@@ -184,34 +184,41 @@ bool AdvertisingPacketFilter::QueueOffloadFilterCommands(
   }
 
   FilterIndex filter_index = filter_index_opt.value();
-  scan_id_to_index_[scan_id].insert(filter_index);
-
-  CommandPacket set_parameters =
-      BuildSetParametersCommand(filter_index, filter);
-  hci_cmd_runner_->QueueCommand(set_parameters);
+  std::vector<CommandPacket> subcommands;
 
   if (!filter.service_uuids().empty()) {
-    std::vector<CommandPacket> packets =
+    std::optional<std::vector<CommandPacket>> packets =
         BuildSetServiceUUIDCommands(filter_index, filter.service_uuids());
-    for (const CommandPacket& packet : packets) {
-      hci_cmd_runner_->QueueCommand(packet);
+    if (!packets.has_value()) {
+      return false;
     }
+    subcommands.insert(subcommands.end(),
+                       std::make_move_iterator(packets->begin()),
+                       std::make_move_iterator(packets->end()));
   }
 
   if (!filter.service_data_uuids().empty()) {
-    std::vector<CommandPacket> packets = BuildSetServiceDataUUIDCommands(
-        filter_index, filter.service_data_uuids());
-    for (const CommandPacket& packet : packets) {
-      hci_cmd_runner_->QueueCommand(packet);
+    std::optional<std::vector<CommandPacket>> packets =
+        BuildSetServiceDataUUIDCommands(filter_index,
+                                        filter.service_data_uuids());
+    if (!packets.has_value()) {
+      return false;
     }
+    subcommands.insert(subcommands.end(),
+                       std::make_move_iterator(packets->begin()),
+                       std::make_move_iterator(packets->end()));
   }
 
   if (!filter.solicitation_uuids().empty()) {
-    std::vector<CommandPacket> packets = BuildSetSolicitationUUIDCommands(
-        filter_index, filter.solicitation_uuids());
-    for (const CommandPacket& packet : packets) {
-      hci_cmd_runner_->QueueCommand(packet);
+    std::optional<std::vector<CommandPacket>> packets =
+        BuildSetSolicitationUUIDCommands(filter_index,
+                                         filter.solicitation_uuids());
+    if (!packets.has_value()) {
+      return false;
     }
+    subcommands.insert(subcommands.end(),
+                       std::make_move_iterator(packets->begin()),
+                       std::make_move_iterator(packets->end()));
   }
 
   if (!filter.name_substring().empty()) {
@@ -220,15 +227,21 @@ bool AdvertisingPacketFilter::QueueOffloadFilterCommands(
     if (!packet.has_value()) {
       return false;
     }
-    hci_cmd_runner_->QueueCommand(packet.value());
+    subcommands.push_back(std::move(packet.value()));
   }
 
   if (filter.manufacturer_code().has_value()) {
-    std::optional<CommandPacket> packet = BuildSetManufacturerCodeCommand(
-        filter_index, filter.manufacturer_code().value());
-    if (packet) {
-      hci_cmd_runner_->QueueCommand(packet.value());
-    }
+    subcommands.push_back(BuildSetManufacturerCodeCommand(
+        filter_index, filter.manufacturer_code().value()));
+  }
+
+  scan_id_to_index_[scan_id].insert(filter_index);
+
+  CommandPacket set_parameters =
+      BuildSetParametersCommand(filter_index, filter);
+  hci_cmd_runner_->QueueCommand(std::move(set_parameters));
+  for (const CommandPacket& packet : subcommands) {
+    hci_cmd_runner_->QueueCommand(std::move(packet));
   }
 
   return true;
@@ -491,6 +504,7 @@ AdvertisingPacketFilter::BuildSetServiceUUID16Command(FilterIndex filter_index,
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceUUIDSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   view.uuid().BackingStorage().WriteLittleEndianUInt<16>(value);
@@ -517,6 +531,7 @@ AdvertisingPacketFilter::BuildSetServiceUUID32Command(FilterIndex filter_index,
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceUUIDSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   view.uuid().BackingStorage().WriteLittleEndianUInt<32>(value);
@@ -538,6 +553,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetServiceUUID128Command(
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceUUIDSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   std::copy(value.begin(), value.end(), view.uuid().BackingStorage().data());
@@ -550,7 +566,8 @@ CommandPacket AdvertisingPacketFilter::BuildSetServiceUUID128Command(
   return packet;
 }
 
-std::vector<CommandPacket> AdvertisingPacketFilter::BuildSetServiceUUIDCommands(
+std::optional<std::vector<CommandPacket>>
+AdvertisingPacketFilter::BuildSetServiceUUIDCommands(
     FilterIndex filter_index, const std::vector<UUID>& uuids) const {
   std::vector<CommandPacket> packets;
   packets.reserve(uuids.size());
@@ -560,7 +577,7 @@ std::vector<CommandPacket> AdvertisingPacketFilter::BuildSetServiceUUIDCommands(
       case UUID::Type::k16Bit: {
         auto packet = BuildSetServiceUUID16Command(filter_index, uuid);
         if (!packet) {
-          return packets;
+          return std::nullopt;
         }
         packets.push_back(std::move(packet.value()));
         break;
@@ -568,7 +585,7 @@ std::vector<CommandPacket> AdvertisingPacketFilter::BuildSetServiceUUIDCommands(
       case UUID::Type::k32Bit: {
         auto packet = BuildSetServiceUUID32Command(filter_index, uuid);
         if (!packet) {
-          return packets;
+          return std::nullopt;
         }
         packets.push_back(std::move(packet.value()));
         break;
@@ -598,6 +615,7 @@ AdvertisingPacketFilter::BuildSetSolicitationUUID16Command(
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceSolicitationUUIDSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   view.uuid().BackingStorage().WriteLittleEndianUInt<16>(value);
@@ -623,6 +641,7 @@ AdvertisingPacketFilter::BuildSetSolicitationUUID32Command(
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceSolicitationUUIDSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   view.uuid().BackingStorage().WriteLittleEndianUInt<32>(value);
@@ -644,6 +663,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetSolicitationUUID128Command(
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceSolicitationUUIDSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   std::copy(value.begin(), value.end(), view.uuid().BackingStorage().data());
@@ -656,7 +676,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetSolicitationUUID128Command(
   return packet;
 }
 
-std::vector<CommandPacket>
+std::optional<std::vector<CommandPacket>>
 AdvertisingPacketFilter::BuildSetSolicitationUUIDCommands(
     FilterIndex filter_index, const std::vector<UUID>& uuids) const {
   std::vector<CommandPacket> packets;
@@ -667,7 +687,7 @@ AdvertisingPacketFilter::BuildSetSolicitationUUIDCommands(
       case UUID::Type::k16Bit: {
         auto packet = BuildSetSolicitationUUID16Command(filter_index, uuid);
         if (!packet) {
-          return packets;
+          return std::nullopt;
         }
         packets.push_back(std::move(packet.value()));
         break;
@@ -675,7 +695,7 @@ AdvertisingPacketFilter::BuildSetSolicitationUUIDCommands(
       case UUID::Type::k32Bit: {
         auto packet = BuildSetSolicitationUUID32Command(filter_index, uuid);
         if (!packet) {
-          return packets;
+          return std::nullopt;
         }
         packets.push_back(std::move(packet.value()));
         break;
@@ -708,6 +728,7 @@ AdvertisingPacketFilter::BuildSetServiceDataUUID16Command(
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceDataSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   view.service_data().BackingStorage().WriteLittleEndianUInt<16>(value);
@@ -736,6 +757,7 @@ AdvertisingPacketFilter::BuildSetServiceDataUUID32Command(
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceDataSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   view.service_data().BackingStorage().WriteLittleEndianUInt<32>(value);
@@ -759,6 +781,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetServiceDataUUID128Command(
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceDataSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   std::copy(
@@ -774,7 +797,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetServiceDataUUID128Command(
   return packet;
 }
 
-std::vector<CommandPacket>
+std::optional<std::vector<CommandPacket>>
 AdvertisingPacketFilter::BuildSetServiceDataUUIDCommands(
     FilterIndex filter_index, const std::vector<UUID>& uuids) const {
   std::vector<CommandPacket> packets;
@@ -785,7 +808,7 @@ AdvertisingPacketFilter::BuildSetServiceDataUUIDCommands(
       case UUID::Type::k16Bit: {
         auto packet = BuildSetServiceDataUUID16Command(filter_index, uuid);
         if (!packet) {
-          return packets;
+          return std::nullopt;
         }
         packets.push_back(std::move(packet.value()));
         break;
@@ -793,7 +816,7 @@ AdvertisingPacketFilter::BuildSetServiceDataUUIDCommands(
       case UUID::Type::k32Bit: {
         auto packet = BuildSetServiceDataUUID32Command(filter_index, uuid);
         if (!packet) {
-          return packets;
+          return std::nullopt;
         }
         packets.push_back(std::move(packet.value()));
         break;
@@ -829,6 +852,7 @@ std::optional<CommandPacket> AdvertisingPacketFilter::BuildSetLocalNameCommand(
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfLocalNameSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   PW_CHECK(view.Ok());
@@ -852,6 +876,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetManufacturerCodeCommand(
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfManufacturerDataSubopcode);
+  view.action().Write(android_emb::ApcfAction::ADD);
   view.filter_index().Write(filter_index);
 
   view.manufacturer_data().BackingStorage().WriteLittleEndianUInt<16>(

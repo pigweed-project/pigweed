@@ -169,7 +169,7 @@ class AdvertisingPacketFilter {
   CommandPacket BuildSetServiceUUID128Command(FilterIndex filter_index,
                                               const UUID& uuid) const;
 
-  std::vector<CommandPacket> BuildSetServiceUUIDCommands(
+  std::optional<std::vector<CommandPacket>> BuildSetServiceUUIDCommands(
       FilterIndex filter_index, const std::vector<UUID>& uuids) const;
 
   std::optional<CommandPacket> BuildSetSolicitationUUID16Command(
@@ -181,7 +181,7 @@ class AdvertisingPacketFilter {
   CommandPacket BuildSetSolicitationUUID128Command(FilterIndex filter_index,
                                                    const UUID& uuid) const;
 
-  std::vector<CommandPacket> BuildSetSolicitationUUIDCommands(
+  std::optional<std::vector<CommandPacket>> BuildSetSolicitationUUIDCommands(
       FilterIndex filter_index, const std::vector<UUID>& uuids) const;
 
   std::optional<CommandPacket> BuildSetServiceDataUUID16Command(
@@ -193,7 +193,7 @@ class AdvertisingPacketFilter {
   CommandPacket BuildSetServiceDataUUID128Command(FilterIndex filter_index,
                                                   const UUID& uuid) const;
 
-  std::vector<CommandPacket> BuildSetServiceDataUUIDCommands(
+  std::optional<std::vector<CommandPacket>> BuildSetServiceDataUUIDCommands(
       FilterIndex filter_index, const std::vector<UUID>& uuids) const;
 
   std::optional<CommandPacket> BuildSetLocalNameCommand(
