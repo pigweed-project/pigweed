@@ -364,7 +364,7 @@ bool AdvertisingPacketFilter::MemoryAvailable() const {
   }
 
   size_t total_filters = 0;
-  std::unordered_map<OffloadedFilterType, uint8_t> needed_slots = {
+  std::unordered_map<OffloadedFilterType, size_t> needed_slots = {
       {OffloadedFilterType::kServiceUUID, 0},
       {OffloadedFilterType::kServiceDataUUID, 0},
       {OffloadedFilterType::kSolicitationUUID, 0},

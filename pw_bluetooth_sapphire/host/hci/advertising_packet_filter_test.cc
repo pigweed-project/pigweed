@@ -808,6 +808,29 @@ TEST_F(AdvertisingPacketFilterTest,
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 }
 
+TEST_F(AdvertisingPacketFilterTest, NeededSlotsDoesNotOverflowUint8) {
+  AdvertisingPacketFilter packet_filter(
+      {/*offloading_supported=*/true,
+       /*max_filters=*/2,
+       /*peer_delivery_mode=*/
+       AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+      transport()->GetWeakPtr());
+
+  // 256 UUIDs would wrap to 0 if counted in a uint8_t.
+  std::vector<UUID> uuids;
+  uuids.reserve(256);
+  for (uint16_t i = 0; i < 256; ++i) {
+    uuids.emplace_back(i);
+  }
+
+  DiscoveryFilter filter;
+  filter.set_service_uuids(uuids);
+  packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
+  RunUntilIdle();
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+}
+
 TEST_F(AdvertisingPacketFilterTest, NameSubstringOverflow) {
   AdvertisingPacketFilter packet_filter(
       {/*offloading_supported=*/true,
