@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/logging/log_ctrl.h>
 
@@ -59,6 +60,7 @@ LOG_MODULE_DECLARE(PW_LOG_ZEPHYR_MODULE_NAME, LOG_LEVEL);
       case PW_LOG_LEVEL_FATAL:                   \
         LOG_ERR(module " " __VA_ARGS__);         \
         LOG_PANIC();                             \
+        k_panic();                               \
         break;                                   \
       case PW_LOG_LEVEL_DEBUG:                   \
       default:                                   \
