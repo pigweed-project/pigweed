@@ -1045,11 +1045,13 @@ TYPED_TEST(LowEnergyScannerTest, NotifyCachedPeersWhenNotScanningIsNoOp) {
 
 TEST(LowEnergyScanResultTest, AssignmentOperator) {
   constexpr int8_t kRSSI = -18;
+  constexpr int8_t kTxPower = 7;
   constexpr uint8_t kAdvertisingSid = 0x0d;
   constexpr uint16_t kPeriodicAdvertisingInterval = 0x2468;
   LowEnergyScanResult scan_result_1(
       kPublicAddress1, /*resolved=*/true, /*connectable=*/true);
   scan_result_1.set_rssi(kRSSI);
+  scan_result_1.set_tx_power(kTxPower);
   scan_result_1.set_advertising_sid(kAdvertisingSid);
   scan_result_1.set_periodic_advertising_interval(kPeriodicAdvertisingInterval);
 
@@ -1058,6 +1060,7 @@ TEST(LowEnergyScanResultTest, AssignmentOperator) {
   EXPECT_EQ(scan_result_2.resolved(), true);
   EXPECT_EQ(scan_result_2.connectable(), true);
   EXPECT_EQ(scan_result_2.rssi(), kRSSI);
+  EXPECT_EQ(scan_result_2.tx_power(), kTxPower);
   EXPECT_EQ(scan_result_2.advertising_sid(), kAdvertisingSid);
   EXPECT_EQ(scan_result_2.periodic_advertising_interval(),
             kPeriodicAdvertisingInterval);

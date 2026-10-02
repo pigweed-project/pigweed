@@ -55,6 +55,7 @@ LowEnergyScanResult& LowEnergyScanResult::operator=(
   resolved_ = other.resolved_;
   connectable_ = other.connectable_;
   rssi_ = other.rssi_;
+  tx_power_ = other.tx_power_;
   advertising_sid_ = other.advertising_sid_;
   periodic_advertising_interval_ = other.periodic_advertising_interval_;
   data_size_ = other.data_size_;
