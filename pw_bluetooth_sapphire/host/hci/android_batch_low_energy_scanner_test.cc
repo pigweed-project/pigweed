@@ -162,6 +162,10 @@ class AndroidBatchLowEnergyScannerTest : public TestingBase,
 
   void StopScan() { scanner_->StopScan(); }
 
+  // Used only for testing scanner destruction while asynchronous operations are
+  // in flight.
+  void DestroyScanner() { scanner_.reset(); }
+
   FakeWakeAlarmProvider& wake_alarm_provider() { return wake_alarm_provider_; }
 
  protected:
@@ -638,6 +642,35 @@ TEST_F(AndroidBatchLowEnergyScannerTest,
   RunFor(AndroidBatchLowEnergyScanner::kMaxReadDelay);
   RunUntilIdle();
   EXPECT_TRUE(peer_found_callback_called);
+}
+
+TEST_F(AndroidBatchLowEnergyScannerTest,
+       DestroyScannerWhileReadInFlightDoesNotCrash) {
+  fit::closure resume_read;
+  test_device()->pause_responses_for_opcode(
+      android_hci::kLEBatchScan,
+      [&](fit::closure resume) { resume_read = std::move(resume); });
+
+  test_device()->SendScanStorageThresholdBreachEvent();
+  RunUntilIdle();
+  ASSERT_TRUE(resume_read);
+
+  DestroyScanner();
+  resume_read();
+  RunUntilIdle();
+}
+
+TEST_F(AndroidBatchLowEnergyScannerTest,
+       DestroyScannerInOnPeerFoundDoesNotCrash) {
+  int peer_found_count = 0;
+  set_peer_found_callback([&](const LowEnergyScanResult& /*result*/) {
+    peer_found_count++;
+    DestroyScanner();
+  });
+
+  test_device()->SendScanStorageThresholdBreachEvent();
+  RunUntilIdle();
+  EXPECT_EQ(1, peer_found_count);
 }
 
 }  // namespace bt::hci

@@ -277,7 +277,12 @@ static std::optional<std::tuple<DeviceAddress, bool>> BuildDeviceAddress(
 
 void AndroidBatchLowEnergyScanner::HandleScanResults(
     const std::vector<android_emb::LEBatchScanFullResultView>& results) {
+  auto self = weak_self_.GetWeakPtr();
   for (const auto& result : results) {
+    if (!self.is_alive() || !IsScanning()) {
+      return;
+    }
+
     std::optional<std::tuple<DeviceAddress, bool>> address_result =
         BuildDeviceAddress(result.peer_address_type().Read(),
                            result.peer_address());
@@ -340,10 +345,12 @@ void AndroidBatchLowEnergyScanner::SendReadCommand(
   }
 
   CommandPacket command = BuildReadScanResultsPacket();
-  auto callback = [this, lease = std::move(wake_lease)](
+  auto callback = [this,
+                   self = weak_self_.GetWeakPtr(),
+                   lease = std::move(wake_lease)](
                       CommandChannel::TransactionId /*id*/,
                       const EventPacket& event) mutable {
-    if (!IsScanning()) {
+    if (!self.is_alive() || !IsScanning()) {
       return;
     }
 
@@ -365,6 +372,9 @@ void AndroidBatchLowEnergyScanner::SendReadCommand(
 
     auto records = ParseScanResults(view);
     HandleScanResults(records);
+    if (!self.is_alive() || !IsScanning()) {
+      return;
+    }
 
     SendReadCommand(std::move(lease));
   };
