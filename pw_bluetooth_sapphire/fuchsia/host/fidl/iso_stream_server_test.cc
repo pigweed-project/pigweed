@@ -66,7 +66,8 @@ class IsoStreamServerTest : public TestingBase {
                    request) {
           on_established_events_.push(std::move(request));
         };
-    fake_iso_stream_ = std::make_unique<bt::iso::testing::FakeIsoStream>();
+    fake_iso_stream_ = std::make_unique<bt::iso::testing::FakeIsoStream>(
+        0, nullptr, [this]() { iso_stream_closed_ = true; });
   }
 
   void TearDown() override {
@@ -95,6 +96,7 @@ class IsoStreamServerTest : public TestingBase {
   std::queue<::fuchsia::bluetooth::le::IsochronousStreamOnEstablishedRequest>
       on_established_events_;
   uint32_t on_closed_called_times_ = 0;
+  bool iso_stream_closed_ = false;
 
  private:
   std::unique_ptr<IsoStreamServer> server_;
@@ -522,6 +524,14 @@ TEST_F(IsoStreamServerDataTest, DoubleReadWithNoDataReceived) {
   ASSERT_TRUE(status);
   EXPECT_EQ(*status, ZX_ERR_BAD_STATE);
   EXPECT_EQ(on_closed_called_times_, 1u);
+}
+
+TEST_F(IsoStreamServerDataTest, DestroyingServerClosesUnderlyingStream) {
+  // Verify that destroying IsoStreamServer correctly closes the underlying
+  // stream
+  DestroyServer();
+  RunLoopUntilIdle();
+  EXPECT_TRUE(iso_stream_closed_);
 }
 
 TEST_F(IsoStreamServerTest, DestructorClosesHostStream) {
