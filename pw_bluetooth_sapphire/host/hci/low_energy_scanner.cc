@@ -197,7 +197,7 @@ void LowEnergyScanner::NotifyPeerFound(const LowEnergyScanResult& result) {
 bool LowEnergyScanner::StartScan(const ScanOptions& options,
                                  ScanStatusCallback callback) {
   PW_CHECK(callback);
-  PW_CHECK(options.window < options.interval);
+  PW_CHECK(options.window <= options.interval);
 
   if (state_ != State::kIdle) {
     bt_log(ERROR,

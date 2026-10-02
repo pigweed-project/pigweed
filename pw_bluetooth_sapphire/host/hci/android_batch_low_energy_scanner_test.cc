@@ -133,6 +133,7 @@ class AndroidBatchLowEnergyScannerTest : public TestingBase,
   }
 
   void TearDown() override {
+    test_device()->clear_pause_listener_for_opcode(android_hci::kLEBatchScan);
     scanner_ = nullptr;
     TestingBase::TearDown();
   }

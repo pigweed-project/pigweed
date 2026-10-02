@@ -71,6 +71,7 @@ AndroidBatchLowEnergyScanner::~AndroidBatchLowEnergyScanner() {
   }
 
   hci()->command_channel()->RemoveEventHandler(event_handler_id_);
+  StopScan();
 }
 
 bool AndroidBatchLowEnergyScanner::StartScan(const ScanOptions& options,

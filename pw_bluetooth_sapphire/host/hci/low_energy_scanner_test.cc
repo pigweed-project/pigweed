@@ -1066,4 +1066,17 @@ TEST(LowEnergyScanResultTest, AssignmentOperator) {
             kPeriodicAdvertisingInterval);
 }
 
+TYPED_TEST(LowEnergyScannerTest, StartScanWithWindowEqualToInterval) {
+  LowEnergyScanner::ScanOptions options{
+      .active = true,
+      .filter_duplicates = true,
+      .period = LowEnergyScanner::kPeriodInfinite,
+      .interval = hci_spec::defaults::kLEScanInterval,
+      .window = hci_spec::defaults::kLEScanInterval,
+  };
+  EXPECT_TRUE(this->scanner()->StartScan(options, [](auto) {}));
+  this->RunUntilIdle();
+  EXPECT_TRUE(this->scanner()->IsActiveScanning());
+}
+
 }  // namespace bt::hci
