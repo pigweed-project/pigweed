@@ -808,6 +808,32 @@ TEST_F(AdvertisingPacketFilterTest,
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 }
 
+TEST_F(AdvertisingPacketFilterTest, LocalNameTooLongFallsBackToHostFiltering) {
+  AdvertisingPacketFilter packet_filter(
+      {/*offloading_supported=*/true,
+       /*max_filters=*/2,
+       /*peer_delivery_mode=*/
+       AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+      transport()->GetWeakPtr());
+
+  DiscoveryFilter filter;
+  std::string max_length_name(
+      hci_spec::vendor::android::kLEApcfMaxPDUValueLength, 'a');
+  filter.set_name_substring(max_length_name);
+  packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
+  RunUntilIdle();
+  EXPECT_TRUE(packet_filter.IsUsingOffloadedFiltering());
+
+  std::string too_long_name(
+      hci_spec::vendor::android::kLEApcfMaxPDUValueLength + 1, 'a');
+  filter.set_name_substring(too_long_name);
+  packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
+  RunUntilIdle();
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+}
+
 TEST_F(AdvertisingPacketFilterTest, NeededSlotsDoesNotOverflowUint8) {
   AdvertisingPacketFilter packet_filter(
       {/*offloading_supported=*/true,
@@ -847,5 +873,4 @@ TEST_F(AdvertisingPacketFilterTest, NameSubstringOverflow) {
 
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 }
-
 }  // namespace bt::hci

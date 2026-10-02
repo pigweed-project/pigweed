@@ -344,6 +344,10 @@ bool AdvertisingPacketFilter::MemoryAvailable() const {
       needed_slots[OffloadedFilterType::kSolicitationUUID] +=
           filter.solicitation_uuids().size();
       if (!filter.name_substring().empty()) {
+        if (filter.name_substring().size() >
+            android_hci::kLEApcfMaxPDUValueLength) {
+          return false;
+        }
         needed_slots[OffloadedFilterType::kLocalName]++;
       }
       if (filter.manufacturer_code().has_value()) {
