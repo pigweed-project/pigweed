@@ -13,8 +13,9 @@
 // the License.
 
 #[cfg(test)]
+#[deny(unused_variables, unused_assignments)]
 mod tests {
-    use pw_assert::{assert, debug_assert, debug_eq, debug_ne, eq, ne};
+    use pw_assert::{assert, debug_assert, debug_eq, debug_ne, debug_panic, eq, ne};
 
     // Because infrastructure to verify panics does not exist, these tests only
     // check for the valid condition and the syntax of the macros being correct.
@@ -33,14 +34,47 @@ mod tests {
 
     #[test]
     fn debug_assert_syntax_works() {
-        debug_assert!(true as bool);
-        debug_assert!(true as bool,);
+        let cond = true;
+        let arg = 42u32;
+        let arg2 = 99u32;
+        debug_assert!(cond as bool);
+        debug_assert!(cond as bool,);
 
-        debug_assert!(true as bool, "custom msg");
-        debug_assert!(true as bool, "custom msg",);
+        debug_assert!(cond as bool, "custom msg");
+        debug_assert!(cond as bool, "custom msg",);
 
-        debug_assert!(true as bool, "custom msg with arg {}", 42 as u32);
-        debug_assert!(true as bool, "custom msg with arg {}", 42 as u32,);
+        debug_assert!(cond as bool, "custom msg with arg {}", arg as u32);
+        debug_assert!(cond as bool, "custom msg with arg {}", arg as u32,);
+        debug_assert!(
+            cond as bool,
+            "custom msg with args {} {}",
+            arg as u32, arg2 as u32,
+        );
+
+        if false {
+            debug_assert!(cond as bool)
+        }
+    }
+
+    #[test]
+    fn debug_panic_syntax_works() {
+        let arg = 42u32;
+        let arg2 = 99u32;
+        if false {
+            debug_panic!("custom msg");
+        }
+        if false {
+            debug_panic!("custom msg",);
+        }
+        if false {
+            debug_panic!("custom msg with arg {}", arg as u32);
+        }
+        if false {
+            debug_panic!("custom msg with arg {}", arg as u32,);
+        }
+        if false {
+            debug_panic!("custom msg with args {} {}", arg as u32, arg2 as u32)
+        }
     }
 
     #[test]
@@ -69,25 +103,55 @@ mod tests {
 
     #[test]
     fn debug_eq_syntax_works() {
-        debug_eq!(1 as u32, 1 as u32);
-        debug_eq!(1 as u32, 1 as u32,);
+        let a = 1u32;
+        let b = 1u32;
+        let arg = 42u32;
+        let arg2 = 99u32;
+        debug_eq!(a as u32, b as u32);
+        debug_eq!(a as u32, b as u32,);
 
-        debug_eq!(1 as u32, 1 as u32, "custom msg");
-        debug_eq!(1 as u32, 1 as u32, "custom msg",);
+        debug_eq!(a as u32, b as u32, "custom msg");
+        debug_eq!(a as u32, b as u32, "custom msg",);
 
-        debug_eq!(1 as u32, 1 as u32, "custom msg with arg {}", 42 as u32);
-        debug_eq!(1 as u32, 1 as u32, "custom msg with arg {}", 42 as u32,);
+        debug_eq!(a as u32, b as u32, "custom msg with arg {}", arg as u32);
+        debug_eq!(a as u32, b as u32, "custom msg with arg {}", arg as u32,);
+        debug_eq!(
+            a as u32,
+            b as u32,
+            "custom msg with args {} {}",
+            arg as u32,
+            arg2 as u32,
+        );
+
+        if false {
+            debug_eq!(a as u32, b as u32)
+        }
     }
 
     #[test]
     fn debug_ne_syntax_works() {
-        debug_ne!(1 as u32, 2 as u32);
-        debug_ne!(1 as u32, 2 as u32,);
+        let a = 1u32;
+        let b = 2u32;
+        let arg = 42u32;
+        let arg2 = 99u32;
+        debug_ne!(a as u32, b as u32);
+        debug_ne!(a as u32, b as u32,);
 
-        debug_ne!(1 as u32, 2 as u32, "custom msg");
-        debug_ne!(1 as u32, 2 as u32, "custom msg",);
+        debug_ne!(a as u32, b as u32, "custom msg");
+        debug_ne!(a as u32, b as u32, "custom msg",);
 
-        debug_ne!(1 as u32, 2 as u32, "custom msg with arg {}", 42 as u32);
-        debug_ne!(1 as u32, 2 as u32, "custom msg with arg {}", 42 as u32,);
+        debug_ne!(a as u32, b as u32, "custom msg with arg {}", arg as u32);
+        debug_ne!(a as u32, b as u32, "custom msg with arg {}", arg as u32,);
+        debug_ne!(
+            a as u32,
+            b as u32,
+            "custom msg with args {} {}",
+            arg as u32,
+            arg2 as u32,
+        );
+
+        if false {
+            debug_ne!(a as u32, b as u32)
+        }
     }
 }

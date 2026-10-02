@@ -88,7 +88,13 @@ macro_rules! debug_panic {
 #[macro_export]
 #[cfg(not(feature = "debug_assertions"))]
 macro_rules! debug_panic {
-    ($($arg:tt)*) => {};
+    ($format_string:literal $(, $args:expr)* $(,)?) => {{
+        #[allow(clippy::unnecessary_cast)]
+        if false {
+            let _: &str = $format_string;
+            $(let _ = $args;)*
+        }
+    }};
 }
 
 /// Asserts that a condition is true.
@@ -145,7 +151,16 @@ macro_rules! debug_assert {
 #[macro_export]
 #[cfg(not(feature = "debug_assertions"))]
 macro_rules! debug_assert {
-    ($($arg:tt)*) => {};
+    ($condition:expr $(, $format_string:literal $(, $args:expr)*)? $(,)?) => {{
+        #[allow(clippy::unnecessary_cast)]
+        if false {
+            let _: bool = $condition;
+            $(
+                let _: &str = $format_string;
+                $(let _ = $args;)*
+            )?
+        }
+    }};
 }
 
 /// Asserts that two expressions are equal (equivalent to `assert_eq!`).
@@ -230,7 +245,16 @@ macro_rules! debug_eq {
 #[macro_export]
 #[cfg(not(feature = "debug_assertions"))]
 macro_rules! debug_eq {
-    ($($arg:tt)*) => {};
+    ($lhs:expr, $rhs:expr $(, $format_string:literal $(, $args:expr)*)? $(,)?) => {{
+        #[allow(clippy::unnecessary_cast)]
+        if false {
+            let _ = $lhs == $rhs;
+            $(
+                let _: &str = $format_string;
+                $(let _ = $args;)*
+            )?
+        }
+    }};
 }
 
 /// Asserts that two expressions are not equal when debug_assertions are enabled.
@@ -263,5 +287,14 @@ macro_rules! debug_ne {
 #[macro_export]
 #[cfg(not(feature = "debug_assertions"))]
 macro_rules! debug_ne {
-    ($($arg:tt)*) => {};
+    ($lhs:expr, $rhs:expr $(, $format_string:literal $(, $args:expr)*)? $(,)?) => {{
+        #[allow(clippy::unnecessary_cast)]
+        if false {
+            let _ = $lhs != $rhs;
+            $(
+                let _: &str = $format_string;
+                $(let _ = $args;)*
+            )?
+        }
+    }};
 }

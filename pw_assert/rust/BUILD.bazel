@@ -87,6 +87,24 @@ rust_test(
     deps = [":pw_assert"],
 )
 
+platform(
+    name = "host_pw_assert_debug_assertions",
+    flags = [
+        "--//pw_assert/rust:debug_assertions=true",
+    ],
+    parents = ["@bazel_tools//tools:host_platform"],
+)
+
+rust_test(
+    name = "pw_assert_debug_assertions_test",
+    srcs = [
+        "pw_assert_test.rs",
+    ],
+    edition = "2021",
+    platform = ":host_pw_assert_debug_assertions",
+    deps = [":pw_assert"],
+)
+
 rust_library(
     name = "pw_assert_backend_pw_log",
     srcs = [
