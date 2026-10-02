@@ -934,6 +934,29 @@ func TestEdit_CQ_Remove(t *testing.T) {
 	}
 }
 
+func TestEdit_CQ_UsesPresubmitReadyWhenNoCommitQueue(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithLabels("Code-Review", "Presubmit-Ready"))
+	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+
+	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--cq", "--host", server.URL)
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+
+	if !strings.Contains(output, "Presubmit-Ready+1 set successfully.") {
+		t.Errorf("Unexpected output: %s", output)
+	}
+
+	var payload gerrit.ReviewInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &payload)
+	}
+	if payload.Labels["Presubmit-Ready"] != 1 {
+		t.Errorf("got Presubmit-Ready = %d, want 1 (labels: %v)", payload.Labels["Presubmit-Ready"], payload.Labels)
+	}
+}
+
 func TestEdit_CommitMessageFlagsDisabledRedirectsToLocalGit(t *testing.T) {
 	tests := []struct {
 		name string
@@ -968,5 +991,49 @@ func TestEdit_CommitMessageFlagsDisabledRedirectsToLocalGit(t *testing.T) {
 				t.Errorf("Expected no SetCommitMessage API call, got %d", n)
 			}
 		})
+	}
+}
+
+func TestEdit_TopicForbiddenBySubmitRequirement(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, func(ch map[string]any) {
+		ch["submit_requirements"] = []map[string]any{
+			{"name": "Topics-Not-Supported", "status": "SATISFIED"},
+		}
+	})
+
+	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--topic", "my-topic", "--host", server.URL)
+	if err == nil {
+		t.Fatal("Expected error when --topic is passed on a change with Topics-Not-Supported submit requirement")
+	}
+	for _, want := range []string{"Topics-Not-Supported", "my-topic", "without --topic"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Expected error to contain %q, got: %v", want, err)
+		}
+	}
+	if server.CallCount("PUT", "/changes/12345/topic") != 0 {
+		t.Errorf("Expected no SetTopic API call when topic is forbidden")
+	}
+}
+
+func TestEdit_Trigger_DefaultAndExplicit(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithLabels("Code-Review", "Presubmit-Ready"))
+	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+
+	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--trigger", "--host", server.URL)
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+	if !strings.Contains(output, "Presubmit-Ready+1 set successfully.") {
+		t.Errorf("Unexpected output: %s", output)
+	}
+
+	var payload gerrit.ReviewInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &payload)
+	}
+	if payload.Labels["Presubmit-Ready"] != 1 {
+		t.Errorf("got Presubmit-Ready = %d, want 1", payload.Labels["Presubmit-Ready"])
 	}
 }

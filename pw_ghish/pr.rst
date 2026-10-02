@@ -56,9 +56,10 @@ Supported flags
 * ``-c, --cc <email>``: CC users on the change.
 * ``--auto`` (alias ``--auto-submit``): Vote the host's auto-submit label upon
   upload.
-* ``--cq [1|2]``: Trigger a Commit-Queue dry run (default ``1`` when omitted;
-  specify ``2`` to submit). See :ref:`module-pw_ghish-pr-cq-auto` for how
-  ``--cq``, ``--auto``, and ``pr merge`` interact.
+* ``--trigger [1|2]`` (alias ``--cq [1|2]``): Trigger a presubmit /
+  Commit-Queue dry run (default ``1`` when omitted; specify ``2`` to submit).
+  See :ref:`module-pw_ghish-pr-cq-auto` for how ``--trigger``/``--cq``,
+  ``--auto``, and ``pr merge`` interact.
 * ``-d, --draft``: Push as a work-in-progress (WIP) draft.
 * ``--publish``: Publish pending draft comments on upload.
 * ``--stack``: Allow pushing multiple commits as a stack of Gerrit changes.
@@ -120,9 +121,10 @@ Supported flags
 * ``--ready``: Mark the change as ready for review (removes WIP status).
 * ``-d, --draft``: Mark the change as a work-in-progress (WIP) draft.
 * ``--auto`` (alias ``--auto-submit``): Vote the host's auto-submit label.
-* ``--cq [1|2]``: Trigger a Commit-Queue dry run (default ``1`` when omitted;
-  specify ``2`` to submit). If the local commit matches the latest patchset on
-  Gerrit, votes are applied via the Gerrit REST API without re-pushing.
+* ``--trigger [1|2]`` (alias ``--cq [1|2]``): Trigger a presubmit /
+  Commit-Queue dry run (default ``1`` when omitted; specify ``2`` to submit).
+  If the local commit matches the latest patchset on Gerrit, votes are applied
+  via the Gerrit REST API without re-pushing.
 * ``--publish``: Publish pending draft comments on upload.
 * ``--stack``: Allow pushing multiple commits as a stack of Gerrit changes.
 * ``--force``: Force upload even if no change with this ``Change-Id`` exists on
@@ -157,8 +159,8 @@ through the Gerrit REST API without pushing a new patchset:
 
 .. code-block:: console
 
-   # Add a reviewer and trigger a CQ dry run:
-   $ ./gh pr edit 413992 --add-reviewer colleague@google.com --cq
+   # Add a reviewer and trigger a presubmit / CQ dry run:
+   $ ./gh pr edit 413992 --add-reviewer colleague@google.com --trigger
 
    # Set a Gerrit topic and add hashtags:
    $ ./gh pr edit 413992 --topic my-feature --add-hashtag triage
@@ -171,7 +173,8 @@ Supported flags
   assignees.
 * ``--add-label <Label=Value>``: Apply a Gerrit label vote (e.g.
   ``--add-label Commit-Queue=1``).
-* ``--cq [0|1|2]``: Vote on ``Commit-Queue`` (default ``1``; ``0`` removes vote).
+* ``--trigger [0|1|2]`` (alias ``--cq [0|1|2]``): Vote on ``Commit-Queue`` or
+  ``Presubmit-Ready`` (default ``1``; ``0`` removes vote).
 * ``--topic <str>`` / ``--remove-topic``: Set or remove the Gerrit topic.
 * ``--add-hashtag <str>`` / ``--remove-hashtag <str>``: Add or remove Gerrit
   hashtags.
@@ -379,14 +382,18 @@ Control the work-in-progress (WIP) and abandoned state of a change:
 
 Checking CI status: ``pr checks``
 =================================
-``./gh pr checks`` queries LUCI Buildbucket tryjobs for the active change and
-returns exit code ``0`` when all blocking checks pass, ``8`` while running, and
+``./gh pr checks`` queries LUCI Buildbucket tryjobs as well as Gerrit
+``SubmitRequirements`` and automated verification labels (such as
+``Android-Build-Verified``, ``Presubmit-Verified``, ``Lint-Verified``, and
+``Kokoro``) for the active change. It returns exit code ``0`` when all blocking
+checks and automated Gerrit gates pass, ``8`` while running or pending, and
 ``1`` on failure:
 
 .. code-block:: console
 
    $ ./gh pr checks
    $ ./gh pr checks --watch --fail-fast
+   $ ./gh pr checks --all
 
 For full documentation on ``pr checks`` and ``gh run``, see
 :ref:`module-pw_ghish-run`.
@@ -416,8 +423,24 @@ Disambiguating ``--cq``, ``--auto``, and ``pr merge``
 =====================================================
 In GitHub, pushing a branch automatically triggers CI and ``gh pr merge`` merges
 the branch directly. In Gerrit and LUCI, code uploads, presubmit dry runs
-(``Commit-Queue+1``), auto-submit (``Pigweed-Auto-Submit+1``), and final
-submission (``Commit-Queue+2``) are controlled by Gerrit label votes.
+(``Commit-Queue+1`` or ``Presubmit-Ready+1``), auto-submit
+(``Pigweed-Auto-Submit+1`` or ``Auto-Submit+1``), and final submission
+(``Commit-Queue+2``) are controlled by Gerrit label votes.
+
+``pw_ghish`` dynamically inspects the Gerrit change's available labels when
+applying ``--cq``, ``--auto``, and ``pr review --approve``:
+
+* **Presubmit / CQ label**: Automatically votes ``Commit-Queue`` or
+  ``Presubmit-Ready`` depending on which label the Gerrit project defines, and
+  clamps ``--cq`` to the label's maximum supported value.
+* **Approval score**: ``pr review --approve`` inspects the ``Code-Review``
+  label's allowed ``Values`` map on the change and votes the maximum allowed
+  positive score (``+2`` on standard Gerrit hosts, or ``+1`` on repositories
+  configured with a ``-1..+1`` scale).
+* **Topics-Not-Supported pre-flight guard**: If a project sets a
+  ``Topics-Not-Supported`` Gerrit submit requirement or ``forbid_topics = true``
+  in ``.ghish.toml``, ``pr create``, ``pr push``, and ``pr edit`` reject
+  ``--topic`` and ``-o topic=...`` before pushing.
 
 You can apply these votes either **when uploading a patchset** (via flags on
 ``pr create`` or ``pr push``) or **on an existing patchset without pushing
@@ -432,7 +455,7 @@ code** (via ``pr review`` or ``pr merge``):
      - During Upload
      - Without Upload
    * - **Run CI tryjobs (dry run)**
-     - ``Commit-Queue+1``
+     - ``Commit-Queue+1`` (or ``Presubmit-Ready+1``)
      - ``./gh pr push --cq``
      - ``./gh pr review --cq``
    * - **Arm auto-submit**
@@ -451,8 +474,8 @@ code** (via ``pr review`` or ``pr merge``):
 .. tip::
 
    Note the difference in ``--cq`` defaults: ``pr push --cq`` and
-   ``pr review --cq`` default to ``Commit-Queue+1`` (a presubmit dry run),
-   whereas ``pr merge --cq`` votes ``Commit-Queue+2`` to land the change.
+   ``pr review --cq`` default to ``+1`` (a presubmit dry run),
+   whereas ``pr merge --cq`` votes ``+2`` to land the change.
 
 .. _module-pw_ghish-pr-targeting:
 
@@ -473,11 +496,13 @@ following target formats:
   ``https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267/3``).
   The Gerrit host in the URL is used automatically unless ``--host`` is
   specified.
-* **Shortlink**: Shortlinks such as ``pwrev/472267``, ``pwrev.dev/i/472267``,
-  ``fxrev/472267``, ``fxr/472267``, ``fxrev.dev/i/472267``, ``ag/472267``,
-  ``aosp/472267``, ``crrev.com/c/472267``, or ``crrev.com/i/472267`` (including
-  ``go/<shortlink>`` and ``goto.google.com/<shortlink>`` forms), which
-  automatically resolve the corresponding Gerrit host.
+* **Shortlink**: Built-in shortlinks such as ``pwrev/472267``,
+  ``pwrev.dev/i/472267``, ``fxrev/472267``, ``fxr/472267``,
+  ``fxrev.dev/i/472267``, ``ag/472267``, ``aosp/472267``, ``crrev.com/c/472267``,
+  or ``crrev.com/i/472267`` (including ``go/<shortlink>`` and
+  ``goto.google.com/<shortlink>`` forms), plus any custom shortlink prefixes
+  configured in ``.ghish.toml`` (``[gerrit.shortlinks]``) or ``git config
+  ghish.gerrit.shortlink.<prefix>``.
 * **Branch name**: Local branch names (e.g. ``my-feature``, ``cl/472267``,
   ``change-472267``), resolved by inspecting the branch tip commit's
   ``Change-Id`` or ``branch.<name>.gerrit-change-id`` in Git config.

@@ -55,6 +55,7 @@ type PushOptions struct {
 	Wip                   bool
 	Ready                 bool
 	CQ                    int
+	CQLabelName           string
 	Publish               bool
 	Topic                 string
 	Hashtags              []string
@@ -122,7 +123,10 @@ func defaultFormatPushRef(branch string, opts PushOptions, extraOptions ...strin
 	if opts.Publish {
 		options = append(options, "publish-comments")
 	}
-	cqLabelName := "Commit-Queue"
+	cqLabelName := opts.CQLabelName
+	if cqLabelName == "" {
+		cqLabelName = "Commit-Queue"
+	}
 	if opts.CQ > 0 {
 		options = append(options, fmt.Sprintf("l=%s+%d", cqLabelName, opts.CQ))
 	}

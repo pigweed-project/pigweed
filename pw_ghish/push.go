@@ -31,6 +31,9 @@ func runPush(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := CheckTopicAllowed(ctx, cfg, state.ExistingChange, RequestedTopic(flags.PushOptions), "gh pr push (without --topic)"); err != nil {
+		return err
+	}
 
 	branch := flags.Base
 	if branch == "" && state.ExistingChange != nil {
@@ -59,6 +62,12 @@ func runPush(cmd *cobra.Command, args []string) error {
 	// outright, taking the whole patchset with it, so the name is looked up
 	// rather than assumed. An existing change lists its own labels; a commit
 	// Gerrit has never seen has to ask the project.
+	if flags.PushOptions.CQ > 0 && state.ExistingChange != nil && len(state.ExistingChange.Labels) > 0 {
+		cqName, cqScore := ResolveCQVoteForLabels(state.ExistingChange.Labels, flags.PushOptions.CQ)
+		flags.PushOptions.CQLabelName = cqName
+		flags.PushOptions.CQ = cqScore
+	}
+
 	var autoSubmit AutoSubmitDecision
 	if flags.PushOptions.AutoSubmit {
 		if state.ExistingChange != nil {
@@ -101,7 +110,7 @@ and suggest using 'gh pr create' (or restoring an overwritten Change-Id). Use --
 Supports rich push options:
   - Reviewers and CCs: --reviewer, --cc
   - Auto-submit: --auto (alias --auto-submit)
-  - Commit queue: --cq (default dry run, or specify vote: 1 = dry run, 2 = submit)
+  - Presubmit / Commit queue: --trigger (alias --cq; default dry run, or specify vote: 1 = dry run, 2 = submit)
   - Publish draft comments: --publish
   - Mark ready for review: --ready
   - Work in progress: --draft

@@ -521,3 +521,26 @@ func TestVerifyHeadForPush(t *testing.T) {
 		}
 	})
 }
+
+func TestPush_TopicForbiddenBySubmitRequirement(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(472267, func(ch map[string]any) {
+		ch["submit_requirements"] = []map[string]any{
+			{"name": "Topics-Not-Supported", "status": "SATISFIED"},
+		}
+	})
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	_, err := executeCommand(RootCmd, "pr", "push", "--topic", "my-topic")
+	if err == nil {
+		t.Fatal("Expected error when --topic is passed on a change with Topics-Not-Supported submit requirement")
+	}
+	for _, want := range []string{"Topics-Not-Supported", "my-topic", "without --topic"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Expected error to contain %q, got: %v", want, err)
+		}
+	}
+	if mockGit.HasCall("push") {
+		t.Errorf("Expected git push not to be called when topic is forbidden, calls: %v", mockGit.Calls)
+	}
+}

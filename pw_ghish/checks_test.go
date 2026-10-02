@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -1674,5 +1676,99 @@ func TestChecks_Watch_SkipsSettledEquivalentPatchsets(t *testing.T) {
 		if queries[ps] != n {
 			t.Errorf("patchset %d queried %d times, want %d (all queries: %v)", ps, queries[ps], n, queries)
 		}
+	}
+}
+
+func TestChecks_HideTagFiltersAndLocalPresubmitHintFromProjectConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	toml := `
+[ci]
+hide_tag_filters = ["hide-in-gerrit:subbuild"]
+local_presubmit_hint = "fx test //src/..."
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, ".ghish.toml"), []byte(toml), 0644); err != nil {
+		t.Fatalf("failed to write .ghish.toml: %v", err)
+	}
+
+	server := NewMockGerritServer(t)
+	MockCWD = tmpDir
+	server.OnDefaultChange(12345, WithSubject("Orchestrator Subbuild Filtering"))
+	server.OnSearchBuilds(
+		FakeBuild("100", "fuchsia-x64-orchestrator", "FAILURE"),
+		FakeBuild("101", "core.x64-subbuild-1", "FAILURE", WithTags(bbTag{Key: "hide-in-gerrit", Value: "subbuild"})),
+		FakeBuild("102", "core.x64-subbuild-2", "SUCCESS", WithTags(bbTag{Key: "hide-in-gerrit", Value: "subbuild"})),
+	)
+
+	output, err := executeCommand(RootCmd, "pr", "checks", "12345")
+	if got := ExitCodeFor(err); got != ExitCodeFailure {
+		t.Fatalf("ExitCodeFor(%v) = %d, want %d\nOutput: %s", err, got, ExitCodeFailure, output)
+	}
+
+	combined := output + "\n" + err.Error()
+	if !strings.Contains(output, "fuchsia-x64-orchestrator") {
+		t.Errorf("Expected orchestrator in output, got:\n%s", output)
+	}
+	if strings.Contains(output, "core.x64-subbuild-1") || strings.Contains(output, "core.x64-subbuild-2") {
+		t.Errorf("Expected subbuilds matching hide_tag_filters to be hidden, got:\n%s", output)
+	}
+	if !strings.Contains(output, "2") || !strings.Contains(output, "hidden") {
+		t.Errorf("Expected note about 2 hidden builds, got:\n%s", output)
+	}
+	if !strings.Contains(combined, "fx test //src/...") {
+		t.Errorf("Expected configured local_presubmit_hint 'fx test //src/...' in output, got:\n%s", combined)
+	}
+
+	allOutput, _ := executeCommand(RootCmd, "pr", "checks", "12345", "--all")
+	if !strings.Contains(allOutput, "core.x64-subbuild-1") || !strings.Contains(allOutput, "core.x64-subbuild-2") {
+		t.Errorf("Expected --all to include subbuilds hidden by hide_tag_filters, got:\n%s", allOutput)
+	}
+}
+
+func TestChecks_GerritGates_FailedLintLabelEvenWithZeroBuilds(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345,
+		WithSubject("Change with Gerrit Gate Failure"),
+		func(ch map[string]any) {
+			ch["submit_requirements"] = []map[string]any{
+				{"name": "Code-Review", "status": "SATISFIED"},
+				{"name": "API-Review", "status": "UNSATISFIED"},
+				{"name": "DrNo-Review", "status": "UNSATISFIED"},
+				{"name": "Lint", "status": "UNSATISFIED"},
+				{"name": "Copybara-Verified", "status": "SATISFIED"},
+				{"name": "Topics-Not-Supported", "status": "UNSATISFIED"},
+			}
+			ch["labels"] = map[string]any{
+				"Code-Review":       narrowLabel(-2, 2, 2),
+				"API-Review":        narrowLabel(-1, 1, 0),
+				"DrNo-Review":       narrowLabel(-1, 1, 0),
+				"Lint":              narrowLabel(-1, 1, -1),
+				"Copybara-Verified": narrowLabel(-1, 1, 1),
+			}
+		},
+	)
+	server.OnSearchBuilds()
+
+	output, err := executeCommand(RootCmd, "pr", "checks", "12345")
+	if got := ExitCodeFor(err); got != ExitCodeFailure {
+		t.Fatalf("ExitCodeFor(%v) = %d, want %d\nOutput: %s", err, got, ExitCodeFailure, output)
+	}
+
+	for _, want := range []string{
+		"Gerrit Gates / Submit Requirements:",
+		"✗  Lint",
+		"✓  Copybara-Verified",
+		"✗  Topics-Not-Supported",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("Expected output to contain %q, got:\n%s", want, output)
+		}
+	}
+	for _, notWant := range []string{"API-Review", "DrNo-Review"} {
+		if strings.Contains(output, notWant) {
+			t.Errorf("Expected unvoted human review requirement %q to be omitted from CI gates, got:\n%s", notWant, output)
+		}
+	}
+	if !strings.Contains(err.Error(), "Gerrit gate(s) failed") || !strings.Contains(err.Error(), "Lint") {
+		t.Errorf("Expected error to mention Gerrit gate failure on Lint, got: %v", err)
 	}
 }

@@ -50,6 +50,11 @@ var autoSubmitLabelPattern = regexp.MustCompile(`(?i)auto[-_ ]?submit`)
 // project ("Pigweed-Auto-Submit").
 var commitQueueLabelPattern = regexp.MustCompile(`(?i)^commit[-_ ]?queue$`)
 
+// presubmitReadyLabelPattern matches the Presubmit-Ready trigger label used by
+// Gerrit hosts that trigger presubmit verification via Presubmit-Ready+1
+// instead of Commit-Queue+1.
+var presubmitReadyLabelPattern = regexp.MustCompile(`(?i)^presubmit[-_ ]?ready$`)
+
 // AutoSubmitDecision is what --auto should do against a particular host.
 type AutoSubmitDecision struct {
 	// Vote is the label to cast. The zero value means there is nothing to cast.
@@ -202,28 +207,140 @@ func autoSubmitVote(info gerrit.LabelInfo) int {
 	return 1
 }
 
-// commitQueueDryRunVote returns a Commit-Queue+1 vote if the host has a Commit
-// Queue to run.
+// commitQueueDryRunVote returns a Commit-Queue+1 or Presubmit-Ready+1 vote if
+// the host has a Commit Queue or presubmit trigger label to run.
 //
 // +1 is the dry run: it verifies the change without submitting it. The higher
 // vote would submit, and a host that was never asked to auto-submit anything
 // should not have its changes submitted because pw_ghish could not find the
 // label the user actually wanted.
 //
-// ok is false when the host has no Commit Queue, when it has more than one
-// label that could be one, or when the label does not permit +1. In each case
-// there is no vote that is obviously the right one, and the caller reports the
-// missing auto-submit label on its own.
+// ok is false when the host has no Commit Queue or Presubmit-Ready label, when
+// it has more than one label that could be one, or when the label does not
+// permit +1.
 func commitQueueDryRunVote(labels map[string]gerrit.LabelInfo) (LabelVote, bool) {
-	matches := matchingLabels(labels, commitQueueLabelPattern)
-	if len(matches) != 1 {
-		return LabelVote{}, false
+	for _, pat := range []*regexp.Regexp{commitQueueLabelPattern, presubmitReadyLabelPattern} {
+		matches := matchingLabels(labels, pat)
+		if len(matches) != 1 {
+			continue
+		}
+		name := matches[0]
+		if low, high, ok := labelRange(labels[name]); ok && (1 < low || 1 > high) {
+			continue
+		}
+		return LabelVote{Name: name, Value: 1}, true
 	}
-	name := matches[0]
-	if low, high, ok := labelRange(labels[name]); ok && (1 < low || 1 > high) {
-		return LabelVote{}, false
+	return LabelVote{}, false
+}
+
+// ResolveCQVoteForLabels resolves the label name and score for a `--trigger` /
+// `--cq` vote against a change's reported labels. If Commit-Queue is present,
+// it uses Commit-Queue; if Presubmit-Ready is present instead, it uses
+// Presubmit-Ready (clamping positive scores to the label's maximum, typically
+// +1). Falls back to Commit-Queue when labels are empty or neither is found.
+func ResolveCQVoteForLabels(labels map[string]gerrit.LabelInfo, score int) (string, int) {
+	if len(labels) == 0 {
+		return "Commit-Queue", score
 	}
-	return LabelVote{Name: name, Value: 1}, true
+	if matches := matchingLabels(labels, commitQueueLabelPattern); len(matches) == 1 {
+		return matches[0], score
+	}
+	if matches := matchingLabels(labels, presubmitReadyLabelPattern); len(matches) == 1 {
+		name := matches[0]
+		if score > 0 {
+			if _, high, ok := labelRange(labels[name]); ok && high > 0 && score > high {
+				score = high
+			} else if score > 1 {
+				score = 1
+			}
+		}
+		return name, score
+	}
+	return "Commit-Queue", score
+}
+
+// ResolveCQVote inspects the change's labels (when available) to determine
+// whether to vote Commit-Queue or Presubmit-Ready for `--trigger` / `--cq`.
+func (c *ChangeContext) ResolveCQVote(score int) (string, int) {
+	if c != nil {
+		if change, err := c.GetChange(&gerrit.ChangeOptions{
+			AdditionalFields: []string{"DETAILED_LABELS"},
+		}); err == nil && change != nil && len(change.Labels) > 0 {
+			return ResolveCQVoteForLabels(change.Labels, score)
+		}
+	}
+	return "Commit-Queue", score
+}
+
+func labelHasPositiveVote(labels map[string]gerrit.LabelInfo, name string) bool {
+	info, ok := labels[name]
+	if !ok {
+		return false
+	}
+	if info.Approved.AccountID != 0 || info.Recommended.AccountID != 0 || info.Value > 0 {
+		return true
+	}
+	if v, voted := castVote(info); voted && v > 0 {
+		return true
+	}
+	return false
+}
+
+// DecideCQSubmit resolves the label vote(s) for `gh pr merge --trigger` /
+// `--cq` given the labels a change reports:
+//   - If Commit-Queue exists on the change, vote Commit-Queue+2.
+//   - Otherwise, if Autosubmit / Auto-Submit and/or Presubmit-Ready exist on
+//     the change, vote Autosubmit+1 (and Presubmit-Ready+1 if neither
+//     Presubmit-Verified nor Verified is already positive).
+func DecideCQSubmit(labels map[string]gerrit.LabelInfo, subject string) ([]LabelVote, error) {
+	if matches := matchingLabels(labels, commitQueueLabelPattern); len(matches) == 1 {
+		name := matches[0]
+		score := 2
+		if _, high, ok := labelRange(labels[name]); ok && high > 0 {
+			score = high
+		}
+		return []LabelVote{{Name: name, Value: score}}, nil
+	}
+
+	var votes []LabelVote
+	if autoVote, ok, err := FindAutoSubmitLabel(labels); err != nil {
+		return nil, err
+	} else if ok {
+		votes = append(votes, autoVote)
+	}
+	if prMatches := matchingLabels(labels, presubmitReadyLabelPattern); len(prMatches) == 1 {
+		if !labelHasPositiveVote(labels, "Presubmit-Verified") && !labelHasPositiveVote(labels, "Verified") {
+			votes = append(votes, LabelVote{Name: prMatches[0], Value: 1})
+		}
+	}
+	if len(votes) > 0 {
+		return votes, nil
+	}
+	if len(labels) > 0 {
+		return nil, fmt.Errorf("--cq: %s has no Commit-Queue, Autosubmit, or Presubmit-Ready label.\n\nLabels here: %s", subject, FormatLabelNames(labels))
+	}
+	return []LabelVote{{Name: "Commit-Queue", Value: 2}}, nil
+}
+
+// DecideCQSubmit resolves the label vote(s) for `gh pr merge --cq` on this
+// change, dynamically inspecting the change's labels when available and
+// falling back to the profile's CQLabel or Commit-Queue+2 when GetChange is
+// unmocked or returns no labels.
+func (c *ChangeContext) DecideCQSubmit() ([]LabelVote, error) {
+	if c == nil {
+		return nil, fmt.Errorf("internal error: ChangeContext is nil")
+	}
+	if change, err := c.GetChange(&gerrit.ChangeOptions{
+		AdditionalFields: []string{"DETAILED_LABELS"},
+	}); err == nil && change != nil && len(change.Labels) > 0 {
+		return DecideCQSubmit(change.Labels, fmt.Sprintf("change %s", c.ChangeID))
+	}
+	if profile, err := c.ResolveProfile(); err == nil && profile != nil {
+		if cqLabel, ok := profile.CQLabel(); ok {
+			return []LabelVote{cqLabel}, nil
+		}
+	}
+	return []LabelVote{{Name: "Commit-Queue", Value: 2}}, nil
 }
 
 // FormatLabelNames renders a host's label names for diagnostics, so an error

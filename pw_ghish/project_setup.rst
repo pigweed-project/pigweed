@@ -105,14 +105,99 @@ Here is an example wrapper script that builds and caches the binary:
 
    exec "${CACHED_BIN}" "$@"
 
+-----------------------------------------------------------------------
+Declarative Repository Configuration (``.ghish.toml`` & ``git config``)
+-----------------------------------------------------------------------
+Repositories can configure ``pw_ghish`` declaratively without modifying Go source
+code by checking in a ``.ghish.toml`` file at the repository root (or in
+subdirectories for monorepo overrides) and/or setting ``git config ghish.*``
+keys locally.
+
+Configuration hierarchy & strict validation
+===========================================
+``pw_ghish`` loads and merges configuration in the following order (later
+sources override earlier ones):
+
+1. Built-in defaults.
+2. ``.ghish.toml`` at the Git repository root (``git rev-parse --show-toplevel``).
+3. Any subdirectory ``.ghish.toml`` files along the path from the repository
+   root to the current working directory.
+4. Local or global ``git config ghish.*`` settings.
+5. Explicit CLI flags (such as ``--host``, ``--all-projects``, ``--all``).
+
+All ``.ghish.toml`` files and ``git config ghish.*`` keys are strictly
+validated: syntax errors, unknown sections, unknown keys, or invalid types fail
+immediately with a descriptive ``file:line`` error.
+
+Example ``.ghish.toml``
+=======================
+.. code-block:: toml
+
+   [gerrit]
+   # Default Gerrit host and project for this repository:
+   host = "pigweed-review.googlesource.com"
+   project = "pigweed/pigweed"
+   default_branch = "main"
+
+   # Scope `gh pr list` to this Gerrit project by default (pass --all-projects to override):
+   scope_list_to_project = true
+
+   # Submodule safety policy ("allow", "warn-unpushed", or "forbid-manual-rolls"):
+   submodule_policy = "warn-unpushed"
+
+   # Reject --topic / -o topic=... before git push on projects with Topics-Not-Supported:
+   forbid_topics = false
+
+   # Custom shortlink prefixes accepted by all commands (e.g. `gh pr view myrev/12345`):
+   [gerrit.shortlinks]
+   "myrev" = "myproject-review.googlesource.com"
+
+   [ci]
+   # CI providers used by this project ("luci", "gerrit"):
+   providers = ["luci", "gerrit"]
+   buildbucket_host = "cr-buildbucket.appspot.com"
+   try_buckets = ["pigweed/try"]
+
+   # Hide child subbuilds matching these Buildbucket tags unless --all is passed:
+   hide_tag_filters = ["hide-in-gerrit:subbuild"]
+
+   # Skip retrying child subbuilds on `gh run rerun --failed` (retried by parent orchestrator):
+   skip_retry_tag_filters = ["skip-retry-in-gerrit:subbuild"]
+
+   # Ordered list of step log streams to prefer in `gh run view --log-failed`:
+   preferred_logs = ["failure summary", "stdout", "stderr"]
+
+   # Include top-level build SummaryMarkdown in failure reports:
+   include_summary_markdown = true
+
+   # Project-specific local presubmit command shown in hints:
+   local_presubmit_hint = "./pw presubmit"
+
+Overriding settings via ``git config``
+======================================
+Any ``.ghish.toml`` setting can be configured or overridden locally via
+``git config``:
+
+.. code-block:: console
+
+   # Hide subbuilds in `gh pr checks`, `gh run list`, and `gh run view`:
+   $ git config --local ghish.ci.hideTagFilters "hide-in-gerrit:subbuild"
+
+   # Register a custom Gerrit shortlink prefix:
+   $ git config --local ghish.gerrit.shortlink.myrev "myproject-review.googlesource.com"
+
+   # Set a custom local presubmit hint:
+   $ git config --local ghish.ci.localPresubmitHint "fx test"
+
 ----------------------------
 Project Profile Architecture
 ----------------------------
 Every Gerrit project has unique review conventions: differing label names
-(such as ``Code-Review`` vs. ``Commit-Queue`` vs. ``Auto-Submit``), varying
-presubmit gates, and dedicated LUCI build buckets.
+(such as ``Code-Review`` vs. ``Commit-Queue`` vs. ``Presubmit-Ready`` vs.
+``Auto-Submit``), varying presubmit gates, and dedicated LUCI build buckets.
 
-``pw_ghish`` abstracts these differences through **Project Profiles**.
+``pw_ghish`` combines automatic Gerrit server introspection with **Project
+Profiles** and ``.ghish.toml`` configuration.
 
 Built-in profiles
 =================

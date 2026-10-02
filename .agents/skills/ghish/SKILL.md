@@ -36,8 +36,10 @@ Subcommands accepting `[<id>]` support:
   (internal review), `fxrev/472267`, `fxrev.dev/472267`, `fxr/472267`,
   `fxrev.dev/i/472267`, `fxr/i/472267`, `ag/472267`, `aosp/472267`,
   `crrev.com/c/472267`, `crrev.com/i/472267` (and `go/<shortlink>` or
-  `goto.google.com/<shortlink>` forms). Automatically resolves the
-  corresponding Gerrit host.
+  `goto.google.com/<shortlink>` forms), plus any custom prefixes configured in
+  `.ghish.toml` (`[gerrit.shortlinks]`) or `git config
+  ghish.gerrit.shortlink.<prefix>`. Automatically resolves the corresponding
+  Gerrit host.
 - **Branch name**: `my-feature`, `cl/472267`, `change-472267` (resolves via
   branch commit `Change-Id` or `branch.<name>.gerrit-change-id` config).
 
@@ -69,7 +71,8 @@ Commands:
   - *Stack Guard*: Halts if pushing multiple commits unless `--stack` is
     specified.
   - Flags: `-r, --reviewer <email>`, `-c, --cc <email>`, `--auto`,
-    `--cq [1|2]` (defaults to `+1` dry run; `2` submits), `-d, --draft` (WIP),
+    `--trigger [1|2]` (alias `--cq [1|2]`; defaults to `+1` dry run on
+    `Commit-Queue` or `Presubmit-Ready`; `2` submits), `-d, --draft` (WIP),
     `-B, --base <branch>`, `--stack`, `--publish`, `-o, --push-option <opt>`,
     `--no-verify`.
 - **`./gh pr push`** (aliases: `./gh push`, `./gh pr upload`): Push local
@@ -80,16 +83,19 @@ Commands:
   - *Stack Guard*: Requires `--stack` if pushing multiple commits ahead of
     origin.
   - Supports `--ready` (remove WIP) and all `create` flags.
-  - *Smart Fallback*: If pushed with `--cq` or metadata on an already
-    up-to-date commit, `pr push` automatically applies updates via the Gerrit
-    API instead of failing.
+  - *Smart Fallback*: If pushed with `--trigger` / `--cq` or metadata on an
+    already up-to-date commit, `pr push` automatically applies updates via the
+    Gerrit API instead of failing.
 - **`./gh pr edit [<id>]`**: Edit Gerrit CL metadata:
-  - Trigger CQ dry run: `./gh pr edit --cq` (or `--cq 2` to submit, `--cq 0` to
-    remove vote; also supports `--add-label <Name>=<Score>`).
+  - Trigger presubmit / CQ dry run: `./gh pr edit --trigger` (alias `--cq`; or
+    `--trigger 2` / `--cq 2` to submit, `--trigger 0` / `--cq 0` to remove
+    vote; also supports `--add-label <Name>=<Score>`).
   - Update reviewers/assignees: `./gh pr edit --add-reviewer user@google.com`
     (`--remove-reviewer`, `--add-assignee`, `--remove-assignee`).
   - Set or remove topic/hashtags: `./gh pr edit --topic <name>`
-    (`--remove-topic`, `--add-hashtag`, `--remove-hashtag`).
+    (`--remove-topic`, `--add-hashtag`, `--remove-hashtag`). Rejects `--topic`
+    and `-o topic=...` before pushing if the project sets `Topics-Not-Supported`
+    or `forbid_topics = true` in `.ghish.toml`.
   - *Commit-Message Edits (`b/567763970`)*: Unlike GitHub (where PR titles and
     descriptions live in the server database), Gerrit stores the CL description
     inside the Git commit message of each patchset. Commit-message flags
@@ -115,19 +121,22 @@ Commands:
     [--line <line>]` (or omit `--path` for a change-level draft).
 - **`./gh pr comment [<id>] -m <msg> [--draft]`**: Post or stage a change-level
   comment (`-F <file>` reads from file).
-- **`./gh pr review [<id>] [--approve | --request-changes] [--cq [1|2]] [--publish] [-m <msg>]`**:
-  Submit review (`--approve` votes `Code-Review+2`; `--request-changes` votes
+- **`./gh pr review [<id>] [--approve | --request-changes] [--trigger [1|2] | --cq [1|2]] [--publish] [-m <msg>]`**:
+  Submit review (`--approve` dynamically votes the change's maximum allowed
+  `Code-Review` score, e.g. `+2` or `+1`; `--request-changes` votes
   `Code-Review-1`; `--publish` batch-publishes all staged draft comments across
   revisions; without `--publish`, pending drafts are kept private). For full
   review criteria, see [`.agents/skills/code_review/SKILL.md`](../code_review/SKILL.md).
 
 ### 4. Monitor & Rerun CI / Buildbucket Checks
 - **`./gh pr checks [<id>[/<patchset>]]`**: Query remote LUCI Buildbucket checks
+  and Gerrit automated submit requirements / verification labels
   (`./pw presubmit` runs local host validation).
   - `-w, --watch`: Monitor checks until all blocking checks finish.
   - `--fail-fast`: Exit immediately upon the first blocking failure (implies `--watch`).
   - `--log-failed`: Automatically display failure reports and LogDog snippets on exit (default: `true`).
   - `-e, --experimental`: Include non-blocking experimental checks in output.
+  - `--all`: Include child subbuilds hidden by `ci.hide_tag_filters` in `.ghish.toml`.
   - **Exit codes**: `0` = all blocking checks passed, `8` = checks still
     running, `1` = blocking check failed, canceled, or no checks reported.
     Branch on the exit code; never scrape the table.
@@ -138,21 +147,22 @@ Commands:
   - *Gerrit UI Check Count Note*: `./gh pr checks` returns top-level Buildbucket
     builders (e.g. ~72), whereas the Gerrit UI "Checks" tab (~132) also counts
     individual `pw_presubmit` sub-steps and static analyzers (AyeAye, SLSA).
-- **`./gh run view [<id>] [-j|--job <builder|id>] [--log-failed] [--log] [-v] [--json]`**:
+- **`./gh run view [<id>] [-j|--job <builder|id>] [--log-failed] [--log] [--all] [-v] [--json]`**:
   Inspect failed builders, LogDog failure snippets (`--log-failed`), or the
   hierarchical step tree (`-j [<project>/][<bucket>/]<builder>`).
 - **`./gh run rerun [<id>] [--failed | -j <builder>] [--dry-run]`**: Rerun all
   failed builders or a specific builder via `bb add` (automatically using each
-  build's recorded Buildbucket `<project>/<bucket>/<builder>`).
-- **`./gh run list [<id>]`** & **`./gh run watch [<id>]`**.
+  build's recorded Buildbucket `<project>/<bucket>/<builder>` and skipping
+  child subbuilds tagged with `skip-retry-in-gerrit:subbuild`).
+- **`./gh run list [<id>] [--all]`** & **`./gh run watch [<id>]`**.
 
 ### 5. Listing, Merging & Status
 - **`./gh pr list [--limit 30] [--state open|merged|closed|all] [--all-projects] [--json <fields>]`**:
   Automatically scopes to `project:<local-repo>` when run inside a Git
   checkout; pass `--all-projects` to list across all projects on the Gerrit host.
-- **`./gh pr merge [<id>] [--auto] [--cq]`**: Submit change to target branch.
-  Prefer `--auto` (auto-submit upon approval) or `--cq` (`Commit-Queue+2`) over
-  bare `pr merge`.
+- **`./gh pr merge [<id>] [--auto] [--trigger | --cq]`**: Submit change to target branch.
+  Prefer `--auto` (auto-submit upon approval) or `--trigger` (alias `--cq`;
+  `Commit-Queue+2` or `Autosubmit+1` + `Presubmit-Ready+1`) over bare `pr merge`.
 - **`./gh pr status [--all]`**: Focused dashboard of current branch (including
   inline `[PS<N>]` previews for up to 2 unresolved threads and standalone
   `[DRAFT]` comments), CLs created by you, and incoming reviews (scoped to last
@@ -171,9 +181,9 @@ Commands:
 
 ### 7. Where `gh` Habits Break
 Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
-`--project`), `--force` (`-f` is `--fill`), `--cq` (`-q` is `--jq`),
-`--all-projects` on `pr list` (`-a` is `--assignee`), and `--message` on
-`pr merge` (`-m` is `--merge`).
+`--project`), `--force` (`-f` is `--fill`), `--trigger`/`--cq` (`-t` is
+`--title`/`--template`, `-q` is `--jq`), `--all-projects` on `pr list` (`-a` is
+`--assignee`), and `--message` on `pr merge` (`-m` is `--merge`).
 
 | You type | Real `gh` | Here |
 |---|---|---|

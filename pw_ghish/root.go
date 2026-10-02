@@ -64,10 +64,43 @@ func (r *RealGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args 
 
 // Config holds the configuration for the CLI.
 type Config struct {
-	Host    string
-	Git     GitRunner
-	CWD     string
-	Profile ProjectProfile
+	Host          string
+	Git           GitRunner
+	CWD           string
+	Profile       ProjectProfile
+	ProjectConfig *ProjectConfig
+	loadedCWD     string
+}
+
+// LoadProjectConfig loads and caches the declarative ProjectConfig from `.ghish.toml`
+// and `git config ghish.*`, and registers any custom Gerrit shortlinks.
+func (c *Config) LoadProjectConfig(ctx context.Context) (*ProjectConfig, error) {
+	if c == nil {
+		return DefaultProjectConfig(), nil
+	}
+	if c.ProjectConfig != nil && c.loadedCWD == c.CWD {
+		SetCustomShortlinks(c.ProjectConfig.Gerrit.Shortlinks)
+		return c.ProjectConfig, nil
+	}
+	projCfg, err := LoadProjectConfig(ctx, c.Git, c.CWD)
+	if err != nil {
+		return nil, err
+	}
+	c.ProjectConfig = projCfg
+	c.loadedCWD = c.CWD
+	if projCfg != nil {
+		SetCustomShortlinks(projCfg.Gerrit.Shortlinks)
+	}
+	return projCfg, nil
+}
+
+// GetProjectConfig returns the loaded ProjectConfig, or DefaultProjectConfig() if loading fails.
+func (c *Config) GetProjectConfig(ctx context.Context) *ProjectConfig {
+	projCfg, err := c.LoadProjectConfig(ctx)
+	if err != nil || projCfg == nil {
+		return DefaultProjectConfig()
+	}
+	return projCfg
 }
 
 // GetProfile returns the project profile for the configuration.
@@ -110,6 +143,11 @@ func SetConfig(cmd *cobra.Command, cfg *Config) {
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if cfg != nil && cfg.ProjectConfig != nil {
+		SetCustomShortlinks(cfg.ProjectConfig.Gerrit.Shortlinks)
+	} else {
+		SetCustomShortlinks(nil)
 	}
 	cmd.SetContext(context.WithValue(ctx, configKey, cfg))
 }
@@ -269,8 +307,8 @@ flag is spelled as it is in 'gh' but the Gerrit concept underneath differs.
 
 Long form only, because 'gh' gives the shorthand another meaning: --auto
 (gh -a is --assignee), --publish (-p is --project), --force (-f is --fill),
---cq (-q is --jq), and --message on 'pr edit' and 'pr merge' (-m is --milestone
-and --merge).
+--trigger/--cq (-t is --title/--template, -q is --jq), and --message on 'pr edit'
+and 'pr merge' (-m is --milestone and --merge).
 
 Not implemented, and loud about it: --jq/-q as an output filter, 'gh api',
 -R/--repo, and 'pr merge --squash/--rebase/--delete-branch'

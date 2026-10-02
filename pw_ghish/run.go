@@ -27,6 +27,7 @@ import (
 var (
 	runListJSON          bool
 	runListExperimental  bool
+	runListAll           bool
 	runViewLogFailed     bool
 	runViewLog           bool
 	runViewVerbose       bool
@@ -34,6 +35,7 @@ var (
 	runViewWeb           bool
 	runViewJSON          bool
 	runViewExperimental  bool
+	runViewAll           bool
 	runRerunFailed       bool
 	runRerunJob          string
 	runRerunDryRun       bool
@@ -112,13 +114,20 @@ func buildMatchesJob(b bbBuild, job string) bool {
 	return false
 }
 
-// collectFailedBuilds returns deduplicated failed builds from the latest builds.
-func collectFailedBuilds(builds []bbBuild, includeExperimental bool) []bbBuild {
+// collectFailedBuilds returns deduplicated failed builds from the latest builds,
+// skipping any builds that match skipRetryFilters (defaulting to ["skip-retry-in-gerrit:subbuild"]).
+func collectFailedBuilds(builds []bbBuild, includeExperimental bool, skipRetryFilters ...string) []bbBuild {
+	if len(skipRetryFilters) == 0 {
+		skipRetryFilters = []string{"skip-retry-in-gerrit:subbuild"}
+	}
 	var failed []bbBuild
 	seen := make(map[string]bool)
 	for _, b := range deduplicateLatestBuilds(builds) {
 		if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
 			if !includeExperimental && b.IsExperimental() {
+				continue
+			}
+			if b.MatchesTagFilters(skipRetryFilters) {
 				continue
 			}
 			key := b.Builder.Project + "/" + b.Builder.Bucket + "/" + b.Builder.Builder
@@ -132,9 +141,9 @@ func collectFailedBuilds(builds []bbBuild, includeExperimental bool) []bbBuild {
 }
 
 // collectFailedBuilders returns deduplicated failed builder names from the latest builds.
-func collectFailedBuilders(builds []bbBuild, includeExperimental bool) []string {
+func collectFailedBuilders(builds []bbBuild, includeExperimental bool, skipRetryFilters ...string) []string {
 	var failed []string
-	for _, b := range collectFailedBuilds(builds, includeExperimental) {
+	for _, b := range collectFailedBuilds(builds, includeExperimental, skipRetryFilters...) {
 		failed = append(failed, b.Builder.Builder)
 	}
 	return failed
@@ -160,7 +169,13 @@ var runListCmd = &cobra.Command{
 	SilenceUsage: true,
 	Args:         cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		rawID, err := ResolveTargetChangeID(cmd.Context(), cmd, args)
+		ctx := cmd.Context()
+		projCfg, err := LoadCommandProjectConfig(cmd)
+		if err != nil {
+			return err
+		}
+
+		rawID, err := ResolveTargetChangeID(ctx, cmd, args)
 		if err != nil {
 			return err
 		}
@@ -169,7 +184,12 @@ var runListCmd = &cobra.Command{
 			return fmt.Errorf("failed to load runs for %q: %w", rawID, err)
 		}
 
-		relevant, omittedExp := FilterExperimentalBuilds(deduplicateLatestBuilds(res.Builds), runListExperimental)
+		hideFilters := projCfg.CI.HideTagFilters
+		if runListAll {
+			hideFilters = nil
+		}
+		filteredBuilds, hiddenCount := FilterBuildsByTags(deduplicateLatestBuilds(res.Builds), hideFilters)
+		relevant, omittedExp := FilterExperimentalBuilds(filteredBuilds, runListExperimental)
 
 		if len(relevant) == 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "No checks scheduled for Change %d (Patchset %d).\n", res.Change.Number, res.PatchsetNum)
@@ -201,6 +221,9 @@ var runListCmd = &cobra.Command{
 		if notice := FormatOmittedExperimentalNotice(omittedExp); notice != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
 		}
+		if notice := FormatHiddenByConfigNotice(hiddenCount, projCfg.CI.HideTagFilters); notice != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
+		}
 		return nil
 	},
 }
@@ -217,6 +240,11 @@ var runViewCmd = &cobra.Command{
 		}
 
 		ctx := cmd.Context()
+		projCfg, err := LoadCommandProjectConfig(cmd)
+		if err != nil {
+			return err
+		}
+
 		luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(ctx, buildbucketHost))
 
 		var res *CIContext
@@ -275,7 +303,12 @@ var runViewCmd = &cobra.Command{
 					}
 				}
 			} else {
-				for _, b := range deduplicateLatestBuilds(res.Builds) {
+				hideFilters := projCfg.CI.HideTagFilters
+				if runViewAll {
+					hideFilters = nil
+				}
+				visibleBuilds, _ := FilterBuildsByTags(deduplicateLatestBuilds(res.Builds), hideFilters)
+				for _, b := range visibleBuilds {
 					if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
 						if !runViewExperimental && b.IsExperimental() {
 							continue
@@ -329,7 +362,7 @@ var runViewCmd = &cobra.Command{
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to get details for build %s: %v\n", b.ID, err)
 					continue
 				}
-				rep := luciClient.ExtractFailureReport(ctx, details, maxLines)
+				rep := luciClient.ExtractFailureReportWithOptions(ctx, details, maxLines, projCfg.PreferredLogs(), projCfg.IncludeSummaryMarkdown())
 				if rep != nil {
 					if res != nil && b.Patchset > 0 && b.Patchset != res.PatchsetNum {
 						rep.Patchset = b.Patchset
@@ -431,7 +464,12 @@ var runViewCmd = &cobra.Command{
 		}
 
 		// Default view: structured summary of the whole workflow run
-		relevant, omittedExp := FilterExperimentalBuilds(deduplicateLatestBuilds(res.Builds), runViewExperimental)
+		hideFilters := projCfg.CI.HideTagFilters
+		if runViewAll {
+			hideFilters = nil
+		}
+		filteredBuilds, hiddenCount := FilterBuildsByTags(deduplicateLatestBuilds(res.Builds), hideFilters)
+		relevant, omittedExp := FilterExperimentalBuilds(filteredBuilds, runViewExperimental)
 		hasFailure := false
 		hasRunning := false
 		passedCount := 0
@@ -509,12 +547,18 @@ var runViewCmd = &cobra.Command{
 		if notice := FormatOmittedExperimentalNotice(omittedExp); notice != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
 		}
+		if notice := FormatHiddenByConfigNotice(hiddenCount, projCfg.CI.HideTagFilters); notice != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
+		}
 
 		fmt.Fprintln(cmd.OutOrStdout())
 		fmt.Fprintln(cmd.OutOrStdout(), "To view failed logs:   gh run view --log-failed")
 		fmt.Fprintln(cmd.OutOrStdout(), "To view step tree:     gh run view -j <builder>")
 		if hasFailure {
 			fmt.Fprintln(cmd.OutOrStdout(), "To rerun failed:       gh run rerun --failed")
+			if hint := effectiveLocalPresubmitHint(projCfg, res.Profile); hint != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "To reproduce locally:  %s\n", hint)
+			}
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), "To view in browser:    gh run view -w")
 		return nil
@@ -527,6 +571,12 @@ var runRerunCmd = &cobra.Command{
 	SilenceUsage: true,
 	Args:         cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		projCfg, err := LoadCommandProjectConfig(cmd)
+		if err != nil {
+			return err
+		}
+
 		rawID, targetBuilder, _, err := parseRunTargetArgs(cmd, args, runRerunJob, false)
 		if err != nil {
 			return err
@@ -537,6 +587,7 @@ var runRerunCmd = &cobra.Command{
 			return fmt.Errorf("failed to load checks for %q: %w", rawID, err)
 		}
 
+		skipRetryFilters := projCfg.EffectiveSkipRetryTagFilters()
 		var buildsToRerun []bbBuild
 		if targetBuilder != "" {
 			found := false
@@ -561,13 +612,13 @@ var runRerunCmd = &cobra.Command{
 				return fmt.Errorf("builder %q not found on change %s%s", targetBuilder, rawID, sortMsg)
 			}
 		} else if runRerunFailed {
-			buildsToRerun = collectFailedBuilds(res.Builds, runRerunExperimental)
+			buildsToRerun = collectFailedBuilds(res.Builds, runRerunExperimental, skipRetryFilters...)
 			if len(buildsToRerun) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No failed checks found to rerun.")
 				return nil
 			}
 		} else {
-			failedBuilders := collectFailedBuilders(res.Builds, runRerunExperimental)
+			failedBuilders := collectFailedBuilders(res.Builds, runRerunExperimental, skipRetryFilters...)
 			if len(failedBuilders) > 0 {
 				return fmt.Errorf("no builder specified to rerun: specify a builder name or pass --failed to rerun all failed checks.\n\nUsage examples:\n  gh run rerun --failed\n  gh run rerun <builder-name>\n  gh run rerun -j <builder-name>\n\nFailed checks available to rerun:\n  - %s", strings.Join(failedBuilders, "\n  - "))
 			}
@@ -581,7 +632,6 @@ var runRerunCmd = &cobra.Command{
 			Patchset: res.PatchsetNum,
 		}
 
-		ctx := cmd.Context()
 		for _, b := range buildsToRerun {
 			bName := b.Builder.Builder
 			rerunSpec := bName
@@ -617,6 +667,7 @@ var runWatchCmd = &cobra.Command{
 func init() {
 	runListCmd.Flags().BoolVar(&runListJSON, "json", false, "Output JSON with specified fields")
 	runListCmd.Flags().BoolVarP(&runListExperimental, "experimental", "e", false, "Include non-blocking experimental checks")
+	runListCmd.Flags().BoolVar(&runListAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters")
 	runListCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	runListCmd.Flags().MarkHidden("buildbucket-host")
 
@@ -627,6 +678,7 @@ func init() {
 	runViewCmd.Flags().BoolVarP(&runViewWeb, "web", "w", false, "Open check in web browser")
 	runViewCmd.Flags().BoolVar(&runViewJSON, "json", false, "Output in JSON format")
 	runViewCmd.Flags().BoolVarP(&runViewExperimental, "experimental", "e", false, "Include non-blocking experimental checks")
+	runViewCmd.Flags().BoolVar(&runViewAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters")
 	runViewCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	runViewCmd.Flags().MarkHidden("buildbucket-host")
 
@@ -640,6 +692,7 @@ func init() {
 	runWatchCmd.Flags().DurationVarP(&checksInterval, "interval", "i", 15*time.Second, "Refresh interval")
 	runWatchCmd.Flags().BoolVar(&checksFailFast, "fail-fast", false, "Exit immediately if any check fails")
 	runWatchCmd.Flags().BoolVarP(&checksExperimental, "experimental", "e", false, "Include non-blocking experimental checks")
+	runWatchCmd.Flags().BoolVar(&checksAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters")
 	runWatchCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	runWatchCmd.Flags().MarkHidden("buildbucket-host")
 

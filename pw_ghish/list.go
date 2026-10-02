@@ -39,14 +39,21 @@ var (
 	listAllProjects  bool
 )
 
-func resolveDefaultListProject(ctx context.Context, cmd *cobra.Command) string {
+func resolveDefaultListProject(ctx context.Context, cmd *cobra.Command) (string, error) {
 	cfg := GetConfig(cmd)
 	if cfg == nil {
-		return ""
+		return "", nil
+	}
+	projCfg, err := cfg.LoadProjectConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !projCfg.ScopeListToProject() {
+		return "", nil
 	}
 	proj, err := cfg.GerritProject(ctx)
 	if err != nil || proj == "" {
-		return ""
+		return "", nil
 	}
 	targetHost := ""
 	if isHostFlagChanged(cmd) {
@@ -58,11 +65,11 @@ func resolveDefaultListProject(ctx context.Context, cmd *cobra.Command) string {
 		if remoteURL, err := cfg.GitClient().ConfigGet(ctx, "remote.origin.url"); err == nil && remoteURL != "" {
 			remoteHost := CanonicalGerritHost(remoteURL)
 			if remoteHost != "" && remoteHost != targetHost {
-				return ""
+				return "", nil
 			}
 		}
 	}
-	return proj
+	return proj, nil
 }
 
 const defaultListTemplate = `ID         STATUS     SUBJECT                                            OWNER
@@ -74,6 +81,9 @@ var listCmd = &cobra.Command{
 	Short: "List open changes",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
+		if _, err := LoadCommandProjectConfig(cmd); err != nil {
+			return err
+		}
 
 		client, err := NewGerritClient(ctx, cmd)
 		if err != nil {
@@ -83,7 +93,11 @@ var listCmd = &cobra.Command{
 		var queryParts []string
 
 		if !listAllProjects && !strings.Contains(strings.ToLower(listSearch), "project:") {
-			if proj := resolveDefaultListProject(ctx, cmd); proj != "" {
+			proj, err := resolveDefaultListProject(ctx, cmd)
+			if err != nil {
+				return err
+			}
+			if proj != "" {
 				queryParts = append(queryParts, fmt.Sprintf("project:%s", proj))
 			}
 		}

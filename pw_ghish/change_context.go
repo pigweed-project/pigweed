@@ -594,7 +594,7 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 		patchsetNum = n
 	}
 	change, err := chCtx.GetChange(&gerrit.ChangeOptions{
-		AdditionalFields: []string{"ALL_REVISIONS", "DETAILED_LABELS"},
+		AdditionalFields: []string{"ALL_REVISIONS", "DETAILED_LABELS", "SUBMIT_REQUIREMENTS"},
 	})
 	if err != nil {
 		return nil, err

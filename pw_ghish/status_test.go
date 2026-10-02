@@ -760,3 +760,35 @@ func TestExtractBlockers(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractBlockers_DynamicSubmitRequirements(t *testing.T) {
+	change := &gerrit.ChangeInfo{
+		Submittable: false,
+		SubmitRequirements: []gerrit.SubmitRequirementResultInfo{
+			{Name: "Code-Review", Status: "UNSATISFIED"},
+			{Name: "Lint", Status: "SATISFIED"},
+			{Name: "Copybara-Verified", Status: "UNSATISFIED"},
+			{Name: "Topics-Not-Supported", Status: "UNSATISFIED"},
+		},
+		Labels: map[string]gerrit.LabelInfo{
+			"Code-Review":       {},
+			"Lint":              {Approved: gerrit.AccountInfo{AccountID: 1}},
+			"Copybara-Verified": {},
+		},
+	}
+
+	got := extractBlockers(change)
+	want := []string{
+		"Code-Review (+2 required)",
+		"Copybara-Verified (Unsatisfied)",
+		"Topics-Not-Supported (Unsatisfied)",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("extractBlockers() = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("extractBlockers()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

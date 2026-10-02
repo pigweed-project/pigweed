@@ -296,6 +296,27 @@ func TestReviewCmd_CQ_Explicit(t *testing.T) {
 	}
 }
 
+func TestReviewCmd_CQ_UsesPresubmitReadyWhenNoCommitQueue(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(123, WithLabels("Code-Review", "Presubmit-Ready"))
+	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+
+	cmd := newReviewCmd()
+	cmd.SetContext(context.Background())
+	cmd.SetArgs(NormalizeCQArgs([]string{"123", "--cq"}))
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute failed: %v", err)
+	}
+
+	var capturedInput gerrit.ReviewInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &capturedInput)
+	}
+	if capturedInput.Labels["Presubmit-Ready"] != 1 {
+		t.Errorf("got Presubmit-Ready = %d, want 1 (labels: %v)", capturedInput.Labels["Presubmit-Ready"], capturedInput.Labels)
+	}
+}
+
 func TestReviewCmd_PublishDrafts(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
@@ -344,5 +365,26 @@ func TestReviewCmd_DefaultKeepsDraftsAndSupportsUpstreamFlags(t *testing.T) {
 	}
 	if capturedInput.Drafts != "KEEP" {
 		t.Errorf("got Drafts = %q, want KEEP", capturedInput.Drafts)
+	}
+}
+
+func TestReviewCmd_Trigger(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(123, WithLabels("Code-Review", "Presubmit-Ready"))
+	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+
+	cmd := newReviewCmd()
+	cmd.SetContext(context.Background())
+	cmd.SetArgs(NormalizeCQArgs([]string{"123", "--trigger"}))
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute failed: %v", err)
+	}
+
+	var capturedInput gerrit.ReviewInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &capturedInput)
+	}
+	if capturedInput.Labels["Presubmit-Ready"] != 1 {
+		t.Errorf("got Presubmit-Ready = %d, want 1 (labels: %v)", capturedInput.Labels["Presubmit-Ready"], capturedInput.Labels)
 	}
 }

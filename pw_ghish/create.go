@@ -32,7 +32,7 @@ and suggest using 'gh pr push' to upload a new patchset instead. Use --force to 
 Supports rich push options:
   - Reviewers and CCs: --reviewer, --cc
   - Auto-submit: --auto (alias --auto-submit)
-  - Commit queue: --cq (default dry run, or specify vote: 1 = dry run, 2 = submit)
+  - Presubmit / Commit queue: --trigger (alias --cq; default dry run, or specify vote: 1 = dry run, 2 = submit)
   - Publish draft comments: --publish
   - Raw push options: -o / --push-option
   - Work in progress: --draft
@@ -71,6 +71,9 @@ Supports rich push options:
 
 		state, err := VerifyHeadForPush(ctx, cmd, cfg, !force)
 		if err != nil {
+			return err
+		}
+		if err := CheckTopicAllowed(ctx, cfg, state.ExistingChange, RequestedTopic(flags.PushOptions), "gh pr create (without --topic)"); err != nil {
 			return err
 		}
 		if state.ExistingChange != nil {

@@ -449,10 +449,12 @@ type ParsedChangeTarget struct {
 	Revision string
 }
 
-var gerritShortlinkPrefixes = []struct {
+type gerritShortlink struct {
 	prefix string
 	host   string
-}{
+}
+
+var gerritShortlinkPrefixes = []gerritShortlink{
 	{"pwrev.dev/i/", "pigweed-internal-review.googlesource.com"},
 	{"pwrev/i/", "pigweed-internal-review.googlesource.com"},
 	{"pwrev.dev/", "pigweed-review.googlesource.com"},
@@ -504,11 +506,12 @@ func ParseChangeTarget(arg string) ParsedChangeTarget {
 		noScheme = strings.TrimPrefix(noScheme, "goto.google.com/")
 	}
 
-	// 1. Check known Gerrit shortlinks (pwrev, fxrev, fxr, ag, aosp, crrev)
+	// 1. Check custom shortlinks from .ghish.toml / git config and built-in Gerrit shortlinks
 	// TODO: https://pwbug.dev/485322635 - Support resolving arbitrary
 	// go/<shortlink>/<id> redirects dynamically to discover the target Gerrit
 	// host when not in gerritShortlinkPrefixes.
-	for _, sl := range gerritShortlinkPrefixes {
+	allShortlinks := append(getCustomShortlinks(), gerritShortlinkPrefixes...)
+	for _, sl := range allShortlinks {
 		if strings.HasPrefix(noScheme, sl.prefix) {
 			rest := strings.TrimPrefix(noScheme, sl.prefix)
 			ch := rest
@@ -903,19 +906,36 @@ func findChangeIDInCommitRange(ctx context.Context, git GitClient, rangeSpec str
 // - If it corresponds to a local branch or git config, the branch's Change-Id is resolved.
 // Otherwise, it attempts to resolve the active change ID from the local git branch/HEAD commit.
 func ResolveTargetChangeID(ctx context.Context, cmd *cobra.Command, args []string) (string, error) {
+	cfg := GetConfig(cmd)
 	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
-		cfg := GetConfig(cmd)
+		if cfg != nil {
+			if _, err := cfg.LoadProjectConfig(ctx); err != nil {
+				return "", err
+			}
+		}
 		return ResolveActiveChangeID(ctx, cfg)
 	}
 
 	target := strings.TrimSpace(args[0])
 
-	// If target is already a change number, Change-Id, URL, or shortlink, return it directly.
+	// If target is already a change number, Change-Id, URL, or built-in shortlink, return it directly
+	// after validating any on-disk .ghish.toml.
 	if isChangeIdentifier(target) {
+		if cfg != nil && hasProjectConfigFileOnDisk(cfg.CWD) {
+			if _, err := cfg.LoadProjectConfig(ctx); err != nil {
+				return "", err
+			}
+		}
 		return target, nil
 	}
-
-	cfg := GetConfig(cmd)
+	if cfg != nil {
+		if _, err := cfg.LoadProjectConfig(ctx); err != nil {
+			return "", err
+		}
+		if isChangeIdentifier(target) {
+			return target, nil
+		}
+	}
 	if cfg != nil && cfg.Git != nil {
 		git := cfg.GitClient()
 		// 1. Check if git config branch.<target>.gerrit-change-id is set
@@ -946,12 +966,12 @@ func ResolveTargetChangeID(ctx context.Context, cmd *cobra.Command, args []strin
 	return target, nil
 }
 
-// NormalizeCQArgs transforms separate ["--cq", "<val>"] tokens into
-// ["--cq=<val>"] for values "0", "1", "2".
+// NormalizeCQArgs transforms separate ["--cq", "<val>"] or ["--trigger", "<val>"] tokens into
+// ["--cq=<val>"] / ["--trigger=<val>"] for values "0", "1", "2".
 // This ensures flags configured with NoOptDefVal accept both valueless invocations
-// (--cq -> default 1) and value-bearing invocations (--cq 1, --cq 2, --cq 0).
+// (--cq / --trigger -> default 1) and value-bearing invocations (--cq 1, --trigger 2, etc.).
 //
-// -q is deliberately not handled: it is gh's --jq, so it is not bound here.
+// -q and -t are deliberately not handled: in gh they are --jq and --title/--template.
 func NormalizeCQArgs(args []string) []string {
 	isAuthCmd := false
 	for _, a := range args {
@@ -966,7 +986,7 @@ func NormalizeCQArgs(args []string) []string {
 	result := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if arg == "--cq" && i+1 < len(args) {
+		if (arg == "--cq" || arg == "--trigger") && i+1 < len(args) {
 			next := args[i+1]
 			if next == "0" || next == "1" || next == "2" {
 				result = append(result, arg+"="+next)

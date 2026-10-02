@@ -31,20 +31,21 @@ type reviewOptions struct {
 	comment        bool
 	publish        bool
 	cq             int
+	trigger        int
 }
 
 func newReviewCmd() *cobra.Command {
-	opts := reviewOptions{cq: -1}
+	opts := reviewOptions{cq: -1, trigger: -1}
 	cmd := &cobra.Command{
 		Use:   "review [<id>]",
 		Short: "Review a change",
-		Long: `Review a Gerrit change by adding a message, approving, requesting changes, publishing draft comments, or voting on Commit-Queue.
+		Long: `Review a Gerrit change by adding a message, approving, requesting changes, publishing draft comments, or voting on presubmit / Commit-Queue.
 
 If no change ID is specified, the active change for the current branch is reviewed.
 
 Examples:
-# Trigger Commit-Queue dry run on the active change
-gh-ish pr review --cq
+# Trigger presubmit / Commit-Queue dry run on the active change
+gh-ish pr review --trigger
 
 # Publish all staged draft comments on the active change
 gh-ish pr review --publish
@@ -52,8 +53,8 @@ gh-ish pr review --publish
 # Approve the active change on the current branch
 gh-ish pr review --approve -m "Looks good to me"
 
-# Approve and trigger Commit-Queue dry run
-gh-ish pr review --approve --cq
+# Approve and trigger presubmit / Commit-Queue dry run
+gh-ish pr review --approve --trigger
 
 # Approve a change by number with a message
 gh-ish pr review 12345 --approve -m "Looks good to me"
@@ -89,7 +90,7 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 				return fmt.Errorf("--comment requires a message (specify -m \"...\", -b \"...\", or -F <file>)")
 			}
 
-			hasCQ := cmd.Flags().Changed("cq")
+			hasCQ := cmd.Flags().Changed("cq") || cmd.Flags().Changed("trigger")
 			if !opts.approve && !opts.requestChanges && !opts.comment && msg == "" && !hasCQ && !opts.publish {
 				targetID := "<id>"
 				if len(args) > 0 {
@@ -97,10 +98,10 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 				}
 				return fmt.Errorf("no review action or message specified.\n\n"+
 					"Specify at least one review action or message:\n"+
-					"  gh pr review %s --cq                             # Trigger CQ dry run\n"+
+					"  gh pr review %s --trigger                        # Trigger presubmit / CQ dry run (alias --cq)\n"+
 					"  gh pr review %s --publish                        # Publish staged draft comments\n"+
 					"  gh pr review %s --approve                        # Vote Code-Review+2\n"+
-					"  gh pr review %s --approve --cq                   # Approve and trigger CQ dry run\n"+
+					"  gh pr review %s --approve --trigger              # Approve and trigger presubmit / CQ dry run\n"+
 					"  gh pr review %s --approve -m \"Looks great!\"       # Approve with a message\n"+
 					"  gh pr review %s --request-changes -m \"See typo\"   # Vote Code-Review-1\n"+
 					"  gh pr review %s --comment -m \"Just a question\"    # Leave comment without voting\n"+
@@ -122,20 +123,31 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 				input.Drafts = "PUBLISH_ALL_REVISIONS"
 			}
 
+			reviewLabel := LabelVote{Name: "Code-Review", Value: 2}
+			if p, err := chCtx.ResolveProfile(); err == nil && p != nil {
+				if rl := p.ReviewLabel(); rl.Name != "" {
+					reviewLabel = rl
+				}
+			}
 			var actions []string
 			if opts.approve {
-				input.Labels["Code-Review"] = 2
-				actions = append(actions, "Code-Review+2")
+				input.Labels[reviewLabel.Name] = reviewLabel.Value
+				actions = append(actions, fmt.Sprintf("%s+%d", reviewLabel.Name, reviewLabel.Value))
 			} else if opts.requestChanges {
-				input.Labels["Code-Review"] = -1
-				actions = append(actions, "Code-Review-1")
+				input.Labels[reviewLabel.Name] = -1
+				actions = append(actions, fmt.Sprintf("%s-1", reviewLabel.Name))
 			}
 			if hasCQ {
-				input.Labels["Commit-Queue"] = opts.cq
-				if opts.cq == 0 {
-					actions = append(actions, "Commit-Queue=0")
+				requestedCQ := opts.cq
+				if cmd.Flags().Changed("trigger") {
+					requestedCQ = opts.trigger
+				}
+				cqName, cqScore := chCtx.ResolveCQVote(requestedCQ)
+				input.Labels[cqName] = cqScore
+				if cqScore == 0 {
+					actions = append(actions, fmt.Sprintf("%s=0", cqName))
 				} else {
-					actions = append(actions, fmt.Sprintf("Commit-Queue+%d", opts.cq))
+					actions = append(actions, fmt.Sprintf("%s+%d", cqName, cqScore))
 				}
 			}
 			if opts.publish {
@@ -165,7 +177,9 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 	cmd.Flags().BoolVarP(&opts.requestChanges, "request-changes", "r", false, "Request changes (Code-Review-1)")
 	cmd.Flags().BoolVarP(&opts.comment, "comment", "c", false, "Comment on change without voting")
 	cmd.Flags().BoolVar(&opts.publish, "publish", false, "Publish all pending draft comments (ghish-only)")
-	cmd.Flags().IntVar(&opts.cq, "cq", -1, "Set Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove) (ghish-only)")
+	cmd.Flags().IntVar(&opts.trigger, "trigger", -1, "Trigger presubmit / Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias --cq) (ghish-only)")
+	cmd.Flags().Lookup("trigger").NoOptDefVal = "1"
+	cmd.Flags().IntVar(&opts.cq, "cq", -1, "Set Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias for --trigger) (ghish-only)")
 	cmd.Flags().Lookup("cq").NoOptDefVal = "1"
 
 	return cmd

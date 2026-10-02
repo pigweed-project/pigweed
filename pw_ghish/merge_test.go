@@ -278,6 +278,52 @@ func TestMergeIntegration_CQ_Pigweed(t *testing.T) {
 	}
 }
 
+func TestMergeIntegration_CQ_GenericProfile_WithCommitQueue(t *testing.T) {
+	SetTestProfile(t, "generic")
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithLabels("Code-Review", "Commit-Queue"))
+	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+
+	output, err := executeCommand(RootCmd, "pr", "merge", "12345", "--cq")
+	if err != nil {
+		t.Fatalf("Command failed on generic profile with Commit-Queue: %v\nOutput: %s", err, output)
+	}
+
+	var capturedInput gerrit.ReviewInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &capturedInput)
+	}
+	if capturedInput.Labels["Commit-Queue"] != 2 {
+		t.Errorf("Labels got %v, want Commit-Queue=2", capturedInput.Labels)
+	}
+	if !strings.Contains(output, "Commit-Queue enabled for change 12345 (Commit-Queue+2)") {
+		t.Errorf("Unexpected output: %s", output)
+	}
+}
+
+func TestMergeIntegration_CQ_GenericProfile_WithAutosubmitAndPresubmitReady(t *testing.T) {
+	SetTestProfile(t, "generic")
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithLabels("Code-Review", "Autosubmit", "Presubmit-Ready"))
+	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+
+	output, err := executeCommand(RootCmd, "pr", "merge", "12345", "--cq")
+	if err != nil {
+		t.Fatalf("Command failed on generic profile with Autosubmit+Presubmit-Ready: %v\nOutput: %s", err, output)
+	}
+
+	var capturedInput gerrit.ReviewInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &capturedInput)
+	}
+	if capturedInput.Labels["Autosubmit"] != 1 || capturedInput.Labels["Presubmit-Ready"] != 1 {
+		t.Errorf("Labels got %v, want Autosubmit=1 and Presubmit-Ready=1", capturedInput.Labels)
+	}
+	if !strings.Contains(output, "Autosubmit+1") || !strings.Contains(output, "Presubmit-Ready+1") {
+		t.Errorf("Unexpected output: %s", output)
+	}
+}
+
 func TestMergeIntegration_ErrorWhenBothAutoAndCQ(t *testing.T) {
 	_, err := executeCommand(RootCmd, "pr", "merge", "12345", "--auto", "--cq")
 	if err == nil {
@@ -307,5 +353,25 @@ func TestMergeIntegration_SubmitConflictOfframp(t *testing.T) {
 	expectedCQ := RootCmd.CommandPath() + " pr merge 12345 --cq"
 	if !strings.Contains(err.Error(), expectedCQ) {
 		t.Errorf("Expected hint mentioning %q, got: %v", expectedCQ, err)
+	}
+}
+
+func TestMergeIntegration_Trigger(t *testing.T) {
+	SetTestProfile(t, "generic")
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithLabels("Code-Review", "Autosubmit", "Presubmit-Ready"))
+	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+
+	output, err := executeCommand(RootCmd, "pr", "merge", "12345", "--trigger")
+	if err != nil {
+		t.Fatalf("Command failed with --trigger: %v\nOutput: %s", err, output)
+	}
+
+	var capturedInput gerrit.ReviewInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &capturedInput)
+	}
+	if capturedInput.Labels["Autosubmit"] != 1 || capturedInput.Labels["Presubmit-Ready"] != 1 {
+		t.Errorf("Labels got %v, want Autosubmit=1 and Presubmit-Ready=1", capturedInput.Labels)
 	}
 }

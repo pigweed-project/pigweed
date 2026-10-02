@@ -41,7 +41,9 @@ func AddCommonPushFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("auto", false, "Automatically submit change when checks and reviews pass")
 	cmd.Flags().Bool("auto-submit", false, "Alias for --auto")
 	_ = cmd.Flags().MarkHidden("auto-submit")
-	cmd.Flags().Int("cq", 0, "Commit-Queue vote (1 = dry run, 2 = submit)")
+	cmd.Flags().Int("trigger", 0, "Trigger presubmit / Commit-Queue vote (1 = dry run, 2 = submit; alias --cq)")
+	cmd.Flags().Lookup("trigger").NoOptDefVal = "1"
+	cmd.Flags().Int("cq", 0, "Commit-Queue vote (1 = dry run, 2 = submit; alias for --trigger)")
 	cmd.Flags().Lookup("cq").NoOptDefVal = "1"
 	cmd.Flags().Bool("publish", false, "Publish draft comments on push")
 	cmd.Flags().StringSliceP("push-option", "o", []string{}, "Raw Gerrit push options (passed via %...)")
@@ -61,6 +63,9 @@ func ParseCommonPushFlags(cmd *cobra.Command) CommonPushFlags {
 	auto, _ := cmd.Flags().GetBool("auto")
 	autoSubmit, _ := cmd.Flags().GetBool("auto-submit")
 	cq, _ := cmd.Flags().GetInt("cq")
+	if cmd.Flags().Changed("trigger") {
+		cq, _ = cmd.Flags().GetInt("trigger")
+	}
 	publish, _ := cmd.Flags().GetBool("publish")
 	pushOptions, _ := cmd.Flags().GetStringSlice("push-option")
 	noVerify, _ := cmd.Flags().GetBool("no-verify")
@@ -90,6 +95,11 @@ func ParseCommonPushFlags(cmd *cobra.Command) CommonPushFlags {
 
 // defaultBranch resolves the default target branch (defaults to "main").
 func defaultBranch(ctx context.Context, cfg *Config, stderr io.Writer) string {
+	if cfg != nil {
+		if projCfg, err := cfg.LoadProjectConfig(ctx); err == nil && projCfg != nil && projCfg.Gerrit.DefaultBranch != "" {
+			return projCfg.Gerrit.DefaultBranch
+		}
+	}
 	git := cfg.GitClient()
 	for _, ref := range []string{"refs/heads/main", "refs/remotes/origin/main", "origin/main"} {
 		if ok, err := git.VerifyRef(ctx, ref); err == nil && ok {
@@ -284,11 +294,20 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 	}
 	autoSubmitLabel := autoSubmit.Vote
 
-	if pushOpts.CQ > 0 || pushOpts.Publish || pushOpts.AutoSubmit {
+	cqLabelName := pushOpts.CQLabelName
+	cqScore := pushOpts.CQ
+	if cqScore > 0 && cqLabelName == "" {
+		cqLabelName, cqScore = chCtx.ResolveCQVote(cqScore)
+	}
+	if cqLabelName == "" {
+		cqLabelName = "Commit-Queue"
+	}
+
+	if cqScore > 0 || pushOpts.Publish || pushOpts.AutoSubmit {
 		input := &gerrit.ReviewInput{}
 		labels := map[string]int{}
-		if pushOpts.CQ > 0 {
-			labels["Commit-Queue"] = pushOpts.CQ
+		if cqScore > 0 {
+			labels[cqLabelName] = cqScore
 		}
 		if pushOpts.AutoSubmit && autoSubmitLabel.Name != "" {
 			// --cq is an explicit request for a specific score; the score
@@ -305,11 +324,11 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 		}
 		if err := chCtx.SetReviewRevision("current", input); err != nil {
 			action := "updating review on"
-			if pushOpts.CQ > 0 && !pushOpts.Publish {
-				action = "setting Commit-Queue on"
-			} else if pushOpts.Publish && pushOpts.CQ == 0 && !pushOpts.AutoSubmit {
+			if cqScore > 0 && !pushOpts.Publish {
+				action = fmt.Sprintf("setting %s on", cqLabelName)
+			} else if pushOpts.Publish && cqScore == 0 && !pushOpts.AutoSubmit {
 				action = "publishing drafts on"
-			} else if pushOpts.AutoSubmit && pushOpts.CQ == 0 && !pushOpts.Publish {
+			} else if pushOpts.AutoSubmit && cqScore == 0 && !pushOpts.Publish {
 				action = "setting auto-submit on"
 			}
 			return chCtx.FormatError(err, action)
@@ -352,8 +371,8 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 
 	applied = true
 	fmt.Fprintf(cmd.OutOrStdout(), "No new commits to push; applied metadata updates to Change %s via Gerrit API.\n", changeID)
-	if pushOpts.CQ > 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "Commit-Queue+%d set successfully.\n", pushOpts.CQ)
+	if cqScore > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s+%d set successfully.\n", cqLabelName, cqScore)
 	}
 	if pushOpts.AutoSubmit && autoSubmitLabel.Name != "" {
 		if autoSubmit.Unsupported != nil {
@@ -533,9 +552,10 @@ func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, que
 	var queried bool
 	if queryExisting && changeID != "" {
 		if client, err := NewGerritClient(ctx, cmd); err == nil {
-			// DETAILED_LABELS so callers can see which labels this host
-			// actually defines (and their ranges) instead of guessing names.
-			existing, queried = queryExistingChangeByID(ctx, client, changeID, "DETAILED_LABELS")
+			// DETAILED_LABELS and SUBMIT_REQUIREMENTS so callers can see which
+			// labels and submit requirements this host actually defines instead
+			// of guessing names.
+			existing, queried = queryExistingChangeByID(ctx, client, changeID, "DETAILED_LABELS", "SUBMIT_REQUIREMENTS")
 		}
 	}
 
@@ -545,6 +565,63 @@ func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, que
 		ExistingChange: existing,
 		GerritQueried:  queried,
 	}, nil
+}
+
+// RequestedTopic returns the topic specified via --topic or -o topic=<name>
+// on PushOptions, or an empty string if none was requested.
+func RequestedTopic(opts PushOptions) string {
+	if strings.TrimSpace(opts.Topic) != "" {
+		return strings.TrimSpace(opts.Topic)
+	}
+	for _, extra := range opts.ExtraOptions {
+		if strings.HasPrefix(extra, "topic=") {
+			return strings.TrimSpace(strings.TrimPrefix(extra, "topic="))
+		}
+	}
+	return ""
+}
+
+// CheckTopicAllowed verifies that setting a Gerrit topic is permitted by the
+// repository's configuration (.ghish.toml / git config) and by the change's
+// SubmitRequirements (such as Topics-Not-Supported).
+func CheckTopicAllowed(ctx context.Context, cfg *Config, existing *gerrit.ChangeInfo, topic string, commandHint string) error {
+	var projCfg *ProjectConfig
+	if cfg != nil {
+		var err error
+		projCfg, err = cfg.LoadProjectConfig(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	topic = strings.TrimSpace(topic)
+	if topic == "" {
+		return nil
+	}
+	if projCfg != nil && projCfg.Gerrit.ForbidTopics {
+		return formatTopicsNotSupportedError(topic, "project configuration (forbid_topics = true)", commandHint)
+	}
+	if existing != nil {
+		for _, sr := range existing.SubmitRequirements {
+			if strings.EqualFold(sr.Name, "Topics-Not-Supported") && sr.Status != "NOT_APPLICABLE" {
+				return formatTopicsNotSupportedError(topic, "Gerrit submit requirement 'Topics-Not-Supported'", commandHint)
+			}
+		}
+	}
+	return nil
+}
+
+func formatTopicsNotSupportedError(topic, source, commandHint string) error {
+	return fmt.Errorf(
+		"cannot set Gerrit topic %q: %s forbids topics on this repository (Topics-Not-Supported).\n\n"+
+			"Why: Setting a topic on a change in this repository causes the 'Topics-Not-Supported'\n"+
+			"submit requirement to become UNSATISFIED, blocking submission.\n\n"+
+			"To proceed:\n"+
+			"  • Re-run the command without --topic (or -o topic=...):\n"+
+			"      %s\n"+
+			"  • If an existing change already has a topic blocking submission, remove it with:\n"+
+			"      gh pr edit --remove-topic",
+		topic, source, commandHint,
+	)
 }
 
 // VerifyStackChanges inspects all commits in origin/<branch>..HEAD when --stack

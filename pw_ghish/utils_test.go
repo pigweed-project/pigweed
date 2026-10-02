@@ -1508,6 +1508,21 @@ func TestNormalizeCQArgs(t *testing.T) {
 			in:   []string{"pr", "push", "--cq=1"},
 			want: []string{"pr", "push", "--cq=1"},
 		},
+		{
+			name: "rewrites --trigger 1 to --trigger=1",
+			in:   []string{"pr", "push", "--trigger", "1"},
+			want: []string{"pr", "push", "--trigger=1"},
+		},
+		{
+			name: "rewrites --trigger 2 to --trigger=2",
+			in:   []string{"pr", "edit", "--trigger", "2"},
+			want: []string{"pr", "edit", "--trigger=2"},
+		},
+		{
+			name: "leaves standalone --trigger untouched",
+			in:   []string{"pr", "push", "--trigger"},
+			want: []string{"pr", "push", "--trigger"},
+		},
 	}
 
 	for _, tc := range tests {

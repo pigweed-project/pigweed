@@ -39,8 +39,8 @@ All flags in ``pw_ghish`` follow four rules:
    limitation rather than ignoring it.
 3. **Non-intersecting flags for ecosystem-specific concepts**: When adding flags
    for Gerrit, LUCI, or Buganizer mechanics with no GitHub analogue (e.g.
-   ``--cq``, ``--auto-submit``, ``--publish``, ``--resolved``, ``--bug``,
-   ``--fixed``, ``--amend``, ``--auth-mode``), ``pw_ghish`` chooses
+   ``--trigger``, ``--cq``, ``--auto-submit``, ``--publish``, ``--resolved``,
+   ``--bug``, ``--fixed``, ``--amend``, ``--auth-mode``), ``pw_ghish`` chooses
    non-intersecting flag names.
 4. **Explicit designation of ghish-only flags**: Ecosystem-specific flags are
    marked as **ghish-only** in help text and documentation.
@@ -59,7 +59,8 @@ rather than performing an unintended operation:
   * ``--publish`` on ``pr create``, ``pr push``, and ``pr review`` (in ``gh``,
     ``-p`` is ``--project``)
   * ``--force`` on ``pr checkout`` (in ``gh``, ``-f`` is ``--fill``)
-  * ``--cq`` on ``pr`` (in ``gh``, ``-q`` is ``--jq``)
+  * ``--trigger`` / ``--cq`` on ``pr`` (in ``gh``, ``-t`` is ``--title`` /
+    ``--template`` and ``-q`` is ``--jq``)
   * ``--message`` on ``pr edit`` and ``pr merge`` (in ``gh``, ``-m`` is
     ``--milestone`` and ``--merge``)
   * ``--all-projects`` on ``pr list`` (in ``gh``, ``-a`` is ``--assignee``)

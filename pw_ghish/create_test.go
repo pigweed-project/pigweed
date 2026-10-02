@@ -583,3 +583,32 @@ func TestCreate_Stack_NewCommitBelowExistingChangeFails(t *testing.T) {
 		t.Errorf("Expected no git push when stack order error is detected, calls: %v", mockGit.Calls)
 	}
 }
+
+func TestCreate_TopicForbiddenByProjectConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	toml := `
+[gerrit]
+forbid_topics = true
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, ".ghish.toml"), []byte(toml), 0644); err != nil {
+		t.Fatalf("failed to write .ghish.toml: %v", err)
+	}
+
+	server := NewMockGerritServer(t)
+	MockCWD = tmpDir
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	_, err := executeCommand(RootCmd, "pr", "create", "--topic", "my-topic")
+	if err == nil {
+		t.Fatal("Expected error when --topic is passed and forbid_topics = true")
+	}
+	for _, want := range []string{"Topics-Not-Supported", "my-topic", "without --topic"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Expected error to contain %q, got: %v", want, err)
+		}
+	}
+	if mockGit.HasCall("push") {
+		t.Errorf("Expected git push not to be called when topic is forbidden, calls: %v", mockGit.Calls)
+	}
+}

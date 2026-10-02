@@ -1375,3 +1375,114 @@ func TestSearchBuildsByPatchset(t *testing.T) {
 		}
 	})
 }
+
+func TestSelectPreferredLog_PrioritizesFailureSummary(t *testing.T) {
+	logs := []LUCILog{
+		{Name: "$debug", ViewURL: "https://logs.example.com/debug"},
+		{Name: "stdout", ViewURL: "https://logs.example.com/stdout"},
+		{Name: "stderr", ViewURL: "https://logs.example.com/stderr"},
+		{Name: "failure summary", ViewURL: "https://logs.example.com/failure_summary"},
+	}
+
+	got := SelectPreferredLog(logs)
+	if got == nil || got.Name != "failure summary" {
+		t.Fatalf("SelectPreferredLog() = %+v, want 'failure summary'", got)
+	}
+
+	gotCustom := SelectPreferredLog(logs, "stderr", "stdout")
+	if gotCustom == nil || gotCustom.Name != "stderr" {
+		t.Fatalf("SelectPreferredLog(custom) = %+v, want 'stderr'", gotCustom)
+	}
+
+	// Verify underscore vs space normalization between preferred_logs and step log names.
+	logsUnderscore := []LUCILog{
+		{Name: "stdout", ViewURL: "https://logs.example.com/stdout"},
+		{Name: "failure_summary", ViewURL: "https://logs.example.com/failure_summary"},
+	}
+	gotUnderscore := SelectPreferredLog(logsUnderscore, "failure summary", "stdout")
+	if gotUnderscore == nil || gotUnderscore.Name != "failure_summary" {
+		t.Fatalf("SelectPreferredLog(underscore match) = %+v, want 'failure_summary'", gotUnderscore)
+	}
+}
+
+func TestExtractFailureReport_OrchestratorSubbuild_IncludesBuildSummaryMarkdown(t *testing.T) {
+	ctx := context.Background()
+	build := &LUCIBuildDetails{
+		ID: "8684369964096953585",
+		Builder: bbBuilder{
+			Project: "fuchsia",
+			Bucket:  "try",
+			Builder: "core.arm64-release",
+		},
+		Status:          "FAILURE",
+		SummaryMarkdown: "Compile failed: `../../src/lib/foo.cc:42:10: error: undeclared identifier`\n\nReproduce locally with: `fx repro 8684369964096953585`",
+		Steps: []LUCIStep{
+			{
+				Name:   "build",
+				Status: "FAILURE",
+			},
+			{
+				Name:            "build|run_Subbuild|core.arm64-release-subbuild",
+				Status:          "FAILURE",
+				SummaryMarkdown: "Subbuild 8684369999999999999 failed",
+			},
+		},
+	}
+
+	client := NewLUCIClient("", http.DefaultClient)
+	report := client.ExtractFailureReport(ctx, build, 50)
+	if report == nil {
+		t.Fatal("expected non-nil FailureReport")
+	}
+	if report.FailedStep != "build|run_Subbuild|core.arm64-release-subbuild" {
+		t.Errorf("FailedStep = %q, want deepest failing step 'build|run_Subbuild|core.arm64-release-subbuild'", report.FailedStep)
+	}
+	formatted := FormatFailureReports([]FailureReport{*report})
+	if !strings.Contains(formatted, "error: undeclared identifier") {
+		t.Errorf("Expected FormatFailureReports to include compiler error from build SummaryMarkdown, got:\n%s", formatted)
+	}
+	if !strings.Contains(formatted, "fx repro 8684369964096953585") {
+		t.Errorf("Expected FormatFailureReports to include fx repro command from build SummaryMarkdown, got:\n%s", formatted)
+	}
+}
+
+func TestFormatFailureReports_DeduplicatesTruncatedSummaryCodeBlockAgainstLogSnippet(t *testing.T) {
+	report := FailureReport{
+		Builder:    "core.x64-cxx20",
+		BuildID:    "8684289715100060433",
+		BuildURL:   "https://ci.chromium.org/b/8684289715100060433",
+		FailedStep: "build|ninja|compile",
+		StepSummary: "```\n[12242/125077] CXX obj/sdk/lib/fit/test/fit-unittest.cc.o\nFAILED: error: static assertion failed\n```\n\n" +
+			"(failure summary truncated, see the 'failure summary' log for full failure details)\n\n" +
+			"You can reproduce this build by running `fx repro 8684289715100060433`",
+		FullLogURL: "https://logs.chromium.org/logs/fuchsia/buildbucket/cr-buildbucket/8684289715100060433/+/u/build/ninja/compile/failure_summary",
+		LogSnippet: "[12242/125077] CXX obj/sdk/lib/fit/test/fit-unittest.cc.o\nFAILED: error: static assertion failed\n1 error generated.",
+	}
+
+	formatted := FormatFailureReports([]FailureReport{report})
+	if strings.Contains(formatted, "failure summary truncated") {
+		t.Errorf("Expected FormatFailureReports to strip truncated summary notice when LogSnippet is present, got:\n%s", formatted)
+	}
+	if count := strings.Count(formatted, "[12242/125077] CXX obj/sdk/lib/fit/test/fit-unittest.cc.o"); count != 1 {
+		t.Errorf("Expected compiler failure line to appear exactly once (in LogSnippet), got %d times:\n%s", count, formatted)
+	}
+	if !strings.Contains(formatted, "fx repro 8684289715100060433") {
+		t.Errorf("Expected FormatFailureReports to preserve fx repro hint from SummaryMarkdown, got:\n%s", formatted)
+	}
+}
+
+func TestFilterBuildsByTags(t *testing.T) {
+	builds := []bbBuild{
+		FakeBuild("1", "parent-orchestrator", "FAILURE"),
+		FakeBuild("2", "child-subbuild-1", "FAILURE", WithTags(bbTag{Key: "hide-in-gerrit", Value: "subbuild"})),
+		FakeBuild("3", "child-subbuild-2", "SUCCESS", WithTags(bbTag{Key: "hide-in-gerrit", Value: "subbuild"})),
+	}
+
+	visible, hidden := FilterBuildsByTags(builds, []string{"hide-in-gerrit:subbuild"})
+	if len(visible) != 1 || visible[0].Builder.Builder != "parent-orchestrator" {
+		t.Errorf("visible = %+v, want [parent-orchestrator]", visible)
+	}
+	if hidden != 2 {
+		t.Errorf("hidden = %d, want 2", hidden)
+	}
+}

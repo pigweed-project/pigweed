@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +31,7 @@ var (
 	checksTemplateStr  string
 	buildbucketHost    string
 	checksExperimental bool
+	checksAll          bool
 	checksWatch        bool
 	checksWeb          bool
 	checksFailFast     bool
@@ -41,7 +43,169 @@ const defaultChecksTemplate = `Checks for Change {{.number}} (Patchset {{.patchs
 {{range .checks}}  {{.StatusSymbol}}  {{printf "%-40s" .Name}}  {{printf "%-8s" .Duration}}  {{.URL}}{{if and .Patchset (ne .Patchset $.patchset)}} (from patchset {{.Patchset}}){{end}}
 {{end}}{{if gt .omittedExperimental 0}}
 ({{ .omittedExperimental }} non-blocking experimental builder{{if ne .omittedExperimental 1}}s{{end}} omitted; add --experimental to see them)
-{{end}}`
+{{end}}{{if .hiddenByConfigNote}}
+{{.hiddenByConfigNote}}
+{{end}}{{if .gerritGates}}
+Gerrit Gates / Submit Requirements:
+{{range .gerritGates}}  {{.StatusSymbol}}  {{printf "%-28s" .Name}}  {{.Summary}}
+{{end}}{{end}}`
+
+// GerritGateItem represents a Gerrit submit requirement or automated gate label
+// surfaced in `gh pr checks`.
+type GerritGateItem struct {
+	Name         string `json:"name"`
+	Status       string `json:"status"`
+	StatusSymbol string `json:"statusSymbol"`
+	Summary      string `json:"summary,omitempty"`
+}
+
+func isHumanReviewRequirement(name string) bool {
+	switch name {
+	case "Code-Review", "Code-Owners", "Owner-Approval", "Review-Enforcement", "Committer-Approval", "API-Review", "DrNo-Review":
+		return true
+	default:
+		return false
+	}
+}
+
+// ExtractGerritGates inspects a Gerrit change's submit requirements and automated
+// gate labels (such as Lint, Copybara-Verified, Presubmit-Verified, Verified,
+// and Topics-Not-Supported), returning the display items and a slice of failed
+// gate descriptions.
+func ExtractGerritGates(change *gerrit.ChangeInfo) ([]GerritGateItem, []string) {
+	if change == nil {
+		return nil, nil
+	}
+	var items []GerritGateItem
+	var failedGates []string
+	seen := make(map[string]bool)
+
+	for _, sr := range change.SubmitRequirements {
+		if sr.Name == "" || sr.Status == "NOT_APPLICABLE" {
+			continue
+		}
+		if isHumanReviewRequirement(sr.Name) {
+			// Only surface human review requirements here if explicitly rejected (-1/-2).
+			if info, ok := change.Labels[sr.Name]; !ok || !labelHasNegativeVote(info) {
+				continue
+			}
+		}
+		seen[sr.Name] = true
+		labelSummary := ""
+		hasNegVote := false
+		if info, ok := change.Labels[sr.Name]; ok {
+			labelSummary = summarizeGateLabel(sr.Name, info)
+			hasNegVote = labelHasNegativeVote(info)
+		}
+
+		switch sr.Status {
+		case "SATISFIED", "OVERRIDDEN", "FORCED":
+			summary := labelSummary
+			if summary == "" {
+				summary = sr.Status
+			}
+			items = append(items, GerritGateItem{
+				Name:         sr.Name,
+				Status:       sr.Status,
+				StatusSymbol: "✓",
+				Summary:      summary,
+			})
+		case "UNSATISFIED", "ERROR":
+			isPolicyFailure := sr.Name == "Topics-Not-Supported" || sr.Name == "Dependencies-Satisfied" || sr.Name == "No-Submodule-Changes"
+			if hasNegVote || isPolicyFailure || sr.Status == "ERROR" {
+				summary := labelSummary
+				if summary == "" {
+					if sr.Description != "" {
+						summary = sr.Description
+					} else {
+						summary = sr.Status
+					}
+				}
+				items = append(items, GerritGateItem{
+					Name:         sr.Name,
+					Status:       sr.Status,
+					StatusSymbol: "✗",
+					Summary:      summary,
+				})
+				if labelSummary != "" {
+					failedGates = append(failedGates, fmt.Sprintf("%s (%s)", sr.Name, labelSummary))
+				} else {
+					failedGates = append(failedGates, sr.Name)
+				}
+			} else {
+				summary := labelSummary
+				if summary == "" {
+					summary = sr.Status
+				}
+				items = append(items, GerritGateItem{
+					Name:         sr.Name,
+					Status:       sr.Status,
+					StatusSymbol: "-",
+					Summary:      summary,
+				})
+			}
+		}
+	}
+
+	gateLabels := []string{"Lint", "Copybara-Verified", "Presubmit-Verified", "Verified", "API-Review"}
+	for _, name := range gateLabels {
+		if seen[name] {
+			continue
+		}
+		info, ok := change.Labels[name]
+		if !ok {
+			continue
+		}
+		if labelHasNegativeVote(info) {
+			summary := summarizeGateLabel(name, info)
+			items = append(items, GerritGateItem{
+				Name:         name,
+				Status:       "REJECTED",
+				StatusSymbol: "✗",
+				Summary:      summary,
+			})
+			failedGates = append(failedGates, fmt.Sprintf("%s (%s)", name, summary))
+		} else if labelHasPositiveApproval(info) {
+			summary := summarizeGateLabel(name, info)
+			items = append(items, GerritGateItem{
+				Name:         name,
+				Status:       "APPROVED",
+				StatusSymbol: "✓",
+				Summary:      summary,
+			})
+		}
+	}
+
+	return items, failedGates
+}
+
+func labelHasPositiveApproval(info gerrit.LabelInfo) bool {
+	if info.Approved.AccountID != 0 || info.Recommended.AccountID != 0 || info.Value > 0 {
+		return true
+	}
+	if v, voted := castVote(info); voted && v > 0 {
+		return true
+	}
+	return false
+}
+
+func summarizeGateLabel(name string, info gerrit.LabelInfo) string {
+	if v, voted := castVote(info); voted {
+		if v < 0 {
+			return fmt.Sprintf("%s%d", name, v)
+		}
+		if v > 0 {
+			return fmt.Sprintf("%s+%d", name, v)
+		}
+	}
+	if info.Rejected.AccountID != 0 || info.Rejected.Name != "" || info.Rejected.Username != "" {
+		return fmt.Sprintf("%s rejected", name)
+	}
+	if info.Approved.AccountID != 0 || info.Approved.Name != "" || info.Approved.Username != "" {
+		return fmt.Sprintf("%s approved", name)
+	}
+	return ""
+}
 
 type CheckItem struct {
 	ID           string `json:"id"`
@@ -120,6 +284,25 @@ func FormatOmittedExperimentalNotice(omittedCount int) string {
 		plural = ""
 	}
 	return fmt.Sprintf("(%d non-blocking experimental builder%s omitted; add --experimental to see them)", omittedCount, plural)
+}
+
+// FormatHiddenByConfigNotice returns a notice when builds are filtered by [ci] hide_tag_filters.
+func FormatHiddenByConfigNotice(hiddenCount int, filters []string) string {
+	if hiddenCount <= 0 {
+		return ""
+	}
+	plural := "s"
+	if hiddenCount == 1 {
+		plural = ""
+	}
+	return fmt.Sprintf("(%d build%s hidden by .ghish.toml hide_tag_filters: %s)", hiddenCount, plural, strings.Join(filters, ", "))
+}
+
+func effectiveLocalPresubmitHint(projCfg *ProjectConfig, _ ProjectProfile) string {
+	if projCfg != nil && strings.TrimSpace(projCfg.CI.LocalPresubmitHint) != "" {
+		return strings.TrimSpace(projCfg.CI.LocalPresubmitHint)
+	}
+	return ""
 }
 
 // getLUCIHTTPClient returns an HTTP client for LUCI Buildbucket queries.
@@ -361,13 +544,22 @@ Use --web (-w) to open checks in the browser.`,
 		}
 
 		ctx := cmd.Context()
+		projCfg, err := LoadCommandProjectConfig(cmd)
+		if err != nil {
+			return err
+		}
+
 		luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(ctx, buildbucketHost))
 
 		if checksFailFast {
 			checksWatch = true
 		}
 
-		builds := deduplicateLatestBuilds(res.Builds)
+		hideFilters := projCfg.CI.HideTagFilters
+		if checksAll {
+			hideFilters = nil
+		}
+		builds, hiddenCount := FilterBuildsByTags(deduplicateLatestBuilds(res.Builds), hideFilters)
 		if checksWatch {
 			interval := checksInterval
 			if interval <= 0 {
@@ -497,7 +689,7 @@ Use --web (-w) to open checks in the browser.`,
 					default:
 					}
 				} else {
-					builds = deduplicateLatestBuilds(newBuilds)
+					builds, hiddenCount = FilterBuildsByTags(deduplicateLatestBuilds(newBuilds), hideFilters)
 				}
 			}
 		}
@@ -534,6 +726,9 @@ Use --web (-w) to open checks in the browser.`,
 			}
 		}
 		failedBuilds := tally.failed
+		tally.localPresubmitHint = effectiveLocalPresubmitHint(projCfg, res.Profile)
+		gerritGates, failedGates := ExtractGerritGates(res.Change)
+		tally.failedGates = failedGates
 
 		data := map[string]any{
 			"number":              res.Change.Number,
@@ -541,6 +736,12 @@ Use --web (-w) to open checks in the browser.`,
 			"equivalentPatchsets": res.EquivalentPatchsets,
 			"checks":              checks,
 			"omittedExperimental": omittedCount,
+		}
+		if len(gerritGates) > 0 {
+			data["gerritGates"] = gerritGates
+		}
+		if checksJSON == "" && hiddenCount > 0 {
+			data["hiddenByConfigNote"] = FormatHiddenByConfigNotice(hiddenCount, projCfg.CI.HideTagFilters)
 		}
 
 		r := &Renderer{
@@ -561,7 +762,7 @@ Use --web (-w) to open checks in the browser.`,
 				if err != nil {
 					continue
 				}
-				rep := luciClient.ExtractFailureReport(ctx, details, 100)
+				rep := luciClient.ExtractFailureReportWithOptions(ctx, details, 100, projCfg.PreferredLogs(), projCfg.IncludeSummaryMarkdown())
 				if rep != nil {
 					if fb.Patchset != res.PatchsetNum {
 						rep.Patchset = fb.Patchset
@@ -584,11 +785,13 @@ Use --web (-w) to open checks in the browser.`,
 // canceled and pending; experimental counts the non-blocking builders that
 // were seen, shown or not, and is used only to explain an empty result.
 type checkTally struct {
-	blocking     int
-	failed       []bbBuild
-	canceled     []bbBuild
-	pending      []bbBuild
-	experimental int
+	blocking           int
+	failed             []bbBuild
+	canceled           []bbBuild
+	pending            []bbBuild
+	experimental       int
+	localPresubmitHint string
+	failedGates        []string
 }
 
 // checksExitStatus maps the resolved state of a change's checks onto the
@@ -623,13 +826,25 @@ func checksExitStatus(changeNum, patchset int, t checkTally) error {
 			summary = fmt.Sprintf("%d of %d checks failed on %s: %s",
 				len(t.failed), t.blocking, location, builderList(t.failed, patchset))
 		}
+		reproHint := ""
+		if t.localPresubmitHint != "" {
+			reproHint = fmt.Sprintf("\nTo reproduce locally:\n  %s", t.localPresubmitHint)
+		}
 		return NewExitCodeError(ExitCodeFailure,
 			"%s.\n\n"+
 				"To inspect the failure logs and step diagnostics:\n"+
 				"  gh run view %d --log-failed\n"+
 				"To rerun only the failed builders:\n"+
-				"  gh run rerun %d --failed",
-			summary, changeNum, changeNum)
+				"  gh run rerun %d --failed%s",
+			summary, changeNum, changeNum, reproHint)
+	}
+
+	if len(t.failedGates) > 0 {
+		return NewExitCodeError(ExitCodeFailure,
+			"Gerrit gate(s) failed on %s: %s.\n\n"+
+				"To inspect change details and robot comments:\n"+
+				"  gh pr view %d --comments",
+			location, strings.Join(t.failedGates, ", "), changeNum)
 	}
 
 	// A canceled check did not pass, so this is not exit 0, but it also did
@@ -717,6 +932,7 @@ func init() {
 	checksCmd.Flags().StringVar(&checksJSON, "json", "", "Output JSON with specified fields")
 	checksCmd.Flags().StringVarP(&checksTemplateStr, "template", "t", "", "Format output using a Go template")
 	checksCmd.Flags().BoolVarP(&checksExperimental, "experimental", "e", false, "Include non-blocking experimental checks")
+	checksCmd.Flags().BoolVar(&checksAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters")
 	checksCmd.Flags().BoolVar(&checksWatch, "watch", false, "Watch checks until they finish")
 	checksCmd.Flags().BoolVarP(&checksWeb, "web", "w", false, "Open checks in web browser")
 	checksCmd.Flags().BoolVar(&checksFailFast, "fail-fast", false, "Exit immediately if any check fails when using --watch flag")

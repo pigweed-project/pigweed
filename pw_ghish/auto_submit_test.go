@@ -417,3 +417,92 @@ func TestDecideAutoSubmitForNewChange(t *testing.T) {
 		}
 	})
 }
+
+func TestCommitQueueDryRunVote_PresubmitReadyFallback(t *testing.T) {
+	labels := map[string]gerrit.LabelInfo{
+		"Code-Review":     {},
+		"Presubmit-Ready": {Values: map[string]string{" 0": "no", "+1": "ready"}},
+	}
+	got, ok := commitQueueDryRunVote(labels)
+	if !ok {
+		t.Fatal("commitQueueDryRunVote() = false, want true for Presubmit-Ready")
+	}
+	if got != (LabelVote{Name: "Presubmit-Ready", Value: 1}) {
+		t.Errorf("commitQueueDryRunVote() = %+v, want Presubmit-Ready=1", got)
+	}
+}
+
+func TestDecideCQSubmit(t *testing.T) {
+	t.Run("Commit-Queue present votes Commit-Queue+2", func(t *testing.T) {
+		labels := map[string]gerrit.LabelInfo{
+			"Code-Review":  {},
+			"Commit-Queue": {Values: map[string]string{" 0": "no", "+1": "dry run", "+2": "submit"}},
+		}
+		votes, err := DecideCQSubmit(labels, "change 1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(votes) != 1 || votes[0] != (LabelVote{Name: "Commit-Queue", Value: 2}) {
+			t.Errorf("DecideCQSubmit() = %+v, want [Commit-Queue=2]", votes)
+		}
+	})
+
+	t.Run("Autosubmit and Presubmit-Ready without Commit-Queue votes both", func(t *testing.T) {
+		labels := map[string]gerrit.LabelInfo{
+			"Code-Review":     {},
+			"Autosubmit":      {Values: map[string]string{" 0": "no", "+1": "yes"}},
+			"Presubmit-Ready": {Values: map[string]string{" 0": "no", "+1": "ready"}},
+		}
+		votes, err := DecideCQSubmit(labels, "change 1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(votes) != 2 ||
+			votes[0] != (LabelVote{Name: "Autosubmit", Value: 1}) ||
+			votes[1] != (LabelVote{Name: "Presubmit-Ready", Value: 1}) {
+			t.Errorf("DecideCQSubmit() = %+v, want [Autosubmit=1, Presubmit-Ready=1]", votes)
+		}
+	})
+
+	t.Run("Autosubmit with Presubmit-Verified already approved skips Presubmit-Ready", func(t *testing.T) {
+		labels := map[string]gerrit.LabelInfo{
+			"Code-Review":        {},
+			"Autosubmit":         {Values: map[string]string{" 0": "no", "+1": "yes"}},
+			"Presubmit-Ready":    {Values: map[string]string{" 0": "no", "+1": "ready"}},
+			"Presubmit-Verified": {Approved: gerrit.AccountInfo{AccountID: 100}},
+		}
+		votes, err := DecideCQSubmit(labels, "change 1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(votes) != 1 || votes[0] != (LabelVote{Name: "Autosubmit", Value: 1}) {
+			t.Errorf("DecideCQSubmit() = %+v, want [Autosubmit=1]", votes)
+		}
+	})
+
+	t.Run("Autosubmit with Verified already approved skips Presubmit-Ready", func(t *testing.T) {
+		labels := map[string]gerrit.LabelInfo{
+			"Code-Review":     {},
+			"Autosubmit":      {Values: map[string]string{" 0": "no", "+1": "yes"}},
+			"Presubmit-Ready": {Values: map[string]string{" 0": "no", "+1": "ready"}},
+			"Verified":        {Approved: gerrit.AccountInfo{AccountID: 100}},
+		}
+		votes, err := DecideCQSubmit(labels, "change 1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(votes) != 1 || votes[0] != (LabelVote{Name: "Autosubmit", Value: 1}) {
+			t.Errorf("DecideCQSubmit() = %+v, want [Autosubmit=1]", votes)
+		}
+	})
+
+	t.Run("neither Commit-Queue nor Autosubmit/Presubmit-Ready returns error", func(t *testing.T) {
+		labels := map[string]gerrit.LabelInfo{
+			"Code-Review": {},
+		}
+		_, err := DecideCQSubmit(labels, "change 1")
+		if err == nil {
+			t.Fatal("expected error when no CQ or Autosubmit label exists, got nil")
+		}
+	})
+}

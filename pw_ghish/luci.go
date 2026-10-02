@@ -63,15 +63,16 @@ type LUCIBuildDetails struct {
 
 // FailureReport encapsulates diagnostic information for a failed check.
 type FailureReport struct {
-	BuildID     string `json:"buildId"`
-	Builder     string `json:"builder"`
-	Status      string `json:"status"`
-	BuildURL    string `json:"buildUrl"`
-	FailedStep  string `json:"failedStep"`
-	StepSummary string `json:"stepSummary,omitempty"`
-	LogName     string `json:"logName,omitempty"`
-	LogSnippet  string `json:"logSnippet,omitempty"`
-	FullLogURL  string `json:"fullLogUrl,omitempty"`
+	BuildID      string `json:"buildId"`
+	Builder      string `json:"builder"`
+	Status       string `json:"status"`
+	BuildURL     string `json:"buildUrl"`
+	FailedStep   string `json:"failedStep"`
+	BuildSummary string `json:"buildSummary,omitempty"`
+	StepSummary  string `json:"stepSummary,omitempty"`
+	LogName      string `json:"logName,omitempty"`
+	LogSnippet   string `json:"logSnippet,omitempty"`
+	FullLogURL   string `json:"fullLogUrl,omitempty"`
 	// Patchset is set only when the build ran on an earlier code-equivalent
 	// patchset rather than the one requested.
 	Patchset int `json:"patchset,omitempty"`
@@ -109,6 +110,54 @@ type bbBuild struct {
 	// so callers can tell builds reused from an earlier code-equivalent
 	// patchset apart from builds on the requested one.
 	Patchset int `json:"-"`
+}
+
+// HasTag reports whether the build has a tag matching key and value.
+func (b *bbBuild) HasTag(key, value string) bool {
+	for _, t := range b.Tags {
+		if strings.EqualFold(t.Key, key) && (value == "" || t.Value == value) {
+			return true
+		}
+	}
+	return false
+}
+
+// MatchesTagFilters reports whether the build matches any "key:value" filter in filters.
+func (b *bbBuild) MatchesTagFilters(filters []string) bool {
+	for _, f := range filters {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		k, v, found := strings.Cut(f, ":")
+		if !found {
+			if b.HasTag(k, "") {
+				return true
+			}
+			continue
+		}
+		if b.HasTag(strings.TrimSpace(k), strings.TrimSpace(v)) {
+			return true
+		}
+	}
+	return false
+}
+
+// FilterBuildsByTags partitions builds into visible builds and the count of builds
+// hidden by hideFilters.
+func FilterBuildsByTags(builds []bbBuild, hideFilters []string) (visible []bbBuild, hiddenCount int) {
+	if len(hideFilters) == 0 {
+		return builds, 0
+	}
+	visible = make([]bbBuild, 0, len(builds))
+	for _, b := range builds {
+		if b.MatchesTagFilters(hideFilters) {
+			hiddenCount++
+			continue
+		}
+		visible = append(visible, b)
+	}
+	return visible, hiddenCount
 }
 
 // IsExperimental reports whether the build is non-blocking / experimental.
@@ -491,8 +540,52 @@ func (c *LUCIClient) FetchLogStream(ctx context.Context, viewURL string, maxLine
 	return strings.Join(lines[len(lines)-maxLines:], "\n"), nil
 }
 
+var defaultPreferredLogs = []string{"failure summary", "failure_summary", "stdout", "stderr", "full contents"}
+
+func normalizeLogStreamName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return strings.ReplaceAll(s, "_", " ")
+}
+
+// SelectPreferredLog selects the highest-priority log stream from logs.
+// When preferred is empty, it defaults to ["failure summary", "failure_summary", "stdout", "stderr", "full contents"].
+// If no preferred log name matches, it falls back to the first non-"$" log with a non-empty ViewURL.
+func SelectPreferredLog(logs []LUCILog, preferred ...string) *LUCILog {
+	log, _ := selectPreferredLogWithRank(logs, preferred...)
+	return log
+}
+
+func selectPreferredLogWithRank(logs []LUCILog, preferred ...string) (*LUCILog, int) {
+	if len(preferred) == 0 {
+		preferred = defaultPreferredLogs
+	}
+	for rank, pref := range preferred {
+		normPref := normalizeLogStreamName(pref)
+		for i := range logs {
+			if logs[i].ViewURL == "" {
+				continue
+			}
+			if normalizeLogStreamName(logs[i].Name) == normPref {
+				return &logs[i], rank
+			}
+		}
+	}
+	for i := range logs {
+		if logs[i].ViewURL != "" && !strings.HasPrefix(logs[i].Name, "$") {
+			return &logs[i], len(preferred)
+		}
+	}
+	return nil, len(preferred) + 1
+}
+
 // ExtractFailureReport analyzes steps in a failing build and retrieves the primary failure diagnostics.
 func (c *LUCIClient) ExtractFailureReport(ctx context.Context, b *LUCIBuildDetails, maxLogLines int) *FailureReport {
+	return c.ExtractFailureReportWithOptions(ctx, b, maxLogLines, nil, true)
+}
+
+// ExtractFailureReportWithOptions analyzes steps in a failing build using custom preferred log
+// names and build SummaryMarkdown inclusion settings.
+func (c *LUCIClient) ExtractFailureReportWithOptions(ctx context.Context, b *LUCIBuildDetails, maxLogLines int, preferredLogs []string, includeSummaryMarkdown bool) *FailureReport {
 	if c == nil {
 		c = NewLUCIClient("", nil)
 	}
@@ -510,9 +603,13 @@ func (c *LUCIClient) ExtractFailureReport(ctx context.Context, b *LUCIBuildDetai
 		BuildURL: fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID),
 	}
 
-	// Find the failing step, prioritizing steps that have accessible logs (stdout, stderr, etc.)
+	// Find the failing step, prioritizing steps that have preferred logs ("failure summary", "stdout", "stderr", etc.)
 	var failedStep *LUCIStep
 	var targetLog *LUCILog
+	bestRank := len(defaultPreferredLogs) + 2
+	if len(preferredLogs) > 0 {
+		bestRank = len(preferredLogs) + 2
+	}
 
 	for i := range b.Steps {
 		step := &b.Steps[i]
@@ -521,27 +618,20 @@ func (c *LUCIClient) ExtractFailureReport(ctx context.Context, b *LUCIBuildDetai
 		}
 		if failedStep == nil {
 			failedStep = step
+		} else if targetLog == nil && strings.HasPrefix(step.Name, failedStep.Name+"|") && !strings.HasSuffix(step.Name, "|logs") {
+			failedStep = step
 		}
 
-		for j := range step.Logs {
-			log := &step.Logs[j]
-			if log.ViewURL == "" {
-				continue
-			}
-			if log.Name == "stdout" || log.Name == "stderr" || log.Name == "full contents" {
-				failedStep = step
-				targetLog = log
-				break
-			}
-			if targetLog == nil && !strings.HasPrefix(log.Name, "$") {
-				failedStep = step
-				targetLog = log
-			}
+		candLog, rank := selectPreferredLogWithRank(step.Logs, preferredLogs...)
+		if candLog != nil && rank <= bestRank {
+			failedStep = step
+			targetLog = candLog
+			bestRank = rank
 		}
 	}
 
 	if failedStep == nil {
-		if b.SummaryMarkdown != "" {
+		if b.SummaryMarkdown != "" && includeSummaryMarkdown {
 			report.StepSummary = b.SummaryMarkdown
 		} else if b.CancellationMarkdown != "" {
 			report.StepSummary = b.CancellationMarkdown
@@ -558,10 +648,15 @@ func (c *LUCIClient) ExtractFailureReport(ctx context.Context, b *LUCIBuildDetai
 	report.FailedStep = failedStep.Name
 	report.StepSummary = failedStep.SummaryMarkdown
 	if report.StepSummary == "" {
-		if b.SummaryMarkdown != "" {
+		if b.SummaryMarkdown != "" && includeSummaryMarkdown {
 			report.StepSummary = b.SummaryMarkdown
 		} else if b.CancellationMarkdown != "" {
 			report.StepSummary = b.CancellationMarkdown
+		}
+	} else if b.SummaryMarkdown != "" && includeSummaryMarkdown {
+		cleanedBuildSum := cleanBuildSummary(b.SummaryMarkdown)
+		if cleanedBuildSum != "" && !strings.Contains(report.StepSummary, cleanedBuildSum) {
+			report.BuildSummary = cleanedBuildSum
 		}
 	}
 
@@ -896,6 +991,71 @@ func FormatBuildStepsVerbose(b *LUCIBuildDetails, verbose bool) string {
 	return sb.String()
 }
 
+// deduplicateSummaryAgainstLog removes fenced code blocks and truncation notices
+// from summary when logSnippet already provides the full failure log content,
+// preserving actionable footer lines (such as `fx repro` instructions).
+func deduplicateSummaryAgainstLog(summary, logSnippet string) string {
+	summary = strings.TrimSpace(summary)
+	if summary == "" || logSnippet == "" {
+		return summary
+	}
+	if strings.Contains(logSnippet, summary) {
+		return ""
+	}
+	lines := strings.Split(summary, "\n")
+	var kept []string
+	inFence := false
+	fenceMarker := ""
+	var fenceLines []string
+
+	flushFenceIfNotRedundant := func() {
+		if len(fenceLines) == 0 {
+			return
+		}
+		firstNonEmpty := ""
+		for _, fl := range fenceLines[1:] {
+			t := strings.TrimSpace(fl)
+			if t != "" && !strings.HasPrefix(t, "```") {
+				firstNonEmpty = t
+				break
+			}
+		}
+		if firstNonEmpty == "" || !strings.Contains(logSnippet, firstNonEmpty) {
+			kept = append(kept, fenceLines...)
+		}
+		fenceLines = nil
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inFence && strings.HasPrefix(trimmed, "```") {
+			inFence = true
+			fenceMarker = "```"
+			if strings.HasPrefix(trimmed, "````") {
+				fenceMarker = "````"
+			}
+			fenceLines = append(fenceLines, line)
+			continue
+		}
+		if inFence {
+			fenceLines = append(fenceLines, line)
+			if strings.HasPrefix(trimmed, fenceMarker) {
+				inFence = false
+				flushFenceIfNotRedundant()
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "(failure summary truncated") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if inFence {
+		flushFenceIfNotRedundant()
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
 // FormatFailureReports formats diagnostic failure reports into a readable string.
 func FormatFailureReports(reports []FailureReport) string {
 	var sb strings.Builder
@@ -914,8 +1074,17 @@ func FormatFailureReports(reports []FailureReport) string {
 			fmt.Fprintf(&sb, "Step: %s\n", r.FailedStep)
 		}
 		sb.WriteString("================================================================================\n")
-		if r.StepSummary != "" {
-			sb.WriteString(r.StepSummary)
+		stepSum := deduplicateSummaryAgainstLog(r.StepSummary, r.LogSnippet)
+		if stepSum != "" {
+			sb.WriteString(stepSum)
+			sb.WriteString("\n")
+		}
+		buildSum := deduplicateSummaryAgainstLog(r.BuildSummary, r.LogSnippet)
+		if buildSum != "" && !strings.Contains(stepSum, buildSum) {
+			if stepSum != "" {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(buildSum)
 			sb.WriteString("\n")
 		}
 		if r.LogSnippet != "" {

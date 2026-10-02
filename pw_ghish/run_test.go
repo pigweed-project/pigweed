@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -768,5 +770,62 @@ func TestRunRerun_UsesActualBuildProjectAndBucket(t *testing.T) {
 	}
 	if !strings.Contains(outBucketBuilder, wantCmd) {
 		t.Errorf("Expected dry-run output to contain %q, got:\n%s", wantCmd, outBucketBuilder)
+	}
+}
+
+func TestRunList_HideTagFiltersFromProjectConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	toml := `
+[ci]
+hide_tag_filters = ["hide-in-gerrit:subbuild"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, ".ghish.toml"), []byte(toml), 0644); err != nil {
+		t.Fatalf("failed to write .ghish.toml: %v", err)
+	}
+
+	server := NewMockGerritServer(t)
+	MockCWD = tmpDir
+	server.OnDefaultChange(12345, WithSubject("Run List Hide Subbuilds"))
+	server.OnSearchBuilds(
+		FakeBuild("100", "fuchsia-x64-orchestrator", "SUCCESS"),
+		FakeBuild("101", "core.x64-subbuild", "SUCCESS", WithTags(bbTag{Key: "hide-in-gerrit", Value: "subbuild"})),
+	)
+
+	output, err := executeCommand(RootCmd, "run", "list", "12345")
+	if err != nil {
+		t.Fatalf("run list failed: %v\nOutput: %s", err, output)
+	}
+	if !strings.Contains(output, "fuchsia-x64-orchestrator") {
+		t.Errorf("Expected orchestrator in output, got:\n%s", output)
+	}
+	if strings.Contains(output, "core.x64-subbuild") {
+		t.Errorf("Expected subbuild to be hidden by hide_tag_filters, got:\n%s", output)
+	}
+	if !strings.Contains(output, "1") || !strings.Contains(output, "hidden") {
+		t.Errorf("Expected hidden count note in output, got:\n%s", output)
+	}
+}
+
+func TestRunRerun_Failed_SkipsSubbuildsWithSkipRetryTag(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("Rerun Skip Subbuild"))
+	server.OnSearchBuilds(
+		FakeBuild("100", "fuchsia-x64-orchestrator", "FAILURE", WithBuildProject("fuchsia"), WithBucket("try")),
+		FakeBuild("101", "core.x64-subbuild", "FAILURE",
+			WithBuildProject("fuchsia"),
+			WithBucket("ci"),
+			WithTags(bbTag{Key: "skip-retry-in-gerrit", Value: "subbuild"}),
+		),
+	)
+
+	output, err := executeCommand(RootCmd, "run", "rerun", "12345", "--failed", "--dry-run")
+	if err != nil {
+		t.Fatalf("run rerun --failed failed: %v\nOutput: %s", err, output)
+	}
+	if !strings.Contains(output, "fuchsia-x64-orchestrator") {
+		t.Errorf("Expected parent orchestrator to be scheduled for rerun, got:\n%s", output)
+	}
+	if strings.Contains(output, "core.x64-subbuild") {
+		t.Errorf("Expected child subbuild with skip-retry-in-gerrit:subbuild tag to be skipped, got:\n%s", output)
 	}
 }

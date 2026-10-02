@@ -76,6 +76,9 @@ func init() {
 func executeCommand(root *cobra.Command, args ...string) (string, error) {
 	setupRootAliases()
 	resetAllFlags(root)
+	if MockCWD != "" {
+		root.SetContext(context.WithValue(root.Context(), configKey, &Config{CWD: MockCWD}))
+	}
 
 	r, w, _ := os.Pipe()
 	oldStdout := os.Stdout
@@ -396,7 +399,10 @@ func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	getLUCIHTTPClient = func(ctx context.Context, bbHost string) *http.Client {
 		return s.Server.Client()
 	}
-	t.Cleanup(func() { getLUCIHTTPClient = origLUCIClient })
+	t.Cleanup(func() {
+		getLUCIHTTPClient = origLUCIClient
+		MockCWD = ""
+	})
 
 	return s
 }

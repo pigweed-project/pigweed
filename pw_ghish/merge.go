@@ -27,6 +27,7 @@ type mergeOptions struct {
 	auto       bool
 	autoSubmit bool
 	cq         bool
+	trigger    bool
 	message    string
 }
 
@@ -40,14 +41,15 @@ func newMergeCmd() *cobra.Command {
 When --auto is passed, pw_ghish detects the host's auto-submit label from the
 change (e.g. Pigweed-Auto-Submit+1 or Auto-Submit+1) and votes it. If the host
 has no auto-submit label, pw_ghish starts a Commit-Queue+1 dry run (when
-available) and returns an error; use --cq to submit via Commit-Queue+2.
+available) and returns an error; use --trigger (or --cq) to submit via Commit-Queue+2.
 
-When --cq is passed, pw_ghish applies the Commit-Queue+2 label directly.
+When --trigger (or --cq) is passed, pw_ghish applies the Commit-Queue+2 (or
+Autosubmit+1 + Presubmit-Ready+1) vote directly.
 
 When neither flag is passed, pw_ghish attempts to submit the change immediately.
 Note: In Pigweed and LUCI-gated projects, direct submission requires all gates
 (Code-Review+2, Presubmit-Verified, etc.) to be satisfied already; otherwise
-Gerrit rejects immediate submission. Use --auto or --cq for automated landing.`,
+Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for automated landing.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			chCtx, err := ResolveChangeContext(cmd, args)
@@ -59,26 +61,23 @@ Gerrit rejects immediate submission. Use --auto or --cq for automated landing.`,
 			}
 
 			isAuto := opts.auto || opts.autoSubmit
-			if isAuto && opts.cq {
-				return fmt.Errorf("cannot specify both --auto and --cq")
+			isCQ := opts.cq || opts.trigger
+			if isAuto && isCQ {
+				return fmt.Errorf("cannot specify both --auto and --cq/--trigger")
 			}
 
-			if isAuto || opts.cq {
-				var label LabelVote
+			if isAuto || isCQ {
+				var votes []LabelVote
 				// Set when the host cannot auto-submit; reported once the
 				// vote that *could* be cast has been.
 				var unsupported error
 
-				if opts.cq {
-					profile, err := chCtx.ResolveProfile()
+				if isCQ {
+					var err error
+					votes, err = chCtx.DecideCQSubmit()
 					if err != nil {
 						return err
 					}
-					cqLabel, ok := profile.CQLabel()
-					if !ok {
-						return fmt.Errorf("profile %q does not support Commit-Queue", profile.Name())
-					}
-					label = cqLabel
 				} else {
 					// Ask the host what its auto-submit label is called rather
 					// than assuming the profile's spelling. Hosts disagree
@@ -88,20 +87,23 @@ Gerrit rejects immediate submission. Use --auto or --cq for automated landing.`,
 					if err != nil {
 						return err
 					}
-					label, unsupported = decision.Vote, decision.Unsupported
+					votes = []LabelVote{decision.Vote}
+					unsupported = decision.Unsupported
 				}
-				labelName, labelValue := label.Name, label.Value
 
 				reviewInput := &gerrit.ReviewInput{
 					Message: opts.message,
-					Labels: map[string]int{
-						labelName: labelValue,
-					},
+					Labels:  make(map[string]int, len(votes)),
+				}
+				var voteStrs []string
+				for _, v := range votes {
+					reviewInput.Labels[v.Name] = v.Value
+					voteStrs = append(voteStrs, fmt.Sprintf("%s%+d", v.Name, v.Value))
 				}
 
 				if err := chCtx.SetReviewRevision("current", reviewInput); err != nil {
 					actionName := "auto-submit"
-					if opts.cq {
+					if isCQ {
 						actionName = "Commit-Queue"
 					}
 					return fmt.Errorf("error enabling %s for change %s: %w", actionName, chCtx.ChangeID, err)
@@ -110,15 +112,15 @@ Gerrit rejects immediate submission. Use --auto or --cq for automated landing.`,
 				// The vote landed, but it was a consolation prize: say so
 				// instead of reporting auto-submit that is not happening.
 				if unsupported != nil {
-					fmt.Fprintf(cmd.OutOrStdout(), "%s%+d set for change %s.\n", labelName, labelValue, chCtx.ChangeID)
+					fmt.Fprintf(cmd.OutOrStdout(), "%s set for change %s.\n", strings.Join(voteStrs, ", "), chCtx.ChangeID)
 					return unsupported
 				}
 
 				targetDesc := "Auto-submit"
-				if opts.cq {
+				if isCQ {
 					targetDesc = "Commit-Queue"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s enabled for change %s (%s%+d).\n", targetDesc, chCtx.ChangeID, labelName, labelValue)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s enabled for change %s (%s).\n", targetDesc, chCtx.ChangeID, strings.Join(voteStrs, ", "))
 				return nil
 			}
 
@@ -149,7 +151,8 @@ Gerrit rejects immediate submission. Use --auto or --cq for automated landing.`,
 	cmd.Flags().BoolVar(&opts.auto, "auto", false, "Automatically merge after requirements (CI checks and approvals) have been met")
 	cmd.Flags().BoolVar(&opts.autoSubmit, "auto-submit", false, "Alias for --auto")
 	cmd.Flags().MarkHidden("auto-submit")
-	cmd.Flags().BoolVar(&opts.cq, "cq", false, "Trigger submission via Commit-Queue+2 (runs checks and submits when ready)")
+	cmd.Flags().BoolVar(&opts.trigger, "trigger", false, "Trigger submission via Commit-Queue+2 or Autosubmit+Presubmit-Ready (alias --cq)")
+	cmd.Flags().BoolVar(&opts.cq, "cq", false, "Trigger submission via Commit-Queue+2 (runs checks and submits when ready; alias for --trigger)")
 	cmd.Flags().StringVar(&opts.message, "message", "", "Optional message when auto-submitting or voting CQ")
 
 	return cmd

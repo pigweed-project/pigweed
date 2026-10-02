@@ -62,6 +62,10 @@ var statusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		cfg := GetConfig(cmd)
+		projCfg, err := LoadCommandProjectConfig(cmd)
+		if err != nil {
+			return err
+		}
 
 		client, err := NewGerritClient(ctx, cmd)
 		if err != nil {
@@ -84,7 +88,7 @@ var statusCmd = &cobra.Command{
 				Query: []string{myQuery},
 			},
 			ChangeOptions: gerrit.ChangeOptions{
-				AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE", "DETAILED_ACCOUNTS"},
+				AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE", "DETAILED_ACCOUNTS", "SUBMIT_REQUIREMENTS"},
 			},
 		}
 
@@ -93,7 +97,7 @@ var statusCmd = &cobra.Command{
 				Query: []string{reviewingQuery},
 			},
 			ChangeOptions: gerrit.ChangeOptions{
-				AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE", "DETAILED_ACCOUNTS"},
+				AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE", "DETAILED_ACCOUNTS", "SUBMIT_REQUIREMENTS"},
 			},
 		}
 
@@ -155,7 +159,7 @@ var statusCmd = &cobra.Command{
 			}
 
 			opt := &gerrit.ChangeOptions{
-				AdditionalFields: []string{"DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE"},
+				AdditionalFields: []string{"DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS"},
 			}
 			activeChange, _, cErr := client.Changes.GetChange(ctx, activeID, opt)
 			if cErr != nil || activeChange == nil {
@@ -174,6 +178,13 @@ var statusCmd = &cobra.Command{
 
 			blockers := extractBlockers(activeChange)
 
+			srNames := make(map[string]bool, len(activeChange.SubmitRequirements))
+			for _, sr := range activeChange.SubmitRequirements {
+				if sr.Name != "" {
+					srNames[sr.Name] = true
+				}
+			}
+
 			type labelItem struct {
 				Name  string `json:"name"`
 				Value string `json:"value"`
@@ -188,11 +199,11 @@ var statusCmd = &cobra.Command{
 					switch n {
 					case "Code-Review":
 						return 1
-					case "Presubmit-Verified":
+					case "Presubmit-Verified", "Verified":
 						return 2
-					case "Lint":
+					case "Lint", "Copybara-Verified":
 						return 3
-					case "Commit-Queue":
+					case "Commit-Queue", "Presubmit-Ready", "Autosubmit", "Auto-Submit":
 						return 4
 					default:
 						return 10
@@ -207,7 +218,7 @@ var statusCmd = &cobra.Command{
 			for _, name := range labelNames {
 				info := activeChange.Labels[name]
 				summary := getLabelSummary(info)
-				isCore := name == "Code-Review" || name == "Presubmit-Verified" || name == "Lint" || name == "Commit-Queue"
+				isCore := name == "Code-Review" || name == "Presubmit-Verified" || name == "Lint" || name == "Commit-Queue" || srNames[name]
 				if isCore || summary != "No score" {
 					labelItems = append(labelItems, labelItem{
 						Name:  name,
@@ -241,8 +252,9 @@ var statusCmd = &cobra.Command{
 					builds, bErr := queryBuildbucketPatchsets(ctx, bbHost, gHost, activeChange.Project, activeChange.Number, patchsets, getLUCIHTTPClient(ctx, bbHost))
 					if bErr == nil && builds != nil {
 						deduped := deduplicateLatestBuilds(builds)
-						checksSummary = formatCheckSummary(deduped)
-						checks = BuildCheckItems(deduped)
+						visibleBuilds, _ := FilterBuildsByTags(deduped, projCfg.CI.HideTagFilters)
+						checksSummary = formatCheckSummary(visibleBuilds)
+						checks = BuildCheckItems(visibleBuilds)
 					} else if ExitCodeFor(bErr) == ExitCodeAuth {
 						checksSummary = "✖ LUCI authentication required (run 'luci-auth login' or 'gh auth status')"
 					}
@@ -368,6 +380,9 @@ var statusCmd = &cobra.Command{
 			for _, change := range changes {
 				crScore := extractLabelScore(change.Labels, "Code-Review")
 				vScore := extractLabelScore(change.Labels, "Verified")
+				if _, hasVerified := change.Labels["Verified"]; !hasVerified {
+					vScore = extractLabelScore(change.Labels, "Presubmit-Verified")
+				}
 
 				attnMap := BuildAttentionMap(change.AttentionSet)
 				inAttentionSet := attnMap[myAccountID]
@@ -449,12 +464,64 @@ func extractLabelScore(labels map[string]gerrit.LabelInfo, labelName string) int
 	return score
 }
 
+func labelHasNegativeVote(info gerrit.LabelInfo) bool {
+	if info.Rejected.AccountID != 0 || info.Disliked.AccountID != 0 || info.Value < 0 {
+		return true
+	}
+	if v, voted := castVote(info); voted && v < 0 {
+		return true
+	}
+	return false
+}
+
 // extractBlockers computes blocking reasons for an unsubmitted change.
 func extractBlockers(change *gerrit.ChangeInfo) []string {
-	if change.Submittable {
+	if change == nil || change.Submittable {
 		return nil
 	}
 	var blockers []string
+	if len(change.SubmitRequirements) > 0 {
+		seen := make(map[string]bool, len(change.SubmitRequirements))
+		for _, sr := range change.SubmitRequirements {
+			if !strings.EqualFold(sr.Status, "UNSATISFIED") && !strings.EqualFold(sr.Status, "ERROR") {
+				continue
+			}
+			name := sr.Name
+			if name == "" {
+				continue
+			}
+			seen[name] = true
+			if info, ok := change.Labels[name]; ok && labelHasNegativeVote(info) {
+				blockers = append(blockers, fmt.Sprintf("%s (Rejected)", name))
+				continue
+			}
+			switch name {
+			case "Code-Review":
+				blockers = append(blockers, "Code-Review (+2 required)")
+			case "Verified":
+				blockers = append(blockers, "Verified (+1 required)")
+			case "Presubmit-Verified":
+				blockers = append(blockers, "Presubmit-Verified (+1 required)")
+			default:
+				blockers = append(blockers, fmt.Sprintf("%s (Unsatisfied)", name))
+			}
+		}
+		var rejectedNames []string
+		for name, info := range change.Labels {
+			if seen[name] {
+				continue
+			}
+			if labelHasNegativeVote(info) {
+				rejectedNames = append(rejectedNames, name)
+			}
+		}
+		sort.Strings(rejectedNames)
+		for _, name := range rejectedNames {
+			blockers = append(blockers, fmt.Sprintf("%s (Rejected)", name))
+		}
+		return blockers
+	}
+
 	if cr, ok := change.Labels["Code-Review"]; ok {
 		if cr.Approved.AccountID == 0 {
 			blockers = append(blockers, "Code-Review (+2 required)")
@@ -466,7 +533,7 @@ func extractBlockers(change *gerrit.ChangeInfo) []string {
 		}
 	}
 	for name, info := range change.Labels {
-		if info.Rejected.AccountID != 0 || info.Disliked.AccountID != 0 {
+		if labelHasNegativeVote(info) {
 			blockers = append(blockers, fmt.Sprintf("%s (Rejected)", name))
 		}
 	}

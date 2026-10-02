@@ -37,6 +37,7 @@ var (
 	editAddHashtags    []string
 	editRemoveHashtags []string
 	editCQ             int
+	editTrigger        int
 	editDropTrailers   bool
 	editBug            string
 	editFixed          string
@@ -66,11 +67,11 @@ var editCmd = &cobra.Command{
 		hasMsgEdit := editMessage != "" || editTitle != "" || cmd.Flags().Changed("body") || hasTrailerEdit
 		hasTopicEdit := cmd.Flags().Changed("topic") || editRemoveTopic
 		hasHashtagEdit := len(editAddHashtags) > 0 || len(editRemoveHashtags) > 0
-		hasCQEdit := cmd.Flags().Changed("cq")
+		hasCQEdit := cmd.Flags().Changed("cq") || cmd.Flags().Changed("trigger")
 		if !hasMsgEdit && len(editAddReviewer) == 0 && len(editRemoveReviewer) == 0 &&
 			len(editAddAssignee) == 0 && len(editRemoveAssignee) == 0 && len(editAddLabels) == 0 &&
 			!hasTopicEdit && !hasHashtagEdit && !hasCQEdit {
-			return fmt.Errorf("at least one of --message, --title, --body, --bug, --fixed, --add-reviewer, --remove-reviewer, --add-assignee, --remove-assignee, --add-label, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-label Commit-Queue=1")
+			return fmt.Errorf("at least one of --message, --title, --body, --bug, --fixed, --add-reviewer, --remove-reviewer, --add-assignee, --remove-assignee, --add-label, --trigger, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --trigger\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-label Commit-Queue=1")
 		}
 
 		if editMessage != "" && (editTitle != "" || cmd.Flags().Changed("body")) {
@@ -233,6 +234,15 @@ var editCmd = &cobra.Command{
 				fmt.Fprintln(cmd.OutOrStdout(), "Topic removed successfully.")
 			} else {
 				targetTopic := strings.TrimSpace(editTopic)
+				chInfo, chErr := chCtx.GetChange(&gerrit.ChangeOptions{
+					AdditionalFields: []string{"SUBMIT_REQUIREMENTS"},
+				})
+				if chErr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to query submit requirements for change %s before setting topic: %v\n", changeID, chErr)
+				}
+				if err := CheckTopicAllowed(ctx, chCtx.Config, chInfo, targetTopic, fmt.Sprintf("gh pr edit %s (without --topic)", changeID)); err != nil {
+					return err
+				}
 				if _, _, err := client.Changes.SetTopic(ctx, changeID, &gerrit.TopicInput{Topic: targetTopic}); err != nil {
 					return chCtx.FormatError(err, "setting topic on")
 				}
@@ -251,16 +261,21 @@ var editCmd = &cobra.Command{
 		}
 
 		if hasCQEdit {
+			requestedCQ := editCQ
+			if cmd.Flags().Changed("trigger") {
+				requestedCQ = editTrigger
+			}
+			cqName, cqScore := chCtx.ResolveCQVote(requestedCQ)
 			input := &gerrit.ReviewInput{
-				Labels: map[string]int{"Commit-Queue": editCQ},
+				Labels: map[string]int{cqName: cqScore},
 			}
 			if err := chCtx.SetReviewRevision("current", input); err != nil {
-				return chCtx.FormatError(err, "setting Commit-Queue on")
+				return chCtx.FormatError(err, fmt.Sprintf("setting %s on", cqName))
 			}
-			if editCQ == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "Commit-Queue vote removed successfully.")
+			if cqScore == 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s vote removed successfully.\n", cqName)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Commit-Queue+%d set successfully.\n", editCQ)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s+%d set successfully.\n", cqName, cqScore)
 			}
 		}
 
@@ -373,7 +388,9 @@ func init() {
 	editCmd.Flags().StringArrayVar(&editAddAssignee, "add-assignee", nil, "Add assignee by email or ID")
 	editCmd.Flags().StringArrayVar(&editRemoveAssignee, "remove-assignee", nil, "Remove assignee by email or ID")
 	editCmd.Flags().StringArrayVar(&editAddLabels, "add-label", nil, "Add Gerrit labels (e.g., Commit-Queue+1)")
-	editCmd.Flags().IntVar(&editCQ, "cq", -1, "Set Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove)")
+	editCmd.Flags().IntVar(&editTrigger, "trigger", -1, "Trigger presubmit / Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias --cq)")
+	editCmd.Flags().Lookup("trigger").NoOptDefVal = "1"
+	editCmd.Flags().IntVar(&editCQ, "cq", -1, "Set Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias for --trigger)")
 	editCmd.Flags().Lookup("cq").NoOptDefVal = "1"
 	editCmd.Flags().StringVar(&editTopic, "topic", "", "Set Gerrit topic for the change")
 	editCmd.Flags().BoolVar(&editRemoveTopic, "remove-topic", false, "Remove topic from the change")

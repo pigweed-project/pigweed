@@ -73,12 +73,33 @@ duration, and build URLs of tryjobs on a change:
    $ ./gh pr checks 413992/1
 
 By default, non-blocking experimental builders (``cq_experimental``) are
-omitted from the display. Pass ``--experimental`` (or ``-e``) to include them:
+omitted from the display. Pass ``--experimental`` (or ``-e``) to include them.
+When ``ci.hide_tag_filters`` is configured in ``.ghish.toml`` or ``git config``
+(for example, ``hide-in-gerrit:subbuild`` on orchestrator builds), matching
+child subbuilds are hidden by default and can be shown with ``--all``:
 
 .. code-block:: console
 
    $ ./gh pr checks --experimental
    $ ./gh pr checks 413992 -e
+   $ ./gh pr checks --all
+
+Gerrit gates and non-Buildbucket CI
+===================================
+In addition to LUCI Buildbucket tryjobs, ``./gh pr checks`` inspects Gerrit
+``SubmitRequirements`` and automated verification labels on the change (such as
+``Android-Build-Verified``, ``Presubmit-Verified``, ``Lint-Verified``,
+``Tree-Approval``, and ``Kokoro``).
+
+* On repositories that use both LUCI Buildbucket and Gerrit automated gates,
+  unsatisfied or non-Buildbucket Gerrit gates are rendered in a
+  ``Gerrit Gates / Submit Requirements:`` section below the Buildbucket table
+  and included in the JSON output and exit code evaluation.
+* On Gerrit repositories that do not use Buildbucket (or when ``ci.providers =
+  ["gerrit"]`` is set in ``.ghish.toml``), ``./gh pr checks`` evaluates the
+  change's Gerrit verification labels and submit requirements directly, and
+  extracts diagnostic messages and CI URLs posted in Gerrit change messages by
+  automated bots.
 
 Watching checks: ``--watch`` and ``--fail-fast``
 ================================================
@@ -179,7 +200,8 @@ Inspecting and rerunning builds: gh run
 Listing runs: ``run list``
 ==========================
 Lists all checks and tryjobs for a change with duration, Buildbucket build ID,
-status, and URL:
+status, and URL (pass ``--all`` to include subbuilds hidden by
+``ci.hide_tag_filters``):
 
 .. code-block:: console
 
@@ -189,8 +211,9 @@ status, and URL:
    # List runs for a specific change:
    $ ./gh run list 472267
 
-   # Include non-blocking experimental checks:
+   # Include non-blocking experimental checks or hidden subbuilds:
    $ ./gh run list --experimental
+   $ ./gh run list --all
 
    # Output JSON:
    $ ./gh run list --json
@@ -280,11 +303,23 @@ Fetch failure summaries and raw step log snippets in the terminal:
    # Open build in web browser:
    $ ./gh run view -j pigweed-lintformat --web
 
+When selecting step logs, ``run view --log-failed`` prioritizes curated
+``failure summary`` (or ``failure_summary``) streams before falling back to
+``stdout`` and ``stderr`` (configurable via ``ci.preferred_logs`` in
+``.ghish.toml``). For orchestrator builds where compilation or test failures
+occur in a child subbuild, ``run view --log-failed`` also includes the top-level
+build ``SummaryMarkdown`` (including reproduction hints such as ``fx repro``)
+while deduplicating truncated summary blocks against the full ``failure
+summary`` log snippet.
+
 Rerunning CI checks: ``run rerun``
 ==================================
 Rerun specific or all failed builders on a change (constructs and executes the
 ``bb add`` invocation using each build's recorded Buildbucket
-``<project>/<bucket>/<builder>`` tuple):
+``<project>/<bucket>/<builder>`` tuple). Child subbuilds tagged with
+``skip-retry-in-gerrit:subbuild`` (or matching ``ci.skip_retry_tag_filters`` in
+``.ghish.toml``) are automatically skipped during ``--failed`` reruns so only
+top-level parent builders are scheduled:
 
 .. code-block:: console
 
