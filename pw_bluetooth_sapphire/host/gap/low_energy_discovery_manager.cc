@@ -198,12 +198,11 @@ void LowEnergyDiscoveryManager::StartDiscovery(
 
 LowEnergyDiscoveryManager::PauseToken
 LowEnergyDiscoveryManager::PauseDiscovery() {
-  if (!paused()) {
+  paused_count_.Set(*paused_count_ + 1);
+  if (*paused_count_ == 1) {
     bt_log(TRACE, "gap-le", "Pausing discovery");
     StopScan();
   }
-
-  paused_count_.Set(*paused_count_ + 1);
 
   return PauseToken([this, self = GetWeakPtr()]() {
     if (!self.is_alive()) {
@@ -643,14 +642,23 @@ void LowEnergyDiscoveryManager::StartScan(bool active) {
       return;
     }
 
+    if (result == ToResult(HostError::kCanceled)) {
+      return;
+    }
+
     if (result.is_error()) {
       bt_log(
           WARN, "gap-le", "failed to apply packet filters: %s", bt_str(result));
       self->state_.Set(State::kIdle);
+      self->OnScanFailed();
       return;
     }
 
-    if (self->state_.value() != State::kStarting || self->paused()) {
+    if (self->state_.value() != State::kStarting) {
+      return;
+    }
+
+    if (self->paused()) {
       self->state_.Set(State::kIdle);
       return;
     }

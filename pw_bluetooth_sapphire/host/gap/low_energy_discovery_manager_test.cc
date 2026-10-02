@@ -24,6 +24,7 @@
 #include "pw_bluetooth_sapphire/internal/host/common/macros.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/peer.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/peer_cache.h"
+#include "pw_bluetooth_sapphire/internal/host/hci-spec/vendor_protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/advertising_packet_filter.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/discovery_filter.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/extended_low_energy_scanner.h"
@@ -2133,6 +2134,59 @@ TEST_F(LowEnergyDiscoveryManagerTest, LeExtendedDataIsPopulated) {
   });
   RunUntilIdle();
   EXPECT_TRUE(peer_seen);
+}
+
+TEST_F(LowEnergyDiscoveryManagerTest,
+       ApplyPacketFiltersFailureNotifiesPendingCallback) {
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {/*offloading_supported=*/true,
+       /*max_filters=*/8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
+
+  test_device()->SetDefaultResponseStatus(
+      hci_spec::vendor::android::kLEApcf,
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
+
+  bool callback_called = false;
+  std::unique_ptr<LowEnergyDiscoverySession> session;
+  discovery_manager()->StartDiscovery(
+      /*active=*/true, {}, [&](auto cb_session) {
+        callback_called = true;
+        session = std::move(cb_session);
+      });
+
+  RunUntilIdle();
+  EXPECT_TRUE(callback_called);
+  EXPECT_FALSE(session);
+  EXPECT_FALSE(scan_enabled());
+}
+
+TEST_F(LowEnergyDiscoveryManagerTest,
+       PauseWhileApplyPacketFiltersInFlightDoesNotStartScan) {
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {/*offloading_supported=*/true,
+       /*max_filters=*/8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
+
+  std::unique_ptr<LowEnergyDiscoverySession> session;
+  discovery_manager()->StartDiscovery(
+      /*active=*/true, {}, [&](auto cb_session) {
+        session = std::move(cb_session);
+      });
+
+  // Pause immediately while ApplyPacketFilters is still in flight.
+  std::optional<PauseToken> pause_token = discovery_manager()->PauseDiscovery();
+
+  RunUntilIdle();
+  EXPECT_FALSE(scan_enabled());
+  EXPECT_FALSE(session);
+
+  pause_token.reset();
+  RunUntilIdle();
+  EXPECT_TRUE(scan_enabled());
+  EXPECT_TRUE(session);
 }
 
 }  // namespace
