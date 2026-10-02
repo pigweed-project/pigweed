@@ -142,8 +142,26 @@ impl<const BASE_ADDR: usize> MTimeCmp<BASE_ADDR> {
 
     #[must_use]
     pub const fn hart0() -> Self {
+        // SAFETY: Hart 0 is always valid.
+        unsafe { Self::for_hart(0) }
+    }
+
+    /// Returns the `mtimecmp` register instance for `hart_id`.
+    ///
+    /// # Safety
+    ///
+    /// - `hart_id` must be a valid physical hardware `mhartid` decoded by the
+    ///   platform's `mtimecmp` register block.
+    /// - The caller must ensure exclusive access to `hart_id`'s `mtimecmp`
+    ///   register (e.g., `hart_id` is the calling hart, or `hart_id` is halted
+    ///   / not yet booted and cannot concurrently modify its `mtimecmp`), since
+    ///   `write()` and `disarm()` perform multi-word writes on RV32 and
+    ///   `InterruptGuard` only masks local interrupts.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn for_hart(hart_id: usize) -> Self {
         let () = Self::_ASSERT_ALIGNED;
-        Self(0)
+        Self(hart_id)
     }
 
     #[cfg(target_pointer_width = "64")]

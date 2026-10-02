@@ -18,6 +18,8 @@ use pw_time_core::Duration;
 
 use super::{Clock, TimerInterface};
 use crate::regs::clint::{ClintMTime, ClintMTimeCmp};
+#[cfg(feature = "smp")]
+use crate::regs::clint::{ClintMsip, MsipVal};
 use crate::spinlock::InterruptGuard;
 
 pub struct Timer;
@@ -68,4 +70,60 @@ impl TimerInterface for Timer {
             pw_assert::debug_panic!("Next monotonic tick overflow");
         }
     }
+}
+
+/// Triggers a Machine Software Interrupt (IPI) on `target_hart` via its CLINT
+/// `msip` register.
+///
+/// # Safety
+///
+/// `target_hart` must be a valid physical hardware `mhartid` decoded by the
+/// platform's CLINT `msip` register block.
+#[cfg(feature = "smp")]
+#[expect(dead_code)]
+#[inline]
+pub(crate) unsafe fn send_ipi(target_hart: usize) {
+    // SAFETY: Caller guarantees `target_hart` is a valid hardware `mhartid` for
+    // this CLINT.
+    let mut msip = unsafe { ClintMsip::for_hart(target_hart) };
+    msip.write(MsipVal::default().with_msip(true));
+}
+
+/// Clears a pending Machine Software Interrupt (IPI) for `hart_id` via its
+/// CLINT `msip` register.
+///
+/// # Safety
+///
+/// `hart_id` must be a valid physical hardware `mhartid` decoded by the
+/// platform's CLINT `msip` register block.
+#[cfg(feature = "smp")]
+#[expect(dead_code)]
+#[inline]
+pub(crate) unsafe fn clear_ipi(hart_id: usize) {
+    // SAFETY: Caller guarantees `hart_id` is a valid hardware `mhartid` for
+    // this CLINT.
+    let mut msip = unsafe { ClintMsip::for_hart(hart_id) };
+    msip.write(MsipVal::default().with_msip(false));
+}
+
+/// Disarms `hart_id`'s CLINT `mtimecmp` compare register by setting it to
+/// `u64::MAX`.
+///
+/// # Safety
+///
+/// - `hart_id` must be a valid physical hardware `mhartid` decoded by the
+///   platform's CLINT `mtimecmp` register block.
+/// - The caller must ensure exclusive access to `hart_id`'s `mtimecmp` register
+///   (e.g., `hart_id` is the calling hart, or `hart_id` is halted / not yet
+///   booted), since `InterruptGuard::new()` only masks interrupts on the
+///   calling hart.
+#[cfg(feature = "smp")]
+#[expect(dead_code)]
+pub(crate) unsafe fn disarm_mtimecmp(hart_id: usize) {
+    let guard = InterruptGuard::new();
+    // SAFETY: Caller guarantees `hart_id` is a valid hardware `mhartid` for
+    // this CLINT and that the caller has exclusive access to `hart_id`'s
+    // `mtimecmp` register.
+    let mut mtimecmp = unsafe { ClintMTimeCmp::for_hart(hart_id) };
+    mtimecmp.disarm(&guard);
 }

@@ -15,7 +15,7 @@
 use kernel::interrupt_controller::InterruptGuard;
 use kernel::scheduler;
 use kernel_config::{KernelConfig, RiscVKernelConfigInterface};
-use pw_time_core::Clock as _;
+use pw_time_core::{Clock as _, Instant};
 
 #[cfg(feature = "timer_mtime")]
 mod mtime;
@@ -23,7 +23,7 @@ mod mtime;
 use mtime::Timer;
 
 #[cfg(feature = "timer_clint")]
-mod clint;
+pub(crate) mod clint;
 #[cfg(feature = "timer_clint")]
 use clint::Timer;
 
@@ -41,8 +41,8 @@ pub struct Clock;
 impl pw_time_core::Clock for Clock {
     const TICKS_PER_SEC: u64 = KernelConfig::MTIME_HZ;
 
-    fn now() -> pw_time_core::Instant<Self> {
-        pw_time_core::Instant::from_ticks(Timer::get_current_monotonic_tick())
+    fn now() -> Instant<Self> {
+        Instant::from_ticks(Timer::get_current_monotonic_tick())
     }
 }
 
