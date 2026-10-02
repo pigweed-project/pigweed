@@ -50,6 +50,8 @@ type GitClient interface {
 	HeadAuthorEmail(ctx context.Context) (string, error)
 	UserEmail(ctx context.Context) (string, error)
 	CheckAmendAllowed(ctx context.Context) error
+	ResolveRemote(ctx context.Context) string
+	ResolveDefaultBranch(ctx context.Context) string
 }
 
 // defaultGitClient implements GitClient by executing commands via an underlying GitRunner.
@@ -115,6 +117,147 @@ func (c *defaultGitClient) runOutput(ctx context.Context, args ...string) (strin
 		return "", fmt.Errorf("git %s failed: %w", cmdStr, err)
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+func isValidRemoteName(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "." {
+		return false
+	}
+	return !strings.Contains(s, "://") && !strings.Contains(s, "/") && !strings.ContainsAny(s, " \t\r\n")
+}
+
+// ResolveRemote resolves the Gerrit git remote name in priority order:
+// 1. git config ghish.gerrit.remote
+// 2. current branch tracking remote (branch.<cur>.remote or @{u} prefix)
+// 3. "origin" if present in `git remote`
+// 4. common Gerrit remotes ("goog", "aosp", "partner") or first remote in `git remote`
+// 5. fallback "origin"
+func (c *defaultGitClient) ResolveRemote(ctx context.Context) string {
+	if c == nil || c.runner == nil {
+		return "origin"
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if v, err := c.runOutput(ctx, "config", "--get", "ghish.gerrit.remote"); err == nil && isValidRemoteName(v) {
+		return strings.TrimSpace(v)
+	}
+
+	if curBranch, err := c.runOutput(ctx, "branch", "--show-current"); err == nil {
+		curBranch = strings.TrimSpace(curBranch)
+		if curBranch != "" && curBranch != "HEAD" && !strings.Contains(curBranch, "://") {
+			if r, err := c.runOutput(ctx, "config", "--get", fmt.Sprintf("branch.%s.remote", curBranch)); err == nil && isValidRemoteName(r) {
+				return strings.TrimSpace(r)
+			}
+		}
+	}
+
+	if upstream, err := c.runOutput(ctx, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
+		upstream = strings.TrimSpace(upstream)
+		if !strings.Contains(upstream, "://") {
+			if rem, _, ok := strings.Cut(upstream, "/"); ok && isValidRemoteName(rem) && rem != "refs" {
+				return rem
+			}
+		}
+	}
+
+	if out, err := c.runOutput(ctx, "remote"); err == nil && strings.TrimSpace(out) != "" {
+		var remotes []string
+		remoteSet := make(map[string]bool)
+		for _, line := range strings.Split(out, "\n") {
+			r := strings.TrimSpace(line)
+			if isValidRemoteName(r) {
+				remotes = append(remotes, r)
+				remoteSet[r] = true
+			}
+		}
+		if len(remotes) > 0 {
+			for _, preferred := range []string{"origin", "goog", "aosp", "partner"} {
+				if remoteSet[preferred] {
+					return preferred
+				}
+			}
+			return remotes[0]
+		}
+	}
+
+	return "origin"
+}
+
+// ResolveDefaultBranch resolves the repository's default upstream branch in priority order:
+// 1. git config ghish.gerrit.defaultbranch
+// 2. current branch's tracked upstream merge target (branch.<cur>.merge when branch.<cur>.remote is set and target != cur)
+// 3. git symbolic-ref refs/remotes/<remote>/HEAD
+// 4. git config init.defaultBranch
+// 5. refs/heads/main, refs/remotes/<remote>/main, and legacy default branch refs
+// 6. fallback "main"
+func (c *defaultGitClient) ResolveDefaultBranch(ctx context.Context) string {
+	if c == nil || c.runner == nil {
+		return "main"
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if v, err := c.runOutput(ctx, "config", "--get", "ghish.gerrit.defaultbranch"); err == nil {
+		v = strings.TrimSpace(v)
+		if v != "" && !strings.Contains(v, "://") {
+			return v
+		}
+	}
+
+	if curBranch, err := c.runOutput(ctx, "branch", "--show-current"); err == nil {
+		curBranch = strings.TrimSpace(curBranch)
+		if curBranch != "" && curBranch != "HEAD" && !strings.Contains(curBranch, "://") {
+			if r, rErr := c.runOutput(ctx, "config", "--get", fmt.Sprintf("branch.%s.remote", curBranch)); rErr == nil && isValidRemoteName(r) {
+				if mergeRef, mErr := c.runOutput(ctx, "config", "--get", fmt.Sprintf("branch.%s.merge", curBranch)); mErr == nil {
+					mergeBranch := strings.TrimPrefix(strings.TrimSpace(mergeRef), "refs/heads/")
+					if mergeBranch != "" && mergeBranch != "HEAD" && mergeBranch != curBranch && !strings.Contains(mergeBranch, "://") {
+						return mergeBranch
+					}
+				}
+			}
+		}
+	}
+
+	remote := c.ResolveRemote(ctx)
+	symRefTarget := fmt.Sprintf("refs/remotes/%s/HEAD", remote)
+	if sym, err := c.runOutput(ctx, "symbolic-ref", symRefTarget); err == nil {
+		sym = strings.TrimSpace(sym)
+		prefix := fmt.Sprintf("refs/remotes/%s/", remote)
+		if strings.HasPrefix(sym, prefix) {
+			if b := strings.TrimPrefix(sym, prefix); b != "" && b != "HEAD" {
+				return b
+			}
+		}
+	}
+
+	if v, err := c.runOutput(ctx, "config", "--get", "init.defaultBranch"); err == nil {
+		v = strings.TrimSpace(v)
+		if v != "" && !strings.Contains(v, "://") {
+			return v
+		}
+	}
+
+	type refCandidate struct {
+		ref    string
+		branch string
+	}
+	candidates := []refCandidate{
+		{ref: "refs/heads/main", branch: "main"},
+		{ref: fmt.Sprintf("refs/remotes/%s/main", remote), branch: "main"},
+		{ref: fmt.Sprintf("refs/remotes/%s/master", remote), branch: "master"}, // inclusive-language: ignore
+		{ref: "refs/heads/master", branch: "master"},                           // inclusive-language: ignore
+	}
+	for _, cand := range candidates {
+		if err := c.Run(ctx, io.Discard, io.Discard, "rev-parse", "--verify", cand.ref); err == nil {
+			return cand.branch
+		}
+	}
+
+	return "main"
 }
 
 func (c *defaultGitClient) CurrentBranch(ctx context.Context) (string, error) {
@@ -222,7 +365,34 @@ func (c *defaultGitClient) StackCommits(ctx context.Context, branch string) ([]S
 	if branch == "" {
 		return nil, fmt.Errorf("cannot list stack commits: branch name is empty")
 	}
-	rangeSpec := fmt.Sprintf("origin/%s..HEAD", branch)
+	remote := c.ResolveRemote(ctx)
+	primaryRef := fmt.Sprintf("%s/%s", remote, branch)
+
+	candidates := []string{
+		primaryRef,
+		fmt.Sprintf("refs/remotes/%s/%s", remote, branch),
+		"HEAD@{upstream}",
+		branch,
+	}
+	baseRef := ""
+	for _, cand := range candidates {
+		if err := c.Run(ctx, io.Discard, io.Discard, "rev-parse", "--verify", cand); err == nil {
+			baseRef = cand
+			break
+		}
+	}
+	if baseRef == "" {
+		return nil, fmt.Errorf(
+			"could not resolve upstream base branch %q on remote %q (tried %s, refs/remotes/%s/%s, HEAD@{upstream}, and %s)\n\n"+
+				"Why: Stack inspection requires a valid upstream reference to bound the commit range and never falls back to walking full repository history.\n"+
+				"Fix: Fetch the remote branch or specify an explicit base branch:\n"+
+				"  git fetch %s %s\n"+
+				"  gh pr create --base <branch> --stack",
+			branch, remote, primaryRef, remote, branch, branch, remote, branch,
+		)
+	}
+
+	rangeSpec := fmt.Sprintf("%s..HEAD", baseRef)
 	var outBuf, errBuf bytes.Buffer
 	if err := c.Run(ctx, &outBuf, &errBuf, "log", "--reverse", "--format=%h%x00%s%x00%B%x1e", rangeSpec); err != nil {
 		if ctx != nil && ctx.Err() != nil {

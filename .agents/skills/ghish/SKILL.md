@@ -70,6 +70,14 @@ Commands:
     exists (use `pr push` to update existing changes).
   - *Stack Guard*: Halts if pushing multiple commits unless `--stack` is
     specified.
+  - *Submodule Guard*: Enforces `gerrit.submodule_policy` (`"allow"`,
+    `"warn-unpushed"`, `"require-pushed"`, or `"forbid-manual-rolls"`, plus
+    automatic detection of Gerrit's `No-Submodule-Changes` submit requirement)
+    before `git push`.
+  - *Multi-Remote & Default Branch*: Automatically resolves non-`origin`
+    remotes (`gerrit.remote` in `.ghish.toml`, `branch.<cur>.remote`, `goog`,
+    `aosp`, `partner`) and default branches (`gerrit.default_branch`, tracked
+    upstream merge branch, `refs/remotes/<remote>/HEAD`, `main`).
   - Flags: `-r, --reviewer <email>`, `-c, --cc <email>`, `--auto`,
     `--trigger [1|2]` (alias `--cq [1|2]`; defaults to `+1` dry run on
     `Commit-Queue` or `Presubmit-Ready`; `2` submits), `-d, --draft` (WIP),
@@ -80,8 +88,8 @@ Commands:
   - *Branch Memory*: Automatically queries Gerrit by `Change-Id` to discover
     the CL's target branch (e.g. sandbox branch), guaranteeing updates land
     on the right branch.
-  - *Stack Guard*: Requires `--stack` if pushing multiple commits ahead of
-    origin.
+  - *Stack & Submodule Guards*: Enforces stack and submodule safety checks
+    before pushing.
   - Supports `--ready` (remove WIP) and all `create` flags.
   - *Smart Fallback*: If pushed with `--trigger` / `--cq` or metadata on an
     already up-to-date commit, `pr push` automatically applies updates via the
@@ -171,11 +179,15 @@ Commands:
 ### 6. Buganizer Issue Management (`./gh issue`)
 - **`./gh issue status`** & **`./gh issue list [--assignee @me|<email>] [--state open|closed|all] [--label priority:P1|type:BUG|component:<id>|hotlist:<id>] [--search "<q>"]`**.
 - **`./gh issue view [<id>|<url>] [--comments] [--json <fields>]`**: View issue
-  (resolves `Bug:`/`Fixed:` trailer from `HEAD` if `<id>` is omitted).
+  (resolves `Bug:`/`Fixed:`/`Fixes:`/`Closes:` trailer from `HEAD` if `<id>` is omitted).
 - **`./gh issue develop <id> [--checkout | -w|--worktree]`**: Create feature
   branch or allocate an isolated warm worktree slot (`./gh wt use --issue <id>`).
-- **`./gh issue create -t "<title>" -b "<body>" [--amend | --commit]`**: Create
-  a Buganizer issue (`--amend` appends `Bug: b/<new-id>` to `HEAD`).
+- **`./gh issue create -t "<title>" -b "<body>" [-C <component-id>] [--amend | --commit]`**:
+  Create a Buganizer issue (`--amend` appends `Bug: b/<new-id>` or configured
+  `issue.trailer_format` to `HEAD` using `git commit --amend --only`). Resolves
+  component ID via `-C`/`-l component:<id>` -> `[issue.path_components]` ->
+  nearest `OWNERS` (`# COMPONENT:` / `# Buganizer component:`) ->
+  `issue.default_component` -> `ghish.componentid` -> profile default.
 - **`./gh issue comment [<id>] -m "<text>"`**, **`./gh issue edit [<id>]`**,
   **`./gh issue close [<id>]`**, **`./gh issue reopen [<id>]`**.
 
@@ -239,10 +251,12 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
    (`git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`), edit the file
    surgically while keeping `Change-Id:` intact, and apply with
    `git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`.
-7. **Link Bugs With Trailers, Never `Fixes #N`**: GitHub's `Fixes #456` does
-   **nothing** on Gerrit. Use `Bug: b/456` or `Fixed: b/456` trailers in the
-   commit message (or `./gh issue create --amend`), and verify with
-   `./gh pr view <id> --json bug,bugs`.
+7. **Link Bugs With Trailers, Never `Fixes #N` or Fabricated Bug IDs**: GitHub's
+   `Fixes #456` does **nothing** on Gerrit. Use `Bug: b/456` or `Fixed: b/456`
+   trailers in the commit message (or `./gh issue create --amend`), and verify
+   with `./gh pr view <id> --json bug,bugs`. **NEVER invent, guess, or
+   placeholder-fill a `Bug:` or `Fixed:` issue number** — omit the trailer
+   entirely if no real issue ID was provided or created.
 8. **Submit Changes, Not Patchsets**: Use `./gh pr merge <id> --cq` (or
    `--auto`) without `/<patchset>` suffixes.
 9. **NEVER Poll CI in an Agent Loop**: Run `./gh pr checks --watch --fail-fast`

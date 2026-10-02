@@ -65,11 +65,47 @@ func (r *RealGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args 
 // Config holds the configuration for the CLI.
 type Config struct {
 	Host          string
+	Remote        string
 	Git           GitRunner
 	CWD           string
 	Profile       ProjectProfile
 	ProjectConfig *ProjectConfig
 	loadedCWD     string
+}
+
+// ResolveRemote determines the active git remote name for this repository.
+func (c *Config) ResolveRemote(ctx context.Context) string {
+	if c == nil {
+		return "origin"
+	}
+	if strings.TrimSpace(c.Remote) != "" {
+		return strings.TrimSpace(c.Remote)
+	}
+	if c.ProjectConfig != nil && strings.TrimSpace(c.ProjectConfig.Gerrit.Remote) != "" {
+		return strings.TrimSpace(c.ProjectConfig.Gerrit.Remote)
+	}
+	if hasProjectConfigFileOnDisk(c.CWD) {
+		if projCfg, err := c.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Gerrit.Remote) != "" {
+			return strings.TrimSpace(projCfg.Gerrit.Remote)
+		}
+	}
+	return c.GitClient().ResolveRemote(ctx)
+}
+
+// ResolveDefaultBranch determines the default target branch for this repository.
+func (c *Config) ResolveDefaultBranch(ctx context.Context) string {
+	if c == nil {
+		return "main"
+	}
+	if c.ProjectConfig != nil && strings.TrimSpace(c.ProjectConfig.Gerrit.DefaultBranch) != "" {
+		return strings.TrimSpace(c.ProjectConfig.Gerrit.DefaultBranch)
+	}
+	if hasProjectConfigFileOnDisk(c.CWD) {
+		if projCfg, err := c.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Gerrit.DefaultBranch) != "" {
+			return strings.TrimSpace(projCfg.Gerrit.DefaultBranch)
+		}
+	}
+	return c.GitClient().ResolveDefaultBranch(ctx)
 }
 
 // LoadProjectConfig loads and caches the declarative ProjectConfig from `.ghish.toml`
@@ -122,8 +158,13 @@ func (c *Config) GetProfile(ctx context.Context) ProjectProfile {
 	}
 	var remoteURL string
 	if c.Git != nil {
-		if val, err := c.GitClient().ConfigGet(ctx, "remote.origin.url"); err == nil {
+		remote := c.ResolveRemote(ctx)
+		if val, err := c.GitClient().ConfigGet(ctx, fmt.Sprintf("remote.%s.url", remote)); err == nil && val != "" {
 			remoteURL = val
+		} else if remote != "origin" {
+			if val, err := c.GitClient().ConfigGet(ctx, "remote.origin.url"); err == nil {
+				remoteURL = val
+			}
 		}
 	}
 	p, err := DetectProfile(remoteURL, c.Host, ProfileFlag)
@@ -491,16 +532,26 @@ func Execute() error {
 // GerritURL returns the Gerrit host URL, detecting it from git config.
 func (c *Config) GerritURL(ctx context.Context) (string, error) {
 	var host string
-	if c.Host != "" {
-		if canon := CanonicalGerritHost(c.Host); strings.HasSuffix(canon, ".googlesource.com") {
+	rawHost := c.Host
+	if rawHost == "" {
+		if projCfg, err := c.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Gerrit.Host) != "" {
+			rawHost = strings.TrimSpace(projCfg.Gerrit.Host)
+		}
+	}
+	if rawHost != "" {
+		if canon := CanonicalGerritHost(rawHost); strings.HasSuffix(canon, ".googlesource.com") {
 			return "https://" + canon + "/a", nil
 		}
-		host = c.Host
+		host = rawHost
 		if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
 			host = "https://" + host
 		}
 	} else {
-		urlStr, err := c.GitClient().ConfigGet(ctx, "remote.origin.url")
+		remote := c.ResolveRemote(ctx)
+		urlStr, err := c.GitClient().ConfigGet(ctx, fmt.Sprintf("remote.%s.url", remote))
+		if (err != nil || urlStr == "") && remote != "origin" {
+			urlStr, err = c.GitClient().ConfigGet(ctx, "remote.origin.url")
+		}
 		if err != nil || urlStr == "" {
 			if defHost := c.GetProfile(ctx).DefaultGerritHost(); defHost != "" {
 				return defHost, nil

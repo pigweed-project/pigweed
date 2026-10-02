@@ -278,6 +278,34 @@ func (c *ChangeContext) ExtractFetchRef(change *gerrit.ChangeInfo, rev gerrit.Re
 	return ExtractFetchRef(change, rev, c.ChangeID)
 }
 
+// ResolveFetchRef fetches the change (requesting ALL_REVISIONS when a specific
+// revision is targeted, or CURRENT_REVISION otherwise), extracts the target
+// revision, and returns the change info along with its git fetch ref.
+func (c *ChangeContext) ResolveFetchRef() (*gerrit.ChangeInfo, string, error) {
+	if c == nil {
+		return nil, "", fmt.Errorf("internal error: ChangeContext is nil")
+	}
+	opt := &gerrit.ChangeOptions{}
+	if c.Revision != "" && c.Revision != "current" {
+		opt.AdditionalFields = []string{"ALL_REVISIONS"}
+	} else {
+		opt.AdditionalFields = []string{"CURRENT_REVISION"}
+	}
+	change, err := c.GetChange(opt)
+	if err != nil {
+		return nil, "", err
+	}
+	revision, err := c.ExtractRevision(change)
+	if err != nil {
+		return nil, "", err
+	}
+	ref, err := c.ExtractFetchRef(change, revision)
+	if err != nil {
+		return nil, "", err
+	}
+	return change, ref, nil
+}
+
 // SetReviewSafe invokes client.Changes.SetReview while safely ignoring the known
 // go-gerrit unmarshaling bug where the "labels" field in ReviewResult fails type
 // assertion on certain Gerrit versions. All genuine API/network errors are preserved.

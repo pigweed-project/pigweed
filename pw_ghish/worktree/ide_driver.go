@@ -57,9 +57,18 @@ func DeterministicProjectUUID(projectName string) string {
 // JetskiIDEDriver manages live fsnotify project files in ~/.gemini/config/projects/.
 type JetskiIDEDriver struct {
 	ProjectsDir           string
+	ProjectPrefix         string
 	Disabled              bool
 	circuitBreakerTripped bool
 	driftReason           string
+}
+
+func (j *JetskiIDEDriver) effectivePrefix() string {
+	pfx := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(j.ProjectPrefix), ":"), "-")
+	if pfx == "" {
+		return "pw"
+	}
+	return pfx
 }
 
 // NewDefaultJetskiIDEDriver returns a JetskiIDEDriver pointing to the active Antigravity/Jetski
@@ -108,6 +117,7 @@ func (j *JetskiIDEDriver) CheckHealth() (ChecklistItem, error) {
 	activeCount := 0
 	archivedCount := 0
 	hasTemplate := false
+	pfx := j.effectivePrefix()
 
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
@@ -124,7 +134,7 @@ func (j *JetskiIDEDriver) CheckHealth() (ChecklistItem, error) {
 		}
 		name, _ := raw["name"].(string)
 		// Canary check: Antigravity language server rewrites corrupt/unrecognized schemas as "Recovered Project"
-		if name == "Recovered Project" && strings.HasPrefix(e.Name(), "pw-") {
+		if name == "Recovered Project" && (strings.HasPrefix(e.Name(), pfx+"-") || strings.HasPrefix(e.Name(), "pw-")) {
 			j.circuitBreakerTripped = true
 			j.driftReason = fmt.Sprintf("IDE rejected %s as 'Recovered Project' (schema drift detected)", e.Name())
 			return ChecklistItem{
@@ -137,7 +147,7 @@ func (j *JetskiIDEDriver) CheckHealth() (ChecklistItem, error) {
 		if _, ok := raw["projectResources"]; ok {
 			hasTemplate = true
 		}
-		if strings.HasPrefix(name, "pw: ") {
+		if strings.HasPrefix(name, pfx+": ") || strings.HasPrefix(name, "pw: ") {
 			if arch, ok := raw["archived"].(bool); ok && arch {
 				archivedCount++
 			} else {
@@ -257,6 +267,7 @@ func (j *JetskiIDEDriver) SyncProject(project *Project, symlinkPath string) erro
 		}
 	}
 
+	pfx := j.effectivePrefix()
 	return SafeModifyJSON(targetFile, 0644, func(existing map[string]any, exists bool) (map[string]any, error) {
 		payload := existing
 		if !exists || payload == nil {
@@ -266,9 +277,9 @@ func (j *JetskiIDEDriver) SyncProject(project *Project, symlinkPath string) erro
 		// Patch only the 4 required fields + ensure TURBO/EAGER permissions
 		payload["id"] = project.JetskiProjectUUID
 		if project.IssueID > 0 {
-			payload["name"] = fmt.Sprintf("pw: b/%d - %s", project.IssueID, project.Name)
+			payload["name"] = fmt.Sprintf("%s: b/%d - %s", pfx, project.IssueID, project.Name)
 		} else {
-			payload["name"] = "pw: " + project.Name
+			payload["name"] = fmt.Sprintf("%s: %s", pfx, project.Name)
 		}
 		payload["archived"] = false
 		payload["projectResources"] = map[string]any{

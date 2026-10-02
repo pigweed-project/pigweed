@@ -110,6 +110,15 @@ func defaultPaths() (poolRoot, projectsDir, primaryRepo string, err error) {
 	}
 	poolRoot = filepath.Join(home, "wrk", "slots")
 	projectsDir = filepath.Join(home, "wrk", "projects")
+
+	// Prefer the current working directory's repository if it contains a .ghish.toml.
+	if cwd, cwdErr := os.Getwd(); cwdErr == nil && pw_ghish.HasProjectConfigFileOnDisk(cwd) {
+		topLevel := pw_ghish.FindGitTopLevelOnDisk(cwd)
+		if _, gitErr := os.Stat(filepath.Join(topLevel, ".git")); gitErr == nil {
+			return poolRoot, projectsDir, topLevel, nil
+		}
+	}
+
 	primaryRepo = filepath.Join(home, "wrk", "pigweed")
 	if _, statErr := os.Stat(primaryRepo); os.IsNotExist(statErr) {
 		// Fall back to current working directory only if it is a valid git repository
@@ -122,6 +131,46 @@ func defaultPaths() (poolRoot, projectsDir, primaryRepo string, err error) {
 	return poolRoot, projectsDir, primaryRepo, nil
 }
 
+// applyRepoProjectConfig populates SlotPrefix, WarmupDriver, and ShortlinkPrefix on State
+// from the primary repository's .ghish.toml / git config if not already set, and syncs
+// ProjectPrefix onto JetskiIDEDriver.
+func (m *Manager) applyRepoProjectConfig(st *State) {
+	if st == nil || st.PrimaryRepo == "" {
+		return
+	}
+	if pcfg, err := pw_ghish.LoadProjectConfig(context.Background(), nil, st.PrimaryRepo); err == nil && pcfg != nil {
+		if st.SlotPrefix == "" && pcfg.Worktree.SlotPrefix != "" {
+			st.SlotPrefix = pcfg.Worktree.SlotPrefix
+		}
+		if st.WarmupDriver == "" && pcfg.Worktree.WarmupDriver != "" {
+			st.WarmupDriver = pcfg.Worktree.WarmupDriver
+		}
+		if st.ShortlinkPrefix == "" && len(pcfg.Gerrit.Shortlinks) > 0 {
+			var keys []string
+			for k := range pcfg.Gerrit.Shortlinks {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			st.ShortlinkPrefix = keys[0]
+		}
+	}
+	if ide, ok := m.IDEDriver.(*JetskiIDEDriver); ok && ide != nil && ide.ProjectPrefix == "" && st.SlotPrefix != "" {
+		ide.ProjectPrefix = st.EffectiveSlotPrefix()
+	}
+}
+
+func (m *Manager) effectiveBuildDriver(st *State) BuildEnvDriver {
+	if st != nil && (st.WarmupDriver == "none" || st.WarmupDriver == "gn") {
+		if m.BuildDriver == nil {
+			return NoopBuildDriver{Mode: st.WarmupDriver}
+		}
+		if _, isBazel := m.BuildDriver.(*BazelDriver); isBazel {
+			return NoopBuildDriver{Mode: st.WarmupDriver}
+		}
+	}
+	return m.BuildDriver
+}
+
 // loadOrInitState loads State from Store or initializes default state in memory.
 func (m *Manager) loadOrInitState(defaultSlots int) (*State, error) {
 	st, err := m.Store.Load()
@@ -132,6 +181,7 @@ func (m *Manager) loadOrInitState(defaultSlots int) (*State, error) {
 		if st.SlotCount <= 0 {
 			st.SlotCount = 10
 		}
+		m.applyRepoProjectConfig(st)
 		return st, nil
 	}
 	if !os.IsNotExist(err) {
@@ -144,7 +194,9 @@ func (m *Manager) loadOrInitState(defaultSlots int) (*State, error) {
 	if defaultSlots <= 0 {
 		defaultSlots = 10
 	}
-	return NewEmptyState(poolRoot, projectsDir, primaryRepo, defaultSlots), nil
+	st = NewEmptyState(poolRoot, projectsDir, primaryRepo, defaultSlots)
+	m.applyRepoProjectConfig(st)
+	return st, nil
 }
 
 // Init idempotently examines and converges the worktree slot pool, symlinks, hooks, and build caches.
@@ -222,7 +274,7 @@ func (m *Manager) Init(slotCount int, checkOnly bool) ([]ChecklistItem, error) {
 			st.PrimaryRepo: true,
 		}
 		for i := 1; i <= st.SlotCount; i++ {
-			slotName := fmt.Sprintf("pw-%02d", i)
+			slotName := st.SlotName(i)
 			slotPath := filepath.Join(st.PoolRoot, slotName)
 			validPaths[slotPath] = true
 
@@ -308,8 +360,8 @@ func (m *Manager) Init(slotCount int, checkOnly bool) ([]ChecklistItem, error) {
 		}
 
 		// 7. Build Environment & Bazel Cache Driver Check
-		if m.BuildDriver != nil {
-			buildItems, err := m.BuildDriver.CheckAndConfigure(!checkOnly, validPaths)
+		if buildDriver := m.effectiveBuildDriver(st); buildDriver != nil {
+			buildItems, err := buildDriver.CheckAndConfigure(!checkOnly, validPaths)
 			if err != nil {
 				return err
 			}
@@ -351,7 +403,7 @@ func (m *Manager) Use(projectName, branchName, clRef string, mode LeaseMode, age
 
 		// Ensure slot entries exist in state map
 		for i := 1; i <= st.SlotCount; i++ {
-			sName := fmt.Sprintf("pw-%02d", i)
+			sName := st.SlotName(i)
 			if _, exists := st.Slots[sName]; !exists {
 				st.Slots[sName] = &Slot{
 					Name: sName,
@@ -453,9 +505,9 @@ func (m *Manager) allocateAndMountLocked(
 	var targetSlot *Slot
 	var swappedOutProject string
 
-	// 1. Look for an AVAILABLE slot (ordered pw-01 .. pw-N)
+	// 1. Look for an AVAILABLE slot (ordered <prefix>-01 .. <prefix>-N)
 	for i := 1; i <= st.SlotCount; i++ {
-		sName := fmt.Sprintf("pw-%02d", i)
+		sName := st.SlotName(i)
 		s := st.Slots[sName]
 		if s.Project == "" {
 			targetSlot = s
@@ -910,7 +962,7 @@ func (m *Manager) List(ctx context.Context) (*DashboardReport, error) {
 			}
 			isDirty := dirtyMap[proj.Name]
 			ahead := aheadMap[proj.Name]
-			badge, details, action := ComputeStatusBadgeWithGerritState(isDirty, ahead, proj.LastKnownChangeID, cs, gerritOffline)
+			badge, details, action := ComputeStatusBadgeWithShortlink(isDirty, ahead, proj.LastKnownChangeID, cs, gerritOffline, st.ShortlinkPrefix)
 
 			issueID := proj.IssueID
 			if issueID == 0 {
@@ -1012,10 +1064,11 @@ func (m *Manager) GarbageCollect(dryRun bool) (GCReport, error) {
 		for _, slot := range st.Slots {
 			validPaths[slot.Path] = true
 		}
-		if m.BuildDriver == nil {
+		buildDriver := m.effectiveBuildDriver(st)
+		if buildDriver == nil {
 			return nil
 		}
-		rep, gcErr := m.BuildDriver.GarbageCollect(dryRun, validPaths)
+		rep, gcErr := buildDriver.GarbageCollect(dryRun, validPaths)
 		report = rep
 		return gcErr
 	})

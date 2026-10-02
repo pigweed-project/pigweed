@@ -143,12 +143,34 @@ message, pass ``--amend`` to ``./gh issue create``:
 ``./gh issue create --amend`` performs two actions atomically:
 
 1. Creates the issue in Buganizer and prints the new issue ID and URL.
-2. Appends ``Bug: b/<new-id>`` to your current ``HEAD`` commit message while
-   preserving your existing ``Change-Id`` and commit description.
+2. Appends ``Bug: b/<new-id>`` (or your repository's configured
+   ``issue.trailer_format``, such as ``Fixed: {id}`` or ``Bug: {id}``) to your
+   current ``HEAD`` commit message using ``git commit --amend --only`` while
+   preserving your existing ``Change-Id``, commit description, and any staged
+   index changes.
 
 If you have staged changes but have not created a commit yet, use ``--commit``
 instead of ``--amend`` to create a new Git commit using the issue title and
-``Bug: b/<new-id>`` trailer.
+configured bug trailer.
+
+Automatic Buganizer component resolution
+----------------------------------------
+When creating or listing issues, ``pw_ghish`` resolves the target Buganizer
+component ID using a 6-tier priority order:
+
+1. Explicit CLI flag: ``-C <id>`` / ``--component <id>`` or ``-l component:<id>``.
+2. ``[issue.path_components]`` in ``.ghish.toml`` (or ``git config
+   ghish.issue.pathComponents.<prefix>``): matches modified files in ``HEAD`` or
+   the current working directory against configured path prefixes or globs
+   (longest match wins).
+3. Nearest ``OWNERS`` file (when ``issue.use_owners_components = true``, the
+   default): walks upward from modified files or the current working directory
+   to the repository root looking for ``# COMPONENT: <id>`` or
+   ``# Buganizer component: <id>``.
+4. ``issue.default_component`` in ``.ghish.toml`` (or ``git config
+   ghish.issue.defaultComponent``).
+5. Legacy ``git config ghish.componentid``.
+6. Active ``ProjectProfile.DefaultComponentID()``.
 
 ---------------------------------
 Step 3: Working in branch context
@@ -398,10 +420,11 @@ API gateway requires a Google Cloud consumer project ID
 itself is free / $0).
 
 ``pw_ghish`` automatically resolves a quota project from your environment
-(``GHISH_QUOTA_PROJECT``, ``git config ghish.quotaproject``, or ``gcloud``
-configuration). If no quota project is detected, enable the Issue Tracker API
-on any Google Cloud project you have access to and configure ``gh-ish`` to use
-it:
+(``GHISH_QUOTA_PROJECT``, ``issue.quota_project`` in ``.ghish.toml``,
+``git config ghish.issue.quotaProject``, ``git config ghish.quotaproject``, or
+``gcloud`` configuration). If no quota project is detected, enable the Issue
+Tracker API on any Google Cloud project you have access to and configure
+``gh-ish`` to use it:
 
 .. code-block:: console
 
@@ -409,4 +432,4 @@ it:
    $ gcloud services enable issuetracker.googleapis.com --project=<gcp-project-id>
 
    # 2. Configure gh-ish to use that project for rate-limit quota:
-   $ git config --global ghish.quotaproject <gcp-project-id>
+   $ git config --global ghish.issue.quotaProject <gcp-project-id>

@@ -349,6 +349,24 @@ func ConfiguredIssueTrackerQuotaProject(ctx context.Context, _ string) string {
 		}
 	}
 
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var runner GitRunner = DefaultGitRunner
+	if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil {
+		if cfg.ProjectConfig != nil && strings.TrimSpace(cfg.ProjectConfig.Issue.QuotaProject) != "" {
+			return strings.TrimSpace(cfg.ProjectConfig.Issue.QuotaProject)
+		}
+		if hasProjectConfigFileOnDisk(cfg.CWD) {
+			if projCfg, err := cfg.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Issue.QuotaProject) != "" {
+				return strings.TrimSpace(projCfg.Issue.QuotaProject)
+			}
+		}
+		if cfg.Git != nil {
+			runner = cfg.Git
+		}
+	}
+
 	quotaProjectMu.Lock()
 	if cachedQuotaProject != "" {
 		v := cachedQuotaProject
@@ -357,19 +375,15 @@ func ConfiguredIssueTrackerQuotaProject(ctx context.Context, _ string) string {
 	}
 	quotaProjectMu.Unlock()
 
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	var runner GitRunner = DefaultGitRunner
-	if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil && cfg.Git != nil {
-		runner = cfg.Git
-	}
-	if v, err := NewGitClient(runner).ConfigGet(ctx, "ghish.quotaproject"); err == nil {
-		if v = strings.TrimSpace(v); v != "" {
-			quotaProjectMu.Lock()
-			cachedQuotaProject = v
-			quotaProjectMu.Unlock()
-			return v
+	gitClient := NewGitClient(runner)
+	for _, key := range []string{"ghish.issue.quotaproject", "ghish.bugs.quotaproject", "ghish.quotaproject"} {
+		if val, err := gitClient.ConfigGet(ctx, key); err == nil {
+			if v := strings.TrimSpace(val); v != "" {
+				quotaProjectMu.Lock()
+				cachedQuotaProject = v
+				quotaProjectMu.Unlock()
+				return v
+			}
 		}
 	}
 
@@ -594,7 +608,14 @@ var NewIssueTrackerClientForCommand = func(ctx context.Context, cmd *cobra.Comma
 			modeReason)
 	}
 	profile := cfg.GetProfile(ctx)
-	return NewIssueTrackerClient(profile.IssueTrackerAPIEndpoint(), nil), nil
+	client := NewIssueTrackerClient(profile.IssueTrackerAPIEndpoint(), nil)
+	if projCfg, err := cfg.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Issue.QuotaProject) != "" {
+		qp := strings.TrimSpace(projCfg.Issue.QuotaProject)
+		client.QuotaProjectProvider = func(context.Context, string) string {
+			return qp
+		}
+	}
+	return client, nil
 }
 
 func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, reqBody, respBody any) error {

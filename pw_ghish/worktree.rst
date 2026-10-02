@@ -419,9 +419,14 @@ To keep builds fast while giving each task an intuitive name, ``./gh wt``
 decouples the physical workspace path from the semantic project name:
 
 1. **Physical Worktree Pool (Slot Layer)**: A fixed pool of ``N`` Git worktrees
-   (by default 10) resides at ``~/wrk/slots/pw-01`` through
-   ``~/wrk/slots/pw-10``. Because the physical path ``~/wrk/slots/pw-XX`` is
-   reused across tasks, its Bazel output base and analysis cache remain warm.
+   (by default 10) resides at ``~/wrk/slots/<slot_prefix>01`` through
+   ``~/wrk/slots/<slot_prefix>10`` (default prefix ``pw-``, configurable via
+   ``[worktree] slot_prefix`` in ``.ghish.toml`` or derived from the primary
+   repository name). Because the physical path ``~/wrk/slots/<slot_prefix>XX``
+   is reused across tasks, its Bazel output base and analysis cache remain warm.
+   Non-Bazel repositories can set ``warmup_driver = "none"`` in ``[worktree]``
+   (or rely on automatic ``MODULE.bazel`` / ``WORKSPACE`` detection) to skip
+   Bazel cache configuration.
 2. **Semantic Project Symlinks (Project Layer)**: Human-readable symbolic links
    reside at ``~/wrk/projects/<project-name>`` and point to the assigned
    physical slot (for example, ``~/wrk/projects/rpc-buffer-fix ->

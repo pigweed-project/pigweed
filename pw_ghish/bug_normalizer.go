@@ -26,11 +26,13 @@ var (
 	// - https://issues.pigweed.dev/issues/<id>
 	// - https://g-issues.pigweed.dev/issues/<id>
 	// - https://issues.fuchsia.dev/issues/<id>
+	// - https://g-issues.fuchsia.dev/issues/<id>
 	// - https://issuetracker.google.com/issues/<id>
+	// - internal Buganizer and Partner Issue Tracker URLs
 	// - https://bugs.chromium.org/p/<project>/issues/detail?id=<id>
-	issueTrackerURLRegex     = regexp.MustCompile(`^https?://(?:(?:g-)?issues\.pigweed\.dev|issues\.fuchsia\.dev|issuetracker\.google\.com)/issues/(\d+)(?:[/?#].*)?$`)
-	publicChromiumIssueRegex = regexp.MustCompile(`^https?://bugs\.chromium\.org/p/[^/]+/issues/detail\?id=(\d+)(?:[&#].*)?$`)
-	shorthandBugRegex        = regexp.MustCompile(`^(?:b/|b:|pwbug(?:\.dev)?/|fxb/|fxbug\.dev/)(\d+)$`)
+	issueTrackerURLRegex     = regexp.MustCompile(`^https?://(?:(?:g-)?issues\.(?:fuchsia|pigweed)\.dev|(?:g-)?issues\.chromium\.org|crbug\.com|issuetracker\.google\.com|b\.corp\.` + `google\.com|partnerissuetracker\.corp\.` + `google\.com)/(?:issues/)?(\d+)(?:[/?#].*)?$`)
+	publicChromiumIssueRegex = regexp.MustCompile(`^https?://(?:bugs|(?:g-)?issues)\.chromium\.org/p/[^/]+/issues/detail\?id=(\d+)(?:[&#].*)?$`)
+	shorthandBugRegex        = regexp.MustCompile(`^(?:b/|b:|pwbug(?:\.dev)?/|fxb/|fxbug\.dev/|crbug(?:\.com)?/)(\d+)$`)
 	pureNumericBugRegex      = regexp.MustCompile(`^(\d+)$`)
 
 	bugTrailerRegex = regexp.MustCompile(`(?i)^(bug|bugs|bugfix|issue|issues)\s*:\s*(.+)$`)
@@ -78,14 +80,38 @@ func ParseIssueID(token string) (int64, error) {
 	return id, nil
 }
 
+// FormatBugIDWithFormat formats a numeric Buganizer issue ID according to a
+// configured trailer_format template (such as "Bug: b/{id}", "Bug: {id}",
+// or "Bug: fxbug.dev/{id}"). When trailerFormat is empty, it defaults to "b/<id>".
+func FormatBugIDWithFormat(id int64, trailerFormat string) string {
+	valTemplate := "b/{id}"
+	trimmed := strings.TrimSpace(trailerFormat)
+	if trimmed != "" {
+		if _, afterColon, hasColon := strings.Cut(trimmed, ":"); hasColon {
+			afterColon = strings.TrimSpace(afterColon)
+			if strings.Contains(afterColon, "{id}") {
+				valTemplate = afterColon
+			}
+		} else if strings.Contains(trimmed, "{id}") {
+			valTemplate = trimmed
+		}
+	}
+	return strings.ReplaceAll(valTemplate, "{id}", strconv.FormatInt(id, 10))
+}
+
 // NormalizeBugID attempts to extract a canonical bug ID (e.g. "b/12345") from a token.
 // Returns the normalized bug ID if matched, or the original token if not.
 func NormalizeBugID(token string) (string, bool) {
+	return NormalizeBugIDWithFormat(token, "")
+}
+
+// NormalizeBugIDWithFormat extracts a bug ID from token and formats it using trailerFormat.
+func NormalizeBugIDWithFormat(token string, trailerFormat string) (string, bool) {
 	id, ok := extractBugNumber(token, 3)
 	if !ok {
 		return strings.TrimSpace(token), false
 	}
-	return fmt.Sprintf("b/%d", id), true
+	return FormatBugIDWithFormat(id, trailerFormat), true
 }
 
 // bugChainSeparatorRegex splits a trailer value into candidate bug tokens.
@@ -99,6 +125,10 @@ var bugChainSeparatorRegex = regexp.MustCompile(`[\s,;]+`)
 // design doc" is a sentence, and picking the references out of it would
 // invent a list the author did not write.
 func bugChainIDs(raw string) []string {
+	return bugChainIDsWithFormat(raw, "")
+}
+
+func bugChainIDsWithFormat(raw string, trailerFormat string) []string {
 	tokens := bugChainSeparatorRegex.Split(strings.TrimSpace(raw), -1)
 
 	var ids []string
@@ -108,7 +138,7 @@ func bugChainIDs(raw string) []string {
 		if tok == "" {
 			continue
 		}
-		norm, ok := NormalizeBugID(tok)
+		norm, ok := NormalizeBugIDWithFormat(tok, trailerFormat)
 		if !ok {
 			return nil
 		}
@@ -124,6 +154,11 @@ func bugChainIDs(raw string) []string {
 // Formats matching IDs into canonical "b/<id>" separated by ", ".
 // If given "none", returns "None". Unmatched strings are preserved cleanly.
 func NormalizeBugChain(raw string) string {
+	return NormalizeBugChainWithFormat(raw, "")
+}
+
+// NormalizeBugChainWithFormat normalizes a raw bug string using the specified trailerFormat.
+func NormalizeBugChainWithFormat(raw string, trailerFormat string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return ""
@@ -133,7 +168,7 @@ func NormalizeBugChain(raw string) string {
 		return "None"
 	}
 
-	ids := bugChainIDs(trimmed)
+	ids := bugChainIDsWithFormat(trimmed, trailerFormat)
 	if len(ids) == 0 {
 		// Free text such as "see the design doc". Leave the author's
 		// sentence exactly as it is.
@@ -183,6 +218,12 @@ func parseBugTrailer(trailerLine string) (key, value string, closes, ok bool) {
 // style rather than function -- and Pigweed's house style is `Bug:` or
 // `Fixed:`.
 func NormalizeTrailer(trailerLine string) string {
+	return NormalizeTrailerWithFormat(trailerLine, "")
+}
+
+// NormalizeTrailerWithFormat normalizes a bug or fix trailer line using a
+// project-configured trailerFormat (such as "Bug: b/{id}" or "Bug: {id}").
+func NormalizeTrailerWithFormat(trailerLine string, trailerFormat string) string {
 	trailerLine = strings.TrimSpace(trailerLine)
 	_, value, closes, ok := parseBugTrailer(trailerLine)
 	if !ok {
@@ -191,6 +232,21 @@ func NormalizeTrailer(trailerLine string) string {
 	key := "Bug"
 	if closes {
 		key = "Fixed"
+	} else if trimmedFmt := strings.TrimSpace(trailerFormat); trimmedFmt != "" {
+		if kPart, _, hasColon := strings.Cut(trimmedFmt, ":"); hasColon && strings.TrimSpace(kPart) != "" {
+			key = strings.TrimSpace(kPart)
+		}
 	}
-	return fmt.Sprintf("%s: %s", key, NormalizeBugChain(value))
+	return fmt.Sprintf("%s: %s", key, NormalizeBugChainWithFormat(value, trailerFormat))
+}
+
+// NormalizeBugFooters rewrites bug and fix trailers in a commit message's
+// trailer block to match trailerFormat while leaving prose body lines and
+// non-bug trailers untouched.
+func NormalizeBugFooters(commitMsg string, trailerFormat string) string {
+	msg := ParseCommitMessage(commitMsg)
+	if !msg.NormalizeBugFooters(trailerFormat) {
+		return commitMsg
+	}
+	return msg.Format()
 }

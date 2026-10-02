@@ -61,6 +61,30 @@ type BuildEnvDriver interface {
 	GarbageCollect(dryRun bool, validWorkspacePaths map[string]bool) (GCReport, error)
 }
 
+// NoopBuildDriver skips Bazel-specific ~/.bazelrc hooks and output_base GC
+// for repositories configured with warmup_driver = "none" or "gn".
+type NoopBuildDriver struct {
+	Mode string
+}
+
+func (n NoopBuildDriver) CheckAndConfigure(fix bool, validWorkspacePaths map[string]bool) ([]ChecklistItem, error) {
+	mode := strings.TrimSpace(n.Mode)
+	if mode == "" {
+		mode = "none"
+	}
+	return []ChecklistItem{
+		{
+			Category: "Build Cache Driver",
+			Status:   ChecklistOK,
+			Summary:  fmt.Sprintf("Skipped Bazel cache setup (warmup_driver=%s)", mode),
+		},
+	}, nil
+}
+
+func (n NoopBuildDriver) GarbageCollect(dryRun bool, validWorkspacePaths map[string]bool) (GCReport, error) {
+	return GCReport{DryRun: dryRun}, nil
+}
+
 // BazelDriver manages the non-invasive try-import .bazelrc snippet and _bazel_$USER output base GC.
 type BazelDriver struct {
 	HomeDir        string

@@ -433,3 +433,62 @@ func TestFreshProjectAtOriginMainIsCleanSyncedNotCLMerged(t *testing.T) {
 			BadgeCleanSynced, mounted.StatusBadge, mounted.Details)
 	}
 }
+
+func TestManager_CustomSlotPrefixWarmupDriverAndShortlink(t *testing.T) {
+	mgr, mockGit, mockGerrit, tmpDir := setupTestManager(t, 2)
+	primaryRepo := filepath.Join(tmpDir, "pigweed")
+	tomlContent := `
+[gerrit]
+host = "https://acme-internal-review.googlesource.com"
+project = "acme-fw"
+shortlinks = { "acmerev" = "https://acme-internal-review.googlesource.com/c/acme-fw/+/{id}" }
+
+[worktree]
+slot_prefix = "acme-wt-"
+warmup_driver = "none"
+`
+	if err := os.WriteFile(filepath.Join(primaryRepo, ".ghish.toml"), []byte(tomlContent), 0644); err != nil {
+		t.Fatalf("failed to write .ghish.toml: %v", err)
+	}
+
+	items, err := mgr.Init(2, false)
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	foundNoopBuild := false
+	for _, item := range items {
+		if item.Category == "Build Cache Driver" && strings.Contains(item.Summary, "warmup_driver=none") {
+			foundNoopBuild = true
+		}
+	}
+	if !foundNoopBuild {
+		t.Errorf("expected Build Cache Driver checklist item with warmup_driver=none, got: %+v", items)
+	}
+
+	res, err := mgr.Use("spi-driver", "", "", LeaseModeWrite, "agent-1")
+	if err != nil {
+		t.Fatalf("Use failed: %v", err)
+	}
+	if res.Slot != "acme-wt-01" {
+		t.Errorf("expected slot 'acme-wt-01', got %q", res.Slot)
+	}
+
+	cid := "I9999999999999999999999999999999999999999"
+	mockGit.ChangeIDs[res.SlotPath] = cid
+	mockGerrit.Statuses[cid] = ChangeStatus{
+		ChangeID: cid,
+		Number:   88123,
+		Status:   "MERGED",
+	}
+
+	report, err := mgr.List(context.Background())
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(report.MountedProjects) != 1 {
+		t.Fatalf("expected 1 mounted project, got %d", len(report.MountedProjects))
+	}
+	if !strings.Contains(report.MountedProjects[0].Details, "acmerev/88123 (Merged)") {
+		t.Errorf("expected details to contain 'acmerev/88123 (Merged)', got %q", report.MountedProjects[0].Details)
+	}
+}

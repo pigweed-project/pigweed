@@ -129,93 +129,7 @@ var cherryPickFooterRegex = regexp.MustCompile(`^\(cherry picked from commit [0-
 // while `Fixed:` stays `Fixed:`. Rewriting keys during an unrelated body edit
 // silently changes a commit message the caller did not ask to change.
 func ExtractTrailers(commitMsg string) []string {
-	normalized := strings.ReplaceAll(commitMsg, "\r\n", "\n")
-	lines := strings.Split(normalized, "\n")
-
-	// The subject is never a trailer, even though it usually has the exact
-	// shape of one ("pw_foo: Add bar").
-	if len(lines) < 2 {
-		return nil
-	}
-
-	var trailers []string
-	for _, paragraph := range splitParagraphs(lines[1:]) {
-		if found, ok := paragraphTrailers(paragraph); ok {
-			trailers = append(trailers, found...)
-		}
-	}
-	return trailers
-}
-
-// paragraphRanges returns the [start, end) line index ranges of the
-// blank-line-delimited paragraphs in lines, skipping empty ones.
-//
-// Ranges rather than copies, because editing a commit message in place
-// requires knowing *where* a paragraph is. Rebuilding a message from copied
-// paragraphs would silently reflow it, collapsing runs of blank lines the
-// author put there.
-func paragraphRanges(lines []string) [][2]int {
-	var ranges [][2]int
-	start := -1
-	for i, l := range lines {
-		if strings.TrimSpace(l) == "" {
-			if start >= 0 {
-				ranges = append(ranges, [2]int{start, i})
-				start = -1
-			}
-			continue
-		}
-		if start < 0 {
-			start = i
-		}
-	}
-	if start >= 0 {
-		ranges = append(ranges, [2]int{start, len(lines)})
-	}
-	return ranges
-}
-
-// splitParagraphs groups lines into blank-line-delimited paragraphs, dropping
-// empty ones.
-func splitParagraphs(lines []string) [][]string {
-	ranges := paragraphRanges(lines)
-	if len(ranges) == 0 {
-		return nil
-	}
-	paragraphs := make([][]string, 0, len(ranges))
-	for _, r := range ranges {
-		paragraphs = append(paragraphs, lines[r[0]:r[1]])
-	}
-	return paragraphs
-}
-
-// paragraphTrailers reports whether a paragraph is a trailer block, and if so
-// returns its trailer lines with continuations folded into the trailer they
-// belong to.
-func paragraphTrailers(paragraph []string) ([]string, bool) {
-	var trailers []string
-	sawTrailer := false
-
-	for _, l := range paragraph {
-		trimmed := strings.TrimSpace(strings.TrimRight(l, "\r"))
-		switch {
-		// An indented line continues the previous trailer. This is checked
-		// first so that an indented `key: value` stays a continuation instead
-		// of being mistaken for a new trailer and losing its indentation.
-		case len(trailers) > 0 && (strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")):
-			trailers[len(trailers)-1] += "\n" + strings.TrimRight(l, "\r")
-		case trailerRegex.MatchString(trimmed):
-			trailers = append(trailers, normalizeTrailerValue(trimmed))
-			sawTrailer = true
-		case cherryPickFooterRegex.MatchString(trimmed):
-			trailers = append(trailers, trimmed)
-		default:
-			// Ordinary prose: this paragraph is body text, not trailers.
-			return nil, false
-		}
-	}
-
-	return trailers, sawTrailer
+	return ParseCommitMessage(commitMsg).ExtractTrailers()
 }
 
 // normalizeTrailerValue canonicalizes the value of a bug-style trailer while
@@ -303,82 +217,11 @@ func MentionsTrailerKey(text, key string) bool {
 // a `Key: value` line, since that can only be a programming mistake and
 // silently returning the message unchanged would hide it.
 func UpsertTrailer(commitMsg, trailerLine string) (string, error) {
-	key, ok := trailerKey(trailerLine)
-	if !ok {
-		return "", fmt.Errorf("internal error: %q is not a `Key: value` trailer", trailerLine)
+	msg := ParseCommitMessage(commitMsg)
+	if err := msg.UpsertTrailer(trailerLine); err != nil {
+		return "", err
 	}
-
-	normalized := strings.ReplaceAll(commitMsg, "\r\n", "\n")
-	body := strings.TrimRight(normalized, "\n")
-	if body == "" {
-		return trailerLine + "\n", nil
-	}
-
-	lines := strings.Split(body, "\n")
-	// The subject is never a trailer, even when it has the exact shape of one.
-	rest := lines[1:]
-
-	replaceAt := -1
-	drop := make(map[int]bool)
-	lastTrailerBlockEnd := -1
-
-	for _, r := range paragraphRanges(rest) {
-		paragraph := rest[r[0]:r[1]]
-		if _, isTrailerBlock := paragraphTrailers(paragraph); !isTrailerBlock {
-			continue
-		}
-		lastTrailerBlockEnd = r[1]
-
-		for i := r[0]; i < r[1]; i++ {
-			k, isTrailer := trailerKey(strings.TrimSpace(rest[i]))
-			if !isTrailer || !strings.EqualFold(k, key) {
-				continue
-			}
-			if replaceAt < 0 {
-				replaceAt = i
-			} else {
-				drop[i] = true
-			}
-			// Continuation lines belong to this trailer and go with it;
-			// stranding them under a new value would leave a fragment of the
-			// old one behind.
-			for j := i + 1; j < r[1]; j++ {
-				if !strings.HasPrefix(rest[j], " ") && !strings.HasPrefix(rest[j], "\t") {
-					break
-				}
-				drop[j] = true
-			}
-		}
-	}
-
-	out := make([]string, 0, len(lines)+2)
-	out = append(out, lines[0])
-	for i, l := range rest {
-		switch {
-		case drop[i]:
-			continue
-		case i == replaceAt:
-			out = append(out, trailerLine)
-		default:
-			out = append(out, l)
-		}
-	}
-
-	if replaceAt < 0 {
-		if lastTrailerBlockEnd < 0 {
-			// No trailer block at all, so start one.
-			out = append(out, "", trailerLine)
-		} else {
-			// No lines were dropped in this branch, so `rest` and `out`
-			// indices differ only by the subject line.
-			at := lastTrailerBlockEnd + 1
-			out = append(out, "")
-			copy(out[at+1:], out[at:])
-			out[at] = trailerLine
-		}
-	}
-
-	return strings.Join(out, "\n") + "\n", nil
+	return msg.Format(), nil
 }
 
 // MergeTrailers appends any trailers from origTrailers whose key is not already defined in newBody.
@@ -746,7 +589,7 @@ To install the hook and generate a Change-Id:
 	return fmt.Errorf("HEAD commit is missing required Gerrit Change-Id")
 }
 
-// CountCommitsAhead returns the number of commits in origin/<branch>..HEAD.
+// CountCommitsAhead returns the number of commits in <remote>/<branch>..HEAD.
 // If the remote branch cannot be verified or rev-list fails, it returns 0 and the error.
 func CountCommitsAhead(ctx context.Context, git GitRunner, branch string) (int, error) {
 	if git == nil {
@@ -756,7 +599,15 @@ func CountCommitsAhead(ctx context.Context, git GitRunner, branch string) (int, 
 	if branch == "" {
 		return 0, fmt.Errorf("cannot count commits ahead: branch name is empty")
 	}
-	targetRef := fmt.Sprintf("origin/%s", branch)
+	remote := "origin"
+	if gc, ok := git.(GitClient); ok {
+		if r := gc.ResolveRemote(ctx); r != "" {
+			remote = r
+		}
+	} else if r := NewGitClient(git).ResolveRemote(ctx); r != "" {
+		remote = r
+	}
+	targetRef := fmt.Sprintf("%s/%s", remote, branch)
 	var verifyErr bytes.Buffer
 	if err := git.Run(ctx, io.Discard, &verifyErr, "rev-parse", "--verify", targetRef); err != nil {
 		errStr := strings.TrimSpace(verifyErr.String())
@@ -766,7 +617,7 @@ func CountCommitsAhead(ctx context.Context, git GitRunner, branch string) (int, 
 		return 0, fmt.Errorf("git rev-parse --verify %s failed: %w", targetRef, err)
 	}
 	var outBuf, listErr bytes.Buffer
-	rangeSpec := fmt.Sprintf("origin/%s..HEAD", branch)
+	rangeSpec := fmt.Sprintf("%s/%s..HEAD", remote, branch)
 	if err := git.Run(ctx, &outBuf, &listErr, "rev-list", "--count", rangeSpec); err != nil {
 		errStr := strings.TrimSpace(listErr.String())
 		if errStr != "" {
@@ -824,7 +675,7 @@ func isChangeIdentifier(arg string) bool {
 // 1. HEAD commit for a Gerrit Change-Id footer.
 // 2. branch.<currentBranch>.gerrit-change-id in git config.
 // 3. branch name encoding a change number (e.g. 472267, cl/472267, change-472267).
-// 4. recent commits ahead of origin/main for a Gerrit Change-Id footer.
+// 4. recent commits ahead of <remote>/<defaultBranch> for a Gerrit Change-Id footer.
 func ResolveActiveChangeID(ctx context.Context, cfg *Config) (string, error) {
 	if cfg == nil || cfg.Git == nil {
 		return "", fmt.Errorf("no change ID specified and git runner not initialized")
@@ -836,7 +687,8 @@ func ResolveActiveChangeID(ctx context.Context, cfg *Config) (string, error) {
 		return "", fmt.Errorf("failed to determine current branch: %w", err)
 	}
 
-	if currentBranch == "main" {
+	defBranch := cfg.ResolveDefaultBranch(ctx)
+	if currentBranch == "main" || (defBranch != "" && currentBranch == defBranch) {
 		if count, err := git.CountCommitsAhead(ctx, currentBranch); err == nil && count == 0 {
 			return "", fmt.Errorf("no change ID specified and current branch %q is synced with origin (no active change).\n\n"+
 				"To inspect or check out existing changes:\n"+
@@ -875,8 +727,9 @@ func ResolveActiveChangeID(ctx context.Context, cfg *Config) (string, error) {
 		}
 	}
 
-	// 4. Check recent commits ahead of origin/main
-	if id := findChangeIDInCommitRange(ctx, git, "origin/main..HEAD"); id != "" {
+	// 4. Check recent commits ahead of <remote>/<defaultBranch>
+	remote := cfg.ResolveRemote(ctx)
+	if id := findChangeIDInCommitRange(ctx, git, fmt.Sprintf("%s/%s..HEAD", remote, defBranch)); id != "" {
 		return id, nil
 	}
 
@@ -954,8 +807,10 @@ func ResolveTargetChangeID(ctx context.Context, cmd *cobra.Command, args []strin
 				}
 			}
 
-			// Inspect recent commits on branch ahead of origin/main
-			if id := findChangeIDInCommitRange(ctx, git, fmt.Sprintf("origin/main..%s", refTarget)); id != "" {
+			// Inspect recent commits on branch ahead of <remote>/<defaultBranch>
+			remote := cfg.ResolveRemote(ctx)
+			defBranch := cfg.ResolveDefaultBranch(ctx)
+			if id := findChangeIDInCommitRange(ctx, git, fmt.Sprintf("%s/%s..%s", remote, defBranch, refTarget)); id != "" {
 				return id, nil
 			}
 

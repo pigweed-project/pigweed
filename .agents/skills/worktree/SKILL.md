@@ -9,13 +9,13 @@ Pigweed developers and AI agents use `./gh wt` (`pw_ghish/worktree`) to juggle m
 
 ## Core Concepts
 
-1. **Fixed Warm Slots (`~/wrk/slots/pw-01..N`):**
-   Physical Git worktrees live at fixed paths so their Bazel MD5 `output_base` hashes never change. Every slot keeps its own warm Bazel JVM server and Skyframe analysis graph.
+1. **Fixed Warm Slots (`~/wrk/slots/<slot_prefix>01..N`):**
+   Physical Git worktrees live at fixed paths (default prefix `pw-`, configurable via `[worktree] slot_prefix` in `.ghish.toml` or derived from the repository name) so their Bazel MD5 `output_base` hashes never change. Every slot keeps its own warm Bazel JVM server and Skyframe analysis graph (or operates with `warmup_driver = "none"` in non-Bazel repositories).
 2. **Logical Project Symlinks (`~/wrk/projects/<project>`):**
    Agents and developers work inside `~/wrk/projects/<project>`, which is a POSIX symlink pointing to the currently mounted slot (e.g., `~/wrk/slots/pw-03`).
 3. **Orthogonal Residency (`MOUNTED` vs. `PARKED`):**
-   - `MOUNTED`: Occupies a warm slot in `~/wrk/slots/pw-XX` and appears as an active project in the Jetski left sidebar.
-   - `PARKED`: Shelved in Git (`refs/heads/<branch>`) and Gerrit (`pwrev/XXX`), consuming **0 disk slots** and archived in the Jetski sidebar. Supports juggling $M$ projects on $N$ slots ($M > N$) via automatic LRU swap-out of clean/unleased slots.
+   - `MOUNTED`: Occupies a warm slot in `~/wrk/slots/<slot_prefix>XX` and appears as an active project in the Jetski left sidebar.
+   - `PARKED`: Shelved in Git (`refs/heads/<branch>`) and Gerrit (`pwrev/XXX` or configured shortlink), consuming **0 disk slots** and archived in the Jetski sidebar. Supports juggling $M$ projects on $N$ slots ($M > N$) via automatic LRU swap-out of clean/unleased slots.
 4. **Never Manually Edit `~/.bazelrc`:**
    All shared Bazel cache settings (`~/.config/pw_ghish/bazelrc.worktrees` and the `try-import` line in `~/.bazelrc`) are managed exclusively by `./gh wt init`. **Agents must NEVER manually edit or delete `~/.bazelrc`.**
 

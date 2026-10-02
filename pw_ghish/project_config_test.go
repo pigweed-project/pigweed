@@ -194,6 +194,12 @@ func TestParseProjectConfigTOML_StrictErrors(t *testing.T) {
 			wantFileStr: "/test/.ghish.toml:",
 			wantMsg:     "end of file",
 		},
+		{
+			name:        "malformed path_components glob",
+			toml:        "[issue.path_components]\n\"src/[unclosed\" = 12345\n",
+			wantFileStr: "/test/.ghish.toml:",
+			wantMsg:     "glob",
+		},
 	}
 
 	for _, tt := range tests {
@@ -417,5 +423,30 @@ func TestMalformedProjectConfig_FailsFastOnCommands(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unknown key") {
 		t.Errorf("expected error to mention 'unknown key', got: %v", err)
+	}
+}
+
+func TestParseProjectConfigTOML_GerritRemoteAndRequirePushedPolicy(t *testing.T) {
+	cfg := DefaultProjectConfig()
+	tomlContent := `
+[gerrit]
+remote = "goog"
+submodule_policy = "require-pushed"
+`
+	if err := ParseProjectConfigTOML("/repo/.ghish.toml", tomlContent, cfg); err != nil {
+		t.Fatalf("ParseProjectConfigTOML failed: %v", err)
+	}
+	if cfg.Gerrit.Remote != "goog" {
+		t.Errorf("Gerrit.Remote = %q, want %q", cfg.Gerrit.Remote, "goog")
+	}
+	if cfg.Gerrit.SubmodulePolicy != "require-pushed" {
+		t.Errorf("Gerrit.SubmodulePolicy = %q, want %q", cfg.Gerrit.SubmodulePolicy, "require-pushed")
+	}
+
+	if err := applyGitConfigOverrides("ghish.gerrit.remote partner\n", cfg); err != nil {
+		t.Fatalf("applyGitConfigOverrides failed: %v", err)
+	}
+	if cfg.Gerrit.Remote != "partner" {
+		t.Errorf("Gerrit.Remote after git config override = %q, want %q", cfg.Gerrit.Remote, "partner")
 	}
 }

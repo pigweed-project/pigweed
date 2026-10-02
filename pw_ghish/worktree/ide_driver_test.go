@@ -140,3 +140,33 @@ func TestJetskiIDEDriver_SchemaDriftCanaryCircuitBreaker(t *testing.T) {
 		t.Errorf("expected SyncProject to succeed gracefully as no-op when circuit breaker is tripped, got: %v", err)
 	}
 }
+
+func TestJetskiIDEDriver_CustomProjectPrefix(t *testing.T) {
+	projectsDir := t.TempDir()
+	driver := &JetskiIDEDriver{
+		ProjectsDir:   projectsDir,
+		ProjectPrefix: "acme-wt",
+	}
+
+	proj := &Project{
+		Name:      "sensor-dma",
+		IssueID:   12345,
+		Residency: ResidencyMounted,
+	}
+	if err := driver.SyncProject(proj, "/tmp/projects/sensor-dma"); err != nil {
+		t.Fatalf("SyncProject failed: %v", err)
+	}
+
+	generatedFile := filepath.Join(projectsDir, proj.JetskiProjectUUID+".json")
+	data, err := os.ReadFile(generatedFile)
+	if err != nil {
+		t.Fatalf("failed to read generated project file: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if parsed["name"] != "acme-wt: b/12345 - sensor-dma" {
+		t.Errorf("expected name 'acme-wt: b/12345 - sensor-dma', got %v", parsed["name"])
+	}
+}

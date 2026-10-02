@@ -111,3 +111,31 @@ func TestCherryPick_ErrorOnConflictWithActionableHelp(t *testing.T) {
 		t.Errorf("Expected mention of 'git cherry-pick --abort', got:\n%v", err)
 	}
 }
+
+func TestCherryPick_NonOriginRemote(t *testing.T) {
+	mockGit := SetMockGit(t, nil)
+	mockGit.OnCommand("remote", "goog\n")
+
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345", http.StatusOK, `{
+		"_number": 12345,
+		"current_revision": "rev1",
+		"revisions": {
+			"rev1": {
+				"fetch": {
+					"http": {
+						"ref": "refs/changes/45/12345/1"
+					}
+				}
+			}
+		}
+	}`)
+
+	output, err := executeCommand(RootCmd, "pr", "cherry-pick", "12345")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+	if !mockGit.HasCall("fetch goog refs/changes/45/12345/1") {
+		t.Errorf("Expected fetch goog call, got calls: %v", mockGit.Calls)
+	}
+}

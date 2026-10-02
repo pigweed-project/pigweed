@@ -491,10 +491,19 @@ func GerritProjectFromRemote(remoteURL string) string {
 
 // GerritProject returns the Gerrit project name for the current checkout.
 func (c *Config) GerritProject(ctx context.Context) (string, error) {
+	if c != nil {
+		if projCfg, err := c.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Gerrit.Project) != "" {
+			return strings.TrimSpace(projCfg.Gerrit.Project), nil
+		}
+	}
 	if c == nil || c.Git == nil {
 		return "", fmt.Errorf("internal error: git runner is not initialized")
 	}
-	urlStr, err := c.GitClient().ConfigGet(ctx, "remote.origin.url")
+	remote := c.ResolveRemote(ctx)
+	urlStr, err := c.GitClient().ConfigGet(ctx, fmt.Sprintf("remote.%s.url", remote))
+	if (err != nil || strings.TrimSpace(urlStr) == "") && remote != "origin" {
+		urlStr, err = c.GitClient().ConfigGet(ctx, "remote.origin.url")
+	}
 	if err != nil || strings.TrimSpace(urlStr) == "" {
 		return "", fmt.Errorf("could not determine the Gerrit project: 'remote.origin.url' is not configured in git config.\n\n" +
 			"To set it:\n" +
@@ -502,10 +511,10 @@ func (c *Config) GerritProject(ctx context.Context) (string, error) {
 	}
 	project := GerritProjectFromRemote(urlStr)
 	if project == "" {
-		return "", fmt.Errorf("could not determine the Gerrit project from remote.origin.url %q: the URL has no project path.\n\n"+
+		return "", fmt.Errorf("could not determine the Gerrit project from remote.%s.url %q: the URL has no project path.\n\n"+
 			"Expected a remote such as:\n"+
 			"  https://<host>.googlesource.com/<project>\n"+
-			"  sso://<host>/<project>", strings.TrimSpace(urlStr))
+			"  sso://<host>/<project>", remote, strings.TrimSpace(urlStr))
 	}
 	return project, nil
 }

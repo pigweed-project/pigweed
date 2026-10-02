@@ -102,6 +102,10 @@ Supports rich push options:
 			return err
 		}
 
+		if err := checkPushSubmodulePolicy(ctx, cmd, cfg, state.ExistingChange, branch, flags.Stack); err != nil {
+			return err
+		}
+
 		if flags.Stack && !force {
 			if err := VerifyStackChanges(ctx, cmd, cfg, branch, state, "create"); err != nil {
 				return err

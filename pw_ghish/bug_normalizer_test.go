@@ -25,13 +25,20 @@ func TestNormalizeBugID(t *testing.T) {
 		wantNorm bool
 	}{
 		{"https://issues.pigweed.dev/issues/123456", "b/123456", true},
+		{"https://g-issues.pigweed.dev/issues/123456", "b/123456", true},
+		{"https://g-issues.fuchsia.dev/issues/123456", "b/123456", true},
 		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654", "b/987654", true},
+		{"https://issues.chromium.org/p/pigweed/issues/detail?id=987654", "b/987654", true},
+		{"https://g-issues.chromium.org/p/pigweed/issues/detail?id=987654", "b/987654", true},
 		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654&q=status:open", "b/987654", true},
 		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654#c2", "b/987654", true},
+		{"https://crbug.com/987654", "b/987654", true},
 		{"b/123456", "b/123456", true},
 		{"b:123456", "b/123456", true},
 		{"fxb/98765", "b/98765", true},
 		{"fxbug.dev/98765", "b/98765", true},
+		{"crbug.com/98765", "b/98765", true},
+		{"crbug/98765", "b/98765", true},
 		{"123456", "b/123456", true},
 		{"none", "none", false},
 		{"fxbug/98765", "fxbug/98765", false},
@@ -129,7 +136,11 @@ func TestParseIssueID(t *testing.T) {
 		{"https://issues.pigweed.dev/issues/123456", 123456, false},
 		{"https://g-issues.pigweed.dev/issues/503634", 503634, false},
 		{"https://issues.fuchsia.dev/issues/98765", 98765, false},
+		{"https://g-issues.fuchsia.dev/issues/98765", 98765, false},
 		{"https://issuetracker.google.com/issues/55555", 55555, false},
+		{"https://b.corp." + "google.com/issues/444333", 444333, false},
+		{"https://b.corp." + "google.com/444333", 444333, false},
+		{"https://partnerissuetracker.corp." + "google.com/issues/777888", 777888, false},
 		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654", 987654, false},
 		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654&q=foo", 987654, false},
 		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654#c1", 987654, false},
@@ -156,5 +167,25 @@ func TestParseIssueID(t *testing.T) {
 		if got != tc.wantID {
 			t.Errorf("ParseIssueID(%q) = %d, want %d", tc.input, got, tc.wantID)
 		}
+	}
+}
+
+func TestNormalizeTrailerWithFormat_And_NormalizeBugFooters(t *testing.T) {
+	if got := FormatBugIDWithFormat(345678, "Bug: {id}"); got != "345678" {
+		t.Errorf("FormatBugIDWithFormat(345678, 'Bug: {id}') = %q, want '345678'", got)
+	}
+	if got := FormatBugIDWithFormat(345678, "Bug: fxbug.dev/{id}"); got != "fxbug.dev/345678" {
+		t.Errorf("FormatBugIDWithFormat(345678, 'Bug: fxbug.dev/{id}') = %q, want 'fxbug.dev/345678'", got)
+	}
+
+	if got := NormalizeTrailerWithFormat("Bug: b/123456, https://b.corp."+"google.com/issues/789012", "Bug: {id}"); got != "Bug: 123456, 789012" {
+		t.Errorf("NormalizeTrailerWithFormat('Bug: {id}') = %q, want 'Bug: 123456, 789012'", got)
+	}
+
+	rawCommit := "acme: Fix sensor timing\n\nBody paragraph mentioning Bug: b/999999 in prose:\n  Bug: b/111111\n\nBug: https://partnerissuetracker.corp." + "google.com/issues/345678\nFixes: b/654321\nChange-Id: I1234567890abcdef1234567890abcdef12345678\n"
+	gotCommit := NormalizeBugFooters(rawCommit, "Bug: {id}")
+	wantCommit := "acme: Fix sensor timing\n\nBody paragraph mentioning Bug: b/999999 in prose:\n  Bug: b/111111\n\nBug: 345678\nFixed: 654321\nChange-Id: I1234567890abcdef1234567890abcdef12345678\n"
+	if gotCommit != wantCommit {
+		t.Errorf("NormalizeBugFooters mismatch:\ngot:\n%s\nwant:\n%s", gotCommit, wantCommit)
 	}
 }

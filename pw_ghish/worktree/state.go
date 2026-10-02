@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -118,13 +119,34 @@ func (s *Slot) UpsertLease(agentID string, mode LeaseMode, now time.Time) {
 
 // State represents the persistent JSON registry stored at ~/.config/pw_ghish/worktrees.json.
 type State struct {
-	Version     int                 `json:"version"`
-	PoolRoot    string              `json:"pool_root"`
-	ProjectsDir string              `json:"projects_dir"`
-	PrimaryRepo string              `json:"primary_repo"`
-	SlotCount   int                 `json:"slot_count"`
-	Projects    map[string]*Project `json:"projects"`
-	Slots       map[string]*Slot    `json:"slots"`
+	Version         int                 `json:"version"`
+	PoolRoot        string              `json:"pool_root"`
+	ProjectsDir     string              `json:"projects_dir"`
+	PrimaryRepo     string              `json:"primary_repo"`
+	SlotCount       int                 `json:"slot_count"`
+	SlotPrefix      string              `json:"slot_prefix,omitempty"`
+	WarmupDriver    string              `json:"warmup_driver,omitempty"`
+	ShortlinkPrefix string              `json:"shortlink_prefix,omitempty"`
+	Projects        map[string]*Project `json:"projects"`
+	Slots           map[string]*Slot    `json:"slots"`
+}
+
+// EffectiveSlotPrefix returns the normalized slot prefix (without a trailing '-')
+// used when naming physical worktree slots (defaulting to "pw").
+func (st *State) EffectiveSlotPrefix() string {
+	if st == nil {
+		return "pw"
+	}
+	pfx := strings.TrimSuffix(strings.TrimSpace(st.SlotPrefix), "-")
+	if pfx == "" {
+		return "pw"
+	}
+	return pfx
+}
+
+// SlotName formats the physical slot directory name for a 1-based slot index (e.g., "pw-01").
+func (st *State) SlotName(index int) string {
+	return fmt.Sprintf("%s-%02d", st.EffectiveSlotPrefix(), index)
 }
 
 // NewEmptyState initializes an empty State struct with default maps.

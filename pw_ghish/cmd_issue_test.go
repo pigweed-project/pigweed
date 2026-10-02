@@ -18,6 +18,8 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -246,8 +248,8 @@ func TestIssueCreate_AndAmend(t *testing.T) {
 			case cmdStr == "branch -r --points-at HEAD":
 				// Not a remote tracking branch tip
 				return nil
-			case strings.HasPrefix(cmdStr, "commit --amend -m "):
-				amendedMsg = args[3]
+			case strings.HasPrefix(cmdStr, "commit --amend --only -m "):
+				amendedMsg = args[4]
 				return nil
 			}
 			return nil
@@ -557,5 +559,136 @@ func TestIssueCreate_AmendDeduplicatesExistingBug(t *testing.T) {
 	}
 	if strings.Count(amendedMsg, "300001") != 1 {
 		t.Errorf("expected b/300001 to appear exactly once in amended message, got:\n%s", amendedMsg)
+	}
+}
+
+func TestResolveIssueComponent_Cascade(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".git"), 0755); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+	subDir := filepath.Join(repoRoot, "src", "sensors", "imu")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatalf("failed to create subdir: %v", err)
+	}
+	ownersContent := "# Team owners\n# Buganizer component: 888777\nalice@google.com\n"
+	if err := os.WriteFile(filepath.Join(filepath.Dir(subDir), "OWNERS"), []byte(ownersContent), 0644); err != nil {
+		t.Fatalf("failed to write OWNERS: %v", err)
+	}
+
+	pcfg := DefaultProjectConfig()
+	pcfg.Issue.DefaultComponent = 111222
+	pcfg.Issue.PathComponents["src/audio/**"] = 333444
+	pcfg.Issue.PathComponents["src/audio/dsp/**"] = 555666
+
+	cfg := &Config{
+		Git:           &MockGitRunner{},
+		CWD:           repoRoot,
+		ProjectConfig: pcfg,
+		loadedCWD:     repoRoot,
+	}
+
+	// 1. Explicit flag wins
+	if got, err := ResolveIssueComponent(ctx, cfg, 999000, []string{"src/audio/dsp/filter.cc"}); err != nil || got != 999000 {
+		t.Errorf("ResolveIssueComponent(explicit) = (%d, %v), want 999000", got, err)
+	}
+
+	// 2. Most specific path_components glob wins
+	if got, err := ResolveIssueComponent(ctx, cfg, 0, []string{"src/audio/dsp/filter.cc"}); err != nil || got != 555666 {
+		t.Errorf("ResolveIssueComponent(path_components specific) = (%d, %v), want 555666", got, err)
+	}
+
+	// 3. Nearest OWNERS file (# Buganizer component: 888777) wins over default_component
+	if got, err := ResolveIssueComponent(ctx, cfg, 0, []string{"src/sensors/imu/driver.cc"}); err != nil || got != 888777 {
+		t.Errorf("ResolveIssueComponent(OWNERS) = (%d, %v), want 888777", got, err)
+	}
+
+	// 4. Falls back to default_component when no path_components or OWNERS match
+	if got, err := ResolveIssueComponent(ctx, cfg, 0, []string{"docs/README.md"}); err != nil || got != 111222 {
+		t.Errorf("ResolveIssueComponent(default_component) = (%d, %v), want 111222", got, err)
+	}
+}
+
+func TestIssueCreate_AmendWithCustomTrailerFormat(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+
+	repoDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0755); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+	tomlData := "[issue]\ndefault_component = 123456\ntrailer_format = \"Bug: {id}\"\n"
+	if err := os.WriteFile(filepath.Join(repoDir, ".ghish.toml"), []byte(tomlData), 0644); err != nil {
+		t.Fatalf("failed to write .ghish.toml: %v", err)
+	}
+
+	var amendedMsg string
+	gitRunner := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			for i := 0; i < len(args)-1; i++ {
+				if args[i] == "-m" {
+					amendedMsg = args[i+1]
+				}
+			}
+			return nil
+		},
+	}
+	gitRunner.OnCommand("log -1 --format=%B HEAD", "acme: Fix sensor init\n\nChange-Id: I1234567890123456789012345678901234567890\n")
+	SetupMockConfig(t, gitRunner)
+	origMockCWD := MockCWD
+	MockCWD = repoDir
+	t.Cleanup(func() { MockCWD = origMockCWD })
+	SetMockGit(t, gitRunner)
+
+	out, err := executeCommand(RootCmd, "issue", "create", "-t", "Sensor bug", "-b", "Body", "--amend")
+	if err != nil {
+		t.Fatalf("issue create --amend failed: %v\nOutput: %s", err, out)
+	}
+	if !strings.Contains(amendedMsg, "Bug: 300001") {
+		t.Errorf("expected amended commit message to use custom trailer format 'Bug: 300001', got:\n%s", amendedMsg)
+	}
+}
+
+func TestMatchPathComponentPattern(t *testing.T) {
+	tests := []struct {
+		pattern string
+		relPath string
+		want    bool
+	}{
+		// Recursive /** glob matching directory itself, direct child, and deeply nested paths
+		{pattern: "foo/**", relPath: "foo", want: true},
+		{pattern: "foo/**", relPath: "foo/", want: true},
+		{pattern: "foo/**", relPath: "./foo", want: true},
+		{pattern: "foo/**", relPath: "foo/bar.cc", want: true},
+		{pattern: "foo/**", relPath: "foo/sub/deep/bar.cc", want: true},
+		{pattern: "foo/**", relPath: `foo\sub\bar.cc`, want: true},
+		{pattern: "foo/**", relPath: "foobar/baz.cc", want: false},
+		{pattern: "foo/**", relPath: "other/foo/bar.cc", want: false},
+		{pattern: "/**", relPath: "README.md", want: true},
+		{pattern: "/**", relPath: "foo/bar.cc", want: true},
+		{pattern: "**", relPath: "README.md", want: true},
+
+		// Single-wildcard /* and trailing-slash directory prefix patterns
+		{pattern: "foo/*", relPath: "foo", want: true},
+		{pattern: "foo/*", relPath: "foo/", want: true},
+		{pattern: "foo/*", relPath: "foo/bar.cc", want: true},
+		{pattern: "foo/", relPath: "foo", want: true},
+		{pattern: "foo/", relPath: "foo/", want: true},
+		{pattern: "foo/", relPath: "foo/bar.cc", want: true},
+		{pattern: "foo/", relPath: "foobar", want: false},
+
+		// Exact and glob pattern matching
+		{pattern: "src/audio/*.cc", relPath: "src/audio/dsp.cc", want: true},
+		{pattern: "src/audio/*.cc", relPath: `src\audio\dsp.cc`, want: true},
+		{pattern: "src/audio/*.cc", relPath: "src/audio/ dsp.h", want: false},
+		{pattern: "", relPath: "foo/bar.cc", want: false},
+		{pattern: "foo/**", relPath: "", want: false},
+	}
+
+	for _, tc := range tests {
+		if got := matchPathComponentPattern(tc.pattern, tc.relPath); got != tc.want {
+			t.Errorf("matchPathComponentPattern(%q, %q) = %v, want %v", tc.pattern, tc.relPath, got, tc.want)
+		}
 	}
 }

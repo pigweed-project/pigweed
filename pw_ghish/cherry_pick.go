@@ -17,7 +17,6 @@ package pw_ghish
 import (
 	"fmt"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -36,31 +35,18 @@ var cherryPickCmd = &cobra.Command{
 			return err
 		}
 
-		opt := &gerrit.ChangeOptions{}
-		if chCtx.Revision != "" && chCtx.Revision != "current" {
-			opt.AdditionalFields = []string{"ALL_REVISIONS"}
-		} else {
-			opt.AdditionalFields = []string{"CURRENT_REVISION"}
-		}
-
-		change, err := chCtx.GetChange(opt)
-		if err != nil {
-			return err
-		}
-
-		revision, err := chCtx.ExtractRevision(change)
-		if err != nil {
-			return err
-		}
-
-		ref, err := chCtx.ExtractFetchRef(change, revision)
+		change, ref, err := chCtx.ResolveFetchRef()
 		if err != nil {
 			return err
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Fetching ref %q...\n", ref)
 
-		if err := git.Fetch(chCtx.Context, "origin", ref, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		remote := git.ResolveRemote(chCtx.Context)
+		if cfg := GetConfig(cmd); cfg != nil {
+			remote = cfg.ResolveRemote(chCtx.Context)
+		}
+		if err := git.Fetch(chCtx.Context, remote, ref, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 			return fmt.Errorf("failed to fetch ref: %w", err)
 		}
 

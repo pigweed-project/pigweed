@@ -45,6 +45,7 @@ type ProjectConfig struct {
 type GerritProjectConfig struct {
 	Host               string            `json:"host,omitempty"`
 	Project            string            `json:"project,omitempty"`
+	Remote             string            `json:"remote,omitempty"`
 	DefaultBranch      string            `json:"default_branch,omitempty"`
 	Shortlinks         map[string]string `json:"shortlinks,omitempty"`
 	ScopeListToProject *bool             `json:"scope_list_to_project,omitempty"`
@@ -283,6 +284,12 @@ func LoadProjectConfig(ctx context.Context, git GitRunner, startDir string) (*Pr
 	return cfg, nil
 }
 
+// FindGitTopLevelOnDisk walks upward from startDir to find the nearest ancestor
+// containing a .git directory or file, returning startDir if none is found.
+func FindGitTopLevelOnDisk(startDir string) string {
+	return findGitTopLevelOnDisk(startDir)
+}
+
 func findGitTopLevelOnDisk(startDir string) string {
 	curr := startDir
 	for {
@@ -295,6 +302,12 @@ func findGitTopLevelOnDisk(startDir string) string {
 		}
 		curr = parent
 	}
+}
+
+// HasProjectConfigFileOnDisk reports whether a .ghish.toml file exists on disk
+// between the git repository root and startDir.
+func HasProjectConfigFileOnDisk(startDir string) bool {
+	return hasProjectConfigFileOnDisk(startDir)
 }
 
 func hasProjectConfigFileOnDisk(startDir string) bool {
@@ -349,6 +362,7 @@ type tomlProjectConfig struct {
 type tomlGerritConfig struct {
 	Host               *string           `toml:"host"`
 	Project            *string           `toml:"project"`
+	Remote             *string           `toml:"remote"`
 	DefaultBranch      *string           `toml:"default_branch"`
 	Shortlinks         map[string]string `toml:"shortlinks"`
 	ScopeListToProject *bool             `toml:"scope_list_to_project"`
@@ -385,12 +399,24 @@ type tomlWorktreeConfig struct {
 	WarmupDriver *string `toml:"warmup_driver"`
 }
 
+func validatePathComponentPattern(pattern string) error {
+	for _, seg := range strings.Split(filepath.ToSlash(pattern), "/") {
+		if _, err := filepath.Match(seg, "test"); err != nil {
+			return fmt.Errorf("invalid path_components glob pattern %q: %w", pattern, err)
+		}
+	}
+	if _, err := filepath.Match(filepath.ToSlash(pattern), "test"); err != nil {
+		return fmt.Errorf("invalid path_components glob pattern %q: %w", pattern, err)
+	}
+	return nil
+}
+
 func validateSubmodulePolicy(policy string) error {
 	switch policy {
-	case "allow", "warn-unpushed", "forbid-manual-rolls":
+	case "allow", "warn-unpushed", "require-pushed", "forbid-manual-rolls":
 		return nil
 	default:
-		return fmt.Errorf("must be one of \"allow\", \"warn-unpushed\", or \"forbid-manual-rolls\", got %q", policy)
+		return fmt.Errorf("must be one of \"allow\", \"warn-unpushed\", \"require-pushed\", or \"forbid-manual-rolls\", got %q", policy)
 	}
 }
 
@@ -456,6 +482,9 @@ func applyTOMLIssueSection(filePath, section string, src tomlIssueConfig, dst *I
 		dst.UseOwnersComponents = cfgBoolPtr(*src.UseOwnersComponents)
 	}
 	for k, v := range src.PathComponents {
+		if err := validatePathComponentPattern(k); err != nil {
+			return fmt.Errorf("%s: invalid key for %s.path_components: %w", filePath, section, err)
+		}
 		dst.PathComponents[k] = v
 	}
 	return nil
@@ -503,6 +532,9 @@ func ParseProjectConfigTOML(filePath, content string, dst *ProjectConfig) error 
 	}
 	if raw.Gerrit.Project != nil {
 		dst.Gerrit.Project = *raw.Gerrit.Project
+	}
+	if raw.Gerrit.Remote != nil {
+		dst.Gerrit.Remote = *raw.Gerrit.Remote
 	}
 	if raw.Gerrit.DefaultBranch != nil {
 		dst.Gerrit.DefaultBranch = *raw.Gerrit.DefaultBranch
@@ -614,6 +646,9 @@ func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
 		for _, pfx := range []string{"issue.pathcomponents.", "issue.path_components.", "issue.path-components.", "bugs.pathcomponents.", "bugs.path_components.", "bugs.path-components."} {
 			if strings.HasPrefix(rest, pfx) {
 				pathKey := strings.TrimPrefix(rest, pfx)
+				if err := validatePathComponentPattern(pathKey); err != nil {
+					return fmt.Errorf("invalid git config %s=%q: %w", key, val, err)
+				}
 				n, err := strconv.ParseInt(val, 10, 64)
 				if err != nil {
 					return fmt.Errorf("invalid git config %s=%q: %w", key, val, err)
@@ -640,6 +675,8 @@ func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
 				dst.Gerrit.Host = val
 			case "project":
 				dst.Gerrit.Project = val
+			case "remote":
+				dst.Gerrit.Remote = val
 			case "defaultbranch":
 				dst.Gerrit.DefaultBranch = val
 			case "scopelisttoproject":

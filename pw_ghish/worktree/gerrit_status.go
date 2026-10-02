@@ -17,6 +17,7 @@ package worktree
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // StatusBadge classifies the Git & Gerrit review state of a project.
@@ -71,28 +72,39 @@ func ComputeStatusBadge(isDirty bool, localCommitsAhead int, changeID string, cs
 // ComputeStatusBadgeWithGerritState determines the StatusBadge, taking into account whether
 // the Gerrit query failed (gerritOffline == true).
 func ComputeStatusBadgeWithGerritState(isDirty bool, localCommitsAhead int, changeID string, cs *ChangeStatus, gerritOffline bool) (badge StatusBadge, details string, action string) {
+	return ComputeStatusBadgeWithShortlink(isDirty, localCommitsAhead, changeID, cs, gerritOffline, "pwrev")
+}
+
+// ComputeStatusBadgeWithShortlink determines the StatusBadge using the given shortlinkPrefix
+// (e.g., "pwrev" -> "pwrev/1234", or "acmerev" -> "acmerev/1234").
+func ComputeStatusBadgeWithShortlink(isDirty bool, localCommitsAhead int, changeID string, cs *ChangeStatus, gerritOffline bool, shortlinkPrefix string) (badge StatusBadge, details string, action string) {
+	pfx := strings.TrimSuffix(strings.TrimSpace(shortlinkPrefix), "/")
+	if pfx == "" {
+		pfx = "pwrev"
+	}
+
 	if cs != nil && cs.Number > 0 {
 		switch cs.Status {
 		case "MERGED":
-			details = fmt.Sprintf("pwrev/%d (Merged)", cs.Number)
+			details = fmt.Sprintf("%s/%d (Merged)", pfx, cs.Number)
 			if isDirty {
 				details += " + dirty tree"
 			}
 			return BadgeCLMerged, details, "Run `./gh wt next` for next CL, or `park`/`close`"
 		case "NEW":
 			if cs.UnresolvedThreads > 0 || cs.CodeReviewScore < 0 || cs.ChecksFailing > 0 {
-				details = fmt.Sprintf("pwrev/%d (CR:%+d, %d threads, %d failing checks)",
-					cs.Number, cs.CodeReviewScore, cs.UnresolvedThreads, cs.ChecksFailing)
+				details = fmt.Sprintf("%s/%d (CR:%+d, %d threads, %d failing checks)",
+					pfx, cs.Number, cs.CodeReviewScore, cs.UnresolvedThreads, cs.ChecksFailing)
 				return BadgeNeedsAttention, details, "Inspect via `./gh pr view --comments` or `./gh pr checks`"
 			}
 			if cs.CodeReviewScore >= 2 {
-				details = fmt.Sprintf("pwrev/%d (CR+%d, CQ ready)", cs.Number, cs.CodeReviewScore)
+				details = fmt.Sprintf("%s/%d (CR+%d, CQ ready)", pfx, cs.Number, cs.CodeReviewScore)
 				return BadgeReadyToLand, details, "Approved! Ready to land (`./gh pr merge --cq`)"
 			}
-			details = fmt.Sprintf("pwrev/%d (CR:%+d, waiting review/CI)", cs.Number, cs.CodeReviewScore)
+			details = fmt.Sprintf("%s/%d (CR:%+d, waiting review/CI)", pfx, cs.Number, cs.CodeReviewScore)
 			return BadgeInReview, details, "Waiting on reviewers — safe candidate to `./gh wt park`"
 		case "ABANDONED":
-			details = fmt.Sprintf("pwrev/%d (Abandoned)", cs.Number)
+			details = fmt.Sprintf("%s/%d (Abandoned)", pfx, cs.Number)
 			return BadgeCleanSynced, details, "CL abandoned -> Run `./gh wt close` or start new CL"
 		}
 	}

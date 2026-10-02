@@ -17,8 +17,12 @@ package pw_ghish
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -95,10 +99,181 @@ func resolveTargetIssueID(ctx context.Context, cmd *cobra.Command, args []string
 	return ids[0], nil
 }
 
-func resolveComponentID(ctx context.Context, cfg *Config, explicitFlag int64) (int64, error) {
+var ownersComponentRegex = regexp.MustCompile(`(?im)^\s*#\s*(?:buganizer\s+component|component)\s*:\s*(?:b/)?(\d+)\s*$`)
+
+// ParseOwnersComponent extracts a numeric Buganizer component ID from an OWNERS
+// file comment such as `# COMPONENT: 1194524` or `# Buganizer component: 1194524`.
+func ParseOwnersComponent(content string) (int64, bool) {
+	m := ownersComponentRegex.FindStringSubmatch(content)
+	if len(m) < 2 {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+func matchPathComponentPattern(pattern, relPath string) bool {
+	pattern = strings.TrimSpace(strings.ReplaceAll(filepath.ToSlash(pattern), `\`, `/`))
+	relPath = strings.TrimPrefix(strings.TrimSpace(strings.ReplaceAll(filepath.ToSlash(relPath), `\`, `/`)), "./")
+	relPath = strings.TrimSuffix(relPath, "/")
+	if pattern == "" || relPath == "" {
+		return false
+	}
+	if pattern == "**" || pattern == "/**" {
+		return true
+	}
+	if strings.HasSuffix(pattern, "/**") {
+		prefix := strings.TrimPrefix(strings.TrimSuffix(pattern, "/**"), "/")
+		if prefix == "" {
+			return true
+		}
+		return relPath == prefix || strings.HasPrefix(relPath, prefix+"/")
+	}
+	if strings.HasSuffix(pattern, "/*") {
+		prefix := strings.TrimPrefix(strings.TrimSuffix(pattern, "/*"), "/")
+		if prefix == "" {
+			return !strings.Contains(relPath, "/")
+		}
+		return relPath == prefix || strings.HasPrefix(relPath, prefix+"/")
+	}
+	if strings.HasSuffix(pattern, "/") {
+		prefix := strings.TrimPrefix(strings.TrimSuffix(pattern, "/"), "/")
+		if prefix == "" {
+			return true
+		}
+		return relPath == prefix || strings.HasPrefix(relPath, prefix+"/")
+	}
+	if matched, err := path.Match(pattern, relPath); err == nil && matched {
+		return true
+	}
+	return relPath == pattern || strings.HasPrefix(relPath, pattern+"/")
+}
+
+// ResolveIssueComponent resolves the Buganizer component ID using the multi-tier cascade:
+//  1. Explicit --component / -C flag (explicitFlag > 0)
+//  2. [issue.path_components] in .ghish.toml / git config matched against modifiedPaths (or CWD)
+//  3. Nearest OWNERS file (# COMPONENT: <id> or # Buganizer component: <id>) when UseOwnersComponents is true
+//  4. [issue] default_component in .ghish.toml / git config
+//  5. git config ghish.componentid
+//  6. ProjectProfile.DefaultComponentID()
+func ResolveIssueComponent(ctx context.Context, cfg *Config, explicitFlag int64, modifiedPaths []string) (int64, error) {
 	if explicitFlag > 0 {
 		return explicitFlag, nil
 	}
+
+	var pcfg *ProjectConfig
+	if cfg != nil {
+		if cfg.ProjectConfig != nil {
+			pcfg = cfg.ProjectConfig
+		} else if hasProjectConfigFileOnDisk(cfg.CWD) {
+			var err error
+			pcfg, err = cfg.LoadProjectConfig(ctx)
+			if err != nil {
+				return 0, err
+			}
+		} else if dg, ok := cfg.GitClient().(*defaultGitClient); ok {
+			if out, err := dg.runOutput(ctx, "config", "--get-regexp", `^ghish\.`); err == nil && strings.TrimSpace(out) != "" {
+				pcfg = DefaultProjectConfig()
+				if err := applyGitConfigOverrides(out, pcfg); err != nil {
+					return 0, err
+				}
+			}
+		}
+	}
+
+	candidatePaths := append([]string(nil), modifiedPaths...)
+	var repoRoot string
+	if cfg != nil && cfg.CWD != "" {
+		repoRoot = findGitTopLevelOnDisk(cfg.CWD)
+	}
+	if len(candidatePaths) == 0 && cfg != nil && cfg.Git != nil {
+		if dg, ok := cfg.GitClient().(*defaultGitClient); ok {
+			if out, err := dg.runOutput(ctx, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); err == nil {
+				for _, line := range strings.Split(out, "\n") {
+					if p := strings.TrimSpace(line); p != "" {
+						candidatePaths = append(candidatePaths, p)
+					}
+				}
+			}
+		}
+	}
+	if len(candidatePaths) == 0 && repoRoot != "" && cfg != nil && cfg.CWD != "" {
+		if absCWD, err := filepath.Abs(cfg.CWD); err == nil {
+			if rel, err := filepath.Rel(repoRoot, absCWD); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+				candidatePaths = append(candidatePaths, filepath.ToSlash(rel))
+			}
+		}
+	}
+
+	// Tier 2: Path-based component mapping ([issue.path_components])
+	if pcfg != nil && len(pcfg.Issue.PathComponents) > 0 && len(candidatePaths) > 0 {
+		for _, relPath := range candidatePaths {
+			bestLen := -1
+			var bestComp int64
+			for pattern, compID := range pcfg.Issue.PathComponents {
+				if compID > 0 && matchPathComponentPattern(pattern, relPath) {
+					if len(pattern) > bestLen {
+						bestLen = len(pattern)
+						bestComp = compID
+					}
+				}
+			}
+			if bestComp > 0 {
+				return bestComp, nil
+			}
+		}
+	}
+
+	// Tier 3: Nearest OWNERS file (# COMPONENT: <id> or # Buganizer component: <id>)
+	if (pcfg == nil || pcfg.UseOwnersComponents()) && repoRoot != "" {
+		var searchDirs []string
+		if len(candidatePaths) > 0 {
+			for _, relPath := range candidatePaths {
+				fullPath := filepath.Join(repoRoot, filepath.FromSlash(relPath))
+				if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+					searchDirs = append(searchDirs, fullPath)
+				} else {
+					searchDirs = append(searchDirs, filepath.Dir(fullPath))
+				}
+			}
+		} else if cfg != nil && cfg.CWD != "" {
+			if absCWD, err := filepath.Abs(cfg.CWD); err == nil {
+				searchDirs = append(searchDirs, absCWD)
+			}
+		}
+		for _, startDir := range searchDirs {
+			curr := startDir
+			for {
+				ownersPath := filepath.Join(curr, "OWNERS")
+				data, err := os.ReadFile(ownersPath)
+				if err != nil {
+					if !errors.Is(err, os.ErrNotExist) {
+						return 0, fmt.Errorf("failed to read %s: %w", ownersPath, err)
+					}
+				} else if compID, ok := ParseOwnersComponent(string(data)); ok {
+					return compID, nil
+				}
+				if filepath.Clean(curr) == filepath.Clean(repoRoot) {
+					break
+				}
+				parent := filepath.Dir(curr)
+				if parent == curr {
+					break
+				}
+				curr = parent
+			}
+		}
+	}
+
+	// Tier 4: ProjectConfig default_component
+	if pcfg != nil && pcfg.Issue.DefaultComponent > 0 {
+		return pcfg.Issue.DefaultComponent, nil
+	}
+
+	// Tier 5: Legacy git config ghish.componentid
 	if cfg != nil {
 		if val, err := cfg.GitClient().ConfigGet(ctx, "ghish.componentid"); err == nil && strings.TrimSpace(val) != "" {
 			trimmed := strings.TrimSpace(val)
@@ -111,11 +286,16 @@ func resolveComponentID(ctx context.Context, cfg *Config, explicitFlag int64) (i
 			}
 			return parsed, nil
 		}
+		// Tier 6: Profile default component ID
 		if def := cfg.GetProfile(ctx).DefaultComponentID(); def > 0 {
 			return def, nil
 		}
 	}
 	return 0, nil
+}
+
+func resolveComponentID(ctx context.Context, cfg *Config, explicitFlag int64) (int64, error) {
+	return ResolveIssueComponent(ctx, cfg, explicitFlag, nil)
 }
 
 func resolveUserEmailArg(ctx context.Context, cfg *Config, arg string) (string, error) {
@@ -615,24 +795,40 @@ var issueCreateCmd = &cobra.Command{
 				return fmt.Errorf("created issue b/%d, but failed to read HEAD commit message for --amend: %w", created.IssueID, err)
 			}
 
+			var trailerFmt string
+			if pcfg := cfg.GetProjectConfig(ctx); pcfg != nil {
+				trailerFmt = strings.TrimSpace(pcfg.Issue.TrailerFormat)
+			}
+
 			existingLinks := ExtractBugLinks(origMsg)
 			var bugValues []string
 			for _, link := range existingLinks {
 				if !link.Closes && !strings.EqualFold(link.ID, "None") {
-					if id, err := ParseIssueID(link.ID); err == nil && id == int64(created.IssueID) {
+					if id, err := ParseIssueID(link.ID); err == nil {
+						if id == int64(created.IssueID) {
+							continue
+						}
+						bugValues = append(bugValues, FormatBugIDWithFormat(id, trailerFmt))
 						continue
 					}
 					bugValues = append(bugValues, link.ID)
 				}
 			}
-			bugValues = append(bugValues, fmt.Sprintf("b/%d", created.IssueID))
-			trailerLine := "Bug: " + strings.Join(bugValues, ", ")
+			bugValues = append(bugValues, FormatBugIDWithFormat(int64(created.IssueID), trailerFmt))
+
+			trailerKeyName := "Bug"
+			if trailerFmt != "" {
+				if kPart, _, hasColon := strings.Cut(trailerFmt, ":"); hasColon && strings.TrimSpace(kPart) != "" {
+					trailerKeyName = strings.TrimSpace(kPart)
+				}
+			}
+			trailerLine := fmt.Sprintf("%s: %s", trailerKeyName, strings.Join(bugValues, ", "))
 
 			updatedMsg, err := UpsertTrailer(origMsg, trailerLine)
 			if err != nil {
 				return fmt.Errorf("created issue b/%d, but failed to update trailer: %w", created.IssueID, err)
 			}
-			if err := cfg.GitClient().Run(ctx, out, cmd.ErrOrStderr(), "commit", "--amend", "-m", updatedMsg); err != nil {
+			if err := cfg.GitClient().Run(ctx, out, cmd.ErrOrStderr(), "commit", "--amend", "--only", "-m", updatedMsg); err != nil {
 				return fmt.Errorf("created issue b/%d, but git commit --amend failed: %w", created.IssueID, err)
 			}
 			fmt.Fprintf(out, "✓ Amended HEAD commit with '%s'\n", trailerLine)

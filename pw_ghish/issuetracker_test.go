@@ -612,3 +612,49 @@ func TestIssueTrackerClient_QuotaProjectErrorRemediation(t *testing.T) {
 		t.Errorf("expected actionable quota project remediation in error, got:\n%v", err)
 	}
 }
+
+func TestConfiguredIssueTrackerQuotaProject_ProjectConfigAndGitConfig(t *testing.T) {
+	t.Setenv("GHISH_QUOTA_PROJECT", "")
+	t.Setenv("GOOGLE_CLOUD_QUOTA_PROJECT", "")
+
+	quotaProjectMu.Lock()
+	origCached := cachedQuotaProject
+	cachedQuotaProject = ""
+	quotaProjectMu.Unlock()
+	t.Cleanup(func() {
+		quotaProjectMu.Lock()
+		cachedQuotaProject = origCached
+		quotaProjectMu.Unlock()
+	})
+
+	t.Run("uses ProjectConfig Issue.QuotaProject", func(t *testing.T) {
+		quotaProjectMu.Lock()
+		cachedQuotaProject = ""
+		quotaProjectMu.Unlock()
+
+		pcfg := DefaultProjectConfig()
+		pcfg.Issue.QuotaProject = "acme-quota-project"
+		cfg := &Config{
+			Git:           &MockGitRunner{},
+			ProjectConfig: pcfg,
+		}
+		ctx := context.WithValue(context.Background(), configKey, cfg)
+		if got := ConfiguredIssueTrackerQuotaProject(ctx, "tok"); got != "acme-quota-project" {
+			t.Errorf("ConfiguredIssueTrackerQuotaProject() = %q, want %q", got, "acme-quota-project")
+		}
+	})
+
+	t.Run("uses git config ghish.issue.quotaproject", func(t *testing.T) {
+		quotaProjectMu.Lock()
+		cachedQuotaProject = ""
+		quotaProjectMu.Unlock()
+
+		mockGit := &MockGitRunner{}
+		mockGit.OnCommand("config --get ghish.issue.quotaproject", "git-issue-quota-proj\n")
+		cfg := &Config{Git: mockGit}
+		ctx := context.WithValue(context.Background(), configKey, cfg)
+		if got := ConfiguredIssueTrackerQuotaProject(ctx, "tok"); got != "git-issue-quota-proj" {
+			t.Errorf("ConfiguredIssueTrackerQuotaProject() = %q, want %q", got, "git-issue-quota-proj")
+		}
+	})
+}

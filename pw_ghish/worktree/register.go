@@ -103,26 +103,9 @@ func (a *gerritStatusAdapter) ResolveCLFetchRef(ctx context.Context, clRef strin
 		return "", "", fmt.Errorf("failed to resolve CL %q: %w", clRef, err)
 	}
 
-	opt := &gerrit.ChangeOptions{}
-	if chCtx.Revision != "" && chCtx.Revision != "current" {
-		opt.AdditionalFields = []string{"ALL_REVISIONS"}
-	} else {
-		opt.AdditionalFields = []string{"CURRENT_REVISION"}
-	}
-
-	change, err := chCtx.GetChange(opt)
+	change, ref, err := chCtx.ResolveFetchRef()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to fetch Gerrit change details for %q: %w", clRef, err)
-	}
-
-	revision, err := chCtx.ExtractRevision(change)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to extract revision for %q: %w", clRef, err)
-	}
-
-	ref, err := chCtx.ExtractFetchRef(change, revision)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to extract git fetch ref for %q: %w", clRef, err)
+		return "", "", fmt.Errorf("failed to resolve git fetch ref for %q: %w", clRef, err)
 	}
 
 	return ref, change.ChangeID, nil

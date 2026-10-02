@@ -670,3 +670,209 @@ func TestGitClient_CommitAmendNoEdit_Guarded(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveRemote_PriorityOrder(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("prefers ghish.gerrit.remote git config", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("config --get ghish.gerrit.remote", "partner\n").
+			OnCommand("remote", "origin\ngoog\npartner\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveRemote(ctx); got != "partner" {
+			t.Errorf("ResolveRemote() = %q, want %q", got, "partner")
+		}
+	})
+
+	t.Run("prefers current branch tracking remote", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.WithBranch("my-feature").
+			OnCommand("config --get branch.my-feature.remote", "goog\n").
+			OnCommand("remote", "origin\ngoog\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveRemote(ctx); got != "goog" {
+			t.Errorf("ResolveRemote() = %q, want %q", got, "goog")
+		}
+	})
+
+	t.Run("prefers current branch tracking remote for branch name with slash", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.WithBranch("feature/my-fix").
+			OnCommand("config --get branch.feature/my-fix.remote", "goog\n").
+			OnCommand("remote", "origin\ngoog\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveRemote(ctx); got != "goog" {
+			t.Errorf("ResolveRemote() = %q, want %q", got, "goog")
+		}
+	})
+
+	t.Run("selects goog when origin does not exist", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("remote", "goog\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveRemote(ctx); got != "goog" {
+			t.Errorf("ResolveRemote() = %q, want %q", got, "goog")
+		}
+	})
+
+	t.Run("selects aosp when origin does not exist", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("remote", "aosp\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveRemote(ctx); got != "aosp" {
+			t.Errorf("ResolveRemote() = %q, want %q", got, "aosp")
+		}
+	})
+
+	t.Run("defaults to origin when origin exists", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("remote", "origin\ngoog\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveRemote(ctx); got != "origin" {
+			t.Errorf("ResolveRemote() = %q, want %q", got, "origin")
+		}
+	})
+}
+
+func TestResolveDefaultBranch_PriorityOrder(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("prefers ghish.gerrit.defaultbranch git config", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("config --get ghish.gerrit.defaultbranch", "release-v2\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveDefaultBranch(ctx); got != "release-v2" {
+			t.Errorf("ResolveDefaultBranch() = %q, want %q", got, "release-v2")
+		}
+	})
+
+	t.Run("uses symbolic-ref refs/remotes/<remote>/HEAD", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("remote", "goog\n").
+			OnCommand("symbolic-ref refs/remotes/goog/HEAD", "refs/remotes/goog/dev\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveDefaultBranch(ctx); got != "dev" {
+			t.Errorf("ResolveDefaultBranch() = %q, want %q", got, "dev")
+		}
+	})
+
+	t.Run("uses init.defaultBranch when symbolic-ref is absent", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("config --get init.defaultBranch", "trunk\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveDefaultBranch(ctx); got != "trunk" {
+			t.Errorf("ResolveDefaultBranch() = %q, want %q", got, "trunk")
+		}
+	})
+
+	t.Run("prefers tracked upstream merge branch over origin/HEAD for release branches", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.WithBranch("my-hotfix").
+			OnCommand("config --get branch.my-hotfix.remote", "origin\n").
+			OnCommand("config --get branch.my-hotfix.merge", "refs/heads/release-1.0\n").
+			OnCommand("symbolic-ref refs/remotes/origin/HEAD", "refs/remotes/origin/main\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveDefaultBranch(ctx); got != "release-1.0" {
+			t.Errorf("ResolveDefaultBranch() = %q, want %q", got, "release-1.0")
+		}
+	})
+
+	t.Run("ignores self-referential branch.<cur>.merge and uses origin/HEAD", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.WithBranch("my-feature").
+			OnCommand("config --get branch.my-feature.remote", "origin\n").
+			OnCommand("config --get branch.my-feature.merge", "refs/heads/my-feature\n").
+			OnCommand("symbolic-ref refs/remotes/origin/HEAD", "refs/remotes/origin/main\n")
+		client := NewGitClient(mock)
+		if got := client.ResolveDefaultBranch(ctx); got != "main" {
+			t.Errorf("ResolveDefaultBranch() = %q, want %q", got, "main")
+		}
+	})
+
+	// inclusive-language: disable
+	t.Run("falls back to master when main does not exist", func(t *testing.T) {
+		mock := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				cmd := strings.Join(args, " ")
+				if cmd == "rev-parse --verify refs/remotes/origin/master" || cmd == "rev-parse --verify refs/heads/master" {
+					return nil
+				}
+				return fmt.Errorf("not found: %s", cmd)
+			},
+		}
+		client := NewGitClient(mock)
+		if got := client.ResolveDefaultBranch(ctx); got != "master" {
+			t.Errorf("ResolveDefaultBranch() = %q, want %q", got, "master")
+		}
+	})
+	// inclusive-language: enable
+}
+
+func TestStackCommits_SafeResolutionAndNoFullHistoryFallback(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("resolves non-origin remote branch goog/main..HEAD", func(t *testing.T) {
+		rawLog := "aaa1111\x00feat: Commit 1\x00feat: Commit 1\n\nChange-Id: I1111111111111111111111111111111111111111\n\x1e"
+		mock := &MockGitRunner{}
+		mock.OnCommand("remote", "goog\n").
+			OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e goog/main..HEAD", rawLog)
+
+		client := NewGitClient(mock)
+		commits, err := client.StackCommits(ctx, "main")
+		if err != nil {
+			t.Fatalf("StackCommits failed: %v", err)
+		}
+		if len(commits) != 1 || commits[0].Hash != "aaa1111" {
+			t.Errorf("unexpected commits: %+v", commits)
+		}
+	})
+
+	t.Run("falls back to HEAD@{upstream}..HEAD when remote branch ref is missing", func(t *testing.T) {
+		rawLog := "bbb2222\x00feat: Commit 2\x00feat: Commit 2\n\nChange-Id: I2222222222222222222222222222222222222222\n\x1e"
+		mock := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				cmd := strings.Join(args, " ")
+				switch cmd {
+				case "rev-parse --verify origin/main", "rev-parse --verify refs/remotes/origin/main":
+					return fmt.Errorf("unknown revision")
+				case "rev-parse --verify HEAD@{upstream}":
+					return nil
+				case "log --reverse --format=%h%x00%s%x00%B%x1e HEAD@{upstream}..HEAD":
+					stdout.Write([]byte(rawLog))
+					return nil
+				default:
+					return fmt.Errorf("unexpected command: %s", cmd)
+				}
+			},
+		}
+		client := NewGitClient(mock)
+		commits, err := client.StackCommits(ctx, "main")
+		if err != nil {
+			t.Fatalf("StackCommits failed: %v", err)
+		}
+		if len(commits) != 1 || commits[0].Hash != "bbb2222" {
+			t.Errorf("unexpected commits: %+v", commits)
+		}
+	})
+
+	t.Run("returns actionable error and never runs unbounded git log when base cannot be resolved", func(t *testing.T) {
+		mock := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				if len(args) > 0 && args[0] == "log" {
+					t.Fatalf("StackCommits ran unbounded git log when base ref failed to resolve: %v", args)
+				}
+				return fmt.Errorf("unknown revision")
+			},
+		}
+		client := NewGitClient(mock)
+		_, err := client.StackCommits(ctx, "nonexistent-base")
+		if err == nil {
+			t.Fatal("expected error when no base ref can be resolved, got nil")
+		}
+		for _, want := range []string{"nonexistent-base", "git fetch", "--base"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got: %v", want, err)
+			}
+		}
+	})
+}

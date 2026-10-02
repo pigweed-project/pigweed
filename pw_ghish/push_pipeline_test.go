@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -849,4 +850,181 @@ func TestApplyPushOptionsViaREST_NilCmd(t *testing.T) {
 	if !strings.Contains(err.Error(), "internal error: cmd is uninitialized in applyPushOptionsViaREST") {
 		t.Errorf("expected internal error message, got: %v", err)
 	}
+}
+
+func TestCheckSubmodulePolicy(t *testing.T) {
+	ctx := context.Background()
+	diffTreeWithSubmodule := ":160000 160000 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 M\tthird_party/foo\n" +
+		":100644 100644 3333333333333333333333333333333333333333 4444444444444444444444444444444444444444 M\tpw_foo/bar.cc\n"
+
+	t.Run("forbid-manual-rolls rejects modified gitlink with remediation", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("diff-tree --no-commit-id -r HEAD", diffTreeWithSubmodule)
+		client := NewGitClient(mock)
+		pcfg := DefaultProjectConfig()
+		pcfg.Gerrit.SubmodulePolicy = "forbid-manual-rolls"
+
+		var errBuf bytes.Buffer
+		err := CheckSubmodulePolicy(ctx, client, pcfg, nil, "goog", "main", nil, &errBuf)
+		if err == nil {
+			t.Fatal("expected error when submodule is modified and policy is forbid-manual-rolls")
+		}
+		for _, want := range []string{"third_party/foo", "git checkout goog/main -- third_party/foo"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got:\n%v", want, err)
+			}
+		}
+	})
+
+	t.Run("No-Submodule-Changes submit requirement rejects modified gitlink", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("diff-tree --no-commit-id -r HEAD", diffTreeWithSubmodule)
+		client := NewGitClient(mock)
+		pcfg := DefaultProjectConfig()
+		change := &gerrit.ChangeInfo{
+			SubmitRequirements: []gerrit.SubmitRequirementResultInfo{
+				{Name: "No-Submodule-Changes", Status: "UNSATISFIED"},
+			},
+		}
+
+		var errBuf bytes.Buffer
+		err := CheckSubmodulePolicy(ctx, client, pcfg, change, "origin", "main", nil, &errBuf)
+		if err == nil {
+			t.Fatal("expected error when change has No-Submodule-Changes submit requirement")
+		}
+		for _, want := range []string{"No-Submodule-Changes", "third_party/foo", "git checkout origin/main -- third_party/foo"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got:\n%v", want, err)
+			}
+		}
+	})
+
+	t.Run("warn-unpushed warns when new submodule SHA is not on remote branch", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("diff-tree --no-commit-id -r HEAD", diffTreeWithSubmodule).
+			OnCommand("-C third_party/foo branch -r --contains 2222222222222222222222222222222222222222", "")
+		client := NewGitClient(mock)
+		pcfg := DefaultProjectConfig()
+		pcfg.Gerrit.SubmodulePolicy = "warn-unpushed"
+
+		var errBuf bytes.Buffer
+		err := CheckSubmodulePolicy(ctx, client, pcfg, nil, "origin", "main", nil, &errBuf)
+		if err != nil {
+			t.Fatalf("expected warn-unpushed to warn rather than fail, got: %v", err)
+		}
+		for _, want := range []string{"Warning:", "third_party/foo", "2222222222222222222222222222222222222222"} {
+			if !strings.Contains(errBuf.String(), want) {
+				t.Errorf("expected stderr warning to contain %q, got:\n%s", want, errBuf.String())
+			}
+		}
+	})
+
+	t.Run("require-pushed fails when new submodule SHA is not on remote branch", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("diff-tree --no-commit-id -r HEAD", diffTreeWithSubmodule).
+			OnCommand("-C third_party/foo branch -r --contains 2222222222222222222222222222222222222222", "")
+		client := NewGitClient(mock)
+		pcfg := DefaultProjectConfig()
+		pcfg.Gerrit.SubmodulePolicy = "require-pushed"
+
+		var errBuf bytes.Buffer
+		err := CheckSubmodulePolicy(ctx, client, pcfg, nil, "origin", "main", nil, &errBuf)
+		if err == nil {
+			t.Fatal("expected require-pushed to fail when submodule SHA is not on remote branch")
+		}
+		for _, want := range []string{"third_party/foo", "2222222222222222222222222222222222222222", "git checkout origin/main -- third_party/foo"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got:\n%v", want, err)
+			}
+		}
+	})
+
+	t.Run("require-pushed succeeds when new submodule SHA is on remote branch", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnCommand("diff-tree --no-commit-id -r HEAD", diffTreeWithSubmodule).
+			OnCommand("-C third_party/foo branch -r --contains 2222222222222222222222222222222222222222", "  origin/main\n")
+		client := NewGitClient(mock)
+		pcfg := DefaultProjectConfig()
+		pcfg.Gerrit.SubmodulePolicy = "require-pushed"
+
+		var errBuf bytes.Buffer
+		if err := CheckSubmodulePolicy(ctx, client, pcfg, nil, "origin", "main", nil, &errBuf); err != nil {
+			t.Fatalf("expected require-pushed to succeed when SHA is on origin/main, got: %v", err)
+		}
+	})
+
+	t.Run("resolves submodule path relative to repository root when invoked from subdirectory", func(t *testing.T) {
+		repoRoot := filepath.Join(t.TempDir(), "repo")
+		expectedSubPath := filepath.Join(repoRoot, "third_party", "foo")
+		mock := &MockGitRunner{}
+		mock.OnCommand("diff-tree --no-commit-id -r HEAD", diffTreeWithSubmodule).
+			OnCommand("rev-parse --show-toplevel", repoRoot+"\n").
+			OnCommand("-C "+expectedSubPath+" branch -r --contains 2222222222222222222222222222222222222222", "  origin/main\n")
+		client := NewGitClient(mock)
+		pcfg := DefaultProjectConfig()
+		pcfg.Gerrit.SubmodulePolicy = "require-pushed"
+
+		var errBuf bytes.Buffer
+		if err := CheckSubmodulePolicy(ctx, client, pcfg, nil, "origin", "main", nil, &errBuf); err != nil {
+			t.Fatalf("expected require-pushed to succeed using top-level resolved submodule path, got: %v", err)
+		}
+		if !mock.HasCall("-C " + expectedSubPath + " branch -r --contains 2222222222222222222222222222222222222222") {
+			t.Errorf("expected git -C %s to be called, got calls: %v", expectedSubPath, mock.Calls)
+		}
+	})
+
+	t.Run("VerifyHeadForPush requests SUBMIT_REQUIREMENTS so CheckSubmodulePolicy enforces No-Submodule-Changes", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		changeID := "I1234567890123456789012345678901234567890"
+		server.OnJSON("GET", "/changes/", http.StatusOK, []gerrit.ChangeInfo{
+			{
+				Number:   42,
+				ChangeID: changeID,
+				SubmitRequirements: []gerrit.SubmitRequirementResultInfo{
+					{Name: "No-Submodule-Changes", Status: "UNSATISFIED"},
+				},
+			},
+		})
+		SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
+			return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
+		})
+
+		mock := &MockGitRunner{}
+		mock.OnCommand("log -1 --format=%B", "feat: Update submodule\n\nChange-Id: "+changeID+"\n").
+			OnCommand("diff-tree --no-commit-id -r HEAD", diffTreeWithSubmodule)
+		cfg := &Config{Git: mock, Host: server.URL}
+		cmd := &cobra.Command{}
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetContext(ctx)
+
+		state, err := VerifyHeadForPush(ctx, cmd, cfg, true)
+		if err != nil {
+			t.Fatalf("VerifyHeadForPush failed: %v", err)
+		}
+		if req := server.LastRequest(); req == nil || !strings.Contains(req.URL.RawQuery, "SUBMIT_REQUIREMENTS") {
+			t.Fatalf("expected VerifyHeadForPush to request SUBMIT_REQUIREMENTS, got request: %+v", req)
+		}
+		if err := CheckSubmodulePolicy(ctx, cfg.GitClient(), DefaultProjectConfig(), state.ExistingChange, "origin", "main", nil, io.Discard); err == nil {
+			t.Fatal("expected CheckSubmodulePolicy to reject modified submodule via SubmitRequirements from VerifyHeadForPush")
+		}
+	})
+
+	t.Run("propagates real git diff-tree error when policy is active", func(t *testing.T) {
+		mock := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				stderr.Write([]byte("fatal: corrupt object\n"))
+				return fmt.Errorf("exit status 128")
+			},
+		}
+		client := NewGitClient(mock)
+		pcfg := DefaultProjectConfig()
+		pcfg.Gerrit.SubmodulePolicy = "forbid-manual-rolls"
+
+		var errBuf bytes.Buffer
+		err := CheckSubmodulePolicy(ctx, client, pcfg, nil, "origin", "main", nil, &errBuf)
+		if err == nil || !strings.Contains(err.Error(), "failed to inspect commit HEAD for submodule changes") {
+			t.Fatalf("expected diff-tree error to propagate, got: %v", err)
+		}
+	})
 }

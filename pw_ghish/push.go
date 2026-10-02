@@ -47,6 +47,10 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := checkPushSubmodulePolicy(ctx, cmd, cfg, state.ExistingChange, branch, flags.Stack); err != nil {
+		return err
+	}
+
 	if !force {
 		if flags.Stack {
 			if err := VerifyStackChanges(ctx, cmd, cfg, branch, state, "push"); err != nil {

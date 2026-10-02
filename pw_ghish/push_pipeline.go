@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/andygrunwald/go-gerrit"
@@ -96,15 +97,7 @@ func ParseCommonPushFlags(cmd *cobra.Command) CommonPushFlags {
 // defaultBranch resolves the default target branch (defaults to "main").
 func defaultBranch(ctx context.Context, cfg *Config, stderr io.Writer) string {
 	if cfg != nil {
-		if projCfg, err := cfg.LoadProjectConfig(ctx); err == nil && projCfg != nil && projCfg.Gerrit.DefaultBranch != "" {
-			return projCfg.Gerrit.DefaultBranch
-		}
-	}
-	git := cfg.GitClient()
-	for _, ref := range []string{"refs/heads/main", "refs/remotes/origin/main", "origin/main"} {
-		if ok, err := git.VerifyRef(ctx, ref); err == nil && ok {
-			return "main"
-		}
+		return cfg.ResolveDefaultBranch(ctx)
 	}
 	return "main"
 }
@@ -113,8 +106,8 @@ func defaultBranch(ctx context.Context, cfg *Config, stderr io.Writer) string {
 // Priority:
 // 1. Explicit --base flag
 // 2. Tracking branch upstream (@{upstream})
-// 3. Remote branch on origin matching current branch name
-// 4. Default branch (main)
+// 3. Remote branch on resolved remote matching current branch name
+// 4. Default branch (e.g. main)
 func resolvePushBranch(ctx context.Context, cfg *Config, baseFlag string, stderr io.Writer) string {
 	if baseFlag != "" {
 		return baseFlag
@@ -129,13 +122,19 @@ func resolvePushBranch(ctx context.Context, cfg *Config, baseFlag string, stderr
 			}
 		}
 	}
-	// 2. Check if current local branch matches an existing remote branch on origin
+	// 2. Check if current local branch matches an existing remote branch
 	if curr, err := git.CurrentBranch(ctx); err == nil && curr != "" {
-		if ok, err := git.VerifyRef(ctx, "origin/"+curr); err == nil && ok {
+		remote := "origin"
+		if cfg != nil {
+			remote = cfg.ResolveRemote(ctx)
+		} else {
+			remote = git.ResolveRemote(ctx)
+		}
+		if ok, err := git.VerifyRef(ctx, remote+"/"+curr); err == nil && ok {
 			return curr
 		}
 	}
-	// 3. Fall back to default repo branch (main)
+	// 3. Fall back to default repo branch
 	return defaultBranch(ctx, cfg, stderr)
 }
 
@@ -196,6 +195,20 @@ func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stac
 	return nil
 }
 
+// checkPushSubmodulePolicy resolves and caches the Gerrit remote on cfg, gathers stack
+// commits when stack is true, and enforces CheckSubmodulePolicy before pushing.
+func checkPushSubmodulePolicy(ctx context.Context, cmd *cobra.Command, cfg *Config, existing *gerrit.ChangeInfo, branch string, stack bool) error {
+	remote := cfg.ResolveRemote(ctx)
+	if cfg.Remote == "" {
+		cfg.Remote = remote
+	}
+	var stackCommits []StackCommit
+	if stack {
+		stackCommits, _ = cfg.GitClient().StackCommits(ctx, branch)
+	}
+	return CheckSubmodulePolicy(ctx, cfg.GitClient(), cfg.GetProjectConfig(ctx), existing, remote, branch, stackCommits, cmd.ErrOrStderr())
+}
+
 // executePush runs git push to Gerrit with the specified push options.
 func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, pushOpts PushOptions, noVerify bool) error {
 	if cmd == nil {
@@ -207,11 +220,18 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 	profile := cfg.GetProfile(ctx)
 	refStr := profile.FormatPushRef(branch, pushOpts)
 
+	remote := "origin"
+	if strings.TrimSpace(cfg.Remote) != "" {
+		remote = strings.TrimSpace(cfg.Remote)
+	} else if cfg.ProjectConfig != nil && strings.TrimSpace(cfg.ProjectConfig.Gerrit.Remote) != "" {
+		remote = strings.TrimSpace(cfg.ProjectConfig.Gerrit.Remote)
+	}
+
 	pushArgs := []string{"push"}
 	if noVerify {
 		pushArgs = append(pushArgs, "--no-verify")
 	}
-	pushArgs = append(pushArgs, "origin", "HEAD:"+refStr)
+	pushArgs = append(pushArgs, remote, "HEAD:"+refStr)
 
 	var errBuf bytes.Buffer
 	if err := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), &errBuf, pushArgs...); err != nil {
@@ -659,7 +679,7 @@ func VerifyStackChanges(ctx context.Context, cmd *cobra.Command, cfg *Config, br
 			existingByIdx[i] = headState.ExistingChange
 			continue
 		}
-		ch, ok := queryExistingChangeByID(ctx, client, c.ChangeID)
+		ch, ok := queryExistingChangeByID(ctx, client, c.ChangeID, "SUBMIT_REQUIREMENTS")
 		if !ok {
 			return nil
 		}
@@ -714,6 +734,174 @@ func VerifyStackChanges(ctx context.Context, cmd *cobra.Command, cfg *Config, br
 					ex.Number, laterC.Hash, laterC.Subject,
 					newC.Hash,
 				)
+			}
+		}
+	}
+
+	return nil
+}
+
+type submoduleModification struct {
+	Path    string
+	OldSHA  string
+	NewSHA  string
+	NewMode string
+}
+
+// CheckSubmodulePolicy inspects the commits being pushed for gitlink (mode 160000)
+// modifications and enforces the repository's submodule policy ("allow",
+// "forbid-manual-rolls", "warn-unpushed", "require-pushed") or Gerrit's
+// "No-Submodule-Changes" submit requirement.
+func CheckSubmodulePolicy(ctx context.Context, git GitClient, pcfg *ProjectConfig, existing *gerrit.ChangeInfo, remote, branch string, commits []StackCommit, stderr io.Writer) error {
+	hasNoSubmoduleSR := false
+	if existing != nil {
+		for _, sr := range existing.SubmitRequirements {
+			if strings.EqualFold(sr.Name, "No-Submodule-Changes") && sr.Status != "NOT_APPLICABLE" {
+				hasNoSubmoduleSR = true
+				break
+			}
+		}
+	}
+
+	policy := "allow"
+	if pcfg != nil && strings.TrimSpace(pcfg.Gerrit.SubmodulePolicy) != "" {
+		policy = strings.ToLower(strings.TrimSpace(pcfg.Gerrit.SubmodulePolicy))
+	}
+	if hasNoSubmoduleSR {
+		policy = "forbid-manual-rolls"
+	}
+	if policy == "" || policy == "allow" {
+		return nil
+	}
+	if git == nil {
+		return nil
+	}
+	if strings.TrimSpace(remote) == "" {
+		remote = "origin"
+	}
+	if strings.TrimSpace(branch) == "" {
+		branch = "main"
+	}
+
+	var refs []string
+	if len(commits) > 0 {
+		for _, c := range commits {
+			if strings.TrimSpace(c.Hash) != "" {
+				refs = append(refs, strings.TrimSpace(c.Hash))
+			}
+		}
+	}
+	if len(refs) == 0 {
+		refs = []string{"HEAD"}
+	}
+
+	var mods []submoduleModification
+	seenPaths := make(map[string]int)
+	for _, ref := range refs {
+		var buf bytes.Buffer
+		if err := git.Run(ctx, &buf, io.Discard, "diff-tree", "--no-commit-id", "-r", ref); err != nil {
+			return fmt.Errorf("failed to inspect commit %s for submodule changes: %w", ref, err)
+		}
+		out := buf.String()
+		for _, rawLine := range strings.Split(out, "\n") {
+			line := strings.TrimSpace(rawLine)
+			if line == "" {
+				continue
+			}
+			line = strings.TrimPrefix(line, ":")
+			meta, subPath, hasTab := strings.Cut(line, "\t")
+			if !hasTab {
+				continue
+			}
+			subPath = strings.TrimSpace(subPath)
+			fields := strings.Fields(meta)
+			if len(fields) < 5 {
+				continue
+			}
+			oldMode, newMode, oldSHA, newSHA := fields[0], fields[1], fields[2], fields[3]
+			if oldMode != "160000" && newMode != "160000" {
+				continue
+			}
+			mod := submoduleModification{
+				Path:    subPath,
+				OldSHA:  oldSHA,
+				NewSHA:  newSHA,
+				NewMode: newMode,
+			}
+			if idx, exists := seenPaths[subPath]; exists {
+				mods[idx].NewSHA = newSHA
+				mods[idx].NewMode = newMode
+			} else {
+				seenPaths[subPath] = len(mods)
+				mods = append(mods, mod)
+			}
+		}
+	}
+
+	if len(mods) == 0 {
+		return nil
+	}
+
+	if policy == "forbid-manual-rolls" {
+		source := "project configuration (submodule_policy = \"forbid-manual-rolls\")"
+		if hasNoSubmoduleSR {
+			source = "Gerrit submit requirement 'No-Submodule-Changes'"
+		}
+		var paths []string
+		for _, m := range mods {
+			paths = append(paths, m.Path)
+		}
+		pathList := strings.Join(paths, " ")
+		return fmt.Errorf(
+			"cannot push commit with modified git submodule(s) (%s): %s forbids manual submodule rolls.\n\n"+
+				"Why: Modifying submodule gitlink entries (mode 160000) in this repository causes the\n"+
+				"'No-Submodule-Changes' submit requirement to fail and blocks submission.\n\n"+
+				"To revert the accidental submodule modification(s) and proceed:\n"+
+				"  git checkout %s/%s -- %s\n"+
+				"  git commit --amend --no-edit",
+			strings.Join(paths, ", "), source, remote, branch, pathList,
+		)
+	}
+
+	if policy == "warn-unpushed" || policy == "require-pushed" {
+		topLevel, topErr := git.RevParse(ctx, "--show-toplevel")
+		topLevel = strings.TrimSpace(topLevel)
+		for _, mod := range mods {
+			if mod.NewMode != "160000" || mod.NewSHA == "" || strings.Trim(mod.NewSHA, "0") == "" {
+				continue
+			}
+			subDir := mod.Path
+			if topErr == nil && topLevel != "" {
+				subDir = filepath.Join(topLevel, filepath.FromSlash(mod.Path))
+			}
+			var buf bytes.Buffer
+			branchErr := git.Run(ctx, &buf, io.Discard, "-C", subDir, "branch", "-r", "--contains", mod.NewSHA)
+			branchOut := buf.String()
+			if branchErr != nil || strings.TrimSpace(branchOut) == "" {
+				if policy == "warn-unpushed" {
+					if stderr != nil {
+						fmt.Fprintf(stderr,
+							"Warning: submodule %q points to commit %s which was not found on any remote branch.\n"+
+								"  • If this submodule update was accidental, revert it before pushing:\n"+
+								"      git checkout %s/%s -- %s && git commit --amend --no-edit\n"+
+								"  • If intentional, ensure commit %s is pushed and merged in %q first.\n",
+							mod.Path, mod.NewSHA, remote, branch, mod.Path, mod.NewSHA, mod.Path,
+						)
+					}
+				} else {
+					return fmt.Errorf(
+						"cannot push unpushed submodule commit: submodule %q points to %s, which is not on any remote branch.\n\n"+
+							"Why: Project configuration (submodule_policy = \"require-pushed\") requires submodule gitlinks\n"+
+							"to reference commits that exist on a remote branch.\n\n"+
+							"To resolve:\n"+
+							"  • If the submodule modification was accidental, revert it:\n"+
+							"      git checkout %s/%s -- %s\n"+
+							"      git commit --amend --no-edit\n"+
+							"  • If intentional, push the commit in submodule %q first, or fetch its remote branches:\n"+
+							"      git -C %s fetch --all",
+						mod.Path, mod.NewSHA, remote, branch, mod.Path, mod.Path, subDir,
+					)
+				}
 			}
 		}
 	}

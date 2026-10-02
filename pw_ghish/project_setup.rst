@@ -134,15 +134,16 @@ Example ``.ghish.toml``
 .. code-block:: toml
 
    [gerrit]
-   # Default Gerrit host and project for this repository:
+   # Default Gerrit host, project, remote, and upstream branch for this repository:
    host = "pigweed-review.googlesource.com"
    project = "pigweed/pigweed"
+   remote = "origin"
    default_branch = "main"
 
    # Scope `gh pr list` to this Gerrit project by default (pass --all-projects to override):
    scope_list_to_project = true
 
-   # Submodule safety policy ("allow", "warn-unpushed", or "forbid-manual-rolls"):
+   # Submodule safety policy ("allow", "warn-unpushed", "require-pushed", or "forbid-manual-rolls"):
    submodule_policy = "warn-unpushed"
 
    # Reject --topic / -o topic=... before git push on projects with Topics-Not-Supported:
@@ -173,6 +174,29 @@ Example ``.ghish.toml``
    # Project-specific local presubmit command shown in hints:
    local_presubmit_hint = "./pw presubmit"
 
+   [issue]
+   # Default Buganizer component ID and GCP quota project:
+   default_component = 1194524
+   quota_project = "my-gcp-quota-project"
+
+   # Commit trailer template written by `gh issue create --amend` / `--commit`:
+   trailer_format = "Bug: b/{id}"
+
+   # Inspect nearest OWNERS files for `# COMPONENT: <id>` or `# Buganizer component: <id>`:
+   use_owners_components = true
+
+   # Path-prefix or glob mappings to Buganizer component IDs (longest match wins):
+   [issue.path_components]
+   "pw_bluetooth_sapphire/" = 1456789
+   "pw_kernel/" = 1456790
+
+   [worktree]
+   # Prefix for warm physical worktree slots (`~/wrk/slots/<slot_prefix>01..N`):
+   slot_prefix = "pw-"
+
+   # Build cache warmup driver ("bazel" or "none"; auto-detected if omitted):
+   warmup_driver = "bazel"
+
 Overriding settings via ``git config``
 ======================================
 Any ``.ghish.toml`` setting can be configured or overridden locally via
@@ -180,11 +204,23 @@ Any ``.ghish.toml`` setting can be configured or overridden locally via
 
 .. code-block:: console
 
+   # Configure Gerrit remote and default upstream branch:
+   $ git config --local ghish.gerrit.remote "goog"
+   $ git config --local ghish.gerrit.defaultBranch "main"
+
+   # Enforce submodule policy ("allow", "warn-unpushed", "require-pushed", "forbid-manual-rolls"):
+   $ git config --local ghish.gerrit.submodulePolicy "forbid-manual-rolls"
+
    # Hide subbuilds in `gh pr checks`, `gh run list`, and `gh run view`:
    $ git config --local ghish.ci.hideTagFilters "hide-in-gerrit:subbuild"
 
    # Register a custom Gerrit shortlink prefix:
    $ git config --local ghish.gerrit.shortlink.myrev "myproject-review.googlesource.com"
+
+   # Configure Buganizer component, path mapping, and trailer format:
+   $ git config --local ghish.issue.defaultComponent 1194524
+   $ git config --local ghish.issue.pathComponents.pw_kernel/ 1456790
+   $ git config --local ghish.issue.trailerFormat "Bug: b/{id}"
 
    # Set a custom local presubmit hint:
    $ git config --local ghish.ci.localPresubmitHint "fx test"

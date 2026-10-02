@@ -145,10 +145,39 @@ type MockGitRunner struct {
 	defaultCommitMsg string
 }
 
+func isOptionalDiscoveryProbe(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "remote", "symbolic-ref", "diff-tree":
+		return true
+	case "branch":
+		return len(args) == 2 && args[1] == "--show-current"
+	case "config":
+		if len(args) == 3 && args[1] == "--get" {
+			k := args[2]
+			return strings.HasPrefix(k, "ghish.") || strings.HasPrefix(k, "branch.") || k == "init.defaultBranch"
+		}
+		if len(args) == 3 && args[1] == "--get-regexp" && args[2] == `^ghish\.` {
+			return true
+		}
+	case "rev-parse":
+		if len(args) >= 2 {
+			switch args[1] {
+			case "--verify", "--show-toplevel":
+				return true
+			case "--abbrev-ref":
+				return len(args) >= 3 && args[len(args)-1] == "@{u}"
+			}
+		}
+	}
+	return false
+}
+
 func (m *MockGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 	m.mu.Lock()
 	call := strings.Join(args, " ")
-	m.Calls = append(m.Calls, call)
 	resp, hasResp := m.responses[call]
 	var errToReturn error
 	for pattern, err := range m.errors {
@@ -159,6 +188,14 @@ func (m *MockGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args 
 	}
 	defaultBranch := m.defaultBranch
 	defaultCommitMsg := m.defaultCommitMsg
+	hasHandler := hasResp || errToReturn != nil || m.RunFn != nil ||
+		(defaultBranch != "" && len(args) >= 1 && args[0] == "branch") ||
+		(defaultCommitMsg != "" && len(args) >= 2 && args[0] == "log" && args[1] == "-1")
+	if !hasHandler && isOptionalDiscoveryProbe(args) {
+		m.mu.Unlock()
+		return nil
+	}
+	m.Calls = append(m.Calls, call)
 	m.mu.Unlock()
 
 	if errToReturn != nil {

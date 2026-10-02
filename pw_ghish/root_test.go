@@ -665,3 +665,19 @@ func TestGerritURL_GitCorpRemote(t *testing.T) {
 		})
 	}
 }
+
+func TestGerritURL_NonOriginRemote(t *testing.T) {
+	ctx := context.Background()
+	mock := &MockGitRunner{}
+	mock.OnCommand("remote", "goog\n").
+		OnCommand("config --get remote.goog.url", "sso://acme-internal/platform/firmware\n")
+	c := &Config{Git: mock}
+	got, err := c.GerritURL(ctx)
+	if err != nil {
+		t.Fatalf("GerritURL() with goog remote failed: %v", err)
+	}
+	want := "https://acme-internal-review.googlesource.com/a"
+	if got != want {
+		t.Errorf("GerritURL() = %q, want %q", got, want)
+	}
+}
