@@ -39,6 +39,5 @@ rust_doc_test(
 rust_doc(
     name = "pw_status_doc",
     crate = ":pw_status",
-    target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],
 )

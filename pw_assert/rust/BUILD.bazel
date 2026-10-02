@@ -216,7 +216,6 @@ rust_doc(
     crate_features = [
         "debug_assertions",
     ],
-    target_compatible_with = incompatible_with_mcu(),
 )
 
 # Use the _doc target for rust_test and rust_doc_tests so they get

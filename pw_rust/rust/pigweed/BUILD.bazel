@@ -13,13 +13,11 @@
 # the License.
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
 rust_library(
     name = "pigweed",
     srcs = ["src/lib.rs"],
     crate_name = "pigweed",
     edition = "2021",
-    target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],
 )

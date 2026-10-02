@@ -14,7 +14,6 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_rust_docs.bzl", "pw_rust_docs")
 
 exports_files(
@@ -101,7 +100,6 @@ sphinx_docs_library(
         "upstream.rst",
     ],
     prefix = "pw_kernel/",
-    target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],
 )
 
@@ -127,7 +125,8 @@ pw_rust_docs(
         "//pw_kernel/lib/unittest",
         "//pw_kernel/syscall:syscall_defs",
         "//pw_kernel/syscall:syscall_user",
-        "//pw_kernel/kernel",
+        "//pw_kernel/kernel:kernel_doc",
+        "//pw_rust/rust/pigweed:pigweed",
     ],
     rustdoc_flags = [
         "-Z",
@@ -136,5 +135,13 @@ pw_rust_docs(
         "--cfg=feature=\"std_panic_handler\"",
     ],
     tags = ["kernel"],
-    target_compatible_with = incompatible_with_mcu(),
+)
+
+# Intermediary target that enables us to provide rustdoc files
+# as an input to rules_python/sphinx_docs_library.
+filegroup(
+    name = "docs_dir",
+    srcs = [":rust_docs"],
+    output_group = "rustdoc_dir",
+    visibility = ["//visibility:public"],
 )
