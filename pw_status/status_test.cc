@@ -14,6 +14,11 @@
 
 #include "pw_status/status.h"
 
+#include <type_traits>
+
+#include "pw_enum/to_string.h"
+#include "pw_status/try.h"
+#include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw {
@@ -150,10 +155,20 @@ TEST(Status, Strings) {
   EXPECT_STREQ("UNAVAILABLE", Status::Unavailable().str());
   EXPECT_STREQ("DATA_LOSS", Status::DataLoss().str());
   EXPECT_STREQ("UNAUTHENTICATED", Status::Unauthenticated().str());
+
+  EXPECT_STREQ("OK", PwEnumToString(PW_STATUS_OK));
+  EXPECT_STREQ("CANCELLED", PwEnumToString(PW_STATUS_CANCELLED));
+  EXPECT_STREQ("OK", EnumToString(PW_STATUS_OK));
+  EXPECT_STREQ("CANCELLED", EnumToString(PW_STATUS_CANCELLED));
+  EXPECT_STREQ("OK", pw_StatusString(OkStatus()));
+  EXPECT_STREQ("CANCELLED", pw_StatusString(Status::Cancelled()));
 }
 
 TEST(Status, UnknownString) {
   EXPECT_STREQ("INVALID STATUS", Status(kInvalidCode).str());
+  EXPECT_STREQ("INVALID STATUS", pw_StatusString(Status(kInvalidCode)));
+  EXPECT_STREQ("INVALID STATUS", PwEnumToString(kInvalidCode));
+  EXPECT_STREQ("INVALID STATUS", EnumToString(kInvalidCode));
 }
 
 TEST(Status, Update) {
@@ -164,6 +179,45 @@ TEST(Status, Update) {
   EXPECT_EQ(status, Status::Cancelled());
   status.Update(Status::NotFound());
   EXPECT_EQ(status, Status::Cancelled());
+}
+
+TEST(Status, EnumToStringIsAvailable) {
+  static_assert(has_enum_to_string_v<pw_Status>);
+  static_assert(internal::status_has_str_v<Status>);
+}
+
+// Types that implicitly convert to pw::Status work with PW_TRY.
+struct ConvertsToStatus {
+  constexpr bool ok() const { return code == PW_STATUS_OK; }
+  constexpr operator Status() const { return code; }
+
+  pw_Status code;
+};
+
+Status TryConvertsToStatus(ConvertsToStatus value) {
+  PW_TRY(value);
+  return Status::Unknown();
+}
+
+TEST(Status, ImplicitConversionToStatus) {
+  constexpr ConvertsToStatus value{PW_STATUS_ABORTED};
+  static_assert(
+      std::is_same_v<decltype(internal::ConvertToStatus(value)), Status>);
+  static_assert(internal::ConvertToStatus(value) == Status::Aborted());
+  static_assert(Status::Aborted() == value);
+
+  EXPECT_EQ(TryConvertsToStatus({PW_STATUS_ABORTED}), Status::Aborted());
+  EXPECT_EQ(TryConvertsToStatus({PW_STATUS_OK}), Status::Unknown());
+}
+
+TEST(Status, ConvertToStatus) {
+  static_assert(
+      std::is_same_v<decltype(internal::ConvertToStatus(OkStatus())), Status>);
+  static_assert(
+      std::is_same_v<decltype(internal::ConvertToStatus(PW_STATUS_OK)),
+                     Status>);
+  static_assert(internal::ConvertToStatus(PW_STATUS_INTERNAL) ==
+                Status::Internal());
 }
 
 // Functions for executing the C pw_Status tests.

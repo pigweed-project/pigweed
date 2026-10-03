@@ -15,6 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_enum:pw_cc_enum_library.bzl", "pw_cc_enum_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -29,11 +30,15 @@ cc_library(
     hdrs = [
         "public/pw_status/internal/config.h",
         "public/pw_status/status.h",
+        "public/pw_status/status_base.h",
         "public/pw_status/status_with_size.h",
         "public/pw_status/try.h",
     ],
     strip_include_prefix = "public",
-    deps = [":config_override"],
+    deps = [
+        ":config_override",
+        "//pw_enum",
+    ],
 )
 
 label_flag(
@@ -52,7 +57,38 @@ pw_cc_test(
         "status_test.cc",
         "status_test_c.c",
     ],
-    deps = [":pw_status"],
+    deps = [
+        ":pw_status",
+        "//pw_enum",
+        "//pw_unit_test:constexpr",
+    ],
+)
+
+pw_cc_enum_library(
+    name = "status_test_enum",
+    testonly = True,
+    enum_headers = ["test_enums/status_test_enum.h"],
+    strip_include_prefix = "test_enums",
+)
+
+pw_cc_test(
+    name = "status_base_test",
+    srcs = ["status_base_test.cc"],
+    has_nc_test = True,
+    deps = [
+        ":pw_status",
+        "//pw_unit_test:constexpr",
+    ],
+)
+
+pw_cc_test(
+    name = "status_base_enum_test",
+    srcs = ["status_base_enum_test.cc"],
+    deps = [
+        ":pw_status",
+        ":status_test_enum",
+        "//pw_unit_test:constexpr",
+    ],
 )
 
 pw_cc_test(
@@ -72,8 +108,10 @@ filegroup(
     srcs = [
         "public/pw_status/internal/config.h",
         "public/pw_status/status.h",
+        "public/pw_status/status_base.h",
         "public/pw_status/status_with_size.h",
         "public/pw_status/try.h",
+        "status_base_test.cc",
     ],
 )
 
@@ -84,6 +122,7 @@ sphinx_docs_library(
         "docs.rst",
         "guide.rst",
         "reference.rst",
+        "status_base_test.cc",
     ],
     prefix = "pw_status/",
     target_compatible_with = incompatible_with_mcu(),

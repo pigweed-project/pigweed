@@ -16,6 +16,7 @@ import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
+import("$dir_pw_enum/pw_cc_enum_source_set.gni")
 import("$dir_pw_unit_test/test.gni")
 
 declare_args() {
@@ -32,9 +33,13 @@ config("public_include_path") {
 
 pw_source_set("pw_status") {
   public_configs = [ ":public_include_path" ]
-  public_deps = [ pw_status_CONFIG ]
+  public_deps = [
+    "$dir_pw_enum",
+    pw_status_CONFIG,
+  ]
   public = [
     "public/pw_status/status.h",
+    "public/pw_status/status_base.h",
     "public/pw_status/status_with_size.h",
     "public/pw_status/try.h",
   ]
@@ -57,17 +62,51 @@ pw_source_set("check_if_used") {
 pw_test_group("tests") {
   tests = [
     ":status_test",
+    ":status_base_test",
     ":status_with_size_test",
     ":try_test",
   ]
+  if (host_os != "win") {
+    tests += [ ":status_base_enum_test" ]
+  }
 }
 
 pw_test("status_test") {
-  deps = [ ":pw_status" ]
+  deps = [
+    ":pw_status",
+    "$dir_pw_enum",
+    "$dir_pw_unit_test:constexpr",
+  ]
   sources = [
     "status_test.cc",
     "status_test_c.c",
   ]
+}
+
+if (host_os != "win") {
+  pw_cc_enum_source_set("status_test_enum") {
+    enum_headers = [ "test_enums/status_test_enum.h" ]
+    include_dirs = [ "test_enums" ]
+    testonly = pw_unit_test_TESTONLY
+  }
+
+  pw_test("status_base_enum_test") {
+    deps = [
+      ":pw_status",
+      ":status_test_enum",
+      "$dir_pw_unit_test:constexpr",
+    ]
+    sources = [ "status_base_enum_test.cc" ]
+  }
+}
+
+pw_test("status_base_test") {
+  deps = [
+    ":pw_status",
+    "$dir_pw_unit_test:constexpr",
+  ]
+  sources = [ "status_base_test.cc" ]
+  negative_compilation_tests = true
 }
 
 pw_test("status_with_size_test") {

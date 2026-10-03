@@ -56,8 +56,14 @@
 
 // A header- and constexpr-safe version of PW_CHECK_OK().
 //
-// If the condition does not evaluate to PW_STATUS_OK, crash.
+// If expression does not evaluate to an OK status, crash.
 // Otherwise, do nothing. The expression is guaranteed to be evaluated.
+//
+// In C++, expression must evaluate to a value convertible to a status via
+// pw::internal::ConvertToStatus(). This includes pw::Status, pw_Status,
+// pw::StatusWithSize, pw::Result, and custom pw::StatusBase-derived types.
+//
+// In C, expression must evaluate to a pw_Status value.
 //
 // Unlike `PW_CHECK_OK`, this macro does not currently log the failed status
 // kind.
@@ -68,18 +74,24 @@
 // absolutely necessary -- in headers, constexpr contexts, or in rare cases
 // where the call site overhead of a full PW_CHECK must be avoided. Use
 // PW_CHECK_*() whenever possible.
-#define PW_ASSERT_OK(expression, ...)                               \
-  do {                                                              \
-    const _PW_ASSERT_OK_STATUS _pw_assert_ok_status = (expression); \
-    if (_pw_assert_ok_status != PW_STATUS_OK) {                     \
-      PW_ASSERT_HANDLE_FAILURE(#expression);                        \
-    }                                                               \
+#ifdef __cplusplus
+
+#define PW_ASSERT_OK(expression, ...)                        \
+  do {                                                       \
+    if (!::pw::internal::ConvertToStatus(expression).ok()) { \
+      PW_ASSERT_HANDLE_FAILURE(#expression);                 \
+    }                                                        \
   } while (0)
 
-#ifdef __cplusplus
-#define _PW_ASSERT_OK_STATUS ::pw::Status
 #else
-#define _PW_ASSERT_OK_STATUS pw_Status
+
+#define PW_ASSERT_OK(expression, ...)        \
+  do {                                       \
+    if ((expression) != PW_STATUS_OK) {      \
+      PW_ASSERT_HANDLE_FAILURE(#expression); \
+    }                                        \
+  } while (0)
+
 #endif  // __cplusplus
 
 // This empty, non-constexpr function is invoked when a PW_ASSERT fails. It

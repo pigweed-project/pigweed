@@ -89,11 +89,21 @@ const char* pw_StatusString(pw_Status status);
 /// Indicates the status code with the highest valid value.
 #define PW_STATUS_LAST PW_STATUS_UNAUTHENTICATED
 
-/// @}
+/// @endmodule
 
 #ifdef __cplusplus
 
 }  // extern "C"
+
+#include "pw_enum/to_string.h"
+#include "pw_status/status_base.h"
+
+/// Returns a string representation of a given `pw_Status` enumerator.
+///
+/// This implements the FTADLE extension point for `pw::EnumToString`.
+inline const char* PwEnumToString(pw_Status status) {
+  return pw_StatusString(status);
+}
 
 /// The Pigweed namespace
 namespace pw {
@@ -117,7 +127,8 @@ namespace pw {
 ///      return Status::DataLoss();
 ///   }
 /// @endcode
-class _PW_STATUS_NO_DISCARD Status {
+class _PW_STATUS_NO_DISCARD Status final
+    : public StatusBase<Status, PW_STATUS_OK> {
  public:
   using Code = pw_Status;
 
@@ -332,108 +343,78 @@ class _PW_STATUS_NO_DISCARD Status {
   // clang-format on
 
   /// Statuses are created with a `Status::Code`.
-  constexpr Status(Code code = PW_STATUS_OK) : code_(code) {}
+  // C/C++ interoperability: allow implicit conversion from pw_Status
+  constexpr Status(Code code = PW_STATUS_OK) : StatusBase(code) {}
 
   constexpr Status(const Status&) = default;
   constexpr Status& operator=(const Status&) = default;
-
-  /// @returns The `Status::Code` (`pw_Status`) for this `Status`.
-  constexpr Code code() const { return code_; }
-
-  /// @returns `true` if the status is `pw::OkStatus()`.
-  ///
-  /// This function is provided in place of an `IsOk()` function.
-  [[nodiscard]] constexpr bool ok() const { return code_ == PW_STATUS_OK; }
+  constexpr Status(Status&&) = default;
+  constexpr Status& operator=(Status&&) = default;
 
   /// @returns `true` if the status of this instance is @CANCELLED.
   [[nodiscard]] constexpr bool IsCancelled() const {
-    return code_ == PW_STATUS_CANCELLED;
+    return code() == PW_STATUS_CANCELLED;
   }
   /// @returns `true` if the status of this instance is @UNKNOWN.
   [[nodiscard]] constexpr bool IsUnknown() const {
-    return code_ == PW_STATUS_UNKNOWN;
+    return code() == PW_STATUS_UNKNOWN;
   }
   /// @returns `true` if the status of this instance is @INVALID_ARGUMENT.
   [[nodiscard]] constexpr bool IsInvalidArgument() const {
-    return code_ == PW_STATUS_INVALID_ARGUMENT;
+    return code() == PW_STATUS_INVALID_ARGUMENT;
   }
   /// @returns `true` if the status of this instance is @DEADLINE_EXCEEDED.
   [[nodiscard]] constexpr bool IsDeadlineExceeded() const {
-    return code_ == PW_STATUS_DEADLINE_EXCEEDED;
+    return code() == PW_STATUS_DEADLINE_EXCEEDED;
   }
   /// @returns `true` if the status of this instance is @NOT_FOUND.
   [[nodiscard]] constexpr bool IsNotFound() const {
-    return code_ == PW_STATUS_NOT_FOUND;
+    return code() == PW_STATUS_NOT_FOUND;
   }
   /// @returns `true` if the status of this instance is @ALREADY_EXISTS.
   [[nodiscard]] constexpr bool IsAlreadyExists() const {
-    return code_ == PW_STATUS_ALREADY_EXISTS;
+    return code() == PW_STATUS_ALREADY_EXISTS;
   }
   /// @returns `true` if the status of this instance is @PERMISSION_DENIED.
   [[nodiscard]] constexpr bool IsPermissionDenied() const {
-    return code_ == PW_STATUS_PERMISSION_DENIED;
+    return code() == PW_STATUS_PERMISSION_DENIED;
   }
   /// @returns `true` if the status of this instance is @RESOURCE_EXHAUSTED.
   [[nodiscard]] constexpr bool IsResourceExhausted() const {
-    return code_ == PW_STATUS_RESOURCE_EXHAUSTED;
+    return code() == PW_STATUS_RESOURCE_EXHAUSTED;
   }
   /// @returns `true` if the status of this instance is @FAILED_PRECONDITION.
   [[nodiscard]] constexpr bool IsFailedPrecondition() const {
-    return code_ == PW_STATUS_FAILED_PRECONDITION;
+    return code() == PW_STATUS_FAILED_PRECONDITION;
   }
   /// @returns `true` if the status of this instance is @ABORTED.
   [[nodiscard]] constexpr bool IsAborted() const {
-    return code_ == PW_STATUS_ABORTED;
+    return code() == PW_STATUS_ABORTED;
   }
   /// @returns `true` if the status of this instance is @OUT_OF_RANGE.
   [[nodiscard]] constexpr bool IsOutOfRange() const {
-    return code_ == PW_STATUS_OUT_OF_RANGE;
+    return code() == PW_STATUS_OUT_OF_RANGE;
   }
   /// @returns `true` if the status of this instance is @UNIMPLEMENTED.
   [[nodiscard]] constexpr bool IsUnimplemented() const {
-    return code_ == PW_STATUS_UNIMPLEMENTED;
+    return code() == PW_STATUS_UNIMPLEMENTED;
   }
   /// @returns `true` if the status of this instance is @INTERNAL.
   [[nodiscard]] constexpr bool IsInternal() const {
-    return code_ == PW_STATUS_INTERNAL;
+    return code() == PW_STATUS_INTERNAL;
   }
   /// @returns `true` if the status of this instance is @UNAVAILABLE.
   [[nodiscard]] constexpr bool IsUnavailable() const {
-    return code_ == PW_STATUS_UNAVAILABLE;
+    return code() == PW_STATUS_UNAVAILABLE;
   }
   /// @returns `true` if the status of this instance is @DATA_LOSS.
   [[nodiscard]] constexpr bool IsDataLoss() const {
-    return code_ == PW_STATUS_DATA_LOSS;
+    return code() == PW_STATUS_DATA_LOSS;
   }
   /// @returns `true` if the status of this instance is @UNAUTHENTICATED.
   [[nodiscard]] constexpr bool IsUnauthenticated() const {
-    return code_ == PW_STATUS_UNAUTHENTICATED;
+    return code() == PW_STATUS_UNAUTHENTICATED;
   }
-
-  /// Updates this `Status` to the `other` IF this status is
-  /// `pw::OkStatus()`.
-  ///
-  /// This is useful for tracking the first encountered error,
-  /// as calls to this helper will not change one error status to another error
-  /// status.
-  constexpr void Update(Status other) {
-    if (ok()) {
-      code_ = other.code();
-    }
-  }
-
-  /// Ignores any errors.
-  ///
-  /// This method does nothing except potentially suppress
-  /// complaints from any tools that are checking that errors are not dropped on
-  /// the floor.
-  constexpr void IgnoreError() const {}
-
-  /// @returns A null-terminated string representation of the `Status`.
-  [[nodiscard]] const char* str() const { return pw_StatusString(code_); }
-
- private:
-  Code code_;
 };
 
 /// Operation succeeded.
@@ -449,23 +430,18 @@ class _PW_STATUS_NO_DISCARD Status {
 /// this status code in other languages.
 [[nodiscard]] constexpr Status OkStatus() { return Status(); }
 
-constexpr bool operator==(const Status& lhs, const Status& rhs) {
-  return lhs.code() == rhs.code();
-}
-
-constexpr bool operator!=(const Status& lhs, const Status& rhs) {
-  return lhs.code() != rhs.code();
-}
-
-/// @}
-
 namespace internal {
 
-// This function and its various overloads are for use by internal macros
-// like PW_TRY.
+// Converts to pw::Status for use by internal macros like PW_TRY and
+// PW_CHECK_OK. This accepts pw::Status, the C pw_Status enum, and any other
+// type that implicitly converts to pw::Status. Custom status types are handled
+// by the generic ConvertToStatus template in status_base.h.
 constexpr Status ConvertToStatus(Status status) { return status; }
 
 }  // namespace internal
+
+/// @endmodule
+
 }  // namespace pw
 
 /// @module{pw_status}
@@ -476,6 +452,6 @@ inline const char* pw_StatusString(pw::Status status) {
   return pw_StatusString(status.code());
 }
 
-/// @}
+/// @endmodule
 
 #endif  // __cplusplus

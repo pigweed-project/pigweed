@@ -60,6 +60,7 @@
 #include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
+#include "pw_status/status_base.h"
 #include "pw_status/status_with_size.h"
 #include "pw_string/format.h"
 #include "pw_string/internal/config.h"
@@ -214,6 +215,13 @@ StatusWithSize ToString(const T& value, span<char> buffer) {
     return string::CopyStringOrNull("std::nullopt", buffer);
   } else if constexpr (internal::is_iterable_v<T>) {
     return internal::IterableToString(value.begin(), value.end(), buffer);
+  } else if constexpr (internal::is_status_v<T>) {
+    // Custom status types derived from pw::StatusBase.
+    if constexpr (internal::status_has_str_v<T>) {
+      return string::CopyStringOrNull(value.str(), buffer);
+    } else {
+      return ToString(value.code(), buffer);
+    }
   } else {
     // By default, no definition of UnknownTypeToString is provided.
     return string::UnknownTypeToString(value, buffer);

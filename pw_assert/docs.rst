@@ -375,7 +375,8 @@ invoke to assert. These macros are found in the ``pw_assert/check.h`` header.
 
   ``status`` can be a ``pw::Status``, or (in C++ only) any expression
   convertible to ``pw::Status``, including ``pw::StatusWithString`` and
-  ``pw::Result<T>``.
+  ``pw::Result<T>``. Custom status types derived from :cc:`pw::StatusBase`
+  are also supported.
 
   The ``DCHECK`` variants only run if ``PW_ASSERT_ENABLE_DEBUG`` is defined;
   otherwise, the entire statement is removed (and the expression not evaluated).

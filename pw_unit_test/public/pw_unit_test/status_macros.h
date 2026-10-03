@@ -23,26 +23,30 @@
 /// Converts `expr` to a Status value and checks that it is `OkStatus()`.
 ///
 /// @param[in] expr The expression to check.
-#define PW_TEST_EXPECT_OK(expr)                     \
-  if (cpp20::is_constant_evaluated()) {             \
-    ::pw::unit_test::internal::Constexpr_EXPECT_OK( \
-        ::pw::internal::ConvertToStatus(expr));     \
-  } else                                            \
-    EXPECT_EQ(::pw::internal::ConvertToStatus(expr), ::pw::OkStatus())
+#define PW_TEST_EXPECT_OK(expr)                                         \
+  if (cpp20::is_constant_evaluated()) {                                 \
+    ::pw::unit_test::internal::Constexpr_EXPECT_OK(                     \
+        ::pw::internal::ConvertToStatus(expr));                         \
+  } else {                                                              \
+    const auto _pw_test_status = ::pw::internal::ConvertToStatus(expr); \
+    EXPECT_EQ(_pw_test_status, decltype(_pw_test_status)());            \
+  }
 
 /// @}
 
 /// @submodule{pw_unit_test,assertions}
 
 /// See `PW_TEST_EXPECT_OK`.
-#define PW_TEST_ASSERT_OK(expr)                          \
-  if (cpp20::is_constant_evaluated()) {                  \
-    if (!::pw::unit_test::internal::Constexpr_EXPECT_OK( \
-            ::pw::internal::ConvertToStatus(expr))) {    \
-      return;                                            \
-    }                                                    \
-  } else                                                 \
-    ASSERT_EQ(::pw::internal::ConvertToStatus(expr), ::pw::OkStatus())
+#define PW_TEST_ASSERT_OK(expr)                                         \
+  if (cpp20::is_constant_evaluated()) {                                 \
+    if (!::pw::unit_test::internal::Constexpr_EXPECT_OK(                \
+            ::pw::internal::ConvertToStatus(expr))) {                   \
+      return;                                                           \
+    }                                                                   \
+  } else {                                                              \
+    const auto _pw_test_status = ::pw::internal::ConvertToStatus(expr); \
+    ASSERT_EQ(_pw_test_status, decltype(_pw_test_status)());            \
+  }
 
 /// Executes an expression that returns a `pw::Result` or `pw::StatusWithSize`
 /// and assigns or moves that value to lhs if the error code is OK. If the
@@ -90,7 +94,8 @@ namespace pw::unit_test::internal {
 // Functions for PW_CONSTEXPR_TEST compatibility. See pw_unit_test/constexpr.h.
 bool EXPECT_OK_FAILED();
 
-constexpr bool Constexpr_EXPECT_OK(Status status) {
+template <typename StatusType>
+constexpr bool Constexpr_EXPECT_OK(StatusType status) {
   return status.ok() ? true : EXPECT_OK_FAILED();
 }
 

@@ -10,6 +10,8 @@ pw_status
      :cc:`PW_TRY`
    - **Efficient**: No memory allocation, no exceptions
    - **Established**: Just like ``absl::Status``, deployed extensively at Google
+   - **Customizable**: Create custom status types for domain-specific enums or
+     codes with :cc:`pw::StatusBase`
 
    :cc:`pw::Status` is Pigweed's error propagation primitive, enabling
    exception-free error handling. The primary feature of ``pw_status`` is the
@@ -137,6 +139,101 @@ the status names below to jump directly to that error's reference.
    * - :c:enumerator:`UNAUTHENTICATED`
      - 16
      - Caller does not have valid authentication credentials for the operation
+
+.. _module-pw_status-status-base:
+
+-----------------------------------
+Custom status codes with StatusBase
+-----------------------------------
+:cc:`pw::StatusBase` is a base class template that provides Pigweed status
+semantics for custom code types, such as domain-specific error enums or integer
+codes. A designated code value represents success (``ok() == true``).
+
+Pigweed's standard :cc:`pw::Status` is itself implemented as a concrete class
+inheriting from ``StatusBase<Status, PW_STATUS_OK>``.
+
+Custom status types can be defined using the :c:macro:`PW_STATUS_TYPE` macro
+or by directly subclassing :cc:`pw::StatusBase`:
+
+* **Macro**: ``PW_STATUS_TYPE(MyStatus, MyEnum::kOk)`` defines a final status
+  class with ``[[nodiscard]]``. The status code must be an enum.
+* **Subclass**: Subclassing ``pw::StatusBase<MyStatus, MyEnum::kOk>`` directly
+  (using the Curiously Recurring Template Pattern / CRTP) allows
+  customizing the status class with additional domain-specific member functions.
+  Derived classes should be declared ``[[nodiscard]]`` and define constructors
+  forwarding to ``StatusBase``, whose constructors are protected.
+
+Custom status types are constructed from a status code (e.g.
+``MyStatus(MyStatus::Code::kFailed)``). They default construct to the OK code.
+The code type is available as ``MyStatus::Code``.
+
+Custom error enums
+==================
+Many drivers and hardware interfaces define their own error enumerations.
+``StatusBase`` allows using these enumerations while retaining status semantics,
+including ``.ok()`` checks, ``[[nodiscard]]`` enforcement, and error propagation
+with :cc:`PW_TRY`:
+
+.. literalinclude:: status_base_test.cc
+   :language: cpp
+   :start-after: [pw_status-status_base-custom_enum]
+   :end-before: [pw_status-status_base-custom_enum]
+
+Callers inspect the status or compare it directly against the underlying enum:
+
+.. literalinclude:: status_base_test.cc
+   :language: cpp
+   :dedent:
+   :start-after: [pw_status-status_base-caller]
+   :end-before: [pw_status-status_base-caller]
+
+Non-enum status codes
+=====================
+Enums are recommended for status codes because they prevent arbitrary or unknown
+values and allow the compiler to warn about unhandled cases in ``switch``
+statements. However, ``StatusBase`` also supports non-enum types such as
+integers when interfacing with existing protocols or numeric error codes. For
+example, HTTP status codes can be represented with ``200`` designating success:
+
+.. literalinclude:: status_base_test.cc
+   :language: cpp
+   :start-after: [pw_status-status_base-non_enum]
+   :end-before: [pw_status-status_base-non_enum]
+
+Callers handle non-enum statuses in the same way:
+
+.. literalinclude:: status_base_test.cc
+   :language: cpp
+   :dedent:
+   :start-after: [pw_status-status_base-non_enum_caller]
+   :end-before: [pw_status-status_base-non_enum_caller]
+
+Should I use a custom status?
+=============================
+Custom status types offer significant advantages, but are not a fit for every
+scenario or project.
+
+**Advantages**
+
+* **Resolve ambiguity**: Each distinct error can map to its own code. No more
+  wondering which resource was exhausted for :c:enumerator:`RESOURCE_EXHAUSTED`.
+* **Better API contracts for callers**: APIs only produce codes that make sense.
+  Callers do not have consider codes that will never be returned.
+* **Better API contracts for implementers**: API implementers are constrained to
+  defined codes and cannot return codes that do not apply. No need to check that
+  an implementation returned a supported code.
+* **Thoughtful layering of status domains**: Prevent users from mindlessly
+  forwarding errors between API layers with :cc:`PW_TRY`, which loses meaning
+  and specificity.
+
+**Disadvantages**
+
+* **Cognitive load**: Users have to learn different status codes for different
+  APIs.
+* **Enum proliferation**: Custom statuses could lead to a proliferation of
+  enums, even when fewer status types would be better.
+
+Whether and how to use custom status types is ultimately a project decision.
 
 .. toctree::
    :hidden:

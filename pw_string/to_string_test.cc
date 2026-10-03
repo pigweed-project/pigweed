@@ -23,6 +23,7 @@
 #include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
+#include "pw_status/status_base.h"
 #include "pw_string/internal/config.h"
 #include "pw_string/type_to_string.h"
 #include "pw_unit_test/framework.h"
@@ -249,6 +250,33 @@ TEST(ToString, StatusCode) {
   EXPECT_EQ(sizeof("UNAVAILABLE") - 1,
             ToString(Status::Unavailable(), buffer).size());
   EXPECT_STREQ("UNAVAILABLE", buffer);
+}
+
+enum class CustomCode : uint8_t { kOk, kTimeout };
+
+constexpr const char* PwEnumToString(CustomCode code) {
+  return code == CustomCode::kOk ? "Ok" : "Timeout";
+}
+
+PW_STATUS_TYPE(CustomStatus, CustomCode::kOk);
+
+class [[nodiscard]] IntCodeStatus final
+    : public StatusBase<IntCodeStatus, 200> {
+ public:
+  constexpr IntCodeStatus() = default;
+  explicit constexpr IntCodeStatus(int code) : StatusBase(code) {}
+};
+
+TEST(ToString, CustomStatusWithEnumCode) {
+  EXPECT_EQ(7u, ToString(CustomStatus(CustomCode::kTimeout), buffer).size());
+  EXPECT_STREQ("Timeout", buffer);
+  EXPECT_EQ(2u, ToString(CustomStatus(), buffer).size());
+  EXPECT_STREQ("Ok", buffer);
+}
+
+TEST(ToString, CustomStatusWithIntCode) {
+  EXPECT_EQ(3u, ToString(IntCodeStatus(404), buffer).size());
+  EXPECT_STREQ("404", buffer);
 }
 
 TEST(ToString, StdArrayAsBuffer) {

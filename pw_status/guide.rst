@@ -120,11 +120,11 @@ intended behavior of "latching" to the first error.
       }
       return overall_status;
 
-:cc:`pw::Status` has a :cc:`pw::Status::Update` helper function
-that does exactly this to reduce visual clutter and succinctly highlight the
-intended behavior.
+:cc:`pw::Status` has a :cc:`pw::Status::Update <pw::StatusBase::Update>` helper
+function that does exactly this to reduce visual clutter and succinctly
+highlight the intended behavior.
 
-.. admonition:: **Yes**: Track status with :cc:`pw::Status::Update`
+.. admonition:: **Yes**: Track status with :cc:`pw::Status::Update <pw::StatusBase::Update>`
    :class: checkmark
 
    .. code-block:: cpp

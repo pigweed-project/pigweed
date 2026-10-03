@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "pw_status/status.h"
+#include "pw_status/status_base.h"
 #include "pw_status/status_with_size.h"
 
 /// @module{pw_status}

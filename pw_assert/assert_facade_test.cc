@@ -28,6 +28,7 @@
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
+#include "pw_status/status_base.h"
 #include "pw_status/status_with_size.h"
 #include "pw_unit_test/framework.h"
 
@@ -569,6 +570,44 @@ TEST_F(AssertFailTest, ResultNotOK) {
   pw::Result<int> result = pw::Status::Unknown();
   PW_CHECK_OK(result);
   EXPECT_MESSAGE("Check failed: result (=UNKNOWN) == OkStatus() (=OK). ");
+}
+
+enum class CustomCode : uint8_t { kOk, kBusFault };
+
+constexpr const char* PwEnumToString(CustomCode code) {
+  return code == CustomCode::kOk ? "Ok" : "BusFault";
+}
+
+PW_STATUS_TYPE(CustomStatus, CustomCode::kOk);
+
+class [[nodiscard]] IntCodeStatus final
+    : public pw::StatusBase<IntCodeStatus, 200> {
+ public:
+  constexpr IntCodeStatus() = default;
+  explicit constexpr IntCodeStatus(int code) : StatusBase(code) {}
+};
+
+TEST_F(AssertPassTest, CustomStatusOK) {
+  CustomStatus status;
+  PW_CHECK_OK(status);
+}
+
+TEST_F(AssertFailTest, CustomStatusNotOK) {
+  CustomStatus status(CustomCode::kBusFault);
+  PW_CHECK_OK(status, "msg: %d", 5);
+  EXPECT_MESSAGE(
+      "Check failed: status (=BusFault) == OkStatus() (=OK). msg: 5");
+}
+
+TEST_F(AssertPassTest, IntCodeStatusOK) {
+  IntCodeStatus status;
+  PW_CHECK_OK(status);
+}
+
+TEST_F(AssertFailTest, IntCodeStatusNotOK) {
+  IntCodeStatus status(404);
+  PW_CHECK_OK(status);
+  EXPECT_MESSAGE("Check failed: status (=NOT OK) == OkStatus() (=OK). ");
 }
 
 // Example expression for the test below.
