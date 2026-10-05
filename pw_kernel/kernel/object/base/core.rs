@@ -112,8 +112,6 @@ impl<K: Kernel> ObjectBase<K> {
         self.signal_impl_locked(kernel, sched, state)
     }
 
-    // Hint to avoid monomorphization bloat.
-    #[inline(never)]
     fn signal_impl_locked<'a>(
         &self,
         kernel: K,
