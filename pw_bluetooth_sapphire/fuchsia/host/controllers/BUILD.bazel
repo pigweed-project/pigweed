@@ -73,7 +73,6 @@ fuchsia_cc_library(
 
 fuchsia_cc_test(
     name = "controllers_test",
-    testonly = True,
     srcs = [
         "fidl_controller_test.cc",
     ],

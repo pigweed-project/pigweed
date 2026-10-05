@@ -223,7 +223,6 @@ fuchsia_cc_library(
 
 fuchsia_cc_test(
     name = "fidl_test",
-    testonly = True,
     srcs = [
         "activity_governor_lease_provider_test.cc",
         "channel_server_test.cc",

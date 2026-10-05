@@ -147,7 +147,6 @@ fuchsia_package(
 
 fuchsia_cc_test(
     name = "loopback_test",
-    testonly = True,
     srcs = ["loopback_test.cc"],
     visibility = ["//visibility:public"],
     deps = [

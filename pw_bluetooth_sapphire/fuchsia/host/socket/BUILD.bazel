@@ -45,7 +45,6 @@ fuchsia_cc_library(
 
 fuchsia_cc_test(
     name = "socket_test",
-    testonly = True,
     srcs = [
         "socket_channel_relay_test.cc",
         "socket_factory_l2cap_integration_test.cc",

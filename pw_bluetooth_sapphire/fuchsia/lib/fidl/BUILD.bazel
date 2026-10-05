@@ -38,7 +38,6 @@ fuchsia_cc_library(
 
 fuchsia_cc_test(
     name = "bt_lib_fidl_test",
-    testonly = True,
     srcs = [
         "hanging_getter_unittest.cc",
     ],

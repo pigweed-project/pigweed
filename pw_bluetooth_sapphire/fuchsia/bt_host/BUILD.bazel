@@ -151,7 +151,6 @@ fuchsia_component(
 
 fuchsia_cc_test(
     name = "host_test",
-    testonly = True,
     srcs = ["host_test.cc"],
     death_unittest = True,
     deps = [
