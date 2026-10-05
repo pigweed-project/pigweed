@@ -5377,5 +5377,76 @@ TEST_F(LowEnergyConnectionManagerTest,
   EXPECT_EQ(error.value(), HostError::kCanceled);
 }
 
+// Test that calling AcceptCis on a Peripheral connection when the controller
+// does not support Connected Isochronous Streams does not crash and returns
+// kNotSupported.
+TEST_F(LowEnergyConnectionManagerTest,
+       AcceptCisReturnsNotSupportedWhenControllerLacksCisSupport) {
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  // Inbound connection where the local device acts as Peripheral.
+  test_device()->ConnectLowEnergy(kAddress0);
+  RunUntilIdle();
+
+  auto link = MoveLastRemoteInitiated();
+  ASSERT_TRUE(link);
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(link), BondableMode::Bondable, [&](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      });
+  RunUntilIdle();
+
+  ASSERT_TRUE(conn_handle);
+  EXPECT_TRUE(conn_handle->active());
+
+  // By default, adapter_state().low_energy_state.supported_features_ is 0,
+  // modelling a controller that does not support CIS.
+  ASSERT_FALSE(
+      adapter_state().low_energy_state.IsConnectedIsochronousStreamSupported());
+
+  const iso::CigCisIdentifier kCisId(/*cig_id=*/5, /*cis_id=*/0x11);
+  iso::AcceptCisStatus status =
+      conn_handle->AcceptCis(kCisId, [](auto, auto, const auto&) {});
+  EXPECT_EQ(status, iso::AcceptCisStatus::kNotSupported);
+}
+
+// Test that calling AcceptCis on a Peripheral connection when the controller
+// supports Connected Isochronous Streams succeeds and returns kSuccess.
+TEST_F(LowEnergyConnectionManagerTest,
+       AcceptCisSucceedsWhenPeripheralAndCisSupported) {
+  adapter_state().low_energy_state.set_supported_features(static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamPeripheral));
+
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  // Inbound connection where the local device acts as Peripheral.
+  test_device()->ConnectLowEnergy(kAddress0);
+  RunUntilIdle();
+
+  auto link = MoveLastRemoteInitiated();
+  ASSERT_TRUE(link);
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(link), BondableMode::Bondable, [&](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      });
+  RunUntilIdle();
+
+  ASSERT_TRUE(conn_handle);
+  EXPECT_TRUE(conn_handle->active());
+  ASSERT_TRUE(
+      adapter_state().low_energy_state.IsConnectedIsochronousStreamSupported());
+
+  const iso::CigCisIdentifier kCisId(/*cig_id=*/5, /*cis_id=*/0x11);
+  iso::AcceptCisStatus status =
+      conn_handle->AcceptCis(kCisId, [](auto, auto, const auto&) {});
+  EXPECT_EQ(status, iso::AcceptCisStatus::kSuccess);
+}
+
 }  // namespace
 }  // namespace bt::gap

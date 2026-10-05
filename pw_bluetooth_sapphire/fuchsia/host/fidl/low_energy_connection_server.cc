@@ -191,6 +191,12 @@ void LowEnergyConnectionServer::AcceptCis(
              cig_id,
              cis_id);
       return;
+    case bt::iso::AcceptCisStatus::kNotSupported:
+      bt_log(WARN,
+             "fidl",
+             "attempt to wait for incoming CIS when CIS is not supported");
+      iso_streams_[id]->Close(ZX_ERR_NOT_SUPPORTED);
+      return;
     case bt::iso::AcceptCisStatus::kNotPeripheral:
       bt_log(WARN,
              "fidl",

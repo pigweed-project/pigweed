@@ -330,6 +330,9 @@ void LowEnergyConnection::OpenL2capChannel(l2cap::Psm psm,
 
 iso::AcceptCisStatus LowEnergyConnection::AcceptCis(
     iso::CigCisIdentifier id, iso::CisEstablishedCallback cb) {
+  if (!iso_mgr_) {
+    return iso::AcceptCisStatus::kNotSupported;
+  }
   if (role() != pw::bluetooth::emboss::ConnectionRole::PERIPHERAL) {
     return iso::AcceptCisStatus::kNotPeripheral;
   }

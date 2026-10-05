@@ -395,6 +395,34 @@ TEST_F(LowEnergyConnectionServerTest, AcceptCisCalledFromCentral) {
   EXPECT_EQ(*(request.epitaph()), ZX_ERR_NOT_SUPPORTED);
 }
 
+// Test fixture where the controller does not support CIS.
+class LowEnergyConnectionServerCisUnsupportedTest
+    : public LowEnergyConnectionServerTest {
+ public:
+  void SetUp() override {
+    bt::testing::FakeController::Settings settings;
+    settings.ApplyDualModeDefaults();
+    // Do not set kConnectedIsochronousStreamPeripheral feature bit.
+    bthost::testing::AdapterTestFixture::SetUp(settings);
+  }
+};
+
+// Calling AcceptCis when the controller does not support CIS should fail with
+// ZX_ERR_NOT_SUPPORTED
+TEST_F(LowEnergyConnectionServerCisUnsupportedTest,
+       AcceptCisFailsWhenCisNotSupported) {
+  bt::testing::FakeController::Settings settings;
+  settings.le_connection_role =
+      pw::bluetooth::emboss::ConnectionRole::PERIPHERAL;
+  test_device()->set_settings(settings);
+  EstablishConnectionAndStartServer();
+
+  AcceptCisRequest request(client(), {/*cig_id=*/0x10, /*cis_id=*/0x08});
+  RunLoopUntilIdle();
+  ASSERT_TRUE(request.epitaph());
+  EXPECT_EQ(*(request.epitaph()), ZX_ERR_NOT_SUPPORTED);
+}
+
 TEST_F(LowEnergyConnectionServerAutoStartTest, ServerClosedOnConnectionClosed) {
   adapter()->le()->Disconnect(peer_id());
   RunLoopUntilIdle();

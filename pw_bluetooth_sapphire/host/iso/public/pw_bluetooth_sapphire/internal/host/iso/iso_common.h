@@ -45,6 +45,10 @@ enum class AcceptCisStatus {
 
   // A request is already pending for this CIG/CIS combination
   kAlreadyExists,
+
+  // Connected Isochronous Streams are not supported by the controller or
+  // connection
+  kNotSupported,
 };
 
 // Our internal representation of the parameters returned from the
