@@ -58,8 +58,12 @@ class ForwardingAllocator : public pw::Allocator {
   ///
   /// This constructor should be used when the forwarding allocator needs to be
   /// created before the allocator being wrapped. The allocator must be set
-  /// using `Init` before any other method is called. The given `capabilities`
-  /// must match those of the allocator subsequently provided to `Init`.
+  /// using `Init` before any other method is called.
+  ///
+  /// The given `capabilities` may differ from those of the allocator
+  /// subsequently provided to `Init` if a derived allocator provides extra
+  /// functionality. In that case, only the capabilities provided here will be
+  /// returned by `capabilities()`.
   constexpr explicit ForwardingAllocator(
       const Capabilities& capabilities) noexcept
       : pw::Allocator(capabilities) {}
@@ -76,13 +80,11 @@ class ForwardingAllocator : public pw::Allocator {
   /// Sets the allocator being wrapped.
   ///
   /// It is an error to call this method if an allocator was provided to the
-  /// constructor. The `capabilities` of the given allocator must match those of
-  /// previously provided to the constructor.
+  /// constructor.
   ///
   /// The allocator must remain valid for the lifetime of this object.
   constexpr void Init(pw::Allocator& allocator) {
     PW_ASSERT(allocator_ == nullptr);
-    PW_ASSERT(capabilities() == allocator.capabilities());
     allocator_ = &allocator;
   }
 
