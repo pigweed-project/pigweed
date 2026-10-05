@@ -234,7 +234,8 @@ func TestBazelDriver_GarbageCollect_RemovesReadOnlyDirectories(t *testing.T) {
 	if err := os.MkdirAll(readOnlySubdir, 0755); err != nil {
 		t.Fatalf("failed to create subdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(orphanDir, "DO_NOT_BUILD_HERE"), []byte("/nonexistent/deleted/worktree\n"), 0644); err != nil {
+	deletedWorktree := filepath.Join(tmpHome, "deleted", "worktree")
+	if err := os.WriteFile(filepath.Join(orphanDir, "DO_NOT_BUILD_HERE"), []byte(deletedWorktree+"\n"), 0644); err != nil {
 		t.Fatalf("failed to write DO_NOT_BUILD_HERE: %v", err)
 	}
 	readOnlyFile := filepath.Join(readOnlySubdir, "artifact.o")
