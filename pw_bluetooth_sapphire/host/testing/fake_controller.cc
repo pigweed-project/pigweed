@@ -772,22 +772,23 @@ void FakeController::MaybeSendPeriodicAdvertisingSyncEstablishedEvent() {
   }
 }
 
-bool FakeController::DataMatchesWithMask(const std::vector<uint8_t>& a,
-                                         const std::vector<uint8_t>& b,
-                                         const std::vector<uint8_t>& mask) {
-  if (a.size() != b.size()) {
+bool FakeController::DataMatchesWithMask(
+    const std::vector<uint8_t>& ad_data,
+    const std::vector<uint8_t>& filter_data,
+    const std::vector<uint8_t>& filter_mask) {
+  if (filter_data.size() != filter_mask.size()) {
     return false;
   }
 
-  if (a.size() != mask.size()) {
+  if (ad_data.size() < filter_data.size()) {
     return false;
   }
 
-  for (size_t i = 0; i < a.size(); ++i) {
-    uint8_t byte_a = a[i] & mask[i];
-    uint8_t byte_b = b[i] & mask[i];
+  for (size_t i = 0; i < filter_data.size(); ++i) {
+    uint8_t ad_byte = ad_data[i] & filter_mask[i];
+    uint8_t filter_byte = filter_data[i] & filter_mask[i];
 
-    if (byte_a != byte_b) {
+    if (ad_byte != filter_byte) {
       return false;
     }
   }
@@ -875,9 +876,11 @@ bool FakeController::FilterMatchesPeer(const FakePeer& p,
     bool matches = false;
 
     for (const UUID& uuid : ad.service_data_uuids()) {
-      BufferView view = ad.service_data(uuid);
-      std::vector<uint8_t> ad_service_data(view.data(),
-                                           view.data() + view.size());
+      BufferView uuid_view = uuid.CompactView();
+      BufferView data_view = ad.service_data(uuid);
+      std::vector<uint8_t> ad_service_data = uuid_view.ToVector();
+      ad_service_data.insert(
+          ad_service_data.end(), data_view.begin(), data_view.end());
       if (DataMatchesWithMask(ad_service_data,
                               f.service_data.value(),
                               f.service_data_mask.value())) {
@@ -895,9 +898,15 @@ bool FakeController::FilterMatchesPeer(const FakePeer& p,
     bool matches = false;
 
     for (uint16_t manufacturer_data_id : ad.manufacturer_data_ids()) {
-      BufferView view = ad.manufacturer_data(manufacturer_data_id);
-      std::vector<uint8_t> ad_manufacturer_data(view.data(),
-                                                view.data() + view.size());
+      BufferView data_view = ad.manufacturer_data(manufacturer_data_id);
+      std::vector<uint8_t> ad_manufacturer_data;
+      ad_manufacturer_data.reserve(sizeof(uint16_t) + data_view.size());
+      ad_manufacturer_data.push_back(
+          static_cast<uint8_t>(manufacturer_data_id & 0xFF));
+      ad_manufacturer_data.push_back(
+          static_cast<uint8_t>((manufacturer_data_id >> 8) & 0xFF));
+      ad_manufacturer_data.insert(
+          ad_manufacturer_data.end(), data_view.begin(), data_view.end());
       if (DataMatchesWithMask(ad_manufacturer_data,
                               f.manufacturer_data.value(),
                               f.manufacturer_data_mask.value())) {
@@ -4741,6 +4750,7 @@ void FakeController::OnAndroidLEApcfSetFilteringParametersCommandDelete(
   packet_filter_state_.filters_broadcast_address.erase(filter_index);
   packet_filter_state_.filters_service_uuid.erase(filter_index);
   packet_filter_state_.filters_solicitation_uuid.erase(filter_index);
+  packet_filter_state_.filters_local_name.erase(filter_index);
   packet_filter_state_.filters_manufacturer_data.erase(filter_index);
   packet_filter_state_.filters_service_data.erase(filter_index);
   packet_filter_state_.filters_advertising_data.erase(filter_index);
@@ -4761,6 +4771,7 @@ void FakeController::OnAndroidLEApcfSetFilteringParametersCommandClear(
   packet_filter_state_.filters_broadcast_address.clear();
   packet_filter_state_.filters_service_uuid.clear();
   packet_filter_state_.filters_solicitation_uuid.clear();
+  packet_filter_state_.filters_local_name.clear();
   packet_filter_state_.filters_manufacturer_data.clear();
   packet_filter_state_.filters_service_data.clear();
   packet_filter_state_.filters_advertising_data.clear();
@@ -5558,6 +5569,8 @@ void FakeController::OnAndroidLEApcfManufacturerDataCommandAdd(
                 filter->manufacturer_data_mask->size());
   }
 
+  packet_filter_state_.filters_manufacturer_data[filter_index] = filter;
+
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
@@ -5664,6 +5677,8 @@ void FakeController::OnAndroidLEApcfServiceDataCommandAdd(
                 filter->service_data_mask->size());
   }
 
+  packet_filter_state_.filters_service_data[filter_index] = filter;
+
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
@@ -5691,7 +5706,7 @@ void FakeController::OnAndroidLEApcfServiceDataCommandDelete(
   PacketFilter& filter = packet_filter_state_.filters[filter_index];
   filter.service_data.reset();
   filter.service_data_mask.reset();
-  packet_filter_state_.filters_manufacturer_data.erase(filter_index);
+  packet_filter_state_.filters_service_data.erase(filter_index);
 
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
@@ -5705,7 +5720,7 @@ void FakeController::OnAndroidLEApcfServiceDataCommandDelete(
 
 void FakeController::OnAndroidLEApcfServiceDataCommandClear(
     const android_emb::LEApcfServiceDataCommandView& params) {
-  for (auto [_, filter] : packet_filter_state_.filters_manufacturer_data) {
+  for (auto [_, filter] : packet_filter_state_.filters_service_data) {
     filter->service_data.reset();
     filter->service_data_mask.reset();
   }

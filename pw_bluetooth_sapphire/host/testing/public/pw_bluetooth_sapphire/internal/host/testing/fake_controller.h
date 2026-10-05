@@ -722,9 +722,9 @@ class FakeController final : public ControllerTestDoubleBase,
   // Returns the next available L2CAP signaling channel command ID.
   uint8_t NextL2CAPCommandId();
 
-  bool DataMatchesWithMask(const std::vector<uint8_t>& a,
-                           const std::vector<uint8_t>& b,
-                           const std::vector<uint8_t>& mask);
+  bool DataMatchesWithMask(const std::vector<uint8_t>& ad_data,
+                           const std::vector<uint8_t>& filter_data,
+                           const std::vector<uint8_t>& filter_mask);
 
   // Returns true if this peer matches the given filter
   bool FilterMatchesPeer(const FakePeer& peer, const PacketFilter& filter);
