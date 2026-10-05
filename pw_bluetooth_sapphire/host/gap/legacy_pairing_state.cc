@@ -650,8 +650,10 @@ void LegacyPairingState::OnEncryptionChange(hci::Result<bool> result) {
     ActionOnError action = GetActionOnError(error);
     switch (action) {
       case ActionOnError::kRetry:
-        current_pairing_->retry_enable_encryption_task.PostAfter(
-            kDelayRetryEnableEncryption);
+        if (!current_pairing_->retry_enable_encryption_task.is_pending()) {
+          current_pairing_->retry_enable_encryption_task.PostAfter(
+              kDelayRetryEnableEncryption);
+        }
         return;
       case ActionOnError::kIgnore:
         return;

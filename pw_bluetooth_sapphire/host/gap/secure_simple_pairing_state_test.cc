@@ -4141,5 +4141,63 @@ TEST_F(PairingStateTest, DebugCombinationLinkKeyFailsPairing) {
   EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
             *status_handler.status());
 }
+
+TEST_F(PairingStateTest, MultipleDifferentTransactionCollisionsAsPeripheral) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      NoOpStatusCallback,
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  TestStatusHandler status_handler;
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                status_handler.MakeStatusCallback());
+  RunUntilIdle();
+  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
+              kTestLinkKey)));
+
+  static_cast<void>(pairing_state.OnLinkKeyRequest());
+  ASSERT_EQ(0, status_handler.call_count());
+
+  pairing_state.OnAuthenticationComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  ASSERT_EQ(0, status_handler.call_count());
+  ASSERT_EQ(1, connection()->start_encryption_count());
+
+  auto tc_result = ToResult(
+      pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
+  hci::Result<bool> result(tc_result.take_error());
+
+  // Trigger the first collision event. This should schedule a retry.
+  connection()->TriggerEncryptionChangeCallback(result);
+  ASSERT_EQ(0, status_handler.call_count());
+
+  // Advance halfway through the retry delay and trigger a second collision
+  // event before the retry timer fires. This should be ignored without
+  // resetting the retry timer.
+  RunFor(SecureSimplePairingState::kDelayRetryEnableEncryption / 2);
+  ASSERT_EQ(1, connection()->start_encryption_count());
+  connection()->TriggerEncryptionChangeCallback(result);
+  ASSERT_EQ(0, status_handler.call_count());
+
+  // Run for the remaining half of the delay and ensure that retry runs on
+  // the original schedule.
+  RunFor(SecureSimplePairingState::kDelayRetryEnableEncryption / 2);
+  ASSERT_EQ(2, connection()->start_encryption_count());
+
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(fit::ok(), *status_handler.status());
+}
 }  // namespace
 }  // namespace bt::gap

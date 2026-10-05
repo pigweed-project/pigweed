@@ -1484,6 +1484,64 @@ TEST_F(LegacyPairingStateTest, DifferentTransactionCollisionAsPeripheral) {
 }
 
 TEST_F(LegacyPairingStateTest,
+       MultipleDifferentTransactionCollisionsAsPeripheral) {
+  FakePairingDelegate pairing_delegate(kTestLocalIoCap);
+  pairing_delegate.SetDisplayPasskeyCallback(
+      [](PeerId, uint32_t, PairingDelegate::DisplayMethod, auto cb) {
+        cb(/*confirm=*/true);
+      });
+
+  LegacyPairingState pairing_state(peer()->GetWeakPtr(),
+                                   pairing_delegate.GetWeakPtr(),
+                                   connection()->GetWeakPtr(),
+                                   /*outgoing_connection=*/false,
+                                   &dispatcher(),
+                                   MakeAuthRequestCallback(),
+                                   NoOpStatusCallback);
+  pairing_state.SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  bool cb_called = false;
+  auto status_cb = [&cb_called](hci_spec::ConnectionHandle,
+                                hci::Result<> status) {
+    EXPECT_FALSE(status.is_error());
+    cb_called = true;
+  };
+
+  pairing_state.InitiatePairing(status_cb);
+  static_cast<void>(pairing_state.OnLinkKeyRequest());
+  pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
+  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                      kTestLegacyLinkKeyType);
+  pairing_state.OnAuthenticationComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  ASSERT_EQ(1, connection()->start_encryption_count());
+
+  auto tc_result = ToResult(
+      pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
+  hci::Result<bool> result(tc_result.take_error());
+
+  // Trigger the first collision event. This should schedule a retry.
+  connection()->TriggerEncryptionChangeCallback(result);
+  EXPECT_FALSE(cb_called);
+
+  // Advance halfway through the retry delay and trigger a second collision
+  // event before the retry timer fires. This should be ignored without
+  // resetting the retry timer.
+  RunFor(LegacyPairingState::kDelayRetryEnableEncryption / 2);
+  ASSERT_EQ(1, connection()->start_encryption_count());
+  connection()->TriggerEncryptionChangeCallback(result);
+  EXPECT_FALSE(cb_called);
+
+  // Run for the remaining half of the delay and ensure that retry runs on
+  // the original schedule.
+  RunFor(LegacyPairingState::kDelayRetryEnableEncryption / 2);
+  ASSERT_EQ(2, connection()->start_encryption_count());
+
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
+  EXPECT_TRUE(cb_called);
+}
+
+TEST_F(LegacyPairingStateTest,
        DifferentTransactionCollisionRetryNotCalledIfSucceeded) {
   FakePairingDelegate pairing_delegate(kTestLocalIoCap);
   pairing_delegate.SetDisplayPasskeyCallback(
