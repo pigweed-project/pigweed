@@ -59,6 +59,11 @@ type LUCIBuildDetails struct {
 	CancellationMarkdown string             `json:"cancellationMarkdown,omitempty"`
 	StatusDetails        *LUCIStatusDetails `json:"statusDetails,omitempty"`
 	Steps                []LUCIStep         `json:"steps,omitempty"`
+	Provider             string             `json:"provider,omitempty"`
+	ViewURL              string             `json:"viewUrl,omitempty"`
+	Target               string             `json:"target,omitempty"`
+	InvocationID         string             `json:"invocationId,omitempty"`
+	WorkplanID           string             `json:"workplanId,omitempty"`
 }
 
 // FailureReport encapsulates diagnostic information for a failed check.
@@ -104,12 +109,78 @@ type bbBuild struct {
 	CreateTime      string    `json:"createTime"`
 	StartTime       string    `json:"startTime"`
 	EndTime         string    `json:"endTime"`
-
 	// Patchset is the Gerrit patchset the build ran against. It is not part
 	// of the Buildbucket response; SearchBuilds fills it in from the query,
 	// so callers can tell builds reused from an earlier code-equivalent
 	// patchset apart from builds on the requested one.
-	Patchset int `json:"-"`
+	Patchset     int    `json:"-"`
+	Provider     string `json:"provider,omitempty"`
+	ViewURL      string `json:"viewUrl,omitempty"`
+	Target       string `json:"target,omitempty"`
+	InvocationID string `json:"invocationId,omitempty"`
+	WorkplanID   string `json:"workplanId,omitempty"`
+}
+
+// IsBusytown reports whether the build originated from the Android Busytown / TreeHugger provider.
+func (b *bbBuild) IsBusytown() bool {
+	if b == nil {
+		return false
+	}
+	if strings.EqualFold(b.Provider, "buildbucket") {
+		return false
+	}
+	if b.Builder.Project != "" && !strings.EqualFold(b.Builder.Project, "android-build") {
+		return false
+	}
+	return strings.EqualFold(b.Provider, "busytown") ||
+		strings.EqualFold(b.Builder.Project, "android-build") ||
+		IsBusytownBuildID(b.ID)
+}
+
+// BuildURL returns the web UI URL for a build across CI providers (LUCI Buildbucket or Android Busytown).
+func BuildURL(b bbBuild) string {
+	if b.ViewURL != "" {
+		return b.ViewURL
+	}
+	if b.IsBusytown() {
+		target := b.Target
+		if target == "" {
+			target = b.TagValue("target")
+		}
+		if target == "" {
+			target = b.Builder.Builder
+		}
+		return BusytownBuildURL(b.ID, target)
+	}
+	return fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID)
+}
+
+// BuildDetailsURL returns the web UI URL for a LUCIBuildDetails struct across CI providers.
+func BuildDetailsURL(b *LUCIBuildDetails) string {
+	if b == nil {
+		return ""
+	}
+	if b.ViewURL != "" {
+		return b.ViewURL
+	}
+	if strings.EqualFold(b.Provider, "busytown") || strings.EqualFold(b.Builder.Project, "android-build") {
+		target := b.Target
+		if target == "" {
+			target = b.Builder.Builder
+		}
+		return BusytownBuildURL(b.ID, target)
+	}
+	return fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID)
+}
+
+// TagValue returns the first tag value matching key (case-insensitive), or "".
+func (b *bbBuild) TagValue(key string) string {
+	for _, t := range b.Tags {
+		if strings.EqualFold(t.Key, key) {
+			return t.Value
+		}
+	}
+	return ""
 }
 
 // HasTag reports whether the build has a tag matching key and value.
@@ -600,7 +671,7 @@ func (c *LUCIClient) ExtractFailureReportWithOptions(ctx context.Context, b *LUC
 		BuildID:  b.ID,
 		Builder:  b.Builder.Builder,
 		Status:   b.Status,
-		BuildURL: fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID),
+		BuildURL: BuildDetailsURL(b),
 	}
 
 	// Find the failing step, prioritizing steps that have preferred logs ("failure summary", "stdout", "stderr", etc.)
@@ -877,7 +948,7 @@ func FormatBuildStepsVerbose(b *LUCIBuildDetails, verbose bool) string {
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Steps for %s (Build %s)\n", b.Builder.Builder, b.ID)
-	fmt.Fprintf(&sb, "Status: %s %s | URL: https://ci.chromium.org/b/%s\n", b.Status, getStatusSymbol(b.Status), b.ID)
+	fmt.Fprintf(&sb, "Status: %s %s | URL: %s\n", b.Status, getStatusSymbol(b.Status), BuildDetailsURL(b))
 
 	cleanSummary := cleanBuildSummary(b.SummaryMarkdown)
 	if cleanSummary != "" {

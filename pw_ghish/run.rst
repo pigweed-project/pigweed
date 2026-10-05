@@ -7,15 +7,16 @@ CI & tryjobs (gh run)
    :name: pw_ghish
 
 ``./gh run`` and ``./gh pr checks`` map GitHub Actions CLI workflows to **LUCI
-Buildbucket**. You can check build statuses, inspect step execution trees, view
-step failure logs, and rerun failed tryjob builders from the terminal.
+Buildbucket** and **Android Busytown / TreeHugger** (``ci.android.com``). You
+can check build statuses, inspect step execution trees, view step failure logs,
+and rerun failed tryjob or presubmit builders from the terminal.
 
 ---------------
 Quick reference
 ---------------
 .. code-block:: console
 
-   # Check status and duration of LUCI tryjob builders on the active CL:
+   # Check status and duration of LUCI tryjob or Busytown builders on the active CL:
    $ ./gh pr checks
 
    # Watch checks until completion, exiting with failure logs if a check fails:
@@ -30,7 +31,7 @@ Quick reference
    # Print failure summaries and step log snippets for all failed checks:
    $ ./gh run view --log-failed
 
-   # Rerun all failed builders on the active CL via Buildbucket (bb add):
+   # Rerun all failed builders on the active CL:
    $ ./gh run rerun --failed
 
 ------------------------------
@@ -41,23 +42,25 @@ Matching the GitHub CLI, ``pw_ghish`` divides CI commands into two groups:
 1. **Change-level check status** (``./gh pr checks``): Displays a status table
    for a Gerrit CL, supports polling until completion (``--watch``), and
    returns an exit code suitable for shell pipelines and merge gates.
-2. **Run and builder inspection** (``./gh run``): Inspects individual LUCI
-   builders and step execution trees (``run view -j <builder>``), fetches step
-   failure logs (``--log-failed`` and ``--log``), and triggers builder retries
-   (``run rerun``).
+2. **Run and builder inspection** (``./gh run``): Inspects individual LUCI or
+   Busytown builders and step execution trees (``run view -j <builder>``),
+   fetches failure logs (``--log-failed`` and ``--log``), and triggers builder
+   retries (``run rerun``).
 
 Both ``pr checks`` and ``run`` commands resolve the active Gerrit change from
 your current Git branch or ``HEAD`` commit when no target argument is supplied.
 You can also pass an explicit change number (e.g. ``472267``), patchset suffix
 (e.g. ``472267/3``), Gerrit URL/shortlink (see
-:ref:`module-pw_ghish-pr-targeting`), or a Buildbucket build ID (e.g.
-``8671182706745774001``).
+:ref:`module-pw_ghish-pr-targeting`), a Buildbucket build ID (e.g.
+``8671182706745774001``), or a Busytown build ID and target (e.g.
+``P99164207/target_name`` or ``P99164207 --target target_name``).
 
 ------------------------------------------
 Checking and watching CL status: pr checks
 ------------------------------------------
-``./gh pr checks`` queries LUCI Buildbucket via pRPC to display the status,
-duration, and build URLs of tryjobs on a change:
+``./gh pr checks`` queries the active CI provider (LUCI Buildbucket and/or
+Android Busytown) to display the status, duration, and build URLs of checks on a
+change:
 
 .. code-block:: console
 
@@ -84,22 +87,32 @@ child subbuilds are hidden by default and can be shown with ``--all``:
    $ ./gh pr checks 413992 -e
    $ ./gh pr checks --all
 
-Gerrit gates and non-Buildbucket CI
-===================================
-In addition to LUCI Buildbucket tryjobs, ``./gh pr checks`` inspects Gerrit
-``SubmitRequirements`` and automated verification labels on the change (such as
-``Android-Build-Verified``, ``Presubmit-Verified``, ``Lint-Verified``,
-``Tree-Approval``, and ``Kokoro``).
+Gerrit gates, Busytown / TreeHugger, and dual-stack CI
+======================================================
+In addition to LUCI Buildbucket tryjobs, ``./gh pr checks`` and ``./gh run``
+support **Android Busytown / TreeHugger** (``ci.android.com``) and Gerrit
+``SubmitRequirements`` / automated verification labels (such as
+``Presubmit-Verified``, ``Android-Build-Verified``, ``Lint-Verified``,
+``Tree-Approval``, and ``Kokoro``):
 
-* On repositories that use both LUCI Buildbucket and Gerrit automated gates,
-  unsatisfied or non-Buildbucket Gerrit gates are rendered in a
-  ``Gerrit Gates / Submit Requirements:`` section below the Buildbucket table
-  and included in the JSON output and exit code evaluation.
-* On Gerrit repositories that do not use Buildbucket (or when ``ci.providers =
-  ["gerrit"]`` is set in ``.ghish.toml``), ``./gh pr checks`` evaluates the
-  change's Gerrit verification labels and submit requirements directly, and
-  extracts diagnostic messages and CI URLs posted in Gerrit change messages by
-  automated bots.
+* **Android Busytown / TreeHugger** (``busytown``): Automatically enabled on
+  Android Gerrit hosts (``*android-review.googlesource.com``, ``ag/...``,
+  ``aosp/...``), on changes with ``Presubmit-Verified`` / ``Presubmit-Ready``
+  labels or ``TreeHugger`` messages, or when ``ci.providers`` includes
+  ``"busytown"`` in ``.ghish.toml``. Queries Gerrit's
+  ``treetop~presubmittasks`` endpoint for structured per-target statuses and
+  falls back to parsing ``TreeHugger`` Gerrit messages and
+  ``Presubmit-Verified`` votes when ``treetop~`` is unavailable.
+* **Dual-stack repositories** (``ci.providers = ["buildbucket", "busytown"]``):
+  Queries both LUCI Buildbucket and Busytown in parallel, merges their check
+  items into a single table and JSON response, and routes ``run view`` and
+  ``run rerun`` to the appropriate provider per build.
+* **Gerrit Submit Requirements and gates**: Unsatisfied or non-Buildbucket
+  Gerrit gates are rendered in a ``Gerrit Gates / Submit Requirements:``
+  section and included in the JSON output and exit code evaluation. On
+  repositories that use only Gerrit labels (``ci.providers = ["gerrit"]``),
+  ``./gh pr checks`` evaluates Gerrit verification labels and submit
+  requirements directly.
 
 Watching checks: ``--watch`` and ``--fail-fast``
 ================================================
@@ -294,6 +307,10 @@ Fetch failure summaries and raw step log snippets in the terminal:
    # Inspect a specific failed builder:
    $ ./gh run view -j pigweed-lintformat --log-failed
 
+   # Inspect a Busytown build directly by build ID and target (--target is ghish-only):
+   $ ./gh run view P99164207/firmware_host_tests --log-failed
+   $ ./gh run view P99164207 --target firmware_host_tests --log-failed
+
    # Print the full step log instead of the tail snippet:
    $ ./gh run view -j pigweed-lintformat --log
 
@@ -303,7 +320,7 @@ Fetch failure summaries and raw step log snippets in the terminal:
    # Open build in web browser:
    $ ./gh run view -j pigweed-lintformat --web
 
-When selecting step logs, ``run view --log-failed`` prioritizes curated
+On **LUCI Buildbucket** builds, ``run view --log-failed`` prioritizes curated
 ``failure summary`` (or ``failure_summary``) streams before falling back to
 ``stdout`` and ``stderr`` (configurable via ``ci.preferred_logs`` in
 ``.ghish.toml``). For orchestrator builds where compilation or test failures
@@ -312,14 +329,33 @@ build ``SummaryMarkdown`` (including reproduction hints such as ``fx repro``)
 while deduplicating truncated summary blocks against the full ``failure
 summary`` log snippet.
 
+On **Android Busytown / TreeHugger** builds, ``run view --log-failed`` uses a
+two-tier retrieval strategy:
+
+1. **Local workstation accelerators (Tier A)**: Invokes
+   ``/google/data/ro/projects/android/fetch_artifact`` (to stream ``build.log``)
+   and ``/google/data/ro/projects/android/ants_cli`` (to query failed AnTS test
+   invocations) when present on the machine.
+2. **Direct HTTP fallback (Tier B)**: Queries the Android Build Internal v3 REST
+   API (``androidbuildinternal.googleapis.com``) and ``ci.android.com`` using
+   OAuth2 credentials, and extracts the failure snippet around ``FAILED:``,
+   ``: error:``, ``: fatal error:``, or ``ninja: build stopped`` markers.
+
 Rerunning CI checks: ``run rerun``
 ==================================
-Rerun specific or all failed builders on a change (constructs and executes the
-``bb add`` invocation using each build's recorded Buildbucket
-``<project>/<bucket>/<builder>`` tuple). Child subbuilds tagged with
-``skip-retry-in-gerrit:subbuild`` (or matching ``ci.skip_retry_tag_filters`` in
-``.ghish.toml``) are automatically skipped during ``--failed`` reruns so only
-top-level parent builders are scheduled:
+Rerun specific or all failed builders on a change:
+
+* **LUCI Buildbucket**: Constructs and executes the ``bb add`` invocation using
+  each build's recorded Buildbucket ``<project>/<bucket>/<builder>`` tuple.
+  Child subbuilds tagged with ``skip-retry-in-gerrit:subbuild`` (or matching
+  ``ci.skip_retry_tag_filters`` in ``.ghish.toml``) are automatically skipped
+  during ``--failed`` reruns so only top-level parent builders are scheduled.
+* **Android Busytown / TreeHugger**: Triggers a presubmit rerun via Gerrit's
+  ``POST /changes/<id>/revisions/<ps>/treetop~runaction?service-id=presubmit&action-id=run``
+  endpoint, automatically falling back to voting ``Presubmit-Ready+1`` if the
+  ``treetop~`` plugin is not installed on the Gerrit host.
+* **Dual-stack**: When a change has failed builds on both Buildbucket and
+  Busytown, ``run rerun --failed`` triggers both providers.
 
 .. code-block:: console
 
@@ -349,36 +385,39 @@ Poll checks until all blocking builds complete:
 --------------------------------------------------
 Comparison with GitHub CLI (gh run & gh pr checks)
 --------------------------------------------------
-Gerrit projects run LUCI Buildbucket and recipes rather than GitHub Actions.
-``./gh run`` and ``./gh pr checks`` map these concepts as follows:
+Gerrit projects run LUCI Buildbucket and/or Android Busytown rather than GitHub
+Actions. ``./gh run`` and ``./gh pr checks`` map these concepts as follows:
 
-LUCI vs. GitHub Actions concept map
-===================================
+LUCI / Busytown vs. GitHub Actions concept map
+==============================================
 .. list-table::
    :header-rows: 1
    :widths: 28 32 40
 
    * - GitHub Actions Concept
-     - LUCI Equivalent in ``pw_ghish``
+     - LUCI / Busytown Equivalent in ``pw_ghish``
      - Behavioral Notes
    * - **Workflow Run**
-     - **Gerrit Patchset Tryjob Set** (or Buildbucket Build ID)
-     - Identified by Gerrit change/patchset (``472267/3``) or a 64-bit
-       Buildbucket ID (``8671182706745774001``).
+     - **Gerrit Patchset Tryjob Set** (or Build ID)
+     - Identified by Gerrit change/patchset (``472267/3``), a 64-bit
+       Buildbucket ID (``8671182706745774001``), or a Busytown build ID /
+       workplan ID (``P99164207/target`` or ``L87654321``).
    * - **Workflow Job** (``-j <job>``)
-     - **LUCI Tryjob Builder** (e.g. ``pigweed-lintformat``)
-     - Targeted by builder name via ``-j <builder>`` or direct Buildbucket ID.
+     - **LUCI Builder or Busytown Target**
+     - Targeted by builder/target name via ``-j <builder>`` or direct build ID.
    * - **Job Steps**
-     - **LUCI Recipe Steps**
+     - **LUCI Recipe Steps / Busytown Target**
      - LUCI recipes emit nested substeps; ``run view -j`` collapses passing
        subtrees and surfaces 1-line failure summaries.
    * - **Action Logs**
-     - **Buildbucket Step Logs & SummaryMarkdown**
-     - ``--log-failed`` downloads the step failure summary and the raw
-       ``stdout``/``stderr`` log stream linked on the failing Buildbucket step.
+     - **Buildbucket Step Logs / Busytown ``build.log`` & AnTS**
+     - ``--log-failed`` downloads the step failure summary and ``stdout``/``stderr``
+       (LUCI) or ``build.log`` and failed AnTS tests (Busytown).
    * - **Rerun Workflow** (``gh run rerun``)
-     - **Buildbucket Retry** (``bb add -cl ...``)
-     - Schedules tryjobs in the project profile's ``<project>/try`` bucket.
+     - **Buildbucket Retry** (``bb add``) or **TreeHugger Rerun**
+       (``treetop~runaction`` / ``Presubmit-Ready+1``)
+     - Schedules tryjobs in Buildbucket or re-triggers TreeHugger presubmit on
+       the patchset.
 
 Key behavioral and flag differences
 ===================================
@@ -399,6 +438,11 @@ Key behavioral and flag differences
   changes (e.g. ``TRIVIAL_REBASE``, ``NO_CODE_CHANGE``) are automatically
   included and annotated with ``(from patchset <N>)``, matching LUCI CV's build
   reuse rules.
+* ``--target <target>`` **flag (ghish-only)**: On ``run view``, ``--target``
+  specifies the Android Busytown target name when inspecting a direct build ID
+  (e.g. ``gh run view P99164207 --target firmware_host_tests --log-failed``).
+  It is long-form only because upstream ``gh`` reserves ``-t`` for
+  ``--template``.
 * ``--json`` **flag**: On ``run list`` and ``run view``, ``--json``
   is a boolean flag that emits the structured run or failure report (unlike
   ``pr view --json <fields>`` and ``issue view --json <fields>``, which take a

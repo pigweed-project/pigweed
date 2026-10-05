@@ -200,6 +200,18 @@ func TestParseProjectConfigTOML_StrictErrors(t *testing.T) {
 			wantFileStr: "/test/.ghish.toml:",
 			wantMsg:     "glob",
 		},
+		{
+			name:        "unknown ci provider",
+			toml:        "[ci]\nproviders = [\"bogus\"]\n",
+			wantFileStr: "/test/.ghish.toml:",
+			wantMsg:     "providers",
+		},
+		{
+			name:        "empty ci provider entry",
+			toml:        "[ci]\nproviders = [\"\"]\n",
+			wantFileStr: "/test/.ghish.toml:",
+			wantMsg:     "providers",
+		},
 	}
 
 	for _, tt := range tests {
@@ -448,5 +460,26 @@ submodule_policy = "require-pushed"
 	}
 	if cfg.Gerrit.Remote != "partner" {
 		t.Errorf("Gerrit.Remote after git config override = %q, want %q", cfg.Gerrit.Remote, "partner")
+	}
+}
+
+func TestParseProjectConfigTOML_CIProvidersValidation(t *testing.T) {
+	validCases := []string{
+		`providers = ["auto"]`,
+		`providers = ["buildbucket"]`,
+		`providers = ["busytown"]`,
+		`providers = ["buildbucket", "busytown"]`,
+		`providers = ["luci", "treehugger", "android-build"]`,
+	}
+	for _, tc := range validCases {
+		cfg := DefaultProjectConfig()
+		if err := ParseProjectConfigTOML("/repo/.ghish.toml", "[ci]\n"+tc+"\n", cfg); err != nil {
+			t.Errorf("expected %s to succeed, got error: %v", tc, err)
+		}
+	}
+
+	cfg := DefaultProjectConfig()
+	if err := applyGitConfigOverrides("ghish.ci.providers bogus\n", cfg); err == nil {
+		t.Errorf("expected git config ghish.ci.providers=bogus to fail validation, got nil")
 	}
 }

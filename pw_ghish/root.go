@@ -348,8 +348,9 @@ flag is spelled as it is in 'gh' but the Gerrit concept underneath differs.
 
 Long form only, because 'gh' gives the shorthand another meaning: --auto
 (gh -a is --assignee), --publish (-p is --project), --force (-f is --fill),
---trigger/--cq (-t is --title/--template, -q is --jq), and --message on 'pr edit'
-and 'pr merge' (-m is --milestone and --merge).
+--trigger/--cq (-t is --title/--template, -q is --jq), --target on 'run view'
+(-t is --template), and --message on 'pr edit' and 'pr merge' (-m is --milestone
+and --merge).
 
 Not implemented, and loud about it: --jq/-q as an output filter, 'gh api',
 -R/--repo, and 'pr merge --squash/--rebase/--delete-branch'

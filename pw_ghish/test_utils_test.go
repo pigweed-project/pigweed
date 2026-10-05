@@ -436,8 +436,22 @@ func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	getLUCIHTTPClient = func(ctx context.Context, bbHost string) *http.Client {
 		return s.Server.Client()
 	}
+	origBTClient := getBusytownHTTPClient
+	getBusytownHTTPClient = func(ctx context.Context) *http.Client {
+		return s.Server.Client()
+	}
+	origBTAPIBase := BusytownAndroidBuildAPIBase
+	BusytownAndroidBuildAPIBase = s.URL
+	origBTCIBase := BusytownAndroidCIBase
+	BusytownAndroidCIBase = s.URL
+	origBTExists := BusytownFileExistsFn
+	BusytownFileExistsFn = func(string) bool { return false }
 	t.Cleanup(func() {
 		getLUCIHTTPClient = origLUCIClient
+		getBusytownHTTPClient = origBTClient
+		BusytownAndroidBuildAPIBase = origBTAPIBase
+		BusytownAndroidCIBase = origBTCIBase
+		BusytownFileExistsFn = origBTExists
 		MockCWD = ""
 	})
 

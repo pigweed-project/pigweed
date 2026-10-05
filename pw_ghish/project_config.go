@@ -420,6 +420,18 @@ func validateSubmodulePolicy(policy string) error {
 	}
 }
 
+func validateCIProviders(providers []string) error {
+	for _, p := range providers {
+		norm := strings.ToLower(strings.TrimSpace(p))
+		switch norm {
+		case "auto", "buildbucket", "luci", "busytown", "android-build", "android_build", "treehugger", "treetop", "gerrit":
+		default:
+			return fmt.Errorf("must be one of \"auto\", \"buildbucket\", \"busytown\", or \"gerrit\", got %q", p)
+		}
+	}
+	return nil
+}
+
 func parseComponentValue(val any) (int64, error) {
 	switch v := val.(type) {
 	case int64:
@@ -562,6 +574,9 @@ func ParseProjectConfigTOML(filePath, content string, dst *ProjectConfig) error 
 		dst.CI.TryBuckets = *raw.CI.TryBuckets
 	}
 	if raw.CI.Providers != nil {
+		if err := validateCIProviders(*raw.CI.Providers); err != nil {
+			return fmt.Errorf("%s: invalid value for ci.providers: %w", filePath, err)
+		}
 		dst.CI.Providers = *raw.CI.Providers
 	}
 	if raw.CI.HideTagFilters != nil {
@@ -705,7 +720,11 @@ func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
 			case "trybuckets":
 				dst.CI.TryBuckets = splitCSV(val)
 			case "providers":
-				dst.CI.Providers = splitCSV(val)
+				arr := splitCSV(val)
+				if err := validateCIProviders(arr); err != nil {
+					return fmt.Errorf("invalid git config %s=%q: %w", key, val, err)
+				}
+				dst.CI.Providers = arr
 			case "hidetagfilters":
 				dst.CI.HideTagFilters = splitCSV(val)
 			case "skipretrytagfilters":

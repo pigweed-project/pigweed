@@ -32,6 +32,7 @@ var (
 	runViewLog           bool
 	runViewVerbose       bool
 	runViewJob           string
+	runViewTarget        string
 	runViewWeb           bool
 	runViewJSON          bool
 	runViewExperimental  bool
@@ -43,23 +44,28 @@ var (
 )
 
 func isBuildbucketID(s string) bool {
-	if len(s) < 10 {
+	if len(s) < 11 {
 		return false
 	}
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
+	return isDigitsOnly(s)
+}
+
+func isDirectBuildIdentifier(s string) bool {
+	if isBuildbucketID(s) || IsBusytownBuildID(s) {
+		return true
 	}
-	return true
+	if strings.TrimSpace(runViewTarget) != "" && isDigitsOnly(strings.TrimSpace(s)) {
+		return true
+	}
+	return false
 }
 
 // parseRunTargetArgs resolves target arguments for 'run view' and 'run rerun'.
 // It handles 0, 1, or 2 positional arguments where a single argument (or -j flag)
-// may be a Buildbucket build ID (if allowBuildID is true), a Gerrit change identifier,
+// may be a Buildbucket/Busytown build ID (if allowBuildID is true), a Gerrit change identifier,
 // or a builder name.
 func parseRunTargetArgs(cmd *cobra.Command, args []string, jobFlag string, allowBuildID bool) (rawID, targetBuilder, directBuildID string, err error) {
-	if allowBuildID && isBuildbucketID(jobFlag) {
+	if allowBuildID && isDirectBuildIdentifier(jobFlag) {
 		return "", "", jobFlag, nil
 	}
 	if len(args) == 0 {
@@ -71,7 +77,7 @@ func parseRunTargetArgs(cmd *cobra.Command, args []string, jobFlag string, allow
 	}
 	if len(args) == 1 {
 		arg := args[0]
-		if allowBuildID && isBuildbucketID(arg) {
+		if allowBuildID && isDirectBuildIdentifier(arg) {
 			return "", "", arg, nil
 		}
 		if isChangeIdentifier(arg) {
@@ -92,17 +98,17 @@ func parseRunTargetArgs(cmd *cobra.Command, args []string, jobFlag string, allow
 	if jobFlag != "" {
 		targetBuilder = jobFlag
 	}
-	if allowBuildID && isBuildbucketID(targetBuilder) {
+	if allowBuildID && isDirectBuildIdentifier(targetBuilder) {
 		return "", "", targetBuilder, nil
 	}
 	return rawID, targetBuilder, "", nil
 }
 
-// buildMatchesJob checks whether a Buildbucket build matches a user-supplied
+// buildMatchesJob checks whether a Buildbucket or Busytown build matches a user-supplied
 // job selector, which may be "<builder>", "<bucket>/<builder>", or
 // "<project>/<bucket>/<builder>" (case-insensitive).
 func buildMatchesJob(b bbBuild, job string) bool {
-	if strings.EqualFold(b.Builder.Builder, job) {
+	if strings.EqualFold(b.Builder.Builder, job) || (b.Target != "" && strings.EqualFold(b.Target, job)) {
 		return true
 	}
 	if b.Builder.Bucket != "" && strings.EqualFold(b.Builder.Bucket+"/"+b.Builder.Builder, job) {
@@ -213,7 +219,7 @@ var runListCmd = &cobra.Command{
 		for _, b := range relevant {
 			sym := getStatusSymbol(b.Status)
 			dur := formatDuration(b.StartTime, b.EndTime)
-			urlStr := fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID)
+			urlStr := BuildURL(b)
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n", sym, b.Builder.Builder, dur, b.ID, urlStr, patchsetNote(b.Patchset, res.PatchsetNum))
 		}
 		w.Flush()
@@ -260,11 +266,15 @@ var runViewCmd = &cobra.Command{
 		if runViewWeb {
 			targetURL := ""
 			if directBuildID != "" {
-				targetURL = fmt.Sprintf("https://ci.chromium.org/b/%s", directBuildID)
+				if bid, target, ok := ParseBusytownBuildTarget(directBuildID, runViewTarget); ok && (IsBusytownBuildID(directBuildID) || runViewTarget != "") {
+					targetURL = BusytownBuildURL(bid, target)
+				} else {
+					targetURL = fmt.Sprintf("https://ci.chromium.org/b/%s", directBuildID)
+				}
 			} else if targetBuilder != "" {
 				for _, b := range deduplicateLatestBuilds(res.Builds) {
 					if buildMatchesJob(b, targetBuilder) {
-						targetURL = fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID)
+						targetURL = BuildURL(b)
 						break
 					}
 				}
@@ -281,16 +291,39 @@ var runViewCmd = &cobra.Command{
 		// Handle logs (--log-failed or --log)
 		if runViewLogFailed || runViewLog {
 			var targetBuilds []bbBuild
+			var directProvider CIProvider
 			if directBuildID != "" {
-				details, err := luciClient.GetBuildDetails(ctx, directBuildID)
-				if err != nil {
-					return fmt.Errorf("failed to fetch build %s: %w", directBuildID, err)
+				if bid, target, ok := ParseBusytownBuildTarget(directBuildID, runViewTarget); ok && (IsBusytownBuildID(directBuildID) || runViewTarget != "") {
+					directProvider = &BusytownProvider{}
+					builderName := target
+					if builderName == "" {
+						builderName = bid
+					}
+					targetBuilds = append(targetBuilds, bbBuild{
+						ID:       bid,
+						Provider: "busytown",
+						Target:   target,
+						Status:   "FAILURE",
+						ViewURL:  BusytownBuildURL(bid, target),
+						Builder: bbBuilder{
+							Project: "android-build",
+							Bucket:  "presubmit",
+							Builder: builderName,
+						},
+					})
+				} else {
+					details, err := luciClient.GetBuildDetails(ctx, directBuildID)
+					if err != nil {
+						return fmt.Errorf("failed to fetch build %s: %w", directBuildID, err)
+					}
+					directProvider = &BuildbucketProvider{LUCIClient: luciClient}
+					targetBuilds = append(targetBuilds, bbBuild{
+						ID:       details.ID,
+						Provider: "buildbucket",
+						Builder:  details.Builder,
+						Status:   details.Status,
+					})
 				}
-				targetBuilds = append(targetBuilds, bbBuild{
-					ID:      details.ID,
-					Builder: details.Builder,
-					Status:  details.Status,
-				})
 			} else if targetBuilder != "" {
 				// Report on the newest build of the builder, the same build
 				// `gh pr checks` reports. res.Builds can span several
@@ -355,14 +388,29 @@ var runViewCmd = &cobra.Command{
 				maxLines = 0
 			}
 
+			activeProvider := directProvider
+			if activeProvider == nil && res != nil {
+				activeProvider = res.Provider
+			}
+			if activeProvider == nil {
+				activeProvider = &BuildbucketProvider{LUCIClient: luciClient}
+			}
+
 			var reports []FailureReport
 			for _, b := range targetBuilds {
-				details, err := luciClient.GetBuildDetails(ctx, b.ID)
+				if b.Status != "FAILURE" && b.Status != "INFRA_FAILURE" {
+					continue
+				}
+				rep, err := activeProvider.FetchFailureReportWithOptions(ctx, b, FailureReportOptions{
+					MaxLogLines:            maxLines,
+					PreferredLogs:          projCfg.PreferredLogs(),
+					IncludeSummaryMarkdown: projCfg.IncludeSummaryMarkdown(),
+					Target:                 runViewTarget,
+				})
 				if err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to get details for build %s: %v\n", b.ID, err)
 					continue
 				}
-				rep := luciClient.ExtractFailureReportWithOptions(ctx, details, maxLines, projCfg.PreferredLogs(), projCfg.IncludeSummaryMarkdown())
 				if rep != nil {
 					if res != nil && b.Patchset > 0 && b.Patchset != res.PatchsetNum {
 						rep.Patchset = b.Patchset
@@ -388,7 +436,7 @@ var runViewCmd = &cobra.Command{
 						continue
 					}
 					dur := formatDuration(b.StartTime, b.EndTime)
-					fmt.Fprintf(cmd.OutOrStdout(), "Check %q%s has status %s (%s).\nBuild details: https://ci.chromium.org/b/%s\n", b.Builder.Builder, note, b.Status, dur, b.ID)
+					fmt.Fprintf(cmd.OutOrStdout(), "Check %q%s has status %s (%s).\nBuild details: %s\n", b.Builder.Builder, note, b.Status, dur, BuildURL(b))
 				}
 				return nil
 			}
@@ -401,13 +449,17 @@ var runViewCmd = &cobra.Command{
 		if directBuildID != "" || targetBuilder != "" || runViewVerbose {
 			var bID string
 			var bName string
+			var matchedBuild *bbBuild
 			if directBuildID != "" {
 				bID = directBuildID
 			} else if targetBuilder != "" {
-				for _, b := range deduplicateLatestBuilds(res.Builds) {
-					if buildMatchesJob(b, targetBuilder) {
+				latest := deduplicateLatestBuilds(res.Builds)
+				for i := range latest {
+					b := &latest[i]
+					if buildMatchesJob(*b, targetBuilder) {
 						bID = b.ID
 						bName = b.Builder.Builder
+						matchedBuild = b
 						break
 					}
 				}
@@ -428,23 +480,37 @@ var runViewCmd = &cobra.Command{
 				// Pick the first failed build, or else the first build, among
 				// the builds `gh pr checks` reports.
 				latest := deduplicateLatestBuilds(res.Builds)
-				for _, b := range latest {
+				for i := range latest {
+					b := &latest[i]
 					if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
 						bID = b.ID
 						bName = b.Builder.Builder
+						matchedBuild = b
 						break
 					}
 				}
 				if bID == "" && len(latest) > 0 {
 					bID = latest[0].ID
 					bName = latest[0].Builder.Builder
+					matchedBuild = &latest[0]
 				}
 				if bID == "" {
 					return fmt.Errorf("no checks found on change %s", rawID)
 				}
 			}
 
-			details, err := luciClient.GetBuildDetails(ctx, bID)
+			var details *LUCIBuildDetails
+			var err error
+			if directBuildID != "" && (IsBusytownBuildID(directBuildID) || runViewTarget != "") {
+				details, err = (&BusytownProvider{}).GetBuildDetails(ctx, directBuildID, &bbBuild{
+					Target: runViewTarget,
+					Status: "FAILURE",
+				})
+			} else if res != nil && res.Provider != nil {
+				details, err = res.Provider.GetBuildDetails(ctx, bID, matchedBuild)
+			} else {
+				details, err = luciClient.GetBuildDetails(ctx, bID)
+			}
 			if err != nil {
 				return fmt.Errorf("failed to fetch steps for build %s: %w", bID, err)
 			}
@@ -617,6 +683,10 @@ var runRerunCmd = &cobra.Command{
 				fmt.Fprintln(cmd.OutOrStdout(), "No failed checks found to rerun.")
 				return nil
 			}
+		} else if allBusytownBuilds(res.Builds) || (res.Provider != nil && res.Provider.Name() == "busytown") {
+			// Busytown / TreeHugger reruns are patchset-wide (treetop~runaction / Presubmit-Ready+1),
+			// so 'gh run rerun [<id>]' without --failed or -j can re-trigger the patchset presubmit directly.
+			buildsToRerun = deduplicateLatestBuilds(res.Builds)
 		} else {
 			failedBuilders := collectFailedBuilders(res.Builds, runRerunExperimental, skipRetryFilters...)
 			if len(failedBuilders) > 0 {
@@ -632,25 +702,26 @@ var runRerunCmd = &cobra.Command{
 			Patchset: res.PatchsetNum,
 		}
 
-		for _, b := range buildsToRerun {
-			bName := b.Builder.Builder
-			rerunSpec := bName
-			if b.Builder.Project != "" && b.Builder.Bucket != "" {
-				rerunSpec = fmt.Sprintf("%s/%s/%s", b.Builder.Project, b.Builder.Bucket, bName)
-			}
-			if runRerunDryRun {
-				cmdStr := res.Profile.FormatRerunCommand(chRef, rerunSpec)
-				fmt.Fprintf(cmd.OutOrStdout(), "[dry-run] %s\n", cmdStr)
-				continue
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "Rerunning check: %s...\n", bName)
-			if err := res.Profile.RerunCheck(ctx, chRef, rerunSpec, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
-				return fmt.Errorf("failed to rerun %s: %w", bName, err)
-			}
+		provider := res.Provider
+		if provider == nil {
+			provider = ResolveCIProvider(res.Config, projCfg, res.Client, res.GerritHost, res.Change)
+			setProviderProfile(provider, res.Profile, cmd)
 		}
-		return nil
+
+		return provider.RerunBuilds(ctx, chRef, buildsToRerun, runRerunDryRun, cmd.OutOrStdout())
 	},
+}
+
+func allBusytownBuilds(builds []bbBuild) bool {
+	if len(builds) == 0 {
+		return false
+	}
+	for _, b := range builds {
+		if !b.IsBusytown() {
+			return false
+		}
+	}
+	return true
 }
 
 var runWatchCmd = &cobra.Command{
@@ -675,6 +746,7 @@ func init() {
 	runViewCmd.Flags().BoolVar(&runViewLog, "log", false, "Output full log for check")
 	runViewCmd.Flags().BoolVarP(&runViewVerbose, "verbose", "v", false, "Show step execution tree")
 	runViewCmd.Flags().StringVarP(&runViewJob, "job", "j", "", "View a specific builder by name")
+	runViewCmd.Flags().StringVar(&runViewTarget, "target", "", "Busytown build target name for direct build ID inspection (ghish-only)")
 	runViewCmd.Flags().BoolVarP(&runViewWeb, "web", "w", false, "Open check in web browser")
 	runViewCmd.Flags().BoolVar(&runViewJSON, "json", false, "Output in JSON format")
 	runViewCmd.Flags().BoolVarP(&runViewExperimental, "experimental", "e", false, "Include non-blocking experimental checks")

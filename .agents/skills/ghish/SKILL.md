@@ -136,13 +136,14 @@ Commands:
   revisions; without `--publish`, pending drafts are kept private). For full
   review criteria, see [`.agents/skills/code_review/SKILL.md`](../code_review/SKILL.md).
 
-### 4. Monitor & Rerun CI / Buildbucket Checks
-- **`./gh pr checks [<id>[/<patchset>]]`**: Query remote LUCI Buildbucket checks
-  and Gerrit automated submit requirements / verification labels
-  (`./pw presubmit` runs local host validation).
+### 4. Monitor & Rerun CI / Buildbucket & Busytown Checks
+- **`./gh pr checks [<id>[/<patchset>]]`**: Query remote LUCI Buildbucket checks,
+  Android Busytown / TreeHugger presubmit targets (`treetop~presubmittasks` /
+  `ci.android.com`), and Gerrit automated submit requirements / verification
+  labels (`./pw presubmit` runs local host validation).
   - `-w, --watch`: Monitor checks until all blocking checks finish.
   - `--fail-fast`: Exit immediately upon the first blocking failure (implies `--watch`).
-  - `--log-failed`: Automatically display failure reports and LogDog snippets on exit (default: `true`).
+  - `--log-failed`: Automatically display failure reports and log snippets on exit (default: `true`).
   - `-e, --experimental`: Include non-blocking experimental checks in output.
   - `--all`: Include child subbuilds hidden by `ci.hide_tag_filters` in `.ghish.toml`.
   - **Exit codes**: `0` = all blocking checks passed, `8` = checks still
@@ -155,13 +156,16 @@ Commands:
   - *Gerrit UI Check Count Note*: `./gh pr checks` returns top-level Buildbucket
     builders (e.g. ~72), whereas the Gerrit UI "Checks" tab (~132) also counts
     individual `pw_presubmit` sub-steps and static analyzers (AyeAye, SLSA).
-- **`./gh run view [<id>] [-j|--job <builder|id>] [--log-failed] [--log] [--all] [-v] [--json]`**:
-  Inspect failed builders, LogDog failure snippets (`--log-failed`), or the
-  hierarchical step tree (`-j [<project>/][<bucket>/]<builder>`).
+- **`./gh run view [<id>] [-j|--job <builder|id>] [--target <target>] [--log-failed] [--log] [--all] [-v] [--json]`**:
+  Inspect failed builders, LogDog or Busytown `build.log` / AnTS failure
+  snippets (`--log-failed`), or the hierarchical step tree
+  (`-j [<project>/][<bucket>/]<builder>`). For direct Busytown build inspection,
+  pass `P<bid>/<target>` or `P<bid> --target <target>`.
 - **`./gh run rerun [<id>] [--failed | -j <builder>] [--dry-run]`**: Rerun all
-  failed builders or a specific builder via `bb add` (automatically using each
-  build's recorded Buildbucket `<project>/<bucket>/<builder>` and skipping
-  child subbuilds tagged with `skip-retry-in-gerrit:subbuild`).
+  failed builders or a specific builder via `bb add` on Buildbucket (using each
+  build's recorded `<project>/<bucket>/<builder>` and skipping child subbuilds
+  tagged with `skip-retry-in-gerrit:subbuild`) or via `treetop~runaction` /
+  `Presubmit-Ready+1` on Android Busytown / TreeHugger changes.
 - **`./gh run list [<id>] [--all]`** & **`./gh run watch [<id>]`**.
 
 ### 5. Listing, Merging & Status
@@ -194,8 +198,9 @@ Commands:
 ### 7. Where `gh` Habits Break
 Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 `--project`), `--force` (`-f` is `--fill`), `--trigger`/`--cq` (`-t` is
-`--title`/`--template`, `-q` is `--jq`), `--all-projects` on `pr list` (`-a` is
-`--assignee`), and `--message` on `pr merge` (`-m` is `--merge`).
+`--title`/`--template`, `-q` is `--jq`), `--target` on `run view` (`-t` is
+`--template`), `--all-projects` on `pr list` (`-a` is `--assignee`), and
+`--message` on `pr merge` (`-m` is `--merge`).
 
 | You type | Real `gh` | Here |
 |---|---|---|

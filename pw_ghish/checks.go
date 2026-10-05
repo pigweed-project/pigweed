@@ -68,6 +68,21 @@ func isHumanReviewRequirement(name string) bool {
 	}
 }
 
+func lookupChangeLabel(change *gerrit.ChangeInfo, name string) (string, gerrit.LabelInfo, bool) {
+	if change == nil || len(change.Labels) == 0 {
+		return "", gerrit.LabelInfo{}, false
+	}
+	if info, ok := change.Labels[name]; ok {
+		return name, info, true
+	}
+	for k, info := range change.Labels {
+		if strings.EqualFold(k, name) {
+			return k, info, true
+		}
+	}
+	return "", gerrit.LabelInfo{}, false
+}
+
 // ExtractGerritGates inspects a Gerrit change's submit requirements and automated
 // gate labels (such as Lint, Copybara-Verified, Presubmit-Verified, Verified,
 // and Topics-Not-Supported), returning the display items and a slice of failed
@@ -86,15 +101,16 @@ func ExtractGerritGates(change *gerrit.ChangeInfo) ([]GerritGateItem, []string) 
 		}
 		if isHumanReviewRequirement(sr.Name) {
 			// Only surface human review requirements here if explicitly rejected (-1/-2).
-			if info, ok := change.Labels[sr.Name]; !ok || !labelHasNegativeVote(info) {
+			if _, info, ok := lookupChangeLabel(change, sr.Name); !ok || !labelHasNegativeVote(info) {
 				continue
 			}
 		}
-		seen[sr.Name] = true
+		seen[strings.ToLower(sr.Name)] = true
 		labelSummary := ""
 		hasNegVote := false
-		if info, ok := change.Labels[sr.Name]; ok {
-			labelSummary = summarizeGateLabel(sr.Name, info)
+		if lblKey, info, ok := lookupChangeLabel(change, sr.Name); ok {
+			seen[strings.ToLower(lblKey)] = true
+			labelSummary = summarizeGateLabel(lblKey, info)
 			hasNegVote = labelHasNegativeVote(info)
 		}
 
@@ -149,10 +165,10 @@ func ExtractGerritGates(change *gerrit.ChangeInfo) ([]GerritGateItem, []string) 
 
 	gateLabels := []string{"Lint", "Copybara-Verified", "Presubmit-Verified", "Verified", "API-Review"}
 	for _, name := range gateLabels {
-		if seen[name] {
+		if seen[strings.ToLower(name)] {
 			continue
 		}
-		info, ok := change.Labels[name]
+		_, info, ok := lookupChangeLabel(change, name)
 		if !ok {
 			continue
 		}
@@ -223,7 +239,7 @@ type CheckItem struct {
 	Patchset int `json:"patchset,omitempty"`
 }
 
-// NewCheckItem creates a CheckItem from a Buildbucket build.
+// NewCheckItem creates a CheckItem from a Buildbucket or Busytown build.
 func NewCheckItem(b bbBuild) CheckItem {
 	return CheckItem{
 		ID:           b.ID,
@@ -232,7 +248,7 @@ func NewCheckItem(b bbBuild) CheckItem {
 		Status:       b.Status,
 		StatusSymbol: getStatusSymbol(b.Status),
 		Duration:     formatDuration(b.StartTime, b.EndTime),
-		URL:          fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID),
+		URL:          BuildURL(b),
 		Summary:      b.SummaryMarkdown,
 		Experimental: b.IsExperimental(),
 		Patchset:     b.Patchset,
@@ -366,9 +382,9 @@ func (c *equivalentBuildCache) record(patchset int, builds []bbBuild) {
 	}
 }
 
-// refresh queries Buildbucket for every patchset that isn't settled and
+// refresh queries the CI provider for every patchset that isn't settled and
 // returns the builds across all patchsets, in patchsets order.
-func (c *equivalentBuildCache) refresh(ctx context.Context, client *LUCIClient, gerritHost, project string, changeNum int, patchsets []int) ([]bbBuild, error) {
+func (c *equivalentBuildCache) refresh(ctx context.Context, provider CIProvider, gerritHost string, changeNum int, patchsets []int, change *GerritChangeInfo) ([]bbBuild, error) {
 	var toQuery []int
 	for _, ps := range patchsets {
 		if _, ok := c.settled[ps]; !ok {
@@ -378,7 +394,7 @@ func (c *equivalentBuildCache) refresh(ctx context.Context, client *LUCIClient, 
 
 	fresh := make(map[int][]bbBuild)
 	if len(toQuery) > 0 {
-		results, err := client.SearchBuildsByPatchset(ctx, gerritHost, project, changeNum, toQuery)
+		results, err := SearchProviderBuildsByPatchset(ctx, provider, gerritHost, changeNum, toQuery, change)
 		if err != nil {
 			return nil, err
 		}
@@ -483,10 +499,10 @@ func formatChecksStatusBreakdown(passed, running, failed, other int) string {
 	return strings.Join(parts, ", ")
 }
 
-// deduplicateLatestBuilds filters a list of builds returned by Buildbucket
+// deduplicateLatestBuilds filters a list of builds returned by CI providers
 // (which are sorted newest-first) to include only the most recent build attempt
-// per builder name, while preferring an older success over a newer cancellation
-// among equivalent patchsets.
+// per provider and builder name, while preferring an older success over a newer
+// cancellation among equivalent patchsets.
 //
 // builds can span several code-equivalent patchsets (see EquivalentPatchsets),
 // and LUCI CV still counts a success from an equivalent patchset even if a
@@ -496,9 +512,14 @@ func deduplicateLatestBuilds(builds []bbBuild) []bbBuild {
 	deduped := make([]bbBuild, 0, len(builds))
 	index := make(map[string]int, len(builds))
 	for _, b := range builds {
-		i, seen := index[b.Builder.Builder]
+		prov := b.Provider
+		if prov == "" {
+			prov = "buildbucket"
+		}
+		key := prov + ":" + b.Builder.Builder
+		i, seen := index[key]
 		if !seen {
-			index[b.Builder.Builder] = len(deduped)
+			index[key] = len(deduped)
 			deduped = append(deduped, b)
 			continue
 		}
@@ -549,7 +570,10 @@ Use --web (-w) to open checks in the browser.`,
 			return err
 		}
 
-		luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(ctx, buildbucketHost))
+		provider := res.Provider
+		if provider == nil {
+			provider = ResolveCIProvider(res.Config, projCfg, res.Client, res.GerritHost, res.Change)
+		}
 
 		if checksFailFast {
 			checksWatch = true
@@ -681,7 +705,7 @@ Use --web (-w) to open checks in the browser.`,
 				case <-time.After(interval):
 				}
 
-				newBuilds, err := buildCache.refresh(ctx, luciClient, res.GerritHost, res.Change.Project, res.Change.Number, patchsetsToQuery)
+				newBuilds, err := buildCache.refresh(ctx, provider, res.GerritHost, res.Change.Number, patchsetsToQuery, res.Change)
 				if err != nil {
 					select {
 					case <-ctx.Done():
@@ -758,12 +782,12 @@ Use --web (-w) to open checks in the browser.`,
 		if checksWatch && checksLogFailed && len(failedBuilds) > 0 {
 			var reports []FailureReport
 			for _, fb := range failedBuilds {
-				details, err := luciClient.GetBuildDetails(ctx, fb.ID)
-				if err != nil {
-					continue
-				}
-				rep := luciClient.ExtractFailureReportWithOptions(ctx, details, 100, projCfg.PreferredLogs(), projCfg.IncludeSummaryMarkdown())
-				if rep != nil {
+				rep, err := provider.FetchFailureReportWithOptions(ctx, fb, FailureReportOptions{
+					MaxLogLines:            100,
+					PreferredLogs:          projCfg.PreferredLogs(),
+					IncludeSummaryMarkdown: projCfg.IncludeSummaryMarkdown(),
+				})
+				if err == nil && rep != nil {
 					if fb.Patchset != res.PatchsetNum {
 						rep.Patchset = fb.Patchset
 					}

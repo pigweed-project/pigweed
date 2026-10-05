@@ -809,7 +809,7 @@ func findLuciAuthBinary(ctx context.Context) string {
 // resolveOAuthTokenFromCLI attempts to mint an OAuth2 access token from luci-auth
 // (trying each scope string in luciScopes; "" means default luci-auth scopes) and
 // then falls back to gcloud. It returns the token and a human-readable source label.
-func resolveOAuthTokenFromCLI(ctx context.Context, luciScopes []string) (string, string, error) {
+func resolveOAuthTokenFromCLI(ctx context.Context, luciScopes []string) (token string, source string, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -848,14 +848,33 @@ func resolveOAuthTokenFromCLI(ctx context.Context, luciScopes []string) (string,
 	return "", "", fmt.Errorf("no active OAuth2 token found from luci-auth or gcloud")
 }
 
+const oauthTokenCacheTTL = 5 * time.Minute
+
 var (
 	luciTokenMu           sync.Mutex
 	cachedLUCIToken       string
 	cachedLUCITokenSource string
 	cachedLUCITokenExpiry time.Time
+
+	androidBuildTokenMu           sync.Mutex
+	cachedAndroidBuildToken       string
+	cachedAndroidBuildTokenSource string
+	cachedAndroidBuildTokenExpiry time.Time
 )
 
-// ResetAuthTokenCaches clears in-memory OAuth token caches for LUCI and Issue Tracker.
+// ScopeAndroidBuildInternal is the OAuth2 scope for Android Build Internal v3 REST APIs.
+const ScopeAndroidBuildInternal = "https://www.googleapis.com/auth/androidbuild.internal"
+
+// ScopeGerritCodeReview is the OAuth2 scope for Gerrit Code Review REST APIs.
+const ScopeGerritCodeReview = "https://www.googleapis.com/auth/gerritcodereview"
+
+// DefaultAndroidBuildScopes are the OAuth2 scopes requested when authenticating with Android Build / Busytown.
+var DefaultAndroidBuildScopes = []string{
+	ScopeAndroidBuildInternal,
+	ScopeGerritCodeReview,
+}
+
+// ResetAuthTokenCaches clears in-memory OAuth token caches for LUCI, Android Build, and Issue Tracker.
 func ResetAuthTokenCaches() {
 	luciTokenMu.Lock()
 	cachedLUCIToken = ""
@@ -863,11 +882,73 @@ func ResetAuthTokenCaches() {
 	cachedLUCITokenExpiry = time.Time{}
 	luciTokenMu.Unlock()
 
+	androidBuildTokenMu.Lock()
+	cachedAndroidBuildToken = ""
+	cachedAndroidBuildTokenSource = ""
+	cachedAndroidBuildTokenExpiry = time.Time{}
+	androidBuildTokenMu.Unlock()
+
 	issueTokenMu.Lock()
 	cachedIssueToken = ""
 	cachedIssueTokenSource = ""
 	cachedIssueTokenExpiry = time.Time{}
 	issueTokenMu.Unlock()
+}
+
+// DefaultAndroidBuildToken resolves an OAuth2 access token for Android Build Internal v3 and ci.android.com.
+func DefaultAndroidBuildToken(ctx context.Context) (string, error) {
+	if tok := strings.TrimSpace(os.Getenv("GHISH_ANDROID_BUILD_TOKEN")); tok != "" {
+		return tok, nil
+	}
+
+	androidBuildTokenMu.Lock()
+	if cachedAndroidBuildToken != "" && time.Now().Before(cachedAndroidBuildTokenExpiry) {
+		tok := cachedAndroidBuildToken
+		androidBuildTokenMu.Unlock()
+		return tok, nil
+	}
+	androidBuildTokenMu.Unlock()
+
+	scopeJoined := strings.Join(DefaultAndroidBuildScopes, " ")
+	tok, src, err := resolveOAuthTokenFromCLI(ctx, []string{
+		scopeJoined,
+		ScopeAndroidBuildInternal,
+		"",
+	})
+	if err != nil {
+		return "", err
+	}
+
+	androidBuildTokenMu.Lock()
+	cachedAndroidBuildToken = tok
+	cachedAndroidBuildTokenSource = src
+	cachedAndroidBuildTokenExpiry = time.Now().Add(oauthTokenCacheTTL)
+	androidBuildTokenMu.Unlock()
+	return tok, nil
+}
+
+// AndroidBuildTokenResolver is the function used to resolve Android Build OAuth2 tokens.
+// It can be overridden in tests.
+var AndroidBuildTokenResolver = DefaultAndroidBuildToken
+
+// AndroidBuildAuthTransport attaches OAuth2 Bearer tokens to Android Build Internal and ci.android.com requests.
+type AndroidBuildAuthTransport struct {
+	Base http.RoundTripper
+}
+
+func (t *AndroidBuildAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	ctx := req.Context()
+	base := t.Base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+
+	if tok, err := AndroidBuildTokenResolver(ctx); err == nil && tok != "" {
+		authedReq := req.Clone(ctx)
+		authedReq.Header.Set("Authorization", "Bearer "+tok)
+		return base.RoundTrip(authedReq)
+	}
+	return base.RoundTrip(req)
 }
 
 // DefaultLUCIToken resolves an OAuth2 access token for LUCI Buildbucket and LogDog.
@@ -906,7 +987,7 @@ func DefaultLUCIToken(ctx context.Context) (string, string, error) {
 	luciTokenMu.Lock()
 	cachedLUCIToken = tok
 	cachedLUCITokenSource = src
-	cachedLUCITokenExpiry = time.Now().Add(5 * time.Minute)
+	cachedLUCITokenExpiry = time.Now().Add(oauthTokenCacheTTL)
 	luciTokenMu.Unlock()
 	return tok, src, nil
 }

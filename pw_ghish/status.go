@@ -231,11 +231,6 @@ var statusCmd = &cobra.Command{
 			var checksSummary string
 			gHost := cfg.GerritHost(ctx)
 
-			bbHost := buildbucketHost
-			if bbHost == "" {
-				bbHost = "cr-buildbucket.appspot.com"
-			}
-
 			var (
 				subWg             sync.WaitGroup
 				publishedComments map[string][]gerrit.CommentInfo
@@ -249,7 +244,8 @@ var statusCmd = &cobra.Command{
 				subWg.Add(1)
 				go func() {
 					defer subWg.Done()
-					builds, bErr := queryBuildbucketPatchsets(ctx, bbHost, gHost, activeChange.Project, activeChange.Number, patchsets, getLUCIHTTPClient(ctx, bbHost))
+					provider := ResolveCIProvider(cfg, projCfg, client, gHost, activeChange)
+					builds, bErr := SearchProviderBuildsForPatchsets(ctx, provider, gHost, activeChange.Number, patchsets, activeChange)
 					if bErr == nil && builds != nil {
 						deduped := deduplicateLatestBuilds(builds)
 						visibleBuilds, _ := FilterBuildsByTags(deduped, projCfg.CI.HideTagFilters)

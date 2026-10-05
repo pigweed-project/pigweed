@@ -154,8 +154,12 @@ Example ``.ghish.toml``
    "myrev" = "myproject-review.googlesource.com"
 
    [ci]
-   # CI providers used by this project ("luci", "gerrit"):
-   providers = ["luci", "gerrit"]
+   # CI providers used by this project ("auto", "buildbucket", "busytown", "gerrit"):
+   # - ["auto"] (default): Uses Buildbucket, and automatically enables Busytown + Buildbucket
+   #   composite mode on Android Gerrit hosts or CLs with TreeHugger / Presubmit-Verified.
+   # - ["busytown"]: Android Busytown / TreeHugger only (treetop~ + ci.android.com).
+   # - ["buildbucket", "busytown"]: Dual-stack LUCI Buildbucket + Android Busytown.
+   providers = ["auto"]
    buildbucket_host = "cr-buildbucket.appspot.com"
    try_buckets = ["pigweed/try"]
 
@@ -211,7 +215,8 @@ Any ``.ghish.toml`` setting can be configured or overridden locally via
    # Enforce submodule policy ("allow", "warn-unpushed", "require-pushed", "forbid-manual-rolls"):
    $ git config --local ghish.gerrit.submodulePolicy "forbid-manual-rolls"
 
-   # Hide subbuilds in `gh pr checks`, `gh run list`, and `gh run view`:
+   # Configure CI providers (e.g. "busytown" or "buildbucket,busytown") and hidden subbuild tags:
+   $ git config --local ghish.ci.providers "busytown"
    $ git config --local ghish.ci.hideTagFilters "hide-in-gerrit:subbuild"
 
    # Register a custom Gerrit shortlink prefix:

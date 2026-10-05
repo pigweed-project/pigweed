@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/andygrunwald/go-gerrit"
 )
 
 func TestQueryBuildbucket_Success(t *testing.T) {
@@ -1770,5 +1772,26 @@ func TestChecks_GerritGates_FailedLintLabelEvenWithZeroBuilds(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Gerrit gate(s) failed") || !strings.Contains(err.Error(), "Lint") {
 		t.Errorf("Expected error to mention Gerrit gate failure on Lint, got: %v", err)
+	}
+}
+
+func TestLookupChangeLabel_CaseInsensitive(t *testing.T) {
+	change := &gerrit.ChangeInfo{
+		Labels: map[string]gerrit.LabelInfo{
+			"LINT": {
+				Recommended: gerrit.AccountInfo{AccountID: 1},
+			},
+		},
+	}
+
+	gotKey, gotInfo, ok := lookupChangeLabel(change, "Lint")
+	if !ok {
+		t.Fatalf("lookupChangeLabel(change, %q) returned ok=false, want true", "Lint")
+	}
+	if gotKey != "LINT" {
+		t.Errorf("lookupChangeLabel key = %q, want %q", gotKey, "LINT")
+	}
+	if gotInfo.Recommended.AccountID != 1 {
+		t.Errorf("lookupChangeLabel Recommended.AccountID = %d, want 1", gotInfo.Recommended.AccountID)
 	}
 }

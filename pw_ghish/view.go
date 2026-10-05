@@ -125,12 +125,12 @@ var viewCmd = &cobra.Command{
 			revisionToFetch = reqRev
 		}
 
-		gHost := chCtx.Config.GerritHost(ctx)
-
-		bbHost := buildbucketHost
-		if bbHost == "" {
-			bbHost = "cr-buildbucket.appspot.com"
+		gHost := chCtx.Host
+		if gHost == "" && chCtx.Config != nil {
+			gHost = chCtx.Config.GerritHost(ctx)
 		}
+		gHost = CanonicalGerritHost(gHost)
+		projCfg, _ := LoadCommandProjectConfig(cmd)
 
 		wantCommentsJSON := requestsAnyJSONField(jsonOutputFields, "comments")
 		wantDraftsJSON := requestsAnyJSONField(jsonOutputFields, "drafts")
@@ -203,7 +203,8 @@ var viewCmd = &cobra.Command{
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				builds, err := queryBuildbucketPatchsets(ctx, bbHost, gHost, change.Project, change.Number, patchsets, getLUCIHTTPClient(ctx, bbHost))
+				provider := ResolveCIProvider(chCtx.Config, projCfg, client, gHost, change)
+				builds, err := SearchProviderBuildsForPatchsets(ctx, provider, gHost, change.Number, patchsets, change)
 				if err == nil && builds != nil {
 					checksSummary = formatCheckSummary(deduplicateLatestBuilds(builds))
 				} else if ExitCodeFor(err) == ExitCodeAuth {

@@ -595,7 +595,7 @@ func EquivalentPatchsets(change *gerrit.ChangeInfo, targetPatchset int) []int {
 }
 
 // CIContext encapsulates the resolved Gerrit change, patchset number, profile,
-// host, and Buildbucket builds for CI/CD commands (checks, run).
+// host, CIProvider, and builds for CI/CD commands (checks, run).
 type CIContext struct {
 	*ChangeContext
 	Change              *gerrit.ChangeInfo
@@ -603,12 +603,17 @@ type CIContext struct {
 	EquivalentPatchsets []int
 	GerritHost          string
 	Profile             ProjectProfile
+	Provider            CIProvider
 	Builds              []bbBuild
 }
 
 // ResolveCIContext resolves the change context, fetches Gerrit change metadata,
-// determines the target patchset number, resolves the project profile, and queries Buildbucket.
+// determines the target patchset number, resolves the project profile, and queries CI providers.
 func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
+	projCfg, err := LoadCommandProjectConfig(cmd)
+	if err != nil {
+		return nil, err
+	}
 	chCtx, err := ResolveChangeContext(cmd, []string{rawID})
 	if err != nil {
 		return nil, err
@@ -622,7 +627,7 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 		patchsetNum = n
 	}
 	change, err := chCtx.GetChange(&gerrit.ChangeOptions{
-		AdditionalFields: []string{"ALL_REVISIONS", "DETAILED_LABELS", "SUBMIT_REQUIREMENTS"},
+		AdditionalFields: []string{"ALL_REVISIONS", "DETAILED_LABELS", "SUBMIT_REQUIREMENTS", "MESSAGES"},
 	})
 	if err != nil {
 		return nil, err
@@ -646,11 +651,23 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 	}
 	gerritHost = CanonicalGerritHost(gerritHost)
 
-	luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(chCtx.Context, buildbucketHost))
-	builds, err := luciClient.SearchBuildsForPatchsets(chCtx.Context, gerritHost, change.Project, change.Number, equivalentPatchsets)
+	provider := ResolveCIProvider(chCtx.Config, projCfg, chCtx.Client, gerritHost, change)
+	setProviderProfile(provider, profile, cmd)
+
+	builds, err := SearchProviderBuildsForPatchsets(chCtx.Context, provider, gerritHost, change.Number, equivalentPatchsets, change)
 	if err != nil {
-		return nil, fmt.Errorf("error querying Buildbucket: %w", err)
+		return nil, fmt.Errorf("error querying CI provider(s): %w", err)
 	}
+
+	explicitPatchset := chCtx.Revision != "" && chCtx.Revision != "current"
+	if len(builds) == 0 && !explicitPatchset && change.Status == "MERGED" && patchsetNum > 1 && len(equivalentPatchsets) <= 1 {
+		prevEq := EquivalentPatchsets(change, patchsetNum-1)
+		if prevBuilds, prevErr := SearchProviderBuildsForPatchsets(chCtx.Context, provider, gerritHost, change.Number, prevEq, change); prevErr == nil && len(prevBuilds) > 0 {
+			builds = prevBuilds
+			equivalentPatchsets = append(equivalentPatchsets, prevEq...)
+		}
+	}
+
 	return &CIContext{
 		ChangeContext:       chCtx,
 		Change:              change,
@@ -658,8 +675,26 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 		EquivalentPatchsets: equivalentPatchsets,
 		GerritHost:          gerritHost,
 		Profile:             profile,
+		Provider:            provider,
 		Builds:              builds,
 	}, nil
+}
+
+func setProviderProfile(p CIProvider, profile ProjectProfile, cmd *cobra.Command) {
+	switch v := p.(type) {
+	case *BuildbucketProvider:
+		v.Profile = profile
+		if cmd != nil {
+			v.ErrOut = cmd.ErrOrStderr()
+		}
+	case *CompositeCIProvider:
+		if cmd != nil {
+			v.ErrOut = cmd.ErrOrStderr()
+		}
+		for _, sub := range v.Providers {
+			setProviderProfile(sub, profile, cmd)
+		}
+	}
 }
 
 // SetWorkInProgress marks the change as Work-In-Progress (WIP / draft) with an optional message.

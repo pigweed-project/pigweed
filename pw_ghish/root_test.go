@@ -358,6 +358,7 @@ var ghShorthandCollisions = []struct {
 	{"pr merge", "q", "cq", "--jq"},
 	{"pr edit", "m", "message", "--milestone"},
 	{"pr merge", "m", "message", "--merge"},
+	{"run view", "t", "target", "--template"},
 }
 
 // findCommandForTest resolves a command path such as "pr create".
