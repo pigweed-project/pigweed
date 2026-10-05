@@ -108,3 +108,12 @@ pw_py_test(
         requirement("pyee"),
     ],
 )
+
+pw_py_test(
+    name = "sitemap_test",
+    srcs = ["sitemap_test.py"],
+    tags = ["local"],
+    deps = [
+        ":helpers",
+    ],
+)
