@@ -57,6 +57,15 @@ Status AclSnapshot::ApplyStateUpdate(const AclStateUpdate& update) {
             }
           }
           return OkStatus();
+        } else if constexpr (std::is_same_v<T, AclBufferSizeSnapshot>) {
+          if (arg.transport == AclTransportType::kLe) {
+            le_controller_max_packets = arg.controller_max_packets;
+            le_max_acl_data_packet_length = arg.max_acl_data_packet_length;
+          } else {
+            br_edr_controller_max_packets = arg.controller_max_packets;
+            br_edr_max_acl_data_packet_length = arg.max_acl_data_packet_length;
+          }
+          return OkStatus();
         }
       },
       update);

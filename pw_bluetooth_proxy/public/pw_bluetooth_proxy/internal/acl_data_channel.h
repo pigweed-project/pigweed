@@ -520,6 +520,12 @@ class AclDataChannel {
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
+  // Invokes buffer size state update callback if registered.
+  void NotifyBufferSizeStateUpdate(AclTransportType transport,
+                                   uint16_t controller_max_packets,
+                                   uint16_t max_acl_data_packet_length) const
+      PW_LOCKS_EXCLUDED(connection_mutex_);
+
   // Invokes connection state update callback if registered.
   void NotifyConnectionStateUpdate(const AclConnection& connection) const
       PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_);
@@ -538,6 +544,11 @@ class AclDataChannel {
       PW_GUARDED_BY(connection_mutex_);
 
 #else
+
+  void NotifyBufferSizeStateUpdate(
+      [[maybe_unused]] AclTransportType transport,
+      [[maybe_unused]] uint16_t controller_max_packets,
+      [[maybe_unused]] uint16_t max_acl_data_packet_length) const {}
 
   void NotifyConnectionStateUpdate(
       [[maybe_unused]] const AclConnection& connection) const {}

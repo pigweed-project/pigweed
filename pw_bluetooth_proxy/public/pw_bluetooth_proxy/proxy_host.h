@@ -52,6 +52,7 @@ namespace pw::bluetooth::proxy {
 
 using ProxyHostStateUpdate = std::variant<AclConnectionSnapshot,
                                           AclConnectionRemoved,
+                                          AclBufferSizeSnapshot,
                                           L2capSignalingStateSnapshot,
                                           L2capChannelSnapshot,
                                           L2capChannelRemoved>;

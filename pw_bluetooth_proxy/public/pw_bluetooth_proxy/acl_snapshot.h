@@ -43,9 +43,15 @@ struct AclConnectionSnapshot {
   Status Update(const AclConnectionSnapshot& update);
 };
 
-/// Incremental update payload emitted on ACL connection state mutations.
-using AclStateUpdate =
-    std::variant<AclConnectionSnapshot, AclConnectionRemoved>;
+struct AclBufferSizeSnapshot {
+  AclTransportType transport = AclTransportType::kLe;
+  uint16_t controller_max_packets = 0;
+  uint16_t max_acl_data_packet_length = 0;
+};
+
+/// Incremental update payload emitted on ACL subsystem state mutations.
+using AclStateUpdate = std::
+    variant<AclConnectionSnapshot, AclConnectionRemoved, AclBufferSizeSnapshot>;
 
 /// Callback invoked when an ACL subsystem state mutates.
 ///
@@ -65,6 +71,13 @@ struct AclSnapshot {
 
   /// Maximum number of ACL data packets the controller can hold for BR/EDR.
   uint16_t br_edr_controller_max_packets = 0;
+
+  /// Maximum length in bytes of an LE ACL data packet (excluding HCI header).
+  uint16_t le_max_acl_data_packet_length = 0;
+
+  /// Maximum length in bytes of a BR/EDR ACL data packet (excluding HCI
+  /// header).
+  uint16_t br_edr_max_acl_data_packet_length = 0;
 
   Vector<AclConnectionSnapshot,
          PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS>

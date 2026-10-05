@@ -296,7 +296,8 @@ Each subsystem defines its own strongly typed callback and payload variant:
    * - ProxyHost (ACL)
      - ``ProxyHostStateUpdateCallback``
      - ``AclConnectionSnapshot``,
-       ``AclConnectionRemoved``
+       ``AclConnectionRemoved``,
+       ``AclBufferSizeSnapshot``
    * - ProxyHost (L2CAP)
      - ``ProxyHostStateUpdateCallback``
      - ``L2capSignalingStateSnapshot``,
@@ -333,9 +334,9 @@ regions or together in a unified structure:
   Takes a ``ProxyHostStateUpdate`` and routes it
   directly to the corresponding ACL or L2CAP snapshot entry.
 * ``AclSnapshot::ApplyStateUpdate``:
-  Updates an existing ``AclConnectionSnapshot`` or
-  erases the entry if an ``AclConnectionRemoved``
-  is received.
+  Updates an existing ``AclConnectionSnapshot``,
+  erases the entry if an ``AclConnectionRemoved`` is received, or records
+  buffer size parameters when an ``AclBufferSizeSnapshot`` is received.
 * ``L2capSnapshot::ApplyStateUpdate``:
   Updates signaling records, updates channel entries, or erases channels upon
   receiving ``L2capChannelRemoved``.

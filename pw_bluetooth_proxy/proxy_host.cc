@@ -121,7 +121,8 @@ Status ProxyHostSnapshot::ApplyStateUpdate(const ProxyHostStateUpdate& update) {
       [this](const auto& arg) -> Status {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, AclConnectionSnapshot> ||
-                      std::is_same_v<T, AclConnectionRemoved>) {
+                      std::is_same_v<T, AclConnectionRemoved> ||
+                      std::is_same_v<T, AclBufferSizeSnapshot>) {
           return acl.ApplyStateUpdate(arg);
         } else {
           return l2cap.ApplyStateUpdate(arg);

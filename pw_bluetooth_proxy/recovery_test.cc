@@ -39,6 +39,13 @@ constexpr uint16_t kBrEdrConnectionHandle = 0x456;
 constexpr uint16_t kLeMaxAclCredits = 10;
 constexpr uint16_t kBrEdrMaxAclCredits = 5;
 
+constexpr uint16_t kLocalCid1 = 0x40;
+constexpr uint16_t kLocalCid2 = 0x41;
+constexpr uint16_t kLocalCid3 = 0x42;
+constexpr uint16_t kRemoteCid1 = 0x50;
+constexpr uint16_t kRemoteCid2 = 0x51;
+constexpr uint16_t kRemoteCid3 = 0x52;
+
 AclConnectionSnapshot CreateAclConnectionSnapshot(
     uint16_t connection_handle = kLeConnectionHandle1,
     AclTransportType transport = AclTransportType::kLe,
@@ -109,16 +116,57 @@ TEST(AclSnapshotTest, AclSnapshotApplyStateUpdate) {
   EXPECT_TRUE(snapshot.snapshot_incomplete);
 }
 
+TEST(AclSnapshotTest, AclBufferSizeSnapshotApplyStateUpdate) {
+  AclSnapshot snapshot;
+
+  // Apply LE buffer size update.
+  AclBufferSizeSnapshot le_buffer{
+      .transport = AclTransportType::kLe,
+      .controller_max_packets = 12,
+      .max_acl_data_packet_length = 251,
+  };
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(le_buffer));
+  EXPECT_EQ(snapshot.le_controller_max_packets, 12);
+  EXPECT_EQ(snapshot.le_max_acl_data_packet_length, 251);
+  EXPECT_EQ(snapshot.br_edr_controller_max_packets, 0);
+  EXPECT_EQ(snapshot.br_edr_max_acl_data_packet_length, 0);
+
+  // Apply BR/EDR buffer size update.
+  AclBufferSizeSnapshot br_edr_buffer{
+      .transport = AclTransportType::kBrEdr,
+      .controller_max_packets = 8,
+      .max_acl_data_packet_length = 672,
+  };
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(br_edr_buffer));
+  EXPECT_EQ(snapshot.le_controller_max_packets, 12);
+  EXPECT_EQ(snapshot.le_max_acl_data_packet_length, 251);
+  EXPECT_EQ(snapshot.br_edr_controller_max_packets, 8);
+  EXPECT_EQ(snapshot.br_edr_max_acl_data_packet_length, 672);
+
+  // Verify through ProxyHostSnapshot::ApplyStateUpdate.
+  ProxyHostSnapshot proxy_snapshot;
+  PW_TEST_EXPECT_OK(proxy_snapshot.ApplyStateUpdate(le_buffer));
+  PW_TEST_EXPECT_OK(proxy_snapshot.ApplyStateUpdate(br_edr_buffer));
+  EXPECT_EQ(proxy_snapshot.acl.le_controller_max_packets, 12);
+  EXPECT_EQ(proxy_snapshot.acl.le_max_acl_data_packet_length, 251);
+  EXPECT_EQ(proxy_snapshot.acl.br_edr_controller_max_packets, 8);
+  EXPECT_EQ(proxy_snapshot.acl.br_edr_max_acl_data_packet_length, 672);
+}
+
 class AclRecoveryTest : public ProxyHostTest {
  protected:
   static AclSnapshot CreateAclSnapshot(
       uint16_t le_max = kLeMaxAclCredits,
       uint16_t br_edr_max = kBrEdrMaxAclCredits,
-      bool incomplete = false) {
+      bool incomplete = false,
+      uint16_t le_max_len = 0,
+      uint16_t br_edr_max_len = 0) {
     AclSnapshot snapshot;
     snapshot.snapshot_incomplete = incomplete;
     snapshot.le_controller_max_packets = le_max;
     snapshot.br_edr_controller_max_packets = br_edr_max;
+    snapshot.le_max_acl_data_packet_length = le_max_len;
+    snapshot.br_edr_max_acl_data_packet_length = br_edr_max_len;
     return snapshot;
   }
 };
@@ -252,10 +300,20 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
 
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
 
+  // Verify that buffer size command complete triggers an AclBufferSizeSnapshot
+  // update.
+  EXPECT_EQ(update_capture.updates_sent, 1u);
+  ASSERT_TRUE(std::holds_alternative<AclBufferSizeSnapshot>(
+      update_capture.last_update));
+  AclBufferSizeSnapshot buffer_snapshot =
+      std::get<AclBufferSizeSnapshot>(update_capture.last_update);
+  EXPECT_EQ(buffer_snapshot.transport, AclTransportType::kLe);
+  EXPECT_EQ(buffer_snapshot.controller_max_packets, 10);
+
   // Verify that connection creation triggers a state update callback.
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
       proxy, kLeConnectionHandle1, emboss::StatusCode::SUCCESS));
-  EXPECT_EQ(update_capture.updates_sent, 1u);
+  EXPECT_EQ(update_capture.updates_sent, 2u);
   ASSERT_TRUE(std::holds_alternative<AclConnectionSnapshot>(
       update_capture.last_update));
   AclConnectionSnapshot connection_snapshot =
@@ -272,7 +330,7 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   // Verify that sending a packet from the host triggers a state update
   // callback.
-  EXPECT_EQ(update_capture.updates_sent, 2u);
+  EXPECT_EQ(update_capture.updates_sent, 3u);
   ASSERT_TRUE(std::holds_alternative<AclConnectionSnapshot>(
       update_capture.last_update));
   connection_snapshot =
@@ -282,7 +340,7 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
 #else
   // Verify that credit mutations don't trigger a state update callback when
   // credit snapshot updates are disabled.
-  EXPECT_EQ(update_capture.updates_sent, 1u);
+  EXPECT_EQ(update_capture.updates_sent, 2u);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
   PW_TEST_ASSERT_OK(
@@ -290,7 +348,7 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   // Verify that reclaiming credits via NOCP event triggers a state update
   // callback.
-  EXPECT_EQ(update_capture.updates_sent, 3u);
+  EXPECT_EQ(update_capture.updates_sent, 4u);
   ASSERT_TRUE(std::holds_alternative<AclConnectionSnapshot>(
       update_capture.last_update));
   connection_snapshot =
@@ -300,22 +358,173 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
 #else
   // Verify that credit mutations don't trigger a state update callback when
   // credit snapshot updates are disabled.
-  EXPECT_EQ(update_capture.updates_sent, 1u);
+  EXPECT_EQ(update_capture.updates_sent, 2u);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
   // Verify that disconnection triggers a state update callback.
   PW_TEST_ASSERT_OK(
       SendDisconnectionCompleteEvent(proxy, kLeConnectionHandle1));
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
-  EXPECT_EQ(update_capture.updates_sent, 4u);
+  EXPECT_EQ(update_capture.updates_sent, 5u);
 #else
-  EXPECT_EQ(update_capture.updates_sent, 2u);
+  EXPECT_EQ(update_capture.updates_sent, 3u);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   ASSERT_TRUE(
       std::holds_alternative<AclConnectionRemoved>(update_capture.last_update));
   EXPECT_EQ(std::get<AclConnectionRemoved>(update_capture.last_update)
                 .connection_handle,
             kLeConnectionHandle1);
+}
+
+TEST_F(AclRecoveryTest, BufferSizeStateUpdatesEmitted) {
+  std::optional<AclBufferSizeSnapshot> last_buffer_update;
+
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/1,
+      GetProxyHostAllocator(),
+      [&last_buffer_update](const ProxyHostStateUpdate& update) {
+        if (auto* snap = std::get_if<AclBufferSizeSnapshot>(&update)) {
+          last_buffer_update = *snap;
+        }
+      });
+  StartDispatcherOnCurrentThread(proxy);
+
+  // Verify LE read buffer size event emits AclBufferSizeSnapshot.
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(
+      proxy, /*num_credits_to_reserve=*/10, /*le_acl_data_packet_length=*/251));
+  ASSERT_TRUE(last_buffer_update.has_value());
+  EXPECT_EQ(last_buffer_update->transport, AclTransportType::kLe);
+  EXPECT_EQ(last_buffer_update->controller_max_packets, 10);
+  EXPECT_EQ(last_buffer_update->max_acl_data_packet_length, 251);
+
+  last_buffer_update.reset();
+
+  // Verify BR/EDR read buffer size event emits AclBufferSizeSnapshot.
+  PW_TEST_ASSERT_OK(SendReadBufferResponseFromController(
+      proxy, /*num_credits_to_reserve=*/8, /*acl_data_packet_length=*/672));
+  ASSERT_TRUE(last_buffer_update.has_value());
+  EXPECT_EQ(last_buffer_update->transport, AclTransportType::kBrEdr);
+  EXPECT_EQ(last_buffer_update->controller_max_packets, 8);
+  EXPECT_EQ(last_buffer_update->max_acl_data_packet_length, 672);
+}
+
+TEST_F(AclRecoveryTest,
+       RecoverFromSnapshotRestoresBufferSizesAndAllowsChannelAcquisition) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/1,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  // Prepare a snapshot using CreateAclSnapshot with buffer sizes and active
+  // connections for both LE and BR/EDR transports.
+  ProxyHostSnapshot snapshot;
+  snapshot.acl = CreateAclSnapshot(
+      /*le_max=*/10,
+      /*br_edr_max=*/8,
+      /*incomplete=*/false,
+      /*le_max_len=*/251,
+      /*br_edr_max_len=*/672);
+  snapshot.acl.acl_connections.push_back(
+      CreateAclConnectionSnapshot(kLeConnectionHandle1, AclTransportType::kLe));
+  snapshot.acl.acl_connections.push_back(CreateAclConnectionSnapshot(
+      kBrEdrConnectionHandle, AclTransportType::kBrEdr));
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kBrEdrConnectionHandle,
+      .transport = AclTransportType::kBrEdr,
+  });
+
+  // Recover state without receiving any ReadBufferSize HCI event from the
+  // controller.
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
+
+  // Verify that intercepting basic L2CAP channels succeeds for both LE and
+  // BR/EDR transports because max packet lengths were restored from the
+  // snapshot.
+  Result<UniquePtr<ChannelProxy>> le_channel_proxy =
+      BuildBasicModeChannelProxyWithResult(
+          proxy,
+          BasicChannelProxyParameters{
+              .connection_handle = ConnectionHandle{kLeConnectionHandle1},
+              .local_channel_id = kLocalCid1,
+              .remote_channel_id = kRemoteCid1,
+              .transport = AclTransportType::kLe,
+          });
+  PW_TEST_ASSERT_OK(le_channel_proxy.status());
+
+  Result<UniquePtr<ChannelProxy>> bredr_channel_proxy =
+      BuildBasicModeChannelProxyWithResult(
+          proxy,
+          BasicChannelProxyParameters{
+              .connection_handle = ConnectionHandle{kBrEdrConnectionHandle},
+              .local_channel_id = kLocalCid2,
+              .remote_channel_id = kRemoteCid2,
+              .transport = AclTransportType::kBrEdr,
+          });
+  PW_TEST_ASSERT_OK(bredr_channel_proxy.status());
+
+  // Recovering a snapshot with 0-length resets packet lengths to std::nullopt
+  // on an already-used instance.
+  ProxyHostSnapshot empty_len_snapshot;
+  empty_len_snapshot.acl = CreateAclSnapshot(
+      /*le_max=*/10,
+      /*br_edr_max=*/8,
+      /*incomplete=*/false,
+      /*le_max_len=*/0,
+      /*br_edr_max_len=*/0);
+  empty_len_snapshot.acl.acl_connections.push_back(
+      CreateAclConnectionSnapshot(kLeConnectionHandle1, AclTransportType::kLe));
+  empty_len_snapshot.l2cap.l2cap_signaling_states.push_back(
+      L2capSignalingStateSnapshot{
+          .connection_handle = kLeConnectionHandle1,
+          .transport = AclTransportType::kLe,
+      });
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&empty_len_snapshot));
+  Result<UniquePtr<ChannelProxy>> proxy_after_zero_recovery =
+      BuildBasicModeChannelProxyWithResult(
+          proxy,
+          BasicChannelProxyParameters{
+              .connection_handle = ConnectionHandle{kLeConnectionHandle1},
+              .local_channel_id = kLocalCid1,
+              .remote_channel_id = kRemoteCid1,
+              .transport = AclTransportType::kLe,
+          });
+  EXPECT_EQ(proxy_after_zero_recovery.status(), Status::FailedPrecondition());
+
+  // Resetting the proxy clears max packet length so channel interception on a
+  // new connection fails with FailedPrecondition until buffer size is
+  // reinitialized.
+  proxy.Reset();
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kLeConnectionHandle1, emboss::StatusCode::SUCCESS));
+  Result<UniquePtr<ChannelProxy>> proxy_after_reset =
+      BuildBasicModeChannelProxyWithResult(
+          proxy,
+          BasicChannelProxyParameters{
+              .connection_handle = ConnectionHandle{kLeConnectionHandle1},
+              .local_channel_id = kLocalCid1,
+              .remote_channel_id = kRemoteCid1,
+              .transport = AclTransportType::kLe,
+          });
+  EXPECT_EQ(proxy_after_reset.status(), Status::FailedPrecondition());
 }
 
 TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {
@@ -614,13 +823,6 @@ TEST_F(AclRecoveryTest, RecombinedHostPduEmitsCreditMutation) {
   }
 }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
-
-constexpr uint16_t kLocalCid1 = 0x40;
-constexpr uint16_t kLocalCid2 = 0x41;
-constexpr uint16_t kLocalCid3 = 0x42;
-constexpr uint16_t kRemoteCid1 = 0x50;
-constexpr uint16_t kRemoteCid2 = 0x51;
-constexpr uint16_t kRemoteCid3 = 0x52;
 
 L2capChannelSnapshot CreateL2capChannelSnapshot(
     uint16_t connection_handle = kLeConnectionHandle1,
@@ -1444,8 +1646,10 @@ TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
                               });
   StartDispatcherOnCurrentThread(proxy);
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
-
+  ASSERT_EQ(updates.size(), 1u);
   ProxyHostSnapshot snapshot;
+  PW_TEST_ASSERT_OK(snapshot.ApplyStateUpdate(updates[0]));
+  updates.clear();
   snapshot.acl.acl_connections.push_back(
       AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
                             .transport = AclTransportType::kLe});

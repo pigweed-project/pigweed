@@ -196,6 +196,8 @@ void AclDataChannel::Reset() {
     // sent.
     le_credits_.Reset();
     br_edr_credits_.Reset();
+    max_acl_data_packet_length_ = std::nullopt;
+    max_le_acl_data_packet_length_ = std::nullopt;
   }
   {
     std::lock_guard lock(connection_mutex_);
@@ -342,15 +344,19 @@ const AclDataChannel::Credits& AclDataChannel::LookupCredits(
 
 void AclDataChannel::ProcessReadBufferSizeCommandCompleteEvent(
     emboss::ReadBufferSizeCommandCompleteEventWriter read_buffer_event) {
+  const uint16_t controller_max =
+      read_buffer_event.total_num_acl_data_packets().Read();
+  const uint16_t max_packet_len =
+      read_buffer_event.acl_data_packet_length().Read();
   {
     std::lock_guard lock(credit_mutex_);
-    const uint16_t controller_max =
-        read_buffer_event.total_num_acl_data_packets().Read();
     const uint16_t host_max = br_edr_credits_.Reserve(controller_max);
     read_buffer_event.total_num_acl_data_packets().Write(host_max);
-    max_acl_data_packet_length_ =
-        read_buffer_event.acl_data_packet_length().Read();
+    max_acl_data_packet_length_ = max_packet_len;
   }
+
+  NotifyBufferSizeStateUpdate(
+      AclTransportType::kBrEdr, controller_max, max_packet_len);
 
   on_tx_credits_fn_();
 }
@@ -358,24 +364,25 @@ void AclDataChannel::ProcessReadBufferSizeCommandCompleteEvent(
 template <class EventT>
 void AclDataChannel::ProcessSpecificLEReadBufferSizeCommandCompleteEvent(
     EventT read_buffer_event) {
+  const uint16_t controller_max =
+      read_buffer_event.total_num_le_acl_data_packets().Read();
+  const uint16_t max_packet_len =
+      read_buffer_event.le_acl_data_packet_length().Read();
   {
     std::lock_guard lock(credit_mutex_);
-    const uint16_t controller_max =
-        read_buffer_event.total_num_le_acl_data_packets().Read();
     // TODO: https://pwbug.dev/380316252 - Support shared buffers.
     const uint16_t host_max = le_credits_.Reserve(controller_max);
     read_buffer_event.total_num_le_acl_data_packets().Write(host_max);
-    max_le_acl_data_packet_length_ =
-        read_buffer_event.le_acl_data_packet_length().Read();
+    max_le_acl_data_packet_length_ = max_packet_len;
   }
 
-  const uint16_t le_acl_data_packet_length =
-      read_buffer_event.le_acl_data_packet_length().Read();
+  NotifyBufferSizeStateUpdate(
+      AclTransportType::kLe, controller_max, max_packet_len);
 
   // Core Spec v6.0 Vol 4, Part E, Section 7.8.2:  A value of 0 means "No
   // dedicated LE Buffer exists".
   // TODO: https://pwbug.dev/380316252 - Support shared buffers.
-  if (le_acl_data_packet_length == 0) {
+  if (max_packet_len == 0) {
     PW_LOG_ERROR(
         "Controller shares data buffers between BR/EDR and LE transport, which "
         "is not yet supported. So channels on LE transport will not be "
@@ -884,6 +891,15 @@ Status AclDataChannel::RecoverFromSnapshot(const AclSnapshot& snapshot) {
   br_edr_credits_.RecoverFromSnapshot(snapshot.br_edr_controller_max_packets,
                                       br_edr_pending);
 
+  max_le_acl_data_packet_length_ =
+      snapshot.le_max_acl_data_packet_length > 0
+          ? std::optional(snapshot.le_max_acl_data_packet_length)
+          : std::nullopt;
+  max_acl_data_packet_length_ =
+      snapshot.br_edr_max_acl_data_packet_length > 0
+          ? std::optional(snapshot.br_edr_max_acl_data_packet_length)
+          : std::nullopt;
+
   PW_LOG_INFO("Restored ACL state from snapshot");
   return OkStatus();
 }
@@ -962,6 +978,20 @@ void AclDataChannel::NotifyConnectionStateUpdate(
         .num_host_pending_packets = connection.num_host_pending_packets(),
         .num_queued_host_packets =
             static_cast<uint16_t>(connection.queue().size()),
+    });
+  }
+}
+
+void AclDataChannel::NotifyBufferSizeStateUpdate(
+    AclTransportType transport,
+    uint16_t controller_max_packets,
+    uint16_t max_acl_data_packet_length) const {
+  std::lock_guard lock(connection_mutex_);
+  if (state_update_callback_) {
+    state_update_callback_(AclBufferSizeSnapshot{
+        .transport = transport,
+        .controller_max_packets = controller_max_packets,
+        .max_acl_data_packet_length = max_acl_data_packet_length,
     });
   }
 }
