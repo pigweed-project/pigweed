@@ -29,6 +29,10 @@ namespace pw {
 
 /// @submodule{pw_allocator,core}
 
+// Forward declarations.
+template <typename T>
+class WeakPtr;
+
 /// A `std::weak_ptr<T>`-like type that integrates with `pw::SharedPtr`.
 ///
 /// @tparam   T   The type being pointed to. This may be an array type, e.g.
@@ -49,48 +53,49 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
   constexpr WeakPtr(std::nullptr_t) noexcept : WeakPtr() {}
 
   /// Copy-constructs a `WeakPtr<T>` from a `WeakPtr<T>`.
-  WeakPtr(const WeakPtr& other) noexcept { *this = other; }
+  WeakPtr(const WeakPtr& other) noexcept : WeakPtr() { *this = other; }
 
   /// Copy-constructs a `WeakPtr<T>` from a `WeakPtr<U>`.
   ///
-  /// This allows not only pure move construction where `T == U`, but also
+  /// This allows not only pure copy construction where `T == U`, but also
   /// converting construction where `T` is a base class of `U`.
   template <typename U,
             typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
-  WeakPtr(const WeakPtr<U>& other) noexcept {
+  WeakPtr(const WeakPtr<U>& other) noexcept : WeakPtr() {
     *this = other;
   }
 
   /// Copy-constructs a `WeakPtr<T>` from a `SharedPtr<U>`.
   ///
+  /// This allows converting copy construction where `T` is a base class of `U`.
+  template <typename U,
+            typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
+  WeakPtr(const SharedPtr<U>& other) noexcept : WeakPtr() {
+    *this = other;
+  }
+
+  /// Move-constructs a `WeakPtr<T>` from a `WeakPtr<T>`.
+  WeakPtr(WeakPtr&& other) noexcept : WeakPtr() { *this = std::move(other); }
+
+  /// Move-constructs a `WeakPtr<T>` from a `WeakPtr<U>`.
+  ///
   /// This allows not only pure move construction where `T == U`, but also
   /// converting construction where `T` is a base class of `U`.
   template <typename U,
             typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
-  WeakPtr(const SharedPtr<U>& other) noexcept {
-    *this = other;
-  }
-
-  /// Move-constructs a `SharedPtr<T>` from a `SharedPtr<U>`.
-  ///
-  /// This allows not only pure move construction where `T == U`, but also
-  /// converting construction where `T` is a base class of `U`, like
-  /// `SharedPtr<Base> base(deallocator.MakeShared<Child>());`.
-  template <typename U,
-            typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
-  WeakPtr(WeakPtr<U>&& other) noexcept {
-    *this = other;
+  WeakPtr(WeakPtr<U>&& other) noexcept : WeakPtr() {
+    *this = std::move(other);
   }
 
   ~WeakPtr() { reset(); }
 
   /// Copy-assigns a `WeakPtr<T>` from a `WeakPtr<T>`.
-  constexpr WeakPtr& operator=(const WeakPtr& other) noexcept {
+  WeakPtr& operator=(const WeakPtr& other) noexcept {
     operator= <T>(other);
     return *this;
   }
 
-  /// Copy-assigns a `SharedPtr<T>` from a `SharedPtr<U>`.
+  /// Copy-assigns a `WeakPtr<T>` from a `WeakPtr<U>`.
   ///
   /// This allows not only pure copy assignment where `T == U`, but also
   /// converting assignment where `T` is a base class of `U`.
@@ -100,16 +105,21 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
 
   /// Copy-assigns a `WeakPtr<T>` from a `SharedPtr<U>`.
   ///
-  /// This allows not only pure move construction where `T == U`, but also
-  /// converting construction where `T` is a base class of `U`.
+  /// This allows converting copy assignment where `T` is a base class of `U`.
   template <typename U,
             typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
   WeakPtr& operator=(const SharedPtr<U>& other) noexcept;
 
-  /// Move-assigns a `WeakPtr<T>` from a `SharedPtr<U>`.
+  /// Move-assigns a `WeakPtr<T>` from a `WeakPtr<T>`.
+  WeakPtr& operator=(WeakPtr&& other) noexcept {
+    operator= <T>(std::move(other));
+    return *this;
+  }
+
+  /// Move-assigns a `WeakPtr<T>` from a `WeakPtr<U>`.
   ///
-  /// This allows not only pure move construction where `T == U`, but also
-  /// converting construction where `T` is a base class of `U`.
+  /// This allows not only pure move assignment where `T == U`, but also
+  /// converting assignment where `T` is a base class of `U`.
   template <typename U,
             typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
   WeakPtr& operator=(WeakPtr<U>&& other) noexcept;
@@ -127,9 +137,11 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
   /// @endcode
   template <typename U,
             typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
-  constexpr explicit operator const WeakPtr<U>&() const {
-    return static_cast<const WeakPtr<U>&>(
-        static_cast<const allocator::internal::BaseManagedPtr&>(*this));
+  explicit operator WeakPtr<U>() const {
+    if (control_block_ != nullptr) {
+      control_block_->IncrementWeak();
+    }
+    return WeakPtr<U>(static_cast<U*>(Base::ptr_), control_block_);
   }
 
   /// Resets this object to an empty state.
@@ -138,8 +150,9 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
   /// block, it is deallocated.
   void reset() noexcept;
 
-  /// Swaps the managed pointer and deallocator of this and another object.
+  /// Swaps the managed pointer and control block of this and another object.
   void swap(WeakPtr& other) noexcept {
+    Base::Swap(other);
     std::swap(control_block_, other.control_block_);
   }
 
@@ -171,6 +184,14 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
 
   ControlBlock* control_block() const { return control_block_; }
 
+  explicit WeakPtr(element_type* ptr, ControlBlock* control_block) noexcept
+      : Base(ptr), control_block_(control_block) {}
+
+  void Release() noexcept {
+    Base::Release();
+    control_block_ = nullptr;
+  }
+
   ControlBlock* control_block_ = nullptr;
 };
 
@@ -180,10 +201,15 @@ template <typename T>
 template <typename U, typename>
 WeakPtr<T>& WeakPtr<T>::operator=(const WeakPtr<U>& other) noexcept {
   Base::template CheckAssignable<U>();
-  control_block_ = other.control_block_;
-  if (control_block_ != nullptr) {
-    control_block_->IncrementWeak();
+  if (static_cast<const void*>(this) == static_cast<const void*>(&other)) {
+    return *this;
   }
+  if (other.control_block_ != nullptr) {
+    other.control_block_->IncrementWeak();
+  }
+  reset();
+  Base::CopyFrom(other);
+  control_block_ = other.control_block_;
   return *this;
 }
 
@@ -191,10 +217,12 @@ template <typename T>
 template <typename U, typename>
 WeakPtr<T>& WeakPtr<T>::operator=(const SharedPtr<U>& other) noexcept {
   Base::template CheckAssignable<U>();
-  control_block_ = other.control_block_;
-  if (control_block_ != nullptr) {
-    control_block_->IncrementWeak();
+  if (other.control_block_ != nullptr) {
+    other.control_block_->IncrementWeak();
   }
+  reset();
+  Base::CopyFrom(other);
+  control_block_ = other.control_block_;
   return *this;
 }
 
@@ -202,21 +230,28 @@ template <typename T>
 template <typename U, typename>
 WeakPtr<T>& WeakPtr<T>::operator=(WeakPtr<U>&& other) noexcept {
   Base::template CheckAssignable<U>();
+  if (static_cast<const void*>(this) == static_cast<const void*>(&other)) {
+    return *this;
+  }
+  reset();
+  Base::CopyFrom(other);
   control_block_ = other.control_block_;
-  other.control_block_ = nullptr;
+  other.Release();
   return *this;
 }
 
 template <typename T>
 void WeakPtr<T>::reset() noexcept {
-  if (control_block_ == nullptr ||
-      control_block_->DecrementWeak() != ControlBlock::Action::kFree) {
+  if (control_block_ == nullptr) {
+    Release();
     return;
   }
-  Allocator* allocator = control_block_->allocator();
-  std::destroy_at(control_block_);
-  Base::Deallocate(allocator, control_block_);
-  control_block_ = nullptr;
+  if (control_block_->DecrementWeak() == ControlBlock::Action::kFree) {
+    Allocator* allocator = control_block_->allocator();
+    std::destroy_at(control_block_);
+    Base::Deallocate(allocator, control_block_);
+  }
+  Release();
 }
 
 template <typename T>
@@ -224,9 +259,7 @@ SharedPtr<T> WeakPtr<T>::Lock() const noexcept {
   if (control_block_ == nullptr || !control_block_->IncrementShared()) {
     return SharedPtr<T>();
   }
-  void* data = control_block_->data();
-  auto* t = std::launder(reinterpret_cast<element_type*>(data));
-  return SharedPtr<T>(t, control_block_);
+  return SharedPtr<T>(Base::ptr_, control_block_);
 }
 
 /// @}

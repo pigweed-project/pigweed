@@ -45,9 +45,9 @@ class BaseManagedPtr {
   static bool Resize(pw::Allocator* deallocator, void* ptr, size_t new_size);
 };
 
-/// This class extends `BaseManagerPtr` to provide type checking for methods
-/// including the assignment operators. It has no concept of ownership of the
-/// object or its memory and is thus "weak".
+/// This class extends `BaseManagedPtr` to provide type checking and store the
+/// pointer to the object. It has no concept of ownership of the object or its
+/// memory and is thus "weak".
 template <typename T>
 class WeakManagedPtr : public BaseManagedPtr {
  protected:
@@ -55,8 +55,36 @@ class WeakManagedPtr : public BaseManagedPtr {
                                           typename std::remove_extent<T>::type,
                                           T>;
 
+  constexpr WeakManagedPtr() = default;
+
+  /// Constructs a `WeakManagedPtr` from an already-allocated object.
+  constexpr explicit WeakManagedPtr(element_type* ptr) : ptr_(ptr) {}
+
   template <typename U>
   constexpr void CheckAssignable();
+
+  /// Returns whether this pointer is in an "empty" (`nullptr`) state.
+  [[nodiscard]] bool Equals(std::nullptr_t) const { return ptr_ == nullptr; }
+
+  /// Returns whether this pointer points at the same object.
+  [[nodiscard]] bool Equals(const WeakManagedPtr& other) const {
+    return ptr_ == other.ptr_;
+  }
+
+  /// Copies details from another object without releasing it.
+  template <typename U>
+  void CopyFrom(const WeakManagedPtr<U>& other);
+
+  /// Releases an object from being managed by the pointer.
+  ///
+  /// After this call, the object will have an "empty" (`nullptr`) pointer.
+  element_type* Release();
+
+  /// Swaps the managed pointer of this and another object.
+  void Swap(WeakManagedPtr& other) noexcept;
+
+  /// A pointer to the managed object.
+  element_type* ptr_ = nullptr;
 
  private:
   // Allow WeakManagedPtr<T> to access WeakManagedPtr<U> and vice versa.
@@ -68,7 +96,7 @@ class WeakManagedPtr : public BaseManagedPtr {
 ///
 /// This type provides methods for accessing and destroying allocated objects
 /// wrapped by RAII-style smart pointers. It is not designed to be used
-/// directly, and instead should be extend to create shart pointers that call
+/// directly, and instead should be extend to create smart pointers that call
 /// the base methods at the appropriate time, e.g. `UniquePtr` calls
 /// `Destroy` as part of `Reset`.
 template <typename T>
@@ -89,7 +117,7 @@ class ManagedPtr : public WeakManagedPtr<T> {
   explicit operator bool() const = delete;
 
   /// Returns the underlying (possibly null) pointer.
-  constexpr element_type* get() const noexcept { return ptr_; }
+  constexpr element_type* get() const noexcept { return Base::ptr_; }
 
   /// Permits accesses to members of `T` via `ptr->Member`.
   ///
@@ -112,28 +140,8 @@ class ManagedPtr : public WeakManagedPtr<T> {
  protected:
   constexpr ManagedPtr() = default;
 
-  /// Constructs a `ManagedPtr` from an already-allocated object and size.
-  constexpr explicit ManagedPtr(element_type* ptr) : ptr_(ptr) {}
-
-  /// Returns whether this `ManagedPtr` is in an "empty" (`nullptr`) state.
-  [[nodiscard]] bool Equals(std::nullptr_t) const { return ptr_ == nullptr; }
-
-  /// Returns whether this `ManagedPtr` points at the same object.
-  [[nodiscard]] bool Equals(const ManagedPtr& other) const {
-    return ptr_ == other.ptr_;
-  }
-
-  /// Copies details from another object without releasing it.
-  template <typename U>
-  void CopyFrom(const ManagedPtr<U>& other);
-
-  /// Releases an object from being managed by the `ManagedPtr`.
-  ///
-  /// After this call, the object will have an "empty" (`nullptr`) pointer.
-  element_type* Release();
-
-  /// Swaps the managed pointer and deallocator of this and another object.
-  void Swap(ManagedPtr& other) noexcept;
+  /// Constructs a `ManagedPtr` from an already-allocated object.
+  constexpr explicit ManagedPtr(element_type* ptr) : Base(ptr) {}
 
   /// Destroys the objects in this object's memory without deallocating it.
   ///
@@ -144,14 +152,6 @@ class ManagedPtr : public WeakManagedPtr<T> {
   ///
   /// This will fail to compile if it is called with a non-array type.
   void Destroy(size_t size);
-
- private:
-  // Allow ManagedPtr<T> to access ManagedPtr<U> and vice versa.
-  template <typename>
-  friend class ManagedPtr;
-
-  /// A pointer to the managed object.
-  element_type* ptr_ = nullptr;
 };
 
 }  // namespace allocator::internal
@@ -161,7 +161,7 @@ class ManagedPtr : public WeakManagedPtr<T> {
 template <typename T>
 bool operator==(std::nullptr_t,
                 const pw::allocator::internal::ManagedPtr<T>& ptr) {
-  return ptr == nullptr;
+  return ptr.get() == nullptr;
 }
 
 /// Returns whether this `ManagedPtr` is not in an "empty" (`nullptr`)
@@ -169,7 +169,7 @@ bool operator==(std::nullptr_t,
 template <typename T>
 bool operator!=(std::nullptr_t,
                 const pw::allocator::internal::ManagedPtr<T>& ptr) {
-  return ptr != nullptr;
+  return ptr.get() != nullptr;
 }
 
 namespace pw::allocator::internal {
@@ -187,19 +187,38 @@ constexpr void WeakManagedPtr<T>::CheckAssignable() {
 }
 
 template <typename T>
+template <typename U>
+void WeakManagedPtr<T>::CopyFrom(const WeakManagedPtr<U>& other) {
+  CheckAssignable<U>();
+  ptr_ = other.ptr_;
+}
+
+template <typename T>
+auto WeakManagedPtr<T>::Release() -> element_type* {
+  element_type* ptr = ptr_;
+  ptr_ = nullptr;
+  return ptr;
+}
+
+template <typename T>
+void WeakManagedPtr<T>::Swap(WeakManagedPtr& other) noexcept {
+  std::swap(ptr_, other.ptr_);
+}
+
+template <typename T>
 constexpr auto ManagedPtr<T>::operator->() const noexcept -> element_type* {
   if constexpr (Hardening::kIncludesRobustChecks) {
-    PW_ASSERT(ptr_ != nullptr);
+    PW_ASSERT(Base::ptr_ != nullptr);
   }
-  return ptr_;
+  return Base::ptr_;
 }
 
 template <typename T>
 constexpr auto ManagedPtr<T>::operator*() const -> element_type& {
   if constexpr (Hardening::kIncludesRobustChecks) {
-    PW_ASSERT(ptr_ != nullptr);
+    PW_ASSERT(Base::ptr_ != nullptr);
   }
-  return *ptr_;
+  return *Base::ptr_;
 }
 
 template <typename T>
@@ -207,42 +226,23 @@ constexpr auto ManagedPtr<T>::operator[](size_t index) const -> element_type& {
   static_assert(std::is_array_v<T>,
                 "operator[] cannot be called with non-array types");
   if constexpr (Hardening::kIncludesRobustChecks) {
-    PW_ASSERT(ptr_ != nullptr);
+    PW_ASSERT(Base::ptr_ != nullptr);
   }
-  return ptr_[index];
-}
-
-template <typename T>
-template <typename U>
-void ManagedPtr<T>::CopyFrom(const ManagedPtr<U>& other) {
-  Base::template CheckAssignable<U>();
-  ptr_ = other.ptr_;
-}
-
-template <typename T>
-auto ManagedPtr<T>::Release() -> element_type* {
-  element_type* ptr = ptr_;
-  ptr_ = nullptr;
-  return ptr;
-}
-
-template <typename T>
-void ManagedPtr<T>::Swap(ManagedPtr& other) noexcept {
-  std::swap(ptr_, other.ptr_);
+  return Base::ptr_[index];
 }
 
 template <typename T>
 void ManagedPtr<T>::Destroy() {
   static_assert(!std::is_array_v<T>,
                 "Destroy() cannot be called with array types");
-  std::destroy_at(ptr_);
+  std::destroy_at(Base::ptr_);
 }
 
 template <typename T>
 void ManagedPtr<T>::Destroy(size_t size) {
   static_assert(std::is_array_v<T>,
                 "Destroy(size_t) cannot be called with non-array types");
-  std::destroy_n(ptr_, size);
+  std::destroy_n(Base::ptr_, size);
 }
 
 }  // namespace pw::allocator::internal

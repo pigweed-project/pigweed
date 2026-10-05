@@ -346,6 +346,83 @@ TEST_F(WeakPtrTest, Conversions) {
   EXPECT_EQ(baz->baz(), 3);
 }
 
+TEST_F(WeakPtrTest, MultipleInheritanceOffset) {
+  struct BaseA {
+    virtual ~BaseA() = default;
+    int a = 111;
+  };
+  struct BaseB {
+    virtual ~BaseB() = default;
+    int b = 222;
+  };
+  struct Derived : public BaseA, public BaseB {
+    int c = 333;
+  };
+
+  pw::SharedPtr<Derived> derived = allocator_.MakeShared<Derived>();
+  ASSERT_NE(derived.get(), nullptr);
+  Derived* derived_raw = derived.get();
+  BaseB* base_b_raw = static_cast<BaseB*>(derived_raw);
+  // Verify non-zero pointer offset between Derived and BaseB subobject.
+  ASSERT_NE(static_cast<void*>(derived_raw), static_cast<void*>(base_b_raw));
+
+  // Upcast SharedPtr<Derived> -> WeakPtr<BaseB>
+  pw::WeakPtr<BaseB> weak_b = derived;
+  EXPECT_FALSE(weak_b.expired());
+  EXPECT_EQ(weak_b.use_count(), 1);
+
+  // Lock to SharedPtr<BaseB> and verify correct address and members.
+  pw::SharedPtr<BaseB> shared_b = weak_b.Lock();
+  ASSERT_NE(shared_b.get(), nullptr);
+  EXPECT_EQ(shared_b.get(), base_b_raw);
+  EXPECT_EQ(shared_b->b, 222);
+
+  // Downcast WeakPtr<BaseB> -> WeakPtr<Derived>
+  pw::WeakPtr<Derived> weak_derived = static_cast<pw::WeakPtr<Derived>>(weak_b);
+  pw::SharedPtr<Derived> locked_derived = weak_derived.Lock();
+  ASSERT_NE(locked_derived.get(), nullptr);
+  EXPECT_EQ(locked_derived.get(), derived_raw);
+  EXPECT_EQ(locked_derived->a, 111);
+  EXPECT_EQ(locked_derived->b, 222);
+  EXPECT_EQ(locked_derived->c, 333);
+}
+
+TEST_F(WeakPtrTest, ReassignmentOverwritesWithoutLeak) {
+  const auto& metrics = allocator_.metrics();
+  auto shared1 = allocator_.MakeShared<int>(1);
+  auto shared2 = allocator_.MakeShared<int>(2);
+  EXPECT_EQ(metrics.num_allocations.value(), 2u);
+
+  pw::WeakPtr<int> weak = shared1;
+  EXPECT_EQ(weak.Lock(), shared1);
+
+  // Copy assignment overwriting existing weak pointer
+  weak = shared2;
+  EXPECT_EQ(weak.Lock(), shared2);
+
+  // Copy assignment from another weak pointer
+  {
+    pw::WeakPtr<int> weak1 = shared1;
+    weak = weak1;
+    EXPECT_EQ(weak.Lock(), shared1);
+  }
+
+  // Move assignment from another weak pointer
+  pw::WeakPtr<int> weak2 = shared2;
+  weak = std::move(weak2);
+  EXPECT_EQ(weak.Lock(), shared2);
+
+  // Empty assignment
+  weak = pw::WeakPtr<int>();
+  EXPECT_TRUE(weak.expired());
+  EXPECT_EQ(weak.Lock(), nullptr);
+
+  shared1.reset();
+  shared2.reset();
+  EXPECT_EQ(metrics.num_deallocations.value(), 2u);
+  EXPECT_EQ(metrics.allocated_bytes.value(), 0u);
+}
+
 }  // namespace
 
 // TODO(b/402489948): Remove when portable atomics are provided by `pw_atomic`.
