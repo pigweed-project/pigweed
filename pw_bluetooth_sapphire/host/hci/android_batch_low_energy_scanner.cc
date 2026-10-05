@@ -189,7 +189,7 @@ AndroidBatchLowEnergyScanner::ParseScanResults(
   const size_t total_bytes = view.full_results().BackingStorage().SizeInBytes();
   const uint8_t* base_ptr = view.full_results().BackingStorage().begin();
 
-  while (bytes_read < total_bytes) {
+  while (bytes_read < total_bytes && records.size() < num_records) {
     size_t bytes_left = total_bytes - bytes_read;
     size_t min_size = android_emb::LEBatchScanFullResult::MinSizeInBytes();
 
@@ -372,6 +372,11 @@ void AndroidBatchLowEnergyScanner::SendReadCommand(
     }
 
     auto records = ParseScanResults(view);
+    if (records.empty()) {
+      ScheduleNextRead();
+      return;
+    }
+
     HandleScanResults(records);
     if (!self.is_alive() || !IsScanning()) {
       return;
