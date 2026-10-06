@@ -20,6 +20,8 @@
 #include <pw_bluetooth/hci_commands.emb.h>
 #include <pw_bluetooth/hci_events.emb.h>
 
+#include <vector>
+
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/common/supplement_data.h"
@@ -449,11 +451,18 @@ void BrEdrDiscoveryManager::UpdateInspectProperties() {
 
 void BrEdrDiscoveryManager::NotifyPeersUpdated(
     const std::unordered_set<Peer*>& peers) {
+  // Result handlers may erase sessions from discovering_, so iterate over a
+  // copy and skip any session that was removed.
+  const std::vector<BrEdrDiscoverySession*> sessions(discovering_.begin(),
+                                                     discovering_.end());
   for (Peer* peer : peers) {
     if (!peer->name()) {
       RequestPeerName(peer->identifier());
     }
-    for (const auto& session : discovering_) {
+    for (BrEdrDiscoverySession* session : sessions) {
+      if (discovering_.count(session) == 0) {
+        continue;
+      }
       session->NotifyDiscoveryResult(*peer);
     }
   }
@@ -759,7 +768,14 @@ void BrEdrDiscoveryManager::RemoveDiscoverableSession(
 }
 
 void BrEdrDiscoveryManager::InvalidateDiscoverySessions() {
-  for (auto session : discovering_) {
+  // Error handlers may erase sessions from discovering_, so iterate over a
+  // copy and skip any session that was removed.
+  const std::vector<BrEdrDiscoverySession*> sessions(discovering_.begin(),
+                                                     discovering_.end());
+  for (BrEdrDiscoverySession* session : sessions) {
+    if (discovering_.count(session) == 0) {
+      continue;
+    }
     session->NotifyError();
   }
   discovering_.clear();

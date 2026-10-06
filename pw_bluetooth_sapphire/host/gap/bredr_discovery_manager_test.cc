@@ -14,6 +14,9 @@
 
 #include "pw_bluetooth_sapphire/internal/host/gap/bredr_discovery_manager.h"
 
+#include <algorithm>
+#include <array>
+
 #include "pw_bluetooth_sapphire/internal/host/gap/peer_cache.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test.h"
@@ -695,6 +698,140 @@ TEST_F(BrEdrDiscoveryManagerTest, ContinuingDiscoveryError) {
   session = nullptr;
 
   RunUntilIdle();
+}
+
+// Test: dropping a session inside its own result or error callback is safe.
+TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryAndDropSelfInCallbacks) {
+  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp, &kInquiryResult);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kRemoteNameRequest1,
+                        &kRemoteNameRequestRsp,
+                        &kRemoteNameRequestComplete1);
+
+  std::unique_ptr<BrEdrDiscoverySession> session1;
+  size_t peers_found1 = 0u;
+
+  discovery_manager()->RequestDiscovery([&session1, &peers_found1](
+                                            auto status, auto cb_session) {
+    EXPECT_EQ(fit::ok(), status);
+    cb_session->set_result_callback([&session1, &peers_found1](const auto&) {
+      peers_found1++;
+      session1 = nullptr;
+    });
+    session1 = std::move(cb_session);
+  });
+
+  std::unique_ptr<BrEdrDiscoverySession> session2;
+  size_t peers_found2 = 0u;
+  bool error_callback = false;
+
+  discovery_manager()->RequestDiscovery(
+      [&session2, &peers_found2, &error_callback](auto status,
+                                                  auto cb_session) {
+        EXPECT_EQ(fit::ok(), status);
+        cb_session->set_result_callback(
+            [&peers_found2](const auto&) { peers_found2++; });
+        cb_session->set_error_callback([&session2, &error_callback]() {
+          error_callback = true;
+          session2 = nullptr;
+        });
+        session2 = std::move(cb_session);
+      });
+
+  EXPECT_FALSE(discovery_manager()->discovering());
+
+  RunUntilIdle();
+
+  EXPECT_FALSE(session1);
+  EXPECT_TRUE(session2);
+  EXPECT_EQ(1u, peers_found1);
+  EXPECT_EQ(1u, peers_found2);
+  EXPECT_TRUE(discovery_manager()->discovering());
+
+  test_device()->SendCommandChannelPacket(kInquiryCompleteError);
+
+  RunUntilIdle();
+
+  EXPECT_TRUE(error_callback);
+  EXPECT_FALSE(session2);
+  EXPECT_FALSE(discovery_manager()->discovering());
+}
+
+// Test: dropping sibling sessions inside a result or error callback is safe,
+// and the dropped sessions are skipped.
+TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryAndDropSiblingsInCallbacks) {
+  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp, &kInquiryResult);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kRemoteNameRequest1,
+                        &kRemoteNameRequestRsp,
+                        &kRemoteNameRequestComplete1);
+
+  constexpr size_t kNumSessions = 3;
+  std::array<std::unique_ptr<BrEdrDiscoverySession>, kNumSessions> sessions;
+
+  auto live_sessions = [&sessions]() {
+    return static_cast<size_t>(
+        std::count_if(sessions.begin(), sessions.end(), [](const auto& s) {
+          return s != nullptr;
+        }));
+  };
+
+  // Iteration order of an unordered_set is unspecified, so whichever session is
+  // notified first drops all its siblings.
+  auto destroy_siblings = [&sessions](const BrEdrDiscoverySession* keep) {
+    for (auto& session : sessions) {
+      if (session.get() != keep) {
+        session.reset();
+      }
+    }
+  };
+
+  size_t result_callbacks = 0u;
+  size_t error_callbacks = 0u;
+  auto request_session = [&](size_t index) {
+    discovery_manager()->RequestDiscovery(
+        [&, index](auto status, auto cb_session) {
+          EXPECT_EQ(fit::ok(), status);
+          const BrEdrDiscoverySession* self = cb_session.get();
+          cb_session->set_result_callback([&, self](const Peer&) {
+            result_callbacks++;
+            destroy_siblings(self);
+          });
+          cb_session->set_error_callback([&, self]() {
+            error_callbacks++;
+            destroy_siblings(self);
+          });
+          sessions[index] = std::move(cb_session);
+        });
+  };
+
+  for (size_t i = 0; i < kNumSessions; ++i) {
+    request_session(i);
+  }
+
+  EXPECT_FALSE(discovery_manager()->discovering());
+
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, result_callbacks);
+  EXPECT_EQ(1u, live_sessions());
+  EXPECT_TRUE(discovery_manager()->discovering());
+
+  // Refill sessions so the error callback also has siblings to drop.
+  for (size_t i = 0; i < kNumSessions; ++i) {
+    if (!sessions[i]) {
+      request_session(i);
+    }
+  }
+  EXPECT_EQ(kNumSessions, live_sessions());
+
+  test_device()->SendCommandChannelPacket(kInquiryCompleteError);
+
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, error_callbacks);
+  EXPECT_EQ(1u, live_sessions());
+  EXPECT_FALSE(discovery_manager()->discovering());
 }
 
 // clang-format off
