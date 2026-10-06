@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "pw_assert/check.h"
+#include "pw_async2/future_task.h"
 #include "pw_log/log.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/handshake.h"
@@ -103,6 +104,76 @@ bool MockConnection::DoCommitWrite(pw::Buf&& buffer) {
 }
 
 void MockConnection::DoCancelWrite(pw::Buf&& buffer) { (void)buffer; }
+
+void PushSynAck(pw::Allocator& allocator, MockConnection& connection) {
+  pw::Buf buffer = pw::Buf::TryAllocate(
+      allocator, internal::HandshakePacket::kWireSizeBytes);
+  PW_CHECK(!buffer.empty(), "Could not allocate a handshake packet");
+  auto encoded =
+      internal::HandshakePacket(internal::HandshakePacket::Type::kSynAck)
+          .Encode(std::move(buffer));
+  PW_CHECK_OK(encoded.status());
+  connection.PushNextRead(std::move(*encoded));
+}
+
+Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
+                         pw::Allocator& allocator,
+                         transport::ReliableDatagramSocket connection,
+                         MockConnection& raw_connection) {
+  async2::FutureTask connect(
+      Client::Connect(dispatcher, allocator, std::move(connection)));
+  dispatcher.Post(connect);
+  dispatcher.RunUntilStalled();
+
+  PushSynAck(allocator, raw_connection);
+  dispatcher.RunUntilStalled();
+
+  PW_CHECK(connect.has_value(), "The client did not complete the handshake");
+  PW_CHECK_OK(connect.value().status());
+  return std::move(*connect.value());
+}
+
+MockPeer MakeMockPeer(async2::RunnableDispatcher& dispatcher,
+                      pw::Allocator& allocator) {
+  auto [connection, raw] = MakeMockConnection(allocator);
+  // Constructing from an EstablishedConnection selects ConnectionTask's
+  // kActive path, so no handshake packets are ever written.
+  internal::EstablishedConnection established{connection,
+                                              internal::HandshakeInfo{}};
+  return MockPeer(internal::CallAccess::CreateClient<Client>(
+                      dispatcher, allocator, std::move(established)),
+                  *raw,
+                  dispatcher,
+                  allocator);
+}
+
+internal::InboundPacket MockPeer::DecodeWrittenPacket(size_t index) const {
+  auto packet = internal::InboundPacket::Decode(
+      ConstBuf::Unowned(connection_->written_packet(index)));
+  PW_CHECK(packet.ok(),
+           "MockPeer could not decode written packet %zu (%s); it only "
+           "understands RPC packets, so the connection must come from "
+           "MakeMockPeer, which skips the handshake.",
+           index,
+           packet.status().str());
+  return std::move(*packet);
+}
+
+void MockPeer::InjectResponseBytes(uint32_t call_id, ConstByteSpan payload) {
+  Inject(internal::PacketFramer::FrameResponsePacket(
+      *allocator_, call_id, payload));
+}
+
+void MockPeer::Inject(pw::Result<pw::Buf>&& packet) {
+  PW_CHECK(packet.ok(),
+           "MockPeer could not frame a packet (%s). The allocator is likely "
+           "exhausted.",
+           packet.status().str());
+  // PushNextRead wakes the reader; running the dispatcher lets the client
+  // consume the packet and resume whatever was awaiting it.
+  connection_->PushNextRead(std::move(*packet));
+  dispatcher_->RunUntilStalled();
+}
 
 PairedConnection::PairedConnection(pw::Allocator& allocator)
     : ReliableDatagramSocketImpl(allocator, 1500), alloc_(allocator) {}

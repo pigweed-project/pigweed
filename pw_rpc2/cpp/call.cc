@@ -71,6 +71,8 @@ void ReadFutureBase::PendAndDeserialize(async2::Context& cx,
 async2::ReceiveFuture<ConstBuf> Call::ClaimRead() {
   PW_DCHECK(!is_read_claimed(),
             "Only one read may be outstanding on an RPC call at a time");
+  PW_DCHECK(!is_reader_dropped(),
+            "Cannot read from a call after its reader has closed");
   SetReadFlag<kClaimed>();
   return receiver_.Receive();
 }
@@ -176,19 +178,22 @@ void Call::DetachFromConnection() {
   }
 }
 
+// Only send error packets for calls that have started. Server calls are always
+// started.
 void Call::QueueError(ProtocolStatus error) {
-  if (connection_task_ != nullptr) {
+  if (connection_task_ != nullptr && HasWriteFlag<kStarted>()) {
     connection_task_->QueueError(call_id_, error);
   }
 }
 
 void Call::QueueFinish() {
-  if (connection_task_ != nullptr) {
+  if (connection_task_ != nullptr && HasWriteFlag<kStarted>()) {
     connection_task_->QueueFinish(call_id_);
   }
 }
 
-Result<transport::ReserveWriteFuture> Call::ReserveWrite(size_t size) {
+Result<transport::ReserveWriteFuture> Call::ReserveWrite(
+    size_t header_size, size_t max_payload_size) {
   if (is_completed()) {
     return completion_status_.ok() ? Status::FailedPrecondition()
                                    : completion_status_;
@@ -205,16 +210,20 @@ Result<transport::ReserveWriteFuture> Call::ReserveWrite(size_t size) {
   transport::ReliableDatagramSocket& connection =
       connection_task_->connection();
   // The transport asserts on requests larger than it can write, so reject
-  // them here instead.
-  if (size > connection.max_write_message_size_bytes()) {
+  // them here instead. Compare against the remaining space rather than adding
+  // the sizes, which could overflow.
+  const size_t max_size = connection.max_write_message_size_bytes();
+  if (header_size > max_size || max_payload_size > max_size - header_size) {
     PW_LOG_WARN(
-        "Call %u: %u-byte write exceeds the %u-byte transport limit",
+        "Call %u: %u-byte header + %u-byte payload exceeds the %u-byte "
+        "transport limit",
         static_cast<unsigned>(call_id_),
-        static_cast<unsigned>(size),
-        static_cast<unsigned>(connection.max_write_message_size_bytes()));
+        static_cast<unsigned>(header_size),
+        static_cast<unsigned>(max_payload_size),
+        static_cast<unsigned>(max_size));
     return Status::ResourceExhausted();
   }
-  return connection.ReserveWrite(size);
+  return connection.ReserveWrite(header_size + max_payload_size);
 }
 
 void Call::QueueWriterDropPacket() {

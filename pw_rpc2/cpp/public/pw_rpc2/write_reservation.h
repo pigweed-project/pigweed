@@ -32,35 +32,28 @@
 namespace pw::rpc2 {
 
 class ReserveWriteFuture;
-class ServiceClient;
 
 namespace internal {
+
+class GeneratedServiceClient;
+class UnaryFutureBase;
+class WriteFutureBase;
 class WriterBase;
 struct CallAccess;
-}  // namespace internal
 
-/// A reserved buffer for writing an outbound RPC payload in place.
-///
-/// Returned by `ReserveWriteFuture` (from `Writer::ReserveWrite()` or
-/// `UnaryWriter::ReserveFinish()`). Provides container-like access (`data()`,
-/// `size()`, `operator[]`, iterators, and conversion to `ByteSpan`) to the
-/// reserved buffer.
-///
-/// Write the payload into the buffer and call `Commit()` with the number of
-/// bytes written to send it. Destroying the reservation without calling
-/// `Commit()` (or calling `Drop()`) releases the buffer without sending
-/// anything.
-class WriteReservation {
+/// Non-templated base class for `WriteReservation` and
+/// `RequestReservationBase<ReaderType>`.
+class WriteReservationBase {
  public:
   using iterator = ByteSpan::iterator;
   using const_iterator = ConstByteSpan::iterator;
 
-  WriteReservation(const WriteReservation&) = delete;
-  WriteReservation& operator=(const WriteReservation&) = delete;
+  WriteReservationBase(const WriteReservationBase&) = delete;
+  WriteReservationBase& operator=(const WriteReservationBase&) = delete;
 
-  WriteReservation(WriteReservation&& other) noexcept = default;
+  WriteReservationBase(WriteReservationBase&& other) noexcept = default;
 
-  WriteReservation& operator=(WriteReservation&& other) noexcept {
+  WriteReservationBase& operator=(WriteReservationBase&& other) noexcept {
     if (this != &other) {
       Drop();
       reservation_ = std::move(other.reservation_);
@@ -70,7 +63,7 @@ class WriteReservation {
     return *this;
   }
 
-  ~WriteReservation() { Drop(); }
+  ~WriteReservationBase() { Drop(); }
 
   /// Returns a pointer to the start of the reserved write buffer.
   std::byte* data() { return PayloadSpan().data(); }
@@ -95,6 +88,67 @@ class WriteReservation {
   const_iterator end() const { return PayloadSpan().end(); }
   const_iterator cend() const { return end(); }
 
+  /// Releases the reservation without sending any data.
+  void Drop() {
+    if (!is_active()) {
+      return;
+    }
+    reservation_.Cancel();
+    ReleaseCall(/*committed=*/false);
+  }
+
+ protected:
+  WriteReservationBase(transport::WriteReservation&& reservation,
+                       OutboundPacket packet,
+                       IntrusivePtr<Call> call = nullptr)
+      : reservation_(std::move(reservation)),
+        packet_(packet),
+        call_(std::move(call)) {}
+
+  [[nodiscard]] Result<IntrusivePtr<Call>> CommitAndTakeCall(size_t size_bytes);
+
+ private:
+  friend class WriteFutureBase;
+
+  bool is_active() const { return reservation_.data() != nullptr; }
+
+  // Releases the call, telling it whether a terminal packet was committed.
+  IntrusivePtr<Call> ReleaseCall(bool committed);
+
+  ConstByteSpan PayloadSpan() const;
+
+  ByteSpan PayloadSpan() {
+    ConstByteSpan span =
+        static_cast<const WriteReservationBase*>(this)->PayloadSpan();
+    return {const_cast<std::byte*>(span.data()), span.size()};
+  }
+
+  transport::WriteReservation reservation_;
+  OutboundPacket packet_;
+  IntrusivePtr<Call> call_;
+};
+
+}  // namespace internal
+
+/// A reserved buffer for writing an outbound RPC payload in place.
+///
+/// Returned by `ReserveWriteFuture` (from `Writer::ReserveWrite()` or
+/// `UnaryWriter::ReserveFinish()`). Provides container-like access (`data()`,
+/// `size()`, `operator[]`, iterators, and conversion to `ByteSpan`) to the
+/// reserved buffer.
+///
+/// Write the payload into the buffer and call `Commit()` with the number of
+/// bytes written to send it. Destroying the reservation without calling
+/// `Commit()` (or calling `Drop()`) releases the buffer without sending
+/// anything.
+class WriteReservation : public internal::WriteReservationBase {
+ public:
+  WriteReservation(const WriteReservation&) = delete;
+  WriteReservation& operator=(const WriteReservation&) = delete;
+  WriteReservation(WriteReservation&&) noexcept = default;
+  WriteReservation& operator=(WriteReservation&&) noexcept = default;
+  ~WriteReservation() = default;
+
   /// Sends the first `size_bytes` bytes of the reserved buffer.
   ///
   /// Consumes the reservation; it cannot be used or committed again.
@@ -107,43 +161,14 @@ class WriteReservation {
   /// * The call's completion status (such as `CANCELLED`) if the call ended
   ///   with an error while the reservation was held.
   /// * `UNAVAILABLE`: the connection closed before the write could be sent.
-  [[nodiscard]] Status Commit(size_t size_bytes);
-
-  /// Releases the reservation without sending any data.
-  void Drop() {
-    if (!is_active()) {
-      return;
-    }
-    reservation_.Cancel();
-    ReleaseCall(/*committed=*/false);
+  [[nodiscard]] Status Commit(size_t size_bytes) {
+    return CommitAndTakeCall(size_bytes).status();
   }
 
  private:
   friend class ReserveWriteFuture;
 
-  WriteReservation(transport::WriteReservation&& reservation,
-                   internal::OutboundPacket packet,
-                   IntrusivePtr<internal::Call> call = nullptr)
-      : reservation_(std::move(reservation)),
-        packet_(packet),
-        call_(std::move(call)) {}
-
-  bool is_active() const { return reservation_.data() != nullptr; }
-
-  // Releases the call, telling it whether a terminal packet was committed.
-  void ReleaseCall(bool committed);
-
-  ConstByteSpan PayloadSpan() const;
-
-  ByteSpan PayloadSpan() {
-    ConstByteSpan span =
-        static_cast<const WriteReservation*>(this)->PayloadSpan();
-    return {const_cast<std::byte*>(span.data()), span.size()};
-  }
-
-  transport::WriteReservation reservation_;
-  internal::OutboundPacket packet_;
-  IntrusivePtr<internal::Call> call_;
+  using internal::WriteReservationBase::WriteReservationBase;
 };
 
 /// Future returned by `Writer::ReserveWrite()` and
@@ -152,7 +177,7 @@ class ReserveWriteFuture : public internal::FutureBase {
  public:
   using value_type = Result<WriteReservation>;
 
-  ReserveWriteFuture() = default;
+  constexpr ReserveWriteFuture() = default;
 
   ReserveWriteFuture(const ReserveWriteFuture&) = delete;
   ReserveWriteFuture& operator=(const ReserveWriteFuture&) = delete;
@@ -194,13 +219,10 @@ class ReserveWriteFuture : public internal::FutureBase {
     mark_complete();
 
     if (!write_res.has_value()) {
+      // The transport resolves a reservation to `std::nullopt` only when the
+      // socket has closed.
       AbandonTerminalIfPending();
-      // TODO: hepler@ - The transport only resolves a reservation to
-      // `std::nullopt` when the socket has closed, so this should be
-      // `UNAVAILABLE`, matching `SendControlPacketFuture` and the documented
-      // `WriteFuture` behavior.
-      return async2::Ready(
-          Result<WriteReservation>(Status::ResourceExhausted()));
+      return async2::Ready(Result<WriteReservation>(Status::Unavailable()));
     }
 
     return async2::Ready(Result<WriteReservation>(
@@ -208,9 +230,18 @@ class ReserveWriteFuture : public internal::FutureBase {
   }
 
  private:
+  friend class internal::GeneratedServiceClient;
+  friend class internal::UnaryFutureBase;
   friend class internal::WriterBase;
-  friend class ServiceClient;
   friend struct internal::CallAccess;
+
+  // Cancels the call this future reserves a packet for, if any. A start packet
+  // that is still pending then fails to commit.
+  void CancelCall() {
+    if (call_ != nullptr) {
+      call_->Cancel();
+    }
+  }
 
   // Constructs a future that resolves immediately to `status`, which must not
   // be `OK`.
@@ -219,10 +250,10 @@ class ReserveWriteFuture : public internal::FutureBase {
   }
 
   [[nodiscard]] static ReserveWriteFuture Message(
-      Result<transport::ReserveWriteFuture> reserve_fut,
+      Result<transport::ReserveWriteFuture>&& reserve_fut,
       internal::EndpointRole sender,
       uint32_t call_id,
-      IntrusivePtr<internal::Call> call = nullptr) {
+      IntrusivePtr<internal::Call>&& call) {
     return Create(std::move(reserve_fut),
                   internal::OutboundPacket::Message(sender, call_id),
                   std::move(call));
@@ -231,11 +262,11 @@ class ReserveWriteFuture : public internal::FutureBase {
   // Reserves the packet that starts a unary or server-streaming call with its
   // only request message.
   [[nodiscard]] static ReserveWriteFuture StartUnary(
-      Result<transport::ReserveWriteFuture> reserve_fut,
+      Result<transport::ReserveWriteFuture>&& reserve_fut,
       uint32_t call_id,
       uint32_t service_id,
       uint32_t method_id,
-      IntrusivePtr<internal::Call> call = nullptr) {
+      IntrusivePtr<internal::Call>&& call) {
     return Create(
         std::move(reserve_fut),
         internal::OutboundPacket::StartUnary(call_id, service_id, method_id),
@@ -246,11 +277,11 @@ class ReserveWriteFuture : public internal::FutureBase {
   // streaming call. It carries no message, and leaves the client's stream
   // open.
   [[nodiscard]] static ReserveWriteFuture StartStream(
-      Result<transport::ReserveWriteFuture> reserve_fut,
+      Result<transport::ReserveWriteFuture>&& reserve_fut,
       uint32_t call_id,
       uint32_t service_id,
       uint32_t method_id,
-      IntrusivePtr<internal::Call> call = nullptr) {
+      IntrusivePtr<internal::Call>&& call) {
     return Create(
         std::move(reserve_fut),
         internal::OutboundPacket::StartStream(call_id, service_id, method_id),
@@ -258,9 +289,9 @@ class ReserveWriteFuture : public internal::FutureBase {
   }
 
   [[nodiscard]] static ReserveWriteFuture Response(
-      Result<transport::ReserveWriteFuture> reserve_fut,
+      Result<transport::ReserveWriteFuture>&& reserve_fut,
       uint32_t call_id,
-      IntrusivePtr<internal::Call> call = nullptr) {
+      IntrusivePtr<internal::Call>&& call) {
     return Create(std::move(reserve_fut),
                   internal::OutboundPacket::Response(call_id),
                   std::move(call));
@@ -269,19 +300,19 @@ class ReserveWriteFuture : public internal::FutureBase {
   // Reserves the packet that finishes `sender`'s stream normally. See
   // `internal::OutboundPacket::Finish()`.
   [[nodiscard]] static ReserveWriteFuture Finish(
-      Result<transport::ReserveWriteFuture> reserve_fut,
+      Result<transport::ReserveWriteFuture>&& reserve_fut,
       internal::EndpointRole sender,
       uint32_t call_id,
-      IntrusivePtr<internal::Call> call = nullptr) {
+      IntrusivePtr<internal::Call>&& call) {
     return Create(std::move(reserve_fut),
                   internal::OutboundPacket::Finish(sender, call_id),
                   std::move(call));
   }
 
   static ReserveWriteFuture Create(
-      Result<transport::ReserveWriteFuture> reserve_fut,
+      Result<transport::ReserveWriteFuture>&& reserve_fut,
       internal::OutboundPacket packet,
-      IntrusivePtr<internal::Call> call = nullptr) {
+      IntrusivePtr<internal::Call>&& call) {
     if (!reserve_fut.ok()) {
       return ReserveWriteFuture(reserve_fut.status());
     }
@@ -296,9 +327,9 @@ class ReserveWriteFuture : public internal::FutureBase {
     PW_ASSERT(!status.ok());
   }
 
-  ReserveWriteFuture(transport::ReserveWriteFuture reserve_fut,
+  ReserveWriteFuture(transport::ReserveWriteFuture&& reserve_fut,
                      internal::OutboundPacket packet,
-                     IntrusivePtr<internal::Call> call)
+                     IntrusivePtr<internal::Call>&& call)
       : internal::FutureBase(async2::FutureState::kPending),
         reserve_fut_(std::move(reserve_fut)),
         packet_(packet),

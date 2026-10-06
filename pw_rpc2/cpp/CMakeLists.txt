@@ -229,8 +229,23 @@ pw_add_library(pw_rpc2.cpp._server STATIC
     service.cc
 )
 
+pw_add_library(pw_rpc2.cpp._client STATIC
+  HEADERS
+    public/pw_rpc2/client.h
+    public/pw_rpc2/internal/generated_service_client.h
+    public/pw_rpc2/service_client.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_rpc2.cpp._connection
+  SOURCES
+    client.cc
+    service_client.cc
+)
+
 pw_add_library(pw_rpc2.cpp INTERFACE
   PUBLIC_DEPS
+    pw_rpc2.cpp._client
     pw_rpc2.cpp._server
 )
 
@@ -248,9 +263,9 @@ pw_add_library(pw_rpc2.cpp._test_utils STATIC
     pw_buf
     pw_bytes
     pw_containers.inline_deque
-    pw_containers.vector
     pw_log
     pw_result
+    pw_rpc2.cpp._client
     pw_rpc2.cpp._connection
     pw_rpc2.cpp._handshake
     pw_rpc2.cpp._method
@@ -453,4 +468,40 @@ pw_add_test(pw_rpc2.cpp.server_call_test
     pw_rpc2
 )
 
+pw_add_test(pw_rpc2.cpp.service_client_test
+  SOURCES
+    service_client_test.cc
+  PRIVATE_DEPS
+    pw_allocator.testing
+    pw_assert.check
+    pw_async2
+    pw_async2.testing
+    pw_bytes
+    pw_rpc2.cpp._client
+    pw_rpc2.cpp._packet
+    pw_rpc2.cpp._test_utils
+    pw_status
+    pw_transport.cpp
+  GROUPS
+    modules
+    pw_rpc2
+)
 
+pw_add_test(pw_rpc2.cpp.client_test
+  SOURCES
+    client_test.cc
+  PRIVATE_DEPS
+    pw_allocator.testing
+    pw_async2
+    pw_async2.testing
+    pw_rpc2.cpp._client
+    pw_rpc2.cpp._method
+    pw_rpc2.cpp._serialize
+    pw_rpc2.cpp._test_utils
+    pw_thread.test_thread_context
+    pw_thread.thread
+    pw_transport.cpp
+  GROUPS
+    modules
+    pw_rpc2
+)

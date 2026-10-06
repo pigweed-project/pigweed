@@ -93,7 +93,8 @@ class TestService : public Service {
  public:
   TestService() : Service(1, {}) {}
 
-  MockFuture RawUnaryFuture(pw::ConstBuf request, RawUnaryWriter responder) {
+  MockFuture RawUnaryReserveFuture(pw::ConstBuf request,
+                                   RawUnaryWriter responder) {
     last_request_size_ = request.size();
     auto res_fut = responder.ReserveFinish(request.size());
     return MockFuture(1);
@@ -302,7 +303,7 @@ class MethodInvokerTest : public ::testing::Test {
 
 TEST_F(MethodInvokerTest, CreateMethodForFutures) {
   using RawUnary =
-      RawMethodInvoker<&TestService::RawUnaryFuture, MethodType::kUnary>;
+      RawMethodInvoker<&TestService::RawUnaryReserveFuture, MethodType::kUnary>;
   constexpr Method unary = RawUnary::CreateMethod<TestService>(1);
   EXPECT_EQ(unary.id(), 1u);
   EXPECT_EQ(unary.future_storage_size(),
@@ -334,7 +335,7 @@ TEST_F(MethodInvokerTest, CreateMethodForFutures) {
 
 TEST_F(MethodInvokerTest, InvokeRawUnaryFutureIntoCall) {
   using Invoker =
-      RawMethodInvoker<&TestService::RawUnaryFuture, MethodType::kUnary>;
+      RawMethodInvoker<&TestService::RawUnaryReserveFuture, MethodType::kUnary>;
   constexpr Method method = Invoker::CreateMethod<TestService>(1);
 
   ServerCall& call = AdoptCall(/*call_id=*/1, method);

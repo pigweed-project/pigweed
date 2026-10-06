@@ -15,9 +15,11 @@
 #include "pw_rpc2/write_reservation.h"
 
 #include <cstddef>
+#include <utility>
 
 #include "pw_assert/check.h"
 #include "pw_async2/await.h"
+#include "pw_async2/try.h"
 #include "pw_bytes/span.h"
 #include "pw_rpc2/writer.h"
 #include "pw_status/status.h"
@@ -26,18 +28,16 @@
 // checked with `PW_CHECK`/`PW_DCHECK`, which carry a message but may not be
 // used in headers.
 
-namespace pw::rpc2 {
-namespace internal {
+namespace pw::rpc2::internal {
 
-async2::Poll<Status> WriteFutureBase::PendWrite(async2::Context& cx,
-                                                const void* payload,
-                                                SerializeFn serialize) {
+async2::Poll<Result<IntrusivePtr<Call>>> WriteFutureBase::PendWriteAndTakeCall(
+    async2::Context& cx, const void* payload, SerializeFn serialize) {
   PW_CHECK(is_pendable());
 
   PW_AWAIT(auto res_result, res_fut_, cx);
 
   if (!res_result.ok()) {
-    return async2::Ready(res_result.status());
+    return async2::Ready(Result<IntrusivePtr<Call>>(res_result.status()));
   }
 
   WriteReservation res = std::move(*res_result);
@@ -46,7 +46,7 @@ async2::Poll<Status> WriteFutureBase::PendWrite(async2::Context& cx,
   if (serialize != nullptr) {
     StatusWithSize serialized = serialize(payload, res);
     if (!serialized.ok()) {
-      return async2::Ready(serialized.status());
+      return async2::Ready(Result<IntrusivePtr<Call>>(serialized.status()));
     }
     size_bytes = serialized.size();
   } else {
@@ -55,12 +55,19 @@ async2::Poll<Status> WriteFutureBase::PendWrite(async2::Context& cx,
     PW_DASSERT(res.size() == 0);
   }
 
-  return async2::Ready(res.Commit(size_bytes));
+  return async2::Ready(res.CommitAndTakeCall(size_bytes));
 }
 
-}  // namespace internal
+async2::Poll<Status> WriteFutureBase::PendWrite(async2::Context& cx,
+                                                const void* payload,
+                                                SerializeFn serialize) {
+  PW_TRY_READY_ASSIGN(Result<IntrusivePtr<Call>> result,
+                      PendWriteAndTakeCall(cx, payload, serialize));
+  return async2::Ready(result.status());
+}
 
-Status WriteReservation::Commit(size_t size_bytes) {
+Result<IntrusivePtr<Call>> WriteReservationBase::CommitAndTakeCall(
+    size_t size_bytes) {
   if (!is_active()) {
     return Status::FailedPrecondition();
   }
@@ -89,13 +96,12 @@ Status WriteReservation::Commit(size_t size_bytes) {
     ReleaseCall(/*committed=*/false);
     return Status::Unavailable();
   }
-  ReleaseCall(/*committed=*/true);
-  return OkStatus();
+  return ReleaseCall(/*committed=*/true);
 }
 
-void WriteReservation::ReleaseCall(bool committed) {
+IntrusivePtr<Call> WriteReservationBase::ReleaseCall(bool committed) {
   if (call_ == nullptr) {
-    return;
+    return nullptr;
   }
   if (committed && packet_.type().is_start()) {
     call_->MarkStarted();
@@ -107,10 +113,10 @@ void WriteReservation::ReleaseCall(bool committed) {
       call_->AbandonTerminalWrite();
     }
   }
-  call_ = nullptr;
+  return std::move(call_);
 }
 
-ConstByteSpan WriteReservation::PayloadSpan() const {
+ConstByteSpan WriteReservationBase::PayloadSpan() const {
   PW_DCHECK(is_active(),
             "WriteReservation accessed after Commit(), Drop(), or move");
   if (!packet_.type().has_payload()) {
@@ -119,4 +125,4 @@ ConstByteSpan WriteReservation::PayloadSpan() const {
   return ConstByteSpan(reservation_).subspan(packet_.payload_offset());
 }
 
-}  // namespace pw::rpc2
+}  // namespace pw::rpc2::internal

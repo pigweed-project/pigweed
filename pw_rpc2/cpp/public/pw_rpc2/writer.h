@@ -14,7 +14,6 @@
 #pragma once
 
 #include <cstddef>
-#include <limits>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -46,6 +45,15 @@ class RawWriter;
 namespace internal {
 
 struct CallAccess;
+class UnaryFutureBase;
+
+/// Type-erased serializer: encodes the payload at `payload` into `dest`.
+using SerializeFn = StatusWithSize (*)(const void* payload, ByteSpan dest);
+
+template <typename Payload>
+StatusWithSize SerializeTypeErased(const void* payload, ByteSpan dest) {
+  return Serialize(*static_cast<const Payload*>(payload), dest);
+}
 
 /// Non-templated base class for `WriteFuture<Payload>`.
 ///
@@ -64,22 +72,25 @@ class WriteFutureBase {
   [[nodiscard]] bool is_complete() const { return res_fut_.is_complete(); }
 
  protected:
-  using SerializeFn = StatusWithSize (*)(const void* payload, ByteSpan dest);
-
   constexpr WriteFutureBase() = default;
 
-  explicit WriteFutureBase(ReserveWriteFuture res_fut)
+  explicit WriteFutureBase(ReserveWriteFuture&& res_fut)
       : res_fut_(std::move(res_fut)) {}
 
   WriteFutureBase(WriteFutureBase&&) noexcept = default;
   WriteFutureBase& operator=(WriteFutureBase&&) noexcept = default;
   ~WriteFutureBase() = default;
 
+  [[nodiscard]] async2::Poll<Result<IntrusivePtr<Call>>> PendWriteAndTakeCall(
+      async2::Context& cx, const void* payload, SerializeFn serialize);
+
   [[nodiscard]] async2::Poll<Status> PendWrite(async2::Context& cx,
                                                const void* payload,
                                                SerializeFn serialize);
 
  private:
+  friend class UnaryFutureBase;
+
   ReserveWriteFuture res_fut_;
 };
 
@@ -118,9 +129,7 @@ class WriteFuture : public internal::WriteFutureBase {
     if constexpr (std::is_void_v<Payload>) {
       return PendWrite(cx, nullptr, nullptr);
     } else {
-      return PendWrite(cx, &payload_, [](const void* payload, ByteSpan dest) {
-        return internal::Serialize(*static_cast<const Payload*>(payload), dest);
-      });
+      return PendWrite(cx, &payload_, &internal::SerializeTypeErased<Payload>);
     }
   }
 
@@ -136,14 +145,14 @@ class WriteFuture : public internal::WriteFutureBase {
   // Constructor for typed message or response writes.
   template <typename P = Payload,
             typename = std::enable_if_t<!std::is_void_v<P>>>
-  WriteFuture(ReserveWriteFuture res_fut, P&& payload)
+  WriteFuture(ReserveWriteFuture&& res_fut, P&& payload)
       : internal::WriteFutureBase(std::move(res_fut)),
         payload_(std::forward<P>(payload)) {}
 
   // Constructor for zero-payload completion packets (`Writer::Finish()`).
   template <typename P = Payload,
             typename = std::enable_if_t<std::is_void_v<P>>>
-  explicit WriteFuture(ReserveWriteFuture res_fut)
+  explicit WriteFuture(ReserveWriteFuture&& res_fut)
       : internal::WriteFutureBase(std::move(res_fut)) {}
 
   [[no_unique_address]] std::conditional_t<std::is_void_v<Payload>,
@@ -236,14 +245,12 @@ class WriterBase : public CallHandle {
   /// The largest payload a message or response packet on this call can carry,
   /// or 0 if the call cannot write.
   [[nodiscard]] size_t payload_limit() const {
-    const size_t max_packet = has_call() ? call().max_write_size_bytes() : 0;
-    return max_packet > sizeof(PacketHeader) ? max_packet - sizeof(PacketHeader)
-                                             : 0;
+    return has_call() ? call().max_payload_size(sizeof(PacketHeader)) : 0;
   }
 
   [[nodiscard]] ReserveWriteFuture ReserveMessage(
       size_t max_payload_size) const {
-    auto reservation = ReserveOutbound(PacketSize(max_payload_size));
+    auto reservation = ReserveOutbound(sizeof(PacketHeader), max_payload_size);
     return ReserveWriteFuture::Message(std::move(reservation.future),
                                        reservation.role,
                                        reservation.call_id,
@@ -251,7 +258,7 @@ class WriterBase : public CallHandle {
   }
 
   [[nodiscard]] ReserveWriteFuture ReserveStreamEnd() const {
-    auto reservation = ReserveOutbound(sizeof(PacketHeader));
+    auto reservation = ReserveOutbound(sizeof(PacketHeader), 0);
     return ReserveWriteFuture::Finish(std::move(reservation.future),
                                       reservation.role,
                                       reservation.call_id,
@@ -260,20 +267,13 @@ class WriterBase : public CallHandle {
 
   [[nodiscard]] ReserveWriteFuture ReserveResponse(
       size_t max_payload_size) const {
-    auto reservation = ReserveOutbound(PacketSize(max_payload_size));
+    auto reservation = ReserveOutbound(sizeof(PacketHeader), max_payload_size);
     return ReserveWriteFuture::Response(std::move(reservation.future),
                                         reservation.call_id,
                                         std::move(reservation.call));
   }
 
  private:
-  static constexpr size_t PacketSize(size_t max_payload_size) {
-    return max_payload_size >
-                   std::numeric_limits<size_t>::max() - sizeof(PacketHeader)
-               ? std::numeric_limits<size_t>::max()
-               : sizeof(PacketHeader) + max_payload_size;
-  }
-
   void CleanupIfUnfinished() {
     if (has_call()) {
       call().CloseOnWriterDestroy();

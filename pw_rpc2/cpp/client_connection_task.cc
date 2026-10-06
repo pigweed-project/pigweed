@@ -42,24 +42,30 @@ uint32_t ClientConnectionTask::NewCallId() {
 }
 
 void ClientConnectionTask::RequestClose(ControlFuture* future) {
-  std::lock_guard lock(ControlLock());
-  switch (close_state_.load(std::memory_order_relaxed)) {
-    case CloseState::kClosed:
-      if (future != nullptr) {
-        future->ResolveLocked(OkStatus());
-      }
-      return;
-    case CloseState::kOpen:
-      close_state_.store(CloseState::kClosing, std::memory_order_release);
-      // The caller holds a reference to this task, so it cannot be destroyed
-      // before the wake completes.
-      Wake();
-      break;
-    case CloseState::kClosing:
-      break;
+  bool wake = false;
+  {
+    std::lock_guard lock(ControlLock());
+    switch (close_state_.load(std::memory_order_relaxed)) {
+      case CloseState::kClosed:
+        if (future != nullptr) {
+          future->ResolveLocked(OkStatus());
+        }
+        return;
+      case CloseState::kOpen:
+        close_state_.store(CloseState::kClosing, std::memory_order_release);
+        wake = true;
+        break;
+      case CloseState::kClosing:
+        break;
+    }
+    if (future != nullptr) {
+      close_futures_.Push(*future);
+    }
   }
-  if (future != nullptr) {
-    close_futures_.Push(*future);
+  // Wake outside of `ControlLock()`, which is shared by every connection. The
+  // caller holds a reference to this task, so it outlives the wake.
+  if (wake) {
+    Wake();
   }
 }
 
@@ -82,10 +88,6 @@ void ClientConnectionTask::ReleaseUserHandle() {
   RequestClose(/*future=*/nullptr);
 }
 
-bool ClientConnectionTask::is_closing_or_closed() const {
-  return close_state_.load(std::memory_order_acquire) != CloseState::kOpen;
-}
-
 void ClientConnectionTask::Finish() {
   std::lock_guard lock(ControlLock());
   if (close_state_.exchange(CloseState::kClosed, std::memory_order_acq_rel) ==
@@ -100,7 +102,7 @@ void ClientConnectionTask::Finish() {
 async2::Poll<> ClientConnectionTask::DoPend(async2::Context& cx) {
   // Checked every poll rather than latched, because the close may be requested
   // by any thread at any point.
-  if (close_state_.load() == CloseState::kClosing) {
+  if (close_state_.load(std::memory_order_acquire) == CloseState::kClosing) {
     CloseConnection(Status::Cancelled());
   }
 

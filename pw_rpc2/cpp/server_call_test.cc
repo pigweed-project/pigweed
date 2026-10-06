@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -165,6 +166,33 @@ TEST(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
   EXPECT_EQ(decode_res->call_id(), 50u);
   EXPECT_EQ(decode_res->payload().size(), 10u);
   EXPECT_EQ(std::memcmp(decode_res->payload().data(), "unary resp", 10), 0);
+
+  task.Deregister();
+  connection_task->Deregister();
+}
+
+TEST(ServerCallTest, UnaryWriterReserveThatOverflowsFails) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
+      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
+  ASSERT_NE(connection_task, nullptr);
+  auto call = internal::ClientCall::Create(*connection_task, 55u, allocator);
+  ASSERT_NE(call, nullptr);
+
+  auto responder =
+      internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
+
+  // Adding the packet header to this size would wrap around.
+  ReserveTestTask task(
+      responder.ReserveFinish(std::numeric_limits<size_t>::max()));
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+
+  ASSERT_TRUE(task.result().has_value());
+  EXPECT_EQ(task.result()->status(), Status::ResourceExhausted());
+  EXPECT_EQ(raw_conn->commit_count(), 0u);
 
   task.Deregister();
   connection_task->Deregister();

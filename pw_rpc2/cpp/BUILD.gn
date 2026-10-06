@@ -235,8 +235,26 @@ pw_source_set("server") {
   visibility = _default_visibility
 }
 
+pw_source_set("client") {
+  public_configs = [ ":public_include_path" ]
+  public = [
+    "public/pw_rpc2/client.h",
+    "public/pw_rpc2/internal/generated_service_client.h",
+    "public/pw_rpc2/service_client.h",
+  ]
+  sources = [
+    "client.cc",
+    "service_client.cc",
+  ]
+  public_deps = [ ":connection" ]
+  visibility = _default_visibility
+}
+
 pw_source_set("pw_rpc2") {
-  public_deps = [ ":server" ]
+  public_deps = [
+    ":client",
+    ":server",
+  ]
   visibility = _default_visibility
 }
 
@@ -249,6 +267,7 @@ pw_source_set("test_utils") {
   ]
   sources = [ "test_utils.cc" ]
   public_deps = [
+    ":client",
     ":connection",
     ":handshake",
     ":method",
@@ -258,7 +277,6 @@ pw_source_set("test_utils") {
     "$dir_pw_assert:check",
     "$dir_pw_async2:value_future",
     "$dir_pw_containers:inline_deque",
-    "$dir_pw_containers:vector",
     "$dir_pw_sync:interrupt_spin_lock",
     "$dir_pw_transport/cpp:pw_transport",
     dir_pw_allocator,
@@ -459,9 +477,50 @@ pw_test("server_call_test") {
   sources = [ "server_call_test.cc" ]
 }
 
+pw_test("service_client_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":client",
+    ":packet",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_assert:check",
+    "$dir_pw_async2:testing",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_async2,
+    dir_pw_bytes,
+    dir_pw_status,
+  ]
+  sources = [ "service_client_test.cc" ]
+}
+
+pw_test("client_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != "" &&
+              pw_thread_THREAD_BACKEND != "" &&
+              pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
+  deps = [
+    ":client",
+    ":method",
+    ":serialize",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    "$dir_pw_thread:test_thread_context",
+    "$dir_pw_thread:thread",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_async2,
+  ]
+  sources = [ "client_test.cc" ]
+}
+
 pw_test_group("tests") {
   tests = [
     ":call_test",
+    ":client_test",
     ":connection_task_test",
     ":handshake_test",
     ":internal_server_call_test",
@@ -475,5 +534,6 @@ pw_test_group("tests") {
     ":server_call_test",
     ":server_dispatch_test",
     ":server_test",
+    ":service_client_test",
   ]
 }

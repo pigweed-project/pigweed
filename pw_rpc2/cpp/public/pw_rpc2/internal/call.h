@@ -313,15 +313,25 @@ class Call : public IntrusiveForwardList<Call>::Item,
   ///   terminal packet was sent or the call completed successfully.
   /// - `UNAVAILABLE`: the call has been detached from its connection without
   ///   completing.
-  /// - `RESOURCE_EXHAUSTED`: `size` exceeds the largest datagram the
+  /// - `RESOURCE_EXHAUSTED`: a packet with a `header_size`-byte header and a
+  ///   `max_payload_size`-byte payload exceeds the largest datagram the
   ///   transport can write.
   ///
-  /// Otherwise returns a future for the transport's reservation.
-  Result<transport::ReserveWriteFuture> ReserveWrite(size_t size);
+  /// Otherwise returns a future for the transport's reservation of
+  /// `header_size + max_payload_size` bytes.
+  Result<transport::ReserveWriteFuture> ReserveWrite(size_t header_size,
+                                                     size_t max_payload_size);
 
   /// The largest packet, header included, that this call can currently
   /// reserve, or 0 if the call is detached from its connection.
   size_t max_write_size_bytes() const;
+
+  /// The largest payload that fits in a packet with a `header_size`-byte
+  /// header, or 0 if the call is detached from its connection.
+  size_t max_payload_size(size_t header_size) const {
+    const size_t max_packet = max_write_size_bytes();
+    return max_packet > header_size ? max_packet - header_size : 0;
+  }
 
  protected:
   friend class Recyclable<Call>;

@@ -27,8 +27,8 @@
 #include "pw_buf/buf.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/inline_deque.h"
-#include "pw_containers/vector.h"
 #include "pw_result/result.h"
+#include "pw_rpc2/client.h"
 #include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/internal/handshake.h"
 #include "pw_rpc2/internal/method_info.h"
@@ -150,6 +150,21 @@ MakeMockConnection(pw::Allocator& allocator) {
   auto* raw = allocator.New<MockConnection>(allocator);
   return {WrapSocket(*raw), raw};
 }
+
+/// Queues the `kSynAck` a server sends to accept a client's `kSyn`.
+void PushSynAck(pw::Allocator& allocator, MockConnection& connection);
+
+/// Connects a `Client` over `connection` with `Client::Connect()`, answering
+/// the handshake as a server would. `raw_connection` must be the
+/// `MockConnection` behind `connection`.
+///
+/// The client writes two handshake packets (`kSyn` and `kAck`) before
+/// returning, so the first packet a call writes is the third one recorded. Use
+/// `MakeMockPeer()` instead when a test does not care about the handshake.
+Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
+                         pw::Allocator& allocator,
+                         transport::ReliableDatagramSocket connection,
+                         MockConnection& raw_connection);
 
 /// A connection that hosts calls but serves nothing.
 ///
@@ -356,6 +371,205 @@ class PayloadView {
   uint32_t call_id_;
 };
 
+/// A mocked downstream dependency: the `Client` that code under test calls
+/// through, plus the remote endpoint that answers those calls.
+///
+/// Hand the client to the code under test with `client()`, then drive the
+/// far end with `ExpectInvocation()`:
+///
+/// @code{.cpp}
+///   auto peer = test::MakeMockPeer(dispatcher, allocator);
+///   service.SetClient(EchoService::Client(peer.client()));
+///   ...
+///   peer.ExpectInvocation<EchoService::Echo>().Finish(EchoResponse{});
+/// @endcode
+///
+/// Nothing is really on the other side of the connection: packets the client
+/// writes are recorded, and packets it reads are injected here. The handshake
+/// is skipped, so the client emits no `kSyn`/`kAck` and the first recorded
+/// packet is the first real request.
+///
+/// Every send runs the dispatcher until it stalls, so by the time one returns
+/// the client (and anything awaiting it) has already observed the packet.
+///
+/// Each `MockPeer` models one downstream dependency; use one per dependency.
+class MockPeer {
+ public:
+  /// A downstream call observed by the peer, already checked to target
+  /// `MethodInfo`. Obtained from `ExpectInvocation()`.
+  ///
+  /// @warning A handle decodes lazily from the recorded packet, so it must not
+  /// outlive a `MockConnection::clear_written()`.
+  template <typename MethodInfo>
+  class Invocation {
+   public:
+    uint32_t call_id() const { return packet_.call_id(); }
+
+    /// Completes the call successfully, carrying `response`.
+    void Finish(const typename MethodInfo::Response& response) {
+      static_assert(MethodInfo::kType == MethodType::kUnary ||
+                        MethodInfo::kType == MethodType::kClientStreaming,
+                    "Finish(response) completes a call that returns a single "
+                    "message.");
+      peer_->InjectResponse(call_id(), response);
+    }
+
+    /// Decodes the request payload the client sent.
+    pw::Result<typename MethodInfo::Request> request() const {
+      return PayloadAs<typename MethodInfo::Request>(packet_.payload());
+    }
+
+   private:
+    friend class MockPeer;
+
+    Invocation(MockPeer& peer, internal::InboundPacket&& packet)
+        : peer_(&peer), packet_(std::move(packet)) {}
+
+    MockPeer* peer_;
+    internal::InboundPacket packet_;
+  };
+
+  MockPeer(Client client,
+           MockConnection& connection,
+           async2::RunnableDispatcher& dispatcher,
+           pw::Allocator& allocator)
+      : client_(std::move(client)),
+        connection_(&connection),
+        dispatcher_(&dispatcher),
+        allocator_(&allocator) {}
+
+  ~MockPeer() {
+    // Close explicitly: code under test may still hold copies of the client.
+    ControlFuture closed = client_.Close();
+  }
+
+  MockPeer(const MockPeer&) = delete;
+  MockPeer& operator=(const MockPeer&) = delete;
+
+  Client& client() { return client_; }
+
+  /// Claims the single outstanding downstream call and binds it to
+  /// `MethodInfo`.
+  ///
+  /// Runs the dispatcher first, then checks that exactly one unclaimed packet
+  /// was written and that it starts a call routed to `MethodInfo`. Each packet
+  /// is claimed once, so successive `ExpectInvocation()`s walk successive
+  /// calls.
+  template <typename MethodInfo>
+  Invocation<MethodInfo> ExpectInvocation() {
+    dispatcher_->RunUntilStalled();
+    const size_t unclaimed = unclaimed_packet_count();
+    PW_CHECK(unclaimed == 1u,
+             "MockPeer::ExpectInvocation() expected exactly 1 outstanding "
+             "call to service %u method %u, but %zu packets are pending.",
+             static_cast<unsigned>(MethodInfo::kServiceId),
+             static_cast<unsigned>(MethodInfo::kMethodId),
+             unclaimed);
+    internal::InboundPacket packet = DecodeWrittenPacket(claimed_++);
+    PW_CHECK(packet.type().is_start(),
+             "MockPeer expected a call to service %u method %u, but the "
+             "client wrote a packet of type 0x%02x.",
+             static_cast<unsigned>(MethodInfo::kServiceId),
+             static_cast<unsigned>(MethodInfo::kMethodId),
+             static_cast<unsigned>(packet.type().bits()));
+    PW_CHECK(packet.service_id() == MethodInfo::kServiceId &&
+                 packet.method_id() == MethodInfo::kMethodId,
+             "MockPeer expected a call to service %u method %u, but the "
+             "client called service %u method %u.",
+             static_cast<unsigned>(MethodInfo::kServiceId),
+             static_cast<unsigned>(MethodInfo::kMethodId),
+             static_cast<unsigned>(packet.service_id()),
+             static_cast<unsigned>(packet.method_id()));
+    return Invocation<MethodInfo>(*this, std::move(packet));
+  }
+
+  /// The number of packets written by the client that no `ExpectInvocation()`
+  /// has claimed yet.
+  ///
+  /// Does not claim them. Use for negative assertions, such as checking that a
+  /// service short-circuited instead of calling downstream.
+  size_t unclaimed_packet_count() const {
+    return connection_->written_packet_count() - claimed_;
+  }
+
+  MockConnection& connection() { return *connection_; }
+
+ private:
+  template <typename MethodInfo>
+  friend class Invocation;
+
+  /// Injects a response completing `call_id` successfully, carrying `payload`.
+  ///
+  /// `payload` may be a `pw::ConstBuf` (what raw methods declare, sent
+  /// verbatim) or any message with a `SerializerFor` specialization, which is
+  /// serialized first.
+  template <typename Msg>
+  void InjectResponse(uint32_t call_id, const Msg& payload) {
+    pw::Buf owned;
+    ConstByteSpan span;
+    EncodePayload(payload, owned, span);
+    InjectResponseBytes(call_id, span);
+  }
+
+  /// Decodes the `index`th packet the client wrote, which must be a valid RPC
+  /// packet.
+  internal::InboundPacket DecodeWrittenPacket(size_t index) const;
+
+  void InjectResponseBytes(uint32_t call_id, ConstByteSpan payload);
+  void Inject(pw::Result<pw::Buf>&& packet);
+
+  /// Renders `msg` as bytes. `owned` keeps any allocation alive for as long as
+  /// `out` is used.
+  template <typename Msg>
+  void EncodePayload(const Msg& msg, pw::Buf& owned, ConstByteSpan& out) {
+    static_assert(
+        !std::is_same_v<Msg, ConstByteSpan>,
+        "Pass raw payloads as pw::ConstBuf, e.g. ConstBuf::Unowned(bytes). "
+        "Raw methods declare Request/Response as pw::ConstBuf, and only "
+        "ConstBuf has a SerializerFor specialization; ConstByteSpan has none.");
+
+    if constexpr (std::is_same_v<Msg, ConstBuf>) {
+      out = ConstByteSpan(msg.data(), msg.size());
+      return;
+    } else {
+      const size_t size = internal::MaxEncodedSize(msg);
+      if (size == 0) {
+        out = ConstByteSpan();
+        return;
+      }
+      owned = pw::Buf::TryAllocate(*allocator_, size);
+      PW_CHECK(!owned.empty(),
+               "MockPeer could not allocate %zu bytes for a message payload; "
+               "its allocator is likely exhausted.",
+               size);
+      auto ser_res = internal::Serialize(msg, owned);
+      PW_CHECK(ser_res.ok(),
+               "MockPeer could not serialize a message into its %zu byte "
+               "buffer (%s).",
+               size,
+               ser_res.status().str());
+      out = ConstByteSpan(owned.data(), ser_res.size());
+    }
+  }
+
+  Client client_;
+  MockConnection* connection_;
+  async2::RunnableDispatcher* dispatcher_;
+  pw::Allocator* allocator_;
+  /// How many written packets `ExpectInvocation()` has consumed.
+  size_t claimed_ = 0;
+};
+
+/// Creates a `MockPeer` on a fresh `MockConnection`, skipping the handshake.
+///
+/// `dispatcher` must be the same dispatcher that drives the code under test,
+/// so that a single `RunUntilStalled()` advances both sides.
+///
+/// @warning Declare `allocator` before `dispatcher`. `~Dispatcher` destroys
+/// still-posted tasks, which live in `allocator`.
+MockPeer MakeMockPeer(async2::RunnableDispatcher& dispatcher,
+                      pw::Allocator& allocator);
+
 class PairedConnection : public transport::ReliableDatagramSocketImpl {
  public:
   explicit PairedConnection(pw::Allocator& allocator);
@@ -514,6 +728,42 @@ class MockTransport : public transport::ReliableDatagramListener,
       pending_connect_result_;
   std::optional<Result<transport::ReliableDatagramSocket>>
       pending_accept_result_;
+};
+
+/// Closes `client` and runs `dispatcher` until the connection is torn down.
+/// Use this instead of `Client::CloseBlocking()` on the thread that runs the
+/// dispatcher.
+inline void CloseClient(Client& client,
+                        async2::RunnableDispatcher& dispatcher) {
+  ControlFuture closed = client.Close();
+  dispatcher.RunUntilStalled();
+}
+
+/// Holds a `Client` and, when the scope exits, closes it and runs the
+/// dispatcher, so the connection task is torn down before the dispatcher and
+/// allocator. Declare it after the dispatcher. Converts to `Client&`, so it can
+/// be passed straight to a service client.
+class ScopedClient {
+ public:
+  ScopedClient(Client client, async2::RunnableDispatcher& dispatcher)
+      : client_(std::move(client)), dispatcher_(&dispatcher) {}
+
+  ~ScopedClient() { CloseClient(client_, *dispatcher_); }
+
+  ScopedClient(const ScopedClient&) = delete;
+  ScopedClient& operator=(const ScopedClient&) = delete;
+
+  operator Client&() & {  // NOLINT(google-explicit-constructor)
+    return client_;
+  }
+  operator const Client&() const& {  // NOLINT(google-explicit-constructor)
+    return client_;
+  }
+  operator const Client&() && = delete;
+
+ private:
+  Client client_;
+  async2::RunnableDispatcher* dispatcher_;
 };
 
 }  // namespace pw::rpc2::test

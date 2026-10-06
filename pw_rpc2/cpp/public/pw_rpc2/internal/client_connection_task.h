@@ -76,9 +76,11 @@ class ClientConnectionTask final : public ConnectionTask {
   /// @pre Must not be called from this connection's dispatcher thread.
   void CloseBlocking();
 
-  /// Thread-safe check returning true once `Close()` / `CloseBlocking()` has
-  /// been initiated or the task has finished.
-  bool is_closing_or_closed() const;
+  /// Thread-safe check returning true if `Close()` / `CloseBlocking()` has not
+  /// been initiated and the task has not finished.
+  [[nodiscard]] bool is_open() const {
+    return close_state_.load(std::memory_order_acquire) == CloseState::kOpen;
+  }
 
   /// Registers one more `Client` handle referring to this task.
   ///

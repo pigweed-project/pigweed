@@ -91,17 +91,20 @@ class CallHandle {
     IntrusivePtr<Call> call;
   };
 
-  /// Begins an egress reservation of `size` bytes for this handle's call.
+  /// Begins an egress reservation for a packet with a `header_size`-byte
+  /// header and up to `max_payload_size` bytes of payload on this handle's
+  /// call.
   ///
   /// Handles the empty-handle case, so callers can pass the result straight to
   /// a `ReserveWriteFuture` factory: writing through a handle that was
   /// default constructed or moved from yields a future resolved to
   /// `FAILED_PRECONDITION` rather than dereferencing nothing.
-  [[nodiscard]] Reservation ReserveOutbound(size_t size) const {
+  [[nodiscard]] Reservation ReserveOutbound(size_t header_size,
+                                            size_t max_payload_size) const {
     if (!has_call()) {
       return {Status::FailedPrecondition(), 0, EndpointRole::kClient, nullptr};
     }
-    return {call().ReserveWrite(size),
+    return {call().ReserveWrite(header_size, max_payload_size),
             call().call_id(),
             call().role(),
             share_call()};

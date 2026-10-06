@@ -33,11 +33,6 @@
 
 namespace pw::rpc2 {
 
-class ServiceClient;
-template <typename, typename>
-class UnaryCallFuture;
-template <typename, typename>
-class ClientStreamCall;
 template <typename>
 class Reader;
 
@@ -45,41 +40,42 @@ namespace internal {
 
 struct CallAccess;
 
-/// Non-templated base class for `ReadFuture<Payload>`.
+/// Type-erased deserializer: writes `bytes` decoded as a payload, or their
+/// error, to the `async2::Poll<Result<Payload>>` at `result_out`.
+using DeserializeFn = void (*)(void* result_out, Result<ConstByteSpan> bytes);
+
+template <typename Payload>
+void DeserializeTypeErased(void* result_out, Result<ConstByteSpan> bytes) {
+  *static_cast<async2::Poll<Result<Payload>>*>(result_out) =
+      bytes.ok() ? Deserialize<Payload>(*bytes)
+                 : Result<Payload>(bytes.status());
+}
+
+/// Non-templated base class for `ReadFuture<Payload>` and
+/// `ResponseFuture<Response>`.
 ///
 /// Keeping `ReadFutureBase` non-templated ensures that the read-claim lifecycle
 /// (construction, move-assignment, destruction) and the channel polling logic
 /// in `PendRaw()` / `PendAndDeserialize()` are compiled once and shared across
-/// `ReadFuture<Payload>` for all payload types.
+/// all payload types.
 class ReadFutureBase : public CallHandle, public FutureBase {
  public:
   ReadFutureBase(const ReadFutureBase&) = delete;
   ReadFutureBase& operator=(const ReadFutureBase&) = delete;
 
  protected:
-  /// Whether the call will read anything after this future.
-  ///
-  /// `Reader::Read()` reads one message of many, and the `Reader` closes the
-  /// call's read side when it is destroyed. The single response to a unary or
-  /// client-streaming RPC has no `Reader` behind it, so that future must close
-  /// the read side itself once it completes or is dropped.
-  enum ReadKind : bool {
-    kStreamRead = false,
-    kSoleRead = true,
-  };
-
-  using DeserializeFn = void (*)(void* result_out, Result<ConstByteSpan> raw);
-
   constexpr ReadFutureBase() = default;
 
-  ReadFutureBase(const IntrusivePtr<Call>& call, ReadKind kind)
-      : CallHandle(call) {
-    ClaimReadIfHasCall(kind);
+  /// Claims the call's read. The read side stays open after this future
+  /// resolves; closing it is up to whatever owns the read side: a `Reader`, or
+  /// a `ResponseFuture`, which owns it itself.
+  explicit ReadFutureBase(const IntrusivePtr<Call>& call) : CallHandle(call) {
+    ClaimReadIfHasCall();
   }
 
-  ReadFutureBase(IntrusivePtr<Call>&& call, ReadKind kind)
+  explicit ReadFutureBase(IntrusivePtr<Call>&& call)
       : CallHandle(std::move(call)) {
-    ClaimReadIfHasCall(kind);
+    ClaimReadIfHasCall();
   }
 
   ~ReadFutureBase() { ReleaseRead(); }
@@ -90,9 +86,11 @@ class ReadFutureBase : public CallHandle, public FutureBase {
     if (this != &other) {
       // Release this future's own hold before adopting `other`'s call.
       ReleaseRead();
+      // `receive_fut_` refers to the call's channel, so replace it before the
+      // call reference, which may be the last one.
+      receive_fut_ = std::move(other.receive_fut_);
       CallHandle::operator=(static_cast<CallHandle&&>(other));
       FutureBase::operator=(static_cast<FutureBase&&>(other));
-      receive_fut_ = std::move(other.receive_fut_);
     }
     return *this;
   }
@@ -104,17 +102,12 @@ class ReadFutureBase : public CallHandle, public FutureBase {
                           DeserializeFn deserialize);
 
  private:
-  void ClaimReadIfHasCall(ReadKind kind) {
+  void ClaimReadIfHasCall() {
     if (!has_call()) {
       return;
     }
     receive_fut_ = call().ClaimRead();
     mark_pending();
-    if (kind == kSoleRead) {
-      // The read is already claimed, so this only flags the call; the read
-      // side closes when the claim is released.
-      call().CloseReadOnReaderDestroy();
-    }
   }
 
   // Releases this future's hold on the call's read stream, if it is active.
@@ -127,13 +120,40 @@ class ReadFutureBase : public CallHandle, public FutureBase {
   async2::ReceiveFuture<ConstBuf> receive_fut_;
 };
 
+/// Non-templated base class for `ResponseFuture<Response>`.
+class ResponseFutureBase : public ReadFutureBase {
+ public:
+  /// Cancels the call: sends a cancellation to the server and completes the
+  /// call locally with `Status::Cancelled()`. A pending or later `Pend()`
+  /// resolves to `CANCELLED` unless the response has already arrived. No-op if
+  /// the call has already ended or this future has no call.
+  void Cancel() {
+    if (has_call()) {
+      call().Cancel();
+    }
+  }
+
+ protected:
+  constexpr ResponseFutureBase() = default;
+
+  // The read is claimed first, so this only flags the call; the read side
+  // closes when the claim is released.
+  explicit ResponseFutureBase(IntrusivePtr<Call>&& call)
+      : ReadFutureBase(std::move(call)) {
+    if (has_call()) {
+      this->call().CloseReadOnReaderDestroy();
+    }
+  }
+
+  ResponseFutureBase(ResponseFutureBase&&) noexcept = default;
+  ResponseFutureBase& operator=(ResponseFutureBase&&) noexcept = default;
+  ~ResponseFutureBase() = default;
+};
+
 }  // namespace internal
 
-/// Future that resolves to a single inbound RPC message (`Result<Payload>`).
-///
-/// Returned by `Reader::Read()` to receive the next message in a stream, and
-/// used in `ClientStreamCall` / `RawUnaryCall` to await the server's single
-/// response.
+/// Future that resolves to the next inbound message of a stream
+/// (`Result<Payload>`). Returned by `Reader::Read()`.
 ///
 /// At most one `ReadFuture` may be active on a call at a time: starting a
 /// second read while an earlier `ReadFuture` is still pending fails with an
@@ -142,8 +162,7 @@ class ReadFutureBase : public CallHandle, public FutureBase {
 /// be started even if the completed `ReadFuture` remains in scope.
 ///
 /// A `ReadFuture` holds a shared reference to the underlying call, so it stays
-/// valid even if the `Reader` or call struct that produced it is destroyed
-/// first.
+/// valid even if the `Reader` that produced it is destroyed first.
 template <typename Payload = ConstBuf>
 class ReadFuture : public internal::ReadFutureBase {
  public:
@@ -175,11 +194,7 @@ class ReadFuture : public internal::ReadFutureBase {
     } else {
       async2::Poll<Result<Payload>> result = async2::Pending();
       PendAndDeserialize(
-          cx, &result, [](void* out, Result<ConstByteSpan> bytes) {
-            *static_cast<async2::Poll<Result<Payload>>*>(out) =
-                bytes.ok() ? internal::Deserialize<Payload>(*bytes)
-                           : Result<Payload>(bytes.status());
-          });
+          cx, &result, &internal::DeserializeTypeErased<Payload>);
       return result;
     }
   }
@@ -189,29 +204,69 @@ class ReadFuture : public internal::ReadFutureBase {
   friend class ReadFuture;
   template <typename>
   friend class Reader;
-  friend class ServiceClient;
-  template <typename, typename>
-  friend class UnaryCallFuture;
-  template <typename, typename>
-  friend class ClientStreamCall;
   friend struct internal::CallAccess;
-
-  static ReadFuture StreamRead(const IntrusivePtr<internal::Call>& call) {
-    return ReadFuture(call, kStreamRead);
-  }
-  static ReadFuture StreamRead(IntrusivePtr<internal::Call>&& call) {
-    return ReadFuture(std::move(call), kStreamRead);
-  }
-  static ReadFuture SoleRead(IntrusivePtr<internal::Call>&& call) {
-    return ReadFuture(std::move(call), kSoleRead);
-  }
 
   using internal::ReadFutureBase::ReadFutureBase;
 };
 
-static_assert(pw::async2::Future<ReadFuture<pw::ConstBuf>>);
+static_assert(async2::Future<ReadFuture<ConstBuf>>);
 
-using RawReadFuture = ReadFuture<pw::ConstBuf>;
+using RawReadFuture = ReadFuture<ConstBuf>;
+
+/// Future that resolves to the server's single response to a client unary or
+/// client-streaming RPC (`Result<Response>`).
+///
+/// Returned by `RawUnaryReservation::Commit()` and
+/// `ClientStreamCall::response()`. `UnaryFuture` uses one internally.
+///
+/// A `ResponseFuture` is its call's only reader. Destroying it before it
+/// resolves cancels the call (`Status::Cancelled()`) so the server can stop
+/// work. `Cancel()` does the same while keeping the future, which then
+/// resolves to `CANCELLED`.
+template <typename Response = ConstBuf>
+class ResponseFuture : public internal::ResponseFutureBase {
+ public:
+  using value_type = Result<Response>;
+
+  constexpr ResponseFuture() = default;
+
+  ResponseFuture(const ResponseFuture&) = delete;
+  ResponseFuture& operator=(const ResponseFuture&) = delete;
+  ResponseFuture(ResponseFuture&&) noexcept = default;
+  ResponseFuture& operator=(ResponseFuture&&) noexcept = default;
+  ~ResponseFuture() = default;
+
+  /// Polls for the server's response.
+  ///
+  /// @returns
+  /// * `OK` with the decoded `Response` (or raw `ConstBuf`) once the server
+  ///   replies.
+  /// * The error status that ended the call (such as `CANCELLED` if the call
+  ///   was cancelled or the connection closed, or `NOT_FOUND` for an unknown
+  ///   service or method).
+  /// * A deserialization error (such as `DATA_LOSS`) if the response could not
+  ///   be decoded as `Response`.
+  [[nodiscard]] async2::Poll<Result<Response>> Pend(async2::Context& cx) {
+    if constexpr (std::is_same_v<Response, ConstBuf>) {
+      return PendRaw(cx);
+    } else {
+      async2::Poll<Result<Response>> result = async2::Pending();
+      PendAndDeserialize(
+          cx, &result, &internal::DeserializeTypeErased<Response>);
+      return result;
+    }
+  }
+
+ private:
+  friend struct internal::CallAccess;
+
+  explicit ResponseFuture(IntrusivePtr<internal::Call>&& call)
+      : internal::ResponseFutureBase(std::move(call)) {}
+};
+
+static_assert(async2::Future<ResponseFuture<ConstBuf>>);
+
+using RawResponseFuture = ResponseFuture<ConstBuf>;
 
 namespace internal {
 
@@ -301,18 +356,19 @@ class Reader : public internal::ReaderBase {
   /// Only one `ReadFuture` may be pending at a time; await or destroy the
   /// returned future before calling `Read()` again.
   [[nodiscard]] ReadFuture<Payload> Read() {
-    return ReadFuture<Payload>::StreamRead(share_call());
+    return ReadFuture<Payload>(share_call());
   }
 
  private:
   template <typename>
   friend class Reader;
-  friend class ServiceClient;
   friend struct internal::CallAccess;
 
   using internal::ReaderBase::ReaderBase;
 };
 
 using RawReader = Reader<ConstBuf>;
+
+static_assert(sizeof(RawReader) == sizeof(internal::CallHandle));
 
 }  // namespace pw::rpc2

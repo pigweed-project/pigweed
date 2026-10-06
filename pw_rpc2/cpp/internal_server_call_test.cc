@@ -249,7 +249,7 @@ TEST_F(ServerCallTest, EscapedHandleKeepsTheCallAlive) {
   // than touching a dead connection.
   EXPECT_EQ(dtor_count, 1);
   EXPECT_NE(alloc_.GetAllocated(), 0u);
-  EXPECT_EQ(escaped->ReserveWrite(8).status(), Status::Unavailable());
+  EXPECT_EQ(escaped->ReserveWrite(0, 8).status(), Status::Unavailable());
 
   escaped = nullptr;
   EXPECT_EQ(alloc_.GetAllocated(), 0u);

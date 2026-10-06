@@ -15,6 +15,7 @@
 #include "pw_rpc2/internal/call.h"
 
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -209,7 +210,7 @@ TEST(CallTest, DeferredResourceResetPostCompletion) {
   // Write on OkStatus-completed call fails with FailedPrecondition
   call->CloseWrite();
   EXPECT_TRUE(call->is_write_closed());
-  EXPECT_EQ(call->ReserveWrite(8).status(), Status::FailedPrecondition());
+  EXPECT_EQ(call->ReserveWrite(0, 8).status(), Status::FailedPrecondition());
   connection_task->Deregister();
 }
 
@@ -226,7 +227,7 @@ TEST(CallTest, ReserveWriteReturnsCompletionErrorWhenCompletedWithError) {
 
   call->CloseWrite();
   call->Complete(Status::Aborted());
-  EXPECT_EQ(call->ReserveWrite(8).status(), Status::Aborted());
+  EXPECT_EQ(call->ReserveWrite(0, 8).status(), Status::Aborted());
   connection_task->Deregister();
 }
 
@@ -244,7 +245,7 @@ TEST(CallTest, ReserveWriteReturnsFailedPreconditionWhenOnlyWriteClosed) {
   call->CloseWrite();
   EXPECT_TRUE(call->is_write_closed());
   EXPECT_FALSE(call->is_completed());
-  EXPECT_EQ(call->ReserveWrite(8).status(), Status::FailedPrecondition());
+  EXPECT_EQ(call->ReserveWrite(0, 8).status(), Status::FailedPrecondition());
   connection_task->Deregister();
 }
 
@@ -260,10 +261,16 @@ TEST(CallTest, ReserveWriteRejectsWritesLargerThanTransportLimit) {
   auto call = ClientCall::Create(*connection_task, 302u, allocator);
   ASSERT_NE(call, nullptr);
 
-  EXPECT_EQ(call->ReserveWrite(max_size + 1).status(),
+  EXPECT_EQ(call->ReserveWrite(0, max_size + 1).status(),
             Status::ResourceExhausted());
   EXPECT_FALSE(call->is_write_closed());
-  PW_TEST_EXPECT_OK(call->ReserveWrite(max_size).status());
+  PW_TEST_EXPECT_OK(call->ReserveWrite(0, max_size).status());
+
+  // Sizes whose sum would overflow are rejected rather than wrapping around.
+  EXPECT_EQ(call->ReserveWrite(1, std::numeric_limits<size_t>::max()).status(),
+            Status::ResourceExhausted());
+  EXPECT_EQ(call->ReserveWrite(max_size + 1, 0).status(),
+            Status::ResourceExhausted());
   connection_task->Deregister();
 }
 

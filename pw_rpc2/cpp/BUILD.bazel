@@ -243,8 +243,26 @@ cc_library(
 )
 
 cc_library(
+    name = "client",
+    srcs = [
+        "client.cc",
+        "service_client.cc",
+    ],
+    hdrs = [
+        "public/pw_rpc2/client.h",
+        "public/pw_rpc2/internal/generated_service_client.h",
+        "public/pw_rpc2/service_client.h",
+    ],
+    strip_include_prefix = "public",
+    deps = _CONNECTION_DEPS + [
+        ":connection",
+    ],
+)
+
+cc_library(
     name = "pw_rpc2",
     deps = [
+        ":client",
         ":server",
     ],
 )
@@ -264,6 +282,7 @@ cc_library(
     ],
     strip_include_prefix = "public",
     deps = [
+        ":client",
         ":connection",
         ":handshake",
         ":method",
@@ -277,7 +296,6 @@ cc_library(
         "//pw_buf",
         "//pw_bytes",
         "//pw_containers:inline_deque",
-        "//pw_containers:vector",
         "//pw_log",
         "//pw_result",
         "//pw_status",
@@ -386,6 +404,42 @@ pw_cc_test(
         "//pw_span",
         "//pw_thread:test_thread_context",
         "//pw_thread:thread",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "client_test",
+    srcs = ["client_test.cc"],
+    deps = [
+        ":client",
+        ":method",
+        ":serialize",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_thread:test_thread_context",
+        "//pw_thread:thread",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "service_client_test",
+    srcs = ["service_client_test.cc"],
+    deps = [
+        ":client",
+        ":packet",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_bytes",
+        "//pw_status",
         "//pw_transport/cpp:pw_transport",
         "//pw_unit_test",
     ],

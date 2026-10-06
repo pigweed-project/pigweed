@@ -76,9 +76,10 @@ class WriteTestTask : public async2::Task {
 template <typename Fut>
 WriteTestTask(Fut fut) -> WriteTestTask<Fut>;
 
+template <typename Fut = RawReadFuture>
 class ReadTestTask : public async2::Task {
  public:
-  explicit ReadTestTask(RawReadFuture fut) : fut_(std::move(fut)) {}
+  explicit ReadTestTask(Fut fut) : fut_(std::move(fut)) {}
 
   async2::Poll<> DoPend(async2::Context& cx) override {
     auto poll = fut_.Pend(cx);
@@ -89,12 +90,16 @@ class ReadTestTask : public async2::Task {
     return async2::Ready();
   }
 
+  Fut& future() { return fut_; }
   const std::optional<Result<ConstBuf>>& result() const { return result_; }
 
  private:
-  RawReadFuture fut_;
+  Fut fut_;
   std::optional<Result<ConstBuf>> result_;
 };
+
+template <typename Fut>
+ReadTestTask(Fut fut) -> ReadTestTask<Fut>;
 
 class ReserveTestTask : public async2::Task {
  public:
@@ -336,6 +341,7 @@ TEST(RawWriterTest, DestructorEndsStreamNormally) {
       internal::EstablishedConnection{std::move(conn)}, allocator);
   auto call = internal::ClientCall::Create(*connection_task, 55u, allocator);
   ASSERT_NE(call, nullptr);
+  call->MarkStarted();
 
   {
     auto writer = internal::CallAccess::Create<RawWriter>(call);
@@ -511,10 +517,11 @@ TEST(RawReaderTest, ReadsPayloadBufFromCall) {
 }
 
 // Reads a single message, expecting the read to resolve within this call.
+template <typename Fut>
 void ReadOneMessage(async2::DispatcherForTest& dispatcher,
                     Allocator& allocator,
                     internal::Call& call,
-                    RawReadFuture read_fut,
+                    Fut read_fut,
                     size_t expected_size) {
   ReadTestTask task(std::move(read_fut));
   dispatcher.Post(task);
@@ -575,6 +582,90 @@ TEST(RawReaderTest, SequentialReadsReuseTheCall) {
   EXPECT_TRUE(next_fut.is_pendable());
 
   task.Deregister();
+}
+
+TEST(RawResponseFutureTest, ResolvesToResponse) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = allocator.MakeShared<internal::ClientConnectionTask>(
+      internal::EstablishedConnection{std::move(conn)}, allocator);
+
+  auto call = internal::ClientCall::Create(*connection_task, 102u, allocator);
+  ASSERT_NE(call, nullptr);
+  call->MarkStarted();
+
+  auto response = internal::CallAccess::Create<RawResponseFuture>(
+      IntrusivePtr<internal::Call>(call));
+  EXPECT_TRUE(response.is_pendable());
+  EXPECT_FALSE(call->is_completed());
+  EXPECT_EQ(raw_conn->commit_count(), 0u);
+
+  ReadOneMessage(dispatcher, allocator, *call, std::move(response), 4u);
+}
+
+TEST(RawResponseFutureTest, DroppingPendingFutureCancelsCall) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = allocator.MakeShared<internal::ClientConnectionTask>(
+      internal::EstablishedConnection{std::move(conn)}, allocator);
+
+  auto call = internal::ClientCall::Create(*connection_task, 104u, allocator);
+  ASSERT_NE(call, nullptr);
+  call->MarkStarted();
+
+  {
+    ReadTestTask task(internal::CallAccess::Create<RawResponseFuture>(
+        IntrusivePtr<internal::Call>(call)));
+    dispatcher.Post(task);
+    dispatcher.RunUntilStalled();
+    EXPECT_FALSE(task.result().has_value());
+    task.Deregister();
+  }
+  // Nothing is left to observe the response, so the call is cancelled.
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(call->is_completed());
+  EXPECT_EQ(call->completion_status(), Status::Cancelled());
+  EXPECT_EQ(raw_conn->commit_count(), 1u);
+}
+
+TEST(RawResponseFutureTest, CancelResolvesPendingFutureToCancelled) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = allocator.MakeShared<internal::ClientConnectionTask>(
+      internal::EstablishedConnection{std::move(conn)}, allocator);
+
+  auto call = internal::ClientCall::Create(*connection_task, 103u, allocator);
+  ASSERT_NE(call, nullptr);
+  call->MarkStarted();
+
+  ReadTestTask task(
+      internal::CallAccess::Create<RawResponseFuture>(std::move(call)));
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+  EXPECT_FALSE(task.result().has_value());
+
+  task.future().Cancel();
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(task.result().has_value());
+  EXPECT_EQ(task.result()->status(), Status::Cancelled());
+  EXPECT_EQ(raw_conn->commit_count(), 1u);
+
+  // Cancelling again, after the call has ended, does nothing.
+  task.future().Cancel();
+  dispatcher.RunUntilStalled();
+  EXPECT_EQ(raw_conn->commit_count(), 1u);
+
+  task.Deregister();
+}
+
+TEST(RawResponseFutureTest, CancelWithoutCallIsNoOp) {
+  RawResponseFuture response;
+  EXPECT_FALSE(response.is_pendable());
+  response.Cancel();
+  EXPECT_FALSE(response.is_pendable());
 }
 
 }  // namespace

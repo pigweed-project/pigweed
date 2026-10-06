@@ -140,7 +140,11 @@ class ConnectionTask : public async2::Task {
   /// @pre Must be called from this connection's dispatcher thread.
   void RegisterCall(Call& call) {
     calls_.push_front(call);
-    Wake();
+    // A server polls its calls, so it must notice the new one. A client has
+    // nothing new to do until the call writes or a packet arrives.
+    if (role() == EndpointRole::kServer) {
+      Wake();
+    }
   }
 
   /// Removes `call` from this connection's registry.
