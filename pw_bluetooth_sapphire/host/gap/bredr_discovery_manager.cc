@@ -48,18 +48,18 @@ Peer* AddOrUpdateConnectablePeer(PeerCache* cache, const DeviceAddress& addr) {
   return peer;
 }
 
-std::unordered_set<Peer*> ProcessInquiryResultEvent(
+std::unordered_set<PeerId> ProcessInquiryResultEvent(
     PeerCache* cache,
     const pw::bluetooth::emboss::InquiryResultWithRssiEventView& event) {
   bt_log(TRACE, "gap-bredr", "inquiry result received");
-  std::unordered_set<Peer*> updated;
+  std::unordered_set<PeerId> updated;
   auto responses = event.responses();
   for (auto response : responses) {
     DeviceAddress addr(DeviceAddress::Type::kBREDR,
                        DeviceAddressBytes(response.bd_addr()));
     Peer* peer = AddOrUpdateConnectablePeer(cache, addr);
     peer->MutBrEdr().SetInquiryData(response);
-    updated.insert(peer);
+    updated.insert(peer->identifier());
   }
   return updated;
 }
@@ -266,7 +266,7 @@ void BrEdrDiscoveryManager::StopInquiry() {
 hci::CommandChannel::EventCallbackResult BrEdrDiscoveryManager::InquiryResult(
     const hci::EventPacket& event) {
   PW_DCHECK(event.event_code() == hci_spec::kInquiryResultEventCode);
-  std::unordered_set<Peer*> peers;
+  std::unordered_set<PeerId> peers;
 
   auto view = event.view<pw::bluetooth::emboss::InquiryResultEventView>();
   for (int i = 0; i < view.num_responses().Read(); i++) {
@@ -275,7 +275,7 @@ hci::CommandChannel::EventCallbackResult BrEdrDiscoveryManager::InquiryResult(
                        DeviceAddressBytes{response.bd_addr()});
     Peer* peer = AddOrUpdateConnectablePeer(cache_, addr);
     peer->MutBrEdr().SetInquiryData(response);
-    peers.insert(peer);
+    peers.insert(peer->identifier());
   }
 
   NotifyPeersUpdated(peers);
@@ -285,7 +285,7 @@ hci::CommandChannel::EventCallbackResult BrEdrDiscoveryManager::InquiryResult(
 
 hci::CommandChannel::EventCallbackResult
 BrEdrDiscoveryManager::InquiryResultWithRssi(const hci::EventPacket& event) {
-  std::unordered_set<Peer*> peers = ProcessInquiryResultEvent(
+  std::unordered_set<PeerId> peers = ProcessInquiryResultEvent(
       cache_,
       event.view<pw::bluetooth::emboss::InquiryResultWithRssiEventView>());
   NotifyPeersUpdated(peers);
@@ -303,7 +303,7 @@ BrEdrDiscoveryManager::ExtendedInquiryResult(const hci::EventPacket& event) {
   Peer* peer = AddOrUpdateConnectablePeer(cache_, addr);
   peer->MutBrEdr().SetInquiryData(result);
 
-  NotifyPeersUpdated({peer});
+  NotifyPeersUpdated({peer->identifier()});
   return hci::CommandChannel::EventCallbackResult::kContinue;
 }
 
@@ -450,20 +450,30 @@ void BrEdrDiscoveryManager::UpdateInspectProperties() {
 }
 
 void BrEdrDiscoveryManager::NotifyPeersUpdated(
-    const std::unordered_set<Peer*>& peers) {
+    const std::unordered_set<PeerId>& peers) {
   // Result handlers may erase sessions from discovering_, so iterate over a
   // copy and skip any session that was removed.
   const std::vector<BrEdrDiscoverySession*> sessions(discovering_.begin(),
                                                      discovering_.end());
-  for (Peer* peer : peers) {
+  for (PeerId id : peers) {
+    // Result callbacks could remove peers, so look them up by ID.
+    Peer* peer = cache_->FindById(id);
+    if (!peer) {
+      continue;
+    }
     if (!peer->name()) {
-      RequestPeerName(peer->identifier());
+      RequestPeerName(id);
     }
     for (BrEdrDiscoverySession* session : sessions) {
       if (discovering_.count(session) == 0) {
         continue;
       }
       session->NotifyDiscoveryResult(*peer);
+      // Check if the result handler removed the peer.
+      peer = cache_->FindById(id);
+      if (!peer) {
+        break;
+      }
     }
   }
 }

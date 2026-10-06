@@ -176,6 +176,36 @@ const StaticByteBuffer kInquiryResult(
   0x00, 0x00 // clock_offset[0]
 );
 
+const StaticByteBuffer kInquiryResultMultipleResponses(
+  hci_spec::kInquiryResultEventCode,
+  0x2B, // parameter_total_size (43 bytes)
+  0x03, // num_responses
+
+  // first response
+  BD_ADDR(0x01), // bd_addr[0]
+  0x00, // page_scan_repetition_mode[0] (R0)
+  0x00, // unused / reserved
+  0x00, // unused / reserved
+  0x00, 0x1F, 0x00, // class_of_device[0] (unspecified)
+  0x00, 0x00, // clock_offset[0]
+
+  // second response
+  BD_ADDR(0x02), // bd_addr[1]
+  0x00, // page_scan_repetition_mode[1] (R0)
+  0x00, // unused / reserved
+  0x00, // unused / reserved
+  0x00, 0x1F, 0x00, // class_of_device[1] (unspecified)
+  0x00, 0x00, // clock_offset[1]
+
+  // third response
+  BD_ADDR(0x03), // bd_addr[2]
+  0x00, // page_scan_repetition_mode[2] (R0)
+  0x00, // unused / reserved
+  0x00, // unused / reserved
+  0x00, 0x1F, 0x00, // class_of_device[2] (unspecified)
+  0x00, 0x00 // clock_offset[2]
+);
+
 const StaticByteBuffer kInquiryResultIncompleteHeader(
   hci_spec::kInquiryResultEventCode,
   0x00 // parameter_total_size (0 bytes)
@@ -832,6 +862,87 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryAndDropSiblingsInCallbacks) {
   EXPECT_EQ(1u, error_callbacks);
   EXPECT_EQ(1u, live_sessions());
   EXPECT_FALSE(discovery_manager()->discovering());
+}
+
+// Test: removing the reported peer inside a discovery result callback doesn't
+// cause inquiry result handling to use freed peers.
+TEST_F(BrEdrDiscoveryManagerTest, InquiryResultPeerRemovedInResultCallback) {
+  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp, &kInquiryResult);
+
+  // Both sessions remove the reported peer from the cache, so it's removed
+  // before the second session is notified.
+  std::unique_ptr<BrEdrDiscoverySession> session1;
+  size_t peers_found1 = 0u;
+
+  discovery_manager()->RequestDiscovery([this, &session1, &peers_found1](
+                                            auto status, auto cb_session) {
+    EXPECT_EQ(fit::ok(), status);
+    cb_session->set_result_callback([this, &peers_found1](const Peer& peer) {
+      peers_found1++;
+      EXPECT_TRUE(peer_cache()->RemoveDisconnectedPeer(peer.identifier()));
+    });
+    session1 = std::move(cb_session);
+  });
+
+  std::unique_ptr<BrEdrDiscoverySession> session2;
+  size_t peers_found2 = 0u;
+
+  discovery_manager()->RequestDiscovery([this, &session2, &peers_found2](
+                                            auto status, auto cb_session) {
+    EXPECT_EQ(fit::ok(), status);
+    cb_session->set_result_callback([this, &peers_found2](const Peer& peer) {
+      peers_found2++;
+      EXPECT_TRUE(peer_cache()->RemoveDisconnectedPeer(peer.identifier()));
+    });
+    session2 = std::move(cb_session);
+  });
+
+  RunUntilIdle();
+
+  ASSERT_TRUE(session1);
+  ASSERT_TRUE(session2);
+  // The peer is reported to only one session before it's removed.
+  EXPECT_EQ(1u, peers_found1 + peers_found2);
+  EXPECT_EQ(0u, peer_cache()->count());
+}
+
+// Test: removing other peers inside a discovery result callback doesn't cause
+// inquiry result handling to use freed peers.
+TEST_F(BrEdrDiscoveryManagerTest,
+       InquiryResultOtherPeersRemovedInResultCallback) {
+  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp);
+
+  std::unique_ptr<BrEdrDiscoverySession> session;
+  size_t peers_found = 0u;
+
+  // The first result callback removes every peer, so the rest of the batch is
+  // never reported.
+  discovery_manager()->RequestDiscovery([this, &session, &peers_found](
+                                            auto status, auto cb_session) {
+    EXPECT_EQ(fit::ok(), status);
+    cb_session->set_result_callback([this, &peers_found](const Peer&) {
+      peers_found++;
+      for (const DeviceAddress& addr :
+           {kDeviceAddress1, kDeviceAddress2, kDeviceAddress3}) {
+        if (Peer* peer = peer_cache()->FindByAddress(addr)) {
+          EXPECT_TRUE(peer_cache()->RemoveDisconnectedPeer(peer->identifier()));
+        }
+      }
+    });
+    session = std::move(cb_session);
+  });
+
+  RunUntilIdle();
+
+  ASSERT_TRUE(session);
+  EXPECT_TRUE(discovery_manager()->discovering());
+
+  test_device()->SendCommandChannelPacket(kInquiryResultMultipleResponses);
+
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, peers_found);
+  EXPECT_EQ(0u, peer_cache()->count());
 }
 
 // clang-format off

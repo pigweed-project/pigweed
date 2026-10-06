@@ -138,7 +138,7 @@ class BrEdrDiscoveryManager final {
   void RemoveDiscoverableSession(BrEdrDiscoverableSession* session);
 
   // Called when |peers| have been updated with new inquiry data.
-  void NotifyPeersUpdated(const std::unordered_set<Peer*>& peers);
+  void NotifyPeersUpdated(const std::unordered_set<PeerId>& peers);
 
   // Sends a RemoteNameRequest to the peer with |id|.
   void RequestPeerName(PeerId id);
