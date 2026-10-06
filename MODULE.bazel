@@ -705,11 +705,15 @@ git_override(
     module_name = "fuchsia_infra",
     # ROLL: Warning: this is automatically updated by
     # ROLL: https://cr-buildbucket.appspot.com/build/8671446753110151665
-    commit = "f31d055fa6cabafe7ac8ded6a70d33200a25c2af",
+    commit = "127a22ce4864f457f6b1b8a6546de13ed4409d18",
+    patch_strip = 1,
+    patches = [
+        "//pw_build/bazel_patches:0002-Watch-ensure_file-in-fuchsia_infra-cipd_repository.patch",
+    ],
     remote = "https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules",
 )
 
-FUCHSIA_SDK_VERSION = "version:32.20260616.4.1"
+FUCHSIA_SDK_VERSION = "version:33.20260911.5.1"
 
 # Use `cipd_ext` and `fuchsia_clang_ext` from `@fuchsia_infra` to override `@fuchsia_infra`'s
 # instantiations of `@rules_fuchsia`, `@fuchsia_sdk` and `@fuchsia_clang`.
@@ -749,7 +753,10 @@ cipd_ext.require(
 )
 use_repo(cipd_ext, "fuchsia_products_metadata")
 
-fuchsia_products_repository = use_repo_rule("@rules_fuchsia//fuchsia:products.bzl", "fuchsia_products_repository")
+# TODO: b/531679151 - Switch back to `@rules_fuchsia//fuchsia:products.bzl` once
+# the upstream Fuchsia `fuchsia_remote_product_bundle` implementation no longer
+# passes the removed `product_version` field to `FuchsiaProductBundleInfo`.
+fuchsia_products_repository = use_repo_rule("//pw_toolchain/fuchsia:products.bzl", "fuchsia_products_repository")
 
 fuchsia_products_repository(
     name = "fuchsia_products",

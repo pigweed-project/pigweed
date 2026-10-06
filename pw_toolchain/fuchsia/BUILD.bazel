@@ -22,7 +22,7 @@
             "@platforms//cpu:" + cpu,
             "@platforms//os:fuchsia",
         ],
-        toolchain = "@fuchsia_clang//:cc-compiler-" + cpu,
+        toolchain = "@fuchsia_clang//:cc-fuchsia-" + cpu,
         toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
     )
     for cpu in [

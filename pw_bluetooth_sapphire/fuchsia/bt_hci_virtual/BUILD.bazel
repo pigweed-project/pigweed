@@ -41,7 +41,7 @@ fuchsia_driver_bind_bytecode(
     output = "bt-hci-virtual.bindbc",
     rules = "meta/bt-hci-virtual.bind",
     deps = [
-        "@fuchsia_sdk//bind/fuchsia.devicetree",
+        "@fuchsia_sdk//bind/fuchsia",
         "@fuchsia_sdk//bind/fuchsia.platform",
     ],
 )

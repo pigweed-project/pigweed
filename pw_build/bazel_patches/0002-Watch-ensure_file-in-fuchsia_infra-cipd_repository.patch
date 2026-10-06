@@ -1,0 +1,27 @@
+diff --git a/cipd/private/cipd_repository.bzl b/cipd/private/cipd_repository.bzl
+--- a/cipd/private/cipd_repository.bzl
++++ b/cipd/private/cipd_repository.bzl
+@@ -81,7 +81,14 @@ def _get_ensure_file(ctx, cipd_bin):
+         fail("Exactly one of `ensure_file` or `package` + `tag` must be specified.")
+ 
+     if ctx.attr.ensure_file:
+-        return ctx.path(ctx.attr.ensure_file)
++        ensure_file = ctx.path(ctx.attr.ensure_file)
++        ctx.watch(ensure_file)
++        resolved_file = ensure_file.dirname.get_child(
++            ensure_file.basename.removesuffix(".ensure") + ".resolved",
++        )
++        if resolved_file.exists:
++            ctx.watch(resolved_file)
++        return ensure_file
+ 
+     # Generate + resolve an ensure file with package + tag on the fly.
+     ensure_file = ctx.path("generated/manifests/%s.ensure" % ctx.attr.name)
+diff --git a/manifests/orchestrate.ensure b/manifests/orchestrate.ensure
+--- a/manifests/orchestrate.ensure
++++ b/manifests/orchestrate.ensure
+@@ -1,3 +1,3 @@
+ $ResolvedVersions orchestrate.resolved
+ $VerifiedPlatform linux-amd64
+-fuchsia/tools/orchestrate/${platform} git_revision:e7a969872b046ed598e8ff97d7de7f66fba64f72
++fuchsia/tools/orchestrate/linux-amd64 git_revision:e7a969872b046ed598e8ff97d7de7f66fba64f72
