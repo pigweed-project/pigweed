@@ -5781,6 +5781,80 @@ TEST_F(AclFragTest, RecombinationWorksWithSplitPayloads) {
   VerifyNormalOperationAfterRecombination(proxy);
 }
 
+TEST_F(AclFragTest, RecombinationFromHostWithDifferentCids) {
+  ProxyHost proxy = GetProxy();
+  StartDispatcherOnCurrentThread(proxy);
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kHandle, emboss::StatusCode::SUCCESS));
+
+  constexpr uint16_t kRemoteCid = 0x123;
+  static_assert(kLocalCid != kRemoteCid);
+
+  std::vector<multibuf::MultiBuf> payloads_from_host;
+  BasicL2capChannel channel = BuildBasicL2capChannel(
+      proxy,
+      BasicL2capParameters{
+          .handle = kHandle,
+          .local_cid = kLocalCid,
+          .remote_cid = kRemoteCid,
+          .transport = AclTransportType::kLe,
+          .payload_from_host_fn =
+              [&payloads_from_host](multibuf::MultiBuf&& buffer) {
+                payloads_from_host.emplace_back(std::move(buffer));
+                return std::nullopt;  // Consume
+              },
+      });
+
+  static constexpr std::array<std::array<uint8_t, 4>, 2> kPayloads = {{
+      {0xA1, 0xB2, 0xC3, 0xD4},
+      {0x11, 0x22, 0x33, 0x44},
+  }};
+
+  for (const auto& pdu_payload : kPayloads) {
+    const auto frag1_payload = pw::span(pdu_payload).first<2>();
+    const auto frag2_payload = pw::span(pdu_payload).subspan<2>();
+
+    // Fragment 1 from host (addressed to kRemoteCid)
+    PW_TEST_ASSERT_OK_AND_ASSIGN(
+        AclFrameWithStorage frag1,
+        SetupAcl(kHandle,
+                 emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
+                     frag1_payload.size()));
+    emboss::BFrameWriter bframe =
+        emboss::MakeBFrameView(frag1.writer.payload().BackingStorage().data(),
+                               frag1.writer.payload().SizeInBytes());
+    bframe.pdu_length().Write(pdu_payload.size());
+    bframe.channel_id().Write(kRemoteCid);
+    std::copy(frag1_payload.begin(),
+              frag1_payload.end(),
+              bframe.payload().BackingStorage().begin());
+    proxy.HandleH4HciFromHost(
+        H4PacketWithH4{emboss::H4PacketType::ACL_DATA, frag1.h4_span()});
+    RunDispatcher();
+
+    // Fragment 2 (continuing) from host
+    PW_TEST_ASSERT_OK_AND_ASSIGN(AclFrameWithStorage frag2,
+                                 SetupAcl(kHandle, frag2_payload.size()));
+    frag2.writer.header().packet_boundary_flag().Write(
+        emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+    std::copy(frag2_payload.begin(),
+              frag2_payload.end(),
+              frag2.writer.payload().BackingStorage().begin());
+    proxy.HandleH4HciFromHost(
+        H4PacketWithH4{emboss::H4PacketType::ACL_DATA, frag2.h4_span()});
+    RunDispatcher();
+  }
+
+  EXPECT_EQ(packets_sent_to_controller_, 0);
+  ASSERT_EQ(payloads_from_host.size(), kPayloads.size());
+  for (size_t i = 0; i < kPayloads.size(); ++i) {
+    ConstByteSpan payload = payloads_from_host[i].ContiguousSpan().value();
+    ConstByteSpan expected = as_bytes(span(kPayloads[i]));
+    EXPECT_TRUE(std::equal(
+        payload.begin(), payload.end(), expected.begin(), expected.end()));
+  }
+}
+
 TEST_F(AclFragTest, UnexpectedContinuingFragment) {
   ProxyHost proxy = GetProxy();
   StartDispatcherOnCurrentThread(proxy);

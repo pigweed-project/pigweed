@@ -68,8 +68,9 @@ TEST_F(RecombinerTest, Start) {
   EXPECT_FALSE(recombiner.IsComplete());
 }
 
-TEST_F(RecombinerTest, GetLocalCid) {
+TEST_F(RecombinerTest, GetCid) {
   constexpr uint16_t kLocalCid = 0x20;
+  constexpr uint16_t kRemoteCid = 0x30;
   ProxyHost proxy_{[]([[maybe_unused]] H4PacketWithHci&& packet) {},
                    []([[maybe_unused]] H4PacketWithH4&& packet) {},
                    0,
@@ -78,17 +79,22 @@ TEST_F(RecombinerTest, GetLocalCid) {
   StartDispatcherOnCurrentThread(proxy_);
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
       proxy_, kConnectionHandle, emboss::StatusCode::SUCCESS));
-  BasicL2capChannel channel = BuildBasicL2capChannel(
-      proxy_, {.handle = kConnectionHandle, .local_cid = kLocalCid});
+  BasicL2capChannel channel =
+      BuildBasicL2capChannel(proxy_,
+                             {.handle = kConnectionHandle,
+                              .local_cid = kLocalCid,
+                              .remote_cid = kRemoteCid});
   internal::Mutex mutex;
   LockedL2capChannel locked_channel{*channel.InternalForTesting(),
                                     std::unique_lock(mutex)};
 
-  Recombiner recombiner{Direction::kFromController};
+  Recombiner rx_recombiner{Direction::kFromController};
+  PW_TEST_EXPECT_OK(rx_recombiner.StartRecombination(locked_channel, 8u, 0u));
+  EXPECT_EQ(rx_recombiner.cid(), kLocalCid);
 
-  PW_TEST_EXPECT_OK(recombiner.StartRecombination(locked_channel, 8u, 0u));
-
-  EXPECT_EQ(recombiner.local_cid(), kLocalCid);
+  Recombiner tx_recombiner{Direction::kFromHost};
+  PW_TEST_EXPECT_OK(tx_recombiner.StartRecombination(locked_channel, 8u, 0u));
+  EXPECT_EQ(tx_recombiner.cid(), kRemoteCid);
 }
 
 TEST_F(RecombinerTest, EndWithChannel) {

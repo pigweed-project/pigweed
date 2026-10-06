@@ -22,6 +22,14 @@
 #include "pw_status/try.h"
 
 namespace pw::bluetooth::proxy {
+namespace {
+
+uint16_t ChannelCid(const L2capChannel& channel, Direction direction) {
+  return direction == Direction::kFromController ? channel.local_cid()
+                                                 : channel.remote_cid();
+}
+
+}  // namespace
 
 pw::Status Recombiner::StartRecombination(LockedL2capChannel& channel,
                                           size_t size,
@@ -36,7 +44,7 @@ pw::Status Recombiner::StartRecombination(LockedL2capChannel& channel,
       direction_, size, extra_header_size));
 
   is_active_ = true;
-  local_cid_ = channel.channel().local_cid();
+  cid_ = ChannelCid(channel.channel(), direction_);
   expected_size_ = size;
   recombined_size_ = 0;
 
@@ -58,17 +66,17 @@ pw::Status Recombiner::RecombineFragment(
     // sizes).
 
     PW_LOG_INFO(
-        "The channel instance (local cid %#x) that was initially receiving the "
+        "The channel instance (cid %#x) that was initially receiving the "
         "recombined PDU %s is no longer acquired. Will complete reading the "
         "recombined PDU, but result will be dropped.",
-        local_cid(),
+        cid(),
         DirectionToString(direction_));
 
   } else {
     // We have a channel, add data to its buf.
 
     // Since channel was found in caller using cid, this should never be false.
-    PW_CHECK_INT_EQ(channel->channel().local_cid(), local_cid_);
+    PW_CHECK_INT_EQ(ChannelCid(channel->channel(), direction_), cid_);
 
     PW_TRY(channel->channel().CopyToRecombinationBuf(
         direction_, as_bytes(data), write_offset()));
@@ -104,7 +112,7 @@ void Recombiner::EndRecombination(std::optional<LockedL2capChannel>& channel) {
     return;
   }
 
-  PW_CHECK_INT_EQ(channel->channel().local_cid(), local_cid_);
+  PW_CHECK_INT_EQ(ChannelCid(channel->channel(), direction_), cid_);
 
   channel->channel().EndRecombinationBuf(direction_);
 }

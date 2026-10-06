@@ -128,7 +128,7 @@ L2capLogicalLink::HandleAclData(Direction direction,
   bool is_fragment = false;
 
   // Set once we know CID from the first packet or from recombiner.
-  uint16_t local_cid;
+  uint16_t cid;
 
   // TODO: https://pwbug.dev/392665312 - make this <const uint8_t>
   const pw::span<uint8_t> acl_payload{
@@ -154,7 +154,7 @@ L2capLogicalLink::HandleAclData(Direction direction,
         return {.handled = false, .recombined_buffer = std::nullopt};
       }
 
-      local_cid = recombiner.local_cid();
+      cid = recombiner.cid();
 
       is_fragment = true;
       break;
@@ -176,7 +176,7 @@ L2capLogicalLink::HandleAclData(Direction direction,
         // Note this conditionally acquires channels_mutex_ which, if nested,
         // is expected to be acquired after/inside connection_mutex_.
         std::optional<LockedL2capChannel> channel = GetLockedChannel(
-            direction, handle, recombiner.local_cid(), channel_manager_);
+            direction, handle, recombiner.cid(), channel_manager_);
         recombiner.EndRecombination(channel);
       }  // recombiner.IsActive(). channel with channels_mutex_ released.
 
@@ -198,13 +198,13 @@ L2capLogicalLink::HandleAclData(Direction direction,
         return {.handled = false, .recombined_buffer = std::nullopt};
       }
 
-      local_cid = l2cap_header.channel_id().Read();
+      cid = l2cap_header.channel_id().Read();
 
       // Is this a channel we care about?
       // Note this conditionally acquires channels_mutex_ which, if nested,
       // is expected to be acquired after/inside connection_mutex_.
       std::optional<LockedL2capChannel> channel =
-          GetLockedChannel(direction, handle, local_cid, channel_manager_);
+          GetLockedChannel(direction, handle, cid, channel_manager_);
       if (!channel.has_value()) {
         return {.handled = false, .recombined_buffer = std::nullopt};
       }
@@ -286,7 +286,7 @@ L2capLogicalLink::HandleAclData(Direction direction,
 
     // If value, includes channels_mutex_ unique_lock.
     std::optional<LockedL2capChannel> channel =
-        GetLockedChannel(direction, handle, local_cid, channel_manager_);
+        GetLockedChannel(direction, handle, cid, channel_manager_);
 
     pw::Status recomb_status =
         recombiner.RecombineFragment(channel, acl_payload);
@@ -298,7 +298,7 @@ L2capLogicalLink::HandleAclData(Direction direction,
             "channel "
             "%#x on connection %#x. Dropping entire PDU.",
             DirectionToString(direction),
-            local_cid,
+            cid,
             handle);
       } else {
         // Given that RecombinationActive is checked above, the only other way
@@ -311,7 +311,7 @@ L2capLogicalLink::HandleAclData(Direction direction,
             "Received continuation packet %s for channel %#x on connection "
             "%#x over specified PDU length. Dropping entire PDU.",
             DirectionToString(direction),
-            local_cid,
+            cid,
             handle);
       }
 
@@ -344,7 +344,7 @@ L2capLogicalLink::HandleAclData(Direction direction,
   // channels_mutex_ must be held as long as `recombined_mbuf` and
   // `send_l2cap_pdu` are accessed to ensure channel is not destroyed.
   std::optional<LockedL2capChannel> channel =
-      GetLockedChannel(direction, handle, local_cid, channel_manager_);
+      GetLockedChannel(direction, handle, cid, channel_manager_);
 
   // If recombining, will be set with the recombined PDU. And must be held
   // as long as `send_l2cap_pdu` is accessed.
@@ -363,7 +363,7 @@ L2capLogicalLink::HandleAclData(Direction direction,
         "%#x since channel instance was destroyed by client since first packet "
         "was received.",
         DirectionToString(direction),
-        local_cid,
+        cid,
         handle);
     // TODO: https://pwbug.dev/402454277 - We might want to consider passing
     // kUnhandled for "signaling" channels, but since we don't have the channel
@@ -389,7 +389,7 @@ L2capLogicalLink::HandleAclData(Direction direction,
           "connection %#x since channel instance was destroyed by client since "
           "first packet was received.",
           DirectionToString(direction),
-          local_cid,
+          cid,
           handle);
       // TODO: https://pwbug.dev/392663102 - Revisit what best behavior is here
       // when we work on support for rejecting a recombined L2CAP PDU.

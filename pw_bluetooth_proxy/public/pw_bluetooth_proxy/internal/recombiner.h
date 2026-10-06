@@ -119,11 +119,12 @@ class Recombiner {
   // receiving and recombining fragments, but have not completed yet.
   uint16_t IsActive() const { return is_active_; }
 
-  // Returns local_cid of channel being recombined. Should only be called
-  // when recombination is active.
-  uint16_t local_cid() const {
+  // Returns CID of channel being recombined (local_cid for kFromController,
+  // remote_cid for kFromHost). Should only be called when recombination is
+  // active.
+  uint16_t cid() const {
     PW_ASSERT(IsActive());
-    return local_cid_;
+    return cid_;
   }
 
  private:
@@ -131,7 +132,7 @@ class Recombiner {
 
   bool is_active_ = false;
   Direction direction_;
-  uint16_t local_cid_ = 0;
+  uint16_t cid_ = 0;
   size_t expected_size_ = 0;
   size_t recombined_size_ = 0;
 };
