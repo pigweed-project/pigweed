@@ -234,7 +234,14 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 	pushArgs = append(pushArgs, remote, "HEAD:"+refStr)
 
 	var errBuf bytes.Buffer
-	if err := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), &errBuf, pushArgs...); err != nil {
+	err := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), &errBuf, pushArgs...)
+	if err != nil && isGitPushSSOAuthError(errBuf.String()) {
+		if fbErr, fbBuf, fbUsed := retryPushWithoutSSO(ctx, cmd, cfg, remote, pushArgs); fbUsed {
+			err = fbErr
+			errBuf = fbBuf
+		}
+	}
+	if err != nil {
 		errStr := errBuf.String()
 		if strings.Contains(errStr, "missing Change-Id") {
 			host := cfg.Host
@@ -265,6 +272,120 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 	}
 	cmd.ErrOrStderr().Write(errBuf.Bytes())
 	return nil
+}
+
+func isGitPushSSOAuthError(stderr string) bool {
+	lower := strings.ToLower(stderr)
+	return strings.Contains(lower, "sso: credentials expired") ||
+		strings.Contains(lower, "try running gcert") ||
+		strings.Contains(lower, "remote helper 'sso' aborted session") ||
+		strings.Contains(lower, "unable to get sso ticket")
+}
+
+func extractSSOTenant(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if !strings.HasPrefix(strings.ToLower(rawURL), "sso://") {
+		return ""
+	}
+	rest := rawURL[len("sso://"):]
+	if idx := strings.IndexByte(rest, '/'); idx != -1 {
+		rest = rest[:idx]
+	}
+	if idx := strings.IndexByte(rest, '.'); idx != -1 {
+		rest = rest[:idx]
+	}
+	return strings.TrimSuffix(strings.TrimSpace(rest), "-review")
+}
+
+func extractTenantFromGerritHost(rawHost string) string {
+	canon := CanonicalGerritHost(rawHost)
+	if strings.HasSuffix(canon, ".googlesource.com") {
+		tenant := strings.TrimSuffix(canon, ".googlesource.com")
+		return strings.TrimSuffix(tenant, "-review")
+	}
+	return ""
+}
+
+func resolveSSOTenantForRemote(ctx context.Context, cfg *Config, remote string) string {
+	if cfg != nil {
+		gc := cfg.GitClient()
+		for _, key := range []string{
+			fmt.Sprintf("remote.%s.pushurl", remote),
+			fmt.Sprintf("remote.%s.url", remote),
+		} {
+			if u, err := gc.ConfigGet(ctx, key); err == nil {
+				if tenant := extractSSOTenant(u); tenant != "" {
+					return tenant
+				}
+				if tenant := extractTenantFromGerritHost(u); tenant != "" {
+					return tenant
+				}
+			}
+		}
+		if tenant := extractTenantFromGerritHost(cfg.Host); tenant != "" {
+			return tenant
+		}
+	}
+	return ""
+}
+
+// retryPushWithoutSSO retries a failed sso:// git push when the 20-hour Corp SSO ticket
+// in ssh-agent is expired:
+//  1. On Corp Linux (when git-remote-rpc is on PATH), it retries with rpc://<tenant>/
+//     which authenticates using the 7-day LOAS2 certificate from 'gcert --lifetime=168h'.
+//  2. On Corp macOS (where git-remote-rpc is absent) or if rpc:// also fails, it retries
+//     with https://<tenant>.googlesource.com/ using a luci-auth Bearer token.
+func retryPushWithoutSSO(ctx context.Context, cmd *cobra.Command, cfg *Config, remote string, pushArgs []string) (error, bytes.Buffer, bool) {
+	var emptyBuf bytes.Buffer
+	tenant := resolveSSOTenantForRemote(ctx, cfg, remote)
+	if tenant == "" {
+		return nil, emptyBuf, false
+	}
+
+	// 1. Try rpc://<tenant>/ when git-remote-rpc is available (Corp Linux with 7-day LOAS2).
+	if _, lookErr := LookPathFn("git-remote-rpc"); lookErr == nil {
+		rpcArgs := make([]string, 0, len(pushArgs)+2)
+		rpcArgs = append(rpcArgs, "-c", fmt.Sprintf("url.rpc://%s/.insteadOf=sso://%s/", tenant, tenant))
+		rpcArgs = append(rpcArgs, pushArgs...)
+
+		var rpcBuf bytes.Buffer
+		rpcErr := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), &rpcBuf, rpcArgs...)
+		if rpcErr == nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Note: sso:// credentials expired; pushed via rpc://%s/ using LOAS2.\n", tenant)
+			return nil, rpcBuf, true
+		}
+		rpcStr := rpcBuf.String()
+		if strings.Contains(rpcStr, "missing Change-Id") || strings.Contains(rpcStr, "no new changes") {
+			return rpcErr, rpcBuf, true
+		}
+	}
+
+	// 2. Try https://<tenant>.googlesource.com/ with a luci-auth OAuth2 Bearer token (Corp macOS & Linux).
+	if tok, src, tokErr := GerritTokenResolver(ctx); tokErr == nil && tok != "" {
+		if src == "" {
+			src = "luci-auth"
+		}
+		httpsBase := fmt.Sprintf("https://%s.googlesource.com/", tenant)
+		httpsArgs := make([]string, 0, len(pushArgs)+4)
+		httpsArgs = append(httpsArgs,
+			"-c", fmt.Sprintf("url.%s.insteadOf=sso://%s/", httpsBase, tenant),
+			"-c", fmt.Sprintf("http.%s.extraHeader=Authorization: Bearer %s", httpsBase, tok),
+		)
+		httpsArgs = append(httpsArgs, pushArgs...)
+
+		var httpsBuf bytes.Buffer
+		httpsErr := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), &httpsBuf, httpsArgs...)
+		if httpsErr == nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Note: sso:// credentials expired; pushed via %s using %s.\n", httpsBase, src)
+			return nil, httpsBuf, true
+		}
+		httpsStr := httpsBuf.String()
+		if strings.Contains(httpsStr, "missing Change-Id") || strings.Contains(httpsStr, "no new changes") {
+			return httpsErr, httpsBuf, true
+		}
+	}
+
+	return nil, emptyBuf, false
 }
 
 func hasMetadataUpdates(opts PushOptions) bool {

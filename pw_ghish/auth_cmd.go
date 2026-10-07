@@ -127,12 +127,17 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 		gerritStatus.Method = "none"
 		gerritStatus.Message = "Authentication disabled (--auth-mode=none)"
 	} else {
+		clearLastGobCurlFallback()
 		client, clientErr := NewGerritClient(ctx, cmd)
 		if clientErr != nil {
 			gerritStatus.Authenticated = false
 			gerritStatus.Message = firstLine(clientErr.Error())
 		} else {
 			acc, _, accErr := client.Accounts.GetAccount(ctx, "self")
+			if fbMethod, fbDesc := getLastGobCurlFallback(); fbDesc != "" {
+				gerritMethod = fbMethod
+				gerritStatus.Method = fbDesc
+			}
 			if accErr == nil && acc != nil && (acc.AccountID != 0 || acc.Email != "" || acc.Username != "" || acc.Name != "") {
 				gerritStatus.Authenticated = true
 				acctLabel := FormatAccount(*acc)
@@ -157,7 +162,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 		}
 		if !gerritStatus.Authenticated {
 			if mode == AuthModeGoogler {
-				gerritStatus.Remediation = fmt.Sprintf("Run 'gcert' to refresh corp SSO credentials, or configure cookies at https://%s/new-password", gerritHost)
+				gerritStatus.Remediation = fmt.Sprintf("Run 'gcert' to refresh corp SSO credentials, or 'luci-auth login -scopes %q', or configure cookies at https://%s/new-password", DefaultGerritScopes, gerritHost)
 			} else {
 				gerritStatus.Remediation = fmt.Sprintf("Configure Git cookies at https://%s/new-password or set export GERRIT_TOKEN=\"<token>\"", gerritHost)
 			}

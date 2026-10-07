@@ -25,6 +25,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -809,4 +811,306 @@ func TestLUCIAuthTransport(t *testing.T) {
 			t.Errorf("expected empty Authorization header in community mode without token, got %q", got)
 		}
 	})
+}
+
+func TestGobCurlTransport_AutoFallbackToLuciAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+	counterFile := filepath.Join(tmpDir, "gob-curl-count")
+	mockScript := filepath.Join(tmpDir, "mock-gob-curl-expired.sh")
+	scriptContent := fmt.Sprintf("#!/bin/sh\necho x >> %q\nprintf 'sso: credentials expired. Try running gcert first\\n' >&2\nexit 1\n", counterFile)
+	if err := os.WriteFile(mockScript, []byte(scriptContent), 0755); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	origGerritResolver := GerritTokenResolver
+	GerritTokenResolver = func(ctx context.Context) (string, string, error) {
+		return "luci-gerrit-oauth-token", "luci-auth", nil
+	}
+	defer func() { GerritTokenResolver = origGerritResolver }()
+
+	var gotAuthHeader string
+	var gotBody string
+	mockBase := &mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			gotAuthHeader = req.Header.Get("Authorization")
+			if req.Body != nil {
+				b, _ := io.ReadAll(req.Body)
+				gotBody = string(b)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(")]}'\n{\"_account_id\":1001}\n")),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		},
+	}
+
+	tr := &GobCurlTransport{
+		Path:         mockScript,
+		AutoFallback: true,
+		Base:         mockBase,
+	}
+
+	// 1. First request (POST with body) should fail gob-curl, preserve body, and succeed via luci-auth
+	req1, _ := http.NewRequest("POST", "https://pigweed-review.googlesource.com/a/changes/123/revisions/current/review", strings.NewReader(`{"labels":{"Code-Review":1}}`))
+	resp1, err := tr.RoundTrip(req1)
+	if err != nil {
+		t.Fatalf("expected AutoFallback to succeed via luci-auth, got error: %v", err)
+	}
+	_ = resp1.Body.Close()
+
+	if gotAuthHeader != "Bearer luci-gerrit-oauth-token" {
+		t.Errorf("Authorization = %q, want 'Bearer luci-gerrit-oauth-token'", gotAuthHeader)
+	}
+	if gotBody != `{"labels":{"Code-Review":1}}` {
+		t.Errorf("POST body after fallback = %q, want JSON payload", gotBody)
+	}
+
+	method, desc := tr.ActiveMethod()
+	if method != AuthMethodToken || !strings.Contains(desc, "luci-auth") || !strings.Contains(desc, "gob-curl") {
+		t.Errorf("ActiveMethod() = (%q, %q), want (token, luci-auth fallback description)", method, desc)
+	}
+
+	// 2. Second request in the same process should use cached fallback without spawning gob-curl again
+	req2, _ := http.NewRequest("GET", "https://pigweed-review.googlesource.com/a/accounts/self", nil)
+	resp2, err := tr.RoundTrip(req2)
+	if err != nil {
+		t.Fatalf("second request failed: %v", err)
+	}
+	_ = resp2.Body.Close()
+
+	countBytes, err := os.ReadFile(counterFile)
+	if err != nil {
+		t.Fatalf("failed to read counter file: %v", err)
+	}
+	if lines := strings.Split(strings.TrimSpace(string(countBytes)), "\n"); len(lines) != 1 {
+		t.Errorf("expected gob-curl to be invoked only once before caching fallback, got %d invocations", len(lines))
+	}
+}
+
+func TestGobCurlTransport_AutoFallbackToCookieWhenLuciAuthUnavailable(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockScript := filepath.Join(tmpDir, "mock-gob-curl-expired.sh")
+	if err := os.WriteFile(mockScript, []byte("#!/bin/sh\nprintf 'sso: credentials expired\\n' >&2\nexit 1\n"), 0755); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	cookieFile := filepath.Join(tmpDir, ".gitcookies")
+	future := time.Now().Unix() + 3600
+	cookieData := fmt.Sprintf(".googlesource.com\tTRUE\t/\tTRUE\t%d\to\tgitcookie-secret-val\n", future)
+	if err := os.WriteFile(cookieFile, []byte(cookieData), 0600); err != nil {
+		t.Fatalf("WriteFile cookie failed: %v", err)
+	}
+	t.Setenv("HOME", tmpDir)
+
+	origGerritResolver := GerritTokenResolver
+	GerritTokenResolver = func(ctx context.Context) (string, string, error) {
+		return "", "", fmt.Errorf("no luci-auth token")
+	}
+	defer func() { GerritTokenResolver = origGerritResolver }()
+
+	var gotCookie string
+	mockBase := &mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			gotCookie = req.Header.Get("Cookie")
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(")]}'\n{}\n")),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		},
+	}
+
+	tr := &GobCurlTransport{
+		Path:         mockScript,
+		AutoFallback: true,
+		Base:         mockBase,
+	}
+
+	req, _ := http.NewRequest("GET", "https://pigweed-review.googlesource.com/a/accounts/self", nil)
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("expected AutoFallback to cookie to succeed, got error: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if !strings.Contains(gotCookie, "o=gitcookie-secret-val") {
+		t.Errorf("Cookie header = %q, want o=gitcookie-secret-val", gotCookie)
+	}
+	method, desc := tr.ActiveMethod()
+	if method != AuthMethodCookie || !strings.Contains(desc, "cookie") {
+		t.Errorf("ActiveMethod() = (%q, %q), want cookie fallback", method, desc)
+	}
+}
+
+func TestNewAuthTransportContext_AutoFallsBackToLuciAuthWhenGobCurlAndCookiesMissing(t *testing.T) {
+	ctx := context.Background()
+	origFlag := AuthModeFlag
+	AuthModeFlag = "googler"
+	defer func() { AuthModeFlag = origFlag }()
+
+	origLookPath := LookPathFn
+	LookPathFn = func(file string) (string, error) {
+		return "", os.ErrNotExist
+	}
+	defer func() { LookPathFn = origLookPath }()
+
+	origGerritResolver := GerritTokenResolver
+	GerritTokenResolver = func(ctx context.Context) (string, string, error) {
+		return "luci-token-xyz", "luci-auth", nil
+	}
+	defer func() { GerritTokenResolver = origGerritResolver }()
+
+	t.Setenv("GH_ISH_AUTH_METHOD", "auto")
+	t.Setenv("GERRIT_TOKEN", "")
+	t.Setenv("HOME", t.TempDir())
+	SetMockGit(t, &MockGitRunner{})
+
+	tr, err := NewAuthTransportContext(ctx, "https://pigweed-review.googlesource.com")
+	if err != nil {
+		t.Fatalf("expected NewAuthTransportContext to succeed via luci-auth fallback, got error: %v", err)
+	}
+	fb, ok := tr.(*fallbackTransport)
+	if !ok {
+		t.Fatalf("expected *fallbackTransport, got %T", tr)
+	}
+	tokTr, ok := fb.base.(*TokenTransport)
+	if !ok || tokTr.Token != "luci-token-xyz" {
+		t.Errorf("expected *TokenTransport with luci-token-xyz, got %#v", fb.base)
+	}
+
+	method, desc := DescribeGerritAuthMethod(ctx, "https://pigweed-review.googlesource.com", AuthModeGoogler)
+	if method != AuthMethodToken || !strings.Contains(desc, "luci-auth") {
+		t.Errorf("DescribeGerritAuthMethod = (%q, %q), want (token, token (luci-auth))", method, desc)
+	}
+}
+
+func TestGobCurlTransport_BodySizeLimit(t *testing.T) {
+	tr := &GobCurlTransport{Path: "gob-curl"}
+	oversized := bytes.NewReader(make([]byte, maxGerritRequestBodyBytes+1))
+	req, _ := http.NewRequest("POST", "https://pigweed-review.googlesource.com/a/changes/123/revisions/current/review", oversized)
+	_, err := tr.RoundTrip(req)
+	if err == nil || !strings.Contains(err.Error(), "exceeds maximum allowed size") {
+		t.Fatalf("expected oversized request body error, got: %v", err)
+	}
+}
+
+func TestGobCurlTransport_ConcurrentFallbackDiscovery(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockScript := filepath.Join(tmpDir, "mock-gob-curl-expired.sh")
+	if err := os.WriteFile(mockScript, []byte("#!/bin/sh\nprintf 'sso: credentials expired\\n' >&2\nexit 1\n"), 0755); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var resolverCalls atomic.Int32
+	origGerritResolver := GerritTokenResolver
+	GerritTokenResolver = func(ctx context.Context) (string, string, error) {
+		resolverCalls.Add(1)
+		return "luci-concurrent-token", "luci-auth", nil
+	}
+	defer func() { GerritTokenResolver = origGerritResolver }()
+
+	mockBase := &mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(")]}'\n{}\n")),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		},
+	}
+
+	tr := &GobCurlTransport{
+		Path:         mockScript,
+		AutoFallback: true,
+		Base:         mockBase,
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, _ := http.NewRequest("GET", "https://pigweed-review.googlesource.com/a/accounts/self", nil)
+			resp, err := tr.RoundTrip(req)
+			if err != nil {
+				t.Errorf("concurrent RoundTrip failed: %v", err)
+				return
+			}
+			_ = resp.Body.Close()
+		}()
+	}
+	wg.Wait()
+
+	if got := resolverCalls.Load(); got != 1 {
+		t.Errorf("expected GerritTokenResolver to be called exactly once during concurrent fallback discovery, got %d", got)
+	}
+}
+
+func TestGobCurlTransport_FallbackReturns400WithoutContinuing(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockScript := filepath.Join(tmpDir, "mock-gob-curl-expired.sh")
+	if err := os.WriteFile(mockScript, []byte("#!/bin/sh\nprintf 'sso: credentials expired\\n' >&2\nexit 1\n"), 0755); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	origGerritResolver := GerritTokenResolver
+	GerritTokenResolver = func(ctx context.Context) (string, string, error) {
+		return "luci-gerrit-token", "luci-auth", nil
+	}
+	defer func() { GerritTokenResolver = origGerritResolver }()
+
+	mockBase := &mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(strings.NewReader("invalid topic name\n")),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		},
+	}
+
+	tr := &GobCurlTransport{
+		Path:         mockScript,
+		AutoFallback: true,
+		Base:         mockBase,
+	}
+
+	req, _ := http.NewRequest("PUT", "https://pigweed-review.googlesource.com/a/changes/123/topic", strings.NewReader(`{"topic":"bad"}`))
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("expected HTTP 400 response to be returned rather than gobCurlErr, got err: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("resp.StatusCode = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestAuthEnvVars_TrimSpace(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("GH_ISH_AUTH_METHOD", "  token  ")
+	t.Setenv("GERRIT_TOKEN", "  my-trimmed-token  ")
+
+	method, _ := DescribeGerritAuthMethod(ctx, "https://pigweed-review.googlesource.com", AuthModeGoogler)
+	if method != AuthMethodToken {
+		t.Errorf("DescribeGerritAuthMethod method = %q, want %q", method, AuthMethodToken)
+	}
+
+	tr, err := NewAuthTransportContext(ctx, "https://pigweed-review.googlesource.com")
+	if err != nil {
+		t.Fatalf("NewAuthTransportContext failed: %v", err)
+	}
+	fb, ok := tr.(*fallbackTransport)
+	if !ok {
+		t.Fatalf("expected *fallbackTransport, got %T", tr)
+	}
+	tokTr, ok := fb.base.(*TokenTransport)
+	if !ok || tokTr.Token != "my-trimmed-token" {
+		t.Errorf("TokenTransport.Token = %q, want 'my-trimmed-token'", tokTr.Token)
+	}
 }

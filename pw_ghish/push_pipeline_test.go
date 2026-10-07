@@ -1028,3 +1028,155 @@ func TestCheckSubmodulePolicy(t *testing.T) {
 		}
 	})
 }
+
+func TestExecutePush_SSOFallbacks(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("falls back from expired sso:// to rpc:// when git-remote-rpc is on PATH", func(t *testing.T) {
+		origLookPath := LookPathFn
+		LookPathFn = func(file string) (string, error) {
+			if file == "git-remote-rpc" {
+				return "/usr/bin/git-remote-rpc", nil
+			}
+			return "", fmt.Errorf("not found: %s", file)
+		}
+		defer func() { LookPathFn = origLookPath }()
+
+		var pushCalls []string
+		mockGit := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				call := strings.Join(args, " ")
+				if call == "config --get remote.origin.url" {
+					stdout.Write([]byte("sso://pigweed/pigweed/pigweed\n"))
+					return nil
+				}
+				if strings.HasPrefix(call, "push ") || strings.Contains(call, " push ") {
+					pushCalls = append(pushCalls, call)
+					if call == "push origin HEAD:refs/for/main" {
+						stderr.Write([]byte("remote_helper.go:932: sso: credentials expired. Try running gcert first\nfatal: remote helper 'sso' aborted session\n"))
+						return fmt.Errorf("exit status 128")
+					}
+					if call == "-c url.rpc://pigweed/.insteadOf=sso://pigweed/ push origin HEAD:refs/for/main" {
+						stderr.Write([]byte("remote: Processing changes: updated: 1, done\n"))
+						return nil
+					}
+				}
+				return nil
+			},
+		}
+
+		var outBuf, errBuf bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&outBuf)
+		cmd.SetErr(&errBuf)
+		cmd.SetContext(ctx)
+		cfg := &Config{Git: mockGit, Host: "pigweed-review.googlesource.com", Remote: "origin"}
+
+		if err := executePush(ctx, cmd, cfg, "main", PushOptions{}, false); err != nil {
+			t.Fatalf("expected executePush to succeed via rpc:// fallback, got error: %v\nStderr: %s", err, errBuf.String())
+		}
+		if len(pushCalls) != 2 {
+			t.Fatalf("expected 2 push calls (initial sso + rpc fallback), got %d: %v", len(pushCalls), pushCalls)
+		}
+		if !strings.Contains(errBuf.String(), "rpc://pigweed/") {
+			t.Errorf("expected stderr note mentioning rpc://pigweed/ fallback, got:\n%s", errBuf.String())
+		}
+	})
+
+	t.Run("falls back from expired sso:// to https:// with luci-auth Bearer token on Corp Mac (no git-remote-rpc)", func(t *testing.T) {
+		origLookPath := LookPathFn
+		LookPathFn = func(file string) (string, error) {
+			return "", fmt.Errorf("not found: %s", file)
+		}
+		defer func() { LookPathFn = origLookPath }()
+
+		origGerrit := GerritTokenResolver
+		GerritTokenResolver = func(ctx context.Context) (string, string, error) {
+			return "mac-luci-bearer-tok", "luci-auth", nil
+		}
+		defer func() { GerritTokenResolver = origGerrit }()
+
+		var pushCalls []string
+		mockGit := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				call := strings.Join(args, " ")
+				if call == "config --get remote.origin.url" {
+					stdout.Write([]byte("sso://pigweed/pigweed/pigweed\n"))
+					return nil
+				}
+				if strings.HasPrefix(call, "push ") || strings.Contains(call, " push ") {
+					pushCalls = append(pushCalls, call)
+					if call == "push origin HEAD:refs/for/main" {
+						stderr.Write([]byte("remote_helper.go:932: sso: credentials expired. Try running gcert first\nfatal: remote helper 'sso' aborted session\n"))
+						return fmt.Errorf("exit status 128")
+					}
+					wantHTTPS := "-c url.https://pigweed.googlesource.com/.insteadOf=sso://pigweed/ -c http.https://pigweed.googlesource.com/.extraHeader=Authorization: Bearer mac-luci-bearer-tok push origin HEAD:refs/for/main"
+					if call == wantHTTPS {
+						stderr.Write([]byte("remote: Processing changes: updated: 1, done\n"))
+						return nil
+					}
+				}
+				return nil
+			},
+		}
+
+		var outBuf, errBuf bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&outBuf)
+		cmd.SetErr(&errBuf)
+		cmd.SetContext(ctx)
+		cfg := &Config{Git: mockGit, Host: "pigweed-review.googlesource.com", Remote: "origin"}
+
+		if err := executePush(ctx, cmd, cfg, "main", PushOptions{}, false); err != nil {
+			t.Fatalf("expected executePush to succeed via https:// + luci-auth fallback, got error: %v\nCalls: %v", err, pushCalls)
+		}
+		if len(pushCalls) != 2 {
+			t.Fatalf("expected 2 push calls (initial sso + https fallback), got %d: %v", len(pushCalls), pushCalls)
+		}
+		if !strings.Contains(errBuf.String(), "https://pigweed.googlesource.com/") || !strings.Contains(errBuf.String(), "luci-auth") {
+			t.Errorf("expected stderr note mentioning https://pigweed.googlesource.com/ and luci-auth, got:\n%s", errBuf.String())
+		}
+	})
+
+	t.Run("preserves no-new-changes error from fallback push so metadata updates still apply", func(t *testing.T) {
+		origLookPath := LookPathFn
+		LookPathFn = func(file string) (string, error) {
+			if file == "git-remote-rpc" {
+				return "/usr/bin/git-remote-rpc", nil
+			}
+			return "", fmt.Errorf("not found: %s", file)
+		}
+		defer func() { LookPathFn = origLookPath }()
+
+		mockGit := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				call := strings.Join(args, " ")
+				if call == "config --get remote.origin.url" {
+					stdout.Write([]byte("sso://pigweed/pigweed/pigweed\n"))
+					return nil
+				}
+				if call == "push origin HEAD:refs/for/main" {
+					stderr.Write([]byte("sso: credentials expired. Try running gcert first\n"))
+					return fmt.Errorf("exit status 128")
+				}
+				if call == "-c url.rpc://pigweed/.insteadOf=sso://pigweed/ push origin HEAD:refs/for/main" {
+					stderr.Write([]byte(" ! [remote rejected] HEAD -> refs/for/main (no new changes)\n"))
+					return fmt.Errorf("exit status 1")
+				}
+				return nil
+			},
+		}
+
+		var outBuf, errBuf bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&outBuf)
+		cmd.SetErr(&errBuf)
+		cmd.SetContext(ctx)
+		cfg := &Config{Git: mockGit, Host: "pigweed-review.googlesource.com", Remote: "origin"}
+
+		err := executePush(ctx, cmd, cfg, "main", PushOptions{}, false)
+		if err == nil || !strings.Contains(err.Error(), "no new changes to push") {
+			t.Fatalf("expected friendly 'no new changes to push' error after rpc:// fallback reached Gerrit, got: %v", err)
+		}
+	})
+}

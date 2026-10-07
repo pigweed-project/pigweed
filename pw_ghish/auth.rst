@@ -107,17 +107,38 @@ The active authentication mode is resolved in the following order:
 Credential resolution
 ---------------------
 
-Gerrit Code Review
-==================
-When ``GH_ISH_AUTH_METHOD`` is ``auto`` (the default), ``pw_ghish`` looks up
-Gerrit credentials in the following order:
+Gerrit Code Review & Git Push
+=============================
+When ``GH_ISH_AUTH_METHOD`` is ``auto`` (the default), ``pw_ghish`` resolves
+Gerrit REST credentials in the following order:
 
 1. ``GERRIT_TOKEN`` environment variable (HTTP Bearer or Basic token).
-2. ``gob-curl`` on ``PATH``.
+2. ``gob-curl`` on ``PATH`` (with automatic runtime fallback to ``luci-auth``,
+   ``.gitcookies``, or ``.netrc`` if the 20-hour Corp SSO ticket in
+   ``ssh-agent`` is expired).
 3. Git cookie file from ``git config http.cookiefile`` or ``~/.gitcookies``.
 4. Machine credentials in ``~/.netrc`` or ``~/_netrc``.
-5. Anonymous HTTPS (permitted in ``community`` and ``none`` modes for public
+5. ``luci-auth token -scopes "https://www.googleapis.com/auth/gerritcodereview https://www.googleapis.com/auth/userinfo.email"``
+   (located on ``PATH`` or in the repository's bootstrapped CIPD environment;
+   works across Linux, macOS, and Windows).
+6. Anonymous HTTPS (permitted in ``community`` and ``none`` modes for public
    reads; rejected in ``googler`` mode with exit code ``4``).
+
+Automatic ``git push`` fallbacks (``pr create`` / ``pr push``)
+--------------------------------------------------------------
+On Google Corp workstations, ``gcert --lifetime=168h`` issues a 7-day
+``LOAS2`` certificate (used by ``rpc://``), whereas the ``corp/normal`` SSO
+ticket in ``ssh-agent`` (used by ``gob-curl`` and ``sso://``) is capped at 20
+hours. When a push to an ``sso://<tenant>/...`` remote fails because the
+20-hour SSO ticket has expired, ``pw_ghish`` automatically retries:
+
+1. **Corp Linux (Cloudtop / gLinux)**: If ``git-remote-rpc`` is on ``PATH``,
+   retries with ``-c url.rpc://<tenant>/.insteadOf=sso://<tenant>/`` using the
+   7-day ``LOAS2`` certificate.
+2. **Corp macOS & Linux**: If ``git-remote-rpc`` is unavailable (such as on
+   Corp macOS) or ``rpc://`` also fails, mints a Gerrit OAuth2 token via
+   ``luci-auth`` and retries over ``https://<tenant>.googlesource.com/`` with
+   an ``Authorization: Bearer`` header.
 
 LUCI Buildbucket & LogDog
 =========================

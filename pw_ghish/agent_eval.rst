@@ -55,8 +55,12 @@ To run ``TestLive_IssueLifecycle`` automatically without interactive prompts:
 
 What the Live Suite Automatically Verifies
 ------------------------------------------
-* **Live Authentication & Metadata**: Verifies workstation authentication against
-  ``pigweed-review.googlesource.com`` and queries change metadata via ``pr view``.
+* **Live Authentication, SSO Expiry Fallback & Metadata**: Verifies workstation
+  authentication against ``pigweed-review.googlesource.com``, queries change
+  metadata via ``pr view``, and verifies (``TestLive_AuthGobCurlExpiredFallbackToLuciAuth``)
+  that when ``gob-curl`` fails due to an expired 20-hour Corp SSO ticket,
+  ``./gh`` seamlessly falls back in-process to ``luci-auth`` OAuth2 tokens
+  without mutating workstation ``ssh-agent`` state.
 * **Live CI Failure Triage**: Queries LUCI Buildbucket via pRPC for a known
   failing build, pulls step-level details, and verifies that ``ExtractFailureReport``
   successfully retrieves the failing step and log stream without browser

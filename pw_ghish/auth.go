@@ -174,14 +174,87 @@ func (t *fallbackTransport) RoundTrip(req *http.Request) (*http.Response, error)
 }
 
 // GobCurlTransport executes /usr/bin/gob-curl to authenticate with Google's Git-on-Borg servers.
+// When AutoFallback is true, if gob-curl fails (for example, when the 20-hour corp/normal
+// SSO ticket in ssh-agent expires while luci-auth OAuth or .gitcookies are still valid),
+// it automatically falls back to luci-auth OAuth token, .gitcookies, or .netrc.
+// maxGerritRequestBodyBytes bounds in-memory request body buffering for Gerrit
+// REST API calls (10 MiB) to support fallback retries without risking OOM.
+const maxGerritRequestBodyBytes = 10 * 1024 * 1024
+
 type GobCurlTransport struct {
-	Path string // path to gob-curl, defaults to "gob-curl"
+	Path         string // path to gob-curl, defaults to "gob-curl"
+	AutoFallback bool   // when true, fall back to luci-auth / cookie / netrc on gob-curl auth failure
+	Base         http.RoundTripper
+
+	mu               sync.Mutex
+	fallbackMu       sync.Mutex
+	gobCurlFailed    bool
+	activeFallback   http.RoundTripper
+	activeMethod     AuthMethod
+	activeMethodDesc string
+}
+
+// ActiveMethod returns the active authentication method and description used by GobCurlTransport.
+func (t *GobCurlTransport) ActiveMethod() (AuthMethod, string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.activeMethod != "" {
+		return t.activeMethod, t.activeMethodDesc
+	}
+	return AuthMethodGobCurl, "gob-curl"
 }
 
 func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	var bodyBytes []byte
+	var hasBody bool
+	if req.Body != nil {
+		hasBody = true
+		var readErr error
+		bodyBytes, readErr = io.ReadAll(io.LimitReader(req.Body, maxGerritRequestBodyBytes+1))
+		_ = req.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("reading request body: %w", readErr)
+		}
+		if len(bodyBytes) > maxGerritRequestBodyBytes {
+			return nil, fmt.Errorf("request body exceeds maximum allowed size of %d bytes", maxGerritRequestBodyBytes)
+		}
+	}
+	if ctxErr := req.Context().Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+
+	if t.AutoFallback {
+		t.mu.Lock()
+		cachedFB := t.activeFallback
+		failed := t.gobCurlFailed
+		t.mu.Unlock()
+		if failed && cachedFB != nil {
+			cloned := req.Clone(req.Context())
+			if hasBody {
+				cloned.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			}
+			return cachedFB.RoundTrip(cloned)
+		}
+	}
+
+	resp, err := t.execGobCurl(req, bodyBytes, hasBody)
+	if err == nil {
+		return resp, nil
+	}
+	if !t.AutoFallback || req.Context().Err() != nil {
+		return nil, err
+	}
+	return t.roundTripWithFallback(req, bodyBytes, hasBody, err)
+}
+
+func (t *GobCurlTransport) execGobCurl(req *http.Request, bodyBytes []byte, hasBody bool) (*http.Response, error) {
 	path := t.Path
 	if path == "" {
-		path = "gob-curl"
+		if resolved, err := LookPathFn("gob-curl"); err == nil && resolved != "" {
+			path = resolved
+		} else {
+			path = "gob-curl"
+		}
 	}
 
 	args := []string{"-i", "-s"}
@@ -196,9 +269,9 @@ func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 
 	var stdin io.Reader
-	if req.Body != nil {
+	if hasBody {
 		args = append(args, "--data-binary", "@-")
-		stdin = req.Body
+		stdin = bytes.NewReader(bodyBytes)
 	}
 
 	args = append(args, req.URL.String())
@@ -213,16 +286,10 @@ func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		if req.Body != nil {
-			_ = req.Body.Close()
-		}
 		return nil, fmt.Errorf("gob-curl stdout pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		if req.Body != nil {
-			_ = req.Body.Close()
-		}
 		return nil, fmt.Errorf("starting gob-curl: %w", err)
 	}
 
@@ -237,9 +304,6 @@ func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		line, err := pipeReader.ReadString('\n')
 		if err != nil {
 			_ = cmd.Wait()
-			if req.Body != nil {
-				_ = req.Body.Close()
-			}
 			if ctxErr := req.Context().Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
@@ -270,9 +334,6 @@ func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	resp, err := http.ReadResponse(bufio.NewReader(combined), req)
 	if err != nil {
 		_ = cmd.Wait()
-		if req.Body != nil {
-			_ = req.Body.Close()
-		}
 		return nil, fmt.Errorf("parsing gob-curl HTTP response: %w; stderr: %s", err, stderr.String())
 	}
 
@@ -282,6 +343,91 @@ func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 
 	return resp, nil
+}
+
+func (t *GobCurlTransport) roundTripWithFallback(req *http.Request, bodyBytes []byte, hasBody bool, gobCurlErr error) (*http.Response, error) {
+	t.fallbackMu.Lock()
+	t.mu.Lock()
+	cachedFB := t.activeFallback
+	failed := t.gobCurlFailed
+	t.mu.Unlock()
+	if failed && cachedFB != nil {
+		t.fallbackMu.Unlock()
+		cloned := req.Clone(req.Context())
+		if hasBody {
+			cloned.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+		return cachedFB.RoundTrip(cloned)
+	}
+	defer t.fallbackMu.Unlock()
+
+	ctx := req.Context()
+	type candidate struct {
+		tr     http.RoundTripper
+		method AuthMethod
+		desc   string
+	}
+	var candidates []candidate
+
+	if tok, src, tokErr := GerritTokenResolver(ctx); tokErr == nil && tok != "" {
+		if src == "" {
+			src = "luci-auth"
+		}
+		candidates = append(candidates, candidate{
+			tr:     &TokenTransport{Base: t.Base, Token: tok},
+			method: AuthMethodToken,
+			desc:   fmt.Sprintf("%s (fallback: gob-curl SSO expired)", src),
+		})
+	}
+
+	if cookieFile := findGitCookieFile(ctx); cookieFile != "" {
+		if f, err := os.Open(cookieFile); err == nil {
+			matched := ParseNetscapeCookies(f, req.URL, time.Now())
+			_ = f.Close()
+			if len(matched) > 0 {
+				candidates = append(candidates, candidate{
+					tr:     &CookieTransport{Base: t.Base, CookieFile: cookieFile},
+					method: AuthMethodCookie,
+					desc:   fmt.Sprintf("cookie (%s; fallback: gob-curl SSO expired)", cookieFile),
+				})
+			}
+		}
+	}
+
+	if hostname := req.URL.Hostname(); hostname != "" {
+		if creds := FindNetrcCredentials(hostname); creds != nil {
+			candidates = append(candidates, candidate{
+				tr:     &BasicAuthTransport{Base: t.Base, Username: creds.Login, Password: creds.Password},
+				method: AuthMethodNetrc,
+				desc:   "netrc (~/.netrc; fallback: gob-curl SSO expired)",
+			})
+		}
+	}
+
+	for _, cand := range candidates {
+		cloned := req.Clone(ctx)
+		if hasBody {
+			cloned.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+		resp, err := cand.tr.RoundTrip(cloned)
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			_ = resp.Body.Close()
+			continue
+		}
+		t.mu.Lock()
+		t.gobCurlFailed = true
+		t.activeFallback = cand.tr
+		t.activeMethod = cand.method
+		t.activeMethodDesc = cand.desc
+		t.mu.Unlock()
+		setLastGobCurlFallback(cand.method, cand.desc)
+		return resp, nil
+	}
+
+	return nil, gobCurlErr
 }
 
 type cmdResponseBody struct {
@@ -574,15 +720,19 @@ func DescribeGerritAuthMethod(ctx context.Context, gerritHost string, mode AuthM
 	case AuthMethodNone:
 		return AuthMethodNone, "none (unauthenticated)"
 	case AuthMethodAuto:
-		if os.Getenv("GERRIT_TOKEN") != "" {
+		// Priority 1: GERRIT_TOKEN environment variable
+		if strings.TrimSpace(os.Getenv("GERRIT_TOKEN")) != "" {
 			return AuthMethodToken, "token (GERRIT_TOKEN)"
 		}
+		// Priority 2: gob-curl on PATH
 		if _, err := LookPathFn("gob-curl"); err == nil {
 			return AuthMethodGobCurl, "gob-curl"
 		}
+		// Priority 3: Git cookies (.gitcookies or git config http.cookiefile)
 		if cookieFile := findGitCookieFile(ctx); cookieFile != "" {
 			return AuthMethodCookie, fmt.Sprintf("cookie (%s)", cookieFile)
 		}
+		// Priority 4: .netrc credentials
 		u, _ := url.Parse(gerritHost)
 		hostname := gerritHost
 		if u != nil && u.Hostname() != "" {
@@ -590,6 +740,13 @@ func DescribeGerritAuthMethod(ctx context.Context, gerritHost string, mode AuthM
 		}
 		if creds := FindNetrcCredentials(hostname); creds != nil {
 			return AuthMethodNetrc, "netrc (~/.netrc)"
+		}
+		// Priority 5: luci-auth Gerrit OAuth2 token
+		if tok, src, err := GerritTokenResolver(ctx); err == nil && tok != "" {
+			if src == "" {
+				src = "luci-auth"
+			}
+			return AuthMethodToken, fmt.Sprintf("token (%s)", src)
 		}
 		return AuthMethodNone, "none"
 	default:
@@ -612,7 +769,7 @@ func NewAuthTransportContext(ctx context.Context, gerritHost string) (http.Round
 		return nil, err
 	}
 
-	method := AuthMethod(os.Getenv("GH_ISH_AUTH_METHOD"))
+	method := AuthMethod(strings.TrimSpace(os.Getenv("GH_ISH_AUTH_METHOD")))
 	if method == "" {
 		if mode == AuthModeNone {
 			method = AuthMethodNone
@@ -625,17 +782,18 @@ func NewAuthTransportContext(ctx context.Context, gerritHost string) (http.Round
 
 	switch method {
 	case AuthMethodToken:
-		token := os.Getenv("GERRIT_TOKEN")
+		token := strings.TrimSpace(os.Getenv("GERRIT_TOKEN"))
 		if token == "" {
 			return nil, NewExitCodeError(ExitCodeAuth, "GH_ISH_AUTH_METHOD=token specified but GERRIT_TOKEN is empty.\n\nTo configure a token, run:\n  export GERRIT_TOKEN=\"<token>\"")
 		}
 		base = &TokenTransport{Token: token}
 
 	case AuthMethodGobCurl:
-		if _, err := LookPathFn("gob-curl"); err != nil {
+		gobCurlPath, err := LookPathFn("gob-curl")
+		if err != nil {
 			return nil, NewExitCodeError(ExitCodeAuth, "GH_ISH_AUTH_METHOD=gob-curl specified but gob-curl executable not found in PATH: %w.\n\nEnsure corp development tools are installed and in PATH, or choose a different auth method (e.g. export GH_ISH_AUTH_METHOD=cookie or =token).", err)
 		}
-		base = &GobCurlTransport{}
+		base = &GobCurlTransport{Path: gobCurlPath}
 
 	case AuthMethodCookie:
 		cookieFile := findGitCookieFile(ctx)
@@ -661,14 +819,15 @@ func NewAuthTransportContext(ctx context.Context, gerritHost string) (http.Round
 
 	case AuthMethodAuto:
 		// Priority 1: GERRIT_TOKEN environment variable
-		if token := os.Getenv("GERRIT_TOKEN"); token != "" {
+		if token := strings.TrimSpace(os.Getenv("GERRIT_TOKEN")); token != "" {
 			base = &TokenTransport{Token: token}
 			break
 		}
 
-		// Priority 2: gob-curl on PATH (seamless Google internal auth)
-		if _, err := LookPathFn("gob-curl"); err == nil {
-			base = &GobCurlTransport{}
+		// Priority 2: gob-curl on PATH (seamless Google internal auth, with automatic
+		// runtime fallback to luci-auth / .gitcookies / .netrc if the 20h SSO ticket is expired)
+		if gobCurlPath, err := LookPathFn("gob-curl"); err == nil {
+			base = &GobCurlTransport{Path: gobCurlPath, AutoFallback: true}
 			break
 		}
 
@@ -689,7 +848,13 @@ func NewAuthTransportContext(ctx context.Context, gerritHost string) (http.Round
 			break
 		}
 
-		// Priority 5: In googler mode, do not silently fall back to anonymous Gerrit.
+		// Priority 5: luci-auth Gerrit OAuth2 token (works across Linux, macOS, Windows)
+		if tok, _, err := GerritTokenResolver(ctx); err == nil && tok != "" {
+			base = &TokenTransport{Token: tok}
+			break
+		}
+
+		// Priority 6: In googler mode, do not silently fall back to anonymous Gerrit.
 		if mode == AuthModeGoogler {
 			cleanHost := CleanGerritHost(gerritHost)
 			if cleanHost == "" {
@@ -699,7 +864,7 @@ func NewAuthTransportContext(ctx context.Context, gerritHost string) (http.Round
 				"Gerrit authentication required in googler mode (%s): no Gerrit credentials found for %s.\n\n"+
 					"Cause: In googler mode, gh-ish does not fall back to unauthenticated Gerrit requests.\n\n"+
 					"Remediation:\n"+
-					"  1. (Corp users) Ensure 'gob-curl' is in PATH and run 'gcert'.\n"+
+					"  1. (Corp users) Ensure 'gob-curl' is in PATH and run 'gcert', or run 'luci-auth login'.\n"+
 					"  2. Or configure Git cookies at: https://%s/new-password\n"+
 					"  3. Or set a token: export GERRIT_TOKEN=\"<token>\"\n"+
 					"  4. Or switch to community mode: export GH_ISH_AUTH_MODE=community\n"+
@@ -860,7 +1025,34 @@ var (
 	cachedAndroidBuildToken       string
 	cachedAndroidBuildTokenSource string
 	cachedAndroidBuildTokenExpiry time.Time
+
+	gerritTokenMu           sync.Mutex
+	cachedGerritToken       string
+	cachedGerritTokenSource string
+	cachedGerritTokenExpiry time.Time
+	lastGobCurlFallbackMeth AuthMethod
+	lastGobCurlFallbackDesc string
 )
+
+func setLastGobCurlFallback(method AuthMethod, desc string) {
+	gerritTokenMu.Lock()
+	lastGobCurlFallbackMeth = method
+	lastGobCurlFallbackDesc = desc
+	gerritTokenMu.Unlock()
+}
+
+func getLastGobCurlFallback() (AuthMethod, string) {
+	gerritTokenMu.Lock()
+	defer gerritTokenMu.Unlock()
+	return lastGobCurlFallbackMeth, lastGobCurlFallbackDesc
+}
+
+func clearLastGobCurlFallback() {
+	gerritTokenMu.Lock()
+	lastGobCurlFallbackMeth = ""
+	lastGobCurlFallbackDesc = ""
+	gerritTokenMu.Unlock()
+}
 
 // ScopeAndroidBuildInternal is the OAuth2 scope for Android Build Internal v3 REST APIs.
 const ScopeAndroidBuildInternal = "https://www.googleapis.com/auth/androidbuild.internal"
@@ -868,13 +1060,19 @@ const ScopeAndroidBuildInternal = "https://www.googleapis.com/auth/androidbuild.
 // ScopeGerritCodeReview is the OAuth2 scope for Gerrit Code Review REST APIs.
 const ScopeGerritCodeReview = "https://www.googleapis.com/auth/gerritcodereview"
 
+// ScopeUserInfoEmail is the OAuth2 scope for reading the user's email address.
+const ScopeUserInfoEmail = "https://www.googleapis.com/auth/userinfo.email"
+
+// DefaultGerritScopes are the OAuth2 scopes requested when authenticating with Gerrit via luci-auth.
+const DefaultGerritScopes = ScopeGerritCodeReview + " " + ScopeUserInfoEmail
+
 // DefaultAndroidBuildScopes are the OAuth2 scopes requested when authenticating with Android Build / Busytown.
 var DefaultAndroidBuildScopes = []string{
 	ScopeAndroidBuildInternal,
 	ScopeGerritCodeReview,
 }
 
-// ResetAuthTokenCaches clears in-memory OAuth token caches for LUCI, Android Build, and Issue Tracker.
+// ResetAuthTokenCaches clears in-memory OAuth token caches for Gerrit, LUCI, Android Build, and Issue Tracker.
 func ResetAuthTokenCaches() {
 	luciTokenMu.Lock()
 	cachedLUCIToken = ""
@@ -888,12 +1086,66 @@ func ResetAuthTokenCaches() {
 	cachedAndroidBuildTokenExpiry = time.Time{}
 	androidBuildTokenMu.Unlock()
 
+	gerritTokenMu.Lock()
+	cachedGerritToken = ""
+	cachedGerritTokenSource = ""
+	cachedGerritTokenExpiry = time.Time{}
+	lastGobCurlFallbackMeth = ""
+	lastGobCurlFallbackDesc = ""
+	gerritTokenMu.Unlock()
+
 	issueTokenMu.Lock()
 	cachedIssueToken = ""
 	cachedIssueTokenSource = ""
 	cachedIssueTokenExpiry = time.Time{}
 	issueTokenMu.Unlock()
 }
+
+// DefaultGerritToken resolves a Gerrit OAuth2 access token from GERRIT_TOKEN or luci-auth
+// (requesting gerritcodereview scope). Unlike DefaultLUCIToken, it does not fall back to
+// unscoped 'gcloud auth print-access-token', because standard gcloud tokens lack the
+// gerritcodereview scope required by Gerrit REST APIs and git-over-HTTPS.
+func DefaultGerritToken(ctx context.Context) (string, string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if tok := strings.TrimSpace(os.Getenv("GERRIT_TOKEN")); tok != "" {
+		return tok, "GERRIT_TOKEN", nil
+	}
+
+	gerritTokenMu.Lock()
+	if cachedGerritToken != "" && time.Now().Before(cachedGerritTokenExpiry) {
+		tok, src := cachedGerritToken, cachedGerritTokenSource
+		gerritTokenMu.Unlock()
+		return tok, src, nil
+	}
+	gerritTokenMu.Unlock()
+
+	luciAuthBin := findLuciAuthBinary(ctx)
+	if luciAuthBin == "" {
+		return "", "", fmt.Errorf("luci-auth binary not found")
+	}
+
+	for _, sc := range []string{DefaultGerritScopes, ScopeGerritCodeReview} {
+		out, err := OAuthTokenCommandRunner(ctx, luciAuthBin, "token", "-scopes", sc)
+		if err == nil {
+			if tok := strings.TrimSpace(string(out)); tok != "" {
+				gerritTokenMu.Lock()
+				cachedGerritToken = tok
+				cachedGerritTokenSource = "luci-auth"
+				cachedGerritTokenExpiry = time.Now().Add(5 * time.Minute)
+				gerritTokenMu.Unlock()
+				return tok, "luci-auth", nil
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("no active Gerrit OAuth2 token found from luci-auth")
+}
+
+// GerritTokenResolver resolves OAuth2 tokens with gerritcodereview scope for Gerrit REST and Git push fallbacks.
+// It can be overridden in unit tests.
+var GerritTokenResolver = DefaultGerritToken
 
 // DefaultAndroidBuildToken resolves an OAuth2 access token for Android Build Internal v3 and ci.android.com.
 func DefaultAndroidBuildToken(ctx context.Context) (string, error) {

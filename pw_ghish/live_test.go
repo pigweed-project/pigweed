@@ -1776,3 +1776,57 @@ func TestLive_AuthStatusAndModes(t *testing.T) {
 		t.Errorf("issue list --auth-mode none exit code = %d, want %d (err: %v)", ExitCodeFor(err), ExitCodeAuth, err)
 	}
 }
+
+// TestLive_AuthGobCurlExpiredFallbackToLuciAuth simulates an expired 20-hour
+// corp/normal SSO ticket in gob-curl (using an in-process mock script without
+// mutating workstation ssh-agent state) and verifies that ./gh seamlessly
+// authenticates against live pigweed-review.googlesource.com via luci-auth.
+func TestLive_AuthGobCurlExpiredFallbackToLuciAuth(t *testing.T) {
+	ctx := context.Background()
+	ResetAuthTokenCaches()
+	defer ResetAuthTokenCaches()
+
+	if tok, _, err := DefaultGerritToken(ctx); err != nil || tok == "" {
+		t.Skipf("Skipping live fallback test: luci-auth Gerrit token not available: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	expiredGobCurl := filepath.Join(tmpDir, "gob-curl")
+	script := "#!/bin/sh\nprintf 'sso: credentials expired. Try running gcert first\\n' >&2\nexit 1\n"
+	if err := os.WriteFile(expiredGobCurl, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write mock expired gob-curl script: %v", err)
+	}
+
+	origLookPath := LookPathFn
+	LookPathFn = func(file string) (string, error) {
+		if file == "gob-curl" {
+			return expiredGobCurl, nil
+		}
+		return origLookPath(file)
+	}
+	defer func() { LookPathFn = origLookPath }()
+
+	statusJSON, err := executeLiveCommand("auth", "status", "--json")
+	if err != nil {
+		t.Fatalf("expected auth status to succeed via luci-auth fallback when gob-curl SSO is expired, got error: %v\nOutput:\n%s", err, statusJSON)
+	}
+
+	var report AuthStatusReport
+	if err := json.Unmarshal([]byte(statusJSON), &report); err != nil {
+		t.Fatalf("failed to unmarshal auth status JSON: %v\nRaw:\n%s", err, statusJSON)
+	}
+	if !report.Healthy || !report.Gerrit.Authenticated {
+		t.Fatalf("expected Healthy=true and Gerrit.Authenticated=true, got: %+v", report)
+	}
+	if !strings.Contains(report.Gerrit.Method, "luci-auth") || !strings.Contains(report.Gerrit.Method, "gob-curl") {
+		t.Errorf("Gerrit.Method = %q, want luci-auth fallback description", report.Gerrit.Method)
+	}
+
+	viewOut, err := executeLiveCommand("pr", "view", "472267", "--json", "number,title")
+	if err != nil {
+		t.Fatalf("expected pr view 472267 to succeed via luci-auth fallback, got: %v\nOutput:\n%s", err, viewOut)
+	}
+	if !strings.Contains(viewOut, "472267") {
+		t.Errorf("expected CL 472267 in output, got:\n%s", viewOut)
+	}
+}
