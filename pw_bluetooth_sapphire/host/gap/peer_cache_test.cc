@@ -1838,5 +1838,118 @@ TEST_F(PeerCacheExpirationTest, RegisterNameUpdatesExpiration) {
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 
+TEST_F(PeerCacheTest, RemoveDisconnectedPeerDuringCallbackReturnsFalse) {
+  size_t callbacks_invoked = 0;
+  PeerCache::CallbackId first_id = 0;
+  PeerCache::CallbackId second_id = 0;
+  first_id = cache()->add_peer_updated_callback(
+      [this, &callbacks_invoked, &second_id](const Peer& p) {
+        callbacks_invoked++;
+        EXPECT_FALSE(cache()->RemoveDisconnectedPeer(p.identifier()));
+        // Removing another callback during iteration should also be safe.
+        cache()->remove_peer_updated_callback(second_id);
+      });
+  second_id = cache()->add_peer_updated_callback(
+      [this, &callbacks_invoked, &first_id](const Peer& p) {
+        callbacks_invoked++;
+        EXPECT_FALSE(cache()->RemoveDisconnectedPeer(p.identifier()));
+        cache()->remove_peer_updated_callback(first_id);
+      });
+
+  Peer* created = cache()->NewPeer(kAddrLePublic, /*connectable=*/true);
+  ASSERT_NE(nullptr, created);
+  EXPECT_EQ(1u, callbacks_invoked);
+  EXPECT_EQ(1u, cache()->count());
+
+  // Transitioning to dual-mode and updating name should also disallow removal
+  // inside the callback.
+  created->MutBrEdr();
+  EXPECT_EQ(2u, callbacks_invoked);
+  created->RegisterName("test");
+  EXPECT_EQ(3u, callbacks_invoked);
+
+  bool for_each_invoked = false;
+  cache()->ForEach([this, &for_each_invoked](const Peer& p) {
+    for_each_invoked = true;
+    EXPECT_FALSE(cache()->RemoveDisconnectedPeer(p.identifier()));
+  });
+  EXPECT_TRUE(for_each_invoked);
+  EXPECT_EQ(created, cache()->FindById(created->identifier()));
+}
+
+TEST_F(PeerCacheTestBondingTest,
+       StoreLowEnergyBondCannotRemovePeerDuringCallbacks) {
+  size_t update_attempts = 0;
+  cache()->add_peer_updated_callback([this, &update_attempts](const Peer& p) {
+    update_attempts++;
+    EXPECT_FALSE(cache()->RemoveDisconnectedPeer(p.identifier()));
+  });
+
+  bool bonded_cb_invoked = false;
+  cache()->set_peer_bonded_callback([this, &bonded_cb_invoked](const Peer& p) {
+    bonded_cb_invoked = true;
+    EXPECT_FALSE(cache()->RemoveDisconnectedPeer(p.identifier()));
+  });
+
+  sm::PairingData data;
+  data.peer_ltk = kLTK;
+  data.local_ltk = kLTK;
+  data.cross_transport_key = kBrEdrKey;
+  EXPECT_TRUE(cache()->StoreLowEnergyBond(peer()->identifier(), data));
+  EXPECT_GT(update_attempts, 0u);
+  EXPECT_TRUE(bonded_cb_invoked);
+  EXPECT_EQ(peer(), cache()->FindById(peer()->identifier()));
+  EXPECT_TRUE(peer()->bonded());
+}
+
+TEST_F(PeerCacheTestBondingTest,
+       StoreBrEdrBondCannotRemovePeerDuringCallbacks) {
+  ASSERT_TRUE(NewPeer(kAddrBrEdr, true));
+  size_t update_attempts = 0;
+  cache()->add_peer_updated_callback([this, &update_attempts](const Peer& p) {
+    update_attempts++;
+    EXPECT_FALSE(cache()->RemoveDisconnectedPeer(p.identifier()));
+  });
+
+  bool bonded_cb_invoked = false;
+  cache()->set_peer_bonded_callback([this, &bonded_cb_invoked](const Peer& p) {
+    bonded_cb_invoked = true;
+    EXPECT_FALSE(cache()->RemoveDisconnectedPeer(p.identifier()));
+  });
+
+  EXPECT_TRUE(cache()->StoreBrEdrBond(kAddrBrEdr, kBrEdrKey));
+  EXPECT_GT(update_attempts, 0u);
+  EXPECT_TRUE(bonded_cb_invoked);
+  EXPECT_EQ(peer(), cache()->FindById(peer()->identifier()));
+  EXPECT_TRUE(peer()->bonded());
+}
+
+TEST_F(PeerCacheTestBondingTest, AddBondedPeerCannotRemovePeerDuringCallback) {
+  bool callback_invoked = false;
+  cache()->add_peer_updated_callback([this, &callback_invoked](const Peer& p) {
+    if (p.identifier() == kId) {
+      callback_invoked = true;
+      EXPECT_FALSE(cache()->RemoveDisconnectedPeer(p.identifier()));
+    }
+  });
+
+  sm::PairingData data;
+  data.peer_ltk = kLTK;
+  data.local_ltk = kLTK;
+  EXPECT_TRUE(
+      cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                         .address = kAddrLeAlias,
+                                         .name = kName,
+                                         .device_class = DeviceClass(0x010203),
+                                         .le_pairing_data = data,
+                                         .bredr_link_key = kBrEdrKey,
+                                         .bredr_services = kBrEdrServices}));
+  EXPECT_TRUE(callback_invoked);
+  EXPECT_FALSE(bonded_callback_called());
+  Peer* added = cache()->FindById(kId);
+  ASSERT_NE(nullptr, added);
+  EXPECT_TRUE(added->bonded());
+}
+
 }  // namespace
 }  // namespace bt::gap

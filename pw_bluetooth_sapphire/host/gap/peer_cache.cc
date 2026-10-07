@@ -51,6 +51,11 @@ Peer* PeerCache::NewPeer(const DeviceAddress& address, bool connectable) {
 
 void PeerCache::ForEach(PeerCallback f) {
   PW_DCHECK(f);
+  notify_listeners_depth_++;
+  auto decrement_depth = fit::defer([this] {
+    PW_DCHECK(notify_listeners_depth_ > 0);
+    notify_listeners_depth_--;
+  });
   for (const auto& iter : peers_) {
     f(*iter.second.peer());
   }
@@ -309,6 +314,10 @@ bool PeerCache::SetAutoConnectBehaviorForSuccessfulConnection(PeerId peer_id) {
 }
 
 bool PeerCache::RemoveDisconnectedPeer(PeerId peer_id) {
+  if (notify_listeners_depth_ > 0) {
+    return false;
+  }
+
   Peer* const peer = FindById(peer_id);
   if (!peer) {
     return true;
@@ -431,6 +440,12 @@ void PeerCache::NotifyPeerBonded(const Peer& peer) {
   PW_DCHECK(peer.identity_known(),
             "peers not allowed to bond with unknown identity!");
 
+  notify_listeners_depth_++;
+  auto decrement_depth = fit::defer([this] {
+    PW_DCHECK(notify_listeners_depth_ > 0);
+    notify_listeners_depth_--;
+  });
+
   bt_log(INFO, "gap", "successfully bonded (peer: %s)", bt_str(peer));
   if (peer_bonded_callback_) {
     peer_bonded_callback_(peer);
@@ -442,8 +457,24 @@ void PeerCache::NotifyPeerUpdated(const Peer& peer,
   PW_DCHECK(peers_.find(peer.identifier()) != peers_.end());
   PW_DCHECK(peers_.at(peer.identifier()).peer() == &peer);
 
-  for (auto& [_, peer_updated_callback] : peer_updated_callbacks_) {
-    peer_updated_callback(peer);
+  notify_listeners_depth_++;
+  auto decrement_depth = fit::defer([this] {
+    PW_DCHECK(notify_listeners_depth_ > 0);
+    notify_listeners_depth_--;
+  });
+
+  std::vector<CallbackId> callback_ids;
+  callback_ids.reserve(peer_updated_callbacks_.size());
+  for (const auto& [callback_id, _] : peer_updated_callbacks_) {
+    callback_ids.push_back(callback_id);
+  }
+
+  for (CallbackId callback_id : callback_ids) {
+    auto cb_iter = peer_updated_callbacks_.find(callback_id);
+    if (cb_iter == peer_updated_callbacks_.end()) {
+      continue;
+    }
+    cb_iter->second(peer);
   }
 
   if (change == Peer::NotifyListenersChange::kBondUpdated) {
@@ -495,6 +526,7 @@ void PeerCache::MakeDualMode(const Peer& peer) {
 
 void PeerCache::RemovePeer(Peer* peer) {
   PW_DCHECK(peer);
+  PW_DCHECK(notify_listeners_depth_ == 0);
 
   auto peer_record_it = peers_.find(peer->identifier());
   PW_DCHECK(peer_record_it != peers_.end());

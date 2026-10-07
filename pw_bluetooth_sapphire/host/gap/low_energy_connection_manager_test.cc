@@ -5448,5 +5448,144 @@ TEST_F(LowEnergyConnectionManagerTest,
   EXPECT_EQ(status, iso::AcceptCisStatus::kSuccess);
 }
 
+TEST_F(LowEnergyConnectionManagerTest,
+       RegisterRemoteInitiatedLinkCannotRemovePeerDuringCallbacks) {
+  size_t remove_attempts = 0;
+  auto cb_id = peer_cache()->add_peer_updated_callback(
+      [this, &remove_attempts](const Peer& p) {
+        if (p.address() != kAddress0) {
+          return;
+        }
+        remove_attempts++;
+        EXPECT_FALSE(peer_cache()->RemoveDisconnectedPeer(p.identifier()));
+      });
+
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+  test_device()->ConnectLowEnergy(kAddress0);
+  RunUntilIdle();
+
+  auto link = MoveLastRemoteInitiated();
+  ASSERT_TRUE(link);
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(link), BondableMode::Bondable, [&](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      });
+  RunUntilIdle();
+
+  EXPECT_GT(remove_attempts, 0u);
+  ASSERT_TRUE(conn_handle);
+  EXPECT_TRUE(conn_handle->active());
+  Peer* peer = peer_cache()->FindByAddress(kAddress0);
+  ASSERT_NE(nullptr, peer);
+  EXPECT_TRUE(peer->connected());
+
+  conn_handle.reset();
+  RunUntilIdle();
+  EXPECT_TRUE(peer_cache()->remove_peer_updated_callback(cb_id));
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       RegisterRemoteInitiatedLinkCannotRemovePeerDuringDualModeTransition) {
+  const DeviceAddress kClassicAddr(DeviceAddress::Type::kBREDR,
+                                   kAddress0.value());
+  ASSERT_NE(nullptr, peer_cache()->NewPeer(kClassicAddr, /*connectable=*/true));
+
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+  test_device()->ConnectLowEnergy(kAddress0);
+  RunUntilIdle();
+
+  auto link = MoveLastRemoteInitiated();
+  ASSERT_TRUE(link);
+
+  bool dual_mode_callback_fired = false;
+  auto cb_id = peer_cache()->add_peer_updated_callback(
+      [this, &dual_mode_callback_fired](const Peer& p) {
+        if (p.technology() != TechnologyType::kDualMode) {
+          return;
+        }
+        dual_mode_callback_fired = true;
+        EXPECT_FALSE(peer_cache()->RemoveDisconnectedPeer(p.identifier()));
+      });
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(link), BondableMode::Bondable, [&](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      });
+  RunUntilIdle();
+
+  EXPECT_TRUE(dual_mode_callback_fired);
+  ASSERT_TRUE(conn_handle);
+  EXPECT_TRUE(conn_handle->active());
+  Peer* peer = peer_cache()->FindByAddress(kAddress0);
+  ASSERT_NE(nullptr, peer);
+  EXPECT_TRUE(peer->connected());
+
+  conn_handle.reset();
+  RunUntilIdle();
+  EXPECT_TRUE(peer_cache()->remove_peer_updated_callback(cb_id));
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       RegisterRemoteInitiatedLinkCannotRemovePeerDuringInterrogation) {
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+  test_device()->ConnectLowEnergy(kAddress0);
+  RunUntilIdle();
+
+  auto link = MoveLastRemoteInitiated();
+  ASSERT_TRUE(link);
+
+  fit::closure send_read_remote_features_response;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLEReadRemoteFeatures, [&](fit::closure unpause) {
+        send_read_remote_features_response = std::move(unpause);
+      });
+
+  bool callback_fired = false;
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(link), BondableMode::Bondable, [&](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      });
+  RunUntilIdle();
+  ASSERT_TRUE(send_read_remote_features_response);
+  ASSERT_FALSE(conn_handle);
+
+  Peer* peer = peer_cache()->FindByAddress(kAddress0);
+  ASSERT_NE(nullptr, peer);
+  ASSERT_TRUE(peer->le());
+  EXPECT_TRUE(peer->le()->initializing());
+  EXPECT_FALSE(peer->connected());
+
+  // Re-entrant removal from a peer update during interrogation must fail.
+  auto cb_id = peer_cache()->add_peer_updated_callback(
+      [this, &callback_fired](const Peer& p) {
+        if (p.address() != kAddress0) {
+          return;
+        }
+        callback_fired = true;
+        EXPECT_FALSE(peer_cache()->RemoveDisconnectedPeer(p.identifier()));
+      });
+  peer->RegisterName("test");
+  EXPECT_TRUE(callback_fired);
+  EXPECT_EQ(peer, peer_cache()->FindByAddress(kAddress0));
+
+  send_read_remote_features_response();
+  RunUntilIdle();
+
+  ASSERT_TRUE(conn_handle);
+  EXPECT_TRUE(conn_handle->active());
+  EXPECT_TRUE(peer->connected());
+
+  conn_handle.reset();
+  RunUntilIdle();
+  EXPECT_TRUE(peer_cache()->remove_peer_updated_callback(cb_id));
+}
+
 }  // namespace
 }  // namespace bt::gap

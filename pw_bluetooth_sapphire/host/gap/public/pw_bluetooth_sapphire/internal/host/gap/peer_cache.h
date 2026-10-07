@@ -59,7 +59,8 @@ class PeerCache final {
 
   // Iterates over all current peers in the map, running |f| on each entry
   // synchronously. This is intended for IPC methods that request a list of
-  // peers.
+  // peers. |f| must not call RemoveDisconnectedPeer, as peers cannot be removed
+  // while iterating.
   //
   // Clients should use the FindBy*() methods below to interact with
   // Peer objects.
@@ -112,8 +113,9 @@ class PeerCache final {
   bool SetAutoConnectBehaviorForSuccessfulConnection(PeerId peer_id);
 
   // If a peer identified by |peer_id| exists and is not connected on either
-  // transport, remove it from the cache immediately. Returns true after no peer
-  // with |peer_id| exists in the cache, false otherwise.
+  // transport, remove it from the cache immediately. Must not be called
+  // re-entrantly from a peer updated, peer bonded, or ForEach callback. Returns
+  // true after no peer with |peer_id| exists in the cache, false otherwise.
   [[nodiscard]] bool RemoveDisconnectedPeer(PeerId peer_id);
 
   // Returns the remote peer with identifier |peer_id|. Returns nullptr if
@@ -132,6 +134,8 @@ class PeerCache final {
                      std::string name = kInspectNodeName);
 
   // Register a |callback| to be invoked whenever a peer is added or updated.
+  // |callback| must not call RemoveDisconnectedPeer, as peers cannot be removed
+  // while callbacks are being notified.
   CallbackId add_peer_updated_callback(PeerCallback callback);
 
   // Unregister the callback indicated by |id|. Returns true if the callback was
@@ -146,7 +150,8 @@ class PeerCache final {
 
   // When this callback is set, |callback| will be invoked whenever the bonding
   // data of a peer is updated and should be persisted. The caller must ensure
-  // that |callback| outlives |this|.
+  // that |callback| outlives |this|. |callback| must not call
+  // RemoveDisconnectedPeer.
   void set_peer_bonded_callback(PeerCallback callback) {
     peer_bonded_callback_ = std::move(callback);
   }
@@ -253,6 +258,7 @@ class PeerCache final {
   IdentityResolvingList le_resolving_list_;
 
   CallbackId next_callback_id_ = 0u;
+  size_t notify_listeners_depth_ = 0u;
   std::unordered_map<CallbackId, PeerCallback> peer_updated_callbacks_;
   PeerIdCallback peer_removed_callback_;
   PeerCallback peer_bonded_callback_;
