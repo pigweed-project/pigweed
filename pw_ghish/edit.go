@@ -28,6 +28,9 @@ var (
 	editTitle          string
 	editBody           string
 	editAddReviewer    []string
+	editReviewer       []string
+	editAddOwner       bool
+	editOwner          bool
 	editRemoveReviewer []string
 	editAddAssignee    []string
 	editRemoveAssignee []string
@@ -63,15 +66,21 @@ var editCmd = &cobra.Command{
 			return fmt.Errorf("cannot set an empty commit message")
 		}
 
+		rawAddReviewers := append([]string{}, editAddReviewer...)
+		rawAddReviewers = append(rawAddReviewers, editReviewer...)
+		if editAddOwner || editOwner {
+			rawAddReviewers = append(rawAddReviewers, "@owners")
+		}
+
 		hasTrailerEdit := cmd.Flags().Changed("bug") || cmd.Flags().Changed("fixed")
 		hasMsgEdit := editMessage != "" || editTitle != "" || cmd.Flags().Changed("body") || hasTrailerEdit
 		hasTopicEdit := cmd.Flags().Changed("topic") || editRemoveTopic
 		hasHashtagEdit := len(editAddHashtags) > 0 || len(editRemoveHashtags) > 0
 		hasCQEdit := cmd.Flags().Changed("cq") || cmd.Flags().Changed("trigger")
-		if !hasMsgEdit && len(editAddReviewer) == 0 && len(editRemoveReviewer) == 0 &&
+		if !hasMsgEdit && len(rawAddReviewers) == 0 && len(editRemoveReviewer) == 0 &&
 			len(editAddAssignee) == 0 && len(editRemoveAssignee) == 0 && len(editAddLabels) == 0 &&
 			!hasTopicEdit && !hasHashtagEdit && !hasCQEdit {
-			return fmt.Errorf("at least one of --message, --title, --body, --bug, --fixed, --add-reviewer, --remove-reviewer, --add-assignee, --remove-assignee, --add-label, --trigger, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --trigger\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-label Commit-Queue=1")
+			return fmt.Errorf("at least one of --message, --title, --body, --bug, --fixed, --add-reviewer, --add-owner, --remove-reviewer, --add-assignee, --remove-assignee, --add-label, --trigger, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --trigger\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-owner\n  gh pr edit 123 --add-label Commit-Queue=1")
 		}
 
 		if editMessage != "" && (editTitle != "" || cmd.Flags().Changed("body")) {
@@ -155,11 +164,17 @@ var editCmd = &cobra.Command{
 			)
 		}
 
-		for _, reviewer := range editAddReviewer {
+		expandedReviewers, err := ExpandReviewersForChange(cmd, chCtx, rawAddReviewers)
+		if err != nil {
+			return err
+		}
+		for _, reviewer := range expandedReviewers {
 			if _, _, err := client.Changes.AddReviewer(ctx, changeID, &gerrit.ReviewerInput{Reviewer: reviewer}); err != nil {
 				return chCtx.FormatError(err, fmt.Sprintf("adding reviewer %s to", reviewer))
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Reviewer added successfully.")
+		}
+		if len(expandedReviewers) > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "Reviewer added successfully: %s\n", strings.Join(expandedReviewers, ", "))
 		}
 
 		for _, reviewer := range editRemoveReviewer {
@@ -383,7 +398,12 @@ func init() {
 		"Set the Bug: trailer, linking a Buganizer issue (accepts 123456, b/123456, an issue URL, a comma-separated list, or \"none\")")
 	editCmd.Flags().StringVar(&editFixed, "fixed", "",
 		"Set the Fixed: trailer, linking a Buganizer issue and closing it on submit (same accepted forms as --bug)")
-	editCmd.Flags().StringArrayVar(&editAddReviewer, "add-reviewer", nil, "Add reviewer by email or ID")
+	editCmd.Flags().StringArrayVar(&editAddReviewer, "add-reviewer", nil, "Add reviewer by email, ID, or @owners")
+	editCmd.Flags().StringArrayVarP(&editReviewer, "reviewer", "r", nil, "Alias for --add-reviewer (ghish-only)")
+	_ = editCmd.Flags().MarkHidden("reviewer")
+	editCmd.Flags().BoolVar(&editAddOwner, "add-owner", false, "Add module code owners as reviewers (ghish-only)")
+	editCmd.Flags().BoolVar(&editOwner, "owner", false, "Alias for --add-owner (ghish-only)")
+	_ = editCmd.Flags().MarkHidden("owner")
 	editCmd.Flags().StringArrayVar(&editRemoveReviewer, "remove-reviewer", nil, "Remove reviewer by email or ID")
 	editCmd.Flags().StringArrayVar(&editAddAssignee, "add-assignee", nil, "Add assignee by email or ID")
 	editCmd.Flags().StringArrayVar(&editRemoveAssignee, "remove-assignee", nil, "Remove assignee by email or ID")

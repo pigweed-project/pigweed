@@ -36,7 +36,12 @@ type CommonPushFlags struct {
 
 // AddCommonPushFlags registers common push flags shared across 'gh pr create' and 'gh pr push'.
 func AddCommonPushFlags(cmd *cobra.Command) {
-	cmd.Flags().StringSliceP("reviewer", "r", []string{}, "Request a review from someone")
+	cmd.Flags().StringSliceP("reviewer", "r", []string{}, "Request a review from someone (or @owners for code owners)")
+	cmd.Flags().StringSlice("add-reviewer", []string{}, "Alias for --reviewer (ghish-only)")
+	_ = cmd.Flags().MarkHidden("add-reviewer")
+	cmd.Flags().Bool("owner", false, "Request a review from module code owners (ghish-only)")
+	cmd.Flags().Bool("add-owner", false, "Alias for --owner (ghish-only)")
+	_ = cmd.Flags().MarkHidden("add-owner")
 	cmd.Flags().StringSliceP("cc", "c", []string{}, "CC someone on the change")
 	cmd.Flags().BoolP("draft", "d", false, "Mark as work in progress (WIP)")
 	cmd.Flags().Bool("auto", false, "Automatically submit change when checks and reviews pass")
@@ -58,6 +63,13 @@ func AddCommonPushFlags(cmd *cobra.Command) {
 // ParseCommonPushFlags parses the common push flags from the Cobra command.
 func ParseCommonPushFlags(cmd *cobra.Command) CommonPushFlags {
 	reviewers, _ := cmd.Flags().GetStringSlice("reviewer")
+	addReviewers, _ := cmd.Flags().GetStringSlice("add-reviewer")
+	reviewers = append(reviewers, addReviewers...)
+	owner, _ := cmd.Flags().GetBool("owner")
+	addOwner, _ := cmd.Flags().GetBool("add-owner")
+	if owner || addOwner {
+		reviewers = append(reviewers, "@owners")
+	}
 	cc, _ := cmd.Flags().GetStringSlice("cc")
 	draft, _ := cmd.Flags().GetBool("draft")
 	ready, _ := cmd.Flags().GetBool("ready")

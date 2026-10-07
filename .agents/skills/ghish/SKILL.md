@@ -78,8 +78,8 @@ Commands:
     remotes (`gerrit.remote` in `.ghish.toml`, `branch.<cur>.remote`, `goog`,
     `aosp`, `partner`) and default branches (`gerrit.default_branch`, tracked
     upstream merge branch, `refs/remotes/<remote>/HEAD`, `main`).
-  - Flags: `-r, --reviewer <email>`, `-c, --cc <email>`, `--auto`,
-    `--trigger [1|2]` (alias `--cq [1|2]`; defaults to `+1` dry run on
+  - Flags: `-r, --reviewer <email|@owners>`, `--owner`, `-c, --cc <email>`,
+    `--auto`, `--trigger [1|2]` (alias `--cq [1|2]`; defaults to `+1` dry run on
     `Commit-Queue` or `Presubmit-Ready`; `2` submits), `-d, --draft` (WIP),
     `-B, --base <branch>`, `--stack`, `--publish`, `-o, --push-option <opt>`,
     `--no-verify`.
@@ -90,16 +90,22 @@ Commands:
     on the right branch.
   - *Stack & Submodule Guards*: Enforces stack and submodule safety checks
     before pushing.
-  - Supports `--ready` (remove WIP) and all `create` flags.
+  - Supports `--ready` (remove WIP) and all `create` flags (including `--owner`
+    and `-r @owners`).
   - *Smart Fallback*: If pushed with `--trigger` / `--cq` or metadata on an
     already up-to-date commit, `pr push` automatically applies updates via the
     Gerrit API instead of failing.
+- **`./gh pr ready [<id>] [--owner] [-r <email|@owners>] [-m <msg>] [-u|--undo]`**:
+  Mark a change ready for review (or back to WIP with `--undo`), optionally
+  assigning reviewers or resolving module code owners via `--owner` / `-r @owners`.
 - **`./gh pr edit [<id>]`**: Edit Gerrit CL metadata:
   - Trigger presubmit / CQ dry run: `./gh pr edit --trigger` (alias `--cq`; or
     `--trigger 2` / `--cq 2` to submit, `--trigger 0` / `--cq 0` to remove
     vote; also supports `--add-label <Name>=<Score>`).
   - Update reviewers/assignees: `./gh pr edit --add-reviewer user@google.com`
-    (`--remove-reviewer`, `--add-assignee`, `--remove-assignee`).
+    (pass `--add-owner` or `--add-reviewer @owners` to automatically assign
+    module code owners; also supports `--remove-reviewer`, `--add-assignee`,
+    `--remove-assignee`).
   - Set or remove topic/hashtags: `./gh pr edit --topic <name>`
     (`--remove-topic`, `--add-hashtag`, `--remove-hashtag`). Rejects `--topic`
     and `-o topic=...` before pushing if the project sets `Topics-Not-Supported`

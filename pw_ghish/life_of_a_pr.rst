@@ -54,19 +54,23 @@ your commit message.
 --------------------------------------------
 Step 2: Create the CL and start a CQ dry run
 --------------------------------------------
-Upload your commit to Gerrit as a new CL, request a reviewer, start a
-Commit-Queue dry run (``--cq``), and enable auto-submit (``--auto``):
+Upload your commit to Gerrit as a new CL, request a reviewer (or pass
+``--owner`` / ``-r @owners`` to select module code owners automatically), start
+a Commit-Queue dry run (``--cq``), and enable auto-submit (``--auto``):
 
 .. code-block:: console
 
-   $ ./gh pr create -r "reviewer@google.com" --cq --auto
+   $ ./gh pr create --owner --cq --auto
 
 What this command does:
 
 * Installs the Gerrit ``commit-msg`` hook and adds a ``Change-Id:`` footer if
   your commit does not have one yet.
 * Pushes ``HEAD`` to ``refs/for/main`` to create Patchset 1.
-* Adds ``reviewer@google.com`` as a reviewer.
+* Resolves ``--owner`` (or ``-r @owners``) for the modified files (or adds an
+  explicit ``-r reviewer@google.com``) as a reviewer. (If you prefer to wait
+  until tryjobs pass before notifying a reviewer, omit ``--owner`` here and run
+  ``./gh pr ready --owner`` once CQ is green.)
 * Votes ``Commit-Queue+1`` (``--cq``) to start LUCI presubmit tryjobs.
 * Votes ``Pigweed-Auto-Submit+1`` (``--auto``) so the CL will automatically
   land once a reviewer approves it with ``Code-Review+2`` and tryjobs pass.

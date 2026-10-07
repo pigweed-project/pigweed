@@ -112,6 +112,11 @@ Supports rich push options:
 			}
 		}
 
+		flags.PushOptions.Reviewers, err = ExpandReviewersForPush(ctx, cmd, cfg, branch, nil, flags.PushOptions.Reviewers)
+		if err != nil {
+			return err
+		}
+
 		fmt.Fprintf(cmd.OutOrStdout(), "Creating change for branch %s...\n", branch)
 
 		if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {

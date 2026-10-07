@@ -52,7 +52,11 @@ Supported flags
   before pushing.
 * ``-B, --base <branch>``: Target base branch (e.g. ``sandbox/experiment``).
   Defaults to the upstream tracking branch or repository default.
-* ``-r, --reviewer <email>``: Add reviewers to the change.
+* ``-r, --reviewer <email|@owners>``: Add reviewers to the change (pass
+  ``@owners`` or ``--owner`` to automatically select code owners for the
+  modified files).
+* ``--owner``: Automatically resolve and add code owners for the modified files
+  (shorthand for ``-r @owners``).
 * ``-c, --cc <email>``: CC users on the change.
 * ``--auto`` (alias ``--auto-submit``): Vote the host's auto-submit label upon
   upload.
@@ -110,13 +114,17 @@ Available as ``./gh pr push``, top-level ``./gh push``, or ``./gh pr upload``:
    # Push using the top-level alias:
    $ ./gh push
 
-   # Push with updated reviewers and mark ready for review:
-   $ ./gh pr push -r "colleague@google.com" --ready --auto
+   # Push, mark ready for review, and auto-assign code owners:
+   $ ./gh pr push --owner --ready --auto
 
 Supported flags
 ===============
 * ``-B, --base <branch>``: Override the target merge branch recorded on Gerrit.
-* ``-r, --reviewer <email>``: Add reviewers to the change.
+* ``-r, --reviewer <email|@owners>``: Add reviewers to the change (pass
+  ``@owners`` or ``--owner`` to automatically select code owners for the
+  modified files).
+* ``--owner``: Automatically resolve and add code owners for the modified files
+  (shorthand for ``-r @owners``).
 * ``-c, --cc <email>``: CC users on the change.
 * ``--ready``: Mark the change as ready for review (removes WIP status).
 * ``-d, --draft``: Mark the change as a work-in-progress (WIP) draft.
@@ -167,8 +175,11 @@ through the Gerrit REST API without pushing a new patchset:
 
 Supported flags
 ===============
-* ``--add-reviewer <email>`` / ``--remove-reviewer <email>``: Add or remove
-  reviewers.
+* ``--add-reviewer <email|@owners>`` / ``--remove-reviewer <email>``: Add or
+  remove reviewers (pass ``@owners`` or ``--add-owner`` to automatically select
+  code owners for the modified files).
+* ``--add-owner``: Automatically resolve and add code owners for the modified
+  files (shorthand for ``--add-reviewer @owners``).
 * ``--add-assignee <email>`` / ``--remove-assignee <email>``: Add or remove
   assignees.
 * ``--add-label <Label=Value>``: Apply a Gerrit label vote (e.g.
@@ -373,12 +384,35 @@ Control the work-in-progress (WIP) and abandoned state of a change:
    # Mark a WIP change ready for review:
    $ ./gh pr ready 413992
 
+   # Mark ready for review and assign module code owners:
+   $ ./gh pr ready 413992 --owner
+
    # Convert an active change back to WIP (draft) with a message:
    $ ./gh pr ready 413992 --undo -m "Holding for upstream refactor."
 
    # Abandon or restore a change in Gerrit:
    $ ./gh pr close 413992
    $ ./gh pr reopen 413992
+
+Automatic code-owner selection: ``--owner`` and ``@owners``
+-----------------------------------------------------------
+Whereas GitHub automatically assigns ``CODEOWNERS`` when a pull request leaves
+draft state, Gerrit's ``code-owners`` plugin does not automatically add
+reviewers when a CL is uploaded or marked ready. Pass ``--owner`` on
+``pr ready``, ``pr create``, or ``pr push``, ``--add-owner`` on ``pr edit``,
+or ``@owners`` to ``-r, --reviewer`` / ``--add-reviewer`` to resolve and add
+the appropriate module owners for the CL's touched files:
+
+.. code-block:: console
+
+   $ ./gh pr ready --owner
+   $ ./gh pr push --ready --owner
+   $ ./gh pr edit --add-owner
+
+``--owner`` / ``@owners`` queries Gerrit's ``code-owners`` API and local
+``OWNERS`` files to select the minimal set of non-author module owners covering
+the modified directories, falling back to the project's review rotation (such
+as ``gwsq-pigweed``) when no module-specific owner applies.
 
 Checking CI status: ``pr checks``
 =================================
@@ -522,12 +556,14 @@ Comparison with GitHub CLI (gh pr)
    * - ``pr create``
      - Pushes ``HEAD`` to ``refs/for/<base>`` as a **new** CL.
      - Stops if ``Change-Id`` already exists on Gerrit (use ``pr push``).
-       Adds ``--stack``, ``--cq``, ``--auto``, and ``-o, --push-option``.
+       Adds ``--stack``, ``--cq``, ``--auto``, ``--owner`` / ``--add-owner``,
+       ``--add-reviewer``, and ``-o, --push-option``; ``-r`` accepts ``@owners``.
    * - ``pr push``
      - Uploads a **new patchset** to an existing Gerrit CL.
      - **Gerrit adaptation** (replaces ``git push``). Queries target branch on
        Gerrit and supports ``--stack``, ``--cq``, ``--auto``, ``--publish``,
-       ``--ready``, and ``-o, --push-option``.
+       ``--ready``, ``--owner`` / ``--add-owner``, ``--add-reviewer``, and
+       ``-o, --push-option``; ``-r`` accepts ``@owners``.
    * - ``pr view [<id>]``
      - Queries Gerrit REST API for change metadata, votes, and ``--comments``.
      - Supports ``<id>/<patchset>`` and shortlinks (``pwrev/``). ``--json``
@@ -536,10 +572,12 @@ Comparison with GitHub CLI (gh pr)
        ``OPEN`` / ``CLOSED`` / ``MERGED``.
    * - ``pr edit [<id>]``
      - Updates reviewers, assignees, topic, hashtags, and votes via REST.
-     - Adds ``--cq``, ``--topic``, ``--remove-topic``, ``--add-hashtag``, and
-       ``--remove-hashtag``. Commit-message flags (``--title``, ``--body``,
-       ``--message``, ``--bug``, ``--fixed``) redirect to local Git commit
-       editing (`b/567763970 <https://issues.pigweed.dev/issues/567763970>`_).
+     - Adds ``--cq``, ``--topic``, ``--remove-topic``, ``--add-hashtag``,
+       ``--remove-hashtag``, ``-r, --reviewer``, and ``--owner`` /
+       ``--add-owner``; ``--add-reviewer`` accepts ``@owners``.
+       Commit-message flags (``--title``, ``--body``, ``--message``, ``--bug``,
+       ``--fixed``) redirect to local Git commit editing
+       (`b/567763970 <https://issues.pigweed.dev/issues/567763970>`_).
    * - ``pr list -a / --assignee``
      - Filters changes by Gerrit ``reviewer:``.
      - Gerrit 3.8+ removed assignees; ``-a`` queries reviewers instead.
@@ -557,7 +595,9 @@ Comparison with GitHub CLI (gh pr)
        ``--delete-draft`` to delete an unpublished draft.
    * - ``pr ready``
      - Marks a WIP change ready for review, or WIP with ``-u, --undo``.
-     - Adds ``-m, --message`` to attach a status note to the state transition.
+     - Adds ``-m, --message`` to attach a status note and ``--owner`` /
+       ``--add-owner`` or ``-r, --reviewer`` / ``--add-reviewer`` (including
+       ``@owners``) to assign reviewers when marking ready.
    * - ``pr merge``
      - Submits the CL directly, via ``--cq`` (``Commit-Queue+2``), or via
        ``--auto`` (``Auto-Submit+1``).
