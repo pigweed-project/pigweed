@@ -18,11 +18,13 @@
 
 #if defined(__cpp_concepts) && __has_include(<concepts>)
 #include <concepts>
+#endif  // defined(__cpp_concepts) && __has_include(<concepts>)
 
+#ifdef __cpp_lib_concepts
 #define _PW_STATUS_CODE ::std::regular
 #else
 #define _PW_STATUS_CODE
-#endif  // defined(__cpp_concepts) && __has_include(<concepts>)
+#endif  // __cpp_lib_concepts
 
 #include "pw_enum/to_string.h"
 
