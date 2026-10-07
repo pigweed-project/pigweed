@@ -270,10 +270,28 @@ void IsoStreamManager::AcceptCisRequest(
     }
     if (self->hci_.is_alive()) {
       hci::IsoDataChannel* iso_data_channel = self->hci_->iso_data_channel();
-      if (iso_data_channel &&
-          iso_data_channel->RegisterConnection(
-              cis_handle, self->streams_[id]->GetWeakPtr())) {
-        self->registered_handles_.insert(cis_handle);
+      if (iso_data_channel) {
+        auto it = self->streams_.find(id);
+        if (it == self->streams_.end()) {
+          bt_log(
+              WARN,
+              "iso",
+              "stream for handle %#x already removed before command response",
+              cis_handle);
+          return;
+        }
+        if (!it->second) {
+          bt_log(ERROR,
+                 "iso",
+                 "stream for handle %#x is null in streams_ map; cleaning up",
+                 cis_handle);
+          self->streams_.erase(it);
+          return;
+        }
+        if (iso_data_channel->RegisterConnection(cis_handle,
+                                                 it->second->GetWeakPtr())) {
+          self->registered_handles_.insert(cis_handle);
+        }
       }
     }
   };

@@ -462,4 +462,34 @@ TEST_F(IsoStreamManagerTest, AcceptCisFailsWhenNotPeripheral) {
   EXPECT_EQ(status, AcceptCisStatus::kNotPeripheral);
 }
 
+TEST_F(IsoStreamManagerTest,
+       CisEstablishedFailureBeforeCommandResponseDoesNotCrash) {
+  const CigCisIdentifier kId(0x14, 0x04);
+
+  bool cb_invoked = false;
+  EXPECT_EQ(CallAcceptCis(kId, &cb_invoked), AcceptCisStatus::kSuccess);
+  ASSERT_TRUE(iso_stream_manager()->HandlerRegistered(kId));
+
+  auto le_accept_cis_packet =
+      testing::LEAcceptCisRequestCommandPacket(kCisHandleId);
+  auto le_cis_established_fail_packet = LECisEstablishedPacketWithStatus(
+      pw::bluetooth::emboss::StatusCode::UNSPECIFIED_ERROR, kCisHandleId);
+  auto le_accept_cis_status_packet =
+      testing::CommandStatusPacket(hci_spec::kLEAcceptCISRequest,
+                                   pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  // Controller sends failed CIS established subevent BEFORE command status.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        le_accept_cis_packet,
+                        &le_cis_established_fail_packet,
+                        &le_accept_cis_status_packet);
+
+  DynamicByteBuffer request_packet = testing::LECisRequestEventPacket(
+      kAclConnectionHandleId1, kCisHandleId, kId.cig_id(), kId.cis_id());
+  test_device()->SendCommandChannelPacket(request_packet);
+  RunUntilIdle();
+
+  EXPECT_TRUE(cb_invoked);
+}
+
 }  // namespace bt::iso
