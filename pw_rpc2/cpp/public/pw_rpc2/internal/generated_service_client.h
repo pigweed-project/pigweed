@@ -35,8 +35,8 @@ class GeneratedServiceClient : public ServiceClient {
   constexpr GeneratedServiceClient() = default;
 
   /// Binds `client` to the service with ID `service_id`.
-  GeneratedServiceClient(Client client, uint32_t service_id)
-      : ServiceClient(std::move(client), service_id) {}
+  GeneratedServiceClient(const Client& client, uint32_t service_id)
+      : ServiceClient(client, service_id) {}
 
   // To limit code size, these templates do only payload-type-dependent work.
   // Everything else is in the non-template `StartCall()`. Calls are allocated

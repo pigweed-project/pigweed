@@ -1,0 +1,36 @@
+// Copyright 2026 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+syntax = "proto3";
+
+package pw.rpc2.test;
+
+// Request for `TestEcho` methods.
+message EchoRequest {
+  uint32 val = 1;
+}
+
+// Response for `TestEcho` methods.
+message EchoResponse {
+  uint32 val = 1;
+}
+
+// A service with one method of each RPC type, used to test generated client and
+// service code.
+service TestEcho {
+  rpc EchoUnary(EchoRequest) returns (EchoResponse);
+  rpc CountUpServerStream(EchoRequest) returns (stream EchoResponse);
+  rpc AccumulateClientStream(stream EchoRequest) returns (EchoResponse);
+  rpc EchoBidiStream(stream EchoRequest) returns (stream EchoResponse);
+}

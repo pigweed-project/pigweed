@@ -1,0 +1,35 @@
+// Copyright 2026 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+syntax = "proto3";
+
+// This file intentionally has no package.
+//
+// It defines no messages, since the pwpb headers for package-less messages do
+// not compile: they refer to the messages as `::pwpb::<Message>` (see
+// b/250945489 and pw_protobuf/py/pw_protobuf/proto_tree.py). The pw_rpc2
+// codegen's handling of package-less messages is covered by the Python tests.
+
+import "pw_rpc2/codegen_test_protos/common.proto";
+
+service NoPackage {
+  rpc Unary(pw.rpc2.codegen_test.common.Shared)
+      returns (pw.rpc2.codegen_test.common.Outer.Inner);
+  rpc ServerStream(pw.rpc2.codegen_test.common.Shared)
+      returns (stream pw.rpc2.codegen_test.common.Shared);
+  rpc ClientStream(stream pw.rpc2.codegen_test.common.Shared)
+      returns (pw.rpc2.codegen_test.common.Outer.Inner);
+  rpc Bidi(stream pw.rpc2.codegen_test.common.Shared)
+      returns (stream pw.rpc2.codegen_test.common.Shared);
+}

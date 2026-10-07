@@ -3849,6 +3849,32 @@ def generate_is_trivially_comparable_specialization(
     output.write_line('}')
 
 
+def generate_message_traits_specialization(
+    message: ProtoMessage,
+    output: OutputFile,
+) -> None:
+    namespace = f'::{message.cpp_namespace()}'
+    qualified_message = f'{namespace}::Message'
+
+    output.write_line('template <>')
+    output.write_line(f'struct MessageTraits<{qualified_message}> {{')
+    with output.indent():
+        output.write_line('static constexpr bool kIsMessage = true;')
+        output.write_line(
+            'static constexpr const span<const MessageField>* '
+            f'kMessageFields = &{namespace}::kMessageFields;'
+        )
+        output.write_line(
+            'static constexpr size_t kMaxEncodedSizeBytesWithoutValues = '
+            f'{namespace}::kMaxEncodedSizeBytesWithoutValues;'
+        )
+        output.write_line(
+            'static constexpr size_t kScratchBufferSizeBytes = '
+            f'{namespace}::kScratchBufferSizeBytes;'
+        )
+    output.write_line('};')
+
+
 def _proto_filename_to_generated_header(proto_file: str) -> str:
     """Returns the generated C++ header name for a .proto file."""
     return os.path.splitext(proto_file)[0] + PROTO_H_EXTENSION
@@ -4021,6 +4047,13 @@ def generate_code_for_package(
                 codegen_options,
             )
 
+        output.write_line()
+        output.write_line('namespace internal {')
+
+        for message in messages:
+            generate_message_traits_specialization(message, output)
+
+        output.write_line('}  // namespace internal')
         output.write_line(f'}}  // namespace {proto_namespace}')
 
 

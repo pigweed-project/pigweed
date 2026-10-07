@@ -52,6 +52,9 @@ PwProtoInfo = provider(
         "hdrs": "generated C++ header files",
         "includes": "include paths for generated C++ header files",
         "srcs": "generated C++ src files",
+        "unexported_files": "files generated from this target's own .proto " +
+                            "files that are neither compiled nor exported " +
+                            "as headers (for example, stubs to copy from)",
     },
 )
 
@@ -98,6 +101,31 @@ def compile_proto(ctx):
         defines = [],
     )
 
+def compile_proto_with_unexported_files(ctx):
+    """Implementation of a proto codegen rule with unexported outputs.
+
+    Like `compile_proto`, but also makes the aspect's `unexported_files` for
+    the protos listed in `protos` available, without exporting them as headers.
+    They are built by `bazel build` of the target (`DefaultInfo`) and are
+    available in the `unexported_files` output group.
+
+    Args:
+      ctx: Rule context object (https://bazel.build/rules/lib/builtins/ctx).
+
+    Returns:
+      CcInfo, DefaultInfo, and OutputGroupInfo providers.
+    """
+    unexported_files = depset([
+        f
+        for dep in ctx.attr.protos
+        for f in dep[PwProtoInfo].unexported_files
+    ])
+    hdrs = depset([f for dep in ctx.attr.protos for f in dep[PwProtoInfo].hdrs])
+    return compile_proto(ctx) + [
+        DefaultInfo(files = depset(transitive = [hdrs, unexported_files])),
+        OutputGroupInfo(unexported_files = unexported_files),
+    ]
+
 def _options_symlink_path(options_file, workspace_root, proto_source_root, import_prefix, strip_import_prefix):
     path_in_module = paths.relativize(options_file.path, workspace_root)
 
@@ -116,13 +144,19 @@ def _options_symlink_path(options_file, workspace_root, proto_source_root, impor
 def _proto_compiler_aspect_impl(target, ctx):
     for excluded_target in ctx.attr._excluded_targets:
         if excluded_target.label == target.label:
-            return PwProtoInfo(srcs = [], hdrs = [], includes = [])
+            return PwProtoInfo(
+                srcs = [],
+                hdrs = [],
+                includes = [],
+                unexported_files = [],
+            )
 
     # List the files we will generate for this proto_library target.
     proto_info = target[ProtoInfo]
 
     srcs = []
     hdrs = []
+    unexported_files = []
 
     # Setup the output root for the plugin to point to targets output
     # directory. This allows us to declare the location of the files that protoc
@@ -147,7 +181,7 @@ def _proto_compiler_aspect_impl(target, ctx):
         # Add location of headers to cc include path.
         includes.append("{}/{}".format(out_path, src.owner.package))
 
-        for ext in ctx.attr._extensions:
+        for ext in ctx.attr._extensions + ctx.attr._unexported_extensions:
             # Declare all output files, in target package dir.
             generated_filename = src.basename[:-len("proto")] + ext
             if proto_dir:
@@ -160,7 +194,9 @@ def _proto_compiler_aspect_impl(target, ctx):
 
             out_file = ctx.actions.declare_file(out_file_name)
 
-            if ext.endswith(".h"):
+            if ext in ctx.attr._unexported_extensions:
+                unexported_files.append(out_file)
+            elif ext.endswith(".h"):
                 hdrs.append(out_file)
             else:
                 srcs.append(out_file)
@@ -251,7 +287,7 @@ def _proto_compiler_aspect_impl(target, ctx):
         progress_message = "Generating %s C++ files for %s" % (ctx.attr._extensions, ctx.label.name),
         mnemonic = "PwProtoCompile",
         tools = all_tools,
-        outputs = srcs + hdrs,
+        outputs = srcs + hdrs + unexported_files,
         executable = protoc,
         arguments = [args],
         env = {
@@ -277,9 +313,15 @@ def _proto_compiler_aspect_impl(target, ctx):
         srcs = transitive_srcs,
         hdrs = transitive_hdrs,
         includes = transitive_includes,
+        unexported_files = unexported_files,
     )]
 
-def proto_compiler_aspect(extensions, protoc_plugin, plugin_options = [], excluded_targets = []):
+def proto_compiler_aspect(
+        extensions,
+        protoc_plugin,
+        plugin_options = [],
+        excluded_targets = [],
+        unexported_extensions = []):
     """Returns an aspect that runs the proto compiler.
 
     The aspect propagates through the deps of proto_library targets, running
@@ -292,6 +334,10 @@ def proto_compiler_aspect(extensions, protoc_plugin, plugin_options = [], exclud
 
     The aspect returns a provider exposing all the File objects generated from
     the dependency graph.
+
+    Files with `unexported_extensions` are also generated, but are neither
+    compiled nor exported as headers. They are listed in the provider's
+    `unexported_files` for the proto_library's own sources only.
     """
     return aspect(
         attr_aspects = ["deps"],
@@ -316,6 +362,10 @@ def proto_compiler_aspect(extensions, protoc_plugin, plugin_options = [], exclud
                 executable = True,
                 doc = "Protoc plugin to invoke.",
                 cfg = "exec",
+            ),
+            "_unexported_extensions": attr.string_list(
+                default = unexported_extensions,
+                doc = "Extensions of generated files that are not exported.",
             ),
         },
         toolchains = [

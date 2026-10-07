@@ -14,6 +14,7 @@
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 include($ENV{PW_ROOT}/pw_enum/pw_cc_enum_library.cmake)
+include($ENV{PW_ROOT}/pw_protobuf_compiler/proto.cmake)
 
 pw_add_enum_library(pw_rpc2.cpp._protocol_status
   ENUM_HEADERS
@@ -494,13 +495,156 @@ pw_add_test(pw_rpc2.cpp.client_test
     pw_allocator.testing
     pw_async2
     pw_async2.testing
+    pw_buf
     pw_rpc2.cpp._client
-    pw_rpc2.cpp._method
-    pw_rpc2.cpp._serialize
+    pw_rpc2.cpp._connection
     pw_rpc2.cpp._test_utils
+    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
+    pw_status
     pw_thread.test_thread_context
     pw_thread.thread
-    pw_transport.cpp
+  GROUPS
+    modules
+    pw_rpc2
+)
+
+pw_add_test(pw_rpc2.cpp.generated_client_test
+  SOURCES
+    generated_client_test.cc
+  PRIVATE_DEPS
+    pw_allocator.testing
+    pw_async2
+    pw_async2.testing
+    pw_buf
+    pw_bytes
+    pw_result
+    pw_rpc2.cpp._client
+    pw_rpc2.cpp._connection
+    pw_rpc2.cpp._test_utils
+    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
+    pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
+    pw_status
+  GROUPS
+    modules
+    pw_rpc2
+)
+
+pw_proto_library(pw_rpc2.cpp.pw_rpc2_test_proto
+  SOURCES
+    pw_rpc2_test.proto
+  PREFIX
+    pw_rpc2
+)
+
+pw_add_test(pw_rpc2.cpp.generated_service_test
+  SOURCES
+    generated_service_test.cc
+  PRIVATE_DEPS
+    pw_allocator.testing
+    pw_async2
+    ${_pw_rpc2_coro_deps}
+    pw_async2.testing
+    pw_buf
+    pw_bytes
+    pw_compilation_testing._pigweed_only_negative_compilation
+    pw_polyfill
+    pw_result
+    pw_rpc2.cpp._client
+    pw_rpc2.cpp._connection
+    pw_rpc2.cpp._server
+    pw_rpc2.cpp._test_utils
+    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
+    pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
+    pw_status
+  GROUPS
+    modules
+    pw_rpc2
+)
+
+pw_proto_library(pw_rpc2.cpp.mixed_apis_proto
+  SOURCES
+    mixed_apis.proto
+  PREFIX
+    pw_rpc2
+)
+
+pw_add_test(pw_rpc2.cpp.mixed_apis_test
+  SOURCES
+    mixed_apis_test.cc
+  PRIVATE_DEPS
+    pw_allocator
+    pw_allocator.testing
+    pw_assert.check
+    pw_async2
+    ${_pw_rpc2_coro_deps}
+    pw_async2.testing
+    pw_buf
+    pw_bytes
+    pw_result
+    pw_rpc2.cpp._client
+    pw_rpc2.cpp._connection
+    pw_rpc2.cpp._server
+    pw_rpc2.cpp._test_utils
+    pw_rpc2.cpp.mixed_apis_proto.pwpb_rpc2
+    pw_status
+  GROUPS
+    modules
+    pw_rpc2
+)
+
+pw_proto_library(pw_rpc2.cpp.codegen_test_proto
+  SOURCES
+    codegen_test_protos/common.proto
+    codegen_test_protos/names.proto
+    codegen_test_protos/no_package.proto
+    codegen_test_protos/other.proto
+  PREFIX
+    pw_rpc2
+)
+
+pw_add_test(pw_rpc2.cpp.codegen_test
+  SOURCES
+    codegen_test.cc
+  PRIVATE_DEPS
+    pw_allocator
+    pw_allocator.testing
+    pw_async2
+    pw_async2.testing
+    pw_buf
+    pw_bytes
+    pw_rpc2.cpp._client
+    pw_rpc2.cpp._connection
+    pw_rpc2.cpp._method
+    pw_rpc2.cpp._server
+    pw_rpc2.cpp._test_utils
+    pw_rpc2.cpp.codegen_test_proto.pwpb_rpc2
+    pw_rpc2.cpp.codegen_test_proto.raw_rpc2
+    pw_status
+  GROUPS
+    modules
+    pw_rpc2
+)
+
+pw_add_test(pw_rpc2.cpp.e2e_test
+  SOURCES
+    e2e_test.cc
+  PRIVATE_DEPS
+    pw_allocator.testing
+    pw_async2
+    pw_async2.testing
+    pw_buf
+    pw_bytes
+    pw_containers.vector
+    pw_result
+    pw_rpc2.cpp._client
+    pw_rpc2.cpp._connection
+    pw_rpc2.cpp._server
+    pw_rpc2.cpp._test_utils
+    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
+    pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
+    pw_span
+    pw_status
+    pw_unit_test.status_macros
   GROUPS
     modules
     pw_rpc2

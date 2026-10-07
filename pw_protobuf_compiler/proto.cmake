@@ -156,6 +156,30 @@ function(pw_proto_library NAME)
     OUT_DIR
       "${out_dir}"
   )
+  _pw_pwpb_rpc2_library("${NAME}"
+    SOURCES
+      ${sources}
+    INPUTS
+      ${inputs}
+    DEPS
+      ${arg_DEPS}
+    INCLUDE_FILE
+      "${include_file}"
+    OUT_DIR
+      "${out_dir}"
+  )
+  _pw_raw_rpc2_library("${NAME}"
+    SOURCES
+      ${sources}
+    INPUTS
+      ${inputs}
+    DEPS
+      ${arg_DEPS}
+    INCLUDE_FILE
+      "${include_file}"
+    OUT_DIR
+      "${out_dir}"
+  )
   _pw_nanopb_library("${NAME}"
     SOURCES
       ${sources}
@@ -277,6 +301,7 @@ function(_pw_generate_protos TARGET LANGUAGE)
       "$ENV{PW_ROOT}/pw_status/py"
       "$ENV{PW_ROOT}/pw_protobuf_compiler/py"
       "$ENV{PW_ROOT}/pw_rpc/py"
+      "$ENV{PW_ROOT}/pw_rpc2/py"
       "$ENV{PW_ROOT}/pw_stream/py"
       "$ENV{PW_ROOT}/pw_log/py"
       "$ENV{PW_ROOT}/pw_cli/py"
@@ -477,6 +502,125 @@ function(_pw_raw_rpc_library NAME)
   )
   add_dependencies("${NAME}.raw_rpc" "${NAME}._generate.raw_rpc")
 endfunction(_pw_raw_rpc_library)
+
+# Internal function that creates a pwpb_rpc2 library.
+function(_pw_pwpb_rpc2_library NAME)
+  pw_parse_arguments(
+    NUM_POSITIONAL_ARGS
+      1
+    ONE_VALUE_ARGS
+      INCLUDE_FILE
+      OUT_DIR
+    MULTI_VALUE_ARGS
+      SOURCES
+      INPUTS
+      DEPS
+  )
+
+  list(TRANSFORM arg_DEPS APPEND .pwpb_rpc2)
+
+  _pw_generate_protos("${NAME}" pwpb_rpc2
+    PLUGIN
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/plugin_pwpb.py"
+    OUTPUT_EXTS
+      ".pwpb.rpc2.h"
+      ".pwpb_stubs.rpc2.h"
+    INCLUDE_FILE
+      "${arg_INCLUDE_FILE}"
+    OUT_DIR
+      "${arg_OUT_DIR}"
+    SOURCES
+      ${arg_SOURCES}
+    INPUTS
+      ${arg_INPUTS}
+    DEPENDS
+      ${arg_DEPS}
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/codegen_common.py"
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/codegen_pwpb.py"
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/plugin.py"
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/plugin_pwpb.py"
+  )
+
+  # The stub headers are generated for reference, but are not part of the
+  # library.
+  set(headers ${generated_outputs})
+  list(FILTER headers EXCLUDE REGEX "_stubs\\.rpc2\\.h$")
+
+  pw_add_library_generic("${NAME}.pwpb_rpc2" INTERFACE
+    GENERATED_HEADERS
+      ${headers}
+    PUBLIC_INCLUDES
+      "${arg_OUT_DIR}/pwpb_rpc2"
+    PUBLIC_DEPS
+      "${NAME}.pwpb"
+      pw_build
+      pw_protobuf
+      pw_rpc2.cpp
+      pw_rpc2.cpp._pwpb_serialize
+      ${arg_DEPS}
+    SANDBOX
+      OFF
+  )
+  add_dependencies("${NAME}.pwpb_rpc2" "${NAME}._generate.pwpb_rpc2")
+endfunction(_pw_pwpb_rpc2_library)
+
+# Internal function that creates a raw_rpc2 proto library.
+function(_pw_raw_rpc2_library NAME)
+  pw_parse_arguments(
+    NUM_POSITIONAL_ARGS
+      1
+    ONE_VALUE_ARGS
+      INCLUDE_FILE
+      OUT_DIR
+    MULTI_VALUE_ARGS
+      SOURCES
+      INPUTS
+      DEPS
+  )
+
+  list(TRANSFORM arg_DEPS APPEND .raw_rpc2)
+
+  _pw_generate_protos("${NAME}" raw_rpc2
+    PLUGIN
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/plugin_raw.py"
+    OUTPUT_EXTS
+      ".raw.rpc2.h"
+      ".raw_stubs.rpc2.h"
+    INCLUDE_FILE
+      "${arg_INCLUDE_FILE}"
+    OUT_DIR
+      "${arg_OUT_DIR}"
+    SOURCES
+      ${arg_SOURCES}
+    INPUTS
+      ${arg_INPUTS}
+    DEPENDS
+      ${arg_DEPS}
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/codegen_common.py"
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/codegen_raw.py"
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/plugin.py"
+      "$ENV{PW_ROOT}/pw_rpc2/py/pw_rpc2/plugin_raw.py"
+  )
+
+  # The stub headers are generated for reference, but are not part of the
+  # library.
+  set(headers ${generated_outputs})
+  list(FILTER headers EXCLUDE REGEX "_stubs\\.rpc2\\.h$")
+
+  pw_add_library_generic("${NAME}.raw_rpc2" INTERFACE
+    GENERATED_HEADERS
+      ${headers}
+    PUBLIC_INCLUDES
+      "${arg_OUT_DIR}/raw_rpc2"
+    PUBLIC_DEPS
+      pw_build
+      pw_rpc2.cpp
+      ${arg_DEPS}
+    SANDBOX
+      OFF
+  )
+  add_dependencies("${NAME}.raw_rpc2" "${NAME}._generate.raw_rpc2")
+endfunction(_pw_raw_rpc2_library)
 
 # Internal function that creates a nanopb proto library.
 function(_pw_nanopb_library NAME)

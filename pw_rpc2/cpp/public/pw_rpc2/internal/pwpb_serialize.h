@@ -14,6 +14,8 @@
 #pragma once
 
 #include <cstddef>
+#include <type_traits>
+#include <utility>
 
 #include "pw_bytes/span.h"
 #include "pw_protobuf/internal/codegen.h"
@@ -150,6 +152,28 @@ struct PwpbSerializer {
   static Result<MessageType> Deserialize(span<const std::byte> source) {
     return PwpbSerde<kTable>::template Deserialize<MessageType>(source);
   }
+};
+
+/// Selects the serializer for a PWPB `Message` struct.
+///
+/// The pwpb codegen specializes `pw::protobuf::internal::MessageTraits` for
+/// every generated `Message` struct with its descriptor table and maximum
+/// encoded size.
+///
+/// `kMaxEncodedSizeBytesWithoutValues` equals `kMaxEncodedSizeBytes` for a
+/// message whose fields all have statically known sizes, and pwpb always
+/// emits it. For a message with dynamically sized (callback) fields, it
+/// excludes those fields; `PwpbSerializer` then sizes values exactly.
+// `enable_if_t` rather than `void_t`, since Clang considers partial
+// specializations that differ only in the arguments to `void_t` to be
+// redefinitions of `SerializerFor<T, std::void_t<typename T::Serializer>>`.
+template <typename T>
+struct SerializerFor<
+    T,
+    std::enable_if_t<protobuf::internal::MessageTraits<T>::kIsMessage>> {
+  using type = PwpbSerializer<
+      protobuf::internal::MessageTraits<T>::kMessageFields,
+      protobuf::internal::MessageTraits<T>::kMaxEncodedSizeBytesWithoutValues>;
 };
 
 }  // namespace pw::rpc2::internal

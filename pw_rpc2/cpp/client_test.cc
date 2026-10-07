@@ -15,105 +15,29 @@
 #include "pw_rpc2/client.h"
 
 #include <cstddef>
-#include <cstring>
+#include <cstdint>
 #include <optional>
 #include <utility>
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/future_task.h"
+#include "pw_buf/buf.h"
+#include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/generated_service_client.h"
-#include "pw_rpc2/internal/method_info.h"
-#include "pw_rpc2/internal/serialize.h"
 #include "pw_rpc2/internal/test_utils.h"
+#include "pw_rpc2/pw_rpc2_test.pwpb.rpc2.h"
 #include "pw_rpc2/service_client.h"
+#include "pw_status/status.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
-#include "pw_transport/transport.h"
 #include "pw_unit_test/framework.h"
-
-namespace echo::pwpb {
-
-struct EchoRequest {
-  uint32_t val = 0;
-};
-
-struct EchoResponse {
-  uint32_t val = 0;
-};
-
-class EchoService {
- public:
-  static constexpr uint32_t kServiceId = 0x1234;
-
-  struct EchoUnary : ::pw::rpc2::internal::MethodInfoTag {
-    static constexpr uint32_t kServiceId = EchoService::kServiceId;
-    static constexpr uint32_t kMethodId = 0x5678;
-    static constexpr ::pw::rpc2::MethodType kType =
-        ::pw::rpc2::MethodType::kUnary;
-    using Request = EchoRequest;
-    using Response = EchoResponse;
-  };
-
-  class Client : public ::pw::rpc2::internal::GeneratedServiceClient {
-   public:
-    explicit Client(::pw::rpc2::Client client)
-        : GeneratedServiceClient(std::move(client), kServiceId) {}
-
-    ::pw::rpc2::UnaryFuture<EchoRequest, EchoResponse> EchoUnary(
-        const EchoRequest& request) const {
-      return CallUnary<EchoRequest, EchoResponse>(
-          EchoService::EchoUnary::kMethodId, request);
-    }
-  };
-};
-
-}  // namespace echo::pwpb
-
-namespace pw::rpc2::internal {
-
-// Serializes a message whose only field is `uint32_t val` as its raw bytes.
-template <typename Message>
-struct Uint32ValSerializer {
-  static size_t MaxEncodedSize(const Message&) { return sizeof(uint32_t); }
-
-  static StatusWithSize Serialize(const Message& msg,
-                                  span<std::byte> destination) {
-    if (destination.size() < sizeof(uint32_t)) {
-      return StatusWithSize::ResourceExhausted();
-    }
-    std::memcpy(destination.data(), &msg.val, sizeof(uint32_t));
-    return StatusWithSize(OkStatus(), sizeof(uint32_t));
-  }
-
-  template <typename T>
-  static Result<T> Deserialize(span<const std::byte> source) {
-    if (source.size() != sizeof(uint32_t)) {
-      return Status::DataLoss();
-    }
-    T msg;
-    std::memcpy(&msg.val, source.data(), sizeof(uint32_t));
-    return msg;
-  }
-};
-
-template <>
-struct SerializerFor<echo::pwpb::EchoRequest> {
-  using type = Uint32ValSerializer<echo::pwpb::EchoRequest>;
-};
-
-template <>
-struct SerializerFor<echo::pwpb::EchoResponse> {
-  using type = Uint32ValSerializer<echo::pwpb::EchoResponse>;
-};
-
-}  // namespace pw::rpc2::internal
 
 namespace pw::rpc2 {
 namespace {
 
-using EchoRequest = echo::pwpb::EchoRequest;
-using EchoResponse = echo::pwpb::EchoResponse;
+using EchoRequest = test::pwpb::EchoRequest::Message;
+using EchoResponse = test::pwpb::EchoResponse::Message;
 
 TEST(ClientFutureTest, CreateFromTransportSequentialConnectAndHandshake) {
   allocator::test::AllocatorForTest<16384> allocator;
@@ -232,7 +156,7 @@ TEST(ClientFutureTest, DestroyedUnpendedFromConnectionClosesConnection) {
   EXPECT_TRUE(raw_conn->is_closed());
 }
 
-TEST(ClientTest, CallIdAllocationAndCopyMoveSemantics) {
+TEST(ClientTest, MoveEmptiesTheSource) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
@@ -240,40 +164,64 @@ TEST(ClientTest, CallIdAllocationAndCopyMoveSemantics) {
   Client client =
       test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn);
 
-  // Moving empties the source.
   Client moved_client(std::move(client));
   EXPECT_TRUE(moved_client.is_open());
   EXPECT_FALSE(client.is_open());  // NOLINT(bugprone-use-after-move)
 
-  // Copying keeps both clients open and referring to the same connection.
-  Client copied_client(moved_client);
-  EXPECT_TRUE(copied_client.is_open());
-  EXPECT_TRUE(moved_client.is_open());
+  test::CloseClient(moved_client, dispatcher);
+}
 
-  // ServiceClients store a Client and expose it via client(), and every copy
-  // draws call IDs from the one underlying connection. A ServiceClient is only
-  // constructed through a generated service client.
+// Copies refer to the same connection, so closing one closes them all.
+TEST(ClientTest, CopiesShareOneConnection) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  Client client =
+      test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn);
+
+  Client copied_client(client);
+  EXPECT_TRUE(copied_client.is_open());
+  EXPECT_TRUE(client.is_open());
+
+  test::CloseClient(client, dispatcher);
+  EXPECT_FALSE(client.is_open());
+  EXPECT_FALSE(copied_client.is_open());
+}
+
+// ServiceClients store a Client and expose it via client(), and every copy
+// draws call IDs from the one underlying connection.
+TEST(ClientTest, ServiceClientCopiesDrawDistinctCallIds) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  Client client =
+      test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn);
+
+  // A ServiceClient is only constructed through a generated service client.
   class TestServiceClient : public internal::GeneratedServiceClient {
    public:
-    TestServiceClient(Client client, uint32_t service_id)
-        : internal::GeneratedServiceClient(std::move(client), service_id) {}
+    TestServiceClient(Client service_client, uint32_t service_id)
+        : internal::GeneratedServiceClient(std::move(service_client),
+                                           service_id) {}
   };
-  TestServiceClient ref1(copied_client, 1);
+  TestServiceClient ref1(client, 1);
   TestServiceClient ref2 = ref1;
   EXPECT_TRUE(ref1.is_open());
   EXPECT_TRUE(ref1.client().is_open());
+
   auto call1 = internal::CallAccess::CreateCall(ref1.client());
   auto call2 = internal::CallAccess::CreateCall(ref2.client());
-  auto call3 = internal::CallAccess::CreateCall(copied_client);
+  auto call3 = internal::CallAccess::CreateCall(client);
   ASSERT_NE(call1, nullptr);
   ASSERT_NE(call2, nullptr);
   ASSERT_NE(call3, nullptr);
   EXPECT_NE(call1->call_id(), call2->call_id());
   EXPECT_NE(call2->call_id(), call3->call_id());
+  EXPECT_NE(call1->call_id(), call3->call_id());
 
-  test::CloseClient(moved_client, dispatcher);
-  EXPECT_FALSE(moved_client.is_open());
-  EXPECT_FALSE(copied_client.is_open());
+  test::CloseClient(client, dispatcher);
   EXPECT_FALSE(ref1.is_open());
   EXPECT_FALSE(ref2.is_open());
 }
@@ -306,14 +254,14 @@ TEST(MockPeerTest, DecodesTypedRequestAndSendsTypedResponse) {
   async2::DispatcherForTest dispatcher;
 
   auto peer = test::MakeMockPeer(dispatcher, allocator);
-  echo::pwpb::EchoService::Client client(peer.client());
+  test::pw_rpc2::pwpb::TestEcho::Client client(peer.client());
 
   async2::FutureTask task(client.EchoUnary(EchoRequest{.val = 42}));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
 
   // Read side: the recorded request payload decodes back to the message.
-  auto call = peer.ExpectInvocation<echo::pwpb::EchoService::EchoUnary>();
+  auto call = peer.ExpectInvocation<test::pw_rpc2::pwpb::TestEcho::EchoUnary>();
   auto decoded = call.request();
   PW_TEST_ASSERT_OK(decoded);
   EXPECT_EQ(decoded->val, 42u);
@@ -334,11 +282,11 @@ TEST(MockPeerTest, ClaimsEachInvocationExactlyOnce) {
   async2::DispatcherForTest dispatcher;
 
   auto peer = test::MakeMockPeer(dispatcher, allocator);
-  echo::pwpb::EchoService::Client client(peer.client());
+  test::pw_rpc2::pwpb::TestEcho::Client client(peer.client());
 
   async2::FutureTask first(client.EchoUnary(EchoRequest{.val = 1}));
   dispatcher.Post(first);
-  peer.ExpectInvocation<echo::pwpb::EchoService::EchoUnary>().Finish(
+  peer.ExpectInvocation<test::pw_rpc2::pwpb::TestEcho::EchoUnary>().Finish(
       EchoResponse{.val = 11});
   ASSERT_TRUE(first.has_value());
   PW_TEST_ASSERT_OK(first.value());
@@ -348,7 +296,7 @@ TEST(MockPeerTest, ClaimsEachInvocationExactlyOnce) {
   // new one rather than tripping on a stale request.
   async2::FutureTask second(client.EchoUnary(EchoRequest{.val = 2}));
   dispatcher.Post(second);
-  peer.ExpectInvocation<echo::pwpb::EchoService::EchoUnary>().Finish(
+  peer.ExpectInvocation<test::pw_rpc2::pwpb::TestEcho::EchoUnary>().Finish(
       EchoResponse{.val = 22});
   ASSERT_TRUE(second.has_value());
   PW_TEST_ASSERT_OK(second.value());
@@ -426,7 +374,7 @@ TEST(ClientTest, CloseCancelsInFlightCalls) {
   Client client =
       test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn);
 
-  echo::pwpb::EchoService::Client stub{client};
+  test::pw_rpc2::pwpb::TestEcho::Client stub{client};
   async2::FutureTask call(stub.EchoUnary(EchoRequest{.val = 7}));
   dispatcher.Post(call);
   dispatcher.RunUntilStalled();
@@ -467,7 +415,7 @@ TEST(ClientTest, DroppingOneOfSeveralHandlesKeepsConnectionOpen) {
   std::optional<Client> client =
       test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn);
 
-  echo::pwpb::EchoService::Client stub{*client};
+  test::pw_rpc2::pwpb::TestEcho::Client stub{*client};
   async2::FutureTask call(stub.EchoUnary(EchoRequest{.val = 7}));
   dispatcher.Post(call);
   dispatcher.RunUntilStalled();
@@ -496,7 +444,8 @@ TEST(ClientTest, DroppingLastHandleClosesConnection) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   std::optional<Client> client =
       test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn);
-  std::optional<echo::pwpb::EchoService::Client> stub(std::in_place, *client);
+  std::optional<test::pw_rpc2::pwpb::TestEcho::Client> stub(std::in_place,
+                                                            *client);
 
   async2::FutureTask call(stub->EchoUnary(EchoRequest{.val = 7}));
   dispatcher.Post(call);

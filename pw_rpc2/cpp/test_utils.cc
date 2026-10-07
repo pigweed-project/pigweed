@@ -175,6 +175,69 @@ void MockPeer::Inject(pw::Result<pw::Buf>&& packet) {
   dispatcher_->RunUntilStalled();
 }
 
+void MockPeer::InjectStreamMessageBytes(uint32_t call_id,
+                                        ConstByteSpan payload) {
+  Inject(internal::PacketFramer::FrameServerMessagePacket(
+      *allocator_, call_id, payload));
+}
+
+void MockPeer::InjectStreamFinish(uint32_t call_id) {
+  Inject(internal::PacketFramer::FrameServerFinishPacket(*allocator_, call_id));
+}
+
+namespace {
+
+// True if `packet` is a stream message the client wrote on `call_id`. Start
+// packets are excluded: the only start packets with a payload carry a unary or
+// server-streaming request, which `Invocation::request()` decodes.
+bool IsClientStreamMessage(const internal::InboundPacket& packet,
+                           uint32_t call_id) {
+  return packet.call_id() == call_id && !packet.type().is_server() &&
+         !packet.type().is_start() && packet.type().has_payload();
+}
+
+}  // namespace
+
+size_t MockPeer::ClientStreamMessageCount(uint32_t call_id) const {
+  size_t count = 0;
+  for (size_t i = 0; i < connection_->written_packet_count(); ++i) {
+    if (IsClientStreamMessage(DecodeWrittenPacket(i), call_id)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+pw::Result<ConstByteSpan> MockPeer::ClientStreamMessage(uint32_t call_id,
+                                                        size_t index) const {
+  size_t seen = 0;
+  for (size_t i = 0; i < connection_->written_packet_count(); ++i) {
+    const internal::InboundPacket packet = DecodeWrittenPacket(i);
+    if (!IsClientStreamMessage(packet, call_id)) {
+      continue;
+    }
+    if (seen == index) {
+      // The packet is an unowned view of the recorded buffer, so the payload
+      // outlives `packet`.
+      return packet.payload();
+    }
+    ++seen;
+  }
+  return Status::OutOfRange();
+}
+
+bool MockPeer::ClientStreamFinished(uint32_t call_id) const {
+  for (size_t i = 0; i < connection_->written_packet_count(); ++i) {
+    const internal::InboundPacket packet = DecodeWrittenPacket(i);
+    if (packet.call_id() == call_id && !packet.type().is_server() &&
+        !packet.type().is_start() &&
+        packet.type().close_mode() == internal::CloseMode::kStreamEnd) {
+      return true;
+    }
+  }
+  return false;
+}
+
 PairedConnection::PairedConnection(pw::Allocator& allocator)
     : ReliableDatagramSocketImpl(allocator, 1500), alloc_(allocator) {}
 

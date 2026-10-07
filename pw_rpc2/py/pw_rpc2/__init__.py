@@ -11,24 +11,4 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-
-load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-
-# TODO: b/570174776 - Make public once pw_rpc2 is ready for external use.
-package(default_visibility = ["//pw_rpc2:__subpackages__"])
-
-licenses(["notice"])
-
-sphinx_docs_library(
-    name = "docs",
-    srcs = [
-        "comparison.rst",
-        "docs.rst",
-        "protocol.rst",
-        "why.rst",
-    ],
-    prefix = "pw_rpc2/",
-    target_compatible_with = incompatible_with_mcu(),
-    visibility = ["//visibility:public"],
-)
+"""pw_rpc2 Python package."""

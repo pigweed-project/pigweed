@@ -68,6 +68,7 @@ pw_python_group("core_pigweed_python_packages") {
     "$dir_pw_protobuf/py",
     "$dir_pw_protobuf_compiler/py",
     "$dir_pw_rpc/py",
+    "$dir_pw_rpc2/py",
     "$dir_pw_sensor/py",
     "$dir_pw_snapshot/py:pw_snapshot",
     "$dir_pw_snapshot/py:pw_snapshot_metadata",

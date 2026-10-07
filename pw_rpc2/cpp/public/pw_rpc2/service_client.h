@@ -423,6 +423,7 @@ class ClientStreamCall {
 /// `ClientStreamCall<Request, Response>`.
 template <typename Request = ConstBuf, typename Response = ConstBuf>
 using ClientStreamFuture = RequestFuture<ClientStreamCall<Request, Response>>;
+using RawClientStreamFuture = ClientStreamFuture<>;
 
 /// Client-side handle for an active bidirectional-streaming RPC.
 ///
@@ -463,10 +464,11 @@ class BidiStreamCall {
 /// `BidiStreamCall<Request, Response>`.
 template <typename Request = ConstBuf, typename Response = ConstBuf>
 using BidiStreamFuture = RequestFuture<BidiStreamCall<Request, Response>>;
+using RawBidiStreamFuture = BidiStreamFuture<>;
 
 static_assert(async2::Future<ServerStreamFuture<ConstBuf, ConstBuf>>);
-static_assert(async2::Future<ClientStreamFuture<ConstBuf, ConstBuf>>);
-static_assert(async2::Future<BidiStreamFuture<ConstBuf, ConstBuf>>);
+static_assert(async2::Future<RawClientStreamFuture>);
+static_assert(async2::Future<RawBidiStreamFuture>);
 
 /// Base class for generated per-service clients. Binds a `Client` to a service
 /// ID.
@@ -487,8 +489,9 @@ class ServiceClient {
   constexpr ServiceClient() = default;
 
   /// Binds `client` to the service with ID `service_id`.
-  ServiceClient(Client client, uint32_t service_id)
-      : client_(std::move(client)), service_id_(service_id) {}
+  // NOLINTNEXTLINE(modernize-pass-by-value)
+  ServiceClient(const Client& client, uint32_t service_id)
+      : client_(client), service_id_(service_id) {}
 
   uint32_t service_id() const { return service_id_; }
 

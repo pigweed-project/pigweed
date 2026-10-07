@@ -13,10 +13,18 @@
 // the License.
 #pragma once
 
-// Every RPC method gets a *method info* struct in its generated header, which
-// names the method at compile time and describes it:
+// Every RPC method gets an empty, non-constructible tag type in its generated
+// service namespace:
 //
-//   struct Echo : ::pw::rpc2::internal::MethodInfoTag {
+//   struct Echo final {
+//     Echo() = delete;
+//   };
+//
+// Generated code specializes `pw::rpc2::internal::MethodInfo<Method>` on this
+// tag type to describe the method at compile time:
+//
+//   template <>
+//   struct MethodInfo<pw_rpc2::pwpb::EchoService::Echo> {
 //     static constexpr uint32_t kServiceId = 0x...;
 //     static constexpr uint32_t kMethodId = 0x...;
 //     static constexpr MethodType kType = MethodType::kUnary;
@@ -24,25 +32,24 @@
 //     using Response = ...;
 //   };
 //
-// APIs which operate on an arbitrary method are parameterized on this struct:
+// APIs which operate on an arbitrary method are parameterized on the tag:
 //
 //   auto call = peer.ExpectInvocation<pw_rpc2::pwpb::EchoService::Echo>();
-//
-// A method info struct is a name, not an object: it is never instantiated.
-
-#include <type_traits>
 
 #include "pw_rpc2/method_type.h"
 
 namespace pw::rpc2::internal {
 
-/// Marks a struct as a method info struct. Only codegen derives from this.
-struct MethodInfoTag {};
+template <typename>
+inline constexpr bool kIsRpcMethod = false;
 
-/// Whether `T` is a generated method info struct. Provided so APIs can
-/// `static_assert` on whether a template argument is a `MethodInfo`.
-template <typename T>
-inline constexpr bool kIsMethodInfo =
-    std::is_base_of_v<MethodInfoTag, T> && !std::is_same_v<MethodInfoTag, T>;
+/// Compile-time metadata for a generated RPC method tag. Specialized by
+/// generated code for each RPC method.
+template <typename Method>
+struct MethodInfo {
+  static_assert(kIsRpcMethod<Method>,
+                "Template argument must be a generated pw_rpc2 method tag, "
+                "such as my_pkg::pw_rpc2::pwpb::MyService::MyMethod.");
+};
 
 }  // namespace pw::rpc2::internal

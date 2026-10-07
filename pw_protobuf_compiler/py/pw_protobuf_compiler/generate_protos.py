@@ -248,8 +248,10 @@ DEFAULT_PROTOC_ARGS: dict[str, _DefaultArgsFunction] = {
     'nanopb_rpc': protoc_nanopb_rpc_args,
     'pwpb': protoc_pwpb_args,
     'pwpb_rpc': protoc_pwpb_rpc_args,
+    'pwpb_rpc2': protoc_pwpb_rpc_args,
     'python': protoc_python_args,
     'raw_rpc': protoc_raw_rpc_args,
+    'raw_rpc2': protoc_raw_rpc_args,
 }
 
 # Languages that protoc internally supports.

@@ -183,6 +183,12 @@ class MessageField {
 static_assert(sizeof(MessageField) <= sizeof(size_t) * 4,
               "MessageField should be four words or less");
 
+// Traits for a generated PWPB Message struct, specialized by codegen.
+template <typename T>
+struct MessageTraits {
+  static constexpr bool kIsMessage = false;
+};
+
 template <typename...>
 constexpr std::false_type kInvalidMessageStruct{};
 

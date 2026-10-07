@@ -17,6 +17,7 @@ import("//build_overrides/pigweed.gni")
 import("$dir_pw_async2/backend.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_enum/pw_cc_enum_source_set.gni")
+import("$dir_pw_protobuf_compiler/proto.gni")
 import("$dir_pw_sync/backend.gni")
 import("$dir_pw_thread/backend.gni")
 import("$dir_pw_toolchain/traits.gni")
@@ -27,7 +28,7 @@ config("public_include_path") {
   visibility = [ ":*" ]
 }
 
-# Private while in development.
+# TODO: b/570174776 - Make public once pw_rpc2 is ready for external use.
 _default_visibility = [ "$dir_pw_rpc2/*" ]
 
 pw_cc_enum_source_set("protocol_status") {
@@ -107,7 +108,9 @@ pw_source_set("pwpb_serialize") {
     dir_pw_status,
   ]
   deps = [ dir_pw_stream ]
-  visibility = _default_visibility
+
+  # TODO: b/570174776 - Visibility is not restricted because pw_proto_library
+  # generates .pwpb_rpc2 subtargets in all directories.
 }
 
 pw_test("pwpb_serialize_test") {
@@ -255,7 +258,8 @@ pw_source_set("pw_rpc2") {
     ":client",
     ":server",
   ]
-  visibility = _default_visibility
+  # TODO: b/570174776 - Visibility is not restricted because pw_proto_library
+  # generates .pwpb_rpc2 and .raw_rpc2 subtargets in all directories.
 }
 
 pw_source_set("test_utils") {
@@ -504,29 +508,174 @@ pw_test("client_test") {
               pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
   deps = [
     ":client",
-    ":method",
-    ":serialize",
+    ":connection",
+    ":pw_rpc2_test_proto.pwpb_rpc2",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
-    "$dir_pw_transport/cpp:pw_transport",
     dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_status,
   ]
   sources = [ "client_test.cc" ]
+}
+
+pw_test("generated_client_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":client",
+    ":connection",
+    ":pw_rpc2_test_proto.pwpb_rpc2",
+    ":pw_rpc2_test_proto.raw_rpc2",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_result,
+    dir_pw_status,
+  ]
+  sources = [ "generated_client_test.cc" ]
+}
+
+pw_proto_library("pw_rpc2_test_proto") {
+  sources = [ "pw_rpc2_test.proto" ]
+  prefix = "pw_rpc2"
+  visibility = [ ":*" ]
+}
+
+pw_test("generated_service_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+           ":client",
+           ":connection",
+           ":pw_rpc2_test_proto.pwpb_rpc2",
+           ":pw_rpc2_test_proto.raw_rpc2",
+           ":server",
+           ":test_utils",
+           "$dir_pw_allocator:testing",
+           "$dir_pw_async2:testing",
+           dir_pw_async2,
+           dir_pw_buf,
+           dir_pw_bytes,
+           dir_pw_polyfill,
+           dir_pw_result,
+           dir_pw_status,
+         ] + _coro_deps
+  sources = [ "generated_service_test.cc" ]
+  negative_compilation_tests = true
+}
+
+pw_proto_library("mixed_apis_proto") {
+  sources = [ "mixed_apis.proto" ]
+  prefix = "pw_rpc2"
+  visibility = [ ":*" ]
+}
+
+pw_test("mixed_apis_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+           ":client",
+           ":connection",
+           ":mixed_apis_proto.pwpb_rpc2",
+           ":server",
+           ":test_utils",
+           "$dir_pw_allocator:testing",
+           "$dir_pw_assert:check",
+           "$dir_pw_async2:testing",
+           dir_pw_allocator,
+           dir_pw_async2,
+           dir_pw_buf,
+           dir_pw_bytes,
+           dir_pw_result,
+           dir_pw_status,
+         ] + _coro_deps
+  sources = [ "mixed_apis_test.cc" ]
+}
+
+pw_proto_library("codegen_test_proto") {
+  sources = [
+    "codegen_test_protos/common.proto",
+    "codegen_test_protos/names.proto",
+    "codegen_test_protos/no_package.proto",
+    "codegen_test_protos/other.proto",
+  ]
+  prefix = "pw_rpc2"
+  visibility = [ ":*" ]
+}
+
+pw_test("codegen_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":client",
+    ":codegen_test_proto.pwpb_rpc2",
+    ":codegen_test_proto.raw_rpc2",
+    ":connection",
+    ":method",
+    ":server",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    dir_pw_allocator,
+    dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_status,
+  ]
+  sources = [ "codegen_test.cc" ]
+}
+
+pw_test("e2e_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":client",
+    ":connection",
+    ":pw_rpc2_test_proto.pwpb_rpc2",
+    ":pw_rpc2_test_proto.raw_rpc2",
+    ":server",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    "$dir_pw_containers:vector",
+    "$dir_pw_unit_test:status_macros",
+    dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_result,
+    dir_pw_span,
+    dir_pw_status,
+  ]
+  sources = [ "e2e_test.cc" ]
 }
 
 pw_test_group("tests") {
   tests = [
     ":call_test",
     ":client_test",
+    ":codegen_test",
     ":connection_task_test",
+    ":e2e_test",
+    ":generated_client_test",
+    ":generated_service_test",
     ":handshake_test",
     ":internal_server_call_test",
     ":method_future_test",
     ":method_test",
     ":method_traits_test",
+    ":mixed_apis_test",
     ":packet_test",
     ":pwpb_serialize_test",
     ":rpc_reader_writer_test",

@@ -406,6 +406,69 @@ template("_pw_raw_rpc_proto_library") {
   }
 }
 
+# Generates pw_rpc2 code with pw_protobuf message structs for proto files,
+# creating a source_set of the generated files. This is internal and should not
+# be used outside of this file. Use pw_proto_library instead.
+template("_pw_pwpb_rpc2_proto_library") {
+  _pw_invoke_protoc(target_name) {
+    forward_variables_from(invoker, "*", _forwarded_vars)
+    language = "pwpb_rpc2"
+    plugin = "$dir_pw_rpc2/py/pw_rpc2/plugin_pwpb.py"
+    python_deps = [ "$dir_pw_rpc2/py" ]
+  }
+
+  config("$target_name._include_path") {
+    include_dirs = [ "${invoker.base_out_dir}/pwpb_rpc2" ]
+    visibility = [ ":*" ]
+  }
+
+  pw_source_set(target_name) {
+    forward_variables_from(invoker, _forwarded_vars)
+    public_configs = [ ":$target_name._include_path" ]
+    deps = [ ":$target_name._gen($pw_protobuf_compiler_TOOLCHAIN)" ]
+    public_deps = [
+                    ":${invoker.base_target}.pwpb",
+                    "$dir_pw_protobuf",
+                    "$dir_pw_rpc2/cpp:pw_rpc2",
+                    "$dir_pw_rpc2/cpp:pwpb_serialize",
+                  ] + invoker.deps
+
+    # The stub headers are generated for reference, but are not part of the
+    # library.
+    public = filter_exclude(invoker.outputs, [ "*_stubs.rpc2.h" ])
+    check_includes = false
+  }
+}
+
+# Generates raw pw_rpc2 code for proto files, creating a source_set of the
+# generated files. This is internal and should not be used outside of this
+# file. Use pw_proto_library instead.
+template("_pw_raw_rpc2_proto_library") {
+  _pw_invoke_protoc(target_name) {
+    forward_variables_from(invoker, "*", _forwarded_vars)
+    language = "raw_rpc2"
+    plugin = "$dir_pw_rpc2/py/pw_rpc2/plugin_raw.py"
+    python_deps = [ "$dir_pw_rpc2/py" ]
+  }
+
+  config("$target_name._include_path") {
+    include_dirs = [ "${invoker.base_out_dir}/raw_rpc2" ]
+    visibility = [ ":*" ]
+  }
+
+  pw_source_set(target_name) {
+    forward_variables_from(invoker, _forwarded_vars)
+    public_configs = [ ":$target_name._include_path" ]
+    deps = [ ":$target_name._gen($pw_protobuf_compiler_TOOLCHAIN)" ]
+    public_deps = [ "$dir_pw_rpc2/cpp:pw_rpc2" ] + invoker.deps
+
+    # The stub headers are generated for reference, but are not part of the
+    # library.
+    public = filter_exclude(invoker.outputs, [ "*_stubs.rpc2.h" ])
+    check_includes = false
+  }
+}
+
 # Generates Go code for proto files, listing the proto output directory in the
 # metadata variable GOPATH. Internal use only.
 template("_pw_go_proto_library") {
@@ -766,6 +829,44 @@ template("pw_proto_library") {
     }
   }
 
+  _pw_pwpb_rpc2_proto_library("$target_name.pwpb_rpc2") {
+    forward_variables_from(invoker, _forwarded_vars)
+    forward_variables_from(_common, "*")
+
+    deps = []
+    foreach(dep, _deps) {
+      _base = get_label_info(dep, "label_no_toolchain")
+      deps += [ "$_base.pwpb_rpc2(" + get_label_info(dep, "toolchain") + ")" ]
+    }
+
+    outputs = []
+    foreach(name, _source_names) {
+      outputs += [
+        "$base_out_dir/pwpb_rpc2/$_prefix/${name}.pwpb.rpc2.h",
+        "$base_out_dir/pwpb_rpc2/$_prefix/${name}.pwpb_stubs.rpc2.h",
+      ]
+    }
+  }
+
+  _pw_raw_rpc2_proto_library("$target_name.raw_rpc2") {
+    forward_variables_from(invoker, _forwarded_vars)
+    forward_variables_from(_common, "*")
+
+    deps = []
+    foreach(dep, _deps) {
+      _base = get_label_info(dep, "label_no_toolchain")
+      deps += [ "$_base.raw_rpc2(" + get_label_info(dep, "toolchain") + ")" ]
+    }
+
+    outputs = []
+    foreach(name, _source_names) {
+      outputs += [
+        "$base_out_dir/raw_rpc2/$_prefix/${name}.raw.rpc2.h",
+        "$base_out_dir/raw_rpc2/$_prefix/${name}.raw_stubs.rpc2.h",
+      ]
+    }
+  }
+
   _pw_go_proto_library("$target_name.go") {
     sources = _common.sources
 
@@ -808,9 +909,11 @@ template("pw_proto_library") {
   _protobuf_generators = [
     "pwpb",
     "pwpb_rpc",
+    "pwpb_rpc2",
     "nanopb",
     "nanopb_rpc",
     "raw_rpc",
+    "raw_rpc2",
     "go",
     "python",
   ]

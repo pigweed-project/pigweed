@@ -1,0 +1,63 @@
+// Copyright 2026 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+syntax = "proto3";
+
+// Exercises names that generated code must fully qualify.
+//
+// The first package component matches `pw::rpc2`, which is visible from
+// `pw::rpc2::internal`, where serializers are looked up.
+package rpc2.codegen_test;
+
+import "pw_rpc2/codegen_test_protos/common.proto";
+
+message Ping {
+  uint32 value = 1;
+}
+
+message Pong {
+  uint32 value = 1;
+}
+
+// A message named with a C++ keyword.
+message delete {
+  uint32 value = 1;
+}
+
+message Outer {
+  message Inner {
+    uint32 value = 1;
+  }
+}
+
+service Names {
+  // Methods with the same names as the messages they use. protoc resolves an
+  // unqualified type name to the method, so the types are fully qualified.
+  rpc Ping(.rpc2.codegen_test.Ping) returns (.rpc2.codegen_test.Pong);
+  rpc Pong(.rpc2.codegen_test.Ping) returns (.rpc2.codegen_test.Pong);
+  rpc Delete(delete) returns (delete);
+  rpc Nested(Outer.Inner) returns (Outer.Inner);
+}
+
+// Covers all four method kinds with imported and nested messages.
+service Kinds {
+  rpc Unary(pw.rpc2.codegen_test.common.Shared)
+      returns (pw.rpc2.codegen_test.common.Outer.Inner);
+  rpc ServerStream(pw.rpc2.codegen_test.common.Shared)
+      returns (stream pw.rpc2.codegen_test.common.Shared);
+  rpc ClientStream(stream pw.rpc2.codegen_test.common.Shared)
+      returns (pw.rpc2.codegen_test.common.Shared);
+  rpc Bidi(stream pw.rpc2.codegen_test.common.Shared)
+      returns (stream pw.rpc2.codegen_test.common.Shared);
+}

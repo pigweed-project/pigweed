@@ -26,6 +26,7 @@
 #include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/internal/method.h"
 #include "pw_rpc2/internal/method_future.h"
+#include "pw_rpc2/internal/method_info.h"
 #include "pw_rpc2/internal/method_traits.h"
 #include "pw_rpc2/internal/serialize.h"
 #include "pw_rpc2/internal/server_call.h"
@@ -57,10 +58,6 @@ Fut CreateFuture(ServiceClass& service, Args&&... args) {
   if constexpr (std::is_constructible_v<Fut, ServiceClass&, Args...>) {
     return Fut(service, std::forward<Args>(args)...);
   } else {
-    static_assert(
-        std::is_constructible_v<Fut, ServiceClass&, Args...> ||
-            std::is_constructible_v<Fut, Args...>,
-        "Future type cannot be constructed with the provided RPC arguments");
     return Fut(std::forward<Args>(args)...);
   }
 }
@@ -271,6 +268,24 @@ template <auto kMethod, MethodType kExpectedType>
 using RawMethodInvoker =
     MethodInvoker<kMethod, kExpectedType, pw::ConstBuf, pw::ConstBuf>;
 
+/// `MethodInvoker` parameterized on a generated RPC method tag.
+template <auto kMethod,
+          typename MethodTag,
+          typename Info = MethodInfo<MethodTag>>
+struct MethodInvokerFor : MethodInvoker<kMethod,
+                                        Info::kType,
+                                        typename Info::Request,
+                                        typename Info::Response> {
+  template <typename ServiceClass>
+  static constexpr Method CreateMethod() {
+    return MethodInvoker<kMethod,
+                         Info::kType,
+                         typename Info::Request,
+                         typename Info::Response>::
+        template CreateMethod<ServiceClass>(Info::kMethodId);
+  }
+};
+
 /// Invokes an RPC by constructing a future type provided by a service
 /// implementation.
 template <typename Fut,
@@ -306,31 +321,42 @@ class FutureMethodInvoker
         !kRawCodegen &&
         detail::kFutureUsesRawApi<Fut, ServiceClass, kExpectedType>;
 
+    constexpr bool kIsUnambiguous = !(kIsTyped && kUsesRawApi);
     static_assert(
-        !(kIsTyped && kUsesRawApi),
+        kIsUnambiguous,
         "The '<Method>Future' type declared for this RPC is constructible from "
         "both the typed protobuf arguments and the raw (pw::ConstBuf) "
         "arguments, which is ambiguous. Provide only one constructor.");
-    static_assert(
+
+    constexpr bool kCanConstruct =
         kRawCodegen
             ? detail::kFutureUsesRawApi<Fut, ServiceClass, kExpectedType>
-            : (kIsTyped || kUsesRawApi),
+            : (kIsTyped || kUsesRawApi);
+    static_assert(
+        kCanConstruct,
         "The '<Method>Future' type declared for this RPC cannot be constructed "
         "from the method's arguments. It must be constructible from either the "
         "typed protobuf arguments or the raw (pw::ConstBuf) arguments for this "
         "method type, optionally preceded by a reference to the service.");
 
-    constexpr bool kIsRaw = kRawCodegen || kUsesRawApi;
+    if constexpr (kIsUnambiguous && kCanConstruct) {
+      constexpr bool kIsRaw = kRawCodegen || kUsesRawApi;
 
-    using Invocation = InvocationTraits<kExpectedType, kIsRaw, Req, Resp>;
-    return FutureMethodInvoker::
-        template PrepareRequestAndInvoke<Invocation, kIsRaw, Req>(
-            call, std::move(request_payload), [&](auto&& make_request) {
-              return EmplaceWithRequest<kIsRaw>(
-                  service,
-                  call,
-                  std::forward<decltype(make_request)>(make_request));
-            });
+      using Invocation = InvocationTraits<kExpectedType, kIsRaw, Req, Resp>;
+      return FutureMethodInvoker::
+          template PrepareRequestAndInvoke<Invocation, kIsRaw, Req>(
+              call, std::move(request_payload), [&](auto&& make_request) {
+                return EmplaceWithRequest<kIsRaw>(
+                    service,
+                    call,
+                    std::forward<decltype(make_request)>(make_request));
+              });
+    } else {
+      static_cast<void>(service);
+      static_cast<void>(call);
+      static_cast<void>(request_payload);
+      return ProtocolStatus::kInternal;
+    }
   }
 
  private:
@@ -352,5 +378,23 @@ class FutureMethodInvoker
 template <typename Fut, MethodType kExpectedType>
 using RawFutureMethodInvoker =
     FutureMethodInvoker<Fut, kExpectedType, ConstBuf, ConstBuf>;
+
+/// `FutureMethodInvoker` parameterized on a generated RPC method tag.
+template <typename Fut,
+          typename MethodTag,
+          typename Info = MethodInfo<MethodTag>>
+struct FutureMethodInvokerFor : FutureMethodInvoker<Fut,
+                                                    Info::kType,
+                                                    typename Info::Request,
+                                                    typename Info::Response> {
+  template <typename ServiceClass>
+  static constexpr Method CreateMethod() {
+    return FutureMethodInvoker<Fut,
+                               Info::kType,
+                               typename Info::Request,
+                               typename Info::Response>::
+        template CreateMethod<ServiceClass>(Info::kMethodId);
+  }
+};
 
 }  // namespace pw::rpc2::internal

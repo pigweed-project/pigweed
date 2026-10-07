@@ -12,11 +12,15 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//pw_enum:pw_cc_enum_library.bzl", "pw_cc_enum_library")
+load("//pw_protobuf_compiler:pwpb_proto_library.bzl", "pwpb_proto_library")
+load("//pw_protobuf_compiler:pwpb_rpc2_proto_library.bzl", "pwpb_rpc2_proto_library")
+load("//pw_protobuf_compiler:raw_rpc2_proto_library.bzl", "raw_rpc2_proto_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
-# Private while in development.
+# TODO: b/570174776 - Make public once pw_rpc2 is ready for external use.
 package(default_visibility = ["//pw_rpc2:__subpackages__"])
 
 licenses(["notice"])
@@ -414,15 +418,36 @@ pw_cc_test(
     srcs = ["client_test.cc"],
     deps = [
         ":client",
-        ":method",
-        ":serialize",
+        ":connection",
+        ":pw_rpc2_test_pwpb_rpc2",
         ":test_utils",
         "//pw_allocator:testing",
         "//pw_async2",
         "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_status",
         "//pw_thread:test_thread_context",
         "//pw_thread:thread",
-        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "generated_client_test",
+    srcs = ["generated_client_test.cc"],
+    deps = [
+        ":client",
+        ":connection",
+        ":pw_rpc2_test_pwpb_rpc2",
+        ":pw_rpc2_test_raw_rpc2",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_result",
+        "//pw_status",
         "//pw_unit_test",
     ],
 )
@@ -520,5 +545,171 @@ pw_cc_test(
         "//pw_async2:testing",
         "//pw_transport/cpp:pw_transport",
         "//pw_unit_test",
+    ],
+)
+
+proto_library(
+    name = "pw_rpc2_test_proto",
+    srcs = ["pw_rpc2_test.proto"],
+    import_prefix = "pw_rpc2",
+    strip_import_prefix = "/pw_rpc2/cpp",
+)
+
+raw_rpc2_proto_library(
+    name = "pw_rpc2_test_raw_rpc2",
+    deps = [":pw_rpc2_test_proto"],
+)
+
+pwpb_proto_library(
+    name = "pw_rpc2_test_pwpb",
+    deps = [":pw_rpc2_test_proto"],
+)
+
+pwpb_rpc2_proto_library(
+    name = "pw_rpc2_test_pwpb_rpc2",
+    pwpb_proto_library_deps = [":pw_rpc2_test_pwpb"],
+    deps = [":pw_rpc2_test_proto"],
+)
+
+proto_library(
+    name = "codegen_test_proto",
+    srcs = [
+        "codegen_test_protos/common.proto",
+        "codegen_test_protos/names.proto",
+        "codegen_test_protos/no_package.proto",
+        "codegen_test_protos/other.proto",
+    ],
+    import_prefix = "pw_rpc2",
+    strip_import_prefix = "/pw_rpc2/cpp",
+)
+
+pwpb_proto_library(
+    name = "codegen_test_pwpb",
+    deps = [":codegen_test_proto"],
+)
+
+pwpb_rpc2_proto_library(
+    name = "codegen_test_pwpb_rpc2",
+    pwpb_proto_library_deps = [":codegen_test_pwpb"],
+    deps = [":codegen_test_proto"],
+)
+
+raw_rpc2_proto_library(
+    name = "codegen_test_raw_rpc2",
+    deps = [":codegen_test_proto"],
+)
+
+pw_cc_test(
+    name = "codegen_test",
+    srcs = ["codegen_test.cc"],
+    deps = [
+        ":client",
+        ":codegen_test_pwpb_rpc2",
+        ":codegen_test_raw_rpc2",
+        ":connection",
+        ":method",
+        ":server",
+        ":test_utils",
+        "//pw_allocator",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:dispatcher",
+        "//pw_async2:poll",
+        "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_status",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "generated_service_test",
+    srcs = ["generated_service_test.cc"],
+    has_nc_test = True,
+    deps = [
+        ":client",
+        ":connection",
+        ":pw_rpc2_test_pwpb_rpc2",
+        ":pw_rpc2_test_raw_rpc2",
+        ":server",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:poll",
+        "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_polyfill",
+        "//pw_result",
+        "//pw_status",
+        "//pw_unit_test",
+    ],
+)
+
+proto_library(
+    name = "mixed_apis_proto",
+    srcs = ["mixed_apis.proto"],
+    import_prefix = "pw_rpc2",
+    strip_import_prefix = "/pw_rpc2/cpp",
+)
+
+pwpb_proto_library(
+    name = "mixed_apis_pwpb",
+    deps = [":mixed_apis_proto"],
+)
+
+pwpb_rpc2_proto_library(
+    name = "mixed_apis_pwpb_rpc2",
+    pwpb_proto_library_deps = [":mixed_apis_pwpb"],
+    deps = [":mixed_apis_proto"],
+)
+
+pw_cc_test(
+    name = "mixed_apis_test",
+    srcs = ["mixed_apis_test.cc"],
+    deps = [
+        ":client",
+        ":connection",
+        ":mixed_apis_pwpb_rpc2",
+        ":server",
+        ":test_utils",
+        "//pw_allocator",
+        "//pw_allocator:testing",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_async2:dispatcher",
+        "//pw_async2:poll",
+        "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_result",
+        "//pw_status",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "e2e_test",
+    srcs = ["e2e_test.cc"],
+    deps = [
+        ":client",
+        ":connection",
+        ":pw_rpc2_test_pwpb_rpc2",
+        ":pw_rpc2_test_raw_rpc2",
+        ":server",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:poll",
+        "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_containers:vector",
+        "//pw_result",
+        "//pw_span",
+        "//pw_status",
+        "//pw_unit_test",
+        "//pw_unit_test:status_macros",
     ],
 )

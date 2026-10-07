@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -22,6 +23,7 @@
 
 #include "pw_allocator/allocator.h"
 #include "pw_assert/check.h"
+#include "pw_async2/future_task.h"
 #include "pw_async2/runnable_dispatcher.h"
 #include "pw_async2/value_future.h"
 #include "pw_buf/buf.h"
@@ -379,9 +381,9 @@ class PayloadView {
 ///
 /// @code{.cpp}
 ///   auto peer = test::MakeMockPeer(dispatcher, allocator);
-///   service.SetClient(EchoService::Client(peer.client()));
+///   service.SetClient(Echo::Client(peer.client()));
 ///   ...
-///   peer.ExpectInvocation<EchoService::Echo>().Finish(EchoResponse{});
+///   peer.ExpectInvocation<Echo::Echo>().Finish(EchoResponse{});
 /// @endcode
 ///
 /// Nothing is really on the other side of the connection: packets the client
@@ -396,27 +398,89 @@ class PayloadView {
 class MockPeer {
  public:
   /// A downstream call observed by the peer, already checked to target
-  /// `MethodInfo`. Obtained from `ExpectInvocation()`.
+  /// `Method`. Obtained from `ExpectInvocation()`.
   ///
   /// @warning A handle decodes lazily from the recorded packet, so it must not
   /// outlive a `MockConnection::clear_written()`.
-  template <typename MethodInfo>
+  template <typename Method>
   class Invocation {
+   private:
+    using Info = internal::MethodInfo<Method>;
+
    public:
     uint32_t call_id() const { return packet_.call_id(); }
 
     /// Completes the call successfully, carrying `response`.
-    void Finish(const typename MethodInfo::Response& response) {
-      static_assert(MethodInfo::kType == MethodType::kUnary ||
-                        MethodInfo::kType == MethodType::kClientStreaming,
+    void Finish(const typename Info::Response& response) {
+      static_assert(Info::kType == MethodType::kUnary ||
+                        Info::kType == MethodType::kClientStreaming,
                     "Finish(response) completes a call that returns a single "
                     "message.");
       peer_->InjectResponse(call_id(), response);
     }
 
+    /// Sends `message` on the server's stream, then runs the dispatcher so the
+    /// client observes it.
+    ///
+    /// The client queues one inbound message per call; a message sent before
+    /// the client reads the previous one waits in the connection until it does.
+    void Write(const typename Info::Response& message) {
+      static_assert(Info::kType == MethodType::kServerStreaming ||
+                        Info::kType == MethodType::kBidirectionalStreaming,
+                    "Write(message) sends a message on a server stream.");
+      peer_->InjectStreamMessage(call_id(), message);
+    }
+
+    /// Ends the server's stream, completing the call successfully. The
+    /// client's reader reports `OUT_OF_RANGE` once it drains any queued
+    /// messages.
+    void Finish() {
+      static_assert(Info::kType == MethodType::kServerStreaming ||
+                        Info::kType == MethodType::kBidirectionalStreaming,
+                    "Finish() ends a server stream; complete calls that return "
+                    "a single message with Finish(response).");
+      peer_->InjectStreamFinish(call_id());
+    }
+
     /// Decodes the request payload the client sent.
-    pw::Result<typename MethodInfo::Request> request() const {
-      return PayloadAs<typename MethodInfo::Request>(packet_.payload());
+    pw::Result<typename Info::Request> request() const {
+      return PayloadAs<typename Info::Request>(packet_.payload());
+    }
+
+    /// The number of stream messages the client has written on this call.
+    size_t stream_message_count() const {
+      static_assert(Info::kType == MethodType::kClientStreaming ||
+                        Info::kType == MethodType::kBidirectionalStreaming,
+                    "Only client and bidirectional streams carry client "
+                    "stream messages.");
+      return peer_->ClientStreamMessageCount(call_id());
+    }
+
+    /// Decodes the `index`th stream message the client wrote on this call.
+    ///
+    /// Returns `OUT_OF_RANGE` if the client has written `index` or fewer
+    /// messages, or the decoding error if the payload is malformed.
+    pw::Result<typename Info::Request> stream_message(size_t index) const {
+      static_assert(Info::kType == MethodType::kClientStreaming ||
+                        Info::kType == MethodType::kBidirectionalStreaming,
+                    "Only client and bidirectional streams carry client "
+                    "stream messages.");
+      pw::Result<ConstByteSpan> payload =
+          peer_->ClientStreamMessage(call_id(), index);
+      if (!payload.ok()) {
+        return payload.status();
+      }
+      return PayloadAs<typename Info::Request>(*payload);
+    }
+
+    /// True once the client has finished (half-closed) its stream, as
+    /// `Writer::Finish()` does.
+    bool client_stream_finished() const {
+      static_assert(Info::kType == MethodType::kClientStreaming ||
+                        Info::kType == MethodType::kBidirectionalStreaming,
+                    "Only client and bidirectional streams are finished by "
+                    "the client.");
+      return peer_->ClientStreamFinished(call_id());
     }
 
    private:
@@ -448,39 +512,39 @@ class MockPeer {
 
   Client& client() { return client_; }
 
-  /// Claims the single outstanding downstream call and binds it to
-  /// `MethodInfo`.
+  /// Claims the single outstanding downstream call and binds it to `Method`.
   ///
   /// Runs the dispatcher first, then checks that exactly one unclaimed packet
-  /// was written and that it starts a call routed to `MethodInfo`. Each packet
+  /// was written and that it starts a call routed to `Method`. Each packet
   /// is claimed once, so successive `ExpectInvocation()`s walk successive
   /// calls.
-  template <typename MethodInfo>
-  Invocation<MethodInfo> ExpectInvocation() {
+  template <typename Method>
+  Invocation<Method> ExpectInvocation() {
+    using Info = internal::MethodInfo<Method>;
     dispatcher_->RunUntilStalled();
     const size_t unclaimed = unclaimed_packet_count();
     PW_CHECK(unclaimed == 1u,
              "MockPeer::ExpectInvocation() expected exactly 1 outstanding "
              "call to service %u method %u, but %zu packets are pending.",
-             static_cast<unsigned>(MethodInfo::kServiceId),
-             static_cast<unsigned>(MethodInfo::kMethodId),
+             static_cast<unsigned>(Info::kServiceId),
+             static_cast<unsigned>(Info::kMethodId),
              unclaimed);
     internal::InboundPacket packet = DecodeWrittenPacket(claimed_++);
     PW_CHECK(packet.type().is_start(),
              "MockPeer expected a call to service %u method %u, but the "
              "client wrote a packet of type 0x%02x.",
-             static_cast<unsigned>(MethodInfo::kServiceId),
-             static_cast<unsigned>(MethodInfo::kMethodId),
+             static_cast<unsigned>(Info::kServiceId),
+             static_cast<unsigned>(Info::kMethodId),
              static_cast<unsigned>(packet.type().bits()));
-    PW_CHECK(packet.service_id() == MethodInfo::kServiceId &&
-                 packet.method_id() == MethodInfo::kMethodId,
+    PW_CHECK(packet.service_id() == Info::kServiceId &&
+                 packet.method_id() == Info::kMethodId,
              "MockPeer expected a call to service %u method %u, but the "
              "client called service %u method %u.",
-             static_cast<unsigned>(MethodInfo::kServiceId),
-             static_cast<unsigned>(MethodInfo::kMethodId),
+             static_cast<unsigned>(Info::kServiceId),
+             static_cast<unsigned>(Info::kMethodId),
              static_cast<unsigned>(packet.service_id()),
              static_cast<unsigned>(packet.method_id()));
-    return Invocation<MethodInfo>(*this, std::move(packet));
+    return Invocation<Method>(*this, std::move(packet));
   }
 
   /// The number of packets written by the client that no `ExpectInvocation()`
@@ -495,7 +559,7 @@ class MockPeer {
   MockConnection& connection() { return *connection_; }
 
  private:
-  template <typename MethodInfo>
+  template <typename Method>
   friend class Invocation;
 
   /// Injects a response completing `call_id` successfully, carrying `payload`.
@@ -517,6 +581,32 @@ class MockPeer {
 
   void InjectResponseBytes(uint32_t call_id, ConstByteSpan payload);
   void Inject(pw::Result<pw::Buf>&& packet);
+
+  /// Injects a server stream message carrying `message` on `call_id`.
+  template <typename Msg>
+  void InjectStreamMessage(uint32_t call_id, const Msg& message) {
+    pw::Buf owned;
+    ConstByteSpan span;
+    EncodePayload(message, owned, span);
+    InjectStreamMessageBytes(call_id, span);
+  }
+
+  void InjectStreamMessageBytes(uint32_t call_id, ConstByteSpan payload);
+
+  /// Injects the packet that ends the server's stream on `call_id`
+  /// successfully.
+  void InjectStreamFinish(uint32_t call_id);
+
+  /// The number of client stream messages written on `call_id`.
+  size_t ClientStreamMessageCount(uint32_t call_id) const;
+
+  /// The payload of the `index`th client stream message written on `call_id`,
+  /// or `OUT_OF_RANGE` if there are not that many.
+  pw::Result<ConstByteSpan> ClientStreamMessage(uint32_t call_id,
+                                                size_t index) const;
+
+  /// True if the client has half-closed its stream on `call_id`.
+  bool ClientStreamFinished(uint32_t call_id) const;
 
   /// Renders `msg` as bytes. `owned` keeps any allocation alive for as long as
   /// `out` is used.
@@ -765,5 +855,73 @@ class ScopedClient {
   Client client_;
   async2::RunnableDispatcher* dispatcher_;
 };
+
+/// Base class for test RPC method futures. A future is pendable once it is
+/// constructed with `TestFuture(true)` and until `Complete()` is called.
+class TestFuture {
+ public:
+  using value_type = void;
+
+  bool is_pendable() const { return active_ && !done_; }
+  bool is_complete() const { return done_; }
+
+ protected:
+  constexpr TestFuture() = default;
+  explicit constexpr TestFuture(bool active) : active_(active) {}
+
+  async2::Poll<> Complete() {
+    done_ = true;
+    return async2::Ready();
+  }
+
+ private:
+  bool active_ = false;
+  bool done_ = false;
+};
+
+/// Posts `future`, runs `dispatcher` until it stalls, and returns the future's
+/// result. If the future has not completed by then, records a test failure and
+/// returns `DEADLINE_EXCEEDED`.
+template <typename Future>
+typename Future::value_type RunToCompletion(
+    async2::RunnableDispatcher& dispatcher, Future future) {
+  async2::FutureTask task(std::move(future));
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+  if (!task.has_value()) {
+    ADD_FAILURE() << "The future did not complete";
+    return Status::DeadlineExceeded();
+  }
+  return std::move(task.value());
+}
+
+/// Checks that `actual` holds the same bytes as `expected`.
+inline bool ExpectBytes(ConstByteSpan actual, ConstByteSpan expected) {
+  EXPECT_EQ(actual.size(), expected.size());
+  const bool equal = std::equal(
+      actual.begin(), actual.end(), expected.begin(), expected.end());
+  EXPECT_TRUE(equal);
+  return equal;
+}
+
+/// Copies `payload` into `reservation` and commits it.
+template <typename Reservation>
+auto CommitCopy(Reservation& reservation, ConstByteSpan payload)
+    -> decltype(reservation.Commit(0)) {
+  if (reservation.size() < payload.size()) {
+    return Status::ResourceExhausted();
+  }
+  std::copy(payload.begin(), payload.end(), reservation.begin());
+  return reservation.Commit(payload.size());
+}
+
+template <typename Reservation>
+auto CommitCopy(Result<Reservation> reservation, ConstByteSpan payload)
+    -> decltype(reservation->Commit(0)) {
+  if (!reservation.ok()) {
+    return reservation.status();
+  }
+  return CommitCopy(*reservation, payload);
+}
 
 }  // namespace pw::rpc2::test

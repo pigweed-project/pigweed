@@ -213,6 +213,18 @@ TEST(CodegenMessage, TriviallyComparable) {
   static_assert(!IsTriviallyComparable<Pigweed::Message>());
 }
 
+TEST(CodegenMessage, MessageTraits) {
+  using Traits = internal::MessageTraits<IntegerMetadata::Message>;
+  static_assert(Traits::kIsMessage);
+  static_assert(Traits::kMessageFields == &IntegerMetadata::kMessageFields);
+  static_assert(Traits::kMaxEncodedSizeBytesWithoutValues ==
+                IntegerMetadata::kMaxEncodedSizeBytesWithoutValues);
+  static_assert(Traits::kScratchBufferSizeBytes ==
+                IntegerMetadata::kScratchBufferSizeBytes);
+
+  static_assert(!internal::MessageTraits<int>::kIsMessage);
+}
+
 TEST(CodegenMessage, ConstCopyable) {
   const Pigweed::Message one{
       .magic_number = 0x49u,
