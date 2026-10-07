@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -34,6 +35,8 @@ var (
 	editRemoveReviewer []string
 	editAddAssignee    []string
 	editRemoveAssignee []string
+	editAddAttention   []string
+	editRemoveAttn     []string
 	editAddLabels      []string
 	editTopic          string
 	editRemoveTopic    bool
@@ -77,10 +80,20 @@ var editCmd = &cobra.Command{
 		hasTopicEdit := cmd.Flags().Changed("topic") || editRemoveTopic
 		hasHashtagEdit := len(editAddHashtags) > 0 || len(editRemoveHashtags) > 0
 		hasCQEdit := cmd.Flags().Changed("cq") || cmd.Flags().Changed("trigger")
+		hasAttentionEdit := len(editAddAttention) > 0 || len(editRemoveAttn) > 0
 		if !hasMsgEdit && len(rawAddReviewers) == 0 && len(editRemoveReviewer) == 0 &&
 			len(editAddAssignee) == 0 && len(editRemoveAssignee) == 0 && len(editAddLabels) == 0 &&
-			!hasTopicEdit && !hasHashtagEdit && !hasCQEdit {
-			return fmt.Errorf("at least one of --message, --title, --body, --bug, --fixed, --add-reviewer, --add-owner, --remove-reviewer, --add-assignee, --remove-assignee, --add-label, --trigger, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --trigger\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-owner\n  gh pr edit 123 --add-label Commit-Queue=1")
+			!hasTopicEdit && !hasHashtagEdit && !hasCQEdit && !hasAttentionEdit {
+			return fmt.Errorf("at least one of --message, --title, --body, --bug, --fixed, --add-reviewer, --add-owner, --remove-reviewer, --add-assignee, --remove-assignee, --add-attention, --remove-attention, --add-label, --trigger, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --trigger\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-owner\n  gh pr edit 123 --remove-attention me\n  gh pr edit 123 --add-label Commit-Queue=1")
+		}
+
+		addAttention, err := normalizeAttentionAccounts("--add-attention", editAddAttention)
+		if err != nil {
+			return err
+		}
+		removeAttention, err := normalizeAttentionAccounts("--remove-attention", editRemoveAttn)
+		if err != nil {
+			return err
 		}
 
 		if editMessage != "" && (editTitle != "" || cmd.Flags().Changed("body")) {
@@ -209,6 +222,20 @@ var editCmd = &cobra.Command{
 			fmt.Fprintln(cmd.OutOrStdout(), "Assignee removed successfully.")
 		}
 
+		for _, account := range addAttention {
+			if err := addToAttentionSet(chCtx, account); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Added %s to the attention set.\n", account)
+		}
+
+		for _, account := range removeAttention {
+			if err := removeFromAttentionSet(chCtx, account); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from the attention set.\n", account)
+		}
+
 		if len(editAddLabels) > 0 {
 			input := &gerrit.ReviewInput{
 				Labels: make(map[string]int),
@@ -296,6 +323,52 @@ var editCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// attentionSetReason is recorded by Gerrit alongside each attention set
+// update and shown in the change's history. Gerrit requires a reason when
+// adding a user.
+const attentionSetReason = "Updated via gh-ish"
+
+// normalizeAttentionAccounts validates the accounts given to flag and maps
+// GitHub-style "me" / "@me" to Gerrit's "self".
+func normalizeAttentionAccounts(flag string, accounts []string) ([]string, error) {
+	normalized := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		account = strings.TrimSpace(account)
+		switch strings.ToLower(account) {
+		case "":
+			return nil, fmt.Errorf("%s requires an account\n\n"+
+				"Accepted forms: an email address, a numeric account ID, or \"me\" for yourself.\n\n"+
+				"Example:\n  gh pr edit 123 %s me", flag, flag)
+		case "me", "@me", "self":
+			account = "self"
+		}
+		normalized = append(normalized, account)
+	}
+	return normalized, nil
+}
+
+// addToAttentionSet adds account to the change's attention set using
+// Gerrit's dedicated endpoint, which, unlike posting a review, creates no
+// change message and does not apply the automatic attention set rules.
+func addToAttentionSet(chCtx *ChangeContext, account string) error {
+	endpoint := fmt.Sprintf("changes/%s/attention", url.PathEscape(chCtx.ChangeID))
+	input := &gerrit.AttentionSetInput{User: account, Reason: attentionSetReason}
+	if _, err := chCtx.Client.Call(chCtx.Context, "POST", endpoint, input, nil); err != nil {
+		return chCtx.FormatError(err, fmt.Sprintf("adding %s to the attention set of", account))
+	}
+	return nil
+}
+
+// removeFromAttentionSet removes account from the change's attention set.
+// The account remains a reviewer or CC.
+func removeFromAttentionSet(chCtx *ChangeContext, account string) error {
+	input := &gerrit.AttentionSetInput{Reason: attentionSetReason}
+	if _, err := chCtx.Client.Changes.RemoveAttention(chCtx.Context, chCtx.ChangeID, url.PathEscape(account), input); err != nil {
+		return chCtx.FormatError(err, fmt.Sprintf("removing %s from the attention set of", account))
+	}
+	return nil
 }
 
 func buildUpdatedCommitMessage(origMessage, changeID string, cmd *cobra.Command, trailerFlags []struct{ flag, key, value string }) (string, error) {
@@ -407,6 +480,10 @@ func init() {
 	editCmd.Flags().StringArrayVar(&editRemoveReviewer, "remove-reviewer", nil, "Remove reviewer by email or ID")
 	editCmd.Flags().StringArrayVar(&editAddAssignee, "add-assignee", nil, "Add assignee by email or ID")
 	editCmd.Flags().StringArrayVar(&editRemoveAssignee, "remove-assignee", nil, "Remove assignee by email or ID")
+	editCmd.Flags().StringArrayVar(&editAddAttention, "add-attention", nil,
+		"Add a user to the attention set by email, account ID, or \"me\" (ghish-only)")
+	editCmd.Flags().StringArrayVar(&editRemoveAttn, "remove-attention", nil,
+		"Remove a user from the attention set by email, account ID, or \"me\"; they stay a reviewer (ghish-only)")
 	editCmd.Flags().StringArrayVar(&editAddLabels, "add-label", nil, "Add Gerrit labels (e.g., Commit-Queue+1)")
 	editCmd.Flags().IntVar(&editTrigger, "trigger", -1, "Trigger presubmit / Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias --cq)")
 	editCmd.Flags().Lookup("trigger").NoOptDefVal = "1"

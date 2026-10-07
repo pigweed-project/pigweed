@@ -106,6 +106,9 @@ Commands:
     (pass `--add-owner` or `--add-reviewer @owners` to automatically assign
     module code owners; also supports `--remove-reviewer`, `--add-assignee`,
     `--remove-assignee`).
+  - Update the attention set: `./gh pr edit --remove-attention me`
+    (`--add-attention <email|me>`, `--remove-attention <email|me>`). Unlike
+    `--remove-assignee`, this leaves the user as a reviewer.
   - Set or remove topic/hashtags: `./gh pr edit --topic <name>`
     (`--remove-topic`, `--add-hashtag`, `--remove-hashtag`). Rejects `--topic`
     and `-o topic=...` before pushing if the project sets `Topics-Not-Supported`

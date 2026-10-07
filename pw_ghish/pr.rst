@@ -173,6 +173,9 @@ through the Gerrit REST API without pushing a new patchset:
    # Set a Gerrit topic and add hashtags:
    $ ./gh pr edit 413992 --topic my-feature --add-hashtag triage
 
+   # Take yourself out of the attention set and put a reviewer in it:
+   $ ./gh pr edit 413992 --remove-attention me --add-attention colleague@google.com
+
 Supported flags
 ===============
 * ``--add-reviewer <email|@owners>`` / ``--remove-reviewer <email>``: Add or
@@ -181,7 +184,11 @@ Supported flags
 * ``--add-owner``: Automatically resolve and add code owners for the modified
   files (shorthand for ``--add-reviewer @owners``).
 * ``--add-assignee <email>`` / ``--remove-assignee <email>``: Add or remove
-  assignees.
+  assignees. ``--remove-assignee`` removes the user as a reviewer.
+* ``--add-attention <email|me>`` / ``--remove-attention <email|me>``: Add a
+  user to, or remove them from, the change's attention set without changing
+  their reviewer or CC status. ``me`` (or ``@me``) means yourself. These use
+  Gerrit's attention set endpoints, so no change message is posted.
 * ``--add-label <Label=Value>``: Apply a Gerrit label vote (e.g.
   ``--add-label Commit-Queue=1``).
 * ``--trigger [0|1|2]`` (alias ``--cq [0|1|2]``): Vote on ``Commit-Queue`` or

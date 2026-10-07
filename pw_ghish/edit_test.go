@@ -110,6 +110,11 @@ func TestEdit_ErrorWhenNoFlagsProvided(t *testing.T) {
 	if !strings.Contains(err.Error(), "Commit-Queue=1") {
 		t.Errorf("Expected error message to include examples, got: %v", err)
 	}
+	for _, flag := range []string{"--add-attention", "--remove-attention"} {
+		if !strings.Contains(err.Error(), flag) {
+			t.Errorf("Expected error message to list %s, got: %v", flag, err)
+		}
+	}
 }
 
 func TestEdit_ErrorInvalidLabelFormat(t *testing.T) {
@@ -231,6 +236,124 @@ func TestEditAddAssignee(t *testing.T) {
 
 	if !strings.Contains(output, "Assignee added successfully") {
 		t.Errorf("Unexpected output: %s", output)
+	}
+}
+
+// attentionRequestInput decodes the AttentionSetInput sent in req.
+func attentionRequestInput(t *testing.T, req MockRequest) gerrit.AttentionSetInput {
+	t.Helper()
+	var input gerrit.AttentionSetInput
+	if len(req.Body) > 0 {
+		if err := json.Unmarshal(req.Body, &input); err != nil {
+			t.Fatalf("failed to decode attention set input %q: %v", req.Body, err)
+		}
+	}
+	return input
+}
+
+func TestEditAddAttention(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("POST", "/changes/12345/attention", http.StatusOK, map[string]any{"_account_id": 1})
+
+	output, err := executeCommand(RootCmd, "pr", "edit", "12345",
+		"--add-attention", "helper@google.com", "--add-attention", "other@google.com")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+
+	var users []string
+	for _, req := range server.Requests() {
+		if req.Method != "POST" || req.Path != "/changes/12345/attention" {
+			continue
+		}
+		input := attentionRequestInput(t, req)
+		if input.Reason == "" {
+			t.Errorf("attention set input for %q has no reason; Gerrit requires one", input.User)
+		}
+		users = append(users, input.User)
+	}
+	if got, want := strings.Join(users, ","), "helper@google.com,other@google.com"; got != want {
+		t.Errorf("users added to attention set = %q, want %q", got, want)
+	}
+	// The dedicated endpoint must be used, not a review post, so that no
+	// change message or automatic attention set rules are triggered.
+	if n := server.CallCount("POST", "/changes/12345/revisions/current/review"); n != 0 {
+		t.Errorf("SetReview called %d times, want 0", n)
+	}
+	if !strings.Contains(output, "Added helper@google.com to the attention set") {
+		t.Errorf("Unexpected output: %s", output)
+	}
+}
+
+func TestEditRemoveAttention(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnString("DELETE", "/changes/12345/attention/*", http.StatusNoContent, "", "")
+
+	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--remove-attention", "helper@google.com")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+	if n := server.CallCount("DELETE", "/changes/12345/attention/helper@google.com"); n != 1 {
+		t.Errorf("RemoveAttention calls = %d, want 1; requests: %+v", n, server.Requests())
+	}
+	// Removing someone from the attention set must not remove them as a
+	// reviewer, which is what --remove-assignee does.
+	if n := server.CallCount("DELETE", "/changes/12345/reviewers/helper@google.com"); n != 0 {
+		t.Errorf("DeleteReviewer called %d times, want 0", n)
+	}
+	if !strings.Contains(output, "Removed helper@google.com from the attention set") {
+		t.Errorf("Unexpected output: %s", output)
+	}
+}
+
+func TestEditAttentionMeMeansSelf(t *testing.T) {
+	for _, alias := range []string{"me", "@me", "self"} {
+		t.Run(alias, func(t *testing.T) {
+			server := NewMockGerritServer(t)
+			server.OnJSON("POST", "/changes/12345/attention", http.StatusOK, map[string]any{"_account_id": 1})
+			server.OnString("DELETE", "/changes/12345/attention/*", http.StatusNoContent, "", "")
+
+			if output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--remove-attention", alias); err != nil {
+				t.Fatalf("--remove-attention %s failed: %v\nOutput: %s", alias, err, output)
+			}
+			if n := server.CallCount("DELETE", "/changes/12345/attention/self"); n != 1 {
+				t.Errorf("--remove-attention %s: DELETE .../attention/self calls = %d, want 1; requests: %+v", alias, n, server.Requests())
+			}
+
+			if output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--add-attention", alias); err != nil {
+				t.Fatalf("--add-attention %s failed: %v\nOutput: %s", alias, err, output)
+			}
+			req := server.LastRequest()
+			if req == nil || req.Path != "/changes/12345/attention" {
+				t.Fatalf("--add-attention %s: last request = %+v, want POST /changes/12345/attention", alias, req)
+			}
+			if got := attentionRequestInput(t, *req).User; got != "self" {
+				t.Errorf("--add-attention %s: user = %q, want %q", alias, got, "self")
+			}
+		})
+	}
+}
+
+func TestEditAttentionErrorNamesAccount(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnString("POST", "/changes/12345/attention", http.StatusBadRequest, "text/plain", "nobody@google.com is not a reviewer")
+
+	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--add-attention", "nobody@google.com")
+	if err == nil {
+		t.Fatal("expected an error when Gerrit rejects the attention set update")
+	}
+	if !strings.Contains(err.Error(), "nobody@google.com") {
+		t.Errorf("error should name the account, got: %v", err)
+	}
+}
+
+func TestEditAttentionRejectsEmptyAccount(t *testing.T) {
+	NewMockGerritServer(t)
+	for _, flag := range []string{"--add-attention", "--remove-attention"} {
+		_, err := executeCommand(RootCmd, "pr", "edit", "12345", flag, " ")
+		if err == nil || !strings.Contains(err.Error(), flag) {
+			t.Errorf("%s with an empty account: expected an error naming the flag, got %v", flag, err)
+		}
 	}
 }
 
