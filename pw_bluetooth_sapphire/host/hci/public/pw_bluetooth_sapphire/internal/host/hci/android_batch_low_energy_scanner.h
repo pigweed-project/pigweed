@@ -120,7 +120,7 @@ class AndroidBatchLowEnergyScanner final : public LowEnergyScanner {
   void ReadScanResults(
       std::optional<pw::bluetooth_sapphire::Lease> wake_lease = std::nullopt);
 
-  void SendReadCommand(std::optional<pw::bluetooth_sapphire::Lease> lease);
+  void QueueReadCommand();
 
   // Event handler ID for the Storage Threshold Breach subevent
   CommandChannel::EventHandlerId event_handler_id_;

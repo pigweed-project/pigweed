@@ -475,28 +475,36 @@ TEST_F(AndroidBatchLowEnergyScannerTest,
        WakeLeaseHeldDuringReadAndReleasedUponCompletion) {
   EXPECT_EQ(0u, wake_alarm_provider().active_leases());
 
-  bool read_command_received = false;
-  fit::closure resume_read;
+  fit::closure resume_first_read;
+  fit::closure resume_second_read;
   int batch_scan_cmd_count = 0;
   test_device()->pause_responses_for_opcode(
-      android_hci::kLEBatchScan,
-      [&, batch_scan_cmd_count](fit::closure resume) mutable {
+      android_hci::kLEBatchScan, [&](fit::closure resume) {
         batch_scan_cmd_count++;
         if (batch_scan_cmd_count == 1) {
-          read_command_received = true;
-          resume_read = std::move(resume);
+          resume_first_read = std::move(resume);
+        } else if (batch_scan_cmd_count == 2) {
+          resume_second_read = std::move(resume);
         } else {
           resume();
         }
       });
 
   RunFor(AndroidBatchLowEnergyScanner::kMaxReadDelay);
-  EXPECT_TRUE(read_command_received);
+  ASSERT_TRUE(resume_first_read);
   EXPECT_EQ(1u, wake_alarm_provider().active_leases());
 
-  if (resume_read) {
-    resume_read();
-  }
+  // Complete the first read (which returns 2 peers and queues a second read).
+  // The wake lease must remain held while the second read in the chain is in
+  // flight.
+  resume_first_read();
+  RunUntilIdle();
+  ASSERT_TRUE(resume_second_read);
+  EXPECT_EQ(1u, wake_alarm_provider().active_leases());
+
+  // Complete the second read (which returns 0 peers and finishes the sequence).
+  // The wake lease must now be released.
+  resume_second_read();
   RunUntilIdle();
 
   EXPECT_EQ(0u, wake_alarm_provider().active_leases());
@@ -672,6 +680,87 @@ TEST_F(AndroidBatchLowEnergyScannerTest,
   test_device()->SendScanStorageThresholdBreachEvent();
   RunUntilIdle();
   EXPECT_EQ(1, peer_found_count);
+}
+
+TEST_F(AndroidBatchLowEnergyScannerTest,
+       OverlappingReadScanResultsTriggersDoNotStartDuplicateReadChain) {
+  int read_cmd_count = 0;
+  fit::closure resume_first_read;
+  test_device()->pause_responses_for_opcode(
+      android_hci::kLEBatchScan, [&](fit::closure resume) {
+        read_cmd_count++;
+        if (read_cmd_count == 1) {
+          resume_first_read = std::move(resume);
+        } else {
+          resume();
+        }
+      });
+
+  // First trigger starts a read chain.
+  test_device()->SendScanStorageThresholdBreachEvent();
+  RunUntilIdle();
+  EXPECT_EQ(1, read_cmd_count);
+
+  // Second trigger while first read is still in flight should not send a
+  // duplicate concurrent read command.
+  test_device()->SendScanStorageThresholdBreachEvent();
+  RunUntilIdle();
+  EXPECT_EQ(1, read_cmd_count);
+
+  // Resume the first read (which returns the 2 initial peers) and allow the
+  // read chain to complete.
+  ASSERT_TRUE(resume_first_read);
+  resume_first_read();
+  RunUntilIdle();
+
+  // The first read returned 2 peers, followed by a second read in the same
+  // chain that returned 0 peers.
+  EXPECT_EQ(2, read_cmd_count);
+}
+
+TEST_F(AndroidBatchLowEnergyScannerTest,
+       ReadScanResultsErrorDuringChainHaltsAndReleasesWakeLease) {
+  EXPECT_EQ(0u, wake_alarm_provider().active_leases());
+
+  fit::closure resume_first_read;
+  fit::closure resume_second_read;
+  int batch_scan_cmd_count = 0;
+  test_device()->pause_responses_for_opcode(
+      android_hci::kLEBatchScan, [&](fit::closure resume) {
+        batch_scan_cmd_count++;
+        if (batch_scan_cmd_count == 1) {
+          resume_first_read = std::move(resume);
+        } else if (batch_scan_cmd_count == 2) {
+          resume_second_read = std::move(resume);
+        } else {
+          resume();
+        }
+      });
+
+  RunFor(AndroidBatchLowEnergyScanner::kMaxReadDelay);
+  ASSERT_TRUE(resume_first_read);
+  EXPECT_EQ(1u, wake_alarm_provider().active_leases());
+
+  // Complete the first read, which returns 2 peers and queues a second read in
+  // the chain while keeping the wake lease held.
+  resume_first_read();
+  RunUntilIdle();
+  ASSERT_TRUE(resume_second_read);
+  EXPECT_EQ(2, batch_scan_cmd_count);
+  EXPECT_EQ(1u, wake_alarm_provider().active_leases());
+
+  // Inject a controller error response for the second read in the chain.
+  test_device()->SetDefaultResponseStatus(
+      android_hci::kLEBatchScan,
+      pw::bluetooth::emboss::StatusCode::HARDWARE_FAILURE);
+  resume_second_read();
+  RunUntilIdle();
+
+  // The error response must halt the read chain, schedule the next periodic
+  // read, and release the wake lease.
+  EXPECT_EQ(2, batch_scan_cmd_count);
+  EXPECT_EQ(0u, wake_alarm_provider().active_leases());
+  EXPECT_TRUE(wake_alarm_provider().HasPendingAlarms());
 }
 
 }  // namespace bt::hci

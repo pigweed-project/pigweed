@@ -324,76 +324,83 @@ void AndroidBatchLowEnergyScanner::ReadScanResults(
   }
 
   if (!hci_cmd_runner().IsReady()) {
-    // Don't cancel the current operation in the command runner. It's probably
-    // more important (e.g. starting or stopping a scan) than this one. We can
-    // try again later.
+    // Don't cancel the current operation in the command runner. It's either
+    // starting/stopping a scan or already reading scan results.
     ScheduleNextRead();
     return;
   }
 
+  read_scan_results_task_.Cancel();
   wake_alarm_.reset();
-  SendReadCommand(std::move(wake_lease));
+  QueueReadCommand();
+  hci_cmd_runner().RunCommands(
+      [self = weak_self_.GetWeakPtr(),
+       lease = std::move(wake_lease)](Result<> status) {
+        if (!self.is_alive() || !self->IsScanning() ||
+            status == ToResult(HostError::kCanceled)) {
+          return;
+        }
+        bt_is_error(status, ERROR, "hci-le", "failed reading scan results");
+        self->ScheduleNextRead();
+      });
 }
 
-void AndroidBatchLowEnergyScanner::SendReadCommand(
-    std::optional<pw::bluetooth_sapphire::Lease> wake_lease) {
+void AndroidBatchLowEnergyScanner::QueueReadCommand() {
   if (!IsScanning()) {
     return;
   }
 
-  if (!hci().is_alive() || !hci()->command_channel()) {
-    return;
-  }
-
   CommandPacket command = BuildReadScanResultsPacket();
-  auto callback = [this,
-                   self = weak_self_.GetWeakPtr(),
-                   lease = std::move(wake_lease)](
-                      CommandChannel::TransactionId /*id*/,
-                      const EventPacket& event) mutable {
-    if (!self.is_alive() || !IsScanning()) {
-      return;
-    }
+  hci_cmd_runner().QueueCommand(
+      std::move(command),
+      [self = weak_self_.GetWeakPtr()](const EventPacket& event) {
+        if (!self.is_alive() || !self->IsScanning()) {
+          return;
+        }
 
-    Result<> result = event.ToResult();
-    if (bt_is_error(result, ERROR, "hci-le", "failed reading scan results")) {
-      ScheduleNextRead();
-      return;
-    }
+        if (event.ToResult().is_error()) {
+          return;
+        }
 
-    auto view = event.view<
-        android_emb::LEBatchScanReadResultsCommandCompleteEventView>();
-    PW_DCHECK(view.read_mode().Read() == android_emb::BatchScanReadMode::FULL);
+        auto view = event.view<
+            android_emb::LEBatchScanReadResultsCommandCompleteEventView>();
+        if (!view.Ok()) {
+          bt_log(WARN,
+                 "hci-le",
+                 "malformed LE batch scan read results command complete event");
+          return;
+        }
 
-    uint8_t num_records = view.num_records().Read();
-    if (num_records == 0) {
-      ScheduleNextRead();
-      return;
-    }
+        if (view.read_mode().Read() != android_emb::BatchScanReadMode::FULL) {
+          bt_log(WARN,
+                 "hci-le",
+                 "unexpected batch scan read mode: %u",
+                 static_cast<unsigned int>(view.read_mode().Read()));
+          return;
+        }
 
-    auto records = ParseScanResults(view);
-    if (records.empty()) {
-      ScheduleNextRead();
-      return;
-    }
+        uint8_t num_records = view.num_records().Read();
+        if (num_records == 0) {
+          return;
+        }
 
-    HandleScanResults(records);
-    if (!self.is_alive() || !IsScanning()) {
-      return;
-    }
+        auto records = self->ParseScanResults(view);
+        if (records.empty()) {
+          return;
+        }
 
-    SendReadCommand(std::move(lease));
-  };
+        self->HandleScanResults(records);
+        if (!self.is_alive() || !self->IsScanning()) {
+          return;
+        }
 
-  auto result = hci()->command_channel()->SendCommand(std::move(command),
-                                                      std::move(callback));
-  if (!result.ok()) {
-    bt_log(ERROR,
-           "hci-le",
-           "failed to send read batch scan results command: %s",
-           result.status().str());
-    ScheduleNextRead();
-  }
+        // A single HCI Command Complete event may not fit all buffered batch
+        // scan records. Continue queuing read commands in the current
+        // SequentialCommandRunner sequence until the controller returns
+        // num_records == 0, after which RunCommands completes and schedules the
+        // next periodic read via ScheduleNextRead().
+        self->QueueReadCommand();
+      });
 }
 
 void AndroidBatchLowEnergyScanner::ScheduleNextRead() {
