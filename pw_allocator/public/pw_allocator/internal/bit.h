@@ -13,7 +13,6 @@
 // the License.
 #pragma once
 
-#include <bit>
 #include <cstddef>
 
 #include "lib/stdcompat/bit.h"
