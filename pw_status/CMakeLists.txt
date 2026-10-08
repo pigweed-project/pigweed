@@ -23,7 +23,7 @@ pw_add_library(pw_status.config INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
-    ${pw_thread_CONFIG}
+    ${pw_status_CONFIG}
 )
 
 pw_add_library(pw_status STATIC
