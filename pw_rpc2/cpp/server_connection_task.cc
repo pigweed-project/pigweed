@@ -27,11 +27,13 @@
 namespace pw::rpc2::internal {
 namespace {
 
-ConstBuf GetInitialPayload(Call& call,
-                           bool streaming_request,
-                           InboundPacket&& packet) {
+// Returns the payload for the method that `packet` starts. Client-stream
+// methods read requests from the call, so they get an empty payload.
+ConstBuf TakeInitialPayload(Call& call,
+                            bool is_client_stream_method,
+                            InboundPacket&& packet) {
   const PacketType packet_type = packet.type();
-  if (!streaming_request) {
+  if (!is_client_stream_method) {
     return std::move(packet).TakePayload();
   }
   if (packet_type.has_payload()) {
@@ -63,11 +65,11 @@ ServerConnectionTask::ServerConnectionTask(
 
 ServerConnectionTask::~ServerConnectionTask() {
   Teardown();
-  RetireAllServerCalls();
+  ForceRetireAllCalls();
   server_task_.RemoveConnection(*this);
 }
 
-void ServerConnectionTask::RetireFinishedServerCalls() {
+void ServerConnectionTask::CleanUpCalls() {
   for (auto prev = calls().before_begin(), it = calls().begin();
        it != calls().end();) {
     ServerCall& call = static_cast<ServerCall&>(*it);
@@ -80,7 +82,7 @@ void ServerConnectionTask::RetireFinishedServerCalls() {
   }
 }
 
-void ServerConnectionTask::RetireAllServerCalls() {
+void ServerConnectionTask::ForceRetireAllCalls() {
   while (!calls().empty()) {
     ServerCall& call = static_cast<ServerCall&>(calls().front());
     calls().pop_front();
@@ -95,7 +97,7 @@ async2::Poll<> ServerConnectionTask::DoPend(async2::Context& cx) {
   if (is_closed()) {
     // Retire all server calls before unregistering from the server so that no
     // call's user future outlives this connection's place in the server.
-    RetireAllServerCalls();
+    ForceRetireAllCalls();
     server_task_.RemoveConnection(*this);
     return async2::Ready();
   }
@@ -139,10 +141,8 @@ bool ServerConnectionTask::PollConnection(async2::Context& cx) {
     }
   }
 
-  // Stage 3: Reap the calls whose methods have finished. Their tasks ran on
-  // this same dispatcher; all that is left is to destroy their futures and
-  // drop this connection's reference to them.
-  RetireFinishedServerCalls();
+  // Stage 3: Retire the calls that are done.
+  CleanUpCalls();
   return progressed;
 }
 
@@ -170,7 +170,8 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
   // service resolved here cannot be unregistered underneath the dispatch.
   Service* target_service = server_task_.FindService(packet.service_id());
   if (target_service == nullptr) {
-    PW_LOG_WARN("RPC request for unknown service_id 0x%08x",
+    PW_LOG_WARN("Call %u: request for unknown service 0x%08x",
+                static_cast<unsigned>(packet.call_id()),
                 static_cast<unsigned>(packet.service_id()));
     QueueError(packet.call_id(), ProtocolStatus::kUnknownService);
     return;
@@ -179,7 +180,8 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
   const uint32_t method_id = packet.method_id();
   const Method* method = ServiceAccess::FindMethod(*target_service, method_id);
   if (method == nullptr) {
-    PW_LOG_WARN("RPC request for unknown method_id 0x%08x in service 0x%08x",
+    PW_LOG_WARN("Call %u: request for unknown method 0x%08x in service 0x%08x",
+                static_cast<unsigned>(packet.call_id()),
                 static_cast<unsigned>(method_id),
                 static_cast<unsigned>(packet.service_id()));
     QueueError(packet.call_id(), ProtocolStatus::kUnknownMethod);
@@ -189,14 +191,15 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
   // A unary or server-streaming method takes exactly one request, so it must
   // be started by the packet that carries that request and closes the client's
   // stream. Anything else means the client disagrees about the method's type.
-  const bool streaming_request = HasClientStream(method->type());
+  const bool is_client_stream_method = HasClientStream(method->type());
   const bool is_single_request =
       packet_type.has_payload() &&
       packet_type.close_mode() == CloseMode::kStreamEnd;
-  if (!streaming_request && !is_single_request) {
+  if (!is_client_stream_method && !is_single_request) {
     PW_LOG_WARN(
-        "RPC start packet of type 0x%02x does not match the type of method "
+        "Call %u: start packet type 0x%02x does not match the type of method "
         "0x%08x in service 0x%08x",
+        static_cast<unsigned>(packet.call_id()),
         static_cast<unsigned>(packet_type.bits()),
         static_cast<unsigned>(method_id),
         static_cast<unsigned>(packet.service_id()));
@@ -204,10 +207,12 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
     return;
   }
 
-  Result<ServerCall*> call_res = ServerCall::Allocate(
-      *this, packet.call_id(), *target_service, *method, allocator());
+  Result<ServerCall*> call_res =
+      ServerCall::Allocate(*this, packet.call_id(), *method, allocator());
   if (!call_res.ok()) {
-    PW_LOG_ERROR("Failed to allocate ServerCall: %s", call_res.status().str());
+    PW_LOG_ERROR("Call %u: failed to allocate ServerCall: %s",
+                 static_cast<unsigned>(packet.call_id()),
+                 call_res.status().str());
     QueueError(packet.call_id(), ProtocolStatus::kFailedToAllocateCall);
     return;
   }
@@ -216,9 +221,10 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
   const ProtocolStatus invocation_error = method->Invoke(
       *target_service,
       call,
-      GetInitialPayload(call, streaming_request, std::move(packet)));
+      TakeInitialPayload(call, is_client_stream_method, std::move(packet)));
   if (invocation_error != ProtocolStatus::kOk) {
-    PW_LOG_WARN("Method invocation failed with protocol error: %s",
+    PW_LOG_WARN("Call %u: method invocation failed with protocol error: %s",
+                static_cast<unsigned>(call.call_id()),
                 pw::EnumToString(invocation_error));
     if (!call.is_write_closed()) {
       QueueError(call.call_id(), invocation_error);
@@ -229,6 +235,9 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
     return;
   }
 
+  // The method is now running. Give it its own task on the server's
+  // dispatcher --- the one polling this connection --- so that the wakers it
+  // stores wake this call alone.
   server_task_.dispatcher().Post(call);
 }
 

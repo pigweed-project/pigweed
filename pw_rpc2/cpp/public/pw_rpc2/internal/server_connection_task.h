@@ -48,15 +48,16 @@ class ServerConnectionTask final : public ConnectionTask {
                        ServerTask& server_task);
 
   /// Constructs a server connection task for a connection whose handshake has
-  /// already completed. Begins in `State::kActive`.
+  /// already completed. Begins in `State::kActive`. For tests only.
   ServerConnectionTask(EstablishedConnection established_connection,
                        Allocator& allocator,
                        ServerTask& server_task);
 
   ~ServerConnectionTask() override;
 
-  /// Retires every server call still on this connection.
-  void RetireAllServerCalls();
+  /// Retires every call on this connection, even ones that are still running.
+  /// On an open connection, running calls end as if their methods returned.
+  void ForceRetireAllCalls();
 
  private:
   async2::Poll<> DoPend(async2::Context& cx) override;
@@ -70,7 +71,7 @@ class ServerConnectionTask final : public ConnectionTask {
   /// This runs on the connection rather than on the calls themselves because
   /// retirement destroys a call's method future and may free the call, which
   /// a call cannot do from inside its own poll.
-  void RetireFinishedServerCalls();
+  void CleanUpCalls();
 
   // The server that accepted this connection. A server outlives every
   // connection it accepted: its shutdown closes each one, unposts it, and

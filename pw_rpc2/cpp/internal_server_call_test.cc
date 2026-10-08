@@ -47,14 +47,6 @@ constexpr Method TestMethod(uint32_t id, size_t size) {
   return Method(id, MethodType::kBidirectionalStreaming, size, NoInvoke);
 }
 
-// These tests drive calls directly rather than dispatching requests through a
-// server, but a call still records the service it belongs to, so one has to
-// exist. `~Service` is protected, hence the subclass.
-class TestService : public Service {
- public:
-  TestService() : Service(/*service_id=*/1u, {}) {}
-};
-
 class MockFuture {
  public:
   using value_type = void;
@@ -148,8 +140,8 @@ class ServerCallTest : public ::testing::Test {
   /// Allocates a server call and registers it with the connection, exactly as
   /// `ServerConnectionTask::HandleIncomingRequest()` does.
   ServerCall& AdoptCall(uint32_t call_id, const Method& method) {
-    auto call_res = ServerCall::Allocate(
-        *connection_task_, call_id, service_, method, alloc_);
+    auto call_res =
+        ServerCall::Allocate(*connection_task_, call_id, method, alloc_);
     PW_CHECK_OK(call_res.status());
     return **call_res;
   }
@@ -180,7 +172,6 @@ class ServerCallTest : public ::testing::Test {
   transport::ReliableDatagramSocket connection_;
   test::MockConnection* raw_conn_ = nullptr;
   SharedPtr<ServerConnectionTask> connection_task_;
-  TestService service_;
   bool posted_ = false;
 };
 
@@ -466,7 +457,7 @@ TEST_F(ServerCallTest, EmplaceInvalidFutureCrashes) {
           []() { return MockFuture(/*pends_before_ready=*/-1); }),
       "");
 
-  connection_task_->RetireAllServerCalls();
+  connection_task_->ForceRetireAllCalls();
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 

@@ -288,8 +288,7 @@ class Call : public IntrusiveForwardList<Call>::Item,
   /// pointer to the connection, after which all outbound operations on this
   /// call become no-ops and `ReserveWrite()` fails with `UNAVAILABLE`.
   ///
-  /// Called when a server call is retired, when a client call closes, when a
-  /// connection is torn down, or when the call is destroyed. Idempotent.
+  /// Idempotent.
   void DetachFromConnection();
 
   /// Claims this call's read stream and starts a receive on it.
@@ -447,8 +446,7 @@ class Call : public IntrusiveForwardList<Call>::Item,
   // call is observed to be closed.
   void NotifyIfClosed();
 
-  // Non-null while registered in `connection_task_->calls_`; cleared by
-  // DetachFromConnection().
+  // The connection this call belongs to. Null after the call is detached.
   ConnectionTask* connection_task_ = nullptr;
   Allocator* allocator_ = nullptr;
 

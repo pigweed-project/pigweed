@@ -123,8 +123,7 @@ class ConnectionTask : public async2::Task {
   /// `~ConnectionTask` after the task has been deregistered from it).
   void CloseConnection(Status status = Status::Cancelled());
 
-  /// @pre Must be called from this connection's dispatcher thread, which is
-  /// the only writer of the connection handle.
+  /// @pre Must be called from this connection's dispatcher thread.
   transport::ReliableDatagramSocket& connection() { return connection_; }
   Allocator& allocator() { return allocator_; }
   EndpointRole role() const { return role_; }
@@ -230,9 +229,8 @@ class ConnectionTask : public async2::Task {
 
   // Every call active on this connection: the routing registry, keyed by call
   // ID, and for a server connection also the set of calls this task owns and
-  // polls. One list suffices because a connection only ever carries calls of
-  // one direction. Calls are registered by `Call`'s constructor and unlisted
-  // by `DetachFromConnection()`, both of which run on the dispatcher thread.
+  // retires. One list suffices because a connection only ever carries calls of
+  // one direction.
   IntrusiveForwardList<Call> calls_;
 
   HandshakeInfo handshake_info_{};

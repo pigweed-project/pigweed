@@ -123,15 +123,16 @@ class MethodInvokerBase {
   static_assert(sizeof(FutureType) <= Method::kMaxSizeBytes,
                 "This RPC method's future is too large to store inline in a "
                 "call. Its storage is allocated for every in-flight call, so "
-                "it must stay small. Move large members into the service "
-                "object, or split the future into smaller pieces.");
+                "it must stay small. Allocate large members separately (e.g. "
+                "in a pw::UniquePtr), use a coroutine, or split the future "
+                "into smaller pieces.");
   static_assert(
       alignof(FutureType) <= alignof(std::max_align_t),
       "This RPC method's future is over-aligned "
       "(alignof(FutureType) > alignof(std::max_align_t)). Inline call future "
       "storage only guarantees alignof(std::max_align_t) alignment. Remove "
-      "over-aligned members (or alignas specifiers) from the future or move "
-      "them into the service object.");
+      "over-aligned members (or alignas specifiers) from the future, or "
+      "allocate them separately.");
 
   static constexpr size_t kFutureStorageSize = sizeof(FutureType);
 

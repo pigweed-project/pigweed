@@ -273,8 +273,8 @@ void Call::CloseWriteOnRetire() {
   }
   const bool single_response = HasWriteFlag<kCancelOnWriterDrop>();
   PW_LOG_WARN(
-      "Call %u was retired without sending a terminal packet, most likely "
-      "because a %s escaped its method; ending the RPC with an error",
+      "Call %u: method finished without sending a terminal packet, most "
+      "likely because a %s escaped it; ending the RPC with an error",
       static_cast<unsigned>(call_id_),
       single_response ? "UnaryWriter" : "Writer");
   QueueError(single_response ? ProtocolStatus::kDroppedWithoutResponse
@@ -322,7 +322,7 @@ bool Call::ReserveMessageSlot(async2::Context& cx) {
 
 void Call::OnMessage(ConstBuf payload) {
   if (!sender_.is_open()) {
-    PW_LOG_DEBUG("Call %u received message after read stream closed, dropping",
+    PW_LOG_DEBUG("Call %u: received message after read stream closed, dropping",
                  static_cast<unsigned>(call_id_));
     return;
   }

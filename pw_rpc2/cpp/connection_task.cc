@@ -117,7 +117,7 @@ void ConnectionTask::QueueControlPacket(const OutboundPacket& packet) {
   //    connection immediately, which completes every call on it and forces the
   //    peer to notice.
   PW_LOG_ERROR(
-      "Call %u: out of memory queueing control packet (type=0x%02x), "
+      "Call %u: out of memory queueing control packet type 0x%02x, "
       "closing connection",
       static_cast<unsigned>(packet.call_id()),
       static_cast<unsigned>(packet.type().bits()));
@@ -281,7 +281,7 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx,
   // between the endpoints forever.
   if (!packet.type().is_for(role_)) {
     PW_LOG_WARN(
-        "Call %u: received packet of type 0x%02x for wrong endpoint role, "
+        "Call %u: received packet type 0x%02x for wrong endpoint role, "
         "dropping",
         static_cast<unsigned>(packet.call_id()),
         static_cast<unsigned>(packet.type().bits()));
@@ -317,13 +317,14 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx,
   // call or is stray.
   if (!packet.type().is_start()) {
     if (packet.type().is_terminal()) {
-      PW_LOG_DEBUG("Call %u: dropping terminal packet 0x%02x for closed call",
-                   static_cast<unsigned>(packet.call_id()),
-                   static_cast<unsigned>(packet.type().bits()));
+      PW_LOG_DEBUG(
+          "Call %u: dropping terminal packet type 0x%02x for closed call",
+          static_cast<unsigned>(packet.call_id()),
+          static_cast<unsigned>(packet.type().bits()));
       return true;
     }
     PW_LOG_WARN(
-        "Call %u: received stray packet of type 0x%02x for unknown or closed "
+        "Call %u: received stray packet type 0x%02x for unknown or closed "
         "call, cancelling it",
         static_cast<unsigned>(packet.call_id()),
         static_cast<unsigned>(packet.type().bits()));

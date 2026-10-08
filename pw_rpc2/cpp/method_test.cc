@@ -256,8 +256,8 @@ class MethodInvokerTest : public ::testing::Test {
   /// Allocates a server call and registers it with the connection, exactly as
   /// `ServerConnectionTask::HandleIncomingRequest()` does.
   ServerCall& AdoptCall(uint32_t call_id, const Method& method) {
-    auto call_res = ServerCall::Allocate(
-        *connection_task_, call_id, service_, method, alloc_);
+    auto call_res =
+        ServerCall::Allocate(*connection_task_, call_id, method, alloc_);
     PW_CHECK_OK(call_res.status());
     return **call_res;
   }
@@ -415,7 +415,7 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryFutureDeserializationFailure) {
 
   // The server retires a call whose invocation failed, which frees it: no
   // future was ever set, so there is nothing else holding it.
-  connection_task_->RetireAllServerCalls();
+  connection_task_->ForceRetireAllCalls();
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
@@ -703,7 +703,7 @@ TEST_F(MethodInvokerTest,
   // retiring a call whose invocation failed. Closing it here keeps retirement
   // from ending the call itself.
   unary_call.CloseWrite();
-  connection_task_->RetireAllServerCalls();
+  connection_task_->ForceRetireAllCalls();
 
   using StreamCoroInvoker =
       RawMethodInvoker<&TestService::RawServerStreamingCoro,
@@ -725,7 +725,7 @@ TEST_F(MethodInvokerTest,
   // retiring a call whose invocation failed. Closing it here keeps retirement
   // from ending the call itself.
   stream_call.CloseWrite();
-  connection_task_->RetireAllServerCalls();
+  connection_task_->ForceRetireAllCalls();
 }
 
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")

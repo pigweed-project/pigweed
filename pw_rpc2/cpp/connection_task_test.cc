@@ -311,13 +311,8 @@ TEST(ConnectionTaskTest, DuplicateStartCancelsActiveCall) {
   dispatcher.Post(task);
 
   // Register active call 50
-  class TestService : public Service {
-   public:
-    TestService() : Service(99, span<const Method>()) {}
-  } service;
   constexpr Method method(1, MethodType::kUnary, 0, nullptr);
-  auto server_call =
-      ServerCall::Allocate(task, 50u, service, method, allocator);
+  auto server_call = ServerCall::Allocate(task, 50u, method, allocator);
   ASSERT_TRUE(server_call.ok());
   IntrusivePtr<Call> call = (*server_call)->shared_call();
 

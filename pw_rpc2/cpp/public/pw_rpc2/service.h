@@ -36,6 +36,9 @@ struct ServiceAccess;
 /// write. Conversely, if a method's future or coroutine finishes before its
 /// `Writer` or `UnaryWriter` has completed the call, the call is terminated
 /// and any remaining handles are detached.
+///
+/// @note **Per-call state.** All of a service's calls share the service
+/// object. Keep per-call state in the method's future or coroutine.
 class Service : public IntrusiveForwardList<Service>::Item {
  protected:
   constexpr Service(uint32_t service_id, span<const internal::Method> methods)

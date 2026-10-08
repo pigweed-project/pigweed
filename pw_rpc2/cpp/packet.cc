@@ -99,6 +99,7 @@ Result<InboundPacket> InboundPacket::Decode(ConstBuf&& buffer) {
   const auto type_bits =
       static_cast<uint8_t>(buffer[offsetof(PacketHeader, type)]);
   if (!PacketType::IsValid(type_bits)) {
+    // TODO: frolv@ - Return a pw_rpc2-specific error for unknown packet types.
     return Status::InvalidArgument();
   }
   const PacketType type = PacketType::FromValidatedBits(type_bits);

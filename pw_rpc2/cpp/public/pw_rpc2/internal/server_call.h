@@ -76,21 +76,10 @@ class alignas(std::max_align_t) ServerCall final : public Call,
   /// it into `connection_task`.
   static Result<ServerCall*> Allocate(ServerConnectionTask& connection_task,
                                       uint32_t call_id,
-                                      const Service& service,
                                       const Method& method,
                                       Allocator& allocator);
 
-  /// The service this call was dispatched to.
-  ///
-  /// Used to cancel a service's in-flight calls when it is unregistered. The
-  /// service is identified by address rather than by ID, because a service
-  /// may be re-registered under a different object with the same ID.
-  const Service& service() const { return *service_; }
-
   /// Returns the ID of the method this call was dispatched to.
-  ///
-  /// Used by generic and forwarding services, which share one invoke
-  /// function across many methods, and for logging.
   uint32_t method_id() const { return method_->id(); }
 
   /// Emplaces a `MethodFutureImpl<Fut>` directly into `future_storage()` using
@@ -116,8 +105,7 @@ class alignas(std::max_align_t) ServerCall final : public Call,
 
   /// Cleans up this call on retirement: halts the task running the user's
   /// method, destroys that method's future, detaches this call from its
-  /// connection, and returns the connection's ownership reference so the
-  /// caller keeps the call alive until retirement completes.
+  /// connection, and drops the connection's reference, which may free the call.
   ///
   /// If the write side is still open after the future is destroyed, a
   /// `Writer` or `UnaryWriter` (or an unfinished write) escaped the method, so
@@ -163,12 +151,10 @@ class alignas(std::max_align_t) ServerCall final : public Call,
   bool is_retirable() const { return finished_ || is_closed(); }
 
  private:
-  /// `service` and `method` must outlive this call. A service outlives every
-  /// call dispatched to it by contract, and methods live in their service's
-  /// method table, which is `static constexpr`.
+  /// `method` must outlive this call. Methods live in their service's method
+  /// table, which is `static constexpr`.
   ServerCall(ServerConnectionTask& connection_task,
              uint32_t call_id,
-             const Service& service,
              const Method& method,
              Allocator* allocator);
 
@@ -184,10 +170,6 @@ class alignas(std::max_align_t) ServerCall final : public Call,
 
   BoxedMethodFuture user_future_;
   IntrusivePtr<Call> connection_ref_;
-
-  // The service this call was dispatched to. Never dereferenced; it is only
-  // compared against, to find the calls an unregistering service must cancel.
-  const Service* service_;
 
   // The method this call was dispatched to. Carries the method ID and the
   // size of the trailing future storage, so neither needs its own member. The

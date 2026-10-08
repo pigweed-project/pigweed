@@ -316,7 +316,7 @@ void ServerTask::Shutdown() {
     connections_.pop_front();
     connection->CloseConnection(Status::Cancelled());
     connection->Deregister();
-    connection->RetireAllServerCalls();
+    connection->ForceRetireAllCalls();
   }
 
   listeners_.clear();

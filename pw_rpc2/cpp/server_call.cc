@@ -35,13 +35,11 @@ static_assert(
 
 ServerCall::ServerCall(ServerConnectionTask& connection_task,
                        uint32_t call_id,
-                       const Service& service,
                        const Method& method,
                        Allocator* allocator)
     : Call(connection_task, call_id, allocator),
       async2::Task(PW_ASYNC_TASK_NAME("pw::rpc2::ServerCall")),
       connection_ref_(this),
-      service_(&service),
       method_(&method) {
   BeginInvocation();
 }
@@ -50,7 +48,6 @@ ServerCall::~ServerCall() { PW_DCHECK(connection_ref_ == nullptr); }
 
 Result<ServerCall*> ServerCall::Allocate(ServerConnectionTask& connection_task,
                                          uint32_t call_id,
-                                         const Service& service,
                                          const Method& method,
                                          Allocator& allocator) {
   const size_t total_size = TotalAllocationSize(method.future_storage_size());
@@ -59,8 +56,7 @@ Result<ServerCall*> ServerCall::Allocate(ServerConnectionTask& connection_task,
   if (mem == nullptr) {
     return Status::ResourceExhausted();
   }
-  return ::new (mem)
-      ServerCall(connection_task, call_id, service, method, &allocator);
+  return ::new (mem) ServerCall(connection_task, call_id, method, &allocator);
 }
 
 ProtocolStatus ServerCall::CommitEmplacedFuture(BoxedMethodFuture&& future,
