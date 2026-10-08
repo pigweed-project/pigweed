@@ -18,6 +18,7 @@ load("@bazel_skylib//lib:selects.bzl", "selects")
 HOST_PLATFORMS = (
     "@platforms//os:android",
     "@platforms//os:chromiumos",
+    "@platforms//os:ios",
     "@platforms//os:linux",
     "@platforms//os:macos",
     "@platforms//os:windows",
