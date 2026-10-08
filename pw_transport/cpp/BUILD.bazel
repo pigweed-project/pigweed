@@ -19,6 +19,13 @@ package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
+# The framed TCP transport uses POSIX sockets.
+hosts_lin_mac = {
+    "@platforms//os:linux": [],
+    "@platforms//os:macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+}
+
 cc_library(
     name = "pw_transport",
     srcs = ["socket.cc"],
@@ -41,6 +48,34 @@ cc_library(
     ],
 )
 
+# Intended for tests and examples, so restricted to upstream Pigweed.
+cc_library(
+    name = "framed_tcp",
+    srcs = ["framed_tcp.cc"],
+    hdrs = ["public/pw_transport/framed_tcp.h"],
+    strip_include_prefix = "public",
+    target_compatible_with = select(hosts_lin_mac),
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":pw_transport",
+        "//pw_allocator",
+        "//pw_assert:check",
+        "//pw_async2:value_future",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_containers:dynamic_deque",
+        "//pw_log",
+        "//pw_result",
+        "//pw_status",
+        "//pw_string:string",
+        "//pw_string:to_string",
+        "//pw_sync:lock_annotations",
+        "//pw_sync:mutex",
+        "//pw_sync:thread_notification",
+        "//pw_thread:thread",
+    ],
+)
+
 filegroup(
     name = "doxygen",
     srcs = [
@@ -59,5 +94,26 @@ pw_cc_test(
         "//pw_async2:testing",
         "//pw_bytes",
         "//pw_sync:interrupt_spin_lock",
+    ],
+)
+
+pw_cc_test(
+    name = "framed_tcp_test",
+    srcs = ["framed_tcp_test.cc"],
+    target_compatible_with = select(hosts_lin_mac),
+    deps = [
+        ":framed_tcp",
+        ":pw_transport",
+        "//pw_allocator:libc_allocator",
+        "//pw_allocator:synchronized_allocator",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_result",
+        "//pw_status",
+        "//pw_stream:socket_stream",
+        "//pw_sync:mutex",
     ],
 )

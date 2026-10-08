@@ -16,6 +16,7 @@ import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_async2/backend.gni")
 import("$dir_pw_build/target_types.gni")
+import("$dir_pw_thread/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 
 config("public_include_path") {
@@ -44,6 +45,34 @@ pw_source_set("pw_transport") {
   sources = [ "socket.cc" ]
 }
 
+# Intended for tests and examples, so restricted to upstream Pigweed.
+pw_source_set("framed_tcp") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_transport/framed_tcp.h" ]
+  public_deps = [
+    ":pw_transport",
+    "$dir_pw_allocator",
+    "$dir_pw_async2:value_future",
+    "$dir_pw_result",
+    "$dir_pw_status",
+    "$dir_pw_string:string",
+    "$dir_pw_sync:lock_annotations",
+    "$dir_pw_sync:mutex",
+    "$dir_pw_sync:thread_notification",
+    "$dir_pw_thread:thread",
+  ]
+  deps = [
+    "$dir_pw_assert:check",
+    "$dir_pw_buf",
+    "$dir_pw_bytes",
+    "$dir_pw_containers:dynamic_deque",
+    "$dir_pw_log",
+    "$dir_pw_string:to_string",
+  ]
+  sources = [ "framed_tcp.cc" ]
+  visibility = [ "$dir_pigweed/*" ]
+}
+
 pw_test("transport_test") {
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
   deps = [
@@ -57,6 +86,32 @@ pw_test("transport_test") {
   sources = [ "transport_test.cc" ]
 }
 
+pw_test("framed_tcp_test") {
+  # The framed TCP transport uses POSIX sockets.
+  enable_if = (current_os == "linux" || current_os == "mac") &&
+              pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_thread_THREAD_BACKEND != ""
+  deps = [
+    ":framed_tcp",
+    ":pw_transport",
+    "$dir_pw_allocator:libc_allocator",
+    "$dir_pw_allocator:synchronized_allocator",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2",
+    "$dir_pw_async2:testing",
+    "$dir_pw_buf",
+    "$dir_pw_bytes",
+    "$dir_pw_result",
+    "$dir_pw_status",
+    "$dir_pw_stream:socket_stream",
+    "$dir_pw_sync:mutex",
+  ]
+  sources = [ "framed_tcp_test.cc" ]
+}
+
 pw_test_group("tests") {
-  tests = [ ":transport_test" ]
+  tests = [
+    ":framed_tcp_test",
+    ":transport_test",
+  ]
 }
