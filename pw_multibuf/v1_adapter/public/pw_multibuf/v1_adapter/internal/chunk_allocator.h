@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <tuple>
 
-#include "pw_allocator/allocator.h"
+#include "pw_allocator/abstract_allocator.h"
 #include "pw_allocator/capability.h"
 #include "pw_allocator/internal/control_block.h"
 #include "pw_allocator/layout.h"
@@ -43,7 +43,7 @@ namespace pw::multibuf::v1_adapter::internal {
 ///
 /// The details of how the second allocator is used are implemented by the
 /// derived classes.
-class ChunkAllocator : public Allocator {
+class ChunkAllocator : public allocator::AbstractAllocator {
  public:
   ~ChunkAllocator() override = default;
 

@@ -25,6 +25,7 @@ pw_add_library(pw_multibuf.v1_adapter.chunk STATIC
     public
   PUBLIC_DEPS
     pw_allocator
+    pw_allocator.abstract_allocator
     pw_assert.assert
     pw_bytes
     pw_bytes.alignment

@@ -637,6 +637,7 @@ pw_add_test(pw_allocator.allocator_test
     allocator_test.cc
   PRIVATE_DEPS
     pw_allocator
+    pw_allocator.abstract_allocator
     pw_allocator.counter
     pw_allocator.testing
   GROUPS
@@ -744,8 +745,8 @@ pw_add_test(pw_allocator.fault_injecting_allocator_test
 
 pw_add_test(pw_allocator.fallback_allocator_test
   PRIVATE_DEPS
-    pw_allocator.testing
     pw_allocator.fallback_allocator
+    pw_allocator.testing
     pw_status
   SOURCES
     fallback_allocator_test.cc

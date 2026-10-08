@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <mutex>
 
+#include "pw_allocator/fault_injecting_allocator.h"
 #include "pw_allocator/first_fit.h"
 #include "pw_allocator/forwarding_allocator.h"
 #include "pw_allocator/hardening.h"
@@ -67,9 +68,9 @@ void FreeAll(typename BlockType::Range range) {
 template <size_t kBufferSize,
           typename BlockType_ = FirstFitBlock<uint32_t>,
           typename MetricsType_ = internal::AllMetrics>
-class AllocatorForTest : public ForwardingAllocator {
+class AllocatorForTest : public FaultInjectingAllocator {
  private:
-  using Base = ForwardingAllocator;
+  using Base = FaultInjectingAllocator;
 
  public:
   using BlockType = BlockType_;
@@ -133,32 +134,11 @@ class AllocatorForTest : public ForwardingAllocator {
     reallocate_ptr_ = nullptr;
     reallocate_old_layout_ = Layout();
     reallocate_new_layout_ = Layout();
-    enable_measure_fragmentation_ = true;
     fragmentation_ = std::nullopt;
   }
 
-  /// Allocates all the memory from this object.
-  void Exhaust() {
-    for (auto* block : blocks()) {
-      if (block->IsFree()) {
-        auto result = BlockType::AllocLast(std::move(block),
-                                           Layout(block->InnerSize(), 1));
-        PW_ASSERT(result.status() == OkStatus());
-
-        using Prev = internal::GenericBlockResult::Prev;
-        PW_ASSERT(result.prev() == Prev::kUnchanged);
-
-        using Next = internal::GenericBlockResult::Next;
-        PW_ASSERT(result.next() == Next::kUnchanged);
-      }
-    }
-  }
-
-  /// Sets whether this allocator returns fragmentation information from
-  /// ``MeasureFragmentation`` or ``std::nullopt``.
-  void SetMeasureFragmentationEnabled(bool enabled) {
-    enable_measure_fragmentation_ = enabled;
-  }
+  /// Legacy method to force allocation to fail.
+  void Exhaust() { DisableAllocate(); }
 
   /// Sets a fake fragmentation struct to be returned by this allocator. This
   /// can be used to test that fragmentation info is properly forwarded by
@@ -174,13 +154,10 @@ class AllocatorForTest : public ForwardingAllocator {
 
   /// @copydoc Allocator::DoMeasureFragmentation
   std::optional<Fragmentation> DoMeasureFragmentation() const override {
-    if (!enable_measure_fragmentation_) {
-      return std::nullopt;
-    }
-    if (fragmentation_.has_value()) {
+    if (can_measure_fragmentation() && fragmentation_.has_value()) {
       return fragmentation_;
     }
-    return allocator_.MeasureFragmentation();
+    return Base::DoMeasureFragmentation();
   }
 
  private:
@@ -228,7 +205,6 @@ class AllocatorForTest : public ForwardingAllocator {
   Layout reallocate_old_layout_;
   Layout reallocate_new_layout_;
 
-  bool enable_measure_fragmentation_;
   std::optional<Fragmentation> fragmentation_;
 };
 

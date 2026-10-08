@@ -16,6 +16,7 @@
 
 #include <cstddef>
 
+#include "pw_allocator/abstract_allocator.h"
 #include "pw_allocator/capability.h"
 #include "pw_allocator/internal/counter.h"
 #include "pw_allocator/testing.h"
@@ -259,9 +260,12 @@ TEST_F(AllocatorTest, ReallocateLarger) {
 }
 
 // Test fixture for IsEqual tests.
-class BaseAllocator : public pw::Allocator {
+class BaseAllocator : public ::pw::allocator::AbstractAllocator {
+ private:
+  using Base = ::pw::allocator::AbstractAllocator;
+
  public:
-  BaseAllocator(void* ptr) : pw::Allocator(Capabilities()), ptr_(ptr) {}
+  BaseAllocator(void* ptr) : Base(0), ptr_(ptr) {}
 
  private:
   void* DoAllocate(Layout) override {
@@ -271,8 +275,6 @@ class BaseAllocator : public pw::Allocator {
   }
 
   void DoDeallocate(void*) override {}
-
-  bool DoResize(void*, size_t) override { return false; }
 
   void* ptr_;
 };

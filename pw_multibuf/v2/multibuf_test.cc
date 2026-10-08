@@ -2015,7 +2015,8 @@ TEST_F(MultiBufV2Test, AddLayerFailsUnableToGrowQueue) {
   ConstMultiBufInstance mbi(allocator_);
   auto chunk = allocator_.MakeUnique<std::byte[]>(kN * 2);
   mbi->PushBack(std::move(chunk));
-  allocator_.Exhaust();
+  allocator_.DisableAllocate();
+  allocator_.DisableResize();
 
   EXPECT_EQ(mbi->NumLayers(), 1u);
   EXPECT_FALSE(mbi->AddLayer(0, 0));

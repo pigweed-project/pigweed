@@ -388,7 +388,7 @@ TEST_F(SharedPtrTest, SharedFromUniquePtrFailsOnAllocationFailure) {
     pw::UniquePtr<Counter> owned = allocator_.MakeUnique<Counter>(5u);
     EXPECT_EQ(metrics.num_allocations.value(), 1u);
 
-    allocator_.Exhaust();
+    allocator_.DisableAllocate();
     pw::SharedPtr<Counter> shared(owned);
 
     EXPECT_EQ(metrics.num_allocations.value(), 1u);

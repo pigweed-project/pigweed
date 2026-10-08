@@ -93,6 +93,9 @@ class GenericBuddyAllocator : public AbstractAllocator {
   /// @copydoc Deallocator::DoDeallocate
   void DoDeallocate(void* ptr) override;
 
+  /// @copydoc Allocator::MeasureFragmentation
+  std::optional<Fragmentation> DoMeasureFragmentation() const override;
+
   /// @copydoc Deallocator::GetInfo
   Result<Layout> DoGetInfo(InfoType info_type, const void* ptr) const override;
 

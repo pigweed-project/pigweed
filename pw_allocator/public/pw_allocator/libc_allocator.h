@@ -41,8 +41,6 @@ class LibCAllocator final : public AbstractAllocator {
 
   /// @copydoc Allocator::Reallocate
   void* DoReallocate(void* ptr, Layout new_layout) override;
-
-  static LibCAllocator kSingleton;
 };
 
 /// Returns a reference to a LibCAllocator singleton.

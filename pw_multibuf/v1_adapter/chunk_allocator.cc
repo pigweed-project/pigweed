@@ -24,8 +24,8 @@ namespace pw::multibuf::v1_adapter::internal {
 // ChunkAllocator methods.
 
 ChunkAllocator::ChunkAllocator(Allocator& metadata_allocator, size_t alignment)
-    : Allocator(allocator::kImplementsGetCapacity |
-                allocator::kImplementsRecognizes),
+    : AbstractAllocator(allocator::kImplementsGetCapacity |
+                        allocator::kImplementsRecognizes),
       metadata_allocator_(metadata_allocator) {
   // Alignment must be a power of two.
   alignment_log2_ = static_cast<uint8_t>(cpp20::countr_zero(alignment));

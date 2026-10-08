@@ -36,6 +36,12 @@ void* BumpAllocator::DoAllocate(Layout layout) {
 
 void BumpAllocator::DoDeallocate(void*) {}
 
+std::optional<Fragmentation> BumpAllocator::DoMeasureFragmentation() const {
+  Fragmentation fragmentation{};
+  fragmentation.AddFragment(remaining_.size());
+  return std::make_optional(std::move(fragmentation));
+}
+
 void BumpAllocator::Reset() {
   if (owned_ != nullptr) {
     owned_->Destroy();

@@ -34,7 +34,7 @@ class NullAllocator final : public AbstractAllocator {
 
   constexpr NullAllocator() : AbstractAllocator(kCapabilities) {}
 
- private:
+ protected:
   /// @copydoc Allocator::Allocate
   void* DoAllocate([[maybe_unused]] Layout layout) override { return nullptr; }
 

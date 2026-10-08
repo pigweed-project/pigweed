@@ -20,6 +20,7 @@
 
 namespace {
 
+using ::pw::allocator::Fragmentation;
 using ::pw::allocator::Layout;
 
 constexpr size_t kTestBufferSize = 128;
@@ -27,63 +28,74 @@ constexpr size_t kTestBufferSize = 128;
 constexpr Layout kSmallLayout = Layout::Of<int>();
 constexpr Layout kLargeLayout = Layout::Of<long long>();
 
-TEST(FaultInjectingAllocatorWithBufferTest, AllocateEnableDisable) {
-  pw::allocator::test::AllocatorForTest<kTestBufferSize> wrapped_allocator;
-  pw::allocator::test::FaultInjectingAllocator allocator(wrapped_allocator);
+class FaultInjectingAllocatorTest : public testing::Test {
+ protected:
+  // AllocatorForTest is a FaultInjectingAllocator.
+  pw::allocator::test::AllocatorForTest<kTestBufferSize> allocator_;
+};
 
-  allocator.DisableAllocate();
+TEST_F(FaultInjectingAllocatorTest, AllocateEnableDisable) {
+  allocator_.DisableAllocate();
 
-  void* ptr = allocator.Allocate(kSmallLayout);
+  void* ptr = allocator_.Allocate(kSmallLayout);
   EXPECT_EQ(ptr, nullptr);
 
-  allocator.EnableAllocate();
-  ptr = allocator.Allocate(kSmallLayout);
+  allocator_.EnableAllocate();
+  ptr = allocator_.Allocate(kSmallLayout);
   EXPECT_NE(ptr, nullptr);
 
-  allocator.Deallocate(ptr);
+  allocator_.Deallocate(ptr);
 }
 
-TEST(FaultInjectingAllocatorWithBufferTest, ResizeEnableDisable) {
-  pw::allocator::test::AllocatorForTest<kTestBufferSize> wrapped_allocator;
-  pw::allocator::test::FaultInjectingAllocator allocator(wrapped_allocator);
-
-  allocator.EnableAllocate();
+TEST_F(FaultInjectingAllocatorTest, ResizeEnableDisable) {
+  allocator_.EnableAllocate();
   void* ptr =
-      allocator.Allocate(kLargeLayout);  // Allocate a larger block initially
+      allocator_.Allocate(kLargeLayout);  // Allocate a larger block initially
   ASSERT_NE(ptr, nullptr);  // Stop test if initial allocation fails
 
-  allocator.DisableResize();
-  EXPECT_FALSE(allocator.Resize(ptr, 1));
+  allocator_.DisableResize();
+  EXPECT_FALSE(allocator_.Resize(ptr, 1));
 
-  allocator.EnableResize();
-  EXPECT_TRUE(allocator.Resize(ptr, 1));
+  allocator_.EnableResize();
+  EXPECT_TRUE(allocator_.Resize(ptr, 1));
 
-  allocator.Deallocate(ptr);
+  allocator_.Deallocate(ptr);
 }
 
-TEST(FaultInjectingAllocatorWithBufferTest, ReallocateEnableDisable) {
-  pw::allocator::test::AllocatorForTest<kTestBufferSize> wrapped_allocator;
-  pw::allocator::test::FaultInjectingAllocator allocator(wrapped_allocator);
-
-  allocator.EnableAllocate();
-  void* original_ptr = allocator.Allocate(kSmallLayout);
+TEST_F(FaultInjectingAllocatorTest, ReallocateEnableDisable) {
+  allocator_.EnableAllocate();
+  void* original_ptr = allocator_.Allocate(kSmallLayout);
   ASSERT_NE(original_ptr, nullptr);  // Stop test if initial allocation fails
 
-  allocator.DisableReallocate();
+  allocator_.DisableReallocate();
 
-  void* reallocated_ptr = allocator.Reallocate(original_ptr, kLargeLayout);
+  void* reallocated_ptr = allocator_.Reallocate(original_ptr, kLargeLayout);
   EXPECT_EQ(reallocated_ptr, nullptr);
 
-  allocator.EnableReallocate();
+  allocator_.EnableReallocate();
 
-  reallocated_ptr = allocator.Reallocate(original_ptr, kLargeLayout);
+  reallocated_ptr = allocator_.Reallocate(original_ptr, kLargeLayout);
   EXPECT_NE(reallocated_ptr, nullptr);
 
   if (reallocated_ptr != nullptr) {
-    allocator.Deallocate(reallocated_ptr);
+    allocator_.Deallocate(reallocated_ptr);
   } else {
-    allocator.Deallocate(original_ptr);
+    allocator_.Deallocate(original_ptr);
   }
+}
+
+TEST_F(FaultInjectingAllocatorTest, MeasureFragmentationEnableDisable) {
+  Fragmentation fragmentation = {
+      .sum_of_squares = {.hi = 0x11223344, .lo = 0x55667788},
+      .sum = 0x99AABBCC,
+  };
+  allocator_.SetFragmentation(fragmentation);
+
+  allocator_.DisableMeasureFragmentation();
+  EXPECT_EQ(allocator_.MeasureFragmentation(), std::nullopt);
+
+  allocator_.EnableMeasureFragmentation();
+  EXPECT_EQ(allocator_.MeasureFragmentation(), fragmentation);
 }
 
 }  // namespace

@@ -198,7 +198,18 @@ void GenericBuddyAllocator::DoDeallocate(void* ptr) {
   std::ignore = bucket->Add(*block);
 }
 
-/// @copydoc Deallocator::GetInfo
+std::optional<Fragmentation> GenericBuddyAllocator::DoMeasureFragmentation()
+    const {
+  Fragmentation fragmentation;
+  for (const auto& bucket : buckets_) {
+    for (const auto& item : bucket) {
+      auto* block = BuddyBlock::FromUsableSpace(&item);
+      fragmentation.AddFragment(block->InnerSize());
+    }
+  }
+  return fragmentation;
+}
+
 Result<Layout> GenericBuddyAllocator::DoGetInfo(InfoType info_type,
                                                 const void* ptr) const {
   switch (info_type) {

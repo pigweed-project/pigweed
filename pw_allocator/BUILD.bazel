@@ -650,6 +650,7 @@ pw_cc_test(
     name = "allocator_test",
     srcs = ["allocator_test.cc"],
     deps = [
+        ":abstract_allocator",
         ":counter",
         ":pw_allocator",
         ":testing",

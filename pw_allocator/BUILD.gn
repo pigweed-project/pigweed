@@ -611,6 +611,7 @@ pw_test("allocator_as_pool_test") {
 
 pw_test("allocator_test") {
   deps = [
+    ":abstract_allocator",
     ":counter",
     ":pw_allocator",
     ":testing",

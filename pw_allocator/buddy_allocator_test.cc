@@ -27,7 +27,7 @@ namespace {
 // Test fixtures.
 
 using BuddyAllocator = ::pw::allocator::BuddyAllocator<>;
-using GenericBuddyAllocator = ::pw::allocator::internal::GenericBuddyAllocator;
+using ::pw::allocator::Fragmentation;
 using ::pw::allocator::Layout;
 
 class TestBuddyAllocator : public BuddyAllocator {
@@ -178,6 +178,47 @@ TEST(BuddyAllocatorTest, GetAllocatedLayout) {
   EXPECT_EQ(unaligned_result.status(), pw::Status::OutOfRange());
 
   allocator.Deallocate(ptr);
+}
+
+TEST(BuddyAllocatorTest, MeasureFragmentation) {
+  std::array<std::byte, 1024> buffer;
+  BuddyAllocator allocator(buffer);
+
+  // 16 bytes are used for BuddyBlock overhead and alignment.
+  // The remaining 1008 bytes are used to create blocks with outer sizes equal
+  // to powers of 2, and inner sizes that are 1 byte less (again, for overhead).
+  Fragmentation expected;
+  expected.AddFragment(511U);
+  expected.AddFragment(255U);
+  expected.AddFragment(127U);
+  expected.AddFragment(63U);
+  expected.AddFragment(31U);
+  expected.AddFragment(15U);
+
+  auto actual = allocator.MeasureFragmentation();
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(expected, *actual);
+
+  // Allocate from the 128-byte block (127 bytes inner).
+  void* ptr1 = allocator.Allocate(Layout(126, 1));
+  ASSERT_NE(ptr1, nullptr);
+  expected.SubtractFragment(127U);
+
+  actual = allocator.MeasureFragmentation();
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(expected, *actual);
+
+  // Allocate from the 16-byte block (15 bytes inner).
+  void* ptr2 = allocator.Allocate(Layout(14, 1));
+  ASSERT_NE(ptr2, nullptr);
+  expected.SubtractFragment(15U);
+
+  actual = allocator.MeasureFragmentation();
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(expected, *actual);
+
+  allocator.Deallocate(ptr1);
+  allocator.Deallocate(ptr2);
 }
 
 // Fuzz tests.

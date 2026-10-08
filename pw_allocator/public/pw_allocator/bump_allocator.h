@@ -123,6 +123,9 @@ class BumpAllocator : public AbstractAllocator {
   /// @copydoc Allocator::GetAllocated
   size_t DoGetAllocated() const override { return allocated_; }
 
+  /// @copydoc Allocator::MeasureFragmentation
+  std::optional<Fragmentation> DoMeasureFragmentation() const override;
+
  private:
   /// Frees any owned objects and discards remaining memory.
   void Reset();

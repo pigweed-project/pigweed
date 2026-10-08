@@ -158,7 +158,7 @@ class BlockAllocator : public internal::GenericBlockAllocator {
   /// @copydoc Allocator::GetAllocated
   size_t DoGetAllocated() const override { return allocated_; }
 
-  /// @copydoc Allocator::DoMeasureFragmentation
+  /// @copydoc Allocator::MeasureFragmentation
   std::optional<Fragmentation> DoMeasureFragmentation() const override;
 
   /// @copydoc Deallocator::GetInfo

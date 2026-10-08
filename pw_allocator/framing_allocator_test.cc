@@ -119,21 +119,6 @@ class TestFramingAllocator
   using typename Base::InfoType;
 };
 
-class NoUsableLayoutAllocator : public pw::allocator::ForwardingAllocator {
- public:
-  explicit NoUsableLayoutAllocator(pw::Allocator& allocator)
-      : ForwardingAllocator(allocator) {}
-
- private:
-  pw::Result<Layout> DoGetInfo(InfoType info_type,
-                               const void* ptr) const override {
-    if (info_type == InfoType::kUsableLayoutOf) {
-      return pw::Status::Unimplemented();
-    }
-    return ForwardingAllocator::DoGetInfo(info_type, ptr);
-  }
-};
-
 class FramingAllocatorTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -142,7 +127,6 @@ class FramingAllocatorTest : public ::testing::Test {
   }
 
   pw::allocator::test::AllocatorForTest<2048> allocator_;
-  NoUsableLayoutAllocator no_usable_layout_{allocator_};
 };
 
 TEST_F(FramingAllocatorTest, AllocateDeallocateTrivialTrivial) {
@@ -295,7 +279,8 @@ TEST_F(FramingAllocatorTest, PrefixOnly) {
 }
 
 TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutAllocateDeallocate) {
-  TestFramingAllocator<Trivial, void> allocator(no_usable_layout_);
+  allocator_.DisableGetUsableLayout();
+  TestFramingAllocator<Trivial, void> allocator(allocator_);
   void* ptr = allocator.Allocate(Layout::Of<uint32_t>());
   ASSERT_NE(ptr, nullptr);
   EXPECT_EQ(allocator.GetUsableLayout(ptr).status(),
@@ -314,7 +299,8 @@ TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutAllocateDeallocate) {
 }
 
 TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutResize) {
-  TestFramingAllocator<Trivial, void> allocator(no_usable_layout_);
+  allocator_.DisableGetUsableLayout();
+  TestFramingAllocator<Trivial, void> allocator(allocator_);
   void* ptr = allocator.Allocate(Layout::Of<uint32_t>());
   ASSERT_NE(ptr, nullptr);
   allocator.GetPrefix(ptr)->value = 0x11111111;
@@ -327,7 +313,8 @@ TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutResize) {
 }
 
 TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutReallocate) {
-  TestFramingAllocator<Trivial, void> allocator(no_usable_layout_);
+  allocator_.DisableGetUsableLayout();
+  TestFramingAllocator<Trivial, void> allocator(allocator_);
   void* ptr = allocator.Reallocate(nullptr, Layout::Of<uint32_t>());
   ASSERT_NE(ptr, nullptr);
   allocator.GetPrefix(ptr)->value = 0x33333333;
@@ -339,20 +326,18 @@ TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutReallocate) {
   EXPECT_EQ(allocator.GetPrefix(new_ptr)->value, 0x33333333u);
   EXPECT_FALSE(FrameErrorRecorder::error.has_value());
 
-  // When in-place Resize fails (e.g. blocked by a subsequent allocation),
   // Reallocate cannot copy without GetUsableLayout and returns nullptr.
-  void* blocker = allocator.Allocate(Layout::Of<uint32_t>());
-  ASSERT_NE(blocker, nullptr);
+  allocator_.DisableResize();  // Force reallocation.
   EXPECT_EQ(allocator.Reallocate(new_ptr, Layout::Of<uint32_t[8]>()), nullptr);
   EXPECT_EQ(allocator.GetPrefix(new_ptr)->value, 0x33333333u);
   EXPECT_FALSE(FrameErrorRecorder::error.has_value());
 
-  allocator.Deallocate(blocker);
   allocator.Deallocate(new_ptr);
 }
 
 TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutNewDelete) {
-  TestFramingAllocator<Trivial, void> allocator(no_usable_layout_);
+  allocator_.DisableGetUsableLayout();
+  TestFramingAllocator<Trivial, void> allocator(allocator_);
   EXPECT_EQ(NonTrivial::count, 0);
 
   NonTrivial* ptr = allocator.New<NonTrivial>(0x123u);
@@ -382,7 +367,8 @@ TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutNewDelete) {
 }
 
 TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutMakeUnique) {
-  TestFramingAllocator<Trivial, void> allocator(no_usable_layout_);
+  allocator_.DisableGetUsableLayout();
+  TestFramingAllocator<Trivial, void> allocator(allocator_);
   EXPECT_EQ(NonTrivial::count, 0);
   {
     auto unique_ptr = allocator.MakeUnique<NonTrivial>(0x456u);
@@ -402,7 +388,8 @@ TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutMakeUnique) {
 
 TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutMakeShared) {
 #if PW_ALLOCATOR_HAS_ATOMICS
-  TestFramingAllocator<Trivial, void> allocator(no_usable_layout_);
+  allocator_.DisableGetUsableLayout();
+  TestFramingAllocator<Trivial, void> allocator(allocator_);
   EXPECT_EQ(NonTrivial::count, 0);
   {
     auto shared_ptr = allocator.MakeShared<NonTrivial>(0x789u);
@@ -422,7 +409,8 @@ TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutMakeShared) {
 }
 
 TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutQueries) {
-  TestFramingAllocator<Trivial, void> allocator(no_usable_layout_);
+  allocator_.DisableGetUsableLayout();
+  TestFramingAllocator<Trivial, void> allocator(allocator_);
   EXPECT_EQ(allocator.GetAllocated(), 0u);
 
   auto capacity = allocator.GetCapacity();

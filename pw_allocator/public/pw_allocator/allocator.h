@@ -394,12 +394,8 @@ class Allocator : public Deallocator {
   virtual size_t DoGetAllocated() const { return size_t(-1); }
 
   /// @copydoc Allocator::MeasureFragmentation
-  ///
-  /// The default implementation simply returns `std::nullopt`, indicating that
-  /// tracking memory fragmentation is not supported.
-  virtual std::optional<Fragmentation> DoMeasureFragmentation() const {
-    return std::nullopt;
-  }
+  virtual std::optional<Fragmentation> DoMeasureFragmentation() const
+      PW_ALLOCATOR_LEGACY_DEFAULT_IMPL(std::nullopt);
 
  private:
   // Helper method for allocating arrays of objects.

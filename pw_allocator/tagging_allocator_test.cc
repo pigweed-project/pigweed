@@ -53,26 +53,23 @@ TEST_F(TaggingAllocatorTest, SetAndGetToken) {
 }
 
 TEST_F(TaggingAllocatorTest, ReallocatePreservesToken) {
+  allocator_.DisableResize();  // Force reallocation.
   Token default_token = 0x12345678;
   TaggingAllocator tagging(default_token, allocator_);
 
   size_t size = 16;
-  void* ptr1 = tagging.Allocate(Layout(size, 1));
-  ASSERT_NE(ptr1, nullptr);
+  void* ptr = tagging.Allocate(Layout(size, 1));
+  ASSERT_NE(ptr, nullptr);
 
   Token custom_token = 0xabcdef01;
-  tagging.SetToken(ptr1, custom_token);
+  tagging.SetToken(ptr, custom_token);
 
-  // Allocate another block to prevent ptr1 from growing.
-  void* ptr2 = tagging.Allocate(Layout(size, 1));
-  ASSERT_NE(ptr2, nullptr);
-
-  // Reallocate ptr1 to a larger size. This should force a new allocation.
+  // Reallocate ptr to a larger size.
   size_t new_size = size * 2;
-  void* new_ptr1 = tagging.Reallocate(ptr1, Layout(new_size, 1));
-  ASSERT_NE(new_ptr1, nullptr);
-  EXPECT_NE(new_ptr1, ptr1);
-  EXPECT_EQ(tagging.GetToken(new_ptr1), custom_token);
+  void* new_ptr = tagging.Reallocate(ptr, Layout(new_size, 1));
+  ASSERT_NE(new_ptr, nullptr);
+  EXPECT_NE(new_ptr, ptr);
+  EXPECT_EQ(tagging.GetToken(new_ptr), custom_token);
 }
 
 }  // namespace

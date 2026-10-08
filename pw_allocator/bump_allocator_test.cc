@@ -136,4 +136,17 @@ TEST(BumpAllocatorTest, MakeUniqueOwnedDestroys) {
   EXPECT_EQ(counter, 1U);
 }
 
+TEST(BumpAllocatorTest, MeasureFragmentation) {
+  alignas(16) std::array<std::byte, 256> buffer;
+  BumpAllocator allocator(buffer);
+  void* ptr = allocator.Allocate(Layout(64, 16));
+  ASSERT_NE(ptr, nullptr);
+
+  auto fragmentation = allocator.MeasureFragmentation();
+  ASSERT_TRUE(fragmentation.has_value());
+  EXPECT_EQ(fragmentation->sum_of_squares.hi, 0U);
+  EXPECT_EQ(fragmentation->sum_of_squares.lo, 192U * 192U);
+  EXPECT_EQ(fragmentation->sum, 192U);
+}
+
 }  // namespace

@@ -42,6 +42,7 @@ pw_source_set("chunk") {
   ]
   public_configs = [ ":public_include_path" ]
   public_deps = [
+    "$dir_pw_allocator:abstract_allocator",
     "$dir_pw_assert:assert",
     "$dir_pw_bytes:alignment",
     "$dir_pw_containers:dynamic_vector",

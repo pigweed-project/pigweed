@@ -1601,10 +1601,7 @@ class FailingAllocator : public ::pw::allocator::ForwardingAllocator {
  public:
   explicit FailingAllocator(pw::Allocator& delegate,
                             size_t successful_allocations)
-      : Base(delegate.capabilities()),
-        remaining_allocations_(successful_allocations) {
-    Base::Init(delegate);
-  }
+      : Base(delegate), remaining_allocations_(successful_allocations) {}
 
   void set_remaining_allocations(size_t n) { remaining_allocations_ = n; }
 

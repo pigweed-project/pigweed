@@ -139,7 +139,7 @@
     PW_APPLY(_PW_ALLOCATOR_IGNORE_ARG, _PW_ALLOCATOR_EMPTY_SEP, , __VA_ARGS__) \
     return retval;                                                             \
   }                                                                            \
-  static_assert(true, "require a comma")
+  static_assert(true, "require a semicolon")
 
 #endif  // PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
 

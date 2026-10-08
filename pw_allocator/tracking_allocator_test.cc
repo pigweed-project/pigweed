@@ -16,6 +16,7 @@
 #include <cstdint>
 
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/fault_injecting_allocator.h"
 #include "pw_allocator/first_fit.h"
 #include "pw_allocator/metrics.h"
 #include "pw_allocator/testing.h"
@@ -30,6 +31,7 @@ namespace {
 using ::pw::allocator::Fragmentation;
 using ::pw::allocator::Layout;
 using ::pw::allocator::TrackingAllocator;
+using ::pw::allocator::test::AllocatorForTest;
 using TestMetrics = ::pw::allocator::internal::AllMetrics;
 
 class TrackingAllocatorForTest : public TrackingAllocator<TestMetrics> {
@@ -450,44 +452,18 @@ TEST_F(TrackingAllocatorTest, CorrectlyAccountsForShiftedBytes) {
   EXPECT_METRICS_EQ(expected, metrics);
 }
 
-// A test allocator that does not provide layout information for its
-// allocations.
-//
-// This class is used to verify that `TrackingAllocator` can still provide
-// useful metrics even when the underlying allocator does not have
-// the `kImplementsGetAllocatedLayout` capability.
-template <size_t kCapacity>
-class AllocatorForTestWithoutInfo
-    : public pw::allocator::test::AllocatorForTest<kCapacity> {
- public:
-  using Base = pw::allocator::test::AllocatorForTest<kCapacity>;
-  using BlockType = typename Base::BlockType;
+TEST_F(TrackingAllocatorTest, ReallocateWithoutLayoutInfo) {
+  AllocatorForTest<kCapacity> underlying;
+  underlying.DisableResize();
+  underlying.DisableGetAllocatedLayout();
+  TrackingAllocatorForTest tracker(kToken, underlying);
 
- private:
-  pw::Result<Layout> DoGetInfo(pw::Deallocator::InfoType,
-                               const void*) const final {
-    return pw::Status::Unimplemented();
-  }
-
-  void* DoReallocate(void* ptr, Layout new_layout) override {
-    return Base::GetTracker().Reallocate(ptr, new_layout);
-  }
-
-  bool DoResize(void*, size_t) override { return false; }
-};
-
-TEST(TrackingAllocator, ReallocateWithoutLayoutInfo) {
-  constexpr size_t kCapacity = 256;
-  using AllocatorType = AllocatorForTestWithoutInfo<kCapacity>;
-
-  AllocatorType allocator;
-
-  const TestMetrics& metrics = allocator.metrics();
+  const TestMetrics& metrics = tracker.metrics();
   ExpectedValues expected;
 
   // Perform an initial allocation.
   constexpr Layout layout1 = Layout::Of<uintptr_t[2]>();
-  void* ptr1 = allocator.Allocate(layout1);
+  void* ptr1 = tracker.Allocate(layout1);
   ASSERT_NE(ptr1, nullptr);
 
   auto* block1 = AllocatorType::BlockType::FromUsableSpace(ptr1);
@@ -501,7 +477,7 @@ TEST(TrackingAllocator, ReallocateWithoutLayoutInfo) {
   // Allocate another block to block resizing and force a move during
   // reallocation.
   constexpr Layout layout_block = Layout::Of<uintptr_t>();
-  void* ptr_block = allocator.Allocate(layout_block);
+  void* ptr_block = tracker.Allocate(layout_block);
   ASSERT_NE(ptr_block, nullptr);
   auto* block_ptr_block = AllocatorType::BlockType::FromUsableSpace(ptr_block);
   size_t ptr_block_allocated = block_ptr_block->OuterSize();
@@ -514,7 +490,7 @@ TEST(TrackingAllocator, ReallocateWithoutLayoutInfo) {
   // Reallocate the first block. Since it's blocked by the second allocation,
   // it must be moved.
   constexpr Layout layout2 = Layout::Of<uintptr_t[4]>();
-  void* ptr2 = allocator.Reallocate(ptr1, layout2);
+  void* ptr2 = tracker.Reallocate(ptr1, layout2);
   ASSERT_NE(ptr2, nullptr);
   EXPECT_NE(ptr2, ptr1);  // Should have moved
 
@@ -532,12 +508,12 @@ TEST(TrackingAllocator, ReallocateWithoutLayoutInfo) {
   expected.num_reallocations += 1;
   EXPECT_METRICS_EQ(expected, metrics);
 
-  allocator.Deallocate(ptr_block);
-  allocator.Deallocate(ptr2);
+  tracker.Deallocate(ptr_block);
+  tracker.Deallocate(ptr2);
 }
 
 TEST_F(TrackingAllocatorTest, MeasureFragmentation) {
-  pw::allocator::test::AllocatorForTest<kCapacity> underlying;
+  AllocatorForTest<kCapacity> underlying;
   TrackingAllocatorForTest tracker(kToken, underlying);
 
   // Default behavior.
@@ -559,7 +535,7 @@ TEST_F(TrackingAllocatorTest, MeasureFragmentation) {
   EXPECT_EQ(result->sum_of_squares.lo, 10000U);
 
   // Disable fragmentation measurement.
-  underlying.SetMeasureFragmentationEnabled(false);
+  underlying.DisableMeasureFragmentation();
   result = tracker.MeasureFragmentation();
   EXPECT_FALSE(result.has_value());
 }

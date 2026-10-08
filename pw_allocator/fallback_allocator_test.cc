@@ -65,7 +65,7 @@ TEST_F(FallbackAllocatorTest, AllocateFromPrimary) {
 }
 
 TEST_F(FallbackAllocatorTest, AllocateFromSecondary) {
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
   Layout layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(layout);
   EXPECT_NE(ptr, nullptr);
@@ -93,7 +93,7 @@ TEST_F(FallbackAllocatorTest, DeallocateUsingPrimary) {
 }
 
 TEST_F(FallbackAllocatorTest, DeallocateUsingSecondary) {
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
   Layout layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(layout);
   ASSERT_NE(ptr, nullptr);
@@ -125,13 +125,12 @@ TEST_F(FallbackAllocatorTest, ResizePrimaryFailure) {
   Layout old_layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(old_layout);
   ASSERT_NE(ptr, nullptr);
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
 
-  size_t new_size = sizeof(uintptr_t[3]);
-  EXPECT_FALSE(allocator_.Resize(ptr, new_size));
+  EXPECT_FALSE(allocator_.Resize(ptr, kCapacity));
   EXPECT_EQ(primary_.resize_ptr(), ptr);
   EXPECT_EQ(primary_.resize_old_size(), old_layout.size());
-  EXPECT_EQ(primary_.resize_new_size(), new_size);
+  EXPECT_EQ(primary_.resize_new_size(), kCapacity);
 
   // Secondary should not be touched.
   EXPECT_EQ(secondary_.resize_ptr(), nullptr);
@@ -140,7 +139,7 @@ TEST_F(FallbackAllocatorTest, ResizePrimaryFailure) {
 }
 
 TEST_F(FallbackAllocatorTest, ResizeSecondary) {
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
   Layout old_layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(old_layout);
   ASSERT_NE(ptr, nullptr);
@@ -158,17 +157,16 @@ TEST_F(FallbackAllocatorTest, ResizeSecondary) {
 }
 
 TEST_F(FallbackAllocatorTest, ResizeSecondaryFailure) {
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
   Layout old_layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(old_layout);
   ASSERT_NE(ptr, nullptr);
-  secondary_.Exhaust();
+  secondary_.DisableAllocate();  // Exhaust memory
 
-  size_t new_size = sizeof(uintptr_t[3]);
-  EXPECT_FALSE(allocator_.Resize(ptr, new_size));
+  EXPECT_FALSE(allocator_.Resize(ptr, kCapacity));
   EXPECT_EQ(secondary_.resize_ptr(), ptr);
   EXPECT_EQ(secondary_.resize_old_size(), old_layout.size());
-  EXPECT_EQ(secondary_.resize_new_size(), new_size);
+  EXPECT_EQ(secondary_.resize_new_size(), kCapacity);
 
   // Primary should not be touched.
   EXPECT_EQ(primary_.resize_ptr(), nullptr);
@@ -178,17 +176,14 @@ TEST_F(FallbackAllocatorTest, ResizeSecondaryFailure) {
 
 TEST_F(FallbackAllocatorTest, ReallocateSameAllocator) {
   Layout old_layout = Layout::Of<uintptr_t>();
-  void* ptr1 = allocator_.Allocate(old_layout);
-  ASSERT_NE(ptr1, nullptr);
+  void* ptr = allocator_.Allocate(old_layout);
+  ASSERT_NE(ptr, nullptr);
 
-  // Claim subsequent memeory to force reallocation.
-  void* ptr2 = allocator_.Allocate(old_layout);
-  ASSERT_NE(ptr2, nullptr);
-
+  primary_.DisableResize();  // Force reallocation.
   Layout new_layout = Layout::Of<uintptr_t[3]>();
-  void* new_ptr = allocator_.Reallocate(ptr1, new_layout);
+  void* new_ptr = allocator_.Reallocate(ptr, new_layout);
   EXPECT_NE(new_ptr, nullptr);
-  EXPECT_EQ(primary_.deallocate_ptr(), ptr1);
+  EXPECT_EQ(primary_.deallocate_ptr(), ptr);
   EXPECT_EQ(primary_.deallocate_size(), old_layout.size());
   EXPECT_EQ(primary_.allocate_size(), new_layout.size());
 }
@@ -196,7 +191,8 @@ TEST_F(FallbackAllocatorTest, ReallocateSameAllocator) {
 TEST_F(FallbackAllocatorTest, ReallocateDifferentAllocator) {
   Layout old_layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(old_layout);
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
+  primary_.DisableResize();    // Force reallocation.
 
   Layout new_layout = Layout::Of<uintptr_t[3]>();
   void* new_ptr = allocator_.Reallocate(ptr, new_layout);
@@ -216,7 +212,7 @@ TEST_F(FallbackAllocatorTest, GetRequestedLayout_Primary) {
 }
 
 TEST_F(FallbackAllocatorTest, GetRequestedLayout_Secondary) {
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
   Layout layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(layout);
   ASSERT_NE(ptr, nullptr);
@@ -241,7 +237,7 @@ TEST_F(FallbackAllocatorTest, GetUsableLayout_Primary) {
 }
 
 TEST_F(FallbackAllocatorTest, GetUsableLayout_Secondary) {
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
   Layout layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(layout);
   ASSERT_NE(ptr, nullptr);
@@ -266,7 +262,7 @@ TEST_F(FallbackAllocatorTest, GetAllocatedLayout_Primary) {
 }
 
 TEST_F(FallbackAllocatorTest, GetAllocatedLayout_Secondary) {
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
   Layout layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(layout);
   ASSERT_NE(ptr, nullptr);
@@ -295,7 +291,7 @@ TEST_F(FallbackAllocatorTest, Recognizes_Primary) {
 }
 
 TEST_F(FallbackAllocatorTest, Recognizes_Secondary) {
-  primary_.Exhaust();
+  primary_.DisableAllocate();  // Exhaust memory
   Layout layout = Layout::Of<uintptr_t>();
   void* ptr = allocator_.Allocate(layout);
   ASSERT_NE(ptr, nullptr);
@@ -321,7 +317,7 @@ TEST_F(FallbackAllocatorTest, MeasureFragmentation_Both) {
 
 TEST_F(FallbackAllocatorTest, MeasureFragmentation_OnlyPrimary) {
   primary_.SetFragmentation({.sum_of_squares = {.hi = 1, .lo = 2}, .sum = 3});
-  secondary_.SetMeasureFragmentationEnabled(false);
+  secondary_.DisableMeasureFragmentation();
 
   auto result = allocator_.MeasureFragmentation();
   ASSERT_TRUE(result.has_value());
@@ -331,7 +327,7 @@ TEST_F(FallbackAllocatorTest, MeasureFragmentation_OnlyPrimary) {
 }
 
 TEST_F(FallbackAllocatorTest, MeasureFragmentation_OnlySecondary) {
-  primary_.SetMeasureFragmentationEnabled(false);
+  primary_.DisableMeasureFragmentation();
   secondary_.SetFragmentation(
       {.sum_of_squares = {.hi = 4, .lo = 8}, .sum = 12});
 
@@ -343,8 +339,8 @@ TEST_F(FallbackAllocatorTest, MeasureFragmentation_OnlySecondary) {
 }
 
 TEST_F(FallbackAllocatorTest, MeasureFragmentation_None) {
-  primary_.SetMeasureFragmentationEnabled(false);
-  secondary_.SetMeasureFragmentationEnabled(false);
+  primary_.DisableMeasureFragmentation();
+  secondary_.DisableMeasureFragmentation();
   EXPECT_FALSE(allocator_.MeasureFragmentation().has_value());
 }
 
