@@ -26,9 +26,9 @@ pw_source_set("pw_result") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
     "$dir_pw_assert",
-    "$dir_pw_containers:optional",
     "$dir_pw_preprocessor",
     "$dir_pw_status",
+    "$pw_external_fuchsia:stdcompat",
   ]
   public = [ "public/pw_result/result.h" ]
   sources = [ "public/pw_result/internal/result_internal.h" ]
@@ -44,12 +44,16 @@ pw_test_group("tests") {
 pw_test("result_test") {
   deps = [
     ":pw_result",
+    "$dir_pw_assert:assert",
+    "$dir_pw_containers:test_helpers",
+    "$dir_pw_unit_test:constexpr",
     dir_pw_status,
   ]
   sources = [
     "result_test.cc",
     "statusor_test.cc",
   ]
+  negative_compilation_tests = true
 }
 
 pw_source_set("expected") {

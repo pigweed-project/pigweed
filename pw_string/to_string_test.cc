@@ -349,6 +349,45 @@ TEST(ToString, ResultWithValue) {
   EXPECT_STREQ("Ok(27)", buffer);
 }
 
+TEST(ToString, VoidResult) {
+  Result<void> ok = OkStatus();
+  EXPECT_EQ(4u, ToString(ok, buffer).size());
+  EXPECT_STREQ("Ok()", buffer);
+
+  Result<void> error = Status::NotFound();
+  EXPECT_EQ(9u, ToString(error, buffer).size());
+  EXPECT_STREQ("NOT_FOUND", buffer);
+}
+
+TEST(ToString, ResultWithCustomStatus) {
+  Result<int, CustomStatus> ok(5);
+  EXPECT_EQ(5u, ToString(ok, buffer).size());
+  EXPECT_STREQ("Ok(5)", buffer);
+
+  Result<int, CustomStatus> error{CustomStatus(CustomCode::kTimeout)};
+  EXPECT_EQ(7u, ToString(error, buffer).size());
+  EXPECT_STREQ("Timeout", buffer);
+
+  Result<void, CustomStatus> void_error{CustomStatus(CustomCode::kTimeout)};
+  EXPECT_EQ(7u, ToString(void_error, buffer).size());
+  EXPECT_STREQ("Timeout", buffer);
+}
+
+TEST(ToString, ResultOfStatus) {
+  Result<Status> ok_val = OkStatus();
+  EXPECT_EQ(6u, ToString(ok_val, buffer).size());
+  EXPECT_STREQ("Ok(OK)", buffer);
+
+  Result<Status> not_found_val = Status::NotFound();
+  EXPECT_EQ(13u, ToString(not_found_val, buffer).size());
+  EXPECT_STREQ("Ok(NOT_FOUND)", buffer);
+
+  Result<Status> error;
+  error.reset<PW_STATUS_RESOURCE_EXHAUSTED>();
+  EXPECT_EQ(18u, ToString(error, buffer).size());
+  EXPECT_STREQ("RESOURCE_EXHAUSTED", buffer);
+}
+
 TEST(ToString, EmptyArrayUsesIterableFormat) {
   std::array<int, 0> v = {};
   EXPECT_EQ(2u, ToString(v, buffer).size());

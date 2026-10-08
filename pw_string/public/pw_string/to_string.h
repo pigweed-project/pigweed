@@ -238,9 +238,15 @@ inline StatusWithSize ToString(pw_Status status, span<char> buffer) {
   return ToString(Status(status), buffer);
 }
 
-template <typename T>
-inline StatusWithSize ToString(const Result<T>& result, span<char> buffer) {
-  if (result.ok()) {
+template <typename T, typename StatusType>
+inline StatusWithSize ToString(const Result<T, StatusType>& result,
+                               span<char> buffer) {
+  if (!result.ok()) {
+    return ToString(result.status(), buffer);
+  }
+  if constexpr (std::is_void_v<T>) {
+    return ToString("Ok()", buffer);
+  } else {
     StatusWithSize s;
     s.UpdateAndAdd(ToString("Ok(", buffer));
     s.UpdateAndAdd(ToString(*result, buffer.subspan(s.size())));
@@ -248,7 +254,6 @@ inline StatusWithSize ToString(const Result<T>& result, span<char> buffer) {
     s.ZeroIfNotOk();
     return s;
   }
-  return ToString(result.status(), buffer);
 }
 
 inline StatusWithSize ToString(std::byte byte, span<char> buffer) {

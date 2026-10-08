@@ -26,12 +26,12 @@ cc_library_static {
         "public",
     ],
     header_libs: [
+        "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
-        "pw_containers_headers",
     ],
     export_header_lib_headers: [
+        "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
-        "pw_containers_headers",
     ],
     static_libs: [
         "pw_preprocessor",

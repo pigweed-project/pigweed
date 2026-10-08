@@ -80,8 +80,8 @@ pw_source_set("pw_async2") {
     "$dir_pw_containers:intrusive_forward_list",
     "$dir_pw_containers:intrusive_list",
     "$dir_pw_containers:intrusive_queue",
-    "$dir_pw_containers:optional",
     "$dir_pw_log:args",
+    "$dir_pw_result",
     "$dir_pw_string:to_string",
     "$dir_pw_sync:lock_annotations",
     "$pw_external_fuchsia:stdcompat",
@@ -464,7 +464,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       ":internal",
       ":pw_async2",
       "$dir_pw_assert:assert",
-      "$dir_pw_containers:optional",
+      "$dir_pw_result",
       dir_pw_allocator,
       dir_pw_function,
     ]

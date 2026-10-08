@@ -32,9 +32,9 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         "//pw_assert:assert",
-        "//pw_containers:optional",
         "//pw_preprocessor",
         "//pw_status",
+        "//third_party/fuchsia:stdcompat",
     ],
 )
 
@@ -50,9 +50,13 @@ cc_library(
 pw_cc_test(
     name = "result_test",
     srcs = ["result_test.cc"],
+    has_nc_test = True,
     deps = [
         ":pw_result",
+        "//pw_assert:assert",
+        "//pw_containers:test_helpers",
         "//pw_status",
+        "//pw_unit_test:constexpr",
     ],
 )
 
@@ -135,6 +139,7 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_result/result.h",
+        "result_test.cc",
     ],
 )
 
@@ -143,6 +148,7 @@ sphinx_docs_library(
     srcs = [
         "Kconfig",
         "docs.rst",
+        "result_test.cc",
         ":result_size",
     ],
     prefix = "pw_result/",

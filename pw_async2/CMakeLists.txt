@@ -66,7 +66,7 @@ pw_add_library(pw_async2 STATIC
     pw_containers.intrusive_forward_list
     pw_containers.intrusive_queue
     pw_containers.intrusive_list
-    pw_containers.optional
+    pw_result
     pw_function
     pw_log
     pw_log.args
@@ -421,7 +421,7 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
       pw_allocator
       pw_assert.assert
       pw_async2
-      pw_containers.optional
+      pw_result
       pw_function
     PUBLIC_INCLUDES
       public

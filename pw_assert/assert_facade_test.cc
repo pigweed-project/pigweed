@@ -599,6 +599,12 @@ TEST_F(AssertFailTest, CustomStatusNotOK) {
       "Check failed: status (=BusFault) == OkStatus() (=OK). msg: 5");
 }
 
+TEST_F(AssertFailTest, CustomStatusResultNotOK) {
+  pw::Result<int, CustomStatus> result{CustomStatus(CustomCode::kBusFault)};
+  PW_CHECK_OK(result);
+  EXPECT_MESSAGE("Check failed: result (=BusFault) == OkStatus() (=OK). ");
+}
+
 TEST_F(AssertPassTest, IntCodeStatusOK) {
   IntCodeStatus status;
   PW_CHECK_OK(status);

@@ -19,13 +19,10 @@
 #include "pw_async2/internal/poll_internal.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_preprocessor/compiler.h"
+#include "pw_result/result.h"
 #include "pw_string/to_string.h"
 
 namespace pw {
-
-template <typename>
-class Result;
-
 namespace async2 {
 
 /// @submodule{pw_async2,poll}

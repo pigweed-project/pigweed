@@ -22,9 +22,9 @@ pw_add_library(pw_result INTERFACE
     public
   PUBLIC_DEPS
     pw_assert
-    pw_containers.optional
     pw_preprocessor
     pw_status
+    pw_third_party.fuchsia.stdcompat
 )
 
 pw_add_library(pw_result.expected INTERFACE
@@ -39,8 +39,12 @@ pw_add_test(pw_result.result_test
   SOURCES
     result_test.cc
   PRIVATE_DEPS
+    pw_assert.assert
+    pw_compilation_testing._pigweed_only_negative_compilation
+    pw_containers._test_helpers
     pw_result
     pw_status
+    pw_unit_test.constexpr
   GROUPS
     modules
     pw_result

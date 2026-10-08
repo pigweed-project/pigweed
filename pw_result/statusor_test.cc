@@ -702,11 +702,64 @@ TEST(Result, UniquePtrImplicitConstruction) {
   EXPECT_NE(status_or->get(), nullptr);
 }
 
+enum class OuterStatus { kOk, kInvalid };
+PW_STATUS_TYPE(OuterStatusType, OuterStatus::kOk);
+using OuterResult = pw::Result<pw::Result<CopyDetector>, OuterStatusType>;
+
 TEST(Result, NestedResultCopyAndMoveConstructorTests) {
+  OuterResult status_or = CopyDetector(10);
+  OuterResult status_error = OuterStatusType(OuterStatus::kInvalid);
+  ASSERT_TRUE(status_or.ok());
+  EXPECT_OK_AND_COPY_DETECTOR_HAS(*status_or, 10, true, false);
+  OuterResult a = status_or;
+  EXPECT_OK_AND_COPY_DETECTOR_HAS(*a, 10, false, true);
+  OuterResult a_err = status_error;
+  EXPECT_FALSE(a_err.ok());
+
+  const OuterResult& cref = status_or;
+  OuterResult b = cref;  // NOLINT
+  ASSERT_TRUE(b.ok());
+  EXPECT_OK_AND_COPY_DETECTOR_HAS(*b, 10, false, true);
+  const OuterResult& cref_err = status_error;
+  OuterResult b_err = cref_err;  // NOLINT
+  EXPECT_FALSE(b_err.ok());
+
+  OuterResult c = std::move(status_or);
+  ASSERT_TRUE(c.ok());
+  EXPECT_OK_AND_COPY_DETECTOR_HAS(*c, 10, true, false);
+  OuterResult c_err = std::move(status_error);
+  EXPECT_FALSE(c_err.ok());
+}
+
+TEST(Result, NestedResultCopyAndMoveAssignment) {
+  OuterResult status_or = CopyDetector(10);
+  OuterResult status_error = OuterStatusType(OuterStatus::kInvalid);
+  OuterResult a(OuterStatus::kInvalid);
+  a = status_or;
+  ASSERT_TRUE(a.ok());
+  EXPECT_OK_AND_COPY_DETECTOR_HAS(*a, 10, false, true);
+  a = status_error;
+  EXPECT_FALSE(a.ok());
+
+  const OuterResult& cref = status_or;
+  a = cref;
+  ASSERT_TRUE(a.ok());
+  EXPECT_OK_AND_COPY_DETECTOR_HAS(*a, 10, false, true);
+  const OuterResult& cref_err = status_error;
+  a = cref_err;
+  EXPECT_FALSE(a.ok());
+  a = std::move(status_or);
+  ASSERT_TRUE(a.ok());
+  EXPECT_OK_AND_COPY_DETECTOR_HAS(*a, 10, true, false);
+  a = std::move(status_error);
+  EXPECT_FALSE(a.ok());
+}
+
+TEST(Result, SameStatusNestedResultCopyAndMoveConstructorTests) {
   pw::Result<pw::Result<CopyDetector>> status_or = CopyDetector(10);
   pw::Result<pw::Result<CopyDetector>> status_error =
       pw::Status::InvalidArgument();
-  PW_TEST_ASSERT_OK(status_or.status());
+  ASSERT_TRUE(status_or.ok());
   EXPECT_OK_AND_COPY_DETECTOR_HAS(*status_or, 10, true, false);
   pw::Result<pw::Result<CopyDetector>> a = status_or;
   EXPECT_OK_AND_COPY_DETECTOR_HAS(*a, 10, false, true);
@@ -715,20 +768,20 @@ TEST(Result, NestedResultCopyAndMoveConstructorTests) {
 
   const pw::Result<pw::Result<CopyDetector>>& cref = status_or;
   pw::Result<pw::Result<CopyDetector>> b = cref;  // NOLINT
-  PW_TEST_ASSERT_OK(b.status());
+  ASSERT_TRUE(b.ok());
   EXPECT_OK_AND_COPY_DETECTOR_HAS(*b, 10, false, true);
   const pw::Result<pw::Result<CopyDetector>>& cref_err = status_error;
   pw::Result<pw::Result<CopyDetector>> b_err = cref_err;  // NOLINT
   EXPECT_FALSE(b_err.ok());
 
   pw::Result<pw::Result<CopyDetector>> c = std::move(status_or);
-  PW_TEST_ASSERT_OK(c.status());
+  ASSERT_TRUE(c.ok());
   EXPECT_OK_AND_COPY_DETECTOR_HAS(*c, 10, true, false);
   pw::Result<pw::Result<CopyDetector>> c_err = std::move(status_error);
   EXPECT_FALSE(c_err.ok());
 }
 
-TEST(Result, NestedResultCopyAndMoveAssignment) {
+TEST(Result, SameStatusNestedResultCopyAndMoveAssignment) {
   pw::Result<pw::Result<CopyDetector>> status_or = CopyDetector(10);
   pw::Result<pw::Result<CopyDetector>> status_error =
       pw::Status::InvalidArgument();

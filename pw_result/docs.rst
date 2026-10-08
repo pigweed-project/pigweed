@@ -366,6 +366,102 @@ should be aware that if they provide a function that returns a ``pw::Result`` to
 
    Result<int> x = ConvertStringToInteger("42").transform(MultiplyByTwo);
 
+Results with custom status types
+================================
+``pw::Result<T, StatusType>`` accepts an optional second template parameter
+for the status type. It defaults to ``pw::Status``, but can be any
+:ref:`custom status type <module-pw_status-status-base>` derived from
+:cc:`pw::StatusBase` with an enum code.
+
+.. literalinclude:: result_test.cc
+   :language: c++
+   :start-after: [pw_result-custom-status]
+   :end-before: [pw_result-custom-status]
+
+``PW_TRY``, ``PW_TRY_ASSIGN``, and ``PW_CHECK_OK`` work with results that use
+custom status types. Unlike ``pw::Result<T>``, results with custom status types
+are not default constructible.
+
+``pw::Result<void>``
+====================
+``pw::Result<void, StatusType>`` provides the ``pw::Result`` interface
+(``ok()``, ``status()``, ``value()``, ``emplace()``, ``reset()``, equality
+comparisons, and the monadic operations) without a contained value. It wraps a
+single ``StatusType`` state and is provided to simplify generic code and
+coroutines that handle both value-returning and ``void``-returning operations.
+
+Unlike ``pw::Result<T>``, ``pw::Result<void, StatusType>`` may be constructed
+or assigned from either an OK or a non-OK status, or constructed in the OK
+state with ``std::in_place``:
+
+.. literalinclude:: result_test.cc
+   :language: c++
+   :start-after: [pw_result-void]
+   :end-before: [pw_result-void]
+
+For non-generic functions that only return a status, prefer returning
+``pw::Status`` (or ``StatusType``) directly instead of ``pw::Result<void>``.
+
+``pw::Result<Status>`` and ``pw::Result<StatusType, StatusType>``
+=================================================================
+When no additional value is returned, prefer ``StatusType`` or
+``pw::Result<void, StatusType>`` (in generic code). However,
+``pw::Result<StatusType, StatusType>`` (such as ``pw::Result<pw::Status>``) is
+supported so that generic code and class template argument deduction (CTAD) can
+uniformly wrap functions that return ``StatusType``.
+
+Unlike ``pw::Result<void, StatusType>``, which has a single ``StatusType``
+state, ``pw::Result<StatusType, StatusType>`` has **two** independent statuses:
+
+* The ``Result``'s own status (inspected via ``result.ok()`` and
+  ``result.status()``), which indicates whether a value is present.
+* The contained ``StatusType`` value (accessed via ``*result``, ``result->``,
+  or ``result.value()`` when ``result.ok()`` is ``true``), which may itself be
+  OK or non-OK.
+
+To avoid ambiguity when the value type ``T`` and ``StatusType`` are the same,
+``pw::Result<StatusType, StatusType>`` follows these rules:
+
+* **Construction and assignment set the value**: Constructing or assigning a
+  ``pw::Result<StatusType, StatusType>`` from a ``StatusType`` or
+  ``StatusType::Code`` always initializes or updates the **contained value**
+  (``result.ok() == true``), even when the status is not OK.
+* **Set errors with** ``reset()``: To put a ``pw::Result<StatusType,
+  StatusType>`` into an error state (``result.ok() == false``), call
+  ``result.reset(status)`` or ``result.reset<kCode>()`` (or use the default
+  constructor for ``pw::Result<pw::Status>``, which initializes the error
+  status to ``pw::Status::Unknown()``).
+* **Comparisons check the value**: Comparing a ``pw::Result<StatusType,
+  StatusType>`` with a ``StatusType`` or ``StatusType::Code`` using ``==`` or
+  ``!=`` compares against the **contained value**
+  (``result.ok() && *result == rhs``). An error ``Result`` without a value never
+  compares equal to a ``StatusType`` value. To compare the ``Result``'s own
+  status, use ``result.status() == status`` or ``result.ok()``.
+* ``PW_TRY`` **and** ``PW_CHECK_OK``: Passing a ``pw::Result<StatusType,
+  StatusType>`` directly to ``PW_TRY``, ``PW_TRY_ASSIGN``, ``PW_CHECK_OK``, or
+  ``PW_ASSERT_OK`` is disallowed (via ``static_assert``) because it is
+  ambiguous whether the macro should check ``result.ok()`` or ``result->ok()``;
+  pass ``result.status()`` or ``*result`` instead. Additionally, avoid using
+  ``PW_TRY`` or ``PW_TRY_ASSIGN`` on other expressions inside a function whose
+  return type is ``pw::Result<StatusType, StatusType>``: ``PW_TRY`` returns a
+  ``StatusType`` on error, which constructs a **contained value**
+  (``ok() == true``, ``*result == error_status``) rather than propagating an
+  error state (``ok() == false``). Prefer ``and_then()`` / ``transform()`` or
+  explicit ``reset()``.
+
+.. literalinclude:: result_test.cc
+   :language: c++
+   :dedent:
+   :start-after: [pw_result-status-value]
+   :end-before: [pw_result-status-value]
+
+Resetting a result
+==================
+``reset()`` destroys the contained value, if any, and sets an error status. The
+status may be provided as a non-OK status object, a non-OK status code, or a
+template argument (``result.reset<kCode>()``), which checks at compile time that
+the code is not OK.
+
 Results with custom error types: ``pw::expected``
 =================================================
 Most error codes can fit into one of the status codes supported by

@@ -41,6 +41,7 @@ pw_add_library(pw_third_party.fuchsia.stdcompat INTERFACE
     repo/sdk/lib/stdcompat/include/lib/stdcompat/utility.h
     repo/sdk/lib/stdcompat/include/lib/stdcompat/version.h
     repo/sdk/lib/stdcompat/include/lib/stdcompat/internal/bit.h
+    repo/sdk/lib/stdcompat/include/lib/stdcompat/internal/functional.h
     repo/sdk/lib/stdcompat/include/lib/stdcompat/internal/type_traits.h
     repo/sdk/lib/stdcompat/include/lib/stdcompat/internal/utility.h
   PUBLIC_INCLUDES

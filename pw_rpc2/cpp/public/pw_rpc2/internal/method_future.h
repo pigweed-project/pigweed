@@ -61,13 +61,13 @@ class MethodFutureImpl final : public async2::internal::BoxedFutureBase<void> {
       // in Coro<void>::Pend().
       async2::internal::Awaitable<async2::Coro<void>*, void> awaitable(
           &future_);
-      switch (awaitable.Advance(cx)) {
-        case async2::internal::CoroPollState::kPending:
+      switch (awaitable.Advance(cx).code()) {
+        case async2::internal::CoroState::kPending:
           return async2::Pending();
-        case async2::internal::CoroPollState::kAborted:
+        case async2::internal::CoroState::kAborted:
           future_ = async2::Coro<void>();
           return async2::Ready();
-        case async2::internal::CoroPollState::kReady:
+        case async2::internal::CoroState::kReady:
           return async2::Ready();
       }
       PW_UNREACHABLE;

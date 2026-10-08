@@ -26,8 +26,8 @@
 #include "pw_allocator/layout.h"
 #include "pw_assert/assert.h"
 #include "pw_async2/future.h"
-#include "pw_containers/internal/optional.h"
 #include "pw_function/function.h"
+#include "pw_result/result.h"
 
 namespace pw::async2 {
 namespace internal {
@@ -208,14 +208,16 @@ struct is_fallible_coro<FallibleCoro<T, Handler>> : std::true_type {};
 template <typename T>
 concept IsFallibleCoro = is_fallible_coro<T>::value;
 
-enum class CoroPollState : uint8_t {
+enum class CoroState : uint8_t {
   kPending,
   kAborted,
   kReady,
 };
 
+PW_STATUS_TYPE(CoroPollStatus, CoroState::kReady);
+
 template <typename T>
-using CoroPoll = ::pw::containers::internal::Optional<T, CoroPollState::kReady>;
+using CoroPoll = ::pw::Result<T, CoroPollStatus>;
 
 template <typename T>
 class ReturnValueHandler {
@@ -334,15 +336,16 @@ class CoroPromiseBase {
     SharedDelete(ptr, size, align);
   }
 
-  CoroPollState AdvanceAwaitable(Context& cx) {
+  CoroPollStatus AdvanceAwaitable(Context& cx) {
     if (pending_awaitable_ == nullptr) {
-      return CoroPollState::kReady;
+      return CoroPollStatus();
     }
-    const CoroPollState state = pending_awaitable_func_(pending_awaitable_, cx);
-    if (state == CoroPollState::kReady) {
+    const CoroPollStatus status =
+        pending_awaitable_func_(pending_awaitable_, cx);
+    if (status.ok()) {
       pending_awaitable_ = nullptr;
     }
-    return state;
+    return status;
   }
 
   Deallocator& deallocator() const { return dealloc_; }
@@ -378,7 +381,7 @@ class CoroPromiseBase {
   // method must be completed before the coroutine's `resume()` function can
   // be invoked.
   void* pending_awaitable_;
-  CoroPollState (*pending_awaitable_func_)(void*, Context&);
+  CoroPollStatus (*pending_awaitable_func_)(void*, Context&);
 };
 
 template <typename T, typename Derived>
@@ -395,7 +398,7 @@ class TypedCoroPromise : public CoroPromiseBase {
 
   // Indicate that allocation failed for a nested coroutine.
   void MarkNestedCoroutineAllocationFailure() {
-    output_->reset(CoroPollState::kAborted);
+    output_->reset(CoroPollStatus(CoroState::kAborted));
   }
 
   // Returns a reference to the `Context` passed in.
@@ -575,7 +578,7 @@ class Awaitable final {
     requires(Future<await_type> && !IsCoro<await_type>)
   {
     Context& cx = promise.promise().cx();
-    if (Advance(cx) == CoroPollState::kPending) {
+    if (Advance(cx) == CoroState::kPending) {
       promise.promise().SuspendAwaitable(*this);
       return true;
     }
@@ -586,12 +589,12 @@ class Awaitable final {
     requires IsCoro<await_type>
   {
     Context& cx = promise.promise().cx();
-    CoroPollState state = Advance(cx);
-    if (state == CoroPollState::kPending) {
+    CoroPollStatus status = Advance(cx);
+    if (status == CoroState::kPending) {
       promise.promise().SuspendAwaitable(*this);
       return true;
     }
-    if (state == CoroPollState::kAborted) {
+    if (status == CoroState::kAborted) {
       promise.promise().MarkNestedCoroutineAllocationFailure();
       return true;
     }
@@ -620,27 +623,27 @@ class Awaitable final {
   // This method must return `kReady` before the coroutine can be safely
   // resumed, as otherwise the return value will not be available when
   // `await_resume` is called to produce the result of `co_await`.
-  CoroPollState Advance(Context& cx)
+  CoroPollStatus Advance(Context& cx)
     requires(Future<await_type> && !IsCoro<await_type>)
   {
     Poll<value_type> poll_res(get().Pend(cx));
     if (poll_res.IsPending()) {
-      return CoroPollState::kPending;
+      return CoroPollStatus(CoroState::kPending);
     }
     state_.coro_or_future.~CoroOrFuture();
     new (&state_.result) Value(std::move(*poll_res));
     is_ready_ = true;
-    return CoroPollState::kReady;
+    return CoroPollStatus();
   }
 
-  CoroPollState Advance(Context& cx)
+  CoroPollStatus Advance(Context& cx)
     requires IsCoro<await_type>
   {
     if (!get().is_pendable()) {
-      return CoroPollState::kAborted;
+      return CoroPollStatus(CoroState::kAborted);
     }
     auto result = get().PendCoro(cx);
-    if (result.state() == CoroPollState::kReady) {
+    if (result.ok()) {
       state_.coro_or_future.~CoroOrFuture();
       if constexpr (std::is_void_v<value_type>) {
         new (&state_.result) Value();
@@ -649,7 +652,7 @@ class Awaitable final {
       }
       is_ready_ = true;
     }
-    return result.state();
+    return result.status();
   }
 
  private:
@@ -762,19 +765,17 @@ class Coro final {
   /// previously returned `Ready`) or if a nested coroutine fails to allocate.
   Poll<T> Pend(Context& cx) {
     internal::CoroPoll<T> return_value = PendCoro(cx);
-    switch (return_value.state()) {
-      case internal::CoroPollState::kPending:
-        return Pending();
-      case internal::CoroPollState::kAborted:
-        internal::CrashDueToCoroutineAllocationFailure();
-      case internal::CoroPollState::kReady:
-        if constexpr (std::is_void_v<T>) {
-          return Ready();
-        } else {
-          return Ready(std::move(*return_value));
-        }
+    if (return_value.ok()) {
+      if constexpr (std::is_void_v<T>) {
+        return Ready();
+      } else {
+        return Ready(std::move(*return_value));
+      }
     }
-    PW_UNREACHABLE;
+    if (return_value.status() == internal::CoroState::kPending) {
+      return Pending();
+    }
+    internal::CrashDueToCoroutineAllocationFailure();
   }
 
   /// Returns a `FallibleCoro` that runs this coroutine and handles
@@ -827,7 +828,7 @@ class Coro final {
   friend class FallibleCoro;
 
   internal::CoroPoll<T> PendCoro(Context& cx) {
-    using enum internal::CoroPollState;
+    using enum internal::CoroState;
 
     if (!is_pendable()) {
       internal::CrashDueToCoroutineAllocationFailure();
@@ -843,26 +844,23 @@ class Coro final {
     // If an `Awaitable` value is currently being processed, it must be
     // allowed to complete and store its return value before we can resume
     // the coroutine.
-    switch (promise_handle_.promise().AdvanceAwaitable(cx)) {
-      case kPending:
-        break;
-      case kAborted:
-        return_value.reset(kAborted);
-        promise_handle_.MarkComplete();
-        break;
-      case kReady:
-        // Resume the coroutine, triggering `Awaitable::await_resume()` and the
-        // returning of the resulting value from `co_await`. The promise's
-        // `return_value()` function stores the result in the `return_value`
-        // variable at this point.
-        promise_handle_.resume();
+    const internal::CoroPollStatus status =
+        promise_handle_.promise().AdvanceAwaitable(cx);
+    if (status.ok()) {
+      // Resume the coroutine, triggering `Awaitable::await_resume()` and the
+      // returning of the resulting value from `co_await`. The promise's
+      // `return_value()` function stores the result in the `return_value`
+      // variable at this point.
+      promise_handle_.resume();
 
-        // `return_value` now reflects the results of the operation. Unless it's
-        // still pending, free the coroutine's memory and mark it complete.
-        if (return_value.state() != kPending) {
-          promise_handle_.MarkComplete();
-        }
-        break;
+      // `return_value` now reflects the results of the operation. Unless it's
+      // still pending, free the coroutine's memory and mark it complete.
+      if (return_value.status() != kPending) {
+        promise_handle_.MarkComplete();
+      }
+    } else if (status == kAborted) {
+      return_value.reset(status);
+      promise_handle_.MarkComplete();
     }
 
     return return_value;
@@ -971,19 +969,17 @@ class [[nodiscard]] FallibleCoro final {
       return CompleteWithFailure();
     }
     internal::CoroPoll<T> result = coro_.PendCoro(cx);
-    switch (result.state()) {
-      case internal::CoroPollState::kPending:
-        return Pending();
-      case internal::CoroPollState::kAborted:
-        return CompleteWithFailure();
-      case internal::CoroPollState::kReady:
-        if constexpr (std::is_void_v<value_type>) {
-          return Ready();
-        } else {
-          return std::move(*result);
-        }
+    if (result.ok()) {
+      if constexpr (std::is_void_v<value_type>) {
+        return Ready();
+      } else {
+        return std::move(*result);
+      }
     }
-    PW_UNREACHABLE;
+    if (result.status() == internal::CoroState::kPending) {
+      return Pending();
+    }
+    return CompleteWithFailure();
   }
 
  private:
@@ -1062,16 +1058,16 @@ class [[nodiscard]] Generator final {
 
     handle_.promise().SetContext(cx);
 
-    switch (handle_.promise().AdvanceAwaitable(cx)) {
-      case internal::CoroPollState::kPending:
-        return Pending();
-      case internal::CoroPollState::kAborted:
-        handle_.Release();
-        return PollOptional<T>(std::nullopt);
-      case internal::CoroPollState::kReady:
-        handle_.resume();
-        break;
+    const internal::CoroPollStatus status =
+        handle_.promise().AdvanceAwaitable(cx);
+    if (status == internal::CoroState::kPending) {
+      return Pending();
     }
+    if (status == internal::CoroState::kAborted) {
+      handle_.Release();
+      return PollOptional<T>(std::nullopt);
+    }
+    handle_.resume();
 
     if (handle_.done()) {
       handle_.Release();
