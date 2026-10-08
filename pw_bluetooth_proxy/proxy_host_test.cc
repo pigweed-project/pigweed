@@ -4462,6 +4462,43 @@ TEST_F(L2capStatusTrackerTest, L2capConfigurationNoOption) {
   proxy.UnregisterL2capStatusDelegate(*this);
 }
 
+TEST_F(L2capStatusTrackerTest, L2capConfigurationWrongDirectionRspIgnored) {
+  SetupConnectedChannel();
+
+  auto expected_l2cap_configuration = L2capChannelConfigurationInfo{
+      .direction = Direction::kFromController,
+      .connection_handle = kHandle,
+      .remote_cid = kSourceCid,
+      .local_cid = kDestinationCid,
+      .mtu = std::nullopt,
+  };
+  config_info.emplace(expected_l2cap_configuration);
+  L2capOptions l2cap_options{.mtu = std::nullopt};
+  PW_TEST_EXPECT_OK(SendL2capConfigureReq(proxy(),
+                                          Direction::kFromController,
+                                          kHandle,
+                                          kDestinationCid,
+                                          l2cap_options));
+
+  // Wrong direction response should not match.
+  PW_TEST_EXPECT_OK(
+      SendL2capConfigureRsp(proxy(),
+                            Direction::kFromController,
+                            kHandle,
+                            kSourceCid,
+                            emboss::L2capConfigurationResult::SUCCESS));
+  EXPECT_EQ(this->configuration_called, 0);
+
+  // Correct direction response should still match and complete configuration.
+  PW_TEST_EXPECT_OK(
+      SendL2capConfigureRsp(proxy(),
+                            Direction::kFromHost,
+                            kHandle,
+                            kSourceCid,
+                            emboss::L2capConfigurationResult::SUCCESS));
+  EXPECT_EQ(this->configuration_called, 1);
+}
+
 TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
   pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});

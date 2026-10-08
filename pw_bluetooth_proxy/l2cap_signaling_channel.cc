@@ -349,9 +349,14 @@ void L2capSignalingChannel::HandleConfigurationReq(
 void L2capSignalingChannel::HandleConfigurationRsp(
     Direction direction, emboss::L2capConfigureRspView cmd) {
   std::lock_guard lock(mutex_);
+  Direction request_direction = direction == Direction::kFromHost
+                                    ? Direction::kFromController
+                                    : Direction::kFromHost;
   uint32_t identifier = cmd.command_header().identifier().Read();
-  auto match = [identifier](const PendingConfiguration& pending) -> bool {
-    return identifier == pending.identifier;
+  auto match = [identifier, request_direction](
+                   const PendingConfiguration& pending) -> bool {
+    return identifier == pending.identifier &&
+           request_direction == pending.info.direction;
   };
   PendingConfiguration* pending_it = std::find_if(
       pending_configurations_.begin(), pending_configurations_.end(), match);
