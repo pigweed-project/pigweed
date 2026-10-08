@@ -42,7 +42,7 @@ bazel_dep(name = "picotool", version = "2.2.1-develop.bcr.20260623-7ac0c2a")
 bazel_dep(name = "platforms", version = "1.1.0")
 
 # LINT.IfChange(protobuf)
-bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
+bazel_dep(name = "protobuf", version = "36.2", repo_name = "com_google_protobuf")
 # LINT.ThenChange(pw_env_setup/py/pw_env_setup/cipd_setup/pigweed.json,pw_env_setup/py/pw_env_setup/virtualenv_setup/constraint.list:protobuf,pw_build/workflows_launcher/MODULE.bazel:protobuf)
 
 bazel_dep(name = "re2", version = "2025-11-05.bcr.1")

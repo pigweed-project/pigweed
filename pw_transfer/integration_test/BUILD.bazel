@@ -31,6 +31,8 @@ pw_cc_binary(
         "-Wno-deprecated-attributes",
         "-Wno-nullability-extension",
         "-Wno-gcc-compat",
+        "-Wno-gnu-anonymous-struct",
+        "-Wno-nested-anon-types",
     ],
     features = ["-conversion_warnings"],
     deps = [
@@ -121,6 +123,8 @@ pw_cc_binary(
         "-Wno-deprecated-attributes",
         "-Wno-nullability-extension",
         "-Wno-gcc-compat",
+        "-Wno-gnu-anonymous-struct",
+        "-Wno-nested-anon-types",
     ],
     features = ["-conversion_warnings"],
     deps = [
