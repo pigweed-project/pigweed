@@ -238,6 +238,17 @@ class MethodInvoker
   }
 
  private:
+  template <typename ServiceClass, typename... CallArgs>
+  static typename Traits::Future CallMethod(ServiceClass& service,
+                                            CallArgs&&... args) {
+    if constexpr (Traits::kIsStatic) {
+      static_cast<void>(service);
+      return kMethod(std::forward<CallArgs>(args)...);
+    } else {
+      return (service.*kMethod)(std::forward<CallArgs>(args)...);
+    }
+  }
+
   template <typename ServiceClass, typename RequestExprFn>
   static ProtocolStatus InvokeWithRequest(ServiceClass& service,
                                           ServerCall& call,
@@ -248,7 +259,8 @@ class MethodInvoker
     return call.EmplaceFutureFromFactory<typename Traits::Future>([&] {
       if constexpr (Traits::kTakesCoroContext) {
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
-        return (service.*kMethod)(
+        return CallMethod(
+            service,
             async2::CoroContext(call.connection_task().allocator()),
             std::forward<RequestExprFn>(make_request)(),
             CallAccess::Create<Responder>(call.shared_call()));
@@ -257,9 +269,9 @@ class MethodInvoker
                       "Coroutine RPC methods require C++20.");
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
       } else {
-        return (service.*kMethod)(
-            std::forward<RequestExprFn>(make_request)(),
-            CallAccess::Create<Responder>(call.shared_call()));
+        return CallMethod(service,
+                          std::forward<RequestExprFn>(make_request)(),
+                          CallAccess::Create<Responder>(call.shared_call()));
       }
     });
   }

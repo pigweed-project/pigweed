@@ -378,7 +378,8 @@ class PwpbFutureService
   using EchoBidiStreamFuture = DoubleBidiFuture;
 };
 
-// Implements every RPC with a member function that returns a future.
+// Implements every RPC with a member function (non-static or static) that
+// returns a future.
 class PwpbMemberService
     : public pw_rpc2::pwpb::TestEcho::Service<PwpbMemberService> {
  public:
@@ -392,14 +393,15 @@ class PwpbMemberService
     return CountUpFuture(request, std::move(writer));
   }
 
-  SumFuture AccumulateClientStream(
+  static SumFuture AccumulateClientStream(
       ::pw::rpc2::Reader<EchoRequest> reader,
       ::pw::rpc2::UnaryWriter<EchoResponse> responder) {
     return SumFuture(std::move(reader), std::move(responder));
   }
 
-  DoubleBidiFuture EchoBidiStream(::pw::rpc2::Reader<EchoRequest> reader,
-                                  ::pw::rpc2::Writer<EchoResponse> writer) {
+  static DoubleBidiFuture EchoBidiStream(
+      ::pw::rpc2::Reader<EchoRequest> reader,
+      ::pw::rpc2::Writer<EchoResponse> writer) {
     return DoubleBidiFuture(std::move(reader), std::move(writer));
   }
 };
@@ -428,13 +430,13 @@ class RawMemberService
     return RawRepeatFuture(std::move(request), std::move(writer));
   }
 
-  RawCountFuture AccumulateClientStream(::pw::rpc2::RawReader reader,
-                                        ::pw::rpc2::RawUnaryWriter responder) {
+  static RawCountFuture AccumulateClientStream(
+      ::pw::rpc2::RawReader reader, ::pw::rpc2::RawUnaryWriter responder) {
     return RawCountFuture(std::move(reader), std::move(responder));
   }
 
-  RawEchoBidiFuture EchoBidiStream(::pw::rpc2::RawReader reader,
-                                   ::pw::rpc2::RawWriter writer) {
+  static RawEchoBidiFuture EchoBidiStream(::pw::rpc2::RawReader reader,
+                                          ::pw::rpc2::RawWriter writer) {
     return RawEchoBidiFuture(std::move(reader), std::move(writer));
   }
 };

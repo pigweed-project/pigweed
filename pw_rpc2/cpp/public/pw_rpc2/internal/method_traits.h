@@ -186,35 +186,48 @@ template <typename... Rest>
 struct RequestIsReference<async2::CoroContext, Rest...>
     : RequestIsReference<Rest...> {};
 
-template <typename Svc,
-          typename Fut,
-          typename Req,
-          typename Resp,
-          MethodType Type,
-          bool TakesCoro>
+template <typename Svc, typename Fut, typename... Args>
 struct BaseMethodTraits {
+  using ArgsTraits = RpcArgs<Args...>;
+
   static constexpr bool kValid = true;
-  static constexpr bool kTakesCoroContext = TakesCoro;
-  static constexpr MethodType kType = Type;
+  static constexpr bool kIsStatic = std::is_void_v<Svc>;
+  static constexpr bool kTakesCoroContext = ArgsTraits::kTakesCoroContext;
+  static constexpr bool kRequestIsReference =
+      RequestIsReference<Args...>::value;
+  static constexpr MethodType kType = ArgsTraits::kType;
   static constexpr bool kIsRaw =
-      std::is_same_v<cpp20::remove_cvref_t<Req>, ConstBuf> &&
-      std::is_same_v<cpp20::remove_cvref_t<Resp>, ConstBuf>;
+      std::is_same_v<cpp20::remove_cvref_t<typename ArgsTraits::Request>,
+                     ConstBuf> &&
+      std::is_same_v<cpp20::remove_cvref_t<typename ArgsTraits::Response>,
+                     ConstBuf>;
   using Service = Svc;
-  using Request = cpp20::remove_cvref_t<Req>;
-  using Response = Resp;
+  using Request = cpp20::remove_cvref_t<typename ArgsTraits::Request>;
+  using Response = typename ArgsTraits::Response;
   using Future = Fut;
 };
 
 }  // namespace detail
 
+/// True if `T` is a pointer to a non-static or `static` member function.
+///
+/// Named by generated code, which uses it to detect whether a service
+/// implementation defines a method.
+template <typename T>
+struct IsMethodPointer
+    : std::bool_constant<std::is_member_function_pointer_v<T> ||
+                         (std::is_pointer_v<T> &&
+                          std::is_function_v<std::remove_pointer_t<T>>)> {};
+
 /// Describes the RPC a service implementation's member function implements:
-/// its method type, its request and response types, whether it is a raw
-/// (`pw::ConstBuf`) method, and the future it returns.
+/// its method type, its request and response types, whether it is `static`,
+/// whether it is a raw (`pw::ConstBuf`) method, and the future it returns.
 ///
 /// `kValid` is false for any signature which is not a recognized RPC method.
 template <typename T, typename = void>
 struct MethodTraits {
   static constexpr bool kValid = false;
+  static constexpr bool kIsStatic = false;
   static constexpr bool kIsRaw = false;
   static constexpr bool kTakesCoroContext = false;
   using Future = void;
@@ -224,21 +237,19 @@ struct MethodTraits {
 template <typename Svc, typename Fut, typename... Args>
 struct MethodTraits<Fut (Svc::*)(Args...),
                     std::enable_if_t<detail::RpcArgs<Args...>::kValid>>
-    : detail::BaseMethodTraits<Svc,
-                               Fut,
-                               typename detail::RpcArgs<Args...>::Request,
-                               typename detail::RpcArgs<Args...>::Response,
-                               detail::RpcArgs<Args...>::kType,
-                               detail::RpcArgs<Args...>::kTakesCoroContext> {
-  static constexpr bool kRequestIsReference =
-      detail::RequestIsReference<Args...>::value;
-};
+    : detail::BaseMethodTraits<Svc, Fut, Args...> {};
 
 // Const member functions behave identically to their non-const counterparts.
 template <typename Svc, typename Fut, typename... Args>
 struct MethodTraits<Fut (Svc::*)(Args...) const,
                     std::enable_if_t<detail::RpcArgs<Args...>::kValid>>
     : MethodTraits<Fut (Svc::*)(Args...)> {};
+
+// Static member functions (and free functions).
+template <typename Fut, typename... Args>
+struct MethodTraits<Fut (*)(Args...),
+                    std::enable_if_t<detail::RpcArgs<Args...>::kValid>>
+    : detail::BaseMethodTraits<void, Fut, Args...> {};
 
 /// The concrete handle types an RPC of shape `<kExpectedType, kIsRaw, Req,
 /// Resp>` hands to the user's method.

@@ -100,29 +100,21 @@ class TestService : public Service {
     return MockFuture(1);
   }
 
-  MockFuture RawServerStreamingFuture(pw::ConstBuf request, RawWriter writer) {
+  MockFuture RawServerStreamingFuture(pw::ConstBuf request, RawWriter) {
     last_request_size_ = request.size();
-    (void)writer;
     return MockFuture(1);
   }
 
-  MockFuture RawClientStreamingFuture(RawReader reader,
-                                      RawUnaryWriter responder) {
-    (void)reader;
-    (void)responder;
+  MockFuture RawClientStreamingFuture(RawReader, RawUnaryWriter) {
     return MockFuture(1);
   }
 
-  MockFuture RawBidiStreamingFuture(RawReader reader, RawWriter writer) {
-    (void)reader;
-    (void)writer;
+  MockFuture RawBidiStreamingFuture(RawReader, RawWriter) {
     return MockFuture(1);
   }
 
-  MockFuture TypedUnaryFuture(const StubMsg& req,
-                              UnaryWriter<StubMsg> responder) {
+  MockFuture TypedUnaryFuture(const StubMsg& req, UnaryWriter<StubMsg>) {
     last_typed_value_ = req.value;
-    (void)responder;
     return MockFuture(1);
   }
 
@@ -130,10 +122,13 @@ class TestService : public Service {
 
   // A const method taking its request by value. Exercises the const and
   // by-value axes of `MethodTraits` end to end.
-  MockFuture TypedUnaryFutureConst(StubMsg req,
-                                   UnaryWriter<StubMsg> responder) const {
+  MockFuture TypedUnaryFutureConst(StubMsg req, UnaryWriter<StubMsg>) const {
     last_const_value_ = req.value;
-    (void)responder;
+    return MockFuture(1);
+  }
+
+  static MockFuture StaticTypedUnaryFuture(StubMsg req, UnaryWriter<StubMsg>) {
+    last_static_value_ = req.value;
     return MockFuture(1);
   }
 
@@ -148,33 +143,34 @@ class TestService : public Service {
 
   async2::Coro<void> RawServerStreamingCoro(async2::CoroContext,
                                             pw::ConstBuf request,
-                                            RawWriter writer) {
+                                            RawWriter) {
     last_request_size_ = request.size();
-    (void)writer;
     co_return;
   }
 
   async2::Coro<void> RawClientStreamingCoro(async2::CoroContext,
-                                            RawReader reader,
-                                            RawUnaryWriter responder) {
-    (void)reader;
-    (void)responder;
+                                            RawReader,
+                                            RawUnaryWriter) {
     co_return;
   }
 
   async2::Coro<void> RawBidiStreamingCoro(async2::CoroContext,
-                                          RawReader reader,
-                                          RawWriter writer) {
-    (void)reader;
-    (void)writer;
+                                          RawReader,
+                                          RawWriter) {
     co_return;
   }
 
   async2::Coro<void> TypedUnaryCoro(async2::CoroContext,
                                     StubMsg req,
-                                    UnaryWriter<StubMsg> responder) {
+                                    UnaryWriter<StubMsg>) {
     last_typed_value_ = req.value;
-    (void)responder;
+    co_return;
+  }
+
+  static async2::Coro<void> StaticTypedUnaryCoro(async2::CoroContext,
+                                                 StubMsg req,
+                                                 UnaryWriter<StubMsg>) {
+    last_static_value_ = req.value;
     co_return;
   }
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
@@ -182,11 +178,13 @@ class TestService : public Service {
   size_t last_request_size() const { return last_request_size_; }
   int last_typed_value() const { return last_typed_value_; }
   int last_const_value() const { return last_const_value_; }
+  static int last_static_value() { return last_static_value_; }
 
  private:
   size_t last_request_size_ = 0;
   int last_typed_value_ = 0;
   mutable int last_const_value_ = 0;
+  static inline int last_static_value_ = 0;
 };
 
 // Signature classification (`MethodTraits`) is checked in
@@ -196,10 +194,8 @@ class StatelessUnaryFuture {
  public:
   using value_type = void;
   StatelessUnaryFuture() = default;
-  StatelessUnaryFuture(pw::ConstBuf request, RawUnaryWriter responder)
-      : request_len_(request.size()) {
-    (void)responder;
-  }
+  StatelessUnaryFuture(pw::ConstBuf request, RawUnaryWriter)
+      : request_len_(request.size()) {}
   bool is_pendable() const { return !done_; }
   bool is_complete() const { return done_; }
   async2::Poll<void> Pend(async2::Context&) {
@@ -217,10 +213,7 @@ class StatefulUnaryFuture {
  public:
   using value_type = void;
   StatefulUnaryFuture() = default;
-  StatefulUnaryFuture(TestService& svc,
-                      pw::ConstBuf request,
-                      RawUnaryWriter responder) {
-    (void)responder;
+  StatefulUnaryFuture(TestService& svc, pw::ConstBuf request, RawUnaryWriter) {
     svc.OnRawUnary(request.size());
   }
   bool is_pendable() const { return !done_; }
@@ -391,6 +384,29 @@ TEST_F(MethodInvokerTest, InvokeConstMethodWithRequestByValue) {
   ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
   EXPECT_EQ(error, ProtocolStatus::kOk);
   EXPECT_EQ(service_.last_const_value(), 4242);
+
+  RunConnection();
+
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryFutureIntoCall) {
+  using Invoker = MethodInvoker<&TestService::StaticTypedUnaryFuture,
+                                MethodType::kUnary,
+                                StubMsg,
+                                StubMsg>;
+  constexpr Method method = Invoker::CreateMethod<TestService>(15);
+
+  ServerCall& call = AdoptCall(/*call_id=*/15, method);
+
+  int val = 7777;
+  auto buf = pw::Buf::Allocate(conn_alloc_, sizeof(int));
+  std::memcpy(buf.data(), &val, sizeof(int));
+  pw::ConstBuf payload(std::move(buf));
+
+  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolStatus::kOk);
+  EXPECT_EQ(TestService::last_static_value(), 7777);
 
   RunConnection();
 
@@ -626,6 +642,29 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryCoroIntoCall) {
   RunConnection();
 
   EXPECT_EQ(service_.last_typed_value(), 9999);
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryCoroIntoCall) {
+  using Invoker = MethodInvoker<&TestService::StaticTypedUnaryCoro,
+                                MethodType::kUnary,
+                                StubMsg,
+                                StubMsg>;
+  constexpr Method method = Invoker::CreateMethod<TestService>(16);
+
+  ServerCall& call = AdoptCall(/*call_id=*/16, method);
+
+  int val = 8888;
+  auto buf = pw::Buf::Allocate(conn_alloc_, sizeof(int));
+  std::memcpy(buf.data(), &val, sizeof(int));
+  pw::ConstBuf payload(std::move(buf));
+
+  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolStatus::kOk);
+
+  RunConnection();
+
+  EXPECT_EQ(TestService::last_static_value(), 8888);
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 

@@ -452,7 +452,8 @@ def _write_invoker_selection(
         f'struct HasMethod_{name}<T, ::std::void_t<decltype(&T::{name})>>'
     )
     output.write_line(
-        f'    : ::std::is_member_function_pointer<decltype(&T::{name})> {{}};'
+        f'    : ::pw::rpc2::internal::IsMethodPointer<decltype(&T::{name})>'
+        ' {};'
     )
     output.write_line()
     output.write_line('template <typename T, typename = void>')

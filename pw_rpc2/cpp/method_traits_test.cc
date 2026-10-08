@@ -86,6 +86,20 @@ class TraitsService {
   MockFuture RawUnary(ConstBuf, RawUnaryWriter);
   MockFuture RawBidi(RawReader, RawWriter);
 
+  static MockFuture StaticUnary(const StubMsg&, UnaryWriter<StubMsg>);
+  static async2::Coro<void> StaticUnaryCoro(async2::CoroContext,
+                                            StubMsg,
+                                            UnaryWriter<StubMsg>);
+  static MockFuture StaticServerStreaming(StubMsg, Writer<StubMsg>);
+  static async2::Coro<void> StaticClientStreamingCoro(async2::CoroContext,
+                                                      Reader<StubMsg>,
+                                                      UnaryWriter<StubMsg>);
+  static MockFuture StaticBidi(Reader<StubMsg>, Writer<StubMsg>);
+  static MockFuture StaticRawUnary(ConstBuf, RawUnaryWriter);
+  static async2::Coro<void> StaticRawBidiCoro(async2::CoroContext,
+                                              RawReader,
+                                              RawWriter);
+
   // None of the following are RPC method signatures.
   MockFuture NoRequest(UnaryWriter<StubMsg>);
   MockFuture TooManyArgs(StubMsg, StubMsg, UnaryWriter<StubMsg>);
@@ -94,6 +108,13 @@ class TraitsService {
                                  async2::CoroContext,
                                  UnaryWriter<StubMsg>);
   MockFuture NoArgs();
+  static MockFuture StaticNoResponder(StubMsg, StubMsg);
+  static MockFuture StaticCoroContextNotFirst(StubMsg,
+                                              async2::CoroContext,
+                                              UnaryWriter<StubMsg>);
+
+  int data_member = 0;
+  static inline int static_data_member = 0;
 };
 
 namespace {
@@ -103,21 +124,25 @@ template <auto kMethod,
           bool kTakesCoroContext,
           bool kIsRaw,
           typename Req,
-          typename Resp>
+          typename Resp,
+          bool kIsStatic = false>
 constexpr bool TraitsMatch() {
   using Traits = MethodTraits<decltype(kMethod)>;
   static_assert(Traits::kValid);
+  static_assert(Traits::kIsStatic == kIsStatic);
   static_assert(Traits::kType == kType);
   static_assert(Traits::kTakesCoroContext == kTakesCoroContext);
   static_assert(Traits::kIsRaw == kIsRaw);
-  static_assert(std::is_same_v<typename Traits::Service, TraitsService>);
+  static_assert(
+      std::is_same_v<typename Traits::Service,
+                     std::conditional_t<kIsStatic, void, TraitsService>>);
   static_assert(std::is_same_v<typename Traits::Request, Req>);
   static_assert(std::is_same_v<typename Traits::Response, Resp>);
   return true;
 }
 
 // The request may be taken by value or by const reference, and the method may
-// be const or non-const, without changing how it is classified.
+// be const, non-const, or static, without changing how it is classified.
 static_assert(TraitsMatch<&TraitsService::UnaryConstRef,
                           MethodType::kUnary,
                           false,
@@ -199,17 +224,86 @@ static_assert(TraitsMatch<&TraitsService::RawBidi,
                           ConstBuf,
                           ConstBuf>());
 
+// Static member functions (both factory functions and coroutines).
+static_assert(TraitsMatch<&TraitsService::StaticUnary,
+                          MethodType::kUnary,
+                          false,
+                          false,
+                          StubMsg,
+                          StubMsg,
+                          true>());
+static_assert(TraitsMatch<&TraitsService::StaticUnaryCoro,
+                          MethodType::kUnary,
+                          true,
+                          false,
+                          StubMsg,
+                          StubMsg,
+                          true>());
+static_assert(TraitsMatch<&TraitsService::StaticServerStreaming,
+                          MethodType::kServerStreaming,
+                          false,
+                          false,
+                          StubMsg,
+                          StubMsg,
+                          true>());
+static_assert(TraitsMatch<&TraitsService::StaticClientStreamingCoro,
+                          MethodType::kClientStreaming,
+                          true,
+                          false,
+                          StubMsg,
+                          StubMsg,
+                          true>());
+static_assert(TraitsMatch<&TraitsService::StaticBidi,
+                          MethodType::kBidirectionalStreaming,
+                          false,
+                          false,
+                          StubMsg,
+                          StubMsg,
+                          true>());
+static_assert(TraitsMatch<&TraitsService::StaticRawUnary,
+                          MethodType::kUnary,
+                          false,
+                          true,
+                          ConstBuf,
+                          ConstBuf,
+                          true>());
+static_assert(TraitsMatch<&TraitsService::StaticRawBidiCoro,
+                          MethodType::kBidirectionalStreaming,
+                          true,
+                          true,
+                          ConstBuf,
+                          ConstBuf,
+                          true>());
+
 static_assert(
     std::is_same_v<MethodTraits<decltype(&TraitsService::Bidi)>::Future,
                    MockFuture>);
 static_assert(
     std::is_same_v<MethodTraits<decltype(&TraitsService::BidiCoro)>::Future,
                    async2::Coro<void>>);
+static_assert(
+    std::is_same_v<MethodTraits<decltype(&TraitsService::StaticBidi)>::Future,
+                   MockFuture>);
+static_assert(std::is_same_v<
+              MethodTraits<decltype(&TraitsService::StaticRawBidiCoro)>::Future,
+              async2::Coro<void>>);
+
+static_assert(IsMethodPointer<decltype(&TraitsService::UnaryByValue)>::value);
+static_assert(
+    IsMethodPointer<decltype(&TraitsService::UnaryConstMethod)>::value);
+static_assert(IsMethodPointer<decltype(&TraitsService::StaticUnary)>::value);
+static_assert(
+    IsMethodPointer<decltype(&TraitsService::StaticUnaryCoro)>::value);
+static_assert(!IsMethodPointer<decltype(&TraitsService::data_member)>::value);
+static_assert(
+    !IsMethodPointer<decltype(&TraitsService::static_data_member)>::value);
+static_assert(!IsMethodPointer<int>::value);
 
 template <auto kMethod>
 constexpr bool TraitsAreInvalid() {
   using Traits = MethodTraits<decltype(kMethod)>;
   static_assert(!Traits::kValid);
+  static_assert(!Traits::kIsStatic);
   static_assert(!Traits::kIsRaw);
   static_assert(!Traits::kTakesCoroContext);
   static_assert(std::is_same_v<typename Traits::Future, void>);
@@ -222,6 +316,8 @@ static_assert(TraitsAreInvalid<&TraitsService::NoResponder>());
 static_assert(TraitsAreInvalid<&TraitsService::CoroContextNotFirst>());
 static_assert(TraitsAreInvalid<&TraitsService::NoArgs>());
 static_assert(TraitsAreInvalid<&TraitsService::NotAnRpc>());
+static_assert(TraitsAreInvalid<&TraitsService::StaticNoResponder>());
+static_assert(TraitsAreInvalid<&TraitsService::StaticCoroContextNotFirst>());
 
 }  // namespace
 }  // namespace pw::rpc2::internal

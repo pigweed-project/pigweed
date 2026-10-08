@@ -334,16 +334,14 @@ class MixedApiService
     return DoubleValueFuture(request, std::move(responder));
   }
 
-  RawEchoFuture RawFactoryUnary(::pw::ConstBuf request,
-                                ::pw::rpc2::RawUnaryWriter responder) {
-    ++factory_calls_;
+  static RawEchoFuture RawFactoryUnary(::pw::ConstBuf request,
+                                       ::pw::rpc2::RawUnaryWriter responder) {
     return RawEchoFuture(std::move(request), std::move(responder));
   }
 
-  EchoBidiFuture PwpbFactoryBidiStream(
+  static EchoBidiFuture PwpbFactoryBidiStream(
       ::pw::rpc2::Reader<MixedRequest> reader,
       ::pw::rpc2::Writer<MixedResponse> writer) {
-    ++factory_calls_;
     return EchoBidiFuture(std::move(reader), std::move(writer));
   }
 
@@ -364,10 +362,10 @@ class MixedApiService
     PW_TEST_EXPECT_OK(status);
   }
 
-  ::pw::async2::Coro<void> RawCoroUnary(::pw::async2::CoroContext,
-                                        ::pw::ConstBuf request,
-                                        ::pw::rpc2::RawUnaryWriter responder) {
-    ++coro_calls_;
+  static ::pw::async2::Coro<void> RawCoroUnary(
+      ::pw::async2::CoroContext,
+      ::pw::ConstBuf request,
+      ::pw::rpc2::RawUnaryWriter responder) {
     auto reservation = co_await responder.ReserveFinish(request.size());
     PW_TEST_EXPECT_OK(reservation.status());
     if (reservation.ok()) {
@@ -390,11 +388,10 @@ class MixedApiService
     PW_TEST_EXPECT_OK(status);
   }
 
-  ::pw::async2::Coro<void> PwpbCoroClientStream(
+  static ::pw::async2::Coro<void> PwpbCoroClientStream(
       ::pw::async2::CoroContext,
       ::pw::rpc2::Reader<MixedRequest> reader,
       ::pw::rpc2::UnaryWriter<MixedResponse> responder) {
-    ++coro_calls_;
     uint32_t sum = 0;
     while (true) {
       auto message = co_await reader.Read();
@@ -595,7 +592,7 @@ TEST_F(MixedApisTest, RawFactoryUnary) {
       RunToCompletion(stub().RawFactoryUnary(MixedRequest{.value = 7}));
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 7u);
-  ExpectCalls(/*future=*/0, /*factory=*/1, /*coro=*/0);
+  ExpectCalls(/*future=*/0, /*factory=*/0, /*coro=*/0);
 }
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
@@ -604,7 +601,7 @@ TEST_F(MixedApisTest, RawCoroUnary) {
       RunToCompletion(stub().RawCoroUnary(MixedRequest{.value = 7}));
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 7u);
-  ExpectCalls(/*future=*/0, /*factory=*/0, /*coro=*/1);
+  ExpectCalls(/*future=*/0, /*factory=*/0, /*coro=*/0);
 }
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
@@ -640,7 +637,7 @@ TEST_F(MixedApisTest, PwpbCoroClientStream) {
       ClientStream(stub().PwpbCoroClientStream(), {1u, 2u, 3u});
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 6u);
-  ExpectCalls(/*future=*/0, /*factory=*/0, /*coro=*/1);
+  ExpectCalls(/*future=*/0, /*factory=*/0, /*coro=*/0);
 }
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
@@ -658,7 +655,7 @@ TEST_F(MixedApisTest, RawFactoryClientStream) {
 
 TEST_F(MixedApisTest, PwpbFactoryBidiStream) {
   ExpectBidiEcho(stub().PwpbFactoryBidiStream());
-  ExpectCalls(/*future=*/0, /*factory=*/1, /*coro=*/0);
+  ExpectCalls(/*future=*/0, /*factory=*/0, /*coro=*/0);
 }
 
 TEST_F(MixedApisTest, RawFutureBidiStream) {
