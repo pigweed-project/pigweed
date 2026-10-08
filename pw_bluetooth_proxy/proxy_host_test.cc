@@ -4261,15 +4261,56 @@ class L2capStatusTrackerTest : public ProxyHostTest,
                                public L2capStatusDelegate {
  public:
   static constexpr uint16_t kPsm = 1;
+  static constexpr uint16_t kSourceCid = 30;
+  static constexpr uint16_t kDestinationCid = 31;
+  static constexpr uint16_t kHandle = 123;
+
+  void SetUp() override {
+    pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+        []([[maybe_unused]] H4PacketWithH4&& packet) {});
+    pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+        []([[maybe_unused]] H4PacketWithHci&& packet) {});
+    proxy_.emplace(std::move(send_to_host_fn),
+                   std::move(send_to_controller_fn),
+                   /*le_acl_credits_to_reserve=*/0,
+                   /*br_edr_acl_credits_to_reserve=*/0,
+                   GetProxyHostAllocator());
+    StartDispatcherOnCurrentThread(*proxy_);
+    proxy_->RegisterL2capStatusDelegate(*this);
+  }
+
+  void TearDown() override {
+    proxy_->UnregisterL2capStatusDelegate(*this);
+    l2cap_channel.reset();
+    proxy_.reset();
+  }
+
+  void SetupConnectedChannel(uint16_t source_cid = kSourceCid,
+                             uint16_t destination_cid = kDestinationCid) {
+    PW_TEST_EXPECT_OK(SendConnectionCompleteEvent(
+        proxy(), kHandle, emboss::StatusCode::SUCCESS));
+    PW_TEST_EXPECT_OK(SendL2capConnectionReq(
+        proxy(), Direction::kFromController, kHandle, source_cid, kPsm));
+    EXPECT_FALSE(info.has_value());
+    PW_TEST_EXPECT_OK(SendL2capConnectionRsp(
+        proxy(),
+        Direction::kFromHost,
+        kHandle,
+        source_cid,
+        destination_cid,
+        emboss::L2capConnectionRspResultCode::SUCCESSFUL));
+  }
+
+  ProxyHost& proxy() { return *proxy_; }
 
   bool ShouldTrackPsm(uint16_t psm) override { return psm == kPsm; }
   void HandleConnectionComplete(const L2capChannelConnectionInfo& i) override {
     EXPECT_FALSE(info.has_value());
-    PW_CHECK(proxy_ptr);
+    PW_CHECK(proxy_.has_value());
     info.emplace(i);
     // Test we can create channel directly in callback.
     l2cap_channel =
-        BuildBasicL2capChannel(*proxy_ptr,
+        BuildBasicL2capChannel(proxy(),
                                {.handle = i.connection_handle,
                                 .local_cid = i.local_cid,
                                 .remote_cid = i.remote_cid,
@@ -4288,7 +4329,7 @@ class L2capStatusTrackerTest : public ProxyHostTest,
   void HandleConfigurationChanged(
       const L2capChannelConfigurationInfo& i) override {
     configuration_called++;
-    PW_CHECK(proxy_ptr);
+    PW_CHECK(proxy_.has_value());
 
     EXPECT_EQ(config_info->direction, i.direction);
     EXPECT_EQ(config_info->connection_handle, i.connection_handle);
@@ -4296,7 +4337,7 @@ class L2capStatusTrackerTest : public ProxyHostTest,
     EXPECT_EQ(config_info->mtu, i.mtu);
   }
 
-  ProxyHost* proxy_ptr = nullptr;
+  std::optional<ProxyHost> proxy_;
   uint8_t configuration_called = 0;
   std::optional<L2capChannelConnectionInfo> info;
   std::optional<BasicL2capChannel> l2cap_channel;
@@ -4305,42 +4346,10 @@ class L2capStatusTrackerTest : public ProxyHostTest,
 
 // TODO(b/405201804): Add test that check MTU value in the response
 TEST_F(L2capStatusTrackerTest, L2capConfigurationMTUCalled) {
-  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
-      []([[maybe_unused]] H4PacketWithH4&& packet) {});
-
-  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
-      []([[maybe_unused]] H4PacketWithHci&& packet) {});
-
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/0,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-
-  proxy_ptr = &proxy;
-
   constexpr uint16_t kLocalCid = 30;
   constexpr uint16_t kRemoteCid = 31;
-  constexpr uint16_t kHandle = 123;
 
-  proxy.RegisterL2capStatusDelegate(*this);
-
-  PW_TEST_EXPECT_OK(
-      SendConnectionCompleteEvent(proxy, kHandle, emboss::StatusCode::SUCCESS));
-
-  // Receive new connection req
-  PW_TEST_EXPECT_OK(SendL2capConnectionReq(
-      proxy, Direction::kFromController, kHandle, kRemoteCid, kPsm));
-  EXPECT_FALSE(info.has_value());
-  // Send success rsp
-  PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
-                             Direction::kFromHost,
-                             kHandle,
-                             kRemoteCid,
-                             kLocalCid,
-                             emboss::L2capConnectionRspResultCode::SUCCESSFUL));
+  SetupConnectedChannel(kRemoteCid, kLocalCid);
 
   auto l2cap_options = L2capOptions{
       .mtu = MtuOption{1024},
@@ -4357,10 +4366,10 @@ TEST_F(L2capStatusTrackerTest, L2capConfigurationMTUCalled) {
   config_info.emplace(expected_sent_l2cap_configuration);
 
   PW_TEST_EXPECT_OK(SendL2capConfigureReq(
-      proxy, Direction::kFromHost, kHandle, kRemoteCid, l2cap_options));
+      proxy(), Direction::kFromHost, kHandle, kRemoteCid, l2cap_options));
 
   PW_TEST_EXPECT_OK(
-      SendL2capConfigureRsp(proxy,
+      SendL2capConfigureRsp(proxy(),
                             Direction::kFromController,
                             kHandle,
                             kLocalCid,
@@ -4379,57 +4388,19 @@ TEST_F(L2capStatusTrackerTest, L2capConfigurationMTUCalled) {
   config_info.emplace(expected_recv_l2cap_configuration);
 
   PW_TEST_EXPECT_OK(SendL2capConfigureReq(
-      proxy, Direction::kFromController, kHandle, kLocalCid, l2cap_options));
+      proxy(), Direction::kFromController, kHandle, kLocalCid, l2cap_options));
 
   PW_TEST_EXPECT_OK(
-      SendL2capConfigureRsp(proxy,
+      SendL2capConfigureRsp(proxy(),
                             Direction::kFromHost,
                             kHandle,
                             kRemoteCid,
                             emboss::L2capConfigurationResult::SUCCESS));
   ASSERT_EQ(this->configuration_called, 2);
-
-  proxy.UnregisterL2capStatusDelegate(*this);
 }
 
 TEST_F(L2capStatusTrackerTest, L2capConfigurationNoOption) {
-  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
-      []([[maybe_unused]] H4PacketWithH4&& packet) {});
-
-  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
-      []([[maybe_unused]] H4PacketWithHci&& packet) {});
-
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/0,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-
-  proxy_ptr = &proxy;
-
-  constexpr uint16_t kSourceCid = 30;
-  constexpr uint16_t kDestinationCid = 31;
-  constexpr uint16_t kHandle = 123;
-
-  proxy.RegisterL2capStatusDelegate(*this);
-
-  PW_TEST_EXPECT_OK(
-      SendConnectionCompleteEvent(proxy, kHandle, emboss::StatusCode::SUCCESS));
-
-  // Send new connection req
-  PW_TEST_EXPECT_OK(SendL2capConnectionReq(
-      proxy, Direction::kFromController, kHandle, kSourceCid, kPsm));
-  EXPECT_FALSE(info.has_value());
-
-  // Send success rsp
-  PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
-                             Direction::kFromHost,
-                             kHandle,
-                             kSourceCid,
-                             kDestinationCid,
-                             emboss::L2capConnectionRspResultCode::SUCCESSFUL));
+  SetupConnectedChannel();
 
   // Send Configure Request
   auto expected_l2cap_configuration = L2capChannelConfigurationInfo{
@@ -4446,20 +4417,18 @@ TEST_F(L2capStatusTrackerTest, L2capConfigurationNoOption) {
       .mtu = std::nullopt,
   };
 
-  PW_TEST_EXPECT_OK(SendL2capConfigureReq(proxy,
+  PW_TEST_EXPECT_OK(SendL2capConfigureReq(proxy(),
                                           Direction::kFromController,
                                           kHandle,
                                           kDestinationCid,
                                           l2cap_options));
 
   PW_TEST_EXPECT_OK(
-      SendL2capConfigureRsp(proxy,
+      SendL2capConfigureRsp(proxy(),
                             Direction::kFromHost,
                             kHandle,
                             kSourceCid,
                             emboss::L2capConfigurationResult::SUCCESS));
-
-  proxy.UnregisterL2capStatusDelegate(*this);
 }
 
 TEST_F(L2capStatusTrackerTest, L2capConfigurationWrongDirectionRspIgnored) {
@@ -4500,37 +4469,17 @@ TEST_F(L2capStatusTrackerTest, L2capConfigurationWrongDirectionRspIgnored) {
 }
 
 TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
-  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
-      []([[maybe_unused]] H4PacketWithH4&& packet) {});
-
-  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
-      []([[maybe_unused]] H4PacketWithHci&& packet) {});
-
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/0,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-  proxy_ptr = &proxy;
-
-  constexpr uint16_t kSourceCid = 30;
-  constexpr uint16_t kDestinationCid = 31;
-  constexpr uint16_t kHandle = 123;
-
-  proxy.RegisterL2capStatusDelegate(*this);
-
-  PW_TEST_EXPECT_OK(
-      SendConnectionCompleteEvent(proxy, kHandle, emboss::StatusCode::SUCCESS));
+  PW_TEST_EXPECT_OK(SendConnectionCompleteEvent(
+      proxy(), kHandle, emboss::StatusCode::SUCCESS));
 
   // First send CONNECTION_REQ to setup partial connection
   PW_TEST_EXPECT_OK(SendL2capConnectionReq(
-      proxy, Direction::kFromController, kHandle, kSourceCid, kPsm));
+      proxy(), Direction::kFromController, kHandle, kSourceCid, kPsm));
   EXPECT_FALSE(info.has_value());
 
   // Send non-successful connection response.
   PW_TEST_EXPECT_OK(SendL2capConnectionRsp(
-      proxy,
+      proxy(),
       Direction::kFromHost,
       kHandle,
       kSourceCid,
@@ -4541,7 +4490,7 @@ TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
   // Send successful connection response, but expect that it will not have
   // called listener since the connection was closed with error already.
   PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
+      SendL2capConnectionRsp(proxy(),
                              Direction::kFromHost,
                              kHandle,
                              kSourceCid,
@@ -4551,12 +4500,12 @@ TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
 
   // Send new connection req
   PW_TEST_EXPECT_OK(SendL2capConnectionReq(
-      proxy, Direction::kFromController, kHandle, kSourceCid, kPsm));
+      proxy(), Direction::kFromController, kHandle, kSourceCid, kPsm));
   EXPECT_FALSE(info.has_value());
 
   // Send rsp with PENDING set.
   PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
+      SendL2capConnectionRsp(proxy(),
                              Direction::kFromHost,
                              kHandle,
                              kSourceCid,
@@ -4566,7 +4515,7 @@ TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
 
   // Send success rsp
   PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
+      SendL2capConnectionRsp(proxy(),
                              Direction::kFromHost,
                              kHandle,
                              kSourceCid,
@@ -4579,7 +4528,7 @@ TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
   EXPECT_EQ(info->remote_cid, kSourceCid);
 
   // Send disconnect
-  PW_TEST_EXPECT_OK(SendL2capDisconnectRsp(proxy,
+  PW_TEST_EXPECT_OK(SendL2capDisconnectRsp(proxy(),
                                            Direction::kFromHost,
                                            AclTransportType::kBrEdr,
                                            kHandle,
@@ -4587,13 +4536,13 @@ TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
                                            kDestinationCid));
   EXPECT_FALSE(info.has_value());
 
-  proxy.UnregisterL2capStatusDelegate(*this);
+  proxy().UnregisterL2capStatusDelegate(*this);
 
   // Send successful connection sequence with no listeners.
   PW_TEST_EXPECT_OK(SendL2capConnectionReq(
-      proxy, Direction::kFromController, kHandle, kSourceCid, kPsm));
+      proxy(), Direction::kFromController, kHandle, kSourceCid, kPsm));
   PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
+      SendL2capConnectionRsp(proxy(),
                              Direction::kFromHost,
                              kHandle,
                              kSourceCid,
@@ -4603,37 +4552,17 @@ TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
 }
 
 TEST_F(L2capStatusTrackerTest, L2capEventsHostInitiated) {
-  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
-      []([[maybe_unused]] H4PacketWithH4&& packet) {});
-
-  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
-      []([[maybe_unused]] H4PacketWithHci&& packet) {});
-
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/0,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-  proxy_ptr = &proxy;
-
-  constexpr uint16_t kSourceCid = 30;
-  constexpr uint16_t kDestinationCid = 31;
-  constexpr uint16_t kHandle = 123;
-
-  proxy.RegisterL2capStatusDelegate(*this);
-
-  PW_TEST_EXPECT_OK(
-      SendConnectionCompleteEvent(proxy, kHandle, emboss::StatusCode::SUCCESS));
+  PW_TEST_EXPECT_OK(SendConnectionCompleteEvent(
+      proxy(), kHandle, emboss::StatusCode::SUCCESS));
 
   // First send CONNECTION_REQ to setup partial connection
   PW_TEST_EXPECT_OK(SendL2capConnectionReq(
-      proxy, Direction::kFromHost, kHandle, kSourceCid, kPsm));
+      proxy(), Direction::kFromHost, kHandle, kSourceCid, kPsm));
   EXPECT_FALSE(info.has_value());
 
   // Send non-successful connection response.
   PW_TEST_EXPECT_OK(SendL2capConnectionRsp(
-      proxy,
+      proxy(),
       Direction::kFromController,
       kHandle,
       kSourceCid,
@@ -4644,7 +4573,7 @@ TEST_F(L2capStatusTrackerTest, L2capEventsHostInitiated) {
   // Send successful connection response, but expect that it will not have
   // called listener since the connection was closed with error already.
   PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
+      SendL2capConnectionRsp(proxy(),
                              Direction::kFromController,
                              kHandle,
                              kSourceCid,
@@ -4654,12 +4583,12 @@ TEST_F(L2capStatusTrackerTest, L2capEventsHostInitiated) {
 
   // Send new connection req
   PW_TEST_EXPECT_OK(SendL2capConnectionReq(
-      proxy, Direction::kFromHost, kHandle, kSourceCid, kPsm));
+      proxy(), Direction::kFromHost, kHandle, kSourceCid, kPsm));
   EXPECT_FALSE(info.has_value());
 
   // Send rsp with PENDING set.
   PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
+      SendL2capConnectionRsp(proxy(),
                              Direction::kFromController,
                              kHandle,
                              kSourceCid,
@@ -4669,7 +4598,7 @@ TEST_F(L2capStatusTrackerTest, L2capEventsHostInitiated) {
 
   // Send success rsp
   PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
+      SendL2capConnectionRsp(proxy(),
                              Direction::kFromController,
                              kHandle,
                              kSourceCid,
@@ -4682,7 +4611,7 @@ TEST_F(L2capStatusTrackerTest, L2capEventsHostInitiated) {
   EXPECT_EQ(info->remote_cid, kDestinationCid);
 
   // Send disconnect rsp
-  PW_TEST_EXPECT_OK(SendL2capDisconnectRsp(proxy,
+  PW_TEST_EXPECT_OK(SendL2capDisconnectRsp(proxy(),
                                            Direction::kFromController,
                                            AclTransportType::kBrEdr,
                                            kHandle,
@@ -4690,13 +4619,13 @@ TEST_F(L2capStatusTrackerTest, L2capEventsHostInitiated) {
                                            kDestinationCid));
   EXPECT_FALSE(info.has_value());
 
-  proxy.UnregisterL2capStatusDelegate(*this);
+  proxy().UnregisterL2capStatusDelegate(*this);
 
   // Send successful connection sequence with no listeners.
   PW_TEST_EXPECT_OK(SendL2capConnectionReq(
-      proxy, Direction::kFromHost, kHandle, kSourceCid, kPsm));
+      proxy(), Direction::kFromHost, kHandle, kSourceCid, kPsm));
   PW_TEST_EXPECT_OK(
-      SendL2capConnectionRsp(proxy,
+      SendL2capConnectionRsp(proxy(),
                              Direction::kFromController,
                              kHandle,
                              kSourceCid,
