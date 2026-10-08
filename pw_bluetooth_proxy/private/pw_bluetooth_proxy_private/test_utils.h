@@ -382,6 +382,17 @@ class ProxyHostTest : public testing::Test {
                                 uint16_t source_cid,
                                 uint16_t destination_cid);
 
+  /// Sends a raw L2CAP signaling command on the ACL-U signaling channel.
+  ///
+  /// `payload` contains the command data following the 4-byte signaling command
+  /// header.
+  Status SendL2capSignalingCommand(ProxyHost& proxy,
+                                   Direction direction,
+                                   uint16_t handle,
+                                   emboss::L2capSignalingPacketCode code,
+                                   uint8_t identifier,
+                                   pw::span<const uint8_t> payload);
+
   /// Sends an L2CAP B-Frame.
   ///
   /// This can be either a complete PDU (pdu_length == payload.size()) or an

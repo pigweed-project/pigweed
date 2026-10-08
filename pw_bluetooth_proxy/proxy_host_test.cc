@@ -4468,6 +4468,101 @@ TEST_F(L2capStatusTrackerTest, L2capConfigurationWrongDirectionRspIgnored) {
   EXPECT_EQ(this->configuration_called, 1);
 }
 
+TEST_F(L2capStatusTrackerTest, L2capConfigurationTruncatedPacketsIgnored) {
+  SetupConnectedChannel();
+
+  // Truncated CONFIGURATION_REQ (0-byte command payload, smaller than
+  // L2capConfigureReq::MinSizeInBytes()).
+  PW_TEST_EXPECT_OK(SendL2capSignalingCommand(
+      proxy(),
+      Direction::kFromController,
+      kHandle,
+      emboss::L2capSignalingPacketCode::CONFIGURATION_REQ,
+      /*identifier=*/0,
+      {}));
+  PW_TEST_EXPECT_OK(
+      SendL2capConfigureRsp(proxy(),
+                            Direction::kFromHost,
+                            kHandle,
+                            kSourceCid,
+                            emboss::L2capConfigurationResult::SUCCESS));
+  EXPECT_EQ(this->configuration_called, 0);
+
+  // Truncated CONFIGURATION_REQ (2-byte command payload, missing 2-byte flags
+  // field).
+  const std::array<uint8_t, 2> kReqMissingFlags = {
+      static_cast<uint8_t>(kDestinationCid),
+      0x00,  // destination_cid
+  };
+  PW_TEST_EXPECT_OK(SendL2capSignalingCommand(
+      proxy(),
+      Direction::kFromController,
+      kHandle,
+      emboss::L2capSignalingPacketCode::CONFIGURATION_REQ,
+      /*identifier=*/0,
+      kReqMissingFlags));
+  PW_TEST_EXPECT_OK(
+      SendL2capConfigureRsp(proxy(),
+                            Direction::kFromHost,
+                            kHandle,
+                            kSourceCid,
+                            emboss::L2capConfigurationResult::SUCCESS));
+  EXPECT_EQ(this->configuration_called, 0);
+
+  // Valid CONFIGURATION_REQ followed by truncated CONFIGURATION_RSP packets
+  // (0-byte and 4-byte payloads, smaller than the 6-byte payload required by
+  // L2capConfigureRsp).
+  auto expected_l2cap_configuration = L2capChannelConfigurationInfo{
+      .direction = Direction::kFromController,
+      .connection_handle = kHandle,
+      .remote_cid = kSourceCid,
+      .local_cid = kDestinationCid,
+      .mtu = std::nullopt,
+  };
+  config_info.emplace(expected_l2cap_configuration);
+  L2capOptions l2cap_options{.mtu = std::nullopt};
+  PW_TEST_EXPECT_OK(SendL2capConfigureReq(proxy(),
+                                          Direction::kFromController,
+                                          kHandle,
+                                          kDestinationCid,
+                                          l2cap_options));
+
+  // Truncated CONFIGURATION_RSP (0-byte payload, 4 bytes total).
+  PW_TEST_EXPECT_OK(SendL2capSignalingCommand(
+      proxy(),
+      Direction::kFromHost,
+      kHandle,
+      emboss::L2capSignalingPacketCode::CONFIGURATION_RSP,
+      /*identifier=*/0,
+      {}));
+  EXPECT_EQ(this->configuration_called, 0);
+
+  // Truncated CONFIGURATION_RSP (4-byte payload, missing 2-byte result field).
+  const std::array<uint8_t, 4> kRspMissingResult = {
+      static_cast<uint8_t>(kSourceCid),
+      0x00,  // source_cid
+      0x00,
+      0x00,  // flags
+  };
+  PW_TEST_EXPECT_OK(SendL2capSignalingCommand(
+      proxy(),
+      Direction::kFromHost,
+      kHandle,
+      emboss::L2capSignalingPacketCode::CONFIGURATION_RSP,
+      /*identifier=*/0,
+      kRspMissingResult));
+  EXPECT_EQ(this->configuration_called, 0);
+
+  // Valid CONFIGURATION_RSP should still complete the pending configuration.
+  PW_TEST_EXPECT_OK(
+      SendL2capConfigureRsp(proxy(),
+                            Direction::kFromHost,
+                            kHandle,
+                            kSourceCid,
+                            emboss::L2capConfigurationResult::SUCCESS));
+  EXPECT_EQ(this->configuration_called, 1);
+}
+
 TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
   PW_TEST_EXPECT_OK(SendConnectionCompleteEvent(
       proxy(), kHandle, emboss::StatusCode::SUCCESS));

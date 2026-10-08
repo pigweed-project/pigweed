@@ -15,6 +15,7 @@
 #include "pw_bluetooth_proxy_private/test_utils.h"
 
 #include <cstdint>
+#include <cstring>
 
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/synchronized_allocator.h"
@@ -550,6 +551,47 @@ Status ProxyHostTest::SendL2capDisconnectRsp(ProxyHost& proxy,
     H4PacketWithHci packet{emboss::H4PacketType::ACL_DATA,
                            cframe.acl.hci_span()};
     proxy.HandleH4HciFromController(std::move(packet));
+  } else {
+    return Status::InvalidArgument();
+  }
+  RunDispatcher();
+  return OkStatus();
+}
+
+Status ProxyHostTest::SendL2capSignalingCommand(
+    ProxyHost& proxy,
+    Direction direction,
+    uint16_t handle,
+    emboss::L2capSignalingPacketCode code,
+    uint8_t identifier,
+    pw::span<const uint8_t> payload) {
+  const uint16_t cmd_len = static_cast<uint16_t>(
+      emboss::L2capSignalingCommandHeader::IntrinsicSizeInBytes() +
+      payload.size());
+  PW_TRY_ASSIGN(
+      CFrameWithStorage cframe,
+      SetupCFrame(handle,
+                  cpp23::to_underlying(emboss::L2capFixedCid::ACL_U_SIGNALING),
+                  cmd_len));
+  auto cmd_view = emboss::MakeL2capSignalingCommandView(
+      cframe.writer.payload().BackingStorage().data(),
+      cframe.writer.payload().SizeInBytes());
+  cmd_view.command_header().code().Write(code);
+  cmd_view.command_header().identifier().Write(identifier);
+  cmd_view.command_header().data_length().Write(
+      static_cast<uint16_t>(payload.size()));
+  if (!payload.empty()) {
+    std::memcpy(cmd_view.payload().BackingStorage().data(),
+                payload.data(),
+                payload.size());
+  }
+  if (direction == Direction::kFromController) {
+    H4PacketWithHci packet{emboss::H4PacketType::ACL_DATA,
+                           cframe.acl.hci_span()};
+    proxy.HandleH4HciFromController(std::move(packet));
+  } else if (direction == Direction::kFromHost) {
+    H4PacketWithH4 packet{emboss::H4PacketType::ACL_DATA, cframe.acl.h4_span()};
+    proxy.HandleH4HciFromHost(std::move(packet));
   } else {
     return Status::InvalidArgument();
   }

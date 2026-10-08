@@ -145,7 +145,7 @@ bool L2capSignalingChannel::HandleL2capSignalingCommand(
     }
     case emboss::L2capSignalingPacketCode::CONFIGURATION_REQ: {
       Result<emboss::L2capConfigureReqView> configure_req_cmd =
-          emboss::MakeL2capConfigureReqView(
+          MakeEmbossView<emboss::L2capConfigureReqView>(
               static_cast<uint32_t>(cmd.SizeInBytes()),
               cmd.BackingStorage().data(),
               cmd.SizeInBytes());
@@ -157,7 +157,7 @@ bool L2capSignalingChannel::HandleL2capSignalingCommand(
     }
     case emboss::L2capSignalingPacketCode::CONFIGURATION_RSP: {
       Result<emboss::L2capConfigureRspView> configure_rsp_cmd =
-          emboss::MakeL2capConfigureRspView(
+          MakeEmbossView<emboss::L2capConfigureRspView>(
               static_cast<uint32_t>(cmd.SizeInBytes()),
               cmd.BackingStorage().data(),
               cmd.SizeInBytes());
