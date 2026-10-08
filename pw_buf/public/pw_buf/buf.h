@@ -14,6 +14,7 @@
 #pragma once
 
 #include <cstddef>
+#include <type_traits>
 #include <utility>
 
 #include "pw_allocator/allocator.h"
@@ -70,6 +71,12 @@ class ConstBuf {
   /// Constructs a null `ConstBuf`.
   constexpr ConstBuf(std::nullptr_t) noexcept : ConstBuf() {}
 
+  /// Integers do not convert to `ConstBuf`. Without this, the literal `0` would
+  /// convert through the `nullptr_t` constructor, so passing `0` where a
+  /// `ConstBuf` is expected would silently produce a null buffer.
+  template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+  ConstBuf(T) = delete;
+
   /// Move constructor.
   ///
   /// The moved-from `ConstBuf` is left null.
@@ -124,6 +131,10 @@ class ConstBuf {
     reset();
     return *this;
   }
+
+  /// Integers cannot be assigned to a `ConstBuf`, not even the literal `0`.
+  template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+  ConstBuf& operator=(T) = delete;
 
   /// `operator bool` is not provided to prevent confusion between nullness and
   /// emptiness. Use `buf == nullptr` to check for null, or `buf.empty()` for
@@ -294,6 +305,12 @@ class Buf {
   /// Constructs a null `Buf`.
   constexpr Buf(std::nullptr_t) noexcept : Buf() {}
 
+  /// Integers do not convert to `Buf`. Without this, the literal `0` would
+  /// convert through the `nullptr_t` constructor, so passing `0` where a
+  /// `Buf` is expected would silently produce a null buffer.
+  template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+  Buf(T) = delete;
+
   /// Move constructor.
   ///
   /// The moved-from `Buf` is left null.
@@ -433,6 +450,10 @@ class Buf {
     reset();
     return *this;
   }
+
+  /// Integers cannot be assigned to a `Buf`, not even the literal `0`.
+  template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+  Buf& operator=(T) = delete;
 
   /// `operator bool` is not provided to prevent confusion between nullness and
   /// emptiness. Use `buf == nullptr` to check for null, or `buf.empty()` for

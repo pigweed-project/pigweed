@@ -15,6 +15,9 @@
 #include "pw_buf/buf.h"
 
 #include <array>
+#include <cstddef>
+#include <type_traits>
+#include <utility>
 
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
@@ -24,6 +27,48 @@
 
 namespace pw {
 namespace {
+
+// The literal `0` is a null pointer constant, so without a deleted overload it
+// would convert to a buffer through the `nullptr_t` constructor. These
+// detectors use a literal `0` rather than `int`, since only a literal converts.
+template <typename T, typename = void>
+constexpr bool kConstructibleFromLiteralZero = false;
+template <typename T>
+constexpr bool kConstructibleFromLiteralZero<T, std::void_t<decltype(T(0))>> =
+    true;
+
+template <typename T, typename = void>
+constexpr bool kConvertibleFromLiteralZero = false;
+template <typename T>
+constexpr bool kConvertibleFromLiteralZero<
+    T,
+    std::void_t<decltype(std::declval<void (&)(T)>()(0))>> = true;
+
+template <typename T, typename = void>
+constexpr bool kAssignableFromLiteralZero = false;
+template <typename T>
+constexpr bool
+    kAssignableFromLiteralZero<T,
+                               std::void_t<decltype(std::declval<T&>() = 0)>> =
+        true;
+
+static_assert(std::is_constructible_v<ConstBuf, std::nullptr_t>);
+static_assert(std::is_convertible_v<std::nullptr_t, ConstBuf>);
+static_assert(std::is_assignable_v<ConstBuf&, std::nullptr_t>);
+static_assert(!kConstructibleFromLiteralZero<ConstBuf>);
+static_assert(!kConvertibleFromLiteralZero<ConstBuf>);
+static_assert(!kAssignableFromLiteralZero<ConstBuf>);
+static_assert(!std::is_constructible_v<ConstBuf, size_t>);
+static_assert(!std::is_convertible_v<bool, ConstBuf>);
+
+static_assert(std::is_constructible_v<Buf, std::nullptr_t>);
+static_assert(std::is_convertible_v<std::nullptr_t, Buf>);
+static_assert(std::is_assignable_v<Buf&, std::nullptr_t>);
+static_assert(!kConstructibleFromLiteralZero<Buf>);
+static_assert(!kConvertibleFromLiteralZero<Buf>);
+static_assert(!kAssignableFromLiteralZero<Buf>);
+static_assert(!std::is_constructible_v<Buf, size_t>);
+static_assert(!std::is_convertible_v<bool, Buf>);
 
 // Test fixture for shared allocator setup.
 class BufTest : public ::testing::Test {
