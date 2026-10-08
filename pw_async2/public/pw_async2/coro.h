@@ -38,12 +38,16 @@ struct NoOpAllocFailureHandler {
   void operator()() const noexcept {}
 };
 
+class CoroPromiseBase;
+
 }  // namespace internal
 
 // Forward-declare coroutine types so that they can be referenced by the
 // promise type APIs.
 template <typename T>
 class Coro;
+
+class Dispatcher;
 
 template <typename T>
 class Generator;
@@ -58,7 +62,6 @@ class CoroContext {
  public:
   /// Creates a `CoroContext`, which uses the provided allocator to allocate
   /// coroutine state. A `CoroContext` may be used to invoke other coroutines.
-  /// Its allocator can be used for other allocations, if desired.
   ///
   /// Supports implicit conversion to simplify creating coroutines.
   constexpr CoroContext(Allocator& allocator) : allocator_(&allocator) {}
@@ -66,9 +69,12 @@ class CoroContext {
   constexpr CoroContext(const CoroContext&) = default;
   constexpr CoroContext& operator=(const CoroContext&) = default;
 
+ private:
+  friend class Dispatcher;
+  friend class internal::CoroPromiseBase;
+
   constexpr Allocator& allocator() const { return *allocator_; }
 
- private:
   Allocator* allocator_;
 };
 
