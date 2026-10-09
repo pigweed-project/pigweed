@@ -197,4 +197,34 @@ func TestExecGitRunner_RealWorktreeAndSymlinkLifecycle(t *testing.T) {
 	if err := mgr.Park("alpha", false); err != nil {
 		t.Fatalf("expected Park to succeed after cleaning dirty file: %v", err)
 	}
+
+	// 5. Real Git Unmanaged Worktree Collision: create an unmanaged worktree outside ~/wrk/slots/
+	// holding branch "ghish", then run mgr.Use("ghish", ...) and verify one-shot success!
+	unmanagedWorktreeDir := filepath.Join(tmpDir, "pw-ghish")
+	runGitCmd(primaryRepo, "worktree", "add", "-b", "ghish", unmanagedWorktreeDir, "origin/main")
+
+	resGhish, err := mgr.Use("ghish", "", "", LeaseModeWrite, "conv-ghish")
+	if err != nil {
+		t.Fatalf("Use('ghish') with real unmanaged worktree holding 'ghish' failed: %v", err)
+	}
+	if resGhish.Branch != "ghish-wt" {
+		t.Errorf("expected real git branch 'ghish-wt' when 'ghish' is locked by %s, got %q", unmanagedWorktreeDir, resGhish.Branch)
+	}
+	actualSlotBranch, err := gitRunner.CurrentBranch(resGhish.SlotPath)
+	if err != nil || actualSlotBranch != "ghish-wt" {
+		t.Errorf("expected slot %s to have 'ghish-wt' checked out, got %q (err=%v)", resGhish.SlotPath, actualSlotBranch, err)
+	}
+	unmanagedBranch, err := gitRunner.CurrentBranch(unmanagedWorktreeDir)
+	if err != nil || unmanagedBranch != "ghish" {
+		t.Errorf("expected unmanaged worktree %s to remain on branch 'ghish', got %q (err=%v)", unmanagedWorktreeDir, unmanagedBranch, err)
+	}
+
+	// 6. Real Git Warm Fork on Writer Lease Collision: Agent B requests write lease on "ghish" while Agent A holds it
+	resFork, err := mgr.Use("ghish", "", "", LeaseModeWrite, "conv-agent-b")
+	if err != nil {
+		t.Fatalf("Warm fork of 'ghish' with real git failed: %v", err)
+	}
+	if resFork.Project != "ghish-fork-1" || resFork.Branch != "ghish-fork-1" {
+		t.Errorf("expected warm fork project/branch 'ghish-fork-1', got project=%q branch=%q", resFork.Project, resFork.Branch)
+	}
 }

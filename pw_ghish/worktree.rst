@@ -202,6 +202,26 @@ project:
    # Return machine-readable JSON metadata for automated agent scripts:
    $ ./gh wt use rpc-buffer-fix --json
 
+Coexisting with Unmanaged Git Worktrees
+---------------------------------------
+Git forbids checking out the same local branch ``refs/heads/<branch>`` in more
+than one worktree at a time. ``./gh wt`` directly supports **unmanaged
+worktrees** (worktrees created outside the ``./gh wt`` slot pool, such as
+``~/wrk/pigweed`` or ``~/wrk/pw-ghish``):
+
+* **Non-destructive branch suffixing**: Running ``./gh wt use <project>`` never
+  detaches or modifies your unmanaged worktrees. If branch ``<project>`` is
+  already checked out in an unmanaged worktree (or another slot), ``./gh wt
+  use`` automatically creates and checks out ``<project>-wt`` (or
+  ``<project>-wt-2``) at ``origin/main`` and prints a diagnostic note.
+* **Stale vs. unmerged local branches**: If a local branch ``<project>`` already
+  exists from an earlier session and is not checked out anywhere, ``./gh wt
+  use`` checks whether it has unmerged commits ahead of ``origin/main``. If all
+  commits are already merged (0 commits ahead), it resets the branch to
+  ``origin/main``; if unmerged commits exist, it preserves the existing branch
+  untouched and creates ``<project>-wt`` at ``origin/main`` (pass ``--branch
+  <project>`` if you want to check out the existing unmerged branch directly).
+
 Viewing the Project Dashboard
 =============================
 Run ``./gh wt list`` to inspect both ``MOUNTED`` and ``PARKED`` projects along

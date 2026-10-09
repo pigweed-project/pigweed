@@ -351,6 +351,19 @@ func (m *Manager) Init(slotCount int, checkOnly bool) ([]ChecklistItem, error) {
 			Summary:  symSummary,
 		})
 
+		// 5b. Inspect unmanaged Git worktrees holding branches
+		if unmanagedWTs := m.findUnmanagedBranchWorktreesLocked(st); len(unmanagedWTs) > 0 {
+			var unmanagedDesc []string
+			for _, uwt := range unmanagedWTs {
+				unmanagedDesc = append(unmanagedDesc, fmt.Sprintf("%s [%s]", filepath.Base(uwt.Path), uwt.Branch))
+			}
+			items = append(items, ChecklistItem{
+				Category: "Unmanaged Git Worktrees",
+				Status:   ChecklistOK,
+				Summary:  fmt.Sprintf("%d unmanaged worktree(s) hold branches (%s); gh wt use auto-suffixes on collision", len(unmanagedWTs), strings.Join(unmanagedDesc, ", ")),
+			})
+		}
+
 		// 6. IDE Integration Health Check
 		if m.IDEDriver != nil {
 			ideItem, err := m.IDEDriver.CheckHealth()
@@ -389,6 +402,8 @@ func (m *Manager) Use(projectName, branchName, clRef string, mode LeaseMode, age
 	if mode == "" {
 		mode = LeaseModeWrite
 	}
+	explicitBranch := strings.TrimSpace(branchName) != ""
+	branchName = strings.TrimSpace(branchName)
 	if branchName == "" {
 		branchName = projectName
 	}
@@ -419,9 +434,10 @@ func (m *Manager) Use(projectName, branchName, clRef string, mode LeaseMode, age
 				// Check for concurrent Writer Lease collision!
 				activeWriter := slot.ActiveWriteLease(now)
 				if mode == LeaseModeWrite && activeWriter != nil && agentID != "" && activeWriter.AgentID != agentID {
-					// AUTOMATIC WARM FORK!
+					// AUTOMATIC WARM FORK! Pass forkName as the new branch name so it never
+					// collides with proj.Branch already checked out in slot.Path.
 					forkName := m.nextForkName(st, projectName)
-					forkRes, forkErr := m.allocateAndMountLocked(st, forkName, proj.Branch, clRef, slot.Path, mode, agentID, now)
+					forkRes, forkErr := m.allocateAndMountLocked(st, forkName, forkName, false, clRef, slot.Path, mode, agentID, now)
 					if forkErr != nil {
 						return forkErr
 					}
@@ -430,14 +446,79 @@ func (m *Manager) Use(projectName, branchName, clRef string, mode LeaseMode, age
 					return m.Store.Save(st)
 				}
 
-				// No collision: update lease, verify symlink & IDE sync
+				// Ensure physical slot directory still exists on disk
+				if err := os.MkdirAll(st.PoolRoot, 0755); err != nil {
+					return fmt.Errorf("failed to create pool directory %s: %w", st.PoolRoot, err)
+				}
+				if err := m.Git.WorktreeAddDetached(st.PrimaryRepo, slot.Path); err != nil {
+					return fmt.Errorf("failed to verify physical slot %s at %s: %w", slot.Name, slot.Path, err)
+				}
+
+				var warnings []DiagnosticWarning
+				var resolvedChangeID string
+
+				// If caller explicitly requested --cl or a different --branch on an already-mounted project,
+				// or if the slot is detached/on a different branch than proj.Branch, converge the branch safely.
+				currBranch, currErr := m.Git.CurrentBranch(slot.Path)
+				needsBranchSwitch := clRef != "" || (explicitBranch && branchName != proj.Branch) || (currErr == nil && proj.Branch != "" && currBranch != proj.Branch)
+				if needsBranchSwitch {
+					status, statusErr := m.Git.StatusPorcelain(slot.Path)
+					if statusErr != nil {
+						return fmt.Errorf("failed to inspect working tree status of slot %s (%s): %w", slot.Name, slot.Path, statusErr)
+					}
+					if strings.TrimSpace(status) != "" {
+						if clRef != "" || (explicitBranch && branchName != proj.Branch) {
+							return fmt.Errorf(
+								"refusing to switch branch/CL in mounted project %q: slot %s has uncommitted working tree changes\n"+
+									"Precondition: Switching branches or checking out a CL requires a clean working tree.\n"+
+									"Remediation: Commit, stash, or discard changes in %s first",
+								proj.Name, slot.Name, filepath.Join(st.ProjectsDir, proj.Name),
+							)
+						}
+					} else {
+						desired := proj.Branch
+						if explicitBranch || desired == "" {
+							desired = branchName
+						}
+						createFrom := "origin/main"
+						forceReset := false
+						if clRef != "" {
+							fetchRef, cid, err := m.GerritStatus.ResolveCLFetchRef(context.Background(), clRef)
+							if err != nil {
+								return fmt.Errorf("failed to resolve Gerrit CL %q: %w", clRef, err)
+							}
+							if err := m.Git.FetchRef(slot.Path, "origin", fetchRef); err != nil {
+								return fmt.Errorf("failed to fetch Gerrit ref %s into slot %s: %w", fetchRef, slot.Name, err)
+							}
+							createFrom = "FETCH_HEAD"
+							resolvedChangeID = cid
+							forceReset = true
+						}
+						actualBranch, branchWarnings, switchErr := m.checkoutSlotBranchLocked(
+							st,
+							slot,
+							proj.Name,
+							desired,
+							true,
+							explicitBranch,
+							createFrom,
+							forceReset,
+						)
+						if switchErr != nil {
+							return fmt.Errorf("failed to switch slot %s to branch %s: %w", slot.Name, desired, switchErr)
+						}
+						proj.Branch = actualBranch
+						warnings = append(warnings, branchWarnings...)
+					}
+				}
+
+				// Update lease, verify symlink & IDE sync
 				slot.UpsertLease(agentID, mode, now)
 				proj.LastUsedAt = now
 				symlinkPath := filepath.Join(st.ProjectsDir, proj.Name)
 				if err := m.ensureSymlink(slot.Path, symlinkPath); err != nil {
 					return err
 				}
-				var warnings []DiagnosticWarning
 				if m.IDEDriver != nil {
 					if ideErr := m.IDEDriver.SyncProject(proj, symlinkPath); ideErr != nil {
 						warnings = append(warnings, DiagnosticWarning{
@@ -449,7 +530,9 @@ func (m *Manager) Use(projectName, branchName, clRef string, mode LeaseMode, age
 				if sha, revErr := m.Git.RevParse(slot.Path, "HEAD"); revErr == nil {
 					proj.LastKnownCommit = sha
 				}
-				if cid, _, cidErr := m.extractProjectChangeID(slot.Path, "HEAD"); cidErr == nil {
+				if resolvedChangeID != "" {
+					proj.LastKnownChangeID = resolvedChangeID
+				} else if cid, _, cidErr := m.extractProjectChangeID(slot.Path, "HEAD"); cidErr == nil {
 					proj.LastKnownChangeID = cid
 				}
 
@@ -469,7 +552,7 @@ func (m *Manager) Use(projectName, branchName, clRef string, mode LeaseMode, age
 		}
 
 		// Project is either PARKED or Brand New -> allocate a slot (or LRU swap)!
-		res, err := m.allocateAndMountLocked(st, projectName, branchName, clRef, "", mode, agentID, now)
+		res, err := m.allocateAndMountLocked(st, projectName, branchName, explicitBranch, clRef, "", mode, agentID, now)
 		if err != nil {
 			return err
 		}
@@ -491,11 +574,13 @@ func (m *Manager) nextForkName(st *State, baseName string) string {
 }
 
 // allocateAndMountLocked finds an AVAILABLE slot or LRU-swaps out a clean MOUNTED slot,
-// checks out branchName, creates the POSIX symlink, and syncs IDE state.
+// checks out branchName (handling any branch collisions with unmanaged/other worktrees),
+// creates the POSIX symlink, and syncs IDE state.
 func (m *Manager) allocateAndMountLocked(
 	st *State,
 	projectName string,
 	branchName string,
+	explicitBranch bool,
 	clRef string,
 	sourceWorktreeForFork string,
 	mode LeaseMode,
@@ -536,13 +621,15 @@ func (m *Manager) allocateAndMountLocked(
 		return nil, fmt.Errorf("failed to initialize physical slot %s at %s: %w", targetSlot.Name, targetSlot.Path, err)
 	}
 
-	// 4. Checkout branch (or Gerrit CL ref) in physical slot
+	// 4. Checkout branch (or Gerrit CL ref) in physical slot with collision & stale-branch protection
 	proj, exists := st.Projects[projectName]
-	if exists && proj.Branch != "" {
-		branchName = proj.Branch
+	desiredBranch := branchName
+	if exists && !explicitBranch && proj.Branch != "" {
+		desiredBranch = proj.Branch
 	}
 	var resolvedChangeID string
 	createFrom := "origin/main"
+	forceResetToCreateFrom := !exists && !explicitBranch
 	if clRef != "" {
 		fetchRef, cid, err := m.GerritStatus.ResolveCLFetchRef(context.Background(), clRef)
 		if err != nil {
@@ -553,14 +640,28 @@ func (m *Manager) allocateAndMountLocked(
 		}
 		createFrom = "FETCH_HEAD"
 		resolvedChangeID = cid
+		forceResetToCreateFrom = true
 	} else if sourceWorktreeForFork != "" {
 		if sha, err := m.Git.RevParse(sourceWorktreeForFork, "HEAD"); err == nil && sha != "" {
 			createFrom = sha
 		}
+		forceResetToCreateFrom = true
 	}
-	if err := m.Git.SwitchBranch(targetSlot.Path, branchName, createFrom); err != nil {
-		return nil, fmt.Errorf("failed to switch slot %s to branch %s: %w", targetSlot.Name, branchName, err)
+
+	actualBranch, warnings, err := m.checkoutSlotBranchLocked(
+		st,
+		targetSlot,
+		projectName,
+		desiredBranch,
+		exists,
+		explicitBranch,
+		createFrom,
+		forceResetToCreateFrom,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to switch slot %s to branch %s: %w", targetSlot.Name, desiredBranch, err)
 	}
+	branchName = actualBranch
 
 	// 5. Create/update POSIX symlink ~/wrk/projects/<projectName> -> targetSlot.Path
 	if err := os.MkdirAll(st.ProjectsDir, 0755); err != nil {
@@ -596,7 +697,6 @@ func (m *Manager) allocateAndMountLocked(
 	targetSlot.UpsertLease(agentID, mode, now)
 
 	// 7. Sync IDE Project (unarchives & sets TURBO permissions in Antigravity/Jetski)
-	var warnings []DiagnosticWarning
 	if m.IDEDriver != nil {
 		if ideErr := m.IDEDriver.SyncProject(proj, symlinkPath); ideErr != nil {
 			warnings = append(warnings, DiagnosticWarning{
@@ -618,6 +718,341 @@ func (m *Manager) allocateAndMountLocked(
 		SwappedOut:  swappedOutProject,
 		Warnings:    warnings,
 	}, nil
+}
+
+// sameFilesystemPath compares two paths after cleaning and resolving symlinks when possible.
+func sameFilesystemPath(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	cleanA := filepath.Clean(a)
+	cleanB := filepath.Clean(b)
+	if cleanA == cleanB {
+		return true
+	}
+	realA, errA := filepath.EvalSymlinks(cleanA)
+	realB, errB := filepath.EvalSymlinks(cleanB)
+	if errA == nil && errB == nil && realA == realB {
+		return true
+	}
+	return false
+}
+
+// pathIsWithin reports whether childPath is equal to or a subdirectory of parentPath.
+func pathIsWithin(childPath, parentPath string) bool {
+	if childPath == "" || parentPath == "" {
+		return false
+	}
+	cleanChild := filepath.Clean(childPath)
+	cleanParent := filepath.Clean(parentPath)
+	if cleanChild == cleanParent || strings.HasPrefix(cleanChild, cleanParent+string(filepath.Separator)) {
+		return true
+	}
+	realChild, errC := filepath.EvalSymlinks(cleanChild)
+	realParent, errP := filepath.EvalSymlinks(cleanParent)
+	if errC == nil && errP == nil {
+		if realChild == realParent || strings.HasPrefix(realChild, realParent+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// findUnmanagedBranchWorktreesLocked returns all Git worktrees outside the gh wt slot pool
+// that currently have a branch checked out (non-detached).
+func (m *Manager) findUnmanagedBranchWorktreesLocked(st *State) []WorktreeInfo {
+	worktrees, err := m.Git.ListWorktrees(st.PrimaryRepo)
+	if err != nil || len(worktrees) == 0 {
+		return nil
+	}
+	var unmanaged []WorktreeInfo
+	for _, wt := range worktrees {
+		if wt.Detached || wt.Branch == "" {
+			continue
+		}
+		isSlot := false
+		for _, s := range st.Slots {
+			if sameFilesystemPath(wt.Path, s.Path) {
+				isSlot = true
+				break
+			}
+		}
+		if !isSlot && pathIsWithin(wt.Path, st.PoolRoot) {
+			isSlot = true
+		}
+		if !isSlot {
+			unmanaged = append(unmanaged, wt)
+		}
+	}
+	return unmanaged
+}
+
+// branchesInUseByOtherWorktreesLocked returns a map of branchName -> owner description for all
+// branches checked out in any worktree other than targetSlot, or owned by another project in State.
+func (m *Manager) branchesInUseByOtherWorktreesLocked(st *State, targetSlot *Slot, projectName string) map[string]string {
+	inUse := make(map[string]string)
+	worktrees, err := m.Git.ListWorktrees(targetSlot.Path)
+	if err != nil || len(worktrees) == 0 {
+		worktrees, _ = m.Git.ListWorktrees(st.PrimaryRepo)
+	}
+	for _, wt := range worktrees {
+		if wt.Detached || wt.Branch == "" {
+			continue
+		}
+		if sameFilesystemPath(wt.Path, targetSlot.Path) {
+			continue
+		}
+		inUse[wt.Branch] = wt.Path
+	}
+	for _, otherProj := range st.Projects {
+		if otherProj.Name == projectName || otherProj.Branch == "" {
+			continue
+		}
+		if _, exists := inUse[otherProj.Branch]; !exists {
+			if otherProj.Residency == ResidencyMounted && otherProj.Slot != "" && otherProj.Slot != targetSlot.Name {
+				inUse[otherProj.Branch] = fmt.Sprintf("slot %s (project %s)", otherProj.Slot, otherProj.Name)
+			} else if otherProj.Residency == ResidencyParked {
+				inUse[otherProj.Branch] = fmt.Sprintf("parked project %s", otherProj.Name)
+			}
+		}
+	}
+	return inUse
+}
+
+// nextAvailableBranchNameLocked finds a collision-free branch name (`<base>-wt`, `<base>-wt-2`, ...)
+// that is not checked out in any other worktree, not owned by another project, and has no unmerged commits.
+func (m *Manager) nextAvailableBranchNameLocked(
+	st *State,
+	worktreePath string,
+	projectName string,
+	baseBranch string,
+	checkedOutByOther map[string]string,
+) string {
+	for i := 1; i <= 100; i++ {
+		candidate := fmt.Sprintf("%s-wt", baseBranch)
+		if i > 1 {
+			candidate = fmt.Sprintf("%s-wt-%d", baseBranch, i)
+		}
+		if checkedOutByOther[candidate] != "" {
+			continue
+		}
+		exists, err := m.Git.BranchExists(worktreePath, candidate)
+		if err == nil && exists {
+			// Only reuse an existing -wt branch if it has 0 unmerged commits ahead of origin/main
+			ahead, aheadErr := m.Git.CommitsAhead(worktreePath, "origin/main", "refs/heads/"+candidate)
+			if aheadErr != nil || ahead > 0 {
+				continue
+			}
+		}
+		return candidate
+	}
+	return fmt.Sprintf("%s-wt-%d", baseBranch, m.Now().Unix())
+}
+
+// checkoutSlotBranchLocked safely checks out desiredBranch in targetSlot, automatically resolving:
+//  1. Collisions with branches already checked out in unmanaged worktrees (e.g. ~/wrk/pw-*) or other slots
+//  2. Stale local branches from previously closed projects (resetting if 0 commits ahead of origin/main,
+//     or suffixing to <branch>-wt if the existing branch has unmerged commits).
+func (m *Manager) checkoutSlotBranchLocked(
+	st *State,
+	targetSlot *Slot,
+	projectName string,
+	desiredBranch string,
+	existsInState bool,
+	explicitBranch bool,
+	createFrom string,
+	forceResetToCreateFrom bool,
+) (string, []DiagnosticWarning, error) {
+	var warnings []DiagnosticWarning
+	checkedOutByOther := m.branchesInUseByOtherWorktreesLocked(st, targetSlot, projectName)
+
+	switchOrResetCandidate := func(branch, baseRef string) error {
+		existsInGit, err := m.Git.BranchExists(targetSlot.Path, branch)
+		if err != nil {
+			return err
+		}
+		if existsInGit {
+			return m.Git.ResetBranch(targetSlot.Path, branch, baseRef)
+		}
+		return m.Git.SwitchBranch(targetSlot.Path, branch, baseRef)
+	}
+
+	// Case 1: desiredBranch is currently checked out in another worktree (e.g., ~/wrk/pw-ghish) or owned by another project.
+	if ownerDesc, inUse := checkedOutByOther[desiredBranch]; inUse {
+		actualBranch := m.nextAvailableBranchNameLocked(st, targetSlot.Path, projectName, desiredBranch, checkedOutByOther)
+		baseRef := createFrom
+		if (existsInState || explicitBranch) && !forceResetToCreateFrom {
+			if existsInGit, err := m.Git.BranchExists(targetSlot.Path, desiredBranch); err == nil && existsInGit {
+				baseRef = "refs/heads/" + desiredBranch
+			}
+		}
+		if err := switchOrResetCandidate(actualBranch, baseRef); err != nil {
+			return "", nil, err
+		}
+		warnings = append(warnings, DiagnosticWarning{
+			Subsystem:   "Git Branch Collision",
+			Message:     fmt.Sprintf("Branch %q is already in use by %s; mounted on branch %q (from %s) instead", desiredBranch, ownerDesc, actualBranch, baseRef),
+			Remediation: fmt.Sprintf("To use branch name %q directly in the future, detach %s (`git -C %s switch --detach`)", desiredBranch, ownerDesc, ownerDesc),
+		})
+		return actualBranch, warnings, nil
+	}
+
+	// Case 2: desiredBranch is not checked out in any other worktree.
+	existsInGit, err := m.Git.BranchExists(targetSlot.Path, desiredBranch)
+	if err != nil {
+		return "", nil, err
+	}
+	if !existsInGit {
+		if switchErr := m.Git.SwitchBranch(targetSlot.Path, desiredBranch, createFrom); switchErr != nil {
+			// Defense-in-depth fallback if git reports a worktree collision race
+			if strings.Contains(switchErr.Error(), "already used by worktree") {
+				checkedOutByOther[desiredBranch] = "another worktree"
+				actualBranch := m.nextAvailableBranchNameLocked(st, targetSlot.Path, projectName, desiredBranch, checkedOutByOther)
+				if retryErr := switchOrResetCandidate(actualBranch, createFrom); retryErr == nil {
+					warnings = append(warnings, DiagnosticWarning{
+						Subsystem: "Git Branch Collision",
+						Message:   fmt.Sprintf("Branch %q is locked by another worktree; mounted on branch %q instead", desiredBranch, actualBranch),
+					})
+					return actualBranch, warnings, nil
+				}
+			}
+			return "", nil, switchErr
+		}
+		return desiredBranch, warnings, nil
+	}
+
+	// desiredBranch already exists in local Git (`refs/heads/<desiredBranch>`).
+	if !forceResetToCreateFrom {
+		// Resuming a PARKED project or checking out an explicit --branch without --cl: preserve existing commits on the branch.
+		if switchErr := m.Git.SwitchBranch(targetSlot.Path, desiredBranch, ""); switchErr != nil {
+			if strings.Contains(switchErr.Error(), "already used by worktree") {
+				checkedOutByOther[desiredBranch] = "another worktree"
+				actualBranch := m.nextAvailableBranchNameLocked(st, targetSlot.Path, projectName, desiredBranch, checkedOutByOther)
+				if retryErr := switchOrResetCandidate(actualBranch, "refs/heads/"+desiredBranch); retryErr == nil {
+					warnings = append(warnings, DiagnosticWarning{
+						Subsystem: "Git Branch Collision",
+						Message:   fmt.Sprintf("Branch %q is locked by another worktree; mounted on branch %q (from %s) instead", desiredBranch, actualBranch, desiredBranch),
+					})
+					return actualBranch, warnings, nil
+				}
+			}
+			return "", nil, switchErr
+		}
+		return desiredBranch, warnings, nil
+	}
+
+	// Brand-new project (not in State) or --cl / warm-fork: check if existing local branch has unmerged commits.
+	ahead, aheadErr := m.Git.CommitsAhead(targetSlot.Path, "origin/main", "refs/heads/"+desiredBranch)
+	if aheadErr == nil && ahead == 0 {
+		// 0 unmerged commits ahead of origin/main -> safe to reset the stale ref to createFrom (origin/main or FETCH_HEAD)!
+		if resetErr := m.Git.ResetBranch(targetSlot.Path, desiredBranch, createFrom); resetErr != nil {
+			if strings.Contains(resetErr.Error(), "already used by worktree") {
+				checkedOutByOther[desiredBranch] = "another worktree"
+				actualBranch := m.nextAvailableBranchNameLocked(st, targetSlot.Path, projectName, desiredBranch, checkedOutByOther)
+				if retryErr := switchOrResetCandidate(actualBranch, createFrom); retryErr == nil {
+					warnings = append(warnings, DiagnosticWarning{
+						Subsystem: "Git Branch Collision",
+						Message:   fmt.Sprintf("Branch %q is locked by another worktree; mounted on branch %q (from %s) instead", desiredBranch, actualBranch, createFrom),
+					})
+					return actualBranch, warnings, nil
+				}
+			}
+			return "", nil, resetErr
+		}
+		return desiredBranch, warnings, nil
+	}
+
+	// Existing local branch has unmerged commits ahead of origin/main!
+	// Never clobber unmerged work: allocate <desiredBranch>-wt at createFrom and warn.
+	checkedOutByOther[desiredBranch] = "existing local branch with unmerged commits"
+	actualBranch := m.nextAvailableBranchNameLocked(st, targetSlot.Path, projectName, desiredBranch, checkedOutByOther)
+	if err := switchOrResetCandidate(actualBranch, createFrom); err != nil {
+		return "", nil, err
+	}
+	warnings = append(warnings, DiagnosticWarning{
+		Subsystem:   "Git Branch Collision",
+		Message:     fmt.Sprintf("Local branch %q already has %d unmerged commit(s) ahead of origin/main; created fresh branch %q (from %s) to avoid overwriting unmerged work", desiredBranch, ahead, actualBranch, createFrom),
+		Remediation: fmt.Sprintf("Pass `--branch %s` (`./gh wt use %s --branch %s`) if you want to check out the existing branch with its %d commit(s)", desiredBranch, projectName, desiredBranch, ahead),
+	})
+	return actualBranch, warnings, nil
+}
+
+// resolveProjectLocked resolves a project by explicit name, slot name (e.g. "pw-02"), branch name,
+// or (when nameOrEmpty is "") from the caller's working directory ($BUILD_WORKING_DIRECTORY, $PWD, or os.Getwd()).
+func (m *Manager) resolveProjectLocked(st *State, nameOrEmpty string) (*Project, error) {
+	nameOrEmpty = strings.TrimSpace(nameOrEmpty)
+	if nameOrEmpty != "" {
+		if proj, ok := st.Projects[nameOrEmpty]; ok {
+			return proj, nil
+		}
+		if slot, ok := st.Slots[nameOrEmpty]; ok && slot.Project != "" {
+			if proj, ok := st.Projects[slot.Project]; ok {
+				return proj, nil
+			}
+		}
+		for _, proj := range st.Projects {
+			if proj.Branch == nameOrEmpty {
+				return proj, nil
+			}
+		}
+		return nil, fmt.Errorf(
+			"project %q not found\nRemediation: Run `./gh wt list` to see active and parked projects",
+			nameOrEmpty,
+		)
+	}
+
+	var candidateDirs []string
+	if bwd := strings.TrimSpace(os.Getenv("BUILD_WORKING_DIRECTORY")); bwd != "" {
+		candidateDirs = append(candidateDirs, bwd)
+	}
+	if pwd := strings.TrimSpace(os.Getenv("PWD")); pwd != "" {
+		candidateDirs = append(candidateDirs, pwd)
+	}
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		candidateDirs = append(candidateDirs, cwd)
+	}
+
+	for _, dir := range candidateDirs {
+		for _, proj := range st.Projects {
+			symPath := filepath.Join(st.ProjectsDir, proj.Name)
+			if pathIsWithin(dir, symPath) {
+				return proj, nil
+			}
+		}
+		for _, s := range st.Slots {
+			if s.Project != "" && pathIsWithin(dir, s.Path) {
+				if proj, ok := st.Projects[s.Project]; ok {
+					return proj, nil
+				}
+			}
+		}
+	}
+
+	displayDir := ""
+	if len(candidateDirs) > 0 {
+		displayDir = candidateDirs[0]
+	}
+	return nil, fmt.Errorf(
+		"could not infer active gh wt project from current directory %q\n"+
+			"Precondition: Running without a <project> argument requires being inside %s/<project> or %s/pw-XX (not an unmanaged worktree).\n"+
+			"Remediation:\n"+
+			"  1. Pass the project name explicitly, e.g., `./gh wt next <project>` or `./gh wt park <project>`\n"+
+			"  2. Or run `./gh wt list` to see mounted projects",
+		displayDir, st.ProjectsDir, st.PoolRoot,
+	)
+}
+
+// ResolveProjectName resolves a project identifier (name, slot, branch, or empty for CWD) to its canonical project name.
+func (m *Manager) ResolveProjectName(nameOrEmpty string) (string, error) {
+	st, err := m.loadOrInitState(0)
+	if err != nil {
+		return "", err
+	}
+	proj, err := m.resolveProjectLocked(st, nameOrEmpty)
+	if err != nil {
+		return "", err
+	}
+	return proj.Name, nil
 }
 
 // selectVictimSlotForSwap picks the best clean, unleased MOUNTED slot to transition to PARKED.
@@ -715,13 +1150,11 @@ func (m *Manager) Park(projectName string, force bool) error {
 		if err != nil {
 			return err
 		}
-		proj, exists := st.Projects[projectName]
-		if !exists {
-			return fmt.Errorf(
-				"project %q not found\nRemediation: Run `./gh wt list` to see active and parked projects",
-				projectName,
-			)
+		proj, err := m.resolveProjectLocked(st, projectName)
+		if err != nil {
+			return err
 		}
+		projectName = proj.Name
 		if proj.Residency == ResidencyParked || proj.Slot == "" {
 			return nil // Already parked
 		}
@@ -765,21 +1198,11 @@ func (m *Manager) Next(projectName string) error {
 		if err != nil {
 			return err
 		}
-		if projectName == "" {
-			// Attempt to resolve from current working directory against both ProjectsDir and Slots
-			if cwd, cwdErr := os.Getwd(); cwdErr == nil {
-				for _, s := range st.Slots {
-					if s.Project != "" && (cwd == s.Path || strings.HasPrefix(cwd, s.Path+string(filepath.Separator))) {
-						projectName = s.Project
-						break
-					}
-				}
-			}
+		proj, err := m.resolveProjectLocked(st, projectName)
+		if err != nil {
+			return err
 		}
-		proj, exists := st.Projects[projectName]
-		if !exists {
-			return fmt.Errorf("project %q not found\nRemediation: Run `./gh wt list` to view projects", projectName)
-		}
+		projectName = proj.Name
 		if proj.Residency != ResidencyMounted || proj.Slot == "" {
 			return fmt.Errorf(
 				"project %q is currently PARKED (not mounted in a slot)\nRemediation: Run `./gh wt use %s` first to mount it into a warm slot",
@@ -822,10 +1245,11 @@ func (m *Manager) Close(projectName string, force bool) error {
 		if err != nil {
 			return err
 		}
-		proj, exists := st.Projects[projectName]
-		if !exists {
-			return fmt.Errorf("project %q not found\nRemediation: Run `./gh wt list` to view projects", projectName)
+		proj, err := m.resolveProjectLocked(st, projectName)
+		if err != nil {
+			return err
 		}
+		projectName = proj.Name
 
 		if !force {
 			repoPath := st.PrimaryRepo

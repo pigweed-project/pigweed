@@ -16,8 +16,10 @@ package worktree
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +32,9 @@ type MockGitRunner struct {
 	DetachErrors         map[string]error
 	FetchedRefs          map[string]string
 	Branches             map[string]string // worktreePath -> branch
+	ExistingBranches     map[string]bool   // branchName -> exists in refs/heads/
+	ResetBranches        map[string]string // worktreePath -> branchName:targetRef
+	SwitchedFromRefs     map[string]string // branchName -> createFromRef
 	ChangeIDs            map[string]string // worktreePath -> Change-Id
 	AheadCounts          map[string]int    // worktreePath/rev -> commits ahead of origin/main
 	UpstreamMainChangeID string            // simulates Change-Id on origin/main tip commit
@@ -39,14 +44,17 @@ type MockGitRunner struct {
 
 func NewMockGitRunner() *MockGitRunner {
 	return &MockGitRunner{
-		DirtyPaths:   make(map[string]bool),
-		StatusErrors: make(map[string]error),
-		DetachErrors: make(map[string]error),
-		FetchedRefs:  make(map[string]string),
-		Branches:     make(map[string]string),
-		ChangeIDs:    make(map[string]string),
-		AheadCounts:  make(map[string]int),
-		Commits:      make(map[string]string),
+		DirtyPaths:       make(map[string]bool),
+		StatusErrors:     make(map[string]error),
+		DetachErrors:     make(map[string]error),
+		FetchedRefs:      make(map[string]string),
+		Branches:         make(map[string]string),
+		ExistingBranches: make(map[string]bool),
+		ResetBranches:    make(map[string]string),
+		SwitchedFromRefs: make(map[string]string),
+		ChangeIDs:        make(map[string]string),
+		AheadCounts:      make(map[string]int),
+		Commits:          make(map[string]string),
 	}
 }
 
@@ -61,15 +69,89 @@ func (m *MockGitRunner) WorktreeAddDetached(primaryRepo, worktreePath string) er
 	if m.Commits[worktreePath] == "" {
 		m.Commits[worktreePath] = "deadbeef1234567890"
 	}
+	if _, ok := m.Branches[worktreePath]; !ok {
+		m.Branches[worktreePath] = "HEAD"
+	}
 	return nil
 }
 
 func (m *MockGitRunner) SwitchBranch(worktreePath, branchName, createFromRef string) error {
+	// Enforce Git's single-worktree-per-branch invariant!
+	for otherPath, otherBranch := range m.Branches {
+		if otherPath != worktreePath && otherBranch == branchName && branchName != "" && branchName != "HEAD" {
+			return fmt.Errorf("fatal: '%s' is already used by worktree at '%s'", branchName, otherPath)
+		}
+	}
+	if m.ExistingBranches == nil {
+		m.ExistingBranches = make(map[string]bool)
+	}
+	m.ExistingBranches[branchName] = true
+	if m.SwitchedFromRefs == nil {
+		m.SwitchedFromRefs = make(map[string]string)
+	}
+	m.SwitchedFromRefs[branchName] = createFromRef
 	m.Branches[worktreePath] = branchName
 	if m.Commits[worktreePath] == "" {
 		m.Commits[worktreePath] = "deadbeef1234567890"
 	}
 	return nil
+}
+
+func (m *MockGitRunner) ResetBranch(worktreePath, branchName, targetRef string) error {
+	// Enforce Git's single-worktree-per-branch invariant!
+	for otherPath, otherBranch := range m.Branches {
+		if otherPath != worktreePath && otherBranch == branchName && branchName != "" && branchName != "HEAD" {
+			return fmt.Errorf("fatal: '%s' is already used by worktree at '%s'", branchName, otherPath)
+		}
+	}
+	if m.ExistingBranches == nil {
+		m.ExistingBranches = make(map[string]bool)
+	}
+	m.ExistingBranches[branchName] = true
+	if m.ResetBranches == nil {
+		m.ResetBranches = make(map[string]string)
+	}
+	m.ResetBranches[worktreePath] = branchName + ":" + targetRef
+	if m.SwitchedFromRefs == nil {
+		m.SwitchedFromRefs = make(map[string]string)
+	}
+	m.SwitchedFromRefs[branchName] = targetRef
+	m.Branches[worktreePath] = branchName
+	if m.Commits[worktreePath] == "" {
+		m.Commits[worktreePath] = "deadbeef1234567890"
+	}
+	return nil
+}
+
+func (m *MockGitRunner) ListWorktrees(repoOrWorktreePath string) ([]WorktreeInfo, error) {
+	var paths []string
+	for p := range m.Branches {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	var out []WorktreeInfo
+	for _, p := range paths {
+		b := m.Branches[p]
+		sha := m.Commits[p]
+		if sha == "" {
+			sha = "deadbeef1234567890"
+		}
+		if b == "" || b == "HEAD" {
+			out = append(out, WorktreeInfo{
+				Path:     p,
+				HeadSHA:  sha,
+				Detached: true,
+			})
+		} else {
+			out = append(out, WorktreeInfo{
+				Path:     p,
+				HeadSHA:  sha,
+				Branch:   b,
+				Detached: false,
+			})
+		}
+	}
+	return out, nil
 }
 
 func (m *MockGitRunner) SwitchDetach(worktreePath, targetRef string) error {
@@ -125,17 +207,25 @@ func (m *MockGitRunner) CommitsAhead(repoOrWorktreePath, baseRef, rev string) (i
 	if c, ok := m.AheadCounts[repoOrWorktreePath+":"+rev]; ok {
 		return c, nil
 	}
-	if c, ok := m.AheadCounts[repoOrWorktreePath]; ok {
-		return c, nil
-	}
 	if c, ok := m.AheadCounts[rev]; ok {
 		return c, nil
 	}
-	// If test explicitly configured a ChangeID for this worktree/branch, default to 1 commit ahead
-	if cid, ok := m.ChangeIDs[repoOrWorktreePath]; ok && cid != "" {
-		return 1, nil
+	shortRev := strings.TrimPrefix(rev, "refs/heads/")
+	if c, ok := m.AheadCounts[shortRev]; ok {
+		return c, nil
+	}
+	if rev == "HEAD" {
+		if c, ok := m.AheadCounts[repoOrWorktreePath]; ok {
+			return c, nil
+		}
+		if cid, ok := m.ChangeIDs[repoOrWorktreePath]; ok && cid != "" {
+			return 1, nil
+		}
 	}
 	if cid, ok := m.ChangeIDs[rev]; ok && cid != "" {
+		return 1, nil
+	}
+	if cid, ok := m.ChangeIDs[shortRev]; ok && cid != "" {
 		return 1, nil
 	}
 	return 0, nil
@@ -162,7 +252,24 @@ func (m *MockGitRunner) FetchRef(repoOrWorktreePath, remote, ref string) error {
 }
 func (m *MockGitRunner) RebaseOriginMain(worktreePath string) error { return nil }
 func (m *MockGitRunner) BranchExists(primaryRepo, branchName string) (bool, error) {
-	return true, nil
+	if m.ExistingBranches != nil && m.ExistingBranches[branchName] {
+		return true, nil
+	}
+	for _, b := range m.Branches {
+		if b == branchName {
+			return true, nil
+		}
+	}
+	if c, ok := m.AheadCounts[branchName]; ok && c > 0 {
+		return true, nil
+	}
+	if c, ok := m.AheadCounts["refs/heads/"+branchName]; ok && c > 0 {
+		return true, nil
+	}
+	if cid, ok := m.ChangeIDs[branchName]; ok && cid != "" {
+		return true, nil
+	}
+	return false, nil
 }
 func (m *MockGitRunner) EnsureCommitMsgHook(primaryRepo string) (bool, error) {
 	if m.HookAdded {
@@ -490,5 +597,140 @@ warmup_driver = "none"
 	}
 	if !strings.Contains(report.MountedProjects[0].Details, "acmerev/88123 (Merged)") {
 		t.Errorf("expected details to contain 'acmerev/88123 (Merged)', got %q", report.MountedProjects[0].Details)
+	}
+}
+
+func TestManager_UnmanagedWorktreeBranchCollisionAutoSuffixes(t *testing.T) {
+	mgr, mockGit, _, tmpDir := setupTestManager(t, 3)
+
+	// Simulate unmanaged worktrees outside ~/wrk/slots/ holding branches checked out
+	unmanagedGhishPath := filepath.Join(tmpDir, "pw-ghish")
+	mockGit.Branches[unmanagedGhishPath] = "ghish"
+
+	// `gh wt init` should detect and report the unmanaged worktree holding a branch
+	items, err := mgr.Init(3, true)
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	foundUnmanagedItem := false
+	for _, item := range items {
+		if item.Category == "Unmanaged Git Worktrees" && strings.Contains(item.Summary, "pw-ghish [ghish]") {
+			foundUnmanagedItem = true
+		}
+	}
+	if !foundUnmanagedItem {
+		t.Errorf("expected Init checklist to report unmanaged worktree pw-ghish [ghish], got: %+v", items)
+	}
+
+	// `gh wt use ghish` must succeed in one shot without detaching unmanagedGhishPath!
+	res, err := mgr.Use("ghish", "", "", LeaseModeWrite, "agent-1")
+	if err != nil {
+		t.Fatalf("expected Use('ghish') to succeed when unmanaged worktree holds branch 'ghish', got err: %v", err)
+	}
+	if res.Project != "ghish" {
+		t.Errorf("expected Project='ghish', got %q", res.Project)
+	}
+	if res.Branch != "ghish-wt" {
+		t.Errorf("expected auto-suffixed branch 'ghish-wt', got %q", res.Branch)
+	}
+	if mockGit.Branches[unmanagedGhishPath] != "ghish" {
+		t.Errorf("unmanaged worktree %s was mutated! Expected branch 'ghish', got %q", unmanagedGhishPath, mockGit.Branches[unmanagedGhishPath])
+	}
+	if len(res.Warnings) == 0 || res.Warnings[0].Subsystem != "Git Branch Collision" {
+		t.Errorf("expected Git Branch Collision warning in UseResult, got: %+v", res.Warnings)
+	}
+
+	// Park and resume "ghish" -> should resume "ghish-wt" cleanly without re-colliding
+	if err := mgr.Park("ghish", false); err != nil {
+		t.Fatalf("Park('ghish') failed: %v", err)
+	}
+	resResume, err := mgr.Use("ghish", "", "", LeaseModeWrite, "agent-1")
+	if err != nil {
+		t.Fatalf("resume Use('ghish') failed: %v", err)
+	}
+	if resResume.Branch != "ghish-wt" {
+		t.Errorf("expected resumed project to stay on branch 'ghish-wt', got %q", resResume.Branch)
+	}
+}
+
+func TestManager_StaleLocalBranchResetVsUnmergedPreservation(t *testing.T) {
+	mgr, mockGit, _, _ := setupTestManager(t, 3)
+
+	// Case A: Pre-existing local branch "stale-merged" has 0 unmerged commits ahead of origin/main.
+	// `gh wt use stale-merged` should reset it to origin/main and use "stale-merged" directly.
+	mockGit.ExistingBranches["stale-merged"] = true
+	mockGit.AheadCounts["stale-merged"] = 0
+
+	resStale, err := mgr.Use("stale-merged", "", "", LeaseModeWrite, "agent-1")
+	if err != nil {
+		t.Fatalf("Use('stale-merged') failed: %v", err)
+	}
+	if resStale.Branch != "stale-merged" {
+		t.Errorf("expected branch 'stale-merged' to be reused when 0 commits ahead, got %q", resStale.Branch)
+	}
+	if mockGit.ResetBranches[resStale.SlotPath] != "stale-merged:origin/main" {
+		t.Errorf("expected ResetBranch('stale-merged', 'origin/main'), got %q", mockGit.ResetBranches[resStale.SlotPath])
+	}
+
+	// Case B: Pre-existing local branch "wip-local" has 2 unmerged commits ahead of origin/main.
+	// Brand-new `gh wt use wip-local` (without explicit --branch) must NOT overwrite "wip-local";
+	// it should allocate "wip-local-wt" at origin/main and warn.
+	mockGit.ExistingBranches["wip-local"] = true
+	mockGit.AheadCounts["wip-local"] = 2
+
+	resWIP, err := mgr.Use("wip-local", "", "", LeaseModeWrite, "agent-1")
+	if err != nil {
+		t.Fatalf("Use('wip-local') failed: %v", err)
+	}
+	if resWIP.Branch != "wip-local-wt" {
+		t.Errorf("expected 'wip-local-wt' to avoid clobbering unmerged branch 'wip-local', got %q", resWIP.Branch)
+	}
+	if len(resWIP.Warnings) == 0 || !strings.Contains(resWIP.Warnings[0].Message, "unmerged commit(s)") {
+		t.Errorf("expected unmerged commits warning, got: %+v", resWIP.Warnings)
+	}
+
+	// Case C: Explicit `--branch wip-local` checks out the existing branch with its unmerged commits.
+	resExplicit, err := mgr.Use("wip-explicit", "wip-local", "", LeaseModeWrite, "agent-1")
+	if err != nil {
+		t.Fatalf("Use('wip-explicit', 'wip-local') failed: %v", err)
+	}
+	if resExplicit.Branch != "wip-local" {
+		t.Errorf("expected explicit --branch 'wip-local' to check out 'wip-local', got %q", resExplicit.Branch)
+	}
+}
+
+func TestManager_ResolveProjectFromSlotSymlinkAndSubdir(t *testing.T) {
+	mgr, _, _, tmpDir := setupTestManager(t, 2)
+
+	res, err := mgr.Use("ghish", "", "", LeaseModeWrite, "agent-1")
+	if err != nil {
+		t.Fatalf("Use('ghish') failed: %v", err)
+	}
+
+	// 1. Resolve from slot subdirectory via BUILD_WORKING_DIRECTORY (simulating ./gh wrapper in slot subdir)
+	slotSubdir := filepath.Join(res.SlotPath, "pw_ghish", "worktree")
+	_ = os.MkdirAll(slotSubdir, 0755)
+	t.Setenv("BUILD_WORKING_DIRECTORY", slotSubdir)
+	if err := mgr.Next(""); err != nil {
+		t.Fatalf("expected Next('') to resolve project 'ghish' from slot subdirectory %s, got: %v", slotSubdir, err)
+	}
+
+	// 2. Resolve by slot name ("pw-01")
+	if err := mgr.Next("pw-01"); err != nil {
+		t.Fatalf("expected Next('pw-01') to resolve project 'ghish', got: %v", err)
+	}
+
+	// 3. Running Next("") inside an unmanaged worktree fails with actionable remediation
+	unmanagedDir := filepath.Join(tmpDir, "pw-unmanaged")
+	_ = os.MkdirAll(unmanagedDir, 0755)
+	t.Setenv("BUILD_WORKING_DIRECTORY", unmanagedDir)
+	t.Setenv("PWD", unmanagedDir)
+	origWd, _ := os.Getwd()
+	_ = os.Chdir(unmanagedDir)
+	defer os.Chdir(origWd)
+
+	err = mgr.Next("")
+	if err == nil || !strings.Contains(err.Error(), "not an unmanaged worktree") {
+		t.Errorf("expected Next('') in unmanaged worktree to return actionable error, got: %v", err)
 	}
 }

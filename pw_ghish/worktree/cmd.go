@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -177,6 +176,12 @@ func newUseCommand(mgr *Manager) *cobra.Command {
 				fmt.Fprintf(out, "  Issue:     b/%d\n", res.IssueID)
 			}
 			fmt.Fprintf(out, "  Directory: %s\n", res.SymlinkPath)
+			for _, w := range res.Warnings {
+				fmt.Fprintf(out, "  ⚠ [%s] %s\n", w.Subsystem, w.Message)
+				if w.Remediation != "" {
+					fmt.Fprintf(out, "    💡 %s\n", w.Remediation)
+				}
+			}
 			return nil
 		},
 	}
@@ -195,24 +200,31 @@ func newParkCommand(mgr *Manager) *cobra.Command {
 	var jsonOutput bool
 
 	cmd := &cobra.Command{
-		Use:   "park <project>",
+		Use:   "park [<project>]",
 		Short: "Unmount a project from its physical slot (MOUNTED -> PARKED), freeing the slot",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mgr == nil {
 				return fmt.Errorf("internal error: worktree manager is uninitialized")
 			}
-			projName := args[0]
-			if err := mgr.Park(projName, force); err != nil {
+			var rawArg string
+			if len(args) > 0 {
+				rawArg = args[0]
+			}
+			resolvedName, _ := mgr.ResolveProjectName(rawArg)
+			if resolvedName == "" {
+				resolvedName = rawArg
+			}
+			if err := mgr.Park(rawArg, force); err != nil {
 				return err
 			}
 			if jsonOutput {
 				return writeJSON(cmd.OutOrStdout(), map[string]any{
-					"project":   projName,
+					"project":   resolvedName,
 					"residency": ResidencyParked,
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "💤 Parked project %q (slot freed; branch and Gerrit CL remain tracked in `./gh wt list`)\n", projName)
+			fmt.Fprintf(cmd.OutOrStdout(), "💤 Parked project %q (slot freed; branch and Gerrit CL remain tracked in `./gh wt list`)\n", resolvedName)
 			return nil
 		},
 	}
@@ -233,24 +245,24 @@ func newNextCommand(mgr *Manager) *cobra.Command {
 			if mgr == nil {
 				return fmt.Errorf("internal error: worktree manager is uninitialized")
 			}
-			var projName string
+			var rawArg string
 			if len(args) > 0 {
-				projName = args[0]
-			} else {
-				// Infer from current working directory if inside ~/wrk/projects/<name> or ~/wrk/slots/pw-XX
-				cwd, _ := os.Getwd()
-				projName = filepath.Base(cwd)
+				rawArg = args[0]
 			}
-			if err := mgr.Next(projName); err != nil {
+			resolvedName, _ := mgr.ResolveProjectName(rawArg)
+			if resolvedName == "" {
+				resolvedName = rawArg
+			}
+			if err := mgr.Next(rawArg); err != nil {
 				return err
 			}
 			if jsonOutput {
 				return writeJSON(cmd.OutOrStdout(), map[string]any{
-					"project": projName,
+					"project": resolvedName,
 					"status":  "REBASED_ORIGIN_MAIN",
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "✨ Rebased project %q onto origin/main in-place! Ready for next CL.\n", projName)
+			fmt.Fprintf(cmd.OutOrStdout(), "✨ Rebased project %q onto origin/main in-place! Ready for next CL.\n", resolvedName)
 			return nil
 		},
 	}
@@ -330,6 +342,9 @@ func newCloseCommand(mgr *Manager) *cobra.Command {
 				return fmt.Errorf("internal error: worktree manager is uninitialized")
 			}
 			projName := args[0]
+			if resolved, _ := mgr.ResolveProjectName(projName); resolved != "" {
+				projName = resolved
+			}
 			var closedIssueID int64
 			if st, loadErr := mgr.Store.Load(); loadErr == nil && st != nil {
 				if proj, ok := st.Projects[projName]; ok {
@@ -342,7 +357,7 @@ func newCloseCommand(mgr *Manager) *cobra.Command {
 				}
 			}
 
-			if err := mgr.Close(projName, force); err != nil {
+			if err := mgr.Close(args[0], force); err != nil {
 				return err
 			}
 			if jsonOutput {

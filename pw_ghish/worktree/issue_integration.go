@@ -33,9 +33,6 @@ func (m *Manager) UseWithIssue(projectName, branchName string, issueID int64, is
 	if projectName == "" {
 		projectName = pw_ghish.SlugifyBranchName(issueID, issueTitle)
 	}
-	if branchName == "" {
-		branchName = projectName
-	}
 
 	res, err := m.Use(projectName, branchName, "", mode, agentID)
 	if err != nil {

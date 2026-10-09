@@ -27,6 +27,51 @@ import (
 	"pigweed.dev/pw_ghish"
 )
 
+// WorktreeInfo describes a single worktree entry from `git worktree list --porcelain`.
+type WorktreeInfo struct {
+	Path     string `json:"path"`
+	HeadSHA  string `json:"head_sha"`
+	Branch   string `json:"branch,omitempty"` // short branch name (e.g. "ghish"), empty if detached
+	Detached bool   `json:"detached"`
+}
+
+// ParseWorktreeListPorcelain parses the output of `git worktree list --porcelain`.
+func ParseWorktreeListPorcelain(output string) []WorktreeInfo {
+	var result []WorktreeInfo
+	var current *WorktreeInfo
+
+	flush := func() {
+		if current != nil && current.Path != "" {
+			result = append(result, *current)
+		}
+		current = nil
+	}
+
+	for _, rawLine := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			flush()
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			flush()
+			current = &WorktreeInfo{
+				Path: strings.TrimSpace(strings.TrimPrefix(line, "worktree ")),
+			}
+		case current != nil && strings.HasPrefix(line, "HEAD "):
+			current.HeadSHA = strings.TrimSpace(strings.TrimPrefix(line, "HEAD "))
+		case current != nil && strings.HasPrefix(line, "branch "):
+			ref := strings.TrimSpace(strings.TrimPrefix(line, "branch "))
+			current.Branch = strings.TrimPrefix(ref, "refs/heads/")
+		case current != nil && line == "detached":
+			current.Detached = true
+		}
+	}
+	flush()
+	return result
+}
+
 // GitRunner abstracts all Git and worktree operations for hermetic testing.
 type GitRunner interface {
 	// WorktreeAdd creates a new git worktree at path detached at origin/main (or HEAD).
@@ -34,10 +79,15 @@ type GitRunner interface {
 	// SwitchBranch switches a worktree directory to branchName. If createFromRef is non-empty
 	// and branchName does not exist locally, creates it tracking createFromRef using non-forcing -c.
 	SwitchBranch(worktreePath, branchName, createFromRef string) error
+	// ResetBranch creates or resets branchName to targetRef (`git switch -C <branchName> <targetRef>`).
+	// Callers MUST verify that branchName has 0 unmerged commits ahead of origin/main before calling.
+	ResetBranch(worktreePath, branchName, targetRef string) error
 	// SwitchDetach switches a worktree directory to detached HEAD at targetRef (e.g. "origin/main").
 	SwitchDetach(worktreePath, targetRef string) error
 	// SwitchDetachForce resets uncommitted/untracked files and detaches HEAD at targetRef.
 	SwitchDetachForce(worktreePath, targetRef string) error
+	// ListWorktrees returns all active worktrees registered with the repository (`git worktree list --porcelain`).
+	ListWorktrees(repoOrWorktreePath string) ([]WorktreeInfo, error)
 	// StatusPorcelain returns uncommitted file status lines (`git status --porcelain`).
 	StatusPorcelain(worktreePath string) (string, error)
 	// CurrentBranch returns the checked out branch name (or "HEAD" if detached).
@@ -93,6 +143,8 @@ func (g *ExecGitRunner) WorktreeAddDetached(primaryRepo, worktreePath string) er
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0755); err != nil {
 		return fmt.Errorf("failed to create parent directory for worktree %s: %w", worktreePath, err)
 	}
+	// Prune any stale administrative worktree entries whose directories were deleted from disk.
+	_, _ = g.runGit(primaryRepo, "worktree", "prune")
 	// Try detaching at origin/main first; fall back to HEAD if origin/main is absent (e.g. local test repos).
 	if _, err := g.runGit(primaryRepo, "worktree", "add", "--detach", worktreePath, "origin/main"); err != nil {
 		if _, fallbackErr := g.runGit(primaryRepo, "worktree", "add", "--detach", worktreePath, "HEAD"); fallbackErr != nil {
@@ -100,6 +152,17 @@ func (g *ExecGitRunner) WorktreeAddDetached(primaryRepo, worktreePath string) er
 		}
 	}
 	return nil
+}
+
+func (g *ExecGitRunner) ListWorktrees(repoOrWorktreePath string) ([]WorktreeInfo, error) {
+	out, err := g.runGit(repoOrWorktreePath, "worktree", "prune")
+	_ = out
+	_ = err
+	porcelain, err := g.runGit(repoOrWorktreePath, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	return ParseWorktreeListPorcelain(porcelain), nil
 }
 
 func (g *ExecGitRunner) BranchExists(primaryRepo, branchName string) (bool, error) {
@@ -145,6 +208,15 @@ func (g *ExecGitRunner) SwitchBranch(worktreePath, branchName, createFromRef str
 	}
 	// Use lowercase -c (non-forcing create) so existing branches are never clobbered.
 	_, err = g.runGit(worktreePath, "switch", "-c", branchName, baseRef)
+	return err
+}
+
+func (g *ExecGitRunner) ResetBranch(worktreePath, branchName, targetRef string) error {
+	baseRef, err := g.resolveBaseRef(worktreePath, targetRef)
+	if err != nil {
+		return err
+	}
+	_, err = g.runGit(worktreePath, "switch", "-C", branchName, baseRef)
 	return err
 }
 

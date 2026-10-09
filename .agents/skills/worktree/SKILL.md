@@ -43,10 +43,14 @@ When the user instructs you to work on a specific project (e.g., *"Project rpc-f
      "mode": "write"
    }
    ```
-   - If another agent holds an active write lease on `<project>`, `./gh wt use` automatically **warm-forks** to `<project>-sub1` in a free slot to prevent Git index collisions.
+   - If another agent holds an active write lease on `<project>`, `./gh wt use` automatically **warm-forks** to `<project>-fork-1` in a free slot to prevent Git index collisions.
+   - If the branch `<project>` is already checked out in an unmanaged worktree (e.g., `~/wrk/pw-ghish` or `~/wrk/pigweed`) or has unmerged local commits from an earlier session, `./gh wt use` automatically creates `<project>-wt` at `origin/main` without touching the unmanaged worktree.
    - If all slots are occupied, `./gh wt use` automatically **LRU-parks** the oldest idle, clean (`!DIRTY`) project to free a warm slot.
 
-2. **Execute All Commands Inside `symlink_path`:**
+2. **Strict One-Shot Rule — NEVER Run Manual `git worktree` Commands:**
+   - **NEVER** run `git worktree add`, `git worktree remove`, `git worktree list`, or `git checkout --detach` in other directories to work around branch collisions. `./gh wt use <project>` is a **single one-shot command** that handles slot allocation, unmanaged worktree branch collisions, and stale local branches automatically.
+
+3. **Execute All Commands Inside `symlink_path`:**
    Use the returned `symlink_path` (`/usr/local/google/home/keir/wrk/projects/<project>`) as the `Cwd` for all subsequent `run_command` and file editing tool calls.
 
 ---
@@ -54,11 +58,13 @@ When the user instructs you to work on a specific project (e.g., *"Project rpc-f
 ## Common CLI Workflows
 
 ```bash
-./gh wt init --check         # Read-only health check of slots, hooks, Bazel caches, and IDE sync
+./gh wt init --check         # Read-only health check of slots, hooks, unmanaged worktrees, Bazel caches, and IDE sync
 ./gh wt init --slots 10      # Idempotently create/repair slots and configure shared Bazel caches
+./gh wt use <project>        # One-shot allocate/resume slot, auto-resolving any unmanaged worktree branch collisions
 ./gh wt list [--json]        # Live dashboard with Gerrit review/CI badges (🔥 NEEDS_ATTENTION, 🚀 READY_TO_LAND)
-./gh wt next <project>       # After a CL merges: fetch origin & rebase mounted slot onto origin/main in-place
-./gh wt park <project>       # Shelve clean mounted slot to PARKED (0 disk slots; dirty trees require --force)
+./gh wt next [<project>]     # After a CL merges: fetch origin & rebase mounted slot onto origin/main in-place
+./gh wt park [<project>]     # Shelve clean mounted slot to PARKED (0 disk slots; dirty trees require --force)
 ./gh wt close <project>      # Permanently close a completed workstream
 ./gh wt gc [--dry-run]       # Remove orphaned Bazel output bases in ~/.cache/bazel/_bazel_$USER
 ```
+
