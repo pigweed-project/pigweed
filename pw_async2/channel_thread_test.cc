@@ -50,30 +50,31 @@ struct ChannelAdapter {
   using ReservedSenderTask = pw::async2::test::ReservedSenderTask<T, int>;
   using SenderTask = pw::async2::test::SenderTask<T, int>;
 
-  pw::Status BlockingSend(Sender<T>& sender,
+  pw::Status BlockingSend(const Sender<T>& sender,
                           Dispatcher& dispatcher,
                           int value) {
     return sender.BlockingSend(dispatcher, T(value));
   }
 
-  pw::Status BlockingSend(Sender<T>& sender,
+  pw::Status BlockingSend(const Sender<T>& sender,
                           Dispatcher& dispatcher,
                           int value,
                           pw::chrono::SystemClock::duration timeout) {
     return sender.BlockingSend(dispatcher, T(value), timeout);
   }
 
-  pw::Result<T> BlockingReceive(Receiver<T>& receiver, Dispatcher& dispatcher) {
+  pw::Result<T> BlockingReceive(const Receiver<T>& receiver,
+                                Dispatcher& dispatcher) {
     return receiver.BlockingReceive(dispatcher);
   }
 
-  pw::Result<T> BlockingReceive(Receiver<T>& receiver,
+  pw::Result<T> BlockingReceive(const Receiver<T>& receiver,
                                 Dispatcher& dispatcher,
                                 pw::chrono::SystemClock::duration timeout) {
     return receiver.BlockingReceive(dispatcher, timeout);
   }
 
-  void TrySend(Sender<T>& sender, int value) {
+  void TrySend(const Sender<T>& sender, int value) {
     PW_TEST_ASSERT_OK(sender.TrySend(T(value)));
   }
 
@@ -111,13 +112,13 @@ struct ChannelAdapter<IntFunction> {
       pw::async2::test::ReservedSenderTask<IntFunction, int>;
   using SenderTask = pw::async2::test::SenderTask<IntFunction, int>;
 
-  pw::Status BlockingSend(Sender<IntFunction>& sender,
+  pw::Status BlockingSend(const Sender<IntFunction>& sender,
                           Dispatcher& dispatcher,
                           int value) {
     return sender.BlockingSend(dispatcher, [value]() { return value; });
   }
 
-  pw::Status BlockingSend(Sender<IntFunction>& sender,
+  pw::Status BlockingSend(const Sender<IntFunction>& sender,
                           Dispatcher& dispatcher,
                           int value,
                           pw::chrono::SystemClock::duration timeout) {
@@ -125,19 +126,19 @@ struct ChannelAdapter<IntFunction> {
         dispatcher, [value]() { return value; }, timeout);
   }
 
-  pw::Result<IntFunction> BlockingReceive(Receiver<IntFunction>& receiver,
+  pw::Result<IntFunction> BlockingReceive(const Receiver<IntFunction>& receiver,
                                           Dispatcher& dispatcher) {
     return receiver.BlockingReceive(dispatcher);
   }
 
   pw::Result<IntFunction> BlockingReceive(
-      Receiver<IntFunction>& receiver,
+      const Receiver<IntFunction>& receiver,
       Dispatcher& dispatcher,
       pw::chrono::SystemClock::duration timeout) {
     return receiver.BlockingReceive(dispatcher, timeout);
   }
 
-  void TrySend(Sender<IntFunction>& sender, int value) {
+  void TrySend(const Sender<IntFunction>& sender, int value) {
     PW_TEST_ASSERT_OK(sender.TrySend([value]() { return value; }));
   }
 
@@ -175,30 +176,31 @@ struct ChannelAdapter<void> {
   using ReservedSenderTask = pw::async2::test::ReservedSenderTask<void>;
   using SenderTask = pw::async2::test::SenderTask<void>;
 
-  pw::Status BlockingSend(Sender<void>& sender,
+  pw::Status BlockingSend(const Sender<void>& sender,
                           Dispatcher& dispatcher,
                           int /*value*/) {
     return sender.BlockingSend(dispatcher);
   }
 
-  pw::Status BlockingSend(Sender<void>& sender,
+  pw::Status BlockingSend(const Sender<void>& sender,
                           Dispatcher& dispatcher,
                           int /*value*/,
                           pw::chrono::SystemClock::duration timeout) {
     return sender.BlockingSend(dispatcher, timeout);
   }
 
-  pw::Status BlockingReceive(Receiver<void>& receiver, Dispatcher& dispatcher) {
+  pw::Status BlockingReceive(const Receiver<void>& receiver,
+                             Dispatcher& dispatcher) {
     return receiver.BlockingReceive(dispatcher);
   }
 
-  pw::Status BlockingReceive(Receiver<void>& receiver,
+  pw::Status BlockingReceive(const Receiver<void>& receiver,
                              Dispatcher& dispatcher,
                              pw::chrono::SystemClock::duration timeout) {
     return receiver.BlockingReceive(dispatcher, timeout);
   }
 
-  void TrySend(Sender<void>& sender, int /*value*/) {
+  void TrySend(const Sender<void>& sender, int /*value*/) {
     PW_TEST_ASSERT_OK(sender.TrySend());
   }
 

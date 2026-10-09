@@ -1098,7 +1098,8 @@ class Receiver {
   std::conditional_t<std::is_void_v<T>, Status, Result<T>> BlockingReceive(
       Dispatcher& dispatcher,
       chrono::SystemClock::duration timeout =
-          internal::Channel<T>::kWaitForever) PW_LOCKS_EXCLUDED(*channel_) {
+          internal::Channel<T>::kWaitForever) const
+      PW_LOCKS_EXCLUDED(*channel_) {
     if (channel_ == nullptr) {
       return Status::FailedPrecondition();
     }
@@ -1163,7 +1164,7 @@ class Receiver {
   ///
   /// If there are multiple receivers for a channel, each of them compete for
   /// exclusive values.
-  ReceiveFuture<T> Receive() PW_LOCKS_EXCLUDED(*channel_) {
+  ReceiveFuture<T> Receive() const PW_LOCKS_EXCLUDED(*channel_) {
     return ReceiveFuture<T>(channel_);
   }
 
@@ -1173,7 +1174,7 @@ class Receiver {
   /// * @OK: A value was successfully read from the channel.
   /// * @FAILED_PRECONDITION: The channel is closed.
   /// * @UNAVAILABLE: The channel is empty.
-  std::conditional_t<std::is_void_v<T>, Status, Result<T>> TryReceive() {
+  std::conditional_t<std::is_void_v<T>, Status, Result<T>> TryReceive() const {
     if (channel_ == nullptr) {
       return Status::FailedPrecondition();
     }
@@ -1515,11 +1516,11 @@ class Sender {
   /// will be read. If all corresponding receivers disconnect, any values
   /// still buffered in the channel are lost.
   template <typename U>
-  SendFuture<T> Send(U&& value) {
+  SendFuture<T> Send(U&& value) const {
     return SendFuture<T>(channel_, std::forward<U>(value));
   }
 
-  SendFuture<T> Send() {
+  SendFuture<T> Send() const {
     static_assert(std::is_void_v<T>,
                   "Send() with no arguments is for notification channels only");
     return SendFuture<T>(channel_);
@@ -1530,7 +1531,9 @@ class Sender {
   /// channel when space is available.
   ///
   /// If the channel is closed, the future resolves to `nullopt`.
-  ReserveSendFuture<T> ReserveSend() { return ReserveSendFuture<T>(channel_); }
+  ReserveSendFuture<T> ReserveSend() const {
+    return ReserveSendFuture<T>(channel_);
+  }
 
   /// Synchronously attempts to reserve a slot in the channel.
   ///
@@ -1541,7 +1544,7 @@ class Sender {
   /// * @OK: A `SendReservation` was successfully created.
   /// * @FAILED_PRECONDITION: The channel is closed.
   /// * @UNAVAILABLE: The channel is full.
-  Result<SendReservation<T>> TryReserveSend() {
+  Result<SendReservation<T>> TryReserveSend() const {
     if (channel_ == nullptr) {
       return Status::FailedPrecondition();
     }
@@ -1561,7 +1564,7 @@ class Sender {
             int&... kExplicitGuard,
             std::enable_if_t<std::is_same_v<::cpp20::remove_cvref_t<U>, T>,
                              bool> = true>
-  Status TrySend(U&& value) {
+  Status TrySend(U&& value) const {
     if (channel_ == nullptr) {
       return Status::FailedPrecondition();
     }
@@ -1574,7 +1577,7 @@ class Sender {
             std::enable_if_t<!std::is_same_v<::cpp20::remove_cvref_t<U>, T> &&
                                  std::is_constructible_v<T, U>,
                              bool> = true>
-  Status TrySend(U&& value) {
+  Status TrySend(U&& value) const {
     return TrySend(T(value));
   }
 
@@ -1588,7 +1591,7 @@ class Sender {
   /// * @OK: The value was successfully sent to the channel.
   /// * @FAILED_PRECONDITION: The channel is closed.
   /// * @UNAVAILABLE: The channel is full.
-  Status TrySend() {
+  Status TrySend() const {
     static_assert(
         std::is_void_v<T>,
         "TrySend() with no arguments is for notification channels only");
@@ -1615,7 +1618,7 @@ class Sender {
   Status BlockingSend(Dispatcher& dispatcher,
                       U&& value,
                       chrono::SystemClock::duration timeout =
-                          internal::Channel<T>::kWaitForever) {
+                          internal::Channel<T>::kWaitForever) const {
     return BlockingSendMoveOrCopy(dispatcher, std::forward<U>(value), timeout);
   }
 
@@ -1628,7 +1631,7 @@ class Sender {
   Status BlockingSend(Dispatcher& dispatcher,
                       U&& value,
                       chrono::SystemClock::duration timeout =
-                          internal::Channel<T>::kWaitForever) {
+                          internal::Channel<T>::kWaitForever) const {
     return BlockingSendMoveOrCopy(dispatcher, T(value), timeout);
   }
 
@@ -1644,7 +1647,7 @@ class Sender {
   /// * @DEADLINE_EXCEEDED: The operation timed out.
   Status BlockingSend(Dispatcher& dispatcher,
                       chrono::SystemClock::duration timeout =
-                          internal::Channel<T>::kWaitForever) {
+                          internal::Channel<T>::kWaitForever) const {
     return BlockingSendMoveOrCopy(dispatcher, timeout);
   }
 
@@ -1703,7 +1706,7 @@ class Sender {
   template <typename U>
   Status BlockingSendMoveOrCopy(Dispatcher& dispatcher,
                                 U&& value,
-                                chrono::SystemClock::duration timeout)
+                                chrono::SystemClock::duration timeout) const
       PW_LOCKS_EXCLUDED(*channel_) {
     if (channel_ == nullptr) {
       return Status::FailedPrecondition();
@@ -1721,7 +1724,7 @@ class Sender {
   }
 
   Status BlockingSendMoveOrCopy(Dispatcher& dispatcher,
-                                chrono::SystemClock::duration timeout)
+                                chrono::SystemClock::duration timeout) const
       PW_LOCKS_EXCLUDED(*channel_) {
     if (channel_ == nullptr) {
       return Status::FailedPrecondition();
@@ -1737,7 +1740,7 @@ class Sender {
 
   Status BlockingSendFuture(Dispatcher& dispatcher,
                             SendFuture<T>&& future,
-                            chrono::SystemClock::duration timeout)
+                            chrono::SystemClock::duration timeout) const
       PW_LOCKS_EXCLUDED(*channel_) {
     Status status;
     sync::TimedThreadNotification notification;

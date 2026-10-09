@@ -94,9 +94,8 @@ TEST(FuturePipe, Then) {
   ChannelStorage<int, 1> storage;
   auto [handle, sender, receiver] = CreateSpscChannel(storage);
 
-  auto future = provider.Get() | Then([s = std::move(sender)](int x) mutable {
-                  return s.Send(x * 10);
-                });
+  auto future = provider.Get() |
+                Then([s = std::move(sender)](int x) { return s.Send(x * 10); });
   static_assert(std::is_same_v<decltype(future)::value_type, bool>);
 
   EXPECT_TRUE(future.is_pendable());
@@ -119,10 +118,9 @@ TEST(FuturePipe, ThenMoveOnly) {
   ChannelStorage<int, 1> storage;
   auto [handle, sender, receiver] = CreateSpscChannel(storage);
 
-  auto future =
-      provider.Get() | Then([s = std::move(sender)](MoveOnly x) mutable {
-        return s.Send(x.value * 10);
-      });
+  auto future = provider.Get() | Then([s = std::move(sender)](MoveOnly x) {
+                  return s.Send(x.value * 10);
+                });
   static_assert(std::is_same_v<decltype(future)::value_type, bool>);
 
   provider.Resolve(MoveOnly(5));

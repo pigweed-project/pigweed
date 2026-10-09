@@ -310,16 +310,16 @@ struct ChannelAdapter {
 
   bool IsDynamicChannelDequeAllocated() const { return true; }
 
-  SendFuture<T> Send(Sender<T>& sender, int value) {
+  SendFuture<T> Send(const Sender<T>& sender, int value) {
     return sender.Send(T(value));
   }
 
-  Status TrySend(Sender<T>& sender, int value) {
+  Status TrySend(const Sender<T>& sender, int value) {
     return sender.TrySend(T(value));
   }
 
   template <typename U>
-  Status TrySend(Sender<T>& sender, U&& value) {
+  Status TrySend(const Sender<T>& sender, U&& value) {
     return sender.TrySend(std::forward<U>(value));
   }
 
@@ -379,11 +379,11 @@ struct ChannelAdapter<IntFunction> {
 
   bool IsDynamicChannelDequeAllocated() const { return true; }
 
-  SendFuture<IntFunction> Send(Sender<IntFunction>& sender, int value) {
+  SendFuture<IntFunction> Send(const Sender<IntFunction>& sender, int value) {
     return sender.Send([value]() { return value; });
   }
 
-  Status TrySend(Sender<IntFunction>& sender, int value) {
+  Status TrySend(const Sender<IntFunction>& sender, int value) {
     return sender.TrySend([value]() { return value; });
   }
 
@@ -444,12 +444,12 @@ struct ChannelAdapter<void> {
 
   bool IsDynamicChannelDequeAllocated() const { return false; }
 
-  SendFuture<void> Send(Sender<void>& sender, int value) {
+  SendFuture<void> Send(const Sender<void>& sender, int value) {
     std::ignore = value;  // Not for notifications
     return sender.Send();
   }
 
-  Status TrySend(Sender<void>& sender, int value) {
+  Status TrySend(const Sender<void>& sender, int value) {
     std::ignore = value;  // Not for notifications
     return sender.TrySend();
   }
@@ -1495,6 +1495,74 @@ TEST(ChannelStorage, Reuse_Void) {
     EXPECT_EQ(receiver.TryReceive(), OkStatus());
   }
   EXPECT_FALSE(void_storage.active());
+}
+
+TEST(Channel, ConstSenderAndReceiver) {
+  ChannelStorage<int, 2> storage;
+  auto [handle, mutable_sender, mutable_receiver] = CreateSpscChannel(storage);
+  handle.Release();
+
+  const Sender<int>& sender = mutable_sender;
+  const Receiver<int>& receiver = mutable_receiver;
+
+  EXPECT_EQ(sender.TrySend(1), OkStatus());
+  pw::Result<SendReservation<int>> reservation = sender.TryReserveSend();
+  PW_TEST_ASSERT_OK(reservation);
+  reservation->Commit(2);
+
+  pw::Result<int> val1 = receiver.TryReceive();
+  PW_TEST_ASSERT_OK(val1);
+  EXPECT_EQ(*val1, 1);
+
+  pw::Result<int> val2 = receiver.TryReceive();
+  PW_TEST_ASSERT_OK(val2);
+  EXPECT_EQ(*val2, 2);
+
+  DispatcherForTest dispatcher;
+  FuncTask task([&](Context& cx) -> Poll<> {
+    SendFuture<int> send_future = sender.Send(3);
+    EXPECT_EQ(send_future.Pend(cx), Ready(true));
+
+    pw::async2::ReserveSendFuture<int> reserve_future = sender.ReserveSend();
+    Poll<std::optional<SendReservation<int>>> reserved =
+        reserve_future.Pend(cx);
+    EXPECT_TRUE(reserved.IsReady());
+    EXPECT_TRUE(reserved->has_value());
+    (*reserved)->Commit(4);
+
+    ReceiveFuture<int> receive_future1 = receiver.Receive();
+    EXPECT_EQ(receive_future1.Pend(cx), Ready(std::optional<int>(3)));
+
+    ReceiveFuture<int> receive_future2 = receiver.Receive();
+    EXPECT_EQ(receive_future2.Pend(cx), Ready(std::optional<int>(4)));
+    return Ready();
+  });
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+}
+
+TEST(Channel, ConstSenderAndReceiver_Void) {
+  ChannelStorage<void, 2> storage;
+  auto [handle, mutable_sender, mutable_receiver] = CreateSpscChannel(storage);
+  handle.Release();
+
+  const Sender<void>& sender = mutable_sender;
+  const Receiver<void>& receiver = mutable_receiver;
+
+  EXPECT_EQ(sender.TrySend(), OkStatus());
+  EXPECT_EQ(receiver.TryReceive(), OkStatus());
+
+  DispatcherForTest dispatcher;
+  FuncTask task([&](Context& cx) -> Poll<> {
+    SendFuture<void> send_future = sender.Send();
+    EXPECT_EQ(send_future.Pend(cx), Ready(true));
+
+    ReceiveFuture<void> receive_future = receiver.Receive();
+    EXPECT_EQ(receive_future.Pend(cx), Ready(true));
+    return Ready();
+  });
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
 }
 
 }  // namespace

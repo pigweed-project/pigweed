@@ -249,12 +249,12 @@ class ProxyHostImpl {
 
   // Channel to handle H4 packets from host.
   async2::ChannelStorage<H4PacketWithH4, 1> host_packet_storage_;
-  mutable async2::Sender<H4PacketWithH4> host_packet_sender_;
+  async2::Sender<H4PacketWithH4> host_packet_sender_;
   H4Handler<H4PacketWithH4> host_packet_task_;
 
   // Channel to handle H4 packets from controller.
   async2::ChannelStorage<H4PacketWithHci, 1> controller_packet_storage_;
-  mutable async2::Sender<H4PacketWithHci> controller_packet_sender_;
+  async2::Sender<H4PacketWithHci> controller_packet_sender_;
   H4Handler<H4PacketWithHci> controller_packet_task_;
 
   // Serializes off-dispatcher callers; the SPSC request/response channels
@@ -267,17 +267,17 @@ class ProxyHostImpl {
   async2::ChannelStorage<BasicRequest, 1> basic_request_storage_;
   async2::ChannelStorage<uint16_t, 1> basic_response_storage_;
 
-  mutable async2::Sender<BasicRequest> basic_request_sender_;
+  async2::Sender<BasicRequest> basic_request_sender_;
   Responder<BasicRequest, uint16_t> basic_task_;
-  mutable async2::Receiver<uint16_t> basic_response_receiver_;
+  async2::Receiver<uint16_t> basic_response_receiver_;
 
   // Channels to request L2CAP channels.
   async2::ChannelStorage<ChannelRequest, 1> channel_request_storage_;
   async2::ChannelStorage<Result<ClientChannel>, 1> channel_response_storage_;
 
-  mutable async2::Sender<ChannelRequest> channel_request_sender_;
+  async2::Sender<ChannelRequest> channel_request_sender_;
   Responder<ChannelRequest, Result<ClientChannel>> channel_task_;
-  mutable async2::Receiver<Result<ClientChannel>> channel_response_receiver_;
+  async2::Receiver<Result<ClientChannel>> channel_response_receiver_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

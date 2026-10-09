@@ -221,8 +221,8 @@ void DrainChannelToAvoidAssertOnDestruction(Receiver<T>&& channel_receiver) {
   DispatcherForTest dispatcher;
   ReceiveFuture<T> receive_future;
   auto drain_task =
-      FuncTask([&receive_future, receiver = std::move(channel_receiver)](
-                   Context& cx) mutable -> Poll<> {
+      FuncTask([&receive_future,
+                receiver = std::move(channel_receiver)](Context& cx) -> Poll<> {
         while (true) {
           if (!receive_future.is_pendable()) {
             receive_future = receiver.Receive();

@@ -153,7 +153,7 @@ TEST(BoxedFuture, TypeErasesFutureChain) {
       alloc,
       provider.Get()
       | Map([](int x) { return x * 4; })
-      | Then([s = std::move(sender)](int x) mutable { return s.Send(x); }));
+      | Then([s = std::move(sender)](int x) { return s.Send(x); }));
   // clang-format on
 
   EXPECT_TRUE(future.is_pendable());
