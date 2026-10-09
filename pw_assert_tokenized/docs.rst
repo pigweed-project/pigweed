@@ -59,16 +59,23 @@ Setup
    ``pw_log_tokenized_HANDLER_BACKEND``. By default, pw_assert_tokenized will
    forward assert failures to the log system. The tokenizer handler should check
    for ``LOG_LEVEL_FATAL`` and properly divert to a crash handler.
-#. Add file name tokens to your token database. pw_assert_tokenized can't create
-   file name tokens that can be parsed out of the final compiled binary. The
-   ``pw_relative_source_file_names``
+#. When compiling with C or C++23, ``pw_assert_tokenized`` emits ``__FILE__``
+   tokens directly into the ``.pw_tokenizer.entries`` ELF section, so no
+   additional token database setup is needed (and offline file name generation
+   should be skipped to avoid adding unused file names to the database).
+
+   In C++17/C++20 (where ``static constexpr`` variables are not permitted inside
+   ``constexpr`` functions) or in translation units that redefine ``static``
+   (such as FreeRTOS ``tasks.c`` with ``PW_THIRD_PARTY_FREERTOS_NO_STATICS``),
+   ``pw_assert_tokenized`` cannot emit file name tokens into the compiled
+   binary. In those configurations, the ``pw_relative_source_file_names``
    :ref:`GN template<module-pw_build-relative-source-file-names>` can be used to
    collect the names of all source files used in your final executable into a
    JSON file, which can then be included in the creation of a tokenizer
    database.
 
-Example file name token database setup
---------------------------------------
+Example file name token database setup (pre-C++23)
+--------------------------------------------------
 
 .. code-block::
 
