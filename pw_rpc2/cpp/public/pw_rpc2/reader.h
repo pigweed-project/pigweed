@@ -40,24 +40,22 @@ namespace internal {
 
 struct CallAccess;
 
-/// Type-erased deserializer: writes `bytes` decoded as a payload, or their
-/// error, to the `async2::Poll<Result<Payload>>` at `result_out`.
+/// Type-erased deserializer: writes `bytes` decoded as a message, or their
+/// error, to the `async2::Poll<Result<Message>>` at `result_out`.
 using DeserializeFn = void (*)(void* result_out, Result<ConstByteSpan> bytes);
 
-template <typename Payload>
+template <typename Message>
 void DeserializeTypeErased(void* result_out, Result<ConstByteSpan> bytes) {
-  *static_cast<async2::Poll<Result<Payload>>*>(result_out) =
-      bytes.ok() ? Deserialize<Payload>(*bytes)
-                 : Result<Payload>(bytes.status());
+  *static_cast<async2::Poll<Result<Message>>*>(result_out) =
+      bytes.ok() ? Deserialize<Message>(*bytes)
+                 : Result<Message>(bytes.status());
 }
 
-/// Non-templated base class for `ReadFuture<Payload>` and
+/// Non-templated base class for `ReadFuture<Message>` and
 /// `ResponseFuture<Response>`.
 ///
-/// Keeping `ReadFutureBase` non-templated ensures that the read-claim lifecycle
-/// (construction, move-assignment, destruction) and the channel polling logic
-/// in `PendRaw()` / `PendAndDeserialize()` are compiled once and shared across
-/// all payload types.
+/// Shares the read-claim lifecycle and channel polling logic across all
+/// message types.
 class ReadFutureBase : public CallHandle, public FutureBase {
  public:
   ReadFutureBase(const ReadFutureBase&) = delete;
@@ -153,7 +151,7 @@ class ResponseFutureBase : public ReadFutureBase {
 }  // namespace internal
 
 /// Future that resolves to the next inbound message of a stream
-/// (`Result<Payload>`). Returned by `Reader::Read()`.
+/// (`Result<Message>`). Returned by `Reader::Read()`.
 ///
 /// At most one `ReadFuture` may be active on a call at a time: starting a
 /// second read while an earlier `ReadFuture` is still pending fails with an
@@ -163,10 +161,10 @@ class ResponseFutureBase : public ReadFutureBase {
 ///
 /// A `ReadFuture` holds a shared reference to the underlying call, so it stays
 /// valid even if the `Reader` that produced it is destroyed first.
-template <typename Payload = ConstBuf>
+template <typename Message = ConstBuf>
 class ReadFuture : public internal::ReadFutureBase {
  public:
-  using value_type = Result<Payload>;
+  using value_type = Result<Message>;
 
   constexpr ReadFuture() = default;
 
@@ -179,7 +177,7 @@ class ReadFuture : public internal::ReadFutureBase {
   /// Polls for the inbound message.
   ///
   /// @returns
-  /// * `OK` with the decoded `Payload` (or raw `ConstBuf`) when a message
+  /// * `OK` with the decoded `Message` (or raw `ConstBuf`) when a message
   ///   arrives.
   /// * `OUT_OF_RANGE` when the peer has finished its outbound stream
   ///   (`Finish()` or `~Writer()`) and all sent messages have been read. This
@@ -187,23 +185,20 @@ class ReadFuture : public internal::ReadFutureBase {
   /// * The error status that ended the call (such as `CANCELLED` if the peer
   ///   cancelled the RPC or the connection closed).
   /// * A deserialization error (such as `DATA_LOSS`) if the incoming bytes
-  ///   could not be decoded as `Payload`.
-  [[nodiscard]] async2::Poll<Result<Payload>> Pend(async2::Context& cx) {
-    if constexpr (std::is_same_v<Payload, ConstBuf>) {
+  ///   could not be decoded as `Message`.
+  [[nodiscard]] async2::Poll<Result<Message>> Pend(async2::Context& cx) {
+    if constexpr (std::is_same_v<Message, ConstBuf>) {
       return PendRaw(cx);
     } else {
-      async2::Poll<Result<Payload>> result = async2::Pending();
+      async2::Poll<Result<Message>> result = async2::Pending();
       PendAndDeserialize(
-          cx, &result, &internal::DeserializeTypeErased<Payload>);
+          cx, &result, &internal::DeserializeTypeErased<Message>);
       return result;
     }
   }
 
  private:
-  template <typename>
-  friend class ReadFuture;
-  template <typename>
-  friend class Reader;
+  friend class Reader<Message>;
   friend struct internal::CallAccess;
 
   using internal::ReadFutureBase::ReadFutureBase;
@@ -216,7 +211,7 @@ using RawReadFuture = ReadFuture<ConstBuf>;
 /// Future that resolves to the server's single response to a client unary or
 /// client-streaming RPC (`Result<Response>`).
 ///
-/// Returned by `RawUnaryReservation::Commit()` and
+/// Returned by `UnaryReservation::Commit()` and
 /// `ClientStreamCall::response()`. `UnaryFuture` uses one internally.
 ///
 /// A `ResponseFuture` is its call's only reader. Destroying it before it
@@ -270,7 +265,7 @@ using RawResponseFuture = ResponseFuture<ConstBuf>;
 
 namespace internal {
 
-/// Non-templated base class for `Reader<Payload>` that closes the call's read
+/// Non-templated base class for `Reader<Message>` that closes the call's read
 /// side when destroyed so that any unread or future inbound messages are
 /// immediately discarded without blocking the connection task.
 class ReaderBase : public CallHandle {
@@ -339,7 +334,7 @@ class ReaderBase : public CallHandle {
 ///   as `Cancel()` does, since nothing is left to observe its outcome. This
 ///   keeps the server from running an abandoned RPC, such as an unbounded
 ///   server stream, until the connection closes.
-template <typename Payload = ConstBuf>
+template <typename Message = ConstBuf>
 class Reader : public internal::ReaderBase {
  public:
   constexpr Reader() = default;
@@ -355,13 +350,11 @@ class Reader : public internal::ReaderBase {
   ///
   /// Only one `ReadFuture` may be pending at a time; await or destroy the
   /// returned future before calling `Read()` again.
-  [[nodiscard]] ReadFuture<Payload> Read() {
-    return ReadFuture<Payload>(share_call());
+  [[nodiscard]] ReadFuture<Message> Read() {
+    return ReadFuture<Message>(share_call());
   }
 
  private:
-  template <typename>
-  friend class Reader;
   friend struct internal::CallAccess;
 
   using internal::ReaderBase::ReaderBase;

@@ -75,29 +75,17 @@ inline constexpr bool kFutureCreatableFrom =
     std::is_constructible_v<Fut, Service&, Args...> ||
     std::is_constructible_v<Fut, Args...>;
 
-// True if `Fut` accepts the typed protobuf arguments for the method.
+// True if `Fut` accepts the `<Req, Resp>` arguments for a method of `kType`.
 template <typename Fut,
           typename Service,
           MethodType kType,
           typename Req,
           typename Resp>
-inline constexpr bool kFutureUsesTypedApi = kFutureCreatableFrom<
+inline constexpr bool kFutureAccepts = kFutureCreatableFrom<
     Fut,
     Service,
     typename InvocationTraits<kType, false, Req, Resp>::Request,
     typename InvocationTraits<kType, false, Req, Resp>::Responder>;
-
-template <typename Fut, typename Service, MethodType kType>
-inline constexpr bool
-    kFutureUsesTypedApi<Fut, Service, kType, ConstBuf, ConstBuf> = false;
-
-// True if `Fut` accepts the raw (`pw::ConstBuf`) arguments for the method.
-template <typename Fut, typename Service, MethodType kType>
-inline constexpr bool kFutureUsesRawApi = kFutureCreatableFrom<
-    Fut,
-    Service,
-    typename InvocationTraits<kType, true, ConstBuf, ConstBuf>::Request,
-    typename InvocationTraits<kType, true, ConstBuf, ConstBuf>::Responder>;
 
 /// The future type returned by a method, or `BoxedMethodFuture` if the method's
 /// signature was not recognized. Substituting a valid future type keeps an
@@ -178,10 +166,7 @@ class MethodInvokerBase {
 };
 
 /// Invokes an RPC on a member function of a service implementation.
-template <auto kMethod,
-          MethodType kExpectedType,
-          typename Req = pw::ConstBuf,
-          typename Resp = pw::ConstBuf>
+template <auto kMethod, MethodType kExpectedType, typename Req, typename Resp>
 class MethodInvoker
     : public MethodInvokerBase<
           MethodInvoker<kMethod, kExpectedType, Req, Resp>,
@@ -282,29 +267,22 @@ using RawMethodInvoker =
     MethodInvoker<kMethod, kExpectedType, pw::ConstBuf, pw::ConstBuf>;
 
 /// `MethodInvoker` parameterized on a generated RPC method tag.
-template <auto kMethod,
-          typename MethodTag,
-          typename Info = MethodInfo<MethodTag>>
-struct MethodInvokerFor : MethodInvoker<kMethod,
-                                        Info::kType,
-                                        typename Info::Request,
-                                        typename Info::Response> {
+template <auto kMethod, typename MethodTag>
+struct MethodInvokerFor
+    : MethodInvoker<kMethod,
+                    MethodInfo<MethodTag>::kType,
+                    typename MethodInfo<MethodTag>::Request,
+                    typename MethodInfo<MethodTag>::Response> {
   template <typename ServiceClass>
   static constexpr Method CreateMethod() {
-    return MethodInvoker<kMethod,
-                         Info::kType,
-                         typename Info::Request,
-                         typename Info::Response>::
-        template CreateMethod<ServiceClass>(Info::kMethodId);
+    return MethodInvokerFor::MethodInvoker::template CreateMethod<ServiceClass>(
+        MethodInfo<MethodTag>::kMethodId);
   }
 };
 
 /// Invokes an RPC by constructing a future type provided by a service
 /// implementation.
-template <typename Fut,
-          MethodType kExpectedType,
-          typename Req = ConstBuf,
-          typename Resp = ConstBuf>
+template <typename Fut, MethodType kExpectedType, typename Req, typename Resp>
 class FutureMethodInvoker
     : public MethodInvokerBase<
           FutureMethodInvoker<Fut, kExpectedType, Req, Resp>,
@@ -328,11 +306,9 @@ class FutureMethodInvoker
         std::is_same_v<Req, ConstBuf> && std::is_same_v<Resp, ConstBuf>;
     constexpr bool kIsTyped =
         !kRawCodegen &&
-        detail::
-            kFutureUsesTypedApi<Fut, ServiceClass, kExpectedType, Req, Resp>;
-    constexpr bool kUsesRawApi =
-        !kRawCodegen &&
-        detail::kFutureUsesRawApi<Fut, ServiceClass, kExpectedType>;
+        detail::kFutureAccepts<Fut, ServiceClass, kExpectedType, Req, Resp>;
+    constexpr bool kUsesRawApi = detail::
+        kFutureAccepts<Fut, ServiceClass, kExpectedType, ConstBuf, ConstBuf>;
 
     constexpr bool kIsUnambiguous = !(kIsTyped && kUsesRawApi);
     static_assert(
@@ -341,10 +317,7 @@ class FutureMethodInvoker
         "both the typed protobuf arguments and the raw (pw::ConstBuf) "
         "arguments, which is ambiguous. Provide only one constructor.");
 
-    constexpr bool kCanConstruct =
-        kRawCodegen
-            ? detail::kFutureUsesRawApi<Fut, ServiceClass, kExpectedType>
-            : (kIsTyped || kUsesRawApi);
+    constexpr bool kCanConstruct = kIsTyped || kUsesRawApi;
     static_assert(
         kCanConstruct,
         "The '<Method>Future' type declared for this RPC cannot be constructed "
@@ -353,13 +326,12 @@ class FutureMethodInvoker
         "method type, optionally preceded by a reference to the service.");
 
     if constexpr (kIsUnambiguous && kCanConstruct) {
-      constexpr bool kIsRaw = kRawCodegen || kUsesRawApi;
-
-      using Invocation = InvocationTraits<kExpectedType, kIsRaw, Req, Resp>;
+      using Invocation =
+          InvocationTraits<kExpectedType, kUsesRawApi, Req, Resp>;
       return FutureMethodInvoker::
-          template PrepareRequestAndInvoke<Invocation, kIsRaw, Req>(
+          template PrepareRequestAndInvoke<Invocation, kUsesRawApi, Req>(
               call, std::move(request_payload), [&](auto&& make_request) {
-                return EmplaceWithRequest<kIsRaw>(
+                return EmplaceWithRequest<kUsesRawApi>(
                     service,
                     call,
                     std::forward<decltype(make_request)>(make_request));
@@ -393,20 +365,16 @@ using RawFutureMethodInvoker =
     FutureMethodInvoker<Fut, kExpectedType, ConstBuf, ConstBuf>;
 
 /// `FutureMethodInvoker` parameterized on a generated RPC method tag.
-template <typename Fut,
-          typename MethodTag,
-          typename Info = MethodInfo<MethodTag>>
-struct FutureMethodInvokerFor : FutureMethodInvoker<Fut,
-                                                    Info::kType,
-                                                    typename Info::Request,
-                                                    typename Info::Response> {
+template <typename Fut, typename MethodTag>
+struct FutureMethodInvokerFor
+    : FutureMethodInvoker<Fut,
+                          MethodInfo<MethodTag>::kType,
+                          typename MethodInfo<MethodTag>::Request,
+                          typename MethodInfo<MethodTag>::Response> {
   template <typename ServiceClass>
   static constexpr Method CreateMethod() {
-    return FutureMethodInvoker<Fut,
-                               Info::kType,
-                               typename Info::Request,
-                               typename Info::Response>::
-        template CreateMethod<ServiceClass>(Info::kMethodId);
+    return FutureMethodInvokerFor::FutureMethodInvoker::template CreateMethod<
+        ServiceClass>(MethodInfo<MethodTag>::kMethodId);
   }
 };
 

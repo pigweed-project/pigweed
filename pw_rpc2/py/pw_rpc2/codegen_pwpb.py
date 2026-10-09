@@ -33,6 +33,7 @@ from pw_rpc2.codegen_common import (
     cpp_namespace,
     generate_headers,
     hex_id,
+    write_reserve_method,
 )
 
 
@@ -126,53 +127,74 @@ class PwpbCodeGenerator(CodeGenerator):
 
     def server_params(self, method: Method) -> ServerParams:
         req, resp = self._types(method)
-        if method.type is MethodType.UNARY:
-            return ServerParams(
-                Param(req, 'request'),
-                Param(f'::pw::rpc2::UnaryWriter<{resp}>', 'writer'),
-            )
-        if method.type is MethodType.SERVER_STREAMING:
-            return ServerParams(
-                Param(req, 'request'),
-                Param(f'::pw::rpc2::Writer<{resp}>', 'writer'),
-            )
-        if method.type is MethodType.CLIENT_STREAMING:
-            return ServerParams(
-                Param(f'::pw::rpc2::Reader<{req}>', 'reader'),
-                Param(f'::pw::rpc2::UnaryWriter<{resp}>', 'writer'),
-            )
+        first = (
+            Param(req, 'request')
+            if method.has_single_request
+            else Param(f'::pw::rpc2::Reader<{req}>', 'reader')
+        )
+        writer = (
+            'UnaryWriter'
+            if method.type in (MethodType.UNARY, MethodType.CLIENT_STREAMING)
+            else 'Writer'
+        )
         return ServerParams(
-            Param(f'::pw::rpc2::Reader<{req}>', 'reader'),
-            Param(f'::pw::rpc2::Writer<{resp}>', 'writer'),
+            first, Param(f'::pw::rpc2::{writer}<{resp}>', 'writer')
         )
 
     def write_client_method(self, output: OutputFile, method: Method) -> None:
         name = method.cpp_name
         req, resp = self._types(method)
-        types = f'{req}, {resp}'
         method_id = hex_id(method.id)
 
-        if method.type is MethodType.UNARY:
-            future = 'UnaryFuture'
-            params = f'const {req}& request'
-            call = f'CallUnary<{types}>({method_id}, request)'
-        elif method.type is MethodType.SERVER_STREAMING:
-            future = 'ServerStreamFuture'
-            params = f'const {req}& request'
-            call = f'CallServerStream<{types}>({method_id}, request)'
-        elif method.type is MethodType.CLIENT_STREAMING:
+        def write_future(future: str) -> None:
+            output.write_line(f'[[nodiscard]] ::pw::rpc2::{future}<')
+            with output.indent(4):
+                output.write_line(f'{req},')
+                output.write_line(f'{resp}>')
+
+        if method.has_single_request:
+            if method.type is MethodType.UNARY:
+                future = 'UnaryFuture'
+                call = 'CallUnary'
+            else:
+                future = 'ServerStreamFuture'
+                call = 'CallServerStream'
+
+            # The request is copied or moved into the future, which serializes
+            # it when polled.
+            for param, arg in (
+                (f'const {req}& request', 'request'),
+                (f'{req}&& request', '::std::move(request)'),
+            ):
+                write_future(future)
+                output.write_line(f'{name}(')
+                output.write_line(f'    {param}) const {{')
+                with output.indent():
+                    output.write_line(f'return {CLIENT_BASE}::{call}<')
+                    with output.indent(4):
+                        output.write_line(f'{req},')
+                        output.write_line(f'{resp}>(')
+                        output.write_line(f'{method_id}, {arg});')
+                output.write_line('}')
+                output.write_line()
+
+            write_reserve_method(output, self, method)
+            return
+
+        if method.type is MethodType.CLIENT_STREAMING:
             future = 'ClientStreamFuture'
-            params = ''
-            call = f'CallClientStream<{types}>({method_id})'
+            call = 'CallClientStream'
         else:
             future = 'BidiStreamFuture'
-            params = ''
-            call = f'CallBidiStream<{types}>({method_id})'
+            call = 'CallBidiStream'
 
-        output.write_line(f'[[nodiscard]] ::pw::rpc2::{future}<{types}>')
-        output.write_line(f'{name}({params}) const {{')
+        write_future(future)
+        output.write_line(f'{name}() const {{')
         with output.indent():
-            output.write_line(f'return {CLIENT_BASE}::{call};')
+            output.write_line(f'return {CLIENT_BASE}::{call}<')
+            with output.indent(4):
+                output.write_line(f'{req},')
+                output.write_line(f'{resp}>({method_id});')
         output.write_line('}')
 
 

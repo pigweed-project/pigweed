@@ -149,7 +149,7 @@ TEST(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
   EXPECT_EQ(internal::CallAccess::call_id(responder), 50u);
 
   const auto resp_bytes = as_bytes(span("unary resp", 10));
-  WriteTestTask task(responder.FinishCopy(resp_bytes));
+  WriteTestTask task(responder.FinishCopy(ConstBuf::Unowned(resp_bytes)));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
 
@@ -166,6 +166,83 @@ TEST(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
   EXPECT_EQ(decode_res->call_id(), 50u);
   EXPECT_EQ(decode_res->payload().size(), 10u);
   EXPECT_EQ(std::memcmp(decode_res->payload().data(), "unary resp", 10), 0);
+
+  task.Deregister();
+  connection_task->Deregister();
+}
+
+TEST(ServerCallTest, UnaryWriterFinishCopyReleasesOwnedResponseWhenSent) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  allocator::test::AllocatorForTest<256> response_allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
+      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
+  ASSERT_NE(connection_task, nullptr);
+  auto call = internal::ClientCall::Create(*connection_task, 51u, allocator);
+  ASSERT_NE(call, nullptr);
+
+  auto responder =
+      internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
+
+  ConstBuf response = MakeConstBuf(response_allocator, "owned");
+  ASSERT_GT(response_allocator.metrics().allocated_bytes.value(), 0u);
+
+  // `task` keeps the `WriteFuture` alive after it completes.
+  WriteTestTask task(responder.FinishCopy(std::move(response)));
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+
+  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  EXPECT_EQ(response_allocator.metrics().allocated_bytes.value(), 0u);
+
+  auto decode_res =
+      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+  ASSERT_TRUE(decode_res.ok());
+  EXPECT_EQ(decode_res->call_id(), 51u);
+  ASSERT_EQ(decode_res->payload().size(), 5u);
+  EXPECT_EQ(std::memcmp(decode_res->payload().data(), "owned", 5), 0);
+
+  task.Deregister();
+  connection_task->Deregister();
+}
+
+// Typed writers copy encoded responses from a `ConstBuf` like raw writers do.
+TEST(ServerCallTest, TypedUnaryWriterFinishCopySendsBytes) {
+  struct TypedResponse {
+    int value;
+  };
+
+  allocator::test::AllocatorForTest<16384> allocator;
+  allocator::test::AllocatorForTest<256> response_allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
+      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
+  ASSERT_NE(connection_task, nullptr);
+  auto call = internal::ClientCall::Create(*connection_task, 52u, allocator);
+  ASSERT_NE(call, nullptr);
+
+  auto responder =
+      internal::CallAccess::Create<UnaryWriter<TypedResponse>>(std::move(call));
+
+  ConstBuf response = MakeConstBuf(response_allocator, "typed");
+  ASSERT_GT(response_allocator.metrics().allocated_bytes.value(), 0u);
+
+  // `task` keeps the `WriteFuture` alive after it completes.
+  WriteTestTask task(responder.FinishCopy(std::move(response)));
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+
+  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  EXPECT_EQ(response_allocator.metrics().allocated_bytes.value(), 0u);
+
+  auto decode_res =
+      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+  ASSERT_TRUE(decode_res.ok());
+  EXPECT_EQ(decode_res->call_id(), 52u);
+  ASSERT_EQ(decode_res->payload().size(), 5u);
+  EXPECT_EQ(std::memcmp(decode_res->payload().data(), "typed", 5), 0);
 
   task.Deregister();
   connection_task->Deregister();

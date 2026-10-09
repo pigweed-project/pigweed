@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstring>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 #include "pw_allocator/testing.h"
@@ -173,9 +174,9 @@ TEST(RawWriterTest, WritesMessageAndFinish) {
   EXPECT_EQ(decode1->payload()[1], std::byte(2));
   EXPECT_EQ(decode1->payload()[2], std::byte(3));
 
-  // 2. Write second message via WriteCopy
+  // 2. Write second message from borrowed bytes
   const std::byte msg2[2] = {std::byte(10), std::byte(20)};
-  WriteTestTask task2(writer.WriteCopy(msg2));
+  WriteTestTask task2(writer.WriteCopy(ConstBuf::Unowned(msg2)));
   dispatcher.Post(task2);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(task2.result().has_value() && task2.result()->ok());
@@ -204,6 +205,141 @@ TEST(RawWriterTest, WritesMessageAndFinish) {
   task1.Deregister();
   task2.Deregister();
   task3.Deregister();
+}
+
+// Raw writers are the typed writers with `ConstBuf` messages.
+static_assert(std::is_same_v<RawWriter, Writer<ConstBuf>>);
+static_assert(std::is_same_v<RawUnaryWriter, UnaryWriter<ConstBuf>>);
+
+// Every writer copies bytes with `WriteCopy()` or `FinishCopy()`. Raw writers
+// have no `Write()` or `Finish()` that takes a message.
+template <typename W, typename Arg, typename = void>
+constexpr bool kHasWrite = false;
+template <typename W, typename Arg>
+constexpr bool kHasWrite<
+    W,
+    Arg,
+    std::void_t<decltype(std::declval<W&>().Write(std::declval<Arg>()))>> =
+    true;
+
+template <typename W, typename Arg, typename = void>
+constexpr bool kHasFinish = false;
+template <typename W, typename Arg>
+constexpr bool kHasFinish<
+    W,
+    Arg,
+    std::void_t<decltype(std::declval<W&>().Finish(std::declval<Arg>()))>> =
+    true;
+
+static_assert(!kHasWrite<RawWriter, ConstBuf>);
+static_assert(!kHasWrite<RawWriter, const ConstBuf&>);
+static_assert(!kHasFinish<RawUnaryWriter, ConstBuf>);
+static_assert(!kHasFinish<RawUnaryWriter, const ConstBuf&>);
+
+// `ConstBuf` is move-only, so an owned message must be moved in.
+template <typename W, typename = void>
+constexpr bool kWriteCopiesLvalue = false;
+template <typename W>
+constexpr bool
+    kWriteCopiesLvalue<W,
+                       std::void_t<decltype(std::declval<W&>().WriteCopy(
+                           std::declval<ConstBuf&>()))>> = true;
+
+template <typename W, typename = void>
+constexpr bool kFinishCopiesLvalue = false;
+template <typename W>
+constexpr bool
+    kFinishCopiesLvalue<W,
+                        std::void_t<decltype(std::declval<W&>().FinishCopy(
+                            std::declval<ConstBuf&>()))>> = true;
+
+static_assert(!kWriteCopiesLvalue<RawWriter>);
+static_assert(!kFinishCopiesLvalue<RawUnaryWriter>);
+static_assert(
+    std::is_same_v<decltype(std::declval<RawWriter&>().WriteCopy(ConstBuf())),
+                   WriteFuture<ConstBuf>>);
+static_assert(std::is_same_v<
+              decltype(std::declval<RawUnaryWriter&>().FinishCopy(ConstBuf())),
+              WriteFuture<ConstBuf>>);
+
+// Typed writers serialize messages with `Write()` or `Finish()` and also copy
+// encoded messages from a `ConstBuf`.
+struct TypedMessage {
+  int value;
+};
+
+static_assert(kHasWrite<Writer<TypedMessage>, const TypedMessage&>);
+static_assert(kHasWrite<Writer<TypedMessage>, TypedMessage>);
+static_assert(kHasFinish<UnaryWriter<TypedMessage>, const TypedMessage&>);
+static_assert(kHasFinish<UnaryWriter<TypedMessage>, TypedMessage>);
+static_assert(!kWriteCopiesLvalue<Writer<TypedMessage>>);
+static_assert(!kFinishCopiesLvalue<UnaryWriter<TypedMessage>>);
+static_assert(std::is_same_v<decltype(std::declval<Writer<TypedMessage>&>()
+                                          .WriteCopy(ConstBuf())),
+                             WriteFuture<ConstBuf>>);
+static_assert(std::is_same_v<decltype(std::declval<UnaryWriter<TypedMessage>&>()
+                                          .FinishCopy(ConstBuf())),
+                             WriteFuture<ConstBuf>>);
+
+TEST(RawWriterTest, WriteCopyReleasesOwnedMessageWhenSent) {
+  allocator::test::AllocatorForTest<4096> allocator;
+  allocator::test::AllocatorForTest<256> message_allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = allocator.MakeShared<internal::ClientConnectionTask>(
+      internal::EstablishedConnection{std::move(conn)}, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 78u, allocator);
+  ASSERT_NE(call, nullptr);
+
+  auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
+
+  constexpr std::byte kMessage[] = {std::byte(4), std::byte(5), std::byte(6)};
+  Buf message = Buf::AllocateCopy(message_allocator, kMessage);
+  ASSERT_NE(message, nullptr);
+  ASSERT_GT(message_allocator.metrics().allocated_bytes.value(), 0u);
+
+  // `task` keeps the `WriteFuture` alive after it completes.
+  WriteTestTask task(writer.WriteCopy(std::move(message)));
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  EXPECT_EQ(message_allocator.metrics().allocated_bytes.value(), 0u);
+
+  auto decode = internal::InboundPacket::Decode(raw_conn->last_written_buf());
+  ASSERT_TRUE(decode.ok());
+  EXPECT_EQ(decode->call_id(), 78u);
+  ASSERT_EQ(decode->payload().size(), sizeof(kMessage));
+  EXPECT_EQ(std::memcmp(decode->payload().data(), kMessage, sizeof(kMessage)),
+            0);
+
+  task.Deregister();
+}
+
+TEST(RawWriterTest, WriteCopyEmptyBracesSendsEmptyMessage) {
+  allocator::test::AllocatorForTest<4096> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = allocator.MakeShared<internal::ClientConnectionTask>(
+      internal::EstablishedConnection{std::move(conn)}, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 79u, allocator);
+  ASSERT_NE(call, nullptr);
+
+  auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
+
+  WriteTestTask task(writer.WriteCopy({}));
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  EXPECT_EQ(raw_conn->commit_count(), 1u);
+
+  auto decode = internal::InboundPacket::Decode(raw_conn->last_written_buf());
+  ASSERT_TRUE(decode.ok());
+  EXPECT_EQ(decode->call_id(), 79u);
+  EXPECT_EQ(decode->payload().size(), 0u);
+
+  task.Deregister();
 }
 
 TEST(RawWriterTest, CancelledReservationReleasesWithoutCommit) {

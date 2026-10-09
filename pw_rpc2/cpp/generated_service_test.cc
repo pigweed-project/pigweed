@@ -220,7 +220,7 @@ class RawEchoUnaryFuture : public TestFuture {
 
   ::pw::async2::Poll<> Pend(::pw::async2::Context& cx) {
     if (!finish_.is_pendable()) {
-      finish_ = responder_.FinishCopy(request_);
+      finish_ = responder_.FinishCopy(std::move(request_));
     }
     PW_AWAIT(::pw::Status status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
@@ -230,7 +230,7 @@ class RawEchoUnaryFuture : public TestFuture {
  private:
   ::pw::ConstBuf request_;
   ::pw::rpc2::RawUnaryWriter responder_;
-  ::pw::rpc2::WriteFuture<::pw::ConstByteSpan> finish_;
+  ::pw::rpc2::WriteFuture<::pw::ConstBuf> finish_;
 };
 static_assert(::pw::async2::Future<RawEchoUnaryFuture>);
 
@@ -248,7 +248,7 @@ class RawRepeatFuture : public TestFuture {
   ::pw::async2::Poll<> Pend(::pw::async2::Context& cx) {
     while (sent_ < kCount) {
       if (!write_.is_pendable()) {
-        write_ = writer_.WriteCopy(request_);
+        write_ = writer_.WriteCopy(ConstBuf::Unowned(request_));
       }
       PW_AWAIT(::pw::Status status, write_, cx);
       PW_TEST_EXPECT_OK(status);
@@ -265,7 +265,7 @@ class RawRepeatFuture : public TestFuture {
  private:
   ::pw::ConstBuf request_;
   ::pw::rpc2::RawWriter writer_;
-  ::pw::rpc2::WriteFuture<::pw::ConstByteSpan> write_;
+  ::pw::rpc2::WriteFuture<::pw::ConstBuf> write_;
   ::pw::rpc2::WriteFuture<> finish_;
   uint32_t sent_ = 0;
 };
@@ -297,7 +297,7 @@ class RawCountFuture : public TestFuture {
     }
     if (!finish_.is_pendable()) {
       response_[0] = static_cast<std::byte>(count_);
-      finish_ = responder_.FinishCopy(response_);
+      finish_ = responder_.FinishCopy(ConstBuf::Unowned(response_));
     }
     PW_AWAIT(::pw::Status status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
@@ -308,7 +308,7 @@ class RawCountFuture : public TestFuture {
   ::pw::rpc2::RawReader reader_;
   ::pw::rpc2::RawUnaryWriter responder_;
   ::pw::rpc2::RawReadFuture read_;
-  ::pw::rpc2::WriteFuture<::pw::ConstByteSpan> finish_;
+  ::pw::rpc2::WriteFuture<::pw::ConstBuf> finish_;
   uint8_t count_ = 0;
   std::byte response_[1] = {};
   bool reading_ = true;
@@ -326,8 +326,7 @@ class RawEchoBidiFuture : public TestFuture {
 
   ::pw::async2::Poll<> Pend(::pw::async2::Context& cx) {
     while (reading_) {
-      // `write_` refers to `message_`, so finish writing it before reading the
-      // next request.
+      // Finish writing the previous message before reading the next request.
       if (write_.is_pendable()) {
         PW_AWAIT(::pw::Status status, write_, cx);
         PW_TEST_EXPECT_OK(status);
@@ -341,8 +340,7 @@ class RawEchoBidiFuture : public TestFuture {
         reading_ = false;
         break;
       }
-      message_ = std::move(*request);
-      write_ = writer_.WriteCopy(message_);
+      write_ = writer_.WriteCopy(std::move(*request));
     }
     if (!finish_.is_pendable()) {
       finish_ = writer_.Finish();
@@ -356,8 +354,7 @@ class RawEchoBidiFuture : public TestFuture {
   ::pw::rpc2::RawReader reader_;
   ::pw::rpc2::RawWriter writer_;
   ::pw::rpc2::RawReadFuture read_;
-  ::pw::ConstBuf message_;
-  ::pw::rpc2::WriteFuture<::pw::ConstByteSpan> write_;
+  ::pw::rpc2::WriteFuture<::pw::ConstBuf> write_;
   ::pw::rpc2::WriteFuture<> finish_;
   bool reading_ = true;
 };
@@ -631,8 +628,8 @@ class RawServiceTest : public ServiceTest<ServiceImpl> {
     PW_TEST_ASSERT_OK(call);
 
     for (int i = 0; i < 3; ++i) {
-      PW_TEST_EXPECT_OK(
-          this->RunToCompletion(call->writer().WriteCopy(kPayload)));
+      PW_TEST_EXPECT_OK(this->RunToCompletion(
+          call->writer().WriteCopy(ConstBuf::Unowned(kPayload))));
     }
     PW_TEST_EXPECT_OK(this->RunToCompletion(call->writer().Finish()));
 
@@ -650,8 +647,8 @@ class RawServiceTest : public ServiceTest<ServiceImpl> {
 
     for (::pw::ConstByteSpan payload :
          {::pw::ConstByteSpan(kPayload), ::pw::ConstByteSpan(kOtherPayload)}) {
-      PW_TEST_EXPECT_OK(
-          this->RunToCompletion(call->writer().WriteCopy(payload)));
+      PW_TEST_EXPECT_OK(this->RunToCompletion(
+          call->writer().WriteCopy(ConstBuf::Unowned(payload))));
       ::pw::Result<::pw::ConstBuf> response =
           this->RunToCompletion(call->reader().Read());
       PW_TEST_ASSERT_OK(response);

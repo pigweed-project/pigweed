@@ -11,7 +11,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Generates raw (pw::ConstBuf payload) C++ code for pw_rpc2 services."""
+"""Generates raw (pw::ConstBuf message) C++ code for pw_rpc2 services."""
 
 from typing import Iterable, Sequence
 
@@ -29,6 +29,7 @@ from pw_rpc2.codegen_common import (
     Service,
     generate_headers,
     hex_id,
+    write_reserve_method,
 )
 
 _CONST_BUF = '::pw::ConstBuf'
@@ -54,7 +55,7 @@ _SERVER_PARAMS = {
 
 
 class RawCodeGenerator(CodeGenerator):
-    """Generates code for services with raw pw::ConstBuf payloads."""
+    """Generates code for services with raw pw::ConstBuf messages."""
 
     def __init__(self) -> None:
         super().__init__('raw')
@@ -73,31 +74,29 @@ class RawCodeGenerator(CodeGenerator):
         return _SERVER_PARAMS[method.type]
 
     def write_client_method(self, output: OutputFile, method: Method) -> None:
+        # Unary and server-streaming requests are written in place with
+        # `client.Method(max_message_size)` or copied from a `ConstBuf` with
+        # `client.Method::Copy()`, which `ClientCopyMethods` provides.
+        if method.has_single_request:
+            write_reserve_method(output, self, method)
+            return
+
         name = method.cpp_name
         method_id = hex_id(method.id)
+        types = f'{_CONST_BUF}, {_CONST_BUF}'
 
-        if method.type is MethodType.UNARY:
-            signature = (
-                f'::pw::rpc2::RawUnaryReserveFuture {name}('
-                '::std::size_t max_payload_size)'
-            )
-            call = f'CallUnaryRaw({method_id}, max_payload_size)'
-        elif method.type is MethodType.SERVER_STREAMING:
-            signature = (
-                f'::pw::rpc2::RawServerStreamReserveFuture {name}('
-                '::std::size_t max_payload_size)'
-            )
-            call = f'CallServerStreamRaw({method_id}, max_payload_size)'
-        elif method.type is MethodType.CLIENT_STREAMING:
-            signature = f'::pw::rpc2::RawClientStreamFuture {name}()'
-            call = f'CallClientStream<{_CONST_BUF}, {_CONST_BUF}>({method_id})'
+        if method.type is MethodType.CLIENT_STREAMING:
+            future = 'RawClientStreamFuture'
+            call = 'CallClientStream'
         else:
-            signature = f'::pw::rpc2::RawBidiStreamFuture {name}()'
-            call = f'CallBidiStream<{_CONST_BUF}, {_CONST_BUF}>({method_id})'
+            future = 'RawBidiStreamFuture'
+            call = 'CallBidiStream'
 
-        output.write_line(f'[[nodiscard]] {signature} const {{')
+        output.write_line(f'[[nodiscard]] ::pw::rpc2::{future}')
+        output.write_line(f'{name}() const {{')
         with output.indent():
-            output.write_line(f'return {CLIENT_BASE}::{call};')
+            output.write_line(f'return {CLIENT_BASE}::{call}<')
+            output.write_line(f'    {types}>({method_id});')
         output.write_line('}')
 
 

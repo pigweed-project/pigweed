@@ -166,9 +166,9 @@ class TestServiceClient : public internal::GeneratedServiceClient {
   using internal::GeneratedServiceClient::CallBidiStream;
   using internal::GeneratedServiceClient::CallClientStream;
   using internal::GeneratedServiceClient::CallServerStream;
-  using internal::GeneratedServiceClient::CallServerStreamRaw;
   using internal::GeneratedServiceClient::CallUnary;
-  using internal::GeneratedServiceClient::CallUnaryRaw;
+  using internal::GeneratedServiceClient::ReserveServerStream;
+  using internal::GeneratedServiceClient::ReserveUnary;
 };
 
 // A request whose serializer always fails with `INVALID_ARGUMENT`.
@@ -1107,14 +1107,16 @@ TEST(ServiceClientTest, DroppingUnpolledCallFuturesWritesNothing) {
   const size_t commits_before = raw_conn->commit_count();
 
   {
-    auto unary = test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, {});
+    auto unary = test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(
+        200u, pw::ConstBuf());
   }
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 
   {
     auto server_stream =
-        test_service.CallServerStream<pw::ConstBuf, pw::ConstBuf>(300u, {});
+        test_service.CallServerStream<pw::ConstBuf, pw::ConstBuf>(
+            300u, pw::ConstBuf());
   }
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
@@ -1148,9 +1150,10 @@ TEST(ServiceClientTest, CallsOnClosedClientFailWithUnavailable) {
   const size_t commits_before = raw_conn->commit_count();
 
   async2::FutureTask unary(
-      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, {}));
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
   async2::FutureTask server_stream(
-      test_service.CallServerStream<pw::ConstBuf, pw::ConstBuf>(300u, {}));
+      test_service.CallServerStream<pw::ConstBuf, pw::ConstBuf>(
+          300u, pw::ConstBuf()));
   async2::FutureTask client_stream(
       test_service.CallClientStream<pw::ConstBuf, pw::ConstBuf>(400u));
   async2::FutureTask bidi(
@@ -1179,15 +1182,16 @@ TEST(ServiceClientTest, CallsOnEmptyServiceClientFailWithUnavailable) {
   ASSERT_FALSE(empty.is_open());
 
   async2::FutureTask unary(
-      empty.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, {}));
+      empty.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
   async2::FutureTask server_stream(
-      empty.CallServerStream<pw::ConstBuf, pw::ConstBuf>(300u, {}));
+      empty.CallServerStream<pw::ConstBuf, pw::ConstBuf>(300u, pw::ConstBuf()));
   async2::FutureTask client_stream(
       empty.CallClientStream<pw::ConstBuf, pw::ConstBuf>(400u));
   async2::FutureTask bidi(
       empty.CallBidiStream<pw::ConstBuf, pw::ConstBuf>(500u));
-  async2::FutureTask unary_raw(empty.CallUnaryRaw(200u, 4));
-  async2::FutureTask server_stream_raw(empty.CallServerStreamRaw(300u, 4));
+  async2::FutureTask unary_raw(empty.ReserveUnary<pw::ConstBuf>(200u, 4));
+  async2::FutureTask server_stream_raw(
+      empty.ReserveServerStream<pw::ConstBuf>(300u, 4));
   dispatcher.Post(unary);
   dispatcher.Post(server_stream);
   dispatcher.Post(client_stream);
@@ -1246,10 +1250,11 @@ TEST(ServiceClientTest, RawRequestSizeThatOverflowsFailsWithoutWriting) {
   const size_t commits_before = raw_conn->commit_count();
 
   // Adding the packet header to this size would wrap around.
-  async2::FutureTask unary(
-      test_service.CallUnaryRaw(200u, std::numeric_limits<size_t>::max()));
-  async2::FutureTask server_stream(test_service.CallServerStreamRaw(
-      300u, std::numeric_limits<size_t>::max()));
+  async2::FutureTask unary(test_service.ReserveUnary<pw::ConstBuf>(
+      200u, std::numeric_limits<size_t>::max()));
+  async2::FutureTask server_stream(
+      test_service.ReserveServerStream<pw::ConstBuf>(
+          300u, std::numeric_limits<size_t>::max()));
   dispatcher.Post(unary);
   dispatcher.Post(server_stream);
   dispatcher.RunUntilStalled();
@@ -1273,10 +1278,11 @@ TEST(ServiceClientTest, RequestSerializationFailureFailsCallWithoutWriting) {
   const size_t commits_before = raw_conn->commit_count();
 
   async2::FutureTask unary(
-      test_service.CallUnary<UnserializableRequest, pw::ConstBuf>(200u, {}));
+      test_service.CallUnary<UnserializableRequest, pw::ConstBuf>(
+          200u, UnserializableRequest{}));
   async2::FutureTask server_stream(
-      test_service.CallServerStream<UnserializableRequest, pw::ConstBuf>(300u,
-                                                                         {}));
+      test_service.CallServerStream<UnserializableRequest, pw::ConstBuf>(
+          300u, UnserializableRequest{}));
   dispatcher.Post(unary);
   dispatcher.Post(server_stream);
   dispatcher.RunUntilStalled();
@@ -1298,7 +1304,8 @@ TEST(ServiceClientTest, RawUnaryCallWritesRequestIntoReservation) {
       dispatcher);
   TestServiceClient test_service(client, 100u);
 
-  async2::FutureTask reservation(test_service.CallUnaryRaw(200u, 3));
+  async2::FutureTask reservation(
+      test_service.ReserveUnary<pw::ConstBuf>(200u, 3));
   dispatcher.Post(reservation);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(reservation.has_value());
@@ -1345,7 +1352,8 @@ TEST(ServiceClientTest, RawServerStreamCallWritesRequestIntoReservation) {
       dispatcher);
   TestServiceClient test_service(client, 100u);
 
-  async2::FutureTask reservation(test_service.CallServerStreamRaw(300u, 2));
+  async2::FutureTask reservation(
+      test_service.ReserveServerStream<pw::ConstBuf>(300u, 2));
   dispatcher.Post(reservation);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(reservation.has_value());
@@ -1402,7 +1410,8 @@ TEST(ServiceClientTest,
   TestServiceClient test_service(client, 100u);
   const size_t commits_before = raw_conn->commit_count();
 
-  async2::FutureTask reservation(test_service.CallUnaryRaw(200u, 3));
+  async2::FutureTask reservation(
+      test_service.ReserveUnary<pw::ConstBuf>(200u, 3));
   dispatcher.Post(reservation);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(reservation.has_value());
@@ -1427,7 +1436,8 @@ TEST(ServiceClientTest,
   const size_t commits_before = raw_conn->commit_count();
 
   {
-    async2::FutureTask reservation(test_service.CallServerStreamRaw(300u, 2));
+    async2::FutureTask reservation(
+        test_service.ReserveServerStream<pw::ConstBuf>(300u, 2));
     dispatcher.Post(reservation);
     dispatcher.RunUntilStalled();
     ASSERT_TRUE(reservation.has_value());
@@ -1470,8 +1480,10 @@ TEST(ServiceClientTest, DroppingHandleFromCommitCancelsCall) {
     ExpectSentError(mock_conn, call_id, internal::ProtocolStatus::kCancelled);
   };
 
-  expect_cancel_on_reader_drop(test_service.CallUnaryRaw(200u, 1));
-  expect_cancel_on_reader_drop(test_service.CallServerStreamRaw(300u, 1));
+  expect_cancel_on_reader_drop(
+      test_service.ReserveUnary<pw::ConstBuf>(200u, 1));
+  expect_cancel_on_reader_drop(
+      test_service.ReserveServerStream<pw::ConstBuf>(300u, 1));
 }
 
 TEST(ServiceClientTest, CancelUnaryCallBeforeSendingSendsNothing) {
@@ -1486,7 +1498,7 @@ TEST(ServiceClientTest, CancelUnaryCallBeforeSendingSendsNothing) {
   const size_t commits_before = raw_conn->commit_count();
 
   FutureOwningTask task(
-      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, {}));
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
   task.future().Cancel();
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
@@ -1507,7 +1519,7 @@ TEST(ServiceClientTest, CancelUnaryCallAfterSendingCancelsOnServer) {
   TestServiceClient test_service(client, 100u);
 
   FutureOwningTask task(
-      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, {}));
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
   ASSERT_FALSE(task.result().has_value());
@@ -1539,7 +1551,7 @@ TEST(ServiceClientTest, CancelUnaryCallAfterResponseDoesNothing) {
   TestServiceClient test_service(client, 100u);
 
   FutureOwningTask task(
-      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, {}));
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
   ASSERT_FALSE(task.result().has_value());
@@ -1569,7 +1581,8 @@ TEST(ServiceClientTest, CancelRawResponseFutureCancelsOnServer) {
       dispatcher);
   TestServiceClient test_service(client, 100u);
 
-  async2::FutureTask reservation(test_service.CallUnaryRaw(200u, 1));
+  async2::FutureTask reservation(
+      test_service.ReserveUnary<pw::ConstBuf>(200u, 1));
   dispatcher.Post(reservation);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(reservation.has_value());
@@ -1639,7 +1652,7 @@ TEST(ServiceClientTest,
 
   raw_conn->SetBlockReserveWrite(true);
   async2::FutureTask task(
-      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, {}));
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
   EXPECT_FALSE(task.has_value());

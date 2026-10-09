@@ -193,7 +193,7 @@ class RawTestService
 
     async2::Poll<> Pend(async2::Context& cx) {
       if (!finish_.is_pendable()) {
-        finish_ = responder_.FinishCopy(request_);
+        finish_ = responder_.FinishCopy(std::move(request_));
       }
       PW_AWAIT(Status status, finish_, cx);
       return Complete(status);
@@ -202,7 +202,7 @@ class RawTestService
    private:
     ConstBuf request_;
     RawUnaryWriter responder_;
-    WriteFuture<ConstByteSpan> finish_;
+    WriteFuture<ConstBuf> finish_;
   };
 
   // Streams `StreamMessage(0)` through `StreamMessage(n - 1)`, where `n` is
@@ -221,7 +221,7 @@ class RawTestService
       while (sent_ < count_) {
         if (!write_.is_pendable()) {
           message_ = StreamMessage(sent_);
-          write_ = writer_.WriteCopy(message_);
+          write_ = writer_.WriteCopy(ConstBuf::Unowned(message_));
         }
         PW_AWAIT(Status status, write_, cx);
         if (!status.ok()) {
@@ -241,7 +241,7 @@ class RawTestService
     size_t sent_ = 0;
     RawWriter writer_;
     Payload message_;
-    WriteFuture<ConstByteSpan> write_;
+    WriteFuture<ConstBuf> write_;
     WriteFuture<> finish_;
   };
 
@@ -276,7 +276,8 @@ class RawTestService
         }
       }
       if (!finish_.is_pendable()) {
-        finish_ = responder_.FinishCopy(as_bytes(span(&response_, 1)));
+        finish_ = responder_.FinishCopy(
+            ConstBuf::Unowned(as_bytes(span(&response_, 1))));
       }
       PW_AWAIT(Status status, finish_, cx);
       return Complete(status);
@@ -286,7 +287,7 @@ class RawTestService
     RawReader reader_;
     RawUnaryWriter responder_;
     RawReadFuture read_;
-    WriteFuture<ConstByteSpan> finish_;
+    WriteFuture<ConstBuf> finish_;
     SumStreamResponse response_{};
     bool input_done_ = false;
   };
@@ -316,8 +317,7 @@ class RawTestService
           if (!message.ok()) {
             return Complete(message.status());
           }
-          message_ = std::move(*message);
-          write_ = writer_.WriteCopy(message_);
+          write_ = writer_.WriteCopy(std::move(*message));
         }
         PW_AWAIT(Status status, write_, cx);
         if (!status.ok()) {
@@ -334,9 +334,8 @@ class RawTestService
    private:
     RawReader reader_;
     RawWriter writer_;
-    ConstBuf message_;
     RawReadFuture read_;
-    WriteFuture<ConstByteSpan> write_;
+    WriteFuture<ConstBuf> write_;
     WriteFuture<> finish_;
     bool input_done_ = false;
   };
@@ -557,8 +556,7 @@ class ProxyService : public test::pw_rpc2::raw::TestEcho::Service<ProxyService>,
           responder_.Cancel();
           return Complete(response.status());
         }
-        response_ = std::move(*response);
-        finish_ = responder_.FinishCopy(response_);
+        finish_ = responder_.FinishCopy(std::move(*response));
       }
       PW_AWAIT(Status status, finish_, cx);
       return Complete(status);
@@ -569,8 +567,7 @@ class ProxyService : public test::pw_rpc2::raw::TestEcho::Service<ProxyService>,
     ConstBuf request_;
     RawUnaryWriter responder_;
     RawEchoFuture backend_call_;
-    ConstBuf response_;
-    WriteFuture<ConstByteSpan> finish_;
+    WriteFuture<ConstBuf> finish_;
   };
 
   using CountUpServerStreamFuture = UnusedMethodFuture;
@@ -784,7 +781,8 @@ TEST_F(E2ETest, RawBidiStreamInterleaved) {
     messages[i] = MakePayload(16 + i * 4, static_cast<uint32_t>(i));
   }
   auto send = [&](size_t i) {
-    return RunToCompletion(stream.writer().WriteCopy(messages[i]));
+    return RunToCompletion(
+        stream.writer().WriteCopy(ConstBuf::Unowned(messages[i])));
   };
 
   // Keep up to two echoes outstanding while writing.
@@ -808,7 +806,8 @@ TEST_F(E2ETest, RawBidiStreamEchoesEveryPayloadSize) {
                                RunToCompletion(client.EchoBidiStream()));
   for (size_t size = 0; size <= kMaxPayloadSize; ++size) {
     const Payload message = MakePayload(size, static_cast<uint32_t>(size));
-    PW_TEST_ASSERT_OK(RunToCompletion(stream.writer().WriteCopy(message)));
+    PW_TEST_ASSERT_OK(
+        RunToCompletion(stream.writer().WriteCopy(ConstBuf::Unowned(message))));
     ASSERT_TRUE(ExpectNextMessage(stream.reader(), message));
   }
   PW_TEST_ASSERT_OK(RunToCompletion(stream.writer().Finish()));
@@ -910,7 +909,8 @@ TEST_F(E2ETest, MultiInterfaceBackpressureOnOneConnectionDoesNotStallOthers) {
   // echo is held at the server.
   blocked.server_end->SetBlockReserveWrite(true);
   for (const Payload& message : messages) {
-    PW_TEST_ASSERT_OK(RunToCompletion(stream.writer().WriteCopy(message)));
+    PW_TEST_ASSERT_OK(
+        RunToCompletion(stream.writer().WriteCopy(ConstBuf::Unowned(message))));
   }
   async2::FutureTask first_echo(stream.reader().Read());
   dispatcher_.Post(first_echo);
@@ -967,8 +967,8 @@ TEST_F(E2ETest, MultiInterfaceDisconnectWithEchoesInFlight) {
                                RunToCompletion(client1.EchoBidiStream()));
   severed.server_end->SetBlockReserveWrite(true);
   for (uint32_t i = 0; i < 3; ++i) {
-    PW_TEST_ASSERT_OK(
-        RunToCompletion(stream.writer().WriteCopy(MakePayload(16, i))));
+    PW_TEST_ASSERT_OK(RunToCompletion(
+        stream.writer().WriteCopy(ConstBuf::Unowned(MakePayload(16, i)))));
   }
   async2::FutureTask echo(stream.reader().Read());
   dispatcher_.Post(echo);
@@ -979,7 +979,8 @@ TEST_F(E2ETest, MultiInterfaceDisconnectWithEchoesInFlight) {
   dispatcher_.RunUntilStalled();
   ASSERT_TRUE(echo.has_value());
   EXPECT_EQ(echo.value().status(), Status::Cancelled());
-  EXPECT_EQ(RunToCompletion(stream.writer().WriteCopy(MakePayload(16, 3))),
+  EXPECT_EQ(RunToCompletion(stream.writer().WriteCopy(
+                ConstBuf::Unowned(MakePayload(16, 3)))),
             Status::Cancelled());
   // The server's echo was waiting for a reservation when the link went down.
   EXPECT_EQ(raw_service_.TakeError(), Status::Unavailable());
@@ -1014,7 +1015,8 @@ TEST_F(E2ETest, DisconnectFailsPendingAndLaterStreamOperations) {
   PW_TEST_ASSERT_OK_AND_ASSIGN(auto stream,
                                RunToCompletion(client.EchoBidiStream()));
   const Payload message = MakePayload(32, 1);
-  PW_TEST_ASSERT_OK(RunToCompletion(stream.writer().WriteCopy(message)));
+  PW_TEST_ASSERT_OK(
+      RunToCompletion(stream.writer().WriteCopy(ConstBuf::Unowned(message))));
   ASSERT_TRUE(ExpectNextMessage(stream.reader(), message));
 
   async2::FutureTask pending_read(stream.reader().Read());
@@ -1044,7 +1046,8 @@ TEST_F(E2ETest, RepeatedBackpressureReturnsMemoryToBaseline) {
 
   // One round trip first, so that any state allocated on first use exists.
   const Payload warm_up = MakePayload(32, 0);
-  PW_TEST_ASSERT_OK(RunToCompletion(stream.writer().WriteCopy(warm_up)));
+  PW_TEST_ASSERT_OK(
+      RunToCompletion(stream.writer().WriteCopy(ConstBuf::Unowned(warm_up))));
   ASSERT_TRUE(ExpectNextMessage(stream.reader(), warm_up));
   const size_t baseline = allocator_.metrics().allocated_bytes.value();
 
@@ -1057,8 +1060,8 @@ TEST_F(E2ETest, RepeatedBackpressureReturnsMemoryToBaseline) {
     for (size_t i = 0; i < messages.size(); ++i) {
       messages[i] =
           MakePayload(32, static_cast<uint32_t>(round * kMessagesPerRound + i));
-      PW_TEST_ASSERT_OK(
-          RunToCompletion(stream.writer().WriteCopy(messages[i])));
+      PW_TEST_ASSERT_OK(RunToCompletion(
+          stream.writer().WriteCopy(ConstBuf::Unowned(messages[i]))));
     }
     async2::FutureTask first_echo(stream.reader().Read());
     dispatcher_.Post(first_echo);

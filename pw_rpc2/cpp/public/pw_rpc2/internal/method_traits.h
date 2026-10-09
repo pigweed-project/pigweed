@@ -65,14 +65,6 @@ struct RpcArgTraits<Req, UnaryWriter<Resp>> {
   using Response = Resp;
 };
 
-template <typename Req>
-struct RpcArgTraits<Req, RawUnaryWriter> {
-  static constexpr bool kValid = true;
-  static constexpr MethodType kType = MethodType::kUnary;
-  using Request = Req;
-  using Response = ConstBuf;
-};
-
 /// `(request, Writer<Resp>)` is a server streaming method.
 template <typename Req, typename Resp>
 struct RpcArgTraits<Req, Writer<Resp>> {
@@ -80,14 +72,6 @@ struct RpcArgTraits<Req, Writer<Resp>> {
   static constexpr MethodType kType = MethodType::kServerStreaming;
   using Request = Req;
   using Response = Resp;
-};
-
-template <typename Req>
-struct RpcArgTraits<Req, RawWriter> {
-  static constexpr bool kValid = true;
-  static constexpr MethodType kType = MethodType::kServerStreaming;
-  using Request = Req;
-  using Response = ConstBuf;
 };
 
 /// `(Reader<Req>, UnaryWriter<Resp>)` is a client streaming method. This is
@@ -100,14 +84,6 @@ struct RpcArgTraits<Reader<Req>, UnaryWriter<Resp>> {
   using Response = Resp;
 };
 
-template <typename Req>
-struct RpcArgTraits<Reader<Req>, RawUnaryWriter> {
-  static constexpr bool kValid = true;
-  static constexpr MethodType kType = MethodType::kClientStreaming;
-  using Request = Req;
-  using Response = ConstBuf;
-};
-
 /// `(Reader<Req>, Writer<Resp>)` is a bidirectional streaming method.
 template <typename Req, typename Resp>
 struct RpcArgTraits<Reader<Req>, Writer<Resp>> {
@@ -115,14 +91,6 @@ struct RpcArgTraits<Reader<Req>, Writer<Resp>> {
   static constexpr MethodType kType = MethodType::kBidirectionalStreaming;
   using Request = Req;
   using Response = Resp;
-};
-
-template <typename Req>
-struct RpcArgTraits<Reader<Req>, RawWriter> {
-  static constexpr bool kValid = true;
-  static constexpr MethodType kType = MethodType::kBidirectionalStreaming;
-  using Request = Req;
-  using Response = ConstBuf;
 };
 
 /// Strips a leading `async2::CoroContext` argument, if present, then
@@ -144,12 +112,8 @@ template <typename T>
 struct IsRpcHandle<Reader<T>> : std::true_type {};
 template <typename T>
 struct IsRpcHandle<Writer<T>> : std::true_type {};
-template <>
-struct IsRpcHandle<RawWriter> : std::true_type {};
 template <typename T>
 struct IsRpcHandle<UnaryWriter<T>> : std::true_type {};
-template <>
-struct IsRpcHandle<RawUnaryWriter> : std::true_type {};
 
 /// Normalizes one argument of an RPC method implementation for classification.
 ///
@@ -263,25 +227,22 @@ struct InvocationTraits {
 
   // Methods with a single response take a `UnaryWriter`; streaming
   // responses are sent through a `Writer`.
-  static constexpr bool kUnaryResponse =
-      kExpectedType == MethodType::kUnary ||
-      kExpectedType == MethodType::kClientStreaming;
+  static constexpr bool kUnaryResponse = !HasServerStream(kExpectedType);
 
   // Streaming requests are read from the client through a `Reader`; unary
   // requests are passed by value, raw ones without deserializing.
-  static constexpr bool kStreamingRequest =
-      kExpectedType == MethodType::kClientStreaming ||
-      kExpectedType == MethodType::kBidirectionalStreaming;
+  static constexpr bool kStreamingRequest = HasClientStream(kExpectedType);
 
-  using Responder = std::conditional_t<
-      kUnaryResponse,
-      std::conditional_t<kIsRaw, RawUnaryWriter, UnaryWriter<Resp>>,
-      std::conditional_t<kIsRaw, RawWriter, Writer<Resp>>>;
+  // Raw methods may appear in typed services, so `Req` and `Resp` may be
+  // message types even when `kIsRaw` is set.
+  using RequestMessage = std::conditional_t<kIsRaw, ConstBuf, Req>;
+  using Response = std::conditional_t<kIsRaw, ConstBuf, Resp>;
 
-  using Request =
-      std::conditional_t<kStreamingRequest,
-                         std::conditional_t<kIsRaw, RawReader, Reader<Req>>,
-                         std::conditional_t<kIsRaw, ConstBuf, Req>>;
+  using Responder = std::
+      conditional_t<kUnaryResponse, UnaryWriter<Response>, Writer<Response>>;
+
+  using Request = std::
+      conditional_t<kStreamingRequest, Reader<RequestMessage>, RequestMessage>;
 };
 
 }  // namespace pw::rpc2::internal

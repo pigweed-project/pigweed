@@ -42,12 +42,7 @@ namespace internal {
 
 class GeneratedServiceClient;
 
-/// `Writer<T>`, or `RawWriter` for raw (`ConstBuf`) payloads.
-template <typename T>
-using WriterFor =
-    std::conditional_t<std::is_same_v<T, ConstBuf>, RawWriter, Writer<T>>;
-
-/// Non-templated base class for `RequestFuture<CallHandler, RequestPayload>`.
+/// Non-templated base class for `RequestFuture<CallHandler, Request>`.
 class RequestFutureBase : public WriteFutureBase {
  protected:
   constexpr RequestFutureBase() = default;
@@ -61,9 +56,9 @@ class RequestFutureBase : public WriteFutureBase {
 
   template <typename CallHandler>
   [[nodiscard]] async2::Poll<Result<CallHandler>> PendAndCreate(
-      async2::Context& cx, const void* payload, SerializeFn serialize) {
+      async2::Context& cx, const void* request, SerializeFn serialize) {
     PW_TRY_READY_ASSIGN(Result<IntrusivePtr<Call>> call,
-                        PendWriteAndTakeCall(cx, payload, serialize));
+                        PendWriteAndTakeCall(cx, request, serialize));
     if (!call.ok()) {
       return async2::Ready(Result<CallHandler>(call.status()));
     }
@@ -96,6 +91,9 @@ class UnaryFutureBase : public FutureBase {
   UnaryFutureBase& operator=(UnaryFutureBase&&) noexcept = default;
   ~UnaryFutureBase() = default;
 
+  /// True until the request has been sent or has failed to send.
+  [[nodiscard]] bool request_pending() const { return req_fut_.is_pendable(); }
+
   [[nodiscard]] async2::Poll<Result<ConstBuf>> PendRaw(async2::Context& cx,
                                                        const void* request,
                                                        SerializeFn serialize);
@@ -113,31 +111,38 @@ class UnaryFutureBase : public FutureBase {
 
 }  // namespace internal
 
-/// Future that sends the start packet of a streaming RPC and resolves to its
-/// call handle: `Reader` (server streaming), `ClientStreamCall` (client
-/// streaming), or `BidiStreamCall` (bidirectional). The start packet carries
-/// the request for server streaming and has no payload otherwise.
-template <typename CallHandler, typename RequestPayload = void>
+/// Future that starts a streaming RPC and resolves to its call handle:
+/// `Reader` (server streaming), `ClientStreamCall` (client streaming), or
+/// `BidiStreamCall` (bidirectional). For server streaming, it also sends the
+/// `Request` message.
+template <typename CallHandler, typename Request = void>
 class RequestFuture : public internal::RequestFutureBase {
  public:
   using value_type = Result<CallHandler>;
 
   constexpr RequestFuture() = default;
 
-  /// Polls the start packet until it is sent.
+  /// Polls until the RPC is started and returns its call handle.
   ///
   /// @returns
-  /// * `OK` with the call handle once the start packet has been committed.
+  /// * `OK` with the call handle once the initial write is committed.
   /// * `UNAVAILABLE` if the client is empty or its connection is closed.
   /// * `RESOURCE_EXHAUSTED` if the call could not be allocated or the request
-  ///   does not fit in a packet.
-  /// * Any serialization error returned by the request serializer.
+  ///   does not fit in the write buffer.
+  /// * Any error returned by the request serializer.
   [[nodiscard]] async2::Poll<value_type> Pend(async2::Context& cx) {
-    if constexpr (std::is_void_v<RequestPayload>) {
+    if constexpr (std::is_void_v<Request>) {
       return PendAndCreate<CallHandler>(cx, nullptr, nullptr);
     } else {
-      return PendAndCreate<CallHandler>(
-          cx, &request_, &internal::SerializeTypeErased<RequestPayload>);
+      async2::Poll<value_type> result = PendAndCreate<CallHandler>(
+          cx, &request_, &internal::SerializeTypeErased<Request>);
+      if constexpr (std::is_same_v<Request, ConstBuf>) {
+        // Release an owned request as soon as it has been copied.
+        if (result.IsReady()) {
+          request_.reset();
+        }
+      }
+      return result;
     }
   }
 
@@ -145,21 +150,21 @@ class RequestFuture : public internal::RequestFutureBase {
   friend class internal::GeneratedServiceClient;
 
   // Server streaming: sends `request`.
-  template <typename P = RequestPayload,
-            typename = std::enable_if_t<!std::is_void_v<P>>>
-  RequestFuture(ReserveWriteFuture&& request_reservation, P&& request)
+  template <typename R>
+  RequestFuture(ReserveWriteFuture&& request_reservation, R&& request)
       : internal::RequestFutureBase(std::move(request_reservation)),
-        request_(std::forward<P>(request)) {}
+        request_(std::forward<R>(request)) {}
 
-  // Client and bidirectional streaming: sends a start packet with no payload.
-  template <typename P = RequestPayload,
-            typename = std::enable_if_t<std::is_void_v<P>>>
+  // Client and bidirectional streaming: starts the call without a request
+  // message.
   explicit RequestFuture(ReserveWriteFuture&& request_reservation)
-      : internal::RequestFutureBase(std::move(request_reservation)) {}
+      : internal::RequestFutureBase(std::move(request_reservation)) {
+    static_assert(std::is_void_v<Request>);
+  }
 
-  [[no_unique_address]] std::conditional_t<std::is_void_v<RequestPayload>,
+  [[no_unique_address]] std::conditional_t<std::is_void_v<Request>,
                                            std::monostate,
-                                           RequestPayload> request_{};
+                                           Request> request_{};
 };
 
 /// Future representing a complete unary RPC on a client.
@@ -168,7 +173,7 @@ class RequestFuture : public internal::RequestFutureBase {
 /// `Response` message, resolving to `Result<Response>`.
 ///
 /// Destroying a `UnaryFuture` before it completes cancels the call. If the
-/// request was already sent, the server is told, so it can stop work.
+/// request was already sent, the server is notified so it can stop work.
 /// `Cancel()` does the same while keeping the future, which then resolves to
 /// `CANCELLED`.
 template <typename Request = ConstBuf, typename Response = ConstBuf>
@@ -181,35 +186,43 @@ class UnaryFuture : public internal::UnaryFutureBase {
   /// Polls the request transmission and then the response.
   ///
   /// @returns
-  /// * `OK` with the decoded `Response` once the server replies.
-  /// * The server's error, mapped to a `Status` (e.g. `NOT_FOUND` for an
-  ///   unknown service or method, or `CANCELLED` if the server dropped its
-  ///   `UnaryWriter` without responding).
+  /// * `OK` with the `Response` once the server replies.
+  /// * The server's error status (e.g. `NOT_FOUND` for an unknown service or
+  ///   method, or `CANCELLED` if the server dropped its `UnaryWriter` without
+  ///   responding).
   /// * `FAILED_PRECONDITION` if the server answered as if the method streamed.
   /// * `UNAVAILABLE` if the client is empty or its connection closed.
   /// * `RESOURCE_EXHAUSTED` if the call could not be allocated or the request
-  ///   does not fit in a packet.
+  ///   does not fit in the write buffer.
   /// * A serialization or deserialization error (e.g. `DATA_LOSS`).
   [[nodiscard]] async2::Poll<Result<Response>> Pend(async2::Context& cx) {
+    async2::Poll<Result<Response>> result = async2::Pending();
     if constexpr (std::is_same_v<Response, ConstBuf>) {
-      return PendRaw(cx, &request_, &internal::SerializeTypeErased<Request>);
+      result = PendRaw(cx, &request_, &internal::SerializeTypeErased<Request>);
     } else {
-      async2::Poll<Result<Response>> result = async2::Pending();
       PendAndDeserialize(cx,
                          &request_,
                          &internal::SerializeTypeErased<Request>,
                          &result,
                          &internal::DeserializeTypeErased<Response>);
-      return result;
     }
+    if constexpr (std::is_same_v<Request, ConstBuf>) {
+      // Release an owned request once it has been copied, rather than holding
+      // it until the response arrives.
+      if (!request_pending()) {
+        request_.reset();
+      }
+    }
+    return result;
   }
 
  private:
   friend class internal::GeneratedServiceClient;
 
-  UnaryFuture(ReserveWriteFuture&& request_reservation, Request&& request)
+  template <typename R>
+  UnaryFuture(ReserveWriteFuture&& request_reservation, R&& request)
       : internal::UnaryFutureBase(std::move(request_reservation)),
-        request_(std::move(request)) {}
+        request_(std::forward<R>(request)) {}
 
   [[no_unique_address]] Request request_{};
 };
@@ -218,9 +231,8 @@ static_assert(async2::Future<UnaryFuture<ConstBuf, ConstBuf>>);
 
 namespace internal {
 
-/// Shared implementation of `RawUnaryReservation` and
-/// `RawServerStreamReservation`. `Commit()` returns `Committed`: the call's
-/// `RawResponseFuture` or `RawReader`.
+/// Shared implementation of `UnaryReservation` and `ServerStreamReservation`.
+/// `Commit()` returns `Committed`: the call's `ResponseFuture` or `Reader`.
 template <typename Committed>
 class RequestReservationBase : public WriteReservationBase {
  public:
@@ -305,74 +317,82 @@ class ReserveRequestFutureBase {
 
 }  // namespace internal
 
-/// A reserved buffer for writing a raw unary RPC request in place.
+/// A reserved buffer for writing a unary RPC request in place.
 ///
-/// Returned by `RawUnaryReserveFuture`. Write the request payload into the
-/// buffer and call `Commit()` with the number of bytes written to send the
-/// request and obtain a `RawResponseFuture` for the server's response.
+/// Write the request into the buffer and call `Commit()` with the number of
+/// bytes written to send the request and obtain a `ResponseFuture<Response>`.
 /// Destroying the reservation without calling `Commit()` (or calling `Drop()`)
-/// releases the buffer and abandons the call without sending anything.
-class RawUnaryReservation final
-    : public internal::RequestReservationBase<RawResponseFuture> {
+/// abandons the call without sending anything.
+template <typename Response = ConstBuf>
+class UnaryReservation final
+    : public internal::RequestReservationBase<ResponseFuture<Response>> {
  private:
-  friend class internal::ReserveRequestFutureBase<RawUnaryReservation>;
+  friend class internal::ReserveRequestFutureBase<UnaryReservation>;
 
-  explicit RawUnaryReservation(WriteReservation&& reservation)
-      : internal::RequestReservationBase<RawResponseFuture>(
+  explicit UnaryReservation(WriteReservation&& reservation)
+      : internal::RequestReservationBase<ResponseFuture<Response>>(
             std::move(reservation)) {}
 };
 
-/// A reserved buffer for writing a raw server-streaming RPC request in place.
-///
-/// Identical to `RawUnaryReservation`, except that `Commit()` returns a
-/// `RawReader` for the server's response stream. Returned by
-/// `RawServerStreamReserveFuture`.
-class RawServerStreamReservation final
-    : public internal::RequestReservationBase<RawReader> {
- private:
-  friend class internal::ReserveRequestFutureBase<RawServerStreamReservation>;
+using RawUnaryReservation = UnaryReservation<>;
 
-  explicit RawServerStreamReservation(WriteReservation&& reservation)
-      : internal::RequestReservationBase<RawReader>(std::move(reservation)) {}
+/// A reserved buffer for writing a server-streaming RPC request in place.
+///
+/// Write the request into the buffer and call `Commit()` with the number of
+/// bytes written to send the request and obtain a `Reader<Response>`.
+/// Destroying the reservation without calling `Commit()` (or calling `Drop()`)
+/// abandons the call without sending anything.
+template <typename Response = ConstBuf>
+class ServerStreamReservation final
+    : public internal::RequestReservationBase<Reader<Response>> {
+ private:
+  friend class internal::ReserveRequestFutureBase<ServerStreamReservation>;
+
+  explicit ServerStreamReservation(WriteReservation&& reservation)
+      : internal::RequestReservationBase<Reader<Response>>(
+            std::move(reservation)) {}
 };
 
-/// Future that reserves a write buffer for a raw unary RPC request and
-/// resolves to a `RawUnaryReservation`.
-///
-/// Await this future, write the request payload into the resulting
-/// reservation, and call `Commit()` to send the request and obtain a
-/// `RawResponseFuture` for the server's response.
-class RawUnaryReserveFuture final
-    : public internal::ReserveRequestFutureBase<RawUnaryReservation> {
+using RawServerStreamReservation = ServerStreamReservation<>;
+
+/// Future that reserves a write buffer for a unary RPC request and resolves to
+/// a `UnaryReservation<Response>`. Returned by
+/// `client.Method(max_message_size)`.
+template <typename Response = ConstBuf>
+class UnaryReserveFuture final
+    : public internal::ReserveRequestFutureBase<UnaryReservation<Response>> {
  public:
-  constexpr RawUnaryReserveFuture() = default;
+  constexpr UnaryReserveFuture() = default;
 
  private:
   friend class internal::GeneratedServiceClient;
 
-  explicit RawUnaryReserveFuture(ReserveWriteFuture&& res_fut)
-      : internal::ReserveRequestFutureBase<RawUnaryReservation>(
+  explicit UnaryReserveFuture(ReserveWriteFuture&& res_fut)
+      : internal::ReserveRequestFutureBase<UnaryReservation<Response>>(
             std::move(res_fut)) {}
 };
 
-/// Future that reserves a write buffer for a raw server-streaming RPC request
-/// and resolves to a `RawServerStreamReservation`.
-///
-/// Await this future, write the request payload into the resulting
-/// reservation, and call `Commit()` to send the request and obtain the call's
-/// `RawReader`.
-class RawServerStreamReserveFuture final
-    : public internal::ReserveRequestFutureBase<RawServerStreamReservation> {
+using RawUnaryReserveFuture = UnaryReserveFuture<>;
+
+/// Future that reserves a write buffer for a server-streaming RPC request and
+/// resolves to a `ServerStreamReservation<Response>`. Returned by
+/// `client.Method(max_message_size)`.
+template <typename Response = ConstBuf>
+class ServerStreamReserveFuture final
+    : public internal::ReserveRequestFutureBase<
+          ServerStreamReservation<Response>> {
  public:
-  constexpr RawServerStreamReserveFuture() = default;
+  constexpr ServerStreamReserveFuture() = default;
 
  private:
   friend class internal::GeneratedServiceClient;
 
-  explicit RawServerStreamReserveFuture(ReserveWriteFuture&& res_fut)
-      : internal::ReserveRequestFutureBase<RawServerStreamReservation>(
+  explicit ServerStreamReserveFuture(ReserveWriteFuture&& res_fut)
+      : internal::ReserveRequestFutureBase<ServerStreamReservation<Response>>(
             std::move(res_fut)) {}
 };
+
+using RawServerStreamReserveFuture = ServerStreamReserveFuture<>;
 
 static_assert(async2::Future<RawUnaryReserveFuture>);
 static_assert(async2::Future<RawServerStreamReserveFuture>);
@@ -390,7 +410,7 @@ using ServerStreamFuture = RequestFuture<Reader<Response>, Request>;
 template <typename Request = ConstBuf, typename Response = ConstBuf>
 class ClientStreamCall {
  public:
-  using Writer = internal::WriterFor<Request>;
+  using Writer = rpc2::Writer<Request>;
   using ResponseFuture = rpc2::ResponseFuture<Response>;
 
   constexpr ClientStreamCall() = default;
@@ -434,7 +454,7 @@ using RawClientStreamFuture = ClientStreamFuture<>;
 template <typename Request = ConstBuf, typename Response = ConstBuf>
 class BidiStreamCall {
  public:
-  using Writer = internal::WriterFor<Request>;
+  using Writer = rpc2::Writer<Request>;
   using Reader = rpc2::Reader<Response>;
 
   constexpr BidiStreamCall() = default;

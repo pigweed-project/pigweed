@@ -41,6 +41,11 @@ using ::pw::rpc2::internal::SerializerFor;
 
 struct TestSerializer {
   template <typename T>
+  static size_t MaxEncodedSize(const T&) {
+    return 1;
+  }
+
+  template <typename T>
   static Result<T> Deserialize(ConstByteSpan source) {
     if (source.size() != 1) {
       return Status::DataLoss();
@@ -56,10 +61,8 @@ struct TestMessage {
 
 static_assert(std::is_same_v<SerializerFor<TestMessage>::type, TestSerializer>);
 
-TEST(Serialize, ConstBufMaxEncodedSizeIsExactSize) {
-  std::byte data[5] = {};
-  ConstBuf buf = ConstBuf::Unowned(data);
-  EXPECT_EQ(MaxEncodedSize(buf), sizeof(data));
+TEST(Serialize, MaxEncodedSizeUsesSerializer) {
+  EXPECT_EQ(MaxEncodedSize(TestMessage{42}), 1u);
 }
 
 TEST(Serialize, ConstBufCopiesIntoDestination) {

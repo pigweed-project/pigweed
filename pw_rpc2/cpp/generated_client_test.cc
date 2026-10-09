@@ -213,9 +213,146 @@ TEST(GeneratedPwpbClientTest, BidiStreamExchangesMessages) {
   EXPECT_EQ(end.status(), Status::OutOfRange());
 }
 
-// Raw unary and server-streaming calls reserve the request in place: await
-// the reservation future, write the payload, and `Commit()` it to send the
-// request and obtain the reader.
+// Raw unary and server-streaming calls send a `ConstBuf` request, which may
+// own its bytes or borrow them.
+TEST(GeneratedRawClientTest, UnaryCallSendsOwnedRequest) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  allocator::test::AllocatorForTest<256> request_allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  test::pw_rpc2::raw::TestEcho::Client client(peer.client());
+
+  constexpr std::byte kRequest[] = {std::byte{0x12}, std::byte{0x34}};
+  async2::FutureTask response(
+      client.EchoUnary::Copy(Buf::AllocateCopy(request_allocator, kRequest)));
+  dispatcher.Post(response);
+
+  auto invocation =
+      peer.ExpectInvocation<test::pw_rpc2::raw::TestEcho::EchoUnary>();
+  auto request = invocation.request();
+  PW_TEST_ASSERT_OK(request);
+  test::ExpectBytes(*request, kRequest);
+
+  // The request is released once sent, before the response arrives.
+  EXPECT_EQ(request_allocator.metrics().allocated_bytes.value(), 0u);
+
+  constexpr std::byte kResponse[] = {std::byte{0x56}};
+  invocation.Finish(ConstBuf::Unowned(kResponse));
+  ASSERT_TRUE(response.has_value());
+  PW_TEST_ASSERT_OK(response.value());
+  test::ExpectBytes(*response.value(), kResponse);
+}
+
+TEST(GeneratedRawClientTest, ServerStreamSendsBorrowedRequest) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  test::pw_rpc2::raw::TestEcho::Client client(peer.client());
+
+  constexpr std::byte kRequest[] = {std::byte{0x02}};
+  auto reader = test::RunToCompletion(
+      dispatcher,
+      client.CountUpServerStream::Copy(ConstBuf::Unowned(kRequest)));
+  PW_TEST_ASSERT_OK(reader);
+
+  auto invocation = peer.ExpectInvocation<
+      test::pw_rpc2::raw::TestEcho::CountUpServerStream>();
+  auto request = invocation.request();
+  PW_TEST_ASSERT_OK(request);
+  test::ExpectBytes(*request, kRequest);
+}
+
+TEST(GeneratedRawClientTest, ServerStreamReleasesOwnedRequestWhenSent) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  allocator::test::AllocatorForTest<256> request_allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  test::pw_rpc2::raw::TestEcho::Client client(peer.client());
+
+  constexpr std::byte kRequest[] = {std::byte{0x03}};
+  // `reader` keeps the `RequestFuture` alive after it completes.
+  async2::FutureTask reader(client.CountUpServerStream::Copy(
+      Buf::AllocateCopy(request_allocator, kRequest)));
+  ASSERT_GT(request_allocator.metrics().allocated_bytes.value(), 0u);
+  dispatcher.Post(reader);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(reader.has_value());
+  PW_TEST_ASSERT_OK(reader.value());
+
+  EXPECT_EQ(request_allocator.metrics().allocated_bytes.value(), 0u);
+
+  auto invocation = peer.ExpectInvocation<
+      test::pw_rpc2::raw::TestEcho::CountUpServerStream>();
+  auto request = invocation.request();
+  PW_TEST_ASSERT_OK(request);
+  test::ExpectBytes(*request, kRequest);
+}
+
+// An owned request is released when the call fails before sending it, even
+// while its future is still alive.
+TEST(GeneratedRawClientTest, OwnedRequestReleasedWhenSendFails) {
+  allocator::test::AllocatorForTest<256> request_allocator;
+  async2::DispatcherForTest dispatcher;
+
+  // A client with no connection fails every call with `UNAVAILABLE`.
+  const test::pw_rpc2::raw::TestEcho::Client client;
+
+  constexpr std::byte kRequest[] = {std::byte{0x12}, std::byte{0x34}};
+  async2::FutureTask unary(
+      client.EchoUnary::Copy(Buf::AllocateCopy(request_allocator, kRequest)));
+  async2::FutureTask server_stream(client.CountUpServerStream::Copy(
+      Buf::AllocateCopy(request_allocator, kRequest)));
+  ASSERT_GT(request_allocator.metrics().allocated_bytes.value(), 0u);
+
+  dispatcher.Post(unary);
+  dispatcher.Post(server_stream);
+  dispatcher.RunUntilStalled();
+
+  ASSERT_TRUE(unary.has_value());
+  EXPECT_EQ(unary.value().status(), Status::Unavailable());
+  ASSERT_TRUE(server_stream.has_value());
+  EXPECT_EQ(server_stream.value().status(), Status::Unavailable());
+  EXPECT_EQ(request_allocator.metrics().allocated_bytes.value(), 0u);
+}
+
+// Typed writers also copy encoded messages from a `ConstBuf`.
+TEST(GeneratedPwpbClientTest, ClientStreamWriteCopySendsEncodedMessage) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  allocator::test::AllocatorForTest<256> message_allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  test::pw_rpc2::pwpb::TestEcho::Client client(peer.client());
+
+  auto stream =
+      test::RunToCompletion(dispatcher, client.AccumulateClientStream());
+  PW_TEST_ASSERT_OK(stream);
+  auto call = peer.ExpectInvocation<
+      test::pw_rpc2::pwpb::TestEcho::AccumulateClientStream>();
+
+  // EchoRequest{.val = 21}: field 1, varint 21.
+  constexpr std::byte kEncoded[] = {std::byte{0x08}, std::byte{0x15}};
+  // `write` keeps the `WriteFuture` alive after it completes.
+  async2::FutureTask write(stream->writer().WriteCopy(
+      Buf::AllocateCopy(message_allocator, kEncoded)));
+  dispatcher.Post(write);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(write.has_value());
+  PW_TEST_ASSERT_OK(write.value());
+  EXPECT_EQ(message_allocator.metrics().allocated_bytes.value(), 0u);
+
+  ASSERT_EQ(call.stream_message_count(), 1u);
+  auto message = call.stream_message(0);
+  PW_TEST_ASSERT_OK(message);
+  EXPECT_EQ(message->val, 21u);
+}
+
+// `client.Method()` reserves the request in place: await the
+// reservation future, write the payload, and `Commit()` it to send the request
+// and obtain the reader.
 constexpr size_t kMaxRawPayloadSize = 16;
 
 TEST(GeneratedRawClientTest, UnaryCallSendsReservedRequestAndReadsResponse) {
@@ -333,10 +470,10 @@ TEST(GeneratedRawClientTest, ClientStreamWritesMessagesAndReceivesResponse) {
 
   static constexpr std::byte kFirst[] = {std::byte{0x01}, std::byte{0x02}};
   static constexpr std::byte kSecond[] = {std::byte{0x03}};
-  PW_TEST_ASSERT_OK(
-      test::RunToCompletion(dispatcher, stream->writer().WriteCopy(kFirst)));
-  PW_TEST_ASSERT_OK(
-      test::RunToCompletion(dispatcher, stream->writer().WriteCopy(kSecond)));
+  PW_TEST_ASSERT_OK(test::RunToCompletion(
+      dispatcher, stream->writer().WriteCopy(ConstBuf::Unowned(kFirst))));
+  PW_TEST_ASSERT_OK(test::RunToCompletion(
+      dispatcher, stream->writer().WriteCopy(ConstBuf::Unowned(kSecond))));
 
   ASSERT_EQ(invocation.stream_message_count(), 2u);
   auto first = invocation.stream_message(0);

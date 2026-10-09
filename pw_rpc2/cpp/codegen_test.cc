@@ -74,11 +74,6 @@ using DeleteMsg = names_msgs::delete_::Message;
 using InnerMsg = names_msgs::Outer::Inner::Message;
 using SharedMsg = common_msgs::Shared::Message;
 using CommonInnerMsg = common_msgs::Outer::Inner::Message;
-using ::pw::ConstBuf;
-using ::pw::ConstByteSpan;
-using ::pw::OkStatus;
-using ::pw::Result;
-using ::pw::Status;
 using ::pw::rpc2::Client;
 using ::pw::rpc2::MethodType;
 using ::pw::rpc2::RawBidiStreamFuture;
@@ -91,8 +86,13 @@ using ::pw::rpc2::RawUnaryWriter;
 using ::pw::rpc2::RawWriter;
 using ::pw::rpc2::Reader;
 using ::pw::rpc2::ReserveWriteFuture;
+using ::pw::rpc2::ResponseFuture;
 using ::pw::rpc2::Server;
+using ::pw::rpc2::ServerStreamFuture;
+using ::pw::rpc2::ServerStreamReserveFuture;
 using ::pw::rpc2::ServiceClient;
+using ::pw::rpc2::UnaryFuture;
+using ::pw::rpc2::UnaryReserveFuture;
 using ::pw::rpc2::UnaryWriter;
 using ::pw::rpc2::WriteFuture;
 using ::pw::rpc2::Writer;
@@ -111,9 +111,8 @@ template <typename Method,
           typename Response,
           typename Info = internal::MethodInfo<Method>>
 constexpr bool kDescribes =
-    std::is_empty_v<Method> && std::is_final_v<Method> &&
-    !std::is_default_constructible_v<Method> && Info::kType == kType &&
-    std::is_same_v<typename Info::Request, Request> &&
+    std::is_empty_v<Method> && !std::is_default_constructible_v<Method> &&
+    Info::kType == kType && std::is_same_v<typename Info::Request, Request> &&
     std::is_same_v<typename Info::Response, Response>;
 
 // Methods named after the messages they use, keyword and nested messages.
@@ -171,24 +170,26 @@ static_assert(kDescribes<no_package_pwpb::Bidi,
                          SharedMsg>);
 
 // Raw descriptors carry the same kinds, with pw::ConstBuf payloads.
-static_assert(
-    kDescribes<names_raw::Names::Ping, MethodType::kUnary, ConstBuf, ConstBuf>);
+static_assert(kDescribes<names_raw::Names::Ping,
+                         MethodType::kUnary,
+                         pw::ConstBuf,
+                         pw::ConstBuf>);
 static_assert(kDescribes<names_raw::Kinds::ServerStream,
                          MethodType::kServerStreaming,
-                         ConstBuf,
-                         ConstBuf>);
+                         pw::ConstBuf,
+                         pw::ConstBuf>);
 static_assert(kDescribes<names_raw::Kinds::ClientStream,
                          MethodType::kClientStreaming,
-                         ConstBuf,
-                         ConstBuf>);
+                         pw::ConstBuf,
+                         pw::ConstBuf>);
 static_assert(kDescribes<names_raw::Kinds::Bidi,
                          MethodType::kBidirectionalStreaming,
-                         ConstBuf,
-                         ConstBuf>);
+                         pw::ConstBuf,
+                         pw::ConstBuf>);
 static_assert(kDescribes<no_package_raw::Bidi,
                          MethodType::kBidirectionalStreaming,
-                         ConstBuf,
-                         ConstBuf>);
+                         pw::ConstBuf,
+                         pw::ConstBuf>);
 
 template <typename PwpbMethod, typename RawMethod>
 constexpr bool kSameIds = internal::MethodInfo<PwpbMethod>::kServiceId ==
@@ -239,20 +240,216 @@ static_assert(!std::is_constructible_v<names_raw::Names::Client,
                                        const ::pw::rpc2::Client&,
                                        uint32_t>);
 
-// The raw client only has the zero-copy reservation API for methods with a
-// single request, so `{}` cannot select an unexpected overload.
+// Method tags are empty, final classes that cannot be created. They are not
+// bases of the generated Client.
+static_assert(std::is_final_v<names_pwpb::Kinds::Unary>);
+static_assert(std::is_final_v<names_raw::Kinds::ServerStream>);
+static_assert(std::is_final_v<names_pwpb::Kinds::ClientStream>);
+static_assert(std::is_final_v<names_raw::Kinds::Bidi>);
 static_assert(
-    std::is_same_v<decltype(std::declval<names_raw::Names::Client&>().Ping(0)),
+    !std::is_base_of_v<names_raw::Kinds::Unary, names_raw::Kinds::Client>);
+static_assert(!std::is_base_of_v<names_pwpb::Kinds::ServerStream,
+                                 names_pwpb::Kinds::Client>);
+
+// `client.Method::Copy()` comes from the generated
+// `pw_rpc2_internal::PwInternal_ClientCopyMethods` base. It is empty, so
+// the Client is the size of its library base class, and only the Client can
+// create or copy it.
+static_assert(std::is_base_of_v<
+              names_raw::Kinds::pw_rpc2_internal::PwInternal_ClientCopyMethods,
+              names_raw::Kinds::Client>);
+static_assert(std::is_base_of_v<
+              names_pwpb::Kinds::pw_rpc2_internal::PwInternal_ClientCopyMethods,
+              names_pwpb::Kinds::Client>);
+static_assert(
+    std::is_empty_v<
+        names_pwpb::Kinds::pw_rpc2_internal::PwInternal_ClientCopyMethods>);
+static_assert(
+    !std::is_default_constructible_v<
+        names_pwpb::Kinds::pw_rpc2_internal::PwInternal_ClientCopyMethods>);
+static_assert(
+    !std::is_copy_constructible_v<
+        names_raw::Kinds::pw_rpc2_internal::PwInternal_ClientCopyMethods>);
+static_assert(sizeof(names_pwpb::Kinds::Client) ==
+              sizeof(internal::GeneratedServiceClient));
+static_assert(sizeof(names_raw::Names::Client) ==
+              sizeof(internal::GeneratedServiceClient));
+static_assert(std::is_copy_constructible_v<names_raw::Names::Client>);
+static_assert(std::is_copy_assignable_v<names_raw::Names::Client>);
+static_assert(std::is_move_assignable_v<names_pwpb::Kinds::Client>);
+
+// `Copy()` takes an rvalue `ConstBuf`: an owned buffer must be moved in.
+template <typename MemberFunction>
+struct CopySignature;
+
+template <typename Class, typename Return, typename Param>
+struct CopySignature<Return (Class::*)(Param) const> {
+  using Result = Return;
+  using Parameter = Param;
+};
+
+static_assert(std::is_same_v<
+              CopySignature<
+                  decltype(&names_raw::Names::Client::Ping::Copy)>::Parameter,
+              pw::ConstBuf&&>);
+static_assert(
+    std::is_same_v<CopySignature<decltype(&names_pwpb::Kinds::Client::
+                                              ServerStream::Copy)>::Parameter,
+                   pw::ConstBuf&&>);
+
+// Raw clients copy requests from a `ConstBuf` with `client.Method::Copy()`.
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_raw::Names::Client&>()
+                                .Ping::Copy(pw::ConstBuf())),
+                   UnaryFuture<>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_raw::Kinds::Client&>()
+                                .ServerStream::Copy(pw::ConstBuf())),
+                   ServerStreamFuture<>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_raw::Kinds::Client&>()
+                                .ClientStream()),
+                   RawClientStreamFuture>);
+static_assert(std::is_same_v<
+              decltype(std::declval<const names_raw::Kinds::Client&>().Bidi()),
+              RawBidiStreamFuture>);
+
+// pwpb clients send a message, copied or moved into the future, or copy the
+// encoded request from a `ConstBuf`.
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_pwpb::Names::Client&>()
+                                .Ping(std::declval<const PingMsg&>())),
+                   UnaryFuture<PingMsg, PongMsg>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_pwpb::Names::Client&>()
+                                .Ping(PingMsg{})),
+                   UnaryFuture<PingMsg, PongMsg>>);
+static_assert(
+    std::is_same_v<
+        decltype(std::declval<const names_pwpb::Names::Client&>().Ping({})),
+        UnaryFuture<PingMsg, PongMsg>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_pwpb::Names::Client&>()
+                                .Ping::Copy(pw::ConstBuf())),
+                   UnaryFuture<pw::ConstBuf, PongMsg>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_pwpb::Kinds::Client&>()
+                                .ServerStream::Copy(pw::ConstBuf())),
+                   ServerStreamFuture<pw::ConstBuf, SharedMsg>>);
+
+template <typename Client, typename Arg, typename = void>
+constexpr bool kPingAccepts = false;
+
+template <typename Client, typename Arg>
+constexpr bool
+    kPingAccepts<Client,
+                 Arg,
+                 std::void_t<decltype(std::declval<const Client&>().Ping(
+                     std::declval<Arg>()))>> = true;
+
+template <typename Client, typename = void>
+constexpr bool kPingAcceptsBraces = false;
+
+template <typename Client>
+constexpr bool kPingAcceptsBraces<
+    Client,
+    std::void_t<decltype(std::declval<const Client&>().Ping({}))>> = true;
+
+// `client.Method()` takes a size or (pwpb only) a message, but never a
+// `ConstBuf` or a `bool`. Braces initialize a message rather than a size.
+static_assert(kPingAccepts<names_raw::Names::Client, uint8_t>);
+static_assert(kPingAccepts<names_pwpb::Names::Client, size_t>);
+static_assert(!kPingAccepts<names_raw::Names::Client, pw::ConstBuf>);
+static_assert(!kPingAccepts<names_pwpb::Names::Client, pw::ConstBuf>);
+static_assert(!kPingAccepts<names_raw::Names::Client, bool>);
+static_assert(!kPingAccepts<names_pwpb::Names::Client, bool>);
+static_assert(!kPingAcceptsBraces<names_raw::Names::Client>);
+static_assert(kPingAcceptsBraces<names_pwpb::Names::Client>);
+
+// Methods may be named after the client API (`Copy`, `Reserve`, and the class
+// that provides `Copy()`), unprefixed internal names (`internal`, `derived`,
+// `kServiceId`, `ClientCopyMethods`), and base class members (`is_open`,
+// `client`, `CallUnary`, etc.).
+namespace api_pwpb = names_pwpb::ClientApiNames;
+namespace api_raw = names_raw::ClientApiNames;
+
+static_assert(std::is_same_v<
+              decltype(std::declval<const api_pwpb::Client&>().Copy(PingMsg{})),
+              UnaryFuture<PingMsg, PongMsg>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const api_pwpb::Client&>().Copy(8)),
+                   UnaryReserveFuture<PongMsg>>);
+static_assert(std::is_same_v<decltype(std::declval<const api_pwpb::Client&>()
+                                          .Copy::Copy(pw::ConstBuf())),
+                             UnaryFuture<pw::ConstBuf, PongMsg>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const api_pwpb::Client&>().Reserve(8)),
+                   ServerStreamReserveFuture<PongMsg>>);
+static_assert(std::is_same_v<decltype(std::declval<const api_pwpb::Client&>()
+                                          .Reserve::Copy(pw::ConstBuf())),
+                             ServerStreamFuture<pw::ConstBuf, PongMsg>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const api_raw::Client&>()
+                                .UnaryCopyMethod::Copy(pw::ConstBuf())),
+                   UnaryFuture<>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const api_raw::Client&>().Copy(8)),
                    RawUnaryReserveFuture>);
-static_assert(std::is_same_v<decltype(std::declval<names_raw::Kinds::Client&>()
-                                          .ServerStream(0)),
-                             RawServerStreamReserveFuture>);
-static_assert(std::is_same_v<decltype(std::declval<names_raw::Kinds::Client&>()
-                                          .ClientStream()),
-                             RawClientStreamFuture>);
+static_assert(std::is_same_v<decltype(std::declval<const api_raw::Client&>()
+                                          .Copy::Copy(pw::ConstBuf())),
+                             UnaryFuture<>>);
+static_assert(std::is_same_v<decltype(std::declval<const api_pwpb::Client&>()
+                                          .internal(PingMsg{})),
+                             UnaryFuture<PingMsg, PongMsg>>);
+static_assert(std::is_same_v<decltype(std::declval<const api_pwpb::Client&>()
+                                          .derived(PingMsg{})),
+                             UnaryFuture<PingMsg, PongMsg>>);
+static_assert(std::is_same_v<
+              decltype(std::declval<const api_pwpb::Client&>().Impl(PingMsg{})),
+              UnaryFuture<PingMsg, PongMsg>>);
+static_assert(std::is_same_v<
+              decltype(std::declval<const api_pwpb::Client&>().Size(PingMsg{})),
+              UnaryFuture<PingMsg, PongMsg>>);
 static_assert(
-    std::is_same_v<decltype(std::declval<names_raw::Kinds::Client&>().Bidi()),
-                   RawBidiStreamFuture>);
+    std::is_same_v<decltype(std::declval<const api_pwpb::Client&>().Size(8)),
+                   UnaryReserveFuture<PongMsg>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const api_raw::Client&>().Size(8)),
+                   RawUnaryReserveFuture>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const api_raw::Client&>()
+                                .ClientCopyMethods::Copy(pw::ConstBuf())),
+                   UnaryFuture<>>);
+static_assert(std::is_same_v<decltype(std::declval<const api_pwpb::Client&>()
+                                          .is_open(PingMsg{})),
+                             UnaryFuture<PingMsg, PongMsg>>);
+static_assert(std::is_same_v<decltype(std::declval<const api_raw::Client&>()
+                                          .client::Copy(pw::ConstBuf())),
+                             UnaryFuture<>>);
+static_assert(std::is_same_v<decltype(std::declval<const api_raw::Client&>()
+                                          .CallUnary::Copy(pw::ConstBuf())),
+                             UnaryFuture<>>);
+
+// `client.Method()` reserves a buffer for writing the request in
+// place, for both raw and pwpb clients.
+static_assert(std::is_same_v<
+              decltype(std::declval<const names_raw::Names::Client&>().Ping(0)),
+              RawUnaryReserveFuture>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_raw::Kinds::Client&>()
+                                .ServerStream(0)),
+                   RawServerStreamReserveFuture>);
+static_assert(
+    std::is_same_v<
+        decltype(std::declval<const names_pwpb::Names::Client&>().Ping(0)),
+        UnaryReserveFuture<PongMsg>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_pwpb::Kinds::Client&>()
+                                .ServerStream(0)),
+                   ServerStreamReserveFuture<SharedMsg>>);
+static_assert(std::is_same_v<
+              decltype(std::declval<const no_package_raw::Client&>().Unary(0)),
+              RawUnaryReserveFuture>);
 
 // =============================================================================
 // Futures used by the service implementations
@@ -272,7 +469,7 @@ class RespondFuture : public test::TestFuture {
     if (!write_fut_.is_pendable()) {
       write_fut_ = writer_.Finish(response_);
     }
-    PW_AWAIT(Status status, write_fut_, cx);
+    PW_AWAIT(pw::Status status, write_fut_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -297,7 +494,7 @@ class AddFuture : public RespondFuture<Response> {
 class RawEchoFuture : public test::TestFuture {
  public:
   RawEchoFuture() = default;
-  RawEchoFuture(ConstBuf request, RawUnaryWriter writer)
+  RawEchoFuture(pw::ConstBuf request, RawUnaryWriter writer)
       : test::TestFuture(true),
         request_(std::move(request)),
         writer_(std::move(writer)) {}
@@ -315,7 +512,7 @@ class RawEchoFuture : public test::TestFuture {
   }
 
  private:
-  ConstBuf request_;
+  pw::ConstBuf request_;
   RawUnaryWriter writer_;
   ReserveWriteFuture reserve_fut_;
 };
@@ -337,7 +534,7 @@ class IdleFuture {
 };
 
 static_assert(async2::Future<RawEchoFuture>);
-static_assert(async2::Future<IdleFuture<ConstBuf, RawWriter>>);
+static_assert(async2::Future<IdleFuture<pw::ConstBuf, RawWriter>>);
 
 // =============================================================================
 // Service implementations
@@ -410,7 +607,7 @@ class RawNamesService : public names_raw::Names::Service<RawNamesService> {
  public:
   using PingFuture = RawEchoFuture;
 
-  RawEchoFuture Pong(ConstBuf request, RawUnaryWriter writer) {
+  RawEchoFuture Pong(pw::ConstBuf request, RawUnaryWriter writer) {
     return {std::move(request), std::move(writer)};
   }
 
@@ -422,8 +619,8 @@ class RawKindsService : public names_raw::Kinds::Service<RawKindsService> {
  public:
   using UnaryFuture = RawEchoFuture;
 
-  IdleFuture<ConstBuf, RawWriter> ServerStream(ConstBuf request,
-                                               RawWriter writer) {
+  IdleFuture<pw::ConstBuf, RawWriter> ServerStream(pw::ConstBuf request,
+                                                   RawWriter writer) {
     return {std::move(request), std::move(writer)};
   }
 
@@ -435,7 +632,7 @@ class RawNoPackageService
     : public no_package_raw::Service<RawNoPackageService> {
  public:
   using UnaryFuture = RawEchoFuture;
-  using ServerStreamFuture = IdleFuture<ConstBuf, RawWriter>;
+  using ServerStreamFuture = IdleFuture<pw::ConstBuf, RawWriter>;
   using ClientStreamFuture = IdleFuture<RawReader, RawUnaryWriter>;
 
   IdleFuture<RawReader, RawWriter> Bidi(RawReader reader, RawWriter writer) {
@@ -466,7 +663,7 @@ template <typename Method, typename Fut>
 
   auto invocation = peer.ExpectInvocation<Method>();
   auto request = invocation.request();
-  EXPECT_EQ(request.status(), OkStatus());
+  EXPECT_EQ(request.status(), pw::OkStatus());
   if (!request.ok()) {
     return false;
   }
@@ -479,7 +676,7 @@ template <typename Method, typename Fut>
   if (!task.has_value()) {
     return false;
   }
-  EXPECT_EQ(task.value().status(), OkStatus());
+  EXPECT_EQ(task.value().status(), pw::OkStatus());
   if (!task.value().ok()) {
     return false;
   }
@@ -598,14 +795,60 @@ TEST(CodegenClient, RawUnary) {
   auto peer = test::MakeMockPeer(dispatcher, allocator);
   const names_raw::Names::Client client(peer.client());
 
-  async2::FutureTask reservation(client.Delete(/*max_payload_size=*/4));
+  const std::byte request_bytes[] = {std::byte{0xAB}, std::byte{0x12}};
+  async2::FutureTask response(
+      client.Delete::Copy(pw::ConstBuf::Unowned(request_bytes)));
+  dispatcher.Post(response);
+  dispatcher.RunUntilStalled();
+
+  auto invocation = peer.ExpectInvocation<names_raw::Names::Delete>();
+  auto request = invocation.request();
+  PW_TEST_ASSERT_OK(request);
+  test::ExpectBytes(*request, request_bytes);
+
+  const std::byte response_bytes[] = {std::byte{0xCD}, std::byte{0xEF}};
+  invocation.Finish(pw::ConstBuf::Unowned(response_bytes));
+  ASSERT_TRUE(response.has_value());
+  PW_TEST_ASSERT_OK(response.value());
+  test::ExpectBytes(*response.value(), response_bytes);
+}
+
+TEST(CodegenClient, RawUnaryEmptyRequest) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  const names_raw::Names::Client client(peer.client());
+
+  async2::FutureTask response(client.Ping::Copy({}));
+  dispatcher.Post(response);
+  dispatcher.RunUntilStalled();
+
+  auto invocation = peer.ExpectInvocation<names_raw::Names::Ping>();
+  auto request = invocation.request();
+  PW_TEST_ASSERT_OK(request);
+  EXPECT_TRUE(request->empty());
+
+  invocation.Finish(pw::ConstBuf());
+  ASSERT_TRUE(response.has_value());
+  PW_TEST_ASSERT_OK(response.value());
+  EXPECT_TRUE(response.value()->empty());
+}
+
+TEST(CodegenClient, RawUnaryReserve) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  const names_raw::Names::Client client(peer.client());
+
+  async2::FutureTask reservation(client.Delete(/*max_message_size=*/4));
   dispatcher.Post(reservation);
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(reservation.has_value());
   PW_TEST_ASSERT_OK(reservation.value());
   reservation.value()->data()[0] = std::byte{0xAB};
-  Result<RawResponseFuture> response_future = reservation.value()->Commit(1);
+  pw::Result<RawResponseFuture> response_future =
+      reservation.value()->Commit(1);
   PW_TEST_ASSERT_OK(response_future);
 
   async2::FutureTask response(std::move(*response_future));
@@ -619,7 +862,7 @@ TEST(CodegenClient, RawUnary) {
   EXPECT_EQ(request->data()[0], std::byte{0xAB});
 
   const std::byte response_bytes[] = {std::byte{0xCD}, std::byte{0xEF}};
-  invocation.Finish(ConstBuf::Unowned(response_bytes));
+  invocation.Finish(pw::ConstBuf::Unowned(response_bytes));
   ASSERT_TRUE(response.has_value());
   PW_TEST_ASSERT_OK(response.value());
   ASSERT_EQ(response.value()->size(), 2u);
@@ -632,13 +875,22 @@ TEST(CodegenClient, RawStreamingMethodsAreRouted) {
   auto peer = test::MakeMockPeer(dispatcher, allocator);
   const names_raw::Kinds::Client client(peer.client());
 
+  const std::byte request_bytes[] = {std::byte{0x02}};
+  async2::FutureTask server_stream(
+      client.ServerStream::Copy(pw::ConstBuf::Unowned(request_bytes)));
+  dispatcher.Post(server_stream);
+  auto invocation = peer.ExpectInvocation<names_raw::Kinds::ServerStream>();
+  auto request = invocation.request();
+  PW_TEST_ASSERT_OK(request);
+  test::ExpectBytes(*request, request_bytes);
+
   async2::FutureTask reservation(client.ServerStream(4));
   dispatcher.Post(reservation);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(reservation.has_value());
   PW_TEST_ASSERT_OK(reservation.value());
   reservation.value()->data()[0] = std::byte{0x01};
-  Result<RawReader> reader = reservation.value()->Commit(1);
+  pw::Result<RawReader> reader = reservation.value()->Commit(1);
   PW_TEST_ASSERT_OK(reader);
   peer.ExpectInvocation<names_raw::Kinds::ServerStream>();
 
@@ -649,6 +901,63 @@ TEST(CodegenClient, RawStreamingMethodsAreRouted) {
   async2::FutureTask bidi(client.Bidi());
   dispatcher.Post(bidi);
   peer.ExpectInvocation<names_raw::Kinds::Bidi>();
+}
+
+TEST(CodegenClient, PwpbUnaryReserve) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  const names_pwpb::Names::Client client(peer.client());
+
+  async2::FutureTask reservation(client.Ping(/*max_message_size=*/8));
+  dispatcher.Post(reservation);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(reservation.has_value());
+  PW_TEST_ASSERT_OK(reservation.value());
+
+  // Encode Ping{.value = 5} in place: field 1, varint 5.
+  reservation.value()->data()[0] = std::byte{0x08};
+  reservation.value()->data()[1] = std::byte{0x05};
+  pw::Result<ResponseFuture<PongMsg>> response_future =
+      reservation.value()->Commit(2);
+  PW_TEST_ASSERT_OK(response_future);
+
+  async2::FutureTask response(std::move(*response_future));
+  dispatcher.Post(response);
+  dispatcher.RunUntilStalled();
+
+  auto invocation = peer.ExpectInvocation<names_pwpb::Names::Ping>();
+  auto request = invocation.request();
+  PW_TEST_ASSERT_OK(request);
+  EXPECT_EQ(request->value, 5u);
+
+  invocation.Finish(PongMsg{.value = 6});
+  ASSERT_TRUE(response.has_value());
+  PW_TEST_ASSERT_OK(response.value());
+  EXPECT_EQ(response.value()->value, 6u);
+}
+
+TEST(CodegenClient, PwpbServerStreamReserve) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  const names_pwpb::Kinds::Client client(peer.client());
+
+  async2::FutureTask reservation(client.ServerStream(8));
+  dispatcher.Post(reservation);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(reservation.has_value());
+  PW_TEST_ASSERT_OK(reservation.value());
+
+  reservation.value()->data()[0] = std::byte{0x08};
+  reservation.value()->data()[1] = std::byte{0x07};
+  pw::Result<Reader<SharedMsg>> reader = reservation.value()->Commit(2);
+  PW_TEST_ASSERT_OK(reader);
+
+  auto invocation = peer.ExpectInvocation<names_pwpb::Kinds::ServerStream>();
+  auto request = invocation.request();
+  PW_TEST_ASSERT_OK(request);
+  EXPECT_EQ(request->value, 7u);
 }
 
 // =============================================================================
@@ -664,7 +973,7 @@ class TestServer {
   ~TestServer() {
     client_.reset();
     static_cast<void>(server_.Close());
-    transport_.ResolveAccept(Status::Cancelled());
+    transport_.ResolveAccept(pw::Status::Cancelled());
     dispatcher_.RunUntilStalled();
     EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), 0u);
   }
@@ -822,14 +1131,14 @@ TEST(CodegenService, RawServicesServePwpbClients) {
 // Writes `request` into `call`, and checks that the service echoes it back.
 [[nodiscard]] bool RawEchoRoundTrip(TestServer& test,
                                     RawUnaryReserveFuture call,
-                                    ConstByteSpan request) {
+                                    pw::ConstByteSpan request) {
   auto reservation = test.Run(std::move(call));
   EXPECT_TRUE(reservation.has_value());
   if (!reservation.has_value() || !reservation->ok()) {
     ADD_FAILURE();
     return false;
   }
-  Result<RawResponseFuture> response_future =
+  pw::Result<RawResponseFuture> response_future =
       test::CommitCopy(**reservation, request);
   PW_TEST_EXPECT_OK(response_future);
   if (!response_future.ok()) {
@@ -858,12 +1167,39 @@ TEST(CodegenService, RawClientAndService) {
   const names_raw::Names::Client names(test.client());
   EXPECT_TRUE(RawEchoRoundTrip(test, names.Nested(sizeof(request)), request));
 
+  auto nested = test.Run(names.Nested::Copy(pw::ConstBuf::Unowned(request)));
+  ASSERT_TRUE(nested.has_value());
+  PW_TEST_ASSERT_OK(*nested);
+  test::ExpectBytes(**nested, request);
+
   const names_raw::Kinds::Client kinds(test.client());
   EXPECT_TRUE(RawEchoRoundTrip(test, kinds.Unary(sizeof(request)), request));
 
   const no_package_raw::Client no_package(test.client());
   EXPECT_TRUE(
       RawEchoRoundTrip(test, no_package.Unary(sizeof(request)), request));
+}
+
+TEST(CodegenService, PwpbClientReservesRequest) {
+  TestServer test;
+  ASSERT_TRUE(test.Start(test.raw_name_service()));
+
+  // The raw service echoes the request, which is written in place as
+  // Ping{.value = 42}: field 1, varint 42.
+  const std::byte request[] = {std::byte{0x08}, std::byte{0x2A}};
+  const names_pwpb::Names::Client names(test.client());
+
+  auto reservation = test.Run(names.Ping(sizeof(request)));
+  ASSERT_TRUE(reservation.has_value());
+  PW_TEST_ASSERT_OK(*reservation);
+  pw::Result<ResponseFuture<PongMsg>> response_future =
+      test::CommitCopy(**reservation, request);
+  PW_TEST_ASSERT_OK(response_future);
+
+  auto response = test.Run(std::move(*response_future));
+  ASSERT_TRUE(response.has_value());
+  PW_TEST_ASSERT_OK(*response);
+  EXPECT_EQ((*response)->value, 42u);
 }
 
 }  // namespace

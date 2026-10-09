@@ -31,7 +31,7 @@
 namespace pw::rpc2::internal {
 
 async2::Poll<Result<IntrusivePtr<Call>>> WriteFutureBase::PendWriteAndTakeCall(
-    async2::Context& cx, const void* payload, SerializeFn serialize) {
+    async2::Context& cx, const void* message, SerializeFn serialize) {
   PW_CHECK(is_pendable());
 
   PW_AWAIT(auto res_result, res_fut_, cx);
@@ -44,7 +44,7 @@ async2::Poll<Result<IntrusivePtr<Call>>> WriteFutureBase::PendWriteAndTakeCall(
 
   size_t size_bytes = 0;
   if (serialize != nullptr) {
-    StatusWithSize serialized = serialize(payload, res);
+    StatusWithSize serialized = serialize(message, res);
     if (!serialized.ok()) {
       return async2::Ready(Result<IntrusivePtr<Call>>(serialized.status()));
     }
@@ -59,10 +59,10 @@ async2::Poll<Result<IntrusivePtr<Call>>> WriteFutureBase::PendWriteAndTakeCall(
 }
 
 async2::Poll<Status> WriteFutureBase::PendWrite(async2::Context& cx,
-                                                const void* payload,
+                                                const void* message,
                                                 SerializeFn serialize) {
   PW_TRY_READY_ASSIGN(Result<IntrusivePtr<Call>> result,
-                      PendWriteAndTakeCall(cx, payload, serialize));
+                      PendWriteAndTakeCall(cx, message, serialize));
   return async2::Ready(result.status());
 }
 

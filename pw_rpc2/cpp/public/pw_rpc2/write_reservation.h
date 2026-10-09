@@ -100,7 +100,7 @@ class WriteReservationBase {
  protected:
   WriteReservationBase(transport::WriteReservation&& reservation,
                        OutboundPacket packet,
-                       IntrusivePtr<Call> call = nullptr)
+                       IntrusivePtr<Call> call)
       : reservation_(std::move(reservation)),
         packet_(packet),
         call_(std::move(call)) {}
@@ -130,14 +130,14 @@ class WriteReservationBase {
 
 }  // namespace internal
 
-/// A reserved buffer for writing an outbound RPC payload in place.
+/// A reserved buffer for writing an outbound RPC message in place.
 ///
 /// Returned by `ReserveWriteFuture` (from `Writer::ReserveWrite()` or
 /// `UnaryWriter::ReserveFinish()`). Provides container-like access (`data()`,
 /// `size()`, `operator[]`, iterators, and conversion to `ByteSpan`) to the
 /// reserved buffer.
 ///
-/// Write the payload into the buffer and call `Commit()` with the number of
+/// Write the message into the buffer and call `Commit()` with the number of
 /// bytes written to send it. Destroying the reservation without calling
 /// `Commit()` (or calling `Drop()`) releases the buffer without sending
 /// anything.

@@ -37,30 +37,32 @@ namespace pw::rpc2 {
 
 template <typename>
 class UnaryWriter;
-class RawUnaryWriter;
 template <typename>
 class Writer;
-class RawWriter;
+
+/// Single-response writer for raw (`ConstBuf`) messages.
+using RawUnaryWriter = UnaryWriter<ConstBuf>;
+
+/// Outbound message stream writer for raw (`ConstBuf`) messages.
+using RawWriter = Writer<ConstBuf>;
 
 namespace internal {
 
 struct CallAccess;
 class UnaryFutureBase;
 
-/// Type-erased serializer: encodes the payload at `payload` into `dest`.
-using SerializeFn = StatusWithSize (*)(const void* payload, ByteSpan dest);
+/// Type-erased serializer: encodes the message at `message` into `dest`.
+using SerializeFn = StatusWithSize (*)(const void* message, ByteSpan dest);
 
-template <typename Payload>
-StatusWithSize SerializeTypeErased(const void* payload, ByteSpan dest) {
-  return Serialize(*static_cast<const Payload*>(payload), dest);
+template <typename Message>
+StatusWithSize SerializeTypeErased(const void* message, ByteSpan dest) {
+  return Serialize(*static_cast<const Message*>(message), dest);
 }
 
-/// Non-templated base class for `WriteFuture<Payload>`.
+/// Non-templated base class for `WriteFuture<Message>`.
 ///
-/// Keeping `WriteFutureBase` non-templated ensures that awaiting the write
-/// reservation, handling reservation or serialization errors, and committing
-/// the packet are compiled once and shared across `WriteFuture<Payload>` for
-/// all payload types.
+/// Shares the reservation, serialization, and commit logic across all message
+/// types.
 class WriteFutureBase {
  public:
   using value_type = Status;
@@ -82,10 +84,10 @@ class WriteFutureBase {
   ~WriteFutureBase() = default;
 
   [[nodiscard]] async2::Poll<Result<IntrusivePtr<Call>>> PendWriteAndTakeCall(
-      async2::Context& cx, const void* payload, SerializeFn serialize);
+      async2::Context& cx, const void* message, SerializeFn serialize);
 
   [[nodiscard]] async2::Poll<Status> PendWrite(async2::Context& cx,
-                                               const void* payload,
+                                               const void* message,
                                                SerializeFn serialize);
 
  private:
@@ -96,14 +98,15 @@ class WriteFutureBase {
 
 }  // namespace internal
 
-/// Future representing an outbound RPC transmission (`Writer::Write()`,
-/// `RawWriter::WriteCopy()`, `Writer::Finish()`, `UnaryWriter::Finish()`, or
-/// `RawUnaryWriter::FinishCopy()`).
+/// Future representing an outbound write or stream completion.
 ///
-/// When polled, `WriteFuture` waits for a write reservation, serializes
-/// `Payload` into the reserved buffer (unless `Payload` is `void`, as for
-/// `Writer::Finish()` returning `WriteFuture<>`), and commits the write.
-template <typename Payload = void>
+/// Waits for a write reservation, serializes `Message` into the reserved buffer
+/// (unless `Message` is `void`, as for `Writer::Finish()`), and commits the
+/// write.
+///
+/// A `ConstBuf` message is copied into the reserved buffer; if it owns its
+/// memory, that memory is released as soon as the write completes.
+template <typename Message = void>
 class WriteFuture : public internal::WriteFutureBase {
  public:
   constexpr WriteFuture() = default;
@@ -116,57 +119,60 @@ class WriteFuture : public internal::WriteFutureBase {
   /// Polls the outbound write until it is committed.
   ///
   /// @returns
-  /// * `OK` once the message or completion has been serialized and committed
-  ///   for transmission.
-  /// * `FAILED_PRECONDITION` if the writer was already closed (for example,
-  ///   after `Finish()` or `Cancel()`).
-  /// * `UNAVAILABLE` if the peer cancelled or finished the call, or the
-  ///   connection closed before the write could be sent.
-  /// * `RESOURCE_EXHAUSTED` if the serialized payload does not fit in the
-  ///   write buffer.
-  /// * Any serialization error returned by the message serializer.
+  /// * `OK` once the message or completion has been committed.
+  /// * `FAILED_PRECONDITION` if the writer is already closed.
+  /// * `RESOURCE_EXHAUSTED` if the encoded message does not fit in the write
+  ///   buffer.
+  /// * The call's completion status (such as `CANCELLED`) if the call ended
+  ///   with an error.
+  /// * `UNAVAILABLE` if the connection is closed.
+  /// * Any error returned by the message serializer.
   [[nodiscard]] async2::Poll<Status> Pend(async2::Context& cx) {
-    if constexpr (std::is_void_v<Payload>) {
+    if constexpr (std::is_void_v<Message>) {
       return PendWrite(cx, nullptr, nullptr);
     } else {
-      return PendWrite(cx, &payload_, &internal::SerializeTypeErased<Payload>);
+      async2::Poll<Status> result =
+          PendWrite(cx, &message_, &internal::SerializeTypeErased<Message>);
+      if constexpr (std::is_same_v<Message, ConstBuf>) {
+        if (result.IsReady()) {
+          message_.reset();
+        }
+      }
+      return result;
     }
   }
 
  private:
   template <typename>
   friend class Writer;
-  friend class RawWriter;
   template <typename>
   friend class UnaryWriter;
-  friend class RawUnaryWriter;
   friend struct internal::CallAccess;
 
-  // Constructor for typed message or response writes.
-  template <typename P = Payload,
-            typename = std::enable_if_t<!std::is_void_v<P>>>
-  WriteFuture(ReserveWriteFuture&& res_fut, P&& payload)
+  // Constructor for message or response writes.
+  template <typename M>
+  WriteFuture(ReserveWriteFuture&& res_fut, M&& message)
       : internal::WriteFutureBase(std::move(res_fut)),
-        payload_(std::forward<P>(payload)) {}
+        message_(std::forward<M>(message)) {}
 
-  // Constructor for zero-payload completion packets (`Writer::Finish()`).
-  template <typename P = Payload,
-            typename = std::enable_if_t<std::is_void_v<P>>>
+  // Constructor for stream-end writes (`Writer::Finish()`).
   explicit WriteFuture(ReserveWriteFuture&& res_fut)
-      : internal::WriteFutureBase(std::move(res_fut)) {}
+      : internal::WriteFutureBase(std::move(res_fut)) {
+    static_assert(std::is_void_v<Message>);
+  }
 
-  [[no_unique_address]] std::conditional_t<std::is_void_v<Payload>,
+  [[no_unique_address]] std::conditional_t<std::is_void_v<Message>,
                                            std::monostate,
-                                           Payload> payload_{};
+                                           Message> message_{};
 };
 
 static_assert(async2::Future<WriteFuture<>>);
-static_assert(async2::Future<WriteFuture<ConstByteSpan>>);
+static_assert(async2::Future<WriteFuture<ConstBuf>>);
 
 namespace internal {
 
-/// Non-templated base class for outbound RPC handles (`Writer`, `RawWriter`,
-/// `UnaryWriter`, and `RawUnaryWriter`).
+/// Non-templated base class for outbound RPC handles (`Writer` and
+/// `UnaryWriter`).
 ///
 /// Keeping `WriterBase` non-templated ensures that `is_closed()`, `Cancel()`,
 /// move-assignment, destruction, and packet reservation helpers are compiled
@@ -178,11 +184,10 @@ class WriterBase : public CallHandle {
 
   /// Returns `true` if no further writes can be initiated through this writer.
   ///
-  /// This becomes `true` once `Finish()` (or `FinishCopy()` /
-  /// `ReserveFinish()`) is called, `Cancel()` is called, the peer cancels or
-  /// finishes the call, or the connection closes. Server handlers can check
-  /// `is_closed()` between async steps to stop work early if the client has
-  /// disconnected or cancelled.
+  /// This becomes `true` once `Finish()` (or `ReserveFinish()`) is called,
+  /// `Cancel()` is called, the peer cancels or finishes the call, or the
+  /// connection closes. Server handlers can check `is_closed()` between async
+  /// steps to stop work early if the client has disconnected or cancelled.
   [[nodiscard]] bool is_closed() const {
     return !has_call() || call().is_write_closed() ||
            call().has_pending_terminal_write();
@@ -249,8 +254,8 @@ class WriterBase : public CallHandle {
   }
 
   [[nodiscard]] ReserveWriteFuture ReserveMessage(
-      size_t max_payload_size) const {
-    auto reservation = ReserveOutbound(sizeof(PacketHeader), max_payload_size);
+      size_t max_message_size) const {
+    auto reservation = ReserveOutbound(sizeof(PacketHeader), max_message_size);
     return ReserveWriteFuture::Message(std::move(reservation.future),
                                        reservation.role,
                                        reservation.call_id,
@@ -266,8 +271,8 @@ class WriterBase : public CallHandle {
   }
 
   [[nodiscard]] ReserveWriteFuture ReserveResponse(
-      size_t max_payload_size) const {
-    auto reservation = ReserveOutbound(sizeof(PacketHeader), max_payload_size);
+      size_t max_message_size) const {
+    auto reservation = ReserveOutbound(sizeof(PacketHeader), max_message_size);
     return ReserveWriteFuture::Response(std::move(reservation.future),
                                         reservation.call_id,
                                         std::move(reservation.call));
@@ -283,35 +288,32 @@ class WriterBase : public CallHandle {
 
 }  // namespace internal
 
-/// Outbound message stream handle for sending zero or more typed messages to
-/// the peer.
+/// Outbound stream handle for sending zero or more messages to the peer.
 ///
-/// * **Server side** (server-streaming and bidirectional-streaming RPCs):
-///   `Writer<Response>` streams response messages to the client. Calling
-///   `Finish()` (or destroying the `Writer`) completes the RPC with `OK`.
-/// * **Client side** (client-streaming and bidirectional-streaming RPCs):
-///   `Writer<Request>` streams request messages to the server. Calling
-///   `Finish()` (or destroying the `Writer`) ends the request stream while
-///   keeping the call open to receive the server's response(s). To abort an
-///   in-progress call instead of finishing the request stream, call `Cancel()`
-///   before dropping the `Writer`.
+/// * **Server side** (server- and bidirectional-streaming RPCs): streams
+///   response messages to the client. `Finish()` (or `~Writer()`) completes the
+///   RPC with `OK`.
+/// * **Client side** (client- and bidirectional-streaming RPCs): streams
+///   request messages to the server. `Finish()` (or `~Writer()`) closes the
+///   request stream while keeping the call open for responses. Call `Cancel()`
+///   to abort the call instead.
 ///
-/// Messages are sent in the order their reservations are committed via
-/// `WriteReservation::Commit()` (or when `WriteFuture` resolves), not the
-/// order `Write()`, `ReserveWrite()`, or `Finish()` was called. Await each
-/// write (or commit its reservation) before starting the next write or
-/// `Finish()`.
+/// Every `Writer` can copy a `ConstBuf` with `WriteCopy()` or reserve a buffer
+/// with `ReserveWrite()`. Typed writers (such as `Writer<pwpb::Msg>`) also
+/// serialize messages with `Write()`.
+///
+/// Messages are sent in the order their writes complete or their reservations
+/// are committed, not the order `Write()`, `WriteCopy()`, `ReserveWrite()`, or
+/// `Finish()` was called. Await each write (or commit its reservation) before
+/// starting the next write or `Finish()`.
 ///
 /// On a server, if the method's future or coroutine completes before its
 /// `Writer` has finished the stream (for example, if the `Writer` was moved to
 /// a subtask that was not joined before returning), the call is terminated with
 /// `CANCELLED` and any remaining writes fail.
-template <typename Payload>
+template <typename Message>
 class Writer : public internal::WriterBase {
  public:
-  static_assert(!std::is_same_v<Payload, ConstBuf>,
-                "Use RawWriter instead of Writer<ConstBuf>.");
-
   constexpr Writer() = default;
 
   Writer(const Writer&) = delete;
@@ -320,41 +322,61 @@ class Writer : public internal::WriterBase {
   Writer& operator=(Writer&&) noexcept = default;
   ~Writer() = default;
 
-  /// Serializes and sends a single message on the outbound stream.
-  [[nodiscard]] WriteFuture<Payload> Write(const Payload& payload) {
-    return WriteFuture<Payload>(
-        ReserveMessage(internal::ReservationSize(payload, payload_limit())),
-        payload);
+  /// Serializes and sends `message`. Not available on `RawWriter`; use
+  /// `WriteCopy()` instead.
+  ///
+  /// @note `message` is copied into the returned future. Copying a
+  /// `pw_protobuf` message drops its callback fields, so move messages with
+  /// callbacks into `Write(Message&&)` instead.
+  template <typename M = Message,
+            typename = std::enable_if_t<std::is_copy_constructible_v<M> &&
+                                        !std::is_same_v<M, ConstBuf>>>
+  [[nodiscard]] WriteFuture<Message> Write(const Message& message) {
+    return WriteFuture<Message>(
+        ReserveWrite(internal::ReservationSize(message, payload_limit())),
+        message);
   }
 
-  /// Serializes and sends a single message on the outbound stream.
-  [[nodiscard]] WriteFuture<Payload> Write(Payload&& payload) {
-    return WriteFuture<Payload>(
-        ReserveMessage(internal::ReservationSize(payload, payload_limit())),
-        std::move(payload));
+  /// Serializes and sends `message`, moving it into the returned future. Not
+  /// available on `RawWriter`; use `WriteCopy()` instead.
+  template <typename M = Message,
+            typename = std::enable_if_t<!std::is_same_v<M, ConstBuf>>>
+  [[nodiscard]] WriteFuture<Message> Write(Message&& message) {
+    return WriteFuture<Message>(
+        ReserveWrite(internal::ReservationSize(message, payload_limit())),
+        std::move(message));
   }
 
-  /// Reserves a buffer of at least `max_payload_size` bytes for writing a
+  /// Copies `message` into the outbound stream.
+  ///
+  /// Pass `ConstBuf::Unowned(bytes)` to copy from bytes that outlive the
+  /// returned future, or move in an owned `ConstBuf`, which is released once
+  /// copied.
+  [[nodiscard]] WriteFuture<ConstBuf> WriteCopy(ConstBuf&& message) {
+    return WriteFuture<ConstBuf>(ReserveWrite(message.size()),
+                                 std::move(message));
+  }
+
+  /// Reserves a buffer of at least `max_message_size` bytes for writing a
   /// message in place.
-  [[nodiscard]] ReserveWriteFuture ReserveWrite(size_t max_payload_size) {
-    return ReserveMessage(max_payload_size);
+  [[nodiscard]] ReserveWriteFuture ReserveWrite(size_t max_message_size) {
+    return ReserveMessage(max_message_size);
   }
 
   /// Completes the outbound message stream normally.
   ///
-  /// Sends a stream-end packet so the peer's `Reader::Read()` resolves to
-  /// `Status::OutOfRange()` after all prior messages have been read. On a
-  /// server, this also completes the RPC with `OK`; on a client, it half-closes
-  /// the request stream while keeping the inbound side open.
+  /// The peer's `Reader::Read()` resolves to `Status::OutOfRange()` after all
+  /// prior messages have been read. On a server, this completes the RPC with
+  /// `OK`; on a client, it closes the request stream while keeping the inbound
+  /// side open.
   ///
-  /// If a `Writer` is destroyed without calling `Finish()` or `Cancel()`, the
-  /// stream is finished automatically on a best-effort basis. Explicitly
-  /// awaiting `Finish()` waits for buffer space and reports whether the
-  /// completion was committed (`Status`).
+  /// Destroying a `Writer` without calling `Finish()` or `Cancel()` finishes
+  /// the stream on a best-effort basis. Await `Finish()` to wait for buffer
+  /// space and observe whether completion was committed.
   ///
-  /// @warning On a server, committing the `Finish()` packet retires the call
-  /// and destroys the method's future or coroutine on the connection's next
-  /// poll. Perform all per-call work before calling `Finish()`.
+  /// @warning On a server, committing `Finish()` retires the call and destroys
+  /// the method's future or coroutine on the connection's next poll. Perform
+  /// all per-call work before calling `Finish()`.
   [[nodiscard]] WriteFuture<> Finish() {
     return WriteFuture<>(ReserveStreamEnd());
   }
@@ -368,72 +390,21 @@ class Writer : public internal::WriterBase {
       : internal::WriterBase(std::move(call), kFinishOnDestroy) {}
 };
 
-/// Outbound message stream handle for sending zero or more raw byte messages to
-/// the peer.
+/// Single-response writer for server unary and client-streaming RPCs.
 ///
-/// Provides copy-based message writing (`WriteCopy()`) and zero-copy write
-/// reservation (`ReserveWrite()`). Lifecycle and completion semantics match
-/// `Writer<Payload>`.
-class RawWriter : public internal::WriterBase {
- public:
-  constexpr RawWriter() = default;
-
-  RawWriter(const RawWriter&) = delete;
-  RawWriter& operator=(const RawWriter&) = delete;
-  RawWriter(RawWriter&&) noexcept = default;
-  RawWriter& operator=(RawWriter&&) noexcept = default;
-  ~RawWriter() = default;
-
-  /// Reserves a write buffer of `payload.size()` bytes and copies `payload`
-  /// into it when the reservation resolves.
-  ///
-  /// The bytes referenced by `payload` must remain valid until the returned
-  /// `WriteFuture` completes or is destroyed.
-  [[nodiscard]] WriteFuture<ConstByteSpan> WriteCopy(ConstByteSpan payload) {
-    return WriteFuture<ConstByteSpan>(ReserveMessage(payload.size()), payload);
-  }
-
-  /// Reserves a buffer of at least `max_payload_size` bytes for writing a
-  /// message in place.
-  [[nodiscard]] ReserveWriteFuture ReserveWrite(size_t max_payload_size) {
-    return ReserveMessage(max_payload_size);
-  }
-
-  /// Completes the outbound message stream normally. See `Writer::Finish()`.
-  [[nodiscard]] WriteFuture<> Finish() {
-    return WriteFuture<>(ReserveStreamEnd());
-  }
-
- private:
-  friend struct internal::CallAccess;
-
-  explicit RawWriter(const IntrusivePtr<internal::Call>& call)
-      : internal::WriterBase(call, kFinishOnDestroy) {}
-  explicit RawWriter(IntrusivePtr<internal::Call>&& call)
-      : internal::WriterBase(std::move(call), kFinishOnDestroy) {}
-};
-
-/// Single-response outbound writer for server unary and client-streaming RPCs.
+/// Sends a single response and completes the RPC with `OK` via `FinishCopy()`
+/// (raw bytes), `Finish()` (typed writers only), or `ReserveFinish()` (in-place
+/// write).
 ///
-/// Unlike `Writer<Payload>`, which streams zero or more messages and finishes
-/// with a zero-argument `Finish()`, `UnaryWriter<Payload>` sends a single
-/// terminal response via `Finish(Payload)` (or `ReserveFinish()` for raw
-/// buffers), delivering the response payload and completing the RPC in one
-/// step.
-///
-/// Destroying a `UnaryWriter` before a response is committed cancels the call
-/// (`Status::Cancelled()`) so the client is not left waiting for a response. If
-/// a `Finish()` future or `ReserveFinish()` reservation is still in flight when
-/// the `UnaryWriter` is destroyed, cancellation is deferred and sent only if
-/// that future or reservation is dropped without committing. Similarly, if the
-/// method's future or coroutine finishes before a response is committed, the
-/// call is cancelled and any remaining handle is detached.
-template <typename Payload>
+/// Destroying a `UnaryWriter` (or returning from the method's future or
+/// coroutine) before a response is committed cancels the call
+/// (`Status::Cancelled()`). If a `Finish()` future or `ReserveFinish()`
+/// reservation is still in flight when the `UnaryWriter` is destroyed, the call
+/// is cancelled only if that future or reservation is dropped without
+/// committing.
+template <typename Message>
 class UnaryWriter : public internal::WriterBase {
  public:
-  static_assert(!std::is_same_v<Payload, ConstBuf>,
-                "Use RawUnaryWriter instead of UnaryWriter<ConstBuf>.");
-
   constexpr UnaryWriter() = default;
 
   UnaryWriter(const UnaryWriter&) = delete;
@@ -442,40 +413,64 @@ class UnaryWriter : public internal::WriterBase {
   UnaryWriter& operator=(UnaryWriter&&) noexcept = default;
   ~UnaryWriter() = default;
 
-  /// Serializes `payload`, sends it as the single response, and completes the
-  /// RPC with `OK`.
+  /// Serializes `response`, sends it, and completes the RPC with `OK`. Not
+  /// available on `RawUnaryWriter`; use `FinishCopy()` instead.
+  ///
+  /// @note `response` is copied into the returned future. Copying a
+  /// `pw_protobuf` message drops its callback fields, so move responses with
+  /// callbacks into `Finish(Message&&)` instead.
   ///
   /// @warning Committing the response retires the call and destroys the
   /// method's future or coroutine on the connection's next poll. Perform all
   /// per-call work before calling `Finish()`.
-  [[nodiscard]] WriteFuture<Payload> Finish(const Payload& payload) {
-    return WriteFuture<Payload>(
-        ReserveResponse(internal::ReservationSize(payload, payload_limit())),
-        payload);
+  template <typename M = Message,
+            typename = std::enable_if_t<std::is_copy_constructible_v<M> &&
+                                        !std::is_same_v<M, ConstBuf>>>
+  [[nodiscard]] WriteFuture<Message> Finish(const Message& response) {
+    return WriteFuture<Message>(
+        ReserveFinish(internal::ReservationSize(response, payload_limit())),
+        response);
   }
 
-  /// Serializes `payload`, sends it as the single response, and completes the
-  /// RPC with `OK`.
+  /// Serializes `response`, sends it, and completes the RPC with `OK`, moving
+  /// `response` into the returned future. Not available on `RawUnaryWriter`;
+  /// use `FinishCopy()` instead.
   ///
   /// @warning Committing the response retires the call and destroys the
   /// method's future or coroutine on the connection's next poll. Perform all
   /// per-call work before calling `Finish()`.
-  [[nodiscard]] WriteFuture<Payload> Finish(Payload&& payload) {
-    return WriteFuture<Payload>(
-        ReserveResponse(internal::ReservationSize(payload, payload_limit())),
-        std::move(payload));
+  template <typename M = Message,
+            typename = std::enable_if_t<!std::is_same_v<M, ConstBuf>>>
+  [[nodiscard]] WriteFuture<Message> Finish(Message&& response) {
+    return WriteFuture<Message>(
+        ReserveFinish(internal::ReservationSize(response, payload_limit())),
+        std::move(response));
   }
 
-  /// Reserves a buffer of at least `max_payload_size` bytes for writing the
-  /// single terminal response in place.
+  /// Copies `response` as the single response and completes the RPC with `OK`.
   ///
-  /// Committing the resulting `WriteReservation` transmits the response and
-  /// completes the RPC with `OK`, which retires the call and destroys the
-  /// method's future or coroutine. Cancelling or dropping the reservation
-  /// without committing reopens the `UnaryWriter` (or cancels the call if the
-  /// `UnaryWriter` was already destroyed).
-  [[nodiscard]] ReserveWriteFuture ReserveFinish(size_t max_payload_size) {
-    return ReserveResponse(max_payload_size);
+  /// Pass `ConstBuf::Unowned(bytes)` to copy from bytes that outlive the
+  /// returned future, or move in an owned `ConstBuf`, which is released once
+  /// copied.
+  ///
+  /// @warning Committing the response retires the call and destroys the
+  /// method's future or coroutine on the connection's next poll. Perform all
+  /// per-call work before calling `FinishCopy()`.
+  [[nodiscard]] WriteFuture<ConstBuf> FinishCopy(ConstBuf&& response) {
+    return WriteFuture<ConstBuf>(ReserveFinish(response.size()),
+                                 std::move(response));
+  }
+
+  /// Reserves a buffer of at least `max_message_size` bytes for writing the
+  /// response in place.
+  ///
+  /// Committing the resulting `WriteReservation` sends the response and
+  /// completes the RPC with `OK`, retiring the call and destroying the
+  /// method's future or coroutine. Dropping the reservation without committing
+  /// reopens the `UnaryWriter` (or cancels the call if the `UnaryWriter` was
+  /// already destroyed).
+  [[nodiscard]] ReserveWriteFuture ReserveFinish(size_t max_message_size) {
+    return ReserveResponse(max_message_size);
   }
 
  private:
@@ -484,50 +479,6 @@ class UnaryWriter : public internal::WriterBase {
   explicit UnaryWriter(const IntrusivePtr<internal::Call>& call)
       : internal::WriterBase(call, kCancelOnDestroy) {}
   explicit UnaryWriter(IntrusivePtr<internal::Call>&& call)
-      : internal::WriterBase(std::move(call), kCancelOnDestroy) {}
-};
-
-/// Single-response outbound writer for raw server unary and client-streaming
-/// RPCs.
-///
-/// Provides copy-based response writing (`FinishCopy()`) and zero-copy response
-/// reservation (`ReserveFinish()`). Lifecycle and cancellation semantics match
-/// `UnaryWriter<Payload>`.
-class RawUnaryWriter : public internal::WriterBase {
- public:
-  constexpr RawUnaryWriter() = default;
-
-  RawUnaryWriter(const RawUnaryWriter&) = delete;
-  RawUnaryWriter& operator=(const RawUnaryWriter&) = delete;
-  RawUnaryWriter(RawUnaryWriter&&) noexcept = default;
-  RawUnaryWriter& operator=(RawUnaryWriter&&) noexcept = default;
-  ~RawUnaryWriter() = default;
-
-  /// Reserves a write buffer of `payload.size()` bytes, copies `payload` into
-  /// it when the reservation resolves, and completes the RPC with `OK`.
-  ///
-  /// The bytes referenced by `payload` must remain valid until the returned
-  /// `WriteFuture` completes or is destroyed.
-  ///
-  /// @warning Committing the response retires the call and destroys the
-  /// method's future or coroutine on the connection's next poll. Perform all
-  /// per-call work before calling `FinishCopy()`.
-  [[nodiscard]] WriteFuture<ConstByteSpan> FinishCopy(ConstByteSpan payload) {
-    return WriteFuture<ConstByteSpan>(ReserveResponse(payload.size()), payload);
-  }
-
-  /// Reserves a buffer of at least `max_payload_size` bytes for writing the
-  /// single terminal response in place. See `UnaryWriter::ReserveFinish()`.
-  [[nodiscard]] ReserveWriteFuture ReserveFinish(size_t max_payload_size) {
-    return ReserveResponse(max_payload_size);
-  }
-
- private:
-  friend struct internal::CallAccess;
-
-  explicit RawUnaryWriter(const IntrusivePtr<internal::Call>& call)
-      : internal::WriterBase(call, kCancelOnDestroy) {}
-  explicit RawUnaryWriter(IntrusivePtr<internal::Call>&& call)
       : internal::WriterBase(std::move(call), kCancelOnDestroy) {}
 };
 

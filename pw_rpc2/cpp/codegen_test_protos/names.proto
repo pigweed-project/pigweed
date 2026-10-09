@@ -61,3 +61,27 @@ service Kinds {
   rpc Bidi(stream pw.rpc2.codegen_test.common.Shared)
       returns (stream pw.rpc2.codegen_test.common.Shared);
 }
+
+// Methods named after client and service base class APIs: `Copy` (as in
+// `client.Method::Copy()`), `Reserve`, the class that provides `Copy()`,
+// unprefixed internal names (`internal`, `derived`, `Impl`, `Size`,
+// `kServiceId`, `ClientCopyMethods`), and members of `ServiceClient`,
+// `GeneratedServiceClient`, and `pw::rpc2::Service` that user methods may
+// shadow.
+service ClientApiNames {
+  rpc Copy(Ping) returns (Pong);
+  rpc Reserve(Ping) returns (stream Pong);
+  rpc UnaryCopyMethod(Ping) returns (Pong);
+  rpc ClientCopyMethods(Ping) returns (Pong);
+  rpc internal(Ping) returns (Pong);
+  rpc derived(Ping) returns (Pong);
+  rpc Impl(Ping) returns (Pong);
+  rpc Size(Ping) returns (Pong);
+  rpc kServiceId(Ping) returns (Pong);
+  rpc CallUnary(Ping) returns (Pong);
+  rpc client(Ping) returns (Pong);
+  rpc is_open(Ping) returns (Pong);
+  rpc FindMethod(Ping) returns (Pong);
+  rpc methods(Ping) returns (Pong);
+  rpc service_id(Ping) returns (Pong);
+}

@@ -37,10 +37,9 @@ struct SerializerFor<T, std::void_t<typename T::Serializer>> {
 };
 
 template <>
-struct SerializerFor<ConstByteSpan> {
+struct SerializerFor<ConstBuf> {
   struct type {
-    static size_t MaxEncodedSize(ConstByteSpan bytes) { return bytes.size(); }
-    static StatusWithSize Serialize(ConstByteSpan bytes,
+    static StatusWithSize Serialize(const ConstBuf& bytes,
                                     span<std::byte> destination) {
       if (destination.size() < bytes.size()) {
         return StatusWithSize::ResourceExhausted();
@@ -53,19 +52,17 @@ struct SerializerFor<ConstByteSpan> {
   };
 };
 
-template <>
-struct SerializerFor<ConstBuf> : SerializerFor<ConstByteSpan> {};
-
 /// Returns an upper bound on the number of bytes `value` serializes to.
 ///
 /// @warning For protobuf messages without callback fields this is the
 /// maximum encoded size of the message *type*, not the size of this
 /// particular value. For messages with callback fields it is computed by a
 /// sizing pass that runs the encode callbacks, so side-effecting callbacks run
-/// once more when the message is written. Raw (`ConstBuf`) payloads report
-/// their exact size.
+/// once more when the message is written.
 template <typename T>
 inline size_t MaxEncodedSize(const T& value) {
+  static_assert(!std::is_same_v<T, ConstBuf>,
+                "Use ConstBuf::size() directly for raw messages.");
   return SerializerFor<T>::type::MaxEncodedSize(value);
 }
 
@@ -91,6 +88,8 @@ inline constexpr bool
 /// values of types whose maximum does not fit.
 template <typename T>
 inline size_t ReservationSize(const T& value, size_t payload_limit) {
+  static_assert(!std::is_same_v<T, ConstBuf>,
+                "Use ConstBuf::size() directly for raw messages.");
   using Serializer = typename SerializerFor<T>::type;
   if constexpr (kHasReservationSize<Serializer, T>) {
     return Serializer::ReservationSize(value, payload_limit);
@@ -108,7 +107,7 @@ inline StatusWithSize Serialize(const T& value, span<std::byte> destination) {
 /// Generic helper to deserialize a message from a borrowed byte span.
 ///
 /// Not available for `ConstBuf`: a borrowed span cannot become an owning
-/// buffer. Use `ConstBuf::Unowned(source)` for raw payloads.
+/// buffer. Use `ConstBuf::Unowned(source)` for raw messages.
 template <typename T>
 inline Result<T> Deserialize(span<const std::byte> source) {
   static_assert(!std::is_same_v<T, ConstBuf>,

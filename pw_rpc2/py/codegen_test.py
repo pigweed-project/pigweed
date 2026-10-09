@@ -199,16 +199,15 @@ class ReservedNameTest(unittest.TestCase):
         for name in (
             'Client',
             'Service',
-            'kServiceId',
-            'CallUnary',
-            'CallBidiStream',
-            'GeneratedServiceClient',
-            'ServiceClient',
-            'client',
-            'is_open',
-            'derived',
-            'kPwRpcMethods',
-            'Impl',
+            'pw_rpc2_internal',
+            'PwInternal',
+            'PwInternal_',
+            'PwInternal_Impl',
+            'PwInternal_ClientCopyMethods',
+            'PwInternal_Derived',
+            'PwInternal_Anything',
+            'kPwInternal_Methods',
+            'FooPwInternalBar',
         ):
             with self.subTest(name=name):
                 self._assert_rejected([_method(name)])
@@ -234,7 +233,8 @@ class ReservedNameTest(unittest.TestCase):
         with self.assertRaisesRegex(ReservedNameError, r"'pkg\.Svc\.Client'"):
             codegen_raw.process_proto_file(proto_file)
 
-    def test_similar_names_are_allowed(self) -> None:
+    def test_similar_and_base_class_names_are_allowed(self) -> None:
+        """Unprefixed internal and base-class member names are allowed."""
         header, _ = _raw(
             _file(
                 services=[
@@ -245,26 +245,93 @@ class ReservedNameTest(unittest.TestCase):
                             _method('Reader'),
                             _method('Writer'),
                             _method('FooFuture'),
+                            _method('internal'),
+                            _method('kServiceId'),
+                            _method('ClientCopyMethods'),
+                            _method('derived'),
+                            _method('Impl'),
+                            _method('ImplT'),
+                            _method('Size'),
+                            _method('kPwRpcMethods'),
+                            _method('CallUnary'),
+                            _method('ReserveUnary'),
+                            _method('ServiceClient'),
+                            _method('GeneratedServiceClient'),
+                            _method('client'),
+                            _method('is_open'),
+                            _method('FindMethod'),
+                            _method('methods'),
+                            _method('service_id'),
                         ],
                     )
                 ]
             )
         )
-        self.assertIn('RawUnaryReserveFuture FooFuture(', header)
+        self.assertIn(
+            '  FooFuture(PwInternal_Size max_message_size) const {', header
+        )
+        self.assertIn(
+            '  is_open(PwInternal_Size max_message_size) const {', header
+        )
+        self.assertIn(
+            '  internal(PwInternal_Size max_message_size) const {', header
+        )
+        self.assertIn(
+            '  derived(PwInternal_Size max_message_size) const {', header
+        )
+        self.assertIn(
+            '  Impl(PwInternal_Size max_message_size) const {', header
+        )
+        self.assertIn(
+            '  Size(PwInternal_Size max_message_size) const {', header
+        )
+
+    def test_copy_and_reserve_are_allowed(self) -> None:
+        """`Copy` and `Reserve` are valid method names of every type."""
+        for streaming in (False, True):
+            proto_file = _file(
+                services=[
+                    _service(
+                        'Svc',
+                        [
+                            _method('Copy', server_streaming=streaming),
+                            _method('Reserve', client_streaming=streaming),
+                        ],
+                    )
+                ]
+            )
+            for process in (_raw, _pwpb):
+                with self.subTest(process=process, streaming=streaming):
+                    header, _ = process(proto_file)
+                    self.assertIn('struct Copy final {', header)
+                    self.assertIn('struct Reserve final {', header)
+                    self.assertIn(
+                        '  using Copy = ::pw::rpc2::internal::', header
+                    )
 
     def test_keyword_method_name(self) -> None:
         header, _ = _raw(_file(services=[_service('Svc', [_method('delete')])]))
-        self.assertIn(
-            'struct delete_ final {\n  delete_() = delete;\n};', header
-        )
+        self.assertIn('struct delete_ final {', header)
         self.assertIn(
             'struct MethodInfo<::pkg::pw_rpc2::raw::Svc::delete_> {', header
         )
-        self.assertIn('RawUnaryReserveFuture delete_(', header)
+        self.assertIn(
+            '  delete_(PwInternal_Size max_message_size) const {', header
+        )
         # The ID is the hash of the proto name, not the C++ name.
         delete_id = f'{hash_65599("delete"):#010x}'
         self.assertIn(
-            f'CallUnaryRaw({delete_id}, max_payload_size)',
+            '  using delete_ = ::pw::rpc2::internal::UnaryCopyMethod<\n'
+            '      ::pkg::pw_rpc2::raw::Svc::Client,\n'
+            f'      {delete_id},\n'
+            '      ::pw::ConstBuf>;',
+            header,
+        )
+        self.assertIn(
+            'ReserveUnary<\n'
+            '        ::pw::ConstBuf>(\n'
+            f'        {delete_id}, '
+            '::pw::rpc2::internal::MessageSize(max_message_size));',
             header,
         )
         self.assertIn(f'kMethodId = {delete_id};', header)
@@ -296,6 +363,147 @@ class HeaderNameTest(unittest.TestCase):
         )
 
 
+_EXPECTED_COPY_METHODS = """\
+class Client;
+
+namespace pw_rpc2_internal {{
+
+// Provides `client.Method::Copy(buf)` for unary and server streaming methods.
+class PwInternal_ClientCopyMethods
+    : public ::pw::rpc2::internal::UnaryCopyMethod<
+          {client},
+          {unary_id},
+          {resp}>,
+      public ::pw::rpc2::internal::ServerStreamCopyMethod<
+          {client},
+          {stream_id},
+          {resp}> {{
+ public:
+  // These alias the classes that provide `Copy()`, not the method
+  // tags of the same names (e.g. `Client::Method` is not `Method`).
+  using Unary = ::pw::rpc2::internal::UnaryCopyMethod<
+      {client},
+      {unary_id},
+      {resp}>;
+  using ServerStream = ::pw::rpc2::internal::ServerStreamCopyMethod<
+      {client},
+      {stream_id},
+      {resp}>;
+
+ protected:
+  constexpr PwInternal_ClientCopyMethods() = default;
+  constexpr PwInternal_ClientCopyMethods(
+      const PwInternal_ClientCopyMethods&) = default;
+  constexpr PwInternal_ClientCopyMethods& operator=(
+      const PwInternal_ClientCopyMethods&) = default;
+}};
+
+}}  // namespace pw_rpc2_internal
+
+class Client final : public ::pw::rpc2::internal::GeneratedServiceClient,
+                     public pw_rpc2_internal::PwInternal_ClientCopyMethods {{
+"""
+
+_EXPECTED_RESERVE_METHOD = """\
+  template <typename PwInternal_Size,
+            typename = ::pw::rpc2::internal::EnableIfMessageSize<
+                PwInternal_Size>>
+  [[nodiscard]] ::pw::rpc2::{future}<
+      {resp}>
+  {name}(PwInternal_Size max_message_size) const {{
+    return ::pw::rpc2::internal::GeneratedServiceClient::{reserve}<
+        {resp}>(
+        {method_id}, ::pw::rpc2::internal::MessageSize(max_message_size));
+  }}
+"""
+
+_EXPECTED_RAW_METHOD_INFO = """\
+template <>
+struct MethodInfo<::pkg::pw_rpc2::raw::Kinds::{name}> {{
+  static constexpr ::std::uint32_t kServiceId = {service_id};
+  static constexpr ::std::uint32_t kMethodId = {method_id};
+  static constexpr ::pw::rpc2::MethodType kType =
+      ::pw::rpc2::MethodType::{kind};
+  using Request = ::pw::ConstBuf;
+  using Response = ::pw::ConstBuf;
+}};"""
+
+_EXPECTED_PWPB_CLIENT_METHODS = """\
+  [[nodiscard]] ::pw::rpc2::UnaryFuture<
+      ::pkg::pwpb::Request::Message,
+      ::pkg::pwpb::Response::Message>
+  Unary(
+      const ::pkg::pwpb::Request::Message& request) const {{
+    return ::pw::rpc2::internal::GeneratedServiceClient::CallUnary<
+        ::pkg::pwpb::Request::Message,
+        ::pkg::pwpb::Response::Message>(
+        {unary_id}, request);
+  }}
+
+  [[nodiscard]] ::pw::rpc2::UnaryFuture<
+      ::pkg::pwpb::Request::Message,
+      ::pkg::pwpb::Response::Message>
+  Unary(
+      ::pkg::pwpb::Request::Message&& request) const {{
+    return ::pw::rpc2::internal::GeneratedServiceClient::CallUnary<
+        ::pkg::pwpb::Request::Message,
+        ::pkg::pwpb::Response::Message>(
+        {unary_id}, ::std::move(request));
+  }}
+""".format(
+    unary_id=f'{hash_65599("Unary"):#010x}',
+)
+
+_EXPECTED_PWPB_SERVER_STREAM_METHODS = """\
+  [[nodiscard]] ::pw::rpc2::ServerStreamFuture<
+      ::pkg::pwpb::Request::Message,
+      ::pkg::pwpb::Response::Message>
+  ServerStream(
+      const ::pkg::pwpb::Request::Message& request) const {{
+    return ::pw::rpc2::internal::GeneratedServiceClient::CallServerStream<
+        ::pkg::pwpb::Request::Message,
+        ::pkg::pwpb::Response::Message>(
+        {stream_id}, request);
+  }}
+
+  [[nodiscard]] ::pw::rpc2::ServerStreamFuture<
+      ::pkg::pwpb::Request::Message,
+      ::pkg::pwpb::Response::Message>
+  ServerStream(
+      ::pkg::pwpb::Request::Message&& request) const {{
+    return ::pw::rpc2::internal::GeneratedServiceClient::CallServerStream<
+        ::pkg::pwpb::Request::Message,
+        ::pkg::pwpb::Response::Message>(
+        {stream_id}, ::std::move(request));
+  }}
+""".format(
+    stream_id=f'{hash_65599("ServerStream"):#010x}',
+)
+
+_EXPECTED_PWPB_CLIENT_STREAM_METHODS = """\
+  [[nodiscard]] ::pw::rpc2::ClientStreamFuture<
+      ::pkg::pwpb::Request::Message,
+      ::pkg::pwpb::Response::Message>
+  ClientStream() const {{
+    return ::pw::rpc2::internal::GeneratedServiceClient::CallClientStream<
+        ::pkg::pwpb::Request::Message,
+        ::pkg::pwpb::Response::Message>({client_stream_id});
+  }}
+
+  [[nodiscard]] ::pw::rpc2::BidiStreamFuture<
+      ::pkg::pwpb::Request::Message,
+      ::pkg::pwpb::Response::Message>
+  Bidi() const {{
+    return ::pw::rpc2::internal::GeneratedServiceClient::CallBidiStream<
+        ::pkg::pwpb::Request::Message,
+        ::pkg::pwpb::Response::Message>({bidi_id});
+  }}
+""".format(
+    client_stream_id=f'{hash_65599("ClientStream"):#010x}',
+    bidi_id=f'{hash_65599("Bidi"):#010x}',
+)
+
+
 class CommonOutputTest(unittest.TestCase):
     """Tests output that is the same for both flavors."""
 
@@ -319,38 +527,43 @@ class CommonOutputTest(unittest.TestCase):
                         'Generated code must use fully qualified names',
                     )
 
-    def test_ids_are_private(self) -> None:
+    def test_ids_are_inlined(self) -> None:
         header, _ = _raw(_file(services=[_service('Svc', [_method('Get')])]))
         service_id = f'{hash_65599("pkg.Svc"):#010x}'
-        constants = (
-            ' private:\n'
-            f'  static constexpr ::std::uint32_t kServiceId = {service_id};\n'
+        self.assertIn(
+            f'::pw::rpc2::Service({service_id}, kPwInternal_Methods) {{}}',
+            header,
         )
-        # Once in the Client and once in the Service.
-        self.assertEqual(header.count(constants), 2)
+        # kServiceId is only declared in MethodInfo, not in Client or Service.
+        self.assertEqual(header.count('kServiceId'), 1)
         self.assertNotIn('kMethodId_', header)
 
     def test_client_constructors(self) -> None:
         header, _ = _raw(_file(services=[_service('Svc', [_method('Get')])]))
+        service_id = f'{hash_65599("pkg.Svc"):#010x}'
         self.assertEqual(len(re.findall(r'\bClient\(', header)), 2)
         self.assertIn('  constexpr Client() = default;\n', header)
         self.assertIn(
             '  explicit Client(const ::pw::rpc2::Client& client)\n'
             '      : ::pw::rpc2::internal::GeneratedServiceClient('
-            'client, kServiceId) {}',
+            f'client, {service_id}) {{}}',
             header,
         )
 
     def test_service_contract_errors(self) -> None:
         header, _ = _raw(_file(services=[_service('Svc', [_method('Get')])]))
         self.assertIn(
-            '"Service implementation must define either a member function '
-            "named 'Get' or a future type named 'GetFuture'\"",
+            '        "Service implementation must define either a member '
+            'function "\n'
+            '        "named \'Get\' or a future type "\n'
+            '        "named \'GetFuture\'"',
             header,
         )
         self.assertIn(
-            '"Service implementation must not define both a member function '
-            "named 'Get' and a future type named 'GetFuture'\"",
+            '        "Service implementation must not define both a member '
+            'function "\n'
+            '        "named \'Get\' and a future type "\n'
+            '        "named \'GetFuture\'"',
             header,
         )
 
@@ -362,7 +575,8 @@ class CommonOutputTest(unittest.TestCase):
             'HasMethod_Get',
             'HasFuture_Get',
             'Invoker_Get',
-            'Impl& derived()',
+            'PwInternal_Impl& PwInternal_Derived()',
+            'kPwInternal_Methods =',
         ):
             with self.subTest(name=name):
                 self.assertGreater(service.index(name), private)
@@ -396,11 +610,99 @@ class CommonOutputTest(unittest.TestCase):
                 self.assertNotIn('using Raw', header)
                 self.assertNotIn('Coro', header)
                 self.assertNotIn('Deserialize', header)
+                # Aside from MethodInfo, only PwInternal_ClientCopyMethods
+                # has aliases.
                 self.assertEqual(
-                    re.findall(r'^\s*using (?!Request|Response)', header, re.M),
+                    re.findall(
+                        r'^\s*using (?!Request|Response|\w+ = '
+                        r'::pw::rpc2::internal::\w+CopyMethod<)',
+                        header,
+                        re.M,
+                    ),
                     [],
                 )
                 self.assertNotIn('using ::', stubs)
+
+    def test_tags_are_empty_and_final(self) -> None:
+        for process in (_raw, _pwpb):
+            header, _ = process(_file(services=[_all_kinds()]))
+            with self.subTest(process=process):
+                for name in ('Unary', 'ServerStream', 'ClientStream', 'Bidi'):
+                    self.assertIn(
+                        f'struct {name} final {{\n  {name}() = delete;\n}};',
+                        header,
+                    )
+
+    def test_copy_methods(self) -> None:
+        """Tests generated PwInternal_ClientCopyMethods."""
+        for process, flavor in ((_raw, 'raw'), (_pwpb, 'pwpb')):
+            header, _ = process(_file(services=[_all_kinds()]))
+            resp = (
+                '::pw::ConstBuf'
+                if flavor == 'raw'
+                else '::pkg::pwpb::Response::Message'
+            )
+            with self.subTest(flavor=flavor):
+                self.assertIn(
+                    _EXPECTED_COPY_METHODS.format(
+                        client=f'::pkg::pw_rpc2::{flavor}::Kinds::Client',
+                        unary_id=f'{hash_65599("Unary"):#010x}',
+                        stream_id=f'{hash_65599("ServerStream"):#010x}',
+                        resp=resp,
+                    ),
+                    header,
+                )
+                self.assertNotIn('using ClientStream', header)
+                self.assertNotIn('using Bidi', header)
+
+    def test_reserve(self) -> None:
+        """Tests generated client reservation methods."""
+        for process, flavor in ((_raw, 'raw'), (_pwpb, 'pwpb')):
+            header, _ = process(_file(services=[_all_kinds()]))
+            resp = (
+                '::pw::ConstBuf'
+                if flavor == 'raw'
+                else '::pkg::pwpb::Response::Message'
+            )
+            for name, future, reserve in (
+                ('Unary', 'UnaryReserveFuture', 'ReserveUnary'),
+                (
+                    'ServerStream',
+                    'ServerStreamReserveFuture',
+                    'ReserveServerStream',
+                ),
+            ):
+                with self.subTest(flavor=flavor, name=name):
+                    self.assertIn(
+                        _EXPECTED_RESERVE_METHOD.format(
+                            name=name,
+                            future=future,
+                            reserve=reserve,
+                            resp=resp,
+                            method_id=f'{hash_65599(name):#010x}',
+                        ),
+                        header,
+                    )
+            for name in ('ClientStream', 'Bidi'):
+                with self.subTest(flavor=flavor, name=name):
+                    self.assertNotIn(f'{name}(PwInternal_Size', header)
+
+    def test_no_copy_methods_without_single_request_methods(self) -> None:
+        streaming = _service(
+            'Svc',
+            [_method('Bidi', client_streaming=True, server_streaming=True)],
+        )
+        for process in (_raw, _pwpb):
+            header, _ = process(_file(services=[streaming]))
+            with self.subTest(process=process):
+                self.assertNotIn('class Client;', header)
+                self.assertNotIn('ClientCopyMethods', header)
+                self.assertNotIn('Reserve', header)
+                self.assertIn(
+                    'class Client final : public '
+                    '::pw::rpc2::internal::GeneratedServiceClient {',
+                    header,
+                )
 
     def test_package_with_keyword(self) -> None:
         header, _ = _raw(
@@ -428,8 +730,8 @@ class CommonOutputTest(unittest.TestCase):
                         f'namespace pkg::pw_rpc2::{flavor}::{service} {{', stubs
                     )
                     self.assertIn(
-                        f'class {service}Service : public '
-                        f'::pkg::pw_rpc2::{flavor}::'
+                        f'class {service}Service\n'
+                        f'    : public ::pkg::pw_rpc2::{flavor}::'
                         f'{service}::Service<{service}Service> {{',
                         stubs,
                     )
@@ -445,7 +747,7 @@ class CommonOutputTest(unittest.TestCase):
 
 
 class RawCodegenTest(unittest.TestCase):
-    """Tests code generated with raw payloads."""
+    """Tests code generated with raw messages."""
 
     def setUp(self) -> None:
         self.header, self.stubs = _raw(_file(services=[_all_kinds()]))
@@ -477,80 +779,92 @@ class RawCodegenTest(unittest.TestCase):
                     self.header,
                 )
                 self.assertIn(
-                    'template <>\n'
-                    f'struct MethodInfo<::pkg::pw_rpc2::raw::Kinds::{name}> '
-                    '{\n'
-                    '  static constexpr ::std::uint32_t kServiceId = '
-                    f'{service_id};\n'
-                    '  static constexpr ::std::uint32_t kMethodId = '
-                    f'{hash_65599(name):#010x};\n'
-                    '  static constexpr ::pw::rpc2::MethodType kType = '
-                    f'::pw::rpc2::MethodType::{kind};\n'
-                    '  using Request = ::pw::ConstBuf;\n'
-                    '  using Response = ::pw::ConstBuf;\n'
-                    '};',
+                    _EXPECTED_RAW_METHOD_INFO.format(
+                        name=name,
+                        service_id=service_id,
+                        method_id=f'{hash_65599(name):#010x}',
+                        kind=kind,
+                    ),
                     self.header,
                 )
 
     def test_client(self) -> None:
         for signature in (
-            '[[nodiscard]] ::pw::rpc2::RawUnaryReserveFuture Unary('
-            '::std::size_t max_payload_size) const {',
-            '[[nodiscard]] ::pw::rpc2::RawServerStreamReserveFuture '
-            'ServerStream(::std::size_t max_payload_size) const {',
-            '[[nodiscard]] ::pw::rpc2::RawClientStreamFuture '
-            'ClientStream() const {',
-            '[[nodiscard]] ::pw::rpc2::RawBidiStreamFuture Bidi() const {',
+            '  Unary(PwInternal_Size max_message_size) const {',
+            '  ServerStream(PwInternal_Size max_message_size) const {',
+            '  [[nodiscard]] ::pw::rpc2::RawClientStreamFuture\n'
+            '  ClientStream() const {',
+            '  [[nodiscard]] ::pw::rpc2::RawBidiStreamFuture\n'
+            '  Bidi() const {',
         ):
             with self.subTest(signature=signature):
                 self.assertIn(signature, self.header)
-        # There is no overload that copies a request.
-        client = self.header.split('class Service', maxsplit=1)[0]
-        self.assertNotIn('::pw::ConstBuf request', client)
+        # Raw requests are sent with `client.Method::Copy(buf)`.
+        client = self.header[self.header.index('class Client final') :]
+        client = client[: client.index('\n};')]
+        self.assertNotIn('ConstBuf request', client)
+        self.assertNotIn('CallUnary', client)
+        self.assertNotIn('CallServerStream', client)
 
     def test_service(self) -> None:
-        for name, params in (
+        """Tests raw Service<Impl> and stub method signatures."""
+        for name, first, second in (
             (
                 'Unary',
-                '::pw::ConstBuf request, ::pw::rpc2::RawUnaryWriter writer',
+                '::pw::ConstBuf request',
+                '::pw::rpc2::RawUnaryWriter writer',
             ),
             (
                 'ServerStream',
-                '::pw::ConstBuf request, ::pw::rpc2::RawWriter writer',
+                '::pw::ConstBuf request',
+                '::pw::rpc2::RawWriter writer',
             ),
             (
                 'ClientStream',
-                '::pw::rpc2::RawReader reader, '
+                '::pw::rpc2::RawReader reader',
                 '::pw::rpc2::RawUnaryWriter writer',
             ),
             (
                 'Bidi',
-                '::pw::rpc2::RawReader reader, ::pw::rpc2::RawWriter writer',
+                '::pw::rpc2::RawReader reader',
+                '::pw::rpc2::RawWriter writer',
             ),
         ):
             with self.subTest(name=name):
-                self.assertIn(f'{name}(\n      {params})', self.header)
-                self.assertIn(f'{name}({params})', self.stubs)
+                self.assertIn(
+                    f'{name}(\n      {first},\n      {second})', self.header
+                )
+                self.assertIn(
+                    f'  //   SomeFuture {name}(\n'
+                    f'  //       {first},\n'
+                    f'  //       {second});',
+                    self.stubs,
+                )
         self.assertIn(
-            '::pw::rpc2::internal::MethodInvokerFor<&T::Bidi, '
-            '::pkg::pw_rpc2::raw::Kinds::Bidi>',
+            '      : ::pw::rpc2::internal::MethodInvokerFor<\n'
+            '            &T::Bidi,\n'
+            '            ::pkg::pw_rpc2::raw::Kinds::Bidi> {};',
             self.header,
         )
         self.assertIn(
-            '::pw::rpc2::internal::FutureMethodInvokerFor<typename '
-            'T::BidiFuture, ::pkg::pw_rpc2::raw::Kinds::Bidi>',
+            '      : ::pw::rpc2::internal::FutureMethodInvokerFor<\n'
+            '            typename T::BidiFuture,\n'
+            '            ::pkg::pw_rpc2::raw::Kinds::Bidi> {};',
             self.header,
         )
 
     def test_stubs(self) -> None:
         self.assertIn(
-            'class KindsService : public ::pkg::pw_rpc2::raw::Kinds::'
+            'class KindsService\n'
+            '    : public ::pkg::pw_rpc2::raw::Kinds::'
             'Service<KindsService> {',
             self.stubs,
         )
         self.assertIn(
-            'BidiFuture(KindsService& service, ::pw::rpc2::RawReader reader, '
-            '::pw::rpc2::RawWriter writer);',
+            '    BidiFuture(\n'
+            '        KindsService& service,\n'
+            '        ::pw::rpc2::RawReader reader,\n'
+            '        ::pw::rpc2::RawWriter writer);',
             self.stubs,
         )
 
@@ -572,6 +886,7 @@ class PwpbCodegenTest(unittest.TestCase):
     """Tests code generated with pw_protobuf message structs."""
 
     def test_method_named_after_message(self) -> None:
+        """Tests RPC methods that share a name with a message."""
         header, _ = _pwpb(
             _file(
                 package='pkg',
@@ -587,8 +902,18 @@ class PwpbCodegenTest(unittest.TestCase):
                 ],
             )
         )
+        self.assertIn('struct Ping final {', header)
         self.assertIn(
-            'struct Ping final {\n  Ping() = delete;\n};',
+            '  [[nodiscard]] ::pw::rpc2::UnaryReserveFuture<\n'
+            '      ::pkg::pwpb::Pong::Message>\n'
+            '  Ping(PwInternal_Size max_message_size) const {',
+            header,
+        )
+        self.assertIn(
+            '  using Ping = ::pw::rpc2::internal::UnaryCopyMethod<\n'
+            '      ::pkg::pw_rpc2::pwpb::Svc::Client,\n'
+            f'      {hash_65599("Ping"):#010x},\n'
+            '      ::pkg::pwpb::Pong::Message>;',
             header,
         )
         self.assertIn(
@@ -598,9 +923,11 @@ class PwpbCodegenTest(unittest.TestCase):
         self.assertIn('using Request = ::pkg::pwpb::Ping::Message;', header)
         self.assertIn('using Response = ::pkg::pwpb::Pong::Message;', header)
         self.assertIn(
-            '  [[nodiscard]] ::pw::rpc2::UnaryFuture<'
-            '::pkg::pwpb::Ping::Message, ::pkg::pwpb::Pong::Message>\n'
-            '  Pong(const ::pkg::pwpb::Ping::Message& request) const {',
+            '  [[nodiscard]] ::pw::rpc2::UnaryFuture<\n'
+            '      ::pkg::pwpb::Ping::Message,\n'
+            '      ::pkg::pwpb::Pong::Message>\n'
+            '  Pong(\n'
+            '      const ::pkg::pwpb::Ping::Message& request) const {',
             header,
         )
 
@@ -689,7 +1016,6 @@ class PwpbCodegenTest(unittest.TestCase):
         ):
             with self.subTest(include=include):
                 self.assertIn(include, includes)
-        self.assertNotIn('<cstddef>', includes)
         self.assertNotIn('"pw_buf/buf.h"', includes)
         self.assertEqual(len(includes), len(set(includes)))
 
@@ -722,60 +1048,64 @@ class PwpbCodegenTest(unittest.TestCase):
         self.assertIn(f'kServiceId = {hash_65599("Svc"):#010x};', header)
 
     def test_client(self) -> None:
+        """Tests pwpb Client method signatures."""
         header, _ = _pwpb(_file(services=[_all_kinds()]))
-        types = '::pkg::pwpb::Request::Message, ::pkg::pwpb::Response::Message'
-        request = 'const ::pkg::pwpb::Request::Message& request'
-        for signature in (
-            f'  [[nodiscard]] ::pw::rpc2::UnaryFuture<{types}>\n'
-            f'  Unary({request}) const {{',
-            f'  [[nodiscard]] ::pw::rpc2::ServerStreamFuture<{types}>\n'
-            f'  ServerStream({request}) const {{',
-            f'  [[nodiscard]] ::pw::rpc2::ClientStreamFuture<{types}>\n'
-            '  ClientStream() const {',
-            f'  [[nodiscard]] ::pw::rpc2::BidiStreamFuture<{types}>\n'
-            '  Bidi() const {',
-        ):
-            with self.subTest(signature=signature):
-                self.assertIn(signature, header)
+        self.assertIn(_EXPECTED_PWPB_CLIENT_METHODS, header)
+        self.assertIn(_EXPECTED_PWPB_SERVER_STREAM_METHODS, header)
+        self.assertIn(_EXPECTED_PWPB_CLIENT_STREAM_METHODS, header)
 
     def test_service_and_stubs(self) -> None:
         """Generated Service<Impl> and stub classes use pwpb message types."""
         header, stubs = _pwpb(_file(services=[_all_kinds()]))
         req = '::pkg::pwpb::Request::Message'
         resp = '::pkg::pwpb::Response::Message'
-        for name, params in (
-            ('Unary', f'{req} request, ::pw::rpc2::UnaryWriter<{resp}> writer'),
+        for name, first, second in (
+            (
+                'Unary',
+                f'{req} request',
+                f'::pw::rpc2::UnaryWriter<{resp}> writer',
+            ),
             (
                 'ServerStream',
-                f'{req} request, ::pw::rpc2::Writer<{resp}> writer',
+                f'{req} request',
+                f'::pw::rpc2::Writer<{resp}> writer',
             ),
             (
                 'ClientStream',
-                f'::pw::rpc2::Reader<{req}> reader, '
+                f'::pw::rpc2::Reader<{req}> reader',
                 f'::pw::rpc2::UnaryWriter<{resp}> writer',
             ),
             (
                 'Bidi',
-                f'::pw::rpc2::Reader<{req}> reader, '
+                f'::pw::rpc2::Reader<{req}> reader',
                 f'::pw::rpc2::Writer<{resp}> writer',
             ),
         ):
             with self.subTest(name=name):
-                self.assertIn(f'{name}(\n      {params})', header)
-                self.assertIn(f'{name}({params})', stubs)
+                self.assertIn(
+                    f'{name}(\n      {first},\n      {second})', header
+                )
+                self.assertIn(
+                    f'  //   SomeFuture {name}(\n'
+                    f'  //       {first},\n'
+                    f'  //       {second});',
+                    stubs,
+                )
         self.assertIn(
-            '::pw::rpc2::internal::MethodInvokerFor<&T::ClientStream, '
-            '::pkg::pw_rpc2::pwpb::Kinds::ClientStream>',
+            '      : ::pw::rpc2::internal::MethodInvokerFor<\n'
+            '            &T::ClientStream,\n'
+            '            ::pkg::pw_rpc2::pwpb::Kinds::ClientStream> {};',
             header,
         )
         self.assertIn(
-            '::pw::rpc2::internal::FutureMethodInvokerFor<typename '
-            'T::ClientStreamFuture, '
-            '::pkg::pw_rpc2::pwpb::Kinds::ClientStream>',
+            '      : ::pw::rpc2::internal::FutureMethodInvokerFor<\n'
+            '            typename T::ClientStreamFuture,\n'
+            '            ::pkg::pw_rpc2::pwpb::Kinds::ClientStream> {};',
             header,
         )
         self.assertIn(
-            'class KindsService : public ::pkg::pw_rpc2::pwpb::Kinds::'
+            'class KindsService\n'
+            '    : public ::pkg::pw_rpc2::pwpb::Kinds::'
             'Service<KindsService> {',
             stubs,
         )

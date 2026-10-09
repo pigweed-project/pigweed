@@ -74,33 +74,12 @@ void UnaryFutureBase::PendAndDeserialize(async2::Context& cx,
   }
 }
 
-namespace {
-
-size_t RawRequestSize(const void* max_payload_size, size_t) {
-  return *static_cast<const size_t*>(max_payload_size);
-}
-
-}  // namespace
-
-RawUnaryReserveFuture GeneratedServiceClient::CallUnaryRaw(
-    uint32_t method_id, size_t max_payload_size) const {
-  return RawUnaryReserveFuture(StartCall(
-      method_id, MethodType::kUnary, &max_payload_size, &RawRequestSize));
-}
-
-RawServerStreamReserveFuture GeneratedServiceClient::CallServerStreamRaw(
-    uint32_t method_id, size_t max_payload_size) const {
-  return RawServerStreamReserveFuture(StartCall(method_id,
-                                                MethodType::kServerStreaming,
-                                                &max_payload_size,
-                                                &RawRequestSize));
-}
-
 ReserveWriteFuture GeneratedServiceClient::StartCall(
     uint32_t method_id,
     MethodType type,
     const void* request,
-    RequestSizeFn size_request) const {
+    RequestSizeFn size_request,
+    size_t max_message_size) const {
   if (!client().is_open()) {
     return ReserveWriteFuture::Failed(Status::Unavailable());
   }
@@ -121,10 +100,10 @@ ReserveWriteFuture GeneratedServiceClient::StartCall(
   // calls send a start packet with no payload and leave the stream open.
   const bool single_request = !HasClientStream(type);
   const size_t payload_size =
-      single_request
+      size_request != nullptr
           ? size_request(request,
                          call->max_payload_size(sizeof(RequestWireFormat)))
-          : 0;
+          : max_message_size;
   Result<transport::ReserveWriteFuture> reservation =
       call->ReserveWrite(sizeof(RequestWireFormat), payload_size);
   if (!reservation.ok()) {

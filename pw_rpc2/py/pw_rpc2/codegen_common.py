@@ -113,6 +113,16 @@ class Method:
     def id(self) -> int:
         return hash_65599(self.name)
 
+    @property
+    def has_single_request(self) -> bool:
+        """True if the method takes a single request (unary/server streaming).
+
+        These methods reserve request buffers with
+        `client.Method(max_message_size)` and copy from a `pw::ConstBuf` with
+        `client.Method::Copy(buf)`.
+        """
+        return self.type in (MethodType.UNARY, MethodType.SERVER_STREAMING)
+
 
 @dataclasses.dataclass(frozen=True)
 class Service:
@@ -190,35 +200,22 @@ def _check_ids(services: Sequence[Service]) -> None:
             seen_methods[method.id] = method
 
 
-# Identifiers that generated code declares in a service's namespace, in its
-# Client and Service<Impl> classes, or in their base classes, which a method of
-# the same name would conflict with or hide.
+# Internal subnamespace and base class of Client that provides
+# `client.Method::Copy()`.
+INTERNAL_NAMESPACE = 'pw_rpc2_internal'
+COPY_METHODS = 'PwInternal_ClientCopyMethods'
+
+# Identifiers that generated code declares in a service's namespace, which a
+# method of the same name would conflict with. Internal identifiers in the
+# generated classes are prefixed with `PwInternal_` or `kPwInternal_`.
+# Names from base classes (e.g. ServiceClient, GeneratedServiceClient, and
+# pw::rpc2::Service) are not reserved because user methods may safely shadow
+# them.
 _RESERVED_NAMES = frozenset(
     [
-        # Service namespace
         'Client',
         'Service',
-        # Client, pw::rpc2::internal::GeneratedServiceClient, and
-        # pw::rpc2::ServiceClient
-        'CallBidiStream',
-        'CallClientStream',
-        'CallServerStream',
-        'CallServerStreamRaw',
-        'CallUnary',
-        'CallUnaryRaw',
-        'GeneratedServiceClient',
-        'ServiceClient',
-        'client',
-        'is_open',
-        'kServiceId',
-        # Service<Impl> and pw::rpc2::Service
-        'FindMethod',
-        'Impl',
-        'ImplT',
-        'derived',
-        'kPwRpcMethods',
-        'methods',
-        'service_id',
+        INTERNAL_NAMESPACE,
     ]
 )
 
@@ -249,6 +246,13 @@ def _check_method_names(service: Service) -> None:
             )
         seen.add(name)
 
+        if 'PwInternal' in name:
+            raise ReservedNameError(
+                f"'{service.full_name}.{method.name}' is not a valid pw_rpc2 "
+                f"method name: '{name}' contains reserved identifier "
+                "'PwInternal'. Rename the method."
+            )
+
         if name in generated:
             raise ReservedNameError(
                 f"'{service.full_name}.{method.name}' is not a valid pw_rpc2 "
@@ -269,6 +273,9 @@ class Param:
     type: str
     name: str
 
+    def __str__(self) -> str:
+        return f'{self.type} {self.name}'
+
 
 @dataclasses.dataclass(frozen=True)
 class ServerParams:
@@ -276,12 +283,6 @@ class ServerParams:
 
     first: Param
     second: Param
-
-    def declaration(self) -> str:
-        return (
-            f'{self.first.type} {self.first.name}, '
-            f'{self.second.type} {self.second.name}'
-        )
 
     def forward(self) -> str:
         return (
@@ -325,6 +326,7 @@ CLIENT_BASE = '::pw::rpc2::internal::GeneratedServiceClient'
 
 _COMMON_INCLUDES = (
     '<array>',
+    '<cstddef>',
     '<cstdint>',
     '<type_traits>',
     '<utility>',
@@ -377,12 +379,51 @@ def _write_namespace_close(output: OutputFile, namespace: str) -> None:
 
 
 def _write_method_tags(output: OutputFile, service: Service) -> None:
+    """Writes the method tags, which identify methods in templates."""
     output.write_line(f'// Method tags for {service.full_name}.')
     for method in service.methods:
-        output.write_line(f'struct {method.cpp_name} final {{')
+        name = method.cpp_name
+        output.write_line()
+        output.write_line(f'struct {name} final {{')
         with output.indent():
-            output.write_line(f'{method.cpp_name}() = delete;')
+            output.write_line(f'{name}() = delete;')
         output.write_line('};')
+
+
+def write_reserve_method(
+    output: OutputFile, gen: CodeGenerator, method: Method
+) -> None:
+    """Writes `Client::Method(max_message_size)` for a single-request method.
+
+    The size is a template parameter so that braced initializers, which cannot
+    be deduced, select a message overload instead.
+    """
+    name = method.cpp_name
+    resp = gen.response_type(method)
+    if method.type is MethodType.UNARY:
+        future = 'UnaryReserveFuture'
+        reserve = 'ReserveUnary'
+    else:
+        future = 'ServerStreamReserveFuture'
+        reserve = 'ReserveServerStream'
+
+    output.write_line('template <typename PwInternal_Size,')
+    output.write_line(
+        '          typename = ::pw::rpc2::internal::EnableIfMessageSize<'
+    )
+    output.write_line('              PwInternal_Size>>')
+    output.write_line(f'[[nodiscard]] ::pw::rpc2::{future}<')
+    output.write_line(f'    {resp}>')
+    output.write_line(f'{name}(PwInternal_Size max_message_size) const {{')
+    with output.indent():
+        output.write_line(f'return {CLIENT_BASE}::{reserve}<')
+        with output.indent(4):
+            output.write_line(f'{resp}>(')
+            output.write_line(
+                f'{hex_id(method.id)}, '
+                '::pw::rpc2::internal::MessageSize(max_message_size));'
+            )
+    output.write_line('}')
 
 
 def _write_method_info(
@@ -405,35 +446,99 @@ def _write_method_info(
                 'static constexpr ::std::uint32_t kMethodId = '
                 f'{hex_id(method.id)};'
             )
-            output.write_line(
-                'static constexpr ::pw::rpc2::MethodType kType = '
-                f'{method.type.cpp()};'
-            )
+            output.write_line('static constexpr ::pw::rpc2::MethodType kType =')
+            output.write_line(f'    {method.type.cpp()};')
             output.write_line(f'using Request = {gen.request_type(method)};')
             output.write_line(f'using Response = {gen.response_type(method)};')
         output.write_line('};')
 
 
+def _write_copy_methods(
+    output: OutputFile, gen: CodeGenerator, service: Service
+) -> None:
+    """Writes the base of `Client` that provides `client.Method::Copy()`.
+
+    For each unary and server streaming method, `ClientCopyMethods` aliases its
+    `CopyMethod` base to the method's name. Lookup before `::` considers only
+    types and namespaces, so `client.Method::Copy()` resolves to the type alias
+    while `client.Method()` resolves to the member function.
+    """
+    namespace = gen.service_namespace(service)
+    client = f'::{namespace}::Client'
+    methods = [m for m in service.methods if m.has_single_request]
+
+    def write_copy_method(
+        prefix: str, method: Method, suffix: str, indent: int = 4
+    ) -> None:
+        template = (
+            'UnaryCopyMethod'
+            if method.type is MethodType.UNARY
+            else 'ServerStreamCopyMethod'
+        )
+        output.write_line(f'{prefix}::pw::rpc2::internal::{template}<')
+        with output.indent(indent):
+            output.write_line(f'{client},')
+            output.write_line(f'{hex_id(method.id)},')
+            output.write_line(f'{gen.response_type(method)}>{suffix}')
+
+    output.write_line('class Client;')
+    _write_namespace_open(output, INTERNAL_NAMESPACE)
+    output.write_line(
+        '// Provides `client.Method::Copy(buf)` for unary and server streaming '
+        'methods.'
+    )
+    output.write_line(f'class {COPY_METHODS}')
+    for i, method in enumerate(methods):
+        prefix = '    : public ' if i == 0 else '      public '
+        suffix = ',' if i < len(methods) - 1 else ' {'
+        write_copy_method(prefix, method, suffix, indent=10)
+    output.write_line(' public:')
+    with output.indent():
+        output.write_line(
+            '// These alias the classes that provide `Copy()`, not the method'
+        )
+        output.write_line(
+            '// tags of the same names (e.g. `Client::Method` is not `Method`).'
+        )
+        for method in methods:
+            write_copy_method(f'using {method.cpp_name} = ', method, ';')
+    output.write_line()
+    output.write_line(' protected:')
+    with output.indent():
+        output.write_line(f'constexpr {COPY_METHODS}() = default;')
+        output.write_line(f'constexpr {COPY_METHODS}(')
+        output.write_line(f'    const {COPY_METHODS}&) = default;')
+        output.write_line(f'constexpr {COPY_METHODS}& operator=(')
+        output.write_line(f'    const {COPY_METHODS}&) = default;')
+    output.write_line('};')
+    _write_namespace_close(output, INTERNAL_NAMESPACE)
+    output.write_line()
+
+
 def _write_client(
     output: OutputFile, gen: CodeGenerator, service: Service
 ) -> None:
-    output.write_line(f'class Client final : public {CLIENT_BASE} {{')
+    has_copy_methods = any(m.has_single_request for m in service.methods)
+    if has_copy_methods:
+        _write_copy_methods(output, gen, service)
+        output.write_line(f'class Client final : public {CLIENT_BASE},')
+        output.write_line(
+            f'                     public {INTERNAL_NAMESPACE}::'
+            f'{COPY_METHODS} {{'
+        )
+    else:
+        output.write_line(f'class Client final : public {CLIENT_BASE} {{')
     output.write_line(' public:')
     with output.indent():
         output.write_line('constexpr Client() = default;')
         output.write_line()
         output.write_line('explicit Client(const ::pw::rpc2::Client& client)')
-        output.write_line(f'    : {CLIENT_BASE}(client, kServiceId) {{}}')
+        output.write_line(
+            f'    : {CLIENT_BASE}(client, {hex_id(service.id)}) {{}}'
+        )
         for method in service.methods:
             output.write_line()
             gen.write_client_method(output, method)
-    output.write_line()
-    output.write_line(' private:')
-    with output.indent():
-        output.write_line(
-            'static constexpr ::std::uint32_t kServiceId = '
-            f'{hex_id(service.id)};'
-        )
     output.write_line('};')
 
 
@@ -448,71 +553,77 @@ def _write_invoker_selection(
     output.write_line(f'struct HasMethod_{name} : ::std::false_type {{}};')
     output.write_line()
     output.write_line('template <typename T>')
-    output.write_line(
-        f'struct HasMethod_{name}<T, ::std::void_t<decltype(&T::{name})>>'
-    )
-    output.write_line(
-        f'    : ::pw::rpc2::internal::IsMethodPointer<decltype(&T::{name})>'
-        ' {};'
-    )
+    output.write_line(f'struct HasMethod_{name}<')
+    with output.indent(4):
+        output.write_line('T,')
+        output.write_line(f'::std::void_t<decltype(&T::{name})>>')
+        output.write_line(
+            f': ::pw::rpc2::internal::IsMethodPointer<decltype(&T::{name})>'
+            ' {};'
+        )
     output.write_line()
     output.write_line('template <typename T, typename = void>')
     output.write_line(f'struct HasFuture_{name} : ::std::false_type {{}};')
     output.write_line()
     output.write_line('template <typename T>')
-    output.write_line(
-        f'struct HasFuture_{name}<T, ::std::void_t<typename T::{future}>>'
-    )
-    output.write_line('    : ::std::true_type {};')
+    output.write_line(f'struct HasFuture_{name}<')
+    with output.indent(4):
+        output.write_line('T,')
+        output.write_line(f'::std::void_t<typename T::{future}>>')
+        output.write_line(': ::std::true_type {};')
     output.write_line()
     output.write_line('template <typename T, typename = void>')
     output.write_line(f'struct Invoker_{name} {{')
     with output.indent():
-        output.write_line(
-            'static_assert(::pw::rpc2::internal::kAlwaysFalse<T>,'
-        )
-        output.write_line(
-            '              "Service implementation must define either a '
-            f"member function named '{name}' or a future type named "
-            f"'{future}'\");"
-        )
+        output.write_line('static_assert(')
+        with output.indent(4):
+            output.write_line('::pw::rpc2::internal::kAlwaysFalse<T>,')
+            output.write_line(
+                '"Service implementation must define either a member function "'
+            )
+            output.write_line(f"\"named '{name}' or a future type \"")
+            output.write_line(f"\"named '{future}'\");")
     output.write_line('};')
     output.write_line()
     output.write_line('template <typename T>')
-    output.write_line(f'struct Invoker_{name}<T, ::std::enable_if_t<')
-    output.write_line(
-        f'    HasMethod_{name}<T>::value && HasFuture_{name}<T>::value>> {{'
-    )
+    output.write_line(f'struct Invoker_{name}<')
+    with output.indent(4):
+        output.write_line('T,')
+        output.write_line(f'::std::enable_if_t<HasMethod_{name}<T>::value &&')
+        output.write_line(f'                   HasFuture_{name}<T>::value>> {{')
     with output.indent():
-        output.write_line(
-            'static_assert(::pw::rpc2::internal::kAlwaysFalse<T>,'
-        )
-        output.write_line(
-            '              "Service implementation must not define both a '
-            f"member function named '{name}' and a future type named "
-            f"'{future}'\");"
-        )
+        output.write_line('static_assert(')
+        with output.indent(4):
+            output.write_line('::pw::rpc2::internal::kAlwaysFalse<T>,')
+            output.write_line(
+                '"Service implementation must not define both a member '
+                'function "'
+            )
+            output.write_line(f"\"named '{name}' and a future type \"")
+            output.write_line(f"\"named '{future}'\");")
     output.write_line('};')
     output.write_line()
     output.write_line('template <typename T>')
-    output.write_line(f'struct Invoker_{name}<T, ::std::enable_if_t<')
-    output.write_line(
-        f'    HasMethod_{name}<T>::value && !HasFuture_{name}<T>::value>>'
-    )
-    output.write_line(
-        f'    : ::pw::rpc2::internal::MethodInvokerFor<&T::{name}, '
-        f'{method_info}> {{}};'
-    )
+    output.write_line(f'struct Invoker_{name}<')
+    with output.indent(4):
+        output.write_line('T,')
+        output.write_line(f'::std::enable_if_t<HasMethod_{name}<T>::value &&')
+        output.write_line(f'                   !HasFuture_{name}<T>::value>>')
+        output.write_line(': ::pw::rpc2::internal::MethodInvokerFor<')
+        with output.indent(6):
+            output.write_line(f'&T::{name},')
+            output.write_line(f'{method_info}> {{}};')
     output.write_line()
     output.write_line('template <typename T>')
-    output.write_line(f'struct Invoker_{name}<T, ::std::enable_if_t<')
-    output.write_line(
-        f'    !HasMethod_{name}<T>::value && HasFuture_{name}<T>::value>>'
-    )
-    output.write_line(
-        '    : ::pw::rpc2::internal::FutureMethodInvokerFor<'
-        f'typename T::{future}, {method_info}> {{}};'
-    )
+    output.write_line(f'struct Invoker_{name}<')
+    with output.indent(4):
+        output.write_line('T,')
+        output.write_line(f'::std::enable_if_t<!HasMethod_{name}<T>::value &&')
+        output.write_line(f'                   HasFuture_{name}<T>::value>>')
+        output.write_line(': ::pw::rpc2::internal::FutureMethodInvokerFor<')
+        with output.indent(6):
+            output.write_line(f'typename T::{future},')
+            output.write_line(f'{method_info}> {{}};')
 
 
 def _write_service(
@@ -532,7 +643,7 @@ def _write_service(
     output.write_line(
         '// arguments, optionally preceded by a reference to the service.'
     )
-    output.write_line('template <typename Impl>')
+    output.write_line('template <typename PwInternal_Impl>')
     output.write_line('class Service : public ::pw::rpc2::Service {')
     if service.methods:
         output.write_line(' public:')
@@ -540,62 +651,72 @@ def _write_service(
         if service.methods:
             output.write_line(
                 '// Default implementations for `<Method>Future` types; '
-                'hidden if `Impl`'
+                'hidden if'
             )
-            output.write_line('// defines `<Method>()` as a member function.')
+            output.write_line(
+                '// `PwInternal_Impl` defines `<Method>()` as a member '
+                'function.'
+            )
         for i, method in enumerate(service.methods):
             if i:
                 output.write_line()
             name = method.cpp_name
             params = gen.server_params(method)
-            output.write_line('template <typename ImplT = Impl>')
-            output.write_line(f'typename ImplT::{name}Future {name}(')
-            output.write_line(f'    {params.declaration()}) {{')
+            output.write_line(
+                'template <typename PwInternal_ = PwInternal_Impl>'
+            )
+            output.write_line(f'typename PwInternal_::{name}Future {name}(')
+            with output.indent(4):
+                output.write_line(f'{params.first},')
+                output.write_line(f'{params.second}) {{')
             with output.indent():
-                output.write_line(
-                    'return ::pw::rpc2::internal::CreateFuture<'
-                    f'typename ImplT::{name}Future>('
-                )
-                output.write_line(f'    derived(), {params.forward()});')
+                output.write_line('return ::pw::rpc2::internal::CreateFuture<')
+                with output.indent(4):
+                    output.write_line(f'typename PwInternal_::{name}Future>(')
+                    output.write_line(
+                        f'PwInternal_Derived(), {params.forward()});'
+                    )
             output.write_line('}')
 
     if service.methods:
         output.write_line()
     output.write_line(' protected:')
     with output.indent():
+        output.write_line('constexpr Service()')
         output.write_line(
-            'constexpr Service() '
-            ': ::pw::rpc2::Service(kServiceId, kPwRpcMethods) {}'
+            f'    : ::pw::rpc2::Service({hex_id(service.id)}, '
+            'kPwInternal_Methods) {}'
         )
 
     output.write_line()
     output.write_line(' private:')
     with output.indent():
-        output.write_line(
-            'static constexpr ::std::uint32_t kServiceId = '
-            f'{hex_id(service.id)};'
-        )
-        for method in service.methods:
-            output.write_line()
+        for i, method in enumerate(service.methods):
+            if i:
+                output.write_line()
             _write_invoker_selection(
                 output, method, f'::{namespace}::{method.cpp_name}'
             )
-        output.write_line()
-        output.write_line(
-            'Impl& derived() { return static_cast<Impl&>(*this); }'
-        )
+        if service.methods:
+            output.write_line()
+        output.write_line('PwInternal_Impl& PwInternal_Derived() {')
+        with output.indent():
+            output.write_line('return static_cast<PwInternal_Impl&>(*this);')
+        output.write_line('}')
         output.write_line()
         output.write_line(
             'static constexpr ::std::array<::pw::rpc2::internal::Method, '
-            f'{len(service.methods)}> kPwRpcMethods = {{'
+            f'{len(service.methods)}>'
         )
-        with output.indent():
+        output.write_line('    kPwInternal_Methods = {')
+        with output.indent(8):
             for method in service.methods:
                 name = method.cpp_name
+                output.write_line(f'Invoker_{name}<PwInternal_Impl>::')
                 output.write_line(
-                    f'Invoker_{name}<Impl>::template CreateMethod<Impl>(),'
+                    '    template CreateMethod<PwInternal_Impl>(),'
                 )
-        output.write_line('};')
+        output.write_line('    };')
     output.write_line('};')
 
 
@@ -610,7 +731,8 @@ def _write_stub(
         'start an'
     )
     output.write_line('// implementation of the service.')
-    output.write_line(f'class {impl} : public {base} {{')
+    output.write_line(f'class {impl}')
+    output.write_line(f'    : public {base} {{')
     output.write_line(' public:')
     with output.indent():
         for i, method in enumerate(service.methods):
@@ -622,18 +744,20 @@ def _write_stub(
             output.write_line(
                 f'// {method.type.description()} RPC. Or implement as:'
             )
-            output.write_line(
-                f'//   SomeFuture {name}({params.declaration()});'
-            )
+            output.write_line(f'//   SomeFuture {name}(')
+            output.write_line(f'//       {params.first},')
+            output.write_line(f'//       {params.second});')
             output.write_line(f'class {future} {{')
             output.write_line(' public:')
             with output.indent():
                 output.write_line('using value_type = void;')
                 output.write_line()
                 output.write_line(f'{future}() = default;')
-                output.write_line(
-                    f'{future}({impl}& service, {params.declaration()});'
-                )
+                output.write_line(f'{future}(')
+                with output.indent(4):
+                    output.write_line(f'{impl}& service,')
+                    output.write_line(f'{params.first},')
+                    output.write_line(f'{params.second});')
                 output.write_line()
                 output.write_line('bool is_pendable() const;')
                 output.write_line('bool is_complete() const;')
