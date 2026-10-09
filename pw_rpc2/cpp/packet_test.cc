@@ -655,7 +655,27 @@ TEST(PacketTest, ProtocolStatusToStatusAndToString) {
       ToStatus(ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning),
       pw::Status::ResourceExhausted());
   EXPECT_EQ(ToStatus(ProtocolStatus::kOk), pw::Status::Internal());
-  EXPECT_EQ(ToStatus(static_cast<ProtocolStatus>(0xff)), pw::Status::Unknown());
+  EXPECT_EQ(ToStatus(static_cast<ProtocolStatus>(0x3f)), pw::Status::Unknown());
+
+  EXPECT_EQ(ToStatus(ProtocolStatus::kEndOfStream), pw::Status::OutOfRange());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kClosed), pw::Status::Cancelled());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kSocketClosed), pw::Status::Unavailable());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kConnectFailed),
+            pw::Status::Unavailable());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kHandshakeFailed), pw::Status::DataLoss());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kMalformedPacket), pw::Status::DataLoss());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kCallIdsExhausted),
+            pw::Status::ResourceExhausted());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kWriteClosed),
+            pw::Status::FailedPrecondition());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kMessageTooLarge),
+            pw::Status::ResourceExhausted());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kSerializationFailed),
+            pw::Status::InvalidArgument());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kDeserializationFailed),
+            pw::Status::DataLoss());
+  EXPECT_EQ(ToStatus(ProtocolStatus::kOutOfMemory),
+            pw::Status::ResourceExhausted());
 
   EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kOk), "OK");
   EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kUnknown), "UNKNOWN");
@@ -681,7 +701,31 @@ TEST(PacketTest, ProtocolStatusToStatusAndToString) {
   EXPECT_STREQ(pw::EnumToString(
                    ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning),
                "FAILED_TO_ALLOCATE_CALL_RESOURCES_WHILE_RUNNING");
+  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kEndOfStream), "END_OF_STREAM");
+  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kSocketClosed),
+               "SOCKET_CLOSED");
+  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kOutOfMemory), "OUT_OF_MEMORY");
 }
+
+// Every defined code's top two bits match the band it was declared in.
+static_assert(internal::OriginOf(internal::ProtocolStatus::kOk) ==
+              internal::ProtocolStatusOrigin::kAny);
+static_assert(
+    internal::OriginOf(internal::ProtocolStatus::kMethodTypeMismatch) ==
+    internal::ProtocolStatusOrigin::kAny);
+static_assert(
+    internal::OriginOf(internal::ProtocolStatus::kDroppedWithoutResponse) ==
+    internal::ProtocolStatusOrigin::kServer);
+static_assert(
+    internal::OriginOf(
+        internal::ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning) ==
+    internal::ProtocolStatusOrigin::kServer);
+static_assert(internal::OriginOf(internal::ProtocolStatus::kEndOfStream) ==
+              internal::ProtocolStatusOrigin::kLocal);
+static_assert(internal::OriginOf(internal::ProtocolStatus::kOutOfMemory) ==
+              internal::ProtocolStatusOrigin::kLocal);
+static_assert(internal::OriginOf(internal::ProtocolStatus::kUnknown) ==
+              internal::ProtocolStatusOrigin::kLocal);
 
 static_assert(!internal::IsServerError(internal::ProtocolStatus::kOk));
 static_assert(!internal::IsClientError(internal::ProtocolStatus::kOk));
@@ -694,10 +738,21 @@ static_assert(
 static_assert(!internal::IsClientError(
     internal::ProtocolStatus::kDroppedWithoutResponse));
 
+// Undefined codes are never sent.
 static_assert(!internal::IsServerError(static_cast<internal::ProtocolStatus>(
     static_cast<uint8_t>(internal::ProtocolStatus::kMethodTypeMismatch) + 1)));
 static_assert(!internal::IsClientError(static_cast<internal::ProtocolStatus>(
     static_cast<uint8_t>(internal::ProtocolStatus::kMethodTypeMismatch) + 1)));
+static_assert(
+    !internal::IsClientError(static_cast<internal::ProtocolStatus>(0x80)));
+
+// Local codes are never sent by either endpoint.
+static_assert(!internal::IsServerError(internal::ProtocolStatus::kEndOfStream));
+static_assert(!internal::IsClientError(internal::ProtocolStatus::kEndOfStream));
+static_assert(!internal::IsServerError(internal::ProtocolStatus::kOutOfMemory));
+static_assert(!internal::IsClientError(internal::ProtocolStatus::kOutOfMemory));
+static_assert(!internal::IsServerError(internal::ProtocolStatus::kUnknown));
+static_assert(!internal::IsClientError(internal::ProtocolStatus::kUnknown));
 
 static_assert(internal::PacketSizeWithoutPayload(
                   PacketType::Make<flags::kStart,
@@ -718,10 +773,10 @@ static_assert(internal::PacketSizeWithoutPayload(
                   PacketType::Make<flags::kServer, flags::kOkTerminal>()) ==
               5u);
 static_assert(internal::PacketSizeWithoutPayload(
-                  PacketType::Make<flags::kErrorTerminal>()) == 7u);
+                  PacketType::Make<flags::kErrorTerminal>()) == 6u);
 static_assert(internal::PacketSizeWithoutPayload(
                   PacketType::Make<flags::kServer, flags::kErrorTerminal>()) ==
-              7u);
+              6u);
 
 static_assert(internal::OutboundPacket::StartUnary(1, 2, 3).payload_offset() ==
               13u);
@@ -737,10 +792,10 @@ static_assert(internal::OutboundPacket::ClientStreamEnd(1).payload_offset() ==
 static_assert(internal::OutboundPacket::ServerFinish(1).payload_offset() == 5u);
 static_assert(internal::OutboundPacket::ClientError(
                   1, internal::ProtocolStatus::kCancelled)
-                  .payload_offset() == 7u);
+                  .payload_offset() == 6u);
 static_assert(internal::OutboundPacket::ServerError(
                   1, internal::ProtocolStatus::kCancelled)
-                  .payload_offset() == 7u);
+                  .payload_offset() == 6u);
 
 // A unary request and a streaming open are distinct on the wire, even when the
 // request message is empty.
@@ -794,7 +849,7 @@ TEST(PacketTest, EncodedErrorHeaderLayout) {
   ASSERT_EQ(result.status(), pw::OkStatus());
   EXPECT_EQ(*result, buffer.size());
 
-  // 4-byte call_id (LE), 1-byte type (0x19), 2-byte error (LE).
+  // 4-byte call_id (LE), 1-byte type (0x19), 1-byte error.
   constexpr auto expected =
       pw::bytes::Array<0x78,
                        0x56,
@@ -802,8 +857,7 @@ TEST(PacketTest, EncodedErrorHeaderLayout) {
                        0x12,
                        0x19,
                        static_cast<uint8_t>(
-                           internal::ProtocolStatus::kUnknownMethod),
-                       0x00>();
+                           internal::ProtocolStatus::kUnknownMethod)>();
   EXPECT_EQ(buffer, expected);
 
   auto decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
@@ -811,9 +865,17 @@ TEST(PacketTest, EncodedErrorHeaderLayout) {
   EXPECT_EQ(decoded->error(), internal::ProtocolStatus::kUnknownMethod);
 }
 
+TEST(PacketTest, DecodeErrorWithTrailingBytesIsMalformed) {
+  // An error packet has no payload, so it must end after its 1-byte error.
+  auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x19, 0x43, 0x00>();
+  EXPECT_EQ(
+      internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer)).status(),
+      pw::Status::DataLoss());
+}
+
 TEST(PacketTest, DecodeErrorZeroMapsToInternal) {
   // A wire error of 0 (kOk) is never valid in an error packet.
-  auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x19, 0x00, 0x00>();
+  auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x19, 0x00>();
 
   auto decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
   ASSERT_EQ(decoded.status(), pw::OkStatus());
@@ -827,44 +889,61 @@ TEST(PacketTest, DecodeErrorZeroMapsToInternal) {
   EXPECT_EQ(internal::ToStatus(decoded->error()), pw::Status::Internal());
 }
 
-TEST(PacketTest, DecodeErrorOutOfRangeOrWrongRoleMapsToUnknown) {
-  auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x19, 0x00, 0x01>();
+TEST(PacketTest, DecodeErrorUndefinedLocalOrWrongRoleMapsToUnknown) {
+  constexpr auto kServerError =
+      static_cast<std::byte>(flags::kServer | flags::kErrorTerminal);
+  constexpr auto kClientError = static_cast<std::byte>(flags::kErrorTerminal);
+  auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x19, 0x00>();
 
-  // 0x0100 is beyond the largest known code.
-  auto decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
-  ASSERT_EQ(decoded.status(), pw::OkStatus());
-  EXPECT_EQ(decoded->error(), internal::ProtocolStatus::kUnknown);
-  EXPECT_EQ(internal::ToStatus(decoded->error()), pw::Status::Unknown());
+  const auto decode_error = [&buffer](std::byte type, uint8_t code) {
+    buffer[4] = type;
+    buffer[5] = std::byte{code};
+    auto decoded =
+        internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
+    EXPECT_EQ(decoded.status(), pw::OkStatus());
+    return decoded.ok() ? decoded->error() : internal::ProtocolStatus::kOk;
+  };
 
-  buffer[4] = static_cast<std::byte>(flags::kErrorTerminal);
-  decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
-  ASSERT_EQ(decoded.status(), pw::OkStatus());
-  EXPECT_EQ(decoded->error(), internal::ProtocolStatus::kUnknown);
-  EXPECT_EQ(internal::ToStatus(decoded->error()), pw::Status::Unknown());
+  // Unassigned codes in each sendable band.
+  const uint8_t kUnassignedEither =
+      static_cast<uint8_t>(internal::ProtocolStatus::kMethodTypeMismatch) + 1;
+  EXPECT_EQ(decode_error(kServerError, kUnassignedEither),
+            internal::ProtocolStatus::kUnknown);
+  EXPECT_EQ(decode_error(kClientError, kUnassignedEither),
+            internal::ProtocolStatus::kUnknown);
+  EXPECT_EQ(decode_error(kServerError, 0x7f),
+            internal::ProtocolStatus::kUnknown);
+  EXPECT_EQ(decode_error(kClientError, 0x80),
+            internal::ProtocolStatus::kUnknown);
 
-  // Unassigned code in the gap between common and server-only bands.
-  buffer[4] = static_cast<std::byte>(flags::kServer | flags::kErrorTerminal);
-  buffer[5] = static_cast<std::byte>(
-      static_cast<uint8_t>(internal::ProtocolStatus::kMethodTypeMismatch) + 1);
-  buffer[6] = std::byte{0x00};
-  decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
-  ASSERT_EQ(decoded.status(), pw::OkStatus());
-  EXPECT_EQ(decoded->error(), internal::ProtocolStatus::kUnknown);
-
-  // One past the maximum defined code.
-  buffer[4] = static_cast<std::byte>(flags::kServer | flags::kErrorTerminal);
-  buffer[5] = static_cast<std::byte>(
-      static_cast<uint8_t>(pw::EnumTraits<internal::ProtocolStatus>::kMax) + 1);
-  decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
-  ASSERT_EQ(decoded.status(), pw::OkStatus());
-  EXPECT_EQ(decoded->error(), internal::ProtocolStatus::kUnknown);
+  // Local codes are never accepted from the wire.
+  for (auto local : {internal::ProtocolStatus::kEndOfStream,
+                     internal::ProtocolStatus::kSocketClosed,
+                     internal::ProtocolStatus::kOutOfMemory,
+                     internal::ProtocolStatus::kUnknown}) {
+    EXPECT_EQ(decode_error(kServerError, static_cast<uint8_t>(local)),
+              internal::ProtocolStatus::kUnknown);
+    EXPECT_EQ(decode_error(kClientError, static_cast<uint8_t>(local)),
+              internal::ProtocolStatus::kUnknown);
+  }
+  EXPECT_EQ(internal::ToStatus(decode_error(kServerError, 0xc0)),
+            pw::Status::Unknown());
 
   // Server-only code in a client error packet maps to kUnknown.
-  buffer[4] = static_cast<std::byte>(flags::kErrorTerminal);
-  buffer[5] = static_cast<std::byte>(internal::ProtocolStatus::kUnknownMethod);
-  decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
-  ASSERT_EQ(decoded.status(), pw::OkStatus());
-  EXPECT_EQ(decoded->error(), internal::ProtocolStatus::kUnknown);
+  const auto kUnknownMethod =
+      static_cast<uint8_t>(internal::ProtocolStatus::kUnknownMethod);
+  EXPECT_EQ(decode_error(kClientError, kUnknownMethod),
+            internal::ProtocolStatus::kUnknown);
+  EXPECT_EQ(decode_error(kServerError, kUnknownMethod),
+            internal::ProtocolStatus::kUnknownMethod);
+
+  // Codes either endpoint may send are accepted from both.
+  const auto kCancelled =
+      static_cast<uint8_t>(internal::ProtocolStatus::kCancelled);
+  EXPECT_EQ(decode_error(kClientError, kCancelled),
+            internal::ProtocolStatus::kCancelled);
+  EXPECT_EQ(decode_error(kServerError, kCancelled),
+            internal::ProtocolStatus::kCancelled);
 }
 
 TEST(PacketTest, EncodeHeaderReportsTotalSizeWithoutWritingPayloadLength) {

@@ -669,8 +669,9 @@ TEST(ConnectionTaskTest, UnrecognizedErrorCodeCompletesCallWithError) {
   dispatcher.RunUntilStalled();
   ASSERT_FALSE(read_task.result().has_value());
 
+  // 0x7F is an unassigned server-origin code.
   auto pkt = PacketFramer::FrameServerErrorPacket(
-      allocator, 7u, static_cast<ProtocolStatus>(200));
+      allocator, 7u, static_cast<ProtocolStatus>(0x7F));
   ASSERT_TRUE(pkt.ok());
   raw_conn->SetNextRead(std::move(*pkt));
   task.Wake();

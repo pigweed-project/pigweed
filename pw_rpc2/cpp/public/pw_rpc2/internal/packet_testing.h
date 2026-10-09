@@ -118,12 +118,9 @@ class PacketFramer {
         sender == EndpointRole::kServer
             ? PacketType::Make<flags::kServer, flags::kErrorTerminal>()
             : PacketType::Make<flags::kErrorTerminal>();
-    return Frame(
-        allocator,
-        OutboundPacket(type,
-                       call_id,
-                       OutboundPacket::Fields(static_cast<uint16_t>(error))),
-        {});
+    return Frame(allocator,
+                 OutboundPacket(type, call_id, OutboundPacket::Fields(error)),
+                 {});
   }
   static pw::Result<pw::Buf> FrameClientErrorPacket(pw::Allocator& allocator,
                                                     uint32_t call_id,

@@ -307,10 +307,10 @@ rejected as malformed.
      - Server's response, completing a unary or client streaming RPC.
    * - ``11000``
      - ``ERROR_TERMINAL``
-     - Client aborts the RPC. Carries a 16-bit ``ProtocolStatus`` value.
+     - Client aborts the RPC. Carries an 8-bit ``ProtocolStatus`` value.
    * - ``11001``
      - ``SERVER | ERROR_TERMINAL``
-     - Server aborts the RPC. Carries a 16-bit ``ProtocolStatus`` value.
+     - Server aborts the RPC. Carries an 8-bit ``ProtocolStatus`` value.
 
 A packet without ``HAS_PAYLOAD`` must end with its header. A receiver rejects
 any packet without ``HAS_PAYLOAD`` that has trailing bytes as malformed.
@@ -439,7 +439,7 @@ Starts an RPC. Its header size is **13 bytes**.
 
 Error packets (``ERROR_TERMINAL`` set)
 --------------------------------------
-Aborts an RPC call immediately. Its header size is **7 bytes**.
+Aborts an RPC call immediately. Its header size is **6 bytes**.
 
 .. list-table::
    :header-rows: 1
@@ -454,8 +454,8 @@ Aborts an RPC call immediately. Its header size is **7 bytes**.
      - Header
      - Common RPC packet header with ``type`` ``11000`` or ``11001``
    * - 5
-     - 2
-     - ``error`` (``uint16_t``)
+     - 1
+     - ``error`` (``uint8_t``)
      - ``ProtocolStatus`` value
 
 All other packets
@@ -466,80 +466,96 @@ packet.
 
 RPC error codes
 ===============
-Error packets (``11000`` and ``11001``) carry a ``ProtocolStatus`` code. Codes
-are partitioned into decimal ranges so that common and role-specific codes
-remain distinct and can be extended independently:
+Error packets (``11000`` and ``11001``) carry an 8-bit ``ProtocolStatus`` code.
+The top two bits of a code identify which endpoint may send it:
 
-- **Common codes** (``0``--``99``): Valid in both client (``11000``) and server
-  (``11001``) error packets, except ``OK`` (``0``), which is never sent on the
-  wire.
-- **Server-only codes** (``100``--``199``): Only valid in server error packets
-  (``11001``).
-- **Reserved** (``200``--``255``): Reserved for future use (e.g., client-only
-  error codes).
+.. list-table::
+   :header-rows: 1
+   :widths: 15 20 65
+
+   * - Top bits
+     - Range
+     - Origin
+   * - ``00``
+     - ``0x00``--``0x3F``
+     - **Either endpoint.** Valid in both client (``11000``) and server
+       (``11001``) error packets, except ``OK`` (``0x00``), which is never
+       sent.
+   * - ``01``
+     - ``0x40``--``0x7F``
+     - **Server only.** Only valid in server error packets (``11001``).
+   * - ``10``
+     - ``0x80``--``0xBF``
+     - **Client only.** Only valid in client error packets (``11000``). No
+       client-only codes are currently defined.
+   * - ``11``
+     - ``0xC0``--``0xFF``
+     - **Local only.** Never sent. Implementations use this range for
+       conditions they detect themselves.
+
+A receiver treats a zero code as ``INTERNAL``, since it indicates a bug in the
+peer. It treats a code that is undefined, local-only, or not valid for the
+packet's sender as unknown.
 
 ..
    # LINT.IfChange(rpc2_error_codes)
 
-.. list-table:: Common error codes (0--99)
+.. list-table:: Either-endpoint error codes (0x00--0x3F)
    :header-rows: 1
    :widths: 10 40 50
 
    * - Value
      - Name
      - Description
-   * - ``0``
+   * - ``0x00``
      - ``OK``
      - No error. Never sent.
-   * - ``1``
-     - ``UNKNOWN``
-     - Unrecognized error code.
-   * - ``2``
+   * - ``0x01``
      - ``INTERNAL``
      - A bug in the RPC implementation.
-   * - ``3``
+   * - ``0x02``
      - ``CANCELLED``
      - The call was deliberately cancelled by application code.
-   * - ``4``
+   * - ``0x03``
      - ``RECEIVED_PACKET_FOR_WRONG_ENDPOINT``
      - The endpoint received a packet type that may only be sent by its own
        role (a server received a server-to-client packet, or a client received
        a client-to-server packet).
-   * - ``5``
+   * - ``0x04``
      - ``METHOD_TYPE_MISMATCH``
      - A packet does not match the method's type. Unary and server streaming
        calls must be started with ``START | HAS_PAYLOAD | STREAM_END``
        (``01110``); unary and client streaming calls must be answered with
        ``SERVER | HAS_PAYLOAD | OK_TERMINAL`` (``10011``).
 
-.. list-table:: Server-only error codes (100--199)
+.. list-table:: Server-only error codes (0x40--0x7F)
    :header-rows: 1
    :widths: 10 40 50
 
    * - Value
      - Name
      - Description
-   * - ``100``
+   * - ``0x40``
      - ``DROPPED_WITHOUT_RESPONSE``
      - The server released a unary call without sending a response or
        cancelling it.
-   * - ``101``
+   * - ``0x41``
      - ``SERVICE_UNREGISTERED``
      - The target service was unregistered from the server while the call was
        running.
-   * - ``102``
+   * - ``0x42``
      - ``UNKNOWN_SERVICE``
      - The requested service is not registered on the server.
-   * - ``103``
+   * - ``0x43``
      - ``UNKNOWN_METHOD``
      - The requested method is not registered on the target service.
-   * - ``104``
+   * - ``0x44``
      - ``INVALID_REQUEST_PAYLOAD``
      - The request payload was invalid.
-   * - ``105``
+   * - ``0x45``
      - ``FAILED_TO_ALLOCATE_CALL``
      - Failed to allocate call state for an incoming request.
-   * - ``106``
+   * - ``0x46``
      - ``FAILED_TO_ALLOCATE_CALL_RESOURCES_WHILE_RUNNING``
      - Failed to allocate necessary resources while running the call.
 

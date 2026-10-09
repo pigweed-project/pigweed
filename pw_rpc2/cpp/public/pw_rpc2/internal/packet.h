@@ -48,7 +48,7 @@ PW_PACKED(struct) RequestWireFormat {
 /// Signals that an RPC has terminated abnormally with a protocol error.
 PW_PACKED(struct) ErrorWireFormat {
   PacketHeader header;
-  uint16_t error;
+  uint8_t error;
 };
 
 /// Connection handshake packet for protocol negotiation and compatibility
@@ -66,7 +66,7 @@ PW_PACKED(struct) HandshakeWireFormat {
 
 static_assert(sizeof(PacketHeader) == 5);
 static_assert(sizeof(RequestWireFormat) == 13);
-static_assert(sizeof(ErrorWireFormat) == 7);
+static_assert(sizeof(ErrorWireFormat) == 6);
 static_assert(sizeof(HandshakeWireFormat) == 8);
 
 /// Returns the wire format size for `type` excluding any trailing payload
@@ -160,11 +160,11 @@ class OutboundPacket {
     constexpr Fields() : request{0, 0} {}
     constexpr Fields(uint32_t service_id, uint32_t method_id)
         : request{service_id, method_id} {}
-    constexpr explicit Fields(uint16_t protocol_error)
-        : raw_error(protocol_error) {}
+    constexpr explicit Fields(ProtocolStatus protocol_error)
+        : error(protocol_error) {}
 
     RequestIds request;
-    uint16_t raw_error;
+    ProtocolStatus error;
   };
 
   // A packet that starts a call, so its header includes the method to invoke.
@@ -254,9 +254,8 @@ class OutboundPacket {
   static constexpr OutboundPacket ClientError(uint32_t call_id,
                                               ProtocolStatus error) {
     PW_DASSERT(IsClientError(error));
-    return OutboundPacket(PacketType::Make<flags::kErrorTerminal>(),
-                          call_id,
-                          Fields(static_cast<uint16_t>(error)));
+    return OutboundPacket(
+        PacketType::Make<flags::kErrorTerminal>(), call_id, Fields(error));
   }
 
   static constexpr OutboundPacket ServerError(uint32_t call_id,
@@ -265,7 +264,7 @@ class OutboundPacket {
     return OutboundPacket(
         PacketType::Make<flags::kServer, flags::kErrorTerminal>(),
         call_id,
-        Fields(static_cast<uint16_t>(error)));
+        Fields(error));
   }
 
   constexpr OutboundPacket()
@@ -378,8 +377,8 @@ class InboundPacket {
   /// Returns the error code of an error packet.
   ///
   /// A zero wire code (never valid in an error packet) maps to
-  /// `ProtocolStatus::kInternal`, and unrecognized or role-mismatched codes
-  /// map to `ProtocolStatus::kUnknown`.
+  /// `ProtocolStatus::kInternal`. Codes that are undefined, local-only, or that
+  /// the sending endpoint may not send map to `ProtocolStatus::kUnknown`.
   ProtocolStatus error() const;
 
   size_t payload_offset() const { return PacketSizeWithoutPayload(type()); }

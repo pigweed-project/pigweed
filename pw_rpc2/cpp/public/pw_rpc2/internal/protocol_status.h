@@ -25,99 +25,168 @@ namespace pw::rpc2::internal {
 
 // LINT.IfChange(cpp_rpc2_error_codes)
 
-/// Wire-level protocol status codes for `pw_rpc2`.
+/// Which endpoint may send a `ProtocolStatus` code in an error packet.
 ///
-/// Each non-zero value identifies the specific condition that terminated a
-/// call in an `ERROR_TERMINAL` packet. Codes are partitioned into decimal
-/// bands so that common and role-specific codes remain distinct and can grow
-/// independently:
+/// Each value is the top two bits of the codes with that origin. See
+/// `OriginOf()`.
+enum class ProtocolStatusOrigin : uint8_t {
+  /// The code may appear anywhere: either endpoint may send it, and it may also
+  /// arise locally.
+  kAny = 0x00,
+  /// Only a server may send the code. A client only receives it from the wire.
+  kServer = 0x40,
+  /// Only a client may send the code. A server only receives it from the wire.
+  kClient = 0x80,
+  /// The code is never sent. It only arises locally, and is rejected (mapped to
+  /// `ProtocolStatus::kUnknown`) if received from the wire.
+  kLocal = 0xC0,
+};
+
+/// Status codes for `pw_rpc2`.
 ///
-/// - `0`--`99`: Common codes (valid from either client or server, except
-///   `kOk`, which is never sent in an error packet).
-/// - `100`--`199`: Server-only codes (only sent in error packets with
-///   `flags::kServer` set).
-/// - `200`--`255`: Reserved (e.g., for future client-only error codes).
+/// Wire codes identify the condition that terminated a call in an
+/// `ERROR_TERMINAL` packet. Local codes describe conditions that an endpoint
+/// detects itself and that are never sent.
+///
+/// The top two bits of each code are its `ProtocolStatusOrigin`, which
+/// determines which endpoint may send it:
+///
+/// - `0x00`--`0x3F`: Either endpoint (except `kOk`, which is never sent).
+/// - `0x40`--`0x7F`: Server only.
+/// - `0x80`--`0xBF`: Client only (none are currently defined).
+/// - `0xC0`--`0xFF`: Local only; never sent.
 enum class ProtocolStatus : uint8_t {
-  // --- Common codes (0-99) ---
+  // --- Either endpoint (0x00-0x3F) ---
 
-  /// No protocol error occurred. Used as the success return value for internal
+  /// No error occurred. Used as the success return value for internal
   /// invocation functions; never sent in an error packet.
-  kOk = 0,
-
-  /// Unrecognized error code.
-  kUnknown = 1,
+  kOk = 0x00,
 
   /// An error that indicates a programming bug within pw_rpc2.
-  kInternal = 2,
+  kInternal = 0x01,
 
   /// The call was deliberately cancelled by application code.
-  kCancelled = 3,
+  kCancelled = 0x02,
 
   /// The endpoint received a packet type that may only be sent by its own role
   /// (a server received a server-to-client packet, or a client received a
   /// client-to-server packet).
-  kReceivedPacketForWrongEndpoint = 4,
+  kReceivedPacketForWrongEndpoint = 0x03,
 
   /// A packet does not match the method's type. On the server, a unary or
   /// server-streaming call must be started by a packet that carries the
   /// request message and closes the client's stream. On the client, a unary or
   /// client-streaming call must be answered by a single packet that carries
   /// the response message and terminates the RPC.
-  kMethodTypeMismatch = 5,
+  kMethodTypeMismatch = 0x04,
 
-  // --- Server-only codes (100-199) ---
+  // --- Server only (0x40-0x7F) ---
 
   /// The server released a unary call without sending a response or
   /// cancelling it.
-  kDroppedWithoutResponse = 100,
+  kDroppedWithoutResponse = 0x40,
 
   /// The target service was unregistered from the server while the call was
   /// running.
-  kServiceUnregistered = 101,
+  kServiceUnregistered = 0x41,
 
   /// The requested service is not registered on the server.
-  kUnknownService = 102,
+  kUnknownService = 0x42,
 
   /// The requested method is not registered on the target service.
-  kUnknownMethod = 103,
+  kUnknownMethod = 0x43,
 
   /// The request payload was invalid.
-  kInvalidRequestPayload = 104,
+  kInvalidRequestPayload = 0x44,
 
   /// Failed to allocate call state for an incoming request.
-  kFailedToAllocateCall = 105,
+  kFailedToAllocateCall = 0x45,
 
   /// Failed to allocate necessary resources while running the call.
-  kFailedToAllocateCallResourcesWhileRunning = 106,
+  kFailedToAllocateCallResourcesWhileRunning = 0x46,
 
-  // --- Reserved (200-255) ---
+  // --- Client only (0x80-0xBF) ---
+
+  // None are currently defined.
+
+  // LINT.ThenChange(//pw_rpc2/protocol.rst:rpc2_error_codes)
+
+  // --- Local only (0xC0-0xFF) ---
+
+  /// The peer finished its stream, and every message it sent has been read.
+  kEndOfStream = 0xC0,
+
+  /// The user closed the `Client` or `Server`, or the handle used is closed.
+  kClosed = 0xC1,
+
+  /// The underlying transport socket closed.
+  kSocketClosed = 0xC2,
+
+  /// The transport failed to connect to the peer.
+  kConnectFailed = 0xC3,
+
+  /// The connection handshake failed: a handshake packet was malformed or
+  /// unexpected, or the endpoints' protocol versions are incompatible.
+  kHandshakeFailed = 0xC4,
+
+  /// An inbound RPC packet could not be parsed.
+  kMalformedPacket = 0xC5,
+
+  /// The client used every available call ID.
+  kCallIdsExhausted = 0xC6,
+
+  /// The call's write side is closed, so nothing more can be written to it.
+  kWriteClosed = 0xC7,
+
+  /// An outbound message is larger than the transport or reservation allows.
+  kMessageTooLarge = 0xC8,
+
+  /// An outbound message could not be serialized.
+  kSerializationFailed = 0xC9,
+
+  /// An inbound message payload could not be deserialized.
+  kDeserializationFailed = 0xCA,
+
+  /// A local allocation failed.
+  kOutOfMemory = 0xCB,
+
+  /// A received code was unrecognized, or was sent by an endpoint that may not
+  /// send it.
+  kUnknown = 0xFF,
 };
 
-// LINT.ThenChange(//pw_rpc2/protocol.rst:rpc2_error_codes)
+/// Returns which endpoint may send `code`, from its top two bits.
+constexpr ProtocolStatusOrigin OriginOf(ProtocolStatus code) {
+  return static_cast<ProtocolStatusOrigin>(static_cast<uint8_t>(code) & 0xC0);
+}
 
-/// True if `code` may be sent in a server error packet (common or server-only,
-/// excluding `kOk`).
+/// True if `code` may be sent in a server error packet: a defined code that
+/// either endpoint or only a server may send, excluding `kOk`.
 template <typename StatusEnum = ProtocolStatus>
 constexpr bool IsServerError(StatusEnum code) {
   static_assert(std::is_same_v<StatusEnum, ProtocolStatus>);
-  return code != ProtocolStatus::kOk && IsValidEnum(code);
+  const ProtocolStatusOrigin origin = OriginOf(code);
+  return code != ProtocolStatus::kOk && IsValidEnum(code) &&
+         (origin == ProtocolStatusOrigin::kAny ||
+          origin == ProtocolStatusOrigin::kServer);
 }
 
-/// True if `code` may be sent in a client error packet (`1`--`99`, excluding
-/// `kOk`).
+/// True if `code` may be sent in a client error packet: a defined code that
+/// either endpoint or only a client may send, excluding `kOk`.
 template <typename StatusEnum = ProtocolStatus>
 constexpr bool IsClientError(StatusEnum code) {
   static_assert(std::is_same_v<StatusEnum, ProtocolStatus>);
-  const auto value = static_cast<uint8_t>(code);
-  return value > 0 && value < 100 && IsValidEnum(code);
+  const ProtocolStatusOrigin origin = OriginOf(code);
+  return code != ProtocolStatus::kOk && IsValidEnum(code) &&
+         (origin == ProtocolStatusOrigin::kAny ||
+          origin == ProtocolStatusOrigin::kClient);
 }
 
-/// Translates a wire `ProtocolStatus` into its equivalent `pw::Status` for
-/// public call completion APIs.
+/// Translates a `ProtocolStatus` into its equivalent `pw::Status` for public
+/// call completion APIs.
 ///
-/// Guaranteed never to return `OkStatus()` or `Status::OutOfRange()` (stream
-/// EOF), even if an unrecognized value is received in an error packet from the
-/// wire.
+/// Never returns `OkStatus()`. Returns `Status::OutOfRange()` (stream EOF) only
+/// for the local `kEndOfStream`, so no code received from the wire maps to it.
 constexpr Status ToStatus(ProtocolStatus code) {
   switch (code) {
     case ProtocolStatus::kOk:
@@ -129,6 +198,7 @@ constexpr Status ToStatus(ProtocolStatus code) {
     case ProtocolStatus::kCancelled:
     case ProtocolStatus::kDroppedWithoutResponse:
     case ProtocolStatus::kServiceUnregistered:
+    case ProtocolStatus::kClosed:
       return Status::Cancelled();
     case ProtocolStatus::kReceivedPacketForWrongEndpoint:
       return Status::Unimplemented();
@@ -136,12 +206,26 @@ constexpr Status ToStatus(ProtocolStatus code) {
     case ProtocolStatus::kUnknownMethod:
       return Status::NotFound();
     case ProtocolStatus::kInvalidRequestPayload:
+    case ProtocolStatus::kHandshakeFailed:
+    case ProtocolStatus::kMalformedPacket:
+    case ProtocolStatus::kDeserializationFailed:
       return Status::DataLoss();
     case ProtocolStatus::kFailedToAllocateCall:
     case ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning:
+    case ProtocolStatus::kCallIdsExhausted:
+    case ProtocolStatus::kMessageTooLarge:
+    case ProtocolStatus::kOutOfMemory:
       return Status::ResourceExhausted();
     case ProtocolStatus::kMethodTypeMismatch:
+    case ProtocolStatus::kWriteClosed:
       return Status::FailedPrecondition();
+    case ProtocolStatus::kEndOfStream:
+      return Status::OutOfRange();
+    case ProtocolStatus::kSocketClosed:
+    case ProtocolStatus::kConnectFailed:
+      return Status::Unavailable();
+    case ProtocolStatus::kSerializationFailed:
+      return Status::InvalidArgument();
   }
   return Status::Unknown();
 }
@@ -150,7 +234,6 @@ constexpr Status ToStatus(ProtocolStatus code) {
 
 PW_ENUM(pw::rpc2::internal::ProtocolStatus,
         kOk,
-        kUnknown,
         kInternal,
         kCancelled,
         kReceivedPacketForWrongEndpoint,
@@ -161,4 +244,17 @@ PW_ENUM(pw::rpc2::internal::ProtocolStatus,
         kUnknownMethod,
         kInvalidRequestPayload,
         kFailedToAllocateCall,
-        kFailedToAllocateCallResourcesWhileRunning);
+        kFailedToAllocateCallResourcesWhileRunning,
+        kEndOfStream,
+        kClosed,
+        kSocketClosed,
+        kConnectFailed,
+        kHandshakeFailed,
+        kMalformedPacket,
+        kCallIdsExhausted,
+        kWriteClosed,
+        kMessageTooLarge,
+        kSerializationFailed,
+        kDeserializationFailed,
+        kOutOfMemory,
+        kUnknown);

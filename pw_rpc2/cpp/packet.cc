@@ -16,7 +16,6 @@
 
 #include <cstddef>
 #include <cstring>
-#include <limits>
 
 #include "pw_assert/check.h"
 #include "pw_bytes/endian.h"
@@ -27,10 +26,6 @@ namespace {
 
 void WriteUint32(ByteSpan buffer, size_t offset, uint32_t value) {
   bytes::CopyInOrder<uint32_t>(endian::little, value, buffer.data() + offset);
-}
-
-void WriteUint16(ByteSpan buffer, size_t offset, uint16_t value) {
-  bytes::CopyInOrder<uint16_t>(endian::little, value, buffer.data() + offset);
 }
 
 }  // namespace
@@ -76,19 +71,15 @@ Result<Buf> HandshakePacket::Encode(Buf buffer) const {
 
 ProtocolStatus InboundPacket::error() const {
   PW_DASSERT(type().is_error());
-  const uint16_t code = bytes::ReadInOrder<uint16_t>(
-      endian::little, buffer_.data() + offsetof(ErrorWireFormat, error));
-  if (code == 0) {
+  const auto code = static_cast<ProtocolStatus>(
+      static_cast<uint8_t>(buffer_[offsetof(ErrorWireFormat, error)]));
+  if (code == ProtocolStatus::kOk) {
     return ProtocolStatus::kInternal;
   }
-  if (code > std::numeric_limits<uint8_t>::max()) {
+  if (type().is_server() ? !IsServerError(code) : !IsClientError(code)) {
     return ProtocolStatus::kUnknown;
   }
-  const auto status = static_cast<ProtocolStatus>(code);
-  if (type().is_server() ? !IsServerError(status) : !IsClientError(status)) {
-    return ProtocolStatus::kUnknown;
-  }
-  return status;
+  return code;
 }
 
 Result<InboundPacket> InboundPacket::Decode(ConstBuf&& buffer) {
@@ -136,7 +127,8 @@ Result<size_t> OutboundPacket::EncodeHeader(ByteSpan buffer,
                 offsetof(RequestWireFormat, method_id),
                 fields_.request.method_id);
   } else if (type_.is_error()) {
-    WriteUint16(buffer, offsetof(ErrorWireFormat, error), fields_.raw_error);
+    buffer[offsetof(ErrorWireFormat, error)] =
+        static_cast<std::byte>(fields_.error);
   }
 
   return offset + payload_len;
