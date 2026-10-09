@@ -1,0 +1,8 @@
+INF  Listening on port <port>
+INF  Echo: hello
+INF  Repeat: ping x3
+INF  Collect: one
+INF  Collect: two
+INF  Collect: three
+INF  EchoStream: alpha
+INF  EchoStream: beta

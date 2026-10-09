@@ -25,8 +25,11 @@ sphinx_docs_library(
     srcs = [
         "comparison.rst",
         "docs.rst",
+        "examples.rst",
         "protocol.rst",
         "why.rst",
+        "//pw_rpc2/cpp/examples:docs",
+        "//pw_rpc2/cpp/examples/echo:docs",
     ],
     prefix = "pw_rpc2/",
     target_compatible_with = incompatible_with_mcu(),

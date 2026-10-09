@@ -1,0 +1,67 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:python.bzl", "pw_py_test")
+
+licenses(["notice"])
+
+# The examples use POSIX sockets.
+hosts_lin_mac = {
+    "@platforms//os:linux": [],
+    "@platforms//os:macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+}
+
+# Runs each Echo client against each Echo server, and compares their output to
+# the expected output.
+pw_py_test(
+    name = "echo_test",
+    size = "small",
+    srcs = ["example_test.py"],
+    args = [
+        "--servers",
+        "$(rootpath //pw_rpc2/cpp/examples/echo:server_coro)",
+        "$(rootpath //pw_rpc2/cpp/examples/echo:server_polling)",
+        "--clients",
+        "$(rootpath //pw_rpc2/cpp/examples/echo:client_coro)",
+        "$(rootpath //pw_rpc2/cpp/examples/echo:client_polling)",
+        "--expected-server-output",
+        "$(rootpath echo_server.expected)",
+        "--expected-client-output",
+        "$(rootpath echo_client.expected)",
+    ],
+    data = [
+        "echo_client.expected",
+        "echo_server.expected",
+        "//pw_rpc2/cpp/examples/echo:client_coro",
+        "//pw_rpc2/cpp/examples/echo:client_polling",
+        "//pw_rpc2/cpp/examples/echo:server_coro",
+        "//pw_rpc2/cpp/examples/echo:server_polling",
+    ],
+    main = "example_test.py",
+    target_compatible_with = select(hosts_lin_mac),
+)
+
+# The expected output, which the docs show as the output of the examples.
+sphinx_docs_library(
+    name = "docs",
+    srcs = [
+        "echo_client.expected",
+        "echo_server.expected",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//pw_rpc2:__pkg__"],
+)

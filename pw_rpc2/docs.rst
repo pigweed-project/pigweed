@@ -14,6 +14,7 @@ pw_rpc2
    :maxdepth: 1
    :hidden:
 
+   Examples <examples>
    Wire protocol <protocol>
    Why RPC2? <why>
    Comparison to RPC1 <comparison>

@@ -1,0 +1,7 @@
+INF  Echo: hello
+INF  Repeat: ping
+INF  Repeat: ping
+INF  Repeat: ping
+INF  Collect: one two three
+INF  EchoStream: alpha
+INF  EchoStream: beta
