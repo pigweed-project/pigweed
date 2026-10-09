@@ -50,6 +50,7 @@ pw_python_package("py") {
     "pw_package/packages/zephyr.py",
     "pw_package/pigweed_packages.py",
   ]
+  tests = [ "git_repo_test.py" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"

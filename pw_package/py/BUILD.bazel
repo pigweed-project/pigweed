@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_library")
+load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -55,4 +55,10 @@ pw_py_library(
         "//pw_env_setup/py:pw_env_setup_private",
         "//pw_stm32cube_build/py:pw_stm32cube_build",
     ],
+)
+
+pw_py_test(
+    name = "git_repo_test",
+    srcs = ["git_repo_test.py"],
+    deps = [":pw_package"],
 )

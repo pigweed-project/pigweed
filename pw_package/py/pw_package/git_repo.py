@@ -157,21 +157,45 @@ class GitRepo(pw_package.package_manager.Package):
             self.checkout_full(path)
 
     def checkout_full(self, path: Path) -> None:
+        """Clones the full repository and checks out the target revision."""
         # --filter=blob:none means we don't get history, just the current
         # revision. If we later run commands that need history it will be
         # retrieved on-demand. For small repositories the effect is negligible
         # but for large repositories this should be a significant improvement.
         # --filter=... causes progress messages to be printed to stderr even if
-        # using --quiet so we wrap our clone command in `get_stdout` to prevent
+        # using --quiet so we wrap our clone command in `git_stdout` to prevent
         # the output from being emitted.
+        #
+        # Passing --no-checkout ensures `git clone` only fetches commit/tree
+        # metadata and does not fail mid-checkout during a lazy blob fetch,
+        # which would leave a non-empty destination directory that causes
+        # subsequent `git clone` retries (such as LUCI's git wrapper) to fail.
         _LOG.debug('%s: checkout_full', self.name)
-        if self._commit:
-            git_stdout('clone', '--filter=blob:none', self._url, path)
-            git('reset', '--hard', self._commit, repo=path)
-        elif self._tag:
-            git_stdout(
-                'clone', '-b', self._tag, '--filter=blob:none', self._url, path
-            )
+        try:
+            if self._commit:
+                git_stdout(
+                    'clone',
+                    '--no-checkout',
+                    '--filter=blob:none',
+                    self._url,
+                    path,
+                )
+                git_stdout('reset', '--hard', self._commit, repo=path)
+            elif self._tag:
+                git_stdout(
+                    'clone',
+                    '-b',
+                    self._tag,
+                    '--no-checkout',
+                    '--filter=blob:none',
+                    self._url,
+                    path,
+                )
+                git_stdout('reset', '--hard', self._tag, repo=path)
+        except subprocess.CalledProcessError:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            raise
 
     def checkout_sparse(self, path: Path) -> None:
         _LOG.debug('%s: checkout_sparse', self.name)
