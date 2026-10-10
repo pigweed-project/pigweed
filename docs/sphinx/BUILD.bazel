@@ -184,6 +184,7 @@ sphinx_docs_library(
         "showcases/sense/setup.rst",
         "showcases/sense/web.rst",
         "size_optimizations.rst",
+        "style/ai_artifacts.rst",
         "style/bazel.rst",
         "style/cli.rst",
         "style/commit_message.rst",

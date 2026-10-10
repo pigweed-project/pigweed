@@ -50,6 +50,12 @@ Documentation style guides
 --------------------------
 See the :ref:`documentation contributors homepage <docs-contrib-docs>`.
 
+-----------------
+AI artifact style
+-----------------
+See :ref:`docs-pw-style-ai-artifacts` for conventions on agent skills,
+subagents, ``AGENTS.md`` rules, and their helper scripts.
+
 .. todo-check: disable
 
 .. _docs-pw-todo-style:
@@ -259,3 +265,4 @@ This plugin will, by default, act upon any file named "OWNERS".
    reStructuredText <style/rest>
    Doxygen <style/doxygen>
    Writing <style/writing>
+   AI artifacts <style/ai_artifacts>
