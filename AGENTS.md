@@ -155,7 +155,11 @@ worktrees (`./gh wt`) using standard GitHub CLI (`gh`) syntax.
 
 For full workflows and flag references, load the
 [`ghish` skill](.agents/skills/ghish/SKILL.md) and
-[`worktree` skill](.agents/skills/worktree/SKILL.md).
+[`worktree` skill](.agents/skills/worktree/SKILL.md). An explicit `/review`
+loads the [`review` skill](.agents/skills/review/SKILL.md), which dispatches
+language reviewer subagents in parallel and falls back to its own inline audit
+for files with no enabled reviewer (the reviewer subagents currently land
+disabled).
 
 ### Strict Rules for AI Agents
 

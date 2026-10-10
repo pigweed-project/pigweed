@@ -2,9 +2,13 @@
 name: review
 description: >-
   High-signal, embedded-aware Pigweed code review skill with strict comment
-  calibration. Supports both Self-Review Gate mode (pre-upload verification for
-  /crank) and Gerrit CL Reviewer mode (staging calibrated --draft comments via
-  ./gh pr comment).
+  calibration. Dispatches the enabled language reviewer subagents in parallel
+  (one patch each), merges their findings into one calibrated verdict, and
+  falls back to an inline audit for files with no enabled reviewer. Supports
+  both Self-Review Gate mode (pre-upload verification for /crank) and Gerrit
+  CL Reviewer mode (staging calibrated --draft comments via ./gh pr comment).
+  Do not load for a quick LGTM or a single-file look, and not for
+  /respond-style comment handling (see .agents/skills/respond/SKILL.md).
 disable-model-invocation: true
 ---
 
@@ -70,6 +74,13 @@ Every comment or finding MUST pass these calibration filters:
    those and drop minor nits entirely.
 5. **Respect Formatter Authority**: Never leave inline comments about whitespace,
    line wrapping, or include sorting that `./pw format` handles automatically.
+6. **Changed Lines Only**: Review the diff, not the file. Never stage an inline
+   comment on unchanged code; put out-of-diff observations, if any, in the
+   summary (Mode A) or in one change-level draft (Mode B).
+7. **Cite the Rule**: When a finding rests on a Pigweed rule, link it as a
+   pigweed.dev URL, e.g.
+   `https://pigweed.dev/code_reviews.html#docs-code-reviews-checklist-<aspect>`
+   or `https://pigweed.dev/style/<page>.html#<anchor>`.
 
 ---
 
@@ -90,11 +101,52 @@ Every comment or finding MUST pass these calibration filters:
   If the CL links a Buganizer issue (`Bug: b/<id>` or `Fixed: b/<id>`), inspect
   it via `./gh issue view <id>` to verify the change actually solves the stated
   problem.
+- **Hard stops**: If no target resolves (no `HEAD` ahead of `origin/main` and
+  no CL given), or the CL is `MERGED` or `ABANDONED`
+  (`./gh pr view <cl> --json state`), stop and say why without dispatching
+  anything.
 
-### Step 2: Deep Pigweed Technical Audit
+### Step 2: Dispatch Reviewer Subagents & Merge Findings
 
-Read the full surrounding file context (`view_file`) for modified hunks—never
-review a diff hunk in isolation. Check these six Pigweed dimensions:
+You coordinate: you do not read changed source yourself when a reviewer
+subagent handles the file. Work from the diff gathered in Step 1.
+
+1. **Map files to reviewers.** A row applies only if a changed file matches
+   it **and** the agent is enabled (its definition file exists and
+   `git grep -l "^disabled: true" -- <definition file>` prints nothing).
+
+   | Files matching | Agent (`name:`) | Definition file |
+   | --- | --- | --- |
+   | `*.c`, `*.cc`, `*.h`, `*.inc` | `cpp-reviewer` | `.agents/agents/cpp_reviewer.md` |
+   | `*.py`, `*.pyi` | `python-reviewer` | `.agents/agents/python_reviewer.md` |
+   | `*.rs` | `rust-reviewer` | `.agents/agents/rust_reviewer.md` |
+
+2. **Cut one patch per reviewer without reading it.** `out=$(mktemp -d)`, then
+   `git diff origin/main...HEAD -- <its files> > "$out/<agent>.patch"` (Mode
+   B: filter the `./gh pr diff <cl>` output the same way).
+3. **Dispatch every selected reviewer in one parallel step**, each as a
+   read-only background subagent. Give each the checkout path, its patch
+   path, its file list, and this instruction verbatim:
+
+   > Read and follow `.agents/skills/review/reviewer_workflow.md`. Return
+   > findings in the Finding format defined there and nothing else.
+
+   Wait for every reviewer to finish before merging.
+4. **Merge.** Render findings with the severity prefixes above as mapped in
+   [`reviewer_workflow.md`](reviewer_workflow.md): `blocking` and
+   `should-fix` become `[<tag>] <issue> (<rule>)`, `nit` becomes
+   `nit: <issue>`. Deduplicate same file/line/rule; order by severity with
+   `scope: in-diff` before `out-of-diff`. Never soften, reword, or drop a
+   reviewer's `blocking` finding. Apply the nit budget to the merged set.
+5. **Fall back for the rest.** Files matching no row, or only rows whose
+   agent is disabled or absent, get the inline audit below. Report which
+   files each reviewer handled and which fell back.
+
+#### Fallback: inline audit
+
+For files no enabled reviewer handled, read the full surrounding file context
+(`view_file`) for modified hunks—never review a diff hunk in isolation. Check
+these six Pigweed dimensions:
 
 #### 1. Embedded Memory & Execution Constraints
 - **Zero Dynamic Allocation**: Core Pigweed C++ modules disallow `new`,
@@ -142,11 +194,20 @@ review a diff hunk in isolation. Check these six Pigweed dimensions:
 - Commit message must follow `<module>: <Imperative subject <=72 chars>`, explain
   the *why*, include `Bug: b/<id>` or `Fixed: b/<id>`, and preserve `Change-Id:`.
 
+#### 6. AI Artifacts
+- If the change touches `.agents/`, `AGENTS.md`, `GEMINI.md`, or `CLAUDE.md`:
+  read `docs/sphinx/style/ai_artifacts.rst` in full at review time and apply
+  its review checklist; cite findings as
+  `https://pigweed.dev/style/ai_artifacts.html#<anchor>` (for example
+  `#docs-pw-style-ai-artifacts-review-checklist`).
+
 ---
 
 ### Step 3: Empirical Check (When Local Workspace Matches)
 
-When running in Mode A (or Mode B after `./gh pr checkout <cl>`):
+When running in Mode A (or Mode B from a worktree allocated with
+`./gh wt use review-<cl> --cl <cl> --json`; never `./gh pr checkout` in a
+checkout you did not allocate):
 - Run hermetic tests for modified modules:
   ```bash
   bazelisk test --noshow_progress --noshow_loading_progress //<module>/...
@@ -166,13 +227,17 @@ Return a structured markdown report:
   `[test]` findings) or `NEEDS_FIXES`.
 - **Blocking Findings**: File, line, severity tag, and exact fix required.
 - **Nits (<= 3)**: Optional minor improvements.
+- **Coverage**: which files each reviewer subagent handled, which fell back
+  to the inline audit, and any `scope: out-of-diff` observations.
 
 #### In Mode B (Gerrit CL Reviewer):
 1. Check existing comments (`./gh pr view <cl> --comments`) so you do not
    duplicate feedback already left by another reviewer.
-2. Stage each finding as a private Gerrit draft:
+2. Stage each `in-diff` finding as a private Gerrit draft:
    ```bash
    ./gh pr comment <cl> --path <file> --line <line> -m "[<tag>] <concise explanation and concrete suggestion>" --draft
    ```
+   Put `out-of-diff` findings, if any, in one change-level draft
+   (`./gh pr comment <cl> -m "<summary>" --draft`). Never vote.
 3. Present a summary table of all staged `--draft` comments to the user, along
    with the command to publish them once reviewed (`./gh pr review <cl> --publish`).
