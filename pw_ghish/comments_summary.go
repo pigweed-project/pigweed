@@ -26,13 +26,16 @@ import (
 
 // UnresolvedComment represents a single unresolved comment thread or draft preview.
 type UnresolvedComment struct {
-	File          string `json:"file"`
-	Line          int    `json:"line"`
-	PatchSet      int    `json:"patchset"`
-	Author        string `json:"author"`
-	Message       string `json:"message"`
-	HasDraftReply bool   `json:"has_draft_reply"`
-	IsDraft       bool   `json:"is_draft,omitempty"`
+	File          string   `json:"file"`
+	Line          int      `json:"line"`
+	PatchSet      int      `json:"patchset"`
+	Author        string   `json:"author"`
+	Message       string   `json:"message"`
+	HasDraftReply bool     `json:"has_draft_reply,omitempty"`
+	IsDraft       bool     `json:"is_draft,omitempty"`
+	CommentID     string   `json:"comment_id,omitempty"`
+	ThreadHistory []string `json:"thread_history,omitempty"`
+	CodeSnippet   string   `json:"code_snippet,omitempty"`
 }
 
 // CommentsSummary contains summarized thread metrics and previews for a change.
@@ -87,9 +90,17 @@ func AnalyzeComments(published map[string][]gerrit.CommentInfo, drafts map[strin
 				resolvedCount++
 				continue
 			}
+			var history []string
 			for _, c := range th.Comments {
 				if c.ID != "" {
 					unresolvedCommentIDs[c.ID] = true
+				}
+				if len(th.Comments) > 1 {
+					cAuth := FormatAccount(c.Author)
+					if cAuth == "" {
+						cAuth = "Unknown"
+					}
+					history = append(history, fmt.Sprintf("%s: %s", cAuth, strings.TrimSpace(c.Message)))
 				}
 			}
 
@@ -112,6 +123,8 @@ func AnalyzeComments(published map[string][]gerrit.CommentInfo, drafts map[strin
 				Author:        author,
 				Message:       strings.TrimSpace(th.Latest.Message),
 				HasDraftReply: th.HasDraftReply,
+				CommentID:     th.Latest.ID,
+				ThreadHistory: history,
 			})
 		}
 	}
@@ -140,12 +153,13 @@ func AnalyzeComments(published map[string][]gerrit.CommentInfo, drafts map[strin
 					continue
 				}
 				standaloneDrafts = append(standaloneDrafts, UnresolvedComment{
-					File:     fileDisplay,
-					Line:     d.Line,
-					PatchSet: d.PatchSet,
-					Author:   FormatAccount(d.Author),
-					Message:  strings.TrimSpace(d.Message),
-					IsDraft:  true,
+					File:      fileDisplay,
+					Line:      d.Line,
+					PatchSet:  d.PatchSet,
+					Author:    FormatAccount(d.Author),
+					Message:   strings.TrimSpace(d.Message),
+					IsDraft:   true,
+					CommentID: d.ID,
 				})
 			}
 		}

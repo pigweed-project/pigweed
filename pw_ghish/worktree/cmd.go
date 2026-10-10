@@ -45,6 +45,7 @@ and automatic Jetski IDE left-sidebar project synchronization.`,
 		newListCommand(mgr),
 		newCloseCommand(mgr),
 		newGCCommand(mgr),
+		pw_ghish.NewSenseCommand(),
 	)
 
 	return wtCmd

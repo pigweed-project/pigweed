@@ -39,6 +39,7 @@ type ProjectConfig struct {
 	CI       CIProjectConfig       `json:"ci"`
 	Issue    IssueProjectConfig    `json:"issue"`
 	Worktree WorktreeProjectConfig `json:"worktree"`
+	Oncall   OncallProjectConfig   `json:"oncall"`
 }
 
 // GerritProjectConfig holds `[gerrit]` configuration settings.
@@ -83,6 +84,11 @@ type WorktreeProjectConfig struct {
 	WarmupDriver string `json:"warmup_driver,omitempty"`
 }
 
+// OncallProjectConfig holds `[oncall]` configuration settings.
+type OncallProjectConfig struct {
+	ScheduleFile string `json:"schedule_file,omitempty"`
+}
+
 func cfgBoolPtr(v bool) *bool {
 	return &v
 }
@@ -115,7 +121,7 @@ func LoadCommandProjectConfig(cmd *cobra.Command) (*ProjectConfig, error) {
 	}
 	cfg := GetConfig(cmd)
 	if cfg == nil {
-		return DefaultProjectConfig(), nil
+		cfg = &Config{Git: DefaultGitRunner}
 	}
 	ctx := cmd.Context()
 	if ctx == nil {
@@ -357,6 +363,7 @@ type tomlProjectConfig struct {
 	Issue    tomlIssueConfig    `toml:"issue"`
 	Bugs     tomlIssueConfig    `toml:"bugs"`
 	Worktree tomlWorktreeConfig `toml:"worktree"`
+	Oncall   tomlOncallConfig   `toml:"oncall"`
 }
 
 type tomlGerritConfig struct {
@@ -397,6 +404,10 @@ type tomlIssueConfig struct {
 type tomlWorktreeConfig struct {
 	SlotPrefix   *string `toml:"slot_prefix"`
 	WarmupDriver *string `toml:"warmup_driver"`
+}
+
+type tomlOncallConfig struct {
+	ScheduleFile *string `toml:"schedule_file"`
 }
 
 func validatePathComponentPattern(pattern string) error {
@@ -529,7 +540,7 @@ func ParseProjectConfigTOML(filePath, content string, dst *ProjectConfig) error 
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
 		k := undecoded[0]
 		switch k[0] {
-		case "gerrit", "ci", "issue", "bugs", "worktree":
+		case "gerrit", "ci", "issue", "bugs", "worktree", "oncall":
 			return fmt.Errorf("%s: unknown key %q in section [%s]", filePath, strings.Join(k[1:], "."), k[0])
 		default:
 			if len(k) == 1 && md.Type(k[0]) != "Hash" {
@@ -607,6 +618,10 @@ func ParseProjectConfigTOML(filePath, content string, dst *ProjectConfig) error 
 	}
 	if raw.Worktree.WarmupDriver != nil {
 		dst.Worktree.WarmupDriver = *raw.Worktree.WarmupDriver
+	}
+
+	if raw.Oncall.ScheduleFile != nil {
+		dst.Oncall.ScheduleFile = *raw.Oncall.ScheduleFile
 	}
 
 	return nil
@@ -773,6 +788,12 @@ func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
 				dst.Worktree.SlotPrefix = val
 			case "warmupdriver":
 				dst.Worktree.WarmupDriver = val
+			}
+
+		case "oncall":
+			switch normKey {
+			case "schedulefile":
+				dst.Oncall.ScheduleFile = val
 			}
 		}
 	}

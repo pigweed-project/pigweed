@@ -93,7 +93,8 @@ Documentation
       :class-item: sales-pitch-cta-primary
 
       Reference for ``gh pr``, ``gh run``, ``gh issue``, ``gh auth``,
-      ``gh hook``, and ``gh wt``, including comparisons with upstream ``gh``.
+      ``gh hook``, ``gh wt``, and ``gh sense``, including comparisons with
+      upstream ``gh``.
 
 .. grid:: 2
 
@@ -110,8 +111,8 @@ Documentation
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Workflows for agent pair programming: private draft steering, staged
-      review replies, CL handoffs, CI failure repair, and parallel agents.
+      Workflows for agent pair programming: ``/crank`` context sensing, private
+      draft steering, staged review replies, CL handoffs, and CI repair.
 
 .. grid:: 2
 

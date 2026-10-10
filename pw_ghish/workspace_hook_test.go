@@ -25,6 +25,7 @@ type mockWorkspaceIntegration struct {
 	pathIssues    map[string]int64
 	issueStatuses map[int64]WorkspaceIssueStatus
 	developedIDs  []int64
+	senseResult   *WorkspaceSenseResult
 }
 
 func (m *mockWorkspaceIntegration) IsEnabled() bool {
@@ -52,6 +53,32 @@ func (m *mockWorkspaceIntegration) DevelopIssueInWorktree(ctx context.Context, i
 		branch = SlugifyBranchName(issueID, title)
 	}
 	return "/mock/projects/" + branch, "pw-02", nil
+}
+
+func (m *mockWorkspaceIntegration) SenseWorktrees(ctx context.Context, cwd string, targetIssueID int64, targetCLNumber int, targetChangeID string, includeFleet bool) (*WorkspaceSenseResult, error) {
+	if m.senseResult != nil {
+		return m.senseResult, nil
+	}
+	res := &WorkspaceSenseResult{
+		Enabled:        m.enabled,
+		ReadyToLand:    []WorkspaceProjectMatch{},
+		NeedsAttention: []WorkspaceProjectMatch{},
+		MergedProjects: []WorkspaceProjectMatch{},
+	}
+	if targetIssueID > 0 {
+		if st, ok := m.issueStatuses[targetIssueID]; ok {
+			res.TargetMatch = &WorkspaceProjectMatch{
+				Project:     st.ProjectName,
+				Residency:   st.Residency,
+				Slot:        st.Slot,
+				Branch:      st.Branch,
+				IssueID:     targetIssueID,
+				SymlinkPath: st.SymlinkPath,
+				ProjectUUID: "mock-uuid-" + st.ProjectName,
+			}
+		}
+	}
+	return res, nil
 }
 
 func TestExtractIssueIDFromBranchName(t *testing.T) {

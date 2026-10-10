@@ -30,6 +30,42 @@ type WorkspaceIssueStatus struct {
 	Branch      string `json:"branch"`
 }
 
+// WorkspaceProjectMatch describes an existing gh wt project matching a target or fleet category.
+type WorkspaceProjectMatch struct {
+	Project     string `json:"project"`
+	Residency   string `json:"residency"` // "MOUNTED" or "PARKED"
+	Slot        string `json:"slot,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	IssueID     int64  `json:"issue_id,omitempty"`
+	SymlinkPath string `json:"symlink_path,omitempty"`
+	ChangeID    string `json:"change_id,omitempty"`
+	StatusBadge string `json:"status_badge,omitempty"`
+	Details     string `json:"details,omitempty"`
+	ProjectUUID string `json:"project_uuid,omitempty"`
+}
+
+// WorkspaceSenseResult holds worktree state returned by SenseWorktrees.
+type WorkspaceSenseResult struct {
+	Enabled                  bool                    `json:"enabled"`
+	PoolRoot                 string                  `json:"pool_root,omitempty"`
+	ProjectsDir              string                  `json:"projects_dir,omitempty"`
+	PrimaryRepo              string                  `json:"primary_repo,omitempty"`
+	CurrentProject           string                  `json:"current_project"`
+	CurrentSlot              string                  `json:"current_slot"`
+	CurrentSymlinkPath       string                  `json:"current_symlink_path,omitempty"`
+	CurrentIssueID           int64                   `json:"current_issue_id,omitempty"`
+	CurrentStatusBadge       string                  `json:"current_status_badge"`
+	CurrentDetails           string                  `json:"current_details"`
+	CurrentRecommendedAction string                  `json:"current_recommended_action"`
+	TotalSlots               int                     `json:"total_slots"`
+	AvailableSlots           int                     `json:"available_slots"`
+	ReadyToLand              []WorkspaceProjectMatch `json:"ready_to_land"`
+	NeedsAttention           []WorkspaceProjectMatch `json:"needs_attention"`
+	MergedProjects           []WorkspaceProjectMatch `json:"merged_projects"`
+	AllProjects              []WorkspaceProjectMatch `json:"all_projects,omitempty"`
+	TargetMatch              *WorkspaceProjectMatch  `json:"target_match,omitempty"`
+}
+
 // WorkspaceIntegration is an optional hook implemented by pw_ghish/worktree.
 // If nil or disabled, all gh issue/pr commands use standard single-repo Git behavior.
 type WorkspaceIntegration interface {
@@ -41,6 +77,8 @@ type WorkspaceIntegration interface {
 	FindWorkspaceForIssue(issueID int64) (WorkspaceIssueStatus, bool)
 	// DevelopIssueInWorktree allocates/mounts a warm worktree slot for the given issue.
 	DevelopIssueInWorktree(ctx context.Context, issueID int64, title string, customBranch string) (symlinkPath string, slotName string, err error)
+	// SenseWorktrees inspects local gh wt state for the current working directory and optional target/fleet queries.
+	SenseWorktrees(ctx context.Context, cwd string, targetIssueID int64, targetCLNumber int, targetChangeID string, includeFleet bool) (*WorkspaceSenseResult, error)
 }
 
 // RegisteredWorkspaceIntegration holds the optional worktree integration registered at startup.

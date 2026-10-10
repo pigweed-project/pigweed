@@ -36,6 +36,7 @@ pw_doc_group("docs") {
     "project_setup.rst",
     "roadmap.rst",
     "run.rst",
+    "sense.rst",
     "subcommands.rst",
     "worktree.rst",
   ]

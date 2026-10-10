@@ -364,3 +364,39 @@ The Workflow
    .. code-block:: console
 
       $ ./gh wt park b-315378787-fix-channel-framing
+
+------------------------------------------------
+CUJ 8: Advancing work with /crank and ./gh sense
+------------------------------------------------
+Rather than guiding an agent step by step through rebasing, addressing review
+comments, repairing failing tryjobs, and picking up the next task, you can use
+the ``/crank`` workflow (powered by :ref:`./gh sense <module-pw_ghish-sense>`)
+to gather local and remote context in a single pass and advance your change to
+its next verified milestone.
+
+The Workflow
+============
+1. **Invoke /crank in your active branch or with a target**:
+   From your checkout, run ``/crank`` with no arguments to advance the current
+   branch, or pass an issue or Gerrit change:
+
+   .. code-block:: console
+
+      # Inspect and advance the current checkout, or pass a bug/CL target:
+      $ ./gh sense
+      $ ./gh sense b/315378787
+      $ ./gh sense pwrev/472267
+
+2. **Single-pass context gathering**:
+   ``./gh sense`` inspects your Git branch, rebase status against the target
+   branch, active or linked Gerrit changes, unresolved reviewer threads, private
+   author draft notes, and LUCI Buildbucket checks concurrently.
+
+3. **Drive to the next milestone**:
+   Based on what ``./gh sense`` finds, ``/crank`` rebases when necessary,
+   implements or respectfully pushes back on review comments (staging replies
+   privately with ``--draft``), repairs any failing CI builds, and watches
+   Commit-Queue until checks pass.
+
+See :ref:`module-pw_ghish-sense` for a full guide to ``/crank`` and ``./gh
+sense`` workflows.

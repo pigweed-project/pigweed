@@ -128,3 +128,26 @@ func TestCLI_WTUseWithIssue_And_WTCloseReminder(t *testing.T) {
 		t.Errorf("expected 'wt close' output to remind user to close issue b/315378787, got:\n%s", outClose)
 	}
 }
+
+func TestMatchProjectTarget_ExactCLNumberBoundaries(t *testing.T) {
+	proj12345 := &Project{
+		Name:   "cl-12345",
+		Branch: "cl-12345-fix",
+	}
+	// Searching for CL 123 must NOT match cl-12345 or pwrev/12345.
+	if matchProjectTarget(proj12345, 0, 123, "", "pwrev/12345 (NEW)") {
+		t.Errorf("expected matchProjectTarget to return false for targetCL=123 against cl-12345 / pwrev/12345")
+	}
+	// Searching for CL 12345 must match cl-12345.
+	if !matchProjectTarget(proj12345, 0, 12345, "", "pwrev/12345 (NEW)") {
+		t.Errorf("expected matchProjectTarget to return true for targetCL=12345 against cl-12345")
+	}
+	// Searching for CL 123 must match cl-123-fix and pwrev/123.
+	proj123 := &Project{
+		Name:   "my-feature",
+		Branch: "cl-123-fix",
+	}
+	if !matchProjectTarget(proj123, 0, 123, "", "") {
+		t.Errorf("expected matchProjectTarget to return true for targetCL=123 against branch cl-123-fix")
+	}
+}

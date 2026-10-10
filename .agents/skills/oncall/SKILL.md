@@ -2,9 +2,8 @@
 name: oncall
 description: >-
   Pigweed oncall rotation runbooks and maintenance workflows (such as rolling
-  CIPD client tools for b/315378787). DO NOT auto-load during normal coding
-  tasks. Only load when explicitly triggered by the user via the `/oncall` or
-  `/roll-cipd` slash command.
+  CIPD client tools for b/315378787).
+disable-model-invocation: true
 ---
 
 # Pigweed Oncall Workflows

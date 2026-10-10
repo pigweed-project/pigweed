@@ -20,6 +20,7 @@ available commands, flags, and differences from upstream GitHub CLI (``gh``).
    gh auth <auth>
    gh hook <hook>
    gh wt <worktree>
+   gh sense <sense>
 
 ----------------
 Command families
@@ -62,6 +63,11 @@ Command families
      - **Git Worktrees & Bazel Cache Pool**
      - Allocate warm physical build slots (``pw-01..N``), manage project
        symlinks, and sync Antigravity (Jetski) IDE workspaces.
+   * - :ref:`gh sense <module-pw_ghish-sense>`
+     - *(None — gh-ish extension)*
+     - **Context Sensing & ``/crank``**
+     - Gather Git, worktree, Gerrit review, LUCI CI, and issue state in one
+       pass to power ``/crank`` and safe branch preparation.
 
 -----------------------------------
 Root-level aliases and global flags

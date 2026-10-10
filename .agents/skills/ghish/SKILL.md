@@ -188,6 +188,13 @@ Commands:
   inline `[PS<N>]` previews for up to 2 unresolved threads and standalone
   `[DRAFT]` comments), CLs created by you, and incoming reviews (scoped to last
   30 days unless `--all` is passed).
+- **`./gh sense [<target>] [--json] [--status] [--fleet]`** (aliases:
+  `./gh pr sense`, `./gh wt sense`): Fast parallel context sensor for autonomous
+  workflows (`/crank`). Inspects local Git state, manual & `./gh wt` worktrees
+  (including whether `<target>` bug/CL is already tracked in another slot),
+  active/target Gerrit CL comments & drafts, Buildbucket CI checks, and
+  optional `.ghish.toml` oncall status in `<500ms`, classifying the recommended
+  next-step modality.
 
 ### 6. Buganizer Issue Management (`./gh issue`)
 - **`./gh issue status`** & **`./gh issue list [--assignee @me|<email>] [--state open|closed|all] [--label priority:P1|type:BUG|component:<id>|hotlist:<id>] [--search "<q>"]`**.
