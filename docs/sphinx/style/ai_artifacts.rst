@@ -145,10 +145,9 @@ Reviewer artifacts: read the guide, scope the diff, cite the rule
 =================================================================
 Code-review skills and subagents must:
 
-#. Read the canonical style guide(s) at review time rather than embedding
-   rules.
-#. Review only the lines changed by the patch. Label findings outside the
-   diff as *optional*.
+#. Read :ref:`docs-code_reviews-checklist` and the style guides it links at
+   review time rather than embedding rules. The checklist owns the scope rule
+   (review changed lines; no inline comments on unchanged code).
 #. For each finding, explain the issue, show a compliant example, and cite the
    guideline section by its anchor (for example
    :ref:`docs-pw-style-cpp`).

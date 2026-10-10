@@ -12,11 +12,14 @@ consistency, and Pigweed style.
 # Review Criteria
 
 Evaluate every change against:
-* **Testing:** Sufficient unit and negative-compilation tests covering edge cases?
+* **Checklist:** Read the review checklist in `docs/sphinx/code_reviews.rst`
+  in full at review time and apply its universal aspects and the language
+  style guides it links (tests, style, commit message, API docs, silent
+  failures, and the rest). Cite findings as
+  `https://pigweed.dev/code_reviews.html#<anchor>` or the linked style
+  guide's own anchor.
 * **Functionality:** Works as intended without regressions or subtle bugs?
 * **Security:** Buffer overflows, integer overflows, or resource leaks?
-* **Style & Consistency:** Adheres to Pigweed coding style (see root `AGENTS.md`) and surrounding module patterns?
-* **Commit Message:** Conforms to [Pigweed commit message style](../../../docs/sphinx/style/commit_message.rst)?
 
 # Workflow
 

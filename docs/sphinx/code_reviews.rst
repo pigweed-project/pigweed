@@ -38,9 +38,180 @@ must include an explanation of the problem and an action to take.
 We will not take over incomplete changes to avoid shifting our focus. We may
 reject changes that do not meet the criteria above.
 
+.. _docs-code_reviews-checklist:
+
+----------------
+Review checklist
+----------------
+Every Pigweed code review, whether by a person or by an AI reviewer agent,
+covers the aspects below. The checklist says what to look for; the rules
+themselves live in the style guides, which each entry links to.
+
+.. _docs-code_reviews-checklist-scope:
+
+Scope
+=====
+Review the lines the change touches. Observations about surrounding code that
+the change did not modify belong in the review summary as optional follow-ups,
+not in inline comments. AI reviewer agents must not post inline comments on
+unchanged code; they may mention out-of-diff observations once, in the review
+summary, and never count them against approval.
+
+.. _docs-code_reviews-checklist-dry:
+
+Don't repeat yourself
+=====================
+Flag copied-and-pasted blocks, parallel ``switch`` ladders that must be kept
+in sync, and helpers reimplemented locally when a Pigweed module already
+provides them. Prefer extracting a function, a template, or a table over a
+second copy.
+
+.. _docs-code_reviews-checklist-no-silent-failures:
+
+No silent failures
+==================
+A precondition violation is a programmer error and must halt, not degrade:
+
+* Use ``PW_ASSERT`` / ``PW_CHECK`` (or the language's equivalent) when a
+  caller breaks a documented contract. Do not return ``nullptr``, ``0``,
+  ``std::nullopt``, or an empty value in place of a crash. See the error
+  handling section of :ref:`docs-pw-style-cpp`; this checklist is
+  deliberately stricter than that section's "may be appropriate".
+* Recoverable, environment-driven failures (I/O, timeouts, resource
+  exhaustion) must surface as ``pw::Status`` / ``pw::Result`` and be
+  propagated or logged, never swallowed.
+* Propagate with ``PW_TRY`` / ``PW_TRY_ASSIGN``. Flag hand-written
+  ``if (!status.ok()) return status;`` ladders.
+* Flag ``.IgnoreError()``, ``(void)status``, empty ``catch`` blocks, and
+  ``default:`` branches that quietly do nothing.
+
+.. _docs-code_reviews-checklist-well-factored:
+
+Well-factored
+=============
+Each function should do one thing at one level of abstraction. Flag functions
+that mix parsing with I/O, policy with mechanism, or that exceed a screen
+without a clear reason. Flag classes whose public surface exposes
+implementation choices callers do not need.
+
+.. _docs-code_reviews-checklist-data-loss:
+
+Data loss aversion
+==================
+Any code path that writes, erases, truncates, or overwrites persistent state
+(flash, files, KVS entries, logs) deserves extra scrutiny:
+
+* Is the operation atomic, or is there a window where a reset leaves
+  corrupted or half-written data?
+* Are buffers sized and bounds-checked so a partial write cannot alias
+  neighboring data?
+* Is destructive behavior opt-in and clearly named (``Erase``, ``Reset``),
+  never a side effect of a read-sounding API?
+* Does developer tooling that deletes, resets, or overwrites files or git
+  state (``rm``, ``git reset --hard``, ``git checkout --``) require opt-in,
+  confirm first, and support ``--dry-run``?
+
+.. _docs-code_reviews-checklist-magic-constants:
+
+No magic constants
+==================
+Numeric and string literals in logic must be named ``constexpr`` values (or
+``enum`` members) whose name explains the *meaning*, not the value. Units
+belong in the name or the type (``kTimeoutMs``, ``chrono::milliseconds``).
+The definition carries a comment explaining *why this value* (a hardware
+limit, a protocol field width, a measured budget), not merely where it came
+from. Flag unexplained ``+ 1``, bit masks, buffer sizes, and protocol opcodes.
+
+.. _docs-code_reviews-checklist-comments:
+
+Commented appropriately
+=======================
+Comments explain *why*, not *what*. Flag comments that paraphrase the code,
+stale comments that no longer match it, and non-obvious decisions (ordering
+constraints, hardware quirks, workarounds) that have no comment at all. Flag
+comments whose only rationale is a link (an internal bug, design doc, or
+specification URL): the behavioral reason must be stated inline so the
+comment stays correct if the link moves; links are supplementary. See
+:ref:`docs-pw-style-cpp-comments`.
+
+.. _docs-code_reviews-checklist-api-docs:
+
+API documentation is written for the caller
+===========================================
+Function and class documentation (Doxygen, docstrings, rustdoc) is written for
+callers; maintainer-facing detail belongs in implementation comments. For each
+public symbol check that the docs state:
+
+* **Behavior**: what the call does and returns, including partial-success
+  cases.
+* **Preconditions**: what the caller must guarantee, and that violations are
+  asserted rather than tolerated.
+* **Leaky implementation aspects**: anything the caller must know to use it
+  correctly -- blocking, allocation, thread or ISR safety, lifetime of
+  returned references, reentrancy.
+
+Pigweed users often need to understand the algorithm or design behind an API.
+That detail belongs in the module's design docs (``docs.rst``), linked from
+the API docs where it helps the caller, so check that it is reachable rather
+than absent. See :ref:`style-doxygen`.
+
+.. _docs-code_reviews-checklist-tests:
+
+Tests
+=====
+New behavior has a test; a bug fix has a regression test; a contract has a
+negative-compilation or death test where practical. Tests should assert on
+behavior, not on implementation details that a refactor would change.
+
+.. _docs-code_reviews-checklist-commit:
+
+Commit message
+==============
+Conforms to :ref:`docs-pw-style-commit-message`: module prefix, imperative
+subject, body explaining *why*, and a ``Bug:`` / ``Fixed:`` trailer when one
+exists.
+
+.. _docs-code_reviews-checklist-language:
+
+Language-specific rules
+=======================
+The rules for each language live in its style guide, not here. The table lists
+the guide and the sections that reviews most often cite.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 85
+
+   * - Language
+     - Canonical guide and frequently cited sections
+   * - C++
+     - :ref:`docs-pw-style-cpp` (classes, error handling, memory allocation,
+       ownership); :ref:`docs-embedded-cpp`
+       (:ref:`docs-embedded-cpp-isr-safety`, atomics); :ref:`style-doxygen`.
+   * - Python
+     - :ref:`docs-style-python` (error handling, type annotations, tests,
+       build rules).
+   * - Rust
+     - Pigweed has no Rust style guide yet. Apply the `Rust API Guidelines
+       <https://rust-lang.github.io/api-guidelines/>`_ and the conventions of
+       the crate being changed (see :ref:`module-pw_kernel`). In particular:
+       no ``unwrap()`` / ``expect()`` / ``panic!`` outside tests and
+       documented-infallible paths; a ``// SAFETY:`` comment on every
+       ``unsafe`` block; ``#[must_use]`` on fallible return types; never hold
+       a ``MutexGuard`` across an ``.await``.
+   * - Bazel
+     - :ref:`docs-pw-style-bazel`: :ref:`docs-pw-style-bazel-naming-rules`
+       and its C++ specific patterns (implementation deps, visibility).
+   * - Java, Go, TypeScript
+     - Pigweed has no guide of its own. Apply the universal aspects above and
+       the corresponding `Google style guide
+       <https://google.github.io/styleguide/>`_.
+
 -------------
 For reviewers
 -------------
+Work through the :ref:`docs-code_reviews-checklist` for every change; the
+sections below cover the review process.
 
 Review speed
 ============

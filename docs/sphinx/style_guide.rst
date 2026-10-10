@@ -56,6 +56,12 @@ AI artifact style
 See :ref:`docs-pw-style-ai-artifacts` for conventions on agent skills,
 subagents, ``AGENTS.md`` rules, and their helper scripts.
 
+---------------------
+Code review checklist
+---------------------
+See :ref:`docs-code_reviews-checklist` for the aspects every review covers
+and the style guide sections most often cited in review.
+
 .. todo-check: disable
 
 .. _docs-pw-todo-style:
