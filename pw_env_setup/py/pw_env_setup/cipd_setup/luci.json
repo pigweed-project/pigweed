@@ -10,7 +10,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:00824acacaddd70f459677dc9ea506dcb8aecc43"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/bb.cipd_version"
     },
@@ -24,7 +24,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/luci-auth.cipd_version"
     },
@@ -38,7 +38,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/gerrit.cipd_version"
     },
@@ -52,7 +52,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/gitiles.cipd_version"
     },
@@ -66,7 +66,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:00824acacaddd70f459677dc9ea506dcb8aecc43"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/cas.cipd_version"
     },
@@ -80,7 +80,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:00824acacaddd70f459677dc9ea506dcb8aecc43"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/led.cipd_version"
     },
@@ -94,7 +94,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:00824acacaddd70f459677dc9ea506dcb8aecc43"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/swarming.cipd_version"
     },
@@ -107,7 +107,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:00824acacaddd70f459677dc9ea506dcb8aecc43"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/logdog.cipd_version"
     },
@@ -121,7 +121,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/prpc.cipd_version"
     },
@@ -146,7 +146,7 @@
         "mac-arm64"
       ],
       "tags": [
-        "git_revision:00824acacaddd70f459677dc9ea506dcb8aecc43"
+        "git_revision:0253be05de053ff9c9768270e1daaade5b8bd6c2"
       ],
       "version_file": ".versions/luci-cv.cipd_version"
     }
