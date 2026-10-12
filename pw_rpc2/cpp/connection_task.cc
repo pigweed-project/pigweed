@@ -159,13 +159,42 @@ Call* ConnectionTask::FindCallById(uint32_t call_id) {
   return nullptr;
 }
 
+async2::Poll<> ConnectionTask::DoPend(async2::Context& cx) {
+  if (is_closed()) {
+    OnClosed();
+    return async2::Ready();
+  }
+
+  StoreWaker(cx);
+  const bool more_work = PollOpenConnection(cx);
+  if (is_closed()) {
+    OnClosed();
+    return async2::Ready();
+  }
+
+  if (more_work) {
+    cx.ReEnqueue();
+  }
+  return async2::Pending();
+}
+
+bool ConnectionTask::PendPackets(async2::Context& cx) {
+  for (int i = 0; i < kMaxPacketsPerPoll; ++i) {
+    // When PendPacket() stalls, it has stored wakers that resume this task.
+    // Check is_closed() after PendPacket(), which can close the connection.
+    if (!PendPacket(cx) || is_closed()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void ConnectionTask::StoreWaker(async2::Context& cx) {
   PW_DASSERT(!is_closed());
   PW_ASYNC_STORE_WAKER(cx, waker_, "waiting for connection activity");
 }
 
-bool ConnectionTask::PendPacket(async2::Context& cx,
-                                InboundPacket* incoming_request) {
+bool ConnectionTask::PendPacket(async2::Context& cx) {
   PW_DASSERT(state() == State::kActive);
 
   // Stage 1: Outgoing control-packet egress.
@@ -178,7 +207,7 @@ bool ConnectionTask::PendPacket(async2::Context& cx,
   progressed |= DispatchPendingIngressPacket(cx);
 
   // Stage 3: Read and dispatch incoming packet from transport.
-  progressed |= ReadPacketFromConnection(cx, incoming_request);
+  progressed |= ReadPacketFromConnection(cx);
   return progressed;
 }
 
@@ -239,8 +268,7 @@ bool ConnectionTask::DispatchPendingIngressPacket(async2::Context& cx) {
   return true;
 }
 
-bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx,
-                                              InboundPacket* incoming_request) {
+bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
   PW_DASSERT(state() == State::kActive);
   PW_DASSERT(connection_);
 
@@ -332,8 +360,7 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx,
     return true;
   }
 
-  PW_DASSERT(incoming_request != nullptr);
-  *incoming_request = std::move(packet);
+  HandleIncomingRequest(std::move(packet));
   return true;
 }
 

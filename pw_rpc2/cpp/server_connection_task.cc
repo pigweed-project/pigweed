@@ -65,8 +65,7 @@ ServerConnectionTask::ServerConnectionTask(
 
 ServerConnectionTask::~ServerConnectionTask() {
   Teardown();
-  ForceRetireAllCalls();
-  server_task_.RemoveConnection(*this);
+  OnClosed();
 }
 
 void ServerConnectionTask::CleanUpCalls() {
@@ -90,55 +89,23 @@ void ServerConnectionTask::ForceRetireAllCalls() {
   }
 }
 
-async2::Poll<> ServerConnectionTask::DoPend(async2::Context& cx) {
-  if (PollConnection(cx)) {
-    cx.ReEnqueue();
-  }
-  if (is_closed()) {
-    // Retire all server calls before unregistering from the server so that no
-    // call's user future outlives this connection's place in the server.
-    ForceRetireAllCalls();
-    server_task_.RemoveConnection(*this);
-    return async2::Ready();
-  }
-  return async2::Pending();
+void ServerConnectionTask::OnClosed() {
+  // Retire all server calls before unregistering from the server so that no
+  // call's user future outlives this connection's place in the server.
+  ForceRetireAllCalls();
+  server_task_.RemoveConnection(*this);
 }
 
-bool ServerConnectionTask::PollConnection(async2::Context& cx) {
-  if (is_closed()) {
-    return false;
-  }
-  StoreWaker(cx);
-
+bool ServerConnectionTask::PollOpenConnection(async2::Context& cx) {
   // Stage 1: Complete responder handshake before accepting packets.
   if (state() == State::kHandshaking && !PollHandshake(cx)) {
     return false;
   }
 
-  // Stage 2: Drain outgoing control packets and read/dispatch up to
-  // `kMaxPacketsPerPoll` incoming packets.
-  //
-  // Note: `progressed` is intentionally overwritten on each iteration rather
-  // than OR-accumulated. If `PendPacket()` returns false on iteration `i <
-  // kMaxPacketsPerPoll`, it has already polled the underlying transport futures
-  // to `Pending()` and registered wakers with `cx`, so re-enqueuing the task
-  // would only cause a redundant poll. `progressed` remains true after the loop
-  // only when all `kMaxPacketsPerPoll` iterations succeeded, meaning more work
-  // may still be ready in the transport and the task must yield via
-  // `cx.ReEnqueue()`.
-  bool progressed = false;
-  for (int i = 0; i < kMaxPacketsPerPoll; ++i) {
-    InboundPacket request;
-    progressed = PendPacket(cx, &request);
-    if (request != nullptr) {
-      HandleIncomingRequest(std::move(request));
-    }
-    if (is_closed()) {
-      return false;
-    }
-    if (!progressed) {
-      break;
-    }
+  // Stage 2: Send and receive packets.
+  const bool progressed = PendPackets(cx);
+  if (is_closed()) {
+    return false;
   }
 
   // Stage 3: Retire the calls that are done.

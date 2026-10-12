@@ -183,31 +183,41 @@ class ConnectionTask : public async2::Task {
     CloseConnection(Status::Cancelled());
   }
 
+  /// Handles up to `kMaxPacketsPerPoll` packets. Returns true if more may be
+  /// ready.
+  ///
+  /// @pre The handshake has completed and the connection is open.
+  bool PendPackets(async2::Context& cx);
+
+ private:
+  async2::Poll<> DoPend(async2::Context& cx) final;
+
+  /// Polls an open connection. Returns true if more work may be ready.
+  virtual bool PollOpenConnection(async2::Context& cx) = 0;
+
+  /// Handles a request to start a new call.
+  virtual void HandleIncomingRequest(InboundPacket&& packet) = 0;
+
+  /// Cleans up after the connection closes. Derived destructors also call
+  /// this, so it must be idempotent.
+  virtual void OnClosed() = 0;
+
   /// Registers this task's waker for connection activity.
   void StoreWaker(async2::Context& cx);
-
-  async2::Waker& waker() { return waker_; }
 
   static constexpr int kMaxPacketsPerPoll = 4;
 
   /// Runs one step of outgoing control packet egress, stashed ingress dispatch,
-  /// and transport reads (Stages 1--3). If a start packet for a new call
-  /// ID is read, it is stored in `*incoming_request` for server dispatch.
-  ///
-  /// @pre `incoming_request` must be non-null on connections that can receive
-  /// start packets (server connections).
-  bool PendPacket(async2::Context& cx,
-                  InboundPacket* incoming_request = nullptr);
+  /// and transport reads (Stages 1--3).
+  bool PendPacket(async2::Context& cx);
 
   bool DispatchPendingIngressPacket(async2::Context& cx);
 
- private:
   void QueueControlPacket(const OutboundPacket& packet);
 
   bool ProcessOutgoingControlPackets(async2::Context& cx);
 
-  bool ReadPacketFromConnection(async2::Context& cx,
-                                InboundPacket* incoming_request);
+  bool ReadPacketFromConnection(async2::Context& cx);
 
   Call* FindCallById(uint32_t call_id);
 

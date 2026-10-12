@@ -15,7 +15,6 @@
 
 #include "pw_allocator/allocator.h"
 #include "pw_async2/context.h"
-#include "pw_async2/poll.h"
 #include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/internal/handshake.h"
 #include "pw_rpc2/internal/packet.h"
@@ -60,10 +59,11 @@ class ServerConnectionTask final : public ConnectionTask {
   void ForceRetireAllCalls();
 
  private:
-  async2::Poll<> DoPend(async2::Context& cx) override;
-  bool PollConnection(async2::Context& cx);
+  bool PollOpenConnection(async2::Context& cx) override;
+  void HandleIncomingRequest(InboundPacket&& packet) override;
+  void OnClosed() override;
+
   bool PollHandshake(async2::Context& cx);
-  void HandleIncomingRequest(InboundPacket&& packet);
 
   /// Retires every server call that is done with, either because its method
   /// finished or because the call was closed underneath it.

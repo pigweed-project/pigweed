@@ -17,6 +17,7 @@
 #include <mutex>
 #include <utility>
 
+#include "pw_assert/check.h"
 #include "pw_log/log.h"
 
 namespace pw::rpc2::internal {
@@ -29,7 +30,7 @@ ClientConnectionTask::ClientConnectionTask(
 
 ClientConnectionTask::~ClientConnectionTask() {
   Teardown();
-  Finish();
+  OnClosed();
 }
 
 uint32_t ClientConnectionTask::NewCallId() {
@@ -88,7 +89,7 @@ void ClientConnectionTask::ReleaseUserHandle() {
   RequestClose(/*future=*/nullptr);
 }
 
-void ClientConnectionTask::Finish() {
+void ClientConnectionTask::OnClosed() {
   std::lock_guard lock(ControlLock());
   if (close_state_.exchange(CloseState::kClosed, std::memory_order_acq_rel) ==
       CloseState::kClosed) {
@@ -99,41 +100,19 @@ void ClientConnectionTask::Finish() {
           PW_NO_LOCK_SAFETY_ANALYSIS { future.ResolveLocked(OkStatus()); });
 }
 
-async2::Poll<> ClientConnectionTask::DoPend(async2::Context& cx) {
+bool ClientConnectionTask::PollOpenConnection(async2::Context& cx) {
   // Checked every poll rather than latched, because the close may be requested
   // by any thread at any point.
   if (close_state_.load(std::memory_order_acquire) == CloseState::kClosing) {
     CloseConnection(Status::Cancelled());
-  }
-
-  if (PollConnection(cx)) {
-    cx.ReEnqueue();
-  }
-  if (is_closed()) {
-    Finish();
-    return async2::Ready();
-  }
-  return async2::Pending();
-}
-
-bool ClientConnectionTask::PollConnection(async2::Context& cx) {
-  if (is_closed()) {
     return false;
   }
-  StoreWaker(cx);
+  return PendPackets(cx);
+}
 
-  // As in `ServerConnectionTask::PollConnection()`, `progressed` is true after
-  // the loop only when all `kMaxPacketsPerPoll` iterations succeeded and the
-  // task must yield via `cx.ReEnqueue()`; an early break means `PendPacket()`
-  // has already registered wakers on the pending transport futures.
-  bool progressed = false;
-  for (int i = 0; i < kMaxPacketsPerPoll; ++i) {
-    progressed = PendPacket(cx);
-    if (!progressed || is_closed()) {
-      break;
-    }
-  }
-  return !is_closed() && progressed;
+void ClientConnectionTask::HandleIncomingRequest(InboundPacket&&) {
+  // ConnectionTask rejects requests sent to a client before dispatching them.
+  PW_CRASH("Client received a request");
 }
 
 }  // namespace pw::rpc2::internal

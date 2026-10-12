@@ -168,19 +168,8 @@ Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
                          transport::ReliableDatagramSocket connection,
                          MockConnection& raw_connection);
 
-/// A connection that hosts calls but serves nothing.
-///
-/// `ConnectionTask` is abstract, and its two concrete subclasses each bring a
-/// role with them: a server connection needs a `Server` to resolve service
-/// IDs against, and a client connection owns call-ID allocation and the
-/// thread-safe `Close()`. A fixture that only needs somewhere for a `Call` to
-/// live wants neither, so this supplies the missing `DoPend()` and nothing
-/// else.
-///
-/// Packets still flow: posting this task drains the egress control queue and
-/// delivers inbound messages to the calls registered on it. Only request
-/// dispatch is absent --- an inbound `kStart` packet is rejected with
-/// `UNIMPLEMENTED`, because there is no service to route it to.
+/// A connection that hosts calls but serves nothing. When posted, it handles
+/// packets for its calls and rejects requests to start new ones.
 class TestConnectionTask final : public internal::ConnectionTask {
  public:
   TestConnectionTask(
@@ -190,29 +179,15 @@ class TestConnectionTask final : public internal::ConnectionTask {
       : ConnectionTask(std::move(established_connection), allocator, role) {}
 
  private:
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    if (is_closed()) {
-      return async2::Ready();
-    }
-
-    StoreWaker(cx);
-
-    bool progressed = false;
-    for (int i = 0; i < kMaxPacketsPerPoll; ++i) {
-      progressed = PendPacket(cx);
-      if (!progressed || is_closed()) {
-        break;
-      }
-    }
-
-    if (is_closed()) {
-      return async2::Ready();
-    }
-    if (progressed) {
-      cx.ReEnqueue();
-    }
-    return async2::Pending();
+  bool PollOpenConnection(async2::Context& cx) override {
+    return PendPackets(cx);
   }
+
+  void HandleIncomingRequest(internal::InboundPacket&& packet) override {
+    QueueError(packet.call_id(), internal::ProtocolStatus::kUnknownService);
+  }
+
+  void OnClosed() override {}
 };
 
 /// Decodes a payload recorded by `MockPeer` into a message.

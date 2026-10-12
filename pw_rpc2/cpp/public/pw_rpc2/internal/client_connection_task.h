@@ -20,7 +20,6 @@
 #include "pw_allocator/allocator.h"
 #include "pw_assert/assert.h"
 #include "pw_async2/context.h"
-#include "pw_async2/poll.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/internal/control_future.h"
@@ -105,21 +104,20 @@ class ClientConnectionTask final : public ConnectionTask {
     kClosed,
   };
 
-  async2::Poll<> DoPend(async2::Context& cx) override;
-  bool PollConnection(async2::Context& cx);
+  bool PollOpenConnection(async2::Context& cx) override;
+  void HandleIncomingRequest(InboundPacket&& packet) override;
+
+  /// Publishes the closed state and resolves every pending `Close()`.
+  ///
+  /// Also runs from the destructor, because a task can be dropped by a
+  /// dispatcher that is itself being destroyed, and a caller blocked in
+  /// `CloseBlocking()` must be released either way.
+  void OnClosed() override PW_LOCKS_EXCLUDED(ControlLock());
 
   /// Moves an open connection to `kClosing` and wakes the task. If `future` is
   /// non-null, it is queued to resolve when the connection is closed, or
   /// resolved on the spot if it already is.
   void RequestClose(ControlFuture* future) PW_LOCKS_EXCLUDED(ControlLock());
-
-  /// Publishes the closed state and resolves every pending `Close()`.
-  ///
-  /// Runs both when the task retires and from the destructor, because a task
-  /// can be dropped by a dispatcher that is itself being destroyed, and a
-  /// caller blocked in `CloseBlocking()` must be released either way.
-  /// Idempotent.
-  void Finish() PW_LOCKS_EXCLUDED(ControlLock());
 
   static constexpr uint32_t kMaxCallId = 0xffffffffu;
 
