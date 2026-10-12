@@ -15,6 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -73,6 +74,7 @@ cc_library(
     visibility = ["//visibility:private"],
     deps = [
         ":handler",
+        "//pw_preprocessor",
         "//pw_tokenizer",
     ],
 )
@@ -98,6 +100,17 @@ cc_library(
         ":handler",
         "//pw_log_tokenized",
         "//pw_tokenizer",
+    ],
+)
+
+pw_cc_test(
+    name = "assert_tokenized_test",
+    srcs = [
+        "assert_tokenized_test.cc",
+        "assert_tokenized_test_c.c",
+    ],
+    deps = [
+        ":assert_backend_private",
     ],
 )
 

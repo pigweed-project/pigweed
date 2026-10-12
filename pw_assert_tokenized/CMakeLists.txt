@@ -34,12 +34,21 @@ pw_add_library(pw_assert_tokenized.handler STATIC
 pw_add_library(pw_assert_tokenized.assert_backend INTERFACE
   HEADERS
     assert_public_overrides/pw_assert_backend/assert_backend.h
-    public/pw_assert_tokenized/assert_tokenized.h
   PUBLIC_INCLUDES
     assert_public_overrides
+  PUBLIC_DEPS
+    pw_assert_tokenized._assert_backend_private
+    pw_assert_tokenized.handler
+)
+
+pw_add_library(pw_assert_tokenized._assert_backend_private INTERFACE
+  HEADERS
+    public/pw_assert_tokenized/assert_tokenized.h
+    public/pw_assert_tokenized/handler.h
+  PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
-    pw_assert_tokenized.handler
+    pw_preprocessor
     pw_tokenizer
 )
 
@@ -54,4 +63,15 @@ pw_add_library(pw_assert_tokenized.check_backend INTERFACE
     pw_assert_tokenized.handler
     pw_log_tokenized
     pw_tokenizer
+)
+
+pw_add_test(pw_assert_tokenized.assert_tokenized_test
+  SOURCES
+    assert_tokenized_test.cc
+    assert_tokenized_test_c.c
+  PRIVATE_DEPS
+    pw_assert_tokenized._assert_backend_private
+  GROUPS
+    modules
+    pw_assert_tokenized
 )

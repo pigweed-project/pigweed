@@ -16,18 +16,22 @@
 #include <stdint.h>
 
 #include "pw_assert_tokenized/handler.h"
+#include "pw_preprocessor/arguments.h"
+#include "pw_preprocessor/concat.h"
 #include "pw_tokenizer/tokenize.h"
 
 // In C and C++23 (where static constexpr variables are permitted inside
 // constexpr functions per P2647R1), emit the tokenized __FILE__ entry directly
 // into the .pw_tokenizer.entries ELF section so no offline file list generation
 // is needed. Fall back to PW_TOKENIZER_STRING_TOKEN(__FILE__) in pre-C++23 C++
-// or when `static` is macro-defined out (e.g.
-// PW_THIRD_PARTY_FREERTOS_NO_STATICS).
-#if !defined(static) &&                                 \
-    (!defined(__cplusplus) || __cplusplus >= 202302L || \
-     (defined(__cpp_constexpr) && __cpp_constexpr >= 202211L))
-#define _PW_ASSERT_TOKENIZED_FILE_TOKEN PW_TOKENIZE_STRING(__FILE__)
+// or when `static` is macro-defined to nothing (e.g. via
+// PW_THIRD_PARTY_FREERTOS_NO_STATICS or FreeRTOS's portREMOVE_STATIC_QUALIFIER,
+// which defines `static` after including headers).
+#if !defined(__cplusplus) || __cpp_constexpr >= 202211L
+#define _PW_ASSERT_TOKENIZED_FILE_TOKEN \
+  PW_CONCAT(_PW_ASSERT_TOKENIZED_FILE_TOKEN_, PW_EMPTY_ARGS(static))(__FILE__)
+#define _PW_ASSERT_TOKENIZED_FILE_TOKEN_0 PW_TOKENIZE_STRING
+#define _PW_ASSERT_TOKENIZED_FILE_TOKEN_1 PW_TOKENIZER_STRING_TOKEN
 #else
 #define _PW_ASSERT_TOKENIZED_FILE_TOKEN PW_TOKENIZER_STRING_TOKEN(__FILE__)
 #endif
