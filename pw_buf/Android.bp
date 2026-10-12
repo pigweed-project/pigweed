@@ -27,21 +27,21 @@ cc_library_static {
         "buf.cc",
     ],
     header_libs: [
+        "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
     ],
     export_header_lib_headers: [
+        "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
     ],
     static_libs: [
         "pw_allocator",
         "pw_bytes",
         "pw_containers",
-        "pw_span",
     ],
     export_static_lib_headers: [
         "pw_allocator",
         "pw_bytes",
         "pw_containers",
-        "pw_span",
     ],
 }

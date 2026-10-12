@@ -27,12 +27,12 @@ pw_source_set("pw_buf") {
   public = [ "public/pw_buf/buf.h" ]
   sources = [ "buf.cc" ]
   public_deps = [
+    "$dir_pigweed/third_party/fuchsia:stdcompat",
     "$dir_pw_assert:assert",
     "$dir_pw_assert:check",
     "$dir_pw_containers:iterator",
     dir_pw_allocator,
     dir_pw_bytes,
-    dir_pw_span,
   ]
 }
 

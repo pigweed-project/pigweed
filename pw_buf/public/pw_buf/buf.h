@@ -14,15 +14,17 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <type_traits>
 #include <utility>
 
+#include "lib/stdcompat/utility.h"
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/unique_ptr.h"
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/ptr_iterator.h"
-#include "pw_span/span.h"
 
 namespace pw {
 namespace multibuf::v2::internal {
@@ -66,7 +68,12 @@ class ConstBuf {
   using const_iterator = containers::ConstPtrIterator<ConstBuf>;
 
   /// Constructs a null `ConstBuf`.
-  constexpr ConstBuf() = default;
+  constexpr ConstBuf()
+      : data_(nullptr),
+        size_(0),
+        deallocator_(nullptr),
+        prefix_(0),
+        suffix_(0) {}
 
   /// Constructs a null `ConstBuf`.
   constexpr ConstBuf(std::nullptr_t) noexcept : ConstBuf() {}
@@ -81,12 +88,13 @@ class ConstBuf {
   ///
   /// The moved-from `ConstBuf` is left null.
   constexpr ConstBuf(ConstBuf&& other) noexcept
-      : base_(other.base_),
-        view_(other.view_),
-        deallocator_(other.deallocator_) {
-    other.base_ = nullptr;
-    other.view_ = {};
-    other.deallocator_ = nullptr;
+  // MoveFrom initializes all members, so skip initializing them twice to reduce
+  // code size. This is not supported in C++17, however.
+#if __cpp_constexpr < 201907L
+      : ConstBuf()
+#endif  // __cpp_constexpr < 201907L
+  {
+    MoveFrom(std::move(other));
   }
 
   /// Move-constructs a `ConstBuf` from a mutable `Buf` (move conversion).
@@ -102,10 +110,7 @@ class ConstBuf {
   /// Creates an unowned `ConstBuf` from a pointer and size in bytes.
   [[nodiscard]] static ConstBuf Unowned(const std::byte* data,
                                         size_t size_bytes) {
-    return ConstBuf(
-        const_cast<std::byte*>(data),
-        nullptr,
-        pw::span<std::byte>(const_cast<std::byte*>(data), size_bytes));
+    return ConstBuf(const_cast<std::byte*>(data), size_bytes);
   }
 
   ConstBuf(const ConstBuf&) = delete;
@@ -160,8 +165,8 @@ class ConstBuf {
 
   /// Accesses the byte at the specified index.
   reference operator[](size_t index) const {
-    PW_DASSERT(index < view_.size());
-    return view_[index];
+    PW_DASSERT(index < size_);
+    return data_[index];
   }
 
   /// Returns a pointer to the read-only data, or `nullptr` if the `ConstBuf` is
@@ -170,30 +175,28 @@ class ConstBuf {
   /// @note An empty `ConstBuf` that is not null (e.g. sliced or truncated to
   /// length 0) returns a non-null pointer. `data()` is only `nullptr` when the
   /// buffer is null.
-  constexpr pointer data() const { return view_.data(); }
+  constexpr pointer data() const { return data_; }
 
   /// Returns the number of bytes in the buffer view.
-  constexpr size_t size() const { return view_.size(); }
+  constexpr size_t size() const { return size_; }
 
   /// Returns true if the buffer view is empty (has no bytes).
   ///
   /// `empty()` returns true for both null buffers and non-null buffers of size
   /// zero (e.g. sliced or truncated to length 0).
-  [[nodiscard]] constexpr bool empty() const { return view_.empty(); }
+  [[nodiscard]] constexpr bool empty() const { return size_ == 0; }
 
   /// Returns a read-only iterator pointing to the beginning of the data.
-  iterator begin() const { return iterator(view_.data()); }
+  iterator begin() const { return iterator(data_); }
 
   /// Returns a read-only iterator pointing past the end of the data.
-  iterator end() const { return iterator(view_.data() + view_.size()); }
+  iterator end() const { return iterator(data_ + size_); }
 
   /// Returns a read-only iterator pointing to the beginning of the data.
-  const_iterator cbegin() const { return const_iterator(view_.data()); }
+  const_iterator cbegin() const { return const_iterator(data_); }
 
   /// Returns a read-only iterator pointing past the end of the data.
-  const_iterator cend() const {
-    return const_iterator(view_.data() + view_.size());
-  }
+  const_iterator cend() const { return const_iterator(data_ + size_); }
 
   /// Returns a pointer to the deallocator if this buffer owns the underlying
   /// memory allocation, or `nullptr` if the buffer is unowned or null.
@@ -205,12 +208,31 @@ class ConstBuf {
   void reset();
 
  private:
+  using OffsetType =
+      std::conditional_t<sizeof(size_t) >= 8, uint32_t, uint16_t>;
+
+  constexpr explicit ConstBuf(std::byte* data,
+                              size_t size,
+                              Deallocator* deallocator = nullptr)
+      : data_(data),
+        size_(size),
+        deallocator_(deallocator),
+        prefix_(0),
+        suffix_(0) {
+    PW_ASSERT(data != nullptr || size == 0);
+  }
+
   constexpr explicit ConstBuf(std::byte* base,
-                              Deallocator* deallocator,
-                              pw::span<std::byte> view)
-      : base_(base), view_(view), deallocator_(deallocator) {
-    PW_ASSERT(base != nullptr || view.empty());
-    PW_ASSERT(view.data() >= base);
+                              size_t offset,
+                              size_t size,
+                              Deallocator* deallocator)
+      : data_(base + offset),
+        size_(size),
+        deallocator_(deallocator),
+        prefix_(static_cast<OffsetType>(offset)),
+        suffix_(0) {
+    PW_ASSERT(base != nullptr || (offset == 0 && size == 0));
+    PW_ASSERT(offset <= std::numeric_limits<OffsetType>::max());
   }
 
   friend class Buf;
@@ -220,31 +242,44 @@ class ConstBuf {
   friend Buf Slice(Buf&& buf, size_t offset, size_t length);
   friend Buf Reclaim(Buf&& buf, size_t prefix_count, size_t suffix_count);
 
-  void MoveFrom(ConstBuf&& other);
+  constexpr void MoveFrom(ConstBuf&& other) {
+    data_ = cpp20::exchange(other.data_, nullptr);
+    size_ = cpp20::exchange(other.size_, 0);
+    deallocator_ = cpp20::exchange(other.deallocator_, nullptr);
+    prefix_ = cpp20::exchange(other.prefix_, 0);
+    suffix_ = cpp20::exchange(other.suffix_, 0);
+  }
 
   ConstBuf Slice(size_t offset, size_t length) &&;
   ConstBuf Reclaim(size_t prefix_count, size_t suffix_count) &&;
 
-  constexpr std::byte* mut_data() { return view_.data(); }
+  constexpr std::byte* mut_data() { return data_; }
+
+  constexpr std::byte* base() const { return data_ - prefix_; }
+
+  constexpr size_t base_size() const { return prefix_ + size_ + suffix_; }
 
   static constexpr iterator MakeIterator(const std::byte* ptr) {
     return iterator(ptr);
   }
 
-  std::byte* base_ = nullptr;
-  pw::span<std::byte> view_;
-  Deallocator* deallocator_ = nullptr;
+  std::byte* data_;
+  size_t size_;
+  Deallocator* deallocator_;
+  OffsetType prefix_;
+  OffsetType suffix_;
 };
 
 /// Represents a mutable view of a contiguous block of bytes.
 ///
 /// An `empty()` `Buf` has no bytes (`size() == 0`). A null `Buf` has no bytes,
-/// and its `base()` and `data()` are `nullptr`. A `Buf` is null when
-/// default-constructed, moved-from, reset, or when allocation fails.
+/// its `base_size()` is 0, and its `base()` and `data()` are `nullptr`. A `Buf`
+/// is null when default-constructed, moved-from, reset, or when allocation
+/// fails.
 ///
 /// An empty `Buf` is not necessarily null (for example, if it has been sliced
 /// or truncated to length 0), in which case `base()` and `data()` return
-/// non-null pointers.
+/// non-null pointers and `base_size()` returns the base allocation size.
 ///
 /// Nullness can be checked via comparison to `nullptr` (`buf == nullptr`,
 /// `buf != nullptr`). `operator bool` is not provided to prevent confusion
@@ -266,7 +301,7 @@ class Buf {
     constexpr iterator() = default;
 
     constexpr operator containers::ConstPtrIterator<ConstBuf>() const {
-      return Buf::ConstBufIterator(this->operator->());
+      return ConstBuf::MakeIterator(this->operator->());
     }
 
    private:
@@ -287,7 +322,7 @@ class Buf {
               other.operator->()) {}
 
     constexpr operator containers::ConstPtrIterator<ConstBuf>() const {
-      return Buf::ConstBufIterator(this->operator->());
+      return ConstBuf::MakeIterator(this->operator->());
     }
 
    private:
@@ -321,9 +356,7 @@ class Buf {
   ///
   /// If `buffer` is empty/null, constructs a null `Buf`.
   explicit Buf(UniquePtr<std::byte[]>&& buffer)
-      : const_buf_(buffer.get(),
-                   buffer.deallocator(),
-                   pw::span<std::byte>(buffer.get(), buffer.size())) {
+      : const_buf_(buffer.get(), buffer.size(), buffer.deallocator()) {
     buffer.Release();
   }
 
@@ -338,8 +371,7 @@ class Buf {
   explicit constexpr Buf(std::byte* allocation,
                          size_t size,
                          Deallocator& deallocator)
-      : const_buf_(
-            allocation, &deallocator, pw::span<std::byte>(allocation, size)) {}
+      : const_buf_(allocation, size, &deallocator) {}
 
   /// Constructs an owned `Buf` from a raw buffer, offset, size, and
   /// deallocator.
@@ -347,9 +379,7 @@ class Buf {
                          size_t offset,
                          size_t size,
                          Deallocator& deallocator)
-      : const_buf_(allocation,
-                   &deallocator,
-                   pw::span<std::byte>(allocation + offset, size)) {}
+      : const_buf_(allocation, offset, size, &deallocator) {}
 
   /// Creates an unowned `Buf` from a `ByteSpan`, offset, and size.
   [[nodiscard]] static Buf Unowned(ByteSpan span, size_t offset, size_t size);
@@ -362,12 +392,12 @@ class Buf {
   [[nodiscard]] static Buf Unowned(std::byte* base,
                                    size_t offset,
                                    size_t size) {
-    return Buf(base, pw::span<std::byte>(base + offset, size));
+    return Buf(ConstBuf(base, offset, size, nullptr));
   }
 
   /// Creates an unowned `Buf` from a pointer and size.
   [[nodiscard]] static Buf Unowned(std::byte* base, size_t size) {
-    return Buf(base, pw::span<std::byte>(base, size));
+    return Buf(ConstBuf(base, size));
   }
 
   /// Allocates a new owned `Buf` of the specified size.
@@ -519,14 +549,16 @@ class Buf {
   /// zero (e.g. after being sliced or truncated to length 0).
   [[nodiscard]] constexpr bool empty() const { return const_buf_.empty(); }
 
-  /// Returns a pointer to the base address of the underlying memory buffer,
-  /// or `nullptr` if the `Buf` is null.
-  ///
-  /// Unlike `data()`, which points to the start of the current view, `base()`
-  /// always points to the beginning of the underlying memory allocation or
-  /// span from which this buffer was created.
+  /// Returns a pointer to the base address of the original, underlying memory
+  /// buffer, or `nullptr` if the `Buf` is null.
   [[nodiscard]] constexpr const std::byte* base() const {
-    return const_buf_.base_;
+    return const_buf_.base();
+  }
+
+  /// Returns the size of the original, underlying memory buffer, or 0 if the
+  /// `Buf` is null.
+  [[nodiscard]] constexpr size_t base_size() const {
+    return const_buf_.base_size();
   }
 
   /// Returns a pointer to the deallocator if this buffer owns the underlying
@@ -561,27 +593,23 @@ class Buf {
   void reset() { const_buf_.reset(); }
 
  private:
-  constexpr Buf(std::byte* base, pw::span<std::byte> view)
-      : const_buf_(base, nullptr, view) {}
-
   explicit constexpr Buf(ConstBuf&& const_buf)
       : const_buf_(std::move(const_buf)) {}
 
   friend class ConstBuf;
-  friend class multibuf::v2::internal::GenericMultiBuf;
 
   friend Buf Slice(Buf&& buf, size_t offset, size_t length);
   friend Buf Reclaim(Buf&& buf, size_t prefix_count, size_t suffix_count);
-
-  static constexpr ConstBuf::iterator ConstBufIterator(const std::byte* ptr) {
-    return ConstBuf::MakeIterator(ptr);
-  }
 
   ConstBuf const_buf_;
 };
 
 inline constexpr ConstBuf::ConstBuf(Buf&& other) noexcept
     : ConstBuf(std::move(other.const_buf_)) {}
+
+inline ConstBuf& ConstBuf::operator=(Buf&& other) noexcept {
+  return *this = std::move(other.const_buf_);
+}
 
 /// Slices a read-only `ConstBuf` by shifting its start address and setting its
 /// size.

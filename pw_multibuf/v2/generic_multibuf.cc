@@ -139,11 +139,12 @@ auto GenericMultiBuf::Insert(const_iterator pos, ConstBuf&& bytes) -> iterator {
     return iter;
   }
 
-  size_t offset = static_cast<size_t>(bytes.data() - bytes.base_);
-  auto [iter, chunk] = Insert(pos,
-                              ConstByteSpan(bytes.base_, offset + bytes.size()),
-                              offset,
-                              bytes.size());
+  size_t offset = bytes.prefix_;
+  auto [iter, chunk] =
+      Insert(pos,
+             ConstByteSpan(bytes.base(), offset + bytes.size()),
+             offset,
+             bytes.size());
   deque_[memory_context_index(chunk)].deallocator =
       std::exchange(bytes.deallocator_, nullptr);
   deque_[base_view_index(chunk)].base_view.owned = true;

@@ -24,7 +24,7 @@ pw_add_library(pw_buf STATIC
     pw_assert
     pw_bytes
     pw_containers.iterator
-    pw_span
+    pw_third_party.fuchsia.stdcompat
   PRIVATE_DEPS
     pw_assert.check
   SOURCES
