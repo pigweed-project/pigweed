@@ -136,6 +136,17 @@ pw_py_test(
 )
 
 pw_py_test(
+    name = "arguments_test",
+    size = "small",
+    srcs = [
+        "arguments_test.py",
+    ],
+    deps = [
+        ":py",
+    ],
+)
+
+pw_py_test(
     name = "collect_files_test",
     size = "small",
     srcs = [

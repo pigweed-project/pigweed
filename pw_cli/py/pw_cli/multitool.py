@@ -122,7 +122,7 @@ class MultitoolCli:
             and args.tab_complete_option is None
             and args.tab_complete_command is None
         ):
-            arguments.print_banner()
+            arguments.maybe_print_banner()
 
         _LOG.debug('Executing the pw command from %s', args.directory)
         os.chdir(args.directory)

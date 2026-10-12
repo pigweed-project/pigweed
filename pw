@@ -24,7 +24,13 @@
 #    as quiet as possible on subsequent runs.
 
 # Print a message that indicates the pw tool might take a few seconds to load.
-if [ -t 1 ]; then
+# Only show this in interactive terminals viewed by humans to avoid polluting
+# automated tool and AI agent outputs where carriage return / line-erase
+# sequences are not supported.
+if [ -t 1 ] && [ -t 2 ] && [ "$TERM" != "dumb" ] \
+    && [ -z "$INVOKER_INFO_NAME" ] && [ -z "$CI" ] \
+    && [ -z "$CLAUDECODE" ] && [ -z "$CURSOR_AGENT" ] \
+    && [ -z "$AI_AGENT" ]; then
   printf " ⏱  Initializing pw tool...\r"
 fi
 # Don't generate compile commands from this action. Note that since we're

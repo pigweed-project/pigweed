@@ -449,7 +449,10 @@ class WorkflowsCli(multitool.MultitoolCli):
         # Small bit of UX magic: The `pw` wrapper entry point emits a loading
         # message while this tool is being bootstrapped. As soon as this tool
         # launches, clear that line so the output isn't polluted.
-        if sys.stdout.isatty():
+        if sys.stdout.isatty() and os.environ.get('TERM', '') not in (
+            'dumb',
+            '',
+        ):
             print('\r\033[2K', end='')
         if 'BUILD_WORKING_DIRECTORY' in os.environ:
             os.chdir(os.environ['BUILD_WORKING_DIRECTORY'])

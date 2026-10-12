@@ -57,6 +57,7 @@ pw_python_package("py") {
   ]
   tests = [
     "argument_types_test.py",
+    "arguments_test.py",
     "collect_files_test.py",
     "decorators_test.py",
     "envparse_test.py",

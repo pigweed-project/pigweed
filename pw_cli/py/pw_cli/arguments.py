@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
 import logging
+import os
 from pathlib import Path
 import sys
 from typing import Any, NoReturn
@@ -158,19 +159,57 @@ def print_completions_for_option(
         print(line)
 
 
+def is_interactive_terminal() -> bool:
+    """Returns True if stdout and stderr are human-interactive terminals."""
+    # If not connected to a TTY on both stdout and stderr, this is a pipe,
+    # redirect, subshell, or non-interactive script.
+    if not (sys.stderr.isatty() and sys.stdout.isatty()):
+        return False
+
+    # Agents, Emacs compile buffers, and headless runners typically use
+    # TERM=dumb.
+    if os.environ.get('TERM', '') in ('dumb', ''):
+        return False
+
+    # Common CI and AI agent environment variables.
+    agent_or_ci_vars = (
+        'AI_AGENT',
+        'ANTIGRAVITY_TRAJECTORY_ID',
+        'CI',
+        'CLAUDECODE',
+        'CONTINUOUS_INTEGRATION',
+        'CURSOR_AGENT',
+        'INVOKER_INFO_NAME',  # Jetski / Antigravity
+        'JETSKI',
+    )
+    if any(var in os.environ for var in agent_or_ci_vars):
+        return False
+
+    return True
+
+
 def print_banner() -> None:
     """Prints the PIGWEED (or project specific) banner to stderr."""
-    parsed_env = pw_cli.env.pigweed_environment()
-    if parsed_env.PW_ENVSETUP_NO_BANNER or parsed_env.PW_ENVSETUP_QUIET:
-        return
     print(banner() + '\n', file=sys.stderr)
 
 
+def maybe_print_banner() -> None:
+    """Prints the banner to stderr if enabled and in an interactive terminal."""
+    parsed_env = pw_cli.env.pigweed_environment()
+    if (
+        parsed_env.PW_ENVSETUP_NO_BANNER
+        or parsed_env.PW_ENVSETUP_QUIET
+        or not is_interactive_terminal()
+    ):
+        return
+    print_banner()
+
+
 class _ArgumentParserWithBanner(argparse.ArgumentParser):
-    """Parser that the Pigweed banner when there are parsing errors."""
+    """Parser that prints the Pigweed banner when there are parsing errors."""
 
     def error(self, message: str) -> NoReturn:
-        print_banner()
+        maybe_print_banner()
         self.print_usage(sys.stderr)
         self.exit(2, f'{self.prog}: error: {message}\n')
 
