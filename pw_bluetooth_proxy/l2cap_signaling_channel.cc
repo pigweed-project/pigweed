@@ -282,6 +282,10 @@ void L2capSignalingChannel::HandleConnectionRsp(
 void L2capSignalingChannel::HandleConfigurationReq(
     Direction direction, emboss::L2capConfigureReqView cmd) {
   std::lock_guard lock(mutex_);
+  if (pending_configurations_.full()) {
+    PW_LOG_ERROR("Reached max number of tracked pending l2cap configurations.");
+    return;
+  }
 
   std::optional<MtuOption> mtu = std::nullopt;
 
@@ -294,25 +298,26 @@ void L2capSignalingChannel::HandleConfigurationReq(
         options_payload.subspan(bytes_consumed, options_size - bytes_consumed);
     Result<emboss::L2capConfigurationOptionHeaderView> option_header =
         MakeEmbossView<emboss::L2capConfigurationOptionHeaderView>(
-            remaining_bytes.data(),
-            emboss::L2capConfigurationOptionHeader::IntrinsicSizeInBytes());
+            remaining_bytes);
     if (!option_header.ok()) {
       return;
     }
     bytes_consumed +=
         emboss::L2capConfigurationOptionHeader::IntrinsicSizeInBytes() +
         option_header->option_length().Read();
+    if (bytes_consumed > options_size) {
+      return;
+    }
 
     switch (option_header->option_type().Read()) {
       case emboss::L2capConfigurationOptionType::MTU: {
         Result<emboss::L2capMtuConfigurationOptionView> l2cap_option_view =
             MakeEmbossView<emboss::L2capMtuConfigurationOptionView>(
-                remaining_bytes.data(),
-                emboss::L2capMtuConfigurationOption::IntrinsicSizeInBytes());
+                remaining_bytes);
         constexpr size_t mtu_length =
             emboss::L2capMtuConfigurationOption::IntrinsicSizeInBytes() -
             emboss::L2capConfigurationOptionHeader::IntrinsicSizeInBytes();
-        if (!l2cap_option_view->Ok() ||
+        if (!l2cap_option_view.ok() ||
             l2cap_option_view->header().option_length().Read() != mtu_length) {
           PW_LOG_WARN(
               "HandleConfigurationReq: connection_handle=%d "

@@ -4563,6 +4563,97 @@ TEST_F(L2capStatusTrackerTest, L2capConfigurationTruncatedPacketsIgnored) {
   EXPECT_EQ(this->configuration_called, 1);
 }
 
+TEST_F(L2capStatusTrackerTest, L2capConfigurationMalformedOptionsIgnored) {
+  SetupConnectedChannel();
+
+  // CONFIGURATION_REQ with a truncated option header (1 byte of options).
+  const std::array<uint8_t, 5> kReqTruncatedOptionHeader = {
+      static_cast<uint8_t>(kDestinationCid),
+      0x00,  // destination_cid
+      0x00,
+      0x00,  // flags
+      0x01,  // 1-byte truncated option header
+  };
+  PW_TEST_EXPECT_OK(SendL2capSignalingCommand(
+      proxy(),
+      Direction::kFromController,
+      kHandle,
+      emboss::L2capSignalingPacketCode::CONFIGURATION_REQ,
+      /*identifier=*/0,
+      kReqTruncatedOptionHeader));
+  PW_TEST_EXPECT_OK(
+      SendL2capConfigureRsp(proxy(),
+                            Direction::kFromHost,
+                            kHandle,
+                            kSourceCid,
+                            emboss::L2capConfigurationResult::SUCCESS));
+  EXPECT_EQ(this->configuration_called, 0);
+
+  // CONFIGURATION_REQ with an option whose header option_length (2) exceeds
+  // the remaining option bytes (1).
+  const std::array<uint8_t, 7> kReqOptionLengthExceedsPayload = {
+      static_cast<uint8_t>(kDestinationCid),
+      0x00,  // destination_cid
+      0x00,
+      0x00,  // flags
+      0x01,  // option_type = MTU
+      0x02,  // option_length = 2
+      0x00,  // only 1 byte of option payload
+  };
+  PW_TEST_EXPECT_OK(SendL2capSignalingCommand(
+      proxy(),
+      Direction::kFromController,
+      kHandle,
+      emboss::L2capSignalingPacketCode::CONFIGURATION_REQ,
+      /*identifier=*/0,
+      kReqOptionLengthExceedsPayload));
+  PW_TEST_EXPECT_OK(
+      SendL2capConfigureRsp(proxy(),
+                            Direction::kFromHost,
+                            kHandle,
+                            kSourceCid,
+                            emboss::L2capConfigurationResult::SUCCESS));
+  EXPECT_EQ(this->configuration_called, 0);
+
+  // CONFIGURATION_REQ with a truncated MTU option (option_length = 1 fits in
+  // the 3-byte options payload, but 3 bytes is smaller than
+  // L2capMtuConfigurationOption::IntrinsicSizeInBytes()).
+  const std::array<uint8_t, 7> kReqTruncatedMtuOption = {
+      static_cast<uint8_t>(kDestinationCid),
+      0x00,  // destination_cid
+      0x00,
+      0x00,  // flags
+      0x01,  // option_type = MTU
+      0x01,  // option_length = 1
+      0x00,  // only 1 byte of MTU payload
+  };
+  PW_TEST_EXPECT_OK(SendL2capSignalingCommand(
+      proxy(),
+      Direction::kFromController,
+      kHandle,
+      emboss::L2capSignalingPacketCode::CONFIGURATION_REQ,
+      /*identifier=*/0,
+      kReqTruncatedMtuOption));
+  PW_TEST_EXPECT_OK(
+      SendL2capConfigureRsp(proxy(),
+                            Direction::kFromHost,
+                            kHandle,
+                            kSourceCid,
+                            emboss::L2capConfigurationResult::SUCCESS));
+  EXPECT_EQ(this->configuration_called, 0);
+
+  // Exceeding the pending configurations capacity should drop excess requests
+  // rather than asserting.
+  L2capOptions l2cap_options{.mtu = std::nullopt};
+  for (size_t i = 0; i < 25; ++i) {
+    PW_TEST_EXPECT_OK(SendL2capConfigureReq(proxy(),
+                                            Direction::kFromController,
+                                            kHandle,
+                                            kDestinationCid,
+                                            l2cap_options));
+  }
+}
+
 TEST_F(L2capStatusTrackerTest, L2capEventsControllerInitiated) {
   PW_TEST_EXPECT_OK(SendConnectionCompleteEvent(
       proxy(), kHandle, emboss::StatusCode::SUCCESS));
