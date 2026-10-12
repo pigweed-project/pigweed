@@ -119,8 +119,8 @@ class ConnectionTask : public async2::Task {
 
   /// Closes the transport connection and completes every call on it.
   ///
-  /// @pre Must be called from this connection's dispatcher thread (or from
-  /// `~ConnectionTask` after the task has been deregistered from it).
+  /// @pre Must be called from this connection's dispatcher thread, or after
+  /// this task is deregistered.
   void CloseConnection(Status status = Status::Cancelled());
 
   /// @pre Must be called from this connection's dispatcher thread.
@@ -176,8 +176,7 @@ class ConnectionTask : public async2::Task {
   void FinishHandshake(HandshakeInfo info);
 
   /// Deregisters this task from the dispatcher and closes the connection.
-  /// Called at the start of derived destructors (`~ServerConnectionTask()` and
-  /// `~ClientConnectionTask()`) before tearing down derived state.
+  /// Derived destructors must call this before destroying their own state.
   void Teardown() {
     Deregister();
     CloseConnection(Status::Cancelled());

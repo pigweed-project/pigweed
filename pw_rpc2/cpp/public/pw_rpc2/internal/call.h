@@ -291,6 +291,11 @@ class Call : public IntrusiveForwardList<Call>::Item,
   /// Idempotent.
   void DetachFromConnection();
 
+  /// Clears this call's pointer to its connection.
+  ///
+  /// @pre The connection has already removed this call from its list.
+  void ClearConnectionTask() { connection_task_ = nullptr; }
+
   /// Claims this call's read stream and starts a receive on it.
   ///
   /// `ReadFuture` is the call's only reader and holds the claim until the read
@@ -341,8 +346,6 @@ class Call : public IntrusiveForwardList<Call>::Item,
   Call(ConnectionTask& connection_task,
        uint32_t call_id,
        Allocator* allocator = nullptr);
-
-  void ClearConnectionTask() { connection_task_ = nullptr; }
 
   void pw_recycle() {
     if (allocator_ != nullptr) {

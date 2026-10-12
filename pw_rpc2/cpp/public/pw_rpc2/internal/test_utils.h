@@ -178,6 +178,8 @@ class TestConnectionTask final : public internal::ConnectionTask {
       internal::EndpointRole role = internal::EndpointRole::kServer)
       : ConnectionTask(std::move(established_connection), allocator, role) {}
 
+  ~TestConnectionTask() override { Teardown(); }
+
  private:
   bool PollOpenConnection(async2::Context& cx) override {
     return PendPackets(cx);

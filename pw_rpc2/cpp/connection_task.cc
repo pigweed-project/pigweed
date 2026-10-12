@@ -78,10 +78,11 @@ ConnectionTask::ConnectionTask(EstablishedConnection established_connection,
 }
 
 ConnectionTask::~ConnectionTask() {
-  Teardown();
-
+  PW_DASSERT(is_closed());
   while (!calls_.empty()) {
-    calls_.front().DetachFromConnection();
+    Call& call = calls_.front();
+    calls_.pop_front();
+    call.ClearConnectionTask();
   }
 }
 

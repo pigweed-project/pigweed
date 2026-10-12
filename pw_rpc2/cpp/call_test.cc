@@ -485,5 +485,24 @@ TEST(CallTest, ClientCallAutoDetachesOnBothSidesClosed) {
   connection_task->Deregister();
 }
 
+TEST(CallTest, CallOutlivesItsConnection) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = allocator.MakeShared<test::TestConnectionTask>(
+      EstablishedConnection{std::move(conn)}, allocator);
+  ASSERT_NE(connection_task, nullptr);
+
+  auto call = ClientCall::Create(*connection_task, 306u, allocator);
+  ASSERT_NE(call, nullptr);
+  EXPECT_TRUE(call->is_attached());
+
+  // Destroying the connection detaches the call.
+  connection_task = nullptr;
+
+  EXPECT_FALSE(call->is_attached());
+  EXPECT_TRUE(call->is_completed());
+  EXPECT_EQ(call->completion_status(), Status::Cancelled());
+}
+
 }  // namespace
 }  // namespace pw::rpc2::internal
