@@ -14,9 +14,19 @@
 
 #include "pw_assert/assert.h"
 
+#include <memory>
+#include <utility>
+
+#include "pw_allocator/testing.h"
+#include "pw_allocator/unique_ptr.h"
+#include "pw_assert_test/fake_backend.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_status/status.h"
 #include "pw_unit_test/framework.h"
+
+#undef PW_ASSERT_HANDLE_FAILURE
+#define PW_ASSERT_HANDLE_FAILURE(condition_string) \
+  PW_HANDLE_ASSERT_FAILURE(condition_string, "")
 
 namespace {
 
@@ -45,6 +55,72 @@ TEST(Assert, AssertOkEvaluatesExpressionAndDoesNotCrashOnOk) {
     return pw::OkStatus();
   })());
   EXPECT_EQ(evaluated, 2);
+}
+
+TEST(Assert, AssertNotNullConstexpr) {
+  static constexpr int kValue = 42;
+  constexpr const int* not_null = PW_ASSERT_NOTNULL(&kValue);
+  static_assert(*not_null == 42);
+}
+
+TEST(Assert, AssertNotNullRuntime) {
+  pw_captured_assert.triggered = 0;
+
+  int value = 42;
+  int* not_null = PW_ASSERT_NOTNULL(&value);
+  EXPECT_EQ(*not_null, 42);
+  EXPECT_EQ(pw_captured_assert.triggered, 0);
+}
+
+TEST(Assert, AssertNotNullStlSmartPointer) {
+  pw_captured_assert.triggered = 0;
+
+  auto unique = std::make_unique<int>(42);
+  std::unique_ptr<int>& not_null = PW_ASSERT_NOTNULL(unique);
+  EXPECT_EQ(*not_null, 42);
+  EXPECT_EQ(pw_captured_assert.triggered, 0);
+}
+
+TEST(Assert, AssertNotNullPigweedSmartPointer) {
+  pw_captured_assert.triggered = 0;
+  pw::allocator::test::AllocatorForTest<256> allocator;
+
+  pw::UniquePtr<int> unique = allocator.MakeUnique<int>(42);
+  pw::UniquePtr<int>& not_null = PW_ASSERT_NOTNULL(unique);
+  EXPECT_EQ(*not_null, 42);
+  EXPECT_EQ(pw_captured_assert.triggered, 0);
+}
+
+TEST(Assert, AssertNotNullMoveSmartPointers) {
+  pw_captured_assert.triggered = 0;
+
+  auto stl_unique = std::make_unique<int>(42);
+  std::unique_ptr<int> moved_stl = PW_ASSERT_NOTNULL(std::move(stl_unique));
+  EXPECT_EQ(*moved_stl, 42);
+
+  pw::allocator::test::AllocatorForTest<256> allocator;
+  pw::UniquePtr<int> pw_unique = allocator.MakeUnique<int>(42);
+  pw::UniquePtr<int> moved_pw = PW_ASSERT_NOTNULL(std::move(pw_unique));
+  EXPECT_EQ(*moved_pw, 42);
+
+  EXPECT_EQ(pw_captured_assert.triggered, 0);
+}
+
+TEST(Assert, AssertNotNullRejectsNull) {
+  pw_captured_assert.triggered = 0;
+  int* null_ptr = nullptr;
+  PW_ASSERT_NOTNULL(null_ptr);
+  EXPECT_EQ(pw_captured_assert.triggered, 1);
+
+  pw_captured_assert.triggered = 0;
+  std::unique_ptr<int> null_stl_ptr;
+  PW_ASSERT_NOTNULL(null_stl_ptr);
+  EXPECT_EQ(pw_captured_assert.triggered, 1);
+
+  pw_captured_assert.triggered = 0;
+  pw::UniquePtr<int> null_pw_ptr;
+  PW_ASSERT_NOTNULL(null_pw_ptr);
+  EXPECT_EQ(pw_captured_assert.triggered, 1);
 }
 
 // Unfortunately, we don't have the infrastructure to test failure handling

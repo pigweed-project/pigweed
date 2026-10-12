@@ -83,6 +83,31 @@
     }                                                        \
   } while (0)
 
+// A header- and constexpr-safe version of PW_CHECK_NOTNULL().
+//
+// If the given pointer is null, crash the system. Otherwise, return the
+// pointer unchanged. The expression is guaranteed to be evaluated once.
+//
+// In C++, expression may be a raw pointer, function pointer, or smart pointer
+// (any type comparable to nullptr). The argument's type and value category are
+// preserved. This macro is only available in C++.
+//
+// IMPORTANT: Unlike the PW_CHECK_*() suite of macros, not all backends for
+// this API capture rich information like line numbers, the file, expression
+// arguments, or the stringified expression. Use these macros only when
+// absolutely necessary -- in headers, constexpr contexts, or in rare cases
+// where the call site overhead of a full PW_CHECK must be avoided. Use
+// PW_CHECK_*() whenever possible.
+#define PW_ASSERT_NOTNULL(ptr)                                     \
+  ([](auto&& _pw_assert_notnull_ptr) constexpr -> decltype(auto) { \
+    if (_pw_assert_notnull_ptr == nullptr) {                       \
+      PW_ASSERT_failed_in_constant_expression_();                  \
+      PW_ASSERT_HANDLE_FAILURE(#ptr " != nullptr");                \
+    }                                                              \
+    return static_cast<decltype(_pw_assert_notnull_ptr)&&>(        \
+        _pw_assert_notnull_ptr);                                   \
+  }(ptr))
+
 #else
 
 #define PW_ASSERT_OK(expression, ...)        \

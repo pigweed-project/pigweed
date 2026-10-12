@@ -198,10 +198,18 @@ group("impl") {
 # is more of a compile test. The results can be visually verified if desired.
 pw_test("assert_test") {
   configs = [ ":public_include_path" ]
-  sources = [ "assert_test.cc" ]
+  sources = [
+    "assert_test.cc",
+    "fake_backend.cc",
+    "pw_assert_test/fake_backend.h",
+  ]
   deps = [
     ":pw_assert",
+    "$dir_pw_allocator:testing",
+    dir_pw_allocator,
+    dir_pw_span,
     dir_pw_status,
+    dir_pw_string,
   ]
   negative_compilation_tests = true
 }

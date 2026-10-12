@@ -542,6 +542,18 @@ PW_ASSERT API Reference
   If the given expression is not `OK`, crash the system. Otherwise, do nothing.
   The condition is guarenteed to be evaluated.
 
+.. cpp:function:: PW_ASSERT_NOTNULL(ptr)
+
+  A header- and constexpr-safe version of ``PW_CHECK_NOTNULL()``.
+
+  If the given pointer is ``nullptr``, crash the system. Otherwise, return the
+  pointer unchanged. The expression is guaranteed to be evaluated once.
+
+  In C++, ``ptr`` may be a raw pointer, function pointer, or smart pointer (any
+  type comparable to ``nullptr``). The argument's type and value category are
+  preserved, making it suitable for initializing member variables in constructor
+  initializer lists. This macro is only available in C++.
+
 .. attention::
 
   Unlike the ``PW_CHECK_*()`` suite of macros, ``PW_ASSERT()`` and

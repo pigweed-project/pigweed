@@ -212,6 +212,8 @@ pw_cc_test(
         ":assert",
         ":config",
         ":facade",
+        "//pw_allocator",
+        "//pw_allocator:testing",
         "//pw_preprocessor",
         "//pw_result",
         "//pw_span",
