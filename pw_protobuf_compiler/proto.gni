@@ -429,7 +429,7 @@ template("_pw_pwpb_rpc2_proto_library") {
     public_deps = [
                     ":${invoker.base_target}.pwpb",
                     "$dir_pw_protobuf",
-                    "$dir_pw_rpc2/cpp:pw_rpc2",
+                    "$dir_pw_rpc2/cpp",
                     "$dir_pw_rpc2/cpp:pwpb_serialize",
                   ] + invoker.deps
 
@@ -460,7 +460,7 @@ template("_pw_raw_rpc2_proto_library") {
     forward_variables_from(invoker, _forwarded_vars)
     public_configs = [ ":$target_name._include_path" ]
     deps = [ ":$target_name._gen($pw_protobuf_compiler_TOOLCHAIN)" ]
-    public_deps = [ "$dir_pw_rpc2/cpp:pw_rpc2" ] + invoker.deps
+    public_deps = [ "$dir_pw_rpc2/cpp" ] + invoker.deps
 
     # The stub headers are generated for reference, but are not part of the
     # library.

@@ -29,7 +29,7 @@ def raw_rpc2_proto_library(*, name, deps, **kwargs):
         name = name,
         protos = deps,
         deps = [
-            Label("//pw_rpc2/cpp:pw_rpc2"),
+            Label("//pw_rpc2/cpp"),
         ],
         **kwargs
     )

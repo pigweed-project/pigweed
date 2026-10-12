@@ -30,7 +30,7 @@ def pwpb_rpc2_proto_library(*, name, deps, pwpb_proto_library_deps = [], **kwarg
         protos = deps,
         deps = [
             Label("//pw_protobuf"),
-            Label("//pw_rpc2/cpp:pw_rpc2"),
+            Label("//pw_rpc2/cpp"),
             Label("//pw_rpc2/cpp:pwpb_serialize"),
         ] + pwpb_proto_library_deps,
         **kwargs
