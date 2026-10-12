@@ -21,7 +21,7 @@ from pw_enum.generate import (
     _write_generated_header,
 )
 from pw_enum.generate_gn import _resolve_gn_compiler_and_flags
-from pw_enum.parse import EnumDescriptor, EnumValue
+from pw_enum.parse import EnumDescriptor, EnumValue, StatusInfo
 
 
 class TestEnumGeneration(unittest.TestCase):
@@ -447,6 +447,253 @@ class TestEnumGeneration(unittest.TestCase):
                 "_PW_ENUM_GENERATED(x) and MY_PW_ENUM(y)",
                 output_text,
             )
+
+    def test_status_enum_generation(self) -> None:
+        """Test footer generation for PW_ENUM_STATUS."""
+        enums = [
+            EnumDescriptor(
+                name="MyStatusCode",
+                scopes=("my", "ns"),
+                cc_full_name="::my::ns::MyStatusCode",
+                line=5,
+                values=(
+                    EnumValue(cc_name="kOk", value=0, name="OK"),
+                    EnumValue(cc_name="kNotFound", value=1, name="NOT_FOUND"),
+                ),
+                status=StatusInfo(
+                    name="MyStatus",
+                    scopes=("my", "ns"),
+                    cc_full_name="::my::ns::MyStatus",
+                    ok_code="kOk",
+                ),
+            )
+        ]
+        footer = "\n".join(generate_footer(enums)) + "\n"
+        self.assertIn('#include "pw_status/status_base.h"', footer)
+        self.assertIn('#include "pw_tokenizer/enum.h"', footer)
+        self.assertIn("namespace my::ns {", footer)
+        self.assertIn(
+            "class [[nodiscard]] MyStatus final\n"
+            "    : public ::pw::StatusBase<MyStatus, MyStatusCode::kOk> {",
+            footer,
+        )
+        self.assertNotIn("using code_type", footer)
+        self.assertNotIn("using Code =", footer)
+        self.assertNotIn("using enum ", footer)
+        self.assertNotIn("static constexpr MyStatus Ok()", footer)
+        self.assertIn(
+            "[[nodiscard]] static constexpr MyStatus NotFound() {\n"
+            "    return MyStatus(Code::kNotFound);\n"
+            "  }",
+            footer,
+        )
+        self.assertIn(
+            "  [[nodiscard]] constexpr bool IsNotFound() const {\n"
+            "    return code() == Code::kNotFound;\n"
+            "  }",
+            footer,
+        )
+        self.assertNotIn("IsOk()", footer)
+        self.assertIn(
+            "  // PW_ENUM_STATUS: No Is*() function for kOk: use ok() instead.",
+            footer,
+        )
+        self.assertIn("constexpr MyStatus() = default;", footer)
+        self.assertIn("explicit constexpr MyStatus(Code code)", footer)
+        self.assertIn(
+            ": ::pw::StatusBase<MyStatus, MyStatusCode::kOk>(code) {}",
+            footer,
+        )
+        self.assertIn("struct EnumTraits<::my::ns::MyStatusCode>", footer)
+        self.assertIn(
+            'static constexpr std::string_view kName = "MyStatusCode";', footer
+        )
+        self.assertIn(
+            'static constexpr std::string_view kFullyQualifiedName = '
+            '"::my::ns::MyStatusCode";',
+            footer,
+        )
+        self.assertIn(
+            "_PW_TOKENIZE_ENUM_DOMAIN(::my::ns::MyStatusCode,", footer
+        )
+
+    def test_status_enum_no_factory_for_ok_code(self) -> None:
+        """Factories are omitted for the OK code and its aliases."""
+        enums = [
+            EnumDescriptor(
+                name="HwStatusCode",
+                scopes=("hw",),
+                cc_full_name="::hw::HwStatusCode",
+                line=5,
+                values=(
+                    EnumValue(cc_name="kBusy", value=0, name="BUSY"),
+                    EnumValue(cc_name="kReady", value=1, name="READY"),
+                    EnumValue(cc_name="kDone", value=1, name="DONE"),
+                    EnumValue(cc_name="kError", value=2, name="ERROR"),
+                ),
+                status=StatusInfo(
+                    name="HwStatus",
+                    scopes=("hw",),
+                    cc_full_name="::hw::HwStatus",
+                    ok_code="kReady",
+                ),
+            )
+        ]
+        footer = "\n".join(generate_footer(enums)) + "\n"
+        self.assertIn(
+            "    : public ::pw::StatusBase<HwStatus, HwStatusCode::kReady> {",
+            footer,
+        )
+        self.assertIn("static constexpr HwStatus Busy()", footer)
+        self.assertIn("static constexpr HwStatus Error()", footer)
+        self.assertNotIn("static constexpr HwStatus Ready()", footer)
+        self.assertNotIn("static constexpr HwStatus Done()", footer)
+        # Is*() functions are generated for OK codes not named OK.
+        self.assertIn("constexpr bool IsBusy() const", footer)
+        self.assertIn("constexpr bool IsReady() const", footer)
+        self.assertIn("constexpr bool IsDone() const", footer)
+        self.assertIn("constexpr bool IsError() const", footer)
+        self.assertIn(
+            "  // PW_ENUM_STATUS: No factory for kReady: OK code; use "
+            "HwStatus() instead.",
+            footer,
+        )
+        self.assertIn(
+            "  // PW_ENUM_STATUS: No factory for kDone: OK code; use "
+            "HwStatus() instead.",
+            footer,
+        )
+
+    def test_status_enum_factory_skip_comments(self) -> None:
+        """Skipped factories are noted in comments in the generated code."""
+        enums = [
+            EnumDescriptor(
+                name="SkipCode",
+                scopes=("ns",),
+                cc_full_name="::ns::SkipCode",
+                line=5,
+                values=(
+                    EnumValue(cc_name="kOk", value=0, name="OK"),
+                    EnumValue(cc_name="notKStyle", value=1, name="notKStyle"),
+                    EnumValue(cc_name="kCode", value=2, name="CODE"),
+                    EnumValue(cc_name="kSkip", value=3, name="SKIP"),
+                ),
+                status=StatusInfo(
+                    name="Skip",
+                    scopes=("ns",),
+                    cc_full_name="::ns::Skip",
+                    ok_code="kOk",
+                ),
+            )
+        ]
+        footer = "\n".join(generate_footer(enums)) + "\n"
+        self.assertIn(
+            "  // PW_ENUM_STATUS: No factory for notKStyle: not a "
+            "kEnumName-style name.",
+            footer,
+        )
+        self.assertIn(
+            "  // PW_ENUM_STATUS: No Is*() function for notKStyle: not a "
+            "kEnumName-style name.",
+            footer,
+        )
+        self.assertIn(
+            "  // PW_ENUM_STATUS: No factory for kCode: Code() conflicts with "
+            "a StatusBase member.",
+            footer,
+        )
+        # Is*() functions are still generated when the factory is skipped.
+        self.assertIn("constexpr bool IsCode() const", footer)
+        self.assertIn("constexpr bool IsSkip() const", footer)
+        self.assertIn(
+            "  // PW_ENUM_STATUS: No factory for kSkip: Skip() conflicts with "
+            "a StatusBase member.",
+            footer,
+        )
+
+    def test_status_enum_is_function_conflicts_with_factory(self) -> None:
+        """Is*() functions that collide with a factory are skipped."""
+        enums = [
+            EnumDescriptor(
+                name="ConflictCode",
+                scopes=("ns",),
+                cc_full_name="::ns::ConflictCode",
+                line=5,
+                values=(
+                    EnumValue(cc_name="kOk", value=0, name="OK"),
+                    EnumValue(cc_name="kIsFull", value=1, name="IS_FULL"),
+                    EnumValue(cc_name="kFull", value=2, name="FULL"),
+                ),
+                status=StatusInfo(
+                    name="Conflict",
+                    scopes=("ns",),
+                    cc_full_name="::ns::Conflict",
+                    ok_code="kOk",
+                ),
+            )
+        ]
+        footer = "\n".join(generate_footer(enums)) + "\n"
+        self.assertIn("static constexpr Conflict IsFull() {", footer)
+        self.assertIn("constexpr bool IsIsFull() const", footer)
+        self.assertNotIn("constexpr bool IsFull() const", footer)
+        self.assertIn(
+            "  // PW_ENUM_STATUS: No Is*() function for kFull: IsFull() is "
+            "already defined.",
+            footer,
+        )
+
+    def test_write_generated_header_status_enum(self) -> None:
+        """Test header rewriting for PW_ENUM_STATUS."""
+        enums = [
+            EnumDescriptor(
+                name="MyStatusCode",
+                scopes=("my", "ns"),
+                cc_full_name="::my::ns::MyStatusCode",
+                line=10,
+                values=(
+                    EnumValue(cc_name="kOk", value=0, name="OK"),
+                    EnumValue(cc_name="kNotFound", value=1, name="NOT_FOUND"),
+                ),
+                status=StatusInfo(
+                    name="MyStatus",
+                    scopes=("my", "ns"),
+                    cc_full_name="::my::ns::MyStatus",
+                    ok_code="kOk",
+                ),
+            )
+        ]
+
+        text = (
+            "namespace my::ns {\n\n"
+            "enum class MyStatusCode : uint8_t {\n"
+            "  kOk,\n"
+            "  kNotFound,\n"
+            "};\n\n"
+            "}  // namespace my::ns\n\n"
+            "PW_ENUM_STATUS("
+            "my::ns::MyStatus, "
+            "my::ns::MyStatusCode::kOk, "
+            "kOk, kNotFound);\n"
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            temp_dir = Path(td)
+            input_file = temp_dir / "input.h"
+            output_file = temp_dir / "output.h"
+            input_file.write_text(text)
+            _write_generated_header(input_file, output_file, enums)
+            output_text = output_file.read_text()
+
+        self.assertIn(
+            "enum class MyStatusCode : uint8_t {",
+            output_text,
+        )
+        self.assertIn(
+            "_PW_ENUM_GENERATED(my::ns::MyStatus, my::ns::MyStatusCode::kOk, "
+            "kOk, kNotFound);",
+            output_text,
+        )
+        self.assertIn('#include "pw_status/status_base.h"', output_text)
 
 
 if __name__ == "__main__":

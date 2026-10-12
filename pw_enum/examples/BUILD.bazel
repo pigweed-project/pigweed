@@ -53,6 +53,23 @@ pw_cc_enum_library(
 )
 # DOCSTAG: [pw_enum-examples-advanced-bazel]
 
+# DOCSTAG: [pw_enum-examples-status-enum-bazel]
+pw_cc_enum_library(
+    name = "i2c_status",
+    enum_headers = ["private/enum_example/i2c_status.h"],
+    strip_include_prefix = "private",
+)
+# DOCSTAG: [pw_enum-examples-status-enum-bazel]
+
+pw_cc_test(
+    name = "status_enum_test",
+    srcs = ["status_enum_test.cc"],
+    deps = [
+        ":i2c_status",
+        "//pw_status",
+    ],
+)
+
 pw_cc_test(
     name = "basic_enum_test",
     srcs = ["basic_enum_test.cc"],
@@ -84,7 +101,9 @@ filegroup(
         "basic_enum_test.cc",
         "enum_example/references_other_enum.h",
         "private/enum_example/basic_enum.h",
+        "private/enum_example/i2c_status.h",
         "private/enum_example/other_enum.h",
+        "status_enum_test.cc",
         "traits.cc",
     ],
     visibility = ["//pw_enum:__subpackages__"],

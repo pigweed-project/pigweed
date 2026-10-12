@@ -127,6 +127,7 @@ template("pw_cc_enum_source_set") {
 
     public_deps = [
       "$dir_pw_enum:_generate_internal_do_not_use",
+      "$dir_pw_status",
       "$dir_pw_tokenizer",
     ]
     if (defined(invoker.public_deps)) {

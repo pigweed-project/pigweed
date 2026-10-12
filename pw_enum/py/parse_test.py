@@ -23,6 +23,8 @@ from pw_enum.parse import (
     ParseError,
     EnumValue,
     EnumDescriptor,
+    StatusInfo,
+    parse_enums,
     _filter_flags,
     _find_line_and_file_for_offset,
     _parse_preprocessed_header,
@@ -30,6 +32,7 @@ from pw_enum.parse import (
     _resolve_compiler,
     _same_file,
     camel_to_upper_snake,
+    is_ok_name,
     _default_display_name,
 )
 
@@ -337,6 +340,281 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(len(eval_values), 2)
         self.assertEqual(eval_values[0], EnumValue("kA", 42, "A"))
         self.assertEqual(eval_values[1], EnumValue("kB", 100, "B"))
+
+    def test_status_enum(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::MyStatus", "my::ns::MyStatusCode::kOk", "kOk", '
+            '"kNotFound") _PW_ENUM_MACRO_END;'
+        )
+        enums = _parse_preprocessed_header(text, test_file)
+        self.assertEqual(len(enums), 1)
+        self.assertEqual(enums[0].name, "MyStatusCode")
+        self.assertEqual(enums[0].cc_full_name, "::my::ns::MyStatusCode")
+        status = enums[0].status
+        assert isinstance(status, StatusInfo)
+        self.assertEqual(status.name, "MyStatus")
+        self.assertEqual(status.scopes, ("my", "ns"))
+        self.assertEqual(status.cc_full_name, "::my::ns::MyStatus")
+        self.assertEqual(status.ok_code, "kOk")
+
+    def test_status_enum_nonzero_ok(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::HwStatus", "my::ns::HwStatusCode::kReady", '
+            '"kBusy", "kReady") _PW_ENUM_MACRO_END;'
+        )
+        enums = _parse_preprocessed_header(text, test_file)
+        self.assertEqual(len(enums), 1)
+        self.assertEqual(enums[0].name, "HwStatusCode")
+        self.assertEqual(enums[0].cc_full_name, "::my::ns::HwStatusCode")
+        status = enums[0].status
+        assert isinstance(status, StatusInfo)
+        self.assertEqual(status.name, "HwStatus")
+        self.assertEqual(status.ok_code, "kReady")
+
+    def test_status_enum_enum_name_without_ok_code_error(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::MyStatus", "my::ns::MyStatusCode", "kOk", "kNotFound") '
+            '_PW_ENUM_MACRO_END;'
+        )
+        with self.assertRaisesRegex(
+            ParseError,
+            r"PW_ENUM_STATUS OK code 'my::ns::MyStatusCode' is not a "
+            r"registered enumerator",
+        ):
+            _parse_preprocessed_header(text, test_file)
+
+    def test_status_enum_ok_code_inferred_namespace(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::MyStatus", "MyStatusCode::kOk", "kOk") '
+            '_PW_ENUM_MACRO_END;'
+        )
+        enums = _parse_preprocessed_header(text, test_file)
+        self.assertEqual(len(enums), 1)
+        self.assertEqual(enums[0].name, "MyStatusCode")
+        self.assertEqual(enums[0].scopes, ("my", "ns"))
+        self.assertEqual(enums[0].cc_full_name, "::my::ns::MyStatusCode")
+        status = enums[0].status
+        assert isinstance(status, StatusInfo)
+        self.assertEqual(status.name, "MyStatus")
+        self.assertEqual(status.scopes, ("my", "ns"))
+        self.assertEqual(status.cc_full_name, "::my::ns::MyStatus")
+        self.assertEqual(status.ok_code, "kOk")
+
+    def test_status_enum_ok_code_leading_colons(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::MyStatus", "::other::MyStatusCode::kOk", "kOk") '
+            '_PW_ENUM_MACRO_END;'
+        )
+        enums = _parse_preprocessed_header(text, test_file)
+        self.assertEqual(len(enums), 1)
+        self.assertEqual(enums[0].name, "MyStatusCode")
+        self.assertEqual(enums[0].scopes, ("other",))
+        self.assertEqual(enums[0].cc_full_name, "::other::MyStatusCode")
+
+    def test_status_enum_ok_code_nested_fully_qualified(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::MyStatus", "my::ns::Outer::Code::kOk", "kOk") '
+            '_PW_ENUM_MACRO_END;'
+        )
+        enums = _parse_preprocessed_header(text, test_file)
+        self.assertEqual(len(enums), 1)
+        self.assertEqual(enums[0].name, "Code")
+        self.assertEqual(enums[0].scopes, ("my", "ns", "Outer"))
+        self.assertEqual(enums[0].cc_full_name, "::my::ns::Outer::Code")
+
+    def test_status_enum_ok_code_global_namespace_error(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::MyStatus", "::MyStatusCode::kOk", "kOk") '
+            '_PW_ENUM_MACRO_END;'
+        )
+        with self.assertRaisesRegex(
+            ParseError, "enum type to be in a namespace"
+        ):
+            _parse_preprocessed_header(text, test_file)
+
+    def test_status_enum_ok_code_without_enum_name_error(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::MyStatus", "kOk", "kOk") '
+            '_PW_ENUM_MACRO_END;'
+        )
+        with self.assertRaisesRegex(
+            ParseError,
+            "PW_ENUM_STATUS requires the OK enumerator including its enum type",
+        ):
+            _parse_preprocessed_header(text, test_file)
+
+    def test_status_enum_same_name_error(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::MyStatus", "my::ns::MyStatus::kOk", "kOk") '
+            '_PW_ENUM_MACRO_END;\n'
+        )
+        with self.assertRaisesRegex(
+            ParseError,
+            r"PW_ENUM_STATUS status class and enum cannot have the same name",
+        ):
+            _parse_preprocessed_header(text, test_file)
+
+    def test_status_enum_duplicate_status_error(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"a::Dup", "a::DupCode1::kOk", "kOk") _PW_ENUM_MACRO_END;\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"a::Dup", "a::DupCode2::kOk", "kOk") _PW_ENUM_MACRO_END;\n'
+        )
+        with self.assertRaisesRegex(
+            ParseError, r"PW_ENUM_STATUS\(Dup\) is declared multiple times"
+        ):
+            _parse_preprocessed_header(text, test_file)
+
+    def test_status_enum_duplicate_enum_error(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"a::Status1", "a::DupCode::kOk", "kOk") _PW_ENUM_MACRO_END;\n'
+            '_PW_ENUM_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"a::DupCode", "kOk") _PW_ENUM_MACRO_END;\n'
+        )
+        with self.assertRaisesRegex(
+            ParseError,
+            r"Enum ::a::DupCode is registered multiple times",
+        ):
+            _parse_preprocessed_header(text, test_file)
+
+    @mock.patch("pw_enum.parse._compile_and_evaluate")
+    @mock.patch("pw_enum.parse._preprocess_header")
+    def test_parse_enums_status(
+        self, mock_preprocess, mock_compile_eval
+    ) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        mock_preprocess.return_value = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::MyStatus", "my::ns::MyStatusCode::kOk", "kOk", "kErr") '
+            '_PW_ENUM_MACRO_END;\n'
+        )
+        mock_compile_eval.return_value = iter(
+            [
+                EnumValue(cc_name="kOk", value=0, name="OK"),
+                EnumValue(cc_name="kErr", value=1, name="ERR"),
+            ]
+        )
+        results = list(parse_enums(test_file, "clang++", [], Path("base.cc")))
+        self.assertEqual(len(results), 1)
+        status = results[0].status
+        assert isinstance(status, StatusInfo)
+        self.assertEqual(status.ok_code, "kOk")
+
+    @mock.patch("pw_enum.parse._compile_and_evaluate")
+    @mock.patch("pw_enum.parse._preprocess_header")
+    def test_parse_enums_status_ok_name_not_ok_code_error(
+        self, mock_preprocess, mock_compile_eval
+    ) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        mock_preprocess.return_value = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::HwStatus", "my::ns::HwStatusCode::kReady", "kReady", '
+            '"kOk") _PW_ENUM_MACRO_END;\n'
+        )
+        mock_compile_eval.return_value = iter(
+            [
+                EnumValue(cc_name="kReady", value=0, name="READY"),
+                EnumValue(cc_name="kOk", value=1, name="OK"),
+            ]
+        )
+        with self.assertRaisesRegex(
+            ParseError,
+            r"PW_ENUM_STATUS\(HwStatus\): kOk is not the OK code \(kReady\)",
+        ):
+            list(parse_enums(test_file, "clang++", [], Path("base.cc")))
+
+    @mock.patch("pw_enum.parse._compile_and_evaluate")
+    @mock.patch("pw_enum.parse._preprocess_header")
+    def test_parse_enums_status_ok_name_alias_of_ok_code(
+        self, mock_preprocess, mock_compile_eval
+    ) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        mock_preprocess.return_value = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::HwStatus", "my::ns::HwStatusCode::kReady", "kReady", '
+            '"OK", "kError") _PW_ENUM_MACRO_END;\n'
+        )
+        mock_compile_eval.return_value = iter(
+            [
+                EnumValue(cc_name="kReady", value=0, name="READY"),
+                EnumValue(cc_name="OK", value=0, name="OK"),
+                EnumValue(cc_name="kError", value=1, name="ERROR"),
+            ]
+        )
+        results = list(parse_enums(test_file, "clang++", [], Path("base.cc")))
+        self.assertEqual(len(results), 1)
+
+    def test_is_ok_name(self) -> None:
+        for name in ("kOk", "kOK", "OK", "Ok", "ok"):
+            self.assertTrue(is_ok_name(name), name)
+        for name in ("kOkay", "kReady", "k", "kok", "Okay"):
+            self.assertFalse(is_ok_name(name), name)
+
+    def test_status_enum_unregistered_ok_code_error(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        text = (
+            f'# 1 "{test_file.resolve()}"\n'
+            '_PW_ENUM_STATUS_MUST_BE_COMPILED_BY_pw_cc_enum('
+            '"my::ns::BadOk", "my::ns::BadOkCode::kMissing", "kA", "kB") '
+            '_PW_ENUM_MACRO_END;\n'
+        )
+        with self.assertRaisesRegex(
+            ParseError,
+            r"PW_ENUM_STATUS OK code 'my::ns::BadOkCode::kMissing' is not a "
+            r"registered enumerator",
+        ):
+            _parse_preprocessed_header(text, test_file)
 
     def test_missing_macro_error(self) -> None:
         test_file = Path(self.test_dir.name) / "test_enum.h"

@@ -23,6 +23,16 @@ load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 # set by create_compile_variables().
 _UNSUPPORTED_FEATURES = ["module_maps", "use_header_modules"]
 
+# Generated headers include pw_status for PW_ENUM_STATUS declarations.
+_PW_STATUS = Label("//pw_status")
+
+def _with_pw_status(deps):
+    """Adds pw_status to deps, unless it is already present."""
+    for dep in deps:
+        if native.package_relative_label(dep) == _PW_STATUS:
+            return deps
+    return deps + [str(_PW_STATUS)]
+
 def _pw_cc_enum_generator_impl(ctx):
     internal_lib = ctx.attr.internal_lib
     comp_context = internal_lib[CcInfo].compilation_context
@@ -211,7 +221,7 @@ def pw_cc_enum_library(
             "//pw_enum:_generate_internal_do_not_use",
             "//pw_log:args",
             "//pw_tokenizer",
-        ] + deps,
+        ] + _with_pw_status(deps),
         visibility = visibility,
         **kwargs
     )

@@ -94,9 +94,11 @@ if (host_os != "win") {
     deps = [
       ":pw_status",
       ":status_test_enum",
+      "$dir_pw_result",
       "$dir_pw_unit_test:constexpr",
     ]
     sources = [ "status_base_enum_test.cc" ]
+    negative_compilation_tests = true
   }
 }
 

@@ -60,7 +60,7 @@ inline constexpr bool has_enum_to_string_v =
 
 /// Returns a string representation of a given enumerator.
 ///
-/// Enums registered with `PW_ENUM` or `PW_STATUS_ENUM` from
+/// Enums registered with `PW_ENUM` or `PW_ENUM_STATUS` from
 /// `pw_enum/generate.h` support `EnumToString` automatically via
 /// `pw::EnumTraits<T>::ToString`.
 ///

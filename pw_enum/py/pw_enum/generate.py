@@ -28,6 +28,8 @@ try:
         parse_enums,
         ParseError,
         camel_to_upper_snake,
+        is_ok_name,
+        StatusInfo,
     )
 except ImportError:  # Support running without installing this Python package.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -37,6 +39,8 @@ except ImportError:  # Support running without installing this Python package.
         parse_enums,
         ParseError,
         camel_to_upper_snake,
+        is_ok_name,
+        StatusInfo,
     )
 
 
@@ -232,9 +236,125 @@ def _generate_tokenization(
     yield ");"
 
 
+_STATUS_BASE_MEMBERS = frozenset(
+    ("Code", "ok", "code", "Update", "IgnoreError", "str")
+)
+
+
+def _status_factory_name(cc_name: str) -> str | None:
+    if cc_name.startswith("k") and len(cc_name) > 1 and cc_name[1].isupper():
+        return cc_name[1:]
+    return None
+
+
+def _generate_status_members(
+    enum_desc: EnumDescriptor, status: StatusInfo
+) -> Iterator[str]:
+    """Generates the factory and Is*() functions for a PW_ENUM_STATUS."""
+    reserved = _STATUS_BASE_MEMBERS | {status.name}
+    defined: set[str] = set()
+
+    def skip_reason_for(fn_name: str) -> str | None:
+        if fn_name in reserved:
+            return f"{fn_name}() conflicts with a StatusBase member"
+        if fn_name in defined:
+            return f"{fn_name}() is already defined"
+        return None
+
+    # Factories are not generated for the OK code (or its aliases); OK statuses
+    # are default constructed.
+    ok_values = [
+        v.value for v in enum_desc.values if v.cc_name == status.ok_code
+    ]
+    assert ok_values, f"{status.ok_code} is not in {enum_desc.cc_full_name}"
+
+    for v in enum_desc.values:
+        skip_reason: str | None
+        fn_name = _status_factory_name(v.cc_name)
+        if fn_name is None:
+            skip_reason = "not a kEnumName-style name"
+        elif v.value == ok_values[0]:
+            skip_reason = f"OK code; use {status.name}() instead"
+        else:
+            skip_reason = skip_reason_for(fn_name)
+
+        yield ""
+        if skip_reason is not None:
+            yield (
+                f"  // PW_ENUM_STATUS: No factory for {v.cc_name}: "
+                f"{skip_reason}."
+            )
+            continue
+
+        assert fn_name is not None
+        defined.add(fn_name)
+        yield (
+            f"  [[nodiscard]] static constexpr {status.name}" f" {fn_name}() {{"
+        )
+        yield f"    return {status.name}(Code::{v.cc_name});"
+        yield "  }"
+
+    # Is*() functions are generated for every code, including OK codes, except
+    # for codes named OK, since IsOk() would duplicate ok().
+    for v in enum_desc.values:
+        fn_name = _status_factory_name(v.cc_name)
+        if fn_name is None:
+            skip_reason = "not a kEnumName-style name"
+        elif is_ok_name(v.cc_name):
+            skip_reason = "use ok() instead"
+        else:
+            fn_name = f"Is{fn_name}"
+            skip_reason = skip_reason_for(fn_name)
+
+        yield ""
+        if skip_reason is not None:
+            yield (
+                f"  // PW_ENUM_STATUS: No Is*() function for {v.cc_name}: "
+                f"{skip_reason}."
+            )
+            continue
+
+        assert fn_name is not None
+        defined.add(fn_name)
+        yield f"  [[nodiscard]] constexpr bool {fn_name}() const {{"
+        yield f"    return code() == Code::{v.cc_name};"
+        yield "  }"
+
+
+def _generate_status_class(enum_desc: EnumDescriptor) -> Iterator[str]:
+    """Generates the StatusBase-derived class for a PW_ENUM_STATUS."""
+    assert enum_desc.status is not None
+    status = enum_desc.status
+    ok_code = status.ok_code
+    ok_expr = (
+        f"{enum_desc.name}::{ok_code}"
+        if enum_desc.scopes == status.scopes
+        else f"{enum_desc.cc_full_name}::{ok_code}"
+    )
+
+    if status.scopes:
+        yield f"namespace {'::'.join(status.scopes)} {{"
+
+    yield f"class [[nodiscard]] {status.name} final"
+    yield f"    : public ::pw::StatusBase<{status.name}, {ok_expr}> {{"
+    yield " public:"
+    yield f"  constexpr {status.name}() = default;"
+    yield f"  explicit constexpr {status.name}(Code code)"
+    yield f"      : ::pw::StatusBase<{status.name}, {ok_expr}>(code) {{}}"
+    yield from _generate_status_members(enum_desc, status)
+    yield "};"
+
+    if status.scopes:
+        yield f"}}  // namespace {'::'.join(status.scopes)}"
+
+
 def _generate_single_enum_footer(enum_desc: EnumDescriptor) -> Iterator[str]:
     value_groups = _group_by_value(enum_desc)
     distinct_values = [group[0] for group in value_groups]
+
+    if enum_desc.status is not None:
+        yield from _generate_status_class(enum_desc)
+        yield ""
 
     yield from _generate_macro_defs(enum_desc)
     yield ""
@@ -249,6 +369,8 @@ def generate_footer(enums: list[EnumDescriptor]) -> Iterator[str]:
     if not enums_with_values:
         return
 
+    if any(e.status is not None for e in enums_with_values):
+        yield '#include "pw_status/status_base.h"'
     yield '#include "pw_tokenizer/enum.h"'
 
     for enum_desc in enums_with_values:
@@ -256,7 +378,7 @@ def generate_footer(enums: list[EnumDescriptor]) -> Iterator[str]:
         yield from _generate_single_enum_footer(enum_desc)
 
 
-_PW_ENUM_MACRO = re.compile(r'\bPW_ENUM(?=\s*\()')
+_PW_ENUM_MACRO = re.compile(r'\bPW_ENUM(?:_STATUS)?(?=\s*\()')
 
 
 def _write_generated_header(
@@ -274,7 +396,9 @@ def _write_generated_header(
         for line_num, line in enumerate(infile, 1):
             if line_num in enum_lines:
                 line, count = _PW_ENUM_MACRO.subn("_PW_ENUM_GENERATED", line)
-                assert count > 0, f"Expected PW_ENUM() on line {line_num}"
+                assert (
+                    count > 0
+                ), f"Expected PW_ENUM() or PW_ENUM_STATUS() on line {line_num}"
             outfile.write(line)
 
         outfile.write("\n\n// --- pw_enum generated footer ---\n\n")

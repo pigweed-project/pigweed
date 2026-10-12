@@ -137,6 +137,7 @@ function(pw_add_enum_library NAME)
     HEADERS
       ${other_headers}
     PUBLIC_DEPS
+      pw_status
       pw_tokenizer
       pw_enum._generate_internal_do_not_use
       ${arg_PUBLIC_DEPS}

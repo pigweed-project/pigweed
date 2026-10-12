@@ -42,6 +42,16 @@ class EnumValue:
     name: str
 
 
+@dataclass(frozen=True)
+class StatusInfo:
+    """PW_ENUM_STATUS metadata for an EnumDescriptor."""
+
+    name: str
+    scopes: tuple[str, ...]
+    cc_full_name: str
+    ok_code: str
+
+
 _Values = TypeVar('_Values')
 
 
@@ -52,6 +62,7 @@ class _ParsedEnum(Generic[_Values]):
     cc_full_name: str
     line: int
     values: tuple[_Values, ...]
+    status: StatusInfo | None = None
 
 
 _ParsedEnums = list[_ParsedEnum[tuple[str, str]]]
@@ -162,6 +173,7 @@ def _parse_type_name(
     enum_type_name: str,
     current_line: int,
     path: Path,
+    macro: str = "PW_ENUM",
 ) -> tuple[str, tuple[str, ...], str]:
     """Parses scopes and name, returning (name, scopes, cc_full_name)."""
     cc_full_name = enum_type_name.strip()
@@ -169,18 +181,25 @@ def _parse_type_name(
         cc_full_name = "::" + cc_full_name
 
     type_parts = tuple(p.strip() for p in cc_full_name.split("::") if p.strip())
-    if not type_parts:
-        _raise_error("Invalid enum name in PW_ENUM", current_line, path)
+    if not type_parts or any(not _IDENTIFIER.match(p) for p in type_parts):
+        _raise_error(f"Invalid enum name in {macro}", current_line, path)
 
     if len(type_parts) < 2:
         _raise_error(
-            "PW_ENUM requires a fully qualified name with at least one "
+            f"{macro} requires a fully qualified name with at least one "
             "namespace (e.g. my_ns::MyEnum)",
             current_line,
             path,
         )
 
-    return type_parts[-1], type_parts[:-1], cc_full_name
+    return type_parts[-1], type_parts[:-1], "::" + "::".join(type_parts)
+
+
+def is_ok_name(cc_name: str) -> bool:
+    """True for enumerators named OK (e.g. kOk, OK), which mirror ok()."""
+    if cc_name.startswith("k") and len(cc_name) > 1 and cc_name[1].isupper():
+        cc_name = cc_name[1:]
+    return cc_name.lower() == "ok"
 
 
 def _default_display_name(cc_name: str) -> str:
@@ -191,7 +210,8 @@ def _default_display_name(cc_name: str) -> str:
 
 
 _ENUM_MARKER = re.compile(
-    r'_PW_ENUM_MUST_BE_COMPILED_BY_pw_cc_enum\s*(\(.*?\))\s+_PW_ENUM_MACRO_END',
+    r'_(?P<kind>PW_ENUM(?:_STATUS)?)_MUST_BE_COMPILED_BY_pw_cc_enum\s*'
+    r'(\(.*?\))\s+_PW_ENUM_MACRO_END',
     re.DOTALL,
 )
 _LINE_MARKER = re.compile(r'^#\s+(\d+)\s+"([^"]+)"[^\n]*\n', re.MULTILINE)
@@ -303,9 +323,104 @@ def _same_file(a: Path, b: Path) -> bool:
     )
 
 
+def _parse_enum_status_args(
+    args: tuple[str, ...],
+    line: int,
+    path: Path,
+) -> _ParsedEnum[tuple[str, str]]:
+    """Parses arguments to PW_ENUM_STATUS(status_name, ok_code, ...)."""
+    if len(args) < 2 or not args[0].strip() or not args[1].strip():
+        _raise_error(
+            "PW_ENUM_STATUS requires a status class name, the OK enumerator "
+            "(e.g. MyCode::kOk), and at least one enumerator",
+            line,
+            path,
+        )
+
+    status_name, status_scopes, status_cc_full_name = _parse_type_name(
+        args[0], line, path, macro="PW_ENUM_STATUS"
+    )
+    values = tuple(_parse_enumerators(args[2:], line, path))
+    if not values:
+        _raise_error(
+            "PW_ENUM_STATUS requires at least one enumerator", line, path
+        )
+
+    raw_ok_arg = args[1].strip()
+    parts = tuple(p.strip() for p in raw_ok_arg.split("::") if p.strip())
+    if not parts or any(not _IDENTIFIER.match(p) for p in parts):
+        _raise_error(
+            f"Invalid OK enumerator in PW_ENUM_STATUS: {raw_ok_arg}",
+            line,
+            path,
+        )
+    if len(parts) < 2:
+        _raise_error(
+            "PW_ENUM_STATUS requires the OK enumerator including its enum type "
+            f"(e.g. MyCode::kOk): {raw_ok_arg}",
+            line,
+            path,
+        )
+
+    ok_code = parts[-1]
+    enum_name = parts[-2]
+
+    # A leading :: always indicates a fully qualified name. Otherwise, an
+    # unqualified enum (Enum::kOk) is in the status class's namespace. Enums in
+    # other namespaces or nested in classes must be fully qualified.
+    if raw_ok_arg.startswith("::") or len(parts) > 2:
+        enum_scopes = parts[:-2]
+    else:
+        enum_scopes = status_scopes
+
+    if not enum_scopes:
+        _raise_error(
+            "PW_ENUM_STATUS requires the OK enumerator's enum type to be in a "
+            f"namespace (e.g. my_ns::MyCode::kOk): {raw_ok_arg}",
+            line,
+            path,
+        )
+
+    enum_parts = enum_scopes + (enum_name,)
+    enum_cc_full_name = "::" + "::".join(enum_parts)
+
+    if ok_code not in {cc_name for cc_name, _ in values}:
+        _raise_error(
+            f"PW_ENUM_STATUS OK code '{raw_ok_arg}' is not a registered "
+            "enumerator; the second argument must specify the OK enumerator "
+            "(e.g. MyCode::kOk)",
+            line,
+            path,
+        )
+
+    if status_cc_full_name == enum_cc_full_name:
+        _raise_error(
+            f"PW_ENUM_STATUS status class and enum cannot have the same name "
+            f"({status_cc_full_name})",
+            line,
+            path,
+        )
+
+    return _ParsedEnum(
+        name=enum_name,
+        scopes=enum_scopes,
+        cc_full_name=enum_cc_full_name,
+        line=line,
+        values=values,
+        status=StatusInfo(
+            name=status_name,
+            scopes=status_scopes,
+            cc_full_name=status_cc_full_name,
+            ok_code=ok_code,
+        ),
+    )
+
+
 def _parse_preprocessed_header(source: str, path: Path) -> _ParsedEnums:
     """Parses the preprocessed output to identify enum macros and lines."""
     enums: _ParsedEnums = []
+    seen_status_names: set[str] = set()
+    seen_enum_names: set[str] = set()
 
     for match in _ENUM_MARKER.finditer(source):
         line, file = _find_line_and_file_for_offset(source, match.start())
@@ -313,26 +428,49 @@ def _parse_preprocessed_header(source: str, path: Path) -> _ParsedEnums:
         if not _same_file(file, path):
             continue
 
-        args = _parse_macro_args(match.group(1).strip(), line, file)
+        args = _parse_macro_args(match.group(2).strip(), line, file)
 
-        if not args or not args[0].strip():
-            _raise_error("PW_ENUM requires at least an enum name", line, file)
-
-        enum_name, scopes, cc_full_name = _parse_type_name(args[0], line, path)
-        enums.append(
-            _ParsedEnum(
+        if match.group("kind") == "PW_ENUM_STATUS":
+            parsed = _parse_enum_status_args(args, line, path)
+            assert parsed.status is not None
+            if parsed.status.cc_full_name in seen_status_names:
+                _raise_error(
+                    f"PW_ENUM_STATUS({parsed.status.name}) is declared "
+                    "multiple times",
+                    line,
+                    file,
+                )
+            seen_status_names.add(parsed.status.cc_full_name)
+        else:
+            if not args or not args[0].strip():
+                _raise_error(
+                    "PW_ENUM requires at least an enum name", line, file
+                )
+            enum_name, scopes, cc_full_name = _parse_type_name(
+                args[0], line, path
+            )
+            parsed = _ParsedEnum(
                 name=enum_name,
                 scopes=scopes,
                 cc_full_name=cc_full_name,
                 line=line,
                 values=tuple(_parse_enumerators(args[1:], line, path)),
             )
-        )
+
+        if parsed.cc_full_name in seen_enum_names:
+            _raise_error(
+                f"Enum {parsed.cc_full_name} is registered multiple times",
+                line,
+                file,
+            )
+        seen_enum_names.add(parsed.cc_full_name)
+        enums.append(parsed)
 
     if not enums:
         raise ParseError(
             f"{path}: pw_cc_enum headers must contain at least one call "
-            "to PW_ENUM(); move headers without PW_ENUM() to regular libraries"
+            "to PW_ENUM() or PW_ENUM_STATUS(); move headers without them to "
+            "regular libraries"
         )
 
     return enums
@@ -419,6 +557,29 @@ def _compile_and_evaluate(
     return _parse_evaluation_output(proc.stderr, flattened_enumerators)
 
 
+def _check_ok_names(
+    enum: _ParsedEnum[tuple[str, str]],
+    values: Sequence[EnumValue],
+    path: Path,
+) -> None:
+    """Rejects codes named OK that are not the status's OK code.
+
+    A code named OK that isn't the OK code would contradict ok(). Aliases of
+    the OK code are permitted.
+    """
+    assert enum.status is not None
+    ok_value = next(v.value for v in values if v.cc_name == enum.status.ok_code)
+    for v in values:
+        if is_ok_name(v.cc_name) and v.value != ok_value:
+            _raise_error(
+                f"PW_ENUM_STATUS({enum.status.name}): {v.cc_name} is not the "
+                f"OK code ({enum.status.ok_code}); codes named OK must be the "
+                "OK code since they conflict with ok()",
+                enum.line,
+                path,
+            )
+
+
 def parse_enums(
     path: Path,
     compiler: str,
@@ -442,10 +603,15 @@ def parse_enums(
             raise ParseError(
                 "Internal error: extracted fewer enum values than parsed"
             ) from exc
+
+        if enum.status is not None:
+            _check_ok_names(enum, values, path)
+
         yield EnumDescriptor(
             name=enum.name,
             scopes=enum.scopes,
             cc_full_name=enum.cc_full_name,
             line=enum.line,
             values=values,
+            status=enum.status,
         )

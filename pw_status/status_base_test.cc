@@ -396,6 +396,38 @@ PW_CONSTEXPR_TEST(StatusBaseTest, ExampleCustomEnum, {
   PW_TEST_EXPECT_EQ(fail_status.code(), DriverError::kBusFault);
 });
 
+// DOCSTAG: [pw_status-status_base-subclass]
+enum class SensorError : uint8_t {
+  kOk,
+  kBusy,
+  kCalibrationFailed,
+};
+
+class [[nodiscard]] SensorStatus final
+    : public pw::StatusBase<SensorStatus, SensorError::kOk> {
+ public:
+  constexpr SensorStatus() = default;
+  explicit constexpr SensorStatus(Code code) : StatusBase(code) {}
+
+  // Subclasses may add domain-specific helpers.
+  [[nodiscard]] constexpr bool IsRetryable() const {
+    return code() == Code::kBusy;
+  }
+};
+// DOCSTAG: [pw_status-status_base-subclass]
+
+PW_CONSTEXPR_TEST(StatusBaseTest, ExampleSubclass, {
+  SensorStatus ok_status;
+  PW_TEST_EXPECT_TRUE(ok_status.ok());
+  PW_TEST_EXPECT_FALSE(ok_status.IsRetryable());
+
+  SensorStatus busy(SensorError::kBusy);
+  PW_TEST_EXPECT_FALSE(busy.ok());
+  PW_TEST_EXPECT_TRUE(busy.IsRetryable());
+  PW_TEST_EXPECT_FALSE(
+      SensorStatus(SensorError::kCalibrationFailed).IsRetryable());
+});
+
 #if defined(__cpp_using_enum)
 // C++20 subclass pattern
 class [[nodiscard]] Cxx20DriverStatus final

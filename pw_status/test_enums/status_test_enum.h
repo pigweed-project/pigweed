@@ -25,6 +25,28 @@ enum class GeneratedEnum : uint8_t {
   kPermissionDenied = 2,
 };
 
+enum class TestStatusCode : uint8_t {
+  kOk = 0,
+  kNotFound = 1,
+  kPermissionDenied = 2,
+};
+
+enum class NonZeroOkStatusCode {
+  kBusy = 0,
+  kReady = 1,
+  kError = 2,
+};
+
 }  // namespace pw::status_test
 
 PW_ENUM(pw::status_test::GeneratedEnum, kOk, kNotFound, kPermissionDenied);
+PW_ENUM_STATUS(pw::status_test::TestStatus,
+               TestStatusCode::kOk,
+               kOk,
+               kNotFound,
+               kPermissionDenied);
+PW_ENUM_STATUS(pw::status_test::NonZeroOkStatus,
+               pw::status_test::NonZeroOkStatusCode::kReady,
+               kBusy,
+               kReady,
+               kError);

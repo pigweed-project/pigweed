@@ -84,9 +84,11 @@ pw_cc_test(
 pw_cc_test(
     name = "status_base_enum_test",
     srcs = ["status_base_enum_test.cc"],
+    has_nc_test = True,
     deps = [
         ":pw_status",
         ":status_test_enum",
+        "//pw_result",
         "//pw_unit_test:constexpr",
     ],
 )

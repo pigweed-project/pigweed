@@ -10,8 +10,8 @@ pw_status
      :cc:`PW_TRY`
    - **Efficient**: No memory allocation, no exceptions
    - **Established**: Just like ``absl::Status``, deployed extensively at Google
-   - **Customizable**: Create custom status types for domain-specific enums or
-     codes with :cc:`pw::StatusBase`
+   - **Customizable**: Create custom status types for domain-specific error
+     codes with :ref:`pw_enum <module-pw_status-guide-custom-status>`
 
    :cc:`pw::Status` is Pigweed's error propagation primitive, enabling
    exception-free error handling. The primary feature of ``pw_status`` is the
@@ -147,32 +147,32 @@ Custom status codes with StatusBase
 -----------------------------------
 :cc:`pw::StatusBase` is a base class template that provides Pigweed status
 semantics for custom code types, such as domain-specific error enums or integer
-codes. A designated code value represents success (``ok() == true``).
+codes. It provides ``ok()`` checks, ``[[nodiscard]]`` enforcement, and error
+propagation with :cc:`PW_TRY` and :cc:`pw::Result`. Pigweed's standard
+:cc:`pw::Status` is itself implemented as a concrete class inheriting from
+``StatusBase<Status, PW_STATUS_OK>``.
 
-Pigweed's standard :cc:`pw::Status` is itself implemented as a concrete class
-inheriting from ``StatusBase<Status, PW_STATUS_OK>``.
-
-Custom status types can be defined using the :c:macro:`PW_STATUS_TYPE` macro
-or by directly subclassing :cc:`pw::StatusBase`:
-
-* **Macro**: ``PW_STATUS_TYPE(MyStatus, MyEnum::kOk)`` defines a final status
-  class with ``[[nodiscard]]``. The status code must be an enum.
-* **Subclass**: Subclassing ``pw::StatusBase<MyStatus, MyEnum::kOk>`` directly
-  (using the Curiously Recurring Template Pattern / CRTP) allows
-  customizing the status class with additional domain-specific member functions.
-  Derived classes should be declared ``[[nodiscard]]`` and define constructors
-  forwarding to ``StatusBase``, whose constructors are protected.
-
-Custom status types are constructed from a status code (e.g.
+Each ``StatusBase`` specialization designates one code value as success (``ok()
+== true``). Custom status types are constructed from a status code (e.g.
 ``MyStatus(MyStatus::Code::kFailed)``). They default construct to the OK code.
-The code type is available as ``MyStatus::Code``.
+The underlying code type is aliased as ``MyStatus::Code``.
 
-Custom error enums
-==================
-Many drivers and hardware interfaces define their own error enumerations.
-``StatusBase`` allows using these enumerations while retaining status semantics,
-including ``.ok()`` checks, ``[[nodiscard]]`` enforcement, and error propagation
-with :cc:`PW_TRY`:
+Enum status codes
+=================
+Enums are recommended for custom status codes because they prevent arbitrary or
+unknown values and allow the compiler to warn about unhandled cases in
+``switch`` statements.
+
+The recommended way to define an enum-based status type is with
+:ref:`module-pw_enum`'s :cc:`PW_ENUM_STATUS` macro (see
+:ref:`module-pw_status-guide-custom-status`). ``PW_ENUM_STATUS`` generates a
+``StatusBase``-derived class from an enum, complete with a factory function for
+each error code, ``Is*()`` query functions, stringification, and tokenized
+logging support.
+
+If not using ``pw_enum``, the :c:macro:`PW_STATUS_TYPE` macro (:ref:`guide
+<module-pw_status-guide-custom-status-type>`) defines a minimal ``final``,
+``[[nodiscard]]`` status class wrapping an existing enum:
 
 .. literalinclude:: status_base_test.cc
    :language: cpp
@@ -186,6 +186,9 @@ Callers inspect the status or compare it directly against the underlying enum:
    :dedent:
    :start-after: [pw_status-status_base-caller]
    :end-before: [pw_status-status_base-caller]
+
+To fully customize the status class, :ref:`subclass StatusBase directly
+<module-pw_status-guide-custom-status-manual>`.
 
 Non-enum status codes
 =====================

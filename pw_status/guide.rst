@@ -93,7 +93,7 @@ Guides
 ------
 
 Tracking the first error encountered
-------------------------------------
+====================================
 In some contexts it is useful to track the first error encountered while
 allowing execution to continue. Manually writing out ``if`` statements to check
 and then assign quickly becomes verbose, and doesn't explicitly highlight the
@@ -139,6 +139,84 @@ highlight the intended behavior.
         }
       }
       return overall_status;
+
+.. _module-pw_status-guide-custom-status:
+
+Defining custom status types
+============================
+Many drivers and subsystems have their own set of error codes. Rather than
+mapping them onto the built-in :cc:`pw::Status` codes, define a custom status
+type that wraps the domain-specific enum while retaining status semantics:
+``ok()`` checks, ``[[nodiscard]]`` enforcement, and error propagation with
+:cc:`PW_TRY` and :cc:`pw::Result`.
+
+The recommended way to define a custom status type is with
+:ref:`module-pw_enum`'s ``PW_ENUM_STATUS`` macro. Declare the status code enum
+in a ``pw_cc_enum_library`` header, then register it with ``PW_ENUM_STATUS``.
+The first argument is the fully qualified name of the status class to
+generate. The second argument is the enumerator that represents success,
+including its enum type (e.g. ``I2cStatusCode::kOk``); its namespace is
+inferred from the status class if omitted.
+
+.. literalinclude:: ../pw_enum/examples/private/enum_example/i2c_status.h
+   :language: cpp
+   :start-after: [pw_enum-examples-status-enum]
+   :end-before: [pw_enum-examples-status-enum]
+
+.. literalinclude:: ../pw_enum/examples/BUILD.bazel
+   :language: python
+   :start-after: [pw_enum-examples-status-enum-bazel]
+   :end-before: [pw_enum-examples-status-enum-bazel]
+
+This generates a ``[[nodiscard]]`` class named ``I2cStatus`` that inherits from
+:cc:`pw::StatusBase`, with:
+
+* Access to the underlying status code enum via ``I2cStatus::Code`` (e.g.
+  ``I2cStatus::Code::kNack``).
+* Static factory functions for non-OK ``kEnumName``-style enumerators (e.g.
+  ``I2cStatus::Nack()``, ``I2cStatus::Timeout()``). No factory is generated for
+  the OK code; default construct (``I2cStatus()``) for OK.
+* ``Is*()`` query functions (e.g. ``status.IsNack()``). ``IsOk()`` is omitted
+  for codes named OK, since ``ok()`` serves that purpose.
+* Explicit construction from ``I2cStatus::Code`` (e.g.
+  ``I2cStatus(I2cStatus::Code::kNack)``).
+* Stringification via ``.str()`` and :cc:`pw::EnumToString`.
+* Native support in :cc:`PW_TRY` and :ref:`module-pw_log`.
+
+.. literalinclude:: ../pw_enum/examples/status_enum_test.cc
+   :language: cpp
+   :start-after: [pw_enum-examples-status-enum-usage]
+   :end-before: [pw_enum-examples-status-enum-usage]
+
+See :ref:`module-pw_enum` for details.
+
+.. _module-pw_status-guide-custom-status-type:
+
+Alternative: PW_STATUS_TYPE
+---------------------------
+If the status code enum cannot be declared in a ``pw_cc_enum_library``,
+:cc:`PW_STATUS_TYPE` wraps an existing enum with a :cc:`pw::StatusBase`-derived
+class. It does not generate factory functions, and ``str()`` requires the enum
+to support :cc:`pw::EnumToString` (e.g. by registering it with ``PW_ENUM``).
+
+.. literalinclude:: status_base_test.cc
+   :language: cpp
+   :start-after: [pw_status-status_base-custom_enum]
+   :end-before: [pw_status-status_base-custom_enum]
+
+.. _module-pw_status-guide-custom-status-manual:
+
+Alternative: Manual definition
+------------------------------
+To add domain-specific member functions, subclass :cc:`pw::StatusBase`
+directly. Pass the derived class and the OK code as template arguments. Declare
+the class ``[[nodiscard]]`` and define constructors that forward to
+``StatusBase``, whose constructors are protected.
+
+.. literalinclude:: status_base_test.cc
+   :language: cpp
+   :start-after: [pw_status-status_base-subclass]
+   :end-before: [pw_status-status_base-subclass]
 
 .. _module-pw_status-guide-status-with-size:
 

@@ -83,6 +83,8 @@ pw_add_test(pw_status.status_base_enum_test
   SOURCES
     status_base_enum_test.cc
   PRIVATE_DEPS
+    pw_compilation_testing._pigweed_only_negative_compilation
+    pw_result
     pw_status
     pw_status.status_test_enum
     pw_unit_test.constexpr
