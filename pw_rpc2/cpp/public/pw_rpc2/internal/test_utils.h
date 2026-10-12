@@ -31,11 +31,12 @@
 #include "pw_containers/inline_deque.h"
 #include "pw_result/result.h"
 #include "pw_rpc2/client.h"
-#include "pw_rpc2/internal/connection_task.h"
+#include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/handshake.h"
 #include "pw_rpc2/internal/method_info.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/serialize.h"
+#include "pw_rpc2/internal/server_connection_task.h"
 #include "pw_rpc2/method_type.h"
 #include "pw_status/status.h"
 #include "pw_sync/interrupt_spin_lock.h"
@@ -168,29 +169,13 @@ Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
                          transport::ReliableDatagramSocket connection,
                          MockConnection& raw_connection);
 
-/// A connection that hosts calls but serves nothing. When posted, it handles
-/// packets for its calls and rejects requests to start new ones.
-class TestConnectionTask final : public internal::ConnectionTask {
- public:
-  TestConnectionTask(
-      internal::EstablishedConnection established_connection,
-      pw::Allocator& allocator,
-      internal::EndpointRole role = internal::EndpointRole::kServer)
-      : ConnectionTask(std::move(established_connection), allocator, role) {}
-
-  ~TestConnectionTask() override { Teardown(); }
-
- private:
-  bool PollOpenConnection(async2::Context& cx) override {
-    return PendPackets(cx);
-  }
-
-  void HandleIncomingRequest(internal::InboundPacket&& packet) override {
-    QueueError(packet.call_id(), internal::ProtocolStatus::kUnknownService);
-  }
-
-  void OnClosed() override {}
-};
+/// Starts a call on `connection_task` as the server does for a request, but
+/// without invoking a method. The test acts as the method, using handles
+/// created from the returned call.
+IntrusivePtr<internal::Call> StartServerCall(
+    internal::ServerConnectionTask& connection_task,
+    uint32_t call_id,
+    pw::Allocator& allocator);
 
 /// Decodes a payload recorded by `MockPeer` into a message.
 ///

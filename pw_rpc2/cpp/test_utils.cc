@@ -25,8 +25,10 @@
 #include "pw_log/log.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/handshake.h"
+#include "pw_rpc2/internal/method.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/packet_testing.h"
+#include "pw_rpc2/internal/server_call.h"
 
 namespace pw::rpc2::test {
 
@@ -131,6 +133,21 @@ Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
   PW_CHECK(connect.has_value(), "The client did not complete the handshake");
   PW_CHECK_OK(connect.value().status());
   return std::move(*connect.value());
+}
+
+IntrusivePtr<internal::Call> StartServerCall(
+    internal::ServerConnectionTask& connection_task,
+    uint32_t call_id,
+    pw::Allocator& allocator) {
+  static constexpr internal::Method kMethod(
+      1, MethodType::kBidirectionalStreaming, 0, nullptr);
+
+  auto call = internal::ServerCall::Allocate(
+      connection_task, call_id, kMethod, allocator);
+  PW_CHECK_OK(call.status());
+  // Finish as if the method had returned, leaving its handles to the test.
+  (*call)->FinishInvocation();
+  return (*call)->shared_call();
 }
 
 MockPeer MakeMockPeer(async2::RunnableDispatcher& dispatcher,

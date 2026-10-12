@@ -488,7 +488,7 @@ TEST(CallTest, ClientCallAutoDetachesOnBothSidesClosed) {
 TEST(CallTest, CallOutlivesItsConnection) {
   allocator::test::AllocatorForTest<16384> allocator;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = allocator.MakeShared<test::TestConnectionTask>(
+  auto connection_task = allocator.MakeShared<ClientConnectionTask>(
       EstablishedConnection{std::move(conn)}, allocator);
   ASSERT_NE(connection_task, nullptr);
 

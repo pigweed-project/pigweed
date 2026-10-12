@@ -24,6 +24,8 @@
 #include "pw_rpc2/internal/client_connection_task.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/packet_testing.h"
+#include "pw_rpc2/internal/server_connection_task.h"
+#include "pw_rpc2/internal/server_task.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/writer.h"
@@ -500,14 +502,12 @@ TEST(RawWriterTest, DestructorEndsStreamNormally) {
 TEST(RawWriterTest, UnaryWriterDestructorCancels) {
   allocator::test::AllocatorForTest<4096> allocator;
   async2::DispatcherForTest dispatcher;
+  internal::ServerTask server(allocator, dispatcher);
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = allocator.MakeShared<test::TestConnectionTask>(
-      internal::EstablishedConnection{std::move(conn)},
-      allocator,
-      internal::EndpointRole::kServer);
-  auto call = internal::ClientCall::Create(*connection_task, 56u, allocator);
-  ASSERT_NE(call, nullptr);
+  auto connection_task = allocator.MakeShared<internal::ServerConnectionTask>(
+      internal::EstablishedConnection{std::move(conn)}, allocator, server);
+  auto call = test::StartServerCall(*connection_task, 56u, allocator);
 
   {
     auto responder = internal::CallAccess::Create<RawUnaryWriter>(call);

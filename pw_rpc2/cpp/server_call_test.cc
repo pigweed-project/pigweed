@@ -21,9 +21,10 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_rpc2/internal/call.h"
-#include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/packet_testing.h"
+#include "pw_rpc2/internal/server_connection_task.h"
+#include "pw_rpc2/internal/server_task.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/writer.h"
@@ -134,15 +135,31 @@ class ReserveTestTask : public async2::Task {
 template <typename Fut>
 ReserveTestTask(Fut) -> ReserveTestTask<Fut>;
 
-TEST(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 50u, allocator);
-  ASSERT_NE(call, nullptr);
+// Each test starts calls on a real server connection and acts as their method.
+class ServerCallTest : public ::testing::Test {
+ protected:
+  ServerCallTest() {
+    auto [conn, raw_conn] = test::MakeMockConnection(allocator_);
+    raw_conn_ = raw_conn;
+    connection_task_ = dispatcher_.Post<internal::ServerConnectionTask>(
+        allocator_,
+        internal::EstablishedConnection{std::move(conn)},
+        allocator_,
+        server_);
+  }
+
+  // Unpost the connection while the server it refers to is still alive.
+  ~ServerCallTest() override { connection_task_->Deregister(); }
+
+  allocator::test::AllocatorForTest<8192> allocator_;
+  async2::DispatcherForTest dispatcher_;
+  internal::ServerTask server_{allocator_, dispatcher_};
+  test::MockConnection* raw_conn_ = nullptr;
+  SharedPtr<internal::ServerConnectionTask> connection_task_;
+};
+
+TEST_F(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
+  auto call = test::StartServerCall(*connection_task_, 50u, allocator_);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
@@ -150,14 +167,14 @@ TEST(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
 
   const auto resp_bytes = as_bytes(span("unary resp", 10));
   WriteTestTask task(responder.FinishCopy(ConstBuf::Unowned(resp_bytes)));
-  dispatcher.Post(task);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(task);
+  dispatcher_.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value() && task.result()->ok());
-  EXPECT_EQ(raw_conn->commit_count(), 1u);
+  EXPECT_EQ(raw_conn_->commit_count(), 1u);
 
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(decode_res->type(),
             (internal::PacketType::Make<flags::kServer,
@@ -168,19 +185,11 @@ TEST(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
   EXPECT_EQ(std::memcmp(decode_res->payload().data(), "unary resp", 10), 0);
 
   task.Deregister();
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, UnaryWriterFinishCopyReleasesOwnedResponseWhenSent) {
-  allocator::test::AllocatorForTest<16384> allocator;
+TEST_F(ServerCallTest, UnaryWriterFinishCopyReleasesOwnedResponseWhenSent) {
   allocator::test::AllocatorForTest<256> response_allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 51u, allocator);
-  ASSERT_NE(call, nullptr);
+  auto call = test::StartServerCall(*connection_task_, 51u, allocator_);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
@@ -190,38 +199,30 @@ TEST(ServerCallTest, UnaryWriterFinishCopyReleasesOwnedResponseWhenSent) {
 
   // `task` keeps the `WriteFuture` alive after it completes.
   WriteTestTask task(responder.FinishCopy(std::move(response)));
-  dispatcher.Post(task);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(task);
+  dispatcher_.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value() && task.result()->ok());
   EXPECT_EQ(response_allocator.metrics().allocated_bytes.value(), 0u);
 
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(decode_res->call_id(), 51u);
   ASSERT_EQ(decode_res->payload().size(), 5u);
   EXPECT_EQ(std::memcmp(decode_res->payload().data(), "owned", 5), 0);
 
   task.Deregister();
-  connection_task->Deregister();
 }
 
 // Typed writers copy encoded responses from a `ConstBuf` like raw writers do.
-TEST(ServerCallTest, TypedUnaryWriterFinishCopySendsBytes) {
+TEST_F(ServerCallTest, TypedUnaryWriterFinishCopySendsBytes) {
   struct TypedResponse {
     int value;
   };
 
-  allocator::test::AllocatorForTest<16384> allocator;
   allocator::test::AllocatorForTest<256> response_allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 52u, allocator);
-  ASSERT_NE(call, nullptr);
+  auto call = test::StartServerCall(*connection_task_, 52u, allocator_);
 
   auto responder =
       internal::CallAccess::Create<UnaryWriter<TypedResponse>>(std::move(call));
@@ -231,32 +232,24 @@ TEST(ServerCallTest, TypedUnaryWriterFinishCopySendsBytes) {
 
   // `task` keeps the `WriteFuture` alive after it completes.
   WriteTestTask task(responder.FinishCopy(std::move(response)));
-  dispatcher.Post(task);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(task);
+  dispatcher_.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value() && task.result()->ok());
   EXPECT_EQ(response_allocator.metrics().allocated_bytes.value(), 0u);
 
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(decode_res->call_id(), 52u);
   ASSERT_EQ(decode_res->payload().size(), 5u);
   EXPECT_EQ(std::memcmp(decode_res->payload().data(), "typed", 5), 0);
 
   task.Deregister();
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, UnaryWriterReserveThatOverflowsFails) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 55u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, UnaryWriterReserveThatOverflowsFails) {
+  auto call = test::StartServerCall(*connection_task_, 55u, allocator_);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
@@ -264,114 +257,90 @@ TEST(ServerCallTest, UnaryWriterReserveThatOverflowsFails) {
   // Adding the packet header to this size would wrap around.
   ReserveTestTask task(
       responder.ReserveFinish(std::numeric_limits<size_t>::max()));
-  dispatcher.Post(task);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(task);
+  dispatcher_.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value());
   EXPECT_EQ(task.result()->status(), Status::ResourceExhausted());
-  EXPECT_EQ(raw_conn->commit_count(), 0u);
+  EXPECT_EQ(raw_conn_->commit_count(), 0u);
 
   task.Deregister();
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, ServerStreamingWriterWriteAndFinish) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 60u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, ServerStreamingWriterWriteAndFinish) {
+  auto call = test::StartServerCall(*connection_task_, 60u, allocator_);
 
   auto responder = internal::CallAccess::Create<RawWriter>(std::move(call));
 
   // Write chunk 1
   ReserveTestTask task1(responder.ReserveWrite(7));
-  dispatcher.Post(task1);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(task1);
+  dispatcher_.RunUntilStalled();
   ASSERT_TRUE(task1.result().has_value() && task1.result()->ok());
   std::memcpy((*task1.result())->data(), "chunk 1", 7);
   PW_TEST_EXPECT_OK((*task1.result())->Commit(7));
 
-  auto decode1 = internal::InboundPacket::Decode(raw_conn->last_written_buf());
+  auto decode1 = internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode1.ok());
   EXPECT_EQ(decode1->type(),
             (internal::PacketType::Make<flags::kServer, flags::kHasPayload>()));
 
   // Finish stream
   WriteTestTask task2(responder.Finish());
-  dispatcher.Post(task2);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(task2);
+  dispatcher_.RunUntilStalled();
   ASSERT_TRUE(task2.result().has_value() && task2.result()->ok());
 
-  auto decode2 = internal::InboundPacket::Decode(raw_conn->last_written_buf());
+  auto decode2 = internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode2.ok());
   EXPECT_EQ(decode2->type(),
             (internal::PacketType::Make<flags::kServer, flags::kOkTerminal>()));
 
   task1.Deregister();
   task2.Deregister();
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, ReaderAndWriterShareCallId) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 70u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, ReaderAndWriterShareCallId) {
+  auto call = test::StartServerCall(*connection_task_, 70u, allocator_);
   auto reader = internal::CallAccess::Create<RawReader>(call);
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
   EXPECT_EQ(internal::CallAccess::call_id(reader), 70u);
   EXPECT_EQ(internal::CallAccess::call_id(writer), 70u);
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, ClientStreamingReadsRequestsThenFinishes) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 110u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, ClientStreamingReadsRequestsThenFinishes) {
+  auto call = test::StartServerCall(*connection_task_, 110u, allocator_);
 
   auto reader = internal::CallAccess::Create<RawReader>(call);
   auto responder = internal::CallAccess::Create<RawUnaryWriter>(call);
 
   // 1. Client pushes chunk 1 into server receiver
   ReserveSlotTask reserve(*call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(reserve);
+  dispatcher_.RunUntilStalled();
   reserve.Deregister();
 
-  call->OnMessage(MakeConstBuf(allocator, "chunk1"));
+  call->OnMessage(MakeConstBuf(allocator_, "chunk1"));
 
   ReadTestTask read_task(reader.Read());
-  dispatcher.Post(read_task);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(read_task);
+  dispatcher_.RunUntilStalled();
   ASSERT_TRUE(read_task.result().has_value() && read_task.result()->ok());
   EXPECT_EQ(read_task.result()->value().size(), 6u);
   read_task.Deregister();
 
   // 2. Server finishes with UnaryWriter via ReserveFinish
   ReserveTestTask finish_task(responder.ReserveFinish(7));
-  dispatcher.Post(finish_task);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(finish_task);
+  dispatcher_.RunUntilStalled();
   ASSERT_TRUE(finish_task.result().has_value() && finish_task.result()->ok());
   std::memcpy((*finish_task.result())->data(), "summary", 7);
   PW_TEST_EXPECT_OK((*finish_task.result())->Commit(7));
-  EXPECT_EQ(raw_conn->commit_count(), 1u);
+  EXPECT_EQ(raw_conn_->commit_count(), 1u);
 
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(decode_res->type(),
             (internal::PacketType::Make<flags::kServer,
@@ -380,79 +349,54 @@ TEST(ServerCallTest, ClientStreamingReadsRequestsThenFinishes) {
   EXPECT_EQ(decode_res->call_id(), 110u);
 
   finish_task.Deregister();
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, BidiStreamingWritesMessageThenFinishes) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 120u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, BidiStreamingWritesMessageThenFinishes) {
+  auto call = test::StartServerCall(*connection_task_, 120u, allocator_);
 
   auto reader = internal::CallAccess::Create<RawReader>(call);
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
   // Server writes message via ReserveWrite
   ReserveTestTask write_task(writer.ReserveWrite(12));
-  dispatcher.Post(write_task);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(write_task);
+  dispatcher_.RunUntilStalled();
   ASSERT_TRUE(write_task.result().has_value() && write_task.result()->ok());
   std::memcpy((*write_task.result())->data(), "server chunk", 12);
   PW_TEST_EXPECT_OK((*write_task.result())->Commit(12));
-  EXPECT_EQ(raw_conn->commit_count(), 1u);
+  EXPECT_EQ(raw_conn_->commit_count(), 1u);
   write_task.Deregister();
 
   // Server finishes
   WriteTestTask close_task(writer.Finish());
-  dispatcher.Post(close_task);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(close_task);
+  dispatcher_.RunUntilStalled();
   ASSERT_TRUE(close_task.result().has_value() && close_task.result()->ok());
-  EXPECT_EQ(raw_conn->commit_count(), 2u);
+  EXPECT_EQ(raw_conn_->commit_count(), 2u);
   close_task.Deregister();
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, UnaryWriterCancel) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 80u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, UnaryWriterCancel) {
+  auto call = test::StartServerCall(*connection_task_, 80u, allocator_);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
   responder.Cancel();
   EXPECT_TRUE(responder.is_closed());
-  dispatcher.RunUntilStalled();
+  dispatcher_.RunUntilStalled();
 
-  EXPECT_EQ(raw_conn->commit_count(), 1u);
+  EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(
       decode_res->type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
   EXPECT_EQ(decode_res->error(), internal::ProtocolStatus::kCancelled);
-
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, RAIICancellationOnDestruction) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 90u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, RAIICancellationOnDestruction) {
+  auto call = test::StartServerCall(*connection_task_, 90u, allocator_);
 
   {
     auto responder =
@@ -464,11 +408,11 @@ TEST(ServerCallTest, RAIICancellationOnDestruction) {
   // Destroying an unfinished responder queues a
   // kDroppedWithoutResponse error packet, which the connection
   // task writes out the next time it is polled.
-  dispatcher.RunUntilStalled();
+  dispatcher_.RunUntilStalled();
 
-  EXPECT_EQ(raw_conn->commit_count(), 1u);
+  EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(
       decode_res->type(),
@@ -476,25 +420,16 @@ TEST(ServerCallTest, RAIICancellationOnDestruction) {
   EXPECT_EQ(decode_res->call_id(), 90u);
   EXPECT_EQ(decode_res->error(),
             internal::ProtocolStatus::kDroppedWithoutResponse);
-
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, ZeroCopyReserveFinish) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 100u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, ZeroCopyReserveFinish) {
+  auto call = test::StartServerCall(*connection_task_, 100u, allocator_);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
   ReserveTestTask task(responder.ReserveFinish(12));
-  dispatcher.Post(task);
-  dispatcher.RunUntilStalled();
+  dispatcher_.Post(task);
+  dispatcher_.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value() && task.result()->ok());
   auto res = std::move(**task.result());
@@ -505,9 +440,9 @@ TEST(ServerCallTest, ZeroCopyReserveFinish) {
   std::memcpy(res.data(), msg, 12);
   PW_TEST_EXPECT_OK(res.Commit(12));
 
-  EXPECT_EQ(raw_conn->commit_count(), 1u);
+  EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(decode_res->type(),
             (internal::PacketType::Make<flags::kServer,
@@ -517,18 +452,10 @@ TEST(ServerCallTest, ZeroCopyReserveFinish) {
   EXPECT_EQ(decode_res->payload().size(), 12u);
 
   task.Deregister();
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, DroppedUnaryFinishFutureFallsBackToRAIICancellation) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 101u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, DroppedUnaryFinishFutureFallsBackToRAIICancellation) {
+  auto call = test::StartServerCall(*connection_task_, 101u, allocator_);
 
   // Obtain a terminal future, destroy the responder while the future is still
   // alive, and then drop the future without awaiting/committing it.
@@ -544,10 +471,10 @@ TEST(ServerCallTest, DroppedUnaryFinishFutureFallsBackToRAIICancellation) {
     // deferred kDroppedWithoutResponse packet.
   }
 
-  dispatcher.RunUntilStalled();
-  EXPECT_EQ(raw_conn->commit_count(), 1u);
+  dispatcher_.RunUntilStalled();
+  EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(
       decode_res->type(),
@@ -555,26 +482,17 @@ TEST(ServerCallTest, DroppedUnaryFinishFutureFallsBackToRAIICancellation) {
   EXPECT_EQ(decode_res->call_id(), 101u);
   EXPECT_EQ(decode_res->error(),
             internal::ProtocolStatus::kDroppedWithoutResponse);
-
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, DroppedUnaryReservationReopensWriterWhileAlive) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 102u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, DroppedUnaryReservationReopensWriterWhileAlive) {
+  auto call = test::StartServerCall(*connection_task_, 102u, allocator_);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
   {
     ReserveTestTask task(responder.ReserveFinish(8));
-    dispatcher.Post(task);
-    dispatcher.RunUntilStalled();
+    dispatcher_.Post(task);
+    dispatcher_.RunUntilStalled();
     ASSERT_TRUE(task.result().has_value() && task.result()->ok());
     // Drop the reservation without calling Commit().
     (*task.result())->Drop();
@@ -586,30 +504,21 @@ TEST(ServerCallTest, DroppedUnaryReservationReopensWriterWhileAlive) {
   EXPECT_FALSE(responder.is_closed());
 
   responder.Cancel();
-  dispatcher.RunUntilStalled();
+  dispatcher_.RunUntilStalled();
 
-  EXPECT_EQ(raw_conn->commit_count(), 1u);
+  EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(
       decode_res->type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
   EXPECT_EQ(decode_res->call_id(), 102u);
   EXPECT_EQ(decode_res->error(), internal::ProtocolStatus::kCancelled);
-
-  connection_task->Deregister();
 }
 
-TEST(ServerCallTest, DroppedWriterFinishFutureFallsBackToRAIIStreamEnd) {
-  allocator::test::AllocatorForTest<16384> allocator;
-  async2::DispatcherForTest dispatcher;
-  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  auto connection_task = dispatcher.Post<test::TestConnectionTask>(
-      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  ASSERT_NE(connection_task, nullptr);
-  auto call = internal::ClientCall::Create(*connection_task, 103u, allocator);
-  ASSERT_NE(call, nullptr);
+TEST_F(ServerCallTest, DroppedWriterFinishFutureFallsBackToRAIIStreamEnd) {
+  auto call = test::StartServerCall(*connection_task_, 103u, allocator_);
 
   {
     std::optional<WriteFuture<>> pending_close;
@@ -622,16 +531,14 @@ TEST(ServerCallTest, DroppedWriterFinishFutureFallsBackToRAIIStreamEnd) {
     // `pending_close` must send the deferred StreamEnd packet.
   }
 
-  dispatcher.RunUntilStalled();
-  EXPECT_EQ(raw_conn->commit_count(), 1u);
+  dispatcher_.RunUntilStalled();
+  EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
-      internal::InboundPacket::Decode(raw_conn->last_written_buf());
+      internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_TRUE(decode_res.ok());
   EXPECT_EQ(decode_res->type(),
             (internal::PacketType::Make<flags::kServer, flags::kOkTerminal>()));
   EXPECT_EQ(decode_res->call_id(), 103u);
-
-  connection_task->Deregister();
 }
 
 }  // namespace
