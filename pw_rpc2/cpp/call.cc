@@ -198,8 +198,6 @@ Result<transport::ReserveWriteFuture> Call::ReserveWrite(
     return completion_status_.ok() ? Status::FailedPrecondition()
                                    : completion_status_;
   }
-  // The connection task owns the connection handle and may reassign it during
-  // the handshake, so it is read here rather than cached at construction.
   if (connection_task_ == nullptr) {
     return Status::Unavailable();
   }

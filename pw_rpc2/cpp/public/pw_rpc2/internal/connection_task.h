@@ -172,8 +172,8 @@ class ConnectionTask : public async2::Task {
   const IntrusiveForwardList<Call>& calls() const { return calls_; }
 
   /// Transitions from `State::kHandshaking` to `State::kActive`, publishing the
-  /// connection handle and handshake parameters produced by the handshake.
-  void FinishHandshake(EstablishedConnection&& established);
+  /// parameters produced by the handshake.
+  void FinishHandshake(HandshakeInfo info);
 
   /// Deregisters this task from the dispatcher and closes the connection.
   /// Called at the start of derived destructors (`~ServerConnectionTask()` and
@@ -226,9 +226,7 @@ class ConnectionTask : public async2::Task {
   /// the call's reader catches up.
   bool DeliverToCall(Call& call, InboundPacket& packet, async2::Context& cx);
 
-  // The transport connection. Written twice: once at construction, and again
-  // when a handshake completes in `FinishHandshake()`. Both writes and every
-  // read happen on the dispatcher thread.
+  // The transport connection.
   transport::ReliableDatagramSocket connection_;
   Allocator& allocator_;
 

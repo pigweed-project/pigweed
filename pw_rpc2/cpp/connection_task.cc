@@ -211,12 +211,9 @@ bool ConnectionTask::PendPacket(async2::Context& cx) {
   return progressed;
 }
 
-void ConnectionTask::FinishHandshake(EstablishedConnection&& established) {
+void ConnectionTask::FinishHandshake(HandshakeInfo info) {
   PW_DASSERT(state_ == State::kHandshaking);
-  PW_DASSERT(established.connection);
-  // The only reassignment of `connection_` after construction.
-  connection_ = std::move(established.connection);
-  handshake_info_ = established.info;
+  handshake_info_ = info;
   set_state(State::kActive);
 }
 

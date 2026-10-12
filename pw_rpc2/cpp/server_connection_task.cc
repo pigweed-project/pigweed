@@ -124,7 +124,8 @@ bool ServerConnectionTask::PollHandshake(async2::Context& cx) {
     CloseConnection(poll->status());
     return false;
   }
-  FinishHandshake(std::move(poll->value()));
+  PW_DASSERT(poll->value().connection == connection());
+  FinishHandshake(poll->value().info);
   handshake_future_ = ResponderHandshakeFuture();
   return true;
 }
