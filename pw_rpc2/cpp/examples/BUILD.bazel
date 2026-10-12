@@ -51,6 +51,13 @@ pw_py_test(
         "//pw_rpc2/cpp/examples/echo:server_coro",
         "//pw_rpc2/cpp/examples/echo:server_polling",
     ],
+    # Disable the macOS nano malloc zone so sanitizers (e.g. ASan) don't log
+    # "malloc: nano zone abandoned due to inability to reserve vm space.", which
+    # interrupts the expected output.
+    env = select({
+        "@platforms//os:macos": {"MallocNanoZone": "0"},
+        "//conditions:default": {},
+    }),
     main = "example_test.py",
     target_compatible_with = select(hosts_lin_mac),
 )
