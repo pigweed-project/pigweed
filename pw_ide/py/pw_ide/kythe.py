@@ -14,6 +14,7 @@
 """Generates Kythe .kzip archives from compilation databases."""
 
 import argparse
+from collections.abc import Callable, Iterable, Iterator
 import concurrent.futures
 import copy
 import json
@@ -111,13 +112,12 @@ def _get_direct_includes(file_path: Path) -> list[str]:
         return _file_includes_cache[file_path]
     includes: list[str] = []
     try:
-        content = file_path.read_text(encoding="utf-8", errors="ignore")
-        for line in content.splitlines():
-            line = line.strip()
-            if line.startswith("#include"):
-                m = _INCLUDE_REGEX.match(line)
-                if m:
-                    includes.append(m.group(1))
+        with file_path.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if "#" in line:
+                    m = _INCLUDE_REGEX.match(line)
+                    if m:
+                        includes.append(m.group(1))
     except Exception:  # pylint: disable=broad-except
         pass
     _file_includes_cache[file_path] = includes
@@ -129,7 +129,7 @@ def _resolve_header(
     src_path: Path,
     include_dirs: list[str],
     workspace: Path,
-    cmd_dir: Path | None = None,
+    cmd_dir: Path | None,
 ) -> Path | None:
     """Resolves an included header to an existing local file path with cache."""
     inc_dirs_tuple = tuple(include_dirs)
@@ -174,34 +174,58 @@ def _find_required_headers(
     include_dirs: list[str],
     workspace: Path,
     cmd_dir: Path | None = None,
-    visited: set[Path] | None = None,
+    max_depth: int = 50,
 ) -> set[Path]:
     """Finds all locally resolvable headers included in the source file
-    recursively.
+    recursively up to max_depth.
     """
-    if visited is None:
-        visited = set()
-    if src_path in visited:
-        return set()
-    visited.add(src_path)
-
     headers: set[Path] = set()
-    for inc_name in _get_direct_includes(src_path):
-        resolved = _resolve_header(
-            inc_name, src_path, include_dirs, workspace, cmd_dir=cmd_dir
-        )
-        if resolved and resolved not in visited:
-            headers.add(resolved)
-            headers.update(
-                _find_required_headers(
-                    resolved,
+    visited: set[Path] = {src_path}
+    frontier: list[Path] = [src_path]
+
+    for _ in range(max_depth):
+        if not frontier:
+            break
+        next_frontier: list[Path] = []
+        for current in frontier:
+            for inc_name in _get_direct_includes(current):
+                resolved = _resolve_header(
+                    inc_name,
+                    current,
                     include_dirs,
                     workspace,
-                    cmd_dir=cmd_dir,
-                    visited=visited,
+                    cmd_dir,
                 )
-            )
+                if resolved and resolved not in visited:
+                    visited.add(resolved)
+                    headers.add(resolved)
+                    next_frontier.append(resolved)
+        frontier = next_frontier
+
     return headers
+
+
+def _extract_include_dirs(args: list[str]) -> list[str]:
+    """Collects include directories from compiler arguments."""
+    include_dirs: list[str] = []
+    for i, arg in enumerate(args):
+        if arg.startswith("-I") and len(arg) > 2 and not arg.startswith("-I="):
+            include_dirs.append(arg[2:])
+        elif arg == "-I" and i + 1 < len(args):
+            include_dirs.append(args[i + 1])
+        elif arg.startswith("-isystem") and len(arg) > 8:
+            include_dirs.append(arg[8:])
+        elif arg == "-isystem" and i + 1 < len(args):
+            include_dirs.append(args[i + 1])
+        elif arg.startswith("-iquote") and len(arg) > 7:
+            include_dirs.append(arg[7:])
+        elif arg == "-iquote" and i + 1 < len(args):
+            include_dirs.append(args[i + 1])
+        elif arg.startswith("-idirafter") and len(arg) > 10:
+            include_dirs.append(arg[10:])
+        elif arg == "-idirafter" and i + 1 < len(args):
+            include_dirs.append(args[i + 1])
+    return include_dirs
 
 
 def extract_single_command(
@@ -231,7 +255,7 @@ def extract_single_command(
         else:
             src_path = (workspace / src_path).resolve()
 
-    if not src_path.exists():
+    if not src_path.exists() or not src_path.is_file():
         return None
 
     args = []
@@ -243,25 +267,7 @@ def extract_single_command(
     if not args:
         return None
 
-    # Collect include flags to locate dependent headers
-    include_dirs: list[str] = []
-    for i, arg in enumerate(args):
-        if arg.startswith("-I") and len(arg) > 2 and not arg.startswith("-I="):
-            include_dirs.append(arg[2:])
-        elif arg == "-I" and i + 1 < len(args):
-            include_dirs.append(args[i + 1])
-        elif arg.startswith("-isystem") and len(arg) > 8:
-            include_dirs.append(arg[8:])
-        elif arg == "-isystem" and i + 1 < len(args):
-            include_dirs.append(args[i + 1])
-        elif arg.startswith("-iquote") and len(arg) > 7:
-            include_dirs.append(arg[7:])
-        elif arg == "-iquote" and i + 1 < len(args):
-            include_dirs.append(args[i + 1])
-        elif arg.startswith("-idirafter") and len(arg) > 10:
-            include_dirs.append(arg[10:])
-        elif arg == "-idirafter" and i + 1 < len(args):
-            include_dirs.append(args[i + 1])
+    include_dirs = _extract_include_dirs(args)
 
     # Find required inputs (source file + referenced local headers)
     required_inputs: set[Path] = {src_path}
@@ -298,14 +304,14 @@ def _merge_kzips(
     kzip_bin: str,
     output_kzip: Path,
     unit_kzips: list[Path],
-    units_dir: Path | None = None,
+    units_dir: Path,
 ) -> None:
     """Merges multiple unit .kzip files into a single .kzip file."""
     if not unit_kzips:
         raise ValueError("No unit kzips provided to merge.")
 
     # 1. Primary method: Native recursive merge over the units directory
-    if units_dir and units_dir.exists():
+    if units_dir.exists():
         merge_cmd = [
             kzip_bin,
             "merge",
@@ -323,7 +329,7 @@ def _merge_kzips(
     ) as list_file:
         for uk in unit_kzips:
             list_file.write(f"{uk}\n")
-        list_file_path = list_file.name
+        list_file_path = Path(list_file.name)
 
     try:
         merge_cmd = [
@@ -337,17 +343,19 @@ def _merge_kzips(
             return
 
         # 3. Direct positional arguments for small batches
-        merge_cmd = [
-            kzip_bin,
-            "merge",
-            f"-output={output_kzip}",
-        ] + [str(u) for u in unit_kzips]
-        merge_proc = subprocess.run(merge_cmd, capture_output=True, text=True)
-        if merge_proc.returncode == 0 and output_kzip.exists():
-            return
+        if len(unit_kzips) <= 500:
+            merge_cmd = [
+                kzip_bin,
+                "merge",
+                f"-output={output_kzip}",
+            ] + [str(u) for u in unit_kzips]
+            merge_proc = subprocess.run(
+                merge_cmd, capture_output=True, text=True
+            )
+            if merge_proc.returncode == 0 and output_kzip.exists():
+                return
     finally:
-        if os.path.exists(list_file_path):
-            os.remove(list_file_path)
+        list_file_path.unlink(missing_ok=True)
 
     # 4. Fallback: Python zipfile merge if native kzip binary failed
     print("Falling back to Python zipfile merge...", flush=True)
@@ -370,12 +378,9 @@ def _merge_kzips(
 
 def _load_compilation_entries(
     workspace: Path,
-    compdb_paths: list[Path] | None = None,
+    compdb_paths: list[Path],
 ) -> list[dict[str, Any]]:
     """Loads and deduplicates compilation entries from compilation databases."""
-    if not compdb_paths:
-        compdb_paths = find_compilation_databases(workspace)
-
     if not compdb_paths:
         raise FileNotFoundError(
             f"No compilation databases found in workspace: {workspace}"
@@ -384,7 +389,7 @@ def _load_compilation_entries(
     all_entries = []
     seen_entries = set()
     for cdb in compdb_paths:
-        with open(cdb, "r", encoding="utf-8") as f:
+        with cdb.open("r", encoding="utf-8") as f:
             entries = json.load(f)
             if isinstance(entries, list):
                 for entry in entries:
@@ -404,6 +409,45 @@ def _load_compilation_entries(
     return all_entries
 
 
+def _run_bounded_pool(
+    max_workers: int,
+    func: Callable[..., Path | None],
+    tasks: Iterable[tuple[int, tuple[Any, ...]]],
+) -> Iterator[tuple[int, concurrent.futures.Future[Path | None]]]:
+    """Executes tasks in a ProcessPoolExecutor with a bounded sliding window.
+
+    Limiting active pending tasks prevents IPC queue/wakeup pipe saturation
+    (e.g. CPython gh-105829) and keeps memory proportional to max_workers.
+    """
+    window_size = max(max_workers * 4, 1)
+    task_iter = iter(tasks)
+
+    with concurrent.futures.ProcessPoolExecutor(
+        max_workers=max_workers
+    ) as executor:
+        futures: dict[concurrent.futures.Future[Path | None], int] = {}
+        exhausted = False
+
+        while futures or not exhausted:
+            while not exhausted and len(futures) < window_size:
+                try:
+                    idx, args = next(task_iter)
+                except StopIteration:
+                    exhausted = True
+                    break
+                futures[executor.submit(func, *args)] = idx
+
+            if not futures:
+                break
+
+            done, _ = concurrent.futures.wait(
+                futures.keys(),
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            for fut in done:
+                yield futures.pop(fut), fut
+
+
 def _extract_all_units(
     all_entries: list[dict[str, Any]],
     tmp_path: Path,
@@ -421,47 +465,48 @@ def _extract_all_units(
     )
     start_time = time.time()
     unit_kzips: list[Path] = []
+    log_interval = max(50, total_units // 20)
+    last_log_time = start_time
+    last_log_count = 0
 
-    with concurrent.futures.ProcessPoolExecutor(
-        max_workers=max_workers
-    ) as executor:
-        futures = {
-            executor.submit(
-                extract_single_command,
-                entry,
-                i,
-                tmp_path,
-                workspace,
-                corpus,
-                kzip_bin,
-            ): i
-            for i, entry in enumerate(all_entries)
-        }
-        log_interval = max(50, total_units // 20)
-        for count, fut in enumerate(
-            concurrent.futures.as_completed(futures), 1
+    tasks = (
+        (i, (entry, i, tmp_path, workspace, corpus, kzip_bin))
+        for i, entry in enumerate(all_entries)
+    )
+    for count, (idx, fut) in enumerate(
+        _run_bounded_pool(max_workers, extract_single_command, tasks),
+        1,
+    ):
+        try:
+            unit_path = fut.result()
+            if unit_path and unit_path.exists():
+                unit_kzips.append(unit_path)
+        except Exception as e:  # pylint: disable=broad-except
+            print(f"Error extracting unit {idx}: {e}", flush=True)
+
+        now = time.time()
+        if (
+            count - last_log_count >= log_interval
+            or count == total_units
+            or (now - last_log_time >= 30.0 and count >= 50)
         ):
-            try:
-                unit_path = fut.result()
-                if unit_path and unit_path.exists():
-                    unit_kzips.append(unit_path)
-            except Exception as e:  # pylint: disable=broad-except
-                print(f"Error extracting unit: {e}", flush=True)
-
-            if count % log_interval == 0 or count == total_units:
-                elapsed = time.time() - start_time
-                rate = count / elapsed if elapsed > 0 else 0
-                print(
-                    f"[{count}/{total_units}] Extracted {len(unit_kzips)} "
-                    f"units ({elapsed:.1f}s, {rate:.1f} units/s)",
-                    flush=True,
-                )
+            last_log_time = now
+            last_log_count = count
+            elapsed = now - start_time
+            print(
+                f"[{count}/{total_units}] Extracted {len(unit_kzips)} "
+                f"units ({elapsed:.1f}s, "
+                f"{count / elapsed if elapsed > 0 else 0:.1f} units/s)",
+                flush=True,
+            )
 
     if not unit_kzips:
         raise RuntimeError("Failed to extract any compilation units.")
 
-    extract_elapsed = time.time() - start_time
-    print(f"Extraction completed in {extract_elapsed:.2f}s.", flush=True)
+    print(
+        f"Extraction completed in {time.time() - start_time:.2f}s.",
+        flush=True,
+    )
     return unit_kzips
 
 
@@ -508,7 +553,7 @@ def extract_single_rust_crate(
     for j, cr in enumerate(m_copy["crates"]):
         cr["is_workspace_member"] = j == orig_idx
 
-    with open(crate_dir / "rust-project.json", "w", encoding="utf-8") as f:
+    with (crate_dir / "rust-project.json").open("w", encoding="utf-8") as f:
         json.dump(m_copy, f)
 
     unit_kzip = rust_units_dir / f"rust_{crate_name}_{orig_idx}.kzip"
@@ -588,6 +633,31 @@ def _collect_rs_files(
     return rs_files
 
 
+def _prepare_rust_crates(
+    manifest: dict[str, Any], workspace: Path
+) -> tuple[list[tuple[int, dict[str, Any]]], dict[str, Any]]:
+    """Filters workspace crates and normalizes root_module paths in manifest."""
+    ws_crates: list[tuple[int, dict[str, Any]]] = []
+    ws_resolved = workspace.resolve()
+    base_manifest = copy.deepcopy(manifest)
+
+    for i, c in enumerate(base_manifest.get("crates", [])):
+        rm = c.get("root_module", "")
+        if not rm:
+            continue
+        p = Path(rm) if Path(rm).is_absolute() else (workspace / rm)
+        try:
+            resolved = p.resolve()
+            if resolved.is_relative_to(ws_resolved):
+                c["root_module"] = str(resolved.relative_to(ws_resolved))
+                if resolved.exists():
+                    ws_crates.append((i, c))
+        except (ValueError, OSError):
+            continue
+
+    return ws_crates, base_manifest
+
+
 def _extract_crates_from_manifest(
     manifest: dict[str, Any],
     rp_name: str,
@@ -599,21 +669,7 @@ def _extract_crates_from_manifest(
     max_workers: int,
 ) -> list[Path]:
     """Extracts compilation units from a parsed rust-project.json manifest."""
-    raw_crates = manifest.get("crates", [])
-    ws_crates: list[tuple[int, dict[str, Any]]] = []
-    ws_resolved = workspace.resolve()
-    for i, c in enumerate(raw_crates):
-        rm = c.get("root_module", "")
-        if not rm:
-            continue
-        p = Path(rm) if Path(rm).is_absolute() else (workspace / rm)
-        try:
-            resolved = p.resolve()
-            if resolved.is_relative_to(ws_resolved) and resolved.exists():
-                ws_crates.append((i, c))
-        except (ValueError, OSError):
-            continue
-
+    ws_crates, base_manifest = _prepare_rust_crates(manifest, workspace)
     if not ws_crates:
         return []
 
@@ -624,26 +680,12 @@ def _extract_crates_from_manifest(
     )
     start_time = time.time()
     all_rs_files = _collect_rs_files(ws_crates, workspace)
-
-    base_manifest = copy.deepcopy(manifest)
-    for c in base_manifest.get("crates", []):
-        rm = c.get("root_module", "")
-        if rm:
-            p = Path(rm) if Path(rm).is_absolute() else (workspace / rm)
-            try:
-                resolved = p.resolve()
-                if resolved.is_relative_to(ws_resolved):
-                    c["root_module"] = str(resolved.relative_to(ws_resolved))
-            except (ValueError, OSError):
-                pass
-
     unit_kzips: list[Path] = []
-    with concurrent.futures.ProcessPoolExecutor(
-        max_workers=max_workers
-    ) as executor:
-        futures = [
-            executor.submit(
-                extract_single_rust_crate,
+
+    tasks = (
+        (
+            orig_idx,
+            (
                 c,
                 orig_idx,
                 base_manifest,
@@ -653,13 +695,24 @@ def _extract_crates_from_manifest(
                 workspace,
                 corpus,
                 kzip_bin,
-            )
-            for orig_idx, c in ws_crates
-        ]
-        for fut in concurrent.futures.as_completed(futures):
+            ),
+        )
+        for orig_idx, c in ws_crates
+    )
+    for orig_idx, fut in _run_bounded_pool(
+        max_workers,
+        extract_single_rust_crate,
+        tasks,
+    ):
+        try:
             res_unit = fut.result()
-            if res_unit:
+            if res_unit and res_unit.exists():
                 unit_kzips.append(res_unit)
+        except Exception as e:  # pylint: disable=broad-except
+            print(
+                f"Warning: Exception extracting Rust crate {orig_idx}: {e}",
+                file=sys.stderr,
+            )
 
     print(
         f"Extracted {len(unit_kzips)} Rust compilation units in "
@@ -687,7 +740,7 @@ def extract_rust_units(
 
     for rp_path in rust_project_paths:
         try:
-            with open(rp_path, "r", encoding="utf-8") as f:
+            with rp_path.open("r", encoding="utf-8") as f:
                 manifest = json.load(f)
         except Exception as e:  # pylint: disable=broad-except
             print(f"Warning: Failed to load {rp_path}: {e}", file=sys.stderr)

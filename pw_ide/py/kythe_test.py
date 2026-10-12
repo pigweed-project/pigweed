@@ -22,6 +22,7 @@ import unittest
 
 from pw_ide.kythe import (
     DEFAULT_CORPUS,
+    _extract_all_units,
     _find_required_headers,
     extract_rust_units,
     extract_single_command,
@@ -271,6 +272,52 @@ class KytheExtractorTest(unittest.TestCase):
             self.assertEqual(len(res), 1)
             self.assertTrue(res[0].exists())
             self.assertIn("rust_pw_sample_0.kzip", res[0].name)
+
+    def test_extract_all_units(self):
+        """Tests extracting all units concurrently with sliding window."""
+        kzip_bin = find_kzip_binary()
+        if not shutil.which(kzip_bin) and not Path(kzip_bin).exists():
+            self.skipTest("kzip binary not found")
+        out_dir = self.workspace / "out"
+        out_dir.mkdir()
+        entries = [
+            {
+                "directory": str(self.workspace),
+                "command": f"clang++ -DFOO={i} -c test.cc",
+                "file": "test.cc",
+            }
+            for i in range(5)
+        ]
+        res = _extract_all_units(
+            entries,
+            out_dir,
+            self.workspace,
+            corpus=DEFAULT_CORPUS,
+            kzip_bin=kzip_bin,
+            max_workers=1,
+        )
+        self.assertEqual(len(res), 5)
+        for unit_path in res:
+            self.assertTrue(unit_path.exists())
+
+    def test_find_required_headers_depth_limit(self):
+        """Tests that recursive header search respects max recursion depth."""
+        prev = self.workspace / "chain_0.h"
+        prev.write_text("#pragma once\n")
+        for i in range(1, 15):
+            curr = self.workspace / f"chain_{i}.h"
+            curr.write_text(f'#pragma once\n#  include "chain_{i-1}.h"\n')
+            prev = curr
+
+        headers = _find_required_headers(prev, [], self.workspace, max_depth=3)
+        self.assertEqual(
+            headers,
+            {
+                (self.workspace / "chain_13.h").resolve(),
+                (self.workspace / "chain_12.h").resolve(),
+                (self.workspace / "chain_11.h").resolve(),
+            },
+        )
 
 
 if __name__ == "__main__":
