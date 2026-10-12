@@ -112,7 +112,7 @@ void pw_boot_Entry(void) {
   // No C code allowed here due to PW_NO_PROLOGUE, and don't use extended
   // asm that might try to spill a register to the stack. See
   // https://gcc.gnu.org/onlinedocs/gcc-14.1.0/gcc/ARM-Function-Attributes.html
-  asm volatile(
+  __asm__ volatile(
       // Disable interrupts.
       //
       // Until pw_boot_PreStaticMemoryInit() has completed, depending on the
@@ -169,7 +169,7 @@ void _pw_boot_Entry(void) {
   // Care is still required since C++ static constructors have not yet been
   // initialized, however it's a lot less likely that an interrupt handler
   // (which are small and focused) will have an issue there.
-  asm volatile("cpsie i");
+  __asm__ volatile("cpsie i");
 
   // Run any init that must be done before C++ static constructors.
   pw_boot_PreStaticConstructorInit();

@@ -32,7 +32,7 @@ PW_MODIFY_DIAGNOSTIC(ignored, "-Wcast-qual");
 
 static inline uint32_t pw_SaveAndDisableInterrupts(void) {
   uint32_t status;
-  asm volatile(
+  __asm__ volatile(
       "mrs %0, PRIMASK\n"
       "cpsid i"
       : "=r"(status)::"memory");
@@ -40,7 +40,7 @@ static inline uint32_t pw_SaveAndDisableInterrupts(void) {
 }
 
 static inline void pw_RestoreInterrupts(uint32_t status) {
-  asm volatile("msr PRIMASK,%0" ::"r"(status) : "memory");
+  __asm__ volatile("msr PRIMASK,%0" ::"r"(status) : "memory");
 }
 
 static inline uint32_t atomic_lock(__unused const volatile void* ptr) {
