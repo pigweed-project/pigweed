@@ -477,9 +477,8 @@ maven.install(
         "org.mockito:mockito-core:4.1.0",
     ],
     repositories = [
-        "https://maven.google.com/",
-        "https://jcenter.bintray.com/",
         "https://repo1.maven.org/maven2",
+        "https://maven.google.com/",
     ],
 )
 use_repo(maven, "pigweed_maven_deps")

@@ -68,6 +68,7 @@ def run_action(env=None):
             [
                 npm,
                 'install',
+                '--ignore-scripts',
                 '--quiet',
                 '--no-progress',
                 '--loglevel=error',

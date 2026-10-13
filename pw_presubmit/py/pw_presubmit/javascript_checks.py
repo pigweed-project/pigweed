@@ -33,7 +33,9 @@ def eslint(ctx: PresubmitContext):
     # Check if npm deps are installed.
     npm_list = log_run(['npm', 'list'], cwd='pw_web')
     if npm_list.returncode != 0:
-        npm_install = log_run(['npm', 'install'], cwd='pw_web')
+        npm_install = log_run(
+            ['npm', 'install', '--ignore-scripts'], cwd='pw_web'
+        )
         if npm_install.returncode != 0:
             raise PresubmitFailure('npm install failed.')
 

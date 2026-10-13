@@ -38,6 +38,7 @@ def npm_test(ctx: PresubmitContext) -> None:
     """Run npm install and npm test in Pigweed root to test all web modules"""
     web_dir = ctx.root / 'pw_web'
     call('npm', "install", cwd=web_dir)
+    call('npm', "rebuild", cwd=web_dir)
     call('npm', "test", cwd=web_dir)
 
 
