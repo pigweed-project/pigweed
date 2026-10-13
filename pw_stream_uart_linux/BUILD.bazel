@@ -27,7 +27,6 @@ cc_library(
     name = "pw_stream_uart_linux",
     srcs = ["stream.cc"],
     hdrs = ["public/pw_stream_uart_linux/stream.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     target_compatible_with = [
         "@platforms//os:linux",
@@ -46,7 +45,6 @@ pw_cc_test(
     srcs = [
         "stream_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":pw_stream_uart_linux",
     ],

@@ -28,41 +28,41 @@ namespace pw::stream {
 Result<speed_t> BaudRateToSpeed(uint32_t baud_rate) {
   switch (baud_rate) {
     case 9600:
-      return B9600;
+      return static_cast<speed_t>(B9600);
     case 19200:
-      return B19200;
+      return static_cast<speed_t>(B19200);
     case 38400:
-      return B38400;
+      return static_cast<speed_t>(B38400);
     case 57600:
-      return B57600;
+      return static_cast<speed_t>(B57600);
     case 115200:
-      return B115200;
+      return static_cast<speed_t>(B115200);
     case 230400:
-      return B230400;
+      return static_cast<speed_t>(B230400);
     case 460800:
-      return B460800;
+      return static_cast<speed_t>(B460800);
     case 500000:
-      return B500000;
+      return static_cast<speed_t>(B500000);
     case 576000:
-      return B576000;
+      return static_cast<speed_t>(B576000);
     case 921600:
-      return B921600;
+      return static_cast<speed_t>(B921600);
     case 1000000:
-      return B1000000;
+      return static_cast<speed_t>(B1000000);
     case 1152000:
-      return B1152000;
+      return static_cast<speed_t>(B1152000);
     case 1500000:
-      return B1500000;
+      return static_cast<speed_t>(B1500000);
     case 2000000:
-      return B2000000;
+      return static_cast<speed_t>(B2000000);
     case 2500000:
-      return B2500000;
+      return static_cast<speed_t>(B2500000);
     case 3000000:
-      return B3000000;
+      return static_cast<speed_t>(B3000000);
     case 3500000:
-      return B3500000;
+      return static_cast<speed_t>(B3500000);
     case 4000000:
-      return B4000000;
+      return static_cast<speed_t>(B4000000);
     default:
       return Status::InvalidArgument();
   }
@@ -143,23 +143,23 @@ Status UartStreamLinux::DoWrite(ConstByteSpan data) {
   const size_t size = data.size_bytes();
   size_t written = 0;
   while (written < size) {
-    int bytes = write(fd_, &data[written], size - written);
+    const ssize_t bytes = write(fd_, &data[written], size - written);
     if (bytes < 0) {
       PW_LOG_ERROR("Failed to write to UART, %s", std::strerror(errno));
       return Status::Unknown();
     }
-    written += bytes;
+    written += static_cast<size_t>(bytes);
   }
   return OkStatus();
 }
 
 StatusWithSize UartStreamLinux::DoRead(ByteSpan dest) {
-  int bytes = read(fd_, &dest[0], dest.size_bytes());
+  const ssize_t bytes = read(fd_, &dest[0], dest.size_bytes());
   if (bytes < 0) {
     PW_LOG_ERROR("Failed to read from UART, %s", std::strerror(errno));
     return StatusWithSize::Unknown();
   }
-  return StatusWithSize(bytes);
+  return StatusWithSize(static_cast<size_t>(bytes));
 }
 
 }  // namespace pw::stream
