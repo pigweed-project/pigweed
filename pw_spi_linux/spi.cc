@@ -94,11 +94,11 @@ Status LinuxInitiator::DoWriteRead(ConstByteSpan write_buffer,
   if (read_buffer.empty()) {
     // Write-only.
     transaction[0].tx_buf = reinterpret_cast<uintptr_t>(write_buffer.data());
-    transaction[0].len = write_buffer.size();
+    transaction[0].len = static_cast<uint32_t>(write_buffer.size());
   } else if (write_buffer.empty()) {
     // Read-only.
     transaction[0].rx_buf = reinterpret_cast<uintptr_t>(read_buffer.data());
-    transaction[0].len = read_buffer.size();
+    transaction[0].len = static_cast<uint32_t>(read_buffer.size());
   } else {
     // Read+Write.
 
@@ -106,20 +106,20 @@ Status LinuxInitiator::DoWriteRead(ConstByteSpan write_buffer,
     const size_t common_len = std::min(write_buffer.size(), read_buffer.size());
     transaction[0].tx_buf = reinterpret_cast<uintptr_t>(write_buffer.data());
     transaction[0].rx_buf = reinterpret_cast<uintptr_t>(read_buffer.data());
-    transaction[0].len = common_len;
+    transaction[0].len = static_cast<uint32_t>(common_len);
 
     // Handle different-sized buffers with a compound transaction
     if (write_buffer.size() > common_len) {
       auto write_remainder = write_buffer.subspan(common_len);
       transaction[1].tx_buf =
           reinterpret_cast<uintptr_t>(write_remainder.data());
-      transaction[1].len = write_remainder.size();
+      transaction[1].len = static_cast<uint32_t>(write_remainder.size());
       request = SPI_IOC_MESSAGE(2);
     } else if (read_buffer.size() > common_len) {
       auto read_remainder = read_buffer.subspan(common_len);
       transaction[1].rx_buf =
           reinterpret_cast<uintptr_t>(read_remainder.data());
-      transaction[1].len = read_remainder.size();
+      transaction[1].len = static_cast<uint32_t>(read_remainder.size());
       request = SPI_IOC_MESSAGE(2);
     }
   }

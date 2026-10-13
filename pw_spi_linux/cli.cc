@@ -100,7 +100,7 @@ struct Args {
                                   : ClockPolarity::kActiveHigh,
         .phase =
             (mode & 0b01) ? ClockPhase::kFallingEdge : ClockPhase::kRisingEdge,
-        .bits_per_word = bits,
+        .bits_per_word = static_cast<uint8_t>(bits),
         .bit_order = lsb_first ? BitOrder::kLsbFirst : BitOrder::kMsbFirst,
     };
   }
