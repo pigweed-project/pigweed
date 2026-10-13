@@ -82,7 +82,6 @@ cc_library(
         "proto_bloat.cc",
     ],
     hdrs = ["proto_bloat.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_containers:vector"],
     deps = [
         "//pw_preprocessor",

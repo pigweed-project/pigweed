@@ -193,7 +193,7 @@ void CodeToPullInProtoEncoder() {
     child.WritePackedFloat(234, GetFloatArray()).IgnoreError();
     child.WriteRepeatedFloat(234, GetFloatVector()).IgnoreError();
 
-    child.WriteFloat(234, 3.14).IgnoreError();
+    child.WriteFloat(234, 3.14f).IgnoreError();
     child.WritePackedDouble(234, GetDoubleArray()).IgnoreError();
     child.WriteRepeatedDouble(234, GetDoubleVector()).IgnoreError();
 
