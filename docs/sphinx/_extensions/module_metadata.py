@@ -48,10 +48,10 @@ except ModuleNotFoundError:
     jsonschema_enabled = False
 # pylint: enable=import-error
 
-import docutils
-from docutils import nodes
-from docutils.nodes import Element
-import docutils.statemachine
+import docutils  # type: ignore[import-untyped]
+from docutils import nodes  # type: ignore[import-untyped]
+from docutils.nodes import Element  # type: ignore[import-untyped]
+import docutils.statemachine  # type: ignore[import-untyped]
 
 # pylint: disable=consider-using-from-import
 import docutils.parsers.rst.directives as directives  # type: ignore
@@ -72,8 +72,10 @@ EnvAttrT = TypeVar('EnvAttrT')
 # would cause hundreds of filesystem reads on each build because those event
 # handlers fire once for each docs page that's built.
 try:  # Bazel location for the data
+    # pylint: disable=unused-import
     from python.runfiles import runfiles  # type: ignore
 
+    # pylint: enable=unused-import
     script_dir = os.path.dirname(os.path.abspath(__file__))
     schema_file = f"{script_dir}/../module_metadata_schema.json"
     metadata_file = f"{script_dir}/../module_metadata.json"
@@ -532,6 +534,7 @@ def should_add_rust_link(module_name: str, languages: list[str] | None) -> bool:
 # TODO: https://pwbug.dev/426012010 - Make this logic general,
 # like how `should_add_rust_link` does it.
 def should_add_doxygen_link(module_name) -> bool:
+    """Returns True if the module has a Doxygen API reference group."""
     ok = [
         'pw_alignment',
         'pw_allocator',
@@ -544,6 +547,7 @@ def should_add_doxygen_link(module_name) -> bool:
         'pw_bluetooth',
         'pw_bluetooth_proxy',
         'pw_bluetooth_sapphire',
+        'pw_buf',
         'pw_build',
         'pw_bytes',
         'pw_channel',
@@ -557,15 +561,18 @@ def should_add_doxygen_link(module_name) -> bool:
         'pw_digital_io_mcuxpresso',
         'pw_display',
         'pw_elf',
+        'pw_enum',
         'pw_function',
         'pw_hdlc',
         'pw_hex_dump',
         'pw_i2c',
         'pw_i2c_linux',
+        'pw_i2c_zephyr',
         'pw_interrupt',
         'pw_json',
         'pw_kvs',
         'pw_log',
+        'pw_log_string',
         'pw_log_tokenized',
         'pw_malloc',
         'pw_multibuf',
@@ -592,12 +599,21 @@ def should_add_doxygen_link(module_name) -> bool:
         'pw_toolchain',
         'pw_trace_tokenized',
         'pw_transfer',
+        'pw_transport',
         'pw_uart',
+        'pw_unit_test',
         'pw_uuid',
         'pw_varint',
         'pw_work_queue',
     ]
     return module_name in ok
+
+
+def _has_slug_placeholder(toctree: Element, slug: str) -> bool:
+    """Returns True if `toctree` contains an explicit placeholder for `slug`."""
+    entries = toctree.get('entries', [])
+    slug_uri = f'pw://{slug}'
+    return any(target in (slug, slug_uri) for _, target in entries)
 
 
 def _insert_or_append_link(
@@ -606,7 +622,7 @@ def _insert_or_append_link(
     default_title: str,
     url: str,
 ) -> None:
-    """Inserts link at slug placeholder position, or appends to end of toctree."""
+    """Inserts link at slug placeholder position, or appends to toctree."""
     entries = toctree.setdefault('entries', [])
     rawentries = toctree.setdefault('rawentries', [])
     slug_uri = f'pw://{slug}'
@@ -625,7 +641,7 @@ def _insert_or_append_link(
 
 
 def add_links(module_name: str, toctree: Element) -> None:
-    """Adds API reference, source code, and issues URLs to a module's table of contents tree.
+    """Adds API reference, source code, and issues URLs to a module's toctree.
 
     If a standard slug placeholder (e.g. `cc-api-ref`, `rust-api-ref`,
     `source-code`, `issues`) is present in the `toctree`, the link replaces
@@ -642,14 +658,18 @@ def add_links(module_name: str, toctree: Element) -> None:
     """
     languages = get_languages(module_name)
 
-    if should_add_rust_link(module_name, languages):
+    if should_add_rust_link(module_name, languages) or _has_slug_placeholder(
+        toctree, 'rust-api-ref'
+    ):
         _insert_or_append_link(
             toctree,
             slug='rust-api-ref',
             default_title='Rust API reference',
             url=rustdoc_url(module_name),
         )
-    if should_add_doxygen_link(module_name):
+    if should_add_doxygen_link(module_name) or _has_slug_placeholder(
+        toctree, 'cc-api-ref'
+    ):
         _insert_or_append_link(
             toctree,
             slug='cc-api-ref',

@@ -16,6 +16,7 @@ load("@bazel_skylib//rules:copy_directory.bzl", "copy_directory")
 load("@sphinxdocs//sphinxdocs:sphinx.bzl", "sphinx_build_binary", "sphinx_docs")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:python.bzl", "pw_py_test")
 
 licenses(["notice"])
 
@@ -35,6 +36,26 @@ sphinx_docs_library(
     ],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:private"],
+)
+
+pw_py_test(
+    name = "module_metadata_test",
+    srcs = [
+        "_extensions/module_metadata.py",
+        "_extensions/module_metadata_test.py",
+        "_extensions/toctree.py",
+    ],
+    data = [
+        "module_metadata.json",
+        "module_metadata_schema.json",
+    ],
+    imports = ["_extensions"],
+    deps = [
+        "@pigweed_python_packages//jsonschema",
+        "@pigweed_python_packages//sphinx",
+        "@pigweed_python_packages//sphinx_design",
+        "@rules_python//python/runfiles",
+    ],
 )
 
 sphinx_docs_library(
