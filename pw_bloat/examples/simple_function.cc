@@ -21,6 +21,6 @@ int main(int argc, char** argv) {
   (void)argv;
 
   // Add function and call to this binary.
-  *non_optimizable_pointer = SimpleFunction();
+  *non_optimizable_pointer = static_cast<char>(SimpleFunction());
   return SimpleFunction();
 }

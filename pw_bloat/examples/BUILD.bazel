@@ -42,7 +42,6 @@ pw_size_diff(
 pw_cc_size_binary(
     name = "simple_function",
     srcs = ["simple_function.cc"],
-    features = ["-conversion_warnings"],
 )
 
 pw_size_diff(

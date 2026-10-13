@@ -53,7 +53,8 @@ void BloatThisBinary() {
                non_optimizable_pointer,
                kRandomLargeNumber);
 
-  *non_optimizable_pointer = std::strlen(non_optimizable_pointer);
+  *non_optimizable_pointer =
+      static_cast<char>(std::strlen(non_optimizable_pointer));
 
   // This code ensures users do not have to pay for the base cost of using
   // asserts and logging.

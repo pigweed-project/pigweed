@@ -27,7 +27,6 @@ cc_library(
     name = "bloat_this_binary",
     srcs = ["bloat_this_binary.cc"],
     hdrs = ["public/pw_bloat/bloat_this_binary.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_assert:assert",
         "//pw_assert:check",
