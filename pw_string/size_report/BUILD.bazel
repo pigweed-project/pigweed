@@ -25,7 +25,6 @@ pw_cc_size_binary(
     name = "single_write_snprintf",
     srcs = ["format_single.cc"],
     copts = ["-DUSE_FORMAT=0"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -36,7 +35,6 @@ pw_cc_size_binary(
     name = "single_write_format",
     srcs = ["format_single.cc"],
     copts = ["-DUSE_FORMAT=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -47,7 +45,6 @@ pw_cc_size_binary(
     name = "multiple_writes_snprintf",
     srcs = ["format_multiple.cc"],
     copts = ["-DUSE_FORMAT=0"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -58,7 +55,6 @@ pw_cc_size_binary(
     name = "multiple_writes_format",
     srcs = ["format_multiple.cc"],
     copts = ["-DUSE_FORMAT=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -69,7 +65,6 @@ pw_cc_size_binary(
     name = "many_writes_snprintf",
     srcs = ["format_many_without_error_handling.cc"],
     copts = ["-DUSE_FORMAT=0"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -80,7 +75,6 @@ pw_cc_size_binary(
     name = "many_writes_format",
     srcs = ["format_many_without_error_handling.cc"],
     copts = ["-DUSE_FORMAT=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -94,7 +88,6 @@ pw_cc_size_binary(
         "-DUSE_STRING_BUILDER=0",
         "-DPROVIDE_BASE_SNPRINTF=0",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -108,7 +101,6 @@ pw_cc_size_binary(
         "-DUSE_STRING_BUILDER=1",
         "-DPROVIDE_BASE_SNPRINTF=0",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -122,7 +114,6 @@ pw_cc_size_binary(
         "-DUSE_STRING_BUILDER=0",
         "-DPROVIDE_BASE_SNPRINTF=1",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -136,7 +127,6 @@ pw_cc_size_binary(
         "-DUSE_STRING_BUILDER=1",
         "-DPROVIDE_BASE_SNPRINTF=1",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -147,7 +137,6 @@ pw_cc_size_binary(
     name = "build_string_incremental_with_snprintf",
     srcs = ["string_builder_size_report_incremental.cc"],
     copts = ["-DUSE_STRING_BUILDER=0"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",
@@ -158,7 +147,6 @@ pw_cc_size_binary(
     name = "build_string_incremental_with_string_builder",
     srcs = ["string_builder_size_report_incremental.cc"],
     copts = ["-DUSE_STRING_BUILDER=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_string",

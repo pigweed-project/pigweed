@@ -37,7 +37,7 @@
 namespace {
 
 bool ProcessResult(unsigned* total, pw::StatusWithSize result) {
-  *total += result.size();
+  *total += static_cast<unsigned>(result.size());
   return result.ok();
 }
 
@@ -67,7 +67,7 @@ bool ProcessResult(char* buffer, unsigned* total, unsigned size, int result) {
     return false;
   }
 
-  *total += result;
+  *total += static_cast<unsigned>(result);
   return true;
 }
 
@@ -115,5 +115,5 @@ unsigned OutputStringsToBuffer() {
 
 int main() {
   pw::bloat::BloatThisBinary();
-  return pw::string::OutputStringsToBuffer();
+  return static_cast<int>(pw::string::OutputStringsToBuffer());
 }

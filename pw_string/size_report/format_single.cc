@@ -44,9 +44,9 @@ unsigned OutputStringsToBuffer() {
 
 #if USE_FORMAT
   // The code for using pw::string::Format is much simpler and safer.
-  return Format(
-             span(buffer, buffer_size), "hello %s %d", get_buffer_2, get_size)
-      .size();
+  return static_cast<unsigned>(
+      Format(span(buffer, buffer_size), "hello %s %d", get_buffer_2, get_size)
+          .size());
 #else   // std::snprintf
   if (buffer_size == 0u) {
     return 0;
@@ -61,7 +61,7 @@ unsigned OutputStringsToBuffer() {
   if (static_cast<size_t>(result) >= buffer_size) {
     return buffer_size - 1;
   }
-  return result;
+  return static_cast<unsigned>(result);
 #endif  // USE_FORMAT
 }
 
@@ -69,5 +69,5 @@ unsigned OutputStringsToBuffer() {
 
 int main() {
   pw::bloat::BloatThisBinary();
-  return pw::string::OutputStringsToBuffer();
+  return static_cast<int>(pw::string::OutputStringsToBuffer());
 }

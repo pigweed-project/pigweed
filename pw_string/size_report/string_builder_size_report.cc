@@ -46,7 +46,7 @@ unsigned BytesWritten(char* buffer, unsigned size, int result) {
     return size > 0u ? size - 1 : 0;
   }
 
-  return result;
+  return static_cast<unsigned>(result);
 }
 
 #endif
@@ -66,13 +66,10 @@ int main() {
 #endif  // PROVIDE_BASE_SNPRINTF
 
 #if USE_STRING_BUILDER
-  return pw::MakeString<64>("Hello, ",
-                            string,
-                            ". The answer to 3 == ",
-                            integer,
-                            " is ",
-                            boolean)
-      .size();
+  return static_cast<int>(
+      pw::MakeString<64>(
+          "Hello, ", string, ". The answer to 3 == ", integer, " is ", boolean)
+          .size());
 
 #else
   char buffer[64];
@@ -84,7 +81,7 @@ int main() {
                              integer,
                              boolean ? "true" : "false");
 
-  return BytesWritten(buffer, sizeof(buffer), result);
+  return static_cast<int>(BytesWritten(buffer, sizeof(buffer), result));
 
 #endif  // USE_STRING_BUILDER
 }

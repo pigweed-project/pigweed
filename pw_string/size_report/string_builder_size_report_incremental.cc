@@ -36,23 +36,25 @@
 #else  // std::snprintf
 
 #define FORMAT_STRING(unused_string_builder_out, ...) \
-  ProcessResult(buffer,                               \
-                &bytes,                               \
-                sizeof(buffer) - bytes,               \
-                std::snprintf(buffer, sizeof(buffer) - bytes, __VA_ARGS__))
+  ProcessResult(                                      \
+      buffer,                                         \
+      &bytes,                                         \
+      sizeof(buffer) - static_cast<size_t>(bytes),    \
+      std::snprintf(                                  \
+          buffer, sizeof(buffer) - static_cast<size_t>(bytes), __VA_ARGS__))
 
 #endif  // USE_STRING_BUILDER
 
-bool ProcessResult(char* buffer, unsigned* total, unsigned size, int result) {
+bool ProcessResult(char* buffer, int* total, size_t size, int result) {
   if (result < 0) {
     // Null-terminate since snprintf doesn't report the written count.
     buffer[size] = '\0';
     return false;
   }
 
-  if (static_cast<unsigned>(result) >= size) {
+  if (static_cast<size_t>(result) >= size) {
     if (size > 0u) {
-      *total += size - 1;
+      *total += static_cast<int>(size - 1);
     }
     return false;
   }
@@ -72,9 +74,9 @@ int main() {
   auto string = get_string;
 
   char* buffer = get_buffer;
-  unsigned size = get_integer;
+  size_t size = static_cast<size_t>(get_integer);
 
-  unsigned bytes = 0;
+  int bytes = 0;
 
   // Use std::snprintf and pw::StringBuilder so they're both accounted for in
   // the base.
