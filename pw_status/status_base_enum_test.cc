@@ -26,7 +26,7 @@
 
 namespace {
 
-PW_STATUS_TYPE(PwEnumStatus, ::pw::status_test::GeneratedEnum::kOk);
+using PwEnumStatus = ::pw::StatusOf<::pw::status_test::GeneratedEnum::kOk>;
 
 template <typename T, typename = void>
 struct HasIsOk : std::false_type {};

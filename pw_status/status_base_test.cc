@@ -53,6 +53,7 @@ namespace {
 
 using ::custom_err::CustomError;
 using ::pw::StatusBase;
+using ::pw::StatusOf;
 
 class [[nodiscard]] TestStatus final
     : public StatusBase<TestStatus, CustomError::kOk> {
@@ -61,21 +62,21 @@ class [[nodiscard]] TestStatus final
   explicit constexpr TestStatus(CustomError code) : StatusBase(code) {}
 };
 
-PW_STATUS_TYPE(MacroStatus, CustomError::kOk);
+using AliasStatus = StatusOf<CustomError::kOk>;
 
 enum UnscopedError {
   kUnscopedOk = 10,
   kUnscopedFailed = 20,
 };
 
-PW_STATUS_TYPE(UnscopedStatus, kUnscopedOk);
+using UnscopedStatus = StatusOf<kUnscopedOk>;
 
 enum class SignedError : int16_t {
   kOk = 0,
   kNegative = -1,
 };
 
-PW_STATUS_TYPE(SignedStatus, SignedError::kOk);
+using SignedStatus = StatusOf<SignedError::kOk>;
 
 class [[nodiscard]] IntStatus final : public StatusBase<IntStatus, 200> {
  public:
@@ -84,9 +85,9 @@ class [[nodiscard]] IntStatus final : public StatusBase<IntStatus, 200> {
 };
 
 static_assert(std::is_same_v<TestStatus::Code, CustomError>);
-static_assert(std::is_same_v<MacroStatus::Code, CustomError>);
+static_assert(std::is_same_v<AliasStatus::Code, CustomError>);
 static_assert(sizeof(TestStatus) == sizeof(uint8_t));
-static_assert(sizeof(MacroStatus) == sizeof(uint8_t));
+static_assert(sizeof(AliasStatus) == sizeof(uint8_t));
 static_assert(sizeof(SignedStatus) == sizeof(int16_t));
 static_assert(std::is_same_v<IntStatus::Code, int>);
 static_assert(sizeof(IntStatus) == sizeof(int));
@@ -120,14 +121,14 @@ static_assert(
 // Derived status types require explicit construction from the underlying code.
 static_assert(!std::is_convertible_v<CustomError, TestStatus>);
 static_assert(std::is_constructible_v<TestStatus, CustomError>);
-static_assert(!std::is_convertible_v<CustomError, MacroStatus>);
-static_assert(std::is_constructible_v<MacroStatus, CustomError>);
+static_assert(!std::is_convertible_v<CustomError, AliasStatus>);
+static_assert(std::is_constructible_v<AliasStatus, CustomError>);
 static_assert(!std::is_convertible_v<int, IntStatus>);
 static_assert(std::is_constructible_v<IntStatus, int>);
 
 // Different status types cannot be implicitly converted to each other.
-static_assert(!std::is_convertible_v<MacroStatus, TestStatus>);
-static_assert(!std::is_convertible_v<TestStatus, MacroStatus>);
+static_assert(!std::is_convertible_v<AliasStatus, TestStatus>);
+static_assert(!std::is_convertible_v<TestStatus, AliasStatus>);
 static_assert(!std::is_convertible_v<pw::Status, TestStatus>);
 static_assert(!std::is_convertible_v<TestStatus, pw::Status>);
 
@@ -213,7 +214,7 @@ PW_CONSTEXPR_TEST(StatusBaseTest, Equality_StatusCode, {
 
 PW_CONSTEXPR_TEST(StatusBaseTest, IgnoreError, {
   TestStatus(CustomError::kFailed).IgnoreError();
-  MacroStatus(CustomError::kFailed).IgnoreError();
+  AliasStatus(CustomError::kFailed).IgnoreError();
 });
 
 PW_CONSTEXPR_TEST(StatusBaseTest, PwTry, {
@@ -247,35 +248,35 @@ PW_CONSTEXPR_TEST(StatusBaseTest, ConvertToStatus, {
                     pw::OkStatus());
 });
 
-PW_CONSTEXPR_TEST(StatusBaseTest, MacroStatus_Basic, {
-  MacroStatus status;
+PW_CONSTEXPR_TEST(StatusBaseTest, StatusOf_Basic, {
+  AliasStatus status;
   PW_TEST_EXPECT_TRUE(status.ok());
   PW_TEST_EXPECT_EQ(status.code(), CustomError::kOk);
 
-  MacroStatus err(CustomError::kTimeout);
+  AliasStatus err(CustomError::kTimeout);
   PW_TEST_EXPECT_FALSE(err.ok());
   PW_TEST_EXPECT_EQ(err, CustomError::kTimeout);
   PW_TEST_EXPECT_EQ(CustomError::kTimeout, err);
 
-  err.Update(MacroStatus(CustomError::kFailed));
+  err.Update(AliasStatus(CustomError::kFailed));
   PW_TEST_EXPECT_EQ(err, CustomError::kTimeout);
 });
 
-PW_CONSTEXPR_TEST(StatusBaseTest, MacroStatus_PwTry, {
-  constexpr auto TryFunc = [](MacroStatus s) -> MacroStatus {
+PW_CONSTEXPR_TEST(StatusBaseTest, StatusOf_PwTry, {
+  constexpr auto TryFunc = [](AliasStatus s) -> AliasStatus {
     PW_TRY(s);
-    return MacroStatus(CustomError::kOther);
+    return AliasStatus(CustomError::kOther);
   };
 
-  PW_TEST_EXPECT_EQ(TryFunc(MacroStatus(CustomError::kOk)),
+  PW_TEST_EXPECT_EQ(TryFunc(AliasStatus(CustomError::kOk)),
                     CustomError::kOther);
-  PW_TEST_EXPECT_EQ(TryFunc(MacroStatus(CustomError::kFailed)),
+  PW_TEST_EXPECT_EQ(TryFunc(AliasStatus(CustomError::kFailed)),
                     CustomError::kFailed);
 });
 
 PW_CONSTEXPR_TEST(StatusBaseTest, CodeAlias, {
-  MacroStatus m(MacroStatus::Code::kTimeout);
-  PW_TEST_EXPECT_EQ(m, MacroStatus::Code::kTimeout);
+  AliasStatus m(AliasStatus::Code::kTimeout);
+  PW_TEST_EXPECT_EQ(m, AliasStatus::Code::kTimeout);
   PW_TEST_EXPECT_EQ(m.code(), CustomError::kTimeout);
 
   TestStatus t(TestStatus::Code::kFailed);
@@ -328,7 +329,7 @@ enum class DriverError : uint8_t {
   kTimeout,
 };
 
-PW_STATUS_TYPE(DriverStatus, DriverError::kOk);
+using DriverStatus = pw::StatusOf<DriverError::kOk>;
 
 constexpr DriverStatus WriteByte(uint8_t byte) {
   if (byte == 0xFF) {
@@ -481,10 +482,10 @@ PW_CONSTEXPR_TEST(StatusBaseTest, Str, {
   TestStatus failed_status(CustomError::kFailed);
   PW_TEST_EXPECT_STREQ(failed_status.str(), "Failed");
 
-  MacroStatus macro_ok;
-  PW_TEST_EXPECT_STREQ(macro_ok.str(), "Ok");
-  MacroStatus macro_fail(CustomError::kFailed);
-  PW_TEST_EXPECT_STREQ(macro_fail.str(), "Failed");
+  AliasStatus alias_ok;
+  PW_TEST_EXPECT_STREQ(alias_ok.str(), "Ok");
+  AliasStatus alias_fail(CustomError::kFailed);
+  PW_TEST_EXPECT_STREQ(alias_fail.str(), "Failed");
 });
 
 [[maybe_unused]] void NonEnumStatusBaseStr() {
@@ -492,18 +493,17 @@ PW_CONSTEXPR_TEST(StatusBaseTest, Str, {
   PW_NC_EXPECT("only supported for status types with enum codes");
   IntStatus status;
   [[maybe_unused]] const char* str = status.str();
-#elif PW_NC_TEST(NodiscardMacroStatus)
+#elif PW_NC_TEST(NodiscardStatusOf)
   PW_NC_EXPECT("ignoring return.*value");
-  auto fn = []() -> MacroStatus { return MacroStatus(); };
+  auto fn = []() -> AliasStatus { return AliasStatus(); };
   fn();
-#elif PW_NC_TEST(StatusTypeMacroRequiresEnum)
-  PW_NC_EXPECT("PW_STATUS_TYPE requires an enum status code");
-  PW_STATUS_TYPE(IntMacroStatus, 0);
-  IntMacroStatus status;
+#elif PW_NC_TEST(StatusOfRequiresEnum)
+  PW_NC_EXPECT("StatusOf requires an enum status code");
+  StatusOf<0> status;
   status.IgnoreError();
 #elif PW_NC_TEST(ImplicitConstructionFails)
   PW_NC_EXPECT("no viable conversion|cannot convert|non-scalar type");
-  MacroStatus s = CustomError::kFailed;
+  AliasStatus s = CustomError::kFailed;
   (void)s;
 #endif  // PW_NC_TEST
 }

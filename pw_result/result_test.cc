@@ -613,7 +613,7 @@ enum class HasValue : uint8_t {
   kDefinitelyNot = 3,
 };
 
-PW_STATUS_TYPE(HasValueStatus, HasValue::kYes);
+using HasValueStatus = StatusOf<HasValue::kYes>;
 
 template <typename T>
 using TestResult = Result<T, HasValueStatus>;
@@ -1000,7 +1000,7 @@ enum class DriverError : uint8_t {
   kTimeout,
 };
 
-PW_STATUS_TYPE(DriverStatus, DriverError::kOk);
+using DriverStatus = pw::StatusOf<DriverError::kOk>;
 
 constexpr pw::Result<uint8_t, DriverStatus> ReadRegister() {
   if (!BusReady()) {

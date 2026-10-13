@@ -703,7 +703,7 @@ TEST(Result, UniquePtrImplicitConstruction) {
 }
 
 enum class OuterStatus { kOk, kInvalid };
-PW_STATUS_TYPE(OuterStatusType, OuterStatus::kOk);
+using OuterStatusType = pw::StatusOf<OuterStatus::kOk>;
 using OuterResult = pw::Result<pw::Result<CopyDetector>, OuterStatusType>;
 
 TEST(Result, NestedResultCopyAndMoveConstructorTests) {

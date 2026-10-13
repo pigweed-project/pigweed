@@ -190,14 +190,16 @@ This generates a ``[[nodiscard]]`` class named ``I2cStatus`` that inherits from
 
 See :ref:`module-pw_enum` for details.
 
-.. _module-pw_status-guide-custom-status-type:
+.. _module-pw_status-guide-custom-status-of:
 
-Alternative: PW_STATUS_TYPE
----------------------------
+Alternative: pw::StatusOf
+-------------------------
 If the status code enum cannot be declared in a ``pw_cc_enum_library``,
-:cc:`PW_STATUS_TYPE` wraps an existing enum with a :cc:`pw::StatusBase`-derived
-class. It does not generate factory functions, and ``str()`` requires the enum
-to support :cc:`pw::EnumToString` (e.g. by registering it with ``PW_ENUM``).
+:cc:`pw::StatusOf` wraps an existing enum in a :cc:`pw::StatusBase`-derived
+class. Create a type alias of ``pw::StatusOf`` parameterized on the OK
+enumerator. It does not generate factory functions, and ``str()`` requires the
+enum to support :cc:`pw::EnumToString` (e.g. by registering it with
+``PW_ENUM``).
 
 .. literalinclude:: status_base_test.cc
    :language: cpp

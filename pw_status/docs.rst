@@ -170,9 +170,9 @@ The recommended way to define an enum-based status type is with
 each error code, ``Is*()`` query functions, stringification, and tokenized
 logging support.
 
-If not using ``pw_enum``, the :c:macro:`PW_STATUS_TYPE` macro (:ref:`guide
-<module-pw_status-guide-custom-status-type>`) defines a minimal ``final``,
-``[[nodiscard]]`` status class wrapping an existing enum:
+If not using ``pw_enum``, :cc:`pw::StatusOf` (:ref:`guide
+<module-pw_status-guide-custom-status-of>`) is a ``final``, ``[[nodiscard]]``
+status class template that wraps an existing enum:
 
 .. literalinclude:: status_base_test.cc
    :language: cpp

@@ -39,10 +39,9 @@ namespace pw {
 /// retrieving the code (`code()`), string formatting (`str()`), updating,
 /// and equality comparisons.
 ///
-/// Custom status types should derive from `StatusBase<Derived, kOkCode>` or use
-/// the `PW_STATUS_TYPE` macro. Derived classes should be declared
-/// `[[nodiscard]]` unless created using `PW_STATUS_TYPE` (which applies
-/// `[[nodiscard]]` automatically).
+/// Custom status types should derive from `StatusBase<Derived, kOkCode>` or
+/// alias `StatusOf<kOkCode>`. Derived classes should be declared
+/// `[[nodiscard]]` unless using `StatusOf` (which is declared `[[nodiscard]]`).
 ///
 /// Users should not interact directly `StatusBase`, except to instantiate a
 /// custom status class. Do not use `StatusBase` for variables or function
@@ -117,20 +116,29 @@ class StatusBase {
   Code code_;
 };
 
-/// Defines a status type wrapping an existing status code enum.
+/// Status type wrapping an existing status code enum.
 ///
-/// The status type is default constructible (OK) and explicitly constructible
-/// from the enum. Enumerators are accessed through the enum type or the `Code`
-/// alias (e.g. `MyStatus::Code::kFailed`).
-#define PW_STATUS_TYPE(name, ok_code)                                       \
-  class [[nodiscard]] name final : public ::pw::StatusBase<name, ok_code> { \
-   public:                                                                  \
-    static_assert(::std::is_enum_v<Code>,                                   \
-                  "PW_STATUS_TYPE requires an enum status code");           \
-    constexpr name() = default;                                             \
-    explicit constexpr name(Code code)                                      \
-        : ::pw::StatusBase<name, ok_code>(code) {}                          \
-  }
+/// `StatusOf` is default constructible (OK) and explicitly constructible from
+/// the enum. Enumerators are accessed through the enum type or the `Code` alias
+/// (e.g. `MyStatus::Code::kFailed`).
+///
+/// Users typically create a type alias of `StatusOf` for their status code enum
+/// (e.g. `using MyStatus = pw::StatusOf<MyCode::kOk>;`).
+///
+/// @tparam kOkCode Enumerator that represents success (`ok() == true`).
+template <_PW_STATUS_CODE auto kOkCode>
+class [[nodiscard]] StatusOf final
+    : public StatusBase<StatusOf<kOkCode>, kOkCode> {
+ public:
+  using typename StatusBase<StatusOf<kOkCode>, kOkCode>::Code;
+
+  static_assert(std::is_enum_v<Code>, "StatusOf requires an enum status code");
+
+  constexpr StatusOf() = default;
+
+  explicit constexpr StatusOf(Code code)
+      : StatusBase<StatusOf<kOkCode>, kOkCode>(code) {}
+};
 
 namespace internal {
 

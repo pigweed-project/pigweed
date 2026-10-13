@@ -258,7 +258,7 @@ constexpr const char* PwEnumToString(CustomCode code) {
   return code == CustomCode::kOk ? "Ok" : "Timeout";
 }
 
-PW_STATUS_TYPE(CustomStatus, CustomCode::kOk);
+using CustomStatus = StatusOf<CustomCode::kOk>;
 
 class [[nodiscard]] IntCodeStatus final
     : public StatusBase<IntCodeStatus, 200> {

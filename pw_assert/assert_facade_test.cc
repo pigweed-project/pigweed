@@ -578,7 +578,7 @@ constexpr const char* PwEnumToString(CustomCode code) {
   return code == CustomCode::kOk ? "Ok" : "BusFault";
 }
 
-PW_STATUS_TYPE(CustomStatus, CustomCode::kOk);
+using CustomStatus = pw::StatusOf<CustomCode::kOk>;
 
 class [[nodiscard]] IntCodeStatus final
     : public pw::StatusBase<IntCodeStatus, 200> {
