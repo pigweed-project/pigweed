@@ -216,7 +216,9 @@ metadata accurate from the command line.
 Posting progress updates: issue comment
 =======================================
 Add comments inline with ``-m`` / ``--body`` or from a file with
-``--body-file`` (use ``-`` to read from standard input):
+``--body-file`` (use ``-`` to read from standard input). Formatting for issue
+descriptions and comments is assumed to be Markdown, so fenced code blocks,
+headings, lists, and links render natively in the Buganizer UI:
 
 .. code-block:: console
 

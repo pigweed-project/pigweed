@@ -777,7 +777,7 @@ var issueCreateCmd = &cobra.Command{
 			IssueState: state,
 		}
 		if body != "" {
-			req.IssueComment = &BuganizerComment{Comment: body}
+			req.IssueComment = NewMarkdownComment(body)
 		}
 
 		created, err := client.CreateIssue(ctx, req)

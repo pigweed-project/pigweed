@@ -42,7 +42,7 @@ if [ -d "${_PW_SCRIPT_DIR}/environment/cipd/packages/bazelisk" ]; then
   export PATH="${_PW_SCRIPT_DIR}/environment/cipd/packages/bazelisk:${PATH}"
 elif [ -n "$_MAIN_REPO_DIR" ] && [ -d "${_MAIN_REPO_DIR}/environment/cipd/packages/bazelisk" ]; then
   export PATH="${_MAIN_REPO_DIR}/environment/cipd/packages/bazelisk:${PATH}"
-elif [ -d "$HOME/bin" ]; then
+elif ! command -v bazelisk >/dev/null 2>&1 && [ -d "$HOME/bin" ]; then
   export PATH="$HOME/bin:${PATH}"
 fi
 if [ -d "${_PW_SCRIPT_DIR}/environment/cipd/packages/luci" ]; then
@@ -58,17 +58,34 @@ declare -r _GH_DIR="${_PW_GH_OUT_DIR:-${_PW_SCRIPT_DIR}/out/gh}"
 declare -r _GH_BIN="${_GH_DIR}/gh-ish"
 declare -r _GH_HASH_FILE="${_GH_DIR}/git_hash"
 
-_CURRENT_HASH=$(git -C "$_PW_SCRIPT_DIR" rev-parse HEAD 2>/dev/null || true)
+_CURRENT_HASH=$(git -C "$_PW_SCRIPT_DIR" rev-parse HEAD:pw_ghish HEAD:MODULE.bazel.lock 2>/dev/null | tr '\n' ':' || true)
+if [ -z "$_CURRENT_HASH" ]; then
+  _CURRENT_HASH=$(git -C "$_PW_SCRIPT_DIR" rev-parse HEAD 2>/dev/null || true)
+fi
 if [ -z "$_CURRENT_HASH" ] && [ -n "${PW_GH_DEBUG:-}" ]; then
   echo "Warning: git rev-parse HEAD failed in $_PW_SCRIPT_DIR; caching disabled." >&2
 fi
 
 _STALE=1
 _DIRTY=$(git -C "$_PW_SCRIPT_DIR" status --porcelain -- pw_ghish ':(exclude)*.md' 2>/dev/null || true)
-if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -z "$_DIRTY" ] && [ -f "$_GH_BIN" ] && [ -f "$_GH_HASH_FILE" ] && [ -n "$_CURRENT_HASH" ]; then
-  _SAVED_HASH=$(cat "$_GH_HASH_FILE" 2>/dev/null || true)
-  if [ "$_CURRENT_HASH" = "$_SAVED_HASH" ]; then
-    _STALE=0
+if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -z "$_DIRTY" ] && [ -n "$_CURRENT_HASH" ]; then
+  if [ -f "$_GH_BIN" ] && [ -f "$_GH_HASH_FILE" ]; then
+    _SAVED_HASH=$(cat "$_GH_HASH_FILE" 2>/dev/null || true)
+    if [ "$_CURRENT_HASH" = "$_SAVED_HASH" ]; then
+      _STALE=0
+    fi
+  fi
+  if [ $_STALE -eq 1 ] && [ -n "$_MAIN_REPO_DIR" ] && [ "$_MAIN_REPO_DIR" != "$_PW_SCRIPT_DIR" ]; then
+    if [ -f "${_MAIN_REPO_DIR}/out/gh/gh-ish" ] && [ -f "${_MAIN_REPO_DIR}/out/gh/git_hash" ]; then
+      _MAIN_SAVED_HASH=$(cat "${_MAIN_REPO_DIR}/out/gh/git_hash" 2>/dev/null || true)
+      if [ "$_CURRENT_HASH" = "$_MAIN_SAVED_HASH" ]; then
+        mkdir -p "$_GH_DIR"
+        cp -f "${_MAIN_REPO_DIR}/out/gh/gh-ish" "$_GH_BIN"
+        chmod +x "$_GH_BIN"
+        echo "$_CURRENT_HASH" > "$_GH_HASH_FILE"
+        _STALE=0
+      fi
+    fi
   fi
 fi
 
@@ -81,6 +98,7 @@ if [ $_STALE -eq 1 ]; then
     fi
   fi
 
+  _LOCK_DIRTY=$(git -C "$_PW_SCRIPT_DIR" status --porcelain -- MODULE.bazel.lock 2>/dev/null || true)
   (
     cd "$_PW_SCRIPT_DIR"
     bazelisk build \
@@ -88,6 +106,9 @@ if [ $_STALE -eq 1 ]; then
       --noshow_loading_progress \
       //pw_ghish:gh-ish
   )
+  if [ -z "$_LOCK_DIRTY" ]; then
+    git -C "$_PW_SCRIPT_DIR" checkout -- MODULE.bazel.lock 2>/dev/null || true
+  fi
 
   _BUILT_BIN="${_PW_SCRIPT_DIR}/bazel-bin/pw_ghish/gh-ish_/gh-ish"
   if [ ! -f "$_BUILT_BIN" ]; then

@@ -310,6 +310,11 @@ func TestIssueTrackerClient_ListAllComments_Pagination(t *testing.T) {
 	if all[4].Comment != "Comment 5" {
 		t.Errorf("all[4].Comment = %q, want Comment 5", all[4].Comment)
 	}
+	for i := 1; i < len(all); i++ {
+		if all[i].FormattingMode != DefaultCommentFormattingMode {
+			t.Errorf("all[%d].FormattingMode = %q, want %q", i, all[i].FormattingMode, DefaultCommentFormattingMode)
+		}
+	}
 }
 
 func TestIssueTrackerClient_CloseAndReopenIssue(t *testing.T) {
@@ -342,6 +347,20 @@ func TestIssueTrackerClient_CloseAndReopenIssue(t *testing.T) {
 	}
 	if reopened.State.Status != "ASSIGNED" {
 		t.Errorf("Status after reopen = %q, want ASSIGNED", reopened.State.Status)
+	}
+
+	// Verify close and reopen comments use MARKDOWN formatting mode
+	comments, err := client.ListAllComments(ctx, 501)
+	if err != nil {
+		t.Fatalf("ListAllComments failed: %v", err)
+	}
+	if len(comments) < 3 {
+		t.Fatalf("expected at least 3 comments on 501, got %d", len(comments))
+	}
+	for i := 1; i < len(comments); i++ {
+		if comments[i].FormattingMode != DefaultCommentFormattingMode {
+			t.Errorf("comments[%d].FormattingMode = %q, want %q", i, comments[i].FormattingMode, DefaultCommentFormattingMode)
+		}
 	}
 
 	// 3. Reopening an already open issue must fail fast

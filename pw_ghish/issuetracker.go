@@ -110,14 +110,27 @@ type BuganizerUser struct {
 	EmailAddress string `json:"emailAddress"`
 }
 
+// DefaultCommentFormattingMode is the default Buganizer formatting mode for
+// issue descriptions and comments created by gh-ish.
+const DefaultCommentFormattingMode = "MARKDOWN"
+
 // BuganizerComment represents a comment entry on a Buganizer issue.
 type BuganizerComment struct {
 	CommentNumber  int            `json:"commentNumber,omitempty"`
 	Comment        string         `json:"comment"`
+	FormattingMode string         `json:"formattingMode,omitempty"`
 	Author         *BuganizerUser `json:"author,omitempty"`
 	OriginalAuthor *BuganizerUser `json:"originalAuthor,omitempty"`
 	LastEditor     *BuganizerUser `json:"lastEditor,omitempty"`
 	CreatedTime    time.Time      `json:"createdTime,omitempty"`
+}
+
+// NewMarkdownComment creates a BuganizerComment configured for Markdown rendering.
+func NewMarkdownComment(text string) *BuganizerComment {
+	return &BuganizerComment{
+		Comment:        text,
+		FormattingMode: DefaultCommentFormattingMode,
+	}
 }
 
 // EffectiveAuthorEmail returns the comment author's email from author, originalAuthor, or lastEditor.
@@ -754,6 +767,9 @@ func (c *IssueTrackerClient) ListIssues(ctx context.Context, query string, pageS
 
 // CreateIssue creates a new Buganizer issue with the provided state and initial comment.
 func (c *IssueTrackerClient) CreateIssue(ctx context.Context, req *CreateIssueRequest) (*BuganizerIssue, error) {
+	if req != nil && req.IssueComment != nil && req.IssueComment.Comment != "" && req.IssueComment.FormattingMode == "" {
+		req.IssueComment.FormattingMode = DefaultCommentFormattingMode
+	}
 	var created BuganizerIssue
 	if err := c.doJSON(ctx, http.MethodPost, "/issues", req, &created); err != nil {
 		return nil, err
@@ -763,6 +779,9 @@ func (c *IssueTrackerClient) CreateIssue(ctx context.Context, req *CreateIssueRe
 
 // ModifyIssue atomically updates fields on an existing Buganizer issue and optionally posts a comment.
 func (c *IssueTrackerClient) ModifyIssue(ctx context.Context, issueID int64, req *ModifyIssueRequest) (*BuganizerIssue, error) {
+	if req != nil && req.IssueComment != nil && req.IssueComment.Comment != "" && req.IssueComment.FormattingMode == "" {
+		req.IssueComment.FormattingMode = DefaultCommentFormattingMode
+	}
 	path := fmt.Sprintf("/issues/%d:modify", issueID)
 	var updated BuganizerIssue
 	if err := c.doJSON(ctx, http.MethodPost, path, req, &updated); err != nil {
@@ -795,9 +814,9 @@ func (c *IssueTrackerClient) ListComments(ctx context.Context, issueID int64, pa
 // CreateComment posts a new comment to an existing issue thread.
 func (c *IssueTrackerClient) CreateComment(ctx context.Context, issueID int64, commentText string) (*BuganizerComment, error) {
 	path := fmt.Sprintf("/issues/%d/comments", issueID)
-	req := BuganizerComment{Comment: commentText}
+	req := NewMarkdownComment(commentText)
 	var created BuganizerComment
-	if err := c.doJSON(ctx, http.MethodPost, path, &req, &created); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, path, req, &created); err != nil {
 		return nil, err
 	}
 	return &created, nil
@@ -850,7 +869,7 @@ func (c *IssueTrackerClient) CloseIssue(ctx context.Context, issueID int64, stat
 		Add:     addState,
 	}
 	if strings.TrimSpace(commentText) != "" {
-		req.IssueComment = &BuganizerComment{Comment: strings.TrimSpace(commentText)}
+		req.IssueComment = NewMarkdownComment(strings.TrimSpace(commentText))
 	}
 	return c.ModifyIssue(ctx, issueID, req)
 }
@@ -875,7 +894,7 @@ func (c *IssueTrackerClient) ReopenIssue(ctx context.Context, issueID int64, com
 		Add:     &BuganizerState{Status: targetStatus},
 	}
 	if strings.TrimSpace(commentText) != "" {
-		req.IssueComment = &BuganizerComment{Comment: strings.TrimSpace(commentText)}
+		req.IssueComment = NewMarkdownComment(strings.TrimSpace(commentText))
 	}
 	return c.ModifyIssue(ctx, issueID, req)
 }

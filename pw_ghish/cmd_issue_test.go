@@ -288,6 +288,9 @@ func TestIssueCreate_AndAmend(t *testing.T) {
 	if createdIssue.State.Priority != "P1" {
 		t.Errorf("created issue priority = %q, want P1", createdIssue.State.Priority)
 	}
+	if createdIssue.Description == nil || createdIssue.Description.FormattingMode != DefaultCommentFormattingMode {
+		t.Errorf("created issue description FormattingMode = %+v, want %q", createdIssue.Description, DefaultCommentFormattingMode)
+	}
 
 	// Verify commit message was amended with Bug: b/300001 while preserving Change-Id
 	if !strings.Contains(amendedMsg, "Bug: b/300001") {
@@ -333,6 +336,9 @@ func TestIssueEdit_Close_Reopen_Comment(t *testing.T) {
 	comments, _ := srv.Client().ListComments(context.Background(), 400, 10, "")
 	if len(comments.IssueComments) != 2 || comments.IssueComments[1].Comment != "Progress update comment" {
 		t.Errorf("unexpected comments after issue comment: %+v", comments.IssueComments)
+	}
+	if comments.IssueComments[1].FormattingMode != DefaultCommentFormattingMode {
+		t.Errorf("comment FormattingMode = %q, want %q", comments.IssueComments[1].FormattingMode, DefaultCommentFormattingMode)
 	}
 
 	// 3. Close with reason "not planned"

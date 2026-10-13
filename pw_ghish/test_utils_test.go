@@ -1008,10 +1008,11 @@ func (s *MockIssueTrackerServer) serveHTTP(w http.ResponseWriter, r *http.Reques
 		}
 		if req.IssueComment != nil && req.IssueComment.Comment != "" {
 			c := BuganizerComment{
-				CommentNumber: 1,
-				Comment:       req.IssueComment.Comment,
-				Author:        req.IssueState.Reporter,
-				CreatedTime:   now,
+				CommentNumber:  1,
+				Comment:        req.IssueComment.Comment,
+				FormattingMode: req.IssueComment.FormattingMode,
+				Author:         req.IssueState.Reporter,
+				CreatedTime:    now,
 			}
 			s.Comments[id] = []BuganizerComment{c}
 			issue.Description = &c
@@ -1071,9 +1072,10 @@ func (s *MockIssueTrackerServer) serveHTTP(w http.ResponseWriter, r *http.Reques
 			if req.IssueComment != nil && req.IssueComment.Comment != "" {
 				num := len(s.Comments[id]) + 1
 				c := BuganizerComment{
-					CommentNumber: num,
-					Comment:       req.IssueComment.Comment,
-					CreatedTime:   issue.ModifiedTime,
+					CommentNumber:  num,
+					Comment:        req.IssueComment.Comment,
+					FormattingMode: req.IssueComment.FormattingMode,
+					CreatedTime:    issue.ModifiedTime,
 				}
 				s.Comments[id] = append(s.Comments[id], c)
 			}
