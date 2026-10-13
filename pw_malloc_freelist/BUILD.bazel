@@ -31,7 +31,6 @@ alias(
 alias(
     name = "pw_malloc_freelist",
     actual = "//pw_malloc:bucket_allocator",
-    features = ["-conversion_warnings"],
 )
 
 sphinx_docs_library(
