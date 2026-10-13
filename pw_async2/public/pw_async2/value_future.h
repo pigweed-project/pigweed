@@ -70,11 +70,7 @@ class ValueFuture {
 
   ValueFuture& operator=(ValueFuture&& other) noexcept
       PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
-    if (this != &other) {
-      std::lock_guard lock(internal::ValueProviderLock());
-      core_ = std::move(other.core_);
-      value_ = std::move(other.value_);
-    }
+    MoveFrom(other);
     return *this;
   }
 
@@ -122,6 +118,40 @@ class ValueFuture {
     return core_.is_complete();
   }
 
+ protected:
+  /// Moves the base `ValueFuture` from `other` while holding the provider lock.
+  ///
+  /// Use this overload when moving a `ValueFuture` or a derived future that has
+  /// no additional state accessed by the provider. If the derived class has
+  /// member variables that may be inspected by the provider (e.g., via
+  /// `ResolveIf` or `ResolveFirstMatching`), use `MoveFrom(other,
+  /// move_members)` instead so that those members are moved atomically under
+  /// the same lock acquisition.
+  void MoveFrom(ValueFuture& other)
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    if (this != &other) {
+      std::lock_guard lock(internal::ValueProviderLock());
+      MoveBaseFrom(other);
+    }
+  }
+
+  /// Moves the base `ValueFuture` from `other` and invokes `move_members` while
+  /// holding the provider lock.
+  ///
+  /// Always call `MoveFrom` in the move constructor and move assignment
+  /// operator of any class derived from `ValueFuture` to ensure derived class
+  /// members are initialized before a concurrent provider operation can access
+  /// the moved-to future.
+  template <typename Fn>
+  void MoveFrom(ValueFuture& other, Fn&& move_members)
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    if (this != &other) {
+      std::lock_guard lock(internal::ValueProviderLock());
+      MoveBaseFrom(other);
+      move_members();
+    }
+  }
+
  private:
   friend class ValueProvider<T>;
   friend class BroadcastValueProvider<T>;
@@ -136,6 +166,12 @@ class ValueFuture {
         value_(std::in_place, std::forward<Args>(args)...) {}
 
   ValueFuture(FutureState::Pending) : core_(FutureState::kPending) {}
+
+  void MoveBaseFrom(ValueFuture& other)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::ValueProviderLock()) {
+    core_ = std::move(other.core_);
+    value_ = std::move(other.value_);
+  }
 
   template <typename... Args>
   void ResolveLocked(Args&&... args)
@@ -166,10 +202,7 @@ class ValueFuture<void> {
 
   ValueFuture& operator=(ValueFuture&& other) noexcept
       PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
-    if (this != &other) {
-      std::lock_guard lock(internal::ValueProviderLock());
-      core_ = std::move(other.core_);
-    }
+    MoveFrom(other);
     return *this;
   }
 
@@ -207,6 +240,40 @@ class ValueFuture<void> {
     return ValueFuture(FutureState::kReadyForCompletion);
   }
 
+ protected:
+  /// Moves the base `ValueFuture` from `other` while holding the provider lock.
+  ///
+  /// Use this overload when moving a `ValueFuture` or a derived future that has
+  /// no additional state accessed by the provider. If the derived class has
+  /// member variables that may be inspected by the provider (e.g., via
+  /// `ResolveIf` or `ResolveFirstMatching`), use `MoveFrom(other,
+  /// move_members)` instead so that those members are moved atomically under
+  /// the same lock acquisition.
+  void MoveFrom(ValueFuture& other)
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    if (this != &other) {
+      std::lock_guard lock(internal::ValueProviderLock());
+      MoveBaseFrom(other);
+    }
+  }
+
+  /// Moves the base `ValueFuture` from `other` and invokes `move_members` while
+  /// holding the provider lock.
+  ///
+  /// Always call `MoveFrom` in the move constructor and move assignment
+  /// operator of any class derived from `ValueFuture` to ensure derived class
+  /// members are initialized before a concurrent provider operation can access
+  /// the moved-to future.
+  template <typename Fn>
+  void MoveFrom(ValueFuture& other, Fn&& move_members)
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    if (this != &other) {
+      std::lock_guard lock(internal::ValueProviderLock());
+      MoveBaseFrom(other);
+      move_members();
+    }
+  }
+
  private:
   friend class ValueProvider<void>;
   friend class BroadcastValueProvider<void>;
@@ -219,6 +286,11 @@ class ValueFuture<void> {
       : core_(FutureState::kReadyForCompletion) {}
 
   explicit ValueFuture(FutureState::Pending) : core_(FutureState::kPending) {}
+
+  void MoveBaseFrom(ValueFuture& other)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::ValueProviderLock()) {
+    core_ = std::move(other.core_);
+  }
 
   FutureCore core_ PW_GUARDED_BY(internal::ValueProviderLock());
 };

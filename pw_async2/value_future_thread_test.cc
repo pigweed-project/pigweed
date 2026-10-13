@@ -312,9 +312,15 @@ class DerivedTestFutureForThreadTest : public pw::async2::ValueFuture<T> {
   constexpr DerivedTestFutureForThreadTest() = default;
   DerivedTestFutureForThreadTest(pw::async2::ValueFuture<T>&& base, int value)
       : pw::async2::ValueFuture<T>(std::move(base)), value_(value) {}
-  DerivedTestFutureForThreadTest(DerivedTestFutureForThreadTest&&) = default;
-  DerivedTestFutureForThreadTest& operator=(DerivedTestFutureForThreadTest&&) =
-      default;
+  DerivedTestFutureForThreadTest(
+      DerivedTestFutureForThreadTest&& other) noexcept {
+    *this = std::move(other);
+  }
+  DerivedTestFutureForThreadTest& operator=(
+      DerivedTestFutureForThreadTest&& other) noexcept {
+    this->MoveFrom(other, [&] { value_ = other.value_; });
+    return *this;
+  }
   ~DerivedTestFutureForThreadTest() { this->Cancel(); }
 
   int value() const { return value_; }
@@ -430,6 +436,9 @@ TEST(ValueListProvider, ConcurrentGetAndResolveFirstMatching) {
   pw::Thread getter_thread(context1.options(), [&test_context]() {
     while (test_context.running.load(std::memory_order_relaxed)) {
       auto f = test_context.provider.Get(42);
+      auto moved_future = std::move(f);
+      auto assigned_future = test_context.provider.Get(42);
+      assigned_future = std::move(moved_future);
       pw::this_thread::yield();
     }
   });
@@ -439,6 +448,7 @@ TEST(ValueListProvider, ConcurrentGetAndResolveFirstMatching) {
       test_context.provider.ResolveFirstMatching(
           [](DerivedTestFutureForThreadTest<pw::Status>& f)
               -> std::optional<pw::Status> {
+            EXPECT_EQ(f.value(), 42);
             if (f.value() == 42) {
               return pw::OkStatus();
             }

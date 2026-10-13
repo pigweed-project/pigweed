@@ -501,23 +501,32 @@ future by move (``ValueFuture<T>&&``) along with any custom arguments.
 
    class BufferFuture : public pw::async2::ValueFuture<pw::Result<pw::ByteSpan>> {
     public:
+     constexpr BufferFuture() = default;
      BufferFuture(pw::async2::ValueFuture<pw::Result<pw::ByteSpan>>&& base,
                   size_t requested_size)
          : pw::async2::ValueFuture<pw::Result<pw::ByteSpan>>(std::move(base)),
            requested_size_(requested_size) {}
-     BufferFuture(BufferFuture&&) = default;
-     BufferFuture& operator=(BufferFuture&&) = default;
+     BufferFuture(BufferFuture&& other) noexcept { *this = std::move(other); }
+     BufferFuture& operator=(BufferFuture&& other) noexcept {
+       this->MoveFrom(other, [&] { requested_size_ = other.requested_size_; });
+       return *this;
+     }
      ~BufferFuture() { this->Cancel(); }
 
      size_t requested_size() const { return requested_size_; }
 
     private:
-     size_t requested_size_;
+     size_t requested_size_ = 0;
    };
 
 .. important::
-   Always call ``this->Cancel()`` in the destructor of a derived future so that
-   the future is cancelled before the derived class member fields are destroyed.
+   Always use ``this->MoveFrom(other, move_members)`` in the move constructor
+   and move assignment operator of a derived future that has custom member
+   fields so that those fields are moved atomically under the provider lock
+   (if a derived future has no provider-visible state of its own, use the
+   single-argument ``this->MoveFrom(other)`` overload or ``= default``).
+   Likewise, always call ``this->Cancel()`` in the destructor so that the future
+   is unlisted before the derived class member fields are destroyed.
 
 Atomic inspection and resolution with ResolveIf
 -----------------------------------------------
@@ -627,18 +636,24 @@ declarations:
    class CustomRequestFuture
        : public pw::async2::ValueFuture<pw::Result<pw::ByteSpan>> {
     public:
+     constexpr CustomRequestFuture() = default;
      CustomRequestFuture(pw::async2::ValueFuture<pw::Result<pw::ByteSpan>>&& base,
                          size_t requested_size)
          : pw::async2::ValueFuture(std::move(base)),
            requested_size_(requested_size) {}
-     CustomRequestFuture(CustomRequestFuture&&) = default;
-     CustomRequestFuture& operator=(CustomRequestFuture&&) = default;
+     CustomRequestFuture(CustomRequestFuture&& other) noexcept {
+       *this = std::move(other);
+     }
+     CustomRequestFuture& operator=(CustomRequestFuture&& other) noexcept {
+       this->MoveFrom(other, [&] { requested_size_ = other.requested_size_; });
+       return *this;
+     }
      ~CustomRequestFuture() { this->Cancel(); }
 
      size_t requested_size() const { return requested_size_; }
 
     private:
-     size_t requested_size_;
+     size_t requested_size_ = 0;
    };
 
    // Declare a list provider for the derived future type.

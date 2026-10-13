@@ -792,14 +792,25 @@ TEST(OptionalBroadcastValueProvider, MoveAssignmentCancelsExisting) {
 
 class DerivedTestFuture : public ValueFuture<pw::Status> {
  public:
+  constexpr DerivedTestFuture() = default;
   DerivedTestFuture(ValueFuture<pw::Status>&& base, int requested_value)
       : ValueFuture<pw::Status>(std::move(base)),
         requested_value_(requested_value) {}
+  DerivedTestFuture(DerivedTestFuture&& other) noexcept {
+    *this = std::move(other);
+  }
+  DerivedTestFuture& operator=(DerivedTestFuture&& other) noexcept {
+    this->MoveFrom(other, [&] { requested_value_ = other.requested_value_; });
+    return *this;
+  }
+  ~DerivedTestFuture() { this->Cancel(); }
+
   int requested_value() const { return requested_value_; }
 
  private:
-  int requested_value_;
+  int requested_value_ = 0;
 };
+static_assert(pw::async2::Future<DerivedTestFuture>);
 
 TEST(DerivedValueProvider, ResolveIf) {
   DispatcherForTest dispatcher;
@@ -841,15 +852,64 @@ TEST(DerivedValueProvider, ResolveIf) {
   EXPECT_EQ(result, pw::OkStatus());
 }
 
+TEST(DerivedValueProvider, MoveConstructAndAssign) {
+  DispatcherForTest dispatcher;
+  pw::async2::DerivedValueListProvider<DerivedTestFuture> provider;
+
+  DerivedTestFuture future1 = provider.Get(10);
+  DerivedTestFuture future2(std::move(future1));
+  EXPECT_EQ(future2.requested_value(), 10);
+  EXPECT_EQ(provider.size(), 1u);
+
+  // Move-assign over an active pending derived future, which should cancel
+  // the overwritten future and preserve the source future's state.
+  DerivedTestFuture future3 = provider.Get(20);
+  EXPECT_EQ(provider.size(), 2u);
+  future3 = std::move(future2);
+  EXPECT_EQ(future3.requested_value(), 10);
+  EXPECT_EQ(provider.size(), 1u);
+
+  pw::Status result = pw::Status::Unknown();
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_AWAIT(result, future3, cx);
+    return Ready();
+  });
+
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  bool resolved = provider.ResolveFirstMatching(
+      [](DerivedTestFuture& f) -> std::optional<pw::Status> {
+        if (f.requested_value() == 10) {
+          return pw::OkStatus();
+        }
+        return std::nullopt;
+      });
+  EXPECT_TRUE(resolved);
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(result, pw::OkStatus());
+}
+
 class DerivedVoidFuture : public ValueFuture<void> {
  public:
+  constexpr DerivedVoidFuture() = default;
   DerivedVoidFuture(ValueFuture<void>&& base, bool condition)
       : ValueFuture<void>(std::move(base)), condition_(condition) {}
+  DerivedVoidFuture(DerivedVoidFuture&& other) noexcept {
+    *this = std::move(other);
+  }
+  DerivedVoidFuture& operator=(DerivedVoidFuture&& other) noexcept {
+    this->MoveFrom(other, [&] { condition_ = other.condition_; });
+    return *this;
+  }
+  ~DerivedVoidFuture() { this->Cancel(); }
+
   bool condition() const { return condition_; }
 
  private:
-  bool condition_;
+  bool condition_ = false;
 };
+static_assert(pw::async2::Future<DerivedVoidFuture>);
 
 TEST(DerivedValueProvider, ResolveIfVoid) {
   DispatcherForTest dispatcher;
@@ -875,6 +935,38 @@ TEST(DerivedValueProvider, ResolveIfVoid) {
 
   resolved =
       provider.ResolveIf([](DerivedVoidFuture& f) { return f.condition(); });
+  EXPECT_TRUE(resolved);
+  dispatcher.RunToCompletion();
+  EXPECT_TRUE(completed);
+}
+
+TEST(DerivedValueProvider, MoveConstructAndAssignVoid) {
+  DispatcherForTest dispatcher;
+  pw::async2::DerivedValueListProvider<DerivedVoidFuture> provider;
+
+  DerivedVoidFuture future1 = provider.Get(true);
+  DerivedVoidFuture future2(std::move(future1));
+  EXPECT_TRUE(future2.condition());
+  EXPECT_EQ(provider.size(), 1u);
+
+  DerivedVoidFuture future3 = provider.Get(false);
+  EXPECT_EQ(provider.size(), 2u);
+  future3 = std::move(future2);
+  EXPECT_TRUE(future3.condition());
+  EXPECT_EQ(provider.size(), 1u);
+
+  bool completed = false;
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_AWAIT(future3, cx);
+    completed = true;
+    return Ready();
+  });
+
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  bool resolved = provider.ResolveFirstMatching(
+      [](DerivedVoidFuture& f) { return f.condition(); });
   EXPECT_TRUE(resolved);
   dispatcher.RunToCompletion();
   EXPECT_TRUE(completed);
