@@ -27,5 +27,5 @@ static struct TokenizeStringExprContainer : BaseContainer {
 
 int main() {
   // Load size report data.
-  return size_report_data.LoadData();
+  return static_cast<int>(size_report_data.LoadData());
 }
