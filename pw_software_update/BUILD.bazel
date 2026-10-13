@@ -141,7 +141,6 @@ cc_library(
     hdrs = [
         "public/pw_software_update/blob_store_openable_reader.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":openable_reader",
