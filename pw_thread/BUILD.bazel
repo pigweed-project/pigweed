@@ -196,7 +196,6 @@ cc_library(
         "thread_snapshot_service.cc",
     ],
     hdrs = ["public/pw_thread/thread_snapshot_service.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_containers:vector"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
@@ -296,7 +295,6 @@ cc_library(
     hdrs = [
         "public/pw_thread/snapshot.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":config",
@@ -424,7 +422,6 @@ pw_cc_test(
         "pw_thread_private/thread_snapshot_service.h",
         "thread_snapshot_service_test.cc",
     ],
-    features = ["-conversion_warnings"],
     # TODO: https://pwbug.dev/342662853 - This test fails under ASAN.
     tags = [
         "noasan",
