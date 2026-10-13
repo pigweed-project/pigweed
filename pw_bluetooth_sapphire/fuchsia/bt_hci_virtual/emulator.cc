@@ -106,16 +106,26 @@ EmulatorDevice::EmulatorDevice()
     : pw_dispatcher_(fdf::Dispatcher::GetCurrent()->async_dispatcher()),
       fake_device_(pw_dispatcher_),
       emulator_devfs_connector_(
-          fit::bind_member<&EmulatorDevice::ConnectEmulator>(this)),
-      vendor_devfs_connector_(
-          fit::bind_member<&EmulatorDevice::ConnectVendor>(this)) {}
+          fit::bind_member<&EmulatorDevice::ConnectEmulator>(this)) {}
 
-EmulatorDevice::~EmulatorDevice() { fake_device_.Stop(); }
+EmulatorDevice::~EmulatorDevice() {
+  UnpublishHci();
+  fake_device_.Stop();
+}
 
 zx_status_t EmulatorDevice::Initialize(std::string_view name,
                                        AddChildCallback callback,
-                                       ShutdownCallback shutdown) {
+                                       ShutdownCallback shutdown,
+                                       fdf::OutgoingDirectory* outgoing,
+                                       std::string_view service_instance_name) {
   shutdown_cb_ = std::move(shutdown);
+  outgoing_ = outgoing;
+  service_instance_name_ = std::string(service_instance_name);
+  if (outgoing_ == nullptr) {
+    fdf::warn(
+        "No outgoing directory provided; fuchsia.hardware.bluetooth.Service "
+        "cannot be published");
+  }
 
   bt::set_random_generator(&rng_);
 
@@ -164,6 +174,7 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
 }
 
 void EmulatorDevice::Shutdown() {
+  UnpublishHci();
   fake_device_.Stop();
   peers_.clear();
 
@@ -174,7 +185,7 @@ void EmulatorDevice::Shutdown() {
 
 void EmulatorDevice::Publish(PublishRequest& request,
                              PublishCompleter::Sync& completer) {
-  if (hci_node_controller_.is_valid()) {
+  if (vendor_service_.is_published()) {
     fdf::info("bt-hci-device is already published");
     completer.Reply(fit::error(fhbt::EmulatorError::kHciAlreadyPublished));
     return;
@@ -183,14 +194,17 @@ void EmulatorDevice::Publish(PublishRequest& request,
   FakeController::Settings settings = SettingsFromFidl(request);
   fake_device_.set_settings(settings);
 
-  zx_status_t status = AddHciDeviceChildNode();
+  zx_status_t status = vendor_service_.Publish(
+      outgoing_,
+      service_instance_name_,
+      fit::bind_member<&EmulatorDevice::ConnectVendor>(this));
   if (status != ZX_OK) {
-    fdf::warn("Failed to publish bt-hci-device node");
+    fdf::warn("Failed to start vendor service");
     completer.Reply(fit::error(fhbt::EmulatorError::kFailed));
-  } else {
-    fdf::info("Successfully published bt-hci-device node");
-    completer.Reply(fit::success());
+    return;
   }
+  fdf::info("Successfully started vendor service {}", service_instance_name_);
+  completer.Reply(fit::success());
 }
 
 void EmulatorDevice::AddLowEnergyPeer(
@@ -365,75 +379,6 @@ void EmulatorDevice::ConnectVendor(fidl::ServerEnd<fhbt::Vendor> request) {
       fidl::kIgnoreBindingClosure);
 }
 
-zx_status_t EmulatorDevice::AddHciDeviceChildNode() {
-  // Create args to add bt-hci-device as a child node on behalf of
-  // VirtualController
-  zx::result connector = vendor_devfs_connector_.Bind(
-      fdf::Dispatcher::GetCurrent()->async_dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
-    return connector.error_value();
-  }
-
-  fidl::Arena args_arena;
-  auto devfs =
-      fuchsia_driver_framework::wire::DevfsAddArgs::Builder(args_arena)
-          .connector(std::move(connector.value()))
-          .connector_supports(fuchsia_device_fs::ConnectionType::kController)
-          .class_name("bt-hci")
-          .Build();
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
-                  .name("bt-hci-device")
-                  .devfs_args(devfs)
-                  .Build();
-
-  // Create the endpoints of fuchsia_driver_framework::NodeController protocol
-  auto controller_endpoints =
-      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
-  if (controller_endpoints.is_error()) {
-    fdf::error("Create node controller endpoints failed: {}",
-               controller_endpoints);
-    return controller_endpoints.error_value();
-  }
-
-  // Create the endpoints of fuchsia_driver_framework::Node protocol for the
-  // child node, and hold the client end of it, because no driver will bind to
-  // the child node.
-  auto child_node_endpoints =
-      fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
-  if (child_node_endpoints.is_error()) {
-    fdf::error("Create child node endpoints failed: {}", child_node_endpoints);
-    return child_node_endpoints.error_value();
-  }
-
-  // Add bt-hci-device as a child node of the EmulatorDevice
-  ZX_DEBUG_ASSERT(emulator_child_node()->is_valid());
-  auto child_result = emulator_child_node()->sync()->AddChild(
-      std::move(args),
-      std::move(controller_endpoints->server),
-      std::move(child_node_endpoints->server));
-  if (!child_result.ok()) {
-    fdf::error("Failed to add bt-hci-device node, FIDL error: {}",
-               child_result.status_string());
-    return child_result.status();
-  }
-
-  if (child_result->is_error()) {
-    fdf::error("Failed to add bt-hci-device node: {}",
-               static_cast<uint32_t>(child_result->error_value()));
-    return ZX_ERR_INTERNAL;
-  }
-
-  // |hci_child_node_| does not need to create more child nodes so we do not
-  // need an event_handler and we do not need to worry about it being re-bound
-  hci_child_node_.Bind(std::move(child_node_endpoints->client),
-                       fdf::Dispatcher::GetCurrent()->async_dispatcher());
-  hci_node_controller_.Bind(std::move(controller_endpoints->client),
-                            fdf::Dispatcher::GetCurrent()->async_dispatcher());
-
-  return ZX_OK;
-}
-
 void EmulatorDevice::AddPeer(std::unique_ptr<EmulatedPeer> peer) {
   auto address = peer->address();
   peer->set_closed_callback([this, address] { peers_.erase(address); });
@@ -543,15 +488,7 @@ void EmulatorDevice::OnPeerConnectionStateChanged(
   }
 }
 
-void EmulatorDevice::UnpublishHci() {
-  // Unpublishing the bt-hci-device child node shuts down the associated bt-host
-  // component
-  auto status = hci_node_controller_->Remove();
-  if (!status.ok()) {
-    fdf::error("Could not remove bt-hci-device child node: {}",
-               status.status_string());
-  }
-}
+void EmulatorDevice::UnpublishHci() { vendor_service_.Unpublish(); }
 
 void EmulatorDevice::SendEventToHost(pw::span<const std::byte> buffer) {
   if (hci_transport_bindings_.size() == 0) {

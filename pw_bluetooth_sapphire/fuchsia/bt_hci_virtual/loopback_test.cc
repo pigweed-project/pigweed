@@ -14,8 +14,12 @@
 
 #include "loopback.h"
 
+#include <lib/component/incoming/cpp/service.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
+
+#include <memory>
 
 #include "gtest/gtest.h"
 
@@ -31,6 +35,11 @@ class LoopbackTest : public ::testing::Test,
                      public fidl::AsyncEventHandler<fhb::Snoop> {
  public:
   void SetUp() override {
+    // There's no driver instance to set up the logger for this test, so create
+    // a driver logger for this test. This must happen before any LoopbackDevice
+    // methods are called, since they may log.
+    ASSERT_NO_FATAL_FAILURE(InitializeLogger());
+
     zx::channel loopback_channel_device_end;
     zx::channel::create(0, &loopback_chan_, &loopback_channel_device_end);
     int add_child_cb_count = 0;
@@ -50,12 +59,8 @@ class LoopbackTest : public ::testing::Test,
     zx_status_t wait_begin_status = loopback_chan_wait_.Begin(dispatcher());
     ASSERT_EQ(wait_begin_status, ZX_OK);
 
-    // There's no driver instance to set up the logger for this test, so create
-    // a driver logger for this test.
-    InitializeLogger();
-
-    OpenHciTransport();
-    OpenSnoop();
+    ASSERT_NO_FATAL_FAILURE(OpenHciTransport());
+    ASSERT_NO_FATAL_FAILURE(OpenSnoop());
 
     fdf_testing_run_until_idle();
   }
@@ -99,6 +104,70 @@ class LoopbackTest : public ::testing::Test,
     return received_packets_;
   }
 
+  // Serves `outgoing` and stores the client end of its directory in `client`.
+  // Returns ZX_OK on success, or the first error encountered otherwise.
+  zx_status_t SetupOutgoingDirectory(
+      fdf::OutgoingDirectory& outgoing,
+      fidl::ClientEnd<fuchsia_io::Directory>& client) {
+    auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+    if (endpoints.is_error()) {
+      return endpoints.status_value();
+    }
+    zx::result result = outgoing.Serve(std::move(endpoints->server));
+    if (result.is_error()) {
+      return result.status_value();
+    }
+    client = std::move(endpoints->client);
+    return ZX_OK;
+  }
+
+  // Creates and initializes a LoopbackDevice in `device`. Returns ZX_OK on
+  // success, or the first error encountered otherwise.
+  zx_status_t CreateLoopbackDevice(fdf::OutgoingDirectory* outgoing,
+                                   std::unique_ptr<LoopbackDevice>& device) {
+    zx::channel loopback_channel_device_end;
+    zx_status_t status = zx::channel::create(
+        0, &service_loopback_chan_, &loopback_channel_device_end);
+    if (status != ZX_OK) {
+      return status;
+    }
+    device = std::make_unique<LoopbackDevice>();
+    return device->Initialize(
+        std::move(loopback_channel_device_end),
+        "loopback-service",
+        [](auto) {},
+        outgoing);
+  }
+
+  // Connects to the Vendor protocol of the fuchsia.hardware.bluetooth.Service
+  // `instance` in `outgoing_dir` and stores the client in `client`. Returns
+  // ZX_OK on success, or an error otherwise.
+  zx_status_t ConnectToVendorService(
+      fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_dir,
+      fidl::WireClient<fhb::Vendor>& client,
+      const std::string& instance = component::kDefaultInstance) {
+    std::string service_path =
+        "svc/" +
+        component::MakeServiceMemberPath<fhb::Service::Vendor>(instance);
+    zx::result<fidl::ClientEnd<fhb::Vendor>> client_end =
+        component::ConnectAt<fhb::Vendor>(outgoing_dir, service_path);
+    if (client_end.is_error()) {
+      return client_end.status_value();
+    }
+    client.Bind(std::move(*client_end), dispatcher());
+    return ZX_OK;
+  }
+
+  bool CheckGetFeatures(fidl::WireClient<fhb::Vendor>& client) {
+    bool ok = false;
+    client->GetFeatures().ThenExactlyOnce(
+        [&ok](fidl::WireUnownedResult<fhb::Vendor::GetFeatures>& res) {
+          ok = res.ok();
+        });
+    fdf_testing_run_until_idle();
+    return ok;
+  }
+
  private:
   // fidl::AsyncEventHandler<fhb::HciTransport> overrides:
   void OnReceive(
@@ -121,6 +190,8 @@ class LoopbackTest : public ::testing::Test,
   void handle_unknown_event(
       fidl::UnknownEventMetadata<fhb::Snoop> metadata) override {}
 
+  // Connects a Vendor client to `loopback_device_` and opens `hci_client_`.
+  // Wrap calls in ASSERT_NO_FATAL_FAILURE so that the test stops on failure.
   void OpenHciTransport() {
     auto vendor_endpoints = fidl::CreateEndpoints<fhb::Vendor>();
     loopback_device_.Connect(std::move(vendor_endpoints->server));
@@ -148,6 +219,8 @@ class LoopbackTest : public ::testing::Test,
     ASSERT_TRUE(hci_client_.is_valid());
   }
 
+  // Connects a Vendor client to `loopback_device_` and opens `snoop_client_`.
+  // Wrap calls in ASSERT_NO_FATAL_FAILURE so that the test stops on failure.
   void OpenSnoop() {
     auto vendor_endpoints = fidl::CreateEndpoints<fhb::Vendor>();
     loopback_device_.Connect(std::move(vendor_endpoints->server));
@@ -168,10 +241,12 @@ class LoopbackTest : public ::testing::Test,
     auto _ = snoop_vendor_client_.UnbindMaybeGetEndpoint();
   }
 
+  // Creates a driver logger and sets it as the global fdf::Logger instance.
+  // Wrap calls in ASSERT_NO_FATAL_FAILURE so that the test stops on failure.
   void InitializeLogger() {
     std::vector<fuchsia_component_runner::ComponentNamespaceEntry> entries;
     zx::result open_result = component::OpenServiceRoot();
-    ZX_ASSERT(open_result.is_ok());
+    ASSERT_TRUE(open_result.is_ok());
 
     ::fidl::ClientEnd<::fuchsia_io::Directory> svc = std::move(*open_result);
     entries.emplace_back(fuchsia_component_runner::ComponentNamespaceEntry{{
@@ -181,11 +256,11 @@ class LoopbackTest : public ::testing::Test,
 
     // Create Namespace object from the entries.
     auto ns = fdf::Namespace::Create(entries);
-    ZX_ASSERT(ns.is_ok());
+    ASSERT_TRUE(ns.is_ok());
 
     // Create Logger with dispatcher and namespace.
     logger_ = fdf::Logger::Create2(*ns, dispatcher(), "vendor-hci-logger");
-    ZX_ASSERT(logger_);
+    ASSERT_TRUE(logger_);
     fdf::Logger::SetGlobalInstance(logger_.get());
   }
 
@@ -231,6 +306,7 @@ class LoopbackTest : public ::testing::Test,
   std::unique_ptr<fdf::Logger> logger_;
 
   zx::channel loopback_chan_;
+  zx::channel service_loopback_chan_;
   LoopbackDevice loopback_device_;
 
   fidl::Client<fhb::Vendor> vendor_client_;
@@ -461,6 +537,33 @@ TEST_F(LoopbackTest, DropSnoopPackets) {
   ASSERT_EQ(dropped_snoop_packets().size(), 1u);
   EXPECT_EQ(dropped_snoop_packets()[0].sent(), 2u);
   EXPECT_EQ(dropped_snoop_packets()[0].received(), 0u);
+}
+
+TEST_F(LoopbackTest, PublishService) {
+  fdf::OutgoingDirectory outgoing(fdf::Dispatcher::GetCurrent()->get());
+  fidl::ClientEnd<fuchsia_io::Directory> outgoing_client;
+  ASSERT_EQ(SetupOutgoingDirectory(outgoing, outgoing_client), ZX_OK);
+
+  std::unique_ptr<LoopbackDevice> device;
+  ASSERT_EQ(CreateLoopbackDevice(&outgoing, device), ZX_OK);
+
+  fidl::WireClient<fhb::Vendor> client;
+  ASSERT_EQ(ConnectToVendorService(outgoing_client.borrow(), client), ZX_OK);
+  EXPECT_TRUE(CheckGetFeatures(client));
+}
+
+TEST_F(LoopbackTest, DestroyDeviceUnpublishesService) {
+  fdf::OutgoingDirectory outgoing(fdf::Dispatcher::GetCurrent()->get());
+  fidl::ClientEnd<fuchsia_io::Directory> outgoing_client;
+  ASSERT_EQ(SetupOutgoingDirectory(outgoing, outgoing_client), ZX_OK);
+
+  std::unique_ptr<LoopbackDevice> device;
+  ASSERT_EQ(CreateLoopbackDevice(&outgoing, device), ZX_OK);
+  device.reset();
+
+  fidl::WireClient<fhb::Vendor> client;
+  ASSERT_EQ(ConnectToVendorService(outgoing_client.borrow(), client), ZX_OK);
+  EXPECT_FALSE(CheckGetFeatures(client));
 }
 
 }  // namespace bt_hci_virtual

@@ -17,11 +17,12 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 
 #include <queue>
 
 #include "lib/async/cpp/wait.h"
+#include "vendor_service_publisher.h"
 
 namespace bt_hci_virtual {
 
@@ -36,16 +37,21 @@ class LoopbackDevice : public fidl::Server<fuchsia_hardware_bluetooth::Vendor> {
   static constexpr size_t kMaxReceiveUnackedPackets = 10;
 
   explicit LoopbackDevice();
+  ~LoopbackDevice() = default;
 
   // Methods to control the LoopbackDevice's lifecycle. These are used by the
   // VirtualController. `channel` speaks the HCI UART protocol. `name` is the
   // name to be used for the driver framework node. `callback` will be called
   // with the NodeAddArgs when LoopbackDevice should be added as a child node.
-  zx_status_t Initialize(zx::channel channel,
-                         std::string_view name,
-                         AddChildCallback callback);
+  // If `outgoing` is non-null, LoopbackDevice will publish
+  // fuchsia.hardware.bluetooth.Service to it.
+  zx_status_t Initialize(
+      zx::channel channel,
+      std::string_view name,
+      AddChildCallback callback,
+      fdf::OutgoingDirectory* outgoing = nullptr,
+      std::string_view service_instance_name = fdf::kDefaultInstance);
 
-  // Called by driver_devfs::Connector.
   void Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request);
 
  private:
@@ -184,7 +190,7 @@ class LoopbackDevice : public fidl::Server<fuchsia_hardware_bluetooth::Vendor> {
   std::array<uint8_t, fuchsia_hardware_bluetooth::kAclPacketMax + 1>
       read_buffer_;
 
-  driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor> devfs_connector_;
+  VendorServicePublisher vendor_service_;
 };
 
 }  // namespace bt_hci_virtual

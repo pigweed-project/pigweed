@@ -19,37 +19,39 @@
 namespace bt_hci_virtual {
 
 LoopbackDevice::LoopbackDevice()
-    : dispatcher_(fdf::Dispatcher::GetCurrent()->async_dispatcher()),
-      devfs_connector_(fit::bind_member<&LoopbackDevice::Connect>(this)) {}
+    : dispatcher_(fdf::Dispatcher::GetCurrent()->async_dispatcher()) {}
 
 zx_status_t LoopbackDevice::Initialize(zx::channel channel,
                                        std::string_view name,
-                                       AddChildCallback callback) {
+                                       AddChildCallback callback,
+                                       fdf::OutgoingDirectory* outgoing,
+                                       std::string_view service_instance_name) {
+  if (outgoing != nullptr) {
+    zx_status_t status = vendor_service_.Publish(
+        outgoing,
+        service_instance_name,
+        fit::bind_member<&LoopbackDevice::Connect>(this));
+    if (status != ZX_OK) {
+      return status;
+    }
+  } else {
+    fdf::warn(
+        "No outgoing directory provided; fuchsia.hardware.bluetooth.Service "
+        "will not be published");
+  }
+
   // Setup up incoming channel waiter
   loopback_chan_ = std::move(channel);
   loopback_chan_wait_.set_object(loopback_chan_.get());
   loopback_chan_wait_.set_trigger(ZX_CHANNEL_READABLE | ZX_CHANNEL_PEER_CLOSED);
   ZX_ASSERT(loopback_chan_wait_.Begin(dispatcher_) == ZX_OK);
 
-  // Create args to add loopback as a child node on behalf of VirtualController
-  zx::result connector = devfs_connector_.Bind(dispatcher_);
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
-    return connector.error_value();
-  }
-
   fidl::Arena args_arena;
-  auto devfs = fuchsia_driver_framework::wire::DevfsAddArgs::Builder(args_arena)
-                   .connector(std::move(connector.value()))
-                   .class_name("bt-hci")
-                   .Build();
   auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
-                  .name(name.data())
-                  .devfs_args(devfs)
+                  .name(fidl::StringView(args_arena, name))
                   .Build();
 
   callback(args);
-
   return ZX_OK;
 }
 
@@ -216,6 +218,7 @@ void LoopbackDevice::OnLoopbackChannelSignal(async_dispatcher_t* dispatcher,
 
   if (signal->observed & ZX_CHANNEL_PEER_CLOSED) {
     fdf::error("Loopback channel peer closed");
+    vendor_service_.Unpublish();
     return;
   }
 

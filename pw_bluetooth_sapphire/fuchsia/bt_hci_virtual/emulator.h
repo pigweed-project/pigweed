@@ -18,6 +18,7 @@
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <pw_async_fuchsia/dispatcher.h>
 
 #include <queue>
@@ -26,6 +27,7 @@
 #include "emulated_peer.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_controller.h"
 #include "pw_random_fuchsia/zircon_random_generator.h"
+#include "vendor_service_publisher.h"
 
 namespace bt_hci_virtual {
 
@@ -36,9 +38,7 @@ using AddChildCallback =
 using ShutdownCallback = fit::function<void()>;
 
 class EmulatorDevice
-    : public fidl::WireAsyncEventHandler<
-          fuchsia_driver_framework::NodeController>,
-      public fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>,
+    : public fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>,
       public fidl::Server<fuchsia_hardware_bluetooth::Emulator>,
       public fidl::Server<fuchsia_hardware_bluetooth::HciTransport>,
       public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
@@ -53,15 +53,15 @@ class EmulatorDevice
   void handle_unknown_event(
       fidl::UnknownEventMetadata<fuchsia_driver_framework::Node> metadata)
       override {}
-  void handle_unknown_event(
-      fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController>
-          metadata) override {}
 
   // Methods used by the VirtualController to control the EmulatorDevice's
   // lifecycle
-  zx_status_t Initialize(std::string_view name,
-                         AddChildCallback callback,
-                         ShutdownCallback shutdown);
+  zx_status_t Initialize(
+      std::string_view name,
+      AddChildCallback callback,
+      ShutdownCallback shutdown,
+      fdf::OutgoingDirectory* outgoing = nullptr,
+      std::string_view service_instance_name = fdf::kDefaultInstance);
   void Shutdown();
 
   void set_emulator_ptr(std::unique_ptr<EmulatorDevice> ptr) {
@@ -123,10 +123,6 @@ class EmulatorDevice
   void ConnectVendor(
       fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request);
 
-  // Helper function for fuchsia.hardware.bluetooth.Emulator.Publish that adds
-  // bt-hci-device as a child of EmulatorDevice device node
-  zx_status_t AddHciDeviceChildNode();
-
   // Helper function used to initialize BR/EDR and LE peers
   void AddPeer(std::unique_ptr<EmulatedPeer> peer);
 
@@ -136,7 +132,7 @@ class EmulatorDevice
   void OnLegacyAdvertisingStateChanged();
   void MaybeUpdateLegacyAdvertisingStates();
 
-  // Remove bt-hci-device node
+  // Unpublish fuchsia.hardware.bluetooth.Service
   void UnpublishHci();
 
   void OnPeerConnectionStateChanged(const bt::DeviceAddress& address,
@@ -180,16 +176,13 @@ class EmulatorDevice
       emulator_devfs_connector_;
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Emulator>
       emulator_binding_group_;
-  driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor>
-      vendor_devfs_connector_;
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor>
       vendor_binding_group_;
   std::unique_ptr<EmulatorDevice> emulator_ptr_;
 
-  // bt-hci-device
-  fidl::WireClient<fuchsia_driver_framework::NodeController>
-      hci_node_controller_;
-  fidl::WireClient<fuchsia_driver_framework::Node> hci_child_node_;
+  fdf::OutgoingDirectory* outgoing_ = nullptr;
+  std::string service_instance_name_;
+  VendorServicePublisher vendor_service_;
 };
 
 }  // namespace bt_hci_virtual
