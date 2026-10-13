@@ -359,7 +359,7 @@ class FixtureTest : public ::testing::Test {
   FixtureTest() : string_("hello world") {}
 
   bool ReturnTrue() { return true; }
-  int StringLength() { return std::strlen(string_); }
+  int StringLength() { return static_cast<int>(std::strlen(string_)); }
 
  protected:
   const char* string_;

@@ -375,7 +375,6 @@ cc_library(
 pw_cc_test(
     name = "test_record_event_handler_test",
     srcs = ["test_record_event_handler_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":test_record_event_handler",
         "//pw_assert:assert",
@@ -421,7 +420,6 @@ cc_library(
             "rpc_gtest_public/pw_unit_test/internal/rpc_event_handler.h",
         ],
     }),
-    features = ["-conversion_warnings"],
     includes = ["public"] + select({
         ":backend_is_light": ["rpc_light_public"],
         "//conditions:default": ["rpc_gtest_public"],
@@ -484,7 +482,6 @@ pw_cc_test(
 pw_cc_test(
     name = "framework_test",
     srcs = ["framework_test.cc"],
-    features = ["-conversion_warnings"],
     # TODO: https://pwbug.dev/325509758 - Passes but hangs on cleanup.
     target_compatible_with = select({
         "//pw_build/constraints/chipset:rp2040": ["@platforms//:incompatible"],

@@ -160,10 +160,14 @@ void UnitTestThread::WriteTestRunStart() {
 void UnitTestThread::WriteTestRunEnd(const RunTestsSummary& summary) {
   WriteEvent([&](pwpb::Event::StreamEncoder& event) {
     pwpb::TestRunEnd::StreamEncoder test_run_end = event.GetTestRunEndEncoder();
-    test_run_end.WritePassed(summary.passed_tests).IgnoreError();
-    test_run_end.WriteFailed(summary.failed_tests).IgnoreError();
-    test_run_end.WriteSkipped(summary.skipped_tests).IgnoreError();
-    test_run_end.WriteDisabled(summary.disabled_tests).IgnoreError();
+    test_run_end.WritePassed(static_cast<uint32_t>(summary.passed_tests))
+        .IgnoreError();
+    test_run_end.WriteFailed(static_cast<uint32_t>(summary.failed_tests))
+        .IgnoreError();
+    test_run_end.WriteSkipped(static_cast<uint32_t>(summary.skipped_tests))
+        .IgnoreError();
+    test_run_end.WriteDisabled(static_cast<uint32_t>(summary.disabled_tests))
+        .IgnoreError();
   });
 }
 
@@ -208,7 +212,8 @@ void UnitTestThread::WriteTestCaseExpectation(
         .WriteEvaluatedExpression(expectation.evaluated_expression)
         .IgnoreError();
     test_case_expectation.WriteFileName(expectation.file_name).IgnoreError();
-    test_case_expectation.WriteLineNumber(expectation.line_number)
+    test_case_expectation
+        .WriteLineNumber(static_cast<uint32_t>(expectation.line_number))
         .IgnoreError();
     test_case_expectation.WriteSuccess(expectation.success).IgnoreError();
   });
