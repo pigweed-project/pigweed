@@ -2960,7 +2960,7 @@ TEST_F(BrEdrDynamicChannelTest, FallbackToBasicModeOpensTheChannel) {
   RunUntilIdle();
 
   // Peer sends ConfigRsp(Success) for Host's request.
-  // This should trigger the fallback to Basic Mode but omit set_opened().
+  // This should trigger the fallback to Basic Mode and open the channel.
   sig()->ReceiveResponses(
       config_req_id,
       {{SignalingChannel::Status::kSuccess, kInboundEmptyConfigRsp.view()}});
@@ -2974,7 +2974,6 @@ TEST_F(BrEdrDynamicChannelTest, FallbackToBasicModeOpensTheChannel) {
   RunUntilIdle();
 
   // We expect the close callback to be called.
-  // This will fail on vulnerable code.
   EXPECT_EQ(1, close_cb_count);
 }
 

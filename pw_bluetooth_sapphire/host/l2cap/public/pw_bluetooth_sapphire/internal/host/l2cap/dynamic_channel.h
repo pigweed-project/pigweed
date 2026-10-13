@@ -122,11 +122,16 @@ class DynamicChannel {
   // bool SetRemoteChannelId(ChannelId remote_cid);
   [[nodiscard]] bool SetRemoteChannelId(ChannelId remote_cid);
 
-  void set_opened() { opened_ = true; }
-
   DynamicChannelRegistry* registry() { return registry_; }
 
  private:
+  // Only DynamicChannelRegistry may mark a channel as opened, at the moment it
+  // hands the open channel to its caller. This keeps |opened_| in sync with
+  // whether the upper layer owns the channel, so that a later remote
+  // disconnection is always reported via |close_cb_|.
+  friend class DynamicChannelRegistry;
+  void set_opened() { opened_ = true; }
+
   // Must be valid for the duration of this object.
   DynamicChannelRegistry* const registry_;
 

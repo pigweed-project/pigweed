@@ -819,7 +819,6 @@ void BrEdrDynamicChannel::OnRxConfigReq(
   }
 
   if (IsOpen()) {
-    set_opened();
     PassOpenResult();
   }
 }
@@ -1562,7 +1561,6 @@ BrEdrDynamicChannel::ResponseHandlerAction BrEdrDynamicChannel::OnRxConfigRsp(
   }
 
   if (IsOpen()) {
-    set_opened();
     PassOpenResult();
   }
 

@@ -434,7 +434,6 @@ void LeDynamicChannel::OnRxLeCreditConnRsp(
                                    .mps = rsp.mps(),
                                    .initial_credits = rsp.initial_credits()};
   state_.exchanged_connection_response = true;
-  set_opened();
 }
 
 void LeDynamicChannel::CompleteInboundConnection(
@@ -447,7 +446,6 @@ void LeDynamicChannel::CompleteInboundConnection(
                   local_config_.initial_credits,
                   LECreditBasedConnectionResult::kSuccess);
   state_.exchanged_connection_response = true;
-  set_opened();
   TriggerOpenCallback();
 }
 

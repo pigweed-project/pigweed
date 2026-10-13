@@ -161,6 +161,7 @@ void DynamicChannelRegistry::ActivateChannel(
                       open_cb = std::move(open_callback),
                       pass_failed]() mutable {
     if (channel->IsOpen()) {
+      channel->set_opened();
       open_cb(channel);
       return;
     }

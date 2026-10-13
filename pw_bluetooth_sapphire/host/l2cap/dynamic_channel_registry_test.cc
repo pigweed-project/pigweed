@@ -48,9 +48,6 @@ class FakeDynamicChannel final : public DynamicChannel {
 
   void DoOpen(bool new_open = true) {
     open_ = new_open;
-    if (new_open) {
-      set_opened();
-    }
     open_result_cb_();
   }
 
@@ -187,6 +184,8 @@ TEST(DynamicChannelRegistryTest, OpenAndRemoteCloseChannel) {
     open_result_cb_called = true;
     EXPECT_TRUE(chan);
     EXPECT_EQ(kPsm, chan->psm());
+    // The registry marks the channel opened when handing it to the caller.
+    EXPECT_TRUE(chan->opened());
     local_cid = chan->local_cid();
     remote_cid = chan->remote_cid();
   };
