@@ -53,7 +53,6 @@ cc_library(
 pw_cc_test(
     name = "xor_shift_test",
     srcs = ["xor_shift_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":pw_random",
         "//pw_assert:config",

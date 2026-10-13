@@ -119,8 +119,9 @@ class RandomGenerator {
       static_assert(sizeof(T) < sizeof(unsigned));
       // __builtin_clz returns the count of leading zeros in an unsigned , so we
       // need to subtract the size difference of T in bits.
-      return static_cast<uint8_t>(__builtin_clz(value) -
-                                  ((sizeof(unsigned) - sizeof(T)) * CHAR_BIT));
+      return static_cast<uint8_t>(
+          __builtin_clz(value) -
+          static_cast<int>((sizeof(unsigned) - sizeof(T)) * CHAR_BIT));
     }
   }
 };
