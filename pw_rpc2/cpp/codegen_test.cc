@@ -74,6 +74,8 @@ using DeleteMsg = names_msgs::delete_::Message;
 using InnerMsg = names_msgs::Outer::Inner::Message;
 using SharedMsg = common_msgs::Shared::Message;
 using CommonInnerMsg = common_msgs::Outer::Inner::Message;
+using WithCallbackMsg = common_msgs::WithCallback::Message;
+using NestedCallbackMsg = common_msgs::NestedCallback::Message;
 using ::pw::rpc2::Client;
 using ::pw::rpc2::MethodType;
 using ::pw::rpc2::RawBidiStreamFuture;
@@ -366,6 +368,131 @@ static_assert(!kPingAccepts<names_pwpb::Names::Client, bool>);
 static_assert(!kPingAcceptsBraces<names_raw::Names::Client>);
 static_assert(kPingAcceptsBraces<names_pwpb::Names::Client>);
 
+// Messages with `Callback` fields (directly or in a nested submessage) drop
+// their callbacks when copied, so they can only be moved into client calls and
+// writers, never passed as lvalues.
+static_assert(!internal::kHasCallbacks<PingMsg>);
+static_assert(internal::kIsCopyableMessage<PingMsg>);
+static_assert(internal::kHasCallbacks<WithCallbackMsg>);
+static_assert(!internal::kIsCopyableMessage<WithCallbackMsg>);
+static_assert(internal::kHasCallbacks<NestedCallbackMsg>);
+static_assert(!internal::kIsCopyableMessage<NestedCallbackMsg>);
+
+template <typename Arg, typename = void>
+constexpr bool kDirectUnaryAccepts = false;
+template <typename Arg>
+constexpr bool kDirectUnaryAccepts<
+    Arg,
+    std::void_t<decltype(std::declval<const names_pwpb::Callbacks::Client&>()
+                             .DirectUnary(std::declval<Arg>()))>> = true;
+
+template <typename Arg, typename = void>
+constexpr bool kNestedUnaryAccepts = false;
+template <typename Arg>
+constexpr bool kNestedUnaryAccepts<
+    Arg,
+    std::void_t<decltype(std::declval<const names_pwpb::Callbacks::Client&>()
+                             .NestedUnary(std::declval<Arg>()))>> = true;
+
+template <typename Arg, typename = void>
+constexpr bool kDirectServerStreamAccepts = false;
+template <typename Arg>
+constexpr bool kDirectServerStreamAccepts<
+    Arg,
+    std::void_t<decltype(std::declval<const names_pwpb::Callbacks::Client&>()
+                             .DirectServerStream(std::declval<Arg>()))>> = true;
+
+template <typename Arg, typename = void>
+constexpr bool kNestedServerStreamAccepts = false;
+template <typename Arg>
+constexpr bool kNestedServerStreamAccepts<
+    Arg,
+    std::void_t<decltype(std::declval<const names_pwpb::Callbacks::Client&>()
+                             .NestedServerStream(std::declval<Arg>()))>> = true;
+
+static_assert(kDirectUnaryAccepts<WithCallbackMsg>);
+static_assert(kDirectUnaryAccepts<WithCallbackMsg&&>);
+static_assert(!kDirectUnaryAccepts<const WithCallbackMsg&>);
+static_assert(!kDirectUnaryAccepts<WithCallbackMsg&>);
+static_assert(kDirectUnaryAccepts<size_t>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_pwpb::Callbacks::Client&>()
+                                .DirectUnary({})),
+                   UnaryFuture<WithCallbackMsg, WithCallbackMsg>>);
+
+static_assert(kNestedUnaryAccepts<NestedCallbackMsg>);
+static_assert(kNestedUnaryAccepts<NestedCallbackMsg&&>);
+static_assert(!kNestedUnaryAccepts<const NestedCallbackMsg&>);
+static_assert(!kNestedUnaryAccepts<NestedCallbackMsg&>);
+static_assert(kNestedUnaryAccepts<size_t>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_pwpb::Callbacks::Client&>()
+                                .NestedUnary({})),
+                   UnaryFuture<NestedCallbackMsg, NestedCallbackMsg>>);
+
+static_assert(kDirectServerStreamAccepts<WithCallbackMsg>);
+static_assert(kDirectServerStreamAccepts<WithCallbackMsg&&>);
+static_assert(!kDirectServerStreamAccepts<const WithCallbackMsg&>);
+static_assert(!kDirectServerStreamAccepts<WithCallbackMsg&>);
+static_assert(kDirectServerStreamAccepts<size_t>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_pwpb::Callbacks::Client&>()
+                                .DirectServerStream({})),
+                   ServerStreamFuture<WithCallbackMsg, WithCallbackMsg>>);
+
+static_assert(kNestedServerStreamAccepts<NestedCallbackMsg>);
+static_assert(kNestedServerStreamAccepts<NestedCallbackMsg&&>);
+static_assert(!kNestedServerStreamAccepts<const NestedCallbackMsg&>);
+static_assert(!kNestedServerStreamAccepts<NestedCallbackMsg&>);
+static_assert(kNestedServerStreamAccepts<size_t>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const names_pwpb::Callbacks::Client&>()
+                                .NestedServerStream({})),
+                   ServerStreamFuture<NestedCallbackMsg, NestedCallbackMsg>>);
+
+template <typename W, typename Arg, typename = void>
+constexpr bool kWriterAccepts = false;
+template <typename W, typename Arg>
+constexpr bool kWriterAccepts<
+    W,
+    Arg,
+    std::void_t<decltype(std::declval<W&>().Write(std::declval<Arg>()))>> =
+    true;
+
+template <typename W, typename Arg, typename = void>
+constexpr bool kUnaryWriterAccepts = false;
+template <typename W, typename Arg>
+constexpr bool kUnaryWriterAccepts<
+    W,
+    Arg,
+    std::void_t<decltype(std::declval<W&>().Finish(std::declval<Arg>()))>> =
+    true;
+
+static_assert(kWriterAccepts<Writer<PingMsg>, const PingMsg&>);
+static_assert(kWriterAccepts<Writer<PingMsg>, PingMsg>);
+static_assert(!kWriterAccepts<Writer<WithCallbackMsg>, const WithCallbackMsg&>);
+static_assert(!kWriterAccepts<Writer<WithCallbackMsg>, WithCallbackMsg&>);
+static_assert(kWriterAccepts<Writer<WithCallbackMsg>, WithCallbackMsg>);
+static_assert(
+    !kWriterAccepts<Writer<NestedCallbackMsg>, const NestedCallbackMsg&>);
+static_assert(!kWriterAccepts<Writer<NestedCallbackMsg>, NestedCallbackMsg&>);
+static_assert(kWriterAccepts<Writer<NestedCallbackMsg>, NestedCallbackMsg>);
+
+static_assert(kUnaryWriterAccepts<UnaryWriter<PingMsg>, const PingMsg&>);
+static_assert(kUnaryWriterAccepts<UnaryWriter<PingMsg>, PingMsg>);
+static_assert(
+    !kUnaryWriterAccepts<UnaryWriter<WithCallbackMsg>, const WithCallbackMsg&>);
+static_assert(
+    !kUnaryWriterAccepts<UnaryWriter<WithCallbackMsg>, WithCallbackMsg&>);
+static_assert(
+    kUnaryWriterAccepts<UnaryWriter<WithCallbackMsg>, WithCallbackMsg>);
+static_assert(!kUnaryWriterAccepts<UnaryWriter<NestedCallbackMsg>,
+                                   const NestedCallbackMsg&>);
+static_assert(
+    !kUnaryWriterAccepts<UnaryWriter<NestedCallbackMsg>, NestedCallbackMsg&>);
+static_assert(
+    kUnaryWriterAccepts<UnaryWriter<NestedCallbackMsg>, NestedCallbackMsg>);
+
 // Methods may be named after the client API (`Copy`, `Reserve`, and the class
 // that provides `Copy()`), unprefixed internal names (`internal`, `derived`,
 // `kServiceId`, `ClientCopyMethods`), and base class members (`is_open`,
@@ -416,6 +543,9 @@ static_assert(
 static_assert(
     std::is_same_v<decltype(std::declval<const api_raw::Client&>().Size(8)),
                    RawUnaryReserveFuture>);
+static_assert(std::is_same_v<decltype(std::declval<const api_pwpb::Client&>()
+                                          .Request(PingMsg{})),
+                             UnaryFuture<PingMsg, PongMsg>>);
 static_assert(
     std::is_same_v<decltype(std::declval<const api_raw::Client&>()
                                 .ClientCopyMethods::Copy(pw::ConstBuf())),
@@ -1200,6 +1330,61 @@ TEST(CodegenService, PwpbClientReservesRequest) {
   ASSERT_TRUE(response.has_value());
   PW_TEST_ASSERT_OK(*response);
   EXPECT_EQ((*response)->value, 42u);
+}
+
+TEST(CodegenClient, CallbackMessagesMovedPreserveEncoders) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  const names_pwpb::Callbacks::Client client(peer.client());
+
+  WithCallbackMsg direct{};
+  direct.name.SetEncoder([](common_msgs::WithCallback::StreamEncoder& encoder) {
+    return encoder.WriteName("hello");
+  });
+  async2::FutureTask unary(client.DirectUnary(std::move(direct)));
+  dispatcher.Post(unary);
+  dispatcher.RunUntilStalled();
+
+  auto unary_inv = peer.ExpectInvocation<names_raw::Callbacks::DirectUnary>();
+  auto unary_req = unary_inv.request();
+  PW_TEST_ASSERT_OK(unary_req);
+  const std::byte kExpectedDirect[] = {
+      std::byte{0x0A},
+      std::byte{0x05},
+      std::byte{'h'},
+      std::byte{'e'},
+      std::byte{'l'},
+      std::byte{'l'},
+      std::byte{'o'},
+  };
+  test::ExpectBytes(*unary_req, kExpectedDirect);
+
+  NestedCallbackMsg nested{};
+  nested.id = 7;
+  nested.child.name.SetEncoder(
+      [](common_msgs::WithCallback::StreamEncoder& encoder) {
+        return encoder.WriteName("hi");
+      });
+  async2::FutureTask stream(client.NestedServerStream(std::move(nested)));
+  dispatcher.Post(stream);
+  dispatcher.RunUntilStalled();
+
+  auto stream_inv =
+      peer.ExpectInvocation<names_raw::Callbacks::NestedServerStream>();
+  auto stream_req = stream_inv.request();
+  PW_TEST_ASSERT_OK(stream_req);
+  const std::byte kExpectedNested[] = {
+      std::byte{0x08},
+      std::byte{0x07},
+      std::byte{0x12},
+      std::byte{0x04},
+      std::byte{0x0A},
+      std::byte{0x02},
+      std::byte{'h'},
+      std::byte{'i'},
+  };
+  test::ExpectBytes(*stream_req, kExpectedNested);
 }
 
 }  // namespace

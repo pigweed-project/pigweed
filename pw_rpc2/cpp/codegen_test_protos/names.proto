@@ -84,4 +84,18 @@ service ClientApiNames {
   rpc FindMethod(Ping) returns (Pong);
   rpc methods(Ping) returns (Pong);
   rpc service_id(Ping) returns (Pong);
+  rpc Request(Ping) returns (Pong);
+}
+
+// Methods whose request and response messages contain `pw_protobuf` `Callback`
+// fields, directly or in a nested submessage.
+service Callbacks {
+  rpc DirectUnary(pw.rpc2.codegen_test.common.WithCallback)
+      returns (pw.rpc2.codegen_test.common.WithCallback);
+  rpc NestedUnary(pw.rpc2.codegen_test.common.NestedCallback)
+      returns (pw.rpc2.codegen_test.common.NestedCallback);
+  rpc DirectServerStream(pw.rpc2.codegen_test.common.WithCallback)
+      returns (stream pw.rpc2.codegen_test.common.WithCallback);
+  rpc NestedServerStream(pw.rpc2.codegen_test.common.NestedCallback)
+      returns (stream pw.rpc2.codegen_test.common.NestedCallback);
 }

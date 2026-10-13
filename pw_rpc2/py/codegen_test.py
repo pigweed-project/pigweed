@@ -429,6 +429,10 @@ struct MethodInfo<::pkg::pw_rpc2::raw::Kinds::{name}> {{
 }};"""
 
 _EXPECTED_PWPB_CLIENT_METHODS = """\
+  template <
+      typename PwInternal_Request = ::pkg::pwpb::Request::Message,
+      typename = ::pw::rpc2::internal::EnableIfCopyableMessage<
+          PwInternal_Request>>
   [[nodiscard]] ::pw::rpc2::UnaryFuture<
       ::pkg::pwpb::Request::Message,
       ::pkg::pwpb::Response::Message>
@@ -455,6 +459,10 @@ _EXPECTED_PWPB_CLIENT_METHODS = """\
 )
 
 _EXPECTED_PWPB_SERVER_STREAM_METHODS = """\
+  template <
+      typename PwInternal_Request = ::pkg::pwpb::Request::Message,
+      typename = ::pw::rpc2::internal::EnableIfCopyableMessage<
+          PwInternal_Request>>
   [[nodiscard]] ::pw::rpc2::ServerStreamFuture<
       ::pkg::pwpb::Request::Message,
       ::pkg::pwpb::Response::Message>
@@ -923,6 +931,10 @@ class PwpbCodegenTest(unittest.TestCase):
         self.assertIn('using Request = ::pkg::pwpb::Ping::Message;', header)
         self.assertIn('using Response = ::pkg::pwpb::Pong::Message;', header)
         self.assertIn(
+            '  template <\n'
+            '      typename PwInternal_Request = ::pkg::pwpb::Ping::Message,\n'
+            '      typename = ::pw::rpc2::internal::EnableIfCopyableMessage<\n'
+            '          PwInternal_Request>>\n'
             '  [[nodiscard]] ::pw::rpc2::UnaryFuture<\n'
             '      ::pkg::pwpb::Ping::Message,\n'
             '      ::pkg::pwpb::Pong::Message>\n'

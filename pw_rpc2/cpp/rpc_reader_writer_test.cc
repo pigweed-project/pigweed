@@ -283,6 +283,28 @@ static_assert(std::is_same_v<decltype(std::declval<UnaryWriter<TypedMessage>&>()
                                           .FinishCopy(ConstBuf())),
                              WriteFuture<ConstBuf>>);
 
+// Messages whose serializer reports `kHasCallbacks = true` can only be moved
+// into `Write()` or `Finish()`, never copied from an lvalue.
+struct CallbackTypedMessage {
+  struct Serializer {
+    static constexpr bool kHasCallbacks = true;
+  };
+  int value;
+};
+
+static_assert(internal::kHasCallbacks<CallbackTypedMessage>);
+static_assert(!internal::kIsCopyableMessage<CallbackTypedMessage>);
+static_assert(
+    !kHasWrite<Writer<CallbackTypedMessage>, const CallbackTypedMessage&>);
+static_assert(!kHasWrite<Writer<CallbackTypedMessage>, CallbackTypedMessage&>);
+static_assert(kHasWrite<Writer<CallbackTypedMessage>, CallbackTypedMessage>);
+static_assert(!kHasFinish<UnaryWriter<CallbackTypedMessage>,
+                          const CallbackTypedMessage&>);
+static_assert(
+    !kHasFinish<UnaryWriter<CallbackTypedMessage>, CallbackTypedMessage&>);
+static_assert(
+    kHasFinish<UnaryWriter<CallbackTypedMessage>, CallbackTypedMessage>);
+
 TEST(RawWriterTest, WriteCopyReleasesOwnedMessageWhenSent) {
   allocator::test::AllocatorForTest<4096> allocator;
   allocator::test::AllocatorForTest<256> message_allocator;

@@ -71,6 +71,8 @@ class GeneratedServiceClient : public ServiceClient {
                                                          R&& request) const {
     static_assert(
         std::is_same_v<std::remove_cv_t<std::remove_reference_t<R>>, Request>);
+    static_assert(std::is_rvalue_reference_v<R&&> ||
+                  kIsCopyableMessage<Request>);
     ReserveWriteFuture req;
     if constexpr (std::is_same_v<Request, ConstBuf>) {
       req = StartReservedCall(method_id, MethodType::kUnary, request.size());
@@ -97,6 +99,8 @@ class GeneratedServiceClient : public ServiceClient {
       uint32_t method_id, R&& request) const {
     static_assert(
         std::is_same_v<std::remove_cv_t<std::remove_reference_t<R>>, Request>);
+    static_assert(std::is_rvalue_reference_v<R&&> ||
+                  kIsCopyableMessage<Request>);
     ReserveWriteFuture req;
     if constexpr (std::is_same_v<Request, ConstBuf>) {
       req = StartReservedCall(

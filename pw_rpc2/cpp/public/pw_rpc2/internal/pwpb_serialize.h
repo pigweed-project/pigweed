@@ -31,13 +31,13 @@ namespace pw::rpc2::internal {
 using PwpbMessageDescriptor =
     const span<const protobuf::internal::MessageField>*;
 
-constexpr bool HasDecodeCallbacks(PwpbMessageDescriptor table) {
+constexpr bool HasCallbacks(PwpbMessageDescriptor table) {
   for (const auto& field : *table) {
     if (field.callback_type() != protobuf::internal::CallbackType::kNone) {
       return true;
     }
     if (field.nested_message_fields() != nullptr &&
-        HasDecodeCallbacks(field.nested_message_fields())) {
+        HasCallbacks(field.nested_message_fields())) {
       return true;
     }
   }
@@ -109,9 +109,11 @@ struct PwpbSerde {
 /// Primary PwpbSerializer for a PWPB message type.
 template <PwpbMessageDescriptor kTable, size_t kMaxSizeBytes>
 struct PwpbSerializer {
+  static constexpr bool kHasCallbacks = HasCallbacks(kTable);
+
   template <typename MessageType>
   static constexpr size_t MaxEncodedSize(const MessageType& value) {
-    if constexpr (HasDecodeCallbacks(kTable)) {
+    if constexpr (kHasCallbacks) {
       const StatusWithSize result = PwpbSerde<kTable>::EncodedSizeBytes(value);
       return result.ok() ? result.size() : kMaxSizeBytes;
     } else {
@@ -130,7 +132,7 @@ struct PwpbSerializer {
   template <typename MessageType>
   static size_t ReservationSize(const MessageType& value,
                                 size_t payload_limit) {
-    if constexpr (!HasDecodeCallbacks(kTable)) {
+    if constexpr (!kHasCallbacks) {
       if (kMaxSizeBytes <= payload_limit) {
         return kMaxSizeBytes;
       }

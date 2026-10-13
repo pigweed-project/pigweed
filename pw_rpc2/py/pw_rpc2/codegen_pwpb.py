@@ -161,22 +161,38 @@ class PwpbCodeGenerator(CodeGenerator):
                 call = 'CallServerStream'
 
             # The request is copied or moved into the future, which serializes
-            # it when polled.
-            for param, arg in (
-                (f'const {req}& request', 'request'),
-                (f'{req}&& request', '::std::move(request)'),
-            ):
-                write_future(future)
-                output.write_line(f'{name}(')
-                output.write_line(f'    {param}) const {{')
-                with output.indent():
-                    output.write_line(f'return {CLIENT_BASE}::{call}<')
-                    with output.indent(4):
-                        output.write_line(f'{req},')
-                        output.write_line(f'{resp}>(')
-                        output.write_line(f'{method_id}, {arg});')
-                output.write_line('}')
-                output.write_line()
+            # it when polled. Messages with callback fields cannot be copied,
+            # since copying a pw_protobuf message drops its callbacks.
+            output.write_line('template <')
+            with output.indent(4):
+                output.write_line(f'typename PwInternal_Request = {req},')
+                output.write_line(
+                    'typename = ::pw::rpc2::internal::EnableIfCopyableMessage<'
+                )
+                output.write_line('    PwInternal_Request>>')
+            write_future(future)
+            output.write_line(f'{name}(')
+            output.write_line(f'    const {req}& request) const {{')
+            with output.indent():
+                output.write_line(f'return {CLIENT_BASE}::{call}<')
+                with output.indent(4):
+                    output.write_line(f'{req},')
+                    output.write_line(f'{resp}>(')
+                    output.write_line(f'{method_id}, request);')
+            output.write_line('}')
+            output.write_line()
+
+            write_future(future)
+            output.write_line(f'{name}(')
+            output.write_line(f'    {req}&& request) const {{')
+            with output.indent():
+                output.write_line(f'return {CLIENT_BASE}::{call}<')
+                with output.indent(4):
+                    output.write_line(f'{req},')
+                    output.write_line(f'{resp}>(')
+                    output.write_line(f'{method_id}, ::std::move(request));')
+            output.write_line('}')
+            output.write_line()
 
             write_reserve_method(output, self, method)
             return

@@ -28,3 +28,14 @@ message Outer {
 
   Inner inner = 1;
 }
+
+// A message with a callback field (`string` without a fixed max_size).
+message WithCallback {
+  string name = 1;
+}
+
+// A message whose only callback is in a nested submessage.
+message NestedCallback {
+  uint32 id = 1;
+  WithCallback child = 2;
+}

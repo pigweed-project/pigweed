@@ -153,7 +153,10 @@ class WriteFuture : public internal::WriteFutureBase {
   template <typename M>
   WriteFuture(ReserveWriteFuture&& res_fut, M&& message)
       : internal::WriteFutureBase(std::move(res_fut)),
-        message_(std::forward<M>(message)) {}
+        message_(std::forward<M>(message)) {
+    static_assert(std::is_rvalue_reference_v<M&&> ||
+                  internal::kIsCopyableMessage<Message>);
+  }
 
   // Constructor for stream-end writes (`Writer::Finish()`).
   explicit WriteFuture(ReserveWriteFuture&& res_fut)
@@ -325,12 +328,11 @@ class Writer : public internal::WriterBase {
   /// Serializes and sends `message`. Not available on `RawWriter`; use
   /// `WriteCopy()` instead.
   ///
-  /// @note `message` is copied into the returned future. Copying a
-  /// `pw_protobuf` message drops its callback fields, so move messages with
-  /// callbacks into `Write(Message&&)` instead.
+  /// @note `message` is copied into the returned future. This overload is
+  /// disabled for `pw_protobuf` messages with callback fields (since copying a
+  /// message drops its callbacks); move them into `Write(Message&&)` instead.
   template <typename M = Message,
-            typename = std::enable_if_t<std::is_copy_constructible_v<M> &&
-                                        !std::is_same_v<M, ConstBuf>>>
+            typename = internal::EnableIfCopyableMessage<M>>
   [[nodiscard]] WriteFuture<Message> Write(const Message& message) {
     return WriteFuture<Message>(
         ReserveWrite(internal::ReservationSize(message, payload_limit())),
@@ -416,16 +418,15 @@ class UnaryWriter : public internal::WriterBase {
   /// Serializes `response`, sends it, and completes the RPC with `OK`. Not
   /// available on `RawUnaryWriter`; use `FinishCopy()` instead.
   ///
-  /// @note `response` is copied into the returned future. Copying a
-  /// `pw_protobuf` message drops its callback fields, so move responses with
-  /// callbacks into `Finish(Message&&)` instead.
+  /// @note `response` is copied into the returned future. This overload is
+  /// disabled for `pw_protobuf` messages with callback fields (since copying a
+  /// message drops its callbacks); move them into `Finish(Message&&)` instead.
   ///
   /// @warning Committing the response retires the call and destroys the
   /// method's future or coroutine on the connection's next poll. Perform all
   /// per-call work before calling `Finish()`.
   template <typename M = Message,
-            typename = std::enable_if_t<std::is_copy_constructible_v<M> &&
-                                        !std::is_same_v<M, ConstBuf>>>
+            typename = internal::EnableIfCopyableMessage<M>>
   [[nodiscard]] WriteFuture<Message> Finish(const Message& response) {
     return WriteFuture<Message>(
         ReserveFinish(internal::ReservationSize(response, payload_limit())),

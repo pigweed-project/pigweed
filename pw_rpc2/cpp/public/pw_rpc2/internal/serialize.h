@@ -52,6 +52,31 @@ struct SerializerFor<ConstBuf> {
   };
 };
 
+/// True if `T`'s serializer reports that `T` contains callback fields that are
+/// not preserved when `T` is copied.
+template <typename T, typename = void>
+inline constexpr bool kHasCallbacks = false;
+
+template <typename T>
+inline constexpr bool kHasCallbacks<
+    T,
+    std::void_t<decltype(SerializerFor<T>::type::kHasCallbacks)>> =
+    SerializerFor<T>::type::kHasCallbacks;
+
+/// True if `T` is a message type that can be safely copied into an outbound
+/// RPC future.
+///
+/// Excludes `ConstBuf` (which uses `WriteCopy()`, `FinishCopy()`, or `Copy()`)
+/// and `pw_protobuf` messages with `Callback` or `OneOf` fields (whose
+/// callbacks are cleared on copy and must be moved instead).
+template <typename T>
+inline constexpr bool kIsCopyableMessage =
+    std::is_copy_constructible_v<T> && !std::is_same_v<T, ConstBuf> &&
+    !kHasCallbacks<T>;
+
+template <typename T>
+using EnableIfCopyableMessage = std::enable_if_t<kIsCopyableMessage<T>>;
+
 /// Returns an upper bound on the number of bytes `value` serializes to.
 ///
 /// @warning For protobuf messages without callback fields this is the

@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #include "pw_function/function.h"
 #include "pw_preprocessor/compiler.h"
@@ -230,8 +231,12 @@ union Callback {
   }
 
   // Allow moving of callbacks by moving the member.
-  constexpr Callback(Callback&& other) = default;
-  constexpr Callback& operator=(Callback&& other) = default;
+  constexpr Callback(Callback&& other) noexcept
+      : encode_(std::move(other.encode_)) {}
+  constexpr Callback& operator=(Callback&& other) noexcept {
+    encode_ = std::move(other.encode_);
+    return *this;
+  }
 
   // Copying a callback does not copy the functions.
   constexpr Callback(const Callback&) : encode_() {}
@@ -311,8 +316,13 @@ struct OneOf {
   }
 
   // Allow moving of callbacks by moving the member.
-  constexpr OneOf(OneOf&& other) = default;
-  constexpr OneOf& operator=(OneOf&& other) = default;
+  constexpr OneOf(OneOf&& other) noexcept
+      : invoked_(other.invoked_), encode_(std::move(other.encode_)) {}
+  constexpr OneOf& operator=(OneOf&& other) noexcept {
+    invoked_ = other.invoked_;
+    encode_ = std::move(other.encode_);
+    return *this;
+  }
 
   // Copying a callback does not copy the functions.
   constexpr OneOf(const OneOf&) : encode_() {}

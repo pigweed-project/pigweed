@@ -378,6 +378,60 @@ TEST(CodegenMessage, SetEncoderAndDecoderMutableLambda) {
   EXPECT_TRUE(msg.id);
 }
 
+TEST(CodegenMessage, MovePreservesCallbackAndCopyClearsIt) {
+  Pigweed::Message msg{};
+  msg.id.SetEncoder(
+      [](Pigweed::StreamEncoder&) -> Status { return OkStatus(); });
+  EXPECT_TRUE(msg.id);
+
+  // Moving preserves the callback.
+  Pigweed::Message moved_constructed(std::move(msg));
+  EXPECT_TRUE(moved_constructed.id);
+
+  Pigweed::Message moved_assigned{};
+  moved_assigned = std::move(moved_constructed);
+  EXPECT_TRUE(moved_assigned.id);
+
+  // Copying does not copy the callback.
+  Pigweed::Message copy_constructed(moved_assigned);
+  EXPECT_FALSE(copy_constructed.id);
+  EXPECT_TRUE(moved_assigned.id);
+
+  Pigweed::Message copy_assigned{};
+  copy_assigned.id.SetEncoder(
+      [](Pigweed::StreamEncoder&) -> Status { return OkStatus(); });
+  EXPECT_TRUE(copy_assigned.id);
+  copy_assigned = moved_assigned;
+  EXPECT_FALSE(copy_assigned.id);
+}
+
+TEST(CodegenMessage, MovePreservesOneOfAndCopyClearsIt) {
+  OneOfTest::Message msg{};
+  msg.type.SetEncoder(
+      [](OneOfTest::StreamEncoder&) -> Status { return OkStatus(); });
+  EXPECT_TRUE(msg.type);
+
+  // Moving preserves the callback.
+  OneOfTest::Message moved_constructed(std::move(msg));
+  EXPECT_TRUE(moved_constructed.type);
+
+  OneOfTest::Message moved_assigned{};
+  moved_assigned = std::move(moved_constructed);
+  EXPECT_TRUE(moved_assigned.type);
+
+  // Copying does not copy the callback.
+  OneOfTest::Message copy_constructed(moved_assigned);
+  EXPECT_FALSE(copy_constructed.type);
+  EXPECT_TRUE(moved_assigned.type);
+
+  OneOfTest::Message copy_assigned{};
+  copy_assigned.type.SetEncoder(
+      [](OneOfTest::StreamEncoder&) -> Status { return OkStatus(); });
+  EXPECT_TRUE(copy_assigned.type);
+  copy_assigned = moved_assigned;
+  EXPECT_FALSE(copy_assigned.type);
+}
+
 TEST(CodegenMessage, Read) {
   // clang-format off
   constexpr uint8_t proto_data[] = {
