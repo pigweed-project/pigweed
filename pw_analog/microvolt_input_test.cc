@@ -64,7 +64,7 @@ class TestMicrovoltInput : public MicrovoltInput {
   Limits GetLimits() const override { return limits_; }
   References GetReferences() const override { return reference_; }
 
-  uint32_t sample_;
+  int32_t sample_;
   const Limits limits_;
   const References reference_;
 };

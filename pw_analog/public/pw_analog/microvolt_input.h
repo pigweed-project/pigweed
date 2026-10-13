@@ -84,10 +84,11 @@ class MicrovoltInput : public AnalogInput {
       return pw::Status::Internal();
     }
 
-    return (((static_cast<int64_t>(sample) - static_cast<int64_t>(limits.min)) *
-             (reference.max_voltage_uv - reference.min_voltage_uv)) /
-            (limits.max - limits.min)) +
-           reference.min_voltage_uv;
+    return static_cast<int32_t>(
+        (((static_cast<int64_t>(sample) - static_cast<int64_t>(limits.min)) *
+          (reference.max_voltage_uv - reference.min_voltage_uv)) /
+         (limits.max - limits.min)) +
+        reference.min_voltage_uv);
   }
 
  private:
