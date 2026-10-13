@@ -38,4 +38,20 @@ TEST(AsyncPacketIo, Instantiate) {
       channel.channel(), buffer, alloc, rpc_server);
 }
 
+TEST(RpcChannelOutputQueue, DropsOversizedDatagramAndReportsMtu) {
+  pw::system::internal::RpcChannelOutputQueue queue;
+  pw::rpc::ChannelOutput& output = queue;
+
+  EXPECT_EQ(output.MaximumTransmissionUnit(),
+            static_cast<size_t>(PW_SYSTEM_MAX_TRANSMISSION_UNIT));
+  EXPECT_EQ(queue.dropped_packets(), 0u);
+
+  std::byte oversized[PW_SYSTEM_MAX_TRANSMISSION_UNIT + 1]{};
+  {
+    pw::rpc::internal::RpcLockGuard lock;
+    EXPECT_EQ(output.Send(oversized), pw::OkStatus());
+  }
+  EXPECT_EQ(queue.dropped_packets(), 1u);
+}
+
 }  // namespace

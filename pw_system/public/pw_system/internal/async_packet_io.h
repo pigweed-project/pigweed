@@ -56,6 +56,10 @@ class RpcChannelOutputQueue final : public rpc::ChannelOutput {
     return dropped_packets_;
   }
 
+  size_t MaximumTransmissionUnit() override {
+    return PW_SYSTEM_MAX_TRANSMISSION_UNIT;
+  }
+
  private:
   Status Send(ConstByteSpan datagram) override;
 

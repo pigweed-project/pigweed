@@ -56,7 +56,7 @@ Status RpcChannelOutputQueue::Send(ConstByteSpan datagram) {
   PACKET_IO_DEBUG_LOG("Pushing %zu B packet into outbound queue",
                       datagram.size());
   mutex_.lock();
-  if (queue_.try_push(datagram)) {
+  if (datagram.size() <= queue_.max_size_bytes() && queue_.try_push(datagram)) {
     packet_ready_.Wake();
   } else {
     dropped_packets_ += 1;
