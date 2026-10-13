@@ -21,7 +21,6 @@ licenses(["notice"])
 pw_cc_size_binary(
     name = "base",
     srcs = ["base.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",
@@ -32,7 +31,6 @@ pw_cc_size_binary(
 pw_cc_size_binary(
     name = "one_metric",
     srcs = ["one_metric.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",
@@ -44,7 +42,6 @@ pw_cc_size_binary(
 pw_cc_size_binary(
     name = "dump",
     srcs = ["dump.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",
@@ -56,7 +53,6 @@ pw_cc_size_binary(
 pw_cc_size_binary(
     name = "more_metrics",
     srcs = ["more_metrics.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",
