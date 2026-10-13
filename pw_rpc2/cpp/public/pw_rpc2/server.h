@@ -52,12 +52,11 @@ namespace pw::rpc2 {
 ///
 /// Each of these hands a request to the server's dispatcher and returns;
 /// nothing is allocated on the calling thread. `RegisterService()` needs no
-/// completion signal, since a queued registration cannot fail. The future the
-/// others return is the one kind of `pw_rpc2` object with no dispatcher
-/// affinity --- it may be polled from any dispatcher, moved between threads,
-/// or dropped. The `*Blocking()` forms instead block the calling thread until
-/// the operation finishes, and so must not be called from the server's own
-/// dispatcher thread once started.
+/// completion signal, since a queued registration cannot fail. Unlike other
+/// `pw_rpc2` futures, the `ControlFuture` the others return may be moved
+/// between threads or dropped on any thread. The `*Blocking()` forms instead
+/// block the calling thread until the operation finishes, and so must not be
+/// called from the dispatcher thread once started.
 ///
 /// Before `Start()` there is no dispatcher thread to hand requests to, so
 /// listener registrations are applied on the calling thread instead and their
@@ -70,8 +69,8 @@ namespace pw::rpc2 {
 /// crashes otherwise. Closing unregisters every service and frees every
 /// listener and connection.
 ///
-/// @note **Close is terminal.** A closed server cannot be restarted or moved
-/// to another dispatcher. Create a new `Server` instead.
+/// @note **Close is terminal.** A closed server cannot be restarted. Create a
+/// new `Server` instead.
 class Server {
  public:
   /// Creates a server that will run on `dispatcher`. The dispatcher must

@@ -49,9 +49,11 @@ inline sync::InterruptSpinLock& ControlLock() {
 /// Future returned by the thread-safe control operations on `Server` and
 /// `Client`.
 ///
-/// Unlike every other `pw_rpc2` object, a `ControlFuture` has no dispatcher
-/// affinity: it may be polled from any dispatcher, moved across threads, or
-/// dropped. Dropping it before the operation has been applied cancels it.
+/// Unlike other `pw_rpc2` futures, which may only be used on the dispatcher
+/// thread, a `ControlFuture` may be created, moved, or dropped on any thread.
+/// Dropping a `RegisterListener()` future before it resolves withdraws the
+/// registration; `Close()` is already under way when it returns and continues
+/// even if its future is dropped.
 class [[nodiscard]] ControlFuture {
  public:
   using value_type = Status;
