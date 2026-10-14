@@ -357,8 +357,8 @@ void SniffOffloadManager::ProcessAclPacket(const MultiBuf& acl_packet,
   ConnectionHandle connection_handle{view->handle().Read()};
   auto iter = connections_.find(cpp23::to_underlying(connection_handle));
   if (iter == connections_.end()) {
-    PW_LOG_WARN("Connection handle 0x%04x not found.",
-                cpp23::to_underlying(connection_handle));
+    PW_LOG_DEBUG("Connection handle 0x%04x not found.",
+                 cpp23::to_underlying(connection_handle));
     OnError(ErrorReason::kConnectionNotFound, connection_handle);
     return;
   }
@@ -668,8 +668,8 @@ SniffOffloadManager::ProcessDisconnectionComplete(
   ConnectionHandle handle = ConnectionHandle(view->connection_handle().Read());
   auto iter = connections_.find(cpp23::to_underlying(handle));
   if (iter == connections_.end()) {
-    PW_LOG_WARN("Connection handle 0x%04x not found.",
-                cpp23::to_underlying(handle));
+    PW_LOG_DEBUG("Connection handle 0x%04x not found.",
+                 cpp23::to_underlying(handle));
     OnError(ErrorReason::kConnectionNotFound, handle);
     return {};
   }
