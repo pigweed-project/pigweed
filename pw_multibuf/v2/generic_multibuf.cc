@@ -39,32 +39,53 @@ GenericMultiBuf& GenericMultiBuf::operator=(GenericMultiBuf&& other) {
   return *this;
 }
 
-bool GenericMultiBuf::TryReserveForInsert(const_iterator pos,
-                                          const GenericMultiBuf& mb) {
-  size_type entries_per_chunk = entries_per_chunk_;
-  while (entries_per_chunk_ < mb.entries_per_chunk_) {
-    if (!AddLayer(0)) {
-      break;
-    }
-  }
-  if (pos.offset_ == 0 || !IsOwned(pos.chunk_) ||
-      TryConvertToShared(pos.chunk_)) {
-    if (entries_per_chunk_ >= mb.entries_per_chunk_ &&
-        TryReserveEntries(entries_per_chunk_ * mb.num_chunks(),
-                          pos.offset_ != 0)) {
-      return true;
-    }
-  }
-  while (entries_per_chunk_ > entries_per_chunk) {
-    PopLayer();
-  }
-  return false;
+bool GenericMultiBuf::TryReserveForInsert(const_iterator pos) {
+  return TryReserveForInsert(pos, 1, 1);
 }
 
-bool GenericMultiBuf::TryReserveForInsert(const_iterator pos) {
-  return (pos.offset_ == 0 || !IsOwned(pos.chunk_) ||
-          TryConvertToShared(pos.chunk_)) &&
-         TryReserveEntries(entries_per_chunk_, pos.offset_ != 0);
+bool GenericMultiBuf::TryReserveForInsert(const_iterator pos,
+                                          const GenericMultiBuf& mb) {
+  return TryReserveForInsert(pos, mb.num_layers(), mb.num_chunks());
+}
+
+bool GenericMultiBuf::TryReserveForInsert(const_iterator pos,
+                                          const ConstBuf& bytes) {
+  if (bytes.empty()) {
+    return true;
+  }
+  size_t layers_needed = 1;
+  if (bytes.deallocator() != nullptr && bytes.size() != bytes.base_size()) {
+    // An owned, sliced Buf needs extra layer to retain its original allocation.
+    layers_needed = 2;
+  }
+  return TryReserveForInsert(pos, layers_needed, 1);
+}
+
+bool GenericMultiBuf::TryReserveForInsert(const_iterator pos,
+                                          size_t min_layers,
+                                          size_t min_chunks) {
+  size_type orig_num_layers = num_layers();
+  while (num_layers() < min_layers) {
+    if (!AddLayer(0)) {
+      PopUntil(orig_num_layers);
+      return false;
+    }
+  }
+  if (pos.offset_ != 0 && IsOwned(pos.chunk_) &&
+      !TryConvertToShared(pos.chunk_)) {
+    PopUntil(orig_num_layers);
+    return false;
+  }
+  size_type num_entries;
+  if (!CheckedMul(entries_per_chunk_, min_chunks, num_entries)) {
+    PopUntil(orig_num_layers);
+    return false;
+  }
+  if (!TryReserveEntries(num_entries, pos.offset_ != 0)) {
+    PopUntil(orig_num_layers);
+    return false;
+  }
+  return true;
 }
 
 auto GenericMultiBuf::Insert(const_iterator pos, GenericMultiBuf&& mb)
@@ -132,22 +153,25 @@ auto GenericMultiBuf::Insert(const_iterator pos, ConstBuf&& bytes) -> iterator {
     bytes.reset();
     return MakeIterator(pos.chunk_, pos.offset_);
   }
-  PW_CHECK(TryReserveForInsert(pos));
   if (bytes.deallocator() == nullptr) {
-    auto [iter, unused] = Insert(pos, bytes, 0, bytes.size());
+    auto iter = Insert(pos, bytes);
     bytes.reset();
     return iter;
   }
 
-  size_t offset = bytes.prefix_;
-  auto [iter, chunk] =
-      Insert(pos,
-             ConstByteSpan(bytes.base(), offset + bytes.size()),
-             offset,
-             bytes.size());
+  PW_CHECK(TryReserveForInsert(pos, bytes));
+  auto [iter, chunk] = Insert(pos,
+                              ConstByteSpan(bytes.base(), bytes.base_size()),
+                              bytes.prefix_,
+                              bytes.size());
   deque_[memory_context_index(chunk)].deallocator =
       std::exchange(bytes.deallocator_, nullptr);
-  deque_[base_view_index(chunk)].base_view.owned = true;
+  deque_[base_view_index(chunk)].base_view = {
+      .offset = 0,
+      .owned = true,
+      .length = CheckedCast<size_type>(bytes.base_size()),
+      .shared = false,
+  };
   bytes.reset();
   return iter;
 }
@@ -529,6 +553,12 @@ void GenericMultiBuf::PopLayer() {
   }
   if (observer_ != nullptr) {
     observer_->Notify(Observer::Event::kLayerRemoved, num_fragments);
+  }
+}
+
+void GenericMultiBuf::PopUntil(size_t orig_num_layers) {
+  while (num_layers() > orig_num_layers) {
+    PopLayer();
   }
 }
 

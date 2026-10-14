@@ -2811,9 +2811,8 @@ TEST_F(MultiBufV2Test, ReleaseSlicedChunk) {
   // not the sliced offset.
   EXPECT_EQ(released.get(), raw_ptr);
 
-  // The size of the released chunk encompasses the offset + length of
-  // the inserted buffer (5 + 10).
-  EXPECT_EQ(released.size(), 15u);
+  // The size of the released chunk encompasses the entire allocation.
+  EXPECT_EQ(released.size(), 20u);
 
   // Ensure the UniquePtr deallocates the memory from the original base pointer.
   const size_t before_destruct = allocator_.metrics().num_deallocations.value();
@@ -3031,13 +3030,14 @@ TEST_F(MultiBufV2Test, TryConvertToSharedPreservesFullExtentOfSlicedBuf) {
   ASSERT_TRUE(copy_res.ok());
   MultiBufInstance copy(std::move(*copy_res));
 
-  // Verify that the SharedPtr covers the allocation through the end of the base
-  // view (5 + 10 = 15).
+  // Verify that the SharedPtr covers the entire allocation.
   pw::SharedPtr<std::byte[]> shared = copy->Share(copy->begin());
   EXPECT_EQ(shared.get(), raw_ptr);
-  EXPECT_EQ(shared.size(), 15u);
+  EXPECT_EQ(shared.size(), 20u);
+  EXPECT_EQ(shared[0], std::byte(0));
   EXPECT_EQ(shared[5], std::byte(5));
   EXPECT_EQ(shared[14], std::byte(14));
+  EXPECT_EQ(shared[19], std::byte(19));
 }
 
 TEST_F(MultiBufV2Test,
@@ -3098,6 +3098,241 @@ TEST_F(MultiBufV2Test,
   EXPECT_EQ(released.base(), raw_ptr);
   EXPECT_EQ(released.data(), raw_ptr);
   EXPECT_EQ(released.size(), 15u);
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithEmptyBuf) {
+  std::array<std::byte, 20> data{};
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = static_cast<std::byte>(i);
+  }
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  pw::Buf empty_buf;
+  allocator_.DisableAllocate();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), empty_buf));
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithUnownedUnslicedBuf) {
+  std::array<std::byte, 20> data{};
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = static_cast<std::byte>(i);
+  }
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  pw::Buf buf = pw::Buf::Unowned(data);
+
+  allocator_.DisableAllocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.begin(), buf));
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), buf));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  // Insert succeeds without further allocations.
+  allocator_.DisableAllocate();
+  mb.Insert(mb.begin(), std::move(buf));
+  EXPECT_EQ(mb.size(), 20u);
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithUnownedSlicedBuf) {
+  std::array<std::byte, 20> data{};
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = static_cast<std::byte>(i);
+  }
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  pw::Buf sliced = pw::Buf::Unowned(data, 4, 8);
+
+  allocator_.DisableAllocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.begin(), sliced));
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  allocator_.DisableAllocate();
+  mb.Insert(mb.begin(), std::move(sliced));
+  EXPECT_EQ(mb.size(), 8u);
+  EXPECT_EQ(mb[0], std::byte(4));
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithEmptyConstBuf) {
+  std::array<std::byte, 20> data{};
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = static_cast<std::byte>(i);
+  }
+  ConstMultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<ConstMultiBuf>();
+  pw::ConstBuf empty_buf;
+  allocator_.DisableAllocate();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), empty_buf));
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithUnownedUnslicedConstBuf) {
+  std::array<std::byte, 20> data{};
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = static_cast<std::byte>(i);
+  }
+  ConstMultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<ConstMultiBuf>();
+  pw::ConstBuf buf = pw::ConstBuf::Unowned(data);
+
+  allocator_.DisableAllocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.begin(), buf));
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), buf));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  allocator_.DisableAllocate();
+  mb.Insert(mb.begin(), std::move(buf));
+  EXPECT_EQ(mb.size(), 20u);
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithUnownedSlicedConstBuf) {
+  std::array<std::byte, 20> data{};
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = static_cast<std::byte>(i);
+  }
+  ConstMultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<ConstMultiBuf>();
+  pw::ConstBuf sliced = pw::Slice(pw::ConstBuf::Unowned(data), 5, 10);
+
+  allocator_.DisableAllocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.begin(), sliced));
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  allocator_.DisableAllocate();
+  mb.Insert(mb.begin(), std::move(sliced));
+  EXPECT_EQ(mb.size(), 10u);
+  EXPECT_EQ(mb[0], std::byte(5));
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithOwnedUnslicedBuf) {
+  auto buf = pw::Buf::Allocate(allocator_, 20);
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+
+  allocator_.DisableAllocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.begin(), buf));
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), buf));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  allocator_.DisableAllocate();
+  mb.Insert(mb.begin(), std::move(buf));
+  EXPECT_EQ(mb.size(), 20u);
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithOwnedSlicedBuf) {
+  auto buf = pw::Buf::Allocate(allocator_, 20);
+  for (size_t i = 0; i < 20; ++i) {
+    buf[i] = static_cast<std::byte>(i);
+  }
+  pw::Buf sliced = pw::Slice(std::move(buf), 3, 12);
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+
+  allocator_.DisableAllocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.begin(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 2u);
+
+  allocator_.DisableAllocate();
+  mb.Insert(mb.begin(), std::move(sliced));
+  EXPECT_EQ(mb.size(), 12u);
+  EXPECT_EQ(mb[0], std::byte(3));
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithOwnedSlicedBufRollBack) {
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  mb.PushBack(allocator_.MakeUnique<std::byte[]>(10));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  auto buf = pw::Buf::Allocate(allocator_, 20);
+  pw::Buf sliced = pw::Slice(std::move(buf), 2, 8);
+
+  allocator_.DisableAllocate();
+  allocator_.DisableResize();
+  allocator_.DisableReallocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.end(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.end(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 2u);
+  mb.Insert(mb.end(), std::move(sliced));
+  EXPECT_EQ(mb.size(), 18u);
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithOwnedUnslicedConstBuf) {
+  pw::ConstBuf buf = pw::Buf::Allocate(allocator_, 20);
+  ConstMultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<ConstMultiBuf>();
+
+  allocator_.DisableAllocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.begin(), buf));
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), buf));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  allocator_.DisableAllocate();
+  mb.Insert(mb.begin(), std::move(buf));
+  EXPECT_EQ(mb.size(), 20u);
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithOwnedSlicedConstBuf) {
+  auto buf = pw::Buf::Allocate(allocator_, 20);
+  for (size_t i = 0; i < 20; ++i) {
+    buf[i] = static_cast<std::byte>(i);
+  }
+  pw::ConstBuf sliced = pw::Slice(std::move(buf), 6, 9);
+  ConstMultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<ConstMultiBuf>();
+
+  allocator_.DisableAllocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.begin(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.begin(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 2u);
+
+  allocator_.DisableAllocate();
+  mb.Insert(mb.begin(), std::move(sliced));
+  EXPECT_EQ(mb.size(), 9u);
+  EXPECT_EQ(mb[0], std::byte(6));
+}
+
+TEST_F(MultiBufV2Test, TryReserveForInsertWithOwnedSlicedConstBufRollBack) {
+  ConstMultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<ConstMultiBuf>();
+  mb.PushBack(allocator_.MakeUnique<std::byte[]>(10));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  auto buf = pw::Buf::Allocate(allocator_, 20);
+  pw::ConstBuf sliced = pw::Slice(std::move(buf), 2, 8);
+
+  allocator_.DisableAllocate();
+  allocator_.DisableResize();
+  allocator_.DisableReallocate();
+  EXPECT_FALSE(mb.TryReserveForInsert(mb.end(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 1u);
+
+  allocator_.EnableAll();
+  EXPECT_TRUE(mb.TryReserveForInsert(mb.end(), sliced));
+  EXPECT_EQ(mb.NumLayers(), 2u);
+  mb.Insert(mb.end(), std::move(sliced));
+  EXPECT_EQ(mb.size(), 18u);
 }
 
 }  // namespace

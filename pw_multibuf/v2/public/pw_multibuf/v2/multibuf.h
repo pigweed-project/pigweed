@@ -457,6 +457,19 @@ class BasicMultiBuf {
   [[nodiscard]] bool TryReserveForInsert(
       const_iterator pos, const BasicMultiBuf<kOtherProperties...>& mb);
 
+  /// Attempts to modify this object to be able to insert the given memory,
+  /// and returns whether successful.
+  ///
+  /// Note that owned, sliced Bufs require a layerable MultiBuf.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    bytes   Memory to be inserted.
+  /// @{
+  [[nodiscard]] bool TryReserveForInsert(const_iterator pos,
+                                         const ConstBuf& bytes);
+  [[nodiscard]] bool TryReserveForInsert(const_iterator pos, const Buf& bytes);
+  /// @}
+
   /// Attempts to modify this object to be able to insert a chunk at the given
   /// position, and returns whether successful.
   ///
@@ -566,6 +579,20 @@ class BasicMultiBuf {
   template <Property... kOtherProperties>
   [[nodiscard]] bool TryReserveForPushBack(
       const BasicMultiBuf<kOtherProperties...>& mb);
+
+  /// Attempts to modify this object to be able to append the given memory to
+  /// the end of this object.
+  ///
+  /// If unable to allocate space for the metadata, returns false and leaves the
+  /// object unchanged. Otherwise, returns true.
+  ///
+  /// Note that owned, sliced Bufs require a layerable MultiBuf.
+  ///
+  /// @param    bytes   Memory to be inserted.
+  /// @{
+  [[nodiscard]] bool TryReserveForPushBack(const ConstBuf& bytes);
+  [[nodiscard]] bool TryReserveForPushBack(const Buf& bytes);
+  /// @}
 
   /// Attempts to modify this object to be able to append a chunk to the end of
   /// this object.
@@ -1188,11 +1215,30 @@ class GenericMultiBuf final
   [[nodiscard]] bool TryReserveForInsert(const_iterator pos,
                                          const GenericMultiBuf& mb);
 
+  /// Attempts to modify this object to be able to insert the given memory,
+  /// and returns whether successful.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    bytes   ConstBuf to be inserted.
+  [[nodiscard]] bool TryReserveForInsert(const_iterator pos,
+                                         const ConstBuf& bytes);
+
   /// Attempts to modify this object to be able to insert a chunk at the given
   /// position, and returns whether successful.
   ///
   /// @param    pos     Location to insert memory within the MultiBuf.
   [[nodiscard]] bool TryReserveForInsert(const_iterator pos);
+
+  /// Attempts to modify this object to be able to insert the given memory,
+  /// and returns whether successful.
+  ///
+  /// @param    pos         Location to insert memory within the MultiBuf.
+  /// @param    min_layers  Minimum number of layers needed for the memory.
+  /// @param    min_chunks  Minimum number of chunks needed for the memory.
+  /// @{
+  [[nodiscard]] bool TryReserveForInsert(const_iterator pos,
+                                         size_t min_layers,
+                                         size_t min_chunks);
 
   /// Insert memory before the given iterator.
   ///
@@ -1371,6 +1417,11 @@ class GenericMultiBuf final
 
   /// @copydoc ::BasicMultiBuf<>::PopLayer
   void PopLayer();
+
+  /// Pops layers repeatedly to restore an original number of layers.
+  ///
+  /// Typically called as part of cleanup on error.
+  void PopUntil(size_t orig_num_layers);
 
   // Implementation methods.
   //
@@ -1760,6 +1811,20 @@ bool BasicMultiBuf<kProperties...>::TryReserveForInsert(
 }
 
 template <Property... kProperties>
+bool BasicMultiBuf<kProperties...>::TryReserveForInsert(const_iterator pos,
+                                                        const ConstBuf& bytes) {
+  static_assert(is_const(),
+                "Cannot `Insert` read-only bytes into mutable MultiBuf");
+  return generic().TryReserveForInsert(pos, bytes);
+}
+
+template <Property... kProperties>
+bool BasicMultiBuf<kProperties...>::TryReserveForInsert(const_iterator pos,
+                                                        const Buf& bytes) {
+  return generic().TryReserveForInsert(pos, bytes);
+}
+
+template <Property... kProperties>
 template <Property... kOtherProperties>
 auto BasicMultiBuf<kProperties...>::Insert(
     const_iterator pos, BasicMultiBuf<kOtherProperties...>&& mb) -> iterator {
@@ -1833,6 +1898,17 @@ bool BasicMultiBuf<kProperties...>::TryReserveForPushBack(
     const BasicMultiBuf<kOtherProperties...>& mb) {
   return generic().TryReserveForInsert(end(),
                                        static_cast<const GenericMultiBuf&>(mb));
+}
+
+template <Property... kProperties>
+bool BasicMultiBuf<kProperties...>::TryReserveForPushBack(
+    const ConstBuf& bytes) {
+  return generic().TryReserveForInsert(end(), bytes);
+}
+
+template <Property... kProperties>
+bool BasicMultiBuf<kProperties...>::TryReserveForPushBack(const Buf& bytes) {
+  return generic().TryReserveForInsert(end(), bytes);
 }
 
 template <Property... kProperties>
