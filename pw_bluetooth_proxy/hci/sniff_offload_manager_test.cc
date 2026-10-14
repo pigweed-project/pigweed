@@ -1015,6 +1015,115 @@ TEST_F(SniffOffloadManagerTest,
   EXPECT_TRUE(NoErrors());
 }
 
+TEST_F(SniffOffloadManagerTest, PreferActiveFromPending) {
+  EXPECT_EQ(Simulate(ConnectionComplete(kConnectionHandle)),
+            kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE));
+
+  // Send Android's "Prefer active" parameters (sniff_max_interval = 1 with zero
+  // intervals/attempts/timeouts).
+  EXPECT_EQ(
+      Simulate(WriteSniffOffloadParameters(kConnectionHandle,
+                                           {.sniff_max_interval = 1,
+                                            .sniff_min_interval = 0,
+                                            .sniff_attempts = 0,
+                                            .sniff_timeout = 0,
+                                            .link_inactivity_timeout = 0})),
+      kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS));
+
+  // Unlike Push Active, Prefer Active does not immediately send Exit Sniff
+  // Mode, nor does it send Sniff Subrating or start the inactivity timer.
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // Timer should be stopped, so advancing time should not send Sniff Mode.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest, PreferActiveFromControlStarted) {
+  EXPECT_EQ(Simulate(ConnectionComplete(kConnectionHandle)),
+            kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE));
+
+  // Send normal parameters.
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(kConnectionHandle)),
+            kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS));
+  EXPECT_TRUE(CheckSniffSubratingSent(kConnectionHandle));
+
+  // Send Android's "Prefer active" parameters (as sent when all profiles
+  // close).
+  EXPECT_EQ(
+      Simulate(WriteSniffOffloadParameters(kConnectionHandle,
+                                           {.sniff_max_interval = 1,
+                                            .sniff_min_interval = 0,
+                                            .sniff_attempts = 0,
+                                            .sniff_timeout = 0,
+                                            .link_inactivity_timeout = 0})),
+      kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS));
+
+  // Should stop the inactivity timer without sending Exit Sniff Mode or Sniff
+  // Mode.
+  EXPECT_TRUE(packets_to_controller().empty());
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // If the link enters Sniff mode (e.g. requested by remote peer), ACL activity
+  // in Prefer Active mode should still trigger Exit Sniff Mode.
+  EXPECT_EQ(Simulate(ModeChangeEvent(kConnectionHandle,
+                                     emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+  SimulateAclActivity(kConnectionHandle, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(kConnectionHandle));
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest, TransitionFromPreferActiveToControlStarted) {
+  EXPECT_EQ(Simulate(ConnectionComplete(kConnectionHandle)),
+            kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE));
+
+  // Enter Prefer Active mode.
+  EXPECT_EQ(
+      Simulate(WriteSniffOffloadParameters(kConnectionHandle,
+                                           {.sniff_max_interval = 1,
+                                            .sniff_min_interval = 0,
+                                            .sniff_attempts = 0,
+                                            .sniff_timeout = 0,
+                                            .link_inactivity_timeout = 0})),
+      kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS));
+  EXPECT_TRUE(packets_to_controller().empty());
+
+  // Transition to Control Started with normal parameters.
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(kConnectionHandle)),
+            kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS));
+  EXPECT_TRUE(CheckSniffSubratingSent(kConnectionHandle));
+  EXPECT_TRUE(NoErrors());
+
+  // Timer should be started, so advancing time should send Sniff Mode.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(kConnectionHandle));
+  EXPECT_TRUE(NoErrors());
+}
+
 TEST_F(SniffOffloadManagerTest, ErrorCannotAllocateConnection) {
   WithTestAllocator([](auto& allocator) { allocator.Exhaust(); });
   EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);

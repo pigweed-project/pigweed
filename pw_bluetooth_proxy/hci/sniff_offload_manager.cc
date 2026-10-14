@@ -68,6 +68,7 @@ constexpr auto kCommandCompleteEventCode =
     cpp23::to_underlying(emboss::EventCode::COMMAND_COMPLETE);
 
 constexpr uint16_t kPushActiveInterval = 0x0000;
+constexpr uint16_t kPreferActiveInterval = 0x0001;
 
 namespace WriteSniffOffloadEnableCommand =
     vendor::android_hci::WriteSniffOffloadEnableCommand;
@@ -104,6 +105,10 @@ enum class ConnectionState : uint8_t {
   /// In kPushActive, exit sniff immediately and do not return to sniff on any
   /// inactivity timeout.
   kPushActive,
+
+  /// In kPreferActive, do not enter sniff on inactivity timeout, but exit sniff
+  /// on ACL activity if currently in sniff mode.
+  kPreferActive,
 };
 
 // Sniff modes and transitional states between them.
@@ -171,8 +176,9 @@ class SniffOffloadManager::ConnectionFsm final {
   /// Controls whether state precondition checks are enforced when issuing
   /// ExitSniffMode commands.
   enum class PreconditionCheck {
-    /// Enforce standard operational state preconditions (`should_control()` or
-    /// `connection_state() == kPushActive`).
+    /// Enforce standard operational state preconditions (`should_control()`,
+    /// `connection_state() == kPushActive`, or
+    /// `connection_state() == kPreferActive`).
     kEnforce,
     /// Bypass precondition checks to allow unconditional hardware
     /// resynchronization post-resumption.
@@ -226,6 +232,10 @@ class SniffOffloadManager::ConnectionFsm final {
 
     if (parameters_->sniff_max_interval == kPushActiveInterval) {
       return ConnectionState::kPushActive;
+    }
+
+    if (parameters_->sniff_max_interval == kPreferActiveInterval) {
+      return ConnectionState::kPreferActive;
     }
 
     return ConnectionState::kControlStarted;
@@ -965,6 +975,9 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(EnableInput&& input) {
       SendExitSniffMode();
       Stop();
       break;
+    case ConnectionState::kPreferActive:
+      Stop();
+      break;
     case ConnectionState::kPendingParameters:
       break;
   }
@@ -996,8 +1009,15 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(
     return;
   }
 
+  if (connection_state() == ConnectionState::kPreferActive) {
+    Stop();  // Do not trigger timeouts.
+    NotifyStateUpdate();
+    return;
+  }
+
   switch (previous_connection_state) {
     case ConnectionState::kPushActive:
+    case ConnectionState::kPreferActive:
     case ConnectionState::kPendingParameters:
       Start();
       ResetTimer();
@@ -1149,7 +1169,8 @@ void SniffOffloadManager::ConnectionFsm::SendExitSniffMode(
 
   if (check == PreconditionCheck::kEnforce) {
     PW_CHECK(should_control() ||
-             connection_state() == ConnectionState::kPushActive);
+             connection_state() == ConnectionState::kPushActive ||
+             connection_state() == ConnectionState::kPreferActive);
   }
 
   auto writer = MakeEmbossWriter<emboss::ExitSniffModeCommandWriter>(scratch);
@@ -1173,6 +1194,13 @@ void SniffOffloadManager::ConnectionFsm::SendExitSniffMode(
 }
 
 bool SniffOffloadManager::ConnectionFsm::ShouldExitSniff(Direction direction) {
+  if (!enabled_) {
+    return false;
+  }
+  if (connection_state() == ConnectionState::kPushActive ||
+      connection_state() == ConnectionState::kPreferActive) {
+    return true;
+  }
   return should_control() && ((direction == Direction::kHostToController)
                                   ? (parameters_->allow_exit_sniff_on_tx)
                                   : (parameters_->allow_exit_sniff_on_rx));
