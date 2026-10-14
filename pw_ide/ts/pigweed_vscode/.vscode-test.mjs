@@ -16,6 +16,10 @@ import { defineConfig } from '@vscode/test-cli';
 import path from 'path';
 
 export default defineConfig([
+  // TODO: https://pwbug.dev/427219817 - Rapid successive extension installs
+  // have a tendency to flake. Do not split this in a way that causes
+  // multiple installs until https://github.com/microsoft/vscode/issues/256031
+  // is fixed.
   {
     label: 'allTests',
     files: 'out/**/*.test.js',
@@ -24,10 +28,5 @@ export default defineConfig([
       ui: 'tdd',
       timeout: 360000,
     },
-    // TODO: https://pwbug.dev/427219817 - Rapid successive extension installs
-    // have a tendency to flake. Do not split this in a way that causes
-    // multiple installs until https://github.com/microsoft/vscode/issues/256031
-    // is fixed.
-    launchArgs: ['--install-extension', 'BazelBuild.vscode-bazel'],
   },
 ]);

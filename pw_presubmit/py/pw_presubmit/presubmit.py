@@ -209,7 +209,7 @@ class Presubmit:  # pylint: disable=too-many-instance-attributes
         os.makedirs(output_directory, exist_ok=True)
 
         handler = logging.FileHandler(
-            output_directory.joinpath('step.log'), mode='w'
+            output_directory.joinpath('step.log'), mode='w', encoding='utf-8'
         )
         handler.setLevel(logging.DEBUG)
 
@@ -236,7 +236,9 @@ class Presubmit:  # pylint: disable=too-many-instance-attributes
             finally:
                 if ctx._failures:  # pylint: disable=protected-access
                     with open(
-                        output_directory / 'failure-summary.log', 'w'
+                        output_directory / 'failure-summary.log',
+                        'w',
+                        encoding='utf-8',
                     ) as outs:
                         for (
                             failure
@@ -245,6 +247,7 @@ class Presubmit:  # pylint: disable=too-many-instance-attributes
 
         finally:
             _LOG.removeHandler(handler)
+            handler.close()
 
     def _execute_checks(
         self,

@@ -297,7 +297,7 @@
     "package": "npm run clean && npm run build && npm run bundle && npm run prePackage && npm run doPackage && npm run postPackage",
     "packagePrerelease": "npm run clean && npm run build && npm run bundle && npm run prePackage && npm run doPackagePrerelease && npm run postPackage",
     "vsceLogin": "vsce login pigweed",
-    "test:all": "rimraf .vscode-test && npm run clean && npm run build && vscode-test"
+    "test:all": "npm run clean && npm run build && vscode-test"
   },
   "dependencies": {
     "@bazel/bazelisk": "^1.19.0",

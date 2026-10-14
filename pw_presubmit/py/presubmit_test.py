@@ -163,6 +163,31 @@ class PresubmitEventsTest(unittest.TestCase):
             mock.ANY,
         )
 
+    def test_context_utf8_logs(self) -> None:
+        """Test that step.log and failure-summary.log use UTF-8 encoding."""
+        pre = _test_presubmit(self)
+
+        def _unicode_failing_step(ctx: presubmit.PresubmitContext):
+            presubmit._LOG.warning(  # pylint: disable=protected-access
+                'Mocha checkmark: \u221a \u2714'
+            )
+            ctx.fail('Failure with unicode: \u221a \u274c')
+
+        program = Program('unicode_program', [_unicode_failing_step])
+        pre.run(program)
+
+        step_dir = (
+            pre._output_directory  # pylint: disable=protected-access
+            / '_unicode_failing_step'
+        )
+        step_log = (step_dir / 'step.log').read_text(encoding='utf-8')
+        self.assertIn('\u221a \u2714', step_log)
+
+        failure_log = (step_dir / 'failure-summary.log').read_text(
+            encoding='utf-8'
+        )
+        self.assertIn('\u221a \u274c', failure_log)
+
 
 class HumanUITest(unittest.TestCase):
     """Tests for HumanUI."""

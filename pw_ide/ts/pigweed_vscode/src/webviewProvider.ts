@@ -73,13 +73,15 @@ function spawnAsync(
   logger?: LoggerUI,
   bazelBinary?: string,
 ): Promise<number> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     bazelBinary = getReliableBazelExecutable();
     logger?.addStdout(`Running command: ${command} ${args.join(' ')}\n`);
     const env = bazelBinary
       ? {
           ...process.env,
-          PATH: `${path.dirname(bazelBinary)}:${process.env?.PATH || ''}`,
+          PATH: `${path.dirname(bazelBinary)}${path.delimiter}${
+            process.env?.PATH || ''
+          }`,
           BAZELISK_SKIP_WRAPPER: '1',
           BAZEL_REAL: bazelBinary,
         }
@@ -88,6 +90,10 @@ function spawnAsync(
 
     child.stdout.on('data', (data) => logger?.addStdout(data.toString()));
     child.stderr.on('data', (data) => logger?.addStderr(data.toString()));
+    child.on('error', (err) => {
+      logger?.addStderr(`Failed to start command: ${err.message}\n`);
+      reject(err);
+    });
     child.on('close', (code) => resolve(code ?? -1));
   });
 }

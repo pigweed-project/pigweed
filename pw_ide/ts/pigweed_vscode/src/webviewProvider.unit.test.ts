@@ -15,6 +15,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import * as fs from 'fs';
+import { getReliableBazelExecutable } from './bazel';
 import { generateAspectCompileCommands } from './webviewProvider';
 import { workingDir } from './settings/vscode';
 import { glob } from 'glob';
@@ -24,7 +25,7 @@ suite('webviewProvider Test Suite', () => {
   if (process.platform !== 'win32') {
     test('generateAspectCompileCommands creates compile_commands.json', async () => {
       const workspaceRoot = workingDir.get();
-      const bazelBinary = 'bazel';
+      const bazelBinary = getReliableBazelExecutable() || 'bazel';
       const buildCmd = 'pw_rpc';
       const compileCommandsDir = path.join(workspaceRoot, '.compile_commands');
 
