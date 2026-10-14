@@ -18,7 +18,6 @@ import("$dir_pw_build/input_group.gni")
 import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_fuzzer/fuzzer.gni")
-import("$dir_pw_perf_test/perf_test.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
 import("$dir_pw_unit_test/facade_test.gni")
 import("$dir_pw_unit_test/test.gni")
@@ -197,18 +196,6 @@ pw_test("map_utils_test") {
 pw_test("message_test") {
   deps = [ ":pw_protobuf" ]
   sources = [ "message_test.cc" ]
-}
-
-group("perf_tests") {
-  deps = [ ":encoder_perf_test" ]
-}
-
-pw_perf_test("encoder_perf_test") {
-  deps = [
-    ":codegen_test_protos.pwpb",
-    ":pw_protobuf",
-  ]
-  sources = [ "encoder_perf_test.cc" ]
 }
 
 config("one_byte_varint") {

@@ -20,7 +20,6 @@ import("$dir_pw_build/cc_blob_library.gni")
 import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_fuzzer/fuzzer.gni")
-import("$dir_pw_perf_test/perf_test.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
 import("$dir_pw_unit_test/test.gni")
 
@@ -347,16 +346,6 @@ pw_test("detokenize_from_this_program_test") {
   enable_if = current_os == "linux"
 
   configs = [ "$dir_pw_tokenizer:detokenize_from_this_program_linker_script" ]
-}
-
-pw_perf_test("detokenize_perf_test") {
-  sources = [ "detokenize_perf_test.cc" ]
-  deps = [
-    ":decoder",
-    "$dir_pw_assert:check",
-    dir_pw_bytes,
-    dir_pw_span,
-  ]
 }
 
 pw_test("encode_args_test") {

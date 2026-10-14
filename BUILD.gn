@@ -635,12 +635,7 @@ if (current_toolchain != default_toolchain) {
   }
 
   pw_test_group("pw_perf_tests") {
-    tests = [
-      "$dir_pw_checksum:perf_tests",
-      "$dir_pw_perf_test:examples",
-      "$dir_pw_protobuf:perf_tests",
-      "$dir_pw_tokenizer:detokenize_perf_test",
-    ]
+    tests = [ "$dir_pw_perf_test:examples" ]
     output_metadata = true
   }
 

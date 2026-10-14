@@ -90,6 +90,7 @@ SOURCE_FILES_FILTER_GN_EXCLUDE = FileFilter(
         r'\bpw_tokenizer/performance_test/',
         r'\bsize_report/',
         r'\btargets/pw_rp2350/',
+        r'_perf_test\.',
         # keep-sorted: end
     ),
 )

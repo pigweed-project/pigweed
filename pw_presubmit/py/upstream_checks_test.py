@@ -180,5 +180,36 @@ print('hello')
             )
 
 
+class TestSourceFilesFilter(unittest.TestCase):
+    """Tests for file filters in upstream_checks."""
+
+    def test_gn_exclude_perf_test(self) -> None:
+        self.assertFalse(
+            upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
+                'pw_checksum/crc32_perf_test.cc'
+            )
+        )
+        self.assertFalse(
+            upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
+                'pw_protobuf/encoder_perf_test.cc'
+            )
+        )
+        self.assertFalse(
+            upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
+                'pw_tokenizer/detokenize_perf_test.cc'
+            )
+        )
+        self.assertTrue(
+            upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
+                'pw_perf_test/perf_test.cc'
+            )
+        )
+        self.assertTrue(
+            upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
+                'pw_checksum/crc32.cc'
+            )
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
