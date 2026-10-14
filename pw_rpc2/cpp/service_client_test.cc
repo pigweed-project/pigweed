@@ -1902,5 +1902,24 @@ TEST(ServiceClientTest, ClientStreamSendsStartStreamFirst) {
   EXPECT_EQ(decode_msg.payload().size(), 2u);
 }
 
+TEST(ServiceClientTest, PollingCallFutureOnWrongDispatcherCrashes) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  async2::DispatcherForTest wrong_dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+
+  test::ScopedClient client(
+      test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn),
+      dispatcher);
+  TestServiceClient test_service(client, 100u);
+
+  async2::FutureTask task(
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
+  wrong_dispatcher.Post(task);
+
+  EXPECT_DEATH_IF_SUPPORTED(wrong_dispatcher.RunUntilStalled(), "");
+  task.Deregister();
+}
+
 }  // namespace
 }  // namespace pw::rpc2

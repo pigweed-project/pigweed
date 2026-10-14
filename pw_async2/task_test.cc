@@ -195,24 +195,40 @@ TEST(Task, BlockingJoin_SleepingTask) {
   dispatcher_thread.join();
 }
 
-TEST(Context, IsRunningOn) {
+TEST(Context, IsSameDispatcher) {
   DispatcherForTest dispatcher_a;
   DispatcherForTest dispatcher_b;
 
   bool ran_on_a = false;
   bool ran_on_b = true;
+  bool same_as_posted = false;
+  bool same_as_other = true;
+  bool same_as_unposted = true;
 
+  pw::async2::FuncTask posted_on_a([](Context& cx) { return cx.Unschedule(); });
+  pw::async2::FuncTask other_task([](Context& cx) { return cx.Unschedule(); });
+  pw::async2::FuncTask unposted_task([](Context&) { return Ready(); });
   pw::async2::FuncTask task([&](Context& cx) {
-    ran_on_a = cx.IsRunningOn(dispatcher_a);
-    ran_on_b = cx.IsRunningOn(std::as_const(dispatcher_b));
+    ran_on_a = cx.IsSameDispatcher(dispatcher_a);
+    ran_on_b = cx.IsSameDispatcher(std::as_const(dispatcher_b));
+    same_as_posted = cx.IsSameDispatcher(posted_on_a);
+    same_as_other = cx.IsSameDispatcher(std::as_const(other_task));
+    same_as_unposted = cx.IsSameDispatcher(unposted_task);
     return Ready();
   });
 
   dispatcher_a.Post(task);
+  dispatcher_a.Post(posted_on_a);
+  dispatcher_b.Post(other_task);
   dispatcher_a.RunToCompletion();
+  posted_on_a.Deregister();
+  other_task.Deregister();
 
   EXPECT_TRUE(ran_on_a);
   EXPECT_FALSE(ran_on_b);
+  EXPECT_TRUE(same_as_posted);
+  EXPECT_FALSE(same_as_other);
+  EXPECT_FALSE(same_as_unposted);
 }
 
 }  // namespace

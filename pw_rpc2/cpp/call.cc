@@ -26,6 +26,11 @@ namespace pw::rpc2::internal {
 
 async2::Poll<RpcResult<ConstBuf>> ReadFutureBase::PendRaw(async2::Context& cx) {
   PW_CHECK(is_pendable());
+  if (call().is_attached()) {
+    PW_CHECK(cx.IsSameDispatcher(call().connection_task()),
+             "pw_rpc2 futures must be polled from the designated pw_rpc2 "
+             "dispatcher");
+  }
 
   PW_AWAIT(std::optional<ConstBuf> val, receive_fut_, cx);
   // The read is no longer outstanding, so let the next one start even if

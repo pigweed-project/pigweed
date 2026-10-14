@@ -33,6 +33,7 @@ namespace pw::async2 {
 #define PW_ASYNC_TASK_NAME(name) PW_LOG_TOKEN_EXPR("pw_async2", name)
 
 class Dispatcher;
+class Task;
 
 /// Whether to store or discard a task's return value in task wrappers such as
 /// `FutureTask` or `RunOnceTask`.
@@ -84,7 +85,11 @@ class Context {
   /// This is helpful for subsystems that require their components to run on a
   /// single dispatcher. Futures can verify that they are only being pended by
   /// the correct dispatcher.
-  [[nodiscard]] bool IsRunningOn(const Dispatcher& dispatcher) const;
+  [[nodiscard]] bool IsSameDispatcher(const Dispatcher& dispatcher) const;
+
+  /// Returns whether `task` is registered on the dispatcher running the current
+  /// task.
+  [[nodiscard]] bool IsSameDispatcher(const Task& task) const;
 
  private:
   friend class Task;
@@ -369,9 +374,14 @@ inline void Context::ReEnqueue() {
   Waker(static_cast<Task&>(*this), {}).Wake();
 }
 
-inline bool Context::IsRunningOn(const Dispatcher& dispatcher) const
+inline bool Context::IsSameDispatcher(const Dispatcher& dispatcher) const
     PW_NO_LOCK_SAFETY_ANALYSIS {
   return static_cast<const Task&>(*this).dispatcher_ == &dispatcher;
+}
+
+inline bool Context::IsSameDispatcher(const Task& task) const
+    PW_NO_LOCK_SAFETY_ANALYSIS {
+  return static_cast<const Task&>(*this).dispatcher_ == task.dispatcher_;
 }
 
 /// @endsubmodule

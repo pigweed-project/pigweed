@@ -17,7 +17,6 @@
 #include <utility>
 
 #include "pw_assert/assert.h"
-#include "pw_async2/await.h"
 #include "pw_async2/context.h"
 #include "pw_async2/poll.h"
 #include "pw_bytes/span.h"
@@ -214,30 +213,7 @@ class ReserveWriteFuture : public internal::FutureBase {
   ///   or `kProtocolError`) if it closed on its own, or `kResourceExhausted`
   ///   if the call could not be allocated.
   [[nodiscard]] async2::Poll<RpcResult<WriteReservation>> Pend(
-      async2::Context& cx) {
-    PW_ASSERT(is_pendable());
-
-    if (!status_.ok()) {
-      mark_complete();
-      return async2::Ready(RpcResult<WriteReservation>(status_));
-    }
-
-    PW_AWAIT(auto write_res, reserve_fut_, cx);
-    mark_complete();
-
-    if (!write_res.has_value()) {
-      // The transport resolves a reservation to `std::nullopt` only when the
-      // socket has closed.
-      const RpcStatus status = call_ != nullptr
-                                   ? call_->ConnectionClosedStatus()
-                                   : RpcStatus::Disconnected();
-      AbandonTerminalIfPending();
-      return async2::Ready(RpcResult<WriteReservation>(status));
-    }
-
-    return async2::Ready(RpcResult<WriteReservation>(
-        WriteReservation(std::move(*write_res), packet_, std::move(call_))));
-  }
+      async2::Context& cx);
 
  private:
   friend class internal::GeneratedServiceClient;

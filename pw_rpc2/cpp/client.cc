@@ -24,6 +24,9 @@ namespace pw::rpc2 {
 
 async2::Poll<RpcResult<Client>> ClientFuture::Pend(async2::Context& cx) {
   PW_CHECK(is_pendable());
+  PW_CHECK(cx.IsSameDispatcher(*dispatcher_),
+           "pw_rpc2 futures must be polled from the designated pw_rpc2 "
+           "dispatcher");
 
   if (Connector* connector = std::get_if<Connector>(&state_)) {
     state_.emplace<ConnectFuture>((*connector)->Connect());

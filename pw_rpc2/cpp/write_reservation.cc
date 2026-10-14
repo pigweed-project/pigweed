@@ -22,13 +22,15 @@
 #include "pw_async2/await.h"
 #include "pw_async2/try.h"
 #include "pw_bytes/span.h"
+#include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/writer.h"
 
 // These members are defined out of line so that their preconditions can be
 // checked with `PW_CHECK`/`PW_DCHECK`, which carry a message but may not be
 // used in headers.
 
-namespace pw::rpc2::internal {
+namespace pw::rpc2 {
+namespace internal {
 
 async2::Poll<RpcResult<IntrusivePtr<Call>>>
 WriteFutureBase::PendWriteAndTakeCall(async2::Context& cx,
@@ -131,4 +133,36 @@ ConstByteSpan WriteReservationBase::PayloadSpan() const {
   return ConstByteSpan(reservation_).subspan(packet_.payload_offset());
 }
 
-}  // namespace pw::rpc2::internal
+}  // namespace internal
+
+async2::Poll<RpcResult<WriteReservation>> ReserveWriteFuture::Pend(
+    async2::Context& cx) {
+  PW_CHECK(is_pendable());
+  if (call_ != nullptr && call_->is_attached()) {
+    PW_CHECK(cx.IsSameDispatcher(call_->connection_task()),
+             "pw_rpc2 futures must be polled from the designated pw_rpc2 "
+             "dispatcher");
+  }
+
+  if (!status_.ok()) {
+    mark_complete();
+    return async2::Ready(RpcResult<WriteReservation>(status_));
+  }
+
+  PW_AWAIT(auto write_res, reserve_fut_, cx);
+  mark_complete();
+
+  if (!write_res.has_value()) {
+    // The transport resolves a reservation to `std::nullopt` only when the
+    // socket has closed.
+    const RpcStatus status = call_ != nullptr ? call_->ConnectionClosedStatus()
+                                              : RpcStatus::Disconnected();
+    AbandonTerminalIfPending();
+    return async2::Ready(RpcResult<WriteReservation>(status));
+  }
+
+  return async2::Ready(RpcResult<WriteReservation>(
+      WriteReservation(std::move(*write_res), packet_, std::move(call_))));
+}
+
+}  // namespace pw::rpc2

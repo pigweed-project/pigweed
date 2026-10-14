@@ -157,6 +157,19 @@ TEST(ClientFutureTest, DestroyedUnpendedFromConnectionClosesConnection) {
   EXPECT_TRUE(raw_conn->is_closed());
 }
 
+TEST(ClientFutureTest, PollingOnWrongDispatcherCrashes) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  async2::DispatcherForTest wrong_dispatcher;
+
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  async2::FutureTask task(Client::Connect(dispatcher, allocator, conn));
+  wrong_dispatcher.Post(task);
+
+  EXPECT_DEATH_IF_SUPPORTED(wrong_dispatcher.RunUntilStalled(), "");
+  task.Deregister();
+}
+
 TEST(ClientTest, MoveEmptiesTheSource) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
