@@ -71,10 +71,14 @@ void ProxyHostTestDispatcher::StartOnNewThread(ProxyHost& proxy) {
     tx_.release();
     while (true) {
       rx_.acquire();
+      bool stop = false;
+      {
+        std::lock_guard lock(mutex_);
+        stop = !id_.has_value();
+      }
       dispatcher_.RunUntilStalled();
       tx_.release();
-      std::lock_guard lock(mutex_);
-      if (!id_.has_value()) {
+      if (stop) {
         break;
       }
     }

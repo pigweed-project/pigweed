@@ -122,7 +122,6 @@ async2::Poll<> L2capChannelManagerImpl::DoDrainChannelQueuesIfNewTx(
     }
 
     L2capChannel& channel = lrd_channel_->second;
-    manager_.Advance(lrd_channel_);
 
     // If we can reserve a send credit for the channel's type, attempt to
     // dequeue a packet from channel. The credit is RAII, and will be returned
@@ -133,6 +132,7 @@ async2::Poll<> L2capChannelManagerImpl::DoDrainChannelQueuesIfNewTx(
     std::optional<AclDataChannel::SendCredit> credit =
         manager_.acl_data_channel_.ReserveSendCredit(channel.transport());
     if (!credit.has_value()) {
+      manager_.Advance(lrd_channel_);
       if (lrd_channel_ == round_robin_terminus_) {
         break;
       }
@@ -144,6 +144,7 @@ async2::Poll<> L2capChannelManagerImpl::DoDrainChannelQueuesIfNewTx(
     if (packet_poll.IsReady() && packet_poll->has_value()) {
       // If we have a packet, send it and reset the terminus so round robin will
       // continue until we have done a full loop with no packets dequeued.
+      manager_.Advance(lrd_channel_);
       PW_CHECK_OK(manager_.acl_data_channel_.SendAcl(std::move(**packet_poll),
                                                      std::move(*credit)));
       round_robin_terminus_ = lrd_channel_;
@@ -153,8 +154,14 @@ async2::Poll<> L2capChannelManagerImpl::DoDrainChannelQueuesIfNewTx(
     // If no packet was returned and the channel is stale, no further packets
     // will be received and the channel can be removed.
     if (channel.IsStale()) {
+      bool was_terminus = lrd_channel_ == round_robin_terminus_;
       auto node = manager_.DeregisterChannelLocked(channel);
       node->mapped().Close();
+      if (was_terminus) {
+        continue;
+      }
+    } else {
+      manager_.Advance(lrd_channel_);
     }
 
     // Done if we have made it all the way around.

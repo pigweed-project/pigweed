@@ -16,6 +16,7 @@
 #include <mutex>
 
 #include "pw_allocator/libc_allocator.h"
+#include "pw_allocator/synchronized_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_assert/check.h"
 #include "pw_bluetooth_proxy/h4_packet.h"
@@ -785,7 +786,8 @@ TEST_F(L2capCocWriteTest, MultithreadedWrite) {
         }
       });
 
-  allocator::test::AllocatorForTest<65536> allocator;
+  allocator::test::AllocatorForTest<65536> test_allocator;
+  allocator::SynchronizedAllocator<sync::Mutex> allocator(test_allocator);
   // Use libc allocators so msan can detect use after frees.
   std::array<std::byte, 200 * 1024> packet_buffer{};
   pw::multibuf::SimpleAllocator multibuf_allocator{
