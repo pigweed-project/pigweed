@@ -712,7 +712,7 @@ class KeyValueStoreBuffer : public KeyValueStore {
   // EntryCache. To support having KeyValueStores with different redundancies,
   // the addresses are stored in a parallel array instead of inside
   // KeyDescriptors.
-  internal::EntryCache::AddressList<kRedundancy, kMaxEntries> addresses_;
+  internal::EntryCache::AddressList<kMaxEntries, kRedundancy> addresses_;
 
   // EntryFormats that can be read by this KeyValueStore.
   std::array<EntryFormat, kEntryFormats> formats_;
