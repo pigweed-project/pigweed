@@ -19,9 +19,8 @@
 
 #include "pw_assert/assert.h"
 #include "pw_intrusive_ptr/intrusive_ptr.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/call.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/status.h"
 #include "pw_transport/socket.h"
 
 namespace pw::rpc2::internal {
@@ -85,7 +84,7 @@ class CallHandle {
   /// terminal packets to close the write side upon commit or fall back on
   /// abandonment).
   struct Reservation {
-    Result<transport::ReserveWriteFuture> future;
+    RpcResult<transport::ReserveWriteFuture> future;
     uint32_t call_id;
     EndpointRole role;
     IntrusivePtr<Call> call;
@@ -98,11 +97,12 @@ class CallHandle {
   /// Handles the empty-handle case, so callers can pass the result straight to
   /// a `ReserveWriteFuture` factory: writing through a handle that was
   /// default constructed or moved from yields a future resolved to
-  /// `FAILED_PRECONDITION` rather than dereferencing nothing.
+  /// `kWriteClosed` rather than dereferencing nothing. Otherwise, the
+  /// reservation fails as described in `Call::ReserveWrite()`.
   [[nodiscard]] Reservation ReserveOutbound(size_t header_size,
                                             size_t max_payload_size) const {
     if (!has_call()) {
-      return {Status::FailedPrecondition(), 0, EndpointRole::kClient, nullptr};
+      return {RpcStatus::WriteClosed(), 0, EndpointRole::kClient, nullptr};
     }
     return {call().ReserveWrite(header_size, max_payload_size),
             call().call_id(),

@@ -25,6 +25,7 @@
 #include "pw_buf/buf.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/generated_service_client.h"
+#include "pw_rpc2/internal/packet_testing.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/pw_rpc2_test.pwpb.rpc2.h"
 #include "pw_rpc2/service_client.h"
@@ -119,7 +120,7 @@ TEST(ClientFutureTest, CreateFromTransportConnectFailure) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(task.has_value());
-  EXPECT_EQ(task.value().status(), Status::Unavailable());
+  EXPECT_EQ(task.value().status(), RpcStatus::Disconnected());
 }
 
 TEST(ClientFutureTest, CreateFromConnectionHandshakeFailure) {
@@ -141,7 +142,7 @@ TEST(ClientFutureTest, CreateFromConnectionHandshakeFailure) {
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(task.has_value());
-  EXPECT_EQ(task.value().status(), Status::DataLoss());
+  EXPECT_EQ(task.value().status(), RpcStatus::ProtocolError());
 }
 
 TEST(ClientFutureTest, DestroyedUnpendedFromConnectionClosesConnection) {
@@ -309,7 +310,81 @@ TEST(MockPeerTest, TypedDecodeFailsOnGarbagePayload) {
   // Malformed bytes must fail to decode rather than yield a default-constructed
   // message.
   const std::byte garbage[] = {std::byte{0xFF}, std::byte{0xFF}};
-  EXPECT_FALSE(test::PayloadAs<EchoRequest>(garbage).ok());
+  RpcStatus status = test::PayloadAs<EchoRequest>(garbage).status();
+  EXPECT_EQ(status, RpcStatus::DataError());
+}
+
+// A response that does not decode as the method's response type fails the
+// call with `kDataError`.
+TEST(ClientTest, UndecodableResponseFailsWithDataError) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  test::pw_rpc2::pwpb::TestEcho::Client client(peer.client());
+
+  async2::FutureTask call(client.EchoUnary(EchoRequest{.val = 1}));
+  dispatcher.Post(call);
+  const uint32_t call_id =
+      peer.ExpectInvocation<test::pw_rpc2::pwpb::TestEcho::EchoUnary>()
+          .call_id();
+
+  const std::byte garbage[] = {std::byte{0xFF}, std::byte{0xFF}};
+  Buf response =
+      internal::PacketFramer::FrameResponsePacket(allocator, call_id, garbage);
+  ASSERT_NE(response, nullptr);
+  peer.connection().PushNextRead(std::move(response));
+  dispatcher.RunUntilStalled();
+
+  ASSERT_TRUE(call.has_value());
+  EXPECT_EQ(call.value().status(), RpcStatus::DataError());
+}
+
+// A stream message that does not decode as the method's response type fails
+// only that read with `kDataError`. The message is dropped, but the stream
+// stays open, so the next read succeeds.
+TEST(ClientTest, UndecodableStreamMessageFailsOnlyThatRead) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto peer = test::MakeMockPeer(dispatcher, allocator);
+  test::pw_rpc2::pwpb::TestEcho::Client client(peer.client());
+
+  async2::FutureTask call(client.CountUpServerStream(EchoRequest{.val = 1}));
+  dispatcher.Post(call);
+  auto invocation = peer.ExpectInvocation<
+      test::pw_rpc2::pwpb::TestEcho::CountUpServerStream>();
+  ASSERT_TRUE(call.has_value());
+  PW_TEST_ASSERT_OK(call.value());
+  Reader<EchoResponse> reader = std::move(*call.value());
+
+  const std::byte garbage[] = {std::byte{0xFF}, std::byte{0xFF}};
+  Buf message = internal::PacketFramer::FrameServerMessagePacket(
+      allocator, invocation.call_id(), garbage);
+  ASSERT_NE(message, nullptr);
+  peer.connection().PushNextRead(std::move(message));
+  dispatcher.RunUntilStalled();
+
+  async2::FutureTask bad_read(reader.Read());
+  dispatcher.Post(bad_read);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(bad_read.has_value());
+  EXPECT_EQ(bad_read.value().status(), RpcStatus::DataError());
+
+  invocation.Write(EchoResponse{.val = 2});
+  async2::FutureTask good_read(reader.Read());
+  dispatcher.Post(good_read);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(good_read.has_value());
+  PW_TEST_ASSERT_OK(good_read.value());
+  EXPECT_EQ(good_read.value()->val, 2u);
+
+  invocation.Finish();
+  async2::FutureTask end_read(reader.Read());
+  dispatcher.Post(end_read);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(end_read.has_value());
+  EXPECT_EQ(end_read.value().status(), RpcStatus::EndOfStream());
 }
 
 // Close() marks the connection closed immediately and resolves once the
@@ -365,8 +440,9 @@ TEST(ClientTest, CloseOnAnAlreadyClosedClientResolvesImmediately) {
   PW_TEST_EXPECT_OK(close_task.value());
 }
 
-// Closing tears down the connection, which aborts every call riding on it.
-TEST(ClientTest, CloseCancelsInFlightCalls) {
+// Closing tears down the connection, which ends every call riding on it with
+// `kClosed`.
+TEST(ClientTest, CloseEndsInFlightCallsWithClosed) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
@@ -383,7 +459,7 @@ TEST(ClientTest, CloseCancelsInFlightCalls) {
   test::CloseClient(client, dispatcher);
 
   ASSERT_TRUE(call.has_value());
-  EXPECT_EQ(call.value().status(), Status::Cancelled());
+  EXPECT_EQ(call.value().status(), RpcStatus::Closed());
 }
 
 // `Close()` and `CloseBlocking()` are the only client operations that may run
@@ -433,7 +509,7 @@ TEST(ClientTest, DroppingOneOfSeveralHandlesKeepsConnectionOpen) {
   Client handle = stub.client();
   test::CloseClient(handle, dispatcher);
   ASSERT_TRUE(call.has_value());
-  EXPECT_EQ(call.value().status(), Status::Cancelled());
+  EXPECT_EQ(call.value().status(), RpcStatus::Closed());
 }
 
 // Dropping the last handle closes the connection.
@@ -463,7 +539,7 @@ TEST(ClientTest, DroppingLastHandleClosesConnection) {
 
   EXPECT_TRUE(raw_conn->is_closed());
   ASSERT_TRUE(call.has_value());
-  EXPECT_EQ(call.value().status(), Status::Cancelled());
+  EXPECT_EQ(call.value().status(), RpcStatus::Closed());
 }
 
 }  // namespace

@@ -15,6 +15,7 @@
 #include "pw_rpc2/write_reservation.h"
 
 #include <cstddef>
+#include <optional>
 #include <utility>
 
 #include "pw_assert/check.h"
@@ -22,7 +23,6 @@
 #include "pw_async2/try.h"
 #include "pw_bytes/span.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status.h"
 
 // These members are defined out of line so that their preconditions can be
 // checked with `PW_CHECK`/`PW_DCHECK`, which carry a message but may not be
@@ -30,25 +30,27 @@
 
 namespace pw::rpc2::internal {
 
-async2::Poll<Result<IntrusivePtr<Call>>> WriteFutureBase::PendWriteAndTakeCall(
-    async2::Context& cx, const void* message, SerializeFn serialize) {
+async2::Poll<RpcResult<IntrusivePtr<Call>>>
+WriteFutureBase::PendWriteAndTakeCall(async2::Context& cx,
+                                      const void* message,
+                                      SerializeFn serialize) {
   PW_CHECK(is_pendable());
 
   PW_AWAIT(auto res_result, res_fut_, cx);
 
   if (!res_result.ok()) {
-    return async2::Ready(Result<IntrusivePtr<Call>>(res_result.status()));
+    return async2::Ready(RpcResult<IntrusivePtr<Call>>(res_result.status()));
   }
 
   WriteReservation res = std::move(*res_result);
 
   size_t size_bytes = 0;
   if (serialize != nullptr) {
-    StatusWithSize serialized = serialize(message, res);
+    RpcResult<size_t> serialized = serialize(message, res);
     if (!serialized.ok()) {
-      return async2::Ready(Result<IntrusivePtr<Call>>(serialized.status()));
+      return async2::Ready(RpcResult<IntrusivePtr<Call>>(serialized.status()));
     }
-    size_bytes = serialized.size();
+    size_bytes = *serialized;
   } else {
     // `serialize` is null only for header-only packets (`WriteFuture<void>`),
     // which are reserved with a payload size of 0.
@@ -58,18 +60,18 @@ async2::Poll<Result<IntrusivePtr<Call>>> WriteFutureBase::PendWriteAndTakeCall(
   return async2::Ready(res.CommitAndTakeCall(size_bytes));
 }
 
-async2::Poll<Status> WriteFutureBase::PendWrite(async2::Context& cx,
-                                                const void* message,
-                                                SerializeFn serialize) {
-  PW_TRY_READY_ASSIGN(Result<IntrusivePtr<Call>> result,
+async2::Poll<RpcStatus> WriteFutureBase::PendWrite(async2::Context& cx,
+                                                   const void* message,
+                                                   SerializeFn serialize) {
+  PW_TRY_READY_ASSIGN(RpcResult<IntrusivePtr<Call>> result,
                       PendWriteAndTakeCall(cx, message, serialize));
   return async2::Ready(result.status());
 }
 
-Result<IntrusivePtr<Call>> WriteReservationBase::CommitAndTakeCall(
+RpcResult<IntrusivePtr<Call>> WriteReservationBase::CommitAndTakeCall(
     size_t size_bytes) {
   if (!is_active()) {
-    return Status::FailedPrecondition();
+    return RpcStatus::WriteClosed();
   }
   PW_CHECK_UINT_LE(size_bytes, size());
 
@@ -78,23 +80,27 @@ Result<IntrusivePtr<Call>> WriteReservationBase::CommitAndTakeCall(
   // peer has forgotten the call, so this packet would only arrive as a stray.
   if (call_ != nullptr && call_->is_write_closed()) {
     reservation_.Cancel();
-    const Status status =
+    const RpcStatus status =
         call_->is_completed() && !call_->completion_status().ok()
             ? call_->completion_status()
-            : Status::FailedPrecondition();
+            : RpcStatus::WriteClosed();
     ReleaseCall(/*committed=*/false);
     return status;
   }
 
-  auto encode_res = packet_.EncodeHeader(reservation_, size_bytes);
+  const std::optional<size_t> packet_size =
+      packet_.EncodeHeader(reservation_, size_bytes);
   // The header always fits: the reservation was sized to hold it, and
   // `size_bytes` is bounded by `size()`.
-  PW_CHECK_OK(encode_res.status(),
-              "Failed to encode the header of an RPC packet that was reserved "
-              "with room for it");
-  if (!reservation_.Commit(*encode_res)) {
+  PW_CHECK(packet_size.has_value(),
+           "Failed to encode the header of an RPC packet that was reserved "
+           "with room for it");
+  if (!reservation_.Commit(*packet_size)) {
+    // The socket closed.
+    const RpcStatus status = call_ != nullptr ? call_->ConnectionClosedStatus()
+                                              : RpcStatus::Disconnected();
     ReleaseCall(/*committed=*/false);
-    return Status::Unavailable();
+    return status;
   }
   return ReleaseCall(/*committed=*/true);
 }

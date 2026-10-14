@@ -26,7 +26,7 @@
 #include "pw_bytes/endian.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/test_utils.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/status.h"
 #include "pw_transport/socket.h"
 #include "pw_unit_test/framework.h"
 
@@ -48,14 +48,14 @@ class HandshakeTestTask : public async2::Task {
     return async2::Ready();
   }
 
-  const std::optional<Result<EstablishedConnection>>& result() const {
+  const std::optional<RpcResult<EstablishedConnection>>& result() const {
     return result_;
   }
   FutureType& future() { return fut_; }
 
  private:
   FutureType fut_;
-  std::optional<Result<EstablishedConnection>> result_;
+  std::optional<RpcResult<EstablishedConnection>> result_;
 };
 
 template <typename FutureType>
@@ -71,7 +71,7 @@ Buf EncodeNewerPeerHandshake(Allocator& allocator,
   Buf buf =
       Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes + extra_bytes);
   EXPECT_EQ(buf.size(), HandshakePacket::kWireSizeBytes + extra_bytes);
-  PW_TEST_EXPECT_OK(HandshakePacket(type, version).Encode(ByteSpan(buf)));
+  EXPECT_TRUE(HandshakePacket(type, version).Encode(ByteSpan(buf)));
   buf[offsetof(HandshakeWireFormat, reserved)] = std::byte{0xa5};
   buf[offsetof(HandshakeWireFormat, reserved) + 1] = std::byte{0x5a};
   for (size_t i = HandshakePacket::kWireSizeBytes; i < buf.size(); ++i) {
@@ -95,13 +95,13 @@ TEST(HandshakeTest, ConstexprDefaultConstructor) {
 TEST(HandshakeTest, EncodeDecodeHandshakePacketDirect) {
   std::byte buffer[HandshakePacket::kWireSizeBytes];
   const HandshakePacket syn(HandshakePacket::Type::kSyn);
-  EXPECT_EQ(syn.Encode(buffer), OkStatus());
+  EXPECT_TRUE(syn.Encode(buffer));
 
   std::byte small_buf[HandshakePacket::kWireSizeBytes - 1];
-  EXPECT_EQ(syn.Encode(small_buf), Status::ResourceExhausted());
+  EXPECT_FALSE(syn.Encode(small_buf));
 
   auto dec_res = HandshakePacket::Decode(buffer);
-  ASSERT_TRUE(dec_res.ok());
+  ASSERT_TRUE(dec_res.has_value());
   EXPECT_EQ(dec_res->type(), HandshakePacket::Type::kSyn);
   EXPECT_EQ(dec_res->version(), 1u);
 }
@@ -211,15 +211,15 @@ TEST(HandshakeTest, StepByStepInitiatorAndResponder) {
   EXPECT_FALSE(responder_task.result().has_value());
 
   auto syn_pkt = HandshakePacket::Decode(raw_client->last_written_buf());
-  ASSERT_TRUE(syn_pkt.ok());
+  ASSERT_TRUE(syn_pkt.has_value());
   EXPECT_EQ(syn_pkt->version(), 1u);
   EXPECT_EQ(syn_pkt->type(), HandshakePacket::Type::kSyn);
 
   // Deliver SYN to Responder
   Buf syn_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn = syn_pkt->Encode(std::move(syn_buf));
-  ASSERT_TRUE(enc_syn.ok());
-  raw_server->SetNextRead(std::move(enc_syn.value()));
+  ASSERT_NE(enc_syn, nullptr);
+  raw_server->SetNextRead(std::move(enc_syn));
 
   // Poll 2: Responder processes SYN, sends SYN-ACK, awaits ACK
   dispatcher.RunUntilStalled();
@@ -227,15 +227,15 @@ TEST(HandshakeTest, StepByStepInitiatorAndResponder) {
   EXPECT_FALSE(responder_task.result().has_value());
 
   auto syn_ack_pkt = HandshakePacket::Decode(raw_server->last_written_buf());
-  ASSERT_TRUE(syn_ack_pkt.ok());
+  ASSERT_TRUE(syn_ack_pkt.has_value());
   EXPECT_EQ(syn_ack_pkt->version(), 1u);
   EXPECT_EQ(syn_ack_pkt->type(), HandshakePacket::Type::kSynAck);
 
   // Deliver SYN-ACK to Initiator
   Buf syn_ack_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn_ack = syn_ack_pkt->Encode(std::move(syn_ack_buf));
-  ASSERT_TRUE(enc_syn_ack.ok());
-  raw_client->SetNextRead(std::move(enc_syn_ack.value()));
+  ASSERT_NE(enc_syn_ack, nullptr);
+  raw_client->SetNextRead(std::move(enc_syn_ack));
 
   // Poll 3: Initiator processes SYN-ACK, sends ACK, completes!
   dispatcher.RunUntilStalled();
@@ -247,15 +247,15 @@ TEST(HandshakeTest, StepByStepInitiatorAndResponder) {
   EXPECT_FALSE(responder_task.result().has_value());
 
   auto ack_pkt = HandshakePacket::Decode(raw_client->last_written_buf());
-  ASSERT_TRUE(ack_pkt.ok());
+  ASSERT_TRUE(ack_pkt.has_value());
   EXPECT_EQ(ack_pkt->version(), 1u);
   EXPECT_EQ(ack_pkt->type(), HandshakePacket::Type::kAck);
 
   // Deliver ACK to Responder
   Buf ack_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_ack = ack_pkt->Encode(std::move(ack_buf));
-  ASSERT_TRUE(enc_ack.ok());
-  raw_server->SetNextRead(std::move(enc_ack.value()));
+  ASSERT_NE(enc_ack, nullptr);
+  raw_server->SetNextRead(std::move(enc_ack));
 
   // Poll 4: Responder processes ACK, completes!
   dispatcher.RunUntilStalled();
@@ -277,15 +277,14 @@ TEST(HandshakeTest, ResponderRejectsInvalidMagicInSyn) {
 
   // Send packet with bad magic
   Buf bad_magic_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
-  auto enc_res = HandshakePacket(HandshakePacket::Type::kSyn)
-                     .Encode(ByteSpan(bad_magic_buf));
-  ASSERT_TRUE(enc_res.ok());
+  ASSERT_TRUE(HandshakePacket(HandshakePacket::Type::kSyn)
+                  .Encode(ByteSpan(bad_magic_buf)));
   bad_magic_buf[0] ^= std::byte{0xff};
   raw_conn->SetNextRead(std::move(bad_magic_buf));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(responder_task.result().has_value());
-  EXPECT_EQ(responder_task.result()->status(), Status::DataLoss());
+  EXPECT_EQ(responder_task.result()->status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, InitiatorRejectsInvalidMagicInSynAck) {
@@ -301,15 +300,14 @@ TEST(HandshakeTest, InitiatorRejectsInvalidMagicInSynAck) {
 
   // Send SYN-ACK with bad magic
   Buf bad_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
-  auto enc_res =
-      HandshakePacket(HandshakePacket::Type::kSynAck).Encode(ByteSpan(bad_buf));
-  ASSERT_TRUE(enc_res.ok());
+  ASSERT_TRUE(HandshakePacket(HandshakePacket::Type::kSynAck)
+                  .Encode(ByteSpan(bad_buf)));
   bad_buf[0] ^= std::byte{0xff};
   raw_conn->SetNextRead(std::move(bad_buf));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), Status::DataLoss());
+  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, InitiatorRejectsHigherVersionInSynAck) {
@@ -328,12 +326,12 @@ TEST(HandshakeTest, InitiatorRejectsHigherVersionInSynAck) {
   Buf syn_ack_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn_ack = HandshakePacket(HandshakePacket::Type::kSynAck, 2)
                          .Encode(ByteSpan(syn_ack_buf));
-  ASSERT_TRUE(enc_syn_ack.ok());
+  ASSERT_TRUE(enc_syn_ack);
   raw_conn->SetNextRead(std::move(syn_ack_buf));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), Status::DataLoss());
+  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, InitiatorRejectsLoopbackSynInSynAckStage) {
@@ -351,12 +349,12 @@ TEST(HandshakeTest, InitiatorRejectsLoopbackSynInSynAckStage) {
   Buf syn_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn =
       HandshakePacket(HandshakePacket::Type::kSyn).Encode(std::move(syn_buf));
-  ASSERT_TRUE(enc_syn.ok());
-  raw_conn->SetNextRead(std::move(enc_syn.value()));
+  ASSERT_NE(enc_syn, nullptr);
+  raw_conn->SetNextRead(std::move(enc_syn));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), Status::DataLoss());
+  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, ResponderRejectsMismatchedVersionInAck) {
@@ -373,8 +371,8 @@ TEST(HandshakeTest, ResponderRejectsMismatchedVersionInAck) {
   Buf syn_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn =
       HandshakePacket(HandshakePacket::Type::kSyn).Encode(std::move(syn_buf));
-  ASSERT_TRUE(enc_syn.ok());
-  raw_conn->SetNextRead(std::move(enc_syn.value()));
+  ASSERT_NE(enc_syn, nullptr);
+  raw_conn->SetNextRead(std::move(enc_syn));
 
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), 1u);
@@ -383,12 +381,12 @@ TEST(HandshakeTest, ResponderRejectsMismatchedVersionInAck) {
   Buf ack_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_ack =
       HandshakePacket(HandshakePacket::Type::kAck, 2).Encode(ByteSpan(ack_buf));
-  ASSERT_TRUE(enc_ack.ok());
+  ASSERT_TRUE(enc_ack);
   raw_conn->SetNextRead(std::move(ack_buf));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(responder_task.result().has_value());
-  EXPECT_EQ(responder_task.result()->status(), Status::DataLoss());
+  EXPECT_EQ(responder_task.result()->status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, ResponderRejectsInvalidMagicInAck) {
@@ -405,8 +403,8 @@ TEST(HandshakeTest, ResponderRejectsInvalidMagicInAck) {
   Buf syn_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn =
       HandshakePacket(HandshakePacket::Type::kSyn).Encode(std::move(syn_buf));
-  ASSERT_TRUE(enc_syn.ok());
-  raw_conn->SetNextRead(std::move(enc_syn.value()));
+  ASSERT_NE(enc_syn, nullptr);
+  raw_conn->SetNextRead(std::move(enc_syn));
 
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), 1u);
@@ -415,13 +413,13 @@ TEST(HandshakeTest, ResponderRejectsInvalidMagicInAck) {
   Buf bad_ack = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_ack =
       HandshakePacket(HandshakePacket::Type::kAck).Encode(ByteSpan(bad_ack));
-  ASSERT_TRUE(enc_ack.ok());
+  ASSERT_TRUE(enc_ack);
   bad_ack[0] ^= std::byte{0xff};
   raw_conn->SetNextRead(std::move(bad_ack));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(responder_task.result().has_value());
-  EXPECT_EQ(responder_task.result()->status(), Status::DataLoss());
+  EXPECT_EQ(responder_task.result()->status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, ResponderAcceptsHandshakePacketWithTrailingBytes) {
@@ -443,7 +441,7 @@ TEST(HandshakeTest, ResponderAcceptsHandshakePacketWithTrailingBytes) {
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto syn_ack = HandshakePacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(syn_ack.ok());
+  ASSERT_TRUE(syn_ack.has_value());
   EXPECT_EQ(syn_ack->type(), HandshakePacket::Type::kSynAck);
   EXPECT_EQ(syn_ack->version(), 1u);
 }
@@ -468,7 +466,7 @@ TEST(HandshakeTest, ResponderNegotiatesDownWithNewerInitiator) {
 
   // The local v1 responder negotiates down to version 1.
   auto syn_ack = HandshakePacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(syn_ack.ok());
+  ASSERT_TRUE(syn_ack.has_value());
   EXPECT_EQ(syn_ack->type(), HandshakePacket::Type::kSynAck);
   EXPECT_EQ(syn_ack->version(), HandshakePacket::kMaxVersion);
   EXPECT_EQ(syn_ack->version(), 1u);
@@ -496,7 +494,7 @@ TEST(HandshakeTest, InitiatorAcceptsNegotiatedVersionFromNewerResponder) {
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto syn = HandshakePacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(syn.ok());
+  ASSERT_TRUE(syn.has_value());
   EXPECT_EQ(syn->type(), HandshakePacket::Type::kSyn);
   EXPECT_EQ(syn->version(), HandshakePacket::kMaxVersion);
 
@@ -513,7 +511,7 @@ TEST(HandshakeTest, InitiatorAcceptsNegotiatedVersionFromNewerResponder) {
   EXPECT_TRUE(initiator_task.result()->value().connection);
 
   auto ack = HandshakePacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(ack.ok());
+  ASSERT_TRUE(ack.has_value());
   EXPECT_EQ(ack->type(), HandshakePacket::Type::kAck);
   EXPECT_EQ(ack->version(), 1u);
 }
@@ -531,15 +529,15 @@ TEST(HandshakeTest, InitiatorSendsMaxVersionAndEchoesNegotiatedVersion) {
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto syn = HandshakePacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(syn.ok());
+  ASSERT_TRUE(syn.has_value());
   EXPECT_EQ(syn->type(), HandshakePacket::Type::kSyn);
   EXPECT_EQ(syn->version(), 3u);
 
   Buf syn_ack_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn_ack = HandshakePacket(HandshakePacket::Type::kSynAck, 2)
                          .Encode(std::move(syn_ack_buf));
-  PW_TEST_ASSERT_OK(enc_syn_ack.status());
-  raw_conn->SetNextRead(std::move(*enc_syn_ack));
+  ASSERT_NE(enc_syn_ack, nullptr);
+  raw_conn->SetNextRead(std::move(enc_syn_ack));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(initiator_task.result().has_value());
@@ -547,7 +545,7 @@ TEST(HandshakeTest, InitiatorSendsMaxVersionAndEchoesNegotiatedVersion) {
   EXPECT_EQ(initiator_task.result()->value().info.negotiated_version, 2u);
 
   auto ack = HandshakePacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(ack.ok());
+  ASSERT_TRUE(ack.has_value());
   EXPECT_EQ(ack->type(), HandshakePacket::Type::kAck);
   EXPECT_EQ(ack->version(), 2u);
 }
@@ -566,22 +564,22 @@ TEST(HandshakeTest, ResponderSendsNegotiatedVersionInSynAck) {
   Buf syn_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn = HandshakePacket(HandshakePacket::Type::kSyn, 2)
                      .Encode(std::move(syn_buf));
-  PW_TEST_ASSERT_OK(enc_syn.status());
-  raw_conn->SetNextRead(std::move(*enc_syn));
+  ASSERT_NE(enc_syn, nullptr);
+  raw_conn->SetNextRead(std::move(enc_syn));
 
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto syn_ack = HandshakePacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(syn_ack.ok());
+  ASSERT_TRUE(syn_ack.has_value());
   EXPECT_EQ(syn_ack->type(), HandshakePacket::Type::kSynAck);
   EXPECT_EQ(syn_ack->version(), 2u);
 
   Buf ack_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_ack = HandshakePacket(HandshakePacket::Type::kAck, 2)
                      .Encode(std::move(ack_buf));
-  PW_TEST_ASSERT_OK(enc_ack.status());
-  raw_conn->SetNextRead(std::move(*enc_ack));
+  ASSERT_NE(enc_ack, nullptr);
+  raw_conn->SetNextRead(std::move(enc_ack));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(responder_task.result().has_value());
@@ -627,12 +625,12 @@ TEST(HandshakeTest, ResponderRejectsVersionZeroInSyn) {
   Buf syn_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn = HandshakePacket(HandshakePacket::Type::kSyn, 0)
                      .Encode(std::move(syn_buf));
-  PW_TEST_ASSERT_OK(enc_syn.status());
-  raw_conn->SetNextRead(std::move(*enc_syn));
+  ASSERT_NE(enc_syn, nullptr);
+  raw_conn->SetNextRead(std::move(enc_syn));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(responder_task.result().has_value());
-  EXPECT_EQ(responder_task.result()->status(), Status::DataLoss());
+  EXPECT_EQ(responder_task.result()->status(), RpcStatus::ProtocolError());
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_TRUE(raw_conn->is_closed());
 }
@@ -651,12 +649,12 @@ TEST(HandshakeTest, InitiatorRejectsVersionZeroInSynAck) {
   Buf syn_ack_buf = Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes);
   auto enc_syn_ack = HandshakePacket(HandshakePacket::Type::kSynAck, 0)
                          .Encode(std::move(syn_ack_buf));
-  PW_TEST_ASSERT_OK(enc_syn_ack.status());
-  raw_conn->SetNextRead(std::move(*enc_syn_ack));
+  ASSERT_NE(enc_syn_ack, nullptr);
+  raw_conn->SetNextRead(std::move(enc_syn_ack));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), Status::DataLoss());
+  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
   EXPECT_TRUE(raw_conn->is_closed());
 }
@@ -677,7 +675,7 @@ TEST(HandshakeTest, ConnectionClosedDuringHandshake) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), Status::Cancelled());
+  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::Disconnected());
 }
 
 TEST(HandshakeTest, FailedHandshakeClosesConnection) {
@@ -697,7 +695,7 @@ TEST(HandshakeTest, FailedHandshakeClosesConnection) {
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), Status::DataLoss());
+  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
   EXPECT_TRUE(raw_conn->is_closed());
 }
 

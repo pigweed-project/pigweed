@@ -24,10 +24,10 @@
 #include "pw_bytes/alignment.h"
 #include "pw_intrusive_ptr/intrusive_ptr.h"
 #include "pw_intrusive_ptr/recyclable.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/method.h"
 #include "pw_rpc2/internal/method_future.h"
+#include "pw_rpc2/internal/protocol_error.h"
 
 namespace pw::rpc2::internal {
 
@@ -73,22 +73,22 @@ class alignas(std::max_align_t) ServerCall final : public Call,
 
   /// Allocates a single contiguous memory block containing `ServerCall` and
   /// its trailing future storage from `allocator`, registering and adopting
-  /// it into `connection_task`.
-  static Result<ServerCall*> Allocate(ServerConnectionTask& connection_task,
-                                      uint32_t call_id,
-                                      const Method& method,
-                                      Allocator& allocator);
+  /// it into `connection_task`. Returns null if the allocation failed.
+  static ServerCall* Allocate(ServerConnectionTask& connection_task,
+                              uint32_t call_id,
+                              const Method& method,
+                              Allocator& allocator);
 
   /// Returns the ID of the method this call was dispatched to.
   uint32_t method_id() const { return method_->id(); }
 
   /// Emplaces a `MethodFutureImpl<Fut>` directly into `future_storage()` using
   /// `factory` (with C++17 guaranteed copy elision) and finishes the
-  /// invocation, or returns
-  /// `ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning` if a
+  /// invocation. Returns `ProtocolError::kNone`, or
+  /// `ProtocolError::kFailedToAllocateCallResourcesWhileRunning` if a
   /// coroutine failed to allocate.
   template <typename Fut, typename Factory>
-  ProtocolStatus EmplaceFutureFromFactory(Factory&& factory) {
+  ProtocolError EmplaceFutureFromFactory(Factory&& factory) {
     return CommitEmplacedFuture(
         BoxedMethodFuture::Emplace<Fut>(future_storage(),
                                         std::forward<Factory>(factory)),
@@ -166,7 +166,7 @@ class alignas(std::max_align_t) ServerCall final : public Call,
   /// call on its next poll.
   void FinishAndRequestRetirement();
 
-  ProtocolStatus CommitEmplacedFuture(BoxedMethodFuture&& future, bool is_coro);
+  ProtocolError CommitEmplacedFuture(BoxedMethodFuture&& future, bool is_coro);
 
   BoxedMethodFuture user_future_;
   IntrusivePtr<Call> connection_ref_;

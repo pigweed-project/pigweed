@@ -26,16 +26,14 @@
 #include "pw_buf/buf.h"
 #include "pw_bytes/span.h"
 #include "pw_intrusive_ptr/intrusive_ptr.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/client.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/future_base.h"
 #include "pw_rpc2/internal/serialize.h"
 #include "pw_rpc2/reader.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status.h"
-#include "pw_status/status_with_size.h"
 
 namespace pw::rpc2 {
 namespace internal {
@@ -55,22 +53,22 @@ class RequestFutureBase : public WriteFutureBase {
   ~RequestFutureBase() = default;
 
   template <typename CallHandler>
-  [[nodiscard]] async2::Poll<Result<CallHandler>> PendAndCreate(
+  [[nodiscard]] async2::Poll<RpcResult<CallHandler>> PendAndCreate(
       async2::Context& cx, const void* request, SerializeFn serialize) {
-    PW_TRY_READY_ASSIGN(Result<IntrusivePtr<Call>> call,
+    PW_TRY_READY_ASSIGN(RpcResult<IntrusivePtr<Call>> call,
                         PendWriteAndTakeCall(cx, request, serialize));
     if (!call.ok()) {
-      return async2::Ready(Result<CallHandler>(call.status()));
+      return async2::Ready(RpcResult<CallHandler>(call.status()));
     }
-    return async2::Ready(
-        Result<CallHandler>(CallAccess::Create<CallHandler>(std::move(*call))));
+    return async2::Ready(RpcResult<CallHandler>(
+        CallAccess::Create<CallHandler>(std::move(*call))));
   }
 };
 
 /// Non-templated base class for `UnaryFuture<Request, Response>`.
 class UnaryFutureBase : public FutureBase {
  public:
-  /// Cancels the call. The future then resolves to `CANCELLED`.
+  /// Cancels the call. The future then resolves to `kCancelled`.
   ///
   /// If the request has not been sent, nothing is sent: the server never
   /// learns of the call. If the request is waiting for transport buffer space,
@@ -94,9 +92,8 @@ class UnaryFutureBase : public FutureBase {
   /// True until the request has been sent or has failed to send.
   [[nodiscard]] bool request_pending() const { return req_fut_.is_pendable(); }
 
-  [[nodiscard]] async2::Poll<Result<ConstBuf>> PendRaw(async2::Context& cx,
-                                                       const void* request,
-                                                       SerializeFn serialize);
+  [[nodiscard]] async2::Poll<RpcResult<ConstBuf>> PendRaw(
+      async2::Context& cx, const void* request, SerializeFn serialize);
 
   void PendAndDeserialize(async2::Context& cx,
                           const void* request,
@@ -118,18 +115,23 @@ class UnaryFutureBase : public FutureBase {
 template <typename CallHandler, typename Request = void>
 class RequestFuture : public internal::RequestFutureBase {
  public:
-  using value_type = Result<CallHandler>;
+  using value_type = RpcResult<CallHandler>;
 
   constexpr RequestFuture() = default;
 
   /// Polls until the RPC is started and returns its call handle.
   ///
   /// @returns
-  /// * `OK` with the call handle once the initial write is committed.
-  /// * `UNAVAILABLE` if the client is empty or its connection is closed.
-  /// * `RESOURCE_EXHAUSTED` if the call could not be allocated or the request
-  ///   does not fit in the write buffer.
-  /// * Any error returned by the request serializer.
+  /// * `kOk` with the call handle once the initial write is committed.
+  /// * `kClosed` if the client is empty or was closed.
+  /// * `kResourceExhausted` if the call could not be allocated.
+  /// * `kMessageTooLarge` if the request does not fit in the write buffer or
+  ///   exceeds the maximum write size.
+  /// * `kDataError` if the request serializer failed for any other reason.
+  /// * `kDisconnected` if the connection closed (or the client ran out of call
+  ///   IDs) before the request was sent, or `kProtocolError` if it closed
+  ///   because an endpoint broke the protocol. See
+  ///   `internal::Call::is_completed()`.
   [[nodiscard]] async2::Poll<value_type> Pend(async2::Context& cx) {
     if constexpr (std::is_void_v<Request>) {
       return PendAndCreate<CallHandler>(cx, nullptr, nullptr);
@@ -170,33 +172,43 @@ class RequestFuture : public internal::RequestFutureBase {
 /// Future representing a complete unary RPC on a client.
 ///
 /// Sends the `Request` message to the server and awaits the server's single
-/// `Response` message, resolving to `Result<Response>`.
+/// `Response` message, resolving to `RpcResult<Response>`.
 ///
 /// Destroying a `UnaryFuture` before it completes cancels the call. If the
 /// request was already sent, the server is notified so it can stop work.
 /// `Cancel()` does the same while keeping the future, which then resolves to
-/// `CANCELLED`.
+/// `kCancelled`.
 template <typename Request = ConstBuf, typename Response = ConstBuf>
 class UnaryFuture : public internal::UnaryFutureBase {
  public:
-  using value_type = Result<Response>;
+  using value_type = RpcResult<Response>;
 
   constexpr UnaryFuture() = default;
 
   /// Polls the request transmission and then the response.
   ///
   /// @returns
-  /// * `OK` with the `Response` once the server replies.
-  /// * The server's error status (e.g. `NOT_FOUND` for an unknown service or
-  ///   method, or `CANCELLED` if the server dropped its `UnaryWriter` without
-  ///   responding).
-  /// * `FAILED_PRECONDITION` if the server answered as if the method streamed.
-  /// * `UNAVAILABLE` if the client is empty or its connection closed.
-  /// * `RESOURCE_EXHAUSTED` if the call could not be allocated or the request
-  ///   does not fit in the write buffer.
-  /// * A serialization or deserialization error (e.g. `DATA_LOSS`).
-  [[nodiscard]] async2::Poll<Result<Response>> Pend(async2::Context& cx) {
-    async2::Poll<Result<Response>> result = async2::Pending();
+  /// * `kOk` with the `Response` once the server replies.
+  /// * `kUnimplemented` if the server does not offer the service or method, or
+  ///   answered as if the method had a different type.
+  /// * `kUnavailable` if the server could not take the call. The method never
+  ///   ran, so retrying later is safe.
+  /// * `kAborted` if the server started the call but could not finish it. The
+  ///   method may have partly run.
+  /// * `kCancelled` if either end cancelled the call, including a server that
+  ///   dropped its `UnaryWriter` without responding, or whose method returned
+  ///   while a `UnaryWriter` it handed out still held the call open.
+  /// * `kClosed` if the client is empty or was closed.
+  /// * `kResourceExhausted` if the call could not be allocated locally.
+  /// * `kMessageTooLarge` if the request does not fit in the write buffer or
+  ///   exceeds the maximum write size.
+  /// * `kDataError` if the request could not be serialized, the server could
+  ///   not decode it, or the response could not be deserialized.
+  /// * `kDisconnected` if the connection closed before the response arrived.
+  /// * `kProtocolError` if an endpoint broke the protocol. See
+  ///   `internal::Call::is_completed()`.
+  [[nodiscard]] async2::Poll<RpcResult<Response>> Pend(async2::Context& cx) {
+    async2::Poll<RpcResult<Response>> result = async2::Pending();
     if constexpr (std::is_same_v<Response, ConstBuf>) {
       result = PendRaw(cx, &request_, &internal::SerializeTypeErased<Request>);
     } else {
@@ -246,15 +258,17 @@ class RequestReservationBase : public WriteReservationBase {
   /// `size_bytes` must not exceed `size()`.
   ///
   /// @returns
-  /// * `OK` with the call's response future or reader once the request is
+  /// * `kOk` with the call's response future or reader once the request is
   ///   queued for transmission.
-  /// * `FAILED_PRECONDITION`: this reservation was already committed, dropped,
-  ///   or moved from.
+  /// * `kWriteClosed`: this reservation was already committed, dropped, or
+  ///   moved from.
   /// * The call's completion status if the call ended while the reservation
-  ///   was held (for example, because its connection closed).
-  /// * `UNAVAILABLE`: the connection closed before the request could be sent.
-  [[nodiscard]] Result<Committed> Commit(size_t size_bytes) {
-    Result<IntrusivePtr<Call>> call = CommitAndTakeCall(size_bytes);
+  ///   was held (for example, `kDisconnected` because its connection closed).
+  ///   See `internal::Call::is_completed()`.
+  /// * `kDisconnected`: the connection closed before the request could be
+  ///   sent.
+  [[nodiscard]] RpcResult<Committed> Commit(size_t size_bytes) {
+    RpcResult<IntrusivePtr<Call>> call = CommitAndTakeCall(size_bytes);
     if (!call.ok()) {
       return call.status();
     }
@@ -277,7 +291,7 @@ template <typename ReservationType>
 class ReserveRequestFutureBase {
  public:
   using Reservation = ReservationType;
-  using value_type = Result<Reservation>;
+  using value_type = RpcResult<Reservation>;
 
   ReserveRequestFutureBase(const ReserveRequestFutureBase&) = delete;
   ReserveRequestFutureBase& operator=(const ReserveRequestFutureBase&) = delete;
@@ -288,12 +302,17 @@ class ReserveRequestFutureBase {
   /// Polls for the request write reservation.
   ///
   /// @returns
-  /// * `OK` with the reservation once buffer space is available.
-  /// * `UNAVAILABLE` if the client is empty or its connection is closed.
-  /// * `RESOURCE_EXHAUSTED` if the call could not be allocated or the
-  ///   requested size exceeds the maximum write size.
+  /// * `kOk` with the reservation once buffer space is available.
+  /// * `kClosed` if the client is empty or was closed.
+  /// * `kResourceExhausted` if the call could not be allocated.
+  /// * `kMessageTooLarge` if the requested size exceeds the maximum write
+  ///   size.
+  /// * `kDisconnected` if the connection closed (or the client ran out of call
+  ///   IDs) before the reservation resolved, or `kProtocolError` if it closed
+  ///   because an endpoint broke the protocol. See
+  ///   `internal::Call::is_completed()`.
   [[nodiscard]] async2::Poll<value_type> Pend(async2::Context& cx) {
-    PW_TRY_READY_ASSIGN(Result<WriteReservation> res, res_fut_.Pend(cx));
+    PW_TRY_READY_ASSIGN(RpcResult<WriteReservation> res, res_fut_.Pend(cx));
     if (!res.ok()) {
       return async2::Ready(value_type(res.status()));
     }
@@ -505,7 +524,7 @@ class ServiceClient {
   friend class internal::GeneratedServiceClient;
 
   /// Constructs a service client with no connection. Calls on it fail with
-  /// `UNAVAILABLE`.
+  /// `kClosed`.
   constexpr ServiceClient() = default;
 
   /// Binds `client` to the service with ID `service_id`.

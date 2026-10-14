@@ -32,11 +32,10 @@
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/coro.h"
 #include "pw_log/log.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/server.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status.h"
 #include "pw_string/util.h"
 #include "pw_transport/framed_tcp.h"
 
@@ -67,7 +66,7 @@ class EchoService : public examples::pw_rpc2::pwpb::Echo::Service<EchoService> {
     PW_LOG_INFO("Repeat: %s x%u", request.msg.c_str(), request.count);
     const EchoMessage response{.msg = request.msg};
     for (uint32_t i = 0; i < request.count; ++i) {
-      pw::Status status = co_await writer.Write(response);
+      pw::rpc2::RpcStatus status = co_await writer.Write(response);
       if (!status.ok()) {
         co_return;  // The call ended early, e.g. the client cancelled it.
       }
@@ -80,8 +79,8 @@ class EchoService : public examples::pw_rpc2::pwpb::Echo::Service<EchoService> {
                      pw::rpc2::UnaryWriter<EchoMessage> responder) {
     EchoMessage response;
     while (true) {
-      pw::Result<EchoMessage> request = co_await reader.Read();
-      if (request.status().IsOutOfRange()) {
+      pw::rpc2::RpcResult<EchoMessage> request = co_await reader.Read();
+      if (request.status().IsEndOfStream()) {
         break;  // The client finished its stream.
       }
       if (!request.ok()) {
@@ -102,8 +101,8 @@ class EchoService : public examples::pw_rpc2::pwpb::Echo::Service<EchoService> {
                         pw::rpc2::Reader<EchoMessage> reader,
                         pw::rpc2::Writer<EchoMessage> writer) {
     while (true) {
-      pw::Result<EchoMessage> request = co_await reader.Read();
-      if (request.status().IsOutOfRange()) {
+      pw::rpc2::RpcResult<EchoMessage> request = co_await reader.Read();
+      if (request.status().IsEndOfStream()) {
         break;  // The client finished its stream.
       }
       if (!request.ok()) {
@@ -111,7 +110,7 @@ class EchoService : public examples::pw_rpc2::pwpb::Echo::Service<EchoService> {
       }
       PW_LOG_INFO("EchoStream: %s", request->msg.c_str());
 
-      pw::Status status = co_await writer.Write(std::move(*request));
+      pw::rpc2::RpcStatus status = co_await writer.Write(std::move(*request));
       if (!status.ok()) {
         co_return;
       }

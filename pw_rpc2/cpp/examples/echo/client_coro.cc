@@ -35,11 +35,10 @@
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/future_task.h"
 #include "pw_log/log.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/client.h"
 #include "pw_rpc2/reader.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status.h"
 #include "pw_status/try.h"
 #include "pw_transport/framed_tcp.h"
 #include "pw_transport/socket.h"
@@ -61,22 +60,22 @@ using EchoMessage = examples::pwpb::EchoMessage::Message;
 using EchoClient = examples::pw_rpc2::pwpb::Echo::Client;
 
 // Unary RPC: sends one request and receives one response.
-Coro<pw::Status> CallEcho(CoroContext, EchoClient client) {
+Coro<pw::rpc2::RpcStatus> CallEcho(CoroContext, EchoClient client) {
   PW_CO_TRY_ASSIGN(EchoMessage response,
                    co_await client.Echo({.msg = "hello"}));
   PW_LOG_INFO("Echo: %s", response.msg.c_str());
-  co_return pw::OkStatus();
+  co_return pw::rpc2::RpcStatus();
 }
 
 // Server streaming RPC: sends one request, then reads responses until the
 // server finishes its stream.
-Coro<pw::Status> CallRepeat(CoroContext, EchoClient client) {
+Coro<pw::rpc2::RpcStatus> CallRepeat(CoroContext, EchoClient client) {
   PW_CO_TRY_ASSIGN(pw::rpc2::Reader<EchoMessage> reader,
                    co_await client.Repeat({.msg = "ping", .count = 3}));
   while (true) {
-    pw::Result<EchoMessage> response = co_await reader.Read();
-    if (response.status().IsOutOfRange()) {
-      co_return pw::OkStatus();  // The server finished its stream.
+    pw::rpc2::RpcResult<EchoMessage> response = co_await reader.Read();
+    if (response.status().IsEndOfStream()) {
+      co_return pw::rpc2::RpcStatus();  // The server finished its stream.
     }
     PW_CO_TRY(response.status());
     PW_LOG_INFO("Repeat: %s", response->msg.c_str());
@@ -84,7 +83,7 @@ Coro<pw::Status> CallRepeat(CoroContext, EchoClient client) {
 }
 
 // Client streaming RPC: streams requests, then receives one response.
-Coro<pw::Status> CallCollect(CoroContext, EchoClient client) {
+Coro<pw::rpc2::RpcStatus> CallCollect(CoroContext, EchoClient client) {
   PW_CO_TRY_ASSIGN(auto call, co_await client.Collect());
   pw::rpc2::Writer<EchoMessage>& writer = call.writer();
   for (std::string_view word : {"one", "two", "three"}) {
@@ -94,13 +93,13 @@ Coro<pw::Status> CallCollect(CoroContext, EchoClient client) {
 
   PW_CO_TRY_ASSIGN(EchoMessage response, co_await call.response());
   PW_LOG_INFO("Collect: %s", response.msg.c_str());
-  co_return pw::OkStatus();
+  co_return pw::rpc2::RpcStatus();
 }
 
 // Bidirectional streaming RPC: streams requests and reads the server's stream
 // of responses. The writer and reader are independent; they could also be used
 // from separate tasks.
-Coro<pw::Status> CallEchoStream(CoroContext, EchoClient client) {
+Coro<pw::rpc2::RpcStatus> CallEchoStream(CoroContext, EchoClient client) {
   PW_CO_TRY_ASSIGN(auto call, co_await client.EchoStream());
   pw::rpc2::Writer<EchoMessage>& writer = call.writer();
   for (std::string_view word : {"alpha", "beta"}) {
@@ -110,9 +109,9 @@ Coro<pw::Status> CallEchoStream(CoroContext, EchoClient client) {
 
   pw::rpc2::Reader<EchoMessage>& reader = call.reader();
   while (true) {
-    pw::Result<EchoMessage> response = co_await reader.Read();
-    if (response.status().IsOutOfRange()) {
-      co_return pw::OkStatus();  // The server finished its stream.
+    pw::rpc2::RpcResult<EchoMessage> response = co_await reader.Read();
+    if (response.status().IsEndOfStream()) {
+      co_return pw::rpc2::RpcStatus();  // The server finished its stream.
     }
     PW_CO_TRY(response.status());
     PW_LOG_INFO("EchoStream: %s", response->msg.c_str());
@@ -122,7 +121,7 @@ Coro<pw::Status> CallEchoStream(CoroContext, EchoClient client) {
 
 // DOCSTAG: [pw_rpc2-examples-echo-client-coro-run]
 // Connects to the server, makes each type of RPC, and closes the connection.
-Coro<pw::Status> RunClient(
+Coro<pw::rpc2::RpcStatus> RunClient(
     CoroContext cx,
     Dispatcher& dispatcher,
     pw::Allocator& allocator,

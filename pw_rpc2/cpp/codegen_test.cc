@@ -89,6 +89,8 @@ using ::pw::rpc2::RawWriter;
 using ::pw::rpc2::Reader;
 using ::pw::rpc2::ReserveWriteFuture;
 using ::pw::rpc2::ResponseFuture;
+using ::pw::rpc2::RpcResult;
+using ::pw::rpc2::RpcStatus;
 using ::pw::rpc2::Server;
 using ::pw::rpc2::ServerStreamFuture;
 using ::pw::rpc2::ServerStreamReserveFuture;
@@ -599,7 +601,7 @@ class RespondFuture : public test::TestFuture {
     if (!write_fut_.is_pendable()) {
       write_fut_ = writer_.Finish(response_);
     }
-    PW_AWAIT(pw::Status status, write_fut_, cx);
+    PW_AWAIT(RpcStatus status, write_fut_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -793,7 +795,7 @@ template <typename Method, typename Fut>
 
   auto invocation = peer.ExpectInvocation<Method>();
   auto request = invocation.request();
-  EXPECT_EQ(request.status(), pw::OkStatus());
+  PW_TEST_EXPECT_OK(request.status());
   if (!request.ok()) {
     return false;
   }
@@ -806,7 +808,7 @@ template <typename Method, typename Fut>
   if (!task.has_value()) {
     return false;
   }
-  EXPECT_EQ(task.value().status(), pw::OkStatus());
+  PW_TEST_EXPECT_OK(task.value().status());
   if (!task.value().ok()) {
     return false;
   }
@@ -977,8 +979,7 @@ TEST(CodegenClient, RawUnaryReserve) {
   ASSERT_TRUE(reservation.has_value());
   PW_TEST_ASSERT_OK(reservation.value());
   reservation.value()->data()[0] = std::byte{0xAB};
-  pw::Result<RawResponseFuture> response_future =
-      reservation.value()->Commit(1);
+  RpcResult<RawResponseFuture> response_future = reservation.value()->Commit(1);
   PW_TEST_ASSERT_OK(response_future);
 
   async2::FutureTask response(std::move(*response_future));
@@ -1020,7 +1021,7 @@ TEST(CodegenClient, RawStreamingMethodsAreRouted) {
   ASSERT_TRUE(reservation.has_value());
   PW_TEST_ASSERT_OK(reservation.value());
   reservation.value()->data()[0] = std::byte{0x01};
-  pw::Result<RawReader> reader = reservation.value()->Commit(1);
+  RpcResult<RawReader> reader = reservation.value()->Commit(1);
   PW_TEST_ASSERT_OK(reader);
   peer.ExpectInvocation<names_raw::Kinds::ServerStream>();
 
@@ -1048,7 +1049,7 @@ TEST(CodegenClient, PwpbUnaryReserve) {
   // Encode Ping{.value = 5} in place: field 1, varint 5.
   reservation.value()->data()[0] = std::byte{0x08};
   reservation.value()->data()[1] = std::byte{0x05};
-  pw::Result<ResponseFuture<PongMsg>> response_future =
+  RpcResult<ResponseFuture<PongMsg>> response_future =
       reservation.value()->Commit(2);
   PW_TEST_ASSERT_OK(response_future);
 
@@ -1081,7 +1082,7 @@ TEST(CodegenClient, PwpbServerStreamReserve) {
 
   reservation.value()->data()[0] = std::byte{0x08};
   reservation.value()->data()[1] = std::byte{0x07};
-  pw::Result<Reader<SharedMsg>> reader = reservation.value()->Commit(2);
+  RpcResult<Reader<SharedMsg>> reader = reservation.value()->Commit(2);
   PW_TEST_ASSERT_OK(reader);
 
   auto invocation = peer.ExpectInvocation<names_pwpb::Kinds::ServerStream>();
@@ -1103,7 +1104,7 @@ class TestServer {
   ~TestServer() {
     client_.reset();
     static_cast<void>(server_.Close());
-    transport_.ResolveAccept(pw::Status::Cancelled());
+    transport_.ResolveAccept(::pw::Status::Cancelled());
     dispatcher_.RunUntilStalled();
     EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), 0u);
   }
@@ -1268,7 +1269,7 @@ TEST(CodegenService, RawServicesServePwpbClients) {
     ADD_FAILURE();
     return false;
   }
-  pw::Result<RawResponseFuture> response_future =
+  RpcResult<RawResponseFuture> response_future =
       test::CommitCopy(**reservation, request);
   PW_TEST_EXPECT_OK(response_future);
   if (!response_future.ok()) {
@@ -1322,7 +1323,7 @@ TEST(CodegenService, PwpbClientReservesRequest) {
   auto reservation = test.Run(names.Ping(sizeof(request)));
   ASSERT_TRUE(reservation.has_value());
   PW_TEST_ASSERT_OK(*reservation);
-  pw::Result<ResponseFuture<PongMsg>> response_future =
+  RpcResult<ResponseFuture<PongMsg>> response_future =
       test::CommitCopy(**reservation, request);
   PW_TEST_ASSERT_OK(response_future);
 

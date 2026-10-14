@@ -36,7 +36,7 @@ ClientConnectionTask::~ClientConnectionTask() {
 uint32_t ClientConnectionTask::NewCallId() {
   if (next_call_id_ == kMaxCallId) {
     PW_LOG_ERROR("Client call IDs exhausted; closing the connection");
-    CloseConnection(Status::ResourceExhausted());
+    CloseConnection(RpcStatus::Disconnected());
     return kMaxCallId;
   }
   return next_call_id_++;
@@ -49,7 +49,7 @@ void ClientConnectionTask::RequestClose(ControlFuture* future) {
     switch (close_state_.load(std::memory_order_relaxed)) {
       case CloseState::kClosed:
         if (future != nullptr) {
-          future->ResolveLocked(OkStatus());
+          future->ResolveLocked(RpcStatus());
         }
         return;
       case CloseState::kOpen:
@@ -97,14 +97,14 @@ void ClientConnectionTask::OnClosed() {
   }
   close_futures_.ResolveAllWith(
       [](ControlFuture& future)
-          PW_NO_LOCK_SAFETY_ANALYSIS { future.ResolveLocked(OkStatus()); });
+          PW_NO_LOCK_SAFETY_ANALYSIS { future.ResolveLocked(RpcStatus()); });
 }
 
 bool ClientConnectionTask::PollOpenConnection(async2::Context& cx) {
   // Checked every poll rather than latched, because the close may be requested
   // by any thread at any point.
   if (close_state_.load(std::memory_order_acquire) == CloseState::kClosing) {
-    CloseConnection(Status::Cancelled());
+    CloseConnection(RpcStatus::Closed());
     return false;
   }
   return PendPackets(cx);

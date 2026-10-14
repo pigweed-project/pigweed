@@ -13,6 +13,7 @@
 // the License.
 
 #include <cstddef>
+#include <optional>
 #include <utility>
 
 #include "pw_allocator/testing.h"
@@ -39,8 +40,8 @@ namespace flags = ::pw::rpc2::internal::flags;
 // supplies the method ID and the size and alignment of the trailing future
 // storage. Real methods live in a service's static method table; these tests
 // build one-off descriptors instead.
-constexpr ProtocolStatus NoInvoke(Service&, ServerCall&, ConstBuf&&) {
-  return ProtocolStatus::kOk;
+constexpr ProtocolError NoInvoke(Service&, ServerCall&, ConstBuf&&) {
+  return ProtocolError::kNone;
 }
 
 constexpr Method TestMethod(uint32_t id, size_t size) {
@@ -140,10 +141,10 @@ class ServerCallTest : public ::testing::Test {
   /// Allocates a server call and registers it with the connection, exactly as
   /// `ServerConnectionTask::HandleIncomingRequest()` does.
   ServerCall& AdoptCall(uint32_t call_id, const Method& method) {
-    auto call_res =
+    ServerCall* call =
         ServerCall::Allocate(*connection_task_, call_id, method, alloc_);
-    PW_CHECK_OK(call_res.status());
-    return **call_res;
+    PW_CHECK_NOTNULL(call);
+    return *call;
   }
 
   /// Starts the task that runs a call's method, as a connection does once it
@@ -205,7 +206,7 @@ TEST_F(ServerCallTest, CallRunsToCompletionAndIsRetired) {
   ServerCall& call = AdoptCall(/*call_id=*/100, kMethod);
   EXPECT_EQ(call.EmplaceFutureFromFactory<MockFuture>(
                 [&] { return MockFuture(2, &dtor_count); }),
-            ProtocolStatus::kOk);
+            ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
@@ -226,7 +227,7 @@ TEST_F(ServerCallTest, EscapedHandleKeepsTheCallAlive) {
   ServerCall& call = AdoptCall(/*call_id=*/101, kMethod);
   EXPECT_EQ(call.EmplaceFutureFromFactory<MockFuture>(
                 [&] { return MockFuture(1, &dtor_count); }),
-            ProtocolStatus::kOk);
+            ProtocolError::kNone);
   StartCall(call);
 
   IntrusivePtr<Call> escaped = call.shared_call();
@@ -240,7 +241,7 @@ TEST_F(ServerCallTest, EscapedHandleKeepsTheCallAlive) {
   // than touching a dead connection.
   EXPECT_EQ(dtor_count, 1);
   EXPECT_NE(alloc_.GetAllocated(), 0u);
-  EXPECT_EQ(escaped->ReserveWrite(0, 8).status(), Status::Unavailable());
+  EXPECT_EQ(escaped->ReserveWrite(0, 8).status(), RpcStatus::WriteClosed());
 
   escaped = nullptr;
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
@@ -257,13 +258,13 @@ TEST_F(ServerCallTest, CompletedCallIsRetiredEvenIfItsFutureNeverFinishes) {
   async2::Waker waker;
   EXPECT_EQ(call.EmplaceFutureFromFactory<MockFuture>(
                 [&] { return MockFuture(10, &dtor_count, &waker); }),
-            ProtocolStatus::kOk);
+            ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
   EXPECT_EQ(dtor_count, 0);
 
-  call.Complete(Status::Cancelled());
+  call.Complete(RpcStatus::Cancelled());
 
   RunConnection();
   EXPECT_EQ(dtor_count, 1);
@@ -284,7 +285,7 @@ TEST_F(ServerCallTest, ConnectionTaskDestructionRetiresServerCalls) {
   async2::Waker waker;
   EXPECT_EQ(call.EmplaceFutureFromFactory<MockFuture>(
                 [&] { return MockFuture(10, &dtor_count, &waker); }),
-            ProtocolStatus::kOk);
+            ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
@@ -315,7 +316,7 @@ TEST_F(ServerCallTest, WakingTheConnectionDoesNotPollCallMethods) {
   EXPECT_EQ(call.EmplaceFutureFromFactory<MockFuture>([&] {
     return MockFuture(10, /*destruction_counter=*/nullptr, &waker, &pend_count);
   }),
-            ProtocolStatus::kOk);
+            ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
@@ -333,12 +334,17 @@ TEST_F(ServerCallTest, WakingTheConnectionDoesNotPollCallMethods) {
   EXPECT_EQ(pend_count, 2);
 }
 
-class FutureHoldingWriter {
+// A method future that holds a writer handle and returns on its first poll
+// without using it, as a method that returns without finishing its call does.
+// The handle is destroyed along with the future when the call is retired.
+template <typename WriterType>
+class FutureHoldingHandle {
  public:
   using value_type = void;
 
-  FutureHoldingWriter() = default;
-  explicit FutureHoldingWriter(RawWriter writer) : writer_(std::move(writer)) {}
+  FutureHoldingHandle() = default;
+  explicit FutureHoldingHandle(WriterType writer)
+      : writer_(std::move(writer)) {}
 
   bool is_pendable() const { return !done_; }
   bool is_complete() const { return done_; }
@@ -349,15 +355,19 @@ class FutureHoldingWriter {
   }
 
  private:
-  std::optional<RawWriter> writer_;
+  std::optional<WriterType> writer_;
   bool done_ = false;
 };
+
+using FutureHoldingWriter = FutureHoldingHandle<RawWriter>;
+using FutureHoldingUnaryWriter = FutureHoldingHandle<RawUnaryWriter>;
 
 // Regression test: `ServerCall::DoPend()` must not call `CloseWrite()` when the
 // method future resolves. The future's local variables (such as `Writer` or
 // `UnaryWriter` handles) are destroyed in `ServerCall::Retire()` ->
 // `ClearUserFuture()`, which must happen while `is_write_closed()` is still
-// false so their destructors can send `kStreamEnd` or `kError(CANCELLED)`.
+// false so their destructors can send `kStreamEnd` or
+// `kError(kDroppedWithoutResponse)`.
 TEST_F(ServerCallTest, RetireDestroysUserFutureBeforeClosingWrite) {
   using ImplType = MethodFutureImpl<FutureHoldingWriter>;
 
@@ -367,37 +377,37 @@ TEST_F(ServerCallTest, RetireDestroysUserFutureBeforeClosingWrite) {
   auto writer = CallAccess::Create<RawWriter>(call.shared_call());
   EXPECT_EQ(call.EmplaceFutureFromFactory<FutureHoldingWriter>(
                 [&] { return FutureHoldingWriter(std::move(writer)); }),
-            ProtocolStatus::kOk);
+            ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
 
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res = InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(),
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(),
             (PacketType::Make<flags::kServer, flags::kOkTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 105u);
+  EXPECT_EQ(decode_res.call_id(), 105u);
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 // Checks that the only packet the server sent ends `call_id` with `error`.
 void ExpectOnlyServerError(test::MockConnection& raw_conn,
                            uint32_t call_id,
-                           ProtocolStatus error) {
+                           ProtocolError error) {
   EXPECT_EQ(raw_conn.commit_count(), 1u);
   auto decoded = InboundPacket::Decode(raw_conn.last_written_buf());
-  ASSERT_TRUE(decoded.ok());
-  EXPECT_EQ(decoded->type(),
+  ASSERT_NE(decoded, nullptr);
+  EXPECT_EQ(decoded.type(),
             (PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decoded->call_id(), call_id);
-  EXPECT_EQ(decoded->error(), error);
+  EXPECT_EQ(decoded.call_id(), call_id);
+  EXPECT_EQ(decoded.error(), error);
 }
 
 // A `Writer` that escapes its method cannot keep the call going once the
 // method returns. The client is told the RPC ended rather than being left to
 // wait for a stream end that will never come.
-TEST_F(ServerCallTest, EscapedWriterIsCancelledWhenMethodReturns) {
+TEST_F(ServerCallTest, EscapedWriterEndsCallWhenMethodReturns) {
   using ImplType = MethodFutureImpl<MockFuture>;
   static constexpr Method kMethod = TestMethod(109, sizeof(ImplType));
   ServerCall& call = AdoptCall(/*call_id=*/109, kMethod);
@@ -405,12 +415,13 @@ TEST_F(ServerCallTest, EscapedWriterIsCancelledWhenMethodReturns) {
   auto escaped = CallAccess::Create<RawWriter>(call.shared_call());
   EXPECT_EQ(
       call.EmplaceFutureFromFactory<MockFuture>([] { return MockFuture(1); }),
-      ProtocolStatus::kOk);
+      ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
 
-  ExpectOnlyServerError(*raw_conn_, 109u, ProtocolStatus::kCancelled);
+  ExpectOnlyServerError(
+      *raw_conn_, 109u, ProtocolError::kMethodReturnedWithoutFinishing);
   EXPECT_TRUE(escaped.is_closed());
 
   // The call is already over, so dropping the escaped writer sends nothing.
@@ -422,7 +433,9 @@ TEST_F(ServerCallTest, EscapedWriterIsCancelledWhenMethodReturns) {
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
-TEST_F(ServerCallTest, EscapedUnaryWriterIsDroppedWithoutResponse) {
+// Likewise for an escaped `UnaryWriter`. The method returning is a different
+// event from dropping the `UnaryWriter`, so it is reported as one.
+TEST_F(ServerCallTest, EscapedUnaryWriterEndsCallWhenMethodReturns) {
   using ImplType = MethodFutureImpl<MockFuture>;
   static constexpr Method kMethod = TestMethod(110, sizeof(ImplType));
   ServerCall& call = AdoptCall(/*call_id=*/110, kMethod);
@@ -430,13 +443,13 @@ TEST_F(ServerCallTest, EscapedUnaryWriterIsDroppedWithoutResponse) {
   auto escaped = CallAccess::Create<RawUnaryWriter>(call.shared_call());
   EXPECT_EQ(
       call.EmplaceFutureFromFactory<MockFuture>([] { return MockFuture(1); }),
-      ProtocolStatus::kOk);
+      ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
 
   ExpectOnlyServerError(
-      *raw_conn_, 110u, ProtocolStatus::kDroppedWithoutResponse);
+      *raw_conn_, 110u, ProtocolError::kMethodReturnedWithoutFinishing);
   EXPECT_TRUE(escaped.is_closed());
 
   {
@@ -444,6 +457,27 @@ TEST_F(ServerCallTest, EscapedUnaryWriterIsDroppedWithoutResponse) {
   }
   RunConnection();
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+// A `UnaryWriter` that the method still owns when it returns is destroyed with
+// the method's future, before the call checks for an escaped handle. That is a
+// dropped `UnaryWriter`, not one that escaped the method.
+TEST_F(ServerCallTest, UnaryWriterOwnedByMethodIsDroppedWithoutResponse) {
+  using ImplType = MethodFutureImpl<FutureHoldingUnaryWriter>;
+  static constexpr Method kMethod = TestMethod(112, sizeof(ImplType));
+  ServerCall& call = AdoptCall(/*call_id=*/112, kMethod);
+
+  auto writer = CallAccess::Create<RawUnaryWriter>(call.shared_call());
+  EXPECT_EQ(call.EmplaceFutureFromFactory<FutureHoldingUnaryWriter>(
+                [&] { return FutureHoldingUnaryWriter(std::move(writer)); }),
+            ProtocolError::kNone);
+  StartCall(call);
+
+  RunConnection();
+
+  ExpectOnlyServerError(
+      *raw_conn_, 112u, ProtocolError::kDroppedWithoutResponse);
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
@@ -488,7 +522,7 @@ TEST_F(ServerCallTest, CoroutineExecutionInServerCall) {
   EXPECT_EQ(call.EmplaceFutureFromFactory<async2::Coro<void>>([&] {
     return EchoCoro(async2::CoroContext(alloc_), MockFuture(2, &dtor_count));
   }),
-            ProtocolStatus::kOk);
+            ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
@@ -498,7 +532,7 @@ TEST_F(ServerCallTest, CoroutineExecutionInServerCall) {
 }
 
 TEST_F(ServerCallTest,
-       NestedCoroAllocationFailureSendsResourceExhaustedInsteadOfDropCancel) {
+       NestedCoroAllocationFailureSendsAllocationErrorInsteadOfDropError) {
   using ImplType = MethodFutureImpl<async2::Coro<void>>;
   pw::allocator::test::AllocatorForTest<64> failing_alloc;
   failing_alloc.Exhaust();
@@ -511,19 +545,19 @@ TEST_F(ServerCallTest,
         failing_alloc,
         CallAccess::Create<RawUnaryWriter>(call.shared_call()));
   }),
-            ProtocolStatus::kOk);
+            ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
 
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res = InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(),
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(),
             (PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 108u);
-  EXPECT_EQ(decode_res->error(),
-            ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning);
+  EXPECT_EQ(decode_res.call_id(), 108u);
+  EXPECT_EQ(decode_res.error(),
+            ProtocolError::kFailedToAllocateCallResourcesWhileRunning);
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
@@ -560,7 +594,7 @@ TEST_F(ServerCallTest, WorkAfterFinalResponseIsDestroyedWithTheMethod) {
         dtor_count,
         ran_after_response);
   }),
-            ProtocolStatus::kOk);
+            ProtocolError::kNone);
   StartCall(call);
 
   RunConnection();
@@ -568,8 +602,8 @@ TEST_F(ServerCallTest, WorkAfterFinalResponseIsDestroyedWithTheMethod) {
   // Only the response was sent; retiring the call did not add an error.
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decoded = InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decoded.ok());
-  EXPECT_EQ(decoded->type(),
+  ASSERT_NE(decoded, nullptr);
+  EXPECT_EQ(decoded.type(),
             (PacketType::Make<flags::kServer,
                               flags::kHasPayload,
                               flags::kOkTerminal>()));

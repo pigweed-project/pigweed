@@ -21,9 +21,11 @@
 #include "pw_assert/check.h"
 #include "pw_async2/await.h"
 #include "pw_bytes/span.h"
+#include "pw_enum/to_string.h"
 #include "pw_log/log.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/packet.h"
+#include "pw_rpc2/internal/protocol_error.h"
 
 namespace pw::rpc2::internal {
 namespace {
@@ -32,26 +34,26 @@ namespace {
 /// it.
 void EncodeAndCommitHeader(transport::WriteReservation& reservation,
                            const OutboundPacket& packet) {
-  auto encode_res =
+  std::optional<size_t> encoded_size =
       packet.EncodeHeader(ByteSpan(reservation.data(), reservation.size()));
-  PW_DCHECK(encode_res.ok());
-  static_cast<void>(reservation.Commit(*encode_res));
+  PW_DCHECK(encoded_size.has_value());
+  static_cast<void>(reservation.Commit(*encoded_size));
 }
 
 }  // namespace
 
-async2::Poll<Status> SendControlPacketFuture::Pend(async2::Context& cx) {
+async2::Poll<RpcStatus> SendControlPacketFuture::Pend(async2::Context& cx) {
   PW_ASSERT(is_pendable());
 
   PW_AWAIT(auto write_res, reserve_fut_, cx);
   mark_complete();
 
   if (!write_res.has_value()) {
-    return async2::Ready(Status::Unavailable());
+    return async2::Ready(RpcStatus::Disconnected());
   }
 
   EncodeAndCommitHeader(*write_res, packet_);
-  return async2::Ready(OkStatus());
+  return async2::Ready(RpcStatus());
 }
 
 ConnectionTask::ConnectionTask(transport::ReliableDatagramSocket connection,
@@ -116,22 +118,24 @@ void ConnectionTask::QueueControlPacket(const OutboundPacket& packet) {
   // 3. The allocator is exhausted. This packet is terminal for its call, so
   //    silently dropping it would leave the peer waiting forever. Close the
   //    connection immediately, which completes every call on it and forces the
-  //    peer to notice.
+  //    peer to notice. The connection is gone either way, so its calls report
+  //    `kDisconnected` rather than `kResourceExhausted`: retrying on this
+  //    connection cannot succeed.
   PW_LOG_ERROR(
       "Call %u: out of memory queueing control packet type 0x%02x, "
       "closing connection",
       static_cast<unsigned>(packet.call_id()),
       static_cast<unsigned>(packet.type().bits()));
-  CloseConnection(Status::ResourceExhausted());
+  CloseConnection(RpcStatus::Disconnected());
 }
 
-void ConnectionTask::CloseConnection(Status status) {
+void ConnectionTask::CloseConnection(RpcStatus reason) {
   if (state_ == State::kClosed) {
     return;
   }
   PW_DASSERT(connection_);
   set_state(State::kClosed);
-  close_status_ = status;
+  close_status_ = reason;
   pending_control_packets_.reset();
   connection_.Close();
 
@@ -140,7 +144,7 @@ void ConnectionTask::CloseConnection(Status status) {
   for (auto it = calls_.begin(); it != calls_.end();) {
     Call& call = *it++;
     if (!call.is_closed()) {
-      call.Complete(status);
+      call.Complete(reason);
     }
   }
 
@@ -240,7 +244,7 @@ bool ConnectionTask::ProcessOutgoingControlPackets(async2::Context& cx) {
     return false;
   }
 
-  const Status send_status = *poll;
+  const RpcStatus send_status = *poll;
   send_control_future_ = SendControlPacketFuture();
 
   if (!send_status.ok()) {
@@ -285,22 +289,20 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
 
   auto& result = *poll;
   if (result == nullptr) {
-    CloseConnection(Status::Cancelled());
+    CloseConnection(RpcStatus::Disconnected());
     return true;
   }
 
   ConstBuf pkt_buf = std::move(result);
   read_future_ = transport::ReadFuture();
 
-  auto decode_result = InboundPacket::Decode(std::move(pkt_buf));
-  if (!decode_result.ok()) {
-    PW_LOG_ERROR("Received malformed RPC packet (%s), closing connection",
-                 decode_result.status().str());
-    CloseConnection(Status::DataLoss());
+  InboundPacket packet = InboundPacket::Decode(std::move(pkt_buf));
+  if (packet == nullptr) {
+    PW_LOG_ERROR("Received malformed RPC packet, closing connection");
+    CloseConnection(RpcStatus::ProtocolError());
     return true;
   }
 
-  InboundPacket packet = std::move(decode_result.value());
   // Replies to packets that cannot be delivered tell the peer to stop sending
   // for that call. A terminal packet never gets a reply: the peer has already
   // forgotten the call, and replying to an error with an error could bounce
@@ -313,10 +315,10 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
         static_cast<unsigned>(packet.type().bits()));
     if (!packet.type().is_terminal()) {
       QueueError(packet.call_id(),
-                 ProtocolStatus::kReceivedPacketForWrongEndpoint);
+                 ProtocolError::kReceivedPacketForWrongEndpoint);
     }
     if (Call* call = FindCallById(packet.call_id()); call != nullptr) {
-      call->Complete(ToStatus(ProtocolStatus::kReceivedPacketForWrongEndpoint));
+      call->Complete(RpcStatus::ProtocolError());
     }
     return true;
   }
@@ -324,13 +326,13 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
   if (Call* call = FindCallById(packet.call_id()); call != nullptr) {
     if (packet.type().is_start()) {
       // Only a server receives start packets. The client reused the ID of a
-      // call that is still running, so it has lost track of that call; end
-      // it, and tell the client that neither call will proceed.
-      PW_LOG_WARN(
-          "Call %u: received start packet for already active call, cancelling",
-          static_cast<unsigned>(packet.call_id()));
-      QueueError(packet.call_id(), ProtocolStatus::kCancelled);
-      call->Complete(Status::Cancelled());
+      // call that is still running, which is a client bug. End the active
+      // call, drop the new start packet, and tell the client that neither
+      // call will proceed.
+      PW_LOG_WARN("Call %u: client reused active call ID; ending both",
+                  static_cast<unsigned>(packet.call_id()));
+      QueueError(packet.call_id(), ProtocolError::kReceivedDuplicateStart);
+      call->Complete(RpcStatus::ProtocolError());
       return true;
     }
     if (!DeliverToCall(*call, packet, cx)) {
@@ -340,7 +342,10 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
   }
 
   // Nothing is registered for this call ID, so the packet either opens a new
-  // call or is stray.
+  // call or is stray. When both endpoints behave correctly, a stray packet
+  // only arrives after this endpoint has finished with the call, and the reply
+  // reaches a peer that has finished with it too, so the reply has no effect.
+  // A live call that receives the reply means the endpoints are out of sync.
   if (!packet.type().is_start()) {
     if (packet.type().is_terminal()) {
       PW_LOG_DEBUG(
@@ -350,11 +355,11 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
       return true;
     }
     PW_LOG_WARN(
-        "Call %u: received stray packet type 0x%02x for unknown or closed "
-        "call, cancelling it",
+        "Call %u: received packet type 0x%02x for unknown or closed call, "
+        "rejecting it",
         static_cast<unsigned>(packet.call_id()),
         static_cast<unsigned>(packet.type().bits()));
-    QueueCancel(packet.call_id());
+    QueueError(packet.call_id(), ProtocolError::kReceivedPacketForUnknownCall);
     return true;
   }
 
@@ -386,14 +391,27 @@ bool ConnectionTask::DeliverToCall(Call& call,
     // A server that has ended the RPC has forgotten the call, so the error
     // would only arrive as a stray packet.
     if (close_mode != CloseMode::kOkTerminal) {
-      QueueError(packet.call_id(), ProtocolStatus::kMethodTypeMismatch);
+      QueueError(packet.call_id(), ProtocolError::kMethodTypeMismatch);
     }
-    call.OnError(Status::FailedPrecondition());
+    call.OnError(RpcStatus::Unimplemented());
     return true;
   }
 
   if (close_mode == CloseMode::kErrorTerminal) {
-    call.OnError(ToStatus(packet.error()));
+    // Log the protocol error, then translate it to an RpcStatus.
+    const ProtocolError error = packet.error();
+    if (call.is_completed()) {
+      PW_LOG_DEBUG("Call %u: peer ended completed RPC with error %s (0x%02x)",
+                   static_cast<unsigned>(packet.call_id()),
+                   EnumToString(error),
+                   static_cast<unsigned>(error));
+    } else {
+      PW_LOG_WARN("Call %u: peer ended RPC with error %s (0x%02x)",
+                  static_cast<unsigned>(packet.call_id()),
+                  EnumToString(error),
+                  static_cast<unsigned>(error));
+    }
+    call.OnError(PeerErrorToRpcStatus(type.sender(), error));
     return true;
   }
 
@@ -422,7 +440,7 @@ bool ConnectionTask::DeliverToCall(Call& call,
       call.OnPeerStreamEnd();
       break;
     case CloseMode::kOkTerminal:
-      call.Complete(OkStatus());
+      call.Complete(RpcStatus());
       break;
     case CloseMode::kErrorTerminal:
       break;

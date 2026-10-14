@@ -111,11 +111,11 @@ void PushSynAck(pw::Allocator& allocator, MockConnection& connection) {
   pw::Buf buffer = pw::Buf::TryAllocate(
       allocator, internal::HandshakePacket::kWireSizeBytes);
   PW_CHECK(!buffer.empty(), "Could not allocate a handshake packet");
-  auto encoded =
+  pw::Buf encoded =
       internal::HandshakePacket(internal::HandshakePacket::Type::kSynAck)
           .Encode(std::move(buffer));
-  PW_CHECK_OK(encoded.status());
-  connection.PushNextRead(std::move(*encoded));
+  PW_CHECK(encoded != nullptr, "Could not encode a handshake packet");
+  connection.PushNextRead(std::move(encoded));
 }
 
 Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
@@ -142,12 +142,12 @@ IntrusivePtr<internal::Call> StartServerCall(
   static constexpr internal::Method kMethod(
       1, MethodType::kBidirectionalStreaming, 0, nullptr);
 
-  auto call = internal::ServerCall::Allocate(
+  internal::ServerCall* const call = internal::ServerCall::Allocate(
       connection_task, call_id, kMethod, allocator);
-  PW_CHECK_OK(call.status());
+  PW_CHECK_NOTNULL(call);
   // Finish as if the method had returned, leaving its handles to the test.
-  (*call)->FinishInvocation();
-  return (*call)->shared_call();
+  call->FinishInvocation();
+  return call->shared_call();
 }
 
 MockPeer MakeMockPeer(async2::RunnableDispatcher& dispatcher,
@@ -167,13 +167,12 @@ MockPeer MakeMockPeer(async2::RunnableDispatcher& dispatcher,
 internal::InboundPacket MockPeer::DecodeWrittenPacket(size_t index) const {
   auto packet = internal::InboundPacket::Decode(
       ConstBuf::Unowned(connection_->written_packet(index)));
-  PW_CHECK(packet.ok(),
-           "MockPeer could not decode written packet %zu (%s); it only "
+  PW_CHECK(packet != nullptr,
+           "MockPeer could not decode written packet %zu; it only "
            "understands RPC packets, so the connection must come from "
            "MakeMockPeer, which skips the handshake.",
-           index,
-           packet.status().str());
-  return std::move(*packet);
+           index);
+  return packet;
 }
 
 void MockPeer::InjectResponseBytes(uint32_t call_id, ConstByteSpan payload) {
@@ -181,14 +180,13 @@ void MockPeer::InjectResponseBytes(uint32_t call_id, ConstByteSpan payload) {
       *allocator_, call_id, payload));
 }
 
-void MockPeer::Inject(pw::Result<pw::Buf>&& packet) {
-  PW_CHECK(packet.ok(),
-           "MockPeer could not frame a packet (%s). The allocator is likely "
-           "exhausted.",
-           packet.status().str());
+void MockPeer::Inject(pw::Buf&& packet) {
+  PW_CHECK(packet != nullptr,
+           "MockPeer could not frame a packet. The allocator is likely "
+           "exhausted.");
   // PushNextRead wakes the reader; running the dispatcher lets the client
   // consume the packet and resume whatever was awaiting it.
-  connection_->PushNextRead(std::move(*packet));
+  connection_->PushNextRead(std::move(packet));
   dispatcher_->RunUntilStalled();
 }
 
@@ -225,8 +223,8 @@ size_t MockPeer::ClientStreamMessageCount(uint32_t call_id) const {
   return count;
 }
 
-pw::Result<ConstByteSpan> MockPeer::ClientStreamMessage(uint32_t call_id,
-                                                        size_t index) const {
+RpcResult<ConstByteSpan> MockPeer::ClientStreamMessage(uint32_t call_id,
+                                                       size_t index) const {
   size_t seen = 0;
   for (size_t i = 0; i < connection_->written_packet_count(); ++i) {
     const internal::InboundPacket packet = DecodeWrittenPacket(i);
@@ -240,7 +238,7 @@ pw::Result<ConstByteSpan> MockPeer::ClientStreamMessage(uint32_t call_id,
     }
     ++seen;
   }
-  return Status::OutOfRange();
+  return RpcStatus::EndOfStream();
 }
 
 bool MockPeer::ClientStreamFinished(uint32_t call_id) const {
@@ -327,7 +325,7 @@ void PairedConnection::DoClose() {
   // Calling peer_->SimulateDisconnect() while holding *this lock can lead to an
   // AB-BA deadlock if both peers close concurrently on different threads.
   if (peer_ != nullptr && !peer_->is_closed()) {
-    peer_->SimulateDisconnect(OkStatus(), false);
+    peer_->SimulateDisconnect(/*disconnect_peer=*/false);
   }
 }
 
@@ -351,8 +349,7 @@ void PairedConnection::TryResolveRead() {
   }
 }
 
-void PairedConnection::SimulateDisconnect(Status status, bool disconnect_peer) {
-  (void)status;
+void PairedConnection::SimulateDisconnect(bool disconnect_peer) {
   PairedConnection* peer_to_disconnect = nullptr;
   {
     std::lock_guard lock(*this);
@@ -366,7 +363,7 @@ void PairedConnection::SimulateDisconnect(Status status, bool disconnect_peer) {
     }
   }
   if (peer_to_disconnect != nullptr) {
-    peer_to_disconnect->SimulateDisconnect(status, false);
+    peer_to_disconnect->SimulateDisconnect(/*disconnect_peer=*/false);
   }
 }
 
@@ -397,10 +394,10 @@ void PairedConnection::DoCancelWrite(pw::Buf&&) {}
 
 namespace pw::rpc2::internal {
 
-Result<pw::Buf> PacketFramer::FramePacket(pw::Allocator& allocator,
-                                          PacketType type,
-                                          uint32_t call_id,
-                                          pw::ConstByteSpan payload) {
+pw::Buf PacketFramer::FramePacket(pw::Allocator& allocator,
+                                  PacketType type,
+                                  uint32_t call_id,
+                                  pw::ConstByteSpan payload) {
   PW_CHECK(!type.is_start() && !type.is_error(),
            "Packets of type 0x%02x have extra header fields",
            static_cast<unsigned>(type.bits()));
@@ -409,12 +406,12 @@ Result<pw::Buf> PacketFramer::FramePacket(pw::Allocator& allocator,
                payload);
 }
 
-Result<pw::Buf> PacketFramer::FrameStartPacket(pw::Allocator& allocator,
-                                               PacketType type,
-                                               uint32_t call_id,
-                                               uint32_t service_id,
-                                               uint32_t method_id,
-                                               pw::ConstByteSpan payload) {
+pw::Buf PacketFramer::FrameStartPacket(pw::Allocator& allocator,
+                                       PacketType type,
+                                       uint32_t call_id,
+                                       uint32_t service_id,
+                                       uint32_t method_id,
+                                       pw::ConstByteSpan payload) {
   PW_CHECK(type.is_start(),
            "Packets of type 0x%02x do not start a call",
            static_cast<unsigned>(type.bits()));
@@ -425,16 +422,16 @@ Result<pw::Buf> PacketFramer::FrameStartPacket(pw::Allocator& allocator,
       payload);
 }
 
-Result<pw::Buf> PacketFramer::Frame(pw::Allocator& allocator,
-                                    const OutboundPacket& packet,
-                                    pw::ConstByteSpan payload) {
+pw::Buf PacketFramer::Frame(pw::Allocator& allocator,
+                            const OutboundPacket& packet,
+                            pw::ConstByteSpan payload) {
   PW_CHECK(packet.type().has_payload() || payload.empty(),
            "A packet of type 0x%02x cannot carry a payload",
            static_cast<unsigned>(packet.type().bits()));
   const size_t packet_size = packet.payload_offset() + payload.size();
   pw::Buf buffer = pw::Buf::TryAllocate(allocator, packet_size);
-  if (buffer.empty()) {
-    return Status::ResourceExhausted();
+  if (buffer == nullptr) {
+    return nullptr;
   }
   if (!payload.empty()) {
     std::memcpy(buffer.data() + packet.payload_offset(),

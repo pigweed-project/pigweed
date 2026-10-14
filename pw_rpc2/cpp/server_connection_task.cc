@@ -17,9 +17,11 @@
 #include <utility>
 
 #include "pw_assert/check.h"
+#include "pw_enum/to_string.h"
 #include "pw_log/log.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/packet.h"
+#include "pw_rpc2/internal/protocol_error.h"
 #include "pw_rpc2/internal/server_call.h"
 #include "pw_rpc2/internal/server_task.h"
 #include "pw_rpc2/service.h"
@@ -141,7 +143,7 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
     PW_LOG_WARN("Call %u: request for unknown service 0x%08x",
                 static_cast<unsigned>(packet.call_id()),
                 static_cast<unsigned>(packet.service_id()));
-    QueueError(packet.call_id(), ProtocolStatus::kUnknownService);
+    QueueError(packet.call_id(), ProtocolError::kUnknownService);
     return;
   }
 
@@ -152,7 +154,7 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
                 static_cast<unsigned>(packet.call_id()),
                 static_cast<unsigned>(method_id),
                 static_cast<unsigned>(packet.service_id()));
-    QueueError(packet.call_id(), ProtocolStatus::kUnknownMethod);
+    QueueError(packet.call_id(), ProtocolError::kUnknownMethod);
     return;
   }
 
@@ -171,27 +173,26 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
         static_cast<unsigned>(packet_type.bits()),
         static_cast<unsigned>(method_id),
         static_cast<unsigned>(packet.service_id()));
-    QueueError(packet.call_id(), ProtocolStatus::kMethodTypeMismatch);
+    QueueError(packet.call_id(), ProtocolError::kMethodTypeMismatch);
     return;
   }
 
-  Result<ServerCall*> call_res =
+  ServerCall* const call_ptr =
       ServerCall::Allocate(*this, packet.call_id(), *method, allocator());
-  if (!call_res.ok()) {
-    PW_LOG_ERROR("Call %u: failed to allocate ServerCall: %s",
-                 static_cast<unsigned>(packet.call_id()),
-                 call_res.status().str());
-    QueueError(packet.call_id(), ProtocolStatus::kFailedToAllocateCall);
+  if (call_ptr == nullptr) {
+    PW_LOG_ERROR("Call %u: failed to allocate ServerCall",
+                 static_cast<unsigned>(packet.call_id()));
+    QueueError(packet.call_id(), ProtocolError::kFailedToAllocateCall);
     return;
   }
-  ServerCall& call = **call_res;
+  ServerCall& call = *call_ptr;
 
-  const ProtocolStatus invocation_error = method->Invoke(
+  const ProtocolError invocation_error = method->Invoke(
       *target_service,
       call,
       TakeInitialPayload(call, is_client_stream_method, std::move(packet)));
-  if (invocation_error != ProtocolStatus::kOk) {
-    PW_LOG_WARN("Call %u: method invocation failed with protocol error: %s",
+  if (invocation_error != ProtocolError::kNone) {
+    PW_LOG_WARN("Call %u: method invocation failed: %s",
                 static_cast<unsigned>(call.call_id()),
                 pw::EnumToString(invocation_error));
     if (!call.is_write_closed()) {

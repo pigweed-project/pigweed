@@ -15,6 +15,7 @@
 #include "pw_rpc2/internal/connection_task.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <optional>
 #include <utility>
@@ -23,11 +24,14 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_bytes/endian.h"
+#include "pw_enum/to_string.h"
+#include "pw_enum/traits.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/client_connection_task.h"
 #include "pw_rpc2/internal/handshake.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/packet_testing.h"
+#include "pw_rpc2/internal/protocol_error.h"
 #include "pw_rpc2/internal/server_call.h"
 #include "pw_rpc2/internal/server_connection_task.h"
 #include "pw_rpc2/internal/test_utils.h"
@@ -79,20 +83,23 @@ class ReadTestTask : public async2::Task {
     if (poll->has_value()) {
       result_ = std::move(**poll);
     } else {
-      Status status = call_.completion_status();
-      result_ = (call_.is_completed() && !status.ok()) ? status
-                                                       : Status::OutOfRange();
+      RpcStatus status = call_.completion_status();
+      result_ = (call_.is_completed() && !status.ok())
+                    ? status
+                    : RpcStatus::EndOfStream();
     }
     return async2::Ready();
   }
 
-  const std::optional<Result<pw::ConstBuf>>& result() const { return result_; }
+  const std::optional<RpcResult<pw::ConstBuf>>& result() const {
+    return result_;
+  }
 
  private:
   async2::ReceiveFuture<pw::ConstBuf> receive_fut_;
   Call& call_;
   bool released_ = false;
-  std::optional<Result<pw::ConstBuf>> result_;
+  std::optional<RpcResult<pw::ConstBuf>> result_;
 };
 
 TEST(ConnectionTaskTest, IngressRequestPacketIsDispatchedToTheServer) {
@@ -110,13 +117,13 @@ TEST(ConnectionTaskTest, IngressRequestPacketIsDispatchedToTheServer) {
 
   std::byte payload_data[4] = {
       std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
-  auto pkt_res = PacketFramer::FrameStartUnaryPacket(allocator,
-                                                     /*call_id=*/42,
-                                                     /*service_id=*/10,
-                                                     /*method_id=*/20,
-                                                     payload_data);
-  ASSERT_TRUE(pkt_res.ok());
-  raw_conn->SetNextRead(std::move(pkt_res.value()));
+  Buf pkt = PacketFramer::FrameStartUnaryPacket(allocator,
+                                                /*call_id=*/42,
+                                                /*service_id=*/10,
+                                                /*method_id=*/20,
+                                                payload_data);
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   task.Wake();
   dispatcher.RunUntilStalled();
@@ -126,11 +133,11 @@ TEST(ConnectionTaskTest, IngressRequestPacketIsDispatchedToTheServer) {
   ASSERT_EQ(raw_conn->written_packet_count(), 1u);
   auto response =
       InboundPacket::Decode(ConstBuf::Unowned(raw_conn->written_packet(0)));
-  ASSERT_TRUE(response.ok());
-  EXPECT_EQ(response->type(),
+  ASSERT_NE(response, nullptr);
+  EXPECT_EQ(response.type(),
             (PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(response->call_id(), 42u);
-  EXPECT_EQ(response->error(), ProtocolStatus::kUnknownService);
+  EXPECT_EQ(response.call_id(), 42u);
+  EXPECT_EQ(response.error(), ProtocolError::kUnknownService);
 
   task.Deregister();
 }
@@ -143,16 +150,15 @@ TEST(ConnectionTaskTest, ProcessOutgoingErrorsFastPathSynchronous) {
 
   // Fast-path: immediate synchronous transmission when transport write is
   // available
-  task.QueueError(100u, ProtocolStatus::kReceivedPacketForWrongEndpoint);
+  task.QueueError(100u, ProtocolError::kReceivedPacketForWrongEndpoint);
 
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto decode_res = InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(), PacketType::Make<flags::kErrorTerminal>());
-  EXPECT_EQ(decode_res->call_id(), 100u);
-  EXPECT_EQ(decode_res->error(),
-            ProtocolStatus::kReceivedPacketForWrongEndpoint);
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(), PacketType::Make<flags::kErrorTerminal>());
+  EXPECT_EQ(decode_res.call_id(), 100u);
+  EXPECT_EQ(decode_res.error(), ProtocolError::kReceivedPacketForWrongEndpoint);
 }
 
 TEST(ConnectionTaskTest, ProcessOutgoingErrorsFallbackQueueAndAsyncFlush) {
@@ -166,7 +172,7 @@ TEST(ConnectionTaskTest, ProcessOutgoingErrorsFallbackQueueAndAsyncFlush) {
   raw_conn->SetBlockReserveWrite(true);
 
   // QueueError should fall back to internal queue
-  task.QueueError(101u, ProtocolStatus::kCancelled);
+  task.QueueError(101u, ProtocolError::kCancelled);
   EXPECT_EQ(raw_conn->commit_count(), 0u);
 
   dispatcher.Post(task);
@@ -185,10 +191,10 @@ TEST(ConnectionTaskTest, ProcessOutgoingErrorsFallbackQueueAndAsyncFlush) {
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto decode_res = InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(), PacketType::Make<flags::kErrorTerminal>());
-  EXPECT_EQ(decode_res->call_id(), 101u);
-  EXPECT_EQ(decode_res->error(), ProtocolStatus::kCancelled);
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(), PacketType::Make<flags::kErrorTerminal>());
+  EXPECT_EQ(decode_res.call_id(), 101u);
+  EXPECT_EQ(decode_res.error(), ProtocolError::kCancelled);
 
   task.Deregister();
 }
@@ -209,7 +215,7 @@ TEST(ConnectionTaskTest, ProcessOutgoingErrorsQueuesUnboundedBacklog) {
   // one of these is terminal for its call, so none may be dropped.
   constexpr uint32_t kBacklog = 8;
   for (uint32_t i = 1; i <= kBacklog; ++i) {
-    task.QueueError(i, ProtocolStatus::kCancelled);
+    task.QueueError(i, ProtocolError::kCancelled);
   }
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_GT(allocator.metrics().allocated_bytes.value(), baseline_allocated);
@@ -226,10 +232,10 @@ TEST(ConnectionTaskTest, ProcessOutgoingErrorsQueuesUnboundedBacklog) {
   for (uint32_t i = 0; i < kBacklog; ++i) {
     auto decode_res =
         InboundPacket::Decode(ConstBuf::Unowned(raw_conn->written_packet(i)));
-    ASSERT_TRUE(decode_res.ok());
-    EXPECT_EQ(decode_res->type(), PacketType::Make<flags::kErrorTerminal>());
-    EXPECT_EQ(decode_res->call_id(), i + 1);
-    EXPECT_EQ(decode_res->error(), ProtocolStatus::kCancelled);
+    ASSERT_NE(decode_res, nullptr);
+    EXPECT_EQ(decode_res.type(), PacketType::Make<flags::kErrorTerminal>());
+    EXPECT_EQ(decode_res.call_id(), i + 1);
+    EXPECT_EQ(decode_res.error(), ProtocolError::kCancelled);
   }
 
   // Once drained, the control packet queue frees its buffer because its
@@ -256,8 +262,8 @@ TEST(ConnectionTaskTest, DemuxStreamingMessagesToActiveCallWithBackpressure) {
   // Step 1: Inject message 1
   std::byte msg1_data[3] = {std::byte{1}, std::byte{2}, std::byte{3}};
   auto pkt1 = PacketFramer::FrameServerMessagePacket(allocator, 42u, msg1_data);
-  ASSERT_TRUE(pkt1.ok());
-  raw_conn->SetNextRead(std::move(*pkt1));
+  ASSERT_NE(pkt1, nullptr);
+  raw_conn->SetNextRead(std::move(pkt1));
   task->Wake();
   dispatcher.RunUntilStalled();
 
@@ -272,8 +278,8 @@ TEST(ConnectionTaskTest, DemuxStreamingMessagesToActiveCallWithBackpressure) {
   // Step 2: Inject message 2
   std::byte msg2_data[2] = {std::byte{10}, std::byte{20}};
   auto pkt2 = PacketFramer::FrameServerMessagePacket(allocator, 42u, msg2_data);
-  ASSERT_TRUE(pkt2.ok());
-  raw_conn->SetNextRead(std::move(*pkt2));
+  ASSERT_NE(pkt2, nullptr);
+  raw_conn->SetNextRead(std::move(pkt2));
   task->Wake();
   dispatcher.RunUntilStalled();
 
@@ -301,7 +307,7 @@ TEST(ConnectionTaskTest, DemuxStreamingMessagesToActiveCallWithBackpressure) {
   task->Deregister();
 }
 
-TEST(ConnectionTaskTest, DuplicateStartCancelsActiveCall) {
+TEST(ConnectionTaskTest, DuplicateStartEndsActiveCallWithProtocolError) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   ServerTask server(allocator, dispatcher);
@@ -312,33 +318,39 @@ TEST(ConnectionTaskTest, DuplicateStartCancelsActiveCall) {
 
   // Register active call 50
   constexpr Method method(1, MethodType::kUnary, 0, nullptr);
-  auto server_call = ServerCall::Allocate(task, 50u, method, allocator);
-  ASSERT_TRUE(server_call.ok());
-  IntrusivePtr<Call> call = (*server_call)->shared_call();
+  ServerCall* server_call = ServerCall::Allocate(task, 50u, method, allocator);
+  ASSERT_NE(server_call, nullptr);
+  IntrusivePtr<Call> call = server_call->shared_call();
 
   // Send a duplicate request packet with call_id = 50
   std::byte payload[2] = {std::byte{1}, std::byte{2}};
   auto pkt = PacketFramer::FrameStartUnaryPacket(
       allocator, 50u, /*service_id=*/10, /*method_id=*/20, payload);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   task.Wake();
   dispatcher.RunUntilStalled();
 
   // The duplicate is not dispatched: had it reached the server, the
-  // unregistered service would have produced a NOT_FOUND error packet.
-  // Instead, the active call is cancelled and the client is told once.
+  // unregistered service would have produced a kUnknownService error packet.
+  // The client reused an active call ID, which is a client bug, so the active
+  // call ends with a protocol error and the client is told once.
   ASSERT_EQ(raw_conn->written_packet_count(), 1u);
   auto reply =
       InboundPacket::Decode(ConstBuf::Unowned(raw_conn->written_packet(0)));
-  ASSERT_TRUE(reply.ok());
-  EXPECT_EQ(reply->type(),
+  ASSERT_NE(reply, nullptr);
+  EXPECT_EQ(reply.type(),
             (PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(reply->call_id(), 50u);
-  EXPECT_EQ(reply->error(), ProtocolStatus::kCancelled);
+  EXPECT_EQ(reply.call_id(), 50u);
+  EXPECT_EQ(reply.error(), ProtocolError::kReceivedDuplicateStart);
   EXPECT_TRUE(call->is_completed());
-  EXPECT_EQ(call->completion_status(), Status::Cancelled());
+  EXPECT_EQ(call->completion_status(), RpcStatus::ProtocolError());
+
+  // Only the two calls end. The connection stays up for the client's other
+  // calls.
+  EXPECT_FALSE(task.is_closed());
+  EXPECT_FALSE(raw_conn->is_closed());
 
   task.Deregister();
 }
@@ -359,8 +371,8 @@ TEST(ConnectionTaskTest, WrongDirectionPacketsAreRejected) {
   std::byte payload[2] = {std::byte{1}, std::byte{2}};
   auto req_pkt = PacketFramer::FrameStartUnaryPacket(
       allocator, 50u, /*service_id=*/10, /*method_id=*/20, payload);
-  ASSERT_TRUE(req_pkt.ok());
-  raw_conn->PushNextRead(std::move(*req_pkt));
+  ASSERT_NE(req_pkt, nullptr);
+  raw_conn->PushNextRead(std::move(req_pkt));
 
   // 2. Client-to-server packets (messages, stream ends, and errors)
   // arriving at a client are dropped. Each non-terminal one is answered with
@@ -368,42 +380,42 @@ TEST(ConnectionTaskTest, WrongDirectionPacketsAreRejected) {
   // reply.
   auto msg_pkt =
       PacketFramer::FrameClientMessagePacket(allocator, 50u, payload);
-  ASSERT_TRUE(msg_pkt.ok());
-  raw_conn->PushNextRead(std::move(*msg_pkt));
+  ASSERT_NE(msg_pkt, nullptr);
+  raw_conn->PushNextRead(std::move(msg_pkt));
 
   auto end_pkt = PacketFramer::FrameClientStreamEndPacket(allocator, 50u);
-  ASSERT_TRUE(end_pkt.ok());
-  raw_conn->PushNextRead(std::move(*end_pkt));
+  ASSERT_NE(end_pkt, nullptr);
+  raw_conn->PushNextRead(std::move(end_pkt));
 
   auto err_pkt = PacketFramer::FrameClientErrorPacket(
-      allocator, 50u, ProtocolStatus::kCancelled);
-  ASSERT_TRUE(err_pkt.ok());
-  raw_conn->PushNextRead(std::move(*err_pkt));
+      allocator, 50u, ProtocolError::kCancelled);
+  ASSERT_NE(err_pkt, nullptr);
+  raw_conn->PushNextRead(std::move(err_pkt));
 
   task.Wake();
   dispatcher.RunUntilStalled();
 
   // The request, message, and stream end were each answered with
   // kReceivedPacketForWrongEndpoint, and the matching local call was completed
-  // with UNIMPLEMENTED.
+  // with a protocol error.
   ASSERT_EQ(raw_conn->written_packet_count(), 3u);
   for (size_t i = 0; i < 3; ++i) {
     auto reply =
         InboundPacket::Decode(ConstBuf::Unowned(raw_conn->written_packet(i)));
-    ASSERT_TRUE(reply.ok());
-    EXPECT_EQ(reply->type(), PacketType::Make<flags::kErrorTerminal>());
-    EXPECT_EQ(reply->call_id(), 50u);
-    EXPECT_EQ(reply->error(), ProtocolStatus::kReceivedPacketForWrongEndpoint);
+    ASSERT_NE(reply, nullptr);
+    EXPECT_EQ(reply.type(), PacketType::Make<flags::kErrorTerminal>());
+    EXPECT_EQ(reply.call_id(), 50u);
+    EXPECT_EQ(reply.error(), ProtocolError::kReceivedPacketForWrongEndpoint);
   }
   EXPECT_TRUE(call->is_closed());
   EXPECT_TRUE(call->is_completed());
-  EXPECT_EQ(call->completion_status(), Status::Unimplemented());
+  EXPECT_EQ(call->completion_status(), RpcStatus::ProtocolError());
   EXPECT_FALSE(call->peer_ended_stream());
 
   task.Deregister();
 }
 
-TEST(ConnectionTaskTest, StrayPacketForUnknownCallIsCancelled) {
+TEST(ConnectionTaskTest, StrayPacketForUnknownCallIsRejected) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -414,22 +426,22 @@ TEST(ConnectionTaskTest, StrayPacketForUnknownCallIsCancelled) {
   // A well-formed message packet for a call that does not exist.
   std::byte msg_data[2] = {std::byte{1}, std::byte{2}};
   auto pkt = PacketFramer::FrameServerMessagePacket(allocator, 9999u, msg_data);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   task.Wake();
   dispatcher.RunUntilStalled();
 
-  // The packet is dropped and the server is told to stop sending for the
-  // call. The connection stays up, since a stray packet is a normal race
-  // against call teardown.
+  // The packet is dropped and the server is told that the call is unknown.
+  // The connection stays up, since a stray packet is a normal race against
+  // call teardown.
   ASSERT_EQ(raw_conn->written_packet_count(), 1u);
   auto reply =
       InboundPacket::Decode(ConstBuf::Unowned(raw_conn->written_packet(0)));
-  ASSERT_TRUE(reply.ok());
-  EXPECT_EQ(reply->type(), PacketType::Make<flags::kErrorTerminal>());
-  EXPECT_EQ(reply->call_id(), 9999u);
-  EXPECT_EQ(reply->error(), ProtocolStatus::kCancelled);
+  ASSERT_NE(reply, nullptr);
+  EXPECT_EQ(reply.type(), PacketType::Make<flags::kErrorTerminal>());
+  EXPECT_EQ(reply.call_id(), 9999u);
+  EXPECT_EQ(reply.error(), ProtocolError::kReceivedPacketForUnknownCall);
   EXPECT_FALSE(raw_conn->is_closed());
 
   task.Deregister();
@@ -447,12 +459,12 @@ TEST(ConnectionTaskTest, StrayTerminalPacketGetsNoReply) {
   // error. The peer has already forgotten the call, so neither is answered.
   std::byte msg_data[2] = {std::byte{1}, std::byte{2}};
   auto response = PacketFramer::FrameResponsePacket(allocator, 9999u, msg_data);
-  ASSERT_TRUE(response.ok());
-  raw_conn->PushNextRead(std::move(*response));
+  ASSERT_NE(response, nullptr);
+  raw_conn->PushNextRead(std::move(response));
   auto error = PacketFramer::FrameServerErrorPacket(
-      allocator, 9998u, ProtocolStatus::kCancelled);
-  ASSERT_TRUE(error.ok());
-  raw_conn->PushNextRead(std::move(*error));
+      allocator, 9998u, ProtocolError::kCancelled);
+  ASSERT_NE(error, nullptr);
+  raw_conn->PushNextRead(std::move(error));
 
   task.Wake();
   dispatcher.RunUntilStalled();
@@ -463,7 +475,7 @@ TEST(ConnectionTaskTest, StrayTerminalPacketGetsNoReply) {
   task.Deregister();
 }
 
-TEST(ConnectionTaskTest, ServerCancelsStrayClientStream) {
+TEST(ConnectionTaskTest, ServerRejectsStrayClientStream) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   ServerTask server(allocator, dispatcher);
@@ -475,8 +487,8 @@ TEST(ConnectionTaskTest, ServerCancelsStrayClientStream) {
   // A client message for a call the server has already finished.
   std::byte msg_data[2] = {std::byte{1}, std::byte{2}};
   auto pkt = PacketFramer::FrameClientMessagePacket(allocator, 77u, msg_data);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   task.Wake();
   dispatcher.RunUntilStalled();
@@ -484,11 +496,12 @@ TEST(ConnectionTaskTest, ServerCancelsStrayClientStream) {
   ASSERT_EQ(raw_conn->written_packet_count(), 1u);
   auto reply =
       InboundPacket::Decode(ConstBuf::Unowned(raw_conn->written_packet(0)));
-  ASSERT_TRUE(reply.ok());
-  EXPECT_EQ(reply->type(),
+  ASSERT_NE(reply, nullptr);
+  EXPECT_EQ(reply.type(),
             (PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(reply->call_id(), 77u);
-  EXPECT_EQ(reply->error(), ProtocolStatus::kCancelled);
+  EXPECT_EQ(reply.call_id(), 77u);
+  EXPECT_EQ(reply.error(), ProtocolError::kReceivedPacketForUnknownCall);
+  EXPECT_FALSE(raw_conn->is_closed());
 
   task.Deregister();
 }
@@ -506,12 +519,12 @@ TEST(ConnectionTaskTest, ServerRejectsServerToClientPackets) {
   // kReceivedPacketForWrongEndpoint; a server error is terminal, so it is not.
   std::byte msg_data[2] = {std::byte{1}, std::byte{2}};
   auto msg = PacketFramer::FrameServerMessagePacket(allocator, 5u, msg_data);
-  ASSERT_TRUE(msg.ok());
-  raw_conn->PushNextRead(std::move(*msg));
+  ASSERT_NE(msg, nullptr);
+  raw_conn->PushNextRead(std::move(msg));
   auto error = PacketFramer::FrameServerErrorPacket(
-      allocator, 6u, ProtocolStatus::kCancelled);
-  ASSERT_TRUE(error.ok());
-  raw_conn->PushNextRead(std::move(*error));
+      allocator, 6u, ProtocolError::kCancelled);
+  ASSERT_NE(error, nullptr);
+  raw_conn->PushNextRead(std::move(error));
 
   task.Wake();
   dispatcher.RunUntilStalled();
@@ -519,11 +532,11 @@ TEST(ConnectionTaskTest, ServerRejectsServerToClientPackets) {
   ASSERT_EQ(raw_conn->written_packet_count(), 1u);
   auto reply =
       InboundPacket::Decode(ConstBuf::Unowned(raw_conn->written_packet(0)));
-  ASSERT_TRUE(reply.ok());
-  EXPECT_EQ(reply->type(),
+  ASSERT_NE(reply, nullptr);
+  EXPECT_EQ(reply.type(),
             (PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(reply->call_id(), 5u);
-  EXPECT_EQ(reply->error(), ProtocolStatus::kReceivedPacketForWrongEndpoint);
+  EXPECT_EQ(reply.call_id(), 5u);
+  EXPECT_EQ(reply.error(), ProtocolError::kReceivedPacketForWrongEndpoint);
 
   task.Deregister();
 }
@@ -535,6 +548,8 @@ TEST(ConnectionTaskTest, UnrecognizedPacketTypeClosesConnection) {
 
   ClientConnectionTask task(EstablishedConnection{conn}, allocator);
   dispatcher.Post(task);
+  auto call = ClientCall::Create(task, 1u, allocator);
+  ASSERT_NE(call, nullptr);
 
   // A complete 5-byte header whose type byte is not a valid PacketType for the
   // negotiated protocol version.
@@ -549,6 +564,8 @@ TEST(ConnectionTaskTest, UnrecognizedPacketTypeClosesConnection) {
 
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_TRUE(raw_conn->is_closed());
+  EXPECT_EQ(task.close_status(), RpcStatus::ProtocolError());
+  EXPECT_EQ(call->completion_status(), RpcStatus::ProtocolError());
 
   task.Deregister();
 }
@@ -560,9 +577,13 @@ TEST(ConnectionTaskTest, MalformedPacketClosesConnection) {
 
   ClientConnectionTask task(EstablishedConnection{conn}, allocator);
   dispatcher.Post(task);
+  auto call = ClientCall::Create(task, 1u, allocator);
+  ASSERT_NE(call, nullptr);
 
   // A complete frame that is shorter than the packet header. The peer is not
-  // speaking the protocol, so the connection is torn down.
+  // speaking the protocol, so the connection is torn down. Reconnecting would
+  // not fix that, so the connection's calls report a protocol error rather
+  // than a disconnection.
   pw::Buf corrupt_buf = pw::Buf::Allocate(allocator, 3);
   corrupt_buf[0] = std::byte{0xFF};
   corrupt_buf[1] = std::byte{0xEE};
@@ -573,6 +594,9 @@ TEST(ConnectionTaskTest, MalformedPacketClosesConnection) {
   dispatcher.RunUntilStalled();
 
   EXPECT_TRUE(raw_conn->is_closed());
+  EXPECT_EQ(task.close_status(), RpcStatus::ProtocolError());
+  EXPECT_TRUE(call->is_completed());
+  EXPECT_EQ(call->completion_status(), RpcStatus::ProtocolError());
 
   task.Deregister();
 }
@@ -594,16 +618,16 @@ TEST(ConnectionTaskTest, SendControlPacketFutureEncapsulation) {
       status_ = *poll;
       return async2::Ready();
     }
-    std::optional<Status> status() const { return status_; }
+    std::optional<RpcStatus> status() const { return status_; }
 
    private:
     SendControlPacketFuture fut_;
-    std::optional<Status> status_;
+    std::optional<RpcStatus> status_;
   };
 
   raw_conn->SetBlockReserveWrite(true);
   SendControlPacketFuture fut(
-      conn, OutboundPacket::ClientError(88u, ProtocolStatus::kCancelled));
+      conn, OutboundPacket::ClientError(88u, ProtocolError::kCancelled));
   EXPECT_TRUE(fut.is_pendable());
   EXPECT_FALSE(fut.is_complete());
 
@@ -620,13 +644,13 @@ TEST(ConnectionTaskTest, SendControlPacketFutureEncapsulation) {
 
   EXPECT_EQ(raw_conn->commit_count(), 1u);
   ASSERT_TRUE(task.status().has_value());
-  EXPECT_EQ(*task.status(), OkStatus());
+  PW_TEST_EXPECT_OK(*task.status());
 
   auto decode_res = InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(), PacketType::Make<flags::kErrorTerminal>());
-  EXPECT_EQ(decode_res->call_id(), 88u);
-  EXPECT_EQ(decode_res->error(), ProtocolStatus::kCancelled);
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(), PacketType::Make<flags::kErrorTerminal>());
+  EXPECT_EQ(decode_res.call_id(), 88u);
+  EXPECT_EQ(decode_res.error(), ProtocolError::kCancelled);
 
   task.Deregister();
 }
@@ -643,17 +667,19 @@ TEST(ConnectionTaskTest, ConnectionCloseNotifiesActiveCalls) {
   ASSERT_NE(call, nullptr);
 
   EXPECT_FALSE(call->is_closed());
-  task->CloseConnection(Status::Aborted());
+  task->CloseConnection(RpcStatus::ProtocolError());
 
   EXPECT_TRUE(task->is_closed());
   EXPECT_TRUE(call->is_closed());
-  EXPECT_EQ(call->completion_status(), Status::Aborted());
+  EXPECT_EQ(call->completion_status(), RpcStatus::ProtocolError());
+  EXPECT_EQ(task->close_status(), RpcStatus::ProtocolError());
   task->Deregister();
 }
 
-// An error code this build does not recognize, e.g. from a newer peer, maps to
-// `Status::Unknown()`. It must still complete the call, and a pending read must
-// report the error rather than a clean end of stream.
+// A peer only sends error codes that the negotiated protocol version defines,
+// so a code this endpoint does not recognize is a protocol violation. It must
+// still complete the call, and a pending read must report the error rather
+// than a clean end of stream.
 TEST(ConnectionTaskTest, UnrecognizedErrorCodeCompletesCallWithError) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
@@ -669,21 +695,81 @@ TEST(ConnectionTaskTest, UnrecognizedErrorCodeCompletesCallWithError) {
   dispatcher.RunUntilStalled();
   ASSERT_FALSE(read_task.result().has_value());
 
-  // 0x7F is an unassigned server-origin code.
+  // The code after the last server-origin code is unassigned.
+  constexpr auto kUnassignedServerCode = static_cast<ProtocolError>(
+      static_cast<uint8_t>(ProtocolError::kMethodReturnedWithoutFinishing) + 1);
+  static_assert(!pw::IsValidEnum(kUnassignedServerCode));
   auto pkt = PacketFramer::FrameServerErrorPacket(
-      allocator, 7u, static_cast<ProtocolStatus>(0x7F));
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+      allocator, 7u, kUnassignedServerCode);
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
   task.Wake();
   dispatcher.RunUntilStalled();
 
   EXPECT_TRUE(call->is_completed());
   EXPECT_TRUE(call->is_closed());
-  EXPECT_EQ(call->completion_status(), Status::Unknown());
+  EXPECT_EQ(call->completion_status(), RpcStatus::ProtocolError());
   ASSERT_TRUE(read_task.result().has_value());
-  EXPECT_EQ(read_task.result()->status(), Status::Unknown());
+  EXPECT_EQ(read_task.result()->status(), RpcStatus::ProtocolError());
+
+  // The violation ends only this call. Unlike a malformed packet, it does not
+  // close the connection.
+  EXPECT_FALSE(task.is_closed());
+  EXPECT_FALSE(raw_conn->is_closed());
 
   read_task.Deregister();
+  task.Deregister();
+}
+
+// A server interprets the code in a client's error packet as one sent by a
+// client: a code that only a server may send is a protocol violation. Error
+// packets are terminal, so the server sends nothing back, and each error ends
+// only its own call.
+TEST(ConnectionTaskTest, ClientErrorEndsServerCallWithMappedStatus) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  ServerTask server(allocator, dispatcher);
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+
+  ServerConnectionTask task(EstablishedConnection{conn}, allocator, server);
+  dispatcher.Post(task);
+
+  struct Case {
+    ProtocolError error;
+    RpcStatus expected;
+  };
+  constexpr Case kCases[] = {
+      {ProtocolError::kCancelled, RpcStatus::Cancelled()},
+      {ProtocolError::kMethodTypeMismatch, RpcStatus::Unimplemented()},
+      // Only a server may send `kUnknownMethod`.
+      {ProtocolError::kUnknownMethod, RpcStatus::ProtocolError()},
+  };
+
+  constexpr Method method(1, MethodType::kBidirectionalStreaming, 0, nullptr);
+  uint32_t call_id = 60;
+  for (const Case& test : kCases) {
+    ServerCall* server_call =
+        ServerCall::Allocate(task, call_id, method, allocator);
+    ASSERT_NE(server_call, nullptr);
+    IntrusivePtr<Call> call = server_call->shared_call();
+
+    auto pkt =
+        PacketFramer::FrameClientErrorPacket(allocator, call_id, test.error);
+    ASSERT_NE(pkt, nullptr);
+    raw_conn->SetNextRead(std::move(pkt));
+    task.Wake();
+    dispatcher.RunUntilStalled();
+
+    EXPECT_TRUE(call->is_completed()) << pw::EnumToString(test.error);
+    EXPECT_EQ(call->completion_status(), test.expected)
+        << pw::EnumToString(test.error);
+    ++call_id;
+  }
+
+  EXPECT_EQ(raw_conn->written_packet_count(), 0u);
+  EXPECT_FALSE(task.is_closed());
+  EXPECT_FALSE(raw_conn->is_closed());
+
   task.Deregister();
 }
 
@@ -701,11 +787,11 @@ TEST(ConnectionTaskTest, ServerRoleHandshake) {
   EXPECT_FALSE(task.is_handshake_complete());
 
   // Step 1: Inject client handshake SYN packet
-  Result<Buf> client_syn =
+  Buf client_syn =
       HandshakePacket(HandshakePacket::Type::kSyn)
           .Encode(Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes));
-  ASSERT_TRUE(client_syn.ok());
-  raw_conn->SetNextRead(std::move(*client_syn));
+  ASSERT_NE(client_syn, nullptr);
+  raw_conn->SetNextRead(std::move(client_syn));
 
   task.Wake();
   dispatcher.RunUntilStalled();
@@ -715,17 +801,73 @@ TEST(ConnectionTaskTest, ServerRoleHandshake) {
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   // Step 2: Inject client handshake ACK packet
-  Result<Buf> client_ack =
+  Buf client_ack =
       HandshakePacket(HandshakePacket::Type::kAck)
           .Encode(Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes));
-  ASSERT_TRUE(client_ack.ok());
-  raw_conn->SetNextRead(std::move(*client_ack));
+  ASSERT_NE(client_ack, nullptr);
+  raw_conn->SetNextRead(std::move(client_ack));
 
   task.Wake();
   dispatcher.RunUntilStalled();
 
   EXPECT_TRUE(task.is_handshake_complete());
   EXPECT_EQ(task.handshake_info().negotiated_version, 1u);
+
+  task.Deregister();
+}
+
+TEST(ConnectionTaskTest, ControlPacketQueueOutOfMemoryDisconnects) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+
+  ClientConnectionTask task(EstablishedConnection{conn}, allocator);
+  dispatcher.Post(task);
+  auto call = ClientCall::Create(task, 1u, allocator);
+  ASSERT_NE(call, nullptr);
+
+  // With the transport blocked, the packet has to be queued, but the queue
+  // cannot grow. Dropping a terminal packet would strand the peer, so the
+  // connection closes instead. The connection is gone, so its calls report
+  // kDisconnected rather than kResourceExhausted.
+  raw_conn->SetBlockReserveWrite(true);
+  allocator.Exhaust();
+  task.QueueError(2u, ProtocolError::kCancelled);
+
+  EXPECT_TRUE(task.is_closed());
+  EXPECT_EQ(task.close_status(), RpcStatus::Disconnected());
+  EXPECT_TRUE(raw_conn->is_closed());
+  EXPECT_TRUE(call->is_completed());
+  EXPECT_EQ(call->completion_status(), RpcStatus::Disconnected());
+
+  dispatcher.RunUntilStalled();
+  task.Deregister();
+}
+
+TEST(ConnectionTaskTest, ServerRoleHandshakeFailureIsProtocolError) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  ServerTask server(allocator, dispatcher);
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+
+  ServerConnectionTask task(conn, allocator, server);
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+
+  // The client must start with a SYN; an ACK is unexpected.
+  Buf client_ack =
+      HandshakePacket(HandshakePacket::Type::kAck)
+          .Encode(Buf::Allocate(allocator, HandshakePacket::kWireSizeBytes));
+  ASSERT_NE(client_ack, nullptr);
+  raw_conn->SetNextRead(std::move(client_ack));
+
+  task.Wake();
+  dispatcher.RunUntilStalled();
+
+  EXPECT_FALSE(task.is_handshake_complete());
+  EXPECT_TRUE(task.is_closed());
+  EXPECT_TRUE(raw_conn->is_closed());
+  EXPECT_EQ(task.close_status(), RpcStatus::ProtocolError());
 
   task.Deregister();
 }

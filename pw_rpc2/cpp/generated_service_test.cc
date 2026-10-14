@@ -39,7 +39,6 @@
 #include "pw_bytes/span.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_polyfill/language_feature_macros.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/client.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/pw_rpc2_test.pwpb.rpc2.h"
@@ -47,6 +46,7 @@
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/server.h"
 #include "pw_rpc2/service_client.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
 #include "pw_status/status.h"
@@ -74,7 +74,7 @@ class DoubleUnaryFuture : public TestFuture {
     if (!finish_.is_pendable()) {
       finish_ = responder_.Finish(EchoResponse{.val = request_.val * 2});
     }
-    PW_AWAIT(::pw::Status status, finish_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -100,14 +100,14 @@ class CountUpFuture : public TestFuture {
       if (!write_.is_pendable()) {
         write_ = writer_.Write(EchoResponse{.val = request_.val + sent_ + 1});
       }
-      PW_AWAIT(::pw::Status status, write_, cx);
+      PW_AWAIT(::pw::rpc2::RpcStatus status, write_, cx);
       PW_TEST_EXPECT_OK(status);
       ++sent_;
     }
     if (!finish_.is_pendable()) {
       finish_ = writer_.Finish();
     }
-    PW_AWAIT(::pw::Status status, finish_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -136,9 +136,9 @@ class SumFuture : public TestFuture {
       if (!read_.is_pendable()) {
         read_ = reader_.Read();
       }
-      PW_AWAIT(::pw::Result<EchoRequest> request, read_, cx);
+      PW_AWAIT(::pw::rpc2::RpcResult<EchoRequest> request, read_, cx);
       if (!request.ok()) {
-        EXPECT_EQ(request.status(), ::pw::Status::OutOfRange());
+        EXPECT_EQ(request.status(), RpcStatus::EndOfStream());
         reading_ = false;
         break;
       }
@@ -147,7 +147,7 @@ class SumFuture : public TestFuture {
     if (!finish_.is_pendable()) {
       finish_ = responder_.Finish(EchoResponse{.val = sum_});
     }
-    PW_AWAIT(::pw::Status status, finish_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -176,15 +176,15 @@ class DoubleBidiFuture : public TestFuture {
     while (reading_) {
       // Finish writing the previous response before reading the next request.
       if (write_.is_pendable()) {
-        PW_AWAIT(::pw::Status status, write_, cx);
+        PW_AWAIT(::pw::rpc2::RpcStatus status, write_, cx);
         PW_TEST_EXPECT_OK(status);
       }
       if (!read_.is_pendable()) {
         read_ = reader_.Read();
       }
-      PW_AWAIT(::pw::Result<EchoRequest> request, read_, cx);
+      PW_AWAIT(::pw::rpc2::RpcResult<EchoRequest> request, read_, cx);
       if (!request.ok()) {
-        EXPECT_EQ(request.status(), ::pw::Status::OutOfRange());
+        EXPECT_EQ(request.status(), RpcStatus::EndOfStream());
         reading_ = false;
         break;
       }
@@ -193,7 +193,7 @@ class DoubleBidiFuture : public TestFuture {
     if (!finish_.is_pendable()) {
       finish_ = writer_.Finish();
     }
-    PW_AWAIT(::pw::Status status, finish_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -222,7 +222,7 @@ class RawEchoUnaryFuture : public TestFuture {
     if (!finish_.is_pendable()) {
       finish_ = responder_.FinishCopy(std::move(request_));
     }
-    PW_AWAIT(::pw::Status status, finish_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -250,14 +250,14 @@ class RawRepeatFuture : public TestFuture {
       if (!write_.is_pendable()) {
         write_ = writer_.WriteCopy(ConstBuf::Unowned(request_));
       }
-      PW_AWAIT(::pw::Status status, write_, cx);
+      PW_AWAIT(::pw::rpc2::RpcStatus status, write_, cx);
       PW_TEST_EXPECT_OK(status);
       ++sent_;
     }
     if (!finish_.is_pendable()) {
       finish_ = writer_.Finish();
     }
-    PW_AWAIT(::pw::Status status, finish_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -287,9 +287,9 @@ class RawCountFuture : public TestFuture {
       if (!read_.is_pendable()) {
         read_ = reader_.Read();
       }
-      PW_AWAIT(::pw::Result<::pw::ConstBuf> request, read_, cx);
+      PW_AWAIT(::pw::rpc2::RpcResult<pw::ConstBuf> request, read_, cx);
       if (!request.ok()) {
-        EXPECT_EQ(request.status(), ::pw::Status::OutOfRange());
+        EXPECT_EQ(request.status(), RpcStatus::EndOfStream());
         reading_ = false;
         break;
       }
@@ -299,7 +299,7 @@ class RawCountFuture : public TestFuture {
       response_[0] = static_cast<std::byte>(count_);
       finish_ = responder_.FinishCopy(ConstBuf::Unowned(response_));
     }
-    PW_AWAIT(::pw::Status status, finish_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -328,15 +328,15 @@ class RawEchoBidiFuture : public TestFuture {
     while (reading_) {
       // Finish writing the previous message before reading the next request.
       if (write_.is_pendable()) {
-        PW_AWAIT(::pw::Status status, write_, cx);
+        PW_AWAIT(::pw::rpc2::RpcStatus status, write_, cx);
         PW_TEST_EXPECT_OK(status);
       }
       if (!read_.is_pendable()) {
         read_ = reader_.Read();
       }
-      PW_AWAIT(::pw::Result<::pw::ConstBuf> request, read_, cx);
+      PW_AWAIT(::pw::rpc2::RpcResult<pw::ConstBuf> request, read_, cx);
       if (!request.ok()) {
-        EXPECT_EQ(request.status(), ::pw::Status::OutOfRange());
+        EXPECT_EQ(request.status(), RpcStatus::EndOfStream());
         reading_ = false;
         break;
       }
@@ -345,7 +345,7 @@ class RawEchoBidiFuture : public TestFuture {
     if (!finish_.is_pendable()) {
       finish_ = writer_.Finish();
     }
-    PW_AWAIT(::pw::Status status, finish_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, finish_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -467,17 +467,17 @@ class ServiceTest : public ::testing::Test {
   ServiceTest() : server_(allocator_, dispatcher_) {}
 
   void SetUp() override {
-    ASSERT_EQ(server_.RegisterService(service_), ::pw::OkStatus());
-    ASSERT_EQ(server_.RegisterListenerBlocking(transport_), ::pw::OkStatus());
+    PW_TEST_ASSERT_OK(server_.RegisterService(service_));
+    PW_TEST_ASSERT_OK(server_.RegisterListenerBlocking(transport_));
     server_.Start();
     started_ = true;
 
     auto connections = MakePairedConnections(allocator_);
     transport_.ResolveAccept(connections.server());
-    ::pw::Result<::pw::rpc2::Client> client =
+    ::pw::rpc2::RpcResult<pw::rpc2::Client> client =
         RunToCompletion(::pw::rpc2::Client::Connect(
             dispatcher_, allocator_, connections.client()));
-    ASSERT_EQ(client.status(), ::pw::OkStatus());
+    PW_TEST_ASSERT_OK(client.status());
     client_.emplace(std::move(*client), dispatcher_);
   }
 
@@ -488,7 +488,7 @@ class ServiceTest : public ::testing::Test {
     if (started_) {
       auto closed = server_.Close();
       transport_.ResolveAccept(::pw::Status::Cancelled());
-      EXPECT_EQ(RunToCompletion(std::move(closed)), ::pw::OkStatus());
+      PW_TEST_EXPECT_OK(RunToCompletion(std::move(closed)));
     }
   }
 
@@ -528,7 +528,7 @@ class PwpbServiceTest : public ServiceTest<ServiceImpl> {
  protected:
   void TestUnary() {
     pw_rpc2::pwpb::TestEcho::Client stub(this->client());
-    ::pw::Result<EchoResponse> response =
+    ::pw::rpc2::RpcResult<EchoResponse> response =
         this->RunToCompletion(stub.EchoUnary(EchoRequest{.val = 21}));
     PW_TEST_ASSERT_OK(response);
     EXPECT_EQ(response->val, 42u);
@@ -536,19 +536,19 @@ class PwpbServiceTest : public ServiceTest<ServiceImpl> {
 
   void TestServerStreaming() {
     pw_rpc2::pwpb::TestEcho::Client stub(this->client());
-    ::pw::Result<::pw::rpc2::Reader<EchoResponse>> reader =
+    ::pw::rpc2::RpcResult<pw::rpc2::Reader<EchoResponse>> reader =
         this->RunToCompletion(stub.CountUpServerStream(EchoRequest{.val = 10}));
     PW_TEST_ASSERT_OK(reader);
 
     for (uint32_t expected : {11u, 12u, 13u}) {
-      ::pw::Result<EchoResponse> response =
+      ::pw::rpc2::RpcResult<EchoResponse> response =
           this->RunToCompletion(reader->Read());
       PW_TEST_ASSERT_OK(response);
       EXPECT_EQ(response->val, expected);
     }
-    // The server finished the stream with `OK`.
+    // The server finished the stream with `kOk`.
     EXPECT_EQ(this->RunToCompletion(reader->Read()).status(),
-              ::pw::Status::OutOfRange());
+              RpcStatus::EndOfStream());
   }
 
   void TestClientStreaming() {
@@ -562,7 +562,7 @@ class PwpbServiceTest : public ServiceTest<ServiceImpl> {
     }
     PW_TEST_EXPECT_OK(this->RunToCompletion(call->writer().Finish()));
 
-    ::pw::Result<EchoResponse> response =
+    ::pw::rpc2::RpcResult<EchoResponse> response =
         this->RunToCompletion(std::move(*call).response());
     PW_TEST_ASSERT_OK(response);
     EXPECT_EQ(response->val, 60u);
@@ -576,14 +576,14 @@ class PwpbServiceTest : public ServiceTest<ServiceImpl> {
     for (uint32_t value : {5u, 15u}) {
       PW_TEST_EXPECT_OK(this->RunToCompletion(
           call->writer().Write(EchoRequest{.val = value})));
-      ::pw::Result<EchoResponse> response =
+      ::pw::rpc2::RpcResult<EchoResponse> response =
           this->RunToCompletion(call->reader().Read());
       PW_TEST_ASSERT_OK(response);
       EXPECT_EQ(response->val, value * 2);
     }
     PW_TEST_EXPECT_OK(this->RunToCompletion(call->writer().Finish()));
     EXPECT_EQ(this->RunToCompletion(call->reader().Read()).status(),
-              ::pw::Status::OutOfRange());
+              RpcStatus::EndOfStream());
   }
 };
 
@@ -596,11 +596,11 @@ class RawServiceTest : public ServiceTest<ServiceImpl> {
  protected:
   void TestUnary() {
     pw_rpc2::raw::TestEcho::Client stub(this->client());
-    ::pw::Result<::pw::rpc2::RawResponseFuture> response_future =
+    ::pw::rpc2::RpcResult<pw::rpc2::RawResponseFuture> response_future =
         this->SendRawRequest(stub.EchoUnary(sizeof(kPayload)), kPayload);
     PW_TEST_ASSERT_OK(response_future);
 
-    ::pw::Result<::pw::ConstBuf> response =
+    ::pw::rpc2::RpcResult<pw::ConstBuf> response =
         this->RunToCompletion(std::move(*response_future));
     PW_TEST_ASSERT_OK(response);
     ExpectBytes(*response, kPayload);
@@ -608,18 +608,18 @@ class RawServiceTest : public ServiceTest<ServiceImpl> {
 
   void TestServerStreaming() {
     pw_rpc2::raw::TestEcho::Client stub(this->client());
-    ::pw::Result<::pw::rpc2::RawReader> reader = this->SendRawRequest(
+    ::pw::rpc2::RpcResult<pw::rpc2::RawReader> reader = this->SendRawRequest(
         stub.CountUpServerStream(sizeof(kPayload)), kPayload);
     PW_TEST_ASSERT_OK(reader);
 
     for (uint32_t i = 0; i < RawRepeatFuture::kCount; ++i) {
-      ::pw::Result<::pw::ConstBuf> response =
+      ::pw::rpc2::RpcResult<pw::ConstBuf> response =
           this->RunToCompletion(reader->Read());
       PW_TEST_ASSERT_OK(response);
       ExpectBytes(*response, kPayload);
     }
     EXPECT_EQ(this->RunToCompletion(reader->Read()).status(),
-              ::pw::Status::OutOfRange());
+              RpcStatus::EndOfStream());
   }
 
   void TestClientStreaming() {
@@ -633,7 +633,7 @@ class RawServiceTest : public ServiceTest<ServiceImpl> {
     }
     PW_TEST_EXPECT_OK(this->RunToCompletion(call->writer().Finish()));
 
-    ::pw::Result<::pw::ConstBuf> response =
+    ::pw::rpc2::RpcResult<pw::ConstBuf> response =
         this->RunToCompletion(std::move(*call).response());
     PW_TEST_ASSERT_OK(response);
     constexpr std::byte kExpectedCount[] = {std::byte{3}};
@@ -649,14 +649,14 @@ class RawServiceTest : public ServiceTest<ServiceImpl> {
          {::pw::ConstByteSpan(kPayload), ::pw::ConstByteSpan(kOtherPayload)}) {
       PW_TEST_EXPECT_OK(this->RunToCompletion(
           call->writer().WriteCopy(ConstBuf::Unowned(payload))));
-      ::pw::Result<::pw::ConstBuf> response =
+      ::pw::rpc2::RpcResult<pw::ConstBuf> response =
           this->RunToCompletion(call->reader().Read());
       PW_TEST_ASSERT_OK(response);
       ExpectBytes(*response, payload);
     }
     PW_TEST_EXPECT_OK(this->RunToCompletion(call->writer().Finish()));
     EXPECT_EQ(this->RunToCompletion(call->reader().Read()).status(),
-              ::pw::Status::OutOfRange());
+              RpcStatus::EndOfStream());
   }
 };
 

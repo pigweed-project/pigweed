@@ -23,7 +23,6 @@
 #include "pw_async2/await.h"
 #include "pw_async2/poll.h"
 #include "pw_intrusive_ptr/intrusive_ptr.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/server_connection_task.h"
 
 namespace pw::rpc2::internal {
@@ -46,31 +45,31 @@ ServerCall::ServerCall(ServerConnectionTask& connection_task,
 
 ServerCall::~ServerCall() { PW_DCHECK(connection_ref_ == nullptr); }
 
-Result<ServerCall*> ServerCall::Allocate(ServerConnectionTask& connection_task,
-                                         uint32_t call_id,
-                                         const Method& method,
-                                         Allocator& allocator) {
+ServerCall* ServerCall::Allocate(ServerConnectionTask& connection_task,
+                                 uint32_t call_id,
+                                 const Method& method,
+                                 Allocator& allocator) {
   const size_t total_size = TotalAllocationSize(method.future_storage_size());
   void* mem =
       allocator.Allocate(allocator::Layout(total_size, alignof(ServerCall)));
   if (mem == nullptr) {
-    return Status::ResourceExhausted();
+    return nullptr;
   }
   return ::new (mem) ServerCall(connection_task, call_id, method, &allocator);
 }
 
-ProtocolStatus ServerCall::CommitEmplacedFuture(BoxedMethodFuture&& future,
-                                                bool is_coro) {
+ProtocolError ServerCall::CommitEmplacedFuture(BoxedMethodFuture&& future,
+                                               bool is_coro) {
   if (!future.is_pendable() && !future.is_complete()) {
     PW_CHECK(is_coro,
              "RPC method returned an invalid future (neither pendable nor "
              "complete)");
     future.Reset();
-    return ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning;
+    return ProtocolError::kFailedToAllocateCallResourcesWhileRunning;
   }
   user_future_ = std::move(future);
   FinishInvocation();
-  return ProtocolStatus::kOk;
+  return ProtocolError::kNone;
 }
 
 async2::Poll<> ServerCall::DoPend(async2::Context& cx) {
@@ -94,7 +93,7 @@ async2::Poll<> ServerCall::DoPend(async2::Context& cx) {
       // failure. Queue the resource allocation error and close the write side
       // before FinishInvocation() so any deferred writer-drop packet is
       // disarmed.
-      QueueError(ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning);
+      QueueError(ProtocolError::kFailedToAllocateCallResourcesWhileRunning);
       CloseWrite();
     }
     FinishInvocation();

@@ -24,7 +24,7 @@
 #include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/internal/control_future.h"
 #include "pw_rpc2/internal/handshake.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/status.h"
 #include "pw_sync/lock_annotations.h"
 
 namespace pw::rpc2::internal {
@@ -43,7 +43,8 @@ class ClientConnectionTask final : public ConnectionTask {
 
   ~ClientConnectionTask() override;
 
-  /// Allocates a new `Call` with a fresh call ID on this connection.
+  /// Allocates a new `Call` with a fresh call ID on this connection. Returns
+  /// null if the call could not be allocated.
   ///
   /// @pre Must be called from this connection's dispatcher thread.
   IntrusivePtr<Call> CreateCall() {
@@ -55,17 +56,18 @@ class ClientConnectionTask final : public ConnectionTask {
   ///
   /// IDs are handed out monotonically. A wrapped ID could collide with an
   /// in-flight call and misroute its packets, so the connection is closed
-  /// instead, forcing the peer to re-establish call state. 2^32 calls on one
-  /// connection is not reachable in practice; this exists so that the failure
-  /// mode is a clean reset rather than silent cross-talk.
+  /// with `kDisconnected` instead (and the exhaustion is logged). A new
+  /// connection starts over with fresh call IDs. 2^32 calls on one connection
+  /// is not reachable in practice; this exists so that the failure mode is a
+  /// clean reset rather than silent cross-talk.
   ///
   /// @pre Must be called from this connection's dispatcher thread.
   uint32_t NewCallId();
 
   /// Closes the transport connection, completes every call on it with
-  /// `CANCELLED`, and retires this task.
+  /// `kClosed`, and retires this task.
   ///
-  /// Callable from any thread. The returned future resolves once the
+  /// Callable from any thread. The returned future resolves to `kOk` once the
   /// dispatcher has done all of that, and also if the connection is already
   /// gone, so it never hangs on a connection that failed on its own.
   ControlFuture Close();

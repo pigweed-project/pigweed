@@ -24,7 +24,7 @@
 
 namespace pw::rpc2::internal {
 
-async2::Poll<Result<ConstBuf>> ReadFutureBase::PendRaw(async2::Context& cx) {
+async2::Poll<RpcResult<ConstBuf>> ReadFutureBase::PendRaw(async2::Context& cx) {
   PW_CHECK(is_pendable());
 
   PW_AWAIT(std::optional<ConstBuf> val, receive_fut_, cx);
@@ -41,15 +41,15 @@ async2::Poll<Result<ConstBuf>> ReadFutureBase::PendRaw(async2::Context& cx) {
     // RPC, since a server that half-closes still sends a terminal packet, so
     // it reports the call's final status.
     if (call().role() == EndpointRole::kServer && call().peer_ended_stream()) {
-      return async2::Ready(Result<ConstBuf>(Status::OutOfRange()));
+      return async2::Ready(RpcResult<ConstBuf>(RpcStatus::EndOfStream()));
     }
     if (call().is_completed() && !call().completion_status().ok()) {
-      return async2::Ready(Result<ConstBuf>(call().completion_status()));
+      return async2::Ready(RpcResult<ConstBuf>(call().completion_status()));
     }
-    return async2::Ready(Result<ConstBuf>(Status::OutOfRange()));
+    return async2::Ready(RpcResult<ConstBuf>(RpcStatus::EndOfStream()));
   }
 
-  return async2::Ready(Result<ConstBuf>(std::move(*val)));
+  return async2::Ready(RpcResult<ConstBuf>(std::move(*val)));
 }
 
 void ReadFutureBase::PendAndDeserialize(async2::Context& cx,
@@ -180,7 +180,7 @@ void Call::DetachFromConnection() {
 
 // Only send error packets for calls that have started. Server calls are always
 // started.
-void Call::QueueError(ProtocolStatus error) {
+void Call::QueueError(ProtocolError error) {
   if (connection_task_ != nullptr && HasWriteFlag<kStarted>()) {
     connection_task_->QueueError(call_id_, error);
   }
@@ -192,18 +192,20 @@ void Call::QueueFinish() {
   }
 }
 
-Result<transport::ReserveWriteFuture> Call::ReserveWrite(
+RpcResult<transport::ReserveWriteFuture> Call::ReserveWrite(
     size_t header_size, size_t max_payload_size) {
   if (is_completed()) {
-    return completion_status_.ok() ? Status::FailedPrecondition()
+    return completion_status_.ok() ? RpcStatus::WriteClosed()
                                    : completion_status_;
   }
+  // A call is only detached without completing once both of its directions
+  // have closed, so its write side is closed.
   if (connection_task_ == nullptr) {
-    return Status::Unavailable();
+    return RpcStatus::WriteClosed();
   }
   if (HasWriteFlag<kClosed>() || HasWriteFlag<kTerminalWritePending>() ||
       HasWriteFlag<kWriterDropped>()) {
-    return Status::FailedPrecondition();
+    return RpcStatus::WriteClosed();
   }
   transport::ReliableDatagramSocket& connection =
       connection_task_->connection();
@@ -219,14 +221,14 @@ Result<transport::ReserveWriteFuture> Call::ReserveWrite(
         static_cast<unsigned>(header_size),
         static_cast<unsigned>(max_payload_size),
         static_cast<unsigned>(max_size));
-    return Status::ResourceExhausted();
+    return RpcStatus::MessageTooLarge();
   }
   return connection.ReserveWrite(header_size + max_payload_size);
 }
 
 void Call::QueueWriterDropPacket() {
-  if (HasWriteFlag<kCancelOnWriterDrop>()) {
-    QueueError(ProtocolStatus::kDroppedWithoutResponse);
+  if (HasWriteFlag<kErrorOnWriterDrop>()) {
+    QueueError(ProtocolError::kDroppedWithoutResponse);
   } else {
     QueueFinish();
   }
@@ -261,7 +263,7 @@ void Call::Cancel() {
   }
   // Complete locally too: the peer does not answer a cancel, so a local read
   // would otherwise wait for a response that will never come.
-  Complete(Status::Cancelled());
+  Complete(RpcStatus::Cancelled());
 }
 
 void Call::CloseWriteOnRetire() {
@@ -269,14 +271,11 @@ void Call::CloseWriteOnRetire() {
   if (is_write_closed()) {
     return;
   }
-  const bool single_response = HasWriteFlag<kCancelOnWriterDrop>();
   PW_LOG_WARN(
-      "Call %u: method finished without sending a terminal packet, most "
-      "likely because a %s escaped it; ending the RPC with an error",
-      static_cast<unsigned>(call_id_),
-      single_response ? "UnaryWriter" : "Writer");
-  QueueError(single_response ? ProtocolStatus::kDroppedWithoutResponse
-                             : ProtocolStatus::kCancelled);
+      "Call %u: method returned without finishing; terminating the RPC with an "
+      "error",
+      static_cast<unsigned>(call_id_));
+  QueueError(ProtocolError::kMethodReturnedWithoutFinishing);
   CloseWrite();
 }
 
@@ -346,12 +345,12 @@ void Call::OnPeerStreamEnd() {
   NotifyIfClosed();
 }
 
-void Call::OnError(Status status) {
+void Call::OnError(RpcStatus status) {
   ClearReadFlag<kPeerClosed>();
   Complete(status);
 }
 
-void Call::Complete(Status status) {
+void Call::Complete(RpcStatus status) {
   // The first completion wins: a call that has already failed keeps its
   // original status even if the connection later closes underneath it.
   if (!is_completed()) {

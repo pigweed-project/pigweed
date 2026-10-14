@@ -54,7 +54,7 @@ size_t MessageSize(Size max_message_size) {
 class GeneratedServiceClient : public ServiceClient {
  protected:
   /// Constructs a service client with no connection. Calls on it fail with
-  /// `UNAVAILABLE`.
+  /// `kClosed`.
   constexpr GeneratedServiceClient() = default;
 
   /// Binds `client` to the service with ID `service_id`.
@@ -161,9 +161,13 @@ class GeneratedServiceClient : public ServiceClient {
   ///
   /// Failures are reported through the returned reservation future:
   ///
-  /// * `UNAVAILABLE`: the client is empty or closed.
-  /// * `RESOURCE_EXHAUSTED`: the call could not be allocated, or the request
-  ///   exceeds the transport's maximum write size.
+  /// * `kClosed`: the client is empty or was closed.
+  /// * `kResourceExhausted`: the call could not be allocated.
+  /// * `kMessageTooLarge`: the request exceeds the transport's maximum write
+  ///   size.
+  /// * The reason the connection closed (`kDisconnected` or `kProtocolError`),
+  ///   if it closed on its own, including when the client ran out of call IDs
+  ///   while creating this call.
   ReserveWriteFuture StartCall(uint32_t method_id,
                                MethodType type,
                                const void* request,

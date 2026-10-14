@@ -26,17 +26,21 @@
 #include "pw_assert/check.h"
 #include "pw_bytes/array.h"
 #include "pw_bytes/span.h"
-#include "pw_enum/to_string.h"
 #include "pw_enum/traits.h"
-#include "pw_rpc2/internal/protocol_status.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/internal/packet_type.h"
+#include "pw_rpc2/internal/protocol_error.h"
+#include "pw_rpc2/status.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
 
 namespace internal = ::pw::rpc2::internal;
 
+using ::pw::rpc2::RpcStatus;
+
+using internal::EndpointRole;
 using internal::PacketType;
+using internal::ProtocolError;
 
 using internal::CloseMode;
 
@@ -96,6 +100,9 @@ constexpr bool AccessorsMatchBits() {
         type.is_for(internal::EndpointRole::kClient)) {
       return false;
     }
+    if (type.is_for(type.sender())) {
+      return false;
+    }
     if (type.is_error() != (type.close_mode() == CloseMode::kErrorTerminal)) {
       return false;
     }
@@ -122,12 +129,12 @@ static_assert(internal::OutboundPacket::ClientStreamEnd(1).type().bits() ==
               0x08);
 static_assert(internal::OutboundPacket::ServerFinish(1).type().bits() == 0x11);
 static_assert(internal::OutboundPacket::Response(1).type().bits() == 0x13);
-static_assert(internal::OutboundPacket::ClientError(
-                  1, internal::ProtocolStatus::kCancelled)
+static_assert(internal::OutboundPacket::ClientError(1,
+                                                    ProtocolError::kCancelled)
                   .type()
                   .bits() == 0x18);
-static_assert(internal::OutboundPacket::ServerError(
-                  1, internal::ProtocolStatus::kCancelled)
+static_assert(internal::OutboundPacket::ServerError(1,
+                                                    ProtocolError::kCancelled)
                   .type()
                   .bits() == 0x19);
 
@@ -151,16 +158,14 @@ TEST(PacketTest, EncodeDecodeRequest) {
             payload_bytes.end(),
             buf.data() + packet.payload_offset());
 
-  auto encode_result = packet.Encode(std::move(buf));
-  ASSERT_EQ(encode_result.status(), pw::OkStatus());
-  pw::Buf encoded_buf = std::move(encode_result.value());
+  pw::Buf encoded_buf = packet.Encode(std::move(buf));
+  ASSERT_NE(encoded_buf, nullptr);
   EXPECT_EQ(encoded_buf.size(), total_size);
 
-  auto decode_result =
+  internal::InboundPacket decoded =
       internal::InboundPacket::Decode(pw::ConstBuf(std::move(encoded_buf)));
-  ASSERT_EQ(decode_result.status(), pw::OkStatus());
+  ASSERT_NE(decoded, nullptr);
 
-  internal::InboundPacket decoded = std::move(decode_result.value());
   EXPECT_EQ(decoded.type(),
             (PacketType::
                  Make<flags::kStart, flags::kHasPayload, flags::kStreamEnd>()));
@@ -195,16 +200,14 @@ TEST(PacketTest, EncodeDecodeMessage) {
               payload_bytes.end(),
               buf.data() + packet.payload_offset());
 
-    auto encode_result = packet.Encode(std::move(buf));
-    ASSERT_EQ(encode_result.status(), pw::OkStatus());
-    pw::Buf encoded_buf = std::move(encode_result.value());
+    pw::Buf encoded_buf = packet.Encode(std::move(buf));
+    ASSERT_NE(encoded_buf, nullptr);
     EXPECT_EQ(encoded_buf.size(), total_size);
 
-    auto decode_result =
+    internal::InboundPacket decoded =
         internal::InboundPacket::Decode(pw::ConstBuf(std::move(encoded_buf)));
-    ASSERT_EQ(decode_result.status(), pw::OkStatus());
+    ASSERT_NE(decoded, nullptr);
 
-    internal::InboundPacket decoded = std::move(decode_result.value());
     EXPECT_EQ(decoded.type(), expected_type);
     EXPECT_TRUE(decoded.type().has_payload());
     EXPECT_EQ(decoded.type().close_mode(), CloseMode::kOpen);
@@ -230,17 +233,15 @@ TEST(PacketTest, EncodeDecodeFinish) {
                   PacketType::Make<flags::kServer, flags::kOkTerminal>()}}) {
     auto buf = pw::Buf::Allocate(allocator, total_size);
 
-    auto encode_result = internal::OutboundPacket::Finish(sender, 0x12345678)
-                             .Encode(std::move(buf));
-    ASSERT_EQ(encode_result.status(), pw::OkStatus());
-    pw::Buf encoded_buf = std::move(encode_result.value());
+    pw::Buf encoded_buf = internal::OutboundPacket::Finish(sender, 0x12345678)
+                              .Encode(std::move(buf));
+    ASSERT_NE(encoded_buf, nullptr);
     EXPECT_EQ(encoded_buf.size(), total_size);
 
-    auto decode_result =
+    internal::InboundPacket decoded =
         internal::InboundPacket::Decode(pw::ConstBuf(std::move(encoded_buf)));
-    ASSERT_EQ(decode_result.status(), pw::OkStatus());
+    ASSERT_NE(decoded, nullptr);
 
-    internal::InboundPacket decoded = std::move(decode_result.value());
     EXPECT_EQ(decoded.type(), expected_type);
     EXPECT_NE(decoded.type().close_mode(), CloseMode::kOpen);
     EXPECT_FALSE(decoded.type().has_payload());
@@ -254,44 +255,39 @@ TEST(PacketTest, EncodeDecodeError) {
 
   {
     auto buf = pw::Buf::Allocate(allocator, total_size);
-    auto encode_result = internal::OutboundPacket::ClientError(
-                             0x12345678, internal::ProtocolStatus::kCancelled)
-                             .Encode(std::move(buf));
-    ASSERT_EQ(encode_result.status(), pw::OkStatus());
-    pw::Buf encoded_buf = std::move(encode_result.value());
+    pw::Buf encoded_buf = internal::OutboundPacket::ClientError(
+                              0x12345678, ProtocolError::kCancelled)
+                              .Encode(std::move(buf));
+    ASSERT_NE(encoded_buf, nullptr);
     EXPECT_EQ(encoded_buf.size(), total_size);
 
-    auto decode_result =
+    internal::InboundPacket decoded =
         internal::InboundPacket::Decode(pw::ConstBuf(std::move(encoded_buf)));
-    ASSERT_EQ(decode_result.status(), pw::OkStatus());
+    ASSERT_NE(decoded, nullptr);
 
-    internal::InboundPacket decoded = std::move(decode_result.value());
     EXPECT_EQ(decoded.type(), PacketType::Make<flags::kErrorTerminal>());
     EXPECT_TRUE(decoded.type().is_error());
     EXPECT_EQ(decoded.call_id(), 0x12345678u);
-    EXPECT_EQ(decoded.error(), internal::ProtocolStatus::kCancelled);
+    EXPECT_EQ(decoded.error(), ProtocolError::kCancelled);
   }
 
   {
     auto buf = pw::Buf::Allocate(allocator, total_size);
-    auto encode_result =
-        internal::OutboundPacket::ServerError(
-            0x12345678, internal::ProtocolStatus::kUnknownMethod)
-            .Encode(std::move(buf));
-    ASSERT_EQ(encode_result.status(), pw::OkStatus());
-    pw::Buf encoded_buf = std::move(encode_result.value());
+    pw::Buf encoded_buf = internal::OutboundPacket::ServerError(
+                              0x12345678, ProtocolError::kUnknownMethod)
+                              .Encode(std::move(buf));
+    ASSERT_NE(encoded_buf, nullptr);
     EXPECT_EQ(encoded_buf.size(), total_size);
 
-    auto decode_result =
+    internal::InboundPacket decoded =
         internal::InboundPacket::Decode(pw::ConstBuf(std::move(encoded_buf)));
-    ASSERT_EQ(decode_result.status(), pw::OkStatus());
+    ASSERT_NE(decoded, nullptr);
 
-    internal::InboundPacket decoded = std::move(decode_result.value());
     EXPECT_EQ(decoded.type(),
               (PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
     EXPECT_TRUE(decoded.type().is_error());
     EXPECT_EQ(decoded.call_id(), 0x12345678u);
-    EXPECT_EQ(decoded.error(), internal::ProtocolStatus::kUnknownMethod);
+    EXPECT_EQ(decoded.error(), ProtocolError::kUnknownMethod);
   }
 }
 
@@ -299,9 +295,8 @@ TEST(PacketTest, DecodeBufferTooShortForHeader) {
   pw::allocator::test::AllocatorForTest<256> allocator;
 
   auto buf = pw::Buf::Allocate(allocator, sizeof(internal::PacketHeader) - 1);
-  EXPECT_EQ(
-      internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf))).status(),
-      pw::Status::DataLoss());
+  EXPECT_EQ(internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf))),
+            nullptr);
 }
 
 TEST(PacketTest, DecodeBufferTooShortForType) {
@@ -309,17 +304,15 @@ TEST(PacketTest, DecodeBufferTooShortForType) {
 
   // Long enough for the common header, but not for a request header.
   auto buf = pw::Buf::Allocate(allocator, sizeof(internal::PacketHeader));
-  ASSERT_EQ(internal::OutboundPacket::StartUnary(1, 2, 3)
-                .EncodeHeader(pw::ByteSpan(buf))
-                .status(),
-            pw::Status::ResourceExhausted());
+  ASSERT_FALSE(internal::OutboundPacket::StartUnary(1, 2, 3)
+                   .EncodeHeader(pw::ByteSpan(buf))
+                   .has_value());
   // Write just the type byte by hand, since the header does not fit.
   buf[offsetof(internal::PacketHeader, type)] = static_cast<std::byte>(
       flags::kStart | flags::kHasPayload | flags::kStreamEnd);
 
-  EXPECT_EQ(
-      internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf))).status(),
-      pw::Status::DataLoss());
+  EXPECT_EQ(internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf))),
+            nullptr);
 }
 
 TEST(PacketTest, DecodeUnrecognizedType) {
@@ -338,9 +331,8 @@ TEST(PacketTest, DecodeUnrecognizedType) {
     auto buf = pw::Buf::Allocate(allocator, 32);
     buf[offsetof(internal::PacketHeader, type)] = invalid_type;
 
-    EXPECT_EQ(
-        internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf))).status(),
-        pw::Status::InvalidArgument());
+    EXPECT_EQ(internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf))),
+              nullptr);
   }
 }
 
@@ -349,19 +341,19 @@ TEST(PacketTest, EncodeDecodeStartStream) {
 
   // Extra buffer space is truncated away: an open carries no payload.
   auto buf = pw::Buf::Allocate(allocator, 64);
-  auto encode_result =
+  pw::Buf encoded_buf =
       internal::OutboundPacket::StartStream(1, 2, 3).Encode(std::move(buf));
-  ASSERT_EQ(encode_result.status(), pw::OkStatus());
-  EXPECT_EQ(encode_result->size(), sizeof(internal::RequestWireFormat));
+  ASSERT_NE(encoded_buf, nullptr);
+  EXPECT_EQ(encoded_buf.size(), sizeof(internal::RequestWireFormat));
 
-  auto decode_result = internal::InboundPacket::Decode(
-      pw::ConstBuf(std::move(encode_result.value())));
-  ASSERT_EQ(decode_result.status(), pw::OkStatus());
-  EXPECT_EQ(decode_result->type(), PacketType::Make<flags::kStart>());
-  EXPECT_EQ(decode_result->call_id(), 1u);
-  EXPECT_EQ(decode_result->service_id(), 2u);
-  EXPECT_EQ(decode_result->method_id(), 3u);
-  EXPECT_TRUE(decode_result->payload().empty());
+  auto decode_result =
+      internal::InboundPacket::Decode(pw::ConstBuf(std::move(encoded_buf)));
+  ASSERT_NE(decode_result, nullptr);
+  EXPECT_EQ(decode_result.type(), PacketType::Make<flags::kStart>());
+  EXPECT_EQ(decode_result.call_id(), 1u);
+  EXPECT_EQ(decode_result.service_id(), 2u);
+  EXPECT_EQ(decode_result.method_id(), 3u);
+  EXPECT_TRUE(decode_result.payload().empty());
 }
 
 TEST(PacketTest, DecodeAllStartTypes) {
@@ -383,12 +375,12 @@ TEST(PacketTest, DecodeAllStartTypes) {
 
     auto decode_result =
         internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf)));
-    ASSERT_EQ(decode_result.status(), pw::OkStatus());
-    EXPECT_EQ(decode_result->type(), type);
-    EXPECT_EQ(decode_result->call_id(), 1u);
-    EXPECT_EQ(decode_result->service_id(), 8u);
-    EXPECT_EQ(decode_result->method_id(), 9u);
-    EXPECT_TRUE(decode_result->payload().empty());
+    ASSERT_NE(decode_result, nullptr);
+    EXPECT_EQ(decode_result.type(), type);
+    EXPECT_EQ(decode_result.call_id(), 1u);
+    EXPECT_EQ(decode_result.service_id(), 8u);
+    EXPECT_EQ(decode_result.method_id(), 9u);
+    EXPECT_TRUE(decode_result.payload().empty());
   }
 }
 
@@ -407,9 +399,8 @@ TEST(PacketTest, DecodeRejectsTrailingBytesOnControlPacket) {
     auto buf = pw::Buf::Allocate(allocator, header_size + 1);
     buf[offsetof(internal::PacketHeader, type)] =
         static_cast<std::byte>(type.bits());
-    EXPECT_EQ(
-        internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf))).status(),
-        pw::Status::DataLoss());
+    EXPECT_EQ(internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf))),
+              nullptr);
   }
 }
 
@@ -422,13 +413,12 @@ TEST(PacketTest, EncodeDecodeHandshakePacket) {
 
   internal::HandshakePacket packet(internal::HandshakePacket::Type::kSyn);
 
-  auto encode_result = packet.Encode(std::move(buf));
-  ASSERT_EQ(encode_result.status(), pw::OkStatus());
-  pw::Buf encoded_buf = std::move(encode_result.value());
+  pw::Buf encoded_buf = packet.Encode(std::move(buf));
+  ASSERT_NE(encoded_buf, nullptr);
   EXPECT_EQ(encoded_buf.size(), total_size);
 
   auto decode_result = internal::HandshakePacket::Decode(encoded_buf);
-  ASSERT_EQ(decode_result.status(), pw::OkStatus());
+  ASSERT_TRUE(decode_result.has_value());
 
   internal::HandshakePacket decoded = decode_result.value();
   EXPECT_EQ(decoded.version(), 1u);
@@ -441,18 +431,16 @@ TEST(PacketTest, DecodeZeroLengthPayload) {
 
   auto buf = pw::Buf::Allocate(allocator, total_size);
 
-  auto encode_result =
+  pw::Buf encoded_buf =
       internal::OutboundPacket::StartUnary(0x12345678, 0x100, 0x200)
           .Encode(std::move(buf));
-  ASSERT_EQ(encode_result.status(), pw::OkStatus());
-  pw::Buf encoded_buf = std::move(encode_result.value());
+  ASSERT_NE(encoded_buf, nullptr);
   EXPECT_EQ(encoded_buf.size(), total_size);
 
-  auto decode_result =
+  internal::InboundPacket decoded =
       internal::InboundPacket::Decode(pw::ConstBuf(std::move(encoded_buf)));
-  ASSERT_EQ(decode_result.status(), pw::OkStatus());
+  ASSERT_NE(decoded, nullptr);
 
-  internal::InboundPacket decoded = std::move(decode_result.value());
   EXPECT_EQ(decoded.type(),
             (PacketType::
                  Make<flags::kStart, flags::kHasPayload, flags::kStreamEnd>()));
@@ -465,8 +453,7 @@ TEST(PacketTest, DecodeZeroLengthPayload) {
 TEST(PacketTest, DecodeCorruptHandshakePacket) {
   pw::allocator::test::AllocatorForTest<256> allocator;
   auto buf = pw::Buf::Allocate(allocator, 4);
-  EXPECT_EQ(internal::HandshakePacket::Decode(buf).status(),
-            pw::Status::DataLoss());
+  EXPECT_FALSE(internal::HandshakePacket::Decode(buf).has_value());
 }
 
 TEST(PacketTest, HandshakePacketDefaultsToMaxVersion) {
@@ -477,14 +464,14 @@ TEST(PacketTest, HandshakePacketDefaultsToMaxVersion) {
 
 TEST(PacketTest, EncodeDecodeHandshakePacketVersion) {
   std::byte buffer[internal::HandshakePacket::kWireSizeBytes];
-  PW_TEST_ASSERT_OK(
+  ASSERT_TRUE(
       internal::HandshakePacket(internal::HandshakePacket::Type::kAck, 7)
           .Encode(buffer));
   EXPECT_EQ(buffer[offsetof(internal::HandshakeWireFormat, version)],
             std::byte{7});
 
   auto decoded = internal::HandshakePacket::Decode(buffer);
-  PW_TEST_ASSERT_OK(decoded.status());
+  ASSERT_TRUE(decoded.has_value());
   EXPECT_EQ(decoded->type(), internal::HandshakePacket::Type::kAck);
   EXPECT_EQ(decoded->version(), 7u);
 }
@@ -494,7 +481,7 @@ TEST(PacketTest, DecodeHandshakeIgnoresTrailingAndReservedBytes) {
   // reserved field. Both must be ignored so that negotiation still works.
   std::byte buffer[internal::HandshakePacket::kWireSizeBytes + 5];
   std::fill(std::begin(buffer), std::end(buffer), std::byte{0xee});
-  PW_TEST_ASSERT_OK(
+  ASSERT_TRUE(
       internal::HandshakePacket(internal::HandshakePacket::Type::kSyn, 2)
           .Encode(buffer));
   buffer[offsetof(internal::HandshakeWireFormat, reserved)] = std::byte{0xa5};
@@ -506,7 +493,7 @@ TEST(PacketTest, DecodeHandshakeIgnoresTrailingAndReservedBytes) {
        ++size) {
     auto decoded =
         internal::HandshakePacket::Decode(pw::ConstByteSpan(buffer, size));
-    PW_TEST_ASSERT_OK(decoded.status());
+    ASSERT_TRUE(decoded.has_value());
     EXPECT_EQ(decoded->type(), internal::HandshakePacket::Type::kSyn);
     EXPECT_EQ(decoded->version(), 2u);
   }
@@ -514,33 +501,28 @@ TEST(PacketTest, DecodeHandshakeIgnoresTrailingAndReservedBytes) {
 
 TEST(PacketTest, DecodeHandshakeRejectsTruncatedPacket) {
   std::byte buffer[internal::HandshakePacket::kWireSizeBytes];
-  PW_TEST_ASSERT_OK(
-      internal::HandshakePacket(internal::HandshakePacket::Type::kSyn)
-          .Encode(buffer));
-  EXPECT_EQ(internal::HandshakePacket::Decode(
-                pw::ConstByteSpan(buffer).first(sizeof(buffer) - 1))
-                .status(),
-            pw::Status::DataLoss());
+  ASSERT_TRUE(internal::HandshakePacket(internal::HandshakePacket::Type::kSyn)
+                  .Encode(buffer));
+  EXPECT_FALSE(internal::HandshakePacket::Decode(
+                   pw::ConstByteSpan(buffer).first(sizeof(buffer) - 1))
+                   .has_value());
 }
 
 TEST(PacketTest, DecodeHandshakeRejectsVersionZero) {
   std::byte buffer[internal::HandshakePacket::kWireSizeBytes];
-  PW_TEST_ASSERT_OK(
+  ASSERT_TRUE(
       internal::HandshakePacket(internal::HandshakePacket::Type::kSyn, 0)
           .Encode(buffer));
-  EXPECT_EQ(internal::HandshakePacket::Decode(buffer).status(),
-            pw::Status::DataLoss());
+  EXPECT_FALSE(internal::HandshakePacket::Decode(buffer).has_value());
 }
 
 TEST(PacketTest, DecodeHandshakeRejectsUnknownType) {
   std::byte buffer[internal::HandshakePacket::kWireSizeBytes];
-  PW_TEST_ASSERT_OK(
-      internal::HandshakePacket(internal::HandshakePacket::Type::kSyn)
-          .Encode(buffer));
+  ASSERT_TRUE(internal::HandshakePacket(internal::HandshakePacket::Type::kSyn)
+                  .Encode(buffer));
   for (std::byte type : {std::byte{0}, std::byte{4}, std::byte{0xff}}) {
     buffer[offsetof(internal::HandshakeWireFormat, type)] = type;
-    EXPECT_EQ(internal::HandshakePacket::Decode(buffer).status(),
-              pw::Status::DataLoss());
+    EXPECT_FALSE(internal::HandshakePacket::Decode(buffer).has_value());
   }
 }
 
@@ -558,16 +540,14 @@ TEST(PacketTest, EncodeDecodeResponse) {
             payload_bytes.end(),
             buf.data() + packet.payload_offset());
 
-  auto encode_result = packet.Encode(std::move(buf));
-  ASSERT_EQ(encode_result.status(), pw::OkStatus());
-  pw::Buf encoded_buf = std::move(encode_result.value());
+  pw::Buf encoded_buf = packet.Encode(std::move(buf));
+  ASSERT_NE(encoded_buf, nullptr);
   EXPECT_EQ(encoded_buf.size(), total_size);
 
-  auto decode_result =
+  internal::InboundPacket decoded =
       internal::InboundPacket::Decode(pw::ConstBuf(std::move(encoded_buf)));
-  ASSERT_EQ(decode_result.status(), pw::OkStatus());
+  ASSERT_NE(decoded, nullptr);
 
-  internal::InboundPacket decoded = std::move(decode_result.value());
   EXPECT_EQ(decoded.type(),
             (PacketType::Make<flags::kServer,
                               flags::kHasPayload,
@@ -585,33 +565,33 @@ TEST(PacketTest, EncodeDecodeResponse) {
 TEST(PacketTest, EncodeStreamEndTruncatesExtraBuffer) {
   pw::allocator::test::AllocatorForTest<256> allocator;
   auto buf = pw::Buf::Allocate(allocator, 64);
-  auto encode_result =
+  pw::Buf encoded_buf =
       internal::OutboundPacket::ServerFinish(0x12345678).Encode(std::move(buf));
-  ASSERT_EQ(encode_result.status(), pw::OkStatus());
-  EXPECT_EQ(encode_result->size(), sizeof(internal::PacketHeader));
+  ASSERT_NE(encoded_buf, nullptr);
+  EXPECT_EQ(encoded_buf.size(), sizeof(internal::PacketHeader));
 }
 
 TEST(PacketTest, EncodeErrorTruncatesExtraBuffer) {
   pw::allocator::test::AllocatorForTest<256> allocator;
   auto buf = pw::Buf::Allocate(allocator, 64);
-  auto encode_result = internal::OutboundPacket::ServerError(
-                           0x12345678, internal::ProtocolStatus::kUnknownMethod)
-                           .Encode(std::move(buf));
-  ASSERT_EQ(encode_result.status(), pw::OkStatus());
-  EXPECT_EQ(encode_result->size(), sizeof(internal::ErrorWireFormat));
+  pw::Buf encoded_buf = internal::OutboundPacket::ServerError(
+                            0x12345678, ProtocolError::kUnknownMethod)
+                            .Encode(std::move(buf));
+  ASSERT_NE(encoded_buf, nullptr);
+  EXPECT_EQ(encoded_buf.size(), sizeof(internal::ErrorWireFormat));
 }
 
 TEST(PacketTest, EncodeHandshakeTruncatesExtraBuffer) {
   pw::allocator::test::AllocatorForTest<256> allocator;
   auto buf = pw::Buf::Allocate(allocator, 64);
-  auto encode_result =
+  pw::Buf encoded_buf =
       internal::HandshakePacket(internal::HandshakePacket::Type::kSyn)
           .Encode(std::move(buf));
-  ASSERT_EQ(encode_result.status(), pw::OkStatus());
-  EXPECT_EQ(encode_result->size(), internal::HandshakePacket::kWireSizeBytes);
+  ASSERT_NE(encoded_buf, nullptr);
+  EXPECT_EQ(encoded_buf.size(), internal::HandshakePacket::kWireSizeBytes);
 
-  auto decode_result = internal::HandshakePacket::Decode(*encode_result);
-  ASSERT_EQ(decode_result.status(), pw::OkStatus());
+  auto decode_result = internal::HandshakePacket::Decode(encoded_buf);
+  ASSERT_TRUE(decode_result.has_value());
   EXPECT_EQ(decode_result->type(), internal::HandshakePacket::Type::kSyn);
 }
 
@@ -619,140 +599,15 @@ TEST(PacketTest, EncodeRejectsBufferSmallerThanHeader) {
   pw::allocator::test::AllocatorForTest<256> allocator;
   auto buf =
       pw::Buf::Allocate(allocator, sizeof(internal::RequestWireFormat) - 1);
-  EXPECT_EQ(internal::OutboundPacket::StartUnary(1, 2, 3)
-                .Encode(std::move(buf))
-                .status(),
-            pw::Status::ResourceExhausted());
+  EXPECT_EQ(
+      internal::OutboundPacket::StartUnary(1, 2, 3).Encode(std::move(buf)),
+      nullptr);
 }
 
 TEST(PacketTest, EncodeRejectsEmptyBuffer) {
-  EXPECT_EQ(
-      internal::OutboundPacket::ClientMessage(1).Encode(pw::Buf()).status(),
-      pw::Status::FailedPrecondition());
+  EXPECT_EQ(internal::OutboundPacket::ClientMessage(1).Encode(pw::Buf()),
+            nullptr);
 }
-
-TEST(PacketTest, ProtocolStatusToStatusAndToString) {
-  using internal::ProtocolStatus;
-
-  EXPECT_EQ(ToStatus(ProtocolStatus::kUnknown), pw::Status::Unknown());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kInternal), pw::Status::Internal());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kCancelled), pw::Status::Cancelled());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kReceivedPacketForWrongEndpoint),
-            pw::Status::Unimplemented());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kMethodTypeMismatch),
-            pw::Status::FailedPrecondition());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kDroppedWithoutResponse),
-            pw::Status::Cancelled());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kServiceUnregistered),
-            pw::Status::Cancelled());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kUnknownService), pw::Status::NotFound());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kUnknownMethod), pw::Status::NotFound());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kInvalidRequestPayload),
-            pw::Status::DataLoss());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kFailedToAllocateCall),
-            pw::Status::ResourceExhausted());
-  EXPECT_EQ(
-      ToStatus(ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning),
-      pw::Status::ResourceExhausted());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kOk), pw::Status::Internal());
-  EXPECT_EQ(ToStatus(static_cast<ProtocolStatus>(0x3f)), pw::Status::Unknown());
-
-  EXPECT_EQ(ToStatus(ProtocolStatus::kEndOfStream), pw::Status::OutOfRange());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kClosed), pw::Status::Cancelled());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kSocketClosed), pw::Status::Unavailable());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kConnectFailed),
-            pw::Status::Unavailable());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kHandshakeFailed), pw::Status::DataLoss());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kMalformedPacket), pw::Status::DataLoss());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kCallIdsExhausted),
-            pw::Status::ResourceExhausted());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kWriteClosed),
-            pw::Status::FailedPrecondition());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kMessageTooLarge),
-            pw::Status::ResourceExhausted());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kSerializationFailed),
-            pw::Status::InvalidArgument());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kDeserializationFailed),
-            pw::Status::DataLoss());
-  EXPECT_EQ(ToStatus(ProtocolStatus::kOutOfMemory),
-            pw::Status::ResourceExhausted());
-
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kOk), "OK");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kUnknown), "UNKNOWN");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kInternal), "INTERNAL");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kCancelled), "CANCELLED");
-  EXPECT_STREQ(
-      pw::EnumToString(ProtocolStatus::kReceivedPacketForWrongEndpoint),
-      "RECEIVED_PACKET_FOR_WRONG_ENDPOINT");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kMethodTypeMismatch),
-               "METHOD_TYPE_MISMATCH");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kDroppedWithoutResponse),
-               "DROPPED_WITHOUT_RESPONSE");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kServiceUnregistered),
-               "SERVICE_UNREGISTERED");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kUnknownService),
-               "UNKNOWN_SERVICE");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kUnknownMethod),
-               "UNKNOWN_METHOD");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kInvalidRequestPayload),
-               "INVALID_REQUEST_PAYLOAD");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kFailedToAllocateCall),
-               "FAILED_TO_ALLOCATE_CALL");
-  EXPECT_STREQ(pw::EnumToString(
-                   ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning),
-               "FAILED_TO_ALLOCATE_CALL_RESOURCES_WHILE_RUNNING");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kEndOfStream), "END_OF_STREAM");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kSocketClosed),
-               "SOCKET_CLOSED");
-  EXPECT_STREQ(pw::EnumToString(ProtocolStatus::kOutOfMemory), "OUT_OF_MEMORY");
-}
-
-// Every defined code's top two bits match the band it was declared in.
-static_assert(internal::OriginOf(internal::ProtocolStatus::kOk) ==
-              internal::ProtocolStatusOrigin::kAny);
-static_assert(
-    internal::OriginOf(internal::ProtocolStatus::kMethodTypeMismatch) ==
-    internal::ProtocolStatusOrigin::kAny);
-static_assert(
-    internal::OriginOf(internal::ProtocolStatus::kDroppedWithoutResponse) ==
-    internal::ProtocolStatusOrigin::kServer);
-static_assert(
-    internal::OriginOf(
-        internal::ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning) ==
-    internal::ProtocolStatusOrigin::kServer);
-static_assert(internal::OriginOf(internal::ProtocolStatus::kEndOfStream) ==
-              internal::ProtocolStatusOrigin::kLocal);
-static_assert(internal::OriginOf(internal::ProtocolStatus::kOutOfMemory) ==
-              internal::ProtocolStatusOrigin::kLocal);
-static_assert(internal::OriginOf(internal::ProtocolStatus::kUnknown) ==
-              internal::ProtocolStatusOrigin::kLocal);
-
-static_assert(!internal::IsServerError(internal::ProtocolStatus::kOk));
-static_assert(!internal::IsClientError(internal::ProtocolStatus::kOk));
-
-static_assert(internal::IsServerError(internal::ProtocolStatus::kCancelled));
-static_assert(internal::IsClientError(internal::ProtocolStatus::kCancelled));
-
-static_assert(
-    internal::IsServerError(internal::ProtocolStatus::kDroppedWithoutResponse));
-static_assert(!internal::IsClientError(
-    internal::ProtocolStatus::kDroppedWithoutResponse));
-
-// Undefined codes are never sent.
-static_assert(!internal::IsServerError(static_cast<internal::ProtocolStatus>(
-    static_cast<uint8_t>(internal::ProtocolStatus::kMethodTypeMismatch) + 1)));
-static_assert(!internal::IsClientError(static_cast<internal::ProtocolStatus>(
-    static_cast<uint8_t>(internal::ProtocolStatus::kMethodTypeMismatch) + 1)));
-static_assert(
-    !internal::IsClientError(static_cast<internal::ProtocolStatus>(0x80)));
-
-// Local codes are never sent by either endpoint.
-static_assert(!internal::IsServerError(internal::ProtocolStatus::kEndOfStream));
-static_assert(!internal::IsClientError(internal::ProtocolStatus::kEndOfStream));
-static_assert(!internal::IsServerError(internal::ProtocolStatus::kOutOfMemory));
-static_assert(!internal::IsClientError(internal::ProtocolStatus::kOutOfMemory));
-static_assert(!internal::IsServerError(internal::ProtocolStatus::kUnknown));
-static_assert(!internal::IsClientError(internal::ProtocolStatus::kUnknown));
 
 static_assert(internal::PacketSizeWithoutPayload(
                   PacketType::Make<flags::kStart,
@@ -790,11 +645,11 @@ static_assert(internal::OutboundPacket::ServerMessage(1).payload_offset() ==
 static_assert(internal::OutboundPacket::ClientStreamEnd(1).payload_offset() ==
               5u);
 static_assert(internal::OutboundPacket::ServerFinish(1).payload_offset() == 5u);
-static_assert(internal::OutboundPacket::ClientError(
-                  1, internal::ProtocolStatus::kCancelled)
+static_assert(internal::OutboundPacket::ClientError(1,
+                                                    ProtocolError::kCancelled)
                   .payload_offset() == 6u);
-static_assert(internal::OutboundPacket::ServerError(
-                  1, internal::ProtocolStatus::kCancelled)
+static_assert(internal::OutboundPacket::ServerError(1,
+                                                    ProtocolError::kCancelled)
                   .payload_offset() == 6u);
 
 // A unary request and a streaming open are distinct on the wire, even when the
@@ -807,7 +662,7 @@ TEST(PacketTest, EncodedMessageHeaderLayout) {
 
   auto result =
       internal::OutboundPacket::ClientMessage(0x12345678).EncodeHeader(buffer);
-  ASSERT_EQ(result.status(), pw::OkStatus());
+  ASSERT_TRUE(result.has_value());
   EXPECT_EQ(*result, buffer.size());
 
   // call_id is little endian and comes first, followed by the type byte (0x02).
@@ -821,7 +676,7 @@ TEST(PacketTest, EncodedRequestHeaderLayout) {
   auto result =
       internal::OutboundPacket::StartUnary(0x12345678, 0xabcdef01, 0x23456789)
           .EncodeHeader(buffer);
-  ASSERT_EQ(result.status(), pw::OkStatus());
+  ASSERT_TRUE(result.has_value());
   EXPECT_EQ(*result, buffer.size());
 
   constexpr auto expected = pw::bytes::Array<0x78,
@@ -844,9 +699,9 @@ TEST(PacketTest, EncodedErrorHeaderLayout) {
   std::array<std::byte, sizeof(internal::ErrorWireFormat)> buffer = {};
 
   auto result = internal::OutboundPacket::ServerError(
-                    0x12345678, internal::ProtocolStatus::kUnknownMethod)
+                    0x12345678, ProtocolError::kUnknownMethod)
                     .EncodeHeader(buffer);
-  ASSERT_EQ(result.status(), pw::OkStatus());
+  ASSERT_TRUE(result.has_value());
   EXPECT_EQ(*result, buffer.size());
 
   // 4-byte call_id (LE), 1-byte type (0x19), 1-byte error.
@@ -856,94 +711,89 @@ TEST(PacketTest, EncodedErrorHeaderLayout) {
                        0x34,
                        0x12,
                        0x19,
-                       static_cast<uint8_t>(
-                           internal::ProtocolStatus::kUnknownMethod)>();
+                       static_cast<uint8_t>(ProtocolError::kUnknownMethod)>();
   EXPECT_EQ(buffer, expected);
 
   auto decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
-  ASSERT_EQ(decoded.status(), pw::OkStatus());
-  EXPECT_EQ(decoded->error(), internal::ProtocolStatus::kUnknownMethod);
+  ASSERT_NE(decoded, nullptr);
+  EXPECT_EQ(decoded.error(), ProtocolError::kUnknownMethod);
 }
 
 TEST(PacketTest, DecodeErrorWithTrailingBytesIsMalformed) {
   // An error packet has no payload, so it must end after its 1-byte error.
-  auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x19, 0x43, 0x00>();
-  EXPECT_EQ(
-      internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer)).status(),
-      pw::Status::DataLoss());
+  auto buffer =
+      pw::bytes::Array<0x78,
+                       0x56,
+                       0x34,
+                       0x12,
+                       0x19,
+                       static_cast<uint8_t>(ProtocolError::kUnknownMethod),
+                       0x00>();
+  EXPECT_EQ(internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer)),
+            nullptr);
 }
 
-TEST(PacketTest, DecodeErrorZeroMapsToInternal) {
-  // A wire error of 0 (kOk) is never valid in an error packet.
-  auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x19, 0x00>();
-
-  auto decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
-  ASSERT_EQ(decoded.status(), pw::OkStatus());
-  EXPECT_EQ(decoded->error(), internal::ProtocolStatus::kInternal);
-  EXPECT_EQ(internal::ToStatus(decoded->error()), pw::Status::Internal());
-
-  buffer[4] = static_cast<std::byte>(flags::kErrorTerminal);
-  decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
-  ASSERT_EQ(decoded.status(), pw::OkStatus());
-  EXPECT_EQ(decoded->error(), internal::ProtocolStatus::kInternal);
-  EXPECT_EQ(internal::ToStatus(decoded->error()), pw::Status::Internal());
-}
-
-TEST(PacketTest, DecodeErrorUndefinedLocalOrWrongRoleMapsToUnknown) {
+TEST(PacketTest, DecodeErrorReturnsCodeExactlyAsReceived) {
   constexpr auto kServerError =
       static_cast<std::byte>(flags::kServer | flags::kErrorTerminal);
   constexpr auto kClientError = static_cast<std::byte>(flags::kErrorTerminal);
   auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x19, 0x00>();
 
-  const auto decode_error = [&buffer](std::byte type, uint8_t code) {
-    buffer[4] = type;
-    buffer[5] = std::byte{code};
-    auto decoded =
-        internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
-    EXPECT_EQ(decoded.status(), pw::OkStatus());
-    return decoded.ok() ? decoded->error() : internal::ProtocolStatus::kOk;
+  // Unassigned codes are derived from the last code in each band.
+  constexpr auto kUnassignedEither = static_cast<uint8_t>(
+      static_cast<uint8_t>(ProtocolError::kReceivedPacketForUnknownCall) + 1);
+  constexpr auto kUnassignedServer = static_cast<uint8_t>(
+      static_cast<uint8_t>(ProtocolError::kMethodReturnedWithoutFinishing) + 1);
+  static_assert(
+      !pw::IsValidEnum(static_cast<ProtocolError>(kUnassignedEither)));
+  static_assert(
+      !pw::IsValidEnum(static_cast<ProtocolError>(kUnassignedServer)));
+  constexpr auto kCancelled = static_cast<uint8_t>(ProtocolError::kCancelled);
+  constexpr auto kUnknownMethod =
+      static_cast<uint8_t>(ProtocolError::kUnknownMethod);
+
+  struct Case {
+    std::byte type;
+    uint8_t code;
+    RpcStatus expected;
+  };
+  const Case kCases[] = {
+      // Codes the sender may send.
+      {kServerError, kCancelled, RpcStatus::Cancelled()},
+      {kClientError, kCancelled, RpcStatus::Cancelled()},
+      {kServerError, kUnknownMethod, RpcStatus::Unimplemented()},
+      // Zero is never sent.
+      {kServerError, 0x00, RpcStatus::ProtocolError()},
+      {kClientError, 0x00, RpcStatus::ProtocolError()},
+      // A server-only code from a client.
+      {kClientError, kUnknownMethod, RpcStatus::ProtocolError()},
+      // Unassigned codes.
+      {kServerError, kUnassignedEither, RpcStatus::ProtocolError()},
+      {kClientError, kUnassignedEither, RpcStatus::ProtocolError()},
+      {kServerError, kUnassignedServer, RpcStatus::ProtocolError()},
+      {kServerError, 0x7f, RpcStatus::ProtocolError()},
+      {kClientError, 0x80, RpcStatus::ProtocolError()},
+      // Reserved codes.
+      {kServerError, 0xc0, RpcStatus::ProtocolError()},
+      {kClientError, 0xff, RpcStatus::ProtocolError()},
   };
 
-  // Unassigned codes in each sendable band.
-  const uint8_t kUnassignedEither =
-      static_cast<uint8_t>(internal::ProtocolStatus::kMethodTypeMismatch) + 1;
-  EXPECT_EQ(decode_error(kServerError, kUnassignedEither),
-            internal::ProtocolStatus::kUnknown);
-  EXPECT_EQ(decode_error(kClientError, kUnassignedEither),
-            internal::ProtocolStatus::kUnknown);
-  EXPECT_EQ(decode_error(kServerError, 0x7f),
-            internal::ProtocolStatus::kUnknown);
-  EXPECT_EQ(decode_error(kClientError, 0x80),
-            internal::ProtocolStatus::kUnknown);
+  for (const Case& test : kCases) {
+    buffer[4] = test.type;
+    buffer[5] = std::byte{test.code};
+    auto decoded =
+        internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
+    ASSERT_NE(decoded, nullptr);
 
-  // Local codes are never accepted from the wire.
-  for (auto local : {internal::ProtocolStatus::kEndOfStream,
-                     internal::ProtocolStatus::kSocketClosed,
-                     internal::ProtocolStatus::kOutOfMemory,
-                     internal::ProtocolStatus::kUnknown}) {
-    EXPECT_EQ(decode_error(kServerError, static_cast<uint8_t>(local)),
-              internal::ProtocolStatus::kUnknown);
-    EXPECT_EQ(decode_error(kClientError, static_cast<uint8_t>(local)),
-              internal::ProtocolStatus::kUnknown);
+    // The code is not validated or normalized when decoded.
+    EXPECT_EQ(static_cast<uint8_t>(decoded.error()), test.code);
+    EXPECT_EQ(decoded.type().sender(),
+              test.type == kServerError ? EndpointRole::kServer
+                                        : EndpointRole::kClient);
+    EXPECT_EQ(internal::PeerErrorToRpcStatus(decoded.type().sender(),
+                                             decoded.error()),
+              test.expected);
   }
-  EXPECT_EQ(internal::ToStatus(decode_error(kServerError, 0xc0)),
-            pw::Status::Unknown());
-
-  // Server-only code in a client error packet maps to kUnknown.
-  const auto kUnknownMethod =
-      static_cast<uint8_t>(internal::ProtocolStatus::kUnknownMethod);
-  EXPECT_EQ(decode_error(kClientError, kUnknownMethod),
-            internal::ProtocolStatus::kUnknown);
-  EXPECT_EQ(decode_error(kServerError, kUnknownMethod),
-            internal::ProtocolStatus::kUnknownMethod);
-
-  // Codes either endpoint may send are accepted from both.
-  const auto kCancelled =
-      static_cast<uint8_t>(internal::ProtocolStatus::kCancelled);
-  EXPECT_EQ(decode_error(kClientError, kCancelled),
-            internal::ProtocolStatus::kCancelled);
-  EXPECT_EQ(decode_error(kServerError, kCancelled),
-            internal::ProtocolStatus::kCancelled);
 }
 
 TEST(PacketTest, EncodeHeaderReportsTotalSizeWithoutWritingPayloadLength) {
@@ -953,7 +803,7 @@ TEST(PacketTest, EncodeHeaderReportsTotalSizeWithoutWritingPayloadLength) {
   auto buffer = pw::bytes::Initialized<64>(buffer_init);
 
   auto result = internal::OutboundPacket::Response(1).EncodeHeader(buffer, 10);
-  ASSERT_EQ(result.status(), pw::OkStatus());
+  ASSERT_TRUE(result.has_value());
   EXPECT_EQ(*result, sizeof(internal::PacketHeader) + 10u);
 
   // Nothing past the header was modified.
@@ -965,14 +815,12 @@ TEST(PacketTest, EncodeHeaderReportsTotalSizeWithoutWritingPayloadLength) {
 TEST(PacketTest, EncodeHeaderRejectsBufferSmallerThanHeaderPlusPayload) {
   std::array<std::byte, sizeof(internal::PacketHeader) + 4> buffer = {};
 
-  EXPECT_EQ(internal::OutboundPacket::ClientMessage(1)
-                .EncodeHeader(buffer, 5)
-                .status(),
-            pw::Status::ResourceExhausted());
-  EXPECT_EQ(internal::OutboundPacket::ClientMessage(1)
-                .EncodeHeader(buffer, 4)
-                .status(),
-            pw::OkStatus());
+  EXPECT_FALSE(internal::OutboundPacket::ClientMessage(1)
+                   .EncodeHeader(buffer, 5)
+                   .has_value());
+  EXPECT_TRUE(internal::OutboundPacket::ClientMessage(1)
+                  .EncodeHeader(buffer, 4)
+                  .has_value());
 }
 
 TEST(PacketTest, DecodedPayloadIsEverythingAfterTheHeader) {
@@ -986,14 +834,13 @@ TEST(PacketTest, DecodedPayloadIsEverythingAfterTheHeader) {
 
   auto encode_result = internal::OutboundPacket::ClientMessage(42).EncodeHeader(
       pw::ByteSpan(buf));
-  ASSERT_EQ(encode_result.status(), pw::OkStatus());
+  ASSERT_TRUE(encode_result.has_value());
   ASSERT_EQ(*encode_result, sizeof(internal::PacketHeader));
 
-  auto decode_result =
+  internal::InboundPacket decoded =
       internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf)));
-  ASSERT_EQ(decode_result.status(), pw::OkStatus());
+  ASSERT_NE(decoded, nullptr);
 
-  internal::InboundPacket decoded = std::move(decode_result.value());
   EXPECT_EQ(decoded.type(), PacketType::Make<flags::kHasPayload>());
   EXPECT_EQ(decoded.call_id(), 42u);
   EXPECT_EQ(decoded.payload().size(), kTrailingBytes);

@@ -113,7 +113,7 @@ type:
 
 * ``UnaryWriter::Finish()`` sends the response.
 * ``Writer::Write()`` sends a message, and ``Writer::Finish()`` ends the stream.
-* ``Reader::Read()`` receives the next message, or ``OUT_OF_RANGE`` once the
+* ``Reader::Read()`` receives the next message, or ``kEndOfStream`` once the
   client has finished its stream.
 
 .. _module-pw_rpc2-examples-implement-lifetime:
@@ -210,18 +210,20 @@ future that starts the RPC and resolves to:
    * - Type
      - Result
    * - Unary
-     - ``pw::Result<Response>``
+     - ``pw::rpc2::RpcResult<Response>``
    * - Server streaming
-     - ``pw::Result<pw::rpc2::Reader<Response>>``
+     - ``pw::rpc2::RpcResult<pw::rpc2::Reader<Response>>``
    * - Client streaming
-     - ``pw::Result<pw::rpc2::ClientStreamCall<Request, Response>>``, which
-       provides a ``writer()`` for the requests and a ``response()`` future
+     - ``pw::rpc2::RpcResult<pw::rpc2::ClientStreamCall<Request, Response>>``,
+       which provides a ``writer()`` for the requests and a ``response()``
+       future
    * - Bidirectional streaming
-     - ``pw::Result<pw::rpc2::BidiStreamCall<Request, Response>>``, which
-       provides a ``writer()`` and a ``reader()``
+     - ``pw::rpc2::RpcResult<pw::rpc2::BidiStreamCall<Request, Response>>``,
+       which provides a ``writer()`` and a ``reader()``
 
 ``Writer::Finish()`` ends the client's stream. ``Reader::Read()`` resolves to
-``OUT_OF_RANGE`` once the server has finished its stream.
+``kEndOfStream`` once the server has finished its stream. See
+:ref:`module-pw_rpc2-errors` for what each status code means.
 
 .. _module-pw_rpc2-examples-call-coro:
 

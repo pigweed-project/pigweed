@@ -52,22 +52,23 @@ class ReadTestTask : public async2::Task {
       result_ = std::move(**poll);
     } else if (call_.role() == EndpointRole::kServer &&
                call_.peer_ended_stream()) {
-      result_ = Status::OutOfRange();
+      result_ = RpcStatus::EndOfStream();
     } else {
-      Status status = call_.completion_status();
-      result_ = (call_.is_completed() && !status.ok()) ? status
-                                                       : Status::OutOfRange();
+      RpcStatus status = call_.completion_status();
+      result_ = (call_.is_completed() && !status.ok())
+                    ? status
+                    : RpcStatus::EndOfStream();
     }
     return async2::Ready();
   }
 
-  const std::optional<Result<ConstBuf>>& result() const { return result_; }
+  const std::optional<RpcResult<ConstBuf>>& result() const { return result_; }
 
  private:
   async2::ReceiveFuture<ConstBuf> receive_fut_;
   Call& call_;
   bool released_ = false;
-  std::optional<Result<ConstBuf>> result_;
+  std::optional<RpcResult<ConstBuf>> result_;
 };
 
 ConstBuf MakePayload(Allocator& alloc, size_t size, std::byte val) {
@@ -188,7 +189,7 @@ TEST(CallTest, DeferredResourceResetPostCompletion) {
   call->OnMessage(MakePayload(allocator, 4, std::byte(0x11)));
 
   // Wire completion occurs
-  call->Complete(OkStatus());
+  call->Complete(RpcStatus());
   EXPECT_TRUE(call->is_completed());
 
   // Buffered message can still be drained cleanly
@@ -199,18 +200,18 @@ TEST(CallTest, DeferredResourceResetPostCompletion) {
   EXPECT_EQ(task1.result()->value().size(), 4u);
   task1.Deregister();
 
-  // Next read returns completion status (OutOfRange)
+  // Next read reports the end of the stream (kEndOfStream)
   ReadTestTask task2(*call);
   dispatcher.Post(task2);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(task2.result().has_value());
-  EXPECT_EQ(task2.result()->status(), Status::OutOfRange());
+  EXPECT_EQ(task2.result()->status(), RpcStatus::EndOfStream());
   task2.Deregister();
 
-  // Write on OkStatus-completed call fails with FailedPrecondition
+  // Write on a call that completed with kOk fails with kWriteClosed
   call->CloseWrite();
   EXPECT_TRUE(call->is_write_closed());
-  EXPECT_EQ(call->ReserveWrite(0, 8).status(), Status::FailedPrecondition());
+  EXPECT_EQ(call->ReserveWrite(0, 8).status(), RpcStatus::WriteClosed());
   connection_task->Deregister();
 }
 
@@ -226,12 +227,12 @@ TEST(CallTest, ReserveWriteReturnsCompletionErrorWhenCompletedWithError) {
   ASSERT_NE(call, nullptr);
 
   call->CloseWrite();
-  call->Complete(Status::Aborted());
-  EXPECT_EQ(call->ReserveWrite(0, 8).status(), Status::Aborted());
+  call->Complete(RpcStatus::ProtocolError());
+  EXPECT_EQ(call->ReserveWrite(0, 8).status(), RpcStatus::ProtocolError());
   connection_task->Deregister();
 }
 
-TEST(CallTest, ReserveWriteReturnsFailedPreconditionWhenOnlyWriteClosed) {
+TEST(CallTest, ReserveWriteReturnsWriteClosedWhenOnlyWriteClosed) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -245,7 +246,7 @@ TEST(CallTest, ReserveWriteReturnsFailedPreconditionWhenOnlyWriteClosed) {
   call->CloseWrite();
   EXPECT_TRUE(call->is_write_closed());
   EXPECT_FALSE(call->is_completed());
-  EXPECT_EQ(call->ReserveWrite(0, 8).status(), Status::FailedPrecondition());
+  EXPECT_EQ(call->ReserveWrite(0, 8).status(), RpcStatus::WriteClosed());
   connection_task->Deregister();
 }
 
@@ -262,15 +263,15 @@ TEST(CallTest, ReserveWriteRejectsWritesLargerThanTransportLimit) {
   ASSERT_NE(call, nullptr);
 
   EXPECT_EQ(call->ReserveWrite(0, max_size + 1).status(),
-            Status::ResourceExhausted());
+            RpcStatus::MessageTooLarge());
   EXPECT_FALSE(call->is_write_closed());
   PW_TEST_EXPECT_OK(call->ReserveWrite(0, max_size).status());
 
   // Sizes whose sum would overflow are rejected rather than wrapping around.
   EXPECT_EQ(call->ReserveWrite(1, std::numeric_limits<size_t>::max()).status(),
-            Status::ResourceExhausted());
+            RpcStatus::MessageTooLarge());
   EXPECT_EQ(call->ReserveWrite(max_size + 1, 0).status(),
-            Status::ResourceExhausted());
+            RpcStatus::MessageTooLarge());
   connection_task->Deregister();
 }
 
@@ -282,17 +283,17 @@ TEST(CallTest, CallCreatedOnClosedConnectionUsesConnectionCloseStatus) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  connection_task->CloseConnection(Status::Aborted());
+  connection_task->CloseConnection(RpcStatus::ProtocolError());
   EXPECT_TRUE(connection_task->is_closed());
 
   auto call = ClientCall::Create(*connection_task, 302u, allocator);
   ASSERT_NE(call, nullptr);
   EXPECT_TRUE(call->is_completed());
-  EXPECT_EQ(call->completion_status(), Status::Aborted());
+  EXPECT_EQ(call->completion_status(), RpcStatus::ProtocolError());
   connection_task->Deregister();
 }
 
-TEST(CallTest, FinishFollowedByConnectionClosePreservesOutOfRange) {
+TEST(CallTest, FinishFollowedByConnectionClosePreservesEndOfStream) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -309,10 +310,10 @@ TEST(CallTest, FinishFollowedByConnectionClosePreservesOutOfRange) {
   reserve.Deregister();
 
   call->OnMessage(MakePayload(allocator, 3, std::byte(0x42)));
-  call->Complete(OkStatus());
+  call->Complete(RpcStatus());
 
   // Connection closes before the caller drains the final message and EOF.
-  connection_task->CloseConnection(Status::Cancelled());
+  connection_task->CloseConnection(RpcStatus::Closed());
 
   ReadTestTask first_read(*call);
   dispatcher.Post(first_read);
@@ -326,7 +327,7 @@ TEST(CallTest, FinishFollowedByConnectionClosePreservesOutOfRange) {
   dispatcher.Post(eof_read);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(eof_read.result().has_value());
-  EXPECT_EQ(eof_read.result()->status(), Status::OutOfRange());
+  EXPECT_EQ(eof_read.result()->status(), RpcStatus::EndOfStream());
   eof_read.Deregister();
 
   connection_task->Deregister();
@@ -368,10 +369,10 @@ TEST(CallTest, PeerStreamEndKeepsClientReaderOpenUntilTerminal) {
   dispatcher.RunUntilStalled();
   EXPECT_FALSE(final_read.result().has_value());
 
-  call->Complete(Status::Aborted());
+  call->Complete(RpcStatus::ProtocolError());
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(final_read.result().has_value());
-  EXPECT_EQ(final_read.result()->status(), Status::Aborted());
+  EXPECT_EQ(final_read.result()->status(), RpcStatus::ProtocolError());
   final_read.Deregister();
 
   connection_task->Deregister();
@@ -390,13 +391,13 @@ TEST(CallTest, PeerStreamEndThenConnectionCloseReportsCloseStatus) {
 
   call->OnPeerStreamEnd();
   // The RPC never finished, so the reader reports why rather than EOF.
-  connection_task->CloseConnection(Status::Cancelled());
+  connection_task->CloseConnection(RpcStatus::Closed());
 
   ReadTestTask read(*call);
   dispatcher.Post(read);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read.result().has_value());
-  EXPECT_EQ(read.result()->status(), Status::Cancelled());
+  EXPECT_EQ(read.result()->status(), RpcStatus::Closed());
   read.Deregister();
 
   connection_task->Deregister();
@@ -501,7 +502,7 @@ TEST(CallTest, CallOutlivesItsConnection) {
 
   EXPECT_FALSE(call->is_attached());
   EXPECT_TRUE(call->is_completed());
-  EXPECT_EQ(call->completion_status(), Status::Cancelled());
+  EXPECT_EQ(call->completion_status(), RpcStatus::Closed());
 }
 
 }  // namespace

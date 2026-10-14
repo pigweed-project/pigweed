@@ -74,11 +74,11 @@ class WriteTestTask : public async2::Task {
     return async2::Ready();
   }
 
-  const std::optional<Status>& result() const { return result_; }
+  const std::optional<RpcStatus>& result() const { return result_; }
 
  private:
   Fut fut_;
-  std::optional<Status> result_;
+  std::optional<RpcStatus> result_;
 };
 
 template <typename Fut>
@@ -98,11 +98,11 @@ class ReadTestTask : public async2::Task {
     return async2::Ready();
   }
 
-  const std::optional<Result<ConstBuf>>& result() const { return result_; }
+  const std::optional<RpcResult<ConstBuf>>& result() const { return result_; }
 
  private:
   Fut fut_;
-  std::optional<Result<ConstBuf>> result_;
+  std::optional<RpcResult<ConstBuf>> result_;
 };
 
 template <typename Fut>
@@ -122,14 +122,14 @@ class ReserveTestTask : public async2::Task {
     return async2::Ready();
   }
 
-  std::optional<Result<WriteReservation>>& result() { return result_; }
-  const std::optional<Result<WriteReservation>>& result() const {
+  std::optional<RpcResult<WriteReservation>>& result() { return result_; }
+  const std::optional<RpcResult<WriteReservation>>& result() const {
     return result_;
   }
 
  private:
   Fut fut_;
-  std::optional<Result<WriteReservation>> result_;
+  std::optional<RpcResult<WriteReservation>> result_;
 };
 
 template <typename Fut>
@@ -175,14 +175,14 @@ TEST_F(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
 
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(),
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(),
             (internal::PacketType::Make<flags::kServer,
                                         flags::kHasPayload,
                                         flags::kOkTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 50u);
-  EXPECT_EQ(decode_res->payload().size(), 10u);
-  EXPECT_EQ(std::memcmp(decode_res->payload().data(), "unary resp", 10), 0);
+  EXPECT_EQ(decode_res.call_id(), 50u);
+  EXPECT_EQ(decode_res.payload().size(), 10u);
+  EXPECT_EQ(std::memcmp(decode_res.payload().data(), "unary resp", 10), 0);
 
   task.Deregister();
 }
@@ -207,10 +207,10 @@ TEST_F(ServerCallTest, UnaryWriterFinishCopyReleasesOwnedResponseWhenSent) {
 
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->call_id(), 51u);
-  ASSERT_EQ(decode_res->payload().size(), 5u);
-  EXPECT_EQ(std::memcmp(decode_res->payload().data(), "owned", 5), 0);
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.call_id(), 51u);
+  ASSERT_EQ(decode_res.payload().size(), 5u);
+  EXPECT_EQ(std::memcmp(decode_res.payload().data(), "owned", 5), 0);
 
   task.Deregister();
 }
@@ -240,10 +240,10 @@ TEST_F(ServerCallTest, TypedUnaryWriterFinishCopySendsBytes) {
 
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->call_id(), 52u);
-  ASSERT_EQ(decode_res->payload().size(), 5u);
-  EXPECT_EQ(std::memcmp(decode_res->payload().data(), "typed", 5), 0);
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.call_id(), 52u);
+  ASSERT_EQ(decode_res.payload().size(), 5u);
+  EXPECT_EQ(std::memcmp(decode_res.payload().data(), "typed", 5), 0);
 
   task.Deregister();
 }
@@ -261,7 +261,7 @@ TEST_F(ServerCallTest, UnaryWriterReserveThatOverflowsFails) {
   dispatcher_.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), Status::ResourceExhausted());
+  EXPECT_EQ(task.result()->status(), RpcStatus::MessageTooLarge());
   EXPECT_EQ(raw_conn_->commit_count(), 0u);
 
   task.Deregister();
@@ -281,8 +281,8 @@ TEST_F(ServerCallTest, ServerStreamingWriterWriteAndFinish) {
   PW_TEST_EXPECT_OK((*task1.result())->Commit(7));
 
   auto decode1 = internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode1.ok());
-  EXPECT_EQ(decode1->type(),
+  ASSERT_NE(decode1, nullptr);
+  EXPECT_EQ(decode1.type(),
             (internal::PacketType::Make<flags::kServer, flags::kHasPayload>()));
 
   // Finish stream
@@ -292,8 +292,8 @@ TEST_F(ServerCallTest, ServerStreamingWriterWriteAndFinish) {
   ASSERT_TRUE(task2.result().has_value() && task2.result()->ok());
 
   auto decode2 = internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode2.ok());
-  EXPECT_EQ(decode2->type(),
+  ASSERT_NE(decode2, nullptr);
+  EXPECT_EQ(decode2.type(),
             (internal::PacketType::Make<flags::kServer, flags::kOkTerminal>()));
 
   task1.Deregister();
@@ -341,12 +341,12 @@ TEST_F(ServerCallTest, ClientStreamingReadsRequestsThenFinishes) {
 
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(),
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(),
             (internal::PacketType::Make<flags::kServer,
                                         flags::kHasPayload,
                                         flags::kOkTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 110u);
+  EXPECT_EQ(decode_res.call_id(), 110u);
 
   finish_task.Deregister();
 }
@@ -388,11 +388,11 @@ TEST_F(ServerCallTest, UnaryWriterCancel) {
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
+  ASSERT_NE(decode_res, nullptr);
   EXPECT_EQ(
-      decode_res->type(),
+      decode_res.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_res->error(), internal::ProtocolStatus::kCancelled);
+  EXPECT_EQ(decode_res.error(), internal::ProtocolError::kCancelled);
 }
 
 TEST_F(ServerCallTest, RAIICancellationOnDestruction) {
@@ -413,13 +413,13 @@ TEST_F(ServerCallTest, RAIICancellationOnDestruction) {
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
+  ASSERT_NE(decode_res, nullptr);
   EXPECT_EQ(
-      decode_res->type(),
+      decode_res.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 90u);
-  EXPECT_EQ(decode_res->error(),
-            internal::ProtocolStatus::kDroppedWithoutResponse);
+  EXPECT_EQ(decode_res.call_id(), 90u);
+  EXPECT_EQ(decode_res.error(),
+            internal::ProtocolError::kDroppedWithoutResponse);
 }
 
 TEST_F(ServerCallTest, ZeroCopyReserveFinish) {
@@ -443,13 +443,13 @@ TEST_F(ServerCallTest, ZeroCopyReserveFinish) {
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(),
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(),
             (internal::PacketType::Make<flags::kServer,
                                         flags::kHasPayload,
                                         flags::kOkTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 100u);
-  EXPECT_EQ(decode_res->payload().size(), 12u);
+  EXPECT_EQ(decode_res.call_id(), 100u);
+  EXPECT_EQ(decode_res.payload().size(), 12u);
 
   task.Deregister();
 }
@@ -475,13 +475,13 @@ TEST_F(ServerCallTest, DroppedUnaryFinishFutureFallsBackToRAIICancellation) {
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
+  ASSERT_NE(decode_res, nullptr);
   EXPECT_EQ(
-      decode_res->type(),
+      decode_res.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 101u);
-  EXPECT_EQ(decode_res->error(),
-            internal::ProtocolStatus::kDroppedWithoutResponse);
+  EXPECT_EQ(decode_res.call_id(), 101u);
+  EXPECT_EQ(decode_res.error(),
+            internal::ProtocolError::kDroppedWithoutResponse);
 }
 
 TEST_F(ServerCallTest, DroppedUnaryReservationReopensWriterWhileAlive) {
@@ -509,12 +509,12 @@ TEST_F(ServerCallTest, DroppedUnaryReservationReopensWriterWhileAlive) {
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
+  ASSERT_NE(decode_res, nullptr);
   EXPECT_EQ(
-      decode_res->type(),
+      decode_res.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 102u);
-  EXPECT_EQ(decode_res->error(), internal::ProtocolStatus::kCancelled);
+  EXPECT_EQ(decode_res.call_id(), 102u);
+  EXPECT_EQ(decode_res.error(), internal::ProtocolError::kCancelled);
 }
 
 TEST_F(ServerCallTest, DroppedWriterFinishFutureFallsBackToRAIIStreamEnd) {
@@ -535,10 +535,10 @@ TEST_F(ServerCallTest, DroppedWriterFinishFutureFallsBackToRAIIStreamEnd) {
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(),
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(),
             (internal::PacketType::Make<flags::kServer, flags::kOkTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 103u);
+  EXPECT_EQ(decode_res.call_id(), 103u);
 }
 
 }  // namespace

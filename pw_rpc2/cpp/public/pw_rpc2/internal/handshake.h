@@ -22,9 +22,8 @@
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_buf/buf.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/packet.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/status.h"
 #include "pw_transport/socket.h"
 
 namespace pw::rpc2::internal {
@@ -54,10 +53,15 @@ class HandshakeFutureBase {
                       HandshakeInfo local_info)
       : connection_(std::move(connection)), handshake_info_(local_info) {}
 
-  async2::Poll<Status> PendWritePacket(async2::Context& cx,
-                                       HandshakePacket::Type type);
+  /// Resolves to `kOk` once the packet is committed, or `kDisconnected` if the
+  /// connection closed.
+  async2::Poll<RpcStatus> PendWritePacket(async2::Context& cx,
+                                          HandshakePacket::Type type);
 
-  async2::Poll<Result<HandshakePacket>> PendReadPacket(
+  /// Resolves to the packet, `kDisconnected` if the connection closed, or
+  /// `kProtocolError` if the packet is malformed or not of `expected_type`.
+  /// Protocol errors are logged.
+  async2::Poll<RpcResult<HandshakePacket>> PendReadPacket(
       async2::Context& cx, HandshakePacket::Type expected_type);
 
   void Cancel();
@@ -86,9 +90,16 @@ enum class HandshakeStage : uint8_t {
 /// futures. Both sides own their connection, cancel it if destroyed before the
 /// handshake completes, and are complete exactly when `stage_` is
 /// `kCompleted`; only the `Pend()` state machine differs.
+///
+/// Both resolve to the established connection, or to:
+///
+/// * `kProtocolError`: the peer sent a malformed or unexpected handshake
+///   packet, or a protocol version that is incompatible with the negotiated
+///   one. The reason is logged.
+/// * `kDisconnected`: the connection closed before the handshake completed.
 class HandshakeFutureImpl : public HandshakeFutureBase {
  public:
-  using value_type = Result<EstablishedConnection>;
+  using value_type = RpcResult<EstablishedConnection>;
   using Stage = HandshakeStage;
 
   HandshakeFutureImpl(const HandshakeFutureImpl&) = delete;
@@ -135,11 +146,11 @@ class HandshakeFutureImpl : public HandshakeFutureBase {
       : HandshakeFutureBase(std::move(connection), local_info),
         stage_(Stage::kSyn) {}
 
-  async2::Poll<Result<EstablishedConnection>> Fail(Status status);
+  async2::Poll<RpcResult<EstablishedConnection>> Fail(RpcStatus status);
 
-  async2::Poll<Result<EstablishedConnection>> Complete() {
+  async2::Poll<RpcResult<EstablishedConnection>> Complete() {
     stage_ = Stage::kCompleted;
-    return async2::Ready(Result<EstablishedConnection>(
+    return async2::Ready(RpcResult<EstablishedConnection>(
         EstablishedConnection{std::move(connection_), handshake_info_}));
   }
 
@@ -160,7 +171,7 @@ class HandshakeFutureImpl : public HandshakeFutureBase {
 ///
 /// A responder that supports a newer version than the initiator negotiates
 /// down to the initiator's version, so a SYN-ACK with a higher version is a
-/// protocol violation and fails the handshake with `DATA_LOSS`.
+/// protocol violation and fails the handshake with `kProtocolError`.
 class InitiatorHandshakeFuture final : public HandshakeFutureImpl {
  public:
   constexpr InitiatorHandshakeFuture() = default;
@@ -174,7 +185,7 @@ class InitiatorHandshakeFuture final : public HandshakeFutureImpl {
   InitiatorHandshakeFuture& operator=(InitiatorHandshakeFuture&&) noexcept =
       default;
 
-  async2::Poll<Result<EstablishedConnection>> Pend(async2::Context& cx);
+  async2::Poll<RpcResult<EstablishedConnection>> Pend(async2::Context& cx);
 };
 
 static_assert(async2::Future<InitiatorHandshakeFuture>);
@@ -203,7 +214,7 @@ class ResponderHandshakeFuture final : public HandshakeFutureImpl {
   ResponderHandshakeFuture& operator=(ResponderHandshakeFuture&&) noexcept =
       default;
 
-  async2::Poll<Result<EstablishedConnection>> Pend(async2::Context& cx);
+  async2::Poll<RpcResult<EstablishedConnection>> Pend(async2::Context& cx);
 };
 
 static_assert(async2::Future<ResponderHandshakeFuture>);

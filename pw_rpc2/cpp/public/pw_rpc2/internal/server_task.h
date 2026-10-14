@@ -28,7 +28,7 @@
 #include "pw_rpc2/internal/control_future.h"
 #include "pw_rpc2/internal/server_connection_task.h"
 #include "pw_rpc2/service.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/status.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_transport/transport.h"
 
@@ -140,16 +140,19 @@ class ServerTask final : public async2::Task {
 
   // --- Control plane. Callable from any thread. ---
 
-  /// Queues `service` for registration. Returns `FAILED_PRECONDITION` if the
+  /// Queues `service` for registration. Returns `kOk`, or `kClosed` if the
   /// server is closing or closed. Registering a duplicate service ID is fatal.
-  Status RegisterService(Service& service);
+  RpcStatus RegisterService(Service& service);
 
+  /// Resolves to `kOk`, `kClosed` if the server is closing or closed, or
+  /// `kResourceExhausted` if the listener's record could not be allocated.
   ControlFuture RegisterListener(transport::ReliableDatagramListener& listener);
-  Status RegisterListenerBlocking(
+  RpcStatus RegisterListenerBlocking(
       transport::ReliableDatagramListener& listener) {
     return BlockOn(RegisterListener(listener));
   }
 
+  /// Resolves to `kOk` once the server is closed.
   ControlFuture Close();
   void CloseBlocking() { BlockOn(Close()).IgnoreError(); }
 
@@ -206,7 +209,7 @@ class ServerTask final : public async2::Task {
   /// Runs `future` to completion on the dispatcher in a `FutureTask`, blocking
   /// the calling thread, and returns its status. Takes the status directly if
   /// the future was already resolved on the calling thread.
-  Status BlockOn(ControlFuture&& future);
+  RpcStatus BlockOn(ControlFuture&& future);
 
   /// Moves queued services into the registry, or drops them if `closing`.
   /// Registering a duplicate service ID is fatal here.

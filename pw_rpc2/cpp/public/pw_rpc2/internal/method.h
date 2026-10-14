@@ -20,7 +20,7 @@
 
 #include "pw_assert/assert.h"
 #include "pw_buf/buf.h"
-#include "pw_rpc2/internal/protocol_status.h"
+#include "pw_rpc2/internal/protocol_error.h"
 #include "pw_rpc2/method_type.h"
 
 namespace pw::rpc2 {
@@ -34,9 +34,12 @@ class ServerCall;
 /// Descriptor for a registered RPC method in a service's method table.
 class Method {
  public:
-  using InvokeFn = ProtocolStatus (*)(Service& service,
-                                      ServerCall& call,
-                                      ConstBuf&& request_payload);
+  /// Invokes the method on `call`. Returns `ProtocolError::kNone` if the
+  /// method is running, or the error to send to the client if it could not be
+  /// started.
+  using InvokeFn = ProtocolError (*)(Service& service,
+                                     ServerCall& call,
+                                     ConstBuf&& request_payload);
 
   /// Maximum supported size in bytes for a method's future storage.
   ///
@@ -64,9 +67,9 @@ class Method {
   constexpr MethodType type() const { return type_; }
   constexpr size_t future_storage_size() const { return future_storage_size_; }
 
-  ProtocolStatus Invoke(Service& service,
-                        ServerCall& call,
-                        ConstBuf&& request_payload) const {
+  ProtocolError Invoke(Service& service,
+                       ServerCall& call,
+                       ConstBuf&& request_payload) const {
     return invoke_(service, call, std::move(request_payload));
   }
 

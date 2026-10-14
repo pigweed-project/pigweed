@@ -40,12 +40,11 @@
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_log/log.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/client.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/service_client.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status.h"
 #include "pw_transport/framed_tcp.h"
 #include "pw_transport/socket.h"
 
@@ -71,7 +70,7 @@ using EchoClient = examples::pw_rpc2::pwpb::Echo::Client;
 // server finishes its stream.
 class RepeatCall {
  public:
-  using value_type = pw::Status;
+  using value_type = pw::rpc2::RpcStatus;
 
   RepeatCall() = default;
   explicit RepeatCall(EchoClient client)
@@ -82,14 +81,14 @@ class RepeatCall {
   }
   bool is_complete() const { return state_ == State::kDone; }
 
-  Poll<pw::Status> Pend(Context& cx) {
+  Poll<pw::rpc2::RpcStatus> Pend(Context& cx) {
     while (true) {
       switch (state_) {
         case State::kCalling: {
           if (!call_future_.is_pendable()) {
             call_future_ = client_.Repeat({.msg = "ping", .count = 3});
           }
-          PW_AWAIT(pw::Result<pw::rpc2::Reader<EchoMessage>> reader,
+          PW_AWAIT(pw::rpc2::RpcResult<pw::rpc2::Reader<EchoMessage>> reader,
                    call_future_,
                    cx);
           if (!reader.ok()) {
@@ -104,9 +103,10 @@ class RepeatCall {
           if (!read_future_.is_pendable()) {
             read_future_ = reader_.Read();
           }
-          PW_AWAIT(pw::Result<EchoMessage> response, read_future_, cx);
-          if (response.status().IsOutOfRange()) {
-            return Complete(pw::OkStatus());  // The server finished its stream.
+          PW_AWAIT(pw::rpc2::RpcResult<EchoMessage> response, read_future_, cx);
+          if (response.status().IsEndOfStream()) {
+            return Complete(
+                pw::rpc2::RpcStatus());  // The server finished its stream.
           }
           if (!response.ok()) {
             return Complete(response.status());
@@ -125,7 +125,7 @@ class RepeatCall {
  private:
   enum class State { kUninitialized, kCalling, kReading, kDone };
 
-  Poll<pw::Status> Complete(pw::Status status) {
+  Poll<pw::rpc2::RpcStatus> Complete(pw::rpc2::RpcStatus status) {
     state_ = State::kDone;
     return Ready(status);
   }
@@ -141,7 +141,7 @@ class RepeatCall {
 // Client streaming RPC: streams requests, then receives one response.
 class CollectCall {
  public:
-  using value_type = pw::Status;
+  using value_type = pw::rpc2::RpcStatus;
 
   CollectCall() = default;
   explicit CollectCall(EchoClient client)
@@ -152,7 +152,7 @@ class CollectCall {
   }
   bool is_complete() const { return state_ == State::kDone; }
 
-  Poll<pw::Status> Pend(Context& cx) {
+  Poll<pw::rpc2::RpcStatus> Pend(Context& cx) {
     while (true) {
       switch (state_) {
         case State::kCalling: {
@@ -176,7 +176,7 @@ class CollectCall {
           if (!write_future_.is_pendable()) {
             write_future_ = call_.writer().Write({.msg = kWords[words_sent_]});
           }
-          PW_AWAIT(pw::Status status, write_future_, cx);
+          PW_AWAIT(pw::rpc2::RpcStatus status, write_future_, cx);
           if (!status.ok()) {
             return Complete(status);
           }
@@ -188,7 +188,7 @@ class CollectCall {
           if (!finish_future_.is_pendable()) {
             finish_future_ = call_.writer().Finish();
           }
-          PW_AWAIT(pw::Status status, finish_future_, cx);
+          PW_AWAIT(pw::rpc2::RpcStatus status, finish_future_, cx);
           if (!status.ok()) {
             return Complete(status);
           }
@@ -197,12 +197,13 @@ class CollectCall {
         }
 
         case State::kReceiving: {
-          PW_AWAIT(pw::Result<EchoMessage> response, call_.response(), cx);
+          PW_AWAIT(
+              pw::rpc2::RpcResult<EchoMessage> response, call_.response(), cx);
           if (!response.ok()) {
             return Complete(response.status());
           }
           PW_LOG_INFO("Collect: %s", response->msg.c_str());
-          return Complete(pw::OkStatus());
+          return Complete(pw::rpc2::RpcStatus());
         }
 
         case State::kUninitialized:
@@ -225,7 +226,7 @@ class CollectCall {
   static constexpr std::array<std::string_view, 3> kWords = {
       "one", "two", "three"};
 
-  Poll<pw::Status> Complete(pw::Status status) {
+  Poll<pw::rpc2::RpcStatus> Complete(pw::rpc2::RpcStatus status) {
     state_ = State::kDone;
     return Ready(status);
   }
@@ -244,7 +245,7 @@ class CollectCall {
 // from separate tasks.
 class EchoStreamCall {
  public:
-  using value_type = pw::Status;
+  using value_type = pw::rpc2::RpcStatus;
 
   EchoStreamCall() = default;
   explicit EchoStreamCall(EchoClient client)
@@ -255,7 +256,7 @@ class EchoStreamCall {
   }
   bool is_complete() const { return state_ == State::kDone; }
 
-  Poll<pw::Status> Pend(Context& cx) {
+  Poll<pw::rpc2::RpcStatus> Pend(Context& cx) {
     while (true) {
       switch (state_) {
         case State::kCalling: {
@@ -279,7 +280,7 @@ class EchoStreamCall {
           if (!write_future_.is_pendable()) {
             write_future_ = call_.writer().Write({.msg = kWords[words_sent_]});
           }
-          PW_AWAIT(pw::Status status, write_future_, cx);
+          PW_AWAIT(pw::rpc2::RpcStatus status, write_future_, cx);
           if (!status.ok()) {
             return Complete(status);
           }
@@ -291,7 +292,7 @@ class EchoStreamCall {
           if (!finish_future_.is_pendable()) {
             finish_future_ = call_.writer().Finish();
           }
-          PW_AWAIT(pw::Status status, finish_future_, cx);
+          PW_AWAIT(pw::rpc2::RpcStatus status, finish_future_, cx);
           if (!status.ok()) {
             return Complete(status);
           }
@@ -303,9 +304,10 @@ class EchoStreamCall {
           if (!read_future_.is_pendable()) {
             read_future_ = call_.reader().Read();
           }
-          PW_AWAIT(pw::Result<EchoMessage> response, read_future_, cx);
-          if (response.status().IsOutOfRange()) {
-            return Complete(pw::OkStatus());  // The server finished its stream.
+          PW_AWAIT(pw::rpc2::RpcResult<EchoMessage> response, read_future_, cx);
+          if (response.status().IsEndOfStream()) {
+            return Complete(
+                pw::rpc2::RpcStatus());  // The server finished its stream.
           }
           if (!response.ok()) {
             return Complete(response.status());
@@ -333,7 +335,7 @@ class EchoStreamCall {
 
   static constexpr std::array<std::string_view, 2> kWords = {"alpha", "beta"};
 
-  Poll<pw::Status> Complete(pw::Status status) {
+  Poll<pw::rpc2::RpcStatus> Complete(pw::rpc2::RpcStatus status) {
     state_ = State::kDone;
     return Ready(status);
   }
@@ -358,7 +360,7 @@ class ClientTask : public Task {
       : dispatcher_(dispatcher), allocator_(allocator), connector_(connector) {}
 
   // Returns the result of the RPCs once the task has completed.
-  pw::Status status() const { return status_; }
+  pw::rpc2::RpcStatus status() const { return status_; }
 
  private:
   enum class State {
@@ -378,7 +380,9 @@ class ClientTask : public Task {
             connect_future_ =
                 pw::rpc2::Client::Connect(dispatcher_, allocator_, connector_);
           }
-          PW_AWAIT(pw::Result<pw::rpc2::Client> client, connect_future_, cx);
+          PW_AWAIT(pw::rpc2::RpcResult<pw::rpc2::Client> client,
+                   connect_future_,
+                   cx);
           if (!client.ok()) {
             status_ = client.status();
             return Ready();
@@ -394,7 +398,7 @@ class ClientTask : public Task {
           if (!echo_future_.is_pendable()) {
             echo_future_ = echo_client_.Echo({.msg = "hello"});
           }
-          PW_AWAIT(pw::Result<EchoMessage> response, echo_future_, cx);
+          PW_AWAIT(pw::rpc2::RpcResult<EchoMessage> response, echo_future_, cx);
           if (response.ok()) {
             PW_LOG_INFO("Echo: %s", response->msg.c_str());
           }
@@ -434,7 +438,7 @@ class ClientTask : public Task {
           if (!close_future_.is_pendable()) {
             close_future_ = client_.Close();
           }
-          PW_AWAIT(pw::Status close_status, close_future_, cx);
+          PW_AWAIT(pw::rpc2::RpcStatus close_status, close_future_, cx);
           status_.Update(close_status);
           return Ready();
         }
@@ -447,7 +451,7 @@ class ClientTask : public Task {
   pw::transport::ReliableDatagramConnector& connector_;
 
   State state_ = State::kConnecting;
-  pw::Status status_;
+  pw::rpc2::RpcStatus status_;
   pw::rpc2::Client client_;
   EchoClient echo_client_;
 

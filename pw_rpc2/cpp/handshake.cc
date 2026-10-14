@@ -16,11 +16,14 @@
 
 #include <algorithm>
 #include <cstring>
+#include <optional>
 #include <utility>
 
 #include "pw_assert/check.h"
 #include "pw_async2/try.h"
 #include "pw_bytes/endian.h"
+#include "pw_enum/to_string.h"
+#include "pw_log/log.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_rpc2/internal/packet.h"
 
@@ -34,14 +37,14 @@ void HandshakeFutureBase::Cancel() {
   }
 }
 
-async2::Poll<Result<EstablishedConnection>> HandshakeFutureImpl::Fail(
-    Status status) {
+async2::Poll<RpcResult<EstablishedConnection>> HandshakeFutureImpl::Fail(
+    RpcStatus status) {
   stage_ = Stage::kCompleted;
   Cancel();
-  return async2::Ready(Result<EstablishedConnection>(status));
+  return async2::Ready(RpcResult<EstablishedConnection>(status));
 }
 
-async2::Poll<Status> HandshakeFutureBase::PendWritePacket(
+async2::Poll<RpcStatus> HandshakeFutureBase::PendWritePacket(
     async2::Context& cx, HandshakePacket::Type type) {
   if (!std::holds_alternative<transport::ReserveWriteFuture>(io_fut_)) {
     io_fut_.emplace<transport::ReserveWriteFuture>(
@@ -51,25 +54,23 @@ async2::Poll<Status> HandshakeFutureBase::PendWritePacket(
   PW_TRY_READY_ASSIGN(auto poll_opt, write_fut.Pend(cx));
   io_fut_ = std::monostate{};
   if (!poll_opt.has_value()) {
-    return async2::Ready(Status::Cancelled());
+    return async2::Ready(RpcStatus::Disconnected());
   }
   auto reservation = std::move(*poll_opt);
   // Before the version is negotiated, `negotiated_version` holds the endpoint's
   // current version, which is what the initiator's SYN advertises. The SYN-ACK
-  // and ACK carry the negotiated version.
-  auto status = HandshakePacket(type, handshake_info_.negotiated_version)
-                    .Encode(reservation);
-  if (!status.ok()) {
-    reservation.Cancel();
-    return async2::Ready(status);
-  }
+  // and ACK carry the negotiated version. The reservation was sized to hold
+  // the packet, so encoding cannot fail.
+  const bool encoded = HandshakePacket(type, handshake_info_.negotiated_version)
+                           .Encode(reservation);
+  PW_CHECK(encoded, "Failed to encode a handshake packet into its reservation");
   if (!reservation.Commit(HandshakePacket::kWireSizeBytes)) {
-    return async2::Ready(Status::Unavailable());
+    return async2::Ready(RpcStatus::Disconnected());
   }
-  return async2::Ready(OkStatus());
+  return async2::Ready(RpcStatus());
 }
 
-async2::Poll<Result<HandshakePacket>> HandshakeFutureBase::PendReadPacket(
+async2::Poll<RpcResult<HandshakePacket>> HandshakeFutureBase::PendReadPacket(
     async2::Context& cx, HandshakePacket::Type expected_type) {
   if (!std::holds_alternative<transport::ReadFuture>(io_fut_)) {
     io_fut_.emplace<transport::ReadFuture>(connection_.Read());
@@ -78,19 +79,28 @@ async2::Poll<Result<HandshakePacket>> HandshakeFutureBase::PendReadPacket(
   PW_TRY_READY_ASSIGN(ConstBuf read_res, read_fut.Pend(cx));
   io_fut_ = std::monostate{};
   if (read_res == nullptr) {
-    return async2::Ready(Result<HandshakePacket>(Status::Cancelled()));
+    return async2::Ready(RpcResult<HandshakePacket>(RpcStatus::Disconnected()));
   }
-  auto dec_res = HandshakePacket::Decode(ConstByteSpan(read_res));
-  if (!dec_res.ok()) {
-    return async2::Ready(dec_res.status());
+  std::optional<HandshakePacket> dec_res =
+      HandshakePacket::Decode(ConstByteSpan(read_res));
+  if (!dec_res.has_value()) {
+    // `Decode()` logged why the packet is invalid.
+    PW_LOG_WARN("Handshake failed: received an invalid packet instead of %s",
+                EnumToString(expected_type));
+    return async2::Ready(
+        RpcResult<HandshakePacket>(RpcStatus::ProtocolError()));
   }
   if (dec_res->type() != expected_type) {
-    return async2::Ready(Result<HandshakePacket>(Status::DataLoss()));
+    PW_LOG_WARN("Handshake failed: expected %s, received %s",
+                EnumToString(expected_type),
+                EnumToString(dec_res->type()));
+    return async2::Ready(
+        RpcResult<HandshakePacket>(RpcStatus::ProtocolError()));
   }
-  return async2::Ready(Result<HandshakePacket>(*dec_res));
+  return async2::Ready(RpcResult<HandshakePacket>(*dec_res));
 }
 
-async2::Poll<Result<EstablishedConnection>> InitiatorHandshakeFuture::Pend(
+async2::Poll<RpcResult<EstablishedConnection>> InitiatorHandshakeFuture::Pend(
     async2::Context& cx) {
   PW_CHECK(is_pendable());
   switch (stage_) {
@@ -98,7 +108,7 @@ async2::Poll<Result<EstablishedConnection>> InitiatorHandshakeFuture::Pend(
     case Stage::kCompleted:
       PW_CRASH("Invalid handshake stage");
     case Stage::kSyn: {
-      PW_TRY_READY_ASSIGN(Status status,
+      PW_TRY_READY_ASSIGN(RpcStatus status,
                           PendWritePacket(cx, HandshakePacket::Type::kSyn));
       if (!status.ok()) {
         return Fail(status);
@@ -107,20 +117,25 @@ async2::Poll<Result<EstablishedConnection>> InitiatorHandshakeFuture::Pend(
       [[fallthrough]];
     }
     case Stage::kSynAck: {
-      PW_TRY_READY_ASSIGN(Result<HandshakePacket> pkt,
+      PW_TRY_READY_ASSIGN(RpcResult<HandshakePacket> pkt,
                           PendReadPacket(cx, HandshakePacket::Type::kSynAck));
       if (!pkt.ok()) {
         return Fail(pkt.status());
       }
       if (pkt->version() > handshake_info_.negotiated_version) {
-        return Fail(Status::DataLoss());
+        PW_LOG_WARN(
+            "Handshake failed: SYN_ACK negotiated version %u, but this "
+            "endpoint offered at most version %u",
+            static_cast<unsigned>(pkt->version()),
+            static_cast<unsigned>(handshake_info_.negotiated_version));
+        return Fail(RpcStatus::ProtocolError());
       }
       handshake_info_.negotiated_version = pkt->version();
       stage_ = Stage::kAck;
       [[fallthrough]];
     }
     case Stage::kAck: {
-      PW_TRY_READY_ASSIGN(Status status,
+      PW_TRY_READY_ASSIGN(RpcStatus status,
                           PendWritePacket(cx, HandshakePacket::Type::kAck));
       if (!status.ok()) {
         return Fail(status);
@@ -131,7 +146,7 @@ async2::Poll<Result<EstablishedConnection>> InitiatorHandshakeFuture::Pend(
   PW_UNREACHABLE;
 }
 
-async2::Poll<Result<EstablishedConnection>> ResponderHandshakeFuture::Pend(
+async2::Poll<RpcResult<EstablishedConnection>> ResponderHandshakeFuture::Pend(
     async2::Context& cx) {
   PW_CHECK(is_pendable());
   switch (stage_) {
@@ -139,7 +154,7 @@ async2::Poll<Result<EstablishedConnection>> ResponderHandshakeFuture::Pend(
     case Stage::kCompleted:
       PW_CRASH("Invalid handshake stage");
     case Stage::kSyn: {
-      PW_TRY_READY_ASSIGN(Result<HandshakePacket> pkt,
+      PW_TRY_READY_ASSIGN(RpcResult<HandshakePacket> pkt,
                           PendReadPacket(cx, HandshakePacket::Type::kSyn));
       if (!pkt.ok()) {
         return Fail(pkt.status());
@@ -150,7 +165,7 @@ async2::Poll<Result<EstablishedConnection>> ResponderHandshakeFuture::Pend(
       [[fallthrough]];
     }
     case Stage::kSynAck: {
-      PW_TRY_READY_ASSIGN(Status status,
+      PW_TRY_READY_ASSIGN(RpcStatus status,
                           PendWritePacket(cx, HandshakePacket::Type::kSynAck));
       if (!status.ok()) {
         return Fail(status);
@@ -159,13 +174,18 @@ async2::Poll<Result<EstablishedConnection>> ResponderHandshakeFuture::Pend(
       [[fallthrough]];
     }
     case Stage::kAck: {
-      PW_TRY_READY_ASSIGN(Result<HandshakePacket> pkt,
+      PW_TRY_READY_ASSIGN(RpcResult<HandshakePacket> pkt,
                           PendReadPacket(cx, HandshakePacket::Type::kAck));
       if (!pkt.ok()) {
         return Fail(pkt.status());
       }
       if (pkt->version() != handshake_info_.negotiated_version) {
-        return Fail(Status::DataLoss());
+        PW_LOG_WARN(
+            "Handshake failed: ACK has version %u, but version %u was "
+            "negotiated",
+            static_cast<unsigned>(pkt->version()),
+            static_cast<unsigned>(handshake_info_.negotiated_version));
+        return Fail(RpcStatus::ProtocolError());
       }
       return Complete();
     }

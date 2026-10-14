@@ -33,13 +33,13 @@
 #include "pw_async2/future_task.h"
 #include "pw_async2/poll.h"
 #include "pw_buf/buf.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/client.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/mixed_apis.pwpb.rpc2.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/server.h"
 #include "pw_rpc2/service_client.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
 #include "pw_status/status.h"
@@ -72,7 +72,7 @@ class DoubleValueFuture : public test::TestFuture {
       write_fut_ =
           responder_.Finish(MixedResponse{.value = request_.value * 2});
     }
-    PW_AWAIT(::pw::Status status, write_fut_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, write_fut_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -126,14 +126,14 @@ class CountUpFuture : public test::TestFuture {
         write_fut_ =
             writer_.Write(MixedResponse{.value = request_.value + sent_ + 1});
       }
-      PW_AWAIT(::pw::Status status, write_fut_, cx);
+      PW_AWAIT(::pw::rpc2::RpcStatus status, write_fut_, cx);
       PW_TEST_EXPECT_OK(status);
       ++sent_;
     }
     if (!close_fut_.is_pendable()) {
       close_fut_ = writer_.Finish();
     }
-    PW_AWAIT(::pw::Status status, close_fut_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, close_fut_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -163,7 +163,7 @@ class RawCountRequestsFuture : public test::TestFuture {
       }
       PW_AWAIT(auto message, read_fut_, cx);
       if (!message.ok()) {
-        EXPECT_EQ(message.status(), ::pw::Status::OutOfRange());
+        EXPECT_EQ(message.status(), RpcStatus::EndOfStream());
         reading_ = false;
         break;
       }
@@ -208,7 +208,7 @@ class EchoBidiFuture : public test::TestFuture {
   ::pw::async2::Poll<> Pend(::pw::async2::Context& cx) {
     while (reading_) {
       if (write_fut_.is_pendable()) {
-        PW_AWAIT(::pw::Status status, write_fut_, cx);
+        PW_AWAIT(::pw::rpc2::RpcStatus status, write_fut_, cx);
         PW_TEST_EXPECT_OK(status);
       }
       if (!read_fut_.is_pendable()) {
@@ -216,7 +216,7 @@ class EchoBidiFuture : public test::TestFuture {
       }
       PW_AWAIT(auto message, read_fut_, cx);
       if (!message.ok()) {
-        EXPECT_EQ(message.status(), ::pw::Status::OutOfRange());
+        EXPECT_EQ(message.status(), RpcStatus::EndOfStream());
         reading_ = false;
         break;
       }
@@ -225,7 +225,7 @@ class EchoBidiFuture : public test::TestFuture {
     if (!close_fut_.is_pendable()) {
       close_fut_ = writer_.Finish();
     }
-    PW_AWAIT(::pw::Status status, close_fut_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, close_fut_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -261,7 +261,7 @@ class RawEchoBidiFuture : public test::TestFuture {
       }
       PW_AWAIT(auto message, read_fut_, cx);
       if (!message.ok()) {
-        EXPECT_EQ(message.status(), ::pw::Status::OutOfRange());
+        EXPECT_EQ(message.status(), RpcStatus::EndOfStream());
         reading_ = false;
         break;
       }
@@ -271,7 +271,7 @@ class RawEchoBidiFuture : public test::TestFuture {
     if (!close_fut_.is_pendable()) {
       close_fut_ = writer_.Finish();
     }
-    PW_AWAIT(::pw::Status status, close_fut_, cx);
+    PW_AWAIT(::pw::rpc2::RpcStatus status, close_fut_, cx);
     PW_TEST_EXPECT_OK(status);
     return Complete();
   }
@@ -312,7 +312,7 @@ class MixedApiService
         write_fut_ = responder_.Finish(
             MixedResponse{.value = request_.value * service_->multiplier_});
       }
-      PW_AWAIT(::pw::Status status, write_fut_, cx);
+      PW_AWAIT(::pw::rpc2::RpcStatus status, write_fut_, cx);
       PW_TEST_EXPECT_OK(status);
       return Complete();
     }
@@ -357,7 +357,7 @@ class MixedApiService
       MixedRequest request,
       ::pw::rpc2::UnaryWriter<MixedResponse> responder) {
     ++coro_calls_;
-    ::pw::Status status =
+    ::pw::rpc2::RpcStatus status =
         co_await responder.Finish(MixedResponse{.value = request.value * 2});
     PW_TEST_EXPECT_OK(status);
   }
@@ -384,7 +384,7 @@ class MixedApiService
         PW_TEST_EXPECT_OK(test::CommitCopy(*reservation, request));
       }
     }
-    ::pw::Status status = co_await writer.Finish();
+    ::pw::rpc2::RpcStatus status = co_await writer.Finish();
     PW_TEST_EXPECT_OK(status);
   }
 
@@ -396,12 +396,12 @@ class MixedApiService
     while (true) {
       auto message = co_await reader.Read();
       if (!message.ok()) {
-        EXPECT_EQ(message.status(), ::pw::Status::OutOfRange());
+        EXPECT_EQ(message.status(), RpcStatus::EndOfStream());
         break;
       }
       sum += message->value;
     }
-    ::pw::Status status =
+    ::pw::rpc2::RpcStatus status =
         co_await responder.Finish(MixedResponse{.value = sum});
     PW_TEST_EXPECT_OK(status);
   }
@@ -452,18 +452,18 @@ class MixedApisTest : public ::testing::Test {
   MixedApisTest() : server_(allocator_, dispatcher_) {}
 
   void SetUp() override {
-    ASSERT_EQ(server_.RegisterService(service_), ::pw::OkStatus());
-    ASSERT_EQ(server_.RegisterListenerBlocking(transport_), ::pw::OkStatus());
+    PW_TEST_ASSERT_OK(server_.RegisterService(service_));
+    PW_TEST_ASSERT_OK(server_.RegisterListenerBlocking(transport_));
     server_.Start();
     started_ = true;
 
     auto connections = ::pw::rpc2::test::MakePairedConnections(allocator_);
     server_connection_ = connections.server_raw();
     transport_.ResolveAccept(connections.server());
-    ::pw::Result<::pw::rpc2::Client> client =
+    ::pw::rpc2::RpcResult<pw::rpc2::Client> client =
         RunToCompletion(::pw::rpc2::Client::Connect(
             dispatcher_, allocator_, connections.client()));
-    ASSERT_EQ(client.status(), ::pw::OkStatus());
+    PW_TEST_ASSERT_OK(client.status());
     client_.emplace(std::move(*client), dispatcher_);
   }
 
@@ -472,7 +472,7 @@ class MixedApisTest : public ::testing::Test {
     if (started_) {
       auto closed = server_.Close();
       transport_.ResolveAccept(::pw::Status::Cancelled());
-      EXPECT_EQ(RunToCompletion(std::move(closed)), ::pw::OkStatus());
+      PW_TEST_EXPECT_OK(RunToCompletion(std::move(closed)));
     }
   }
 
@@ -486,20 +486,21 @@ class MixedApisTest : public ::testing::Test {
   }
 
   // Checks that `reader` yields exactly `expected`, after which the server
-  // finished the stream with `OK`.
+  // finished the stream with `kOk`.
   void ExpectStream(::pw::rpc2::Reader<MixedResponse>& reader,
                     std::initializer_list<uint32_t> expected) {
     for (uint32_t value : expected) {
-      ::pw::Result<MixedResponse> response = RunToCompletion(reader.Read());
+      ::pw::rpc2::RpcResult<MixedResponse> response =
+          RunToCompletion(reader.Read());
       PW_TEST_ASSERT_OK(response);
       EXPECT_EQ(response->value, value);
     }
     EXPECT_EQ(RunToCompletion(reader.Read()).status(),
-              ::pw::Status::OutOfRange());
+              RpcStatus::EndOfStream());
   }
 
   // Streams `values` to a client-streaming RPC and returns its response.
-  ::pw::Result<MixedResponse> ClientStream(
+  ::pw::rpc2::RpcResult<MixedResponse> ClientStream(
       ::pw::rpc2::ClientStreamFuture<MixedRequest, MixedResponse> future,
       std::initializer_list<uint32_t> values) {
     auto call = RunToCompletion(std::move(future));
@@ -552,7 +553,7 @@ class MixedApisTest : public ::testing::Test {
 // =============================================================================
 
 TEST_F(MixedApisTest, PwpbFutureUnary) {
-  ::pw::Result<MixedResponse> response =
+  ::pw::rpc2::RpcResult<MixedResponse> response =
       RunToCompletion(stub().PwpbFutureUnary(MixedRequest{.value = 21}));
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 42u);
@@ -560,7 +561,7 @@ TEST_F(MixedApisTest, PwpbFutureUnary) {
 }
 
 TEST_F(MixedApisTest, PwpbFactoryUnary) {
-  ::pw::Result<MixedResponse> response =
+  ::pw::rpc2::RpcResult<MixedResponse> response =
       RunToCompletion(stub().PwpbFactoryUnary(MixedRequest{.value = 21}));
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 42u);
@@ -569,7 +570,7 @@ TEST_F(MixedApisTest, PwpbFactoryUnary) {
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 TEST_F(MixedApisTest, PwpbCoroUnary) {
-  ::pw::Result<MixedResponse> response =
+  ::pw::rpc2::RpcResult<MixedResponse> response =
       RunToCompletion(stub().PwpbCoroUnary(MixedRequest{.value = 21}));
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 42u);
@@ -580,7 +581,7 @@ TEST_F(MixedApisTest, PwpbCoroUnary) {
 // The `<Method>Future` for this RPC is written against the raw API even
 // though the service is generated by the pwpb codegen.
 TEST_F(MixedApisTest, RawFutureUnary) {
-  ::pw::Result<MixedResponse> response =
+  ::pw::rpc2::RpcResult<MixedResponse> response =
       RunToCompletion(stub().RawFutureUnary(MixedRequest{.value = 7}));
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 7u);
@@ -588,7 +589,7 @@ TEST_F(MixedApisTest, RawFutureUnary) {
 }
 
 TEST_F(MixedApisTest, RawFactoryUnary) {
-  ::pw::Result<MixedResponse> response =
+  ::pw::rpc2::RpcResult<MixedResponse> response =
       RunToCompletion(stub().RawFactoryUnary(MixedRequest{.value = 7}));
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 7u);
@@ -597,7 +598,7 @@ TEST_F(MixedApisTest, RawFactoryUnary) {
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 TEST_F(MixedApisTest, RawCoroUnary) {
-  ::pw::Result<MixedResponse> response =
+  ::pw::rpc2::RpcResult<MixedResponse> response =
       RunToCompletion(stub().RawCoroUnary(MixedRequest{.value = 7}));
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 7u);
@@ -633,7 +634,7 @@ TEST_F(MixedApisTest, RawCoroServerStream) {
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 TEST_F(MixedApisTest, PwpbCoroClientStream) {
-  ::pw::Result<MixedResponse> response =
+  ::pw::rpc2::RpcResult<MixedResponse> response =
       ClientStream(stub().PwpbCoroClientStream(), {1u, 2u, 3u});
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 6u);
@@ -642,7 +643,7 @@ TEST_F(MixedApisTest, PwpbCoroClientStream) {
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
 TEST_F(MixedApisTest, RawFactoryClientStream) {
-  ::pw::Result<MixedResponse> response =
+  ::pw::rpc2::RpcResult<MixedResponse> response =
       ClientStream(stub().RawFactoryClientStream(), {1u, 2u});
   PW_TEST_ASSERT_OK(response);
   EXPECT_EQ(response->value, 2u);

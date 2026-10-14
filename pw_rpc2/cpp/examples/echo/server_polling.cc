@@ -34,11 +34,10 @@
 #include "pw_async2/context.h"
 #include "pw_async2/poll.h"
 #include "pw_log/log.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/server.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status.h"
 #include "pw_string/util.h"
 #include "pw_transport/framed_tcp.h"
 
@@ -132,7 +131,7 @@ class EchoService : public examples::pw_rpc2::pwpb::Echo::Service<EchoService> {
             if (!write_future_.is_pendable()) {
               write_future_ = writer_.Write(response_);
             }
-            PW_AWAIT(pw::Status status, write_future_, cx);
+            PW_AWAIT(pw::rpc2::RpcStatus status, write_future_, cx);
             if (!status.ok()) {
               state_ = State::kDone;  // The call ended early.
               return Ready();
@@ -192,8 +191,9 @@ class EchoService : public examples::pw_rpc2::pwpb::Echo::Service<EchoService> {
             if (!read_future_.is_pendable()) {
               read_future_ = reader_.Read();
             }
-            PW_AWAIT(pw::Result<EchoMessage> request, read_future_, cx);
-            if (request.status().IsOutOfRange()) {
+            PW_AWAIT(
+                pw::rpc2::RpcResult<EchoMessage> request, read_future_, cx);
+            if (request.status().IsEndOfStream()) {
               state_ = State::kResponding;  // The client finished its stream.
               break;
             }
@@ -262,8 +262,9 @@ class EchoService : public examples::pw_rpc2::pwpb::Echo::Service<EchoService> {
             if (!read_future_.is_pendable()) {
               read_future_ = reader_.Read();
             }
-            PW_AWAIT(pw::Result<EchoMessage> request, read_future_, cx);
-            if (request.status().IsOutOfRange()) {
+            PW_AWAIT(
+                pw::rpc2::RpcResult<EchoMessage> request, read_future_, cx);
+            if (request.status().IsEndOfStream()) {
               state_ = State::kFinishing;  // The client finished its stream.
               break;
             }
@@ -278,7 +279,7 @@ class EchoService : public examples::pw_rpc2::pwpb::Echo::Service<EchoService> {
           }
 
           case State::kWriting: {
-            PW_AWAIT(pw::Status status, write_future_, cx);
+            PW_AWAIT(pw::rpc2::RpcStatus status, write_future_, cx);
             if (!status.ok()) {
               state_ = State::kDone;
               return Ready();

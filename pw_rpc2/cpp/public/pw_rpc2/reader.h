@@ -29,7 +29,7 @@
 #include "pw_rpc2/internal/call_handle.h"
 #include "pw_rpc2/internal/future_base.h"
 #include "pw_rpc2/internal/serialize.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/status.h"
 
 namespace pw::rpc2 {
 
@@ -41,14 +41,26 @@ namespace internal {
 struct CallAccess;
 
 /// Type-erased deserializer: writes `bytes` decoded as a message, or their
-/// error, to the `async2::Poll<Result<Message>>` at `result_out`.
-using DeserializeFn = void (*)(void* result_out, Result<ConstByteSpan> bytes);
+/// error, to the `async2::Poll<RpcResult<Message>>` at `result_out`. If the
+/// bytes cannot be decoded, writes `kDataError`.
+using DeserializeFn = void (*)(void* result_out,
+                               RpcResult<ConstByteSpan> bytes);
 
 template <typename Message>
-void DeserializeTypeErased(void* result_out, Result<ConstByteSpan> bytes) {
-  *static_cast<async2::Poll<Result<Message>>*>(result_out) =
-      bytes.ok() ? Deserialize<Message>(*bytes)
-                 : Result<Message>(bytes.status());
+void DeserializeTypeErased(void* result_out, RpcResult<ConstByteSpan> bytes) {
+  auto& out = *static_cast<async2::Poll<RpcResult<Message>>*>(result_out);
+  if (!bytes.ok()) {
+    out = RpcResult<Message>(bytes.status());
+    return;
+  }
+  // Serializers report errors as `pw::Status`. Translate them here, at the
+  // boundary between the serializer interface and the public API.
+  Result<Message> message = Deserialize<Message>(*bytes);
+  if (!message.ok()) {
+    out = RpcResult<Message>(RpcStatus::DataError());
+    return;
+  }
+  out = RpcResult<Message>(std::move(*message));
 }
 
 /// Non-templated base class for `ReadFuture<Message>` and
@@ -93,7 +105,7 @@ class ReadFutureBase : public CallHandle, public FutureBase {
     return *this;
   }
 
-  [[nodiscard]] async2::Poll<Result<ConstBuf>> PendRaw(async2::Context& cx);
+  [[nodiscard]] async2::Poll<RpcResult<ConstBuf>> PendRaw(async2::Context& cx);
 
   void PendAndDeserialize(async2::Context& cx,
                           void* result_out,
@@ -122,9 +134,9 @@ class ReadFutureBase : public CallHandle, public FutureBase {
 class ResponseFutureBase : public ReadFutureBase {
  public:
   /// Cancels the call: sends a cancellation to the server and completes the
-  /// call locally with `Status::Cancelled()`. A pending or later `Pend()`
-  /// resolves to `CANCELLED` unless the response has already arrived. No-op if
-  /// the call has already ended or this future has no call.
+  /// call locally with `kCancelled`. A pending or later `Pend()` resolves to
+  /// `kCancelled` unless the response has already arrived. No-op if the call
+  /// has already ended or this future has no call.
   void Cancel() {
     if (has_call()) {
       call().Cancel();
@@ -151,7 +163,7 @@ class ResponseFutureBase : public ReadFutureBase {
 }  // namespace internal
 
 /// Future that resolves to the next inbound message of a stream
-/// (`Result<Message>`). Returned by `Reader::Read()`.
+/// (`RpcResult<Message>`). Returned by `Reader::Read()`.
 ///
 /// At most one `ReadFuture` may be active on a call at a time: starting a
 /// second read while an earlier `ReadFuture` is still pending fails with an
@@ -164,7 +176,7 @@ class ResponseFutureBase : public ReadFutureBase {
 template <typename Message = ConstBuf>
 class ReadFuture : public internal::ReadFutureBase {
  public:
-  using value_type = Result<Message>;
+  using value_type = RpcResult<Message>;
 
   constexpr ReadFuture() = default;
 
@@ -177,20 +189,26 @@ class ReadFuture : public internal::ReadFutureBase {
   /// Polls for the inbound message.
   ///
   /// @returns
-  /// * `OK` with the decoded `Message` (or raw `ConstBuf`) when a message
+  /// * `kOk` with the decoded `Message` (or raw `ConstBuf`) when a message
   ///   arrives.
-  /// * `OUT_OF_RANGE` when the peer has finished its outbound stream
+  /// * `kEndOfStream` when the peer has finished its outbound stream
   ///   (`Finish()` or `~Writer()`) and all sent messages have been read. This
   ///   is the normal end-of-stream condition for a `Reader` loop, not an error.
-  /// * The error status that ended the call (such as `CANCELLED` if the peer
-  ///   cancelled the RPC or the connection closed).
-  /// * A deserialization error (such as `DATA_LOSS`) if the incoming bytes
-  ///   could not be decoded as `Message`.
-  [[nodiscard]] async2::Poll<Result<Message>> Pend(async2::Context& cx) {
+  /// * `kDataError` if a message could not be decoded. If the incoming bytes
+  ///   could not be decoded as `Message`, only that message is dropped: the
+  ///   stream stays open, and the next read may succeed. If the server could
+  ///   not decode the request, the call is over, and every later read returns
+  ///   `kDataError` too.
+  /// * The status that ended the call, if it ended with an error: for example,
+  ///   `kCancelled` if either end cancelled the RPC; `kClosed`,
+  ///   `kDisconnected`, or `kProtocolError` if the connection closed; or
+  ///   `kUnimplemented`, `kUnavailable`, `kAborted`, or `kProtocolError` if the
+  ///   peer ended the call. See `internal::Call::is_completed()`.
+  [[nodiscard]] async2::Poll<RpcResult<Message>> Pend(async2::Context& cx) {
     if constexpr (std::is_same_v<Message, ConstBuf>) {
       return PendRaw(cx);
     } else {
-      async2::Poll<Result<Message>> result = async2::Pending();
+      async2::Poll<RpcResult<Message>> result = async2::Pending();
       PendAndDeserialize(
           cx, &result, &internal::DeserializeTypeErased<Message>);
       return result;
@@ -209,19 +227,19 @@ static_assert(async2::Future<ReadFuture<ConstBuf>>);
 using RawReadFuture = ReadFuture<ConstBuf>;
 
 /// Future that resolves to the server's single response to a client unary or
-/// client-streaming RPC (`Result<Response>`).
+/// client-streaming RPC (`RpcResult<Response>`).
 ///
 /// Returned by `UnaryReservation::Commit()` and
 /// `ClientStreamCall::response()`. `UnaryFuture` uses one internally.
 ///
 /// A `ResponseFuture` is its call's only reader. Destroying it before it
-/// resolves cancels the call (`Status::Cancelled()`) so the server can stop
-/// work. `Cancel()` does the same while keeping the future, which then
-/// resolves to `CANCELLED`.
+/// resolves cancels the call (`kCancelled`) so the server can stop work.
+/// `Cancel()` does the same while keeping the future, which then resolves to
+/// `kCancelled`.
 template <typename Response = ConstBuf>
 class ResponseFuture : public internal::ResponseFutureBase {
  public:
-  using value_type = Result<Response>;
+  using value_type = RpcResult<Response>;
 
   constexpr ResponseFuture() = default;
 
@@ -234,18 +252,20 @@ class ResponseFuture : public internal::ResponseFutureBase {
   /// Polls for the server's response.
   ///
   /// @returns
-  /// * `OK` with the decoded `Response` (or raw `ConstBuf`) once the server
+  /// * `kOk` with the decoded `Response` (or raw `ConstBuf`) once the server
   ///   replies.
-  /// * The error status that ended the call (such as `CANCELLED` if the call
-  ///   was cancelled or the connection closed, or `NOT_FOUND` for an unknown
-  ///   service or method).
-  /// * A deserialization error (such as `DATA_LOSS`) if the response could not
-  ///   be decoded as `Response`.
-  [[nodiscard]] async2::Poll<Result<Response>> Pend(async2::Context& cx) {
+  /// * `kDataError` if the response could not be decoded as `Response`, or the
+  ///   server could not decode the request.
+  /// * The status that ended the call, if it ended with an error: for example,
+  ///   `kCancelled` if either end cancelled the RPC; `kClosed`,
+  ///   `kDisconnected`, or `kProtocolError` if the connection closed; or
+  ///   `kUnimplemented`, `kUnavailable`, `kAborted`, or `kProtocolError` if the
+  ///   server ended the call. See `internal::Call::is_completed()`.
+  [[nodiscard]] async2::Poll<RpcResult<Response>> Pend(async2::Context& cx) {
     if constexpr (std::is_same_v<Response, ConstBuf>) {
       return PendRaw(cx);
     } else {
-      async2::Poll<Result<Response>> result = async2::Pending();
+      async2::Poll<RpcResult<Response>> result = async2::Pending();
       PendAndDeserialize(
           cx, &result, &internal::DeserializeTypeErased<Response>);
       return result;
@@ -276,9 +296,9 @@ class ReaderBase : public CallHandle {
   /// Aborts the call immediately in both directions.
   ///
   /// Sends a cancellation to the peer and completes the call locally with
-  /// `Status::Cancelled()`: once any message already received has been read,
-  /// a pending or later `Read()` on this end fails with `CANCELLED`, as does
-  /// any write through the call's `Writer` or `UnaryWriter`. No-op if the call
+  /// `kCancelled`: once any message already received has been read, a pending
+  /// or later `Read()` on this end fails with `kCancelled`, as does any write
+  /// through the call's `Writer` or `UnaryWriter`. No-op if the call
   /// has already ended. On a server, this is equivalent to cancelling through
   /// the call's writer.
   void Cancel() {
@@ -322,8 +342,8 @@ class ReaderBase : public CallHandle {
 ///   `Reader<Response>` reads the stream of responses sent by the server.
 ///
 /// Call `Read()` in a loop until the returned `ReadFuture` resolves to
-/// `Status::OutOfRange()`, which indicates that the peer called `Finish()` (or
-/// dropped its `Writer`) and no more messages will arrive.
+/// `kEndOfStream`, which indicates that the peer called `Finish()` (or dropped
+/// its `Writer`) and no more messages will arrive.
 ///
 /// Destroying a `Reader` before the stream ends stops reading incoming
 /// messages (any unread or subsequent messages from the peer are discarded).
@@ -346,7 +366,7 @@ class Reader : public internal::ReaderBase {
   ~Reader() = default;
 
   /// Returns a future that resolves to the next inbound message, or
-  /// `Status::OutOfRange()` once the peer has finished the stream.
+  /// `kEndOfStream` once the peer has finished the stream.
   ///
   /// Only one `ReadFuture` may be pending at a time; await or destroy the
   /// returned future before calling `Read()` again.

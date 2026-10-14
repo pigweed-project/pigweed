@@ -30,9 +30,9 @@
 #include "pw_intrusive_ptr/intrusive_ptr.h"
 #include "pw_intrusive_ptr/recyclable.h"
 #include "pw_intrusive_ptr/ref_counted.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/packet.h"
-#include "pw_rpc2/internal/protocol_status.h"
+#include "pw_rpc2/internal/protocol_error.h"
+#include "pw_rpc2/status.h"
 #include "pw_status/status.h"
 #include "pw_transport/socket.h"
 
@@ -72,7 +72,7 @@ class Call;
 /// detaches it, after which its outbound operations are no-ops and
 /// `ReserveWrite()` fails. A completed call reports why it completed (see
 /// `ReserveWrite()`); a detached call that did not complete reports
-/// `UNAVAILABLE`.
+/// `kWriteClosed`.
 class Call : public IntrusiveForwardList<Call>::Item,
              public RefCounted<Call>,
              public Recyclable<Call> {
@@ -98,7 +98,7 @@ class Call : public IntrusiveForwardList<Call>::Item,
   /// packet is written immediately if the transport has room, and otherwise
   /// queued until it does. If the queue cannot grow, the connection is closed.
   /// No-op if the call is detached.
-  void QueueError(ProtocolStatus error);
+  void QueueError(ProtocolError error);
 
   /// Queues the packet that finishes this call's outbound stream normally on
   /// its connection task: a client stream end, or a server's successful end of
@@ -173,8 +173,9 @@ class Call : public IntrusiveForwardList<Call>::Item,
   /// cancelling sends nothing.
   void MarkStarted() { SetWriteFlag<kStarted>(); }
 
-  /// Sends `kCancelled` to the peer and completes the call locally with
-  /// `Status::Cancelled()`. In-flight write reservations fail to commit.
+  /// Sends `ProtocolError::kCancelled` to the peer and completes the call
+  /// locally with `RpcCode::kCancelled`. In-flight write reservations fail to
+  /// commit.
   ///
   /// No-op if the call completed, or if it is a server call that already sent
   /// its terminal packet.
@@ -182,22 +183,24 @@ class Call : public IntrusiveForwardList<Call>::Item,
 
   /// Ends a retired server call whose write side is still open because a
   /// `Writer` or `UnaryWriter` escaped its method. Sends
-  /// `kDroppedWithoutResponse` (single response) or `kCancelled` (streaming)
-  /// and closes the write side. No-op if the write side is closed.
+  /// `ProtocolError::kMethodReturnedWithoutFinishing` and closes the write
+  /// side. No-op if the write side is closed.
   void CloseWriteOnRetire();
 
-  void set_cancel_on_writer_drop(bool cancel) {
-    if (cancel) {
-      SetWriteFlag<kCancelOnWriterDrop>();
+  void set_error_on_writer_drop(bool error) {
+    if (error) {
+      SetWriteFlag<kErrorOnWriterDrop>();
     } else {
-      ClearWriteFlag<kCancelOnWriterDrop>();
+      ClearWriteFlag<kErrorOnWriterDrop>();
     }
   }
 
   /// Runs the RAII destructor fallback for `Writer` and `UnaryWriter`. Queues
-  /// `CANCELLED` (if `kCancelOnWriterDrop` is set, as for `UnaryWriter`) or
-  /// `STREAM_END` (as for `Writer`), deferring the packet if a terminal write
-  /// or initial method invocation is still in progress.
+  /// `ProtocolError::kDroppedWithoutResponse` (if `kErrorOnWriterDrop` is
+  /// set, as for `UnaryWriter`) or a finish packet (as for `Writer`:
+  /// `OK_TERMINAL` from a server, `STREAM_END` from a client), deferring the
+  /// packet if a terminal write or initial method invocation is still in
+  /// progress.
   void CloseOnWriterDestroy();
 
   /// Marks this call as undergoing server method invocation or polling,
@@ -211,36 +214,35 @@ class Call : public IntrusiveForwardList<Call>::Item,
   /// destructor action triggered while `kInvoking` was active.
   void FinishInvocation();
 
-  /// Calls complete with one of the following known statuses:
-  ///
-  /// - `OkStatus()`: the server ended the RPC successfully with a
-  ///   `CloseMode::kOkTerminal` packet.
-  /// - `Status::Cancelled()`: `ProtocolStatus::kCancelled`,
-  ///   `ProtocolStatus::kDroppedWithoutResponse`,
-  ///   `ProtocolStatus::kServiceUnregistered`, local/peer connection closed,
-  ///   or service unregistered.
-  /// - `Status::NotFound()`: `ProtocolStatus::kUnknownService` or
-  ///   `ProtocolStatus::kUnknownMethod`.
-  /// - `Status::DataLoss()`: `ProtocolStatus::kInvalidRequestPayload` or
-  ///   response payload deserialization failure.
-  /// - `Status::ResourceExhausted()`: `ProtocolStatus::kFailedToAllocateCall`,
-  ///   `ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning`, or local
-  ///   outbound buffer allocation failure.
-  /// - `Status::Unimplemented()`:
-  ///   `ProtocolStatus::kReceivedPacketForWrongEndpoint`.
-  /// - `Status::FailedPrecondition()`: `ProtocolStatus::kMethodTypeMismatch`,
-  ///   sent by whichever side detected that the client and server disagree
-  ///   about the method's type.
-  /// - `Status::Internal()`: `ProtocolStatus::kInternal`.
-  /// - `Status::Unavailable()`: invoked on a closed or disconnected client, or
-  ///   outbound write reservation failed due to closed transport.
-  /// - `Status::Unknown()`: the peer sent an unrecognized error code.
+  /// True once the call has completed.
   [[nodiscard]] bool is_completed() const { return HasReadFlag<kCompleted>(); }
 
   /// The status the call completed with.
   ///
+  /// - `kOk`: the server ended the RPC successfully.
+  /// - `kCancelled`: application code on either end ended the call. This end
+  ///   cancelled it, or the peer sent `kCancelled`, `kDroppedWithoutResponse`,
+  ///   or `kMethodReturnedWithoutFinishing`.
+  /// - `kUnavailable`, `kAborted`, `kUnimplemented`, or `kDataError`: the peer
+  ///   ended the call with an error code that maps to it (see
+  ///   `PeerErrorToRpcStatus()`).
+  /// - `kProtocolError`: an endpoint violated the protocol.
+  /// - `kClosed`: the call was closed by the user.
+  /// - `kDisconnected`: the underlying socket disconnected.
+  ///
   /// @pre `is_completed()`.
-  Status completion_status() const { return completion_status_; }
+  RpcStatus completion_status() const { return completion_status_; }
+
+  /// The status to report when an operation on this call fails because its
+  /// socket closed. If the call already ended with an error, such as the
+  /// `kProtocolError` that this end closed the connection with, that error is
+  /// the cause. Otherwise, the socket closed on its own: `kDisconnected`.
+  RpcStatus ConnectionClosedStatus() const {
+    if (is_completed() && !completion_status_.ok()) {
+      return completion_status_;
+    }
+    return RpcStatus::Disconnected();
+  }
 
   /// Acquires a slot in the call's ingress queue, in preparation for a call to
   /// `OnMessage()`.
@@ -276,17 +278,17 @@ class Call : public IntrusiveForwardList<Call>::Item,
   /// the reader reports the actual outcome of the RPC rather than a premature
   /// end of stream.
   void OnPeerStreamEnd();
-  void OnError(Status status);
+  void OnError(RpcStatus status);
 
   /// Completes the call with `status`, closing both directions and waking the
   /// server connection (or detaching a client call). The first completion wins,
   /// so a call that already failed keeps its original status even if the
   /// connection later closes underneath it.
-  void Complete(Status status);
+  void Complete(RpcStatus status);
 
   /// Unregisters this call from its connection's routing registry and drops its
   /// pointer to the connection, after which all outbound operations on this
-  /// call become no-ops and `ReserveWrite()` fails with `UNAVAILABLE`.
+  /// call become no-ops and `ReserveWrite()` fails.
   ///
   /// Idempotent.
   void DetachFromConnection();
@@ -312,19 +314,20 @@ class Call : public IntrusiveForwardList<Call>::Item,
   /// write at all:
   ///
   /// - The call's completion status, if the call completed with an error: for
-  ///   example `CANCELLED` if the peer cancelled it or the connection closed.
-  /// - `FAILED_PRECONDITION`: the write side is already closed, because a
-  ///   terminal packet was sent or the call completed successfully.
-  /// - `UNAVAILABLE`: the call has been detached from its connection without
-  ///   completing.
-  /// - `RESOURCE_EXHAUSTED`: a packet with a `header_size`-byte header and a
+  ///   example `kCancelled` if the peer cancelled it, or `kDisconnected` if
+  ///   the connection closed. See `is_completed()`.
+  /// - `kWriteClosed`: the write side is already closed, because a terminal
+  ///   packet was sent or is pending, the writer was dropped, the call
+  ///   completed successfully, or the call was detached from its connection
+  ///   without completing.
+  /// - `kMessageTooLarge`: a packet with a `header_size`-byte header and a
   ///   `max_payload_size`-byte payload exceeds the largest datagram the
   ///   transport can write.
   ///
   /// Otherwise returns a future for the transport's reservation of
   /// `header_size + max_payload_size` bytes.
-  Result<transport::ReserveWriteFuture> ReserveWrite(size_t header_size,
-                                                     size_t max_payload_size);
+  RpcResult<transport::ReserveWriteFuture> ReserveWrite(
+      size_t header_size, size_t max_payload_size);
 
   /// The largest packet, header included, that this call can currently
   /// reserve, or 0 if the call is detached from its connection.
@@ -373,9 +376,9 @@ class Call : public IntrusiveForwardList<Call>::Item,
     // The call's Writer or UnaryWriter was destroyed without finishing.
     kWriterDropped = 1 << 3,
 
-    // Dropping the writer cancels the call (UnaryWriter) instead of sending
-    // a stream-end packet (Writer).
-    kCancelOnWriterDrop = 1 << 4,
+    // Dropping the writer ends the call with an error (UnaryWriter) instead of
+    // sending a stream-end packet (Writer).
+    kErrorOnWriterDrop = 1 << 4,
 
     // This call belongs to a ServerConnectionTask (EndpointRole::kServer).
     kServerCall = 1 << 5,
@@ -472,7 +475,7 @@ class Call : public IntrusiveForwardList<Call>::Item,
   uint8_t read_flags_ = 0;
 
   // Set by the first `Complete()`; later completions are ignored.
-  Status completion_status_;
+  RpcStatus completion_status_;
 };
 
 /// Client-side RPC call state.

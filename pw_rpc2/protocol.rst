@@ -307,10 +307,10 @@ rejected as malformed.
      - Server's response, completing a unary or client streaming RPC.
    * - ``11000``
      - ``ERROR_TERMINAL``
-     - Client aborts the RPC. Carries an 8-bit ``ProtocolStatus`` value.
+     - Client aborts the RPC. Carries an 8-bit RPC error code.
    * - ``11001``
      - ``SERVER | ERROR_TERMINAL``
-     - Server aborts the RPC. Carries an 8-bit ``ProtocolStatus`` value.
+     - Server aborts the RPC. Carries an 8-bit RPC error code.
 
 A packet without ``HAS_PAYLOAD`` must end with its header. A receiver rejects
 any packet without ``HAS_PAYLOAD`` that has trailing bytes as malformed.
@@ -352,7 +352,8 @@ or dropping a message:
   delivering anything from the packet. If the packet already ended the RPC
   (``10001``), the client sends nothing.
 
-Either way, the client's call completes with ``FAILED_PRECONDITION``.
+Either way, the client's call fails because of ``METHOD_TYPE_MISMATCH``. The
+C++ client reports this as ``kUnimplemented``; see :ref:`module-pw_rpc2-errors`.
 
 A streaming endpoint accepts ``01110`` or ``10011``, which represent a
 stream of a single message. A mismatch that produces only these packets
@@ -395,6 +396,37 @@ completes normally because no message is lost or misread:
    * - Bidirectional streaming
      - Client streaming
      - Works: the server's ``10011`` is a stream of one message.
+
+.. _module-pw_rpc2-protocol-unexpected-packets:
+
+Unexpected packets
+------------------
+An endpoint handles packets that it does not expect as follows. It never
+replies to a terminal packet (``10001``, ``10011``, ``11000``, or ``11001``):
+the sender has already finished with the call, and replying to an error with an
+error could bounce between the endpoints forever.
+
+* **A packet for the wrong endpoint.** The receiver drops a packet type that
+  only its own role may send, such as a server message arriving at a server. If
+  the packet is not terminal, the receiver replies with
+  ``RECEIVED_PACKET_FOR_WRONG_ENDPOINT``. If a call with the packet's call ID is
+  active, it ends with a protocol error.
+* **A non-terminal packet for an unknown call.** The receiver drops the packet
+  and replies with ``RECEIVED_PACKET_FOR_UNKNOWN_CALL``. When both endpoints
+  behave correctly, this only happens in a race with the end of the call: the
+  receiver has already finished with the call, and so has the peer by the time
+  the reply arrives, so the reply has no effect. If an active call receives
+  ``RECEIVED_PACKET_FOR_UNKNOWN_CALL``, the endpoints are out of sync, and the
+  call ends with a protocol error.
+* **A terminal packet for an unknown call.** The receiver drops the packet
+  without replying.
+* **A START packet for an active call.** The client reused the ID of a call
+  that is still active. The server drops the new ``START`` packet, ends the
+  active call, and replies with ``RECEIVED_DUPLICATE_START``, which ends the
+  call on the client. Neither call proceeds.
+* **A message after the peer ended its stream.** The receiver drops the message
+  without replying, and still applies any stream end or terminal status in the
+  same packet.
 
 Packet structures
 =================
@@ -456,7 +488,7 @@ Aborts an RPC call immediately. Its header size is **6 bytes**.
    * - 5
      - 1
      - ``error`` (``uint8_t``)
-     - ``ProtocolStatus`` value
+     - RPC error code
 
 All other packets
 -----------------
@@ -464,9 +496,14 @@ Every other packet has a **5-byte** header consisting only of the common RPC
 packet header. If ``HAS_PAYLOAD`` is set, the payload is the remainder of the
 packet.
 
+.. _module-pw_rpc2-protocol-error-codes:
+
 RPC error codes
 ===============
-Error packets (``11000`` and ``11001``) carry an 8-bit ``ProtocolStatus`` code.
+Error packets (``11000`` and ``11001``) carry an 8-bit RPC error code. Every
+code names exactly one condition, so that an endpoint's logs say precisely why
+the peer ended a call.
+
 The top two bits of a code identify which endpoint may send it:
 
 .. list-table::
@@ -479,7 +516,7 @@ The top two bits of a code identify which endpoint may send it:
    * - ``00``
      - ``0x00``--``0x3F``
      - **Either endpoint.** Valid in both client (``11000``) and server
-       (``11001``) error packets, except ``OK`` (``0x00``), which is never
+       (``11001``) error packets, except ``NONE`` (``0x00``), which is never
        sent.
    * - ``01``
      - ``0x40``--``0x7F``
@@ -490,12 +527,23 @@ The top two bits of a code identify which endpoint may send it:
        client-only codes are currently defined.
    * - ``11``
      - ``0xC0``--``0xFF``
-     - **Local only.** Never sent. Implementations use this range for
-       conditions they detect themselves.
+     - **Reserved** for future protocol versions. Not valid in any error packet
+       in protocol version 1.
 
-A receiver treats a zero code as ``INTERNAL``, since it indicates a bug in the
-peer. It treats a code that is undefined, local-only, or not valid for the
-packet's sender as unknown.
+Each protocol version defines a set of error codes. An endpoint must not send
+an error code that the negotiated protocol version does not define. A receiver
+treats any code it does not recognize, any code that the sender may not send,
+and zero as a protocol violation.
+
+As a result, a well-behaved peer never sends a code that the receiver does not
+know. A later protocol version may add codes. When the negotiated version is
+older than the newest version that an endpoint supports, the endpoint sends the
+closest code that the negotiated version defines.
+
+The tables below list the codes that protocol version 1 defines. Every other
+value is unassigned or reserved. The C++ implementation reports each code to
+the application as the action it calls for; see
+:ref:`module-pw_rpc2-errors`.
 
 ..
    # LINT.IfChange(rpc2_error_codes)
@@ -508,25 +556,36 @@ packet's sender as unknown.
      - Name
      - Description
    * - ``0x00``
-     - ``OK``
+     - ``NONE``
      - No error. Never sent.
    * - ``0x01``
      - ``INTERNAL``
      - A bug in the RPC implementation.
    * - ``0x02``
      - ``CANCELLED``
-     - The call was deliberately cancelled by application code.
+     - Application code cancelled the call, either explicitly or, on the
+       client, by dropping a handle to the call before the call finished.
    * - ``0x03``
-     - ``RECEIVED_PACKET_FOR_WRONG_ENDPOINT``
-     - The endpoint received a packet type that may only be sent by its own
-       role (a server received a server-to-client packet, or a client received
-       a client-to-server packet).
-   * - ``0x04``
      - ``METHOD_TYPE_MISMATCH``
      - A packet does not match the method's type. Unary and server streaming
        calls must be started with ``START | HAS_PAYLOAD | STREAM_END``
        (``01110``); unary and client streaming calls must be answered with
        ``SERVER | HAS_PAYLOAD | OK_TERMINAL`` (``10011``).
+   * - ``0x04``
+     - ``RECEIVED_PACKET_FOR_WRONG_ENDPOINT``
+     - The endpoint received a packet type that may only be sent by its own
+       role (a server received a server-to-client packet, or a client received
+       a client-to-server packet).
+   * - ``0x05``
+     - ``RECEIVED_PACKET_FOR_UNKNOWN_CALL``
+     - The endpoint received a non-terminal packet for a call ID that it does
+       not know about. See :ref:`module-pw_rpc2-protocol-unexpected-packets`.
+
+The server-only codes are in the order of a call's lifecycle: ``0x40`` to
+``0x44`` reject a call before its method runs (``0x42`` also ends the active
+call that has the same ID), ``0x45`` and ``0x46`` end a call for a reason
+outside the method's control after the method started, and ``0x47`` and
+``0x48`` report that the server's application code ended the call.
 
 .. list-table:: Server-only error codes (0x40--0x7F)
    :header-rows: 1
@@ -536,28 +595,38 @@ packet's sender as unknown.
      - Name
      - Description
    * - ``0x40``
-     - ``DROPPED_WITHOUT_RESPONSE``
-     - The server released a unary call without sending a response or
-       cancelling it.
-   * - ``0x41``
-     - ``SERVICE_UNREGISTERED``
-     - The target service was unregistered from the server while the call was
-       running.
-   * - ``0x42``
      - ``UNKNOWN_SERVICE``
      - The requested service is not registered on the server.
-   * - ``0x43``
+   * - ``0x41``
      - ``UNKNOWN_METHOD``
      - The requested method is not registered on the target service.
-   * - ``0x44``
+   * - ``0x42``
+     - ``RECEIVED_DUPLICATE_START``
+     - The server received a ``START`` packet for a call ID that is still
+       active. Both calls end. See
+       :ref:`module-pw_rpc2-protocol-unexpected-packets`.
+   * - ``0x43``
      - ``INVALID_REQUEST_PAYLOAD``
-     - The request payload was invalid.
-   * - ``0x45``
+     - The request payload could not be decoded.
+   * - ``0x44``
      - ``FAILED_TO_ALLOCATE_CALL``
-     - Failed to allocate call state for an incoming request.
-   * - ``0x46``
+     - The server could not allocate state for the call. The method never ran.
+   * - ``0x45``
      - ``FAILED_TO_ALLOCATE_CALL_RESOURCES_WHILE_RUNNING``
-     - Failed to allocate necessary resources while running the call.
+     - An allocation failed after the method started.
+   * - ``0x46``
+     - ``SERVICE_UNREGISTERED``
+     - The target service was unregistered from the server while the call was
+       running. A server that does not support unregistering services never
+       sends this code.
+   * - ``0x47``
+     - ``DROPPED_WITHOUT_RESPONSE``
+     - The handle that a unary or client streaming method uses to respond was
+       destroyed without responding or cancelling.
+   * - ``0x48``
+     - ``METHOD_RETURNED_WITHOUT_FINISHING``
+     - The method's implementation completed while a handle it handed out for
+       writing still held the call open.
 
 ..
-   # LINT.ThenChange(//pw_rpc2/cpp/public/pw_rpc2/internal/protocol_status.h:cpp_rpc2_error_codes)
+   # LINT.ThenChange(//pw_rpc2/cpp/public/pw_rpc2/internal/protocol_error_enum.h:cpp_rpc2_error_codes)

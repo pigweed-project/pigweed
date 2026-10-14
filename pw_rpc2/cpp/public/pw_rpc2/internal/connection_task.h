@@ -32,7 +32,8 @@
 #include "pw_rpc2/internal/future_base.h"
 #include "pw_rpc2/internal/handshake.h"
 #include "pw_rpc2/internal/packet.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/internal/protocol_error.h"
+#include "pw_rpc2/status.h"
 #include "pw_transport/socket.h"
 
 namespace pw::rpc2::internal {
@@ -40,9 +41,12 @@ namespace pw::rpc2::internal {
 /// Composite future that asynchronously reserves egress buffer space, formats a
 /// payload-free control packet (a client/server error or stream end), and
 /// commits it to the transport connection.
+///
+/// Resolves to `kOk` once the packet is committed, or `kDisconnected` if the
+/// transport closed first.
 class SendControlPacketFuture : public FutureBase {
  public:
-  using value_type = Status;
+  using value_type = RpcStatus;
 
   constexpr SendControlPacketFuture() = default;
 
@@ -58,7 +62,7 @@ class SendControlPacketFuture : public FutureBase {
   SendControlPacketFuture(const SendControlPacketFuture&) = delete;
   SendControlPacketFuture& operator=(const SendControlPacketFuture&) = delete;
 
-  async2::Poll<Status> Pend(async2::Context& cx);
+  async2::Poll<RpcStatus> Pend(async2::Context& cx);
 
  private:
   OutboundPacket packet_;
@@ -94,22 +98,23 @@ class ConnectionTask : public async2::Task {
   /// queue cannot be grown, the connection is closed instead.
   ///
   /// @pre Must be called from this connection's dispatcher thread.
-  void QueueError(uint32_t call_id, ProtocolStatus error) {
+  void QueueError(uint32_t call_id, ProtocolError error) {
     QueueControlPacket(OutboundPacket::Error(role_, call_id, error));
   }
 
-  /// Queues a cancellation error packet (`ProtocolStatus::kCancelled`) for
-  /// `call_id`.
+  /// Queues a `ProtocolError::kCancelled` packet for `call_id`, which tells the
+  /// peer that application code cancelled the call. Only application cancels
+  /// send it; every other condition has its own code.
   ///
   /// @pre Must be called from this connection's dispatcher thread.
   void QueueCancel(uint32_t call_id) {
-    QueueError(call_id, ProtocolStatus::kCancelled);
+    QueueError(call_id, ProtocolError::kCancelled);
   }
 
   /// Queues the packet that finishes this endpoint's stream for `call_id`
   /// normally. Behaves as `QueueError`.
   ///
-  /// A client half-closes its stream; a server ends the RPC with `OK`. See
+  /// A client half-closes its stream; a server ends the RPC with `kOk`. See
   /// `OutboundPacket::Finish()`.
   ///
   /// @pre Must be called from this connection's dispatcher thread.
@@ -117,11 +122,18 @@ class ConnectionTask : public async2::Task {
     QueueControlPacket(OutboundPacket::Finish(role_, call_id));
   }
 
-  /// Closes the transport connection and completes every call on it.
+  /// Closes the transport connection and completes every call on it with
+  /// `reason`, which is one of:
+  ///
+  /// - `kClosed`: the user closed the `Client` or `Server`.
+  /// - `kDisconnected`: the transport closed, the client ran out of call IDs,
+  ///   or a control packet could not be queued for lack of memory.
+  /// - `kProtocolError`: the peer sent a malformed packet, or the handshake
+  ///   failed.
   ///
   /// @pre Must be called from this connection's dispatcher thread, or after
   /// this task is deregistered.
-  void CloseConnection(Status status = Status::Cancelled());
+  void CloseConnection(RpcStatus reason);
 
   /// @pre Must be called from this connection's dispatcher thread.
   transport::ReliableDatagramSocket& connection() { return connection_; }
@@ -129,7 +141,7 @@ class ConnectionTask : public async2::Task {
   EndpointRole role() const { return role_; }
   bool is_closed() const { return state() == State::kClosed; }
   bool is_handshake_complete() const { return state() == State::kActive; }
-  Status close_status() const { return close_status_; }
+  RpcStatus close_status() const { return close_status_; }
   const HandshakeInfo& handshake_info() const { return handshake_info_; }
 
   // --- Call management, scoped strictly to this connection ---
@@ -179,7 +191,7 @@ class ConnectionTask : public async2::Task {
   /// Derived destructors must call this before destroying their own state.
   void Teardown() {
     Deregister();
-    CloseConnection(Status::Cancelled());
+    CloseConnection(RpcStatus::Closed());
   }
 
   /// Handles up to `kMaxPacketsPerPoll` packets. Returns true if more may be
@@ -232,7 +244,7 @@ class ConnectionTask : public async2::Task {
   // The connection state machine and fixed endpoint role.
   State state_;
   EndpointRole role_;
-  Status close_status_ = Status::Cancelled();
+  RpcStatus close_status_ = RpcStatus::Closed();
 
   // Every call active on this connection: the routing registry, keyed by call
   // ID, and for a server connection also the set of calls this task owns and

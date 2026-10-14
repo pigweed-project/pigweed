@@ -133,6 +133,11 @@ class PacketType {
   /// True if the server sent this packet.
   constexpr bool is_server() const { return (bits_ & flags::kServer) != 0u; }
 
+  /// The role of the endpoint that sent this packet.
+  constexpr EndpointRole sender() const {
+    return is_server() ? EndpointRole::kServer : EndpointRole::kClient;
+  }
+
   /// True if this packet carries a message, which may be empty.
   constexpr bool has_payload() const {
     return (bits_ & flags::kHasPayload) != 0u;

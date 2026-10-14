@@ -20,7 +20,7 @@
 #include "pw_rpc2/internal/control_future.h"
 #include "pw_rpc2/internal/server_task.h"
 #include "pw_rpc2/service.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/status.h"
 #include "pw_transport/transport.h"
 
 namespace pw::rpc2 {
@@ -91,22 +91,29 @@ class Server {
 
   /// Registers a service with the server so its methods can be invoked.
   ///
-  /// Callable from any thread. Returns `OK` once the registration is queued;
-  /// the dispatcher applies it before processing any further packets. Returns
-  /// `FAILED_PRECONDITION` if the server is closing or closed.
+  /// Callable from any thread.
+  ///
+  /// @returns
+  /// * `kOk`: the registration is queued. The dispatcher applies it before
+  ///   processing any further packets.
+  /// * `kClosed`: the server is closing or closed.
   ///
   /// Registering a service whose ID is already registered is a fatal error,
   /// detected when the dispatcher applies the registration. The service stays
   /// registered until the server closes, and must outlive the server.
-  Status RegisterService(Service& service) {
+  RpcStatus RegisterService(Service& service) {
     return task_.RegisterService(service);
   }
 
   /// Starts accepting connections on `listener`.
   ///
-  /// Callable from any thread. The returned future resolves once the listener
-  /// is registered, with `RESOURCE_EXHAUSTED` if its bookkeeping could not be
-  /// allocated or `FAILED_PRECONDITION` if the server is closing or closed.
+  /// Callable from any thread. The returned future resolves to:
+  ///
+  /// * `kOk`: the listener is registered.
+  /// * `kClosed`: the server is closing or closed.
+  /// * `kResourceExhausted`: the listener's bookkeeping could not be
+  ///   allocated.
+  ///
   /// Dropping the future before it resolves withdraws the request.
   ///
   /// Before `Start()`, the registration is applied on the calling thread and
@@ -118,10 +125,10 @@ class Server {
   }
 
   /// `RegisterListener()`, but blocks the calling thread until the listener is
-  /// registered.
+  /// registered. Returns the same codes as `RegisterListener()`.
   ///
   /// @pre Must not be called from the server's own dispatcher thread.
-  Status RegisterListenerBlocking(
+  RpcStatus RegisterListenerBlocking(
       transport::ReliableDatagramListener& listener) {
     return task_.RegisterListenerBlocking(listener);
   }
@@ -129,9 +136,9 @@ class Server {
   /// Tears down the server: stops every listener, closes every connection and
   /// the calls on it, and unregisters every service.
   ///
-  /// Callable from any thread. The returned future resolves once all of that
-  /// has happened on the dispatcher. Closing is terminal; the server cannot be
-  /// restarted.
+  /// Callable from any thread. The returned future resolves to `kOk` once all
+  /// of that has happened on the dispatcher. Calls still running end with
+  /// `kClosed`. Closing is terminal; the server cannot be restarted.
   ControlFuture Close() { return task_.Close(); }
 
   /// `Close()`, but blocks the calling thread until teardown is complete.

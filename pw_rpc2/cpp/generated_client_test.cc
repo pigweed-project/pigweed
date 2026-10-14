@@ -19,14 +19,13 @@
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/future_task.h"
 #include "pw_buf/buf.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/pw_rpc2_test.pwpb.rpc2.h"
 #include "pw_rpc2/pw_rpc2_test.raw.rpc2.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/service_client.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/write_reservation.h"
-#include "pw_status/status.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc2 {
@@ -99,7 +98,7 @@ TEST(GeneratedPwpbClientTest, ServerStreamSendsRequestAndReadsMessages) {
 
   call.Finish();
   auto end = test::RunToCompletion(dispatcher, reader->Read());
-  EXPECT_EQ(end.status(), Status::OutOfRange());
+  EXPECT_EQ(end.status(), RpcStatus::EndOfStream());
 }
 
 // Messages the server sends before the client reads wait in order until the
@@ -130,7 +129,7 @@ TEST(GeneratedPwpbClientTest, ServerStreamQueuesMessagesUntilRead) {
   EXPECT_EQ(second->val, 12u);
 
   auto end = test::RunToCompletion(dispatcher, reader->Read());
-  EXPECT_EQ(end.status(), Status::OutOfRange());
+  EXPECT_EQ(end.status(), RpcStatus::EndOfStream());
 }
 
 TEST(GeneratedPwpbClientTest, ClientStreamWritesMessagesAndReceivesResponse) {
@@ -161,7 +160,7 @@ TEST(GeneratedPwpbClientTest, ClientStreamWritesMessagesAndReceivesResponse) {
   auto second = call.stream_message(1);
   PW_TEST_ASSERT_OK(second);
   EXPECT_EQ(second->val, 22u);
-  EXPECT_EQ(call.stream_message(2).status(), Status::OutOfRange());
+  EXPECT_EQ(call.stream_message(2).status(), RpcStatus::EndOfStream());
 
   EXPECT_FALSE(call.client_stream_finished());
   PW_TEST_ASSERT_OK(
@@ -210,7 +209,7 @@ TEST(GeneratedPwpbClientTest, BidiStreamExchangesMessages) {
 
   call.Finish();
   auto end = test::RunToCompletion(dispatcher, stream->reader().Read());
-  EXPECT_EQ(end.status(), Status::OutOfRange());
+  EXPECT_EQ(end.status(), RpcStatus::EndOfStream());
 }
 
 // Raw unary and server-streaming calls send a `ConstBuf` request, which may
@@ -297,7 +296,7 @@ TEST(GeneratedRawClientTest, OwnedRequestReleasedWhenSendFails) {
   allocator::test::AllocatorForTest<256> request_allocator;
   async2::DispatcherForTest dispatcher;
 
-  // A client with no connection fails every call with `UNAVAILABLE`.
+  // A client with no connection fails every call with `kClosed`.
   const test::pw_rpc2::raw::TestEcho::Client client;
 
   constexpr std::byte kRequest[] = {std::byte{0x12}, std::byte{0x34}};
@@ -312,9 +311,9 @@ TEST(GeneratedRawClientTest, OwnedRequestReleasedWhenSendFails) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(unary.has_value());
-  EXPECT_EQ(unary.value().status(), Status::Unavailable());
+  EXPECT_EQ(unary.value().status(), RpcStatus::Closed());
   ASSERT_TRUE(server_stream.has_value());
-  EXPECT_EQ(server_stream.value().status(), Status::Unavailable());
+  EXPECT_EQ(server_stream.value().status(), RpcStatus::Closed());
   EXPECT_EQ(request_allocator.metrics().allocated_bytes.value(), 0u);
 }
 
@@ -368,7 +367,7 @@ TEST(GeneratedRawClientTest, UnaryCallSendsReservedRequestAndReadsResponse) {
   EXPECT_GE(reservation->size(), kMaxRawPayloadSize);
 
   constexpr std::byte kRequest[] = {std::byte{0x12}, std::byte{0x34}};
-  Result<RawResponseFuture> response_future =
+  RpcResult<RawResponseFuture> response_future =
       test::CommitCopy(*reservation, kRequest);
   PW_TEST_ASSERT_OK(response_future);
 
@@ -398,7 +397,7 @@ TEST(GeneratedRawClientTest, UnaryCallWithEmptyPayloads) {
 
   auto reservation = test::RunToCompletion(dispatcher, client.EchoUnary(0));
   PW_TEST_ASSERT_OK(reservation);
-  Result<RawResponseFuture> response_future = reservation->Commit(0);
+  RpcResult<RawResponseFuture> response_future = reservation->Commit(0);
   PW_TEST_ASSERT_OK(response_future);
 
   async2::FutureTask response(std::move(*response_future));
@@ -428,7 +427,7 @@ TEST(GeneratedRawClientTest, ServerStreamSendsReservedRequestAndReadsMessages) {
   PW_TEST_ASSERT_OK(reservation);
 
   constexpr std::byte kRequest[] = {std::byte{0x01}};
-  Result<RawReader> reader = test::CommitCopy(*reservation, kRequest);
+  RpcResult<RawReader> reader = test::CommitCopy(*reservation, kRequest);
   PW_TEST_ASSERT_OK(reader);
 
   auto invocation = peer.ExpectInvocation<
@@ -451,7 +450,7 @@ TEST(GeneratedRawClientTest, ServerStreamSendsReservedRequestAndReadsMessages) {
 
   invocation.Finish();
   auto end = test::RunToCompletion(dispatcher, reader->Read());
-  EXPECT_EQ(end.status(), Status::OutOfRange());
+  EXPECT_EQ(end.status(), RpcStatus::EndOfStream());
 }
 
 TEST(GeneratedRawClientTest, ClientStreamWritesMessagesAndReceivesResponse) {
@@ -538,7 +537,7 @@ TEST(GeneratedRawClientTest, BidiStreamExchangesMessages) {
 
   invocation.Finish();
   auto end = test::RunToCompletion(dispatcher, stream->reader().Read());
-  EXPECT_EQ(end.status(), Status::OutOfRange());
+  EXPECT_EQ(end.status(), RpcStatus::EndOfStream());
 }
 
 }  // namespace

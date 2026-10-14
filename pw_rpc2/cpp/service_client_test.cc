@@ -15,7 +15,9 @@
 #include "pw_rpc2/service_client.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <type_traits>
@@ -26,10 +28,13 @@
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/future_task.h"
 #include "pw_bytes/span.h"
+#include "pw_enum/to_string.h"
+#include "pw_enum/traits.h"
 #include "pw_rpc2/client.h"
 #include "pw_rpc2/internal/generated_service_client.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/packet_testing.h"
+#include "pw_rpc2/internal/protocol_error.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_status/status_with_size.h"
 #include "pw_transport/transport.h"
@@ -39,6 +44,8 @@ namespace pw::rpc2 {
 namespace {
 
 namespace flags = ::pw::rpc2::internal::flags;
+
+using internal::ProtocolError;
 
 static_assert(!std::is_copy_constructible_v<RawReadFuture>);
 static_assert(!std::is_copy_assignable_v<RawReadFuture>);
@@ -88,10 +95,10 @@ static_assert(
 
 static_assert(
     std::is_same_v<decltype(std::declval<RawUnaryReservation&>().Commit(0)),
-                   Result<RawResponseFuture>>);
+                   RpcResult<RawResponseFuture>>);
 static_assert(std::is_same_v<
               decltype(std::declval<RawServerStreamReservation&>().Commit(0)),
-              Result<RawReader>>);
+              RpcResult<RawReader>>);
 static_assert(
     std::is_same_v<ClientStreamCall<pw::ConstBuf>::Writer, RawWriter>);
 static_assert(std::is_same_v<ClientStreamCall<pw::ConstBuf>::ResponseFuture,
@@ -171,7 +178,8 @@ class TestServiceClient : public internal::GeneratedServiceClient {
   using internal::GeneratedServiceClient::ReserveUnary;
 };
 
-// A request whose serializer always fails with `INVALID_ARGUMENT`.
+// A request whose serializer always fails with `INVALID_ARGUMENT`, which the
+// client reports as `kDataError`.
 struct UnserializableRequest {
   struct Serializer {
     static size_t MaxEncodedSize(const UnserializableRequest&) { return 4; }
@@ -183,10 +191,10 @@ struct UnserializableRequest {
 
 // Frames a server packet of any type that is neither a start nor an error
 // packet.
-Result<pw::Buf> FrameServerPacket(pw::Allocator& allocator,
-                                  internal::PacketType type,
-                                  uint32_t call_id,
-                                  pw::ConstByteSpan payload = {}) {
+pw::Buf FrameServerPacket(pw::Allocator& allocator,
+                          internal::PacketType type,
+                          uint32_t call_id,
+                          pw::ConstByteSpan payload = {}) {
   PW_CHECK(type.is_server());
   return internal::PacketFramer::FramePacket(allocator, type, call_id, payload);
 }
@@ -194,21 +202,32 @@ Result<pw::Buf> FrameServerPacket(pw::Allocator& allocator,
 // Returns the call ID of the most recent packet the client sent.
 uint32_t LastSentCallId(test::MockConnection& raw_conn) {
   auto decoded = internal::InboundPacket::Decode(raw_conn.last_written_buf());
-  PW_CHECK_OK(decoded.status());
-  return decoded->call_id();
+  PW_CHECK(decoded != nullptr);
+  return decoded.call_id();
 }
 
 // Checks that the most recent packet the client sent terminates `call_id` with
 // `error`.
 void ExpectSentError(test::MockConnection& raw_conn,
                      uint32_t call_id,
-                     internal::ProtocolStatus error) {
+                     ProtocolError error) {
   auto decoded = internal::InboundPacket::Decode(raw_conn.last_written_buf());
-  ASSERT_TRUE(decoded.ok());
-  EXPECT_EQ(decoded->type(),
+  ASSERT_NE(decoded, nullptr);
+  EXPECT_EQ(decoded.type(),
             internal::PacketType::Make<flags::kErrorTerminal>());
-  EXPECT_EQ(decoded->call_id(), call_id);
-  EXPECT_EQ(decoded->error(), error);
+  EXPECT_EQ(decoded.call_id(), call_id);
+  EXPECT_EQ(decoded.error(), error);
+}
+
+// Delivers a packet that is too short to hold a packet header. The server is
+// not speaking the protocol, so the client closes the connection with
+// `kProtocolError`.
+void ReceiveMalformedPacket(pw::Allocator& allocator,
+                            test::MockConnection& raw_conn) {
+  pw::Buf malformed = pw::Buf::Allocate(allocator, 3);
+  PW_CHECK(!malformed.empty());
+  std::memset(malformed.data(), 0xAB, malformed.size());
+  raw_conn.SetNextRead(std::move(malformed));
 }
 
 // Polls a future that it owns and keeps reachable, so that tests can cancel the
@@ -277,11 +296,11 @@ TEST(ServiceClientTest, UnaryCallSendsRequestFirstThenReadsResponse) {
   EXPECT_EQ(raw_conn->commit_count(), 3u);  // 2 handshake + 1 request
   auto decode_req =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_req.ok());
-  EXPECT_EQ(decode_req->type(), kUnaryRequestType);
-  EXPECT_EQ(decode_req->service_id(), 100u);
-  EXPECT_EQ(decode_req->method_id(), 200u);
-  EXPECT_EQ(decode_req->payload().size(), 3u);
+  ASSERT_NE(decode_req, nullptr);
+  EXPECT_EQ(decode_req.type(), kUnaryRequestType);
+  EXPECT_EQ(decode_req.service_id(), 100u);
+  EXPECT_EQ(decode_req.method_id(), 200u);
+  EXPECT_EQ(decode_req.payload().size(), 3u);
 
   EXPECT_FALSE(task.has_value());
 
@@ -289,8 +308,8 @@ TEST(ServiceClientTest, UnaryCallSendsRequestFirstThenReadsResponse) {
   std::memset(resp_payload.data(), 0xAA, 4);
   auto framed_resp = internal::PacketFramer::FrameResponsePacket(
       allocator, /*call_id=*/1, pw::ConstByteSpan(resp_payload));
-  ASSERT_TRUE(framed_resp.ok());
-  raw_conn->SetNextRead(std::move(*framed_resp));
+  ASSERT_NE(framed_resp, nullptr);
+  raw_conn->SetNextRead(std::move(framed_resp));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(task.has_value());
@@ -334,8 +353,8 @@ TEST(ServiceClientTest, UnaryFutureReportsCompleteOnceResolved) {
   std::memset(resp_payload.data(), 0xBB, 2);
   auto framed_resp = internal::PacketFramer::FrameResponsePacket(
       allocator, /*call_id=*/1, pw::ConstByteSpan(resp_payload));
-  ASSERT_TRUE(framed_resp.ok());
-  raw_conn->SetNextRead(std::move(*framed_resp));
+  ASSERT_NE(framed_resp, nullptr);
+  raw_conn->SetNextRead(std::move(framed_resp));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(task.has_value());
@@ -373,8 +392,8 @@ TEST(ServiceClientTest, ServerStreamingReceivesMessagesAndStreamEnd) {
   std::byte chunk1[3] = {std::byte{1}, std::byte{2}, std::byte{3}};
   auto pkt1 =
       internal::PacketFramer::FrameServerMessagePacket(allocator, 1u, chunk1);
-  ASSERT_TRUE(pkt1.ok());
-  raw_conn->SetNextRead(std::move(*pkt1));
+  ASSERT_NE(pkt1, nullptr);
+  raw_conn->SetNextRead(std::move(pkt1));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read1.has_value());
   PW_TEST_ASSERT_OK(read1.value());
@@ -385,8 +404,8 @@ TEST(ServiceClientTest, ServerStreamingReceivesMessagesAndStreamEnd) {
   std::byte chunk2[2] = {std::byte{10}, std::byte{20}};
   auto pkt2 =
       internal::PacketFramer::FrameServerMessagePacket(allocator, 1u, chunk2);
-  ASSERT_TRUE(pkt2.ok());
-  raw_conn->SetNextRead(std::move(*pkt2));
+  ASSERT_NE(pkt2, nullptr);
+  raw_conn->SetNextRead(std::move(pkt2));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read2.has_value());
   PW_TEST_ASSERT_OK(read2.value());
@@ -395,11 +414,11 @@ TEST(ServiceClientTest, ServerStreamingReceivesMessagesAndStreamEnd) {
   async2::FutureTask read3(reader.Read());
   dispatcher.Post(read3);
   auto end_pkt = internal::PacketFramer::FrameServerFinishPacket(allocator, 1u);
-  ASSERT_TRUE(end_pkt.ok());
-  raw_conn->SetNextRead(std::move(*end_pkt));
+  ASSERT_NE(end_pkt, nullptr);
+  raw_conn->SetNextRead(std::move(end_pkt));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read3.has_value());
-  EXPECT_EQ(read3.value().status(), Status::OutOfRange());
+  EXPECT_EQ(read3.value().status(), RpcStatus::EndOfStream());
 }
 
 TEST(ServiceClientTest, ClientStreamingSendsChunksThenReadsResponse) {
@@ -455,8 +474,8 @@ TEST(ServiceClientTest, ClientStreamingSendsChunksThenReadsResponse) {
   std::memset(resp_data.data(), 0xEE, 4);
   auto framed_resp = internal::PacketFramer::FrameResponsePacket(
       allocator, /*call_id=*/1, pw::ConstByteSpan(resp_data));
-  ASSERT_TRUE(framed_resp.ok());
-  raw_conn->SetNextRead(std::move(*framed_resp));
+  ASSERT_NE(framed_resp, nullptr);
+  raw_conn->SetNextRead(std::move(framed_resp));
 
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(resp_task.has_value());
@@ -497,8 +516,8 @@ TEST(ServiceClientTest, BidirectionalStreamingConcurrentReadWrite) {
   std::byte srv_msg[3] = {std::byte{1}, std::byte{2}, std::byte{3}};
   auto pkt =
       internal::PacketFramer::FrameServerMessagePacket(allocator, 1u, srv_msg);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read_task.has_value());
   PW_TEST_ASSERT_OK(read_task.value());
@@ -513,11 +532,11 @@ TEST(ServiceClientTest, BidirectionalStreamingConcurrentReadWrite) {
   async2::FutureTask end_read_task(call.reader().Read());
   dispatcher.Post(end_read_task);
   auto end_pkt = internal::PacketFramer::FrameServerFinishPacket(allocator, 1u);
-  ASSERT_TRUE(end_pkt.ok());
-  raw_conn->SetNextRead(std::move(*end_pkt));
+  ASSERT_NE(end_pkt, nullptr);
+  raw_conn->SetNextRead(std::move(end_pkt));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(end_read_task.has_value());
-  EXPECT_EQ(end_read_task.value().status(), Status::OutOfRange());
+  EXPECT_EQ(end_read_task.value().status(), RpcStatus::EndOfStream());
 }
 
 // A server finish packet terminates the RPC, so an open client writer is closed
@@ -544,11 +563,11 @@ TEST(ServiceClientTest, BidirectionalServerStreamEndClosesClientWriter) {
   async2::FutureTask end_read_task(call.reader().Read());
   dispatcher.Post(end_read_task);
   auto end_pkt = internal::PacketFramer::FrameServerFinishPacket(allocator, 1u);
-  ASSERT_TRUE(end_pkt.ok());
-  raw_conn->SetNextRead(std::move(*end_pkt));
+  ASSERT_NE(end_pkt, nullptr);
+  raw_conn->SetNextRead(std::move(end_pkt));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(end_read_task.has_value());
-  EXPECT_EQ(end_read_task.value().status(), Status::OutOfRange());
+  EXPECT_EQ(end_read_task.value().status(), RpcStatus::EndOfStream());
 
   const size_t commits_before = raw_conn->commit_count();
 
@@ -597,11 +616,11 @@ TEST(ServiceClientTest, ServerFinalMessageWaitsForTerminalPacket) {
                                                           flags::kStreamEnd>(),
                                1u,
                                chunk);
-  ASSERT_TRUE(pkt.ok());
+  ASSERT_NE(pkt, nullptr);
 
   async2::FutureTask read_task(reader.Read());
   dispatcher.Post(read_task);
-  raw_conn->SetNextRead(std::move(*pkt));
+  raw_conn->SetNextRead(std::move(pkt));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read_task.has_value());
   PW_TEST_ASSERT_OK(read_task.value());
@@ -613,11 +632,11 @@ TEST(ServiceClientTest, ServerFinalMessageWaitsForTerminalPacket) {
   EXPECT_FALSE(end_read_task.has_value());
 
   auto finish = internal::PacketFramer::FrameServerFinishPacket(allocator, 1u);
-  ASSERT_TRUE(finish.ok());
-  raw_conn->SetNextRead(std::move(*finish));
+  ASSERT_NE(finish, nullptr);
+  raw_conn->SetNextRead(std::move(finish));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(end_read_task.has_value());
-  EXPECT_EQ(end_read_task.value().status(), Status::OutOfRange());
+  EXPECT_EQ(end_read_task.value().status(), RpcStatus::EndOfStream());
 }
 
 // After a server half-close (0x09), the client drops any further messages and
@@ -649,16 +668,16 @@ TEST(ServiceClientTest, ServerStreamEndThenErrorReportsError) {
       allocator,
       internal::PacketType::Make<flags::kServer, flags::kStreamEnd>(),
       call_id);
-  ASSERT_TRUE(stream_end.ok());
-  raw_conn->SetNextRead(std::move(*stream_end));
+  ASSERT_NE(stream_end, nullptr);
+  raw_conn->SetNextRead(std::move(stream_end));
   dispatcher.RunUntilStalled();
   EXPECT_FALSE(read_task.has_value());
 
   std::byte chunk[1] = {std::byte{1}};
   auto late_message = internal::PacketFramer::FrameServerMessagePacket(
       allocator, call_id, chunk);
-  ASSERT_TRUE(late_message.ok());
-  raw_conn->SetNextRead(std::move(*late_message));
+  ASSERT_NE(late_message, nullptr);
+  raw_conn->SetNextRead(std::move(late_message));
   dispatcher.RunUntilStalled();
   EXPECT_FALSE(read_task.has_value());
 
@@ -670,12 +689,12 @@ TEST(ServiceClientTest, ServerStreamEndThenErrorReportsError) {
   PW_TEST_EXPECT_OK(write_task.value().status());
 
   auto error = internal::PacketFramer::FrameServerErrorPacket(
-      allocator, call_id, internal::ProtocolStatus::kInternal);
-  ASSERT_TRUE(error.ok());
-  raw_conn->SetNextRead(std::move(*error));
+      allocator, call_id, ProtocolError::kInternal);
+  ASSERT_NE(error, nullptr);
+  raw_conn->SetNextRead(std::move(error));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read_task.has_value());
-  EXPECT_EQ(read_task.value().status(), Status::Internal());
+  EXPECT_EQ(read_task.value().status(), RpcStatus::ProtocolError());
 }
 
 // A unary call takes exactly one packet that carries the response and ends the
@@ -706,21 +725,20 @@ TEST(ServiceClientTest, UnaryCallRejectsResponseThatIsNotSingleResponse) {
         type,
         call_id,
         type.has_payload() ? pw::ConstByteSpan(kPayload) : pw::ConstByteSpan());
-    ASSERT_TRUE(pkt.ok());
-    raw_conn->SetNextRead(std::move(*pkt));
+    ASSERT_NE(pkt, nullptr);
+    raw_conn->SetNextRead(std::move(pkt));
     dispatcher.RunUntilStalled();
 
     ASSERT_TRUE(task.has_value());
-    EXPECT_EQ(task.value().status(), Status::FailedPrecondition());
+    EXPECT_EQ(task.value().status(), RpcStatus::Unimplemented());
     if (type ==
         internal::PacketType::Make<flags::kServer, flags::kOkTerminal>()) {
       auto last = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-      ASSERT_TRUE(last.ok());
-      EXPECT_EQ(last->type(), kUnaryRequestType);
-      EXPECT_EQ(last->call_id(), call_id);
+      ASSERT_NE(last, nullptr);
+      EXPECT_EQ(last.type(), kUnaryRequestType);
+      EXPECT_EQ(last.call_id(), call_id);
     } else {
-      ExpectSentError(
-          *raw_conn, call_id, internal::ProtocolStatus::kMethodTypeMismatch);
+      ExpectSentError(*raw_conn, call_id, ProtocolError::kMethodTypeMismatch);
     }
   }
 }
@@ -750,21 +768,20 @@ TEST(ServiceClientTest, ClientStreamingCallRejectsStreamedResponse) {
   std::byte srv_msg[3] = {std::byte{1}, std::byte{2}, std::byte{3}};
   auto pkt = internal::PacketFramer::FrameServerMessagePacket(
       allocator, call_id, srv_msg);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(resp_task.has_value());
-  EXPECT_EQ(resp_task.value().status(), Status::FailedPrecondition());
-  ExpectSentError(
-      *raw_conn, call_id, internal::ProtocolStatus::kMethodTypeMismatch);
+  EXPECT_EQ(resp_task.value().status(), RpcStatus::Unimplemented());
+  ExpectSentError(*raw_conn, call_id, ProtocolError::kMethodTypeMismatch);
 
   // The call is over, so the client's stream is closed too.
   async2::FutureTask write_task(call.writer().ReserveWrite(2));
   dispatcher.Post(write_task);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(write_task.has_value());
-  EXPECT_EQ(write_task.value().status(), Status::FailedPrecondition());
+  EXPECT_EQ(write_task.value().status(), RpcStatus::Unimplemented());
 }
 
 // A streaming call accepts a single terminal response: it is unambiguously a
@@ -794,8 +811,8 @@ TEST(ServiceClientTest, ServerStreamingCallAcceptsSingleResponse) {
   std::byte resp[2] = {std::byte{7}, std::byte{8}};
   auto pkt =
       internal::PacketFramer::FrameResponsePacket(allocator, call_id, resp);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read_task.has_value());
   PW_TEST_ASSERT_OK(read_task.value());
@@ -805,16 +822,18 @@ TEST(ServiceClientTest, ServerStreamingCallAcceptsSingleResponse) {
   dispatcher.Post(end_read_task);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(end_read_task.has_value());
-  EXPECT_EQ(end_read_task.value().status(), Status::OutOfRange());
+  EXPECT_EQ(end_read_task.value().status(), RpcStatus::EndOfStream());
 
   // Nothing was reported to the server.
   EXPECT_EQ(LastSentCallId(*raw_conn), call_id);
   auto last = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(last.ok());
-  EXPECT_EQ(last->type(), kUnaryRequestType);
+  ASSERT_NE(last, nullptr);
+  EXPECT_EQ(last.type(), kUnaryRequestType);
 }
 
-TEST(ServiceClientTest, ServerErrorResolvesClientFutureWithStatus) {
+// A server error code becomes the `RpcStatus` that tells the client what to do
+// next.
+TEST(ServiceClientTest, ServerErrorResolvesClientFutureWithMappedStatus) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -824,23 +843,127 @@ TEST(ServiceClientTest, ServerErrorResolvesClientFutureWithStatus) {
       dispatcher);
   TestServiceClient test_service(client, 100u);
 
-  pw::Buf req_buf = pw::Buf::Allocate(allocator, 2);
-  async2::FutureTask task(test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(
-      600u, pw::ConstBuf(std::move(req_buf))));
-  dispatcher.Post(task);
+  // The code after the last server-origin code is unassigned.
+  constexpr auto kUnassignedServerCode = static_cast<ProtocolError>(
+      static_cast<uint8_t>(ProtocolError::kMethodReturnedWithoutFinishing) + 1);
+  static_assert(!pw::IsValidEnum(kUnassignedServerCode));
+
+  struct Case {
+    ProtocolError error;
+    RpcStatus expected;
+  };
+  constexpr Case kCases[] = {
+      {ProtocolError::kInternal, RpcStatus::ProtocolError()},
+      {ProtocolError::kCancelled, RpcStatus::Cancelled()},
+      {ProtocolError::kMethodTypeMismatch, RpcStatus::Unimplemented()},
+      {ProtocolError::kReceivedPacketForWrongEndpoint,
+       RpcStatus::ProtocolError()},
+      {ProtocolError::kReceivedPacketForUnknownCall,
+       RpcStatus::ProtocolError()},
+      {ProtocolError::kUnknownService, RpcStatus::Unimplemented()},
+      {ProtocolError::kUnknownMethod, RpcStatus::Unimplemented()},
+      {ProtocolError::kReceivedDuplicateStart, RpcStatus::ProtocolError()},
+      {ProtocolError::kInvalidRequestPayload, RpcStatus::DataError()},
+      {ProtocolError::kFailedToAllocateCall, RpcStatus::Unavailable()},
+      {ProtocolError::kFailedToAllocateCallResourcesWhileRunning,
+       RpcStatus::Aborted()},
+      {ProtocolError::kServiceUnregistered, RpcStatus::Aborted()},
+      {ProtocolError::kDroppedWithoutResponse, RpcStatus::Cancelled()},
+      {ProtocolError::kMethodReturnedWithoutFinishing, RpcStatus::Cancelled()},
+      // A code the server may not send is a protocol violation: zero, an
+      // unassigned server code, a client-only code (none are defined), or a
+      // reserved code.
+      {ProtocolError::kNone, RpcStatus::ProtocolError()},
+      {kUnassignedServerCode, RpcStatus::ProtocolError()},
+      {static_cast<ProtocolError>(0x80), RpcStatus::ProtocolError()},
+      {static_cast<ProtocolError>(0xC0), RpcStatus::ProtocolError()},
+  };
+  // Every defined code, plus the three undefined ones.
+  static_assert(std::size(kCases) ==
+                pw::EnumTraits<ProtocolError>::kDistinctValueCount + 3);
+
+  for (const Case& test : kCases) {
+    async2::FutureTask task(test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(
+        600u, pw::ConstBuf()));
+    dispatcher.Post(task);
+    dispatcher.RunUntilStalled();
+    const uint32_t call_id = LastSentCallId(*raw_conn);
+
+    auto err_pkt = internal::PacketFramer::FrameServerErrorPacket(
+        allocator, call_id, test.error);
+    ASSERT_NE(err_pkt, nullptr);
+    raw_conn->SetNextRead(std::move(err_pkt));
+    dispatcher.RunUntilStalled();
+
+    ASSERT_TRUE(task.has_value());
+    EXPECT_EQ(task.value().status(), test.expected)
+        << pw::EnumToString(test.error);
+    // The error ended only this call, not the connection.
+    EXPECT_TRUE(test_service.is_open()) << pw::EnumToString(test.error);
+    // The error ended the call, so the client sent nothing in reply.
+    EXPECT_EQ(LastSentCallId(*raw_conn), call_id);
+    EXPECT_FALSE(internal::InboundPacket::Decode(raw_conn->last_written_buf())
+                     .type()
+                     .is_error());
+
+    // Keep the mock connection's record of written packets from filling up.
+    raw_conn->clear_written();
+  }
+}
+
+// A malformed packet means the server is not speaking the protocol, so the
+// connection closes. Reconnecting would not help, so its calls, and any call
+// started on the client afterwards, fail with `kProtocolError`.
+TEST(ServiceClientTest, MalformedPacketFailsCallsWithProtocolError) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+
+  test::ScopedClient client(
+      test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn),
+      dispatcher);
+  TestServiceClient test_service(client, 100u);
+
+  async2::FutureTask pending(
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
+  dispatcher.Post(pending);
+  dispatcher.RunUntilStalled();
+  EXPECT_FALSE(pending.has_value());
+
+  ReceiveMalformedPacket(allocator, *raw_conn);
   dispatcher.RunUntilStalled();
 
-  // The server reports ProtocolStatus::kUnknownMethod.
-  auto err_pkt = internal::PacketFramer::FrameServerErrorPacket(
-      allocator,
-      /*call_id=*/1,
-      internal::ProtocolStatus::kUnknownMethod);
-  ASSERT_TRUE(err_pkt.ok());
-  raw_conn->SetNextRead(std::move(*err_pkt));
+  EXPECT_TRUE(raw_conn->is_closed());
+  ASSERT_TRUE(pending.has_value());
+  EXPECT_EQ(pending.value().status(), RpcStatus::ProtocolError());
 
+  EXPECT_FALSE(test_service.is_open());
+
+  // Calls of every type started afterwards fail with the client's close
+  // status, `kProtocolError`.
+  async2::FutureTask unary(
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
+  async2::FutureTask server_stream(
+      test_service.CallServerStream<pw::ConstBuf, pw::ConstBuf>(
+          300u, pw::ConstBuf()));
+  async2::FutureTask client_stream(
+      test_service.CallClientStream<pw::ConstBuf, pw::ConstBuf>(400u));
+  async2::FutureTask bidi(
+      test_service.CallBidiStream<pw::ConstBuf, pw::ConstBuf>(500u));
+  dispatcher.Post(unary);
+  dispatcher.Post(server_stream);
+  dispatcher.Post(client_stream);
+  dispatcher.Post(bidi);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task.has_value());
-  EXPECT_EQ(task.value().status(), Status::NotFound());
+
+  ASSERT_TRUE(unary.has_value());
+  EXPECT_EQ(unary.value().status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(server_stream.has_value());
+  EXPECT_EQ(server_stream.value().status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(client_stream.has_value());
+  EXPECT_EQ(client_stream.value().status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(bidi.has_value());
+  EXPECT_EQ(bidi.value().status(), RpcStatus::ProtocolError());
 }
 
 TEST(ServiceClientTest, ClientDropHandleEndsClientStream) {
@@ -879,15 +1002,14 @@ TEST(ServiceClientTest, ClientDropHandleEndsClientStream) {
   EXPECT_EQ(raw_conn->commit_count(), initial_commits + 2u);
   auto decode_end =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_end.ok());
-  EXPECT_EQ(decode_end->type(),
-            internal::PacketType::Make<flags::kStreamEnd>());
+  ASSERT_NE(decode_end, nullptr);
+  EXPECT_EQ(decode_end.type(), internal::PacketType::Make<flags::kStreamEnd>());
 
   // Dropping the response future before the server answers cancels the call.
   response.reset();
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), initial_commits + 3u);
-  ExpectSentError(*raw_conn, call_id, internal::ProtocolStatus::kCancelled);
+  ExpectSentError(*raw_conn, call_id, ProtocolError::kCancelled);
 }
 
 // Cancelling through the writer completes the call locally, so a pending read
@@ -920,9 +1042,9 @@ TEST(ServiceClientTest, BidiWriterCancelResolvesPendingRead) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(read_task.has_value());
-  EXPECT_EQ(read_task.value().status(), Status::Cancelled());
+  EXPECT_EQ(read_task.value().status(), RpcStatus::Cancelled());
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
-  ExpectSentError(*raw_conn, 1u, internal::ProtocolStatus::kCancelled);
+  ExpectSentError(*raw_conn, 1u, ProtocolError::kCancelled);
 
   // The call is over, so dropping the handles sends nothing more.
   {
@@ -959,8 +1081,8 @@ TEST(ServiceClientTest, ClientStreamWriterCancelResolvesResponse) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(resp_task.has_value());
-  EXPECT_EQ(resp_task.value().status(), Status::Cancelled());
-  ExpectSentError(*raw_conn, 1u, internal::ProtocolStatus::kCancelled);
+  EXPECT_EQ(resp_task.value().status(), RpcStatus::Cancelled());
+  ExpectSentError(*raw_conn, 1u, ProtocolError::kCancelled);
 }
 
 // A client that drops a server stream's reader before the stream ends has no
@@ -989,7 +1111,7 @@ TEST(ServiceClientTest, DroppingServerStreamReaderCancelsCall) {
   dispatcher.RunUntilStalled();
 
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
-  ExpectSentError(*raw_conn, 1u, internal::ProtocolStatus::kCancelled);
+  ExpectSentError(*raw_conn, 1u, ProtocolError::kCancelled);
 }
 
 // Dropping a reader after the stream ended normally sends nothing.
@@ -1015,11 +1137,11 @@ TEST(ServiceClientTest, DroppingFinishedServerStreamReaderSendsNothing) {
   async2::FutureTask end_read(reader->Read());
   dispatcher.Post(end_read);
   auto end_pkt = internal::PacketFramer::FrameServerFinishPacket(allocator, 1u);
-  ASSERT_TRUE(end_pkt.ok());
-  raw_conn->SetNextRead(std::move(*end_pkt));
+  ASSERT_NE(end_pkt, nullptr);
+  raw_conn->SetNextRead(std::move(end_pkt));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(end_read.has_value());
-  EXPECT_EQ(end_read.value().status(), Status::OutOfRange());
+  EXPECT_EQ(end_read.value().status(), RpcStatus::EndOfStream());
 
   const size_t commits_before = raw_conn->commit_count();
   reader.reset();
@@ -1056,9 +1178,9 @@ TEST(ServiceClientTest, ReaderCancelResolvesPendingReadAndCancelsCall) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(read_task.has_value());
-  EXPECT_EQ(read_task.value().status(), Status::Cancelled());
+  EXPECT_EQ(read_task.value().status(), RpcStatus::Cancelled());
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
-  ExpectSentError(*raw_conn, 1u, internal::ProtocolStatus::kCancelled);
+  ExpectSentError(*raw_conn, 1u, ProtocolError::kCancelled);
 
   // A second cancel, or dropping the reader, sends nothing more.
   reader->Cancel();
@@ -1090,7 +1212,7 @@ TEST(ServiceClientTest, DroppingUnaryCallAfterRequestCancelsCall) {
   dispatcher.RunUntilStalled();
 
   EXPECT_EQ(raw_conn->commit_count(), commits_after_request + 1u);
-  ExpectSentError(*raw_conn, 1u, internal::ProtocolStatus::kCancelled);
+  ExpectSentError(*raw_conn, 1u, ProtocolError::kCancelled);
 }
 
 // Nothing is sent until a call future is polled, so dropping one unpolled
@@ -1135,7 +1257,7 @@ TEST(ServiceClientTest, DroppingUnpolledCallFuturesWritesNothing) {
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
 
-TEST(ServiceClientTest, CallsOnClosedClientFailWithUnavailable) {
+TEST(ServiceClientTest, CallsOnClosedClientFailWithClosed) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -1165,18 +1287,18 @@ TEST(ServiceClientTest, CallsOnClosedClientFailWithUnavailable) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(unary.has_value());
-  EXPECT_EQ(unary.value().status(), Status::Unavailable());
+  EXPECT_EQ(unary.value().status(), RpcStatus::Closed());
   ASSERT_TRUE(server_stream.has_value());
-  EXPECT_EQ(server_stream.value().status(), Status::Unavailable());
+  EXPECT_EQ(server_stream.value().status(), RpcStatus::Closed());
   ASSERT_TRUE(client_stream.has_value());
-  EXPECT_EQ(client_stream.value().status(), Status::Unavailable());
+  EXPECT_EQ(client_stream.value().status(), RpcStatus::Closed());
   ASSERT_TRUE(bidi.has_value());
-  EXPECT_EQ(bidi.value().status(), Status::Unavailable());
+  EXPECT_EQ(bidi.value().status(), RpcStatus::Closed());
 
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
 
-TEST(ServiceClientTest, CallsOnEmptyServiceClientFailWithUnavailable) {
+TEST(ServiceClientTest, CallsOnEmptyServiceClientFailWithClosed) {
   async2::DispatcherForTest dispatcher;
   TestServiceClient empty;
   ASSERT_FALSE(empty.is_open());
@@ -1201,17 +1323,17 @@ TEST(ServiceClientTest, CallsOnEmptyServiceClientFailWithUnavailable) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(unary.has_value());
-  EXPECT_EQ(unary.value().status(), Status::Unavailable());
+  EXPECT_EQ(unary.value().status(), RpcStatus::Closed());
   ASSERT_TRUE(server_stream.has_value());
-  EXPECT_EQ(server_stream.value().status(), Status::Unavailable());
+  EXPECT_EQ(server_stream.value().status(), RpcStatus::Closed());
   ASSERT_TRUE(client_stream.has_value());
-  EXPECT_EQ(client_stream.value().status(), Status::Unavailable());
+  EXPECT_EQ(client_stream.value().status(), RpcStatus::Closed());
   ASSERT_TRUE(bidi.has_value());
-  EXPECT_EQ(bidi.value().status(), Status::Unavailable());
+  EXPECT_EQ(bidi.value().status(), RpcStatus::Closed());
   ASSERT_TRUE(unary_raw.has_value());
-  EXPECT_EQ(unary_raw.value().status(), Status::Unavailable());
+  EXPECT_EQ(unary_raw.value().status(), RpcStatus::Closed());
   ASSERT_TRUE(server_stream_raw.has_value());
-  EXPECT_EQ(server_stream_raw.value().status(), Status::Unavailable());
+  EXPECT_EQ(server_stream_raw.value().status(), RpcStatus::Closed());
 }
 
 TEST(ServiceClientTest, UnaryRequestTooLargeForTransportFailsWithoutWriting) {
@@ -1234,7 +1356,7 @@ TEST(ServiceClientTest, UnaryRequestTooLargeForTransportFailsWithoutWriting) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(task.has_value());
-  EXPECT_EQ(task.value().status(), Status::ResourceExhausted());
+  EXPECT_EQ(task.value().status(), RpcStatus::MessageTooLarge());
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
 
@@ -1260,9 +1382,9 @@ TEST(ServiceClientTest, RawRequestSizeThatOverflowsFailsWithoutWriting) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(unary.has_value());
-  EXPECT_EQ(unary.value().status(), Status::ResourceExhausted());
+  EXPECT_EQ(unary.value().status(), RpcStatus::MessageTooLarge());
   ASSERT_TRUE(server_stream.has_value());
-  EXPECT_EQ(server_stream.value().status(), Status::ResourceExhausted());
+  EXPECT_EQ(server_stream.value().status(), RpcStatus::MessageTooLarge());
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
 
@@ -1288,9 +1410,9 @@ TEST(ServiceClientTest, RequestSerializationFailureFailsCallWithoutWriting) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(unary.has_value());
-  EXPECT_EQ(unary.value().status(), Status::InvalidArgument());
+  EXPECT_EQ(unary.value().status(), RpcStatus::DataError());
   ASSERT_TRUE(server_stream.has_value());
-  EXPECT_EQ(server_stream.value().status(), Status::InvalidArgument());
+  EXPECT_EQ(server_stream.value().status(), RpcStatus::DataError());
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
 
@@ -1314,16 +1436,16 @@ TEST(ServiceClientTest, RawUnaryCallWritesRequestIntoReservation) {
   reservation.value()->data()[0] = std::byte{1};
   reservation.value()->data()[1] = std::byte{2};
   reservation.value()->data()[2] = std::byte{3};
-  Result<RawResponseFuture> response_future = reservation.value()->Commit(3);
+  RpcResult<RawResponseFuture> response_future = reservation.value()->Commit(3);
   PW_TEST_ASSERT_OK(response_future);
 
   auto request = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(request.ok());
-  EXPECT_EQ(request->type(), kUnaryRequestType);
-  EXPECT_EQ(request->service_id(), 100u);
-  EXPECT_EQ(request->method_id(), 200u);
-  EXPECT_EQ(request->payload().size(), 3u);
-  const uint32_t call_id = request->call_id();
+  ASSERT_NE(request, nullptr);
+  EXPECT_EQ(request.type(), kUnaryRequestType);
+  EXPECT_EQ(request.service_id(), 100u);
+  EXPECT_EQ(request.method_id(), 200u);
+  EXPECT_EQ(request.payload().size(), 3u);
+  const uint32_t call_id = request.call_id();
 
   async2::FutureTask response(std::move(*response_future));
   dispatcher.Post(response);
@@ -1333,8 +1455,8 @@ TEST(ServiceClientTest, RawUnaryCallWritesRequestIntoReservation) {
   std::byte resp[4] = {};
   auto framed_resp =
       internal::PacketFramer::FrameResponsePacket(allocator, call_id, resp);
-  ASSERT_TRUE(framed_resp.ok());
-  raw_conn->SetNextRead(std::move(*framed_resp));
+  ASSERT_NE(framed_resp, nullptr);
+  raw_conn->SetNextRead(std::move(framed_resp));
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(response.has_value());
@@ -1361,16 +1483,16 @@ TEST(ServiceClientTest, RawServerStreamCallWritesRequestIntoReservation) {
   ASSERT_GE(reservation.value()->size(), 2u);
   reservation.value()->data()[0] = std::byte{4};
   reservation.value()->data()[1] = std::byte{5};
-  Result<RawReader> reader = reservation.value()->Commit(2);
+  RpcResult<RawReader> reader = reservation.value()->Commit(2);
   PW_TEST_ASSERT_OK(reader);
 
   auto request = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(request.ok());
-  EXPECT_EQ(request->type(), kUnaryRequestType);
-  EXPECT_EQ(request->service_id(), 100u);
-  EXPECT_EQ(request->method_id(), 300u);
-  EXPECT_EQ(request->payload().size(), 2u);
-  const uint32_t call_id = request->call_id();
+  ASSERT_NE(request, nullptr);
+  EXPECT_EQ(request.type(), kUnaryRequestType);
+  EXPECT_EQ(request.service_id(), 100u);
+  EXPECT_EQ(request.method_id(), 300u);
+  EXPECT_EQ(request.payload().size(), 2u);
+  const uint32_t call_id = request.call_id();
 
   async2::FutureTask read(reader->Read());
   dispatcher.Post(read);
@@ -1380,8 +1502,8 @@ TEST(ServiceClientTest, RawServerStreamCallWritesRequestIntoReservation) {
   std::byte message[3] = {};
   auto framed_message = internal::PacketFramer::FrameServerMessagePacket(
       allocator, call_id, message);
-  ASSERT_TRUE(framed_message.ok());
-  raw_conn->SetNextRead(std::move(*framed_message));
+  ASSERT_NE(framed_message, nullptr);
+  raw_conn->SetNextRead(std::move(framed_message));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read.has_value());
   PW_TEST_ASSERT_OK(read.value());
@@ -1391,11 +1513,11 @@ TEST(ServiceClientTest, RawServerStreamCallWritesRequestIntoReservation) {
   dispatcher.Post(end_read);
   auto finish =
       internal::PacketFramer::FrameServerFinishPacket(allocator, call_id);
-  ASSERT_TRUE(finish.ok());
-  raw_conn->SetNextRead(std::move(*finish));
+  ASSERT_NE(finish, nullptr);
+  raw_conn->SetNextRead(std::move(finish));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(end_read.has_value());
-  EXPECT_EQ(end_read.value().status(), Status::OutOfRange());
+  EXPECT_EQ(end_read.value().status(), RpcStatus::EndOfStream());
 }
 
 TEST(ServiceClientTest,
@@ -1417,8 +1539,7 @@ TEST(ServiceClientTest,
   ASSERT_TRUE(reservation.has_value());
   PW_TEST_ASSERT_OK(reservation.value());
   reservation.value()->Drop();
-  EXPECT_EQ(reservation.value()->Commit(0).status(),
-            Status::FailedPrecondition());
+  EXPECT_EQ(reservation.value()->Commit(0).status(), RpcStatus::WriteClosed());
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
@@ -1459,26 +1580,26 @@ TEST(ServiceClientTest, DroppingHandleFromCommitCancelsCall) {
       dispatcher);
   TestServiceClient test_service(client, 100u);
 
-  auto expect_cancel_on_reader_drop = [&, &mock_conn = *raw_conn](
-                                          auto reservation_future) {
-    async2::FutureTask reservation(std::move(reservation_future));
-    dispatcher.Post(reservation);
-    dispatcher.RunUntilStalled();
-    ASSERT_TRUE(reservation.has_value());
-    PW_TEST_ASSERT_OK(reservation.value());
-    uint32_t call_id = 0;
-    size_t commits_before = 0;
-    {
-      auto reader = reservation.value()->Commit(0);
-      PW_TEST_ASSERT_OK(reader);
-      call_id = LastSentCallId(mock_conn);
-      commits_before = mock_conn.commit_count();
-    }  // Drop the reader before the server responds.
+  auto expect_cancel_on_reader_drop =
+      [&, &mock_conn = *raw_conn](auto reservation_future) {
+        async2::FutureTask reservation(std::move(reservation_future));
+        dispatcher.Post(reservation);
+        dispatcher.RunUntilStalled();
+        ASSERT_TRUE(reservation.has_value());
+        PW_TEST_ASSERT_OK(reservation.value());
+        uint32_t call_id = 0;
+        size_t commits_before = 0;
+        {
+          auto reader = reservation.value()->Commit(0);
+          PW_TEST_ASSERT_OK(reader);
+          call_id = LastSentCallId(mock_conn);
+          commits_before = mock_conn.commit_count();
+        }  // Drop the reader before the server responds.
 
-    dispatcher.RunUntilStalled();
-    EXPECT_EQ(mock_conn.commit_count(), commits_before + 1u);
-    ExpectSentError(mock_conn, call_id, internal::ProtocolStatus::kCancelled);
-  };
+        dispatcher.RunUntilStalled();
+        EXPECT_EQ(mock_conn.commit_count(), commits_before + 1u);
+        ExpectSentError(mock_conn, call_id, ProtocolError::kCancelled);
+      };
 
   expect_cancel_on_reader_drop(
       test_service.ReserveUnary<pw::ConstBuf>(200u, 1));
@@ -1504,7 +1625,7 @@ TEST(ServiceClientTest, CancelUnaryCallBeforeSendingSendsNothing) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), Status::Cancelled());
+  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
 
@@ -1530,9 +1651,9 @@ TEST(ServiceClientTest, CancelUnaryCallAfterSendingCancelsOnServer) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), Status::Cancelled());
+  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
-  ExpectSentError(*raw_conn, call_id, internal::ProtocolStatus::kCancelled);
+  ExpectSentError(*raw_conn, call_id, ProtocolError::kCancelled);
 
   // Cancelling a finished call does nothing.
   task.future().Cancel();
@@ -1559,8 +1680,8 @@ TEST(ServiceClientTest, CancelUnaryCallAfterResponseDoesNothing) {
   std::byte resp[2] = {};
   auto framed_resp = internal::PacketFramer::FrameResponsePacket(
       allocator, LastSentCallId(*raw_conn), resp);
-  ASSERT_TRUE(framed_resp.ok());
-  raw_conn->SetNextRead(std::move(*framed_resp));
+  ASSERT_NE(framed_resp, nullptr);
+  raw_conn->SetNextRead(std::move(framed_resp));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(task.result().has_value());
   PW_TEST_ASSERT_OK(task.result().value());
@@ -1587,7 +1708,7 @@ TEST(ServiceClientTest, CancelRawResponseFutureCancelsOnServer) {
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(reservation.has_value());
   PW_TEST_ASSERT_OK(reservation.value());
-  Result<RawResponseFuture> response_future = reservation.value()->Commit(0);
+  RpcResult<RawResponseFuture> response_future = reservation.value()->Commit(0);
   PW_TEST_ASSERT_OK(response_future);
   const uint32_t call_id = LastSentCallId(*raw_conn);
 
@@ -1600,8 +1721,8 @@ TEST(ServiceClientTest, CancelRawResponseFutureCancelsOnServer) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), Status::Cancelled());
-  ExpectSentError(*raw_conn, call_id, internal::ProtocolStatus::kCancelled);
+  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
+  ExpectSentError(*raw_conn, call_id, ProtocolError::kCancelled);
 }
 
 TEST(ServiceClientTest, CancelClientStreamResponseCancelsOnServer) {
@@ -1631,15 +1752,15 @@ TEST(ServiceClientTest, CancelClientStreamResponseCancelsOnServer) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), Status::Cancelled());
-  ExpectSentError(*raw_conn, call_id, internal::ProtocolStatus::kCancelled);
+  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
+  ExpectSentError(*raw_conn, call_id, ProtocolError::kCancelled);
 }
 
 // The transport resolves a pending reservation to nothing only when its socket
-// closes, so a call still waiting to send its start packet fails with
-// `UNAVAILABLE`.
+// closes. If the socket closed on its own, a call still waiting to send its
+// start packet fails with `kDisconnected`.
 TEST(ServiceClientTest,
-     SocketClosingWhileStartPacketPendingFailsWithUnavailable) {
+     SocketClosingWhileStartPacketPendingFailsWithDisconnected) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -1661,7 +1782,74 @@ TEST(ServiceClientTest,
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(task.has_value());
-  EXPECT_EQ(task.value().status(), Status::Unavailable());
+  EXPECT_EQ(task.value().status(), RpcStatus::Disconnected());
+  EXPECT_EQ(raw_conn->commit_count(), commits_before);
+}
+
+// If the client closes the connection because the server broke the protocol, a
+// call still waiting to send its start packet fails with `kProtocolError`
+// rather than `kDisconnected`: reconnecting would not help.
+TEST(ServiceClientTest,
+     ProtocolErrorWhileStartPacketPendingFailsWithProtocolError) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+
+  test::ScopedClient client(
+      test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn),
+      dispatcher);
+  TestServiceClient test_service(client, 100u);
+  const size_t commits_before = raw_conn->commit_count();
+
+  raw_conn->SetBlockReserveWrite(true);
+  async2::FutureTask task(
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+  EXPECT_FALSE(task.has_value());
+
+  ReceiveMalformedPacket(allocator, *raw_conn);
+  dispatcher.RunUntilStalled();
+
+  EXPECT_TRUE(raw_conn->is_closed());
+  ASSERT_TRUE(task.has_value());
+  EXPECT_EQ(task.value().status(), RpcStatus::ProtocolError());
+  EXPECT_EQ(raw_conn->commit_count(), commits_before);
+}
+
+// Likewise, a write on a started call that is still waiting for buffer space
+// fails with `kProtocolError`.
+TEST(ServiceClientTest, ProtocolErrorWhileWritePendingFailsWithProtocolError) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+
+  test::ScopedClient client(
+      test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn),
+      dispatcher);
+  TestServiceClient test_service(client, 100u);
+
+  async2::FutureTask call_task(
+      test_service.CallClientStream<pw::ConstBuf, pw::ConstBuf>(400u));
+  dispatcher.Post(call_task);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(call_task.has_value());
+  PW_TEST_ASSERT_OK(call_task.value());
+  ClientStreamCall<> call = std::move(*call_task.value());
+  const size_t commits_before = raw_conn->commit_count();
+
+  raw_conn->SetBlockReserveWrite(true);
+  async2::FutureTask write_task(call.writer().ReserveWrite(2));
+  dispatcher.Post(write_task);
+  dispatcher.RunUntilStalled();
+  EXPECT_FALSE(write_task.has_value());
+
+  ReceiveMalformedPacket(allocator, *raw_conn);
+  dispatcher.RunUntilStalled();
+
+  EXPECT_TRUE(raw_conn->is_closed());
+  ASSERT_TRUE(write_task.has_value());
+  EXPECT_EQ(write_task.value().status(), RpcStatus::ProtocolError());
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
 
@@ -1684,13 +1872,13 @@ TEST(ServiceClientTest, ClientStreamSendsStartStreamFirst) {
   EXPECT_EQ(raw_conn->commit_count(), 3u);  // 2 handshake + 1 start
   auto decode_req =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_req.ok());
-  EXPECT_EQ(decode_req->type(), internal::PacketType::Make<flags::kStart>());
-  EXPECT_FALSE(decode_req->type().has_payload());
-  EXPECT_EQ(decode_req->type().close_mode(), internal::CloseMode::kOpen);
-  EXPECT_EQ(decode_req->service_id(), 100u);
-  EXPECT_EQ(decode_req->method_id(), 200u);
-  EXPECT_EQ(decode_req->payload().size(), 0u);
+  ASSERT_NE(decode_req, nullptr);
+  EXPECT_EQ(decode_req.type(), internal::PacketType::Make<flags::kStart>());
+  EXPECT_FALSE(decode_req.type().has_payload());
+  EXPECT_EQ(decode_req.type().close_mode(), internal::CloseMode::kOpen);
+  EXPECT_EQ(decode_req.service_id(), 100u);
+  EXPECT_EQ(decode_req.method_id(), 200u);
+  EXPECT_EQ(decode_req.payload().size(), 0u);
 
   ASSERT_TRUE(task.has_value());
   PW_TEST_ASSERT_OK(task.value());
@@ -1708,10 +1896,10 @@ TEST(ServiceClientTest, ClientStreamSendsStartStreamFirst) {
 
   auto decode_msg =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_msg.ok());
-  EXPECT_EQ(decode_msg->type(),
+  ASSERT_NE(decode_msg, nullptr);
+  EXPECT_EQ(decode_msg.type(),
             internal::PacketType::Make<flags::kHasPayload>());
-  EXPECT_EQ(decode_msg->payload().size(), 2u);
+  EXPECT_EQ(decode_msg.payload().size(), 2u);
 }
 
 }  // namespace

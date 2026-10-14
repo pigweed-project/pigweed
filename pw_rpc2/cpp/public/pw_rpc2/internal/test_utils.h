@@ -38,6 +38,7 @@
 #include "pw_rpc2/internal/serialize.h"
 #include "pw_rpc2/internal/server_connection_task.h"
 #include "pw_rpc2/method_type.h"
+#include "pw_rpc2/status.h"
 #include "pw_status/status.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_transport/socket.h"
@@ -186,8 +187,10 @@ IntrusivePtr<internal::Call> StartServerCall(
 /// `payload`, so it stays valid exactly as long as the span does. Any other
 /// type is deserialized through its `SerializerFor` specialization, whose
 /// generated `*_serde.h` header the caller must include.
+///
+/// Returns `kDataError` if `payload` cannot be decoded as `Msg`.
 template <typename Msg>
-pw::Result<Msg> PayloadAs(ConstByteSpan payload) {
+RpcResult<Msg> PayloadAs(ConstByteSpan payload) {
   static_assert(!std::is_same_v<Msg, ConstByteSpan>,
                 "Decode raw payloads as pw::ConstBuf; ConstByteSpan has no "
                 "SerializerFor specialization.");
@@ -195,7 +198,11 @@ pw::Result<Msg> PayloadAs(ConstByteSpan payload) {
   if constexpr (std::is_same_v<Msg, ConstBuf>) {
     return ConstBuf::Unowned(payload);
   } else {
-    return internal::Deserialize<Msg>(payload);
+    pw::Result<Msg> message = internal::Deserialize<Msg>(payload);
+    if (!message.ok()) {
+      return RpcStatus::DataError();
+    }
+    return std::move(*message);
   }
 }
 
@@ -224,15 +231,15 @@ class PayloadView {
       PW_CHECK(conn_ != nullptr);
       auto decode_res = internal::InboundPacket::Decode(
           ConstBuf::Unowned(conn_->written_packet(packet_index_)));
-      if (!decode_res.ok()) {
+      if (decode_res == nullptr) {
         ADD_FAILURE() << "PayloadView failed to decode written packet "
                       << packet_index_;
         return Response{};
       }
       if constexpr (std::is_same_v<Response, ConstByteSpan>) {
-        return decode_res->payload();
+        return decode_res.payload();
       } else {
-        auto deser_res = PayloadAs<Response>(decode_res->payload());
+        auto deser_res = PayloadAs<Response>(decode_res.payload());
         if (!deser_res.ok()) {
           ADD_FAILURE() << "PayloadView failed to deserialize the payload of "
                            "written packet "
@@ -272,8 +279,8 @@ class PayloadView {
       while (packet_index_ < conn_->written_packet_count()) {
         auto pkt = internal::InboundPacket::Decode(
             ConstBuf::Unowned(conn_->written_packet(packet_index_)));
-        if (pkt.ok() && pkt->call_id() == call_id_ && pkt->type().is_server() &&
-            pkt->type().has_payload()) {
+        if (pkt != nullptr && pkt.call_id() == call_id_ &&
+            pkt.type().is_server() && pkt.type().has_payload()) {
           break;
         }
         packet_index_++;
@@ -394,7 +401,7 @@ class MockPeer {
     }
 
     /// Ends the server's stream, completing the call successfully. The
-    /// client's reader reports `OUT_OF_RANGE` once it drains any queued
+    /// client's reader reports `kEndOfStream` once it drains any queued
     /// messages.
     void Finish() {
       static_assert(Info::kType == MethodType::kServerStreaming ||
@@ -405,7 +412,7 @@ class MockPeer {
     }
 
     /// Decodes the request payload the client sent.
-    pw::Result<typename Info::Request> request() const {
+    RpcResult<typename Info::Request> request() const {
       return PayloadAs<typename Info::Request>(packet_.payload());
     }
 
@@ -420,14 +427,14 @@ class MockPeer {
 
     /// Decodes the `index`th stream message the client wrote on this call.
     ///
-    /// Returns `OUT_OF_RANGE` if the client has written `index` or fewer
-    /// messages, or the decoding error if the payload is malformed.
-    pw::Result<typename Info::Request> stream_message(size_t index) const {
+    /// Returns `kEndOfStream` if the client has written `index` or fewer
+    /// messages, or `kDataError` if the payload is malformed.
+    RpcResult<typename Info::Request> stream_message(size_t index) const {
       static_assert(Info::kType == MethodType::kClientStreaming ||
                         Info::kType == MethodType::kBidirectionalStreaming,
                     "Only client and bidirectional streams carry client "
                     "stream messages.");
-      pw::Result<ConstByteSpan> payload =
+      RpcResult<ConstByteSpan> payload =
           peer_->ClientStreamMessage(call_id(), index);
       if (!payload.ok()) {
         return payload.status();
@@ -531,10 +538,8 @@ class MockPeer {
   /// serialized first.
   template <typename Msg>
   void InjectResponse(uint32_t call_id, const Msg& payload) {
-    pw::Buf owned;
-    ConstByteSpan span;
-    EncodePayload(payload, owned, span);
-    InjectResponseBytes(call_id, span);
+    const ConstBuf bytes = EncodePayload(payload);
+    InjectResponseBytes(call_id, ConstByteSpan(bytes.data(), bytes.size()));
   }
 
   /// Decodes the `index`th packet the client wrote, which must be a valid RPC
@@ -542,15 +547,14 @@ class MockPeer {
   internal::InboundPacket DecodeWrittenPacket(size_t index) const;
 
   void InjectResponseBytes(uint32_t call_id, ConstByteSpan payload);
-  void Inject(pw::Result<pw::Buf>&& packet);
+  void Inject(pw::Buf&& packet);
 
   /// Injects a server stream message carrying `message` on `call_id`.
   template <typename Msg>
   void InjectStreamMessage(uint32_t call_id, const Msg& message) {
-    pw::Buf owned;
-    ConstByteSpan span;
-    EncodePayload(message, owned, span);
-    InjectStreamMessageBytes(call_id, span);
+    const ConstBuf bytes = EncodePayload(message);
+    InjectStreamMessageBytes(call_id,
+                             ConstByteSpan(bytes.data(), bytes.size()));
   }
 
   void InjectStreamMessageBytes(uint32_t call_id, ConstByteSpan payload);
@@ -563,17 +567,17 @@ class MockPeer {
   size_t ClientStreamMessageCount(uint32_t call_id) const;
 
   /// The payload of the `index`th client stream message written on `call_id`,
-  /// or `OUT_OF_RANGE` if there are not that many.
-  pw::Result<ConstByteSpan> ClientStreamMessage(uint32_t call_id,
-                                                size_t index) const;
+  /// or `kEndOfStream` if there are not that many.
+  RpcResult<ConstByteSpan> ClientStreamMessage(uint32_t call_id,
+                                               size_t index) const;
 
   /// True if the client has half-closed its stream on `call_id`.
   bool ClientStreamFinished(uint32_t call_id) const;
 
-  /// Renders `msg` as bytes. `owned` keeps any allocation alive for as long as
-  /// `out` is used.
+  /// Renders `msg` as bytes. A `pw::ConstBuf` is returned unowned, so `msg`
+  /// must outlive the result. An empty message may return a null `ConstBuf`.
   template <typename Msg>
-  void EncodePayload(const Msg& msg, pw::Buf& owned, ConstByteSpan& out) {
+  ConstBuf EncodePayload(const Msg& msg) {
     static_assert(
         !std::is_same_v<Msg, ConstByteSpan>,
         "Pass raw payloads as pw::ConstBuf, e.g. ConstBuf::Unowned(bytes). "
@@ -581,16 +585,14 @@ class MockPeer {
         "ConstBuf has a SerializerFor specialization; ConstByteSpan has none.");
 
     if constexpr (std::is_same_v<Msg, ConstBuf>) {
-      out = ConstByteSpan(msg.data(), msg.size());
-      return;
+      return ConstBuf::Unowned(msg.data(), msg.size());
     } else {
       const size_t size = internal::MaxEncodedSize(msg);
       if (size == 0) {
-        out = ConstByteSpan();
-        return;
+        return nullptr;
       }
-      owned = pw::Buf::TryAllocate(*allocator_, size);
-      PW_CHECK(!owned.empty(),
+      pw::Buf owned = pw::Buf::TryAllocate(*allocator_, size);
+      PW_CHECK(owned != nullptr,
                "MockPeer could not allocate %zu bytes for a message payload; "
                "its allocator is likely exhausted.",
                size);
@@ -600,7 +602,7 @@ class MockPeer {
                "buffer (%s).",
                size,
                ser_res.status().str());
-      out = ConstByteSpan(owned.data(), ser_res.size());
+      return Truncate(std::move(owned), ser_res.size());
     }
   }
 
@@ -641,8 +643,7 @@ class PairedConnection : public transport::ReliableDatagramSocketImpl {
   void UnblockReserveWrite(size_t size) PW_LOCKS_EXCLUDED(*this);
   void TryResolveRead() PW_LOCKS_EXCLUDED(*this);
   void ReceivePacket(pw::ConstBuf packet) PW_LOCKS_EXCLUDED(*this);
-  void SimulateDisconnect(Status status = Status::Cancelled(),
-                          bool disconnect_peer = false)
+  void SimulateDisconnect(bool disconnect_peer = false)
       PW_LOCKS_EXCLUDED(*this);
 
   ConstBuf last_written_buf() const PW_LOCKS_EXCLUDED(*this) {
@@ -843,7 +844,7 @@ class TestFuture {
 
 /// Posts `future`, runs `dispatcher` until it stalls, and returns the future's
 /// result. If the future has not completed by then, records a test failure and
-/// returns `DEADLINE_EXCEEDED`.
+/// returns `kProtocolError`.
 template <typename Future>
 typename Future::value_type RunToCompletion(
     async2::RunnableDispatcher& dispatcher, Future future) {
@@ -852,7 +853,7 @@ typename Future::value_type RunToCompletion(
   dispatcher.RunUntilStalled();
   if (!task.has_value()) {
     ADD_FAILURE() << "The future did not complete";
-    return Status::DeadlineExceeded();
+    return typename Future::value_type(RpcStatus::ProtocolError());
   }
   return std::move(task.value());
 }
@@ -866,19 +867,20 @@ inline bool ExpectBytes(ConstByteSpan actual, ConstByteSpan expected) {
   return equal;
 }
 
-/// Copies `payload` into `reservation` and commits it.
+/// Copies `payload` into `reservation` and commits it. Returns
+/// `kMessageTooLarge` if `payload` does not fit.
 template <typename Reservation>
 auto CommitCopy(Reservation& reservation, ConstByteSpan payload)
     -> decltype(reservation.Commit(0)) {
   if (reservation.size() < payload.size()) {
-    return Status::ResourceExhausted();
+    return RpcStatus::MessageTooLarge();
   }
   std::copy(payload.begin(), payload.end(), reservation.begin());
   return reservation.Commit(payload.size());
 }
 
 template <typename Reservation>
-auto CommitCopy(Result<Reservation> reservation, ConstByteSpan payload)
+auto CommitCopy(RpcResult<Reservation> reservation, ConstByteSpan payload)
     -> decltype(reservation->Commit(0)) {
   if (!reservation.ok()) {
     return reservation.status();

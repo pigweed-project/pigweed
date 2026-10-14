@@ -69,11 +69,11 @@ class WriteTestTask : public async2::Task {
     return async2::Ready();
   }
 
-  const std::optional<Status>& result() const { return result_; }
+  const std::optional<RpcStatus>& result() const { return result_; }
 
  private:
   Fut fut_;
-  std::optional<Status> result_;
+  std::optional<RpcStatus> result_;
 };
 
 template <typename Fut>
@@ -94,11 +94,11 @@ class ReadTestTask : public async2::Task {
   }
 
   Fut& future() { return fut_; }
-  const std::optional<Result<ConstBuf>>& result() const { return result_; }
+  const std::optional<RpcResult<ConstBuf>>& result() const { return result_; }
 
  private:
   Fut fut_;
-  std::optional<Result<ConstBuf>> result_;
+  std::optional<RpcResult<ConstBuf>> result_;
 };
 
 template <typename Fut>
@@ -117,11 +117,11 @@ class ReserveTestTask : public async2::Task {
     return async2::Ready();
   }
 
-  Result<WriteReservation>& result() { return *result_; }
+  RpcResult<WriteReservation>& result() { return *result_; }
 
  private:
   ReserveWriteFuture fut_;
-  std::optional<Result<WriteReservation>> result_;
+  std::optional<RpcResult<WriteReservation>> result_;
 };
 
 TEST(RawReaderWriterTest, RequireValidCallAndExposeCallId) {
@@ -168,13 +168,13 @@ TEST(RawWriterTest, WritesMessageAndFinish) {
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto decode1 = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode1.ok());
-  EXPECT_EQ(decode1->type(), internal::PacketType::Make<flags::kHasPayload>());
-  EXPECT_EQ(decode1->call_id(), 77u);
-  ASSERT_EQ(decode1->payload().size(), 3u);
-  EXPECT_EQ(decode1->payload()[0], std::byte(1));
-  EXPECT_EQ(decode1->payload()[1], std::byte(2));
-  EXPECT_EQ(decode1->payload()[2], std::byte(3));
+  ASSERT_NE(decode1, nullptr);
+  EXPECT_EQ(decode1.type(), internal::PacketType::Make<flags::kHasPayload>());
+  EXPECT_EQ(decode1.call_id(), 77u);
+  ASSERT_EQ(decode1.payload().size(), 3u);
+  EXPECT_EQ(decode1.payload()[0], std::byte(1));
+  EXPECT_EQ(decode1.payload()[1], std::byte(2));
+  EXPECT_EQ(decode1.payload()[2], std::byte(3));
 
   // 2. Write second message from borrowed bytes
   const std::byte msg2[2] = {std::byte(10), std::byte(20)};
@@ -185,12 +185,12 @@ TEST(RawWriterTest, WritesMessageAndFinish) {
   EXPECT_EQ(raw_conn->commit_count(), 2u);
 
   auto decode2 = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode2.ok());
-  EXPECT_EQ(decode2->type(), internal::PacketType::Make<flags::kHasPayload>());
-  EXPECT_EQ(decode2->call_id(), 77u);
-  EXPECT_EQ(decode2->payload().size(), 2u);
-  EXPECT_EQ(decode2->payload()[0], std::byte(10));
-  EXPECT_EQ(decode2->payload()[1], std::byte(20));
+  ASSERT_NE(decode2, nullptr);
+  EXPECT_EQ(decode2.type(), internal::PacketType::Make<flags::kHasPayload>());
+  EXPECT_EQ(decode2.call_id(), 77u);
+  EXPECT_EQ(decode2.payload().size(), 2u);
+  EXPECT_EQ(decode2.payload()[0], std::byte(10));
+  EXPECT_EQ(decode2.payload()[1], std::byte(20));
 
   // 3. Finish stream
   WriteTestTask task3(writer.Finish());
@@ -201,8 +201,8 @@ TEST(RawWriterTest, WritesMessageAndFinish) {
   EXPECT_EQ(raw_conn->commit_count(), 3u);
 
   auto decode3 = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode3.ok());
-  EXPECT_EQ(decode3->type(), internal::PacketType::Make<flags::kStreamEnd>());
+  ASSERT_NE(decode3, nullptr);
+  EXPECT_EQ(decode3.type(), internal::PacketType::Make<flags::kStreamEnd>());
 
   task1.Deregister();
   task2.Deregister();
@@ -331,10 +331,10 @@ TEST(RawWriterTest, WriteCopyReleasesOwnedMessageWhenSent) {
   EXPECT_EQ(message_allocator.metrics().allocated_bytes.value(), 0u);
 
   auto decode = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode.ok());
-  EXPECT_EQ(decode->call_id(), 78u);
-  ASSERT_EQ(decode->payload().size(), sizeof(kMessage));
-  EXPECT_EQ(std::memcmp(decode->payload().data(), kMessage, sizeof(kMessage)),
+  ASSERT_NE(decode, nullptr);
+  EXPECT_EQ(decode.call_id(), 78u);
+  ASSERT_EQ(decode.payload().size(), sizeof(kMessage));
+  EXPECT_EQ(std::memcmp(decode.payload().data(), kMessage, sizeof(kMessage)),
             0);
 
   task.Deregister();
@@ -359,9 +359,9 @@ TEST(RawWriterTest, WriteCopyEmptyBracesSendsEmptyMessage) {
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto decode = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode.ok());
-  EXPECT_EQ(decode->call_id(), 79u);
-  EXPECT_EQ(decode->payload().size(), 0u);
+  ASSERT_NE(decode, nullptr);
+  EXPECT_EQ(decode.call_id(), 79u);
+  EXPECT_EQ(decode.payload().size(), 0u);
 
   task.Deregister();
 }
@@ -387,7 +387,7 @@ TEST(RawWriterTest, CancelledReservationReleasesWithoutCommit) {
 
   // Explicitly drop reservation without committing
   res.Drop();
-  EXPECT_EQ(res.Commit(0), Status::FailedPrecondition());
+  EXPECT_EQ(res.Commit(0), RpcStatus::WriteClosed());
   EXPECT_EQ(raw_conn->commit_count(), 0u);
 
   task.Deregister();
@@ -410,17 +410,17 @@ TEST(RawWriterTest, OversizeReservationFailsWithoutClosingWriter) {
   ReserveTestTask oversize(writer.ReserveWrite(max_size));
   dispatcher.Post(oversize);
   dispatcher.RunUntilStalled();
-  EXPECT_EQ(oversize.result().status(), Status::ResourceExhausted());
+  EXPECT_EQ(oversize.result().status(), RpcStatus::MessageTooLarge());
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_FALSE(writer.is_closed());
 
   // A size that would overflow `sizeof(PacketHeader) + max_payload_size` must
-  // also fail with RESOURCE_EXHAUSTED rather than wrapping around.
+  // also fail with kMessageTooLarge rather than wrapping around.
   ReserveTestTask overflow(
       writer.ReserveWrite(std::numeric_limits<size_t>::max()));
   dispatcher.Post(overflow);
   dispatcher.RunUntilStalled();
-  EXPECT_EQ(overflow.result().status(), Status::ResourceExhausted());
+  EXPECT_EQ(overflow.result().status(), RpcStatus::MessageTooLarge());
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_FALSE(writer.is_closed());
 
@@ -460,11 +460,11 @@ TEST(RawWriterTest, WriterErrorTransmitsErrorPacket) {
 
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(),
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(),
             internal::PacketType::Make<flags::kErrorTerminal>());
-  EXPECT_EQ(decode_res->call_id(), 99u);
-  EXPECT_EQ(decode_res->error(), internal::ProtocolStatus::kCancelled);
+  EXPECT_EQ(decode_res.call_id(), 99u);
+  EXPECT_EQ(decode_res.error(), internal::ProtocolError::kCancelled);
 }
 
 TEST(RawWriterTest, CancelBeforeStartSendsNothing) {
@@ -487,7 +487,7 @@ TEST(RawWriterTest, CancelBeforeStartSendsNothing) {
   EXPECT_TRUE(writer.is_closed());
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_TRUE(raw_call.is_completed());
-  EXPECT_EQ(raw_call.completion_status(), Status::Cancelled());
+  EXPECT_EQ(raw_call.completion_status(), RpcStatus::Cancelled());
 }
 
 // Destroying a `Writer` ends the outbound stream normally. This is the
@@ -513,10 +513,9 @@ TEST(RawWriterTest, DestructorEndsStreamNormally) {
 
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
-  EXPECT_EQ(decode_res->type(),
-            internal::PacketType::Make<flags::kStreamEnd>());
-  EXPECT_EQ(decode_res->call_id(), 55u);
+  ASSERT_NE(decode_res, nullptr);
+  EXPECT_EQ(decode_res.type(), internal::PacketType::Make<flags::kStreamEnd>());
+  EXPECT_EQ(decode_res.call_id(), 55u);
 }
 
 // A unary call owes the client-facing side exactly one response, so an
@@ -541,13 +540,13 @@ TEST(RawWriterTest, UnaryWriterDestructorCancels) {
 
   auto decode_res =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_res.ok());
+  ASSERT_NE(decode_res, nullptr);
   EXPECT_EQ(
-      decode_res->type(),
+      decode_res.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_res->call_id(), 56u);
-  EXPECT_EQ(decode_res->error(),
-            internal::ProtocolStatus::kDroppedWithoutResponse);
+  EXPECT_EQ(decode_res.call_id(), 56u);
+  EXPECT_EQ(decode_res.error(),
+            internal::ProtocolError::kDroppedWithoutResponse);
 }
 
 // Once the stream has been finished explicitly, the destructor must not send a
@@ -602,11 +601,11 @@ TEST(RawWriterTest, MessageCommittedAfterFinishIsRejected) {
   ASSERT_TRUE(finish.result().has_value() && finish.result()->ok());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
-  EXPECT_EQ(message.result()->Commit(2), Status::FailedPrecondition());
+  EXPECT_EQ(message.result()->Commit(2), RpcStatus::WriteClosed());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
   auto decoded = internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decoded.ok());
-  EXPECT_EQ(decoded->type(), internal::PacketType::Make<flags::kStreamEnd>());
+  ASSERT_NE(decoded, nullptr);
+  EXPECT_EQ(decoded.type(), internal::PacketType::Make<flags::kStreamEnd>());
 
   message.Deregister();
   finish.Deregister();
@@ -632,7 +631,7 @@ TEST(RawWriterTest, MessageCommittedAfterCancelReportsCancellation) {
   ASSERT_TRUE(message.result().ok());
 
   writer.Cancel();
-  EXPECT_EQ(message.result()->Commit(2), Status::Cancelled());
+  EXPECT_EQ(message.result()->Commit(2), RpcStatus::Cancelled());
   dispatcher.RunUntilStalled();
   // The call was never started, so nothing at all reaches the peer.
   EXPECT_EQ(raw_conn->commit_count(), 0u);
@@ -784,7 +783,7 @@ TEST(RawResponseFutureTest, DroppingPendingFutureCancelsCall) {
   // Nothing is left to observe the response, so the call is cancelled.
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(call->is_completed());
-  EXPECT_EQ(call->completion_status(), Status::Cancelled());
+  EXPECT_EQ(call->completion_status(), RpcStatus::Cancelled());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 }
 
@@ -808,7 +807,7 @@ TEST(RawResponseFutureTest, CancelResolvesPendingFutureToCancelled) {
   task.future().Cancel();
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), Status::Cancelled());
+  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   // Cancelling again, after the call has ended, does nothing.

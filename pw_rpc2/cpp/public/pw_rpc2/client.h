@@ -22,11 +22,11 @@
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/client_connection_task.h"
 #include "pw_rpc2/internal/control_future.h"
 #include "pw_rpc2/internal/handshake.h"
+#include "pw_rpc2/status.h"
 #include "pw_transport/socket.h"
 #include "pw_transport/transport.h"
 
@@ -42,7 +42,7 @@ class GeneratedServiceClient;
 /// `Client::Connect()`.
 class ClientFuture {
  public:
-  using value_type = Result<Client>;
+  using value_type = RpcResult<Client>;
 
   /// Constructs an empty future, which is neither pendable nor complete.
   constexpr ClientFuture() = default;
@@ -69,13 +69,14 @@ class ClientFuture {
   /// starts the client's connection task.
   ///
   /// @returns
-  /// * `OK` with the connected `Client`.
-  /// * Any error from the connector's `Connect()`.
-  /// * `DATA_LOSS` if the peer sent an invalid handshake.
-  /// * `UNAVAILABLE` or `CANCELLED` if the connection closed during the
-  ///   handshake.
-  /// * `RESOURCE_EXHAUSTED` if the connection task could not be allocated.
-  async2::Poll<Result<Client>> Pend(async2::Context& cx);
+  /// * `kOk` with the connected `Client`.
+  /// * `kDisconnected` if the connector's `Connect()` failed (the transport's
+  ///   error is logged) or the connection closed during the handshake.
+  /// * `kProtocolError` if the peer sent an invalid or unexpected handshake
+  ///   packet, or negotiated an incompatible protocol version. The reason is
+  ///   logged.
+  /// * `kResourceExhausted` if the connection task could not be allocated.
+  async2::Poll<RpcResult<Client>> Pend(async2::Context& cx);
 
  private:
   friend class Client;
@@ -176,8 +177,8 @@ class Client {
   }
 
   /// Closes the connection shared by this client and all its copies,
-  /// completing every call on it with `CANCELLED`, and releases this client's
-  /// handle to the connection. The returned future resolves once the
+  /// completing every call on it with `kClosed`, and releases this client's
+  /// handle to the connection. The returned future resolves to `kOk` once the
   /// dispatcher has torn the connection down, or immediately if the client is
   /// empty or already closed.
   ///
@@ -208,6 +209,21 @@ class Client {
   IntrusivePtr<internal::Call> CreateCall() const {
     PW_ASSERT(connection_task_ != nullptr);
     return connection_task_->CreateCall();
+  }
+
+  /// Status to return for operations on a closed client.
+  ///
+  /// @returns
+  /// * `kDisconnected`: The connection closed on its own.
+  /// * `kProtocolError`: The connection closed due to a protocol error.
+  /// * `kClosed`: The client is empty or the user closed it.
+  ///
+  /// @pre Must be called from the client's dispatcher thread.
+  RpcStatus close_status() const {
+    if (connection_task_ == nullptr || !connection_task_->is_closed()) {
+      return RpcStatus::Closed();
+    }
+    return connection_task_->close_status();
   }
 
   void AddConnectionHandle() const {

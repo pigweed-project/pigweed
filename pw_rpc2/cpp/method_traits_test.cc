@@ -21,11 +21,9 @@
 #include "pw_async2/poll.h"
 #include "pw_buf/buf.h"
 #include "pw_bytes/span.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/method_type.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status_with_size.h"
 #include "pw_unit_test/framework.h"
 
 // Classification is pure type computation, so every check here is a

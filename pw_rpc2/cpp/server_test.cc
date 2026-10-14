@@ -47,6 +47,8 @@
 namespace pw::rpc2 {
 namespace {
 
+using internal::ProtocolError;
+
 namespace flags = ::pw::rpc2::internal::flags;
 
 // Awaits a `ControlFuture` on the dispatcher. A future only makes progress
@@ -61,7 +63,7 @@ class ControlTask : public async2::Task {
   [[nodiscard]] bool done() const { return done_; }
 
   // Only valid once `done()`.
-  [[nodiscard]] Status status() const { return status_; }
+  [[nodiscard]] RpcStatus status() const { return status_; }
 
  private:
   async2::Poll<> DoPend(async2::Context& cx) override {
@@ -72,7 +74,7 @@ class ControlTask : public async2::Task {
 
   ControlFuture future_;
   bool done_ = false;
-  Status status_ = Status::Unknown();
+  RpcStatus status_ = RpcStatus::ProtocolError();
 };
 
 class MockServerListener : public transport::ReliableDatagramListener {
@@ -132,9 +134,9 @@ class TestEchoService : public Service {
   size_t last_payload_size() const { return last_payload_size_; }
 
  private:
-  static internal::ProtocolStatus InvokeMethod1(Service& service,
-                                                internal::ServerCall& call,
-                                                ConstBuf&& request_payload) {
+  static ProtocolError InvokeMethod1(Service& service,
+                                     internal::ServerCall& call,
+                                     ConstBuf&& request_payload) {
     auto& self = static_cast<TestEchoService&>(service);
     self.last_dispatched_method_ = 1u;
     self.last_payload_size_ = request_payload.size();
@@ -146,13 +148,13 @@ class TestEchoService : public Service {
         [] { return ReadyFuture{}; });
   }
 
-  static internal::ProtocolStatus InvokeMethod2(Service& service,
-                                                internal::ServerCall&,
-                                                ConstBuf&& request_payload) {
+  static ProtocolError InvokeMethod2(Service& service,
+                                     internal::ServerCall&,
+                                     ConstBuf&& request_payload) {
     auto& self = static_cast<TestEchoService&>(service);
     self.last_dispatched_method_ = 2u;
     self.last_payload_size_ = request_payload.size();
-    return internal::ProtocolStatus::kInvalidRequestPayload;
+    return ProtocolError::kInvalidRequestPayload;
   }
 
   std::array<internal::Method, 2> methods_;
@@ -220,9 +222,9 @@ class StallingService : public Service {
   int future_destructions() const { return future_destructions_; }
 
  private:
-  static internal::ProtocolStatus InvokeStall(Service& service,
-                                              internal::ServerCall& call,
-                                              ConstBuf&&) {
+  static ProtocolError InvokeStall(Service& service,
+                                   internal::ServerCall& call,
+                                   ConstBuf&&) {
     auto& self = static_cast<StallingService&>(service);
     return call.EmplaceFutureFromFactory<StallFuture>(
         [&] { return StallFuture(&self.future_destructions_); });
@@ -247,9 +249,9 @@ void EstablishServerConnection(Allocator& allocator,
       Buf::Allocate(allocator, internal::HandshakePacket::kWireSizeBytes);
   auto hs_pkt =
       internal::HandshakePacket(internal::HandshakePacket::Type::kSyn);
-  auto enc_res = hs_pkt.Encode(std::move(req_buf));
-  PW_CHECK(enc_res.ok());
-  raw_conn->SetNextRead(std::move(enc_res.value()));
+  Buf encoded = hs_pkt.Encode(std::move(req_buf));
+  PW_CHECK(encoded != nullptr);
+  raw_conn->SetNextRead(std::move(encoded));
 
   dispatcher.RunUntilStalled();
   PW_ASSERT(raw_conn->commit_count() == 1u);  // 1 handshake response (SYN-ACK)
@@ -260,8 +262,8 @@ void EstablishServerConnection(Allocator& allocator,
   auto ack_pkt =
       internal::HandshakePacket(internal::HandshakePacket::Type::kAck);
   auto ack_enc = ack_pkt.Encode(std::move(ack_buf));
-  PW_CHECK(ack_enc.ok());
-  raw_conn->SetNextRead(std::move(ack_enc.value()));
+  PW_CHECK(ack_enc != nullptr);
+  raw_conn->SetNextRead(std::move(ack_enc));
 
   dispatcher.RunUntilStalled();
 }
@@ -272,7 +274,7 @@ TEST(ServerTest, RegisterTransportAndAcceptConnectionWithHandshake) {
 
   Server server(allocator, dispatcher);
   MockServerListener transport;
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
   dispatcher.RunUntilStalled();
@@ -293,10 +295,10 @@ TEST(ServerTest, ServiceMethodDispatchRouting) {
 
   Server server(allocator, dispatcher);
   TestEchoService echo_service(100u);
-  EXPECT_EQ(server.RegisterService(echo_service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
   MockServerListener transport;
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -308,8 +310,8 @@ TEST(ServerTest, ServiceMethodDispatchRouting) {
       std::byte{10}, std::byte{20}, std::byte{30}, std::byte{40}};
   auto pkt = internal::PacketFramer::FrameStartUnaryPacket(
       allocator, /*call_id=*/5, /*service_id=*/100u, /*method_id=*/1u, payload);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   dispatcher.RunUntilStalled();
 
@@ -328,10 +330,10 @@ TEST(ServerTest, ServiceNotFoundRepliesError) {
 
   Server server(allocator, dispatcher);
   TestEchoService echo_service(100u);
-  EXPECT_EQ(server.RegisterService(echo_service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
   MockServerListener transport;
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -344,8 +346,8 @@ TEST(ServerTest, ServiceNotFoundRepliesError) {
   std::byte payload[2] = {std::byte{1}, std::byte{2}};
   auto pkt = internal::PacketFramer::FrameStartUnaryPacket(
       allocator, /*call_id=*/7, /*service_id=*/999u, /*method_id=*/1u, payload);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   dispatcher.RunUntilStalled();
 
@@ -353,12 +355,12 @@ TEST(ServerTest, ServiceNotFoundRepliesError) {
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
   auto decode_err =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_err.ok());
+  ASSERT_NE(decode_err, nullptr);
   EXPECT_EQ(
-      decode_err->type(),
+      decode_err.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_err->call_id(), 7u);
-  EXPECT_EQ(decode_err->error(), internal::ProtocolStatus::kUnknownService);
+  EXPECT_EQ(decode_err.call_id(), 7u);
+  EXPECT_EQ(decode_err.error(), ProtocolError::kUnknownService);
 
   ControlTask close_task(server.Close());
   dispatcher.Post(close_task);
@@ -372,10 +374,10 @@ TEST(ServerTest, MethodNotFoundRepliesError) {
 
   Server server(allocator, dispatcher);
   TestEchoService echo_service(100u);
-  EXPECT_EQ(server.RegisterService(echo_service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
   MockServerListener transport;
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -391,21 +393,21 @@ TEST(ServerTest, MethodNotFoundRepliesError) {
                                                            /*service_id=*/100u,
                                                            /*method_id=*/999u,
                                                            payload);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   dispatcher.RunUntilStalled();
 
-  // Server should reply with ProtocolStatus::kUnknownMethod error frame
+  // Server should reply with ProtocolError::kUnknownMethod error frame
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
   auto decode_err =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_err.ok());
+  ASSERT_NE(decode_err, nullptr);
   EXPECT_EQ(
-      decode_err->type(),
+      decode_err.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_err->call_id(), 8u);
-  EXPECT_EQ(decode_err->error(), internal::ProtocolStatus::kUnknownMethod);
+  EXPECT_EQ(decode_err.call_id(), 8u);
+  EXPECT_EQ(decode_err.error(), ProtocolError::kUnknownMethod);
 
   ControlTask close_task(server.Close());
   dispatcher.Post(close_task);
@@ -423,8 +425,8 @@ TEST(ServerTest, RegisterDuplicateServiceIdCrashes) {
 
   // Queuing succeeds; the duplicate is detected when the dispatcher applies
   // the registrations.
-  EXPECT_EQ(server.RegisterService(echo_service), OkStatus());
-  EXPECT_EQ(server.RegisterService(duplicate_service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
+  PW_TEST_EXPECT_OK(server.RegisterService(duplicate_service));
   server.Start();
   EXPECT_DEATH_IF_SUPPORTED(dispatcher.RunUntilStalled(), "");
 
@@ -460,7 +462,7 @@ TEST(ServerTest, DestroyingUnclosedServerCrashes) {
   EXPECT_DEATH_IF_SUPPORTED(
       {
         Server server(allocator, dispatcher);
-        EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+        PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
         server.Start();
       },
       "");
@@ -475,7 +477,7 @@ TEST(ServerTest, CloseTearsDownListenersAndConnections) {
 
   {
     Server server(allocator, dispatcher);
-    EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+    PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
     server.Start();
     EstablishServerConnection(
         allocator, dispatcher, server, transport, raw_conn, conn);
@@ -500,7 +502,7 @@ TEST(ServerTest, CloseBlockingTearsDownListenersAndConnections) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
 
   Server server(allocator, dispatcher);
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
   EstablishServerConnection(
       allocator, dispatcher, server, transport, raw_conn, conn);
@@ -525,10 +527,10 @@ TEST(ServerTest, CloseDrainsInFlightServerCalls) {
 
   Server server(allocator, dispatcher);
   StallingService stalling_service(200u);
-  EXPECT_EQ(server.RegisterService(stalling_service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(stalling_service));
 
   MockServerListener transport;
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -541,8 +543,8 @@ TEST(ServerTest, CloseDrainsInFlightServerCalls) {
                                                            /*service_id=*/200u,
                                                            /*method_id=*/1u,
                                                            payload);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   dispatcher.RunUntilStalled();
 
@@ -571,8 +573,8 @@ TEST(ServerTest, BlockingControlOperationsRunFromAnotherThread) {
 
   server.Start();
 
-  Status register_service = Status::Unknown();
-  Status register_listener = Status::Unknown();
+  RpcStatus register_service = RpcStatus::ProtocolError();
+  RpcStatus register_listener = RpcStatus::ProtocolError();
 
   auto run_control_ops = [&] {
     register_service = server.RegisterService(echo_service);
@@ -587,8 +589,8 @@ TEST(ServerTest, BlockingControlOperationsRunFromAnotherThread) {
   dispatcher.RunToCompletion();
   thread.join();
 
-  EXPECT_EQ(register_service, OkStatus());
-  EXPECT_EQ(register_listener, OkStatus());
+  PW_TEST_EXPECT_OK(register_service);
+  PW_TEST_EXPECT_OK(register_listener);
   EXPECT_EQ(transport.accept_calls(), 1u);
 }
 
@@ -601,8 +603,8 @@ TEST(ServerTest, RegisterListenerFailsWhenRecordAllocationFails) {
   MockServerListener transport;
 
   failing_allocator.DisableAllocate();
-  EXPECT_EQ(server.RegisterListenerBlocking(transport),
-            Status::ResourceExhausted());
+  RpcStatus status = server.RegisterListenerBlocking(transport);
+  EXPECT_EQ(status, RpcStatus::ResourceExhausted());
 }
 
 TEST(ServerTest, RegisterMultipleListenersWhileRunningDoesNotCrash) {
@@ -627,11 +629,11 @@ TEST(ServerTest, RegisterMultipleListenersWhileRunningDoesNotCrash) {
   dispatcher.RunUntilStalled();
 
   EXPECT_TRUE(reg1.done());
-  EXPECT_EQ(reg1.status(), OkStatus());
+  PW_TEST_EXPECT_OK(reg1.status());
   EXPECT_TRUE(reg2.done());
-  EXPECT_EQ(reg2.status(), OkStatus());
+  PW_TEST_EXPECT_OK(reg2.status());
   EXPECT_TRUE(reg3.done());
-  EXPECT_EQ(reg3.status(), OkStatus());
+  PW_TEST_EXPECT_OK(reg3.status());
 
   ControlTask close_task(server.Close());
   dispatcher.Post(close_task);
@@ -650,8 +652,8 @@ TEST(ServerTest, RegistrationBeforeStart) {
   MockServerListener listener2;
 
   // Service registration is queued without allocating.
-  EXPECT_EQ(server.RegisterService(service1), OkStatus());
-  EXPECT_EQ(server.RegisterService(service2), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(service1));
+  PW_TEST_EXPECT_OK(server.RegisterService(service2));
   EXPECT_EQ(allocator.metrics().allocated_bytes.value(), 0u);
 
   // Before Start() there is nothing to apply listener registrations, so both
@@ -659,13 +661,13 @@ TEST(ServerTest, RegistrationBeforeStart) {
   // already resolved.
   ControlTask listener_task(server.RegisterListener(listener1));
   EXPECT_EQ(allocator.metrics().num_allocations.value(), 1u);
-  EXPECT_EQ(server.RegisterListenerBlocking(listener2), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(listener2));
   EXPECT_EQ(allocator.metrics().num_allocations.value(), 2u);
 
   dispatcher.Post(listener_task);
   dispatcher.RunUntilStalled();
   EXPECT_TRUE(listener_task.done());
-  EXPECT_EQ(listener_task.status(), OkStatus());
+  PW_TEST_EXPECT_OK(listener_task.status());
 
   // Listeners only begin accepting once the server runs.
   EXPECT_EQ(listener1.accept_calls(), 0u);
@@ -693,9 +695,9 @@ TEST(ServerTest, CloseBeforeStartDropsQueuedRequests) {
   MockServerListener listener1;
   MockServerListener listener2;
 
-  EXPECT_EQ(server.RegisterService(service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(service));
   ControlTask listener_task(server.RegisterListener(listener1));
-  EXPECT_EQ(server.RegisterListenerBlocking(listener2), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(listener2));
   EXPECT_EQ(allocator.metrics().num_allocations.value(), 2u);
 
   ControlTask close_task(server.Close());
@@ -704,13 +706,13 @@ TEST(ServerTest, CloseBeforeStartDropsQueuedRequests) {
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(close_task.done());
-  EXPECT_EQ(close_task.status(), OkStatus());
+  PW_TEST_EXPECT_OK(close_task.status());
   ASSERT_TRUE(listener_task.done());
-  EXPECT_EQ(listener_task.status(), OkStatus());
+  PW_TEST_EXPECT_OK(listener_task.status());
 
   // Both listener records were freed by the close.
   EXPECT_EQ(allocator.metrics().allocated_bytes.value(), 0u);
-  EXPECT_EQ(server.RegisterService(service), Status::FailedPrecondition());
+  EXPECT_EQ(server.RegisterService(service), RpcStatus::Closed());
 }
 
 // Once a close is requested, registrations fail, and the close tears down
@@ -722,10 +724,10 @@ TEST(ServerTest, RegistrationWhileClosingFails) {
   Server server(allocator, dispatcher);
   StallingService stalling_service(200u);
   TestEchoService echo_service(100u);
-  EXPECT_EQ(server.RegisterService(stalling_service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(stalling_service));
 
   MockServerListener transport;
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -738,23 +740,23 @@ TEST(ServerTest, RegistrationWhileClosingFails) {
                                                            /*service_id=*/200u,
                                                            /*method_id=*/1u,
                                                            payload);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
   dispatcher.RunUntilStalled();
   ASSERT_EQ(stalling_service.future_destructions(), 0);
 
   MockServerListener late_listener;
   ControlTask close_task(server.Close());
-  EXPECT_EQ(server.RegisterService(echo_service), Status::FailedPrecondition());
+  EXPECT_EQ(server.RegisterService(echo_service), RpcStatus::Closed());
   ControlTask listener_task(server.RegisterListener(late_listener));
   dispatcher.Post(close_task);
   dispatcher.Post(listener_task);
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(close_task.done());
-  EXPECT_EQ(close_task.status(), OkStatus());
+  PW_TEST_EXPECT_OK(close_task.status());
   ASSERT_TRUE(listener_task.done());
-  EXPECT_EQ(listener_task.status(), Status::FailedPrecondition());
+  EXPECT_EQ(listener_task.status(), RpcStatus::Closed());
   EXPECT_EQ(stalling_service.future_destructions(), 1);
 }
 
@@ -765,7 +767,7 @@ TEST(ServerTest, ControlOperationsAfterCloseResolveImmediately) {
   Server server(allocator, dispatcher);
   TestEchoService service(100u);
   MockServerListener listener;
-  EXPECT_EQ(server.RegisterService(service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(service));
   server.Start();
 
   ControlTask close_task(server.Close());
@@ -773,9 +775,8 @@ TEST(ServerTest, ControlOperationsAfterCloseResolveImmediately) {
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(close_task.done());
 
-  EXPECT_EQ(server.RegisterService(service), Status::FailedPrecondition());
-  EXPECT_EQ(server.RegisterListenerBlocking(listener),
-            Status::FailedPrecondition());
+  EXPECT_EQ(server.RegisterService(service), RpcStatus::Closed());
+  EXPECT_EQ(server.RegisterListenerBlocking(listener), RpcStatus::Closed());
 
   ControlTask listener_task(server.RegisterListener(listener));
   ControlTask second_close_task(server.Close());
@@ -783,9 +784,9 @@ TEST(ServerTest, ControlOperationsAfterCloseResolveImmediately) {
   dispatcher.Post(second_close_task);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(listener_task.done());
-  EXPECT_EQ(listener_task.status(), Status::FailedPrecondition());
+  EXPECT_EQ(listener_task.status(), RpcStatus::Closed());
   ASSERT_TRUE(second_close_task.done());
-  EXPECT_EQ(second_close_task.status(), OkStatus());
+  PW_TEST_EXPECT_OK(second_close_task.status());
 
   server.CloseBlocking();  // Also a no-op once closed.
 }
@@ -801,7 +802,7 @@ TEST(ServerTest, AsyncControlOperationsSubmittedFromAnotherThread) {
   MockServerListener transport;
   server.Start();
 
-  Status register_service = Status::Unknown();
+  RpcStatus register_service = RpcStatus::ProtocolError();
   std::optional<ControlFuture> register_listener;
 
   auto submit_control_ops = [&] {
@@ -813,14 +814,14 @@ TEST(ServerTest, AsyncControlOperationsSubmittedFromAnotherThread) {
                     [&submit_control_ops] { submit_control_ops(); });
   thread.join();
 
-  EXPECT_EQ(register_service, OkStatus());
+  PW_TEST_EXPECT_OK(register_service);
 
   ControlTask register_listener_task(std::move(*register_listener));
   dispatcher.Post(register_listener_task);
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(register_listener_task.done());
-  EXPECT_EQ(register_listener_task.status(), OkStatus());
+  PW_TEST_EXPECT_OK(register_listener_task.status());
   EXPECT_EQ(transport.accept_calls(), 1u);
 
   ControlTask close_task(server.Close());
@@ -842,13 +843,13 @@ TEST(ServerTest, AsyncControlOperationsWhenAllocatorExhausted) {
   // Service registration does not allocate and succeeds even when the
   // allocator is exhausted; only the listener's record allocation fails.
   failing_allocator.DisableAllocate();
-  EXPECT_EQ(server.RegisterService(echo_service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
   ControlTask register_listener_task(server.RegisterListener(transport));
   dispatcher.Post(register_listener_task);
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(register_listener_task.done());
-  EXPECT_EQ(register_listener_task.status(), Status::ResourceExhausted());
+  EXPECT_EQ(register_listener_task.status(), RpcStatus::ResourceExhausted());
   EXPECT_EQ(transport.accept_calls(), 0u);
 
   ControlTask close_task(server.Close());
@@ -877,7 +878,7 @@ TEST(ServerTest, DroppingQueuedRegisterListenerFutureWithdrawsRequest) {
   dispatcher.Post(task1);
   dispatcher.RunUntilStalled();
   EXPECT_TRUE(task1.done());
-  EXPECT_EQ(task1.status(), OkStatus());
+  PW_TEST_EXPECT_OK(task1.status());
 
   // Only listener1 was registered: one record was allocated and only
   // listener1 has been asked to accept.
@@ -922,11 +923,11 @@ TEST(ServerTest, MovingQueuedControlFuturesPreservesRequests) {
   // The close was requested before the listener requests were applied, so
   // they fail; the close itself succeeds.
   EXPECT_TRUE(task1.done());
-  EXPECT_EQ(task1.status(), Status::FailedPrecondition());
+  EXPECT_EQ(task1.status(), RpcStatus::Closed());
   EXPECT_TRUE(task2.done());
-  EXPECT_EQ(task2.status(), Status::FailedPrecondition());
+  EXPECT_EQ(task2.status(), RpcStatus::Closed());
   EXPECT_TRUE(task3.done());
-  EXPECT_EQ(task3.status(), OkStatus());
+  PW_TEST_EXPECT_OK(task3.status());
 }
 
 TEST(ServerTest, CallAllocationFailureRepliesError) {
@@ -936,10 +937,10 @@ TEST(ServerTest, CallAllocationFailureRepliesError) {
 
   Server server(failing_allocator, dispatcher);
   TestEchoService echo_service(100u);
-  EXPECT_EQ(server.RegisterService(echo_service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
   MockServerListener transport;
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
   auto [conn, raw_conn] = test::MakeMockConnection(backing_allocator);
@@ -954,8 +955,8 @@ TEST(ServerTest, CallAllocationFailureRepliesError) {
                                                            /*service_id=*/100u,
                                                            /*method_id=*/1u,
                                                            payload);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   failing_allocator.DisableAllocate();
   dispatcher.RunUntilStalled();
@@ -965,13 +966,12 @@ TEST(ServerTest, CallAllocationFailureRepliesError) {
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
   auto decode_err =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_err.ok());
+  ASSERT_NE(decode_err, nullptr);
   EXPECT_EQ(
-      decode_err->type(),
+      decode_err.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_err->call_id(), 12u);
-  EXPECT_EQ(decode_err->error(),
-            internal::ProtocolStatus::kFailedToAllocateCall);
+  EXPECT_EQ(decode_err.call_id(), 12u);
+  EXPECT_EQ(decode_err.error(), ProtocolError::kFailedToAllocateCall);
 
   ControlTask close_task(server.Close());
   dispatcher.Post(close_task);
@@ -986,7 +986,7 @@ TEST(ServerTest, ListenerKeepsAcceptingAfterConnectionAllocationFailure) {
 
   Server server(failing_allocator, dispatcher);
   MockServerListener transport;
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
   dispatcher.RunUntilStalled();
 
@@ -1008,8 +1008,8 @@ TEST(ServerTest, ListenerKeepsAcceptingAfterConnectionAllocationFailure) {
                               internal::HandshakePacket::kWireSizeBytes);
   auto syn = internal::HandshakePacket(internal::HandshakePacket::Type::kSyn)
                  .Encode(std::move(syn_buf));
-  ASSERT_TRUE(syn.ok());
-  raw_conn->SetNextRead(std::move(*syn));
+  ASSERT_NE(syn, nullptr);
+  raw_conn->SetNextRead(std::move(syn));
   dispatcher.RunUntilStalled();
 
   EXPECT_EQ(raw_conn->commit_count(), 1u);  // SYN-ACK
@@ -1026,10 +1026,10 @@ TEST(ServerTest, InvalidRequestPayloadRepliesError) {
 
   Server server(allocator, dispatcher);
   TestEchoService echo_service(100u);
-  EXPECT_EQ(server.RegisterService(echo_service), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
   MockServerListener transport;
-  EXPECT_EQ(server.RegisterListenerBlocking(transport), OkStatus());
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -1045,21 +1045,20 @@ TEST(ServerTest, InvalidRequestPayloadRepliesError) {
                                                            /*service_id=*/100u,
                                                            /*method_id=*/2u,
                                                            payload);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
   dispatcher.RunUntilStalled();
 
   EXPECT_EQ(echo_service.last_dispatched_method(), 2u);
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
   auto decode_err =
       internal::InboundPacket::Decode(raw_conn->last_written_buf());
-  ASSERT_TRUE(decode_err.ok());
+  ASSERT_NE(decode_err, nullptr);
   EXPECT_EQ(
-      decode_err->type(),
+      decode_err.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(decode_err->call_id(), 13u);
-  EXPECT_EQ(decode_err->error(),
-            internal::ProtocolStatus::kInvalidRequestPayload);
+  EXPECT_EQ(decode_err.call_id(), 13u);
+  EXPECT_EQ(decode_err.error(), ProtocolError::kInvalidRequestPayload);
 
   ControlTask close_task(server.Close());
   dispatcher.Post(close_task);
@@ -1084,10 +1083,10 @@ class StreamRecordingService : public Service {
     return span(message_sizes_).first(message_count_);
   }
   bool finished() const { return finished_; }
-  Status end_status() const { return end_status_; }
+  RpcStatus end_status() const { return end_status_; }
 
   // True once the method's future has been destroyed, whether it ran to
-  // completion or its call was aborted and torn down.
+  // completion or its call ended first and was torn down.
   bool frame_destroyed() const { return frame_destroyed_; }
 
  private:
@@ -1114,7 +1113,7 @@ class StreamRecordingService : public Service {
 
     async2::Poll<> Pend(async2::Context& cx) {
       while (true) {
-        PW_TRY_READY_ASSIGN(Result<ConstBuf> msg, read_future_.Pend(cx));
+        PW_TRY_READY_ASSIGN(RpcResult<ConstBuf> msg, read_future_.Pend(cx));
         if (!msg.ok()) {
           service_->end_status_ = msg.status();
           service_->finished_ = true;
@@ -1141,7 +1140,7 @@ class StreamRecordingService : public Service {
   size_t message_count_ = 0;
   bool finished_ = false;
   bool frame_destroyed_ = false;
-  Status end_status_;
+  RpcStatus end_status_;
 };
 
 class ServerStartPacketTest : public ::testing::Test {
@@ -1168,9 +1167,9 @@ class ServerStartPacketTest : public ::testing::Test {
     EXPECT_TRUE(close_task.done());
   }
 
-  void Receive(Result<Buf>&& packet) {
-    PW_CHECK_OK(packet.status());
-    raw_conn_->SetNextRead(std::move(*packet));
+  void Receive(Buf&& packet) {
+    PW_CHECK(packet != nullptr);
+    raw_conn_->SetNextRead(std::move(packet));
     dispatcher_.RunUntilStalled();
   }
 
@@ -1186,8 +1185,8 @@ class ServerStartPacketTest : public ::testing::Test {
   internal::InboundPacket LastSent() {
     auto decoded =
         internal::InboundPacket::Decode(raw_conn_->last_written_buf());
-    PW_CHECK_OK(decoded.status());
-    return std::move(*decoded);
+    PW_CHECK(decoded != nullptr);
+    return decoded;
   }
 
   allocator::test::AllocatorForTest<8192> allocator_;
@@ -1216,7 +1215,7 @@ TEST_F(ServerStartPacketTest,
       pkt.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
   EXPECT_EQ(pkt.call_id(), 1u);
-  EXPECT_EQ(pkt.error(), internal::ProtocolStatus::kMethodTypeMismatch);
+  EXPECT_EQ(pkt.error(), ProtocolError::kMethodTypeMismatch);
 }
 
 TEST_F(ServerStartPacketTest,
@@ -1234,7 +1233,7 @@ TEST_F(ServerStartPacketTest,
       pkt.type(),
       (internal::PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
   EXPECT_EQ(pkt.call_id(), 2u);
-  EXPECT_EQ(pkt.error(), internal::ProtocolStatus::kMethodTypeMismatch);
+  EXPECT_EQ(pkt.error(), ProtocolError::kMethodTypeMismatch);
 }
 
 TEST_F(ServerStartPacketTest, StreamEndWithoutPayloadToUnaryMethodIsMismatch) {
@@ -1245,7 +1244,7 @@ TEST_F(ServerStartPacketTest, StreamEndWithoutPayloadToUnaryMethodIsMismatch) {
 
   EXPECT_EQ(echo_service_.last_dispatched_method(), 0u);
   ASSERT_EQ(raw_conn_->commit_count(), commits_before + 1u);
-  EXPECT_EQ(LastSent().error(), internal::ProtocolStatus::kMethodTypeMismatch);
+  EXPECT_EQ(LastSent().error(), ProtocolError::kMethodTypeMismatch);
 }
 
 TEST_F(ServerStartPacketTest, StartStreamThenMessagesToStreamingMethod) {
@@ -1263,7 +1262,7 @@ TEST_F(ServerStartPacketTest, StartStreamThenMessagesToStreamingMethod) {
   ASSERT_EQ(stream_service_.message_sizes().size(), 1u);
   EXPECT_EQ(stream_service_.message_sizes()[0], 2u);
   EXPECT_TRUE(stream_service_.finished());
-  EXPECT_EQ(stream_service_.end_status(), Status::OutOfRange());
+  EXPECT_EQ(stream_service_.end_status(), RpcStatus::EndOfStream());
 
   // Dropping the writer terminates the RPC.
   internal::InboundPacket pkt = LastSent();
@@ -1289,7 +1288,7 @@ TEST_F(ServerStartPacketTest, StartStreamWithPayloadDeliversInitialMessage) {
   ASSERT_EQ(stream_service_.message_sizes().size(), 2u);
   EXPECT_EQ(stream_service_.message_sizes()[1], 2u);
   EXPECT_TRUE(stream_service_.finished());
-  EXPECT_EQ(stream_service_.end_status(), Status::OutOfRange());
+  EXPECT_EQ(stream_service_.end_status(), RpcStatus::EndOfStream());
 }
 
 TEST_F(ServerStartPacketTest, RequestToStreamingMethodDeliversMessageAndEnd) {
@@ -1302,7 +1301,7 @@ TEST_F(ServerStartPacketTest, RequestToStreamingMethodDeliversMessageAndEnd) {
   ASSERT_EQ(stream_service_.message_sizes().size(), 1u);
   EXPECT_EQ(stream_service_.message_sizes()[0], sizeof(kPayload));
   EXPECT_TRUE(stream_service_.finished());
-  EXPECT_EQ(stream_service_.end_status(), Status::OutOfRange());
+  EXPECT_EQ(stream_service_.end_status(), RpcStatus::EndOfStream());
 
   internal::InboundPacket pkt = LastSent();
   EXPECT_EQ(pkt.type(),
@@ -1317,7 +1316,7 @@ TEST_F(ServerStartPacketTest, StartWithStreamEndClosesStreamImmediately) {
 
   EXPECT_TRUE(stream_service_.message_sizes().empty());
   EXPECT_TRUE(stream_service_.finished());
-  EXPECT_EQ(stream_service_.end_status(), Status::OutOfRange());
+  EXPECT_EQ(stream_service_.end_status(), RpcStatus::EndOfStream());
 
   internal::InboundPacket pkt = LastSent();
   EXPECT_EQ(pkt.type(),
@@ -1326,9 +1325,10 @@ TEST_F(ServerStartPacketTest, StartWithStreamEndClosesStreamImmediately) {
 }
 
 // A client that detects that the server's responses don't match the method's
-// type reports it, which aborts the call on the server too. Like any aborted
-// call, it is torn down without resuming the method, and nothing is sent back.
-TEST_F(ServerStartPacketTest, ClientMethodTypeMismatchAbortsServerCall) {
+// type reports it, which ends the call on the server too. Like any call that
+// the peer ends, it is torn down without resuming the method, and nothing is
+// sent back.
+TEST_F(ServerStartPacketTest, ClientMethodTypeMismatchEndsServerCall) {
   ReceiveStart(internal::PacketType::Make<flags::kStart>(),
                /*call_id=*/8,
                kStreamServiceId);
@@ -1338,7 +1338,7 @@ TEST_F(ServerStartPacketTest, ClientMethodTypeMismatchAbortsServerCall) {
   Receive(internal::PacketFramer::FrameClientErrorPacket(
       allocator_,
       /*call_id=*/8,
-      internal::ProtocolStatus::kMethodTypeMismatch));
+      ProtocolError::kMethodTypeMismatch));
 
   EXPECT_TRUE(stream_service_.frame_destroyed());
   EXPECT_FALSE(stream_service_.finished());

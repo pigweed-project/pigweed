@@ -22,7 +22,7 @@
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_polyfill/language_feature_macros.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/status.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_sync/lock_annotations.h"
 
@@ -54,9 +54,12 @@ inline sync::InterruptSpinLock& ControlLock() {
 /// Dropping a `RegisterListener()` future before it resolves withdraws the
 /// registration; `Close()` is already under way when it returns and continues
 /// even if its future is dropped.
+///
+/// Resolves to an `RpcStatus`. The codes each operation can return are
+/// documented on the `Server` or `Client` function that returns the future.
 class [[nodiscard]] ControlFuture {
  public:
-  using value_type = Status;
+  using value_type = RpcStatus;
 
   constexpr ControlFuture() = default;
 
@@ -82,11 +85,11 @@ class [[nodiscard]] ControlFuture {
   }
 
   /// Creates a `ControlFuture` that is already resolved with `status`.
-  static ControlFuture Resolved(Status status) {
+  static ControlFuture Resolved(RpcStatus status) {
     return ControlFuture(async2::FutureState::kReadyForCompletion, status);
   }
 
-  async2::Poll<Status> Pend(async2::Context& cx)
+  async2::Poll<RpcStatus> Pend(async2::Context& cx)
       PW_LOCKS_EXCLUDED(internal::ControlLock()) {
     std::lock_guard lock(internal::ControlLock());
     PW_ASSERT(core_.is_pendable());
@@ -121,7 +124,7 @@ class [[nodiscard]] ControlFuture {
   /// resolve them.
   using List = async2::FutureList<&ControlFuture::core_>;
 
-  ControlFuture(async2::FutureState::ReadyForCompletion, Status status)
+  ControlFuture(async2::FutureState::ReadyForCompletion, RpcStatus status)
       : core_(async2::FutureState::kReadyForCompletion), status_(status) {}
 
   /// A pending future. `listener` is set for listener registrations.
@@ -130,7 +133,7 @@ class [[nodiscard]] ControlFuture {
 
   /// Resolves the future, waking any task pending it. The future must already
   /// have been removed from any list.
-  void ResolveLocked(Status status)
+  void ResolveLocked(RpcStatus status)
       PW_EXCLUSIVE_LOCKS_REQUIRED(internal::ControlLock()) {
     status_ = status;
     core_.WakeAndMarkReady();
@@ -139,7 +142,7 @@ class [[nodiscard]] ControlFuture {
   /// If the future has already been resolved, completes it and returns its
   /// status. For `*Blocking()` callers whose request was applied synchronously
   /// on their own thread, and so have no dispatcher to run the future on.
-  std::optional<Status> TryTakeResolved()
+  std::optional<RpcStatus> TryTakeResolved()
       PW_LOCKS_EXCLUDED(internal::ControlLock()) {
     std::lock_guard lock(internal::ControlLock());
     if (!core_.is_ready()) {
@@ -155,7 +158,10 @@ class [[nodiscard]] ControlFuture {
     return *listener_;
   }
 
-  Status status_ PW_GUARDED_BY(internal::ControlLock()) = Status::Unknown();
+  // Every path resolves the future before its status is read, so this value
+  // is never observed. Observing it would be a bug.
+  RpcStatus status_ PW_GUARDED_BY(internal::ControlLock()) =
+      RpcStatus::ProtocolError();
   transport::ReliableDatagramListener* listener_
       PW_GUARDED_BY(internal::ControlLock()) = nullptr;
 };

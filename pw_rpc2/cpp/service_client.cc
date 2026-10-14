@@ -20,12 +20,13 @@
 
 #include "pw_assert/check.h"
 #include "pw_async2/try.h"
+#include "pw_log/log.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/generated_service_client.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/method_type.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/write_reservation.h"
-#include "pw_status/status.h"
 
 namespace pw::rpc2::internal {
 
@@ -39,21 +40,20 @@ void UnaryFutureBase::Cancel() {
   response_fut_.Cancel();
 }
 
-async2::Poll<Result<ConstBuf>> UnaryFutureBase::PendRaw(async2::Context& cx,
-                                                        const void* request,
-                                                        SerializeFn serialize) {
+async2::Poll<RpcResult<ConstBuf>> UnaryFutureBase::PendRaw(
+    async2::Context& cx, const void* request, SerializeFn serialize) {
   PW_CHECK(is_pendable());
 
   if (req_fut_.is_pendable()) {
-    PW_TRY_READY_ASSIGN(Result<IntrusivePtr<Call>> call,
+    PW_TRY_READY_ASSIGN(RpcResult<IntrusivePtr<Call>> call,
                         req_fut_.PendWriteAndTakeCall(cx, request, serialize));
     if (!call.ok()) {
       mark_complete();
-      return async2::Ready(Result<ConstBuf>(call.status()));
+      return async2::Ready(RpcResult<ConstBuf>(call.status()));
     }
     response_fut_ = CallAccess::Create<RawResponseFuture>(std::move(*call));
   }
-  PW_TRY_READY_ASSIGN(Result<ConstBuf> response, response_fut_.Pend(cx));
+  PW_TRY_READY_ASSIGN(RpcResult<ConstBuf> response, response_fut_.Pend(cx));
   mark_complete();
   return async2::Ready(std::move(response));
 }
@@ -81,11 +81,15 @@ ReserveWriteFuture GeneratedServiceClient::StartCall(
     RequestSizeFn size_request,
     size_t max_message_size) const {
   if (!client().is_open()) {
-    return ReserveWriteFuture::Failed(Status::Unavailable());
+    return ReserveWriteFuture::Failed(client().close_status());
   }
   IntrusivePtr<Call> call = client().CreateCall();
   if (call == nullptr) {
-    return ReserveWriteFuture::Failed(Status::ResourceExhausted());
+    PW_LOG_ERROR(
+        "Failed to allocate a call for method 0x%08x in service 0x%08x",
+        static_cast<unsigned>(method_id),
+        static_cast<unsigned>(service_id()));
+    return ReserveWriteFuture::Failed(RpcStatus::ResourceExhausted());
   }
 
   // Unary and client-streaming RPCs are answered by a single response packet.
@@ -104,7 +108,7 @@ ReserveWriteFuture GeneratedServiceClient::StartCall(
           ? size_request(request,
                          call->max_payload_size(sizeof(RequestWireFormat)))
           : max_message_size;
-  Result<transport::ReserveWriteFuture> reservation =
+  RpcResult<transport::ReserveWriteFuture> reservation =
       call->ReserveWrite(sizeof(RequestWireFormat), payload_size);
   if (!reservation.ok()) {
     return ReserveWriteFuture::Failed(reservation.status());

@@ -23,14 +23,15 @@
 #include "pw_async2/context.h"
 #include "pw_async2/poll.h"
 #include "pw_buf/buf.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/call_handle.h"
 #include "pw_rpc2/internal/future_base.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/serialize.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/write_reservation.h"
 #include "pw_status/status.h"
+#include "pw_status/status_with_size.h"
 #include "pw_transport/socket.h"
 
 namespace pw::rpc2 {
@@ -52,11 +53,26 @@ struct CallAccess;
 class UnaryFutureBase;
 
 /// Type-erased serializer: encodes the message at `message` into `dest`.
-using SerializeFn = StatusWithSize (*)(const void* message, ByteSpan dest);
+///
+/// @returns
+/// * `kOk` with the number of bytes written.
+/// * `kMessageTooLarge`: the message does not fit in `dest`.
+/// * `kDataError`: the serializer failed for any other reason.
+using SerializeFn = RpcResult<size_t> (*)(const void* message, ByteSpan dest);
 
 template <typename Message>
-StatusWithSize SerializeTypeErased(const void* message, ByteSpan dest) {
-  return Serialize(*static_cast<const Message*>(message), dest);
+RpcResult<size_t> SerializeTypeErased(const void* message, ByteSpan dest) {
+  // Serializers report errors as `pw::Status`. Translate them here, at the
+  // boundary between the serializer interface and the public API.
+  const StatusWithSize result =
+      Serialize(*static_cast<const Message*>(message), dest);
+  if (result.ok()) {
+    return result.size();
+  }
+  if (result.status().IsResourceExhausted()) {
+    return RpcStatus::MessageTooLarge();
+  }
+  return RpcStatus::DataError();
 }
 
 /// Non-templated base class for `WriteFuture<Message>`.
@@ -65,7 +81,7 @@ StatusWithSize SerializeTypeErased(const void* message, ByteSpan dest) {
 /// types.
 class WriteFutureBase {
  public:
-  using value_type = Status;
+  using value_type = RpcStatus;
 
   WriteFutureBase(const WriteFutureBase&) = delete;
   WriteFutureBase& operator=(const WriteFutureBase&) = delete;
@@ -83,12 +99,14 @@ class WriteFutureBase {
   WriteFutureBase& operator=(WriteFutureBase&&) noexcept = default;
   ~WriteFutureBase() = default;
 
-  [[nodiscard]] async2::Poll<Result<IntrusivePtr<Call>>> PendWriteAndTakeCall(
-      async2::Context& cx, const void* message, SerializeFn serialize);
+  [[nodiscard]] async2::Poll<RpcResult<IntrusivePtr<Call>>>
+  PendWriteAndTakeCall(async2::Context& cx,
+                       const void* message,
+                       SerializeFn serialize);
 
-  [[nodiscard]] async2::Poll<Status> PendWrite(async2::Context& cx,
-                                               const void* message,
-                                               SerializeFn serialize);
+  [[nodiscard]] async2::Poll<RpcStatus> PendWrite(async2::Context& cx,
+                                                  const void* message,
+                                                  SerializeFn serialize);
 
  private:
   friend class UnaryFutureBase;
@@ -119,19 +137,21 @@ class WriteFuture : public internal::WriteFutureBase {
   /// Polls the outbound write until it is committed.
   ///
   /// @returns
-  /// * `OK` once the message or completion has been committed.
-  /// * `FAILED_PRECONDITION` if the writer is already closed.
-  /// * `RESOURCE_EXHAUSTED` if the encoded message does not fit in the write
-  ///   buffer.
-  /// * The call's completion status (such as `CANCELLED`) if the call ended
-  ///   with an error.
-  /// * `UNAVAILABLE` if the connection is closed.
-  /// * Any error returned by the message serializer.
-  [[nodiscard]] async2::Poll<Status> Pend(async2::Context& cx) {
+  /// * `kOk` once the message or completion has been committed.
+  /// * `kWriteClosed` if the writer is already closed, empty, or moved from.
+  /// * `kMessageTooLarge` if the encoded message does not fit in the write
+  ///   buffer or exceeds the maximum write size. Nothing was sent, and the
+  ///   call is still open.
+  /// * `kDataError` if the message serializer failed for any other reason.
+  ///   Nothing was sent, and the call is still open.
+  /// * The call's completion status (such as `kCancelled` or `kDisconnected`)
+  ///   if the call ended with an error. See `internal::Call::is_completed()`.
+  /// * `kDisconnected` if the connection closed before the write was sent.
+  [[nodiscard]] async2::Poll<RpcStatus> Pend(async2::Context& cx) {
     if constexpr (std::is_void_v<Message>) {
       return PendWrite(cx, nullptr, nullptr);
     } else {
-      async2::Poll<Status> result =
+      async2::Poll<RpcStatus> result =
           PendWrite(cx, &message_, &internal::SerializeTypeErased<Message>);
       if constexpr (std::is_same_v<Message, ConstBuf>) {
         if (result.IsReady()) {
@@ -197,14 +217,14 @@ class WriterBase : public CallHandle {
   }
 
   /// Aborts the call immediately, closing this writer and sending
-  /// `Status::Cancelled()` to the peer.
+  /// `kCancelled` to the peer.
   ///
   /// Unlike `Finish()`, which indicates normal completion of the stream or RPC,
   /// `Cancel()` terminates the RPC in both directions. The peer's pending or
-  /// next read fails with `CANCELLED`, and so does this end's: the call
-  /// completes locally with `Status::Cancelled()`, so a client's `Reader` or
-  /// response future resolves instead of waiting for a server that will not
-  /// answer. A write still in flight is rejected rather than sent.
+  /// next read fails with `kCancelled`, and so does this end's: the call
+  /// completes locally with `kCancelled`, so a client's `Reader` or response
+  /// future resolves instead of waiting for a server that will not answer. A
+  /// write still in flight is rejected rather than sent.
   void Cancel() {
     if (has_call()) {
       call().Cancel();
@@ -215,11 +235,12 @@ class WriterBase : public CallHandle {
   /// What destroying a writer before it is finished does to the call.
   ///
   /// `Writer` ends its stream normally, since a stream may legitimately be
-  /// empty. `UnaryWriter` cancels, since the peer is owed exactly one
-  /// response.
+  /// empty. `UnaryWriter` ends the call with an error
+  /// (`ProtocolError::kDroppedWithoutResponse`), since the peer is owed exactly
+  /// one response.
   enum OnDestroy : bool {
     kFinishOnDestroy = false,
-    kCancelOnDestroy = true,
+    kErrorOnDestroy = true,
   };
 
   constexpr WriterBase() = default;
@@ -227,14 +248,14 @@ class WriterBase : public CallHandle {
   WriterBase(const IntrusivePtr<Call>& call, OnDestroy on_destroy)
       : CallHandle(call) {
     if (has_call()) {
-      this->call().set_cancel_on_writer_drop(on_destroy == kCancelOnDestroy);
+      this->call().set_error_on_writer_drop(on_destroy == kErrorOnDestroy);
     }
   }
 
   WriterBase(IntrusivePtr<Call>&& call, OnDestroy on_destroy)
       : CallHandle(std::move(call)) {
     if (has_call()) {
-      this->call().set_cancel_on_writer_drop(on_destroy == kCancelOnDestroy);
+      this->call().set_error_on_writer_drop(on_destroy == kErrorOnDestroy);
     }
   }
 
@@ -295,7 +316,7 @@ class WriterBase : public CallHandle {
 ///
 /// * **Server side** (server- and bidirectional-streaming RPCs): streams
 ///   response messages to the client. `Finish()` (or `~Writer()`) completes the
-///   RPC with `OK`.
+///   RPC with `kOk`.
 /// * **Client side** (client- and bidirectional-streaming RPCs): streams
 ///   request messages to the server. `Finish()` (or `~Writer()`) closes the
 ///   request stream while keeping the call open for responses. Call `Cancel()`
@@ -312,8 +333,9 @@ class WriterBase : public CallHandle {
 ///
 /// On a server, if the method's future or coroutine completes before its
 /// `Writer` has finished the stream (for example, if the `Writer` was moved to
-/// a subtask that was not joined before returning), the call is terminated with
-/// `CANCELLED` and any remaining writes fail.
+/// a subtask that was not joined before returning), the call ends with an
+/// error, which the client sees as `kCancelled`, and any remaining writes
+/// fail.
 template <typename Message>
 class Writer : public internal::WriterBase {
  public:
@@ -367,9 +389,9 @@ class Writer : public internal::WriterBase {
 
   /// Completes the outbound message stream normally.
   ///
-  /// The peer's `Reader::Read()` resolves to `Status::OutOfRange()` after all
-  /// prior messages have been read. On a server, this completes the RPC with
-  /// `OK`; on a client, it closes the request stream while keeping the inbound
+  /// The peer's `Reader::Read()` resolves to `kEndOfStream` after all prior
+  /// messages have been read. On a server, this completes the RPC with
+  /// `kOk`; on a client, it closes the request stream while keeping the inbound
   /// side open.
   ///
   /// Destroying a `Writer` without calling `Finish()` or `Cancel()` finishes
@@ -394,16 +416,16 @@ class Writer : public internal::WriterBase {
 
 /// Single-response writer for server unary and client-streaming RPCs.
 ///
-/// Sends a single response and completes the RPC with `OK` via `FinishCopy()`
+/// Sends a single response and completes the RPC with `kOk` via `FinishCopy()`
 /// (raw bytes), `Finish()` (typed writers only), or `ReserveFinish()` (in-place
 /// write).
 ///
 /// Destroying a `UnaryWriter` (or returning from the method's future or
-/// coroutine) before a response is committed cancels the call
-/// (`Status::Cancelled()`). If a `Finish()` future or `ReserveFinish()`
-/// reservation is still in flight when the `UnaryWriter` is destroyed, the call
-/// is cancelled only if that future or reservation is dropped without
-/// committing.
+/// coroutine) before a response is committed ends the call with an error,
+/// which the client sees as `kCancelled`. If a `Finish()` future or
+/// `ReserveFinish()` reservation is still in flight when the `UnaryWriter` is
+/// destroyed, the call ends that way only if that future or reservation is
+/// dropped without committing.
 template <typename Message>
 class UnaryWriter : public internal::WriterBase {
  public:
@@ -415,7 +437,7 @@ class UnaryWriter : public internal::WriterBase {
   UnaryWriter& operator=(UnaryWriter&&) noexcept = default;
   ~UnaryWriter() = default;
 
-  /// Serializes `response`, sends it, and completes the RPC with `OK`. Not
+  /// Serializes `response`, sends it, and completes the RPC with `kOk`. Not
   /// available on `RawUnaryWriter`; use `FinishCopy()` instead.
   ///
   /// @note `response` is copied into the returned future. This overload is
@@ -433,7 +455,7 @@ class UnaryWriter : public internal::WriterBase {
         response);
   }
 
-  /// Serializes `response`, sends it, and completes the RPC with `OK`, moving
+  /// Serializes `response`, sends it, and completes the RPC with `kOk`, moving
   /// `response` into the returned future. Not available on `RawUnaryWriter`;
   /// use `FinishCopy()` instead.
   ///
@@ -448,7 +470,7 @@ class UnaryWriter : public internal::WriterBase {
         std::move(response));
   }
 
-  /// Copies `response` as the single response and completes the RPC with `OK`.
+  /// Copies `response` as the single response and completes the RPC with `kOk`.
   ///
   /// Pass `ConstBuf::Unowned(bytes)` to copy from bytes that outlive the
   /// returned future, or move in an owned `ConstBuf`, which is released once
@@ -466,10 +488,10 @@ class UnaryWriter : public internal::WriterBase {
   /// response in place.
   ///
   /// Committing the resulting `WriteReservation` sends the response and
-  /// completes the RPC with `OK`, retiring the call and destroying the
+  /// completes the RPC with `kOk`, retiring the call and destroying the
   /// method's future or coroutine. Dropping the reservation without committing
-  /// reopens the `UnaryWriter` (or cancels the call if the `UnaryWriter` was
-  /// already destroyed).
+  /// reopens the `UnaryWriter`, or, if the `UnaryWriter` was already
+  /// destroyed, ends the call as destroying it would have.
   [[nodiscard]] ReserveWriteFuture ReserveFinish(size_t max_message_size) {
     return ReserveResponse(max_message_size);
   }
@@ -478,9 +500,9 @@ class UnaryWriter : public internal::WriterBase {
   friend struct internal::CallAccess;
 
   explicit UnaryWriter(const IntrusivePtr<internal::Call>& call)
-      : internal::WriterBase(call, kCancelOnDestroy) {}
+      : internal::WriterBase(call, kErrorOnDestroy) {}
   explicit UnaryWriter(IntrusivePtr<internal::Call>&& call)
-      : internal::WriterBase(std::move(call), kCancelOnDestroy) {}
+      : internal::WriterBase(std::move(call), kErrorOnDestroy) {}
 };
 
 static_assert(sizeof(RawWriter) == sizeof(internal::CallHandle));

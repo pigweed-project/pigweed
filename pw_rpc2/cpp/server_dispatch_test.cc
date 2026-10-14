@@ -36,8 +36,6 @@ namespace {
 
 namespace flags = ::pw::rpc2::internal::flags;
 
-// Arms one call's ingress reservation, so that the connection task can deliver
-// a message to it without backpressure.
 // Acquires a slot in a call's ingress queue, as the connection task
 // does when it has a message to deliver.
 class ReserveSlotTask : public async2::Task {
@@ -70,8 +68,8 @@ TEST(ServerDispatchTest, DispatchesIncomingRequest) {
       std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
   auto pkt = PacketFramer::FrameStartUnaryPacket(
       allocator, /*call_id=*/10, /*service_id=*/20, /*method_id=*/30, payload);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn->SetNextRead(std::move(pkt));
 
   dispatcher.RunUntilStalled();
 
@@ -80,11 +78,11 @@ TEST(ServerDispatchTest, DispatchesIncomingRequest) {
   ASSERT_EQ(raw_conn->written_packet_count(), 1u);
   auto response =
       InboundPacket::Decode(ConstBuf::Unowned(raw_conn->written_packet(0)));
-  ASSERT_TRUE(response.ok());
-  EXPECT_EQ(response->type(),
+  ASSERT_NE(response, nullptr);
+  EXPECT_EQ(response.type(),
             (PacketType::Make<flags::kServer, flags::kErrorTerminal>()));
-  EXPECT_EQ(response->call_id(), 10u);
-  EXPECT_EQ(response->error(), ProtocolStatus::kUnknownService);
+  EXPECT_EQ(response.call_id(), 10u);
+  EXPECT_EQ(response.error(), ProtocolError::kUnknownService);
 
   // This connection was built by hand rather than accepted, so the server does
   // not know to close it. Unpost it here: the dispatcher outlives the server,
@@ -115,8 +113,8 @@ TEST(ServerDispatchTest, CallRegistriesAreScopedToTheirConnectionTask) {
   // Deliver a message for call 42 on the first connection only.
   std::byte data[3] = {std::byte{1}, std::byte{2}, std::byte{3}};
   auto pkt = PacketFramer::FrameServerMessagePacket(allocator, 42u, data);
-  ASSERT_TRUE(pkt.ok());
-  raw_conn1->SetNextRead(std::move(*pkt));
+  ASSERT_NE(pkt, nullptr);
+  raw_conn1->SetNextRead(std::move(pkt));
   task1->Wake();
   dispatcher.RunUntilStalled();
 
@@ -134,7 +132,7 @@ TEST(ServerDispatchTest, CallRegistriesAreScopedToTheirConnectionTask) {
   EXPECT_TRUE(reserve2.reserved());
 }
 
-TEST(ServerDispatchTest, ConnectionSeveredAbortsActiveCallsImmediately) {
+TEST(ServerDispatchTest, ConnectionSeveredEndsActiveCallsImmediately) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   {
@@ -149,11 +147,11 @@ TEST(ServerDispatchTest, ConnectionSeveredAbortsActiveCallsImmediately) {
     auto call2 = internal::ClientCall::Create(*task, 2u, allocator);
     ASSERT_NE(call2, nullptr);
 
-    task->CloseConnection(Status::Aborted());
+    task->CloseConnection(RpcStatus::ProtocolError());
     EXPECT_TRUE(call1->is_completed());
-    EXPECT_EQ(call1->completion_status(), Status::Aborted());
+    EXPECT_EQ(call1->completion_status(), RpcStatus::ProtocolError());
     EXPECT_TRUE(call2->is_completed());
-    EXPECT_EQ(call2->completion_status(), Status::Aborted());
+    EXPECT_EQ(call2->completion_status(), RpcStatus::ProtocolError());
   }
   dispatcher.RunUntilStalled();
   EXPECT_EQ(allocator.metrics().allocated_bytes.value(), 0u);
@@ -170,7 +168,7 @@ TEST(ServerDispatchTest, PacketDecodeRejectsTruncatedPacket) {
     std::memset(buf.data(), 0, buf.size());
     auto decode_res =
         internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf)));
-    EXPECT_EQ(decode_res.status(), Status::DataLoss());
+    EXPECT_EQ(decode_res, nullptr);
   }
 
   // A buffer with a complete common header, but too short for the request
@@ -184,7 +182,7 @@ TEST(ServerDispatchTest, PacketDecodeRejectsTruncatedPacket) {
         flags::kStart | flags::kHasPayload | flags::kStreamEnd);
     auto decode_res =
         internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf)));
-    EXPECT_EQ(decode_res.status(), Status::DataLoss());
+    EXPECT_EQ(decode_res, nullptr);
   }
 }
 
@@ -197,7 +195,7 @@ TEST(ServerDispatchTest, PacketDecodeRejectsUnrecognizedType) {
 
   auto decode_res =
       internal::InboundPacket::Decode(pw::ConstBuf(std::move(buf)));
-  EXPECT_EQ(decode_res.status(), Status::InvalidArgument());
+  EXPECT_EQ(decode_res, nullptr);
 }
 
 TEST(ServerDispatchTest, HandshakePacketDecodeVersionZeroRejection) {
@@ -206,12 +204,10 @@ TEST(ServerDispatchTest, HandshakePacketDecodeVersionZeroRejection) {
       pw::Buf::Allocate(allocator, internal::HandshakePacket::kWireSizeBytes);
   ASSERT_FALSE(buf.empty());
   internal::HandshakePacket packet(internal::HandshakePacket::Type::kSyn);
-  EXPECT_TRUE(packet.Encode(ByteSpan(buf)).ok());
+  EXPECT_TRUE(packet.Encode(ByteSpan(buf)));
   buf[4] = static_cast<std::byte>(0);  // Version 0
 
-  auto decode_res = internal::HandshakePacket::Decode(buf);
-  EXPECT_FALSE(decode_res.ok());
-  EXPECT_EQ(decode_res.status(), Status::DataLoss());
+  EXPECT_FALSE(internal::HandshakePacket::Decode(buf).has_value());
 }
 
 }  // namespace

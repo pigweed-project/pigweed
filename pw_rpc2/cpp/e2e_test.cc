@@ -32,18 +32,16 @@
 #include "pw_buf/buf.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/vector.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/client.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/pw_rpc2_test.pwpb.rpc2.h"
 #include "pw_rpc2/pw_rpc2_test.raw.rpc2.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/server.h"
+#include "pw_rpc2/status.h"
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
 #include "pw_span/span.h"
-#include "pw_status/status.h"
-#include "pw_status/try.h"
 #include "pw_unit_test/framework.h"
 #include "pw_unit_test/status_macros.h"
 
@@ -72,7 +70,7 @@ Payload MakePayload(size_t size, uint32_t seed) {
 // `request` must outlive the future.
 class RawEchoFuture {
  public:
-  using value_type = Result<ConstBuf>;
+  using value_type = RpcResult<ConstBuf>;
 
   RawEchoFuture() = default;
   RawEchoFuture(RawClient client, ConstByteSpan request)
@@ -87,8 +85,8 @@ class RawEchoFuture {
       state_ = kSendingRequest;
     }
     if (state_ == kSendingRequest) {
-      PW_AWAIT(Result<RawUnaryReservation> reservation, req_fut_, cx);
-      Result<RawResponseFuture> response_future =
+      PW_AWAIT(RpcResult<RawUnaryReservation> reservation, req_fut_, cx);
+      RpcResult<RawResponseFuture> response_future =
           test::CommitCopy(std::move(reservation), request_);
       if (!response_future.ok()) {
         state_ = kComplete;
@@ -97,7 +95,7 @@ class RawEchoFuture {
       resp_fut_ = std::move(*response_future);
       state_ = kAwaitingResponse;
     }
-    PW_AWAIT(Result<ConstBuf> response, resp_fut_, cx);
+    PW_AWAIT(RpcResult<ConstBuf> response, resp_fut_, cx);
     state_ = kComplete;
     return async2::Ready(std::move(response));
   }
@@ -124,17 +122,17 @@ static_assert(async2::Future<RawEchoFuture>);
 // whether (and why) a method failed rather than having it swallowed.
 class ErrorRecorder {
  public:
-  void Record(Status status) {
+  void Record(RpcStatus status) {
     if (first_error_.ok()) {
       first_error_ = status;
     }
   }
 
-  // Returns the first recorded error, or `OK`, and clears it.
-  Status TakeError() { return std::exchange(first_error_, OkStatus()); }
+  // Returns the first recorded error, or `kOk`, and clears it.
+  RpcStatus TakeError() { return std::exchange(first_error_, RpcStatus()); }
 
  private:
-  Status first_error_;
+  RpcStatus first_error_;
 };
 
 // Base for the test services' method futures. A default-constructed future is
@@ -146,7 +144,7 @@ class TestMethodFuture : public test::TestFuture {
       : test::TestFuture(true), recorder_(&recorder) {}
 
   // Completes the method, recording `status` with the service if it failed.
-  async2::Poll<> Complete(Status status) {
+  async2::Poll<> Complete(RpcStatus status) {
     if (!status.ok()) {
       recorder_->Record(status);
     }
@@ -195,7 +193,7 @@ class RawTestService
       if (!finish_.is_pendable()) {
         finish_ = responder_.FinishCopy(std::move(request_));
       }
-      PW_AWAIT(Status status, finish_, cx);
+      PW_AWAIT(RpcStatus status, finish_, cx);
       return Complete(status);
     }
 
@@ -223,7 +221,7 @@ class RawTestService
           message_ = StreamMessage(sent_);
           write_ = writer_.WriteCopy(ConstBuf::Unowned(message_));
         }
-        PW_AWAIT(Status status, write_, cx);
+        PW_AWAIT(RpcStatus status, write_, cx);
         if (!status.ok()) {
           return Complete(status);
         }
@@ -232,7 +230,7 @@ class RawTestService
       if (!finish_.is_pendable()) {
         finish_ = writer_.Finish();
       }
-      PW_AWAIT(Status status, finish_, cx);
+      PW_AWAIT(RpcStatus status, finish_, cx);
       return Complete(status);
     }
 
@@ -262,8 +260,8 @@ class RawTestService
         if (!read_.is_pendable()) {
           read_ = reader_.Read();
         }
-        PW_AWAIT(Result<ConstBuf> message, read_, cx);
-        if (message.status().IsOutOfRange()) {
+        PW_AWAIT(RpcResult<ConstBuf> message, read_, cx);
+        if (message.status().IsEndOfStream()) {
           input_done_ = true;
           break;
         }
@@ -279,7 +277,7 @@ class RawTestService
         finish_ = responder_.FinishCopy(
             ConstBuf::Unowned(as_bytes(span(&response_, 1))));
       }
-      PW_AWAIT(Status status, finish_, cx);
+      PW_AWAIT(RpcStatus status, finish_, cx);
       return Complete(status);
     }
 
@@ -309,8 +307,8 @@ class RawTestService
           if (!read_.is_pendable()) {
             read_ = reader_.Read();
           }
-          PW_AWAIT(Result<ConstBuf> message, read_, cx);
-          if (message.status().IsOutOfRange()) {
+          PW_AWAIT(RpcResult<ConstBuf> message, read_, cx);
+          if (message.status().IsEndOfStream()) {
             input_done_ = true;
             break;
           }
@@ -319,7 +317,7 @@ class RawTestService
           }
           write_ = writer_.WriteCopy(std::move(*message));
         }
-        PW_AWAIT(Status status, write_, cx);
+        PW_AWAIT(RpcStatus status, write_, cx);
         if (!status.ok()) {
           return Complete(status);
         }
@@ -327,7 +325,7 @@ class RawTestService
       if (!finish_.is_pendable()) {
         finish_ = writer_.Finish();
       }
-      PW_AWAIT(Status status, finish_, cx);
+      PW_AWAIT(RpcStatus status, finish_, cx);
       return Complete(status);
     }
 
@@ -368,7 +366,7 @@ class PwpbEchoService
       if (!finish_.is_pendable()) {
         finish_ = responder_.Finish(EchoResponse{.val = value_ + 100});
       }
-      PW_AWAIT(Status status, finish_, cx);
+      PW_AWAIT(RpcStatus status, finish_, cx);
       return Complete(status);
     }
 
@@ -394,7 +392,7 @@ class PwpbEchoService
         if (!write_.is_pendable()) {
           write_ = writer_.Write(EchoResponse{.val = base_ + sent_ + 1});
         }
-        PW_AWAIT(Status status, write_, cx);
+        PW_AWAIT(RpcStatus status, write_, cx);
         if (!status.ok()) {
           return Complete(status);
         }
@@ -403,7 +401,7 @@ class PwpbEchoService
       if (!finish_.is_pendable()) {
         finish_ = writer_.Finish();
       }
-      PW_AWAIT(Status status, finish_, cx);
+      PW_AWAIT(RpcStatus status, finish_, cx);
       return Complete(status);
     }
 
@@ -431,8 +429,8 @@ class PwpbEchoService
         if (!read_.is_pendable()) {
           read_ = reader_.Read();
         }
-        PW_AWAIT(Result<EchoRequest> request, read_, cx);
-        if (request.status().IsOutOfRange()) {
+        PW_AWAIT(RpcResult<EchoRequest> request, read_, cx);
+        if (request.status().IsEndOfStream()) {
           input_done_ = true;
           break;
         }
@@ -444,7 +442,7 @@ class PwpbEchoService
       if (!finish_.is_pendable()) {
         finish_ = responder_.Finish(EchoResponse{.val = sum_});
       }
-      PW_AWAIT(Status status, finish_, cx);
+      PW_AWAIT(RpcStatus status, finish_, cx);
       return Complete(status);
     }
 
@@ -474,8 +472,8 @@ class PwpbEchoService
           if (!read_.is_pendable()) {
             read_ = reader_.Read();
           }
-          PW_AWAIT(Result<EchoRequest> request, read_, cx);
-          if (request.status().IsOutOfRange()) {
+          PW_AWAIT(RpcResult<EchoRequest> request, read_, cx);
+          if (request.status().IsEndOfStream()) {
             input_done_ = true;
             break;
           }
@@ -484,7 +482,7 @@ class PwpbEchoService
           }
           write_ = writer_.Write(EchoResponse{.val = request->val * 3});
         }
-        PW_AWAIT(Status status, write_, cx);
+        PW_AWAIT(RpcStatus status, write_, cx);
         if (!status.ok()) {
           return Complete(status);
         }
@@ -492,7 +490,7 @@ class PwpbEchoService
       if (!finish_.is_pendable()) {
         finish_ = writer_.Finish();
       }
-      PW_AWAIT(Status status, finish_, cx);
+      PW_AWAIT(RpcStatus status, finish_, cx);
       return Complete(status);
     }
 
@@ -551,14 +549,14 @@ class ProxyService : public test::pw_rpc2::raw::TestEcho::Service<ProxyService>,
         if (!backend_call_.is_pendable()) {
           backend_call_ = RawEchoFuture(backend_, request_);
         }
-        PW_AWAIT(Result<ConstBuf> response, backend_call_, cx);
+        PW_AWAIT(RpcResult<ConstBuf> response, backend_call_, cx);
         if (!response.ok()) {
           responder_.Cancel();
           return Complete(response.status());
         }
         finish_ = responder_.FinishCopy(std::move(*response));
       }
-      PW_AWAIT(Status status, finish_, cx);
+      PW_AWAIT(RpcStatus status, finish_, cx);
       return Complete(status);
     }
 
@@ -618,21 +616,21 @@ class E2ETest : public ::testing::Test {
 
   void SetUp() override {
     if (service_kind_ == ServiceKind::kRaw) {
-      EXPECT_EQ(server_.RegisterService(raw_service_), OkStatus());
+      PW_TEST_EXPECT_OK(server_.RegisterService(raw_service_));
     } else if (service_kind_ == ServiceKind::kPwpb) {
-      EXPECT_EQ(server_.RegisterService(pwpb_service_), OkStatus());
+      PW_TEST_EXPECT_OK(server_.RegisterService(pwpb_service_));
     }
     for (test::MockTransport& transport : interfaces_) {
-      EXPECT_EQ(server_.RegisterListenerBlocking(transport), OkStatus());
+      PW_TEST_EXPECT_OK(server_.RegisterListenerBlocking(transport));
     }
     server_.Start();
   }
 
   void TearDown() override {
     CloseClients();
-    EXPECT_EQ(RunToCompletion(server_.Close()), OkStatus());
-    EXPECT_EQ(raw_service_.TakeError(), OkStatus());
-    EXPECT_EQ(pwpb_service_.TakeError(), OkStatus());
+    PW_TEST_EXPECT_OK(RunToCompletion(server_.Close()));
+    PW_TEST_EXPECT_OK(raw_service_.TakeError());
+    PW_TEST_EXPECT_OK(pwpb_service_.TakeError());
     EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), 0u);
   }
 
@@ -649,9 +647,9 @@ class E2ETest : public ::testing::Test {
     connection.client_end = link.client_raw();
     connection.server_end = link.server_raw();
     listener.ResolveAccept(std::move(link.server()));
-    Result<Client> client = RunToCompletion(
+    RpcResult<Client> client = RunToCompletion(
         Client::Connect(dispatcher_, allocator_, std::move(link.client())));
-    EXPECT_EQ(client.status(), OkStatus());
+    PW_TEST_EXPECT_OK(client.status());
     if (client.ok()) {
       connection.client = std::move(*client);
     }
@@ -667,7 +665,7 @@ class E2ETest : public ::testing::Test {
   // connections are freed.
   void CloseClients() {
     for (Connection& connection : connections_) {
-      EXPECT_EQ(RunToCompletion(connection.client.Close()), OkStatus());
+      PW_TEST_EXPECT_OK(RunToCompletion(connection.client.Close()));
     }
     connections_.clear();
   }
@@ -676,19 +674,20 @@ class E2ETest : public ::testing::Test {
   // each just sees its socket close. The server frees its end once it notices,
   // so `connection`'s raw pointers must not be used afterwards.
   static void SeverLink(Connection& connection) {
-    connection.client_end->SimulateDisconnect(Status::Unavailable(),
-                                              /*disconnect_peer=*/true);
+    connection.client_end->SimulateDisconnect(/*disconnect_peer=*/true);
   }
 
   // Makes a raw `EchoUnary` call and checks that it echoes `request`.
   bool ExpectEcho(const RawClient& client, ConstByteSpan request) {
-    Result<ConstBuf> response = RunToCompletion(RawEchoFuture(client, request));
-    EXPECT_EQ(response.status(), OkStatus());
+    RpcResult<ConstBuf> response =
+        RunToCompletion(RawEchoFuture(client, request));
+    PW_TEST_EXPECT_OK(response.status());
     return response.ok() && test::ExpectBytes(*response, request);
   }
 
   // Starts a raw `CountUpServerStream` of `count` messages.
-  Result<RawReader> StartCountStream(const RawClient& client, uint8_t count) {
+  RpcResult<RawReader> StartCountStream(const RawClient& client,
+                                        uint8_t count) {
     const std::byte request[] = {static_cast<std::byte>(count)};
     return test::CommitCopy(
         RunToCompletion(client.CountUpServerStream(sizeof(request))), request);
@@ -696,17 +695,17 @@ class E2ETest : public ::testing::Test {
 
   // Reads the next message and checks that it is `expected`.
   bool ExpectNextMessage(RawReader& reader, ConstByteSpan expected) {
-    Result<ConstBuf> message = RunToCompletion(reader.Read());
-    EXPECT_EQ(message.status(), OkStatus());
+    RpcResult<ConstBuf> message = RunToCompletion(reader.Read());
+    PW_TEST_EXPECT_OK(message.status());
     return message.ok() && test::ExpectBytes(*message, expected);
   }
 
   // Checks that the peer has finished the stream.
   template <typename T>
   bool ExpectEndOfStream(Reader<T>& reader) {
-    const Status status = RunToCompletion(reader.Read()).status();
-    EXPECT_EQ(status, Status::OutOfRange());
-    return status.IsOutOfRange();
+    const RpcStatus status = RunToCompletion(reader.Read()).status();
+    EXPECT_EQ(status, RpcStatus::EndOfStream());
+    return status.IsEndOfStream();
   }
 
   ScopedTestAllocator scoped_allocator_;
@@ -945,7 +944,7 @@ TEST_F(E2ETest, MultiInterfaceDisconnectedClientsFailWhileOthersContinue) {
   dispatcher_.RunUntilStalled();
   EXPECT_FALSE(client1.is_open());
   EXPECT_EQ(RunToCompletion(RawEchoFuture(client1, request)).status(),
-            Status::Unavailable());
+            RpcStatus::Disconnected());
   EXPECT_TRUE(ExpectEcho(client2, request));
   EXPECT_TRUE(ExpectEcho(client3, request));
 
@@ -953,7 +952,7 @@ TEST_F(E2ETest, MultiInterfaceDisconnectedClientsFailWhileOthersContinue) {
   dispatcher_.RunUntilStalled();
   EXPECT_FALSE(client2.is_open());
   EXPECT_EQ(RunToCompletion(RawEchoFuture(client2, request)).status(),
-            Status::Unavailable());
+            RpcStatus::Disconnected());
   EXPECT_TRUE(ExpectEcho(client3, request));
   EXPECT_TRUE(client3.is_open());
 }
@@ -978,12 +977,12 @@ TEST_F(E2ETest, MultiInterfaceDisconnectWithEchoesInFlight) {
   SeverLink(severed);
   dispatcher_.RunUntilStalled();
   ASSERT_TRUE(echo.has_value());
-  EXPECT_EQ(echo.value().status(), Status::Cancelled());
+  EXPECT_EQ(echo.value().status(), RpcStatus::Disconnected());
   EXPECT_EQ(RunToCompletion(stream.writer().WriteCopy(
                 ConstBuf::Unowned(MakePayload(16, 3)))),
-            Status::Cancelled());
+            RpcStatus::Disconnected());
   // The server's echo was waiting for a reservation when the link went down.
-  EXPECT_EQ(raw_service_.TakeError(), Status::Unavailable());
+  EXPECT_EQ(raw_service_.TakeError(), RpcStatus::Disconnected());
 
   EXPECT_TRUE(ExpectEcho(client2, MakePayload(kMaxPayloadSize, 2)));
 }
@@ -1028,11 +1027,11 @@ TEST_F(E2ETest, DisconnectFailsPendingAndLaterStreamOperations) {
   dispatcher_.RunUntilStalled();
 
   ASSERT_TRUE(pending_read.has_value());
-  EXPECT_EQ(pending_read.value().status(), Status::Cancelled());
+  EXPECT_EQ(pending_read.value().status(), RpcStatus::Disconnected());
   EXPECT_EQ(RunToCompletion(stream.reader().Read()).status(),
-            Status::Cancelled());
+            RpcStatus::Disconnected());
   EXPECT_EQ(RunToCompletion(stream.writer().ReserveWrite(16)).status(),
-            Status::Cancelled());
+            RpcStatus::Disconnected());
   EXPECT_FALSE(client.is_open());
   // The server's echo loop, which was waiting for the next message, is dropped
   // with the connection without being resumed, so it records no error.
@@ -1106,9 +1105,8 @@ class ProxyTest : public E2ETest {
 
   void SetUp() override {
     E2ETest::SetUp();
-    EXPECT_EQ(proxy_server_.RegisterService(proxy_service_), OkStatus());
-    EXPECT_EQ(proxy_server_.RegisterListenerBlocking(proxy_listener_),
-              OkStatus());
+    PW_TEST_EXPECT_OK(proxy_server_.RegisterService(proxy_service_));
+    PW_TEST_EXPECT_OK(proxy_server_.RegisterListenerBlocking(proxy_listener_));
     proxy_server_.Start();
 
     backend_ = &ConnectClient();
@@ -1121,8 +1119,8 @@ class ProxyTest : public E2ETest {
     frontend_ = RawClient();
     proxy_service_.set_backend(Client());
     CloseClients();
-    EXPECT_EQ(RunToCompletion(proxy_server_.Close()), OkStatus());
-    EXPECT_EQ(proxy_service_.TakeError(), OkStatus());
+    PW_TEST_EXPECT_OK(RunToCompletion(proxy_server_.Close()));
+    PW_TEST_EXPECT_OK(proxy_service_.TakeError());
     E2ETest::TearDown();
   }
 
@@ -1175,8 +1173,9 @@ TEST_F(ProxyTest, BackendDisconnectCancelsFrontendCall) {
   SeverLink(*backend_);
   dispatcher_.RunUntilStalled();
   ASSERT_TRUE(call.has_value());
-  EXPECT_EQ(call.value().status(), Status::Cancelled());
-  EXPECT_EQ(proxy_service_.TakeError(), Status::Unavailable());
+  EXPECT_EQ(call.value().status(), RpcStatus::Cancelled());
+  const RpcStatus error = proxy_service_.TakeError();
+  EXPECT_EQ(error, RpcStatus::Disconnected());
   EXPECT_EQ(raw_service_.unary_echo_calls(), 0u);
 }
 
@@ -1189,8 +1188,9 @@ class ProxyToEmptyBackendTest : public ProxyTest {
 TEST_F(ProxyToEmptyBackendTest, BackendErrorCancelsFrontendCall) {
   const Payload request = MakePayload(kMaxPayloadSize, 1);
   EXPECT_EQ(RunToCompletion(RawEchoFuture(frontend_, request)).status(),
-            Status::Cancelled());
-  EXPECT_EQ(proxy_service_.TakeError(), Status::NotFound());
+            RpcStatus::Cancelled());
+  const RpcStatus error = proxy_service_.TakeError();
+  EXPECT_EQ(error, RpcStatus::Unimplemented());
 }
 
 }  // namespace

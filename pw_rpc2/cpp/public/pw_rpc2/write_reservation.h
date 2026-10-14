@@ -22,11 +22,10 @@
 #include "pw_async2/poll.h"
 #include "pw_bytes/span.h"
 #include "pw_intrusive_ptr/intrusive_ptr.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/future_base.h"
 #include "pw_rpc2/internal/packet.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/status.h"
 #include "pw_transport/socket.h"
 
 namespace pw::rpc2 {
@@ -105,7 +104,8 @@ class WriteReservationBase {
         packet_(packet),
         call_(std::move(call)) {}
 
-  [[nodiscard]] Result<IntrusivePtr<Call>> CommitAndTakeCall(size_t size_bytes);
+  [[nodiscard]] RpcResult<IntrusivePtr<Call>> CommitAndTakeCall(
+      size_t size_bytes);
 
  private:
   friend class WriteFutureBase;
@@ -155,13 +155,15 @@ class WriteReservation : public internal::WriteReservationBase {
   /// `size_bytes` must not exceed `size()`.
   ///
   /// @returns
-  /// * `OK`: the message or response was queued for transmission.
-  /// * `FAILED_PRECONDITION`: this reservation was already committed, dropped,
-  ///   or moved from, or the call's outbound stream was already finished.
-  /// * The call's completion status (such as `CANCELLED`) if the call ended
-  ///   with an error while the reservation was held.
-  /// * `UNAVAILABLE`: the connection closed before the write could be sent.
-  [[nodiscard]] Status Commit(size_t size_bytes) {
+  /// * `kOk`: the message or response was queued for transmission.
+  /// * `kWriteClosed`: this reservation was already committed, dropped, or
+  ///   moved from, or the call's outbound stream was already finished.
+  /// * The call's completion status (such as `kCancelled` or `kDisconnected`)
+  ///   if the call ended with an error while the reservation was held. See
+  ///   `internal::Call::is_completed()`.
+  /// * `kDisconnected`: the connection closed before the write could be
+  ///   sent.
+  [[nodiscard]] RpcStatus Commit(size_t size_bytes) {
     return CommitAndTakeCall(size_bytes).status();
   }
 
@@ -175,7 +177,7 @@ class WriteReservation : public internal::WriteReservationBase {
 /// `UnaryWriter::ReserveFinish()` that resolves to a `WriteReservation`.
 class ReserveWriteFuture : public internal::FutureBase {
  public:
-  using value_type = Result<WriteReservation>;
+  using value_type = RpcResult<WriteReservation>;
 
   constexpr ReserveWriteFuture() = default;
 
@@ -199,20 +201,25 @@ class ReserveWriteFuture : public internal::FutureBase {
   /// Polls for the write reservation.
   ///
   /// @returns
-  /// * `OK` with a `WriteReservation` once buffer space is available.
-  /// * `FAILED_PRECONDITION` if the writer is already closed.
-  /// * `RESOURCE_EXHAUSTED` if the requested size exceeds the maximum write
+  /// * `kOk` with a `WriteReservation` once buffer space is available.
+  /// * `kWriteClosed` if the writer is already closed, empty, or moved from.
+  /// * `kMessageTooLarge` if the requested size exceeds the maximum write
   ///   size.
-  /// * The call's completion status (such as `CANCELLED`) if the call ended
-  ///   with an error.
-  /// * `UNAVAILABLE` if the connection is closed.
-  [[nodiscard]] async2::Poll<Result<WriteReservation>> Pend(
+  /// * The call's completion status (such as `kCancelled` or `kDisconnected`)
+  ///   if the call ended with an error. See `internal::Call::is_completed()`.
+  /// * `kDisconnected` if the connection closed while waiting for buffer
+  ///   space.
+  /// * For a client call that has not started: `kClosed` if the client is
+  ///   empty or was closed, the reason its connection closed (`kDisconnected`
+  ///   or `kProtocolError`) if it closed on its own, or `kResourceExhausted`
+  ///   if the call could not be allocated.
+  [[nodiscard]] async2::Poll<RpcResult<WriteReservation>> Pend(
       async2::Context& cx) {
     PW_ASSERT(is_pendable());
 
     if (!status_.ok()) {
       mark_complete();
-      return async2::Ready(Result<WriteReservation>(status_));
+      return async2::Ready(RpcResult<WriteReservation>(status_));
     }
 
     PW_AWAIT(auto write_res, reserve_fut_, cx);
@@ -221,11 +228,14 @@ class ReserveWriteFuture : public internal::FutureBase {
     if (!write_res.has_value()) {
       // The transport resolves a reservation to `std::nullopt` only when the
       // socket has closed.
+      const RpcStatus status = call_ != nullptr
+                                   ? call_->ConnectionClosedStatus()
+                                   : RpcStatus::Disconnected();
       AbandonTerminalIfPending();
-      return async2::Ready(Result<WriteReservation>(Status::Unavailable()));
+      return async2::Ready(RpcResult<WriteReservation>(status));
     }
 
-    return async2::Ready(Result<WriteReservation>(
+    return async2::Ready(RpcResult<WriteReservation>(
         WriteReservation(std::move(*write_res), packet_, std::move(call_))));
   }
 
@@ -244,13 +254,13 @@ class ReserveWriteFuture : public internal::FutureBase {
   }
 
   // Constructs a future that resolves immediately to `status`, which must not
-  // be `OK`.
-  [[nodiscard]] static ReserveWriteFuture Failed(Status status) {
+  // be `kOk`.
+  [[nodiscard]] static ReserveWriteFuture Failed(RpcStatus status) {
     return ReserveWriteFuture(status);
   }
 
   [[nodiscard]] static ReserveWriteFuture Message(
-      Result<transport::ReserveWriteFuture>&& reserve_fut,
+      RpcResult<transport::ReserveWriteFuture>&& reserve_fut,
       internal::EndpointRole sender,
       uint32_t call_id,
       IntrusivePtr<internal::Call>&& call) {
@@ -262,7 +272,7 @@ class ReserveWriteFuture : public internal::FutureBase {
   // Reserves the packet that starts a unary or server-streaming call with its
   // only request message.
   [[nodiscard]] static ReserveWriteFuture StartUnary(
-      Result<transport::ReserveWriteFuture>&& reserve_fut,
+      RpcResult<transport::ReserveWriteFuture>&& reserve_fut,
       uint32_t call_id,
       uint32_t service_id,
       uint32_t method_id,
@@ -277,7 +287,7 @@ class ReserveWriteFuture : public internal::FutureBase {
   // streaming call. It carries no message, and leaves the client's stream
   // open.
   [[nodiscard]] static ReserveWriteFuture StartStream(
-      Result<transport::ReserveWriteFuture>&& reserve_fut,
+      RpcResult<transport::ReserveWriteFuture>&& reserve_fut,
       uint32_t call_id,
       uint32_t service_id,
       uint32_t method_id,
@@ -289,7 +299,7 @@ class ReserveWriteFuture : public internal::FutureBase {
   }
 
   [[nodiscard]] static ReserveWriteFuture Response(
-      Result<transport::ReserveWriteFuture>&& reserve_fut,
+      RpcResult<transport::ReserveWriteFuture>&& reserve_fut,
       uint32_t call_id,
       IntrusivePtr<internal::Call>&& call) {
     return Create(std::move(reserve_fut),
@@ -300,7 +310,7 @@ class ReserveWriteFuture : public internal::FutureBase {
   // Reserves the packet that finishes `sender`'s stream normally. See
   // `internal::OutboundPacket::Finish()`.
   [[nodiscard]] static ReserveWriteFuture Finish(
-      Result<transport::ReserveWriteFuture>&& reserve_fut,
+      RpcResult<transport::ReserveWriteFuture>&& reserve_fut,
       internal::EndpointRole sender,
       uint32_t call_id,
       IntrusivePtr<internal::Call>&& call) {
@@ -310,7 +320,7 @@ class ReserveWriteFuture : public internal::FutureBase {
   }
 
   static ReserveWriteFuture Create(
-      Result<transport::ReserveWriteFuture>&& reserve_fut,
+      RpcResult<transport::ReserveWriteFuture>&& reserve_fut,
       internal::OutboundPacket packet,
       IntrusivePtr<internal::Call>&& call) {
     if (!reserve_fut.ok()) {
@@ -322,7 +332,7 @@ class ReserveWriteFuture : public internal::FutureBase {
     return ReserveWriteFuture(std::move(*reserve_fut), packet, std::move(call));
   }
 
-  explicit ReserveWriteFuture(Status status)
+  explicit ReserveWriteFuture(RpcStatus status)
       : internal::FutureBase(async2::FutureState::kPending), status_(status) {
     PW_ASSERT(!status.ok());
   }
@@ -344,9 +354,9 @@ class ReserveWriteFuture : public internal::FutureBase {
 
   transport::ReserveWriteFuture reserve_fut_;
   internal::OutboundPacket packet_;
-  // `OK` while this future represents a real reservation attempt; otherwise
+  // `kOk` while this future represents a real reservation attempt; otherwise
   // the reason the call could not write, resolved on the first `Pend`.
-  Status status_;
+  RpcStatus status_;
   IntrusivePtr<internal::Call> call_;
 };
 

@@ -42,14 +42,14 @@ ServerTask::~ServerTask() {
 
 // --- Control plane ---
 
-Status ServerTask::RegisterService(Service& service) {
+RpcStatus ServerTask::RegisterService(Service& service) {
   std::lock_guard lock(ControlLock());
   if (state() == State::kClosing || state() == State::kClosed) {
-    return Status::FailedPrecondition();
+    return RpcStatus::Closed();
   }
   pending_services_.push_front(service);
   SignalControlLocked();
-  return OkStatus();
+  return RpcStatus();
 }
 
 ControlFuture ServerTask::RegisterListener(
@@ -65,11 +65,11 @@ ControlFuture ServerTask::Close() {
   return future;
 }
 
-Status ServerTask::BlockOn(ControlFuture&& future) {
+RpcStatus ServerTask::BlockOn(ControlFuture&& future) {
   // A request applied on the calling thread (before `Start()`, or once the
   // server is closed) comes back already resolved. There may be no dispatcher
   // running to poll it then, so take its status directly.
-  if (std::optional<Status> status = future.TryTakeResolved();
+  if (std::optional<RpcStatus> status = future.TryTakeResolved();
       status.has_value()) {
     return *status;
   }
@@ -110,25 +110,33 @@ void ServerTask::SubmitListener(ControlFuture& future) {
   const bool allocated =
       state() == State::kUnstarted && record.try_emplace_front();
 
-  std::lock_guard lock(ControlLock());
-  switch (state()) {
-    case State::kClosing:
-    case State::kClosed:
-      future.ResolveLocked(Status::FailedPrecondition());
-      return;
-    case State::kUnstarted:
-      if (!allocated) {
-        future.ResolveLocked(Status::ResourceExhausted());
-        return;
-      }
-      record.front().set_listener(future.listener_locked());
-      listeners_.splice_after(listeners_.before_begin(), record);
-      future.ResolveLocked(OkStatus());
-      return;
-    case State::kRunning:
-      listener_requests_.Push(future);
-      SignalControlLocked();
-      return;
+  bool out_of_memory = false;
+  {
+    std::lock_guard lock(ControlLock());
+    switch (state()) {
+      case State::kClosing:
+      case State::kClosed:
+        future.ResolveLocked(RpcStatus::Closed());
+        break;
+      case State::kUnstarted:
+        if (!allocated) {
+          out_of_memory = true;
+          future.ResolveLocked(RpcStatus::ResourceExhausted());
+          break;
+        }
+        record.front().set_listener(future.listener_locked());
+        listeners_.splice_after(listeners_.before_begin(), record);
+        future.ResolveLocked(RpcStatus());
+        break;
+      case State::kRunning:
+        listener_requests_.Push(future);
+        SignalControlLocked();
+        break;
+    }
+  }
+  // Avoid logging while holding `ControlLock()`.
+  if (out_of_memory) {
+    PW_LOG_ERROR("Failed to allocate a record for an RPC listener");
   }
 }
 
@@ -138,14 +146,14 @@ void ServerTask::SubmitClose(ControlFuture& future) {
     std::lock_guard lock(ControlLock());
     switch (state()) {
       case State::kClosed:
-        future.ResolveLocked(OkStatus());
+        future.ResolveLocked(RpcStatus());
         return;
       case State::kUnstarted:
         // The task never ran, so there is nothing for the dispatcher to do;
         // the close completes on the calling thread.
         set_state_locked(State::kClosed);
         pending_services_.clear();
-        future.ResolveLocked(OkStatus());
+        future.ResolveLocked(RpcStatus());
         shutdown_now = true;
         break;
       case State::kRunning:
@@ -181,9 +189,10 @@ async2::Poll<> ServerTask::DoPend(async2::Context& cx) {
       Shutdown();
       std::lock_guard lock(ControlLock());
       set_state_locked(State::kClosed);
-      close_futures_.ResolveAllWith(
-          [](ControlFuture& future)
-              PW_NO_LOCK_SAFETY_ANALYSIS { future.ResolveLocked(OkStatus()); });
+      close_futures_.ResolveAllWith([](ControlFuture& future)
+                                        PW_NO_LOCK_SAFETY_ANALYSIS {
+                                          future.ResolveLocked(RpcStatus());
+                                        });
       return async2::Ready();
     }
   }
@@ -233,18 +242,25 @@ void ServerTask::ApplyPendingListeners(bool closing) {
     ForwardList<ListenerRecord> record(allocator_);
     const bool allocated = !closing && record.try_emplace_front();
 
-    std::lock_guard lock(ControlLock());
-    ControlFuture* request = listener_requests_.PopIfAvailable();
-    if (request == nullptr) {
-      // The request was dropped between the two critical sections.
-    } else if (closing) {
-      request->ResolveLocked(Status::FailedPrecondition());
-    } else if (!allocated) {
-      request->ResolveLocked(Status::ResourceExhausted());
-    } else {
-      record.front().set_listener(request->listener_locked());
-      listeners_.splice_after(listeners_.before_begin(), record);
-      request->ResolveLocked(OkStatus());
+    bool out_of_memory = false;
+    {
+      std::lock_guard lock(ControlLock());
+      ControlFuture* request = listener_requests_.PopIfAvailable();
+      if (request == nullptr) {
+        // The request was dropped between the two critical sections.
+      } else if (closing) {
+        request->ResolveLocked(RpcStatus::Closed());
+      } else if (!allocated) {
+        out_of_memory = true;
+        request->ResolveLocked(RpcStatus::ResourceExhausted());
+      } else {
+        record.front().set_listener(request->listener_locked());
+        listeners_.splice_after(listeners_.before_begin(), record);
+        request->ResolveLocked(RpcStatus());
+      }
+    }
+    if (out_of_memory) {
+      PW_LOG_ERROR("Failed to allocate a record for an RPC listener");
     }
   }
 }
@@ -314,7 +330,7 @@ void ServerTask::Shutdown() {
     SharedPtr<ServerConnectionTask> connection =
         std::move(connections_.front());
     connections_.pop_front();
-    connection->CloseConnection(Status::Cancelled());
+    connection->CloseConnection(RpcStatus::Closed());
     connection->Deregister();
     connection->ForceRetireAllCalls();
   }

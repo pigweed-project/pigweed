@@ -33,7 +33,6 @@
 #include "pw_rpc2/method_type.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status.h"
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 #include "pw_async2/coro.h"
@@ -125,9 +124,9 @@ class MethodInvokerBase {
   static constexpr size_t kFutureStorageSize = sizeof(FutureType);
 
   template <typename ServiceClass>
-  static ProtocolStatus InvokeMethod(Service& service,
-                                     ServerCall& call,
-                                     ConstBuf&& request_payload) {
+  static ProtocolError InvokeMethod(Service& service,
+                                    ServerCall& call,
+                                    ConstBuf&& request_payload) {
     return Derived::template InvokeIntoCall<ServiceClass>(
         static_cast<ServiceClass&>(service), call, std::move(request_payload));
   }
@@ -140,9 +139,9 @@ class MethodInvokerBase {
 
  protected:
   template <typename Invocation, bool kIsRaw, typename Req, typename InvokeFn>
-  static ProtocolStatus PrepareRequestAndInvoke(ServerCall& call,
-                                                ConstBuf&& request_payload,
-                                                InvokeFn&& invoke) {
+  static ProtocolError PrepareRequestAndInvoke(ServerCall& call,
+                                               ConstBuf&& request_payload,
+                                               InvokeFn&& invoke) {
     if constexpr (Invocation::kStreamingRequest) {
       return invoke([&call] {
         return CallAccess::Create<typename Invocation::Request>(
@@ -157,7 +156,7 @@ class MethodInvokerBase {
       } else {
         Result<Req> request = Deserialize<Req>(request_payload);
         if (!request.ok()) {
-          return ProtocolStatus::kInvalidRequestPayload;
+          return ProtocolError::kInvalidRequestPayload;
         }
         return invoke([&request]() -> Req&& { return std::move(*request); });
       }
@@ -196,9 +195,9 @@ class MethodInvoker
       "parameter from 'const Request&' to 'Request'.");
 
   template <typename ServiceClass>
-  static ProtocolStatus InvokeIntoCall(ServiceClass& service,
-                                       ServerCall& call,
-                                       pw::ConstBuf&& request_payload) {
+  static ProtocolError InvokeIntoCall(ServiceClass& service,
+                                      ServerCall& call,
+                                      pw::ConstBuf&& request_payload) {
     if constexpr (!Traits::kIsRaw) {
       static_assert(std::is_same_v<typename Traits::Request, Req>,
                     "Method request type does not match the generated service. "
@@ -235,9 +234,9 @@ class MethodInvoker
   }
 
   template <typename ServiceClass, typename RequestExprFn>
-  static ProtocolStatus InvokeWithRequest(ServiceClass& service,
-                                          ServerCall& call,
-                                          RequestExprFn&& make_request) {
+  static ProtocolError InvokeWithRequest(ServiceClass& service,
+                                         ServerCall& call,
+                                         RequestExprFn&& make_request) {
     using Invocation =
         InvocationTraits<kExpectedType, Traits::kIsRaw, Req, Resp>;
     using Responder = typename Invocation::Responder;
@@ -293,9 +292,9 @@ class FutureMethodInvoker
                 "RPC method return future must have a value_type of void");
 
   template <typename ServiceClass>
-  static ProtocolStatus InvokeIntoCall(ServiceClass& service,
-                                       ServerCall& call,
-                                       ConstBuf&& request_payload) {
+  static ProtocolError InvokeIntoCall(ServiceClass& service,
+                                      ServerCall& call,
+                                      ConstBuf&& request_payload) {
     // The protobuf API is deduced from the future's constructor. Both may be
     // mixed within a single service, but a single future must not accept both.
     //
@@ -340,15 +339,15 @@ class FutureMethodInvoker
       static_cast<void>(service);
       static_cast<void>(call);
       static_cast<void>(request_payload);
-      return ProtocolStatus::kInternal;
+      return ProtocolError::kInternal;
     }
   }
 
  private:
   template <bool kIsRaw, typename ServiceClass, typename RequestExprFn>
-  static ProtocolStatus EmplaceWithRequest(ServiceClass& service,
-                                           ServerCall& call,
-                                           RequestExprFn&& make_request) {
+  static ProtocolError EmplaceWithRequest(ServiceClass& service,
+                                          ServerCall& call,
+                                          RequestExprFn&& make_request) {
     using Invocation = InvocationTraits<kExpectedType, kIsRaw, Req, Resp>;
     using Responder = typename Invocation::Responder;
     return call.EmplaceFutureFromFactory<Fut>([&] {

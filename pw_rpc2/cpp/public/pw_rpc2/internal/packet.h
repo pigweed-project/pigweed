@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -22,12 +23,11 @@
 #include "pw_buf/buf.h"
 #include "pw_bytes/endian.h"
 #include "pw_bytes/span.h"
-#include "pw_enum/traits.h"
+#include "pw_enum/generate.h"
 #include "pw_preprocessor/compiler.h"
-#include "pw_result/result.h"
 #include "pw_rpc2/internal/packet_type.h"
-#include "pw_rpc2/internal/protocol_status.h"
-#include "pw_status/status.h"
+#include "pw_rpc2/internal/protocol_error.h"
+#include "pw_rpc2/status.h"
 
 namespace pw::rpc2::internal {
 
@@ -109,13 +109,12 @@ class HandshakePacket {
   /// minimum size it accepts.
   static constexpr size_t kWireSizeBytes = sizeof(HandshakeWireFormat);
 
-  /// Decodes a handshake packet.
+  /// Decodes a handshake packet. Bytes past `kWireSizeBytes` are ignored.
   ///
-  /// @returns
-  /// * @OK: The packet was decoded. Bytes past `kWireSizeBytes` are ignored.
-  /// * @DATA_LOSS: The packet is shorter than `kWireSizeBytes`, has the wrong
-  ///   magic value, has version 0, or has an unknown type.
-  static Result<HandshakePacket> Decode(ConstByteSpan bytes);
+  /// Returns `std::nullopt`, and logs why, if the packet is shorter than
+  /// `kWireSizeBytes`, has the wrong magic value, has version 0, or has an
+  /// unknown type.
+  static std::optional<HandshakePacket> Decode(ConstByteSpan bytes);
 
   explicit constexpr HandshakePacket(Type type, uint8_t version = kMaxVersion)
       : type_(type), version_(version) {}
@@ -123,8 +122,14 @@ class HandshakePacket {
   uint8_t version() const { return version_; }
   Type type() const { return type_; }
 
-  Status Encode(ByteSpan buffer) const;
-  Result<Buf> Encode(Buf buffer) const;
+  /// Encodes this packet at the start of `buffer`. Returns false, writing
+  /// nothing, if `buffer` is smaller than `kWireSizeBytes`.
+  [[nodiscard]] bool Encode(ByteSpan buffer) const;
+
+  /// Encodes this packet into `buffer`, truncated to `kWireSizeBytes`.
+  /// Returns a null `Buf`, releasing `buffer`, if `buffer` is smaller than
+  /// `kWireSizeBytes`.
+  [[nodiscard]] Buf Encode(Buf buffer) const;
 
  private:
   static constexpr uint32_t kMagic = 0x43505250;  // 'PRPC'
@@ -160,11 +165,11 @@ class OutboundPacket {
     constexpr Fields() : request{0, 0} {}
     constexpr Fields(uint32_t service_id, uint32_t method_id)
         : request{service_id, method_id} {}
-    constexpr explicit Fields(ProtocolStatus protocol_error)
+    constexpr explicit Fields(ProtocolError protocol_error)
         : error(protocol_error) {}
 
     RequestIds request;
-    ProtocolStatus error;
+    ProtocolError error;
   };
 
   // A packet that starts a call, so its header includes the method to invoke.
@@ -246,20 +251,20 @@ class OutboundPacket {
 
   static constexpr OutboundPacket Error(EndpointRole sender,
                                         uint32_t call_id,
-                                        ProtocolStatus error) {
+                                        ProtocolError error) {
     return sender == EndpointRole::kServer ? ServerError(call_id, error)
                                            : ClientError(call_id, error);
   }
 
   static constexpr OutboundPacket ClientError(uint32_t call_id,
-                                              ProtocolStatus error) {
+                                              ProtocolError error) {
     PW_DASSERT(IsClientError(error));
     return OutboundPacket(
         PacketType::Make<flags::kErrorTerminal>(), call_id, Fields(error));
   }
 
   static constexpr OutboundPacket ServerError(uint32_t call_id,
-                                              ProtocolStatus error) {
+                                              ProtocolError error) {
     PW_DASSERT(IsServerError(error));
     return OutboundPacket(
         PacketType::Make<flags::kServer, flags::kErrorTerminal>(),
@@ -303,10 +308,21 @@ class OutboundPacket {
   /// `payload_len` is not written to the wire; it is only used to check that
   /// `buffer` is large enough for the header plus payload, and is included in
   /// the returned total packet size.
-  Result<size_t> EncodeHeader(ByteSpan buffer, size_t payload_len = 0) const;
+  ///
+  /// Returns the total packet size, or `std::nullopt` if `buffer` is too small
+  /// for the header plus `payload_len` bytes.
+  std::optional<size_t> EncodeHeader(ByteSpan buffer,
+                                     size_t payload_len = 0) const;
 
-  Result<Buf> Encode(Buf buffer, size_t payload_len) const;
-  Result<Buf> Encode(Buf buffer) const;
+  /// Encodes this packet's header into `buffer`, truncated to the header plus
+  /// `payload_len` bytes. Returns a null `Buf`, releasing `buffer`, if
+  /// `buffer` is too small.
+  [[nodiscard]] Buf Encode(Buf buffer, size_t payload_len) const;
+
+  /// Encodes this packet's header into `buffer`, treating the rest of the
+  /// buffer as the payload if the packet type carries one. Returns a null
+  /// `Buf`, releasing `buffer`, if `buffer` is too small.
+  [[nodiscard]] Buf Encode(Buf buffer) const;
 
  private:
   constexpr OutboundPacket(PacketType type, uint32_t call_id, Fields fields)
@@ -326,7 +342,12 @@ static_assert(std::is_trivially_copyable_v<OutboundPacket>);
 /// header fields and the trailing payload data.
 class InboundPacket {
  public:
-  static Result<InboundPacket> Decode(ConstBuf&& buffer);
+  /// Decodes and validates the header of a packet.
+  ///
+  /// @returns The decoded packet, or a null `InboundPacket` if the packet is
+  /// too short for its header, has an invalid type, or has trailing bytes
+  /// after a header-only packet. The reason is logged.
+  static InboundPacket Decode(ConstBuf&& buffer);
 
   constexpr InboundPacket() = default;
   constexpr InboundPacket(std::nullptr_t) noexcept : InboundPacket() {}
@@ -374,12 +395,16 @@ class InboundPacket {
     return ReadUint32(offsetof(RequestWireFormat, method_id));
   }
 
-  /// Returns the error code of an error packet.
+  /// Returns the error code of an error packet exactly as received.
   ///
-  /// A zero wire code (never valid in an error packet) maps to
-  /// `ProtocolStatus::kInternal`. Codes that are undefined, local-only, or that
-  /// the sending endpoint may not send map to `ProtocolStatus::kUnknown`.
-  ProtocolStatus error() const;
+  /// The code is not validated: it may be zero, undefined, reserved, or a code
+  /// that the sender's role may not send. Use `PeerErrorToRpcStatus()` to
+  /// interpret it.
+  ProtocolError error() const {
+    PW_DASSERT(type().is_error());
+    return static_cast<ProtocolError>(
+        static_cast<uint8_t>(buffer_[offsetof(ErrorWireFormat, error)]));
+  }
 
   size_t payload_offset() const { return PacketSizeWithoutPayload(type()); }
 
@@ -404,3 +429,5 @@ class InboundPacket {
 };
 
 }  // namespace pw::rpc2::internal
+
+PW_ENUM(pw::rpc2::internal::HandshakePacket::Type, kSyn, kSynAck, kAck);

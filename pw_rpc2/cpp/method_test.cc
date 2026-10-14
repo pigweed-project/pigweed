@@ -249,20 +249,20 @@ class MethodInvokerTest : public ::testing::Test {
   /// Allocates a server call and registers it with the connection, exactly as
   /// `ServerConnectionTask::HandleIncomingRequest()` does.
   ServerCall& AdoptCall(uint32_t call_id, const Method& method) {
-    auto call_res =
+    ServerCall* call =
         ServerCall::Allocate(*connection_task_, call_id, method, alloc_);
-    PW_CHECK_OK(call_res.status());
-    return **call_res;
+    PW_CHECK_NOTNULL(call);
+    return *call;
   }
 
   /// Invokes `method` on `call` and starts the task that runs it, exactly
   /// as `ServerConnectionTask::HandleIncomingRequest()` does.
-  ProtocolStatus InvokeIntoCall(const Method& method,
-                                ServerCall& call,
-                                pw::ConstBuf&& payload) {
-    const ProtocolStatus error =
+  ProtocolError InvokeIntoCall(const Method& method,
+                               ServerCall& call,
+                               pw::ConstBuf&& payload) {
+    const ProtocolError error =
         method.Invoke(service_, call, std::move(payload));
-    if (error == ProtocolStatus::kOk) {
+    if (error == ProtocolError::kNone) {
       dispatcher_.Post(call);
     }
     return error;
@@ -335,8 +335,8 @@ TEST_F(MethodInvokerTest, InvokeRawUnaryFutureIntoCall) {
 
   auto buf = pw::Buf::Allocate(conn_alloc_, 8);
   pw::ConstBuf payload(std::move(buf));
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
   EXPECT_EQ(service_.last_request_size(), 8u);
 
   RunConnection();
@@ -358,8 +358,8 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryFutureIntoCall) {
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
   EXPECT_EQ(service_.last_typed_value(), 12345);
 
   RunConnection();
@@ -381,8 +381,8 @@ TEST_F(MethodInvokerTest, InvokeConstMethodWithRequestByValue) {
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
   EXPECT_EQ(service_.last_const_value(), 4242);
 
   RunConnection();
@@ -404,8 +404,8 @@ TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryFutureIntoCall) {
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
   EXPECT_EQ(TestService::last_static_value(), 7777);
 
   RunConnection();
@@ -426,8 +426,8 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryFutureDeserializationFailure) {
   auto buf = pw::Buf::Allocate(conn_alloc_, 2);
   pw::ConstBuf payload(std::move(buf));
 
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kInvalidRequestPayload);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kInvalidRequestPayload);
 
   // The server retires a call whose invocation failed, which frees it: no
   // future was ever set, so there is nothing else holding it.
@@ -444,8 +444,8 @@ TEST_F(MethodInvokerTest, InvokeRawServerStreamingFutureIntoCall) {
 
   auto buf = pw::Buf::Allocate(conn_alloc_, 4);
   pw::ConstBuf payload(std::move(buf));
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -460,8 +460,8 @@ TEST_F(MethodInvokerTest, InvokeRawClientStreamingFutureIntoCall) {
   ServerCall& call = AdoptCall(/*call_id=*/7, method);
 
   pw::ConstBuf payload;
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -476,8 +476,8 @@ TEST_F(MethodInvokerTest, InvokeRawBidiStreamingFutureIntoCall) {
   ServerCall& call = AdoptCall(/*call_id=*/8, method);
 
   pw::ConstBuf payload;
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -503,8 +503,8 @@ TEST_F(MethodInvokerTest, InvokeStatelessTypeMethodIntoCall) {
 
   auto buf = pw::Buf::Allocate(conn_alloc_, 4);
   pw::ConstBuf payload(std::move(buf));
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -520,8 +520,8 @@ TEST_F(MethodInvokerTest, InvokeStatefulTypeMethodIntoCall) {
 
   auto buf = pw::Buf::Allocate(conn_alloc_, 6);
   pw::ConstBuf payload(std::move(buf));
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
   EXPECT_EQ(service_.last_request_size(), 6u);
 
   RunConnection();
@@ -531,8 +531,8 @@ TEST_F(MethodInvokerTest, InvokeStatefulTypeMethodIntoCall) {
 
 TEST(MethodTest, StorageSizeBounds) {
   constexpr auto stub_invoke =
-      [](Service&, ServerCall&, ConstBuf&&) -> ProtocolStatus {
-    return ProtocolStatus::kOk;
+      [](Service&, ServerCall&, ConstBuf&&) -> ProtocolError {
+    return ProtocolError::kNone;
   };
 
   constexpr Method m1(101, MethodType::kUnary, 0, stub_invoke);
@@ -560,8 +560,8 @@ TEST(MethodTest, StorageSizeBounds) {
 
 TEST(MethodTest, StoresMethodType) {
   constexpr auto stub_invoke =
-      [](Service&, ServerCall&, ConstBuf&&) -> ProtocolStatus {
-    return ProtocolStatus::kOk;
+      [](Service&, ServerCall&, ConstBuf&&) -> ProtocolError {
+    return ProtocolError::kNone;
   };
 
   constexpr Method unary(1, MethodType::kUnary, 0, stub_invoke);
@@ -613,8 +613,8 @@ TEST_F(MethodInvokerTest, InvokeRawUnaryCoroIntoCall) {
 
   auto buf = pw::Buf::Allocate(conn_alloc_, 16);
   pw::ConstBuf payload(std::move(buf));
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -636,8 +636,8 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryCoroIntoCall) {
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -659,8 +659,8 @@ TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryCoroIntoCall) {
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -677,8 +677,8 @@ TEST_F(MethodInvokerTest, InvokeRawServerStreamingCoroIntoCall) {
 
   auto buf = pw::Buf::Allocate(conn_alloc_, 4);
   pw::ConstBuf payload(std::move(buf));
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -693,8 +693,8 @@ TEST_F(MethodInvokerTest, InvokeRawClientStreamingCoroIntoCall) {
   ServerCall& call = AdoptCall(/*call_id=*/10, method);
 
   pw::ConstBuf payload;
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -709,8 +709,8 @@ TEST_F(MethodInvokerTest, InvokeRawBidiStreamingCoroIntoCall) {
   ServerCall& call = AdoptCall(/*call_id=*/11, method);
 
   pw::ConstBuf payload;
-  ProtocolStatus error = InvokeIntoCall(method, call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kOk);
+  ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
+  EXPECT_EQ(error, ProtocolError::kNone);
 
   RunConnection();
 
@@ -718,7 +718,7 @@ TEST_F(MethodInvokerTest, InvokeRawBidiStreamingCoroIntoCall) {
 }
 
 TEST_F(MethodInvokerTest,
-       CoroutineFrameAllocationFailureReturnsResourceExhaustedWithoutCancel) {
+       CoroutineFrameAllocationFailureReturnsAllocationErrorWithoutCancel) {
   using UnaryCoroInvoker =
       RawMethodInvoker<&TestService::RawUnaryCoro, MethodType::kUnary>;
   constexpr Method unary_method =
@@ -730,12 +730,12 @@ TEST_F(MethodInvokerTest,
 
   // Exhaust the connection allocator so coroutine frame allocation fails.
   conn_alloc_.Exhaust();
-  ProtocolStatus error =
+  ProtocolError error =
       InvokeIntoCall(unary_method, unary_call, std::move(payload));
-  EXPECT_EQ(error, ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning);
+  EXPECT_EQ(error, ProtocolError::kFailedToAllocateCallResourcesWhileRunning);
   // The responder destructor must NOT have closed the write side or queued a
-  // CANCELLED packet, leaving the call open for ServerConnectionTask to send
-  // RESOURCE_EXHAUSTED.
+  // kDroppedWithoutResponse packet, leaving the call open for
+  // ServerConnectionTask to send kFailedToAllocateCallResourcesWhileRunning.
   EXPECT_FALSE(unary_call.is_write_closed());
   EXPECT_EQ(raw_conn_->written_packet_count(), 0u);
   // ServerConnectionTask queues the error and closes the write side before
@@ -752,10 +752,10 @@ TEST_F(MethodInvokerTest,
 
   ServerCall& stream_call = AdoptCall(/*call_id=*/21, stream_method);
   pw::ConstBuf stream_payload;
-  ProtocolStatus stream_error =
+  ProtocolError stream_error =
       InvokeIntoCall(stream_method, stream_call, std::move(stream_payload));
   EXPECT_EQ(stream_error,
-            ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning);
+            ProtocolError::kFailedToAllocateCallResourcesWhileRunning);
   // The writer destructor must NOT have closed the write side or queued a
   // StreamEnd (EOF) packet.
   EXPECT_FALSE(stream_call.is_write_closed());

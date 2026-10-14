@@ -18,10 +18,11 @@
 
 #include "pw_assert/check.h"
 #include "pw_async2/try.h"
+#include "pw_log/log.h"
 
 namespace pw::rpc2 {
 
-async2::Poll<Result<Client>> ClientFuture::Pend(async2::Context& cx) {
+async2::Poll<RpcResult<Client>> ClientFuture::Pend(async2::Context& cx) {
   PW_CHECK(is_pendable());
 
   if (Connector* connector = std::get_if<Connector>(&state_)) {
@@ -31,8 +32,10 @@ async2::Poll<Result<Client>> ClientFuture::Pend(async2::Context& cx) {
   if (ConnectFuture* connect = std::get_if<ConnectFuture>(&state_)) {
     PW_TRY_READY_ASSIGN(auto connection, connect->Pend(cx));
     if (!connection.ok()) {
+      PW_LOG_ERROR("Failed to connect to the RPC server: %s",
+                   connection.status().str());
       state_ = Completed();
-      return async2::Ready(Result<Client>(connection.status()));
+      return async2::Ready(RpcResult<Client>(RpcStatus::Disconnected()));
     }
     state_.emplace<internal::InitiatorHandshakeFuture>(std::move(*connection));
   }
@@ -42,18 +45,19 @@ async2::Poll<Result<Client>> ClientFuture::Pend(async2::Context& cx) {
       std::get<internal::InitiatorHandshakeFuture>(state_).Pend(cx));
   state_ = Completed();
   if (!established.ok()) {
-    return async2::Ready(Result<Client>(established.status()));
+    return async2::Ready(RpcResult<Client>(established.status()));
   }
 
   Client client(*dispatcher_, *allocator_, std::move(*established));
   if (!client.is_open()) {
-    return async2::Ready(Result<Client>(Status::ResourceExhausted()));
+    PW_LOG_ERROR("Failed to allocate the RPC client's connection task");
+    return async2::Ready(RpcResult<Client>(RpcStatus::ResourceExhausted()));
   }
-  return async2::Ready(Result<Client>(std::move(client)));
+  return async2::Ready(RpcResult<Client>(std::move(client)));
 }
 
 // A null `connection_task_` (allocation failed) leaves the client empty;
-// `ClientFuture::Pend` reports it as RESOURCE_EXHAUSTED.
+// `ClientFuture::Pend` reports it as `kResourceExhausted`.
 Client::Client(async2::Dispatcher& dispatcher,
                Allocator& allocator,
                internal::EstablishedConnection established_connection)
@@ -83,7 +87,7 @@ Client& Client::operator=(Client&& other) noexcept {
 
 ControlFuture Client::Close() {
   if (connection_task_ == nullptr) {
-    return ControlFuture::Resolved(OkStatus());
+    return ControlFuture::Resolved(RpcStatus());
   }
   ControlFuture future = connection_task_->Close();
   ReleaseConnection();
