@@ -63,10 +63,11 @@ pw_add_library(pw_thread_zephyr.sleep STATIC
   PRIVATE_DEPS
     pw_assert.check
     pw_thread.thread
+    zephyr_interface
   SOURCES
     sleep.cc
 )
-pw_zephyrize_libraries_ifdef(
+pw_zephyr_append_cmake_library_ifdef(
   CONFIG_PIGWEED_THREAD_SLEEP
   pw_thread_zephyr.sleep
 )
@@ -93,10 +94,11 @@ pw_add_library(pw_thread_zephyr.thread STATIC
     pw_string
     pw_thread.thread.facade
     pw_thread_zephyr.config
+    zephyr_interface
   SOURCES
     thread.cc
 )
-pw_zephyrize_libraries_ifdef(
+pw_zephyr_append_cmake_library_ifdef(
   CONFIG_PIGWEED_THREAD
   pw_thread_zephyr.thread
 )
@@ -140,11 +142,18 @@ pw_add_library(pw_thread_zephyr.thread_iteration STATIC
     pw_thread.thread_info
     pw_thread.thread_iteration.facade
     pw_thread_zephyr.config
+    zephyr_interface
   SOURCES
     pw_thread_zephyr_private/thread_iteration.h
     thread_iteration.cc
 )
-pw_zephyrize_libraries_ifdef(
+pw_zephyr_append_cmake_library_ifdef(
   CONFIG_PIGWEED_THREAD_ITERATION
+  pw_thread_zephyr.thread_iteration
+)
+
+pw_zephyr_add_generated_header_deps(
+  pw_thread_zephyr.sleep
+  pw_thread_zephyr.thread
   pw_thread_zephyr.thread_iteration
 )
