@@ -114,7 +114,9 @@ class PacketType {
   template <flags::Flag... kFlags>
   static constexpr PacketType Make() {
     constexpr unsigned kBits = (0u | ... | kFlags);
-    static_assert((0u + ... + kFlags) == kBits,
+    constexpr unsigned kCloseModes =
+        (0u + ... + unsigned{(kFlags & flags::kCloseModeMask) != 0u});
+    static_assert((0u + ... + kFlags) == kBits && kCloseModes <= 1u,
                   "Packet flags must not overlap; pass each close mode alone");
     static_assert(IsValid(kBits), "Invalid combination of packet flags");
     return PacketType(static_cast<uint8_t>(kBits));

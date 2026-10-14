@@ -99,6 +99,7 @@ pw_add_test(pw_rpc2.cpp.packet_test
     pw_allocator.testing
     pw_assert.check
     pw_bytes
+    pw_compilation_testing._pigweed_only_negative_compilation
     pw_enum
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._packet_type

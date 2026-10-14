@@ -97,6 +97,7 @@ pw_cc_enum_library(
 pw_cc_test(
     name = "packet_test",
     srcs = ["packet_test.cc"],
+    has_nc_test = True,
     deps = [
         ":packet",
         ":packet_type",

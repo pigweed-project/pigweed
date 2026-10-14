@@ -108,6 +108,7 @@ pw_test("packet_test") {
     dir_pw_enum,
   ]
   sources = [ "packet_test.cc" ]
+  negative_compilation_tests = true
 }
 
 pw_source_set("serialize") {

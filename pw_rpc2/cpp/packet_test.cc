@@ -26,6 +26,7 @@
 #include "pw_assert/check.h"
 #include "pw_bytes/array.h"
 #include "pw_bytes/span.h"
+#include "pw_compilation_testing/negative_compilation.h"
 #include "pw_enum/traits.h"
 #include "pw_rpc2/internal/packet_type.h"
 #include "pw_rpc2/internal/protocol_error.h"
@@ -845,5 +846,19 @@ TEST(PacketTest, DecodedPayloadIsEverythingAfterTheHeader) {
   EXPECT_EQ(decoded.call_id(), 42u);
   EXPECT_EQ(decoded.payload().size(), kTrailingBytes);
 }
+
+#if PW_NC_TEST(MakePacketTypeWithTwoCloseModes)
+PW_NC_EXPECT("Packet flags must not overlap; pass each close mode alone");
+[[maybe_unused]] constexpr PacketType kBadType =
+    PacketType::Make<flags::kStreamEnd, flags::kOkTerminal>();
+#elif PW_NC_TEST(MakePacketTypeWithOverlappingFlags)
+PW_NC_EXPECT("Packet flags must not overlap; pass each close mode alone");
+[[maybe_unused]] constexpr PacketType kBadType =
+    PacketType::Make<flags::kServer, flags::kServer>();
+#elif PW_NC_TEST(MakePacketTypeWithInvalidFlagCombination)
+PW_NC_EXPECT("Invalid combination of packet flags");
+[[maybe_unused]] constexpr PacketType kBadType =
+    PacketType::Make<flags::kServer, flags::kStart>();
+#endif  // PW_NC_TEST
 
 }  // namespace
