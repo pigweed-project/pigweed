@@ -513,6 +513,7 @@ sphinx_docs(
         "--fail-on-warning",
         "--jobs",
         "16",
+        "--color",
     ],
     formats = [
         "html",
