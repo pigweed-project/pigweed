@@ -235,11 +235,15 @@ func NewIssueTrackerClient(endpoint string, httpClient *http.Client) *IssueTrack
 			httpClient = &http.Client{Timeout: 30 * time.Second}
 		}
 	}
+	quotaProvider := DefaultIssueTrackerQuotaProject
+	if strings.Contains(endpoint, ".corp.googleapis.com") && hasSSOClient {
+		quotaProvider = ConfiguredIssueTrackerQuotaProject
+	}
 	return &IssueTrackerClient{
 		Endpoint:             endpoint,
 		HTTPClient:           httpClient,
 		TokenProvider:        DefaultIssueTrackerToken,
-		QuotaProjectProvider: DefaultIssueTrackerQuotaProject,
+		QuotaProjectProvider: quotaProvider,
 	}
 }
 
@@ -328,6 +332,7 @@ func parseSSOClientResponse(out []byte, req *http.Request) (*http.Response, erro
 var (
 	quotaProjectMu     sync.Mutex
 	cachedQuotaProject string
+	quotaProjectProbed bool
 )
 
 // DefaultPigweedQuotaProject is the shared Pigweed GCP project configured to
@@ -423,9 +428,23 @@ func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
 		return ""
 	}
 
+	quotaProjectMu.Lock()
+	alreadyProbed := quotaProjectProbed
+	quotaProjectMu.Unlock()
+	if alreadyProbed {
+		return ""
+	}
+
+	markProbed := func() {
+		quotaProjectMu.Lock()
+		quotaProjectProbed = true
+		quotaProjectMu.Unlock()
+	}
+
 	cacheAndReturn := func(projID string) string {
 		quotaProjectMu.Lock()
 		cachedQuotaProject = projID
+		quotaProjectProbed = true
 		quotaProjectMu.Unlock()
 		_ = exec.CommandContext(ctx, "git", "config", "ghish.quotaproject", projID).Run()
 		return projID
@@ -462,16 +481,19 @@ func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
 	// the user already has Issue Tracker API enabled and Service Usage Consumer access.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://cloudresourcemanager.googleapis.com/v1/projects?pageSize=20", nil)
 	if err != nil {
+		markProbed()
 		return ""
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		markProbed()
 		return ""
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		markProbed()
 		return ""
 	}
 
@@ -482,6 +504,7 @@ func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
 		} `json:"projects"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+		markProbed()
 		return ""
 	}
 
@@ -507,6 +530,7 @@ func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
 		}
 	}
 
+	markProbed()
 	return ""
 }
 
@@ -899,16 +923,35 @@ func (c *IssueTrackerClient) ReopenIssue(ctx context.Context, issueID int64, com
 	return c.ModifyIssue(ctx, issueID, req)
 }
 
+// CreateHotlistEntry adds an issue to a Buganizer hotlist via POST /v1/hotlists/{hotlistID}/entries.
+func (c *IssueTrackerClient) CreateHotlistEntry(ctx context.Context, hotlistID, issueID int64) error {
+	path := fmt.Sprintf("/hotlists/%d/entries", hotlistID)
+	req := map[string]any{
+		"hotlistEntry": map[string]any{
+			"issueId": FlexInt64(issueID),
+		},
+	}
+	return c.doJSON(ctx, http.MethodPost, path, req, nil)
+}
+
+// DeleteHotlistEntry removes an issue from a Buganizer hotlist via DELETE /v1/hotlists/{hotlistID}/entries/{issueID}.
+func (c *IssueTrackerClient) DeleteHotlistEntry(ctx context.Context, hotlistID, issueID int64) error {
+	path := fmt.Sprintf("/hotlists/%d/entries/%d", hotlistID, issueID)
+	return c.doJSON(ctx, http.MethodDelete, path, nil, nil)
+}
+
 // IssueModifier encapsulates Buganizer field masks and state machine transitions (such as NEW <-> ASSIGNED)
-// when building a ModifyIssueRequest.
+// when building a ModifyIssueRequest, as well as hotlist entry additions and removals.
 type IssueModifier struct {
-	current     *BuganizerIssue
-	addState    *BuganizerState
-	removeState *BuganizerState
-	addMasks    []string
-	removeMasks []string
-	maskSet     map[string]bool
-	remSet      map[string]bool
+	current         *BuganizerIssue
+	addState        *BuganizerState
+	removeState     *BuganizerState
+	addMasks        []string
+	removeMasks     []string
+	maskSet         map[string]bool
+	remSet          map[string]bool
+	addedHotlists   []int64
+	removedHotlists []int64
 }
 
 // NewIssueModifier creates a modifier initialized against the current state of an issue.
@@ -934,6 +977,24 @@ func (m *IssueModifier) remMask(f string) {
 		m.remSet[f] = true
 		m.removeMasks = append(m.removeMasks, f)
 	}
+}
+
+func (m *IssueModifier) addHotlistID(id int64) {
+	for _, existing := range m.addedHotlists {
+		if existing == id {
+			return
+		}
+	}
+	m.addedHotlists = append(m.addedHotlists, id)
+}
+
+func (m *IssueModifier) removeHotlistID(id int64) {
+	for _, existing := range m.removedHotlists {
+		if existing == id {
+			return
+		}
+	}
+	m.removedHotlists = append(m.removedHotlists, id)
 }
 
 // SetTitle sets a new issue title, rejecting empty strings.
@@ -971,22 +1032,38 @@ func (m *IssueModifier) SetComponent(componentID int64) {
 	m.addMask("componentId")
 }
 
-// AddLabel parses a GitHub-style label and adds the corresponding Buganizer field.
+// AddLabel parses a GitHub-style label and adds the corresponding Buganizer field or hotlist entry.
 func (m *IssueModifier) AddLabel(label string) error {
-	field, err := ApplyLabelToState(m.addState, label)
+	var parsed BuganizerState
+	field, err := ApplyLabelToState(&parsed, label)
 	if err != nil {
 		return err
 	}
+	if field == "hotlistIds" {
+		for _, hid := range parsed.HotlistIDs {
+			m.addHotlistID(int64(hid))
+		}
+		return nil
+	}
+	_, _ = ApplyLabelToState(m.addState, label)
 	m.addMask(field)
 	return nil
 }
 
-// RemoveLabel parses a GitHub-style label and removes the corresponding Buganizer field.
+// RemoveLabel parses a GitHub-style label and removes the corresponding Buganizer field or hotlist entry.
 func (m *IssueModifier) RemoveLabel(label string) error {
-	field, err := ApplyLabelToState(m.removeState, label)
+	var parsed BuganizerState
+	field, err := ApplyLabelToState(&parsed, label)
 	if err != nil {
 		return err
 	}
+	if field == "hotlistIds" {
+		for _, hid := range parsed.HotlistIDs {
+			m.removeHotlistID(int64(hid))
+		}
+		return nil
+	}
+	_, _ = ApplyLabelToState(m.removeState, label)
 	m.remMask(field)
 	return nil
 }
@@ -1010,9 +1087,24 @@ func (m *IssueModifier) RemoveAssignee() {
 	}
 }
 
-// HasChanges returns true if at least one field mask has been queued for addition or removal.
-func (m *IssueModifier) HasChanges() bool {
+// HasMetadataChanges returns true if at least one issueState field mask has been queued for ModifyIssue.
+func (m *IssueModifier) HasMetadataChanges() bool {
 	return len(m.addMasks) > 0 || len(m.removeMasks) > 0
+}
+
+// AddedHotlistIDs returns the hotlist IDs queued for addition via CreateHotlistEntry.
+func (m *IssueModifier) AddedHotlistIDs() []int64 {
+	return m.addedHotlists
+}
+
+// RemovedHotlistIDs returns the hotlist IDs queued for removal via DeleteHotlistEntry.
+func (m *IssueModifier) RemovedHotlistIDs() []int64 {
+	return m.removedHotlists
+}
+
+// HasChanges returns true if any metadata or hotlist edits have been queued.
+func (m *IssueModifier) HasChanges() bool {
+	return m.HasMetadataChanges() || len(m.addedHotlists) > 0 || len(m.removedHotlists) > 0
 }
 
 // BuildRequest constructs the ModifyIssueRequest payload.

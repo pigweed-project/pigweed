@@ -318,14 +318,27 @@ func TestIssueEdit_Close_Reopen_Comment(t *testing.T) {
 	gitRunner := &MockGitRunner{}
 	SetupMockConfig(t, gitRunner)
 
-	// 1. Edit title, label (P0), and add assignee -> transitions NEW -> ASSIGNED
-	_, err := executeCommand(RootCmd, "issue", "edit", "400", "-t", "Edited bug title", "-l", "P0", "--add-assignee", "bob@google.com")
+	// 1. Edit title, label (P0), hotlist, and add assignee -> transitions NEW -> ASSIGNED and calls /v1/hotlists/7777/entries
+	_, err := executeCommand(RootCmd, "issue", "edit", "400", "-t", "Edited bug title", "-l", "P0", "-l", "hotlist:7777", "--add-assignee", "bob@google.com")
 	if err != nil {
 		t.Fatalf("issue edit failed: %v", err)
 	}
 	iss, _ := srv.Client().GetIssue(context.Background(), 400)
 	if iss.State.Title != "Edited bug title" || iss.State.Priority != "P0" || iss.State.Status != "ASSIGNED" {
 		t.Errorf("unexpected state after edit: %+v", iss.State)
+	}
+	if len(iss.State.HotlistIDs) != 1 || iss.State.HotlistIDs[0] != 7777 {
+		t.Errorf("expected HotlistIDs=[7777] after edit, got %+v", iss.State.HotlistIDs)
+	}
+
+	// 1b. Remove hotlist entry via --remove-label hotlist:7777 (without any metadata changes)
+	_, err = executeCommand(RootCmd, "issue", "edit", "400", "--remove-label", "hotlist:7777")
+	if err != nil {
+		t.Fatalf("issue edit --remove-label hotlist:7777 failed: %v", err)
+	}
+	iss, _ = srv.Client().GetIssue(context.Background(), 400)
+	if len(iss.State.HotlistIDs) != 0 {
+		t.Errorf("expected HotlistIDs=[] after remove-label, got %+v", iss.State.HotlistIDs)
 	}
 
 	// 2. Comment

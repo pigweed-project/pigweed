@@ -1066,6 +1066,16 @@ func (s *MockIssueTrackerServer) serveHTTP(w http.ResponseWriter, r *http.Reques
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
+			if strings.Contains(req.AddMask, "hotlistIds") || strings.Contains(req.RemoveMask, "hotlistIds") {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error": map[string]any{
+						"code":    http.StatusBadRequest,
+						"message": "hotlist_ids cannot be modified using ModifyIssue",
+					},
+				})
+				return
+			}
 			issue := s.Issues[id]
 			applyIssueModify(issue, &req)
 			issue.ModifiedTime = time.Now().UTC()
@@ -1156,6 +1166,68 @@ func (s *MockIssueTrackerServer) serveHTTP(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	// Sub-routes under /v1/hotlists/{hotlistID}/entries...
+	if strings.HasPrefix(r.URL.Path, "/v1/hotlists/") {
+		rest := strings.TrimPrefix(r.URL.Path, "/v1/hotlists/")
+		if (r.Method == http.MethodPost || r.Method == http.MethodPut) && strings.HasSuffix(rest, "/entries") {
+			hidStr := strings.TrimSuffix(rest, "/entries")
+			hid, err := strconv.ParseInt(hidStr, 10, 64)
+			if err != nil || hid <= 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid hotlist ID"})
+				return
+			}
+			var payload struct {
+				HotlistEntry struct {
+					IssueID FlexInt64 `json:"issueId"`
+				} `json:"hotlistEntry"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			iss := s.Issues[int64(payload.HotlistEntry.IssueID)]
+			if iss == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "issue not found"})
+				return
+			}
+			already := false
+			for _, existing := range iss.State.HotlistIDs {
+				if int64(existing) == hid {
+					already = true
+					break
+				}
+			}
+			if !already {
+				iss.State.HotlistIDs = append(iss.State.HotlistIDs, FlexInt64(hid))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"issueId": payload.HotlistEntry.IssueID})
+			return
+		}
+		if r.Method == http.MethodDelete && strings.Contains(rest, "/entries/") {
+			parts := strings.SplitN(rest, "/entries/", 2)
+			hid, err1 := strconv.ParseInt(parts[0], 10, 64)
+			iid, err2 := strconv.ParseInt(parts[1], 10, 64)
+			if err1 != nil || err2 != nil || s.Issues[iid] == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "hotlist entry not found"})
+				return
+			}
+			iss := s.Issues[iid]
+			var kept []FlexInt64
+			for _, existing := range iss.State.HotlistIDs {
+				if int64(existing) != hid {
+					kept = append(kept, existing)
+				}
+			}
+			iss.State.HotlistIDs = kept
+			_ = json.NewEncoder(w).Encode(map[string]any{})
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusNotFound)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": "unhandled mock route: " + r.URL.Path})
 }
@@ -1196,6 +1268,18 @@ func matchesIssueQuery(iss *BuganizerIssue, query string) bool {
 			if fmt.Sprintf("%d", iss.State.ComponentID) != want {
 				return false
 			}
+		case strings.HasPrefix(tok, "hotlistid:"):
+			want := strings.TrimPrefix(tok, "hotlistid:")
+			found := false
+			for _, hid := range iss.State.HotlistIDs {
+				if fmt.Sprintf("%d", hid) == want {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
 		default:
 			clean := strings.Trim(tok, "\"")
 			if !strings.Contains(strings.ToLower(iss.State.Title), strings.ToLower(clean)) {
@@ -1228,8 +1312,6 @@ func applyIssueModify(issue *BuganizerIssue, req *ModifyIssueRequest) {
 				issue.State.CanonicalIssueID = req.Add.CanonicalIssueID
 			case "ccs":
 				issue.State.CCs = append(issue.State.CCs, req.Add.CCs...)
-			case "hotlistIds":
-				issue.State.HotlistIDs = append(issue.State.HotlistIDs, req.Add.HotlistIDs...)
 			}
 		}
 	}
@@ -1253,21 +1335,6 @@ func applyIssueModify(issue *BuganizerIssue, req *ModifyIssueRequest) {
 					}
 				}
 				issue.State.CCs = kept
-			case "hotlistIds":
-				var kept []FlexInt64
-				for _, existing := range issue.State.HotlistIDs {
-					remove := false
-					for _, rem := range req.Remove.HotlistIDs {
-						if existing == rem {
-							remove = true
-							break
-						}
-					}
-					if !remove {
-						kept = append(kept, existing)
-					}
-				}
-				issue.State.HotlistIDs = kept
 			}
 		}
 	}

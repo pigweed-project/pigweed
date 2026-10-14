@@ -428,6 +428,31 @@ func TestIssueModifier_StateTransitionsAndMasks(t *testing.T) {
 	if !strings.Contains(req2.RemoveMask, "assignee") {
 		t.Errorf("RemoveMask = %q, expected assignee", req2.RemoveMask)
 	}
+
+	// 3. Hotlist labels are tracked separately from ModifyIssueRequest masks
+	mod3 := NewIssueModifier(newIssue)
+	if err := mod3.AddLabel("hotlist:9001"); err != nil {
+		t.Fatalf("AddLabel(hotlist:9001) failed: %v", err)
+	}
+	if err := mod3.RemoveLabel("hotlist:9002"); err != nil {
+		t.Fatalf("RemoveLabel(hotlist:9002) failed: %v", err)
+	}
+	if !mod3.HasChanges() {
+		t.Error("expected HasChanges() == true when hotlist labels are queued")
+	}
+	if mod3.HasMetadataChanges() {
+		t.Error("expected HasMetadataChanges() == false when only hotlist labels are queued")
+	}
+	req3 := mod3.BuildRequest()
+	if strings.Contains(req3.AddMask, "hotlistIds") || strings.Contains(req3.RemoveMask, "hotlistIds") {
+		t.Errorf("BuildRequest() must not include hotlistIds in masks; got AddMask=%q RemoveMask=%q", req3.AddMask, req3.RemoveMask)
+	}
+	if len(mod3.AddedHotlistIDs()) != 1 || mod3.AddedHotlistIDs()[0] != 9001 {
+		t.Errorf("AddedHotlistIDs() = %v, want [9001]", mod3.AddedHotlistIDs())
+	}
+	if len(mod3.RemovedHotlistIDs()) != 1 || mod3.RemovedHotlistIDs()[0] != 9002 {
+		t.Errorf("RemovedHotlistIDs() = %v, want [9002]", mod3.RemovedHotlistIDs())
+	}
 }
 
 func TestLabelToQueryToken(t *testing.T) {
@@ -638,11 +663,14 @@ func TestConfiguredIssueTrackerQuotaProject_ProjectConfigAndGitConfig(t *testing
 
 	quotaProjectMu.Lock()
 	origCached := cachedQuotaProject
+	origProbed := quotaProjectProbed
 	cachedQuotaProject = ""
+	quotaProjectProbed = false
 	quotaProjectMu.Unlock()
 	t.Cleanup(func() {
 		quotaProjectMu.Lock()
 		cachedQuotaProject = origCached
+		quotaProjectProbed = origProbed
 		quotaProjectMu.Unlock()
 	})
 
@@ -674,6 +702,32 @@ func TestConfiguredIssueTrackerQuotaProject_ProjectConfigAndGitConfig(t *testing
 		ctx := context.WithValue(context.Background(), configKey, cfg)
 		if got := ConfiguredIssueTrackerQuotaProject(ctx, "tok"); got != "git-issue-quota-proj" {
 			t.Errorf("ConfiguredIssueTrackerQuotaProject() = %q, want %q", got, "git-issue-quota-proj")
+		}
+	})
+
+	t.Run("corp endpoint with sso_client uses ConfiguredIssueTrackerQuotaProject without network probes", func(t *testing.T) {
+		quotaProjectMu.Lock()
+		cachedQuotaProject = ""
+		quotaProjectProbed = false
+		quotaProjectMu.Unlock()
+
+		origLookPath := LookPathFn
+		LookPathFn = func(file string) (string, error) {
+			if file == "sso_client" {
+				return "/usr/bin/sso_client", nil
+			}
+			return "", errors.New("not found")
+		}
+		defer func() { LookPathFn = origLookPath }()
+
+		c := NewIssueTrackerClient("", nil)
+		if c.Endpoint != DefaultCorpIssueTrackerEndpoint {
+			t.Errorf("c.Endpoint = %q, want %q", c.Endpoint, DefaultCorpIssueTrackerEndpoint)
+		}
+		mockGit := &MockGitRunner{}
+		ctx := context.WithValue(context.Background(), configKey, &Config{Git: mockGit})
+		if got := c.QuotaProjectProvider(ctx, "tok"); got != "" {
+			t.Errorf("QuotaProjectProvider() on unconfigured corp client = %q, want empty string", got)
 		}
 	})
 }

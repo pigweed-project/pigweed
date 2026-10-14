@@ -926,9 +926,23 @@ var issueEditCmd = &cobra.Command{
 				"  gh issue edit 345678 -t \"New title\" -P P1 --add-assignee user@google.com")
 		}
 
-		updated, err := client.ModifyIssue(ctx, issueID, mod.BuildRequest())
-		if err != nil {
-			return err
+		updated := current
+		if mod.HasMetadataChanges() {
+			var err error
+			updated, err = client.ModifyIssue(ctx, issueID, mod.BuildRequest())
+			if err != nil {
+				return err
+			}
+		}
+		for _, hid := range mod.AddedHotlistIDs() {
+			if err := client.CreateHotlistEntry(ctx, hid, issueID); err != nil {
+				return err
+			}
+		}
+		for _, hid := range mod.RemovedHotlistIDs() {
+			if err := client.DeleteHotlistEntry(ctx, hid, issueID); err != nil {
+				return err
+			}
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "✓ Updated issue b/%d (%s)\n", updated.IssueID, updated.State.Status)
