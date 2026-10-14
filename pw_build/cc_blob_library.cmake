@@ -156,15 +156,13 @@ function(pw_cc_blob_library NAME)
   pw_add_library_generic("${NAME}" OBJECT
     GENERATED_HEADERS
       "${generated_header}"
-    SOURCES
+    GENERATED_SOURCES
       "${generated_source}"
     PUBLIC_INCLUDES
       "${out_dir}/public"
     PUBLIC_DEPS
       pw_polyfill
       pw_preprocessor
-    SANDBOX
-      OFF
   )
   add_dependencies("${NAME}" "${NAME}._gen")
 endfunction(pw_cc_blob_library)

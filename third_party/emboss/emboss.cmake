@@ -113,8 +113,6 @@ function(emboss_cc_library NAME)
     PUBLIC_DEPS
       pw_third_party.emboss.cpp_utils
       ${arg_DEPS}
-    SANDBOX
-      OFF
   )
   # Tie in the generated outputs as a dep of the library
   add_dependencies("${NAME}" "${NAME}._generate")

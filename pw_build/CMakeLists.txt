@@ -266,3 +266,35 @@ pw_add_test(pw_build.sandbox_absolute_path_test
     modules
     pw_build
 )
+
+set(generated_source_file "${CMAKE_CURRENT_BINARY_DIR}/generated_source.cc")
+add_custom_command(
+  OUTPUT
+    "${generated_source_file}"
+  COMMAND
+    python3 -c
+    "with open('${generated_source_file}', 'w') as f: f.write('namespace pw::build { int TestFunctionFromGeneratedSource() { return 42; } }\\n')"
+  VERBATIM
+  COMMENT
+    "Generating test source file"
+)
+
+add_custom_target(pw_build._generate_test_source DEPENDS "${generated_source_file}")
+
+pw_add_library(pw_build._sandbox_test_generated_source STATIC
+  GENERATED_SOURCES
+    "${generated_source_file}"
+  SANDBOX ON
+)
+add_dependencies(pw_build._sandbox_test_generated_source pw_build._generate_test_source)
+
+pw_add_test(pw_build.generated_source_test
+  SOURCES
+    generated_source_test.cc
+  PRIVATE_DEPS
+    pw_build._sandbox_test_generated_source
+  GROUPS
+    modules
+    pw_build
+)
+

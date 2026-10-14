@@ -608,11 +608,19 @@ if (current_toolchain != default_toolchain) {
     deps = [ ":test_blob_with_checksum" ]
   }
 
+  pw_test("generated_source_test") {
+    sources = [
+      "absolute_path_source_file.cc",
+      "generated_source_test.cc",
+    ]
+  }
+
   pw_test_group("tests") {
     tests = [
       ":cc_blob_library_checksum_test",
       ":cc_blob_library_test",
       ":file_prefix_map_test",
+      ":generated_source_test",
       ":linker_symbol_test",
       ":sandbox_test",
     ]

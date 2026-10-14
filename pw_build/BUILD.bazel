@@ -335,6 +335,14 @@ pw_cc_test(
     deps = [":sandbox_test_visible_header"],
 )
 
+pw_cc_test(
+    name = "generated_source_test",
+    srcs = [
+        "absolute_path_source_file.cc",
+        "generated_source_test.cc",
+    ],
+)
+
 pw_string_list_comparison_test(
     name = "simple_glob",
     actual = glob_dirs(

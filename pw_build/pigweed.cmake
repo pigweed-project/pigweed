@@ -194,7 +194,7 @@ endfunction()
 
 # Sets the provided variable to the multi_value_keywords from pw_add_library.
 macro(_pw_add_library_multi_value_args variable)
-  set("${variable}" SOURCES HEADERS GENERATED_HEADERS
+  set("${variable}" SOURCES HEADERS GENERATED_HEADERS GENERATED_SOURCES
                     PUBLIC_DEPS PRIVATE_DEPS
                     PUBLIC_INCLUDES PRIVATE_INCLUDES
                     PUBLIC_DEFINES PRIVATE_DEFINES
@@ -291,6 +291,7 @@ endfunction()
 #   SOURCES - source files for this library
 #   HEADERS - header files for this library
 #   GENERATED_HEADERS - headers that will be generated when the target is built
+#   GENERATED_SOURCES - source files that will be generated when the target is built
 #   PUBLIC_DEPS - public pw_target_link_targets arguments
 #   PRIVATE_DEPS - private pw_target_link_targets arguments
 #   PUBLIC_INCLUDES - public target_include_directories argument
@@ -360,8 +361,10 @@ function(pw_add_library_generic NAME TYPE)
   endif()
 
   if(sandbox_enabled)
-    foreach(path IN LISTS arg_GENERATED_HEADERS arg_HEADERS arg_SOURCES
-        arg_PUBLIC_INCLUDES arg_PRIVATE_INCLUDES)
+    # Generated files may not exist at configure time and are appended to
+    # arg_HEADERS and arg_SOURCES after sandboxing.
+    foreach(path IN LISTS arg_HEADERS arg_SOURCES arg_PUBLIC_INCLUDES
+        arg_PRIVATE_INCLUDES)
       # Don't sandbox files that don't exist yet or are generator expressions.
       cmake_path(ABSOLUTE_PATH path OUTPUT_VARIABLE absolute)
       if(NOT EXISTS "${absolute}" OR "${path}" MATCHES ".*\\$<.+>.*")
@@ -388,6 +391,7 @@ function(pw_add_library_generic NAME TYPE)
     endif()
   endif()
   list(APPEND arg_HEADERS ${arg_GENERATED_HEADERS})
+  list(APPEND arg_SOURCES ${arg_GENERATED_SOURCES})
 
   if("${TYPE}" STREQUAL "INTERFACE")
     if(NOT "${arg_SOURCES}" STREQUAL "")
@@ -512,6 +516,8 @@ endfunction(_pw_check_name_is_relative_to_root)
 #
 #   SOURCES - source files for this library
 #   HEADERS - header files for this library
+#   GENERATED_HEADERS - headers that will be generated when the target is built
+#   GENERATED_SOURCES - source files that will be generated when the target is built
 #   PUBLIC_DEPS - public pw_target_link_targets arguments
 #   PRIVATE_DEPS - private pw_target_link_targets arguments
 #   PUBLIC_INCLUDES - public target_include_directories argument
@@ -548,6 +554,8 @@ function(pw_add_library NAME TYPE)
       ${arg_HEADERS}
     GENERATED_HEADERS
       ${arg_GENERATED_HEADERS}
+    GENERATED_SOURCES
+      ${arg_GENERATED_SOURCES}
     PUBLIC_DEPS
       # TODO: b/232141950 - Apply compilation options that affect ABI
       # globally in the CMake build instead of injecting them into libraries.
@@ -612,6 +620,10 @@ function(pw_add_facade NAME TYPE)
       ${arg_SOURCES}
     HEADERS
       ${arg_HEADERS}
+    GENERATED_HEADERS
+      ${arg_GENERATED_HEADERS}
+    GENERATED_SOURCES
+      ${arg_GENERATED_SOURCES}
     PUBLIC_DEPS
       # TODO: b/232141950 - Apply compilation options that affect ABI
       # globally in the CMake build instead of injecting them into libraries.
@@ -664,6 +676,8 @@ endfunction(pw_add_facade)
 #
 #   SOURCES - source files for this library
 #   HEADERS - header files for this library
+#   GENERATED_HEADERS - headers that will be generated when the target is built
+#   GENERATED_SOURCES - source files that will be generated when the target is built
 #   PUBLIC_DEPS - public pw_target_link_targets arguments
 #   PRIVATE_DEPS - private pw_target_link_targets arguments
 #   PUBLIC_INCLUDES - public target_include_directories argument
@@ -728,6 +742,8 @@ function(pw_add_facade_generic NAME TYPE)
   pw_add_library_generic("${NAME}.facade" INTERFACE
     HEADERS
       ${arg_HEADERS}
+    GENERATED_HEADERS
+      ${arg_GENERATED_HEADERS}
     PUBLIC_INCLUDES
       ${arg_PUBLIC_INCLUDES}
     PUBLIC_DEPS
@@ -750,6 +766,8 @@ function(pw_add_facade_generic NAME TYPE)
       "${backend_target}"
     SOURCES
       ${arg_SOURCES}
+    GENERATED_SOURCES
+      ${arg_GENERATED_SOURCES}
     PRIVATE_INCLUDES
       ${arg_PRIVATE_INCLUDES}
     PRIVATE_DEPS
