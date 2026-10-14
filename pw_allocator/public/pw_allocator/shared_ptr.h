@@ -45,9 +45,6 @@ constexpr SharedPtr<To> const_pointer_cast(const SharedPtr<From>& p) noexcept;
 template <typename T>
 class WeakPtr;
 
-template <typename T>
-class MaybeSharedPtr;
-
 namespace async2 {
 class Task;
 }  // namespace async2
@@ -340,9 +337,6 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
 
   template <typename>
   friend class WeakPtr;
-
-  template <typename>
-  friend class MaybeSharedPtr;
 
   // The following classes manage their own ControlBlocks and need to
   // construct SharedPtr instances to manage their lifetimes.
