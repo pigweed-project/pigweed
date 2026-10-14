@@ -11,7 +11,7 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
-// Configuration macros for the tokenizer module.
+// Configuration macros for the sync FreeRTOS module.
 #pragma once
 
 #include "FreeRTOS.h"
@@ -53,6 +53,8 @@
   !(_PW_ARCH_ARM_CORTEX_M)
 #endif  // PW_SYNC_FREERTOS_INTERRUPT_SPIN_LOCK_USES_SCHEDULER_LOCK
 
+#ifdef __cplusplus
+
 namespace pw::sync::freertos::config {
 
 inline constexpr UBaseType_t kThreadNotificationIndex =
@@ -68,3 +70,5 @@ static_assert(kThreadNotificationIndex == 0);
 #endif  // configTASK_NOTIFICATION_ARRAY_ENTRIES
 
 }  // namespace pw::sync::freertos::config
+
+#endif  // __cplusplus

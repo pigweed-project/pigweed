@@ -45,8 +45,6 @@ rust_bindgen_library(
     ],
     cc_lib = ":pw_sync_spinlock_backend_freertos_config_header",
     clang_flags = [
-        "-x",
-        "c++",
         "-Wno-pragma-once-outside-header",
         "-Wno-unused-const-variable",
     ],
