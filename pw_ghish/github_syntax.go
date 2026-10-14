@@ -91,14 +91,10 @@ func GitHubIssueSyntaxError(refs []GitHubIssueRef, where string) error {
 	}
 
 	var quoted []string
-	seen := make(map[string]bool)
 	for _, ref := range refs {
-		if seen[ref.Match] {
-			continue
-		}
-		seen[ref.Match] = true
 		quoted = append(quoted, "  "+ref.Match)
 	}
+	quoted = dedup(quoted)
 
 	return fmt.Errorf(
 		"%s contains GitHub issue syntax, which has no effect on Gerrit:\n\n%s\n\n"+

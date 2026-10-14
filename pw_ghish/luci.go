@@ -836,7 +836,6 @@ func extractStepDiagnostic(summary string) string {
 
 	// 1. Check for unified diff headers (linters and formatters)
 	var diffFiles []string
-	seenFiles := make(map[string]bool)
 	lines := strings.Split(summary, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -853,12 +852,12 @@ func extractStepDiagnostic(summary string) string {
 				cleanPath = parts[len(parts)-1]
 			}
 			cleanPath = strings.TrimSpace(cleanPath)
-			if cleanPath != "" && !seenFiles[cleanPath] {
-				seenFiles[cleanPath] = true
+			if cleanPath != "" {
 				diffFiles = append(diffFiles, cleanPath)
 			}
 		}
 	}
+	diffFiles = dedup(diffFiles)
 	if len(diffFiles) == 1 {
 		return fmt.Sprintf("formatting diff in %s", diffFiles[0])
 	} else if len(diffFiles) > 1 && len(diffFiles) <= 3 {

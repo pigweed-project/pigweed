@@ -196,14 +196,8 @@ func parseTreetopTasksPayload(rawBytes []byte) ([]busytownTaskJSON, error) {
 				return nil, nil
 			}
 			var tasks []busytownTaskJSON
-			seen := make(map[string]bool)
-			for _, m := range urlMatches {
+			for _, m := range dedupBy(urlMatches, func(m []string) string { return m[1] + "/" + m[2] }) {
 				bid, target := m[1], m[2]
-				key := bid + "/" + target
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
 				tasks = append(tasks, busytownTaskJSON{
 					Name:    target,
 					Target:  target,
@@ -443,15 +437,9 @@ func parseTreeHuggerMessagesFallback(change *GerritChangeInfo, patchsetNum int) 
 	urlMatches := treeHuggerAndroidCIURLRegex.FindAllStringSubmatch(latestMsg.Message, -1)
 	if len(urlMatches) > 0 {
 		var builds []bbBuild
-		seen := make(map[string]bool)
-		for _, m := range urlMatches {
+		for _, m := range dedupBy(urlMatches, func(m []string) string { return m[1] + "/" + m[2] }) {
 			bid := m[1]
 			target := m[2]
-			key := bid + "/" + target
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
 			viewURL := BusytownBuildURL(bid, target)
 			builds = append(builds, bbBuild{
 				ID:              bid,

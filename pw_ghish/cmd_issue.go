@@ -49,15 +49,12 @@ func resolveTargetIssueID(ctx context.Context, cmd *cobra.Command, args []string
 
 	links := ExtractBugLinks(msg)
 	var ids []int64
-	seen := make(map[int64]bool)
 	for _, link := range links {
 		if id, err := ParseIssueID(link.ID); err == nil && id > 0 {
-			if !seen[id] {
-				seen[id] = true
-				ids = append(ids, id)
-			}
+			ids = append(ids, id)
 		}
 	}
+	ids = dedup(ids)
 
 	if len(ids) == 0 {
 		// Tier 2: Branch name inference (e.g. b-315378787-fix-rpc or 315378787-fix-rpc)

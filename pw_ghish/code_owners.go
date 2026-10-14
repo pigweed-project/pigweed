@@ -123,14 +123,10 @@ func ExpandReviewersForPush(ctx context.Context, cmd *cobra.Command, cfg *Config
 
 func replaceOwnersTokens(items []string, resolvedOwners []string) []string {
 	var result []string
-	seen := make(map[string]bool)
 	add := func(email string) {
-		key := strings.ToLower(strings.TrimSpace(email))
-		if key == "" || seen[key] {
-			return
+		if trimmed := strings.TrimSpace(email); trimmed != "" {
+			result = append(result, trimmed)
 		}
-		seen[key] = true
-		result = append(result, strings.TrimSpace(email))
 	}
 
 	for _, item := range items {
@@ -142,7 +138,7 @@ func replaceOwnersTokens(items []string, resolvedOwners []string) []string {
 			add(item)
 		}
 	}
-	return result
+	return dedupBy(result, strings.ToLower)
 }
 
 // ResolveCodeOwnersForChange finds the minimal covering set of code owners for
@@ -377,22 +373,14 @@ func resolveRepoRoot(ctx context.Context, cfg *Config) string {
 // directory so that a change touching 30 files in one module only queries
 // code_owners once for that directory.
 func representativeFilesByDir(files []string) []string {
-	if len(files) == 0 {
-		return []string{"OWNERS"}
-	}
-	seenDir := make(map[string]bool)
 	var reps []string
 	for _, f := range files {
 		clean := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(f), "/"))
-		if clean == "" {
-			continue
-		}
-		dir := path.Dir(clean)
-		if !seenDir[dir] {
-			seenDir[dir] = true
+		if clean != "" {
 			reps = append(reps, clean)
 		}
 	}
+	reps = dedupBy(reps, path.Dir)
 	if len(reps) == 0 {
 		return []string{"OWNERS"}
 	}

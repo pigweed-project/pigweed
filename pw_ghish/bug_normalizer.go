@@ -132,7 +132,6 @@ func bugChainIDsWithFormat(raw string, trailerFormat string) []string {
 	tokens := bugChainSeparatorRegex.Split(strings.TrimSpace(raw), -1)
 
 	var ids []string
-	seen := make(map[string]bool)
 	for _, tok := range tokens {
 		tok = strings.TrimSpace(tok)
 		if tok == "" {
@@ -142,12 +141,9 @@ func bugChainIDsWithFormat(raw string, trailerFormat string) []string {
 		if !ok {
 			return nil
 		}
-		if !seen[norm] {
-			seen[norm] = true
-			ids = append(ids, norm)
-		}
+		ids = append(ids, norm)
 	}
-	return ids
+	return dedup(ids)
 }
 
 // NormalizeBugChain normalizes a raw bug string (single or comma/space/semicolon-separated).

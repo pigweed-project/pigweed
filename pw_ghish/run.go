@@ -127,7 +127,6 @@ func collectFailedBuilds(builds []bbBuild, includeExperimental bool, skipRetryFi
 		skipRetryFilters = []string{"skip-retry-in-gerrit:subbuild"}
 	}
 	var failed []bbBuild
-	seen := make(map[string]bool)
 	for _, b := range deduplicateLatestBuilds(builds) {
 		if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
 			if !includeExperimental && b.IsExperimental() {
@@ -136,14 +135,12 @@ func collectFailedBuilds(builds []bbBuild, includeExperimental bool, skipRetryFi
 			if b.MatchesTagFilters(skipRetryFilters) {
 				continue
 			}
-			key := b.Builder.Project + "/" + b.Builder.Bucket + "/" + b.Builder.Builder
-			if !seen[key] {
-				seen[key] = true
-				failed = append(failed, b)
-			}
+			failed = append(failed, b)
 		}
 	}
-	return failed
+	return dedupBy(failed, func(b bbBuild) string {
+		return b.Builder.Project + "/" + b.Builder.Bucket + "/" + b.Builder.Builder
+	})
 }
 
 // collectFailedBuilders returns deduplicated failed builder names from the latest builds.
@@ -354,28 +351,25 @@ var runViewCmd = &cobra.Command{
 			if len(targetBuilds) == 0 {
 				if targetBuilder != "" {
 					var available []string
-					seen := make(map[string]bool)
 					for _, b := range res.Builds {
-						if !seen[b.Builder.Builder] && b.Builder.Builder != "" {
-							seen[b.Builder.Builder] = true
+						if b.Builder.Builder != "" {
 							available = append(available, b.Builder.Builder)
 						}
 					}
+					available = dedup(available)
 					if len(available) > 0 {
 						return fmt.Errorf("no check found matching builder %q on change %s.\n\nAvailable builders on this change:\n  - %s\n\nRun 'gh run list' to view all checks",
 							targetBuilder, rawID, strings.Join(available, "\n  - "))
 					}
 					return fmt.Errorf("no check found matching builder %q on change %s (no checks found on this change).\n\nRun 'gh run list' to view check status", targetBuilder, rawID)
 				}
-				failedExpCount := 0
-				seenExp := make(map[string]bool)
+				var failedExp []string
 				for _, b := range res.Builds {
-					if (b.Status == "FAILURE" || b.Status == "INFRA_FAILURE") && b.IsExperimental() && !seenExp[b.Builder.Builder] {
-						seenExp[b.Builder.Builder] = true
-						failedExpCount++
+					if (b.Status == "FAILURE" || b.Status == "INFRA_FAILURE") && b.IsExperimental() {
+						failedExp = append(failedExp, b.Builder.Builder)
 					}
 				}
-				if notice := FormatOmittedExperimentalNotice(failedExpCount); notice != "" {
+				if notice := FormatOmittedExperimentalNotice(len(dedup(failedExp))); notice != "" {
 					fmt.Fprintf(cmd.OutOrStdout(), "No failed blocking checks found on this change %s.\n", notice)
 					return nil
 				}

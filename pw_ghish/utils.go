@@ -69,18 +69,13 @@ func ExtractChangeID(commitMsg string) string {
 // commitMsg in order of appearance.
 func ExtractAllChangeIDs(commitMsg string) []string {
 	matches := changeIDCaptureRegex.FindAllStringSubmatch(commitMsg, -1)
-	if len(matches) == 0 {
-		return nil
-	}
 	var ids []string
-	seen := make(map[string]bool, len(matches))
 	for _, m := range matches {
-		if len(m) > 1 && !seen[m[1]] {
-			seen[m[1]] = true
+		if len(m) > 1 {
 			ids = append(ids, m[1])
 		}
 	}
-	return ids
+	return dedup(ids)
 }
 
 // CheckMultipleChangeIDs returns an error if commitMsg contains more than one
@@ -879,4 +874,28 @@ var OpenBrowserFn = func(urlStr string) error {
 		}
 	}
 	return cmd.Start()
+}
+
+// dedup returns a new slice with duplicate elements removed, preserving the
+// order of first appearance.
+func dedup[T comparable](items []T) []T {
+	return dedupBy(items, func(item T) T { return item })
+}
+
+// dedupBy returns a new slice with elements deduplicated by key(item),
+// preserving the order of first appearance.
+func dedupBy[T any, K comparable](items []T, key func(T) K) []T {
+	if len(items) == 0 {
+		return nil
+	}
+	seen := make(map[K]struct{}, len(items))
+	var out []T
+	for _, item := range items {
+		k := key(item)
+		if _, ok := seen[k]; !ok {
+			seen[k] = struct{}{}
+			out = append(out, item)
+		}
+	}
+	return out
 }
