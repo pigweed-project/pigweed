@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,7 +25,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1496,8 +1497,8 @@ func senseBugTarget(
 				Message:   truncateLines(body, 12, 600),
 			})
 		}
-		sort.Slice(comments, func(i, j int) bool {
-			return comments[i].Number < comments[j].Number
+		slices.SortFunc(comments, func(a, b SenseIssueComment) int {
+			return cmp.Compare(a.Number, b.Number)
 		})
 	}()
 

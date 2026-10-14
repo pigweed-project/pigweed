@@ -15,8 +15,10 @@
 package pw_ghish
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/andygrunwald/go-gerrit"
@@ -110,39 +112,43 @@ func BuildCommentForestWithDrafts(published, drafts []gerrit.CommentInfo) []*Com
 	// Sort each node's children chronologically (drafts sort after published at identical timestamps)
 	for _, node := range nodes {
 		if len(node.Children) > 1 {
-			sort.Slice(node.Children, func(i, j int) bool {
-				return compareCommentNodesChronologically(node.Children[i], node.Children[j])
-			})
+			slices.SortFunc(node.Children, compareCommentNodesChronologically)
 		}
 	}
 
 	// Sort root threads by line number ascending, then chronologically
-	sort.Slice(roots, func(i, j int) bool {
-		if roots[i].Comment.Line != roots[j].Comment.Line {
-			return roots[i].Comment.Line < roots[j].Comment.Line
+	slices.SortFunc(roots, func(a, b *CommentNode) int {
+		if c := cmp.Compare(a.Comment.Line, b.Comment.Line); c != 0 {
+			return c
 		}
-		return compareCommentNodesChronologically(roots[i], roots[j])
+		return compareCommentNodesChronologically(a, b)
 	})
 
 	return roots
 }
 
-func compareCommentNodesChronologically(a, b *CommentNode) bool {
+func compareCommentNodesChronologically(a, b *CommentNode) int {
 	ca := a.Comment
 	cb := b.Comment
 	if (ca.Updated == nil) != (cb.Updated == nil) {
-		return ca.Updated == nil
+		if ca.Updated == nil {
+			return -1
+		}
+		return 1
 	}
 	if ca.Updated != nil && cb.Updated != nil && !ca.Updated.Time.Equal(cb.Updated.Time) {
-		return ca.Updated.Time.Before(cb.Updated.Time)
+		return ca.Updated.Time.Compare(cb.Updated.Time)
 	}
-	if ca.PatchSet != cb.PatchSet {
-		return ca.PatchSet < cb.PatchSet
+	if c := cmp.Compare(ca.PatchSet, cb.PatchSet); c != 0 {
+		return c
 	}
 	if a.IsDraft != b.IsDraft {
-		return !a.IsDraft
+		if !a.IsDraft {
+			return -1
+		}
+		return 1
 	}
-	return ca.ID < cb.ID
+	return cmp.Compare(ca.ID, cb.ID)
 }
 
 func createsCycle(child *CommentNode, parent *CommentNode, nodes map[string]*CommentNode) bool {
@@ -459,14 +465,8 @@ func FormatCommentForestWithDrafts(published, drafts map[string][]gerrit.Comment
 		return ""
 	}
 
-	paths := make([]string, 0, len(pathSet))
-	for path := range pathSet {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-
 	var b strings.Builder
-	for _, path := range paths {
+	for _, path := range slices.Sorted(maps.Keys(pathSet)) {
 		var filePublished []gerrit.CommentInfo
 		if published != nil {
 			filePublished = published[path]

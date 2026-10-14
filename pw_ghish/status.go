@@ -15,8 +15,10 @@
 package pw_ghish
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 
@@ -190,30 +192,25 @@ var statusCmd = &cobra.Command{
 				Value string `json:"value"`
 			}
 			var labelItems []labelItem
-			var labelNames []string
-			for k := range activeChange.Labels {
-				labelNames = append(labelNames, k)
+			rank := func(n string) int {
+				switch n {
+				case "Code-Review":
+					return 1
+				case "Presubmit-Verified", "Verified":
+					return 2
+				case "Lint", "Copybara-Verified":
+					return 3
+				case "Commit-Queue", "Presubmit-Ready", "Autosubmit", "Auto-Submit":
+					return 4
+				default:
+					return 10
+				}
 			}
-			sort.Slice(labelNames, func(i, j int) bool {
-				rank := func(n string) int {
-					switch n {
-					case "Code-Review":
-						return 1
-					case "Presubmit-Verified", "Verified":
-						return 2
-					case "Lint", "Copybara-Verified":
-						return 3
-					case "Commit-Queue", "Presubmit-Ready", "Autosubmit", "Auto-Submit":
-						return 4
-					default:
-						return 10
-					}
+			labelNames := slices.SortedFunc(maps.Keys(activeChange.Labels), func(a, b string) int {
+				if c := cmp.Compare(rank(a), rank(b)); c != 0 {
+					return c
 				}
-				rI, rJ := rank(labelNames[i]), rank(labelNames[j])
-				if rI != rJ {
-					return rI < rJ
-				}
-				return labelNames[i] < labelNames[j]
+				return cmp.Compare(a, b)
 			})
 			for _, name := range labelNames {
 				info := activeChange.Labels[name]
@@ -511,7 +508,7 @@ func extractBlockers(change *gerrit.ChangeInfo) []string {
 				rejectedNames = append(rejectedNames, name)
 			}
 		}
-		sort.Strings(rejectedNames)
+		slices.Sort(rejectedNames)
 		for _, name := range rejectedNames {
 			blockers = append(blockers, fmt.Sprintf("%s (Rejected)", name))
 		}

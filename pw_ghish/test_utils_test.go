@@ -20,12 +20,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1025,14 +1026,8 @@ func (s *MockIssueTrackerServer) serveHTTP(w http.ResponseWriter, r *http.Reques
 	// GET /v1/issues
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/issues" {
 		query := r.URL.Query().Get("query")
-		var ids []int64
-		for id := range s.Issues {
-			ids = append(ids, id)
-		}
-		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-
 		var matched []*BuganizerIssue
-		for _, id := range ids {
+		for _, id := range slices.Sorted(maps.Keys(s.Issues)) {
 			iss := s.Issues[id]
 			if !matchesIssueQuery(iss, query) {
 				continue

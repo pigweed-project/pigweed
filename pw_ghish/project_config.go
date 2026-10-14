@@ -16,13 +16,14 @@ package pw_ghish
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -196,11 +197,11 @@ func SetCustomShortlinks(shortlinks map[string]string) {
 		list = append(list, gerritShortlink{prefix: p, host: h})
 	}
 	// Sort longest prefix first so more specific prefixes (e.g. "acmer/i/") match before shorter ones ("acmer/").
-	sort.Slice(list, func(i, j int) bool {
-		if len(list[i].prefix) != len(list[j].prefix) {
-			return len(list[i].prefix) > len(list[j].prefix)
+	slices.SortFunc(list, func(a, b gerritShortlink) int {
+		if c := cmp.Compare(len(b.prefix), len(a.prefix)); c != 0 {
+			return c
 		}
-		return list[i].prefix < list[j].prefix
+		return cmp.Compare(a.prefix, b.prefix)
 	})
 	customShortlinks = list
 }

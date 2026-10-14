@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -943,7 +943,7 @@ func builderList(builds []bbBuild, currentPatchset int) string {
 	for _, b := range builds {
 		names = append(names, b.Builder.Builder+patchsetNote(b.Patchset, currentPatchset))
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	if len(names) <= maxNamedBuilders {
 		return strings.Join(names, ", ")

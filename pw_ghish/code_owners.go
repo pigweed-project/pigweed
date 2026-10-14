@@ -24,7 +24,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/andygrunwald/go-gerrit"
@@ -332,7 +332,7 @@ func extractModifiedFilePaths(fMap map[string]gerrit.FileInfo) []string {
 		}
 		paths = append(paths, strings.TrimPrefix(p, "/"))
 	}
-	sort.Strings(paths)
+	slices.Sort(paths)
 	return paths
 }
 
@@ -350,7 +350,7 @@ func listHeadChangedFiles(ctx context.Context, cfg *Config) []string {
 			files = append(files, trimmed)
 		}
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	return files
 }
 

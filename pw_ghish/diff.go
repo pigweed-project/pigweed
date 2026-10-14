@@ -17,7 +17,7 @@ package pw_ghish
 import (
 	"encoding/base64"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/andygrunwald/go-gerrit"
@@ -44,7 +44,7 @@ func formatDiffStat(files map[string]gerrit.FileInfo) string {
 			maxPathLen = len(p)
 		}
 	}
-	sort.Strings(paths)
+	slices.Sort(paths)
 
 	var sb strings.Builder
 	for _, p := range paths {
@@ -104,7 +104,7 @@ var diffCmd = &cobra.Command{
 					}
 					paths = append(paths, p)
 				}
-				sort.Strings(paths)
+				slices.Sort(paths)
 				for _, p := range paths {
 					fmt.Fprintln(cmd.OutOrStdout(), p)
 				}

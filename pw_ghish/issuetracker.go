@@ -17,6 +17,7 @@ package pw_ghish
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,7 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -862,11 +863,11 @@ func (c *IssueTrackerClient) ListAllComments(ctx context.Context, issueID int64)
 		}
 		pageToken = resp.NextPageToken
 	}
-	sort.SliceStable(all, func(i, j int) bool {
-		if all[i].CommentNumber != all[j].CommentNumber {
-			return all[i].CommentNumber < all[j].CommentNumber
+	slices.SortStableFunc(all, func(a, b BuganizerComment) int {
+		if c := cmp.Compare(a.CommentNumber, b.CommentNumber); c != 0 {
+			return c
 		}
-		return all[i].CreatedTime.Before(all[j].CreatedTime)
+		return a.CreatedTime.Compare(b.CreatedTime)
 	})
 	return all, nil
 }

@@ -17,9 +17,10 @@ package pw_ghish
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/andygrunwald/go-gerrit"
@@ -142,7 +143,7 @@ func matchingLabels(labels map[string]gerrit.LabelInfo, pattern *regexp.Regexp) 
 			matches = append(matches, name)
 		}
 	}
-	sort.Strings(matches)
+	slices.Sort(matches)
 	return matches
 }
 
@@ -349,12 +350,7 @@ func FormatLabelNames(labels map[string]gerrit.LabelInfo) string {
 	if len(labels) == 0 {
 		return "none reported"
 	}
-	names := make([]string, 0, len(labels))
-	for name := range labels {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return strings.Join(names, ", ")
+	return strings.Join(slices.Sorted(maps.Keys(labels)), ", ")
 }
 
 // DecideAutoSubmit resolves what --auto should do to this change, by reading

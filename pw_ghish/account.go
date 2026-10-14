@@ -15,8 +15,9 @@
 package pw_ghish
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/andygrunwald/go-gerrit"
@@ -116,8 +117,8 @@ func FormatChangeReviewersAndAssignees(change *gerrit.ChangeInfo) (assignees []s
 				remaining = append(remaining, info)
 			}
 		}
-		sort.Slice(remaining, func(i, j int) bool {
-			return remaining[i].Account.AccountID < remaining[j].Account.AccountID
+		slices.SortFunc(remaining, func(a, b gerrit.AttentionSetInfo) int {
+			return cmp.Compare(a.Account.AccountID, b.Account.AccountID)
 		})
 		for _, info := range remaining {
 			assignees = append(assignees, FormatReviewer(info.Account, true, false))

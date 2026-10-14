@@ -15,13 +15,15 @@
 package pw_ghish
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1093,12 +1095,7 @@ func exitCodeChecksServer(t *testing.T, statuses map[string]string, experimental
 	server.OnDefaultChange(12345)
 
 	builds := make([]bbBuild, 0, len(statuses))
-	names := make([]string, 0, len(statuses))
-	for name := range statuses {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for i, name := range names {
+	for i, name := range slices.Sorted(maps.Keys(statuses)) {
 		var opts []func(*bbBuild)
 		if experimental[name] {
 			opts = append(opts, WithCritical("NO"))
@@ -1447,7 +1444,7 @@ func TestChecks_EquivalentPatchsets(t *testing.T) {
 	mu.Lock()
 	queried := append([]int(nil), queriedPatchsets...)
 	mu.Unlock()
-	sort.Sort(sort.Reverse(sort.IntSlice(queried)))
+	slices.SortFunc(queried, func(a, b int) int { return cmp.Compare(b, a) })
 	if want := "[10 9 8]"; fmt.Sprint(queried) != want {
 		t.Errorf("queried patchsets = %v, want %s", queried, want)
 	}

@@ -15,11 +15,13 @@
 package worktree
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -146,12 +148,7 @@ func (m *Manager) applyRepoProjectConfig(st *State) {
 			st.WarmupDriver = pcfg.Worktree.WarmupDriver
 		}
 		if st.ShortlinkPrefix == "" && len(pcfg.Gerrit.Shortlinks) > 0 {
-			var keys []string
-			for k := range pcfg.Gerrit.Shortlinks {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			st.ShortlinkPrefix = keys[0]
+			st.ShortlinkPrefix = slices.Sorted(maps.Keys(pcfg.Gerrit.Shortlinks))[0]
 		}
 	}
 	if ide, ok := m.IDEDriver.(*JetskiIDEDriver); ok && ide != nil && ide.ProjectPrefix == "" && st.SlotPrefix != "" {
@@ -1096,8 +1093,8 @@ func (m *Manager) selectVictimSlotForSwap(st *State, now time.Time) (*Slot, *Pro
 	}
 
 	// Sort by LastUsedAt ascending (Least Recently Used first)
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].proj.LastUsedAt.Before(candidates[j].proj.LastUsedAt)
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		return a.proj.LastUsedAt.Compare(b.proj.LastUsedAt)
 	})
 
 	return candidates[0].slot, candidates[0].proj, nil
@@ -1443,11 +1440,11 @@ func (m *Manager) List(ctx context.Context) (*DashboardReport, error) {
 			report.AvailableSlots = 0
 		}
 
-		sort.Slice(report.MountedProjects, func(i, j int) bool {
-			return report.MountedProjects[i].Slot < report.MountedProjects[j].Slot
+		slices.SortFunc(report.MountedProjects, func(a, b ProjectListEntry) int {
+			return cmp.Compare(a.Slot, b.Slot)
 		})
-		sort.Slice(report.ParkedProjects, func(i, j int) bool {
-			return report.ParkedProjects[i].Project < report.ParkedProjects[j].Project
+		slices.SortFunc(report.ParkedProjects, func(a, b ProjectListEntry) int {
+			return cmp.Compare(a.Project, b.Project)
 		})
 
 		return m.Store.Save(st)

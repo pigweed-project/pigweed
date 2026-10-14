@@ -16,8 +16,9 @@ package pw_ghish
 
 import (
 	"fmt"
+	"maps"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -394,12 +395,7 @@ func formatMissingDraftToDeleteError(changeID, path string, line, patchSet int, 
 	}
 
 	var available []string
-	var paths []string
-	for p := range drafts {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	for _, p := range paths {
+	for _, p := range slices.Sorted(maps.Keys(drafts)) {
 		for _, d := range drafts[p] {
 			psFlag := ""
 			if d.PatchSet > 0 {

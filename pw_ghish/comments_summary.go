@@ -15,8 +15,10 @@
 package pw_ghish
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/andygrunwald/go-gerrit"
@@ -64,20 +66,12 @@ func AnalyzeComments(published map[string][]gerrit.CommentInfo, drafts map[strin
 		}
 	}
 
-	var paths []string
-	if published != nil {
-		for p := range published {
-			paths = append(paths, p)
-		}
-	}
-	sort.Strings(paths)
-
 	var allThreadsTotal int
 	var resolvedCount int
 	var unresolvedList []UnresolvedComment
 	unresolvedCommentIDs := make(map[string]bool)
 
-	for _, path := range paths {
+	for _, path := range slices.Sorted(maps.Keys(published)) {
 		fileComments := published[path]
 		if len(fileComments) == 0 {
 			continue
@@ -130,38 +124,31 @@ func AnalyzeComments(published map[string][]gerrit.CommentInfo, drafts map[strin
 	}
 
 	var standaloneDrafts []UnresolvedComment
-	if drafts != nil {
-		var draftPaths []string
-		for p := range drafts {
-			draftPaths = append(draftPaths, p)
-		}
-		sort.Strings(draftPaths)
-		for _, path := range draftPaths {
-			fileDrafts := append([]gerrit.CommentInfo(nil), drafts[path]...)
-			sort.Slice(fileDrafts, func(i, j int) bool {
-				if fileDrafts[i].Line != fileDrafts[j].Line {
-					return fileDrafts[i].Line < fileDrafts[j].Line
-				}
-				return compareCommentNodesChronologically(
-					&CommentNode{Comment: fileDrafts[i], IsDraft: true},
-					&CommentNode{Comment: fileDrafts[j], IsDraft: true},
-				)
-			})
-			fileDisplay := formatShortCommentTarget(path, 0)
-			for _, d := range fileDrafts {
-				if d.InReplyTo != "" && unresolvedCommentIDs[d.InReplyTo] {
-					continue
-				}
-				standaloneDrafts = append(standaloneDrafts, UnresolvedComment{
-					File:      fileDisplay,
-					Line:      d.Line,
-					PatchSet:  d.PatchSet,
-					Author:    FormatAccount(d.Author),
-					Message:   strings.TrimSpace(d.Message),
-					IsDraft:   true,
-					CommentID: d.ID,
-				})
+	for _, path := range slices.Sorted(maps.Keys(drafts)) {
+		fileDrafts := slices.Clone(drafts[path])
+		slices.SortFunc(fileDrafts, func(a, b gerrit.CommentInfo) int {
+			if c := cmp.Compare(a.Line, b.Line); c != 0 {
+				return c
 			}
+			return compareCommentNodesChronologically(
+				&CommentNode{Comment: a, IsDraft: true},
+				&CommentNode{Comment: b, IsDraft: true},
+			)
+		})
+		fileDisplay := formatShortCommentTarget(path, 0)
+		for _, d := range fileDrafts {
+			if d.InReplyTo != "" && unresolvedCommentIDs[d.InReplyTo] {
+				continue
+			}
+			standaloneDrafts = append(standaloneDrafts, UnresolvedComment{
+				File:      fileDisplay,
+				Line:      d.Line,
+				PatchSet:  d.PatchSet,
+				Author:    FormatAccount(d.Author),
+				Message:   strings.TrimSpace(d.Message),
+				IsDraft:   true,
+				CommentID: d.ID,
+			})
 		}
 	}
 

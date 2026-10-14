@@ -17,9 +17,10 @@ package worktree
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -124,13 +125,8 @@ func (m *MockGitRunner) ResetBranch(worktreePath, branchName, targetRef string) 
 }
 
 func (m *MockGitRunner) ListWorktrees(repoOrWorktreePath string) ([]WorktreeInfo, error) {
-	var paths []string
-	for p := range m.Branches {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
 	var out []WorktreeInfo
-	for _, p := range paths {
+	for _, p := range slices.Sorted(maps.Keys(m.Branches)) {
 		b := m.Branches[p]
 		sha := m.Commits[p]
 		if sha == "" {

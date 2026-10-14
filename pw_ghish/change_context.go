@@ -15,12 +15,14 @@
 package pw_ghish
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -399,12 +401,7 @@ func ExtractFetchRef(change *gerrit.ChangeInfo, rev gerrit.RevisionInfo, changeI
 	} else if f, ok := rev.Fetch["ssh"]; ok && f.Ref != "" {
 		ref = f.Ref
 	} else if len(rev.Fetch) > 0 {
-		keys := make([]string, 0, len(rev.Fetch))
-		for k := range rev.Fetch {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range slices.Sorted(maps.Keys(rev.Fetch)) {
 			if f := rev.Fetch[k]; f.Ref != "" {
 				ref = f.Ref
 				break
@@ -461,7 +458,7 @@ func availablePatchsets(change *gerrit.ChangeInfo) string {
 	if len(nums) == 0 {
 		return "none"
 	}
-	sort.Ints(nums)
+	slices.Sort(nums)
 	var sb strings.Builder
 	for i, n := range nums {
 		if i > 0 {
@@ -569,8 +566,8 @@ func EquivalentPatchsets(change *gerrit.ChangeInfo, targetPatchset int) []int {
 			revs = append(revs, rev)
 		}
 	}
-	sort.Slice(revs, func(i, j int) bool {
-		return revs[i].Number < revs[j].Number
+	slices.SortFunc(revs, func(a, b gerrit.RevisionInfo) int {
+		return cmp.Compare(a.Number, b.Number)
 	})
 
 	targetIdx := -1
