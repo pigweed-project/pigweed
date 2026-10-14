@@ -27,7 +27,6 @@ licenses(["notice"])
 cc_library(
     name = "system_rpc_server",
     srcs = ["system_rpc_server.cc"],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     deps = [
         "//pw_hdlc",

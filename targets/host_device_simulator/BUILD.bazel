@@ -28,7 +28,6 @@ cc_library(
     srcs = [
         "boot.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_log",
         "//pw_system:init",

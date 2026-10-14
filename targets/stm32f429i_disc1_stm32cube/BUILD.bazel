@@ -104,7 +104,6 @@ cc_library(
     srcs = [
         "unit_test_app.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_status",
         "//pw_system",
