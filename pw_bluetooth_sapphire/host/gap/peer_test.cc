@@ -209,6 +209,38 @@ class PeerTest : public pw::async::test::FakeDispatcherFixture {
     store_le_bond_cb_ = std::move(cb);
   }
 
+  // Sends an HCI Extended Inquiry Result event for the peer.
+  void SendExtendedInquiryResult(
+      const ByteBuffer& eir,
+      std::optional<DeviceClass> device_class = std::nullopt,
+      std::optional<uint16_t> clock_offset = std::nullopt,
+      std::optional<pw::bluetooth::emboss::PageScanRepetitionMode>
+          page_scan_rep_mode = std::nullopt,
+      std::optional<int8_t> rssi = std::nullopt) {
+    StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
+    eirep.view().num_responses().Write(1);
+    eirep.view().bd_addr().CopyFrom(peer().address().value().view());
+    if (device_class) {
+      eirep.view().class_of_device().BackingStorage().WriteUInt(
+          device_class->to_int());
+    }
+    if (clock_offset) {
+      eirep.view().clock_offset().valid().Write(true);
+      eirep.view().clock_offset().clock_offset().Write(*clock_offset);
+    }
+    if (page_scan_rep_mode) {
+      eirep.view().page_scan_repetition_mode().Write(*page_scan_rep_mode);
+    }
+    if (rssi) {
+      // Unchecked so tests can supply out-of-range values.
+      eirep.view().rssi().UncheckedWrite(*rssi);
+    }
+    eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
+        ::emboss::support::ReadOnlyContiguousBuffer(&eir), eir.size());
+
+    peer().MutBrEdr().SetInquiryData(eirep.view());
+  }
+
  private:
   void NotifyListenersCallback(const Peer& peer,
                                Peer::NotifyListenersChange change) {
@@ -534,13 +566,7 @@ TEST_F(PeerTest, BrEdrDataSetEirDataWithInvalidUtf8NameDoesNotUpdatePeerName) {
       0xFF  // 0xFF should not appear in a valid UTF-8 string
   );
 
-  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
-  eirep.view().num_responses().Write(1);
-  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
-  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
-      ::emboss::support::ReadOnlyContiguousBuffer(&kEirData), kEirData.size());
-
-  peer().MutBrEdr().SetInquiryData(eirep.view());
+  SendExtendedInquiryResult(kEirData);
   EXPECT_TRUE(listener_notified);  // Fresh EIR data still results in an update
   EXPECT_FALSE(peer().name().has_value());
 }
@@ -1573,13 +1599,7 @@ TEST_F(PeerTest, SettingInquiryDataOfBondedPeerDoesNotUpdateName) {
                                   'o',
                                   'r',
                                   'y');
-  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
-  eirep.view().num_responses().Write(1);
-  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
-  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
-      ::emboss::support::ReadOnlyContiguousBuffer(&kEirData), kEirData.size());
-
-  peer().MutBrEdr().SetInquiryData(eirep.view());
+  SendExtendedInquiryResult(kEirData);
 
   ASSERT_TRUE(peer().name().has_value());
   EXPECT_EQ(peer().name().value(), "alice");
@@ -1600,17 +1620,8 @@ TEST_F(PeerTest, SettingInquiryDataOfBondedPeerDoesNotUpdateBrEdrData) {
       static_cast<uint8_t>(DataType::kComplete16BitServiceUuids),
       0x01,
       0x11);
-  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
-  eirep.view().num_responses().Write(1);
-  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
-  eirep.view().class_of_device().BackingStorage().WriteUInt(
-      kDeviceClass.to_int());
-  eirep.view().clock_offset().valid().Write(true);
-  eirep.view().clock_offset().clock_offset().Write(kClockOffset);
-  eirep.view().page_scan_repetition_mode().Write(kPageScanRepMode);
-  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
-      ::emboss::support::ReadOnlyContiguousBuffer(&kEirData), kEirData.size());
-  peer().MutBrEdr().SetInquiryData(eirep.view());
+  SendExtendedInquiryResult(
+      kEirData, kDeviceClass, kClockOffset, kPageScanRepMode);
 
   ASSERT_TRUE(peer().bredr()->device_class().has_value());
   ASSERT_EQ(peer().bredr()->device_class().value(), kDeviceClass);
@@ -1634,19 +1645,10 @@ TEST_F(PeerTest, SettingInquiryDataOfBondedPeerDoesNotUpdateBrEdrData) {
       static_cast<uint8_t>(DataType::kComplete16BitServiceUuids),
       0x02,
       0x11);
-  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter>
-      bonded_eirep;
-  bonded_eirep.view().num_responses().Write(1);
-  bonded_eirep.view().bd_addr().CopyFrom(peer().address().value().view());
-  bonded_eirep.view().class_of_device().BackingStorage().WriteUInt(0x000200);
-  bonded_eirep.view().clock_offset().valid().Write(true);
-  bonded_eirep.view().clock_offset().clock_offset().Write(0x4321);
-  bonded_eirep.view().page_scan_repetition_mode().Write(
-      pw::bluetooth::emboss::PageScanRepetitionMode::R2_);
-  bonded_eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
-      ::emboss::support::ReadOnlyContiguousBuffer(&kBondedEirData),
-      kBondedEirData.size());
-  peer().MutBrEdr().SetInquiryData(bonded_eirep.view());
+  SendExtendedInquiryResult(kBondedEirData,
+                            DeviceClass(0x000200),
+                            /*clock_offset=*/0x4321,
+                            pw::bluetooth::emboss::PageScanRepetitionMode::R2_);
 
   EXPECT_EQ(peer().bredr()->device_class().value(), kDeviceClass);
   EXPECT_EQ(peer().bredr()->clock_offset().value(), kClockOffset);
@@ -1680,13 +1682,7 @@ TEST_F(PeerTest, BrEdrDataSetEirDataDoesUpdatePeerName) {
                                   0x92,
                                   0x96);
 
-  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
-  eirep.view().num_responses().Write(1);
-  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
-  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
-      ::emboss::support::ReadOnlyContiguousBuffer(&kEirData), kEirData.size());
-
-  peer().MutBrEdr().SetInquiryData(eirep.view());
+  SendExtendedInquiryResult(kEirData);
 
   EXPECT_TRUE(listener_notified);  // Fresh EIR data results in an update
   ASSERT_TRUE(peer().name().has_value());
@@ -1695,19 +1691,15 @@ TEST_F(PeerTest, BrEdrDataSetEirDataDoesUpdatePeerName) {
 
 TEST_F(PeerTest, SetEirDataUpdatesServiceUUIDs) {
   peer().MutBrEdr();  // Initialize BrEdrData.
-                      // clang-format off
   const StaticByteBuffer kEirJustServiceUuids{
       // One 16-bit UUID: AudioSink
-      0x03, static_cast<uint8_t>(DataType::kIncomplete16BitServiceUuids), 0x0A, 0x11,
+      0x03,
+      static_cast<uint8_t>(DataType::kIncomplete16BitServiceUuids),
+      0x0A,
+      0x11,
   };
 
-  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
-  eirep.view().num_responses().Write(1);
-  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
-  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
-      ::emboss::support::ReadOnlyContiguousBuffer(&kEirJustServiceUuids),
-      kEirJustServiceUuids.size());
-  peer().MutBrEdr().SetInquiryData(eirep.view());
+  SendExtendedInquiryResult(kEirJustServiceUuids);
 
   EXPECT_EQ(peer().bredr()->services().size(), 1u);
   EXPECT_EQ(peer().bredr()->services().count(UUID((uint16_t)0x110A)), 1u);
@@ -1744,13 +1736,13 @@ TEST_F(PeerTest, OverwritingBrEdrBondWithSameSecuritySucceeds) {
 TEST_F(PeerTest, LowEnergyPairingToken) {
   EXPECT_FALSE(peer().MutLe().is_pairing());
   int count_0 = 0;
-  peer().MutLe().add_pairing_completion_callback([&count_0](){count_0++;});
+  peer().MutLe().add_pairing_completion_callback([&count_0]() { count_0++; });
   EXPECT_EQ(count_0, 1);
   std::optional<Peer::PairingToken> token = peer().MutLe().RegisterPairing();
   int count_1 = 0;
-  peer().MutLe().add_pairing_completion_callback([&count_1](){count_1++;});
+  peer().MutLe().add_pairing_completion_callback([&count_1]() { count_1++; });
   int count_2 = 0;
-  peer().MutLe().add_pairing_completion_callback([&count_2](){count_2++;});
+  peer().MutLe().add_pairing_completion_callback([&count_2]() { count_2++; });
   EXPECT_EQ(count_1, 0);
   EXPECT_EQ(count_2, 0);
   token.reset();
@@ -1761,13 +1753,13 @@ TEST_F(PeerTest, LowEnergyPairingToken) {
 TEST_F(PeerTest, BrEdrPairingToken) {
   EXPECT_FALSE(peer().MutBrEdr().is_pairing());
   int count_0 = 0;
-  peer().MutBrEdr().add_pairing_completion_callback([&count_0]{count_0++;});
+  peer().MutBrEdr().add_pairing_completion_callback([&count_0] { count_0++; });
   EXPECT_EQ(count_0, 1);
   std::optional<Peer::PairingToken> token = peer().MutBrEdr().RegisterPairing();
   int count_1 = 0;
-  peer().MutBrEdr().add_pairing_completion_callback([&count_1]{count_1++;});
+  peer().MutBrEdr().add_pairing_completion_callback([&count_1] { count_1++; });
   int count_2 = 0;
-  peer().MutBrEdr().add_pairing_completion_callback([&count_2]{count_2++;});
+  peer().MutBrEdr().add_pairing_completion_callback([&count_2] { count_2++; });
   EXPECT_EQ(count_1, 0);
   EXPECT_EQ(count_2, 0);
   token.reset();
@@ -1775,7 +1767,8 @@ TEST_F(PeerTest, BrEdrPairingToken) {
   EXPECT_EQ(count_2, 1);
 }
 
-TEST_F(PeerTest, ClearBondDataDoesNotSetIdentityKnownToFalseIfAddressIsLEPublic) {
+TEST_F(PeerTest,
+       ClearBondDataDoesNotSetIdentityKnownToFalseIfAddressIsLEPublic) {
   ASSERT_EQ(peer().address().type(), DeviceAddress::Type::kLEPublic);
   EXPECT_TRUE(peer().identity_known());
   sm::PairingData data;
@@ -1791,25 +1784,23 @@ TEST_F(PeerTest, ClearBondDataDoesNotSetIdentityKnownToFalseIfAddressIsLEPublic)
 TEST_F(PeerTest, SetInquiryDataWithInvalidRssiIgnored) {
   EXPECT_EQ(peer().rssi(), hci_spec::kRSSIInvalid);
 
-  const StaticByteBuffer kEirData(
-      0x05,  // Length
-      0x09,  // AD type: Complete Local Name
-      'T',
-      'e',
-      's',
-      't'
-  );
-  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
-  eirep.view().num_responses().Write(1);
-  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
-  eirep.view().rssi().UncheckedWrite(hci_spec::kMaxRssi + 1);
-  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
-      ::emboss::support::ReadOnlyContiguousBuffer(&kEirData), kEirData.size());
-  peer().MutBrEdr().SetInquiryData(eirep.view());
+  const StaticByteBuffer kEirData(0x05,  // Length
+                                  0x09,  // AD type: Complete Local Name
+                                  'T',
+                                  'e',
+                                  's',
+                                  't');
+  SendExtendedInquiryResult(kEirData,
+                            /*device_class=*/std::nullopt,
+                            /*clock_offset=*/std::nullopt,
+                            /*page_scan_rep_mode=*/std::nullopt,
+                            /*rssi=*/hci_spec::kMaxRssi + 1);
   EXPECT_EQ(peer().rssi(), hci_spec::kRSSIInvalid);
 
-  StaticPacket<pw::bluetooth::emboss::InquiryResultWithRssiWriter> inquiry_result_rssi;
-  inquiry_result_rssi.view().bd_addr().CopyFrom(peer().address().value().view());
+  StaticPacket<pw::bluetooth::emboss::InquiryResultWithRssiWriter>
+      inquiry_result_rssi;
+  inquiry_result_rssi.view().bd_addr().CopyFrom(
+      peer().address().value().view());
   inquiry_result_rssi.view().rssi().UncheckedWrite(hci_spec::kMaxRssi + 1);
   peer().MutBrEdr().SetInquiryData(inquiry_result_rssi.view());
   EXPECT_EQ(peer().rssi(), hci_spec::kRSSIInvalid);
@@ -1842,21 +1833,15 @@ class PeerEirServicesTest : public PeerTest {
       eir[2 + 2 * i + 1] = static_cast<uint8_t>(uuid_value >> 8);
     }
 
-    StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> event;
-    event.view().num_responses().Write(1);
-    event.view().bd_addr().CopyFrom(peer().address().value().view());
-    event.view().extended_inquiry_response().BackingStorage().CopyFrom(
-        ::emboss::support::ReadOnlyContiguousBuffer(&eir), eir.size());
-
-    peer().MutBrEdr().SetInquiryData(event.view());
+    SendExtendedInquiryResult(eir);
   }
 
  private:
   int update_expiry_count_ = 0;
 };
 
-// Tests that when a single EIR containing more than kMaxPeerEirServices UUIDs is
-// received, the services set size is capped at kMaxPeerEirServices.
+// Tests that when a single EIR containing more than kMaxPeerEirServices UUIDs
+// is received, the services set size is capped at kMaxPeerEirServices.
 TEST_F(PeerEirServicesTest, SingleEirIsCappedAtMaxServices) {
   peer().MutBrEdr();
   ASSERT_EQ(peer().bredr()->services().size(), 0u);
@@ -1888,20 +1873,20 @@ TEST_F(PeerEirServicesTest, ServicesSetIsCappedAcrossRepeatedEirReceptions) {
 }
 TEST_F(PeerTest, DowngradingLowEnergyBondFails) {
   sm::PairingData secure_data;
-  secure_data.peer_ltk = sm::LTK(
-      sm::SecurityProperties(/*encrypted=*/true,
-                             /*authenticated=*/true,
-                             /*secure_connections=*/true,
-                             sm::kMaxEncryptionKeySize),
-      hci_spec::LinkKey(UInt128{1}, 2, 3));
+  secure_data.peer_ltk =
+      sm::LTK(sm::SecurityProperties(/*encrypted=*/true,
+                                     /*authenticated=*/true,
+                                     /*secure_connections=*/true,
+                                     sm::kMaxEncryptionKeySize),
+              hci_spec::LinkKey(UInt128{1}, 2, 3));
 
   sm::PairingData weak_data;
-  weak_data.peer_ltk = sm::LTK(
-      sm::SecurityProperties(/*encrypted=*/true,
-                             /*authenticated=*/false,
-                             /*secure_connections=*/false,
-                             sm::kMaxEncryptionKeySize),
-      hci_spec::LinkKey(UInt128{4}, 5, 6));
+  weak_data.peer_ltk =
+      sm::LTK(sm::SecurityProperties(/*encrypted=*/true,
+                                     /*authenticated=*/false,
+                                     /*secure_connections=*/false,
+                                     sm::kMaxEncryptionKeySize),
+              hci_spec::LinkKey(UInt128{4}, 5, 6));
 
   EXPECT_TRUE(peer().MutLe().SetBondData(secure_data));
   ASSERT_TRUE(peer().le()->bond_data().has_value());
@@ -1927,7 +1912,8 @@ TEST_F(PeerTest, UpdateBondSecurityPropertiesPreventsDowngrade) {
   EXPECT_TRUE(peer().bredr()->link_key()->security().secure_connections());
 
   // Try to update with weaker security properties.
-  EXPECT_FALSE(peer().MutBrEdr().UpdateBondSecurityProperties(kLessSecureBrEdrKey.security()));
+  EXPECT_FALSE(peer().MutBrEdr().UpdateBondSecurityProperties(
+      kLessSecureBrEdrKey.security()));
 
   // Verify that security properties were NOT downgraded.
   EXPECT_TRUE(peer().bredr()->link_key()->security().secure_connections());
@@ -1941,7 +1927,8 @@ TEST_F(PeerTest, UpdateBondSecurityPropertiesSucceeds) {
   EXPECT_FALSE(peer().bredr()->link_key()->security().secure_connections());
 
   // Try to update with stronger security properties.
-  EXPECT_TRUE(peer().MutBrEdr().UpdateBondSecurityProperties(kSecureBrEdrKey.security()));
+  EXPECT_TRUE(peer().MutBrEdr().UpdateBondSecurityProperties(
+      kSecureBrEdrKey.security()));
 
   // Verify that security properties WERE updated.
   EXPECT_TRUE(peer().bredr()->link_key()->security().secure_connections());
