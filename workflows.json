@@ -67,6 +67,7 @@
         "-//targets/...",
         "-//pw_web/...",
         "-//pw_ide/...",
+        "-//pw_bluetooth_sapphire/...",
         "//pw_toolchain:cpp_20_check"
       ]
     },
@@ -86,6 +87,7 @@
         "-//targets/...",
         "-//pw_web/...",
         "-//pw_ide/...",
+        "-//pw_bluetooth_sapphire/...",
         "//pw_toolchain:cpp_17_check"
       ]
     },
@@ -104,7 +106,8 @@
         "-//pw_kernel/...",
         "-//targets/...",
         "-//pw_web/...",
-        "-//pw_ide/..."
+        "-//pw_ide/...",
+        "-//pw_bluetooth_sapphire/..."
       ]
     },
     {
