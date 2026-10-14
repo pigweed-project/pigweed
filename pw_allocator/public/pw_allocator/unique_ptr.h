@@ -139,7 +139,7 @@ class UniquePtr : public ::pw::allocator::internal::ManagedPtr<T> {
   }
   [[nodiscard]] friend constexpr bool operator==(const UniquePtr& lhs,
                                                  const UniquePtr& rhs) {
-    return lhs.Equals(rhs) && lhs.control_block_ == rhs.control_block_;
+    return lhs.Equals(rhs) && lhs.deallocator_ == rhs.deallocator_;
   }
 
   [[nodiscard]] friend constexpr bool operator!=(const UniquePtr& lhs,

@@ -91,6 +91,32 @@ TEST_F(UniquePtrTest, OperatorEqNullptrAfterMakeUniqueNullptrTypeFails) {
   EXPECT_FALSE(*ptr != nullptr);
 }
 
+TEST_F(UniquePtrTest, OperatorEqUniquePtr) {
+  pw::UniquePtr<int> empty1;
+  pw::UniquePtr<int> empty2;
+  EXPECT_EQ(empty1, empty2);
+
+  auto ptr1 = allocator_.MakeUnique<int>(5);
+  auto ptr2 = allocator_.MakeUnique<int>(5);
+  EXPECT_EQ(ptr1, ptr1);
+  EXPECT_NE(ptr1, ptr2);
+  EXPECT_NE(ptr1, empty1);
+}
+
+TEST_F(UniquePtrTest, OperatorEqUniquePtrWithDifferentAllocators) {
+  auto ptr1 = allocator_.MakeUnique<int>(5);
+
+  // Like pw::SharedPtr, equality compares pointer identity and ownership
+  // metadata (the deallocator) rather than the dereferenced pointee value.
+  pw::allocator::test::AllocatorForTest<256> other_allocator;
+  auto ptr2 = other_allocator.MakeUnique<int>(5);
+  EXPECT_NE(ptr1, ptr2);
+
+  pw::UniquePtr<int> same_ptr_diff_allocator(ptr1.get(), other_allocator);
+  EXPECT_NE(ptr1, same_ptr_diff_allocator);
+  same_ptr_diff_allocator.Release();
+}
+
 TEST_F(UniquePtrTest, MakeUniqueForwardsConstructorArguments) {
   Counter counter(6);
   auto ptr = allocator_.MakeUnique<CounterSink>(std::move(counter));
