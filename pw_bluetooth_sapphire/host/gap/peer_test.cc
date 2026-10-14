@@ -1585,6 +1585,78 @@ TEST_F(PeerTest, SettingInquiryDataOfBondedPeerDoesNotUpdateName) {
   EXPECT_EQ(peer().name().value(), "alice");
 }
 
+TEST_F(PeerTest, SettingInquiryDataOfBondedPeerDoesNotUpdateBrEdrData) {
+  SetUpPeer(/*address=*/kAddrBrEdr, /*connectable=*/true);
+
+  // Populate the peer from an inquiry result prior to bonding.
+  const DeviceClass kDeviceClass(0x000100);
+  constexpr uint16_t kClockOffset = 0x1234;
+  constexpr pw::bluetooth::emboss::PageScanRepetitionMode kPageScanRepMode =
+      pw::bluetooth::emboss::PageScanRepetitionMode::R1_;
+  const UUID kServiceUuid(uint16_t{0x1101});
+
+  const StaticByteBuffer kEirData(
+      0x03,  // Length
+      static_cast<uint8_t>(DataType::kComplete16BitServiceUuids),
+      0x01,
+      0x11);
+  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
+  eirep.view().num_responses().Write(1);
+  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
+  eirep.view().class_of_device().BackingStorage().WriteUInt(
+      kDeviceClass.to_int());
+  eirep.view().clock_offset().valid().Write(true);
+  eirep.view().clock_offset().clock_offset().Write(kClockOffset);
+  eirep.view().page_scan_repetition_mode().Write(kPageScanRepMode);
+  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
+      ::emboss::support::ReadOnlyContiguousBuffer(&kEirData), kEirData.size());
+  peer().MutBrEdr().SetInquiryData(eirep.view());
+
+  ASSERT_TRUE(peer().bredr()->device_class().has_value());
+  ASSERT_EQ(peer().bredr()->device_class().value(), kDeviceClass);
+  ASSERT_TRUE(peer().bredr()->clock_offset().has_value());
+  ASSERT_EQ(peer().bredr()->clock_offset().value(), kClockOffset);
+  ASSERT_TRUE(peer().bredr()->page_scan_repetition_mode().has_value());
+  ASSERT_EQ(peer().bredr()->page_scan_repetition_mode().value(),
+            kPageScanRepMode);
+  ASSERT_EQ(peer().bredr()->services().size(), 1u);
+  ASSERT_EQ(peer().bredr()->services().count(kServiceUuid), 1u);
+
+  ASSERT_TRUE(peer().MutBrEdr().SetBondData(kLTK));
+
+  bool listener_notified = false;
+  set_notify_listeners_cb(
+      [&](auto&, Peer::NotifyListenersChange) { listener_notified = true; });
+
+  // Inquiry results are unauthenticated and shouldn't update bonded peers.
+  const StaticByteBuffer kBondedEirData(
+      0x03,  // Length
+      static_cast<uint8_t>(DataType::kComplete16BitServiceUuids),
+      0x02,
+      0x11);
+  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter>
+      bonded_eirep;
+  bonded_eirep.view().num_responses().Write(1);
+  bonded_eirep.view().bd_addr().CopyFrom(peer().address().value().view());
+  bonded_eirep.view().class_of_device().BackingStorage().WriteUInt(0x000200);
+  bonded_eirep.view().clock_offset().valid().Write(true);
+  bonded_eirep.view().clock_offset().clock_offset().Write(0x4321);
+  bonded_eirep.view().page_scan_repetition_mode().Write(
+      pw::bluetooth::emboss::PageScanRepetitionMode::R2_);
+  bonded_eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
+      ::emboss::support::ReadOnlyContiguousBuffer(&kBondedEirData),
+      kBondedEirData.size());
+  peer().MutBrEdr().SetInquiryData(bonded_eirep.view());
+
+  EXPECT_EQ(peer().bredr()->device_class().value(), kDeviceClass);
+  EXPECT_EQ(peer().bredr()->clock_offset().value(), kClockOffset);
+  EXPECT_EQ(peer().bredr()->page_scan_repetition_mode().value(),
+            kPageScanRepMode);
+  EXPECT_EQ(peer().bredr()->services().size(), 1u);
+  EXPECT_EQ(peer().bredr()->services().count(kServiceUuid), 1u);
+  EXPECT_FALSE(listener_notified);
+}
+
 TEST_F(PeerTest, BrEdrDataSetEirDataDoesUpdatePeerName) {
   peer().MutBrEdr();  // Initialize BrEdrData.
   ASSERT_FALSE(peer().name().has_value());

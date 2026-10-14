@@ -527,6 +527,13 @@ void Peer::BrEdrData::SetInquiryData(
   // with throttling to avoid spamming.
   peer_->SetRssiInternal(rssi);
 
+  // Do not update the data of bonded peers because inquiry results are
+  // unauthenticated.
+  if (peer_->bonded()) {
+    peer_->OnPeerUpdate();
+    return;
+  }
+
   page_scan_rep_mode_ = page_scan_rep_mode;
   clock_offset_ =
       pw::bytes::ConvertOrderFrom(cpp20::endian::little, clock_offset) &
@@ -551,6 +558,11 @@ void Peer::BrEdrData::SetInquiryData(
 bool Peer::BrEdrData::SetEirData(const ByteBuffer& eir) {
   PW_DCHECK(eir.size());
 
+  // Inquiry results are unauthenticated and shouldn't update bonded peers.
+  if (peer_->bonded()) {
+    return false;
+  }
+
   // TODO(armansito): Validate that the EIR data is not malformed?
   SupplementDataReader reader(eir);
   DataType type;
@@ -559,12 +571,8 @@ bool Peer::BrEdrData::SetEirData(const ByteBuffer& eir) {
   while (reader.GetNextField(&type, &data)) {
     if (type == DataType::kCompleteLocalName) {
       // TODO(armansito): Parse more fields.
-      // Do not update the name of bonded peers because inquiry results are
-      // unauthenticated.
-      if (!peer_->bonded()) {
-        changed = peer_->RegisterNameInternal(
-            data.ToString(), Peer::NameSource::kInquiryResultComplete);
-      }
+      changed = peer_->RegisterNameInternal(
+          data.ToString(), Peer::NameSource::kInquiryResultComplete);
     } else if (type == DataType::kIncomplete16BitServiceUuids ||
                type == DataType::kComplete16BitServiceUuids) {
       // TODO(fxbug.dev/42082102): Consider adding 32-bit and 128-bit UUIDs to
