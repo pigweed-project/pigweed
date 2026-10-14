@@ -98,7 +98,8 @@ TEST_F(StreamTest, Seek_OutOfBounds) {
   buf.PushFrontChunk(MakeChunk(16, kPoisonByte));
   Stream writer(buf);
   EXPECT_EQ(writer.Seek(-1), pw::Status::OutOfRange());
-  EXPECT_EQ(writer.Seek(buf.size()), pw::Status::OutOfRange());
+  EXPECT_EQ(writer.Seek(static_cast<ptrdiff_t>(buf.size())),
+            pw::Status::OutOfRange());
 }
 
 TEST_F(StreamTest, Seek_SingleChunkMultibuf_Succeeds) {

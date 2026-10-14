@@ -128,7 +128,6 @@ cc_library(
 pw_cc_test(
     name = "header_chunk_region_tracker_test",
     srcs = ["header_chunk_region_tracker_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":v1",
         "//pw_allocator:testing",
@@ -233,7 +232,6 @@ cc_library(
     name = "allocator_async",
     srcs = ["allocator_async.cc"],
     hdrs = ["public/pw_multibuf/v1/allocator_async.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -246,7 +244,6 @@ cc_library(
 pw_cc_test(
     name = "allocator_async_test",
     srcs = ["allocator_async_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":allocator_async",
         ":v1",
@@ -262,7 +259,6 @@ cc_library(
     name = "simple_allocator",
     srcs = ["simple_allocator.cc"],
     hdrs = ["public/pw_multibuf/v1/simple_allocator.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -288,7 +284,6 @@ filegroup(
 pw_cc_test(
     name = "simple_allocator_test",
     srcs = [":simple_allocator_test_srcs"],
-    features = ["-conversion_warnings"],
     deps = [
         ":v1",
         "//pw_allocator:null_allocator",
@@ -313,7 +308,6 @@ cc_library(
 pw_cc_test(
     name = "stream_test",
     srcs = ["stream_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":chunk_testing",
         ":stream",
@@ -353,7 +347,6 @@ filegroup(
 pw_cc_test(
     name = "from_span_test",
     srcs = [":from_span_test_srcs"],
-    features = ["-conversion_warnings"],
     deps = [
         ":v1",
         "//pw_allocator:testing",
