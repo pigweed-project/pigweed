@@ -1,0 +1,462 @@
+=====================================
+What's new in Pigweed: September 2026
+=====================================
+.. changelog_highlights_start
+
+Highlights:
+
+* :ref:`changelog-2026-09-rust-pw-unit-test` - Write Rust unit tests once and
+  run them on host or on device with the new ``pw_rust_test`` macro in
+  ``pw_unit_test``.
+
+* :ref:`changelog-2026-09-net-pw-transport` - Build reliable, asynchronous
+  datagram pipelines with zero-copy buffer reservations using the new
+  ``pw_transport`` module.
+
+* :ref:`changelog-2026-09-async-shared-mutex` - Synchronize concurrent readers
+  and exclusive writers with the new ``pw::sync::SharedMutex`` primitive.
+
+* :ref:`changelog-2026-09-rust-pw-sync-mutex` - Synchronize shared state in
+  embedded Rust applications with the new ``pw_sync_mutex`` crate.
+
+.. changelog_highlights_end
+
+---------------------
+Async and concurrency
+---------------------
+
+.. _changelog-2026-09-async-shared-mutex:
+
+Reader-writer synchronization with pw::sync::SharedMutex
+========================================================
+The new ``pw::sync::SharedMutex`` is a ``std::shared_mutex``-compatible
+reader-writer lock: multiple readers may hold it concurrently, writers get
+exclusive access, and a waiting writer blocks new readers to prevent writer
+starvation. It is built on ``pw::sync::Mutex`` and
+``pw::sync::ThreadNotification``, so it works on any target that supports those
+primitives. The new ``pw::sync::SharedLockable`` and
+``pw::sync::ExclusiveLockable`` adapters expose the reader and writer sides as
+``pw::sync::VirtualBasicLockable`` locks. CLs: `1 <https://pwrev.dev/364396>`__
+
+.. code-block:: c++
+
+   #include <mutex>
+   #include <shared_mutex>
+
+   #include "pw_sync/shared_mutex.h"
+
+   pw::sync::SharedMutex shared_mutex;
+
+   int ReadData() {
+     std::shared_lock lock(shared_mutex);
+     return ReadSharedState();
+   }
+
+   void WriteData(int value) {
+     std::lock_guard lock(shared_mutex);
+     WriteSharedState(value);
+   }
+
+.. _changelog-2026-09-async-coro-future:
+
+Coroutines as futures in pw_async2
+==================================
+``pw::async2::Coro<T>`` now implements the ``pw::async2::Future`` concept,
+unifying C++20 coroutines with the rest of the ``pw_async2`` future ecosystem.
+Allocation failure handling moves from the task layer to the future itself via
+``Coro::MakeFallible()``, and ``CoroTask`` and ``FallibleCoroTask`` are now
+type aliases for ``pw::async2::FutureTask`` (which now supports default
+construction and reassignment between runs). CLs: `1 <https://pwrev.dev/483110>`__, `2 <https://pwrev.dev/488969>`__, `3 <https://pwrev.dev/486129>`__, `4 <https://pwrev.dev/483329>`__
+
+.. code-block:: c++
+
+   #include "pw_async2/coro.h"
+
+   // Resolve with a fallback status if the coroutine frame cannot be allocated:
+   auto task = dispatcher.Post(
+       allocator,
+       MyCoroutine(allocator).MakeFallible(pw::Status::ResourceExhausted()));
+
+.. _changelog-2026-09-async-context-is-running-on:
+
+Verify active dispatcher with Context::IsRunningOn
+==================================================
+``pw::async2::Context`` now provides ``IsRunningOn(const Dispatcher&)``, which
+lets futures and tasks verify that they are being pended on the expected
+dispatcher without exposing a mutable ``Dispatcher&``. CLs: `1 <https://pwrev.dev/478267>`__
+
+.. _changelog-2026-09-async-value-future-cancel:
+
+Explicit cancellation with ValueFuture::Cancel in pw_async2
+===========================================================
+``pw::async2::ValueFuture`` now has a ``Cancel()`` method that unregisters a
+pending future from its provider and resets its state. Classes derived from
+``ValueFuture`` should call ``Cancel()`` in their destructors so that a
+concurrent provider cannot touch derived members while they are being
+destroyed. CLs: `1 <https://pwrev.dev/472186>`__
+
+.. _changelog-2026-09-async-scoped-locker-adopt-lock:
+
+std::adopt_lock support in pw::ScopedLocker
+===========================================
+``pw::ScopedLocker`` now accepts ``std::adopt_lock``, so a lock that was
+already acquired (for example, with ``try_lock()``) is released automatically
+at scope exit while remaining visible to static thread safety analysis. A new
+deduction guide also makes the template argument optional. CLs: `1 <https://pwrev.dev/446252>`__
+
+.. code-block:: c++
+
+   #include <mutex>
+
+   #include "pw_sync/scoped_locker.h"
+
+   bool SetValue(int value, bool may_block) PW_LOCKS_EXCLUDED(lock_) {
+     if (may_block) {
+       lock_.lock();
+     } else if (!lock_.try_lock()) {
+       return false;
+     }
+     // Release the already-held lock at scope exit:
+     pw::ScopedLocker locker(lock_, std::adopt_lock);
+     value_ = value;
+     return true;
+   }
+
+-------------
+Build systems
+-------------
+
+.. _changelog-2026-09-build-pw-hermetic-cc-library:
+
+Hermetic C/C++ libraries with pw_hermetic_cc_library
+====================================================
+The new ``pw_hermetic_cc_library`` Bazel rule produces an
+incrementally-linked hermetic C/C++ static library. It compiles ``srcs``
+together with its private ``deps`` into a single relocatable object
+(``ld -r``), uses ``objcopy`` to localize every symbol not listed in
+``global_symbols``, and checks that any remaining undefined symbols match the
+``undefined_symbols`` allowlist. CLs: `1 <https://pwrev.dev/430932>`__
+
+.. code-block:: bazel
+
+   load("@pigweed//pw_build:pw_hermetic_cc_library.bzl", "pw_hermetic_cc_library")
+
+   pw_hermetic_cc_library(
+       name = "my_hermetic_lib",
+       srcs = ["lib.cc"],
+       hdrs = ["public/my_lib/lib.h"],
+       includes = ["public"],
+       deps = [":private_dependency"],
+       # Only these symbols stay globally visible:
+       global_symbols = [
+           "my_lib_exported_foo",
+           "my_lib_exported_bar",
+       ],
+       # External symbols this library may reference (wildcards allowed):
+       undefined_symbols = [
+           "malloc",
+           "free",
+           "memset",
+           "memcpy",
+       ],
+   )
+
+---------------------------------
+C++ data structures and utilities
+---------------------------------
+
+.. _changelog-2026-09-cpp-enum-traits:
+
+Compile-time metadata and validation with pw::EnumTraits
+========================================================
+Enums declared with ``PW_ENUM`` now get a generated ``pw::EnumTraits``
+specialization in ``pw_enum/traits.h``. The traits expose compile-time metadata
+such as ``kValues``, ``kDistinctValueCount``, ``kMin``, ``kMax``, and
+``kIsContiguous``, plus ``IsValid()`` and ``ToString()``. The new
+``pw::IsValidEnum`` helper validates an integer from the wire or another
+untrusted source before it is cast to the enum, and
+``pw::has_enum_to_string_v`` reports whether an enum supports string
+conversion. CLs: `1 <https://pwrev.dev/490232>`__, `2 <https://pwrev.dev/483949>`__
+
+.. code-block:: c++
+
+   #include "pw_enum/traits.h"
+
+   // Validate before casting so out-of-range values never become enumerators:
+   pw::Result<MyEnum> DecodeMyEnum(uint32_t wire_value) {
+     if (!pw::IsValidEnum<MyEnum>(wire_value)) {
+       return pw::Status::DataLoss();
+     }
+     return static_cast<MyEnum>(wire_value);
+   }
+
+.. _changelog-2026-09-cpp-forward-list:
+
+Dynamic singly-linked list with pw::ForwardList
+===============================================
+The new ``pw::ForwardList<T>`` in ``pw_containers`` is a singly-linked list
+whose nodes are allocated from a ``pw::Allocator``. Its interface mirrors
+``std::forward_list``, and fallible ``try_*`` methods such as
+``try_push_front`` and ``try_emplace_after`` return ``false`` on allocation
+failure instead of crashing. CLs: `1 <https://pwrev.dev/354134>`__
+
+.. code-block:: c++
+
+   #include "pw_containers/forward_list.h"
+
+   pw::ForwardList<int> list(allocator);
+   if (!list.try_push_front(42)) {
+     // Handle allocation failure.
+   }
+
+-------------------------------
+Data encoding and serialization
+-------------------------------
+
+.. _changelog-2026-09-data-exact-fit-buffers:
+
+Exact-fit buffer encoding in pw_protobuf
+========================================
+``pw::protobuf::MemoryEncoder`` and ``StreamEncoder`` can now encode into a
+buffer that exactly matches the message's wire size, including empty messages
+into 0-byte buffers and nested submessages without varint scratch padding. This
+removes the extra 16 bytes that ``pw::rpc::PwpbSerde::EncodedSizeBytes``
+previously added when sizing RPC buffers. CLs: `1 <https://pwrev.dev/486190>`__
+
+---------------
+Developer tools
+---------------
+
+.. _changelog-2026-09-dev-gn-gen-ccache:
+
+Automatic ccache support in pw_presubmit GN builds
+==================================================
+``pw_presubmit`` now sets ``pw_command_launcher = "ccache"`` during ``gn_gen``
+whenever ``ccache`` is on ``PATH`` and no command launcher is already
+configured. This enables compiler caching across Linux, Windows, and macOS,
+delivering 14% to 30% speedups on upstream Pigweed GN presubmit builders
+and saving up to 5 minutes per tryjob. CLs: `1 <https://pwrev.dev/464766>`__
+
+-----------------
+Memory management
+-----------------
+
+.. _changelog-2026-09-memory-pw-buf:
+
+pw_multibuf integration and unowned views in pw_buf
+===================================================
+``pw::MultiBuf`` now integrates directly with ``pw::Buf`` and ``pw::ConstBuf``
+via new ``Insert``, ``PushBack``, and ``Release`` methods. ``pw_buf`` also adds
+``pw::ConstBuf::Unowned`` for read-only views over existing memory,
+``AllocateCopy`` and ``AllocateFill`` helpers, and ``nullptr`` comparisons. CLs: `1 <https://pwrev.dev/467486>`__, `2 <https://pwrev.dev/413992>`__, `3 <https://pwrev.dev/473765>`__, `4 <https://pwrev.dev/476365>`__
+
+.. code-block:: c++
+
+   #include "pw_buf/buf.h"
+
+   pw::Buf buf = pw::Buf::TryAllocate(allocator, 100);
+   if (buf != nullptr) {
+     multibuf.PushBack(std::move(buf));
+   }
+
+   // A zero-copy, read-only view over existing memory:
+   pw::ConstBuf view = pw::ConstBuf::Unowned(bytes);
+
+----------
+Networking
+----------
+
+.. _changelog-2026-09-net-pw-transport:
+
+Async datagram sockets with pw_transport
+========================================
+The new ``pw_transport`` module defines interfaces for async-native,
+datagram-oriented, reliable sockets built on ``pw_async2``. A
+``pw::transport::ReliableDatagramSocket`` reads and writes ``pw_buf`` buffers
+for zero-copy I/O. Writes are two-phase: ``ReserveWrite`` returns a future that
+resolves to a ``pw::transport::WriteReservation`` once transport buffer space
+is available, so a full outgoing queue naturally applies backpressure. Sockets
+are provisioned by a ``pw::transport::ReliableDatagramConnector``, which
+establishes them, or a ``pw::transport::ReliableDatagramListener``, which
+accepts them from a peer. CLs: `1 <https://pwrev.dev/477385>`__, `2 <https://pwrev.dev/483709>`__
+
+.. code-block:: c++
+
+   #include "pw_status/try.h"
+   #include "pw_transport/transport.h"
+
+   pw::async2::Coro<pw::Status> SendAndReceive(
+       pw::async2::CoroContext,
+       pw::transport::ReliableDatagramConnector& connector) {
+     PW_CO_TRY_ASSIGN(pw::transport::ReliableDatagramSocket socket,
+                      co_await connector.Connect());
+
+     // Reserve space in an outgoing transport buffer:
+     std::optional<pw::transport::WriteReservation> reservation =
+         co_await socket.ReserveWrite(kPayload.size());
+     if (!reservation.has_value()) {
+       co_return pw::Status::Aborted();
+     }
+
+     // Serialize directly into the transport buffer, then commit it:
+     SerializePayload(pw::ByteSpan(*reservation));
+     if (!reservation->Commit(kPayload.size())) {
+       co_return pw::Status::Aborted();
+     }
+
+     // Read the peer's response without copying:
+     pw::ConstBuf response = co_await socket.Read();
+     if (response == nullptr) {
+       co_return pw::Status::Aborted();
+     }
+
+     ProcessResponse(response);
+     co_return pw::OkStatus();
+   }
+
+.. _changelog-2026-09-net-dump-hdlc-frames:
+
+Inspect HDLC streams with dump_hdlc_frames
+==========================================
+The new ``dump_hdlc_frames`` tool in ``pw_hdlc`` decodes a raw HDLC byte
+stream, such as a UART capture, and prints each frame's address, control byte,
+length, and payload, with optional hex dumps and per-address payload
+extraction. CLs: `1 <https://pwrev.dev/480025>`__
+
+.. code-block:: console
+
+   $ bazelisk --quiet run //pw_hdlc/py:dump_hdlc_frames -- < raw_uart.bin
+   [0000] OK addr=0x01 ctrl=0x03 len=5   'hello'
+   [0001] OK addr=0x01 ctrl=0x03 len=5   'world'
+
+---
+RPC
+---
+
+.. _changelog-2026-09-rpc-grpc-space-available:
+
+Send queue space-available callback in pw_grpc
+==============================================
+``pw::grpc::SendQueue`` and ``pw::grpc::DefaultSendQueue`` now provide
+``set_on_space_available()``, which registers a callback that fires when buffer
+space frees up after the send queue has filled, simplifying producer-side flow
+control. CLs: `1 <https://pwrev.dev/480485>`__
+
+----
+Rust
+----
+
+.. _changelog-2026-09-rust-pw-unit-test:
+
+pw_unit_test support for Rust
+=============================
+``pw_unit_test`` now supports Rust unit tests on both host and embedded
+targets. The new ``pw_rust_test`` Bazel macro in
+``@pigweed//pw_unit_test:pw_rust_test.bzl`` produces a host ``rust_test``
+executable (``<name>.rust_test``), a device library that registers the tests
+over C FFI (``<name>.lib``), and a device runner (``<name>.pw_cc_test``) that
+executes them with ``pw_unit_test:light`` on platforms that satisfy
+``@pigweed//pw_build/constraints/rust:enabled``. Tests use the standard
+``#[cfg(test)]`` layout with ``assert!``, ``assert_eq!``, and ``assert_ne!``
+from ``pw_unit_test``. CLs: `1 <https://pwrev.dev/450252>`__
+
+.. code-block:: rs
+
+   pub fn add(left: u64, right: u64) -> u64 {
+       left + right
+   }
+
+   #[cfg(test)]
+   mod tests {
+       use super::*;
+       use pw_unit_test::{assert, assert_eq, assert_ne, test};
+
+       #[test]
+       fn test_add() {
+           let result = add(2, 2);
+           assert_eq!(result, 4);
+       }
+   }
+
+.. code-block:: bazel
+
+   load("@pigweed//pw_unit_test:pw_rust_test.bzl", "pw_rust_test")
+
+   pw_rust_test(
+       name = "my_rust_test",
+       srcs = ["my_rust_test.rs"],
+   )
+
+.. _changelog-2026-09-rust-pw-sync-mutex:
+
+Mutex synchronization primitives in Rust with pw_sync_mutex
+===========================================================
+The new ``pw_sync_mutex`` Rust crate provides ``Mutex<T, Lock>``, a mutual
+exclusion primitive generic over a ``RawMutex`` or ``RawTimedMutex`` backend
+lock, with ``try_lock_for`` and ``try_lock_until`` for timed acquisition. The
+``SystemMutex<T>`` and ``SystemTimedMutex<T>`` aliases use the backend selected
+by the ``//pw_sync/rust/pw_sync_mutex:pw_sync_mutex_backend`` label flag, and
+``SingleThreadMutex<T>`` covers single-threaded contexts. Backends are provided
+for ``std``, FreeRTOS, and ``pw_kernel``. CLs: `1 <https://pwrev.dev/440233>`__
+
+.. code-block:: rs
+
+   use pw_sync_mutex::SystemMutex;
+
+   let lock = SystemMutex::new(0);
+   {
+       let mut data = lock.lock();
+       *data += 1;
+   }
+   assert_eq!(*lock.lock(), 1);
+
+.. _changelog-2026-09-rust-pw-assert:
+
+Swappable backend implementations for Rust pw_assert
+====================================================
+The Rust ``pw_assert`` crate is now a facade: its macros are separated from the
+backend selected by the ``//pw_assert/rust:pw_assert_backend`` label flag,
+which defaults to ``pw_assert_backend_pw_log``. The new
+``pw_assert_backend_std`` backend forwards to ``std::panic!``,
+``std::assert!``, ``std::assert_eq!``, and ``std::assert_ne!``, which is handy
+for host tests. ``pw_assert`` also gains ``debug_eq!`` and ``debug_ne!``
+macros. CLs: `1 <https://pwrev.dev/469425>`__, `2 <https://pwrev.dev/462945>`__, `3 <https://pwrev.dev/469727>`__, `4 <https://pwrev.dev/457565>`__
+
+.. code-block:: none
+
+   # In your project's .bazelrc, assert through the Rust standard library:
+   common --@pigweed//pw_assert/rust:pw_assert_backend=@pigweed//pw_assert/rust:pw_assert_backend_std
+
+------------
+Tokenization
+------------
+
+.. _changelog-2026-09-token-format-reserve:
+
+Faster C++ detokenization in pw_tokenizer
+=========================================
+``pw::tokenizer::FormatString::Format`` now reserves its output segment vector
+up front instead of growing it per argument. On device, end-to-end
+``Detokenize`` calls on one- and two-argument messages run 45–53% faster, and
+per-call heap allocations drop by up to 80% for eight-argument messages. CLs: `1 <https://pwrev.dev/477545>`__
+
+------------------------
+Toolchains and compilers
+------------------------
+
+.. _changelog-2026-09-toolchain-warning-constraint-facades:
+
+Compiler warning constraint facades for external toolchains
+===========================================================
+Warning arguments in ``//pw_toolchain/cc/args`` now gate on ``label_flag``
+constraint facades (``compiler_is_clang``, ``compiler_is_gcc``,
+``rules_go_unsupported_feature``, and ``rules_rust_unsupported_feature``)
+instead of hardcoded Pigweed capabilities. Projects that build with an external
+toolchain, such as Zephyr's, can point each facade at their own compiler
+feature, or at the new ``:always_true`` constraint, to adopt Pigweed's warning
+flags without toolchain feature validation errors. CLs: `1 <https://pwrev.dev/466825>`__
+
+.. code-block:: none
+
+   # In your project's .bazelrc, for a toolchain known to be Clang:
+   common --@pigweed//pw_toolchain/cc/args:compiler_is_clang=@pigweed//pw_toolchain/cc/args:always_true
