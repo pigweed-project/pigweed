@@ -98,14 +98,19 @@
 // absolutely necessary -- in headers, constexpr contexts, or in rare cases
 // where the call site overhead of a full PW_CHECK must be avoided. Use
 // PW_CHECK_*() whenever possible.
-#define PW_ASSERT_NOTNULL(ptr)                                     \
-  ([](auto&& _pw_assert_notnull_ptr) constexpr -> decltype(auto) { \
-    if (_pw_assert_notnull_ptr == nullptr) {                       \
-      PW_ASSERT_failed_in_constant_expression_();                  \
-      PW_ASSERT_HANDLE_FAILURE(#ptr " != nullptr");                \
-    }                                                              \
-    return static_cast<decltype(_pw_assert_notnull_ptr)&&>(        \
-        _pw_assert_notnull_ptr);                                   \
+//
+// [[maybe_unused]] on the lambda parameter suppresses Clang-Tidy's
+// cppcoreguidelines-missing-std-forward check (which does not inspect generic
+// lambda bodies and cannot be suppressed with NOLINT inside a macro).
+#define PW_ASSERT_NOTNULL(ptr)                                  \
+  ([]([[maybe_unused]] auto&& _pw_assert_notnull_ptr) constexpr \
+       -> decltype(auto) {                                      \
+    if (_pw_assert_notnull_ptr == nullptr) {                    \
+      PW_ASSERT_failed_in_constant_expression_();               \
+      PW_ASSERT_HANDLE_FAILURE(#ptr " != nullptr");             \
+    }                                                           \
+    return static_cast<decltype(_pw_assert_notnull_ptr)&&>(     \
+        _pw_assert_notnull_ptr);                                \
   }(ptr))
 
 #else
