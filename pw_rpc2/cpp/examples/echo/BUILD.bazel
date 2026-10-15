@@ -122,7 +122,7 @@ pw_cc_binary(
         "//pw_rpc2/cpp:status",
         "//pw_status",
         "//pw_transport/cpp:framed_tcp",
-        "//pw_transport/cpp:pw_transport",
+        "//pw_transport/cpp:socket",
     ],
 )
 
@@ -143,7 +143,7 @@ pw_cc_binary(
         "//pw_rpc2/cpp",
         "//pw_rpc2/cpp:status",
         "//pw_transport/cpp:framed_tcp",
-        "//pw_transport/cpp:pw_transport",
+        "//pw_transport/cpp:socket",
     ],
 )
 

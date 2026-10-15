@@ -170,7 +170,7 @@ pw_source_set("handshake") {
   public_deps = [
     ":packet",
     ":status",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
     dir_pw_buf,
   ]
@@ -246,7 +246,7 @@ pw_source_set("cpp") {
                   "$dir_pw_containers:intrusive_forward_list",
                   "$dir_pw_sync:interrupt_spin_lock",
                   "$dir_pw_sync:lock_annotations",
-                  "$dir_pw_transport/cpp:pw_transport",
+                  "$dir_pw_transport/cpp:socket",
                   "$pw_external_fuchsia:stdcompat",
                   dir_pw_allocator,
                   dir_pw_async2,
@@ -284,7 +284,7 @@ pw_source_set("test_utils") {
     "$dir_pw_async2:value_future",
     "$dir_pw_containers:inline_deque",
     "$dir_pw_sync:interrupt_spin_lock",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_allocator,
     dir_pw_async2,
     dir_pw_buf,
@@ -308,7 +308,7 @@ pw_test("handshake_test") {
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
     dir_pw_bytes,
   ]
@@ -324,7 +324,7 @@ pw_test("call_test") {
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
   ]
   sources = [ "call_test.cc" ]
 }
@@ -339,7 +339,7 @@ pw_test("rpc_reader_writer_test") {
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_bytes,
   ]
   sources = [ "rpc_reader_writer_test.cc" ]
@@ -356,7 +356,7 @@ pw_test("server_dispatch_test") {
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
     dir_pw_bytes,
   ]
@@ -375,7 +375,7 @@ pw_test("connection_task_test") {
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
     dir_pw_bytes,
     dir_pw_enum,
@@ -400,7 +400,7 @@ pw_test("server_test") {
     "$dir_pw_async2:value_future",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
     dir_pw_span,
   ]
@@ -430,7 +430,7 @@ pw_test("internal_server_call_test") {
     "$dir_pw_allocator:testing",
     "$dir_pw_assert:check",
     "$dir_pw_async2:testing",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
   ]
   sources = [ "internal_server_call_test.cc" ]
@@ -446,7 +446,7 @@ pw_test("method_test") {
     "$dir_pw_allocator:testing",
     "$dir_pw_assert:check",
     "$dir_pw_async2:testing",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
     dir_pw_buf,
     dir_pw_bytes,
@@ -476,7 +476,7 @@ pw_test("server_call_test") {
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
   ]
   sources = [ "server_call_test.cc" ]
@@ -494,7 +494,7 @@ pw_test("service_client_test") {
     "$dir_pw_allocator:testing",
     "$dir_pw_assert:check",
     "$dir_pw_async2:testing",
-    "$dir_pw_transport/cpp:pw_transport",
+    "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
     dir_pw_bytes,
     dir_pw_enum,

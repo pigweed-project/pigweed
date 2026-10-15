@@ -27,7 +27,7 @@ hosts_lin_mac = {
 }
 
 cc_library(
-    name = "pw_transport",
+    name = "socket",
     srcs = ["socket.cc"],
     hdrs = [
         "public/pw_transport/socket.h",
@@ -48,6 +48,12 @@ cc_library(
     ],
 )
 
+# Deprecated alias; remove once downstream projects migrate to :socket.
+alias(
+    name = "pw_transport",
+    actual = ":socket",
+)
+
 # Intended for tests and examples, so restricted to upstream Pigweed.
 cc_library(
     name = "framed_tcp",
@@ -57,7 +63,7 @@ cc_library(
     target_compatible_with = select(hosts_lin_mac),
     visibility = ["//:__subpackages__"],
     deps = [
-        ":pw_transport",
+        ":socket",
         "//pw_allocator",
         "//pw_assert:check",
         "//pw_async2:value_future",
@@ -88,7 +94,7 @@ pw_cc_test(
     name = "transport_test",
     srcs = ["transport_test.cc"],
     deps = [
-        ":pw_transport",
+        ":socket",
         "//pw_allocator:testing",
         "//pw_async2:dispatcher",
         "//pw_async2:testing",
@@ -103,7 +109,7 @@ pw_cc_test(
     target_compatible_with = select(hosts_lin_mac),
     deps = [
         ":framed_tcp",
-        ":pw_transport",
+        ":socket",
         "//pw_allocator:libc_allocator",
         "//pw_allocator:synchronized_allocator",
         "//pw_allocator:testing",

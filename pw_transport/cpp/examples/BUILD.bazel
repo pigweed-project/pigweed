@@ -40,7 +40,7 @@ pw_cc_binary(
         "//pw_result",
         "//pw_string:builder",
         "//pw_transport/cpp:framed_tcp",
-        "//pw_transport/cpp:pw_transport",
+        "//pw_transport/cpp:socket",
     ],
 )
 
@@ -61,7 +61,7 @@ pw_cc_binary(
         "//pw_result",
         "//pw_string:builder",
         "//pw_transport/cpp:framed_tcp",
-        "//pw_transport/cpp:pw_transport",
+        "//pw_transport/cpp:socket",
     ],
 )
 

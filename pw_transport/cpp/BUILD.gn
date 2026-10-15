@@ -24,7 +24,7 @@ config("public_include_path") {
   visibility = [ ":*" ]
 }
 
-pw_source_set("pw_transport") {
+pw_source_set("socket") {
   public_configs = [ ":public_include_path" ]
   public = [
     "public/pw_transport/socket.h",
@@ -50,7 +50,7 @@ pw_source_set("framed_tcp") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_transport/framed_tcp.h" ]
   public_deps = [
-    ":pw_transport",
+    ":socket",
     "$dir_pw_allocator",
     "$dir_pw_async2:value_future",
     "$dir_pw_result",
@@ -76,7 +76,7 @@ pw_source_set("framed_tcp") {
 pw_test("transport_test") {
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
   deps = [
-    ":pw_transport",
+    ":socket",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:dispatcher",
     "$dir_pw_async2:testing",
@@ -93,7 +93,7 @@ pw_test("framed_tcp_test") {
               pw_thread_THREAD_BACKEND != ""
   deps = [
     ":framed_tcp",
-    ":pw_transport",
+    ":socket",
     "$dir_pw_allocator:libc_allocator",
     "$dir_pw_allocator:synchronized_allocator",
     "$dir_pw_allocator:testing",

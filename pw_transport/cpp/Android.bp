@@ -17,7 +17,7 @@ package {
 }
 
 cc_library_static {
-    name: "pw_transport",
+    name: "pw_transport.socket",
     defaults: [
         "pw_android_common_backends",
         "pw_android_common_target_support",

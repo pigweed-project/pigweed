@@ -14,7 +14,7 @@
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 
-pw_add_library(pw_transport.cpp STATIC
+pw_add_library(pw_transport.cpp.socket STATIC
   HEADERS
     public/pw_transport/socket.h
     public/pw_transport/transport.h
@@ -39,7 +39,7 @@ pw_add_test(pw_transport.cpp.transport_test
   SOURCES
     transport_test.cc
   PRIVATE_DEPS
-    pw_transport.cpp
+    pw_transport.cpp.socket
     pw_allocator.testing
     pw_async2.dispatcher
     pw_async2.testing

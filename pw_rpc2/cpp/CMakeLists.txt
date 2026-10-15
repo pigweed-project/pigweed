@@ -179,7 +179,7 @@ pw_add_library(pw_rpc2.cpp._handshake STATIC
     pw_buf
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._status
-    pw_transport.cpp
+    pw_transport.cpp.socket
   PRIVATE_DEPS
     pw_assert.check
     pw_bytes
@@ -251,7 +251,7 @@ pw_add_library(pw_rpc2.cpp STATIC
     pw_sync.interrupt_spin_lock
     pw_sync.lock_annotations
     pw_third_party.fuchsia.stdcompat
-    pw_transport.cpp
+    pw_transport.cpp.socket
   PRIVATE_DEPS
     pw_enum
     pw_log
@@ -292,7 +292,7 @@ pw_add_library(pw_rpc2.cpp._test_utils STATIC
     pw_rpc2.cpp._status
     pw_status
     pw_sync.interrupt_spin_lock
-    pw_transport.cpp
+    pw_transport.cpp.socket
     pw_unit_test
   PRIVATE_DEPS
     pw_log
@@ -312,7 +312,7 @@ pw_add_test(pw_rpc2.cpp.handshake_test
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._status
     pw_rpc2.cpp._test_utils
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
@@ -326,7 +326,7 @@ pw_add_test(pw_rpc2.cpp.call_test
     pw_async2.testing
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
@@ -342,7 +342,7 @@ pw_add_test(pw_rpc2.cpp.rpc_reader_writer_test
     pw_rpc2.cpp
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._test_utils
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
@@ -360,7 +360,7 @@ pw_add_test(pw_rpc2.cpp.server_dispatch_test
     pw_rpc2.cpp._handshake
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._test_utils
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
@@ -380,7 +380,7 @@ pw_add_test(pw_rpc2.cpp.connection_task_test
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._protocol_error
     pw_rpc2.cpp._test_utils
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
@@ -402,7 +402,7 @@ pw_add_test(pw_rpc2.cpp.server_test
     pw_span
     pw_thread.test_thread_context
     pw_thread.thread
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
@@ -431,7 +431,7 @@ pw_add_test(pw_rpc2.cpp.internal_server_call_test
     pw_async2.testing
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
@@ -449,7 +449,7 @@ pw_add_test(pw_rpc2.cpp.method_test
     pw_bytes
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
@@ -478,7 +478,7 @@ pw_add_test(pw_rpc2.cpp.server_call_test
     pw_rpc2.cpp
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._test_utils
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
@@ -499,7 +499,7 @@ pw_add_test(pw_rpc2.cpp.service_client_test
     pw_rpc2.cpp._protocol_error
     pw_rpc2.cpp._test_utils
     pw_status
-    pw_transport.cpp
+    pw_transport.cpp.socket
   GROUPS
     modules
     pw_rpc2
