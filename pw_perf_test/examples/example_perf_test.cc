@@ -29,7 +29,10 @@ void SimulateWork(size_t a, size_t b) {
 // DOCSTAG: [pw_perf_test_examples-simulate_work]
 
 // DOCSTAG: [pw_perf_test_examples-simple_example]
-PW_PERF_TEST_SIMPLE(SimpleFunction, SimulateWork, 2, 4);
+PW_PERF_TEST_SIMPLE(SimpleFunction,
+                    SimulateWork,
+                    static_cast<size_t>(2),
+                    static_cast<size_t>(4));
 // DOCSTAG: [pw_perf_test_examples-simple_example]
 
 // DOCSTAG: [pw_perf_test_examples-full_example]
@@ -43,7 +46,10 @@ PW_PERF_TEST(FunctionWithArgs, TestFunction, 2, 4);
 
 // DOCSTAG: [pw_perf_test_examples-lambda_example]
 PW_PERF_TEST_SIMPLE(
-    SimpleLambda, [](size_t a, size_t b) { SimulateWork(a, b); }, 2, 4);
+    SimpleLambda,
+    [](size_t a, size_t b) { SimulateWork(a, b); },
+    static_cast<size_t>(2),
+    static_cast<size_t>(4));
 
 PW_PERF_TEST(
     LambdaFunction,

@@ -226,7 +226,6 @@ cc_library(
 pw_cc_perf_test(
     name = "example_perf_test",
     srcs = ["examples/example_perf_test.cc"],
-    features = ["-conversion_warnings"],
 )
 
 sphinx_docs_library(
