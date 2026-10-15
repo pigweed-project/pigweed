@@ -52,7 +52,6 @@ cc_library(
     name = "socket_stream",
     srcs = ["socket_stream.cc"],
     hdrs = ["public/pw_stream/socket_stream.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     target_compatible_with = incompatible_with_mcu(unless_platform_has = ":socket_stream_compatible"),
@@ -84,7 +83,6 @@ cc_library(
     name = "std_file_stream",
     srcs = ["std_file_stream.cc"],
     hdrs = ["public/pw_stream/std_file_stream.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     target_compatible_with = incompatible_with_mcu(),
@@ -95,7 +93,6 @@ cc_library(
     name = "interval_reader",
     srcs = ["interval_reader.cc"],
     hdrs = ["public/pw_stream/interval_reader.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -145,7 +142,6 @@ pw_cc_test(
 pw_cc_test(
     name = "std_file_stream_test",
     srcs = ["std_file_stream_test.cc"],
-    features = ["-conversion_warnings"],
     target_compatible_with = incompatible_with_mcu(),
     deps = [
         ":std_file_stream",
@@ -181,7 +177,6 @@ pw_cc_test(
 pw_cc_test(
     name = "interval_reader_test",
     srcs = ["interval_reader_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":interval_reader",
         ":pw_stream",
@@ -192,7 +187,6 @@ pw_cc_test(
 pw_cc_test(
     name = "socket_stream_test",
     srcs = ["socket_stream_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":socket_stream",
         "//pw_result",

@@ -41,12 +41,13 @@ StatusWithSize StdFileReader::DoRead(ByteSpan dest) {
     return StatusWithSize::OutOfRange();
   }
 
-  stream_.read(reinterpret_cast<char*>(dest.data()), dest.size());
+  stream_.read(reinterpret_cast<char*>(dest.data()),
+               static_cast<std::streamsize>(dest.size()));
   if (stream_.bad()) {
     return StatusWithSize::Unknown();
   }
 
-  return StatusWithSize(stream_.gcount());
+  return StatusWithSize(static_cast<size_t>(stream_.gcount()));
 }
 
 Status StdFileReader::DoSeek(ptrdiff_t offset, Whence origin) {
@@ -61,8 +62,8 @@ Status StdFileReader::DoSeek(ptrdiff_t offset, Whence origin) {
 }
 
 size_t StdFileReader::DoTell() {
-  auto pos = static_cast<int>(stream_.tellg());
-  return pos < 0 ? kUnknownPosition : pos;
+  std::streamoff pos = stream_.tellg();
+  return pos < 0 ? kUnknownPosition : static_cast<size_t>(pos);
 }
 
 size_t StdFileReader::ConservativeLimit(LimitType limit) const {
@@ -86,7 +87,7 @@ size_t StdFileReader::ConservativeLimit(LimitType limit) const {
     return 0;
   }
   stream->seekg(start, std::ios::beg);
-  return end - start;
+  return end < start ? 0 : static_cast<size_t>(end - start);
 }
 
 Status StdFileWriter::DoWrite(ConstByteSpan data) {
@@ -94,7 +95,8 @@ Status StdFileWriter::DoWrite(ConstByteSpan data) {
     return Status::OutOfRange();
   }
 
-  if (stream_.write(reinterpret_cast<const char*>(data.data()), data.size())) {
+  if (stream_.write(reinterpret_cast<const char*>(data.data()),
+                    static_cast<std::streamsize>(data.size()))) {
     return OkStatus();
   }
 
@@ -109,8 +111,8 @@ Status StdFileWriter::DoSeek(ptrdiff_t offset, Whence origin) {
 }
 
 size_t StdFileWriter::DoTell() {
-  auto pos = static_cast<int>(stream_.tellp());
-  return pos < 0 ? kUnknownPosition : pos;
+  std::streamoff pos = stream_.tellp();
+  return pos < 0 ? kUnknownPosition : static_cast<size_t>(pos);
 }
 
 }  // namespace pw::stream

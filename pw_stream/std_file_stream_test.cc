@@ -169,7 +169,8 @@ TEST_F(StdFileStreamTest, SeekAtEnd) {
   EXPECT_EQ(read_offset, kTestData.size());
 
   // Seek backwards and read again to ensure seek at EOF works.
-  ASSERT_EQ(reader.Seek(-1 * read_buffer.size(), Stream::Whence::kEnd),
+  ASSERT_EQ(reader.Seek(-static_cast<ptrdiff_t>(read_buffer.size()),
+                        Stream::Whence::kEnd),
             OkStatus());
   ASSERT_EQ(reader.ConservativeReadLimit(), read_buffer.size());
   result = reader.Read(as_writable_bytes(span(read_buffer)));

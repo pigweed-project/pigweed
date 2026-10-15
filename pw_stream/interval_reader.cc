@@ -33,7 +33,8 @@ StatusWithSize IntervalReader::DoRead(ByteSpan destination) {
 
   // Seek the source reader to the `current_` offset of this IntervalReader
   // before reading.
-  Status status = source_reader_->Seek(current_, Whence::kBeginning);
+  Status status = source_reader_->Seek(static_cast<ptrdiff_t>(current_),
+                                       Whence::kBeginning);
   if (!status.ok()) {
     return StatusWithSize(status, 0);
   }
@@ -55,15 +56,15 @@ Status IntervalReader::DoSeek(ptrdiff_t offset, Whence origin) {
   // source reader stream.
   switch (origin) {
     case Whence::kBeginning:
-      absolute_position = offset + start_;
+      absolute_position = offset + static_cast<ptrdiff_t>(start_);
       break;
 
     case Whence::kCurrent:
-      absolute_position = current_ + offset;
+      absolute_position = static_cast<ptrdiff_t>(current_) + offset;
       break;
 
     case Whence::kEnd:
-      absolute_position = end_ + offset;
+      absolute_position = static_cast<ptrdiff_t>(end_) + offset;
       break;
   }
 
@@ -76,7 +77,7 @@ Status IntervalReader::DoSeek(ptrdiff_t offset, Whence origin) {
     return Status::InvalidArgument();
   }
 
-  current_ = absolute_position;
+  current_ = static_cast<size_t>(absolute_position);
   return OkStatus();
 }
 
