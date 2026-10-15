@@ -33,17 +33,6 @@ from typing import (
     TypeVar,
 )
 
-try:
-    # pylint: disable=wrong-import-position
-    import black
-
-    black_mode: black.Mode | None = black.Mode(string_normalization=False)
-
-    # pylint: enable=wrong-import-position
-except ImportError:
-    black = None  # type: ignore
-    black_mode = None
-
 _LOG = logging.getLogger(__name__)
 
 
@@ -457,7 +446,14 @@ def proto_repr(message, *, wrap: bool = True) -> str:
     """
     raw = f'{message.DESCRIPTOR.full_name}({", ".join(_proto_repr(message))})'
 
-    if wrap and black is not None and black_mode is not None:
-        return black.format_str(raw, mode=black_mode).strip()
+    if wrap:
+        try:
+            import black  # pylint: disable=import-outside-toplevel
+
+            return black.format_str(
+                raw, mode=black.Mode(string_normalization=False)
+            ).strip()
+        except ImportError:
+            pass
 
     return raw
