@@ -477,6 +477,11 @@ func TestManager_ListDashboardMonitorsParkedProjects(t *testing.T) {
 		t.Fatalf("Park failed: %v", err)
 	}
 
+	// Clear mockGit.ChangeIDs to verify List() uses the persisted LastKnownChangeID
+	// from worktrees.json rather than re-running git log / rev-list on parked branches.
+	delete(mockGit.ChangeIDs, res1.SlotPath)
+	delete(mockGit.ChangeIDs, "bt-proxy")
+
 	// Simulate reviewer leaving 3 unresolved comments on Gerrit while bt-proxy is PARKED!
 	mockGerrit.Statuses[cid] = ChangeStatus{
 		ChangeID:          cid,

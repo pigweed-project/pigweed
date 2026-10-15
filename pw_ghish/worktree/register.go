@@ -38,19 +38,47 @@ type gerritStatusAdapter struct {
 	rootCmd *cobra.Command
 }
 
-func (a *gerritStatusAdapter) QueryChangesByID(ctx context.Context, changeIDs []string) (map[string]ChangeStatus, error) {
-	res := make(map[string]ChangeStatus)
-	if len(changeIDs) == 0 {
-		return res, nil
-	}
+// maxGerritQueryBatchSize caps the number of `change:<id>` predicates per
+// Gerrit QueryChanges request so large fleets (e.g. 200+ parked projects)
+// never exceed Gerrit's index.maxTerms limit.
+const maxGerritQueryBatchSize = 30
 
+// BatchChangeIDQueries deduplicates non-empty Change-IDs and groups their
+// `change:<id>` predicates into `OR`-joined query strings of at most batchSize
+// terms each.
+func BatchChangeIDQueries(changeIDs []string, batchSize int) []string {
+	if batchSize <= 0 {
+		batchSize = maxGerritQueryBatchSize
+	}
 	var predicates []string
+	seen := make(map[string]bool, len(changeIDs))
 	for _, cid := range changeIDs {
-		if trimmed := strings.TrimSpace(cid); trimmed != "" {
-			predicates = append(predicates, fmt.Sprintf("change:%s", trimmed))
+		trimmed := strings.TrimSpace(cid)
+		if trimmed == "" || seen[trimmed] {
+			continue
 		}
+		seen[trimmed] = true
+		predicates = append(predicates, fmt.Sprintf("change:%s", trimmed))
 	}
 	if len(predicates) == 0 {
+		return nil
+	}
+
+	var queries []string
+	for start := 0; start < len(predicates); start += batchSize {
+		end := start + batchSize
+		if end > len(predicates) {
+			end = len(predicates)
+		}
+		queries = append(queries, strings.Join(predicates[start:end], " OR "))
+	}
+	return queries
+}
+
+func (a *gerritStatusAdapter) QueryChangesByID(ctx context.Context, changeIDs []string) (map[string]ChangeStatus, error) {
+	res := make(map[string]ChangeStatus)
+	queries := BatchChangeIDQueries(changeIDs, maxGerritQueryBatchSize)
+	if len(queries) == 0 {
 		return res, nil
 	}
 
@@ -59,30 +87,34 @@ func (a *gerritStatusAdapter) QueryChangesByID(ctx context.Context, changeIDs []
 		return res, err
 	}
 
-	query := strings.Join(predicates, " OR ")
-	opt := &gerrit.QueryChangeOptions{
-		QueryOptions: gerrit.QueryOptions{
-			Query: []string{query},
-		},
-		ChangeOptions: gerrit.ChangeOptions{
-			AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE"},
-		},
-	}
+	for _, query := range queries {
+		opt := &gerrit.QueryChangeOptions{
+			QueryOptions: gerrit.QueryOptions{
+				Query: []string{query},
+			},
+			ChangeOptions: gerrit.ChangeOptions{
+				AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE"},
+			},
+		}
 
-	changes, _, err := client.Changes.QueryChanges(ctx, opt)
-	if err != nil || changes == nil {
-		return res, err
-	}
+		changes, _, err := client.Changes.QueryChanges(ctx, opt)
+		if err != nil {
+			return res, err
+		}
+		if changes == nil {
+			continue
+		}
 
-	for _, c := range *changes {
-		res[c.ChangeID] = ChangeStatus{
-			ChangeID:          c.ChangeID,
-			Number:            c.Number,
-			Status:            c.Status,
-			CodeReviewScore:   pw_ghish.ExtractLabelScore(c.Labels, "Code-Review"),
-			CommitQueueScore:  pw_ghish.ExtractLabelScore(c.Labels, "Commit-Queue"),
-			UnresolvedThreads: c.UnresolvedCommentCount,
-			Subject:           c.Subject,
+		for _, c := range *changes {
+			res[c.ChangeID] = ChangeStatus{
+				ChangeID:          c.ChangeID,
+				Number:            c.Number,
+				Status:            c.Status,
+				CodeReviewScore:   pw_ghish.ExtractLabelScore(c.Labels, "Code-Review"),
+				CommitQueueScore:  pw_ghish.ExtractLabelScore(c.Labels, "Commit-Queue"),
+				UnresolvedThreads: c.UnresolvedCommentCount,
+				Subject:           c.Subject,
+			}
 		}
 	}
 	return res, nil

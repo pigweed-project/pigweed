@@ -242,6 +242,11 @@ code review state:
    PROJECT          SLOT   STATUS              GERRIT CL & DETAILS                                     RECOMMENDED ACTION
    bazel-cleanup    -      🚀 READY_TO_LAND    pwrev/470111 (CR+2, CQ ready)                           Approved! Ready to land (`./gh pr merge --cq`)
 
+For large fleets of parked projects, ``./gh wt list`` reuses the cached
+``Change-Id`` recorded when each project was parked and batches Gerrit
+``change:<id>`` queries into chunks of 30 predicates so hundreds of shelved
+workstreams can be monitored quickly without exceeding Gerrit query term limits.
+
 Status Badges
 -------------
 ``./gh wt list`` classifies projects using six status badges:

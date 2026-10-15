@@ -1348,11 +1348,17 @@ func (m *Manager) List(ctx context.Context) (*DashboardReport, error) {
 						proj.LastKnownChangeID = cid
 					}
 				}
-			} else if proj.Residency == ResidencyParked && proj.Branch != "" && st.PrimaryRepo != "" {
-				cid, ahead, cidErr := m.extractProjectChangeID(st.PrimaryRepo, proj.Branch)
-				aheadMap[proj.Name] = ahead
-				if cidErr == nil && cid != "" {
-					proj.LastKnownChangeID = cid
+			} else if proj.Residency == ResidencyParked {
+				if proj.LastKnownChangeID != "" {
+					// Parked projects already persist LastKnownChangeID on unmount;
+					// reuse it directly to avoid 2N git subprocesses across large parked fleets.
+					aheadMap[proj.Name] = 1
+				} else if proj.Branch != "" && st.PrimaryRepo != "" {
+					cid, ahead, cidErr := m.extractProjectChangeID(st.PrimaryRepo, proj.Branch)
+					aheadMap[proj.Name] = ahead
+					if cidErr == nil && cid != "" {
+						proj.LastKnownChangeID = cid
+					}
 				}
 			}
 			if proj.LastKnownChangeID != "" && !changeIDSet[proj.LastKnownChangeID] {
