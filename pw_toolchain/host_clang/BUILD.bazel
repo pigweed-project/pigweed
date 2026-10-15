@@ -479,7 +479,10 @@ cc_toolchain(
         ":layering_check_enabled": ":builtin_module_map",
         "//conditions:default": None,
     }),
-    tool_map = "@llvm_toolchain//:all_tools",
+    tool_map = select({
+        "@platforms//os:macos": "@llvm_toolchain//:macos_tools",
+        "//conditions:default": "@llvm_toolchain//:default_tools",
+    }),
 )
 
 toolchain(

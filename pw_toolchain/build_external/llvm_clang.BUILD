@@ -74,7 +74,7 @@ cc_tool_map(
     tools = COMMON_TOOLS | {
         "@rules_cc//cc/toolchains/actions:ar_actions": ":llvm-ar",
     },
-    visibility = ["//visibility:private"],
+    visibility = ["//visibility:public"],
 )
 
 cc_tool_map(
@@ -82,7 +82,7 @@ cc_tool_map(
     tools = COMMON_TOOLS | {
         "@rules_cc//cc/toolchains/actions:ar_actions": ":llvm-libtool-darwin",
     },
-    visibility = ["//visibility:private"],
+    visibility = ["//visibility:public"],
 )
 
 # TODO: https://github.com/bazelbuild/rules_cc/issues/235 - Workaround until
@@ -191,7 +191,27 @@ cc_tool(
         "@platforms//os:windows": "//:bin/llvm-strip.exe",
         "//conditions:default": "//:bin/llvm-strip",
     }),
-    data = glob(["bin/llvm"]),
+    # In Bazel 9, rules_cc's Starlarkified cc_toolchain computes `all_files`
+    # only from `LEGACY_FILE_GROUPS` rather than all actions in `tool_map`.
+    # Include the binaries for custom Pigweed actions (`cov`, `gcov`, `nm`,
+    # `objdump_disassemble`, `readelf`, `size`) here so they remain present in
+    # `cc_toolchain.all_files` without bloating compile or link action inputs.
+    data = glob(["bin/llvm"]) + select({
+        "@platforms//os:windows": [
+            "//:bin/llvm-cov.exe",
+            "//:bin/llvm-nm.exe",
+            "//:bin/llvm-objdump.exe",
+            "//:bin/llvm-readelf.exe",
+            "//:bin/llvm-size.exe",
+        ],
+        "//conditions:default": [
+            "//:bin/llvm-cov",
+            "//:bin/llvm-nm",
+            "//:bin/llvm-objdump",
+            "//:bin/llvm-readelf",
+            "//:bin/llvm-size",
+        ],
+    }),
 )
 
 cc_tool(

@@ -336,7 +336,7 @@ cc_toolchain(
         "//pw_build/constraints/arm:cortex-m55": [],
         "//pw_build/constraints/arm:none": ["@platforms//:incompatible"],
     }),
-    tool_map = "@llvm_toolchain//:all_tools",
+    tool_map = "@llvm_toolchain//:default_tools",
     visibility = ["//pw_toolchain:__pkg__"],
 )
 
@@ -441,7 +441,7 @@ cc_toolchain(
         "//pw_build/constraints/arm:cortex-a35": [],
         "//pw_build/constraints/arm:none": ["@platforms//:incompatible"],
     }),
-    tool_map = "@llvm_toolchain//:all_tools",
+    tool_map = "@llvm_toolchain//:default_tools",
     visibility = ["//pw_toolchain:__pkg__"],
 )
 

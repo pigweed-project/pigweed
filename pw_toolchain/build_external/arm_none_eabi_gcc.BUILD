@@ -147,6 +147,27 @@ cc_tool(
         "@platforms//os:windows": "//:bin/arm-none-eabi-strip.exe",
         "//conditions:default": "//:bin/arm-none-eabi-strip",
     }),
+    # In Bazel 9, rules_cc's Starlarkified cc_toolchain computes `all_files`
+    # only from `LEGACY_FILE_GROUPS` rather than all actions in `tool_map`.
+    # Include the binaries for custom Pigweed actions (`gcov`, `nm`,
+    # `objdump_disassemble`, `readelf`, `size`) here so they remain present in
+    # `cc_toolchain.all_files` without bloating compile or link action inputs.
+    data = select({
+        "@platforms//os:windows": [
+            "//:bin/arm-none-eabi-gcov.exe",
+            "//:bin/arm-none-eabi-nm.exe",
+            "//:bin/arm-none-eabi-objdump.exe",
+            "//:bin/arm-none-eabi-readelf.exe",
+            "//:bin/arm-none-eabi-size.exe",
+        ],
+        "//conditions:default": [
+            "//:bin/arm-none-eabi-gcov",
+            "//:bin/arm-none-eabi-nm",
+            "//:bin/arm-none-eabi-objdump",
+            "//:bin/arm-none-eabi-readelf",
+            "//:bin/arm-none-eabi-size",
+        ],
+    }),
 )
 
 cc_tool(
