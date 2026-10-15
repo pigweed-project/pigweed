@@ -28,6 +28,8 @@ type mergeOptions struct {
 	autoSubmit bool
 	cq         bool
 	trigger    bool
+	nightly    bool
+	submitAt   string
 	message    string
 }
 
@@ -36,7 +38,7 @@ func newMergeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "merge [<id>]",
 		Short: "Merge (submit) a change",
-		Long: `Merge (submit) a Gerrit change, or enable auto-submit / Commit-Queue.
+		Long: `Merge (submit) a Gerrit change, or enable auto-submit / Commit-Queue / scheduled submission.
 
 When --auto is passed, pw_ghish detects the host's auto-submit label from the
 change (e.g. Pigweed-Auto-Submit+1 or Auto-Submit+1) and votes it. If the host
@@ -46,7 +48,14 @@ available) and returns an error; use --trigger (or --cq) to submit via Commit-Qu
 When --trigger (or --cq) is passed, pw_ghish applies the Commit-Queue+2 (or
 Autosubmit+1 + Presubmit-Ready+1) vote directly.
 
-When neither flag is passed, pw_ghish attempts to submit the change immediately.
+When --nightly or --submit-at is passed, pw_ghish creates a Gerrit Flow that,
+once the scheduled time in PT/MTV (America/Los_Angeles) is reached, starts a
+dry run (Commit-Queue+1, or Presubmit-Ready+1 on hosts that use it) and enables
+auto-submit. Auto-submit then lands the change once it is submittable. A
+work-in-progress change is marked ready for review. Running it again replaces
+the pending schedule.
+
+When none of these flags are passed, pw_ghish attempts to submit the change immediately.
 Note: In Pigweed and LUCI-gated projects, direct submission requires all gates
 (Code-Review+2, Presubmit-Verified, etc.) to be satisfied already; otherwise
 Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for automated landing.`,
@@ -64,6 +73,29 @@ Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for au
 			isCQ := opts.cq || opts.trigger
 			if isAuto && isCQ {
 				return fmt.Errorf("cannot specify both --auto and --cq/--trigger")
+			}
+			isScheduled, err := validateScheduleFlags(opts.nightly, &opts.submitAt, cmd.Flags().Changed("submit-at"), isAuto)
+			if err != nil {
+				return err
+			}
+			if isScheduled {
+				if isCQ {
+					return fmt.Errorf("cannot specify both --cq/--trigger and --nightly/--submit-at")
+				}
+				// A flow's vote action carries exactly one label vote and no
+				// message, so --message has nowhere to go. Refuse it rather
+				// than accept a flag that does nothing.
+				if cmd.Flags().Changed("message") {
+					return fmt.Errorf("cannot specify --message with --nightly/--submit-at: scheduled Gerrit Flows vote labels without a message\n\n"+
+						"To leave a note on the change, post it separately:\n"+
+						"  %s pr comment %s -m <message>", RootCmd.CommandPath(), chCtx.ChangeID)
+				}
+				scheduled, err := chCtx.CreateScheduledSubmitFlow(0, opts.submitAt, DefaultScheduleTimezone)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), scheduled.Summary())
+				return nil
 			}
 
 			if isAuto || isCQ {
@@ -153,6 +185,8 @@ Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for au
 	cmd.Flags().MarkHidden("auto-submit")
 	cmd.Flags().BoolVar(&opts.trigger, "trigger", false, "Trigger submission via Commit-Queue+2 or Autosubmit+Presubmit-Ready (alias --cq)")
 	cmd.Flags().BoolVar(&opts.cq, "cq", false, "Trigger submission via Commit-Queue+2 (runs checks and submits when ready; alias for --trigger)")
+	cmd.Flags().BoolVar(&opts.nightly, "nightly", false, "Schedule submission via Gerrit Flows during off-peak hours (21:00-03:00 PT/MTV)")
+	cmd.Flags().StringVar(&opts.submitAt, "submit-at", "", "Schedule submission via Gerrit Flows at a specific 24-hour time in PT/MTV (e.g. \"21:45\")")
 	cmd.Flags().StringVar(&opts.message, "message", "", "Optional message when auto-submitting or voting CQ")
 
 	return cmd

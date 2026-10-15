@@ -15,6 +15,7 @@
 package pw_ghish
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -25,6 +26,9 @@ func runPush(cmd *cobra.Command, args []string) error {
 	cfg := GetConfig(cmd)
 
 	flags := ParseCommonPushFlags(cmd)
+	if err := ValidatePushScheduleFlags(cmd, &flags.PushOptions); err != nil {
+		return err
+	}
 	force, _ := cmd.Flags().GetBool("force")
 
 	state, err := VerifyHeadForPush(ctx, cmd, cfg, !force)
@@ -33,6 +37,23 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 	if err := CheckTopicAllowed(ctx, cfg, state.ExistingChange, RequestedTopic(flags.PushOptions), "gh pr push (without --topic)"); err != nil {
 		return err
+	}
+	if state.ExistingChange != nil {
+		flags.PushOptions.ChangeNumber = state.ExistingChange.Number
+	}
+
+	// The schedule is created after the push, so on a host without Gerrit
+	// Flows the patchset would be uploaded and only then would scheduling
+	// fail. When the change already exists, ask first. (For --stack, the
+	// other changes are checked as they are scheduled.)
+	if (flags.PushOptions.Nightly || flags.PushOptions.SubmitAt != "") && state.ExistingChange != nil {
+		client, err := NewGerritClient(ctx, cmd)
+		if err != nil {
+			return err
+		}
+		if err := checkFlowsEnabled(ctx, client, cfg.GerritHost(ctx), state.ExistingChange.Number); err != nil {
+			return err
+		}
 	}
 
 	branch := flags.Base
@@ -91,10 +112,20 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if flags.PushOptions.StackChangeIDs, err = stackChangeIDsToSchedule(ctx, cfg, branch, flags); err != nil {
+		return err
+	}
+
 	fmt.Fprintf(cmd.OutOrStdout(), "Pushing patchset for branch %s...\n", branch)
 
 	if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {
 		if autoSubmit.Unsupported != nil && err == autoSubmit.Unsupported {
+			return err
+		}
+		// The patchset is up; only the schedule failed. Prefixing this with
+		// "error pushing patchset" would send the user to push again.
+		var flowErr *ScheduleFlowError
+		if errors.As(err, &flowErr) {
 			return err
 		}
 		return fmt.Errorf("error pushing patchset: %w", err)
@@ -119,6 +150,7 @@ and suggest using 'gh pr create' (or restoring an overwritten Change-Id). Use --
 Supports rich push options:
   - Reviewers and CCs: --reviewer, --cc
   - Auto-submit: --auto (alias --auto-submit)
+  - Scheduled submission (Gerrit Flows): --nightly, --submit-at <HH:MM>
   - Presubmit / Commit queue: --trigger (alias --cq; default dry run, or specify vote: 1 = dry run, 2 = submit)
   - Publish draft comments: --publish
   - Mark ready for review: --ready

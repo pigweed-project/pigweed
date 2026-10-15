@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -542,5 +543,308 @@ func TestPush_TopicForbiddenBySubmitRequirement(t *testing.T) {
 	}
 	if mockGit.HasCall("push") {
 		t.Errorf("Expected git push not to be called when topic is forbidden, calls: %v", mockGit.Calls)
+	}
+}
+
+func TestPush_Nightly_WithDryRunCQ(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(123456, WithChangeID("I0000000000000000000000000000000000000001"), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	output, err := executeCommand(RootCmd, "pr", "push", "--cq", "--nightly")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+
+	if !mockGit.HasCall("push origin HEAD:refs/for/main%l=Commit-Queue+1") {
+		t.Errorf("Expected push with Commit-Queue+1 dry run, got calls: %v", mockGit.Calls)
+	}
+	if server.CallCount("POST", "/changes/123456/flows") != 1 {
+		t.Fatalf("Expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
+	}
+	wantOut := "Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles)."
+	if !strings.Contains(output, wantOut) {
+		t.Errorf("Output got %q, want %q", output, wantOut)
+	}
+}
+
+func TestPush_SubmitAt(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(123456, WithChangeID("I0000000000000000000000000000000000000001"), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	output, err := executeCommand(RootCmd, "pr", "push", "--submit-at", "22:15")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+
+	if !mockGit.HasCall("push origin HEAD:refs/for/main") {
+		t.Errorf("Expected git push to be called, got calls: %v", mockGit.Calls)
+	}
+	if server.CallCount("POST", "/changes/123456/flows") != 1 {
+		t.Fatalf("Expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
+	}
+	wantOut := "Created submit flow for Change 123456 (scheduled for today at 22:15 in America/Los_Angeles)."
+	if !strings.Contains(output, wantOut) {
+		t.Errorf("Output got %q, want %q", output, wantOut)
+	}
+}
+
+func TestPush_ScheduledFlagConflicts(t *testing.T) {
+	NewMockGit(t).WithBranch("main")
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "nightly and submit-at",
+			args:    []string{"pr", "push", "--nightly", "--submit-at", "20:00"},
+			wantErr: "cannot specify both --nightly and --submit-at",
+		},
+		{
+			name:    "nightly and auto",
+			args:    []string{"pr", "push", "--nightly", "--auto"},
+			wantErr: "cannot specify both --auto and --nightly/--submit-at",
+		},
+		{
+			name:    "nightly and cq=2",
+			args:    []string{"pr", "push", "--nightly", "--cq", "2"},
+			wantErr: "cannot specify both --cq=2 and --nightly/--submit-at",
+		},
+		{
+			name:    "nightly and draft",
+			args:    []string{"pr", "push", "--nightly", "--draft"},
+			wantErr: "cannot specify both --draft and --nightly/--submit-at",
+		},
+		{
+			name:    "submit-at and draft",
+			args:    []string{"pr", "push", "--submit-at", "20:00", "--draft"},
+			wantErr: "cannot specify both --draft and --nightly/--submit-at",
+		},
+		{
+			name:    "invalid submit-at",
+			args:    []string{"pr", "push", "--submit-at", "25:00"},
+			wantErr: "expected 24-hour format \"HH:MM\"",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := executeCommand(RootCmd, tc.args...)
+			if err == nil {
+				t.Fatalf("Expected error for args %v, got nil", tc.args)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("Error got %q, want substring %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+// A flow failure after a successful push must not read as a failed push: the
+// patchset is on Gerrit, and pushing again would only risk duplicate flows.
+func TestPush_Nightly_FlowFailureIsNotAPushFailure(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(123456, WithChangeID("I0000000000000000000000000000000000000001"), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+	server.OnString("POST", "/changes/123456/flows", http.StatusInternalServerError, "text/plain", "flows disabled")
+
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	_, err := executeCommand(RootCmd, "pr", "push", "--submit-at", "22:15")
+	if err == nil {
+		t.Fatal("expected an error when flow creation fails, got nil")
+	}
+	if !mockGit.HasCall("push origin HEAD:refs/for/main") {
+		t.Fatalf("expected the push to have happened, got calls: %v", mockGit.Calls)
+	}
+	var flowErr *ScheduleFlowError
+	if !errors.As(err, &flowErr) {
+		t.Fatalf("expected a *ScheduleFlowError, got %T: %v", err, err)
+	}
+	for _, want := range []string{"patchset pushed, but scheduling the submit flow failed", "pr merge 123456 --submit-at 22:15"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q, got: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "error pushing patchset") {
+		t.Errorf("error must not claim the push failed, got: %v", err)
+	}
+}
+
+// When the change already exists, whether flows are enabled is checked before
+// pushing, so a host without flows never ends up with a pushed patchset and a
+// missing schedule.
+func TestPush_Nightly_FlowsNotEnabledStopsBeforePush(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+	}{
+		{"reported disabled", http.StatusOK},
+		{"no flow service", http.StatusMethodNotAllowed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			SetTestProfile(t, "pigweed")
+			server := NewMockGerritServer(t)
+			server.OnDefaultChange(123456, WithChangeID("I0000000000000000000000000000000000000001"), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+			server.OnFlowsEnabled(123456, tc.status, false)
+			server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+
+			mockGit := NewMockGit(t).WithBranch("main")
+
+			_, err := executeCommand(RootCmd, "pr", "push", "--nightly")
+			var notEnabled *FlowsNotEnabledError
+			if !errors.As(err, &notEnabled) {
+				t.Fatalf("expected a *FlowsNotEnabledError, got %T: %v", err, err)
+			}
+			var flowErr *ScheduleFlowError
+			if errors.As(err, &flowErr) {
+				t.Errorf("nothing was pushed, so the error must not say the push succeeded, got: %v", err)
+			}
+			if mockGit.HasCall("push") {
+				t.Errorf("expected git push not to be called, calls: %v", mockGit.Calls)
+			}
+			if n := server.CallCount("POST", "/changes/123456/flows"); n != 0 {
+				t.Errorf("expected no flows to be created, got %d", n)
+			}
+		})
+	}
+}
+
+// stackScheduleFixture serves a two-change stack: bottom change 111111 and
+// HEAD change 123456. failTop makes creating the top change's flow fail.
+func stackScheduleFixture(t *testing.T, failTop bool) (*MockGerritServer, *MockGitRunner) {
+	t.Helper()
+	const bottomID = "I1111111111111111111111111111111111111111"
+	const topID = "I2222222222222222222222222222222222222222"
+	labels := WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit")
+
+	server := NewMockGerritServer(t)
+	// Registered first so Change-Id queries return the matching change
+	// rather than whichever OnDefaultChange registered first.
+	server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("q") {
+		case bottomID:
+			server.RespondJSON(w, http.StatusOK, []map[string]any{DefaultMockChange(111111, WithChangeID(bottomID), labels)})
+		case topID:
+			server.RespondJSON(w, http.StatusOK, []map[string]any{DefaultMockChange(123456, WithChangeID(topID), labels)})
+		default:
+			server.RespondJSON(w, http.StatusOK, []map[string]any{})
+		}
+	})
+	server.OnDefaultChange(111111, WithChangeID(bottomID), labels)
+	server.OnDefaultChange(123456, WithChangeID(topID), labels)
+	server.OnJSON("POST", "/changes/111111/flows", http.StatusCreated, map[string]any{})
+	if failTop {
+		server.OnString("POST", "/changes/123456/flows", http.StatusInternalServerError, "text/plain", "flows disabled")
+	} else {
+		server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+	}
+
+	stackLog := fmt.Sprintf(
+		"aaa1111\x00pw_ghish: Bottom\x00pw_ghish: Bottom\n\nChange-Id: %s\n\x1e"+
+			"bbb2222\x00pw_ghish: Top\x00pw_ghish: Top\n\nChange-Id: %s\n\x1e",
+		bottomID, topID,
+	)
+	mockGit := NewMockGit(t).WithBranch("main").
+		WithCommit("pw_ghish: Top\n\nChange-Id: "+topID+"\n").
+		OnCommand("rev-list --count origin/main..HEAD", "2\n").
+		OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", stackLog)
+	return server, mockGit
+}
+
+// With --stack --nightly, every change in the stack gets a flow at its own
+// nightly slot, as if each had been scheduled alone.
+func TestPush_Stack_Nightly_SchedulesEveryChange(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server, mockGit := stackScheduleFixture(t, false)
+
+	output, err := executeCommand(RootCmd, "pr", "push", "--base", "main", "--stack", "--nightly")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+	if !mockGit.HasCall("push") {
+		t.Fatalf("expected a push, got calls: %v", mockGit.Calls)
+	}
+	for _, tc := range []struct {
+		num  int
+		when string
+	}{
+		{111111, "tomorrow at 00:51"}, // 111111 % 360 = 231 minutes after 21:00.
+		{123456, "tomorrow at 02:36"}, // 123456 % 360 = 336 minutes after 21:00.
+	} {
+		path := fmt.Sprintf("/changes/%d/flows", tc.num)
+		if n := server.CallCount("POST", path); n != 1 {
+			t.Errorf("POST %s called %d times, want 1", path, n)
+		}
+		want := fmt.Sprintf("Created submit flow for Change %d (scheduled for %s in America/Los_Angeles).", tc.num, tc.when)
+		if !strings.Contains(output, want) {
+			t.Errorf("output missing %q, got: %s", want, output)
+		}
+	}
+}
+
+// With --stack --submit-at, the bottom change gets the requested time and each
+// change above it 30 minutes later.
+func TestPush_Stack_SubmitAt_StaggersChanges(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	_, _ = stackScheduleFixture(t, false)
+
+	output, err := executeCommand(RootCmd, "pr", "push", "--base", "main", "--stack", "--submit-at", "23:50")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+	for _, want := range []string{
+		"Created submit flow for Change 111111 (scheduled for today at 23:50 in America/Los_Angeles).",
+		// Wraps past midnight; 00:20 has already passed today.
+		"Created submit flow for Change 123456 (scheduled for tomorrow at 00:20 in America/Los_Angeles).",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("output missing %q, got: %s", want, output)
+		}
+	}
+}
+
+// If one change in the stack fails to schedule, the error says how far it got
+// and gives retry commands only for the changes still unscheduled.
+func TestPush_Stack_PartialFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      []string
+		wantRetry string
+	}{
+		{"nightly", []string{"--nightly"}, "pr merge I2222222222222222222222222222222222222222 --nightly"},
+		{"submit-at", []string{"--submit-at", "20:00"}, "pr merge I2222222222222222222222222222222222222222 --submit-at 20:30"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			SetTestProfile(t, "pigweed")
+			_, _ = stackScheduleFixture(t, true)
+
+			args := append([]string{"pr", "push", "--base", "main", "--stack"}, tc.args...)
+			_, err := executeCommand(RootCmd, args...)
+			if err == nil {
+				t.Fatal("expected an error when the top change's flow fails, got nil")
+			}
+			var flowErr *ScheduleFlowError
+			if !errors.As(err, &flowErr) {
+				t.Fatalf("expected a ScheduleFlowError, got %T: %v", err, err)
+			}
+			for _, want := range []string{"1 of 2 changes in the stack were scheduled", tc.wantRetry} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error missing %q, got: %v", want, err)
+				}
+			}
+			if strings.Contains(err.Error(), "pr merge I1111111111111111111111111111111111111111") {
+				t.Errorf("error must not ask to retry the change that was scheduled, got: %v", err)
+			}
+		})
 	}
 }

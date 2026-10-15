@@ -47,6 +47,8 @@ func AddCommonPushFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("auto", false, "Automatically submit change when checks and reviews pass")
 	cmd.Flags().Bool("auto-submit", false, "Alias for --auto")
 	_ = cmd.Flags().MarkHidden("auto-submit")
+	cmd.Flags().Bool("nightly", false, "Schedule submission via Gerrit Flows during off-peak hours (21:00-03:00 PT/MTV)")
+	cmd.Flags().String("submit-at", "", "Schedule submission via Gerrit Flows at a specific 24-hour time in PT/MTV (e.g. \"21:45\")")
 	cmd.Flags().Int("trigger", 0, "Trigger presubmit / Commit-Queue vote (1 = dry run, 2 = submit; alias --cq)")
 	cmd.Flags().Lookup("trigger").NoOptDefVal = "1"
 	cmd.Flags().Int("cq", 0, "Commit-Queue vote (1 = dry run, 2 = submit; alias for --trigger)")
@@ -75,6 +77,8 @@ func ParseCommonPushFlags(cmd *cobra.Command) CommonPushFlags {
 	ready, _ := cmd.Flags().GetBool("ready")
 	auto, _ := cmd.Flags().GetBool("auto")
 	autoSubmit, _ := cmd.Flags().GetBool("auto-submit")
+	nightly, _ := cmd.Flags().GetBool("nightly")
+	submitAt, _ := cmd.Flags().GetString("submit-at")
 	cq, _ := cmd.Flags().GetInt("cq")
 	if cmd.Flags().Changed("trigger") {
 		cq, _ = cmd.Flags().GetInt("trigger")
@@ -97,6 +101,8 @@ func ParseCommonPushFlags(cmd *cobra.Command) CommonPushFlags {
 			Draft:        draft,
 			Ready:        ready,
 			AutoSubmit:   auto || autoSubmit,
+			Nightly:      nightly,
+			SubmitAt:     submitAt,
 			CQ:           cq,
 			Publish:      publish,
 			Topic:        topic,
@@ -104,6 +110,55 @@ func ParseCommonPushFlags(cmd *cobra.Command) CommonPushFlags {
 			ExtraOptions: pushOptions,
 		},
 	}
+}
+
+// validateScheduleFlags holds the --nightly / --submit-at checks shared by
+// `pr create`, `pr push` and `pr merge`: the two are mutually exclusive,
+// --submit-at must be "HH:MM" (normalized in place), and neither combines with
+// --auto. submitAtSet reports whether --submit-at was passed, even if empty.
+// It returns whether a schedule was requested; callers add their own checks
+// for flags only they have.
+func validateScheduleFlags(nightly bool, submitAt *string, submitAtSet bool, auto bool) (bool, error) {
+	submitAtSet = submitAtSet || *submitAt != ""
+	if nightly && submitAtSet {
+		return false, fmt.Errorf("cannot specify both --nightly and --submit-at")
+	}
+	if submitAtSet {
+		trimmed, err := ValidateScheduleTime(*submitAt)
+		if err != nil {
+			return false, err
+		}
+		*submitAt = trimmed
+	}
+	scheduled := nightly || submitAtSet
+	if scheduled && auto {
+		return false, fmt.Errorf("cannot specify both --auto and --nightly/--submit-at")
+	}
+	return scheduled, nil
+}
+
+// ValidatePushScheduleFlags validates --nightly and --submit-at flags and their
+// mutual exclusivity with --auto, --cq=2 and --draft.
+func ValidatePushScheduleFlags(cmd *cobra.Command, opts *PushOptions) error {
+	if opts == nil {
+		return nil
+	}
+	submitAtSet := cmd != nil && cmd.Flags().Lookup("submit-at") != nil && cmd.Flags().Changed("submit-at")
+	scheduled, err := validateScheduleFlags(opts.Nightly, &opts.SubmitAt, submitAtSet, opts.AutoSubmit)
+	if err != nil || !scheduled {
+		return err
+	}
+	if opts.CQ >= 2 {
+		return fmt.Errorf("cannot specify both --cq=2 and --nightly/--submit-at (use --cq=1 for a dry run)")
+	}
+	// A draft is marked not ready for review, so scheduling it to submit
+	// contradicts the flag the user just passed.
+	if opts.Draft {
+		return fmt.Errorf("cannot specify both --draft and --nightly/--submit-at: a work-in-progress change is not ready to submit\n\n"+
+			"Drop --draft, or schedule the submit once the change is ready:\n"+
+			"  %s pr merge --nightly", RootCmd.CommandPath())
+	}
+	return nil
 }
 
 // defaultBranch resolves the default target branch (defaults to "main").
@@ -221,6 +276,28 @@ func checkPushSubmodulePolicy(ctx context.Context, cmd *cobra.Command, cfg *Conf
 	return CheckSubmodulePolicy(ctx, cfg.GitClient(), cfg.GetProjectConfig(ctx), existing, remote, branch, stackCommits, cmd.ErrOrStderr())
 }
 
+// stackChangeIDsToSchedule returns the Change-Ids of the commits a --stack
+// push sends to branch, bottom first, when --nightly or --submit-at asks for
+// them to be scheduled. It returns nil otherwise. It must run before the push:
+// it reads the commits between origin/<branch> and HEAD.
+func stackChangeIDsToSchedule(ctx context.Context, cfg *Config, branch string, flags CommonPushFlags) ([]string, error) {
+	if !flags.Stack || (!flags.PushOptions.Nightly && flags.PushOptions.SubmitAt == "") {
+		return nil, nil
+	}
+	commits, err := cfg.GitClient().StackCommits(ctx, branch)
+	if err != nil {
+		return nil, fmt.Errorf("listing the stack to schedule: %w", err)
+	}
+	ids := make([]string, 0, len(commits))
+	for _, c := range commits {
+		if c.ChangeID == "" {
+			return nil, fmt.Errorf("cannot schedule the stack: commit %s (%q) has no Change-Id", c.Hash, c.Subject)
+		}
+		ids = append(ids, c.ChangeID)
+	}
+	return ids, nil
+}
+
 // executePush runs git push to Gerrit with the specified push options.
 func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, pushOpts PushOptions, noVerify bool) error {
 	if cmd == nil {
@@ -283,7 +360,8 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 		return err
 	}
 	cmd.ErrOrStderr().Write(errBuf.Bytes())
-	return nil
+
+	return scheduleSubmitFlowForPush(cmd, nil, pushOpts, "patchset pushed")
 }
 
 func isGitPushSSOAuthError(stderr string) bool {
@@ -401,7 +479,8 @@ func retryPushWithoutSSO(ctx context.Context, cmd *cobra.Command, cfg *Config, r
 }
 
 func hasMetadataUpdates(opts PushOptions) bool {
-	return opts.CQ > 0 || opts.AutoSubmit || opts.Topic != "" || len(opts.Hashtags) > 0 ||
+	return opts.CQ > 0 || opts.AutoSubmit || opts.Nightly || opts.SubmitAt != "" ||
+		opts.Topic != "" || len(opts.Hashtags) > 0 ||
 		opts.Draft || opts.Wip || opts.Ready || opts.Publish ||
 		len(opts.Reviewers) > 0 || len(opts.CC) > 0
 }
@@ -536,6 +615,12 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 	}
 	if pushOpts.Publish {
 		fmt.Fprintln(cmd.OutOrStdout(), "Draft comments published successfully.")
+	}
+	// Scheduled last, after everything else has been applied and reported, so
+	// that a failure here is reported as exactly that and not as a failure of
+	// the updates above.
+	if err := scheduleSubmitFlowForPush(cmd, chCtx, pushOpts, "the change is up to date on Gerrit"); err != nil {
+		return err
 	}
 	return autoSubmit.Unsupported
 }

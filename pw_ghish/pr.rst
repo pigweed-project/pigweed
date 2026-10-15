@@ -60,6 +60,16 @@ Supported flags
 * ``-c, --cc <email>``: CC users on the change.
 * ``--auto`` (alias ``--auto-submit``): Vote the host's auto-submit label upon
   upload.
+* ``--nightly`` / ``--submit-at <HH:MM>``: Schedule submission via a Gerrit
+  Flow for off-peak hours (``21:00``–``03:00`` PT/MTV) or a specific 24-hour
+  time in PT/MTV. At the scheduled time it starts a dry run
+  (``Commit-Queue+1``, or ``Presubmit-Ready+1`` on hosts that use it) and
+  enables auto-submit, which lands the change once it is submittable. A
+  work-in-progress change is marked ready for review. Running it again
+  replaces the change's pending schedule rather than adding to it.
+  With ``--stack``, every change in the stack is scheduled: ``--nightly``
+  gives each change its own off-peak slot, and ``--submit-at`` gives the
+  bottom change the requested time and each change above it 30 minutes later.
 * ``--trigger [1|2]`` (alias ``--cq [1|2]``): Trigger a presubmit /
   Commit-Queue dry run (default ``1`` when omitted; specify ``2`` to submit).
   See :ref:`module-pw_ghish-pr-cq-auto` for how ``--trigger``/``--cq``,
@@ -117,6 +127,13 @@ Available as ``./gh pr push``, top-level ``./gh push``, or ``./gh pr upload``:
    # Push, mark ready for review, and auto-assign code owners:
    $ ./gh pr push --owner --ready --auto
 
+   # Push a stack and schedule each change in its own off-peak slot:
+   $ ./gh pr push --stack --nightly
+
+   # Push a stack and schedule it from 21:00, one change every 30 minutes
+   # (bottom change first):
+   $ ./gh pr push --stack --submit-at 21:00
+
 Supported flags
 ===============
 * ``-B, --base <branch>``: Override the target merge branch recorded on Gerrit.
@@ -129,6 +146,16 @@ Supported flags
 * ``--ready``: Mark the change as ready for review (removes WIP status).
 * ``-d, --draft``: Mark the change as a work-in-progress (WIP) draft.
 * ``--auto`` (alias ``--auto-submit``): Vote the host's auto-submit label.
+* ``--nightly`` / ``--submit-at <HH:MM>``: Schedule submission via a Gerrit
+  Flow for off-peak hours (``21:00``–``03:00`` PT/MTV) or a specific 24-hour
+  time in PT/MTV. At the scheduled time it starts a dry run
+  (``Commit-Queue+1``, or ``Presubmit-Ready+1`` on hosts that use it) and
+  enables auto-submit, which lands the change once it is submittable. A
+  work-in-progress change is marked ready for review. Running it again
+  replaces the change's pending schedule rather than adding to it.
+  With ``--stack``, every change in the stack is scheduled: ``--nightly``
+  gives each change its own off-peak slot, and ``--submit-at`` gives the
+  bottom change the requested time and each change above it 30 minutes later.
 * ``--trigger [1|2]`` (alias ``--cq [1|2]``): Trigger a presubmit /
   Commit-Queue dry run (default ``1`` when omitted; specify ``2`` to submit).
   If the local commit matches the latest patchset on Gerrit, votes are applied
@@ -451,12 +478,25 @@ Submits a change to the target branch:
    # Trigger Commit-Queue+2 submission directly:
    $ ./gh pr merge 413992 --cq
 
+   # Schedule off-peak submission (21:00-03:00 PT/MTV) via Gerrit Flows:
+   $ ./gh pr merge 413992 --nightly
+
+   # Schedule submission at a specific 24-hour time in PT/MTV via Gerrit Flows:
+   $ ./gh pr merge 413992 --submit-at 20:30
+
    # Attempt immediate submit (requires all checks and approvals to already be satisfied):
    $ ./gh pr merge 413992
 
 If you run ``./gh pr merge`` without flags while submit requirements are still
 pending, Gerrit returns HTTP 409 Conflict and ``pw_ghish`` prints the command to
 enable ``--auto`` or ``--cq``.
+
+``--nightly`` and ``--submit-at`` require Gerrit Flows (Gerrit 3.13 or later
+with a flow service installed). ``pw_ghish`` asks Gerrit whether flows are
+enabled for the change before modifying it, and fails with a suggested
+``--auto`` or ``--cq`` command if they are not. ``pr push`` asks before pushing.
+``pr create`` can only ask once the change exists, so on a host without flows
+the change is created and only the schedule fails.
 
 .. _module-pw_ghish-pr-cq-auto:
 
@@ -503,6 +543,10 @@ code** (via ``pr review`` or ``pr merge``):
      - ``Pigweed-Auto-Submit+1`` (or ``Auto-Submit+1``)
      - ``./gh pr push --auto``
      - ``./gh pr merge --auto``
+   * - **Schedule off-peak submit**
+     - Gerrit Flow (``Commit-Queue+1`` + auto-submit at ``21:00``–``03:00`` PT)
+     - ``./gh pr push --nightly``
+     - ``./gh pr merge --nightly``
    * - **Submit via Commit Queue**
      - ``Commit-Queue+2`` (requires ``Code-Review+2``)
      - ``./gh pr push --cq=2``
@@ -563,14 +607,16 @@ Comparison with GitHub CLI (gh pr)
    * - ``pr create``
      - Pushes ``HEAD`` to ``refs/for/<base>`` as a **new** CL.
      - Stops if ``Change-Id`` already exists on Gerrit (use ``pr push``).
-       Adds ``--stack``, ``--cq``, ``--auto``, ``--owner`` / ``--add-owner``,
-       ``--add-reviewer``, and ``-o, --push-option``; ``-r`` accepts ``@owners``.
+       Adds ``--stack``, ``--cq``, ``--auto``, ``--nightly``, ``--submit-at``,
+       ``--owner`` / ``--add-owner``, ``--add-reviewer``, and
+       ``-o, --push-option``; ``-r`` accepts ``@owners``.
    * - ``pr push``
      - Uploads a **new patchset** to an existing Gerrit CL.
      - **Gerrit adaptation** (replaces ``git push``). Queries target branch on
-       Gerrit and supports ``--stack``, ``--cq``, ``--auto``, ``--publish``,
-       ``--ready``, ``--owner`` / ``--add-owner``, ``--add-reviewer``, and
-       ``-o, --push-option``; ``-r`` accepts ``@owners``.
+       Gerrit and supports ``--stack``, ``--cq``, ``--auto``, ``--nightly``,
+       ``--submit-at``, ``--publish``, ``--ready``, ``--owner`` /
+       ``--add-owner``, ``--add-reviewer``, and ``-o, --push-option``; ``-r``
+       accepts ``@owners``.
    * - ``pr view [<id>]``
      - Queries Gerrit REST API for change metadata, votes, and ``--comments``.
      - Supports ``<id>/<patchset>`` and shortlinks (``pwrev/``). ``--json``
@@ -606,8 +652,9 @@ Comparison with GitHub CLI (gh pr)
        ``--add-owner`` or ``-r, --reviewer`` / ``--add-reviewer`` (including
        ``@owners``) to assign reviewers when marking ready.
    * - ``pr merge``
-     - Submits the CL directly, via ``--cq`` (``Commit-Queue+2``), or via
-       ``--auto`` (``Auto-Submit+1``).
+     - Submits the CL directly, via ``--cq`` (``Commit-Queue+2``), via
+       ``--auto`` (``Auto-Submit+1``), or on a Gerrit Flow schedule via
+       ``--nightly`` / ``--submit-at``.
      - Does not support ``--squash``, ``--rebase``, or ``--delete-branch``
        (merge strategy is configured on the Gerrit repository).
 

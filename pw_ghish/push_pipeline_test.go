@@ -632,6 +632,9 @@ func TestHasMetadataUpdates(t *testing.T) {
 		opts PushOptions
 	}{
 		{"CQ", PushOptions{CQ: 1}},
+		{"AutoSubmit", PushOptions{AutoSubmit: true}},
+		{"Nightly", PushOptions{Nightly: true}},
+		{"SubmitAt", PushOptions{SubmitAt: "20:30"}},
 		{"Topic", PushOptions{Topic: "fix"}},
 		{"Hashtags", PushOptions{Hashtags: []string{"tag"}}},
 		{"Draft", PushOptions{Draft: true}},
@@ -648,6 +651,59 @@ func TestHasMetadataUpdates(t *testing.T) {
 				t.Errorf("hasMetadataUpdates(%+v) = false, want true", tc.opts)
 			}
 		})
+	}
+}
+
+func TestExecutePush_NoNewChanges_Nightly_FallbackREST(t *testing.T) {
+	ctx := context.Background()
+	changeID := "I1234567890123456789012345678901234567890"
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
+		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
+	})
+
+	mockGit := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			if len(args) > 0 && args[0] == "push" {
+				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
+				return fmt.Errorf("exit status 1")
+			}
+			if len(args) > 0 && args[0] == "log" {
+				stdout.Write([]byte("Commit subject\n\nChange-Id: " + changeID + "\n"))
+				return nil
+			}
+			return nil
+		},
+	}
+	cfg := &Config{
+		Git:     mockGit,
+		Host:    server.URL,
+		Profile: profiles["pigweed"],
+	}
+
+	cmd := &cobra.Command{}
+	var outBuf, errBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetErr(&errBuf)
+	cmd.SetContext(ctx)
+	SetConfig(cmd, cfg)
+
+	pushOpts := PushOptions{
+		Nightly:      true,
+		ChangeNumber: 123456,
+	}
+
+	if err := executePush(ctx, cmd, cfg, "main", pushOpts, false); err != nil {
+		t.Fatalf("unexpected error, should have fallen back to REST: %v", err)
+	}
+
+	if server.CallCount("POST", "/changes/123456/flows") != 1 {
+		t.Fatalf("expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
+	}
+	if !strings.Contains(outBuf.String(), "Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles).") {
+		t.Errorf("unexpected output: %s", outBuf.String())
 	}
 }
 
@@ -1179,4 +1235,65 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 			t.Fatalf("expected friendly 'no new changes to push' error after rpc:// fallback reached Gerrit, got: %v", err)
 		}
 	})
+}
+
+// In the no-new-commits path, the other updates are applied and reported
+// before scheduling, and a flow failure is not reported as a failure to apply
+// them.
+func TestExecutePush_NoNewChanges_Nightly_FlowFailure(t *testing.T) {
+	ctx := context.Background()
+	changeID := "I1234567890123456789012345678901234567890"
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+	server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnString("POST", "/changes/123456/flows", http.StatusInternalServerError, "text/plain", "flows disabled")
+	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
+		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
+	})
+
+	mockGit := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			if len(args) > 0 && args[0] == "push" {
+				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
+				return fmt.Errorf("exit status 1")
+			}
+			if len(args) > 0 && args[0] == "log" {
+				stdout.Write([]byte("Commit subject\n\nChange-Id: " + changeID + "\n"))
+				return nil
+			}
+			return nil
+		},
+	}
+	cfg := &Config{
+		Git:     mockGit,
+		Host:    server.URL,
+		Profile: profiles["pigweed"],
+	}
+
+	cmd := &cobra.Command{}
+	var outBuf, errBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetErr(&errBuf)
+	cmd.SetContext(ctx)
+	SetConfig(cmd, cfg)
+
+	pushOpts := PushOptions{
+		CQ:           1,
+		Nightly:      true,
+		ChangeNumber: 123456,
+	}
+
+	err := executePush(ctx, cmd, cfg, "main", pushOpts, false)
+	if err == nil {
+		t.Fatal("expected an error when flow creation fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "the change is up to date on Gerrit, but scheduling the submit flow failed") {
+		t.Errorf("expected a schedule failure, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "failed to apply metadata updates") {
+		t.Errorf("error must not claim the metadata updates failed, got: %v", err)
+	}
+	if !strings.Contains(outBuf.String(), "Commit-Queue+1 set successfully") {
+		t.Errorf("expected the applied CQ vote to be reported before the failure, got: %s", outBuf.String())
+	}
 }

@@ -15,6 +15,7 @@
 package pw_ghish
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -32,6 +33,7 @@ and suggest using 'gh pr push' to upload a new patchset instead. Use --force to 
 Supports rich push options:
   - Reviewers and CCs: --reviewer, --cc
   - Auto-submit: --auto (alias --auto-submit)
+  - Scheduled submission (Gerrit Flows): --nightly, --submit-at <HH:MM>
   - Presubmit / Commit queue: --trigger (alias --cq; default dry run, or specify vote: 1 = dry run, 2 = submit)
   - Publish draft comments: --publish
   - Raw push options: -o / --push-option
@@ -42,6 +44,9 @@ Supports rich push options:
 		cfg := GetConfig(cmd)
 
 		flags := ParseCommonPushFlags(cmd)
+		if err := ValidatePushScheduleFlags(cmd, &flags.PushOptions); err != nil {
+			return err
+		}
 		title, _ := cmd.Flags().GetString("title")
 		body, _ := cmd.Flags().GetString("body")
 		force, _ := cmd.Flags().GetBool("force")
@@ -117,11 +122,23 @@ Supports rich push options:
 			return err
 		}
 
+		if flags.PushOptions.StackChangeIDs, err = stackChangeIDsToSchedule(ctx, cfg, branch, flags); err != nil {
+			return err
+		}
+
 		fmt.Fprintf(cmd.OutOrStdout(), "Creating change for branch %s...\n", branch)
 
 		if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {
 			if autoSubmit.Unsupported != nil && err == autoSubmit.Unsupported {
 				return err
+			}
+			// The change exists; only the schedule failed. Prefixing this
+			// with "error creating change" would send the user to create it
+			// again.
+			var flowErr *ScheduleFlowError
+			if errors.As(err, &flowErr) {
+				flowErr.Done = "change created"
+				return flowErr
 			}
 			return fmt.Errorf("error creating change: %w", err)
 		}

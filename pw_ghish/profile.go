@@ -60,6 +60,14 @@ type PushOptions struct {
 	Topic                 string
 	Hashtags              []string
 	ExtraOptions          []string
+	Nightly               bool
+	SubmitAt              string
+	ChangeNumber          int
+	// StackChangeIDs lists the Change-Ids of the commits pushed with
+	// --stack, bottom first. When it has more than one entry, --nightly and
+	// --submit-at schedule every change in it rather than only HEAD. It
+	// does not affect the push ref.
+	StackChangeIDs []string
 }
 
 // ProjectProfile defines project-specific Gerrit and CI conventions.

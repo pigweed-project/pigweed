@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -610,5 +611,147 @@ forbid_topics = true
 	}
 	if mockGit.HasCall("push") {
 		t.Errorf("Expected git push not to be called when topic is forbidden, calls: %v", mockGit.Calls)
+	}
+}
+
+func TestCreate_Nightly(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	changeID := "I0000000000000000000000000000000000000001"
+	server := NewMockGerritServer(t)
+	// QueryChanges before push sees no existing change.
+	server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{})
+	// GetChange after push resolves the newly created change number.
+	server.OnJSON("GET", "/changes/"+changeID, http.StatusOK, DefaultMockChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit")))
+	server.OnFlows(123456)
+	server.OnFlowsEnabled(123456, http.StatusOK, true)
+	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	output, err := executeCommand(RootCmd, "pr", "create", "--cq", "--nightly")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+
+	if !mockGit.HasCall("push origin HEAD:refs/for/main%l=Commit-Queue+1") {
+		t.Errorf("Expected git push with Commit-Queue+1 dry run, got calls: %v", mockGit.Calls)
+	}
+	if server.CallCount("POST", "/changes/123456/flows") != 1 {
+		t.Fatalf("Expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
+	}
+	wantOut := "Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles)."
+	if !strings.Contains(output, wantOut) {
+		t.Errorf("Output got %q, want %q", output, wantOut)
+	}
+}
+
+func TestCreate_ScheduledFlagConflicts(t *testing.T) {
+	NewMockGit(t).WithBranch("main")
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "nightly and submit-at",
+			args:    []string{"pr", "create", "--nightly", "--submit-at", "20:00"},
+			wantErr: "cannot specify both --nightly and --submit-at",
+		},
+		{
+			name:    "nightly and auto",
+			args:    []string{"pr", "create", "--nightly", "--auto"},
+			wantErr: "cannot specify both --auto and --nightly/--submit-at",
+		},
+		{
+			name:    "nightly and cq=2",
+			args:    []string{"pr", "create", "--nightly", "--cq", "2"},
+			wantErr: "cannot specify both --cq=2 and --nightly/--submit-at",
+		},
+		{
+			name:    "nightly and draft",
+			args:    []string{"pr", "create", "--nightly", "--draft"},
+			wantErr: "cannot specify both --draft and --nightly/--submit-at",
+		},
+		{
+			name:    "submit-at and draft",
+			args:    []string{"pr", "create", "--submit-at", "20:00", "--draft"},
+			wantErr: "cannot specify both --draft and --nightly/--submit-at",
+		},
+		{
+			name:    "invalid submit-at",
+			args:    []string{"pr", "create", "--submit-at", "8pm"},
+			wantErr: "expected 24-hour format \"HH:MM\"",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := executeCommand(RootCmd, tc.args...)
+			if err == nil {
+				t.Fatalf("Expected error for args %v, got nil", tc.args)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("Error got %q, want substring %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+// A flow failure after the change is created must not read as a failed create.
+func TestCreate_Nightly_FlowFailureIsNotACreateFailure(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	changeID := "I0000000000000000000000000000000000000001"
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{})
+	server.OnJSON("GET", "/changes/"+changeID, http.StatusOK, DefaultMockChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue")))
+
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	_, err := executeCommand(RootCmd, "pr", "create", "--nightly")
+	if err == nil {
+		t.Fatal("expected an error when the change has no auto-submit label, got nil")
+	}
+	if !mockGit.HasCall("push") {
+		t.Fatalf("expected the push to have happened, got calls: %v", mockGit.Calls)
+	}
+	for _, want := range []string{"change created, but scheduling the submit flow failed", "has no auto-submit label", "pr merge"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q, got: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "error creating change") {
+		t.Errorf("error must not claim the create failed, got: %v", err)
+	}
+}
+
+// A new change has no change number to ask about before it is pushed, so on a
+// host without Gerrit Flows the create succeeds and the schedule fails with
+// an actionable error, before the change is otherwise modified.
+func TestCreate_Nightly_FlowsNotEnabled(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	changeID := "I0000000000000000000000000000000000000001"
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{})
+	server.OnJSON("GET", "/changes/"+changeID, http.StatusOK, DefaultMockChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit")))
+	server.OnFlowsEnabled(123456, http.StatusMethodNotAllowed, false)
+	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	_, err := executeCommand(RootCmd, "pr", "create", "--nightly")
+	if !mockGit.HasCall("push") {
+		t.Fatalf("expected the push to have happened, got calls: %v", mockGit.Calls)
+	}
+	var flowErr *ScheduleFlowError
+	if !errors.As(err, &flowErr) {
+		t.Fatalf("expected a *ScheduleFlowError, got %T: %v", err, err)
+	}
+	var notEnabled *FlowsNotEnabledError
+	if !errors.As(err, &notEnabled) {
+		t.Fatalf("expected it to wrap a *FlowsNotEnabledError, got: %v", err)
+	}
+	if n := server.CallCount("POST", "/changes/123456/flows"); n != 0 {
+		t.Errorf("expected no flows to be created, got %d", n)
 	}
 }

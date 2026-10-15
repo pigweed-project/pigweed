@@ -375,3 +375,173 @@ func TestMergeIntegration_Trigger(t *testing.T) {
 		t.Errorf("Labels got %v, want Autosubmit=1 and Presubmit-Ready=1", capturedInput.Labels)
 	}
 }
+
+func TestMergeIntegration_Nightly(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(123456, WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+
+	output, err := executeCommand(RootCmd, "pr", "merge", "123456", "--nightly")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+
+	if server.CallCount("POST", "/changes/123456/flows") != 1 {
+		t.Fatalf("Expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
+	}
+
+	var postReqs []MockRequest
+	for _, r := range server.Requests() {
+		if r.Method == "POST" && r.Path == "/changes/123456/flows" {
+			postReqs = append(postReqs, r)
+		}
+	}
+	if len(postReqs) != 1 {
+		t.Fatalf("Expected 1 POST request, got %d", len(postReqs))
+	}
+
+	wantFlows := []struct {
+		condSubstr string
+		cqVote     string
+	}{
+		{
+			condSubstr: "/c/123456 is is:open, wait until tomorrow at 02:36 in America/Los_Angeles",
+			cqVote:     "Commit-Queue+1",
+		},
+	}
+
+	for i, want := range wantFlows {
+		var capturedFlow FlowInput
+		if err := json.Unmarshal(postReqs[i].Body, &capturedFlow); err != nil {
+			t.Fatalf("request %d: failed to unmarshal FlowInput: %v", i, err)
+		}
+		if len(capturedFlow.StageExpressions) != 2 {
+			t.Fatalf("request %d: expected 2 stage expressions, got %d", i, len(capturedFlow.StageExpressions))
+		}
+		wantVotes := []string{want.cqVote, "Pigweed-Auto-Submit+1"}
+		for sIdx, wantVote := range wantVotes {
+			stage := capturedFlow.StageExpressions[sIdx]
+			if !strings.Contains(stage.Condition, want.condSubstr) {
+				t.Errorf("request %d stage %d: unexpected flow condition: %q, want substring %q", i, sIdx, stage.Condition, want.condSubstr)
+			}
+			if stage.Action.Name != "vote" || len(stage.Action.Parameters) != 1 || stage.Action.Parameters[0] != wantVote {
+				t.Errorf("request %d stage %d: unexpected flow action: %+v, want vote %s", i, sIdx, stage.Action, wantVote)
+			}
+		}
+	}
+
+	wantOut := "Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles)."
+	if !strings.Contains(output, wantOut) {
+		t.Errorf("Output got %q, want %q", output, wantOut)
+	}
+}
+
+func TestMergeIntegration_SubmitAt(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(123456, WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+
+	output, err := executeCommand(RootCmd, "pr", "merge", "123456", "--submit-at", "21:00")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+
+	if server.CallCount("POST", "/changes/123456/flows") != 1 {
+		t.Fatalf("Expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
+	}
+
+	var capturedFlow FlowInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &capturedFlow)
+	}
+	if len(capturedFlow.StageExpressions) != 2 {
+		t.Fatalf("Expected 2 stage expressions, got %d", len(capturedFlow.StageExpressions))
+	}
+	if !strings.Contains(capturedFlow.StageExpressions[0].Condition, "wait until today at 21:00 in America/Los_Angeles") {
+		t.Errorf("Unexpected flow condition: %q", capturedFlow.StageExpressions[0].Condition)
+	}
+
+	wantOut := "Created submit flow for Change 123456 (scheduled for today at 21:00 in America/Los_Angeles)."
+	if !strings.Contains(output, wantOut) {
+		t.Errorf("Output got %q, want %q", output, wantOut)
+	}
+}
+
+func TestMergeIntegration_ScheduledFlagConflicts(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "nightly and submit-at",
+			args:    []string{"pr", "merge", "12345", "--nightly", "--submit-at", "20:00"},
+			wantErr: "cannot specify both --nightly and --submit-at",
+		},
+		{
+			name:    "nightly and auto",
+			args:    []string{"pr", "merge", "12345", "--nightly", "--auto"},
+			wantErr: "cannot specify both --auto and --nightly/--submit-at",
+		},
+		{
+			name:    "nightly and cq",
+			args:    []string{"pr", "merge", "12345", "--nightly", "--cq"},
+			wantErr: "cannot specify both --cq/--trigger and --nightly/--submit-at",
+		},
+		{
+			name:    "nightly and trigger",
+			args:    []string{"pr", "merge", "12345", "--nightly", "--trigger"},
+			wantErr: "cannot specify both --cq/--trigger and --nightly/--submit-at",
+		},
+		{
+			name:    "submit-at and auto",
+			args:    []string{"pr", "merge", "12345", "--submit-at", "20:00", "--auto"},
+			wantErr: "cannot specify both --auto and --nightly/--submit-at",
+		},
+		{
+			name:    "submit-at and cq",
+			args:    []string{"pr", "merge", "12345", "--submit-at", "20:00", "--cq"},
+			wantErr: "cannot specify both --cq/--trigger and --nightly/--submit-at",
+		},
+		{
+			name:    "invalid submit-at",
+			args:    []string{"pr", "merge", "12345", "--submit-at", "25:00"},
+			wantErr: "expected 24-hour format \"HH:MM\"",
+		},
+		{
+			name:    "empty submit-at",
+			args:    []string{"pr", "merge", "12345", "--submit-at", ""},
+			wantErr: "expected 24-hour format \"HH:MM\"",
+		},
+		{
+			name:    "nightly and message",
+			args:    []string{"pr", "merge", "12345", "--nightly", "--message", "Landing tonight."},
+			wantErr: "cannot specify --message with --nightly/--submit-at",
+		},
+		{
+			name:    "submit-at and message",
+			args:    []string{"pr", "merge", "12345", "--submit-at", "20:00", "--message", "Landing tonight."},
+			wantErr: "cannot specify --message with --nightly/--submit-at",
+		},
+		{
+			// An explicitly empty message is still a flag the user passed.
+			name:    "nightly and empty message",
+			args:    []string{"pr", "merge", "12345", "--nightly", "--message", ""},
+			wantErr: "cannot specify --message with --nightly/--submit-at",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := executeCommand(RootCmd, tc.args...)
+			if err == nil {
+				t.Fatalf("Expected error for args %v, got nil", tc.args)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("Error got %q, want substring %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}

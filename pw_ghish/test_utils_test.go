@@ -71,6 +71,13 @@ func resetAllFlags(cmd *cobra.Command) {
 
 func init() {
 	setupRootAliases()
+	// Pin scheduleNowFn to 19:00 UTC (12:00 PM PDT) in tests so evening
+	// times (21:00-23:59) resolve to "today" and post-midnight times
+	// (00:00-02:59) resolve to "tomorrow" deterministically regardless of
+	// when the test suite runs.
+	scheduleNowFn = func() time.Time {
+		return time.Date(2026, 9, 30, 19, 0, 0, 0, time.UTC) // 12:00 PM PDT
+	}
 }
 
 // executeCommand runs a cobra command and captures stdout.
@@ -695,7 +702,55 @@ func (s *MockGerritServer) OnDefaultChange(number any, opts ...func(map[string]a
 		s.OnJSON("GET", fmt.Sprintf("/changes/%s*", cID), http.StatusOK, ch)
 	}
 	s.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{ch})
+	if _, ok := number.(int); ok {
+		// Registered ahead of the wildcard below, which would otherwise
+		// answer GET .../flows and .../is-flows-enabled with the change
+		// itself. Hosts in tests have flows enabled unless a test says
+		// otherwise with OnFlowsEnabled.
+		s.OnJSON("GET", fmt.Sprintf("/changes/%d/flows", num), http.StatusOK, []any{})
+		s.OnJSON("GET", fmt.Sprintf("/changes/%d/is-flows-enabled", num), http.StatusOK, map[string]any{"enabled": true})
+	}
 	return s.OnJSON("GET", pattern, http.StatusOK, ch)
+}
+
+// OnFlowsEnabled registers GET /changes/<number>/is-flows-enabled responding
+// with status and, for a 2xx status, {"enabled": enabled}. It takes priority
+// over routes registered earlier, including OnDefaultChange's.
+func (s *MockGerritServer) OnFlowsEnabled(number int, status int, enabled bool) *MockGerritServer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	route := MockRoute{
+		Method: "GET",
+		Path:   fmt.Sprintf("/changes/%d/is-flows-enabled", number),
+		Handler: func(w http.ResponseWriter, r *http.Request) {
+			if status < 200 || status > 299 {
+				w.WriteHeader(status)
+				return
+			}
+			s.RespondJSON(w, status, map[string]any{"enabled": enabled})
+		},
+	}
+	s.routes = append([]MockRoute{route}, s.routes...)
+	return s
+}
+
+// OnFlows registers GET /changes/<number>/flows returning flows. It takes
+// priority over routes registered earlier, including OnDefaultChange's.
+func (s *MockGerritServer) OnFlows(number int, flows ...FlowInfo) *MockGerritServer {
+	if flows == nil {
+		flows = []FlowInfo{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	route := MockRoute{
+		Method: "GET",
+		Path:   fmt.Sprintf("/changes/%d/flows", number),
+		Handler: func(w http.ResponseWriter, r *http.Request) {
+			s.RespondJSON(w, http.StatusOK, flows)
+		},
+	}
+	s.routes = append([]MockRoute{route}, s.routes...)
+	return s
 }
 
 // OnCommitMessage registers GET /changes/<number>/revisions/current/commit returning a commit message.
