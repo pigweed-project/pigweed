@@ -108,7 +108,21 @@ cc_library(
     name = "abstract_allocator",
     hdrs = ["public/pw_allocator/abstract_allocator.h"],
     strip_include_prefix = "public",
-    deps = [":pw_allocator"],
+    deps = [
+        ":abstract_deallocator",
+        ":pw_allocator",
+    ],
+)
+
+cc_library(
+    name = "abstract_deallocator",
+    hdrs = ["public/pw_allocator/abstract_deallocator.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":pw_allocator",
+        "//pw_result",
+        "//pw_status",
+    ],
 )
 
 cc_library(
@@ -636,6 +650,28 @@ cc_library(
 # Tests
 
 pw_cc_test(
+    name = "abstract_allocator_test",
+    srcs = ["abstract_allocator_test.cc"],
+    deps = [
+        ":abstract_allocator",
+        ":pw_allocator",
+        ":testing",
+        "//pw_status",
+    ],
+)
+
+pw_cc_test(
+    name = "abstract_deallocator_test",
+    srcs = ["abstract_deallocator_test.cc"],
+    deps = [
+        ":abstract_deallocator",
+        ":pw_allocator",
+        ":testing",
+        "//pw_status",
+    ],
+)
+
+pw_cc_test(
     name = "allocator_as_pool_test",
     srcs = ["allocator_as_pool_test.cc"],
     deps = [
@@ -969,6 +1005,7 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_allocator/abstract_allocator.h",
+        "public/pw_allocator/abstract_deallocator.h",
         "public/pw_allocator/allocator.h",
         "public/pw_allocator/allocator_as_pool.h",
         "public/pw_allocator/async_pool.h",

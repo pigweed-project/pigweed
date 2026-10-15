@@ -14,7 +14,9 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 
+#include "pw_allocator/abstract_deallocator.h"
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/capability.h"
 
@@ -27,10 +29,14 @@ namespace pw::allocator {
 ///
 /// This type isn't instantiated directly, but is provided to make it easier to
 /// define other allocator types.
-class AbstractAllocator : public pw::Allocator {
+class AbstractAllocator
+    : public internal::BasicAbstractDeallocator<pw::Allocator> {
+ private:
+  using Base = internal::BasicAbstractDeallocator<pw::Allocator>;
+
  protected:
-  constexpr explicit AbstractAllocator(Capabilities capabilities)
-      : pw::Allocator(capabilities) {}
+  constexpr explicit AbstractAllocator(Capabilities capabilities = 0)
+      : Base(capabilities) {}
 
 // TODO(b/548053990): Always use this as the default.
 #if !PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
@@ -47,11 +53,6 @@ class AbstractAllocator : public pw::Allocator {
   /// @copydoc Allocator::MeasureFragmentation
   std::optional<Fragmentation> DoMeasureFragmentation() const override {
     return std::nullopt;
-  }
-
-  /// @copydoc Deallocator::GetInfo
-  Result<Layout> DoGetInfo(InfoType, const void*) const override {
-    return Status::Unimplemented();
   }
 };
 

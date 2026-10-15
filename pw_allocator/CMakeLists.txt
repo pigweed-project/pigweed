@@ -84,6 +84,18 @@ pw_add_library(pw_allocator.abstract_allocator INTERFACE
     public
   PUBLIC_DEPS
     pw_allocator
+    pw_allocator.abstract_deallocator
+)
+
+pw_add_library(pw_allocator.abstract_deallocator INTERFACE
+  HEADERS
+    public/pw_allocator/abstract_deallocator.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator
+    pw_result
+    pw_status
 )
 
 pw_add_library(pw_allocator.allocator_as_pool STATIC
@@ -618,6 +630,32 @@ pw_add_library(pw_allocator.fuzzing STATIC
 )
 
 # Tests
+
+pw_add_test(pw_allocator.abstract_allocator_test
+  SOURCES
+    abstract_allocator_test.cc
+  PRIVATE_DEPS
+    pw_allocator
+    pw_allocator.abstract_allocator
+    pw_allocator.testing
+    pw_status
+  GROUPS
+    modules
+    pw_allocator
+)
+
+pw_add_test(pw_allocator.abstract_deallocator_test
+  SOURCES
+    abstract_deallocator_test.cc
+  PRIVATE_DEPS
+    pw_allocator
+    pw_allocator.abstract_deallocator
+    pw_allocator.testing
+    pw_status
+  GROUPS
+    modules
+    pw_allocator
+)
 
 pw_add_test(pw_allocator.allocator_as_pool_test
   SOURCES

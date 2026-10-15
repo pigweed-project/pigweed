@@ -122,7 +122,20 @@ pw_source_set("use_legacy_default_impl") {
 pw_source_set("abstract_allocator") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/abstract_allocator.h" ]
-  public_deps = [ ":pw_allocator" ]
+  public_deps = [
+    ":abstract_deallocator",
+    ":pw_allocator",
+  ]
+}
+
+pw_source_set("abstract_deallocator") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_allocator/abstract_deallocator.h" ]
+  public_deps = [
+    ":pw_allocator",
+    dir_pw_result,
+    dir_pw_status,
+  ]
 }
 
 pw_source_set("allocator_as_pool") {
@@ -599,6 +612,26 @@ pw_source_set("fuzzing") {
 
 # Tests
 
+pw_test("abstract_allocator_test") {
+  deps = [
+    ":abstract_allocator",
+    ":pw_allocator",
+    ":testing",
+    dir_pw_status,
+  ]
+  sources = [ "abstract_allocator_test.cc" ]
+}
+
+pw_test("abstract_deallocator_test") {
+  deps = [
+    ":abstract_deallocator",
+    ":pw_allocator",
+    ":testing",
+    dir_pw_status,
+  ]
+  sources = [ "abstract_deallocator_test.cc" ]
+}
+
 pw_test("allocator_as_pool_test") {
   deps = [
     ":allocator_as_pool",
@@ -895,6 +928,8 @@ pw_test("worst_fit_test") {
 
 pw_test_group("tests") {
   tests = [
+    ":abstract_allocator_test",
+    ":abstract_deallocator_test",
     ":allocator_as_pool_test",
     ":allocator_test",
     ":best_fit_test",

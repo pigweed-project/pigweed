@@ -327,13 +327,14 @@ log whenever a threshold is exceeded:
    :linenos:
    :start-after: [pw_allocator-examples-custom_allocator]
 
-Most other pure virtual methods, such as `DoResize`, can either be satisfied by
+Most other pure virtual methods, such as ``DoResize``, can be satisfied by
 either implementing them directly or inheriting them from a base class. The
-:cc:`AbstractAllocator <pw::allocator::AbstractAllocator>` type provides default
-implementations for concrete allocators.
+:cc:`AbstractDeallocator <pw::allocator::AbstractDeallocator>` and
+:cc:`AbstractAllocator <pw::allocator::AbstractAllocator>` types provide default
+implementations for concrete deallocators and allocators, respectively.
 
-A notable exception to the above is `DoReallocate`, which unless overridden will
-try to ``Resize``, and, if unsuccessful, try to ``Allocate``, copy, and
+A notable exception to the above is ``DoReallocate``, which unless overridden
+will try to ``Resize``, and, if unsuccessful, try to ``Allocate``, copy, and
 ``Deallocate``.
 
 Custom allocators can indicate which optional methods they implement and what
