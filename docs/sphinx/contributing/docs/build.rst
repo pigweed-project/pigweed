@@ -452,7 +452,9 @@ to other components.
 
 * **Python**: We use Sphinx's `autodoc`_ feature to auto-generate Python API
   reference content. In order for this to work, the Python modules must be
-  listed as dependencies of the ``//docs/sphinx:docs`` target.
+  listed as dependencies of the ``//docs/sphinx:docs`` target. Standard library
+  cross-references are resolved via
+  :ref:`intersphinx <contrib-docs-website-intersphinx>`.
 
 * **Sphinx**: Once all the other inputs are ready, we can use `Sphinx`_
   (essentially a `static site generator`_) to build the ``pigweed.dev``

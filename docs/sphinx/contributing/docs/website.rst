@@ -169,6 +169,27 @@ There is a workflow for manually removing the copy-to-clipboard button for a
 particular code block but it has not been implemented yet. See
 `Remove copybuttons using a CSS selector`_.
 
+.. _contrib-docs-website-intersphinx:
+
+---------------------------------------
+External cross-references (intersphinx)
+---------------------------------------
+.. inclusive-language: disable
+.. _autodoc: https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
+.. _intersphinx: https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html
+.. inclusive-language: enable
+
+Cross-references to external documentation are powered by `intersphinx`_ and
+configured via ``intersphinx_mapping`` in :cs:`docs/sphinx/conf.py`.
+
+When `autodoc`_ generates Python API references or when reStructuredText files
+use ``:py:*:`` roles (such as ``:py:class:`pathlib.Path```), Sphinx first
+checks whether the symbol is defined in Pigweed's own documentation. If the
+symbol is not found locally, ``intersphinx`` looks it up in the external
+inventories configured in ``intersphinx_mapping`` (which fetches
+``https://docs.python.org/3/objects.inv`` over the network at build time) and
+links the reference to the official Python documentation.
+
 .. _contrib-docs-website-fonts:
 
 --------------------

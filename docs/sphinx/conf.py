@@ -84,6 +84,7 @@ extensions = [
     'seed_metadata',
     'sitemap',  # Custom extension to handle pigweed.dev sitemap nuances.
     'sphinx.ext.autodoc',  # Automatic documentation for Python code
+    'sphinx.ext.intersphinx',  # Cross-references to external documentation
     'sphinx.ext.napoleon',  # Parses Google-style docstrings
     'sphinxarg.ext',  # Automatic documentation of Python argparse
     'sphinxcontrib.doxylink',
@@ -260,6 +261,17 @@ cpp_paren_attributes = [
 # total length exceeds 130 characters. 130 seems about right for keeping one or
 # two parameters on a single line.
 maximum_signature_line_length = 130
+
+# Resolve Python standard library cross-references (such as type annotations
+# processed by autodoc) to the official Python documentation. Setting the
+# inventory location to None instructs intersphinx to download
+# https://docs.python.org/3/objects.inv over the network at build time. If, in
+# the future, we need to block the docs build from any network access it's
+# possible to vendor the inventory data locally. See patchset 4 for example:
+# https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/502233/4
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3/', None),
+}
 
 
 def do_not_skip_init(app, what, name, obj, would_skip, options):
