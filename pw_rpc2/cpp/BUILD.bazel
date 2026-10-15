@@ -20,7 +20,6 @@ load("//pw_protobuf_compiler:pwpb_rpc2_proto_library.bzl", "pwpb_rpc2_proto_libr
 load("//pw_protobuf_compiler:raw_rpc2_proto_library.bzl", "raw_rpc2_proto_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
-# TODO: b/570174776 - Make public once pw_rpc2 is ready for external use.
 package(default_visibility = ["//pw_rpc2:__subpackages__"])
 
 licenses(["notice"])
@@ -144,6 +143,7 @@ cc_library(
     ],
     implementation_deps = ["//pw_stream"],
     strip_include_prefix = "public",
+    visibility = ["//visibility:public"],
     deps = [
         ":serialize",
         "//pw_bytes",
@@ -238,6 +238,7 @@ cc_library(
         "//pw_log",
     ],
     strip_include_prefix = "public",
+    visibility = ["//visibility:public"],
     deps = _CORO_DEPS + [
         ":handshake",
         ":packet",

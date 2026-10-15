@@ -28,7 +28,6 @@ config("public_include_path") {
   visibility = [ ":*" ]
 }
 
-# TODO: b/570174776 - Make public once pw_rpc2 is ready for external use.
 _default_visibility = [ "$dir_pw_rpc2/*" ]
 
 pw_cc_enum_source_set("status") {
@@ -148,8 +147,8 @@ pw_source_set("pwpb_serialize") {
   ]
   deps = [ dir_pw_stream ]
 
-  # TODO: b/570174776 - Visibility is not restricted because pw_proto_library
-  # generates .pwpb_rpc2 subtargets in all directories.
+  # Visibility is not restricted because pw_proto_library generates .pwpb_rpc2
+  # subtargets in all directories.
 }
 
 pw_test("pwpb_serialize_test") {
@@ -263,9 +262,6 @@ pw_source_set("cpp") {
     dir_pw_enum,
     dir_pw_log,
   ]
-
-  # TODO: b/570174776 - Visibility is not restricted because pw_proto_library
-  # generates .pwpb_rpc2 and .raw_rpc2 subtargets in all directories.
 }
 
 pw_source_set("test_utils") {
