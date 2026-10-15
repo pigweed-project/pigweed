@@ -323,6 +323,7 @@ pw_add_test(pw_rpc2.cpp.call_test
     call_test.cc
   PRIVATE_DEPS
     pw_allocator.testing
+    pw_async2
     pw_async2.testing
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils

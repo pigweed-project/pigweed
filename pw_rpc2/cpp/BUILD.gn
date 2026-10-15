@@ -324,6 +324,7 @@ pw_test("call_test") {
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
     "$dir_pw_transport/cpp:socket",
+    dir_pw_async2,
   ]
   sources = [ "call_test.cc" ]
 }

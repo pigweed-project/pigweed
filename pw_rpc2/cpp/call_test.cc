@@ -21,7 +21,10 @@
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 #include "pw_rpc2/internal/client_connection_task.h"
+#include "pw_rpc2/internal/server_connection_task.h"
+#include "pw_rpc2/internal/server_task.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/reader.h"
 #include "pw_transport/transport.h"
@@ -29,47 +32,6 @@
 
 namespace pw::rpc2::internal {
 namespace {
-
-class ReadTestTask : public async2::Task {
- public:
-  explicit ReadTestTask(Call& call)
-      : receive_fut_(call.ClaimRead()), call_(call) {}
-
-  ~ReadTestTask() override {
-    if (!released_) {
-      call_.ReleaseRead();
-    }
-  }
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = receive_fut_.Pend(cx);
-    if (poll.IsPending()) {
-      return async2::Pending();
-    }
-    call_.ReleaseRead();
-    released_ = true;
-    if (poll->has_value()) {
-      result_ = std::move(**poll);
-    } else if (call_.role() == EndpointRole::kServer &&
-               call_.peer_ended_stream()) {
-      result_ = RpcStatus::EndOfStream();
-    } else {
-      RpcStatus status = call_.completion_status();
-      result_ = (call_.is_completed() && !status.ok())
-                    ? status
-                    : RpcStatus::EndOfStream();
-    }
-    return async2::Ready();
-  }
-
-  const std::optional<RpcResult<ConstBuf>>& result() const { return result_; }
-
- private:
-  async2::ReceiveFuture<ConstBuf> receive_fut_;
-  Call& call_;
-  bool released_ = false;
-  std::optional<RpcResult<ConstBuf>> result_;
-};
 
 ConstBuf MakePayload(Allocator& alloc, size_t size, std::byte val) {
   Buf payload = Buf::Allocate(alloc, size);
@@ -105,6 +67,7 @@ TEST(CallTest, IngressMessageQueueAndBackpressure) {
 
   auto call = ClientCall::Create(*connection_task, 100u, allocator);
   ASSERT_NE(call, nullptr);
+  RawReader reader = CallAccess::Create<RawReader>(call);
 
   ReserveSlotTask reserve1(*call);
   dispatcher.Post(reserve1);
@@ -122,12 +85,13 @@ TEST(CallTest, IngressMessageQueueAndBackpressure) {
   reserve2.Deregister();
   EXPECT_FALSE(reserve2.reserved());
 
-  ReadTestTask task(*call);
-  dispatcher.Post(task);
+  async2::FutureTask read(reader.Read());
+  dispatcher.Post(read);
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
-  EXPECT_EQ(task.result()->value().size(), 5u);
+  ASSERT_TRUE(read.has_value());
+  PW_TEST_ASSERT_OK(read.value());
+  EXPECT_EQ(read.value()->size(), 5u);
 
   // Now queue has space again
   ReserveSlotTask reserve3(*call);
@@ -138,7 +102,6 @@ TEST(CallTest, IngressMessageQueueAndBackpressure) {
 
   call->OnMessage(MakePayload(allocator, 3, std::byte(0xCC)));
 
-  task.Deregister();
   connection_task->Deregister();
 }
 
@@ -179,6 +142,7 @@ TEST(CallTest, DeferredResourceResetPostCompletion) {
 
   auto call = ClientCall::Create(*connection_task, 300u, allocator);
   ASSERT_NE(call, nullptr);
+  RawReader reader = CallAccess::Create<RawReader>(call);
 
   // Buffer a message before completion
   ReserveSlotTask reserve(*call);
@@ -193,20 +157,19 @@ TEST(CallTest, DeferredResourceResetPostCompletion) {
   EXPECT_TRUE(call->is_completed());
 
   // Buffered message can still be drained cleanly
-  ReadTestTask task1(*call);
-  dispatcher.Post(task1);
+  async2::FutureTask read1(reader.Read());
+  dispatcher.Post(read1);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task1.result().has_value() && task1.result()->ok());
-  EXPECT_EQ(task1.result()->value().size(), 4u);
-  task1.Deregister();
+  ASSERT_TRUE(read1.has_value());
+  PW_TEST_ASSERT_OK(read1.value());
+  EXPECT_EQ(read1.value()->size(), 4u);
 
   // Next read reports the end of the stream (kEndOfStream)
-  ReadTestTask task2(*call);
-  dispatcher.Post(task2);
+  async2::FutureTask read2(reader.Read());
+  dispatcher.Post(read2);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task2.result().has_value());
-  EXPECT_EQ(task2.result()->status(), RpcStatus::EndOfStream());
-  task2.Deregister();
+  ASSERT_TRUE(read2.has_value());
+  EXPECT_EQ(read2.value().status(), RpcStatus::EndOfStream());
 
   // Write on a call that completed with kOk fails with kWriteClosed
   call->CloseWrite();
@@ -303,6 +266,7 @@ TEST(CallTest, FinishFollowedByConnectionClosePreservesEndOfStream) {
 
   auto call = ClientCall::Create(*connection_task, 303u, allocator);
   ASSERT_NE(call, nullptr);
+  RawReader reader = CallAccess::Create<RawReader>(call);
 
   ReserveSlotTask reserve(*call);
   dispatcher.Post(reserve);
@@ -315,20 +279,18 @@ TEST(CallTest, FinishFollowedByConnectionClosePreservesEndOfStream) {
   // Connection closes before the caller drains the final message and EOF.
   connection_task->CloseConnection(RpcStatus::Closed());
 
-  ReadTestTask first_read(*call);
+  async2::FutureTask first_read(reader.Read());
   dispatcher.Post(first_read);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(first_read.result().has_value());
-  PW_TEST_ASSERT_OK(*first_read.result());
-  EXPECT_EQ(first_read.result()->value().size(), 3u);
-  first_read.Deregister();
+  ASSERT_TRUE(first_read.has_value());
+  PW_TEST_ASSERT_OK(first_read.value());
+  EXPECT_EQ(first_read.value()->size(), 3u);
 
-  ReadTestTask eof_read(*call);
+  async2::FutureTask eof_read(reader.Read());
   dispatcher.Post(eof_read);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(eof_read.result().has_value());
-  EXPECT_EQ(eof_read.result()->status(), RpcStatus::EndOfStream());
-  eof_read.Deregister();
+  ASSERT_TRUE(eof_read.has_value());
+  EXPECT_EQ(eof_read.value().status(), RpcStatus::EndOfStream());
 
   connection_task->Deregister();
 }
@@ -345,6 +307,7 @@ TEST(CallTest, PeerStreamEndKeepsClientReaderOpenUntilTerminal) {
 
   auto call = ClientCall::Create(*connection_task, 303u, allocator);
   ASSERT_NE(call, nullptr);
+  RawReader reader = CallAccess::Create<RawReader>(call);
 
   ReserveSlotTask reserve(*call);
   dispatcher.Post(reserve);
@@ -357,23 +320,21 @@ TEST(CallTest, PeerStreamEndKeepsClientReaderOpenUntilTerminal) {
   EXPECT_FALSE(call->is_read_closed());
   EXPECT_FALSE(call->is_completed());
 
-  ReadTestTask first_read(*call);
+  async2::FutureTask first_read(reader.Read());
   dispatcher.Post(first_read);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(first_read.result().has_value());
-  PW_TEST_ASSERT_OK(*first_read.result());
-  first_read.Deregister();
+  ASSERT_TRUE(first_read.has_value());
+  PW_TEST_ASSERT_OK(first_read.value());
 
-  ReadTestTask final_read(*call);
+  async2::FutureTask final_read(reader.Read());
   dispatcher.Post(final_read);
   dispatcher.RunUntilStalled();
-  EXPECT_FALSE(final_read.result().has_value());
+  EXPECT_FALSE(final_read.has_value());
 
   call->Complete(RpcStatus::ProtocolError());
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(final_read.result().has_value());
-  EXPECT_EQ(final_read.result()->status(), RpcStatus::ProtocolError());
-  final_read.Deregister();
+  ASSERT_TRUE(final_read.has_value());
+  EXPECT_EQ(final_read.value().status(), RpcStatus::ProtocolError());
 
   connection_task->Deregister();
 }
@@ -388,17 +349,82 @@ TEST(CallTest, PeerStreamEndThenConnectionCloseReportsCloseStatus) {
 
   auto call = ClientCall::Create(*connection_task, 303u, allocator);
   ASSERT_NE(call, nullptr);
+  RawReader reader = CallAccess::Create<RawReader>(call);
 
   call->OnPeerStreamEnd();
   // The RPC never finished, so the reader reports why rather than EOF.
   connection_task->CloseConnection(RpcStatus::Closed());
 
-  ReadTestTask read(*call);
+  async2::FutureTask read(reader.Read());
   dispatcher.Post(read);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(read.result().has_value());
-  EXPECT_EQ(read.result()->status(), RpcStatus::Closed());
-  read.Deregister();
+  ASSERT_TRUE(read.has_value());
+  EXPECT_EQ(read.value().status(), RpcStatus::Closed());
+
+  connection_task->Deregister();
+}
+
+TEST(CallTest, ServerPeerStreamEndThenConnectionClosePreservesEndOfStream) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  ServerTask server(allocator, dispatcher);
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = dispatcher.Post<ServerConnectionTask>(
+      allocator, EstablishedConnection{conn}, allocator, server);
+  ASSERT_NE(connection_task, nullptr);
+
+  auto call = test::StartServerCall(*connection_task, 303u, allocator);
+  ASSERT_NE(call, nullptr);
+  RawReader reader = CallAccess::Create<RawReader>(call);
+
+  ReserveSlotTask reserve(*call);
+  dispatcher.Post(reserve);
+  dispatcher.RunUntilStalled();
+  reserve.Deregister();
+
+  // Unlike a client call, a server call's incoming stream ends cleanly once the
+  // client half-closes it, even if the call later fails before the server
+  // drains the stream.
+  call->OnMessage(MakePayload(allocator, 3, std::byte(0x42)));
+  call->OnPeerStreamEnd();
+  connection_task->CloseConnection(RpcStatus::Closed());
+
+  async2::FutureTask first_read(reader.Read());
+  dispatcher.Post(first_read);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(first_read.has_value());
+  PW_TEST_ASSERT_OK(first_read.value());
+  EXPECT_EQ(first_read.value()->size(), 3u);
+
+  async2::FutureTask eof_read(reader.Read());
+  dispatcher.Post(eof_read);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(eof_read.has_value());
+  EXPECT_EQ(eof_read.value().status(), RpcStatus::EndOfStream());
+
+  connection_task->Deregister();
+}
+
+TEST(CallTest, ServerConnectionCloseWithoutPeerStreamEndReportsCloseStatus) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  ServerTask server(allocator, dispatcher);
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  auto connection_task = dispatcher.Post<ServerConnectionTask>(
+      allocator, EstablishedConnection{conn}, allocator, server);
+  ASSERT_NE(connection_task, nullptr);
+
+  auto call = test::StartServerCall(*connection_task, 303u, allocator);
+  ASSERT_NE(call, nullptr);
+  RawReader reader = CallAccess::Create<RawReader>(call);
+
+  connection_task->CloseConnection(RpcStatus::Closed());
+
+  async2::FutureTask read(reader.Read());
+  dispatcher.Post(read);
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(read.has_value());
+  EXPECT_EQ(read.value().status(), RpcStatus::Closed());
 
   connection_task->Deregister();
 }

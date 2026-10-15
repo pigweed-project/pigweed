@@ -409,13 +409,18 @@ TEST(ClientTest, CloseMarksClientClosedAndResolves) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   Client client =
       test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn);
+  Client copy = client;
   ASSERT_TRUE(client.is_open());
+  ASSERT_TRUE(copy.is_open());
 
   async2::FutureTask close_task(client.Close());
   EXPECT_FALSE(client.is_open());
+  EXPECT_FALSE(copy.is_open());
+  EXPECT_FALSE(raw_conn->is_closed());
 
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
+  EXPECT_TRUE(raw_conn->is_closed());
   ASSERT_TRUE(close_task.has_value());
   PW_TEST_EXPECT_OK(close_task.value());
 }
@@ -430,7 +435,8 @@ TEST(ClientTest, CloseOnAnEmptyClientResolvesImmediately) {
 
   async2::FutureTask close_task(client.Close());
   dispatcher.Post(close_task);
-  dispatcher.RunUntilStalled();
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(dispatcher.tasks_polled(), 1u);
   ASSERT_TRUE(close_task.has_value());
   PW_TEST_EXPECT_OK(close_task.value());
 }
@@ -442,15 +448,26 @@ TEST(ClientTest, CloseOnAnAlreadyClosedClientResolvesImmediately) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   Client client =
       test::ConnectMockClient(dispatcher, allocator, conn, *raw_conn);
+  Client copy = client;
 
   test::CloseClient(client, dispatcher);
   ASSERT_FALSE(client.is_open());
+  ASSERT_FALSE(copy.is_open());
 
-  async2::FutureTask close_task(client.Close());
-  dispatcher.Post(close_task);
-  dispatcher.RunUntilStalled();
-  ASSERT_TRUE(close_task.has_value());
-  PW_TEST_EXPECT_OK(close_task.value());
+  // `copy` still refers to the closed connection task; `client` was emptied by
+  // the first `Close()`. Both resolve on their first poll with no connection
+  // task work.
+  const uint32_t polled_before = dispatcher.tasks_polled();
+  async2::FutureTask close_closed(copy.Close());
+  async2::FutureTask close_emptied(client.Close());
+  dispatcher.Post(close_closed);
+  dispatcher.Post(close_emptied);
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(dispatcher.tasks_polled(), polled_before + 2u);
+  ASSERT_TRUE(close_closed.has_value());
+  PW_TEST_EXPECT_OK(close_closed.value());
+  ASSERT_TRUE(close_emptied.has_value());
+  PW_TEST_EXPECT_OK(close_emptied.value());
 }
 
 // Closing tears down the connection, which ends every call riding on it with

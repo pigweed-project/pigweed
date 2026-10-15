@@ -329,6 +329,7 @@ pw_cc_test(
         ":cpp",
         ":test_utils",
         "//pw_allocator:testing",
+        "//pw_async2",
         "//pw_async2:testing",
         "//pw_transport/cpp:socket",
         "//pw_unit_test",
