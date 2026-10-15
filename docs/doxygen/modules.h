@@ -621,6 +621,36 @@
 /// @defgroup pw_rpc_config Configuration
 /// @ingroup pw_rpc
 
+/// @defgroup pw_rpc2 pw_rpc2
+/// @brief Next gen, zero-copy async RPC with end-to-end backpressure
+/// @maindocs
+/// [Home](../../pw_rpc2/docs.html) |
+/// [C++ client and server](../../pw_rpc2/cpp.html) |
+/// [Examples](../../pw_rpc2/examples.html) |
+/// [Wire protocol](../../pw_rpc2/protocol.html) |
+/// [Why RPC2?](../../pw_rpc2/why.html) |
+/// [Comparison to RPC1](../../pw_rpc2/comparison.html)
+/// @endmaindocs
+
+/// @defgroup pw_rpc2_client Client
+/// @ingroup pw_rpc2
+/// @brief Connect to an RPC server and invoke RPC methods
+/// @details Learn more: [Calling RPCs](../../pw_rpc2/examples.html#module-pw-rpc2-examples-call)
+
+/// @defgroup pw_rpc2_server Server
+/// @ingroup pw_rpc2
+/// @brief Register RPC services and accept incoming client connections
+/// @details Learn more: [Implementing a service](../../pw_rpc2/examples.html#module-pw-rpc2-examples-implement)
+
+/// @defgroup pw_rpc2_readers_writers Readers and writers
+/// @ingroup pw_rpc2
+/// @brief Read and write RPC messages and responses
+
+/// @defgroup pw_rpc2_status Status
+/// @ingroup pw_rpc2
+/// @brief %Status codes and result types for RPC operations
+/// @details Learn more: [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors)
+
 /// @defgroup pw_span pw_span
 /// @brief std::span for C++17.
 /// @maindocs

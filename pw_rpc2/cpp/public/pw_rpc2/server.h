@@ -25,6 +25,8 @@
 
 namespace pw::rpc2 {
 
+/// @submodule{pw_rpc2,server}
+
 /// Serves RPC services over one or more transport listeners.
 ///
 /// A `Server` owns three things: the service registry, the set of transport
@@ -160,5 +162,7 @@ class Server {
   // control inbox the thread-safe functions above post to.
   internal::ServerTask task_;
 };
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2

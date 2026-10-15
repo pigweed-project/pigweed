@@ -17,6 +17,8 @@
 
 namespace pw::rpc2 {
 
+/// @submodule{pw_rpc2,server}
+
 /// The type of an RPC method.
 ///
 /// Bit 0 is set if the server streams responses, and bit 1 if the client
@@ -37,5 +39,7 @@ constexpr bool HasServerStream(MethodType type) {
 constexpr bool HasClientStream(MethodType type) {
   return (static_cast<uint8_t>(type) & 0b10u) != 0u;
 }
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2

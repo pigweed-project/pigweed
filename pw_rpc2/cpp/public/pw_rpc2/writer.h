@@ -36,6 +36,8 @@
 
 namespace pw::rpc2 {
 
+/// @submodule{pw_rpc2,readers_writers}
+
 template <typename>
 class UnaryWriter;
 template <typename>
@@ -46,6 +48,8 @@ using RawUnaryWriter = UnaryWriter<ConstBuf>;
 
 /// Outbound message stream writer for raw (`ConstBuf`) messages.
 using RawWriter = Writer<ConstBuf>;
+
+/// @endsubmodule
 
 namespace internal {
 
@@ -116,6 +120,8 @@ class WriteFutureBase {
 
 }  // namespace internal
 
+/// @submodule{pw_rpc2,readers_writers}
+
 /// Future representing an outbound write or stream completion.
 ///
 /// Waits for a write reservation, serializes `Message` into the reserved buffer
@@ -145,7 +151,8 @@ class WriteFuture : public internal::WriteFutureBase {
   /// * `kDataError` if the message serializer failed for any other reason.
   ///   Nothing was sent, and the call is still open.
   /// * The call's completion status (such as `kCancelled` or `kDisconnected`)
-  ///   if the call ended with an error. See `internal::Call::is_completed()`.
+  ///   if the call ended with an error. See
+  ///   [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors).
   /// * `kDisconnected` if the connection closed before the write was sent.
   [[nodiscard]] async2::Poll<RpcStatus> Pend(async2::Context& cx) {
     if constexpr (std::is_void_v<Message>) {
@@ -191,6 +198,8 @@ class WriteFuture : public internal::WriteFutureBase {
 
 static_assert(async2::Future<WriteFuture<>>);
 static_assert(async2::Future<WriteFuture<ConstBuf>>);
+
+/// @endsubmodule
 
 namespace internal {
 
@@ -311,6 +320,8 @@ class WriterBase : public CallHandle {
 };
 
 }  // namespace internal
+
+/// @submodule{pw_rpc2,readers_writers}
 
 /// Outbound stream handle for sending zero or more messages to the peer.
 ///
@@ -507,5 +518,7 @@ class UnaryWriter : public internal::WriterBase {
 
 static_assert(sizeof(RawWriter) == sizeof(internal::CallHandle));
 static_assert(sizeof(RawUnaryWriter) == sizeof(internal::CallHandle));
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2

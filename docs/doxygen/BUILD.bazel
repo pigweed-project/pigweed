@@ -87,6 +87,7 @@ filegroup(
         "//pw_random:doxygen",
         "//pw_result:doxygen",
         "//pw_rpc:doxygen",
+        "//pw_rpc2/cpp:doxygen",
         "//pw_span:doxygen",
         "//pw_spi:doxygen",
         "//pw_status:doxygen",

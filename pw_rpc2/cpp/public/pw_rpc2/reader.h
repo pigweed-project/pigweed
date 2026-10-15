@@ -162,6 +162,8 @@ class ResponseFutureBase : public ReadFutureBase {
 
 }  // namespace internal
 
+/// @submodule{pw_rpc2,readers_writers}
+
 /// Future that resolves to the next inbound message of a stream
 /// (`RpcResult<Message>`). Returned by `Reader::Read()`.
 ///
@@ -203,7 +205,8 @@ class ReadFuture : public internal::ReadFutureBase {
   ///   `kCancelled` if either end cancelled the RPC; `kClosed`,
   ///   `kDisconnected`, or `kProtocolError` if the connection closed; or
   ///   `kUnimplemented`, `kUnavailable`, `kAborted`, or `kProtocolError` if the
-  ///   peer ended the call. See `internal::Call::is_completed()`.
+  ///   peer ended the call. See
+  ///   [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors).
   [[nodiscard]] async2::Poll<RpcResult<Message>> Pend(async2::Context& cx) {
     if constexpr (std::is_same_v<Message, ConstBuf>) {
       return PendRaw(cx);
@@ -260,7 +263,8 @@ class ResponseFuture : public internal::ResponseFutureBase {
   ///   `kCancelled` if either end cancelled the RPC; `kClosed`,
   ///   `kDisconnected`, or `kProtocolError` if the connection closed; or
   ///   `kUnimplemented`, `kUnavailable`, `kAborted`, or `kProtocolError` if the
-  ///   server ended the call. See `internal::Call::is_completed()`.
+  ///   server ended the call. See
+  ///   [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors).
   [[nodiscard]] async2::Poll<RpcResult<Response>> Pend(async2::Context& cx) {
     if constexpr (std::is_same_v<Response, ConstBuf>) {
       return PendRaw(cx);
@@ -282,6 +286,8 @@ class ResponseFuture : public internal::ResponseFutureBase {
 static_assert(async2::Future<ResponseFuture<ConstBuf>>);
 
 using RawResponseFuture = ResponseFuture<ConstBuf>;
+
+/// @endsubmodule
 
 namespace internal {
 
@@ -333,6 +339,8 @@ class ReaderBase : public CallHandle {
 
 }  // namespace internal
 
+/// @submodule{pw_rpc2,readers_writers}
+
 /// Inbound message stream handle for reading a sequence of messages from the
 /// peer.
 ///
@@ -383,5 +391,7 @@ class Reader : public internal::ReaderBase {
 using RawReader = Reader<ConstBuf>;
 
 static_assert(sizeof(RawReader) == sizeof(internal::CallHandle));
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2

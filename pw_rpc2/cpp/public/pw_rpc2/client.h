@@ -38,6 +38,8 @@ namespace internal {
 class GeneratedServiceClient;
 }  // namespace internal
 
+/// @submodule{pw_rpc2,client}
+
 /// Future that resolves to a connected `Client`. Returned by
 /// `Client::Connect()`.
 class ClientFuture {
@@ -247,5 +249,7 @@ class Client {
 
   SharedPtr<internal::ClientConnectionTask> connection_task_;
 };
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2

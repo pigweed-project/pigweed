@@ -46,6 +46,8 @@ inline sync::InterruptSpinLock& ControlLock() {
 
 }  // namespace internal
 
+/// @submodule{pw_rpc2,server}
+
 /// Future returned by the thread-safe control operations on `Server` and
 /// `Client`.
 ///
@@ -167,5 +169,7 @@ class [[nodiscard]] ControlFuture {
 };
 
 static_assert(async2::Future<ControlFuture>);
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2

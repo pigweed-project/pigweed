@@ -15,11 +15,13 @@ C++ client and server
 --------------
 Error handling
 --------------
-``pw_rpc2`` APIs report errors as a ``pw::rpc2::RpcStatus``, or as a
-``pw::rpc2::RpcResult<T>`` that holds either a value or an ``RpcStatus``. An
-``RpcStatus`` is a single ``pw::rpc2::RpcCode``. Each code maps to one distinct
-action, so the code alone tells the caller what to do next. Check for a
-specific code with its ``Is*()`` function, such as ``status.IsEndOfStream()``.
+``pw_rpc2`` APIs report errors as a :cc:`pw::rpc2::RpcStatus`, or as a
+:cc:`pw::rpc2::RpcResult<T> <pw::rpc2::RpcResult>` that holds either a value or
+an :cc:`RpcStatus <pw::rpc2::RpcStatus>`. An :cc:`RpcStatus
+<pw::rpc2::RpcStatus>` is a single :cc:`pw::rpc2::RpcCode`. Each code maps to
+one distinct action, so the code alone tells the caller what to do next. Check
+for a specific code with its ``Is*()`` function, such as
+``status.IsEndOfStream()``.
 
 A status does not say exactly what went wrong. ``pw_rpc2`` logs the precise
 cause where it detects an error, including the precise error code when the peer
@@ -41,18 +43,17 @@ the logs to debug.
      - Continue.
    * - ``kEndOfStream``
      - The peer finished its stream and every message has been read. Not a
-       failure.
-     - Stop reading. For a client, the RPC finished successfully.
+       failure. For a client, the RPC finished successfully.
+     - Stop reading.
    * - ``kCancelled``
      - Application code on either side ended the call, explicitly or
        implicitly, such as by dropping a call handle.
      - Stop work on the call. Don't retry automatically; application logic
        chose to end it.
    * - ``kClosed``
-     - You closed the ``Client`` or ``Server``, or the object you used is
-       empty.
-     - Nothing to recover; it's the result of your own action. Stop using the
-       object, or create a new ``Client``.
+     - You closed the :cc:`Client <pw::rpc2::Client>` or :cc:`Server
+       <pw::rpc2::Server>`, or the object you used is empty.
+     - Up to you; you closed this call.
    * - ``kWriteClosed``
      - The call's outbound direction is closed. The call itself may still be
        open.
@@ -61,8 +62,9 @@ the logs to debug.
      - The connection is gone or couldn't be made, for a reason that a new
        connection can fix. Whether the peer processed in-flight calls is
        unknown.
-     - Create a new ``Client``, with backoff. Retry in-flight calls only if
-       they're idempotent. On a server, stop work on the call.
+     - Create a new :cc:`Client <pw::rpc2::Client>`, with backoff. Retry
+       in-flight calls only if they're idempotent. On a server, stop work on
+       the call.
    * - ``kResourceExhausted``
      - This endpoint couldn't allocate memory for the operation. The peer
        wasn't involved.
@@ -94,8 +96,8 @@ the logs to debug.
    * - ``kProtocolError``
      - An endpoint broke the protocol, the endpoints' protocol versions are
        incompatible, or an RPC implementation has a bug. If the error closed
-       the connection, later calls on the same ``Client`` also report
-       ``kProtocolError``.
+       the connection, later calls on the same :cc:`Client <pw::rpc2::Client>`
+       also report ``kProtocolError``.
      - Nothing fixes it at runtime: reconnecting and retrying won't help. Log
        or report it; it needs a code or deployment fix.
 
@@ -121,8 +123,10 @@ Codes that look similar call for different responses:
 
 Errors from the peer
 ====================
-When the peer ends a call with an error code, ``pw_rpc2`` logs the code, and
-the call completes with the ``RpcCode`` for the action it calls for:
+When the peer ends a call with an error code
+(:cc:`pw::rpc2::internal::ProtocolError`), ``pw_rpc2`` logs the code, and the
+call completes with the :cc:`RpcCode <pw::rpc2::RpcCode>` for the action it
+calls for:
 
 ..
    # LINT.IfChange(rpc2_peer_error_mapping)

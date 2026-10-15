@@ -103,18 +103,22 @@ type:
    * - Type
      - Arguments
    * - Unary
-     - ``Request``, ``pw::rpc2::UnaryWriter<Response>``
+     - ``Request``, :cc:`pw::rpc2::UnaryWriter<Response> <pw::rpc2::UnaryWriter>`
    * - Server streaming
-     - ``Request``, ``pw::rpc2::Writer<Response>``
+     - ``Request``, :cc:`pw::rpc2::Writer<Response> <pw::rpc2::Writer>`
    * - Client streaming
-     - ``pw::rpc2::Reader<Request>``, ``pw::rpc2::UnaryWriter<Response>``
+     - :cc:`pw::rpc2::Reader<Request> <pw::rpc2::Reader>`,
+       :cc:`pw::rpc2::UnaryWriter<Response> <pw::rpc2::UnaryWriter>`
    * - Bidirectional streaming
-     - ``pw::rpc2::Reader<Request>``, ``pw::rpc2::Writer<Response>``
+     - :cc:`pw::rpc2::Reader<Request> <pw::rpc2::Reader>`,
+       :cc:`pw::rpc2::Writer<Response> <pw::rpc2::Writer>`
 
-* ``UnaryWriter::Finish()`` sends the response.
-* ``Writer::Write()`` sends a message, and ``Writer::Finish()`` ends the stream.
-* ``Reader::Read()`` receives the next message, or ``kEndOfStream`` once the
-  client has finished its stream.
+* :cc:`UnaryWriter::Finish() <pw::rpc2::UnaryWriter::Finish>` sends the
+  response.
+* :cc:`Writer::Write() <pw::rpc2::Writer::Write>` sends a message, and
+  :cc:`Writer::Finish() <pw::rpc2::Writer::Finish>` ends the stream.
+* :cc:`Reader::Read() <pw::rpc2::Reader::Read>` receives the next message, or
+  ``kEndOfStream`` once the client has finished its stream.
 
 .. _module-pw_rpc2-examples-implement-lifetime:
 
@@ -179,7 +183,7 @@ like these.
 -----------------
 Serve the service
 -----------------
-A ``pw::rpc2::Server`` serves its registered services on the connections that
+A :cc:`pw::rpc2::Server` serves its registered services on the connections that
 its listeners accept. Both servers set it up the same way:
 
 .. literalinclude:: cpp/examples/echo/server_coro.cc
@@ -188,18 +192,19 @@ its listeners accept. Both servers set it up the same way:
    :start-after: // DOCSTAG: [pw_rpc2-examples-echo-server-main]
    :end-before: // DOCSTAG: [pw_rpc2-examples-echo-server-main]
 
-``Start()`` runs the server on the dispatcher. The service's RPCs run on the
-dispatcher's thread, so state that only the RPCs access does not need locking.
+:cc:`Start() <pw::rpc2::Server::Start>` runs the server on the dispatcher. The
+service's RPCs run on the dispatcher's thread, so state that only the RPCs
+access does not need locking.
 
 .. _module-pw_rpc2-examples-call:
 
 -------------
 Call the RPCs
 -------------
-``pw::rpc2::Client::Connect()`` connects to a server and resolves to a
-``pw::rpc2::Client``, which is a handle to the connection. The generated
-``Echo::Client`` binds a ``pw::rpc2::Client`` to the ``Echo`` service. Both are
-cheap to copy, so pass them by value.
+:cc:`pw::rpc2::Client::Connect() <pw::rpc2::Client::Connect>` connects to a
+server and resolves to a :cc:`pw::rpc2::Client`, which is a handle to the
+connection. The generated ``Echo::Client`` binds a :cc:`pw::rpc2::Client` to
+the ``Echo`` service. Both are cheap to copy, so pass them by value.
 
 The generated client creates functions for each RPC. Each function returns a
 future that starts the RPC and resolves to:
@@ -210,20 +215,22 @@ future that starts the RPC and resolves to:
    * - Type
      - Result
    * - Unary
-     - ``pw::rpc2::RpcResult<Response>``
+     - :cc:`pw::rpc2::RpcResult<Response> <pw::rpc2::RpcResult>`
    * - Server streaming
-     - ``pw::rpc2::RpcResult<pw::rpc2::Reader<Response>>``
+     - :cc:`pw::rpc2::RpcResult<pw::rpc2::Reader<Response>> <pw::rpc2::Reader>`
    * - Client streaming
-     - ``pw::rpc2::RpcResult<pw::rpc2::ClientStreamCall<Request, Response>>``,
-       which provides a ``writer()`` for the requests and a ``response()``
-       future
+     - :cc:`pw::rpc2::RpcResult<pw::rpc2::ClientStreamCall<Request, Response>>
+       <pw::rpc2::ClientStreamCall>`, which provides a ``writer()`` for the
+       requests and a ``response()`` future
    * - Bidirectional streaming
-     - ``pw::rpc2::RpcResult<pw::rpc2::BidiStreamCall<Request, Response>>``,
-       which provides a ``writer()`` and a ``reader()``
+     - :cc:`pw::rpc2::RpcResult<pw::rpc2::BidiStreamCall<Request, Response>>
+       <pw::rpc2::BidiStreamCall>`, which provides a ``writer()`` and a
+       ``reader()``
 
-``Writer::Finish()`` ends the client's stream. ``Reader::Read()`` resolves to
-``kEndOfStream`` once the server has finished its stream. See
-:ref:`module-pw_rpc2-cpp-errors` for what each status code means.
+:cc:`Writer::Finish() <pw::rpc2::Writer::Finish>` ends the client's stream.
+:cc:`Reader::Read() <pw::rpc2::Reader::Read>` resolves to ``kEndOfStream`` once
+the server has finished its stream. See :ref:`module-pw_rpc2-cpp-errors` for
+what each status code means.
 
 .. _module-pw_rpc2-examples-call-coro:
 

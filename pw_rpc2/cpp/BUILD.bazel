@@ -686,3 +686,22 @@ pw_cc_test(
         "//pw_unit_test:status_macros",
     ],
 )
+
+filegroup(
+    name = "doxygen",
+    srcs = [
+        "public/pw_rpc2/client.h",
+        "public/pw_rpc2/internal/control_future.h",
+        "public/pw_rpc2/internal/future_base.h",
+        "public/pw_rpc2/internal/protocol_error_enum.h",
+        "public/pw_rpc2/method_type.h",
+        "public/pw_rpc2/reader.h",
+        "public/pw_rpc2/server.h",
+        "public/pw_rpc2/service.h",
+        "public/pw_rpc2/service_client.h",
+        "public/pw_rpc2/write_reservation.h",
+        "public/pw_rpc2/writer.h",
+        ":status.generate",
+    ],
+    visibility = ["//docs/doxygen:__pkg__"],
+)

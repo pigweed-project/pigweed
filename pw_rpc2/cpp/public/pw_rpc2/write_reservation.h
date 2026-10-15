@@ -129,6 +129,8 @@ class WriteReservationBase {
 
 }  // namespace internal
 
+/// @submodule{pw_rpc2,readers_writers}
+
 /// A reserved buffer for writing an outbound RPC message in place.
 ///
 /// Returned by `ReserveWriteFuture` (from `Writer::ReserveWrite()` or
@@ -159,7 +161,7 @@ class WriteReservation : public internal::WriteReservationBase {
   ///   moved from, or the call's outbound stream was already finished.
   /// * The call's completion status (such as `kCancelled` or `kDisconnected`)
   ///   if the call ended with an error while the reservation was held. See
-  ///   `internal::Call::is_completed()`.
+  ///   [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors).
   /// * `kDisconnected`: the connection closed before the write could be
   ///   sent.
   [[nodiscard]] RpcStatus Commit(size_t size_bytes) {
@@ -205,7 +207,8 @@ class ReserveWriteFuture : public internal::FutureBase {
   /// * `kMessageTooLarge` if the requested size exceeds the maximum write
   ///   size.
   /// * The call's completion status (such as `kCancelled` or `kDisconnected`)
-  ///   if the call ended with an error. See `internal::Call::is_completed()`.
+  ///   if the call ended with an error. See
+  ///   [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors).
   /// * `kDisconnected` if the connection closed while waiting for buffer
   ///   space.
   /// * For a client call that has not started: `kClosed` if the client is
@@ -337,5 +340,7 @@ class ReserveWriteFuture : public internal::FutureBase {
 };
 
 static_assert(async2::Future<ReserveWriteFuture>);
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2

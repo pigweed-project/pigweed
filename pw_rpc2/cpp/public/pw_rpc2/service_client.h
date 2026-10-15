@@ -108,6 +108,8 @@ class UnaryFutureBase : public FutureBase {
 
 }  // namespace internal
 
+/// @submodule{pw_rpc2,client}
+
 /// Future that starts a streaming RPC and resolves to its call handle:
 /// `Reader` (server streaming), `ClientStreamCall` (client streaming), or
 /// `BidiStreamCall` (bidirectional). For server streaming, it also sends the
@@ -131,7 +133,7 @@ class RequestFuture : public internal::RequestFutureBase {
   /// * `kDisconnected` if the connection closed (or the client ran out of call
   ///   IDs) before the request was sent, or `kProtocolError` if it closed
   ///   because an endpoint broke the protocol. See
-  ///   `internal::Call::is_completed()`.
+  ///   [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors).
   [[nodiscard]] async2::Poll<value_type> Pend(async2::Context& cx) {
     if constexpr (std::is_void_v<Request>) {
       return PendAndCreate<CallHandler>(cx, nullptr, nullptr);
@@ -206,7 +208,7 @@ class UnaryFuture : public internal::UnaryFutureBase {
   ///   not decode it, or the response could not be deserialized.
   /// * `kDisconnected` if the connection closed before the response arrived.
   /// * `kProtocolError` if an endpoint broke the protocol. See
-  ///   `internal::Call::is_completed()`.
+  ///   [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors).
   [[nodiscard]] async2::Poll<RpcResult<Response>> Pend(async2::Context& cx) {
     async2::Poll<RpcResult<Response>> result = async2::Pending();
     if constexpr (std::is_same_v<Response, ConstBuf>) {
@@ -241,6 +243,8 @@ class UnaryFuture : public internal::UnaryFutureBase {
 
 static_assert(async2::Future<UnaryFuture<ConstBuf, ConstBuf>>);
 
+/// @endsubmodule
+
 namespace internal {
 
 /// Shared implementation of `UnaryReservation` and `ServerStreamReservation`.
@@ -264,7 +268,7 @@ class RequestReservationBase : public WriteReservationBase {
   ///   moved from.
   /// * The call's completion status if the call ended while the reservation
   ///   was held (for example, `kDisconnected` because its connection closed).
-  ///   See `internal::Call::is_completed()`.
+  ///   See [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors).
   /// * `kDisconnected`: the connection closed before the request could be
   ///   sent.
   [[nodiscard]] RpcResult<Committed> Commit(size_t size_bytes) {
@@ -310,7 +314,7 @@ class ReserveRequestFutureBase {
   /// * `kDisconnected` if the connection closed (or the client ran out of call
   ///   IDs) before the reservation resolved, or `kProtocolError` if it closed
   ///   because an endpoint broke the protocol. See
-  ///   `internal::Call::is_completed()`.
+  ///   [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors).
   [[nodiscard]] async2::Poll<value_type> Pend(async2::Context& cx) {
     PW_TRY_READY_ASSIGN(RpcResult<WriteReservation> res, res_fut_.Pend(cx));
     if (!res.ok()) {
@@ -335,6 +339,8 @@ class ReserveRequestFutureBase {
 };
 
 }  // namespace internal
+
+/// @submodule{pw_rpc2,client}
 
 /// A reserved buffer for writing a unary RPC request in place.
 ///
@@ -537,5 +543,7 @@ class ServiceClient {
   Client client_;
   uint32_t service_id_ = 0;
 };
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2

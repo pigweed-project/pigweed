@@ -23,6 +23,8 @@
 
 namespace pw::rpc2::internal {
 
+/// @submodule{pw_rpc2,status}
+
 // LINT.IfChange(cpp_rpc2_error_codes)
 
 /// The 8-bit error code carried by an `ERROR_TERMINAL` packet.
@@ -114,6 +116,8 @@ enum class ProtocolError : uint8_t {
 };
 
 // LINT.ThenChange(//pw_rpc2/protocol.rst:rpc2_error_codes)
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2::internal
 

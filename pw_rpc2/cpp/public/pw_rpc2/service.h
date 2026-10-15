@@ -27,6 +27,8 @@ struct ServiceAccess;
 
 }  // namespace internal
 
+/// @submodule{pw_rpc2,server}
+
 /// A collection of RPC methods.
 ///
 /// @note **Method lifetime.** A method's future or coroutine is owned by its
@@ -76,5 +78,7 @@ class Service : public IntrusiveForwardList<Service>::Item {
   span<const internal::Method> methods_;
   uint32_t service_id_;
 };
+
+/// @endsubmodule
 
 }  // namespace pw::rpc2

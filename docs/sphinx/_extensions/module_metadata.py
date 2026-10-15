@@ -585,6 +585,7 @@ def should_add_doxygen_link(module_name) -> bool:
         'pw_random',
         'pw_result',
         'pw_rpc',
+        'pw_rpc2',
         'pw_span',
         'pw_spi',
         'pw_status',
