@@ -836,7 +836,10 @@ bool Peer::TryMakeTemporary() {
     temporary_.Set(true);
     return true;
   }
-  if (bredr() && !bredr()->bonded()) {
+  // Temporary peers expire out of the cache. A dual-mode peer shares a single
+  // record, so an LE bond should keep it non-temporary even without a BR/EDR
+  // bond.
+  if (bredr() && !bonded()) {
     bt_log(DEBUG, "gap", "BR/EDR became temporary: %s:", bt_str(*this));
     temporary_.Set(true);
     return true;

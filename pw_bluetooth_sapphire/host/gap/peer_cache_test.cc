@@ -1764,6 +1764,33 @@ TEST_F(PeerCacheExpirationTest, BrEdrPeerRemainsNonTemporaryOnDisconnect) {
   EXPECT_EQ(1, peers_removed());
 }
 
+TEST_F(PeerCacheExpirationTest,
+       LEBondedPeerRemainsNonTemporaryOnBrEdrDisconnect) {
+  // Bond the peer over LE, and get it into the BR/EDR kInitializing state.
+  sm::PairingData data;
+  data.peer_ltk = kLTK;
+  data.local_ltk = kLTK;
+  ASSERT_TRUE(GetDefaultPeer()->MutLe().StoreBond(data));
+  ASSERT_TRUE(GetDefaultPeer()->bonded());
+
+  std::optional<Peer::InitializingConnectionToken> init_token =
+      GetDefaultPeer()->MutBrEdr().RegisterInitializingConnection();
+  ASSERT_FALSE(GetDefaultPeer()->bredr()->bonded());
+  ASSERT_FALSE(GetDefaultPeer()->temporary());
+
+  // Disconnect BR/EDR without bonding. The LE bond should keep the peer
+  // non-temporary, so refreshing its expiry shouldn't schedule removal.
+  init_token.reset();
+  EXPECT_FALSE(GetDefaultPeer()->temporary());
+  GetDefaultPeer()->MutLe().SetAdvertisingData(
+      kTestRSSI, kAdvData, pw::chrono::SystemClock::time_point());
+
+  // Verify that the bonded peer doesn't expire out of the cache.
+  RunFor(kCacheTimeout);
+  EXPECT_TRUE(IsDefaultPeerPresent());
+  EXPECT_EQ(0, peers_removed());
+}
+
 TEST_F(PeerCacheExpirationTest, ExpirationUpdatesAddressMap) {
   ASSERT_TRUE(IsDefaultPeerAddressInCache());
   ASSERT_TRUE(IsOtherTransportAddressInCache());
