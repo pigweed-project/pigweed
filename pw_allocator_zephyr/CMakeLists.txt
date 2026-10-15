@@ -42,16 +42,10 @@ pw_add_library(pw_allocator_zephyr.system_heap_allocator STATIC
     zephyr_interface
 )
 
-pw_zephyr_append_cmake_library_ifdef(
-  CONFIG_PIGWEED_ALLOCATOR
-  pw_allocator_zephyr.synchronized_heap_allocator
-  pw_allocator_zephyr.system_heap_allocator
-)
-
-pw_zephyr_add_generated_header_deps(
-  pw_allocator_zephyr.synchronized_heap_allocator
-  pw_allocator_zephyr.system_heap_allocator
-)
+if(CONFIG_PIGWEED_ALLOCATOR)
+  zephyr_append_cmake_library(pw_allocator_zephyr.synchronized_heap_allocator)
+  zephyr_append_cmake_library(pw_allocator_zephyr.system_heap_allocator)
+endif()
 
 if(TARGET zephyr_generated_headers)
   if(TARGET pw_allocator_zephyr.synchronized_heap_allocator)

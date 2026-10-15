@@ -47,16 +47,15 @@ pw_add_library(pw_sync_zephyr.timed_mutex_backend STATIC
   PUBLIC_DEPS
     pw_chrono.system_clock
     pw_sync.timed_mutex.facade
-    zephyr_interface
   PRIVATE_DEPS
     pw_assert
     pw_interrupt.context
   SOURCES
     timed_mutex.cc
 )
-pw_zephyr_append_cmake_library_ifdef(
+pw_zephyrize_libraries_ifdef(
   CONFIG_PIGWEED_SYNC_TIMED_MUTEX
-  pw_sync_zephyr.timed_mutex_backend
+    pw_sync_zephyr.timed_mutex_backend
 )
 
 pw_add_library(pw_sync_zephyr.binary_semaphore_backend STATIC
@@ -73,13 +72,12 @@ pw_add_library(pw_sync_zephyr.binary_semaphore_backend STATIC
     pw_chrono.system_clock
     pw_interrupt.context
     pw_sync.binary_semaphore.facade
-    zephyr_interface
   SOURCES
     binary_semaphore.cc
 )
-pw_zephyr_append_cmake_library_ifdef(
-  CONFIG_PIGWEED_SYNC_BINARY_SEMAPHORE
-  pw_sync_zephyr.binary_semaphore_backend
+pw_zephyrize_libraries_ifdef(
+    CONFIG_PIGWEED_SYNC_BINARY_SEMAPHORE
+    pw_sync_zephyr.binary_semaphore_backend
 )
 
 pw_add_library(pw_sync_zephyr.counting_semaphore_backend STATIC
@@ -96,19 +94,12 @@ pw_add_library(pw_sync_zephyr.counting_semaphore_backend STATIC
     pw_chrono.system_clock
     pw_interrupt.context
     pw_sync.counting_semaphore.facade
-    zephyr_interface
   SOURCES
     counting_semaphore.cc
 )
-pw_zephyr_append_cmake_library_ifdef(
-  CONFIG_PIGWEED_SYNC_COUNTING_SEMAPHORE
-  pw_sync_zephyr.counting_semaphore_backend
-)
-
-pw_zephyr_add_generated_header_deps(
-  pw_sync_zephyr.timed_mutex_backend
-  pw_sync_zephyr.binary_semaphore_backend
-  pw_sync_zephyr.counting_semaphore_backend
+pw_zephyrize_libraries_ifdef(
+    CONFIG_PIGWEED_SYNC_COUNTING_SEMAPHORE
+    pw_sync_zephyr.counting_semaphore_backend
 )
 
 pw_add_library(pw_sync_zephyr.interrupt_spin_lock_backend INTERFACE
@@ -142,6 +133,10 @@ pw_add_library(pw_sync_zephyr.thread_notification_backend INTERFACE
     pw_sync.binary_semaphore
     pw_sync.thread_notification.facade
 )
+pw_zephyrize_libraries_ifdef(
+    CONFIG_PIGWEED_SYNC_THREAD_NOTIFICATION
+    pw_sync_zephyr.thread_notification_backend
+)
 
 pw_add_library(pw_sync_zephyr.timed_thread_notification_backend INTERFACE
   HEADERS
@@ -153,4 +148,9 @@ pw_add_library(pw_sync_zephyr.timed_thread_notification_backend INTERFACE
   PUBLIC_DEPS
     pw_sync.binary_semaphore
     pw_sync.timed_thread_notification.facade
+)
+
+pw_zephyrize_libraries_ifdef(
+    CONFIG_PIGWEED_SYNC_TIMED_THREAD_NOTIFICATION
+    pw_sync_zephyr.timed_thread_notification_backend
 )

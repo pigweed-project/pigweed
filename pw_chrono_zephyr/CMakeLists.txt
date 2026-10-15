@@ -53,9 +53,6 @@ pw_add_library(pw_chrono_zephyr.system_timer STATIC
     pw_chrono.system_timer.facade
     zephyr_interface
 )
-pw_zephyr_append_cmake_library_ifdef(
-  CONFIG_PIGWEED_CHRONO_SYSTEM_TIMER
-  pw_chrono_zephyr.system_timer
-)
-
-pw_zephyr_add_generated_header_deps(pw_chrono_zephyr.system_timer)
+if(CONFIG_PIGWEED_CHRONO_SYSTEM_TIMER)
+  zephyr_link_libraries(pw_chrono_zephyr.system_timer)
+endif()

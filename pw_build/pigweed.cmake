@@ -854,27 +854,6 @@ function(pw_zephyrize_libraries_ifdef COND)
   endif()
 endfunction()
 
-# Zephyr specific wrapper to append a pw library to Zephyr cmake libraries
-function(pw_zephyr_append_cmake_library_ifdef COND)
-  if(DEFINED Zephyr_FOUND)
-    if(${${COND}})
-      foreach(lib IN LISTS ARGN)
-        zephyr_append_cmake_library(${lib})
-      endforeach()
-    endif()
-  endif()
-endfunction()
-
-# Zephyr specific helper to add a dependency on zephyr_generated_headers for the
-# specified targets.
-function(pw_zephyr_add_generated_header_deps)
-  if(DEFINED Zephyr_FOUND)
-    foreach(target IN LISTS ARGN)
-      add_dependencies(${target} zephyr_generated_headers)
-    endforeach()
-  endif()
-endfunction()
-
 # Zephyr function allowing conversion of Kconfig values to Pigweed configs
 function(pw_set_config_from_zephyr ZEPHYR_CONFIG PW_CONFIG)
   if(${ZEPHYR_CONFIG})
