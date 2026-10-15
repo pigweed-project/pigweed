@@ -225,6 +225,9 @@ pw_compile_commands_generator(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     target_patterns = [
+        "//pw_bluetooth_sapphire/fuchsia/bt_hci_virtual:pkg.x64",
+        "//pw_bluetooth_sapphire/fuchsia/bt_hci_virtual:test_pkg",
+        "//pw_bluetooth_sapphire/fuchsia/bt_host:pkg.x64",
         "//pw_bluetooth_sapphire/fuchsia/bt_host:test_pkg",
         "//pw_bluetooth_sapphire/fuchsia/host/att:test_pkg",
         "//pw_bluetooth_sapphire/fuchsia/host/common:test_pkg",
@@ -242,6 +245,7 @@ pw_compile_commands_generator(
         "//pw_bluetooth_sapphire/fuchsia/host/socket:test_pkg",
         "//pw_bluetooth_sapphire/fuchsia/host/testing:test_pkg",
         "//pw_bluetooth_sapphire/fuchsia/host/transport:test_pkg",
+        "//pw_bluetooth_sapphire/fuchsia/lib/fidl:test_pkg",
     ],
 )
 
