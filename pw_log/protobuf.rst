@@ -99,7 +99,7 @@ Encoding logs to the ``log.proto`` format can be performed using the helpers
 provided in the ``pw_log/proto_utils.h`` header. Separate helpers are provided
 for encoding tokenized logs and string-based logs.
 
-The following example shows a :c:func:`pw_log_tokenized_HandleLog`
+The following example shows a :cc:`pw_log_tokenized_HandleLog`
 implementation that encodes the results to a protobuf.
 
 .. code-block:: cpp

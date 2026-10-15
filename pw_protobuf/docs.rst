@@ -1119,7 +1119,7 @@ that can hold the set of values encoded by it, following these rules.
        pw::Vector<std::byte, kSerialNumberMaxSize> serial_number;
      };
 
-* `string` fields are represented by a :cpp:type:`pw::InlineString` when the
+* `string` fields are represented by a :cc:`pw::InlineString` when the
   ``max_size`` option is set for that field. The string can hold up to
   ``max_size`` characters, and is always null terminated. The null terminator is
   not counted in ``max_size``.

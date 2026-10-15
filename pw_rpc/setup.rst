@@ -21,7 +21,8 @@ plumbing:
 #. Creating the ingress (RX) task or polling loop to unframe packets and pass them
    to :cpp:func:`pw::rpc::Server::ProcessPacket`.
 #. Registering services with the RPC Server.
-#. (Optional) Configuring MCU-to-MCU C++ Clients or dual-role :cpp:class:`pw::rpc::ClientServer` endpoints.
+#. (Optional) Configuring MCU-to-MCU C++ Clients or dual-role
+   :cc:`ClientServer <pw::rpc::ClientServer>` endpoints.
 #. (Optional) Setting up Host tooling (Python, TypeScript, Java/Android).
 
 -------------------
@@ -208,13 +209,13 @@ Setting up ``pw_rpc`` involves 7 core steps:
      - Subclass :cpp:class:`pw::rpc::ChannelOutput`, implement :cpp:func:`pw::rpc::ChannelOutput::Send`, transport mutex.
    * - :ref:`Step 4 <module-pw_rpc-setup-ingress>`
      - **Ingress (RX) Path**
-     - Instantiation of :cpp:class:`pw::rpc::Server`, RX dispatch loop (RTOS task or main loop) calling :cpp:func:`pw::rpc::Server::ProcessPacket`.
+     - Instantiation of :cc:`Server <pw::rpc::Server>`, RX dispatch loop (RTOS task or main loop) calling :cpp:func:`pw::rpc::Server::ProcessPacket`.
    * - :ref:`Step 5 <module-pw_rpc-setup-services>`
      - **Service Registration**
      - Implement ``.proto`` services and register them via :cpp:func:`pw::rpc::Server::RegisterService`.
    * - :ref:`Step 6 <module-pw_rpc-setup-clients>`
      - **C++ Clients (Optional)**
-     - :cpp:class:`pw::rpc::Client` or :cpp:class:`pw::rpc::ClientServer` for inter-MCU RPCs.
+     - :cc:`Client <pw::rpc::Client>` or :cc:`ClientServer <pw::rpc::ClientServer>` for inter-MCU RPCs.
    * - :ref:`Step 7 <module-pw_rpc-setup-host>`
      - **Host Tooling (Optional)**
      - Python (:ref:`module-pw_rpc-py`), TypeScript (:ref:`module-pw_rpc-ts`), or Java/Android integrations.
@@ -291,8 +292,8 @@ Step 2: Transport layer & channel architecture
 
 What is a Channel?
 ==================
-In ``pw_rpc``, a **Channel** (:cpp:class:`pw::rpc::Channel`) represents a logical
-communication pathway between a client and server. Each channel binds:
+In ``pw_rpc``, a **Channel** (:cc:`Channel <pw::rpc::Channel>`) represents a
+logical communication pathway between a client and server. Each channel binds:
 
 #. A unique integer **Channel ID** (``uint32_t``).
 #. A :cpp:class:`pw::rpc::ChannelOutput` interface responsible for transmitting encoded RPC packets.
@@ -336,14 +337,15 @@ Sizing and MTU considerations
 =============================
 The maximum size of an RPC message is governed by two constraints:
 
-#. :c:macro:`PW_RPC_ENCODING_BUFFER_SIZE_BYTES`: Compile-time configuration
+#. :cc:`PW_RPC_ENCODING_BUFFER_SIZE_BYTES`: Compile-time configuration
    (default: 512 bytes) that defines the maximum encoded RPC packet size ``pw_rpc``
    can construct in memory.
 #. :cpp:func:`pw::rpc::ChannelOutput::MaximumTransmissionUnit`: The maximum packet
    size the physical transport can transmit in one frame.
 
-Use the helper :cpp:func:`pw::rpc::MaxSafePayloadSize` to determine the maximum
-payload size your service can safely write without exceeding encode buffers.
+Use the helper :cc:`MaxSafePayloadSize <pw::rpc::MaxSafePayloadSize>` to
+determine the maximum payload size your service can safely write without
+exceeding encode buffers.
 
 .. _module-pw_rpc-setup-egress:
 
@@ -471,7 +473,7 @@ acts as an **RPC Client**.
 
 1. Creating the Client
 ======================
-The :cpp:class:`pw::rpc::Client` is instantiated with its own list of channels
+The :cc:`Client <pw::rpc::Client>` is instantiated with its own list of channels
 (or shares channels with a server):
 
 .. literalinclude:: examples/client_example.cc
@@ -482,8 +484,8 @@ The :cpp:class:`pw::rpc::Client` is instantiated with its own list of channels
 2. Dual-Role Nodes with pw::rpc::ClientServer
 =============================================
 If a single device acts as **both** a Server and a Client over the same channel/transport,
-use :cpp:class:`pw::rpc::ClientServer`. It combines both endpoints and routes packets
-automatically:
+use :cc:`ClientServer <pw::rpc::ClientServer>`. It combines both endpoints and
+routes packets automatically:
 
 .. literalinclude:: examples/client_example.cc
    :language: cpp
@@ -549,16 +551,16 @@ The following compile-time options allow you to tune memory consumption and perf
    * - Macro / Option
      - Default
      - Description & Tuning Advice
-   * - :c:macro:`PW_RPC_ENCODING_BUFFER_SIZE_BYTES`
+   * - :cc:`PW_RPC_ENCODING_BUFFER_SIZE_BYTES`
      - ``512``
      - Max size of an encoded RPC packet buffer. Increase if services send large payloads; decrease to save RAM.
-   * - :c:macro:`PW_RPC_DYNAMIC_ALLOCATION`
+   * - :cc:`PW_RPC_DYNAMIC_ALLOCATION`
      - ``0``
      - Set to ``0`` for bare-metal / embedded targets to guarantee zero heap allocations. When ``0``, channel spans and services use fixed arrays.
-   * - :c:macro:`PW_RPC_LOCKLESS_CHANNEL_SEND`
+   * - :cc:`PW_RPC_LOCKLESS_CHANNEL_SEND`
      - ``0``
      - When ``1``, releases the RPC global lock before calling :cpp:func:`pw::rpc::ChannelOutput::Send`. Useful if ``Send()`` blocks on hardware FIFO.
-   * - :c:macro:`PW_RPC_CALLBACK_TIMEOUT_TICKS`
+   * - :cc:`PW_RPC_CALLBACK_TIMEOUT_TICKS`
      - Platform default
      - Watchdog timeout ticks to detect deadlocks in RPC user callbacks.
 
@@ -600,7 +602,7 @@ Use this checklist to ensure all architectural and implementation components are
 * **Channel IDs assigned**: Assigned unique static integer IDs (``1..127``) for
   each endpoint.
 * **Buffer sizing (MTU)**: Configured
-  :c:macro:`PW_RPC_ENCODING_BUFFER_SIZE_BYTES` and verified framing decoder
+  :cc:`PW_RPC_ENCODING_BUFFER_SIZE_BYTES` and verified framing decoder
   buffers match transport MTU.
 
 3. Egress (TX) Pipeline
@@ -638,8 +640,8 @@ Use this checklist to ensure all architectural and implementation components are
 
 6. Embedded Clients (If MCU-to-MCU)
 ===================================
-* **Client / ClientServer**: Instantiated :cpp:class:`pw::rpc::Client` (or
-  :cpp:class:`pw::rpc::ClientServer` for dual-role nodes).
+* **Client / ClientServer**: Instantiated :cc:`Client <pw::rpc::Client>` (or
+  :cc:`ClientServer <pw::rpc::ClientServer>` for dual-role nodes).
 * **Response ingress**: Ingress pipeline routes response packets to
   ``client.ProcessPacket(packet)``.
 * **Call object lifecycle**: Call objects retained in class members / state

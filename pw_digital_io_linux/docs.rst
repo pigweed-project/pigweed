@@ -32,7 +32,8 @@ This can be created using an existing file descriptor
 
 ``LinuxDigitalIn``
 ==================
-Represents a single input line and implements :cpp:class:`DigitalIn`.
+Represents a single input line and implements :cc:`DigitalIn
+<pw::digital_io::DigitalIn>`.
 
 This is acquired by calling ``chip.GetInputLine()`` with an appropriate
 ``LinuxInputConfig``.
@@ -40,14 +41,15 @@ This is acquired by calling ``chip.GetInputLine()`` with an appropriate
 ``LinuxDigitalInInterrupt``
 ===========================
 Represents a single input line configured for interrupts and implements
-:cpp:class:`DigitalInInterrupt`.
+:cc:`DigitalInInterrupt <pw::digital_io::DigitalInInterrupt>`.
 
 This is acquired by calling ``chip.GetInterruptLine()`` with an appropriate
 ``LinuxInputConfig``.
 
 ``LinuxDigitalOut``
 ===================
-Represents a single input line and implements :cpp:class:`DigitalOut`.
+Represents a single input line and implements :cc:`DigitalOut
+<pw::digital_io::DigitalOut>`.
 
 This is acquired by calling ``chip.GetOutputLine()`` with an appropriate
 ``LinuxOutputConfig``.

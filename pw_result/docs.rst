@@ -10,7 +10,7 @@ pw_result
    - **Reliable**: Propagate errors consistently for less bugs
    - **Battle-tested**: Just like ``absl::StatusOr``, deployed extensively
 
-``pw::Result<T>`` is a union of an error (:cpp:class:`pw::Status`) and a value
+``pw::Result<T>`` is a union of an error (:cc:`pw::Status`) and a value
 (``T``), in a type-safe and convenient wrapper. This enables operations to
 return either a value on success, or an error code on failure, in one type.
 Propagating errors with this one type is less burdensome than other methods,

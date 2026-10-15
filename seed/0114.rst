@@ -16,7 +16,7 @@
 Summary
 -------
 This document proposes a new ``pw_channel`` module and
-:cpp:class:`pw::channel::Channel` class. The module is similar to
+:cc:`pw::channel::Channel` class. The module is similar to
 pw_stream, with three key changes:
 
 - Supports byte stream or datagram semantics (:ref:`module-pw_stream` is a
@@ -34,7 +34,7 @@ Proposal
 This SEED proposes the following:
 
 - Introduce a new ``pw_channel`` module.
-- Introduce a :cpp:class:`pw::channel::Channel` virtual interface.
+- Introduce a :cc:`pw::channel::Channel` virtual interface.
   Implementors of this interface may expose byte stream or datagram semantics.
   All operations in this interface are async and use :ref:`seed-0109` buffers
   to provide zero-copy operations.
@@ -100,16 +100,16 @@ pw_stream
 ``Channel`` should support all use cases addressed by ``pw_stream``. These
 include:
 
-- :cpp:class:`pw::stream::NullStream` -- ``NullStream`` ignores all bytes
+- :cc:`pw::stream::NullStream` -- ``NullStream`` ignores all bytes
   written to it and produces no bytes when read. This is used when no input or
   output is needed.
-- :cpp:class:`pw::stream::CountingNullStream` -- Counts bytes written to it.
+- :cc:`pw::stream::CountingNullStream` -- Counts bytes written to it.
   Used to to determine the size of an encoded object before it is encoded to its
   final destination.
-- :cpp:class:`pw::stream::MemoryReader` / :cpp:class:`pw::stream::MemoryWriter`
+- :cc:`pw::stream::MemoryReader` / :cc:`pw::stream::MemoryWriter`
   -- Writes data to or reads data from a fixed, contiguous memory buffer.
   Example uses include encoding a protobuf for transport.
-- :cpp:class:`pw::stream::SocketStream` -- Supports reading from and writing to
+- :cc:`pw::stream::SocketStream` -- Supports reading from and writing to
   a TCP socket.
 - :cpp:class:`pw::blob_store::BlobStore::Reader` /
   :cpp:class:`pw::blob_store::BlobStore::Writer` -- ``pw_blob_store`` uses a
@@ -292,7 +292,7 @@ to receive calls to ``Write``. Additionally, the ``MultiBufAllocator`` may wait
 to provide a ``MultiBuf`` for writing until memory becomes available.
 
 pw_stream offered a notion of flow control through the
-:cpp:func:`pw::stream::Stream::ConservativeWriteLimit` function. Code using a
+:cc:`pw::stream::Stream::ConservativeWriteLimit` function. Code using a
 stream could check the write limit prior to writing data to determine if the
 stream is ready to receive more. This function will not be provided in
 ``pw_channel``.

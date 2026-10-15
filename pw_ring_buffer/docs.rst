@@ -75,7 +75,7 @@ entries in the provided buffer.
 In cases where a crash has caused the ring buffer to have corrupted data, the
 iterator will progress until it sees the corrupted section and instead move to
 ``iterator::end()``. The ``iterator::status()`` function returns a
-:cpp:class:`pw::Status` indicating the reason the iterator reached it's end.
+:cc:`pw::Status` indicating the reason the iterator reached its end.
 
 .. code-block:: cpp
 

@@ -16,7 +16,7 @@ targets!
 
 `Click here for more examples. <https://pigweed.googlesource.com/pigweed/pigweed/+/refs/heads/main/pw_async2/examples>`_
 
-Notably, Pigweed's :cpp:class:`pw::async2::Coro` API does not require heap
+Notably, Pigweed's :cc:`pw::async2::Coro` API does not require heap
 allocation. This post details how we accompilished this, what challenges
 we encountered, and how you can get started using coroutines on embedded.
 
@@ -67,8 +67,8 @@ Fortunately, heap allocation is not necessary to use C++ coroutines.
 
 However, C++20 coroutines do require *dynamic allocation*
 (memory that is allocated at runtime). Pigweed's
-:cpp:class:`pw::async2::Coro` API allocates memory using an
-:cpp:class:`pw::Allocator`. This avoids the need for a platform-provided
+:cc:`pw::async2::Coro` API allocates memory using an
+:cc:`pw::Allocator`. This avoids the need for a platform-provided
 heap allocator, but users may still encounter some of the costs associated
 with dynamic allocation, such as:
 
@@ -198,13 +198,13 @@ Despite the need for dynamic allocation, it is still possible to use coroutines
 on embedded devices. Today, Pigweed is using coroutines in the :ref:`showcase-sense`
 showcase for the Raspberry Pi RP2040 and (new!) RP2350 microcontrollers.
 
-In order to accomplish this, we needed the Pigweed :cpp:class:`pw::async2::Coro`
+In order to accomplish this, we needed the Pigweed :cc:`pw::async2::Coro`
 API to:
 
 * Avoid heap allocation.
 * Allow recovering from allocation failure without using exceptions.
 * Allow using custom, context-specific
-  :cpp:class:`pw::Allocator` implementations on a per-coroutine basis.
+  :cc:`pw::Allocator` implementations on a per-coroutine basis.
 
 If you want to skip ahead, you can :cs:`see the Coro implementation here.
 <main:pw_async2/public/pw_async2/coro.h>`
@@ -257,7 +257,7 @@ and ``MyCoroutineType::promise_type`` has an ``operator new`` like:
 
 then the argument ``a`` will be copied into the invocation of ``operator new``.
 
-:cpp:class:`pw::async2::Coro` uses this tool to allow the caller of a coroutine
+:cc:`pw::async2::Coro` uses this tool to allow the caller of a coroutine
 function to specify which memory allocator to use for the coroutine frame.
 
 Different coroutines may want to use memory provided by different allocators
@@ -276,7 +276,7 @@ Furthermore, C++20 doesn't provide a way to know ahead of time how much memory
 needs to be allocated to store the coroutine state—that information is only
 available once our custom ``operator new`` is invoked with a ``size`` value.
 
-Instead, :cpp:class:`pw::async2::Coro` allows custom per-coroutine ``Allocator``
+Instead, :cc:`pw::async2::Coro` allows custom per-coroutine ``Allocator``
 values to be provided by intercepting an ``Allocator`` argument to the coroutine
 function. One can pass an allocator as the first argument of all coroutine
 functions. We can then use an ``Args...`` variadic to discard all other
@@ -302,9 +302,9 @@ reference and can use it to allocate the coroutine state.
 
 .. admonition:: ``CoroContext``
 
-   The allocator argument to :cpp:class:`pw::async2::Coro` is actually packaged inside a
-   :cpp:class:`pw::async2::CoroContext` in order to allow for greater evolvability, but
-   today this type is a simple wrapper over a :cpp:class:`pw::Allocator`.
+   The allocator argument to :cc:`pw::async2::Coro` is actually packaged inside a
+   :cc:`pw::async2::CoroContext` in order to allow for greater evolvability, but
+   today this type is a simple wrapper over a :cc:`pw::Allocator`.
 
 Handling allocation failure
 ===========================
@@ -346,10 +346,10 @@ API.
 
 This means that ``delete`` has no way to get access to the ``Allocator``
 instance from which the memory was allocated. Pigweed's
-:cpp:class:`pw::Allocator` API does not provide a way to free memory from only
+:cc:`pw::Allocator` API does not provide a way to free memory from only
 a pointer to the allocated memory; a reference to the ``Allocator`` object is
 required (particular ``Allocator`` instances may support this, but the generic
-interface does not). :cpp:class:`pw::async2::Coro` solves this by specifying
+interface does not). :cc:`pw::async2::Coro` solves this by specifying
 ``operator delete`` to be a no-op. Instead, the coroutine memory is freed by
 the coroutine handle wrapper type (``Coro``) *after* running
 ``operator delete``:
@@ -436,7 +436,7 @@ Annoyingly, ``resume`` does not accept any arguments and returns ``void``,
 so it does not offer a built-in way to pass arguments into our coroutine
 function, nor does it give us a way to return values from our coroutine function.
 
-:cpp:class:`pw::async2::Coro` solves this by storing a pointer to input
+:cc:`pw::async2::Coro` solves this by storing a pointer to input
 and output storage inside the ``promise_type`` before invoking ``resume``.
 
 .. literalinclude:: ../pw_async2/public/pw_async2/coro.h
@@ -454,7 +454,7 @@ Avoiding dynamic allocation for statically known coroutines
 ===========================================================
 Although the steps described in this blog will allow you to avoid heap
 allocation, they still rely on *dynamic* allocation via a
-:cpp:class:`pw::Allocator`. This means that our application can potentially
+:cc:`pw::Allocator`. This means that our application can potentially
 fail at runtime by running out of memory for our coroutines.
 
 For code which only instantiates a single known coroutine or fixed set of
@@ -490,7 +490,7 @@ could be statically allocated.
 -----------------------------------
 Try out Pigweed's coroutine API now
 -----------------------------------
-To experiment with Pigweed's :cpp:class:`pw::async2::Coro` API, you can get
+To experiment with Pigweed's :cc:`pw::async2::Coro` API, you can get
 started by `cloning our Quickstart repo <https://cs.opensource.google/pigweed/quickstart/bazel>`_
 for a bare-bones example
 or trying out the :ref:`Sense tutorial <showcase-sense-tutorial-intro>`

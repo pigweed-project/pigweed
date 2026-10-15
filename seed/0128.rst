@@ -116,7 +116,7 @@ Motivation
 ----------
 Pigweed's ``pw_thread`` module does not support cross-platform thread creation.
 Instead, threads must be created by instantiating a
-:cpp:class:`pw::thread::Options` specific to the thread backend. For example, to
+:cc:`pw::thread::Options` specific to the thread backend. For example, to
 create a FreeRTOS thread, one must instantiate a
 :cpp:class:`pw::thread::freertos::Options` and configure it with a
 :cpp:class:`pw::thread::freertos::Context`
@@ -157,7 +157,7 @@ and :cs:`target_hooks.cc
 Enabling cross-platform thread creation would make it easier to use
 ``pw_system``. The code for running ``pw_system`` on any target would be the
 same: a single function call in ``main``. The user would no longer have to
-allocate stacks or create :cpp:class:`pw::thread::Options` for ``pw_system``
+allocate stacks or create :cc:`pw::thread::Options` for ``pw_system``
 threads; this could be managed by ``pw_system`` itself and configured with
 generic ``pw_system`` options if needed.
 
@@ -225,7 +225,7 @@ for creating platform-specific thread contexts and ``pw::thread::Options``.
 Generic thread attributes
 =========================
 This SEED introduces a limited set of cross-platform thread attributes. These
-generic attributes map to a platform-specific :cpp:class:`pw::thread::Options`.
+generic attributes map to a platform-specific :cc:`pw::thread::Options`.
 
 There are three thread attributes:
 
@@ -338,7 +338,7 @@ Most OS APIs support the proposed thread attributes.
      - `multiple of 32
        <https://github.com/eclipse-threadx/threadx/blob/80bd9fe9a33fa79257c75629be1b4438b84db7bc/common/inc/tx_api.h#L2143>`_
    * - ``pw::ThreadContext``
-     - :cpp:type:`pw::Thread`
+     - :cc:`pw::Thread`
      - C string
      - bytes
      - custom class
@@ -756,7 +756,7 @@ is guaranteed to map to a unique OS priority.
 ``ThreadAttrs``
 ---------------
 The ``ThreadAttrs`` class represents generic thread attributes. It is a
-cross-platform version of :cpp:class:`pw::thread::Options`.
+cross-platform version of :cc:`pw::thread::Options`.
 
 .. code-block:: c++
 

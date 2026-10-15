@@ -56,7 +56,8 @@ which is an input into divider ``clock_divider_d``.
 .. cpp:namespace-push:: pw::clock_tree::Element
 
 Derived ``ClockSourceExample`` class template that overrides
-:cpp:func:`DoEnable` and :cpp:func:`DoDisable` methods.
+:cc:`DoEnable <pw::clock_tree::Element::DoEnable>` and :cc:`DoDisable
+<pw::clock_tree::Element::DoDisable>` methods.
 
 .. literalinclude:: examples.cc
    :language: cpp
@@ -65,7 +66,7 @@ Derived ``ClockSourceExample`` class template that overrides
    :end-before: [pw_clock_tree-examples-ClockSourceExampleDef]
 
 Derived ``ClockDividerExample`` class template that overrides
-:cpp:func:`DoEnable` method.
+:cc:`DoEnable <pw::clock_tree::Element::DoEnable>` method.
 
 .. literalinclude:: examples.cc
    :language: cpp

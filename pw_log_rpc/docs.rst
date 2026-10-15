@@ -30,7 +30,7 @@ Set up the :ref:`module-pw_log_tokenized` log backend.
 3. Connect the tokenized logging handler to the MultiSink
 ---------------------------------------------------------
 Create a :ref:`MultiSink <module-pw_multisink>` instance to buffer log entries.
-Then, make the log backend handler, :c:func:`pw_log_tokenized_HandleLog`, encode
+Then, make the log backend handler, :cc:`pw_log_tokenized_HandleLog`, encode
 log entries in the ``log::LogEntry`` format, and add them to the ``MultiSink``.
 
 4. Create log drains and filters
@@ -138,7 +138,7 @@ log stream flushing to the user's preferred method, as well as a ``FilterMap``
 to retrieve and modify filters. The client may also stop streaming the logs by
 calling ``Cancel()`` or ``RequestCompletion()`` using the ``RawClientReader``
 interface. Note that ``Cancel()`` may lead to dropped logs. To prevent dropped
-logs use ``RequestCompletion()`` and enable :c:macro:`PW_RPC_COMPLETION_REQUEST_CALLBACK`
+logs use ``RequestCompletion()`` and enable :cc:`PW_RPC_COMPLETION_REQUEST_CALLBACK`
 e.g. ``-DPW_RPC_COMPLETION_REQUEST_CALLBACK=1``.
 If ``PW_RPC_COMPLETION_REQUEST_CALLBACK`` is not enabled, RequestCompletion()
 call will not stop the logging stream.

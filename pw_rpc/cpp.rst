@@ -211,7 +211,7 @@ output.
 Adding and removing channels
 ============================
 New channels may be registered with the ``OpenChannel`` function. If dynamic
-allocation is enabled (:c:macro:`PW_RPC_DYNAMIC_ALLOCATION` is 1), any number of
+allocation is enabled (:cc:`PW_RPC_DYNAMIC_ALLOCATION` is 1), any number of
 channels may be registered. If dynamic allocation is disabled, new channels may
 only be registered if there are availale channel slots in the span provided to
 the RPC endpoint at construction.
@@ -281,13 +281,13 @@ associate with a channel ID.
   connections.
 - On the client core, pw_rpc clients all use the same channel ID (e.g.  ``1``).
 - As packets arrive from pw_rpc client connections, the server-side code calls
-  :cpp:func:`pw::rpc::ChangeEncodedChannelId` on the encoded packet to replace
-  the generic channel ID (``1``) with the server-side channel ID allocated when
-  the client connected. The encoded packet is then passed to
+  :cc:`ChangeEncodedChannelId <pw::rpc::ChangeEncodedChannelId>` on the encoded
+  packet to replace the generic channel ID (``1``) with the server-side channel
+  ID allocated when the client connected. The encoded packet is then passed to
   :cpp:func:`pw::rpc::Server::ProcessPacket`.
 - When the server sends pw_rpc packets, the :cpp:class:`pw::rpc::ChannelOutput`
-  calls :cpp:func:`pw::rpc::ChangeEncodedChannelId` to set the channel ID back
-  to the generic ``1``.
+  calls :cc:`ChangeEncodedChannelId <pw::rpc::ChangeEncodedChannelId>` to set
+  the channel ID back to the generic ``1``.
 
 ------------------------------
 C++ payload sizing limitations
@@ -475,7 +475,7 @@ The C++ call objects allow users to set callbacks that are invoked when RPC
    * - ``on_client_requested_completion``
      - ``void()``
      - n/a
-     - ✅ (:c:macro:`optional <PW_RPC_COMPLETION_REQUEST_CALLBACK>`)
+     - ✅ (:cc:`optional <PW_RPC_COMPLETION_REQUEST_CALLBACK>`)
      -
 
 Limitations and restrictions
@@ -506,7 +506,7 @@ Destructors & moves wait for callbacks to complete
    - never returns
 
    If ``pw_rpc`` a callback violates these restrictions, a crash may occur,
-   depending on the value of :c:macro:`PW_RPC_CALLBACK_TIMEOUT_TICKS`. These
+   depending on the value of :cc:`PW_RPC_CALLBACK_TIMEOUT_TICKS`. These
    crashes have a message like the following:
 
    .. code-block:: text
@@ -726,7 +726,7 @@ Example
    }
 
 The ``SynchronousCallResult<Response>`` is also compatible with the
-:c:macro:`PW_TRY` family of macros, but users should be aware that their use
+:cc:`PW_TRY` family of macros, but users should be aware that their use
 will lose information about the type of error. This should only be used if the
 caller will handle all error scenarios the same.
 
@@ -1107,8 +1107,8 @@ interface.
       .. danger::
 
          No ``pw_rpc`` APIs may be accessed in this function! Implementations
-         MUST NOT access any RPC endpoints (:cpp:class:`pw::rpc::Client`,
-         :cpp:class:`pw::rpc::Server`) or call objects
+         MUST NOT access any RPC endpoints (:cc:`Client <pw::rpc::Client>`,
+         :cc:`Server <pw::rpc::Server>`) or call objects
          (:cpp:class:`pw::rpc::ServerReaderWriter`
          :cpp:class:`pw::rpc::ClientReaderWriter`, etc.) inside the
          :cpp:func:`Send` function or any descendent calls. Doing so will result

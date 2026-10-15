@@ -25,7 +25,7 @@ Code synchronization
 Unlike other third party libraries used by Pigweed, some Fuchsia source code is
 included in tree. A few factors drove this decision:
 
-- Core Pigweed features like :cpp:type:`pw::Function` depend on these Fuchsia
+- Core Pigweed features like :cc:`pw::Function` depend on these Fuchsia
   libraries. Including the source in-tree avoids having Pigweed require an
   an external repository.
 - The Fuchsia repository is too large to require downstream projects to clone.

@@ -59,8 +59,8 @@ code:
 
 Implement the logging function
 ==============================
-Implement :cpp:func:`pw_log_string_HandleMessageVaList()` in C. Macros like
-:cpp:func:`PW_LOG()` hand off the actual logging implementation to this
+Implement :cc:`pw_log_string_HandleMessageVaList` in C. Macros like
+:cc:`PW_LOG` hand off the actual logging implementation to this
 function.
 
 The function signature of your implementation must match the one specified by
@@ -132,7 +132,7 @@ Update your target toolchain configuration file:
 
 * Set ``pw_log_BACKEND`` to ``dir_pw_log_string``
 * Point ``pw_log_string_HANDLER_BACKEND`` to your source set that implements
-  :cpp:func:`pw_log_string_HandleMessageVaList()`
+  :cc:`pw_log_string_HandleMessageVaList`
 * Update :ref:`pw_build_LINK_DEPS <module-pw_build-link-deps>` to include
   ``"$dir_pw_log:impl"`` and ``"$dir_pw_log_string:handler:impl"``
 

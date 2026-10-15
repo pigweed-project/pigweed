@@ -61,51 +61,71 @@ and to manage the individual clocks and clock tree elements.
 
 .. cpp:namespace-push:: pw::clock_tree::Element
 
-The :cpp:class:`Element` abstract base class is the root of the pw_clock_tree class hierarchy, and
-represents a single node in the clock tree.
+The :cc:`Element <pw::clock_tree::Element>` abstract base class is the root of
+the pw_clock_tree class hierarchy, and represents a single node in the clock
+tree.
 
 The public (consumer) API includes two basic methods which apply to all clock tree elements:
 
-* :cpp:func:`Acquire`
-* :cpp:func:`Release`
+* :cc:`Acquire <pw::clock_tree::Element::Acquire>`
+* :cc:`Release <pw::clock_tree::Element::Release>`
 
-The :cpp:class:`Element` abstract class implements basic reference counting methods
-:cpp:func:`IncRef` and :cpp:func:`DecRef`, but requires derived classes to use the reference
-counting methods to properly acquire and release references to clock tree elements.
+The :cc:`Element <pw::clock_tree::Element>` abstract class implements basic
+reference counting methods :cc:`IncRef <pw::clock_tree::Element::IncRef>` and
+:cc:`DecRef <pw::clock_tree::Element::DecRef>`, but requires derived classes to
+use the reference counting methods to properly acquire and release references to
+clock tree elements.
 
-Three derived abstract classes are defined for :cpp:class:`Element`:
+Three derived abstract classes are defined for :cc:`Element
+<pw::clock_tree::Element>`:
 
 .. cpp:namespace-pop::
 
 .. cpp:namespace-push:: pw::clock_tree
 
-* :cpp:class:`ElementBlocking` for clock tree elements that might block when acquired or released.
-  Acquiring or releasing such a clock tree element might fail.
-* :cpp:class:`ElementNonBlockingCannotFail` for clock tree elements that will not block when
-  acquired or released. Acquiring or releasing such a clock tree element will always succeed.
-* :cpp:class:`ElementNonBlockingMightFail` for clock tree elements that will not block when
-  acquired or released. Acquiring or releasing such a clock tree element might fail.
+* :cc:`ElementBlocking <pw::clock_tree::ElementBlocking>` for clock tree
+  elements that might block when acquired or released. Acquiring or releasing
+  such a clock tree element might fail.
+* :cc:`ElementNonBlockingCannotFail
+  <pw::clock_tree::ElementNonBlockingCannotFail>` for clock tree elements that
+  will not block when acquired or released. Acquiring or releasing such a clock
+  tree element will always succeed.
+* :cc:`ElementNonBlockingMightFail
+  <pw::clock_tree::ElementNonBlockingMightFail>` for clock tree elements that
+  will not block when acquired or released. Acquiring or releasing such a clock
+  tree element might fail.
 
-:cpp:class:`ElementNonBlockingCannotFail` and :cpp:class:`ElementsNonBlockingMightFail` elements can
-be acquired from an interrupt context.
+:cc:`ElementNonBlockingCannotFail
+<pw::clock_tree::ElementNonBlockingCannotFail>` and
+:cc:`ElementNonBlockingMightFail <pw::clock_tree::ElementNonBlockingMightFail>`
+elements can be acquired from an interrupt context.
 
-All classes representing a clock tree element should be implemented as a template and accept
-:cpp:class:`ElementBlocking`, :cpp:class:`ElementNonBlockingCannotFail` or
-:cpp:class:`ElementNonBlockingMightFail` as a template argument. Only if it is known at compile time
-that a clock tree element can only be either blocking or non-blocking, one can directly derive the
-class from :cpp:class:`ElementBlocking` or :cpp:class:`ElementNonBlockingCannotFail` /
-:cpp:class:`ElementNonBlockingMightFail`, respectively.
+All classes representing a clock tree element should be implemented as a
+template and accept :cc:`ElementBlocking <pw::clock_tree::ElementBlocking>`,
+:cc:`ElementNonBlockingCannotFail
+<pw::clock_tree::ElementNonBlockingCannotFail>` or
+:cc:`ElementNonBlockingMightFail <pw::clock_tree::ElementNonBlockingMightFail>`
+as a template argument. Only if it is known at compile time that a clock tree
+element can only be either blocking or non-blocking, one can directly derive the
+class from :cc:`ElementBlocking <pw::clock_tree::ElementBlocking>` or
+:cc:`ElementNonBlockingCannotFail
+<pw::clock_tree::ElementNonBlockingCannotFail>` /
+:cc:`ElementNonBlockingMightFail <pw::clock_tree::ElementNonBlockingMightFail>`,
+respectively.
 
 .. cpp:namespace-pop::
 
 .. cpp:namespace-push:: pw::clock_tree::OptionalElement
 
-For convenience, :cpp:class:`OptionalElement` represents a null-safe pointer to an
-::cpp:class:`Element`. This allows drivers to easily support an optional :cpp:class:`Element`
-pointer argument.
+For convenience, :cc:`OptionalElement <pw::clock_tree::OptionalElement>`
+represents a null-safe pointer to an :cc:`Element <pw::clock_tree::Element>`.
+This allows drivers to easily support an optional :cc:`Element
+<pw::clock_tree::Element>` pointer argument.
 
-If it does not point to an `Element`, then its :cpp:func:`Acquire` and :cpp:func:`Release` methods
-do nothing and return ``pw::OkStatus()``.
+If it does not point to an `Element`, then its :cc:`Acquire
+<pw::clock_tree::OptionalElement::Acquire>` and :cc:`Release
+<pw::clock_tree::OptionalElement::Release>` methods do nothing and return
+``pw::OkStatus()``.
 
 .. cpp:namespace-pop::
 
@@ -114,11 +134,15 @@ Synchronization
 ---------------
 .. cpp:namespace-push:: pw::clock_tree
 
-:cpp:class:`Element` objects are individually internally synchronized.
+:cc:`Element <pw::clock_tree::Element>` objects are individually internally
+synchronized.
 
-* :cpp:class:`ElementBlocking` objects use a `Mutex`.
-* :cpp:class:`ElementNonBlockingCannotFail` and :cpp:class:`ElementNonBlockingMightFail` objects use
-  an `InterruptSpinLock`.
+* :cc:`ElementBlocking <pw::clock_tree::ElementBlocking>` objects use a `Mutex`.
+* :cc:`ElementNonBlockingCannotFail
+  <pw::clock_tree::ElementNonBlockingCannotFail>` and
+  :cc:`ElementNonBlockingMightFail
+  <pw::clock_tree::ElementNonBlockingMightFail>` objects use an
+  `InterruptSpinLock`.
 
 .. cpp:namespace-pop::
 
@@ -127,22 +151,29 @@ Dependency enforcement
 ----------------------
 .. cpp:namespace-push:: pw::clock_tree
 
-The :cpp:class:`DependentElement` class enforces the dependency rules
-between the :cpp:class:`ElementBlocking`,
-:cpp:class:`ElementNonBlockingCannotFail`,
-:cpp:class:`ElementNonBlockingMightFail` and generic
-:cpp:class:`Element` classes.
+The :cc:`DependentElement <pw::clock_tree::DependentElement>` class enforces the
+dependency rules between the :cc:`ElementBlocking
+<pw::clock_tree::ElementBlocking>`, :cc:`ElementNonBlockingCannotFail
+<pw::clock_tree::ElementNonBlockingCannotFail>`,
+:cc:`ElementNonBlockingMightFail <pw::clock_tree::ElementNonBlockingMightFail>`
+and generic :cc:`Element <pw::clock_tree::Element>` classes.
 
-:cpp:class:`ElementBlocking` can depend on an object from any class,
-while :cpp:class:`ElementNonBlockingMightFail` can only depend on
-objects of classes :cpp:class:`ElementNonBlockingMightFail` and
-:cpp:class:`ElementNonBlockingCannotFail`.
-:cpp:class:`ElementNonBlockingCannotFail` can only depend on objects of
-class :cpp:class:`ElementNonBlockingCannotFail`.
+:cc:`ElementBlocking <pw::clock_tree::ElementBlocking>` can depend on an object
+from any class, while :cc:`ElementNonBlockingMightFail
+<pw::clock_tree::ElementNonBlockingMightFail>` can only depend on objects of
+classes :cc:`ElementNonBlockingMightFail
+<pw::clock_tree::ElementNonBlockingMightFail>` and
+:cc:`ElementNonBlockingCannotFail
+<pw::clock_tree::ElementNonBlockingCannotFail>`.
+:cc:`ElementNonBlockingCannotFail
+<pw::clock_tree::ElementNonBlockingCannotFail>` can only depend on objects of
+class :cc:`ElementNonBlockingCannotFail
+<pw::clock_tree::ElementNonBlockingCannotFail>`.
 
 When one wants to pass a specific object as a source object of class
-:cpp:class:`Element`, the dependent object must be of class
-:cpp:class:`ElementBlocking` to satisfy the dependency rules.
+:cc:`Element <pw::clock_tree::Element>`, the dependent object must be of class
+:cc:`ElementBlocking <pw::clock_tree::ElementBlocking>` to satisfy the
+dependency rules.
 
 
 .. cpp:namespace-pop::

@@ -378,10 +378,10 @@ projects have migrated, unused result warnings will be enabled unconditionally.
 -----
 C API
 -----
-``pw_status`` provides the C-compatible :c:enum:`pw_Status` enum for the status
-codes.  For ease of use, :cpp:class:`pw::Status` implicitly converts to and from
-:c:enum:`pw_Status`.  However, the :c:enum:`pw_Status` enum should never be used
-in C++; instead use the :cpp:class:`pw::Status` class.
+``pw_status`` provides the C-compatible :cc:`pw_Status` enum for the status
+codes.  For ease of use, :cc:`pw::Status` implicitly converts to and from
+:cc:`pw_Status`.  However, the :cc:`pw_Status` enum should never be used
+in C++; instead use the :cc:`pw::Status` class.
 
 --------
 Rust API

@@ -48,8 +48,8 @@ There are three basic capabilities of a stream:
 
 ``pw_stream`` provides a family of stream classes with different capabilities.
 The most basic class, :cc:`Stream <pw::stream::Stream>` guarantees no
-functionality, while the most capable class, :cpp:class:`SeekableReaderWriter`
-supports reading, writing, and seeking.
+functionality, while the most capable class, :cc:`SeekableReaderWriter
+<pw::stream::SeekableReaderWriter>` supports reading, writing, and seeking.
 
 Usage overview
 ==============
@@ -59,27 +59,27 @@ Usage overview
    * - pw::stream Interfaces
      - Accept in APIs?
      - Extend to create new stream?
-   * - :cpp:class:`pw::stream::Stream`
+   * - :cc:`Stream <pw::stream::Stream>`
      - ❌
      - ❌
-   * - | :cpp:class:`pw::stream::Reader`
-       | :cpp:class:`pw::stream::Writer`
-       | :cpp:class:`pw::stream::ReaderWriter`
+   * - | :cc:`Reader <pw::stream::Reader>`
+       | :cc:`Writer <pw::stream::Writer>`
+       | :cc:`ReaderWriter <pw::stream::ReaderWriter>`
      - ✅
      - ❌
-   * - | :cpp:class:`pw::stream::SeekableReader`
-       | :cpp:class:`pw::stream::SeekableWriter`
-       | :cpp:class:`pw::stream::SeekableReaderWriter`
+   * - | :cc:`SeekableReader <pw::stream::SeekableReader>`
+       | :cc:`SeekableWriter <pw::stream::SeekableWriter>`
+       | :cc:`SeekableReaderWriter <pw::stream::SeekableReaderWriter>`
      - ✅
      - ✅
-   * - | :cpp:class:`pw::stream::RelativeSeekableReader`
-       | :cpp:class:`pw::stream::RelativeSeekableWriter`
-       | :cpp:class:`pw::stream::RelativeSeekableReaderWriter`
+   * - | :cc:`RelativeSeekableReader <pw::stream::RelativeSeekableReader>`
+       | :cc:`RelativeSeekableWriter <pw::stream::RelativeSeekableWriter>`
+       | :cc:`RelativeSeekableReaderWriter <pw::stream::RelativeSeekableReaderWriter>`
      - ✅ (rarely)
      - ✅
-   * - | :cpp:class:`pw::stream::NonSeekableReader`
-       | :cpp:class:`pw::stream::NonSeekableWriter`
-       | :cpp:class:`pw::stream::NonSeekableReaderWriter`
+   * - | :cc:`NonSeekableReader <pw::stream::NonSeekableReader>`
+       | :cc:`NonSeekableWriter <pw::stream::NonSeekableWriter>`
+       | :cc:`NonSeekableReaderWriter <pw::stream::NonSeekableReaderWriter>`
      - ❌
      - ✅
 
@@ -108,7 +108,7 @@ prevents a dependency on a bespoke API that would require porting work.
 Similarly, after building a :cc:`Writer <pw::stream::Writer>`
 implementation for a Sink that data could be dumped to, that same
 :cc:`Writer <pw::stream::Writer>` can be reused for other contexts that
-already write data to the :cpp:class:`pw::stream::Writer` interface.
+already write data to the :cc:`Writer <pw::stream::Writer>` interface.
 
 Before:
 
@@ -228,11 +228,11 @@ Design notes
 
 Sync & Flush
 ============
-The :cpp:class:`pw::stream::Stream` API does not include ``Sync()`` or
+The :cc:`Stream <pw::stream::Stream>` API does not include ``Sync()`` or
 ``Flush()`` functions. There no mechanism in the :cc:`Stream
-<pw::stream::Stream>` API to synchronize a :cpp:class:`Reader`'s potentially
-buffered input with its underlying data source. This must be handled by the
-implementation if required.  Similarly, the :cc:`Writer
+<pw::stream::Stream>` API to synchronize a :cc:`Reader <pw::stream::Reader>`'s
+potentially buffered input with its underlying data source. This must be handled
+by the implementation if required.  Similarly, the :cc:`Writer
 <pw::stream::Writer>` implementation is responsible for flushing any buffered
 data to the sink.
 
@@ -240,8 +240,8 @@ data to the sink.
 <pw::stream::Stream>` for a few reasons:
 
 * The semantics of when to call ``Flush()``/``Sync()`` on the stream are
-  unclear. The presence of these methods complicates using a :cpp:class:`Reader`
-  or :cc:`Writer <pw::stream::Writer>`.
+  unclear. The presence of these methods complicates using a :cc:`Reader
+  <pw::stream::Reader>` or :cc:`Writer <pw::stream::Writer>`.
 * Adding one or two additional virtual calls increases the size of all
   :cc:`Stream <pw::stream::Stream>` vtables.
 
@@ -250,7 +250,7 @@ data to the sink.
 Class hierarchy
 ===============
 All ``pw_stream`` classes inherit from a single, common base with all possible
-functionality: :cpp:class:`pw::stream::Stream`. This structure has
+functionality: :cc:`Stream <pw::stream::Stream>`. This structure has
 some similarities with Python's `io module
 <https://docs.python.org/3/library/io.html>`_ and C#'s `Stream class
 <https://docs.microsoft.com/en-us/dotnet/api/system.io.stream>`_.
@@ -264,20 +264,22 @@ We chose to use a single base class for a few reasons:
 
 * The inheritance hierarchy is simple and linear. Despite the linear
   hierarchy, combining capabilities is natural with classes like
-  :cpp:class:`ReaderWriter`.
+  :cc:`ReaderWriter <pw::stream::ReaderWriter>`.
 
   In C++, separate interfaces for each capability requires either a complex
   virtual inheritance hierarchy or entirely separate hierarchies for each
   capability. Separate hierarchies can become cumbersome when trying to
-  combine multiple capabilities. A :cpp:class:`SeekableReaderWriter` would
-  have to implement three different interfaces, which means three different
-  vtables and three vtable pointers in each instance.
+  combine multiple capabilities. A :cc:`SeekableReaderWriter
+  <pw::stream::SeekableReaderWriter>` would have to implement three different
+  interfaces, which means three different vtables and three vtable pointers in
+  each instance.
 * Stream capabilities are clearly expressed in the type system, while
-  naturally supporting optional functionality. A :cpp:class:`Reader` may
-  or may not support :cpp:func:`Stream::Seek`. Applications that can handle
-  seek failures gracefully way use seek on any :cpp:class:`Reader`. If seeking
-  is strictly necessary, an API can accept a :cpp:class:`SeekableReader`
-  instead.
+  naturally supporting optional functionality. A :cc:`Reader
+  <pw::stream::Reader>` may or may not support :cc:`Stream::Seek
+  <pw::stream::Stream::Seek>`. Applications that can handle seek failures
+  gracefully way use seek on any :cc:`Reader <pw::stream::Reader>`. If seeking
+  is strictly necessary, an API can accept a :cc:`SeekableReader
+  <pw::stream::SeekableReader>` instead.
 
   Expressing optional functionality in the type system is cumbersome when
   there are distinct interfaces for each capability. ``Reader``, ``Writer``,
@@ -287,8 +289,8 @@ We chose to use a single base class for a few reasons:
   <pw::stream::Stream>` would be an "OptionalReaderOptionalWriterOptionalSeeker"
   in this model.
 * Code reuse is maximized. For example, a single
-  :cpp:func:`Stream::ConservativeLimit` implementation supports many stream
-  implementations.
+  :cc:`Stream::ConservativeLimit <pw::stream::Stream::ConservativeLimit>`
+  implementation supports many stream implementations.
 
 Virtual interfaces
 ==================

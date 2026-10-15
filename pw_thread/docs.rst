@@ -102,8 +102,8 @@ C
 ---------------------
 Thread Identification
 ---------------------
-The class :cpp:type:`pw::Thread::id` is a lightweight, trivially copyable class
-that serves as a unique identifier of Thread objects.
+The class :cc:`pw::Thread::id <pw::thread::Thread::id>` is a lightweight,
+trivially copyable class that serves as a unique identifier of Thread objects.
 
 Instances of this class may also hold the special distinct value that does
 not represent any thread. Once a thread has finished, the value of its
@@ -116,10 +116,10 @@ Although the current API is similar to C++11 STL `std::thread::id
 <https://en.cppreference.com/w/cpp/thread/thread/id>`_, it is missing the
 required hashing and streaming operators and may diverge further in the future.
 
-A thread's identification (:cpp:type:`pw::Thread::id`) can be acquired only in
-C++ in one of two ways:
+A thread's identification (:cc:`pw::Thread::id <pw::thread::Thread::id>`) can
+be acquired only in C++ in one of two ways:
 
-1) Using the :cpp:type:`pw::Thread` handle's ``pw::Thread::id get_id() const``
+1) Using the :cc:`pw::Thread` handle's ``pw::Thread::id get_id() const``
    method.
 2) While executing the thread using
    ``pw::Thread::id pw::this_thread::get_id() noexcept``.
@@ -150,7 +150,7 @@ Example
 ---------------
 Thread creation
 ---------------
-The :cpp:type:`pw::Thread` class can be used to create a thread, allowing
+The :cc:`pw::Thread` class can be used to create a thread, allowing
 multiple functions to execute concurrently.
 
 API reference
@@ -235,7 +235,7 @@ core/processor affinity, and/or an optional reference to a pre-allocated
 Context (the collection of memory allocations needed for a thread to run).
 
 Options shall NOT have an attribute to start threads as detached vs joinable.
-All :cpp:type:`pw::Thread` instances must be explicitly ``join()``'d or
+All :cc:`pw::Thread` instances must be explicitly ``join()``'d or
 ``detach()``'d through the run-time Thread API.
 
 Note that if backends set ``PW_THREAD_JOINING_ENABLED`` to false, backends
@@ -347,7 +347,7 @@ Please see the selected thread creation backend documentation for how to
 enable joining if it's not already enabled by default.
 
 .. Warning::
-  A constructed :cpp:type:`pw::Thread` which represents a thread of execution
+  A constructed :cc:`pw::Thread` which represents a thread of execution
   must be EITHER detached or joined, else the destructor will assert!
 
 DetachedThread
@@ -427,7 +427,7 @@ new code.
 
 .. warning::
 
-   Because the thread may start after the :cpp:type:`pw::Thread` creation, an
+   Because the thread may start after the :cc:`pw::Thread` creation, an
    object which implements the ``ThreadCore`` MUST meet or exceed the lifetime
    of its thread of execution!
 
@@ -535,14 +535,14 @@ For example:
 pw_snapshot integration
 -----------------------
 ``pw_thread`` provides some light, optional integration with pw_snapshot through
-helper functions for populating a :cpp:type:`pw::Thread` proto. Some of these
+helper functions for populating a :cc:`pw::Thread` proto. Some of these
 are directly integrated into the RTOS thread backends to simplify the thread
 state capturing for snapshots.
 
 SnapshotStack()
 ===============
 The ``SnapshotStack()`` helper captures stack metadata (stack pointer and
-bounds) into a :cpp:type:`pw::Thread` proto. After the stack bounds are
+bounds) into a :cc:`pw::Thread` proto. After the stack bounds are
 captured, execution is passed off to the thread stack collection callback to
 capture a backtrace or stack dump. Note that this function does NOT capture the
 thread name: that metadata is only required in cases where a stack overflow or

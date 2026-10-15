@@ -629,7 +629,7 @@ Recoverable errors
 ------------------
 Use the following to report non-fatal failures from subroutines:
 
-- :cpp:type:`pw::Status`: Zero-overhead type that wraps a
+- :cc:`pw::Status`: Zero-overhead type that wraps a
   :ref:`status code <module-pw_status-quickref>`.
 - :ref:`pw::Result <module-pw_result>`: Union of a status code and a value.
 - :ref:`pw::StatusWithSize <module-pw_status-guide-status-with-size>`: A status
@@ -923,7 +923,7 @@ an error and cannot be obtained another way.
 
       PW_LOG_DEBUG("%s:%d: %s called", __FILE__, __LINE__, __PRETTY_FUNCTION__);
 
-- **Do not log** :cpp:type:`pw::Status` **details.** If you are logging and
+- **Do not log** :cc:`pw::Status` **details.** If you are logging and
   returning an error as a result of a subroutine that returned an error, it is
   likely that a log statement can be added closer to where that error was
   detected.

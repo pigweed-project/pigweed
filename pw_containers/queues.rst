@@ -172,7 +172,7 @@ Example
       :sync: c
 
       A ``InlineVarLenEntryQueue`` may be declared and initialized in C with the
-      :c:macro:`PW_VARIABLE_LENGTH_ENTRY_QUEUE_DECLARE` macro.
+      :cc:`PW_VARIABLE_LENGTH_ENTRY_QUEUE_DECLARE` macro.
 
       .. code-block:: c
 

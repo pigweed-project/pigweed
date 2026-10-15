@@ -428,7 +428,7 @@ specified in ``pw_android_common_backends``. These flags are as follows:
 ``PW_FUNCTION_ENABLE_DYNAMIC_ALLOCATION``
 -----------------------------------------
 As discussed in :ref:`module-pw_function-dynamic-allocation`, this flag enables
-dynamic allocation of :cpp:type:`pw::Function`, allowing it to exceed the
+dynamic allocation of :cc:`pw::Function`, allowing it to exceed the
 inline size limit.
 
 Android targets support dynamic allocation since the Android environment is not
@@ -439,5 +439,5 @@ disabled cannot be linked against components with dynamic allocation enabled.
 ``PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL``
 ----------------------------------------
 This flag provides legacy default implementations of optional virtual methods
- in :cpp:class:`pw::Allocator` (such as ``DoResize``) to facilitate the transition
- to :cpp:class:`pw::allocator::AbstractAllocator`.
+ in :cc:`pw::Allocator` (such as ``DoResize``) to facilitate the transition
+ to :cc:`pw::allocator::AbstractAllocator`.

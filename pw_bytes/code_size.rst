@@ -12,11 +12,11 @@ This page analyzes the code size impact of using components from the
 Size report: using ByteBuffer vs. manual manipulation
 -----------------------------------------------------
 The following report compares the code size of using
-:cpp:class:`pw::ByteBuffer` for constructing and parsing a simple byte sequence
+:cc:`pw::ByteBuffer` for constructing and parsing a simple byte sequence
 versus manually performing similar operations with ``std::memcpy`` and bitwise
 logic for endianness.
 
-:cpp:class:`pw::ByteBuffer` can offer improved type safety and convenience,
+:cc:`pw::ByteBuffer` can offer improved type safety and convenience,
 potentially at a small code size cost for very simple operations, but can lead
 to more maintainable and less error-prone code for complex byte manipulations.
 

@@ -17,7 +17,7 @@ to enable the SPI peripheral and set its bus speed.
 
 .. note::
    There is currently no support for RP2040 hardware CSn
-   pins. :cpp:class:`pw::spi::DigitalOutChipSelector` is
+   pins. :cc:`pw::spi::DigitalOutChipSelector` is
    used instead.
 
 Usage

@@ -83,7 +83,7 @@ Get Started
 Choose between pw::InlineString and pw::StringBuilder
 =====================================================
 `pw::InlineString` is intended to replace typical null terminated character
-arrays in embedded data structures. Use :cpp:type:`pw::InlineString` if you
+arrays in embedded data structures. Use :cc:`pw::InlineString` if you
 need:
 
 * Compatibility with ``std::string``
@@ -93,7 +93,7 @@ need:
 
 `pw::StringBuilder` is intended to ease constructing strings in external data;
 typically created on the stack and disposed of in the same function. Use
-:cpp:class:`pw::StringBuilder` if you need:
+:cc:`pw::StringBuilder` if you need:
 
 * Compatibility with ``std::ostringstream``, including custom object support
 * Storage external to the object
@@ -102,7 +102,7 @@ typically created on the stack and disposed of in the same function. Use
 * A temporary stack object to aid string construction
 * Medium code size overhead
 
-An example of when to prefer :cpp:type:`pw::InlineString` is wrapping a
+An example of when to prefer :cc:`pw::InlineString` is wrapping a
 length-delimited string (e.g. ``std::string_view``) for APIs that require null
 termination:
 
@@ -120,7 +120,7 @@ termination:
      PW_LOG_DEBUG("The name is %s", pw::InlineString<kMaxNameLen>(name).c_str());
    }
 
-An example of when to prefer :cpp:class:`pw::StringBuilder` is when
+An example of when to prefer :cc:`pw::StringBuilder` is when
 constructing a string for external use.
 
 .. code-block:: cpp
@@ -143,7 +143,7 @@ constructing a string for external use.
 
 Build a string with pw::StringBuilder
 =====================================
-The following shows basic use of a :cpp:class:`pw::StringBuilder`.
+The following shows basic use of a :cc:`pw::StringBuilder`.
 
 .. code-block:: cpp
 
@@ -173,7 +173,7 @@ The following shows basic use of a :cpp:class:`pw::StringBuilder`.
 
 Build a string with pw::InlineString
 ====================================
-:cpp:type:`pw::InlineString` objects must be constructed by specifying a fixed
+:cc:`pw::InlineString` objects must be constructed by specifying a fixed
 capacity for the string.
 
 .. code-block:: c++
@@ -210,8 +210,8 @@ capacity for the string.
 
 Build a string inside an pw::InlineString with a pw::StringBuilder
 ==================================================================
-:cpp:class:`pw::StringBuilder` can build a string in a
-:cpp:type:`pw::InlineString`:
+:cc:`pw::StringBuilder` can build a string in a
+:cc:`pw::InlineString`:
 
 .. literalinclude:: ./examples/build_inlinestring_with_stringbuilder_test.cc
    :language: cpp
@@ -221,13 +221,13 @@ Build a string inside an pw::InlineString with a pw::StringBuilder
 
 Pass an pw::InlineString object as a parameter
 ==============================================
-:cpp:type:`pw::InlineString` objects can be passed to non-templated functions
+:cc:`pw::InlineString` objects can be passed to non-templated functions
 via type erasure. This saves code size in most cases, since it avoids template
 expansions triggered by string size differences.
 
 Unknown size strings
 --------------------
-To operate on :cpp:type:`pw::InlineString` objects without knowing their type,
+To operate on :cc:`pw::InlineString` objects without knowing their type,
 use the ``pw::InlineString<>`` type, shown in the examples below:
 
 .. code-block:: c++
@@ -249,12 +249,12 @@ use the ``pw::InlineString<>`` type, shown in the examples below:
      PW_ASSERT(str1 == str2);
    }
 
-However, generically sized :cpp:type:`pw::InlineString` objects don't work in
+However, generically sized :cc:`pw::InlineString` objects don't work in
 ``constexpr`` contexts.
 
 Known size strings
 ------------------
-:cpp:type:`pw::InlineString` operations on known-size strings may be used in
+:cc:`pw::InlineString` operations on known-size strings may be used in
 ``constexpr`` expressions.
 
 .. literalinclude:: ./examples/known_size_string_test.cc
@@ -265,8 +265,8 @@ Known size strings
 
 Initialization of pw::InlineString objects
 ===========================================
-:cpp:type:`pw::InlineBasicString` supports class template argument deduction
-(CTAD) in C++17 and newer. Since :cpp:type:`pw::InlineString` is an alias, CTAD
+:cc:`pw::InlineBasicString` supports class template argument deduction
+(CTAD) in C++17 and newer. Since :cc:`pw::InlineString` is an alias, CTAD
 is not supported until C++20.
 
 .. code-block:: c++
