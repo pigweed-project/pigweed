@@ -100,6 +100,6 @@ constexpr RpcStatus PeerErrorToRpcStatus(EndpointRole sender,
   return RpcStatus::ProtocolError();
 }
 
-// LINT.ThenChange(//pw_rpc2/docs.rst:rpc2_peer_error_mapping)
+// LINT.ThenChange(//pw_rpc2/cpp.rst:rpc2_peer_error_mapping)
 
 }  // namespace pw::rpc2::internal

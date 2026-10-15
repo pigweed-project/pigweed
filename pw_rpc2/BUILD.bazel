@@ -23,6 +23,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "comparison.rst",
+        "cpp.rst",
         "docs.rst",
         "examples.rst",
         "protocol.rst",

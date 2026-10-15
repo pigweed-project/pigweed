@@ -353,7 +353,8 @@ or dropping a message:
   (``10001``), the client sends nothing.
 
 Either way, the client's call fails because of ``METHOD_TYPE_MISMATCH``. The
-C++ client reports this as ``kUnimplemented``; see :ref:`module-pw_rpc2-errors`.
+C++ client reports this as ``kUnimplemented``; see
+:ref:`module-pw_rpc2-cpp-errors`.
 
 A streaming endpoint accepts ``01110`` or ``10011``, which represent a
 stream of a single message. A mismatch that produces only these packets
@@ -543,7 +544,7 @@ closest code that the negotiated version defines.
 The tables below list the codes that protocol version 1 defines. Every other
 value is unassigned or reserved. The C++ implementation reports each code to
 the application as the action it calls for; see
-:ref:`module-pw_rpc2-errors`.
+:ref:`module-pw_rpc2-cpp-errors`.
 
 ..
    # LINT.IfChange(rpc2_error_codes)

@@ -223,7 +223,7 @@ future that starts the RPC and resolves to:
 
 ``Writer::Finish()`` ends the client's stream. ``Reader::Read()`` resolves to
 ``kEndOfStream`` once the server has finished its stream. See
-:ref:`module-pw_rpc2-errors` for what each status code means.
+:ref:`module-pw_rpc2-cpp-errors` for what each status code means.
 
 .. _module-pw_rpc2-examples-call-coro:
 
