@@ -37,7 +37,6 @@ pw_cc_enum_source_set("status") {
     dir_pw_result,
     dir_pw_status,
   ]
-  visibility = _default_visibility
 }
 
 pw_test("status_test") {

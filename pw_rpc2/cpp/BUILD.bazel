@@ -28,6 +28,7 @@ pw_cc_enum_library(
     name = "status",
     enum_headers = ["public/pw_rpc2/status.h"],
     strip_include_prefix = "public",
+    visibility = ["//visibility:public"],
     deps = [
         "//pw_result",
         "//pw_status",
