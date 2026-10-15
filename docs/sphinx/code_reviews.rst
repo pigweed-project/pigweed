@@ -202,7 +202,12 @@ the guide and the sections that reviews most often cite.
    * - Bazel
      - :ref:`docs-pw-style-bazel`: :ref:`docs-pw-style-bazel-naming-rules`
        and its C++ specific patterns (implementation deps, visibility).
-   * - Java, Go, TypeScript
+   * - Go
+     - :ref:`docs-pw-style-go` (:ref:`docs-pw-style-go-generics`,
+       :ref:`docs-pw-style-go-error-handling`,
+       :ref:`docs-pw-style-go-cli-state`,
+       :ref:`docs-pw-style-go-concurrency`, :ref:`docs-pw-style-go-testing`).
+   * - Java, TypeScript
      - Pigweed has no guide of its own. Apply the universal aspects above and
        the corresponding `Google style guide
        <https://google.github.io/styleguide/>`_.

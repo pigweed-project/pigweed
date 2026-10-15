@@ -266,6 +266,7 @@ This plugin will, by default, act upon any file named "OWNERS".
    C++ <style/cpp>
    Commit message <style/commit_message>
    CLI <style/cli>
+   Go <style/go>
    Protobuf <style/protobuf>
    Python <style/python>
    reStructuredText <style/rest>
