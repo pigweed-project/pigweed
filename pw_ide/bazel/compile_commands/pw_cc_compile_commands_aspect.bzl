@@ -550,7 +550,19 @@ def _compile_commands_aspect_impl(target, ctx):
 
 pw_cc_compile_commands_aspect = aspect(
     implementation = _compile_commands_aspect_impl,
-    attr_aspects = ["deps", "implementation_deps", "srcs", "target", "backend", "includes"],
+    attr_aspects = [
+        "actual",
+        "backend",
+        "components",
+        "deps",
+        "implementation_deps",
+        "includes",
+        "native_target",
+        "package",
+        "srcs",
+        "target",
+        "test_components",
+    ],
     provides = [VirtualIncludesInfo, CompileCommandsFragmentInfo],
     fragments = ["cpp"],
     attrs = {
