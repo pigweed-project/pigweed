@@ -157,6 +157,7 @@ fuchsia_cc_test(
         "//pw_unit_test",
         "@fuchsia_sdk//pkg/component_incoming_cpp",
         "@fuchsia_sdk//pkg/driver_testing_cpp",
+        "@fuchsia_sdk//pkg/driver_testing_scoped_global_logger_cpp",
     ],
 )
 

@@ -18,6 +18,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
+#include <lib/driver/testing/cpp/scoped_global_logger.h>
 
 #include <memory>
 
@@ -27,19 +28,11 @@ namespace fhb = fuchsia_hardware_bluetooth;
 
 namespace bt_hci_virtual {
 
-// TODO: https://pwbug.dev/369120118 - Use ScopedGlobalLogger when it is
-// available in the SDK. See fxr/1110057.
-
 class LoopbackTest : public ::testing::Test,
                      public fidl::AsyncEventHandler<fhb::HciTransport>,
                      public fidl::AsyncEventHandler<fhb::Snoop> {
  public:
   void SetUp() override {
-    // There's no driver instance to set up the logger for this test, so create
-    // a driver logger for this test. This must happen before any LoopbackDevice
-    // methods are called, since they may log.
-    ASSERT_NO_FATAL_FAILURE(InitializeLogger());
-
     zx::channel loopback_channel_device_end;
     zx::channel::create(0, &loopback_chan_, &loopback_channel_device_end);
     int add_child_cb_count = 0;
@@ -69,7 +62,6 @@ class LoopbackTest : public ::testing::Test,
     loopback_chan_wait_.Cancel();
     fdf_testing_run_until_idle();
     runtime_.ShutdownAllDispatchers(fdf::Dispatcher::GetCurrent()->get());
-    fdf::Logger::SetGlobalInstance(nullptr);
   }
 
   async_dispatcher_t* dispatcher() {
@@ -241,29 +233,6 @@ class LoopbackTest : public ::testing::Test,
     auto _ = snoop_vendor_client_.UnbindMaybeGetEndpoint();
   }
 
-  // Creates a driver logger and sets it as the global fdf::Logger instance.
-  // Wrap calls in ASSERT_NO_FATAL_FAILURE so that the test stops on failure.
-  void InitializeLogger() {
-    std::vector<fuchsia_component_runner::ComponentNamespaceEntry> entries;
-    zx::result open_result = component::OpenServiceRoot();
-    ASSERT_TRUE(open_result.is_ok());
-
-    ::fidl::ClientEnd<::fuchsia_io::Directory> svc = std::move(*open_result);
-    entries.emplace_back(fuchsia_component_runner::ComponentNamespaceEntry{{
-        .path = "/svc",
-        .directory = std::move(svc),
-    }});
-
-    // Create Namespace object from the entries.
-    auto ns = fdf::Namespace::Create(entries);
-    ASSERT_TRUE(ns.is_ok());
-
-    // Create Logger with dispatcher and namespace.
-    logger_ = fdf::Logger::Create2(*ns, dispatcher(), "vendor-hci-logger");
-    ASSERT_TRUE(logger_);
-    fdf::Logger::SetGlobalInstance(logger_.get());
-  }
-
   void OnChannelReady(async_dispatcher_t*,
                       async::WaitBase* wait,
                       zx_status_t status,
@@ -303,7 +272,8 @@ class LoopbackTest : public ::testing::Test,
 
   // Attaches a foreground dispatcher for us automatically.
   fdf_testing::DriverRuntime runtime_;
-  std::unique_ptr<fdf::Logger> logger_;
+  // LoopbackDevice logs through the global fdf::Logger.
+  fdf_testing::ScopedGlobalLogger logger_;
 
   zx::channel loopback_chan_;
   zx::channel service_loopback_chan_;
