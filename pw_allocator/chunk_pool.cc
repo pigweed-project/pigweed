@@ -26,7 +26,7 @@ static Layout EnsurePointerLayout(const Layout& layout) {
 }
 
 ChunkPool::ChunkPool(ByteSpan region, const Layout& layout)
-    : Pool(kCapabilities, layout),
+    : AbstractPool(kCapabilities, layout),
       allocated_layout_(EnsurePointerLayout(layout)) {
   Result<ByteSpan> result =
       GetAlignedSubspan(region, allocated_layout_.alignment());

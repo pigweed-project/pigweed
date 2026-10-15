@@ -329,9 +329,10 @@ log whenever a threshold is exceeded:
 
 Most other pure virtual methods, such as ``DoResize``, can be satisfied by
 either implementing them directly or inheriting them from a base class. The
-:cc:`AbstractDeallocator <pw::allocator::AbstractDeallocator>` and
-:cc:`AbstractAllocator <pw::allocator::AbstractAllocator>` types provide default
-implementations for concrete deallocators and allocators, respectively.
+:cc:`AbstractDeallocator <pw::allocator::AbstractDeallocator>`,
+:cc:`AbstractAllocator <pw::allocator::AbstractAllocator>`, and
+:cc:`AbstractPool <pw::allocator::AbstractPool>` types provide default
+implementations for concrete deallocators, allocators, and pools, respectively.
 
 A notable exception to the above is ``DoReallocate``, which unless overridden
 will try to ``Resize``, and, if unsuccessful, try to ``Allocate``, copy, and

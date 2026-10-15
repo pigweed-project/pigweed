@@ -138,10 +138,20 @@ pw_source_set("abstract_deallocator") {
   ]
 }
 
+pw_source_set("abstract_pool") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_allocator/abstract_pool.h" ]
+  public_deps = [
+    ":abstract_deallocator",
+    ":pw_allocator",
+  ]
+}
+
 pw_source_set("allocator_as_pool") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/allocator_as_pool.h" ]
   public_deps = [
+    ":abstract_pool",
     ":pw_allocator",
     dir_pw_status,
   ]
@@ -242,6 +252,7 @@ pw_source_set("chunk_pool") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/chunk_pool.h" ]
   public_deps = [
+    ":abstract_pool",
     ":pw_allocator",
     dir_pw_bytes,
     dir_pw_result,
@@ -632,6 +643,16 @@ pw_test("abstract_deallocator_test") {
   sources = [ "abstract_deallocator_test.cc" ]
 }
 
+pw_test("abstract_pool_test") {
+  deps = [
+    ":abstract_pool",
+    ":pw_allocator",
+    ":testing",
+    dir_pw_status,
+  ]
+  sources = [ "abstract_pool_test.cc" ]
+}
+
 pw_test("allocator_as_pool_test") {
   deps = [
     ":allocator_as_pool",
@@ -930,6 +951,7 @@ pw_test_group("tests") {
   tests = [
     ":abstract_allocator_test",
     ":abstract_deallocator_test",
+    ":abstract_pool_test",
     ":allocator_as_pool_test",
     ":allocator_test",
     ":best_fit_test",

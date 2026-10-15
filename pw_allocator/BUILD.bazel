@@ -126,11 +126,22 @@ cc_library(
 )
 
 cc_library(
+    name = "abstract_pool",
+    hdrs = ["public/pw_allocator/abstract_pool.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":abstract_deallocator",
+        ":pw_allocator",
+    ],
+)
+
+cc_library(
     name = "allocator_as_pool",
     srcs = ["allocator_as_pool.cc"],
     hdrs = ["public/pw_allocator/allocator_as_pool.h"],
     strip_include_prefix = "public",
     deps = [
+        ":abstract_pool",
         ":pw_allocator",
         "//pw_status",
     ],
@@ -243,6 +254,7 @@ cc_library(
     ],
     strip_include_prefix = "public",
     deps = [
+        ":abstract_pool",
         ":pw_allocator",
         "//pw_bytes",
         "//pw_result",
@@ -672,6 +684,17 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "abstract_pool_test",
+    srcs = ["abstract_pool_test.cc"],
+    deps = [
+        ":abstract_pool",
+        ":pw_allocator",
+        ":testing",
+        "//pw_status",
+    ],
+)
+
+pw_cc_test(
     name = "allocator_as_pool_test",
     srcs = ["allocator_as_pool_test.cc"],
     deps = [
@@ -1006,6 +1029,7 @@ filegroup(
     srcs = [
         "public/pw_allocator/abstract_allocator.h",
         "public/pw_allocator/abstract_deallocator.h",
+        "public/pw_allocator/abstract_pool.h",
         "public/pw_allocator/allocator.h",
         "public/pw_allocator/allocator_as_pool.h",
         "public/pw_allocator/async_pool.h",

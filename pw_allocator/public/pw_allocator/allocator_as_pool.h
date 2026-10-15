@@ -13,9 +13,9 @@
 // the License.
 #pragma once
 
+#include "pw_allocator/abstract_pool.h"
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/layout.h"
-#include "pw_allocator/pool.h"
 #include "pw_status/status.h"
 
 namespace pw::allocator {
@@ -23,7 +23,7 @@ namespace pw::allocator {
 /// @submodule{pw_allocator,forwarding}
 
 /// Implementation of ``Pool`` that satisfies requests using an ``Allocator``.
-class AllocatorAsPool : public Pool {
+class AllocatorAsPool : public AbstractPool {
  public:
   /// Construct a ``Pool`` from an ``Allocator``.
   ///

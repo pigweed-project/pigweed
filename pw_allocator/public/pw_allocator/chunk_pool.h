@@ -15,9 +15,9 @@
 
 #include <cstdint>
 
+#include "pw_allocator/abstract_pool.h"
 #include "pw_allocator/capability.h"
 #include "pw_allocator/layout.h"
-#include "pw_allocator/pool.h"
 #include "pw_bytes/span.h"
 #include "pw_status/status.h"
 
@@ -29,7 +29,7 @@ namespace pw::allocator {
 ///
 /// The first ``sizeof(void*)`` bytes of each free chunk is used to store a
 /// pointer to the next free chunk, or null for the last free chunk.
-class ChunkPool : public Pool {
+class ChunkPool : public AbstractPool {
  public:
   static constexpr Capabilities kCapabilities =
       kImplementsGetRequestedLayout | kImplementsGetUsableLayout |
