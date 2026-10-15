@@ -159,7 +159,7 @@ class TransferService : public pw_rpc::raw::Transfer::Service<TransferService> {
                   StartCallback&& on_start,
                   EndCallback&& on_end)
       : max_parameters_(max_window_size_bytes,
-                        transfer_thread.max_chunk_size(),
+                        static_cast<uint32_t>(transfer_thread.max_chunk_size()),
                         extend_window_divisor),
         thread_(transfer_thread),
         chunk_timeout_(chunk_timeout),
