@@ -190,10 +190,8 @@ class IntrusiveQueue {
   // Check that T is an Item in a function, since the class T will not be fully
   // defined when the IntrusiveQueue<T> class is instantiated.
   static constexpr void CheckItemType() {
-    using IntrusiveItemType =
-        typename containers::internal::IntrusiveItem<ItemBase, T>::Type;
     static_assert(
-        std::is_base_of_v<IntrusiveItemType, T>,
+        containers::internal::IsIntrusiveItem<ItemBase, T>(),
         "IntrusiveQueue items must be derived from IntrusiveQueue<T>::Item, "
         "where T is the item or one of its bases.");
   }

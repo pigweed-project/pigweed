@@ -49,6 +49,12 @@ struct IntrusiveItem<Item, T, true> {
   using Type = typename T::ItemType;
 };
 
+// Checks if `T` inherits from the container's nested `Item` type.
+template <typename ItemBase, typename T>
+constexpr bool IsIntrusiveItem() {
+  return std::is_base_of_v<typename IntrusiveItem<ItemBase, T>::Type, T>;
+}
+
 // Implementation of `is_weakly_orderable` that uses SFINE to detect when the
 // given type can be ordered using the '<' operator.
 template <typename T>
