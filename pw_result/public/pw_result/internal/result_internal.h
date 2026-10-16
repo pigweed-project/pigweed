@@ -36,137 +36,128 @@ template <typename T,
           bool = std::is_trivially_destructible<T>::value>
 class ResultData;
 
-#define PW_RESULT_DATA_IMPL                                                \
-  template <typename U, typename S, bool b>                                \
-  friend class ResultData;                                                 \
-                                                                           \
- public:                                                                   \
-  using status_type = StatusType;                                          \
-  using State = typename status_type::Code;                                \
-  static constexpr State kHasValueState = status_type().code();            \
-                                                                           \
-  ResultData() = delete;                                                   \
-                                                                           \
-  PW_MODIFY_DIAGNOSTICS_PUSH();                                            \
-  PW_MODIFY_DIAGNOSTIC_GCC(ignored, "-Wmaybe-uninitialized");              \
-                                                                           \
-  constexpr ResultData(const ResultData& other)                            \
-      : empty_(), state_(other.state_) {                                   \
-    if (other.state_ == kHasValueState) {                                  \
-      MakeValue(other.data_);                                              \
-    }                                                                      \
-  }                                                                        \
-                                                                           \
-  constexpr ResultData(ResultData&& other) noexcept(                       \
-      std::is_nothrow_move_constructible<T>::value)                        \
-      : empty_(), state_(other.state_) {                                   \
-    if (other.state_ == kHasValueState) {                                  \
-      MakeValue(std::move(other.data_));                                   \
-    }                                                                      \
-  }                                                                        \
-                                                                           \
-  template <typename U, bool b>                                            \
-  explicit constexpr ResultData(const ResultData<U, StatusType, b>& other) \
-      : empty_() {                                                         \
-    if (other.state_ == kHasValueState) {                                  \
-      MakeValue(other.data_);                                              \
-      state_ = kHasValueState;                                             \
-    } else {                                                               \
-      state_ = other.state_;                                               \
-    }                                                                      \
-  }                                                                        \
-                                                                           \
-  template <typename U, bool b>                                            \
-  explicit constexpr ResultData(ResultData<U, StatusType, b>&& other)      \
-      : empty_() {                                                         \
-    if (other.state_ == kHasValueState) {                                  \
-      MakeValue(std::move(other.data_));                                   \
-      state_ = kHasValueState;                                             \
-    } else {                                                               \
-      state_ = other.state_;                                               \
-    }                                                                      \
-  }                                                                        \
-                                                                           \
-  template <typename... Args>                                              \
-  explicit constexpr ResultData(std::in_place_t, Args&&... args)           \
-      : data_(std::forward<Args>(args)...), state_(kHasValueState) {}      \
-                                                                           \
-  explicit constexpr ResultData(State no_value_state)                      \
-      : empty_(), state_(no_value_state) {                                 \
-    PW_ASSERT(no_value_state != kHasValueState);                           \
-  }                                                                        \
-                                                                           \
-  constexpr ResultData& operator=(const ResultData& other) {               \
-    if (this == &other) {                                                  \
-      return *this;                                                        \
-    }                                                                      \
-    if (other.state_ == kHasValueState) {                                  \
-      Assign(other.data_);                                                 \
-    } else {                                                               \
-      AssignState(other.state_);                                           \
-    }                                                                      \
-    return *this;                                                          \
-  }                                                                        \
-                                                                           \
-  constexpr ResultData& operator=(ResultData&& other) noexcept(            \
-      std::is_nothrow_move_assignable<T>::value &&                         \
-      std::is_nothrow_move_constructible<T>::value) {                      \
-    if (this == &other) {                                                  \
-      return *this;                                                        \
-    }                                                                      \
-    if (other.state_ == kHasValueState) {                                  \
-      Assign(std::move(other.data_));                                      \
-    } else {                                                               \
-      AssignState(other.state_);                                           \
-    }                                                                      \
-    return *this;                                                          \
-  }                                                                        \
-                                                                           \
-  template <typename U>                                                    \
-  constexpr void Assign(U&& value) {                                       \
-    if (state_ == kHasValueState) {                                        \
-      data_ = std::forward<U>(value);                                      \
-    } else {                                                               \
-      MakeValue(std::forward<U>(value));                                   \
-      state_ = kHasValueState;                                             \
-    }                                                                      \
-  }                                                                        \
-                                                                           \
-  constexpr void AssignState(State no_value_state) {                       \
-    Clear();                                                               \
-    state_ = no_value_state;                                               \
-    PW_ASSERT(no_value_state != kHasValueState);                           \
-  }                                                                        \
-                                                                           \
-  template <State kState>                                                  \
-  constexpr void AssignState() {                                           \
-    Clear();                                                               \
-    state_ = kState;                                                       \
-    static_assert(                                                         \
-        kState != kHasValueState,                                          \
-        "Cannot set state to the has-value state; set the value instead"); \
-  }                                                                        \
-                                                                           \
- protected:                                                                \
-  struct Empty {};                                                         \
-  union {                                                                  \
-    Empty empty_;                                                          \
-    std::remove_const_t<T> data_;                                          \
-  };                                                                       \
-  State state_;                                                            \
-                                                                           \
-  constexpr void Clear() {                                                 \
-    if constexpr (!std::is_trivially_destructible_v<T>) {                  \
-      if (state_ == kHasValueState) {                                      \
-        data_.~T();                                                        \
-      }                                                                    \
-    }                                                                      \
-  }                                                                        \
-  template <typename... Arg>                                               \
-  constexpr void MakeValue(Arg&&... arg) {                                 \
-    new (&data_) T(std::forward<Arg>(arg)...);                             \
-  }                                                                        \
-  PW_MODIFY_DIAGNOSTICS_POP();                                             \
+#define PW_RESULT_DATA_IMPL                                                    \
+  template <typename U, typename S, bool b>                                    \
+  friend class ResultData;                                                     \
+                                                                               \
+ public:                                                                       \
+  using status_type = StatusType;                                              \
+                                                                               \
+  ResultData() = delete;                                                       \
+                                                                               \
+  PW_MODIFY_DIAGNOSTICS_PUSH();                                                \
+  PW_MODIFY_DIAGNOSTIC_GCC(ignored, "-Wmaybe-uninitialized");                  \
+                                                                               \
+  constexpr ResultData(const ResultData& other)                                \
+      : empty_(), status_(other.status_) {                                     \
+    if (other.status_.ok()) {                                                  \
+      MakeValue(other.data_);                                                  \
+    }                                                                          \
+  }                                                                            \
+                                                                               \
+  constexpr ResultData(ResultData&& other) noexcept(                           \
+      std::is_nothrow_move_constructible<T>::value)                            \
+      : empty_(), status_(other.status_) {                                     \
+    if (other.status_.ok()) {                                                  \
+      MakeValue(std::move(other.data_));                                       \
+    }                                                                          \
+  }                                                                            \
+                                                                               \
+  template <typename U, bool b>                                                \
+  explicit constexpr ResultData(const ResultData<U, StatusType, b>& other)     \
+      : empty_(), status_(other.status_) {                                     \
+    if (other.status_.ok()) {                                                  \
+      MakeValue(other.data_);                                                  \
+    }                                                                          \
+  }                                                                            \
+                                                                               \
+  template <typename U, bool b>                                                \
+  explicit constexpr ResultData(ResultData<U, StatusType, b>&& other)          \
+      : empty_(), status_(other.status_) {                                     \
+    if (other.status_.ok()) {                                                  \
+      MakeValue(std::move(other.data_));                                       \
+    }                                                                          \
+  }                                                                            \
+                                                                               \
+  template <typename... Args>                                                  \
+  explicit constexpr ResultData(std::in_place_t, Args&&... args)               \
+      : data_(std::forward<Args>(args)...), status_() {}                       \
+                                                                               \
+  explicit constexpr ResultData(status_type status)                            \
+      : empty_(), status_(status) {                                            \
+    PW_ASSERT(!status.ok());                                                   \
+  }                                                                            \
+                                                                               \
+  constexpr ResultData& operator=(const ResultData& other) {                   \
+    if (this == &other) {                                                      \
+      return *this;                                                            \
+    }                                                                          \
+    if (other.status_.ok()) {                                                  \
+      Assign(other.data_);                                                     \
+    } else {                                                                   \
+      AssignStatus(other.status_);                                             \
+    }                                                                          \
+    return *this;                                                              \
+  }                                                                            \
+                                                                               \
+  constexpr ResultData& operator=(ResultData&& other) noexcept(                \
+      std::is_nothrow_move_assignable<T>::value &&                             \
+      std::is_nothrow_move_constructible<T>::value) {                          \
+    if (this == &other) {                                                      \
+      return *this;                                                            \
+    }                                                                          \
+    if (other.status_.ok()) {                                                  \
+      Assign(std::move(other.data_));                                          \
+    } else {                                                                   \
+      AssignStatus(other.status_);                                             \
+    }                                                                          \
+    return *this;                                                              \
+  }                                                                            \
+                                                                               \
+  template <typename U>                                                        \
+  constexpr void Assign(U&& value) {                                           \
+    if (status_.ok()) {                                                        \
+      data_ = std::forward<U>(value);                                          \
+    } else {                                                                   \
+      MakeValue(std::forward<U>(value));                                       \
+      status_ = status_type();                                                 \
+    }                                                                          \
+  }                                                                            \
+                                                                               \
+  constexpr void AssignStatus(status_type status) {                            \
+    Clear();                                                                   \
+    status_ = status;                                                          \
+    PW_ASSERT(!status.ok());                                                   \
+  }                                                                            \
+                                                                               \
+  template <typename status_type::Code kCode>                                  \
+  constexpr void AssignStatus() {                                              \
+    Clear();                                                                   \
+    status_ = status_type(kCode);                                              \
+    static_assert(!status_type(kCode).ok(),                                    \
+                  "Cannot set status to an OK status; set the value instead"); \
+  }                                                                            \
+                                                                               \
+ protected:                                                                    \
+  struct Empty {};                                                             \
+  union {                                                                      \
+    Empty empty_;                                                              \
+    std::remove_const_t<T> data_;                                              \
+  };                                                                           \
+  status_type status_;                                                         \
+                                                                               \
+  constexpr void Clear() {                                                     \
+    if constexpr (!std::is_trivially_destructible_v<T>) {                      \
+      if (status_.ok()) {                                                      \
+        data_.~T();                                                            \
+      }                                                                        \
+    }                                                                          \
+  }                                                                            \
+  template <typename... Arg>                                                   \
+  constexpr void MakeValue(Arg&&... arg) {                                     \
+    new (&data_) T(std::forward<Arg>(arg)...);                                 \
+  }                                                                            \
+  PW_MODIFY_DIAGNOSTICS_POP();                                                 \
   static_assert(true, "Macros must be terminated with a semicolon")
 
 template <typename T, typename StatusType>

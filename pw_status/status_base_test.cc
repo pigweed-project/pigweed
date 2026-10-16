@@ -187,6 +187,30 @@ PW_CONSTEXPR_TEST(StatusBaseTest, Update, {
   PW_TEST_EXPECT_TRUE(ok_status.ok());
 });
 
+class [[nodiscard]] StatusWithDetail final
+    : public StatusBase<StatusWithDetail, CustomError::kOk> {
+ public:
+  constexpr StatusWithDetail() = default;
+  explicit constexpr StatusWithDetail(CustomError code, uint8_t detail = 0)
+      : StatusBase(code), detail_(detail) {}
+
+  [[nodiscard]] constexpr uint8_t detail() const { return detail_; }
+
+ private:
+  uint8_t detail_ = 0;
+};
+
+PW_CONSTEXPR_TEST(StatusBaseTest, UpdatePreservesDerivedState, {
+  StatusWithDetail status;
+  status.Update(StatusWithDetail(CustomError::kFailed, 42));
+  PW_TEST_EXPECT_EQ(status.code(), CustomError::kFailed);
+  PW_TEST_EXPECT_EQ(status.detail(), 42u);
+
+  status.Update(StatusWithDetail(CustomError::kTimeout, 99));
+  PW_TEST_EXPECT_EQ(status.code(), CustomError::kFailed);
+  PW_TEST_EXPECT_EQ(status.detail(), 42u);
+});
+
 PW_CONSTEXPR_TEST(StatusBaseTest, Equality_StatusStatus, {
   PW_TEST_EXPECT_EQ(TestStatus(CustomError::kOk), TestStatus(CustomError::kOk));
   PW_TEST_EXPECT_EQ(TestStatus(CustomError::kFailed),

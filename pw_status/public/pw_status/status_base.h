@@ -67,7 +67,7 @@ class StatusBase {
   /// helper will not change one error status to another error status.
   constexpr void Update(Derived other) {
     if (ok()) {
-      code_ = other.code();
+      *static_cast<Derived*>(this) = other;
     }
   }
 

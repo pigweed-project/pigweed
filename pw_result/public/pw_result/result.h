@@ -205,7 +205,7 @@ class [[nodiscard]] Result final
   /// Only enabled when `StatusType` is `pw::Status`.
   template <typename S = StatusType,
             typename = std::enable_if_t<std::is_same_v<S, Status>>>
-  explicit constexpr Result() : Base(PW_STATUS_UNKNOWN) {}
+  explicit constexpr Result() : Base(Status::Unknown()) {}
 
   /// `Result<T, StatusType>` is copy constructible if `T` is copy
   /// constructible.
@@ -376,7 +376,7 @@ class [[nodiscard]] Result final
               value,
           int> = 0>
   constexpr Result(U&& v)  // NOLINT
-      : Base(static_cast<status_type>(std::forward<U>(v)).code()) {}
+      : Base(static_cast<status_type>(std::forward<U>(v))) {}
 
   template <
       typename U = status_type,
@@ -395,7 +395,7 @@ class [[nodiscard]] Result final
               value,
           int> = 0>
   explicit constexpr Result(U&& v)
-      : Base(static_cast<status_type>(std::forward<U>(v)).code()) {}
+      : Base(static_cast<status_type>(std::forward<U>(v))) {}
 
   /// Assigns a non-OK status to this `Result<T, StatusType>`, destroying any
   /// currently held value.
@@ -422,7 +422,7 @@ class [[nodiscard]] Result final
               value,
           int> = 0>
   constexpr Result& operator=(U&& v) {
-    this->AssignState(static_cast<status_type>(std::forward<U>(v)).code());
+    this->AssignStatus(static_cast<status_type>(std::forward<U>(v)));
     return *this;
   }
 
@@ -549,32 +549,30 @@ class [[nodiscard]] Result final
   ///     // Handle error
   ///   }
   /// @endcode
-  [[nodiscard]] constexpr bool ok() const {
-    return this->state_ == Base::kHasValueState;
-  }
+  [[nodiscard]] constexpr bool ok() const { return this->status_.ok(); }
 
   /// @returns The current `status_type` contained within the
   /// `Result<T, StatusType>`. If `Result<T, StatusType>` contains a `T`, then
   /// this function returns an OK status (`ok() == true`).
-  constexpr status_type status() const { return status_type(this->state_); }
+  constexpr status_type status() const { return this->status_; }
 
   /// Destroys the contained value, if any, and sets the status. The status must
   /// not be OK. To avoid a runtime check, use the `reset<kCode>()`
   /// function template whenever possible.
-  constexpr void reset(status_type status) { this->AssignState(status.code()); }
+  constexpr void reset(status_type status) { this->AssignStatus(status); }
 
   /// @copydoc reset
   template <
       typename C,
       std::enable_if_t<std::is_same_v<C, typename status_type::Code>, int> = 0>
   constexpr void reset(C code) {
-    this->AssignState(code);
+    this->AssignStatus(status_type(code));
   }
 
   /// @copydoc reset
   template <typename status_type::Code kCode>
   constexpr void reset() {
-    this->template AssignState<kCode>();
+    this->template AssignStatus<kCode>();
   }
 
   /// @returns A reference to the held value if `this->ok()`. Otherwise,
@@ -711,7 +709,7 @@ class [[nodiscard]] Result final
   constexpr T& emplace(Args&&... args) {
     this->Clear();
     this->MakeValue(std::forward<Args>(args)...);
-    this->state_ = Base::kHasValueState;
+    this->status_ = status_type();
     return this->data_;
   }
 
@@ -725,7 +723,7 @@ class [[nodiscard]] Result final
   constexpr T& emplace(std::initializer_list<U> ilist, Args&&... args) {
     this->Clear();
     this->MakeValue(ilist, std::forward<Args>(args)...);
-    this->state_ = Base::kHasValueState;
+    this->status_ = status_type();
     return this->data_;
   }
 
@@ -744,7 +742,7 @@ class [[nodiscard]] Result final
                     "Fn must return a pw::Result with the same status_type");
     }
     return ok() ? cpp20::invoke(std::forward<Fn>(function), this->data_)
-                : Ret(internal_result::kErrorTag, this->state_);
+                : Ret(internal_result::kErrorTag, this->status_);
   }
 
   /// @copydoc and_then
@@ -760,7 +758,7 @@ class [[nodiscard]] Result final
     }
     return ok() ? cpp20::invoke(std::forward<Fn>(function),
                                 std::move(this->data_))
-                : Ret(internal_result::kErrorTag, this->state_);
+                : Ret(internal_result::kErrorTag, this->status_);
   }
 
   /// @copydoc and_then
@@ -775,7 +773,7 @@ class [[nodiscard]] Result final
                     "Fn must return a pw::Result with the same status_type");
     }
     return ok() ? cpp20::invoke(std::forward<Fn>(function), this->data_)
-                : Ret(internal_result::kErrorTag, this->state_);
+                : Ret(internal_result::kErrorTag, this->status_);
   }
 
   /// @copydoc and_then
@@ -791,7 +789,7 @@ class [[nodiscard]] Result final
     }
     return ok() ? cpp20::invoke(std::forward<Fn>(function),
                                 std::move(this->data_))
-                : Ret(internal_result::kErrorTag, this->state_);
+                : Ret(internal_result::kErrorTag, this->status_);
   }
 
   /// @returns This `Result<T, StatusType>` if it has a value, otherwise invokes
@@ -853,7 +851,7 @@ class [[nodiscard]] Result final
                        int> = 0>
   constexpr Result<Ret, StatusType> transform(Fn&& function) & {
     if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, this->state_);
+      return Result<Ret, StatusType>(internal_result::kErrorTag, this->status_);
     }
     if constexpr (std::is_void_v<Ret>) {
       cpp20::invoke(std::forward<Fn>(function), this->data_);
@@ -871,7 +869,7 @@ class [[nodiscard]] Result final
                        int> = 0>
   constexpr Result<Ret, StatusType> transform(Fn&& function) && {
     if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, this->state_);
+      return Result<Ret, StatusType>(internal_result::kErrorTag, this->status_);
     }
     if constexpr (std::is_void_v<Ret>) {
       cpp20::invoke(std::forward<Fn>(function), std::move(this->data_));
@@ -889,7 +887,7 @@ class [[nodiscard]] Result final
                        int> = 0>
   constexpr Result<Ret, StatusType> transform(Fn&& function) const& {
     if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, this->state_);
+      return Result<Ret, StatusType>(internal_result::kErrorTag, this->status_);
     }
     if constexpr (std::is_void_v<Ret>) {
       cpp20::invoke(std::forward<Fn>(function), this->data_);
@@ -907,7 +905,7 @@ class [[nodiscard]] Result final
                        int> = 0>
   constexpr Result<Ret, StatusType> transform(Fn&& function) const&& {
     if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, this->state_);
+      return Result<Ret, StatusType>(internal_result::kErrorTag, this->status_);
     }
     if constexpr (std::is_void_v<Ret>) {
       cpp20::invoke(std::forward<Fn>(function), std::move(this->data_));
@@ -1059,9 +1057,8 @@ class [[nodiscard]] Result final
   }
 
  private:
-  explicit constexpr Result(internal_result::ErrorTag,
-                            typename status_type::Code code)
-      : Base(code) {}
+  explicit constexpr Result(internal_result::ErrorTag, status_type status)
+      : Base(status) {}
 
   using Base::Assign;
   template <typename U>
@@ -1069,7 +1066,7 @@ class [[nodiscard]] Result final
     if (other.ok()) {
       this->Assign(other.data_);
     } else {
-      this->AssignState(other.status().code());
+      this->AssignStatus(other.status());
     }
   }
   template <typename U>
@@ -1077,7 +1074,7 @@ class [[nodiscard]] Result final
     if (other.ok()) {
       this->Assign(std::move(other.data_));
     } else {
-      this->AssignState(other.status().code());
+      this->AssignStatus(other.status());
     }
   }
 };
@@ -1088,8 +1085,8 @@ class [[nodiscard]] Result final
 /// and monadic operations).
 ///
 /// Unlike `Result<StatusType, StatusType>` (which contains a `StatusType` value
-/// AND a separate `StatusType` error state), `Result<void, StatusType>` holds
-/// only a single `StatusType` state: constructing or assigning from an OK
+/// AND a separate `StatusType` error status), `Result<void, StatusType>` holds
+/// only a single `StatusType`: constructing or assigning from an OK
 /// `StatusType` (or `std::in_place`) sets `ok() == true`, while constructing or
 /// assigning from a non-OK `StatusType` (or calling `reset()`) sets
 /// `ok() == false`.
@@ -1121,7 +1118,7 @@ class [[nodiscard]] Result<void, StatusType> final {
   /// Only enabled when `StatusType` is `pw::Status`.
   template <typename S = StatusType,
             typename = std::enable_if_t<std::is_same_v<S, Status>>>
-  explicit constexpr Result() : state_(PW_STATUS_UNKNOWN) {}
+  explicit constexpr Result() : status_(Status::Unknown()) {}
 
   /// Copy constructor.
   constexpr Result(const Result&) = default;
@@ -1135,7 +1132,7 @@ class [[nodiscard]] Result<void, StatusType> final {
   /// Constructs a `Result<void, StatusType>` from a status value (either OK or
   /// non-OK).
   constexpr Result(status_type status)  // NOLINT
-      : state_(status.code()) {}
+      : status_(status) {}
 
   /// Constructs a `Result<void, StatusType>` from any `U` constructible to
   /// `status_type`. This constructor is explicit if and only if `U` is not
@@ -1155,7 +1152,7 @@ class [[nodiscard]] Result<void, StatusType> final {
               value,
           int> = 0>
   constexpr Result(U&& v)
-      : state_(static_cast<status_type>(std::forward<U>(v)).code()) {}
+      : status_(static_cast<status_type>(std::forward<U>(v))) {}
 
   template <
       typename U = status_type,
@@ -1172,7 +1169,7 @@ class [[nodiscard]] Result<void, StatusType> final {
               value,
           int> = 0>
   explicit constexpr Result(U&& v)
-      : state_(static_cast<status_type>(std::forward<U>(v)).code()) {}
+      : status_(static_cast<status_type>(std::forward<U>(v))) {}
 
   /// Assigns a status value to this `Result<void, StatusType>`.
   template <
@@ -1189,16 +1186,16 @@ class [[nodiscard]] Result<void, StatusType> final {
               value,
           int> = 0>
   constexpr Result& operator=(U&& v) {
-    state_ = static_cast<status_type>(std::forward<U>(v)).code();
+    status_ = static_cast<status_type>(std::forward<U>(v));
     return *this;
   }
 
   /// Constructs a `Result<void, StatusType>` indicating success (`ok() ==
   /// true`).
-  explicit constexpr Result(std::in_place_t) : state_(kHasValueState) {}
+  explicit constexpr Result(std::in_place_t) : status_() {}
 
-  /// Sets the state to indicate success (`ok() == true`).
-  constexpr void emplace() { state_ = kHasValueState; }
+  /// Sets the status to indicate success (`ok() == true`).
+  constexpr void emplace() { status_ = status_type(); }
 
   /// Sets the status of the `Result` to an error status.
   ///
@@ -1206,7 +1203,7 @@ class [[nodiscard]] Result<void, StatusType> final {
   /// the `reset<kCode>()` function template whenever possible.
   constexpr void reset(status_type status) {
     PW_ASSERT(!status.ok());
-    state_ = status.code();
+    status_ = status;
   }
 
   /// @copydoc reset
@@ -1214,27 +1211,25 @@ class [[nodiscard]] Result<void, StatusType> final {
       typename C,
       std::enable_if_t<std::is_same_v<C, typename status_type::Code>, int> = 0>
   constexpr void reset(C code) {
-    PW_ASSERT(code != kHasValueState);
-    state_ = code;
+    reset(status_type(code));
   }
 
   /// @copydoc reset
   template <typename status_type::Code kCode>
   constexpr void reset() {
-    static_assert(
-        kCode != kHasValueState,
-        "Cannot set status to the has-value state; use emplace() instead");
-    state_ = kCode;
+    static_assert(!status_type(kCode).ok(),
+                  "Cannot set status to an OK status; use emplace() instead");
+    status_ = status_type(kCode);
   }
 
   /// @returns `true` if the `Result` represents success (`ok() == true`).
-  [[nodiscard]] constexpr bool ok() const { return state_ == kHasValueState; }
+  [[nodiscard]] constexpr bool ok() const { return status_.ok(); }
 
   /// Asserts that `ok()` is `true` via `PW_ASSERT`.
   constexpr void value() const { PW_ASSERT(ok()); }
 
   /// @returns The current `status_type`.
-  constexpr status_type status() const { return status_type(state_); }
+  constexpr status_type status() const { return status_; }
 
   /// Ignores any errors. This method does nothing except potentially suppress
   /// complaints from any tools that are checking that errors are not dropped.
@@ -1255,7 +1250,7 @@ class [[nodiscard]] Result<void, StatusType> final {
                     "Fn must return a pw::Result with the same status_type");
     }
     return ok() ? cpp20::invoke(std::forward<Fn>(function))
-                : Ret(internal_result::kErrorTag, state_);
+                : Ret(internal_result::kErrorTag, status_);
   }
 
   /// @copydoc and_then
@@ -1270,7 +1265,7 @@ class [[nodiscard]] Result<void, StatusType> final {
                     "Fn must return a pw::Result with the same status_type");
     }
     return ok() ? cpp20::invoke(std::forward<Fn>(function))
-                : Ret(internal_result::kErrorTag, state_);
+                : Ret(internal_result::kErrorTag, status_);
   }
 
   /// @returns This `Result<void, StatusType>` if `ok()`, otherwise invokes
@@ -1332,7 +1327,7 @@ class [[nodiscard]] Result<void, StatusType> final {
                        int> = 0>
   constexpr Result<Ret, StatusType> transform(Fn&& function) const& {
     if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, state_);
+      return Result<Ret, StatusType>(internal_result::kErrorTag, status_);
     }
     if constexpr (std::is_void_v<Ret>) {
       cpp20::invoke(std::forward<Fn>(function));
@@ -1350,7 +1345,7 @@ class [[nodiscard]] Result<void, StatusType> final {
                        int> = 0>
   constexpr Result<Ret, StatusType> transform(Fn&& function) && {
     if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, state_);
+      return Result<Ret, StatusType>(internal_result::kErrorTag, status_);
     }
     if constexpr (std::is_void_v<Ret>) {
       cpp20::invoke(std::forward<Fn>(function));
@@ -1408,16 +1403,12 @@ class [[nodiscard]] Result<void, StatusType> final {
   }
 
  private:
-  explicit constexpr Result(internal_result::ErrorTag,
-                            typename status_type::Code code)
-      : state_(code) {
-    PW_ASSERT(code != kHasValueState);
+  explicit constexpr Result(internal_result::ErrorTag, status_type status)
+      : status_(status) {
+    PW_ASSERT(!status.ok());
   }
 
-  static constexpr typename status_type::Code kHasValueState =
-      status_type().code();
-
-  typename status_type::Code state_;
+  status_type status_;
 };
 
 /// Deduction guide to allow `Result(v)` rather than `Result<T>(v)`.

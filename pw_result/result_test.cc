@@ -2032,6 +2032,79 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Void_ConversionOperatorPriority, {
   PW_TEST_EXPECT_EQ(r2.status(), Status::NotFound());
 });
 
+class [[nodiscard]] StatusWithDetail final
+    : public StatusBase<StatusWithDetail, HasValue::kYes> {
+ public:
+  constexpr StatusWithDetail() = default;
+  explicit constexpr StatusWithDetail(HasValue code, uint8_t detail = 0)
+      : StatusBase(code), detail_(detail) {}
+
+  [[nodiscard]] constexpr uint8_t detail() const { return detail_; }
+
+ private:
+  uint8_t detail_ = 0;
+};
+
+PW_CONSTEXPR_TEST(ResultCustomStatus, PreservesDerivedStatusState, {
+  Result<int, StatusWithDetail> res = StatusWithDetail(HasValue::kNo, 42);
+  PW_TEST_EXPECT_FALSE(res.ok());
+  PW_TEST_EXPECT_EQ(res.status().code(), HasValue::kNo);
+  PW_TEST_EXPECT_EQ(res.status().detail(), 42u);
+
+  Result<long, StatusWithDetail> converted = res;
+  PW_TEST_EXPECT_EQ(converted.status().detail(), 42u);
+
+  Result<int, StatusWithDetail> transformed =
+      res.transform([](int x) { return x + 1; });
+  PW_TEST_EXPECT_EQ(transformed.status().detail(), 42u);
+
+  Result<int, StatusWithDetail> chained =
+      res.and_then([](int x) { return Result<int, StatusWithDetail>(x + 1); });
+  PW_TEST_EXPECT_EQ(chained.status().code(), HasValue::kNo);
+  PW_TEST_EXPECT_EQ(chained.status().detail(), 42u);
+
+  res.reset(StatusWithDetail(HasValue::kDefinitelyNot, 55));
+  PW_TEST_EXPECT_EQ(res.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(res.status().detail(), 55u);
+
+  converted = res;
+  PW_TEST_EXPECT_EQ(converted.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(converted.status().detail(), 55u);
+
+  converted =
+      Result<int, StatusWithDetail>(StatusWithDetail(HasValue::kNo, 66));
+  PW_TEST_EXPECT_EQ(converted.status().code(), HasValue::kNo);
+  PW_TEST_EXPECT_EQ(converted.status().detail(), 66u);
+
+  converted = StatusWithDetail(HasValue::kDefinitelyNot, 77);
+  PW_TEST_EXPECT_EQ(converted.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(converted.status().detail(), 77u);
+});
+
+PW_CONSTEXPR_TEST(ResultCustomStatus, Void_PreservesDerivedStatusState, {
+  Result<void, StatusWithDetail> void_res =
+      StatusWithDetail(HasValue::kDefinitelyNot, 99);
+  PW_TEST_EXPECT_FALSE(void_res.ok());
+  PW_TEST_EXPECT_EQ(void_res.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(void_res.status().detail(), 99u);
+
+  Result<int, StatusWithDetail> void_transformed =
+      void_res.transform([]() { return 1; });
+  PW_TEST_EXPECT_EQ(void_transformed.status().detail(), 99u);
+
+  Result<int, StatusWithDetail> void_chained =
+      void_res.and_then([]() { return Result<int, StatusWithDetail>(1); });
+  PW_TEST_EXPECT_EQ(void_chained.status().detail(), 99u);
+
+  void_res.reset(StatusWithDetail(HasValue::kNo, 88));
+  PW_TEST_EXPECT_EQ(void_res.status().code(), HasValue::kNo);
+  PW_TEST_EXPECT_EQ(void_res.status().detail(), 88u);
+
+  void_res = StatusWithDetail(HasValue::kDefinitelyNot, 77);
+  PW_TEST_EXPECT_EQ(void_res.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(void_res.status().detail(), 77u);
+});
+
 #if PW_NC_TEST(ResultRequiresEnumStatusCode)
 PW_NC_EXPECT("pw::Result only supports status types with enum codes");
 class [[nodiscard]] IntCodeStatus final
@@ -2051,13 +2124,13 @@ void ResetRequiresCodeType() {
   r.reset(1);
 }
 #elif PW_NC_TEST(ResetCannotUseOkCode)
-PW_NC_EXPECT("Cannot set state to the has-value state; set the value instead");
+PW_NC_EXPECT("Cannot set status to an OK status; set the value instead");
 void ResetCannotUseOkCode() {
   Result<Status> r = OkStatus();
   r.reset<PW_STATUS_OK>();
 }
 #elif PW_NC_TEST(VoidResetCannotUseOkCode)
-PW_NC_EXPECT("Cannot set status to the has-value state; use emplace");
+PW_NC_EXPECT("Cannot set status to an OK status; use emplace");
 void VoidResetCannotUseOkCode() {
   Result<void> r = OkStatus();
   r.reset<PW_STATUS_OK>();
