@@ -95,13 +95,4 @@ Connection::RequestParameterUpdate(RequestedConnectionParameters) {
       Resolved(std::nullopt);
 }
 
-async2::ValueFuture<
-    std::optional<pw::Result<pw::bluetooth::low_energy::Channel::Ptr>>>
-Connection::ConnectL2cap(ConnectL2capParameters) {
-  // TODO: https://pwbug.dev/396449684 - Open an L2CAP channel.
-  return async2::ValueFuture<
-      std::optional<pw::Result<pw::bluetooth::low_energy::Channel::Ptr>>>::
-      Resolved(pw::Status::Unimplemented());
-}
-
 }  // namespace pw::bluetooth_sapphire::internal

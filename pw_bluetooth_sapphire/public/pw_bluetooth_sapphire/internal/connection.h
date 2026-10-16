@@ -41,9 +41,6 @@ class Connection final : public pw::bluetooth::low_energy::Connection2 {
   async2::ValueFuture<
       std::optional<pw::expected<void, ConnectionParameterUpdateError>>>
   RequestParameterUpdate(RequestedConnectionParameters parameters) override;
-  async2::ValueFuture<
-      std::optional<pw::Result<pw::bluetooth::low_energy::Channel::Ptr>>>
-  ConnectL2cap(ConnectL2capParameters parameters) override;
 
  private:
   void Release() override { delete this; }

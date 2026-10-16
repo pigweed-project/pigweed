@@ -70,7 +70,6 @@ pw_add_library(pw_bluetooth.pw_bluetooth2 INTERFACE
     public/pw_bluetooth/assigned_uuids.h
     public/pw_bluetooth/constants.h
     public/pw_bluetooth/config.h
-    public/pw_bluetooth/controller2.h
     public/pw_bluetooth/gatt/client2.h
     public/pw_bluetooth/gatt/constants.h
     public/pw_bluetooth/gatt/error.h
@@ -80,7 +79,6 @@ pw_add_library(pw_bluetooth.pw_bluetooth2 INTERFACE
     public/pw_bluetooth/low_energy/advertising_data.h
     public/pw_bluetooth/low_energy/bond_data2.h
     public/pw_bluetooth/low_energy/central2.h
-    public/pw_bluetooth/low_energy/channel.h
     public/pw_bluetooth/low_energy/connection2.h
     public/pw_bluetooth/low_energy/peripheral2.h
     public/pw_bluetooth/low_energy/phy.h
@@ -97,7 +95,6 @@ pw_add_library(pw_bluetooth.pw_bluetooth2 INTERFACE
     pw_async2
     pw_async2.value_future
     pw_result.expected
-    pw_channel
     pw_containers
     pw_function
     pw_multibuf
