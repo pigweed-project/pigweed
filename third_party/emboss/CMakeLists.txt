@@ -65,9 +65,14 @@ pw_add_library(pw_third_party.emboss.cpp_utils INTERFACE
   HEADERS
     ${CMAKE_CURRENT_BINARY_DIR}/include/runtime/cpp/emboss_defines.h
     ${emboss_headers}
-  PUBLIC_INCLUDES
-    ${CMAKE_CURRENT_BINARY_DIR}/include
-    ${dir_pw_third_party_emboss}
   PUBLIC_DEPS
     pw_assert.assert
+)
+# Expose third-party Emboss runtime headers as system includes (-isystem) to
+# match Bazel's external repository behavior and avoid leaking warning flags to
+# downstream targets.
+target_include_directories(pw_third_party.emboss.cpp_utils
+  SYSTEM INTERFACE
+    ${CMAKE_CURRENT_BINARY_DIR}/include
+    ${dir_pw_third_party_emboss}
 )

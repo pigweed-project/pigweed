@@ -107,12 +107,15 @@ function(emboss_cc_library NAME)
   pw_add_library_generic("${NAME}" INTERFACE
     GENERATED_HEADERS
       ${outputs}
-    PUBLIC_INCLUDES
-      "${out_dir}/public"
-      "${output_include_path}"
     PUBLIC_DEPS
       pw_third_party.emboss.cpp_utils
       ${arg_DEPS}
+  )
+  # Expose generated .emb.h headers as system includes (-isystem).
+  target_include_directories("${NAME}"
+    SYSTEM INTERFACE
+      "${out_dir}/public"
+      "${output_include_path}"
   )
   # Tie in the generated outputs as a dep of the library
   add_dependencies("${NAME}" "${NAME}._generate")
