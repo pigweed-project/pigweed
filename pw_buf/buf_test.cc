@@ -636,10 +636,13 @@ TEST_F(BufTest, EmptyUniquePtrOffsetOutOfBounds) {
 TEST_F(BufTest, BoundsChecking) {
   auto unique_data = test_allocator_.MakeUnique<std::byte[]>(10);
   Buf buf(std::move(unique_data));
-  const ConstBuf& const_ref = buf;
+  const Buf& const_ref = buf;
 
   EXPECT_DEATH_IF_SUPPORTED(buf[10], ".*");
   EXPECT_DEATH_IF_SUPPORTED(const_ref[10], ".*");
+
+  ConstBuf const_buf = std::move(buf);
+  EXPECT_DEATH_IF_SUPPORTED(const_buf[10], ".*");
 }
 
 TEST_F(BufTest, UniquePtrOffsetBounds) {
@@ -738,31 +741,29 @@ TEST_F(BufTest, SelfMoveAssignment) {
 }
 
 TEST_F(BufTest, ConstBufConversion) {
-  auto unique_data = test_allocator_.MakeUnique<std::byte[]>(10);
-  std::byte* raw_ptr = unique_data.get();
-  const Buf buf(std::move(unique_data));
-
-  // Test const Buf& -> const ConstBuf& conversion
-  const ConstBuf& const_ref = buf;
-  EXPECT_EQ(const_ref.size(), 10u);
-  EXPECT_EQ(const_ref.data(), raw_ptr);
-
-  // Test const Buf&& -> const ConstBuf&& conversion
-  const ConstBuf&& const_rvalue_ref = std::move(buf);
-  EXPECT_EQ(const_rvalue_ref.size(), 10u);
-  EXPECT_EQ(const_rvalue_ref.data(), raw_ptr);
-
-  // Test non-const Buf& -> const ConstBuf& conversion
-  Buf mutable_buf = Buf::Unowned(raw_ptr, 10);
-  const ConstBuf& mutable_to_const_ref = mutable_buf;
-  EXPECT_EQ(mutable_to_const_ref.size(), 10u);
-  EXPECT_EQ(mutable_to_const_ref.data(), raw_ptr);
+  std::array<std::byte, 10> storage{};
+  std::byte* raw_ptr = storage.data();
 
   // Test implicit move conversion Buf&& -> ConstBuf
-  Buf buf2 = Buf::Unowned(raw_ptr, 10);
-  ConstBuf const_moved = std::move(buf2);
+  Buf buf = Buf::Unowned(raw_ptr, 10);
+  ConstBuf const_moved = std::move(buf);
   EXPECT_EQ(const_moved.size(), 10u);
+  EXPECT_EQ(const_moved.data(), raw_ptr);
+  EXPECT_EQ(buf, nullptr);  // NOLINT(bugprone-use-after-move)
+
+  // Test move conversion assignment Buf&& -> ConstBuf
+  Buf buf2 = Buf::Unowned(raw_ptr, 5);
+  const_moved = std::move(buf2);
+  EXPECT_EQ(const_moved.size(), 5u);
+  EXPECT_EQ(const_moved.data(), raw_ptr);
+  EXPECT_EQ(buf2, nullptr);  // NOLINT(bugprone-use-after-move)
 }
+
+// A Buf can only become a ConstBuf by moving it.
+static_assert(std::is_convertible_v<Buf&&, ConstBuf>);
+static_assert(!std::is_convertible_v<Buf&, ConstBuf>);
+static_assert(!std::is_convertible_v<const Buf&, const ConstBuf&>);
+static_assert(!std::is_convertible_v<Buf&, const ConstBuf&>);
 
 TEST_F(BufTest, AllocateSuccess) {
   Buf buf = Buf::Allocate(test_allocator_, 10);

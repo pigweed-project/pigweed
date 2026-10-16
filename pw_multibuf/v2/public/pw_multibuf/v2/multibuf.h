@@ -1219,9 +1219,14 @@ class GenericMultiBuf final
   /// and returns whether successful.
   ///
   /// @param    pos     Location to insert memory within the MultiBuf.
-  /// @param    bytes   ConstBuf to be inserted.
+  /// @param    bytes   Buf or ConstBuf to be inserted.
+  /// @{
+  [[nodiscard]] bool TryReserveForInsert(const_iterator pos, const Buf& bytes);
   [[nodiscard]] bool TryReserveForInsert(const_iterator pos,
-                                         const ConstBuf& bytes);
+                                         const ConstBuf& bytes) {
+    return TryReserveForInsert(pos, bytes.buf_);
+  }
+  /// @}
 
   /// Attempts to modify this object to be able to insert a chunk at the given
   /// position, and returns whether successful.
@@ -1307,10 +1312,10 @@ class GenericMultiBuf final
   /// @param    bytes   Buffer to be inserted.
   /// @returns          An iterator to the inserted memory.
   /// @{
-  iterator Insert(const_iterator pos, ConstBuf&& bytes);
-  iterator Insert(const_iterator pos, Buf&& bytes) {
-    return Insert(pos, static_cast<ConstBuf>(std::move(bytes)));
+  iterator Insert(const_iterator pos, ConstBuf&& bytes) {
+    return Insert(pos, std::move(bytes.buf_));
   }
+  iterator Insert(const_iterator pos, Buf&& bytes);
   /// @}
 
   /// Insert memory before the given iterator.

@@ -49,7 +49,7 @@ bool GenericMultiBuf::TryReserveForInsert(const_iterator pos,
 }
 
 bool GenericMultiBuf::TryReserveForInsert(const_iterator pos,
-                                          const ConstBuf& bytes) {
+                                          const Buf& bytes) {
   if (bytes.empty()) {
     return true;
   }
@@ -148,7 +148,7 @@ auto GenericMultiBuf::Insert(const_iterator pos,
   return iter;
 }
 
-auto GenericMultiBuf::Insert(const_iterator pos, ConstBuf&& bytes) -> iterator {
+auto GenericMultiBuf::Insert(const_iterator pos, Buf&& bytes) -> iterator {
   if (bytes.empty()) {
     bytes.reset();
     return MakeIterator(pos.chunk_, pos.offset_);

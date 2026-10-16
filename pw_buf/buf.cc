@@ -15,13 +15,14 @@
 #include "pw_buf/buf.h"
 
 #include <cstring>
+#include <limits>
 
 #include "pw_allocator/allocator.h"
 #include "pw_assert/check.h"
 
 namespace pw {
 
-ConstBuf& ConstBuf::operator=(ConstBuf&& other) noexcept {
+Buf& Buf::operator=(Buf&& other) noexcept {
   if (this != &other) {
     reset();
     MoveFrom(std::move(other));
@@ -29,9 +30,9 @@ ConstBuf& ConstBuf::operator=(ConstBuf&& other) noexcept {
   return *this;
 }
 
-void ConstBuf::reset() {
+void Buf::reset() {
   if (deallocator_ != nullptr && data_ != nullptr) {
-    deallocator_->Deallocate(base());
+    deallocator_->Deallocate(data_ - prefix_);
   }
   data_ = nullptr;
   size_ = 0;
@@ -40,25 +41,26 @@ void ConstBuf::reset() {
   suffix_ = 0;
 }
 
-ConstBuf ConstBuf::Slice(size_t offset, size_t length) && {
-  const size_t new_prefix = prefix_ + offset;
-  const size_t new_suffix = suffix_ + (size_ - offset - length);
-  PW_CHECK(offset <= size_ && length <= size_ - offset &&
-           (new_prefix | new_suffix) <= std::numeric_limits<OffsetType>::max());
-  data_ += offset;
-  size_ = length;
-  prefix_ = static_cast<OffsetType>(new_prefix);
-  suffix_ = static_cast<OffsetType>(new_suffix);
-  return std::move(*this);
+Buf Slice(Buf&& buf, size_t offset, size_t length) {
+  const size_t new_prefix = buf.prefix_ + offset;
+  const size_t new_suffix = buf.suffix_ + (buf.size_ - offset - length);
+  PW_CHECK(offset <= buf.size_ && length <= buf.size_ - offset &&
+           (new_prefix | new_suffix) <=
+               std::numeric_limits<Buf::OffsetType>::max());
+  buf.data_ += offset;
+  buf.size_ = length;
+  buf.prefix_ = static_cast<Buf::OffsetType>(new_prefix);
+  buf.suffix_ = static_cast<Buf::OffsetType>(new_suffix);
+  return std::move(buf);
 }
 
-ConstBuf ConstBuf::Reclaim(size_t prefix_count, size_t suffix_count) && {
-  PW_CHECK(prefix_count <= prefix_ && suffix_count <= suffix_);
-  data_ -= prefix_count;
-  size_ += prefix_count + suffix_count;
-  prefix_ -= static_cast<OffsetType>(prefix_count);
-  suffix_ -= static_cast<OffsetType>(suffix_count);
-  return std::move(*this);
+Buf Reclaim(Buf&& buf, size_t prefix_count, size_t suffix_count) {
+  PW_CHECK(prefix_count <= buf.prefix_ && suffix_count <= buf.suffix_);
+  buf.data_ -= prefix_count;
+  buf.size_ += prefix_count + suffix_count;
+  buf.prefix_ -= static_cast<Buf::OffsetType>(prefix_count);
+  buf.suffix_ -= static_cast<Buf::OffsetType>(suffix_count);
+  return std::move(buf);
 }
 
 Buf Buf::Allocate(Allocator& allocator, size_t size_bytes) {

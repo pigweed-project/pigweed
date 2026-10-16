@@ -100,10 +100,10 @@ A ``Buf`` can be converted to a ``ConstBuf`` by moving it:
    :start-after: // DOCSTAG: [pw_buf-examples-move]
    :end-before: // DOCSTAG: [pw_buf-examples-move]
 
-Moving the ``Buf`` transfers ownership and leaves the ``Buf`` null. A ``Buf``
-may also be used through a ``const ConstBuf&``, though accepting a
-``pw::ConstByteSpan`` (or ``pw::span<const std::byte>``) by value is
-recommended for functions that only borrow data for reading.
+Moving the ``Buf`` transfers ownership and leaves the ``Buf`` null. Functions
+that only borrow data for reading should accept a ``pw::ConstByteSpan`` (or
+``pw::span<const std::byte>``) by value, which accepts both ``Buf`` and
+``ConstBuf``.
 
 .. LINT.IfChange(multibuf_relationship)
 

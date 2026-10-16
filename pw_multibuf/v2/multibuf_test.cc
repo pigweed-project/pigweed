@@ -2821,6 +2821,60 @@ TEST_F(MultiBufV2Test, ReleaseSlicedChunk) {
   EXPECT_EQ(after_destruct, before_destruct + 1);
 }
 
+TEST_F(MultiBufV2Test, ReleaseSlicedConstBufChunk) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  for (size_t i = 0; i < 20; ++i) {
+    unique_data[i] = static_cast<std::byte>(i);
+  }
+
+  const std::byte* const raw_ptr = unique_data.get();
+  pw::ConstBuf sliced =
+      pw::Slice(pw::ConstBuf(pw::Buf(std::move(unique_data))), 5, 10);
+  EXPECT_EQ(sliced.size(), 10u);
+  EXPECT_EQ(sliced.data(), raw_ptr + 5);
+
+  ConstMultiBufInstance cmbi(allocator_);
+  auto& cmb = cmbi->as<ConstMultiBuf>();
+  cmb.PushBack(std::move(sliced));
+  EXPECT_EQ(cmb.size(), 10u);
+  EXPECT_EQ(cmb[0], std::byte(5));
+  EXPECT_EQ(cmb[9], std::byte(14));
+
+  // The released chunk spans the original allocation, including the sliced
+  // prefix and suffix.
+  pw::UniquePtr<const std::byte[]> released = cmb.ReleaseChunk(cmb.begin());
+  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_EQ(released.get(), raw_ptr);
+  EXPECT_EQ(released.size(), 20u);
+
+  const size_t before_destruct = allocator_.metrics().num_deallocations.value();
+  released.Reset();
+  const size_t after_destruct = allocator_.metrics().num_deallocations.value();
+  EXPECT_EQ(after_destruct, before_destruct + 1);
+}
+
+TEST_F(MultiBufV2Test, ReleaseSlicedConstBuf) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  for (size_t i = 0; i < 20; ++i) {
+    unique_data[i] = static_cast<std::byte>(i);
+  }
+
+  const std::byte* const raw_ptr = unique_data.get();
+  pw::ConstBuf sliced =
+      pw::Slice(pw::ConstBuf(pw::Buf(std::move(unique_data))), 5, 10);
+
+  ConstMultiBufInstance cmbi(allocator_);
+  auto& cmb = cmbi->as<ConstMultiBuf>();
+  cmb.PushBack(std::move(sliced));
+
+  // The released ConstBuf has the same view that was pushed back.
+  pw::ConstBuf released = cmb.Release(cmb.begin());
+  EXPECT_TRUE(cmb.empty());
+  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_EQ(released.data(), raw_ptr + 5);
+  EXPECT_EQ(released.size(), 10u);
+}
+
 TEST_F(MultiBufV2Test, ReleaseSlicedBufFromLayeredMultiBuf) {
   auto unique_data = allocator_.MakeUnique<std::byte[]>(24);
   const std::byte* raw_ptr = unique_data.get();
