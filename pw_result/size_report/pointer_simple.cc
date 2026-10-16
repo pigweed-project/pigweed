@@ -23,7 +23,7 @@ pw::Status Divide(float a, float b, float* out) {
   return pw::OkStatus();
 }
 
-int volatile* unoptimizable;
+float volatile* unoptimizable;
 
 int main() {
   float f;

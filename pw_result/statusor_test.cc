@@ -1462,7 +1462,7 @@ static pw::Result<int> MakeStatus() { return 100; }
 TEST(Result, TestIgnoreError) { MakeStatus().IgnoreError(); }
 
 TEST(Result, EqualityOperator) {
-  constexpr int kNumCases = 4;
+  constexpr size_t kNumCases = 4;
   std::array<pw::Result<int>, kNumCases> group1 = {
       pw::Result<int>(1),
       pw::Result<int>(2),
@@ -1473,8 +1473,8 @@ TEST(Result, EqualityOperator) {
       pw::Result<int>(2),
       pw::Result<int>(pw::Status::InvalidArgument()),
       pw::Result<int>(pw::Status::Internal())};
-  for (int i = 0; i < kNumCases; ++i) {
-    for (int j = 0; j < kNumCases; ++j) {
+  for (size_t i = 0; i < kNumCases; ++i) {
+    for (size_t j = 0; j < kNumCases; ++j) {
       if (i == j) {
         EXPECT_TRUE(group1[i] == group2[j]);
         EXPECT_FALSE(group1[i] != group2[j]);
