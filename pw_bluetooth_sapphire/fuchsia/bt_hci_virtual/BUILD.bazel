@@ -148,6 +148,21 @@ fuchsia_package(
 )
 
 fuchsia_cc_test(
+    name = "emulator_test",
+    srcs = ["emulator_test.cc"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "//pw_bluetooth_sapphire/host/testing:gtest_main",
+        "//pw_log_fuchsia:pw_log_fuchsia_driver",
+        "//pw_unit_test",
+        "@fuchsia_sdk//pkg/component_incoming_cpp",
+        "@fuchsia_sdk//pkg/driver_testing_cpp",
+        "@fuchsia_sdk//pkg/driver_testing_scoped_global_logger_cpp",
+    ],
+)
+
+fuchsia_cc_test(
     name = "loopback_test",
     srcs = ["loopback_test.cc"],
     visibility = ["//visibility:public"],
@@ -166,7 +181,10 @@ fuchsia_unittest_package(
     package_name = "bt-hci-virtual-unittests",
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     platform = fuchsia_platforms.x64,
-    unit_tests = [":loopback_test"],
+    unit_tests = [
+        ":emulator_test",
+        ":loopback_test",
+    ],
     visibility = ["//visibility:public"],
 )
 

@@ -23,6 +23,7 @@
 #include "pw_bluetooth_sapphire/internal/host/common/random.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_controller.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_peer.h"
+#include "pw_random_fuchsia/zircon_random_generator.h"
 
 namespace fhbt = fuchsia_hardware_bluetooth;
 
@@ -109,6 +110,7 @@ EmulatorDevice::EmulatorDevice()
           fit::bind_member<&EmulatorDevice::ConnectEmulator>(this)) {}
 
 EmulatorDevice::~EmulatorDevice() {
+  pw_dispatcher_.Cancel(shutdown_task_);
   UnpublishHci();
   fake_device_.Stop();
 }
@@ -127,7 +129,11 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
         "cannot be published");
   }
 
-  bt::set_random_generator(&rng_);
+  // The generator is process-wide and may only be installed once.
+  if (bt::random_generator() == nullptr) {
+    static pw::random_fuchsia::ZirconRandomGenerator generator;
+    bt::set_random_generator(&generator);
+  }
 
   // Initialize |fake_device_|
   auto init_complete_cb = [](pw::Status status) {
@@ -174,12 +180,33 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
 }
 
 void EmulatorDevice::Shutdown() {
+  if (shut_down_) {
+    return;
+  }
+  shut_down_ = true;
+
+  pw_dispatcher_.Cancel(shutdown_task_);
   UnpublishHci();
   fake_device_.Stop();
   peers_.clear();
+  controller_parameters_completer_.reset();
+  while (!legacy_adv_states_completers_.empty()) {
+    legacy_adv_states_completers_.pop();
+  }
+  // Close any remaining (observer) Emulator connections and any active Vendor
+  // or HciTransport connections. RemoveAll() tears the bindings down without
+  // running their close handlers, so this cannot re-enter
+  // `OnEmulatorOwnerClosed`.
+  emulator_binding_group_.RemoveAll();
+  vendor_binding_group_.RemoveAll();
+  hci_transport_bindings_.RemoveAll();
 
-  if (shutdown_cb_) {
-    shutdown_cb_();
+  // The callback typically destroys `this`, so move it out first (the
+  // fit::function must not be destroyed while it is executing) and touch
+  // nothing afterwards.
+  ShutdownCallback shutdown_cb = std::move(shutdown_cb_);
+  if (shutdown_cb) {
+    shutdown_cb();
   }
 }
 
@@ -364,11 +391,33 @@ void EmulatorDevice::handle_unknown_method(
 }
 
 void EmulatorDevice::ConnectEmulator(fidl::ServerEnd<fhbt::Emulator> request) {
+  auto* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+  if (!emulator_owner_connected_) {
+    // The first connection owns the emulator's lifetime; see the declaration
+    // of `ConnectEmulator` for the full contract.
+    emulator_owner_connected_ = true;
+    emulator_binding_group_.AddBinding(
+        dispatcher,
+        std::move(request),
+        this,
+        fit::bind_member<&EmulatorDevice::OnEmulatorOwnerClosed>(this));
+    return;
+  }
   emulator_binding_group_.AddBinding(
-      fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-      std::move(request),
-      this,
-      fidl::kIgnoreBindingClosure);
+      dispatcher, std::move(request), this, fidl::kIgnoreBindingClosure);
+}
+
+void EmulatorDevice::OnEmulatorOwnerClosed(fidl::UnbindInfo info) {
+  if (info.is_dispatcher_shutdown()) {
+    // The driver is stopping; the owner of this device tears it down. Posting
+    // to a shutting-down dispatcher would assert.
+    return;
+  }
+  fdf::info("Emulator owner disconnected ({}); shutting down",
+            info.FormatDescription());
+  // Defer the shutdown: it destroys this object, which is not allowed from
+  // within the binding group's close handler.
+  pw_dispatcher_.Post(shutdown_task_);
 }
 
 void EmulatorDevice::ConnectVendor(fidl::ServerEnd<fhbt::Vendor> request) {

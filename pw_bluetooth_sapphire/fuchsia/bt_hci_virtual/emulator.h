@@ -19,6 +19,7 @@
 #include <lib/async/cpp/wait.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
+#include <pw_async/task.h>
 #include <pw_async_fuchsia/dispatcher.h>
 
 #include <queue>
@@ -26,7 +27,6 @@
 
 #include "emulated_peer.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_controller.h"
-#include "pw_random_fuchsia/zircon_random_generator.h"
 #include "vendor_service_publisher.h"
 
 namespace bt_hci_virtual {
@@ -46,8 +46,10 @@ class EmulatorDevice
   explicit EmulatorDevice();
   ~EmulatorDevice();
 
-  // This error handler is called when the EmulatorDevice is shut down by DFv2.
-  // We call |Shutdown()| to manually delete the heap-allocated EmulatorDevice.
+  // fidl::WireAsyncEventHandler<Node> override. This error handler is called
+  // when the emulator's node is removed by the driver framework (e.g. via
+  // devfs `fuchsia.device.Controller/ScheduleUnbind`). We call `Shutdown()` to
+  // manually delete the heap-allocated EmulatorDevice.
   void on_fidl_error(fidl::UnbindInfo error) override { Shutdown(); }
 
   void handle_unknown_event(
@@ -64,9 +66,23 @@ class EmulatorDevice
       std::string_view service_instance_name = fdf::kDefaultInstance);
   void Shutdown();
 
-  void set_emulator_ptr(std::unique_ptr<EmulatorDevice> ptr) {
-    emulator_ptr_ = std::move(ptr);
-  }
+  // Serves the fuchsia.hardware.bluetooth.Emulator protocol on `request`.
+  //
+  // The first connection accepted by an EmulatorDevice is its *owner*: the
+  // lifetime of the emulator is tied to that connection. When the owner
+  // disconnects, the EmulatorDevice calls `Shutdown()`, which unpublishes the
+  // HCI vendor service, closes all other Emulator connections, and invokes the
+  // ShutdownCallback passed to `Initialize()` (in the driver, that callback
+  // removes the emulator's node and destroys this object). This gives clients
+  // a way to destroy an emulator that does not depend on devfs. Later
+  // connections are observers and may come and go without affecting the
+  // emulator's lifetime.
+  //
+  // NOTE: ownership is inferred from connection order. A client that merely
+  // opens and closes the Emulator protocol before the intended owner connects
+  // becomes the owner and tears the emulator down when it disconnects.
+  void ConnectEmulator(
+      fidl::ServerEnd<fuchsia_hardware_bluetooth::Emulator> request);
 
   fidl::WireClient<fuchsia_driver_framework::Node>* emulator_child_node() {
     return &emulator_child_node_;
@@ -118,10 +134,11 @@ class EmulatorDevice
           metadata,
       ::fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  void ConnectEmulator(
-      fidl::ServerEnd<fuchsia_hardware_bluetooth::Emulator> request);
   void ConnectVendor(
       fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request);
+
+  // Called when the owning Emulator connection (see `ConnectEmulator`) closes.
+  void OnEmulatorOwnerClosed(fidl::UnbindInfo info);
 
   // Helper function used to initialize BR/EDR and LE peers
   void AddPeer(std::unique_ptr<EmulatedPeer> peer);
@@ -143,8 +160,6 @@ class EmulatorDevice
   void SendEventToHost(pw::span<const std::byte> buffer);
   void SendAclPacketToHost(pw::span<const std::byte> buffer);
   void SendIsoPacketToHost(pw::span<const std::byte> buffer);
-
-  pw::random_fuchsia::ZirconRandomGenerator rng_;
 
   // Responsible for running the thread-hostile |fake_device_|
   pw::async_fuchsia::FuchsiaDispatcher pw_dispatcher_;
@@ -176,9 +191,25 @@ class EmulatorDevice
       emulator_devfs_connector_;
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Emulator>
       emulator_binding_group_;
+  // True once the owning Emulator connection has been accepted (see
+  // `ConnectEmulator`).
+  bool emulator_owner_connected_ = false;
+  // Set by `Shutdown()` so that a second call is a no-op when the
+  // ShutdownCallback does not destroy this object (e.g. none was provided).
+  bool shut_down_ = false;
+  // Shutdown triggered by the owner disconnecting is deferred to a separate
+  // dispatcher task: `Shutdown()` destroys this object (and with it
+  // `emulator_binding_group_`), which must not happen from within a binding's
+  // close handler. The task is cancelled in `~EmulatorDevice()` if this object
+  // is destroyed first (e.g. because the node was removed).
+  pw::async::Task shutdown_task_{
+      [this](pw::async::Context&, pw::Status status) {
+        if (status.ok()) {
+          Shutdown();
+        }
+      }};
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor>
       vendor_binding_group_;
-  std::unique_ptr<EmulatorDevice> emulator_ptr_;
 
   fdf::OutgoingDirectory* outgoing_ = nullptr;
   std::string service_instance_name_;

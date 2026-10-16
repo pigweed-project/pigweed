@@ -58,6 +58,12 @@ void VirtualController::CreateEmulator(
     CreateEmulatorCompleter::Sync& completer) {
   std::string name = "emulator";
 
+  // Only one emulator exists at a time. Shut down (and release) any previous
+  // one first so that its node is removed and `emulator_node_controller_` is
+  // free to be bound again below.
+  if (emulator_device_) {
+    emulator_device_->Shutdown();
+  }
   emulator_device_ = std::make_unique<EmulatorDevice>();
 
   auto add_child_cb = [this](auto args) {
@@ -66,6 +72,19 @@ void VirtualController::CreateEmulator(
   };
   auto shutdown_cb = [this]() {
     fdf::info("Releasing EmulatorDevice");
+    // Remove the emulator's node. When the shutdown was triggered by the
+    // framework removing the node (devfs unbind) the client is already torn
+    // down and the call reports ZX_ERR_CANCELED; when it was triggered by the
+    // owning Emulator connection closing, this is what tears the node down.
+    if (emulator_node_controller_.is_valid()) {
+      fidl::OneWayStatus result = emulator_node_controller_->Remove();
+      if (!result.ok() && result.status() != ZX_ERR_CANCELED) {
+        fdf::warn("Failed to remove emulator node: {}", result.status_string());
+      }
+      // Drop the client so that the next CreateEmulator can bind a new one;
+      // Bind() on an already-bound WireClient asserts.
+      emulator_node_controller_ = {};
+    }
     emulator_device_.reset();
   };
 
@@ -74,8 +93,9 @@ void VirtualController::CreateEmulator(
 
   if (status != ZX_OK) {
     fdf::error("Failed to bind: {}", zx_status_get_string(status));
+    // Shutdown() invokes `shutdown_cb`, which removes the node if one was
+    // added and releases the device.
     emulator_device_->Shutdown();
-    auto _ = emulator_node_controller_->Remove();
     completer.ReplyError(status);
     return;
   }
