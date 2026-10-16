@@ -18,17 +18,21 @@
 namespace pw::containers::internal {
 
 /// Crashes with a diagnostic message that intrusive containers must be empty
-/// before destruction if the given `empty` parameter is not set.
+/// before destruction.
 ///
-/// This function is standalone to avoid using PW_CHECK in a header file.
-void CheckIntrusiveContainerIsEmpty(bool empty);
+/// This function is standalone to avoid using PW_CRASH in a header file.
+/// Callers check the condition inline, so the common, non-crashing path does
+/// not incur a function call.
+[[noreturn]] void CrashIntrusiveContainerIsNotEmpty();
 
 /// Crashes with a diagnostic message that items must not be in an intrusive
-/// container before insertion into an intrusive container or before destruction
-/// if the given `uncontained` parameter is not set.
+/// container before insertion into an intrusive container or before
+/// destruction.
 ///
-/// This function is standalone to avoid using PW_CHECK in a header file.
-void CheckIntrusiveItemIsUncontained(bool uncontained);
+/// This function is standalone to avoid using PW_CRASH in a header file.
+/// Callers check the condition inline, so the common, non-crashing path does
+/// not incur a function call.
+[[noreturn]] void CrashIntrusiveItemIsContained();
 
 // Gets the container's `value_type` from an item. This is used to check that an
 // the `value_type` inherits from the container's nested `Item` type, either

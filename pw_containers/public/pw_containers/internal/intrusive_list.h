@@ -63,7 +63,11 @@ class GenericIntrusiveList {
     return *this;
   }
 
-  ~GenericIntrusiveList() { CheckIntrusiveContainerIsEmpty(empty()); }
+  ~GenericIntrusiveList() {
+    if (!empty()) {
+      CrashIntrusiveContainerIsNotEmpty();
+    }
+  }
 
   template <typename Iterator>
   void assign(Iterator first, Iterator last) {
@@ -130,7 +134,9 @@ class GenericIntrusiveList {
   ///
   /// @return The item that was added.
   static Item* insert_after(Item* prev, Item& item) {
-    CheckIntrusiveItemIsUncontained(item.unlisted());
+    if (!item.unlisted()) {
+      CrashIntrusiveItemIsContained();
+    }
     item.next_ = prev->next_;
     item.set_previous(prev);
     prev->next_ = &item;
@@ -234,11 +240,30 @@ class GenericIntrusiveList {
   // by identity (address comparison) rather than value equality. Returns true
   // if the item was removed; false if it was not present.
   bool remove(const Item& item_to_remove) {
-    return remove_if(
-               [&item_to_remove](const Item& item) -> bool {
-                 return &item_to_remove == &item;
-               },
-               1) != 0;
+    Item* prev = find_previous(item_to_remove);
+    if (prev == nullptr) {
+      return false;
+    }
+    erase_after(prev);
+    return true;
+  }
+
+  /// Finds the item that precedes `item` in the list by identity (address
+  /// comparison). Since an item can only be in one list at a time, the search
+  /// stops at the first match.
+  ///
+  /// This is O(n).
+  ///
+  /// @returns The item before `item`, which may be `before_begin()`, or
+  /// `nullptr` if `item` is not in this list.
+  Item* find_previous(const Item& item) {
+    for (Item* prev = before_begin(); prev->next_ != end();
+         prev = prev->next_) {
+      if (prev->next_ == &item) {
+        return prev;
+      }
+    }
+    return nullptr;
   }
 
   /// Removes any item for which the given unary predicate function `p`

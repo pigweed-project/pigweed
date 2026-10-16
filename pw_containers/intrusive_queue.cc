@@ -40,9 +40,12 @@ auto GenericIntrusiveQueue::erase_after(Item* first, Item* last) -> Item* {
 }
 
 bool GenericIntrusiveQueue::remove(const Item& item_to_remove) {
-  return remove_if<Item>([&item_to_remove](const Item& item) {
-           return &item_to_remove == &item;
-         }) != 0;
+  IntrusiveForwardListItem* prev = list_.find_previous(item_to_remove);
+  if (prev == nullptr) {
+    return false;
+  }
+  erase_after(static_cast<Item*>(prev));
+  return true;
 }
 
 void GenericIntrusiveQueue::swap(GenericIntrusiveQueue& other) noexcept {

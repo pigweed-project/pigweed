@@ -18,13 +18,12 @@
 
 namespace pw::containers::internal {
 
-void CheckIntrusiveContainerIsEmpty(bool empty) {
-  PW_CHECK(empty, "Intrusive container is not empty and cannot be destroyed");
+void CrashIntrusiveContainerIsNotEmpty() {
+  PW_CRASH("Intrusive container is not empty and cannot be destroyed");
 }
 
-void CheckIntrusiveItemIsUncontained(bool uncontained) {
-  PW_CHECK(
-      uncontained,
+void CrashIntrusiveItemIsContained() {
+  PW_CRASH(
       "Item is in an intrusive container and cannot be added or destroyed");
 }
 

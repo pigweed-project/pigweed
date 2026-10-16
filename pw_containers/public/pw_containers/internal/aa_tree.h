@@ -46,7 +46,11 @@ class GenericAATree {
       : unique_keys_(unique_keys) {}
 
   /// Destructor.
-  ~GenericAATree() { CheckIntrusiveContainerIsEmpty(empty()); }
+  ~GenericAATree() {
+    if (!empty()) {
+      CrashIntrusiveContainerIsNotEmpty();
+    }
+  }
 
   // Intrusive trees cannot be copied, since each Item can only be in one tree.
   GenericAATree(const GenericAATree&) = delete;
@@ -313,7 +317,9 @@ class AATree final : public KeyedAATree<K> {
 template <typename K>
 std::pair<GenericAATree::iterator, bool> KeyedAATree<K>::insert(
     AATreeItem& item) {
-  CheckIntrusiveItemIsUncontained(!item.IsMapped());
+  if (item.IsMapped()) {
+    CrashIntrusiveItemIsContained();
+  }
   item.SetLevel(1);
   if (empty()) {
     SetRoot(&item);

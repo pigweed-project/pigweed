@@ -15,6 +15,8 @@
 
 #include <utility>
 
+#include "pw_containers/internal/intrusive_item.h"
+
 namespace pw::containers::internal {
 
 // Forward declaration for friending.
@@ -36,7 +38,11 @@ class IntrusiveListItemBase {
   ///
   /// Subclasses MUST call `unlist` in their destructors, since unlisting may
   /// require calling derived class methods.
-  ~IntrusiveListItemBase() { CheckIntrusiveItemIsUncontained(unlisted()); }
+  ~IntrusiveListItemBase() {
+    if (!unlisted()) {
+      CrashIntrusiveItemIsContained();
+    }
+  }
 
   /// Items are not copyable.
   IntrusiveListItemBase(const IntrusiveListItemBase&) = delete;
