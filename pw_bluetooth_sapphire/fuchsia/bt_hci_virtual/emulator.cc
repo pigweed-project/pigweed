@@ -174,9 +174,7 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
                   .name(name.data())
                   .devfs_args(devfs)
                   .Build();
-  callback(args);
-
-  return ZX_OK;
+  return callback(args);
 }
 
 void EmulatorDevice::Shutdown() {

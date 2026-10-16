@@ -76,18 +76,27 @@ fuchsia_cc_library(
     ],
 )
 
-fuchsia_cc_driver(
-    name = "bt-hci-virtual",
+fuchsia_cc_library(
+    name = "controller",
     testonly = True,
-    srcs = [
-        "controller.cc",
-        "controller.h",
-    ],
-    output_name = "bt-hci-virtual",
+    srcs = ["controller.cc"],
+    hdrs = ["controller.h"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":common",
         "//pw_log_fuchsia:pw_log_fuchsia_driver",
     ],
+    # `controller.cc` defines `__fuchsia_driver_registration__`, which nothing
+    # in the driver references and which fdf_testing::*DriverTest resolves at
+    # link time; keep the object when linking statically into either.
+    alwayslink = True,
+)
+
+fuchsia_cc_driver(
+    name = "bt-hci-virtual",
+    testonly = True,
+    output_name = "bt-hci-virtual",
+    deps = [":controller"],
 )
 
 fuchsia_component_manifest(
@@ -148,6 +157,18 @@ fuchsia_package(
 )
 
 fuchsia_cc_test(
+    name = "controller_test",
+    srcs = ["controller_test.cc"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":controller",
+        "//pw_bluetooth_sapphire/host/testing:gtest_main",
+        "//pw_unit_test",
+        "@fuchsia_sdk//pkg/driver_testing_cpp",
+    ],
+)
+
+fuchsia_cc_test(
     name = "emulator_test",
     srcs = ["emulator_test.cc"],
     visibility = ["//visibility:public"],
@@ -182,6 +203,7 @@ fuchsia_unittest_package(
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     platform = fuchsia_platforms.x64,
     unit_tests = [
+        ":controller_test",
         ":emulator_test",
         ":loopback_test",
     ],

@@ -38,6 +38,7 @@ class LoopbackTest : public ::testing::Test,
     int add_child_cb_count = 0;
     auto add_child_cb = [&](fuchsia_driver_framework::wire::NodeAddArgs) {
       add_child_cb_count++;
+      return ZX_OK;
     };
     zx_status_t status =
         loopback_device_.Initialize(std::move(loopback_channel_device_end),
@@ -127,7 +128,7 @@ class LoopbackTest : public ::testing::Test,
     return device->Initialize(
         std::move(loopback_channel_device_end),
         "loopback-service",
-        [](auto) {},
+        [](auto) { return ZX_OK; },
         outgoing);
   }
 

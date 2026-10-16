@@ -51,8 +51,7 @@ zx_status_t LoopbackDevice::Initialize(zx::channel channel,
                   .name(fidl::StringView(args_arena, name))
                   .Build();
 
-  callback(args);
-  return ZX_OK;
+  return callback(args);
 }
 
 LoopbackDevice::SnoopServer::SnoopServer(

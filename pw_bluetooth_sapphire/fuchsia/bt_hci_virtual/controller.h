@@ -19,22 +19,28 @@
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <string>
+#include <string_view>
+
 #include "pw_bluetooth_sapphire/fuchsia/bt_hci_virtual/emulator.h"
 #include "pw_bluetooth_sapphire/fuchsia/bt_hci_virtual/loopback.h"
 
 namespace bt_hci_virtual {
 
 // The VirtualController class implements the
-// fuchsia.hardware.bluetooth.VirtualController API. It is used to created two
-// devices: the EmulatorDevice and/or the LoopbackDevice. The EmulatorDevice is
-// used for Bluetooth integration tests, and the LoopbackDevice is used by
-// RootCanal for PTS-bot.
+// fuchsia.hardware.bluetooth.VirtualController API. It is used to create two
+// kinds of devices: any number of EmulatorDevices (one per `CreateEmulator`
+// call, each with a unique name and independently owned by its first Emulator
+// connection) and/or a LoopbackDevice. The EmulatorDevice is used for Bluetooth
+// integration tests, and the LoopbackDevice is used by RootCanal for PTS-bot.
 //
-// VirtualController publishes itself as a DFv2 driver and starts a device node
-// to bind to said driver. It can create a EmulatorDevice/LoopbackDevice which
-// can then use the VirtualController's child node
-// |virtual_controller_child_node_| to publish its own children node that would
-// represent the EmulatorDevice/LoopbackDevice.
+// VirtualController publishes itself as a DFv2 driver and adds a child node
+// (`bt_hci_virtual`) that exposes the VirtualController protocol via devfs.
+// Each EmulatorDevice/LoopbackDevice it creates gets its own child node of the
+// driver's node (`node_`), a sibling of `bt_hci_virtual`.
 //
 // EmulatorDevice/LoopbackDevice then implements and serves the FIDL protocols
 // that their client needs. For more details, refer to
@@ -46,6 +52,12 @@ class VirtualController
       public fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>,
       public fidl::WireServer<fuchsia_hardware_bluetooth::VirtualController> {
  public:
+  // Name of the devfs node through which VirtualController is reached.
+  static constexpr std::string_view kNodeName = "bt_hci_virtual";
+
+  // Prefix of the unique name `CreateEmulator` gives each emulator.
+  static constexpr std::string_view kEmulatorNamePrefix = "emulator-";
+
   VirtualController();
 
   // fdf::DriverBase overrides:
@@ -59,6 +71,12 @@ class VirtualController
           metadata) override {}
 
  private:
+  // An EmulatorDevice together with the controller for its driver node.
+  struct Emulator {
+    std::unique_ptr<EmulatorDevice> device;
+    fidl::WireClient<fuchsia_driver_framework::NodeController> node_controller;
+  };
+
   // fuchsia_hardware_bluetooth::VirtualController overrides:
   void CreateEmulator(CreateEmulatorCompleter::Sync& completer) override;
   void CreateLoopbackDevice(
@@ -78,10 +96,13 @@ class VirtualController
   zx_status_t AddLoopbackChildNode(
       fuchsia_driver_framework::wire::NodeAddArgs args);
   zx_status_t AddEmulatorChildNode(
-      fuchsia_driver_framework::wire::NodeAddArgs args,
-      EmulatorDevice* emulator_device);
+      fuchsia_driver_framework::wire::NodeAddArgs args, Emulator& emulator);
 
-  std::unique_ptr<EmulatorDevice> emulator_device_;
+  // Live emulators keyed by the unique name returned from `CreateEmulator`.
+  // Each entry is erased by its own ShutdownCallback (see `CreateEmulator`).
+  std::map<std::string, Emulator> emulators_;
+  uint64_t next_emulator_id_ = 0;
+
   std::unique_ptr<LoopbackDevice> loopback_device_;
 
   // VirtualController
@@ -98,11 +119,6 @@ class VirtualController
   fidl::WireClient<fuchsia_driver_framework::NodeController>
       loopback_node_controller_;
   fidl::WireClient<fuchsia_driver_framework::Node> loopback_child_node_;
-
-  // EmulatorDevice
-  fidl::WireClient<fuchsia_driver_framework::NodeController>
-      emulator_node_controller_;
-  fidl::WireClient<fuchsia_driver_framework::Node> emulator_child_node_;
 };
 
 }  // namespace bt_hci_virtual

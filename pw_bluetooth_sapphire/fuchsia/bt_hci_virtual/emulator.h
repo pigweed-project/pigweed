@@ -33,8 +33,10 @@ namespace bt_hci_virtual {
 
 enum class ChannelType : uint8_t { ACL, COMMAND, EMULATOR, ISO, SNOOP };
 
+// Adds the device's node with `args`; returns the status of doing so, which
+// `Initialize()` returns to its caller.
 using AddChildCallback =
-    fit::function<void(fuchsia_driver_framework::wire::NodeAddArgs)>;
+    fit::function<zx_status_t(fuchsia_driver_framework::wire::NodeAddArgs)>;
 using ShutdownCallback = fit::function<void()>;
 
 class EmulatorDevice
