@@ -179,6 +179,11 @@ Example ``.ghish.toml``
    local_presubmit_hint = "./pw presubmit"
 
    [issue]
+   # Issue tracker system ("buganizer"), prefix ("b/"), and optional host override:
+   system = "buganizer"
+   prefix = "b/"
+   host = "issuetracker.googleapis.com"
+
    # Default Buganizer component ID and GCP quota project:
    default_component = 1194524
    quota_project = "my-gcp-quota-project"
@@ -200,6 +205,10 @@ Example ``.ghish.toml``
 
    # Build cache warmup driver ("bazel" or "none"; auto-detected if omitted):
    warmup_driver = "bazel"
+
+   [oncall]
+   # Optional rotation schedule JSON file used by `gh sense`:
+   schedule_file = ".ghish/oncall.json"
 
 Overriding settings via ``git config``
 ======================================

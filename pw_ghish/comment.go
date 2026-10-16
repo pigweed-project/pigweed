@@ -469,14 +469,23 @@ func formatAmbiguousDraftError(changeID, path string, line int, matches []gerrit
 }
 
 func init() {
+	//ghish:flag mode=upstream gh="pr comment --body"
 	commentCmd.Flags().StringVarP(&commentMessage, "message", "m", "", "Comment message")
+	//ghish:flag mode=upstream gh="pr comment --body"
 	commentCmd.Flags().StringVarP(&commentBody, "body", "b", "", "Comment body (alias for --message)")
+	//ghish:flag mode=extension reason="Gerrit inline file path targeting"
 	commentCmd.Flags().StringVar(&commentFile, "path", "", "File path for inline comment (ghish-only)")
+	//ghish:flag mode=extension reason="Gerrit inline line number targeting"
 	commentCmd.Flags().IntVarP(&commentLine, "line", "l", 0, "Line number for inline comment (ghish-only)")
+	//ghish:flag mode=upstream gh="pr comment --body-file"
 	commentCmd.Flags().StringVarP(&commentBodyFile, "body-file", "F", "", "Read comment body from file (use \"-\" to read from standard input)")
+	//ghish:flag mode=extension reason="Gerrit comment thread resolution state"
 	commentCmd.Flags().BoolVar(&commentResolved, "resolved", false, "Mark the comment thread as resolved (ghish-only)")
+	//ghish:flag mode=extension reason="Gerrit patchset revision targeting"
 	commentCmd.Flags().StringVar(&commentPatchset, "patchset", "current", "Patchset number or 'current' (ghish-only)")
+	//ghish:flag mode=divergent gh="pr create --draft" doc="ghDivergenceHelp"
 	commentCmd.Flags().BoolVar(&commentDraft, "draft", false, "Save or update comment as an unpublished draft (ghish-only)")
+	//ghish:flag mode=extension reason="Delete unpublished Gerrit server-side draft comment"
 	commentCmd.Flags().BoolVar(&commentDeleteDraft, "delete-draft", false, "Delete an unpublished draft comment at the target location (ghish-only)")
 	PrCmd.AddCommand(commentCmd)
 }

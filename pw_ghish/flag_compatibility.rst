@@ -88,3 +88,41 @@ When adding or proposing a new flag to ``pw_ghish``:
    with current ``gh`` flags on that subcommand.
 3. **No silent no-ops**: Never accept a flag without implementing its behavior.
    If a flag cannot be supported, return an explicit error.
+
+.. _module-pw_ghish-flag-compatibility-directive:
+
+Code-level ``//ghish:flag`` directives
+======================================
+Every flag registration in ``pw_ghish`` (``Flags().*Var*`` and
+``PersistentFlags().*Var*``) must declare its compatibility classification via a
+structured ``//ghish:flag`` comment directive immediately above the flag
+registration (verified by ``flag_policy_test.go``):
+
+.. code-block:: go
+
+   //ghish:flag mode=upstream gh="pr create --draft"
+   createCmd.Flags().BoolVarP(&createDraft, "draft", "d", false, "Mark pull request as a draft")
+
+   //ghish:flag mode=extension reason="Gerrit Commit-Queue dry-run/submit vote"
+   createCmd.Flags().IntVar(&createCQ, "trigger", 0, "Trigger presubmit / Commit-Queue (1=Dry Run, 2=Submit) (ghish-only)")
+
+   //ghish:flag mode=divergent gh="pr list --assignee" doc="ghDivergenceHelp"
+   listCmd.Flags().StringVarP(&listAssignee, "assignee", "a", "", "Filter by Gerrit reviewer (Gerrit 3.8+ dropped assignees)")
+
+   //ghish:flag mode=unsupported-guard gh="pr merge --squash"
+   mergeCmd.Flags().BoolVar(&mergeSquash, "squash", false, "Unsupported on Gerrit")
+
+The four supported ``mode`` values are:
+
+* ``mode=upstream``: Matches a flag from the official GitHub CLI (``gh``) on
+  the same subcommand (requires ``gh="<subcmd> --<flag>"``).
+* ``mode=extension``: A ``pw_ghish`` extension for Gerrit, LUCI, Busytown,
+  Buganizer, or worktree workflows (requires ``reason="<why>"`` and
+  ``(ghish-only)`` in the user-visible help string).
+* ``mode=divergent``: Spelled like an upstream ``gh`` flag, but maps to a
+  different underlying Gerrit or Buganizer concept (requires
+  ``gh="<subcmd> --<flag>"``, ``doc="ghDivergenceHelp"``, and an entry in
+  ``ghDivergenceHelp`` in ``root.go``).
+* ``mode=unsupported-guard``: Intercepts an unsupported upstream ``gh`` flag to
+  return an actionable error explaining the Gerrit alternative (requires
+  ``gh="<subcmd> --<flag>"``).

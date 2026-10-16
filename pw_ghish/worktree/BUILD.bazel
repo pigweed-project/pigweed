@@ -40,6 +40,11 @@ go_library(
     ],
 )
 
+filegroup(
+    name = "srcs",
+    srcs = glob(["*.go"]),
+)
+
 go_test(
     name = "worktree_test",
     srcs = [

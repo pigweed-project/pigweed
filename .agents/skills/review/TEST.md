@@ -69,8 +69,9 @@ rubric, see `pw_ghish/agent_eval.rst`.
 | **6** | **Gerrit target isolation** | *"/review pwrev/\<open CL\>"* (Step 3 wanted) | `./gh wt use review-<id> --cl <id> --json`; all later commands run in the returned `symlink_path`. | `./gh pr checkout` in the current checkout; raw `git fetch`/`git checkout` of the CL ref. |
 | **7** | **C++ violations** (`cpp-reviewer` enabled, fixture 4.3.1) | *"/review"* | Findings cite `code_reviews.html#docs-code-reviews-checklist-no-silent-failures` (`nullptr` on contract violation), `style/cpp.html` (rule of five), and `style/doxygen.html` (implementation detail in Doxygen), each `severity: blocking` or `should-fix`, `scope: in-diff`, with a `tag:`, a `quote:`, and a code `fix:`; the merged report renders them as `[bug]` / `[api]` and `Verdict: NEEDS_FIXES`. | Findings without a `rule:` URL; findings on unchanged lines marked `in-diff`; dropping a `blocking` finding. |
 | **8** | **Python violations** (`python-reviewer` enabled, fixture 4.3.2) | *"/review"* | Findings cite `style/python.html` for the broad `try` and `except Exception: pass`, and `code_reviews.html#docs-code-reviews-checklist-no-silent-failures` for returning `None`. | Missing the swallowed exception. |
-| **9** | **Compliant change** (fixture 4.3.3) | *"/review"* | Reviewer returns `No findings.`; report says `Verdict: PASS`. | Inventing nits with no `quote:`; `NEEDS_FIXES`. |
-| **10** | **Drafts in Mode B** | After scenario 7 on an open CL: *"/review pwrev/\<id\>"* | One `./gh pr comment <id> --path <file> --line <line> -m "[<tag>] <issue> (<rule>)" --draft` per `in-diff` finding; `out-of-diff` findings, if any, in one change-level draft. | Posting without `--draft`; inline comments on unchanged lines; any vote. |
+| **9** | **`pw_ghish` violations** (`go-ghish-reviewer` enabled, fixture 4.3.4) | *"/review"* | Findings cite `pw_ghish/AGENTS.md` for swallowing `err` and returning `nil`, and `pw_ghish/flag_compatibility.html#module-pw_ghish-flag-compatibility` for an unannotated flag registration and binding `-q`. | Missing the silent `return nil` or missing the unannotated flag. |
+| **10** | **Compliant change** (fixture 4.3.3) | *"/review"* | Reviewer returns `No findings.`; report says `Verdict: PASS`. | Inventing nits with no `quote:`; `NEEDS_FIXES`. |
+| **11** | **Drafts in Mode B** | After scenario 7 on an open CL: *"/review pwrev/\<id\>"* | One `./gh pr comment <id> --path <file> --line <line> -m "[<tag>] <issue> (<rule>)" --draft` per `in-diff` finding; `out-of-diff` findings, if any, in one change-level draft. | Posting without `--draft`; inline comments on unchanged lines; any vote. |
 
 ### 4.3 Fixtures
 
@@ -170,6 +171,35 @@ class Counter {
 }  // namespace pw::scratch
 ```
 
+#### 4.3.4 `pw_ghish/scratch_cmd.go` (Go / `pw_ghish` violations)
+
+```go
+package pw_ghish
+
+import "github.com/spf13/cobra"
+
+var scratchFlag bool
+
+var scratchCmd = &cobra.Command{
+	Use: "scratch",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if _, err := LoadCommandProjectConfig(cmd); err != nil {
+			return nil
+		}
+		return nil
+	},
+}
+
+func init() {
+	scratchCmd.Flags().BoolVarP(&scratchFlag, "scratch", "q", false, "Run scratch mode")
+}
+```
+
+Expected: `blocking` (`tag: bug`) for swallowing `LoadCommandProjectConfig` error
+with `return nil`, `should-fix` (`tag: api`) for missing `//ghish:flag`
+compatibility directive and `(ghish-only)` help marker, and `blocking` (`tag:
+api`) for binding `-q` (which collides with upstream `gh --jq`).
+
 ### 4.4 Grading
 
 A session **passes** only if:
@@ -181,7 +211,7 @@ A session **passes** only if:
 - Scenario 5 dispatches in one parallel step with per-reviewer patches and
   audits the remaining files inline.
 - Scenario 6 allocates a worktree before touching the CL.
-- Scenarios 7-8 produce every expected finding with a resolvable `rule:` URL,
+- Scenarios 7-9 produce every expected finding with a resolvable `rule:` URL,
   a `quote:`, and a `tag:` that the merged report renders as a severity
-  prefix; scenario 9 produces none.
-- Scenario 10 posts drafts only, with the specified body, and never votes.
+  prefix; scenario 10 produces none.
+- Scenario 11 posts drafts only, with the specified body, and never votes.

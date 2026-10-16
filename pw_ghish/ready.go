@@ -109,12 +109,18 @@ func isAlreadyReadyConflict(err error) bool {
 }
 
 func init() {
+	//ghish:flag mode=extension reason="Gerrit SetReadyForReview / SetWorkInProgress message"
 	readyCmd.Flags().StringP("message", "m", "", "Optional message explaining why the change is ready for review (or moving to WIP) (ghish-only)")
+	//ghish:flag mode=upstream gh="pr ready --undo"
 	readyCmd.Flags().BoolP("undo", "u", false, "Convert the change back to work-in-progress (WIP / draft)")
+	//ghish:flag mode=extension reason="Assign Gerrit reviewers when marking ready"
 	readyCmd.Flags().StringSliceP("reviewer", "r", []string{}, "Request a review from someone, or @owners for code owners (ghish-only)")
+	//ghish:flag mode=extension reason="Hidden alias for --reviewer on pr ready"
 	readyCmd.Flags().StringSlice("add-reviewer", []string{}, "Alias for --reviewer (ghish-only)")
 	_ = readyCmd.Flags().MarkHidden("add-reviewer")
+	//ghish:flag mode=extension reason="Resolve and assign Gerrit code owners when marking ready"
 	readyCmd.Flags().Bool("owner", false, "Request a review from module code owners (ghish-only)")
+	//ghish:flag mode=extension reason="Hidden alias for --owner on pr ready"
 	readyCmd.Flags().Bool("add-owner", false, "Alias for --owner (ghish-only)")
 	_ = readyCmd.Flags().MarkHidden("add-owner")
 	PrCmd.AddCommand(readyCmd)

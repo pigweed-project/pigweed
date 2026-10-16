@@ -88,6 +88,14 @@ refer to the full style guide.
 - **Generated Files:** Python packages with generated files should extend their
   import path in `__init__.py`.
 
+## Go Development Guidance (`pw_ghish`)
+
+- **Style:** Follow the Pigweed Go style guide (`docs/sphinx/style/go.rst`) and
+  `pw_ghish/AGENTS.md`. Format code with `./pw format`.
+- **Invariants:** Use `RunE` on all Cobra commands, never silently swallow
+  errors with `return nil`, classify all CLI flags (`//ghish:flag`), and keep
+  CLI/config docs synchronized (`bazelisk test //pw_ghish/...`).
+
 ## Project Conventions
 
 ### Build System Interaction
