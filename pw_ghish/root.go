@@ -364,6 +364,9 @@ var RootCmd = &cobra.Command{
 	Long:         "",
 	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := chdirToBuildWorkingDirectory(); err != nil {
+			return err
+		}
 		if ProfileFlag != "" {
 			if _, ok := GetProfile(ProfileFlag); !ok {
 				return fmt.Errorf("unknown profile: %q", ProfileFlag)
@@ -520,6 +523,16 @@ func setupRootAliases() {
 		RootCmd.AddCommand(newRootAlias(diffCmd, "diff", "Show changes in a PR or patchset"))
 		RootCmd.AddCommand(newRootAlias(statusCmd, "status", "Show status of relevant pull requests"))
 	})
+}
+
+func chdirToBuildWorkingDirectory() error {
+	if buildWorkDir := os.Getenv("BUILD_WORKING_DIRECTORY"); buildWorkDir != "" {
+		if err := os.Chdir(buildWorkDir); err != nil {
+			return fmt.Errorf("failed to chdir to BUILD_WORKING_DIRECTORY %q: %w", buildWorkDir, err)
+		}
+		_ = os.Unsetenv("BUILD_WORKING_DIRECTORY")
+	}
+	return nil
 }
 
 // Execute runs the root command.

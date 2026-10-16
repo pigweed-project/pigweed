@@ -21,6 +21,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -680,5 +682,38 @@ func TestGerritURL_NonOriginRemote(t *testing.T) {
 	want := "https://acme-internal-review.googlesource.com/a"
 	if got != want {
 		t.Errorf("GerritURL() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildWorkingDirectory(t *testing.T) {
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd() failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(origDir)
+	})
+
+	userDir := t.TempDir()
+	t.Setenv("BUILD_WORKING_DIRECTORY", userDir)
+	if err := chdirToBuildWorkingDirectory(); err != nil {
+		t.Fatalf("chdirToBuildWorkingDirectory() failed: %v", err)
+	}
+	gotDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd() failed: %v", err)
+	}
+	resolvedUserDir, _ := filepath.EvalSymlinks(userDir)
+	resolvedGotDir, _ := filepath.EvalSymlinks(gotDir)
+	if resolvedGotDir != resolvedUserDir {
+		t.Errorf("cwd = %q, want %q", resolvedGotDir, resolvedUserDir)
+	}
+	if got := os.Getenv("BUILD_WORKING_DIRECTORY"); got != "" {
+		t.Errorf("BUILD_WORKING_DIRECTORY = %q, want empty", got)
+	}
+
+	t.Setenv("BUILD_WORKING_DIRECTORY", filepath.Join(t.TempDir(), "does-not-exist"))
+	if err := chdirToBuildWorkingDirectory(); err == nil || !strings.Contains(err.Error(), "BUILD_WORKING_DIRECTORY") {
+		t.Errorf("expected BUILD_WORKING_DIRECTORY error, got: %v", err)
 	}
 }
