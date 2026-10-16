@@ -179,6 +179,7 @@ pw_add_enum_library(pw_rpc2.cpp
     public/pw_rpc2/internal/server_call.h
     public/pw_rpc2/internal/server_connection_task.h
     public/pw_rpc2/internal/server_task.h
+    public/pw_rpc2/internal/service_info.h
     public/pw_rpc2/method_type.h
     public/pw_rpc2/reader.h
     public/pw_rpc2/server.h
@@ -276,7 +277,6 @@ pw_add_library(pw_rpc2.cpp.test_harness INTERFACE
     ${_pw_rpc2_coro_deps}
     pw_async2.testing
     pw_rpc2.cpp
-    pw_rpc2.cpp._status
     pw_rpc2.cpp._test_utils
     pw_status
 )
@@ -290,7 +290,6 @@ pw_add_test(pw_rpc2.cpp.test_harness_test
     pw_buf
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_rpc2.cpp
-    pw_rpc2.cpp._status
     pw_rpc2.cpp._test_utils
     pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
     pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2

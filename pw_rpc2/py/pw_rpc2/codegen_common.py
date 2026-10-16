@@ -316,15 +316,16 @@ class CodeGenerator(abc.ABC):
     def write_client_method(self, output: OutputFile, method: Method) -> None:
         """Writes the Client member function for a method."""
 
-    def service_namespace(
-        self, service: Service, flavor: str | None = None
-    ) -> str:
-        return cpp_namespace(
-            service.package,
-            'pw_rpc2',
-            self.flavor if flavor is None else flavor,
-            service.cpp_name,
-        )
+    def service_namespace(self, service: Service) -> str:
+        return flavor_namespace(service, self.flavor)
+
+
+FLAVORS = ('raw', 'pwpb')
+
+
+def flavor_namespace(service: Service, flavor: str) -> str:
+    """The namespace of a service's generated code for a flavor."""
+    return cpp_namespace(service.package, 'pw_rpc2', flavor, service.cpp_name)
 
 
 CLIENT_BASE = '::pw::rpc2::internal::GeneratedServiceClient'
@@ -340,6 +341,7 @@ _COMMON_INCLUDES = (
     '"pw_rpc2/internal/method.h"',
     '"pw_rpc2/internal/method_info.h"',
     '"pw_rpc2/internal/method_invoker.h"',
+    '"pw_rpc2/internal/service_info.h"',
     '"pw_rpc2/method_type.h"',
     '"pw_rpc2/reader.h"',
     '"pw_rpc2/service.h"',
@@ -456,6 +458,37 @@ def _write_method_info(
             output.write_line(f'using Request = {gen.request_type(method)};')
             output.write_line(f'using Response = {gen.response_type(method)};')
         output.write_line('};')
+
+
+def _write_client_forward_declarations(
+    output: OutputFile, gen: CodeGenerator, services: Sequence[Service]
+) -> None:
+    """Declares the other flavors' clients, which ServiceInfo refers to."""
+    for service in services:
+        for flavor in FLAVORS:
+            if flavor != gen.flavor:
+                namespace = flavor_namespace(service, flavor)
+                _write_namespace_open(output, namespace)
+                output.write_line('class Client;')
+                _write_namespace_close(output, namespace)
+
+
+def _write_service_info(
+    output: OutputFile, gen: CodeGenerator, service: Service
+) -> None:
+    output.write_line('template <typename PwInternal_Impl>')
+    output.write_line('struct ServiceInfo<')
+    output.write_line(
+        f'    ::{gen.service_namespace(service)}::Service<PwInternal_Impl>,'
+    )
+    output.write_line('    true> {')
+    with output.indent():
+        for flavor in FLAVORS:
+            output.write_line(
+                f'using {flavor.capitalize()}Client = '
+                f'::{flavor_namespace(service, flavor)}::Client;'
+            )
+    output.write_line('};')
 
 
 def _write_copy_methods(
@@ -635,8 +668,6 @@ def _write_service(
     output: OutputFile, gen: CodeGenerator, service: Service
 ) -> None:
     namespace = gen.service_namespace(service)
-    raw_namespace = gen.service_namespace(service, 'raw')
-    pwpb_namespace = gen.service_namespace(service, 'pwpb')
     output.write_line(f'// Base class for {service.full_name} implementations.')
     output.write_line('//')
     output.write_line(
@@ -652,17 +683,10 @@ def _write_service(
     )
     output.write_line('template <typename PwInternal_Impl>')
     output.write_line('class Service : public ::pw::rpc2::Service {')
-    output.write_line(' public:')
+    if service.methods:
+        output.write_line(' public:')
     with output.indent():
-        output.write_line(f'using PwInternal_Client = ::{namespace}::Client;')
-        output.write_line(
-            f'using PwInternal_RawClient = ::{raw_namespace}::Client;'
-        )
-        output.write_line(
-            f'using PwInternal_PwpbClient = ::{pwpb_namespace}::Client;'
-        )
         if service.methods:
-            output.write_line()
             output.write_line(
                 '// Default implementations for `<Method>Future` types; '
                 'hidden if'
@@ -705,6 +729,15 @@ def _write_service(
     output.write_line()
     output.write_line(' private:')
     with output.indent():
+        output.write_line(
+            '// Identifies the generated base class to ServiceInfo.'
+        )
+        output.write_line(
+            'friend class ::pw::rpc2::internal::ServiceInfoAccess;'
+        )
+        output.write_line()
+        output.write_line('using PwInternal_GeneratedService = Service;')
+        output.write_line()
         for i, method in enumerate(service.methods):
             if i:
                 output.write_line()
@@ -805,13 +838,7 @@ def generate_headers(
         [*_COMMON_INCLUDES, *gen.includes(services)] if services else [],
     )
 
-    other_flavor = 'pwpb' if gen.flavor == 'raw' else 'raw'
     for service in services:
-        other_namespace = gen.service_namespace(service, other_flavor)
-        _write_namespace_open(header, other_namespace)
-        header.write_line('class Client;')
-        _write_namespace_close(header, other_namespace)
-
         namespace = gen.service_namespace(service)
         _write_namespace_open(header, namespace)
         if service.methods:
@@ -822,13 +849,16 @@ def generate_headers(
         _write_service(header, gen, service)
         _write_namespace_close(header, namespace)
 
-    services_with_methods = [s for s in services if s.methods]
-    if services_with_methods:
+    if services:
+        _write_client_forward_declarations(header, gen, services)
         _write_namespace_open(header, 'pw::rpc2::internal')
-        for i, service in enumerate(services_with_methods):
+        for i, service in enumerate(services):
             if i:
                 header.write_line()
-            _write_method_info(header, gen, service)
+            _write_service_info(header, gen, service)
+            if service.methods:
+                header.write_line()
+                _write_method_info(header, gen, service)
         _write_namespace_close(header, 'pw::rpc2::internal')
 
     stubs = OutputFile(stubs_header_name(proto_file.name, gen.flavor))

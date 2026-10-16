@@ -43,6 +43,7 @@
 #include "pw_rpc2/codegen_test_protos/no_package.raw.rpc2.h"
 #include "pw_rpc2/codegen_test_protos/other.pwpb.rpc2.h"
 #include "pw_rpc2/codegen_test_protos/other.raw.rpc2.h"
+#include "pw_rpc2/internal/service_info.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/method_type.h"
 #include "pw_rpc2/reader.h"
@@ -776,6 +777,41 @@ class RawOtherService : public other_raw::Other::Service<RawOtherService> {
  public:
   using GetFuture = RawEchoFuture;
 };
+
+// `ServiceInfo` finds the clients of both flavors from a service
+// implementation or from its generated base class.
+template <typename Service, typename Raw, typename Pwpb>
+constexpr bool kHasClients =
+    std::is_same_v<typename internal::ServiceInfo<Service>::RawClient, Raw> &&
+    std::is_same_v<typename internal::ServiceInfo<Service>::PwpbClient, Pwpb>;
+
+static_assert(kHasClients<NamesService,
+                          names_raw::Names::Client,
+                          names_pwpb::Names::Client>);
+static_assert(kHasClients<RawNamesService,
+                          names_raw::Names::Client,
+                          names_pwpb::Names::Client>);
+static_assert(kHasClients<names_pwpb::Kinds::Service<KindsService>,
+                          names_raw::Kinds::Client,
+                          names_pwpb::Kinds::Client>);
+static_assert(kHasClients<names_raw::Kinds::Service<RawKindsService>,
+                          names_raw::Kinds::Client,
+                          names_pwpb::Kinds::Client>);
+static_assert(kHasClients<OtherService,
+                          other_raw::Other::Client,
+                          other_pwpb::Other::Client>);
+static_assert(kHasClients<RawNoPackageService,
+                          no_package_raw::Client,
+                          no_package_pwpb::Client>);
+
+// Only service implementations and generated base classes are services.
+static_assert(internal::ServiceInfoAccess::kIsService<NamesService>);
+static_assert(internal::ServiceInfoAccess::kIsService<
+              names_raw::Kinds::Service<RawKindsService>>);
+static_assert(!internal::ServiceInfoAccess::kIsService<int>);
+static_assert(!internal::ServiceInfoAccess::kIsService<::pw::rpc2::Service>);
+static_assert(
+    !internal::ServiceInfoAccess::kIsService<names_pwpb::Names::Client>);
 
 // =============================================================================
 // Clients

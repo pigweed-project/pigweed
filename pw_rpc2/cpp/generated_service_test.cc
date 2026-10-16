@@ -40,6 +40,7 @@
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_rpc2/client.h"
+#include "pw_rpc2/internal/service_info.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/pw_rpc2_test.pwpb.rpc2.h"
 #include "pw_rpc2/pw_rpc2_test.raw.rpc2.h"
@@ -1083,6 +1084,13 @@ class AmbiguousFutureService
 };
 
 [[maybe_unused]] void ConstructService() { AmbiguousFutureService service; }
+
+#elif PW_NC_TEST(ServiceInfoOfNonService)
+PW_NC_EXPECT("Template argument must be a pw_rpc2 service implementation");
+
+[[maybe_unused]] void LookUpClient() {
+  [[maybe_unused]] internal::ServiceInfo<int>::RawClient* client = nullptr;
+}
 
 #endif  // PW_NC_TEST
 

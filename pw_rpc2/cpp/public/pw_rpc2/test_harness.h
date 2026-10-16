@@ -26,10 +26,10 @@
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_rpc2/client.h"
+#include "pw_rpc2/internal/service_info.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/server.h"
 #include "pw_rpc2/service.h"
-#include "pw_rpc2/service_client.h"
 #include "pw_rpc2/status.h"
 #include "pw_status/status.h"
 
@@ -45,9 +45,10 @@ namespace pw::rpc2::test {
 /// client.
 ///
 /// Instantiates and connects a real `Server` (hosting `ServiceImpl`) and a
-/// generated `ServiceClient` over an in-memory `PairedConnection` on a single
-/// `DispatcherForTest`. Tests drive RPCs through the generated client API
-/// using `RunToCompletion()`, `RunInTaskUntilStalled()`, or `dispatcher()`.
+/// `Client` over an in-memory `PairedConnection` on a single
+/// `DispatcherForTest`. Tests drive RPCs through the generated `raw` or `pwpb`
+/// client API using `RunToCompletion()`, `RunInTaskUntilStalled()`, or
+/// `dispatcher()`.
 template <typename ServiceImpl, size_t kAllocatorSizeBytes = 16384>
 class TestHarness {
  public:
@@ -55,9 +56,10 @@ class TestHarness {
                 "ServiceImpl must derive from a generated pw_rpc2 Service "
                 "base class (which inherits from pw::rpc2::Service).");
 
-  using ServiceClient = typename ServiceImpl::PwInternal_Client;
-  using RawClient = typename ServiceImpl::PwInternal_RawClient;
-  using PwpbClient = typename ServiceImpl::PwInternal_PwpbClient;
+  using RawClient =
+      typename ::pw::rpc2::internal::ServiceInfo<ServiceImpl>::RawClient;
+  using PwpbClient =
+      typename ::pw::rpc2::internal::ServiceInfo<ServiceImpl>::PwpbClient;
 
   template <typename... Args,
             typename =
@@ -75,11 +77,11 @@ class TestHarness {
     RpcResult<Client> client = RunToCompletion(
         Client::Connect(dispatcher_, allocator_, std::move(paired.first)));
     PW_CHECK_OK(client.status());
-    service_client_ = ServiceClient(*client);
+    client_ = std::move(*client);
   }
 
   ~TestHarness() {
-    service_client_ = ServiceClient();
+    client_ = Client();
     transport_.ResolveAccept(Status::Cancelled());
     PW_CHECK_OK(RunToCompletion(server_.Close()));
   }
@@ -90,11 +92,7 @@ class TestHarness {
   TestHarness& operator=(TestHarness&&) = delete;
 
   /// Returns the connected `pw::rpc2::Client`.
-  const Client& client() const { return service_client_.client(); }
-
-  /// Returns the generated service client matching `ServiceImpl`'s flavor
-  /// (`raw` or `pwpb`), bound to the connected `Client`.
-  const ServiceClient& service_client() const { return service_client_; }
+  const Client& client() const { return client_; }
 
   /// Returns a generated `raw` service client bound to the connected `Client`.
   /// Requires the `.raw.rpc2.h` header for this service to be included.
@@ -134,7 +132,7 @@ class TestHarness {
   /// before `runnable` completes.
   ///
   /// Accepts:
-  /// 1. Any `pw::async2::Future` (e.g. `tester.service_client().MyUnary(req)`
+  /// 1. Any `pw::async2::Future` (e.g. `tester.pwpb_client().MyUnary(req)`
   ///    or a `pw::async2::Coro<T>`).
   /// 2. Any `pw::async2::Task` lvalue.
   /// 3. A coroutine callable `(pw::async2::CoroContext) ->
@@ -186,7 +184,7 @@ class TestHarness {
   // torn down during `~TestHarness()`.
   ServiceImpl service_;
   Server server_;
-  ServiceClient service_client_;
+  Client client_;
 };
 
 /// @endsubmodule

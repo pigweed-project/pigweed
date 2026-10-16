@@ -199,6 +199,7 @@ pw_cc_enum_library(
         "public/pw_rpc2/internal/server_call.h",
         "public/pw_rpc2/internal/server_connection_task.h",
         "public/pw_rpc2/internal/server_task.h",
+        "public/pw_rpc2/internal/service_info.h",
         "public/pw_rpc2/method_type.h",
         "public/pw_rpc2/reader.h",
         "public/pw_rpc2/server.h",
@@ -283,7 +284,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = _CORO_DEPS + [
         ":cpp",
-        ":status",
         ":test_utils",
         "//pw_allocator",
         "//pw_allocator:testing",
@@ -302,7 +302,6 @@ pw_cc_test(
         ":cpp",
         ":pw_rpc2_test_pwpb_rpc2",
         ":pw_rpc2_test_raw_rpc2",
-        ":status",
         ":test_harness",
         ":test_utils",
         "//pw_async2",

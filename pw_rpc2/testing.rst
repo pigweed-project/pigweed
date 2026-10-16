@@ -10,28 +10,31 @@ Unit testing
 for unit testing ``pw_rpc2`` services and clients with minimal boilerplate.
 
 Constructing ``TestHarness<MyService>`` instantiates ``MyService`` (forwarding
-any constructor arguments) and connects a generated service client to it. You
-can use the harness from either side:
+any constructor arguments) and connects a client to it. The harness provides
+both generated service clients, ``pwpb_client()`` and ``raw_client()``,
+regardless of which flavor ``MyService`` implements. You can use the harness
+from either side:
 
-* **Testing a service**: Call RPCs through ``tester.service_client()`` (or
-  ``pwpb_client()`` / ``raw_client()``) and assert on the responses or on
+* **Testing a service**: Call RPCs through ``tester.pwpb_client()`` (or
+  ``tester.raw_client()``) and assert on the responses or on
   ``tester.service()``.
 
   .. code-block:: c++
 
      TestHarness<MyService> tester(arg1, arg2);
-     auto resp = tester.RunToCompletion(tester.service_client().DoSomething(req));
+     auto resp = tester.RunToCompletion(tester.pwpb_client().DoSomething(req));
      PW_TEST_ASSERT_OK(resp);
      EXPECT_EQ(tester.service().call_count(), 1u);
 
-* **Testing client code**: Pass ``tester.service_client()`` or
-  ``tester.client()`` to the client code under test and use a test
-  ``ServiceImpl`` to verify how the client interacts with the service.
+* **Testing client code**: Pass ``tester.pwpb_client()``,
+  ``tester.raw_client()``, or ``tester.client()`` to the client code under test
+  and use a test ``ServiceImpl`` to verify how the client interacts with the
+  service.
 
   .. code-block:: c++
 
      TestHarness<FakeMyService> tester;
-     MyClientComponent component(tester.service_client());
+     MyClientComponent component(tester.pwpb_client());
      PW_TEST_ASSERT_OK(tester.RunToCompletion(component.FetchStatus()));
      EXPECT_TRUE(tester.service().was_queried());
 

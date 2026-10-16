@@ -604,13 +604,13 @@ class CommonOutputTest(unittest.TestCase):
                     ctor = svc.index(ctors[0])
                     self.assertGreater(ctor, svc.index(' protected:'))
                     self.assertLess(ctor, svc.index(' private:'))
-                    self.assertIn(' public:', svc)
+                    self.assertEqual(' public:' in svc, bool(methods))
                     for text in (header, stubs):
                         self.assertNotIn('Dispatcher', text)
                         self.assertNotIn('Allocator', text)
 
-    def test_service_has_client_aliases(self) -> None:
-        """Service declares aliases for each flavor of generated Client."""
+    def test_service_info(self) -> None:
+        """Tests the ServiceInfo specialization and its forward declaration."""
         for methods in ([_method('Get')], []):
             proto_file = _file(services=[_service('Svc', methods)])
             for process, flavor, other in (
@@ -619,58 +619,40 @@ class CommonOutputTest(unittest.TestCase):
             ):
                 header, _ = process(proto_file)
                 with self.subTest(flavor=flavor, methods=len(methods)):
-                    # The other flavor's Client is forward declared ahead of
-                    # this flavor's namespace so the aliases can name it.
-                    other_ns = f'namespace pkg::pw_rpc2::{other}::Svc {{'
-                    own_ns = f'namespace pkg::pw_rpc2::{flavor}::Svc {{'
-                    forward = header.index(other_ns)
-                    self.assertLess(forward, header.index(own_ns))
                     self.assertIn(
-                        'class Client;',
-                        header[forward : header.index(own_ns)],
-                    )
-
-                    svc = header[header.index('class Service ') :]
-                    svc = svc[: svc.index('\n};')]
-                    for alias, alias_flavor in (
-                        ('PwInternal_Client', flavor),
-                        ('PwInternal_RawClient', 'raw'),
-                        ('PwInternal_PwpbClient', 'pwpb'),
-                    ):
-                        decl = (
-                            f'  using {alias} = '
-                            f'::pkg::pw_rpc2::{alias_flavor}::Svc::Client;'
-                        )
-                        self.assertIn(decl, svc)
-                        self.assertGreater(
-                            svc.index(decl), svc.index(' public:')
-                        )
-                        self.assertLess(
-                            svc.index(decl), svc.index(' protected:')
-                        )
-
-    def test_no_aliases(self) -> None:
-        proto_file = _file(services=[_all_kinds()])
-        for process in (_raw, _pwpb):
-            header, stubs = process(proto_file)
-            with self.subTest(process=process):
-                self.assertNotIn('using Reader', header)
-                self.assertNotIn('using Raw', header)
-                self.assertNotIn('Coro', header)
-                self.assertNotIn('Deserialize', header)
-                # Aside from MethodInfo and Service::PwInternal_*Client, only
-                # PwInternal_ClientCopyMethods has aliases.
-                self.assertEqual(
-                    re.findall(
-                        r'^\s*using (?!Request|Response|'
-                        r'PwInternal_\w*Client = |'
-                        r'\w+ = ::pw::rpc2::internal::\w+CopyMethod<)',
+                        f'namespace pkg::pw_rpc2::{other}::Svc {{\n\n'
+                        'class Client;\n\n'
+                        f'}}  // namespace pkg::pw_rpc2::{other}::Svc\n',
                         header,
-                        re.M,
-                    ),
-                    [],
-                )
-                self.assertNotIn('using ::', stubs)
+                    )
+                    self.assertIn(
+                        'template <typename PwInternal_Impl>\n'
+                        'struct ServiceInfo<\n'
+                        f'    ::pkg::pw_rpc2::{flavor}::Svc::Service'
+                        '<PwInternal_Impl>,\n'
+                        '    true> {\n'
+                        '  using RawClient = '
+                        '::pkg::pw_rpc2::raw::Svc::Client;\n'
+                        '  using PwpbClient = '
+                        '::pkg::pw_rpc2::pwpb::Svc::Client;\n'
+                        '};\n',
+                        header,
+                    )
+                    service = header[header.index('class Service ') :]
+                    private = service.index(' private:')
+                    self.assertGreater(
+                        service.index(
+                            '  friend class '
+                            '::pw::rpc2::internal::ServiceInfoAccess;'
+                        ),
+                        private,
+                    )
+                    self.assertGreater(
+                        service.index(
+                            '  using PwInternal_GeneratedService = Service;'
+                        ),
+                        private,
+                    )
 
     def test_tags_are_empty_and_final(self) -> None:
         for process in (_raw, _pwpb):
@@ -741,13 +723,12 @@ class CommonOutputTest(unittest.TestCase):
             'Svc',
             [_method('Bidi', client_streaming=True, server_streaming=True)],
         )
-        for process, flavor in ((_raw, 'raw'), (_pwpb, 'pwpb')):
+        for process in (_raw, _pwpb):
             header, _ = process(_file(services=[streaming]))
-            svc_ns = header[
-                header.index(f'namespace pkg::pw_rpc2::{flavor}::Svc {{') :
-            ]
             with self.subTest(process=process):
-                self.assertNotIn('class Client;', svc_ns)
+                # Only the other flavor's Client is forward declared, for
+                # ServiceInfo.
+                self.assertEqual(header.count('class Client;'), 1)
                 self.assertNotIn('ClientCopyMethods', header)
                 self.assertNotIn('Reserve', header)
                 self.assertIn(

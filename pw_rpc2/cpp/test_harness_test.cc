@@ -31,7 +31,6 @@
 #include "pw_rpc2/pw_rpc2_test.pwpb.rpc2.h"
 #include "pw_rpc2/pw_rpc2_test.raw.rpc2.h"
 #include "pw_rpc2/reader.h"
-#include "pw_rpc2/service_client.h"
 #include "pw_rpc2/status.h"
 #include "pw_rpc2/writer.h"
 #include "pw_unit_test/framework.h"
@@ -225,7 +224,7 @@ TEST(TestHarnessTest, UnaryCoroClient) {
 
   tester.RunToCompletion([&](CoroContext) -> Coro<void> {
     RpcResult<EchoResponse> resp =
-        co_await tester.service_client().EchoUnary(EchoRequest{.val = 21});
+        co_await tester.pwpb_client().EchoUnary(EchoRequest{.val = 21});
     PW_TEST_EXPECT_OK(resp);
     if (resp.ok()) {
       EXPECT_EQ(resp->val, 42u);
@@ -238,7 +237,7 @@ TEST(TestHarnessTest, ServerStreamingCoroClient) {
 
   tester.RunToCompletion([&](CoroContext) -> Coro<void> {
     RpcResult<Reader<EchoResponse>> reader =
-        co_await tester.service_client().CountUpServerStream(
+        co_await tester.pwpb_client().CountUpServerStream(
             EchoRequest{.val = 100});
     PW_TEST_EXPECT_OK(reader);
     if (!reader.ok()) {
@@ -260,7 +259,7 @@ TEST(TestHarnessTest, ClientStreamingCoroClient) {
   TestHarness<EchoFutureService> tester;
 
   tester.RunToCompletion([&](CoroContext) -> Coro<void> {
-    auto call = co_await tester.service_client().AccumulateClientStream();
+    auto call = co_await tester.pwpb_client().AccumulateClientStream();
     PW_TEST_EXPECT_OK(call);
     if (!call.ok()) {
       co_return;
@@ -283,7 +282,7 @@ TEST(TestHarnessTest, BidiStreamingCoroClient) {
   TestHarness<EchoFutureService> tester;
 
   tester.RunToCompletion([&](CoroContext) -> Coro<void> {
-    auto call = co_await tester.service_client().EchoBidiStream();
+    auto call = co_await tester.pwpb_client().EchoBidiStream();
     PW_TEST_EXPECT_OK(call);
     if (!call.ok()) {
       co_return;
@@ -315,7 +314,7 @@ TEST(TestHarnessTest, CoroCallableReturningValue) {
 
   uint32_t result = tester.RunToCompletion([&](CoroContext) -> Coro<uint32_t> {
     RpcResult<EchoResponse> resp =
-        co_await tester.service_client().EchoUnary(EchoRequest{.val = 11});
+        co_await tester.pwpb_client().EchoUnary(EchoRequest{.val = 11});
     PW_TEST_EXPECT_OK(resp);
     co_return resp.ok() ? resp->val : 0u;
   });
@@ -329,7 +328,7 @@ TEST(TestHarnessTest, UnaryDirectFuture) {
   TestHarness<EchoFutureService> tester;
 
   RpcResult<EchoResponse> resp = tester.RunToCompletion(
-      tester.service_client().EchoUnary(EchoRequest{.val = 21}));
+      tester.pwpb_client().EchoUnary(EchoRequest{.val = 21}));
   PW_TEST_ASSERT_OK(resp);
   EXPECT_EQ(resp->val, 42u);
   EXPECT_EQ(tester.service().calls(), 1u);
@@ -340,7 +339,7 @@ TEST(TestHarnessTest, ServerStreamingNonCoro) {
   TestHarness<EchoFutureService> tester;
 
   RpcResult<Reader<EchoResponse>> reader = tester.RunToCompletion(
-      tester.service_client().CountUpServerStream(EchoRequest{.val = 100}));
+      tester.pwpb_client().CountUpServerStream(EchoRequest{.val = 100}));
   PW_TEST_ASSERT_OK(reader);
 
   for (uint32_t expected = 101; expected <= 103; ++expected) {
@@ -379,7 +378,7 @@ class EchoUnaryClientTask : public async2::Task {
 TEST(TestHarnessTest, UnaryTask) {
   TestHarness<EchoFutureService> tester;
 
-  EchoUnaryClientTask task(tester.service_client(), 21);
+  EchoUnaryClientTask task(tester.pwpb_client(), 21);
   tester.RunToCompletion(task);
 
   PW_TEST_ASSERT_OK(task.result());
@@ -535,7 +534,7 @@ class EchoBidiClientTask : public async2::Task {
 TEST(TestHarnessTest, ClientStreamingNonCoro) {
   TestHarness<EchoFutureService> tester;
 
-  AccumulateClientTask task(tester.service_client(), {10, 20, 30});
+  AccumulateClientTask task(tester.pwpb_client(), {10, 20, 30});
   tester.RunToCompletion(task);
 
   PW_TEST_ASSERT_OK(task.result());
@@ -545,7 +544,7 @@ TEST(TestHarnessTest, ClientStreamingNonCoro) {
 TEST(TestHarnessTest, BidiStreamingNonCoro) {
   TestHarness<EchoFutureService> tester;
 
-  EchoBidiClientTask task(tester.service_client(), {5, 15});
+  EchoBidiClientTask task(tester.pwpb_client(), {5, 15});
   tester.RunToCompletion(task);
 
   PW_TEST_ASSERT_OK(task.status());
@@ -559,7 +558,7 @@ TEST(TestHarnessTest, StalledCallResumedWhenStreamFinishes) {
   TestHarness<EchoFutureService> tester;
 
   auto call =
-      tester.RunToCompletion(tester.service_client().AccumulateClientStream());
+      tester.RunToCompletion(tester.pwpb_client().AccumulateClientStream());
   PW_TEST_ASSERT_OK(call);
 
   auto& response_fut = call->response();
@@ -579,8 +578,6 @@ TEST(TestHarnessTest, StalledCallResumedWhenStreamFinishes) {
 
 // The harness exposes both generated client flavors, regardless of which
 // flavor `ServiceImpl` implements.
-static_assert(std::is_same_v<TestHarness<EchoFutureService>::ServiceClient,
-                             PwpbTestEcho::Client>);
 static_assert(std::is_same_v<TestHarness<EchoFutureService>::PwpbClient,
                              PwpbTestEcho::Client>);
 static_assert(std::is_same_v<TestHarness<EchoFutureService>::RawClient,
@@ -614,7 +611,7 @@ TEST(TestHarnessTest, RawClientCallsPwpbService) {
 TEST(TestHarnessTest, AbandonedCallTearsDownCleanly) {
   TestHarness<EchoFutureService> tester;
 
-  auto call = tester.RunToCompletion(tester.service_client().EchoBidiStream());
+  auto call = tester.RunToCompletion(tester.pwpb_client().EchoBidiStream());
   PW_TEST_ASSERT_OK(call);
   PW_TEST_EXPECT_OK(
       tester.RunToCompletion(call->writer().Write(EchoRequest{.val = 5})));
