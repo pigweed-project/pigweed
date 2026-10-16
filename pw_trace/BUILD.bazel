@@ -134,7 +134,6 @@ cc_library(
     name = "pw_trace_sample_app",
     srcs = ["example/sample_app.cc"],
     hdrs = ["example/public/pw_trace/example/sample_app.h"],
-    features = ["-conversion_warnings"],
     includes = ["example/public"],
     # TODO: b/258071921 - fails to link on rp2040 with missing
     # std::this_thread::__sleep_for symbol
@@ -148,7 +147,6 @@ cc_library(
 pw_cc_binary(
     name = "trace_example_basic",
     srcs = ["example/basic.cc"],
-    features = ["-conversion_warnings"],
     # TODO: b/258071921 - fails to link on rp2040 with missing
     # std::this_thread::__sleep_for symbol
     target_compatible_with = incompatible_with_mcu(),

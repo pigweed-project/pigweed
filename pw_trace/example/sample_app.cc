@@ -38,7 +38,7 @@ namespace {
 auto start = system_clock::now();
 uint32_t GetTimeSinceBootMillis() {
   auto delta = system_clock::now() - start;
-  return floor<milliseconds>(delta).count();
+  return static_cast<uint32_t>(floor<milliseconds>(delta).count());
 }
 
 // Creating a very simple runnable with predictable behaviour to help with the
@@ -172,7 +172,7 @@ class InputTask : public SimpleRunnable {
     SAMPLE_APP_SLEEP_MILLIS(100);  // Fake processing time
     return sample_count_ % 4 + 1;
   }
-  size_t sample_count_ = 0;
+  uint32_t sample_count_ = 0;
   uint32_t last_run_time_ = 0;
   static constexpr uint32_t kRunInterval = 1000;
 } input_task;
