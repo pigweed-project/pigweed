@@ -416,6 +416,7 @@ pw_test("framework_test") {
   sources = [ "framework_test.cc" ]
   deps = [
     dir_pw_assert,
+    dir_pw_preprocessor,
     dir_pw_result,
     dir_pw_status,
   ]

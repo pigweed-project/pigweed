@@ -489,6 +489,7 @@ pw_cc_test(
     }),
     deps = [
         "//pw_assert:check",
+        "//pw_preprocessor",
         "//pw_result",
         "//pw_status",
     ],

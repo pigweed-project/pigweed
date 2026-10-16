@@ -17,6 +17,7 @@
 #include <cstring>
 
 #include "pw_assert/check.h"
+#include "pw_preprocessor/compiler.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"
@@ -31,14 +32,18 @@ TEST(PigweedTest, ExpectBool) {
   EXPECT_TRUE(1);
   EXPECT_TRUE(1203492);
   EXPECT_TRUE(-1);
-  EXPECT_TRUE(0.1f);
 
   EXPECT_FALSE(0);
+
+  PW_MODIFY_DIAGNOSTICS_PUSH();
+  PW_MODIFY_DIAGNOSTIC(ignored, "-Wfloat-conversion");
+  EXPECT_TRUE(0.1f);
   EXPECT_FALSE(0.0f);
 
   // Avoid a -Wliteral-conversion converting to bool
   constexpr float negative_zero = -0.0f;
   EXPECT_FALSE(negative_zero);
+  PW_MODIFY_DIAGNOSTICS_POP();
 }
 
 TEST(PigweedTest, ExpectBasicComparisons) {

@@ -46,6 +46,10 @@ src:*/protobuf/google/protobuf/map_field.h
 # TODO: https://pwbug.dev/515084904 - Update googletest so we can remove these.
 src:*/googletest/include/gtest/gtest-printers.h
 
+[float-conversion]
+# TODO: https://pwbug.dev/515084904 - Update googletest so we can remove these.
+src:*/googletest/include/gtest/gtest-assertion-result.h
+
 [implicit-int-conversion]
 # TODO: https://pwbug.dev/515087379 - Update emboss so we can remove these.
 src:*/runtime/cpp/emboss_prelude.h

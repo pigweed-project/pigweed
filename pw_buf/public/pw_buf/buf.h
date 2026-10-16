@@ -343,10 +343,10 @@ class Buf {
 
   constexpr void MoveFrom(Buf&& other) {
     data_ = cpp20::exchange(other.data_, nullptr);
-    size_ = cpp20::exchange(other.size_, 0);
+    size_ = cpp20::exchange(other.size_, 0u);
     deallocator_ = cpp20::exchange(other.deallocator_, nullptr);
-    prefix_ = cpp20::exchange(other.prefix_, 0);
-    suffix_ = cpp20::exchange(other.suffix_, 0);
+    prefix_ = cpp20::exchange(other.prefix_, static_cast<OffsetType>(0));
+    suffix_ = cpp20::exchange(other.suffix_, static_cast<OffsetType>(0));
   }
 
   std::byte* data_;

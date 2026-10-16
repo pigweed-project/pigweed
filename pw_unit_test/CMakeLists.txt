@@ -116,6 +116,7 @@ pw_add_test(pw_unit_test.framework_test
   framework_test.cc
     PRIVATE_DEPS
   pw_assert
+  pw_preprocessor
   pw_status
     GROUPS
   pw_unit_test
