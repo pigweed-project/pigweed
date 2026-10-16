@@ -208,7 +208,7 @@ void CountingUpWriteReadTest() {
 
     size_t j;
     for (j = 0; j < kSingleEntryCycles; j++) {
-      memset(write_buffer, j + seed, sizeof(write_buffer));
+      memset(write_buffer, static_cast<int>(j + seed), sizeof(write_buffer));
 
       ASSERT_EQ(ring.PushBack(write_buffer), OkStatus());
 
@@ -223,7 +223,8 @@ void CountingUpWriteReadTest() {
     for (j = 0; j < kCountingUpMaxExpectedEntries; j++) {
       byte read_buffer[sizeof(write_buffer)];
       size_t read_size;
-      memset(write_buffer, fill_val + j, sizeof(write_buffer));
+      memset(
+          write_buffer, static_cast<int>(fill_val + j), sizeof(write_buffer));
       ASSERT_EQ(ring.PeekFront(read_buffer, &read_size), OkStatus());
 
       ASSERT_EQ(memcmp(write_buffer, read_buffer, kDataSize), 0);
@@ -342,7 +343,9 @@ void DeringTest(bool preload) {
       // Prime the ringbuffer with some junk data to get the buffer
       // wrapped.
       for (i = 0; i < (kTotalEntryCount * (main_loop_count % 64u)); i++) {
-        memset(single_entry_buffer, i, sizeof(single_entry_buffer));
+        memset(single_entry_buffer,
+               static_cast<int>(i),
+               sizeof(single_entry_buffer));
         ASSERT_EQ(OkStatus(), ring.PushBack(single_entry_buffer));
       }
     }
@@ -355,7 +358,9 @@ void DeringTest(bool preload) {
       expected_result.push_back(byte(sizeof(single_entry_buffer)));
 
       // Second component of the entry: the raw data.
-      memset(single_entry_buffer, 'a' + i, sizeof(single_entry_buffer));
+      memset(single_entry_buffer,
+             static_cast<int>('a' + i),
+             sizeof(single_entry_buffer));
       for (byte b : entry_data) {
         expected_result.push_back(b);
       }
@@ -783,7 +788,7 @@ TEST(PrefixedEntryRingBufferMulti, TryPushBack) {
 
   // Fill the buffer again, expect that the fast reader
   // only sees half the entries as the slow reader.
-  size_t max_items = total_items;
+  int max_items = total_items;
   const size_t total_used_bytes_before_pushing = total_used_bytes;
   while (true) {
     Status status = TryPushBack<int>(ring, total_items);
@@ -794,9 +799,10 @@ TEST(PrefixedEntryRingBufferMulti, TryPushBack) {
       break;
     }
   }
-  EXPECT_EQ(slow_reader.EntryCount(), max_items);
+  EXPECT_EQ(slow_reader.EntryCount(), static_cast<size_t>(max_items));
   EXPECT_EQ(slow_reader.EntriesSize(), ring.TotalUsedBytes());
-  EXPECT_EQ(fast_reader.EntryCount(), total_items - max_items);
+  EXPECT_EQ(fast_reader.EntryCount(),
+            static_cast<size_t>(total_items - max_items));
   // Fast reader pops all the entries before the second push.
   EXPECT_EQ(fast_reader.EntriesSize(),
             ring.TotalUsedBytes() - total_used_bytes_before_pushing);
@@ -804,7 +810,7 @@ TEST(PrefixedEntryRingBufferMulti, TryPushBack) {
   for (int i = total_items - max_items; i < total_items; ++i) {
     EXPECT_EQ(PeekFront<int>(slow_reader), i);
     EXPECT_EQ(slow_reader.PopFront(), OkStatus());
-    if (static_cast<size_t>(i) >= max_items) {
+    if (i >= max_items) {
       EXPECT_EQ(PeekFront<int>(fast_reader), i);
       EXPECT_EQ(fast_reader.PopFront(), OkStatus());
     }
@@ -830,7 +836,7 @@ TEST(PrefixedEntryRingBufferMulti, PopBackMultiReader) {
   // Fill up the ring buffer with an increasing count.
   size_t total_items = 0;
   while (true) {
-    Status status = TryPushBack<int>(ring, total_items);
+    Status status = TryPushBack<int>(ring, static_cast<int>(total_items));
     if (status.ok()) {
       total_items++;
     } else {
@@ -886,7 +892,8 @@ TEST(PrefixedEntryRingBufferMulti, PushBack) {
   // Fill up the ring buffer with an increasing count.
   size_t total_items = 0;
   while (true) {
-    Status status = TryPushBack<uint32_t>(ring, total_items);
+    Status status =
+        TryPushBack<uint32_t>(ring, static_cast<uint32_t>(total_items));
     if (status.ok()) {
       total_items++;
     } else {
@@ -1031,7 +1038,9 @@ TEST(PrefixedEntryRingBufferMulti, IteratorValidEntriesWithPreamble) {
 
   // Fill up the ring buffer with a constant value.
   size_t entry_count = 0;
-  while (TryPushBack<size_t>(ring, entry_count, entry_count).ok()) {
+  while (
+      TryPushBack<size_t>(ring, entry_count, static_cast<uint32_t>(entry_count))
+          .ok()) {
     entry_count++;
   }
 

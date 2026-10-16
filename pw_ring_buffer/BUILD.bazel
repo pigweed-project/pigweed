@@ -50,7 +50,6 @@ cc_library(
 pw_cc_test(
     name = "prefixed_entry_ring_buffer_test",
     srcs = ["prefixed_entry_ring_buffer_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":pw_ring_buffer",
         "//pw_assert:check",
