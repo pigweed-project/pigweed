@@ -711,3 +711,96 @@ func TestMatchPathComponentPattern(t *testing.T) {
 		}
 	}
 }
+
+func TestIssue_BodyFileStdin(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+
+	gitRunner := &MockGitRunner{}
+	SetupMockConfig(t, gitRunner)
+	SetTestProfile(t, "pigweed")
+
+	// 1. issue create --body-file - reads description from stdin
+	createBody := "Multi-line issue body from stdin\nwith `backticks` and \"quotes\"."
+	outCreate, err := executeCommandWithStdin(
+		RootCmd,
+		strings.NewReader(createBody),
+		"issue", "create", "-t", "pw_ghish: Stdin body test", "--body-file", "-",
+	)
+	if err != nil {
+		t.Fatalf("issue create --body-file - failed: %v\nOutput: %s", err, outCreate)
+	}
+	created, err := srv.Client().GetIssue(context.Background(), 300001)
+	if err != nil {
+		t.Fatalf("failed to fetch created issue 300001: %v", err)
+	}
+	if eff := created.EffectiveDescription(); eff == nil || eff.Comment != createBody {
+		t.Errorf("created issue description = %+v, want %q", eff, createBody)
+	}
+
+	// 2. issue comment -F - reads comment from stdin
+	commentBody := "Follow-up investigation notes from stdin\nLine 2."
+	outComment, err := executeCommandWithStdin(
+		RootCmd,
+		strings.NewReader(commentBody),
+		"issue", "comment", "300001", "-F", "-",
+	)
+	if err != nil {
+		t.Fatalf("issue comment -F - failed: %v\nOutput: %s", err, outComment)
+	}
+	comments, err := srv.Client().ListComments(context.Background(), 300001, 10, "")
+	if err != nil {
+		t.Fatalf("ListComments failed: %v", err)
+	}
+	if len(comments.IssueComments) != 2 || comments.IssueComments[1].Comment != commentBody {
+		t.Errorf("unexpected comments after issue comment -F -: %+v", comments.IssueComments)
+	}
+
+	// 3. issue comment -F - with empty stdin fails
+	_, errEmpty := executeCommandWithStdin(
+		RootCmd,
+		strings.NewReader("  \n"),
+		"issue", "comment", "300001", "-F", "-",
+	)
+	if errEmpty == nil || !strings.Contains(errEmpty.Error(), "comment body cannot be empty") {
+		t.Errorf("expected empty comment body error, got: %v", errEmpty)
+	}
+
+	// 4. Specifying both --body and --body-file fails
+	_, errBoth := executeCommandWithStdin(
+		RootCmd,
+		strings.NewReader("stdin"),
+		"issue", "comment", "300001", "-b", "inline", "-F", "-",
+	)
+	if errBoth == nil || !strings.Contains(errBoth.Error(), "cannot specify both --body (-b) and --body-file (-F)") {
+		t.Errorf("expected conflicting --body and --body-file error, got: %v", errBoth)
+	}
+
+	// 5. issue create --body - also reads from stdin instead of literal "-"
+	dashBody := "Issue body passed via --body - heredoc."
+	outDash, err := executeCommandWithStdin(
+		RootCmd,
+		strings.NewReader(dashBody),
+		"issue", "create", "-t", "pw_ghish: Dash body alias test", "--body", "-",
+	)
+	if err != nil {
+		t.Fatalf("issue create --body - failed: %v\nOutput: %s", err, outDash)
+	}
+	createdDash, err := srv.Client().GetIssue(context.Background(), 300002)
+	if err != nil {
+		t.Fatalf("failed to fetch created issue 300002: %v", err)
+	}
+	if eff := createdDash.EffectiveDescription(); eff == nil || eff.Comment != dashBody {
+		t.Errorf("created issue description for --body - = %+v, want %q", eff, dashBody)
+	}
+
+	// 6. issue create --body - with empty stdin fails instead of creating empty/dash issue
+	_, errCreateEmpty := executeCommandWithStdin(
+		RootCmd,
+		strings.NewReader("  \n"),
+		"issue", "create", "-t", "pw_ghish: Empty stdin test", "--body", "-",
+	)
+	if errCreateEmpty == nil || !strings.Contains(errCreateEmpty.Error(), "body from stdin is empty") {
+		t.Errorf("expected empty stdin error on issue create --body -, got: %v", errCreateEmpty)
+	}
+}

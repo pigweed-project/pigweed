@@ -66,9 +66,12 @@ gh-ish pr review 12345 --request-changes -m "Please fix the typo"
 gh-ish pr review 12345 --comment -m "Just a question"`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			msg, err := resolveCommentMessage(opts.message, opts.body, opts.bodyFile, false)
+			msg, err := resolveCommentMessage(opts.message, opts.body, opts.bodyFile, cmd.InOrStdin(), false)
 			if err != nil {
 				return err
+			}
+			if strings.TrimSpace(msg) == "" {
+				msg = ""
 			}
 
 			count := 0
@@ -172,7 +175,7 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 
 	cmd.Flags().StringVarP(&opts.message, "message", "m", "", "Review message")
 	cmd.Flags().StringVarP(&opts.body, "body", "b", "", "Review message (alias for --message)")
-	cmd.Flags().StringVarP(&opts.bodyFile, "body-file", "F", "", "Read review message from file")
+	cmd.Flags().StringVarP(&opts.bodyFile, "body-file", "F", "", "Read review message from file (use \"-\" to read from standard input)")
 	cmd.Flags().BoolVarP(&opts.approve, "approve", "a", false, "Approve change (Code-Review+2)")
 	cmd.Flags().BoolVarP(&opts.requestChanges, "request-changes", "r", false, "Request changes (Code-Review-1)")
 	cmd.Flags().BoolVarP(&opts.comment, "comment", "c", false, "Comment on change without voting")

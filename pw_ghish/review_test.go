@@ -388,3 +388,41 @@ func TestReviewCmd_Trigger(t *testing.T) {
 		t.Errorf("got Presubmit-Ready = %d, want 1 (labels: %v)", capturedInput.Labels["Presubmit-Ready"], capturedInput.Labels)
 	}
 }
+
+func TestReviewCmd_BodyFileStdin(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+
+	t.Run("reads review message from stdin via -F -", func(t *testing.T) {
+		reviewBody := "Detailed review summary:\n- Checked stack usage\n- Verified BUILD.gn parity"
+		cmd := newReviewCmd()
+		cmd.SetContext(context.Background())
+		cmd.SetIn(strings.NewReader(reviewBody))
+		cmd.SetArgs([]string{"123", "--approve", "-F", "-"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("cmd.Execute failed: %v", err)
+		}
+
+		var capturedInput gerrit.ReviewInput
+		if req := server.LastRequest(); req != nil {
+			json.Unmarshal(req.Body, &capturedInput)
+		}
+		if capturedInput.Message != reviewBody {
+			t.Errorf("got Message = %q, want %q", capturedInput.Message, reviewBody)
+		}
+		if capturedInput.Labels["Code-Review"] != 2 {
+			t.Errorf("got Code-Review = %d, want 2", capturedInput.Labels["Code-Review"])
+		}
+	})
+
+	t.Run("--comment with empty stdin fails with clear error", func(t *testing.T) {
+		cmd := newReviewCmd()
+		cmd.SetContext(context.Background())
+		cmd.SetIn(strings.NewReader("  \n"))
+		cmd.SetArgs([]string{"123", "--comment", "--body-file", "-"})
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "--comment requires a message") {
+			t.Fatalf("expected '--comment requires a message' error for empty stdin, got: %v", err)
+		}
+	})
+}

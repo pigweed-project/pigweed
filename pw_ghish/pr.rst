@@ -357,7 +357,8 @@ Reviewing, commenting, and landing
 Reviewing changes: ``pr review``
 ================================
 Submits review scores, Commit-Queue votes, or staged draft comments on a Gerrit
-CL:
+CL (pass ``-m, --message``, ``-b, --body``, or ``-F, --body-file <file|->`` to
+attach a review message from a file or ``stdin``):
 
 .. code-block:: console
 
@@ -378,8 +379,9 @@ CL:
 
 Posting inline comments: ``pr comment``
 =======================================
-Posts change-level, file-level, or inline review comments (via ``-m, --message``
-or ``-b, --body``). When ``--path`` (and optionally ``--line``) is provided,
+Posts change-level, file-level, or inline review comments (via ``-m, --message``,
+``-b, --body``, or ``-F, --body-file <file|->``; pass ``-`` to read from
+standard input). When ``--path`` (and optionally ``--line``) is provided,
 ``pw_ghish`` checks for an existing thread at that target across patchsets and
 appends your comment as a reply while keeping any unrelated drafts private
 (``Drafts: KEEP``):
@@ -393,6 +395,11 @@ appends your comment as a reply while keeping any unrelated drafts private
    # Save or update an inline comment as a private draft without publishing:
    $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 \
        -m "Consider std::string_view" --draft
+
+   # Pipe a multi-line comment from stdin via a heredoc (avoids shell escaping):
+   $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 --body-file - --draft <<'EOF'
+   Consider using `pw::InlineString` here instead of a raw `char[]` buffer.
+   EOF
 
    # Delete an unpublished draft comment on a file and line:
    $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 --delete-draft

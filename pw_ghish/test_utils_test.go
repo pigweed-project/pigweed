@@ -82,6 +82,11 @@ func init() {
 
 // executeCommand runs a cobra command and captures stdout.
 func executeCommand(root *cobra.Command, args ...string) (string, error) {
+	return executeCommandWithStdin(root, nil, args...)
+}
+
+// executeCommandWithStdin runs a cobra command with the provided stdin reader and captures stdout.
+func executeCommandWithStdin(root *cobra.Command, stdin io.Reader, args ...string) (string, error) {
 	setupRootAliases()
 	resetAllFlags(root)
 	if MockCWD != "" {
@@ -119,8 +124,10 @@ func executeCommand(root *cobra.Command, args ...string) (string, error) {
 	defer func() {
 		NewGerritClient = oldNewGerritClient
 		HostFlag = savedHostFlag
+		root.SetIn(nil)
 	}()
 
+	root.SetIn(stdin)
 	root.SetOut(w)
 	root.SetErr(w)
 	root.SetArgs(NormalizeCQArgs(args))

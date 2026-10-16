@@ -730,3 +730,97 @@ func TestComment_WarnWhenNoThreadFoundWithResolved(t *testing.T) {
 		t.Errorf("Expected suggestion to run 'gh pr view --comments', got: %q", out)
 	}
 }
+
+func TestCommentCmd_BodyFileStdin(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{})
+	server.OnJSON("GET", "/changes/123/drafts", http.StatusOK, map[string]any{})
+	server.OnJSON("PUT", "/changes/123/revisions/current/drafts", http.StatusCreated, map[string]any{
+		"id":        "draft_stdin",
+		"patch_set": 3,
+	})
+	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+
+	t.Run("inline draft comment from stdin via --body-file -", func(t *testing.T) {
+		heredocBody := "Multi-line comment with \"quotes\", `backticks`, and $vars\nSecond line."
+		out, err := executeCommandWithStdin(
+			RootCmd,
+			strings.NewReader(heredocBody),
+			"pr", "comment", "123", "--path", "foo.cc", "--line", "42", "--body-file", "-", "--draft",
+		)
+		if err != nil {
+			t.Fatalf("pr comment --body-file - failed: %v\nOutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Draft comment saved successfully on foo.cc:42 [PS3] (new thread, unresolved).") {
+			t.Errorf("Unexpected output: %q", out)
+		}
+		req := server.LastRequest()
+		if req == nil || req.Path != "/changes/123/revisions/current/drafts" {
+			t.Fatalf("Expected PUT /changes/123/revisions/current/drafts, got %+v", req)
+		}
+		var draftInput gerrit.CommentInput
+		if err := json.Unmarshal(req.Body, &draftInput); err != nil {
+			t.Fatalf("Failed to unmarshal draft input: %v", err)
+		}
+		if draftInput.Message != heredocBody {
+			t.Errorf("draftInput.Message = %q, want %q", draftInput.Message, heredocBody)
+		}
+	})
+
+	t.Run("change-level comment from stdin via -F -", func(t *testing.T) {
+		stdinBody := "Change-level note from stdin\n"
+		out, err := executeCommandWithStdin(
+			RootCmd,
+			strings.NewReader(stdinBody),
+			"pr", "comment", "123", "-F", "-",
+		)
+		if err != nil {
+			t.Fatalf("pr comment -F - failed: %v\nOutput: %s", err, out)
+		}
+		req := server.LastRequest()
+		if req == nil || req.Path != "/changes/123/revisions/current/review" {
+			t.Fatalf("Expected POST /changes/123/revisions/current/review, got %+v", req)
+		}
+		var reviewInput gerrit.ReviewInput
+		if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
+			t.Fatalf("Failed to unmarshal review input: %v", err)
+		}
+		if reviewInput.Message != stdinBody {
+			t.Errorf("reviewInput.Message = %q, want %q", reviewInput.Message, stdinBody)
+		}
+	})
+
+	t.Run("empty stdin returns clear error", func(t *testing.T) {
+		_, err := executeCommandWithStdin(
+			RootCmd,
+			strings.NewReader("   \n\t "),
+			"pr", "comment", "123", "--body-file", "-",
+		)
+		if err == nil {
+			t.Fatal("Expected error when stdin is empty/whitespace, got nil")
+		}
+		if !strings.Contains(err.Error(), "body from stdin is empty; comment message cannot be empty") {
+			t.Errorf("Unexpected error for empty stdin: %v", err)
+		}
+	})
+
+	t.Run("-m - and -b - also read from stdin instead of literal dash", func(t *testing.T) {
+		stdinBody := "Comment body via -m - alias."
+		out, err := executeCommandWithStdin(
+			RootCmd,
+			strings.NewReader(stdinBody),
+			"pr", "comment", "123", "-m", "-",
+		)
+		if err != nil {
+			t.Fatalf("pr comment -m - failed: %v\nOutput: %s", err, out)
+		}
+		req := server.LastRequest()
+		var reviewInput gerrit.ReviewInput
+		if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
+			t.Fatalf("Failed to unmarshal review input: %v", err)
+		}
+		if reviewInput.Message != stdinBody {
+			t.Errorf("reviewInput.Message = %q, want %q", reviewInput.Message, stdinBody)
+		}
+	})
+}

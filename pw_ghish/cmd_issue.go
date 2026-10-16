@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -310,8 +311,29 @@ func resolveUserEmailArg(ctx context.Context, cfg *Config, arg string) (string, 
 	return trimmed, nil
 }
 
-func readBodyInput(bodyFlag, bodyFileFlag string) (string, error) {
+func readBodyInput(bodyFlag, bodyFileFlag string, stdin io.Reader) (string, error) {
+	if bodyFlag != "" && bodyFileFlag != "" {
+		return "", fmt.Errorf("cannot specify both --body (-b) and --body-file (-F)")
+	}
+	if bodyFlag == "-" && bodyFileFlag == "" {
+		bodyFileFlag = "-"
+		bodyFlag = ""
+	}
 	if bodyFileFlag != "" {
+		if bodyFileFlag == "-" {
+			in := stdin
+			if in == nil {
+				in = os.Stdin
+			}
+			data, err := io.ReadAll(in)
+			if err != nil {
+				return "", fmt.Errorf("failed to read body from stdin: %w", err)
+			}
+			if strings.TrimSpace(string(data)) == "" {
+				return "", fmt.Errorf("body from stdin is empty; comment body cannot be empty")
+			}
+			return string(data), nil
+		}
 		data, err := os.ReadFile(bodyFileFlag)
 		if err != nil {
 			return "", fmt.Errorf("failed to read body file %q: %w", bodyFileFlag, err)
@@ -694,7 +716,7 @@ var issueCreateCmd = &cobra.Command{
 				"  gh issue create -t \"pw_rpc: Fix channel deadlock\" -b \"Description...\" [-P P1] [--amend]")
 		}
 
-		body, err := readBodyInput(issueCreateBody, issueCreateBodyFile)
+		body, err := readBodyInput(issueCreateBody, issueCreateBodyFile, cmd.InOrStdin())
 		if err != nil {
 			return err
 		}
@@ -1039,7 +1061,7 @@ var issueCommentCmd = &cobra.Command{
 			return err
 		}
 
-		body, err := readBodyInput(issueCommentBody, issueCommentBodyFile)
+		body, err := readBodyInput(issueCommentBody, issueCommentBodyFile, cmd.InOrStdin())
 		if err != nil {
 			return err
 		}
@@ -1173,7 +1195,7 @@ func init() {
 
 	issueCreateCmd.Flags().StringVarP(&issueCreateTitle, "title", "t", "", "Issue title (required)")
 	issueCreateCmd.Flags().StringVarP(&issueCreateBody, "body", "b", "", "Issue description body")
-	issueCreateCmd.Flags().StringVarP(&issueCreateBodyFile, "body-file", "F", "", "Read description body from file")
+	issueCreateCmd.Flags().StringVarP(&issueCreateBodyFile, "body-file", "F", "", "Read description body from file (use \"-\" to read from standard input)")
 	issueCreateCmd.Flags().StringVarP(&issueCreateAssignee, "assignee", "a", "", "Assign issue to email (or 'me')")
 	issueCreateCmd.Flags().StringSliceVarP(&issueCreateLabels, "label", "l", nil, "Add structured labels (e.g. P1, bug, feature)")
 	issueCreateCmd.Flags().StringVarP(&issueCreatePriority, "priority", "P", "", "Buganizer priority (P0..P4)")
@@ -1198,7 +1220,7 @@ func init() {
 	issueReopenCmd.Flags().StringVarP(&issueReopenComment, "comment", "c", "", "Post a reopening comment")
 
 	issueCommentCmd.Flags().StringVarP(&issueCommentBody, "body", "b", "", "Comment text")
-	issueCommentCmd.Flags().StringVarP(&issueCommentBodyFile, "body-file", "F", "", "Read comment text from file")
+	issueCommentCmd.Flags().StringVarP(&issueCommentBodyFile, "body-file", "F", "", "Read comment text from file (use \"-\" to read from standard input)")
 
 	issueDevelopCmd.Flags().StringVarP(&issueDevelopBase, "base", "b", "", "Base branch to branch from")
 	issueDevelopCmd.Flags().StringVarP(&issueDevelopName, "name", "n", "", "Custom branch name")

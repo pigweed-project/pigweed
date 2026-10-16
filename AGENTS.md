@@ -193,8 +193,8 @@ disabled).
   - Edit CL metadata (CQ, reviewers, topic, hashtags):
     `./gh pr edit [<id>] [--cq] [--add-reviewer <email>] [--topic <name>]`
 - **Respond to or post review comments**:
-  - Reply to inline thread & mark resolved (use `--draft` to stage privately):
-    `./gh pr comment [<id>] --path <file> --line <line> -m "<msg>" --resolved [--draft]`
+  - Reply to inline thread & mark resolved (use `--draft` to stage privately, or `-F -` to read multi-line body from `stdin`):
+    `./gh pr comment [<id>] --path <file> --line <line> (-m "<msg>" | -F <file|->) --resolved [--draft]`
 - **Inspect & rerun LUCI CI / Buildbucket checks**:
   - Check or watch status: `./gh pr checks [<id>] [--watch --fail-fast]`
   - View failure logs in terminal: `./gh run view [<id>] --log-failed`
@@ -203,7 +203,7 @@ disabled).
 - **Buganizer issues (`./gh issue`)**:
   - Inspect or list issues: `./gh issue view [<id>] --comments`, `./gh issue list`
   - File bug & add `Bug: b/<id>` trailer to `HEAD`:
-    `./gh issue create -t "<title>" -b "<body>" --amend`
+    `./gh issue create -t "<title>" (-b "<body>" | -F <file|->) --amend`
 - **Warm Git/Bazel worktrees (`./gh wt`)**:
   - Allocate or switch project slot: `./gh wt use <project> --json`
   - View active & parked workstreams: `./gh wt list`

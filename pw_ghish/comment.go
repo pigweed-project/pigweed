@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"slices"
@@ -39,8 +40,9 @@ var (
 )
 
 // resolveCommentMessage validates and resolves --message (-m), --body (-b), and
-// --body-file (-F) without mutating flag variables.
-func resolveCommentMessage(message, body, bodyFile string, required bool) (string, error) {
+// --body-file (-F) without mutating flag variables. Passing "-" for bodyFile
+// reads from stdin.
+func resolveCommentMessage(message, body, bodyFile string, stdin io.Reader, required bool) (string, error) {
 	if message != "" && body != "" {
 		return "", fmt.Errorf("cannot specify both --message (-m) and --body (-b)")
 	}
@@ -51,13 +53,35 @@ func resolveCommentMessage(message, body, bodyFile string, required bool) (strin
 	if resolved != "" && bodyFile != "" {
 		return "", fmt.Errorf("cannot specify both --message/--body and --body-file (-F)")
 	}
+	if resolved == "-" && bodyFile == "" {
+		bodyFile = "-"
+		resolved = ""
+	}
 	if bodyFile != "" {
-		content, err := os.ReadFile(bodyFile)
-		if err != nil {
-			return "", fmt.Errorf("failed to read body file %q: %w", bodyFile, err)
+		var (
+			content []byte
+			err     error
+		)
+		if bodyFile == "-" {
+			in := stdin
+			if in == nil {
+				in = os.Stdin
+			}
+			content, err = io.ReadAll(in)
+			if err != nil {
+				return "", fmt.Errorf("failed to read body from stdin: %w", err)
+			}
+		} else {
+			content, err = os.ReadFile(bodyFile)
+			if err != nil {
+				return "", fmt.Errorf("failed to read body file %q: %w", bodyFile, err)
+			}
 		}
 		resolved = string(content)
 		if required && strings.TrimSpace(resolved) == "" {
+			if bodyFile == "-" {
+				return "", fmt.Errorf("body from stdin is empty; comment message cannot be empty")
+			}
 			return "", fmt.Errorf("body file %q is empty; comment message cannot be empty", bodyFile)
 		}
 	}
@@ -95,7 +119,7 @@ var commentCmd = &cobra.Command{
 				return fmt.Errorf("--resolved requires --path (and --line for inline comments) to identify the comment thread to resolve")
 			}
 			var err error
-			message, err = resolveCommentMessage(commentMessage, commentBody, commentBodyFile, true)
+			message, err = resolveCommentMessage(commentMessage, commentBody, commentBodyFile, cmd.InOrStdin(), true)
 			if err != nil {
 				return err
 			}
@@ -449,7 +473,7 @@ func init() {
 	commentCmd.Flags().StringVarP(&commentBody, "body", "b", "", "Comment body (alias for --message)")
 	commentCmd.Flags().StringVar(&commentFile, "path", "", "File path for inline comment (ghish-only)")
 	commentCmd.Flags().IntVarP(&commentLine, "line", "l", 0, "Line number for inline comment (ghish-only)")
-	commentCmd.Flags().StringVarP(&commentBodyFile, "body-file", "F", "", "File containing comment body")
+	commentCmd.Flags().StringVarP(&commentBodyFile, "body-file", "F", "", "Read comment body from file (use \"-\" to read from standard input)")
 	commentCmd.Flags().BoolVar(&commentResolved, "resolved", false, "Mark the comment thread as resolved (ghish-only)")
 	commentCmd.Flags().StringVar(&commentPatchset, "patchset", "current", "Patchset number or 'current' (ghish-only)")
 	commentCmd.Flags().BoolVar(&commentDraft, "draft", false, "Save or update comment as an unpublished draft (ghish-only)")

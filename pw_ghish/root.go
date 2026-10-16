@@ -279,9 +279,9 @@ CORE COMMAND CHEAT-SHEET
      $ %[1]s pr review <change_id> --approve -m "Looks good!"
      $ %[1]s pr review <change_id> --request-changes -m "Please address feedback."
    - Post inline comments (and reply to threads):
-     $ %[1]s pr comment <change_id> --path <file_path> --line <line_number> -m "Comment message" [--resolved] [--draft]
-   - Post change-level comment from a file:
-     $ %[1]s pr comment <change_id> -F <body_file_path> [--draft]
+     $ %[1]s pr comment <change_id> --path <file_path> --line <line_number> (-m "Comment message" | -F <file|->) [--resolved] [--draft]
+   - Post change-level comment from a file or stdin:
+     $ %[1]s pr comment <change_id> -F <body_file_path|-> [--draft]
 
 6. BUGANIZER ISSUES
    - View issue details (auto-detects Bug:/Fixed: trailer from HEAD if ID omitted):
@@ -289,10 +289,10 @@ CORE COMMAND CHEAT-SHEET
    - List open issues in project component:
      $ %[1]s issue list [--assignee <email|me>] [--state open|closed|all] [-l P1] [-S "query"]
    - Create an issue (and optionally link to current commit via --amend):
-     $ %[1]s issue create -t "Title" -b "Body" [-P P1] [--amend]
+     $ %[1]s issue create -t "Title" (-b "Body" | -F <file|->) [-P P1] [--amend]
    - Close, reopen, comment, or edit issues:
      $ %[1]s issue close [<number> | <url>] [-r completed|"not planned"] [--duplicate-of <id>] [-c "Comment"]
-     $ %[1]s issue comment [<number> | <url>] -b "Comment text"
+     $ %[1]s issue comment [<number> | <url>] (-b "Comment text" | -F <file|->)
 
 7. WORKTREES & MULTI-AGENT SLOTS
    - Inspect/configure warm worktree pool, hooks, and shared Bazel caches:

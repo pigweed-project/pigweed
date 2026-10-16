@@ -123,10 +123,11 @@ Commands:
     3. `git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP" && ./gh pr push`
 
 ### 3. Review & Comment
-- **`./gh pr comment [<id>] --path <file> [--line <line>] -m <msg>`** (or `-b <msg>`):
+- **`./gh pr comment [<id>] --path <file> [--line <line>] (-m <msg> | -F <file|->)`** (or `-b <msg>`):
   Post a file-level or inline comment (auto-threads onto any existing thread at
   `<file>` or `<file>:<line>` across patchsets, keeping unrelated drafts private
-  via `Drafts: KEEP`).
+  via `Drafts: KEEP`). Pass `--body-file -` (`-F -`) with a heredoc (`<<'EOF'`)
+  for multi-line comments containing quotes, backticks, or code blocks.
   - `--resolved`: Mark thread as resolved (requires `--path`, and `--line` for
     inline threads).
   - `--draft`: Create or update an unpublished draft comment visible only to you.
@@ -136,9 +137,9 @@ Commands:
     `--patchset <N>` or `<id>/<N>`.
   - `--delete-draft`: Delete an unpublished draft comment at `--path <file>
     [--line <line>]` (or omit `--path` for a change-level draft).
-- **`./gh pr comment [<id>] -m <msg> [--draft]`**: Post or stage a change-level
-  comment (`-F <file>` reads from file).
-- **`./gh pr review [<id>] [--approve | --request-changes] [--trigger [1|2] | --cq [1|2]] [--publish] [-m <msg>]`**:
+- **`./gh pr comment [<id>] (-m <msg> | -F <file|->) [--draft]`**: Post or stage a
+  change-level comment (`-F <file>` reads from file; `-F -` reads from `stdin`).
+- **`./gh pr review [<id>] [--approve | --request-changes] [--trigger [1|2] | --cq [1|2]] [--publish] [-m <msg> | -F <file|->]`**:
   Submit review (`--approve` dynamically votes the change's maximum allowed
   `Code-Review` score, e.g. `+2` or `+1`; `--request-changes` votes
   `Code-Review-1`; `--publish` batch-publishes all staged draft comments across
@@ -202,13 +203,13 @@ Commands:
   (resolves `Bug:`/`Fixed:`/`Fixes:`/`Closes:` trailer from `HEAD` if `<id>` is omitted).
 - **`./gh issue develop <id> [--checkout | -w|--worktree]`**: Create feature
   branch or allocate an isolated warm worktree slot (`./gh wt use --issue <id>`).
-- **`./gh issue create -t "<title>" -b "<body>" [-C <component-id>] [--amend | --commit]`**:
+- **`./gh issue create -t "<title>" (-b "<body>" | -F <file|->) [-C <component-id>] [--amend | --commit]`**:
   Create a Buganizer issue (`--amend` appends `Bug: b/<new-id>` or configured
   `issue.trailer_format` to `HEAD` using `git commit --amend --only`). Resolves
   component ID via `-C`/`-l component:<id>` -> `[issue.path_components]` ->
   nearest `OWNERS` (`# COMPONENT:` / `# Buganizer component:`) ->
   `issue.default_component` -> `ghish.componentid` -> profile default.
-- **`./gh issue comment [<id>] -m "<text>"`**, **`./gh issue edit [<id>]`**,
+- **`./gh issue comment [<id>] (-b "<text>" | -F <file|->)`**, **`./gh issue edit [<id>]`**,
   **`./gh issue close [<id>]`**, **`./gh issue reopen [<id>]`**.
 
 ### 7. Where `gh` Habits Break
@@ -236,8 +237,8 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 1. **Fetch & review comments and drafts**: `./gh pr view <id> --comments` (or `./gh pr status`)
 2. **Apply fixes & verify locally**: `./pw presubmit --mode auto --base origin/main`
 3. **Upload updated patchset**: `git commit -a --amend --no-edit && ./gh pr push`
-4. **Reply & resolve threads** (add `--draft` to stage privately for human review, or `--delete-draft` to remove a private steering draft):
-   `./gh pr comment <id> --path <file> --line <line> -m "Fixed." --resolved [--draft]`
+4. **Reply & resolve threads** (add `--draft` to stage privately for human review, `-F -` to read multi-line body from `stdin`, or `--delete-draft` to remove a private steering draft):
+   `./gh pr comment <id> --path <file> --line <line> (-m "Fixed." | -F <file|->) --resolved [--draft]`
 5. **Publish staged drafts (when ready)**: `./gh pr review <id> --publish` (or `./gh pr push --publish`)
 
 ### Workflow 2: CI Triage & Targeted Retry
