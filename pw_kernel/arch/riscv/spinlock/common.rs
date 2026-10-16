@@ -60,6 +60,8 @@ use core::arch::asm;
 use core::marker::PhantomData;
 use core::sync::atomic::{Ordering, compiler_fence};
 
+use kernel::sync::spinlock::InterruptsOnDrop;
+
 use super::BareSpinLock;
 
 /// `mstatus.MIE` (bit 3).
@@ -91,6 +93,34 @@ impl InterruptGuard {
         }
         // Synchronizes `Relaxed` atomics with ISRs on this hart.
         compiler_fence(Ordering::SeqCst);
+        Self {
+            saved_mstatus,
+            _not_send: PhantomData,
+        }
+    }
+
+    /// Reconstructs an [`InterruptGuard`] when interrupts are already disabled.
+    ///
+    /// # Safety
+    /// Interrupts must already be disabled (`mstatus.MIE == 0`).
+    #[inline]
+    pub(super) unsafe fn adopt_locked(interrupts_on_drop: InterruptsOnDrop) -> Self {
+        pw_assert::debug_assert!({
+            let current_mstatus: usize;
+            // SAFETY: Reading `mstatus` is a side-effect-free CSR read in M-mode.
+            unsafe {
+                asm!(
+                    "csrr {}, mstatus",
+                    out(reg) current_mstatus,
+                    options(nomem, nostack, preserves_flags),
+                );
+            }
+            (current_mstatus & MSTATUS_MIE) == 0
+        });
+        let saved_mstatus = match interrupts_on_drop {
+            InterruptsOnDrop::Restore => MSTATUS_MIE,
+            InterruptsOnDrop::KeepDisabled => 0,
+        };
         Self {
             saved_mstatus,
             _not_send: PhantomData,

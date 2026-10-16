@@ -22,7 +22,7 @@ mod tests {
     use arch_arm_cortex_m::Arch;
     #[cfg(feature = "arch_riscv")]
     use arch_riscv::Arch;
-    use kernel::sync::spinlock::{BareSpinLock, SpinLock};
+    use kernel::sync::spinlock::{BareSpinLock, InterruptsOnDrop, SpinLock};
     use unittest::test;
 
     type ConcreteBareSpinLock = <Arch as kernel::Arch>::BareSpinLock;
@@ -53,6 +53,57 @@ mod tests {
 
         let guard = lock.lock(Arch);
         unittest::assert_true!(*guard);
+
+        Ok(())
+    }
+
+    #[test]
+    fn adopt_locked_adopts_and_releases_lock() -> unittest::Result<()> {
+        use kernel::interrupt_controller::InterruptController as _;
+
+        let interrupts_were_enabled =
+            <Arch as kernel::Arch>::InterruptController::interrupts_enabled();
+        let lock = SpinLock::<Arch, _>::new(false);
+
+        // 1. Adopt with `InterruptsOnDrop::KeepDisabled`: dropping the guard
+        // unlocks `lock` and decrements `preempt_disable_count`, but keeps
+        // interrupts disabled.
+        core::mem::forget(lock.lock(Arch));
+        let try_lock_while_held = lock.try_lock(Arch).is_none();
+        {
+            // SAFETY: `lock` is held via the forgotten guard above, and
+            // interrupts and preemption are disabled.
+            let mut guard = unsafe { lock.adopt_locked(Arch, InterruptsOnDrop::KeepDisabled) };
+            *guard = true;
+        }
+        let interrupts_after_drop_false =
+            <Arch as kernel::Arch>::InterruptController::interrupts_enabled();
+
+        // 2. Re-lock while interrupts are disabled, then adopt and restore the
+        // initial interrupt state on drop.
+        core::mem::forget(lock.lock(Arch));
+        let value_in_second_adopt = {
+            let interrupts_on_drop = if interrupts_were_enabled {
+                InterruptsOnDrop::Restore
+            } else {
+                InterruptsOnDrop::KeepDisabled
+            };
+            // SAFETY: `lock` is held via the forgotten guard above, and
+            // interrupts and preemption are disabled.
+            let guard = unsafe { lock.adopt_locked(Arch, interrupts_on_drop) };
+            *guard
+        };
+
+        unittest::assert_true!(try_lock_while_held);
+        unittest::assert_false!(interrupts_after_drop_false);
+        unittest::assert_true!(value_in_second_adopt);
+        unittest::assert_eq!(
+            <Arch as kernel::Arch>::InterruptController::interrupts_enabled(),
+            interrupts_were_enabled
+        );
+        let guard = lock.try_lock(Arch);
+        unittest::assert_true!(guard.is_some());
+        unittest::assert_true!(*guard.unwrap());
 
         Ok(())
     }

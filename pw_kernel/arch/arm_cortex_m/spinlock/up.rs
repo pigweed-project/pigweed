@@ -14,7 +14,7 @@
 
 use core::cell::UnsafeCell;
 
-use kernel::sync::spinlock::BareSpinLock as BareSpinLockTrait;
+use kernel::sync::spinlock::{BareSpinLock as BareSpinLockTrait, InterruptsOnDrop};
 
 use super::common::{CortexMSpinLockGuard, InterruptGuard};
 
@@ -89,14 +89,20 @@ impl BareSpinLockTrait for BareSpinLock {
         CortexMSpinLockGuard::new(guard, self)
     }
 
-    /// Unconditionally break the lock.
+    /// Reconstructs a guard for a lock that is already held by the current core.
     ///
     /// Do not call directly.
     ///
     /// # Safety
-    /// See [`kernel::sync::spinlock::SpinLock::break_lock()`] for use and
+    /// See [`kernel::sync::spinlock::SpinLock::adopt_locked()`] for use and
     /// safety information.
-    unsafe fn break_lock(&self) {
-        unsafe { self.unlock() };
+    #[inline]
+    unsafe fn adopt_locked(&self, interrupts_on_drop: InterruptsOnDrop) -> Self::Guard<'_> {
+        // SAFETY: Caller guarantees interrupts are disabled.
+        let guard = unsafe { InterruptGuard::adopt_locked(interrupts_on_drop) };
+        // SAFETY: Exclusive access to `is_locked` is guaranteed because
+        // interrupts are off.
+        pw_assert::debug_assert!(unsafe { self.is_locked.get().read_volatile() });
+        CortexMSpinLockGuard::new(guard, self)
     }
 }

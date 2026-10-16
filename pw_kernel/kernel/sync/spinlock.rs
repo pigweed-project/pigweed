@@ -18,6 +18,16 @@ use core::ops::{Deref, DerefMut};
 use crate::scheduler::PreemptDisableGuard;
 use crate::{Arch, Kernel};
 
+/// Controls whether dropping a guard reconstructed via
+/// [`SpinLock::adopt_locked`] re-enables interrupts or keeps them disabled.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum InterruptsOnDrop {
+    /// Re-enable interrupts after unlocking when the guard is dropped.
+    Restore,
+    /// Leave interrupts disabled after unlocking when the guard is dropped.
+    KeepDisabled,
+}
+
 pub trait BareSpinLock: Send + Sync {
     type Guard<'a>
     where
@@ -38,13 +48,21 @@ pub trait BareSpinLock: Send + Sync {
         }
     }
 
-    /// Unconditionally break the lock.
+    /// Reconstructs a guard for a lock that is already held by the current core
+    /// (for example, when lock ownership is transferred across a context switch
+    /// into a newly started thread's entry trampoline).
     ///
     /// Do not call directly.
     ///
+    /// `interrupts_on_drop` controls whether dropping the returned guard will
+    /// re-enable interrupts after unlocking ([`InterruptsOnDrop::Restore`]) or
+    /// leave interrupts disabled ([`InterruptsOnDrop::KeepDisabled`]).
+    ///
     /// # Safety
-    /// See [`SpinLock::break_lock()`] for use and safety information.
-    unsafe fn break_lock(&self);
+    /// The caller must guarantee that the lock is currently held, interrupts are
+    /// disabled, and no other active `Guard` will unlock it. See
+    /// [`SpinLock::adopt_locked()`] for use and safety information.
+    unsafe fn adopt_locked(&self, interrupts_on_drop: InterruptsOnDrop) -> Self::Guard<'_>;
 
     // TODO - konkers: Add optimized path for functions that know they are in
     // atomic context (i.e. interrupt handlers).
@@ -103,21 +121,33 @@ impl<K: Kernel, T> SpinLock<K, T> {
         }
     }
 
-    /// Unconditionally break the lock.
+    /// Reconstructs a [`SpinLockGuard`] for a lock that is already held and whose
+    /// ownership was transferred to the calling context (for example, across a
+    /// context switch into a newly started thread).
     ///
-    /// This method is used to forcibly release the lock without dropping the
-    /// guard. This is unsafe because it breaks the lock invariants and can
-    /// lead to data corruption if not used carefully.
+    /// `interrupts_on_drop` controls whether dropping the returned guard will
+    /// re-enable interrupts after unlocking ([`InterruptsOnDrop::Restore`]) or
+    /// leave interrupts disabled ([`InterruptsOnDrop::KeepDisabled`]).
     ///
     /// # Safety
-    /// This method should only be called in specific scenarios:
-    /// 1. Thread starting: to drop the scheduler lock on thread start.
-    /// 2. Resource access during a system wide crash dump.
-    ///
-    /// The caller must ensure that breaking the lock will not cause data corruption.
-    pub unsafe fn break_lock(&self) {
-        unsafe {
-            self.inner.break_lock();
+    /// The caller must guarantee that the underlying lock is currently held,
+    /// interrupts and preemption are disabled (`preempt_disable_count >= 1`),
+    /// and no other active guard exists for this lock.
+    #[inline]
+    pub unsafe fn adopt_locked(
+        &self,
+        kernel: K,
+        interrupts_on_drop: InterruptsOnDrop,
+    ) -> SpinLockGuard<'_, K, T> {
+        // SAFETY: Caller guarantees the underlying lock is currently held,
+        // interrupts are disabled, and no other active guard exists.
+        let inner_guard = unsafe { self.inner.adopt_locked(interrupts_on_drop) };
+        SpinLockGuard {
+            lock: self,
+            // SAFETY: Caller guarantees `preempt_disable_count >= 1` for an
+            // active guard whose ownership was transferred to this context.
+            _preempt_guard: unsafe { PreemptDisableGuard::adopt_locked(kernel) },
+            _inner_guard: inner_guard,
         }
     }
 }

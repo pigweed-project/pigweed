@@ -17,10 +17,10 @@ use core::mem;
 use core::ptr::NonNull;
 
 use exit_status::ExitStatus;
-use kernel::Arch;
 use kernel::interrupt_controller::InterruptController;
 use kernel::scheduler::{self, SchedulerState, Stack, ThreadLocalState};
-use kernel::sync::spinlock::SpinLockGuard;
+use kernel::sync::spinlock::{InterruptsOnDrop, SpinLockGuard};
+use kernel::{Arch, Kernel};
 use log_if::debug_if;
 #[cfg(feature = "user_space")]
 use pw_status::Result;
@@ -63,22 +63,28 @@ pub struct ArchThreadState {
 
 #[cfg(feature = "user_space")]
 extern "C" fn prepare_userspace_thread(memory_config: *const MemoryConfig) {
-    // Break the scheduler lock.
-    // Safety: This is called on thread start, which is one of the allowed
-    // scenarios for breaking the lock. The scheduler lock was held by the
-    // previous thread/scheduler and we need to release it so this thread
-    // can use it (or anything it calls).
+    // Adopt the scheduler lock held across the context switch into this new
+    // thread and drop the guard to decrement `preempt_disable_count` to 0
+    // and release the scheduler lock.
+    //
+    // Note: Passing `InterruptsOnDrop::KeepDisabled` is intentionally
+    // asymmetric with the adopted lock (leaving interrupts disabled when the
+    // guard is dropped). Keeping interrupts disabled here is necessary to
+    // ensure the remainder of the thread setup (PMP configuration and
+    // `asm_user_trampoline`'s `mscratch`/`sp`/`mstatus`/`mepc` setup) executes
+    // atomically before `mret` enters U-mode and enables interrupts via `MPIE`.
+    //
+    // SAFETY: New threads are switched into with the scheduler lock held,
+    // interrupts disabled, and `local.preempt_disable_count == 1`.
     unsafe {
-        kernel::scheduler::break_scheduler_lock(crate::Arch);
+        let _sched_state = crate::Arch
+            .get_scheduler()
+            .adopt_locked(crate::Arch, InterruptsOnDrop::KeepDisabled);
     }
 
-    // Enable interrupts per contract in `ThreadState::initialize_user_frame`.
-    <crate::Arch as Arch>::InterruptController::enable_interrupts();
-
-    // If we need to reload the PMP to for exceptions, this also means we
-    // do not perform the PMP load in the context switch function.  We
-    // defer it instead to the trampoline function.  Stash the pointers
-    // we'll need to make the call in the trampoline.
+    // When `exceptions_reload_pmp` is enabled, the context switch function
+    // defers loading the new thread's PMP configuration so kernel memory
+    // mappings remain active until returning to userspace.
     if cfg!(feature = "exceptions_reload_pmp") {
         unsafe {
             (*memory_config).write();
@@ -96,7 +102,10 @@ impl ArchThreadState {
         initial_sp: usize,
         (s0, s1, s2, s3): (usize, usize, usize, usize),
     ) {
-        self.local = ThreadLocalState::new();
+        // New threads are switched into with the scheduler SpinLock held, so
+        // their initial preemption disable count is 1 until their entry
+        // trampoline adopts the lock via `adopt_locked` and drops the guard.
+        self.local = ThreadLocalState::new_preempt_disabled();
 
         let frame: *mut ContextSwitchFrame =
             Stack::aligned_stack_allocation_mut(unsafe { kernel_stack.end_mut() }, 8);
@@ -120,11 +129,6 @@ impl ArchThreadState {
             {
                 (*frame).s7 = self.memory_config as usize;
                 (*frame).s8 = prepare_userspace_thread as *const () as usize;
-            }
-            #[cfg(not(feature = "user_space"))]
-            {
-                (*frame).s7 = 0;
-                (*frame).s8 = 0;
             }
         }
 
@@ -344,15 +348,14 @@ extern "C" fn riscv_context_switch(
 extern "C" fn asm_user_trampoline() {
     naked_asm!(
         "
-                // If we have a stashed memory config pointer in s7,
-                // then perform the call memory_config_write(memory_config)
-                // via the stashed function address in s8.
-                beqz    s7, 1f
+                // Call prepare_userspace_thread(memory_config) via the
+                // stashed function address in s8 and memory_config in s7
+                // to release the scheduler lock and (when configured)
+                // write the PMP.
                 mv      a0, s7
                 jalr    ra, s8, 0
 
                 // Store the kernel stack pointer in mscratch.
-            1:
                 csrw    mscratch, sp
 
                 // Set initial SP as passed in by `initialize_frame()`.
@@ -410,17 +413,18 @@ extern "C" fn trampoline(
         arg2 as usize,
     );
 
-    // Break the scheduler lock.
-    // Safety: This is called on thread start, which is one of the allowed
-    // scenarios for breaking the lock. The scheduler lock was held by the
-    // previous thread/scheduler and we need to release it so this thread
-    // can use it (or anything it calls).
+    // Adopt the scheduler lock held across the context switch into this new
+    // thread and drop the guard to decrement `preempt_disable_count` to 0,
+    // release the scheduler lock, and enable interrupts per
+    // `ThreadState::initialize_kernel_state`.
+    //
+    // SAFETY: New threads are switched into with the scheduler lock held,
+    // interrupts disabled, and `local.preempt_disable_count == 1`.
     unsafe {
-        kernel::scheduler::break_scheduler_lock(crate::Arch);
+        let _sched_state = crate::Arch
+            .get_scheduler()
+            .adopt_locked(crate::Arch, InterruptsOnDrop::Restore);
     }
-
-    // Enable interrupts per contract in `ThreadState::initialize_kernel_frame`.
-    <crate::Arch as Arch>::InterruptController::enable_interrupts();
 
     // Call the actual initial function of the thread.
     initial_function(arg0, arg1, arg2);

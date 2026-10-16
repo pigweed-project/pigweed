@@ -45,8 +45,8 @@ pub(crate) mod wait_queue;
 pub(crate) use core::block;
 pub use core::{
     JoinResult, PreemptDisableGuard, ProcessJoinResult, ProcessTryJoinResult, SchedulerState,
-    ThreadLocalState, TryJoinResult, add_process, bootstrap_scheduler, break_scheduler_lock,
-    exit_thread, handle_terminal_exception, initialize, sleep_until, start_thread, tick,
+    ThreadLocalState, TryJoinResult, add_process, bootstrap_scheduler, exit_thread,
+    handle_terminal_exception, initialize, sleep_until, start_thread, tick,
     try_deferred_reschedule, yield_timeslice,
 };
 

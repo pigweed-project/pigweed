@@ -15,6 +15,8 @@
 use core::arch::asm;
 use core::sync::atomic::{Ordering, compiler_fence};
 
+use kernel::sync::spinlock::InterruptsOnDrop;
+
 use super::BareSpinLock;
 
 /// Masks interrupts on the local core by setting `PRIMASK`. Dropping the guard
@@ -56,6 +58,31 @@ impl InterruptGuard {
         }
         compiler_fence(Ordering::SeqCst);
 
+        Self { saved_primask }
+    }
+
+    /// Reconstructs an [`InterruptGuard`] when interrupts are already disabled.
+    ///
+    /// # Safety
+    /// Interrupts must already be disabled (`PRIMASK & 1 == 1`).
+    #[inline]
+    pub(super) unsafe fn adopt_locked(interrupts_on_drop: InterruptsOnDrop) -> Self {
+        pw_assert::debug_assert!({
+            let current_primask: u32;
+            // SAFETY: Reading `PRIMASK` is a side-effect-free system register read.
+            unsafe {
+                asm!(
+                    "mrs {}, PRIMASK",
+                    out(reg) current_primask,
+                    options(nomem, nostack, preserves_flags)
+                );
+            }
+            (current_primask & 0x1) == 0x1
+        });
+        let saved_primask = match interrupts_on_drop {
+            InterruptsOnDrop::Restore => 0,
+            InterruptsOnDrop::KeepDisabled => 1,
+        };
         Self { saved_primask }
     }
 }

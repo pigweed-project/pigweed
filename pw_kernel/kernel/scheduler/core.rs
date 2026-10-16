@@ -21,7 +21,8 @@ use foreign_box::ForeignBox;
 use list::*;
 use memory_config::MemoryConfig as _;
 use pw_atomic::{
-    AtomicAdd, AtomicCompareExchange, AtomicFalse, AtomicLoad, AtomicStore, AtomicSub, AtomicZero,
+    AtomicAdd, AtomicCompareExchange, AtomicFalse, AtomicLoad, AtomicOne, AtomicStore, AtomicSub,
+    AtomicZero,
 };
 use pw_log::info;
 use pw_status::{Error, Result};
@@ -54,6 +55,14 @@ impl<A: Arch> ThreadLocalState<A> {
     pub const fn new() -> Self {
         Self {
             preempt_disable_count: A::AtomicUsize::ZERO,
+            needs_reschedule: A::AtomicBool::FALSE,
+        }
+    }
+
+    #[must_use]
+    pub const fn new_preempt_disabled() -> Self {
+        Self {
+            preempt_disable_count: A::AtomicUsize::ONE,
             needs_reschedule: A::AtomicBool::FALSE,
         }
     }
@@ -165,6 +174,23 @@ impl<K: Kernel> PreemptDisableGuard<K> {
             pw_assert::debug_panic!("PreemptDisableGuard: preempt_disable_count overflow")
         }
 
+        Self(kernel)
+    }
+
+    /// Reconstructs a [`PreemptDisableGuard`] when preemption is already disabled.
+    ///
+    /// # Safety
+    /// `preempt_disable_count` must already be `>= 1` for an active guard whose
+    /// ownership was transferred to this context.
+    #[inline]
+    pub(crate) unsafe fn adopt_locked(kernel: K) -> Self {
+        pw_assert::debug_assert!(
+            kernel
+                .thread_local_state()
+                .preempt_disable_count
+                .load(Ordering::SeqCst)
+                >= 1
+        );
         Self(kernel)
     }
 }
@@ -1069,21 +1095,6 @@ pub fn tick<K: Kernel>(
         .try_reschedule(kernel, RescheduleReason::Ticked);
 
     guard
-}
-
-/// Break the global scheduler lock.
-///
-/// This method is used to forcibly release the scheduler lock without dropping the
-/// guard. This is unsafe because it breaks the lock invariants and can
-/// lead to data corruption if not used carefully.
-///
-/// # Safety
-/// This method should only be called on thread start.
-/// The caller must ensure that breaking the lock will not cause data corruption.
-pub unsafe fn break_scheduler_lock<K: Kernel>(kernel: K) {
-    unsafe {
-        kernel.get_scheduler().break_lock();
-    }
 }
 
 pub fn exit_thread<K: Kernel>(kernel: K, status: ExitStatus) -> ! {
