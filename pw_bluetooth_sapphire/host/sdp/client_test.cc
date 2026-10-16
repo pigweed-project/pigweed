@@ -708,7 +708,7 @@ TEST_F(ClientTest, ShortSduResponse) {
   fake_chan()->SetSendCallback(
       [&](auto packet) {
         ASSERT_GE(packet->size(), 3u);
-        request_tid = (static_cast<uint16_t>((*packet)[1]) << 8) | (*packet)[2];
+        request_tid = static_cast<uint16_t>(((*packet)[1] << 8) | (*packet)[2]);
         request_sent = true;
       },
       dispatcher());

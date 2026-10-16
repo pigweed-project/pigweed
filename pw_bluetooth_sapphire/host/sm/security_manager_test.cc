@@ -2539,7 +2539,7 @@ TEST_F(InitiatorPairingTest, Phase3CentralIdentificationReceiveExampleRand) {
 // The responder sends an LTK that is longer than the max key size
 TEST_F(InitiatorPairingTest, Phase3CentralIdentificationReceiveLongLTK) {
   UInt128 stk;
-  auto max_key_size = 8;
+  uint8_t max_key_size = 8;
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
@@ -3757,7 +3757,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKMaxLength) {
   EXPECT_EQ(0, central_ident_count());
 
   UInt128 stk;
-  uint16_t max_key_size = 7;
+  uint8_t max_key_size = 7;
 
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,

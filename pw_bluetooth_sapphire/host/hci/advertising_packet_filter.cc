@@ -724,7 +724,7 @@ AdvertisingPacketFilter::BuildSetServiceDataUUID16Command(
   auto packet =
       hci::CommandPacket::New<android_emb::LEApcfServiceDataCommandWriter>(
           android_hci::kLEApcf, packet_size);
-  auto view = packet.view_t(sizeof(uint16_t));
+  auto view = packet.view_t(static_cast<uint8_t>(sizeof(uint16_t)));
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceDataSubopcode);
@@ -753,7 +753,7 @@ AdvertisingPacketFilter::BuildSetServiceDataUUID32Command(
   auto packet =
       hci::CommandPacket::New<android_emb::LEApcfServiceDataCommandWriter>(
           android_hci::kLEApcf, packet_size);
-  auto view = packet.view_t(sizeof(uint32_t));
+  auto view = packet.view_t(static_cast<uint8_t>(sizeof(uint32_t)));
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceDataSubopcode);
@@ -777,7 +777,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetServiceDataUUID128Command(
   auto packet =
       hci::CommandPacket::New<android_emb::LEApcfServiceDataCommandWriter>(
           android_hci::kLEApcf, packet_size);
-  auto view = packet.view_t(kUInt128Size);
+  auto view = packet.view_t(static_cast<uint8_t>(kUInt128Size));
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfServiceDataSubopcode);
@@ -848,7 +848,7 @@ std::optional<CommandPacket> AdvertisingPacketFilter::BuildSetLocalNameCommand(
   auto packet =
       hci::CommandPacket::New<android_emb::LEApcfLocalNameCommandWriter>(
           android_hci::kLEApcf, packet_size);
-  auto view = packet.view_t(local_name.size());
+  auto view = packet.view_t(static_cast<uint8_t>(local_name.size()));
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfLocalNameSubopcode);
@@ -872,7 +872,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetManufacturerCodeCommand(
   auto packet =
       hci::CommandPacket::New<android_emb::LEApcfManufacturerDataCommandWriter>(
           android_hci::kLEApcf, packet_size);
-  auto view = packet.view_t(sizeof(manufacturer_code));
+  auto view = packet.view_t(static_cast<uint8_t>(sizeof(manufacturer_code)));
 
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfManufacturerDataSubopcode);

@@ -163,7 +163,8 @@ AndroidExtendedLowEnergyAdvertiser::BuildSetAdvertisingData(
           android_hci::kLEMultiAdvt);
   auto view = packet.view_t();
 
-  uint8_t adv_data_length = data.CalculateBlockSize(/*include_flags=*/true);
+  uint8_t adv_data_length =
+      static_cast<uint8_t>(data.CalculateBlockSize(/*include_flags=*/true));
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEMultiAdvtSetAdvtDataSubopcode);
   view.adv_data_length().Write(adv_data_length);
@@ -207,7 +208,7 @@ AndroidExtendedLowEnergyAdvertiser::BuildSetScanResponse(
       android_hci::kLEMultiAdvt);
   auto view = packet.view_t();
 
-  uint8_t scan_rsp_length = data.CalculateBlockSize();
+  uint8_t scan_rsp_length = static_cast<uint8_t>(data.CalculateBlockSize());
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEMultiAdvtSetScanRespSubopcode);
   view.scan_resp_length().Write(scan_rsp_length);
@@ -366,7 +367,7 @@ void AndroidExtendedLowEnergyAdvertiser::StartAdvertising(
         return;
       }
 
-      int8_t tx_power = view.tx_power_level().Read();
+      int8_t tx_power = static_cast<int8_t>(view.tx_power_level().Read());
       pending_start.data.SetTxPower(tx_power);
       if (pending_start.scan_rsp.CalculateBlockSize()) {
         pending_start.scan_rsp.SetTxPower(tx_power);

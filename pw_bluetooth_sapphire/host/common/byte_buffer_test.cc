@@ -531,10 +531,10 @@ TEST(ByteBufferTest, ByteBufferToDoesNotReadUnaligned) {
   const DynamicByteBuffer buf(2 * sizeof(float) - 1);
 
   // Advance past the float alignment boundary
-  const size_t offset = std::distance(
+  const auto offset = static_cast<size_t>(std::distance(
       buf.begin(), std::find_if(buf.begin(), buf.end(), [](auto& b) {
         return reinterpret_cast<uintptr_t>(&b) % alignof(float) != 0;
-      }));
+      })));
   BufferView view = buf.view(offset, sizeof(float));
 
   // Prove that the data in the view isn't aligned for a float

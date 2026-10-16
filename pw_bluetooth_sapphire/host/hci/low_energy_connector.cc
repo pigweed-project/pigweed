@@ -279,7 +279,8 @@ CommandPacket LowEnergyConnector::BuildExtendedCreateConnectionPacket(
   params.initiating_phys().le_2m().Write(true);
   params.initiating_phys().le_coded().Write(true);
 
-  for (int i = 0; i < params.num_entries().Read(); i++) {
+  for (size_t i = 0; i < static_cast<size_t>(params.num_entries().Read());
+       i++) {
     params.data()[i].scan_interval().Write(scan_interval);
     params.data()[i].scan_window().Write(scan_window);
     params.data()[i].connection_interval_min().Write(

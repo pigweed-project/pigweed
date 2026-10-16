@@ -156,7 +156,7 @@ TEST_F(CentralTest, ScanOneResultAndStopScanSuccess) {
 
   const bool connectable = true;
   bt::gap::Peer* peer = peer_cache().NewPeer(kAddress0, connectable);
-  const int rssi = 5;
+  const int8_t rssi = 5;
   SystemClock::time_point timestamp(SystemClock::duration(5));
   peer->MutLe().SetAdvertisingData(rssi, kAdvDataWithName, timestamp);
 
@@ -314,8 +314,9 @@ TEST_F(CentralTest, QueueMoreThanMaxScanResultsInScanHandleDropsOldest) {
   SystemClock::time_point timestamp(SystemClock::duration(5));
 
   // Queue 1 more than the max queue size. Put the index in the rssi field.
-  for (int i = 0; i < Central::kMaxScanResultsQueueSize + 1; i++) {
-    peer->MutLe().SetAdvertisingData(/*rssi=*/i, kAdvDataWithName, timestamp);
+  for (size_t i = 0; i < Central::kMaxScanResultsQueueSize + 1; i++) {
+    peer->MutLe().SetAdvertisingData(
+        /*rssi=*/static_cast<int8_t>(i), kAdvDataWithName, timestamp);
     adapter().fake_le()->NotifyScanResult(*peer);
   }
 
@@ -323,9 +324,9 @@ TEST_F(CentralTest, QueueMoreThanMaxScanResultsInScanHandleDropsOldest) {
   scan_handle_task.Deregister();
   ASSERT_EQ(scan_result_results.size(), Central::kMaxScanResultsQueueSize);
   // The first scan result should have been dropped.
-  for (int i = 0; i < Central::kMaxScanResultsQueueSize; i++) {
+  for (size_t i = 0; i < Central::kMaxScanResultsQueueSize; i++) {
     ASSERT_TRUE(scan_result_results[i].ok());
-    EXPECT_EQ(scan_result_results[i].value().rssi, i + 1);
+    EXPECT_EQ(scan_result_results[i].value().rssi, static_cast<int8_t>(i + 1));
   }
 }
 

@@ -23,7 +23,6 @@ package(
 
 cc_library(
     name = "stack",
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bluetooth_sapphire/host/att",
         "//pw_bluetooth_sapphire/host/common",

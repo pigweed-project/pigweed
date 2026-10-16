@@ -2032,8 +2032,8 @@ TEST_F(ServerTest, ContinuationCacheLifecycle) {
                                                packet.header().param_length);
     packet.Resize(len);
 
-    uint16_t attr_list_byte_count =
-        (packet.payload_data()[0] << 8) | packet.payload_data()[1];
+    uint16_t attr_list_byte_count = static_cast<uint16_t>(
+        (packet.payload_data()[0] << 8) | packet.payload_data()[1]);
 
     uint8_t continuation_state_length =
         packet.payload_data()[2 + attr_list_byte_count];
@@ -2055,8 +2055,8 @@ TEST_F(ServerTest, ContinuationCacheLifecycle) {
           0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF); // Attribute ID list (All)
       // clang-format on
 
-      uint16_t param_size =
-          req_start.size() - sizeof(Header) + 1 + continuation_state_length;
+      uint16_t param_size = static_cast<uint16_t>(
+          req_start.size() - sizeof(Header) + 1 + continuation_state_length);
 
       DynamicByteBuffer req(req_start.size() + 1 + continuation_state_length);
       req_start.Copy(&req);
@@ -2299,8 +2299,8 @@ TEST_F(ServerTest, ContinuationRequestWithModifiedParametersReturnsError) {
       uint16_t len = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
                                                  packet.header().param_length);
       packet.Resize(len);
-      uint16_t attr_list_byte_count =
-          (packet.payload_data()[0] << 8) | packet.payload_data()[1];
+      uint16_t attr_list_byte_count = static_cast<uint16_t>(
+          (packet.payload_data()[0] << 8) | packet.payload_data()[1]);
       uint8_t cont_len = packet.payload_data()[2 + attr_list_byte_count];
       ASSERT_GT(cont_len, 0u);
       const uint8_t* cont_src =
@@ -2316,7 +2316,8 @@ TEST_F(ServerTest, ContinuationRequestWithModifiedParametersReturnsError) {
           0x00, 0x20,                   // Max attribute byte count
           0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF); // Attribute ID list (All)
       // clang-format on
-      uint16_t param_size = req_start.size() - sizeof(Header) + 1 + cont_len;
+      uint16_t param_size = static_cast<uint16_t>(
+          req_start.size() - sizeof(Header) + 1 + cont_len);
       DynamicByteBuffer req(req_start.size() + 1 + cont_len);
       req_start.Copy(&req);
       req.mutable_data()[3] = static_cast<uint8_t>(param_size >> 8);
@@ -2395,8 +2396,8 @@ TEST_F(ServerTest, ContinuationCacheLruEviction) {
   uint16_t len1 = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
                                               packet1.header().param_length);
   packet1.Resize(len1);
-  uint16_t attr_list_byte_count =
-      (packet1.payload_data()[0] << 8) | packet1.payload_data()[1];
+  uint16_t attr_list_byte_count = static_cast<uint16_t>(
+      (packet1.payload_data()[0] << 8) | packet1.payload_data()[1]);
   uint8_t cont_len = packet1.payload_data()[2 + attr_list_byte_count];
   ASSERT_GT(cont_len, 0u);
   std::vector<uint8_t> cont_state(
@@ -2418,7 +2419,8 @@ TEST_F(ServerTest, ContinuationCacheLruEviction) {
   // Now attempt to use the continuation state from the very first request.
   // Because it was evicted from the LRU cache, it should fail with
   // kInvalidContinuationState.
-  uint16_t param_size = req_start.size() - sizeof(Header) + cont_len;
+  uint16_t param_size =
+      static_cast<uint16_t>(req_start.size() - sizeof(Header) + cont_len);
   DynamicByteBuffer cont_req(req_start.size() + cont_len);
   req_start.Copy(&cont_req);
   cont_req.mutable_data()[3] = static_cast<uint8_t>(param_size >> 8);

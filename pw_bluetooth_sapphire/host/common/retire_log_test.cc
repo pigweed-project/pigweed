@@ -32,7 +32,8 @@ void Retire101Elements(RetireLog& retire_log, int starting_value = 0) {
   constexpr int kSeed = 4;
   std::shuffle(values.begin(), values.end(), std::default_random_engine(kSeed));
   for (auto value : values) {
-    retire_log.Retire(value, std::chrono::milliseconds(value));
+    retire_log.Retire(static_cast<size_t>(value),
+                      std::chrono::milliseconds(value));
   }
 }
 

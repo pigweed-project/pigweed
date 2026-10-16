@@ -1096,7 +1096,7 @@ void FakeController::CaptureLEConnectParams(
 void FakeController::CaptureLEConnectParamsForPHY(
     const pwemb::LEExtendedCreateConnectionCommandV1View& params,
     LEConnectParams::InitiatingPHYs phy) {
-  int index = static_cast<int>(phy);
+  size_t index = static_cast<size_t>(phy);
 
   LEConnectParams::Parameters& connect_params =
       le_connect_params_->phy_conn_params[phy];
@@ -3730,7 +3730,7 @@ void FakeController::OnLESetExtendedAdvertisingEnable(
         element.second.enabled = false;
       }
     } else {
-      for (int i = 0; i < num_sets; i++) {
+      for (size_t i = 0; i < num_sets; i++) {
         hci_spec::AdvertisingHandle handle =
             params.data()[i].advertising_handle().Read();
         extended_advertising_states_[handle].enabled = false;
@@ -5942,29 +5942,29 @@ void FakeController::OnAndroidLEApcfCommand(
       break;
     }
     case android_hci::kLEApcfLocalNameSubopcode: {
-      size_t data_length =
+      auto data_length = static_cast<int32_t>(
           command_packet.size() -
-          android_emb::LEApcfLocalNameCommand::MinSizeInBytes();
+          android_emb::LEApcfLocalNameCommand::MinSizeInBytes());
       auto params = android_emb::MakeLEApcfLocalNameCommandView(
           data_length, command_packet.data().data(), command_packet.size());
       OnAndroidLEApcfLocalNameCommand(params);
       break;
     }
     case android_hci::kLEApcfManufacturerDataSubopcode: {
-      size_t data_length =
+      auto data_length = static_cast<int32_t>(
           (command_packet.size() -
            android_emb::LEApcfManufacturerDataCommand::MinSizeInBytes()) /
-          2;
+          2);
       auto params = android_emb::MakeLEApcfManufacturerDataCommandView(
           data_length, command_packet.data().data(), command_packet.size());
       OnAndroidLEApcfManufacturerDataCommand(params);
       break;
     }
     case android_hci::kLEApcfServiceDataSubopcode: {
-      size_t data_length =
+      auto data_length = static_cast<int32_t>(
           (command_packet.size() -
            android_emb::LEApcfServiceDataCommand::MinSizeInBytes()) /
-          2;
+          2);
       auto params = android_emb::MakeLEApcfServiceDataCommandView(
           data_length, command_packet.data().data(), command_packet.size());
       OnAndroidLEApcfServiceDataCommand(params);
@@ -6088,8 +6088,9 @@ void FakeController::OnAndroidLEBatchScanSetScanParametersCommand(
     }
   }
 
-  le_scan_state_.scan_window = params.window().Read();
-  le_scan_state_.scan_interval = params.interval().Read();
+  le_scan_state_.scan_window = static_cast<uint16_t>(params.window().Read());
+  le_scan_state_.scan_interval =
+      static_cast<uint16_t>(params.interval().Read());
   le_scan_state_.batch_scan_num_peers_read = 0;
 
   if (params.own_address_type().Read() ==

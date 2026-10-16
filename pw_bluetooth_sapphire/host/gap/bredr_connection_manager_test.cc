@@ -2398,7 +2398,7 @@ TEST_F(BrEdrConnectionManagerTest, InitializingPeerDoesNotTimeout) {
 }
 
 inline uint16_t tid_from_sdp_packet(const ByteBufferPtr& packet) {
-  return (*packet)[1] << CHAR_BIT | (*packet)[2];
+  return static_cast<uint16_t>((*packet)[1] << CHAR_BIT | (*packet)[2]);
 }
 
 TEST_F(BrEdrConnectionManagerTest,
@@ -2415,7 +2415,7 @@ TEST_F(BrEdrConnectionManagerTest,
                               [&](auto, auto&) { search_cb_count++; });
 
   l2cap::testing::FakeChannel::WeakPtr sdp_chan;
-  std::optional<uint32_t> sdp_request_tid;
+  std::optional<uint16_t> sdp_request_tid;
 
   l2cap()->set_channel_callback(
       [this, &sdp_chan, &sdp_request_tid](auto new_chan) {
@@ -2471,7 +2471,7 @@ TEST_F(BrEdrConnectionManagerTest,
       kServiceUuid, {sdp::kServiceId}, [&](auto, auto&) { search_cb_count++; });
 
   l2cap::testing::FakeChannel::WeakPtr sdp_chan;
-  std::optional<uint32_t> sdp_request_tid;
+  std::optional<uint16_t> sdp_request_tid;
 
   l2cap()->set_channel_callback(
       [this, &sdp_chan, &sdp_request_tid](auto new_chan) {
@@ -3512,7 +3512,7 @@ TEST_F(BrEdrConnectionManagerTest, AddServiceSearchAll) {
   connmgr()->AddServiceSearch(sdp::profile::kAudioSink, {}, search_cb);
 
   l2cap::testing::FakeChannel::WeakPtr sdp_chan;
-  std::optional<uint32_t> sdp_request_tid;
+  std::optional<uint16_t> sdp_request_tid;
 
   l2cap()->set_channel_callback(
       [this, &sdp_chan, &sdp_request_tid](auto new_chan) {

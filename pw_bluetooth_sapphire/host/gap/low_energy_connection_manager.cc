@@ -912,16 +912,16 @@ void LowEnergyConnectionManager::RecordDisconnectInspect(
   if (conn.link()) {
     // The Controller accepts the connection interval n * 1.25. We store it the
     // same way in memory. This multiplier converts it back to milliseconds.
-    static float kConnectionIntervalMultiplier = 1.25;
+    static constexpr float kConnectionIntervalMultiplier = 1.25f;
     inspect_item.node.RecordUint(
         kInspectLastDisconnectedItemConnectionIntervalPropertyName,
-        conn.link()->low_energy_parameters().interval() *
-            kConnectionIntervalMultiplier);
+        static_cast<uint64_t>(conn.link()->low_energy_parameters().interval() *
+                              kConnectionIntervalMultiplier));
 
     // The Controller accepts the supervision timeout as centiseconds. We store
     // it the same way in memory. This multiplier converts it back to
     // milliseconds.
-    static float kSupervisionTimeoutMultiplier = 10;
+    static constexpr uint64_t kSupervisionTimeoutMultiplier = 10;
     inspect_item.node.RecordUint(
         kInspectLastDisconnectedItemSupervisionTimeoutPropertyName,
         conn.link()->low_energy_parameters().supervision_timeout() *

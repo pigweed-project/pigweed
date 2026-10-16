@@ -105,8 +105,8 @@ DeviceClass::DeviceClass(uint32_t value) {
 uint32_t DeviceClass::to_int() const {
   uint32_t out = 0;
   out |= bytes_[0];
-  out |= bytes_[1] << CHAR_BIT;
-  out |= bytes_[2] << 2 * CHAR_BIT;
+  out |= static_cast<uint32_t>(bytes_[1]) << CHAR_BIT;
+  out |= static_cast<uint32_t>(bytes_[2]) << (2 * CHAR_BIT);
   return out;
 }
 

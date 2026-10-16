@@ -36,7 +36,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/att/att.h",
         "public/pw_bluetooth_sapphire/internal/host/att/packet.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -64,7 +63,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/att/permissions.h",
         "public/pw_bluetooth_sapphire/internal/host/att/write_queue.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_preprocessor",
         "//pw_string",
@@ -94,7 +92,6 @@ pw_cc_test(
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
         "-Wno-shadow",
     ],
-    features = ["-conversion_warnings"],
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",
     deps = [
         ":att",

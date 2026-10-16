@@ -456,7 +456,7 @@ std::vector<DynamicByteBuffer> IsoDataFragments(
     const std::vector<uint8_t>& sdu_data,
     const std::vector<size_t>& fragment_sizes) {
   std::vector<DynamicByteBuffer> fragments;
-  uint16_t sdu_total_size = sdu_data.size();
+  size_t sdu_total_size = sdu_data.size();
 
   size_t fragment_start = 0;
   size_t fragment_end;
@@ -479,7 +479,9 @@ std::vector<DynamicByteBuffer> IsoDataFragments(
         is_first ? time_stamp : std::nullopt,
         is_first ? std::optional<uint16_t>(packet_sequence_number)
                  : std::nullopt,
-        is_first ? std::optional<uint16_t>(sdu_total_size) : std::nullopt,
+        is_first
+            ? std::optional<uint16_t>(static_cast<uint16_t>(sdu_total_size))
+            : std::nullopt,
         is_first ? std::optional<pw::bluetooth::emboss::IsoDataPacketStatus>(
                        packet_status_flag)
                  : std::nullopt,

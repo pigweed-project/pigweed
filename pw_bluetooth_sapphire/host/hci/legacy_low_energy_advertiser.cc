@@ -265,9 +265,10 @@ void LegacyLowEnergyAdvertiser::StartAdvertising(
       auto view = event.view<
           pw::bluetooth::emboss::
               LEReadAdvertisingChannelTxPowerCommandCompleteEventView>();
-      staged_params.data.SetTxPower(view.tx_power_level().Read());
+      int8_t tx_power = static_cast<int8_t>(view.tx_power_level().Read());
+      staged_params.data.SetTxPower(tx_power);
       if (staged_params.scan_rsp.CalculateBlockSize()) {
-        staged_params.scan_rsp.SetTxPower(view.tx_power_level().Read());
+        staged_params.scan_rsp.SetTxPower(tx_power);
       }
 
       StartAdvertisingInternal(staged_params.address,

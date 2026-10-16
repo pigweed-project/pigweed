@@ -265,8 +265,9 @@ class LowEnergyAdvertisingManagerTest : public TestingBase {
       // Each field to take 10 bytes total, unless the next header (4 bytes)
       // won't fit. In which case we add enough bytes to finish up.
       size_t data_bytes = bytes_left < 14 ? (bytes_left - 4) : 6;
-      EXPECT_TRUE(result.SetManufacturerData(0xb000 + bytes_left,
-                                             buffer.view(0, data_bytes)));
+      EXPECT_TRUE(
+          result.SetManufacturerData(static_cast<uint16_t>(0xb000 + bytes_left),
+                                     buffer.view(0, data_bytes)));
       bytes_left = packed_size - result.CalculateBlockSize();
     }
     return result;

@@ -342,7 +342,7 @@ l2cap::Psm Server::GetDynamicPsm(const ProtocolQueue* queued_psms) const {
   uint16_t offset = 0;
   constexpr uint16_t MAX_MINUS_MIN = 0xeffe;
   random_generator()->GetInt(offset, MAX_MINUS_MIN);
-  uint16_t psm = l2cap::kMinDynamicPsm + offset;
+  uint16_t psm = static_cast<uint16_t>(l2cap::kMinDynamicPsm + offset);
   // LSB of upper octet must be 0. LSB of lower octet must be 1.
   constexpr uint16_t UPPER_OCTET_MASK = 0xFEFF;
   constexpr uint16_t LOWER_OCTET_MASK = 0x0001;

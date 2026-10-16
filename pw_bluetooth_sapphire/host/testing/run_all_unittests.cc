@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
       fprintf(stderr, "\nERROR: Invalid gtest_random_seed value\n");
       return 1;
     }
-    random_seed = NormalizeRandomSeed(random_seed);
+    random_seed = NormalizeRandomSeed(static_cast<uint32_t>(random_seed));
   } else {
     random_seed = GenerateRandomSeed();
     bool format_ok =
@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
   // Print the random seed so that it is easy to reproduce a test run.
   printf("\nGTEST_RANDOM_SEED=%d\n", random_seed);
 
-  pw::random::XorShiftStarRng64 rng(random_seed);
+  pw::random::XorShiftStarRng64 rng(static_cast<uint64_t>(random_seed));
   bt::set_random_generator(&rng);
 
   int new_argc = static_cast<int>(new_argv.size());

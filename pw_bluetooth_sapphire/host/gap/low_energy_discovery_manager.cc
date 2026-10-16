@@ -577,19 +577,20 @@ void LowEnergyDiscoveryManager::NotifyPending() {
   if (!pending_.empty()) {
     size_t count = pending_.size();
     std::vector<std::unique_ptr<LowEnergyDiscoverySession>> new_sessions(count);
-    std::generate(
-        new_sessions.begin(), new_sessions.end(), [this, i = 0]() mutable {
-          bool active = pending_[i].active;
-          std::vector<hci::DiscoveryFilter> filters =
-              std::move(pending_[i].filters);
-          i++;
-          return AddSession(active, filters);
-        });
+    std::generate(new_sessions.begin(),
+                  new_sessions.end(),
+                  [this, i = size_t{0}]() mutable {
+                    bool active = pending_[i].active;
+                    std::vector<hci::DiscoveryFilter> filters =
+                        std::move(pending_[i].filters);
+                    i++;
+                    return AddSession(active, filters);
+                  });
 
-    for (int i = count - 1; i >= 0; i--) {
+    for (size_t i = count; i > 0; i--) {
       auto cb = std::move(pending_.back().callback);
       pending_.pop_back();
-      cb(std::move(new_sessions[i]));
+      cb(std::move(new_sessions[i - 1]));
     }
   }
 }

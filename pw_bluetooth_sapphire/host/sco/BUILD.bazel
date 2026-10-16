@@ -34,7 +34,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/sco/sco_connection.h",
         "public/pw_bluetooth_sapphire/internal/host/sco/sco_connection_manager.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [

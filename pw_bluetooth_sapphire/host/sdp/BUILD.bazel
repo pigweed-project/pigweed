@@ -37,7 +37,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/sdp/sdp.h",
         "public/pw_bluetooth_sapphire/internal/host/sdp/service_record.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -59,7 +58,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/sdp/server.h",
         "public/pw_bluetooth_sapphire/internal/host/sdp/service_discoverer.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -83,7 +81,6 @@ pw_cc_test(
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
         "-Wno-shadow",
     ],
-    features = ["-conversion_warnings"],
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",
     deps = [
         ":sdp",
@@ -99,13 +96,11 @@ pw_cc_test(
 pw_cc_fuzz_test(
     name = "data_element_fuzzer",
     srcs = ["data_element_fuzztest.cc"],
-    features = ["-conversion_warnings"],
     deps = [":definitions"],
 )
 
 pw_cc_fuzz_test(
     name = "pdu_fuzzer",
     srcs = ["pdu_fuzztest.cc"],
-    features = ["-conversion_warnings"],
     deps = [":sdp"],
 )

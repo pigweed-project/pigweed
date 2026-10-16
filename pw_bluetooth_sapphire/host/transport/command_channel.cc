@@ -151,9 +151,10 @@ void CommandChannel::TransactionData::Cancel() {
   timeout_task_.Cancel();
   callback_ = nullptr;
 
-  uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    end_time - start_time_)
-                    .count();
+  uint64_t ms = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(end_time -
+                                                            start_time_)
+          .count());
   bt_log(INFO, "hci", "Canceling Transaction after %" PRIu64 " ms", ms);
 }
 
@@ -913,8 +914,8 @@ void CommandChannel::OnCommandTimeout(TransactionId transaction_id,
 
 void CommandChannel::RecordCommandResponseTime(
     pw::chrono::SystemClock::duration duration) {
-  uint64_t ms =
-      std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+  uint64_t ms = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(duration).count());
 
   // Check for overflow in sum of squares
   if (total_command_response_time_squared_ms_ >

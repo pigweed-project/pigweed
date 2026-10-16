@@ -25,7 +25,6 @@ cc_library(
     hdrs = [
         "public/cpp-string/string_printf.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
 )
 
@@ -37,7 +36,6 @@ pw_cc_test(
     copts = [
         "-Wno-format-zero-length",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":cpp-string",
     ],

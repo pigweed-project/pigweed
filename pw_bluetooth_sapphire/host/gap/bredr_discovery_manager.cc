@@ -269,7 +269,8 @@ hci::CommandChannel::EventCallbackResult BrEdrDiscoveryManager::InquiryResult(
   std::unordered_set<PeerId> peers;
 
   auto view = event.view<pw::bluetooth::emboss::InquiryResultEventView>();
-  for (int i = 0; i < view.num_responses().Read(); i++) {
+  for (size_t i = 0; i < static_cast<size_t>(view.num_responses().Read());
+       i++) {
     const auto response = view.responses()[i];
     DeviceAddress addr(DeviceAddress::Type::kBREDR,
                        DeviceAddressBytes{response.bd_addr()});
@@ -329,7 +330,7 @@ void BrEdrDiscoveryManager::UpdateEIRResponseData(
   MutableBufferView eir_response_buf =
       MutableBufferView(eir_data, hci_spec::kExtendedInquiryResponseBytes);
   eir_response_buf.Fill(0);
-  eir_response_buf[0] = name_size + 1;
+  eir_response_buf[0] = static_cast<uint8_t>(name_size + 1);
   eir_response_buf[1] = static_cast<uint8_t>(name_type);
   eir_response_buf.mutable_view(2).Write(
       reinterpret_cast<const uint8_t*>(name.data()), name_size);
@@ -421,8 +422,8 @@ void BrEdrDiscoveryManager::InspectProperties::Update(
     discoverable_sessions_count.Add(1);
     pw::chrono::SystemClock::duration length =
         now - discoverable_started_time.value();
-    last_discoverable_length_sec.Set(
-        std::chrono::duration_cast<std::chrono::seconds>(length).count());
+    last_discoverable_length_sec.Set(static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(length).count()));
     discoverable_started_time.reset();
   }
 
@@ -432,8 +433,8 @@ void BrEdrDiscoveryManager::InspectProperties::Update(
     discovery_sessions_count.Add(1);
     pw::chrono::SystemClock::duration length =
         now - inquiry_started_time.value();
-    last_discovery_length_sec.Set(
-        std::chrono::duration_cast<std::chrono::seconds>(length).count());
+    last_discovery_length_sec.Set(static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(length).count()));
     inquiry_started_time.reset();
   }
 

@@ -34,7 +34,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/l2cap/frame_headers.h",
         "public/pw_bluetooth_sapphire/internal/host/l2cap/l2cap_defs.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -110,7 +109,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/l2cap/tx_engine.h",
         "public/pw_bluetooth_sapphire/internal/host/l2cap/types.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_bluetooth:emboss_l2cap_frames",
         "//pw_preprocessor",
@@ -179,7 +177,6 @@ cc_library(
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
         "-Wno-shadow",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_bluetooth_sapphire/host/testing:gtest_helpers",
         "//pw_bluetooth_sapphire/host/testing:test_helpers",
@@ -229,7 +226,6 @@ pw_cc_test(
     ],
     # TODO: https://pwbug.dev/464024322 - Fix warnings.
     copts = ["-Wno-shadow"],
-    features = ["-conversion_warnings"],
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",
     deps = [
         ":channel_manager_mock_controller_test_fixture",
@@ -267,7 +263,6 @@ pw_cc_fuzz_test(
 pw_cc_fuzz_test(
     name = "bredr_dynamic_channel_registry_fuzzer",
     srcs = ["bredr_dynamic_channel_registry_fuzztest.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":l2cap",
         ":testing",
@@ -288,7 +283,6 @@ pw_cc_fuzz_test(
 pw_cc_fuzz_test(
     name = "common_handler_fuzzer",
     srcs = ["common_handler_fuzztest.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":l2cap",
         ":testing",
@@ -298,7 +292,6 @@ pw_cc_fuzz_test(
 pw_cc_fuzz_test(
     name = "l2cap_fuzzer",
     srcs = ["l2cap_fuzztest.cc"],
-    features = ["-conversion_warnings"],
     target_compatible_with = select({
         "//pw_unit_test:backend_is_googletest": [],
         "@platforms//os:fuchsia": [],

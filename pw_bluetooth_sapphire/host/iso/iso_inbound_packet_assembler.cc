@@ -51,8 +51,9 @@ void IsoInboundPacketAssembler::ProcessNext(pw::span<const std::byte> packet) {
   if (pb_flag == pw::bluetooth::emboss::IsoDataPbFlag::FIRST_FRAGMENT) {
     // Make sure our buffer has sufficient space to hold the entire assembled
     // ISO SDU frame
-    size_t assembled_frame_size = packet_view.sdu_fragment_offset().Read() +
-                                  packet_view.iso_sdu_length().Read();
+    size_t assembled_frame_size =
+        static_cast<size_t>(packet_view.sdu_fragment_offset().Read()) +
+        static_cast<size_t>(packet_view.iso_sdu_length().Read());
     if (assembled_frame_size > assembly_buffer_.capacity()) {
       assembly_buffer_.reserve(assembled_frame_size);
     }
@@ -100,9 +101,10 @@ bool IsoInboundPacketAssembler::AppendFragment(
            fragment_view.header().connection_handle().Read());
 
   size_t total_sdu_bytes_received =
-      assembly_buffer_view.sdu_fragment_size().Read() +
-      fragment_view.sdu_fragment_size().Read();
-  size_t complete_sdu_length = assembly_buffer_view.iso_sdu_length().Read();
+      static_cast<size_t>(assembly_buffer_view.sdu_fragment_size().Read()) +
+      static_cast<size_t>(fragment_view.sdu_fragment_size().Read());
+  size_t complete_sdu_length =
+      static_cast<size_t>(assembly_buffer_view.iso_sdu_length().Read());
 
   // Verify that the total amount of SDU data received does not exceed that
   // specified in the header from the FIRST_FRAGMENT.

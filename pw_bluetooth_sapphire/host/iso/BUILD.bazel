@@ -40,7 +40,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/iso/iso_stream.h",
         "public/pw_bluetooth_sapphire/internal/host/iso/iso_stream_manager.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_bluetooth_sapphire/host/hci",
     ],
@@ -68,7 +67,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/iso/fake_iso_group_manager_provider.h",
         "public/pw_bluetooth_sapphire/internal/host/iso/fake_iso_stream.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -90,7 +88,6 @@ pw_cc_test(
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
         "-Wno-shadow",
     ],
-    features = ["-conversion_warnings"],
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",
     deps = [
         ":iso",

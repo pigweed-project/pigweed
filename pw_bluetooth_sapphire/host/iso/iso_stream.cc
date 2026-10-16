@@ -619,9 +619,9 @@ void IsoStreamImpl::Send(pw::ConstByteSpan data) {
   // Calculate the current interval sequence number
   auto now = dispatcher_.now();
   auto elapsed_time = now - reference_time_;
-  uint64_t elapsed_usec =
+  uint64_t elapsed_usec = static_cast<uint64_t>(
       std::chrono::duration_cast<std::chrono::microseconds>(elapsed_time)
-          .count();
+          .count());
   uint16_t interval_sequence_num =
       static_cast<uint16_t>(elapsed_usec / iso_interval_usec_);
 

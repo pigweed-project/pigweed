@@ -126,7 +126,7 @@ class ExtendedLowEnergyScannerTest : public TestingBase,
     return scanner_->StartScan(options, [](auto) {});
   }
 
-  const std::unique_ptr<FakePeer>& peer(int i) const { return peers_[i]; }
+  const std::unique_ptr<FakePeer>& peer(size_t i) const { return peers_[i]; }
 
   static constexpr size_t event_prefix_size = pw::bluetooth::emboss::
       LEExtendedAdvertisingReportSubevent::MinSizeInBytes();

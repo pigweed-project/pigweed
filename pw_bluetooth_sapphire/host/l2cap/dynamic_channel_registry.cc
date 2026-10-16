@@ -107,7 +107,8 @@ ChannelId DynamicChannelRegistry::FindAvailableChannelId() {
     random_generator()->GetInt(offset, max_num_channels_);
   }
   for (uint16_t i = 0; i < max_num_channels_; i++) {
-    ChannelId id = kFirstDynamicChannelId + ((offset + i) % max_num_channels_);
+    ChannelId id = static_cast<ChannelId>(kFirstDynamicChannelId +
+                                          ((offset + i) % max_num_channels_));
     if (channels_.count(id) == 0) {
       return id;
     }

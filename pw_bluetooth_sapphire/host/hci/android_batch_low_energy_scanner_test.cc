@@ -223,7 +223,7 @@ TEST_F(AndroidBatchLowEnergyScannerTest, MultipleStorageThresholdBreach) {
   size_t full_result_size =
       android_emb::LEBatchScanFullResult::MinSizeInBytes() +
       kPlainAdvDataBytes.size() + kPlainScanRspBytes.size();
-  size_t num_peers = (max_hci_packet_size / full_result_size) * 1.5;
+  size_t num_peers = (max_hci_packet_size / full_result_size) * 3 / 2;
 
   // We start at 2 because we already added 2 peers in the SetUp method
   for (unsigned int i = 2; i < num_peers; i++) {

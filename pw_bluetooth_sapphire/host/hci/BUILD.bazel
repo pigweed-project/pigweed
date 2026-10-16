@@ -71,7 +71,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/hci/sco_connection.h",
         "public/pw_bluetooth_sapphire/internal/host/hci/sequential_command_runner.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_async:heap_dispatcher",
         "//pw_bluetooth:emboss_hci",
@@ -103,7 +102,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/hci/fake_low_energy_connection.h",
         "public/pw_bluetooth_sapphire/internal/host/hci/fake_sco_connection.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -136,7 +134,6 @@ pw_cc_test(
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
         "-Wno-shadow",
     ],
-    features = ["-conversion_warnings"],
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",
     deps = [
         ":hci",

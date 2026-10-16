@@ -28,7 +28,7 @@
 namespace bt::l2cap::internal {
 namespace {
 constexpr ChannelId DynamicCid(int16_t channel_number = 0) {
-  return kFirstDynamicChannelId + channel_number;
+  return static_cast<ChannelId>(kFirstDynamicChannelId + channel_number);
 }
 
 auto LeConnReq(const LECreditBasedConnectionRequestPayload& payload) {

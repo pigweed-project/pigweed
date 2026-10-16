@@ -518,7 +518,8 @@ TEST_F(IsoStreamTest, UnreadData) {
   const size_t kTotalFrameCount = 5;
   for (size_t i = 0; i < kTotalFrameCount; i++) {
     std::vector<uint8_t> sdu_data = testing::GenDataBlob(
-        /*size=*/kMaxControllerSDUFragmentSize - i, /*starting_value=*/i);
+        /*size=*/kMaxControllerSDUFragmentSize - i,
+        /*starting_value=*/static_cast<uint8_t>(i));
     DynamicByteBuffer packet = testing::IsoDataPacket(
         /*connection_handle=*/iso_stream()->cis_handle(),
         pw::bluetooth::emboss::IsoDataPbFlag::COMPLETE_SDU,
@@ -1019,8 +1020,8 @@ TEST_F(IsoStreamTest, ClearControllerPacketCountOnDisconnectComplete) {
 
   // FIll up controller buffer + 1 packet queued.
   for (size_t i = 0; i < kMaxControllerPacketCount; i++) {
-    std::vector<uint8_t> sdu =
-        testing::GenDataBlob(kMaxFirstPacketSize / 2, /*starting_value=*/i);
+    std::vector<uint8_t> sdu = testing::GenDataBlob(
+        kMaxFirstPacketSize / 2, /*starting_value=*/static_cast<uint8_t>(i));
     EXPECT_ISO_PACKET_OUT(
         test_device(),
         testing::IsoDataPacket(iso_stream()->cis_handle(),

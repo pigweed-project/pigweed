@@ -96,8 +96,15 @@ class CommandPacket : public DynamicPacket {
 template <class ViewT>
 class CommandPacketT : public CommandPacket {
  public:
-  ViewT view_t() { return view<ViewT>(); }
-  ViewT view_t(size_t size) { return view<ViewT>(size); }
+  template <typename... Args>
+  ViewT view_t(Args... args) {
+    return view<ViewT>(args...);
+  }
+
+  template <typename... Args>
+  ViewT unchecked_view_t(Args... args) {
+    return unchecked_view<ViewT>(args...);
+  }
 
  private:
   friend class CommandPacket;

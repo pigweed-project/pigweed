@@ -37,7 +37,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/sm/smp.h",
         "public/pw_bluetooth_sapphire/internal/host/sm/types.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_bluetooth_sapphire/lib/cpp-string",
         "//pw_preprocessor",
@@ -85,7 +84,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/sm/security_request_phase.h",
         "public/pw_bluetooth_sapphire/internal/host/sm/util.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -112,7 +110,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/sm/fake_phase_listener.h",
         "public/pw_bluetooth_sapphire/internal/host/sm/test_security_manager.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -149,7 +146,6 @@ pw_cc_test(
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
         "-Wno-shadow",
     ],
-    features = ["-conversion_warnings"],
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",
     deps = [
         ":sm",
@@ -166,6 +162,5 @@ pw_cc_test(
 pw_cc_fuzz_test(
     name = "valid_packet_reader_fuzzer",
     srcs = ["valid_packet_reader_parse_sdu_fuzztest.cc"],
-    features = ["-conversion_warnings"],
     deps = [":definitions"],
 )

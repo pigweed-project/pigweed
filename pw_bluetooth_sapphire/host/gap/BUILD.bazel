@@ -35,7 +35,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/gap/gap.h",
         "public/pw_bluetooth_sapphire/internal/host/gap/pairing_delegate.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -55,7 +54,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/gap/peer.h",
         "public/pw_bluetooth_sapphire/internal/host/gap/peer_metrics.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -128,7 +126,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/gap/secure_simple_pairing_state.h",
         "public/pw_bluetooth_sapphire/internal/host/gap/types.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_string:utf_codecs",
     ],
@@ -168,7 +165,6 @@ cc_library(
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
         "-Wno-shadow",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_unit_test:pw_unit_test.facade",
     ],
@@ -210,7 +206,6 @@ pw_cc_test(
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
         "-Wno-shadow",
     ],
-    features = ["-conversion_warnings"],
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",
     deps = [
         ":gap",
@@ -233,7 +228,6 @@ pw_cc_test(
 pw_cc_fuzz_test(
     name = "peer_cache_fuzzer",
     srcs = ["peer_cache_fuzztest.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":gap",
         "//pw_async:fake_dispatcher",

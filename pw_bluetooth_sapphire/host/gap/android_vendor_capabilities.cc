@@ -52,6 +52,7 @@ AndroidVendorCapabilities AndroidVendorCapabilities::New(
     const uint16_t override_vendor_capabilites_version) {
   auto mutable_event = hci::EventPacket::New<
       android_emb::LEGetVendorCapabilitiesCommandCompleteEventWriter>(
+      hci_spec::kCommandCompleteEventCode,
       orig_e.BackingStorage().SizeInBytes());
   mutable_event.mutable_data().Write(
       orig_e.BackingStorage().data(), orig_e.BackingStorage().SizeInBytes(), 0);
@@ -67,9 +68,9 @@ AndroidVendorCapabilities AndroidVendorCapabilities::New(
            major_override,
            minor_override);
     // TODO(fxbug.dev/450278813): Remove these manual overrides
-    mutable_event.view_t().version_supported().major_number().Write(
+    mutable_event.unchecked_view_t().version_supported().major_number().Write(
         major_override);
-    mutable_event.view_t().version_supported().minor_number().Write(
+    mutable_event.unchecked_view_t().version_supported().minor_number().Write(
         minor_override);
   }
   auto e = mutable_event.unchecked_view_t();

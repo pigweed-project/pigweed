@@ -487,7 +487,7 @@ void ExtendedLowEnergyAdvertiser::OnSetAdvertisingParamsComplete(
           LESetExtendedAdvertisingParametersCommandCompleteEventView>();
   if (staged_advertising_parameters_.include_tx_power_level) {
     staged_advertising_parameters_.selected_tx_power_level =
-        view.selected_tx_power().Read();
+        static_cast<int8_t>(view.selected_tx_power().Read());
   }
 }
 

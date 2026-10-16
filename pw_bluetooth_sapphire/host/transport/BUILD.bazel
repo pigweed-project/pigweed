@@ -54,7 +54,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/transport/slab_allocators.h",
         "public/pw_bluetooth_sapphire/internal/host/transport/transport.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     target_compatible_with = incompatible_with_mcu(unless_platform_has = "//pw_function:dynamic_allocation_enabled"),
@@ -89,7 +88,6 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/transport/fake_sco_data_channel.h",
         "public/pw_bluetooth_sapphire/internal/host/transport/mock_acl_data_channel.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -114,7 +112,6 @@ pw_cc_test(
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
         "-Wno-shadow",
     ],
-    features = ["-conversion_warnings"],
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",
     deps = [
         ":testing",

@@ -143,7 +143,8 @@ class RetireLog final {
       // In the case that partition = 1.0, cut_point = depth(). Saturate to the
       // final (max) element.
       const size_t selection_offset = std::min(cut_point, depth() - 1);
-      const auto cut_iter = std::next(elements.begin(), selection_offset);
+      const auto cut_iter =
+          std::next(elements.begin(), static_cast<ptrdiff_t>(selection_offset));
       std::nth_element(unsorted_begin, cut_iter, elements.end());
       // Post-condition: the element at cut_iter is what it would be if
       // |elements| were sorted, with all preceding elements no greater than

@@ -210,8 +210,10 @@ class FakeController final : public ControllerTestDoubleBase,
     std::unordered_map<uint8_t, PacketFilter> filters;
 
     uint8_t available_filters() const {
-      int available = max_filters - filters.size();
-      return std::max(0, available);
+      if (filters.size() >= max_filters) {
+        return 0;
+      }
+      return static_cast<uint8_t>(max_filters - filters.size());
     }
 
     std::unordered_map<uint8_t, PacketFilter*> filters_broadcast_address;

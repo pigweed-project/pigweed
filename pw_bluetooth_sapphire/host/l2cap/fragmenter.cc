@@ -72,7 +72,7 @@ void OutboundFrame::WriteToFragment(MutableBufferView fragment_payload,
   // Find the last page whose offset is not greater than the current offset.
   const auto page_iter =
       std::prev(std::upper_bound(offsets.begin(), offsets.end(), offset));
-  for (size_t page_index = page_iter - offsets.begin();
+  for (size_t page_index = static_cast<size_t>(page_iter - offsets.begin());
        page_index < pages.size();
        page_index++) {
     if (fragment_payload.size() - output_offset == 0) {

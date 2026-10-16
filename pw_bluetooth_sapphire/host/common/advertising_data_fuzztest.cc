@@ -23,7 +23,7 @@ void fuzz(const uint8_t* data, size_t size) {
   FuzzedDataProvider fuzzed_data(data, size);
   auto adv_flags = fuzzed_data.ConsumeIntegral<AdvFlags>();
   bool include_adv_flags = fuzzed_data.ConsumeBool();
-  auto write_buffer_size = fuzzed_data.ConsumeIntegralInRange(0, 2000);
+  auto write_buffer_size = fuzzed_data.ConsumeIntegralInRange<size_t>(0, 2000);
   auto adv_data = fuzzed_data.ConsumeRemainingBytes<uint8_t>();
 
   AdvertisingData::ParseResult result =

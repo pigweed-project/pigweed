@@ -40,7 +40,7 @@ void StringVAppendfHelper(std::string* dest, const char* format, va_list ap) {
 
   // Only append what fit into our stack buffer.
   // Strings that are too long will be truncated.
-  size_t actual_len_excluding_null = result;
+  size_t actual_len_excluding_null = static_cast<size_t>(result);
   if (actual_len_excluding_null > kStackBufferSize - 1) {
     actual_len_excluding_null = kStackBufferSize - 1;
   }

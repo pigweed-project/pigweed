@@ -719,7 +719,7 @@ DynamicByteBuffer AclIFrame(hci_spec::ConnectionHandle link_handle,
   const uint16_t l2cap_size =
       static_cast<uint16_t>(sizeof(internal::SimpleInformationFrameHeader) +
                             payload.size() + sizeof(FrameCheckSequence));
-  const uint16_t acl_size = l2cap_size + sizeof(BasicHeader);
+  const auto acl_size = static_cast<uint16_t>(l2cap_size + sizeof(BasicHeader));
   StaticByteBuffer headers(
       // ACL data header (handle: |link handle|, length)
       LowerBits(link_handle),
@@ -754,9 +754,9 @@ DynamicByteBuffer AclIFrame(hci_spec::ConnectionHandle link_handle,
 DynamicByteBuffer AclKFrame(hci_spec::ConnectionHandle link_handle,
                             l2cap::ChannelId channel_id,
                             const ByteBuffer& payload) {
-  const uint16_t sdu_size = payload.size();
-  const uint16_t pdu_size = sdu_size + sizeof(sdu_size);
-  const uint16_t acl_size = pdu_size + sizeof(BasicHeader);
+  const auto sdu_size = static_cast<uint16_t>(payload.size());
+  const auto pdu_size = static_cast<uint16_t>(sdu_size + sizeof(sdu_size));
+  const auto acl_size = static_cast<uint16_t>(pdu_size + sizeof(BasicHeader));
   StaticByteBuffer headers(
       // ACL data header: link handle, length
       LowerBits(link_handle),
@@ -782,8 +782,8 @@ DynamicByteBuffer AclKFrame(hci_spec::ConnectionHandle link_handle,
 DynamicByteBuffer AclBFrame(hci_spec::ConnectionHandle link_handle,
                             l2cap::ChannelId channel_id,
                             const ByteBuffer& payload) {
-  const uint16_t pdu_size = payload.size();
-  const uint16_t acl_size = pdu_size + sizeof(BasicHeader);
+  const auto pdu_size = static_cast<uint16_t>(payload.size());
+  const auto acl_size = static_cast<uint16_t>(pdu_size + sizeof(BasicHeader));
   StaticByteBuffer headers(
       // ACL data header: link handle, length
       LowerBits(link_handle),

@@ -2013,7 +2013,7 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionPendingLimitExceeded) {
 
   std::vector<ChannelId> remote_cids;
   for (size_t i = 0; i < kMaxPending; ++i) {
-    remote_cids.push_back(kRemoteCId + i);
+    remote_cids.push_back(static_cast<ChannelId>(kRemoteCId + i));
   }
 
   // We need to keep the expectation buffers alive for the duration of the test.
@@ -2022,7 +2022,7 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionPendingLimitExceeded) {
 
   // Set up expectations for the first 16 connections' outbound config requests.
   for (size_t i = 0; i < kMaxPending; ++i) {
-    ChannelId local_id = kLocalCId + i;
+    ChannelId local_id = static_cast<ChannelId>(kLocalCId + i);
     ChannelId remote_id = remote_cids[i];
 
     outbound_config_reqs.push_back(
@@ -2053,7 +2053,7 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionPendingLimitExceeded) {
   // Simulate 16 connections, establishing them as half-open.
   for (size_t i = 0; i < kMaxPending; ++i) {
     SCOPED_TRACE(::testing::Message() << "Simulating connection i = " << i);
-    ChannelId local_id = kLocalCId + i;
+    ChannelId local_id = static_cast<ChannelId>(kLocalCId + i);
     ChannelId remote_id = remote_cids[i];
 
     const auto inbound_conn_req = MakeConnectionRequest(remote_id, kPsm);
@@ -2088,7 +2088,7 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionPendingLimitExceeded) {
   std::list<DynamicByteBuffer> discon_rsps;
 
   for (size_t i = 0; i < kMaxPending; ++i) {
-    ChannelId local_id = kLocalCId + i;
+    ChannelId local_id = static_cast<ChannelId>(kLocalCId + i);
     ChannelId remote_id = remote_cids[i];
 
     discon_reqs.push_back(
@@ -4408,12 +4408,12 @@ TEST_F(
   constexpr uint8_t kUnknownOption1Type = 0x71;
   uint8_t option_header_size = 2;
   while (options_view.size() >= option_header_size) {
-    uint8_t length =
+    uint8_t length = static_cast<uint8_t>(
         std::min(static_cast<size_t>(std::numeric_limits<uint8_t>::max()),
-                 options_view.size() - option_header_size);
+                 options_view.size() - option_header_size));
     StaticByteBuffer<2> option(kUnknownOption1Type, length);
     options_view.Write(option);
-    uint16_t option_size = option_header_size + length;
+    uint16_t option_size = static_cast<uint16_t>(option_header_size + length);
     options_view = options_view.mutable_view(/*pos=*/option_size);
   }
 

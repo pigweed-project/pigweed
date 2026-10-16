@@ -2103,8 +2103,8 @@ void AdapterTest::GetSupportedDelayRangeHelper(
 
   // Error code that should never be returned
   pw::Status cb_status = static_cast<pw::Status::Code>(PW_STATUS_LAST + 1);
-  uint32_t min_delay_us = -1;
-  uint32_t max_delay_us = -1;
+  uint32_t min_delay_us = std::numeric_limits<uint32_t>::max();
+  uint32_t max_delay_us = std::numeric_limits<uint32_t>::max();
   Adapter::GetSupportedDelayRangeCallback cb =
       [&](pw::Status status, uint32_t min_delay, uint32_t max_delay) {
         cb_status = status;

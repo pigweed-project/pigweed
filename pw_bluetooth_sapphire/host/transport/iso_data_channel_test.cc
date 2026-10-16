@@ -34,13 +34,14 @@ const DataBufferInfo kDefaultIsoBufferInfo(kDefaultMaxDataLength,
 
 DynamicByteBuffer MakeIsoPacket(hci_spec::ConnectionHandle handle,
                                 uint16_t seq) {
-  std::vector<uint8_t> sdu = testing::GenDataBlob(kTestSduSize, seq);
+  std::vector<uint8_t> sdu =
+      testing::GenDataBlob(kTestSduSize, static_cast<uint8_t>(seq));
   return testing::IsoDataPacket(
       /*connection_handle = */ handle,
       /*pb_flag = */ pw::bluetooth::emboss::IsoDataPbFlag::COMPLETE_SDU,
       /*time_stamp = */ 0x00000000,
       /*packet_sequence_number = */ seq,
-      /*iso_sdu_length = */ sdu.size(),
+      /*iso_sdu_length = */ static_cast<uint16_t>(sdu.size()),
       /*status_flag = */
       pw::bluetooth::emboss::IsoDataPacketStatus::VALID_DATA,
       /*sdu_data = */ sdu);
@@ -179,14 +180,14 @@ TEST_F(IsoDataChannelTests, DataDemuxification) {
     size_t connection_num = test_vector[test_num].connection_num;
     ASSERT_TRUE(connection_num < kNumTotalInterfaces);
 
-    std::vector<uint8_t> sdu =
-        testing::GenDataBlob(sdu_fragment_size, /*starting_value=*/test_num);
+    std::vector<uint8_t> sdu = testing::GenDataBlob(
+        sdu_fragment_size, /*starting_value=*/static_cast<uint8_t>(test_num));
     DynamicByteBuffer frame = testing::IsoDataPacket(
         /*connection_handle=*/connection_handles[connection_num],
         pw::bluetooth::emboss::IsoDataPbFlag::COMPLETE_SDU,
         /*time_stamp=*/std::nullopt,
         /*packet_sequence_number=*/123,
-        /*iso_sdu_length=*/sdu_fragment_size,
+        /*iso_sdu_length=*/static_cast<uint16_t>(sdu_fragment_size),
         pw::bluetooth::emboss::IsoDataPacketStatus::VALID_DATA,
         sdu);
     pw::span<const std::byte> frame_as_span = frame.subspan();
@@ -253,13 +254,14 @@ TEST_F(IsoDataChannelTests, SendDataExhaustBuffers) {
   iso_data_channel()->RegisterConnection(kIsoHandle, connection.GetWeakPtr());
 
   for (size_t i = 0; i < kDefaultMaxNumPackets; ++i) {
-    std::vector<uint8_t> sdu = testing::GenDataBlob(10, i);
+    std::vector<uint8_t> sdu =
+        testing::GenDataBlob(10, static_cast<uint8_t>(i));
     DynamicByteBuffer packet = testing::IsoDataPacket(
         /*handle = */ kIsoHandle,
         /*pb_flag = */ pw::bluetooth::emboss::IsoDataPbFlag::COMPLETE_SDU,
         /*timestamp = */ 0x00000000,
-        /*sequence_number = */ i,
-        /*iso_sdu_length = */ sdu.size(),
+        /*sequence_number = */ static_cast<uint16_t>(i),
+        /*iso_sdu_length = */ static_cast<uint16_t>(sdu.size()),
         /*status_flag = */
         pw::bluetooth::emboss::IsoDataPacketStatus::VALID_DATA,
         sdu);
@@ -291,13 +293,14 @@ TEST_F(IsoDataChannelTests, SendDataExceedBuffers) {
   size_t num_expectations = 0;
 
   for (; num_sent < kNumPackets; ++num_sent) {
-    std::vector<uint8_t> sdu = testing::GenDataBlob(kSduSize, num_sent);
+    std::vector<uint8_t> sdu =
+        testing::GenDataBlob(kSduSize, static_cast<uint8_t>(num_sent));
     DynamicByteBuffer packet = testing::IsoDataPacket(
         /*handle = */ kIsoHandle,
         /*pb_flag = */ pw::bluetooth::emboss::IsoDataPbFlag::COMPLETE_SDU,
         /*timestamp = */ 0x00000000,
-        /*sequence_number = */ num_sent,
-        /*iso_sdu_length = */ sdu.size(),
+        /*sequence_number = */ static_cast<uint16_t>(num_sent),
+        /*iso_sdu_length = */ static_cast<uint16_t>(sdu.size()),
         /*status_flag = */
         pw::bluetooth::emboss::IsoDataPacketStatus::VALID_DATA,
         /*sdu_data = */ sdu);
@@ -316,13 +319,14 @@ TEST_F(IsoDataChannelTests, SendDataExceedBuffers) {
   EXPECT_TRUE(test_device()->AllExpectedIsoPacketsSent());
 
   for (size_t i = 0; i < kNumExtraPacketsWithValidCompletedEvent; ++i) {
-    std::vector<uint8_t> sdu = testing::GenDataBlob(kSduSize, num_expectations);
+    std::vector<uint8_t> sdu =
+        testing::GenDataBlob(kSduSize, static_cast<uint8_t>(num_expectations));
     DynamicByteBuffer packet = testing::IsoDataPacket(
         /*handle = */ kIsoHandle,
         /*pb_flag = */ pw::bluetooth::emboss::IsoDataPbFlag::COMPLETE_SDU,
         /*timestamp = */ 0x00000000,
-        /*sequence_number = */ num_expectations,
-        /*iso_sdu_length = */ sdu.size(),
+        /*sequence_number = */ static_cast<uint16_t>(num_expectations),
+        /*iso_sdu_length = */ static_cast<uint16_t>(sdu.size()),
         /*status_flag = */
         pw::bluetooth::emboss::IsoDataPacketStatus::VALID_DATA,
         sdu);
@@ -346,7 +350,8 @@ TEST_F(IsoDataChannelTests, SendDataExceedBuffers) {
   // Send the event for the ISO connection.
   test_device()->SendCommandChannelPacket(
       testing::NumberOfCompletedPacketsPacket(
-          kIsoHandle, kNumExtraPacketsWithValidCompletedEvent));
+          kIsoHandle,
+          static_cast<uint16_t>(kNumExtraPacketsWithValidCompletedEvent)));
 
   RunUntilIdle();
   EXPECT_TRUE(test_device()->AllExpectedIsoPacketsSent());
@@ -354,13 +359,14 @@ TEST_F(IsoDataChannelTests, SendDataExceedBuffers) {
   // Repeat the above with a Number_Of_Completed_Packets event that has a count
   // larger than expected, to ensure it isn't ignored.
   for (; num_expectations < kNumPackets; ++num_expectations) {
-    std::vector<uint8_t> sdu = testing::GenDataBlob(kSduSize, num_expectations);
+    std::vector<uint8_t> sdu =
+        testing::GenDataBlob(kSduSize, static_cast<uint8_t>(num_expectations));
     DynamicByteBuffer packet = testing::IsoDataPacket(
         /*handle = */ kIsoHandle,
         /*pb_flag = */ pw::bluetooth::emboss::IsoDataPbFlag::COMPLETE_SDU,
         /*timestamp = */ 0x00000000,
-        /*sequence_number = */ num_expectations,
-        /*iso_sdu_length = */ sdu.size(),
+        /*sequence_number = */ static_cast<uint16_t>(num_expectations),
+        /*iso_sdu_length = */ static_cast<uint16_t>(sdu.size()),
         /*status_flag = */
         pw::bluetooth::emboss::IsoDataPacketStatus::VALID_DATA,
         sdu);
@@ -510,7 +516,8 @@ TEST_F(IsoDataChannelTests, SendDataMultipleConnections) {
   size_t num_sent = 0;
   // First send a packet on connection2.
   {
-    DynamicByteBuffer packet = MakeIsoPacket(kIsoHandle2, /*seq=*/num_sent);
+    DynamicByteBuffer packet =
+        MakeIsoPacket(kIsoHandle2, /*seq=*/static_cast<uint16_t>(num_sent));
     EXPECT_ISO_PACKET_OUT(test_device(), packet);
     connection2.SendData(std::move(packet));
     ++num_sent;
@@ -521,7 +528,8 @@ TEST_F(IsoDataChannelTests, SendDataMultipleConnections) {
 
   // Fill rest of controller buffer with connection1 packets.
   for (; num_sent < kDefaultMaxNumPackets; ++num_sent) {
-    DynamicByteBuffer packet = MakeIsoPacket(kIsoHandle1, /*seq=*/num_sent);
+    DynamicByteBuffer packet =
+        MakeIsoPacket(kIsoHandle1, /*seq=*/static_cast<uint16_t>(num_sent));
     EXPECT_ISO_PACKET_OUT(test_device(), packet);
     connection1.SendData(std::move(packet));
   }
@@ -530,13 +538,15 @@ TEST_F(IsoDataChannelTests, SendDataMultipleConnections) {
 
   // Queue 2 packets in connection2.
   for (; num_sent < kDefaultMaxNumPackets + 2; ++num_sent) {
-    DynamicByteBuffer packet = MakeIsoPacket(kIsoHandle2, /*seq=*/num_sent);
+    DynamicByteBuffer packet =
+        MakeIsoPacket(kIsoHandle2, /*seq=*/static_cast<uint16_t>(num_sent));
     connection2.SendData(std::move(packet));
   }
 
   // Queue 2 packets in connection1.
   for (; num_sent < kDefaultMaxNumPackets + 4; ++num_sent) {
-    DynamicByteBuffer packet = MakeIsoPacket(kIsoHandle1, /*seq=*/num_sent);
+    DynamicByteBuffer packet =
+        MakeIsoPacket(kIsoHandle1, /*seq=*/static_cast<uint16_t>(num_sent));
     connection1.SendData(std::move(packet));
   }
   // No packets should be sent.
@@ -544,8 +554,8 @@ TEST_F(IsoDataChannelTests, SendDataMultipleConnections) {
 
   // The next queued connection2 packet should be sent after NOCP event.
   {
-    DynamicByteBuffer expected_packet =
-        MakeIsoPacket(kIsoHandle2, /*seq=*/kDefaultMaxNumPackets);
+    DynamicByteBuffer expected_packet = MakeIsoPacket(
+        kIsoHandle2, /*seq=*/static_cast<uint16_t>(kDefaultMaxNumPackets));
     EXPECT_ISO_PACKET_OUT(test_device(), expected_packet);
   }
   test_device()->SendCommandChannelPacket(
@@ -625,7 +635,8 @@ TEST_F(IsoDataChannelTests,
 
   // Fill controller buffer with connection1 packets.
   for (size_t num_sent = 0; num_sent < kDefaultMaxNumPackets; ++num_sent) {
-    DynamicByteBuffer packet = MakeIsoPacket(kIsoHandle1, /*seq=*/num_sent);
+    DynamicByteBuffer packet =
+        MakeIsoPacket(kIsoHandle1, /*seq=*/static_cast<uint16_t>(num_sent));
     EXPECT_ISO_PACKET_OUT(test_device(), packet);
     connection1.SendData(std::move(packet));
   }
@@ -634,8 +645,8 @@ TEST_F(IsoDataChannelTests,
   EXPECT_NE(lease_provider().lease_count(), 0u);
 
   // Queue 1 packet in connection2.
-  DynamicByteBuffer packet =
-      MakeIsoPacket(kIsoHandle2, /*seq=*/kDefaultMaxNumPackets);
+  DynamicByteBuffer packet = MakeIsoPacket(
+      kIsoHandle2, /*seq=*/static_cast<uint16_t>(kDefaultMaxNumPackets));
   EXPECT_ISO_PACKET_OUT(test_device(), packet);
   connection2.SendData(std::move(packet));
   RunUntilIdle();
@@ -675,7 +686,8 @@ TEST_F(IsoDataChannelTests,
 
   // Fill controller buffer with connection1 packets.
   for (size_t num_sent = 0; num_sent < kDefaultMaxNumPackets; ++num_sent) {
-    DynamicByteBuffer packet = MakeIsoPacket(kIsoHandle1, /*seq=*/num_sent);
+    DynamicByteBuffer packet =
+        MakeIsoPacket(kIsoHandle1, /*seq=*/static_cast<uint16_t>(num_sent));
     EXPECT_ISO_PACKET_OUT(test_device(), packet);
     connection1.SendData(std::move(packet));
   }
@@ -683,8 +695,8 @@ TEST_F(IsoDataChannelTests,
   EXPECT_TRUE(test_device()->AllExpectedIsoPacketsSent());
 
   // Queue 1 packet in connection2.
-  DynamicByteBuffer packet =
-      MakeIsoPacket(kIsoHandle2, /*seq=*/kDefaultMaxNumPackets);
+  DynamicByteBuffer packet = MakeIsoPacket(
+      kIsoHandle2, /*seq=*/static_cast<uint16_t>(kDefaultMaxNumPackets));
   EXPECT_ISO_PACKET_OUT(test_device(), packet);
   connection2.SendData(std::move(packet));
   RunUntilIdle();
@@ -711,7 +723,8 @@ TEST_F(IsoDataChannelTests, NocpExceedsPendingPacketCount) {
   // Fill controller buffer with connection1 packets.
   size_t num_sent = 0;
   for (; num_sent < kDefaultMaxNumPackets; ++num_sent) {
-    DynamicByteBuffer packet = MakeIsoPacket(kIsoHandle1, /*seq=*/num_sent);
+    DynamicByteBuffer packet =
+        MakeIsoPacket(kIsoHandle1, /*seq=*/static_cast<uint16_t>(num_sent));
     EXPECT_ISO_PACKET_OUT(test_device(), packet);
     connection1.SendData(std::move(packet));
   }
@@ -720,7 +733,8 @@ TEST_F(IsoDataChannelTests, NocpExceedsPendingPacketCount) {
 
   // Queue a full buffer's worth of packets.
   for (; num_sent < kDefaultMaxNumPackets * 2; ++num_sent) {
-    DynamicByteBuffer packet = MakeIsoPacket(kIsoHandle1, /*seq=*/num_sent);
+    DynamicByteBuffer packet =
+        MakeIsoPacket(kIsoHandle1, /*seq=*/static_cast<uint16_t>(num_sent));
     EXPECT_ISO_PACKET_OUT(test_device(), packet);
     connection1.SendData(std::move(packet));
   }
@@ -729,13 +743,14 @@ TEST_F(IsoDataChannelTests, NocpExceedsPendingPacketCount) {
 
   // Receive NOCP with invalid number of packets.
   test_device()->SendCommandChannelPacket(
-      testing::NumberOfCompletedPacketsPacket(kIsoHandle1,
-                                              kDefaultMaxNumPackets + 1));
+      testing::NumberOfCompletedPacketsPacket(
+          kIsoHandle1, static_cast<uint16_t>(kDefaultMaxNumPackets + 1)));
   RunUntilIdle();
   EXPECT_TRUE(test_device()->AllExpectedIsoPacketsSent());
 
   // Next frame should not be sent until an additional NOCP.
-  DynamicByteBuffer packet = MakeIsoPacket(kIsoHandle1, /*seq=*/num_sent);
+  DynamicByteBuffer packet =
+      MakeIsoPacket(kIsoHandle1, /*seq=*/static_cast<uint16_t>(num_sent));
   EXPECT_ISO_PACKET_OUT(test_device(), packet);
   connection1.SendData(std::move(packet));
   RunUntilIdle();
