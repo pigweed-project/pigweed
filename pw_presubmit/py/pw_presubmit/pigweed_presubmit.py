@@ -1171,9 +1171,19 @@ SOURCE_FILES_FILTER_CMAKE_EXCLUDE = FileFilter(
 # Presubmit check programs
 #
 
+
+def lockfile_check(ctx: PresubmitContext) -> None:
+    bazel_checks.lockfile_check(
+        ctx,
+        additional_lockfiles=(
+            'pw_kernel/examples/adventure/MODULE.bazel.lock',
+            'targets/pw_rp2350/zephyr/MODULE.bazel.lock',
+        ),
+    )
+
+
 OTHER_CHECKS = (
     # keep-sorted: start
-    bazel_checks.lockfile_check,
     bthost_package,
     bthost_package_internal,
     build.gn_gen_check,
@@ -1192,6 +1202,7 @@ OTHER_CHECKS = (
     gn_platform_build_check,
     gn_python_build_check,
     gn_stm_build_check,
+    lockfile_check,
     module_owners.presubmit_check(),
     npm_presubmit.vscode_test,
     pw_internal_namespace.pw_internal_namespace,

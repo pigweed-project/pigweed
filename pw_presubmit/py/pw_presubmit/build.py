@@ -108,6 +108,7 @@ def bazel(
     ctx: PresubmitContext,
     cmd: str,
     *args: str,
+    override_working_dir: Path | None = None,
     remote_download_outputs: str = 'minimal',
     stdout: io.TextIOWrapper | None = None,
     strict_module_lockfile: bool = False,
@@ -165,6 +166,10 @@ def bazel(
                     stderr=errs,
                 )
 
+            working_dir = ctx.root
+            if override_working_dir:
+                working_dir = override_working_dir
+
             call(
                 BAZEL_EXECUTABLE,
                 cmd,
@@ -174,7 +179,7 @@ def bazel(
                 *strict_lockfile,
                 *remote_cache,
                 *args,
-                cwd=ctx.root,
+                cwd=working_dir,
                 tee=stdout,
                 call_annotation={'build_system': 'bazel'},
                 **kwargs,

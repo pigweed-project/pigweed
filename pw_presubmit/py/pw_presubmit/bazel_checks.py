@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 """Bazel related checks."""
+from typing import Iterable
 
 from pw_presubmit.private.result import PresubmitFailure
 from . import build, git_repo, presubmit, presubmit_context
@@ -77,7 +78,10 @@ def includes_presubmit_check(
     return includes_check
 
 
-def lockfile_check(ctx: presubmit_context.PresubmitContext) -> None:
+def lockfile_check(
+    ctx: presubmit_context.PresubmitContext,
+    additional_lockfiles: Iterable[str] | None = None,
+) -> None:
     """Verify that MODULE.bazel.lock is up to date.
 
     Note: unlike most presubmit checks, this check intentionally modifies the
@@ -87,16 +91,51 @@ def lockfile_check(ctx: presubmit_context.PresubmitContext) -> None:
 
     Args:
       ctx: A presubmit context.
+      additional_lockfiles: A list of extra MODULE.bazel.lock file paths to
+        check. Each path should be relative to the repo root.
     """
-    build.bazel(ctx, 'mod', 'deps', '--lockfile_mode=update')
+    bazel_roots = [
+        # Top level //MODULE.bazel.lock
+        ctx.root,
+    ]
+    if additional_lockfiles:
+        for lockfile in additional_lockfiles:
+            lockfile_path = ctx.root / lockfile
+            if not lockfile_path.is_file():
+                raise PresubmitFailure(f'{lockfile_path} does not exist')
+            bazel_roots.append(lockfile_path.parent)
 
-    diff = git_repo.find_git_repo(ctx.root).diff('MODULE.bazel.lock')
-    if not diff:
+    failures_found = False
+    for working_dir in bazel_roots:
+        build.bazel(
+            ctx,
+            'mod',
+            'deps',
+            '--lockfile_mode=update',
+            override_working_dir=working_dir,
+        )
+
+        diff = git_repo.find_git_repo(ctx.root).diff(
+            working_dir / 'MODULE.bazel.lock'
+        )
+        if not diff:
+            continue
+
+        failures_found = True
+
+    if not failures_found:
         return
 
     ctx.output_dir.mkdir(exist_ok=True, parents=True)
     diff_path = ctx.output_dir / 'git_diff.txt'
+    diff = git_repo.find_git_repo(ctx.root).diff(
+        *[wd / 'MODULE.bazel.lock' for wd in bazel_roots]
+    )
     with open(diff_path, 'w') as stdout:
         stdout.write(diff)
 
-    raise PresubmitFailure(f'git diff output is not empty; see {diff_path}')
+    raise PresubmitFailure(
+        f'git diff output is not empty; see {diff_path}\n'
+        'Run this presubmit locally to update all lockfiles:\n'
+        '  pw presubmit --step lockfile_check'
+    )

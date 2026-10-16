@@ -13,3 +13,4 @@
 # the License.
 
 bazel-*
+MODULE.bazel.lock
