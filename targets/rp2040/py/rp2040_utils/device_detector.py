@@ -27,6 +27,8 @@ from typing import Iterable, Optional, Sequence
 from ctypes.util import find_library as ctypes_find_library
 import serial.tools.list_ports  # type: ignore[import-untyped]
 import usb  # type: ignore
+import usb.core  # type: ignore
+import usb.util  # type: ignore
 from usb.backend import libusb1  # type: ignore
 
 import pw_cli.log
@@ -274,6 +276,64 @@ class PicoDebugProbeBoardInfo(PicoBoardInfo):
     @staticmethod
     def device_id() -> int:
         return _DEBUG_PROBE_DEVICE_ID
+
+    def is_usbip(self) -> bool:
+        """Returns True if attached via Linux USB/IP (vhci_hcd)."""
+        if platform.system() != 'Linux':
+            return False
+        for attr in ('manufacturer', 'product'):
+            sysfs_path = Path(f'/sys/bus/usb/devices/usb{self.bus}/{attr}')
+            try:
+                val = sysfs_path.read_text(encoding='utf-8', errors='ignore')
+                if 'vhci_hcd' in val or 'USB/IP' in val:
+                    return True
+            except OSError:
+                pass
+        return False
+
+    def prime_for_probe_rs(self) -> None:
+        """Primes CMSIS-DAPv2 endpoints so probe-rs can open over USB/IP.
+
+        When probe-rs opens a CMSIS-DAPv2 probe, it first issues a bulk IN read
+        on EP 0x85 with a 1ms timeout to drain stale data. Over USB/IP (where
+        network RTT exceeds 1ms), that read always times out locally at 1ms and
+        sends a USBIP_CMD_UNLINK. If EP 0x85 has no data queued, the unlinked
+        IN transfer wedges the endpoint/proxy and causes all subsequent
+        DAP_Info packet-size queries to time out.
+
+        Resetting interface 0, draining any stale responses, and leaving
+        a single DAP_Info(PacketSize) response queued on EP 0x85
+        allows probe-rs's 1ms drain read to consume that packet cleanly on the
+        remote USB/IP host while still timing out locally at 1ms to exit the
+        drain loop.
+        """
+        if not self.is_usbip():
+            return
+
+        _LOG.debug('Priming CMSIS-DAPv2 endpoints on USB/IP debug probe')
+        dev = self._lookup_device()
+        usb.util.claim_interface(dev, 0)
+        try:
+            # 1. Reset interface 0 and drain any stale responses so the probe's
+            # ring buffer is empty (rd_idx == wr_idx).
+            dev.set_interface_altsetting(0, 0)
+            for _ in range(8):
+                dev.write(0x04, b'\x00\xff', timeout=500)
+            while True:
+                try:
+                    dev.read(0x85, 64, timeout=200)
+                except usb.core.USBTimeoutError:
+                    break
+
+            # 2. Reset interface 0 after the drain timeout and leave 1 response
+            # packet queued on EP 0x85 for probe-rs's initial 1ms drain read.
+            dev.set_interface_altsetting(0, 0)
+            dev.write(0x04, b'\x00\xff', timeout=500)
+            dev.write(0x04, b'\x00\xff', timeout=500)
+            dev.read(0x85, 64, timeout=500)
+        finally:
+            usb.util.release_interface(dev, 0)
+            usb.util.dispose_resources(dev)
 
 
 @dataclass

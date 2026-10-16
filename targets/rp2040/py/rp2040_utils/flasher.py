@@ -228,14 +228,12 @@ def _load_debugprobe_binary(
         str(elf_path),
     )
     _LOG.debug('Flashing ==> %s', ' '.join(download_cmd))
-    process = subprocess.run(
-        download_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-    )
+    board_info.prime_for_probe_rs()
+    process = subprocess.run(download_cmd, check=False)
     if process.returncode:
-        err = (
+        err: tuple[str, ...] = (
             'Flashing command failed: ' + ' '.join(download_cmd),
             str(board_info),
-            process.stdout.decode('utf-8', errors='replace'),
         )
         _LOG.error('\n\n'.join(err))
         return False
@@ -251,6 +249,7 @@ def _load_debugprobe_binary(
         chip,
     )
     _LOG.debug('Resetting ==> %s', ' '.join(reset_cmd))
+    board_info.prime_for_probe_rs()
     process = subprocess.run(
         reset_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
