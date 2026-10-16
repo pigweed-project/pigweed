@@ -80,9 +80,14 @@ class ValueFuture {
   /// `ValueFuture` to ensure the future is unlisted before the derived class
   /// members are destroyed.
   void Cancel() PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
-    std::lock_guard lock(internal::ValueProviderLock());
-    core_.Reset();
-    value_.reset();
+    std::optional<T> discarded;
+    {
+      std::lock_guard lock(internal::ValueProviderLock());
+      core_.Reset();
+      discarded.swap(value_);
+    }
+    // `discarded` is destroyed here, outside the lock: its destructor may use
+    // value providers (and thus the lock) itself.
   }
 
   ~ValueFuture() PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) { Cancel(); }
@@ -129,9 +134,10 @@ class ValueFuture {
   /// the same lock acquisition.
   void MoveFrom(ValueFuture& other)
       PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    std::optional<T> discarded;  // Destroyed after the lock is released.
     if (this != &other) {
       std::lock_guard lock(internal::ValueProviderLock());
-      MoveBaseFrom(other);
+      MoveBaseFrom(other, discarded);
     }
   }
 
@@ -145,9 +151,10 @@ class ValueFuture {
   template <typename Fn>
   void MoveFrom(ValueFuture& other, Fn&& move_members)
       PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    std::optional<T> discarded;  // Destroyed after the lock is released.
     if (this != &other) {
       std::lock_guard lock(internal::ValueProviderLock());
-      MoveBaseFrom(other);
+      MoveBaseFrom(other, discarded);
       move_members();
     }
   }
@@ -167,10 +174,14 @@ class ValueFuture {
 
   ValueFuture(FutureState::Pending) : core_(FutureState::kPending) {}
 
-  void MoveBaseFrom(ValueFuture& other)
+  // Moves `other` into this future. This future's previous value, if any, is
+  // moved into `discarded` so the caller can destroy it after releasing the
+  // lock.
+  void MoveBaseFrom(ValueFuture& other, std::optional<T>& discarded)
       PW_EXCLUSIVE_LOCKS_REQUIRED(internal::ValueProviderLock()) {
     core_ = std::move(other.core_);
-    value_ = std::move(other.value_);
+    discarded.swap(value_);
+    value_.swap(other.value_);
   }
 
   template <typename... Args>

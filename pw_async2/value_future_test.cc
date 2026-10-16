@@ -14,6 +14,8 @@
 
 #include "pw_async2/value_future.h"
 
+#include <utility>
+
 #include "pw_async2/await.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
@@ -1295,6 +1297,65 @@ TEST(ValueListProvider, ResolveAllOnEmptyList) {
     return 42;
   });
   EXPECT_FALSE(invoked);
+}
+
+// A value whose destructor uses a `ValueProvider`, like a socket handle whose
+// last reference tears down an object that owns providers.
+class ProviderUsingValue {
+ public:
+  ProviderUsingValue(ValueProvider<int>& provider, int& destructions)
+      : provider_(&provider), destructions_(&destructions) {}
+
+  ProviderUsingValue(ProviderUsingValue&& other) noexcept
+      : provider_(std::exchange(other.provider_, nullptr)),
+        destructions_(other.destructions_) {}
+
+  ProviderUsingValue& operator=(ProviderUsingValue&& other) noexcept {
+    Release();
+    provider_ = std::exchange(other.provider_, nullptr);
+    destructions_ = other.destructions_;
+    return *this;
+  }
+
+  ~ProviderUsingValue() { Release(); }
+
+ private:
+  void Release() {
+    if (provider_ != nullptr) {
+      // Acquires the provider lock. Must not run while it is already held.
+      EXPECT_FALSE(provider_->has_future());
+      ++*destructions_;
+      provider_ = nullptr;
+    }
+  }
+
+  ValueProvider<int>* provider_;
+  int* destructions_;
+};
+
+TEST(ValueFuture, DestroyingUnreadValueMayUseProviders) {
+  ValueProvider<int> other_provider;
+  int destructions = 0;
+  {
+    ValueProvider<ProviderUsingValue> provider;
+    ValueFuture<ProviderUsingValue> future = provider.Get();
+    provider.Resolve(other_provider, destructions);
+  }  // Destroys the unread value.
+  EXPECT_EQ(destructions, 1);
+}
+
+TEST(ValueFuture, MoveAssigningOverUnreadValueMayUseProviders) {
+  ValueProvider<int> other_provider;
+  int destructions = 0;
+  ValueProvider<ProviderUsingValue> provider_1;
+  ValueProvider<ProviderUsingValue> provider_2;
+  ValueFuture<ProviderUsingValue> future_1 = provider_1.Get();
+  ValueFuture<ProviderUsingValue> future_2 = provider_2.Get();
+  provider_1.Resolve(other_provider, destructions);
+  provider_2.Resolve(other_provider, destructions);
+
+  future_1 = std::move(future_2);  // Destroys future_1's unread value.
+  EXPECT_EQ(destructions, 1);
 }
 
 }  // namespace
