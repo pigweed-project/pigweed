@@ -30,9 +30,15 @@ local_path_override(
     path = "../../..",
 )
 
+# TODO: https://pwbug.dev/574617885 - zephyr-bazel is dead. Switch to
+# https://pigweed.googlesource.com/third_party/github/zephyrproject-rtos/zephyr
 git_override(
     module_name = "zephyr-bazel",
     commit = "8214e58f096ea9f7524884d3e9abd63514c81938",
+    patch_strip = 1,
+    patches = [
+        "//bazel_patches:0001-Avoid-watching-resolved-symlinks-outside-workspace.patch",
+    ],
     remote = "https://pigweed.googlesource.com/zephyr/zephyr-bazel.git",
 )
 
