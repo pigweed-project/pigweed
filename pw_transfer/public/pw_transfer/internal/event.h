@@ -101,7 +101,7 @@ struct NewTransferEvent {
   const TransferParameters* max_parameters;
   chrono::SystemClock::duration timeout;
   chrono::SystemClock::duration initial_timeout;
-  uint32_t max_retries;
+  uint8_t max_retries;
   uint32_t max_lifetime_retries;
   TransferThread* transfer_thread;
 
@@ -113,7 +113,7 @@ struct NewTransferEvent {
   const std::byte* raw_chunk_data;
   size_t raw_chunk_size;
 
-  uint64_t initial_offset;
+  uint32_t initial_offset;
 };
 
 // A chunk received by a transfer client / server.
@@ -150,7 +150,7 @@ struct SetStreamEvent {
 
 struct UpdateTransferEvent {
   uint32_t handle_id;
-  uint32_t transfer_size_bytes;
+  size_t transfer_size_bytes;
 };
 
 struct ResourceStatus {

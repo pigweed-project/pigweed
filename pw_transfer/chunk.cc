@@ -371,8 +371,8 @@ size_t Chunk::EncodedSize() const {
   }
 
   if (has_payload()) {
-    size += protobuf::SizeOfDelimitedField(ProtoChunk::Fields::kData,
-                                           payload_.size());
+    size += protobuf::SizeOfDelimitedField(
+        ProtoChunk::Fields::kData, static_cast<uint32_t>(payload_.size()));
   }
 
   if (max_chunk_size_bytes_.has_value()) {
@@ -408,13 +408,13 @@ void Chunk::LogChunk(bool received,
         PW_LOG_LEVEL_DEBUG,
         rate_limit,
         "Chunk received, type: %u, session id: %u, protocol version: %u,\n"
-        "resource id: %d, desired session id: %d, offset: %u, size: %u,\n"
+        "resource id: %u, desired session id: %d, offset: %u, size: %u,\n"
         "window end offset: %u, remaining bytes: %d, status: %d",
         type_.has_value() ? static_cast<unsigned>(type_.value()) : 0,
         static_cast<unsigned>(session_id_),
         static_cast<unsigned>(protocol_version_),
         resource_id_.has_value() ? static_cast<unsigned>(resource_id_.value())
-                                 : -1,
+                                 : 0,
         desired_session_id_.has_value()
             ? static_cast<int>(desired_session_id_.value())
             : -1,
@@ -422,22 +422,21 @@ void Chunk::LogChunk(bool received,
         has_payload() ? static_cast<unsigned>(payload_.size()) : 0,
         static_cast<unsigned>(window_end_offset_),
         remaining_bytes_.has_value()
-            ? static_cast<unsigned>(remaining_bytes_.value())
+            ? static_cast<int>(remaining_bytes_.value())
             : -1,
-        status_.has_value() ? static_cast<unsigned>(status_.value().code())
-                            : -1);
+        status_.has_value() ? static_cast<int>(status_.value().code()) : -1);
   } else {
     PW_LOG_EVERY_N_DURATION(
         PW_LOG_LEVEL_DEBUG,
         rate_limit,
         "Chunk sent, type: %u, session id: %u, protocol version: %u,\n"
-        "resource id: %d, desired session id: %d, offset: %u, size: %u,\n"
+        "resource id: %u, desired session id: %d, offset: %u, size: %u,\n"
         "window end offset: %u, remaining bytes: %d, status: %d",
         type_.has_value() ? static_cast<unsigned>(type_.value()) : 0,
         static_cast<unsigned>(session_id_),
         static_cast<unsigned>(protocol_version_),
         resource_id_.has_value() ? static_cast<unsigned>(resource_id_.value())
-                                 : -1,
+                                 : 0,
         desired_session_id_.has_value()
             ? static_cast<int>(desired_session_id_.value())
             : -1,
@@ -445,10 +444,9 @@ void Chunk::LogChunk(bool received,
         has_payload() ? static_cast<unsigned>(payload_.size()) : 0,
         static_cast<unsigned>(window_end_offset_),
         remaining_bytes_.has_value()
-            ? static_cast<unsigned>(remaining_bytes_.value())
+            ? static_cast<int>(remaining_bytes_.value())
             : -1,
-        status_.has_value() ? static_cast<unsigned>(status_.value().code())
-                            : -1);
+        status_.has_value() ? static_cast<int>(status_.value().code()) : -1);
   }
 }
 

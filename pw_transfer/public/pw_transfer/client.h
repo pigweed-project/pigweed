@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+#include <limits>
+
 #include "pw_function/function.h"
 #include "pw_result/result.h"
 #include "pw_rpc/client.h"
@@ -82,8 +84,8 @@ class Client {
         client_(rpc_client, channel_id),
         transfer_thread_(transfer_thread),
         next_handle_id_(1),
-        max_parameters_(max_window_size_bytes,
-                        transfer_thread.max_chunk_size(),
+        max_parameters_(static_cast<uint32_t>(max_window_size_bytes),
+                        static_cast<uint32_t>(transfer_thread.max_chunk_size()),
                         extend_window_divisor),
         max_retries_(cfg::kDefaultMaxClientRetries),
         max_lifetime_retries_(cfg::kDefaultMaxLifetimeRetries),
@@ -176,7 +178,8 @@ class Client {
   }
 
   constexpr Status set_max_retries(uint32_t max_retries) {
-    if (max_retries < 1 || max_retries > max_lifetime_retries_) {
+    if (max_retries < 1 || max_retries > max_lifetime_retries_ ||
+        max_retries > std::numeric_limits<uint8_t>::max()) {
       return Status::InvalidArgument();
     }
     max_retries_ = max_retries;

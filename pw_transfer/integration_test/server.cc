@@ -181,10 +181,10 @@ void RunServer(int socket_port, ServerConfig config) {
       transfer_thread,
       config.pending_bytes(),
       std::chrono::seconds(config.chunk_timeout_seconds()),
-      config.transfer_service_retries(),
+      static_cast<uint8_t>(config.transfer_service_retries()),
       config.extend_window_divisor());
 
-  rpc::system_server::set_socket_port(socket_port);
+  rpc::system_server::set_socket_port(static_cast<uint16_t>(socket_port));
 
   rpc::system_server::Init();
   rpc::system_server::Server().RegisterService(transfer_service);

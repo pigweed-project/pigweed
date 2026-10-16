@@ -34,7 +34,6 @@ pw_cc_binary(
         "-Wno-gnu-anonymous-struct",
         "-Wno-nested-anon-types",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":config_cc_proto",
         "//pw_assert:check",
@@ -91,13 +90,11 @@ pw_py_test(
 proto_library(
     name = "config_proto",
     srcs = ["config.proto"],
-    features = ["-conversion_warnings"],
     deps = ["//pw_protobuf:status_proto"],
 )
 
 cc_proto_library(
     name = "config_cc_proto",
-    features = ["-conversion_warnings"],
     # cc_proto_library pulls in the regular proto library, which is only
     # needed for host tests.
     target_compatible_with = incompatible_with_mcu(),
@@ -126,7 +123,6 @@ pw_cc_binary(
         "-Wno-gnu-anonymous-struct",
         "-Wno-nested-anon-types",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":config_cc_proto",
         "//pw_assert:check",
@@ -155,7 +151,6 @@ pw_py_library(
         ":python_client",
         ":server",
     ],
-    features = ["-conversion_warnings"],
     imports = ["."],
     # TODO: b/434032260 - Fix these warnings.
     tags = [
@@ -217,7 +212,6 @@ pw_py_test(
     srcs = [
         "cross_language_medium_read_test.py",
     ],
-    features = ["-conversion_warnings"],
     tags = [
         "integration",
         # TODO: b/434032260 - Fix these warnings.
@@ -239,7 +233,6 @@ pw_py_test(
     srcs = [
         "cross_language_medium_write_test.py",
     ],
-    features = ["-conversion_warnings"],
     tags = [
         "integration",
         # TODO: b/434032260 - Fix these warnings.
@@ -261,7 +254,6 @@ pw_py_test(
     srcs = [
         "cross_language_small_test.py",
     ],
-    features = ["-conversion_warnings"],
     tags = [
         "integration",
         # TODO: b/434032260 - Fix these warnings.
@@ -282,7 +274,6 @@ pw_py_test(
     srcs = [
         "multi_transfer_test.py",
     ],
-    features = ["-conversion_warnings"],
     tags = [
         "integration",
         # TODO: b/434032260 - Fix these warnings.
@@ -301,7 +292,6 @@ pw_py_test(
     name = "expected_errors_test",
     timeout = "long",
     srcs = ["expected_errors_test.py"],
-    features = ["-conversion_warnings"],
     tags = [
         "integration",
         # TODO: b/434032260 - Fix these warnings.
@@ -325,7 +315,6 @@ pw_py_test(
     data = [
         "@pw_transfer_test_binaries//:all",
     ],
-    features = ["-conversion_warnings"],
     tags = [
         "integration",
         # TODO: b/434032260 - Fix these warnings.

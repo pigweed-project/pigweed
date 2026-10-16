@@ -28,8 +28,9 @@ size_t RateEstimate::GetRateBytesPerSecond() const {
   }
 
   constexpr unsigned int kMillsecondsPerSecond = 1000;
-  return (static_cast<uint64_t>(bytes_transferred_) * kMillsecondsPerSecond) /
-         elapsed_ms.count();
+  return static_cast<size_t>(
+      (static_cast<uint64_t>(bytes_transferred_) * kMillsecondsPerSecond) /
+      static_cast<uint64_t>(elapsed_ms.count()));
 }
 
 }  // namespace pw::transfer

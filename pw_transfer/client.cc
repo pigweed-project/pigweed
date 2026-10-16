@@ -53,7 +53,7 @@ Result<Client::Handle> Client::Read(
                                        std::move(on_completion),
                                        timeout,
                                        initial_chunk_timeout,
-                                       max_retries_,
+                                       static_cast<uint8_t>(max_retries_),
                                        max_lifetime_retries_,
                                        initial_offset);
   return handle;
@@ -91,7 +91,7 @@ Result<Client::Handle> Client::Write(
                                        std::move(on_completion),
                                        timeout,
                                        initial_chunk_timeout,
-                                       max_retries_,
+                                       static_cast<uint8_t>(max_retries_),
                                        max_lifetime_retries_,
                                        initial_offset);
 

@@ -88,7 +88,8 @@ pw::Status PerformTransferActions(const pw::transfer::ClientConfig& config) {
   // array of TransferResults needs to outlive the loop that performs the
   // actual transfer actions due to how some references to TransferResult
   // may persist beyond the lifetime of a transfer.
-  const int num_actions = config.transfer_actions().size();
+  const size_t num_actions =
+      static_cast<size_t>(config.transfer_actions().size());
   auto transfer_results = std::make_unique<TransferResult[]>(num_actions);
 
   pw::transfer::Client client(rpc::integration_test::client(),
@@ -114,8 +115,9 @@ pw::Status PerformTransferActions(const pw::transfer::ClientConfig& config) {
   }
 
   Status final_status = pw::OkStatus();
-  for (int i = 0; i < num_actions; i++) {
-    const pw::transfer::TransferAction& action = config.transfer_actions()[i];
+  for (size_t i = 0; i < num_actions; i++) {
+    const pw::transfer::TransferAction& action =
+        config.transfer_actions()[static_cast<int>(i)];
     TransferResult& result = transfer_results[i];
     // If no protocol version is specified, default to the latest version.
     pw::transfer::ProtocolVersion protocol_version =

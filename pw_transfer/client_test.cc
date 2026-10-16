@@ -478,7 +478,7 @@ TEST_F(ReadTransferMaxBytes32, TooMuchData_HitsLifetimeRetries) {
   stream::MemoryWriterBuffer<32> writer;
   Status transfer_status = Status::Unknown();
 
-  constexpr int kLowMaxLifetimeRetries = 3;
+  constexpr uint32_t kLowMaxLifetimeRetries = 3;
   legacy_client_.set_max_lifetime_retries(kLowMaxLifetimeRetries).IgnoreError();
 
   ASSERT_EQ(
@@ -519,7 +519,7 @@ TEST_F(ReadTransferMaxBytes32, TooMuchData_HitsLifetimeRetries) {
                       .set_payload(data.subspan(16, 8))));
 
   // pending_bytes == 8, but send 16 several times.
-  for (int i = 0; i < kLowMaxLifetimeRetries; ++i) {
+  for (uint32_t i = 0; i < kLowMaxLifetimeRetries; ++i) {
     context_.server().SendServerStream<Transfer::Read>(
         EncodeChunk(Chunk(ProtocolVersion::kLegacy, Chunk::Type::kData)
                         .set_session_id(8)

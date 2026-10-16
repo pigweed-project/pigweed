@@ -79,7 +79,6 @@ cc_library(
         "public/pw_transfer/rate_estimate.h",
         "public/pw_transfer/transfer_thread.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -116,7 +115,6 @@ cc_library(
     hdrs = [
         "public/pw_transfer/transfer.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -137,7 +135,6 @@ cc_library(
         "handler_allocator.cc",
     ],
     hdrs = ["public/pw_transfer/handler_allocator.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":pw_transfer",
@@ -160,7 +157,6 @@ cc_library(
     hdrs = [
         "public/pw_transfer/atomic_file_transfer_handler.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":atomic_file_transfer_handler_internal",
@@ -183,7 +179,6 @@ cc_library(
     srcs = [
         "pw_transfer_private/chunk_testing.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_containers:vector"],
     deps = [
         ":core",
@@ -194,14 +189,12 @@ cc_library(
 pw_cc_test(
     name = "chunk_test",
     srcs = ["chunk_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [":core"],
 )
 
 pw_cc_test(
     name = "handler_test",
     srcs = ["handler_test.cc"],
-    features = ["-conversion_warnings"],
     # TODO: b/235345886 - Fix transfer tests on Windows and non-host builds.
     target_compatible_with = select(hosts_lin_mac),
     deps = [":pw_transfer"],
@@ -210,7 +203,6 @@ pw_cc_test(
 pw_cc_test(
     name = "handler_allocator_test",
     srcs = ["handler_allocator_test.cc"],
-    features = ["-conversion_warnings"],
     # TODO: b/235345886 - Fix transfer tests on Windows and non-host builds.
     target_compatible_with = select(hosts_lin_mac),
     deps = [
@@ -226,7 +218,6 @@ pw_cc_test(
 pw_cc_test(
     name = "atomic_file_transfer_handler_test",
     srcs = ["atomic_file_transfer_handler_test.cc"],
-    features = ["-conversion_warnings"],
     # TODO: b/235345886 - Fix transfer tests on Windows and non-host builds.
     target_compatible_with = select(hosts_lin_mac),
     deps = [
@@ -241,7 +232,6 @@ pw_cc_test(
 pw_cc_test(
     name = "transfer_thread_test",
     srcs = ["transfer_thread_test.cc"],
-    features = ["-conversion_warnings"],
     # TODO: b/235345886 - Fix transfer tests on Windows and non-host builds.
     target_compatible_with = select(hosts_lin_mac),
     deps = [
@@ -258,7 +248,6 @@ pw_cc_test(
 pw_cc_test(
     name = "transfer_test",
     srcs = ["transfer_test.cc"],
-    features = ["-conversion_warnings"],
     # TODO: b/235345886 - Fix transfer tests on Windows and non-host builds.
     target_compatible_with = select(hosts_lin_mac),
     deps = [
@@ -275,7 +264,6 @@ pw_cc_test(
 pw_cc_test(
     name = "client_test",
     srcs = ["client_test.cc"],
-    features = ["-conversion_warnings"],
     # TODO: b/235345886 - Fix transfer tests on Windows and non-host builds.
     target_compatible_with = select(hosts_lin_mac),
     deps = [

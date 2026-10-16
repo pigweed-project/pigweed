@@ -47,8 +47,8 @@ thread::Options& TransferThreadOptions() {
 class TransferThreadTest : public ::testing::Test {
  public:
   TransferThreadTest()
-      : max_parameters_(chunk_buffer_.size(),
-                        chunk_buffer_.size(),
+      : max_parameters_(static_cast<uint32_t>(chunk_buffer_.size()),
+                        static_cast<uint32_t>(chunk_buffer_.size()),
                         cfg::kDefaultExtendWindowDivisor),
         transfer_thread_(chunk_buffer_, encode_buffer_),
         system_thread_(TransferThreadOptions(), transfer_thread_),

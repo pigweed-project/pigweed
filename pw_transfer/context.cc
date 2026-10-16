@@ -1346,7 +1346,7 @@ uint32_t Context::MaxWriteChunkSize(uint32_t max_chunk_size_bytes,
       "Transfer service maximum chunk size is too small to fit a payload. "
       "Increase max_chunk_size_bytes to support write transfers.");
 
-  return max_size;
+  return static_cast<uint32_t>(max_size);
 }
 
 void Context::LogTransferConfiguration() {
