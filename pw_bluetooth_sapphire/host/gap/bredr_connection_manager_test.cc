@@ -4226,6 +4226,134 @@ TEST_F(BrEdrConnectionManagerTest, DisconnectPendingConnections) {
                                      DisconnectReason::kApiRequest));
 }
 
+TEST_F(BrEdrConnectionManagerTest,
+       QueuedPeerRemovedBeforeTryCreateNextConnection) {
+  Peer* peer_a = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
+  Peer* peer_b = peer_cache()->NewPeer(kTestDevAddr2, /*connectable=*/true);
+  const PeerId peer_b_id = peer_b->identifier();
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kCreateConnection, &kCreateConnectionRsp);
+
+  std::optional<hci::Result<>> status_a;
+  auto callback_a = [&status_a](hci::Result<> status,
+                                BrEdrConnection* /*conn*/) {
+    status_a = status;
+  };
+  std::optional<hci::Result<>> status_b;
+  auto callback_b = [&status_b](hci::Result<> status, BrEdrConnection* conn) {
+    status_b = status;
+    EXPECT_EQ(nullptr, conn);
+  };
+
+  // Peer A's request is sent to the controller; Peer B's request is queued in
+  // connection_requests_.
+  EXPECT_TRUE(connmgr()->Connect(peer_a->identifier(), callback_a));
+  EXPECT_TRUE(connmgr()->Connect(peer_b_id, callback_b));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  // Remove Peer B from PeerCache while its connection request is still queued.
+  ASSERT_TRUE(peer_cache()->RemoveDisconnectedPeer(peer_b_id));
+  EXPECT_EQ(nullptr, peer_cache()->FindById(peer_b_id));
+
+  // Complete Peer A's connection with an error so CompleteRequest invokes
+  // TryCreateNextConnection(), which must cancel Peer B's stale request rather
+  // than dereferencing a null Peer pointer.
+  test_device()->SendCommandChannelPacket(kConnectionCompleteError);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  ASSERT_TRUE(status_a.has_value());
+  EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::
+                         CONNECTION_FAILED_TO_BE_ESTABLISHED),
+            *status_a);
+  ASSERT_TRUE(status_b.has_value());
+  EXPECT_EQ(ToResult(HostError::kCanceled), *status_b);
+}
+
+TEST_F(BrEdrConnectionManagerTest,
+       QueuedPeerRemovedCallbackReentrantlyConnects) {
+  const DeviceAddress kTestDevAddr3(DeviceAddress::Type::kBREDR, {4});
+  Peer* peer_a = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
+  Peer* peer_b = peer_cache()->NewPeer(kTestDevAddr2, /*connectable=*/true);
+  Peer* peer_c = peer_cache()->NewPeer(kTestDevAddr3, /*connectable=*/true);
+  const PeerId peer_b_id = peer_b->identifier();
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kCreateConnection, &kCreateConnectionRsp);
+
+  std::optional<hci::Result<>> status_a;
+  auto callback_a = [&status_a](hci::Result<> status,
+                                BrEdrConnection* /*conn*/) {
+    status_a = status;
+  };
+  std::optional<hci::Result<>> status_a_retry;
+  auto callback_a_retry = [&status_a_retry](hci::Result<> status,
+                                            BrEdrConnection* /*conn*/) {
+    status_a_retry = status;
+  };
+  std::optional<hci::Result<>> status_c;
+  auto callback_c = [&status_c](hci::Result<> status,
+                                BrEdrConnection* /*conn*/) {
+    status_c = status;
+  };
+
+  std::optional<hci::Result<>> status_b;
+  auto callback_b = [&](hci::Result<> status, BrEdrConnection* conn) {
+    status_b = status;
+    EXPECT_EQ(nullptr, conn);
+    // Re-entrantly initiate a new connection to Peer A (which starts a new
+    // pending_request_ immediately) and queue a connection to Peer C. The outer
+    // TryCreateNextConnection() must notice pending_request_ is now active and
+    // not overwrite it with Peer C's queued request.
+    EXPECT_TRUE(connmgr()->Connect(peer_a->identifier(), callback_a_retry));
+    EXPECT_TRUE(connmgr()->Connect(peer_c->identifier(), callback_c));
+  };
+
+  EXPECT_TRUE(connmgr()->Connect(peer_a->identifier(), callback_a));
+  EXPECT_TRUE(connmgr()->Connect(peer_b_id, callback_b));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  ASSERT_TRUE(peer_cache()->RemoveDisconnectedPeer(peer_b_id));
+
+  // Expect only Peer A's re-entrant CreateConnection command when Peer A's
+  // initial connection fails and Peer B's cancellation callback runs.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kCreateConnection, &kCreateConnectionRsp);
+  test_device()->SendCommandChannelPacket(kConnectionCompleteError);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  ASSERT_TRUE(status_a.has_value());
+  EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::
+                         CONNECTION_FAILED_TO_BE_ESTABLISHED),
+            *status_a);
+  ASSERT_TRUE(status_b.has_value());
+  EXPECT_EQ(ToResult(HostError::kCanceled), *status_b);
+  EXPECT_FALSE(status_a_retry.has_value());
+  EXPECT_FALSE(status_c.has_value());
+
+  // Now complete Peer A's retry with an error; Peer C's queued request should
+  // be sent next.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::CreateConnectionPacket(kTestDevAddr3),
+                        &kCreateConnectionRsp);
+  test_device()->SendCommandChannelPacket(kConnectionCompleteError);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  ASSERT_TRUE(status_a_retry.has_value());
+  EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::
+                         CONNECTION_FAILED_TO_BE_ESTABLISHED),
+            *status_a_retry);
+  EXPECT_FALSE(status_c.has_value());
+
+  // Clean up Peer C's pending connection before teardown.
+  test_device()->SendCommandChannelPacket(testing::ConnectionCompletePacket(
+      kTestDevAddr3,
+      0x0000,
+      pw::bluetooth::emboss::StatusCode::CONNECTION_FAILED_TO_BE_ESTABLISHED));
+  RETURN_IF_FATAL(RunUntilIdle());
+  ASSERT_TRUE(status_c.has_value());
+}
+
 TEST_F(BrEdrConnectionManagerTest, DisconnectCooldownIncoming) {
   auto* peer = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
 

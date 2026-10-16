@@ -718,7 +718,7 @@ void HostServer::ConnectBrEdr(PeerId peer_id, ConnectCallback callback) {
 
 void HostServer::Forget(fbt::PeerId peer_id, ForgetCallback callback) {
   bt::PeerId id{peer_id.value};
-  auto peer = adapter()->peer_cache()->FindById(id);
+  bt::gap::Peer* peer = adapter()->peer_cache()->FindById(id);
   if (!peer) {
     bt_log(DEBUG, "fidl", "peer %s to forget wasn't found", bt_str(id));
     callback(fpromise::ok());
@@ -731,7 +731,6 @@ void HostServer::Forget(fbt::PeerId peer_id, ForgetCallback callback) {
       adapter()->bredr() ? adapter()->bredr()->Disconnect(
                                id, bt::gap::DisconnectReason::kApiRequest)
                          : true;
-  const bool peer_removed = adapter()->peer_cache()->RemoveDisconnectedPeer(id);
 
   if (!le_disconnected || !bredr_disconnected) {
     bt_log(WARN,
@@ -741,10 +740,12 @@ void HostServer::Forget(fbt::PeerId peer_id, ForgetCallback callback) {
            le_disconnected ? "" : " LE",
            bredr_disconnected ? "" : " BR/EDR");
     callback(fpromise::error(fsys::Error::FAILED));
-  } else {
-    PW_CHECK(peer_removed);
-    callback(fpromise::ok());
+    return;
   }
+
+  const bool peer_removed = adapter()->peer_cache()->RemoveDisconnectedPeer(id);
+  PW_CHECK(peer_removed);
+  callback(fpromise::ok());
 }
 
 void HostServer::Pair(fbt::PeerId id,

@@ -1367,6 +1367,36 @@ TEST_F(HostServerTest, ConnectDualMode) {
   EXPECT_EQ(1, test_device()->acl_create_connection_command_count());
 }
 
+TEST_F(HostServerTest, ForgetPeerWithPendingBrEdrConnectionDoesNotRemovePeer) {
+  bt::gap::Peer* peer = AddFakePeer(kBredrTestAddr);
+  const bt::PeerId peer_id = peer->identifier();
+  test_device()->FindPeer(kBredrTestAddr)->set_force_pending_connect(true);
+
+  std::optional<ConnectResult> connect_result;
+  host_client()->Connect(
+      fbt::PeerId{peer_id.value()},
+      [&](ConnectResult result) { connect_result = std::move(result); });
+  RunLoopUntilIdle();
+  EXPECT_FALSE(connect_result.has_value());
+  ASSERT_TRUE(peer->bredr());
+  EXPECT_TRUE(peer->bredr()->initializing());
+
+  std::optional<fhost::Host_Forget_Result> forget_result;
+  host_client()->Forget(fbt::PeerId{peer_id.value()},
+                        [&](fhost::Host_Forget_Result result) {
+                          forget_result = std::move(result);
+                        });
+  RunLoopUntilIdle();
+  ASSERT_TRUE(forget_result.has_value());
+  ASSERT_TRUE(forget_result->is_err());
+  EXPECT_EQ(fsys::Error::FAILED, forget_result->err());
+
+  // Because disconnecting the pending BR/EDR connection failed, the peer must
+  // remain in the peer cache rather than being removed prematurely.
+  ASSERT_NE(nullptr, adapter()->peer_cache()->FindById(peer_id));
+  EXPECT_TRUE(peer->bredr()->initializing());
+}
+
 TEST_F(HostServerTest, RestoreBondsErrorDataMissing) {
   fsys::BondingData bond;
 

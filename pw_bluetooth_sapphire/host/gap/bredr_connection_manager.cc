@@ -2021,12 +2021,37 @@ void BrEdrConnectionManager::TryCreateNextConnection() {
     return;
   }
 
+  // Clean up any requests for peers that have been removed from the cache.
+  std::vector<BrEdrConnectionRequest> canceled_requests;
+  for (auto it = connection_requests_.begin();
+       it != connection_requests_.end();) {
+    if (cache_->FindById(it->first)) {
+      ++it;
+      continue;
+    }
+    auto node = connection_requests_.extract(it++);
+    canceled_requests.push_back(std::move(node.mapped()));
+  }
+  auto self = weak_self_.GetWeakPtr();
+  for (BrEdrConnectionRequest& request : canceled_requests) {
+    request.NotifyCallbacks(ToResult(HostError::kCanceled),
+                            [] { return nullptr; });
+    if (!self.is_alive()) {
+      return;
+    }
+  }
+  // A canceled request's callback may have re-entrantly called Connect() and
+  // started a new pending_request_.
+  if (pending_request_) {
+    return;
+  }
+
   // Find next outgoing BR/EDR request if available
   auto is_bredr_and_outgoing = [this](const auto& key_val) {
     PeerId peer_id = key_val.first;
     const BrEdrConnectionRequest* request = &key_val.second;
     const Peer* peer = cache_->FindById(peer_id);
-    return peer->bredr() && !request->HasIncoming();
+    return peer && peer->bredr() && !request->HasIncoming();
   };
 
   auto it = std::find_if(connection_requests_.begin(),
@@ -2040,7 +2065,6 @@ void BrEdrConnectionManager::TryCreateNextConnection() {
   BrEdrConnectionRequest& request = it->second;
   const Peer* peer = cache_->FindById(peer_id);
 
-  auto self = weak_self_.GetWeakPtr();
   auto on_failure = [self, addr = request.address()](hci::Result<> status,
                                                      PeerId id) {
     if (self.is_alive() && status.is_error()) {
