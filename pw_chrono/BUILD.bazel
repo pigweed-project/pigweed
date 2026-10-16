@@ -191,8 +191,6 @@ cc_library(
 cc_library(
     name = "wrap_time_system_clock",
     srcs = ["wrap_time_system_clock.cc"],
-    # Fails on MacOS only.
-    features = ["-conversion_warnings"],
     linkopts = [
         "-Wl,--wrap=gettimeofday",
         "-Wl,--wrap=time",

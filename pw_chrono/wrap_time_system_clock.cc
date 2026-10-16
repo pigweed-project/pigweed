@@ -32,9 +32,9 @@ namespace pw::chrono {
 extern "C" time_t __wrap_time(time_t* t) {
   const pw::chrono::SystemClock::time_point now =
       pw::chrono::SystemClock::now();
-  const time_t ret =
+  const time_t ret = static_cast<time_t>(
       std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch())
-          .count();
+          .count());
   if (t) {
     *t = ret;
   }
@@ -54,8 +54,9 @@ extern "C" int __wrap_gettimeofday(struct timeval* tv, void* tz) {
   const auto usec_since_epoch =
       std::chrono::duration_cast<std::chrono::microseconds>(
           now.time_since_epoch());
-  tv->tv_sec = (usec_since_epoch / 1s);
-  tv->tv_usec = (usec_since_epoch % 1s).count();
+  tv->tv_sec = static_cast<time_t>(usec_since_epoch / 1s);
+  tv->tv_usec =
+      static_cast<decltype(tv->tv_usec)>((usec_since_epoch % 1s).count());
   return 0;
 }
 
