@@ -27,7 +27,6 @@
 #include "pw_preprocessor/compiler.h"
 #include "pw_rpc2/internal/packet_type.h"
 #include "pw_rpc2/internal/protocol_error.h"
-#include "pw_rpc2/status.h"
 
 namespace pw::rpc2::internal {
 

@@ -28,6 +28,9 @@ _PW_STATUS = Label("//pw_status")
 
 def _with_pw_status(deps):
     """Adds pw_status to deps, unless it is already present."""
+    if type(deps) != "list":
+        # `select()` can't be introspected, so always add the implicit dep.
+        return deps + [str(_PW_STATUS)]
     for dep in deps:
         if native.package_relative_label(dep) == _PW_STATUS:
             return deps

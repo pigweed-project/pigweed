@@ -30,14 +30,11 @@
 #include "pw_enum/traits.h"
 #include "pw_rpc2/internal/packet_type.h"
 #include "pw_rpc2/internal/protocol_error.h"
-#include "pw_rpc2/status.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
 
 namespace internal = ::pw::rpc2::internal;
-
-using ::pw::rpc2::RpcStatus;
 
 using internal::EndpointRole;
 using internal::PacketType;
@@ -756,27 +753,26 @@ TEST(PacketTest, DecodeErrorReturnsCodeExactlyAsReceived) {
   struct Case {
     std::byte type;
     uint8_t code;
-    RpcStatus expected;
   };
   const Case kCases[] = {
       // Codes the sender may send.
-      {kServerError, kCancelled, RpcStatus::Cancelled()},
-      {kClientError, kCancelled, RpcStatus::Cancelled()},
-      {kServerError, kUnknownMethod, RpcStatus::Unimplemented()},
+      {kServerError, kCancelled},
+      {kClientError, kCancelled},
+      {kServerError, kUnknownMethod},
       // Zero is never sent.
-      {kServerError, 0x00, RpcStatus::ProtocolError()},
-      {kClientError, 0x00, RpcStatus::ProtocolError()},
+      {kServerError, 0x00},
+      {kClientError, 0x00},
       // A server-only code from a client.
-      {kClientError, kUnknownMethod, RpcStatus::ProtocolError()},
+      {kClientError, kUnknownMethod},
       // Unassigned codes.
-      {kServerError, kUnassignedEither, RpcStatus::ProtocolError()},
-      {kClientError, kUnassignedEither, RpcStatus::ProtocolError()},
-      {kServerError, kUnassignedServer, RpcStatus::ProtocolError()},
-      {kServerError, 0x7f, RpcStatus::ProtocolError()},
-      {kClientError, 0x80, RpcStatus::ProtocolError()},
+      {kServerError, kUnassignedEither},
+      {kClientError, kUnassignedEither},
+      {kServerError, kUnassignedServer},
+      {kServerError, 0x7f},
+      {kClientError, 0x80},
       // Reserved codes.
-      {kServerError, 0xc0, RpcStatus::ProtocolError()},
-      {kClientError, 0xff, RpcStatus::ProtocolError()},
+      {kServerError, 0xc0},
+      {kClientError, 0xff},
   };
 
   for (const Case& test : kCases) {
@@ -791,9 +787,6 @@ TEST(PacketTest, DecodeErrorReturnsCodeExactlyAsReceived) {
     EXPECT_EQ(decoded.type().sender(),
               test.type == kServerError ? EndpointRole::kServer
                                         : EndpointRole::kClient);
-    EXPECT_EQ(internal::PeerErrorToRpcStatus(decoded.type().sender(),
-                                             decoded.error()),
-              test.expected);
   }
 }
 

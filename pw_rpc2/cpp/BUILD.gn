@@ -30,18 +30,11 @@ config("public_include_path") {
 
 _default_visibility = [ "$dir_pw_rpc2/*" ]
 
-pw_cc_enum_source_set("status") {
-  enum_headers = [ "public/pw_rpc2/status.h" ]
-  include_dirs = [ "public" ]
-  public_deps = [
-    dir_pw_result,
-    dir_pw_status,
-  ]
-}
-
 pw_test("status_test") {
+  enable_if = pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
   deps = [
-    ":status",
+    ":cpp",
     dir_pw_enum,
   ]
   sources = [ "status_test.cc" ]
@@ -58,19 +51,13 @@ pw_cc_enum_source_set("protocol_error") {
   enum_headers = [ "public/pw_rpc2/internal/protocol_error_enum.h" ]
   public = [ "public/pw_rpc2/internal/protocol_error.h" ]
   include_dirs = [ "public" ]
-  public_deps = [
-    ":packet_type",
-    ":status",
-    dir_pw_enum,
-  ]
+  public_deps = [ dir_pw_enum ]
   visibility = _default_visibility
 }
 
 pw_test("protocol_error_test") {
   deps = [
-    ":packet_type",
     ":protocol_error",
-    ":status",
     dir_pw_enum,
   ]
   sources = [ "protocol_error_test.cc" ]
@@ -83,7 +70,6 @@ pw_cc_enum_source_set("packet") {
   public_deps = [
     ":packet_type",
     ":protocol_error",
-    ":status",
     "$dir_pw_assert:assert",
     dir_pw_buf,
     dir_pw_bytes,
@@ -99,7 +85,6 @@ pw_test("packet_test") {
     ":packet",
     ":packet_type",
     ":protocol_error",
-    ":status",
     "$dir_pw_allocator:testing",
     "$dir_pw_assert:check",
     dir_pw_bytes,
@@ -162,33 +147,14 @@ pw_test("pwpb_serialize_test") {
   negative_compilation_tests = true
 }
 
-pw_source_set("handshake") {
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_rpc2/internal/handshake.h" ]
-  sources = [ "handshake.cc" ]
-  public_deps = [
-    ":packet",
-    ":status",
-    "$dir_pw_transport/cpp:socket",
-    dir_pw_async2,
-    dir_pw_buf,
-  ]
-  deps = [
-    "$dir_pw_assert:check",
-    dir_pw_bytes,
-    dir_pw_enum,
-    dir_pw_log,
-    dir_pw_preprocessor,
-  ]
-  visibility = _default_visibility
-}
-
 _coro_deps = []
 if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
   _coro_deps = [ "$dir_pw_async2:coro" ]
 }
 
-pw_source_set("cpp") {
+pw_cc_enum_source_set("cpp") {
+  enum_headers = [ "public/pw_rpc2/status.h" ]
+  include_dirs = [ "public" ]
   public_configs = [ ":public_include_path" ]
   public = [
     "public/pw_rpc2/client.h",
@@ -199,6 +165,7 @@ pw_source_set("cpp") {
     "public/pw_rpc2/internal/control_future.h",
     "public/pw_rpc2/internal/future_base.h",
     "public/pw_rpc2/internal/generated_service_client.h",
+    "public/pw_rpc2/internal/handshake.h",
     "public/pw_rpc2/internal/method.h",
     "public/pw_rpc2/internal/method_future.h",
     "public/pw_rpc2/internal/method_info.h",
@@ -220,6 +187,7 @@ pw_source_set("cpp") {
     "client.cc",
     "client_connection_task.cc",
     "connection_task.cc",
+    "handshake.cc",
     "server_call.cc",
     "server_connection_task.cc",
     "server_task.cc",
@@ -228,12 +196,10 @@ pw_source_set("cpp") {
     "write_reservation.cc",
   ]
   public_deps = [
-                  ":handshake",
                   ":packet",
                   ":packet_type",
                   ":protocol_error",
                   ":serialize",
-                  ":status",
                   "$dir_pw_assert:assert",
                   "$dir_pw_assert:check",
                   "$dir_pw_async2:box",
@@ -255,11 +221,11 @@ pw_source_set("cpp") {
                   dir_pw_polyfill,
                   dir_pw_result,
                   dir_pw_span,
-                  dir_pw_status,
                 ] + _coro_deps
   deps = [
     dir_pw_enum,
     dir_pw_log,
+    dir_pw_preprocessor,
   ]
 }
 
@@ -273,12 +239,10 @@ pw_source_set("test_utils") {
   sources = [ "test_utils.cc" ]
   public_deps = [
     ":cpp",
-    ":handshake",
     ":packet",
     ":packet_type",
     ":protocol_error",
     ":serialize",
-    ":status",
     "$dir_pw_assert:check",
     "$dir_pw_async2:value_future",
     "$dir_pw_containers:inline_deque",
@@ -336,9 +300,8 @@ pw_test("handshake_test") {
               pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
               pw_sync_THREAD_NOTIFICATION_BACKEND != ""
   deps = [
-    ":handshake",
+    ":cpp",
     ":packet",
-    ":status",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
@@ -386,7 +349,6 @@ pw_test("server_dispatch_test") {
               pw_sync_THREAD_NOTIFICATION_BACKEND != ""
   deps = [
     ":cpp",
-    ":handshake",
     ":packet",
     ":test_utils",
     "$dir_pw_allocator:testing",
@@ -404,7 +366,6 @@ pw_test("connection_task_test") {
               pw_sync_THREAD_NOTIFICATION_BACKEND != ""
   deps = [
     ":cpp",
-    ":handshake",
     ":packet",
     ":protocol_error",
     ":test_utils",
@@ -426,7 +387,6 @@ pw_test("server_test") {
               pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
   deps = [
     ":cpp",
-    ":handshake",
     ":packet",
     ":test_utils",
     "$dir_pw_allocator:testing",
@@ -567,7 +527,6 @@ pw_test("generated_client_test") {
     ":cpp",
     ":pw_rpc2_test_proto.pwpb_rpc2",
     ":pw_rpc2_test_proto.raw_rpc2",
-    ":status",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
@@ -591,7 +550,6 @@ pw_test("generated_service_test") {
     ":cpp",
     ":pw_rpc2_test_proto.pwpb_rpc2",
     ":pw_rpc2_test_proto.raw_rpc2",
-    ":status",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
@@ -618,7 +576,6 @@ pw_test("mixed_apis_test") {
   deps = [
     ":cpp",
     ":mixed_apis_proto.pwpb_rpc2",
-    ":status",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_assert:check",
@@ -671,7 +628,6 @@ pw_test("e2e_test") {
     ":cpp",
     ":pw_rpc2_test_proto.pwpb_rpc2",
     ":pw_rpc2_test_proto.raw_rpc2",
-    ":status",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",

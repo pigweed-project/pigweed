@@ -19,20 +19,14 @@
 
 #include "pw_enum/to_string.h"
 #include "pw_enum/traits.h"
-#include "pw_rpc2/internal/packet_type.h"
-#include "pw_rpc2/status.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
 
-using ::pw::rpc2::RpcCode;
-using ::pw::rpc2::RpcStatus;
 using ::pw::rpc2::internal::CodeOrigin;
-using ::pw::rpc2::internal::EndpointRole;
 using ::pw::rpc2::internal::IsClientError;
 using ::pw::rpc2::internal::IsServerError;
 using ::pw::rpc2::internal::OriginOf;
-using ::pw::rpc2::internal::PeerErrorToRpcStatus;
 using ::pw::rpc2::internal::ProtocolError;
 
 constexpr ProtocolError Code(unsigned value) {
@@ -50,14 +44,6 @@ constexpr ProtocolError kLastEitherCode =
     ProtocolError::kReceivedPacketForUnknownCall;
 constexpr ProtocolError kLastServerCode =
     ProtocolError::kMethodReturnedWithoutFinishing;
-
-constexpr RpcStatus FromServer(ProtocolError code) {
-  return PeerErrorToRpcStatus(EndpointRole::kServer, code);
-}
-
-constexpr RpcStatus FromClient(ProtocolError code) {
-  return PeerErrorToRpcStatus(EndpointRole::kClient, code);
-}
 
 // --- Origins ---
 
@@ -157,116 +143,6 @@ static_assert(!IsServerError(Code(0xC0)));
 static_assert(!IsClientError(Code(0xC0)));
 static_assert(!IsServerError(Code(0xFF)));
 static_assert(!IsClientError(Code(0xFF)));
-
-// --- PeerErrorToRpcStatus: every row of the wire table ---
-
-// Codes either endpoint may send map the same way from both.
-static_assert(FromServer(ProtocolError::kInternal).IsProtocolError());
-static_assert(FromClient(ProtocolError::kInternal).IsProtocolError());
-static_assert(FromServer(ProtocolError::kCancelled).IsCancelled());
-static_assert(FromClient(ProtocolError::kCancelled).IsCancelled());
-static_assert(FromServer(ProtocolError::kMethodTypeMismatch).IsUnimplemented());
-static_assert(FromClient(ProtocolError::kMethodTypeMismatch).IsUnimplemented());
-static_assert(FromServer(ProtocolError::kReceivedPacketForWrongEndpoint)
-                  .IsProtocolError());
-static_assert(FromClient(ProtocolError::kReceivedPacketForWrongEndpoint)
-                  .IsProtocolError());
-static_assert(
-    FromServer(ProtocolError::kReceivedPacketForUnknownCall).IsProtocolError());
-static_assert(
-    FromClient(ProtocolError::kReceivedPacketForUnknownCall).IsProtocolError());
-
-// Server-only codes sent by a server.
-static_assert(FromServer(ProtocolError::kUnknownService).IsUnimplemented());
-static_assert(FromServer(ProtocolError::kUnknownMethod).IsUnimplemented());
-static_assert(
-    FromServer(ProtocolError::kReceivedDuplicateStart).IsProtocolError());
-static_assert(FromServer(ProtocolError::kInvalidRequestPayload).IsDataError());
-static_assert(FromServer(ProtocolError::kFailedToAllocateCall).IsUnavailable());
-static_assert(
-    FromServer(ProtocolError::kFailedToAllocateCallResourcesWhileRunning)
-        .IsAborted());
-static_assert(FromServer(ProtocolError::kServiceUnregistered).IsAborted());
-static_assert(FromServer(ProtocolError::kDroppedWithoutResponse).IsCancelled());
-static_assert(
-    FromServer(ProtocolError::kMethodReturnedWithoutFinishing).IsCancelled());
-
-// A client that sends a server-only code broke the protocol.
-static_assert(FromClient(ProtocolError::kUnknownService).IsProtocolError());
-static_assert(FromClient(ProtocolError::kUnknownMethod).IsProtocolError());
-static_assert(
-    FromClient(ProtocolError::kReceivedDuplicateStart).IsProtocolError());
-static_assert(
-    FromClient(ProtocolError::kInvalidRequestPayload).IsProtocolError());
-static_assert(
-    FromClient(ProtocolError::kFailedToAllocateCall).IsProtocolError());
-static_assert(
-    FromClient(ProtocolError::kFailedToAllocateCallResourcesWhileRunning)
-        .IsProtocolError());
-static_assert(
-    FromClient(ProtocolError::kServiceUnregistered).IsProtocolError());
-static_assert(
-    FromClient(ProtocolError::kDroppedWithoutResponse).IsProtocolError());
-static_assert(FromClient(ProtocolError::kMethodReturnedWithoutFinishing)
-                  .IsProtocolError());
-
-// Zero is never sent.
-static_assert(FromServer(ProtocolError::kNone).IsProtocolError());
-static_assert(FromClient(ProtocolError::kNone).IsProtocolError());
-
-// The first unassigned code in each band.
-static_assert(FromServer(After(kLastEitherCode)).IsProtocolError());
-static_assert(FromClient(After(kLastEitherCode)).IsProtocolError());
-static_assert(FromServer(After(kLastServerCode)).IsProtocolError());
-static_assert(FromClient(After(kLastServerCode)).IsProtocolError());
-
-// Band boundaries. No client-only codes are defined, so 0x80 is the first
-// unassigned client code. 0xC0 and up are reserved.
-static_assert(FromServer(Code(0x7F)).IsProtocolError());
-static_assert(FromClient(Code(0x7F)).IsProtocolError());
-static_assert(FromServer(Code(0x80)).IsProtocolError());
-static_assert(FromClient(Code(0x80)).IsProtocolError());
-static_assert(FromServer(Code(0xC0)).IsProtocolError());
-static_assert(FromClient(Code(0xC0)).IsProtocolError());
-static_assert(FromServer(Code(0xFF)).IsProtocolError());
-static_assert(FromClient(Code(0xFF)).IsProtocolError());
-
-// Every code a sender may not send is a protocol error, and a received code
-// never maps to a code that only arises locally.
-constexpr bool UnsendableCodesAreProtocolErrors() {
-  for (unsigned value = 0; value <= 0xFF; ++value) {
-    const ProtocolError code = Code(value);
-    for (EndpointRole sender : {EndpointRole::kServer, EndpointRole::kClient}) {
-      const bool may_send = sender == EndpointRole::kServer
-                                ? IsServerError(code)
-                                : IsClientError(code);
-      const RpcStatus result = PeerErrorToRpcStatus(sender, code);
-      if (!may_send && !result.IsProtocolError()) {
-        return false;
-      }
-      switch (result.code()) {
-        case RpcCode::kCancelled:
-        case RpcCode::kUnavailable:
-        case RpcCode::kAborted:
-        case RpcCode::kUnimplemented:
-        case RpcCode::kDataError:
-        case RpcCode::kProtocolError:
-          break;
-        case RpcCode::kOk:
-        case RpcCode::kEndOfStream:
-        case RpcCode::kClosed:
-        case RpcCode::kWriteClosed:
-        case RpcCode::kDisconnected:
-        case RpcCode::kResourceExhausted:
-        case RpcCode::kMessageTooLarge:
-          return false;
-      }
-    }
-  }
-  return true;
-}
-
-static_assert(UnsendableCodesAreProtocolErrors());
 
 // --- Values and names ---
 

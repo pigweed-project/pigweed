@@ -136,6 +136,8 @@ function(pw_add_enum_library NAME)
       ${output_files}
     HEADERS
       ${other_headers}
+    PUBLIC_INCLUDES
+      ${arg_PUBLIC_INCLUDES}
     PUBLIC_DEPS
       pw_status
       pw_tokenizer

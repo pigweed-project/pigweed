@@ -16,22 +16,12 @@ include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 include($ENV{PW_ROOT}/pw_enum/pw_cc_enum_library.cmake)
 include($ENV{PW_ROOT}/pw_protobuf_compiler/proto.cmake)
 
-pw_add_enum_library(pw_rpc2.cpp._status
-  ENUM_HEADERS
-    public/pw_rpc2/status.h
-  PUBLIC_INCLUDES
-    public
-  PUBLIC_DEPS
-    pw_result
-    pw_status
-)
-
 pw_add_test(pw_rpc2.cpp.status_test
   SOURCES
     status_test.cc
   PRIVATE_DEPS
     pw_enum
-    pw_rpc2.cpp._status
+    pw_rpc2.cpp
   GROUPS
     modules
     pw_rpc2
@@ -55,8 +45,6 @@ pw_add_enum_library(pw_rpc2.cpp._protocol_error
     public
   PUBLIC_DEPS
     pw_enum
-    pw_rpc2.cpp._packet_type
-    pw_rpc2.cpp._status
 )
 
 pw_add_test(pw_rpc2.cpp.protocol_error_test
@@ -64,9 +52,7 @@ pw_add_test(pw_rpc2.cpp.protocol_error_test
     protocol_error_test.cc
   PRIVATE_DEPS
     pw_enum
-    pw_rpc2.cpp._packet_type
     pw_rpc2.cpp._protocol_error
-    pw_rpc2.cpp._status
   GROUPS
     modules
     pw_rpc2
@@ -85,7 +71,6 @@ pw_add_enum_library(pw_rpc2.cpp._packet
     pw_preprocessor
     pw_rpc2.cpp._packet_type
     pw_rpc2.cpp._protocol_error
-    pw_rpc2.cpp._status
   PRIVATE_DEPS
     pw_log
   SOURCES
@@ -104,7 +89,6 @@ pw_add_test(pw_rpc2.cpp.packet_test
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._packet_type
     pw_rpc2.cpp._protocol_error
-    pw_rpc2.cpp._status
   GROUPS
     modules
     pw_rpc2
@@ -169,33 +153,14 @@ pw_add_test(pw_rpc2.cpp.pwpb_serialize_test
     pw_rpc2
 )
 
-pw_add_library(pw_rpc2.cpp._handshake STATIC
-  HEADERS
-    public/pw_rpc2/internal/handshake.h
-  PUBLIC_INCLUDES
-    public
-  PUBLIC_DEPS
-    pw_async2
-    pw_buf
-    pw_rpc2.cpp._packet
-    pw_rpc2.cpp._status
-    pw_transport.cpp.socket
-  PRIVATE_DEPS
-    pw_assert.check
-    pw_bytes
-    pw_enum
-    pw_log
-    pw_preprocessor
-  SOURCES
-    handshake.cc
-)
-
 set(_pw_rpc2_coro_deps)
 if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
   set(_pw_rpc2_coro_deps pw_async2.coro)
 endif()
 
-pw_add_library(pw_rpc2.cpp STATIC
+pw_add_enum_library(pw_rpc2.cpp
+  ENUM_HEADERS
+    public/pw_rpc2/status.h
   HEADERS
     public/pw_rpc2/client.h
     public/pw_rpc2/internal/call.h
@@ -205,6 +170,7 @@ pw_add_library(pw_rpc2.cpp STATIC
     public/pw_rpc2/internal/control_future.h
     public/pw_rpc2/internal/future_base.h
     public/pw_rpc2/internal/generated_service_client.h
+    public/pw_rpc2/internal/handshake.h
     public/pw_rpc2/internal/method.h
     public/pw_rpc2/internal/method_future.h
     public/pw_rpc2/internal/method_info.h
@@ -240,14 +206,11 @@ pw_add_library(pw_rpc2.cpp STATIC
     pw_intrusive_ptr
     pw_polyfill
     pw_result
-    pw_rpc2.cpp._handshake
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._packet_type
     pw_rpc2.cpp._protocol_error
     pw_rpc2.cpp._serialize
-    pw_rpc2.cpp._status
     pw_span
-    pw_status
     pw_sync.interrupt_spin_lock
     pw_sync.lock_annotations
     pw_third_party.fuchsia.stdcompat
@@ -255,11 +218,13 @@ pw_add_library(pw_rpc2.cpp STATIC
   PRIVATE_DEPS
     pw_enum
     pw_log
+    pw_preprocessor
   SOURCES
     call.cc
     client.cc
     client_connection_task.cc
     connection_task.cc
+    handshake.cc
     server_call.cc
     server_connection_task.cc
     server_task.cc
@@ -284,12 +249,10 @@ pw_add_library(pw_rpc2.cpp._test_utils STATIC
     pw_containers.inline_deque
     pw_result
     pw_rpc2.cpp
-    pw_rpc2.cpp._handshake
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._packet_type
     pw_rpc2.cpp._protocol_error
     pw_rpc2.cpp._serialize
-    pw_rpc2.cpp._status
     pw_status
     pw_sync.interrupt_spin_lock
     pw_transport.cpp.socket
@@ -345,9 +308,8 @@ pw_add_test(pw_rpc2.cpp.handshake_test
     pw_async2
     pw_async2.testing
     pw_bytes
-    pw_rpc2.cpp._handshake
+    pw_rpc2.cpp
     pw_rpc2.cpp._packet
-    pw_rpc2.cpp._status
     pw_rpc2.cpp._test_utils
     pw_transport.cpp.socket
   GROUPS
@@ -395,7 +357,6 @@ pw_add_test(pw_rpc2.cpp.server_dispatch_test
     pw_async2.testing
     pw_bytes
     pw_rpc2.cpp
-    pw_rpc2.cpp._handshake
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._test_utils
     pw_transport.cpp.socket
@@ -414,7 +375,6 @@ pw_add_test(pw_rpc2.cpp.connection_task_test
     pw_bytes
     pw_enum
     pw_rpc2.cpp
-    pw_rpc2.cpp._handshake
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._protocol_error
     pw_rpc2.cpp._test_utils
@@ -434,7 +394,6 @@ pw_add_test(pw_rpc2.cpp.server_test
     pw_async2.testing
     pw_async2.value_future
     pw_rpc2.cpp
-    pw_rpc2.cpp._handshake
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._test_utils
     pw_span
@@ -571,7 +530,6 @@ pw_add_test(pw_rpc2.cpp.generated_client_test
     pw_async2.testing
     pw_buf
     pw_rpc2.cpp
-    pw_rpc2.cpp._status
     pw_rpc2.cpp._test_utils
     pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
     pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
@@ -599,7 +557,6 @@ pw_add_test(pw_rpc2.cpp.generated_service_test
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_polyfill
     pw_rpc2.cpp
-    pw_rpc2.cpp._status
     pw_rpc2.cpp._test_utils
     pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
     pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
@@ -628,7 +585,6 @@ pw_add_test(pw_rpc2.cpp.mixed_apis_test
     pw_buf
     pw_bytes
     pw_rpc2.cpp
-    pw_rpc2.cpp._status
     pw_rpc2.cpp._test_utils
     pw_rpc2.cpp.mixed_apis_proto.pwpb_rpc2
     pw_status
@@ -678,7 +634,6 @@ pw_add_test(pw_rpc2.cpp.e2e_test
     pw_bytes
     pw_containers.vector
     pw_rpc2.cpp
-    pw_rpc2.cpp._status
     pw_rpc2.cpp._test_utils
     pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
     pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2

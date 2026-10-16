@@ -40,6 +40,65 @@ void EncodeAndCommitHeader(transport::WriteReservation& reservation,
   static_cast<void>(reservation.Commit(*encoded_size));
 }
 
+// LINT.IfChange(cpp_rpc2_peer_error_mapping)
+
+/// Converts an error code received in a peer's error packet to the status that
+/// the call completes with. `sender` is the role of the peer that sent the
+/// packet.
+///
+/// An endpoint only sends codes that the negotiated protocol version defines
+/// and that its role may send. Any other code --- zero, an undefined or
+/// reserved code, or a code only the receiver's role may send --- is a
+/// protocol violation, so it maps to `RpcCode::kProtocolError`.
+constexpr RpcStatus PeerErrorToRpcStatus(EndpointRole sender,
+                                         ProtocolError code) {
+  if (sender == EndpointRole::kServer ? !IsServerError(code)
+                                      : !IsClientError(code)) {
+    return RpcStatus::ProtocolError();
+  }
+  switch (code) {
+    case ProtocolError::kCancelled:
+    case ProtocolError::kDroppedWithoutResponse:
+    case ProtocolError::kMethodReturnedWithoutFinishing:
+      return RpcStatus::Cancelled();
+    case ProtocolError::kFailedToAllocateCall:
+      return RpcStatus::Unavailable();
+    case ProtocolError::kFailedToAllocateCallResourcesWhileRunning:
+    case ProtocolError::kServiceUnregistered:
+      return RpcStatus::Aborted();
+    case ProtocolError::kMethodTypeMismatch:
+    case ProtocolError::kUnknownService:
+    case ProtocolError::kUnknownMethod:
+      return RpcStatus::Unimplemented();
+    case ProtocolError::kInvalidRequestPayload:
+      return RpcStatus::DataError();
+    case ProtocolError::kNone:
+    case ProtocolError::kInternal:
+    case ProtocolError::kReceivedPacketForWrongEndpoint:
+    case ProtocolError::kReceivedPacketForUnknownCall:
+    case ProtocolError::kReceivedDuplicateStart:
+      return RpcStatus::ProtocolError();
+  }
+  return RpcStatus::ProtocolError();
+}
+
+// LINT.ThenChange(//pw_rpc2/cpp.rst:rpc2_peer_error_mapping)
+
+static_assert(PeerErrorToRpcStatus(EndpointRole::kServer, ProtocolError::kNone)
+                  .IsProtocolError());
+static_assert(PeerErrorToRpcStatus(EndpointRole::kServer,
+                                   ProtocolError::kCancelled)
+                  .IsCancelled());
+static_assert(PeerErrorToRpcStatus(EndpointRole::kClient,
+                                   ProtocolError::kCancelled)
+                  .IsCancelled());
+static_assert(PeerErrorToRpcStatus(EndpointRole::kServer,
+                                   ProtocolError::kUnknownMethod)
+                  .IsUnimplemented());
+static_assert(PeerErrorToRpcStatus(EndpointRole::kClient,
+                                   ProtocolError::kUnknownMethod)
+                  .IsProtocolError());
+
 }  // namespace
 
 async2::Poll<RpcStatus> SendControlPacketFuture::Pend(async2::Context& cx) {

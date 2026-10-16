@@ -26,22 +26,18 @@ package(default_visibility = ["//pw_rpc2:__subpackages__"])
 
 licenses(["notice"])
 
-pw_cc_enum_library(
+alias(
     name = "status",
-    enum_headers = ["public/pw_rpc2/status.h"],
-    strip_include_prefix = "public",
+    actual = ":cpp",
+    deprecation = "Use //pw_rpc2/cpp instead of //pw_rpc2/cpp:status",
     visibility = ["//visibility:public"],
-    deps = [
-        "//pw_result",
-        "//pw_status",
-    ],
 )
 
 pw_cc_test(
     name = "status_test",
     srcs = ["status_test.cc"],
     deps = [
-        ":status",
+        ":cpp",
         "//pw_enum",
         "//pw_unit_test",
     ],
@@ -60,8 +56,6 @@ pw_cc_enum_library(
     enum_headers = ["public/pw_rpc2/internal/protocol_error_enum.h"],
     strip_include_prefix = "public",
     deps = [
-        ":packet_type",
-        ":status",
         "//pw_enum",
     ],
 )
@@ -70,9 +64,7 @@ pw_cc_test(
     name = "protocol_error_test",
     srcs = ["protocol_error_test.cc"],
     deps = [
-        ":packet_type",
         ":protocol_error",
-        ":status",
         "//pw_enum",
         "//pw_unit_test",
     ],
@@ -87,7 +79,6 @@ pw_cc_enum_library(
     deps = [
         ":packet_type",
         ":protocol_error",
-        ":status",
         "//pw_assert:assert",
         "//pw_buf",
         "//pw_bytes",
@@ -104,7 +95,6 @@ pw_cc_test(
         ":packet",
         ":packet_type",
         ":protocol_error",
-        ":status",
         "//pw_allocator:testing",
         "//pw_assert:check",
         "//pw_bytes",
@@ -171,39 +161,19 @@ pw_cc_test(
     ],
 )
 
-cc_library(
-    name = "handshake",
-    srcs = ["handshake.cc"],
-    hdrs = ["public/pw_rpc2/internal/handshake.h"],
-    implementation_deps = [
-        "//pw_assert:check",
-        "//pw_bytes",
-        "//pw_enum",
-        "//pw_log",
-        "//pw_preprocessor",
-    ],
-    strip_include_prefix = "public",
-    deps = [
-        ":packet",
-        ":status",
-        "//pw_async2",
-        "//pw_buf",
-        "//pw_transport/cpp:socket",
-    ],
-)
-
 _CORO_DEPS = select({
     "//pw_toolchain/cc:c++20_enabled": ["//pw_async2:coro"],
     "//conditions:default": [],
 })
 
-cc_library(
+pw_cc_enum_library(
     name = "cpp",
     srcs = [
         "call.cc",
         "client.cc",
         "client_connection_task.cc",
         "connection_task.cc",
+        "handshake.cc",
         "server_call.cc",
         "server_connection_task.cc",
         "server_task.cc",
@@ -220,6 +190,7 @@ cc_library(
         "public/pw_rpc2/internal/control_future.h",
         "public/pw_rpc2/internal/future_base.h",
         "public/pw_rpc2/internal/generated_service_client.h",
+        "public/pw_rpc2/internal/handshake.h",
         "public/pw_rpc2/internal/method.h",
         "public/pw_rpc2/internal/method_future.h",
         "public/pw_rpc2/internal/method_info.h",
@@ -236,19 +207,19 @@ cc_library(
         "public/pw_rpc2/write_reservation.h",
         "public/pw_rpc2/writer.h",
     ],
+    enum_headers = ["public/pw_rpc2/status.h"],
     implementation_deps = [
         "//pw_enum",
         "//pw_log",
+        "//pw_preprocessor",
     ],
     strip_include_prefix = "public",
     visibility = ["//visibility:public"],
     deps = _CORO_DEPS + [
-        ":handshake",
         ":packet",
         ":packet_type",
         ":protocol_error",
         ":serialize",
-        ":status",
         "//pw_allocator",
         "//pw_assert:assert",
         "//pw_assert:check",
@@ -266,7 +237,6 @@ cc_library(
         "//pw_polyfill",
         "//pw_result",
         "//pw_span",
-        "//pw_status",
         "//pw_sync:interrupt_spin_lock",
         "//pw_sync:lock_annotations",
         "//pw_transport/cpp:socket",
@@ -286,12 +256,10 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         ":cpp",
-        ":handshake",
         ":packet",
         ":packet_type",
         ":protocol_error",
         ":serialize",
-        ":status",
         "//pw_allocator",
         "//pw_assert:check",
         "//pw_async2",
@@ -347,9 +315,8 @@ pw_cc_test(
     name = "handshake_test",
     srcs = ["handshake_test.cc"],
     deps = [
-        ":handshake",
+        ":cpp",
         ":packet",
-        ":status",
         ":test_utils",
         "//pw_allocator:testing",
         "//pw_async2",
@@ -394,7 +361,6 @@ pw_cc_test(
     srcs = ["server_dispatch_test.cc"],
     deps = [
         ":cpp",
-        ":handshake",
         ":packet",
         ":test_utils",
         "//pw_allocator:testing",
@@ -411,7 +377,6 @@ pw_cc_test(
     srcs = ["connection_task_test.cc"],
     deps = [
         ":cpp",
-        ":handshake",
         ":packet",
         ":protocol_error",
         ":test_utils",
@@ -430,7 +395,6 @@ pw_cc_test(
     srcs = ["server_test.cc"],
     deps = [
         ":cpp",
-        ":handshake",
         ":packet",
         ":test_utils",
         "//pw_allocator:testing",
@@ -471,7 +435,6 @@ pw_cc_test(
         ":cpp",
         ":pw_rpc2_test_pwpb_rpc2",
         ":pw_rpc2_test_raw_rpc2",
-        ":status",
         ":test_utils",
         "//pw_allocator:testing",
         "//pw_async2",
@@ -652,7 +615,6 @@ pw_cc_test(
         ":cpp",
         ":pw_rpc2_test_pwpb_rpc2",
         ":pw_rpc2_test_raw_rpc2",
-        ":status",
         ":test_utils",
         "//pw_allocator:testing",
         "//pw_async2",
@@ -690,7 +652,6 @@ pw_cc_test(
     deps = [
         ":cpp",
         ":mixed_apis_pwpb_rpc2",
-        ":status",
         ":test_utils",
         "//pw_allocator",
         "//pw_allocator:testing",
@@ -713,7 +674,6 @@ pw_cc_test(
         ":cpp",
         ":pw_rpc2_test_pwpb_rpc2",
         ":pw_rpc2_test_raw_rpc2",
-        ":status",
         ":test_utils",
         "//pw_allocator:testing",
         "//pw_async2",
@@ -743,7 +703,7 @@ filegroup(
         "public/pw_rpc2/test_harness.h",
         "public/pw_rpc2/write_reservation.h",
         "public/pw_rpc2/writer.h",
-        ":status.generate",
+        ":cpp.generate",
     ],
     visibility = ["//docs/doxygen:__pkg__"],
 )
