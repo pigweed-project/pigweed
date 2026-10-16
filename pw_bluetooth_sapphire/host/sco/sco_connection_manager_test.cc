@@ -1602,5 +1602,70 @@ TEST_F(ScoConnectionManagerTest,
   RunUntilIdle();
 }
 
+TEST_F(ScoConnectionManagerTest, IgnoreMalformedConnectionComplete) {
+  auto setup_status_packet = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_status_packet);
+
+  std::optional<OpenConnectionResult> conn_result;
+  auto conn_cb = [&conn_result](auto result) {
+    activate_connection(result);
+    conn_result = std::move(result);
+  };
+
+  auto req_handle =
+      manager()->OpenConnection(kConnectionParams, std::move(conn_cb));
+  RunUntilIdle();
+  EXPECT_FALSE(conn_result.has_value());
+
+  // Connection handles > 0x0EFF (such as 0x0F00 and 0x1ABC) violate the spec
+  // range [0x0000, 0x0EFF] and should be ignored.
+  auto invalid_handle_packet_0 = testing::SynchronousConnectionCompletePacket(
+      0x0F00,
+      kPeerAddress,
+      hci_spec::LinkType::kExtendedSCO,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  test_device()->SendCommandChannelPacket(invalid_handle_packet_0);
+  RunUntilIdle();
+  EXPECT_FALSE(conn_result.has_value());
+
+  auto invalid_handle_packet_1 = testing::SynchronousConnectionCompletePacket(
+      0x1ABC,
+      kPeerAddress,
+      hci_spec::LinkType::kSCO,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  test_device()->SendCommandChannelPacket(invalid_handle_packet_1);
+  RunUntilIdle();
+  EXPECT_FALSE(conn_result.has_value());
+
+  // A truncated event should also be ignored without crashing.
+  const StaticByteBuffer kTruncatedEvent(
+      hci_spec::kSynchronousConnectionCompleteEventCode,
+      0x01,  // parameter_total_size = 1 (too short)
+      0x00);
+  test_device()->SendCommandChannelPacket(kTruncatedEvent);
+  RunUntilIdle();
+  EXPECT_FALSE(conn_result.has_value());
+
+  // Ensure a subsequent valid complete packet still completes the request.
+  auto valid_conn_complete_packet =
+      testing::SynchronousConnectionCompletePacket(
+          kScoConnectionHandle,
+          kPeerAddress,
+          hci_spec::LinkType::kExtendedSCO,
+          pw::bluetooth::emboss::StatusCode::SUCCESS);
+  test_device()->SendCommandChannelPacket(valid_conn_complete_packet);
+  RunUntilIdle();
+  ASSERT_TRUE(conn_result.has_value());
+  ASSERT_TRUE(conn_result->is_ok());
+  EXPECT_EQ(conn_result->value()->handle(), kScoConnectionHandle);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(kScoConnectionHandle));
+}
+
 }  // namespace
 }  // namespace bt::sco

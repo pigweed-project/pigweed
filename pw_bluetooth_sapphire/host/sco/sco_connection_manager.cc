@@ -151,8 +151,15 @@ hci::CommandChannel::EventHandlerId ScoConnectionManager::AddEventHandler(
 hci::CommandChannel::EventCallbackResult
 ScoConnectionManager::OnSynchronousConnectionComplete(
     const hci::EventPacket& event) {
-  const auto params = event.view<
+  const auto params = event.unchecked_view<
       pw::bluetooth::emboss::SynchronousConnectionCompleteEventView>();
+  if (!params.Ok()) {
+    bt_log(WARN,
+           "gap-sco",
+           "ignoring malformed SynchronousConnectionComplete event");
+    return hci::CommandChannel::EventCallbackResult::kContinue;
+  }
+
   DeviceAddress addr(DeviceAddress::Type::kBREDR,
                      DeviceAddressBytes(params.bd_addr()));
 
