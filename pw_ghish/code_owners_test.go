@@ -354,3 +354,50 @@ func TestResolveCodeOwners_MultipleDirectoriesAndAlreadyCoveredBy(t *testing.T) 
 		}
 	})
 }
+
+func TestCreate_WithReviewerOwners_MergeCommitUsesRemergeDiffAndRecentAuthor(t *testing.T) {
+	tmpDir := t.TempDir()
+	modDir := filepath.Join(tmpDir, "pw_bluetooth_proxy")
+	if err := os.MkdirAll(filepath.Join(modDir, "hci"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// OWNERS lists benlawson first and joshconner second, while joshconner
+	// recently authored commits on pw_bluetooth_proxy/hci/sniff_offload_manager.cc.
+	if err := os.WriteFile(
+		filepath.Join(modDir, "OWNERS"),
+		[]byte("benlawson@google.com\njoshconner@google.com\n"),
+		0644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main").
+		OnCommand("log -1 --format=%ae HEAD", "hoangmle@google.com\n").
+		OnCommand("diff-tree --no-commit-id --name-only -r HEAD", "").
+		OnCommand("show --remerge-diff --name-only --format= HEAD", "pw_bluetooth_proxy/hci/sniff_offload_manager.cc\n").
+		OnCommand("log --no-merges -n 10 --format=%ae HEAD -- pw_bluetooth_proxy/hci/sniff_offload_manager.cc", "saeedali@google.com\njoshconner@google.com\n").
+		OnCommand("rev-parse --show-toplevel", tmpDir+"\n")
+
+	output, err := executeCommand(RootCmd, "pr", "create", "-r", "@owners")
+	if err != nil {
+		t.Fatalf("pr create -r @owners failed: %v\nOutput: %s", err, output)
+	}
+
+	if !strings.Contains(output, "Resolved @owners: joshconner@google.com") {
+		t.Errorf("expected Resolved @owners to prefer recent author joshconner@google.com, got:\n%s", output)
+	}
+
+	var pushCall string
+	for _, call := range mockGit.Calls {
+		if strings.HasPrefix(call, "push") {
+			pushCall = call
+			break
+		}
+	}
+	if !strings.Contains(pushCall, "r=joshconner@google.com") {
+		t.Errorf("expected git push to contain r=joshconner@google.com, got %q", pushCall)
+	}
+}

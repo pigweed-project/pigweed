@@ -158,8 +158,11 @@ func ResolveCodeOwnersForChange(chCtx *ChangeContext) ([]string, error) {
 	queryFn := func(filePath string) ([]CodeOwnerInfo, error) {
 		return queryChangeCodeOwners(ctx, client, changeID, "current", filePath)
 	}
+	recentAuthorsFn := func(filePath string) []string {
+		return listRecentFileAuthors(ctx, chCtx.Config, filePath)
+	}
 
-	owners := selectOwnersForFiles(files, authorEmail, repoRoot, queryFn)
+	owners := selectOwnersForFiles(files, authorEmail, repoRoot, queryFn, recentAuthorsFn)
 	if len(owners) == 0 {
 		return nil, noEligibleOwnersError(fmt.Sprintf("change %s", changeID))
 	}
@@ -224,7 +227,11 @@ func ResolveCodeOwnersForPush(ctx context.Context, cmd *cobra.Command, cfg *Conf
 		return nil, fmt.Errorf("gerrit project unknown")
 	}
 
-	owners := selectOwnersForFiles(files, authorEmail, repoRoot, queryFn)
+	recentAuthorsFn := func(filePath string) []string {
+		return listRecentFileAuthors(ctx, cfg, filePath)
+	}
+
+	owners := selectOwnersForFiles(files, authorEmail, repoRoot, queryFn, recentAuthorsFn)
 	if len(owners) == 0 {
 		return nil, noEligibleOwnersError("HEAD commit")
 	}
@@ -341,17 +348,62 @@ func listHeadChangedFiles(ctx context.Context, cfg *Config) []string {
 		return nil
 	}
 	var stdout bytes.Buffer
-	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); err != nil {
+	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); err == nil {
+		if files := parseSortedLines(stdout.String()); len(files) > 0 {
+			return files
+		}
+	}
+	// For merge commits, plain `git diff-tree HEAD` returns no files.
+	// `git show --remerge-diff --name-only --format= HEAD` diffs the merge
+	// commit against the automatic merge of its parents, returning only the
+	// files where merge conflicts were manually resolved.
+	stdout.Reset()
+	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "show", "--remerge-diff", "--name-only", "--format=", "HEAD"); err != nil {
 		return nil
 	}
+	return parseSortedLines(stdout.String())
+}
+
+func parseSortedLines(raw string) []string {
 	var files []string
-	for _, line := range strings.Split(stdout.String(), "\n") {
+	for _, line := range strings.Split(raw, "\n") {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			files = append(files, trimmed)
 		}
 	}
 	slices.Sort(files)
 	return files
+}
+
+func listRecentFileAuthors(ctx context.Context, cfg *Config, filePath string) []string {
+	if cfg == nil || strings.TrimSpace(filePath) == "" {
+		return nil
+	}
+	var stdout bytes.Buffer
+	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "log", "--no-merges", "-n", "10", "--format=%ae", "HEAD", "--", filePath); err != nil {
+		return nil
+	}
+	var authors []string
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" && !isServiceAccountEmail(trimmed) {
+			authors = append(authors, trimmed)
+		}
+	}
+	return dedupBy(authors, strings.ToLower)
+}
+
+func pickPreferredOwner(candidates []string, recentAuthors []string) string {
+	if len(candidates) == 0 {
+		return ""
+	}
+	for _, author := range recentAuthors {
+		for _, cand := range candidates {
+			if strings.EqualFold(strings.TrimSpace(cand), strings.TrimSpace(author)) {
+				return cand
+			}
+		}
+	}
+	return candidates[0]
 }
 
 func resolveRepoRoot(ctx context.Context, cfg *Config) string {
@@ -410,6 +462,7 @@ func selectOwnersForFiles(
 	authorEmail string,
 	repoRoot string,
 	queryGerrit func(filePath string) ([]CodeOwnerInfo, error),
+	recentAuthorsForFile func(filePath string) []string,
 ) []string {
 	reps := representativeFilesByDir(files)
 	activePool := loadActiveOwnersPool(repoRoot)
@@ -436,6 +489,10 @@ func selectOwnersForFiles(
 	}
 
 	for _, rep := range reps {
+		var recentAuthors []string
+		if recentAuthorsForFile != nil {
+			recentAuthors = recentAuthorsForFile(rep)
+		}
 		var gerritSpecificHumans []string
 		var gerritFallbacks []string
 
@@ -459,7 +516,7 @@ func selectOwnersForFiles(
 		// 1. Specific module/directory human owners from Gerrit code-owners API.
 		if len(gerritSpecificHumans) > 0 {
 			if !alreadyCoveredBy(gerritSpecificHumans) {
-				addSelected(gerritSpecificHumans[0])
+				addSelected(pickPreferredOwner(gerritSpecificHumans, recentAuthors))
 			}
 			continue
 		}
@@ -468,7 +525,7 @@ func selectOwnersForFiles(
 		localSubdirOwners := findLocalSubdirOwners(repoRoot, rep, authorEmail, activePool)
 		if len(localSubdirOwners) > 0 {
 			if !alreadyCoveredBy(localSubdirOwners) {
-				addSelected(localSubdirOwners[0])
+				addSelected(pickPreferredOwner(localSubdirOwners, recentAuthors))
 			}
 			continue
 		}
@@ -476,7 +533,7 @@ func selectOwnersForFiles(
 		// 3. Fallback suggestions from Gerrit code-owners API (e.g. gwsq-pigweed or root owners).
 		if len(gerritFallbacks) > 0 {
 			if !alreadyCoveredBy(gerritFallbacks) {
-				addSelected(gerritFallbacks[0])
+				addSelected(pickPreferredOwner(gerritFallbacks, recentAuthors))
 			}
 			continue
 		}
@@ -485,7 +542,7 @@ func selectOwnersForFiles(
 		localRootOwners := findLocalRootOwners(repoRoot, authorEmail)
 		if len(localRootOwners) > 0 {
 			if !alreadyCoveredBy(localRootOwners) {
-				addSelected(localRootOwners[0])
+				addSelected(pickPreferredOwner(localRootOwners, recentAuthors))
 			}
 		}
 	}
