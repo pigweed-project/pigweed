@@ -30,7 +30,6 @@ pw_cc_test(
     srcs = [
         "memset_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = ["//pw_containers:algorithm"],
 )
 

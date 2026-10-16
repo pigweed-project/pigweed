@@ -70,19 +70,19 @@ TEST(Memset, OneCharacter) {
 // Now do a detailed case with more values. Span both word sizes and alignments
 // to ensure we hit some edge cases.
 TEST(Memset, MultipleSizesMultipleAlignments) {
-  constexpr int kMaxBytes = 64;
+  constexpr size_t kMaxBytes = 64;
   std::array<char, kMaxBytes> arr;
 
-  constexpr int kMaxAlignment = 16;
+  constexpr size_t kMaxAlignment = 16;
 
   // Avoid 0 sentinel to prevent interaction with uninitialized memory.
   constexpr char kSentinel = 3;
   constexpr char kIotaStart = kSentinel + 7;
 
   // Try different alignments.
-  for (int alignment = 0; alignment < kMaxAlignment; ++alignment) {
+  for (size_t alignment = 0; alignment < kMaxAlignment; ++alignment) {
     // Try different memset sizes.
-    for (int write_size = 0; write_size < (kMaxBytes - kMaxAlignment);
+    for (size_t write_size = 0; write_size < (kMaxBytes - kMaxAlignment);
          ++write_size) {
       // Fill entire array with incrementing integers; starting above sentinel.
       std::iota(arr.begin(), arr.end(), kIotaStart);
@@ -94,16 +94,16 @@ TEST(Memset, MultipleSizesMultipleAlignments) {
       // Check destination buffer returned.
       EXPECT_EQ(ret, write_head);
 
-      for (int j = 0; j < kMaxBytes; ++j) {
+      for (size_t j = 0; j < kMaxBytes; ++j) {
         if (j < alignment) {
           // First part of destination buffer untouched; should match iota.
-          EXPECT_EQ(arr[j], kIotaStart + j);
+          EXPECT_EQ(arr[j], static_cast<char>(kIotaStart + j));
         } else if (j < alignment + write_size) {
           // Second part is set to the sentinel value.
           EXPECT_EQ(arr[j], kSentinel);
         } else {
           // Third part is back to the iota content.
-          EXPECT_EQ(arr[j], kIotaStart + j);
+          EXPECT_EQ(arr[j], static_cast<char>(kIotaStart + j));
         }
       }
     }
