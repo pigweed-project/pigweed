@@ -42,7 +42,7 @@ TEST_F(PersistentTest, DefaultConstructionAndDestruction) {
     auto& persistent = *(new (&buffer_) Persistent<uint32_t>());
     EXPECT_FALSE(persistent.has_value());
 
-    persistent = 42;
+    persistent = 42u;
     ASSERT_TRUE(persistent.has_value());
     EXPECT_EQ(42u, persistent.value());
 

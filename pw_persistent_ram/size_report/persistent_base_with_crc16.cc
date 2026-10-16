@@ -25,7 +25,7 @@ int main() {
   volatile uint32_t value;
 
   // Emplace to construct value in place.
-  value = std::move(42);
+  value = std::move(42u);
 
   // Assignment operator.
   value = 13u;

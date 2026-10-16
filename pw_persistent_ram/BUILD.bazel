@@ -47,7 +47,6 @@ cc_library(
     hdrs = [
         "public/pw_persistent_ram/flat_file_system_entry.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         "//pw_file:flat_file_system",
@@ -60,7 +59,6 @@ pw_cc_test(
     srcs = [
         "persistent_test.cc",
     ],
-    features = ["-conversion_warnings"],
     # The test contains intentional uninitialized memory access.
     tags = ["nomsan"],
     deps = [
@@ -88,10 +86,7 @@ pw_cc_test(
     srcs = [
         "flat_file_system_entry_test.cc",
     ],
-    features = [
-        "-conversion_warnings",
-        "-ctad_warnings",
-    ],
+    features = ["-ctad_warnings"],
     deps = [
         ":flat_file_system_entry",
     ],
