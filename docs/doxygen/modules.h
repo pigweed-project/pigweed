@@ -627,6 +627,7 @@
 /// [Home](../../pw_rpc2/docs.html) |
 /// [C++ client and server](../../pw_rpc2/cpp.html) |
 /// [Examples](../../pw_rpc2/examples.html) |
+/// [Unit testing](../../pw_rpc2/testing.html) |
 /// [Wire protocol](../../pw_rpc2/protocol.html) |
 /// [Why RPC2?](../../pw_rpc2/why.html) |
 /// [Comparison to RPC1](../../pw_rpc2/comparison.html)
@@ -650,6 +651,11 @@
 /// @ingroup pw_rpc2
 /// @brief %Status codes and result types for RPC operations
 /// @details Learn more: [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors)
+
+/// @defgroup pw_rpc2_testing Testing
+/// @ingroup pw_rpc2
+/// @brief Unit test RPC services and clients end to end
+/// @details Learn more: [Unit testing](../../pw_rpc2/testing.html)
 
 /// @defgroup pw_span pw_span
 /// @brief std::span for C++17.

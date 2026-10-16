@@ -316,9 +316,14 @@ class CodeGenerator(abc.ABC):
     def write_client_method(self, output: OutputFile, method: Method) -> None:
         """Writes the Client member function for a method."""
 
-    def service_namespace(self, service: Service) -> str:
+    def service_namespace(
+        self, service: Service, flavor: str | None = None
+    ) -> str:
         return cpp_namespace(
-            service.package, 'pw_rpc2', self.flavor, service.cpp_name
+            service.package,
+            'pw_rpc2',
+            self.flavor if flavor is None else flavor,
+            service.cpp_name,
         )
 
 
@@ -630,6 +635,8 @@ def _write_service(
     output: OutputFile, gen: CodeGenerator, service: Service
 ) -> None:
     namespace = gen.service_namespace(service)
+    raw_namespace = gen.service_namespace(service, 'raw')
+    pwpb_namespace = gen.service_namespace(service, 'pwpb')
     output.write_line(f'// Base class for {service.full_name} implementations.')
     output.write_line('//')
     output.write_line(
@@ -645,10 +652,17 @@ def _write_service(
     )
     output.write_line('template <typename PwInternal_Impl>')
     output.write_line('class Service : public ::pw::rpc2::Service {')
-    if service.methods:
-        output.write_line(' public:')
+    output.write_line(' public:')
     with output.indent():
+        output.write_line(f'using PwInternal_Client = ::{namespace}::Client;')
+        output.write_line(
+            f'using PwInternal_RawClient = ::{raw_namespace}::Client;'
+        )
+        output.write_line(
+            f'using PwInternal_PwpbClient = ::{pwpb_namespace}::Client;'
+        )
         if service.methods:
+            output.write_line()
             output.write_line(
                 '// Default implementations for `<Method>Future` types; '
                 'hidden if'
@@ -791,7 +805,13 @@ def generate_headers(
         [*_COMMON_INCLUDES, *gen.includes(services)] if services else [],
     )
 
+    other_flavor = 'pwpb' if gen.flavor == 'raw' else 'raw'
     for service in services:
+        other_namespace = gen.service_namespace(service, other_flavor)
+        _write_namespace_open(header, other_namespace)
+        header.write_line('class Client;')
+        _write_namespace_close(header, other_namespace)
+
         namespace = gen.service_namespace(service)
         _write_namespace_open(header, namespace)
         if service.methods:

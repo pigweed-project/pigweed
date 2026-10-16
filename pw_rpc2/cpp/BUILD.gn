@@ -296,6 +296,41 @@ pw_source_set("test_utils") {
   visibility = _default_visibility
 }
 
+pw_source_set("test_harness") {
+  testonly = pw_unit_test_TESTONLY
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_rpc2/test_harness.h" ]
+  public_deps = [
+                  ":cpp",
+                  ":status",
+                  ":test_utils",
+                  "$dir_pw_allocator:testing",
+                  "$dir_pw_assert:check",
+                  "$dir_pw_async2:testing",
+                  dir_pw_allocator,
+                  dir_pw_async2,
+                  dir_pw_status,
+                ] + _coro_deps
+}
+
+pw_test("test_harness_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+           ":cpp",
+           ":pw_rpc2_test_proto.pwpb_rpc2",
+           ":pw_rpc2_test_proto.raw_rpc2",
+           ":status",
+           ":test_harness",
+           ":test_utils",
+           dir_pw_async2,
+           dir_pw_buf,
+         ] + _coro_deps
+  sources = [ "test_harness_test.cc" ]
+  negative_compilation_tests = true
+}
+
 pw_test("handshake_test") {
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
               pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
@@ -675,5 +710,6 @@ pw_test_group("tests") {
     ":server_test",
     ":service_client_test",
     ":status_test",
+    ":test_harness_test",
   ]
 }

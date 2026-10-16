@@ -101,6 +101,7 @@ Evaluation and migration
 
    C++ client and server <cpp>
    C++ examples <examples>
+   C++ Unit testing <testing>
    Wire protocol <protocol>
    Why RPC2? <why>
    RPC1 vs. RPC2 <comparison>

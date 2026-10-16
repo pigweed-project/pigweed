@@ -14,6 +14,8 @@
 
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_enum:pw_cc_enum_library.bzl", "pw_cc_enum_library")
 load("//pw_protobuf_compiler:pwpb_proto_library.bzl", "pwpb_proto_library")
 load("//pw_protobuf_compiler:pwpb_rpc2_proto_library.bzl", "pwpb_rpc2_proto_library")
@@ -301,6 +303,42 @@ cc_library(
         "//pw_status",
         "//pw_sync:interrupt_spin_lock",
         "//pw_transport/cpp:socket",
+        "//pw_unit_test",
+    ],
+)
+
+cc_library(
+    name = "test_harness",
+    testonly = True,
+    hdrs = ["public/pw_rpc2/test_harness.h"],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:public"],
+    deps = _CORO_DEPS + [
+        ":cpp",
+        ":status",
+        ":test_utils",
+        "//pw_allocator",
+        "//pw_allocator:testing",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_status",
+    ],
+)
+
+pw_cc_test(
+    name = "test_harness_test",
+    srcs = ["test_harness_test.cc"],
+    has_nc_test = True,
+    deps = [
+        ":cpp",
+        ":pw_rpc2_test_pwpb_rpc2",
+        ":pw_rpc2_test_raw_rpc2",
+        ":status",
+        ":test_harness",
+        ":test_utils",
+        "//pw_async2",
+        "//pw_buf",
         "//pw_unit_test",
     ],
 )
@@ -702,9 +740,19 @@ filegroup(
         "public/pw_rpc2/server.h",
         "public/pw_rpc2/service.h",
         "public/pw_rpc2/service_client.h",
+        "public/pw_rpc2/test_harness.h",
         "public/pw_rpc2/write_reservation.h",
         "public/pw_rpc2/writer.h",
         ":status.generate",
     ],
     visibility = ["//docs/doxygen:__pkg__"],
+)
+
+sphinx_docs_library(
+    name = "docs",
+    srcs = [
+        "test_harness_test.cc",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//pw_rpc2:__pkg__"],
 )

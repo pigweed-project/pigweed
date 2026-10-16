@@ -300,6 +300,43 @@ pw_add_library(pw_rpc2.cpp._test_utils STATIC
     test_utils.cc
 )
 
+pw_add_library(pw_rpc2.cpp.test_harness INTERFACE
+  HEADERS
+    public/pw_rpc2/test_harness.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator
+    pw_allocator.testing
+    pw_assert.check
+    pw_async2
+    ${_pw_rpc2_coro_deps}
+    pw_async2.testing
+    pw_rpc2.cpp
+    pw_rpc2.cpp._status
+    pw_rpc2.cpp._test_utils
+    pw_status
+)
+
+pw_add_test(pw_rpc2.cpp.test_harness_test
+  SOURCES
+    test_harness_test.cc
+  PRIVATE_DEPS
+    pw_async2
+    ${_pw_rpc2_coro_deps}
+    pw_buf
+    pw_compilation_testing._pigweed_only_negative_compilation
+    pw_rpc2.cpp
+    pw_rpc2.cpp._status
+    pw_rpc2.cpp._test_utils
+    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
+    pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
+    pw_rpc2.cpp.test_harness
+  GROUPS
+    modules
+    pw_rpc2
+)
+
 pw_add_test(pw_rpc2.cpp.handshake_test
   SOURCES
     handshake_test.cc
