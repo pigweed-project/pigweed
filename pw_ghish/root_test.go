@@ -709,6 +709,33 @@ func TestConfigGerritHost(t *testing.T) {
 	})
 }
 
+func TestParseInternalGitURL(t *testing.T) {
+	tests := []struct {
+		input      string
+		wantScheme string
+		wantTenant string
+		wantOK     bool
+	}{
+		{"sso://pigweed/pigweed/pigweed", "sso", "pigweed", true},
+		{"SSO://foo-internal-review.googlesource.com/bar/baz", "sso", "foo-internal", true},
+		{"rpc://pigweed/pigweed/pigweed", "rpc", "pigweed", true},
+		{"rpc://foo-internal-review/bar", "rpc", "foo-internal", true},
+		{"https://pigweed.googlesource.com/pigweed/pigweed", "", "", false},
+		{"sso://", "", "", false},
+		{"sso://-review/bar", "", "", false},
+		{"", "", "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			scheme, tenant, ok := parseInternalGitURL(tc.input)
+			if scheme != tc.wantScheme || tenant != tc.wantTenant || ok != tc.wantOK {
+				t.Errorf("parseInternalGitURL(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					tc.input, scheme, tenant, ok, tc.wantScheme, tc.wantTenant, tc.wantOK)
+			}
+		})
+	}
+}
+
 func TestCanonicalGerritHost(t *testing.T) {
 	tests := []struct {
 		input string

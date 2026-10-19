@@ -756,6 +756,26 @@ func CleanGerritHost(raw string) string {
 // allowing runtime canonicalization of internal Git-on-Borg URLs.
 const gobCorpDomainSuffix = ".git.corp." + "google.com"
 
+// parseInternalGitURL parses an sso:// or rpc:// Git-on-Borg URL and returns
+// its lowercase scheme ("sso" or "rpc") and Gerrit tenant name (without
+// "-review" or domain suffix).
+func parseInternalGitURL(raw string) (scheme, tenant string, ok bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return "", "", false
+	}
+	scheme = strings.ToLower(parsed.Scheme)
+	if scheme != "sso" && scheme != "rpc" {
+		return "", "", false
+	}
+	tenant, _, _ = strings.Cut(parsed.Host, ".")
+	tenant = strings.TrimSuffix(tenant, "-review")
+	if tenant == "" {
+		return "", "", false
+	}
+	return scheme, tenant, true
+}
+
 // CanonicalGerritHost normalizes a Gerrit host or URL to its canonical
 // Gerrit review hostname. For Git-on-Borg instances (including
 // *.googlesource.com, internal GoB mirror domains, and sso:// or rpc://<tenant>/...), it
@@ -766,13 +786,8 @@ func CanonicalGerritHost(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	lower := strings.ToLower(raw)
-	if strings.HasPrefix(lower, "sso://") || strings.HasPrefix(lower, "rpc://") {
-		if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
-			h, _, _ := strings.Cut(parsed.Host, ".")
-			h = strings.TrimSuffix(h, "-review")
-			return h + "-review.googlesource.com"
-		}
+	if _, tenant, ok := parseInternalGitURL(raw); ok {
+		return tenant + "-review.googlesource.com"
 	}
 	h := CleanGerritHost(raw)
 	if idx := strings.IndexByte(h, '/'); idx != -1 {

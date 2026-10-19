@@ -766,6 +766,34 @@ func TestResolveAuthMode(t *testing.T) {
 		}
 	})
 
+	for _, tc := range []struct {
+		remote     string
+		wantReason string
+	}{
+		{"sso://pigweed/pigweed/pigweed\n", "sso:// git remote"},
+		{"rpc://pigweed/pigweed/pigweed\n", "rpc:// git remote"},
+	} {
+		t.Run("auto detects googler via "+tc.wantReason, func(t *testing.T) {
+			AuthModeFlag = ""
+			t.Setenv("GH_ISH_AUTH_MODE", "")
+			LookPathFn = func(file string) (string, error) {
+				return "", os.ErrNotExist
+			}
+			mockGit := &MockGitRunner{}
+			mockGit.OnCommand("config --get user.email", "contributor@example.com\n").
+				OnCommand("config --get remote.origin.url", tc.remote)
+			cfg := &Config{Git: mockGit}
+
+			mode, reason, err := ResolveAuthMode(ctx, cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if mode != AuthModeGoogler || !strings.Contains(reason, tc.wantReason) {
+				t.Errorf("got (%q, %q), want (googler, %s)", mode, reason, tc.wantReason)
+			}
+		})
+	}
+
 	t.Run("auto detects community when no corp signals", func(t *testing.T) {
 		AuthModeFlag = ""
 		t.Setenv("GH_ISH_AUTH_MODE", "")

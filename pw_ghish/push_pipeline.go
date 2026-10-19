@@ -373,18 +373,10 @@ func isGitPushSSOAuthError(stderr string) bool {
 }
 
 func extractSSOTenant(rawURL string) string {
-	rawURL = strings.TrimSpace(rawURL)
-	if !strings.HasPrefix(strings.ToLower(rawURL), "sso://") {
-		return ""
+	if scheme, tenant, ok := parseInternalGitURL(rawURL); ok && scheme == "sso" {
+		return tenant
 	}
-	rest := rawURL[len("sso://"):]
-	if idx := strings.IndexByte(rest, '/'); idx != -1 {
-		rest = rest[:idx]
-	}
-	if idx := strings.IndexByte(rest, '.'); idx != -1 {
-		rest = rest[:idx]
-	}
-	return strings.TrimSuffix(strings.TrimSpace(rest), "-review")
+	return ""
 }
 
 func extractTenantFromGerritHost(rawHost string) string {

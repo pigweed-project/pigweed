@@ -55,7 +55,7 @@ var AuthModeFlag string
 //  1. --auth-mode flag (AuthModeFlag)
 //  2. GH_ISH_AUTH_MODE environment variable
 //  3. git config ghish.authmode
-//  4. Auto-detection (gob-curl or sso_client on PATH, @google.com git user.email, or sso:// remote)
+//  4. Auto-detection (gob-curl or sso_client on PATH, @google.com git user.email, or sso:// or rpc:// remote)
 func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -118,10 +118,7 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 			}
 		}
 		if origin, err := gc.ConfigGet(ctx, "remote.origin.url"); err == nil {
-			origin = strings.TrimSpace(origin)
-			lowerOrigin := strings.ToLower(origin)
-			if strings.HasPrefix(lowerOrigin, "sso://") || strings.HasPrefix(lowerOrigin, "rpc://") {
-				scheme, _, _ := strings.Cut(lowerOrigin, "://")
+			if scheme, _, ok := parseInternalGitURL(origin); ok {
 				return AuthModeGoogler, fmt.Sprintf("auto-detected (%s:// git remote)", scheme), nil
 			}
 		}
