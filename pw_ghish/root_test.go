@@ -792,7 +792,7 @@ func TestCommandRequestBudgets(t *testing.T) {
 		{"pr view", []string{"pr", "view", "12345"}, RequestBudget{Gerrit: 2, Buildbucket: 2}},
 		{"pr checks", []string{"pr", "checks", "12345"}, RequestBudget{Gerrit: 1, Buildbucket: 2}},
 		{"run list", []string{"run", "list", "12345"}, RequestBudget{Gerrit: 1, Buildbucket: 2}},
-		{"pr status", []string{"pr", "status"}, RequestBudget{Gerrit: 6, Buildbucket: 0}},
+		{"pr status", []string{"pr", "status"}, RequestBudget{Gerrit: 4, Buildbucket: 0}},
 	}
 
 	for _, tc := range tests {

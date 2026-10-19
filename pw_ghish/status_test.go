@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -95,8 +96,8 @@ func TestStatusIntegration(t *testing.T) {
 
 func TestStatus_WritesToCmdOut(t *testing.T) {
 	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{
-		{"_number": 88888, "subject": "Status Change Subject", "status": "NEW", "owner": map[string]any{"name": "Alice"}},
+	server.OnJSON("GET", "/changes/*", http.StatusOK, [][]map[string]any{
+		{{"_number": 88888, "subject": "Status Change Subject", "status": "NEW", "owner": map[string]any{"name": "Alice"}}},
 	})
 
 	var buf bytes.Buffer
@@ -234,12 +235,27 @@ func TestStatus_30DayFilter_And_MoreOlderChanges(t *testing.T) {
 
 	server := newStatusMockServer(t)
 	server.On("GET", "/changes/*", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query().Get("q")
-		if strings.Contains(q, "age:30d") && !strings.Contains(q, "-age:30d") {
-			server.RespondJSON(w, http.StatusOK, older)
-			return
+		qs := r.URL.Query()["q"]
+		opts := r.URL.Query()["o"]
+		if slices.ContainsFunc(qs, func(q string) bool { return strings.Contains(q, "-age:30d") }) {
+			wantOpts := []string{"DETAILED_LABELS", "SUBMITTABLE", "DETAILED_ACCOUNTS", "SUBMIT_REQUIREMENTS"}
+			if !slices.Equal(opts, wantOpts) {
+				t.Errorf("recent changes batch o=%v, want %v", opts, wantOpts)
+			}
+		} else if slices.ContainsFunc(qs, func(q string) bool { return strings.Contains(q, "age:30d") }) {
+			if len(opts) != 0 {
+				t.Errorf("older count-only batch should have no o= params, got %v", opts)
+			}
 		}
-		server.RespondJSON(w, http.StatusOK, []any{})
+		batches := make([][]gerrit.ChangeInfo, len(qs))
+		for i, query := range qs {
+			if strings.Contains(query, "age:30d") && !strings.Contains(query, "-age:30d") {
+				batches[i] = older
+			} else {
+				batches[i] = []gerrit.ChangeInfo{}
+			}
+		}
+		server.RespondJSON(w, http.StatusOK, batches)
 	})
 
 	mockGitForMainBranch(t)
@@ -249,13 +265,11 @@ func TestStatus_30DayFilter_And_MoreOlderChanges(t *testing.T) {
 		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
 	}
 
-	hasAgeFilter := false
-	for _, req := range server.Requests() {
-		if strings.Contains(req.URL.Query().Get("q"), "-age:30d") {
-			hasAgeFilter = true
-			break
-		}
-	}
+	hasAgeFilter := slices.ContainsFunc(server.Requests(), func(req MockRequest) bool {
+		return slices.ContainsFunc(req.URL.Query()["q"], func(q string) bool {
+			return strings.Contains(q, "-age:30d")
+		})
+	})
 	if !hasAgeFilter {
 		t.Errorf("Expected query to contain -age:30d")
 	}
@@ -276,7 +290,7 @@ func TestStatus_AllFlag_BypassesFilter(t *testing.T) {
 	}
 
 	for _, req := range server.Requests() {
-		q := req.URL.Query().Get("q")
+		q := strings.Join(req.URL.Query()["q"], " ")
 		if strings.Contains(q, "-age:30d") || strings.Contains(q, "age:30d") {
 			t.Errorf("Expected --all to bypass age filters, but saw query: %s", q)
 		}

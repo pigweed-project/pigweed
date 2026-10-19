@@ -16,8 +16,10 @@ package pw_ghish
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -85,37 +87,8 @@ var statusCmd = &cobra.Command{
 			reviewingQuery = "reviewer:self status:open -owner:self -age:30d"
 		}
 
-		myChangesOpt := &gerrit.QueryChangeOptions{
-			QueryOptions: gerrit.QueryOptions{
-				Query: []string{myQuery},
-			},
-			ChangeOptions: gerrit.ChangeOptions{
-				AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE", "DETAILED_ACCOUNTS", "SUBMIT_REQUIREMENTS"},
-			},
-		}
-
-		reviewingChangesOpt := &gerrit.QueryChangeOptions{
-			QueryOptions: gerrit.QueryOptions{
-				Query: []string{reviewingQuery},
-			},
-			ChangeOptions: gerrit.ChangeOptions{
-				AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE", "DETAILED_ACCOUNTS", "SUBMIT_REQUIREMENTS"},
-			},
-		}
-
-		olderMyOpt := &gerrit.QueryChangeOptions{
-			QueryOptions: gerrit.QueryOptions{
-				Query: []string{"owner:self status:open age:30d"},
-				Limit: 100,
-			},
-		}
-
-		olderReviewingOpt := &gerrit.QueryChangeOptions{
-			QueryOptions: gerrit.QueryOptions{
-				Query: []string{"reviewer:self status:open -owner:self age:30d"},
-				Limit: 100,
-			},
-		}
+		queries := []string{myQuery, reviewingQuery}
+		statusChangeFields := []string{"DETAILED_LABELS", "SUBMITTABLE", "DETAILED_ACCOUNTS", "SUBMIT_REQUIREMENTS"}
 
 		var (
 			rootWg sync.WaitGroup
@@ -128,14 +101,10 @@ var statusCmd = &cobra.Command{
 			selfErr     error
 
 			// 3. My changes
-			myChanges   *[]gerrit.ChangeInfo
-			myErr       error
-			moreCreated int
+			myBatches  [][]gerrit.ChangeInfo
+			batchesErr error
 
-			// 4. Reviewing changes
-			reviewingChanges *[]gerrit.ChangeInfo
-			reviewingErr     error
-			moreReviewing    int
+			moreCreated, moreReviewing int
 		)
 
 		// Pipeline 1: Inspect Active PR / Current branch
@@ -310,48 +279,22 @@ var statusCmd = &cobra.Command{
 			}
 		}()
 
-		// Pipeline 3: Created by you
+		// Pipeline 3: Created by you and reviewing
 		rootWg.Add(1)
 		go func() {
 			defer rootWg.Done()
-			var mySubWg sync.WaitGroup
-			mySubWg.Add(1)
-			go func() {
-				defer mySubWg.Done()
-				myChanges, _, myErr = client.Changes.QueryChanges(ctx, myChangesOpt)
-			}()
-			if !statusAll {
-				mySubWg.Add(1)
-				go func() {
-					defer mySubWg.Done()
-					if olderMy, _, err := client.Changes.QueryChanges(ctx, olderMyOpt); err == nil && olderMy != nil {
-						moreCreated = len(*olderMy)
-					}
-				}()
-			}
-			mySubWg.Wait()
+			myBatches, batchesErr = queryStatusChanges(ctx, client, queries, statusChangeFields)
 		}()
 
-		// Pipeline 4: Reviewing
+		// Pipeline 4: Older change counts
 		rootWg.Add(1)
 		go func() {
 			defer rootWg.Done()
-			var revSubWg sync.WaitGroup
-			revSubWg.Add(1)
-			go func() {
-				defer revSubWg.Done()
-				reviewingChanges, _, reviewingErr = client.Changes.QueryChanges(ctx, reviewingChangesOpt)
-			}()
 			if !statusAll {
-				revSubWg.Add(1)
-				go func() {
-					defer revSubWg.Done()
-					if olderReviewing, _, err := client.Changes.QueryChanges(ctx, olderReviewingOpt); err == nil && olderReviewing != nil {
-						moreReviewing = len(*olderReviewing)
-					}
-				}()
+				olderQueries := []string{"owner:self status:open age:30d limit:100", "reviewer:self status:open -owner:self age:30d limit:100"}
+				batches, _ := queryStatusChanges(ctx, client, olderQueries, nil)
+				moreCreated, moreReviewing = len(batches[0]), len(batches[1])
 			}
-			revSubWg.Wait()
 		}()
 
 		rootWg.Wait()
@@ -359,11 +302,8 @@ var statusCmd = &cobra.Command{
 		if selfErr != nil {
 			return fmt.Errorf("failed to get self account: %w", selfErr)
 		}
-		if myErr != nil {
-			return fmt.Errorf("failed to query my changes: %w", myErr)
-		}
-		if reviewingErr != nil {
-			return fmt.Errorf("failed to query changes I'm reviewing: %w", reviewingErr)
+		if batchesErr != nil {
+			return fmt.Errorf("failed to query my changes: %w", batchesErr)
 		}
 
 		myAccountID := selfAccount.AccountID
@@ -400,19 +340,10 @@ var statusCmd = &cobra.Command{
 			return result
 		}
 
-		var myChangesList []gerrit.ChangeInfo
-		if myChanges != nil {
-			myChangesList = *myChanges
-		}
-		var reviewingChangesList []gerrit.ChangeInfo
-		if reviewingChanges != nil {
-			reviewingChangesList = *reviewingChanges
-		}
-
 		data := map[string]any{
 			"current_branch": currentBranchData,
-			"created_by_you": processChanges(myChangesList),
-			"reviewing":      processChanges(reviewingChangesList),
+			"created_by_you": processChanges(myBatches[0]),
+			"reviewing":      processChanges(myBatches[1]),
 			"time_filtered":  !statusAll,
 			"more_created":   moreCreated,
 			"more_reviewing": moreReviewing,
@@ -439,6 +370,23 @@ func init() {
 	statusCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	statusCmd.Flags().MarkHidden("buildbucket-host")
 	PrCmd.AddCommand(statusCmd)
+}
+
+func queryStatusChanges(ctx context.Context, client *gerrit.Client, queries, fields []string) ([][]gerrit.ChangeInfo, error) {
+	qs := url.Values{"q": queries}
+	if len(fields) > 0 {
+		qs["o"] = fields
+	}
+	req, err := client.NewRequest(ctx, "GET", "changes/?"+qs.Encode(), nil)
+	if err != nil {
+		return make([][]gerrit.ChangeInfo, len(queries)), err
+	}
+	var batches [][]gerrit.ChangeInfo
+	_, err = client.Do(req, &batches)
+	for len(batches) < len(queries) {
+		batches = append(batches, nil)
+	}
+	return batches, err
 }
 
 // ExtractLabelScore extracts the decisive score for a label from ApprovalInfo entries.
