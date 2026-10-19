@@ -1818,8 +1818,8 @@ func TestLive_AuthGobCurlExpiredFallbackToLuciAuth(t *testing.T) {
 	if !report.Healthy || !report.Gerrit.Authenticated {
 		t.Fatalf("expected Healthy=true and Gerrit.Authenticated=true, got: %+v", report)
 	}
-	if !strings.Contains(report.Gerrit.Method, "luci-auth") || !strings.Contains(report.Gerrit.Method, "gob-curl") {
-		t.Errorf("Gerrit.Method = %q, want luci-auth fallback description", report.Gerrit.Method)
+	if !strings.Contains(report.Gerrit.Method, "luci-auth") {
+		t.Errorf("Gerrit.Method = %q, want luci-auth description", report.Gerrit.Method)
 	}
 
 	viewOut, err := executeLiveCommand("pr", "view", "472267", "--json", "number,title")

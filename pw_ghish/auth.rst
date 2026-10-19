@@ -114,14 +114,15 @@ When ``GH_ISH_AUTH_METHOD`` is ``auto`` (the default), ``pw_ghish`` resolves
 Gerrit REST credentials in the following order:
 
 1. ``GERRIT_TOKEN`` environment variable (HTTP Bearer or Basic token).
-2. ``gob-curl`` on ``PATH`` (with automatic runtime fallback to ``luci-auth``,
+2. ``luci-auth token`` with ``gerritcodereview`` and ``userinfo.email`` scopes
+   (located on ``PATH`` or in the repository's bootstrapped CIPD environment;
+   works across Linux, macOS, and Windows, falling back to ``gob-curl`` if
+   rejected).
+3. ``gob-curl`` on ``PATH`` (with automatic runtime fallback to ``luci-auth``,
    ``.gitcookies``, or ``.netrc`` if the 20-hour Corp SSO ticket in
    ``ssh-agent`` is expired).
-3. Git cookie file from ``git config http.cookiefile`` or ``~/.gitcookies``.
-4. Machine credentials in ``~/.netrc`` or ``~/_netrc``.
-5. ``luci-auth token -scopes "https://www.googleapis.com/auth/gerritcodereview https://www.googleapis.com/auth/userinfo.email"``
-   (located on ``PATH`` or in the repository's bootstrapped CIPD environment;
-   works across Linux, macOS, and Windows).
+4. Git cookie file from ``git config http.cookiefile`` or ``~/.gitcookies``.
+5. Machine credentials in ``~/.netrc`` or ``~/_netrc``.
 6. Anonymous HTTPS (permitted in ``community`` and ``none`` modes for public
    reads; rejected in ``googler`` mode with exit code ``4``).
 

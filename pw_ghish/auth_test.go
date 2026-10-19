@@ -167,6 +167,180 @@ func TestTokenTransport(t *testing.T) {
 			t.Errorf("Authorization = %q, want %q", got, want)
 		}
 	})
+
+	t.Run("Host pinning", func(t *testing.T) {
+		rec := &mockTransportRecorder{}
+		transport := &TokenTransport{
+			Base:  rec,
+			Token: "pinned-token",
+			Host:  "pigweed-review.googlesource.com",
+		}
+
+		sameHost, _ := http.NewRequest("GET", "https://pigweed-review.googlesource.com/a/changes/1", nil)
+		if _, err := transport.RoundTrip(sameHost); err != nil {
+			t.Fatalf("RoundTrip(sameHost) failed: %v", err)
+		}
+		if got := rec.lastReq.Header.Get("Authorization"); got != "Bearer pinned-token" {
+			t.Errorf("same-host Authorization = %q, want 'Bearer pinned-token'", got)
+		}
+
+		crossHost, _ := http.NewRequest("GET", "https://storage.googleapis.com/bucket/obj", nil)
+		if _, err := transport.RoundTrip(crossHost); err != nil {
+			t.Fatalf("RoundTrip(crossHost) failed: %v", err)
+		}
+		if got := rec.lastReq.Header.Get("Authorization"); got != "" {
+			t.Errorf("cross-host Authorization = %q, want empty", got)
+		}
+	})
+
+	t.Run("Dynamic re-mint and retry bounds", func(t *testing.T) {
+		origResolver := GerritTokenResolver
+		t.Cleanup(func() { GerritTokenResolver = origResolver })
+
+		var mints, reqs int
+		var gotBodies []string
+		base := &mockTransport{
+			roundTrip: func(req *http.Request) (*http.Response, error) {
+				reqs++
+				if req.Body != nil {
+					b, _ := io.ReadAll(req.Body)
+					gotBodies = append(gotBodies, string(b))
+				}
+				status := http.StatusUnauthorized
+				if req.Header.Get("Authorization") == "Bearer fresh-token" {
+					status = http.StatusOK
+				}
+				return &http.Response{
+					StatusCode: status,
+					Body:       io.NopCloser(strings.NewReader("ok")),
+					Header:     make(http.Header),
+					Request:    req,
+				}, nil
+			},
+		}
+
+		for _, tc := range []struct {
+			name, initTok, body      string
+			mintFn                   func(int) string
+			wantStatus, mints, nReqs int
+		}{
+			{"re-mint and replay", "stale-token", `{"message":"hi"}`, func(int) string { return "fresh-token" }, http.StatusOK, 1, 2},
+			{"same token", "same-token", "", func(int) string { return "same-token" }, http.StatusUnauthorized, 1, 1},
+			{"retry also 401", "bad-0", "", func(m int) string { return fmt.Sprintf("still-bad-%d", m) }, http.StatusUnauthorized, 1, 2},
+		} {
+			mints, reqs, gotBodies = 0, 0, nil
+			GerritTokenResolver = func(ctx context.Context) (string, string, error) {
+				mints++
+				return tc.mintFn(mints), "luci-auth", nil
+			}
+			var body io.Reader
+			if tc.body != "" {
+				body = strings.NewReader(tc.body)
+			}
+			req, _ := http.NewRequest("POST", "https://pigweed-review.googlesource.com/a/changes/1/review", body)
+			resp, err := (&TokenTransport{Base: base, Token: tc.initTok, Dynamic: true}).RoundTrip(req)
+			if err != nil || resp.StatusCode != tc.wantStatus {
+				t.Fatalf("%s: RoundTrip = (%v, %v), want %d", tc.name, resp, err, tc.wantStatus)
+			}
+			_ = resp.Body.Close()
+			if mints != tc.mints || reqs != tc.nReqs {
+				t.Errorf("%s: mints=%d reqs=%d, want %d and %d", tc.name, mints, reqs, tc.mints, tc.nReqs)
+			}
+			if tc.body != "" && (len(gotBodies) != 2 || gotBodies[0] != tc.body || gotBodies[1] != tc.body) {
+				t.Errorf("%s: bodies = %v, want payload replayed on retry", tc.name, gotBodies)
+			}
+		}
+	})
+
+	t.Run("Floor fallback", func(t *testing.T) {
+		ResetAuthTokenCaches()
+		t.Cleanup(ResetAuthTokenCaches)
+		t.Setenv("GH_ISH_AUTH_METHOD", "auto")
+		t.Setenv("GERRIT_TOKEN", "")
+
+		origLookPath := LookPathFn
+		LookPathFn = func(file string) (string, error) {
+			if file == "gob-curl" {
+				return "/usr/bin/gob-curl", nil
+			}
+			return "", os.ErrNotExist
+		}
+		t.Cleanup(func() { LookPathFn = origLookPath })
+
+		origResolver := GerritTokenResolver
+		GerritTokenResolver = func(ctx context.Context) (string, string, error) {
+			return "rejected-token", "luci-auth", nil
+		}
+		t.Cleanup(func() { GerritTokenResolver = origResolver })
+
+		tr, err := NewAuthTransportContext(t.Context(), "https://pigweed-review.googlesource.com")
+		if err != nil {
+			t.Fatalf("NewAuthTransportContext failed: %v", err)
+		}
+		tokTr, ok := tr.(*fallbackTransport).base.(*TokenTransport)
+		if !ok || !tokTr.Dynamic || tokTr.Host != "pigweed-review.googlesource.com" || tokTr.Floor == nil {
+			t.Fatalf("expected dynamic *TokenTransport with Host and gob-curl Floor, got %#v", tr.(*fallbackTransport).base)
+		}
+
+		var baseReqs, floorReqs int
+		baseStatus := http.StatusForbidden
+		baseBody := "submit not permitted"
+		tokTr.Base = &mockTransport{
+			roundTrip: func(req *http.Request) (*http.Response, error) {
+				baseReqs++
+				return &http.Response{
+					StatusCode: baseStatus,
+					Body:       io.NopCloser(strings.NewReader(baseBody)),
+					Header:     make(http.Header),
+					Request:    req,
+				}, nil
+			},
+		}
+		tokTr.Floor = &mockTransport{
+			roundTrip: func(req *http.Request) (*http.Response, error) {
+				floorReqs++
+				if got := req.Header.Get("Authorization"); got != "" {
+					t.Errorf("Floor saw leaked Authorization header %q", got)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("floor-ok")),
+					Header:     make(http.Header),
+					Request:    req,
+				}, nil
+			},
+		}
+
+		aclReq, _ := http.NewRequest("POST", "https://pigweed-review.googlesource.com/a/changes/1/submit", nil)
+		aclResp, err := tokTr.RoundTrip(aclReq)
+		if err != nil || aclResp.StatusCode != http.StatusForbidden {
+			t.Fatalf("ACL 403 RoundTrip = (%v, %v), want 403 Forbidden", aclResp, err)
+		}
+		aclBytes, _ := io.ReadAll(aclResp.Body)
+		_ = aclResp.Body.Close()
+		if string(aclBytes) != "submit not permitted" || floorReqs != 0 {
+			t.Fatalf("ACL 403 body=%q floorReqs=%d, want 'submit not permitted' and 0 floor calls", string(aclBytes), floorReqs)
+		}
+
+		baseReqs = 0
+		baseStatus = http.StatusUnauthorized
+		baseBody = "unauthorized"
+		for i := range 2 {
+			req, _ := http.NewRequest("GET", "https://pigweed-review.googlesource.com/a/accounts/self", nil)
+			resp, err := tokTr.RoundTrip(req)
+			if err != nil || resp.StatusCode != http.StatusOK {
+				t.Fatalf("RoundTrip(%d) = (%v, %v), want 200 OK via Floor", i, resp, err)
+			}
+			_ = resp.Body.Close()
+			if fbMeth, fbDesc := getLastGobCurlFallback(); fbMeth != AuthMethodGobCurl || !strings.Contains(fbDesc, "token rejected") {
+				t.Errorf("RoundTrip(%d) getLastGobCurlFallback() = (%q, %q), want (gob-curl, token rejected)", i, fbMeth, fbDesc)
+			}
+			clearLastGobCurlFallback()
+		}
+		if baseReqs != 1 || floorReqs != 2 {
+			t.Errorf("baseReqs=%d floorReqs=%d, want 1 (before latching Floor) and 2", baseReqs, floorReqs)
+		}
+	})
 }
 
 func TestCookieTransport(t *testing.T) {
@@ -840,6 +1014,49 @@ func TestLUCIAuthTransport(t *testing.T) {
 			t.Errorf("expected empty Authorization header in community mode without token, got %q", got)
 		}
 	})
+}
+
+func TestDefaultGerritToken_CachesJSONExpiry(t *testing.T) {
+	t.Setenv("GERRIT_TOKEN", "")
+	ResetAuthTokenCaches()
+	t.Cleanup(ResetAuthTokenCaches)
+
+	origLookPath := LookPathFn
+	LookPathFn = func(file string) (string, error) {
+		if file == "luci-auth" {
+			return "/usr/bin/luci-auth", nil
+		}
+		return "", os.ErrNotExist
+	}
+	t.Cleanup(func() { LookPathFn = origLookPath })
+
+	wantExpiry := time.Now().Add(45 * time.Minute).Unix()
+	var runnerCalls int
+	origRunner := OAuthTokenCommandRunner
+	OAuthTokenCommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		runnerCalls++
+		return fmt.Appendf(nil, `{"token":"gerrit-json-token","expiry":%d}`, wantExpiry), nil
+	}
+	t.Cleanup(func() { OAuthTokenCommandRunner = origRunner })
+
+	for range 2 {
+		tok, src, err := DefaultGerritToken(t.Context())
+		if err != nil {
+			t.Fatalf("DefaultGerritToken() error = %v", err)
+		}
+		if tok != "gerrit-json-token" || src != "luci-auth" {
+			t.Errorf("DefaultGerritToken() = (%q, %q), want (gerrit-json-token, luci-auth)", tok, src)
+		}
+	}
+	if runnerCalls != 1 {
+		t.Errorf("OAuthTokenCommandRunner calls = %d, want 1", runnerCalls)
+	}
+	gerritTokenMu.Lock()
+	gotExpiry := cachedGerritTokenExpiry
+	gerritTokenMu.Unlock()
+	if want := time.Unix(wantExpiry, 0).Add(-60 * time.Second); !gotExpiry.Equal(want) {
+		t.Errorf("cachedGerritTokenExpiry = %v, want %v", gotExpiry, want)
+	}
 }
 
 func TestGobCurlTransport_AutoFallbackToLuciAuth(t *testing.T) {

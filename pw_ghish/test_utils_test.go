@@ -428,6 +428,8 @@ type MockGerritServer struct {
 // and restores them on test cleanup.
 func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	t.Helper()
+	ResetAuthTokenCaches()
+	t.Cleanup(ResetAuthTokenCaches)
 	s := &MockGerritServer{
 		t:              t,
 		fallbackStatus: http.StatusNotFound,

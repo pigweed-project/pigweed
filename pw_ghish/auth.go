@@ -17,8 +17,10 @@ package pw_ghish
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -214,6 +216,8 @@ type GobCurlTransport struct {
 	AutoFallback bool   // when true, fall back to luci-auth / cookie / netrc on gob-curl auth failure
 	Base         http.RoundTripper
 
+	SkipTokenFallback bool // skip GerritTokenResolver during AutoFallback (already tried upstream)
+
 	mu               sync.Mutex
 	fallbackMu       sync.Mutex
 	gobCurlVerified  bool
@@ -257,19 +261,9 @@ func (t *GobCurlTransport) checkState(req *http.Request, bodyBytes []byte, hasBo
 }
 
 func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	var bodyBytes []byte
-	var hasBody bool
-	if req.Body != nil {
-		hasBody = true
-		var readErr error
-		bodyBytes, readErr = io.ReadAll(io.LimitReader(req.Body, maxGerritRequestBodyBytes+1))
-		_ = req.Body.Close()
-		if readErr != nil {
-			return nil, fmt.Errorf("reading request body: %w", readErr)
-		}
-		if len(bodyBytes) > maxGerritRequestBodyBytes {
-			return nil, fmt.Errorf("request body exceeds maximum allowed size of %d bytes", maxGerritRequestBodyBytes)
-		}
+	bodyBytes, hasBody, err := readBoundedRequestBody(req)
+	if err != nil {
+		return nil, err
 	}
 	if ctxErr := req.Context().Err(); ctxErr != nil {
 		return nil, ctxErr
@@ -448,12 +442,16 @@ func (t *GobCurlTransport) roundTripWithFallback(req *http.Request, bodyBytes []
 	}
 	var candidates []candidate
 
-	if tok, src, tokErr := GerritTokenResolver(ctx); tokErr == nil && tok != "" {
+	var tok, src string
+	if !t.SkipTokenFallback {
+		tok, src, _ = GerritTokenResolver(ctx)
+	}
+	if tok != "" {
 		if src == "" {
 			src = "luci-auth"
 		}
 		candidates = append(candidates, candidate{
-			tr:     &TokenTransport{Base: t.Base, Token: tok},
+			tr:     &TokenTransport{Base: t.Base, Token: tok, Host: req.URL.Hostname()},
 			method: AuthMethodToken,
 			desc:   fmt.Sprintf("%s (fallback: gob-curl SSO expired)", src),
 		})
@@ -752,23 +750,156 @@ func (t *BasicAuthTransport) RoundTrip(req *http.Request) (*http.Response, error
 type TokenTransport struct {
 	Base  http.RoundTripper
 	Token string
+
+	Host     string
+	Dynamic  bool
+	Floor    http.RoundTripper
+	mu       sync.Mutex
+	useFloor bool
+}
+
+func hostnameOf(raw string) string {
+	if raw != "" && !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	if u, err := url.Parse(raw); err == nil && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	return CleanGerritHost(raw)
+}
+
+func setTokenAuthHeader(req *http.Request, tok string) {
+	if strings.Contains(tok, ":") {
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(tok)))
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+}
+
+func readBoundedRequestBody(req *http.Request) ([]byte, bool, error) {
+	if req.Body == nil || req.Body == http.NoBody {
+		return nil, false, nil
+	}
+	bodyBytes, err := io.ReadAll(io.LimitReader(req.Body, maxGerritRequestBodyBytes+1))
+	_ = req.Body.Close()
+	if err != nil {
+		return nil, false, fmt.Errorf("reading request body: %w", err)
+	}
+	if len(bodyBytes) > maxGerritRequestBodyBytes {
+		return nil, false, fmt.Errorf("request body exceeds maximum allowed size of %d bytes", maxGerritRequestBodyBytes)
+	}
+	return bodyBytes, true, nil
+}
+
+var gerritTokenAuthRejectionMarkers = []string{
+	"insufficient_scope",
+	"invalid_token",
+	"authentication required",
+	"access_token_scope_insufficient",
+}
+
+func isGerritTokenAuthRejection(resp *http.Response) bool {
+	if resp == nil {
+		return false
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return true
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		return false
+	}
+	var bodyPreview string
+	if resp.Body != nil {
+		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		orig := resp.Body
+		resp.Body = struct {
+			io.Reader
+			io.Closer
+		}{
+			Reader: io.MultiReader(bytes.NewReader(buf), orig),
+			Closer: orig,
+		}
+		bodyPreview = string(buf)
+	}
+	combined := strings.ToLower(resp.Header.Get("WWW-Authenticate") + "\n" + bodyPreview)
+	return slices.ContainsFunc(gerritTokenAuthRejectionMarkers, func(m string) bool {
+		return strings.Contains(combined, m)
+	})
 }
 
 func (t *TokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.Token != "" {
-		req = req.Clone(req.Context())
-		if strings.Contains(t.Token, ":") {
-			auth := base64.StdEncoding.EncodeToString([]byte(t.Token))
-			req.Header.Set("Authorization", "Basic "+auth)
-		} else {
-			req.Header.Set("Authorization", "Bearer "+t.Token)
-		}
+	base := cmp.Or[http.RoundTripper](t.Base, http.DefaultTransport)
+	if t.Host != "" && !strings.EqualFold(req.URL.Hostname(), t.Host) {
+		return base.RoundTrip(req)
 	}
-	base := t.Base
-	if base == nil {
-		base = http.DefaultTransport
+	if t.Dynamic || t.Floor != nil {
+		return t.roundTripDynamic(req, base)
+	}
+	t.mu.Lock()
+	tok := t.Token
+	t.mu.Unlock()
+	if tok != "" {
+		req = req.Clone(req.Context())
+		setTokenAuthHeader(req, tok)
 	}
 	return base.RoundTrip(req)
+}
+
+func (t *TokenTransport) roundTripDynamic(req *http.Request, base http.RoundTripper) (*http.Response, error) {
+	bodyBytes, hasBody, err := readBoundedRequestBody(req)
+	if err != nil {
+		return nil, err
+	}
+	cloneReq := func(tok string) *http.Request {
+		cloned := req.Clone(req.Context())
+		if hasBody {
+			cloned.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+		if tok != "" {
+			setTokenAuthHeader(cloned, tok)
+		}
+		return cloned
+	}
+
+	t.mu.Lock()
+	useFloor := t.useFloor
+	tok := t.Token
+	t.mu.Unlock()
+	if useFloor && t.Floor != nil {
+		setLastGobCurlFallback(AuthMethodGobCurl, "gob-curl (fallback: token rejected)")
+		return t.Floor.RoundTrip(cloneReq(""))
+	}
+
+	ctx := req.Context()
+	resp, err := base.RoundTrip(cloneReq(tok))
+	if err != nil {
+		return nil, err
+	}
+	if rejected := isGerritTokenAuthRejection(resp); rejected {
+		if t.Dynamic {
+			invalidateCachedGerritToken(tok)
+			if newTok, _, mErr := GerritTokenResolver(ctx); mErr == nil && newTok != "" && newTok != tok {
+				_ = resp.Body.Close()
+				t.mu.Lock()
+				t.Token = newTok
+				t.mu.Unlock()
+				resp, err = base.RoundTrip(cloneReq(newTok))
+				if err != nil {
+					return nil, err
+				}
+				rejected = isGerritTokenAuthRejection(resp)
+			}
+		}
+		if rejected && t.Floor != nil {
+			_ = resp.Body.Close()
+			t.mu.Lock()
+			t.useFloor = true
+			t.mu.Unlock()
+			setLastGobCurlFallback(AuthMethodGobCurl, "gob-curl (fallback: token rejected)")
+			return t.Floor.RoundTrip(cloneReq(""))
+		}
+	}
+	return resp, nil
 }
 
 // LookPathFn allows overriding exec.LookPath in tests.
@@ -807,6 +938,10 @@ func DescribeGerritAuthMethod(ctx context.Context, gerritHost string, mode AuthM
 		if strings.TrimSpace(os.Getenv("GERRIT_TOKEN")) != "" {
 			return AuthMethodToken, "token (GERRIT_TOKEN)"
 		}
+		// Priority 1b: luci-auth Gerrit OAuth2 token
+		if tok, src, err := GerritTokenResolver(ctx); err == nil && tok != "" {
+			return AuthMethodToken, fmt.Sprintf("token (%s)", cmp.Or(src, "luci-auth"))
+		}
 		// Priority 2: gob-curl on PATH
 		if _, err := LookPathFn("gob-curl"); err == nil {
 			return AuthMethodGobCurl, "gob-curl"
@@ -816,20 +951,8 @@ func DescribeGerritAuthMethod(ctx context.Context, gerritHost string, mode AuthM
 			return AuthMethodCookie, fmt.Sprintf("cookie (%s)", cookieFile)
 		}
 		// Priority 4: .netrc credentials
-		u, _ := url.Parse(gerritHost)
-		hostname := gerritHost
-		if u != nil && u.Hostname() != "" {
-			hostname = u.Hostname()
-		}
-		if creds := FindNetrcCredentials(hostname); creds != nil {
+		if creds := FindNetrcCredentials(hostnameOf(gerritHost)); creds != nil {
 			return AuthMethodNetrc, "netrc (~/.netrc)"
-		}
-		// Priority 5: luci-auth Gerrit OAuth2 token
-		if tok, src, err := GerritTokenResolver(ctx); err == nil && tok != "" {
-			if src == "" {
-				src = "luci-auth"
-			}
-			return AuthMethodToken, fmt.Sprintf("token (%s)", src)
 		}
 		return AuthMethodNone, "none"
 	default:
@@ -869,7 +992,7 @@ func NewAuthTransportContext(ctx context.Context, gerritHost string) (http.Round
 		if token == "" {
 			return nil, NewExitCodeError(ExitCodeAuth, "GH_ISH_AUTH_METHOD=token specified but GERRIT_TOKEN is empty.\n\nTo configure a token, run:\n  export GERRIT_TOKEN=\"<token>\"")
 		}
-		base = &TokenTransport{Token: token}
+		base = &TokenTransport{Token: token, Host: hostnameOf(gerritHost)}
 
 	case AuthMethodGobCurl:
 		gobCurlPath, err := LookPathFn("gob-curl")
@@ -886,11 +1009,7 @@ func NewAuthTransportContext(ctx context.Context, gerritHost string) (http.Round
 		base = &CookieTransport{CookieFile: cookieFile}
 
 	case AuthMethodNetrc:
-		u, _ := url.Parse(gerritHost)
-		hostname := gerritHost
-		if u != nil && u.Hostname() != "" {
-			hostname = u.Hostname()
-		}
+		hostname := hostnameOf(gerritHost)
 		creds := FindNetrcCredentials(hostname)
 		if creds == nil {
 			return nil, NewExitCodeError(ExitCodeAuth, "GH_ISH_AUTH_METHOD=netrc specified but no credentials found for %s in ~/.netrc", hostname)
@@ -903,7 +1022,17 @@ func NewAuthTransportContext(ctx context.Context, gerritHost string) (http.Round
 	case AuthMethodAuto:
 		// Priority 1: GERRIT_TOKEN environment variable
 		if token := strings.TrimSpace(os.Getenv("GERRIT_TOKEN")); token != "" {
-			base = &TokenTransport{Token: token}
+			base = &TokenTransport{Token: token, Host: hostnameOf(gerritHost)}
+			break
+		}
+
+		// Priority 1b: luci-auth Gerrit OAuth2 token (works across Linux, macOS, Windows)
+		if tok, _, err := GerritTokenResolver(ctx); err == nil && tok != "" {
+			var floor http.RoundTripper
+			if gobCurlPath, err := LookPathFn("gob-curl"); err == nil {
+				floor = &GobCurlTransport{Path: gobCurlPath, AutoFallback: true, SkipTokenFallback: true}
+			}
+			base = &TokenTransport{Token: tok, Host: hostnameOf(gerritHost), Dynamic: true, Floor: floor}
 			break
 		}
 
@@ -921,19 +1050,8 @@ func NewAuthTransportContext(ctx context.Context, gerritHost string) (http.Round
 		}
 
 		// Priority 4: .netrc credentials
-		u, _ := url.Parse(gerritHost)
-		hostname := gerritHost
-		if u != nil && u.Hostname() != "" {
-			hostname = u.Hostname()
-		}
-		if creds := FindNetrcCredentials(hostname); creds != nil {
+		if creds := FindNetrcCredentials(hostnameOf(gerritHost)); creds != nil {
 			base = &BasicAuthTransport{Username: creds.Login, Password: creds.Password}
-			break
-		}
-
-		// Priority 5: luci-auth Gerrit OAuth2 token (works across Linux, macOS, Windows)
-		if tok, _, err := GerritTokenResolver(ctx); err == nil && tok != "" {
-			base = &TokenTransport{Token: tok}
 			break
 		}
 
@@ -1113,6 +1231,7 @@ var (
 	cachedGerritToken       string
 	cachedGerritTokenSource string
 	cachedGerritTokenExpiry time.Time
+	gerritTokenProbeFailed  bool
 	lastGobCurlFallbackMeth AuthMethod
 	lastGobCurlFallbackDesc string
 )
@@ -1177,6 +1296,7 @@ func ResetAuthTokenCaches() {
 	cachedGerritToken = ""
 	cachedGerritTokenSource = ""
 	cachedGerritTokenExpiry = time.Time{}
+	gerritTokenProbeFailed = false
 	lastGobCurlFallbackMeth = ""
 	lastGobCurlFallbackDesc = ""
 	gerritTokenMu.Unlock()
@@ -1186,6 +1306,16 @@ func ResetAuthTokenCaches() {
 	cachedIssueTokenSource = ""
 	cachedIssueTokenExpiry = time.Time{}
 	issueTokenMu.Unlock()
+}
+
+func invalidateCachedGerritToken(rejected string) {
+	gerritTokenMu.Lock()
+	if cachedGerritToken == rejected {
+		cachedGerritToken = ""
+		cachedGerritTokenExpiry = time.Time{}
+	}
+	gerritTokenProbeFailed = false
+	gerritTokenMu.Unlock()
 }
 
 // DefaultGerritToken resolves a Gerrit OAuth2 access token from GERRIT_TOKEN or luci-auth
@@ -1201,32 +1331,46 @@ func DefaultGerritToken(ctx context.Context) (string, string, error) {
 	}
 
 	gerritTokenMu.Lock()
+	defer gerritTokenMu.Unlock()
 	if cachedGerritToken != "" && time.Now().Before(cachedGerritTokenExpiry) {
-		tok, src := cachedGerritToken, cachedGerritTokenSource
-		gerritTokenMu.Unlock()
-		return tok, src, nil
+		return cachedGerritToken, cachedGerritTokenSource, nil
 	}
-	gerritTokenMu.Unlock()
+	if gerritTokenProbeFailed {
+		return "", "", fmt.Errorf("no active Gerrit OAuth2 token found from luci-auth")
+	}
 
 	luciAuthBin := findLuciAuthBinary(ctx)
 	if luciAuthBin == "" {
+		gerritTokenProbeFailed = true
 		return "", "", fmt.Errorf("luci-auth binary not found")
 	}
 
 	for _, sc := range []string{DefaultGerritScopes, ScopeGerritCodeReview} {
-		out, err := OAuthTokenCommandRunner(ctx, luciAuthBin, "token", "-scopes", sc)
+		out, err := OAuthTokenCommandRunner(ctx, luciAuthBin, "token", "-scopes", sc, "-json-output", "-")
 		if err == nil {
-			if tok := strings.TrimSpace(string(out)); tok != "" {
-				gerritTokenMu.Lock()
+			tok := strings.TrimSpace(string(out))
+			expiry := time.Now().Add(oauthTokenCacheTTL)
+			var parsed struct {
+				Token  string `json:"token"`
+				Expiry int64  `json:"expiry"`
+			}
+			if json.Unmarshal(out, &parsed) == nil {
+				tok = strings.TrimSpace(parsed.Token)
+				if parsed.Expiry > 0 {
+					expiry = time.Unix(parsed.Expiry, 0).Add(-60 * time.Second)
+				}
+			}
+			if tok != "" {
 				cachedGerritToken = tok
 				cachedGerritTokenSource = "luci-auth"
-				cachedGerritTokenExpiry = time.Now().Add(5 * time.Minute)
-				gerritTokenMu.Unlock()
+				cachedGerritTokenExpiry = expiry
+				gerritTokenProbeFailed = false
 				return tok, "luci-auth", nil
 			}
 		}
 	}
 
+	gerritTokenProbeFailed = true
 	return "", "", fmt.Errorf("no active Gerrit OAuth2 token found from luci-auth")
 }
 
@@ -1300,12 +1444,10 @@ func DefaultLUCIToken(ctx context.Context) (string, string, error) {
 	}
 
 	luciTokenMu.Lock()
+	defer luciTokenMu.Unlock()
 	if cachedLUCIToken != "" && time.Now().Before(cachedLUCITokenExpiry) {
-		tok, src := cachedLUCIToken, cachedLUCITokenSource
-		luciTokenMu.Unlock()
-		return tok, src, nil
+		return cachedLUCIToken, cachedLUCITokenSource, nil
 	}
-	luciTokenMu.Unlock()
 
 	tok, src, err := resolveOAuthTokenFromCLI(ctx, []string{"", DefaultBuganizerScopes})
 	if err != nil {
@@ -1323,11 +1465,9 @@ func DefaultLUCIToken(ctx context.Context) (string, string, error) {
 			err)
 	}
 
-	luciTokenMu.Lock()
 	cachedLUCIToken = tok
 	cachedLUCITokenSource = src
 	cachedLUCITokenExpiry = time.Now().Add(oauthTokenCacheTTL)
-	luciTokenMu.Unlock()
 	return tok, src, nil
 }
 
