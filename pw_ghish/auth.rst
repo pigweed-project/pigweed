@@ -79,7 +79,8 @@ Authentication modes
    * - ``auto``
      - **(Default)** Selects ``googler`` if ``gob-curl`` or ``sso_client`` is
        on ``PATH``, the Git ``user.email`` ends in ``@google.com``, or the
-       ``origin`` remote uses ``sso://``; otherwise selects ``community``.
+       ``origin`` remote uses ``sso://`` or ``rpc://``; otherwise selects
+       ``community``.
    * - ``googler``
      - Requires authenticated access to both Gerrit and LUCI Buildbucket so
        internal tryjob buckets (such as ``pigweed/internal.try``) are included

@@ -151,7 +151,7 @@ Commands:
   Android Busytown / TreeHugger presubmit targets (`treetop~presubmittasks` /
   `ci.android.com`), and Gerrit automated submit requirements / verification
   labels (`./pw presubmit` runs local host validation).
-  - `-w, --watch`: Monitor checks until all blocking checks finish.
+  - `--watch`: Monitor checks until all blocking checks finish.
   - `--fail-fast`: Exit immediately upon the first blocking failure (implies `--watch`).
   - `--log-failed`: Automatically display failure reports and log snippets on exit (default: `true`).
   - `-e, --experimental`: Include non-blocking experimental checks in output.

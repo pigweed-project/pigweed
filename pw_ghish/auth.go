@@ -116,8 +116,10 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		}
 		if origin, err := gc.ConfigGet(ctx, "remote.origin.url"); err == nil {
 			origin = strings.TrimSpace(origin)
-			if strings.HasPrefix(strings.ToLower(origin), "sso://") {
-				return AuthModeGoogler, "auto-detected (sso:// git remote)", nil
+			lowerOrigin := strings.ToLower(origin)
+			if strings.HasPrefix(lowerOrigin, "sso://") || strings.HasPrefix(lowerOrigin, "rpc://") {
+				scheme, _, _ := strings.Cut(lowerOrigin, "://")
+				return AuthModeGoogler, fmt.Sprintf("auto-detected (%s:// git remote)", scheme), nil
 			}
 		}
 	}

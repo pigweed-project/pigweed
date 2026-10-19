@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -408,6 +409,28 @@ var RootCmd = &cobra.Command{
 	},
 }
 
+func buildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "devel"
+	}
+	revision, dirty := "", ""
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.modified":
+			if s.Value == "true" {
+				dirty = "-dirty"
+			}
+		}
+	}
+	if revision == "" {
+		return "devel"
+	}
+	return revision[:min(len(revision), 12)] + dirty
+}
+
 // PrCmd is the command for managing pull requests.
 var PrCmd = &cobra.Command{
 	Use:   "pr",
@@ -438,6 +461,10 @@ func init() {
 
 	RootCmd.AddCommand(PrCmd)
 	RootCmd.AddCommand(IssueCmd)
+	RootCmd.Version = buildVersion()
+	// Register --version without -v so Cobra does not shadow --verbose (-v).
+	//ghish:flag mode=upstream gh="--version"
+	RootCmd.Flags().Bool("version", false, "Print the gh-ish version")
 	RootCmd.PersistentFlags().StringVar(&HostFlag, "host", "", "Gerrit host to connect to")
 	RootCmd.PersistentFlags().BoolVarP(&VerboseFlag, "verbose", "v", false, "Enable verbose (debug) logging")
 	RootCmd.PersistentFlags().StringVar(&ProfileFlag, "profile", "", "Project profile (pigweed, fuchsia, generic)")
@@ -525,6 +552,32 @@ func setupRootAliases() {
 	})
 }
 
+// rejectUnknownSubcommands gives every group command below parent (one with
+// subcommands but no Run/RunE) a RunE that fails on an unknown subcommand, the
+// way cobra already does at the root. Without it, cobra prints help and exits
+// 0 for `gh-ish pr vew`, which scripts and agents read as success.
+func rejectUnknownSubcommands(parent *cobra.Command) {
+	for _, group := range parent.Commands() {
+		rejectUnknownSubcommands(group)
+		if !group.HasSubCommands() || group.Runnable() {
+			continue
+		}
+		group.RunE = func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 || (len(args) == 1 && args[0] == "help") {
+				return cmd.Help()
+			}
+			if cmd.SuggestionsMinimumDistance <= 0 {
+				cmd.SuggestionsMinimumDistance = 2
+			}
+			var hint string
+			if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
+				hint = "\n\nDid you mean this?\n\t" + strings.Join(suggestions, "\n\t") + "\n"
+			}
+			return fmt.Errorf("unknown command %q for %q%s\nRun '%s --help' for usage.", args[0], cmd.CommandPath(), hint, cmd.CommandPath())
+		}
+	}
+}
+
 func chdirToBuildWorkingDirectory() error {
 	if buildWorkDir := os.Getenv("BUILD_WORKING_DIRECTORY"); buildWorkDir != "" {
 		if err := os.Chdir(buildWorkDir); err != nil {
@@ -539,6 +592,7 @@ func chdirToBuildWorkingDirectory() error {
 func Execute() error {
 	setupRootCmdHelp()
 	setupRootAliases()
+	rejectUnknownSubcommands(RootCmd)
 	RootCmd.SetArgs(NormalizeCQArgs(os.Args[1:]))
 	return RootCmd.Execute()
 }
@@ -619,7 +673,7 @@ const gobCorpDomainSuffix = ".git.corp." + "google.com"
 
 // CanonicalGerritHost normalizes a Gerrit host or URL to its canonical
 // Gerrit review hostname. For Git-on-Borg instances (including
-// *.googlesource.com, internal GoB mirror domains, and sso://<tenant>/...), it
+// *.googlesource.com, internal GoB mirror domains, and sso:// or rpc://<tenant>/...), it
 // returns "<tenant>-review.googlesource.com". Non-GoB hosts are returned via
 // CleanGerritHost.
 func CanonicalGerritHost(raw string) string {
@@ -627,12 +681,10 @@ func CanonicalGerritHost(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	if strings.HasPrefix(raw, "sso://") {
+	lower := strings.ToLower(raw)
+	if strings.HasPrefix(lower, "sso://") || strings.HasPrefix(lower, "rpc://") {
 		if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
-			h := parsed.Host
-			if idx := strings.IndexByte(h, '.'); idx != -1 {
-				h = h[:idx]
-			}
+			h, _, _ := strings.Cut(parsed.Host, ".")
 			h = strings.TrimSuffix(h, "-review")
 			return h + "-review.googlesource.com"
 		}

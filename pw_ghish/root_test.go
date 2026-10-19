@@ -484,6 +484,9 @@ func TestRootCmd_SilenceUsage(t *testing.T) {
 	if !RootCmd.SilenceUsage {
 		t.Errorf("Expected RootCmd.SilenceUsage to be true, got false")
 	}
+	if out, err := executeCommand(RootCmd, "--version"); err != nil || !strings.Contains(out, "version "+RootCmd.Version) {
+		t.Errorf("--version = (%q, %v), want version %q", out, err, RootCmd.Version)
+	}
 }
 
 func TestRootAliases(t *testing.T) {
@@ -560,6 +563,52 @@ func TestRootAliases_Execution(t *testing.T) {
 	}
 }
 
+func TestRejectUnknownSubcommands(t *testing.T) {
+	var groups, installed []*cobra.Command
+	var walk func(*cobra.Command)
+	walk = func(parent *cobra.Command) {
+		for _, cmd := range parent.Commands() {
+			walk(cmd)
+			if !cmd.HasSubCommands() {
+				continue
+			}
+			groups = append(groups, cmd)
+			if !cmd.Runnable() {
+				installed = append(installed, cmd)
+			}
+		}
+	}
+	walk(RootCmd)
+	t.Cleanup(func() {
+		for _, cmd := range installed {
+			cmd.RunE = nil
+		}
+	})
+	rejectUnknownSubcommands(RootCmd)
+
+	for _, group := range groups {
+		path := strings.Fields(strings.TrimPrefix(group.CommandPath(), RootCmd.CommandPath()))
+		want := fmt.Sprintf("unknown command %q for %q", "frob", group.CommandPath())
+		if _, err := executeCommand(RootCmd, append(path, "frob")...); err == nil || !strings.HasPrefix(err.Error(), want) {
+			t.Errorf("%q frob: got %v, want %q", group.CommandPath(), err, want)
+		}
+	}
+
+	for _, tc := range []struct {
+		args    []string
+		wantErr string
+	}{
+		{[]string{"pr"}, ""},
+		{[]string{"pr", "help"}, ""},
+		{[]string{"pr", "vew"}, "Did you mean this?\n\tview\n\nRun 'gh-ish pr --help' for usage."},
+	} {
+		_, err := executeCommand(RootCmd, tc.args...)
+		if (tc.wantErr == "" && err != nil) || (tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr))) {
+			t.Errorf("%v: got %v, wantErr %q", tc.args, err, tc.wantErr)
+		}
+	}
+}
+
 func TestCleanGerritHost(t *testing.T) {
 	tests := []struct {
 		input string
@@ -627,6 +676,8 @@ func TestCanonicalGerritHost(t *testing.T) {
 		{"pigweed-review.googlesource.com", "pigweed-review.googlesource.com"},
 		{"sso://foo-internal/bar/baz", "foo-internal-review.googlesource.com"},
 		{"sso://foo-internal-review.googlesource.com/bar/baz", "foo-internal-review.googlesource.com"},
+		{"rpc://pigweed/pigweed/pigweed", "pigweed-review.googlesource.com"},
+		{"rpc://foo-internal-review/bar", "foo-internal-review.googlesource.com"},
 		{"localhost:8080", "localhost:8080"},
 		{"http://127.0.0.1:12345", "127.0.0.1:12345"},
 		{"", ""},
@@ -646,6 +697,7 @@ func TestGerritURL_GitCorpRemote(t *testing.T) {
 		"https://foo-internal" + gobCorpDomainSuffix + "/bar/baz.git",
 		"https://foo-internal-review" + gobCorpDomainSuffix + "/bar/baz",
 		"sso://foo-internal/bar/baz",
+		"rpc://foo-internal/bar/baz",
 	}
 	for _, remote := range remotes {
 		t.Run(remote, func(t *testing.T) {

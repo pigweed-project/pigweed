@@ -92,3 +92,4 @@ For common operations, ``./gh`` provides top-level aliases and global flags:
   * ``--auth-mode <mode>``: Set the authentication mode (``auto``, ``googler``,
     ``community``, or ``none``). See :ref:`module-pw_ghish-auth-modes`.
   * ``-v, --verbose``: Enable debug logging.
+  * ``--version``: Print the build's VCS revision (or ``devel``).
