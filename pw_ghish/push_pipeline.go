@@ -456,15 +456,13 @@ func retryPushWithoutSSO(ctx context.Context, cmd *cobra.Command, cfg *Config, r
 			src = "luci-auth"
 		}
 		httpsBase := fmt.Sprintf("https://%s.googlesource.com/", tenant)
-		httpsArgs := make([]string, 0, len(pushArgs)+4)
-		httpsArgs = append(httpsArgs,
-			"-c", fmt.Sprintf("url.%s.insteadOf=sso://%s/", httpsBase, tenant),
-			"-c", fmt.Sprintf("http.%s.extraHeader=Authorization: Bearer %s", httpsBase, tok),
+		httpsCtx := withGitConfigEnv(ctx,
+			fmt.Sprintf("url.%s.insteadOf", httpsBase), fmt.Sprintf("sso://%s/", tenant),
+			fmt.Sprintf("http.%s.extraHeader", httpsBase), fmt.Sprintf("Authorization: Bearer %s", tok),
 		)
-		httpsArgs = append(httpsArgs, pushArgs...)
 
 		var httpsBuf bytes.Buffer
-		httpsErr := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), &httpsBuf, httpsArgs...)
+		httpsErr := cfg.GitClient().Run(httpsCtx, cmd.OutOrStdout(), &httpsBuf, pushArgs...)
 		if httpsErr == nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Note: sso:// credentials expired; pushed via %s using %s.\n", httpsBase, src)
 			return nil, httpsBuf, true

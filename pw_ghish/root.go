@@ -26,6 +26,8 @@ import (
 	"os"
 	"os/exec"
 	"runtime/debug"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -52,12 +54,49 @@ type RealGitRunner struct {
 	Dir string
 }
 
+const gitEnvKey contextKey = "gitEnv"
+
+func withGitEnv(ctx context.Context, env ...string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, gitEnvKey, slices.Concat(gitEnvFromContext(ctx), env))
+}
+
+func withGitConfigEnv(ctx context.Context, kv ...string) context.Context {
+	var count int
+	for _, entry := range slices.Concat(os.Environ(), gitEnvFromContext(ctx)) {
+		if v, ok := strings.CutPrefix(entry, "GIT_CONFIG_COUNT="); ok {
+			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+				count = n
+			}
+		}
+	}
+	var env []string
+	for i := 0; i+1 < len(kv); i += 2 {
+		env = append(env,
+			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", count, kv[i]),
+			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", count, kv[i+1]),
+		)
+		count++
+	}
+	return withGitEnv(ctx, append([]string{fmt.Sprintf("GIT_CONFIG_COUNT=%d", count)}, env...)...)
+}
+
+func gitEnvFromContext(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	env, _ := ctx.Value(gitEnvKey).([]string)
+	return env
+}
+
 func (r *RealGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if r != nil && r.Dir != "" {
 		cmd.Dir = r.Dir
 	}
-	cmd.Env = append(os.Environ(), "GH_ISH_ACTIVE=1")
+	cmd.Env = slices.Concat(os.Environ(), []string{"GH_ISH_ACTIVE=1"}, gitEnvFromContext(ctx))
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()

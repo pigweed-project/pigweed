@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1153,6 +1154,7 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 		defer func() { GerritTokenResolver = origGerrit }()
 
 		var pushCalls []string
+		var gotEnv []string
 		mockGit := &MockGitRunner{
 			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 				call := strings.Join(args, " ")
@@ -1162,12 +1164,12 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 				}
 				if strings.HasPrefix(call, "push ") || strings.Contains(call, " push ") {
 					pushCalls = append(pushCalls, call)
-					if call == "push origin HEAD:refs/for/main" {
+					if len(pushCalls) == 1 {
 						stderr.Write([]byte("remote_helper.go:932: sso: credentials expired. Try running gcert first\nfatal: remote helper 'sso' aborted session\n"))
 						return fmt.Errorf("exit status 128")
 					}
-					wantHTTPS := "-c url.https://pigweed.googlesource.com/.insteadOf=sso://pigweed/ -c http.https://pigweed.googlesource.com/.extraHeader=Authorization: Bearer mac-luci-bearer-tok push origin HEAD:refs/for/main"
-					if call == wantHTTPS {
+					if call == "push origin HEAD:refs/for/main" {
+						gotEnv = gitEnvFromContext(ctx)
 						stderr.Write([]byte("remote: Processing changes: updated: 1, done\n"))
 						return nil
 					}
@@ -1188,6 +1190,23 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 		}
 		if len(pushCalls) != 2 {
 			t.Fatalf("expected 2 push calls (initial sso + https fallback), got %d: %v", len(pushCalls), pushCalls)
+		}
+		if mockGit.HasCall("mac-luci-bearer-tok") || mockGit.HasCall("Authorization") || mockGit.HasCall("extraHeader") {
+			t.Errorf("bearer token or auth header leaked into git command args: %v", mockGit.Calls)
+		}
+		wantEnv := []string{
+			"GIT_CONFIG_COUNT=2",
+			"GIT_CONFIG_KEY_0=url.https://pigweed.googlesource.com/.insteadOf",
+			"GIT_CONFIG_VALUE_0=sso://pigweed/",
+			"GIT_CONFIG_KEY_1=http.https://pigweed.googlesource.com/.extraHeader",
+			"GIT_CONFIG_VALUE_1=Authorization: Bearer mac-luci-bearer-tok",
+		}
+		if !slices.Equal(gotEnv, wantEnv) {
+			t.Errorf("git env = %v, want %v", gotEnv, wantEnv)
+		}
+		t.Setenv("GIT_CONFIG_COUNT", "1")
+		if got := gitEnvFromContext(withGitConfigEnv(t.Context(), "k", "v")); !slices.Equal(got, []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_1=k", "GIT_CONFIG_VALUE_1=v"}) {
+			t.Errorf("withGitConfigEnv with existing count = %v", got)
 		}
 		if !strings.Contains(errBuf.String(), "https://pigweed.googlesource.com/") || !strings.Contains(errBuf.String(), "luci-auth") {
 			t.Errorf("expected stderr note mentioning https://pigweed.googlesource.com/ and luci-auth, got:\n%s", errBuf.String())
