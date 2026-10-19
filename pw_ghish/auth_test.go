@@ -235,6 +235,10 @@ printf ")]}'\n{\"_account_id\":1000}\n"
 	if !strings.Contains(bodyStr, `"_account_id":1000`) {
 		t.Errorf("body = %q, want account id 1000", bodyStr)
 	}
+
+	if cmd := newGobCurlCommand(t.Context(), mockScript); cmd.Cancel == nil || cmd.WaitDelay <= 0 {
+		t.Errorf("newGobCurlCommand() = (Cancel: %v, WaitDelay: %v), want non-nil Cancel and WaitDelay > 0", cmd.Cancel != nil, cmd.WaitDelay)
+	}
 }
 
 func TestNewAuthTransport_Methods(t *testing.T) {

@@ -249,6 +249,15 @@ func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return t.roundTripWithFallback(req, bodyBytes, hasBody, err)
 }
 
+func newGobCurlCommand(ctx context.Context, path string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Cancel = func() error {
+		return cmd.Process.Signal(os.Interrupt)
+	}
+	cmd.WaitDelay = 2 * time.Second
+	return cmd
+}
+
 func (t *GobCurlTransport) execGobCurl(req *http.Request, bodyBytes []byte, hasBody bool) (*http.Response, error) {
 	path := t.Path
 	if path == "" {
@@ -278,7 +287,7 @@ func (t *GobCurlTransport) execGobCurl(req *http.Request, bodyBytes []byte, hasB
 
 	args = append(args, req.URL.String())
 
-	cmd := exec.CommandContext(req.Context(), path, args...)
+	cmd := newGobCurlCommand(req.Context(), path, args...)
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
