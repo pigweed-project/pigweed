@@ -678,22 +678,47 @@ func TestFallbackTransport_DisallowAnonFallbackInGooglerMode(t *testing.T) {
 func TestGobCurlTransport_FailureReturnsExitCodeAuth(t *testing.T) {
 	tmpDir := t.TempDir()
 	mockScript := filepath.Join(tmpDir, "mock-gob-curl-fail.sh")
-	scriptContent := "#!/bin/sh\nprintf 'LOAS certificate expired\\n' >&2\nexit 1\n"
-	if err := os.WriteFile(mockScript, []byte(scriptContent), 0755); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
+	var resolverCalled, fallbackMarked bool
+	origGerritResolver := GerritTokenResolver
+	t.Cleanup(func() { GerritTokenResolver = origGerritResolver })
+	GerritTokenResolver = func(ctx context.Context) (string, string, error) {
+		resolverCalled = true
+		return "should-not-be-used", "luci-auth", nil
 	}
 
-	tr := &GobCurlTransport{Path: mockScript}
 	req, _ := http.NewRequest("GET", "https://pigweed-review.googlesource.com/a/accounts/self", nil)
-	_, err := tr.RoundTrip(req)
-	if err == nil {
-		t.Fatal("expected error when gob-curl fails")
+	for _, tc := range []struct {
+		name, stderr           string
+		autoFallback, wantAuth bool
+		wantSubstr             string
+	}{
+		{"LOAS expired returns ExitCodeAuth", "LOAS certificate expired", false, true, "gcert"},
+		{"scheme error is non-auth and skips fallback", "Scheme must be http(s)", true, false, "Scheme must be http(s)"},
+		{"TLS cert error is non-auth and skips fallback", "SSL certificate problem: unable to get local issuer certificate", true, false, "SSL certificate problem"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(mockScript, []byte("#!/bin/sh\nprintf '"+tc.stderr+"\\n' >&2\nexit 1\n"), 0755); err != nil {
+				t.Fatalf("write mock script: %v", err)
+			}
+			tr := &GobCurlTransport{Path: mockScript, AutoFallback: tc.autoFallback, Base: &mockTransportRecorder{}}
+			_, roundTripErr := tr.RoundTrip(req)
+			if roundTripErr == nil {
+				t.Fatal("RoundTrip succeeded, want error")
+			}
+			if gotAuth := (ExitCodeFor(roundTripErr) == ExitCodeAuth); gotAuth != tc.wantAuth {
+				t.Errorf("ExitCodeFor(err) == ExitCodeAuth is %v, want %v (err: %v)", gotAuth, tc.wantAuth, roundTripErr)
+			}
+			if !strings.Contains(roundTripErr.Error(), tc.wantSubstr) {
+				t.Errorf("expected %q in error, got: %v", tc.wantSubstr, roundTripErr)
+			}
+			fallbackMarked = fallbackMarked || tr.gobCurlFailed
+		})
 	}
-	if ExitCodeFor(err) != ExitCodeAuth {
-		t.Errorf("ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
+	if resolverCalled {
+		t.Error("unexpected GerritTokenResolver fallback call")
 	}
-	if !strings.Contains(err.Error(), "gcert") {
-		t.Errorf("expected gcert remediation in error, got: %v", err)
+	if fallbackMarked {
+		t.Error("unexpected gobCurlFailed latch on non-auth failure")
 	}
 }
 
@@ -1003,8 +1028,10 @@ func TestGobCurlTransport_BodySizeLimit(t *testing.T) {
 
 func TestGobCurlTransport_ConcurrentFallbackDiscovery(t *testing.T) {
 	tmpDir := t.TempDir()
+	counterFile := filepath.Join(tmpDir, "gob-curl-count")
 	mockScript := filepath.Join(tmpDir, "mock-gob-curl-expired.sh")
-	if err := os.WriteFile(mockScript, []byte("#!/bin/sh\nprintf 'sso: credentials expired\\n' >&2\nexit 1\n"), 0755); err != nil {
+	scriptContent := fmt.Sprintf("#!/bin/sh\necho x >> %q\nprintf 'sso: credentials expired\\n' >&2\nexit 1\n", counterFile)
+	if err := os.WriteFile(mockScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
@@ -1033,11 +1060,13 @@ func TestGobCurlTransport_ConcurrentFallbackDiscovery(t *testing.T) {
 		Base:         mockBase,
 	}
 
+	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			<-start
 			req, _ := http.NewRequest("GET", "https://pigweed-review.googlesource.com/a/accounts/self", nil)
 			resp, err := tr.RoundTrip(req)
 			if err != nil {
@@ -1047,10 +1076,18 @@ func TestGobCurlTransport_ConcurrentFallbackDiscovery(t *testing.T) {
 			_ = resp.Body.Close()
 		}()
 	}
+	close(start)
 	wg.Wait()
 
 	if got := resolverCalls.Load(); got != 1 {
 		t.Errorf("expected GerritTokenResolver to be called exactly once during concurrent fallback discovery, got %d", got)
+	}
+	countBytes, err := os.ReadFile(counterFile)
+	if err != nil {
+		t.Fatalf("failed to read counter file: %v", err)
+	}
+	if lines := strings.Split(strings.TrimSpace(string(countBytes)), "\n"); len(lines) != 1 {
+		t.Errorf("expected gob-curl to be invoked only once during concurrent fallback discovery, got %d invocations", len(lines))
 	}
 }
 

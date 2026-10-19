@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -183,6 +184,31 @@ func (t *fallbackTransport) RoundTrip(req *http.Request) (*http.Response, error)
 // REST API calls (10 MiB) to support fallback retries without risking OOM.
 const maxGerritRequestBodyBytes = maxHTTPBodyBytes
 
+// gobCurlAuthMarkers are lowercase substrings of gob-curl's stderr that point
+// at a credential problem. gob-curl exits 1 for every failure (including
+// "Scheme must be http(s)"), so its stderr is the only available signal.
+var gobCurlAuthMarkers = []string{
+	"gcert",
+	"credential",
+	"loas",
+	"sso:",
+	"uberproxy",
+	"ticket",
+	"unauthenticated",
+	"unauthorized",
+	"expired",
+}
+
+// isGobCurlNonAuthFailure reports whether gob-curl's stderr describes a
+// failure that is clearly not about credentials. Empty stderr is treated as a
+// possible auth failure.
+func isGobCurlNonAuthFailure(stderr string) bool {
+	lower := strings.ToLower(stderr)
+	return lower != "" && !slices.ContainsFunc(gobCurlAuthMarkers, func(m string) bool {
+		return strings.Contains(lower, m)
+	})
+}
+
 type GobCurlTransport struct {
 	Path         string // path to gob-curl, defaults to "gob-curl"
 	AutoFallback bool   // when true, fall back to luci-auth / cookie / netrc on gob-curl auth failure
@@ -190,7 +216,9 @@ type GobCurlTransport struct {
 
 	mu               sync.Mutex
 	fallbackMu       sync.Mutex
+	gobCurlVerified  bool
 	gobCurlFailed    bool
+	gobCurlErr       error
 	activeFallback   http.RoundTripper
 	activeMethod     AuthMethod
 	activeMethodDesc string
@@ -204,6 +232,28 @@ func (t *GobCurlTransport) ActiveMethod() (AuthMethod, string) {
 		return t.activeMethod, t.activeMethodDesc
 	}
 	return AuthMethodGobCurl, "gob-curl"
+}
+
+func (t *GobCurlTransport) checkState(req *http.Request, bodyBytes []byte, hasBody bool) (settled bool, run func() (*http.Response, error)) {
+	t.mu.Lock()
+	verified, failed := t.gobCurlVerified, t.gobCurlFailed
+	fb, cachedErr := t.activeFallback, t.gobCurlErr
+	method, desc := t.activeMethod, t.activeMethodDesc
+	t.mu.Unlock()
+	if failed && fb != nil {
+		return true, func() (*http.Response, error) {
+			setLastGobCurlFallback(method, desc)
+			cloned := req.Clone(req.Context())
+			if hasBody {
+				cloned.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			}
+			return fb.RoundTrip(cloned)
+		}
+	}
+	if failed {
+		return true, func() (*http.Response, error) { return nil, cachedErr }
+	}
+	return verified, nil
 }
 
 func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -225,26 +275,45 @@ func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		return nil, ctxErr
 	}
 
+	var probeLocked bool
 	if t.AutoFallback {
-		t.mu.Lock()
-		cachedFB := t.activeFallback
-		failed := t.gobCurlFailed
-		t.mu.Unlock()
-		if failed && cachedFB != nil {
-			cloned := req.Clone(req.Context())
-			if hasBody {
-				cloned.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		settled, run := t.checkState(req, bodyBytes, hasBody)
+		if !settled {
+			t.fallbackMu.Lock()
+			probeLocked = true
+			defer func() {
+				if probeLocked {
+					t.fallbackMu.Unlock()
+				}
+			}()
+			if settled, run = t.checkState(req, bodyBytes, hasBody); settled {
+				t.fallbackMu.Unlock()
+				probeLocked = false
 			}
-			return cachedFB.RoundTrip(cloned)
+		}
+		if run != nil {
+			return run()
 		}
 	}
 
 	resp, err := t.execGobCurl(req, bodyBytes, hasBody)
 	if err == nil {
+		if t.AutoFallback {
+			t.mu.Lock()
+			t.gobCurlVerified = true
+			t.mu.Unlock()
+		}
 		return resp, nil
 	}
-	if !t.AutoFallback || req.Context().Err() != nil {
+	if ctxErr := req.Context().Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	if !t.AutoFallback || ExitCodeFor(err) != ExitCodeAuth {
 		return nil, err
+	}
+	if !probeLocked {
+		t.fallbackMu.Lock()
+		defer t.fallbackMu.Unlock()
 	}
 	return t.roundTripWithFallback(req, bodyBytes, hasBody, err)
 }
@@ -319,6 +388,16 @@ func (t *GobCurlTransport) execGobCurl(req *http.Request, bodyBytes []byte, hasB
 				return nil, ctxErr
 			}
 			stderrStr := strings.TrimSpace(stderr.String())
+			if isGobCurlNonAuthFailure(stderrStr) {
+				return nil, fmt.Errorf("gob-curl request to %s failed: %s\n\n"+
+					"Cause: gob-curl rejected the request for a reason other than credentials.\n\n"+
+					"Remediation:\n"+
+					"  1. Check the remote URL the Gerrit host is detected from:\n"+
+					"     git remote -v\n"+
+					"  2. If detection is wrong, pass the host explicitly:\n"+
+					"     gh <command> --host <project>-review.googlesource.com",
+					req.URL.Host, stderrStr)
+			}
 			return nil, NewExitCodeError(ExitCodeAuth,
 				"reading gob-curl response headers: %w; stderr: %s\n\n"+
 					"Cause: gob-curl failed to authenticate with %s (corp SSO / LOAS credentials may be expired).\n\n"+
@@ -357,20 +436,9 @@ func (t *GobCurlTransport) execGobCurl(req *http.Request, bodyBytes []byte, hasB
 }
 
 func (t *GobCurlTransport) roundTripWithFallback(req *http.Request, bodyBytes []byte, hasBody bool, gobCurlErr error) (*http.Response, error) {
-	t.fallbackMu.Lock()
-	t.mu.Lock()
-	cachedFB := t.activeFallback
-	failed := t.gobCurlFailed
-	t.mu.Unlock()
-	if failed && cachedFB != nil {
-		t.fallbackMu.Unlock()
-		cloned := req.Clone(req.Context())
-		if hasBody {
-			cloned.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-		}
-		return cachedFB.RoundTrip(cloned)
+	if _, run := t.checkState(req, bodyBytes, hasBody); run != nil {
+		return run()
 	}
-	defer t.fallbackMu.Unlock()
 
 	ctx := req.Context()
 	type candidate struct {
@@ -438,6 +506,10 @@ func (t *GobCurlTransport) roundTripWithFallback(req *http.Request, bodyBytes []
 		return resp, nil
 	}
 
+	t.mu.Lock()
+	t.gobCurlFailed = true
+	t.gobCurlErr = gobCurlErr
+	t.mu.Unlock()
 	return nil, gobCurlErr
 }
 
