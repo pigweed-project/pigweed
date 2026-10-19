@@ -34,7 +34,9 @@ func TestResolveCIProvider_AutoAndExplicit(t *testing.T) {
 	cfg := &Config{}
 
 	// 1. Default auto on Pigweed host -> BuildbucketProvider
-	p1 := ResolveCIProvider(cfg, DefaultProjectConfig(), nil, "pigweed-review.googlesource.com", nil)
+	p1 := ResolveCIProvider(cfg, DefaultProjectConfig(), nil, "pigweed-review.googlesource.com", &gerrit.ChangeInfo{
+		Labels: map[string]gerrit.LabelInfo{"Presubmit-Verified": {}},
+	})
 	if p1.Name() != "buildbucket" {
 		t.Errorf("expected buildbucket provider for pigweed host, got %q", p1.Name())
 	}

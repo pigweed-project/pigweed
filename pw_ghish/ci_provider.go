@@ -401,7 +401,6 @@ func isBusytownCandidate(host string, change *GerritChangeInfo) bool {
 	if change != nil {
 		for labelName := range change.Labels {
 			if strings.EqualFold(labelName, "Presubmit-Ready") ||
-				strings.EqualFold(labelName, "Presubmit-Verified") ||
 				strings.EqualFold(labelName, "Autosubmit") {
 				return true
 			}

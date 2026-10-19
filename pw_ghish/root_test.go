@@ -789,9 +789,9 @@ func TestCommandRequestBudgets(t *testing.T) {
 		budget RequestBudget
 	}{
 		{"pr list", []string{"pr", "list", "--limit", "5"}, RequestBudget{Gerrit: 1, Buildbucket: 0}},
-		{"pr view", []string{"pr", "view", "12345"}, RequestBudget{Gerrit: 5, Buildbucket: 2}},
-		{"pr checks", []string{"pr", "checks", "12345"}, RequestBudget{Gerrit: 3, Buildbucket: 2}},
-		{"run list", []string{"run", "list", "12345"}, RequestBudget{Gerrit: 3, Buildbucket: 2}},
+		{"pr view", []string{"pr", "view", "12345"}, RequestBudget{Gerrit: 2, Buildbucket: 2}},
+		{"pr checks", []string{"pr", "checks", "12345"}, RequestBudget{Gerrit: 1, Buildbucket: 2}},
+		{"run list", []string{"run", "list", "12345"}, RequestBudget{Gerrit: 1, Buildbucket: 2}},
 		{"pr status", []string{"pr", "status"}, RequestBudget{Gerrit: 6, Buildbucket: 0}},
 	}
 
@@ -804,7 +804,6 @@ func TestCommandRequestBudgets(t *testing.T) {
 				OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{
 					"/COMMIT_MSG": map[string]any{},
 				}).
-				OnJSON("GET", "/changes/12345/revisions/*/treetop~presubmittasks", http.StatusOK, []any{}).
 				On("GET", "/changes/12345*", func(w http.ResponseWriter, r *http.Request) {
 					opts := r.URL.Query()["o"]
 					if !slices.Contains(opts, "DETAILED_LABELS") && !slices.Contains(opts, "LABELS") {

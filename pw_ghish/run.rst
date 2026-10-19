@@ -97,7 +97,7 @@ support **Android Busytown / TreeHugger** (``ci.android.com``) and Gerrit
 
 * **Android Busytown / TreeHugger** (``busytown``): Automatically enabled on
   Android Gerrit hosts (``*android-review.googlesource.com``, ``ag/...``,
-  ``aosp/...``), on changes with ``Presubmit-Verified`` / ``Presubmit-Ready``
+  ``aosp/...``), on changes with ``Presubmit-Ready`` / ``Autosubmit``
   labels or ``TreeHugger`` messages, or when ``ci.providers`` includes
   ``"busytown"`` in ``.ghish.toml``. Queries Gerrit's
   ``treetop~presubmittasks`` endpoint for structured per-target statuses and

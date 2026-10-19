@@ -156,7 +156,8 @@ Example ``.ghish.toml``
    [ci]
    # CI providers used by this project ("auto", "buildbucket", "busytown", "gerrit"):
    # - ["auto"] (default): Uses Buildbucket, and automatically enables Busytown + Buildbucket
-   #   composite mode on Android Gerrit hosts or CLs with TreeHugger / Presubmit-Verified.
+   #   composite mode on Android Gerrit hosts or CLs with TreeHugger /
+   #   Presubmit-Ready.
    # - ["busytown"]: Android Busytown / TreeHugger only (treetop~ + ci.android.com).
    # - ["buildbucket", "busytown"]: Dual-stack LUCI Buildbucket + Android Busytown.
    providers = ["auto"]
