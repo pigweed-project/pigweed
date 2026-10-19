@@ -44,7 +44,8 @@ StringBuilder& StringBuilder::append(const char* str) {
   // Use buffer_.size() - size() as the maximum length so that strings too long
   // to fit in the buffer will request one character too many, which sets the
   // status to RESOURCE_EXHAUSTED.
-  return append(string::ClampedCString(str, buffer_.size() - size()));
+  return append(str,
+                string::internal::ClampedLength(str, buffer_.size() - size()));
 }
 
 StringBuilder& StringBuilder::append(std::string_view str) {

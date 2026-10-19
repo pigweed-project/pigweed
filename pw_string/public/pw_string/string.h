@@ -90,7 +90,9 @@ class InlineBasicString final
   // Constructors
 
   constexpr InlineBasicString() noexcept
-      : InlineBasicString<T, string_impl::kGeneric>(kCapacity), buffer_() {}
+      : InlineBasicString<T, string_impl::kGeneric>(
+            static_cast<size_type>(kCapacity)),
+        buffer_() {}
 
   constexpr InlineBasicString(size_t count, T ch) : InlineBasicString() {
     Fill(data(), ch, count);
@@ -293,6 +295,10 @@ class InlineBasicString final
   using InlineBasicString<T, string_impl::kGeneric>::Resize;
   using InlineBasicString<T, string_impl::kGeneric>::SetSizeAndTerminate;
 
+  static_assert(
+      kCapacity < string_impl::kGeneric,
+      "pw::InlineString capacity must be less than pw::string_impl::kGeneric");
+
   // Store kCapacity + 1 bytes to reserve space for a null terminator.
   // InlineBasicString<T, 0> only stores a null terminator.
   T buffer_[kCapacity + 1];
@@ -342,8 +348,8 @@ class InlineBasicString<T, string_impl::kGeneric> {
 #include "pw_string/internal/string_common_functions.inc"
 
  protected:
-  explicit constexpr InlineBasicString(size_t capacity)
-      : capacity_(string_impl::CheckedCastToSize(capacity)), length_(0) {}
+  explicit constexpr InlineBasicString(size_type capacity)
+      : capacity_(capacity), length_(0) {}
 
   // The generic-capacity InlineBasicString<T> is not copyable or movable, but
   // BasicStrings can copied or assigned through a fixed capacity derived class.

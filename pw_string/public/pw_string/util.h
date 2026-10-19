@@ -57,13 +57,12 @@ PW_CONSTEXPR_CPP20 inline StatusWithSize CopyToSpan(std::string_view source,
 ///
 /// This is strongly recommended over using something like C11's `strnlen_s` as
 /// a `string_view` does not require null-termination.
-constexpr std::string_view ClampedCString(span<const char> str) {
-  return std::string_view(str.data(),
-                          internal::ClampedLength(str.data(), str.size()));
+constexpr std::string_view ClampedCString(const char* str, size_t max_len) {
+  return std::string_view(str, internal::ClampedLength(str, max_len));
 }
 
-constexpr std::string_view ClampedCString(const char* str, size_t max_len) {
-  return ClampedCString(span<const char>(str, max_len));
+constexpr std::string_view ClampedCString(span<const char> str) {
+  return ClampedCString(str.data(), str.size());
 }
 
 // clang-format off

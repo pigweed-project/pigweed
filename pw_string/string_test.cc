@@ -243,6 +243,12 @@ TEST(InlineString, Construct_Default) {
   constexpr InlineString<10> kEmpty10;
   static_assert(kEmpty10.empty(), "Must be empty");
   static_assert(kEmpty10.c_str()[0] == '\0', "Must be null terminated");
+
+#if PW_NC_TEST(Construct_Default_CapacityTooLarge)
+  PW_NC_EXPECT(
+      "pw::InlineString capacity must be less than pw::string_impl::kGeneric");
+  [[maybe_unused]] InlineString<65536> too_large;
+#endif  // PW_NC_TEST
 }
 
 TEST(InlineString, Construct_Characters) {
