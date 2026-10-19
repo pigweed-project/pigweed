@@ -53,6 +53,7 @@ pw_add_library(pw_log_zephyr.pigweed_overrides INTERFACE
   PUBLIC_DEPS
     pw_hex_dump.log_bytes
     pw_log.facade
+    pw_polyfill
     pw_preprocessor
 )
 

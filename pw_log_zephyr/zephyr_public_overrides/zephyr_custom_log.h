@@ -17,13 +17,8 @@
 #include <zephyr/logging/log_core.h>
 #include <zephyr/sys/__assert.h>
 
-// If static_assert wasn't defined by zephyr/sys/__assert.h that means it's not
-// supported, just ignore it.
-#ifndef static_assert
-#define static_assert(...)
-#endif
-
-#include <pw_log/log.h>
+#include "pw_log/log.h"
+#include "pw_polyfill/static_assert.h"
 
 #undef LOG_DBG
 #undef LOG_INF
