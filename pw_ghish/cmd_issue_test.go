@@ -194,6 +194,12 @@ func TestIssueList_FiltersAndJSON(t *testing.T) {
 	if errBadState == nil || !strings.Contains(errBadState.Error(), "invalid --state") {
 		t.Errorf("expected error for invalid --state, got: %v", errBadState)
 	}
+
+	// Default issue list on a project/component uses componentid:<id>+ so subcomponents are included
+	SetTestProfile(t, "pigweed")
+	if outComp, err := executeCommand(RootCmd, "issue", "list"); err != nil || !strings.Contains(srv.LastQuery, "componentid:1194524+") || !strings.Contains(outComp, "First open issue") {
+		t.Errorf("issue list (pigweed): query=%q out=%q err=%v", srv.LastQuery, outComp, err)
+	}
 }
 
 func TestIssueStatus(t *testing.T) {

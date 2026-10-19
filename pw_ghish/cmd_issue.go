@@ -266,6 +266,12 @@ func ResolveIssueComponent(ctx context.Context, cfg *Config, explicitFlag int64,
 		}
 	}
 
+	return projectComponentID(ctx, cfg, pcfg)
+}
+
+// projectComponentID resolves the project-wide component from project config,
+// git config, or profile defaults, ignoring path- and OWNERS-based mappings.
+func projectComponentID(ctx context.Context, cfg *Config, pcfg *ProjectConfig) (int64, error) {
 	// Tier 4: ProjectConfig default_component
 	if pcfg != nil && pcfg.Issue.DefaultComponent > 0 {
 		return pcfg.Issue.DefaultComponent, nil
@@ -508,7 +514,7 @@ var issueListCmd = &cobra.Command{
 				return err
 			}
 			if compID > 0 {
-				queryParts = append(queryParts, fmt.Sprintf("componentid:%d", compID))
+				queryParts = append(queryParts, fmt.Sprintf("componentid:%d+", compID))
 			}
 		}
 		if stateFilter == "open" {

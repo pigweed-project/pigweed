@@ -949,6 +949,7 @@ type MockIssueTrackerServer struct {
 	Comments        map[int64][]BuganizerComment
 	NextIssueID     int64
 	Calls           []string
+	LastQuery       string
 	ForceStatus     int
 	CommentPageSize int
 }
@@ -1088,6 +1089,7 @@ func (s *MockIssueTrackerServer) serveHTTP(w http.ResponseWriter, r *http.Reques
 	// GET /v1/issues
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/issues" {
 		query := r.URL.Query().Get("query")
+		s.LastQuery = query
 		var matched []*BuganizerIssue
 		for _, id := range slices.Sorted(maps.Keys(s.Issues)) {
 			iss := s.Issues[id]
@@ -1321,7 +1323,9 @@ func matchesIssueQuery(iss *BuganizerIssue, query string) bool {
 				return false
 			}
 		case strings.HasPrefix(tok, "componentid:"):
-			want := strings.TrimPrefix(tok, "componentid:")
+			// The mock has no component hierarchy, so "N+" (N and its
+			// descendants) matches only N.
+			want := strings.TrimSuffix(strings.TrimPrefix(tok, "componentid:"), "+")
 			if fmt.Sprintf("%d", iss.State.ComponentID) != want {
 				return false
 			}

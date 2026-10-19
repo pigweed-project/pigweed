@@ -631,6 +631,52 @@ func TestClassifySenseModality_BugAndTargetEdgeCases(t *testing.T) {
 	if mod3 != "ADOPT_CL" || conf3 != "LOW" || len(gates3) == 0 || gates3[0] != "GATE_7_TARGET_NOT_FOUND" {
 		t.Errorf("expected LOW confidence and GATE_7_TARGET_NOT_FOUND for missing CL, got mod=%s conf=%s gates=%v", mod3, conf3, gates3)
 	}
+
+	// 4. Only recommend pushing or marking ready when the CL belongs to the current user
+	me := SenseOncallState{UserLogin: "me", UserEmail: "me@example.com"}
+	bug := func(owner string) *SenseTargetState {
+		return &SenseTargetState{TargetType: "bug", NormalizedID: "315378787", Issue: &SenseIssueInfo{
+			Number: 315378787, State: "OPEN", RelatedCLs: []SenseRelatedCL{{Number: 472267, Status: "NEW", Owner: owner}},
+		}}
+	}
+	cl := func(owner string) *SenseCLState { return &SenseCLState{Number: 472267, Status: "NEW", Owner: owner} }
+	main, dirty := SenseGitState{Branch: "main"}, SenseGitState{Branch: "f", IsDirty: true}
+	pending := &SenseCLState{Number: 472267, Status: "NEW", Owner: "other@example.com", IsWIP: true, PendingChecksCount: 1}
+	for _, tc := range []struct {
+		name     string
+		git      SenseGitState
+		activeCL *SenseCLState
+		target   *SenseTargetState
+		user     SenseOncallState
+		wantPush bool
+	}{
+		{"BugOwnCL", main, nil, bug("me@example.com"), me, true},
+		{"BugOtherThenOwnCL", main, nil, &SenseTargetState{TargetType: "bug", NormalizedID: "315378787", Issue: &SenseIssueInfo{
+			Number: 315378787, State: "OPEN", RelatedCLs: []SenseRelatedCL{{Number: 111, Status: "NEW", Owner: "other@example.com"}, {Number: 472267, Status: "NEW", Owner: "me@example.com"}},
+		}}, me, true},
+		{"BugOtherCL", main, nil, bug("other@example.com"), me, false},
+		{"BugUnknownOwner", main, nil, bug(""), me, false},
+		{"TargetOwnCL", main, nil, &SenseTargetState{TargetType: "cl", NormalizedID: "472267", CL: cl("me@example.com")}, me, true},
+		{"TargetOtherCL", main, nil, &SenseTargetState{TargetType: "cl", NormalizedID: "472267", CL: cl("other@example.com")}, me, false},
+		{"ActiveOwnCL", dirty, cl("me@example.com"), nil, me, true},
+		{"ActiveOwnUsername", dirty, cl("me"), nil, me, true},
+		{"ActiveOtherCL", dirty, cl("other@example.com"), nil, me, false},
+		{"ActiveOtherPendingChecks", main, pending, nil, me, false},
+		{"OtherDomainSameLocal", dirty, cl("me@other.example"), nil, me, false},
+		{"ActiveUnknownUser", dirty, cl("me@example.com"), nil, SenseOncallState{}, false},
+		{"ActiveOwnAccountOtherEmail", dirty, &SenseCLState{Number: 472267, Status: "NEW", Owner: "me@chromium.org", OwnerID: 7}, nil, SenseOncallState{UserEmail: "me@example.com", UserAccountID: 7}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, _, steps, _ := classifySenseModality(tc.git, SenseWorktreeState{}, tc.activeCL, tc.target, tc.user, 0)
+			all := strings.Join(steps, "\n")
+			if gotPush := strings.Contains(all, "pr push"); gotPush != tc.wantPush {
+				t.Errorf("suggests push = %v, want %v; steps=%v", gotPush, tc.wantPush, steps)
+			}
+			if !tc.wantPush && (strings.Contains(all, "pr ready") || strings.Contains(all, "pr checkout") || strings.Contains(all, "wt use") || !strings.Contains(all, "./gh pr view 472267 --comments")) {
+				t.Errorf("expected only the review step, got steps=%v", steps)
+			}
+		})
+	}
 }
 
 func TestSense_MultiProjectAndShortlinkNeutrality(t *testing.T) {
@@ -868,5 +914,38 @@ func TestSense_NoWorktreePoolAssumptionsWhenUnmanaged(t *testing.T) {
 	})
 	if !strings.Contains(cardManaged, "Worktree: project=my-proj  slot=slot-1") {
 		t.Errorf("expected pool-managed status card to print project and slot, got:\n%s", cardManaged)
+	}
+}
+
+func TestSenseCandidateIssues_ScopedToProjectComponent(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+	for id, comp := range map[FlexInt64]FlexInt64{1: 1194524, 2: 1363195} {
+		srv.SeedIssue(&BuganizerIssue{IssueID: id, State: BuganizerState{
+			Status: "ASSIGNED", ComponentID: comp, Assignee: &BuganizerUser{EmailAddress: "dev@google.com"},
+		}}, "")
+	}
+	gitRunner := NewMockGit(t).OnCommand("config --get user.email", "dev@google.com\n")
+	for _, tc := range []struct {
+		component int64
+		want      int
+	}{{component: 1194524, want: 1}, {component: 0, want: 2}} {
+		pcfg := DefaultProjectConfig()
+		pcfg.Issue.DefaultComponent = tc.component
+		cfg := &Config{Git: gitRunner, ProjectConfig: pcfg, Profile: &genericProfile{}}
+		if got := senseCandidateIssues(t.Context(), nil, cfg, pcfg, senseProjectMeta{issuePrefix: "b/"}, "", &senseWarnCollector{}); len(got) != tc.want {
+			t.Errorf("default_component=%d: got %d candidate issues %+v, want %d", tc.component, len(got), got, tc.want)
+		}
+	}
+
+	// When activeCL is MERGED and HEAD has Bug: b/1, issue #1 is filtered out of candidate_issues while #2 remains
+	SetTestProfile(t, "generic")
+	cid := "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e"
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(100, WithChangeID(cid), WithStatus("MERGED"))
+	gitRunner.WithCommit("pw_foo: Fix\n\nBug: b/1\nChange-Id: "+cid+"\n").
+		OnCommand("rev-list --left-right --count origin/main...HEAD", "0\t1\n")
+	if rep, err := BuildSenseReport(t.Context(), nil, "", false); err != nil || len(rep.CandidateIssues) != 1 || rep.CandidateIssues[0].Number != 2 {
+		t.Errorf("merged CL candidate issues = %+v (err=%v), want only issue #2", rep.CandidateIssues, err)
 	}
 }

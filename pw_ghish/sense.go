@@ -123,6 +123,7 @@ type SenseCLState struct {
 	Subject                   string                    `json:"subject"`
 	Status                    string                    `json:"status"`
 	Owner                     string                    `json:"owner,omitempty"`
+	OwnerID                   int                       `json:"-"`
 	ChangeID                  string                    `json:"change_id"`
 	URL                       string                    `json:"url"`
 	ShortRef                  string                    `json:"short_ref,omitempty"`
@@ -162,6 +163,8 @@ type SenseRelatedCL struct {
 	Status   string `json:"status"`
 	Subject  string `json:"subject"`
 	IsWIP    bool   `json:"is_wip,omitempty"`
+	Owner    string `json:"owner,omitempty"`
+	OwnerID  int    `json:"-"`
 }
 
 // SenseIssueSummary holds a 1-line summary of an open candidate issue.
@@ -203,6 +206,8 @@ type SenseTargetState struct {
 // SenseOncallState holds optional oncall rotation detection results.
 type SenseOncallState struct {
 	UserLogin       string `json:"user_login,omitempty"`
+	UserEmail       string `json:"user_email,omitempty"`
+	UserAccountID   int    `json:"-"`
 	PrimaryOncall   string `json:"primary_oncall,omitempty"`
 	SecondaryOncall string `json:"secondary_oncall,omitempty"`
 	IsUserOncall    bool   `json:"is_user_oncall,omitempty"`
@@ -727,7 +732,7 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			candidateIssues = senseCandidateIssues(ctx, cmd, cfg, warnings)
+			candidateIssues = senseCandidateIssues(ctx, cmd, cfg, projCfg, meta, "", warnings)
 		}()
 	}
 
@@ -735,7 +740,7 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 
 	// If worktree had 1 commit ahead on a MERGED CL and no target arg was passed, pre-fetch candidate issues now
 	if targetArg == "" && !gitState.IsDirty && !gitState.RebaseInProgress && len(candidateIssues) == 0 && activeCL != nil && activeCL.Status == "MERGED" {
-		candidateIssues = senseCandidateIssues(ctx, cmd, cfg, warnings)
+		candidateIssues = senseCandidateIssues(ctx, cmd, cfg, projCfg, meta, gitState.BugID, warnings)
 	}
 
 	// Share activeCL and targetSt.CL if they refer to the same change
@@ -817,6 +822,11 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 			gitState.BugID = meta.issueRef(wtSenseRes.CurrentIssueID)
 		}
 	}
+	if activeCL != nil && activeCL.Status == "MERGED" {
+		candidateIssues = slices.DeleteFunc(candidateIssues, func(iss SenseIssueSummary) bool {
+			return meta.issueRef(iss.Number) == gitState.BugID || branchTracksBug(gitState, strconv.FormatInt(iss.Number, 10))
+		})
+	}
 	if len(gitWTs) > 1 && wtState.CurrentProject == "" && wtState.CurrentSlot == "" {
 		wtState.IsUnmanagedGitWorktree = true
 		wtState.GitWorktrees = gitWTs
@@ -824,6 +834,31 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 
 	if wtState.CurrentStatusBadge == "" {
 		wtState.CurrentStatusBadge = inferSingleWorktreeBadge(gitState, activeCL)
+	}
+
+	// Resolve the user's Gerrit account once, only when there is an open CL whose
+	// owner has an account ID that did not already match Git email/login.
+	needsOwnerLookup := func(status, owner string, ownerID int) bool {
+		return status == "NEW" && ownerID != 0 && !isOwnedBy(owner, 0, oncallSt)
+	}
+	needsAccountID := func(cl *SenseCLState) bool {
+		return cl != nil && needsOwnerLookup(cl.Status, cl.Owner, cl.OwnerID)
+	}
+	if needsAccountID(activeCL) || (targetSt != nil && (needsAccountID(targetSt.CL) || (targetSt.Issue != nil && slices.ContainsFunc(targetSt.Issue.RelatedCLs, func(cl SenseRelatedCL) bool {
+		return needsOwnerLookup(cl.Status, cl.Owner, cl.OwnerID)
+	})))) {
+		aCtx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
+		defer cancel()
+		// OK: on any error, ownership falls back to email/login matching.
+		if gClient, gErr := NewGerritClient(aCtx, cmd); gErr != nil {
+			warnings.addf("skipping Gerrit account lookup for CL ownership: %v", firstLine(gErr.Error()))
+		} else if gClient != nil {
+			if acc, _, accErr := gClient.Accounts.GetAccount(aCtx, "self"); accErr != nil {
+				warnings.addf("skipping Gerrit account lookup for CL ownership: %v", firstLine(accErr.Error()))
+			} else if acc != nil {
+				oncallSt.UserAccountID = acc.AccountID
+			}
+		}
 	}
 
 	modality, confidence, summary, steps, gates := classifySenseModalityWithMeta(gitState, wtState, activeCL, targetSt, oncallSt, len(candidateIssues), meta)
@@ -1521,6 +1556,9 @@ func senseBugTarget(
 					Query: []string{fmt.Sprintf("message:%d", targetBugID)},
 					Limit: 5,
 				},
+				ChangeOptions: gerrit.ChangeOptions{
+					AdditionalFields: []string{"DETAILED_ACCOUNTS"},
+				},
 			})
 			if qErr != nil {
 				warnings.addf("issue %s: related Gerrit CL query failed: %v", meta.issueRef(targetBugID), firstLine(qErr.Error()))
@@ -1534,6 +1572,8 @@ func senseBugTarget(
 						Status:   ch.Status,
 						Subject:  ch.Subject,
 						IsWIP:    ch.WorkInProgress,
+						Owner:    extractChangeOwner(&ch),
+						OwnerID:  ch.Owner.AccountID,
 					})
 				}
 			}
@@ -1575,7 +1615,7 @@ func resolveCurrentUserIdentity(ctx context.Context, cfg *Config) (email string,
 	return email, login
 }
 
-func senseCandidateIssues(ctx context.Context, cmd *cobra.Command, cfg *Config, warnings *senseWarnCollector) []SenseIssueSummary {
+func senseCandidateIssues(ctx context.Context, cmd *cobra.Command, cfg *Config, projCfg *ProjectConfig, meta senseProjectMeta, excludeBugID string, warnings *senseWarnCollector) []SenseIssueSummary {
 	client, err := NewIssueTrackerClientForCommand(ctx, cmd)
 	if err != nil || client == nil || isMockWithoutLocalIssueServer(cfg, client) {
 		if err != nil && cfg != nil && cfg.Git == DefaultGitRunner {
@@ -1592,9 +1632,28 @@ func senseCandidateIssues(ctx context.Context, cmd *cobra.Command, cfg *Config, 
 		return nil
 	}
 
-	resp, err := client.ListIssues(qCtx, fmt.Sprintf("status:open assignee:%s", email), 5, "")
+	// Scope to the project's component tree so a shared tracker doesn't
+	// surface other projects' issues.
+	compID, err := projectComponentID(qCtx, cfg, projCfg)
+	if err != nil {
+		warnings.addf("candidate issues component lookup failed: %v", firstLine(err.Error()))
+		return nil
+	}
+	scope := ""
+	if compID > 0 {
+		scope = fmt.Sprintf(" componentid:%d+", compID)
+	}
+
+	exclude := func(iss *BuganizerIssue) bool {
+		return iss == nil || (excludeBugID != "" && meta.issueRef(int64(iss.IssueID)) == excludeBugID)
+	}
+	resp, err := client.ListIssues(qCtx, fmt.Sprintf("status:open assignee:%s%s", email, scope), 5, "")
+	if resp != nil {
+		resp.Issues = slices.DeleteFunc(resp.Issues, exclude)
+	}
 	if (err != nil || resp == nil || len(resp.Issues) == 0) && qCtx.Err() == nil {
-		if repResp, repErr := client.ListIssues(qCtx, fmt.Sprintf("status:open reporter:%s", email), 5, ""); repErr == nil && repResp != nil {
+		if repResp, repErr := client.ListIssues(qCtx, fmt.Sprintf("status:open reporter:%s%s", email, scope), 5, ""); repErr == nil && repResp != nil {
+			repResp.Issues = slices.DeleteFunc(repResp.Issues, exclude)
 			resp = repResp
 			err = nil
 		}
@@ -1624,13 +1683,31 @@ func extractChangeOwner(change *gerrit.ChangeInfo) string {
 	if change == nil {
 		return ""
 	}
-	if change.Owner.Email != "" {
-		return change.Owner.Email
+	return cmp.Or(change.Owner.Email, change.Owner.Username, change.Owner.Name)
+}
+
+// isOwnedBy reports whether the CL owner is the current user, matching by
+// Gerrit account ID when both are known or falling back to Git email/login.
+func isOwnedBy(owner string, ownerID int, user SenseOncallState) bool {
+	if ownerID != 0 && user.UserAccountID != 0 {
+		return ownerID == user.UserAccountID
 	}
-	if change.Owner.Username != "" {
-		return change.Owner.Username
+	if strings.Contains(owner, "@") {
+		return user.UserEmail != "" && strings.EqualFold(owner, user.UserEmail)
 	}
-	return change.Owner.Name
+	return owner != "" && user.UserLogin != "" && strings.EqualFold(owner, user.UserLogin)
+}
+
+func senseBystander(modality, cl, subject, owner string) (string, string, string, []string, []string) {
+	return modality,
+		"HIGH",
+		fmt.Sprintf("CL %s (%s) may not be yours (owner: %s); review rather than push.", cl, subject, cmp.Or(owner, "unknown")),
+		[]string{senseReviewStep(cl)},
+		nil
+}
+
+func senseReviewStep(cl string) string {
+	return fmt.Sprintf("Review CL %s (`./gh pr view %s --comments`) and coordinate with its owner instead of pushing to it.", cl, cl)
 }
 
 func extractChangeRevisionInfo(change *gerrit.ChangeInfo, localHeadSHA string) (patchsetNum int, fetchRef string, headUploaded bool) {
@@ -1865,6 +1942,7 @@ func senseGerritCL(
 		Subject:                   change.Subject,
 		Status:                    change.Status,
 		Owner:                     ownerEmail,
+		OwnerID:                   change.Owner.AccountID,
 		ChangeID:                  change.ChangeID,
 		URL:                       meta.clWebURL(ctx, cfg, gHost, change.Project, change.Number),
 		ShortRef:                  meta.clRef(change.Number),
@@ -1931,8 +2009,8 @@ func enrichCommentsWithLocalCode(cwd string, items []UnresolvedComment) []Unreso
 }
 
 func senseOncall(ctx context.Context, cfg *Config, projCfg *ProjectConfig, warnings *senseWarnCollector) SenseOncallState {
-	_, userLogin := resolveCurrentUserIdentity(ctx, cfg)
-	res := SenseOncallState{UserLogin: userLogin}
+	userEmail, userLogin := resolveCurrentUserIdentity(ctx, cfg)
+	res := SenseOncallState{UserLogin: userLogin, UserEmail: userEmail}
 
 	scheduleFile := strings.TrimSpace(os.Getenv("GH_ISH_ONCALL_FILE"))
 	if scheduleFile == "" && projCfg != nil {
@@ -2082,7 +2160,7 @@ func classifySenseModalityWithMeta(
 					if activeCL != nil && activeCL.Number == rcl.Number && activeCL.Status == "NEW" {
 						activeCLMatchesBug = true
 					}
-					if rcl.Status == "NEW" && openRelatedCL == nil {
+					if rcl.Status == "NEW" && (openRelatedCL == nil || (!isOwnedBy(openRelatedCL.Owner, openRelatedCL.OwnerID, oncall) && isOwnedBy(rcl.Owner, rcl.OwnerID, oncall))) {
 						openRelatedCL = rcl
 					}
 				}
@@ -2129,7 +2207,9 @@ func classifySenseModalityWithMeta(
 					s = append(s, fmt.Sprintf("Prepare branch (`./gh sense --prepare %s` or `git checkout -b b-%s %s`).", issRef, bugID, baseRef))
 				}
 
-				if openRelatedCL != nil {
+				if openRelatedCL != nil && !isOwnedBy(openRelatedCL.Owner, openRelatedCL.OwnerID, oncall) {
+					s = []string{senseReviewStep(strconv.Itoa(openRelatedCL.Number))}
+				} else if openRelatedCL != nil {
 					clRef := meta.clRef(openRelatedCL.Number)
 					s = append(s, fmt.Sprintf("Drive existing CL %s for %s: address comments/CI, push (`./gh pr push --cq`), watch CQ (`./gh pr checks %d --watch --fail-fast`), then `./gh pr ready %d --owner`.", clRef, issRef, openRelatedCL.Number, openRelatedCL.Number))
 				} else {
@@ -2169,6 +2249,13 @@ func classifySenseModalityWithMeta(
 					clTitle = target.CL.Subject
 				} else if activeCL != nil && activeCL.Subject != "" {
 					clTitle = activeCL.Subject
+				}
+				clOwner, clOwnerID := "", 0
+				if target.CL != nil {
+					clOwner, clOwnerID = target.CL.Owner, target.CL.OwnerID
+				}
+				if !isOwnedBy(clOwner, clOwnerID, oncall) {
+					return senseBystander("ADOPT_CL", clID, clTitle, clOwner)
 				}
 				var s []string
 				if target.ExistingWorktree != nil {
@@ -2219,6 +2306,9 @@ func classifySenseModalityWithMeta(
 	// Tier 2: Active open Gerrit CL on current branch
 	if activeCL != nil && activeCL.Status == "NEW" {
 		clNum := activeCL.Number
+		if !isOwnedBy(activeCL.Owner, activeCL.OwnerID, oncall) {
+			return senseBystander("DRIVE_ACTIVE_CL", strconv.Itoa(clNum), activeCL.Subject, activeCL.Owner)
+		}
 		var s []string
 		var summaryParts []string
 

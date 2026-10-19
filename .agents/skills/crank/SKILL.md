@@ -64,6 +64,8 @@ Follow the `Next:` directives from `./gh sense` according to the active scenario
 ### 1. Driving an Active or Adopted CL (`DRIVE_ACTIVE_CL` / `ADOPT_CL`)
 *(If the user asked to review a teammate's CL rather than adopt it, run
 [`.agents/skills/review/SKILL.md`](../review/SKILL.md) Mode B instead.)*
+If `./gh sense` says the CL may not be yours, follow its review step and do not
+push.
 
 1. **Rebase (`/freshen`)**: Follow the `Rebase:` verdict from `./gh sense`:
    - `REBASE_CONFLICT` or `REBASE_RECOMMENDED`: Run
