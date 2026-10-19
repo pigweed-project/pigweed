@@ -4,9 +4,7 @@
 Set up Pigweed as an external dependency
 ========================================
 Pigweed only supports `bzlmod
-<https://bazel.build/external/overview#bzlmod>`__ based projects. `WORKSPACE
-<https://bazel.build/external/overview#workspace-system>`__ based projects are
-no longer supported.
+<https://bazel.build/external/overview#bzlmod>`__ based projects.
 
 Add Pigweed as a ``bazel_dep`` with a ``git_override``:
 

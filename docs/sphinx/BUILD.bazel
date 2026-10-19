@@ -217,6 +217,7 @@ sphinx_docs_library(
         "style/rest.rst",
         "style/writing.rst",
         "style_guide.rst",
+        "support_policy.rst",
         "testing/cpp_type_equivalence_classes.rst",
         "testing/index.rst",
         "toolchain/get_started.rst",

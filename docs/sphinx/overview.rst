@@ -7,7 +7,6 @@ Overview
 .. _talk to us on Discord: https://discord.gg/M9NSeTA
 .. _Bazel for Embedded: https://blog.bazel.build/2024/08/08/bazel-for-embedded.html
 .. _AOSP: https://source.android.com
-.. _official supported versions: https://devguide.python.org/versions/
 .. _hermetic: https://bazel.build/basics/hermeticity
 .. _libusb: https://libusb.info/
 .. _hermeticity: https://bazel.build/basics/hermeticity
@@ -335,17 +334,12 @@ Pigweed incrementally adds Rust support for any given module based on client nee
 We plan on growing our Rust support extensively over the next few years. We expect
 to support Rust (alongside C++) indefinitely.
 
-.. _docs-concepts-python-version:
-
 Python
 ------
 Python is Pigweed's primary language for scripting tasks. Some Pigweed modules,
 such as :ref:`module-pw_console`, can be extended with custom scripts. These
-scripts almost always must be written in Python.
-
-Pigweed officially supports Python 3.10 and 3.11. Moving forward, Pigweed will
-follow Python's `official supported versions`_. Pigweed will drop support for
-Python versions as they reach end-of-life.
+scripts almost always must be written in Python. See
+:ref:`docs-concepts-python-version` for supported Python versions.
 
 Other languages
 ---------------
@@ -372,3 +366,4 @@ Next steps
    ../mission
    ../glossary
    FAQs <../faq>
+   ../support_policy
