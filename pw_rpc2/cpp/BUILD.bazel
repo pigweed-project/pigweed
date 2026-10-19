@@ -26,13 +26,6 @@ package(default_visibility = ["//pw_rpc2:__subpackages__"])
 
 licenses(["notice"])
 
-alias(
-    name = "status",
-    actual = ":cpp",
-    deprecation = "Use //pw_rpc2/cpp instead of //pw_rpc2/cpp:status",
-    visibility = ["//visibility:public"],
-)
-
 pw_cc_test(
     name = "status_test",
     srcs = ["status_test.cc"],
