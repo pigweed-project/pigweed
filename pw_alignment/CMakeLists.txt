@@ -19,4 +19,16 @@ pw_add_library(pw_alignment INTERFACE
     public/pw_alignment/alignment.h
   PUBLIC_INCLUDES
     public
+  PUBLIC_DEPS
+    pw_third_party.fuchsia.stdcompat
+)
+
+pw_add_test(pw_alignment.alignment_test
+  SOURCES
+    alignment_test.cc
+  PRIVATE_DEPS
+    pw_alignment
+  GROUPS
+    modules
+    pw_alignment
 )

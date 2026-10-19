@@ -13,48 +13,13 @@
 // the License.
 #pragma once
 
-// todo-check: ignore
-// TODO(fxbug.dev/42072051): Once this bug is addressed, this module can likely
-// be removed and we could just inline the using statements.
-
 #include <atomic>
-#if __cplusplus >= 202002L
-#include <bit>
-#endif  // __cplusplus >= 202002L
-#include <limits>
-#include <type_traits>
+
+#include "lib/stdcompat/bit.h"
 
 namespace pw {
 
-#if defined(__cpp_lib_int_pow2) && __cpp_lib_int_pow2 >= 202002L
-using std::bit_ceil;
-#else
-constexpr size_t countl_zero(size_t x) noexcept {
-  size_t size_digits = std::numeric_limits<size_t>::digits;
-
-  if (sizeof(x) <= sizeof(unsigned int))
-    return __builtin_clz(static_cast<unsigned int>(x)) -
-           (std::numeric_limits<unsigned int>::digits - size_digits);
-
-  if (sizeof(x) <= sizeof(unsigned long))
-    return __builtin_clzl(static_cast<unsigned long>(x)) -
-           (std::numeric_limits<unsigned long>::digits - size_digits);
-
-  static_assert(sizeof(x) <= sizeof(unsigned long long));
-  return __builtin_clzll(static_cast<unsigned long long>(x)) -
-         (std::numeric_limits<unsigned long long>::digits - size_digits);
-}
-
-constexpr size_t bit_width(size_t x) noexcept {
-  return std::numeric_limits<size_t>::digits - countl_zero(x);
-}
-
-constexpr size_t bit_ceil(size_t x) noexcept {
-  if (x == 0)
-    return 1;
-  return size_t{1} << bit_width(size_t{x - 1});
-}
-#endif  // defined(__cpp_lib_int_pow2) && __cpp_lib_int_pow2 >= 202002L
+using cpp20::bit_ceil;
 
 /// @module{pw_alignment}
 

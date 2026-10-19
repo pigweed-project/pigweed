@@ -29,6 +29,7 @@ pw_source_set("pw_random") {
     "public/pw_random/xor_shift.h",
   ]
   public_deps = [
+    "$pw_external_fuchsia:stdcompat",
     dir_pw_assert,
     dir_pw_bytes,
     dir_pw_span,

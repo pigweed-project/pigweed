@@ -25,7 +25,14 @@ config("public_include_path") {
 pw_source_set("pw_alignment") {
   public = [ "public/pw_alignment/alignment.h" ]
   public_configs = [ ":public_include_path" ]
+  public_deps = [ "$pw_external_fuchsia:stdcompat" ]
+}
+
+pw_test("alignment_test") {
+  sources = [ "alignment_test.cc" ]
+  deps = [ ":pw_alignment" ]
 }
 
 pw_test_group("tests") {
+  tests = [ ":alignment_test" ]
 }

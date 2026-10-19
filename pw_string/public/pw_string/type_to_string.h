@@ -36,7 +36,7 @@ constexpr uint_fast8_t DecimalDigitCount(uint64_t integer);
 // Returns the number of digits in the hexadecimal representation of the
 // provided non-negative integer.
 constexpr uint_fast8_t HexDigitCount(uint64_t integer) {
-  return static_cast<uint_fast8_t>((64 - __builtin_clzll(integer | 1u) + 3) /
+  return static_cast<uint_fast8_t>((64 - cpp20::countl_zero(integer | 1u) + 3) /
                                    4);
 }
 

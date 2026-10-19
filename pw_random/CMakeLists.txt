@@ -25,6 +25,7 @@ pw_add_library(pw_random INTERFACE
     pw_bytes
     pw_span
     pw_status
+    pw_third_party.fuchsia.stdcompat
 )
 
 pw_add_test(pw_random.xor_shift_star_test

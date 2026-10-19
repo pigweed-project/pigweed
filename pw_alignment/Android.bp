@@ -18,8 +18,14 @@ package {
 
 cc_library_static {
     name: "pw_alignment",
-    export_include_dirs: ["public"],
     defaults: [
         "pw_android_common_target_support",
+    ],
+    export_include_dirs: ["public"],
+    header_libs: [
+        "fuchsia_sdk_lib_stdcompat",
+    ],
+    export_header_lib_headers: [
+        "fuchsia_sdk_lib_stdcompat",
     ],
 }

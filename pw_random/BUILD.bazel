@@ -36,6 +36,7 @@ cc_library(
         "//pw_bytes",
         "//pw_span",
         "//pw_status",
+        "//third_party/fuchsia:stdcompat",
     ],
 )
 

@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <limits>
 
+#include "lib/stdcompat/bit.h"
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
 #include "pw_span/span.h"
@@ -66,8 +67,8 @@ class RandomGenerator {
       return;
     }
 
-    const uint8_t leading_zeros_in_upper_bound =
-        CountLeadingZeros(exclusive_upper_bound);
+    const int leading_zeros_in_upper_bound =
+        cpp20::countl_zero(exclusive_upper_bound);
 
     // Create a mask that discards the higher order bits of the random number.
     const T mask =
@@ -103,25 +104,6 @@ class RandomGenerator {
   void InjectEntropy(ConstByteSpan data) {
     for (std::byte b : data) {
       InjectEntropyBits(std::to_integer<uint32_t>(b), /*num_bits=*/8);
-    }
-  }
-
- private:
-  template <class T>
-  uint8_t CountLeadingZeros(T value) {
-    if constexpr (std::is_same_v<T, unsigned>) {
-      return static_cast<uint8_t>(__builtin_clz(value));
-    } else if constexpr (std::is_same_v<T, unsigned long>) {
-      return static_cast<uint8_t>(__builtin_clzl(value));
-    } else if constexpr (std::is_same_v<T, unsigned long long>) {
-      return static_cast<uint8_t>(__builtin_clzll(value));
-    } else {
-      static_assert(sizeof(T) < sizeof(unsigned));
-      // __builtin_clz returns the count of leading zeros in an unsigned , so we
-      // need to subtract the size difference of T in bits.
-      return static_cast<uint8_t>(
-          __builtin_clz(value) -
-          static_cast<int>((sizeof(unsigned) - sizeof(T)) * CHAR_BIT));
     }
   }
 };
