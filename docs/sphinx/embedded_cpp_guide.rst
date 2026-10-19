@@ -217,6 +217,11 @@ A function that is marked as "ISR safe" *may* be safely called from ISR context.
    If you are implementing a virtual function that specifies "ISR safe", you
    must implement that function such that it can be called from ISR context.
 
+A function that is intended to be called from an ISR must be documented as ISR
+safe. Its implementation must not block, allocate memory, or acquire a lock
+that is not interrupt safe (see :ref:`module-pw_sync`), and it must only log
+if the logging backend is ISR safe.
+
 .. _docs-embedded-cpp-nmi-safety:
 
 NMI safety
@@ -250,3 +255,14 @@ shared state.
 
    If you are implementing a virtual function that specifies "thread safe", you
    must implement that function such that it can be called concurrently.
+
+.. _docs-embedded-cpp-atomics:
+
+Atomics
+=======
+Not every target supports every atomic operation natively. In particular, most
+32-bit targets have no lock-free 64-bit atomics, so a ``std::atomic<uint64_t>``
+or ``std::atomic<int64_t>`` fails to link unless ``libatomic`` is available.
+Do not use 64-bit atomics in portable code. Use a 32-bit or narrower atomic
+when it suffices, or guard the wider value with a critical section such as
+:cc:`pw::sync::InterruptSpinLock`.

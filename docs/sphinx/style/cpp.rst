@@ -341,6 +341,54 @@ the argument by-value or ensure that it is consumed by all control paths:
         }
       }
 
+.. _docs-pw-style-cpp-classes:
+
+Classes
+=======
+The `Google C++ Style Guide`_ rules on `copyable and movable types
+<https://google.github.io/styleguide/cppguide.html#Copyable_Movable_Types>`_
+and `implicit conversions
+<https://google.github.io/styleguide/cppguide.html#Implicit_Conversions>`_
+apply to Pigweed. The rules below add to them.
+
+.. _docs-pw-style-cpp-special-member-functions:
+
+Special member functions
+------------------------
+A class that declares any of the destructor, copy constructor, copy assignment
+operator, move constructor, or move assignment operator must deliberately
+declare, default, or ``= delete`` all five. Resource-owning types that need no
+custom behavior should rely on RAII members and declare none of them.
+
+Types that are referenced by address after construction must ``= delete``
+their copy and move operations. This includes items in an
+:ref:`module-pw_containers-intrusive_list` or other intrusive container,
+objects that register themselves with another object, and self-referential
+types. Moving such an object leaves a dangling reference behind.
+
+Polymorphic base classes must declare a ``virtual`` destructor, or a
+``protected`` non-virtual destructor if they are never destroyed through a
+pointer to the base.
+
+.. _docs-pw-style-cpp-conversions:
+
+Conversions
+-----------
+Single-argument constructors and conversion operators should generally be
+``explicit``. Implicit conversions are occasionally permitted when they are
+idiomatic or improve readability.
+Do not rely on implicit narrowing conversions; convert with ``static_cast``,
+never with a C-style cast.
+
+.. _docs-pw-style-cpp-member-order:
+
+Member declaration order
+------------------------
+Declare members so that anything a member references outlives it: owners
+before dependents. Members are constructed in declaration order and destroyed
+in reverse, so a member that holds a reference, pointer, or span to another
+member must be declared after it.
+
 Control statements
 ==================
 
@@ -606,6 +654,8 @@ and standardize loop/function structure.
         DoOtherThing();
         return OkStatus();
       }
+
+.. _docs-pw-style-cpp-error-handling:
 
 Error handling
 ==============
@@ -943,6 +993,8 @@ an error and cannot be obtained another way.
         // ...
       }
 
+.. _docs-pw-style-cpp-memory-allocation:
+
 Memory allocation
 =================
 Dynamic memory allocation can be problematic. Heap allocations and deallocations
@@ -953,6 +1005,11 @@ To keep Pigweed portable, core Pigweed code is not permitted to dynamically
 (heap) allocate memory, such as with ``malloc`` or ``new``. All memory should be
 allocated with automatic (stack) or static (global) storage duration. Pigweed
 must not use C++ libraries that use dynamic allocation.
+
+Pigweed modules may offer optional functionality that requires dynamic memory.
+Such code must take the allocator as a parameter, typically a
+``pw::Allocator&`` from :ref:`module-pw_allocator`, rather than calling
+``new`` or ``malloc`` or using an allocating standard library container.
 
 Projects that use Pigweed are free to use dynamic allocation, provided they
 have selected a target that enables the heap.
@@ -1149,6 +1206,8 @@ of definition.
 
    constexpr std::chrono::duration delay = 250ms;
 
+.. _docs-pw-style-cpp-pointers-references:
+
 Pointers and references
 =======================
 For pointer and reference types, place the asterisk or ampersand next to the
@@ -1166,6 +1225,17 @@ type.
 Prefer storing references over storing pointers. Pointers are required when the
 pointer can change its target or may be ``nullptr``. Otherwise, a reference or
 const reference should be used.
+
+.. _docs-pw-style-cpp-ownership:
+
+Ownership and lifetime
+----------------------
+An API that accepts or returns a raw pointer must document who owns the
+pointee. An API that stores a reference, pointer, or ``pw::span`` beyond the
+duration of the call must document how long the caller must keep the referent
+alive. Prefer designs that make the lifetime structural, such as taking the
+dependency in the constructor or transferring ownership with a move, over
+relying on documentation alone.
 
 .. _docs-pw-style-macros:
 

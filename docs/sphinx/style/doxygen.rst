@@ -52,6 +52,28 @@ Always use the ``///`` style. No other comment style is allowed.
       /// …
       /// …
 
+.. _style-doxygen-coverage:
+
+--------
+Coverage
+--------
+Every public symbol declared in a public header has a Doxygen comment: classes,
+functions, methods, type aliases, enumerators, and constants. Function and
+method comments document each parameter with ``@param`` (see
+:ref:`style-doxygen-cmd-param`), the return value with ``@returns``, and any
+obligation the caller must meet with ``@pre``. Functions that return
+``pw::Status`` or ``pw::Result`` enumerate the codes they can return; see
+:ref:`style-doxygen-pw-returns-status` and
+:ref:`style-doxygen-pw-returns-result`.
+
+Write the comment for the caller. Describe what the symbol does, including
+partial-success cases, its preconditions, and anything the caller must know to
+use it correctly: whether it blocks, allocates, is thread or ISR safe, is
+reentrant, and how long any returned reference stays valid. Algorithm and
+design detail belongs in the module's ``docs.rst``; link to it from the comment
+where it helps the caller. Notes that only a maintainer needs belong in
+implementation comments.
+
 .. _style-doxygen-cmd:
 
 --------
