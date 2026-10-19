@@ -612,6 +612,42 @@ func (s *MockGerritServer) LastRequest() *MockRequest {
 	return &req
 }
 
+// RequestBudget specifies the expected Gerrit REST and Buildbucket pRPC request
+// counts for a single command invocation.
+type RequestBudget struct {
+	Gerrit      int
+	Buildbucket int
+}
+
+// AssertRequestBudget fails if the recorded Gerrit or Buildbucket request counts
+// do not match b, or if any identical request was sent more than once.
+func (s *MockGerritServer) AssertRequestBudget(t *testing.T, b RequestBudget) {
+	t.Helper()
+	reqs := s.Requests()
+	var gerritReqs, bbReqs int
+	seen := make(map[string]int, len(reqs))
+	var summary []string
+	for _, r := range reqs {
+		if strings.HasPrefix(r.Path, "/prpc/") {
+			bbReqs++
+		} else {
+			gerritReqs++
+		}
+		key := r.Method + " " + r.Path + "?" + r.URL.RawQuery + " " + string(r.Body)
+		seen[key]++
+		summary = append(summary, fmt.Sprintf("  %s %s?%s", r.Method, r.Path, r.URL.RawQuery))
+	}
+	if gerritReqs != b.Gerrit || bbReqs != b.Buildbucket {
+		t.Errorf("request budget mismatch: got gerrit=%d (want %d), buildbucket=%d (want %d)\nrequests:\n%s",
+			gerritReqs, b.Gerrit, bbReqs, b.Buildbucket, strings.Join(summary, "\n"))
+	}
+	for _, k := range slices.Sorted(maps.Keys(seen)) {
+		if seen[k] > 1 {
+			t.Errorf("duplicate request (%dx): %s", seen[k], k)
+		}
+	}
+}
+
 // -----------------------------------------------------------------------------
 // Declarative Gerrit Fixtures
 // -----------------------------------------------------------------------------
@@ -708,7 +744,15 @@ func (s *MockGerritServer) OnDefaultChange(number any, opts ...func(map[string]a
 	if cID, ok := ch["change_id"].(string); ok && cID != "" {
 		s.OnJSON("GET", fmt.Sprintf("/changes/%s*", cID), http.StatusOK, ch)
 	}
-	s.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{ch})
+	s.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+		if qs := r.URL.Query()["q"]; len(qs) > 1 {
+			batches := make([][]map[string]any, len(qs))
+			batches[0] = []map[string]any{ch}
+			s.RespondJSON(w, http.StatusOK, batches)
+			return
+		}
+		s.RespondJSON(w, http.StatusOK, []map[string]any{ch})
+	})
 	if _, ok := number.(int); ok {
 		// Registered ahead of the wildcard below, which would otherwise
 		// answer GET .../flows and .../is-flows-enabled with the change

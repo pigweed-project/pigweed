@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -767,5 +768,64 @@ func TestBuildWorkingDirectory(t *testing.T) {
 	t.Setenv("BUILD_WORKING_DIRECTORY", filepath.Join(t.TempDir(), "does-not-exist"))
 	if err := chdirToBuildWorkingDirectory(); err == nil || !strings.Contains(err.Error(), "BUILD_WORKING_DIRECTORY") {
 		t.Errorf("expected BUILD_WORKING_DIRECTORY error, got: %v", err)
+	}
+}
+
+func TestCommandRequestBudgets(t *testing.T) {
+	changeOpts := []func(map[string]any){
+		WithLabels("Presubmit-Verified"),
+		func(ch map[string]any) {
+			ch["current_revision"] = "rev2"
+			ch["revisions"] = map[string]any{
+				"rev1": map[string]any{"_number": 1, "kind": "REWORK"},
+				"rev2": map[string]any{"_number": 2, "kind": "TRIVIAL_REBASE"},
+			}
+		},
+	}
+
+	tests := []struct {
+		name   string
+		args   []string
+		budget RequestBudget
+	}{
+		{"pr list", []string{"pr", "list", "--limit", "5"}, RequestBudget{Gerrit: 1, Buildbucket: 0}},
+		{"pr view", []string{"pr", "view", "12345"}, RequestBudget{Gerrit: 5, Buildbucket: 2}},
+		{"pr checks", []string{"pr", "checks", "12345"}, RequestBudget{Gerrit: 3, Buildbucket: 2}},
+		{"run list", []string{"run", "list", "12345"}, RequestBudget{Gerrit: 3, Buildbucket: 2}},
+		{"pr status", []string{"pr", "status"}, RequestBudget{Gerrit: 6, Buildbucket: 0}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			NewMockGit(t)
+			s := NewMockGerritServer(t)
+			s.OnAccountSelf(1000000).
+				OnSearchBuilds(FakeBuild("87654321001", "linux-bazel", "SUCCESS")).
+				OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{
+					"/COMMIT_MSG": map[string]any{},
+				}).
+				OnJSON("GET", "/changes/12345/revisions/*/treetop~presubmittasks", http.StatusOK, []any{}).
+				On("GET", "/changes/12345*", func(w http.ResponseWriter, r *http.Request) {
+					opts := r.URL.Query()["o"]
+					if !slices.Contains(opts, "DETAILED_LABELS") && !slices.Contains(opts, "LABELS") {
+						t.Errorf("%s %s missing DETAILED_LABELS/LABELS option (got o=%v)", r.Method, r.URL.Path, opts)
+					}
+					if !slices.Contains(opts, "ALL_REVISIONS") && !slices.Contains(opts, "CURRENT_REVISION") {
+						t.Errorf("%s %s missing ALL_REVISIONS/CURRENT_REVISION option (got o=%v)", r.Method, r.URL.Path, opts)
+					}
+					ch := DefaultMockChange(12345, changeOpts...)
+					if slices.Contains(opts, "MESSAGES") {
+						ch["messages"] = []map[string]any{{"id": "m1", "message": "Uploaded patch set 1."}}
+					}
+					s.RespondJSON(w, http.StatusOK, ch)
+				}).
+				// Registers /changes/12345 and /changes/ query handlers.
+				OnDefaultChange(12345, changeOpts...)
+
+			if out, err := executeCommand(RootCmd, tc.args...); err != nil {
+				t.Fatalf("executeCommand(%v) failed: %v\nOutput:\n%s", tc.args, err, out)
+			}
+			s.AssertRequestBudget(t, tc.budget)
+		})
 	}
 }
