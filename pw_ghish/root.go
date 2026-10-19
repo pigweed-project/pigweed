@@ -515,13 +515,56 @@ func init() {
 	flag.StringVar(&AuthModeFlag, "auth-mode", "", "Authentication mode (auto, googler, community, none)")
 }
 
+type rpcClientKey struct {
+	host, cwd, home, profile, authModeFlag, authModeEnv, authMethodEnv, gerritToken string
+	git                                                                             GitRunner
+}
+
+var (
+	rpcClientMu      sync.Mutex
+	cachedRPCClients map[rpcClientKey]*http.Client
+)
+
+func rpcClientCacheKey(ctx context.Context, gerritHost string) rpcClientKey {
+	var cwd string
+	git := DefaultGitRunner
+	if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil {
+		cwd = cfg.CWD
+		if cfg.Git != nil {
+			git = cfg.Git
+		}
+	}
+	return rpcClientKey{
+		host:          CanonicalGerritHost(gerritHost),
+		cwd:           cwd,
+		git:           git,
+		home:          os.Getenv("HOME"),
+		profile:       strings.TrimSpace(ProfileFlag),
+		authModeFlag:  strings.TrimSpace(AuthModeFlag),
+		authModeEnv:   strings.TrimSpace(os.Getenv("GH_ISH_AUTH_MODE")),
+		authMethodEnv: strings.TrimSpace(os.Getenv("GH_ISH_AUTH_METHOD")),
+		gerritToken:   strings.TrimSpace(os.Getenv("GERRIT_TOKEN")),
+	}
+}
+
 // getRPCClient returns an HTTP client configured with authenticated transport.
 var getRPCClient = func(ctx context.Context, gerritHost string) (*http.Client, error) {
+	key := rpcClientCacheKey(ctx, gerritHost)
+	rpcClientMu.Lock()
+	defer rpcClientMu.Unlock()
+	if c := cachedRPCClients[key]; c != nil {
+		return c, nil
+	}
 	tr, err := NewAuthTransportContext(ctx, gerritHost)
 	if err != nil {
 		return nil, err
 	}
-	return &http.Client{Transport: tr}, nil
+	c := &http.Client{Transport: tr}
+	if cachedRPCClients == nil {
+		cachedRPCClients = make(map[rpcClientKey]*http.Client)
+	}
+	cachedRPCClients[key] = c
+	return c, nil
 }
 
 // NewGerritClient creates a new Gerrit client. It can be overridden in tests.
@@ -532,6 +575,9 @@ var NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Cli
 			Host: HostFlag,
 			Git:  DefaultGitRunner,
 		}
+	}
+	if ctx.Value(configKey) == nil {
+		ctx = context.WithValue(ctx, configKey, config)
 	}
 	gerritURL, err := config.GerritURL(ctx)
 	if err != nil {

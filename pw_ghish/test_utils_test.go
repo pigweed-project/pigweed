@@ -39,6 +39,9 @@ import (
 )
 
 func resetAllFlags(cmd *cobra.Command) {
+	if !cmd.HasParent() {
+		ResetAuthTokenCaches()
+	}
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
 		if f.Name == "host" || f.Name == "profile" || f.Name == "buildbucket-host" {
 			f.Changed = false

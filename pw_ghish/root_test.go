@@ -131,6 +131,51 @@ func TestNewGerritClient_RPCFailure(t *testing.T) {
 	}
 }
 
+func TestGetRPCClient_ReusesClientPerHost(t *testing.T) {
+	ResetAuthTokenCaches()
+	t.Cleanup(ResetAuthTokenCaches)
+	oldModeFlag := AuthModeFlag
+	AuthModeFlag = ""
+	t.Cleanup(func() { AuthModeFlag = oldModeFlag })
+	t.Setenv("GH_ISH_AUTH_MODE", "")
+	t.Setenv("GH_ISH_AUTH_METHOD", "token")
+	t.Setenv("GERRIT_TOKEN", "test-token")
+
+	mockGit := NewMockGit(t).OnCommand("config --get ghish.authmode", "googler\n")
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	SetConfig(cmd, &Config{Host: "pigweed-review.googlesource.com", Git: mockGit})
+
+	for i := range 2 {
+		if _, err := NewGerritClient(cmd.Context(), cmd); err != nil {
+			t.Fatalf("NewGerritClient(%d) failed: %v", i, err)
+		}
+	}
+	if len(mockGit.Calls) != 1 {
+		t.Errorf("git calls across repeated NewGerritClient = %v, want 1", mockGit.Calls)
+	}
+
+	mustClient := func(host string) *http.Client {
+		c, err := getRPCClient(cmd.Context(), host)
+		if err != nil {
+			t.Fatalf("getRPCClient(%q) failed: %v", host, err)
+		}
+		return c
+	}
+	c1 := mustClient("https://pigweed-review.googlesource.com/a")
+	c2 := mustClient("pigweed-review.googlesource.com")
+	if c1 != c2 || c1.Transport != c2.Transport {
+		t.Errorf("expected same client and transport for canonical host, got %p (%p) vs %p (%p)", c1, c1.Transport, c2, c2.Transport)
+	}
+	if mustClient("https://fuchsia-review.googlesource.com/a") == c1 {
+		t.Error("expected distinct client for different Gerrit host")
+	}
+	ResetAuthTokenCaches()
+	if mustClient("https://pigweed-review.googlesource.com/a") == c1 {
+		t.Error("expected new client after ResetAuthTokenCaches")
+	}
+}
+
 func TestFallbackTransport(t *testing.T) {
 	var reqs []*http.Request
 
