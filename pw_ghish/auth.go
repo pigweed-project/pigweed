@@ -181,7 +181,7 @@ func (t *fallbackTransport) RoundTrip(req *http.Request) (*http.Response, error)
 // it automatically falls back to luci-auth OAuth token, .gitcookies, or .netrc.
 // maxGerritRequestBodyBytes bounds in-memory request body buffering for Gerrit
 // REST API calls (10 MiB) to support fallback retries without risking OOM.
-const maxGerritRequestBodyBytes = 10 * 1024 * 1024
+const maxGerritRequestBodyBytes = maxHTTPBodyBytes
 
 type GobCurlTransport struct {
 	Path         string // path to gob-curl, defaults to "gob-curl"

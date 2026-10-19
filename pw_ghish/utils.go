@@ -32,6 +32,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// maxHTTPBodyBytes bounds in-memory HTTP request and response body reads (10 MiB).
+const maxHTTPBodyBytes = 10 * 1024 * 1024
+
+func readBoundedBody(r io.Reader, limit int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("response body exceeds maximum allowed size of %d bytes", limit)
+	}
+	return b, nil
+}
+
+func readBoundedLog(r io.Reader, limit int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return append(b[:limit:limit], "\n... [output truncated at 10 MiB]"...), nil
+	}
+	return b, nil
+}
+
 var (
 	changeIDRegex        = regexp.MustCompile(`(?m)^Change-Id:\s+I[0-9a-fA-F]{40}\s*$`)
 	changeIDCaptureRegex = regexp.MustCompile(`(?m)^Change-Id:\s+(I[0-9a-fA-F]{40})\s*$`)
@@ -531,7 +556,7 @@ func EnsureChangeID(ctx context.Context, cfg *Config, stdout, stderr io.Writer) 
 				if resp.StatusCode != http.StatusOK {
 					fmt.Fprintf(stderr, "Warning: failed to download commit-msg hook from %s: HTTP %d\n", hookURL, resp.StatusCode)
 				} else {
-					body, rErr := io.ReadAll(resp.Body)
+					body, rErr := readBoundedBody(resp.Body, maxHTTPBodyBytes)
 					if rErr != nil {
 						fmt.Fprintf(stderr, "Warning: failed to read commit-msg hook response: %v\n", rErr)
 					} else if len(body) == 0 {

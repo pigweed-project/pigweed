@@ -309,7 +309,7 @@ func (rt *ssoClientRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	}
 
 	if req.Body != nil {
-		bodyBytes, err := io.ReadAll(req.Body)
+		bodyBytes, err := readBoundedBody(req.Body, maxHTTPBodyBytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read request body for sso_client: %w", err)
 		}
@@ -717,7 +717,7 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 	}
 	defer resp.Body.Close()
 
-	respBytes, err := io.ReadAll(resp.Body)
+	respBytes, err := readBoundedBody(resp.Body, maxHTTPBodyBytes)
 	if err != nil {
 		return fmt.Errorf("failed to read HTTP response from %s %s: %w", method, fullURL, err)
 	}

@@ -263,3 +263,30 @@ func TestInvariants_NoAdHocGhishGitConfigLookups(t *testing.T) {
 		})
 	}
 }
+
+// TestInvariants_BoundedHTTPBodyReads verifies that every HTTP request/response
+// body read uses readBoundedBody, readBoundedLog, or io.LimitReader rather than
+// an unbounded io.ReadAll(resp.Body).
+func TestInvariants_BoundedHTTPBodyReads(t *testing.T) {
+	fset := token.NewFileSet()
+	for _, path := range collectProductionGoFiles(t, true) {
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatalf("ParseFile(%q): %v", path, err)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok && len(call.Args) == 1 {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "ReadAll" {
+					if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "io" {
+						if bodySel, ok := call.Args[0].(*ast.SelectorExpr); ok && bodySel.Sel.Name == "Body" {
+							pos := fset.Position(call.Pos())
+							t.Errorf("%s:%d: unbounded io.ReadAll(%s.Body); use readBoundedBody, readBoundedLog, or io.LimitReader per AGENTS.md invariant #10",
+								pos.Filename, pos.Line, bodySel.X)
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+}

@@ -558,7 +558,7 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 
 		if req, err := http.NewRequestWithContext(ctx, "GET", urlEndpoint, nil); err == nil {
 			if resp, err := client.Do(req); err == nil && resp != nil {
-				body, _ := io.ReadAll(resp.Body)
+				body, _ := readBoundedLog(resp.Body, maxHTTPBodyBytes)
 				resp.Body.Close()
 				if resp.StatusCode >= 200 && resp.StatusCode < 300 && len(body) > 0 {
 					var signed struct {
@@ -573,7 +573,7 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 						}
 						if dlReq, err := http.NewRequestWithContext(ctx, "GET", dlURL, nil); err == nil {
 							if dlResp, err := client.Do(dlReq); err == nil && dlResp != nil {
-								dlBytes, _ := io.ReadAll(dlResp.Body)
+								dlBytes, _ := readBoundedLog(dlResp.Body, maxHTTPBodyBytes)
 								dlResp.Body.Close()
 								if dlResp.StatusCode >= 200 && dlResp.StatusCode < 300 {
 									buildLog = string(dlBytes)
@@ -599,7 +599,7 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 				ciBase, kind, url.PathEscape(bid), url.PathEscape(target))
 			if req, err := http.NewRequestWithContext(ctx, "GET", rawEndpoint, nil); err == nil {
 				if resp, err := client.Do(req); err == nil && resp != nil {
-					body, _ := io.ReadAll(resp.Body)
+					body, _ := readBoundedLog(resp.Body, maxHTTPBodyBytes)
 					resp.Body.Close()
 					if resp.StatusCode >= 200 && resp.StatusCode < 300 && len(body) > 0 {
 						buildLog = string(body)

@@ -140,6 +140,20 @@ line 5
 	if strings.TrimSpace(tail) != expectedTail {
 		t.Errorf("Expected tail %q, got %q", expectedTail, tail)
 	}
+
+	// 3. Oversized log stream is bounded by maxHTTPBodyBytes and appends truncation notice
+	bigSrv := newLogServer(t, http.StatusOK, strings.Repeat("a", maxHTTPBodyBytes+1024))
+	capped, err := FetchLogStream(ctx, bigSrv.URL+"/+/u/test/stdout", 0, bigSrv.Client())
+	if err != nil {
+		t.Fatalf("FetchLogStream capped failed: %v", err)
+	}
+	wantSuffix := "\n... [output truncated at 10 MiB]"
+	if len(capped) != maxHTTPBodyBytes+len(wantSuffix) || !strings.HasSuffix(capped, wantSuffix) {
+		t.Errorf("len(capped) = %d (hasSuffix=%v), want %d with suffix %q", len(capped), strings.HasSuffix(capped, wantSuffix), maxHTTPBodyBytes+len(wantSuffix), wantSuffix)
+	}
+	if _, err := readBoundedBody(strings.NewReader("01234567890"), 10); err == nil || !strings.Contains(err.Error(), "exceeds maximum allowed size") {
+		t.Errorf("readBoundedBody overflow = %v, want exceeds maximum allowed size error", err)
+	}
 }
 
 func TestExtractFailureReports(t *testing.T) {

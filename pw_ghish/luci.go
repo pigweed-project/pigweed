@@ -367,7 +367,7 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 	}
 	defer httpResp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(httpResp.Body)
+	bodyBytes, err := readBoundedBody(httpResp.Body, maxHTTPBodyBytes)
 	if err != nil {
 		return fmt.Errorf("failed to read %s/%s response: %w", service, method, err)
 	}
@@ -585,14 +585,14 @@ func (c *LUCIClient) FetchLogStream(ctx context.Context, viewURL string, maxLine
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxHTTPBodyBytes))
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			return "", newLUCIHTTPAuthError("LogDog", resp.StatusCode, body)
 		}
 		return "", fmt.Errorf("LogDog returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	rawBytes, err := io.ReadAll(resp.Body)
+	rawBytes, err := readBoundedLog(resp.Body, maxHTTPBodyBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to read log body: %w", err)
 	}
