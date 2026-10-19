@@ -90,16 +90,24 @@ class VirtualController
   void Connect(
       fidl::ServerEnd<fuchsia_hardware_bluetooth::VirtualController> request);
 
-  // Helpers functions to add DFv2 device nodes
-  zx_status_t AddVirtualControllerChildNode(
-      fuchsia_driver_framework::wire::NodeAddArgs args);
-  zx_status_t AddLoopbackChildNode(
-      fuchsia_driver_framework::wire::NodeAddArgs args);
-  zx_status_t AddEmulatorChildNode(
-      fuchsia_driver_framework::wire::NodeAddArgs args, Emulator& emulator);
+  // Adds a child node of `node_` with `args` and binds `child_node` (with
+  // `node_event_handler`) and `node_controller` to it. `log_name` names the
+  // node in log messages.
+  zx_status_t AddChildNode(
+      fuchsia_driver_framework::wire::NodeAddArgs args,
+      std::string_view log_name,
+      fidl::WireClient<fuchsia_driver_framework::Node>& child_node,
+      fidl::WireClient<fuchsia_driver_framework::NodeController>&
+          node_controller,
+      fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>*
+          node_event_handler);
+  // Removes the node `node_controller` controls, if it was ever added.
+  void RemoveNode(fidl::WireClient<fuchsia_driver_framework::NodeController>&
+                      node_controller);
 
   // Live emulators keyed by the unique name returned from `CreateEmulator`.
   // Each entry is erased by its own ShutdownCallback (see `CreateEmulator`).
+  // A std::map so that entries never move (see `Emulator::node`).
   std::map<std::string, Emulator> emulators_;
   uint64_t next_emulator_id_ = 0;
 
