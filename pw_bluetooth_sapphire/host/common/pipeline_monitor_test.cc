@@ -286,7 +286,7 @@ TEST_F(PipelineMonitorTest, TokensRetireIntoRetireLog) {
   const auto bytes_quantiles =
       monitor.retire_log().ComputeByteCountQuantiles(std::array{0., .5, 1.});
   ASSERT_TRUE(bytes_quantiles.has_value());
-  EXPECT_THAT(*bytes_quantiles, testing::ElementsAre(1, 1, 1));
+  EXPECT_THAT(*bytes_quantiles, testing::ElementsAre(1U, 1U, 1U));
 
   const auto age_quantiles =
       monitor.retire_log().ComputeAgeQuantiles(std::array{0., .5, 1.});

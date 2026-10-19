@@ -255,7 +255,7 @@ void BrEdrDiscoveryManager::StopInquiry() {
       hci::CommandPacket::New<pw::bluetooth::emboss::InquiryCancelCommandView>(
           hci_spec::kInquiryCancel);
   cmd_->SendCommand(std::move(inq_cancel),
-                    [](int64_t, const hci::EventPacket& event) {
+                    [](auto, const hci::EventPacket& event) {
                       // Warn if the command failed.
                       HCI_IS_ERROR(
                           event, WARN, "gap-bredr", "inquiry cancel failed");

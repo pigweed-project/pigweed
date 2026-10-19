@@ -86,7 +86,7 @@ TEST(FakePairingDelegateTest, RequestPasskey) {
     respond(-1);
   };
   delegate.SetRequestPasskeyCallback(std::move(cb));
-  delegate.RequestPasskey(PeerId(5), [](uint64_t) {});
+  delegate.RequestPasskey(PeerId(5), [](int64_t) {});
   EXPECT_TRUE(cb_called);
 }
 

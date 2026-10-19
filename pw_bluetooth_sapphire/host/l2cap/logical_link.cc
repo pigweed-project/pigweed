@@ -117,8 +117,9 @@ LogicalLink::LogicalLink(
       flush_timeout_(
           pw::chrono::SystemClock::duration::max(), /*convert=*/
           [](pw::chrono::SystemClock::duration f) {
-            return std::chrono::duration_cast<std::chrono::milliseconds>(f)
-                .count();
+            return static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(f)
+                    .count());
           }),
       closed_(false),
       recombiner_(handle, wake_lease_provider),

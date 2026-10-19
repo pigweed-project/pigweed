@@ -83,6 +83,7 @@ src:*/pw_bluetooth/l2cap_frames.emb.h
 src:*/pw_bluetooth/rfcomm_frames.emb.h
 src:*/pw_bluetooth/snoop.emb.h
 src:*/pw_multibuf/examples/protocol.emb.h
+src:*/runtime/cpp/emboss_array_view.h
 
 [macro-redefined]
 # TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.

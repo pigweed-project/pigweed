@@ -126,7 +126,7 @@ class ReadTransfer : public ::testing::Test {
         transfer_thread_(span(data_buffer_).first(max_chunk_size_bytes),
                          encode_buffer_),
         ctx_(transfer_thread_,
-             64,
+             64u,
              // Use a long timeout to avoid accidentally triggering timeouts.
              std::chrono::minutes(1)),
         system_thread_(TransferThreadOptions(), transfer_thread_) {
@@ -747,7 +747,7 @@ class SimpleWriteTransfer final : public WriteOnlyHandler {
 
 class WriteTransfer : public ::testing::Test {
  protected:
-  WriteTransfer(size_t max_bytes_to_receive = 64)
+  WriteTransfer(uint32_t max_bytes_to_receive = 64)
       : buffer{},
         handler_(7, buffer),
         transfer_thread_(data_buffer_, encode_buffer_),
@@ -756,7 +756,7 @@ class WriteTransfer : public ::testing::Test {
              max_bytes_to_receive,
              // Use a long timeout to avoid accidentally triggering timeouts.
              std::chrono::minutes(1),
-             /*max_retries=*/3) {
+             /*max_retries=*/uint8_t{3}) {
     ctx_.service().RegisterHandler(handler_);
 
     PW_CHECK(!handler_.prepare_write_called);
@@ -2457,14 +2457,14 @@ TEST_F(WriteTransfer, Version2_InvalidResourceId) {
 
 class ReadTransferLowMaxRetries : public ::testing::Test {
  protected:
-  static constexpr uint32_t kMaxRetries = 3;
+  static constexpr uint8_t kMaxRetries = 3;
   static constexpr uint32_t kMaxLifetimeRetries = 4;
 
   ReadTransferLowMaxRetries()
       : handler_(9, kData),
         transfer_thread_(data_buffer_, encode_buffer_),
         ctx_(transfer_thread_,
-             64,
+             64u,
              // Use a long timeout to avoid accidentally triggering timeouts.
              std::chrono::minutes(1),
              kMaxRetries,
@@ -2707,10 +2707,10 @@ class WriteTransferLargeData : public ::testing::Test {
         transfer_thread_(chunk_buffer_, encode_buffer_),
         system_thread_(TransferThreadOptions(), transfer_thread_),
         ctx_(transfer_thread_,
-             kData128.size(),
+             static_cast<uint32_t>(kData128.size()),
              // Use a long timeout to avoid accidentally triggering timeouts.
              std::chrono::minutes(1),
-             /*max_retries=*/3) {
+             /*max_retries=*/uint8_t{3}) {
     ctx_.service().RegisterHandler(handler_);
 
     PW_CHECK(!handler_.prepare_write_called);
@@ -3096,10 +3096,10 @@ class WriteTransferMultibyteVarintChunkSize : public ::testing::Test {
         transfer_thread_(chunk_buffer_, encode_buffer_),
         system_thread_(TransferThreadOptions(), transfer_thread_),
         ctx_(transfer_thread_,
-             kData256.size(),
+             static_cast<uint32_t>(kData256.size()),
              // Use a long timeout to avoid accidentally triggering timeouts.
              std::chrono::minutes(1),
-             /*max_retries=*/3) {
+             /*max_retries=*/uint8_t{3}) {
     ctx_.service().RegisterHandler(handler_);
 
     PW_CHECK(!handler_.prepare_write_called);
@@ -3206,7 +3206,7 @@ class GetResourceStatus : public ::testing::Test {
         transfer_thread_(span(data_buffer_).first(max_chunk_size_bytes),
                          encode_buffer_),
         ctx_(transfer_thread_,
-             64,
+             64u,
              // Use a long timeout to avoid accidentally triggering timeouts.
              std::chrono::minutes(1)),
         system_thread_(TransferThreadOptions(), transfer_thread_) {
@@ -3286,7 +3286,7 @@ class ServerLifecycleTest : public ::testing::Test {
         transfer_thread_(chunk_buffer_, encode_buffer_),
         ctx_(
             transfer_thread_,
-            64,
+            64u,
             [this](uint32_t session_id, uint32_t resource_id) {
               tracker_.start_session_id = session_id;
               tracker_.start_resource_id = resource_id;
@@ -3407,7 +3407,7 @@ class ConcurrentServerLifecycleTest : public ::testing::Test {
         transfer_thread_(chunk_buffer_, encode_buffer_),
         ctx_(
             transfer_thread_,
-            64,
+            64u,
             [this](uint32_t session_id, uint32_t resource_id) {
               auto& session = tracker_.GetSession(session_id);
               session.resource_id = resource_id;

@@ -52,7 +52,7 @@ class TransferThreadTest : public ::testing::Test {
                         cfg::kDefaultExtendWindowDivisor),
         transfer_thread_(chunk_buffer_, encode_buffer_),
         system_thread_(TransferThreadOptions(), transfer_thread_),
-        ctx_(transfer_thread_, 512) {}
+        ctx_(transfer_thread_, 512u) {}
 
   ~TransferThreadTest() override {
     transfer_thread_.Terminate();

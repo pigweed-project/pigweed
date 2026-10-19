@@ -22,7 +22,9 @@ LowEnergyConnectionRequest::LowEnergyConnectionRequest(
     LowEnergyConnectionOptions connection_options,
     Peer::InitializingConnectionToken peer_conn_token)
     : peer_id_(peer_id, MakeToStringInspectConvertFunction()),
-      callbacks_(/*convert=*/[](const auto& cbs) { return cbs.size(); }),
+      callbacks_(/*convert=*/[](const auto& cbs) {
+        return static_cast<int64_t>(cbs.size());
+      }),
       connection_options_(connection_options),
       peer_conn_token_(std::move(peer_conn_token)) {
   callbacks_.Mutable()->push_back(std::move(first_callback));

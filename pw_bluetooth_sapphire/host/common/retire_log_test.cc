@@ -87,7 +87,7 @@ TEST(RetireLogTest, ComputeQuantiles) {
   // Cutting at extremes yields the min and max entries while cutting in the
   // middle yields the median. Cutting between entry values yields the nearest
   // (by distribution) logged value.
-  EXPECT_THAT(*result, testing::ElementsAre(0, 0, 50, 76, 99, 100));
+  EXPECT_THAT(*result, testing::ElementsAre(0U, 0U, 50U, 76U, 99U, 100U));
 }
 
 TEST(RetireLogTest, ComputeQuantilesExactBoundaryIsHighBiased) {
@@ -98,7 +98,7 @@ TEST(RetireLogTest, ComputeQuantilesExactBoundaryIsHighBiased) {
   ASSERT_TRUE(result.has_value());
 
   // Cutting at exactly between two entries yields the higher sample
-  EXPECT_THAT(*result, testing::ElementsAre(1));
+  EXPECT_THAT(*result, testing::ElementsAre(1U));
 }
 
 TEST(RetireLogTest, ComputeQuantilesOutOfOrderPartitions) {
@@ -106,7 +106,7 @@ TEST(RetireLogTest, ComputeQuantilesOutOfOrderPartitions) {
   Retire101Elements(retire_log);
   auto result = retire_log.ComputeByteCountQuantiles(std::array{.75, .25, .5});
   ASSERT_TRUE(result.has_value());
-  EXPECT_THAT(*result, testing::ElementsAre(75, 25, 50));
+  EXPECT_THAT(*result, testing::ElementsAre(75U, 25U, 50U));
 }
 
 // Check that cutting at the same point more than once works
@@ -116,7 +116,7 @@ TEST(RetireLogTest, ComputeSameQuantileTwice) {
   auto result =
       retire_log.ComputeByteCountQuantiles(std::array{0., 0., 1., 1.});
   ASSERT_TRUE(result.has_value());
-  EXPECT_THAT(*result, testing::ElementsAre(0, 0, 100, 100));
+  EXPECT_THAT(*result, testing::ElementsAre(0U, 0U, 100U, 100U));
 }
 
 TEST(RetireLogTest, RetiringPastMaxDepthReplacesPreviousEntries) {
@@ -126,7 +126,7 @@ TEST(RetireLogTest, RetiringPastMaxDepthReplacesPreviousEntries) {
   EXPECT_EQ(101U, retire_log.depth());
   auto result = retire_log.ComputeByteCountQuantiles(std::array{0., .5, 1.});
   ASSERT_TRUE(result.has_value());
-  EXPECT_THAT(*result, testing::ElementsAre(10, 60, 110));
+  EXPECT_THAT(*result, testing::ElementsAre(10U, 60U, 110U));
 }
 
 }  // namespace
