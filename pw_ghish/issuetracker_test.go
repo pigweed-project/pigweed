@@ -20,6 +20,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 )
@@ -595,6 +596,48 @@ func TestParseSSOClientResponse(t *testing.T) {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("StatusCode = %d, want 404", resp.StatusCode)
+		}
+	})
+
+	t.Run("RoundTrip keeps credentials off sso_client argv", func(t *testing.T) {
+		var gotArgs []string
+		var flagPath, flagData string
+		rt := &ssoClientRoundTripper{
+			exec: func(_ context.Context, args ...string) ([]byte, error) {
+				gotArgs = args
+				for _, a := range args {
+					if path, ok := strings.CutPrefix(a, "--flagfile="); ok {
+						flagPath = path
+						b, err := os.ReadFile(path)
+						if err != nil {
+							return nil, err
+						}
+						flagData = string(b)
+					}
+				}
+				return []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}"), nil
+			},
+		}
+
+		rtReq := req.Clone(t.Context())
+		rtReq.Header.Set("Authorization", "Bearer secret-oauth-token")
+		rtReq.Header.Set("Cookie", "SSO=secret-cookie")
+
+		resp, err := rt.RoundTrip(rtReq)
+		if err != nil {
+			t.Fatalf("RoundTrip unexpected error: %v", err)
+		}
+		resp.Body.Close()
+
+		if joined := strings.Join(gotArgs, " "); strings.Contains(joined, "secret-") || strings.Contains(joined, "--headers=") {
+			t.Errorf("credentials leaked in sso_client argv: %v", gotArgs)
+		}
+		wantFlags := "--headers=Authorization: Bearer secret-oauth-token|||Cookie: SSO=secret-cookie\n"
+		if flagData != wantFlags {
+			t.Errorf("flagfile content = %q, want %q", flagData, wantFlags)
+		}
+		if _, err := os.Stat(flagPath); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("expected temp flagfile %q to be removed after RoundTrip, stat err = %v", flagPath, err)
 		}
 	})
 }

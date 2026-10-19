@@ -20,8 +20,10 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -254,6 +256,20 @@ func NewIssueTrackerClient(endpoint string, httpClient *http.Client) *IssueTrack
 // parsing the raw HTTP response back into an *http.Response.
 type ssoClientRoundTripper struct {
 	fallback http.RoundTripper
+	exec     func(ctx context.Context, args ...string) ([]byte, error)
+}
+
+func writeSSOTempFile(pattern string, content []byte) (string, error) {
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", err
+	}
+	_, writeErr := f.Write(content)
+	if err := errors.Join(writeErr, f.Close()); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 func (rt *ssoClientRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -264,6 +280,9 @@ func (rt *ssoClientRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		}
 		return fb.RoundTrip(req)
 	}
+	if req.Body != nil {
+		defer req.Body.Close()
+	}
 
 	const headerSep = "|||"
 	args := []string{
@@ -273,14 +292,20 @@ func (rt *ssoClientRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		"--method=" + req.Method,
 	}
 
+	stripCRLF := strings.NewReplacer("\r", "", "\n", "")
 	var hdrs []string
-	for k, vals := range req.Header {
-		for _, v := range vals {
-			hdrs = append(hdrs, fmt.Sprintf("%s: %s", k, v))
+	for _, k := range slices.Sorted(maps.Keys(req.Header)) {
+		for _, v := range req.Header[k] {
+			hdrs = append(hdrs, fmt.Sprintf("%s: %s", stripCRLF.Replace(k), stripCRLF.Replace(v)))
 		}
 	}
 	if len(hdrs) > 0 {
-		args = append(args, "--headers="+strings.Join(hdrs, headerSep))
+		flagPath, err := writeSSOTempFile("ghish-sso-headers-*", fmt.Appendf(nil, "--headers=%s\n", strings.Join(hdrs, headerSep)))
+		if err != nil {
+			return nil, fmt.Errorf("failed to write sso_client headers file: %w", err)
+		}
+		defer os.Remove(flagPath)
+		args = append(args, "--flagfile="+flagPath)
 	}
 
 	if req.Body != nil {
@@ -289,24 +314,23 @@ func (rt *ssoClientRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 			return nil, fmt.Errorf("failed to read request body for sso_client: %w", err)
 		}
 		if len(bodyBytes) > 0 {
-			tmpFile, err := os.CreateTemp("", "ghish-sso-body-*.json")
+			tmpPath, err := writeSSOTempFile("ghish-sso-body-*.json", bodyBytes)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create temp file for sso_client payload: %w", err)
+				return nil, fmt.Errorf("failed to write sso_client payload file: %w", err)
 			}
-			tmpPath := tmpFile.Name()
 			defer os.Remove(tmpPath)
-			if _, err := tmpFile.Write(bodyBytes); err != nil {
-				tmpFile.Close()
-				return nil, fmt.Errorf("failed to write sso_client payload: %w", err)
-			}
-			tmpFile.Close()
 			args = append(args, "--data_file="+tmpPath)
 		}
 	}
 
 	args = append(args, "--url="+req.URL.String())
-	cmd := exec.CommandContext(req.Context(), "sso_client", args...)
-	out, err := cmd.CombinedOutput()
+	execFn := rt.exec
+	if execFn == nil {
+		execFn = func(ctx context.Context, args ...string) ([]byte, error) {
+			return exec.CommandContext(ctx, "sso_client", args...).CombinedOutput()
+		}
+	}
+	out, err := execFn(req.Context(), args...)
 	if err != nil && !bytes.Contains(out, []byte("HTTP/")) {
 		return nil, fmt.Errorf("sso_client execution failed for %s %s: %w (output: %s)",
 			req.Method, req.URL.String(), err, strings.TrimSpace(string(out)))
