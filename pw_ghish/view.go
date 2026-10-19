@@ -206,7 +206,7 @@ var viewCmd = &cobra.Command{
 				provider := ResolveCIProvider(chCtx.Config, projCfg, client, gHost, change)
 				builds, err := SearchProviderBuildsForPatchsets(ctx, provider, gHost, change.Number, patchsets, change)
 				if err == nil && builds != nil {
-					checksSummary = formatCheckSummary(deduplicateLatestBuilds(builds))
+					checksSummary = formatCheckSummary(deduplicateLatestBuilds(builds), change.Number)
 				} else if ExitCodeFor(err) == ExitCodeAuth {
 					checksSummary = "✖ LUCI authentication required (run 'luci-auth login' or 'gh auth status')"
 				}

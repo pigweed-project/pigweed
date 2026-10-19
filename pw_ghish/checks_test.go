@@ -1088,11 +1088,11 @@ func TestChecksExitStatus(t *testing.T) {
 
 // exitCodeChecksServer builds a mock Gerrit + Buildbucket server whose
 // SearchBuilds response contains one builder per entry in statuses.
-func exitCodeChecksServer(t *testing.T, statuses map[string]string, experimental map[string]bool) *MockGerritServer {
+func exitCodeChecksServer(t *testing.T, statuses map[string]string, experimental map[string]bool, changeOpts ...func(map[string]any)) *MockGerritServer {
 	t.Helper()
 
 	server := NewMockGerritServer(t)
-	server.OnDefaultChange(12345)
+	server.OnDefaultChange(12345, changeOpts...)
 
 	builds := make([]bbBuild, 0, len(statuses))
 	for i, name := range slices.Sorted(maps.Keys(statuses)) {
@@ -1116,9 +1116,11 @@ func TestChecks_ExitCodeContract(t *testing.T) {
 		statuses     map[string]string
 		experimental map[string]bool
 		extraArgs    []string
+		changeOpts   []func(map[string]any)
 		wantCode     int
 		wantMessage  string
 		wantNotInMsg string
+		wantOutput   string
 	}{
 		{
 			name:     "all passed",
@@ -1194,17 +1196,42 @@ func TestChecks_ExitCodeContract(t *testing.T) {
 			experimental: map[string]bool{"exp": true},
 			wantCode:     ExitCodeFailure,
 		},
+		{
+			// The exit code covers CI only, matching gh, but the output must
+			// not let a passing run read as "ready to submit".
+			name:     "unsatisfied Code-Review is printed but does not gate",
+			statuses: map[string]string{"a": "SUCCESS"},
+			changeOpts: []func(map[string]any){func(ch map[string]any) {
+				ch["submit_requirements"] = []map[string]any{{"name": "Code-Review", "status": "UNSATISFIED"}}
+			}},
+			wantCode:   ExitCodeOK,
+			wantOutput: "Not yet submittable: Code-Review (+2 required)",
+		},
+		{
+			name:     "satisfied submit requirements print no blockers",
+			statuses: map[string]string{"a": "SUCCESS"},
+			changeOpts: []func(map[string]any){func(ch map[string]any) {
+				ch["submit_requirements"] = []map[string]any{{"name": "Code-Review", "status": "SATISFIED"}}
+			}},
+			wantCode: ExitCodeOK,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := exitCodeChecksServer(t, tt.statuses, tt.experimental)
+			server := exitCodeChecksServer(t, tt.statuses, tt.experimental, tt.changeOpts...)
 
 			args := append([]string{"pr", "checks", "12345", "--buildbucket-host", server.URL}, tt.extraArgs...)
 			output, err := executeCommand(RootCmd, args...)
 
 			if got := ExitCodeFor(err); got != tt.wantCode {
 				t.Fatalf("exit code = %d, want %d\nerr = %v\nOutput:\n%s", got, tt.wantCode, err, output)
+			}
+			if tt.wantOutput == "" && strings.Contains(output, "Not yet submittable") {
+				t.Errorf("output must not contain a blockers line, got:\n%s", output)
+			}
+			if !strings.Contains(output, tt.wantOutput) {
+				t.Errorf("output missing %q, got:\n%s", tt.wantOutput, output)
 			}
 			if tt.wantMessage != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantMessage) {
@@ -1230,7 +1257,7 @@ func TestChecks_ExitCodeContractIsIndependentOfOutputFormat(t *testing.T) {
 		args []string
 	}{
 		{"default", nil},
-		{"json", []string{"--json", "number,checks"}},
+		{"json", []string{"--json", "number,checks,gerritGates"}},
 		{"template", []string{"--template", "{{.number}}"}},
 	}
 
@@ -1762,13 +1789,23 @@ func TestChecks_GerritGates_FailedLintLabelEvenWithZeroBuilds(t *testing.T) {
 			t.Errorf("Expected output to contain %q, got:\n%s", want, output)
 		}
 	}
+	gates, _, _ := strings.Cut(output, "Not yet submittable")
 	for _, notWant := range []string{"API-Review", "DrNo-Review"} {
-		if strings.Contains(output, notWant) {
+		if strings.Contains(gates, notWant) {
 			t.Errorf("Expected unvoted human review requirement %q to be omitted from CI gates, got:\n%s", notWant, output)
 		}
 	}
 	if !strings.Contains(err.Error(), "Gerrit gate(s) failed") || !strings.Contains(err.Error(), "Lint") {
 		t.Errorf("Expected error to mention Gerrit gate failure on Lint, got: %v", err)
+	}
+	if !strings.Contains(output, "Not yet submittable: API-Review (Unsatisfied), DrNo-Review (Unsatisfied), Lint (Rejected)") {
+		t.Errorf("Expected unsatisfied submit requirements in the blockers line, got:\n%s", output)
+	}
+	if !slices.ContainsFunc(server.Requests(), func(r MockRequest) bool {
+		o := r.URL.Query()["o"]
+		return slices.Contains(o, "SUBMIT_REQUIREMENTS") && slices.Contains(o, "SUBMITTABLE")
+	}) {
+		t.Error("pr checks must request o=SUBMIT_REQUIREMENTS and o=SUBMITTABLE for its change fetch")
 	}
 }
 

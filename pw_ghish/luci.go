@@ -1174,9 +1174,9 @@ func FormatFailureReports(reports []FailureReport) string {
 }
 
 // formatCheckSummary returns a 1-line summary of checks status, highlighting failures.
-func formatCheckSummary(builds []bbBuild) string {
+func formatCheckSummary(builds []bbBuild, changeNum int) string {
 	if len(builds) == 0 {
-		return "No checks scheduled (run 'gh pr review --cq' to trigger dry run)"
+		return fmt.Sprintf("No checks scheduled (run 'gh pr review %d --cq' to trigger dry run)", changeNum)
 	}
 
 	var (
@@ -1203,7 +1203,7 @@ func formatCheckSummary(builds []bbBuild) string {
 
 	total := passed + len(failedBuilders) + running
 	if total == 0 {
-		return "No checks scheduled (run 'gh pr review --cq' to trigger dry run)"
+		return fmt.Sprintf("No checks scheduled (run 'gh pr review %d --cq' to trigger dry run)", changeNum)
 	}
 
 	if len(failedBuilders) > 0 {
@@ -1217,9 +1217,9 @@ func formatCheckSummary(builds []bbBuild) string {
 				failedBuilders[0], failedBuilders[1], failedBuilders[2], len(failedBuilders)-3)
 		}
 
-		suffix := "(run 'gh run view --log-failed' to view errors)"
+		suffix := fmt.Sprintf("(run 'gh run view %d --log-failed' to view errors)", changeNum)
 		if running > 0 {
-			suffix = fmt.Sprintf("(%d running; run 'gh run view --log-failed' to view errors)", running)
+			suffix = fmt.Sprintf("(%d running; run 'gh run view %d --log-failed' to view errors)", running, changeNum)
 		}
 
 		if len(failedBuilders) == 1 {

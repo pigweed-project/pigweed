@@ -358,10 +358,10 @@ var runViewCmd = &cobra.Command{
 					}
 					available = dedup(available)
 					if len(available) > 0 {
-						return fmt.Errorf("no check found matching builder %q on change %s.\n\nAvailable builders on this change:\n  - %s\n\nRun 'gh run list' to view all checks",
-							targetBuilder, rawID, strings.Join(available, "\n  - "))
+						return fmt.Errorf("no check found matching builder %q on change %s.\n\nAvailable builders on this change:\n  - %s\n\nRun 'gh run list %d' to view all checks",
+							targetBuilder, rawID, strings.Join(available, "\n  - "), res.Change.Number)
 					}
-					return fmt.Errorf("no check found matching builder %q on change %s (no checks found on this change).\n\nRun 'gh run list' to view check status", targetBuilder, rawID)
+					return fmt.Errorf("no check found matching builder %q on change %s (no checks found on this change).\n\nRun 'gh run list %d' to view check status", targetBuilder, rawID, res.Change.Number)
 				}
 				var failedExp []string
 				for _, b := range res.Builds {
@@ -426,7 +426,11 @@ var runViewCmd = &cobra.Command{
 						note = patchsetNote(b.Patchset, res.PatchsetNum)
 					}
 					if b.Status == "STARTED" || b.Status == "SCHEDULED" {
-						fmt.Fprintf(cmd.OutOrStdout(), "Check %q%s is currently running (status: %s).\nTo monitor progress, run:\n  gh run view -j %s -v\n", b.Builder.Builder, note, b.Status, b.Builder.Builder)
+						viewCmd := fmt.Sprintf("gh run view -j %s -v", b.Builder.Builder)
+						if res != nil && res.Change != nil && res.Change.Number > 0 {
+							viewCmd = fmt.Sprintf("gh run view %d -j %s -v", res.Change.Number, b.Builder.Builder)
+						}
+						fmt.Fprintf(cmd.OutOrStdout(), "Check %q%s is currently running (status: %s).\nTo monitor progress, run:\n  %s\n", b.Builder.Builder, note, b.Status, viewCmd)
 						continue
 					}
 					dur := formatDuration(b.StartTime, b.EndTime)
@@ -612,15 +616,15 @@ var runViewCmd = &cobra.Command{
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout())
-		fmt.Fprintln(cmd.OutOrStdout(), "To view failed logs:   gh run view --log-failed")
-		fmt.Fprintln(cmd.OutOrStdout(), "To view step tree:     gh run view -j <builder>")
+		fmt.Fprintf(cmd.OutOrStdout(), "To view failed logs:   gh run view %d --log-failed\n", res.Change.Number)
+		fmt.Fprintf(cmd.OutOrStdout(), "To view step tree:     gh run view %d -j <builder>\n", res.Change.Number)
 		if hasFailure {
-			fmt.Fprintln(cmd.OutOrStdout(), "To rerun failed:       gh run rerun --failed")
+			fmt.Fprintf(cmd.OutOrStdout(), "If flaky, rerun:       gh run rerun %d --failed\n", res.Change.Number)
 			if hint := effectiveLocalPresubmitHint(projCfg, res.Profile); hint != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "To reproduce locally:  %s\n", hint)
 			}
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "To view in browser:    gh run view -w")
+		fmt.Fprintf(cmd.OutOrStdout(), "To view in browser:    gh run view %d -w\n", res.Change.Number)
 		return nil
 	},
 }
@@ -684,9 +688,9 @@ var runRerunCmd = &cobra.Command{
 		} else {
 			failedBuilders := collectFailedBuilders(res.Builds, runRerunExperimental, skipRetryFilters...)
 			if len(failedBuilders) > 0 {
-				return fmt.Errorf("no builder specified to rerun: specify a builder name or pass --failed to rerun all failed checks.\n\nUsage examples:\n  gh run rerun --failed\n  gh run rerun <builder-name>\n  gh run rerun -j <builder-name>\n\nFailed checks available to rerun:\n  - %s", strings.Join(failedBuilders, "\n  - "))
+				return fmt.Errorf("no builder specified to rerun: specify a builder name or pass --failed to rerun all failed checks.\n\nUsage examples:\n  gh run rerun %[1]d --failed\n  gh run rerun %[1]d <builder-name>\n  gh run rerun %[1]d -j <builder-name>\n\nFailed checks available to rerun:\n  - %[2]s", res.Change.Number, strings.Join(failedBuilders, "\n  - "))
 			}
-			return fmt.Errorf("no builder specified to rerun and no failed checks found on this change: specify a builder name or pass --failed.\n\nUsage:\n  gh run rerun <builder-name>\n\nRun 'gh pr checks' to view check status")
+			return fmt.Errorf("no builder specified to rerun and no failed checks found on this change: specify a builder name or pass --failed.\n\nUsage:\n  gh run rerun %[1]d <builder-name>\n\nRun 'gh pr checks %[1]d' to view check status", res.Change.Number)
 		}
 
 		chRef := GerritChangeRef{

@@ -48,7 +48,9 @@ const defaultChecksTemplate = `Checks for Change {{.number}} (Patchset {{.patchs
 {{end}}{{if .gerritGates}}
 Gerrit Gates / Submit Requirements:
 {{range .gerritGates}}  {{.StatusSymbol}}  {{printf "%-28s" .Name}}  {{.Summary}}
-{{end}}{{end}}`
+{{end}}{{end}}{{if .submitBlockers}}
+Not yet submittable: {{range $i, $b := .submitBlockers}}{{if $i}}, {{end}}{{$b}}{{end}}
+{{end}}`
 
 // GerritGateItem represents a Gerrit submit requirement or automated gate label
 // surfaced in `gh pr checks`.
@@ -753,6 +755,10 @@ Use --web (-w) to open checks in the browser.`,
 		tally.localPresubmitHint = effectiveLocalPresubmitHint(projCfg, res.Profile)
 		gerritGates, failedGates := ExtractGerritGates(res.Change)
 		tally.failedGates = failedGates
+		submitBlockers := []string{}
+		if res.Change.Status == "NEW" {
+			submitBlockers = append(submitBlockers, extractBlockers(res.Change)...)
+		}
 
 		data := map[string]any{
 			"number":              res.Change.Number,
@@ -760,8 +766,12 @@ Use --web (-w) to open checks in the browser.`,
 			"equivalentPatchsets": res.EquivalentPatchsets,
 			"checks":              checks,
 			"omittedExperimental": omittedCount,
+			"submitBlockers":      submitBlockers,
 		}
-		if len(gerritGates) > 0 {
+		if len(gerritGates) > 0 || checksJSON != "" {
+			if gerritGates == nil {
+				gerritGates = []GerritGateItem{}
+			}
 			data["gerritGates"] = gerritGates
 		}
 		if checksJSON == "" && hiddenCount > 0 {
@@ -858,7 +868,7 @@ func checksExitStatus(changeNum, patchset int, t checkTally) error {
 			"%s.\n\n"+
 				"To inspect the failure logs and step diagnostics:\n"+
 				"  gh run view %d --log-failed\n"+
-				"To rerun only the failed builders:\n"+
+				"If these failures look flaky, rerun only the failed builders:\n"+
 				"  gh run rerun %d --failed%s",
 			summary, changeNum, changeNum, reproHint)
 	}

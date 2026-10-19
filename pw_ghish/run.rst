@@ -135,7 +135,7 @@ failing checks print their step failure summary and log snippet upon exit:
    $ ./gh pr checks --web
 
    # Output JSON:
-   $ ./gh pr checks --json
+   $ ./gh pr checks --json checks,submitBlockers
 
 Process exit code contract
 ==========================
@@ -154,6 +154,10 @@ code, matching the GitHub CLI:
    * - ``1``
      - At least one blocking check failed or was canceled, no checks were
        reported at all, or the command itself errored.
+
+Exit ``0`` reflects CI only; when submit requirements such as Code-Review are
+still unsatisfied, the text output ends with a ``Not yet submittable:`` line and
+``--json`` reports them in ``submitBlockers`` (empty when none).
 
 The contract holds on every invocation, with or without ``--watch``,
 ``--json``, or ``--template``, so it is safe to use as a merge gate:

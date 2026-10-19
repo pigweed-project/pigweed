@@ -973,8 +973,8 @@ func TestLive_View_DisplaysChecks_Failing(t *testing.T) {
 	if !strings.Contains(output, "pigweed-lintformat") {
 		t.Errorf("Expected failed builder 'pigweed-lintformat' in pr view output, got:\n%s", output)
 	}
-	if !strings.Contains(output, "(run 'gh run view --log-failed' to view errors)") {
-		t.Errorf("Expected '(run 'gh run view --log-failed' to view errors)' in pr view output, got:\n%s", output)
+	if !strings.Contains(output, "(run 'gh run view 467905 --log-failed' to view errors)") {
+		t.Errorf("Expected '(run 'gh run view 467905 --log-failed' to view errors)' in pr view output, got:\n%s", output)
 	}
 }
 

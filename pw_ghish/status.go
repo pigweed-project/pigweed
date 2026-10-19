@@ -246,7 +246,7 @@ var statusCmd = &cobra.Command{
 					if bErr == nil && builds != nil {
 						deduped := deduplicateLatestBuilds(builds)
 						visibleBuilds, _ := FilterBuildsByTags(deduped, projCfg.CI.HideTagFilters)
-						checksSummary = formatCheckSummary(visibleBuilds)
+						checksSummary = formatCheckSummary(visibleBuilds, activeChange.Number)
 						checks = BuildCheckItems(visibleBuilds)
 					} else if ExitCodeFor(bErr) == ExitCodeAuth {
 						checksSummary = "✖ LUCI authentication required (run 'luci-auth login' or 'gh auth status')"

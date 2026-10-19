@@ -159,6 +159,8 @@ Commands:
   - **Exit codes**: `0` = all blocking checks passed, `8` = checks still
     running, `1` = blocking check failed, canceled, or no checks reported.
     Branch on the exit code; never scrape the table.
+    `0` covers CI only, not submittability: also read the trailing
+    `Not yet submittable: …` line (`submitBlockers` in `--json`).
   - *Equivalent Patchsets*: Builds from earlier code-equivalent patchsets
     (`TRIVIAL_REBASE`, `TRIVIAL_REBASE_WITH_MESSAGE_UPDATE`, `NO_CODE_CHANGE`,
     `NO_CHANGE`, `MERGE_FIRST_PARENT_UPDATE`) are automatically included and

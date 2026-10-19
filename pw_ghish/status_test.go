@@ -578,7 +578,7 @@ func TestStatus_CurrentBranch_ChecksSummary_Failing(t *testing.T) {
 		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
 	}
 
-	if !strings.Contains(out, "Checks:      ✖ 1 failed: pigweed-lint (run 'gh run view --log-failed' to view errors)") {
+	if !strings.Contains(out, "Checks:      ✖ 1 failed: pigweed-lint (run 'gh run view 472267 --log-failed' to view errors)") {
 		t.Errorf("Expected failure summary in status output, got:\n%s", out)
 	}
 }

@@ -466,7 +466,7 @@ func TestFormatCheckSummary(t *testing.T) {
 		{
 			name:   "empty builds",
 			builds: []bbBuild{},
-			want:   "No checks scheduled (run 'gh pr review --cq' to trigger dry run)",
+			want:   "No checks scheduled (run 'gh pr review 12345 --cq' to trigger dry run)",
 		},
 		{
 			name: "all passing",
@@ -482,7 +482,7 @@ func TestFormatCheckSummary(t *testing.T) {
 				{Status: "SUCCESS", Builder: bbBuilder{Builder: "builder-1"}},
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "pigweed-lint"}},
 			},
-			want: "✖ 1 failed: pigweed-lint (run 'gh run view --log-failed' to view errors)",
+			want: "✖ 1 failed: pigweed-lint (run 'gh run view 12345 --log-failed' to view errors)",
 		},
 		{
 			name: "multiple failures detected",
@@ -490,7 +490,7 @@ func TestFormatCheckSummary(t *testing.T) {
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "builder-a"}},
 				{Status: "INFRA_FAILURE", Builder: bbBuilder{Builder: "builder-b"}},
 			},
-			want: "✖ 2 failed: builder-a, builder-b (run 'gh run view --log-failed' to view errors)",
+			want: "✖ 2 failed: builder-a, builder-b (run 'gh run view 12345 --log-failed' to view errors)",
 		},
 		{
 			name: "running and passed",
@@ -513,7 +513,7 @@ func TestFormatCheckSummary(t *testing.T) {
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "pigweed-lint"}},
 				{Status: "STARTED", Builder: bbBuilder{Builder: "builder-running"}},
 			},
-			want: "✖ 1 failed: pigweed-lint (1 running; run 'gh run view --log-failed' to view errors)",
+			want: "✖ 1 failed: pigweed-lint (1 running; run 'gh run view 12345 --log-failed' to view errors)",
 		},
 		{
 			name: "more than 3 failures",
@@ -523,7 +523,7 @@ func TestFormatCheckSummary(t *testing.T) {
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "b3"}},
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "b4"}},
 			},
-			want: "✖ 4 failed: b1, b2, b3, and 1 more (run 'gh run view --log-failed' to view errors)",
+			want: "✖ 4 failed: b1, b2, b3, and 1 more (run 'gh run view 12345 --log-failed' to view errors)",
 		},
 		{
 			name: "experimental failure ignored",
@@ -537,7 +537,7 @@ func TestFormatCheckSummary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatCheckSummary(tt.builds)
+			got := formatCheckSummary(tt.builds, 12345)
 			if got != tt.want {
 				t.Errorf("formatCheckSummary() = %q, want %q", got, tt.want)
 			}
@@ -588,7 +588,7 @@ func TestView_DisplaysChecks_Failing(t *testing.T) {
 		t.Fatalf("pr view failed: %v\nOutput: %s", err, output)
 	}
 
-	if !strings.Contains(output, "Checks:  ✖ 1 failed: pigweed-lint (run 'gh run view --log-failed' to view errors)") {
+	if !strings.Contains(output, "Checks:  ✖ 1 failed: pigweed-lint (run 'gh run view 12345 --log-failed' to view errors)") {
 		t.Errorf("Expected failure indicator for pigweed-lint, got:\n%s", output)
 	}
 }

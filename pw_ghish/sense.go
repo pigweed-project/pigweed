@@ -1852,7 +1852,7 @@ func senseGerritCL(
 				}
 				deduped := deduplicateLatestBuilds(builds)
 				visibleBuilds, _ := FilterBuildsByTags(deduped, projCfg.CI.HideTagFilters)
-				checksSummary = formatCheckSummary(visibleBuilds)
+				checksSummary = formatCheckSummary(visibleBuilds, change.Number)
 				var failedBuilds []bbBuild
 				for _, b := range visibleBuilds {
 					if b.IsExperimental() {

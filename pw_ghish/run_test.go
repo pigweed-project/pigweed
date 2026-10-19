@@ -74,7 +74,7 @@ func TestRunView_DefaultStructuredSummary(t *testing.T) {
 	if !strings.Contains(output, "builder-pass") || !strings.Contains(output, "builder-fail") {
 		t.Errorf("Expected builders in JOBS list, got:\n%s", output)
 	}
-	if !strings.Contains(output, "To view failed logs:") {
+	if !strings.Contains(output, "To view failed logs:   gh run view 12345 --log-failed") {
 		t.Errorf("Expected helpful footer hints, got:\n%s", output)
 	}
 }
@@ -171,6 +171,11 @@ func TestRunView_VerboseSteps(t *testing.T) {
 	}
 	if !strings.Contains(output, "✓  setup") || !strings.Contains(output, "*  compile") {
 		t.Errorf("Expected step items, got:\n%s", output)
+	}
+
+	runOut, err := executeCommand(RootCmd, "run", "view", "12345", "-j", "pigweed-compile", "--log-failed")
+	if err != nil || !strings.Contains(runOut, "gh run view 12345 -j pigweed-compile -v") {
+		t.Errorf("run view -j --log-failed on running build = (%q, %v), want 'gh run view 12345 -j pigweed-compile -v'", runOut, err)
 	}
 }
 
@@ -300,6 +305,9 @@ func TestRunRerun_MissingBuilderError(t *testing.T) {
 	if !strings.Contains(errStr, "pigweed-linux") {
 		t.Errorf("Expected failed builder to be listed, got: %v", err)
 	}
+	if !strings.Contains(errStr, "gh run rerun 12345 --failed") {
+		t.Errorf("Expected change-scoped usage example, got: %v", err)
+	}
 }
 
 func TestRunView_DirectBuildID(t *testing.T) {
@@ -357,6 +365,15 @@ func TestRunView_BuilderNotFound_ShowsAvailable(t *testing.T) {
 	}
 	if !strings.Contains(errStr, "pigweed-linux") {
 		t.Errorf("Expected available check pigweed-linux to be listed, got: %v", err)
+	}
+	if _, err := executeCommand(RootCmd, "run", "view", "12345", "--log-failed", "-j", "nonexistent"); err == nil || !strings.Contains(err.Error(), "Run 'gh run list 12345' to view all checks") {
+		t.Errorf("Expected 'gh run list 12345' hint in --log-failed error, got: %v", err)
+	}
+	emptyServer := NewMockGerritServer(t)
+	emptyServer.OnDefaultChange(12345, WithSubject("Builder Not Found Change"))
+	emptyServer.OnSearchBuilds()
+	if _, err := executeCommand(RootCmd, "run", "view", "12345", "--log-failed", "-j", "nonexistent"); err == nil || !strings.Contains(err.Error(), "Run 'gh run list 12345' to view check status") {
+		t.Errorf("Expected 'gh run list 12345' no-checks hint in --log-failed error, got: %v", err)
 	}
 }
 
