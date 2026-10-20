@@ -77,7 +77,6 @@ extensions = [
     'toctree',
     'cs',
     'module_metadata',
-    'modules_index',
     'common',
     'pigweed_live',
     'pw_docgen.sphinx.google_analytics',  # Enables optional Google Analytics
@@ -194,8 +193,6 @@ html_baseurl = 'https://pigweed.dev/'
 html_sidebars = {
     'changelog': [],
     'size_optimizations': [],
-    'index': [],
-    'toolchain': [],
 }
 
 html_context = {
@@ -286,6 +283,23 @@ def env_get_outdated(app, env, added, changed, removed):
     return ['index']
 
 
+# pydata-sphinx-theme defaults to startdepth=1 for "Section Navigation", which
+# suppresses the primary sidebar on root_doc (index). Override startdepth=0 on
+# root_doc so the homepage displays the top-level toctree in "Section
+# Navigation" unless explicitly disabled in html_sidebars.
+def enable_root_sidebar_toctree(app, pagename, templatename, context, doctree):
+    if pagename != app.config.root_doc:
+        return
+    orig_generate = context.get('generate_toctree_html')
+    if orig_generate is None:
+        return
+    context['suppress_sidebar_toctree'] = lambda **_kwargs: False
+    context['generate_toctree_html'] = lambda *args, **kwargs: orig_generate(
+        *args, **{**kwargs, 'startdepth': 0}
+    )
+
+
 def setup(app):
     app.connect('env-get-outdated', env_get_outdated)
     app.connect('autodoc-skip-member', do_not_skip_init)
+    app.connect('html-page-context', enable_root_sidebar_toctree, priority=600)

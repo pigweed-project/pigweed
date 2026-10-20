@@ -54,47 +54,47 @@ def extract_header_nav(app: Sphinx) -> list[HeaderLink]:
     if not toctree_node or len(toctree_node) == 0:
         return []
 
-    first_child = toctree_node[0]
-    if not isinstance(first_child, nodes.bullet_list):
-        return []
-
     top_links: list[HeaderLink] = []
 
-    for list_item in first_child.children:
-        if not list_item.children:
+    for bullet_list in toctree_node.children:
+        if not isinstance(bullet_list, nodes.bullet_list):
             continue
-        para = list_item.children[0]
-        if not para.children:
-            continue
-        ref = para.children[0]
-        if not isinstance(ref, nodes.reference):
-            continue
+        for list_item in bullet_list.children:
+            if not list_item.children:
+                continue
+            para = list_item.children[0]
+            if not para.children:
+                continue
+            ref = para.children[0]
+            if not isinstance(ref, nodes.reference):
+                continue
 
-        title = ref.astext()
-        href = format_href(ref.attributes.get("refuri", ""))
+            title = ref.astext()
+            href = format_href(ref.attributes.get("refuri", ""))
 
-        child_links: list[HeaderLink] = []
-        for child in list_item.children[1:]:
-            if isinstance(child, nodes.bullet_list):
-                for sub_item in child.children:
-                    if not sub_item.children:
-                        continue
-                    sub_para = sub_item.children[0]
-                    if not sub_para.children:
-                        continue
-                    sub_ref = sub_para.children[0]
-                    if not isinstance(sub_ref, nodes.reference):
-                        continue
-                    sub_title = sub_ref.astext()
-                    sub_href = format_href(sub_ref.attributes.get("refuri", ""))
-                    child_links.append(
-                        HeaderLink(title=sub_title, href=sub_href)
-                    )
-                break
+            child_links: list[HeaderLink] = []
+            for child in list_item.children[1:]:
+                if isinstance(child, nodes.bullet_list):
+                    for sub_item in child.children:
+                        if not sub_item.children:
+                            continue
+                        sub_para = sub_item.children[0]
+                        if not sub_para.children:
+                            continue
+                        sub_ref = sub_para.children[0]
+                        if not isinstance(sub_ref, nodes.reference):
+                            continue
+                        sub_title = sub_ref.astext()
+                        sub_href = format_href(
+                            sub_ref.attributes.get("refuri", "")
+                        )
+                        child_links.append(
+                            HeaderLink(title=sub_title, href=sub_href)
+                        )
 
-        top_links.append(
-            HeaderLink(title=title, href=href, children=child_links)
-        )
+            top_links.append(
+                HeaderLink(title=title, href=href, children=child_links)
+            )
 
     if len(top_links) <= _MAX_VISIBLE_HEADER_LINKS:
         return top_links

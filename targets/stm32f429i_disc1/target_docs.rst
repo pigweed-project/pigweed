@@ -1,18 +1,19 @@
 .. _target-stm32f429i-disc1:
 
-----------------
+================
 stm32f429i-disc1
-----------------
+================
 The STMicroelectronics STM32F429I-DISC1 development board is currently Pigweed's
 primary target for on-device testing and development in the STM32 family.
 
+--------
 Building
-========
+--------
 To build for this Pigweed target use the following commands, based on which
 build system you are using.
 
 Bazel
------
+=====
 The Bazel invocation can specify which targets to build, including glob targets
 (e.g. ``//...``).
 
@@ -24,7 +25,7 @@ The Bazel invocation can specify which targets to build, including glob targets
    $ bazelisk build //path/to/target --config=stm32f429i_baremetal
 
 GN / Ninja
-----------
+==========
 The GN build will incrementally build all targets which support the stm32f429i
 platform.
 
@@ -34,8 +35,9 @@ platform.
 
 .. _target-stm32f429i-disc1-test:
 
+-------
 Testing
-=======
+-------
 When working in upstream Pigweed, this target platform supports building and
 running unit tests on-device. The method is different depending on which build
 system you are using.
@@ -43,7 +45,7 @@ system you are using.
 .. _target-stm32f429i-disc1-test-bazel:
 
 Bazel
------
+=====
 Tests can be run using the normal ``bazelisk test`` command, however, in order
 to run any unit tests on-device you must first start the unit test server which
 will handle flashing the hardware and reporting the results back.
@@ -59,7 +61,7 @@ will handle flashing the hardware and reporting the results back.
    also be run in the background of your current terminal.
 
 Run a single unit test
-^^^^^^^^^^^^^^^^^^^^^^
+----------------------
 Run bazel test commands like normal, but use the relevant stm32f429i config:
 
 .. code-block:: console
@@ -70,7 +72,7 @@ Run bazel test commands like normal, but use the relevant stm32f429i config:
    $ bazelisk test //path/to/test --config=stm32f429i_baremetal
 
 Run multiple tests
-^^^^^^^^^^^^^^^^^^
+------------------
 Multiple tests can be run just the same as a single test:
 
 .. code-block:: console
@@ -81,7 +83,7 @@ Multiple tests can be run just the same as a single test:
    $ bazelisk test //... --config=stm32f429i_baremetal
 
 Run tests affected by code changes
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------
 The ``pw_watch`` tool allows you to watch for file changes and then rebuild or
 retest a set of targets. More details are available :ref:`module-pw_watch`.
 
@@ -98,10 +100,10 @@ To start the watcher use something like:
    Be sure to use ``./pw``, not ``pw``!
 
 GN / Ninja
-----------
+==========
 
 Run a single unit test
-^^^^^^^^^^^^^^^^^^^^^^
+----------------------
 If using ``out`` as a build directory, tests will be located in
 ``out/stm32f429i_disc1_debug/obj/[module name]/[test_name].elf``. To run
 these on device, the stm32f429i-disc1 target provides a helper script
@@ -120,7 +122,7 @@ that flashes the test to a device and then runs it.
    not currently support triggering unit test runs via RPC.
 
 Run multiple tests
-^^^^^^^^^^^^^^^^^^
+------------------
 Running all tests one-by-one is rather tedious. To make running multiple
 tests easier, use Pigweed's ``pw test`` command and pass it a path to the
 build directory and the name of the test runner. By default, ``pw test``
@@ -137,7 +139,7 @@ individual test binaries can be specified with the ``--test`` option.
    > --runner stm32f429i_disc1_unit_test_runner
 
 Run tests affected by code changes
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------
 When writing code that will impact multiple modules, it's helpful to only
 run all tests that are affected by a given code change. Thanks to the GN
 Ninja build, this is possible! This is done by using a
@@ -149,7 +151,7 @@ connected, the tests will be run across all attached devices to further speed up
 testing.
 
 Step 1: Start test server
-.........................
+^^^^^^^^^^^^^^^^^^^^^^^^^
 To allow Ninja to properly serialize tests to run on an arbitrary number of
 devices, Ninja will send test requests to a server running in the background.
 The first step is to launch this server. By default, the script will attempt
@@ -167,7 +169,7 @@ with ``--server-config``.
    $ stm32f429i_disc1_test_server
 
 Step 2: Configure GN
-....................
+^^^^^^^^^^^^^^^^^^^^
 By default, this hardware target has incremental testing via
 ``pw_target_runner`` disabled. Enabling the ``pw_use_test_server`` build arg
 tells GN to send requests to a running ``stm32f429i_disc1_test_server``.
@@ -179,19 +181,21 @@ tells GN to send requests to a running ``stm32f429i_disc1_test_server``.
    pw_use_test_server = true
 
 Step 3: Build changes
-.....................
+^^^^^^^^^^^^^^^^^^^^^
 Whenever you run ``ninja -C out stm32f429i``, affected tests will be built and
 run on the attached device(s). Alternatively, you may use ``pw watch`` to set up
 Pigweed to build/test whenever it sees changes to source files.
 
+----------
 RPC server
-==========
+----------
 The stm32f429i target implements a system RPC server that over a simple UART
 driver. To communicate with a device running the RPC server, run
 ``pw rpc -d <device> -b 115200 <protos>``.
 
+---------
 Debugging
-=========
+---------
 There are multiple ways to debug the device, including using commercial tools
 like SEGGER's J-Link. However, the Discovery board has an on-board STLink
 debugger, which is supported by the open source OpenOCD debugger. To debug with
@@ -223,7 +227,7 @@ OpenOCD requires a few steps. Summary version of the steps:
 
 
 Step 1: Start an OpenOCD server and connect to the device
----------------------------------------------------------
+=========================================================
 OpenOCD is a persistent server that you run and leave running to bridge between
 GDB and the device. To run it for the Discovery board:
 
@@ -253,7 +257,7 @@ Typical output:
    Info : Listening on port 3333 for gdb connections
 
 Step 2: Start GDB and connect to the OpenOCD server
----------------------------------------------------
+===================================================
 Start GDB pointing to the correct .elf file, and tell it to connect to the
 OpenOCD server (running on port 333 by default).
 
@@ -288,7 +292,7 @@ file. This should produce output similar to the following:
    117	  }
 
 Step 3: Flash, run, and debug
------------------------------
+=============================
 Now that the GDB instance is connected to the device, you can flash, run, and debug.
 
 To flash
@@ -330,3 +334,48 @@ This will produce output similar to:
 
 The device is now ready for debugging. You can place breakpoints and start the
 device with ``continue``.
+
+.. categories-start
+.. +----------------------------------------------------------+
+.. | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+.. |                                                          |
+.. | To regenerate this section, run:                         |
+.. |   bazelisk run //docs/common/metadata:sync               |
+.. |                                                          |
+.. | Docs: https://pigweed.dev/contributing/docs/website.html |
+.. +----------------------------------------------------------+
+
+-------
+Modules
+-------
+The following table lists all modules related to STMicroelectronics STM32FXXX.
+
+.. csv-table::
+   :header: "Name", "Status", "Description", "Languages"
+
+   ":ref:`module-pw_stm32cube_build`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_sys_io_baremetal_stm32f429`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_sys_io_stm32cube`", ":bdg-primary:`stable`", "", ""
+
+.. Do not edit this toctree. To add non-module docs to this category,
+.. create a separate toctree outside the categories-start /
+.. categories-end block.
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   self
+   STM32Cube build <../../pw_stm32cube_build/docs>
+   System I/O (STM32F429) <../../pw_sys_io_baremetal_stm32f429/docs>
+   System I/O (STM32Cube) <../../pw_sys_io_stm32cube/docs>
+
+.. +----------------------------------------------------------+
+.. | END OF AUTO-GENERATED SECTION                            |
+.. +----------------------------------------------------------+
+.. categories-end
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   ../stm32f429i_disc1_stm32cube/target_docs

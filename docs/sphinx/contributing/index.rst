@@ -315,3 +315,5 @@ process you are welcome to send us feedback using the
    Code of conduct <pw://code_of_conduct.html>
    docs/index
    ../testing/index
+   ../third_party/fuchsia/docs
+   ../security/index

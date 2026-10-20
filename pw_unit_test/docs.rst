@@ -1392,9 +1392,9 @@ CMake build arguments
 
    Usage: toolchain-controlled only
 
-====================
+--------------------
 Zephyr backend tests
-====================
+--------------------
 Zephyr backend tests use Zephyr's test runner `twister`_. The test runner is
 installed into the Pigweed CLI and can be run by calling ``pw twister-runner``.
 The runner intercepts a few arguments in order to add features to the normal
@@ -1412,9 +1412,8 @@ the following:
   file will be appended to the final twister command using ``-T
   {build_dir}/{name}``.
 
---------------
 Test templates
---------------
+==============
 Twister normally uses a combination of ``testcase.yaml`` files along
 ``CMakeLists.txt`` files which serve as the test's entry point. This doesn't
 work when trying to write tests side by side with the source. The twister runner
@@ -1445,9 +1444,8 @@ Additional fields are available in the template and are optional:
   C++20 and a few other common Kconfigs. Additional configs can be added as a
   part of the ``testtemplate.yaml`` using the ``extra_configs`` key.
 
------------------
 Running the tests
------------------
+=================
 Automatically, tests will be picked up by ``pw presubmit --step zephyr_build``.
 This presubmit test will call the ``twister-runner`` script to run all the tests
 defined in either ``testcase.yaml`` or ``testtemplate.yaml``. Coverage reports

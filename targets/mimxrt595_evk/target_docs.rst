@@ -1,24 +1,25 @@
 .. _target-mimxrt595-evk:
 
--------------
+=============
 mimxrt595-evk
--------------
+=============
 The NXP MIMXRT595-EVK_ evaluation board is a demonstration target for on-device
 Pigweed development
 
 .. _MIMXRT595-EVK: https://www.nxp.com/design/development-boards/i-mx-evaluation-and-development-boards/i-mx-rt595-evaluation-kit:MIMXRT595-EVK
 
+-----------
 Configuring
-===========
+-----------
 Step 1: Download SDK
---------------------
+====================
 To configure this Pigweed target you will first need to download an NXP
 `MCUXpresso SDK`_ for your device and unpack it within your project source tree.
 
 .. _MCUXpresso SDK: https://mcuxpresso.nxp.com/en/welcome
 
 Step 2: Create SDK source set
------------------------------
+=============================
 You'll next need to create a source set based on the downloaded SDK, and set
 the ``pw_third_party_mcuxpresso_SDK`` build arg to the name of the source set
 you create. See :ref:`module-pw_build_mcuxpresso` for more details.
@@ -36,8 +37,9 @@ Pigweed target directory.
    pw_target_mimxrt595_evk_MANIFEST = "//third_party/mcuxpresso/sdk/EVK-MIMXRT595_manifest_v3_13.xml"
    pw_third_party_mcuxpresso_SDK = "//targets/mimxrt595_evk:sample_sdk"
 
+--------
 Building
-========
+--------
 Once configured, to build for this Pigweed target, simply build the top-level
 "mimxrt595" Ninja target.
 
@@ -45,10 +47,11 @@ Once configured, to build for this Pigweed target, simply build the top-level
 
    $ ninja -C out mimxrt595
 
+---------------------
 Running and Debugging
-=====================
+---------------------
 First Time Setup
-----------------
+================
 The MIMXRT595-EVK comes with an integrated Link2 debug probe that can operate in
 either CMSIS-DAP or SEGGER J-Link mode. CMSIS-DAP is how the board will likely
 come by default, but J-Link is the mode that is currently known to work, so
@@ -76,7 +79,7 @@ SEGGER website.
 .. _J-Link: https://www.segger.com/downloads/jlink/
 
 General Setup
--------------
+=============
 Each time you prepare the MIMXRT595-EVK for use, you'll need to do a few steps.
 You don't need to repeat these if you leave everything setup and don't
 disconnect or reboot.
@@ -98,7 +101,7 @@ On Linux, you may need to install the `libncurses5` library to use the tools:
    $ sudo apt install libncurses5
 
 Running and Debugging
----------------------
+=====================
 Use ``arm-none-eabi-gdb`` to load an executable into the target, debug, and run
 it.
 
@@ -139,3 +142,60 @@ To debug a new file, use ``file`` before ``load``.
 
 Debug console is available on the USB serial port, e.g. ``/dev/ttyACM0``
 (Linux) or ``/dev/tty.usbmodem*`` (Mac).
+
+.. categories-start
+.. +----------------------------------------------------------+
+.. | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+.. |                                                          |
+.. | To regenerate this section, run:                         |
+.. |   bazelisk run //docs/common/metadata:sync               |
+.. |                                                          |
+.. | Docs: https://pigweed.dev/contributing/docs/website.html |
+.. +----------------------------------------------------------+
+
+-------
+Modules
+-------
+The following table lists all modules related to NXP.
+
+.. csv-table::
+   :header: "Name", "Status", "Description", "Languages"
+
+   ":ref:`module-pw_build_mcuxpresso`", ":bdg-primary:`stable`", "Utilities for building NXP MCUXpresso SDK targets", "Bazel, GN"
+   ":ref:`module-pw_clock_tree_mcuxpresso`", ":bdg-secondary:`unstable`", "NXP MCUXpresso SDK implementation for pw_clock_tree", "C++"
+   ":ref:`module-pw_digital_io_mcuxpresso`", ":bdg-primary:`stable`", "Digital I/O for NXP MCUXpresso", "C++"
+   ":ref:`module-pw_dma_mcuxpresso`", ":bdg-secondary:`unstable`", "DMA helpers for MCUXpresso SDK", "C++"
+   ":ref:`module-pw_i2c_mcuxpresso`", ":bdg-primary:`stable`", "NXP MCUXpresso SDK implementation for pw_i2c", "C++"
+   ":ref:`module-pw_spi_mcuxpresso`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_stream_uart_mcuxpresso`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_sys_io_mcuxpresso`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_uart_mcuxpresso`", ":bdg-secondary:`unstable`", "NXP MCUXpresso SDK implementation for pw_uart", "C++"
+
+.. Do not edit this toctree. To add non-module docs to this category,
+.. create a separate toctree outside the categories-start /
+.. categories-end block.
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   self
+   Build utilities <../../pw_build_mcuxpresso/docs>
+   Clock tree <../../pw_clock_tree_mcuxpresso/docs>
+   Digital I/O <../../pw_digital_io_mcuxpresso/docs>
+   DMA <../../pw_dma_mcuxpresso/docs>
+   I2C <../../pw_i2c_mcuxpresso/docs>
+   SPI <../../pw_spi_mcuxpresso/docs>
+   UART stream <../../pw_stream_uart_mcuxpresso/docs>
+   System I/O <../../pw_sys_io_mcuxpresso/docs>
+   UART <../../pw_uart_mcuxpresso/docs>
+
+.. +----------------------------------------------------------+
+.. | END OF AUTO-GENERATED SECTION                            |
+.. +----------------------------------------------------------+
+.. categories-end
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   ../mimxrt595_evk_freertos/target_docs

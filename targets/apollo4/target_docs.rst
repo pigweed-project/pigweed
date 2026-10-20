@@ -163,3 +163,44 @@ Then call this script:
 .. code-block:: console
 
    $ bash ./debug_amap4.sh ./out/apollo4_debug/obj/pw_log/test/basic_log_test.elf
+
+.. categories-start
+.. +----------------------------------------------------------+
+.. | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+.. |                                                          |
+.. | To regenerate this section, run:                         |
+.. |   bazelisk run //docs/common/metadata:sync               |
+.. |                                                          |
+.. | Docs: https://pigweed.dev/contributing/docs/website.html |
+.. +----------------------------------------------------------+
+
+-------
+Modules
+-------
+The following table lists all modules related to Ambiq.
+
+.. csv-table::
+   :header: "Name", "Status", "Description", "Languages"
+
+   ":ref:`module-pw_sys_io_ambiq_sdk`", ":bdg-primary:`stable`", "", ""
+
+.. Do not edit this toctree. To add non-module docs to this category,
+.. create a separate toctree outside the categories-start /
+.. categories-end block.
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   self
+   System I/O <../../pw_sys_io_ambiq_sdk/docs>
+
+.. +----------------------------------------------------------+
+.. | END OF AUTO-GENERATED SECTION                            |
+.. +----------------------------------------------------------+
+.. categories-end
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   ../apollo4_pw_system/target_docs

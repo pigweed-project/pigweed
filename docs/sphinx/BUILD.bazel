@@ -92,12 +92,47 @@ sphinx_docs_library(
         "index.rst",
         "module_metadata.json",
         "module_metadata_schema.json",
-        "modules.rst",
+        # categories-start
+        # +----------------------------------------------------------+
+        # | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+        # |                                                          |
+        # | To regenerate this section, run:                         |
+        # |   bazelisk run //docs/common/metadata:sync               |
+        # |                                                          |
+        # | Docs: https://pigweed.dev/contributing/docs/website.html |
+        # +----------------------------------------------------------+
+        "async/index.rst",
+        "bluetooth/index.rst",
+        "build/index.rst",
+        "comms/index.rst",
+        "core/index.rst",
+        "crypto/index.rst",
+        "devtools/index.rst",
+        "encoding/index.rst",
+        "hal/index.rst",
+        "hw/index.rst",
+        "kernel/index.rst",
+        "memory/index.rst",
+        "observability/index.rst",
+        "os/backends.rst",
+        "os/baremetal/index.rst",
+        "os/embos/index.rst",
+        "os/freertos/index.rst",
+        "os/index.rst",
+        "os/stl/index.rst",
+        "os/threadx/index.rst",
+        "os/zephyr/index.rst",
+        "test/index.rst",
+        "toolchains/index.rst",
+        # +----------------------------------------------------------+
+        # | END OF AUTO-GENERATED SECTION                            |
+        # +----------------------------------------------------------+
+        # categories-end
+        "platform.rst",
         "redirects.json",
         # TODO: b/388905812 - Delete this file.
         "size_report_notice",
         "targets.rst",
-        "third_party_support.rst",
         "blog/01-kudzu.rst",
         "blog/02-bazel-feature-flags.rst",
         "blog/03-pigweed-sdk.rst",
@@ -118,7 +153,6 @@ sphinx_docs_library(
         "build/bazel/dependencies.rst",
         "build/bazel/mcu-setup.rst",
         "build/bazel/quickstart.rst",
-        "build/index.rst",
         "build/cmake/api.rst",
         "build/cmake/index.rst",
         "build/cmake/integration/index.rst",
@@ -156,27 +190,15 @@ sphinx_docs_library(
         "layout/layout.html",
         "mission.rst",
         "module_structure.rst",
-        "os/index.rst",
-        "os/zephyr/backends.rst",
-        "os/zephyr/index.rst",
+        "modules.rst",
         "os/zephyr/setup.rst",
         "os/zephyr/features.rst",
-        "os/freertos/backends.rst",
-        "os/freertos/index.rst",
         "os/freertos/setup.rst",
         "os/freertos/features.rst",
-        "os/threadx/backends.rst",
-        "os/threadx/index.rst",
         "os/threadx/setup.rst",
         "os/threadx/features.rst",
-        "os/embos/backends.rst",
-        "os/embos/index.rst",
         "os/embos/setup.rst",
         "os/embos/features.rst",
-        "os/stl/backends.rst",
-        "os/stl/index.rst",
-        "os/baremetal/backends.rst",
-        "os/baremetal/index.rst",
         "overview.rst",
         "security/2026/07.rst",
         "security/2026/08.rst",

@@ -111,10 +111,10 @@ filegroup(
 sphinx_docs_library(
     name = "docs",
     srcs = [
+        "backends.rst",
         "docs.rst",
         "examples.cc",
         "examples.rst",
-        "implementations.rst",
         "module.toml",
     ],
     prefix = "pw_clock_tree/",

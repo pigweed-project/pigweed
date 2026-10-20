@@ -1,8 +1,8 @@
 .. _target-lm3s6965evb-qemu:
 
-----------------
+================
 lm3s6965evb-qemu
-----------------
+================
 This target is specifically for emulation of the Texas Instruments Stellaris
 LM3S lm3s6965evb using QEMU. This may be useful for testing ARMv7-M code without
 physical hardware.
@@ -10,8 +10,9 @@ physical hardware.
 This target configuration has **not** been tested on the physical Stellaris
 development board.
 
+--------
 Building
-========
+--------
 To build for this Pigweed target, simply build the top-level "qemu_gcc" Ninja
 target.
 
@@ -19,18 +20,20 @@ target.
 
    $ ninja -C out qemu_gcc
 
+-------
 Testing
-=======
+-------
 This target does not yet support automatic test running (though it would be
 relatively easy to do so). To run a QEMU binary, see the instructions below.
 
+------------------
 Executing Binaries
-==================
+------------------
 When running a QEMU binary, you may chose to run it interactively with GDB, or
 allow the binary to run in a hands-off manner.
 
 Running Without GDB
--------------------
+===================
 When running without GDB, the firmware will execute normally without requiring
 further interaction.
 
@@ -41,7 +44,7 @@ further interaction.
    > -kernel path/to/firmware.elf
 
 Run With GDB
-------------------
+============
 When running with GDB, execution of the binary will begin in a halted state. To
 begin running the code, you must connect using GDB, set any breakpoints you
 wish, and then continue execution.
@@ -62,3 +65,38 @@ In another window
    (gdb) target remote :3333
    (gdb) break SomeFunction()
    (gdb) continue
+
+.. categories-start
+.. +----------------------------------------------------------+
+.. | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+.. |                                                          |
+.. | To regenerate this section, run:                         |
+.. |   bazelisk run //docs/common/metadata:sync               |
+.. |                                                          |
+.. | Docs: https://pigweed.dev/contributing/docs/website.html |
+.. +----------------------------------------------------------+
+
+-------
+Modules
+-------
+The following table lists all modules related to Texas Instruments.
+
+.. csv-table::
+   :header: "Name", "Status", "Description", "Languages"
+
+   ":ref:`module-pw_sys_io_baremetal_lm3s6965evb`", ":bdg-primary:`stable`", "", ""
+
+.. Do not edit this toctree. To add non-module docs to this category,
+.. create a separate toctree outside the categories-start /
+.. categories-end block.
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   self
+   System I/O <../../pw_sys_io_baremetal_lm3s6965evb/docs>
+
+.. +----------------------------------------------------------+
+.. | END OF AUTO-GENERATED SECTION                            |
+.. +----------------------------------------------------------+
+.. categories-end

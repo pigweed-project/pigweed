@@ -1,9 +1,9 @@
 .. _docs-os-freertos:
 .. _module-pw_third_party_freertos:
 
-========
-FreeRTOS
-========
+===============
+Amazon FreeRTOS
+===============
 Pigweed's FreeRTOS integration provides a suite of abstractions and helpers
 designed to make developing C++ applications on FreeRTOS safer, more robust, and
 fully compatible with Pigweed's portable facades.
@@ -40,20 +40,52 @@ fully compatible with Pigweed's portable facades.
       Integrate FreeRTOS with GN, CMake, or Bazel, configure target parameters,
       and set up necessary custom runtime hook functions.
 
-.. grid:: 1
-
-   .. grid-item-card:: FreeRTOS backend modules
-      :link: freertos-backends
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Pigweed provides native FreeRTOS backends for several of its core OS
-      abstraction layers.
-
 .. toctree::
    :maxdepth: 1
    :hidden:
 
+   self
    setup
    features
-   backends
+
+.. categories-start
+.. +----------------------------------------------------------+
+.. | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+.. |                                                          |
+.. | To regenerate this section, run:                         |
+.. |   bazelisk run //docs/common/metadata:sync               |
+.. |                                                          |
+.. | Docs: https://pigweed.dev/contributing/docs/website.html |
+.. +----------------------------------------------------------+
+
+-------
+Modules
+-------
+The following table lists all modules related to Amazon FreeRTOS.
+
+.. csv-table::
+   :header: "Name", "Status", "Description", "Languages"
+
+   ":ref:`module-pw_chrono_freertos`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_interrupt_freertos`", ":bdg-warning:`experimental`", "", ""
+   ":ref:`module-pw_malloc_freertos`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_sync_freertos`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_thread_freertos`", ":bdg-primary:`stable`", "", ""
+
+.. Do not edit this toctree. To add non-module docs to this category,
+.. create a separate toctree outside the categories-start /
+.. categories-end block.
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   Chrono <../../pw_chrono_freertos/docs>
+   Interrupts <../../pw_interrupt_freertos/docs>
+   Malloc <../../pw_malloc_freertos/docs>
+   Synchronization <../../pw_sync_freertos/docs>
+   Threads <../../pw_thread_freertos/docs>
+
+.. +----------------------------------------------------------+
+.. | END OF AUTO-GENERATED SECTION                            |
+.. +----------------------------------------------------------+
+.. categories-end

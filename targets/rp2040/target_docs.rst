@@ -57,22 +57,6 @@ Examples
 The `Sense showcase`_ is our work-in-progress demonstration product for using
 Pigweed with a Pico or Pico 2.
 
--------
-Modules
--------
-Most Pigweed :ref:`modules <docs-glossary-module>` work on all hardware
-platforms. A few areas such as I2C require integrating with a specific Pigweed
-module.
-
-.. csv-table::
-   :header: "Description", "Module"
-
-   "Time primitives", ":ref:`module-pw_chrono_rp2040`"
-   "GPIO (digital I/O)", ":ref:`module-pw_digital_io_rp2040`"
-   "I2C", ":ref:`module-pw_i2c_rp2040`"
-   "SPI", ":ref:`module-pw_spi_rp2040`"
-   "Basic I/O for bringup and debugging", ":ref:`module-pw_sys_io_rp2040`"
-
 ----------------
 Unit test runner
 ----------------
@@ -95,8 +79,52 @@ This allows using syntax such as:
 
    bazelisk run //targets/rp2040/py:rpc_unit_test_runner -- --chip RP2350 ./bazel-out/rp2350-fastbuild/bin/pw_containers/vector_test.cc_test
 
+.. categories-start
+.. +----------------------------------------------------------+
+.. | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+.. |                                                          |
+.. | To regenerate this section, run:                         |
+.. |   bazelisk run //docs/common/metadata:sync               |
+.. |                                                          |
+.. | Docs: https://pigweed.dev/contributing/docs/website.html |
+.. +----------------------------------------------------------+
+
+-------
+Modules
+-------
+The following table lists all modules related to Raspberry Pi RP2XXX.
+
+.. csv-table::
+   :header: "Name", "Status", "Description", "Languages"
+
+   ":ref:`module-pw_chrono_rp2040`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_digital_io_rp2040`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_i2c_rp2040`", ":bdg-primary:`stable`", "Raspberry Pi Pico SDK implementation for pw_i2c", "C++"
+   ":ref:`module-pw_spi_rp2040`", ":bdg-secondary:`unstable`", "Raspberry Pi RP2040 backend for pw_spi", "C++"
+   ":ref:`module-pw_sys_io_rp2040`", ":bdg-primary:`stable`", "", ""
+
+.. Do not edit this toctree. To add non-module docs to this category,
+.. create a separate toctree outside the categories-start /
+.. categories-end block.
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   self
+   Chrono <../../pw_chrono_rp2040/docs>
+   Digital I/O <../../pw_digital_io_rp2040/docs>
+   I2C <../../pw_i2c_rp2040/docs>
+   SPI <../../pw_spi_rp2040/docs>
+   System I/O <../../pw_sys_io_rp2040/docs>
+
+.. +----------------------------------------------------------+
+.. | END OF AUTO-GENERATED SECTION                            |
+.. +----------------------------------------------------------+
+.. categories-end
+
 .. toctree::
    :maxdepth: 1
    :hidden:
 
    Upstream Pigweed <upstream>
+   ../pw_rp2350/target_docs

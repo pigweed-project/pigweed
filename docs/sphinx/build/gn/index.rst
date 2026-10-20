@@ -22,3 +22,5 @@ more information.
 
    self
    python
+   ../../targets
+   ../../targets/docs/target_docs

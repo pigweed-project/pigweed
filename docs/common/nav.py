@@ -53,6 +53,15 @@ class NavLink:
     title: str
     href: str
     children: list["NavLink"] = field(default_factory=list)
+    # True when this link is a canonical Sphinx toctree child document; False
+    # when it is an external URI or a `pw://` cross-reference (for example, a
+    # target-categorized backend listed on `//<facade>/backends.rst` or a
+    # category page in `//docs/sphinx/index.rst` whose canonical parent is
+    # another page). Because `format_href` rewrites `pw://` links to the same
+    # `https://pigweed.dev/...` URLs as internal pages, we track `is_internal`
+    # so `has_active_descendant` and `breadcrumbs.find_nav_trail` only match a
+    # page's single canonical toctree location.
+    is_internal: bool = True
 
 
 def _parse_bullet_list(bullet_list: nodes.bullet_list) -> list[NavLink]:
@@ -69,15 +78,28 @@ def _parse_bullet_list(bullet_list: nodes.bullet_list) -> list[NavLink]:
             continue
 
         title = ref.astext()
-        href = format_href(ref.attributes.get("refuri", ""))
+        raw_uri = ref.attributes.get("refuri", "")
+        is_internal = bool(
+            ref.attributes.get(
+                "internal",
+                not raw_uri.startswith(("pw://", "http://", "https://")),
+            )
+        )
+        href = format_href(raw_uri)
 
         child_links: list[NavLink] = []
         for child in list_item.children[1:]:
             if isinstance(child, nodes.bullet_list):
-                child_links = _parse_bullet_list(child)
-                break
+                child_links.extend(_parse_bullet_list(child))
 
-        nav_links.append(NavLink(title=title, href=href, children=child_links))
+        nav_links.append(
+            NavLink(
+                title=title,
+                href=href,
+                children=child_links,
+                is_internal=is_internal,
+            )
+        )
 
     return nav_links
 
@@ -97,11 +119,11 @@ def extract_site_nav(app: Sphinx) -> list[NavLink]:
     if not toctree_node or len(toctree_node) == 0:
         return []
 
-    first_child = toctree_node[0]
-    if not isinstance(first_child, nodes.bullet_list):
-        return []
-
-    return _parse_bullet_list(first_child)
+    nav_links: list[NavLink] = []
+    for child in toctree_node.children:
+        if isinstance(child, nodes.bullet_list):
+            nav_links.extend(_parse_bullet_list(child))
+    return nav_links
 
 
 def _normalize_url_for_matching(url: str) -> str:
@@ -132,7 +154,7 @@ def is_matching_url(link_href: str, current_page_path: str) -> bool:
 
 def has_active_descendant(link: NavLink, current_page_path: str) -> bool:
     """Recursively checks whether a nav link or any descendant matches current page."""
-    if is_matching_url(link.href, current_page_path):
+    if link.is_internal and is_matching_url(link.href, current_page_path):
         return True
     return any(
         has_active_descendant(child, current_page_path)
@@ -143,7 +165,7 @@ def has_active_descendant(link: NavLink, current_page_path: str) -> bool:
 _SITE_NAV_TEMPLATE = """
 {% macro render_items(items, level) %}
   {% for item in items %}
-    {% set is_current = is_matching(item.href, current_page) %}
+    {% set is_current = item.is_internal and is_matching(item.href, current_page) %}
     {% set has_active = has_active_child(item, current_page) %}
     <li class="toctree-l{{ level }}{% if item.children %} has-children{% endif %}{% if is_current or has_active %} current active{% endif %}">
       <a class="reference internal{% if is_current %} current active{% endif %}" href="{{ item.href }}"{% if is_current %} aria-current="page"{% endif %}>{{ item.title }}</a>

@@ -1,9 +1,9 @@
 .. _docs-os-embos:
 .. _module-pw_third_party_embos:
 
-=====
-embOS
-=====
+============
+Segger embOS
+============
 Pigweed's embOS integration provides a suite of abstractions and helpers
 designed to make developing C++ applications on SEGGER embOS safer, more robust,
 and fully compatible with Pigweed's portable facades.
@@ -35,20 +35,48 @@ and fully compatible with Pigweed's portable facades.
       Integrate embOS with GN, configure target parameters, and configure
       module backend options.
 
-.. grid:: 1
-
-   .. grid-item-card:: embOS backend modules
-      :link: embos-backends
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Pigweed provides native embOS backends for several of its core OS
-      abstraction layers.
-
 .. toctree::
    :maxdepth: 1
    :hidden:
 
+   self
    setup
    features
-   backends
+
+.. categories-start
+.. +----------------------------------------------------------+
+.. | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+.. |                                                          |
+.. | To regenerate this section, run:                         |
+.. |   bazelisk run //docs/common/metadata:sync               |
+.. |                                                          |
+.. | Docs: https://pigweed.dev/contributing/docs/website.html |
+.. +----------------------------------------------------------+
+
+-------
+Modules
+-------
+The following table lists all modules related to Segger embOS.
+
+.. csv-table::
+   :header: "Name", "Status", "Description", "Languages"
+
+   ":ref:`module-pw_chrono_embos`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_sync_embos`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_thread_embos`", ":bdg-primary:`stable`", "", ""
+
+.. Do not edit this toctree. To add non-module docs to this category,
+.. create a separate toctree outside the categories-start /
+.. categories-end block.
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   Chrono <../../pw_chrono_embos/docs>
+   Synchronization <../../pw_sync_embos/docs>
+   Threads <../../pw_thread_embos/docs>
+
+.. +----------------------------------------------------------+
+.. | END OF AUTO-GENERATED SECTION                            |
+.. +----------------------------------------------------------+
+.. categories-end

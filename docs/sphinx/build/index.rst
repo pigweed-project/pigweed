@@ -1,8 +1,8 @@
 .. _docs-build:
 
-=========================
-Build systems & toolchain
-=========================
+=============
+Build systems
+=============
 Pigweed has full support for Bazel and partial support for GN and CMake.
 See :ref:`docs-concepts-build-system` for more information.
 
@@ -94,5 +94,47 @@ CMake
    bazel/index
    gn/index
    cmake/index
-   Toolchain <../toolchain/index>
+
+.. categories-start
+.. +----------------------------------------------------------+
+.. | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+.. |                                                          |
+.. | To regenerate this section, run:                         |
+.. |   bazelisk run //docs/common/metadata:sync               |
+.. |                                                          |
+.. | Docs: https://pigweed.dev/contributing/docs/website.html |
+.. +----------------------------------------------------------+
+
+-------
+Modules
+-------
+The following table lists all modules related to Build systems.
+
+.. csv-table::
+   :header: "Name", "Status", "Description", "Languages"
+
+   ":ref:`module-pw_build`", ":bdg-primary:`stable`", "Integrations for Bazel, GN, and CMake", "Bazel, CMake, GN, Rust"
+   ":ref:`module-pw_build_info`", ":bdg-primary:`stable`", "Generate, embed, and parse build-related information", "Bazel, CMake, GN"
+   ":ref:`module-pw_rust`", ":bdg-warning:`experimental`", "", ""
+
+.. Do not edit this toctree. To add non-module docs to this category,
+.. create a separate toctree outside the categories-start /
+.. categories-end block.
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   Build integrations <../pw_build/docs>
+   Build info <../pw_build_info/docs>
+   Rust <../pw_rust/docs>
+
+.. +----------------------------------------------------------+
+.. | END OF AUTO-GENERATED SECTION                            |
+.. +----------------------------------------------------------+
+.. categories-end
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
    ../size_optimizations

@@ -1,3 +1,9 @@
+.. docker is annotated with a module reference label because it is listed in
+.. //PIGWEED_MODULES and the docs categorization sync logic expects every
+.. module in //PIGWEED_MODULES to define a `module-<name>` target.
+
+.. _module-docker:
+
 ------
 Docker
 ------

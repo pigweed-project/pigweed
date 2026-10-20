@@ -14,27 +14,276 @@
 #pragma once
 
 // TODO: b/426012010 - Auto-generate this file from the metadata provided
-// in //docs/sphinx/module_metadata.json.
+// in //docs/common/metadata/categories.toml and //<module>/module.toml.
 
 // TODO: b/441319784 - Move each module's content into that module's directory.
 // E.g. the pw_allocator content should go into //pw_allocator/doxygen.h
 
 // clang-format off
 
-/// @defgroup pw_alignment pw_alignment
-/// @brief Natural object alignment, guaranteed.
-/// @maindocs
-/// [Home](../../pw_alignment/docs.html)
-/// @endmaindocs
+// Top-level category (`category_<id>`) and module (`pw_<name>`) groups are
+// auto-generated between `categories-start` and `categories-end` from
+// //docs/common/metadata/categories.toml and //<module>/module.toml.
+// Lower-level submodule groups (such as `pw_allocator_block`) after
+// `categories-end` are maintained manually and are OK to edit directly.
 
+// categories-start
+// +----------------------------------------------------------+
+// | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+// |                                                          |
+// | To regenerate this section, run:                         |
+// |   bazelisk run //docs/common/metadata:sync               |
+// |                                                          |
+// | Docs: https://pigweed.dev/contributing/docs/website.html |
+// +----------------------------------------------------------+
+/// @defgroup category_async Async & concurrency
+/// @brief Cooperative multitasking, futures, and asynchronous primitives
+/// @defgroup category_build Build systems
+/// @brief Bazel, GN, and CMake integrations and rules
+/// @defgroup category_comms Comms
+/// @brief Remote procedure calls (RPC), channels, and communication streams
+/// @defgroup category_core Data structures & utilities
+/// @brief Embedded-safe collections, spans, strings, status, and error handling
+/// @defgroup category_crypto Cryptography & security
+/// @brief Hashing, cryptographic primitives, and secure storage
+/// @defgroup category_encoding Encoding & serialization
+/// @brief Protocol Buffers, JSON, Varint, Base64, and wire format serialization
+/// @defgroup category_hal HALs
+/// @brief Hardware abstraction layer interfaces for timers, I2C, SPI, UART, and GPIO
+/// @defgroup category_hw Hardware support
+/// @brief Board support, hardware drivers, and SDK integrations for target platforms
+/// @defgroup category_memory Memory & storage
+/// @brief Memory allocators, buffers, persistent flash storage, and key-value stores
+/// @defgroup category_observability Observability
+/// @brief Structured logging, tokenization, metrics, crash handling, and tracing
+/// @defgroup category_os OS abstraction layers
+/// @brief Synchronization, threading, and portable RTOS abstractions
+/// @defgroup category_test Testing
+/// @brief Unit testing frameworks, mocking, compilation tests, and fuzzing
+/// @defgroup category_toolchain Toolchains
+/// @brief Hermetic LLVM/Clang toolchains, C/C++ libraries, and build utilities
+/// @defgroup category_bluetooth Bluetooth
+/// @ingroup category_comms
+/// @brief Dual-mode Bluetooth Host stack, HCI controllers, and profiles
+/// @defgroup category_nxp NXP
+/// @ingroup category_hw
+/// @brief Drivers, build utilities, & HAL implementations for NXP MCUXpresso SDK
+/// @defgroup category_os_backends Backends
+/// @ingroup category_os
+/// @brief Operating system, RTOS, and bare-metal backends for Pigweed's OS abstraction layers
+/// @defgroup category_android Android
+/// @ingroup category_os_backends
+/// @brief Utilities and toolchains for using Pigweed on Android
+/// @defgroup category_zephyr Zephyr
+/// @ingroup category_os_backends
+/// @brief Modules, backends, and helpers for the Zephyr RTOS
+/// @defgroup pw_alignment pw_alignment
+/// @ingroup category_memory
+/// @brief Natural object alignment, guaranteed
 /// @defgroup pw_allocator pw_allocator
-/// @brief Flexible, safe, and measurable memory allocation.
-/// @maindocs
-/// [Home](../../pw_allocator/docs.html) |
-/// [Guides](../../pw_allocator/guide.html) |
-/// [Design & roadmap](../../pw_allocator/design.html) |
-/// [Code size analysis](../../pw_allocator/code_size.html)
-/// @endmaindocs
+/// @ingroup category_memory
+/// @brief Flexible, safe, and measurable memory allocation
+/// @defgroup pw_analog pw_analog
+/// @ingroup category_hal
+/// @brief Analog-to-digital converter libraries and utilities
+/// @defgroup pw_assert pw_assert
+/// @ingroup category_observability
+/// @brief Flexible crash triggering and handling
+/// @defgroup pw_async pw_async
+/// @ingroup category_async
+/// @brief Portable APIs for asynchronous code
+/// @defgroup pw_async2 pw_async2
+/// @ingroup category_async
+/// @brief Cooperative async tasks for embedded
+/// @defgroup pw_async_basic pw_async_basic
+/// @ingroup pw_async
+/// @defgroup pw_base64 pw_base64
+/// @ingroup category_encoding
+/// @brief Base64 encoding, decoding, and validating
+/// @defgroup pw_bloat pw_bloat
+/// @ingroup category_toolchain
+/// @brief Utilities for generating binary size reports
+/// @defgroup pw_bluetooth pw_bluetooth
+/// @ingroup category_bluetooth
+/// @brief Host-layer Bluetooth Low Energy APIs and utilities
+/// @defgroup pw_bluetooth_proxy pw_bluetooth_proxy
+/// @ingroup category_bluetooth
+/// @brief Lightweight proxy for augmenting Bluetooth functionality
+/// @defgroup pw_bluetooth_sapphire pw_bluetooth_sapphire
+/// @ingroup category_bluetooth
+/// @brief Battle-tested Bluetooth with rock-solid reliability
+/// @defgroup pw_buf pw_buf
+/// @ingroup category_memory
+/// @brief Contiguous buffer views with optional memory ownership
+/// @defgroup pw_build pw_build
+/// @ingroup category_build
+/// @brief Integrations for Bazel, GN, and CMake
+/// @defgroup pw_bytes pw_bytes
+/// @ingroup category_encoding
+/// @brief Utilities for manipulating binary data
+/// @defgroup pw_channel pw_channel
+/// @ingroup category_comms
+/// @brief Async, zero-copy API for sending and receiving bytes or datagrams
+/// @defgroup pw_chre pw_chre
+/// @ingroup category_android
+/// @brief Android Context Hub Runtime Environment backend
+/// @defgroup pw_chrono pw_chrono
+/// @ingroup category_os
+/// @brief Portable std::chrono for constrained embedded devices
+/// @defgroup pw_clock_tree pw_clock_tree
+/// @ingroup category_hal
+/// @brief Clock tree management for embedded devices
+/// @defgroup pw_clock_tree_mcuxpresso pw_clock_tree_mcuxpresso
+/// @ingroup pw_clock_tree category_nxp
+/// @brief NXP MCUXpresso SDK implementation for pw_clock_tree
+/// @defgroup pw_containers pw_containers
+/// @ingroup category_core
+/// @brief Generic collections of objects for embedded devices
+/// @defgroup pw_crypto pw_crypto
+/// @ingroup category_crypto
+/// @defgroup pw_digital_io pw_digital_io
+/// @ingroup category_hal
+/// @brief Digital I/O interface
+/// @defgroup pw_digital_io_mcuxpresso pw_digital_io_mcuxpresso
+/// @ingroup pw_digital_io category_nxp
+/// @brief Digital I/O for NXP MCUXpresso
+/// @defgroup pw_display pw_display
+/// @ingroup category_hal
+/// @brief Graphic display support and framebuffer management
+/// @defgroup pw_elf pw_elf
+/// @ingroup category_toolchain
+/// @brief ELF file support
+/// @defgroup pw_enum pw_enum
+/// @ingroup category_core
+/// @brief Rich enum support
+/// @defgroup pw_function pw_function
+/// @ingroup category_core
+/// @brief Embedded-friendly std::function
+/// @defgroup pw_hdlc pw_hdlc
+/// @ingroup category_comms
+/// @brief Simple, robust, and efficient serial communication
+/// @defgroup pw_hex_dump pw_hex_dump
+/// @ingroup category_observability
+/// @brief Handy hexdump utilities
+/// @defgroup pw_i2c pw_i2c
+/// @ingroup category_hal
+/// @brief Cross-platform I2C API with interactive debugging
+/// @defgroup pw_i2c_linux pw_i2c_linux
+/// @ingroup pw_i2c
+/// @brief Linux userspace implementation for pw_i2c
+/// @defgroup pw_i2c_zephyr pw_i2c_zephyr
+/// @ingroup pw_i2c category_zephyr
+/// @brief Zephyr implementation for pw_i2c
+/// @defgroup pw_interrupt pw_interrupt
+/// @ingroup category_os
+/// @brief Interrupt handling utilities for embedded systems
+/// @defgroup pw_json pw_json
+/// @ingroup category_encoding
+/// @brief Simple, efficient C++ JSON serialization
+/// @defgroup pw_kvs pw_kvs
+/// @ingroup category_memory
+/// @brief Lightweight, persistent key-value store
+/// @defgroup pw_log pw_log
+/// @ingroup category_observability
+/// @brief Robust and portable logging for embedded projects
+/// @defgroup pw_log_string pw_log_string
+/// @ingroup pw_log
+/// @defgroup pw_log_tokenized pw_log_tokenized
+/// @ingroup pw_log
+/// @defgroup pw_malloc pw_malloc
+/// @ingroup category_memory
+/// @brief Replacement interface for standard libc dynamic memory operations
+/// @defgroup pw_multibuf pw_multibuf
+/// @ingroup category_memory
+/// @brief A buffer API optimized for zero-copy messaging
+/// @defgroup pw_numeric pw_numeric
+/// @ingroup category_core
+/// @brief Efficient mathematical utilities for embedded
+/// @defgroup pw_perf_test pw_perf_test
+/// @ingroup category_test
+/// @brief Micro-benchmarks that are easy to write and run
+/// @defgroup pw_persistent_ram pw_persistent_ram
+/// @ingroup category_observability
+/// @brief Reliable memory across reboots for crash reporting
+/// @defgroup pw_polyfill pw_polyfill
+/// @ingroup category_toolchain
+/// @defgroup pw_preprocessor pw_preprocessor
+/// @ingroup category_toolchain
+/// @brief Helpful preprocessor macros
+/// @defgroup pw_protobuf pw_protobuf
+/// @ingroup category_encoding
+/// @brief Expressive interface for encoding and decoding protocol buffers
+/// @defgroup pw_random pw_random
+/// @ingroup category_crypto
+/// @defgroup pw_result pw_result
+/// @ingroup category_core
+/// @brief Error propagation primitives: value-or-error
+/// @defgroup pw_rpc pw_rpc
+/// @ingroup category_comms
+/// @brief Efficient, low-code-size RPC system for embedded devices
+/// @defgroup pw_rpc2 pw_rpc2
+/// @ingroup category_comms
+/// @brief Next gen, zero-copy async RPC with end-to-end backpressure
+/// @defgroup pw_span pw_span
+/// @ingroup category_core
+/// @brief std::span for C++17
+/// @defgroup pw_spi pw_spi
+/// @ingroup category_hal
+/// @defgroup pw_status pw_status
+/// @ingroup category_core
+/// @brief Exception-free error propagation for embedded
+/// @defgroup pw_stream pw_stream
+/// @ingroup category_comms
+/// @brief A foundational interface for streaming data
+/// @defgroup pw_stream_uart_linux pw_stream_uart_linux
+/// @ingroup pw_stream
+/// @brief UART stream implementation for Linux
+/// @defgroup pw_string pw_string
+/// @ingroup category_core
+/// @brief Efficient, easy, and safe string manipulation
+/// @defgroup pw_sync pw_sync
+/// @ingroup category_os
+/// @brief Portable abstraction for synchronization primitives
+/// @defgroup pw_sys_io pw_sys_io
+/// @ingroup category_hal
+/// @defgroup pw_system pw_system
+/// @ingroup category_os
+/// @defgroup pw_thread pw_thread
+/// @ingroup category_os
+/// @brief Thread creation and execution
+/// @defgroup pw_tokenizer pw_tokenizer
+/// @ingroup category_observability
+/// @brief Compress strings to shrink logs by +75%
+/// @defgroup pw_toolchain pw_toolchain
+/// @ingroup category_toolchain
+/// @brief Embedded toolchains for GN-based Pigweed projects
+/// @defgroup pw_trace pw_trace
+/// @ingroup category_observability
+/// @defgroup pw_trace_tokenized pw_trace_tokenized
+/// @ingroup pw_trace
+/// @defgroup pw_transfer pw_transfer
+/// @ingroup category_comms
+/// @defgroup pw_transport pw_transport
+/// @ingroup category_comms
+/// @brief Asynchronous datagram-oriented transport interface
+/// @defgroup pw_uart pw_uart
+/// @ingroup category_hal
+/// @brief Core interfaces for UART communication
+/// @defgroup pw_unit_test pw_unit_test
+/// @ingroup category_test
+/// @brief GoogleTest for embedded
+/// @defgroup pw_uuid pw_uuid
+/// @ingroup category_encoding
+/// @brief 128-bit universally unique identifier (UUID)
+/// @defgroup pw_varint pw_varint
+/// @ingroup category_encoding
+/// @brief Functions for encoding and decoding variable length integers
+/// @defgroup pw_work_queue pw_work_queue
+/// @ingroup category_async
+// +----------------------------------------------------------+
+// | END OF AUTO-GENERATED SECTION                            |
+// +----------------------------------------------------------+
+// categories-end
 
 /// @defgroup pw_allocator_block Blocks
 /// @ingroup pw_allocator
@@ -109,41 +358,6 @@
 /// @ingroup pw_allocator
 /// @brief Helpers for metrics, fragmentation, and buffer management
 
-/// @defgroup pw_analog pw_analog
-/// @brief Analog-to-digital converter libraries and utilities
-/// @maindocs
-/// [Home](../../pw_analog/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_assert pw_assert
-/// @brief Flexible crash triggering and handling.
-/// @maindocs
-/// [Home](../../pw_assert/docs.html) |
-/// [Backends](../../pw_assert/backends.html)
-/// @endmaindocs
-
-/// @defgroup pw_async pw_async
-/// @brief Portable APIs for asynchronous code.
-/// @maindocs
-/// [Home](../../pw_async/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_async2 pw_async2
-/// @brief Cooperative async tasks for embedded.
-/// @maindocs
-/// [Home](../../pw_async2/docs.html) |
-/// [Quickstart](../../pw_async2/quickstart.html) |
-/// [Informed poll](../../pw_async2/informed_poll.html) |
-/// [Codelab](../../pw_async2/codelab/docs.html) |
-/// [Guides](../../pw_async2/guides.html) |
-/// [Dispatcher](../../pw_async2/dispatcher.html) |
-/// [Code size analysis](../../pw_async2/code_size.html) |
-/// [Coroutines](../../pw_async2/coroutines.html) |
-/// [Futures](../../pw_async2/futures.html) |
-/// [Channels](../../pw_async2/channels.html) |
-/// [Tasks](../../pw_async2/tasks.html)
-/// @endmaindocs
-
 /// @defgroup pw_async2_alloc Dynamic allocation
 /// @ingroup pw_async2
 /// @brief Heap allocate space for tasks
@@ -205,59 +419,6 @@
 /// @brief Compile-time configuration
 /// @details Learn more: [Configuration](../../pw_async2/guides.html#configuring-pw-async2)
 
-/// @defgroup pw_async_basic pw_async_basic
-/// @maindocs
-/// [Home](../../pw_async_basic/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_base64 pw_base64
-/// @brief Base64 encoding, decoding, and validating.
-/// @maindocs
-/// [Home](../../pw_base64/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_bloat pw_bloat
-/// @brief Utilities for generating binary size reports.
-/// @maindocs
-/// [Home](../../pw_bloat/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_bluetooth pw_bluetooth
-/// @brief Host-layer Bluetooth Low Energy APIs and utilities.
-/// @maindocs
-/// [Home](../../pw_bluetooth/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_bluetooth_proxy pw_bluetooth_proxy
-/// @brief Lightweight proxy for augmenting Bluetooth functionality.
-/// @maindocs
-/// [Home](../../pw_bluetooth_proxy/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_bluetooth_sapphire pw_bluetooth_sapphire
-/// @brief Battle-tested Bluetooth with rock-solid reliability.
-/// @maindocs
-/// [Home](../../pw_bluetooth_sapphire/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_buf pw_buf
-/// @brief Contiguous buffer views with optional memory ownership.
-/// @maindocs
-/// [Home](../../pw_buf/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_build pw_build
-/// @brief Integrations for Bazel, GN, and CMake.
-/// @maindocs
-/// [Home](../../pw_build/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_bytes pw_bytes
-/// @brief Utilities for manipulating binary data.
-/// @maindocs
-/// [Home](../../pw_bytes/docs.html)
-/// @endmaindocs
-
 /// @defgroup pw_bytes_ptr Packed pointers
 /// @ingroup pw_bytes
 /// @brief Store data in unused pointer bits
@@ -294,150 +455,9 @@
 /// @ingroup pw_bytes
 /// @brief Aliases for `pw::span` of bytes
 
-/// @defgroup pw_channel pw_channel
-/// @brief Async, zero-copy API for sending and receiving bytes or datagrams.
-/// @maindocs
-/// [Home](../../pw_channel/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_chre pw_chre
-/// @brief Android Context Hub Runtime Environment backend.
-/// @maindocs
-/// [Home](../../pw_chre/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_chrono pw_chrono
-/// @brief Portable `std::chrono` for constrained embedded devices.
-/// @maindocs
-/// [Home](../../pw_chrono/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_clock_tree pw_clock_tree
-/// @brief Clock tree management for embedded devices.
-/// @maindocs
-/// [Home](../../pw_clock_tree/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_clock_tree_mcuxpresso pw_clock_tree_mcuxpresso
-/// @brief NXP MCUXpresso SDK implementation for pw_clock_tree.
-/// @maindocs
-/// [Home](../../pw_clock_tree_mcuxpresso/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_containers pw_containers
-/// @brief Generic collections of objects for embedded devices.
-/// @maindocs
-/// [Home](../../pw_containers/docs.html) |
-/// [Lists](../../pw_containers/lists.html) |
-/// [Maps](../../pw_containers/maps.html) |
-/// [Queues](../../pw_containers/queues.html) |
-/// [Sets](../../pw_containers/sets.html) |
-/// [Vectors](../../pw_containers/vectors.html) |
-/// [Utilities](../../pw_containers/utilities.html) |
-/// [Using items with multiple containers](../../pw_containers/multiple_containers.html)
-/// @endmaindocs
-
-/// @defgroup pw_crypto pw_crypto
-/// @maindocs
-/// [Home](../../pw_crypto/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_digital_io pw_digital_io
-/// @brief Digital I/O interface.
-/// @maindocs
-/// [Home](../../pw_digital_io/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_digital_io_mcuxpresso pw_digital_io_mcuxpresso
-/// @brief Digital I/O for NXP MCUXpresso.
-/// @maindocs
-/// [Home](../../pw_digital_io_mcuxpresso/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_display pw_display
-/// @brief Graphic display support and framebuffer management.
-/// @maindocs
-/// [Home](../../pw_display/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_elf pw_elf
-/// @brief ELF file support.
-/// @maindocs
-/// [Home](../../pw_elf/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_enum pw_enum
-/// @brief Automatic versioned tokenized enum support.
-/// @maindocs
-/// [Home](../../pw_enum/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_function pw_function
-/// @brief Embedded-friendly `std::function`.
-/// @maindocs
-/// [Home](../../pw_function/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_hdlc pw_hdlc
-/// @brief Simple, robust, and efficient serial communication.
-/// @maindocs
-/// [Home](../../pw_hdlc/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_hex_dump pw_hex_dump
-/// @brief Handy hexdump utilities.
-/// @maindocs
-/// [Home](../../pw_hex_dump/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_i2c pw_i2c
-/// @brief Cross-platform I2C API with interactive debugging.
-/// @maindocs
-/// [Home](../../pw_i2c/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_i2c_linux pw_i2c_linux
-/// @brief Linux userspace implementation for pw_i2c.
-/// @maindocs
-/// [Home](../../pw_i2c_linux/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_i2c_zephyr pw_i2c_zephyr
-/// @brief Zephyr implementation for pw_i2c.
-/// @maindocs
-/// [Home](../../pw_i2c_zephyr/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_interrupt pw_interrupt
-/// @brief Interrupt handling utilities for embedded systems.
-/// @maindocs
-/// [Home](../../pw_interrupt/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_json pw_json
-/// @brief Simple, efficient C++ JSON serialization.
-/// @maindocs
-/// [Home](../../pw_json/docs.html)
-/// @endmaindocs
-
 /// @defgroup pw_json_builder_api Builder API
 /// @ingroup pw_json
 /// @brief Serialize JSON into fixed-size buffers.
-
-/// @defgroup pw_kvs pw_kvs
-/// @brief Lightweight, persistent key-value store.
-/// @maindocs
-/// [Home](../../pw_kvs/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_log pw_log
-/// @brief Robust and portable logging for embedded projects
-/// @maindocs
-/// [Home](../../pw_log/docs.html) |
-/// [The pw_log protobuf](../../pw_log/protobuf.html) |
-/// [Tokenized log arguments](../../pw_log/tokenized_args.html) |
-/// [Backends](../../pw_log/backends.html)
-/// @endmaindocs
 
 /// @defgroup pw_log_global_config Global config
 /// @ingroup pw_log
@@ -471,29 +491,6 @@
 /// @defgroup pw_log_tokenized_args Tokenized args
 /// @ingroup pw_log
 /// @details Learn more: [Tokenized log arguments](../../pw_log/tokenized_args.html)
-
-/// @defgroup pw_log_string pw_log_string
-/// @maindocs
-/// [Home](../../pw_log_string/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_log_tokenized pw_log_tokenized
-/// @maindocs
-/// [Home](../../pw_log_tokenized/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_malloc pw_malloc
-/// @brief Replacement interface for standard libc dynamic memory operations.
-/// @maindocs
-/// [Home](../../pw_malloc/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_multibuf pw_multibuf
-/// @brief A buffer API optimized for zero-copy messaging.
-/// @maindocs
-/// [Home](../../pw_multibuf/docs.html) |
-/// [Code size analysis](../../pw_multibuf/code_size.html)
-/// @endmaindocs
 
 /// @defgroup pw_multibuf_v1 Legacy v1 API
 /// @ingroup pw_multibuf
@@ -539,34 +536,6 @@
 /// @ingroup pw_multibuf
 /// @brief Experimental API that separates out the concern of memory allocation
 
-/// @defgroup pw_numeric pw_numeric
-/// @brief Efficient mathematical utilities for embedded.
-/// @maindocs
-/// [Home](../../pw_numeric/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_perf_test pw_perf_test
-/// @brief Micro-benchmarks that are easy to write and run.
-/// @maindocs
-/// [Home](../../pw_perf_test/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_persistent_ram pw_persistent_ram
-/// @maindocs
-/// [Home](../../pw_persistent_ram/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_polyfill pw_polyfill
-/// @maindocs
-/// [Home](../../pw_polyfill/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_preprocessor pw_preprocessor
-/// @brief Helpful preprocessor macros.
-/// @maindocs
-/// [Home](../../pw_preprocessor/docs.html)
-/// @endmaindocs
-
 /// @defgroup pw_preprocessor_compiler Compiler
 /// @ingroup pw_preprocessor_internal
 /// @brief Public compiler attributes and macros.
@@ -575,42 +544,8 @@
 /// @ingroup pw_preprocessor
 /// @brief Internal implementation details.
 
-/// @defgroup pw_protobuf pw_protobuf
-/// @brief Expressive interface for encoding and decoding protocol buffers
-/// @maindocs
-/// [Home](../../pw_protobuf/docs.html) |
-/// [Extended size report](../../pw_protobuf/size_report.html)
-/// @endmaindocs
-
 /// @defgroup pw_protobuf_find Find APIs
 /// @ingroup pw_protobuf
-
-/// @defgroup pw_random pw_random
-/// @maindocs
-/// [Home](../../pw_random/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_result pw_result
-/// @brief Error propagation primitives: value-or-error
-/// @maindocs
-/// [Home](../../pw_random/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_rpc pw_rpc
-/// @brief Efficient, low-code-size RPC system for embedded devices
-/// @maindocs
-/// [Home](../../pw_rpc/docs.html) |
-/// [Quickstart & guides](../../pw_rpc/guides.html) |
-/// [Client, server, and protobuf libraries](../../pw_rpc/libraries.html) |
-/// [C++ server and client](../../pw_rpc/cpp.html) |
-/// [Python client](../../pw_rpc/py/docs.html) |
-/// [TypeScript client](../../pw_rpc/ts/docs.html) |
-/// [Nanopb codegen](../../pw_rpc/nanopb/docs.html) |
-/// [pw_protobuf codegen](../../pw_rpc/pwpb/docs.html) |
-/// [Packet protocol](../../pw_rpc/protocol.html) |
-/// [Design & roadmap](../../pw_rpc/design.html) |
-/// [HDLC example](../../pw_hdlc/rpc_example/docs.html)
-/// @endmaindocs
 
 /// @defgroup pw_rpc_test Benchmarking & testing
 /// @ingroup pw_rpc
@@ -620,25 +555,9 @@
 
 /// @defgroup pw_rpc_sync Synchronous API
 /// @ingroup pw_rpc
-/// @maindocs
-/// [Client synchronous call
-/// wrappers](../../pw_rpc/cpp.html#client-synchronous-call-wrappers)
-/// @endmaindocs
 
 /// @defgroup pw_rpc_config Configuration
 /// @ingroup pw_rpc
-
-/// @defgroup pw_rpc2 pw_rpc2
-/// @brief Next gen, zero-copy async RPC with end-to-end backpressure
-/// @maindocs
-/// [Home](../../pw_rpc2/docs.html) |
-/// [C++ client and server](../../pw_rpc2/cpp.html) |
-/// [Examples](../../pw_rpc2/examples.html) |
-/// [Unit testing](../../pw_rpc2/testing.html) |
-/// [Wire protocol](../../pw_rpc2/protocol.html) |
-/// [Why RPC2?](../../pw_rpc2/why.html) |
-/// [Comparison to RPC1](../../pw_rpc2/comparison.html)
-/// @endmaindocs
 
 /// @defgroup pw_rpc2_client Client
 /// @ingroup pw_rpc2
@@ -664,28 +583,6 @@
 /// @brief Unit test RPC services and clients end to end
 /// @details Learn more: [Unit testing](../../pw_rpc2/testing.html)
 
-/// @defgroup pw_span pw_span
-/// @brief std::span for C++17.
-/// @maindocs
-/// [Home](../../pw_span/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_status pw_status
-/// @brief Exception-free error propagation for embedded
-/// @maindocs
-/// [Home](../../pw_status/docs.html) |
-/// [Quickstart & guides](../../pw_status/guide.html) |
-/// [Reference](../../pw_status/reference.html)
-/// @endmaindocs
-
-/// @defgroup pw_stream pw_stream
-/// @brief A foundational interface for streaming data
-/// @maindocs
-/// [Home](../../pw_stream/docs.html) |
-/// [Backends](../../pw_stream/backends.html) |
-/// [Python](../../pw_stream/py/docs.html)
-/// @endmaindocs
-
 /// @defgroup pw_stream_interface Interfaces
 /// @ingroup pw_stream
 /// @brief Generic stream interfaces that support a combination of reading,
@@ -707,21 +604,6 @@
 /// @ingroup pw_stream
 /// @brief Concrete implementations of stream interfaces for general use
 
-/// @defgroup pw_stream_uart_linux pw_stream_uart_linux
-/// @brief UART stream implementation for Linux.
-/// @maindocs
-/// [Home](../../pw_stream_uart_linux/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_string pw_string
-/// @brief Efficient, easy, and safe string manipulation
-/// @maindocs
-/// [Home](../../pw_string/docs.html) |
-/// [Get started & guides](../../pw_string/guide.html) |
-/// [Design & roadmap](../../pw_string/design.html) |
-/// [Code size analysis](../../pw_string/code_size.html)
-/// @endmaindocs
-
 /// @defgroup pw_string_inline InlineString and InlineBasicString
 /// @ingroup pw_string
 /// @brief Safer alternatives to `std::string` and `std::basic_string`
@@ -738,36 +620,6 @@
 /// @ingroup pw_string
 /// @brief Basic helpers for reading and writing UTF-8-encoded strings
 
-/// @defgroup pw_sync pw_sync
-/// @maindocs
-/// [Home](../../pw_sync/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_sys_io pw_sys_io
-/// @maindocs
-/// [Home](../../pw_sys_io/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_system pw_system
-/// @maindocs
-/// [Home](../../pw_system/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_thread pw_thread
-/// @maindocs
-/// [Home](../../pw_thread/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_tokenizer pw_tokenizer
-/// @brief Compress strings to shrink logs by +75%
-/// @maindocs
-/// [Home](../../pw_tokenizer/docs.html) |
-/// [Quickstart](../../pw_tokenizer/get_started.html) |
-/// [Tokenization](../../pw_tokenizer/tokenization.html) |
-/// [Token databases](../../pw_tokenizer/token_databases.html) |
-/// [Detokenization](../../pw_tokenizer/detokenization.html)
-/// @endmaindocs
-
 /// @defgroup pw_tokenizer_tokenize Tokenization
 /// @ingroup pw_tokenizer
 /// @brief Convert string literals to tokens
@@ -783,46 +635,6 @@
 /// @defgroup pw_tokenizer_config Configuration
 /// @ingroup pw_tokenizer
 /// @brief Tokenization customization options
-
-/// @defgroup pw_toolchain pw_toolchain
-/// @brief Embedded toolchains for GN-based Pigweed projects.
-/// @maindocs
-/// [Home](../../pw_toolchain/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_trace_tokenized pw_trace_tokenized
-/// @maindocs
-/// [Home](../../pw_trace_tokenized/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_transfer pw_transfer
-/// @maindocs
-/// [Home](../../pw_transfer/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_transport pw_transport
-/// @brief Asynchronous datagram-oriented transport interface.
-/// @maindocs
-/// [Home](../../pw_transport/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_varint pw_varint
-/// @brief Functions for encoding and decoding variable length integers.
-/// @maindocs
-/// [Home](../../pw_varint/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_uart pw_uart
-/// @brief Core interfaces for UART communication.
-/// @maindocs
-/// [Home](../../pw_uart/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_unit_test pw_unit_test
-/// @brief GoogleTest for embedded
-/// @maindocs
-/// [Home](../../pw_unit_test/docs.html)
-/// @endmaindocs
 
 /// @defgroup pw_unit_test_declaration Test declaration
 /// @ingroup pw_unit_test
@@ -853,17 +665,6 @@
 
 /// @defgroup pw_unit_test_constexpr Constexpr tests
 /// @ingroup pw_unit_test
-
-/// @defgroup pw_uuid pw_uuid
-/// @brief 128-bit universally unique identifier (UUID).
-/// @maindocs
-/// [Home](../../pw_uuid/docs.html)
-/// @endmaindocs
-
-/// @defgroup pw_work_queue pw_work_queue
-/// @maindocs
-/// [Home](../../pw_work_queue/docs.html)
-/// @endmaindocs
 
 /// @defgroup third_party third-party
 /// @brief API integrations with third-party software e.g. FreeRTOS

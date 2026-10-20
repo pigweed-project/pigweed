@@ -1,7 +1,7 @@
 .. _toolchain:
 
 =================
-Pigweed Toolchain
+Pigweed toolchain
 =================
 Pigweed Toolchain is a Clang/LLVM-based toolchain distribution tailored for
 embedded and baremetal software development. Rather than relying on
@@ -186,9 +186,13 @@ and requests for architectures or host platforms that aren't listed in
    :maxdepth: 2
    :hidden:
 
+   self
    get_started
    why
    targets
    migration
    versioning
    roadmap
+   ../third_party/llvm_builtins/docs
+   ../third_party/llvm_libc/docs
+   ../third_party/llvm_libcxx/docs

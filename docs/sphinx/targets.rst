@@ -93,21 +93,3 @@ targets.
    generate_toolchain("my_target") {
      forward_variables_from(my_target_scope, "*")
    }
-
-Upstream targets
-================
-The following is a list of targets used for upstream Pigweed development.
-
-.. TODO: https://pwbug.dev/424897199 - Refactor this into a proper index page.
-
-.. toctree::
-   :maxdepth: 1
-   :glob:
-
-   self
-   targets/*/target_docs
-
-Work-in-progress targets
-------------------------
-You can see a list of hardware targets that are under development but not
-yet landed `here <https://issues.pigweed.dev/issues/300646347/dependencies>`_.

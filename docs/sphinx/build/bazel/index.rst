@@ -76,3 +76,4 @@ Explore other Bazel topics
    dependencies
    mcu-setup
    compatibility
+   ../../third_party/crates_io/docs

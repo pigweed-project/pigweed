@@ -22,20 +22,61 @@
 //!
 //! ## Modules
 //!
-//! The following Pigweed modules are available in Rust:
+//! <!-- categories-start -->
+//! <!-- +----------------------------------------------------------+ -->
+//! <!-- | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   | -->
+//! <!-- |                                                          | -->
+//! <!-- | To regenerate this section, run:                         | -->
+//! <!-- |   bazelisk run //docs/common/metadata:sync               | -->
+//! <!-- |                                                          | -->
+//! <!-- | Docs: https://pigweed.dev/contributing/docs/website.html | -->
+//! <!-- +----------------------------------------------------------+ -->
+//! The following Pigweed modules are available in Rust, organized by category:
 //!
+//! ### Comms
+//!
+//! Remote procedure calls (RPC), channels, and communication streams.
+//!
+//! - [`pw_stream`](../pw_stream/index.html) - A foundational interface for streaming data.
+//!
+//! ### Observability
+//!
+//! Structured logging, tokenization, metrics, crash handling, and tracing.
+//!
+//! - [`pw_log`](../pw_log/index.html) - Robust and portable logging for embedded projects.
+//! - [`pw_tokenizer`](../pw_tokenizer/index.html) - Compress strings to shrink logs by +75%.
 //! - [`pw_assert`](../pw_assert/index.html) - Flexible crash triggering and handling.
-//! - [`pw_base64`](../pw_base64/index.html) - Base64 encoding and decoding.
-//! - [`pw_bytes`](../pw_bytes/index.html) - Byte manipulation utilities.
-//! - [`pw_format`](../pw_format/index.html) - Formatting support.
-//! - [`pw_log`](../pw_log/index.html) - Logging facade.
-//! - [`pw_status`](../pw_status/index.html) - Status codes and results.
-//! - [`pw_stream`](../pw_stream/index.html) - Traits for streaming data.
-//! - [`pw_sync_mutex`](../pw_sync_mutex/index.html) - Portable abstraction for mutexes.
+//! - [`pw_format`](../pw_format/index.html) - String formatting.
+//!
+//! ### Encoding & serialization
+//!
+//! Protocol Buffers, JSON, Varint, Base64, and wire format serialization.
+//!
+//! - [`pw_base64`](../pw_base64/index.html) - Base64 encoding, decoding, and validating.
+//! - [`pw_bytes`](../pw_bytes/index.html) - Utilities for manipulating binary data.
+//! - [`pw_varint`](../pw_varint/index.html) - Functions for encoding and decoding variable length integers.
+//!
+//! ### OS abstraction layers
+//!
+//! Synchronization, threading, and portable RTOS abstractions.
+//!
 //! - [`pw_thread`](../pw_thread/index.html) - Thread creation and execution.
-//! - [`pw_time`](../pw_time/index.html) - Time types and clock facilities.
-//! - [`pw_tokenizer`](../pw_tokenizer/index.html) - String tokenization.
-//! - [`pw_varint`](../pw_varint/index.html) - Variable-length integer encoding.
+//!
+//! ### HALs
+//!
+//! Hardware abstraction layer interfaces for timers, I2C, SPI, UART, and GPIO.
+//!
+//! - [`pw_time`](../pw_time/index.html) - Robust time, instants, and durations for multiple clock domains.
+//!
+//! ### Data structures & utilities
+//!
+//! Embedded-safe collections, spans, strings, status, and error handling.
+//!
+//! - [`pw_status`](../pw_status/index.html) - Exception-free error propagation for embedded.
+//! <!-- +----------------------------------------------------------+ -->
+//! <!-- | END OF AUTO-GENERATED SECTION                            | -->
+//! <!-- +----------------------------------------------------------+ -->
+//! <!-- categories-end -->
 //!
 //! Pigweed's Rust support is relatively new compared to our mature C++
 //! codebase. We are actively working on expanding the set of modules available

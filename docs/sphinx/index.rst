@@ -66,46 +66,132 @@ What's new in Pigweed?
 
 And more! See :doc:`changelog/2026/09`.
 
-----------------
-What is Pigweed?
-----------------
-.. raw:: html
+-----------------
+Platform overview
+-----------------
+Pigweed :ref:`modules <docs-module-guides>` are building blocks and infrastructure
+that enable faster and more reliable embedded development.
 
-   <!-- Add a little space between the H2 and the cards. This is an edge case
-        that only occurs on the homepage so it's best to just hack the fix
-        locally here. -->
-   <br>
+.. toctree::
+   :maxdepth: 1
+   :hidden:
 
-.. grid:: 1
+   overview
+   get_started/index
+   Tour <showcases/sense/index>
+   platform
+   Contributing <contributing/index>
+   community/index
+   api/index
 
-   .. grid-item-card:: :octicon:`code-square` Libraries
-      :link: docs-concepts-embedded-development-libraries
-      :link-type: ref
+.. categories-start
+.. +----------------------------------------------------------+
+.. | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |
+.. |                                                          |
+.. | To regenerate this section, run:                         |
+.. |   bazelisk run //docs/common/metadata:sync               |
+.. |                                                          |
+.. | Docs: https://pigweed.dev/contributing/docs/website.html |
+.. +----------------------------------------------------------+
+
+.. grid:: 3
+
+   .. grid-item-card:: :octicon:`broadcast` Comms
+      :link: comms/index
+      :link-type: doc
       :class-item: sales-pitch-cta-secondary
 
-      Over 150 libraries ("modules") enabling you to use modern C++ and
-      software development best practices without compromising performance,
-      code size, or memory
+      Remote procedure calls (RPC), channels, and communication streams
 
-.. grid:: 1
-
-   .. grid-item-card:: :octicon:`tools` Automation
-      :link: docs-concepts-build-system
-      :link-type: ref
+   .. grid-item-card:: :octicon:`eye` Observability
+      :link: observability/index
+      :link-type: doc
       :class-item: sales-pitch-cta-secondary
 
-      Easier automated building, testing, and linting for Bazel, GN,
-      and CMake projects
+      Structured logging, tokenization, metrics, crash handling, and tracing
 
-.. grid:: 1
-
-   .. grid-item-card:: :octicon:`container` Environments
-      :link: docs-concepts-development-environment
-      :link-type: ref
+   .. grid-item-card:: :octicon:`sync` Async & concurrency
+      :link: async/index
+      :link-type: doc
       :class-item: sales-pitch-cta-secondary
 
-      Hermetic and reproducible development environments for your entire team -
-      no more struggling with toolchains and the "it worked on my machine" problem
+      Cooperative multitasking, futures, and asynchronous primitives
+
+.. grid:: 3
+
+   .. grid-item-card:: :octicon:`file-binary` Encoding & serialization
+      :link: encoding/index
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      Protocol Buffers, JSON, Varint, Base64, and wire format serialization
+
+   .. grid-item-card:: :octicon:`cpu` OS abstraction layers
+      :link: os/index
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      Synchronization, threading, and portable RTOS abstractions
+
+   .. grid-item-card:: :octicon:`server` Kernel
+      :link: kernel/index
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      Embedded kernels, preemptive scheduling, and userspace isolation
+
+.. grid:: 3
+
+   .. grid-item-card:: :octicon:`database` Memory & storage
+      :link: memory/index
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      Memory allocators, buffers, persistent flash storage, and key-value stores
+
+   .. grid-item-card:: :octicon:`plug` HALs
+      :link: hal/index
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      Hardware abstraction layer interfaces for timers, I2C, SPI, UART, and GPIO
+
+   .. grid-item-card:: :octicon:`package-dependencies` Hardware support
+      :link: hw/index
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      Board support, hardware drivers, and SDK integrations for target platforms
+
+.. grid:: 3
+
+   .. grid-item-card:: :octicon:`code` Data structures & utilities
+      :link: core/index
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      Embedded-safe collections, spans, strings, status, and error handling
+
+   .. grid-item-card:: :octicon:`checklist` Testing
+      :link: test/index
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      Unit testing frameworks, mocking, compilation tests, and fuzzing
+
+   .. grid-item-card:: :octicon:`workflow` Build systems
+      :link: build/index
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      Bazel, GN, and CMake integrations and rules
+
+And more! See :ref:`docs-module-guides`.
+
+.. +----------------------------------------------------------+
+.. | END OF AUTO-GENERATED SECTION                            |
+.. +----------------------------------------------------------+
+.. categories-end
 
 --------------------
 Who's using Pigweed?
@@ -167,20 +253,3 @@ Talk to us
 
       Found a bug? Got a feature request? Please create a new issue in our
       tracker.
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-
-   overview
-   get_started/index
-   Tour <showcases/sense/index>
-   modules
-   Contributing <contributing/index>
-   build/index
-   targets
-   os/index
-   third_party_support
-   community/index
-   security/index
-   api/index

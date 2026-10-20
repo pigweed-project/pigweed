@@ -713,7 +713,7 @@ class HeaderTest(unittest.TestCase):
 
             sidebar = page.locator("#pst-primary-sidebar")
             sidebar.wait_for(state="visible", timeout=5000)
-            title = sidebar.locator(".bd-links__title")
+            title = sidebar.locator(".pw-site-nav .bd-links__title")
             title.wait_for(state="visible", timeout=5000)
             self.assertEqual(title.inner_text(), "Site Navigation")
 

@@ -34,7 +34,7 @@ def find_nav_trail(
 ) -> list[NavLink] | None:
     """Recursively searches nav links to find ancestor trail to target_rel_path."""
     for item in items:
-        if is_matching_url(item.href, target_rel_path):
+        if item.is_internal and is_matching_url(item.href, target_rel_path):
             return [item]
         if item.children:
             child_trail = find_nav_trail(item.children, target_rel_path)

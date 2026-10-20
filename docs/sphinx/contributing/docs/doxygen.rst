@@ -35,7 +35,7 @@ Quickstart
    .. literalinclude:: ../../docs/doxygen/modules.h
       :language: cpp
       :start-at: /// @defgroup pw_bytes pw_bytes
-      :end-at: /// @endmaindocs
+      :end-at: /// @brief Utilities for manipulating binary data
 
    The pattern is ``@defgroup <id> <title>``. If ``<title>`` is omitted,
    Doxygen mistakenly capitalizes the module as ``Pw_bytes``.
@@ -151,10 +151,9 @@ Link from Doxygen to Sphinx
 Use normal Markdown links with relative paths. There is not yet any utility
 like ``:cc:`` for managing Doxygen-to-Sphinx links.
 
-.. literalinclude:: ../../docs/doxygen/modules.h
-   :language: cpp
-   :start-at: /// [Home](../../pw_bytes/docs.html)
-   :end-at: /// [Home](../../pw_bytes/docs.html)
+.. code-block:: cpp
+
+   /// See the [pw_bytes docs](../../pw_bytes/docs.html) for more details.
 
 .. tip::
 
