@@ -20,6 +20,11 @@
 
 /// @module{pw_log_tokenized}
 
+/// User-provided header to optionally override options in this file.
+#if defined(PW_LOG_TOKENIZED_CONFIG_HEADER)
+#include PW_LOG_TOKENIZED_CONFIG_HEADER
+#endif  // defined(PW_LOG_TOKENIZED_CONFIG_HEADER)
+
 // The size of the stack-allocated argument encoding buffer to use by default.
 // A buffer of this size is allocated and used for the 4-byte token and for
 // encoding all arguments. It must be at least large enough for the token (4
