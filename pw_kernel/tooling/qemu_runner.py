@@ -215,10 +215,18 @@ def _main(args) -> int:
     if args.qemu_args:
         qemu_args.extend(args.qemu_args)
 
+    env = os.environ.copy()
+    if sys.platform == "darwin":
+        # TODO: https://pwbug.dev/575591876 - Newer mac-arm64 QEMU CIPD builds
+        # link @rpath/libz.1.dylib without any LC_RPATH entries, which fails on
+        # macOS 15+ SDK builds unless /usr/lib is on DYLD_LIBRARY_PATH.
+        env["DYLD_LIBRARY_PATH"] = "/usr/lib"
+
     _LOG.info("Invoking QEMU: %s", qemu_args)
     with tempfile.NamedTemporaryFile() as f:
         with subprocess.Popen(
             args=qemu_args,
+            env=env,
             stdout=f,
         ) as proc:
             # Capturing the sub process stdout or stderr and then writing to

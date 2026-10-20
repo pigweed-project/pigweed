@@ -15,6 +15,7 @@
 """The script that runs unit tests on lm3s6965evb-qemu targets."""
 
 import argparse
+import os
 import subprocess
 import sys
 
@@ -71,7 +72,14 @@ def launch_tests(binary: str) -> int:
         '-kernel',
         binary,
     ]
-    test_process = subprocess.run(cmd, stdout=subprocess.PIPE)
+    env = os.environ.copy()
+    if sys.platform == 'darwin':
+        # TODO: https://pwbug.dev/575591876 - Newer mac-arm64 QEMU CIPD builds
+        # link @rpath/libz.1.dylib without any LC_RPATH entries, which fails on
+        # macOS 15+ SDK builds unless /usr/lib is on DYLD_LIBRARY_PATH.
+        env['DYLD_LIBRARY_PATH'] = '/usr/lib'
+
+    test_process = subprocess.run(cmd, env=env, stdout=subprocess.PIPE)
     print(test_process.stdout.decode('utf-8'))
     return handle_test_results(test_process.stdout)
 

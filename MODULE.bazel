@@ -491,11 +491,7 @@ cipd_ext.require(
     name = "pigweed.qemu",
     build_file = "//third_party/qemu:qemu.BUILD",
     packages = {
-        "fuchsia/third_party/qemu/${os=linux}-${arch}": "git_revision:ad14439be5731e872d8448a04664a9c0e66624a8",
-        # TODO: https://pwbug.dev/575591876 - Newer mac-arm64 QEMU builds link
-        # @rpath/libz.1.dylib without an LC_RPATH entry and with macOS 15.2 SDK,
-        # which disables dyld's legacy /usr/lib fallback and fails at runtime.
-        "fuchsia/third_party/qemu/${os=mac}-${arch}": "git_revision:1da8f3a3c53b604edfe0d55e475102640490549e",
+        "fuchsia/third_party/qemu/${platform}": "git_revision:ad14439be5731e872d8448a04664a9c0e66624a8",
     },
 )
 use_repo(cipd_ext, qemu = "pigweed.qemu")
