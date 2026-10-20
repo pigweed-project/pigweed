@@ -17,6 +17,11 @@
 
 /// @submodule{pw_log,global_config}
 
+/// User-provided header to optionally override options in this file.
+#if defined(PW_LOG_CONFIG_HEADER)
+#include PW_LOG_CONFIG_HEADER
+#endif  // defined(PW_LOG_CONFIG_HEADER)
+
 // These configuration options differ from the options in pw_log/options.h in
 // that these should be set at a global level in the build system rather than
 // at a module or compile unit level.
