@@ -32,7 +32,7 @@ Buf& Buf::operator=(Buf&& other) noexcept {
 }
 
 void Buf::reset() {
-  if (deallocator_ != nullptr) {
+  if (owned()) {
     deallocator_->Deallocate(mutable_base());
   }
   Clear();
@@ -61,9 +61,8 @@ Buf Reclaim(Buf&& buf, size_t prefix_count, size_t suffix_count) {
 }
 
 UniquePtr<std::byte[]> TakeAllocation(Buf&& buf) {
-  if (buf.deallocator_ == nullptr) {
-    // Only a null Buf may have no deallocator here. A null Buf has no state to
-    // clear.
+  if (!buf.owned()) {
+    // Only a null Buf may be unowned here. A null Buf has no state to clear.
     PW_CHECK(buf.data_ == nullptr);
     return UniquePtr<std::byte[]>();
   }
@@ -100,6 +99,9 @@ Buf Buf::AllocateCopy(Allocator& allocator,
 }
 
 Buf Buf::TryAllocate(Allocator& allocator, size_t size_bytes) {
+  if (size_bytes == 0) {
+    return ZeroLength();
+  }
   void* ptr =
       allocator.Allocate(allocator::Layout::Of<std::byte[]>(size_bytes));
   if (ptr == nullptr) {
@@ -112,7 +114,7 @@ Buf Buf::TryAllocateFill(Allocator& allocator,
                          size_t size_bytes,
                          std::byte value) {
   Buf buf = TryAllocate(allocator, size_bytes);
-  if (buf != nullptr && size_bytes > 0) {
+  if (!buf.empty()) {
     std::memset(buf.data(), static_cast<int>(value), size_bytes);
   }
   return buf;
@@ -122,7 +124,7 @@ Buf Buf::TryAllocateCopy(Allocator& allocator,
                          const std::byte* data,
                          size_t size_bytes) {
   Buf buf = TryAllocate(allocator, size_bytes);
-  if (buf != nullptr && size_bytes > 0) {
+  if (!buf.empty()) {
     std::memcpy(buf.data(), data, size_bytes);
   }
   return buf;

@@ -42,9 +42,10 @@ class GenericMultiBuf;
 /// is null when default-constructed, moved-from, reset, or when allocation
 /// fails.
 ///
-/// An empty `Buf` is not necessarily null (for example, if it has been sliced
-/// or truncated to length 0), in which case `base()` and `data()` return
-/// non-null pointers and `base_size()` returns the base allocation size.
+/// An empty `Buf` is not necessarily null (for example, if it was created with
+/// `Buf::ZeroLength()` or sliced or truncated to length 0), in which case
+/// `base()` and `data()` return non-null pointers and `base_size()` returns the
+/// base allocation size.
 ///
 /// Nullness can be checked via comparison to `nullptr` (`buf == nullptr`,
 /// `buf != nullptr`). `operator bool` is not provided to prevent confusion
@@ -120,6 +121,14 @@ class Buf {
                          Deallocator& deallocator)
       : Buf(allocation, offset, size, &deallocator) {}
 
+  /// Returns an empty, non-null, unowned `Buf` (`empty() == true`,
+  /// `buf != nullptr`, `owned() == false`).
+  [[nodiscard]] static Buf ZeroLength() noexcept {
+    // Size and prefix/suffix are 0, so `kEmpty` cannot be modified through
+    // the returned `Buf`.
+    return Unowned(const_cast<std::byte*>(&kEmpty), 0);
+  }
+
   /// Creates an unowned `Buf` from a `ByteSpan`, offset, and size.
   [[nodiscard]] static Buf Unowned(ByteSpan span, size_t offset, size_t size);
 
@@ -139,13 +148,14 @@ class Buf {
     return Buf(base, 0, size, nullptr);
   }
 
-  /// Allocates a new owned `Buf` of the specified size.
+  /// Allocates a new owned `Buf` of the specified size, or returns
+  /// `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
   ///
   /// Asserts if allocation fails.
   [[nodiscard]] static Buf Allocate(Allocator& allocator, size_t size_bytes);
 
   /// Allocates a new owned `Buf` of the specified size and fills it with
-  /// `value`.
+  /// `value`, or returns `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
   ///
   /// Asserts if allocation fails.
   [[nodiscard]] static Buf AllocateFill(Allocator& allocator,
@@ -153,7 +163,8 @@ class Buf {
                                         std::byte value = std::byte{0});
 
   /// Allocates a new owned `Buf` the same size as `data` and copies the
-  /// contents of `data` into it.
+  /// contents of `data` into it, or returns `Buf::ZeroLength()` (unowned) if
+  /// `data` is empty.
   ///
   /// Asserts if allocation fails.
   [[nodiscard]] static Buf AllocateCopy(Allocator& allocator,
@@ -162,20 +173,21 @@ class Buf {
   }
 
   /// Allocates a new owned `Buf` of the specified size and copies from `data`
-  /// into it.
+  /// into it, or returns `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
   ///
   /// Asserts if allocation fails.
   [[nodiscard]] static Buf AllocateCopy(Allocator& allocator,
                                         const std::byte* data,
                                         size_t size_bytes);
 
-  /// Allocates a new owned `Buf` of the specified size.
+  /// Allocates a new owned `Buf` of the specified size, or returns
+  /// `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
   ///
   /// Returns a null `Buf` if allocation fails.
   [[nodiscard]] static Buf TryAllocate(Allocator& allocator, size_t size_bytes);
 
   /// Allocates a new owned `Buf` of the specified size and fills it with
-  /// `value`.
+  /// `value`, or returns `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
   ///
   /// Returns a null `Buf` if allocation fails.
   [[nodiscard]] static Buf TryAllocateFill(Allocator& allocator,
@@ -183,7 +195,8 @@ class Buf {
                                            std::byte value = std::byte{0});
 
   /// Allocates a new owned `Buf` the same size as `data` and copies the
-  /// contents of `data` into it.
+  /// contents of `data` into it, or returns `Buf::ZeroLength()` (unowned) if
+  /// `data` is empty.
   ///
   /// Returns a null `Buf` if allocation fails.
   [[nodiscard]] static Buf TryAllocateCopy(Allocator& allocator,
@@ -192,7 +205,7 @@ class Buf {
   }
 
   /// Allocates a new owned `Buf` of the specified size and copies from `data`
-  /// into it.
+  /// into it, or returns `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
   ///
   /// Returns a null `Buf` if allocation fails.
   [[nodiscard]] static Buf TryAllocateCopy(Allocator& allocator,
@@ -307,6 +320,10 @@ class Buf {
     return prefix_ != 0 || suffix_ != 0;
   }
 
+  /// Returns true if this buffer owns the underlying memory allocation
+  /// (`deallocator() != nullptr`), or false if the buffer is unowned or null.
+  [[nodiscard]] constexpr bool owned() const { return deallocator_ != nullptr; }
+
   /// Returns a pointer to the deallocator if this buffer owns the underlying
   /// memory allocation, or `nullptr` if the buffer is unowned or null.
   [[nodiscard]] constexpr Deallocator* deallocator() const {
@@ -386,6 +403,8 @@ class Buf {
 
   [[nodiscard]] constexpr std::byte* mutable_base() { return data_ - prefix_; }
 
+  static constexpr std::byte kEmpty{};
+
   std::byte* data_;
   size_t size_;
   OffsetType prefix_;
@@ -442,8 +461,8 @@ class Buf {
 ///
 /// If the `Buf` is null, returns a null `UniquePtr`.
 ///
-/// @pre `buf` must be owned (`buf.deallocator() != nullptr`) or null. An
-/// unowned `Buf` has no allocation to take.
+/// @pre `buf` must be owned (`buf.owned()`) or null. An unowned `Buf` has no
+/// allocation to take.
 [[nodiscard]] UniquePtr<std::byte[]> TakeAllocation(Buf&& buf);
 
 inline Buf::Buf(UniquePtr<std::byte[]>&& buffer, size_t offset)
@@ -471,9 +490,9 @@ inline Buf Buf::Unowned(ByteSpan span, size_t offset) {
 /// no bytes, and its `data()` pointer is `nullptr`. A `ConstBuf` is null when
 /// default-constructed, moved-from, or reset.
 ///
-/// An empty `ConstBuf` is not necessarily null (for example, if it has been
-/// sliced or truncated to length 0), in which case `data()` returns a non-null
-/// pointer.
+/// An empty `ConstBuf` is not necessarily null (for example, if it was created
+/// with `ConstBuf::ZeroLength()` or sliced or truncated to length 0), in which
+/// case `data()` returns a non-null pointer.
 ///
 /// Nullness can be checked via comparison to `nullptr` (`buf == nullptr`,
 /// `buf != nullptr`). `operator bool` is not provided to prevent confusion
@@ -511,6 +530,12 @@ class ConstBuf {
   ///
   /// The moved-from `Buf` is left null.
   constexpr ConstBuf(Buf&& other) noexcept : buf_(std::move(other)) {}
+
+  /// Returns an empty, non-null, unowned `ConstBuf` (`empty() == true`,
+  /// `buf != nullptr`, `owned() == false`).
+  [[nodiscard]] static ConstBuf ZeroLength() noexcept {
+    return Buf::ZeroLength();
+  }
 
   /// Creates an unowned `ConstBuf` from a `ConstByteSpan`.
   [[nodiscard]] static ConstBuf Unowned(ConstByteSpan span) {
@@ -609,6 +634,10 @@ class ConstBuf {
 
   /// Returns a read-only iterator pointing past the end of the data.
   const_iterator cend() const { return buf_.cend(); }
+
+  /// Returns true if this buffer owns the underlying memory allocation
+  /// (`deallocator() != nullptr`), or false if the buffer is unowned or null.
+  [[nodiscard]] constexpr bool owned() const { return buf_.owned(); }
 
   /// Returns a pointer to the deallocator if this buffer owns the underlying
   /// memory allocation, or `nullptr` if the buffer is unowned or null.

@@ -29,7 +29,8 @@ Ownership and ``pw_allocator``
 ==============================
 ``Buf`` regions may optionally be allocated via a ``pw_allocator``, causing the
 region's deallocator to travel with the ``Buf`` (and its slices) and
-automatically reclaim the memory when it is destroyed.
+automatically reclaim the memory when it is destroyed. :cc:`pw::Buf::owned` and
+:cc:`pw::ConstBuf::owned` report whether a buffer owns its memory.
 
 Despite its name, ``pw_allocator`` does not necessarily mean "heap allocation".
 It simply provides an interface for requesting and releasing ownership of a
@@ -43,6 +44,25 @@ A ``Buf`` can be constructed from a ``pw::UniquePtr<std::byte[]>``, and
 current view. To recreate the view later, record :cc:`pw::Buf::prefix_size` and
 ``size()`` first and pass them to the ``Buf(UniquePtr&&, offset, size)``
 constructor.
+
+Null and zero-length buffers
+============================
+An empty buffer (``empty() == true``, ``size() == 0``) is distinct from a null
+buffer (``buf == nullptr``):
+
+* A **null** buffer has no underlying buffer (``data() == nullptr``). A ``Buf``
+  or ``ConstBuf`` is null when default-constructed, moved-from, reset, or when
+  allocation fails.
+* A **non-null zero-length** buffer has ``size() == 0`` and ``empty() == true``,
+  but ``buf != nullptr``. This occurs when a buffer is sliced or truncated to 0
+  bytes, when 0 bytes are allocated, or when created with
+  :cc:`pw::Buf::ZeroLength` or :cc:`pw::ConstBuf::ZeroLength`.
+
+``ZeroLength()`` returns an empty, non-null, unowned buffer. Allocating 0 bytes
+with ``Allocate*`` or ``TryAllocate*`` also returns ``Buf::ZeroLength()``
+without invoking the allocator. This is useful when an API needs to distinguish
+a valid zero-byte payload (such as an empty datagram) from a null buffer used
+to signal closure or allocation failure.
 
 Slicing and reclaiming
 ======================

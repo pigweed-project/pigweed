@@ -54,7 +54,7 @@ bool GenericMultiBuf::TryReserveForInsert(const_iterator pos,
     return true;
   }
   size_t layers_needed = 1;
-  if (bytes.deallocator() != nullptr && bytes.sliced()) {
+  if (bytes.owned() && bytes.sliced()) {
     // An owned, sliced Buf needs extra layer to retain its original allocation.
     layers_needed = 2;
   }
@@ -153,7 +153,7 @@ auto GenericMultiBuf::Insert(const_iterator pos, Buf&& bytes) -> iterator {
     bytes.reset();
     return MakeIterator(pos.chunk_, pos.offset_);
   }
-  if (bytes.deallocator() == nullptr) {
+  if (!bytes.owned()) {
     auto iter = Insert(pos, bytes);
     bytes.reset();
     return iter;

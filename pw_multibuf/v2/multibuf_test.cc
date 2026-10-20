@@ -2670,7 +2670,7 @@ TEST_F(MultiBufV2Test, ReleaseAndConst) {
 
   // Release Buf from mutable MultiBuf
   pw::Buf released = mb.Release(mb.begin());
-  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_TRUE(released.owned());
   EXPECT_EQ(released.size(), 10u);
   EXPECT_EQ(released.data(), raw_ptr);
   EXPECT_TRUE(mb.empty());
@@ -2680,7 +2680,7 @@ TEST_F(MultiBufV2Test, ReleaseAndConst) {
   auto& const_mb = const_mbi->as<ConstMultiBuf>();
   const_mb.PushBack(std::move(released));
   pw::ConstBuf released_const = const_mb.Release(const_mb.begin());
-  EXPECT_NE(released_const.deallocator(), nullptr);
+  EXPECT_TRUE(released_const.owned());
   EXPECT_EQ(released_const.size(), 10u);
   EXPECT_EQ(released_const.data(), raw_ptr);
   EXPECT_TRUE(const_mb.empty());
@@ -2707,7 +2707,7 @@ TEST_F(MultiBufV2Test, ReleaseWithNonZeroOffset) {
 
   // Release
   pw::Buf released = mb.Release(mb.begin());
-  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_TRUE(released.owned());
   EXPECT_EQ(released.base(), raw_ptr);
   EXPECT_EQ(released.size(), 10u);
   EXPECT_EQ(released.data(), raw_ptr + 5);
@@ -2756,7 +2756,7 @@ TEST_F(MultiBufV2Test, InsertEmptyOwnedBufTakesOwnershipAndResetsCaller) {
   pw::Buf buf(std::move(unique_data));
   pw::Buf sliced = pw::Slice(std::move(buf), 5, 0);
   EXPECT_TRUE(sliced.empty());
-  EXPECT_NE(sliced.deallocator(), nullptr);
+  EXPECT_TRUE(sliced.owned());
 
   size_t before = allocator_.metrics().num_deallocations.value();
   {
@@ -2774,7 +2774,7 @@ TEST_F(MultiBufV2Test, InsertEmptyOwnedBufTakesOwnershipAndResetsCaller) {
 TEST_F(MultiBufV2Test, InsertUnownedBufResetsCaller) {
   std::array<std::byte, 10> data{};
   pw::Buf buf = pw::Buf::Unowned(data);
-  EXPECT_EQ(buf.deallocator(), nullptr);
+  EXPECT_FALSE(buf.owned());
 
   MultiBufInstance mbi(allocator_);
   auto& mb = mbi->as<MultiBuf>();
@@ -2870,7 +2870,7 @@ TEST_F(MultiBufV2Test, ReleaseSlicedConstBuf) {
   // The released ConstBuf has the same view that was pushed back.
   pw::ConstBuf released = cmb.Release(cmb.begin());
   EXPECT_TRUE(cmb.empty());
-  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_TRUE(released.owned());
   EXPECT_EQ(released.data(), raw_ptr + 5);
   EXPECT_EQ(released.size(), 10u);
 }
@@ -2943,7 +2943,7 @@ TEST_F(MultiBufV2Test, RemoveSlicedBufPreservesOwnership) {
   EXPECT_TRUE(removed_mb->IsReleasable(removed_mb->begin()));
 
   pw::Buf released = removed_mb->Release(removed_mb->begin());
-  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_TRUE(released.owned());
   EXPECT_EQ(released.base(), raw_ptr);
   EXPECT_EQ(released.data(), raw_ptr + 5);
   EXPECT_EQ(released.size(), 10u);
@@ -3116,7 +3116,7 @@ TEST_F(MultiBufV2Test,
   // Verify the chunk remains owned and releasable!
   EXPECT_TRUE(mb.IsReleasable(mb.begin()));
   pw::Buf released = mb.Release(mb.begin());
-  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_TRUE(released.owned());
   EXPECT_EQ(released.base(), raw_ptr);
   EXPECT_EQ(released.data(), raw_ptr + 5);
   EXPECT_EQ(released.size(), 15u);
@@ -3148,7 +3148,7 @@ TEST_F(MultiBufV2Test,
   // Verify the chunk remains owned and releasable!
   EXPECT_TRUE(mb.IsReleasable(mb.begin()));
   pw::Buf released = mb.Release(mb.begin());
-  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_TRUE(released.owned());
   EXPECT_EQ(released.base(), raw_ptr);
   EXPECT_EQ(released.data(), raw_ptr);
   EXPECT_EQ(released.size(), 15u);

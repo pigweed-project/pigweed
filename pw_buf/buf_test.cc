@@ -772,6 +772,18 @@ TEST_F(BufTest, AllocateSuccess) {
   EXPECT_EQ(buf.deallocator(), &test_allocator_);
 }
 
+TEST_F(BufTest, AllocateZeroSizeReturnsZeroLength) {
+  allocator::NullAllocator null_allocator;
+  Buf buf = Buf::Allocate(null_allocator, 0);
+  EXPECT_NE(buf, nullptr);
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_NE(buf.base(), nullptr);
+  EXPECT_FALSE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
 TEST_F(BufTest, AllocateFailureAsserts) {
   allocator::NullAllocator null_allocator;
   EXPECT_DEATH_IF_SUPPORTED((void)Buf::Allocate(null_allocator, 10), ".*");
@@ -797,11 +809,18 @@ TEST_F(BufTest, AllocateFillSuccessCustomValue) {
   }
 }
 
+TEST_F(BufTest, AllocateFillZeroSizeReturnsZeroLength) {
+  allocator::NullAllocator null_allocator;
+  Buf buf = Buf::AllocateFill(null_allocator, 0);
+  EXPECT_NE(buf, nullptr);
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_FALSE(buf.owned());
+}
+
 TEST_F(BufTest, AllocateFillFailureAsserts) {
   allocator::NullAllocator null_allocator;
   EXPECT_DEATH_IF_SUPPORTED((void)Buf::AllocateFill(null_allocator, 10), ".*");
-
-  EXPECT_DEATH_IF_SUPPORTED((void)Buf::AllocateFill(test_allocator_, 0), ".*");
 }
 
 TEST_F(BufTest, TryAllocateSuccess) {
@@ -811,9 +830,22 @@ TEST_F(BufTest, TryAllocateSuccess) {
   EXPECT_EQ(buf.deallocator(), &test_allocator_);
 }
 
-TEST_F(BufTest, TryAllocateFailureReturnsEmpty) {
+TEST_F(BufTest, TryAllocateZeroSizeReturnsZeroLength) {
+  allocator::NullAllocator null_allocator;
+  Buf buf = Buf::TryAllocate(null_allocator, 0);
+  EXPECT_NE(buf, nullptr);
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_NE(buf.base(), nullptr);
+  EXPECT_FALSE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, TryAllocateFailureReturnsNull) {
   allocator::NullAllocator null_allocator;
   Buf buf = Buf::TryAllocate(null_allocator, 10);
+  EXPECT_EQ(buf, nullptr);
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
   EXPECT_EQ(buf.data(), nullptr);
@@ -841,18 +873,22 @@ TEST_F(BufTest, TryAllocateFillSuccessCustomValue) {
   }
 }
 
-TEST_F(BufTest, TryAllocateFillZeroSizeReturnsEmpty) {
-  Buf buf = Buf::TryAllocateFill(test_allocator_, 0);
+TEST_F(BufTest, TryAllocateFillZeroSizeReturnsZeroLength) {
+  allocator::NullAllocator null_allocator;
+  Buf buf = Buf::TryAllocateFill(null_allocator, 0);
+  EXPECT_NE(buf, nullptr);
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
-  EXPECT_EQ(buf.data(), nullptr);
-  EXPECT_EQ(buf.base(), nullptr);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_NE(buf.base(), nullptr);
+  EXPECT_FALSE(buf.owned());
   EXPECT_EQ(buf.deallocator(), nullptr);
 }
 
-TEST_F(BufTest, TryAllocateFillFailureReturnsEmpty) {
+TEST_F(BufTest, TryAllocateFillFailureReturnsNull) {
   allocator::NullAllocator null_allocator;
   Buf buf = Buf::TryAllocateFill(null_allocator, 10);
+  EXPECT_EQ(buf, nullptr);
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
   EXPECT_EQ(buf.data(), nullptr);
@@ -883,6 +919,22 @@ TEST_F(BufTest, AllocateCopyFromPointerAndSizeSuccess) {
   EXPECT_TRUE(std::equal(buf.begin(), buf.end(), data.begin(), data.end()));
 }
 
+TEST_F(BufTest, AllocateCopyZeroSizeReturnsZeroLength) {
+  allocator::NullAllocator null_allocator;
+  ConstByteSpan empty_span;
+  Buf buf1 = Buf::AllocateCopy(null_allocator, empty_span);
+  EXPECT_NE(buf1, nullptr);
+  EXPECT_TRUE(buf1.empty());
+  EXPECT_EQ(buf1.size(), 0u);
+  EXPECT_FALSE(buf1.owned());
+
+  Buf buf2 = Buf::AllocateCopy(null_allocator, nullptr, 0);
+  EXPECT_NE(buf2, nullptr);
+  EXPECT_TRUE(buf2.empty());
+  EXPECT_EQ(buf2.size(), 0u);
+  EXPECT_FALSE(buf2.owned());
+}
+
 TEST_F(BufTest, AllocateCopyFailureAsserts) {
   allocator::NullAllocator null_allocator;
   constexpr std::array<std::byte, 4> data = {
@@ -891,13 +943,6 @@ TEST_F(BufTest, AllocateCopyFailureAsserts) {
       (void)Buf::AllocateCopy(null_allocator, ConstByteSpan(data)), ".*");
   EXPECT_DEATH_IF_SUPPORTED(
       (void)Buf::AllocateCopy(null_allocator, data.data(), data.size()), ".*");
-
-  // Allocating size 0 also fails because Allocator returns nullptr for size 0.
-  ConstByteSpan empty_span;
-  EXPECT_DEATH_IF_SUPPORTED(
-      (void)Buf::AllocateCopy(test_allocator_, empty_span), ".*");
-  EXPECT_DEATH_IF_SUPPORTED(
-      (void)Buf::AllocateCopy(test_allocator_, nullptr, 0), ".*");
 }
 
 TEST_F(BufTest, TryAllocateCopyFromSpanSuccess) {
@@ -923,24 +968,29 @@ TEST_F(BufTest, TryAllocateCopyFromPointerAndSizeSuccess) {
   EXPECT_TRUE(std::equal(buf.begin(), buf.end(), data.begin(), data.end()));
 }
 
-TEST_F(BufTest, TryAllocateCopyZeroSizeReturnsEmpty) {
+TEST_F(BufTest, TryAllocateCopyZeroSizeReturnsZeroLength) {
+  allocator::NullAllocator null_allocator;
   ConstByteSpan empty_span;
-  Buf buf1 = Buf::TryAllocateCopy(test_allocator_, empty_span);
+  Buf buf1 = Buf::TryAllocateCopy(null_allocator, empty_span);
+  EXPECT_NE(buf1, nullptr);
   EXPECT_TRUE(buf1.empty());
   EXPECT_EQ(buf1.size(), 0u);
-  EXPECT_EQ(buf1.data(), nullptr);
-  EXPECT_EQ(buf1.base(), nullptr);
+  EXPECT_NE(buf1.data(), nullptr);
+  EXPECT_NE(buf1.base(), nullptr);
+  EXPECT_FALSE(buf1.owned());
   EXPECT_EQ(buf1.deallocator(), nullptr);
 
-  Buf buf2 = Buf::TryAllocateCopy(test_allocator_, nullptr, 0);
+  Buf buf2 = Buf::TryAllocateCopy(null_allocator, nullptr, 0);
+  EXPECT_NE(buf2, nullptr);
   EXPECT_TRUE(buf2.empty());
   EXPECT_EQ(buf2.size(), 0u);
-  EXPECT_EQ(buf2.data(), nullptr);
-  EXPECT_EQ(buf2.base(), nullptr);
+  EXPECT_NE(buf2.data(), nullptr);
+  EXPECT_NE(buf2.base(), nullptr);
+  EXPECT_FALSE(buf2.owned());
   EXPECT_EQ(buf2.deallocator(), nullptr);
 }
 
-TEST_F(BufTest, TryAllocateCopyFailureReturnsEmpty) {
+TEST_F(BufTest, TryAllocateCopyFailureReturnsNull) {
   allocator::NullAllocator null_allocator;
   constexpr std::array<std::byte, 4> data = {
       std::byte(1), std::byte(2), std::byte(3), std::byte(4)};
@@ -1375,18 +1425,46 @@ TEST_F(BufTest, PrefixAndSuffixSizeNull) {
 TEST_F(BufTest, NullPointerWithDeallocatorIsUnowned) {
   Buf buf(nullptr, 0, test_allocator_);
   EXPECT_EQ(buf, nullptr);
+  EXPECT_FALSE(buf.owned());
   EXPECT_EQ(buf.deallocator(), nullptr);
 
   Buf buf_with_offset(nullptr, 0, 0, test_allocator_);
   EXPECT_EQ(buf_with_offset, nullptr);
+  EXPECT_FALSE(buf_with_offset.owned());
   EXPECT_EQ(buf_with_offset.deallocator(), nullptr);
 
   Buf buf_from_unique_ptr(UniquePtr<std::byte[]>(nullptr, 0, test_allocator_));
   EXPECT_EQ(buf_from_unique_ptr, nullptr);
+  EXPECT_FALSE(buf_from_unique_ptr.owned());
   EXPECT_EQ(buf_from_unique_ptr.deallocator(), nullptr);
 
   UniquePtr<std::byte[]> allocation = TakeAllocation(std::move(buf));
   EXPECT_EQ(allocation, nullptr);
+}
+
+TEST_F(BufTest, Owned) {
+  Buf null_buf;
+  EXPECT_FALSE(null_buf.owned());
+
+  ConstBuf null_const_buf;
+  EXPECT_FALSE(null_const_buf.owned());
+
+  std::array<std::byte, 4> storage{};
+  Buf unowned_buf = Buf::Unowned(storage);
+  EXPECT_FALSE(unowned_buf.owned());
+
+  ConstBuf unowned_const_buf = ConstBuf::Unowned(storage);
+  EXPECT_FALSE(unowned_const_buf.owned());
+
+  Buf owned_buf = Buf::Allocate(test_allocator_, 4);
+  EXPECT_TRUE(owned_buf.owned());
+
+  ConstBuf owned_const_buf = std::move(owned_buf);
+  EXPECT_FALSE(owned_buf.owned());  // NOLINT(bugprone-use-after-move)
+  EXPECT_TRUE(owned_const_buf.owned());
+
+  owned_const_buf.reset();
+  EXPECT_FALSE(owned_const_buf.owned());
 }
 
 TEST_F(BufTest, Sliced) {
@@ -1425,6 +1503,65 @@ TEST_F(BufTest, SlicedOffsetConstructor) {
 TEST_F(BufTest, SlicedNull) {
   Buf buf;
   EXPECT_FALSE(buf.sliced());
+}
+
+TEST_F(BufTest, BufZeroLength) {
+  Buf buf = Buf::ZeroLength();
+  EXPECT_NE(buf, nullptr);
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_NE(buf.base(), nullptr);
+  EXPECT_EQ(buf.data(), buf.base());
+  EXPECT_EQ(buf.base_size(), 0u);
+  EXPECT_EQ(buf.prefix_size(), 0u);
+  EXPECT_EQ(buf.suffix_size(), 0u);
+  EXPECT_FALSE(buf.sliced());
+  EXPECT_FALSE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), nullptr);
+  EXPECT_EQ(buf.begin(), buf.end());
+
+  ByteSpan span = buf;
+  EXPECT_TRUE(span.empty());
+  EXPECT_NE(span.data(), nullptr);
+
+  buf = Slice(std::move(buf), 0, 0);
+  EXPECT_NE(buf, nullptr);
+  EXPECT_TRUE(buf.empty());
+
+  buf = Reclaim(std::move(buf), 0, 0);
+  EXPECT_NE(buf, nullptr);
+  EXPECT_TRUE(buf.empty());
+
+  ConstBuf const_buf = std::move(buf);
+  EXPECT_EQ(buf, nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_NE(const_buf, nullptr);
+  EXPECT_TRUE(const_buf.empty());
+
+  const_buf.reset();
+  EXPECT_EQ(const_buf, nullptr);
+}
+
+TEST_F(BufTest, ConstBufZeroLength) {
+  ConstBuf buf = ConstBuf::ZeroLength();
+  EXPECT_NE(buf, nullptr);
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_FALSE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), nullptr);
+  EXPECT_EQ(buf.begin(), buf.end());
+
+  ConstByteSpan span = buf;
+  EXPECT_TRUE(span.empty());
+  EXPECT_NE(span.data(), nullptr);
+
+  buf = Slice(std::move(buf), 0, 0);
+  EXPECT_NE(buf, nullptr);
+  EXPECT_TRUE(buf.empty());
+
+  buf.reset();
+  EXPECT_EQ(buf, nullptr);
 }
 
 }  // namespace
