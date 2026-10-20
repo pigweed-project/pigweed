@@ -167,6 +167,25 @@ and falls back to ``pigweed/gh``:
    echo "Error: gh-ish binary not found. Run 'source bootstrap.sh' first." >&2
    exit 1
 
+Option C: Copying ``pigweed/gh`` (no Pigweed checkout or environment)
+=====================================================================
+If your repository does not include Pigweed and does not use ``pw_env_setup``,
+copy ``pigweed/gh`` to the root of your repository. The only requirement is
+that the `cipd <https://chromium.googlesource.com/infra/luci/luci-go/+/HEAD/cipd/>`_
+client is on ``PATH``.
+
+When ``./gh`` cannot find a bootstrapped CIPD binary and cannot build from
+source (because there are no Pigweed Bazel build files next to it or
+``bazelisk`` is not installed), it uses ``cipd ensure`` to fetch
+``pigweed/ghish/${platform}`` into a per-user cache and runs it from there. The
+package is re-resolved at most once a day, and the cached binary is used if
+CIPD is unreachable. The following environment variables control this:
+
+* ``PW_GH_CIPD_VERSION``: CIPD version to fetch (a ref such as ``latest``, or
+  a tag such as ``git_revision:<sha>``). Defaults to ``latest``.
+* ``PW_GH_CIPD_ROOT``: Cache directory. Defaults to
+  ``${XDG_CACHE_HOME:-~/.cache}/pigweed/gh/cipd``.
+
 ------------------------------------------------
 Sharing Agent Skills & Hooks in Downstream Repos
 ------------------------------------------------

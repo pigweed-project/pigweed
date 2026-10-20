@@ -19,6 +19,10 @@
 # it executes the prebuilt directly with zero Bazel startup overhead. If the hash
 # changed or the prebuilt does not exist, it builds //pw_ghish:gh-ish via
 # bazelisk and caches the resulting binary.
+#
+# Without Bazel build files or bazelisk (e.g. a copy of this script in a
+# repository that does not include Pigweed, with no bootstrapped environment),
+# it instead fetches the CIPD prebuilt using the `cipd` client from PATH.
 
 set -e
 
@@ -85,6 +89,66 @@ if [ -z "${PW_GH_FORCE_BUILD:-}" ] && { [ -n "${PW_GH_USE_CIPD:-}" ] || { [ -n "
   done
 fi
 
+# Building gh-ish from source requires a Pigweed checkout with Bazel build files
+# and bazelisk.
+_pw_gh_can_build() {
+  [ -f "${_PW_SCRIPT_DIR}/MODULE.bazel" ] &&
+    [ -f "${_PW_SCRIPT_DIR}/pw_ghish/BUILD.bazel" ] &&
+    command -v bazelisk >/dev/null 2>&1
+}
+
+_pw_gh_cipd_platform() {
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) echo "linux-amd64" ;;
+    Darwin-arm64) echo "mac-arm64" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Fetches the gh-ish CIPD prebuilt into a per-user cache using the `cipd` client
+# from PATH and executes it. Used when there is neither a bootstrapped
+# environment nor a way to build from source (e.g. a copy of this script checked
+# into a repository that does not include Pigweed). The package is re-resolved
+# at most once a day, or immediately when PW_GH_CIPD_VERSION changes.
+_pw_gh_exec_cipd() {
+  if ! command -v cipd >/dev/null 2>&1; then
+    echo "Error: cannot run gh-ish: building it requires bazelisk and Pigweed's" \
+      "Bazel build files, and 'cipd' is not on PATH to fetch a prebuilt." >&2
+    exit 1
+  fi
+  local platform
+  if ! platform=$(_pw_gh_cipd_platform); then
+    echo "Error: no gh-ish CIPD prebuilt for $(uname -s)-$(uname -m)" \
+      "(available: linux-amd64, mac-arm64)." >&2
+    exit 1
+  fi
+  local want="pigweed/ghish/${platform} ${PW_GH_CIPD_VERSION:-latest}"
+  local root="${PW_GH_CIPD_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/pigweed/gh/cipd}/${platform}"
+  local bin="${root}/gh-ish"
+  local stamp="${root}/.pw_gh_ensured"
+
+  if [ ! -x "$bin" ] ||
+    [ "$(cat "$stamp" 2>/dev/null || true)" != "$want" ] ||
+    [ -n "$(find "$stamp" -mmin +1440 2>/dev/null || true)" ]; then
+    mkdir -p "$root"
+    if [ -t 2 ]; then
+      printf " ⏱  Fetching %s from CIPD...\n" "$want" >&2
+    fi
+    if printf '%s\n' "$want" |
+      cipd ensure -root "$root" -ensure-file - -log-level warning >/dev/null; then
+      printf '%s\n' "$want" >"$stamp"
+    elif [ -x "$bin" ]; then
+      echo "Warning: failed to update ${want} from CIPD; using cached ${bin}." >&2
+      # Back off for a day instead of retrying (e.g. while offline) every run.
+      touch "$stamp" 2>/dev/null || true
+    else
+      echo "Error: failed to fetch ${want} from CIPD." >&2
+      exit 1
+    fi
+  fi
+  exec "$bin" "$@"
+}
+
 # Prebuilt cache directory (defaults to out/gh, which is .gitignored in Pigweed).
 declare -r _GH_DIR="${_PW_GH_OUT_DIR:-${_PW_SCRIPT_DIR}/out/gh}"
 declare -r _GH_BIN="${_GH_DIR}/gh-ish"
@@ -119,6 +183,10 @@ if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -z "$_DIRTY" ] && [ -n "$_CURRENT_HASH" 
       fi
     fi
   fi
+fi
+
+if [ $_STALE -eq 1 ] && [ -z "${PW_GH_FORCE_BUILD:-}" ] && ! _pw_gh_can_build; then
+  _pw_gh_exec_cipd "$@"
 fi
 
 if [ $_STALE -eq 1 ]; then
