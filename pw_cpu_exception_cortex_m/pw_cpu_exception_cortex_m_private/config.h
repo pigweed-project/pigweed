@@ -26,6 +26,11 @@
 #error "Your selected ARM Cortex-M arch is not yet supported by this module."
 #endif
 
+/// User-provided header to optionally override options in this file.
+#if defined(PW_CPU_EXCEPTION_CORTEX_M_CONFIG_HEADER)
+#include PW_CPU_EXCEPTION_CORTEX_M_CONFIG_HEADER
+#endif  // defined(PW_CPU_EXCEPTION_CORTEX_M_CONFIG_HEADER)
+
 // Which log level to use for this module.
 #ifndef PW_CPU_EXCEPTION_CORTEX_M_LOG_LEVEL
 #define PW_CPU_EXCEPTION_CORTEX_M_LOG_LEVEL PW_LOG_LEVEL_DEBUG
