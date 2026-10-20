@@ -13,6 +13,11 @@
 // the License.
 #pragma once
 
+/// User-provided header to optionally override options in this file.
+#if defined(PW_THREAD_CONFIG_HEADER)
+#include PW_THREAD_CONFIG_HEADER
+#endif  // defined(PW_THREAD_CONFIG_HEADER)
+
 // The log level to use for this module. Logs below this level are omitted.
 #ifndef PW_THREAD_CONFIG_LOG_LEVEL
 #define PW_THREAD_CONFIG_LOG_LEVEL PW_LOG_LEVEL_DEBUG
