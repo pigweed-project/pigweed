@@ -58,6 +58,9 @@ class VirtualController
   // Prefix of the unique name `CreateEmulator` gives each emulator.
   static constexpr std::string_view kEmulatorNamePrefix = "emulator-";
 
+  // Name `CreateLoopbackDevice` gives the loopback device.
+  static constexpr std::string_view kLoopbackName = "loopback";
+
   VirtualController();
 
   // fdf::DriverBase overrides:
@@ -101,8 +104,10 @@ class VirtualController
           node_controller,
       fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>*
           node_event_handler);
-  // Removes the node `node_controller` controls, if it was ever added.
-  void RemoveNode(fidl::WireClient<fuchsia_driver_framework::NodeController>&
+  // Removes the node `node_controller` controls, if it was ever added, and
+  // resets `child_node` and `node_controller`.
+  void RemoveNode(fidl::WireClient<fuchsia_driver_framework::Node>& child_node,
+                  fidl::WireClient<fuchsia_driver_framework::NodeController>&
                       node_controller);
 
   // Live emulators keyed by the unique name returned from `CreateEmulator`.

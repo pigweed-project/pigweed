@@ -19,6 +19,7 @@
 #include <lib/driver/testing/cpp/test_node.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fit/function.h>
+#include <lib/zx/channel.h>
 #include <lib/zx/time.h>
 #include <zircon/types.h>
 
@@ -114,6 +115,22 @@ class VirtualControllerTest : public ::testing::Test {
       return zx::error(ZX_ERR_TIMED_OUT);
     }
     return *result;
+  }
+
+  // Calls VirtualController.CreateLoopbackDevice with a fresh UART channel and
+  // returns the other end of that channel.
+  zx::channel CreateLoopbackDevice() {
+    zx::channel host_end, device_end;
+    EXPECT_EQ(zx::channel::create(0, &host_end, &device_end), ZX_OK);
+    fidl::Arena arena;
+    auto request =
+        fhb::wire::VirtualControllerCreateLoopbackDeviceRequest::Builder(arena)
+            .uart_channel(std::move(device_end))
+            .Build();
+    fidl::OneWayStatus status = controller_->CreateLoopbackDevice(request);
+    EXPECT_TRUE(status.ok()) << status.status_string();
+    runtime().RunUntilIdle();
+    return host_end;
   }
 
   // Names of the child nodes the driver has added under its own node.
@@ -268,6 +285,24 @@ TEST_F(VirtualControllerTest, CreateEmulatorFailsWhenNodeCannotBeAdded) {
   ASSERT_TRUE(second.is_ok()) << second.status_string();
   EXPECT_NE(*second, kFirstEmulatorName);
   EXPECT_TRUE(HasChildNode(*second));
+}
+
+// Calling CreateLoopbackDevice again replaces the previous loopback device and
+// its child node.
+TEST_F(VirtualControllerTest, CreateLoopbackDeviceTwiceReplacesDevice) {
+  const std::string name(VirtualController::kLoopbackName);
+
+  zx::channel first_uart = CreateLoopbackDevice();
+  EXPECT_TRUE(HasChildNode(name));
+  EXPECT_TRUE(VendorServiceIsServed(std::string(fdf::kDefaultInstance)));
+
+  zx::channel second_uart = CreateLoopbackDevice();
+  zx_signals_t observed = 0;
+  EXPECT_EQ(first_uart.wait_one(
+                ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed),
+            ZX_OK);
+  EXPECT_TRUE(HasChildNode(name));
+  EXPECT_TRUE(VendorServiceIsServed(std::string(fdf::kDefaultInstance)));
 }
 
 }  // namespace

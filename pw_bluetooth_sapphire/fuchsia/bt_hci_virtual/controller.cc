@@ -101,7 +101,8 @@ void VirtualController::CreateEmulator(
     fdf::info("Releasing EmulatorDevice {}", name);
     // Remove the emulator's node. When the shutdown was triggered by the
     // owning Emulator connection closing, this is what tears the node down.
-    RemoveNode(entry->second.node_controller);
+    RemoveNode(*entry->second.device->emulator_child_node(),
+               entry->second.node_controller);
     emulators_.erase(entry);
   };
 
@@ -128,14 +129,15 @@ void VirtualController::CreateEmulator(
 void VirtualController::CreateLoopbackDevice(
     CreateLoopbackDeviceRequestView request,
     CreateLoopbackDeviceCompleter::Sync& completer) {
-  std::string name = "loopback";
-
+  // This replaces any previous loopback device; its node must go before
+  // another one of the same name can be added.
+  RemoveNode(loopback_child_node_, loopback_node_controller_);
   loopback_device_ = std::make_unique<LoopbackDevice>();
 
   PW_CHECK(request->has_uart_channel());
   zx_status_t status = loopback_device_->Initialize(
       std::move(request->uart_channel()),
-      name,
+      kLoopbackName,
       [this](auto args) {
         // Add LoopbackDevice as a child node of VirtualController
         fdf::info("LoopbackDevice successfully initialized");
@@ -149,7 +151,7 @@ void VirtualController::CreateLoopbackDevice(
       outgoing().get());
   if (status != ZX_OK) {
     fdf::error("Failed to bind: {}", zx_status_get_string(status));
-    RemoveNode(loopback_node_controller_);
+    RemoveNode(loopback_child_node_, loopback_node_controller_);
     loopback_device_.reset();
     return;
   }
@@ -224,24 +226,30 @@ zx_status_t VirtualController::AddChildNode(
 }
 
 void VirtualController::RemoveNode(
+    fidl::WireClient<fuchsia_driver_framework::Node>& child_node,
     fidl::WireClient<fuchsia_driver_framework::NodeController>&
         node_controller) {
-  if (!node_controller.is_valid()) {
-    return;
-  }
-  fidl::OneWayStatus result = node_controller->Remove();
+  if (node_controller.is_valid()) {
+    fidl::OneWayStatus result = node_controller->Remove();
 
-  // If the framework already removed the node (e.g. devfs unbind) and the
-  // client has already processed the peer-closed event and unbound, `Remove()`
-  // returns `is_canceled()`. (If the client hasn't unbound yet, a one-way
-  // write to a closed peer channel still reports `ok()`.)
-  bool already_unbound = result.is_canceled();
-  // If we're tearing down during driver stop, the dispatcher is shutting down.
-  bool driver_stopping = result.is_dispatcher_shutdown();
+    // If the framework already removed the node (e.g. devfs unbind) and the
+    // client has already processed the peer-closed event and unbound,
+    // `Remove()` returns `is_canceled()`. (If the client hasn't unbound yet, a
+    // one-way write to a closed peer channel still reports `ok()`.)
+    bool already_unbound = result.is_canceled();
+    // If we're tearing down during driver stop, the dispatcher is shutting
+    // down.
+    bool driver_stopping = result.is_dispatcher_shutdown();
 
-  if (!result.ok() && !already_unbound && !driver_stopping) {
-    fdf::warn("Failed to remove child node: {}", result.status_string());
+    if (!result.ok() && !already_unbound && !driver_stopping) {
+      fdf::warn("Failed to remove child node: {}", result.status_string());
+    }
   }
+
+  // Drop the clients so that the next node can be bound; `Bind()` on an
+  // already-bound client asserts.
+  node_controller = {};
+  child_node = {};
 }
 
 }  // namespace bt_hci_virtual
