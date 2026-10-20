@@ -18,6 +18,11 @@
 #include <cstddef>
 #include <type_traits>
 
+/// User-provided header to optionally override options in this file.
+#if defined(PW_RPC_CONFIG_HEADER)
+#include PW_RPC_CONFIG_HEADER
+#endif  // defined(PW_RPC_CONFIG_HEADER)
+
 #if defined(PW_RPC_CLIENT_STREAM_END_CALLBACK) && \
     PW_RPC_CLIENT_STREAM_END_CALLBACK
 #pragma message(                                                \
