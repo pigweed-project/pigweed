@@ -1065,6 +1065,45 @@ TEST_F(BrEdrConnectionManagerTest,
   EXPECT_EQ(kInvalidPeerId, connmgr()->GetPeerId(kConnectionHandle));
 }
 
+TEST_F(BrEdrConnectionManagerTest,
+       IncomingConnectionNonSspPeerWithLegacyPairingDisabledRejectsPairing) {
+  // Legacy pairing is disabled, so the user must never be prompted for a PIN
+  // code. No RequestPasskey callback is set so that any prompt fails the test.
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  // Trigger inbound connection but don't complete the connection.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kAcceptConnectionRequest, &kAcceptConnectionRequestRsp);
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+
+  RunUntilIdle();
+
+  EXPECT_EQ(1, transaction_count());
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  ASSERT_TRUE(IsInitializing(peer));
+  ASSERT_FALSE(peer->bredr()->bonded());
+
+  // Initiate pairing from the peer with an HCI_Link_Key_Request event before
+  // the connection completes.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kLinkKeyRequestNegativeReply,
+                        &kLinkKeyRequestNegativeReplyRsp,
+                        &kPinCodeRequest);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kPinCodeRequestNegativeReply,
+                        &kPinCodeRequestNegativeReplyRsp,
+                        &kConnectionCompleteError);
+  test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_FALSE(peer->bredr()->bonded());
+  EXPECT_TRUE(IsNotConnected(peer));
+}
+
 // Legacy pairing requires a PIN code to be displayed for the peer to enter, so
 // this cannot happen when we do not have any display output capabilities.
 TEST_F(BrEdrConnectionManagerLegacyPairingTest,

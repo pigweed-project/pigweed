@@ -1510,6 +1510,18 @@ BrEdrConnectionManager::OnLinkKeyRequest(const hci::EventPacket& event) {
     // HCI_Connection_Complete event (so no connection object will exist yet)
     // (Core Spec v5.4, Vol 2, Part F, 3.1).
 
+    // This request begins legacy pairing, so reject it if legacy pairing is
+    // disabled, even if a legacy link key is stored for the peer.
+    if (!legacy_pairing_enabled_) {
+      bt_log(WARN,
+             "gap-bredr",
+             "Rejecting link key request from peer %s: authentication during "
+             "connection setup requires legacy pairing, which is not enabled",
+             bt_str(peer_id));
+      SendLinkKeyRequestNegativeReply(addr.value());
+      return hci::CommandChannel::EventCallbackResult::kContinue;
+    }
+
     bool outgoing_connection = connection_req.value()->AwaitingOutgoing();
 
     // The HCI link is not yet established, so |link|, |auth_cb|, and
@@ -1832,6 +1844,16 @@ BrEdrConnectionManager::OnPinCodeRequest(const hci::EventPacket& event) {
   }
 
   PeerId peer_id = peer->identifier();
+
+  if (!legacy_pairing_enabled_) {
+    bt_log(WARN,
+           "gap-bredr",
+           "Rejecting PIN code request from peer %s: PIN codes are only used "
+           "by legacy pairing, which is not enabled",
+           bt_str(peer_id));
+    SendPinCodeRequestNegativeReply(addr.value());
+    return hci::CommandChannel::EventCallbackResult::kContinue;
+  }
 
   auto pin_code_cb =
       [this, self = weak_self_.GetWeakPtr(), addr_as_bytes = addr.value()](
