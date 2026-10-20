@@ -152,6 +152,168 @@ By default, these links are appended to the end of each module homepage's
 standard placeholder slugs (``pw://cc-api-ref``, ``pw://rust-api-ref``,
 ``pw://source-code``, ``pw://issues``) into the ``.. toctree::`` directive.
 
+.. _contrib-docs-website-categories:
+
+---------------------
+Module categorization
+---------------------
+All Pigweed modules listed in :cs:`PIGWEED_MODULES` are organized into
+top-level categories across Sphinx (:ref:`docs-module-guides` and category
+landing pages such as :doc:`/os/index`), Doxygen (``//docs/doxygen/modules.h``),
+and ``rustdoc`` (``//pw_rust/rust/pigweed/src/lib.rs``).
+
+Category metadata is defined in :cs:`docs/common/metadata/categories.toml`
+(validated against :cs:`docs/common/metadata/categories_schema.json`), and each
+module's metadata and category assignment lives in ``//<module>/module.toml``
+(validated against :cs:`docs/common/metadata/module_schema.json`). Everything
+else is generated from them by the synchronization CLI:
+
+.. code-block:: console
+
+   $ bazelisk run //docs/common/metadata:sync
+
+Generated content lives between ``categories-start`` and ``categories-end``
+marker comments and is labeled ``AUTO-GENERATED``. Don't edit it by hand. The
+docs build (``bazelisk build //docs``) fails if any generated content is out of
+date or if any ``module.toml`` file is missing or invalid; the error message
+explains how to fix the problem. To run the same checks without building the
+docs:
+
+.. code-block:: console
+
+   $ bazelisk run //docs/common/metadata:sync -- --check
+
+How categories are structured
+=============================
+* In :cs:`docs/common/metadata/categories.toml`, each ``[<category_id>]`` table
+  maps a category ID to its metadata (``title``, ``homepage``, ``description``,
+  and either ``icon`` for a top-level category or ``parent`` for a subcategory).
+  Categories are displayed in the order they are listed, and the first 12
+  top-level categories get a card on the ``pigweed.dev`` homepage. Subcategories
+  (such as ``zephyr`` with ``parent = "os_backends"`` or ``rpi`` with
+  ``parent = "hw"``) are nested under their parent category in
+  :ref:`docs-module-guides`, on the parent category's landing page, in Doxygen,
+  and in ``rustdoc``. Within a category, direct modules are sorted
+  alphabetically and placed before subcategories by default; set an optional
+  ``pin = [...]`` list on a category table to pin specific direct module names
+  or child subcategory IDs to the top in the specified order.
+* In ``//<module>/module.toml``, each module defines its metadata, including a
+  required ``status`` and at least one of ``[category]`` or ``[facade]``:
+
+  * ``[category]`` has ``id = "<category_id>"`` and ``toctree = "<title>"`` to
+    set the module's **canonical category**: the parent of the module's docs in
+    the Sphinx ``toctree`` (rendered as ``<title> <../<module>/docs>`` on the
+    category's landing page). Both ``id`` and ``toctree`` are required.
+  * ``[facade]`` has ``module = "<facade_module>"`` and ``toctree = "<title>"``
+    to identify the facade module that a backend module implements (for example,
+    ``module = "pw_log"`` and ``toctree = "Zephyr"``). Backend modules are
+    progressively disclosed on their facade's ``//<facade>/backends.rst`` page
+    rather than repeating the facade's functional category (``observability``,
+    ``hal``, ``os``, etc.). Both ``[category]`` and ``[facade]`` require their
+    own ``toctree`` field because a backend's short title changes depending on
+    where it is listed (for example, ``pw_log_zephyr`` is titled ``Logging`` on
+    the Zephyr page and ``Zephyr`` under ``pw_log``'s backends). Target-specific
+    backends (for an OS or hardware platform category such as ``zephyr``,
+    ``fuchsia``, ``freertos``, or ``rpi``) specify both ``[category]`` and
+    ``[facade]``, making the target category their canonical ``toctree`` parent
+    while ``//<facade>/backends.rst`` cross-references them with ``pw://``.
+    Target-agnostic backends (such as ``pw_assert_basic`` or
+    ``pw_log_tokenized``) omit ``[category]``, making
+    ``//<facade>/backends.rst`` their canonical ``toctree`` parent.
+
+Add a module
+============
+For upstream modules, ``pw module create`` (see
+:ref:`module-pw_module-module-create`) scaffolds ``//<module>/module.toml``
+with a commented-out ``[category]`` / ``[facade]`` template and adds
+``"module.toml"`` to the module's ``sphinx_docs_library`` in
+``//<module>/BUILD.bazel``. Uncomment and fill out ``[category]`` or
+``[facade]``, then run the synchronization CLI. Until you do,
+``bazelisk build //docs`` fails with a validation error for the new module.
+
+Update a module's category
+==========================
+#. Edit the module's ``[category]`` table in ``//<module>/module.toml`` (for
+   example, :cs:`pw_alignment/module.toml`):
+
+   .. code-block:: toml
+
+      status = "stable"
+      tagline = "Natural object alignment, guaranteed"
+      languages = ["C++"]
+
+      [category]
+      id = "memory"
+      toctree = "Alignment"
+
+#. Run the synchronization CLI to update Sphinx, Doxygen, and rustdoc files
+   in-place:
+
+   .. code-block:: console
+
+      $ bazelisk run //docs/common/metadata:sync
+
+#. Verify the documentation build:
+
+   .. code-block:: console
+
+      $ bazelisk build //docs
+
+Add, rename, or delete a category
+=================================
+#. Add, rename, or remove the ``[<category_id>]`` table in
+   :cs:`docs/common/metadata/categories.toml`.
+#. Update the ``[category]`` tables in ``//<module>/module.toml`` for the
+   affected modules. Every category must contain at least one module.
+#. If you deleted or renamed a category, delete its old landing page or remove
+   its ``.. categories-start`` / ``.. categories-end`` block.
+#. Run the synchronization CLI:
+
+   .. code-block:: console
+
+      $ bazelisk run //docs/common/metadata:sync
+
+   This automatically:
+
+   * Scaffolds the landing page for any newly added category and registers it in
+     ``//docs/sphinx/BUILD.bazel``.
+   * Updates ``//docs/sphinx/BUILD.bazel``, ``//docs/sphinx/platform.rst``,
+     ``//docs/sphinx/modules.rst``, ``//docs/sphinx/index.rst``,
+     ``//docs/doxygen/modules.h``, and ``//pw_rust/rust/pigweed/src/lib.rs``.
+#. Run ``bazelisk build //docs``.
+
+Customize a category landing page
+=================================
+Category landing pages live at the path specified by each category's
+``homepage`` field in :cs:`docs/common/metadata/categories.toml` (for example,
+:cs:`docs/sphinx/memory/index.rst` or :cs:`docs/sphinx/os/index.rst`). Each
+category's ``description`` is automatically rendered as a subtitle below the H1
+heading on its landing page.
+
+The synchronization CLI only modifies the content between the
+``.. categories-start`` and ``.. categories-end`` marker comments. Hand-written
+guides, overviews, headings, and diagrams before or after the markers are
+preserved; see :cs:`docs/sphinx/os/index.rst` for an example.
+
+To add non-module pages (such as cross-module guides or third-party
+integrations) to a category's sidebar navigation, don't edit the auto-generated
+``.. toctree::`` inside ``.. categories-start`` and ``.. categories-end``.
+Instead, add a separate ``.. toctree::`` directive outside the markers:
+
+* Place the ``.. toctree::`` **after** ``.. categories-end`` (omitting
+  ``self``) to append pages after the category's modules (see
+  :cs:`docs/sphinx/observability/index.rst` for an example).
+* Place the ``.. toctree::`` (starting with ``self``) **before**
+  ``.. categories-start`` to list introductory guides before the category's
+  modules; the synchronization CLI automatically omits ``self`` from the
+  generated ``.. toctree::`` so ``self`` appears only once (see
+  :cs:`docs/sphinx/toolchains/index.rst` for an example).
+
+To use an existing page as a category's landing page, set the category's
+``homepage`` to the page's path and add ``.. categories-start`` and
+``.. categories-end`` lines where the module table should appear. The
+synchronization CLI fills in the content between them.
+
 .. _contrib-docs-website-copy:
 
 ----------------------------------------
@@ -421,7 +583,7 @@ immediately without client-side layout shift:
 
 * **Sphinx pages:** Derived from the root documentation toctree hierarchy.
 * **C/C++ reference pages (Doxygen):** Formatted as ``Home`` > ``Reference`` >
-  ``C/C++`` > ``<group>`` > ``<symbol>``.
+  ``C/C++`` > ``<category>`` > ``<group>`` > ``<symbol>``.
 * **Rust reference pages (Rustdoc):** Formatted as ``Home`` > ``Reference`` >
   ``Rust`` > ``<crate>`` > ``<item>``.
 * **Homepage:** Omitted to maintain a clean landing experience.

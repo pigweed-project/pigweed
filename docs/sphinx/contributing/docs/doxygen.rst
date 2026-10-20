@@ -29,40 +29,6 @@ into their respective Pigweed modules.
 ----------
 Quickstart
 ----------
-#. Check if your module is defined in :cs:`docs/doxygen/modules.h`. If not,
-   define it now.
-
-   .. literalinclude:: ../../docs/doxygen/modules.h
-      :language: cpp
-      :start-at: /// @defgroup pw_bytes pw_bytes
-      :end-at: /// @brief Utilities for manipulating binary data
-
-   The pattern is ``@defgroup <id> <title>``. If ``<title>`` is omitted,
-   Doxygen mistakenly capitalizes the module as ``Pw_bytes``.
-
-   ``@brief`` should contain the module's tagline as defined in
-   :cs:`docs/sphinx/module_metadata.json`. If your module doesn't have a
-   tagline, now is a good time to create one!
-
-   The content between ``@maindocs`` and ``@endmaindocs`` should be a complete
-   list of links to the module's Sphinx docs.
-
-#. (Optional) If your module has a large, complex API, define "submodule"
-   groups (such as the ``pw_bytes_ptr`` subgroup shown below) in
-   :cs:`docs/doxygen/modules.h` to help further organize your module's API
-   reference:
-
-   .. literalinclude:: ../../docs/doxygen/modules.h
-      :language: cpp
-      :start-at: /// @defgroup pw_bytes_ptr Packed pointers
-      :end-at: /// @brief Store data in unused pointer bits
-
-   See :cc:`pw_bytes` to view the rendered example. The ``pw_bytes`` group
-   controls the module's API reference landing page. The main page is
-   organized by "submodules". The ``pw_bytes_ptr`` group is one of the
-   submodules. On that page, all APIs related to packed pointers are
-   presented.
-
 #. In your module's main ``BUILD.bazel`` file (e.g. ``//pw_bytes/BUILD.bazel``)
    create a ``filegroup`` named ``doxygen``. For ``srcs``, list all Doxygen
    inputs:
@@ -106,7 +72,7 @@ Quickstart
 
       // …
 
-      /// @}
+      /// @endmodule
 
       }  // namespace pw
 
@@ -120,7 +86,7 @@ Quickstart
 
       // …
 
-      /// @}
+      /// @endsubmodule
 
       }  // namespace pw
 
@@ -129,7 +95,29 @@ Quickstart
 
    The lack of whitespace between ``pw_bytes`` and ``ptr`` is important!
 
-   Remember to use ``@}`` to close off your annotation!
+#. (Optional) If your module uses ``@submodule``, define its submodule groups
+   (such as the ``pw_bytes_ptr`` subgroup shown below) in the manual section of
+   :cs:`docs/doxygen/modules.h` after ``// categories-end``:
+
+   .. literalinclude:: ../../docs/doxygen/modules.h
+      :language: cpp
+      :start-at: /// @defgroup pw_bytes_ptr Packed pointers
+      :end-at: /// @brief Store data in unused pointer bits
+
+   See :cc:`pw_bytes` to view the rendered example. The ``pw_bytes`` group
+   controls the module's API reference landing page. The main page is
+   organized by "submodules". The ``pw_bytes_ptr`` group is one of the
+   submodules. On that page, all APIs related to packed pointers are
+   presented.
+
+#. Run ``bazelisk run //docs/common/metadata:sync`` to auto-generate your
+   module's top-level ``@defgroup`` entry in :cs:`docs/doxygen/modules.h` from
+   ``//<module>/module.toml``:
+
+   .. literalinclude:: ../../docs/doxygen/modules.h
+      :language: cpp
+      :start-at: /// @defgroup pw_bytes pw_bytes
+      :end-at: /// @brief Utilities for manipulating binary data
 
 #. Follow the style rules in :ref:`style-doxygen`.
 

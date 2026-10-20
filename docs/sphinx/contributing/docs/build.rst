@@ -273,7 +273,6 @@ The full list of docs sources will be logged:
    bazel-bin/docs/sphinx/_docs/_sources/_extensions/bug.py
    bazel-bin/docs/sphinx/_docs/_sources/_extensions/kconfig.py
    bazel-bin/docs/sphinx/_docs/_sources/_extensions/module_metadata.py
-   bazel-bin/docs/sphinx/_docs/_sources/_extensions/modules_index.py
    bazel-bin/docs/sphinx/_docs/_sources/_extensions/pigweed_live.py
    bazel-bin/docs/sphinx/_docs/_sources/_extensions/pw_status_codes.py
    bazel-bin/docs/sphinx/_docs/_sources/_extensions/seed_metadata.py

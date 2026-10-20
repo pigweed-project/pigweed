@@ -25,6 +25,7 @@ Verify:
 
 ```console
 ls docs/agents/changelog/AGENTS.md
+ls docs/agents/metadata/AGENTS.md
 ls docs/agents/rst/AGENTS.md
 ```
 
@@ -63,3 +64,16 @@ Verify:
 * `//docs/agents/changelog/resources/data.toml` is created.
 * Agent runs `bazelisk run //docs/agents/changelog/scripts -- next …`
   many times.
+
+### 5. Metadata workflows are followed
+
+1. Prompt: `move pw_alignment to the core category`
+
+Verify:
+
+* Agent reads `//docs/agents/metadata/AGENTS.md`.
+* Agent updates `pw_alignment`'s `category.id` to `core` in
+  `//pw_alignment/module.toml`.
+* Agent runs `bazelisk run //docs/common/metadata:sync`.
+* `//docs/sphinx/core/index.rst`, `//docs/sphinx/memory/index.rst`,
+  `//docs/sphinx/platform.rst`, and `//docs/doxygen/modules.h` are updated.

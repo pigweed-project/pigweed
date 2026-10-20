@@ -1,8 +1,8 @@
 ---
 name: docs
 description: >-
-  Use for ALL documentation-related workflows: rst style guide,
-  changelog updates, C/C++ API reference (Doxygen)
+  Use for ALL documentation-related workflows: rst style guide, module
+  metadata and categories, changelog updates, C/C++ API reference (Doxygen)
 ---
 
 # Docs
@@ -37,6 +37,8 @@ them to the full instructions.
 Each of the sections below represents a workflow. Summary:
 
 * rst: Align with Pigweed's reStructuredText (reST) style guide.
+* metadata: Manage Pigweed module metadata and documentation categories
+  (`//<module>/module.toml` and `//docs/common/metadata/categories.toml`).
 * changelog: Update the Pigweed changelog.
 * doxygen: Create C/C++ API reference content.
 * security: Annotate a vulernability false positive.
@@ -69,6 +71,27 @@ Guards:
   reST that's unrelated to the main goal.
 
 Path: `//docs/agents/rst/AGENTS.md`
+
+### metadata
+
+Triggers:
+
+* `module.toml` or `categories.toml` is in context.
+* A `[ERROR] Docs Categorization Failed` build error occurs.
+* The user is adding a new Pigweed module or updating module categories/metadata.
+* "update the module categories"
+* "categorize this module"
+
+Guards:
+
+* "what modules are in the async category?"
+* "update the seed_metadata extension"
+* "add metadata to this packet"
+* Editing a module's documentation in `//pw_*/docs.rst` without changing its
+  metadata or categories in `//<module>/module.toml` or
+  `//docs/common/metadata/categories.toml`.
+
+Path: `//docs/agents/metadata/AGENTS.md`
 
 ### changelog
 

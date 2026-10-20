@@ -78,12 +78,18 @@ Module names must conform to a specific format:
   for the module. For example, ``pw_module_name`` results in the namespace
   ``pw::module_name``.
 
+**Upstream Integration**
+
+In upstream Pigweed, ``pw module create`` also registers the module in
+``PIGWEED_MODULES`` and the docs build, and scaffolds ``//<module>/module.toml``.
+The new ``module.toml`` file has no documentation category yet, so the docs
+build fails until you add one and run the sync tool, as described in
+:ref:`contrib-docs-website-categories`.
+
 **Downstream Support**
 
 When run in a downstream project, ``pw module create`` creates the module
-directory and files but skips the integration steps that assume a Pigweed
-upstream repository structure (such as updating ``PIGWEED_MODULES`` and the
-Sphinx documentation index).
+directory and files but skips the upstream integration steps.
 
 .. _module-pw_module-configuration:
 

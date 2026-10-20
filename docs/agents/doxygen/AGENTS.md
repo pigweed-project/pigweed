@@ -20,16 +20,24 @@ Every `@module` and `@submodule` annotation must have an accompanying
 
 ## Quickstart
 
-1. Add the Pigweed module to `//docs/doxygen/modules.h`.
-2. Annotate headers that contain public APIs with `@module` or `@submodule`.
-   Always close with `@endmodule` or `@endsubmodule`.
-3. Add a `filegroup` with name `doxygen` in the module's root `BUILD.bazel`
+1. Add a `filegroup` with name `doxygen` in the module's root `BUILD.bazel`
    file. List all Doxygen inputs in `srcs`.
-4. Add the `doxygen` target to `//docs/doxygen:srcs`.
-5. Follow Pigweed's Doxygen style guide (`//docs/sphinx/style/doxygen.rst`)
+2. Add the `doxygen` target to `//docs/doxygen:srcs`.
+3. Annotate headers that contain public APIs with `@module` or `@submodule`.
+   Always close with `@endmodule` or `@endsubmodule`.
+4. (Optional) `//docs/doxygen/modules.h` has an auto-generated section at the
+   top (between `// categories-start` and `// categories-end`) for top-level
+   category and module groups, followed by a manual section at the end (after
+   `// categories-end`) for submodule groups. If using `@submodule`, define the
+   submodule `@defgroup` blocks in the manual section at the end of
+   `//docs/doxygen/modules.h`.
+5. Run `bazelisk run //docs/common/metadata:sync` to auto-generate the module's
+   top-level `@defgroup` entry in `//docs/doxygen/modules.h` from
+   `//<module>/module.toml` and `//docs/common/metadata/categories.toml`.
+6. Follow Pigweed's Doxygen style guide (`//docs/sphinx/style/doxygen.rst`)
    when documenting headers.
-6. Build the docs with `bazelisk build //docs`. Doxygen output can be inspected
-   and at `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/`. The
+7. Build the docs with `bazelisk build //docs`. Doxygen output can be inspected
+   at `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/`. The
    [tagfile](https://www.doxygen.nl/manual/external.html) is an authoritative
    index of the entire public API that Doxygen is aware of. It can be found at
    `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/index.tag`.

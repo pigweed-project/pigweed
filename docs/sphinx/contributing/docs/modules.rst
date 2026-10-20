@@ -68,21 +68,23 @@ Create your module's metadata:
       .. pigweed-module::
          :name: pw_*
 
-2. Add metadata for your module in ``//docs/sphinx/module_metadata.json``.
-   See ``//docs/sphinx/module_metadata_schema.json`` for the schema
-   definition.
+2. Add metadata for your module in ``//<module>/module.toml`` (and include
+   ``"module.toml"`` in ``srcs`` of your module's ``sphinx_docs_library`` in
+   ``//<module>/BUILD.bazel``). See
+   ``//docs/common/metadata/module_schema.json`` for the schema definition and
+   :ref:`contrib-docs-website-categories` for how to choose ``[category]`` or
+   ``[facade]``. Then run ``bazelisk run //docs/common/metadata:sync`` to add
+   your module to the module index and its category landing page.
 
-   .. code-block:: json
+   .. code-block:: toml
 
-      {
-        "pw_alignment": {
-          "tagline": "Natural object alignment, guaranteed",
-          "status": "stable",
-          "languages": [
-            "C++"
-          ]
-        }
-      }
+      status = "stable"
+      tagline = "Natural object alignment, guaranteed"
+      languages = ["C++"]
+
+      [category]
+      id = "memory"
+      toctree = "Alignment"
 
    The ``tagline`` should concisely summarize your module's value proposition.
 
