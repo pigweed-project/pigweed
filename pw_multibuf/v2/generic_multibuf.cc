@@ -54,7 +54,7 @@ bool GenericMultiBuf::TryReserveForInsert(const_iterator pos,
     return true;
   }
   size_t layers_needed = 1;
-  if (bytes.deallocator() != nullptr && bytes.size() != bytes.base_size()) {
+  if (bytes.deallocator() != nullptr && bytes.sliced()) {
     // An owned, sliced Buf needs extra layer to retain its original allocation.
     layers_needed = 2;
   }
@@ -160,19 +160,21 @@ auto GenericMultiBuf::Insert(const_iterator pos, Buf&& bytes) -> iterator {
   }
 
   PW_CHECK(TryReserveForInsert(pos, bytes));
-  auto [iter, chunk] = Insert(pos,
-                              ConstByteSpan(bytes.base(), bytes.base_size()),
-                              bytes.prefix_,
-                              bytes.size());
-  deque_[memory_context_index(chunk)].deallocator =
-      std::exchange(bytes.deallocator_, nullptr);
+  const size_t offset = bytes.prefix_size();
+  const size_t length = bytes.size();
+  // The allocation spans the Buf's entire base, including any sliced prefix or
+  // suffix, so that the full allocation is retained in the base view.
+  UniquePtr<std::byte[]> allocation = TakeAllocation(std::move(bytes));
+  auto [iter, chunk] = Insert(
+      pos, ConstByteSpan(allocation.get(), allocation.size()), offset, length);
+  deque_[memory_context_index(chunk)].deallocator = allocation.deallocator();
   deque_[base_view_index(chunk)].base_view = {
       .offset = 0,
       .owned = true,
-      .length = CheckedCast<size_type>(bytes.base_size()),
+      .length = CheckedCast<size_type>(allocation.size()),
       .shared = false,
   };
-  bytes.reset();
+  allocation.Release();
   return iter;
 }
 

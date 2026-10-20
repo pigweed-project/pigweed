@@ -37,6 +37,13 @@ block of memory. You can, for instance, create a ``pw_allocator`` implementation
 that wraps a single static buffer with an "in use" flag; a ``Buf`` created over
 it would just signal transfers of ownership without ever allocating any memory.
 
+A ``Buf`` can be constructed from a ``pw::UniquePtr<std::byte[]>``, and
+:cc:`pw::TakeAllocation` converts an owned ``Buf`` back. The returned
+``UniquePtr`` spans the entire underlying allocation, not just the ``Buf``'s
+current view. To recreate the view later, record :cc:`pw::Buf::prefix_size` and
+``size()`` first and pass them to the ``Buf(UniquePtr&&, offset, size)``
+constructor.
+
 Slicing and reclaiming
 ======================
 Both :cc:`pw::Buf` and :cc:`pw::ConstBuf` can be truncated or sliced.
@@ -76,8 +83,9 @@ of a buffer:
 
 - :cc:`pw::Slice`: Shrinks a buffer view to a sub-range of its bytes.
 - :cc:`pw::Truncate`: Truncates a buffer view to a smaller size from the start.
-- :cc:`pw::Reclaim`: Expands a sliced buffer view back into its originally
-  allocated prefix and suffix bytes.
+- :cc:`pw::Reclaim`, :cc:`pw::ReclaimPrefix`, :cc:`pw::ReclaimSuffix`: Expand a
+  sliced buffer view back into its originally allocated prefix and suffix
+  bytes, up to :cc:`pw::Buf::prefix_size` and :cc:`pw::Buf::suffix_size`.
 
 Relationship between Buf and ConstBuf
 =====================================
@@ -92,6 +100,19 @@ serve different purposes:
   ``ConstBuf`` only supports slicing and truncating, never reclaiming, which is
   suited for read packets where layers strip headers as data moves up the
   protocol stack without accessing outside their assigned slice.
+
+.. important::
+
+   :cc:`Buf <pw::Buf>` grants full control over the underlying buffer, including
+   mutating its contents, slicing, reclaiming prefix or suffix bytes, and taking
+   the underlying allocation. It is intended primarily for internal use within a
+   module or protocol implementation.
+
+   Do not expose ``Buf`` in public APIs where unexpected slicing, reclamation,
+   or ownership transfer could violate invariants. Use :cc:`pw::ByteSpan` /
+   :cc:`pw::ConstByteSpan` for borrowed access or :cc:`ConstBuf <pw::ConstBuf>`
+   for transferring read-only ownership instead. To transfer mutable ownership,
+   use a wrapper type (e.g. :cc:`pw::transport::WriteReservation`).
 
 A ``Buf`` can be converted to a ``ConstBuf`` by moving it:
 

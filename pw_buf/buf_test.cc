@@ -1250,5 +1250,182 @@ TEST_F(BufTest, EmptyNonNullBufIsNotEqualToNullptr) {
   EXPECT_NE(nullptr, const_truncated);
 }
 
+TEST_F(BufTest, TakeAllocationOwned) {
+  Buf buf = Buf::Allocate(test_allocator_, 10);
+  std::byte* base = buf.data();
+  buf = Slice(std::move(buf), 2, 5);
+
+  const size_t offset = buf.prefix_size();
+  const size_t size = buf.size();
+  UniquePtr<std::byte[]> allocation = TakeAllocation(std::move(buf));
+  EXPECT_EQ(buf, nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_EQ(buf.deallocator(), nullptr);
+  EXPECT_EQ(allocation.get(), base);
+  EXPECT_EQ(allocation.size(), 10u);
+  EXPECT_EQ(allocation.deallocator(), &test_allocator_);
+
+  // The view can be restored from the taken allocation.
+  Buf restored(std::move(allocation), offset, size);
+  EXPECT_EQ(restored.data(), base + 2);
+  EXPECT_EQ(restored.size(), 5u);
+  EXPECT_EQ(restored.base(), base);
+  EXPECT_EQ(restored.base_size(), 10u);
+  EXPECT_EQ(restored.deallocator(), &test_allocator_);
+}
+
+TEST_F(BufTest, TakeAllocationUnownedFails) {
+  std::array<std::byte, 10> storage{};
+  Buf buf = Buf::Unowned(storage);
+  EXPECT_DEATH_IF_SUPPORTED(static_cast<void>(TakeAllocation(std::move(buf))),
+                            ".*");
+}
+
+TEST_F(BufTest, TakeAllocationNull) {
+  Buf buf;
+  UniquePtr<std::byte[]> allocation = TakeAllocation(std::move(buf));
+  EXPECT_EQ(allocation, nullptr);
+  EXPECT_EQ(buf, nullptr);  // NOLINT(bugprone-use-after-move)
+}
+
+TEST_F(BufTest, SwapBuf) {
+  Buf owned = Buf::Allocate(test_allocator_, 10);
+  std::byte* owned_data = owned.data();
+  owned = Slice(std::move(owned), 1, 4);
+
+  std::array<std::byte, 6> storage{};
+  Buf unowned = Buf::Unowned(storage);
+
+  owned.swap(unowned);
+  EXPECT_EQ(owned.data(), storage.data());
+  EXPECT_EQ(owned.size(), 6u);
+  EXPECT_EQ(owned.deallocator(), nullptr);
+  EXPECT_EQ(unowned.data(), owned_data + 1);
+  EXPECT_EQ(unowned.size(), 4u);
+  EXPECT_EQ(unowned.base(), owned_data);
+  EXPECT_EQ(unowned.base_size(), 10u);
+  EXPECT_EQ(unowned.deallocator(), &test_allocator_);
+
+  using std::swap;
+  swap(owned, unowned);
+  EXPECT_EQ(owned.data(), owned_data + 1);
+  EXPECT_EQ(owned.size(), 4u);
+  EXPECT_EQ(owned.deallocator(), &test_allocator_);
+  EXPECT_EQ(unowned.data(), storage.data());
+  EXPECT_EQ(unowned.size(), 6u);
+  EXPECT_EQ(unowned.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, SwapConstBuf) {
+  ConstBuf owned = Buf::Allocate(test_allocator_, 10);
+  const std::byte* owned_data = owned.data();
+
+  ConstBuf null_buf;
+
+  owned.swap(null_buf);
+  EXPECT_EQ(owned, nullptr);
+  EXPECT_EQ(null_buf.data(), owned_data);
+  EXPECT_EQ(null_buf.size(), 10u);
+  EXPECT_EQ(null_buf.deallocator(), &test_allocator_);
+
+  using std::swap;
+  swap(owned, null_buf);
+  EXPECT_EQ(owned.data(), owned_data);
+  EXPECT_EQ(owned.size(), 10u);
+  EXPECT_EQ(null_buf, nullptr);
+}
+
+TEST_F(BufTest, PrefixAndSuffixSize) {
+  Buf buf = Buf::Allocate(test_allocator_, 10);
+  EXPECT_EQ(buf.prefix_size(), 0u);
+  EXPECT_EQ(buf.suffix_size(), 0u);
+
+  buf = Slice(std::move(buf), 2, 5);
+  EXPECT_EQ(buf.prefix_size(), 2u);
+  EXPECT_EQ(buf.suffix_size(), 3u);
+  EXPECT_EQ(buf.prefix_size() + buf.size() + buf.suffix_size(),
+            buf.base_size());
+
+  buf = Truncate(std::move(buf), 1);
+  EXPECT_EQ(buf.prefix_size(), 2u);
+  EXPECT_EQ(buf.suffix_size(), 7u);
+
+  buf = ReclaimPrefix(std::move(buf), buf.prefix_size());
+  EXPECT_EQ(buf.prefix_size(), 0u);
+  EXPECT_EQ(buf.size(), 3u);
+
+  buf = ReclaimSuffix(std::move(buf), buf.suffix_size());
+  EXPECT_EQ(buf.suffix_size(), 0u);
+  EXPECT_EQ(buf.size(), 10u);
+}
+
+TEST_F(BufTest, PrefixAndSuffixSizeOffsetConstructor) {
+  std::array<std::byte, 10> storage{};
+  Buf buf = Buf::Unowned(storage, 4);
+  EXPECT_EQ(buf.prefix_size(), 4u);
+  EXPECT_EQ(buf.suffix_size(), 0u);
+  EXPECT_EQ(buf.size(), 6u);
+}
+
+TEST_F(BufTest, PrefixAndSuffixSizeNull) {
+  Buf buf;
+  EXPECT_EQ(buf.prefix_size(), 0u);
+  EXPECT_EQ(buf.suffix_size(), 0u);
+}
+
+TEST_F(BufTest, NullPointerWithDeallocatorIsUnowned) {
+  Buf buf(nullptr, 0, test_allocator_);
+  EXPECT_EQ(buf, nullptr);
+  EXPECT_EQ(buf.deallocator(), nullptr);
+
+  Buf buf_with_offset(nullptr, 0, 0, test_allocator_);
+  EXPECT_EQ(buf_with_offset, nullptr);
+  EXPECT_EQ(buf_with_offset.deallocator(), nullptr);
+
+  Buf buf_from_unique_ptr(UniquePtr<std::byte[]>(nullptr, 0, test_allocator_));
+  EXPECT_EQ(buf_from_unique_ptr, nullptr);
+  EXPECT_EQ(buf_from_unique_ptr.deallocator(), nullptr);
+
+  UniquePtr<std::byte[]> allocation = TakeAllocation(std::move(buf));
+  EXPECT_EQ(allocation, nullptr);
+}
+
+TEST_F(BufTest, Sliced) {
+  Buf buf = Buf::Allocate(test_allocator_, 10);
+  EXPECT_FALSE(buf.sliced());
+
+  buf = Slice(std::move(buf), 2);
+  EXPECT_TRUE(buf.sliced());
+
+  buf = ReclaimPrefix(std::move(buf), buf.prefix_size());
+  EXPECT_FALSE(buf.sliced());
+
+  buf = Truncate(std::move(buf), 9);
+  EXPECT_TRUE(buf.sliced());
+
+  buf = ReclaimSuffix(std::move(buf), buf.suffix_size());
+  EXPECT_FALSE(buf.sliced());
+
+  // Slicing to the full size does not exclude any bytes.
+  buf = Slice(std::move(buf), 0, 10);
+  EXPECT_FALSE(buf.sliced());
+
+  // Slicing to an empty view excludes all bytes.
+  buf = Truncate(std::move(buf), 0);
+  EXPECT_TRUE(buf.empty());
+  EXPECT_TRUE(buf.sliced());
+}
+
+TEST_F(BufTest, SlicedOffsetConstructor) {
+  std::array<std::byte, 10> storage{};
+  EXPECT_FALSE(Buf::Unowned(storage).sliced());
+  EXPECT_TRUE(Buf::Unowned(storage, 1).sliced());
+  EXPECT_TRUE(Buf::Unowned(storage, 0, 9).sliced());
+}
+
+TEST_F(BufTest, SlicedNull) {
+  Buf buf;
+  EXPECT_FALSE(buf.sliced());
+}
+
 }  // namespace
 }  // namespace pw

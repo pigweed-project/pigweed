@@ -23,9 +23,10 @@ namespace pw {
 
 /// @submodule{pw_bytes,span}
 
-// Aliases for spans of bytes.
+/// Alias for a mutable `pw::span` of bytes.
 using ByteSpan = span<std::byte>;
 
+/// Alias for a read-only `pw::span` of bytes.
 using ConstByteSpan = span<const std::byte>;
 
 /// Gets a read-only `pw::span<const std::byte>` (`ConstByteSpan`) view of an
@@ -81,6 +82,6 @@ span<std::byte, sizeof(T)> ObjectAsWritableBytes(T& obj) {
   return pw::as_writable_bytes(s);
 }
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw

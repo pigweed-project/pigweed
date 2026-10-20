@@ -16,6 +16,7 @@
 
 #include <cstring>
 #include <limits>
+#include <utility>
 
 #include "pw_allocator/allocator.h"
 #include "pw_assert/check.h"
@@ -31,14 +32,10 @@ Buf& Buf::operator=(Buf&& other) noexcept {
 }
 
 void Buf::reset() {
-  if (deallocator_ != nullptr && data_ != nullptr) {
-    deallocator_->Deallocate(data_ - prefix_);
+  if (deallocator_ != nullptr) {
+    deallocator_->Deallocate(mutable_base());
   }
-  data_ = nullptr;
-  size_ = 0;
-  deallocator_ = nullptr;
-  prefix_ = 0;
-  suffix_ = 0;
+  Clear();
 }
 
 Buf Slice(Buf&& buf, size_t offset, size_t length) {
@@ -61,6 +58,19 @@ Buf Reclaim(Buf&& buf, size_t prefix_count, size_t suffix_count) {
   buf.prefix_ -= static_cast<Buf::OffsetType>(prefix_count);
   buf.suffix_ -= static_cast<Buf::OffsetType>(suffix_count);
   return std::move(buf);
+}
+
+UniquePtr<std::byte[]> TakeAllocation(Buf&& buf) {
+  if (buf.deallocator_ == nullptr) {
+    // Only a null Buf may have no deallocator here. A null Buf has no state to
+    // clear.
+    PW_CHECK(buf.data_ == nullptr);
+    return UniquePtr<std::byte[]>();
+  }
+  UniquePtr<std::byte[]> allocation(
+      buf.mutable_base(), buf.base_size(), *buf.deallocator_);
+  buf.Clear();
+  return allocation;
 }
 
 Buf Buf::Allocate(Allocator& allocator, size_t size_bytes) {

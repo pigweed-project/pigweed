@@ -65,9 +65,9 @@ class Buf {
   constexpr Buf()
       : data_(nullptr),
         size_(0),
-        deallocator_(nullptr),
         prefix_(0),
-        suffix_(0) {}
+        suffix_(0),
+        deallocator_(nullptr) {}
 
   /// Constructs a null `Buf`.
   constexpr Buf(std::nullptr_t) noexcept : Buf() {}
@@ -292,6 +292,21 @@ class Buf {
     return prefix_ + size_ + suffix_;
   }
 
+  /// Returns the number of bytes between `base()` and `data()`. These bytes
+  /// were excluded by slicing and may be recovered with `ReclaimPrefix()`.
+  [[nodiscard]] constexpr size_t prefix_size() const { return prefix_; }
+
+  /// Returns the number of bytes after the end of the data in the underlying
+  /// memory buffer. These bytes were excluded by slicing or truncating and may
+  /// be recovered with `ReclaimSuffix()`.
+  [[nodiscard]] constexpr size_t suffix_size() const { return suffix_; }
+
+  /// Returns true if the `Buf` views only part of its underlying memory buffer,
+  /// i.e. it was sliced or truncated, or constructed with an offset.
+  [[nodiscard]] constexpr bool sliced() const {
+    return prefix_ != 0 || suffix_ != 0;
+  }
+
   /// Returns a pointer to the deallocator if this buffer owns the underlying
   /// memory allocation, or `nullptr` if the buffer is unowned or null.
   [[nodiscard]] constexpr Deallocator* deallocator() const {
@@ -319,6 +334,18 @@ class Buf {
   /// Frees the owned memory (if any) and sets the buffer to null.
   void reset();
 
+  /// Exchanges the contents of this `Buf` with `other`.
+  void swap(Buf& other) noexcept {
+    std::swap(data_, other.data_);
+    std::swap(size_, other.size_);
+    std::swap(prefix_, other.prefix_);
+    std::swap(suffix_, other.suffix_);
+    std::swap(deallocator_, other.deallocator_);
+  }
+
+  /// Exchanges the contents of two `Buf`s.
+  friend void swap(Buf& lhs, Buf& rhs) noexcept { lhs.swap(rhs); }
+
  private:
   using OffsetType =
       std::conditional_t<sizeof(size_t) >= 8, uint32_t, uint16_t>;
@@ -329,31 +356,41 @@ class Buf {
                          Deallocator* deallocator)
       : data_(base + offset),
         size_(size),
-        deallocator_(deallocator),
         prefix_(static_cast<OffsetType>(offset)),
-        suffix_(0) {
+        suffix_(0),
+        // Never store an allocator for a null Buf.
+        deallocator_(base != nullptr ? deallocator : nullptr) {
     PW_ASSERT(base != nullptr || (offset == 0 && size == 0));
     PW_ASSERT(offset <= std::numeric_limits<OffsetType>::max());
   }
 
-  friend class multibuf::v2::internal::GenericMultiBuf;
-
   friend Buf Slice(Buf&& buf, size_t offset, size_t length);
   friend Buf Reclaim(Buf&& buf, size_t prefix_count, size_t suffix_count);
+  friend UniquePtr<std::byte[]> TakeAllocation(Buf&& buf);
 
   constexpr void MoveFrom(Buf&& other) {
     data_ = cpp20::exchange(other.data_, nullptr);
     size_ = cpp20::exchange(other.size_, 0u);
+    prefix_ = cpp20::exchange(other.prefix_, OffsetType{0});
+    suffix_ = cpp20::exchange(other.suffix_, OffsetType{0});
     deallocator_ = cpp20::exchange(other.deallocator_, nullptr);
-    prefix_ = cpp20::exchange(other.prefix_, static_cast<OffsetType>(0));
-    suffix_ = cpp20::exchange(other.suffix_, static_cast<OffsetType>(0));
   }
+
+  constexpr void Clear() {
+    data_ = nullptr;
+    size_ = 0;
+    prefix_ = 0;
+    suffix_ = 0;
+    deallocator_ = nullptr;
+  }
+
+  [[nodiscard]] constexpr std::byte* mutable_base() { return data_ - prefix_; }
 
   std::byte* data_;
   size_t size_;
-  Deallocator* deallocator_;
   OffsetType prefix_;
   OffsetType suffix_;
+  Deallocator* deallocator_;
 };
 
 /// Slices a mutable `Buf` by shifting its start address and setting its size.
@@ -371,19 +408,43 @@ class Buf {
   return Slice(std::move(buf), 0, length);
 }
 
-/// Reclaims up to `prefix_count` bytes at the beginning and `suffix_count`
-/// bytes at the end of the buffer.
+/// Reclaims `prefix_count` bytes at the beginning and `suffix_count` bytes at
+/// the end of the buffer.
+///
+/// @pre `prefix_count` cannot exceed `buf.prefix_size()`, and `suffix_count`
+/// cannot exceed `buf.suffix_size()`.
 [[nodiscard]] Buf Reclaim(Buf&& buf, size_t prefix_count, size_t suffix_count);
 
-/// Reclaims up to `count` prefix bytes at the beginning of the buffer.
+/// Reclaims `count` prefix bytes at the beginning of the buffer.
+///
+/// @pre `count` cannot exceed `buf.prefix_size()`.
 [[nodiscard]] inline Buf ReclaimPrefix(Buf&& buf, size_t count) {
   return Reclaim(std::move(buf), count, 0);
 }
 
-/// Reclaims up to `count` suffix bytes at the end of the buffer.
+/// Reclaims `count` suffix bytes at the end of the buffer.
+///
+/// @pre `count` cannot exceed `buf.suffix_size()`.
 [[nodiscard]] inline Buf ReclaimSuffix(Buf&& buf, size_t count) {
   return Reclaim(std::move(buf), 0, count);
 }
+
+/// Transfers ownership of a `Buf`'s underlying memory allocation to a
+/// `UniquePtr`. The `Buf` is null after this call.
+///
+/// The returned `UniquePtr` spans the entire base allocation (`base()` and
+/// `base_size()`), not only the bytes in the current view. To preserve the
+/// view, record `prefix_size()` and `size()` before calling `TakeAllocation()`,
+/// then pass them to `Buf(UniquePtr<std::byte[]>&&, size_t, size_t)`.
+///
+/// To take sole responsibility for the memory, call `Release()` on the
+/// returned `UniquePtr` after saving its `deallocator()` and `size()`.
+///
+/// If the `Buf` is null, returns a null `UniquePtr`.
+///
+/// @pre `buf` must be owned (`buf.deallocator() != nullptr`) or null. An
+/// unowned `Buf` has no allocation to take.
+[[nodiscard]] UniquePtr<std::byte[]> TakeAllocation(Buf&& buf);
 
 inline Buf::Buf(UniquePtr<std::byte[]>&& buffer, size_t offset)
     : Buf(Slice(Buf(std::move(buffer)), offset)) {}
@@ -557,6 +618,12 @@ class ConstBuf {
 
   /// Frees the owned memory (if any) and sets the buffer to null.
   void reset() { buf_.reset(); }
+
+  /// Exchanges the contents of this `ConstBuf` with `other`.
+  void swap(ConstBuf& other) noexcept { buf_.swap(other.buf_); }
+
+  /// Exchanges the contents of two `ConstBuf`s.
+  friend void swap(ConstBuf& lhs, ConstBuf& rhs) noexcept { lhs.swap(rhs); }
 
  private:
   friend class multibuf::v2::internal::GenericMultiBuf;
