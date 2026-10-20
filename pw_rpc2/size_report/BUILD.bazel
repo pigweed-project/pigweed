@@ -1,0 +1,464 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//pw_bloat:pw_cc_size_binary.bzl", "pw_cc_size_binary")
+load("//pw_bloat:pw_size_diff.bzl", "pw_size_diff")
+load("//pw_bloat:pw_size_table.bzl", "pw_size_table")
+load(
+    "//pw_protobuf_compiler:pwpb_proto_library.bzl",
+    "pwpb_proto_library",
+)
+load(
+    "//pw_protobuf_compiler:pwpb_rpc2_proto_library.bzl",
+    "pwpb_rpc2_proto_library",
+)
+load(
+    "//pw_protobuf_compiler:raw_rpc2_proto_library.bzl",
+    "raw_rpc2_proto_library",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+cc_library(
+    name = "size_report",
+    srcs = ["size_report.cc"],
+    hdrs = ["public/pw_rpc2/size_report/size_report.h"],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_allocator",
+        "//pw_allocator:first_fit",
+        "//pw_async2",
+        "//pw_async2:basic_dispatcher",
+        "//pw_async2:value_future",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_buf",
+        "//pw_containers:intrusive_forward_list",
+        "//pw_preprocessor",
+        "//pw_result",
+        "//pw_status",
+        "//pw_sync:interrupt_spin_lock",
+        "//pw_sync:lock_annotations",
+        "//pw_sync:mutex",
+        "//pw_sync:thread_notification",
+        "//pw_transport/cpp:socket",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "base",
+    srcs = ["base.cc"],
+    deps = [
+        ":size_report",
+        "//pw_bloat:bloat_this_binary",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "server_size_report",
+    srcs = ["server_size_report.cc"],
+    deps = [
+        ":size_report",
+        ":size_report_raw_rpc2",
+        "//pw_async2",
+        "//pw_async2:basic_dispatcher",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_buf",
+        "//pw_rpc2/cpp",
+        "//pw_rpc2/cpp:protocol_error",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "server_incremental_size_report",
+    srcs = ["server_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_ALTERNATE_SERVICE=1"],
+    deps = [
+        ":size_report",
+        ":size_report_raw_rpc2",
+        "//pw_async2",
+        "//pw_async2:basic_dispatcher",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_buf",
+        "//pw_rpc2/cpp",
+        "//pw_rpc2/cpp:protocol_error",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "client_size_report",
+    srcs = ["client_size_report.cc"],
+    deps = [
+        ":size_report",
+        ":size_report_raw_rpc2",
+        "//pw_async2",
+        "//pw_async2:basic_dispatcher",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_buf",
+        "//pw_rpc2/cpp",
+        "//pw_transport/cpp:socket",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "client_incremental_size_report",
+    srcs = ["client_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_ALTERNATE_CALL=1"],
+    deps = [
+        ":size_report",
+        ":size_report_raw_rpc2",
+        "//pw_async2",
+        "//pw_async2:basic_dispatcher",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_buf",
+        "//pw_rpc2/cpp",
+        "//pw_transport/cpp:socket",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "combined_size_report",
+    srcs = ["combined_size_report.cc"],
+    deps = [
+        ":size_report",
+        ":size_report_raw_rpc2",
+        "//pw_async2",
+        "//pw_async2:basic_dispatcher",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_buf",
+        "//pw_rpc2/cpp",
+        "//pw_rpc2/cpp:protocol_error",
+        "//pw_transport/cpp:socket",
+    ],
+)
+
+_RPC2_SOURCE_FILTER = "pw::rpc2::*"
+
+pw_size_diff(
+    name = "server_row",
+    base = ":base",
+    label = "Size of core ``pw::rpc2::Server`` with 1 transport and 1 ``raw`` unary service",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":server_size_report",
+)
+
+pw_size_diff(
+    name = "server_incremental_service_row",
+    base = ":server_size_report",
+    label = "Incremental cost of adding a second ``raw`` unary service to ``Server``",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":server_incremental_size_report",
+)
+
+pw_size_diff(
+    name = "client_row",
+    base = ":base",
+    label = "Size of core ``pw::rpc2::Client`` with 1 transport and 1 ``raw`` unary call",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":client_size_report",
+)
+
+pw_size_diff(
+    name = "client_incremental_call_row",
+    base = ":client_size_report",
+    label = "Incremental cost of making a second ``raw`` unary call in ``Client``",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":client_incremental_size_report",
+)
+
+pw_size_diff(
+    name = "combined_row",
+    base = ":base",
+    label = "Size of combined ``pw::rpc2::Server`` and ``pw::rpc2::Client`` (1 transport, 1 ``raw`` unary service, 1 ``raw`` unary call)",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":combined_size_report",
+)
+
+pw_size_table(
+    name = "rpc2_size_report",
+    reports = [
+        ":server_row",
+        ":server_incremental_service_row",
+        ":client_row",
+        ":client_incremental_call_row",
+        ":combined_row",
+    ],
+)
+
+proto_library(
+    name = "size_report_proto",
+    srcs = ["size_report.proto"],
+)
+
+raw_rpc2_proto_library(
+    name = "size_report_raw_rpc2",
+    deps = [":size_report_proto"],
+)
+
+pwpb_proto_library(
+    name = "size_report_pwpb",
+    deps = [":size_report_proto"],
+)
+
+pwpb_rpc2_proto_library(
+    name = "size_report_pwpb_rpc2",
+    pwpb_proto_library_deps = [":size_report_pwpb"],
+    deps = [":size_report_proto"],
+)
+
+_SERVICE_CODEGEN_DEPS = [
+    ":size_report",
+    ":size_report_pwpb_rpc2",
+    ":size_report_raw_rpc2",
+    "//pw_async2",
+    "//pw_async2:basic_dispatcher",
+    "//pw_bloat:bloat_this_binary",
+    "//pw_buf",
+    "//pw_bytes",
+    "//pw_polyfill",
+    "//pw_rpc2/cpp",
+    "//pw_rpc2/cpp:pwpb_serialize",
+]
+
+_PWPB_SOURCE_FILTER = "pw::protobuf::*|pw::rpc2::*"
+
+pw_cc_size_binary(
+    name = "pwpb_service_base_size_report",
+    srcs = ["service_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_PWPB_BASE=1"],
+    deps = _SERVICE_CODEGEN_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "raw_unary_service_size_report",
+    srcs = ["service_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_RAW_UNARY_SERVICE=1"],
+    deps = _SERVICE_CODEGEN_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "pwpb_unary_service_size_report",
+    srcs = ["service_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_PWPB_UNARY_SERVICE=1"],
+    deps = _SERVICE_CODEGEN_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "pwpb_unary_coro_service_size_report",
+    srcs = ["service_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_PWPB_UNARY_CORO_SERVICE=1"],
+    deps = _SERVICE_CODEGEN_DEPS + [
+        "//pw_async2:coro",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "raw_future_service_size_report",
+    srcs = ["service_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_RAW_FUTURE_SERVICE=1"],
+    deps = _SERVICE_CODEGEN_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "pwpb_future_service_size_report",
+    srcs = ["service_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_PWPB_FUTURE_SERVICE=1"],
+    deps = _SERVICE_CODEGEN_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "pwpb_coro_service_size_report",
+    srcs = ["service_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_PWPB_CORO_SERVICE=1"],
+    deps = _SERVICE_CODEGEN_DEPS + [
+        "//pw_async2:coro",
+    ],
+)
+
+pw_size_diff(
+    name = "pwpb_service_table_serde_row",
+    base = ":server_size_report",
+    label = "One-time ``pw_protobuf`` table encoder/decoder and ``pw_rpc2`` PWPB serialization",
+    source_filter = _PWPB_SOURCE_FILTER,
+    target = ":pwpb_service_base_size_report",
+)
+
+pw_size_diff(
+    name = "raw_unary_service_row",
+    base = ":server_size_report",
+    label = "Incremental cost of generated ``raw::UnarySizeReport::Service`` (1 unary RPC) with futures",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":raw_unary_service_size_report",
+)
+
+pw_size_diff(
+    name = "pwpb_unary_service_row",
+    base = ":pwpb_service_base_size_report",
+    label = "Incremental cost of generated ``pwpb::UnarySizeReport::Service`` (1 unary RPC) with futures",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":pwpb_unary_service_size_report",
+)
+
+pw_size_diff(
+    name = "pwpb_unary_coro_service_row",
+    base = ":pwpb_service_base_size_report",
+    label = "Incremental cost of generated ``pwpb::UnarySizeReport::Service`` (1 unary RPC) with C++20 coroutines",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":pwpb_unary_coro_service_size_report",
+)
+
+pw_size_diff(
+    name = "raw_future_service_row",
+    base = ":server_size_report",
+    label = "Incremental cost of generated ``raw::SizeReport::Service`` (all 4 RPC types) with futures",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":raw_future_service_size_report",
+)
+
+pw_size_diff(
+    name = "pwpb_future_service_row",
+    base = ":pwpb_service_base_size_report",
+    label = "Incremental cost of generated ``pwpb::SizeReport::Service`` (all 4 RPC types) with futures",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":pwpb_future_service_size_report",
+)
+
+pw_size_diff(
+    name = "pwpb_coro_service_row",
+    base = ":pwpb_service_base_size_report",
+    label = "Incremental cost of generated ``pwpb::SizeReport::Service`` (all 4 RPC types) with C++20 coroutines",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":pwpb_coro_service_size_report",
+)
+
+pw_size_table(
+    name = "service_codegen_size_report",
+    reports = [
+        ":pwpb_service_table_serde_row",
+        ":raw_unary_service_row",
+        ":pwpb_unary_service_row",
+    ] + select({
+        "//pw_toolchain/cc:c++20_enabled": [":pwpb_unary_coro_service_row"],
+        "//conditions:default": [],
+    }) + [
+        ":raw_future_service_row",
+        ":pwpb_future_service_row",
+    ] + select({
+        "//pw_toolchain/cc:c++20_enabled": [":pwpb_coro_service_row"],
+        "//conditions:default": [],
+    }),
+)
+
+_CLIENT_CODEGEN_DEPS = [
+    ":size_report",
+    ":size_report_pwpb_rpc2",
+    ":size_report_raw_rpc2",
+    "//pw_async2",
+    "//pw_async2:basic_dispatcher",
+    "//pw_bloat:bloat_this_binary",
+    "//pw_buf",
+    "//pw_bytes",
+    "//pw_rpc2/cpp",
+    "//pw_rpc2/cpp:pwpb_serialize",
+    "//pw_transport/cpp:socket",
+]
+
+pw_cc_size_binary(
+    name = "pwpb_client_base_size_report",
+    srcs = ["client_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_PWPB_CLIENT_BASE=1"],
+    deps = _CLIENT_CODEGEN_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "raw_client_unary_size_report",
+    srcs = ["client_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_RAW_CLIENT_UNARY=1"],
+    deps = _CLIENT_CODEGEN_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "raw_client_all_methods_size_report",
+    srcs = ["client_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_RAW_CLIENT_ALL=1"],
+    deps = _CLIENT_CODEGEN_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "pwpb_client_unary_size_report",
+    srcs = ["client_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_PWPB_CLIENT_UNARY=1"],
+    deps = _CLIENT_CODEGEN_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "pwpb_client_all_methods_size_report",
+    srcs = ["client_codegen_size_report.cc"],
+    defines = ["PW_RPC2_SIZE_REPORT_PWPB_CLIENT_ALL=1"],
+    deps = _CLIENT_CODEGEN_DEPS,
+)
+
+pw_size_diff(
+    name = "pwpb_client_table_serde_row",
+    base = ":client_size_report",
+    label = "One-time ``pw_protobuf`` table encoder/decoder and ``pw_rpc2`` PWPB serialization",
+    source_filter = _PWPB_SOURCE_FILTER,
+    target = ":pwpb_client_base_size_report",
+)
+
+pw_size_diff(
+    name = "raw_client_unary_row",
+    base = ":client_size_report",
+    label = "Incremental cost of generated ``raw::SizeReport::Client`` calling 1 unary RPC",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":raw_client_unary_size_report",
+)
+
+pw_size_diff(
+    name = "pwpb_client_unary_row",
+    base = ":pwpb_client_base_size_report",
+    label = "Incremental cost of generated ``pwpb::SizeReport::Client`` calling 1 unary RPC",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":pwpb_client_unary_size_report",
+)
+
+pw_size_diff(
+    name = "raw_client_all_methods_row",
+    base = ":client_size_report",
+    label = "Incremental cost of generated ``raw::SizeReport::Client`` calling all 4 RPC types (unary, server/client/bidi stream)",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":raw_client_all_methods_size_report",
+)
+
+pw_size_diff(
+    name = "pwpb_client_all_methods_row",
+    base = ":pwpb_client_base_size_report",
+    label = "Incremental cost of generated ``pwpb::SizeReport::Client`` calling all 4 RPC types (unary, server/client/bidi stream)",
+    source_filter = _RPC2_SOURCE_FILTER,
+    target = ":pwpb_client_all_methods_size_report",
+)
+
+pw_size_table(
+    name = "client_codegen_size_report",
+    reports = [
+        ":pwpb_client_table_serde_row",
+        ":raw_client_unary_row",
+        ":pwpb_client_unary_row",
+        ":raw_client_all_methods_row",
+        ":pwpb_client_all_methods_row",
+    ],
+)

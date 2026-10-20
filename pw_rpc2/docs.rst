@@ -76,7 +76,7 @@ Protocol and architecture
 ------------------------
 Evaluation and migration
 ------------------------
-.. grid:: 2
+.. grid:: 3
 
    .. grid-item-card:: :octicon:`info` Why RPC2?
       :link: module-pw_rpc2-why
@@ -95,6 +95,15 @@ Evaluation and migration
       **Choosing the right RPC framework.**
       Trade-offs between RPC1 and RPC2, with a guide on when to use which.
 
+   .. grid-item-card:: :octicon:`meter` Extended size report
+      :link: module-pw_rpc2-size_report
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      **Flash and RAM footprint.**
+      Bloaty size reports for the core server, client, combined endpoints, and
+      generated raw/PWPB services and clients.
+
 .. toctree::
    :maxdepth: 1
    :hidden:
@@ -105,3 +114,4 @@ Evaluation and migration
    Wire protocol <protocol>
    Why RPC2? <why>
    RPC1 vs. RPC2 <comparison>
+   Extended size report <size_report>

@@ -34,8 +34,9 @@ systems, some of which will be described in more detail in sections below.
 
    * - :ref:`Binary size (flash) <module-pw_rpc2-comparison-code-size>`
      - **~7-10 KB baseline** for an embedded server with Nanopb.
-     - **Larger (~25 KB)** combined client/server baseline due to async tasks,
-       queues, and connection management.
+     - **~11-13 KB** core ``pw::rpc2`` client or server baseline (~17 KB
+       combined), or ~23-25 KB (~31 KB combined) including ``pw_async2`` and
+       ``pw_transport``.
 
    * - :ref:`Runtime <module-pw_rpc2-comparison-runtime>`
      - Runtime-agnostic. No coupled framework. Call from any RTOS thread or
@@ -111,8 +112,12 @@ constraint may be the strongest reason to stick with RPC1.
   system is tightly constrained, RPC1 has a much smaller footprint.
 * **RPC2** incorporates the machinery of an asynchronous runtime and complete
   transport layer, including complex async state machines, inter-task channels,
-  reliable delivery, a more complete protocol, etc. The baseline footprint of a
-  combined client and server is **~25 KB of flash**.
+  reliable delivery, a more complete protocol, etc. The core ``pw::rpc2``
+  footprint of a standalone client or server is **~11-13 KB of flash**
+  (**~17 KB** for a combined client and server), or **~23-25 KB of flash**
+  (**~31 KB** combined) when including ``pw_async2`` and ``pw_transport`` (see
+  the :ref:`extended size report <module-pw_rpc2-size_report>` for a full
+  per-symbol breakdown).
 
 While RPC2 has a larger code size, the two are much more competitive on RAM
 usage. Since RPC2 uses memory pools through ``pw_allocator``, it reuses the same
