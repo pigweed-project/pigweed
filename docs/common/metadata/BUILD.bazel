@@ -12,12 +12,44 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
+
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-exports_files([
-    "categories.toml",
-    "categories_schema.json",
-    "module_schema.json",
-])
+pw_py_library(
+    name = "sync_lib",
+    srcs = ["sync.py"],
+    data = [
+        "categories.toml",
+        "categories_schema.json",
+        "module_schema.json",
+    ],
+    deps = ["@pigweed_python_packages//jsonschema"],
+)
+
+# Regenerates the docs content that is derived from categories.toml and
+# //<module>/module.toml. Pass `-- --check` to report out-of-date files
+# without modifying them.
+pw_py_binary(
+    name = "sync",
+    srcs = ["sync.py"],
+    data = [
+        "//docs/doxygen:_html_1",
+        "//pw_rust:docs_dir",
+    ],
+    main = "sync.py",
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [
+        ":sync_lib",
+        "@pigweed_python_packages//jsonschema",
+    ],
+)
+
+pw_py_test(
+    name = "sync_test",
+    srcs = ["sync_test.py"],
+    deps = [":sync_lib"],
+)
