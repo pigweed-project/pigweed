@@ -1018,7 +1018,7 @@ void PerformRandomOperations(int iterations, uint_fast32_t seed) {
         } else {
           diff_t pos = static_cast<diff_t>(random_uint() % oracle.size());
           const auto count = static_cast<diff_t>(
-              random_uint() % (static_cast<diff_t>(oracle.size()) - pos) + 1);
+              random_uint() % (oracle.size() - static_cast<size_t>(pos)) + 1);
           deque.erase(deque.begin() + pos, deque.begin() + pos + count);
           oracle.erase(oracle.begin() + pos, oracle.begin() + pos + count);
         }

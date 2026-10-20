@@ -379,9 +379,9 @@ void BundledUpdateService::DoApply() {
       return;
     }
     target_file_bytes_applied += file_reader.interval_size();
-    const uint32_t progress_hundreth_percent =
+    const uint32_t progress_hundreth_percent = static_cast<uint32_t>(
         (static_cast<uint64_t>(target_file_bytes_applied) * 100 * 100) /
-        target_file_bytes_to_apply;
+        target_file_bytes_to_apply);
     PW_LOG_DEBUG("Apply progress: %zu/%zu Bytes (%ld%%)",
                  target_file_bytes_applied,
                  target_file_bytes_to_apply,

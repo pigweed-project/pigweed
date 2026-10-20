@@ -28,7 +28,7 @@ Status ClientContext::FinalCleanup(Status status) {
 }
 
 Status ClientContext::SeekReader(uint32_t offset) {
-  return reader().Seek(offset - initial_offset_);
+  return reader().Seek(static_cast<ptrdiff_t>(offset - initial_offset_));
 }
 
 }  // namespace pw::transfer::internal

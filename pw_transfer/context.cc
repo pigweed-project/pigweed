@@ -1298,7 +1298,7 @@ uint32_t Context::MaxWriteChunkSize(uint32_t max_chunk_size_bytes,
                                     uint32_t channel_id) const {
   // Start with the user-provided maximum chunk size, which should be the usable
   // payload length on the RPC ingress path after any transport overhead.
-  ptrdiff_t max_size = max_chunk_size_bytes;
+  ptrdiff_t max_size = static_cast<ptrdiff_t>(max_chunk_size_bytes);
 
   // Subtract the RPC overhead (pw_rpc/internal/packet.proto).
   //

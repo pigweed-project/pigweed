@@ -81,7 +81,10 @@ cc_args_list(
         ":strict_warnings",
         ":clang_strict_warnings",
         ":extra_strict_warnings",
-    ] + ([":link_strict_warnings"] if pigweed_is_root() else []),
+    ] + ([
+        ":internal_strict_warnings",
+        ":link_strict_warnings",
+    ] if pigweed_is_root() else []),
 )
 
 # Fail link actions on linker driver warnings (such as
@@ -115,8 +118,6 @@ cc_args(
         "-Wcast-qual",
         "-Wundef",
         "-Wpointer-arith",
-        # TODO: b/259746255 - Enable implicit conversion warnings once fixed.
-        # "-Wconversion",
         # Make all warnings errors, except for the exemptions below.
         "-Werror",
         "-Wno-error=cpp",  # preprocessor #warning statement
@@ -208,6 +209,7 @@ cc_args_list(
     args = [
         ":pedantic_warnings",
         ":extra_pigweed_warnings",
+        ":extra_pigweed_cpp_warnings",
         ":clang_only_extra_pigweed_warnings",
     ],
     visibility = ["//:__subpackages__"],
@@ -219,7 +221,19 @@ cc_args(
         "@rules_cc//cc/toolchains/actions:compile_actions",
     ],
     args = [
+        "-Wconversion",
         "-Wswitch-enum",
+    ],
+    visibility = ["//:__subpackages__"],
+)
+
+# TODO: b/306734552 - On GCC, -Wextra-semi only works as a C++ flag.
+cc_args(
+    name = "extra_pigweed_cpp_warnings",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+    ],
+    args = [
         "-Wextra-semi",
     ],
     visibility = ["//:__subpackages__"],
@@ -262,23 +276,6 @@ cc_args(
     visibility = ["//visibility:private"],
 )
 # LINT.ThenChange(//pw_build/BUILD.gn:internal_strict_warnings,//pw_build/CMakeLists.txt:internal_strict_warnings)
-
-# LINT.IfChange(conversion_warnings)
-cc_args(
-    name = "w_conversion",
-    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
-    args = ["-Wconversion"],
-)
-
-# This is currently expressed as a feature so it can be selectively disabled
-# while fixes are rolled out.
-cc_feature(
-    name = "conversion_warnings_feature",
-    args = [":w_conversion"],
-    feature_name = "conversion_warnings",
-    visibility = ["//:__subpackages__"],
-)
-# LINT.ThenChange(//pw_build/BUILD.gn:conversion_warnings)
 
 cc_args(
     name = "w_ctad_maybe_unsupported",

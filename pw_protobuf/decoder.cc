@@ -242,8 +242,8 @@ Status Decoder::ReadDelimited(span<const std::byte>* out) {
     return Status::DataLoss();
   }
 
-  *out = proto_.first(length);
-  proto_ = proto_.subspan(length);
+  *out = proto_.first(static_cast<size_t>(length));
+  proto_ = proto_.subspan(static_cast<size_t>(length));
   previous_field_consumed_ = true;
 
   return OkStatus();

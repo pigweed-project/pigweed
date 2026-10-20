@@ -71,18 +71,20 @@ PW_CONSTEXPR_TEST(AbsoluteValueTest, Abs, {
 
 template <typename... Ts>
 constexpr void TestLabs() {
-  (TestOne<Ts, long>([](Ts t) { return pw::labs(t); }), ...);
+  (
+      [] {
+        if constexpr (sizeof(Ts) <= sizeof(long)) {
+          TestOne<Ts, long>([](Ts t) { return pw::labs(t); });
+        }
+      }(),
+      ...);
 }
 
 PW_CONSTEXPR_TEST(AbsoluteValueTest, Labs, {
-  TestLabs<int8_t, int16_t, int32_t, short, int, long>();
+  TestLabs<int8_t, int16_t, int32_t, short, int, long, int64_t>();
   // `char` is unsigned on ARM.
   if constexpr (std::is_signed_v<char>) {
     TestLabs<char>();
-  }
-  // `int64_t` is `long long` on 32-bit platforms.
-  if constexpr (sizeof(int64_t) <= sizeof(long)) {
-    TestLabs<int64_t>();
   }
 });
 

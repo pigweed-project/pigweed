@@ -56,7 +56,7 @@ Status ServerContext::FinalCleanup(const Status status) {
 }
 
 Status ServerContext::SeekReader(uint32_t offset) {
-  return reader().Seek(offset);
+  return reader().Seek(static_cast<ptrdiff_t>(offset));
 }
 
 void ServerContext::SetInactive() {

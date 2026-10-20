@@ -229,7 +229,7 @@ constexpr size_t DetailedBlockImpl<Parameters>::ReservedWhenFree() {
 
 template <typename Parameters>
 constexpr size_t DetailedBlockImpl<Parameters>::OuterSizeUnchecked() const {
-  size_t outer_size = next_;
+  size_t outer_size = static_cast<size_t>(next_);
   Hardening::Multiply(outer_size, Basic::kAlignment);
   return outer_size;
 }
@@ -271,7 +271,7 @@ constexpr void DetailedBlockImpl<Parameters>::SetNext(size_t outer_size,
 
 template <typename Parameters>
 constexpr size_t DetailedBlockImpl<Parameters>::PrevOuterSizeUnchecked() const {
-  size_t outer_size = prev_;
+  size_t outer_size = static_cast<size_t>(prev_);
   Hardening::Multiply(outer_size, Basic::kAlignment);
   return outer_size;
 }
@@ -364,7 +364,7 @@ constexpr void DetailedBlockImpl<Parameters>::SetRequestedAlignment(
     PW_ASSERT((alignment & (alignment - 1)) == 0);
     PW_ASSERT(alignment < 0x2000);
   }
-  info_.alignment = static_cast<uint16_t>(alignment);
+  info_.alignment = static_cast<uint16_t>(alignment & 0x1fff);
 }
 
 }  // namespace pw::allocator

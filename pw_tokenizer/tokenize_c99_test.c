@@ -57,7 +57,7 @@ static void TokenizeIntegersOnly(uint32_t token, int arg_count, ...) {
 
   for (int i = 0; i < arg_count; ++i) {
     // Encode each int argument.
-    int argument = va_arg(args, uint32_t);
+    int argument = va_arg(args, int);
 
     // Encode the argument to the buffer
     index += pw_tokenizer_EncodeInt(
@@ -65,7 +65,7 @@ static void TokenizeIntegersOnly(uint32_t token, int arg_count, ...) {
   }
 
   // Write the encoded log to the ring buffer
-  pw_InlineVarLenEntryQueue_PushOverwrite(buffer, encoded, index);
+  pw_InlineVarLenEntryQueue_PushOverwrite(buffer, encoded, (uint32_t)index);
 
   va_end(args);
 }

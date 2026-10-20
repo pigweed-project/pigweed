@@ -86,12 +86,12 @@ void StaticMemoryInit(void) {
   // Static-init RAM (load static values into ram, .data section init).
   memcpy(&_pw_static_init_ram_start,
          &_pw_static_init_flash_start,
-         &_pw_static_init_ram_end - &_pw_static_init_ram_start);
+         (size_t)(&_pw_static_init_ram_end - &_pw_static_init_ram_start));
 
   // Zero-init RAM (.bss section init).
   memset(&_pw_zero_init_ram_start,
          0,
-         &_pw_zero_init_ram_end - &_pw_zero_init_ram_start);
+         (size_t)(&_pw_zero_init_ram_end - &_pw_zero_init_ram_start));
 }
 
 // WARNING: This code is run immediately upon boot, and performs initialization

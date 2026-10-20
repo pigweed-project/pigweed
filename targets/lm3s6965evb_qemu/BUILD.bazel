@@ -27,7 +27,7 @@ cc_library(
     name = "pre_init",
     srcs = [
         "boot.cc",
-        "vector_table.c",
+        "vector_table.cc",
     ],
     deps = [
         ":basic_linker_script",

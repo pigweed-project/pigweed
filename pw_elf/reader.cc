@@ -64,6 +64,9 @@ Result<internal::ElfReaderImpls> MakeReaderImpl(
 #if UINTPTR_MAX == UINT64_MAX
     case ElfClass::kElf64:
       return internal::ElfReaderImpl64::FromStream(stream);
+#else
+    case ElfClass::kElf64:
+      return Status::Unimplemented();
 #endif
     default:
       return Status::Unimplemented();

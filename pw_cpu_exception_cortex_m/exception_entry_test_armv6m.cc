@@ -47,7 +47,7 @@ constexpr size_t kMaxInstructionSize = 4;
 
 // The manually captured PC won't be the exact same as the faulting PC. This is
 // the maximum tolerated distance between the two to allow the test to pass.
-constexpr int32_t kMaxPcDistance = 6;
+constexpr uint32_t kMaxPcDistance = 6;
 
 // Variable to prevent more than kMaxFaultDepth nested crashes.
 size_t current_fault_depth = 0;
@@ -207,7 +207,7 @@ TEST(FaultEntry, BasicFault) {
   EXPECT_EQ(static_cast<uint32_t>(captured_state.base.r1), 0u);
   // PC is manually saved in r2 before the exception occurs (where PC is also
   // stored). Ensure these numbers are within a reasonable distance.
-  int32_t captured_pc_distance =
+  uint32_t captured_pc_distance =
       captured_state.base.pc - captured_state.base.r2;
   EXPECT_LT(captured_pc_distance, kMaxPcDistance);
   EXPECT_EQ(static_cast<uint32_t>(captured_state.base.r3),
@@ -223,7 +223,7 @@ TEST(FaultEntry, BasicUnalignedStackFault) {
   EXPECT_EQ(static_cast<uint32_t>(captured_state.base.r1), 0u);
   // PC is manually saved in r2 before the exception occurs (where PC is also
   // stored). Ensure these numbers are within a reasonable distance.
-  int32_t captured_pc_distance =
+  uint32_t captured_pc_distance =
       captured_state.base.pc - captured_state.base.r2;
   EXPECT_LT(captured_pc_distance, kMaxPcDistance);
   EXPECT_EQ(static_cast<uint32_t>(captured_state.base.r3),

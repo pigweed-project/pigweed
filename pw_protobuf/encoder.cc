@@ -125,8 +125,9 @@ Result<ByteSpan> StreamEncoder::GetNestedScratchBuffer(uint32_t field_number) {
   size_t max_size = std::min(memory_writer_.ConservativeWriteLimit(),
                              writer_->ConservativeWriteLimit());
   // Cap based on max varint size.
-  max_size = std::min(varint::MaxValueInBytes(config::kMaxVarintSize),
-                      static_cast<uint64_t>(max_size));
+  max_size = static_cast<size_t>(
+      std::min(varint::MaxValueInBytes(config::kMaxVarintSize),
+               static_cast<uint64_t>(max_size)));
 
   // Reserve space for the field key and the maximum possible length varint that
   // could fit in the remaining buffer.

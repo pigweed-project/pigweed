@@ -106,7 +106,7 @@ volatile float fpu_rhs_val = 67.89f;
 
 // The manually captured PC won't be the exact same as the faulting PC. This is
 // the maximum tolerated distance between the two to allow the test to pass.
-constexpr int32_t kMaxPcDistance = 4;
+constexpr uint32_t kMaxPcDistance = 4;
 
 // This pattern serves a purpose similar to kMagicPattern, but is used for
 // testing a nested fault to ensure both pw_cpu_exception_State objects are
@@ -297,7 +297,7 @@ TEST(FaultEntry, BasicFault) {
   EXPECT_EQ(static_cast<uint32_t>(captured_state.base.r1), 0u);
   // PC is manually saved in r2 before the exception occurs (where PC is also
   // stored). Ensure these numbers are within a reasonable distance.
-  int32_t captured_pc_distance =
+  uint32_t captured_pc_distance =
       captured_state.base.pc - captured_state.base.r2;
   EXPECT_LT(captured_pc_distance, kMaxPcDistance);
   EXPECT_EQ(static_cast<uint32_t>(captured_state.base.r3),
@@ -313,7 +313,7 @@ TEST(FaultEntry, BasicUnalignedStackFault) {
   EXPECT_EQ(static_cast<uint32_t>(captured_state.base.r1), 0u);
   // PC is manually saved in r2 before the exception occurs (where PC is also
   // stored). Ensure these numbers are within a reasonable distance.
-  int32_t captured_pc_distance =
+  uint32_t captured_pc_distance =
       captured_state.base.pc - captured_state.base.r2;
   EXPECT_LT(captured_pc_distance, kMaxPcDistance);
   EXPECT_EQ(static_cast<uint32_t>(captured_state.base.r3),
@@ -370,7 +370,7 @@ TEST(FaultEntry, NestedFault) {
   EXPECT_EQ(static_cast<uint32_t>(captured_states[1].base.r1), 0u);
   // PC is manually saved in r2 before the exception occurs (where PC is also
   // stored). Ensure these numbers are within a reasonable distance.
-  int32_t captured_pc_distance =
+  uint32_t captured_pc_distance =
       captured_states[1].base.pc - captured_states[1].base.r2;
   EXPECT_LT(captured_pc_distance, kMaxPcDistance);
   EXPECT_EQ(static_cast<uint32_t>(captured_states[1].base.r3),

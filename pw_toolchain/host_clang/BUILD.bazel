@@ -21,7 +21,6 @@ load("@rules_cc//cc/toolchains:feature_constraint.bzl", "cc_feature_constraint")
 load("@rules_cc//cc/toolchains:feature_set.bzl", "cc_feature_set")
 load("@rules_cc//cc/toolchains:toolchain.bzl", "cc_toolchain")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("//pw_build:pigweed_is_root.bzl", "pigweed_is_root")
 load("//pw_toolchain/cc:builtin_module_map.bzl", "builtin_module_map")
 
 package(default_visibility = ["//visibility:public"])
@@ -268,6 +267,7 @@ cc_args(
     ],
     args = [
         "-Wno-c99-extensions",
+        "-Wno-conversion",
         "-Wno-long-long",
         "-Wno-strict-prototypes",
         "-Wno-unused-parameter",
@@ -416,9 +416,7 @@ cc_toolchain(
         "//pw_toolchain/cc/args:common_warnings",
         "//pw_toolchain/cc/args:color_diagnostics",
         "//pw_toolchain/cc/args:warning_suppression_allowlist",
-    ] + (
-        ["//pw_toolchain/cc/args:internal_strict_warnings"] if pigweed_is_root() else []
-    ) + select({
+    ] + select({
         "//pw_build:kythe": [":no_unknown_warning_option"],
         "//conditions:default": [],
     }) + [
@@ -466,7 +464,6 @@ cc_toolchain(
         ":layering_check_feature",
         ":use_module_maps",
         ":verbose_compiler_output",
-        "//pw_toolchain/cc/args:conversion_warnings_feature",
         "//pw_toolchain/cc/args:ctad_warnings_feature",
         "//pw_toolchain/cc/args:dbg_feature",
         "//pw_toolchain/cc/args:fastbuild_feature",

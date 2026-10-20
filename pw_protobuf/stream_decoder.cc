@@ -248,7 +248,7 @@ Status StreamDecoder::ReadFieldKey() {
       return Status::DataLoss();
     }
 
-    delimited_field_size_ = varint;
+    delimited_field_size_ = static_cast<size_t>(varint);
     delimited_field_offset_ = position_;
   }
 

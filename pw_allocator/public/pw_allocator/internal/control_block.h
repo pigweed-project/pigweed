@@ -162,12 +162,12 @@ class ControlBlock final {
 
   /// Returns a count of weak pointers from a packed value.
   static constexpr uint16_t UnpackWeak(uint32_t num_weak_and_shared) {
-    return num_weak_and_shared >> 16;
+    return static_cast<uint16_t>(num_weak_and_shared >> 16);
   }
 
   /// Returns a count of shared pointers from a packed value.
   static constexpr uint16_t UnpackShared(uint32_t num_weak_and_shared) {
-    return num_weak_and_shared & 0xFFFF;
+    return static_cast<uint16_t>(num_weak_and_shared & 0xFFFF);
   }
 
   /// Returns a packed value that combines a count of weak pointers and a count

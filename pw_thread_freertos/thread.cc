@@ -184,8 +184,9 @@ void Context::CreateThread(const freertos::Options& options,
 #if configNUM_THREAD_LOCAL_STORAGE_POINTERS > 0
   const auto& pointers = options.tls_pointers();
   for (uint32_t i = 0; i < configNUM_THREAD_LOCAL_STORAGE_POINTERS; ++i) {
-    vTaskSetThreadLocalStoragePointer(
-        task_handle, i, reinterpret_cast<void*>(pointers[i]));
+    vTaskSetThreadLocalStoragePointer(task_handle,
+                                      static_cast<BaseType_t>(i),
+                                      reinterpret_cast<void*>(pointers[i]));
   }
 #endif
 }

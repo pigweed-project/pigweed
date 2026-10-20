@@ -41,7 +41,7 @@ Status TraceService::GetClockParameters(
     proto::pwpb::ClockParametersResponse::Message& response) {
   response.clock_parameters.tick_period_seconds_numerator = 1;
   response.clock_parameters.tick_period_seconds_denominator =
-      pw_trace_GetTraceTimeTicksPerSecond();
+      static_cast<int32_t>(pw_trace_GetTraceTimeTicksPerSecond());
 
   // There is no platform API to get the epoch type of trace time.
   // Epoch type is also not part of generated trace json file and

@@ -191,48 +191,6 @@ Now ``bazelisk build --config=clang-tidy //...`` will run clang-tidy for all
 As an example of this setup, see `the CL that added clang-tidy support to our
 Quickstart repo <http://pwrev.dev/266934>`__.
 
-Conversion warnings
-===================
-By default, upstream Pigweed is built with `-Wconversion
-<https://clang.llvm.org/docs/DiagnosticsReference.html#wconversion>`__ enabled.
-However, this was not always the case, and many Pigweed targets contain
-``-Wconversion`` violations. (:bug:`259746255` tracks fixing all of these.)
-
-Upstream allowlist
-------------------
-Do not add new ``-Wconversion`` violations to the Pigweed codebase.
-
-If you write new code that fails to build because it includes a header with a
-pre-existing ``-Wconversion`` violation, try to fix the pre-existing violation.
-
-As a last resort, you may add the ``features = ["-conversion_warnings"]`` (note
-the ``-``!) attribute to your ``cc_library`` or other build target:
-
-.. code-block:: py
-
-   cc_library(
-      name = "…",
-      features = ["-conversion_warnings"],
-   )
-
-This will disable ``-Wconversion`` for this target.
-
-Downstream use
---------------
-If you would like to enable ``-Wconversion`` in a downstream project that uses
-Pigweed's toolchains, add a `REPO.bazel
-<https://bazel.build/external/overview#repo.bazel>`__ file at the root of
-your project, with the following content:
-
-.. code-block:: py
-
-   repo(
-       features = ["conversion_warnings"],
-   )
-
-This will enable ``-Wconversion`` for all code in your project, but not for
-code coming from any external dependencies also built with Bazel.
-
 .. _module-pw_toolchain-bazel-running-tools:
 
 -----------------------

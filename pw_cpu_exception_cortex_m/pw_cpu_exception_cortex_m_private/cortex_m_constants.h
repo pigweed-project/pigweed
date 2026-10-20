@@ -36,8 +36,8 @@ inline constexpr uint32_t kDebugMonIsrNum = 0xC;
 inline constexpr uint32_t kIcsrVectactiveMask = (1 << 9) - 1;
 
 // Masks for individual bits of HFSR. (ARMv7-M Section B3.2.16)
-inline constexpr uint32_t kHfsrForcedMask = (0x1 << 30);
-inline constexpr uint32_t kHfsrDebugEvtMask = (0x1 << 31);
+inline constexpr uint32_t kHfsrForcedMask = (0x1u << 30);
+inline constexpr uint32_t kHfsrDebugEvtMask = (0x1u << 31);
 
 // Masks for different sections of CFSR. (ARMv7-M Section B3.2.15)
 inline constexpr uint32_t kCfsrMemFaultMask = 0x000000ff;

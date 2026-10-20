@@ -12,32 +12,42 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include <stdbool.h>
-#include <stdint.h>
+#include <cstdint>
 
 #include "pw_boot/boot.h"
 #include "pw_boot_cortex_m/boot.h"
 #include "pw_memory/busy_wait_forever.h"
 #include "pw_preprocessor/compiler.h"
 
+namespace {
+
 // Default handler to insert into the ARMv7-M vector table (below).
 // This function exists for convenience. If a device isn't doing what you
 // expect, it might have hit a fault and ended up here.
-static void DefaultFaultHandler(void) {
+[[noreturn]] void DefaultFaultHandler() {
   // Tell QEMU to shut down immediately on fault instead of hanging.
-  volatile uint32_t* aircr = (uint32_t*)(0xE000ED0CU);
+  volatile uint32_t* aircr = reinterpret_cast<uint32_t*>(0xE000ED0CU);
   *aircr = 0x5fa0004;
   // Wait for debugger to attach if not running in QEMU.
-  pw_BusyWaitForever();
+  pw::BusyWaitForever();
 }
+
+// This typedef is for convenience when building the vector table. With the
+// exception of SP_main (0th entry in the vector table), all the entries of the
+// vector table are function pointers.
+using InterruptHandler = void (*)();
+
+}  // namespace
+
+extern "C" {
 
 // Interrupt handlers critical for OS operation.
 // Default weak implementations fall back to DefaultFaultHandler if no OS is
 // linked. When FreeRTOS is linked, its port handlers override these symbols.
-PW_WEAK void SVC_Handler(void) { DefaultFaultHandler(); }
-PW_WEAK void DebugMon_Handler(void) { DefaultFaultHandler(); }
-PW_WEAK void PendSV_Handler(void) { DefaultFaultHandler(); }
-PW_WEAK void SysTick_Handler(void) { DefaultFaultHandler(); }
+PW_WEAK void SVC_Handler() { DefaultFaultHandler(); }
+PW_WEAK void DebugMon_Handler() { DefaultFaultHandler(); }
+PW_WEAK void PendSV_Handler() { DefaultFaultHandler(); }
+PW_WEAK void SysTick_Handler() { DefaultFaultHandler(); }
 
 // This is the device's interrupt vector table. It's not referenced in any
 // code because the platform (STM32F4xx) expects this table to be present at the
@@ -46,47 +56,43 @@ PW_WEAK void SysTick_Handler(void) { DefaultFaultHandler(); }
 //
 // For more information, see ARMv7-M Architecture Reference Manual DDI 0403E.b
 // section B1.5.3.
-
-// This typedef is for convenience when building the vector table. With the
-// exception of SP_main (0th entry in the vector table), all the entries of the
-// vector table are function pointers.
-typedef void (*InterruptHandler)(void);
-
 PW_KEEP_IN_SECTION(".vector_table")
 const InterruptHandler vector_table[] = {
-    // The starting location of the stack pointer.
+    // [0] The starting location of the stack pointer.
     // This address is NOT an interrupt handler/function pointer, it is simply
     // the address that the main stack pointer should be initialized to. The
     // value is reinterpret casted because it needs to be in the vector table.
-    [0] = (InterruptHandler)(&pw_boot_stack_high_addr),
+    reinterpret_cast<InterruptHandler>(&pw_boot_stack_high_addr),
 
-    // Reset handler, dictates how to handle reset interrupt. This is the
+    // [1] Reset handler, dictates how to handle reset interrupt. This is the
     // address that the Program Counter (PC) is initialized to at boot.
-    [1] = pw_boot_Entry,
+    pw_boot_Entry,
 
-    // NMI handler.
-    [2] = DefaultFaultHandler,
-    // HardFault handler.
-    [3] = DefaultFaultHandler,
-    // MemManage fault handler.
-    [4] = DefaultFaultHandler,
-    // BusFault handler.
-    [5] = DefaultFaultHandler,
-    // UsageFault handler.
-    [6] = DefaultFaultHandler,
-    // 7-10: Reserved.
-    [7] = 0,
-    [8] = 0,
-    [9] = 0,
-    [10] = 0,
-    // SVCall handler.
-    [11] = SVC_Handler,
-    // DebugMon handler.
-    [12] = DebugMon_Handler,
-    // 13: Reserved.
-    [13] = 0,
-    // PendSV handler.
-    [14] = PendSV_Handler,
-    // SysTick handler.
-    [15] = SysTick_Handler,
+    // [2] NMI handler.
+    DefaultFaultHandler,
+    // [3] HardFault handler.
+    DefaultFaultHandler,
+    // [4] MemManage fault handler.
+    DefaultFaultHandler,
+    // [5] BusFault handler.
+    DefaultFaultHandler,
+    // [6] UsageFault handler.
+    DefaultFaultHandler,
+    // [7-10] Reserved.
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    // [11] SVCall handler.
+    SVC_Handler,
+    // [12] DebugMon handler.
+    DebugMon_Handler,
+    // [13] Reserved.
+    nullptr,
+    // [14] PendSV handler.
+    PendSV_Handler,
+    // [15] SysTick handler.
+    SysTick_Handler,
 };
+
+}  // extern "C"

@@ -47,7 +47,7 @@ void TraceService::GetTraceData(
                                  &size) != pw::Status::OutOfRange()) {
     trace_buffer->PopFront()
         .IgnoreError();  // TODO: b/242598609 - Handle Status properly
-    buffer.data.size = size;
+    buffer.data.size = static_cast<pb_size_t>(size);
     pw::Status status = writer.Write(buffer);
     if (!status.ok()) {
       PW_LOG_ERROR("Error sending trace; abandoning trace dump. Error: %s",

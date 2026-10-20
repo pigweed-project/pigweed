@@ -226,7 +226,7 @@ ATOMIC_OPTIMIZED_CASES
       volatile void* ptr, type val, __unused int model) { \
     uint32_t save = atomic_lock(ptr);                     \
     type tmp = *(volatile type*)ptr;                      \
-    *(volatile type*)ptr = tmp op val;                    \
+    *(volatile type*)ptr = (type)(tmp op val);            \
     atomic_unlock(ptr, save);                             \
     return tmp;                                           \
   }
@@ -235,7 +235,7 @@ ATOMIC_OPTIMIZED_CASES
   type __atomic_fetch_nand_##n(type* ptr, type val, __unused int model) { \
     uint32_t save = atomic_lock(ptr);                                     \
     type tmp = *ptr;                                                      \
-    *ptr = ~(tmp & val);                                                  \
+    *ptr = (type) ~(tmp & val);                                           \
     atomic_unlock(ptr, save);                                             \
     return tmp;                                                           \
   }

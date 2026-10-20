@@ -108,7 +108,8 @@ Status Rp2040Initiator::DoWriteReadFor(Address device_address,
     return PicoStatusToPwStatus(result);
 
   } else if (!tx_buffer.empty() && !rx_buffer.empty()) {
-    absolute_time_t timeout_absolute = make_timeout_time_us(timeout_us);
+    absolute_time_t timeout_absolute =
+        make_timeout_time_us(static_cast<uint64_t>(timeout_us));
     // Write then Read
     int write_result = i2c_write_blocking_until(
         instance_,

@@ -58,7 +58,7 @@
         PW_TOKENIZE_STRING_MASK("pw_log_module_names",                       \
                                 ((1u << PW_LOG_TOKENIZED_MODULE_BITS) - 1u), \
                                 module);                                     \
-    const uintptr_t _pw_log_tokenized_level = level;                         \
+    const uintptr_t _pw_log_tokenized_level = (uintptr_t)(level);            \
     PW_LOG_TOKENIZED_ENCODE_MESSAGE(                                         \
         (_PW_LOG_TOKENIZED_LEVEL(_pw_log_tokenized_level) |                  \
          _PW_LOG_TOKENIZED_MODULE(_pw_log_tokenized_module_token) |          \

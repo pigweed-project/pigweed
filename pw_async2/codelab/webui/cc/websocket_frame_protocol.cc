@@ -246,8 +246,10 @@ struct FrameEncoder {
       return Status::InvalidArgument();
     }
 
-    auto payload = in_out_remaining.subspan(0, payload_length);
-    in_out_remaining = in_out_remaining.subspan(payload_length);
+    auto payload =
+        in_out_remaining.subspan(0, static_cast<size_t>(payload_length));
+    in_out_remaining =
+        in_out_remaining.subspan(static_cast<size_t>(payload_length));
 
     if (mask) {
       for (size_t i = 0; i < payload.size(); ++i) {

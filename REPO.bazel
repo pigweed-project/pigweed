@@ -23,7 +23,6 @@ repo(
     # Pigweed, but not when compiling any dependencies hosted in external
     # repositories.
     features = [
-        "conversion_warnings",
         "ctad_warnings",
         "layering_check",
     ],
