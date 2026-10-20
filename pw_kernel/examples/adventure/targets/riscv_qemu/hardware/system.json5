@@ -17,14 +17,14 @@
   },
   kernel: {
     flash_start_address: 0x80000000,
-    flash_size_bytes: 261120,
+    flash_size_bytes: 262144,
     ram_start_address: 0x81000000,
     ram_size_bytes: 65536,
   },
   apps: [
     {
       name: "supervisor",
-      flash_size_bytes: 261120,
+      flash_size_bytes: 262144,
       processes: [
         {
           name: "supervisor",
@@ -57,7 +57,7 @@
     },
     {
       name: "uart_driver_16550",
-      flash_size_bytes: 261120,
+      flash_size_bytes: 262144,
       processes: [
         {
           name: "uart_driver_16550",
@@ -107,7 +107,7 @@
     },
     {
       name: "adventure_game",
-      flash_size_bytes: 261120,
+      flash_size_bytes: 262144,
       processes: [
         {
           name: "adventure_game",

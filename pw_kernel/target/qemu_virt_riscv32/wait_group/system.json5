@@ -17,7 +17,7 @@
   },
   kernel: {
     flash_start_address: 0x80000000,
-    flash_size_bytes: 261120,
+    flash_size_bytes: 262144,
     ram_start_address: 0x81000000,
     ram_size_bytes: 65536,
     interrupt_table: {
@@ -27,7 +27,7 @@
   apps: [
     {
       name: "initiator",
-      flash_size_bytes: 261120,
+      flash_size_bytes: 262144,
       processes: [
         {
           name: "initiator",
@@ -57,7 +57,7 @@
     },
     {
       name: "handler",
-      flash_size_bytes: 261120,
+      flash_size_bytes: 262144,
       processes: [
         {
           name: "handler",

@@ -17,14 +17,14 @@
   },
   kernel: {
     flash_start_address: 0x80000000,
-    flash_size_bytes: 261120,
+    flash_size_bytes: 262144,
     ram_start_address: 0x81000000,
     ram_size_bytes: 65536,
   },
   apps: [
     {
       name: "test_uart",
-      flash_size_bytes: 261120,
+      flash_size_bytes: 262144,
       processes: [
         {
           name: "test_uart",
@@ -54,7 +54,7 @@
     },
     {
       name: "test_uart_listener",
-      flash_size_bytes: 261120,
+      flash_size_bytes: 262144,
       processes: [
         {
           name: "test_uart_listener",
