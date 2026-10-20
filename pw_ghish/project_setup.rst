@@ -55,55 +55,150 @@ You can compile and install ``gh-ish`` using the Go toolchain:
    # Or install directly into $GOPATH/bin:
    $ go install pigweed.dev/pw_ghish/cmd@latest
 
-Distributing via CIPD or package managers
-=========================================
-For large multi-repo projects (such as Fuchsia or Chromium), ``gh-ish`` can be
-packaged as a CIPD (Chrome Infrastructure Package Deployer) package or added to
-host toolchains so developers and CI bots have it pre-installed on their
-``$PATH``.
+Distributing via CIPD (``pw_env_setup``)
+========================================
+Pigweed publishes pre-built ``gh-ish`` binaries to CIPD under
+`pigweed/ghish/${platform} <https://chrome-infra-packages.appspot.com/p/pigweed/ghish>`_
+(currently ``linux-amd64`` and ``mac-arm64``) and includes the package in
+``pw_env_setup/py/pw_env_setup/cipd_setup/pigweed.json`` (which is included by
+``default.json``).
+
+For downstream projects using ``pw_env_setup`` (such as GN or CMake projects
+that run ``source bootstrap.sh``), the CIPD pre-built binary is automatically
+downloaded into ``environment/cipd/packages/pigweed/gh-ish`` and updated
+whenever the Pigweed submodule rolls. Projects with custom CIPD manifests can
+also add the package directly:
+
+.. code-block:: json
+
+   {
+     "path": "pigweed/ghish/${platform}",
+     "platforms": [
+       "linux-amd64",
+       "mac-arm64"
+     ],
+     "tags": [
+       "git_revision:57b4f2eff500996a9a2f5a9c1e4b6b75539293e1"
+     ]
+   }
 
 -----------------------------
 Creating a repository wrapper
 -----------------------------
 Rather than requiring every developer and AI coding agent to manually install
-and update a global binary, we recommend placing a wrapper script named ``gh``
-at the root of your repository (e.g. ``./gh``).
+and update a global binary, we recommend placing a wrapper script or symlink
+named ``gh`` at the root of your repository (``./gh``).
 
 Why use a repository wrapper?
 =============================
 1. **No global installation step**: Contributors and coding agents can run
-   ``./gh pr list`` or ``./gh pr status`` directly from a fresh checkout.
-2. **Commit-pinned consistency**: The wrapper builds or downloads the version
-   of the tool matching the repository's current commit.
-3. **Local binary caching**: The wrapper builds the binary once per commit and
-   caches it in a local output directory (e.g. ``out/gh/``) for subsequent
-   runs.
+   ``./gh pr list`` or ``./gh pr status`` directly from a checkout.
+2. **Zero Bazel overhead for GN/CMake projects**: When backed by the CIPD
+   pre-built package, ``./gh`` executes directly from
+   ``environment/cipd/packages/`` without invoking Bazel or downloading a Go
+   toolchain.
+3. **Automatic updates**: Both the CIPD pre-built pin in ``pigweed.json`` and
+   the ``pigweed/gh`` script roll automatically with Pigweed (and projects that
+   check in a standalone ``./gh`` wrapper script can request an automated LUCI
+   roller to keep it current).
 4. **Standard CLI entry point**: Coding agents can invoke ``./gh`` from the
-   checkout root using standard GitHub CLI subcommands.
+   checkout root using standard GitHub CLI subcommands even in non-interactive
+   subshells where ``activate.sh`` has not been sourced.
 
-Example wrapper implementation
-==============================
-Here is an example wrapper script that builds and caches the binary:
+Option A: Symlinking ``pigweed/gh`` (submodule projects)
+========================================================
+If your project includes Pigweed as a Git submodule (e.g. at ``pigweed/`` or
+``third_party/pigweed/``) and initializes it during checkout, you can symlink
+``./gh`` directly to ``pigweed/gh``:
+
+.. code-block:: console
+
+   $ ln -s pigweed/gh gh
+
+``pigweed/gh`` resolves symlinks via ``readlink -f``, sets
+``BUILD_WORKSPACE_DIRECTORY`` to the caller's superproject root (so
+``.ghish.toml`` and Git operations target your project rather than the
+``pigweed/`` submodule), and automatically prefers the CIPD pre-built binary in
+``environment/cipd/packages/`` when invoked from a downstream repository.
+
+Option B: Standalone CIPD-first ``./gh`` wrapper script
+=======================================================
+If ``pigweed/`` is an optional submodule or your repository uses ``pw_env_setup``
+without always initializing ``pigweed/`` in shallow checkouts, check in a small
+CIPD-first wrapper script at ``./gh`` that executes the CIPD pre-built binary
+and falls back to ``pigweed/gh``:
 
 .. code-block:: bash
 
-   #!/usr/bin/env bash
-   set -euo pipefail
+   #!/bin/bash
+   set -e
 
-   REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-   CACHE_DIR="${REPO_ROOT}/out/gh"
-   COMMIT_HASH="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo "latest")"
-   CACHED_BIN="${CACHE_DIR}/gh-ish-${COMMIT_HASH}"
+   _REPO_ROOT="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
-   if [[ ! -x "${CACHED_BIN}" ]]; then
-     mkdir -p "${CACHE_DIR}"
-     # Build using Bazel or Go:
-     bazelisk build --noshow_progress //pw_ghish:gh-ish
-     cp -f "${REPO_ROOT}/bazel-bin/pw_ghish/gh-ish_/gh-ish" "${CACHED_BIN}"
-     chmod +x "${CACHED_BIN}"
+   for _LUCI_DIR in \
+     "${PW_ENVIRONMENT_ROOT:-}/cipd/packages/luci" \
+     "${_REPO_ROOT}/environment/cipd/packages/luci" \
+     "${_REPO_ROOT}/pigweed/environment/cipd/packages/luci"; do
+     if [ -n "$_LUCI_DIR" ] && [ -d "$_LUCI_DIR" ]; then
+       export PATH="${_LUCI_DIR}:${PATH}"
+       break
+     fi
+   done
+
+   export BUILD_WORKSPACE_DIRECTORY="${BUILD_WORKSPACE_DIRECTORY:-${_REPO_ROOT}}"
+   export BUILD_WORKING_DIRECTORY="${PWD}"
+
+   if [ -z "${PW_GH_FORCE_BUILD:-}" ]; then
+     for _CANDIDATE in \
+       "${PW_GH_BIN:-}" \
+       "${PW_ENVIRONMENT_ROOT:-}/cipd/packages/pigweed/gh-ish" \
+       "${_REPO_ROOT}/environment/cipd/packages/pigweed/gh-ish" \
+       "$(command -v gh-ish 2>/dev/null || true)"; do
+       if [ -n "$_CANDIDATE" ] && [ -x "$_CANDIDATE" ]; then
+         exec "$_CANDIDATE" "$@"
+       fi
+     done
    fi
 
-   exec "${CACHED_BIN}" "$@"
+   if [ -x "${_REPO_ROOT}/pigweed/gh" ]; then
+     exec "${_REPO_ROOT}/pigweed/gh" "$@"
+   fi
+
+   echo "Error: gh-ish binary not found. Run 'source bootstrap.sh' first." >&2
+   exit 1
+
+------------------------------------------------
+Sharing Agent Skills & Hooks in Downstream Repos
+------------------------------------------------
+To give AI coding agents (Antigravity/Jetski, Gemini CLI, Claude Code) the
+``ghish`` skill in a downstream repository without copy-pasting or manually
+syncing ``SKILL.md``:
+
+1. **Symlink the skill directory into your repository's** ``.agents/skills/``:
+
+   .. code-block:: console
+
+      $ mkdir -p .agents/skills
+      $ ln -s ../../pigweed/.agents/skills/ghish .agents/skills/ghish
+
+   Because the symlink points into the ``pigweed/`` submodule, the skill
+   instructions automatically stay in sync whenever Pigweed rolls. Projects
+   that vendor ``.agents/skills/ghish`` directly instead of symlinking into a
+   ``pigweed/`` submodule can also request an automated LUCI roller to keep the
+   skill directory current.
+
+2. **Install Git and agent hooks during environment setup** (e.g. in
+   ``.agents/setup.sh`` or ``bootstrap.sh``):
+
+   .. code-block:: bash
+
+      if [ -x "$REPO_ROOT/gh" ]; then
+        "$REPO_ROOT/gh" hook install --agent=jetski --git >/dev/null 2>&1 || true
+      fi
+
+3. **Reference** ``./gh`` **and project-specific commit rules in** ``AGENTS.md``
+   **or** ``GEMINI.md`` at your repository root (such as required commit
+   trailers and ``./gh pr create`` / ``./gh pr push`` workflows).
 
 -----------------------------------------------------------------------
 Declarative Repository Configuration (``.ghish.toml`` & ``git config``)

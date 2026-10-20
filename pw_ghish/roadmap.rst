@@ -55,9 +55,10 @@ Current status: what works today
      - Go profiles for ``pigweed``, ``fuchsia``, and ``generic`` hosts. See
        :ref:`module-pw_ghish-project-integration`.
    * - **Declarative Config** (``.ghish.toml``)
-     - **Planned**
-     - Move project policies and Pigweed defaults out of Go code into
-       repository config files.
+     - **Experimental**
+     - Configure Gerrit host, project, shortlinks, CI buckets, and issue
+       trailers via ``.ghish.toml`` and ``git config ghish.*``. See
+       :ref:`module-pw_ghish-project-integration`.
    * - **Alternative SCM** (``jj``)
      - **Under Evaluation**
      - Evaluate interoperability with Jujutsu (``jj``) branchless workflows.

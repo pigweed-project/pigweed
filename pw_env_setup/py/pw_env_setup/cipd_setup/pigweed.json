@@ -133,6 +133,16 @@
       "tags": [
         "version:2@1.14.0+20240213git9ffe8a98a"
       ]
+    },
+    {
+      "path": "pigweed/ghish/${platform}",
+      "platforms": [
+        "linux-amd64",
+        "mac-arm64"
+      ],
+      "tags": [
+        "git_revision:57b4f2eff500996a9a2f5a9c1e4b6b75539293e1"
+      ]
     }
   ]
 }
