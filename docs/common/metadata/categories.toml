@@ -1,0 +1,215 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+[comms]
+title = "Comms"
+icon = "broadcast"
+description = "Remote procedure calls (RPC), channels, and communication streams"
+homepage = "//docs/sphinx/comms/index.rst"
+pin = ["pw_rpc2", "pw_transport", "bluetooth"]
+
+[observability]
+title = "Observability"
+icon = "eye"
+description = "Structured logging, tokenization, metrics, crash handling, and tracing"
+homepage = "//docs/sphinx/observability/index.rst"
+pin = ["pw_log", "pw_tokenizer", "pw_assert", "pw_console"]
+
+[async]
+title = "Async & concurrency"
+icon = "sync"
+description = "Cooperative multitasking, futures, and asynchronous primitives"
+homepage = "//docs/sphinx/async/index.rst"
+pin = ["pw_async2", "pw_atomic", "pw_work_queue"]
+
+[encoding]
+title = "Encoding & serialization"
+icon = "file-binary"
+description = "Protocol Buffers, JSON, Varint, Base64, and wire format serialization"
+homepage = "//docs/sphinx/encoding/index.rst"
+pin = ["pw_protobuf"]
+
+[os]
+title = "OS abstraction layers"
+icon = "cpu"
+description = "Synchronization, threading, and portable RTOS abstractions"
+homepage = "//docs/sphinx/os/index.rst"
+pin = ["pw_sync", "pw_thread", "pw_chrono", "pw_interrupt", "pw_boot", "pw_system"]
+
+[kernel]
+title = "Kernel"
+icon = "server"
+description = "Embedded kernels, preemptive scheduling, and userspace isolation"
+homepage = "//docs/sphinx/kernel/index.rst"
+
+[memory]
+title = "Memory & storage"
+icon = "database"
+description = "Memory allocators, buffers, persistent flash storage, and key-value stores"
+homepage = "//docs/sphinx/memory/index.rst"
+pin = ["pw_allocator", "pw_buf", "pw_kvs"]
+
+[hal]
+title = "HALs"
+icon = "plug"
+description = "Hardware abstraction layer interfaces for timers, I2C, SPI, UART, and GPIO"
+homepage = "//docs/sphinx/hal/index.rst"
+
+[hw]
+title = "Hardware support"
+icon = "package-dependencies"
+description = "Board support, hardware drivers, and SDK integrations for target platforms"
+homepage = "//docs/sphinx/hw/index.rst"
+pin = ["rpi", "nxp"]
+
+[core]
+title = "Data structures & utilities"
+icon = "code"
+description = "Embedded-safe collections, spans, strings, status, and error handling"
+homepage = "//docs/sphinx/core/index.rst"
+pin = ["pw_status", "pw_result", "pw_containers", "pw_function"]
+
+[test]
+title = "Testing"
+icon = "checklist"
+description = "Unit testing frameworks, mocking, compilation tests, and fuzzing"
+homepage = "//docs/sphinx/test/index.rst"
+pin = ["pw_unit_test"]
+
+[bluetooth]
+parent = "comms"
+title = "Bluetooth"
+description = "Dual-mode Bluetooth Host stack, HCI controllers, and profiles"
+homepage = "//docs/sphinx/bluetooth/index.rst"
+
+[build]
+title = "Build systems"
+icon = "workflow"
+description = "Bazel, GN, and CMake integrations and rules"
+homepage = "//docs/sphinx/build/index.rst"
+
+[toolchain]
+title = "Toolchains"
+icon = "gear"
+description = "Hermetic LLVM/Clang toolchains, C/C++ libraries, and build utilities"
+homepage = "//docs/sphinx/toolchains/index.rst"
+
+[devtools]
+title = "Developer tools"
+icon = "command-palette"
+description = "Interactive REPL, CLI utilities, code intelligence, and emulators"
+homepage = "//docs/sphinx/devtools/index.rst"
+pin = ["pw_ide", "pw_env_setup", "pw_module", "pw_presubmit", "pw_watch"]
+
+[crypto]
+title = "Cryptography & security"
+icon = "shield-lock"
+description = "Hashing, cryptographic primitives, and secure storage"
+homepage = "//docs/sphinx/crypto/index.rst"
+
+[os_backends]
+parent = "os"
+title = "Backends"
+description = "Operating system, RTOS, and bare-metal backends for Pigweed's OS abstraction layers"
+homepage = "//docs/sphinx/os/backends.rst"
+
+[zephyr]
+parent = "os_backends"
+title = "Zephyr"
+description = "Modules, backends, and helpers for the Zephyr RTOS"
+homepage = "//docs/sphinx/os/zephyr/index.rst"
+
+[freertos]
+parent = "os_backends"
+title = "Amazon FreeRTOS"
+description = "Safe, non-overflowing OS abstractions & wrappers for FreeRTOS"
+homepage = "//docs/sphinx/os/freertos/index.rst"
+
+[threadx]
+parent = "os_backends"
+title = "Eclipse ThreadX"
+description = "Thread-safe OS abstraction layers & backends for Azure RTOS ThreadX"
+homepage = "//docs/sphinx/os/threadx/index.rst"
+
+[embos]
+parent = "os_backends"
+title = "Segger embOS"
+description = "RTOS abstraction layers & thread-safety integrations for SEGGER embOS"
+homepage = "//docs/sphinx/os/embos/index.rst"
+
+[stl]
+parent = "os_backends"
+title = "STL"
+description = "C++ Standard Template Library backends for host and POSIX targets"
+homepage = "//docs/sphinx/os/stl/index.rst"
+
+[baremetal]
+parent = "os_backends"
+title = "Bare metal"
+description = "Backends for running directly on target hardware without an OS or scheduler"
+homepage = "//docs/sphinx/os/baremetal/index.rst"
+
+[android]
+parent = "os_backends"
+title = "Android"
+description = "Utilities and toolchains for using Pigweed on Android"
+homepage = "//targets/android/target_docs.rst"
+
+[fuchsia]
+parent = "os_backends"
+title = "Fuchsia"
+description = "Backends and platform integrations for Fuchsia OS"
+homepage = "//targets/fuchsia/target_docs.rst"
+
+[ambiq]
+parent = "hw"
+title = "Ambiq"
+description = "Hardware drivers & platform support for Ambiq Apollo4 & AmbiqSuite SDK"
+homepage = "//targets/apollo4/target_docs.rst"
+
+[arduino]
+parent = "hw"
+title = "Arduino"
+description = "Build utilities, cores, & hardware support for Arduino"
+homepage = "//targets/arduino/target_docs.rst"
+
+[emcraft]
+parent = "hw"
+title = "Emcraft"
+description = "Hardware support & HAL integrations for Emcraft SmartFusion2"
+homepage = "//targets/emcraft_sf2_som/target_docs.rst"
+
+[nxp]
+parent = "hw"
+title = "NXP"
+description = "Drivers, build utilities, & HAL implementations for NXP MCUXpresso SDK"
+homepage = "//targets/mimxrt595_evk/target_docs.rst"
+
+[rpi]
+parent = "hw"
+title = "Raspberry Pi RP2XXX"
+description = "Hardware drivers & platform support for Raspberry Pi RP2040 & Pico SDK"
+homepage = "//targets/rp2040/target_docs.rst"
+
+[stm]
+parent = "hw"
+title = "STMicroelectronics STM32FXXX"
+description = "Build support & hardware drivers for STMicroelectronics STM32Cube"
+homepage = "//targets/stm32f429i_disc1/target_docs.rst"
+
+[ti]
+parent = "hw"
+title = "Texas Instruments"
+description = "Hardware & emulation support for Texas Instruments microcontrollers"
+homepage = "//targets/lm3s6965evb_qemu/target_docs.rst"

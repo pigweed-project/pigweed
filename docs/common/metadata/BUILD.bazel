@@ -16,4 +16,8 @@ package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-exports_files(["module_schema.json"])
+exports_files([
+    "categories.toml",
+    "categories_schema.json",
+    "module_schema.json",
+])

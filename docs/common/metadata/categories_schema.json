@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Schema for //docs/common/metadata/categories.toml.",
+  "type": "object",
+  "patternProperties": {
+    "^[a-z0-9_]+$": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "description": "Human-readable display title for the category.",
+          "type": "string",
+          "minLength": 1
+        },
+        "icon": {
+          "description": "Octicon icon identifier representing the category.",
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "description": "Short summary sentence of the category purpose and contents.",
+          "type": "string",
+          "minLength": 1
+        },
+        "homepage": {
+          "description": "Path to the category homepage (e.g. //docs/sphinx/... or //targets/...)",
+          "type": "string",
+          "pattern": "^//(docs/sphinx|targets)/.+\\.rst$"
+        },
+        "parent": {
+          "description": "Parent category ID in //docs/common/metadata/categories.toml.",
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "pin": {
+          "description": "Direct module names or child subcategory IDs to pin at the top of the category in the specified order.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          }
+        }
+      },
+      "required": [
+        "title",
+        "description",
+        "homepage"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "icon"
+          ],
+          "not": {
+            "required": [
+              "parent"
+            ]
+          }
+        },
+        {
+          "required": [
+            "parent"
+          ],
+          "not": {
+            "required": [
+              "icon"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "minProperties": 1,
+  "additionalProperties": false
+}
