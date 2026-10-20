@@ -31,8 +31,9 @@ Quick reference
    # Upload a new patchset to the active Gerrit change:
    $ ./gh pr push --cq
 
-   # Reply to an inline comment thread and mark as resolved:
+   # Stage an inline reply and mark resolved, then batch-publish staged drafts:
    $ ./gh pr comment --path pw_string/string.cc --line 42 -m "Done." --resolved
+   $ ./gh pr review --publish
 
    # Enable automated submission once review and CI checks pass:
    $ ./gh pr merge --auto
@@ -383,18 +384,24 @@ Posts change-level, file-level, or inline review comments (via ``-m, --message``
 ``-b, --body``, or ``-F, --body-file <file|->``; pass ``-`` to read from
 standard input). When ``--path`` (and optionally ``--line``) is provided,
 ``pw_ghish`` checks for an existing thread at that target across patchsets and
-appends your comment as a reply while keeping any unrelated drafts private
-(``Drafts: KEEP``):
+stages your comment as an unpublished server-side draft reply by default
+(matching the Gerrit Web UI). You can then publish all staged drafts in a single
+review via ``./gh pr review --publish`` (or ``./gh pr push --publish``), or pass
+``--publish`` to publish a single inline comment immediately while keeping any
+other unrelated drafts private (``Drafts: KEEP``):
 
 .. code-block:: console
 
-   # Reply to an inline thread and mark as resolved:
+   # Stage an inline reply and mark as resolved (unpublished draft by default):
    $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 \
        -m "Fixed, using pw::Status." --resolved
 
-   # Save or update an inline comment as a private draft without publishing:
+   # Publish all staged draft replies in a single review:
+   $ ./gh pr review 413992 --publish
+
+   # Publish a single inline comment immediately without staging:
    $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 \
-       -m "Consider std::string_view" --draft
+       -m "Fixed, using pw::Status." --resolved --publish
 
    # Pipe a multi-line comment from stdin via a heredoc (avoids shell escaping):
    $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 --body-file - --draft <<'EOF'
@@ -407,9 +414,9 @@ appends your comment as a reply while keeping any unrelated drafts private
    # Explicitly target or disambiguate a specific patchset:
    $ ./gh pr comment 413992/1 --path pw_string/string.cc --line 42 -m "Ack."
 
-When ``--draft`` is used on a thread or line that already has an unpublished
-draft from you, ``pw_ghish`` updates that draft in place (preserving ``Side``
-and character ``Range``) rather than creating a duplicate draft. If multiple
+When staging a draft on a thread or line that already has an unpublished draft
+from you, ``pw_ghish`` updates that draft in place (preserving ``Side`` and
+character ``Range``) rather than creating a duplicate draft. If multiple
 unpublished drafts exist at the same location across different patchsets,
 ``pr comment`` refuses to guess and prompts you to disambiguate with
 ``--patchset <N>`` or ``<id>/<N>``. ``--resolved`` requires ``--path`` (and
@@ -650,9 +657,9 @@ Comparison with GitHub CLI (gh pr)
        ``Code-Review-2`` is the veto. Also supports ``--cq`` and ``--publish``.
    * - ``pr comment``
      - Posts change-level or inline threaded comments (``--path``, ``--line``).
-     - Adds ``--resolved`` to mark an inline thread resolved, ``--draft`` to
-       create or update an unpublished server-side draft comment, and
-       ``--delete-draft`` to delete an unpublished draft.
+     - Inline/file comments (``--path``) stage as unpublished server-side drafts
+       by default unless ``--publish`` is passed. Adds ``--resolved``,
+       ``--draft``, ``--publish``, and ``--delete-draft``.
    * - ``pr ready``
      - Marks a WIP change ready for review, or WIP with ``-u, --undo``.
      - Adds ``-m, --message`` to attach a status note and ``--owner`` /

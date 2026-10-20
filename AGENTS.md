@@ -200,9 +200,11 @@ disabled).
   - Upload new patchset: `./gh pr push [--cq] [--stack]`
   - Edit CL metadata (CQ, reviewers, topic, hashtags):
     `./gh pr edit [<id>] [--cq] [--add-reviewer <email>] [--topic <name>]`
-- **Respond to or post review comments**:
-  - Reply to inline thread & mark resolved (use `--draft` to stage privately, or `-F -` to read multi-line body from `stdin`):
-    `./gh pr comment [<id>] --path <file> --line <line> (-m "<msg>" | -F <file|->) --resolved [--draft]`
+- **Respond to or post review comments** (stage inline replies first, then publish once):
+  - Stage inline reply & mark resolved (use `-F -` to read multi-line body from `stdin`):
+    `./gh pr comment [<id>] --path <file> --line <line> (-m "<msg>" | -F <file|->) --resolved`
+  - Batch-publish all staged replies in a single review:
+    `./gh pr review [<id>] --publish` (or `./gh pr push --publish`)
 - **Inspect & rerun LUCI CI / Buildbucket checks**:
   - Check or watch status: `./gh pr checks [<id>] [--watch --fail-fast]`
   - View failure logs in terminal: `./gh run view [<id>] --log-failed`

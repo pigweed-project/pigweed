@@ -36,6 +36,7 @@ var (
 	commentResolved    bool
 	commentPatchset    string
 	commentDraft       bool
+	commentPublish     bool
 	commentDeleteDraft bool
 )
 
@@ -108,6 +109,9 @@ var commentCmd = &cobra.Command{
 			if commentDraft {
 				return fmt.Errorf("cannot specify both --draft and --delete-draft")
 			}
+			if commentPublish {
+				return fmt.Errorf("cannot specify both --publish and --delete-draft")
+			}
 			if commentMessage != "" || commentBody != "" || commentBodyFile != "" {
 				return fmt.Errorf("cannot specify --message, --body, or --body-file with --delete-draft")
 			}
@@ -115,6 +119,9 @@ var commentCmd = &cobra.Command{
 				return fmt.Errorf("cannot specify --resolved with --delete-draft")
 			}
 		} else {
+			if commentDraft && commentPublish {
+				return fmt.Errorf("cannot specify both --draft and --publish")
+			}
 			if commentResolved && commentFile == "" {
 				return fmt.Errorf("--resolved requires --path (and --line for inline comments) to identify the comment thread to resolve")
 			}
@@ -221,15 +228,22 @@ var commentCmd = &cobra.Command{
 			}
 		}
 
+		// Inline and file-level comments (--path) default to staging as an unpublished
+		// server-side draft (matching the Gerrit Web UI) unless --publish is passed,
+		// preventing multiple 'pr comment --path' calls from publishing a separate
+		// Gerrit review and notification email per comment. Change-level comments
+		// (without --path) default to publishing immediately unless --draft is passed.
+		isDraft := commentDraft || (commentFile != "" && !commentPublish)
+
 		var existingDraft *gerrit.CommentInfo
-		if commentDraft || (commentResolved && !foundThread) {
+		if isDraft || (commentResolved && !foundThread) {
 			drafts, _, dErr := client.Changes.ListChangeDrafts(ctx, changeID)
 			if dErr != nil {
 				return chCtx.FormatError(dErr, "listing draft comments for")
 			}
 			if drafts != nil {
 				matches := matchDraftsWithRevisionFallback((*drafts)[targetPath], commentLine, inReplyTo, explicitPatchsetNum, explicitPatchset)
-				if len(matches) > 1 && commentDraft {
+				if len(matches) > 1 && isDraft {
 					return formatAmbiguousDraftError(changeID, targetPath, commentLine, matches, false)
 				}
 				if len(matches) > 0 {
@@ -262,7 +276,7 @@ var commentCmd = &cobra.Command{
 			unresolved = &unresolvedTrue
 		}
 
-		if commentDraft {
+		if isDraft {
 			draftInput := &gerrit.CommentInput{
 				Path:       targetPath,
 				Line:       commentLine,
@@ -273,7 +287,17 @@ var commentCmd = &cobra.Command{
 			if commentFile != "" && commentLine != 0 {
 				draftInput.Side = "REVISION"
 			}
-			if existingDraft != nil && existingDraft.ID != "" {
+
+			var (
+				savedDraft *gerrit.CommentInfo
+				fallbackPS = parentPatchSet
+				action     = "saved"
+			)
+			if existingDraft != nil {
+				if existingDraft.ID == "" {
+					return fmt.Errorf("internal error: Gerrit returned draft comment without an ID at %s on change %s",
+						formatCommentLocation(targetPath, commentLine), changeID)
+				}
 				draftRev := draftRevisionForAPI(existingDraft.PatchSet, targetPatchset)
 				if draftInput.InReplyTo == "" && existingDraft.InReplyTo != "" {
 					draftInput.InReplyTo = existingDraft.InReplyTo
@@ -287,28 +311,29 @@ var commentCmd = &cobra.Command{
 				if existingDraft.Side != "" {
 					draftInput.Side = existingDraft.Side
 				}
-				updatedDraft, _, uErr := client.Changes.UpdateDraft(ctx, changeID, draftRev, existingDraft.ID, draftInput)
+				var uErr error
+				savedDraft, _, uErr = client.Changes.UpdateDraft(ctx, changeID, draftRev, existingDraft.ID, draftInput)
 				if uErr != nil {
 					return chCtx.FormatError(uErr, "updating draft comment for")
 				}
-				ps := effectivePatchSet(existingDraft.PatchSet, explicitPatchsetNum)
-				if updatedDraft != nil && updatedDraft.PatchSet > 0 {
-					ps = updatedDraft.PatchSet
+				fallbackPS = existingDraft.PatchSet
+				action = "updated"
+			} else {
+				var cErr error
+				savedDraft, _, cErr = client.Changes.CreateDraft(ctx, changeID, targetPatchset, draftInput)
+				if cErr != nil {
+					return chCtx.FormatError(cErr, "creating draft comment for")
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Draft comment updated successfully %s.\n",
-					formatCommentActionSummary(targetPath, commentLine, ps, draftInput.InReplyTo != "", draftInput.Unresolved))
-				return nil
 			}
-			createdDraft, _, err := client.Changes.CreateDraft(ctx, changeID, targetPatchset, draftInput)
-			if err != nil {
-				return chCtx.FormatError(err, "creating draft comment for")
+
+			var savedPS int
+			if savedDraft != nil {
+				savedPS = savedDraft.PatchSet
 			}
-			ps := effectivePatchSet(parentPatchSet, explicitPatchsetNum)
-			if createdDraft != nil && createdDraft.PatchSet > 0 {
-				ps = createdDraft.PatchSet
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Draft comment saved successfully %s.\n",
-				formatCommentActionSummary(targetPath, commentLine, ps, draftInput.InReplyTo != "", draftInput.Unresolved))
+			ps := effectivePatchSet(savedPS, fallbackPS, explicitPatchsetNum)
+			fmt.Fprintf(cmd.OutOrStdout(), "Draft comment %s successfully %s.\n",
+				action, formatCommentActionSummary(targetPath, commentLine, ps, draftInput.InReplyTo != "", draftInput.Unresolved))
+			fmt.Fprintln(cmd.OutOrStdout(), "Run 'gh pr review --publish' (or 'gh pr push --publish') once all comments are staged to publish them in a single review.")
 			return nil
 		}
 
@@ -343,11 +368,13 @@ var commentCmd = &cobra.Command{
 	},
 }
 
-func effectivePatchSet(primaryPS, fallbackPS int) int {
-	if primaryPS > 0 {
-		return primaryPS
+func effectivePatchSet(patchSets ...int) int {
+	for _, ps := range patchSets {
+		if ps > 0 {
+			return ps
+		}
 	}
-	return fallbackPS
+	return 0
 }
 
 func formatCommentActionSummary(targetPath string, line int, patchSet int, isReply bool, unresolved *bool) string {
@@ -484,7 +511,9 @@ func init() {
 	//ghish:flag mode=extension reason="Gerrit patchset revision targeting"
 	commentCmd.Flags().StringVar(&commentPatchset, "patchset", "current", "Patchset number or 'current' (ghish-only)")
 	//ghish:flag mode=divergent gh="pr create --draft" doc="ghDivergenceHelp"
-	commentCmd.Flags().BoolVar(&commentDraft, "draft", false, "Save or update comment as an unpublished draft (ghish-only)")
+	commentCmd.Flags().BoolVar(&commentDraft, "draft", false, "Save or update comment as an unpublished draft (default when --path is specified) (ghish-only)")
+	//ghish:flag mode=extension reason="Publish Gerrit inline or file comment immediately"
+	commentCmd.Flags().BoolVar(&commentPublish, "publish", false, "Publish inline or file comment immediately instead of staging as a draft (ghish-only)")
 	//ghish:flag mode=extension reason="Delete unpublished Gerrit server-side draft comment"
 	commentCmd.Flags().BoolVar(&commentDeleteDraft, "delete-draft", false, "Delete an unpublished draft comment at the target location (ghish-only)")
 	PrCmd.AddCommand(commentCmd)

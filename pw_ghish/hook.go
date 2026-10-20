@@ -208,7 +208,8 @@ func CheckAgentCommand(command string) string {
 			"(which handles corp and cookie auth automatically):\n" +
 			"  • View CL metadata & comments: ./gh pr view [<id>] --comments\n" +
 			"  • View CL unified patch diff:  ./gh pr diff [<id>]\n" +
-			"  • Reply/resolve inline thread: ./gh pr comment [<id>] --path <file> --line <line> -m '<msg>' --resolved [--draft]\n" +
+			"  • Stage inline thread reply:   ./gh pr comment [<id>] --path <file> --line <line> -m '<msg>' --resolved\n" +
+			"  • Batch-publish staged drafts: ./gh pr review [<id>] --publish\n" +
 			"  • Check or watch CI tryjobs:   ./gh pr checks [<id>] [--watch --fail-fast]\n" +
 			"  • Inspect failed CI build log: ./gh run view [<id>] --log-failed"
 	}

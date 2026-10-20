@@ -124,26 +124,32 @@ Commands:
 
 ### 3. Review & Comment
 - **`./gh pr comment [<id>] --path <file> [--line <line>] (-m <msg> | -F <file|->)`** (or `-b <msg>`):
-  Post a file-level or inline comment (auto-threads onto any existing thread at
-  `<file>` or `<file>:<line>` across patchsets, keeping unrelated drafts private
-  via `Drafts: KEEP`). Pass `--body-file -` (`-F -`) with a heredoc (`<<'EOF'`)
-  for multi-line comments containing quotes, backticks, or code blocks.
+  Stage a file-level or inline comment as a server-side draft (auto-threads onto
+  any existing thread at `<file>` or `<file>:<line>` across patchsets) so
+  multiple comments and resolutions can be published together via
+  `./gh pr review --publish` (or `./gh pr push --publish`). Pass `--body-file -`
+  (`-F -`) with a heredoc (`<<'EOF'`) for multi-line comments containing quotes,
+  backticks, or code blocks.
   - `--resolved`: Mark thread as resolved (requires `--path`, and `--line` for
     inline threads).
-  - `--draft`: Create or update an unpublished draft comment visible only to you.
-    If an unpublished draft already exists at that target, `--draft` updates it
-    in place (preserving `Side` and character `Range`). If multiple drafts exist
-    at the same location across different patchsets, disambiguate with
-    `--patchset <N>` or `<id>/<N>`.
+  - `--draft`: Save or update comment as an unpublished draft (default with
+    `--path`; opt-in without `--path`). Updates an existing draft at that target
+    in place (preserving `Side` and `Range`); disambiguate multiple drafts across
+    patchsets with `--patchset <N>` or `<id>/<N>`.
+  - `--publish`: Publish an inline/file comment immediately in its own Gerrit
+    review instead of staging a draft. **Never use `--publish` on `pr comment`
+    when replying to or resolving multiple comments**; stage all comments first
+    and run `./gh pr review --publish` once at the end.
   - `--delete-draft`: Delete an unpublished draft comment at `--path <file>
     [--line <line>]` (or omit `--path` for a change-level draft).
-- **`./gh pr comment [<id>] (-m <msg> | -F <file|->) [--draft]`**: Post or stage a
-  change-level comment (`-F <file>` reads from file; `-F -` reads from `stdin`).
+- **`./gh pr comment [<id>] (-m <msg> | -F <file|->) [--draft]`**: Post (or stage
+  with `--draft`) a change-level comment (`-F <file>` reads from file; `-F -`
+  reads from `stdin`).
 - **`./gh pr review [<id>] [--approve | --request-changes] [--trigger [1|2] | --cq [1|2]] [--publish] [-m <msg> | -F <file|->]`**:
-  Submit review (`--approve` dynamically votes the change's maximum allowed
-  `Code-Review` score, e.g. `+2` or `+1`; `--request-changes` votes
-  `Code-Review-1`; `--publish` batch-publishes all staged draft comments across
-  revisions; without `--publish`, pending drafts are kept private). For full
+  Submit review (`--approve` votes the change's maximum allowed `Code-Review`
+  score, e.g. `+2` or `+1`; `--request-changes` votes `Code-Review-1`;
+  `--publish` batch-publishes all staged drafts across revisions in a single
+  review and email; without `--publish`, pending drafts stay private). For full
   review criteria, see [`.agents/skills/code_review/SKILL.md`](../code_review/SKILL.md).
 
 ### 4. Monitor & Rerun CI / Buildbucket & Busytown Checks
@@ -239,9 +245,9 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 1. **Fetch & review comments and drafts**: `./gh pr view <id> --comments` (or `./gh pr status`)
 2. **Apply fixes & verify locally**: `./pw presubmit --mode auto --base origin/main`
 3. **Upload updated patchset**: `git commit -a --amend --no-edit && ./gh pr push`
-4. **Reply & resolve threads** (add `--draft` to stage privately for human review, `-F -` to read multi-line body from `stdin`, or `--delete-draft` to remove a private steering draft):
-   `./gh pr comment <id> --path <file> --line <line> (-m "Fixed." | -F <file|->) --resolved [--draft]`
-5. **Publish staged drafts (when ready)**: `./gh pr review <id> --publish` (or `./gh pr push --publish`)
+4. **Stage replies & resolve threads** (saved as server-side drafts by default when `--path` is specified; pass `-F -` to read multi-line body from `stdin`, or `--delete-draft` to remove a private steering draft):
+   `./gh pr comment <id> --path <file> --line <line> (-m "Fixed." | -F <file|->) --resolved`
+5. **Batch-publish all staged drafts once**: `./gh pr review <id> --publish` (or `./gh pr push --publish`)
 
 ### Workflow 2: CI Triage & Targeted Retry
 1. **Check or watch status**: `./gh pr checks <id>` or run
@@ -259,8 +265,12 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 1. **NEVER use raw `git push`**: Always use `./gh pr push` (or `./gh push`)
    to update existing changes with new patchsets, and `./gh pr create` to create
    new changes.
-2. **Use `--draft` for Private Notes**: Intermediate or preparatory review
-   comments should use `--draft` so they remain private to you until ready.
+2. **Stage Inline Comments First, Then Batch-Publish Once**: `./gh pr comment --path <file> [--line <line>]`
+   stages inline/file comments and thread resolutions as server-side drafts by
+   default. When the user asks to publish comments or resolve threads on Gerrit,
+   stage all replies first and then run `./gh pr review [<id>] --publish` (or
+   `./gh pr push --publish`) **once** at the end so Gerrit emits a single review
+   and notification email. Never pass `--publish` to `pr comment` in a loop.
 3. **Resolve Threads Explicitly**: When fixing an issue raised by a reviewer,
    always reply with `--resolved --path <file> [--line <line>]`.
 4. **Authentication is Automatic**: Never use manual `curl -sb ~/.gitcookies` or

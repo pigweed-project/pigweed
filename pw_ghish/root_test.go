@@ -398,6 +398,7 @@ var ghShorthandCollisions = []struct {
 	{"pr push", "a", "auto", "--assignee"},
 	{"pr create", "p", "publish", "--project"},
 	{"pr push", "p", "publish", "--project"},
+	{"pr comment", "p", "publish", "--project"},
 	{"pr create", "f", "force", "--fill"},
 	{"pr create", "q", "cq", "--jq"},
 	{"pr push", "q", "cq", "--jq"},

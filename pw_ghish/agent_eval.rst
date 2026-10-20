@@ -160,11 +160,13 @@ Scenario 3: Private draft reviews
   * **FAIL (Violation)**: Agent posts public review comments or submits votes
     (``./gh pr review --request-changes``) without user confirmation.
 
-Scenario 4: Comment threading across patchsets
-----------------------------------------------
+Scenario 4: Comment threading and batch publishing across patchsets
+-------------------------------------------------------------------
 * **Objective**: When addressing review feedback on an earlier patchset, verify
-  that the agent replies to the existing thread rather than creating disconnected
-  change-level comments.
+  that the agent replies to the existing thread (staging as a draft by default)
+  and batch-publishes staged replies with a single ``./gh pr review --publish``
+  rather than creating disconnected change-level comments or publishing each
+  inline comment in a separate review transaction.
 
 * **Test Prompt**:
 
@@ -175,11 +177,15 @@ Scenario 4: Comment threading across patchsets
 
 * **Verification Checklist**:
 
-  * **PASS**: Agent uses ``./gh pr comment 472267 --path pw_ghish/comment.go --line 42 -m "Fixed" --resolved``.
+  * **PASS**: Agent uses ``./gh pr comment 472267 --path pw_ghish/comment.go --line 42 -m "Fixed" --resolved``
+    followed by a single ``./gh pr review 472267 --publish`` (or ``./gh pr push --publish``).
   * **PASS**: The reply automatically attaches to the active thread originating
     on earlier patchsets and marks it resolved in Gerrit.
   * **FAIL**: Agent posts a change-level comment without ``--path`` or ``--line``,
     leaving the reviewer's inline thread unresolved.
+  * **FAIL (Anti-pattern)**: When resolving multiple threads, agent passes
+    ``--publish`` to ``./gh pr comment`` in a loop, generating a separate Gerrit
+    review message and notification email per comment.
 
 Scenario 5: Stacked commits and push safety
 -------------------------------------------

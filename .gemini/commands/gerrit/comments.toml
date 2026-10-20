@@ -29,11 +29,14 @@ review comments:
     **32:** Reviewer: Should we add validation for this input?
     ```
 4.  After amending (`git commit -a --amend --no-edit`) and pushing
-    (`./gh pr push`), reply to each addressed thread and mark it resolved
-    (pass `--draft` to stage privately or update an existing draft in place,
-    `--delete-draft` to delete a private steering draft, and
-    `./gh pr review [<CHANGE_ID>] --publish` to batch-publish staged drafts):
+    (`./gh pr push`), stage replies to each addressed thread and mark them
+    resolved (`--path` saves as a server-side draft by default; use
+    `--delete-draft` to delete a private steering draft), then run
+    `./gh pr review [<CHANGE_ID>] --publish` **once** at the end if the user
+    wants them published immediately:
     ```bash
-    ./gh pr comment [<CHANGE_ID>] --path <FILE_PATH> --line <LINE> -m "<RESPONSE>" --resolved [--draft]
+    ./gh pr comment [<CHANGE_ID>] --path <FILE_PATH> --line <LINE> -m "<RESPONSE>" --resolved
+    # Once all replies are staged, batch-publish in a single review:
+    ./gh pr review [<CHANGE_ID>] --publish
     ```
 """

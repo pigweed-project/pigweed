@@ -24,91 +24,177 @@ import (
 )
 
 func TestCommentCmd_InReplyTo(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
-		"test.txt": []map[string]any{
-			{
-				"id":      "parent_id",
-				"path":    "test.txt",
-				"line":    10,
-				"message": "existing comment",
-				"updated": "2026-04-08 10:00:00.000000000",
+	t.Run("defaults to draft for inline comment and prints batch publish hint", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
+			"test.txt": []map[string]any{
+				{
+					"id":      "parent_id",
+					"path":    "test.txt",
+					"line":    10,
+					"message": "existing comment",
+					"updated": "2026-04-08 10:00:00.000000000",
+				},
 			},
-		},
+		})
+		server.OnJSON("GET", "/changes/123/drafts", http.StatusOK, map[string]any{})
+		server.OnJSON("PUT", "/changes/123/revisions/current/drafts", http.StatusOK, map[string]any{})
+
+		out, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "10", "--message", "reply message")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
+		if !strings.Contains(out, "Draft comment saved successfully on test.txt:10 (reply).") {
+			t.Errorf("Expected draft saved message, got: %q", out)
+		}
+		if !strings.Contains(out, "gh pr review --publish") {
+			t.Errorf("Expected batch publish hint in output, got: %q", out)
+		}
+
+		req := server.LastRequest()
+		if req == nil {
+			t.Fatal("No request captured")
+		}
+		if req.Method != http.MethodPut || req.Path != "/changes/123/revisions/current/drafts" {
+			t.Fatalf("Expected PUT /changes/123/revisions/current/drafts, got %s %s", req.Method, req.Path)
+		}
+
+		var commentInput gerrit.CommentInput
+		if err := json.Unmarshal(req.Body, &commentInput); err != nil {
+			t.Fatalf("Failed to unmarshal request body: %v", err)
+		}
+		if commentInput.InReplyTo != "parent_id" {
+			t.Errorf("Expected InReplyTo 'parent_id', got %q", commentInput.InReplyTo)
+		}
 	})
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
 
-	_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "10", "--message", "reply message")
-	if err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
+	t.Run("publishes immediately when --publish is specified", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
+			"test.txt": []map[string]any{
+				{
+					"id":      "parent_id",
+					"path":    "test.txt",
+					"line":    10,
+					"message": "existing comment",
+					"updated": "2026-04-08 10:00:00.000000000",
+				},
+			},
+		})
+		server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
 
-	req := server.LastRequest()
-	if req == nil {
-		t.Fatal("No request captured")
-	}
-	expectedPath := "/changes/123/revisions/current/review"
-	if req.Path != expectedPath {
-		t.Errorf("Expected path %s, got %s", expectedPath, req.Path)
-	}
+		_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "10", "--message", "reply message", "--publish")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
 
-	var reviewInput gerrit.ReviewInput
-	if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
-		t.Fatalf("Failed to unmarshal request body: %v", err)
-	}
+		req := server.LastRequest()
+		if req == nil {
+			t.Fatal("No request captured")
+		}
+		expectedPath := "/changes/123/revisions/current/review"
+		if req.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, req.Path)
+		}
 
-	comments, ok := reviewInput.Comments["test.txt"]
-	if !ok || len(comments) == 0 {
-		t.Fatal("No comments found for test.txt")
-	}
+		var reviewInput gerrit.ReviewInput
+		if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
+			t.Fatalf("Failed to unmarshal request body: %v", err)
+		}
 
-	if comments[0].InReplyTo != "parent_id" {
-		t.Errorf("Expected InReplyTo 'parent_id', got %q", comments[0].InReplyTo)
-	}
+		comments, ok := reviewInput.Comments["test.txt"]
+		if !ok || len(comments) == 0 {
+			t.Fatal("No comments found for test.txt")
+		}
+
+		if comments[0].InReplyTo != "parent_id" {
+			t.Errorf("Expected InReplyTo 'parent_id', got %q", comments[0].InReplyTo)
+		}
+	})
 }
 
 func TestCommentCmd_Resolved(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
-		"test.txt": []map[string]any{
-			{
-				"id":      "parent_id",
-				"path":    "test.txt",
-				"line":    10,
-				"message": "existing comment",
-				"updated": "2026-04-08 10:00:00.000000000",
+	t.Run("defaults to draft resolution", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
+			"test.txt": []map[string]any{
+				{
+					"id":      "parent_id",
+					"path":    "test.txt",
+					"line":    10,
+					"message": "existing comment",
+					"updated": "2026-04-08 10:00:00.000000000",
+				},
 			},
-		},
+		})
+		server.OnJSON("GET", "/changes/123/drafts", http.StatusOK, map[string]any{})
+		server.OnJSON("PUT", "/changes/123/revisions/current/drafts", http.StatusOK, map[string]any{})
+
+		_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "10", "--message", "reply message", "--resolved")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
+
+		req := server.LastRequest()
+		if req == nil {
+			t.Fatal("No request captured")
+		}
+		if req.Method != http.MethodPut || req.Path != "/changes/123/revisions/current/drafts" {
+			t.Fatalf("Expected PUT /changes/123/revisions/current/drafts, got %s %s", req.Method, req.Path)
+		}
+
+		var commentInput gerrit.CommentInput
+		if err := json.Unmarshal(req.Body, &commentInput); err != nil {
+			t.Fatalf("Failed to unmarshal request body: %v", err)
+		}
+		if commentInput.Unresolved == nil || *commentInput.Unresolved != false {
+			t.Errorf("Expected Unresolved to be false, got %v", commentInput.Unresolved)
+		}
 	})
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
 
-	_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "10", "--message", "reply message", "--resolved")
-	if err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
+	t.Run("publishes resolution immediately with --publish", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
+			"test.txt": []map[string]any{
+				{
+					"id":      "parent_id",
+					"path":    "test.txt",
+					"line":    10,
+					"message": "existing comment",
+					"updated": "2026-04-08 10:00:00.000000000",
+				},
+			},
+		})
+		server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
 
-	req := server.LastRequest()
-	if req == nil {
-		t.Fatal("No request captured")
-	}
+		_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "10", "--message", "reply message", "--resolved", "--publish")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
 
-	var reviewInput gerrit.ReviewInput
-	if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
-		t.Fatalf("Failed to unmarshal request body: %v", err)
-	}
+		req := server.LastRequest()
+		if req == nil {
+			t.Fatal("No request captured")
+		}
 
-	comments, ok := reviewInput.Comments["test.txt"]
-	if !ok || len(comments) == 0 {
-		t.Fatal("No comments found for test.txt")
-	}
+		var reviewInput gerrit.ReviewInput
+		if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
+			t.Fatalf("Failed to unmarshal request body: %v", err)
+		}
 
-	if comments[0].Unresolved == nil {
-		t.Fatal("Expected Unresolved to be set, but got nil")
-	}
+		comments, ok := reviewInput.Comments["test.txt"]
+		if !ok || len(comments) == 0 {
+			t.Fatal("No comments found for test.txt")
+		}
 
-	if *comments[0].Unresolved != false {
-		t.Errorf("Expected Unresolved to be false, got %v", *comments[0].Unresolved)
-	}
+		if comments[0].Unresolved == nil {
+			t.Fatal("Expected Unresolved to be set, but got nil")
+		}
+
+		if *comments[0].Unresolved != false {
+			t.Errorf("Expected Unresolved to be false, got %v", *comments[0].Unresolved)
+		}
+	})
 }
 
 func TestCommentCmd_Patchset(t *testing.T) {
@@ -116,7 +202,7 @@ func TestCommentCmd_Patchset(t *testing.T) {
 	server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{})
 	server.OnJSON("POST", "/changes/123/revisions/2/review", http.StatusOK, map[string]any{})
 
-	_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "10", "--message", "reply message", "--patchset", "2")
+	_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "10", "--message", "reply message", "--patchset", "2", "--publish")
 	if err != nil {
 		t.Fatalf("Command failed: %v", err)
 	}
@@ -132,49 +218,94 @@ func TestCommentCmd_Patchset(t *testing.T) {
 }
 
 func TestCommentCmd_InReplyTo_EarlierPatchset(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
-		"test.txt": []map[string]any{
-			{
-				"id":        "ps1_comment_id",
-				"path":      "test.txt",
-				"line":      42,
-				"message":   "comment on ps1",
-				"patch_set": 1,
-				"updated":   "2026-04-08 10:00:00.000000000",
+	t.Run("stages draft on earlier patchset by default", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
+			"test.txt": []map[string]any{
+				{
+					"id":        "ps1_comment_id",
+					"path":      "test.txt",
+					"line":      42,
+					"message":   "comment on ps1",
+					"patch_set": 1,
+					"updated":   "2026-04-08 10:00:00.000000000",
+				},
 			},
-		},
+		})
+		server.OnJSON("GET", "/changes/123/drafts", http.StatusOK, map[string]any{})
+		server.OnJSON("PUT", "/changes/123/revisions/1/drafts", http.StatusOK, map[string]any{})
+
+		_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "42", "--message", "Fixed in PS2", "--resolved")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
+
+		req := server.LastRequest()
+		if req == nil {
+			t.Fatal("No request captured")
+		}
+		expectedPath := "/changes/123/revisions/1/drafts"
+		if req.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, req.Path)
+		}
+
+		var commentInput gerrit.CommentInput
+		if err := json.Unmarshal(req.Body, &commentInput); err != nil {
+			t.Fatalf("Failed to parse body: %v", err)
+		}
+		if commentInput.InReplyTo != "ps1_comment_id" {
+			t.Errorf("Expected InReplyTo 'ps1_comment_id', got %q", commentInput.InReplyTo)
+		}
+		if commentInput.Unresolved == nil || *commentInput.Unresolved != false {
+			t.Errorf("Expected Unresolved to be false, got %v", commentInput.Unresolved)
+		}
 	})
-	server.OnJSON("POST", "/changes/123/revisions/1/review", http.StatusOK, map[string]any{})
 
-	_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "42", "--message", "Fixed in PS2", "--resolved")
-	if err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
+	t.Run("publishes on earlier patchset when --publish is passed", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
+			"test.txt": []map[string]any{
+				{
+					"id":        "ps1_comment_id",
+					"path":      "test.txt",
+					"line":      42,
+					"message":   "comment on ps1",
+					"patch_set": 1,
+					"updated":   "2026-04-08 10:00:00.000000000",
+				},
+			},
+		})
+		server.OnJSON("POST", "/changes/123/revisions/1/review", http.StatusOK, map[string]any{})
 
-	req := server.LastRequest()
-	if req == nil {
-		t.Fatal("No request captured")
-	}
-	expectedPath := "/changes/123/revisions/1/review"
-	if req.Path != expectedPath {
-		t.Errorf("Expected path %s, got %s", expectedPath, req.Path)
-	}
+		_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "--line", "42", "--message", "Fixed in PS2", "--resolved", "--publish")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
 
-	var reviewInput gerrit.ReviewInput
-	if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
-		t.Fatalf("Failed to parse body: %v", err)
-	}
-	comments := reviewInput.Comments["test.txt"]
-	if len(comments) != 1 {
-		t.Fatalf("Expected 1 comment, got %d", len(comments))
-	}
-	if comments[0].InReplyTo != "ps1_comment_id" {
-		t.Errorf("Expected InReplyTo 'ps1_comment_id', got %q", comments[0].InReplyTo)
-	}
-	if comments[0].Unresolved == nil || *comments[0].Unresolved != false {
-		t.Errorf("Expected Unresolved to be false, got %v", comments[0].Unresolved)
-	}
+		req := server.LastRequest()
+		if req == nil {
+			t.Fatal("No request captured")
+		}
+		expectedPath := "/changes/123/revisions/1/review"
+		if req.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, req.Path)
+		}
+
+		var reviewInput gerrit.ReviewInput
+		if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
+			t.Fatalf("Failed to parse body: %v", err)
+		}
+		comments := reviewInput.Comments["test.txt"]
+		if len(comments) != 1 {
+			t.Fatalf("Expected 1 comment, got %d", len(comments))
+		}
+		if comments[0].InReplyTo != "ps1_comment_id" {
+			t.Errorf("Expected InReplyTo 'ps1_comment_id', got %q", comments[0].InReplyTo)
+		}
+		if comments[0].Unresolved == nil || *comments[0].Unresolved != false {
+			t.Errorf("Expected Unresolved to be false, got %v", comments[0].Unresolved)
+		}
+	})
 }
 
 func TestCommentCmd_DraftInline(t *testing.T) {
@@ -224,9 +355,12 @@ func TestCommentCmd_DraftPatchsetLevel(t *testing.T) {
 	server.OnJSON("GET", "/changes/123/drafts", http.StatusOK, map[string]any{})
 	server.OnJSON("PUT", "/changes/123/revisions/current/drafts", http.StatusOK, map[string]any{})
 
-	_, err := executeCommand(RootCmd, "pr", "comment", "123", "--message", "draft top comment", "--draft")
+	out, err := executeCommand(RootCmd, "pr", "comment", "123", "--message", "draft top comment", "--draft")
 	if err != nil {
 		t.Fatalf("Command failed: %v", err)
+	}
+	if !strings.Contains(out, "gh pr review --publish") {
+		t.Errorf("Expected batch publish hint in output, got: %q", out)
 	}
 
 	req := server.LastRequest()
@@ -297,39 +431,74 @@ func TestCommentCmd_BodyFlagAndDraftsKeep(t *testing.T) {
 }
 
 func TestCommentCmd_FileLevelPublicComment(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{})
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+	t.Run("defaults to draft for file-level comment", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{})
+		server.OnJSON("GET", "/changes/123/drafts", http.StatusOK, map[string]any{})
+		server.OnJSON("PUT", "/changes/123/revisions/current/drafts", http.StatusOK, map[string]any{})
 
-	_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "-m", "File-level note")
-	if err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
+		out, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "-m", "File-level note")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
+		if !strings.Contains(out, "Draft comment saved successfully on test.txt (new thread, unresolved).") {
+			t.Errorf("Expected file-level draft saved message, got: %q", out)
+		}
+		if !strings.Contains(out, "gh pr review --publish") {
+			t.Errorf("Expected batch publish hint, got: %q", out)
+		}
 
-	req := server.LastRequest()
-	if req == nil {
-		t.Fatal("No request captured")
-	}
-	var reviewInput gerrit.ReviewInput
-	if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
-		t.Fatalf("Failed to unmarshal request body: %v", err)
-	}
-	if reviewInput.Message != "" {
-		t.Errorf("Expected empty top-level ReviewInput.Message for file-level comment, got %q", reviewInput.Message)
-	}
-	fileComments := reviewInput.Comments["test.txt"]
-	if len(fileComments) != 1 {
-		t.Fatalf("Expected 1 file-level comment on test.txt, got %+v", reviewInput.Comments)
-	}
-	if fileComments[0].Line != 0 {
-		t.Errorf("Expected Line 0 for file-level comment, got %d", fileComments[0].Line)
-	}
-	if fileComments[0].Message != "File-level note" {
-		t.Errorf("Expected Message 'File-level note', got %q", fileComments[0].Message)
-	}
-	if fileComments[0].Unresolved == nil || !*fileComments[0].Unresolved {
-		t.Errorf("Expected new root file-level comment to default to Unresolved=true, got %v", fileComments[0].Unresolved)
-	}
+		req := server.LastRequest()
+		if req == nil || req.Method != http.MethodPut || req.Path != "/changes/123/revisions/current/drafts" {
+			t.Fatalf("Expected PUT /changes/123/revisions/current/drafts, got %+v", req)
+		}
+		var commentInput gerrit.CommentInput
+		if err := json.Unmarshal(req.Body, &commentInput); err != nil {
+			t.Fatalf("Failed to unmarshal request body: %v", err)
+		}
+		if commentInput.Path != "test.txt" || commentInput.Line != 0 {
+			t.Errorf("Expected Path 'test.txt' and Line 0, got %+v", commentInput)
+		}
+		if commentInput.Unresolved == nil || !*commentInput.Unresolved {
+			t.Errorf("Expected Unresolved=true, got %v", commentInput.Unresolved)
+		}
+	})
+
+	t.Run("publishes file-level comment immediately when --publish is passed", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{})
+		server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+
+		_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "-m", "File-level note", "--publish")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
+
+		req := server.LastRequest()
+		if req == nil {
+			t.Fatal("No request captured")
+		}
+		var reviewInput gerrit.ReviewInput
+		if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
+			t.Fatalf("Failed to unmarshal request body: %v", err)
+		}
+		if reviewInput.Message != "" {
+			t.Errorf("Expected empty top-level ReviewInput.Message for file-level comment, got %q", reviewInput.Message)
+		}
+		fileComments := reviewInput.Comments["test.txt"]
+		if len(fileComments) != 1 {
+			t.Fatalf("Expected 1 file-level comment on test.txt, got %+v", reviewInput.Comments)
+		}
+		if fileComments[0].Line != 0 {
+			t.Errorf("Expected Line 0 for file-level comment, got %d", fileComments[0].Line)
+		}
+		if fileComments[0].Message != "File-level note" {
+			t.Errorf("Expected Message 'File-level note', got %q", fileComments[0].Message)
+		}
+		if fileComments[0].Unresolved == nil || !*fileComments[0].Unresolved {
+			t.Errorf("Expected new root file-level comment to default to Unresolved=true, got %v", fileComments[0].Unresolved)
+		}
+	})
 }
 
 func TestCommentCmd_DraftUpdatesExistingDraftAndPreservesRangeAndSide(t *testing.T) {
@@ -373,6 +542,9 @@ func TestCommentCmd_DraftUpdatesExistingDraftAndPreservesRangeAndSide(t *testing
 	}
 	if !strings.Contains(out, "Draft comment updated successfully on test.txt:307 [PS15] (reply, resolved).") {
 		t.Errorf("Expected detailed updated message, got: %q", out)
+	}
+	if !strings.Contains(out, "gh pr review --publish") {
+		t.Errorf("Expected batch publish hint in output, got: %q", out)
 	}
 
 	req := server.LastRequest()
@@ -619,42 +791,83 @@ func TestComment_ErrorWhenResolvedWithoutPath(t *testing.T) {
 }
 
 func TestCommentCmd_FileLevelThreadResolve(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
-		"test.txt": []map[string]any{
-			{
-				"id":         "file_thread_id",
-				"path":       "test.txt",
-				"line":       0,
-				"patch_set":  2,
-				"unresolved": true,
-				"message":    "Please add a copyright header to this file.",
-				"updated":    "2026-09-30 06:00:00.000000000",
+	t.Run("stages draft reply by default", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
+			"test.txt": []map[string]any{
+				{
+					"id":         "file_thread_id",
+					"path":       "test.txt",
+					"line":       0,
+					"patch_set":  2,
+					"unresolved": true,
+					"message":    "Please add a copyright header to this file.",
+					"updated":    "2026-09-30 06:00:00.000000000",
+				},
 			},
-		},
+		})
+		server.OnJSON("GET", "/changes/123/drafts", http.StatusOK, map[string]any{})
+		server.OnJSON("PUT", "/changes/123/revisions/2/drafts", http.StatusOK, map[string]any{})
+
+		out, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "-m", "Added copyright header.", "--resolved")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
+		if !strings.Contains(out, "Draft comment saved successfully on test.txt [PS2] (reply, resolved).") {
+			t.Errorf("Expected draft saved confirmation for file-level thread reply, got: %q", out)
+		}
+
+		req := server.LastRequest()
+		if req == nil || req.Path != "/changes/123/revisions/2/drafts" {
+			t.Fatalf("Expected PUT /changes/123/revisions/2/drafts, got %+v", req)
+		}
+		var commentInput gerrit.CommentInput
+		if err := json.Unmarshal(req.Body, &commentInput); err != nil {
+			t.Fatalf("Failed to parse body: %v", err)
+		}
+		if commentInput.InReplyTo != "file_thread_id" || commentInput.Unresolved == nil || *commentInput.Unresolved {
+			t.Errorf("Expected resolved reply to file_thread_id, got %+v", commentInput)
+		}
 	})
-	server.OnJSON("POST", "/changes/123/revisions/2/review", http.StatusOK, map[string]any{})
 
-	out, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "-m", "Added copyright header.", "--resolved")
-	if err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
-	if !strings.Contains(out, "Comment submitted successfully on test.txt [PS2] (reply, resolved).") {
-		t.Errorf("Expected confirmation for file-level thread reply, got: %q", out)
-	}
+	t.Run("publishes immediately with --publish", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{
+			"test.txt": []map[string]any{
+				{
+					"id":         "file_thread_id",
+					"path":       "test.txt",
+					"line":       0,
+					"patch_set":  2,
+					"unresolved": true,
+					"message":    "Please add a copyright header to this file.",
+					"updated":    "2026-09-30 06:00:00.000000000",
+				},
+			},
+		})
+		server.OnJSON("POST", "/changes/123/revisions/2/review", http.StatusOK, map[string]any{})
 
-	req := server.LastRequest()
-	if req == nil || req.Path != "/changes/123/revisions/2/review" {
-		t.Fatalf("Expected POST /changes/123/revisions/2/review, got %+v", req)
-	}
-	var reviewInput gerrit.ReviewInput
-	if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
-		t.Fatalf("Failed to parse body: %v", err)
-	}
-	comments := reviewInput.Comments["test.txt"]
-	if len(comments) != 1 || comments[0].InReplyTo != "file_thread_id" || comments[0].Unresolved == nil || *comments[0].Unresolved {
-		t.Errorf("Expected resolved reply to file_thread_id, got %+v", comments)
-	}
+		out, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "test.txt", "-m", "Added copyright header.", "--resolved", "--publish")
+		if err != nil {
+			t.Fatalf("Command failed: %v", err)
+		}
+		if !strings.Contains(out, "Comment submitted successfully on test.txt [PS2] (reply, resolved).") {
+			t.Errorf("Expected confirmation for file-level thread reply, got: %q", out)
+		}
+
+		req := server.LastRequest()
+		if req == nil || req.Path != "/changes/123/revisions/2/review" {
+			t.Fatalf("Expected POST /changes/123/revisions/2/review, got %+v", req)
+		}
+		var reviewInput gerrit.ReviewInput
+		if err := json.Unmarshal(req.Body, &reviewInput); err != nil {
+			t.Fatalf("Failed to parse body: %v", err)
+		}
+		comments := reviewInput.Comments["test.txt"]
+		if len(comments) != 1 || comments[0].InReplyTo != "file_thread_id" || comments[0].Unresolved == nil || *comments[0].Unresolved {
+			t.Errorf("Expected resolved reply to file_thread_id, got %+v", comments)
+		}
+	})
 }
 
 func TestComment_PreconditionValidationErrors(t *testing.T) {
@@ -662,6 +875,20 @@ func TestComment_PreconditionValidationErrors(t *testing.T) {
 		_, err := executeCommand(RootCmd, "pr", "comment", "123", "--draft", "--delete-draft")
 		if err == nil || !strings.Contains(err.Error(), "cannot specify both --draft and --delete-draft") {
 			t.Errorf("Expected conflicting --draft and --delete-draft error, got: %v", err)
+		}
+	})
+
+	t.Run("publish and delete-draft together", func(t *testing.T) {
+		_, err := executeCommand(RootCmd, "pr", "comment", "123", "--publish", "--delete-draft")
+		if err == nil || !strings.Contains(err.Error(), "cannot specify both --publish and --delete-draft") {
+			t.Errorf("Expected conflicting --publish and --delete-draft error, got: %v", err)
+		}
+	})
+
+	t.Run("draft and publish together", func(t *testing.T) {
+		_, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "a.cc", "--line", "10", "-m", "hi", "--draft", "--publish")
+		if err == nil || !strings.Contains(err.Error(), "cannot specify both --draft and --publish") {
+			t.Errorf("Expected conflicting --draft and --publish error, got: %v", err)
 		}
 	})
 
@@ -717,7 +944,7 @@ func TestComment_WarnWhenNoThreadFoundWithResolved(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{})
 	server.OnJSON("GET", "/changes/123/drafts", http.StatusOK, map[string]any{})
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnJSON("PUT", "/changes/123/revisions/current/drafts", http.StatusOK, map[string]any{})
 
 	out, err := executeCommand(RootCmd, "pr", "comment", "123", "--path", "main.go", "--line", "10", "-m", "fixed", "--resolved")
 	if err != nil {

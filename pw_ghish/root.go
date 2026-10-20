@@ -315,11 +315,12 @@ CORE COMMAND CHEAT-SHEET
      $ %[1]s pr edit <change_id> [-m "New message"] [--add-reviewer "email"] [--add-label "Code-Review=2"]
 
 5. REVIEWS & RESPONDING
-   - Submit review (Approve / Request changes):
+   - Submit review (Approve / Request changes / Publish staged drafts):
      $ %[1]s pr review <change_id> --approve -m "Looks good!"
      $ %[1]s pr review <change_id> --request-changes -m "Please address feedback."
-   - Post inline comments (and reply to threads):
-     $ %[1]s pr comment <change_id> --path <file_path> --line <line_number> (-m "Comment message" | -F <file|->) [--resolved] [--draft]
+     $ %[1]s pr review <change_id> --publish
+   - Stage inline comments and thread replies (defaults to draft when --path is used):
+     $ %[1]s pr comment <change_id> --path <file_path> --line <line_number> (-m "Comment message" | -F <file|->) [--resolved]
    - Post change-level comment from a file or stdin:
      $ %[1]s pr comment <change_id> -F <body_file_path|-> [--draft]
 
@@ -357,8 +358,8 @@ When a GenAI Agent is tasked with addressing review feedback:
 3. Cherry-pick the CL: '%[1]s pr cherry-pick <change_id>'.
 4. Fetch & review comments: '%[1]s pr view <change_id> --comments'.
 5. Apply fixes, compile, and validate via tests.
-6. Respond to comments: Reply to inline threads using '%[1]s pr comment <change_id> --path ... --line ... -m ... --resolved'.
-7. Upload new patchset: Push your changes to Gerrit using '%[1]s pr push'.
+6. Stage replies to comments: Reply to inline threads using '%[1]s pr comment <change_id> --path ... --line ... -m ... --resolved' (saved as drafts by default).
+7. Upload new patchset & batch-publish staged replies: '%[1]s pr push --publish' (or '%[1]s pr review <change_id> --publish' if already pushed).
 `
 
 // ghDivergenceHelp is appended verbatim to the root help text. It is a plain
