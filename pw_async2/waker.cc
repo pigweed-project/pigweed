@@ -20,12 +20,6 @@
 
 namespace pw::async2 {
 
-Waker::Waker(Task& task, log::Token wait_reason) : task_(&task) {
-  set_wait_reason(wait_reason);
-  std::lock_guard lock(internal::lock());
-  task_->AddWakerLocked(*this);
-}
-
 Waker& Waker::operator=(Waker&& other) noexcept {
   std::lock_guard lock(internal::lock());
   RemoveTaskIfSet();

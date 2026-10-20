@@ -71,7 +71,7 @@ class Context {
   ///   PW_ASYNC_STORE_WAKER(cx, waker, ...);
   ///   waker.Wake();
   /// @endcode
-  void ReEnqueue();  // Implemented inline in task.h after Task is defined.
+  void ReEnqueue() PW_LOCKS_EXCLUDED(internal::lock());
 
   /// Indicates that the task has not completed, but that it also does not need
   /// to register a waker and go to sleep. This results in the task being
@@ -288,7 +288,7 @@ class Task : public IntrusiveQueue<Task>::Item, private Context {
   // as running.
   RunTaskResult RunInDispatcher() PW_LOCKS_EXCLUDED(internal::lock());
 
-  // Called by a waker to wake this task.
+  // Called by a waker or by Context::ReEnqueue() to wake this task.
   void Wake() PW_UNLOCK_FUNCTION(internal::lock());
 
   // Unlinks all `Waker` objects associated with this `Task.`
@@ -370,8 +370,9 @@ inline PendingType Context::Unschedule() {
   return Pending();
 }
 
-inline void Context::ReEnqueue() {
-  Waker(static_cast<Task&>(*this), {}).Wake();
+inline void Context::ReEnqueue() PW_LOCKS_EXCLUDED(internal::lock()) {
+  internal::lock().lock();
+  static_cast<Task&>(*this).Wake();  // Releases the lock.
 }
 
 inline bool Context::IsSameDispatcher(const Dispatcher& dispatcher) const

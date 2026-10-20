@@ -194,7 +194,6 @@ class Waker : public pw::IntrusiveForwardList<Waker>::Item {
   void Clear() PW_LOCKS_EXCLUDED(internal::lock());
 
  private:
-  friend class Context;
   friend class Task;
   friend class Dispatcher;
 
@@ -205,8 +204,6 @@ class Waker : public pw::IntrusiveForwardList<Waker>::Item {
   friend bool internal::StoreWaker(Context& context,
                                    Waker& waker_out,
                                    log::Token wait_reason);
-
-  Waker(Task& task, log::Token wait_reason) PW_LOCKS_EXCLUDED(internal::lock());
 
   void set_wait_reason([[maybe_unused]] log::Token wait_reason)
       PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock()) {
