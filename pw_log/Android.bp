@@ -109,16 +109,12 @@ genrule {
         "--proto-path=external/protobuf/src/ " +
         "--out-dir=$(genDir) " +
         "--plugin-path=$(location pw_protobuf_plugin_py) " +
-        "--compile-dir=$(genDir) " +
         "--sources $(location :pw_log_log_proto_with_prefix) " +
         "--language pwpb " +
         "--no-experimental-proto3-optional " +
         "--no-experimental-editions " +
         "--pwpb-no-oneof-callbacks " +
-        "--protoc=$(location aprotoc) && " +
-        // TODO(b/308678575) - Avoid making an extra copy of the created file.
-        "python3 -c \"import os; import shutil; " +
-        "shutil.copy2(os.path.splitext('$(location :pw_log_log_proto_with_prefix)')[0]+'.pwpb.h', '$(out)')\"",
+        "--protoc=$(location aprotoc)",
     out: [
         "pw_log/proto/log.pwpb.h",
     ],
@@ -144,16 +140,12 @@ genrule {
         "--proto-path=external/protobuf/src/ " +
         "--out-dir=$(genDir) " +
         "--plugin-path=$(location pw_rpc_plugin_pwpb_py) " +
-        "--compile-dir=$(genDir) " +
         "--sources $(location :pw_log_log_proto_with_prefix) " +
         "--language pwpb_rpc " +
         "--no-experimental-proto3-optional " +
         "--no-experimental-editions " +
         "--pwpb-no-oneof-callbacks " +
-        "--protoc=$(location aprotoc) && " +
-        // TODO(b/308678575) - Avoid making an extra copy of the created file.
-        "python3 -c \"import os; import shutil; " +
-        "shutil.copy2(os.path.splitext('$(location :pw_log_log_proto_with_prefix)')[0]+'.rpc.pwpb.h', '$(out)')\"",
+        "--protoc=$(location aprotoc)",
     out: [
         "pw_log/proto/log.rpc.pwpb.h",
     ],
@@ -179,16 +171,12 @@ genrule {
         "--proto-path=external/protobuf/src/ " +
         "--out-dir=$(genDir) " +
         "--plugin-path=$(location pw_rpc_plugin_rawpb_py) " +
-        "--compile-dir=$(genDir) " +
         "--sources $(location :pw_log_log_proto_with_prefix) " +
         "--language raw_rpc " +
         "--no-experimental-proto3-optional " +
         "--no-experimental-editions " +
         "--pwpb-no-oneof-callbacks " +
-        "--protoc=$(location aprotoc) && " +
-        // TODO(b/308678575) - Avoid making an extra copy of the created file.
-        "python3 -c \"import os; import shutil; " +
-        "shutil.copy2(os.path.splitext('$(location :pw_log_log_proto_with_prefix)')[0]+'.raw_rpc.pb.h', '$(out)')\"",
+        "--protoc=$(location aprotoc)",
     out: [
         "pw_log/proto/log.raw_rpc.pb.h",
     ],
