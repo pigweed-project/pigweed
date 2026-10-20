@@ -16,17 +16,20 @@
 #include "pw_assert/config.h"  // For PW_ASSERT_ENABLE_DEBUG
 #include "pw_assert_backend/assert_backend.h"
 
-// A header- and constexpr-safe version of PW_CHECK().
-//
-// If the given condition is false, crash the system. Otherwise, do nothing.
-// The condition is guaranteed to be evaluated.
-//
-// IMPORTANT: Unlike the PW_CHECK_*() suite of macros, not all backends for
-// this API capture rich information like line numbers, the file, expression
-// arguments, or the stringified expression. Use these macros only when
-// absolutely necessary -- in headers, constexpr contexts, or in rare cases
-// where the call site overhead of a full PW_CHECK must be avoided. Use
-// PW_CHECK_*() whenever possible.
+/// @module{pw_assert}
+
+/// A header- and constexpr-safe version of `PW_CHECK()`.
+///
+/// If the given condition is false, crash the system. Otherwise, do nothing.
+/// The condition is guaranteed to be evaluated. This assert implementation is
+/// guaranteed to be constexpr-safe.
+///
+/// @warning Unlike the `PW_CHECK_*()` suite of macros, not all backends for
+/// this API capture rich information like line numbers, the file, expression
+/// arguments, or the stringified expression. Use these macros only when
+/// absolutely necessary — in headers, constexpr contexts, or in rare cases
+/// where the call site overhead of a full `PW_CHECK` must be avoided. Use
+/// `PW_CHECK_*()` whenever possible.
 #define PW_ASSERT(condition)                      \
   do {                                            \
     if (!(condition)) {                           \
@@ -35,17 +38,17 @@
     }                                             \
   } while (0)
 
-// A header- and constexpr-safe version of PW_DCHECK().
-//
-// Same as PW_ASSERT(), except that if PW_ASSERT_ENABLE_DEBUG == 1, the assert
-// is disabled and condition is not evaluated.
-//
-// IMPORTANT: Unlike the PW_CHECK_*() suite of macros, not all backends for
-// this API capture rich information like line numbers, the file, expression
-// arguments, or the stringified expression. Use these macros only when
-// absolutely necessary -- in headers, constexpr contexts, or in rare cases
-// where the call site overhead of a full PW_CHECK must be avoided. Use
-// PW_CHECK_*() whenever possible.
+/// A header- and constexpr-safe version of `PW_DCHECK()`.
+///
+/// Same as `PW_ASSERT()`, except that if `PW_ASSERT_ENABLE_DEBUG == 0`, the
+/// assert is disabled and condition is not evaluated.
+///
+/// @warning Unlike the `PW_CHECK_*()` suite of macros, not all backends for
+/// this API capture rich information like line numbers, the file, expression
+/// arguments, or the stringified expression. Use these macros only when
+/// absolutely necessary — in headers, constexpr contexts, or in rare cases
+/// where the call site overhead of a full `PW_CHECK` must be avoided. Use
+/// `PW_CHECK_*()` whenever possible.
 #define PW_DASSERT(condition)                            \
   do {                                                   \
     if ((PW_ASSERT_ENABLE_DEBUG == 1) && !(condition)) { \
@@ -54,26 +57,27 @@
     }                                                    \
   } while (0)
 
-// A header- and constexpr-safe version of PW_CHECK_OK().
-//
-// If expression does not evaluate to an OK status, crash.
-// Otherwise, do nothing. The expression is guaranteed to be evaluated.
-//
-// In C++, expression must evaluate to a value convertible to a status via
-// pw::internal::ConvertToStatus(). This includes pw::Status, pw_Status,
-// pw::StatusWithSize, pw::Result, and custom pw::StatusBase-derived types.
-//
-// In C, expression must evaluate to a pw_Status value.
-//
-// Unlike `PW_CHECK_OK`, this macro does not currently log the failed status
-// kind.
-//
-// IMPORTANT: Unlike the PW_CHECK_*() suite of macros, not all backends for
-// this API capture rich information like line numbers, the file, expression
-// arguments, or the stringified expression. Use these macros only when
-// absolutely necessary -- in headers, constexpr contexts, or in rare cases
-// where the call site overhead of a full PW_CHECK must be avoided. Use
-// PW_CHECK_*() whenever possible.
+/// A header- and constexpr-safe version of `PW_CHECK_OK()`.
+///
+/// If `expression` does not evaluate to an OK status, crash.
+/// Otherwise, do nothing. The expression is guaranteed to be evaluated.
+///
+/// In C++, `expression` must evaluate to a value convertible to a status via
+/// `pw::internal::ConvertToStatus()`. This includes `pw::Status`, `pw_Status`,
+/// `pw::StatusWithSize`, `pw::Result`, and custom `pw::StatusBase`-derived
+/// types.
+///
+/// In C, `expression` must evaluate to a `pw_Status` value.
+///
+/// Unlike `PW_CHECK_OK`, this macro does not currently log the failed status
+/// kind.
+///
+/// @warning Unlike the `PW_CHECK_*()` suite of macros, not all backends for
+/// this API capture rich information like line numbers, the file, expression
+/// arguments, or the stringified expression. Use these macros only when
+/// absolutely necessary — in headers, constexpr contexts, or in rare cases
+/// where the call site overhead of a full `PW_CHECK` must be avoided. Use
+/// `PW_CHECK_*()` whenever possible.
 #ifdef __cplusplus
 
 #define PW_ASSERT_OK(expression, ...)                        \
@@ -83,25 +87,26 @@
     }                                                        \
   } while (0)
 
-// A header- and constexpr-safe version of PW_CHECK_NOTNULL().
-//
-// If the given pointer is null, crash the system. Otherwise, return the
-// pointer unchanged. The expression is guaranteed to be evaluated once.
-//
-// In C++, expression may be a raw pointer, function pointer, or smart pointer
-// (any type comparable to nullptr). The argument's type and value category are
-// preserved. This macro is only available in C++.
-//
-// IMPORTANT: Unlike the PW_CHECK_*() suite of macros, not all backends for
-// this API capture rich information like line numbers, the file, expression
-// arguments, or the stringified expression. Use these macros only when
-// absolutely necessary -- in headers, constexpr contexts, or in rare cases
-// where the call site overhead of a full PW_CHECK must be avoided. Use
-// PW_CHECK_*() whenever possible.
-//
 // [[maybe_unused]] on the lambda parameter suppresses Clang-Tidy's
 // cppcoreguidelines-missing-std-forward check (which does not inspect generic
 // lambda bodies and cannot be suppressed with NOLINT inside a macro).
+
+/// A header- and constexpr-safe version of `PW_CHECK_NOTNULL()`.
+///
+/// If the given pointer is `nullptr`, crash the system. Otherwise, return the
+/// pointer unchanged. The expression is guaranteed to be evaluated once.
+///
+/// In C++, `ptr` may be a raw pointer, function pointer, or smart pointer
+/// (any type comparable to `nullptr`). The argument's type and value category
+/// are preserved, making it suitable for initializing member variables in
+/// constructor initializer lists. This macro is only available in C++.
+///
+/// @warning Unlike the `PW_CHECK_*()` suite of macros, not all backends for
+/// this API capture rich information like line numbers, the file, expression
+/// arguments, or the stringified expression. Use these macros only when
+/// absolutely necessary — in headers, constexpr contexts, or in rare cases
+/// where the call site overhead of a full `PW_CHECK` must be avoided. Use
+/// `PW_CHECK_*()` whenever possible.
 #define PW_ASSERT_NOTNULL(ptr)                                  \
   ([]([[maybe_unused]] auto&& _pw_assert_notnull_ptr) constexpr \
        -> decltype(auto) {                                      \
@@ -123,6 +128,8 @@
   } while (0)
 
 #endif  // __cplusplus
+
+/// @endmodule
 
 // This empty, non-constexpr function is invoked when a PW_ASSERT fails. It
 // doesn't produce any code, but improves error messages when PW_ASSERTs fail

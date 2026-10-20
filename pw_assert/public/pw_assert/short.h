@@ -21,6 +21,8 @@
 #error "CHECK macros already defined"
 #endif  // CHECK
 
+/// @module{pw_assert}
+
 // clang-format off
 // Checks that always run even in production.
 #define CRASH                 PW_CRASH
@@ -83,3 +85,5 @@
 #define DCHECK_FLOAT_EXACT_NE PW_DCHECK_FLOAT_EXACT_NE
 #define DCHECK_OK             PW_DCHECK_OK
 // clang-format on
+
+/// @endmodule

@@ -18,8 +18,18 @@
 
 PW_EXTERN_C_START
 
+/// @module{pw_assert}
+
+/// Handles a low-level crash from `pw_assert/assert.h`. In this crash handler,
+/// there is no access to line, file, expression, or other rich assert
+/// information. Must not return.
 PW_NO_RETURN void pw_assert_HandleFailure(void);
 
 PW_EXTERN_C_END
 
+/// Handles a low-level crash from `pw_assert/assert.h`. Backends must ensure
+/// their implementation is safe for usage in headers, constexpr contexts, and
+/// templates. This macro should expand to an expression that does not return.
 #define PW_ASSERT_HANDLE_FAILURE(condition_string) pw_assert_HandleFailure()
+
+/// @endmodule

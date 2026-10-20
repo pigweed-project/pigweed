@@ -26,7 +26,14 @@
 #include "pw_assert/config.h"
 #include "pw_preprocessor/compiler.h"
 
-// PW_CRASH - Crash the system, with a message.
+/// @module{pw_assert}
+
+/// Triggers a crash with a message. Replaces `LOG_FATAL()` in other systems.
+/// Can include a message with format arguments; for example:
+///
+/// @code{.cpp}
+/// PW_CRASH("Unexpected: frobnitz in state: %s", frobnitz_state);
+/// @endcode
 #define PW_CRASH(...)                                                        \
   do {                                                                       \
     if (0) { /* Check args but don't execute to avoid multiple evaluation */ \
@@ -35,7 +42,12 @@
     PW_HANDLE_CRASH(__VA_ARGS__);                                            \
   } while (0)
 
-// PW_CHECK - If condition evaluates to false, crash. Message optional.
+/// Asserts that a condition is true, optionally including a message with
+/// arguments to report if the condition is false.
+///
+/// Overloads:
+/// - `PW_CHECK(condition)`
+/// - `PW_CHECK(condition, format, ...)`
 #define PW_CHECK(condition, ...)                                               \
   do {                                                                         \
     if (!(condition)) {                                                        \
@@ -48,6 +60,13 @@
     }                                                                          \
   } while (0)
 
+/// Debug variant of `PW_CHECK` that only runs if `PW_ASSERT_ENABLE_DEBUG` is
+/// enabled; otherwise, the entire statement is removed (and the expression not
+/// evaluated).
+///
+/// Overloads:
+/// - `PW_DCHECK(condition)`
+/// - `PW_DCHECK(condition, format, ...)`
 #define PW_DCHECK(...)            \
   do {                            \
     if (PW_ASSERT_ENABLE_DEBUG) { \
@@ -64,84 +83,133 @@
 //
 // clang-format off
 
-// Checks for int: LE, LT, GE, GT, EQ.
+/// Asserts `a <= b` (`int`).
 #define PW_CHECK_INT_LE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, <=, argb, int, "%d", __VA_ARGS__)
+/// Asserts `a < b` (`int`).
 #define PW_CHECK_INT_LT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, < , argb, int, "%d", __VA_ARGS__)
+/// Asserts `a >= b` (`int`).
 #define PW_CHECK_INT_GE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, >=, argb, int, "%d", __VA_ARGS__)
+/// Asserts `a > b` (`int`).
 #define PW_CHECK_INT_GT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, > , argb, int, "%d", __VA_ARGS__)
+/// Asserts `a == b` (`int`).
 #define PW_CHECK_INT_EQ(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, ==, argb, int, "%d", __VA_ARGS__)
+/// Asserts `a != b` (`int`).
 #define PW_CHECK_INT_NE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, !=, argb, int, "%d", __VA_ARGS__)
 
-// Debug checks for int: LE, LT, GE, GT, EQ.
+/// Debug check: asserts `a <= b` (`int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT_LE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT_LE(__VA_ARGS__)
+/// Debug check: asserts `a < b` (`int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT_LT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT_LT(__VA_ARGS__)
+/// Debug check: asserts `a >= b` (`int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT_GE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT_GE(__VA_ARGS__)
+/// Debug check: asserts `a > b` (`int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT_GT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT_GT(__VA_ARGS__)
+/// Debug check: asserts `a == b` (`int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT_EQ(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT_EQ(__VA_ARGS__)
+/// Debug check: asserts `a != b` (`int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT_NE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT_NE(__VA_ARGS__)
 
-// Checks for unsigned int: LE, LT, GE, GT, EQ.
+/// Asserts `a <= b` (`unsigned int`).
 #define PW_CHECK_UINT_LE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, <=, argb, unsigned int, "%u", __VA_ARGS__)
+/// Asserts `a < b` (`unsigned int`).
 #define PW_CHECK_UINT_LT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, < , argb, unsigned int, "%u", __VA_ARGS__)
+/// Asserts `a >= b` (`unsigned int`).
 #define PW_CHECK_UINT_GE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, >=, argb, unsigned int, "%u", __VA_ARGS__)
+/// Asserts `a > b` (`unsigned int`).
 #define PW_CHECK_UINT_GT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, > , argb, unsigned int, "%u", __VA_ARGS__)
+/// Asserts `a == b` (`unsigned int`).
 #define PW_CHECK_UINT_EQ(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, ==, argb, unsigned int, "%u", __VA_ARGS__)
+/// Asserts `a != b` (`unsigned int`).
 #define PW_CHECK_UINT_NE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, !=, argb, unsigned int, "%u", __VA_ARGS__)
 
-// Debug checks for unsigned int: LE, LT, GE, GT, EQ.
+/// Debug check: asserts `a <= b` (`unsigned int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT_LE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT_LE(__VA_ARGS__)
+/// Debug check: asserts `a < b` (`unsigned int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT_LT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT_LT(__VA_ARGS__)
+/// Debug check: asserts `a >= b` (`unsigned int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT_GE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT_GE(__VA_ARGS__)
+/// Debug check: asserts `a > b` (`unsigned int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT_GT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT_GT(__VA_ARGS__)
+/// Debug check: asserts `a == b` (`unsigned int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT_EQ(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT_EQ(__VA_ARGS__)
+/// Debug check: asserts `a != b` (`unsigned int`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT_NE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT_NE(__VA_ARGS__)
 
 // Checks for int64_t: LE, LT, GE, GT, EQ.
 #if defined(PRId64)
+/// Asserts `a <= b` (`int64_t`).
 #define PW_CHECK_INT64_LE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, <=, argb, int64_t, "%" PRId64, __VA_ARGS__)
+/// Asserts `a < b` (`int64_t`).
 #define PW_CHECK_INT64_LT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, < , argb, int64_t, "%" PRId64, __VA_ARGS__)
+/// Asserts `a >= b` (`int64_t`).
 #define PW_CHECK_INT64_GE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, >=, argb, int64_t, "%" PRId64, __VA_ARGS__)
+/// Asserts `a > b` (`int64_t`).
 #define PW_CHECK_INT64_GT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, > , argb, int64_t, "%" PRId64, __VA_ARGS__)
+/// Asserts `a == b` (`int64_t`).
 #define PW_CHECK_INT64_EQ(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, ==, argb, int64_t, "%" PRId64, __VA_ARGS__)
+/// Asserts `a != b` (`int64_t`).
 #define PW_CHECK_INT64_NE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, !=, argb, int64_t, "%" PRId64, __VA_ARGS__)
 #endif // defined(PRId64)
 
 // Debug checks for int64_t: LE, LT, GE, GT, EQ.
 #if defined(PRId64)
+/// Debug check: asserts `a <= b` (`int64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT64_LE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT64_LE(__VA_ARGS__)
+/// Debug check: asserts `a < b` (`int64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT64_LT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT64_LT(__VA_ARGS__)
+/// Debug check: asserts `a >= b` (`int64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT64_GE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT64_GE(__VA_ARGS__)
+/// Debug check: asserts `a > b` (`int64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT64_GT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT64_GT(__VA_ARGS__)
+/// Debug check: asserts `a == b` (`int64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT64_EQ(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT64_EQ(__VA_ARGS__)
+/// Debug check: asserts `a != b` (`int64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_INT64_NE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_INT64_NE(__VA_ARGS__)
 #endif // defined(PRId64)
 
 // Checks for uint64_t: LE, LT, GE, GT, EQ.
 #if defined(PRIu64)
+/// Asserts `a <= b` (`uint64_t`).
 #define PW_CHECK_UINT64_LE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, <=, argb, uint64_t, "%" PRIu64, __VA_ARGS__)
+/// Asserts `a < b` (`uint64_t`).
 #define PW_CHECK_UINT64_LT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, < , argb, uint64_t, "%" PRIu64, __VA_ARGS__)
+/// Asserts `a >= b` (`uint64_t`).
 #define PW_CHECK_UINT64_GE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, >=, argb, uint64_t, "%" PRIu64, __VA_ARGS__)
+/// Asserts `a > b` (`uint64_t`).
 #define PW_CHECK_UINT64_GT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, > , argb, uint64_t, "%" PRIu64, __VA_ARGS__)
+/// Asserts `a == b` (`uint64_t`).
 #define PW_CHECK_UINT64_EQ(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, ==, argb, uint64_t, "%" PRIu64, __VA_ARGS__)
+/// Asserts `a != b` (`uint64_t`).
 #define PW_CHECK_UINT64_NE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, !=, argb, uint64_t, "%" PRIu64, __VA_ARGS__)
 #endif // defined(PRIu64)
 
 // Debug checks for uint64_t: LE, LT, GE, GT, EQ.
 #if defined(PRIu64)
+/// Debug check: asserts `a <= b` (`uint64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT64_LE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT64_LE(__VA_ARGS__)
+/// Debug check: asserts `a < b` (`uint64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT64_LT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT64_LT(__VA_ARGS__)
+/// Debug check: asserts `a >= b` (`uint64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT64_GE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT64_GE(__VA_ARGS__)
+/// Debug check: asserts `a > b` (`uint64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT64_GT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT64_GT(__VA_ARGS__)
+/// Debug check: asserts `a == b` (`uint64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT64_EQ(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT64_EQ(__VA_ARGS__)
+/// Debug check: asserts `a != b` (`uint64_t`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_UINT64_NE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_UINT64_NE(__VA_ARGS__)
 #endif // defined(PRIu64)
 
-// Checks for pointer: LE, LT, GE, GT, EQ, NE.
+/// Asserts `a <= b` (`const void*`).
 #define PW_CHECK_PTR_LE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, <=, argb, const void*, "%p", __VA_ARGS__)
+/// Asserts `a < b` (`const void*`).
 #define PW_CHECK_PTR_LT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, < , argb, const void*, "%p", __VA_ARGS__)
+/// Asserts `a >= b` (`const void*`).
 #define PW_CHECK_PTR_GE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, >=, argb, const void*, "%p", __VA_ARGS__)
+/// Asserts `a > b` (`const void*`).
 #define PW_CHECK_PTR_GT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, > , argb, const void*, "%p", __VA_ARGS__)
+/// Asserts `a == b` (`const void*`).
 #define PW_CHECK_PTR_EQ(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, ==, argb, const void*, "%p", __VA_ARGS__)
+/// Asserts `a != b` (`const void*`).
 #define PW_CHECK_PTR_NE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, !=, argb, const void*, "%p", __VA_ARGS__)
 
 // Deprecated: Check for integer overflow.
@@ -155,7 +223,12 @@
   PW_PRAGMA(message "Deprecated; use PW_CHECK(pw::CheckedMul(...)) instead") \
   PW_CHECK(!PW_MUL_OVERFLOW(a, b, out), __VA_ARGS__)
 
-// Check for pointer: NOTNULL. Use "nullptr" in C++, "NULL" in C.
+/// Asserts that the given pointer is not `NULL` (`nullptr` in C++), optionally
+/// including a message with arguments to report if the pointer is `NULL`.
+///
+/// Overloads:
+/// - `PW_CHECK_NOTNULL(ptr)`
+/// - `PW_CHECK_NOTNULL(ptr, format, ...)`
 #ifdef __cplusplus
 #define PW_CHECK_NOTNULL(arga, ...) \
   _PW_CHECK_BINARY_CMP_IMPL(arga, !=, nullptr, const void*, "%p", __VA_ARGS__)
@@ -164,46 +237,74 @@
   _PW_CHECK_BINARY_CMP_IMPL(arga, !=, NULL, const void*, "%p", __VA_ARGS__)
 #endif  // __cplusplus
 
-// Debug checks for pointer: LE, LT, GE, GT, EQ, NE, and NOTNULL.
+/// Debug check: asserts `a <= b` (`const void*`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_PTR_LE(...)  if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_PTR_LE(__VA_ARGS__)
+/// Debug check: asserts `a < b` (`const void*`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_PTR_LT(...)  if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_PTR_LT(__VA_ARGS__)
+/// Debug check: asserts `a >= b` (`const void*`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_PTR_GE(...)  if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_PTR_GE(__VA_ARGS__)
+/// Debug check: asserts `a > b` (`const void*`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_PTR_GT(...)  if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_PTR_GT(__VA_ARGS__)
+/// Debug check: asserts `a == b` (`const void*`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_PTR_EQ(...)  if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_PTR_EQ(__VA_ARGS__)
+/// Debug check: asserts `a != b` (`const void*`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_PTR_NE(...)  if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_PTR_NE(__VA_ARGS__)
+/// Debug variant of `PW_CHECK_NOTNULL` that only runs if `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_NOTNULL(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_NOTNULL(__VA_ARGS__)
 
-// Checks for float: EXACT_LE, EXACT_LT, EXACT_GE, EXACT_GT, EXACT_EQ, EXACT_NE,
-// NEAR.
+/// Asserts that `(a >= b - abs_tolerance) && (a <= b + abs_tolerance)` is true,
+/// where `a`, `b`, and `abs_tolerance` are converted to `float`. Also asserts
+/// that `abs_tolerance >= 0`.
+///
+/// Overloads:
+/// - `PW_CHECK_FLOAT_NEAR(a, b, abs_tolerance)`
+/// - `PW_CHECK_FLOAT_NEAR(a, b, abs_tolerance, format, ...)`
 #define PW_CHECK_FLOAT_NEAR(arga, argb, abs_tolerance, ...) \
   _PW_CHECK_FLOAT_NEAR(arga, argb, abs_tolerance, __VA_ARGS__)
+/// Asserts `a <= b` (`float`).
 #define PW_CHECK_FLOAT_EXACT_LE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, <=, argb, float, "%f", __VA_ARGS__)
+/// Asserts `a < b` (`float`).
 #define PW_CHECK_FLOAT_EXACT_LT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, < , argb, float, "%f", __VA_ARGS__)
+/// Asserts `a >= b` (`float`).
 #define PW_CHECK_FLOAT_EXACT_GE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, >=, argb, float, "%f", __VA_ARGS__)
+/// Asserts `a > b` (`float`).
 #define PW_CHECK_FLOAT_EXACT_GT(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, > , argb, float, "%f", __VA_ARGS__)
+/// Asserts `a == b` (`float`).
 #define PW_CHECK_FLOAT_EXACT_EQ(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, ==, argb, float, "%f", __VA_ARGS__)
+/// Asserts `a != b` (`float`).
 #define PW_CHECK_FLOAT_EXACT_NE(arga, argb, ...) _PW_CHECK_BINARY_CMP_IMPL(arga, !=, argb, float, "%f", __VA_ARGS__)
 
-// Debug checks for float: NEAR, EXACT_LE, EXACT_LT, EXACT_GE, EXACT_GT,
-// EXACT_EQ.
+/// Debug variant of `PW_CHECK_FLOAT_NEAR` that only runs if `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_FLOAT_NEAR(...)     if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_FLOAT_NEAR(__VA_ARGS__)
+/// Debug check: asserts `a <= b` (`float`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_FLOAT_EXACT_LE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_FLOAT_EXACT_LE(__VA_ARGS__)
+/// Debug check: asserts `a < b` (`float`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_FLOAT_EXACT_LT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_FLOAT_EXACT_LT(__VA_ARGS__)
+/// Debug check: asserts `a >= b` (`float`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_FLOAT_EXACT_GE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_FLOAT_EXACT_GE(__VA_ARGS__)
+/// Debug check: asserts `a > b` (`float`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_FLOAT_EXACT_GT(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_FLOAT_EXACT_GT(__VA_ARGS__)
+/// Debug check: asserts `a == b` (`float`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_FLOAT_EXACT_EQ(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_FLOAT_EXACT_EQ(__VA_ARGS__)
+/// Debug check: asserts `a != b` (`float`) when `PW_ASSERT_ENABLE_DEBUG` is enabled.
 #define PW_DCHECK_FLOAT_EXACT_NE(...) if (!(PW_ASSERT_ENABLE_DEBUG)) {} else PW_CHECK_FLOAT_EXACT_NE(__VA_ARGS__)
 
 // clang-format on
 
-// PW_CHECK_OK - If expression does not evaluate to an OK status, crash.
-// Message optional.
-//
-// In C++, expression must evaluate to a value convertible to a status via
-// pw::internal::ConvertToStatus(). This includes pw::Status, pw_Status,
-// pw::StatusWithSize, pw::Result, and custom pw::StatusBase-derived types.
-//
-// In C, expression must evaluate to a pw_Status value.
+/// Asserts that `expression` evaluates to `pw::OkStatus()` (in C++) or
+/// `PW_STATUS_OK` (in C). Optionally includes a message with arguments to
+/// report.
+///
+/// In C++, `expression` must evaluate to a value convertible to a status via
+/// `pw::internal::ConvertToStatus()`. This includes `pw::Status`, `pw_Status`,
+/// `pw::StatusWithSize`, `pw::Result`, and custom `pw::StatusBase`-derived
+/// types.
+///
+/// In C, `expression` must evaluate to a `pw_Status` value.
+///
+/// Overloads:
+/// - `PW_CHECK_OK(status)`
+/// - `PW_CHECK_OK(status, format, ...)`
 #define PW_CHECK_OK(expression, ...)                              \
   do {                                                            \
     const _PW_CHECK_OK_STATUS _pw_assert_check_ok_status =        \
@@ -233,10 +334,18 @@
 #define _PW_CHECK_OK_STATUS_STRING(status) pw_StatusString(status)
 #endif  // __cplusplus
 
+/// Debug variant of `PW_CHECK_OK` that only runs if `PW_ASSERT_ENABLE_DEBUG`
+/// is enabled.
+///
+/// Overloads:
+/// - `PW_DCHECK_OK(status)`
+/// - `PW_DCHECK_OK(status, format, ...)`
 #define PW_DCHECK_OK(...)          \
   if (!(PW_ASSERT_ENABLE_DEBUG)) { \
   } else                           \
     PW_CHECK_OK(__VA_ARGS__)
+
+/// @endmodule
 
 // Use a static_cast in C++ to avoid accidental comparisons between e.g. an
 // integer and the CHECK message const char*.

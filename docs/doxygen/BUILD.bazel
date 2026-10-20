@@ -39,6 +39,7 @@ filegroup(
         "//pw_alignment:doxygen",
         "//pw_allocator:doxygen",
         "//pw_analog:doxygen",
+        "//pw_assert:doxygen",
         "//pw_async:doxygen",
         "//pw_async2:doxygen",
         "//pw_async_basic:doxygen",

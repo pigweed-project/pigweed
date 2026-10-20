@@ -235,6 +235,19 @@ pw_cc_test(
     ],
 )
 
+filegroup(
+    name = "doxygen",
+    srcs = [
+        "assert_compatibility_public_overrides/pw_assert_backend/assert_backend.h",
+        "print_and_abort_check_public_overrides/pw_assert_backend/check_backend.h",
+        "public/pw_assert/assert.h",
+        "public/pw_assert/check.h",
+        "public/pw_assert/config.h",
+        "public/pw_assert/internal/check_impl.h",
+        "public/pw_assert/short.h",
+    ],
+)
+
 # DOCSTAG: [contributing-docs-examples]
 pw_cc_test(
     name = "examples",

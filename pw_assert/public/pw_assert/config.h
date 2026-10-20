@@ -13,10 +13,12 @@
 // the License.
 #pragma once
 
-// PW_ASSERT_ENABLE_DEBUG controls whether DCHECKs and DASSERTs are enabled.
-//
-// This block defines PW_ASSERT_ENABLE_DEBUG if it is not already, taking into
-// account traditional NDEBUG macro.
+/// @module{pw_assert}
+
+/// Controls whether `DCHECK` and `DASSERT` are enabled.
+///
+/// This defaults to being disabled if `NDEBUG` is defined, else it is enabled
+/// by default.
 #if !defined(PW_ASSERT_ENABLE_DEBUG)
 #if defined(NDEBUG)
 // Release mode; remove all DCHECK*() and DASSERT() asserts.
@@ -27,9 +29,11 @@
 #endif  // defined (NDEBUG)
 #endif  // !defined(PW_ASSERT_ENABLE_DEBUG)
 
-// PW_ASSERT_CAPTURE_VALUES controls whether the evaluated values of a CHECK are
-// captured in the final string. Disabling this will reduce codesize at CHECK
-// callsites.
+/// Controls whether the evaluated values of a `CHECK` statement are captured as
+/// arguments to the final string. Disabling this will reduce code size at
+/// `CHECK` callsites, but slightly reduces debuggability.
+///
+/// This defaults to enabled.
 #if !defined(PW_ASSERT_CAPTURE_VALUES)
 #define PW_ASSERT_CAPTURE_VALUES 1
 #endif  // !defined(PW_ASSERT_CAPTURE_VALUES)
@@ -43,21 +47,23 @@
 #error PW_ASSERT_BASIC_ABORT is deprecated! Use PW_ASSERT_BASIC_ACTION instead.
 #endif  // PW_ASSERT_BASIC_ABORT
 
-// Set to one of the following to define how pw_basic_assert should act after an
-// assert failure:
-// - PW_ASSERT_BASIC_ACTION_ABORT: Call std::abort()
-// - PW_ASSERT_BASIC_ACTION_EXIT: Call std::_Exit(-1)
-// - PW_ASSERT_BASIC_ACTION_LOOP: Loop forever
+/// Set to one of the following to define how `pw_assert_basic` should act
+/// after an assert failure:
+/// - `PW_ASSERT_BASIC_ACTION_ABORT`: Call `std::abort()`
+/// - `PW_ASSERT_BASIC_ACTION_EXIT`: Call `std::_Exit(-1)`
+/// - `PW_ASSERT_BASIC_ACTION_LOOP`: Loop forever
 #ifndef PW_ASSERT_BASIC_ACTION
 #define PW_ASSERT_BASIC_ACTION PW_ASSERT_BASIC_ACTION_ABORT
 #endif  // PW_ASSERT_BASIC_ACTION
 
-// Whether to show the CRASH ASCII art banner.
+/// Whether to show the CRASH ASCII art banner.
 #ifndef PW_ASSERT_BASIC_SHOW_BANNER
 #define PW_ASSERT_BASIC_SHOW_BANNER 1
 #endif  // PW_ASSERT_BASIC_SHOW_BANNER
 
-// Whether to use ANSI colors.
+/// Whether to use ANSI colors.
 #ifndef PW_ASSERT_BASIC_USE_COLORS
 #define PW_ASSERT_BASIC_USE_COLORS 1
 #endif  // PW_ASSERT_BASIC_USE_COLORS
+
+/// @endmodule

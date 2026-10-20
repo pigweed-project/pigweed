@@ -115,6 +115,13 @@
 /// [Home](../../pw_analog/docs.html)
 /// @endmaindocs
 
+/// @defgroup pw_assert pw_assert
+/// @brief Flexible crash triggering and handling.
+/// @maindocs
+/// [Home](../../pw_assert/docs.html) |
+/// [Backends](../../pw_assert/backends.html)
+/// @endmaindocs
+
 /// @defgroup pw_async pw_async
 /// @brief Portable APIs for asynchronous code.
 /// @maindocs
