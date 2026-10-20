@@ -28,7 +28,6 @@ sphinx_docs_library(
         "_extensions/bug.py",
         "_extensions/cs.py",
         "_extensions/module_metadata.py",
-        "_extensions/modules_index.py",
         "_extensions/pigweed_live.py",
         "_extensions/seed_metadata.py",
         "_extensions/sitemap.py",
@@ -45,12 +44,9 @@ pw_py_test(
         "_extensions/module_metadata_test.py",
         "_extensions/toctree.py",
     ],
-    data = [
-        "module_metadata.json",
-        "module_metadata_schema.json",
-    ],
     imports = ["_extensions"],
     deps = [
+        "//docs/common/metadata:sync_lib",
         "@pigweed_python_packages//jsonschema",
         "@pigweed_python_packages//sphinx",
         "@pigweed_python_packages//sphinx_design",
@@ -90,8 +86,6 @@ sphinx_docs_library(
     srcs = [
         "api/index.rst",
         "index.rst",
-        "module_metadata.json",
-        "module_metadata_schema.json",
         # categories-start
         # +----------------------------------------------------------+
         # | WARNING: AUTO-GENERATED SECTION. DO NOT MANUALLY EDIT!   |

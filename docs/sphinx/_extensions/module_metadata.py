@@ -23,10 +23,11 @@ Everything is implemented through the Sphinx Extension API.
 """
 
 from dataclasses import dataclass
+import functools
 import json
 import os
-import sys
-from typing import cast, TypeVar
+import tomllib
+from typing import Any, cast, TypeVar
 
 # We use BeautifulSoup for certain docs rendering features. It may not be
 # available in downstream projects. If so, no problem. We fall back to simpler
@@ -60,6 +61,7 @@ import docutils.parsers.rst.directives as directives  # type: ignore
 from sphinx.addnodes import document as Document
 from sphinx.application import Sphinx
 from sphinx.environment import BuildEnvironment
+from sphinx.errors import SphinxError
 from sphinx.util.docutils import SphinxDirective
 
 from sphinx_design.cards import CardDirective
@@ -67,29 +69,72 @@ from sphinx_design.cards import CardDirective
 EnvAttrT = TypeVar('EnvAttrT')
 
 
-# The module metadata is exposed as a global because it's used as read-only
-# data. Opening and reading the metadata file in one of the event handlers
-# would cause hundreds of filesystem reads on each build because those event
-# handlers fire once for each docs page that's built.
-try:  # Bazel location for the data
-    # pylint: disable=unused-import
-    from python.runfiles import runfiles  # type: ignore
+try:  # Bazel location for the schema and categories.toml
+    from docs.common.metadata import sync as _metadata_sync
 
-    # pylint: enable=unused-import
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    schema_file = f"{script_dir}/../module_metadata_schema.json"
-    metadata_file = f"{script_dir}/../module_metadata.json"
-except ImportError:  # GN location for the data
-    schema_file = f'{os.environ["PW_ROOT"]}/docs/module_metadata_schema.json'
-    metadata_file = f'{os.environ["PW_ROOT"]}/docs/module_metadata.json'
-with open(schema_file, 'r') as f:
+    _metadata_dir = os.path.dirname(os.path.abspath(_metadata_sync.__file__))
+except ImportError:  # GN location for the schema and categories.toml
+    _metadata_dir = f'{os.environ["PW_ROOT"]}/docs/common/metadata'
+
+schema_file = f'{_metadata_dir}/module_schema.json'
+with open(schema_file, 'r', encoding='utf-8') as f:
     schema = json.load(f)
-with open(metadata_file, 'r') as f:
-    metadata = json.load(f)
-# Make sure the metadata matches its schema. Raise an uncaught exception
-# if not.
-if jsonschema_enabled:
-    jsonschema.validate(metadata, schema)
+
+categories_file = f'{_metadata_dir}/categories.toml'
+category_descriptions: dict[str, str] = {}
+if os.path.isfile(categories_file):
+    with open(categories_file, 'rb') as _categories_f:
+        for _raw_cat in tomllib.load(_categories_f).values():
+            if isinstance(_raw_cat, dict):
+                _homepage = _raw_cat.get('homepage', '')
+                _desc = _raw_cat.get('description', '')
+                if _homepage and _desc:
+                    if _homepage.startswith('//docs/sphinx/'):
+                        _relpath = _homepage.removeprefix('//docs/sphinx/')
+                    else:
+                        _relpath = _homepage.removeprefix('//')
+                    category_descriptions[_relpath.removesuffix('.rst')] = _desc
+
+_default_root_dir = os.path.abspath(
+    os.path.join(_metadata_dir, '..', '..', '..')
+)
+_default_srcdir: list[str] = []
+
+
+@functools.lru_cache(maxsize=None)
+def _load_module_metadata(module_name: str, root_dir: str) -> dict[str, Any]:
+    """Loads and validates //<module_name>/module.toml from root_dir."""
+    metadata_file = os.path.join(root_dir, module_name, 'module.toml')
+    if not os.path.isfile(metadata_file):
+        raise SphinxError(f'//{module_name}/module.toml not found')
+    with open(metadata_file, 'rb') as metadata_f:
+        raw_metadata = tomllib.load(metadata_f)
+    if jsonschema_enabled:
+        try:
+            jsonschema.validate(raw_metadata, schema)
+        except jsonschema.ValidationError as exc:
+            location = '/'.join(str(key) for key in exc.absolute_path)
+            at_loc = f" at '{location}'" if location else ''
+            raise SphinxError(
+                f'//{module_name}/module.toml does not match '
+                f'//docs/common/metadata/module_schema.json{at_loc}: '
+                f'{exc.message}. See '
+                'https://pigweed.dev/contributing/docs/website.html'
+                '#contrib-docs-website-categories'
+            ) from None
+    return raw_metadata
+
+
+def _get_module_metadata(
+    module_name: str, srcdir: str | None = None
+) -> dict[str, Any]:
+    root_dir = (
+        srcdir
+        or (_default_srcdir[0] if _default_srcdir else None)
+        or os.environ.get('PW_ROOT')
+        or _default_root_dir
+    )
+    return _load_module_metadata(module_name, root_dir)
 
 
 @dataclass
@@ -131,7 +176,9 @@ class EnvMetadata:
         return self._get_env_attr('pw_module_nav', default)
 
 
-def get_languages(module_name: str) -> list[str] | None:
+def get_languages(
+    module_name: str, srcdir: str | None = None
+) -> list[str] | None:
     """Returns the list of languages that a module supports.
 
     Args:
@@ -139,20 +186,20 @@ def get_languages(module_name: str) -> list[str] | None:
 
     Returns:
         A list of programming languages that the module supports, or ``None``
-        if this has not been defined in ``//docs/sphinx/module_metadata.json``.
+        if this has not been defined in ``//<module>/module.toml``.
     """
-    if module_name not in metadata:
+    try:
+        mod_meta = _get_module_metadata(module_name, srcdir)
+    except SphinxError:
         return None
-    if 'languages' not in metadata[module_name]:
-        return None
-    return metadata[module_name]['languages']
+    return mod_meta.get('languages')
 
 
-def get_status(module_name: str) -> str:
+def get_status(module_name: str, srcdir: str | None = None) -> str:
     """Returns the status of a module.
 
     Preconditions:
-        The status must be defined in ``//docs/sphinx/module_metadata.json``.
+        The status must be defined in ``//<module>/module.toml``.
 
     Args:
         module_name: The module to look up.
@@ -160,14 +207,13 @@ def get_status(module_name: str) -> str:
     Returns:
         The status of the module as a string.
     """
-    if module_name not in metadata:
-        sys.exit(f'{module_name} not found in {metadata_file}')
-    if 'status' not in metadata[module_name]:
-        sys.exit(f'{module_name}.status not found in {metadata_file}')
-    return metadata[module_name]['status']
+    mod_meta = _get_module_metadata(module_name, srcdir)
+    if 'status' not in mod_meta:
+        raise SphinxError(f'status not found in //{module_name}/module.toml')
+    return mod_meta['status']
 
 
-def get_tagline(module_name: str) -> str | None:
+def get_tagline(module_name: str, srcdir: str | None = None) -> str | None:
     """Returns the tagline for a module.
 
     Args:
@@ -175,16 +221,13 @@ def get_tagline(module_name: str) -> str | None:
 
     Returns:
         The module's tagline or ``None`` if no tagline has been defined
-        in ``//docs/sphinx/module_metadata.json``.
+        in ``//<module>/module.toml``.
     """
-    if module_name not in metadata:
-        return None
-    if 'tagline' not in metadata[module_name]:
-        return None
-    return metadata[module_name]['tagline']
+    mod_meta = _get_module_metadata(module_name, srcdir)
+    return mod_meta.get('tagline')
 
 
-def get_code_size(module_name: str) -> str | None:
+def get_code_size(module_name: str, srcdir: str | None = None) -> str | None:
     """Returns the code size impact summary for a module.
 
     Args:
@@ -192,13 +235,10 @@ def get_code_size(module_name: str) -> str | None:
 
     Returns:
         The code size impact summary as a string or ``None`` if no summary
-        has been defined in ``//docs/sphinx/module_metadata.json``.
+        has been defined in ``//<module>/module.toml``.
     """
-    if module_name not in metadata:
-        return None
-    if 'size' not in metadata[module_name]:
-        return None
-    return metadata[module_name]['size']
+    mod_meta = _get_module_metadata(module_name, srcdir)
+    return mod_meta.get('size')
 
 
 def status_badge(module_status: str) -> str:
@@ -531,84 +571,20 @@ def should_add_rust_link(module_name: str, languages: list[str] | None) -> bool:
     return True
 
 
-# TODO: https://pwbug.dev/426012010 - Make this logic general,
-# like how `should_add_rust_link` does it.
-def should_add_doxygen_link(module_name) -> bool:
+def should_add_doxygen_link(
+    module_name: str, srcdir: str | None = None
+) -> bool:
     """Returns True if the module has a Doxygen API reference group."""
-    ok = [
-        'pw_alignment',
-        'pw_allocator',
-        'pw_analog',
-        'pw_assert',
-        'pw_async',
-        'pw_async2',
-        'pw_async_basic',
-        'pw_base64',
-        'pw_bloat',
-        'pw_bluetooth',
-        'pw_bluetooth_proxy',
-        'pw_bluetooth_sapphire',
-        'pw_buf',
-        'pw_build',
-        'pw_bytes',
-        'pw_channel',
-        'pw_chre',
-        'pw_chrono',
-        'pw_clock_tree',
-        'pw_clock_tree_mcuxpresso',
-        'pw_containers',
-        'pw_crypto',
-        'pw_digital_io',
-        'pw_digital_io_mcuxpresso',
-        'pw_display',
-        'pw_elf',
-        'pw_enum',
-        'pw_function',
-        'pw_hdlc',
-        'pw_hex_dump',
-        'pw_i2c',
-        'pw_i2c_linux',
-        'pw_i2c_zephyr',
-        'pw_interrupt',
-        'pw_json',
-        'pw_kvs',
-        'pw_log',
-        'pw_log_string',
-        'pw_log_tokenized',
-        'pw_malloc',
-        'pw_multibuf',
-        'pw_numeric',
-        'pw_perf_test',
-        'pw_persistent_ram',
-        'pw_polyfill',
-        'pw_preprocessor',
-        'pw_protobuf',
-        'pw_random',
-        'pw_result',
-        'pw_rpc',
-        'pw_rpc2',
-        'pw_span',
-        'pw_spi',
-        'pw_status',
-        'pw_stream',
-        'pw_stream_uart_linux',
-        'pw_string',
-        'pw_sync',
-        'pw_sys_io',
-        'pw_system',
-        'pw_thread',
-        'pw_tokenizer',
-        'pw_toolchain',
-        'pw_trace_tokenized',
-        'pw_transfer',
-        'pw_transport',
-        'pw_uart',
-        'pw_unit_test',
-        'pw_uuid',
-        'pw_varint',
-        'pw_work_queue',
-    ]
-    return module_name in ok
+    root_dir = (
+        srcdir
+        or (_default_srcdir[0] if _default_srcdir else None)
+        or os.environ.get('PW_ROOT')
+        or _default_root_dir
+    )
+    group = module_name.replace('_', '__')
+    return os.path.isfile(
+        os.path.join(root_dir, 'doxygen', 'api', 'cc', f'group__{group}.html')
+    )
 
 
 def _has_slug_placeholder(toctree: Element, slug: str) -> bool:
@@ -642,7 +618,9 @@ def _insert_or_append_link(
     rawentries.append(default_title)
 
 
-def add_links(module_name: str, toctree: Element) -> None:
+def add_links(
+    module_name: str, toctree: Element, srcdir: str | None = None
+) -> None:
     """Adds API reference, source code, and issues URLs to a module's toctree.
 
     If a standard slug placeholder (e.g. `cc-api-ref`, `rust-api-ref`,
@@ -654,11 +632,13 @@ def add_links(module_name: str, toctree: Element) -> None:
             The Pigweed module that we're creating links for.
         toctree:
             The table of contents tree from that module's homepage.
+        srcdir:
+            The Sphinx source directory containing the built Doxygen output.
 
     Returns:
         `None`. `toctree` is modified in-place.
     """
-    languages = get_languages(module_name)
+    languages = get_languages(module_name, srcdir)
 
     if should_add_rust_link(module_name, languages) or _has_slug_placeholder(
         toctree, 'rust-api-ref'
@@ -669,7 +649,7 @@ def add_links(module_name: str, toctree: Element) -> None:
             default_title='Rust API reference',
             url=rustdoc_url(module_name),
         )
-    if should_add_doxygen_link(module_name) or _has_slug_placeholder(
+    if should_add_doxygen_link(module_name, srcdir) or _has_slug_placeholder(
         toctree, 'cc-api-ref'
     ):
         _insert_or_append_link(
@@ -729,6 +709,16 @@ def parse_module_name(docname: str) -> str:
     return tokens[0]
 
 
+def add_category_description(doctree: Document, description: str) -> None:
+    """Inserts a category's description subtitle below its H1 title."""
+    for section in doctree.traverse(nodes.section):
+        for i, child in enumerate(section.children):
+            if isinstance(child, nodes.title):
+                section.insert(i + 1, create_topnav(description))
+                return
+        return
+
+
 def on_doctree_read(app: Sphinx, doctree: Document) -> None:
     """Event handler that enables manipulating a doc's Docutils tree.
 
@@ -753,6 +743,9 @@ def on_doctree_read(app: Sphinx, doctree: Document) -> None:
     [1] See link in `on_source_read()`
     """
     docname = app.env.docname
+    if docname in category_descriptions:
+        add_category_description(doctree, category_descriptions[docname])
+        return
     if not is_module_homepage(docname):
         return
     toctree = find_first_toctree(doctree)
@@ -760,9 +753,11 @@ def on_doctree_read(app: Sphinx, doctree: Document) -> None:
         # `add_toctree_to_module_homepage()` should ensure that every
         # `pw_*/docs.rst` file has a `toctree` node but if something went wrong
         # then we should bail.
-        sys.exit(f'[module_metadata.py] error: toctree missing in {docname}')
+        raise SphinxError(
+            f'[module_metadata.py] error: toctree missing in {docname}'
+        )
     module_name = parse_module_name(docname)
-    add_links(module_name, toctree)
+    add_links(module_name, toctree, str(app.srcdir))
 
 
 def is_module_homepage(docname: str) -> bool:
@@ -891,6 +886,7 @@ def setup(app: Sphinx) -> dict[str, bool]:
     Returns:
         A dict that provides Sphinx info about our extension.
     """
+    _default_srcdir[:] = [str(app.srcdir)]
     # Register the `.. pigweed-module::` and `.. pigweed-module-subpage::`
     # directives that are used on `pw_*/*.rst` pages.
     app.add_directive('pigweed-module', PigweedModuleDirective)

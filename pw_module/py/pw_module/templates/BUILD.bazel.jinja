@@ -53,6 +53,9 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+{% if module.is_upstream %}
+        "module.toml",
+{% endif %}
     ],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],

@@ -669,14 +669,28 @@ def _basic_module_setup(
     return ctx
 
 
+_SYNC_DOCS_COMMAND = 'bazelisk run //docs/common/metadata:sync'
+_CATEGORIES_DOCS_URL = (
+    'https://pigweed.dev/contributing/docs/website.html'
+    '#contrib-docs-website-categories'
+)
+
+
 def _add_to_module_metadata(
     project_root: Path,
     module_name: _ModuleName,
     languages: Iterable[str] | None = None,
-) -> None:
-    """Update sphinx module metadata."""
-    module_metadata_file = project_root / 'docs/sphinx/module_metadata.json'
-    metadata_dict = json.loads(module_metadata_file.read_text())
+) -> bool:
+    """Creates //<module>/module.toml for an upstream module.
+
+    The new file has no documentation category or facade; the author must
+    uncomment and populate one before the docs build will pass. Returns whether
+    the file was created.
+    """
+    module_metadata_file = project_root / module_name.path / 'module.toml'
+    if module_metadata_file.exists():
+        _report_unchanged_file(module_metadata_file)
+        return False
 
     language_tags = []
     if languages:
@@ -686,62 +700,27 @@ def _add_to_module_metadata(
             elif lang == 'py':
                 language_tags.append('Python')
 
-    # Stop if the module metadata already exists
-    if module_name.full in metadata_dict:
-        _report_unchanged_file(module_metadata_file)
-        return
-
-    # Add the new entry
-    metadata_dict[module_name.full] = dict(
-        status='experimental',
-        languages=language_tags,
-    )
-
-    # Sort by module name.
-    sorted_metadata = dict(
-        sorted(metadata_dict.items(), key=lambda item: item[0])
-    )
-    output_text = json.dumps(sorted_metadata, sort_keys=False, indent=2)
-    output_text += '\n'
-
-    module_metadata_file.write_text(output_text)
-    _report_edited_file(module_metadata_file)
-
-
-def _add_to_sphinx_index(
-    project_root: Path,
-    module_name: _ModuleName,
-) -> None:
-    """Update the modules index page on the Sphinx site."""
-    modules_index_file = project_root / 'docs/sphinx/modules.rst'
-    modules_index_list = modules_index_file.read_text().splitlines()
-
-    new_content = '   {}/docs'.format(module_name.full)
-
-    # Stop if the module is already listed in the index
-    if new_content in modules_index_list:
-        _report_unchanged_file(modules_index_file)
-        return
-
-    # Find the correct insertion location in the index. The list of modules
-    # begins after `module_structure`.
-    start = modules_index_list.index('   module_structure') + 1
-    end = len(modules_index_list) - 1
-    target_index = None
-    for i in range(start, end):
-        line = modules_index_list[i]
-        if line < new_content:
-            continue
-        target_index = i
-        break
-    target_index = end if target_index is None else target_index
-
-    # Insert the module into the index
-    modules_index_list.insert(target_index, new_content)
-    output_text = '\n'.join(modules_index_list)
-    output_text += '\n'
-    modules_index_file.write_text(output_text)
-    _report_edited_file(modules_index_file)
+    lines = [
+        _PIGWEED_LICENSE,
+        '',
+        'status = "experimental"',
+        f'languages = {json.dumps(language_tags)}',
+        '',
+        '# Uncomment and fill out [category] (or [facade] for backends),',
+        f'# then run `{_SYNC_DOCS_COMMAND}`.',
+        f'# See {_CATEGORIES_DOCS_URL}',
+        '# [category]',
+        '# id = "<category_id>"',
+        '# toctree = "<Display title>"',
+        '#',
+        '# [facade]',
+        '# module = "pw_<facade>"',
+        '# toctree = "<Display title>"',
+        '',
+    ]
+    module_metadata_file.write_text('\n'.join(lines), encoding='utf-8')
+    _report_write_file(module_metadata_file)
+    return True
 
 
 def _add_to_docs_build(
@@ -978,16 +957,30 @@ def _create_module(
     for build_file in ctx.build_files():
         build_file.write()
 
+    needs_categories = False
     if is_upstream:
         _add_to_pigweed_modules_file(project_root, module_name)
-        _add_to_module_metadata(project_root, module_name, languages)
-        _add_to_sphinx_index(project_root, module_name)
+        needs_categories = _add_to_module_metadata(
+            project_root, module_name, languages
+        )
         _add_to_docs_build(project_root, module_name)
         if 'cmake' in build_systems:
             _add_to_root_cmakelists(project_root, module_name)
 
     print()
     _REPORT.new(f'{module_name} created at: {module_dir.relative_to(_PW_ROOT)}')
+
+    if needs_categories:
+        _REPORT.info(
+            [
+                f'{module_name} is not in any documentation category yet, so '
+                'the docs build will fail until you:',
+                f'1. Add a [category] (or [facade]) table in '
+                f'//{module_name.path}/module.toml',
+                f'2. Run `{_SYNC_DOCS_COMMAND}`',
+                f'See {_CATEGORIES_DOCS_URL}',
+            ]
+        )
 
 
 class _ConfigErrors(list):
