@@ -1340,6 +1340,46 @@ func (s *MockIssueTrackerServer) serveHTTP(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": "unhandled mock route: " + r.URL.Path})
 }
 
+func matchesSingleIssueQueryToken(iss *BuganizerIssue, isOpen bool, tok string) bool {
+	switch {
+	case tok == "status:open":
+		return isOpen
+	case tok == "status:closed":
+		return !isOpen
+	case strings.HasPrefix(tok, "assignee:"):
+		want := strings.TrimPrefix(tok, "assignee:")
+		return iss.State.Assignee != nil && strings.EqualFold(iss.State.Assignee.EmailAddress, want)
+	case strings.HasPrefix(tok, "reporter:"):
+		want := strings.TrimPrefix(tok, "reporter:")
+		return iss.State.Reporter != nil && strings.EqualFold(iss.State.Reporter.EmailAddress, want)
+	case strings.HasPrefix(tok, "priority:"):
+		want := strings.TrimPrefix(tok, "priority:")
+		return strings.EqualFold(iss.State.Priority, want)
+	case strings.HasPrefix(tok, "severity:"):
+		want := strings.TrimPrefix(tok, "severity:")
+		return strings.EqualFold(iss.State.Severity, want)
+	case strings.HasPrefix(tok, "type:"):
+		want := strings.TrimPrefix(tok, "type:")
+		return strings.EqualFold(iss.State.Type, want)
+	case strings.HasPrefix(tok, "componentid:"):
+		// The mock has no component hierarchy, so "N+" (N and its
+		// descendants) matches only N.
+		want := strings.TrimSuffix(strings.TrimPrefix(tok, "componentid:"), "+")
+		return fmt.Sprintf("%d", iss.State.ComponentID) == want
+	case strings.HasPrefix(tok, "hotlistid:"):
+		want := strings.TrimPrefix(tok, "hotlistid:")
+		for _, hid := range iss.State.HotlistIDs {
+			if fmt.Sprintf("%d", hid) == want {
+				return true
+			}
+		}
+		return false
+	default:
+		clean := strings.Trim(tok, "\"")
+		return strings.Contains(strings.ToLower(iss.State.Title), strings.ToLower(clean))
+	}
+}
+
 func matchesIssueQuery(iss *BuganizerIssue, query string) bool {
 	if query == "" {
 		return true
@@ -1347,54 +1387,17 @@ func matchesIssueQuery(iss *BuganizerIssue, query string) bool {
 	isOpen := iss.State.Status == "NEW" || iss.State.Status == "ASSIGNED" || iss.State.Status == "ACCEPTED"
 	tokens := strings.Fields(query)
 	for _, tok := range tokens {
-		switch {
-		case tok == "status:open":
-			if !isOpen {
-				return false
-			}
-		case tok == "status:closed":
-			if isOpen {
-				return false
-			}
-		case strings.HasPrefix(tok, "assignee:"):
-			want := strings.TrimPrefix(tok, "assignee:")
-			if iss.State.Assignee == nil || !strings.EqualFold(iss.State.Assignee.EmailAddress, want) {
-				return false
-			}
-		case strings.HasPrefix(tok, "reporter:"):
-			want := strings.TrimPrefix(tok, "reporter:")
-			if iss.State.Reporter == nil || !strings.EqualFold(iss.State.Reporter.EmailAddress, want) {
-				return false
-			}
-		case strings.HasPrefix(tok, "priority:"):
-			want := strings.TrimPrefix(tok, "priority:")
-			if !strings.EqualFold(iss.State.Priority, want) {
-				return false
-			}
-		case strings.HasPrefix(tok, "componentid:"):
-			// The mock has no component hierarchy, so "N+" (N and its
-			// descendants) matches only N.
-			want := strings.TrimSuffix(strings.TrimPrefix(tok, "componentid:"), "+")
-			if fmt.Sprintf("%d", iss.State.ComponentID) != want {
-				return false
-			}
-		case strings.HasPrefix(tok, "hotlistid:"):
-			want := strings.TrimPrefix(tok, "hotlistid:")
-			found := false
-			for _, hid := range iss.State.HotlistIDs {
-				if fmt.Sprintf("%d", hid) == want {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
-		default:
-			clean := strings.Trim(tok, "\"")
-			if !strings.Contains(strings.ToLower(iss.State.Title), strings.ToLower(clean)) {
-				return false
-			}
+		negated := false
+		if strings.HasPrefix(tok, "-") && len(tok) > 1 {
+			negated = true
+			tok = tok[1:]
+		}
+		matched := matchesSingleIssueQueryToken(iss, isOpen, tok)
+		if negated && matched {
+			return false
+		}
+		if !negated && !matched {
+			return false
 		}
 	}
 	return true

@@ -77,6 +77,8 @@ type IssueProjectConfig struct {
 	TrailerFormat       string           `json:"trailer_format,omitempty"`
 	UseOwnersComponents *bool            `json:"use_owners_components,omitempty"`
 	PathComponents      map[string]int64 `json:"path_components,omitempty"`
+	Components          map[string]int64 `json:"components,omitempty"`
+	Hotlists            map[string]int64 `json:"hotlists,omitempty"`
 }
 
 // WorktreeProjectConfig holds `[worktree]` configuration settings.
@@ -109,6 +111,8 @@ func DefaultProjectConfig() *ProjectConfig {
 		Issue: IssueProjectConfig{
 			UseOwnersComponents: cfgBoolPtr(true),
 			PathComponents:      make(map[string]int64),
+			Components:          make(map[string]int64),
+			Hotlists:            make(map[string]int64),
 		},
 	}
 }
@@ -400,6 +404,8 @@ type tomlIssueConfig struct {
 	RequireTrailer      any              `toml:"require_trailer"`
 	UseOwnersComponents *bool            `toml:"use_owners_components"`
 	PathComponents      map[string]int64 `toml:"path_components"`
+	Components          map[string]int64 `toml:"components"`
+	Hotlists            map[string]int64 `toml:"hotlists"`
 }
 
 type tomlWorktreeConfig struct {
@@ -520,6 +526,20 @@ func applyTOMLIssueSection(filePath, section string, src tomlIssueConfig, dst *I
 		}
 		dst.PathComponents[k] = v
 	}
+	for k, v := range src.Components {
+		alias := strings.TrimSpace(k)
+		if alias == "" || v <= 0 {
+			return fmt.Errorf("%s: invalid %s.components entry %q=%d: alias must be non-empty and ID must be positive", filePath, section, k, v)
+		}
+		dst.Components[alias] = v
+	}
+	for k, v := range src.Hotlists {
+		alias := strings.TrimSpace(k)
+		if alias == "" || v <= 0 {
+			return fmt.Errorf("%s: invalid %s.hotlists entry %q=%d: alias must be non-empty and ID must be positive", filePath, section, k, v)
+		}
+		dst.Hotlists[alias] = v
+	}
 	return nil
 }
 
@@ -535,6 +555,12 @@ func ParseProjectConfigTOML(filePath, content string, dst *ProjectConfig) error 
 	}
 	if dst.Issue.PathComponents == nil {
 		dst.Issue.PathComponents = make(map[string]int64)
+	}
+	if dst.Issue.Components == nil {
+		dst.Issue.Components = make(map[string]int64)
+	}
+	if dst.Issue.Hotlists == nil {
+		dst.Issue.Hotlists = make(map[string]int64)
 	}
 
 	var raw tomlProjectConfig
@@ -660,6 +686,15 @@ func splitCSV(val string) []string {
 }
 
 func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
+	if dst.Issue.PathComponents == nil {
+		dst.Issue.PathComponents = make(map[string]int64)
+	}
+	if dst.Issue.Components == nil {
+		dst.Issue.Components = make(map[string]int64)
+	}
+	if dst.Issue.Hotlists == nil {
+		dst.Issue.Hotlists = make(map[string]int64)
+	}
 	for _, rawLine := range strings.Split(output, "\n") {
 		line := strings.TrimSpace(rawLine)
 		if line == "" {
@@ -697,6 +732,36 @@ func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
 					return fmt.Errorf("invalid git config %s=%q: %w", key, val, err)
 				}
 				dst.Issue.PathComponents[pathKey] = n
+				rest = ""
+				break
+			}
+		}
+		if rest == "" {
+			continue
+		}
+		for _, pfx := range []string{"issue.components.", "issue.component.", "bugs.components.", "bugs.component."} {
+			if strings.HasPrefix(rest, pfx) {
+				alias := strings.TrimSpace(strings.TrimPrefix(rest, pfx))
+				n, err := strconv.ParseInt(val, 10, 64)
+				if err != nil || n <= 0 || alias == "" {
+					return fmt.Errorf("invalid git config %s=%q: component alias ID must be a positive integer", key, val)
+				}
+				dst.Issue.Components[alias] = n
+				rest = ""
+				break
+			}
+		}
+		if rest == "" {
+			continue
+		}
+		for _, pfx := range []string{"issue.hotlists.", "issue.hotlist.", "bugs.hotlists.", "bugs.hotlist."} {
+			if strings.HasPrefix(rest, pfx) {
+				alias := strings.TrimSpace(strings.TrimPrefix(rest, pfx))
+				n, err := strconv.ParseInt(val, 10, 64)
+				if err != nil || n <= 0 || alias == "" {
+					return fmt.Errorf("invalid git config %s=%q: hotlist alias ID must be a positive integer", key, val)
+				}
+				dst.Issue.Hotlists[alias] = n
 				rest = ""
 				break
 			}
@@ -814,4 +879,47 @@ func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
 		}
 	}
 	return nil
+}
+
+func lookupIssueAliasID(aliases map[string]int64, name string) (int64, bool) {
+	if len(aliases) == 0 || name == "" {
+		return 0, false
+	}
+	if id, ok := aliases[name]; ok && id > 0 {
+		return id, true
+	}
+	for k, id := range aliases {
+		if id > 0 && strings.EqualFold(k, name) {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// ExpandIssueLabel resolves any configured [issue.hotlists] or [issue.components]
+// alias in a label string (such as "hotlist:triage", "-hotlist:triage", or
+// "component:rpc") into its numeric ID form before label parsing.
+func (c *ProjectConfig) ExpandIssueLabel(label string) string {
+	if c == nil {
+		return label
+	}
+	clean := strings.TrimSpace(label)
+	negPrefix := ""
+	if strings.HasPrefix(clean, "-") || strings.HasPrefix(clean, "!") {
+		negPrefix = clean[:1]
+		clean = strings.TrimSpace(clean[1:])
+	}
+	lower := strings.ToLower(clean)
+	if strings.HasPrefix(lower, "hotlist:") {
+		raw := strings.TrimSpace(clean[len("hotlist:"):])
+		if id, ok := lookupIssueAliasID(c.Issue.Hotlists, raw); ok {
+			return fmt.Sprintf("%shotlist:%d", negPrefix, id)
+		}
+	} else if strings.HasPrefix(lower, "component:") {
+		raw := strings.TrimSpace(clean[len("component:"):])
+		if id, ok := lookupIssueAliasID(c.Issue.Components, raw); ok {
+			return fmt.Sprintf("%scomponent:%d", negPrefix, id)
+		}
+	}
+	return label
 }

@@ -206,7 +206,7 @@ Commands:
   next-step modality.
 
 ### 6. Buganizer Issue Management (`./gh issue`)
-- **`./gh issue status`** & **`./gh issue list [--assignee @me|<email>] [--state open|closed|all] [--label priority:P1|type:BUG|component:<id>|hotlist:<id>] [--search "<q>"]`**.
+- **`./gh issue status`** & **`./gh issue list [--assignee @me|<email>] [--state open|closed|all] [--label P1|S2|bug|vulnerability|component:<id|alias>|hotlist:<id|alias>|!hotlist:<id|alias>] [--search "<q>"]`**.
 - **`./gh issue view [<id>|<url>] [--comments] [--json <fields>]`**: View issue
   (resolves `Bug:`/`Fixed:`/`Fixes:`/`Closes:` trailer from `HEAD` if `<id>` is omitted).
 - **`./gh issue develop <id> [--checkout | -w|--worktree]`**: Create feature
@@ -214,10 +214,10 @@ Commands:
 - **`./gh issue create -t "<title>" (-b "<body>" | -F <file|->) [-C <component-id>] [--amend | --commit]`**:
   Create a Buganizer issue (`--amend` appends `Bug: b/<new-id>` or configured
   `issue.trailer_format` to `HEAD` using `git commit --amend --only`). Resolves
-  component ID via `-C`/`-l component:<id>` -> `[issue.path_components]` ->
+  component ID via `-C`/`-l component:<id|alias>` -> `[issue.path_components]` ->
   nearest `OWNERS` (`# COMPONENT:` / `# Buganizer component:`) ->
   `issue.default_component` -> `ghish.componentid` -> profile default.
-- **`./gh issue comment [<id>] (-b "<text>" | -F <file|->)`**, **`./gh issue edit [<id>]`**,
+- **`./gh issue comment [<id>] (-m "<text>" | -b "<text>" | -F <file|->)`**, **`./gh issue edit [<id>]`**,
   **`./gh issue close [<id>]`**, **`./gh issue reopen [<id>]`**.
 
 ### 7. Where `gh` Habits Break
@@ -235,7 +235,7 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 | `--json state` | `OPEN`/`CLOSED`/`MERGED` | Gerrit's `NEW`/`MERGED`/`ABANDONED`. |
 | `pr review --request-changes` | blocks the PR | votes `Code-Review-1`, which is **advisory**. `Code-Review-2` is the veto. |
 | `pr comment --draft` | (n/a) | an unpublished draft **comment** nobody else can see — not a WIP change. |
-| `issue -l/--label` | free-form text | Buganizer priority/type/hotlist (`P0`–`P4`, `bug`, `feature`, `task`, `hotlist:<id>`). |
+| `issue -l/--label` | free-form text | Buganizer priority/severity/type/hotlist/component (`P0`–`P4`, `S0`–`S4`, `bug`, `feature`, `task`, `vulnerability`, `hotlist:<id\|alias>`, `component:<id\|alias>`, prefix `-`/`!` to negate in `list`). |
 
 ---
 

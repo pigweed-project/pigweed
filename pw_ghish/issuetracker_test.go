@@ -463,8 +463,11 @@ func TestLabelToQueryToken(t *testing.T) {
 	}{
 		{"P0", "priority:P0"},
 		{"priority:p2", "priority:P2"},
+		{"priority: P1", "priority:P1"},
 		{"S1", "severity:S1"},
+		{"severity: S2", "severity:S2"},
 		{"bug", "type:BUG"},
+		{"type: vulnerability", "type:VULNERABILITY"},
 		{"feature", "type:FEATURE_REQUEST"},
 		{"component:1194524", "componentid:1194524"},
 		{"hotlist:5555", "hotlistid:5555"},

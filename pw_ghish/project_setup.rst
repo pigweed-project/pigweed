@@ -672,6 +672,33 @@ candidate path, the **longest pattern string (``len(pattern)``) wins**.
 6. **Project profile default**: ``ProjectProfile.DefaultComponentID()`` (e.g.
    ``1194524`` for the ``pigweed`` profile).
 
+``[issue.components]`` & ``[issue.hotlists]`` sections
+------------------------------------------------------
+Maps symbolic alias names to numeric Buganizer component IDs and hotlist IDs
+for use in ``-l component:<alias>``, ``-l hotlist:<alias>``, ``--add-hotlist``,
+and ``--remove-hotlist``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 14 14 25 25
+
+   * - Key
+     - Type
+     - Default
+     - ``git config`` Equivalent
+     - Behavior
+   * - ``components."<alias>" = <id>``
+     - ``map[string]int64``
+     - ``{}``
+     - ``ghish.issue.components.<alias>``
+     - Expands ``component:<alias>`` labels to ``component:<id>``.
+   * - ``hotlists."<alias>" = <id>``
+     - ``map[string]int64``
+     - ``{}``
+     - ``ghish.issue.hotlists.<alias>``
+     - Expands ``hotlist:<alias>`` labels and ``--add-hotlist`` /
+       ``--remove-hotlist <alias>`` arguments to Buganizer hotlist ID ``<id>``.
+
 ``[worktree]`` section
 ----------------------
 Configures warm Git worktree slot naming and build cache warmup behavior for
@@ -803,6 +830,12 @@ Buganizer components:
    [issue.path_components]
    "pw_bluetooth_sapphire/**" = 1456789
    "pw_kernel/**" = 1456790
+
+   [issue.components]
+   security = 1456791
+
+   [issue.hotlists]
+   triage = 9876543
 
    [worktree]
    slot_prefix = "pw-"

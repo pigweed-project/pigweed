@@ -810,3 +810,238 @@ func TestIssue_BodyFileStdin(t *testing.T) {
 		t.Errorf("expected empty stdin error on issue create --body -, got: %v", errCreateEmpty)
 	}
 }
+
+func TestIssueTriageErgonomics_VulnerabilityNegatedLabelsAliasesAndMessage(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+
+	repoDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0755); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+	tomlData := `[issue]
+default_component = 1194524
+
+[issue.components]
+security = 999888
+
+[issue.hotlists]
+triage = 7777
+`
+	if err := os.WriteFile(filepath.Join(repoDir, ".ghish.toml"), []byte(tomlData), 0644); err != nil {
+		t.Fatalf("failed to write .ghish.toml: %v", err)
+	}
+
+	gitRunner := &MockGitRunner{}
+	SetupMockConfig(t, gitRunner)
+	origMockCWD := MockCWD
+	MockCWD = repoDir
+	t.Cleanup(func() { MockCWD = origMockCWD })
+	SetMockGit(t, gitRunner)
+
+	// 1. Create a VULNERABILITY issue using component:security and hotlist:triage aliases
+	outCreate, err := executeCommand(RootCmd, "issue", "create",
+		"-t", "pw_rpc: Fix integer overflow in packet parser",
+		"-b", "Found by static analysis.",
+		"-T", "vulnerability",
+		"-l", "S2",
+		"-l", "component:security",
+		"-l", "hotlist:triage",
+	)
+	if err != nil {
+		t.Fatalf("issue create with vulnerability & aliases failed: %v\nOutput: %s", err, outCreate)
+	}
+
+	created, err := srv.Client().GetIssue(context.Background(), 300001)
+	if err != nil {
+		t.Fatalf("GetIssue(300001) failed: %v", err)
+	}
+	if created.State.Type != "VULNERABILITY" || created.State.Severity != "S2" || int64(created.State.ComponentID) != 999888 {
+		t.Errorf("unexpected created state: %+v", created.State)
+	}
+	if len(created.State.HotlistIDs) != 1 || created.State.HotlistIDs[0] != 7777 {
+		t.Errorf("expected HotlistIDs=[7777], got %+v", created.State.HotlistIDs)
+	}
+
+	// 2. Seed a second S2 vulnerability NOT on the triage hotlist
+	srv.SeedIssue(&BuganizerIssue{
+		IssueID: 300002,
+		State: BuganizerState{
+			ComponentID: 999888,
+			Type:        "VULNERABILITY",
+			Status:      "NEW",
+			Priority:    "P2",
+			Severity:    "S2",
+			Title:       "pw_hdlc: Unbounded frame length",
+		},
+	}, "Second vulnerability.")
+
+	// 3. View 300001 and verify Severity and Hotlists are displayed (and hotlistIds in --json)
+	outView, err := executeCommand(RootCmd, "issue", "view", "300001")
+	if err != nil {
+		t.Fatalf("issue view 300001 failed: %v", err)
+	}
+	for _, want := range []string{"Severity:  S2", "Type:      VULNERABILITY", "Hotlists:  7777"} {
+		if !strings.Contains(outView, want) {
+			t.Errorf("issue view missing %q; got:\n%s", want, outView)
+		}
+	}
+
+	outJSON, err := executeCommand(RootCmd, "issue", "view", "300001", "--json", "number,severity,type,hotlistIds")
+	if err != nil {
+		t.Fatalf("issue view --json hotlistIds failed: %v", err)
+	}
+	if !strings.Contains(outJSON, "7777") || !strings.Contains(outJSON, "VULNERABILITY") {
+		t.Errorf("unexpected JSON output:\n%s", outJSON)
+	}
+
+	// 4. List with component alias, vulnerability type, S2 severity, negated system labels (!P1, -bug), and negated hotlist alias (!hotlist:triage)
+	outList, err := executeCommand(RootCmd, "issue", "list",
+		"-l", "component:security",
+		"-l", "vulnerability",
+		"-l", "S2",
+		"-l", "!P1",
+		"-l", "-bug",
+		"-l", "!hotlist:triage",
+	)
+	if err != nil {
+		t.Fatalf("issue list with negated hotlist alias failed: %v\nOutput: %s", err, outList)
+	}
+	if !strings.Contains(outList, "300002") || !strings.Contains(outList, "P2/S2") {
+		t.Errorf("expected 300002 with P2/S2 in list output; got:\n%s", outList)
+	}
+	if strings.Contains(outList, "300001") {
+		t.Errorf("expected 300001 (on hotlist:triage) to be excluded by !hotlist:triage; got:\n%s", outList)
+	}
+
+	// Negating S2 system label (!S2) must exclude both S2 issues
+	outNegS2, err := executeCommand(RootCmd, "issue", "list",
+		"-l", "component:security",
+		"-l", "!S2",
+	)
+	if err != nil {
+		t.Fatalf("issue list with !S2 failed: %v\nOutput: %s", err, outNegS2)
+	}
+	if strings.Contains(outNegS2, "300001") || strings.Contains(outNegS2, "300002") {
+		t.Errorf("expected !S2 to exclude both S2 issues; got:\n%s", outNegS2)
+	}
+
+	// 5. Comment using -m / --message alias
+	outComment, err := executeCommand(RootCmd, "issue", "comment", "300002", "-m", "Triaged via -m flag")
+	if err != nil {
+		t.Fatalf("issue comment -m failed: %v\nOutput: %s", err, outComment)
+	}
+	comments, _ := srv.Client().ListComments(context.Background(), 300002, 10, "")
+	if len(comments.IssueComments) != 2 || comments.IssueComments[1].Comment != "Triaged via -m flag" {
+		t.Errorf("unexpected comments after issue comment -m: %+v", comments.IssueComments)
+	}
+
+	// Passing both -m and -b must fail fast
+	if _, errBoth := executeCommand(RootCmd, "issue", "comment", "300002", "-m", "msg", "-b", "body"); errBoth == nil {
+		t.Errorf("expected error when both -m and -b are passed to issue comment")
+	}
+
+	// 6. Edit issue 300002 with --severity, --status, --add-hotlist, and --remove-hotlist
+	outEdit, err := executeCommand(RootCmd, "issue", "edit", "300002",
+		"--severity", "S1",
+		"--status", "ACCEPTED",
+		"--add-hotlist", "triage",
+	)
+	if err != nil {
+		t.Fatalf("issue edit --severity/--status/--add-hotlist failed: %v\nOutput: %s", err, outEdit)
+	}
+	edited, _ := srv.Client().GetIssue(context.Background(), 300002)
+	if edited.State.Severity != "S1" || edited.State.Status != "ACCEPTED" || len(edited.State.HotlistIDs) != 1 || edited.State.HotlistIDs[0] != 7777 {
+		t.Errorf("unexpected edited state: %+v", edited.State)
+	}
+
+	if _, err := executeCommand(RootCmd, "issue", "edit", "300002", "--remove-hotlist", "triage"); err != nil {
+		t.Fatalf("issue edit --remove-hotlist failed: %v", err)
+	}
+	editedAfterRemove, _ := srv.Client().GetIssue(context.Background(), 300002)
+	if len(editedAfterRemove.State.HotlistIDs) != 0 {
+		t.Errorf("expected hotlist removed, got %+v", editedAfterRemove.State.HotlistIDs)
+	}
+
+	// 6b. Validation errors for invalid or cross-field --priority, --severity, --type, and --status on create & edit
+	t.Run("validation errors on create and edit", func(t *testing.T) {
+		invalidCases := []struct {
+			name    string
+			args    []string
+			wantErr string
+		}{
+			{
+				name:    "create invalid severity S9",
+				args:    []string{"issue", "create", "-t", "Bad sev", "--severity", "S9"},
+				wantErr: `invalid --severity "S9"`,
+			},
+			{
+				name:    "create priority passed to --severity",
+				args:    []string{"issue", "create", "-t", "Cross field", "--severity", "P2"},
+				wantErr: `invalid --severity "P2"; expected S0..S4`,
+			},
+			{
+				name:    "create severity passed to --priority",
+				args:    []string{"issue", "create", "-t", "Cross field", "--priority", "S1"},
+				wantErr: `invalid --priority "S1"; expected P0..P4`,
+			},
+			{
+				name:    "create priority passed to --type",
+				args:    []string{"issue", "create", "-t", "Cross field", "--type", "P1"},
+				wantErr: `invalid --type "P1"`,
+			},
+			{
+				name:    "edit invalid severity S9",
+				args:    []string{"issue", "edit", "300002", "--severity", "S9"},
+				wantErr: `invalid --severity "S9"; expected S0..S4`,
+			},
+			{
+				name:    "edit invalid status FINISHED",
+				args:    []string{"issue", "edit", "300002", "--status", "FINISHED"},
+				wantErr: `invalid Buganizer status "FINISHED"`,
+			},
+			{
+				name:    "edit severity S1 passed to --priority",
+				args:    []string{"issue", "edit", "300002", "--priority", "S1"},
+				wantErr: `invalid --priority "S1"; expected P0..P4`,
+			},
+			{
+				name:    "edit priority P2 passed to --severity",
+				args:    []string{"issue", "edit", "300002", "--severity", "P2"},
+				wantErr: `invalid --severity "P2"; expected S0..S4`,
+			},
+			{
+				name:    "edit priority P1 passed to --type",
+				args:    []string{"issue", "edit", "300002", "--type", "P1"},
+				wantErr: `invalid --type "P1"`,
+			},
+		}
+		for _, tc := range invalidCases {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := executeCommand(RootCmd, tc.args...)
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("executeCommand(%v) err = %v, want substring %q", tc.args, err, tc.wantErr)
+				}
+			})
+		}
+	})
+
+	// 7. Close with --reason wontfix and -m, then reopen with -m
+	if _, err := executeCommand(RootCmd, "issue", "close", "300002", "--duplicate-of", "300001", "--reason", "completed"); err == nil || !strings.Contains(err.Error(), "--duplicate-of can only be used with --reason duplicate") {
+		t.Errorf("expected error when combining --duplicate-of with --reason completed, got: %v", err)
+	}
+	if _, err := executeCommand(RootCmd, "issue", "close", "300002", "--reason", "wontfix", "-m", "False positive in static analysis."); err != nil {
+		t.Fatalf("issue close --reason wontfix -m failed: %v", err)
+	}
+	closedIss, _ := srv.Client().GetIssue(context.Background(), 300002)
+	if closedIss.State.Status != "INFEASIBLE" {
+		t.Errorf("expected status INFEASIBLE after --reason wontfix, got %q", closedIss.State.Status)
+	}
+	if _, err := executeCommand(RootCmd, "issue", "reopen", "300002", "-m", "Reopening for second look."); err != nil {
+		t.Fatalf("issue reopen -m failed: %v", err)
+	}
+	reopenedIss, _ := srv.Client().GetIssue(context.Background(), 300002)
+	if reopenedIss.State.Status != "ACCEPTED" {
+		t.Errorf("expected status ACCEPTED after reopen, got %q", reopenedIss.State.Status)
+	}
+}

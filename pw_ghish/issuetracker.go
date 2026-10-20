@@ -1035,18 +1035,73 @@ func (m *IssueModifier) SetTitle(title string) error {
 
 // SetPriority sets the issue priority (e.g., P0-P4).
 func (m *IssueModifier) SetPriority(priority string) error {
-	if _, err := ApplyLabelToState(m.addState, priority); err != nil {
-		return err
+	var parsed BuganizerState
+	field, err := ApplyLabelToState(&parsed, priority)
+	if err != nil || field != "priority" {
+		return fmt.Errorf("invalid --priority %q; expected P0..P4", priority)
 	}
+	m.addState.Priority = parsed.Priority
 	m.addMask("priority")
 	return nil
 }
 
-// SetType sets the issue type (e.g., BUG, FEATURE_REQUEST, TASK).
-func (m *IssueModifier) SetType(issueType string) error {
-	if _, err := ApplyLabelToState(m.addState, issueType); err != nil {
+// SetSeverity sets the issue severity (e.g., S0-S4).
+func (m *IssueModifier) SetSeverity(severity string) error {
+	var parsed BuganizerState
+	field, err := ApplyLabelToState(&parsed, severity)
+	if err != nil || field != "severity" {
+		return fmt.Errorf("invalid --severity %q; expected S0..S4", severity)
+	}
+	m.addState.Severity = parsed.Severity
+	m.addMask("severity")
+	return nil
+}
+
+// NormalizeIssueStatus normalizes a Buganizer status string or shorthand alias.
+func NormalizeIssueStatus(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "new":
+		return "NEW", nil
+	case "assigned":
+		return "ASSIGNED", nil
+	case "accepted":
+		return "ACCEPTED", nil
+	case "fixed", "completed":
+		return "FIXED", nil
+	case "verified":
+		return "VERIFIED", nil
+	case "obsolete", "not_planned", "not planned":
+		return "OBSOLETE", nil
+	case "infeasible", "wontfix", "wont_fix", "not_reproducible", "not reproducible":
+		return "INFEASIBLE", nil
+	case "intended_behavior", "intended behavior", "wai":
+		return "INTENDED_BEHAVIOR", nil
+	case "duplicate":
+		return "DUPLICATE", nil
+	default:
+		return "", fmt.Errorf("invalid Buganizer status %q; valid choices are NEW, ASSIGNED, ACCEPTED, FIXED, VERIFIED, INTENDED_BEHAVIOR (wai), INFEASIBLE (wontfix / not_reproducible), OBSOLETE (not_planned), or DUPLICATE", raw)
+	}
+}
+
+// SetStatus sets the issue status.
+func (m *IssueModifier) SetStatus(status string) error {
+	norm, err := NormalizeIssueStatus(status)
+	if err != nil {
 		return err
 	}
+	m.addState.Status = norm
+	m.addMask("status")
+	return nil
+}
+
+// SetType sets the issue type (e.g., BUG, FEATURE_REQUEST, TASK, VULNERABILITY).
+func (m *IssueModifier) SetType(issueType string) error {
+	var parsed BuganizerState
+	field, err := ApplyLabelToState(&parsed, issueType)
+	if err != nil || field != "type" {
+		return fmt.Errorf("invalid --type %q; expected bug, feature, task, cleanup, process, or vulnerability", issueType)
+	}
+	m.addState.Type = parsed.Type
 	m.addMask("type")
 	return nil
 }
@@ -1156,7 +1211,7 @@ func ApplyLabelToState(state *BuganizerState, label string) (string, error) {
 		state.Priority = upper
 		return "priority", nil
 	case strings.HasPrefix(lower, "priority:"):
-		p := strings.ToUpper(strings.TrimPrefix(lower, "priority:"))
+		p := strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(lower, "priority:")))
 		if p == "P0" || p == "P1" || p == "P2" || p == "P3" || p == "P4" {
 			state.Priority = p
 			return "priority", nil
@@ -1165,7 +1220,7 @@ func ApplyLabelToState(state *BuganizerState, label string) (string, error) {
 		state.Severity = upper
 		return "severity", nil
 	case strings.HasPrefix(lower, "severity:"):
-		s := strings.ToUpper(strings.TrimPrefix(lower, "severity:"))
+		s := strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(lower, "severity:")))
 		if s == "S0" || s == "S1" || s == "S2" || s == "S3" || s == "S4" {
 			state.Severity = s
 			return "severity", nil
@@ -1185,19 +1240,44 @@ func ApplyLabelToState(state *BuganizerState, label string) (string, error) {
 	case lower == "process" || lower == "type:process":
 		state.Type = "PROCESS"
 		return "type", nil
+	case lower == "vulnerability" || lower == "type:vulnerability":
+		state.Type = "VULNERABILITY"
+		return "type", nil
+	case strings.HasPrefix(lower, "type:"):
+		t := strings.TrimSpace(strings.TrimPrefix(lower, "type:"))
+		switch t {
+		case "bug":
+			state.Type = "BUG"
+			return "type", nil
+		case "feature", "enhancement":
+			state.Type = "FEATURE_REQUEST"
+			return "type", nil
+		case "task":
+			state.Type = "TASK"
+			return "type", nil
+		case "cleanup":
+			state.Type = "INTERNAL_CLEANUP"
+			return "type", nil
+		case "process":
+			state.Type = "PROCESS"
+			return "type", nil
+		case "vulnerability":
+			state.Type = "VULNERABILITY"
+			return "type", nil
+		}
 	case strings.HasPrefix(lower, "component:"):
-		idStr := strings.TrimPrefix(lower, "component:")
+		idStr := strings.TrimSpace(clean[len("component:"):])
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil || id <= 0 {
-			return "", fmt.Errorf("invalid component ID in label %q", label)
+			return "", fmt.Errorf("invalid component ID or unknown alias %q in label %q (configure aliases under [issue.components] in .ghish.toml)", idStr, label)
 		}
 		state.ComponentID = FlexInt64(id)
 		return "componentId", nil
 	case strings.HasPrefix(lower, "hotlist:"):
-		idStr := strings.TrimPrefix(lower, "hotlist:")
+		idStr := strings.TrimSpace(clean[len("hotlist:"):])
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil || id <= 0 {
-			return "", fmt.Errorf("invalid hotlist ID in label %q", label)
+			return "", fmt.Errorf("invalid hotlist ID or unknown alias %q in label %q (configure aliases under [issue.hotlists] in .ghish.toml)", idStr, label)
 		}
 		state.HotlistIDs = append(state.HotlistIDs, FlexInt64(id))
 		return "hotlistIds", nil
@@ -1206,32 +1286,44 @@ func ApplyLabelToState(state *BuganizerState, label string) (string, error) {
 	return "", fmt.Errorf("unsupported Buganizer label format %q.\n\n"+
 		"Cause: Google Issue Tracker uses structured fields instead of arbitrary text labels.\n\n"+
 		"Supported label formats:\n"+
-		"  - Priority: P0, P1, P2, P3, P4 (or priority:P1)\n"+
-		"  - Severity: S0, S1, S2, S3, S4 (or severity:S2)\n"+
-		"  - Type:     bug, feature, task, cleanup, process\n"+
-		"  - Hotlist:  hotlist:<id>\n"+
-		"  - Component: component:<id>", label)
+		"  - Priority:  P0, P1, P2, P3, P4 (or priority:P1)\n"+
+		"  - Severity:  S0, S1, S2, S3, S4 (or severity:S2)\n"+
+		"  - Type:      bug, feature, task, cleanup, process, vulnerability\n"+
+		"  - Hotlist:   hotlist:<id|alias>\n"+
+		"  - Component: component:<id|alias>", label)
 }
 
 // LabelToQueryToken converts a GitHub-style label into a Buganizer search query predicate.
+// A leading '-' or '!' negates the predicate (e.g. "-hotlist:123" -> "-hotlistid:123",
+// "!S2" -> "-severity:S2").
 func LabelToQueryToken(label string) (string, error) {
+	clean := strings.TrimSpace(label)
+	negated := false
+	if strings.HasPrefix(clean, "-") || strings.HasPrefix(clean, "!") {
+		negated = true
+		clean = strings.TrimSpace(clean[1:])
+	}
 	var parsedState BuganizerState
-	field, err := ApplyLabelToState(&parsedState, label)
+	field, err := ApplyLabelToState(&parsedState, clean)
 	if err != nil {
 		return "", err
 	}
+	prefix := ""
+	if negated {
+		prefix = "-"
+	}
 	switch field {
 	case "priority":
-		return fmt.Sprintf("priority:%s", parsedState.Priority), nil
+		return fmt.Sprintf("%spriority:%s", prefix, parsedState.Priority), nil
 	case "severity":
-		return fmt.Sprintf("severity:%s", parsedState.Severity), nil
+		return fmt.Sprintf("%sseverity:%s", prefix, parsedState.Severity), nil
 	case "type":
-		return fmt.Sprintf("type:%s", parsedState.Type), nil
+		return fmt.Sprintf("%stype:%s", prefix, parsedState.Type), nil
 	case "componentId":
-		return fmt.Sprintf("componentid:%d", parsedState.ComponentID), nil
+		return fmt.Sprintf("%scomponentid:%d", prefix, parsedState.ComponentID), nil
 	case "hotlistIds":
 		if len(parsedState.HotlistIDs) > 0 {
-			return fmt.Sprintf("hotlistid:%d", parsedState.HotlistIDs[0]), nil
+			return fmt.Sprintf("%shotlistid:%d", prefix, parsedState.HotlistIDs[0]), nil
 		}
 	}
 	return "", fmt.Errorf("unsupported query label %q", label)
@@ -1284,6 +1376,7 @@ var allowedIssueJSONFields = map[string]bool{
 	"severity":    true,
 	"type":        true,
 	"componentId": true,
+	"hotlistIds":  true,
 }
 
 // ValidateIssueJSONFields validates a comma-separated list of --json fields against the supported schema.
@@ -1301,7 +1394,7 @@ func ValidateIssueJSONFields(fieldsStr string) ([]string, error) {
 			return nil, fmt.Errorf("unknown JSON field: %q\n\n"+
 				"Available fields for gh issue --json:\n"+
 				"  number, title, state, stateReason, body, author, assignees, labels,\n"+
-				"  comments, createdAt, updatedAt, closedAt, url, priority, severity, type, componentId", f)
+				"  comments, createdAt, updatedAt, closedAt, url, priority, severity, type, componentId, hotlistIds", f)
 		}
 		fields = append(fields, f)
 	}
@@ -1363,6 +1456,11 @@ func IssueToJSONMap(issue *BuganizerIssue, comments []BuganizerComment, profile 
 		closedAt = issue.ResolvedTime.Format(time.RFC3339)
 	}
 
+	hotlistIDs := make([]int64, 0, len(issue.State.HotlistIDs))
+	for _, hid := range issue.State.HotlistIDs {
+		hotlistIDs = append(hotlistIDs, int64(hid))
+	}
+
 	full := map[string]any{
 		"number":      int64(issue.IssueID),
 		"title":       issue.State.Title,
@@ -1381,6 +1479,7 @@ func IssueToJSONMap(issue *BuganizerIssue, comments []BuganizerComment, profile 
 		"severity":    issue.State.Severity,
 		"type":        issue.State.Type,
 		"componentId": int64(issue.State.ComponentID),
+		"hotlistIds":  hotlistIDs,
 	}
 
 	if len(fields) == 0 {

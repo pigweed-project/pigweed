@@ -425,11 +425,21 @@ var issueViewCmd = &cobra.Command{
 		if issue.State.Priority != "" {
 			fmt.Fprintf(out, "Priority:  %s\n", issue.State.Priority)
 		}
+		if issue.State.Severity != "" {
+			fmt.Fprintf(out, "Severity:  %s\n", issue.State.Severity)
+		}
 		if issue.State.Type != "" {
 			fmt.Fprintf(out, "Type:      %s\n", issue.State.Type)
 		}
 		if issue.State.ComponentID > 0 {
 			fmt.Fprintf(out, "Component: %d\n", issue.State.ComponentID)
+		}
+		if len(issue.State.HotlistIDs) > 0 {
+			hids := make([]string, 0, len(issue.State.HotlistIDs))
+			for _, hid := range issue.State.HotlistIDs {
+				hids = append(hids, strconv.FormatInt(int64(hid), 10))
+			}
+			fmt.Fprintf(out, "Hotlists:  %s\n", strings.Join(hids, ", "))
 		}
 		if issue.State.Assignee != nil && issue.State.Assignee.EmailAddress != "" {
 			fmt.Fprintf(out, "Assignee:  %s\n", issue.State.Assignee.EmailAddress)
@@ -506,9 +516,26 @@ var issueListCmd = &cobra.Command{
 			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
 		}
 		profile := cfg.GetProfile(ctx)
+		pcfg, err := cfg.LoadProjectConfig(ctx)
+		if err != nil {
+			return err
+		}
+
+		var labelTokens []string
+		hasPositiveComponentLabel := false
+		for _, l := range issueListLabels {
+			token, err := LabelToQueryToken(pcfg.ExpandIssueLabel(l))
+			if err != nil {
+				return err
+			}
+			if strings.HasPrefix(token, "componentid:") {
+				hasPositiveComponentLabel = true
+			}
+			labelTokens = append(labelTokens, token)
+		}
 
 		var queryParts []string
-		if !issueListAllComponents {
+		if !issueListAllComponents && (issueListComponent > 0 || !hasPositiveComponentLabel) {
 			compID, err := resolveComponentID(ctx, cfg, issueListComponent)
 			if err != nil {
 				return err
@@ -538,13 +565,7 @@ var issueListCmd = &cobra.Command{
 			queryParts = append(queryParts, fmt.Sprintf("reporter:%s", author))
 		}
 
-		for _, l := range issueListLabels {
-			token, err := LabelToQueryToken(l)
-			if err != nil {
-				return err
-			}
-			queryParts = append(queryParts, token)
-		}
+		queryParts = append(queryParts, labelTokens...)
 
 		if issueListSearch != "" {
 			queryParts = append(queryParts, issueListSearch)
@@ -588,6 +609,9 @@ var issueListCmd = &cobra.Command{
 			pri := iss.State.Priority
 			if pri == "" {
 				pri = "--"
+			}
+			if iss.State.Severity != "" {
+				pri = fmt.Sprintf("%s/%s", pri, iss.State.Severity)
 			}
 			fmt.Fprintf(out, "b/%-9d  %-10s  %-4s  %-24s  %s\n",
 				iss.IssueID, iss.State.Status, pri, assignee, SanitizeUntrustedText(iss.State.Title))
@@ -703,6 +727,7 @@ var (
 	issueCreateAssignee  string
 	issueCreateLabels    []string
 	issueCreatePriority  string
+	issueCreateSeverity  string
 	issueCreateType      string
 	issueCreateComponent int64
 	issueCreateCCs       []string
@@ -738,17 +763,14 @@ var issueCreateCmd = &cobra.Command{
 			}
 		}
 
-		compID, err := resolveComponentID(ctx, cfg, issueCreateComponent)
+		pcfg, err := cfg.LoadProjectConfig(ctx)
 		if err != nil {
 			return err
 		}
-		if compID <= 0 {
-			return fmt.Errorf("no Buganizer component ID configured for this project.\n\n" +
-				"Remediation:\n" +
-				"  1. Specify a component ID via flag:\n" +
-				"     gh issue create -C <component_id> -t ...\n" +
-				"  2. Or set a default repository component ID in git config:\n" +
-				"     git config ghish.componentid <component_id>")
+
+		compID, err := resolveComponentID(ctx, cfg, issueCreateComponent)
+		if err != nil {
+			return err
 		}
 
 		state := BuganizerState{
@@ -760,19 +782,39 @@ var issueCreateCmd = &cobra.Command{
 		}
 
 		for _, l := range issueCreateLabels {
-			if _, err := ApplyLabelToState(&state, l); err != nil {
+			if _, err := ApplyLabelToState(&state, pcfg.ExpandIssueLabel(l)); err != nil {
 				return err
 			}
 		}
 		if issueCreatePriority != "" {
-			if _, err := ApplyLabelToState(&state, issueCreatePriority); err != nil {
-				return err
+			var parsed BuganizerState
+			if field, err := ApplyLabelToState(&parsed, issueCreatePriority); err != nil || field != "priority" {
+				return fmt.Errorf("invalid --priority %q; expected P0..P4", issueCreatePriority)
 			}
+			state.Priority = parsed.Priority
+		}
+		if issueCreateSeverity != "" {
+			var parsed BuganizerState
+			if field, err := ApplyLabelToState(&parsed, issueCreateSeverity); err != nil || field != "severity" {
+				return fmt.Errorf("invalid --severity %q; expected S0..S4", issueCreateSeverity)
+			}
+			state.Severity = parsed.Severity
 		}
 		if issueCreateType != "" {
-			if _, err := ApplyLabelToState(&state, issueCreateType); err != nil {
-				return err
+			var parsed BuganizerState
+			if field, err := ApplyLabelToState(&parsed, issueCreateType); err != nil || field != "type" {
+				return fmt.Errorf("invalid --type %q; expected bug, feature, task, cleanup, process, or vulnerability", issueCreateType)
 			}
+			state.Type = parsed.Type
+		}
+
+		if state.ComponentID <= 0 {
+			return fmt.Errorf("no Buganizer component ID configured for this project.\n\n" +
+				"Remediation:\n" +
+				"  1. Specify a component ID via flag:\n" +
+				"     gh issue create -C <component_id> -t ...\n" +
+				"  2. Or set a default repository component ID in git config:\n" +
+				"     git config ghish.componentid <component_id>")
 		}
 
 		if issueCreateAssignee != "" {
@@ -798,6 +840,9 @@ var issueCreateCmd = &cobra.Command{
 			return err
 		}
 
+		hotlistsToAdd := append([]FlexInt64(nil), state.HotlistIDs...)
+		state.HotlistIDs = nil
+
 		req := &CreateIssueRequest{
 			IssueState: state,
 		}
@@ -808,6 +853,11 @@ var issueCreateCmd = &cobra.Command{
 		created, err := client.CreateIssue(ctx, req)
 		if err != nil {
 			return err
+		}
+		for _, hid := range hotlistsToAdd {
+			if err := client.CreateHotlistEntry(ctx, int64(hid), int64(created.IssueID)); err != nil {
+				return err
+			}
 		}
 
 		profile := cfg.GetProfile(ctx)
@@ -821,7 +871,7 @@ var issueCreateCmd = &cobra.Command{
 			}
 
 			var trailerFmt string
-			if pcfg := cfg.GetProjectConfig(ctx); pcfg != nil {
+			if pcfg != nil {
 				trailerFmt = strings.TrimSpace(pcfg.Issue.TrailerFormat)
 			}
 
@@ -870,7 +920,11 @@ var (
 	issueEditRemoveAssignee string
 	issueEditAddLabels      []string
 	issueEditRemoveLabels   []string
+	issueEditAddHotlists    []string
+	issueEditRemoveHotlists []string
 	issueEditPriority       string
+	issueEditSeverity       string
+	issueEditStatus         string
 	issueEditType           string
 	issueEditComponent      int64
 )
@@ -882,6 +936,15 @@ var issueEditCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		issueID, err := resolveTargetIssueID(ctx, cmd, args)
+		if err != nil {
+			return err
+		}
+
+		cfg := GetConfig(cmd)
+		if cfg == nil {
+			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
+		}
+		pcfg, err := cfg.LoadProjectConfig(ctx)
 		if err != nil {
 			return err
 		}
@@ -909,6 +972,11 @@ var issueEditCmd = &cobra.Command{
 				return err
 			}
 		}
+		if issueEditSeverity != "" {
+			if err := mod.SetSeverity(issueEditSeverity); err != nil {
+				return err
+			}
+		}
 		if issueEditType != "" {
 			if err := mod.SetType(issueEditType); err != nil {
 				return err
@@ -919,19 +987,26 @@ var issueEditCmd = &cobra.Command{
 		}
 
 		for _, l := range issueEditAddLabels {
-			if err := mod.AddLabel(l); err != nil {
+			if err := mod.AddLabel(pcfg.ExpandIssueLabel(l)); err != nil {
 				return err
 			}
 		}
 		for _, l := range issueEditRemoveLabels {
-			if err := mod.RemoveLabel(l); err != nil {
+			if err := mod.RemoveLabel(pcfg.ExpandIssueLabel(l)); err != nil {
 				return err
 			}
 		}
-
-		cfg := GetConfig(cmd)
-		if cfg == nil {
-			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
+		for _, h := range issueEditAddHotlists {
+			lbl := "hotlist:" + strings.TrimPrefix(strings.TrimSpace(h), "hotlist:")
+			if err := mod.AddLabel(pcfg.ExpandIssueLabel(lbl)); err != nil {
+				return err
+			}
+		}
+		for _, h := range issueEditRemoveHotlists {
+			lbl := "hotlist:" + strings.TrimPrefix(strings.TrimSpace(h), "hotlist:")
+			if err := mod.RemoveLabel(pcfg.ExpandIssueLabel(lbl)); err != nil {
+				return err
+			}
 		}
 
 		if issueEditAddAssignee != "" {
@@ -943,6 +1018,11 @@ var issueEditCmd = &cobra.Command{
 		}
 		if issueEditRemoveAssignee != "" {
 			mod.RemoveAssignee()
+		}
+		if issueEditStatus != "" {
+			if err := mod.SetStatus(issueEditStatus); err != nil {
+				return err
+			}
 		}
 
 		if !mod.HasChanges() {
@@ -977,6 +1057,7 @@ var issueEditCmd = &cobra.Command{
 
 var (
 	issueCloseComment     string
+	issueCloseMessage     string
 	issueCloseReason      string
 	issueCloseDuplicateOf int64
 )
@@ -992,20 +1073,30 @@ var issueCloseCmd = &cobra.Command{
 			return err
 		}
 
+		commentText := strings.TrimSpace(issueCloseComment)
+		if strings.TrimSpace(issueCloseMessage) != "" {
+			if commentText != "" && commentText != strings.TrimSpace(issueCloseMessage) {
+				return fmt.Errorf("cannot specify both --comment (-c) and --message (-m)")
+			}
+			commentText = strings.TrimSpace(issueCloseMessage)
+		}
+
 		targetStatus := "FIXED"
 		if issueCloseDuplicateOf > 0 {
 			targetStatus = "DUPLICATE"
-		} else if issueCloseReason != "" {
-			switch strings.ToLower(strings.TrimSpace(issueCloseReason)) {
-			case "completed", "fixed":
-				targetStatus = "FIXED"
-			case "not planned", "not_planned", "obsolete":
-				targetStatus = "OBSOLETE"
-			case "duplicate":
-				return fmt.Errorf("--reason duplicate requires --duplicate-of <issue_id>")
-			default:
-				return fmt.Errorf("invalid --reason %q; valid choices are 'completed' or 'not planned'", issueCloseReason)
+		}
+		if issueCloseReason != "" {
+			norm, err := NormalizeIssueStatus(issueCloseReason)
+			if err != nil || IsIssueOpen(norm) {
+				return fmt.Errorf("invalid --reason %q; valid choices are 'completed' ('fixed'), 'not planned' ('obsolete'), 'wontfix' ('infeasible' / 'not_reproducible'), 'intended_behavior' ('wai'), or 'duplicate'", issueCloseReason)
 			}
+			if norm == "DUPLICATE" && issueCloseDuplicateOf <= 0 {
+				return fmt.Errorf("--reason duplicate requires --duplicate-of <issue_id>")
+			}
+			if issueCloseDuplicateOf > 0 && norm != "DUPLICATE" {
+				return fmt.Errorf("--duplicate-of can only be used with --reason duplicate (got %q)", issueCloseReason)
+			}
+			targetStatus = norm
 		}
 
 		client, err := NewIssueTrackerClientForCommand(ctx, cmd)
@@ -1013,7 +1104,7 @@ var issueCloseCmd = &cobra.Command{
 			return err
 		}
 
-		updated, err := client.CloseIssue(ctx, issueID, targetStatus, issueCloseDuplicateOf, issueCloseComment)
+		updated, err := client.CloseIssue(ctx, issueID, targetStatus, issueCloseDuplicateOf, commentText)
 		if err != nil {
 			return err
 		}
@@ -1023,7 +1114,10 @@ var issueCloseCmd = &cobra.Command{
 	},
 }
 
-var issueReopenComment string
+var (
+	issueReopenComment string
+	issueReopenMessage string
+)
 
 var issueReopenCmd = &cobra.Command{
 	Use:   "reopen [<number> | <url>]",
@@ -1036,12 +1130,20 @@ var issueReopenCmd = &cobra.Command{
 			return err
 		}
 
+		commentText := strings.TrimSpace(issueReopenComment)
+		if strings.TrimSpace(issueReopenMessage) != "" {
+			if commentText != "" && commentText != strings.TrimSpace(issueReopenMessage) {
+				return fmt.Errorf("cannot specify both --comment (-c) and --message (-m)")
+			}
+			commentText = strings.TrimSpace(issueReopenMessage)
+		}
+
 		client, err := NewIssueTrackerClientForCommand(ctx, cmd)
 		if err != nil {
 			return err
 		}
 
-		updated, err := client.ReopenIssue(ctx, issueID, issueReopenComment)
+		updated, err := client.ReopenIssue(ctx, issueID, commentText)
 		if err != nil {
 			return err
 		}
@@ -1053,6 +1155,7 @@ var issueReopenCmd = &cobra.Command{
 
 var (
 	issueCommentBody     string
+	issueCommentMessage  string
 	issueCommentBodyFile string
 )
 
@@ -1067,12 +1170,22 @@ var issueCommentCmd = &cobra.Command{
 			return err
 		}
 
-		body, err := readBodyInput(issueCommentBody, issueCommentBodyFile, cmd.InOrStdin())
+		if issueCommentMessage != "" && issueCommentBody != "" {
+			return fmt.Errorf("cannot specify both --message (-m) and --body (-b)")
+		}
+		if issueCommentMessage != "" && issueCommentBodyFile != "" {
+			return fmt.Errorf("cannot specify both --message (-m) and --body-file (-F)")
+		}
+		rawBody := issueCommentBody
+		if rawBody == "" {
+			rawBody = issueCommentMessage
+		}
+		body, err := readBodyInput(rawBody, issueCommentBodyFile, cmd.InOrStdin())
 		if err != nil {
 			return err
 		}
 		if strings.TrimSpace(body) == "" {
-			return fmt.Errorf("comment body cannot be empty; specify --body (-b) or --body-file (-F)")
+			return fmt.Errorf("comment body cannot be empty; pass --message (-m), --body (-b), or --body-file (-F)")
 		}
 
 		client, err := NewIssueTrackerClientForCommand(ctx, cmd)
@@ -1189,7 +1302,7 @@ func init() {
 
 	issueListCmd.Flags().StringVarP(&issueListAssignee, "assignee", "a", "", "Filter by assignee email (or 'me')")
 	issueListCmd.Flags().StringVarP(&issueListAuthor, "author", "A", "", "Filter by reporter/author email (or 'me')")
-	issueListCmd.Flags().StringSliceVarP(&issueListLabels, "label", "l", nil, "Filter by priority/type/hotlist label (e.g. P1, bug)")
+	issueListCmd.Flags().StringSliceVarP(&issueListLabels, "label", "l", nil, "Filter by priority/severity/type/hotlist/component label (prefix with '-' or '!' to negate)")
 	issueListCmd.Flags().StringVarP(&issueListState, "state", "s", "open", "Filter by state: {open|closed|all}")
 	issueListCmd.Flags().StringVarP(&issueListSearch, "search", "S", "", "Search issues with a Buganizer query")
 	issueListCmd.Flags().IntVarP(&issueListLimit, "limit", "L", 30, "Maximum number of issues to fetch")
@@ -1203,9 +1316,11 @@ func init() {
 	issueCreateCmd.Flags().StringVarP(&issueCreateBody, "body", "b", "", "Issue description body")
 	issueCreateCmd.Flags().StringVarP(&issueCreateBodyFile, "body-file", "F", "", "Read description body from file (use \"-\" to read from standard input)")
 	issueCreateCmd.Flags().StringVarP(&issueCreateAssignee, "assignee", "a", "", "Assign issue to email (or 'me')")
-	issueCreateCmd.Flags().StringSliceVarP(&issueCreateLabels, "label", "l", nil, "Add structured labels (e.g. P1, bug, feature)")
+	issueCreateCmd.Flags().StringSliceVarP(&issueCreateLabels, "label", "l", nil, "Add structured labels (e.g. P1, S2, bug, vulnerability, hotlist:<id|alias>)")
 	issueCreateCmd.Flags().StringVarP(&issueCreatePriority, "priority", "P", "", "Buganizer priority (P0..P4)")
-	issueCreateCmd.Flags().StringVarP(&issueCreateType, "type", "T", "", "Buganizer issue type (bug, feature, task, cleanup, process)")
+	//ghish:flag mode=extension reason="Set Buganizer issue severity S0..S4"
+	issueCreateCmd.Flags().StringVarP(&issueCreateSeverity, "severity", "S", "", "Buganizer severity (S0..S4) (ghish-only)")
+	issueCreateCmd.Flags().StringVarP(&issueCreateType, "type", "T", "", "Buganizer issue type (bug, feature, task, cleanup, process, vulnerability)")
 	issueCreateCmd.Flags().Int64VarP(&issueCreateComponent, "component", "C", 0, "Buganizer component ID")
 	issueCreateCmd.Flags().StringSliceVar(&issueCreateCCs, "cc", nil, "Comma-separated emails to CC")
 	issueCreateCmd.Flags().BoolVar(&issueCreateAmend, "amend", false, "Amend current Git HEAD commit with 'Bug: b/<new-id>'")
@@ -1213,19 +1328,33 @@ func init() {
 	issueEditCmd.Flags().StringVarP(&issueEditTitle, "title", "t", "", "New issue title")
 	issueEditCmd.Flags().StringVar(&issueEditAddAssignee, "add-assignee", "", "Set issue assignee email")
 	issueEditCmd.Flags().StringVar(&issueEditRemoveAssignee, "remove-assignee", "", "Remove issue assignee")
-	issueEditCmd.Flags().StringSliceVarP(&issueEditAddLabels, "add-label", "l", nil, "Add priority/type/hotlist labels")
-	issueEditCmd.Flags().StringSliceVar(&issueEditRemoveLabels, "remove-label", nil, "Remove hotlist labels")
+	issueEditCmd.Flags().StringSliceVarP(&issueEditAddLabels, "add-label", "l", nil, "Add priority/severity/type/hotlist labels")
+	issueEditCmd.Flags().StringSliceVar(&issueEditRemoveLabels, "remove-label", nil, "Remove priority/severity/type/hotlist labels")
+	//ghish:flag mode=extension reason="Add issue to Buganizer hotlist ID or alias"
+	issueEditCmd.Flags().StringSliceVar(&issueEditAddHotlists, "add-hotlist", nil, "Add issue to Buganizer hotlist ID or alias (ghish-only)")
+	//ghish:flag mode=extension reason="Remove issue from Buganizer hotlist ID or alias"
+	issueEditCmd.Flags().StringSliceVar(&issueEditRemoveHotlists, "remove-hotlist", nil, "Remove issue from Buganizer hotlist ID or alias (ghish-only)")
 	issueEditCmd.Flags().StringVarP(&issueEditPriority, "priority", "P", "", "Set Buganizer priority (P0..P4)")
-	issueEditCmd.Flags().StringVarP(&issueEditType, "type", "T", "", "Set Buganizer issue type (bug, feature, task)")
+	//ghish:flag mode=extension reason="Set Buganizer issue severity S0..S4"
+	issueEditCmd.Flags().StringVarP(&issueEditSeverity, "severity", "S", "", "Set Buganizer severity (S0..S4) (ghish-only)")
+	//ghish:flag mode=extension reason="Set Buganizer issue status"
+	issueEditCmd.Flags().StringVar(&issueEditStatus, "status", "", "Set Buganizer status (NEW, ASSIGNED, ACCEPTED, FIXED, VERIFIED, INTENDED_BEHAVIOR, INFEASIBLE, OBSOLETE, DUPLICATE) (ghish-only)")
+	issueEditCmd.Flags().StringVarP(&issueEditType, "type", "T", "", "Set Buganizer issue type (bug, feature, task, cleanup, process, vulnerability)")
 	issueEditCmd.Flags().Int64VarP(&issueEditComponent, "component", "C", 0, "Move issue to Buganizer component ID")
 
 	issueCloseCmd.Flags().StringVarP(&issueCloseComment, "comment", "c", "", "Post a closing comment")
-	issueCloseCmd.Flags().StringVarP(&issueCloseReason, "reason", "r", "", "Reason for closing: {completed|not planned}")
+	//ghish:flag mode=extension reason="Alias for --comment on issue close"
+	issueCloseCmd.Flags().StringVarP(&issueCloseMessage, "message", "m", "", "Post a closing comment (alias for --comment) (ghish-only)")
+	issueCloseCmd.Flags().StringVarP(&issueCloseReason, "reason", "r", "", "Reason for closing: {completed|not planned|wontfix|not_reproducible|intended_behavior|duplicate}")
 	issueCloseCmd.Flags().Int64Var(&issueCloseDuplicateOf, "duplicate-of", 0, "Close as DUPLICATE of another issue ID")
 
 	issueReopenCmd.Flags().StringVarP(&issueReopenComment, "comment", "c", "", "Post a reopening comment")
+	//ghish:flag mode=extension reason="Alias for --comment on issue reopen"
+	issueReopenCmd.Flags().StringVarP(&issueReopenMessage, "message", "m", "", "Post a reopening comment (alias for --comment) (ghish-only)")
 
 	issueCommentCmd.Flags().StringVarP(&issueCommentBody, "body", "b", "", "Comment text")
+	//ghish:flag mode=extension reason="Alias for --body on issue comment"
+	issueCommentCmd.Flags().StringVarP(&issueCommentMessage, "message", "m", "", "Comment text (alias for --body) (ghish-only)")
 	issueCommentCmd.Flags().StringVarP(&issueCommentBodyFile, "body-file", "F", "", "Read comment text from file (use \"-\" to read from standard input)")
 
 	issueDevelopCmd.Flags().StringVarP(&issueDevelopBase, "base", "b", "", "Base branch to branch from")

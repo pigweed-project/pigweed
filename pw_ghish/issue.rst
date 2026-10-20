@@ -78,9 +78,13 @@ lists open issues in the project's configured default Buganizer component:
    $ ./gh issue list --assignee @me
    $ ./gh issue list --assignee "keir@google.com"
 
-   # Filter by priority, type, or a specific Buganizer component ID:
+   # Filter by priority, severity, type, or a specific Buganizer component ID:
    $ ./gh issue list --label priority:P1 --label type:BUG
+   $ ./gh issue list --label vulnerability --label S2
    $ ./gh issue list --label component:123456 --limit 20
+
+   # Exclude issues already on a triage hotlist by prefixing with '-' or '!':
+   $ ./gh issue list -l S2 -l "!hotlist:9876543"
 
    # Combine structured flags with full-text Buganizer query syntax:
    $ ./gh issue list --search "pw_async2 dispatcher deadlock" --state all
@@ -88,7 +92,8 @@ lists open issues in the project's configured default Buganizer component:
 Inspecting details and threads: issue view
 ==========================================
 Once you identify an issue of interest, inspect its description, metadata
-(priority, severity, status, assignee, component ID), and discussion history:
+(priority, severity, status, assignee, component ID, hotlists), and discussion
+history:
 
 .. code-block:: console
 
@@ -158,7 +163,9 @@ Automatic Buganizer component resolution
 When creating or listing issues, ``pw_ghish`` resolves the target Buganizer
 component ID using a 6-tier priority order:
 
-1. Explicit CLI flag: ``-C <id>`` / ``--component <id>`` or ``-l component:<id>``.
+1. Explicit CLI flag: ``-C <id>`` / ``--component <id>`` or
+   ``-l component:<id|alias>`` (where aliases are defined under
+   ``[issue.components]`` in ``.ghish.toml``).
 2. ``[issue.path_components]`` in ``.ghish.toml`` (or ``git config
    ghish.issue.pathComponents.<prefix>``): matches modified files in ``HEAD`` or
    the current working directory against configured path prefixes or globs
@@ -215,10 +222,10 @@ metadata accurate from the command line.
 
 Posting progress updates: issue comment
 =======================================
-Add comments inline with ``-m`` / ``--body`` or from a file with
-``--body-file`` (use ``-`` to read from standard input). Formatting for issue
-descriptions and comments is assumed to be Markdown, so fenced code blocks,
-headings, lists, and links render natively in the Buganizer UI:
+Add comments inline with ``-m`` / ``--message`` or ``-b`` / ``--body``, or from
+a file with ``--body-file`` (use ``-`` to read from standard input). Formatting
+for issue descriptions and comments is assumed to be Markdown, so fenced code
+blocks, headings, lists, and links render natively in the Buganizer UI:
 
 .. code-block:: console
 
@@ -240,7 +247,9 @@ Modify the title, description, assignee, or structured Buganizer fields using
    $ ./gh issue edit --add-label priority:P1,severity:S1
    $ ./gh issue edit --add-label component:654321
 
-   # Add or remove an issue from a Buganizer hotlist:
+   # Add or remove an issue from a Buganizer hotlist (by numeric ID or .ghish.toml alias):
+   $ ./gh issue edit --add-hotlist 9876543 --remove-hotlist 1112223
+   $ ./gh issue edit --severity S1 --status ACCEPTED
    $ ./gh issue edit --add-label hotlist:9876543
    $ ./gh issue edit --remove-label hotlist:9876543
 
@@ -261,12 +270,12 @@ Modify the title, description, assignee, or structured Buganizer fields using
      - ``--add-label severity:S2``
    * - ``type:<TYPE>``
      - Issue Type
-     - ``--add-label type:BUG`` (``BUG``, ``FEATURE``, ``TASK``)
-   * - ``component:<id>``
-     - Component ID
+     - ``--add-label type:BUG`` (``bug``, ``feature``, ``task``, ``cleanup``, ``process``, ``vulnerability``)
+   * - ``component:<id|alias>``
+     - Component ID (or ``[issue.components]`` alias)
      - ``--add-label component:123456``
-   * - ``hotlist:<id>``
-     - Hotlist IDs
+   * - ``hotlist:<id|alias>``
+     - Hotlist IDs (or ``[issue.hotlists]`` alias)
      - ``--add-label hotlist:9876543``
 
 ------------------------
