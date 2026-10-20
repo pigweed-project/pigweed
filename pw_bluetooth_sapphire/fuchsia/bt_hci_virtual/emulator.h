@@ -14,10 +14,8 @@
 
 #pragma once
 
-#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <pw_async/task.h>
 #include <pw_async_fuchsia/dispatcher.h>
@@ -33,39 +31,25 @@ namespace bt_hci_virtual {
 
 enum class ChannelType : uint8_t { ACL, COMMAND, EMULATOR, ISO, SNOOP };
 
-// Adds the device's node with `args`; returns the status of doing so, which
-// `Initialize()` returns to its caller.
-using AddChildCallback =
-    fit::function<zx_status_t(fuchsia_driver_framework::wire::NodeAddArgs)>;
 using ShutdownCallback = fit::function<void()>;
 
 class EmulatorDevice
-    : public fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>,
-      public fidl::Server<fuchsia_hardware_bluetooth::Emulator>,
+    : public fidl::Server<fuchsia_hardware_bluetooth::Emulator>,
       public fidl::Server<fuchsia_hardware_bluetooth::HciTransport>,
       public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
  public:
   explicit EmulatorDevice();
   ~EmulatorDevice();
 
-  // fidl::WireAsyncEventHandler<Node> override. This error handler is called
-  // when the emulator's node is removed by the driver framework (e.g. via
-  // devfs `fuchsia.device.Controller/ScheduleUnbind`). We call `Shutdown()` to
-  // manually delete the heap-allocated EmulatorDevice.
-  void on_fidl_error(fidl::UnbindInfo error) override { Shutdown(); }
-
-  void handle_unknown_event(
-      fidl::UnknownEventMetadata<fuchsia_driver_framework::Node> metadata)
-      override {}
-
   // Methods used by the VirtualController to control the EmulatorDevice's
-  // lifecycle
-  zx_status_t Initialize(
-      std::string_view name,
-      AddChildCallback callback,
-      ShutdownCallback shutdown,
-      fdf::OutgoingDirectory* outgoing = nullptr,
-      std::string_view service_instance_name = fdf::kDefaultInstance);
+  // lifecycle.
+  //
+  // `name` identifies this emulator: if `outgoing` is non-null, `Publish`
+  // publishes the fuchsia.hardware.bluetooth.Service instance `name` to it.
+  // `shutdown` is invoked by `Shutdown()`.
+  zx_status_t Initialize(std::string_view name,
+                         ShutdownCallback shutdown,
+                         fdf::OutgoingDirectory* outgoing = nullptr);
   void Shutdown();
 
   // Serves the fuchsia.hardware.bluetooth.Emulator protocol on `request`.
@@ -74,9 +58,9 @@ class EmulatorDevice
   // lifetime of the emulator is tied to that connection. When the owner
   // disconnects, the EmulatorDevice calls `Shutdown()`, which unpublishes the
   // HCI vendor service, closes all other Emulator connections, and invokes the
-  // ShutdownCallback passed to `Initialize()` (in the driver, that callback
-  // removes the emulator's node and destroys this object). This gives clients
-  // a way to destroy an emulator that does not depend on devfs. Later
+  // ShutdownCallback passed to `Initialize()` (in the VirtualController, that
+  // callback removes the emulator's node and destroys this object). This gives
+  // clients a way to destroy an emulator that does not depend on devfs. Later
   // connections are observers and may come and go without affecting the
   // emulator's lifetime.
   //
@@ -85,14 +69,6 @@ class EmulatorDevice
   // becomes the owner and tears the emulator down when it disconnects.
   void ConnectEmulator(
       fidl::ServerEnd<fuchsia_hardware_bluetooth::Emulator> request);
-
-  fidl::WireClient<fuchsia_driver_framework::Node>* emulator_child_node() {
-    return &emulator_child_node_;
-  }
-  void set_emulator_child_node(
-      fidl::WireClient<fuchsia_driver_framework::Node> node) {
-    emulator_child_node_ = std::move(node);
-  }
 
  private:
   // fuchsia_hardware_bluetooth::Emulator overrides:
@@ -188,9 +164,6 @@ class EmulatorDevice
       hci_transport_bindings_;
 
   // EmulatorDevice
-  fidl::WireClient<fuchsia_driver_framework::Node> emulator_child_node_;
-  driver_devfs::Connector<fuchsia_hardware_bluetooth::Emulator>
-      emulator_devfs_connector_;
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Emulator>
       emulator_binding_group_;
   // True once the owning Emulator connection has been accepted (see
@@ -214,7 +187,7 @@ class EmulatorDevice
       vendor_binding_group_;
 
   fdf::OutgoingDirectory* outgoing_ = nullptr;
-  std::string service_instance_name_;
+  std::string name_;
   VendorServicePublisher vendor_service_;
 };
 

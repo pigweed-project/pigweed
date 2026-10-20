@@ -14,7 +14,6 @@
 
 #pragma once
 
-#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
@@ -25,11 +24,6 @@
 #include "vendor_service_publisher.h"
 
 namespace bt_hci_virtual {
-
-// Adds the device's node with `args`; returns the status of doing so, which
-// `Initialize()` returns to its caller.
-using AddChildCallback =
-    fit::function<zx_status_t(fuchsia_driver_framework::wire::NodeAddArgs)>;
 
 class LoopbackDevice : public fidl::Server<fuchsia_hardware_bluetooth::Vendor> {
  public:
@@ -42,17 +36,12 @@ class LoopbackDevice : public fidl::Server<fuchsia_hardware_bluetooth::Vendor> {
   ~LoopbackDevice() = default;
 
   // Methods to control the LoopbackDevice's lifecycle. These are used by the
-  // VirtualController. `channel` speaks the HCI UART protocol. `name` is the
-  // name to be used for the driver framework node. `callback` will be called
-  // with the NodeAddArgs when LoopbackDevice should be added as a child node.
-  // If `outgoing` is non-null, LoopbackDevice will publish
-  // fuchsia.hardware.bluetooth.Service to it.
-  zx_status_t Initialize(
-      zx::channel channel,
-      std::string_view name,
-      AddChildCallback callback,
-      fdf::OutgoingDirectory* outgoing = nullptr,
-      std::string_view service_instance_name = fdf::kDefaultInstance);
+  // VirtualController. `channel` speaks the HCI UART protocol. If `outgoing`
+  // is non-null, LoopbackDevice will publish the fuchsia.hardware.bluetooth
+  // Service instance `name` to it.
+  zx_status_t Initialize(zx::channel channel,
+                         std::string_view name,
+                         fdf::OutgoingDirectory* outgoing = nullptr);
 
   void Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request);
 

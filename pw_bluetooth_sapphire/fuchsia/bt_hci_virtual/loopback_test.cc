@@ -28,6 +28,9 @@ namespace fhb = fuchsia_hardware_bluetooth;
 
 namespace bt_hci_virtual {
 
+// Vendor service instance name used by the tests that publish a device.
+constexpr char kServiceDeviceName[] = "loopback-service";
+
 class LoopbackTest : public ::testing::Test,
                      public fidl::AsyncEventHandler<fhb::HciTransport>,
                      public fidl::AsyncEventHandler<fhb::Snoop> {
@@ -35,17 +38,9 @@ class LoopbackTest : public ::testing::Test,
   void SetUp() override {
     zx::channel loopback_channel_device_end;
     zx::channel::create(0, &loopback_chan_, &loopback_channel_device_end);
-    int add_child_cb_count = 0;
-    auto add_child_cb = [&](fuchsia_driver_framework::wire::NodeAddArgs) {
-      add_child_cb_count++;
-      return ZX_OK;
-    };
-    zx_status_t status =
-        loopback_device_.Initialize(std::move(loopback_channel_device_end),
-                                    "loopback",
-                                    std::move(add_child_cb));
+    zx_status_t status = loopback_device_.Initialize(
+        std::move(loopback_channel_device_end), "loopback");
     ASSERT_EQ(status, ZX_OK);
-    ASSERT_EQ(add_child_cb_count, 1);
 
     loopback_chan_wait_.set_object(loopback_chan_.get());
     loopback_chan_wait_.set_trigger(ZX_CHANNEL_READABLE |
@@ -126,10 +121,7 @@ class LoopbackTest : public ::testing::Test,
     }
     device = std::make_unique<LoopbackDevice>();
     return device->Initialize(
-        std::move(loopback_channel_device_end),
-        "loopback-service",
-        [](auto) { return ZX_OK; },
-        outgoing);
+        std::move(loopback_channel_device_end), kServiceDeviceName, outgoing);
   }
 
   // Connects to the Vendor protocol of the fuchsia.hardware.bluetooth.Service
@@ -138,7 +130,7 @@ class LoopbackTest : public ::testing::Test,
   zx_status_t ConnectToVendorService(
       fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_dir,
       fidl::WireClient<fhb::Vendor>& client,
-      const std::string& instance = component::kDefaultInstance) {
+      const std::string& instance = kServiceDeviceName) {
     std::string service_path =
         "svc/" +
         component::MakeServiceMemberPath<fhb::Service::Vendor>(instance);

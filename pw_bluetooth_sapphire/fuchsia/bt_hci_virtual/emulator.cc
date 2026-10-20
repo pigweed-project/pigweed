@@ -14,7 +14,6 @@
 
 #include "emulator.h"
 
-#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
@@ -105,9 +104,7 @@ std::optional<fuchsia_bluetooth::AddressType> LeOwnAddressTypeToFidl(
 
 EmulatorDevice::EmulatorDevice()
     : pw_dispatcher_(fdf::Dispatcher::GetCurrent()->async_dispatcher()),
-      fake_device_(pw_dispatcher_),
-      emulator_devfs_connector_(
-          fit::bind_member<&EmulatorDevice::ConnectEmulator>(this)) {}
+      fake_device_(pw_dispatcher_) {}
 
 EmulatorDevice::~EmulatorDevice() {
   pw_dispatcher_.Cancel(shutdown_task_);
@@ -116,13 +113,11 @@ EmulatorDevice::~EmulatorDevice() {
 }
 
 zx_status_t EmulatorDevice::Initialize(std::string_view name,
-                                       AddChildCallback callback,
                                        ShutdownCallback shutdown,
-                                       fdf::OutgoingDirectory* outgoing,
-                                       std::string_view service_instance_name) {
+                                       fdf::OutgoingDirectory* outgoing) {
   shutdown_cb_ = std::move(shutdown);
   outgoing_ = outgoing;
-  service_instance_name_ = std::string(service_instance_name);
+  name_ = std::string(name);
   if (outgoing_ == nullptr) {
     fdf::warn(
         "No outgoing directory provided; fuchsia.hardware.bluetooth.Service "
@@ -155,26 +150,7 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
   fake_device_.set_connection_state_callback(
       fit::bind_member<&EmulatorDevice::OnPeerConnectionStateChanged>(this));
 
-  // Create args to add emulator as a child node on behalf of VirtualController
-  zx::result connector = emulator_devfs_connector_.Bind(
-      fdf::Dispatcher::GetCurrent()->async_dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
-    return connector.error_value();
-  }
-
-  fidl::Arena args_arena;
-  auto devfs =
-      fuchsia_driver_framework::wire::DevfsAddArgs::Builder(args_arena)
-          .connector(std::move(connector.value()))
-          .connector_supports(fuchsia_device_fs::ConnectionType::kController)
-          .class_name("bt-emulator")
-          .Build();
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
-                  .name(name.data())
-                  .devfs_args(devfs)
-                  .Build();
-  return callback(args);
+  return ZX_OK;
 }
 
 void EmulatorDevice::Shutdown() {
@@ -220,15 +196,13 @@ void EmulatorDevice::Publish(PublishRequest& request,
   fake_device_.set_settings(settings);
 
   zx_status_t status = vendor_service_.Publish(
-      outgoing_,
-      service_instance_name_,
-      fit::bind_member<&EmulatorDevice::ConnectVendor>(this));
+      outgoing_, name_, fit::bind_member<&EmulatorDevice::ConnectVendor>(this));
   if (status != ZX_OK) {
     fdf::warn("Failed to start vendor service");
     completer.Reply(fit::error(fhbt::EmulatorError::kFailed));
     return;
   }
-  fdf::info("Successfully started vendor service {}", service_instance_name_);
+  fdf::info("Successfully started vendor service {}", name_);
   completer.Reply(fit::success());
 }
 

@@ -14,7 +14,6 @@
 
 #include "emulator.h"
 
-#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/component/incoming/cpp/service.h>
@@ -37,6 +36,8 @@ namespace {
 
 namespace fhb = fuchsia_hardware_bluetooth;
 
+constexpr char kEmulatorName[] = "emulator";
+
 class EmulatorTest : public ::testing::Test {
  public:
   void SetUp() override {
@@ -49,20 +50,14 @@ class EmulatorTest : public ::testing::Test {
     outgoing_client_ = std::move(endpoints->client);
 
     device_ = std::make_unique<EmulatorDevice>();
-    int add_child_cb_count = 0;
-    auto add_child_cb = [&](fuchsia_driver_framework::wire::NodeAddArgs) {
-      add_child_cb_count++;
-      return ZX_OK;
-    };
     // Mirrors VirtualController: the shutdown callback releases the device.
     auto shutdown_cb = [this]() {
       shutdown_count_++;
       device_.reset();
     };
-    zx_status_t status = device_->Initialize(
-        "emulator", std::move(add_child_cb), std::move(shutdown_cb), &outgoing);
+    zx_status_t status =
+        device_->Initialize(kEmulatorName, std::move(shutdown_cb), &outgoing);
     ASSERT_EQ(status, ZX_OK);
-    ASSERT_EQ(add_child_cb_count, 1);
     fdf_testing_run_until_idle();
   }
 
@@ -108,8 +103,8 @@ class EmulatorTest : public ::testing::Test {
   // fuchsia.hardware.bluetooth.Service instance can complete a request.
   bool VendorServiceIsServed() {
     std::string path =
-        "svc/" + component::MakeServiceMemberPath<fhb::Service::Vendor>(
-                     component::kDefaultInstance);
+        "svc/" +
+        component::MakeServiceMemberPath<fhb::Service::Vendor>(kEmulatorName);
     zx::result client_end =
         component::ConnectAt<fhb::Vendor>(outgoing_client_.borrow(), path);
     if (client_end.is_error()) {
@@ -266,8 +261,8 @@ TEST_F(EmulatorTest, OwnerDisconnectClosesVendorHciTransportAndHangingGets) {
 
   // Connect a Vendor client and open an HciTransport connection through it.
   std::string path =
-      "svc/" + component::MakeServiceMemberPath<fhb::Service::Vendor>(
-                   component::kDefaultInstance);
+      "svc/" +
+      component::MakeServiceMemberPath<fhb::Service::Vendor>(kEmulatorName);
   zx::result vendor_end =
       component::ConnectAt<fhb::Vendor>(outgoing_client(), path);
   ASSERT_TRUE(vendor_end.is_ok());
@@ -309,10 +304,8 @@ TEST_F(EmulatorTest, ShutdownIsIdempotentWhenDeviceRemainsAlive) {
 
   auto standalone = std::make_unique<EmulatorDevice>();
   int callbacks = 0;
-  zx_status_t status = standalone->Initialize(
-      "emulator",
-      [](fuchsia_driver_framework::wire::NodeAddArgs) { return ZX_OK; },
-      [&callbacks]() { callbacks++; });
+  zx_status_t status =
+      standalone->Initialize(kEmulatorName, [&callbacks]() { callbacks++; });
   ASSERT_EQ(status, ZX_OK);
 
   zx::result endpoints = fidl::CreateEndpoints<fhb::Emulator>();
@@ -348,12 +341,7 @@ TEST_F(EmulatorTest, RandomGeneratorInstalledOnceAcrossMultipleEmulators) {
 
   // First EmulatorDevice installs the process-wide generator on Initialize().
   auto first = std::make_unique<EmulatorDevice>();
-  ASSERT_EQ(
-      first->Initialize(
-          "emulator",
-          [](fuchsia_driver_framework::wire::NodeAddArgs) { return ZX_OK; },
-          []() {}),
-      ZX_OK);
+  ASSERT_EQ(first->Initialize(kEmulatorName, []() {}), ZX_OK);
   pw::random::RandomGenerator* installed = bt::random_generator();
   EXPECT_NE(installed, nullptr);
 
@@ -362,12 +350,7 @@ TEST_F(EmulatorTest, RandomGeneratorInstalledOnceAcrossMultipleEmulators) {
   // bt::set_random_generator(), and destroying the first leaves the generator
   // valid.
   auto second = std::make_unique<EmulatorDevice>();
-  ASSERT_EQ(
-      second->Initialize(
-          "emulator",
-          [](fuchsia_driver_framework::wire::NodeAddArgs) { return ZX_OK; },
-          []() {}),
-      ZX_OK);
+  ASSERT_EQ(second->Initialize(kEmulatorName, []() {}), ZX_OK);
   first.reset();
   EXPECT_EQ(bt::random_generator(), installed);
 }

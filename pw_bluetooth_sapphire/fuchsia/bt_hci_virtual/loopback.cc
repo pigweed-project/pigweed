@@ -23,14 +23,10 @@ LoopbackDevice::LoopbackDevice()
 
 zx_status_t LoopbackDevice::Initialize(zx::channel channel,
                                        std::string_view name,
-                                       AddChildCallback callback,
-                                       fdf::OutgoingDirectory* outgoing,
-                                       std::string_view service_instance_name) {
+                                       fdf::OutgoingDirectory* outgoing) {
   if (outgoing != nullptr) {
     zx_status_t status = vendor_service_.Publish(
-        outgoing,
-        service_instance_name,
-        fit::bind_member<&LoopbackDevice::Connect>(this));
+        outgoing, name, fit::bind_member<&LoopbackDevice::Connect>(this));
     if (status != ZX_OK) {
       return status;
     }
@@ -45,13 +41,7 @@ zx_status_t LoopbackDevice::Initialize(zx::channel channel,
   loopback_chan_wait_.set_object(loopback_chan_.get());
   loopback_chan_wait_.set_trigger(ZX_CHANNEL_READABLE | ZX_CHANNEL_PEER_CLOSED);
   ZX_ASSERT(loopback_chan_wait_.Begin(dispatcher_) == ZX_OK);
-
-  fidl::Arena args_arena;
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
-                  .name(fidl::StringView(args_arena, name))
-                  .Build();
-
-  return callback(args);
+  return ZX_OK;
 }
 
 LoopbackDevice::SnoopServer::SnoopServer(

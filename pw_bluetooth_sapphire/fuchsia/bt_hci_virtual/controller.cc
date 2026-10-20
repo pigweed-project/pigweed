@@ -17,8 +17,8 @@
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <pw_assert/check.h>
+#include <zircon/status.h>
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -35,7 +35,7 @@ zx::result<> VirtualController::Start(fdf::DriverContext context) {
   pw::log_fuchsia::InitializeLogging(dispatcher());
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
+    fdf::error("Failed to bind devfs connector to dispatcher: {}", connector);
     return connector.take_error();
   }
 
@@ -69,30 +69,11 @@ void VirtualController::CreateEmulator(
   // (and nobody else's).
   std::string name =
       std::string(kEmulatorNamePrefix) + std::to_string(next_emulator_id_++);
-  auto [it, inserted] = emulators_.try_emplace(name);
+  auto [it, inserted] =
+      emulators_.try_emplace(name, std::make_unique<EmulatorDevice>());
   PW_CHECK(inserted);
   Emulator& emulator = it->second;
-  emulator.device = std::make_unique<EmulatorDevice>();
 
-  auto add_child_cb = [this, name](auto args) {
-    auto entry = emulators_.find(name);
-    PW_CHECK(entry != emulators_.end(),
-             "AddChildCallback ran for unknown emulator %s",
-             name.c_str());
-    fdf::info("EmulatorDevice successfully initialized");
-    Emulator& emulator = entry->second;
-    fidl::WireClient<fuchsia_driver_framework::Node> child_node;
-    zx_status_t status = AddChildNode(args,
-                                      "emulator device node",
-                                      child_node,
-                                      emulator.node_controller,
-                                      emulator.device.get());
-    if (status != ZX_OK) {
-      return status;
-    }
-    emulator.device->set_emulator_child_node(std::move(child_node));
-    return ZX_OK;
-  };
   auto shutdown_cb = [this, name]() {
     auto entry = emulators_.find(name);
     PW_CHECK(entry != emulators_.end(),
@@ -101,18 +82,17 @@ void VirtualController::CreateEmulator(
     fdf::info("Releasing EmulatorDevice {}", name);
     // Remove the emulator's node. When the shutdown was triggered by the
     // owning Emulator connection closing, this is what tears the node down.
-    RemoveNode(*entry->second.device->emulator_child_node(),
-               entry->second.node_controller);
+    RemoveNode(entry->second.node, entry->second.node_controller);
     emulators_.erase(entry);
   };
 
+  zx_status_t status = emulator.device->Initialize(
+      name, std::move(shutdown_cb), outgoing().get());
   // A failure to add the node is reported too: without one the caller could
   // never find the emulator, so it must not get a name that will never appear.
-  zx_status_t status = emulator.device->Initialize(name,
-                                                   std::move(add_child_cb),
-                                                   std::move(shutdown_cb),
-                                                   outgoing().get(),
-                                                   name);
+  if (status == ZX_OK) {
+    status = AddEmulatorNode(name, emulator);
+  }
   if (status != ZX_OK) {
     fdf::error(
         "Failed to create emulator {}: {}", name, zx_status_get_string(status));
@@ -136,25 +116,58 @@ void VirtualController::CreateLoopbackDevice(
 
   PW_CHECK(request->has_uart_channel());
   zx_status_t status = loopback_device_->Initialize(
-      std::move(request->uart_channel()),
-      kLoopbackName,
-      [this](auto args) {
-        // Add LoopbackDevice as a child node of VirtualController
-        fdf::info("LoopbackDevice successfully initialized");
-        // The loopback node has no children, so it needs no event handler.
-        return AddChildNode(args,
-                            "loopback device node",
-                            loopback_child_node_,
-                            loopback_node_controller_,
-                            nullptr);
-      },
-      outgoing().get());
+      std::move(request->uart_channel()), kLoopbackName, outgoing().get());
+  if (status == ZX_OK) {
+    fidl::Arena args_arena;
+    auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
+                    .name(fidl::StringView(args_arena, kLoopbackName))
+                    .Build();
+    // The loopback node has no children, so it needs no event handler.
+    status = AddChildNode(args,
+                          "loopback device node",
+                          loopback_child_node_,
+                          loopback_node_controller_,
+                          nullptr);
+  }
   if (status != ZX_OK) {
     fdf::error("Failed to bind: {}", zx_status_get_string(status));
     RemoveNode(loopback_child_node_, loopback_node_controller_);
     loopback_device_.reset();
     return;
   }
+  fdf::info("LoopbackDevice successfully initialized");
+}
+
+zx_status_t VirtualController::AddEmulatorNode(const std::string& name,
+                                               Emulator& emulator) {
+  zx::result connector = emulator.connector.Bind(dispatcher());
+  if (connector.is_error()) {
+    fdf::error("Failed to bind devfs connector to dispatcher: {}", connector);
+    return connector.error_value();
+  }
+
+  fidl::Arena args_arena;
+  auto devfs =
+      fuchsia_driver_framework::wire::DevfsAddArgs::Builder(args_arena)
+          .connector(std::move(connector.value()))
+          .connector_supports(fuchsia_device_fs::ConnectionType::kController)
+          .class_name("bt-emulator")
+          .Build();
+  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
+                  .name(fidl::StringView(args_arena, name))
+                  .devfs_args(devfs)
+                  .Build();
+
+  zx_status_t status = AddChildNode(args,
+                                    "emulator device node",
+                                    emulator.node,
+                                    emulator.node_controller,
+                                    &emulator);
+  if (status != ZX_OK) {
+    return status;
+  }
+  fdf::info("EmulatorDevice {} successfully initialized", name);
+  return ZX_OK;
 }
 
 void VirtualController::handle_unknown_method(

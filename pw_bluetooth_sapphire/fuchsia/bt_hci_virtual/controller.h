@@ -40,7 +40,8 @@ namespace bt_hci_virtual {
 // VirtualController publishes itself as a DFv2 driver and adds a child node
 // (`bt_hci_virtual`) that exposes the VirtualController protocol via devfs.
 // Each EmulatorDevice/LoopbackDevice it creates gets its own child node of the
-// driver's node (`node_`), a sibling of `bt_hci_virtual`.
+// driver's node (`node_`), a sibling of `bt_hci_virtual`. Emulator nodes also
+// expose the Emulator protocol via devfs.
 //
 // EmulatorDevice/LoopbackDevice then implements and serves the FIDL protocols
 // that their client needs. For more details, refer to
@@ -74,9 +75,30 @@ class VirtualController
           metadata) override {}
 
  private:
-  // An EmulatorDevice together with the controller for its driver node.
-  struct Emulator {
+  // One live emulator: its device and the driver-framework state of its node.
+  struct Emulator final
+      : public fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node> {
+    explicit Emulator(std::unique_ptr<EmulatorDevice> dev)
+        : device(std::move(dev)),
+          connector(fit::bind_member<&EmulatorDevice::ConnectEmulator>(
+              device.get())) {}
+
+    // Shuts the emulator down when its node is removed by the driver framework
+    // (e.g. via devfs `fuchsia.device.Controller/ScheduleUnbind`). This
+    // destroys the node's clients (including the one calling this) and then
+    // the device, so nothing may be touched afterwards.
+    void on_fidl_error(fidl::UnbindInfo) override { device->Shutdown(); }
+    void handle_unknown_event(
+        fidl::UnknownEventMetadata<fuchsia_driver_framework::Node> metadata)
+        override {}
+
     std::unique_ptr<EmulatorDevice> device;
+    // Declared after `device`, which they refer to, so that they are destroyed
+    // first.
+    driver_devfs::Connector<fuchsia_hardware_bluetooth::Emulator> connector;
+    // Bound with the enclosing `Emulator` as its event handler, so entries of
+    // `emulators_` must never move.
+    fidl::WireClient<fuchsia_driver_framework::Node> node;
     fidl::WireClient<fuchsia_driver_framework::NodeController> node_controller;
   };
 
@@ -93,6 +115,9 @@ class VirtualController
   void Connect(
       fidl::ServerEnd<fuchsia_hardware_bluetooth::VirtualController> request);
 
+  // Adds the devfs node of the emulator `name` (serving its Emulator
+  // protocol).
+  zx_status_t AddEmulatorNode(const std::string& name, Emulator& emulator);
   // Adds a child node of `node_` with `args` and binds `child_node` (with
   // `node_event_handler`) and `node_controller` to it. `log_name` names the
   // node in log messages.

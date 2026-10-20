@@ -294,7 +294,7 @@ TEST_F(VirtualControllerTest, CreateLoopbackDeviceTwiceReplacesDevice) {
 
   zx::channel first_uart = CreateLoopbackDevice();
   EXPECT_TRUE(HasChildNode(name));
-  EXPECT_TRUE(VendorServiceIsServed(std::string(fdf::kDefaultInstance)));
+  EXPECT_TRUE(VendorServiceIsServed(name));
 
   zx::channel second_uart = CreateLoopbackDevice();
   zx_signals_t observed = 0;
@@ -302,7 +302,7 @@ TEST_F(VirtualControllerTest, CreateLoopbackDeviceTwiceReplacesDevice) {
                 ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed),
             ZX_OK);
   EXPECT_TRUE(HasChildNode(name));
-  EXPECT_TRUE(VendorServiceIsServed(std::string(fdf::kDefaultInstance)));
+  EXPECT_TRUE(VendorServiceIsServed(name));
 }
 
 }  // namespace
