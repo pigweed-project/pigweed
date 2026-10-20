@@ -12,6 +12,18 @@
         "version:3@3.13.14.chromium.1"
       ],
       "version_file": ".versions/cpython3.cipd_version"
+    },
+    {
+      "path": "pigweed/third_party/python_packages/313/${platform}",
+      "platforms": [
+        "linux-amd64",
+        "mac-arm64",
+        "windows-amd64"
+      ],
+      "subdir": "pip_cache",
+      "tags": [
+        "git_revision:224bdf60c25969a9cb24e0776423caaed09cd6b9"
+      ]
     }
   ]
 }
