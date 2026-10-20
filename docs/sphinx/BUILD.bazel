@@ -468,6 +468,7 @@ sphinx_build_binary(
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:private"],
     deps = [
+        "//docs/common/metadata:validate",
         "//pw_build/py:pw_build",
         "//pw_build/py:pw_project_builder",
         "//pw_bytes/py:pw_bytes",

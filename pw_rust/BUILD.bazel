@@ -75,6 +75,11 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "module.toml",
+        # Included so //docs/common/metadata:validate can verify during the
+        # hermetic Sphinx build that the generated crate list in lib.rs is in
+        # sync with //docs/common/metadata/categories.toml and
+        # //<module>/module.toml.
+        "//pw_rust/rust/pigweed:src/lib.rs",
     ],
     prefix = "pw_rust/",
     target_compatible_with = incompatible_with_mcu(),

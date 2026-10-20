@@ -53,3 +53,12 @@ pw_py_test(
     srcs = ["sync_test.py"],
     deps = [":sync_lib"],
 )
+
+pw_py_library(
+    name = "validate",
+    srcs = ["validate.py"],
+    deps = [
+        ":sync_lib",
+        "@pigweed_python_packages//sphinx",
+    ],
+)

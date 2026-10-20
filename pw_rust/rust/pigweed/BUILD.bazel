@@ -14,6 +14,12 @@
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
+# Exported so //pw_rust:sphinx can copy src/lib.rs into the hermetic Sphinx
+# source tree, where //docs/common/metadata:validate checks that its generated
+# crate list is in sync with //docs/common/metadata/categories.toml and
+# //<module>/module.toml.
+exports_files(["src/lib.rs"])
+
 rust_library(
     name = "pigweed",
     srcs = ["src/lib.rs"],
