@@ -498,12 +498,28 @@ class Framework {
   // run are sent to the registered event handler, if any.
   int RunAllTests();
 
-  // Only run test suites whose names are included in the provided list during
-  // the next test run.
-  void SetTestSuitesToRun(span<std::string_view> test_suites) {
-    test_suites_to_run_ = test_suites;
+  // Sets the test filters for the next test run.
+  //
+  // Only test cases that match at least one filter in the provided list will
+  // be run. If no filters are provided, all enabled test cases are run.
+  //
+  // Wildcards ('*') are supported for either the suite name or test name:
+  // - A filter with a specific suite and test name matches only that test case
+  //   (e.g., {"SuiteName", "TestName"}).
+  // - A filter with an empty or "*" test name matches all tests in that suite
+  //   (e.g., {"SuiteName", "*"} or {"SuiteName", ""}).
+  // - A filter with an empty or "*" suite name matches tests with that name
+  //   across all suites (e.g., {"*", "TestName"} or {"", "TestName"}).
+  // - A filter with "*" (or empty) for both matches all tests.
+  void SetTestFilters(span<const TestCaseFilter> test_filters) {
+    test_filters_ = test_filters;
   }
 
+  bool MatchesFilter(std::string_view suite_name,
+                     std::string_view test_name = {}) const;
+  bool MatchesFilter(const TestCase& test_case) const {
+    return MatchesFilter(test_case.suite_name, test_case.test_name);
+  }
   bool ShouldRunTest(const TestInfo& test_info) const;
 
   // Whether the current test is skipped.
@@ -628,9 +644,6 @@ class Framework {
       int line,
       bool success);
 
-  // Checks whether a test suite matches the active test suite filter list.
-  bool ShouldRunSuite(std::string_view suite_name) const;
-
  private:
   // Convert char* to void* so that they are printed as pointers instead of
   // strings in EXPECT_EQ and other macros. EXPECT_STREQ wraps its pointers in
@@ -676,7 +689,7 @@ class Framework {
   // Handler to which to dispatch test events.
   EventHandler* event_handler_;
 
-  span<std::string_view> test_suites_to_run_;
+  span<const TestCaseFilter> test_filters_;
 
   alignas(std::max_align_t) std::byte memory_pool_[config::kMemoryPoolSize];
 };
@@ -796,8 +809,8 @@ constexpr bool HasNoUnderscores(const char* suite) {
 
 }  // namespace internal
 
-inline void SetTestSuitesToRun(span<std::string_view> test_suites) {
-  internal::Framework::Get().SetTestSuitesToRun(test_suites);
+inline void SetTestFilters(span<const TestCaseFilter> test_filters) {
+  internal::Framework::Get().SetTestFilters(test_filters);
 }
 
 }  // namespace unit_test

@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+#include <string_view>
+
 namespace pw {
 
 namespace unit_test {
@@ -36,6 +38,14 @@ struct TestCase {
 
   /// Path to the file in which the test case (`TEST` macro) is defined.
   const char* file_name;
+};
+
+struct TestCaseFilter {
+  /// Name of the test suite(s) to run.
+  std::string_view suite_name;
+
+  /// Name of the test case(s) to run.
+  std::string_view test_name;
 };
 
 struct TestExpectation {

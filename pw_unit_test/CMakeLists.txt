@@ -299,6 +299,7 @@ if("${pw_unit_test_BACKEND}" STREQUAL "pw_unit_test.light")
       pw_unit_test.unit_test_proto.pwpb
       pw_unit_test.unit_test_proto.raw_rpc
       pw_containers.vector
+      pw_string.string
       pw_string.util
       pw_sync.lock_annotations
       pw_sync.mutex
@@ -307,6 +308,7 @@ if("${pw_unit_test_BACKEND}" STREQUAL "pw_unit_test.light")
     PRIVATE_DEPS
       pw_assert
       pw_log
+      pw_result
     PUBLIC_INCLUDES
       public
       rpc_light_public
@@ -328,6 +330,7 @@ else()
       pw_containers.vector
     PRIVATE_DEPS
       pw_log
+      pw_result
     PUBLIC_INCLUDES
       public
       rpc_gtest_public

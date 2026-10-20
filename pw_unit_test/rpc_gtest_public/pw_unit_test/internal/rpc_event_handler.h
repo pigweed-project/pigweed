@@ -14,6 +14,7 @@
 #pragma once
 
 #include "pw_span/span.h"
+#include "pw_unit_test/event_handler.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::unit_test {
@@ -26,7 +27,7 @@ namespace internal {
 class RpcEventHandler : public testing::EmptyTestEventListener {
  public:
   RpcEventHandler(UnitTestThread& thread);
-  void ExecuteTests(span<std::string_view> suites_to_run);
+  void ExecuteTests(span<const TestCaseFilter> test_filters);
 
   void OnTestProgramStart(const testing::UnitTest& unit_test) override;
   void OnTestProgramEnd(const testing::UnitTest& unit_test) override;

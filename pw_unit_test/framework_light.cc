@@ -68,16 +68,16 @@ int Framework::RunAllTests() {
     event_handler_->RunAllTestsStart();
   }
   for (const TestInfo* test = tests_; test != nullptr; test = test->next()) {
-    if (ShouldRunTest(*test)) {
+    if (!MatchesFilter(test->test_case())) {
+      run_tests_summary_.skipped_tests++;
+    } else if (test->enabled()) {
       test->run();
-    } else if (!test->enabled()) {
+    } else {
       run_tests_summary_.disabled_tests++;
 
       if (event_handler_ != nullptr) {
         event_handler_->TestCaseDisabled(test->test_case());
       }
-    } else {
-      run_tests_summary_.skipped_tests++;
     }
   }
 
@@ -100,7 +100,8 @@ void Framework::SetUpTestSuiteIfNeeded(SetUpTestSuiteFunc set_up_ts) const {
   for (TestInfo* info = tests_;
        info != nullptr && &info->test_case() != current_test_;
        info = info->next()) {
-    if (strcmp(info->test_case().suite_name, current_test_->suite_name) == 0) {
+    if (ShouldRunTest(*info) &&
+        strcmp(info->test_case().suite_name, current_test_->suite_name) == 0) {
       return;
     }
   }
@@ -122,7 +123,8 @@ void Framework::TearDownTestSuiteIfNeeded(
       }
       continue;
     }
-    if (strcmp(info->test_case().suite_name, current_test_->suite_name) == 0) {
+    if (ShouldRunTest(*info) &&
+        strcmp(info->test_case().suite_name, current_test_->suite_name) == 0) {
       return;
     }
   }
@@ -202,18 +204,27 @@ FailureMessageAdapter Framework::CurrentTestExpectSimple(
   return {};
 }
 
-bool Framework::ShouldRunSuite(std::string_view suite_name) const {
-  if (test_suites_to_run_.empty()) {
+bool Framework::MatchesFilter(std::string_view suite_name,
+                              std::string_view test_name) const {
+  if (test_filters_.empty()) {
     return true;
   }
-  return std::any_of(test_suites_to_run_.begin(),
-                     test_suites_to_run_.end(),
-                     [&](auto& name) { return suite_name == name; });
+  for (const TestCaseFilter& filter : test_filters_) {
+    const bool suite_matches = filter.suite_name.empty() ||
+                               filter.suite_name == "*" ||
+                               filter.suite_name == suite_name;
+    const bool test_matches = filter.test_name.empty() ||
+                              filter.test_name == "*" || test_name.empty() ||
+                              filter.test_name == test_name;
+    if (suite_matches && test_matches) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool Framework::ShouldRunTest(const TestInfo& test_info) const {
-  return ShouldRunSuite(test_info.test_case().suite_name) &&
-         test_info.enabled();
+  return MatchesFilter(test_info.test_case()) && test_info.enabled();
 }
 
 bool TestInfo::enabled() const {

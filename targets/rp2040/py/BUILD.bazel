@@ -13,7 +13,7 @@
 # the License.
 
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -39,6 +39,7 @@ pw_py_library(
         "rp2040_utils/__init__.py",
         "rp2040_utils/device_detector.py",
         "rp2040_utils/flasher.py",
+        "rp2040_utils/rpc_unit_test_runner.py",
         "rp2040_utils/unit_test_client.py",
         "rp2040_utils/unit_test_server.py",
     ],
@@ -72,6 +73,14 @@ pw_py_binary(
     ],
     main = "rp2040_utils/rpc_unit_test_runner.py",
     tags = ["manual"],
+    deps = [
+        ":rp2040_utils",
+    ],
+)
+
+pw_py_test(
+    name = "rpc_unit_test_runner_test",
+    srcs = ["rpc_unit_test_runner_test.py"],
     deps = [
         ":rp2040_utils",
     ],

@@ -41,7 +41,7 @@ bool pw_unit_test_ShouldRunSuite(const char* suite_name) {
   if (suite_name == nullptr) {
     return false;
   }
-  return pw::unit_test::internal::Framework::Get().ShouldRunSuite(suite_name);
+  return pw::unit_test::internal::Framework::Get().MatchesFilter(suite_name);
 }
 
 static pw::unit_test::TestCase s_current_ffi_test_case;

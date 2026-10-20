@@ -194,9 +194,19 @@ class Device:
         """Returns an object for accessing services on the specified channel."""
         return next(iter(self.client.client.channels())).rpcs
 
-    def run_tests(self, timeout_s: float | None = 5) -> TestRecord:
+    def run_tests(
+        self,
+        timeout_s: float | None = 5,
+        test_suites: Iterable[str] = (),
+        test_filters: Iterable[Any] = (),
+    ) -> TestRecord:
         """Runs the unit tests on this device."""
-        return pw_unit_test_run_tests(self.rpcs, timeout_s=timeout_s)
+        return pw_unit_test_run_tests(
+            self.rpcs,
+            timeout_s=timeout_s,
+            test_suites=test_suites,
+            test_filters=test_filters,
+        )
 
     def echo(self, msg: str) -> str:
         """Sends a string to the device and back, returning the result."""

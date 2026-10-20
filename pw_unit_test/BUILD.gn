@@ -310,6 +310,7 @@ pw_source_set("rpc_service") {
     ":unit_test_proto.pwpb",
     ":unit_test_proto.raw_rpc",
     "$dir_pw_containers:vector",
+    "$dir_pw_string:string",
     "$dir_pw_string:util",
     "$dir_pw_sync:lock_annotations",
     "$dir_pw_sync:mutex",
@@ -319,6 +320,7 @@ pw_source_set("rpc_service") {
   deps = [
     dir_pw_assert,
     dir_pw_log,
+    dir_pw_result,
   ]
   public = [ "public/pw_unit_test/unit_test_service.h" ]
   sources = [ "unit_test_service.cc" ]

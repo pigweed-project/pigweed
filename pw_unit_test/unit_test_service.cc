@@ -20,10 +20,38 @@
 #include "pw_assert/check.h"
 #include "pw_log/log.h"
 #include "pw_protobuf/decoder.h"
+#include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_string/util.h"
 
 namespace pw::unit_test {
+namespace {
+
+Result<TestCaseFilter> DecodeTestCaseFilter(ConstByteSpan filter_data) {
+  protobuf::Decoder filter_decoder(filter_data);
+  std::string_view suite_name;
+  std::string_view test_name;
+  Status status;
+  while ((status = filter_decoder.Next()).ok()) {
+    switch (
+        static_cast<pwpb::TestFilter::Fields>(filter_decoder.FieldNumber())) {
+      case pwpb::TestFilter::Fields::kSuiteName:
+        filter_decoder.ReadString(&suite_name).IgnoreError();
+        break;
+      case pwpb::TestFilter::Fields::kTestName:
+        filter_decoder.ReadString(&test_name).IgnoreError();
+        break;
+    }
+  }
+
+  if (status != Status::OutOfRange()) {
+    return status;
+  }
+
+  return TestCaseFilter{suite_name, test_name};
+}
+
+}  // namespace
 
 void UnitTestThread::Reset() {
   std::lock_guard lock(mutex_);
@@ -34,11 +62,12 @@ void UnitTestThread::ResetLocked() {
   PW_CHECK(!running_,
            "Attempted to reset unit test thread with an active test run");
   verbose_ = false;
-  test_suites_to_run_.clear();
+  test_filters_to_run_.clear();
 }
 
 Status UnitTestThread::ScheduleTestRun(
-    rpc::RawServerWriter&& writer, span<std::string_view> test_suites_to_run) {
+    rpc::RawServerWriter&& writer,
+    span<const TestCaseFilter> test_filters_to_run) {
   std::lock_guard lock(mutex_);
 
   if (running_) {
@@ -46,9 +75,21 @@ Status UnitTestThread::ScheduleTestRun(
     return Status::Unavailable();
   }
 
-  for (std::string_view& suite : test_suites_to_run) {
-    test_suites_to_run_.emplace_back();
-    if (!string::Copy(suite, test_suites_to_run_.back()).ok()) {
+  if (test_filters_to_run.size() > test_filters_to_run_.max_size()) {
+    writer.Finish(Status::InvalidArgument()).IgnoreError();
+    return Status::InvalidArgument();
+  }
+
+  test_filters_to_run_.clear();
+
+  for (const TestCaseFilter& filter : test_filters_to_run) {
+    test_filters_to_run_.emplace_back();
+    if (!string::Assign(test_filters_to_run_.back().suite_name,
+                        filter.suite_name)
+             .ok() ||
+        !string::Assign(test_filters_to_run_.back().test_name, filter.test_name)
+             .ok()) {
+      test_filters_to_run_.clear();
       writer.Finish(Status::InvalidArgument()).IgnoreError();
       return Status::InvalidArgument();
     }
@@ -70,13 +111,13 @@ void UnitTestThread::Run() {
       running_ = true;
     }
 
-    Vector<std::string_view, kMaxTestSuiteFilters> suites_to_run;
-    for (auto& suite : test_suites_to_run_) {
-      suites_to_run.push_back(suite.data());
+    Vector<TestCaseFilter, kMaxTestFilters> test_filters;
+    for (const auto& filter : test_filters_to_run_) {
+      test_filters.push_back({filter.suite_name, filter.test_name});
     }
 
     PW_LOG_INFO("Starting unit test run");
-    handler_.ExecuteTests(suites_to_run);
+    handler_.ExecuteTests(test_filters);
     PW_LOG_INFO("Unit test run complete");
 
     writer_.Finish(OkStatus()).IgnoreError();
@@ -98,10 +139,10 @@ void UnitTestThread::Service::Run(ConstByteSpan request,
     return;
   }
 
-  // List of test suite names to run. The string views in this vector point to
-  // data in the raw protobuf request message, so it is only valid for the
-  // duration of this function.
-  Vector<std::string_view, UnitTestThread::kMaxTestSuiteFilters> suites_to_run;
+  // List of test filters to run. The string views point to data in the raw
+  // protobuf request message, so they are only valid for the duration of this
+  // function.
+  Vector<TestCaseFilter, UnitTestThread::kMaxTestFilters> test_filters;
 
   protobuf::Decoder decoder(request);
 
@@ -119,20 +160,42 @@ void UnitTestThread::Service::Run(ConstByteSpan request,
       }
 
       case pwpb::TestRunRequest::Fields::kTestSuite: {
+        if (test_filters.full()) {
+          PW_LOG_ERROR("Maximum of %u test filters supported",
+                       static_cast<unsigned>(test_filters.max_size()));
+          writer.Finish(Status::InvalidArgument()).IgnoreError();
+          return;
+        }
+
         std::string_view suite_name;
         if (!decoder.ReadString(&suite_name).ok()) {
           break;
         }
 
-        if (!suites_to_run.full()) {
-          suites_to_run.push_back(suite_name);
-        } else {
-          PW_LOG_ERROR("Maximum of %u test suite filters supported",
-                       static_cast<unsigned>(suites_to_run.max_size()));
+        test_filters.push_back({suite_name, {}});
+        break;
+      }
+
+      case pwpb::TestRunRequest::Fields::kTestFilters: {
+        if (test_filters.full()) {
+          PW_LOG_ERROR("Maximum of %u test filters supported",
+                       static_cast<unsigned>(test_filters.max_size()));
           writer.Finish(Status::InvalidArgument()).IgnoreError();
           return;
         }
 
+        ConstByteSpan filter_data;
+        if (!decoder.ReadBytes(&filter_data).ok()) {
+          break;
+        }
+
+        Result<TestCaseFilter> filter = DecodeTestCaseFilter(filter_data);
+        if (!filter.ok()) {
+          writer.Finish(filter.status()).IgnoreError();
+          return;
+        }
+
+        test_filters.push_back(*filter);
         break;
       }
     }
@@ -145,7 +208,7 @@ void UnitTestThread::Service::Run(ConstByteSpan request,
 
   PW_LOG_INFO("Queueing unit test run");
 
-  if (!thread_.ScheduleTestRun(std::move(writer), suites_to_run).ok()) {
+  if (!thread_.ScheduleTestRun(std::move(writer), test_filters).ok()) {
     PW_LOG_ERROR("Failed to queue unit test run");
   }
 }

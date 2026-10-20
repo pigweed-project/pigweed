@@ -19,17 +19,17 @@ namespace pw::unit_test::internal {
 
 RpcEventHandler::RpcEventHandler(UnitTestThread& thread) : thread_(thread) {}
 
-void RpcEventHandler::ExecuteTests(span<std::string_view> suites_to_run) {
+void RpcEventHandler::ExecuteTests(span<const TestCaseFilter> test_filters) {
   RegisterEventHandler(this);
-  SetTestSuitesToRun(suites_to_run);
+  SetTestFilters(test_filters);
 
-  PW_LOG_DEBUG("%u test suite filters applied",
-               static_cast<unsigned>(suites_to_run.size()));
+  PW_LOG_DEBUG("%u test filters applied",
+               static_cast<unsigned>(test_filters.size()));
 
   RUN_ALL_TESTS();
 
   RegisterEventHandler(nullptr);
-  SetTestSuitesToRun({});
+  SetTestFilters({});
 }
 
 void RpcEventHandler::RunAllTestsStart() { thread_.WriteTestRunStart(); }

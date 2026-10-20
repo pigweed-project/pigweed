@@ -84,5 +84,61 @@ TEST(ExpectEq, ObjectsAreNotStringifiedUnlessExpectationFails) {
   EXPECT_EQ(ExplodingString{}, ExplodingString{});
 }
 
+TEST(TestFilter, MatchesFilterUnionSemantics) {
+  unit_test::TestCase case_a{"SuiteA", "Test1", "file.cc"};
+  unit_test::TestCase case_b{"SuiteB", "Test2", "file.cc"};
+  unit_test::TestCase case_c{"SuiteC", "Test3", "file.cc"};
+
+  // No filters set -> all match
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter(case_a));
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter(case_b));
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter(case_c));
+
+  // Only suite filter
+  unit_test::TestCaseFilter suite_filters[] = {{"SuiteA", ""}};
+  unit_test::SetTestFilters(suite_filters);
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter(case_a));
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter(case_b));
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter(case_c));
+
+  // Only test case filter
+  unit_test::TestCaseFilter case_filters[] = {{"SuiteB", "Test2"}};
+  unit_test::SetTestFilters(case_filters);
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter(case_a));
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter(case_b));
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter(case_c));
+
+  // Union of suite and test case filters
+  unit_test::TestCaseFilter union_filters[] = {{"SuiteA", ""},
+                                               {"SuiteB", "Test2"}};
+  unit_test::SetTestFilters(union_filters);
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter(case_a));
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter(case_b));
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter(case_c));
+
+  // Wildcard suite filter (*.Test2 matches Test2 in any suite)
+  unit_test::TestCaseFilter wildcard_suite_filters[] = {{"*", "Test2"}};
+  unit_test::SetTestFilters(wildcard_suite_filters);
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter(case_a));
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter(case_b));
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter(case_c));
+
+  // Wildcard test name filter (SuiteA.* matches all tests in SuiteA)
+  unit_test::TestCaseFilter wildcard_test_filters[] = {{"SuiteA", "*"}};
+  unit_test::SetTestFilters(wildcard_test_filters);
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter(case_a));
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter(case_b));
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter(case_c));
+
+  // Suite-level checks
+  unit_test::SetTestFilters(union_filters);
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter("SuiteA"));
+  EXPECT_TRUE(unit_test::internal::Framework::Get().MatchesFilter("SuiteB"));
+  EXPECT_FALSE(unit_test::internal::Framework::Get().MatchesFilter("SuiteC"));
+
+  // Clean up
+  unit_test::SetTestFilters({});
+}
+
 }  // namespace
 }  // namespace pw

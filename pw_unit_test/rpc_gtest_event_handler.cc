@@ -29,11 +29,11 @@ RpcEventHandler::RpcEventHandler(UnitTestThread& thread) : thread_(thread) {
   delete default_listener;
 }
 
-void RpcEventHandler::ExecuteTests(span<std::string_view> suites_to_run) {
-  if (!suites_to_run.empty()) {
+void RpcEventHandler::ExecuteTests(span<const TestCaseFilter> test_filters) {
+  if (!test_filters.empty()) {
     PW_LOG_WARN(
-        "GoogleTest backend does not support test suite filtering. Running all "
-        "suites.");
+        "GoogleTest backend does not support test filtering. Running all "
+        "tests.");
   }
   if (thread_.verbose_) {
     PW_LOG_WARN(

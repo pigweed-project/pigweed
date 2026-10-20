@@ -387,10 +387,27 @@ GoogleTest-style output using the shared
 
 .. _module-pw_unit_test-subset:
 
-Run a subset of test suites
-===========================
-To run only a subset of registered test suites, use the
-``pw::unit_test::SetTestSuitesToRun`` function. See
+Run a subset of test suites or test cases
+=========================================
+To run only a subset of registered test suites or specific test cases, use the
+``pw::unit_test::SetTestFilters`` function with
+``pw::unit_test::TestCaseFilter`` entries. Any tests that match at least one
+filter will be run.
+
+A filter supports wildcards (``*``) for either the suite name or the test name:
+
+* **Specific test case**: Specify both ``suite_name`` and ``test_name`` (e.g.
+  ``{"SuiteA", "Test1"}``) to run only that test case.
+* **Entire suite**: Specify ``suite_name`` and an empty or ``"*"``
+  ``test_name`` (e.g. ``{"SuiteA", ""}`` or ``{"SuiteA", "*"}``) to run all
+  tests in that suite.
+* **Test case across all suites**: Specify an empty or ``"*"`` ``suite_name``
+  and a specific ``test_name`` (e.g. ``{"*", "Test1"}``) to run that test case
+  in any suite.
+* **All tests**: Specify ``"*"`` (or empty) for both ``suite_name`` and
+  ``test_name``, or provide an empty filter list.
+
+Multiple filters run the union of tests matching any filter. See
 :cs:`pw_unit_test/light_public_overrides/pw_unit_test/framework_backend.h`.
 
 This is useful when you've got a lot of test suites bundled up into a
@@ -578,7 +595,7 @@ streams the results back to the client. The service is defined in
 The RPC service is primarily intended for use with the default
 ``pw_unit_test:light`` backend. It has some support for the upstream GoogleTest
 backend (``pw_unit_test:googletest``), however some features (such as test suite
-filtering) are missing.
+and test case filtering) are missing.
 
 To set up RPC-based unit tests in your application:
 
@@ -625,6 +642,9 @@ To set up RPC-based unit tests in your application:
    client services object that has the unit testing RPC service enabled. By
    default, the results output via logging. The return value is a
    ``TestRecord`` dataclass instance containing the results of the test run.
+   Specific test suites and/or test cases can be filtered using the
+   ``test_suites`` and ``test_filters`` arguments. When specified, only tests
+   matching the union of the selected suites and filters will be executed.
 
    .. code-block:: python
 

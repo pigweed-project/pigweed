@@ -17,7 +17,7 @@ import enum
 import abc
 from dataclasses import dataclass
 import logging
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from pw_rpc.client import Services
 from pw_rpc.callback_client import OptionalTimeout, UseDefault
@@ -149,10 +149,136 @@ class TestRecord:
         return self.all_tests_passed()
 
 
+def parse_test_filters(
+    filters: Sequence[str],
+) -> list[tuple[str, str]]:
+    """Parses test filter strings into test filters.
+
+    Supported formats:
+      - 'SuiteName.TestName': named test case
+      - 'SuiteName.*': all tests in suite
+      - 'SuiteName': all tests in suite (no '.' assumes suite)
+      - '*.TestName': named test case across all suites
+      - '*.*' or '*': all tests (run everything)
+      - Colons (':') can be used to delimit multiple filters.
+
+    Partial globbing (e.g. 'Suite*.Test' or 'Suite.Test*') and negative
+    filters (e.g. 'Suite.-Test' or '-Suite') are not allowed.
+    """
+    test_filters: list[tuple[str, str]] = []
+    run_all = False
+
+    for filter_arg in filters:
+        for pattern in filter_arg.split(':'):
+            pattern = pattern.strip()
+            if not pattern:
+                continue
+
+            if '-' in pattern:
+                raise ValueError(
+                    f"Negative filters are not allowed: '{pattern}'"
+                )
+
+            if pattern in ('*', '*.*'):
+                run_all = True
+                continue
+
+            if '.' in pattern:
+                if pattern.count('.') != 1:
+                    raise ValueError(f"Invalid test filter format: '{pattern}'")
+                suite, test = pattern.split('.')
+                if not suite or not test:
+                    raise ValueError(f"Invalid test filter format: '{pattern}'")
+
+                if suite == '*' and test == '*':
+                    run_all = True
+                elif suite == '*':
+                    if '*' in test:
+                        raise ValueError(
+                            "Partial test name globbing is not allowed: "
+                            f"'{pattern}'"
+                        )
+                    test_filters.append(('*', test))
+                elif test == '*':
+                    if '*' in suite:
+                        raise ValueError(
+                            "Partial suite name globbing is not allowed: "
+                            f"'{pattern}'"
+                        )
+                    test_filters.append((suite, '*'))
+                else:
+                    if '*' in suite:
+                        raise ValueError(
+                            "Partial suite name globbing is not allowed: "
+                            f"'{pattern}'"
+                        )
+                    if '*' in test:
+                        raise ValueError(
+                            "Partial test name globbing is not allowed: "
+                            f"'{pattern}'"
+                        )
+                    test_filters.append((suite, test))
+            else:
+                suite = pattern
+                if '*' in suite:
+                    raise ValueError(
+                        "Partial suite name globbing is not allowed: "
+                        f"'{pattern}'"
+                    )
+                test_filters.append((suite, '*'))
+
+    if run_all:
+        return []
+
+    return list(dict.fromkeys(test_filters))
+
+
+def _convert_to_proto_test_filters(
+    test_suites: Iterable[str],
+    test_filters: Iterable[
+        TestCase | unit_test_pb2.TestFilter | tuple[str, str] | str
+    ],
+) -> list[unit_test_pb2.TestFilter]:
+    proto_test_filters: list[unit_test_pb2.TestFilter] = [
+        unit_test_pb2.TestFilter(suite_name=suite) for suite in test_suites
+    ]
+    for item in test_filters:
+        if isinstance(item, unit_test_pb2.TestFilter):
+            proto_test_filters.append(item)
+        elif isinstance(item, TestCase):
+            proto_test_filters.append(
+                unit_test_pb2.TestFilter(
+                    suite_name=item.suite_name,
+                    test_name=item.test_name,
+                )
+            )
+        elif isinstance(item, tuple):
+            proto_test_filters.append(
+                unit_test_pb2.TestFilter(
+                    suite_name=item[0],
+                    test_name=item[1] if len(item) > 1 else None,
+                )
+            )
+        elif isinstance(item, str):
+            for suite, test in parse_test_filters([item]):
+                proto_test_filters.append(
+                    unit_test_pb2.TestFilter(
+                        suite_name=suite,
+                        test_name=test if test != '*' else None,
+                    )
+                )
+        else:
+            raise TypeError(f'Unsupported test filter type: {type(item)}')
+    return proto_test_filters
+
+
 def run_tests(
     rpcs: Services,
     report_passed_expectations: bool = False,
     test_suites: Iterable[str] = (),
+    test_filters: Iterable[
+        TestCase | unit_test_pb2.TestFilter | tuple[str, str] | str
+    ] = (),
     event_handlers: Iterable[EventHandler] = (LoggingEventHandler(),),
     timeout_s: OptionalTimeout = UseDefault.VALUE,
 ) -> TestRecord:
@@ -161,10 +287,14 @@ def run_tests(
     Calls each of the provided event handlers as test events occur, and returns
     ``True`` if all tests pass.
     """
+    proto_test_filters = _convert_to_proto_test_filters(
+        test_suites, test_filters
+    )
+
     unit_test_service = rpcs.pw.unit_test.UnitTest  # type: ignore[attr-defined]
     request = unit_test_service.Run.request(
         report_passed_expectations=report_passed_expectations,
-        test_suite=test_suites,
+        test_filters=proto_test_filters,
     )
     call = unit_test_service.Run.invoke(request, timeout_s=timeout_s)
     test_responses = iter(call)

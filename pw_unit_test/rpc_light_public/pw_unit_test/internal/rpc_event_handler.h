@@ -26,7 +26,7 @@ namespace internal {
 class RpcEventHandler : public EventHandler {
  public:
   RpcEventHandler(UnitTestThread& thread);
-  void ExecuteTests(span<std::string_view> suites_to_run);
+  void ExecuteTests(span<const TestCaseFilter> test_filters);
 
   void TestProgramStart(const ProgramSummary&) override {}
   void EnvironmentsSetUpEnd() override {}

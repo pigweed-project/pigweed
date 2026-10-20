@@ -15,6 +15,7 @@
 
 from pw_unit_test.rpc import (
     run_tests,
+    parse_test_filters,
     EventHandler,
     TestCase,
     TestExpectation,

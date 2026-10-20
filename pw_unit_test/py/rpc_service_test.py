@@ -132,6 +132,109 @@ class RpcIntegrationTest(unittest.TestCase):
         calls = [mock.call(case, unit_test_pb2.FAILURE) for case in FAILING]
         self.handler.test_case_end.assert_has_calls(calls, any_order=True)
 
+    def test_single_test_case_only(self) -> None:
+        self.assertTrue(
+            run_tests(
+                self.rpcs,
+                test_filters=[('Passing', 'One')],
+                event_handlers=[self.handler],
+            )
+        )
+        target_case = TestCase('Passing', 'One', _FILE)
+        self.handler.test_case_start.assert_called_once_with(target_case)
+        self.handler.test_case_end.assert_called_once_with(
+            target_case, unit_test_pb2.SUCCESS
+        )
+
+    def test_multiple_test_cases(self) -> None:
+        self.assertTrue(
+            run_tests(
+                self.rpcs,
+                test_filters=[('Passing', 'Zero'), ('Passing', 'Two')],
+                event_handlers=[self.handler],
+            )
+        )
+        expected = [
+            TestCase('Passing', 'Zero', _FILE),
+            TestCase('Passing', 'Two', _FILE),
+        ]
+        self.handler.test_case_end.assert_has_calls(
+            [mock.call(case, unit_test_pb2.SUCCESS) for case in expected],
+            any_order=True,
+        )
+        self.assertEqual(self.handler.test_case_end.call_count, 2)
+
+    def test_union_suite_and_test_cases(self) -> None:
+        self.assertFalse(
+            run_tests(
+                self.rpcs,
+                test_suites=['Passing'],
+                test_filters=[('Failing', 'One')],
+                event_handlers=[self.handler],
+            )
+        )
+        expected_passing = [
+            mock.call(case, unit_test_pb2.SUCCESS) for case in PASSING
+        ]
+        expected_failing = [
+            mock.call(TestCase('Failing', 'One', _FILE), unit_test_pb2.FAILURE)
+        ]
+        self.handler.test_case_end.assert_has_calls(
+            expected_passing + expected_failing, any_order=True
+        )
+        self.assertEqual(
+            self.handler.test_case_end.call_count, len(PASSING) + 1
+        )
+
+    def test_non_existent_test_case(self) -> None:
+        record = run_tests(
+            self.rpcs,
+            test_filters=[('NonExistentSuite', 'NonExistentTest')],
+            event_handlers=[self.handler],
+        )
+        self.assertTrue(record.all_tests_passed())
+        self.assertEqual(len(record.passing_tests), 0)
+        self.assertEqual(len(record.failing_tests), 0)
+        self.handler.test_case_start.assert_not_called()
+        self.handler.test_case_end.assert_not_called()
+
+    def test_test_filter_and_test_case_objects(self) -> None:
+        filter_obj = unit_test_pb2.TestFilter(
+            suite_name='Passing', test_name='Zero'
+        )
+        test_case_obj = TestCase('Passing', 'Two', _FILE)
+        self.assertTrue(
+            run_tests(
+                self.rpcs,
+                test_filters=[filter_obj, test_case_obj],
+                event_handlers=[self.handler],
+            )
+        )
+        expected = [
+            TestCase('Passing', 'Zero', _FILE),
+            TestCase('Passing', 'Two', _FILE),
+        ]
+        self.handler.test_case_end.assert_has_calls(
+            [mock.call(case, unit_test_pb2.SUCCESS) for case in expected],
+            any_order=True,
+        )
+        self.assertEqual(self.handler.test_case_end.call_count, 2)
+
+    def test_filter_without_suite_name(self) -> None:
+        self.assertFalse(
+            run_tests(
+                self.rpcs,
+                test_filters=[unit_test_pb2.TestFilter(test_name='One')],
+                event_handlers=[self.handler],
+            )
+        )
+        expected = [
+            mock.call(TestCase('Passing', 'One', _FILE), unit_test_pb2.SUCCESS),
+            mock.call(TestCase('Failing', 'One', _FILE), unit_test_pb2.FAILURE),
+        ]
+        self.handler.test_case_end.assert_has_calls(expected, any_order=True)
+        self.assertEqual(self.handler.test_case_end.call_count, 2)
+
 
 def _main(
     test_server_command: list[str], port: int, unittest_args: list[str]

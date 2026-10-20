@@ -18,6 +18,7 @@
 
 #include "pw_containers/vector.h"
 #include "pw_log/log.h"
+#include "pw_string/string.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"
 #include "pw_sync/thread_notification.h"
@@ -51,7 +52,13 @@ class UnitTestThread : public thread::ThreadCore {
   friend class internal::RpcEventHandler;
 
   static constexpr size_t kMaxTestSuiteNameLength = 64;
-  static constexpr size_t kMaxTestSuiteFilters = 16;
+  static constexpr size_t kMaxTestNameLength = 64;
+  static constexpr size_t kMaxTestFilters = 16;
+
+  struct TestCaseFilterStorage {
+    InlineString<kMaxTestSuiteNameLength> suite_name;
+    InlineString<kMaxTestNameLength> test_name;
+  };
 
   bool running() {
     std::lock_guard lock(mutex_);
@@ -65,7 +72,7 @@ class UnitTestThread : public thread::ThreadCore {
   void set_verbose(bool verbose) { verbose_ = verbose; }
 
   Status ScheduleTestRun(rpc::RawServerWriter&& writer,
-                         span<std::string_view> test_suites_to_run);
+                         span<const TestCaseFilter> test_filters_to_run);
 
   void Run() final;
 
@@ -87,8 +94,7 @@ class UnitTestThread : public thread::ThreadCore {
 
   Service service_;
   internal::RpcEventHandler handler_;
-  Vector<std::array<char, kMaxTestSuiteNameLength>, kMaxTestSuiteFilters>
-      test_suites_to_run_;
+  Vector<TestCaseFilterStorage, kMaxTestFilters> test_filters_to_run_;
   std::array<std::byte, config::kEventBufferSize> encoding_buffer_ = {};
   pw::sync::Mutex mutex_;
   pw::sync::ThreadNotification notification_;
