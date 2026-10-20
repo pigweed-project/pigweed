@@ -111,7 +111,7 @@ class GenericIntrusiveQueue {
       if (prev->next_ == list_.end()) {
         break;
       }
-      if (pred(*static_cast<DerivedItem*>(prev->next_))) {
+      if (pred(static_cast<DerivedItem&>(*prev->next_))) {
         erase_after(prev);
         removed += 1;
       } else {

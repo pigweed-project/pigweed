@@ -164,10 +164,10 @@ class IntrusiveList {
   // Element access
 
   /// Reference to the first element in the list. Undefined behavior if empty().
-  T& front() { return *static_cast<T*>(list_.begin()); }
+  T& front() { return static_cast<T&>(*list_.begin()); }
 
   /// Reference to the last element in the list. Undefined behavior if empty().
-  T& back() { return *static_cast<T*>(list_.before_end()); }
+  T& back() { return static_cast<T&>(*list_.before_end()); }
 
   // Iterators
 

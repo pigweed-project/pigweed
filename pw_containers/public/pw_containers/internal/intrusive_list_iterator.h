@@ -39,11 +39,11 @@ namespace internal {
 template <typename Derived, typename T, typename I>
 class IteratorBase {
  public:
-  constexpr const T& operator*() const { return *(downcast()); }
-  constexpr T& operator*() { return *(downcast()); }
+  constexpr const T& operator*() const { return downcast(); }
+  constexpr T& operator*() { return downcast(); }
 
-  constexpr const T* operator->() const { return downcast(); }
-  constexpr T* operator->() { return downcast(); }
+  constexpr const T* operator->() const { return &downcast(); }
+  constexpr T* operator->() { return &downcast(); }
 
   template <typename D2,
             typename T2,
@@ -71,8 +71,8 @@ class IteratorBase {
   Derived& derived() { return static_cast<Derived&>(*this); }
   const Derived& derived() const { return static_cast<const Derived&>(*this); }
 
-  T* downcast() { return static_cast<T*>(derived().item_); }
-  const T* downcast() const { return static_cast<const T*>(derived().item_); }
+  T& downcast() { return static_cast<T&>(*derived().item_); }
+  const T& downcast() const { return static_cast<const T&>(*derived().item_); }
 };
 
 // Mixin for iterators that can advance to a subsequent item.

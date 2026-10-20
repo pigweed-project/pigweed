@@ -63,7 +63,7 @@ class LegacyIntrusiveList : public IntrusiveForwardList<T> {
   /// Returns a reference to the last element in the list.
   ///
   /// Undefined behavior if empty(). Runs in O(n) time.
-  T& back() { return *static_cast<T*>(Base::list().before_end()); }
+  T& back() { return static_cast<T&>(*Base::list().before_end()); }
 
   /// Returns the number of items in the list.
   ///

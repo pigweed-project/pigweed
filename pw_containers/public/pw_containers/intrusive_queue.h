@@ -113,14 +113,14 @@ class IntrusiveQueue {
 
   // Element access
 
-  reference front() { return *static_cast<T*>(generic_queue_.begin()); }
+  reference front() { return static_cast<T&>(*generic_queue_.begin()); }
   const_reference front() const {
-    return *static_cast<const T*>(generic_queue_.begin());
+    return static_cast<const T&>(*generic_queue_.begin());
   }
 
-  reference back() { return *static_cast<T*>(generic_queue_.tail()); }
+  reference back() { return static_cast<T&>(*generic_queue_.tail()); }
   const_reference back() const {
-    return *static_cast<const T*>(generic_queue_.tail());
+    return static_cast<const T&>(*generic_queue_.tail());
   }
 
   // Capacity

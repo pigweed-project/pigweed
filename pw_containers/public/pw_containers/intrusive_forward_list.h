@@ -172,9 +172,9 @@ class IntrusiveForwardList {
   // Element access
 
   /// Reference to the first element in the list. Undefined behavior if empty().
-  reference front() { return *static_cast<T*>(list().begin()); }
+  reference front() { return static_cast<T&>(*list().begin()); }
   const_reference front() const {
-    return *static_cast<const T*>(list().begin());
+    return static_cast<const T&>(*list().begin());
   }
 
   // Iterators
