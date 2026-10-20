@@ -17,6 +17,11 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+/// User-provided header to optionally override options in this file.
+#if defined(PW_THREAD_FREERTOS_CONFIG_HEADER)
+#include PW_THREAD_FREERTOS_CONFIG_HEADER
+#endif  // defined(PW_THREAD_FREERTOS_CONFIG_HEADER)
+
 // Whether thread joining is enabled. By default this is disabled.
 //
 // We suggest only enabling this when thread joining is required to minimize
