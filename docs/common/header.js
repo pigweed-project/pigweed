@@ -111,28 +111,9 @@ class PwHeader extends HTMLElement {
         }
 
         // 3. Sphinx subsite
-        const sphinxSidebar = document.querySelector('.bd-sidebar-primary');
-        let sphinxActive = document.querySelector(
-          '.bd-sidebar-primary .pw-site-nav [aria-current="page"], .bd-sidebar-primary .pw-site-nav a.current, .bd-sidebar-primary .pw-site-nav a.active',
-        );
-        if (!sphinxActive || sphinxActive.getClientRects().length === 0) {
-          sphinxActive = document.querySelector(
-            '.bd-sidebar-primary [aria-current="page"], .bd-sidebar-primary a.current, .bd-sidebar-primary a.active, .bd-sidebar-primary .active, .bd-sidebar-primary .current',
-          );
-        }
-        if (sphinxActive && sphinxSidebar) {
-          const sRect = sphinxSidebar.getBoundingClientRect();
-          const aRect = sphinxActive.getBoundingClientRect();
-          if (sRect.height > 0 && aRect.height > 0) {
-            sphinxSidebar.scrollTop = Math.max(
-              0,
-              aRect.top -
-                sRect.top +
-                sphinxSidebar.scrollTop -
-                sRect.height / 2 +
-                aRect.height / 2,
-            );
-          }
+        const pwNav = document.querySelector('pw-nav, #pw-nav');
+        if (pwNav && typeof pwNav.scrollToActiveItem === 'function') {
+          pwNav.scrollToActiveItem();
         }
       });
     };
@@ -171,11 +152,9 @@ class PwHeader extends HTMLElement {
         return;
       }
 
-      // 3. Sphinx subsite (PyData Sphinx Theme)
-      const primarySidebar = document.querySelector(
-        '#pst-primary-sidebar, .bd-sidebar-primary',
-      );
-      if (primarySidebar) {
+      // 3. Sphinx subsite
+      const pwNav = document.querySelector('pw-nav, #pw-nav');
+      if (pwNav) {
         const isOpen = document.body.classList.toggle('pw-sphinx-nav-open');
         updateMenuIcon(isOpen);
         if (isOpen) {

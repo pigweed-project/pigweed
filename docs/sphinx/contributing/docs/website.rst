@@ -587,3 +587,25 @@ immediately without client-side layout shift:
 * **Rust reference pages (Rustdoc):** Formatted as ``Home`` > ``Reference`` >
   ``Rust`` > ``<crate>`` > ``<item>``.
 * **Homepage:** Omitted to maintain a clean landing experience.
+
+.. _contrib-docs-website-nav:
+
+----------------------
+Sphinx site navigation
+----------------------
+All Sphinx pages display a unified global navigation tree (``<pw-nav>``) in the
+left sidebar on desktop viewports (``>=840px``) and inside the hamburger menu
+drawer on mobile viewports (``<840px``).
+
+* **Static build-time generation:** ``//docs/common/nav.py`` extracts the full
+  recursive navigation tree from the root ``toctree`` and replaces the
+  ``<!-- pw-nav-sentinel -->`` placeholder in ``//docs/sphinx/layout/layout.html``.
+* **Native HTML/CSS progressive disclosure:** Expandable sections use native
+  ``<details>`` and ``<summary>`` elements with CSS-masked chevrons
+  (``//docs/common/nav.css``). Ancestor sections along the active path are marked
+  ``open`` at build time so navigation and section disclosure work even when
+  JavaScript is disabled.
+* **Progressive enhancement:** ``//docs/common/nav.js`` defines the ``<pw-nav>``
+  custom element (``PwNav``), which automatically scrolls the active page link
+  (``[aria-current="page"]``) into view on desktop page load and when opening
+  the mobile navigation drawer.

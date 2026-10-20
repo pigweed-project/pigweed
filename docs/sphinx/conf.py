@@ -171,6 +171,8 @@ html_theme_options = {
     # Hide default PyData breadcrumbs. Universal breadcrumbs are now provided by
     # //docs/common.
     'article_header_start': [],
+    # Hide default PyData primary sidebar
+    'primary_sidebar_end': [],
     # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/styling.html#configure-pygments-theme
     'pygments_light_style': 'pigweed_code_light_style',
     'pygments_dark_style': 'pigweed_code_style',
@@ -189,10 +191,10 @@ html_theme_options = {
 
 html_baseurl = 'https://pigweed.dev/'
 
-# The lefthand "Section Navigation" section is empty for these docs. Hide it.
+# Disable PyData's default primary sidebar templates (sidebar-nav-bs.html,
+# sidebar-collapse.html). Sitewide navigation is provided by //docs/common/nav.py.
 html_sidebars = {
-    'changelog': [],
-    'size_optimizations': [],
+    '**': [],
 }
 
 html_context = {
@@ -283,23 +285,6 @@ def env_get_outdated(app, env, added, changed, removed):
     return ['index']
 
 
-# pydata-sphinx-theme defaults to startdepth=1 for "Section Navigation", which
-# suppresses the primary sidebar on root_doc (index). Override startdepth=0 on
-# root_doc so the homepage displays the top-level toctree in "Section
-# Navigation" unless explicitly disabled in html_sidebars.
-def enable_root_sidebar_toctree(app, pagename, templatename, context, doctree):
-    if pagename != app.config.root_doc:
-        return
-    orig_generate = context.get('generate_toctree_html')
-    if orig_generate is None:
-        return
-    context['suppress_sidebar_toctree'] = lambda **_kwargs: False
-    context['generate_toctree_html'] = lambda *args, **kwargs: orig_generate(
-        *args, **{**kwargs, 'startdepth': 0}
-    )
-
-
 def setup(app):
     app.connect('env-get-outdated', env_get_outdated)
     app.connect('autodoc-skip-member', do_not_skip_init)
-    app.connect('html-page-context', enable_root_sidebar_toctree, priority=600)

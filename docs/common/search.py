@@ -26,6 +26,7 @@ _PW_EXCLUDE_SELECTORS = [
     '#pw-toc-fab',  # Page ToC FAB
     'pw-header',  # Universal header
     'pw-breadcrumbs',  # Universal breadcrumbs
+    'pw-nav',  # Global Sphinx site navigation
 ]
 
 _SPHINX_EXCLUDE_SELECTORS = [

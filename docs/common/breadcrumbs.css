@@ -48,20 +48,23 @@ body:has(#pw-breadcrumbs) {
   ) !important;
 }
 
-body:has(#pw-breadcrumbs) .bd-sidebar-primary,
+body:has(#pw-breadcrumbs) pw-nav {
+  top: calc(var(--pw-header-height) + var(--pw-breadcrumbs-height));
+  height: calc(100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height));
+  max-height: calc(
+    100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
+  );
+}
+
 body:has(#pw-breadcrumbs) .bd-sidebar-secondary {
-  top: calc(
-    var(--pw-header-height) + var(--pw-breadcrumbs-height)
-  ) !important;
+  top: calc(var(--pw-header-height) + var(--pw-breadcrumbs-height)) !important;
   height: calc(
     100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
   ) !important;
 }
 
 body:has(#pw-breadcrumbs) #pw-nav-backdrop {
-  top: calc(
-    var(--pw-header-height) + var(--pw-breadcrumbs-height)
-  ) !important;
+  top: calc(var(--pw-header-height) + var(--pw-breadcrumbs-height)) !important;
   height: calc(
     100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
   ) !important;
@@ -75,9 +78,7 @@ body:has(#pw-breadcrumbs) #pw-toc-fab {
 
 body:has(#pw-breadcrumbs) #side-nav {
   position: fixed !important;
-  top: calc(
-    var(--pw-header-height) + var(--pw-breadcrumbs-height)
-  ) !important;
+  top: calc(var(--pw-header-height) + var(--pw-breadcrumbs-height)) !important;
   height: calc(
     100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
   ) !important;
@@ -98,9 +99,7 @@ body:has(#pw-breadcrumbs) #nav-tree {
 
 .rustdoc:has(#pw-breadcrumbs) .sidebar,
 body:has(#pw-breadcrumbs):has(> nav.sidebar) .sidebar {
-  top: calc(
-    var(--pw-header-height) + var(--pw-breadcrumbs-height)
-  ) !important;
+  top: calc(var(--pw-header-height) + var(--pw-breadcrumbs-height)) !important;
   height: calc(
     100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
   ) !important;
@@ -108,9 +107,7 @@ body:has(#pw-breadcrumbs):has(> nav.sidebar) .sidebar {
 
 .rustdoc:has(#pw-breadcrumbs) .sidebar-resizer,
 body:has(#pw-breadcrumbs):has(> nav.sidebar) .sidebar-resizer {
-  top: calc(
-    var(--pw-header-height) + var(--pw-breadcrumbs-height)
-  ) !important;
+  top: calc(var(--pw-header-height) + var(--pw-breadcrumbs-height)) !important;
   height: calc(
     100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
   ) !important;

@@ -58,6 +58,19 @@ pw_py_test(
 )
 
 pw_py_test(
+    name = "nav_test",
+    srcs = ["nav_test.py"],
+    data = [":chromium_files"],
+    tags = ["local"],
+    deps = [
+        ":helpers",
+        requirement("greenlet"),
+        requirement("playwright"),
+        requirement("pyee"),
+    ],
+)
+
+pw_py_test(
     name = "search_test",
     srcs = ["search_test.py"],
     data = [":chromium_files"],

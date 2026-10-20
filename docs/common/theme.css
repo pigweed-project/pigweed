@@ -26,16 +26,21 @@ html[data-theme='dark'] {
   --pw-color-background-secondary: #22272e;
   --pw-color-background-code: #2d333b;
   --pw-color-foreground-primary: #ffffffcc;
+  --pw-color-border: #333;
+  --pw-color-hover: var(--pw-color-background-secondary);
+  --pw-color-outline-focus: #58a6ff;
 
+  /* TODO: https://pwbug.dev/575488391 - Migrate remaining non-search uses of
+   * --pf-* variables in docs/common/ to --pw-* variables. */
   --pf-text-secondary: var(--pw-color-foreground-primary) !important;
   --pf-text-muted: #949494;
-  --pf-border: #333;
+  --pf-border: var(--pw-color-border);
   --pf-border-focus: #555;
   --pf-skeleton: #2a2a2a;
   --pf-skeleton-shine: #333;
   --pf-mark: #e5e5e5;
   --pf-scroll-shadow: rgba(255, 255, 255, 0.1);
-  --pf-outline-focus: #58a6ff;
+  --pf-outline-focus: var(--pw-color-outline-focus);
   --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
   --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
@@ -55,16 +60,21 @@ html[data-theme='light'] {
   --pw-color-background-secondary: #f8f9fb;
   --pw-color-background-code: #e8ecef;
   --pw-color-foreground-primary: #222832;
+  --pw-color-border: #e0e0e0;
+  --pw-color-hover: var(--pw-color-background-secondary);
+  --pw-color-outline-focus: #0969da;
 
+  /* TODO: https://pwbug.dev/575488391 - Migrate remaining non-search uses of
+   * --pf-* variables in docs/common/ to --pw-* variables. */
   --pf-text-secondary: var(--pw-color-foreground-primary) !important;
   --pf-text-muted: #767676;
-  --pf-border: #e0e0e0;
+  --pf-border: var(--pw-color-border);
   --pf-border-focus: #999;
   --pf-skeleton: #eee;
   --pf-skeleton-shine: #f5f5f5;
   --pf-mark: #1a1a1a;
   --pf-scroll-shadow: rgba(0, 0, 0, 0.08);
-  --pf-outline-focus: #0969da;
+  --pf-outline-focus: var(--pw-color-outline-focus);
   --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
   --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
   --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.2);

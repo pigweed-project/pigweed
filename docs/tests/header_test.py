@@ -154,7 +154,7 @@ class HeaderTest(unittest.TestCase):
             # Click to open Sphinx drawer
             menu_btn.click()
             self.assertEqual(menu_btn.get_attribute("aria-expanded"), "true")
-            sidebar = page.locator(".bd-sidebar-primary")
+            sidebar = page.locator("#pw-nav")
             sidebar.wait_for(state="visible", timeout=5000)
             nav_links = sidebar.locator("a")
             self.assertGreater(nav_links.count(), 0)
@@ -219,11 +219,8 @@ class HeaderTest(unittest.TestCase):
             menu_btn.click()
             self.assertEqual(menu_btn.get_attribute("aria-expanded"), "true")
 
-            sidebar = page.locator(".bd-sidebar-primary")
-            sidebar.wait_for(state="visible", timeout=5000)
-
-            # Check that pw-site-nav is visible and contains navigation links
-            site_nav = sidebar.locator(".pw-site-nav")
+            # Check that pw-nav is visible and contains navigation links
+            site_nav = page.locator("#pw-nav")
             site_nav.wait_for(state="visible", timeout=5000)
             nav_links = site_nav.locator("a")
             self.assertGreater(nav_links.count(), 0)
@@ -645,23 +642,16 @@ class HeaderTest(unittest.TestCase):
             menu_btn.wait_for(state="visible", timeout=5000)
             menu_btn.click()
 
-            sidebar = page.locator("#pst-primary-sidebar")
+            sidebar = page.locator("#pw-nav")
             sidebar.wait_for(state="visible", timeout=5000)
 
-            # Section nav should be hidden on mobile, sitewide nav visible
-            mobile_section_nav = sidebar.locator(
+            # Section nav should be absent, sitewide nav visible
+            mobile_section_nav = page.locator(
                 "nav[aria-label='Section Navigation']"
             )
-            mobile_site_nav = sidebar.locator(
-                "nav[aria-label='Site Navigation']"
-            )
-            self.assertFalse(mobile_section_nav.is_visible())
+            mobile_site_nav = sidebar.locator("nav[aria-label='Documentation']")
+            self.assertEqual(mobile_section_nav.count(), 0)
             self.assertTrue(mobile_site_nav.is_visible())
-
-            # Check that the sitewide nav title is present
-            title = mobile_site_nav.locator(".bd-links__title")
-            title.wait_for(state="visible", timeout=5000)
-            self.assertEqual(title.inner_text(), "Site Navigation")
 
             # Check that ancestor details are open
             allocator_item = mobile_site_nav.locator(
@@ -676,9 +666,10 @@ class HeaderTest(unittest.TestCase):
             # Check that active page has aria-current="page" and is visible
             active_link = mobile_site_nav.locator("a[aria-current='page']")
             active_link.wait_for(state="visible", timeout=5000)
+            self.assertEqual(active_link.count(), 1)
             self.assertIn("Backends", active_link.inner_text())
 
-            # 3. Test scrolling down on a page far down the sitewide navigation
+            # 2. Test scrolling down on a page far down the sitewide navigation
             page.goto(
                 self.server.url_for("pw_string/docs.html"),
                 wait_until="domcontentloaded",
@@ -687,11 +678,9 @@ class HeaderTest(unittest.TestCase):
             menu_btn.wait_for(state="visible", timeout=5000)
             menu_btn.click()
 
-            sidebar = page.locator("#pst-primary-sidebar")
+            sidebar = page.locator("#pw-nav")
             sidebar.wait_for(state="visible", timeout=5000)
-            string_active = sidebar.locator(
-                ".pw-site-nav a[aria-current='page']"
-            )
+            string_active = sidebar.locator("a[aria-current='page']")
             string_active.wait_for(state="visible", timeout=5000)
 
             page.wait_for_timeout(300)
@@ -702,7 +691,7 @@ class HeaderTest(unittest.TestCase):
                 f"Sidebar should have scrolled down to pw_string, got scrollTop={sidebar_scroll_top}",
             )
 
-            # 4. Test homepage mobile sitewide nav
+            # 3. Test homepage mobile sitewide nav
             page.goto(
                 self.server.url_for("index.html"),
                 wait_until="domcontentloaded",
@@ -711,11 +700,11 @@ class HeaderTest(unittest.TestCase):
             menu_btn.wait_for(state="visible", timeout=5000)
             menu_btn.click()
 
-            sidebar = page.locator("#pst-primary-sidebar")
+            sidebar = page.locator("#pw-nav")
             sidebar.wait_for(state="visible", timeout=5000)
-            title = sidebar.locator(".pw-site-nav .bd-links__title")
-            title.wait_for(state="visible", timeout=5000)
-            self.assertEqual(title.inner_text(), "Site Navigation")
+            self.assertTrue(
+                sidebar.locator("nav[aria-label='Documentation']").is_visible()
+            )
 
             context.close()
             browser.close()

@@ -90,9 +90,9 @@ class DevTest(unittest.TestCase):
                 wait_until="domcontentloaded",
             )
 
-            # Find C/C++ API reference link in #pst-primary-sidebar / .bd-sidebar-primary
+            # Find C/C++ API reference link in #pw-nav
             sidebar_link = page.locator(
-                '.bd-sidebar-primary a[href*="group__pw__analog"]'
+                '#pw-nav a[href*="group__pw__analog"]'
             ).first
             sidebar_link.wait_for(state="attached", timeout=5000)
 

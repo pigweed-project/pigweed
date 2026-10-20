@@ -140,7 +140,7 @@ class HeaderCompiler:
             "nav.css",
             "breadcrumbs.css",
         ]
-        js_files = ["dev.js", "header.js"]
+        js_files = ["dev.js", "header.js", "nav.js"]
 
         css_parts = [
             (self.integration_dir / f).read_text(encoding="utf-8")
@@ -187,7 +187,7 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
     header_html_default = compiler.compile(skip_target="#main-content")
     header_html_doxygen = compiler.compile(skip_target="#doc-content")
 
-    env = Environment(trim_blocks=True, lstrip_blocks=True)
+    env = Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
     env.globals["is_matching"] = is_matching_url
     env.globals["has_active_child"] = lambda item, cur: any(
         has_active_descendant(child, cur) for child in item.children
@@ -208,7 +208,7 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
 
             is_doxygen = rel_parts[:2] == ("api", "cc")
 
-            # 1. For Sphinx pages (not assets, Doxygen under api/cc, or rustdoc), inject mobile site nav
+            # 1. For Sphinx pages (not assets, Doxygen under api/cc, or rustdoc), inject site nav
             if (
                 not any(
                     part in ("_static", "_sources", "rustdoc")
@@ -219,6 +219,10 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
                 content = inject_site_nav_into_content(
                     content, rel_page_path, site_nav_links, env
                 )
+                if "<pw-nav" not in content:
+                    raise RuntimeError(
+                        f"Failed to inject <pw-nav> into Sphinx page {rel_page_path}"
+                    )
 
             # 2. Build breadcrumb trail and HTML
             trail = build_breadcrumb_trail(

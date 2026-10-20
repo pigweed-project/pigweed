@@ -11,32 +11,29 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Sphinx custom site navigation menu generator.
+"""Sphinx global site navigation (<pw-nav>) generator.
 
-PyData Sphinx Theme (pydata-sphinx-theme) separates top-level header navigation
-(startdepth=0) from section sidebar navigation (startdepth=1). On mobile
-devices, the default PyData Sphinx Theme navigation presents a confusing UI
-and fails to work when JavaScript is disabled.
-
-To solve this, we provide a custom site navigation menu for Sphinx pages on
-mobile devices (accessed via the hamburger drawer):
-1. We construct the complete recursive sitewide navigation hierarchy directly
+Provides a unified, progressive-disclosure sitewide navigation component
+(``<pw-nav>``) across all Sphinx documentation pages on both desktop and mobile
+viewports:
+1. Constructs the complete recursive sitewide navigation hierarchy directly
    from the root toctree during the Sphinx build using native semantic HTML
-   (``<details>``/``<summary>``) so navigation remains fully functional even
-   when JavaScript is disabled.
-2. We inject this markup into ``#pst-primary-sidebar`` across all Sphinx HTML
-   pages (displayed on mobile viewports while desktop continues using PyData's
-   native section nav).
-3. For deeply nested pages, parent ``<details>`` ancestor elements are
-   automatically marked ``open`` at build time, and the active link is tagged
-   with ``aria-current="page"`` and ``active`` classes so that the navigation
-   tree is expanded to the current page and scrolled into view.
+   (``<details>``/``<summary>``) and CSS so navigation and section disclosure
+   remain fully functional even when JavaScript is disabled.
+2. Replaces ``<!-- pw-nav-sentinel -->`` across all Sphinx HTML pages. Note that
+   ``<pw-nav>`` is only used on Sphinx pages; it is not used on Doxygen
+   (``api/cc/``) or rustdoc (``rustdoc/``) pages, which retain their own native
+   navigation sidebars.
+3. For nested pages, ancestor ``<details>`` elements and the current page's
+   ``<details>`` are marked ``open`` at build time, and the active link is
+   tagged with ``aria-current="page"`` and ``current active`` classes so the
+   navigation tree is expanded to the current page and progressively enhanced
+   with auto-scrolling via ``PwNav`` (``nav.js``).
 """
 
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
-import re
 
 from docutils import nodes
 from jinja2 import Environment
@@ -44,6 +41,8 @@ from sphinx.application import Sphinx
 from sphinx.environment.adapters.toctree import global_toctree_for_doc
 
 from .utils import format_href
+
+_NAV_PLACEHOLDER = "<!-- pw-nav-sentinel -->"
 
 
 @dataclass
@@ -62,6 +61,32 @@ class NavLink:
     # so `has_active_descendant` and `breadcrumbs.find_nav_trail` only match a
     # page's single canonical toctree location.
     is_internal: bool = True
+
+
+def _normalize_url_for_matching(url: str) -> str:
+    """Normalizes a URL or path for matching against the current page path."""
+    url = url.split("?")[0].split("#")[0].replace("\\", "/")
+    if url.startswith("https://pigweed.dev/"):
+        url = url[len("https://pigweed.dev/") :]
+    elif url.startswith("http://pigweed.dev/"):
+        url = url[len("http://pigweed.dev/") :]
+    url = url.lstrip("/")
+    if url.endswith("/index.html"):
+        url = url[: -len("/index.html")]
+    elif url == "index.html":
+        url = ""
+    elif url.endswith(".html"):
+        url = url[: -len(".html")]
+    elif url.endswith("/"):
+        url = url[:-1]
+    return url
+
+
+def is_matching_url(link_href: str, current_page_path: str) -> bool:
+    """Checks whether a nav link points to the current page."""
+    norm_link = _normalize_url_for_matching(link_href)
+    norm_page = _normalize_url_for_matching(current_page_path)
+    return norm_link == norm_page
 
 
 def _parse_bullet_list(bullet_list: nodes.bullet_list) -> list[NavLink]:
@@ -92,6 +117,15 @@ def _parse_bullet_list(bullet_list: nodes.bullet_list) -> list[NavLink]:
             if isinstance(child, nodes.bullet_list):
                 child_links.extend(_parse_bullet_list(child))
 
+        # Filter out self-referential leaf entries produced by `<self>` / `self`
+        # in section toctrees so they do not appear as duplicate child links
+        # beneath their own parent in the global navigation tree.
+        child_links = [
+            c
+            for c in child_links
+            if not (is_matching_url(c.href, href) and not c.children)
+        ]
+
         nav_links.append(
             NavLink(
                 title=title,
@@ -119,37 +153,16 @@ def extract_site_nav(app: Sphinx) -> list[NavLink]:
     if not toctree_node or len(toctree_node) == 0:
         return []
 
-    nav_links: list[NavLink] = []
+    root_href = format_href(
+        app.builder.get_target_uri(root_doc) or "index.html"
+    )
+    nav_links: list[NavLink] = [
+        NavLink(title="Home", href=root_href, is_internal=True)
+    ]
     for child in toctree_node.children:
         if isinstance(child, nodes.bullet_list):
             nav_links.extend(_parse_bullet_list(child))
     return nav_links
-
-
-def _normalize_url_for_matching(url: str) -> str:
-    """Normalizes a URL or path for matching against the current page path."""
-    url = url.split("?")[0].split("#")[0].replace("\\", "/")
-    if url.startswith("https://pigweed.dev/"):
-        url = url[len("https://pigweed.dev/") :]
-    elif url.startswith("http://pigweed.dev/"):
-        url = url[len("http://pigweed.dev/") :]
-    url = url.lstrip("/")
-    if url.endswith("/index.html"):
-        url = url[: -len("/index.html")]
-    elif url == "index.html":
-        url = ""
-    elif url.endswith(".html"):
-        url = url[: -len(".html")]
-    elif url.endswith("/"):
-        url = url[:-1]
-    return url
-
-
-def is_matching_url(link_href: str, current_page_path: str) -> bool:
-    """Checks whether a nav link points to the current page."""
-    norm_link = _normalize_url_for_matching(link_href)
-    norm_page = _normalize_url_for_matching(current_page_path)
-    return norm_link == norm_page
 
 
 def has_active_descendant(link: NavLink, current_page_path: str) -> bool:
@@ -167,12 +180,12 @@ _SITE_NAV_TEMPLATE = """
   {% for item in items %}
     {% set is_current = item.is_internal and is_matching(item.href, current_page) %}
     {% set has_active = has_active_child(item, current_page) %}
-    <li class="toctree-l{{ level }}{% if item.children %} has-children{% endif %}{% if is_current or has_active %} current active{% endif %}">
-      <a class="reference internal{% if is_current %} current active{% endif %}" href="{{ item.href }}"{% if is_current %} aria-current="page"{% endif %}>{{ item.title }}</a>
+    <li class="pw-nav-tree-item pw-nav-level-{{ level }}{% if item.children %} has-children{% endif %}{% if is_current or has_active %} current active{% endif %}">
+      <a class="pw-nav-tree-link{% if is_current %} current active{% endif %}" href="{{ item.href }}"{% if is_current %} aria-current="page"{% endif %}>{{ item.title }}</a>
       {% if item.children %}
       <details{% if is_current or has_active %} open{% endif %}>
-        <summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary>
-        <ul>
+        <summary aria-label="{{ item.title }} subpages"></summary>
+        <ul class="pw-nav-sublist">
           {{ render_items(item.children, level + 1) }}
         </ul>
       </details>
@@ -180,14 +193,13 @@ _SITE_NAV_TEMPLATE = """
     </li>
   {% endfor %}
 {% endmacro %}
-<nav class="bd-docs-nav bd-links" aria-label="Site Navigation">
-  <p class="bd-links__title" role="heading" aria-level="1">Site Navigation</p>
-  <div class="bd-toc-item navbar-nav">
-    <ul class="nav bd-sidenav">
+<pw-nav id="pw-nav" data-pagefind-ignore="all">
+  <nav class="pw-nav-container" aria-label="Documentation">
+    <ul class="pw-nav-tree">
       {{ render_items(nav_links, 1) }}
     </ul>
-  </div>
-</nav>
+  </nav>
+</pw-nav>
 """.strip()
 
 
@@ -198,7 +210,7 @@ def render_site_nav(
 ) -> str:
     """Renders the HTML navigation markup for a specific page."""
     if env is None:
-        env = Environment(trim_blocks=True, lstrip_blocks=True)
+        env = Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
         env.globals["is_matching"] = is_matching_url
         env.globals["has_active_child"] = lambda item, cur: any(
             has_active_descendant(child, cur) for child in item.children
@@ -214,32 +226,11 @@ def inject_site_nav_into_content(
     env: Environment,
 ) -> str:
     """Injects sitewide navigation into the content of a Sphinx HTML page."""
-    if 'id="pst-primary-sidebar"' not in content:
+    if _NAV_PLACEHOLDER not in content:
         return content
 
     site_nav_html = render_site_nav(nav_links, rel_page_path, env)
-    pattern = r'<div class="sidebar-primary-item">\s*<nav class="bd-docs-nav bd-links"[\s\S]*?</nav>\s*</div>'
-    site_nav_item = f'<div class="sidebar-primary-item pw-site-nav">\n{site_nav_html}\n</div>'
-
-    if re.search(pattern, content):
-        return re.sub(
-            pattern,
-            lambda m: f"{m.group(0)}\n{site_nav_item}",
-            content,
-            count=1,
-        )
-
-    target = '<div class="sidebar-header-items sidebar-primary__section">'
-    if target in content:
-        replacement = f"{target}\n{site_nav_item}"
-        return content.replace(target, replacement, 1)
-
-    end_target = '<div class="sidebar-primary-items__end'
-    if end_target in content:
-        replacement = f"{site_nav_item}\n{end_target}"
-        return content.replace(end_target, replacement, 1)
-
-    return content
+    return content.replace(_NAV_PLACEHOLDER, site_nav_html, 1)
 
 
 def inject_site_nav(app: Sphinx) -> None:
@@ -249,7 +240,7 @@ def inject_site_nav(app: Sphinx) -> None:
     if not nav_links:
         return
 
-    env = Environment(trim_blocks=True, lstrip_blocks=True)
+    env = Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
     env.globals["is_matching"] = is_matching_url
     env.globals["has_active_child"] = lambda item, cur: any(
         has_active_descendant(child, cur) for child in item.children

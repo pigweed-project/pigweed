@@ -15,6 +15,8 @@ the License.
 -->
 
 {% extends "pydata_sphinx_theme/layout.html" %}
+{%- import "static/webpack-macros.html" as _webpack with context %}
+{% set remove_sidebar_secondary = (meta is defined and meta is not none and 'html_theme.sidebar_secondary.remove' in meta) or secondary_sidebar_items|length == 0 %}
 
 {# htmltitle controls the HTML title node. On some pages we customize
    the title to make it more usable. #}
@@ -57,12 +59,75 @@ the License.
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
 {% endblock extrahead %}
 
-{% block docs_main %}
-  {{ super() }}
-  {# The following scripts are loaded after the main content in order to
-     improve load performance. Background:
-     https://developer.chrome.com/docs/lighthouse/performance/render-blocking-resources #}
-  {# Always load pigweed.js after Sphinx's scripts because pigweed.js
-     relies on classes and data from Sphinx's scripts. #}
-  <script src="{{ pathto('_static/js/pigweed.js', 1) | e }}"></script>
-{% endblock docs_main %}
+{#
+   Forked from `pydata_sphinx_theme/layout.html` (`block content`, lines 127-205)
+   because upstream does not provide a dedicated Jinja block around
+   `#pst-primary-sidebar`, which we replace with `<!-- pw-nav-sentinel -->`.
+   Because Jinja does not expose top-level `{% import %}` or `{% set %}`
+   bindings from a parent template to a child template, we also copy `_webpack`
+   and `remove_sidebar_secondary` at the top of this file so they are in scope
+   inside our overridden `content` block.
+   https://github.com/pydata/pydata-sphinx-theme/blob/v0.18.0/src/pydata_sphinx_theme/theme/pydata_sphinx_theme/layout.html#L127-L205
+#}
+{%- block content %}
+  <div id="pst-scroll-pixel-helper"></div>
+  {%- if theme_back_to_top_button %}
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    {{- _("Back to top") -}}
+  </button>
+  {%- endif %}
+  {% include "sections/announcement.html" %}
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      <!-- `pw-nav-sentinel` will be replaced during site build
+           post-processing (`docs/common/__init__.py`) with the
+           compiled site navigation (`<pw-nav>`). -->
+      <!-- pw-nav-sentinel -->
+      <main id="main-content" class="bd-main" role="main">
+        {% block docs_main %}
+          <div class="bd-content">
+            <div class="bd-article-container">
+              <div class="bd-header-article d-print-none">{% include "sections/header-article.html" %}</div>
+              {% block docs_body %}
+                {% include "components/searchbox.html" %}
+                <article class="bd-article">
+                  {% block body %}{% endblock %}
+                </article>
+              {% endblock docs_body %}
+              {% if theme_article_footer_items %}
+                <footer class="bd-footer-article">
+                  {% include "sections/footer-article.html" %}
+                </footer>
+              {% endif %}
+              {% if theme_show_prev_next %}
+                <footer class="prev-next-footer d-print-none">
+                  {% include "components/prev-next.html" %}
+                </footer>
+              {% endif %}
+            </div>
+            {% block docs_toc %}
+              {% if not remove_sidebar_secondary %}
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc">{% include "sections/sidebar-secondary.html" %}</div>
+              {% endif %}
+            {% endblock docs_toc %}
+          </div>
+          <footer class="bd-footer-content">
+            {% include "sections/footer-content.html" %}
+          </footer>
+          {# The following scripts are loaded after the main content in order to
+             improve load performance. Background:
+             https://developer.chrome.com/docs/lighthouse/performance/render-blocking-resources #}
+          {# Always load pigweed.js after Sphinx's scripts because pigweed.js
+             relies on classes and data from Sphinx's scripts. #}
+          <script src="{{ pathto('_static/js/pigweed.js', 1) | e }}"></script>
+        {% endblock docs_main %}
+      </main>
+    </div>
+  </div>
+  {# `scripts_end` is nested inside `block content` in upstream
+     `pydata_sphinx_theme/layout.html` (line 204), so it must be retained here
+     when overriding `block content`. #}
+  {%- block scripts_end %}{{ _webpack.body_post() }}{%- endblock scripts_end %}
+{%- endblock content %}

@@ -29,6 +29,7 @@ sphinx_docs_library(
         "header.js",
         "header.py",
         "nav.css",
+        "nav.js",
         "nav.py",
         "search.css",
         "search.py",
