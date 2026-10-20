@@ -81,22 +81,25 @@ func ParseIssueID(token string) (int64, error) {
 }
 
 // FormatBugIDWithFormat formats a numeric Buganizer issue ID according to a
-// configured trailer_format template (such as "Bug: b/{id}", "Bug: {id}",
-// or "Bug: fxbug.dev/{id}"). When trailerFormat is empty, it defaults to "b/<id>".
+// configured trailer_format template (such as "Bug: b/{id}", "Bug: b/<id>",
+// "Bug: {id}", or "Bug: fxbug.dev/{id}"). When trailerFormat is empty, it
+// defaults to "b/<id>".
 func FormatBugIDWithFormat(id int64, trailerFormat string) string {
 	valTemplate := "b/{id}"
 	trimmed := strings.TrimSpace(trailerFormat)
 	if trimmed != "" {
 		if _, afterColon, hasColon := strings.Cut(trimmed, ":"); hasColon {
 			afterColon = strings.TrimSpace(afterColon)
-			if strings.Contains(afterColon, "{id}") {
+			if strings.Contains(afterColon, "{id}") || strings.Contains(afterColon, "<id>") {
 				valTemplate = afterColon
 			}
-		} else if strings.Contains(trimmed, "{id}") {
+		} else if strings.Contains(trimmed, "{id}") || strings.Contains(trimmed, "<id>") {
 			valTemplate = trimmed
 		}
 	}
-	return strings.ReplaceAll(valTemplate, "{id}", strconv.FormatInt(id, 10))
+	idStr := strconv.FormatInt(id, 10)
+	out := strings.ReplaceAll(valTemplate, "{id}", idStr)
+	return strings.ReplaceAll(out, "<id>", idStr)
 }
 
 // NormalizeBugID attempts to extract a canonical bug ID (e.g. "b/12345") from a token.

@@ -444,6 +444,15 @@ func validateCIProviders(providers []string) error {
 	return nil
 }
 
+func validateWarmupDriver(driver string) error {
+	switch strings.ToLower(strings.TrimSpace(driver)) {
+	case "", "bazel", "none", "gn":
+		return nil
+	default:
+		return fmt.Errorf("must be one of \"bazel\" or \"none\", got %q", driver)
+	}
+}
+
 func parseComponentValue(val any) (int64, error) {
 	switch v := val.(type) {
 	case int64:
@@ -618,6 +627,9 @@ func ParseProjectConfigTOML(filePath, content string, dst *ProjectConfig) error 
 		dst.Worktree.SlotPrefix = *raw.Worktree.SlotPrefix
 	}
 	if raw.Worktree.WarmupDriver != nil {
+		if err := validateWarmupDriver(*raw.Worktree.WarmupDriver); err != nil {
+			return fmt.Errorf("%s: invalid value for worktree.warmup_driver: %w", filePath, err)
+		}
 		dst.Worktree.WarmupDriver = *raw.Worktree.WarmupDriver
 	}
 
@@ -788,6 +800,9 @@ func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
 			case "slotprefix":
 				dst.Worktree.SlotPrefix = val
 			case "warmupdriver":
+				if err := validateWarmupDriver(val); err != nil {
+					return fmt.Errorf("invalid git config %s=%q: %w", key, val, err)
+				}
 				dst.Worktree.WarmupDriver = val
 			}
 

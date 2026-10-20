@@ -121,8 +121,9 @@ Documentation
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Building standalone binaries, setting up repository wrappers, and
-      configuring project profiles.
+      Building standalone binaries, setting up repository wrappers,
+      ``.ghish.toml`` and ``git config ghish.*`` reference, and project
+      profiles.
 
    .. grid-item-card:: :octicon:`tools` Developing
       :link: module-pw_ghish-developing

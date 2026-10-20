@@ -483,3 +483,141 @@ func TestParseProjectConfigTOML_CIProvidersValidation(t *testing.T) {
 		t.Errorf("expected git config ghish.ci.providers=bogus to fail validation, got nil")
 	}
 }
+
+func TestParseProjectConfigTOML_WarmupDriverValidationAndAngleBracketPlaceholder(t *testing.T) {
+	for _, validDriver := range []string{"bazel", "none", "gn"} {
+		cfg := DefaultProjectConfig()
+		if err := ParseProjectConfigTOML("/repo/.ghish.toml", "[worktree]\nwarmup_driver = \""+validDriver+"\"\n", cfg); err != nil {
+			t.Errorf("expected warmup_driver=%q to succeed, got: %v", validDriver, err)
+		}
+	}
+
+	cfg := DefaultProjectConfig()
+	if err := ParseProjectConfigTOML("/repo/.ghish.toml", "[worktree]\nwarmup_driver = \"cmake-bogus\"\n", cfg); err == nil {
+		t.Errorf("expected invalid worktree.warmup_driver to fail validation, got nil")
+	}
+	if err := applyGitConfigOverrides("ghish.worktree.warmupDriver cmake-bogus\n", cfg); err == nil {
+		t.Errorf("expected invalid git config ghish.worktree.warmupDriver to fail validation, got nil")
+	}
+
+	if got := FormatBugIDWithFormat(570137899, "Bug: b/<id>"); got != "b/570137899" {
+		t.Errorf("FormatBugIDWithFormat(570137899, \"Bug: b/<id>\") = %q, want \"b/570137899\"", got)
+	}
+	if got := FormatBugIDWithFormat(570137899, "fxbug.dev/<id>"); got != "fxbug.dev/570137899" {
+		t.Errorf("FormatBugIDWithFormat(570137899, \"fxbug.dev/<id>\") = %q, want \"fxbug.dev/570137899\"", got)
+	}
+}
+
+func TestParseProjectConfigTOML_DocumentedCookbookRecipes(t *testing.T) {
+	recipes := map[string]string{
+		"luci_monorepo": `
+[gerrit]
+host = "pigweed-review.googlesource.com"
+project = "pigweed/pigweed"
+remote = "origin"
+default_branch = "main"
+scope_list_to_project = true
+submodule_policy = "warn-unpushed"
+
+[gerrit.shortlinks]
+"pwrev" = "pigweed-review.googlesource.com"
+"pwrev/i" = "pigweed-internal-review.googlesource.com"
+
+[ci]
+providers = ["buildbucket"]
+buildbucket_host = "cr-buildbucket.appspot.com"
+try_buckets = ["pigweed/try"]
+hide_tag_filters = ["hide-in-gerrit:subbuild"]
+skip_retry_tag_filters = ["skip-retry-in-gerrit:subbuild"]
+preferred_logs = ["failure summary", "stdout", "stderr"]
+include_summary_markdown = true
+local_presubmit_hint = "./pw presubmit"
+
+[issue]
+system = "buganizer"
+prefix = "b/"
+host = "issues.pigweed.dev"
+default_component = 1194524
+trailer_format = "Bug: b/{id}"
+use_owners_components = true
+
+[issue.path_components]
+"pw_bluetooth_sapphire/**" = 1456789
+"pw_kernel/**" = 1456790
+
+[worktree]
+slot_prefix = "pw-"
+warmup_driver = "bazel"
+`,
+		"android_busytown": `
+[gerrit]
+host = "googleplex-android-review.googlesource.com"
+project = "platform/external/myproject"
+remote = "goog"
+default_branch = "main"
+scope_list_to_project = true
+submodule_policy = "forbid-manual-rolls"
+
+[gerrit.shortlinks]
+"ag" = "googleplex-android-review.googlesource.com"
+
+[ci]
+providers = ["busytown"]
+include_summary_markdown = true
+local_presubmit_hint = "atest MyProjectTests"
+
+[issue]
+system = "buganizer"
+prefix = "b/"
+host = "issuetracker.google.com"
+default_component = 1357924
+trailer_format = "Bug: {id}"
+use_owners_components = true
+
+[worktree]
+slot_prefix = "and-"
+warmup_driver = "none"
+`,
+		"dual_stack": `
+[gerrit]
+host = "partner-android-review.googlesource.com"
+project = "device/google/firmware"
+remote = "partner"
+default_branch = "main"
+scope_list_to_project = true
+
+[ci]
+providers = ["buildbucket", "busytown"]
+buildbucket_host = "cr-buildbucket.appspot.com"
+try_buckets = ["firmware/try"]
+hide_tag_filters = ["hide-in-gerrit:subbuild"]
+skip_retry_tag_filters = ["skip-retry-in-gerrit:subbuild"]
+
+[issue]
+default_component = 1928374
+trailer_format = "Bug: b/{id}"
+`,
+		"superproject_subdir": `
+[gerrit]
+remote = "partner"
+forbid_topics = false
+
+[ci]
+local_presubmit_hint = "bazelisk test //vendor/sensor/..."
+
+[issue]
+default_component = 2000200
+[issue.path_components]
+"vendor/sensor/dsp/**" = 2000201
+`,
+	}
+
+	for name, content := range recipes {
+		t.Run(name, func(t *testing.T) {
+			cfg := DefaultProjectConfig()
+			if err := ParseProjectConfigTOML("/repo/.ghish.toml", content, cfg); err != nil {
+				t.Fatalf("ParseProjectConfigTOML(%s) failed: %v", name, err)
+			}
+		})
+	}
+}
