@@ -212,6 +212,7 @@ sphinx_docs_library(
         "design.rst",
         "docs.rst",
         "guides.rst",
+        "module.toml",
     ],
     prefix = "pw_channel/",
     target_compatible_with = incompatible_with_mcu(),

@@ -89,6 +89,7 @@ sphinx_docs_library(
         "backends.rst",
         "docs.rst",
         "fake_backend.rst",
+        "module.toml",
     ],
     prefix = "pw_interrupt/",
     target_compatible_with = incompatible_with_mcu(),

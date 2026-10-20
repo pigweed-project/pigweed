@@ -899,6 +899,7 @@ sphinx_docs_library(
         "futures.rst",
         "guides.rst",
         "informed_poll.rst",
+        "module.toml",
         "public/pw_async2/coro.h",
         "quickstart.rst",
         "tasks.rst",

@@ -233,6 +233,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "examples/example_perf_test.cc",
+        "module.toml",
     ],
     prefix = "pw_perf_test/",
     target_compatible_with = incompatible_with_mcu(),

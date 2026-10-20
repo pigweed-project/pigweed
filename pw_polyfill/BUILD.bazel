@@ -66,6 +66,7 @@ sphinx_docs_library(
         "Kconfig",
         "c_test.c",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_polyfill/",
     target_compatible_with = incompatible_with_mcu(),

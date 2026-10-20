@@ -186,6 +186,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_thread_threadx/",
     target_compatible_with = incompatible_with_mcu(),

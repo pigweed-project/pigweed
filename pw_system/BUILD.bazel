@@ -762,6 +762,7 @@ sphinx_docs_library(
         "Kconfig",
         "cli.rst",
         "docs.rst",
+        "module.toml",
         "system_async_test.cc",
     ],
     prefix = "pw_system/",

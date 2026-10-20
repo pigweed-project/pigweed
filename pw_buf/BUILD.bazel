@@ -60,6 +60,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         "//pw_buf/examples",
     ],
     prefix = "pw_buf/",

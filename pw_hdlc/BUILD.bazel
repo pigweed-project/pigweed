@@ -251,6 +251,7 @@ sphinx_docs_library(
         "design.rst",
         "docs.rst",
         "guide.rst",
+        "module.toml",
         "router.rst",
         "size.rst",
         ":pw_hdlc_size_table",

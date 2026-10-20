@@ -122,6 +122,7 @@ sphinx_docs_library(
     srcs = [
         "backends.rst",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_tls_client/",
     target_compatible_with = incompatible_with_mcu(),

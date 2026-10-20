@@ -280,6 +280,7 @@ sphinx_docs_library(
         "docs.rst",
         "get_started.rst",
         "guides.rst",
+        "module.toml",
         "security.rst",
     ],
     prefix = "pw_software_update/",

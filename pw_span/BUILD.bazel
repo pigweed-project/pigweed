@@ -102,6 +102,7 @@ sphinx_docs_library(
         "Kconfig",
         "cast_test.cc",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_span/",
     target_compatible_with = incompatible_with_mcu(),

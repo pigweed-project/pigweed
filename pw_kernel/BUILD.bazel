@@ -95,6 +95,7 @@ sphinx_docs_library(
         "examples/adventure/targets/riscv_qemu/simulated/system.json5",
         "examples/adventure/targets/riscv_qemu/target.rs",
         "guides.rst",
+        "module.toml",
         "quickstart.rst",
         "tour.rst",
         "upstream.rst",

@@ -157,6 +157,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         ":docs_size_report",
     ],
     prefix = "pw_async_basic/",

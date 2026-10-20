@@ -96,6 +96,7 @@ pw_cc_test(
 sphinx_docs_library(
     name = "docs",
     srcs = [
+        "module.toml",
         "docs.rst",
         # These header files must be provided to Sphinx because
         # some of their code is directly included in docs.rst.

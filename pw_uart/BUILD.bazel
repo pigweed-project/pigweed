@@ -154,6 +154,7 @@ sphinx_docs_library(
     srcs = [
         "backends.rst",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_uart/",
     target_compatible_with = incompatible_with_mcu(),

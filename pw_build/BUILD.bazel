@@ -492,6 +492,7 @@ sphinx_docs_library(
         "docs.rst",
         "gn.rst",
         "linker_scripts.rst",
+        "module.toml",
         "pigweed.bazelrc",
         "pigweed.cmake",
         "pigweed_recommended.bazelrc",

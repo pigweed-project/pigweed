@@ -103,6 +103,7 @@ sphinx_docs_library(
     srcs = [
         "Kconfig",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_preprocessor/",
     target_compatible_with = incompatible_with_mcu(),

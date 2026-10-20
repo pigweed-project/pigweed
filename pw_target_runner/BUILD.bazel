@@ -47,6 +47,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         "//pw_target_runner/go:docs",
     ],
     prefix = "pw_target_runner/",

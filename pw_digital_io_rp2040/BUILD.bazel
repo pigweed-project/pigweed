@@ -48,6 +48,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_digital_io_rp2040/",
     target_compatible_with = incompatible_with_mcu(),

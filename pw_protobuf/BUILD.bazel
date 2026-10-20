@@ -425,6 +425,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         "pw_protobuf_test_protos/size_report.proto",
         "pw_protobuf_test_protos/size_report.pwpb_options",
         "size_report.rst",

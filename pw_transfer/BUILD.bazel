@@ -320,6 +320,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         "transfer.proto",
     ],
     prefix = "pw_transfer/",

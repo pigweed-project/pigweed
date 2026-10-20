@@ -53,6 +53,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_digital_io_mcuxpresso/",
     target_compatible_with = incompatible_with_mcu(),

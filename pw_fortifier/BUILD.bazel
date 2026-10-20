@@ -32,6 +32,7 @@ sphinx_docs_library(
         "guides/defect_user.rst",
         "guides/freshness_impl.rst",
         "guides/freshness_user.rst",
+        "module.toml",
         "other_utils.rst",
     ],
     prefix = "pw_fortifier/",

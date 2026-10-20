@@ -49,6 +49,7 @@ sphinx_docs_library(
     srcs = [
         "api.rst",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_display/",
     target_compatible_with = incompatible_with_mcu(),

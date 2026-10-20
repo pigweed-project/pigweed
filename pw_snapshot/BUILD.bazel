@@ -126,6 +126,7 @@ sphinx_docs_library(
     srcs = [
         "design_discussion.rst",
         "docs.rst",
+        "module.toml",
         "module_usage.rst",
         "proto_format.rst",
         "setup.rst",

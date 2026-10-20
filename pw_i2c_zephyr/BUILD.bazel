@@ -50,6 +50,7 @@ sphinx_docs_library(
     srcs = [
         "Kconfig",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_i2c_zephyr/",
     target_compatible_with = incompatible_with_mcu(),

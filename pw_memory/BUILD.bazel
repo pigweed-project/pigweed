@@ -116,6 +116,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "globals_test.cc",
+        "module.toml",
     ],
     prefix = "pw_memory/",
     target_compatible_with = incompatible_with_mcu(),

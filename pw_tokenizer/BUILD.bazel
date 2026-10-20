@@ -458,6 +458,7 @@ sphinx_docs_library(
         "docs.rst",
         "enum_test.cc",
         "get_started.rst",
+        "module.toml",
         "public/pw_tokenizer/internal/tokenize_string.h",
         "token_databases.rst",
         "tokenization.rst",

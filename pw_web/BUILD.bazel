@@ -25,6 +25,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "log_viewer.rst",
+        "module.toml",
         "repl.rst",
         "testing.rst",
     ],

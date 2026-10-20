@@ -279,6 +279,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         ":metric_size_report",
     ],
     prefix = "pw_metric/",

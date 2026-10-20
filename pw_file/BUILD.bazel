@@ -100,6 +100,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "file.proto",
+        "module.toml",
     ],
     prefix = "pw_file/",
     target_compatible_with = incompatible_with_mcu(),

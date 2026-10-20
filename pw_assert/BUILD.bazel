@@ -265,6 +265,7 @@ sphinx_docs_library(
         "backends.rst",
         "docs.rst",
         "examples.cc",
+        "module.toml",
     ],
     prefix = "pw_assert/",
     target_compatible_with = incompatible_with_mcu(),

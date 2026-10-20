@@ -95,6 +95,7 @@ sphinx_docs_library(
     srcs = [
         "Kconfig",
         "docs.rst",
+        "module.toml",
         ":static_router_size",
     ],
     prefix = "pw_router/",

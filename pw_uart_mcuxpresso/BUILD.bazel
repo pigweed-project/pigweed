@@ -115,6 +115,7 @@ sphinx_docs_library(
         "dma_uart_example.cc",
         "dma_uart_nonblocking_example.cc",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_uart_mcuxpresso/",
     target_compatible_with = incompatible_with_mcu(),

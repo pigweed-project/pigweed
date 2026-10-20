@@ -22,6 +22,7 @@ sphinx_docs_library(
     srcs = [
         "api.rst",
         "docs.rst",
+        "module.toml",
         "//pw_config_loader/py:pw_config_loader",
     ],
     prefix = "pw_config_loader/",

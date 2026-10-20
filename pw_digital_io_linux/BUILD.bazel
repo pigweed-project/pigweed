@@ -122,6 +122,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         "//pw_digital_io_linux/examples:docs",
     ],
     prefix = "pw_digital_io_linux/",

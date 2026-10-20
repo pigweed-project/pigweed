@@ -231,6 +231,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_log_tokenized/",
     target_compatible_with = incompatible_with_mcu(),

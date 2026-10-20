@@ -92,6 +92,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "interrupt_safe_writer_example.cc",
+        "module.toml",
         "stream_example.cc",
     ],
     prefix = "pw_stream_uart_mcuxpresso/",

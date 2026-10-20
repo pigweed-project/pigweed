@@ -196,6 +196,7 @@ sphinx_docs_library(
         "bazel.rst",
         "docs.rst",
         "gn.rst",
+        "module.toml",
         "security.rst",
     ],
     prefix = "pw_toolchain/",

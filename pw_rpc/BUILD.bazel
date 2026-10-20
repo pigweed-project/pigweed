@@ -777,6 +777,7 @@ sphinx_docs_library(
         "echo.proto",
         "internal/packet.proto",
         "java/docs.rst",
+        "module.toml",
         "protocol.rst",
         "services.rst",
         "setup.rst",

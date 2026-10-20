@@ -26,6 +26,7 @@ sphinx_docs_library(
         "cpp.rst",
         "docs.rst",
         "examples.rst",
+        "module.toml",
         "protocol.rst",
         "testing.rst",
         "why.rst",

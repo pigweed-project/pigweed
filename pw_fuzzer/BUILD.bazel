@@ -105,6 +105,7 @@ sphinx_docs_library(
         "guides/index.rst",
         "guides/libfuzzer.rst",
         "guides/reproducing_oss_fuzz_bugs.rst",
+        "module.toml",
         "//pw_fuzzer/examples/fuzztest:docs",
     ],
     prefix = "pw_fuzzer/",

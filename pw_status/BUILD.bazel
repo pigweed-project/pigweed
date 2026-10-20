@@ -123,6 +123,7 @@ sphinx_docs_library(
         "Kconfig",
         "docs.rst",
         "guide.rst",
+        "module.toml",
         "reference.rst",
         "status_base_test.cc",
     ],

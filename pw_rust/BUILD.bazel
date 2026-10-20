@@ -74,6 +74,7 @@ sphinx_docs_library(
     name = "sphinx",
     srcs = [
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_rust/",
     target_compatible_with = incompatible_with_mcu(),

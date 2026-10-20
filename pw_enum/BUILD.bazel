@@ -129,6 +129,7 @@ sphinx_docs_library(
         "BUILD.gn",
         "CMakeLists.txt",
         "docs.rst",
+        "module.toml",
         "//pw_enum/examples:docs_sources",
     ],
     prefix = "pw_enum/",

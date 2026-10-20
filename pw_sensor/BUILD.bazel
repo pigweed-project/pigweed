@@ -78,6 +78,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         "//pw_sensor/py:docs",
     ],
     prefix = "pw_sensor/",

@@ -22,6 +22,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "format.rst",
+        "module.toml",
         "pigweed_config.rst",
         "//pw_presubmit/py:examples",
     ],

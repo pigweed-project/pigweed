@@ -215,6 +215,7 @@ sphinx_docs_library(
         "Kconfig",
         "backends.rst",
         "docs.rst",
+        "module.toml",
         "//pw_stream/py:docs",
     ],
     prefix = "pw_stream/",

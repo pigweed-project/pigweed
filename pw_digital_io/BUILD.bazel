@@ -135,6 +135,7 @@ sphinx_docs_library(
     srcs = [
         "backends.rst",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_digital_io/",
     target_compatible_with = incompatible_with_mcu(),

@@ -23,7 +23,10 @@ licenses(["notice"])
 
 sphinx_docs_library(
     name = "docs",
-    srcs = ["docs.rst"],
+    srcs = [
+        "docs.rst",
+        "module.toml",
+    ],
     prefix = "pw_allocator_zephyr/",
     target_compatible_with = incompatible_with_mcu(),
 )

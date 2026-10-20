@@ -164,6 +164,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         ":blob_size",
         "//pw_blob_store/size_report:docs",
     ],

@@ -115,6 +115,7 @@ sphinx_docs_library(
         "examples.cc",
         "examples.rst",
         "implementations.rst",
+        "module.toml",
     ],
     prefix = "pw_clock_tree/",
     target_compatible_with = incompatible_with_mcu(),

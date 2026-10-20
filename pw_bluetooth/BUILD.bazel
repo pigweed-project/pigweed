@@ -615,6 +615,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "emboss_test.cc",
+        "module.toml",
         ":emboss_size_report",
         ":emboss_size_report_diff",
     ],

@@ -156,6 +156,7 @@ sphinx_docs_library(
     srcs = [
         "Kconfig",
         "docs.rst",
+        "module.toml",
         ":pw_checksum_size_report",
     ],
     prefix = "pw_checksum/",

@@ -558,6 +558,7 @@ sphinx_docs_library(
     srcs = [
         "constexpr_test.cc",
         "docs.rst",
+        "module.toml",
         "test.cmake",
         "//pw_unit_test/py:BUILD.bazel",
     ],

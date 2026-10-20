@@ -167,6 +167,7 @@ sphinx_docs_library(
         "design.rst",
         "docs.rst",
         "guide.rst",
+        "module.toml",
         "//pw_multibuf/examples:docs",
         "//pw_multibuf/size_report:multibuf_size_report",
     ],

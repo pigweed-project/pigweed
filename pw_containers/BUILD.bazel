@@ -986,6 +986,7 @@ sphinx_docs_library(
         "docs.rst",
         "lists.rst",
         "maps.rst",
+        "module.toml",
         "multiple_containers.rst",
         "queues.rst",
         "sets.rst",

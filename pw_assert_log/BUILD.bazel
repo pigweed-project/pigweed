@@ -115,6 +115,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "examples.cc",
+        "module.toml",
     ],
     prefix = "pw_assert_log/",
     target_compatible_with = incompatible_with_mcu(),

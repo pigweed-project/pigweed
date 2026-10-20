@@ -292,6 +292,7 @@ sphinx_docs_library(
         "design.rst",
         "docs.rst",
         "guide.rst",
+        "module.toml",
         ":format_size_report",
         ":string_builder_size_report",
         "//pw_string/examples",

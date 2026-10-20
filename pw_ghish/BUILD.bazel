@@ -211,6 +211,7 @@ sphinx_docs_library(
         "hook.rst",
         "issue.rst",
         "life_of_a_pr.rst",
+        "module.toml",
         "pr.rst",
         "project_setup.rst",
         "roadmap.rst",

@@ -286,6 +286,7 @@ sphinx_docs_library(
     srcs = [
         "crash_recovery.rst",
         "docs.rst",
+        "module.toml",
         "proxy_host_test.cc",
         "security.rst",
         ":use_passthrough_proxy_size_report",

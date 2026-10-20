@@ -36,6 +36,7 @@ sphinx_docs_library(
         "guide/bazel/usage.rst",
         "guide/bootstrap/editors.rst",
         "guide/bootstrap/index.rst",
+        "module.toml",
     ],
     prefix = "pw_ide/",
     target_compatible_with = incompatible_with_mcu(),

@@ -190,6 +190,7 @@ sphinx_docs_library(
         "add_build_id_to_default_linker_script.ld",
         "build_id_linker_snippet.ld",
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_build_info/",
     target_compatible_with = incompatible_with_mcu(),

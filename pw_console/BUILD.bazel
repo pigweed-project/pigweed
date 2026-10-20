@@ -23,6 +23,7 @@ sphinx_docs_library(
         "docs.rst",
         "embedding.rst",
         "internals.rst",
+        "module.toml",
         "plugins.rst",
         "security.rst",
         "testing.rst",

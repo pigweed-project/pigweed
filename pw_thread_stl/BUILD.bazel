@@ -229,6 +229,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         "public/pw_thread_stl/test_thread_context_native.h",
     ],
     prefix = "pw_thread_stl/",

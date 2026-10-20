@@ -26,6 +26,7 @@ sphinx_docs_library(
         "design.rst",
         "docs.rst",
         "guide.rst",
+        "module.toml",
         "qemu-lm3s6965evb.json",
         "renode-stm32f4_discovery.json",
     ],

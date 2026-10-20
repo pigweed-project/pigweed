@@ -147,6 +147,7 @@ sphinx_docs_library(
     srcs = [
         "Kconfig",
         "docs.rst",
+        "module.toml",
         "result_test.cc",
         ":result_size",
     ],

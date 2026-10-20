@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Schema for //<module>/module.toml.",
+  "type": "object",
+  "properties": {
+    "category": {
+      "description": "The category this module belongs to in the Sphinx toctree. Optional when 'facade' is set.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Category ID, as a key of //docs/common/metadata/categories.toml.",
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "toctree": {
+          "description": "Display title for the module in the category's toctree.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "toctree"
+      ],
+      "additionalProperties": false
+    },
+    "facade": {
+      "description": "The facade module that this backend module implements.",
+      "type": "object",
+      "properties": {
+        "module": {
+          "description": "The facade module name.",
+          "type": "string",
+          "pattern": "^pw_.*$"
+        },
+        "toctree": {
+          "description": "Display title for the backend in the facade's backends.rst toctree.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "module",
+        "toctree"
+      ],
+      "additionalProperties": false
+    },
+    "languages": {
+      "description": "Supported languages, build systems, etc. TODO: https://pwbug.dev/345534064 - Refactor this.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "Bazel",
+          "C",
+          "C++",
+          "CLI",
+          "CMake",
+          "GN",
+          "Go",
+          "Java",
+          "JavaScript",
+          "Python",
+          "Rust",
+          "Starlark",
+          "TypeScript",
+          "VS Code"
+        ]
+      }
+    },
+    "size": {
+      "description": "A summary of the code size impact of the module.",
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "description": "The status of the module.",
+      "type": "string",
+      "enum": [
+        "stable",
+        "unstable",
+        "experimental",
+        "deprecated"
+      ]
+    },
+    "tagline": {
+      "description": "A concise summary of the module's value proposition.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "category"
+      ]
+    },
+    {
+      "required": [
+        "facade"
+      ]
+    }
+  ],
+  "additionalProperties": false
+}

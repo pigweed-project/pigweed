@@ -23,6 +23,7 @@ sphinx_docs_library(
         "cli.rst",
         "docs.rst",
         "guide.rst",
+        "module.toml",
     ],
     prefix = "pw_watch/",
     target_compatible_with = incompatible_with_mcu(),

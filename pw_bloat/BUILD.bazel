@@ -53,6 +53,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         "security.rst",
         "//pw_bloat/examples:docs",
     ],

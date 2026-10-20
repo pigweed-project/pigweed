@@ -50,6 +50,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
     ],
     prefix = "pw_sys_io_emcraft_sf2/",
     target_compatible_with = incompatible_with_mcu(),

@@ -215,6 +215,7 @@ sphinx_docs_library(
         "Kconfig",
         "docs.rst",
         "function_test.cc",
+        "module.toml",
         ":function_size",
     ],
     prefix = "pw_function/",

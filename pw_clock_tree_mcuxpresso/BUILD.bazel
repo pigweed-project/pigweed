@@ -136,6 +136,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "examples.cc",
+        "module.toml",
     ],
     prefix = "pw_clock_tree_mcuxpresso/",
     target_compatible_with = incompatible_with_mcu(),

@@ -126,6 +126,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "module.toml",
         ":persistent_size",
     ],
     prefix = "pw_persistent_ram/",

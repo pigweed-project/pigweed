@@ -34,6 +34,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "example_test.cc",
+        "module.toml",
     ],
     prefix = "pw_compilation_testing/",
     target_compatible_with = incompatible_with_mcu(),
