@@ -15,12 +15,14 @@
 #pragma once
 
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/driver/outgoing/cpp/outgoing_directory.h>
+#include <lib/async/cpp/wait.h>
+#include <lib/async/dispatcher.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/zx/channel.h>
 
 #include <queue>
+#include <string_view>
 
-#include "lib/async/cpp/wait.h"
 #include "vendor_service_publisher.h"
 
 namespace bt_hci_virtual {
@@ -32,16 +34,18 @@ class LoopbackDevice : public fidl::Server<fuchsia_hardware_bluetooth::Vendor> {
   static constexpr size_t kMaxReceiveQueueSize = 40;
   static constexpr size_t kMaxReceiveUnackedPackets = 10;
 
-  explicit LoopbackDevice();
+  // All FIDL servers and the channel wait run on `dispatcher`.
+  explicit LoopbackDevice(async_dispatcher_t* dispatcher);
   ~LoopbackDevice() = default;
 
   // Methods to control the LoopbackDevice's lifecycle. These are used by the
   // VirtualController. `channel` speaks the HCI UART protocol. If `outgoing`
   // is non-null, LoopbackDevice will publish the fuchsia.hardware.bluetooth
-  // Service instance `name` to it.
+  // Service instance `name` to it; it must already be served and must outlive
+  // this object.
   zx_status_t Initialize(zx::channel channel,
                          std::string_view name,
-                         fdf::OutgoingDirectory* outgoing = nullptr);
+                         component::OutgoingDirectory* outgoing = nullptr);
 
   void Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request);
 

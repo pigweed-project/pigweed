@@ -16,11 +16,14 @@
 
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/driver/outgoing/cpp/outgoing_directory.h>
+#include <lib/async/dispatcher.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <pw_async/task.h>
 #include <pw_async_fuchsia/dispatcher.h>
 
 #include <queue>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "emulated_peer.h"
@@ -38,7 +41,8 @@ class EmulatorDevice
       public fidl::Server<fuchsia_hardware_bluetooth::HciTransport>,
       public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
  public:
-  explicit EmulatorDevice();
+  // All FIDL servers and the emulated controller run on `dispatcher`.
+  explicit EmulatorDevice(async_dispatcher_t* dispatcher);
   ~EmulatorDevice();
 
   // Methods used by the VirtualController to control the EmulatorDevice's
@@ -46,10 +50,11 @@ class EmulatorDevice
   //
   // `name` identifies this emulator: if `outgoing` is non-null, `Publish`
   // publishes the fuchsia.hardware.bluetooth.Service instance `name` to it.
-  // `shutdown` is invoked by `Shutdown()`.
+  // `outgoing` must already be served and must outlive this object. `shutdown`
+  // is invoked by `Shutdown()`.
   zx_status_t Initialize(std::string_view name,
                          ShutdownCallback shutdown,
-                         fdf::OutgoingDirectory* outgoing = nullptr);
+                         component::OutgoingDirectory* outgoing = nullptr);
   void Shutdown();
 
   // Serves the fuchsia.hardware.bluetooth.Emulator protocol on `request`.
@@ -59,10 +64,9 @@ class EmulatorDevice
   // disconnects, the EmulatorDevice calls `Shutdown()`, which unpublishes the
   // HCI vendor service, closes all other Emulator connections, and invokes the
   // ShutdownCallback passed to `Initialize()` (in the VirtualController, that
-  // callback removes the emulator's node and destroys this object). This gives
-  // clients a way to destroy an emulator that does not depend on devfs. Later
-  // connections are observers and may come and go without affecting the
-  // emulator's lifetime.
+  // callback destroys this object). This gives clients a way to destroy an
+  // emulator that does not depend on devfs. Later connections are observers
+  // and may come and go without affecting the emulator's lifetime.
   //
   // NOTE: ownership is inferred from connection order. A client that merely
   // opens and closes the Emulator protocol before the intended owner connects
@@ -139,7 +143,7 @@ class EmulatorDevice
   void SendAclPacketToHost(pw::span<const std::byte> buffer);
   void SendIsoPacketToHost(pw::span<const std::byte> buffer);
 
-  // Responsible for running the thread-hostile |fake_device_|
+  // Responsible for running the thread-hostile `fake_device_`
   pw::async_fuchsia::FuchsiaDispatcher pw_dispatcher_;
 
   bt::testing::FakeController fake_device_;
@@ -176,7 +180,7 @@ class EmulatorDevice
   // dispatcher task: `Shutdown()` destroys this object (and with it
   // `emulator_binding_group_`), which must not happen from within a binding's
   // close handler. The task is cancelled in `~EmulatorDevice()` if this object
-  // is destroyed first (e.g. because the node was removed).
+  // is destroyed first.
   pw::async::Task shutdown_task_{
       [this](pw::async::Context&, pw::Status status) {
         if (status.ok()) {
@@ -186,7 +190,7 @@ class EmulatorDevice
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor>
       vendor_binding_group_;
 
-  fdf::OutgoingDirectory* outgoing_ = nullptr;
+  component::OutgoingDirectory* outgoing_ = nullptr;
   std::string name_;
   VendorServicePublisher vendor_service_;
 };

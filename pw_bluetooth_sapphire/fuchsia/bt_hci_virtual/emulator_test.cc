@@ -15,20 +15,14 @@
 #include "emulator.h"
 
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
-#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/component/incoming/cpp/service.h>
-#include <lib/driver/outgoing/cpp/outgoing_directory.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/scoped_global_logger.h>
-#include <lib/fdf/cpp/dispatcher.h>
-#include <lib/zx/channel.h>
-#include <lib/zx/time.h>
 
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "gtest/gtest.h"
+#include "pw_bluetooth_sapphire/fuchsia/bt_hci_virtual/outgoing_loop_test_fixture.h"
 #include "pw_bluetooth_sapphire/internal/host/common/random.h"
 
 namespace bt_hci_virtual {
@@ -38,37 +32,26 @@ namespace fhb = fuchsia_hardware_bluetooth;
 
 constexpr char kEmulatorName[] = "emulator";
 
-class EmulatorTest : public ::testing::Test {
+class EmulatorTest : public testing::OutgoingLoopTestFixture {
  public:
   void SetUp() override {
-    fdf::OutgoingDirectory& outgoing =
-        outgoing_.emplace(fdf::Dispatcher::GetCurrent()->get());
-    auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    ASSERT_TRUE(endpoints.is_ok());
-    zx::result serve_result = outgoing.Serve(std::move(endpoints->server));
-    ASSERT_TRUE(serve_result.is_ok());
-    outgoing_client_ = std::move(endpoints->client);
+    ASSERT_NO_FATAL_FAILURE(OutgoingLoopTestFixture::SetUp());
 
-    device_ = std::make_unique<EmulatorDevice>();
+    device_ = std::make_unique<EmulatorDevice>(dispatcher());
     // Mirrors VirtualController: the shutdown callback releases the device.
     auto shutdown_cb = [this]() {
       shutdown_count_++;
       device_.reset();
     };
     zx_status_t status =
-        device_->Initialize(kEmulatorName, std::move(shutdown_cb), &outgoing);
+        device_->Initialize(kEmulatorName, std::move(shutdown_cb), outgoing());
     ASSERT_EQ(status, ZX_OK);
-    fdf_testing_run_until_idle();
+    RunUntilIdle();
   }
 
   void TearDown() override {
     device_.reset();
-    fdf_testing_run_until_idle();
-    runtime_.ShutdownAllDispatchers(fdf::Dispatcher::GetCurrent()->get());
-  }
-
-  async_dispatcher_t* dispatcher() {
-    return fdf::Dispatcher::GetCurrent()->async_dispatcher();
+    RunUntilIdle();
   }
 
   EmulatorDevice* device() { return device_.get(); }
@@ -83,7 +66,7 @@ class EmulatorTest : public ::testing::Test {
       return {};
     }
     device_->ConnectEmulator(std::move(endpoints->server));
-    fdf_testing_run_until_idle();
+    RunUntilIdle();
     return std::move(endpoints->client);
   }
 
@@ -95,61 +78,17 @@ class EmulatorTest : public ::testing::Test {
           EXPECT_TRUE(result.is_ok()) << result.error_value();
           done = true;
         });
-    fdf_testing_run_until_idle();
+    RunUntilIdle();
     ASSERT_TRUE(done);
   }
 
-  // Returns true if a Vendor client connected through the published
-  // fuchsia.hardware.bluetooth.Service instance can complete a request.
   bool VendorServiceIsServed() {
-    std::string path =
-        "svc/" +
-        component::MakeServiceMemberPath<fhb::Service::Vendor>(kEmulatorName);
-    zx::result client_end =
-        component::ConnectAt<fhb::Vendor>(outgoing_client_.borrow(), path);
-    if (client_end.is_error()) {
-      return false;
-    }
-    fidl::WireClient<fhb::Vendor> client(std::move(*client_end), dispatcher());
-    bool ok = false;
-    client->GetFeatures().ThenExactlyOnce(
-        [&ok](fidl::WireUnownedResult<fhb::Vendor::GetFeatures>& res) {
-          ok = res.ok();
-        });
-    fdf_testing_run_until_idle();
-    return ok;
-  }
-
-  // Returns true if the peer of `client_end` has been closed.
-  template <typename Protocol>
-  static bool PeerClosed(const fidl::ClientEnd<Protocol>& client_end) {
-    zx_signals_t observed = 0;
-    zx_status_t status = client_end.channel().wait_one(
-        ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
-    return status == ZX_OK && (observed & ZX_CHANNEL_PEER_CLOSED);
-  }
-
-  fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_client() const {
-    return outgoing_client_.borrow();
+    return OutgoingLoopTestFixture::VendorServiceIsServed(kEmulatorName);
   }
 
   void ReleaseDevice() { device_.reset(); }
 
-  // Shuts down every driver dispatcher, as the framework does when the driver
-  // stops. Idempotent, so TearDown may call it again.
-  void ShutdownDispatchers() {
-    runtime_.ShutdownAllDispatchers(fdf::Dispatcher::GetCurrent()->get());
-  }
-
  private:
-  // Attaches a foreground dispatcher for us automatically.
-  fdf_testing::DriverRuntime runtime_;
-  // EmulatorDevice logs through the global fdf::Logger.
-  fdf_testing::ScopedGlobalLogger logger_;
-
-  std::optional<fdf::OutgoingDirectory> outgoing_;
-  fidl::ClientEnd<fuchsia_io::Directory> outgoing_client_;
-
   std::unique_ptr<EmulatorDevice> device_;
   int shutdown_count_ = 0;
 };
@@ -162,7 +101,7 @@ TEST_F(EmulatorTest, OwnerDisconnectShutsDownAndClosesObservers) {
   EXPECT_FALSE(PeerClosed(observer));
 
   owner.reset();
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
 
   EXPECT_EQ(shutdown_count(), 1);
   EXPECT_EQ(device(), nullptr);
@@ -177,7 +116,7 @@ TEST_F(EmulatorTest, OwnerDisconnectUnpublishesVendorService) {
 
   // Destroying the client closes the owning connection.
   owner.reset();
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
 
   EXPECT_EQ(shutdown_count(), 1);
   EXPECT_FALSE(VendorServiceIsServed());
@@ -188,7 +127,7 @@ TEST_F(EmulatorTest, ObserverDisconnectDoesNotShutDown) {
   fidl::ClientEnd<fhb::Emulator> observer = ConnectEmulator();
 
   observer.reset();
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
 
   EXPECT_EQ(shutdown_count(), 0);
   ASSERT_NE(device(), nullptr);
@@ -209,7 +148,7 @@ TEST_F(EmulatorTest, AlreadyClosedFirstConnectionShutsDown) {
   endpoints->client.reset();
 
   device()->ConnectEmulator(std::move(endpoints->server));
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
 
   EXPECT_EQ(shutdown_count(), 1);
   EXPECT_EQ(device(), nullptr);
@@ -224,22 +163,22 @@ TEST_F(EmulatorTest, ShutdownBeforeOwnerDisconnectOnlyShutsDownOnce) {
   device()->Shutdown();
   EXPECT_EQ(shutdown_count(), 1);
   EXPECT_EQ(device(), nullptr);
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
   EXPECT_TRUE(PeerClosed(owner));
 
   owner.reset();
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
   EXPECT_EQ(shutdown_count(), 1);
 }
 
-// Driver stop shuts the dispatchers down while the owner is still connected.
-// That tears the owner's binding down and runs its close handler, which must
-// not post the deferred shutdown to the shutting-down dispatcher (doing so
-// asserts). The driver owns the device's lifetime in this case.
+// Stopping the host shuts the dispatcher down while the owner is still
+// connected. That tears the owner's binding down and runs its close handler,
+// which must not post the deferred shutdown to the shutting-down dispatcher
+// (doing so asserts). The host owns the device's lifetime in this case.
 TEST_F(EmulatorTest, DispatcherShutdownWithLiveOwnerDoesNotShutDown) {
   fidl::ClientEnd<fhb::Emulator> owner = ConnectEmulator();
 
-  ShutdownDispatchers();
+  ShutdownLoop();
 
   EXPECT_TRUE(PeerClosed(owner));
   EXPECT_EQ(shutdown_count(), 0);
@@ -257,7 +196,7 @@ TEST_F(EmulatorTest, OwnerDisconnectClosesVendorHciTransportAndHangingGets) {
       [](fidl::Result<fhb::Emulator::WatchControllerParameters>&) {});
   (*owner)->WatchLegacyAdvertisingStates().ThenExactlyOnce(
       [](fidl::Result<fhb::Emulator::WatchLegacyAdvertisingStates>&) {});
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
 
   // Connect a Vendor client and open an HciTransport connection through it.
   std::string path =
@@ -277,7 +216,7 @@ TEST_F(EmulatorTest, OwnerDisconnectClosesVendorHciTransportAndHangingGets) {
           ASSERT_TRUE(res->is_ok());
           hci_transport_end = std::move(res->value()->channel);
         });
-    fdf_testing_run_until_idle();
+    RunUntilIdle();
     ASSERT_TRUE(hci_transport_end.is_valid());
   }
 
@@ -286,12 +225,12 @@ TEST_F(EmulatorTest, OwnerDisconnectClosesVendorHciTransportAndHangingGets) {
   zx::result raw_vendor_end =
       component::ConnectAt<fhb::Vendor>(outgoing_client(), path);
   ASSERT_TRUE(raw_vendor_end.is_ok());
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
   EXPECT_FALSE(PeerClosed(*raw_vendor_end));
   EXPECT_FALSE(PeerClosed(hci_transport_end));
 
   owner.reset();
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
 
   EXPECT_EQ(shutdown_count(), 1);
   EXPECT_TRUE(PeerClosed(*raw_vendor_end));
@@ -300,9 +239,9 @@ TEST_F(EmulatorTest, OwnerDisconnectClosesVendorHciTransportAndHangingGets) {
 
 TEST_F(EmulatorTest, ShutdownIsIdempotentWhenDeviceRemainsAlive) {
   ReleaseDevice();
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
 
-  auto standalone = std::make_unique<EmulatorDevice>();
+  auto standalone = std::make_unique<EmulatorDevice>(dispatcher());
   int callbacks = 0;
   zx_status_t status =
       standalone->Initialize(kEmulatorName, [&callbacks]() { callbacks++; });
@@ -311,12 +250,12 @@ TEST_F(EmulatorTest, ShutdownIsIdempotentWhenDeviceRemainsAlive) {
   zx::result endpoints = fidl::CreateEndpoints<fhb::Emulator>();
   ASSERT_TRUE(endpoints.is_ok());
   standalone->ConnectEmulator(std::move(endpoints->server));
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
 
   // Owner disconnect triggers Shutdown() via the deferred task, without
   // destroying `standalone`.
   endpoints->client.reset();
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
   EXPECT_EQ(callbacks, 1);
 
   // A subsequent explicit Shutdown() call is a no-op because `shut_down_` is
@@ -327,7 +266,7 @@ TEST_F(EmulatorTest, ShutdownIsIdempotentWhenDeviceRemainsAlive) {
 
 TEST_F(EmulatorTest, RandomGeneratorInstalledOnceAcrossMultipleEmulators) {
   ReleaseDevice();
-  fdf_testing_run_until_idle();
+  RunUntilIdle();
 
   struct RestoreHarnessRng {
     pw::random::RandomGenerator* saved = bt::random_generator();
@@ -340,7 +279,7 @@ TEST_F(EmulatorTest, RandomGeneratorInstalledOnceAcrossMultipleEmulators) {
   ASSERT_EQ(bt::random_generator(), nullptr);
 
   // First EmulatorDevice installs the process-wide generator on Initialize().
-  auto first = std::make_unique<EmulatorDevice>();
+  auto first = std::make_unique<EmulatorDevice>(dispatcher());
   ASSERT_EQ(first->Initialize(kEmulatorName, []() {}), ZX_OK);
   pw::random::RandomGenerator* installed = bt::random_generator();
   EXPECT_NE(installed, nullptr);
@@ -349,7 +288,7 @@ TEST_F(EmulatorTest, RandomGeneratorInstalledOnceAcrossMultipleEmulators) {
   // without tripping the single-registration check in
   // bt::set_random_generator(), and destroying the first leaves the generator
   // valid.
-  auto second = std::make_unique<EmulatorDevice>();
+  auto second = std::make_unique<EmulatorDevice>(dispatcher());
   ASSERT_EQ(second->Initialize(kEmulatorName, []() {}), ZX_OK);
   first.reset();
   EXPECT_EQ(bt::random_generator(), installed);

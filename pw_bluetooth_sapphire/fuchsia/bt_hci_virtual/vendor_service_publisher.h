@@ -15,8 +15,7 @@
 #pragma once
 
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
-#include <lib/driver/logging/cpp/logger.h>
-#include <lib/driver/outgoing/cpp/outgoing_directory.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/fit/function.h>
 #include <lib/zx/result.h>
 #include <zircon/types.h>
@@ -25,10 +24,12 @@
 #include <string_view>
 #include <utility>
 
+#include "pw_bluetooth_sapphire/internal/host/common/log.h"
+
 namespace bt_hci_virtual {
 
 // RAII helper to manage publishing and unpublishing
-// `fuchsia.hardware.bluetooth.Service` in a driver's outgoing directory.
+// `fuchsia.hardware.bluetooth.Service` in a component's outgoing directory.
 class VendorServicePublisher {
  public:
   using ConnectHandler =
@@ -43,7 +44,7 @@ class VendorServicePublisher {
   VendorServicePublisher(VendorServicePublisher&&) = delete;
   VendorServicePublisher& operator=(VendorServicePublisher&&) = delete;
 
-  zx_status_t Publish(fdf::OutgoingDirectory* outgoing,
+  zx_status_t Publish(component::OutgoingDirectory* outgoing,
                       std::string_view instance_name,
                       ConnectHandler connect_handler) {
     if (!outgoing || !connect_handler) {
@@ -61,9 +62,12 @@ class VendorServicePublisher {
         outgoing->AddService<fuchsia_hardware_bluetooth::Service>(
             std::move(handler), instance_name);
     if (result.is_error()) {
-      fdf::error("Failed to add fuchsia_hardware_bluetooth::Service {}: {}",
-                 instance_name,
-                 result.status_string());
+      bt_log(ERROR,
+             "bt-hci-virtual",
+             "Failed to add fuchsia_hardware_bluetooth::Service %.*s: %s",
+             static_cast<int>(instance_name.size()),
+             instance_name.data(),
+             result.status_string());
       return result.error_value();
     }
 
@@ -79,9 +83,11 @@ class VendorServicePublisher {
           outgoing_->RemoveService<fuchsia_hardware_bluetooth::Service>(
               instance_name_);
       if (status.is_error()) {
-        fdf::warn("Failed to remove fuchsia_hardware_bluetooth::Service {}: {}",
-                  instance_name_,
-                  status.status_string());
+        bt_log(WARN,
+               "bt-hci-virtual",
+               "Failed to remove fuchsia_hardware_bluetooth::Service %s: %s",
+               instance_name_.c_str(),
+               status.status_string());
       }
       published_ = false;
       outgoing_ = nullptr;
@@ -92,7 +98,7 @@ class VendorServicePublisher {
   bool is_published() const { return published_; }
 
  private:
-  fdf::OutgoingDirectory* outgoing_ = nullptr;
+  component::OutgoingDirectory* outgoing_ = nullptr;
   std::string instance_name_;
   bool published_ = false;
 };

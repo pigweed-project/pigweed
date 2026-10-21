@@ -46,15 +46,19 @@ fuchsia_driver_bind_bytecode(
     ],
 )
 
+# The virtual devices. Independent of the driver framework and of any pw_log
+# backend, so that a plain component can host them as well as the driver.
 fuchsia_cc_library(
-    name = "common",
+    name = "virtual_sources",
     testonly = True,
     srcs = [
         "emulated_peer.cc",
-        "emulated_peer.h",
         "emulator.cc",
-        "emulator.h",
         "loopback.cc",
+    ],
+    hdrs = [
+        "emulated_peer.h",
+        "emulator.h",
         "loopback.h",
         "vendor_service_publisher.h",
     ],
@@ -65,14 +69,12 @@ fuchsia_cc_library(
         "//pw_bluetooth_sapphire/host/common",
         "//pw_bluetooth_sapphire/host/testing:fake_controller",
         "//pw_random_fuchsia:zircon_random_generator",
-        "@fuchsia_sdk//fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_cpp",
-        "@fuchsia_sdk//pkg/async-loop-cpp",
-        "@fuchsia_sdk//pkg/driver_component_cpp",
-        "@fuchsia_sdk//pkg/driver_devfs_cpp",
-        "@fuchsia_sdk//pkg/driver_logging_cpp",
-        "@fuchsia_sdk//pkg/driver_outgoing_cpp",
-        "@fuchsia_sdk//pkg/driver_runtime",
+        "@fuchsia_sdk//pkg/async-cpp",
+        "@fuchsia_sdk//pkg/component_outgoing_cpp",
+        "@fuchsia_sdk//pkg/fidl_cpp",
+        "@fuchsia_sdk//pkg/fit",
+        "@fuchsia_sdk//pkg/zx",
     ],
 )
 
@@ -83,8 +85,16 @@ fuchsia_cc_library(
     hdrs = ["controller.h"],
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
-        ":common",
+        ":virtual_sources",
+        "//pw_assert:check",
+        "//pw_log_fuchsia",
         "//pw_log_fuchsia:pw_log_fuchsia_driver",
+        "@fuchsia_sdk//fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "@fuchsia_sdk//pkg/driver_component_cpp",
+        "@fuchsia_sdk//pkg/driver_devfs_cpp",
+        "@fuchsia_sdk//pkg/driver_logging_cpp",
+        "@fuchsia_sdk//pkg/driver_outgoing_cpp",
+        "@fuchsia_sdk//pkg/driver_runtime",
     ],
     # `controller.cc` defines `__fuchsia_driver_registration__`, which nothing
     # in the driver references and which fdf_testing::*DriverTest resolves at
@@ -172,28 +182,32 @@ fuchsia_cc_test(
     name = "emulator_test",
     srcs = ["emulator_test.cc"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":common",
-        "//pw_bluetooth_sapphire/host/testing:gtest_main",
-        "//pw_log_fuchsia:pw_log_fuchsia_driver",
-        "//pw_unit_test",
-        "@fuchsia_sdk//pkg/component_incoming_cpp",
-        "@fuchsia_sdk//pkg/driver_testing_cpp",
-        "@fuchsia_sdk//pkg/driver_testing_scoped_global_logger_cpp",
-    ],
+    deps = [":outgoing_loop_test_fixture"],
 )
 
 fuchsia_cc_test(
     name = "loopback_test",
     srcs = ["loopback_test.cc"],
     visibility = ["//visibility:public"],
+    deps = [":outgoing_loop_test_fixture"],
+)
+
+fuchsia_cc_library(
+    name = "outgoing_loop_test_fixture",
+    testonly = True,
+    hdrs = ["outgoing_loop_test_fixture.h"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
-        ":common",
+        ":virtual_sources",
         "//pw_bluetooth_sapphire/host/testing:gtest_main",
+        "//pw_log_fuchsia:pw_log_fuchsia_syslog",
         "//pw_unit_test",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_cpp",
+        "@fuchsia_sdk//fidl/fuchsia.io:fuchsia.io_cpp",
+        "@fuchsia_sdk//pkg/async-loop-cpp",
+        "@fuchsia_sdk//pkg/async-loop-default",
         "@fuchsia_sdk//pkg/component_incoming_cpp",
-        "@fuchsia_sdk//pkg/driver_testing_cpp",
-        "@fuchsia_sdk//pkg/driver_testing_scoped_global_logger_cpp",
+        "@fuchsia_sdk//pkg/component_outgoing_cpp",
     ],
 )
 

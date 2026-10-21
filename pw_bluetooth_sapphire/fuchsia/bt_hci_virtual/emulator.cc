@@ -15,10 +15,14 @@
 #include "emulator.h"
 
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
-#include <lib/driver/logging/cpp/logger.h>
-#include <lib/fdf/cpp/dispatcher.h>
+#include <zircon/status.h>
+
+#include <cinttypes>
+#include <string>
+#include <utility>
 
 #include "emulated_peer.h"
+#include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/common/random.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_controller.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_peer.h"
@@ -102,9 +106,8 @@ std::optional<fuchsia_bluetooth::AddressType> LeOwnAddressTypeToFidl(
 
 }  // namespace
 
-EmulatorDevice::EmulatorDevice()
-    : pw_dispatcher_(fdf::Dispatcher::GetCurrent()->async_dispatcher()),
-      fake_device_(pw_dispatcher_) {}
+EmulatorDevice::EmulatorDevice(async_dispatcher_t* dispatcher)
+    : pw_dispatcher_(dispatcher), fake_device_(pw_dispatcher_) {}
 
 EmulatorDevice::~EmulatorDevice() {
   pw_dispatcher_.Cancel(shutdown_task_);
@@ -114,14 +117,15 @@ EmulatorDevice::~EmulatorDevice() {
 
 zx_status_t EmulatorDevice::Initialize(std::string_view name,
                                        ShutdownCallback shutdown,
-                                       fdf::OutgoingDirectory* outgoing) {
+                                       component::OutgoingDirectory* outgoing) {
   shutdown_cb_ = std::move(shutdown);
   outgoing_ = outgoing;
   name_ = std::string(name);
   if (outgoing_ == nullptr) {
-    fdf::warn(
-        "No outgoing directory provided; fuchsia.hardware.bluetooth.Service "
-        "cannot be published");
+    bt_log(WARN,
+           "bt-hci-virtual",
+           "No outgoing directory provided; fuchsia.hardware.bluetooth.Service "
+           "cannot be published");
   }
 
   // The generator is process-wide and may only be installed once.
@@ -130,15 +134,17 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
     bt::set_random_generator(&generator);
   }
 
-  // Initialize |fake_device_|
+  // Initialize `fake_device_`
   auto init_complete_cb = [](pw::Status status) {
     if (!status.ok()) {
-      fdf::warn("FakeController failed to initialize: {}",
-                pw_StatusString(status));
+      bt_log(WARN,
+             "bt-hci-virtual",
+             "FakeController failed to initialize: %s",
+             status.str());
     }
   };
   auto error_cb = [this](pw::Status status) {
-    fdf::warn("FakeController error: {}", pw_StatusString(status));
+    bt_log(WARN, "bt-hci-virtual", "FakeController error: %s", status.str());
     UnpublishHci();
   };
   fake_device_.Initialize(init_complete_cb, error_cb);
@@ -187,7 +193,7 @@ void EmulatorDevice::Shutdown() {
 void EmulatorDevice::Publish(PublishRequest& request,
                              PublishCompleter::Sync& completer) {
   if (vendor_service_.is_published()) {
-    fdf::info("bt-hci-device is already published");
+    bt_log(INFO, "bt-hci-virtual", "bt-hci-device is already published");
     completer.Reply(fit::error(fhbt::EmulatorError::kHciAlreadyPublished));
     return;
   }
@@ -198,11 +204,14 @@ void EmulatorDevice::Publish(PublishRequest& request,
   zx_status_t status = vendor_service_.Publish(
       outgoing_, name_, fit::bind_member<&EmulatorDevice::ConnectVendor>(this));
   if (status != ZX_OK) {
-    fdf::warn("Failed to start vendor service");
+    bt_log(WARN, "bt-hci-virtual", "Failed to start vendor service");
     completer.Reply(fit::error(fhbt::EmulatorError::kFailed));
     return;
   }
-  fdf::info("Successfully started vendor service {}", name_);
+  bt_log(INFO,
+         "bt-hci-virtual",
+         "Successfully started vendor service %s",
+         name_.c_str());
   completer.Reply(fit::success());
 }
 
@@ -210,9 +219,7 @@ void EmulatorDevice::AddLowEnergyPeer(
     AddLowEnergyPeerRequest& request,
     AddLowEnergyPeerCompleter::Sync& completer) {
   auto result = EmulatedPeer::NewLowEnergy(
-      std::move(request),
-      &fake_device_,
-      fdf::Dispatcher::GetCurrent()->async_dispatcher());
+      std::move(request), &fake_device_, pw_dispatcher_.native());
   if (result.is_error()) {
     completer.Reply(fit::error(result.error()));
     return;
@@ -224,10 +231,8 @@ void EmulatorDevice::AddLowEnergyPeer(
 
 void EmulatorDevice::AddBredrPeer(AddBredrPeerRequest& request,
                                   AddBredrPeerCompleter::Sync& completer) {
-  auto result =
-      EmulatedPeer::NewBredr(std::move(request),
-                             &fake_device_,
-                             fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  auto result = EmulatedPeer::NewBredr(
+      std::move(request), &fake_device_, pw_dispatcher_.native());
   if (result.is_error()) {
     completer.Reply(fit::error(result.error()));
     return;
@@ -255,7 +260,9 @@ void EmulatorDevice::WatchLegacyAdvertisingStates(
 void EmulatorDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fhbt::Emulator> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::error(
+  bt_log(
+      ERROR,
+      "bt-hci-virtual",
       "Unknown method in Emulator request, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
@@ -282,16 +289,18 @@ void EmulatorDevice::OpenHciTransport(
 
   auto endpoints = fidl::CreateEndpoints<fhbt::HciTransport>();
   if (endpoints.is_error()) {
-    fdf::error("Failed to create endpoints: {}", endpoints);
+    bt_log(ERROR,
+           "bt-hci-virtual",
+           "Failed to create endpoints: %s",
+           endpoints.status_string());
     completer.ReplyError(endpoints.error_value());
     return;
   }
 
-  hci_transport_bindings_.AddBinding(
-      fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-      std::move(endpoints->server),
-      this,
-      fidl::kIgnoreBindingClosure);
+  hci_transport_bindings_.AddBinding(pw_dispatcher_.native(),
+                                     std::move(endpoints->server),
+                                     this,
+                                     fidl::kIgnoreBindingClosure);
   completer.ReplySuccess(std::move(endpoints->client));
 }
 
@@ -307,8 +316,9 @@ void EmulatorDevice::GetCrashParameters(
 void EmulatorDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fhbt::Vendor> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::error(
-      "Unknown method in Vendor request, closing with ZX_ERR_NOT_SUPPORTED");
+  bt_log(ERROR,
+         "bt-hci-virtual",
+         "Unknown method in Vendor request, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -337,8 +347,10 @@ void EmulatorDevice::Send(SendRequest& request,
       return;
     }
     default: {
-      fdf::error("Received unknown packet type {}",
-                 static_cast<uint64_t>(request.Which()));
+      bt_log(ERROR,
+             "bt-hci-virtual",
+             "Received unknown packet type %" PRIu64,
+             static_cast<uint64_t>(request.Which()));
       return;
     }
   }
@@ -356,48 +368,51 @@ void EmulatorDevice::handle_unknown_method(
     ::fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::HciTransport>
         metadata,
     ::fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::error(
-      "Unknown method in HciTransport request, closing with "
-      "ZX_ERR_NOT_SUPPORTED");
+  bt_log(ERROR,
+         "bt-hci-virtual",
+         "Unknown method in HciTransport request, closing with "
+         "ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
 void EmulatorDevice::ConnectEmulator(fidl::ServerEnd<fhbt::Emulator> request) {
-  auto* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
   if (!emulator_owner_connected_) {
     // The first connection owns the emulator's lifetime; see the declaration
     // of `ConnectEmulator` for the full contract.
     emulator_owner_connected_ = true;
     emulator_binding_group_.AddBinding(
-        dispatcher,
+        pw_dispatcher_.native(),
         std::move(request),
         this,
         fit::bind_member<&EmulatorDevice::OnEmulatorOwnerClosed>(this));
     return;
   }
-  emulator_binding_group_.AddBinding(
-      dispatcher, std::move(request), this, fidl::kIgnoreBindingClosure);
+  emulator_binding_group_.AddBinding(pw_dispatcher_.native(),
+                                     std::move(request),
+                                     this,
+                                     fidl::kIgnoreBindingClosure);
 }
 
 void EmulatorDevice::OnEmulatorOwnerClosed(fidl::UnbindInfo info) {
   if (info.is_dispatcher_shutdown()) {
-    // The driver is stopping; the owner of this device tears it down. Posting
-    // to a shutting-down dispatcher would assert.
+    // The dispatcher is stopping; the owner of this device tears it down.
+    // Posting to a shutting-down dispatcher would assert.
     return;
   }
-  fdf::info("Emulator owner disconnected ({}); shutting down",
-            info.FormatDescription());
+  bt_log(INFO,
+         "bt-hci-virtual",
+         "Emulator owner disconnected (%s); shutting down",
+         info.FormatDescription().c_str());
   // Defer the shutdown: it destroys this object, which is not allowed from
   // within the binding group's close handler.
   pw_dispatcher_.Post(shutdown_task_);
 }
 
 void EmulatorDevice::ConnectVendor(fidl::ServerEnd<fhbt::Vendor> request) {
-  vendor_binding_group_.AddBinding(
-      fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-      std::move(request),
-      this,
-      fidl::kIgnoreBindingClosure);
+  vendor_binding_group_.AddBinding(pw_dispatcher_.native(),
+                                   std::move(request),
+                                   this,
+                                   fidl::kIgnoreBindingClosure);
 }
 
 void EmulatorDevice::AddPeer(std::unique_ptr<EmulatedPeer> peer) {
@@ -495,13 +510,14 @@ void EmulatorDevice::OnPeerConnectionStateChanged(
     bt::hci_spec::ConnectionHandle handle,
     bool connected,
     bool canceled) {
-  fdf::trace(
-      "Peer connection state changed: {} (handle: {:#06x}) (connected: {}) "
-      "(canceled: {}):",
-      address.ToString(),
-      handle,
-      connected,
-      canceled);
+  bt_log(TRACE,
+         "bt-hci-virtual",
+         "Peer connection state changed: %s (handle: %#06x) (connected: %d) "
+         "(canceled: %d)",
+         address.ToString().c_str(),
+         handle,
+         connected,
+         canceled);
 
   auto iter = peers_.find(address);
   if (iter != peers_.end()) {
@@ -513,7 +529,7 @@ void EmulatorDevice::UnpublishHci() { vendor_service_.Unpublish(); }
 
 void EmulatorDevice::SendEventToHost(pw::span<const std::byte> buffer) {
   if (hci_transport_bindings_.size() == 0) {
-    fdf::error("No HciTransport bindings");
+    bt_log(ERROR, "bt-hci-virtual", "No HciTransport bindings");
     return;
   }
   // Using HciTransport protocol (i.e. |cmd_channel_| is not set)
@@ -527,15 +543,17 @@ void EmulatorDevice::SendEventToHost(pw::span<const std::byte> buffer) {
         fit::result<::fidl::OneWayError> status =
             fidl::SendEvent(binding)->OnReceive(event);
         if (!status.is_ok()) {
-          fdf::error("Failed to send OnReceive event to bt-host: {}",
-                     status.error_value().status_string());
+          bt_log(ERROR,
+                 "bt-hci-virtual",
+                 "Failed to send OnReceive event to bt-host: %s",
+                 status.error_value().status_string());
         }
       });
 }
 
 void EmulatorDevice::SendAclPacketToHost(pw::span<const std::byte> buffer) {
   if (hci_transport_bindings_.size() == 0) {
-    fdf::error("No HciTransport bindings");
+    bt_log(ERROR, "bt-hci-virtual", "No HciTransport bindings");
     return;
   }
   // Using HciTransport protocol (i.e. |acl_channel_| is not set)
@@ -549,15 +567,17 @@ void EmulatorDevice::SendAclPacketToHost(pw::span<const std::byte> buffer) {
         fit::result<::fidl::OneWayError> status =
             fidl::SendEvent(binding)->OnReceive(event);
         if (!status.is_ok()) {
-          fdf::error("Failed to send OnReceive event to bt-host: {}",
-                     status.error_value().status_string());
+          bt_log(ERROR,
+                 "bt-hci-virtual",
+                 "Failed to send OnReceive event to bt-host: %s",
+                 status.error_value().status_string());
         }
       });
 }
 
 void EmulatorDevice::SendIsoPacketToHost(pw::span<const std::byte> buffer) {
   if (hci_transport_bindings_.size() == 0) {
-    fdf::error("No HciTransport bindings");
+    bt_log(ERROR, "bt-hci-virtual", "No HciTransport bindings");
     return;
   }
   // Using HciTransport protocol (i.e. |iso_channel_| is not set)
@@ -571,8 +591,10 @@ void EmulatorDevice::SendIsoPacketToHost(pw::span<const std::byte> buffer) {
         fit::result<::fidl::OneWayError> status =
             fidl::SendEvent(binding)->OnReceive(event);
         if (!status.is_ok()) {
-          fdf::error("Failed to send OnReceive event to bt-host: {}",
-                     status.error_value().status_string());
+          bt_log(ERROR,
+                 "bt-hci-virtual",
+                 "Failed to send OnReceive event to bt-host: %s",
+                 status.error_value().status_string());
         }
       });
 }

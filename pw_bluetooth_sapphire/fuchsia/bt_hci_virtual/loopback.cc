@@ -14,16 +14,18 @@
 
 #include "loopback.h"
 
-#include <lib/driver/logging/cpp/logger.h>
+#include <zircon/status.h>
+
+#include "pw_bluetooth_sapphire/internal/host/common/log.h"
 
 namespace bt_hci_virtual {
 
-LoopbackDevice::LoopbackDevice()
-    : dispatcher_(fdf::Dispatcher::GetCurrent()->async_dispatcher()) {}
+LoopbackDevice::LoopbackDevice(async_dispatcher_t* dispatcher)
+    : dispatcher_(dispatcher) {}
 
 zx_status_t LoopbackDevice::Initialize(zx::channel channel,
                                        std::string_view name,
-                                       fdf::OutgoingDirectory* outgoing) {
+                                       component::OutgoingDirectory* outgoing) {
   if (outgoing != nullptr) {
     zx_status_t status = vendor_service_.Publish(
         outgoing, name, fit::bind_member<&LoopbackDevice::Connect>(this));
@@ -31,9 +33,10 @@ zx_status_t LoopbackDevice::Initialize(zx::channel channel,
       return status;
     }
   } else {
-    fdf::warn(
-        "No outgoing directory provided; fuchsia.hardware.bluetooth.Service "
-        "will not be published");
+    bt_log(WARN,
+           "bt-hci-virtual",
+           "No outgoing directory provided; fuchsia.hardware.bluetooth.Service "
+           "will not be published");
   }
 
   // Setup up incoming channel waiter
@@ -112,7 +115,7 @@ void LoopbackDevice::SnoopServer::SendSnoopPacket(
       packet = fuchsia_hardware_bluetooth::wire::SnoopPacket::WithIso(obj_view);
       break;
     default:
-      fdf::warn("Unknown indicator in {}", __func__);
+      bt_log(WARN, "bt-hci-virtual", "Unknown indicator in %s", __func__);
       return;
   }
 
@@ -128,8 +131,10 @@ void LoopbackDevice::SnoopServer::SendSnoopPacket(
   fidl::OneWayStatus observe_status =
       fidl::WireSendEvent(binding_)->OnObservePacket(request);
   if (!observe_status.ok()) {
-    fdf::warn("Failed to send OnObservePacket on Snoop: {}",
-              observe_status.status_string());
+    bt_log(WARN,
+           "bt-hci-virtual",
+           "Failed to send OnObservePacket on Snoop: %s",
+           observe_status.status_string());
   }
 }
 
@@ -150,8 +155,10 @@ void LoopbackDevice::SnoopServer::AcknowledgePackets(
     fit::result<fidl::OneWayError> result =
         fidl::SendEvent(binding_)->OnDroppedPackets(request);
     if (result.is_error()) {
-      fdf::warn("Failed to send Snoop.OnDroppedPackets event: {}",
-                result.error_value().status_string());
+      bt_log(WARN,
+             "bt-hci-virtual",
+             "Failed to send Snoop.OnDroppedPackets event: %s",
+             result.error_value().status_string());
     }
     dropped_sent_ = 0;
     dropped_received_ = 0;
@@ -172,7 +179,7 @@ void LoopbackDevice::SnoopServer::AcknowledgePackets(
 
 void LoopbackDevice::SnoopServer::OnFidlError(fidl::UnbindInfo error) {
   if (!error.is_user_initiated()) {
-    fdf::info("Snoop closed: {}", error.status_string());
+    bt_log(INFO, "bt-hci-virtual", "Snoop closed: %s", error.status_string());
   }
   device_->snoop_.reset();
 }
@@ -180,7 +187,7 @@ void LoopbackDevice::SnoopServer::OnFidlError(fidl::UnbindInfo error) {
 void LoopbackDevice::SnoopServer::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::Snoop> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::warn("Unknown Snoop method received");
+  bt_log(WARN, "bt-hci-virtual", "Unknown Snoop method received");
 }
 
 void LoopbackDevice::Connect(
@@ -197,7 +204,10 @@ void LoopbackDevice::OnLoopbackChannelSignal(async_dispatcher_t* dispatcher,
     return;
   }
   if (status != ZX_OK) {
-    fdf::error("Loopback channel wait error: {}", zx_status_get_string(status));
+    bt_log(ERROR,
+           "bt-hci-virtual",
+           "Loopback channel wait error: %s",
+           zx_status_get_string(status));
     return;
   }
 
@@ -206,7 +216,7 @@ void LoopbackDevice::OnLoopbackChannelSignal(async_dispatcher_t* dispatcher,
   }
 
   if (signal->observed & ZX_CHANNEL_PEER_CLOSED) {
-    fdf::error("Loopback channel peer closed");
+    bt_log(ERROR, "bt-hci-virtual", "Loopback channel peer closed");
     vendor_service_.Unpublish();
     return;
   }
@@ -236,13 +246,17 @@ void LoopbackDevice::ReadLoopbackChannel() {
     }
 
     if (read_status != ZX_OK) {
-      fdf::error("failed to read from loopback channel {}",
-                 zx_status_get_string(read_status));
+      bt_log(ERROR,
+             "bt-hci-virtual",
+             "Failed to read from loopback channel: %s",
+             zx_status_get_string(read_status));
       return;
     }
 
     if (actual_bytes == 0) {
-      fdf::warn("ignoring empty packet when reading loopback channel");
+      bt_log(WARN,
+             "bt-hci-virtual",
+             "Ignoring empty packet when reading loopback channel");
       continue;
     }
 
@@ -279,8 +293,10 @@ void LoopbackDevice::WriteLoopbackChannel(PacketIndicator indicator,
                            /*handles=*/nullptr,
                            /*num_handles=*/0);
   if (write_status != ZX_OK) {
-    fdf::error("Failed to write to loopback channel: {}",
-               zx_status_get_string(write_status));
+    bt_log(ERROR,
+           "bt-hci-virtual",
+           "Failed to write to loopback channel: %s",
+           zx_status_get_string(write_status));
     return;
   }
 
@@ -311,7 +327,10 @@ void LoopbackDevice::OpenHciTransport(
   auto endpoints =
       fidl::CreateEndpoints<fuchsia_hardware_bluetooth::HciTransport>();
   if (endpoints.is_error()) {
-    fdf::error("Failed to create HciTransport endpoints: {}", endpoints);
+    bt_log(ERROR,
+           "bt-hci-virtual",
+           "Failed to create HciTransport endpoints: %s",
+           endpoints.status_string());
     completer.Reply(fit::error(ZX_ERR_INTERNAL));
     return;
   }
@@ -326,7 +345,10 @@ void LoopbackDevice::OpenHciTransport(
 void LoopbackDevice::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
   auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_bluetooth::Snoop>();
   if (endpoints.is_error()) {
-    fdf::error("Failed to create Snoop endpoints: {}", endpoints);
+    bt_log(ERROR,
+           "bt-hci-virtual",
+           "Failed to create Snoop endpoints: %s",
+           endpoints.status_string());
     completer.Reply(fit::error(ZX_ERR_INTERNAL));
     return;
   }
@@ -342,8 +364,9 @@ void LoopbackDevice::GetCrashParameters(
 void LoopbackDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::Vendor> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::error(
-      "Unknown method in Vendor request, closing with ZX_ERR_NOT_SUPPORTED");
+  bt_log(ERROR,
+         "bt-hci-virtual",
+         "Unknown method in Vendor request, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -362,7 +385,9 @@ void LoopbackDevice::HciTransportServer::OnReceive(uint8_t* buffer,
                                                    size_t length) {
   if (receive_credits_ == 0 || !receive_queue_.empty()) {
     if (receive_queue_.size() == kMaxReceiveQueueSize) {
-      fdf::error("Receive queue reached max size, dropping packet");
+      bt_log(ERROR,
+             "bt-hci-virtual",
+             "Receive queue reached max size, dropping packet");
       return;
     }
     std::vector<uint8_t> packet(buffer, buffer + length);
@@ -401,12 +426,17 @@ void LoopbackDevice::HciTransportServer::SendOnReceive(uint8_t* buffer,
           fuchsia_hardware_bluetooth::wire::ReceivedPacket::WithIso(obj_view);
       break;
     default:
-      fdf::warn("Received invalid packet indicator on loopback channel");
+      bt_log(WARN,
+             "bt-hci-virtual",
+             "Received invalid packet indicator on loopback channel");
       return;
   }
   fidl::OneWayStatus status = fidl::WireSendEvent(binding_)->OnReceive(packet);
   if (!status.ok()) {
-    fdf::warn("Error sending OnReceive event: {}", status.status_string());
+    bt_log(WARN,
+           "bt-hci-virtual",
+           "Error sending OnReceive event: %s",
+           status.status_string());
   }
 }
 
@@ -438,7 +468,7 @@ void LoopbackDevice::HciTransportServer::Send(SendRequest& request,
                                     request.iso()->size());
       break;
     default:
-      fdf::warn("Unknown SentPacket type");
+      bt_log(WARN, "bt-hci-virtual", "Unknown SentPacket type");
   }
 }
 
@@ -455,9 +485,10 @@ void LoopbackDevice::HciTransportServer::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::HciTransport>
         metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::error(
-      "Unknown method in HciTransport request, closing with "
-      "ZX_ERR_NOT_SUPPORTED");
+  bt_log(ERROR,
+         "bt-hci-virtual",
+         "Unknown method in HciTransport request, closing with "
+         "ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 

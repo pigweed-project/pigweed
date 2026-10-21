@@ -24,6 +24,8 @@
 #include <string_view>
 #include <utility>
 
+#include "pw_log_fuchsia/log_backend.h"
+
 namespace bt_hci_virtual {
 
 VirtualController::VirtualController()
@@ -69,8 +71,8 @@ void VirtualController::CreateEmulator(
   // (and nobody else's).
   std::string name =
       std::string(kEmulatorNamePrefix) + std::to_string(next_emulator_id_++);
-  auto [it, inserted] =
-      emulators_.try_emplace(name, std::make_unique<EmulatorDevice>());
+  auto [it, inserted] = emulators_.try_emplace(
+      name, std::make_unique<EmulatorDevice>(dispatcher()));
   PW_CHECK(inserted);
   Emulator& emulator = it->second;
 
@@ -87,7 +89,7 @@ void VirtualController::CreateEmulator(
   };
 
   zx_status_t status = emulator.device->Initialize(
-      name, std::move(shutdown_cb), outgoing().get());
+      name, std::move(shutdown_cb), &outgoing()->component());
   // A failure to add the node is reported too: without one the caller could
   // never find the emulator, so it must not get a name that will never appear.
   if (status == ZX_OK) {
@@ -112,11 +114,13 @@ void VirtualController::CreateLoopbackDevice(
   // This replaces any previous loopback device; its node must go before
   // another one of the same name can be added.
   RemoveNode(loopback_child_node_, loopback_node_controller_);
-  loopback_device_ = std::make_unique<LoopbackDevice>();
+  loopback_device_ = std::make_unique<LoopbackDevice>(dispatcher());
 
   PW_CHECK(request->has_uart_channel());
-  zx_status_t status = loopback_device_->Initialize(
-      std::move(request->uart_channel()), kLoopbackName, outgoing().get());
+  zx_status_t status =
+      loopback_device_->Initialize(std::move(request->uart_channel()),
+                                   kLoopbackName,
+                                   &outgoing()->component());
   if (status == ZX_OK) {
     fidl::Arena args_arena;
     auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
