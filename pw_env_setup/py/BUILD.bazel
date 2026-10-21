@@ -99,6 +99,7 @@ pw_py_library(
         "pw_env_setup/windows_env_start.py",
     ],
     data = [
+        # LINT.IfChange(pw_env_setup_cipd_files)
         "pw_env_setup/cipd_setup/.cipd_version",
         "pw_env_setup/cipd_setup/.cipd_version.digests",
         "pw_env_setup/cipd_setup/arm.json",
@@ -121,6 +122,8 @@ pw_py_library(
         "pw_env_setup/cipd_setup/python.json",
         "pw_env_setup/cipd_setup/python310.json",
         "pw_env_setup/cipd_setup/python311.json",
+        "pw_env_setup/cipd_setup/python313.json",
+        "pw_env_setup/cipd_setup/python314.json",
         "pw_env_setup/cipd_setup/rbe.json",
         "pw_env_setup/cipd_setup/riscv.json",
         "pw_env_setup/cipd_setup/rust.json",
@@ -130,6 +133,7 @@ pw_py_library(
         "pw_env_setup/virtualenv_setup/constraint.list",
         "pw_env_setup/virtualenv_setup/constraint_hashes_linux.list",
         "pw_env_setup/virtualenv_setup/python_base_requirements.txt",
+        # LINT.ThenChange(pw_env_setup/py/BUILD.bazel,pw_env_setup/py/BUILD.gn,pw_env_setup/py/setup.cfg)
         ":pigweed_json",
     ],
     imports = ["."],

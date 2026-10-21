@@ -58,6 +58,7 @@ pw_python_package("py") {
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"
   inputs = [
+    # LINT.IfChange(pw_env_setup_cipd_files)
     "pw_env_setup/cipd_setup/.cipd_version",
     "pw_env_setup/cipd_setup/.cipd_version.digests",
     "pw_env_setup/cipd_setup/arm.json",
@@ -69,6 +70,7 @@ pw_python_package("py") {
     "pw_env_setup/cipd_setup/coverage.json",
     "pw_env_setup/cipd_setup/default.json",
     "pw_env_setup/cipd_setup/doxygen.json",
+    "pw_env_setup/cipd_setup/flatc.json",
     "pw_env_setup/cipd_setup/go.json",
     "pw_env_setup/cipd_setup/host_tools.json",
     "pw_env_setup/cipd_setup/kythe.json",
@@ -76,17 +78,28 @@ pw_python_package("py") {
     "pw_env_setup/cipd_setup/msrv_python.json",
     "pw_env_setup/cipd_setup/openjdk.json",
     "pw_env_setup/cipd_setup/pigweed.json",
+    "pw_env_setup/cipd_setup/python.json",
     "pw_env_setup/cipd_setup/python310.json",
     "pw_env_setup/cipd_setup/python311.json",
-    "pw_env_setup/cipd_setup/python.json",
+    "pw_env_setup/cipd_setup/python313.json",
+    "pw_env_setup/cipd_setup/python314.json",
     "pw_env_setup/cipd_setup/rbe.json",
     "pw_env_setup/cipd_setup/riscv.json",
     "pw_env_setup/cipd_setup/rust.json",
     "pw_env_setup/cipd_setup/testing.json",
     "pw_env_setup/cipd_setup/upstream.json",
     "pw_env_setup/cipd_setup/web.json",
+    "pw_env_setup/cipd_setup/zephyr_sdk.json",
     "pw_env_setup/virtualenv_setup/constraint.list",
+    "pw_env_setup/virtualenv_setup/constraint_hashes_darwin.list",
     "pw_env_setup/virtualenv_setup/constraint_hashes_linux.list",
+    "pw_env_setup/virtualenv_setup/constraint_hashes_windows.list",
+    "pw_env_setup/virtualenv_setup/pigweed_upstream_requirements.txt",
     "pw_env_setup/virtualenv_setup/python_base_requirements.txt",
+    "pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt",
+    "pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt",
+    "pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt",
+
+    # LINT.ThenChange(pw_env_setup/py/BUILD.bazel,pw_env_setup/py/BUILD.gn,pw_env_setup/py/setup.cfg)
   ]
 }
