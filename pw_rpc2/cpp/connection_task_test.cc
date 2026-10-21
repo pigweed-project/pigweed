@@ -256,7 +256,7 @@ TEST(ConnectionTaskTest, DemuxStreamingMessagesToActiveCallWithBackpressure) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(task, nullptr);
 
-  auto call = ClientCall::Create(*task, 42u, allocator);
+  auto call = ClientCall::Create(*task, 42u);
   ASSERT_NE(call, nullptr);
 
   // Step 1: Inject message 1
@@ -318,7 +318,7 @@ TEST(ConnectionTaskTest, DuplicateStartEndsActiveCallWithProtocolError) {
 
   // Register active call 50
   constexpr Method method(1, MethodType::kUnary, 0, nullptr);
-  ServerCall* server_call = ServerCall::Allocate(task, 50u, method, allocator);
+  ServerCall* server_call = ServerCall::Allocate(task, 50u, method);
   ASSERT_NE(server_call, nullptr);
   IntrusivePtr<Call> call = server_call->shared_call();
 
@@ -363,7 +363,7 @@ TEST(ConnectionTaskTest, WrongDirectionPacketsAreRejected) {
   ClientConnectionTask task(EstablishedConnection{conn}, allocator);
   dispatcher.Post(task);
 
-  auto call = ClientCall::Create(task, 50u, allocator);
+  auto call = ClientCall::Create(task, 50u);
   ASSERT_NE(call, nullptr);
 
   // 1. A client receiving a request packet replies with
@@ -548,7 +548,7 @@ TEST(ConnectionTaskTest, UnrecognizedPacketTypeClosesConnection) {
 
   ClientConnectionTask task(EstablishedConnection{conn}, allocator);
   dispatcher.Post(task);
-  auto call = ClientCall::Create(task, 1u, allocator);
+  auto call = ClientCall::Create(task, 1u);
   ASSERT_NE(call, nullptr);
 
   // A complete 5-byte header whose type byte is not a valid PacketType for the
@@ -577,7 +577,7 @@ TEST(ConnectionTaskTest, MalformedPacketClosesConnection) {
 
   ClientConnectionTask task(EstablishedConnection{conn}, allocator);
   dispatcher.Post(task);
-  auto call = ClientCall::Create(task, 1u, allocator);
+  auto call = ClientCall::Create(task, 1u);
   ASSERT_NE(call, nullptr);
 
   // A complete frame that is shorter than the packet header. The peer is not
@@ -663,7 +663,7 @@ TEST(ConnectionTaskTest, ConnectionCloseNotifiesActiveCalls) {
   auto task = dispatcher.Post<ClientConnectionTask>(
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(task, nullptr);
-  auto call = ClientCall::Create(*task, 123u, allocator);
+  auto call = ClientCall::Create(*task, 123u);
   ASSERT_NE(call, nullptr);
 
   EXPECT_FALSE(call->is_closed());
@@ -688,7 +688,7 @@ TEST(ConnectionTaskTest, UnrecognizedErrorCodeCompletesCallWithError) {
   ClientConnectionTask task(EstablishedConnection{conn}, allocator);
   dispatcher.Post(task);
 
-  auto call = ClientCall::Create(task, 7u, allocator);
+  auto call = ClientCall::Create(task, 7u);
   ASSERT_NE(call, nullptr);
   ReadTestTask read_task(*call);
   dispatcher.Post(read_task);
@@ -748,8 +748,7 @@ TEST(ConnectionTaskTest, ClientErrorEndsServerCallWithMappedStatus) {
   constexpr Method method(1, MethodType::kBidirectionalStreaming, 0, nullptr);
   uint32_t call_id = 60;
   for (const Case& test : kCases) {
-    ServerCall* server_call =
-        ServerCall::Allocate(task, call_id, method, allocator);
+    ServerCall* server_call = ServerCall::Allocate(task, call_id, method);
     ASSERT_NE(server_call, nullptr);
     IntrusivePtr<Call> call = server_call->shared_call();
 
@@ -823,7 +822,7 @@ TEST(ConnectionTaskTest, ControlPacketQueueOutOfMemoryDisconnects) {
 
   ClientConnectionTask task(EstablishedConnection{conn}, allocator);
   dispatcher.Post(task);
-  auto call = ClientCall::Create(task, 1u, allocator);
+  auto call = ClientCall::Create(task, 1u);
   ASSERT_NE(call, nullptr);
 
   // With the transport blocked, the packet has to be queued, but the queue

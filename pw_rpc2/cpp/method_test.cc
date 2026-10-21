@@ -230,11 +230,11 @@ class StatefulUnaryFuture {
 class MethodInvokerTest : public ::testing::Test {
  protected:
   MethodInvokerTest() {
-    auto [conn, raw_conn] = test::MakeMockConnection(conn_alloc_);
+    auto [conn, raw_conn] = test::MakeMockConnection(fixture_alloc_);
     connection_ = conn;
     raw_conn_ = raw_conn;
-    connection_task_ = conn_alloc_.MakeShared<ServerConnectionTask>(
-        EstablishedConnection{connection_}, conn_alloc_, server_);
+    connection_task_ = fixture_alloc_.MakeShared<ServerConnectionTask>(
+        EstablishedConnection{connection_}, alloc_, server_);
   }
 
   ~MethodInvokerTest() override {
@@ -249,8 +249,7 @@ class MethodInvokerTest : public ::testing::Test {
   /// Allocates a server call and registers it with the connection, exactly as
   /// `ServerConnectionTask::HandleIncomingRequest()` does.
   ServerCall& AdoptCall(uint32_t call_id, const Method& method) {
-    ServerCall* call =
-        ServerCall::Allocate(*connection_task_, call_id, method, alloc_);
+    ServerCall* call = ServerCall::Allocate(*connection_task_, call_id, method);
     PW_CHECK_NOTNULL(call);
     return *call;
   }
@@ -282,11 +281,11 @@ class MethodInvokerTest : public ::testing::Test {
     dispatcher_.RunUntilStalled();
   }
 
-  pw::allocator::test::AllocatorForTest<4096> conn_alloc_;
+  pw::allocator::test::AllocatorForTest<4096> fixture_alloc_;
   pw::allocator::test::AllocatorForTest<4096> alloc_;
   // Declared before the server, which is bound to it for the server's life.
   async2::DispatcherForTest dispatcher_;
-  ServerTask server_{conn_alloc_, dispatcher_};
+  ServerTask server_{fixture_alloc_, dispatcher_};
   transport::ReliableDatagramSocket connection_;
   test::MockConnection* raw_conn_ = nullptr;
   SharedPtr<ServerConnectionTask> connection_task_;
@@ -333,7 +332,7 @@ TEST_F(MethodInvokerTest, InvokeRawUnaryFutureIntoCall) {
 
   ServerCall& call = AdoptCall(/*call_id=*/1, method);
 
-  auto buf = pw::Buf::Allocate(conn_alloc_, 8);
+  auto buf = pw::Buf::Allocate(fixture_alloc_, 8);
   pw::ConstBuf payload(std::move(buf));
   ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
   EXPECT_EQ(error, ProtocolError::kNone);
@@ -354,7 +353,7 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryFutureIntoCall) {
   ServerCall& call = AdoptCall(/*call_id=*/3, method);
 
   int val = 12345;
-  auto buf = pw::Buf::Allocate(conn_alloc_, sizeof(int));
+  auto buf = pw::Buf::Allocate(fixture_alloc_, sizeof(int));
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
@@ -377,7 +376,7 @@ TEST_F(MethodInvokerTest, InvokeConstMethodWithRequestByValue) {
   ServerCall& call = AdoptCall(/*call_id=*/14, method);
 
   int val = 4242;
-  auto buf = pw::Buf::Allocate(conn_alloc_, sizeof(int));
+  auto buf = pw::Buf::Allocate(fixture_alloc_, sizeof(int));
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
@@ -400,7 +399,7 @@ TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryFutureIntoCall) {
   ServerCall& call = AdoptCall(/*call_id=*/15, method);
 
   int val = 7777;
-  auto buf = pw::Buf::Allocate(conn_alloc_, sizeof(int));
+  auto buf = pw::Buf::Allocate(fixture_alloc_, sizeof(int));
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
@@ -423,7 +422,7 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryFutureDeserializationFailure) {
   ServerCall& call = AdoptCall(/*call_id=*/4, method);
 
   // Provide only 2 bytes when sizeof(int) = 4 is required.
-  auto buf = pw::Buf::Allocate(conn_alloc_, 2);
+  auto buf = pw::Buf::Allocate(fixture_alloc_, 2);
   pw::ConstBuf payload(std::move(buf));
 
   ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
@@ -442,7 +441,7 @@ TEST_F(MethodInvokerTest, InvokeRawServerStreamingFutureIntoCall) {
 
   ServerCall& call = AdoptCall(/*call_id=*/6, method);
 
-  auto buf = pw::Buf::Allocate(conn_alloc_, 4);
+  auto buf = pw::Buf::Allocate(fixture_alloc_, 4);
   pw::ConstBuf payload(std::move(buf));
   ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
   EXPECT_EQ(error, ProtocolError::kNone);
@@ -501,7 +500,7 @@ TEST_F(MethodInvokerTest, InvokeStatelessTypeMethodIntoCall) {
 
   ServerCall& call = AdoptCall(/*call_id=*/12, method);
 
-  auto buf = pw::Buf::Allocate(conn_alloc_, 4);
+  auto buf = pw::Buf::Allocate(fixture_alloc_, 4);
   pw::ConstBuf payload(std::move(buf));
   ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
   EXPECT_EQ(error, ProtocolError::kNone);
@@ -518,7 +517,7 @@ TEST_F(MethodInvokerTest, InvokeStatefulTypeMethodIntoCall) {
 
   ServerCall& call = AdoptCall(/*call_id=*/13, method);
 
-  auto buf = pw::Buf::Allocate(conn_alloc_, 6);
+  auto buf = pw::Buf::Allocate(fixture_alloc_, 6);
   pw::ConstBuf payload(std::move(buf));
   ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
   EXPECT_EQ(error, ProtocolError::kNone);
@@ -611,7 +610,7 @@ TEST_F(MethodInvokerTest, InvokeRawUnaryCoroIntoCall) {
 
   ServerCall& call = AdoptCall(/*call_id=*/2, method);
 
-  auto buf = pw::Buf::Allocate(conn_alloc_, 16);
+  auto buf = pw::Buf::Allocate(fixture_alloc_, 16);
   pw::ConstBuf payload(std::move(buf));
   ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
   EXPECT_EQ(error, ProtocolError::kNone);
@@ -632,7 +631,7 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryCoroIntoCall) {
   ServerCall& call = AdoptCall(/*call_id=*/5, method);
 
   int val = 9999;
-  auto buf = pw::Buf::Allocate(conn_alloc_, sizeof(int));
+  auto buf = pw::Buf::Allocate(fixture_alloc_, sizeof(int));
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
@@ -655,7 +654,7 @@ TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryCoroIntoCall) {
   ServerCall& call = AdoptCall(/*call_id=*/16, method);
 
   int val = 8888;
-  auto buf = pw::Buf::Allocate(conn_alloc_, sizeof(int));
+  auto buf = pw::Buf::Allocate(fixture_alloc_, sizeof(int));
   std::memcpy(buf.data(), &val, sizeof(int));
   pw::ConstBuf payload(std::move(buf));
 
@@ -675,7 +674,7 @@ TEST_F(MethodInvokerTest, InvokeRawServerStreamingCoroIntoCall) {
 
   ServerCall& call = AdoptCall(/*call_id=*/9, method);
 
-  auto buf = pw::Buf::Allocate(conn_alloc_, 4);
+  auto buf = pw::Buf::Allocate(fixture_alloc_, 4);
   pw::ConstBuf payload(std::move(buf));
   ProtocolError error = InvokeIntoCall(method, call, std::move(payload));
   EXPECT_EQ(error, ProtocolError::kNone);
@@ -724,12 +723,19 @@ TEST_F(MethodInvokerTest,
   constexpr Method unary_method =
       UnaryCoroInvoker::CreateMethod<TestService>(20);
 
+  using StreamCoroInvoker =
+      RawMethodInvoker<&TestService::RawServerStreamingCoro,
+                       MethodType::kServerStreaming>;
+  constexpr Method stream_method =
+      StreamCoroInvoker::CreateMethod<TestService>(21);
+
   ServerCall& unary_call = AdoptCall(/*call_id=*/20, unary_method);
-  auto buf = pw::Buf::Allocate(conn_alloc_, 4);
+  ServerCall& stream_call = AdoptCall(/*call_id=*/21, stream_method);
+  auto buf = pw::Buf::Allocate(fixture_alloc_, 4);
   pw::ConstBuf payload(std::move(buf));
 
   // Exhaust the connection allocator so coroutine frame allocation fails.
-  conn_alloc_.Exhaust();
+  alloc_.Exhaust();
   ProtocolError error =
       InvokeIntoCall(unary_method, unary_call, std::move(payload));
   EXPECT_EQ(error, ProtocolError::kFailedToAllocateCallResourcesWhileRunning);
@@ -742,15 +748,7 @@ TEST_F(MethodInvokerTest,
   // retiring a call whose invocation failed. Closing it here keeps retirement
   // from ending the call itself.
   unary_call.CloseWrite();
-  connection_task_->ForceRetireAllCalls();
 
-  using StreamCoroInvoker =
-      RawMethodInvoker<&TestService::RawServerStreamingCoro,
-                       MethodType::kServerStreaming>;
-  constexpr Method stream_method =
-      StreamCoroInvoker::CreateMethod<TestService>(21);
-
-  ServerCall& stream_call = AdoptCall(/*call_id=*/21, stream_method);
   pw::ConstBuf stream_payload;
   ProtocolError stream_error =
       InvokeIntoCall(stream_method, stream_call, std::move(stream_payload));

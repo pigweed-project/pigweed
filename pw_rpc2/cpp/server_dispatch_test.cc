@@ -105,9 +105,9 @@ TEST(ServerDispatchTest, CallRegistriesAreScopedToTheirConnectionTask) {
   ASSERT_NE(task2, nullptr);
 
   // The same call ID on two different connections.
-  auto call1 = internal::ClientCall::Create(*task1, 42u, allocator);
+  auto call1 = internal::ClientCall::Create(*task1, 42u);
   ASSERT_NE(call1, nullptr);
-  auto call2 = internal::ClientCall::Create(*task2, 42u, allocator);
+  auto call2 = internal::ClientCall::Create(*task2, 42u);
   ASSERT_NE(call2, nullptr);
 
   // Deliver a message for call 42 on the first connection only.
@@ -141,10 +141,10 @@ TEST(ServerDispatchTest, ConnectionSeveredEndsActiveCallsImmediately) {
         allocator, EstablishedConnection{conn}, allocator);
     ASSERT_NE(task, nullptr);
 
-    auto call1 = internal::ClientCall::Create(*task, 1u, allocator);
+    auto call1 = internal::ClientCall::Create(*task, 1u);
     ASSERT_NE(call1, nullptr);
 
-    auto call2 = internal::ClientCall::Create(*task, 2u, allocator);
+    auto call2 = internal::ClientCall::Create(*task, 2u);
     ASSERT_NE(call2, nullptr);
 
     task->CloseConnection(RpcStatus::ProtocolError());

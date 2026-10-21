@@ -72,12 +72,12 @@ class alignas(std::max_align_t) ServerCall final : public Call,
   }
 
   /// Allocates a single contiguous memory block containing `ServerCall` and
-  /// its trailing future storage from `allocator`, registering and adopting
-  /// it into `connection_task`. Returns null if the allocation failed.
+  /// its trailing future storage from `connection_task.allocator()`,
+  /// registering and adopting it into `connection_task`. Returns null if the
+  /// allocation failed.
   static ServerCall* Allocate(ServerConnectionTask& connection_task,
                               uint32_t call_id,
-                              const Method& method,
-                              Allocator& allocator);
+                              const Method& method);
 
   /// Returns the ID of the method this call was dispatched to.
   uint32_t method_id() const { return method_->id(); }
@@ -155,8 +155,7 @@ class alignas(std::max_align_t) ServerCall final : public Call,
   /// table, which is `static constexpr`.
   ServerCall(ServerConnectionTask& connection_task,
              uint32_t call_id,
-             const Method& method,
-             Allocator* allocator);
+             const Method& method);
 
   /// Advances the user's method future, and asks the connection to retire this
   /// call once it is done with it.

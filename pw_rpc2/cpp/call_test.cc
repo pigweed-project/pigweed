@@ -65,7 +65,7 @@ TEST(CallTest, IngressMessageQueueAndBackpressure) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 100u, allocator);
+  auto call = ClientCall::Create(*connection_task, 100u);
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
@@ -113,7 +113,7 @@ TEST(CallTest, IngressMessageDroppedWhenReadClosed) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 200u, allocator);
+  auto call = ClientCall::Create(*connection_task, 200u);
   ASSERT_NE(call, nullptr);
 
   call->CloseReadOnReaderDestroy();
@@ -140,7 +140,7 @@ TEST(CallTest, DeferredResourceResetPostCompletion) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 300u, allocator);
+  auto call = ClientCall::Create(*connection_task, 300u);
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
@@ -186,7 +186,7 @@ TEST(CallTest, ReserveWriteReturnsCompletionErrorWhenCompletedWithError) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 300u, allocator);
+  auto call = ClientCall::Create(*connection_task, 300u);
   ASSERT_NE(call, nullptr);
 
   call->CloseWrite();
@@ -203,7 +203,7 @@ TEST(CallTest, ReserveWriteReturnsWriteClosedWhenOnlyWriteClosed) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 301u, allocator);
+  auto call = ClientCall::Create(*connection_task, 301u);
   ASSERT_NE(call, nullptr);
 
   call->CloseWrite();
@@ -222,7 +222,7 @@ TEST(CallTest, ReserveWriteRejectsWritesLargerThanTransportLimit) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 302u, allocator);
+  auto call = ClientCall::Create(*connection_task, 302u);
   ASSERT_NE(call, nullptr);
 
   EXPECT_EQ(call->ReserveWrite(0, max_size + 1).status(),
@@ -249,7 +249,7 @@ TEST(CallTest, CallCreatedOnClosedConnectionUsesConnectionCloseStatus) {
   connection_task->CloseConnection(RpcStatus::ProtocolError());
   EXPECT_TRUE(connection_task->is_closed());
 
-  auto call = ClientCall::Create(*connection_task, 302u, allocator);
+  auto call = ClientCall::Create(*connection_task, 302u);
   ASSERT_NE(call, nullptr);
   EXPECT_TRUE(call->is_completed());
   EXPECT_EQ(call->completion_status(), RpcStatus::ProtocolError());
@@ -264,7 +264,7 @@ TEST(CallTest, FinishFollowedByConnectionClosePreservesEndOfStream) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 303u, allocator);
+  auto call = ClientCall::Create(*connection_task, 303u);
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
@@ -305,7 +305,7 @@ TEST(CallTest, PeerStreamEndKeepsClientReaderOpenUntilTerminal) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 303u, allocator);
+  auto call = ClientCall::Create(*connection_task, 303u);
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
@@ -347,7 +347,7 @@ TEST(CallTest, PeerStreamEndThenConnectionCloseReportsCloseStatus) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 303u, allocator);
+  auto call = ClientCall::Create(*connection_task, 303u);
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
@@ -373,7 +373,7 @@ TEST(CallTest, ServerPeerStreamEndThenConnectionClosePreservesEndOfStream) {
       allocator, EstablishedConnection{conn}, allocator, server);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = test::StartServerCall(*connection_task, 303u, allocator);
+  auto call = test::StartServerCall(*connection_task, 303u);
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
@@ -414,7 +414,7 @@ TEST(CallTest, ServerConnectionCloseWithoutPeerStreamEndReportsCloseStatus) {
       allocator, EstablishedConnection{conn}, allocator, server);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = test::StartServerCall(*connection_task, 303u, allocator);
+  auto call = test::StartServerCall(*connection_task, 303u);
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
@@ -456,7 +456,7 @@ TEST(CallTest, DroppingReaderUnblocksReserveReadSlot) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 304u, allocator);
+  auto call = ClientCall::Create(*connection_task, 304u);
   ASSERT_NE(call, nullptr);
 
   std::optional<RawReader> reader = CallAccess::Create<RawReader>(call);
@@ -495,7 +495,7 @@ TEST(CallTest, ClientCallAutoDetachesOnBothSidesClosed) {
       allocator, EstablishedConnection{conn}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 305u, allocator);
+  auto call = ClientCall::Create(*connection_task, 305u);
   ASSERT_NE(call, nullptr);
   EXPECT_TRUE(call->is_attached());
 
@@ -519,7 +519,7 @@ TEST(CallTest, CallOutlivesItsConnection) {
       EstablishedConnection{std::move(conn)}, allocator);
   ASSERT_NE(connection_task, nullptr);
 
-  auto call = ClientCall::Create(*connection_task, 306u, allocator);
+  auto call = ClientCall::Create(*connection_task, 306u);
   ASSERT_NE(call, nullptr);
   EXPECT_TRUE(call->is_attached());
 

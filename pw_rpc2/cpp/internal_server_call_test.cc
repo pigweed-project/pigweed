@@ -122,11 +122,11 @@ class MockFuture {
 class ServerCallTest : public ::testing::Test {
  protected:
   ServerCallTest() {
-    auto [conn, raw_conn] = test::MakeMockConnection(conn_alloc_);
+    auto [conn, raw_conn] = test::MakeMockConnection(fixture_alloc_);
     connection_ = conn;
     raw_conn_ = raw_conn;
-    connection_task_ = conn_alloc_.MakeShared<ServerConnectionTask>(
-        EstablishedConnection{connection_}, conn_alloc_, server_);
+    connection_task_ = fixture_alloc_.MakeShared<ServerConnectionTask>(
+        EstablishedConnection{connection_}, alloc_, server_);
   }
 
   ~ServerCallTest() override {
@@ -141,8 +141,7 @@ class ServerCallTest : public ::testing::Test {
   /// Allocates a server call and registers it with the connection, exactly as
   /// `ServerConnectionTask::HandleIncomingRequest()` does.
   ServerCall& AdoptCall(uint32_t call_id, const Method& method) {
-    ServerCall* call =
-        ServerCall::Allocate(*connection_task_, call_id, method, alloc_);
+    ServerCall* call = ServerCall::Allocate(*connection_task_, call_id, method);
     PW_CHECK_NOTNULL(call);
     return *call;
   }
@@ -165,11 +164,11 @@ class ServerCallTest : public ::testing::Test {
     dispatcher_.RunUntilStalled();
   }
 
-  pw::allocator::test::AllocatorForTest<4096> conn_alloc_;
+  pw::allocator::test::AllocatorForTest<4096> fixture_alloc_;
   pw::allocator::test::AllocatorForTest<4096> alloc_;
   // Declared before the server, which is bound to it for the server's life.
   async2::DispatcherForTest dispatcher_;
-  ServerTask server_{conn_alloc_, dispatcher_};
+  ServerTask server_{fixture_alloc_, dispatcher_};
   transport::ReliableDatagramSocket connection_;
   test::MockConnection* raw_conn_ = nullptr;
   SharedPtr<ServerConnectionTask> connection_task_;

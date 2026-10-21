@@ -174,9 +174,7 @@ Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
 /// without invoking a method. The test acts as the method, using handles
 /// created from the returned call.
 IntrusivePtr<internal::Call> StartServerCall(
-    internal::ServerConnectionTask& connection_task,
-    uint32_t call_id,
-    pw::Allocator& allocator);
+    internal::ServerConnectionTask& connection_task, uint32_t call_id);
 
 /// Decodes a payload recorded by `MockPeer` into a message.
 ///

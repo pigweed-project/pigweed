@@ -14,6 +14,7 @@
 
 #include "pw_rpc2/internal/call.h"
 
+#include <memory>
 #include <utility>
 
 #include "pw_assert/check.h"
@@ -107,7 +108,7 @@ void Call::CloseRead() {
   receiver_.Disconnect();
   sender_.Disconnect();
   send_state_.Reset();
-  if (was_open && connection_task_ != nullptr) {
+  if (was_open && is_attached()) {
     connection_task_->Wake();
   }
   if (role() == EndpointRole::kClient && !is_completed()) {
@@ -127,13 +128,12 @@ void Call::CloseReadOnReaderDestroy() {
 }
 
 void Call::NotifyIfClosed() {
-  if (!is_closed() || HasReadFlag<kClosedNotified>()) {
+  if (!is_closed() || !is_attached()) {
     return;
   }
-  SetReadFlag<kClosedNotified>();
   if (role() == EndpointRole::kClient) {
     DetachFromConnection();
-  } else if (connection_task_ != nullptr) {
+  } else {
     // The server connection polls this call for retirement, so it is what has
     // to notice. It may already be awake --- `CloseConnection()` completes
     // every call and then wakes once --- but waking an awake task is free.
@@ -141,12 +141,8 @@ void Call::NotifyIfClosed() {
   }
 }
 
-Call::Call(ConnectionTask& connection_task,
-           uint32_t call_id,
-           Allocator* allocator)
-    : connection_task_(&connection_task),
-      allocator_(allocator),
-      call_id_(call_id) {
+Call::Call(ConnectionTask& connection_task, uint32_t call_id)
+    : connection_task_(&connection_task), call_id_(call_id) {
   if (connection_task.role() == EndpointRole::kServer) {
     SetWriteFlag<kServerCall>();
     SetWriteFlag<kStarted>();
@@ -162,7 +158,7 @@ void Call::InitChannel() {
     completion_status_ = connection_task_->close_status();
     SetReadFlag<kCompleted>();
     SetWriteFlag<kClosed>();
-    connection_task_ = nullptr;
+    ClearConnectionTask();
     sender_.Disconnect();
   } else {
     connection_task_->RegisterCall(*this);
@@ -176,23 +172,38 @@ Call::~Call() {
   send_state_.Reset();
 }
 
-void Call::DetachFromConnection() {
-  if (connection_task_ != nullptr) {
-    connection_task_->UnregisterCall(*this);
-    connection_task_ = nullptr;
+void Call::ClearConnectionTask() {
+  if (is_attached()) {
+    Allocator& alloc = connection_task_->allocator();
+    ClearReadFlag<kAttached>();
+    allocator_ = &alloc;
   }
+}
+
+void Call::DetachFromConnection() {
+  if (is_attached()) {
+    connection_task_->UnregisterCall(*this);
+    ClearConnectionTask();
+  }
+}
+
+void Call::pw_recycle() {
+  DetachFromConnection();
+  Allocator& alloc = *allocator_;
+  std::destroy_at(this);
+  alloc.Deallocate(this);
 }
 
 // Only send error packets for calls that have started. Server calls are always
 // started.
 void Call::QueueError(ProtocolError error) {
-  if (connection_task_ != nullptr && HasWriteFlag<kStarted>()) {
+  if (is_attached() && HasWriteFlag<kStarted>()) {
     connection_task_->QueueError(call_id_, error);
   }
 }
 
 void Call::QueueFinish() {
-  if (connection_task_ != nullptr && HasWriteFlag<kStarted>()) {
+  if (is_attached() && HasWriteFlag<kStarted>()) {
     connection_task_->QueueFinish(call_id_);
   }
 }
@@ -205,7 +216,7 @@ RpcResult<transport::ReserveWriteFuture> Call::ReserveWrite(
   }
   // A call is only detached without completing once both of its directions
   // have closed, so its write side is closed.
-  if (connection_task_ == nullptr) {
+  if (!is_attached()) {
     return RpcStatus::WriteClosed();
   }
   if (HasWriteFlag<kClosed>() || HasWriteFlag<kTerminalWritePending>() ||
@@ -263,7 +274,7 @@ void Call::Cancel() {
   }
   // A client call whose start packet was never sent is unknown to the server,
   // so there is nobody to tell.
-  if (connection_task_ != nullptr && HasWriteFlag<kStarted>()) {
+  if (is_attached() && HasWriteFlag<kStarted>()) {
     connection_task_->QueueCancel(call_id_);
   }
   // Complete locally too: the peer does not answer a cancel, so a local read
@@ -285,7 +296,7 @@ void Call::CloseWriteOnRetire() {
 }
 
 size_t Call::max_write_size_bytes() const {
-  if (connection_task_ == nullptr) {
+  if (!is_attached()) {
     return 0;
   }
   return connection_task_->connection().max_write_message_size_bytes();
@@ -365,6 +376,12 @@ void Call::Complete(RpcStatus status) {
   send_state_.Reset();
   sender_.Disconnect();
   CloseWrite();
+}
+
+IntrusivePtr<Call> ClientCall::Create(ConnectionTask& connection_task,
+                                      uint32_t call_id) {
+  return IntrusivePtr<Call>(
+      connection_task.allocator().New<ClientCall>(connection_task, call_id));
 }
 
 }  // namespace pw::rpc2::internal

@@ -136,14 +136,12 @@ Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
 }
 
 IntrusivePtr<internal::Call> StartServerCall(
-    internal::ServerConnectionTask& connection_task,
-    uint32_t call_id,
-    pw::Allocator& allocator) {
+    internal::ServerConnectionTask& connection_task, uint32_t call_id) {
   static constexpr internal::Method kMethod(
       1, MethodType::kBidirectionalStreaming, 0, nullptr);
 
-  internal::ServerCall* const call = internal::ServerCall::Allocate(
-      connection_task, call_id, kMethod, allocator);
+  internal::ServerCall* const call =
+      internal::ServerCall::Allocate(connection_task, call_id, kMethod);
   PW_CHECK_NOTNULL(call);
   // Finish as if the method had returned, leaving its handles to the test.
   call->FinishInvocation();

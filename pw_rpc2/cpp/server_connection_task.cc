@@ -178,7 +178,7 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
   }
 
   ServerCall* const call_ptr =
-      ServerCall::Allocate(*this, packet.call_id(), *method, allocator());
+      ServerCall::Allocate(*this, packet.call_id(), *method);
   if (call_ptr == nullptr) {
     PW_LOG_ERROR("Call %u: failed to allocate ServerCall",
                  static_cast<unsigned>(packet.call_id()));

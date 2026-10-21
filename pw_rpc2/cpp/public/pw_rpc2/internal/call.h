@@ -66,13 +66,13 @@ class Call;
 /// @note **Ownership.** Every `Call` is intrusively reference-counted via
 /// `RefCounted<Call>`, `IntrusivePtr<Call>`, and `Recyclable<Call>`,
 /// and every handle holds a reference, so a handle can never outlive the call
-/// it refers to. A call refers back to its `ConnectionTask` via a raw pointer
-/// that is non-null if and only if the call is currently registered in that
-/// connection's call list. Retiring the call or tearing the connection down
-/// detaches it, after which its outbound operations are no-ops and
-/// `ReserveWrite()` fails. A completed call reports why it completed (see
-/// `ReserveWrite()`); a detached call that did not complete reports
-/// `kWriteClosed`.
+/// it refers to. While registered in its connection's call list, a call refers
+/// back to its `ConnectionTask`. Retiring the call or tearing the connection
+/// down detaches it (replacing the connection pointer with the connection's
+/// `Allocator*` for eventual deallocation), after which its outbound operations
+/// are no-ops and `ReserveWrite()` fails. A completed call reports why it
+/// completed (see `ReserveWrite()`); a detached call that did not complete
+/// reports `kWriteClosed`.
 class Call : public IntrusiveForwardList<Call>::Item,
              public RefCounted<Call>,
              public Recyclable<Call> {
@@ -81,11 +81,11 @@ class Call : public IntrusiveForwardList<Call>::Item,
 
   /// True while this call is registered with a connection. A detached call's
   /// outbound operations are no-ops.
-  bool is_attached() const { return connection_task_ != nullptr; }
+  bool is_attached() const { return HasReadFlag<kAttached>(); }
 
   /// @pre The call must not have been detached from its connection.
   ConnectionTask& connection_task() const {
-    PW_DASSERT(connection_task_ != nullptr);
+    PW_DASSERT(is_attached());
     return *connection_task_;
   }
   uint32_t call_id() const { return call_id_; }
@@ -293,10 +293,12 @@ class Call : public IntrusiveForwardList<Call>::Item,
   /// Idempotent.
   void DetachFromConnection();
 
-  /// Clears this call's pointer to its connection.
+  /// Clears this call's pointer to its connection, replacing it with the
+  /// connection's allocator so the call can still deallocate itself when its
+  /// last handle is released.
   ///
   /// @pre The connection has already removed this call from its list.
-  void ClearConnectionTask() { connection_task_ = nullptr; }
+  void ClearConnectionTask();
 
   /// Claims this call's read stream and starts a receive on it.
   ///
@@ -343,20 +345,11 @@ class Call : public IntrusiveForwardList<Call>::Item,
  protected:
   friend class Recyclable<Call>;
 
-  /// Constructs a call attached to `connection_task`. If `allocator` is
-  /// non-null, the call will destroy and deallocate itself through `allocator`
-  /// when its last `IntrusivePtr` reference is released.
-  Call(ConnectionTask& connection_task,
-       uint32_t call_id,
-       Allocator* allocator = nullptr);
+  /// Constructs a call attached to `connection_task` and allocated from
+  /// `connection_task.allocator()`.
+  Call(ConnectionTask& connection_task, uint32_t call_id);
 
-  void pw_recycle() {
-    if (allocator_ != nullptr) {
-      Allocator* alloc = allocator_;
-      this->~Call();
-      alloc->Deallocate(this);
-    }
-  }
+  void pw_recycle();
 
  private:
   enum WriteFlag : uint8_t {
@@ -407,8 +400,10 @@ class Call : public IntrusiveForwardList<Call>::Item,
     // The call has completed; `completion_status_` holds its status.
     kCompleted = 1 << 4,
 
-    // `NotifyIfClosed()` has run, so it does not run again.
-    kClosedNotified = 1 << 5,
+    // True while registered with `connection_task_` (`connection_task_` is the
+    // active union member). False once detached (`allocator_` is the active
+    // union member).
+    kAttached = 1 << 5,
   };
 
   template <WriteFlag kFlag>
@@ -448,13 +443,18 @@ class Call : public IntrusiveForwardList<Call>::Item,
   void QueueWriterDropPacket();
   void FlushDeferredWriterDrop();
 
-  // Detaches a client call or wakes the server connection the first time the
-  // call is observed to be closed.
+  // Detaches a client call or wakes the server connection when the call is
+  // observed to be closed.
   void NotifyIfClosed();
 
-  // The connection this call belongs to. Null after the call is detached.
-  ConnectionTask* connection_task_ = nullptr;
-  Allocator* allocator_ = nullptr;
+  // While `kAttached` is set, points to the owning `ConnectionTask`. When
+  // detached (`ClearConnectionTask()`), replaced with
+  // `&connection_task_->allocator()` so `pw_recycle()` can deallocate `this`
+  // even after the connection is gone.
+  union {
+    ConnectionTask* connection_task_;
+    Allocator* allocator_;
+  };
 
   uint32_t call_id_;
 
@@ -472,7 +472,7 @@ class Call : public IntrusiveForwardList<Call>::Item,
   async2::FutureOrValue<async2::ReserveSendFuture<ConstBuf>> send_state_;
 
   uint8_t write_flags_ = 0;
-  uint8_t read_flags_ = 0;
+  uint8_t read_flags_ = kAttached;
 
   // Set by the first `Complete()`; later completions are ignored.
   RpcStatus completion_status_;
@@ -485,19 +485,16 @@ class Call : public IntrusiveForwardList<Call>::Item,
 /// commits.
 class ClientCall final : public Call {
  public:
-  ClientCall(ConnectionTask& connection_task,
-             uint32_t call_id,
-             Allocator* allocator = nullptr)
-      : Call(connection_task, call_id, allocator) {}
-
-  /// Allocates and constructs a heap-allocated `ClientCall` managed by
-  /// `IntrusivePtr<Call>`.
+  /// Allocates and constructs a heap-allocated `ClientCall` from
+  /// `connection_task.allocator()`, managed by `IntrusivePtr<Call>`.
   static IntrusivePtr<Call> Create(ConnectionTask& connection_task,
-                                   uint32_t call_id,
-                                   Allocator& allocator) {
-    return IntrusivePtr<Call>(
-        allocator.New<ClientCall>(connection_task, call_id, &allocator));
-  }
+                                   uint32_t call_id);
+
+ private:
+  friend class ::pw::Allocator;
+
+  ClientCall(ConnectionTask& connection_task, uint32_t call_id)
+      : Call(connection_task, call_id) {}
 };
 
 /// Internal access helper used to construct public RPC handles and futures

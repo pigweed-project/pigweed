@@ -34,9 +34,8 @@ static_assert(
 
 ServerCall::ServerCall(ServerConnectionTask& connection_task,
                        uint32_t call_id,
-                       const Method& method,
-                       Allocator* allocator)
-    : Call(connection_task, call_id, allocator),
+                       const Method& method)
+    : Call(connection_task, call_id),
       async2::Task(PW_ASYNC_TASK_NAME("pw::rpc2::ServerCall")),
       connection_ref_(this),
       method_(&method) {
@@ -47,15 +46,14 @@ ServerCall::~ServerCall() { PW_DCHECK(connection_ref_ == nullptr); }
 
 ServerCall* ServerCall::Allocate(ServerConnectionTask& connection_task,
                                  uint32_t call_id,
-                                 const Method& method,
-                                 Allocator& allocator) {
+                                 const Method& method) {
   const size_t total_size = TotalAllocationSize(method.future_storage_size());
-  void* mem =
-      allocator.Allocate(allocator::Layout(total_size, alignof(ServerCall)));
+  void* mem = connection_task.allocator().Allocate(
+      allocator::Layout(total_size, alignof(ServerCall)));
   if (mem == nullptr) {
     return nullptr;
   }
-  return ::new (mem) ServerCall(connection_task, call_id, method, &allocator);
+  return ::new (mem) ServerCall(connection_task, call_id, method);
 }
 
 ProtocolError ServerCall::CommitEmplacedFuture(BoxedMethodFuture&& future,

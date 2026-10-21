@@ -159,7 +159,7 @@ class ServerCallTest : public ::testing::Test {
 };
 
 TEST_F(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
-  auto call = test::StartServerCall(*connection_task_, 50u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 50u);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
@@ -189,7 +189,7 @@ TEST_F(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
 
 TEST_F(ServerCallTest, UnaryWriterFinishCopyReleasesOwnedResponseWhenSent) {
   allocator::test::AllocatorForTest<256> response_allocator;
-  auto call = test::StartServerCall(*connection_task_, 51u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 51u);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
@@ -222,7 +222,7 @@ TEST_F(ServerCallTest, TypedUnaryWriterFinishCopySendsBytes) {
   };
 
   allocator::test::AllocatorForTest<256> response_allocator;
-  auto call = test::StartServerCall(*connection_task_, 52u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 52u);
 
   auto responder =
       internal::CallAccess::Create<UnaryWriter<TypedResponse>>(std::move(call));
@@ -249,7 +249,7 @@ TEST_F(ServerCallTest, TypedUnaryWriterFinishCopySendsBytes) {
 }
 
 TEST_F(ServerCallTest, UnaryWriterReserveThatOverflowsFails) {
-  auto call = test::StartServerCall(*connection_task_, 55u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 55u);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
@@ -268,7 +268,7 @@ TEST_F(ServerCallTest, UnaryWriterReserveThatOverflowsFails) {
 }
 
 TEST_F(ServerCallTest, ServerStreamingWriterWriteAndFinish) {
-  auto call = test::StartServerCall(*connection_task_, 60u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 60u);
 
   auto responder = internal::CallAccess::Create<RawWriter>(std::move(call));
 
@@ -301,7 +301,7 @@ TEST_F(ServerCallTest, ServerStreamingWriterWriteAndFinish) {
 }
 
 TEST_F(ServerCallTest, ReaderAndWriterShareCallId) {
-  auto call = test::StartServerCall(*connection_task_, 70u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 70u);
   auto reader = internal::CallAccess::Create<RawReader>(call);
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
@@ -310,7 +310,7 @@ TEST_F(ServerCallTest, ReaderAndWriterShareCallId) {
 }
 
 TEST_F(ServerCallTest, ClientStreamingReadsRequestsThenFinishes) {
-  auto call = test::StartServerCall(*connection_task_, 110u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 110u);
 
   auto reader = internal::CallAccess::Create<RawReader>(call);
   auto responder = internal::CallAccess::Create<RawUnaryWriter>(call);
@@ -352,7 +352,7 @@ TEST_F(ServerCallTest, ClientStreamingReadsRequestsThenFinishes) {
 }
 
 TEST_F(ServerCallTest, BidiStreamingWritesMessageThenFinishes) {
-  auto call = test::StartServerCall(*connection_task_, 120u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 120u);
 
   auto reader = internal::CallAccess::Create<RawReader>(call);
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
@@ -377,7 +377,7 @@ TEST_F(ServerCallTest, BidiStreamingWritesMessageThenFinishes) {
 }
 
 TEST_F(ServerCallTest, UnaryWriterCancel) {
-  auto call = test::StartServerCall(*connection_task_, 80u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 80u);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
@@ -396,7 +396,7 @@ TEST_F(ServerCallTest, UnaryWriterCancel) {
 }
 
 TEST_F(ServerCallTest, RAIICancellationOnDestruction) {
-  auto call = test::StartServerCall(*connection_task_, 90u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 90u);
 
   {
     auto responder =
@@ -423,7 +423,7 @@ TEST_F(ServerCallTest, RAIICancellationOnDestruction) {
 }
 
 TEST_F(ServerCallTest, ZeroCopyReserveFinish) {
-  auto call = test::StartServerCall(*connection_task_, 100u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 100u);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
@@ -455,7 +455,7 @@ TEST_F(ServerCallTest, ZeroCopyReserveFinish) {
 }
 
 TEST_F(ServerCallTest, DroppedUnaryFinishFutureFallsBackToRAIICancellation) {
-  auto call = test::StartServerCall(*connection_task_, 101u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 101u);
 
   // Obtain a terminal future, destroy the responder while the future is still
   // alive, and then drop the future without awaiting/committing it.
@@ -485,7 +485,7 @@ TEST_F(ServerCallTest, DroppedUnaryFinishFutureFallsBackToRAIICancellation) {
 }
 
 TEST_F(ServerCallTest, DroppedUnaryReservationReopensWriterWhileAlive) {
-  auto call = test::StartServerCall(*connection_task_, 102u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 102u);
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
@@ -518,7 +518,7 @@ TEST_F(ServerCallTest, DroppedUnaryReservationReopensWriterWhileAlive) {
 }
 
 TEST_F(ServerCallTest, DroppedWriterFinishFutureFallsBackToRAIIStreamEnd) {
-  auto call = test::StartServerCall(*connection_task_, 103u, allocator_);
+  auto call = test::StartServerCall(*connection_task_, 103u);
 
   {
     std::optional<WriteFuture<>> pending_close;

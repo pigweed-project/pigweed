@@ -129,7 +129,7 @@ TEST(RawReaderWriterTest, RequireValidCallAndExposeCallId) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = allocator.MakeShared<internal::ClientConnectionTask>(
       internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 123u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 123u);
   ASSERT_NE(call, nullptr);
 
   auto reader = internal::CallAccess::Create<RawReader>(call);
@@ -147,7 +147,7 @@ TEST(RawWriterTest, WritesMessageAndFinish) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 77u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 77u);
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
@@ -313,7 +313,7 @@ TEST(RawWriterTest, WriteCopyReleasesOwnedMessageWhenSent) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 78u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 78u);
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
@@ -347,7 +347,7 @@ TEST(RawWriterTest, WriteCopyEmptyBracesSendsEmptyMessage) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 79u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 79u);
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
@@ -373,7 +373,7 @@ TEST(RawWriterTest, CancelledReservationReleasesWithoutCommit) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 88u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 88u);
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
@@ -401,7 +401,7 @@ TEST(RawWriterTest, OversizeReservationFailsWithoutClosingWriter) {
   const size_t max_size = conn.max_write_message_size_bytes();
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 89u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 89u);
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
@@ -444,7 +444,7 @@ TEST(RawWriterTest, WriterErrorTransmitsErrorPacket) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 99u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 99u);
   ASSERT_NE(call, nullptr);
   // The server only learns of a call once its start packet is sent, which
   // this test bypasses.
@@ -474,7 +474,7 @@ TEST(RawWriterTest, CancelBeforeStartSendsNothing) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 99u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 99u);
   ASSERT_NE(call, nullptr);
   internal::Call& raw_call = *call;
 
@@ -499,7 +499,7 @@ TEST(RawWriterTest, DestructorEndsStreamNormally) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 55u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 55u);
   ASSERT_NE(call, nullptr);
   call->MarkStarted();
 
@@ -528,7 +528,7 @@ TEST(RawWriterTest, UnaryWriterDestructorCancels) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = allocator.MakeShared<internal::ServerConnectionTask>(
       internal::EstablishedConnection{std::move(conn)}, allocator, server);
-  auto call = test::StartServerCall(*connection_task, 56u, allocator);
+  auto call = test::StartServerCall(*connection_task, 56u);
 
   {
     auto responder = internal::CallAccess::Create<RawUnaryWriter>(call);
@@ -558,7 +558,7 @@ TEST(RawWriterTest, DestructorAfterFinishDoesNotResend) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 57u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 57u);
   ASSERT_NE(call, nullptr);
 
   {
@@ -585,7 +585,7 @@ TEST(RawWriterTest, MessageCommittedAfterFinishIsRejected) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 58u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 58u);
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
@@ -620,7 +620,7 @@ TEST(RawWriterTest, MessageCommittedAfterCancelReportsCancellation) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 59u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 59u);
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
@@ -646,7 +646,7 @@ TEST(RawReaderTest, ReadsPayloadBufFromCall) {
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
 
-  auto call = internal::ClientCall::Create(*connection_task, 99u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 99u);
   ASSERT_NE(call, nullptr);
   auto reader = internal::CallAccess::Create<RawReader>(call);
 
@@ -707,7 +707,7 @@ TEST(RawReaderTest, SequentialReadsReuseTheCall) {
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
 
-  auto call = internal::ClientCall::Create(*connection_task, 101u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 101u);
   ASSERT_NE(call, nullptr);
   auto reader = internal::CallAccess::Create<RawReader>(call);
 
@@ -748,7 +748,7 @@ TEST(RawResponseFutureTest, ResolvesToResponse) {
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
 
-  auto call = internal::ClientCall::Create(*connection_task, 102u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 102u);
   ASSERT_NE(call, nullptr);
   call->MarkStarted();
 
@@ -768,7 +768,7 @@ TEST(RawResponseFutureTest, DroppingPendingFutureCancelsCall) {
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
 
-  auto call = internal::ClientCall::Create(*connection_task, 104u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 104u);
   ASSERT_NE(call, nullptr);
   call->MarkStarted();
 
@@ -794,7 +794,7 @@ TEST(RawResponseFutureTest, CancelResolvesPendingFutureToCancelled) {
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
 
-  auto call = internal::ClientCall::Create(*connection_task, 103u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 103u);
   ASSERT_NE(call, nullptr);
   call->MarkStarted();
 
@@ -833,7 +833,7 @@ TEST(RawWriterTest, PollingOnWrongDispatcherCrashes) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 105u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 105u);
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
@@ -852,7 +852,7 @@ TEST(RawReaderTest, PollingOnWrongDispatcherCrashes) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 106u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 106u);
   ASSERT_NE(call, nullptr);
 
   auto reader = internal::CallAccess::Create<RawReader>(std::move(call));
@@ -871,7 +871,7 @@ TEST(RawResponseFutureTest, PollingOnWrongDispatcherCrashes) {
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
-  auto call = internal::ClientCall::Create(*connection_task, 107u, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 107u);
   ASSERT_NE(call, nullptr);
   call->MarkStarted();
 

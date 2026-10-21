@@ -49,7 +49,7 @@ class ClientConnectionTask final : public ConnectionTask {
   /// @pre Must be called from this connection's dispatcher thread.
   IntrusivePtr<Call> CreateCall() {
     const uint32_t id = NewCallId();
-    return ClientCall::Create(*this, id, allocator());
+    return ClientCall::Create(*this, id);
   }
 
   /// Returns a call ID that is unused on this connection.
