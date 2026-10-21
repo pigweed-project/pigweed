@@ -469,9 +469,6 @@ pw_test("call_test") {
     ":test_utils",
   ]
   sources = [ "call_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("callback_test") {
@@ -488,9 +485,6 @@ pw_test("callback_test") {
     "raw:client_testing",
   ]
   sources = [ "callback_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("channel_list_test") {
@@ -507,9 +501,6 @@ pw_test("channel_test") {
     ":test_utils",
   ]
   sources = [ "channel_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("lockless_channel_send_test") {
@@ -540,9 +531,6 @@ pw_python_action("generate_ids_test") {
 pw_test("ids_test") {
   deps = [ ":server" ]
   source_gen_deps = [ ":generate_ids_test" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("packet_test") {
@@ -553,9 +541,6 @@ pw_test("packet_test") {
     dir_pw_protobuf,
   ]
   sources = [ "packet_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("packet_meta_test") {
@@ -565,9 +550,6 @@ pw_test("packet_meta_test") {
     dir_pw_bytes,
   ]
   sources = [ "packet_meta_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("service_test") {
@@ -577,9 +559,6 @@ pw_test("service_test") {
     dir_pw_assert,
   ]
   sources = [ "service_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("client_server_test") {
@@ -589,9 +568,6 @@ pw_test("client_server_test") {
     "raw:server_api",
   ]
   sources = [ "client_server_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("method_test") {
@@ -600,9 +576,6 @@ pw_test("method_test") {
     ":test_utils",
   ]
   sources = [ "method_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("server_test") {
@@ -613,17 +586,11 @@ pw_test("server_test") {
     dir_pw_assert,
   ]
   sources = [ "server_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("fake_channel_output_test") {
   deps = [ ":test_utils" ]
   sources = [ "fake_channel_output_test.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("test_helpers_test") {
@@ -642,7 +609,4 @@ pw_test("test_helpers_test") {
   enable_if = pw_sync_TIMED_THREAD_NOTIFICATION_BACKEND != "" &&
               pw_sync_COUNTING_SEMAPHORE_BACKEND != "" &&
               pw_chrono_SYSTEM_CLOCK_BACKEND != ""
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }

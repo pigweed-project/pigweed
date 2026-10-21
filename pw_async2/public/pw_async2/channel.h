@@ -490,7 +490,8 @@ class Channel : public BaseChannel {
 
   uint16_t remaining_capacity_locked() const
       PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
-    return deque_.capacity() - deque_.size() - reservations();
+    return static_cast<uint16_t>(deque_.capacity() - deque_.size() -
+                                 reservations());
   }
 
   uint16_t capacity() const PW_NO_LOCK_SAFETY_ANALYSIS {

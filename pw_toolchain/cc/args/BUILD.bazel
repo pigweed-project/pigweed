@@ -239,15 +239,33 @@ cc_args(
     visibility = ["//:__subpackages__"],
 )
 
-cc_args(
+cc_args_list(
     name = "pedantic_warnings",
+    args = [
+        ":pedantic_common_warnings",
+        ":pedantic_clang_warnings",
+        ":pedantic_gcc_warnings",
+    ],
+)
+
+cc_args(
+    name = "pedantic_common_warnings",
     actions = [
         "@rules_cc//cc/toolchains/actions:compile_actions",
     ],
     args = [
         # Enable -Wpedantic, but disable a few warnings.
         "-Wpedantic",
+    ],
+    visibility = ["//visibility:private"],
+)
 
+cc_args(
+    name = "pedantic_clang_warnings",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+    ],
+    args = [
         # Allow designated initializers, which were added in C++20 but widely
         # supported prior and permitted by the Google style guide.
         "-Wno-c++20-designator",
@@ -260,6 +278,26 @@ cc_args(
         # widely supported prior.
         "-Wno-gnu-zero-variadic-macro-arguments",
     ],
+    requires_any_of = [
+        ":compiler_is_clang",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+cc_args(
+    name = "pedantic_gcc_warnings",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+    ],
+    args = [
+        # Allow designated initializers, which were added in C++20 but widely
+        # supported prior and permitted by the Google style guide.
+        "-Wno-c++20-extensions",
+    ],
+    requires_any_of = [
+        ":compiler_is_gcc",
+    ],
+    visibility = ["//visibility:private"],
 )
 
 cc_args(

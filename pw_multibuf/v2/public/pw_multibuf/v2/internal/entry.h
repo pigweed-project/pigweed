@@ -50,7 +50,7 @@ struct Entry {
   using difference_type = Deque::difference_type;
 
   /// Offset and length must fit in 15 bits.
-  static constexpr size_t kMaxSize = ~(1U << 15);
+  static constexpr size_t kMaxSize = (1U << 15) - 1;
 
   /// Per-chunk index entry that holds the deallocator or control block.
   static constexpr size_type kMemoryContextIndex = 0;
@@ -80,31 +80,33 @@ struct Entry {
   /// Returns the index to the data entry of a given chunk.
   [[nodiscard]] static constexpr size_type memory_context_index(
       size_type chunk, size_type entries_per_chunk) {
-    return chunk * entries_per_chunk + kMemoryContextIndex;
+    return static_cast<size_type>(chunk * entries_per_chunk +
+                                  kMemoryContextIndex);
   }
 
   /// Returns the index to the data entry of a given chunk.
   [[nodiscard]] static constexpr size_type data_index(
       size_type chunk, size_type entries_per_chunk) {
-    return chunk * entries_per_chunk + kDataIndex;
+    return static_cast<size_type>(chunk * entries_per_chunk + kDataIndex);
   }
 
   /// Returns the index to the base view entry of a given chunk.
   [[nodiscard]] static constexpr size_type base_view_index(
       size_type chunk, size_type entries_per_chunk) {
-    return chunk * entries_per_chunk + kBaseViewIndex;
+    return static_cast<size_type>(chunk * entries_per_chunk + kBaseViewIndex);
   }
 
   /// Returns the index to a view entry of a given chunk.
   [[nodiscard]] static constexpr size_type view_index(
       size_type chunk, size_type entries_per_chunk, size_type layer) {
-    return chunk * entries_per_chunk + kBaseViewIndex + layer - 1;
+    return static_cast<size_type>(chunk * entries_per_chunk + kBaseViewIndex +
+                                  layer - 1);
   }
 
   /// Returns the index to the top view entry of a given chunk.
   [[nodiscard]] static constexpr size_type top_view_index(
       size_type chunk, size_type entries_per_chunk) {
-    return (chunk + 1) * entries_per_chunk - 1;
+    return static_cast<size_type>((chunk + 1) * entries_per_chunk - 1);
   }
 
   /// Returns the memory backing the chunk at the given index.

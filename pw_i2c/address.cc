@@ -19,8 +19,8 @@
 namespace pw::i2c {
 
 // Implemented in the source to produce a nicer CHECK message vs an ASSERT.
-Address::Address(uint16_t address) : address_(address) {
-  PW_CHECK_UINT_LE(address_, kMaxTenBitAddress);
+Address::Address(uint16_t address) : address_(address & kMaxTenBitAddress) {
+  PW_CHECK_UINT_LE(address, kMaxTenBitAddress);
   if (address <= kMaxSevenBitAddress) {
     mode_ = Mode::kSevenBit;
   } else {
@@ -28,12 +28,13 @@ Address::Address(uint16_t address) : address_(address) {
   }
 }
 
-Address::Address(uint16_t address, Mode mode) : address_(address), mode_(mode) {
+Address::Address(uint16_t address, Mode mode)
+    : address_(address & kMaxTenBitAddress), mode_(mode) {
   if (mode == Mode::kSevenBit) {
-    PW_CHECK_UINT_LE(address_, kMaxSevenBitAddress);
+    PW_CHECK_UINT_LE(address, kMaxSevenBitAddress);
     return;
   }
-  PW_CHECK_UINT_LE(address_, kMaxTenBitAddress);
+  PW_CHECK_UINT_LE(address, kMaxTenBitAddress);
 }
 
 // Implemented in the source to produce a nicer CHECK message vs an ASSERT.

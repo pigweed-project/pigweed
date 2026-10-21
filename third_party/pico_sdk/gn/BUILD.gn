@@ -17,9 +17,12 @@ import("//build_overrides/pi_pico.gni")
 # These warnings need to be disabled when using strict warnings.
 config("disable_warnings") {
   cflags = [
+    "-Wno-conversion",
+    "-Wno-ignored-qualifiers",
+    "-Wno-pedantic",
+    "-Wno-switch-enum",
     "-Wno-undef",
     "-Wno-unused-function",
-    "-Wno-ignored-qualifiers",
   ]
   asmflags = cflags
 }

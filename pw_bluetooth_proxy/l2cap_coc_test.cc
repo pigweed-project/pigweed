@@ -2509,7 +2509,7 @@ TEST_F(L2capCocSegmentationTest, SduSentWhenSegmentedOverFullRangeOfMps) {
   } capture;
 
   for (size_t i = 0; i < capture.expected_payload.size(); ++i) {
-    capture.expected_payload[i] = i % UINT8_MAX;
+    capture.expected_payload[i] = static_cast<uint8_t>(i % UINT8_MAX);
   }
 
   pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
@@ -2529,9 +2529,9 @@ TEST_F(L2capCocSegmentationTest, SduSentWhenSegmentedOverFullRangeOfMps) {
                                expected_kframe.acl.hci_span().begin(),
                                expected_kframe.acl.hci_span().end()));
 
-        pdu_bytes_received +=
+        pdu_bytes_received += static_cast<uint16_t>(
             expected_kframe.acl.writer.data_total_length().Read() -
-            emboss::BasicL2capHeader::IntrinsicSizeInBytes();
+            emboss::BasicL2capHeader::IntrinsicSizeInBytes());
 
         if (pdu_bytes_received ==
             capture.expected_payload.size() + kSduLengthFieldSize) {

@@ -42,11 +42,14 @@ config("pw_malloc_active") {
 config("disable_warnings") {
   cflags = [
     "-Wno-cast-qual",
+    "-Wno-conversion",
+    "-Wno-error=strict-prototypes",
+    "-Wno-pedantic",
     "-Wno-redundant-decls",
+    "-Wno-switch-enum",
     "-Wno-undef",
     "-Wno-unused-parameter",
     "-Wno-unused-variable",
-    "-Wno-error=strict-prototypes",
   ]
   visibility = [ ":*" ]
 }

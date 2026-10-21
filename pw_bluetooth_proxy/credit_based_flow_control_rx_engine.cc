@@ -152,8 +152,8 @@ CreditBasedFlowControlRxEngine::HandlePduFromController(
     return L2capChannelEvent::kRxInvalid;
   }
 
-  rx_sdu_bytes_remaining_ -= kframe_payload.size();
-  rx_sdu_offset_ += kframe_payload.size();
+  rx_sdu_bytes_remaining_ -= static_cast<uint16_t>(kframe_payload.size());
+  rx_sdu_offset_ += static_cast<uint16_t>(kframe_payload.size());
 
   if (rx_sdu_bytes_remaining_ == 0) {
     // We have a full SDU, so invoke client callback.

@@ -92,15 +92,15 @@ Result<KFrameWithStorage> SetupKFrame(uint16_t handle,
                                       span<const uint8_t> payload) {
   uint16_t sdu_length_field_offset = segment_no == 0 ? kSduLengthFieldSize : 0;
   // Requested segment encodes payload starting at `payload[payload_offset]`.
-  uint16_t payload_offset =
-      segment_no * mps - (segment_no == 0 ? 0 : kSduLengthFieldSize);
+  uint16_t payload_offset = static_cast<uint16_t>(
+      segment_no * mps - (segment_no == 0 ? 0 : kSduLengthFieldSize));
   if (payload_offset >= payload.size()) {
     return Status::OutOfRange();
   }
   uint16_t remaining_payload_length =
       static_cast<uint16_t>(payload.size() - payload_offset);
   uint16_t segment_pdu_length =
-      remaining_payload_length + sdu_length_field_offset;
+      static_cast<uint16_t>(remaining_payload_length + sdu_length_field_offset);
   if (segment_pdu_length > mps) {
     segment_pdu_length = mps;
   }

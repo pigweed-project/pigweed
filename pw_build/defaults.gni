@@ -77,6 +77,10 @@ pigweed_default_configs = [
   "$dir_pw_build:enable_clang_fixed_point_types",
 ]
 
+if (dir_pigweed == "//") {
+  pigweed_default_configs += [ "$dir_pw_build:internal_strict_warnings" ]
+}
+
 # Some Projects rely on this, so it is being retained for backwards
 # compatibilty. Using these is not recommended; prefer to use the pw_* target
 # types directly.

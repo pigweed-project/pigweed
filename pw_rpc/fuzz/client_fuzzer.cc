@@ -64,7 +64,8 @@ int FuzzClient(int argc, char** argv) {
   }
 
   if (!seed) {
-    seed = chrono::SystemClock::now().time_since_epoch().count();
+    seed = static_cast<uint64_t>(
+        chrono::SystemClock::now().time_since_epoch().count());
   }
 
   if (auto status = integration_test::InitializeClient(port); !status.ok()) {

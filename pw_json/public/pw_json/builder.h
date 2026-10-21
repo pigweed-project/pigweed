@@ -581,7 +581,7 @@ constexpr StatusWithSize WriteString(std::string_view value,
 }
 
 constexpr char NibbleToHex(uint8_t nibble) {
-  return nibble + (nibble < 10 ? '0' : ('a' - 10));
+  return static_cast<char>(nibble + (nibble < 10 ? '0' : ('a' - 10)));
 }
 
 // In accordance with RFC 8259, JSON strings must escape control characters,

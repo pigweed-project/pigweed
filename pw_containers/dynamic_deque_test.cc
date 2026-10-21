@@ -1033,8 +1033,9 @@ void PerformRandomOperations(int iterations, uint_fast32_t seed) {
         }
         break;
       case kReserve:
-        std::ignore =
-            deque.try_reserve_exact(deque.size() + random_uint() % 100);
+        std::ignore = deque.try_reserve_exact(
+            static_cast<pw::DynamicDeque<Counter>::size_type>(
+                deque.size() + random_uint() % 100));
         break;
       case kShrinkToFit:
         deque.shrink_to_fit();

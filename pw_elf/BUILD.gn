@@ -38,9 +38,6 @@ pw_source_set("reader") {
     dir_pw_status,
     dir_pw_stream,
   ]
-
-  # TODO(b/259746255): Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("reader_test") {

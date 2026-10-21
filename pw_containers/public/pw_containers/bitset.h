@@ -210,8 +210,9 @@ class BitSet {
   template <typename... Args,
             typename = std::enable_if_t<(std::is_same_v<Args, bool> && ...)>>
   static constexpr value_type LittleBoolsToBits(bool first, Args... bits) {
-    return (first ? (value_type{1} << (kBits - sizeof...(Args) - 1)) : 0) |
-           LittleBoolsToBits(bits...);
+    return static_cast<value_type>(
+        (first ? (value_type{1} << (kBits - sizeof...(Args) - 1)) : 0) |
+        LittleBoolsToBits(bits...));
   }
 
   explicit constexpr BitSet(value_type bits) : bits_(bits) {}

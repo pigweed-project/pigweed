@@ -851,10 +851,11 @@ Status AclDataChannel::RecoverFromSnapshot(const AclSnapshot& snapshot) {
   for (const AclConnectionSnapshot& connection_snapshot :
        snapshot.acl_connections) {
     const Credits& credits = LookupCredits(connection_snapshot.transport);
-    const uint16_t pending = connection_snapshot.num_proxy_pending_packets +
-                             (credits.dynamic_sharing()
-                                  ? connection_snapshot.num_host_pending_packets
-                                  : 0);
+    const uint16_t pending = static_cast<uint16_t>(
+        connection_snapshot.num_proxy_pending_packets +
+        (credits.dynamic_sharing()
+             ? connection_snapshot.num_host_pending_packets
+             : 0));
     if (connection_snapshot.transport == AclTransportType::kLe) {
       le_pending += pending;
     } else {

@@ -326,7 +326,7 @@ TEST(ByteBuilder, ResizeError_NoDataAddedAfter) {
   EXPECT_EQ(3u, bb.size());
   EXPECT_EQ(bb.status(), Status::OutOfRange());
 
-  bb.PutInt8(0xFE);
+  bb.PutInt8(static_cast<int8_t>(0xFE));
   EXPECT_EQ(3u, bb.size());
   EXPECT_EQ(bb.status(), Status::OutOfRange());
 }
@@ -341,7 +341,7 @@ TEST(ByteBuilder, AddingNoBytesToZeroSizedByteBuffer) {
 
 TEST(ByteBuffer, Putting8ByteInts_Full) {
   ByteBuffer<2> bb;
-  bb.PutInt8(0xFE);
+  bb.PutInt8(static_cast<int8_t>(0xFE));
   bb.PutUint8(0x02);
 
   EXPECT_EQ(byte{0xFE}, bb.data()[0]);
@@ -351,7 +351,7 @@ TEST(ByteBuffer, Putting8ByteInts_Full) {
 
 TEST(ByteBuffer, Putting8ByteInts_Exhausted) {
   ByteBuffer<2> bb;
-  bb.PutInt8(0xFE);
+  bb.PutInt8(static_cast<int8_t>(0xFE));
   bb.PutUint8(0x02);
   bb.PutUint8(0x05);
 
@@ -362,7 +362,7 @@ TEST(ByteBuffer, Putting8ByteInts_Exhausted) {
 
 TEST(ByteBuffer, Putting16ByteInts_Full_kLittleEndian) {
   ByteBuffer<4> bb;
-  bb.PutInt16(0xFFF7);
+  bb.PutInt16(static_cast<int16_t>(0xFFF7));
   bb.PutUint16(0x0008);
 
   EXPECT_EQ(byte{0xF7}, bb.data()[0]);
@@ -375,7 +375,7 @@ TEST(ByteBuffer, Putting16ByteInts_Full_kLittleEndian) {
 
 TEST(ByteBuffer, Putting16ByteInts_Exhausted_kBigEndian) {
   ByteBuffer<5> bb;
-  bb.PutInt16(0xFFF7, endian::big);
+  bb.PutInt16(static_cast<int16_t>(0xFFF7), endian::big);
   bb.PutUint16(0x0008, endian::big);
 
   EXPECT_EQ(byte{0xFF}, bb.data()[0]);
@@ -383,7 +383,7 @@ TEST(ByteBuffer, Putting16ByteInts_Exhausted_kBigEndian) {
   EXPECT_EQ(byte{0x00}, bb.data()[2]);
   EXPECT_EQ(byte{0x08}, bb.data()[3]);
 
-  bb.PutInt16(0xFAFA, endian::big);
+  bb.PutInt16(static_cast<int16_t>(0xFAFA), endian::big);
   EXPECT_EQ(4u, bb.size());
   EXPECT_EQ(Status::ResourceExhausted(), bb.status());
 }
@@ -479,10 +479,10 @@ TEST(ByteBuffer, Putting64ByteInts_Exhausted_kBigEndian) {
 TEST(ByteBuffer, PuttingInts_MixedTypes_MixedEndian) {
   ByteBuffer<16> bb;
   bb.PutUint8(0x03);
-  bb.PutInt16(0xFD6D, endian::big);
+  bb.PutInt16(static_cast<int16_t>(0xFD6D), endian::big);
   bb.PutUint32(0x482B3D9E);
   bb.PutInt64(static_cast<int64_t>(0x9A1C3641843DF317), endian::big);
-  bb.PutInt8(0xFB);
+  bb.PutInt8(static_cast<int8_t>(0xFB));
 
   EXPECT_EQ(byte{0x03}, bb.data()[0]);
   EXPECT_EQ(byte{0xFD}, bb.data()[1]);
@@ -750,7 +750,7 @@ TEST(ByteBuffer, Iterator_Indexing) {
 
 TEST(ByteBuffer, Iterator_PeekValues_1Byte) {
   ByteBuffer<3> bb;
-  bb.PutInt8(0xF2);
+  bb.PutInt8(static_cast<int8_t>(0xF2));
   bb.PutUint8(0xE5);
   bb.PutInt8(0x5F);
 
@@ -764,7 +764,7 @@ TEST(ByteBuffer, Iterator_PeekValues_1Byte) {
 
 TEST(ByteBuffer, Iterator_PeekValues_2Bytes) {
   ByteBuffer<4> bb;
-  bb.PutInt16(0xA7F1);
+  bb.PutInt16(static_cast<int16_t>(0xA7F1));
   bb.PutUint16(0xF929, endian::big);
 
   auto it = bb.begin();
@@ -797,7 +797,7 @@ TEST(ByteBuffer, Iterator_PeekValues_8Bytes) {
 
 TEST(ByteBuffer, Iterator_ReadValues_1Byte) {
   ByteBuffer<3> bb;
-  bb.PutInt8(0xF2);
+  bb.PutInt8(static_cast<int8_t>(0xF2));
   bb.PutUint8(0xE5);
   bb.PutInt8(0x5F);
 
@@ -809,7 +809,7 @@ TEST(ByteBuffer, Iterator_ReadValues_1Byte) {
 
 TEST(ByteBuffer, Iterator_ReadValues_2Bytes) {
   ByteBuffer<4> bb;
-  bb.PutInt16(0xA7F1);
+  bb.PutInt16(static_cast<int16_t>(0xA7F1));
   bb.PutUint16(0xF929, endian::big);
 
   auto it = bb.begin();

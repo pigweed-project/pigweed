@@ -108,9 +108,6 @@ pw_source_set("pw_tokenizer") {
     "tokenize.cc",
   ]
   friend = [ ":*" ]
-
-  # TODO(b/259746255): Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_source_set("base64") {
@@ -123,9 +120,6 @@ pw_source_set("base64") {
     dir_pw_base64,
     dir_pw_preprocessor,
   ]
-
-  # TODO(b/259746255): Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_source_set("decoder") {
@@ -156,9 +150,6 @@ pw_source_set("decoder") {
     "token_database.cc",
   ]
   friend = [ ":*" ]
-
-  # TODO(b/259746255): Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 config("detokenize_from_this_program_linker_script") {
@@ -199,9 +190,6 @@ pw_source_set("csv") {
   public_configs = [ ":private_include_path" ]
   deps = [ dir_pw_log ]
   visibility = [ ":*" ]
-
-  # TODO(b/259746255): Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("csv_test") {

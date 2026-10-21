@@ -244,10 +244,19 @@ template("emboss_cc_library") {
   }
 
   config("${target_name}_emboss_config") {
-    include_dirs = [
-      "$dir_pw_third_party_emboss",
-      root_gen_dir,
-    ]
+    if (current_os == "win" && !is_clang) {
+      include_dirs = [
+        "$dir_pw_third_party_emboss",
+        root_gen_dir,
+      ]
+    } else {
+      cflags = [
+        "-isystem",
+        rebase_path(dir_pw_third_party_emboss, root_build_dir),
+        "-isystem",
+        rebase_path(root_gen_dir, root_build_dir),
+      ]
+    }
   }
 
   # Since the emboss_cc_library template is used in non-Pigweed environments,

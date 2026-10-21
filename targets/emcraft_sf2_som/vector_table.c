@@ -46,6 +46,9 @@ void PendSV_Handler(void);
 void SysTick_Handler(void);
 void sf2_SocInit(void);
 
+PW_MODIFY_DIAGNOSTICS_PUSH();
+PW_MODIFY_DIAGNOSTIC(ignored, "-Wpedantic");
+
 PW_KEEP_IN_SECTION(".vector_table")
 const InterruptHandler vector_table[] = {
     // The starting location of the stack pointer.
@@ -74,3 +77,5 @@ const InterruptHandler vector_table[] = {
     // SysTick handler.
     [15] = SysTick_Handler,
 };
+
+PW_MODIFY_DIAGNOSTICS_POP();

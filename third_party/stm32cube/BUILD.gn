@@ -125,7 +125,11 @@ if (dir_pw_third_party_stm32cube == "") {
   }
 
   config("header_flags") {
-    cflags = [ "-Wno-unused-parameter" ]
+    cflags = [
+      "-Wno-unused-parameter",
+      "-Wno-conversion",
+      "-Wno-pedantic",
+    ]
     cflags_c = [
       "-Wno-redundant-decls",
       "-Wno-sign-compare",

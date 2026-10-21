@@ -129,21 +129,24 @@ pw_add_library_generic(pw_build.pedantic_warnings INTERFACE
 
     # Allow designated initializers, which were added in C++20 but widely
     # supported prior and permitted by the Google style guide.
-    "-Wno-c++20-designator"
+    $<$<C_COMPILER_ID:Clang>:-Wno-c++20-designator>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-c++20-designator>
 
     # __COUNTER__ is a GCC extension until C++26. Using it results in
     # -Wc2y-extensions warnings, which must be disabled.
-    "-Wno-c2y-extensions"
+    $<$<C_COMPILER_ID:Clang>:-Wno-c2y-extensions>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-c2y-extensions>
 
     # Allow empty ... arguments in macros, which are permitted in C++20 but
     # widely supported prior.
-    "-Wno-gnu-zero-variadic-macro-arguments"
+    $<$<C_COMPILER_ID:Clang>:-Wno-gnu-zero-variadic-macro-arguments>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-gnu-zero-variadic-macro-arguments>
 
     # TODO: b/333712899 - Enable C23 extension warnings.
     "-Wno-c23-extensions"
 
     # TODO: b/335021928 - Enable C++ 20 extension warnings.
-    "-Wno-c++20-extensions"
+    $<$<COMPILE_LANGUAGE:CXX>:-Wno-c++20-extensions>
 
     # TODO: b/335328444 - Enable C++ 20 extension warnings.
     "-Wno-deprecated-pragma"
@@ -153,7 +156,7 @@ pw_add_library_generic(pw_build.pedantic_warnings INTERFACE
     # Remove this warning suppression after addressing the root cause.
     "-Wno-missing-template-arg-list-after-template-kw"
 )
-# LINT.ThenChange(//pw_toolchain/cc/args/BUILD.bazel:internal_strict_warnings,//pw_toolchain/cc/args/BUILD.gn:internal_strict_warnings)
+# LINT.ThenChange(//pw_toolchain/cc/args/BUILD.bazel:internal_strict_warnings,//pw_build/BUILD.gn:internal_strict_warnings)
 
 pw_add_library_generic(pw_build.cpp17 INTERFACE
   PUBLIC_COMPILE_OPTIONS

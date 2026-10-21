@@ -29,9 +29,6 @@ pw_source_set("pw_base64") {
     dir_pw_span,
   ]
   sources = [ "base64.cc" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test_group("tests") {

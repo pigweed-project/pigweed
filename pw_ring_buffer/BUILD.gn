@@ -37,9 +37,6 @@ pw_source_set("pw_ring_buffer") {
     "$dir_pw_assert:pw_assert",
     "$dir_pw_varint",
   ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test_group("tests") {

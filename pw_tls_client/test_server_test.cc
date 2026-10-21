@@ -29,7 +29,7 @@ namespace {
 
 int TestClientBioRead(BIO* bio, char* out, int outl) {
   auto read_writer = static_cast<stream::ReaderWriter*>(bio->ptr);
-  auto res = read_writer->Read(out, outl);
+  auto res = read_writer->Read(out, static_cast<size_t>(outl));
   if (!res.ok()) {
     return -1;
   }
@@ -37,12 +37,12 @@ int TestClientBioRead(BIO* bio, char* out, int outl) {
     BIO_set_retry_read(bio);
     return -1;
   }
-  return res.value().size();
+  return static_cast<int>(res.value().size());
 }
 
 int TestClientBioWrite(BIO* bio, const char* in, int inl) {
   auto read_writer = static_cast<stream::ReaderWriter*>(bio->ptr);
-  auto res = read_writer->Write(in, inl);
+  auto res = read_writer->Write(in, static_cast<size_t>(inl));
   if (!res.ok()) {
     return -1;
   }

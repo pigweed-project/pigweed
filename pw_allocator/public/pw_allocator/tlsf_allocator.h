@@ -279,8 +279,8 @@ bool TlsfAllocator<BlockType, kMinSize, kNumShelves>::FindNextAvailable(
   }
 
   // Use the bitmaps to find the next largest non-empty bucket.
-  uint16_t bucket_bitmap =
-      bucket_bitmaps_[indices.shelf] & (~uint32_t(0) << indices.bucket);
+  uint16_t bucket_bitmap = static_cast<uint16_t>(
+      bucket_bitmaps_[indices.shelf] & (~uint32_t(0) << indices.bucket));
   if (bucket_bitmap != 0) {
     // There's at least one non-empty bucket on the current shelf whose
     // blocks are at least as large as the requested size.

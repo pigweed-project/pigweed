@@ -41,10 +41,13 @@ config("pw_malloc_active") {
 config("disable_warnings") {
   cflags = [
     "-Wno-cast-qual",
+    "-Wno-conversion",
     "-Wno-error=strict-prototypes",
+    "-Wno-pedantic",
     "-Wno-redundant-decls",
     "-Wno-shadow",
     "-Wno-sign-compare",
+    "-Wno-switch-enum",
     "-Wno-type-limits",
     "-Wno-undef",
     "-Wno-unused-function",

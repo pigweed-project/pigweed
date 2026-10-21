@@ -109,9 +109,9 @@ auto GenericMultiBuf::Insert(const_iterator pos, GenericMultiBuf&& mb)
     // If this object is deeper than `mb`, pad it with extra entries.
     for (; i < entries_per_chunk_; ++i) {
       deque_[index + i].view = {
-          .offset = offset,
+          .offset = static_cast<size_type>(offset & Entry::kMaxSize),
           .sealed = false,
-          .length = length,
+          .length = static_cast<size_type>(length & Entry::kMaxSize),
           .boundary = true,
       };
     }
@@ -171,7 +171,8 @@ auto GenericMultiBuf::Insert(const_iterator pos, Buf&& bytes) -> iterator {
   deque_[base_view_index(chunk)].base_view = {
       .offset = 0,
       .owned = true,
-      .length = CheckedCast<size_type>(allocation.size()),
+      .length = static_cast<size_type>(
+          CheckedCast<size_type>(allocation.size()) & Entry::kMaxSize),
       .shared = false,
   };
   allocation.Release();
@@ -419,7 +420,7 @@ bool GenericMultiBuf::AddLayer(size_t offset, size_t length) {
           .boundary = false,
       };
     } else {
-      deque_[i - 1] = deque_[i - 1 - shift];
+      deque_[i - 1] = deque_[static_cast<size_type>(i - 1 - shift)];
     }
   }
 
@@ -446,7 +447,8 @@ bool GenericMultiBuf::AddLayer(size_t offset, size_t length) {
       entry.view.length = 0;
       continue;
     }
-    entry.view.offset = lower_off + off;
+    entry.view.offset =
+        static_cast<size_type>((lower_off + off) & Entry::kMaxSize);
     lower_len -= off;
 
     // This is similar to `entry.view.length = std::min(lower_len, len);`, but
@@ -454,16 +456,16 @@ bool GenericMultiBuf::AddLayer(size_t offset, size_t length) {
     if (lower_len == 0) {
       entry.view.length = 0;
     } else if (length == dynamic_extent) {
-      entry.view.length = lower_len;
+      entry.view.length = static_cast<size_type>(lower_len & Entry::kMaxSize);
       last = &entry;
     } else if (len == 0) {
       entry.view.length = 0;
     } else if (len <= lower_len) {
-      entry.view.length = len;
+      entry.view.length = static_cast<size_type>(len & Entry::kMaxSize);
       entry.view.boundary = true;
       len = 0;
     } else {
-      entry.view.length = lower_len;
+      entry.view.length = static_cast<size_type>(lower_len & Entry::kMaxSize);
       len -= lower_len;
     }
     off = 0;
@@ -506,7 +508,8 @@ void GenericMultiBuf::TruncateTopLayer(size_t length) {
       len -= chunk_len;
       continue;
     }
-    deque_[top_view_index(chunk)].view.length = len;
+    deque_[top_view_index(chunk)].view.length =
+        static_cast<size_type>(len & Entry::kMaxSize);
     len = 0;
   }
   PW_CHECK_UINT_EQ(len,
@@ -652,25 +655,21 @@ auto GenericMultiBuf::Insert(const_iterator pos,
                              ConstByteSpan bytes,
                              size_t offset,
                              size_t length) -> std::tuple<iterator, size_type> {
+  length = CheckRange(offset, length, bytes.size());
   size_type chunk = InsertChunks(pos, 1);
   deque_[memory_context_index(chunk)].deallocator = nullptr;
   deque_[data_index(chunk)].data = const_cast<std::byte*>(bytes.data());
-  auto off = CheckedCast<size_type>(offset);
-  if (length == dynamic_extent) {
-    length = bytes.size() - offset;
-  }
-  auto len = CheckedCast<size_type>(length);
   deque_[base_view_index(chunk)].base_view = {
-      .offset = off,
+      .offset = static_cast<size_type>(offset & Entry::kMaxSize),
       .owned = false,
-      .length = len,
+      .length = static_cast<size_type>(length & Entry::kMaxSize),
       .shared = false,
   };
   for (size_type layer = 2; layer <= num_layers(); ++layer) {
     deque_[view_index(chunk, layer)].view = {
-        .offset = off,
+        .offset = static_cast<size_type>(offset & Entry::kMaxSize),
         .sealed = false,
-        .length = len,
+        .length = static_cast<size_type>(length & Entry::kMaxSize),
         .boundary = true,
     };
   }
@@ -707,12 +706,14 @@ void GenericMultiBuf::SplitBefore(size_type chunk,
   Entry::BaseView& dst_base_view =
       out_deque[base_view_index(out_chunk)].base_view;
   dst_base_view.offset = src_base_view.offset;
-  dst_base_view.length = split - src_base_view.offset;
+  dst_base_view.length =
+      static_cast<size_type>((split - src_base_view.offset) & Entry::kMaxSize);
   for (size_type layer = 2; layer <= num_layers(); ++layer) {
     Entry::View src_view = deque_[view_index(chunk, layer)].view;
     Entry::View& dst_view = out_deque[view_index(out_chunk, layer)].view;
     dst_view.offset = src_view.offset;
-    dst_view.length = split - src_view.offset;
+    dst_view.length =
+        static_cast<size_type>((split - src_view.offset) & Entry::kMaxSize);
   }
 }
 
@@ -729,13 +730,15 @@ void GenericMultiBuf::SplitAfter(size_type chunk,
   Entry::BaseView src_base_view = deque_[base_view_index(chunk)].base_view;
   Entry::BaseView& dst_base_view =
       out_deque[base_view_index(out_chunk)].base_view;
-  dst_base_view.offset = split;
-  dst_base_view.length = src_base_view.offset + src_base_view.length - split;
+  dst_base_view.offset = static_cast<size_type>(split & Entry::kMaxSize);
+  dst_base_view.length = static_cast<size_type>(
+      (src_base_view.offset + src_base_view.length - split) & Entry::kMaxSize);
   for (size_type layer = 2; layer <= num_layers(); ++layer) {
     Entry::View src_view = deque_[view_index(chunk, layer)].view;
     Entry::View& dst_view = out_deque[view_index(out_chunk, layer)].view;
-    dst_view.offset = split;
-    dst_view.length = src_view.offset + src_view.length - split;
+    dst_view.offset = static_cast<size_type>(split & Entry::kMaxSize);
+    dst_view.length = static_cast<size_type>(
+        (src_view.offset + src_view.length - split) & Entry::kMaxSize);
   }
 }
 

@@ -34,6 +34,13 @@
 #include <stdint.h>
 #include <string.h>
 
+#if !defined(__clang__)
+// GCC does not have narrower flags like -Wno-c11-extensions or
+// -Wno-gnu-zero-variadic-macro-arguments to silence pedantic warnings for
+// _Static_assert and empty variadic macro arguments in -std=c99 mode.
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif  // !defined(__clang__)
+
 #include "pw_containers/inline_var_len_entry_queue.h"
 #include "pw_tokenizer/encode_args.h"
 #include "pw_tokenizer/tokenize.h"

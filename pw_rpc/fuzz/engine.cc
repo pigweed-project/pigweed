@@ -133,8 +133,9 @@ Action::Action(Op op_, size_t target_, uint16_t value_)
 Action::Action(Op op_, size_t target_, char val, size_t len)
     : op(op_), target(target_) {
   PW_ASSERT(op == kWriteUnary || op == kWriteStream);
-  value = static_cast<uint16_t>(((val % 0x80) * kMaxWriteLen) +
-                                (len % kMaxWriteLen));
+  value = static_cast<uint16_t>(
+      ((static_cast<uint8_t>(val) % 0x80u) * kMaxWriteLen) +
+      (len % kMaxWriteLen));
 }
 
 char Action::DecodeWriteValue(uint16_t value) {

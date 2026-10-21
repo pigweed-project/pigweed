@@ -103,7 +103,8 @@ struct SmallBlockBase : public BasicBlock<Derived>,
   constexpr bool IsFreeUnchecked() const { return (prev_and_free_ & 1U) != 0; }
 
   constexpr void SetFree(bool is_free) {
-    prev_and_free_ = (prev_and_free_ & ~1U) | (is_free ? 1U : 0U);
+    prev_and_free_ =
+        static_cast<T>((prev_and_free_ & ~1U) | (is_free ? 1U : 0U));
   }
 
   T prev_and_free_;

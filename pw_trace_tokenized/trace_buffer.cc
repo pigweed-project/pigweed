@@ -48,7 +48,7 @@ class TraceBufferImpl {
       return;  // Block is too large, skipping.
     }
     memcpy(&buffer->current_block_[buffer->block_idx_], bytes, size);
-    buffer->block_idx_ += size;
+    buffer->block_idx_ += static_cast<uint16_t>(size);
   }
 
   static void TraceSinkEndBlock(void* user_data) {

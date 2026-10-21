@@ -33,7 +33,8 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  pw::rpc::system_server::set_socket_port(std::atoi(argv[1]));
+  pw::rpc::system_server::set_socket_port(
+      static_cast<uint16_t>(std::atoi(argv[1])));
   pw::rpc::system_server::Init();
   pw::rpc::system_server::Server().RegisterService(benchmark_service);
 

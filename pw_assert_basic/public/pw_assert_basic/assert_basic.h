@@ -19,12 +19,12 @@
 #include "pw_preprocessor/util.h"       // IWYU pragma: export
 
 // Use __PRETTY_FUNCTION__, a GNU extension, in place of the __func__ macro when
-// supported. __PRETTY_FUNCTION__ expands to the full C++ function name.
-#ifdef __GNUC__
+// supported in C++. __PRETTY_FUNCTION__ expands to the full C++ function name.
+#if defined(__GNUC__) && defined(__cplusplus)
 #define _PW_ASSERT_BASIC_FUNCTION_NAME __PRETTY_FUNCTION__
 #else
 #define _PW_ASSERT_BASIC_FUNCTION_NAME __func__
-#endif  // __GNUC__
+#endif  // defined(__GNUC__) && defined(__cplusplus)
 
 // Die with a message with many attributes included. This is the crash macro
 // frontend that funnels everything into the C handler provided by the user,

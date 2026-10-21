@@ -217,7 +217,7 @@ bool RfcommChannelInternal::TryToSendPacket()
     auto credit_pdu_span = pending_credit_tx_->ContiguousSpan().value();
     if (!credit_pdu_span.empty()) {
       auto credits_sent =
-          static_cast<uint16_t>(credit_pdu_span[credit_pdu_span.size() - 2]);
+          static_cast<uint8_t>(credit_pdu_span[credit_pdu_span.size() - 2]);
       StatusWithMultiBuf write_status =
           l2cap_channel_proxy_.Write(std::move(pending_credit_tx_.value()));
       if (!write_status.status.ok()) {

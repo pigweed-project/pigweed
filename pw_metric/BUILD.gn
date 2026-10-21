@@ -47,9 +47,6 @@ pw_source_set("pw_metric") {
     dir_pw_tokenizer,
   ]
   deps = [ dir_pw_span ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 # This gives access to the "PW_METRIC_GLOBAL()" macros, for globally-registered

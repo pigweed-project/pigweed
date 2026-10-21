@@ -116,7 +116,7 @@ bool SimpleAllocator::SimpleChunkAllocator::Init() {
   subregions_.push_back(Region());
   Region& first = subregions_.back();
   first.data = buffer.data();
-  first.size = static_cast<uint32_t>(buffer.size());
+  first.size = static_cast<uint32_t>(buffer.size()) & Region::kMaxSize;
   return true;
 }
 
@@ -190,7 +190,8 @@ size_t SimpleAllocator::SimpleChunkAllocator::TryDeallocateRegion(void* ptr) {
 
     iter->free = true;
     size_t size = iter->size;
-    iter->size = static_cast<uint32_t>(AlignUp(iter->size, alignment()));
+    iter->size = static_cast<uint32_t>(AlignUp(iter->size, alignment())) &
+                 Region::kMaxSize;
 
     // Can we merge with the previous region?
     if (prev != subregions_.end() && prev->free) {
@@ -213,18 +214,18 @@ auto SimpleAllocator::SimpleChunkAllocator::Split(iterator iter, size_t offset)
   ByteSpan bytes(iter->data, iter->size);
   iter = subregions_.insert(iter, Region());
   iter->data = bytes.data();
-  iter->size = static_cast<uint32_t>(offset);
+  iter->size = static_cast<uint32_t>(offset) & Region::kMaxSize;
   auto next = iter;
   ++next;
   bytes = bytes.subspan(offset);
   next->data = bytes.data();
-  next->size = static_cast<uint32_t>(bytes.size());
+  next->size = static_cast<uint32_t>(bytes.size()) & Region::kMaxSize;
   return std::make_tuple(iter, next);
 }
 
 auto SimpleAllocator::SimpleChunkAllocator::Merge(iterator left, iterator right)
     -> iterator {
-  left->size += right->size;
+  left->size = (left->size + right->size) & Region::kMaxSize;
   subregions_.erase(right);
   return left;
 }

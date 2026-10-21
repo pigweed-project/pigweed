@@ -471,7 +471,7 @@ class DynamicHashMap {
     if (buckets_.empty()) {
       return 0;
     }
-    return (nodes_.size() * 100) / buckets_.size();
+    return static_cast<size_type>((nodes_.size() * 100) / buckets_.size());
   }
 
   /// Returns the maximum load factor (in percent) that the map attempts to
@@ -503,7 +503,8 @@ class DynamicHashMap {
     }
 
     for (auto& node : nodes_) {
-      size_type bucket_index = hash_(node.key_value.first) % new_buckets.size();
+      size_type bucket_index = static_cast<size_type>(
+          hash_(node.key_value.first) % new_buckets.size());
       node.next = new_buckets[bucket_index];
       new_buckets[bucket_index] = &node;
     }
@@ -555,7 +556,7 @@ class DynamicHashMap {
  private:
   size_type GetBucketIndex(const key_type& key) const {
     PW_ASSERT(!buckets_.empty());
-    return hash_(key) % buckets_.size();
+    return static_cast<size_type>(hash_(key) % buckets_.size());
   }
 
   size_type CalculateNewBucketCount(size_type current_count) const {

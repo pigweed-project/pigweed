@@ -37,8 +37,8 @@
 //     reboot();
 //   } while (0)
 //
-#define PW_CPU_EXCEPTION_CORTEX_M_CRASH(state, reason_and_optional_args...) \
-  PW_CPU_EXCEPTION_CORTEX_M_HANDLE_CRASH(state, reason_and_optional_args)
+#define PW_CPU_EXCEPTION_CORTEX_M_CRASH(state, ...) \
+  PW_CPU_EXCEPTION_CORTEX_M_HANDLE_CRASH(state, __VA_ARGS__)
 
 namespace pw::cpu_exception::cortex_m {
 

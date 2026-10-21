@@ -135,6 +135,9 @@ static void SDMA_IRQHandler(void);
 // the entries of the vector table are function pointers.
 typedef void (*InterruptHandler)(void);
 
+PW_MODIFY_DIAGNOSTICS_PUSH();
+PW_MODIFY_DIAGNOSTIC(ignored, "-Wpedantic");
+
 PW_KEEP_IN_SECTION(".vector_table")
 const InterruptHandler vector_table[] = {
     // Core Level - CM33
@@ -329,6 +332,8 @@ const InterruptHandler vector_table[] = {
     // Smart DMA Engine Controller interrupt.
     [89] = SDMA_IRQHandler,
 };
+
+PW_MODIFY_DIAGNOSTICS_POP();
 
 // Define handlers that call out to a driver handler provided by the SDK.
 #define DRIVER_HANDLER(_IRQHandler, _DriverIRQHandler)            \

@@ -260,7 +260,9 @@ config("internal_strict_warnings_core") {
   }
 
   # TODO: b/243069432 - Enable pedantic warnings on Windows when they pass.
+  # TODO: b/260629756 - Enable conversion warnings on Windows when they pass.
   if (host_os != "win") {
+    cflags += [ "-Wconversion" ]
     configs = [ ":pedantic_warnings" ]
   }
 }
@@ -276,38 +278,30 @@ config("pedantic_warnings") {
   cflags = [
     # Enable -Wpedantic, but disable a few warnings.
     "-Wpedantic",
-
-    # Allow designated initializers, which were added in C++20 but widely
-    # supported prior and permitted by the Google style guide.
-    "-Wno-c++20-designator",
-
-    # __COUNTER__ is a GCC extension until C++26. Using it results in
-    # -Wc2y-extensions warnings, which must be disabled.
-    "-Wno-c2y-extensions",
-
-    # Allow empty ... arguments in macros, which are permitted in C++20 but
-    # widely supported prior.
-    "-Wno-gnu-zero-variadic-macro-arguments",
   ]
-}
 
-# LINT.ThenChange(//pw_toolchain/cc/args/BUILD.bazel:internal_strict_warnings,CMakeLists.txt:internal_strict_warnings)
+  if (is_clang) {
+    cflags += [
+      # Allow designated initializers, which were added in C++20 but widely
+      # supported prior and permitted by the Google style guide.
+      "-Wno-c++20-designator",
 
-# LINT.IfChange(conversion_warnings)
-# Numeric conversion warnings.
-#
-# Originally Pigweed didn't enable this, but we ultimately decided to turn it
-# on since it caused issues with downstream project that enable this warning.
-#
-# b/259746255 tracks converting everything to build with this warning.
-config("conversion_warnings") {
-  # TODO: b/260629756 - Remove Windows restriction once fixed for Windows + GCC.
-  if (host_os != "win") {
-    cflags = [ "-Wconversion" ]
+      # __COUNTER__ is a GCC extension until C++26. Using it results in
+      # -Wc2y-extensions warnings, which must be disabled.
+      "-Wno-c2y-extensions",
+
+      # Allow empty ... arguments in macros, which are permitted in C++20 but
+      # widely supported prior.
+      "-Wno-gnu-zero-variadic-macro-arguments",
+    ]
+  } else {
+    # Allow C++20 extensions such as designated initializers and empty ...
+    # arguments in macros when compiling as C++17 on GCC.
+    cflags_cc = [ "-Wno-c++20-extensions" ]
   }
 }
 
-# LINT.ThenChange(//pw_toolchain/cc/args/BUILD.bazel:conversion_warnings)
+# LINT.ThenChange(//pw_toolchain/cc/args/BUILD.bazel:internal_strict_warnings,CMakeLists.txt:internal_strict_warnings)
 
 config("cpp14") {
   cflags_cc = [ "-std=c++14" ]

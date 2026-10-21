@@ -49,7 +49,9 @@ std::optional<OwnedChunk> ChunkAllocator::AllocateChunk(size_t min_size,
   if (region == nullptr) {
     return std::nullopt;
   }
-  region->size = std::min(region->size, static_cast<uint32_t>(desired_size));
+  region->size =
+      std::min(uint32_t{region->size}, static_cast<uint32_t>(desired_size)) &
+      Region::kMaxSize;
 
   // Create a new control block using a restricted method.
   const auto& handle =
@@ -136,7 +138,8 @@ auto SingleChunkAllocator::AllocateRegion(size_t min_size, size_t desired_size)
     return nullptr;
   }
   region_.data = buffer().data();
-  region_.size = static_cast<uint32_t>(std::min(available(), desired_size));
+  region_.size = static_cast<uint32_t>(std::min(available(), desired_size)) &
+                 Region::kMaxSize;
   region_.free = false;
   return &region_;
 }

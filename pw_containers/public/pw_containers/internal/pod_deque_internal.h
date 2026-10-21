@@ -306,7 +306,9 @@ class PodDequeImpl
       }
     } else if (dst > src) {
       for (size_type i = count; i > 0; --i) {
-        std::memcpy((*this)[dst + i - 1], (*this)[src + i - 1], pod_size_);
+        std::memcpy((*this)[static_cast<size_type>(dst + i - 1)],
+                    (*this)[static_cast<size_type>(src + i - 1)],
+                    pod_size_);
       }
     }
   }

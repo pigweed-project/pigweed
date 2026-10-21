@@ -27,6 +27,6 @@ inline constexpr ptrdiff_t kBinarySemaphoreMaxValue =
     std::numeric_limits<ptrdiff_t>::max() <
             std::numeric_limits<UBaseType_t>::max()
         ? std::numeric_limits<ptrdiff_t>::max()
-        : std::numeric_limits<UBaseType_t>::max();
+        : static_cast<ptrdiff_t>(std::numeric_limits<UBaseType_t>::max());
 
 }  // namespace pw::sync::backend

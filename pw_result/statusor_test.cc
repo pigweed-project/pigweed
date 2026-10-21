@@ -1602,7 +1602,10 @@ TEST(Result, ConstructionFromT) {
   }
   {
     ConvertibleToAnyResult v;
+    PW_MODIFY_DIAGNOSTICS_PUSH();
+    PW_MODIFY_DIAGNOSTIC_GCC(ignored, "-Wconversion");
     pw::Result<ConvertibleToAnyResult> statusor = v;
+    PW_MODIFY_DIAGNOSTICS_POP();
     EXPECT_TRUE(statusor.ok());
   }
   // Construct pw::Result<T> from T when T is explicitly convertible to

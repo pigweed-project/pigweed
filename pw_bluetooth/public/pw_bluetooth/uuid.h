@@ -71,10 +71,13 @@ class Uuid {
     for (size_t i = 0; i < kBaseOffset; i++) {
       data[i] = base_uuid.As128BitSpan()[i];
     }
-    data[kBaseOffset] = short_uuid & 0xff;
-    data[kBaseOffset + 1] = (short_uuid >> CHAR_BIT) & 0xff;
-    data[kBaseOffset + 2] = (short_uuid >> CHAR_BIT * 2) & 0xff;
-    data[kBaseOffset + 3] = (short_uuid >> CHAR_BIT * 3) & 0xff;
+    data[kBaseOffset] = static_cast<uint8_t>(short_uuid & 0xff);
+    data[kBaseOffset + 1] =
+        static_cast<uint8_t>((short_uuid >> CHAR_BIT) & 0xff);
+    data[kBaseOffset + 2] =
+        static_cast<uint8_t>((short_uuid >> CHAR_BIT * 2) & 0xff);
+    data[kBaseOffset + 3] =
+        static_cast<uint8_t>((short_uuid >> CHAR_BIT * 3) & 0xff);
     Result<uuid::Uuid> result = uuid::Uuid::FromSpan(data);
     PW_ASSERT(result.ok());
     uuid_ = result.value();

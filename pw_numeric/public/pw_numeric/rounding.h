@@ -34,7 +34,7 @@ constexpr T RoundDown(T value, U multiple) {
     return T{0};
   }
   T t_multiple = static_cast<T>(multiple);
-  return (value / t_multiple) * t_multiple;
+  return static_cast<T>((value / t_multiple) * t_multiple);
 }
 
 /// Returns the value rounded up to the nearest multiple.
@@ -49,7 +49,7 @@ constexpr T RoundUp(T value, U multiple) {
   PW_ASSERT(multiple <= std::numeric_limits<T>::max());
   T t_multiple = static_cast<T>(multiple);
   PW_ASSERT(CheckedAdd(value, t_multiple - 1, value));
-  return (value / t_multiple) * t_multiple;
+  return static_cast<T>((value / t_multiple) * t_multiple);
 }
 
 }  // namespace pw

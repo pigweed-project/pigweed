@@ -72,17 +72,17 @@ class IteratorTest : public ::testing::Test {
         } else if (i == Entry::kBaseViewIndex) {
           auto [offset, length] = kViews[0][chunk];
           entry.base_view = {
-              .offset = offset,
+              .offset = static_cast<size_type>(offset & Entry::kMaxSize),
               .owned = false,
-              .length = length,
+              .length = static_cast<size_type>(length & Entry::kMaxSize),
               .shared = false,
           };
         } else if (i > Entry::kBaseViewIndex) {
           auto [offset, length] = kViews[i - Entry::kBaseViewIndex][chunk];
           entry.view = {
-              .offset = offset,
+              .offset = static_cast<size_type>(offset & Entry::kMaxSize),
               .sealed = false,
-              .length = length,
+              .length = static_cast<size_type>(length & Entry::kMaxSize),
               .boundary = true,
           };
         }

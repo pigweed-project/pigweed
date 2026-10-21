@@ -180,14 +180,23 @@ pw_source_set("snoop") {
 
 if (dir_pw_third_party_emboss != "") {
   config("emboss_include_path") {
-    include_dirs = [
-      "$target_gen_dir/public",
+    if (current_os == "win" && !is_clang) {
+      include_dirs = [
+        "$target_gen_dir/public",
+        "$target_gen_dir/..",
+      ]
+    } else {
+      cflags = [
+        "-isystem",
+        rebase_path("$target_gen_dir/public", root_build_dir),
 
-      # Emboss headers (.emb.h) need to look for imported Emboss file headers in
-      # Pigweed's root gen directory. This is *not* root_gen_dir in
-      # external repositories depending on Pigweed.
-      "$target_gen_dir/..",
-    ]
+        # Emboss headers (.emb.h) need to look for imported Emboss file headers
+        # in Pigweed's root gen directory. This is *not* root_gen_dir in
+        # external repositories depending on Pigweed.
+        "-isystem",
+        rebase_path("$target_gen_dir/..", root_build_dir),
+      ]
+    }
     visibility = [ ":*" ]
   }
 

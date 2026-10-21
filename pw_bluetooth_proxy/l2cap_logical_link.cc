@@ -49,7 +49,7 @@ std::optional<LockedL2capChannel> GetLockedChannel(
 }
 
 static constexpr std::uint8_t kH4PacketIndicatorSize = 1;
-constexpr std::uint64_t kH4AclHeaderSize =
+constexpr size_t kH4AclHeaderSize =
     emboss::AclDataFrameHeader::IntrinsicSizeInBytes() + kH4PacketIndicatorSize;
 // 2048 was selected because it is larger than the PDU sizes needed by most
 // profiles, and Android uses a MPS of 1010.
@@ -473,7 +473,8 @@ L2capLogicalLink::HandleAclData(Direction direction,
     // This check must pass because we don't recombine packets larger than
     // kMaxRecombinedPduSize.
     PW_CHECK(acl_payload_size <= std::numeric_limits<uint16_t>::max());
-    recombined_acl->data_total_length().Write(acl_payload_size);
+    recombined_acl->data_total_length().Write(
+        static_cast<uint16_t>(acl_payload_size));
 
     // We still return handled = true here since the fragment ACL packet was
     // consumed to make the recombined packet.

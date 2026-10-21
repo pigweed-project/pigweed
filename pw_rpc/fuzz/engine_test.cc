@@ -237,7 +237,7 @@ TEST_F(RpcFuzzTestingTest, DISABLED_SwappedRequests) {
   // Thread 2
   for (size_t i = 0; i < 100; ++i) {
     auto j = i % 3;
-    Add(Action::kSwap, j, j + 1);
+    Add(Action::kSwap, j, static_cast<uint16_t>(j + 1));
   }
   NextThread();
   // Thread 3

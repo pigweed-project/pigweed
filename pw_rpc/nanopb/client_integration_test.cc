@@ -62,7 +62,7 @@ pw_rpc_Payload Payload(const char (&string)[kSize]) {
   static_assert(kSize <= sizeof(pw_rpc_Payload::payload));
   pw_rpc_Payload payload{};
   std::memcpy(payload.payload.bytes, string, kSize);
-  payload.payload.size = kSize;
+  payload.payload.size = static_cast<pb_size_t>(kSize);
   return payload;
 }
 

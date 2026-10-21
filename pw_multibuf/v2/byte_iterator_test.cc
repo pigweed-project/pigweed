@@ -243,7 +243,7 @@ TEST_F(ByteIteratorTest, CanIterateUsingCompoundSubtraction) {
 TEST_F(ByteIteratorTest, CanCalculateDistanceBetweenIterators) {
   uint16_t total = 0;
   for (size_t i = 0; i < kNumContiguous; ++i) {
-    total += GetContiguous(i).size();
+    total += static_cast<uint16_t>(GetContiguous(i).size());
   }
   EXPECT_EQ(first_ - first_, 0);
   EXPECT_EQ(std::distance(first_, first_), 0);

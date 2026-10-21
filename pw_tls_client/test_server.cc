@@ -37,7 +37,8 @@ int TestBioFree(BIO*) { return 1; }
 namespace pw::tls_client::test {
 
 Result<X509*> ParseDerCertificate(ConstByteSpan cert) {
-  BIO* bio = BIO_new_mem_buf(cert.data(), cert.size());
+  BIO* bio =
+      BIO_new_mem_buf(cert.data(), static_cast<ossl_ssize_t>(cert.size()));
   if (!bio) {
     return Status::Internal();
   }
@@ -161,7 +162,7 @@ Status InMemoryTestServer::Initialize(ConstByteSpan key,
 }
 
 Status InMemoryTestServer::LoadPrivateKey(ConstByteSpan key) {
-  BIO* bio = BIO_new_mem_buf(key.data(), key.size());
+  BIO* bio = BIO_new_mem_buf(key.data(), static_cast<ossl_ssize_t>(key.size()));
   if (!bio) {
     return Status::Internal();
   }

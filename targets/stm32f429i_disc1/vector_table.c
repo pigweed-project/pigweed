@@ -17,6 +17,7 @@
 #include "pw_boot/boot.h"
 #include "pw_boot_cortex_m/boot.h"
 #include "pw_memory/busy_wait_forever.h"
+#include "pw_preprocessor/compiler.h"
 
 // Default handler to insert into the ARMv7-M vector table (below).
 // This function exists for convenience. If a device isn't doing what you
@@ -39,6 +40,9 @@ static void DefaultFaultHandler(void) {
 // vector table are function pointers.
 typedef void (*InterruptHandler)(void);
 
+PW_MODIFY_DIAGNOSTICS_PUSH();
+PW_MODIFY_DIAGNOSTIC(ignored, "-Wpedantic");
+
 PW_KEEP_IN_SECTION(".vector_table")
 const InterruptHandler vector_table[] = {
     // The starting location of the stack pointer.
@@ -56,3 +60,5 @@ const InterruptHandler vector_table[] = {
     // HardFault handler.
     [3] = DefaultFaultHandler,
 };
+
+PW_MODIFY_DIAGNOSTICS_POP();

@@ -145,11 +145,11 @@ Decoder::FieldSize Decoder::GetFieldSize() const {
     case WireType::kDelimited: {
       // Varint at cursor indicates size of the field.
       const size_t delimited_size = varint::Decode(remainder, &value);
-      if (delimited_size == 0) {
+      if (delimited_size == 0 || value > proto_.size()) {
         return FieldSize::Invalid();
       }
       key_size += delimited_size;
-      expected_value_size += value;
+      expected_value_size += static_cast<size_t>(value);
       break;
     }
     case WireType::kFixed32:

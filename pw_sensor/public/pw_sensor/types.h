@@ -43,12 +43,12 @@ namespace pw::sensor {
 
 constexpr inline uint32_t GetMeasurementNameFromType(
     uint64_t measurement_type) {
-  return measurement_type >> 32;
+  return static_cast<uint32_t>(measurement_type >> 32);
 }
 
 constexpr inline uint32_t GetMeasurementUnitFromType(
     uint64_t measurement_type) {
-  return measurement_type & 0xffffffff;
+  return static_cast<uint32_t>(measurement_type & 0xffffffff);
 }
 
 constexpr inline uint32_t GetMeasurementUnitNameFromType(

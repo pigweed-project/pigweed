@@ -117,15 +117,11 @@ _clang_default_configs = [
   "$dir_pw_build:extra_strict_warnings",
   "$dir_pw_build:clang_thread_safety_warnings",
 ]
-_internal_clang_default_configs =
-    _clang_default_configs + [ "$dir_pw_build:internal_strict_warnings" ]
 
 _gcc_default_configs = [
   "$dir_pw_build:extra_strict_warnings",
   "$dir_pw_toolchain/host_gcc:threading_support",
 ]
-_internal_gcc_default_configs =
-    _gcc_default_configs + [ "$dir_pw_build:internal_strict_warnings" ]
 
 _excluded_members = [
   "defaults",
@@ -330,7 +326,7 @@ pw_internal_host_toolchains = [
       forward_variables_from(_host_common, "*")
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
-      default_configs += _internal_clang_default_configs
+      default_configs += _clang_default_configs
     }
   },
   {
@@ -342,7 +338,7 @@ pw_internal_host_toolchains = [
       forward_variables_from(_host_common, "*")
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
-      default_configs += _internal_clang_default_configs
+      default_configs += _clang_default_configs
     }
   },
   {
@@ -354,7 +350,7 @@ pw_internal_host_toolchains = [
       forward_variables_from(_host_common, "*")
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
-      default_configs += _internal_clang_default_configs
+      default_configs += _clang_default_configs
     }
   },
   {
@@ -366,7 +362,7 @@ pw_internal_host_toolchains = [
       forward_variables_from(_host_common, "*", [ "pw_unit_test_MAIN" ])
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
-      default_configs += _internal_clang_default_configs
+      default_configs += _clang_default_configs
     }
   },
   {
@@ -378,7 +374,7 @@ pw_internal_host_toolchains = [
       forward_variables_from(_host_common, "*")
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
-      default_configs += _internal_gcc_default_configs
+      default_configs += _gcc_default_configs
     }
   },
   {
@@ -390,7 +386,7 @@ pw_internal_host_toolchains = [
       forward_variables_from(_host_common, "*")
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
-      default_configs += _internal_gcc_default_configs
+      default_configs += _gcc_default_configs
     }
   },
   {
@@ -402,7 +398,7 @@ pw_internal_host_toolchains = [
       forward_variables_from(_host_common, "*")
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
-      default_configs += _internal_gcc_default_configs
+      default_configs += _gcc_default_configs
     }
   },
   {
@@ -414,7 +410,7 @@ pw_internal_host_toolchains = [
       forward_variables_from(_host_common, "*")
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
-      default_configs += _internal_clang_default_configs
+      default_configs += _clang_default_configs
 
       # Don't enable span asserts since C++20 provides the implementation for
       # pw::span, and there's no way to ensure asserts are enabled for the C++
@@ -434,7 +430,7 @@ pw_internal_host_toolchains = [
       forward_variables_from(_host_common, "*")
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
-      default_configs += _internal_clang_default_configs
+      default_configs += _clang_default_configs
 
       pw_function_CONFIG = "$dir_pw_function:enable_dynamic_allocation"
       pw_rpc_CONFIG = "$dir_pw_rpc:use_dynamic_allocation"

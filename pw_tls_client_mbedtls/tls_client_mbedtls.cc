@@ -29,7 +29,7 @@ int SessionImplementation::MbedTlsWrite(void* ctx,
   auto writer =
       static_cast<SessionImplementation*>(ctx)->session_options_.transport();
   PW_CHECK_NOTNULL(writer);
-  return writer->Write(buf, len).ok() ? len : -1;
+  return writer->Write(buf, len).ok() ? static_cast<int>(len) : -1;
 }
 
 int SessionImplementation::MbedTlsRead(void* ctx,
@@ -44,7 +44,8 @@ int SessionImplementation::MbedTlsRead(void* ctx,
   if (!res.ok()) {
     return -1;
   }
-  return res.value().empty() ? MBEDTLS_ERR_SSL_WANT_READ : res.value().size();
+  return res.value().empty() ? MBEDTLS_ERR_SSL_WANT_READ
+                             : static_cast<int>(res.value().size());
 }
 
 Status SessionImplementation::entropy_source_status_ = OkStatus();

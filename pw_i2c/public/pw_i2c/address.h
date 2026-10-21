@@ -180,7 +180,7 @@ class Address {
 
   enum AlreadyCheckedAddress { kAlreadyCheckedAddress };
   constexpr Address(uint16_t address, Mode mode, AlreadyCheckedAddress)
-      : address_(address), mode_(mode) {}
+      : address_(address & kMaxTenBitAddress), mode_(mode) {}
 
   uint16_t address_ : 10;
   Mode mode_ : 1;

@@ -72,6 +72,8 @@ class ChunkAllocator : public allocator::AbstractAllocator {
 
   // A compact representation of a span that may be allocated or free.
   PW_PACKED(struct) Region {
+    static constexpr uint32_t kMaxSize = (1U << 31) - 1;
+
     std::byte* data;
     uint32_t size : 31;
     uint32_t free : 1;

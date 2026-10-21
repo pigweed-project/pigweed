@@ -115,6 +115,9 @@ void am_timer14_isr(void) PW_ALIAS(DefaultFaultHandler);
 void am_timer15_isr(void) PW_ALIAS(DefaultFaultHandler);
 void am_cachecpu_isr(void) PW_ALIAS(DefaultFaultHandler);
 
+PW_MODIFY_DIAGNOSTICS_PUSH();
+PW_MODIFY_DIAGNOSTIC(ignored, "-Wpedantic");
+
 PW_KEEP_IN_SECTION(".vector_table")
 const InterruptHandler vector_table[] = {
     // Cortex-M CPU specific interrupt handlers.
@@ -220,3 +223,5 @@ const InterruptHandler vector_table[] = {
     am_timer15_isr,       // 82: timer15
     am_cachecpu_isr       // 83: CPU cache
 };
+
+PW_MODIFY_DIAGNOSTICS_POP();

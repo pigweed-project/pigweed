@@ -527,9 +527,6 @@ pw_test("algorithm_test") {
     "$dir_pw_unit_test:constexpr",
     dir_pw_span,
   ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("bitset_test") {
@@ -550,9 +547,6 @@ pw_test("filtered_view_test") {
     ":intrusive_list",
     dir_pw_span,
   ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("flat_map_test") {
@@ -561,9 +555,6 @@ pw_test("flat_map_test") {
     ":flat_map",
     dir_pw_polyfill,
   ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("functional_test") {
@@ -609,9 +600,6 @@ pw_test("inline_deque_test") {
     ":test_helpers",
   ]
   negative_compilation_tests = true
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("dynamic_queue_test") {
@@ -681,9 +669,6 @@ pw_test("inline_queue_test") {
     ":test_helpers",
   ]
   negative_compilation_tests = true
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("raw_storage_test") {
@@ -692,9 +677,6 @@ pw_test("raw_storage_test") {
     ":raw_storage",
     ":test_helpers",
   ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("storage_test") {
@@ -708,9 +690,6 @@ pw_test("storage_test") {
 pw_test("to_array_test") {
   sources = [ "to_array_test.cc" ]
   deps = [ ":to_array" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("var_len_entry_test") {
@@ -776,9 +755,6 @@ pw_test("vector_test") {
   ]
 
   negative_compilation_tests = true
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("dynamic_vector_test") {
@@ -803,9 +779,6 @@ pw_test("dynamic_ptr_vector_test") {
 pw_test("wrapped_iterator_test") {
   sources = [ "wrapped_iterator_test.cc" ]
   deps = [ ":wrapped_iterator" ]
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("ptr_iterator_test") {
@@ -820,9 +793,6 @@ pw_test("intrusive_forward_list_test") {
     ":vector",
   ]
   negative_compilation_tests = true
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("forward_list_test") {
@@ -846,9 +816,6 @@ pw_test("intrusive_list_test") {
     ":vector",
   ]
   negative_compilation_tests = true
-
-  # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
-  configs = [ "$dir_pw_build:conversion_warnings" ]
 }
 
 pw_test("intrusive_map_test") {
