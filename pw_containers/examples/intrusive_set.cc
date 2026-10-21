@@ -14,6 +14,9 @@
 
 #include "pw_containers/intrusive_set.h"
 
+#include <array>
+#include <cstring>
+
 #include "pw_unit_test/framework.h"
 
 namespace examples {

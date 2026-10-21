@@ -28,6 +28,7 @@
 #include "pw_containers/dynamic_deque.h"
 #include "pw_containers/dynamic_ptr_vector.h"
 #include "pw_containers/functional.h"
+#include "pw_containers/internal/traits.h"
 #include "pw_preprocessor/compiler.h"
 
 namespace pw {

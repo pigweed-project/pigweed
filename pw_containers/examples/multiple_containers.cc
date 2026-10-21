@@ -12,6 +12,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "pw_containers/intrusive_list.h"

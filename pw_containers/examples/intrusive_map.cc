@@ -14,6 +14,9 @@
 
 #include "pw_containers/intrusive_map.h"
 
+#include <array>
+#include <cstdint>
+
 #include "pw_unit_test/framework.h"
 
 namespace examples {

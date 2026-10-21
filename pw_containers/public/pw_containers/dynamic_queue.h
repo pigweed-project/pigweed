@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <cstdint>
 #include <utility>
 
 #include "pw_allocator/allocator.h"

@@ -17,6 +17,7 @@
 #pragma once
 
 #include <algorithm>
+#include <type_traits>
 #include <utility>
 
 #include "pw_containers/internal/algorithm_internal.h"  // IWYU pragma: export

@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <type_traits>

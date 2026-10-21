@@ -14,6 +14,7 @@
 #pragma once
 
 #include <cstddef>
+#include <type_traits>
 
 #include "pw_containers/iterator.h"
 

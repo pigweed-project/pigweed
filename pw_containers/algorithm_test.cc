@@ -19,6 +19,7 @@
 #include "pw_containers/algorithm.h"
 
 #include <algorithm>
+#include <array>
 #include <iterator>
 
 #include "pw_containers/flat_map.h"

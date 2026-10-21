@@ -13,10 +13,14 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <initializer_list>
 #include <iterator>
+#include <optional>
 
 #include "pw_allocator/allocator.h"
+#include "pw_assert/assert.h"
 #include "pw_containers/dynamic_deque.h"
 #include "pw_containers/ptr_iterator.h"
 

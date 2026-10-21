@@ -15,12 +15,16 @@
 
 #ifdef __cplusplus
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
+#include "pw_containers/algorithm.h"
 #include "pw_containers/internal/var_len_entry.h"  // IWYU pragma: export
 #include "pw_containers/internal/var_len_entry_queue_iterator.h"  // IWYU pragma: export
 #include "pw_containers/internal/wrap.h"

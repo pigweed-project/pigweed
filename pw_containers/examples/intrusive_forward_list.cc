@@ -14,6 +14,7 @@
 
 #include "pw_containers/intrusive_forward_list.h"
 
+#include <array>
 #include <cstddef>
 
 #include "pw_unit_test/framework.h"

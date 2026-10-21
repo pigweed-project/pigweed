@@ -13,13 +13,22 @@
 // the License.
 #pragma once
 
+#include <lib/stdcompat/utility.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
 #include <utility>
 
 #include "pw_allocator/allocator.h"
-#include "pw_allocator/unique_ptr.h"
+#include "pw_allocator/deallocator.h"
+#include "pw_allocator/layout.h"
+#include "pw_allocator/unique_ptr.h"  // IWYU pragma: export
+#include "pw_assert/assert.h"
 #include "pw_containers/deque.h"
 #include "pw_containers/internal/generic_queue.h"  // IWYU pragma: export
-#include "pw_containers/storage.h"
+#include "pw_containers/storage.h"                 // IWYU pragma: export
+#include "pw_span/span.h"
 
 namespace pw {
 

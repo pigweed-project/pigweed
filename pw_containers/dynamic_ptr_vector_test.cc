@@ -14,6 +14,10 @@
 
 #include "pw_containers/dynamic_ptr_vector.h"
 
+#include <cstddef>
+#include <type_traits>
+#include <utility>
+
 #include "pw_allocator/fault_injecting_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_compilation_testing/negative_compilation.h"

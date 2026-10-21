@@ -14,6 +14,8 @@
 
 #include "pw_containers/flat_map.h"
 
+#include <array>
+
 #include "pw_unit_test/framework.h"
 
 namespace examples {

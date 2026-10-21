@@ -14,9 +14,12 @@
 
 #include "pw_containers/inline_var_len_entry_queue.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include "pw_containers/test/generic_var_len_entry_queue_testing.h"
 #include "pw_containers_private/inline_var_len_entry_queue_test_oracle.h"

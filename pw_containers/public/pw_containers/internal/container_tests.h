@@ -15,9 +15,11 @@
 
 #include <algorithm>  // std::min, std::max_element
 #include <array>
+#include <cstddef>
 #include <initializer_list>
 #include <iterator>     // std::input_iterator_tag
 #include <type_traits>  // std::is_base_of_v, std::is_same_v, etc.
+#include <utility>
 
 #include "lib/stdcompat/type_traits.h"
 #include "pw_containers/algorithm.h"

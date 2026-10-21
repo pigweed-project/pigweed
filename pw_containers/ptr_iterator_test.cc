@@ -15,9 +15,11 @@
 #include "pw_containers/ptr_iterator.h"
 
 #include <array>
+#include <cstddef>
 #include <iterator>
 #include <type_traits>
 
+#include "pw_containers/iterator.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

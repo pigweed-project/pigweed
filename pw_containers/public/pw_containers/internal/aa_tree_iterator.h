@@ -13,10 +13,12 @@
 // the License.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <type_traits>
 
+#include "pw_assert/assert.h"
 #include "pw_containers/internal/aa_tree_item.h"
 
 namespace pw::containers::internal {

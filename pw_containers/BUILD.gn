@@ -297,6 +297,7 @@ pw_source_set("inline_var_len_entry_queue") {
     ":generic_var_len_entry_queue",
     ":raw_storage",
     "$dir_pw_toolchain:constexpr_tag",
+    dir_pw_assert,
     dir_pw_bytes,
     dir_pw_preprocessor,
     dir_pw_span,

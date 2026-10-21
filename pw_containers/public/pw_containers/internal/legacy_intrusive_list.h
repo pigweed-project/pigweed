@@ -13,6 +13,9 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <initializer_list>
+
 #include "pw_containers/intrusive_forward_list.h"
 
 namespace pw::containers::internal {

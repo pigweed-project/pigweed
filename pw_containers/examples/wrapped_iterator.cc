@@ -14,6 +14,9 @@
 
 #include "pw_containers/wrapped_iterator.h"
 
+#include <array>
+#include <cstddef>
+
 #include "pw_unit_test/framework.h"
 
 namespace examples {

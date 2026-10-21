@@ -13,13 +13,14 @@
 // the License.
 #pragma once
 
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <utility>
+#include <array>    // IWYU pragma: export
+#include <cstddef>  // IWYU pragma: export
+#include <cstdint>  // IWYU pragma: export
+#include <utility>  // IWYU pragma: export
 
-#include "pw_allocator/libc_allocator.h"
-#include "pw_bloat/bloat_this_binary.h"
+#include "pw_allocator/layout.h"          // IWYU pragma: export
+#include "pw_allocator/libc_allocator.h"  // IWYU pragma: export
+#include "pw_bloat/bloat_this_binary.h"   // IWYU pragma: export
 
 namespace pw::containers::size_report {
 

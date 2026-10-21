@@ -14,9 +14,18 @@
 
 #include "pw_containers/dynamic_deque.h"
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <deque>
+#include <iterator>
+#include <limits>
+#include <optional>
 #include <random>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "pw_allocator/fault_injecting_allocator.h"

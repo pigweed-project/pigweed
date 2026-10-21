@@ -14,7 +14,10 @@
 
 #include "pw_containers/flat_map.h"
 
+#include <array>
+#include <cstdint>
 #include <limits>
+#include <utility>
 
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_unit_test/framework.h"

@@ -14,6 +14,7 @@
 
 #include "pw_containers/bitset.h"
 
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 

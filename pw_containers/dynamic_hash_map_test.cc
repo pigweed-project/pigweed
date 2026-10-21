@@ -15,7 +15,9 @@
 #include "pw_containers/dynamic_hash_map.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 

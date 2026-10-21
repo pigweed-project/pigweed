@@ -14,6 +14,12 @@
 
 #include "pw_containers/internal/var_len_entry.h"
 
+#include <cstddef>
+#include <cstdint>
+
+#include "pw_bytes/span.h"
+#include "pw_preprocessor/util.h"
+
 namespace pw::containers::internal {
 
 VarLenEntry<std::byte> VarLenEntryC::From(

@@ -57,13 +57,16 @@
 
 #else  // __cplusplus
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
+#include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/internal/raw_storage.h"  // IWYU pragma: export
 #include "pw_span/span.h"
-#include "pw_toolchain/constexpr_tag.h"
+#include "pw_toolchain/constexpr_tag.h"  // IWYU pragma: export
 
 #endif  // __cplusplus
 

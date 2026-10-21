@@ -13,10 +13,16 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <functional>
+#include <initializer_list>
+#include <iterator>
 #include <type_traits>
+#include <utility>
 
 #include "pw_containers/internal/aa_tree.h"       // IWYU pragma: export
 #include "pw_containers/internal/aa_tree_item.h"  // IWYU pragma: export
+#include "pw_containers/internal/intrusive_item.h"
 
 namespace pw {
 

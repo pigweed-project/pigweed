@@ -14,7 +14,12 @@
 
 #include "pw_containers/vector.h"
 
+#include <array>
 #include <cstddef>
+#include <initializer_list>
+#include <string_view>
+#include <type_traits>
+#include <utility>
 
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/test_helpers.h"

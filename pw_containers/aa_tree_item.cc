@@ -15,6 +15,10 @@
 #include "pw_containers/internal/aa_tree_item.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+
+#include "pw_bytes/packed_ptr.h"
 
 namespace pw::containers::internal {
 

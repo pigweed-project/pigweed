@@ -14,8 +14,10 @@
 
 #include "pw_containers/optional_tuple.h"
 
+#include <cstdint>
 #include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #include "pw_compilation_testing/negative_compilation.h"

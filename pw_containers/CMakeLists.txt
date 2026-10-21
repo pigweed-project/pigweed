@@ -326,6 +326,7 @@ pw_add_library(pw_containers.inline_var_len_entry_queue STATIC
   SOURCES
     inline_var_len_entry_queue.cc
   PUBLIC_DEPS
+    pw_assert.assert
     pw_bytes
     pw_containers.generic_var_len_entry_queue
     pw_containers._raw_storage

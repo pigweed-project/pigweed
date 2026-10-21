@@ -14,6 +14,11 @@
 
 #include "pw_containers/internal/aa_tree.h"
 
+#include <cstddef>
+#include <utility>
+
+#include "pw_containers/internal/aa_tree_item.h"
+
 namespace pw::containers::internal {
 
 void GenericAATree::SetRoot(AATreeItem* item) {

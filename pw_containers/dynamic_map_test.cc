@@ -15,6 +15,7 @@
 #include "pw_containers/dynamic_map.h"
 
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 

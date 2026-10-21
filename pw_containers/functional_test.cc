@@ -14,7 +14,10 @@
 
 #include "pw_containers/functional.h"
 
+#include <cstddef>
+#include <functional>
 #include <string>
+#include <utility>
 #include <variant>
 
 #include "pw_unit_test/framework.h"

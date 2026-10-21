@@ -15,9 +15,11 @@
 #include "pw_containers/internal/var_len_entry_queue_iterator.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 
 #include "pw_bytes/array.h"
+#include "pw_bytes/span.h"
 #include "pw_containers/var_len_entry_queue.h"
 #include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"

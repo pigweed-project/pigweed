@@ -18,6 +18,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <limits>
+#include <utility>
 
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/vector.h"

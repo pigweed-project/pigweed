@@ -14,6 +14,9 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <type_traits>
+#include <utility>
 
 #include "pw_containers/deque.h"
 #include "pw_containers/pod_deque.h"

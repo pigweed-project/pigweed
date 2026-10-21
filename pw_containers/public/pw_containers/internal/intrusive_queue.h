@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+
 #include "pw_containers/internal/intrusive_list.h"
 #include "pw_containers/internal/intrusive_list_item.h"
 

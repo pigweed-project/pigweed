@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <utility>
 
 #include "pw_assert/assert.h"

@@ -14,6 +14,10 @@
 
 #include "pw_containers/dynamic_vector.h"
 
+#include <array>
+#include <cstddef>
+#include <utility>
+
 #include "pw_allocator/fault_injecting_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_containers/internal/test_helpers.h"

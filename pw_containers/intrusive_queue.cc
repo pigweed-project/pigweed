@@ -14,6 +14,10 @@
 
 #include "pw_containers/internal/intrusive_queue.h"
 
+#include <utility>
+
+#include "pw_containers/internal/intrusive_list_item.h"
+
 namespace pw::containers::internal {
 
 auto GenericIntrusiveQueue::insert_after(Item* pos, Item& item) -> Item* {

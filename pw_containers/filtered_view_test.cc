@@ -14,7 +14,10 @@
 
 #include "pw_containers/filtered_view.h"
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
+#include <utility>
 
 #include "pw_containers/algorithm.h"
 #include "pw_containers/flat_map.h"

@@ -14,6 +14,8 @@
 
 #include "pw_containers/intrusive_queue.h"
 
+#include <cstddef>
+#include <iterator>
 #include <utility>
 
 #include "pw_unit_test/framework.h"

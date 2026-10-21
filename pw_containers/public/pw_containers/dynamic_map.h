@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <cstddef>
 #include <initializer_list>
 #include <iterator>
 #include <optional>

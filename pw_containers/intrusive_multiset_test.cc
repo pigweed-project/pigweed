@@ -14,6 +14,14 @@
 
 #include "pw_containers/intrusive_multiset.h"
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <iterator>
+#include <limits>
+#include <tuple>
+#include <utility>
+
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/intrusive_set.h"
 #include "pw_span/span.h"

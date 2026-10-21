@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "pw_containers/internal/generic_var_len_entry_queue.h"  // IWYU pragma: export

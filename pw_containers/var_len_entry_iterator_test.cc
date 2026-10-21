@@ -14,6 +14,7 @@
 
 #include "pw_containers/internal/var_len_entry_iterator.h"
 
+#include <cstddef>
 #include <string_view>
 
 #include "pw_bytes/array.h"

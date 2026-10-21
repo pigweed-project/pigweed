@@ -14,6 +14,9 @@
 
 #include "pw_containers/intrusive_multimap.h"
 
+#include <array>
+#include <cstdint>
+
 #include "pw_unit_test/framework.h"
 
 namespace examples {

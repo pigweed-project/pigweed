@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <iterator>
@@ -34,6 +35,7 @@
 #include "pw_containers/internal/wrap.h"
 #include "pw_containers/storage.h"
 #include "pw_numeric/checked_arithmetic.h"
+#include "pw_span/span.h"
 
 namespace pw::containers::internal {
 

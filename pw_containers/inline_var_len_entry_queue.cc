@@ -14,6 +14,11 @@
 
 #include "pw_containers/inline_var_len_entry_queue.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <new>
+
+#include "pw_bytes/span.h"
 #include "pw_containers/internal/var_len_entry_queue_iterator.h"
 
 namespace {

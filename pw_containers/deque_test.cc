@@ -19,6 +19,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <type_traits>
+#include <utility>
 
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"

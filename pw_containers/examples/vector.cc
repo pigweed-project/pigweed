@@ -15,6 +15,7 @@
 #include "pw_containers/vector.h"
 
 #include <cstddef>
+#include <utility>
 
 #include "pw_function/function.h"
 #include "pw_status/status.h"

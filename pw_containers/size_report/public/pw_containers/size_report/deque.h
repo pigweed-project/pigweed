@@ -13,8 +13,10 @@
 // the License.
 #pragma once
 
-#include "pw_bloat/bloat_this_binary.h"
-#include "pw_containers/size_report/size_report.h"
+#include <cstdint>  // IWYU pragma: export
+
+#include "pw_bloat/bloat_this_binary.h"             // IWYU pragma: export
+#include "pw_containers/size_report/size_report.h"  // IWYU pragma: export
 
 namespace pw::containers::size_report {
 

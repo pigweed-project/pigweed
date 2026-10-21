@@ -14,7 +14,9 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
+#include "pw_assert/assert.h"
 #include "pw_bytes/packed_ptr.h"
 
 namespace pw::containers::internal {

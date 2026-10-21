@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 #include "pw_allocator/testing.h"
 #include "pw_containers/internal/test_helpers.h"

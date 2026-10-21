@@ -14,7 +14,9 @@
 
 #include "pw_containers/to_array.h"
 
+#include <array>
 #include <cstring>
+#include <utility>
 
 #include "pw_unit_test/framework.h"
 

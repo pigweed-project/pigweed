@@ -17,6 +17,9 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <type_traits>
+#include <utility>
 
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/container_tests.h"

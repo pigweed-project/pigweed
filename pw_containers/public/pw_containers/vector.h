@@ -28,7 +28,7 @@
 #include "pw_assert/assert.h"
 #include "pw_containers/storage.h"
 #include "pw_preprocessor/compiler.h"
-#include "pw_toolchain/constexpr_tag.h"
+#include "pw_toolchain/constexpr_tag.h"  // IWYU pragma: export
 
 namespace pw {
 namespace vector_impl {

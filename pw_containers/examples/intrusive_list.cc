@@ -14,6 +14,8 @@
 
 #include "pw_containers/intrusive_list.h"
 
+#include <array>
+
 #include "pw_unit_test/framework.h"
 
 namespace examples {

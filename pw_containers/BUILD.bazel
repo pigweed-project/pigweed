@@ -385,6 +385,7 @@ cc_library(
     deps = [
         ":generic_var_len_entry_queue",
         ":raw_storage",
+        "//pw_assert:assert",
         "//pw_bytes",
         "//pw_preprocessor",
         "//pw_span",

@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 #include "pw_containers/internal/test_helpers.h"
 #include "pw_unit_test/framework.h"

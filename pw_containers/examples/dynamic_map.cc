@@ -14,6 +14,9 @@
 
 #include "pw_containers/dynamic_map.h"
 
+#include <array>
+#include <cstdint>
+
 #include "pw_allocator/testing.h"
 #include "pw_unit_test/framework.h"
 
