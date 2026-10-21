@@ -14,6 +14,8 @@
 
 #include "pw_status/try.h"
 
+#include <cstddef>
+
 #include "pw_unit_test/framework.h"
 
 namespace pw {
