@@ -53,7 +53,8 @@ class MethodTest(unittest.TestCase):
     """Tests pw_rpc.Method."""
 
     def setUp(self):
-        (module,) = python_protos.compile_and_import_strings([TEST_PROTO])
+        compiled_protos = python_protos.compile_and_import_strings([TEST_PROTO])
+        module = next(compiled_protos)
         service = descriptors.Service.from_descriptor(
             module.DESCRIPTOR.services_by_name['PublicService']
         )
