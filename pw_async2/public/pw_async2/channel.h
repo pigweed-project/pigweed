@@ -1951,6 +1951,11 @@ std::tuple<SpscChannelHandle<T>, Sender<T>, Receiver<T>> CreateSpscChannel(
 namespace internal {
 
 inline void BaseChannelFuture::Complete() PW_UNLOCK_FUNCTION(*channel_) {
+  // A queued future usually completes after the channel pops and wakes it. It
+  // may also complete while still queued, if its task was woken for another
+  // reason (e.g. a Select with a timeout) and claimed a slot that was freed for
+  // a different future. Remove it from the list in that case.
+  core_.Unlist();
   channel_->RemoveRefAndDestroyIfUnreferenced();
   channel_ = nullptr;
 }

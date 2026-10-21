@@ -644,7 +644,9 @@ pw_add_test(pw_async2.channel_test
   PRIVATE_DEPS
     pw_async2
     pw_async2.channel
+    pw_async2.select
     pw_async2.testing
+    pw_async2.value_future
     pw_allocator.testing
     pw_containers.vector
 )

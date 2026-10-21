@@ -21,6 +21,8 @@
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/internal/channel_test_util.h"
+#include "pw_async2/select.h"
+#include "pw_async2/value_future.h"
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
 #include "pw_unit_test/framework.h"
@@ -47,11 +49,14 @@ using pw::async2::Poll;
 using pw::async2::Ready;
 using pw::async2::ReceiveFuture;
 using pw::async2::Receiver;
+using pw::async2::ReserveSendFuture;
 using pw::async2::Sender;
 using pw::async2::SendFuture;
 using pw::async2::SendReservation;
 using pw::async2::SpmcChannelHandle;
 using pw::async2::SpscChannelHandle;
+using pw::async2::ValueProvider;
+using pw::async2::VoidFuture;
 
 using IntFunction = pw::InlineFunction<int()>;
 using MoveOnlyInt = pw::async2::test::MoveOnlyInt;
@@ -1563,6 +1568,189 @@ TEST(Channel, ConstSenderAndReceiver_Void) {
   });
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
+}
+
+// Two send futures are queued on a full channel. Receiving a value wakes only
+// the first, but the second's task is woken for another reason and runs first,
+// so the second future completes while it is still queued in the channel.
+TEST(Channel, SendFutureCompletedWhileQueuedIsUnlisted) {
+  ChannelStorage<int, 1> storage;
+  auto [handle, receiver] = CreateMpscChannel(storage);
+  Sender<int> sender_1 = handle.CreateSender();
+  Sender<int> sender_2 = handle.CreateSender();
+  handle.Release();
+  ASSERT_EQ(sender_1.TrySend(0), OkStatus());  // The channel is now full.
+
+  SendFuture<int> future_1 = sender_1.Send(1);
+  std::optional<SendFuture<int>> future_2 = sender_2.Send(2);
+  ValueProvider<void> other_event;
+  VoidFuture other_event_future = other_event.Get();
+
+  DispatcherForTest dispatcher;
+  FuncTask task_1([&](Context& cx) -> Poll<> {
+    if (future_1.Pend(cx).IsReady()) {
+      return Ready();
+    }
+    return Pending();
+  });
+  FuncTask task_2([&](Context& cx) -> Poll<> {
+    if (future_2->Pend(cx).IsReady()) {
+      return Ready();
+    }
+    if (other_event_future.is_pendable()) {
+      EXPECT_EQ(other_event_future.Pend(cx), Pending());
+    }
+    return Pending();
+  });
+  dispatcher.Post(task_1);
+  dispatcher.Post(task_2);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());  // Both futures are queued.
+
+  other_event.Resolve();                        // Wakes task_2 first.
+  EXPECT_EQ(receiver.TryReceive().value(), 0);  // Wakes task_1 (future_1).
+  EXPECT_TRUE(dispatcher.RunUntilStalled());    // future_2 sends; task_1 waits.
+  EXPECT_TRUE(future_2->is_complete());
+  future_2.reset();  // Must not leave a dangling entry in the channel's list.
+
+  EXPECT_EQ(receiver.TryReceive().value(), 2);
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(receiver.TryReceive().value(), 1);
+}
+
+TEST(Channel, ReserveSendFutureCompletedWhileQueuedIsUnlisted) {
+  ChannelStorage<int, 1> storage;
+  auto [handle, receiver] = CreateMpscChannel(storage);
+  Sender<int> sender_1 = handle.CreateSender();
+  Sender<int> sender_2 = handle.CreateSender();
+  handle.Release();
+  ASSERT_EQ(sender_1.TrySend(0), OkStatus());  // The channel is now full.
+
+  ReserveSendFuture<int> future_1 = sender_1.ReserveSend();
+  std::optional<ReserveSendFuture<int>> future_2 = sender_2.ReserveSend();
+  ValueProvider<void> other_event;
+  VoidFuture other_event_future = other_event.Get();
+
+  DispatcherForTest dispatcher;
+  FuncTask task_1([&](Context& cx) -> Poll<> {
+    auto poll = future_1.Pend(cx);
+    if (poll.IsReady()) {
+      (*poll)->Commit(1);
+      return Ready();
+    }
+    return Pending();
+  });
+  FuncTask task_2([&](Context& cx) -> Poll<> {
+    auto poll = future_2->Pend(cx);
+    if (poll.IsReady()) {
+      (*poll)->Commit(2);
+      return Ready();
+    }
+    if (other_event_future.is_pendable()) {
+      EXPECT_EQ(other_event_future.Pend(cx), Pending());
+    }
+    return Pending();
+  });
+  dispatcher.Post(task_1);
+  dispatcher.Post(task_2);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());  // Both futures are queued.
+
+  other_event.Resolve();                        // Wakes task_2 first.
+  EXPECT_EQ(receiver.TryReceive().value(), 0);  // Wakes task_1 (future_1).
+  EXPECT_TRUE(dispatcher.RunUntilStalled());    // future_2 sends; task_1 waits.
+  EXPECT_TRUE(future_2->is_complete());
+  future_2.reset();  // Must not leave a dangling entry in the channel's list.
+
+  EXPECT_EQ(receiver.TryReceive().value(), 2);
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(receiver.TryReceive().value(), 1);
+}
+
+TEST(Channel, ReceiveFutureCompletedWhileQueuedIsUnlisted) {
+  ChannelStorage<int, 1> storage;
+  auto [handle, sender] = CreateSpmcChannel(storage);
+  Receiver<int> receiver_1 = handle.CreateReceiver();
+  Receiver<int> receiver_2 = handle.CreateReceiver();
+  handle.Release();
+
+  ReceiveFuture<int> future_1 = receiver_1.Receive();
+  std::optional<ReceiveFuture<int>> future_2 = receiver_2.Receive();
+  ValueProvider<void> other_event;
+  VoidFuture other_event_future = other_event.Get();
+
+  DispatcherForTest dispatcher;
+  FuncTask task_1([&](Context& cx) -> Poll<> {
+    auto poll = future_1.Pend(cx);
+    if (poll.IsReady()) {
+      EXPECT_EQ(*poll, 2);
+      return Ready();
+    }
+    return Pending();
+  });
+  FuncTask task_2([&](Context& cx) -> Poll<> {
+    auto poll = future_2->Pend(cx);
+    if (poll.IsReady()) {
+      EXPECT_EQ(*poll, 1);
+      return Ready();
+    }
+    if (other_event_future.is_pendable()) {
+      EXPECT_EQ(other_event_future.Pend(cx), Pending());
+    }
+    return Pending();
+  });
+  dispatcher.Post(task_1);
+  dispatcher.Post(task_2);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());  // Both futures are queued.
+
+  other_event.Resolve();                      // Wakes task_2 first.
+  EXPECT_EQ(sender.TrySend(1), OkStatus());   // Wakes task_1 (future_1).
+  EXPECT_TRUE(dispatcher.RunUntilStalled());  // task_2 receives; task_1 waits.
+  EXPECT_TRUE(future_2->is_complete());
+  future_2.reset();  // Must not leave a dangling entry in the channel's list.
+
+  EXPECT_EQ(sender.TrySend(2), OkStatus());  // Must wake task_1, not task_2.
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+  EXPECT_TRUE(future_1.is_complete());
+}
+
+// As above, for a receive future completed in a Select, which destroys its
+// sub-futures upon completion.
+TEST(Channel, ReceiveFutureInSelectCompletedWhileQueuedIsUnlisted) {
+  ChannelStorage<int, 2> storage;
+  MpmcChannelHandle<int> handle = CreateMpmcChannel(storage);
+  Sender<int> sender = handle.CreateSender();
+  Receiver<int> receiver_1 = handle.CreateReceiver();
+  Receiver<int> receiver_2 = handle.CreateReceiver();
+  handle.Release();
+
+  ReceiveFuture<int> future_1 = receiver_1.Receive();
+  ValueProvider<void> other_event;
+  auto select = Select(receiver_2.Receive(), other_event.Get());
+
+  DispatcherForTest dispatcher;
+  FuncTask task_1([&](Context& cx) -> Poll<> {
+    if (future_1.Pend(cx).IsReady()) {
+      return Ready();
+    }
+    return Pending();
+  });
+  FuncTask task_2([&](Context& cx) -> Poll<> {
+    if (select.Pend(cx).IsReady()) {
+      return Ready();
+    }
+    return Pending();
+  });
+  dispatcher.Post(task_1);
+  dispatcher.Post(task_2);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());  // Both futures are queued.
+
+  other_event.Resolve();                      // Wakes task_2 first.
+  EXPECT_EQ(sender.TrySend(1), OkStatus());   // Wakes task_1 (future_1).
+  EXPECT_TRUE(dispatcher.RunUntilStalled());  // task_2 receives the value.
+  EXPECT_TRUE(select.is_complete());
+
+  EXPECT_EQ(sender.TrySend(2), OkStatus());  // Must wake task_1, not task_2.
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+  EXPECT_TRUE(future_1.is_complete());
 }
 
 }  // namespace
