@@ -95,7 +95,7 @@ const char* pw_StatusString(pw_Status status);
 
 }  // extern "C"
 
-#include "pw_enum/to_string.h"
+#include "pw_enum/to_string.h"      // IWYU pragma: keep
 #include "pw_status/status_base.h"  // IWYU pragma: export
 
 /// Returns a string representation of a given `pw_Status` enumerator.

@@ -21,19 +21,19 @@
        "included when using the pw_unit_test light backend."
 #endif  // GTEST_TEST
 
-#include <cmath>
+#include <cmath>  // IWYU pragma: keep
 #include <cstddef>
-#include <cstdint>
+#include <cstdint>  // IWYU pragma: keep
 #include <cstring>
-#include <new>
+#include <new>  // IWYU pragma: keep
 #include <string_view>
 
 #include "pw_bytes/alignment.h"
-#include "pw_polyfill/standard.h"
+#include "pw_polyfill/standard.h"  // IWYU pragma: keep
 #include "pw_preprocessor/compiler.h"
-#include "pw_preprocessor/util.h"
+#include "pw_preprocessor/util.h"  // IWYU pragma: keep
 #include "pw_span/span.h"
-#include "pw_status/status.h"
+#include "pw_status/status.h"  // IWYU pragma: keep
 #include "pw_string/string_builder.h"
 #include "pw_unit_test/config.h"         // IWYU pragma: export
 #include "pw_unit_test/event_handler.h"  // IWYU pragma: export

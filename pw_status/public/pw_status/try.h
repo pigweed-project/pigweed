@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include <utility>
+#include <utility>  // IWYU pragma: keep
 
 #include "pw_status/status.h"            // IWYU pragma: export
 #include "pw_status/status_base.h"       // IWYU pragma: export
