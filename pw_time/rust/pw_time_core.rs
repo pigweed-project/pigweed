@@ -25,12 +25,6 @@
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 
-#[cfg(test)]
-#[unsafe(no_mangle)]
-unsafe extern "C-unwind" fn pw_assert_HandleFailure() -> ! {
-    panic!("pw_assert failed");
-}
-
 /// A trait for retrieving the current system or hardware time.
 pub trait Clock: Sized {
     /// The number of clock ticks per second.

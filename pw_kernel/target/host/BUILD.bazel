@@ -21,8 +21,7 @@ platform(
     name = "host",
     flags = flags_from_dict(
         KERNEL_COMMON_FLAGS | {
-            # Activate the default panic handler so tests don't need to register one.
-            "//pw_assert/rust:default_handler": "true",
+            "//pw_assert/rust:pw_assert_backend": "//pw_assert/rust:pw_assert_backend_std",
             # Use the println backend To avoid pulling in the implicit console dep.
             "//pw_log/rust:pw_log_backend": "@pigweed//pw_log/rust:pw_log_backend_println",
         },

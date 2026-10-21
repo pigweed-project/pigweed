@@ -19,11 +19,6 @@ use crate::{
     SystemSingleThreadMutex, SystemSingleThreadTimedMutex, SystemTimedMutex,
 };
 
-#[unsafe(no_mangle)]
-unsafe extern "C-unwind" fn pw_assert_HandleFailure() -> ! {
-    panic!("pw_assert failed");
-}
-
 #[test]
 fn test_mutex_lock_unlock() {
     let lock = SystemMutex::new(42);

@@ -18,29 +18,14 @@
 //! `pw_assert_backend_pw_log` provides an implementation of `pw_assert` backend
 //! macros that route to `pw_log` and [`pw_assert_HandleFailure`].
 
-#[cfg(not(feature = "default_handler"))]
 unsafe extern "C" {
     /// The crash handler called by asserts and panics when they fail.
     ///
-    /// Since the `default_handler` feature is disabled, the application must
-    /// provide an implementation of this function with the `#[no_mangle]` attribute.
+    /// The application must provide an implementation of this function with the
+    /// `#[no_mangle]` attribute.
     ///
     /// This function must not return.
     pub fn pw_assert_HandleFailure() -> !;
-}
-
-#[cfg(feature = "default_handler")]
-#[allow(non_snake_case)]
-/// Default implementation of the crash handler.
-///
-/// This implementation simply delegates to `core::panic!`.
-///
-/// # Safety
-///
-/// The default_handler panic handler is safe, but the unsafe keyword is
-/// required to match the non-default panic handler signature.
-pub unsafe extern "C-unwind" fn pw_assert_HandleFailure() -> ! {
-    core::panic!("pw_assert panic")
 }
 
 // Re-export pw_log for use by panic/assert macros.

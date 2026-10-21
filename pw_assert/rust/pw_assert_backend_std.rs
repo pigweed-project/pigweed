@@ -21,20 +21,25 @@
 
 extern crate std;
 
+#[doc(hidden)]
+pub mod __private {
+    pub use std::{assert, assert_eq, assert_ne, panic};
+}
+
 /// Backend implementation of [`pw_assert::panic`].
 #[macro_export]
 macro_rules! panic_backend {
     ($format_string:literal $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::panic!($format_string)
+            $crate::__private::panic!($format_string)
         }
     }};
 
     ($format_string:literal, $($args:expr),* $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::panic!($format_string, $($args),*)
+            $crate::__private::panic!($format_string, $($args),*)
         }
     }};
 }
@@ -46,14 +51,14 @@ macro_rules! assert_unary_backend {
     ($condition:expr $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::assert!($condition)
+            $crate::__private::assert!($condition)
         }
     }};
 
     ($condition:expr, $($args:expr),* $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::assert!($condition, $($args),*)
+            $crate::__private::assert!($condition, $($args),*)
         }
     }};
 }
@@ -65,42 +70,42 @@ macro_rules! assert_binary_backend {
     ($lhs:expr, ==, $rhs:expr $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::assert_eq!($lhs, $rhs)
+            $crate::__private::assert_eq!($lhs, $rhs)
         }
     }};
 
     ($lhs:expr, ==, $rhs:expr, $($args:expr),* $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::assert_eq!($lhs, $rhs, $($args),*)
+            $crate::__private::assert_eq!($lhs, $rhs, $($args),*)
         }
     }};
 
     ($lhs:expr, !=, $rhs:expr $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::assert_ne!($lhs, $rhs)
+            $crate::__private::assert_ne!($lhs, $rhs)
         }
     }};
 
     ($lhs:expr, !=, $rhs:expr, $($args:expr),* $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::assert_ne!($lhs, $rhs, $($args),*)
+            $crate::__private::assert_ne!($lhs, $rhs, $($args),*)
         }
     }};
 
     ($lhs:expr, $op:tt, $rhs:expr $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::assert!($lhs $op $rhs)
+            $crate::__private::assert!($lhs $op $rhs)
         }
     }};
 
     ($lhs:expr, $op:tt, $rhs:expr, $($args:expr),* $(,)?) => {{
         #[allow(clippy::unnecessary_cast)]
         {
-            std::assert!($lhs $op $rhs, $($args),*)
+            $crate::__private::assert!($lhs $op $rhs, $($args),*)
         }
     }};
 }

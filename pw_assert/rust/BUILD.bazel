@@ -36,19 +36,6 @@ config_setting(
     },
 )
 
-# TODO: https://pwbug.dev/563018764 - Remove the default_handler crate feature.
-bool_flag(
-    name = "default_handler",
-    build_setting_default = False,
-)
-
-config_setting(
-    name = "default_handler_enabled",
-    flag_values = {
-        ":default_handler": "true",
-    },
-)
-
 bool_flag(
     name = "color",
     build_setting_default = True,
@@ -113,9 +100,6 @@ rust_library(
     crate_features = select({
         ":color_enabled": ["color"],
         "//conditions:default": [],
-    }) + select({
-        ":default_handler_enabled": ["default_handler"],
-        "//conditions:default": [],
     }),
     crate_name = "pw_assert_backend",
     edition = "2021",
@@ -124,7 +108,7 @@ rust_library(
 
 label_flag(
     name = "pw_assert_backend",
-    build_setting_default = ":pw_assert_backend_pw_log",
+    build_setting_default = ":pw_assert_backend_std",
     visibility = ["//visibility:public"],
 )
 
@@ -162,7 +146,6 @@ rust_library(
     ],
     crate_features = [
         "color",
-        "default_handler",
     ],
     crate_name = "pw_assert_backend_pw_log",
     edition = "2021",
@@ -207,9 +190,6 @@ rust_library(
     name = "pw_assert_backend_std_doc",
     srcs = [
         "pw_assert_backend_std.rs",
-    ],
-    crate_features = [
-        "default_handler",
     ],
     crate_name = "pw_assert_backend_std",
     edition = "2021",
