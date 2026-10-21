@@ -17,4 +17,6 @@
 // (though only pw_log/log.h can only point to 1 backend).
 #pragma once
 
+// IWYU pragma: private, include "pw_log/log.h"
+
 #include "pw_log_basic/log_basic.h"  // IWYU pragma: export

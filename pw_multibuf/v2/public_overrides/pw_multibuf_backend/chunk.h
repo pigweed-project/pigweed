@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/chunk.h"
+
 #include "pw_multibuf/config.h"  // IWYU pragma: export
 
 // Theses adapters will be removed when the migration to v2 is complete.

@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/single_chunk_region_tracker.h"
+
 #include "pw_multibuf/config.h"  // IWYU pragma: export
 
 // This adapter will be removed when the migration to v2 is complete.

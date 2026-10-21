@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_chrono/system_clock.h"
+
 #include <stdbool.h>
 
 #include "pw_assert/assert.h"

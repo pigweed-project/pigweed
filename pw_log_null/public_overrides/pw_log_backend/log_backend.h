@@ -13,4 +13,6 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_log/log.h"
+
 #include "pw_log_null/log_null.h"  // IWYU pragma: export

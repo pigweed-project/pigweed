@@ -13,4 +13,6 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/observer.h"
+
 // Intentionally empty file, as there is no `Observer` type in v1.

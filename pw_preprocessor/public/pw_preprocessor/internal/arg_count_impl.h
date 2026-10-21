@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_preprocessor/arguments.h"
+
 // Expands to the passed arguments.
 #define _PW_EXPAND(...) __VA_ARGS__
 

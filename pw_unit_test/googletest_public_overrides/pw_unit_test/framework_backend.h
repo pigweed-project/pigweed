@@ -13,4 +13,6 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_unit_test/framework.h"
+
 #include "gtest/gtest.h"  // IWYU pragma: export

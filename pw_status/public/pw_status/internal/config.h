@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_status/status.h"
+
 /// @module{pw_status}
 
 /// Controls whether to check if `pw::Status` values are used. Unused status

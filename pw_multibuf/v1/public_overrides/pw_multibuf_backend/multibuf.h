@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/multibuf.h"
+
 #include "pw_multibuf/v1/chunk.h"     // IWYU pragma: export
 #include "pw_multibuf/v1/multibuf.h"  // IWYU pragma: export
 

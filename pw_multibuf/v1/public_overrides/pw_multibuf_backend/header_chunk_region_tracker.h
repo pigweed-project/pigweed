@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/header_chunk_region_tracker.h"
+
 #include "pw_multibuf/v1/header_chunk_region_tracker.h"  // IWYU pragma: export
 
 namespace pw::multibuf {

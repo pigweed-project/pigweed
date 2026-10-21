@@ -25,6 +25,8 @@
 // and added to this file.
 #pragma once
 
+// IWYU pragma: private, include "pw_tokenizer/tokenize.h"
+
 #include <stdint.h>
 
 #include "pw_preprocessor/compiler.h"

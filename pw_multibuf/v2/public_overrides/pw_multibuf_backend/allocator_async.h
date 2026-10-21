@@ -13,5 +13,7 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/allocator_async.h"
+
 // Intentionally empty file, as `MultiBufAllocatorAsync` is not supported by the
 // v1_adapter (yet).

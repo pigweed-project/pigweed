@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_log/glog_adapter.h"
+
 #include "pw_assert/check.h"  // IWYU pragma: export
 #include "pw_log/glog_adapter_config.h"
 #include "pw_log/levels.h"  // IWYU pragma: export

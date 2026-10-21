@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_async2/dispatcher_for_test.h"
+
 #include "pw_async2/basic_dispatcher.h"  // IWYU pragma: export
 
 namespace pw::async2::backend {

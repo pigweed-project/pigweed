@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_fuzzer/fuzztest.h"
+
 /// @file
 /// Stubs for the Pigweed-compatible subset of the FuzzTest interface
 ///

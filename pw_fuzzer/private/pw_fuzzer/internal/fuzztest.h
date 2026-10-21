@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_fuzzer/fuzztest.h"
+
 /// @file fuzztest.h
 /// Replaceable interface to FuzzTest
 ///

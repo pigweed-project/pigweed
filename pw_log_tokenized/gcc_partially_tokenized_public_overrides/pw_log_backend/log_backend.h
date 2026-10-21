@@ -16,6 +16,8 @@
 // the PW_LOG macro as the tokenized logging macro.
 #pragma once
 
+// IWYU pragma: private, include "pw_log/log.h"
+
 #include "pw_log_tokenized/config.h"         // IWYU pragma: export
 #include "pw_log_tokenized/log_tokenized.h"  // IWYU pragma: export
 

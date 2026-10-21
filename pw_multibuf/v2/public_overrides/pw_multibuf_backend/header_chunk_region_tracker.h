@@ -13,5 +13,7 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/header_chunk_region_tracker.h"
+
 // Intentionally empty file, as `HeaderChunkRegionTracker` is not supported by
 // the v1_adapter.

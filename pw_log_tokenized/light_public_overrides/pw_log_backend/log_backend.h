@@ -17,6 +17,8 @@
 // payload.
 #pragma once
 
+// IWYU pragma: private, include "pw_log/log.h"
+
 #include "pw_log_tokenized/config.h"               // IWYU pragma: export
 #include "pw_log_tokenized/log_tokenized_light.h"  // IWYU pragma: export
 

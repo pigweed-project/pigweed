@@ -17,4 +17,6 @@
 // (though only pw_assert/check.h can only point to 1 backend).
 #pragma once
 
+// IWYU pragma: private, include "pw_assert/check.h"
+
 #include "pw_assert_trap/check_trap.h"  // IWYU pragma: export

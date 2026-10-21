@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/observer.h"
+
 #include "pw_multibuf/v2/observer.h"  // IWYU pragma: export
 
 namespace pw::multibuf {

@@ -13,4 +13,6 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_assert/check.h"
+
 #include "pw_assert_zephyr/check_zephyr.h"  // IWYU pragma: export

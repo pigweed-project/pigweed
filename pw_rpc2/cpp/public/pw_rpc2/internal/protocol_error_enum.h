@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_rpc2/internal/protocol_error.h"
+
 // Defines only the `ProtocolError` enum, so that `protocol_error.h` can use the
 // `pw::EnumTraits` that `PW_ENUM` generates at the end of this header. Include
 // `pw_rpc2/internal/protocol_error.h` instead of this header.

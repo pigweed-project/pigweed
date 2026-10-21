@@ -15,6 +15,8 @@
 // This header provides internal macros used by the tokenizer module.
 #pragma once
 
+// IWYU pragma: private, include "pw_tokenizer/tokenize.h"
+
 #include <stdint.h>
 
 #include "pw_preprocessor/arguments.h"

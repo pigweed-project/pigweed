@@ -16,6 +16,8 @@
 
 #pragma once
 
+// IWYU pragma: private, include "pw_trace_tokenized/trace_tokenized.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

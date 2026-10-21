@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_assert/assert.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
