@@ -21,8 +21,8 @@
 
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
-#include "pw_containers/internal/var_len_entry.h"
-#include "pw_containers/internal/var_len_entry_queue_iterator.h"
+#include "pw_containers/internal/var_len_entry.h"  // IWYU pragma: export
+#include "pw_containers/internal/var_len_entry_queue_iterator.h"  // IWYU pragma: export
 #include "pw_containers/internal/wrap.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_span/cast.h"

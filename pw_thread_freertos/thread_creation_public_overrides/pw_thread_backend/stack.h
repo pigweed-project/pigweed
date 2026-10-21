@@ -13,12 +13,12 @@
 // the License.
 #pragma once
 
-#include <algorithm>
-#include <cstddef>
+#include <algorithm>  // IWYU pragma: export
+#include <cstddef>    // IWYU pragma: export
 
-#include "FreeRTOS.h"
-#include "pw_thread/stack_not_supported.h"
-#include "pw_thread_freertos/config.h"
+#include "FreeRTOS.h"                       // IWYU pragma: export
+#include "pw_thread/stack_not_supported.h"  // IWYU pragma: export
+#include "pw_thread_freertos/config.h"      // IWYU pragma: export
 
 namespace pw::thread::freertos {
 

@@ -18,7 +18,7 @@
 #include <variant>
 
 #include "pw_bluetooth_proxy/config.h"
-#include "pw_bluetooth_proxy/internal/logical_transport.h"
+#include "pw_bluetooth_proxy/internal/logical_transport.h"  // IWYU pragma: export
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
 #include "pw_status/status.h"

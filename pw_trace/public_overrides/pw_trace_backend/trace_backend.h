@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_trace/internal/null.h"
+#include "pw_trace/internal/null.h"  // IWYU pragma: export

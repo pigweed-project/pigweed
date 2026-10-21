@@ -23,9 +23,9 @@
 #include "pw_allocator/layout.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/storage.h"
-#include "pw_multibuf/v1_adapter/chunk.h"
-#include "pw_multibuf/v1_adapter/internal/chunk_allocator.h"
-#include "pw_multibuf/v2/internal/entry.h"
+#include "pw_multibuf/v1_adapter/chunk.h"  // IWYU pragma: export
+#include "pw_multibuf/v1_adapter/internal/chunk_allocator.h"  // IWYU pragma: export
+#include "pw_multibuf/v2/internal/entry.h"  // IWYU pragma: export
 
 namespace pw::multibuf::v1_adapter {
 

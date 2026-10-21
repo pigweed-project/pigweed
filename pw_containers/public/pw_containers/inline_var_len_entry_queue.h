@@ -45,8 +45,8 @@
 /// `InlineVarLenEntryQueue` C++ class is structured similarly to
 /// `pw::InlineQueue` and `pw::Vector`.
 
-#include "pw_containers/internal/generic_var_len_entry_queue.h"
-#include "pw_containers/internal/var_len_entry_queue_iterator.h"
+#include "pw_containers/internal/generic_var_len_entry_queue.h"  // IWYU pragma: export
+#include "pw_containers/internal/var_len_entry_queue_iterator.h"  // IWYU pragma: export
 #include "pw_preprocessor/util.h"
 
 #ifndef __cplusplus
@@ -61,7 +61,7 @@
 #include <cstdint>
 
 #include "pw_bytes/span.h"
-#include "pw_containers/internal/raw_storage.h"
+#include "pw_containers/internal/raw_storage.h"  // IWYU pragma: export
 #include "pw_span/span.h"
 #include "pw_toolchain/constexpr_tag.h"
 

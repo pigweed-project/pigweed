@@ -20,7 +20,7 @@
 #include "pw_bluetooth_proxy/basic_mode_channel_config.h"
 #include "pw_bluetooth_proxy/channel_proxy.h"
 #include "pw_bluetooth_proxy/connection_handle.h"
-#include "pw_bluetooth_proxy/internal/logical_transport.h"
+#include "pw_bluetooth_proxy/internal/logical_transport.h"  // IWYU pragma: export
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy/l2cap_coc_config.h"
 #include "pw_bytes/span.h"

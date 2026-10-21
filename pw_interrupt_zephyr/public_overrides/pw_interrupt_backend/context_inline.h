@@ -16,4 +16,4 @@
 // the PW_LOG macro as the tokenized logging macro.
 #pragma once
 
-#include "pw_interrupt_zephyr/context_inline.h"
+#include "pw_interrupt_zephyr/context_inline.h"  // IWYU pragma: export

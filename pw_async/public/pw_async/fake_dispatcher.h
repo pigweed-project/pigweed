@@ -13,8 +13,12 @@
 // the License.
 #pragma once
 
-#include "pw_async/dispatcher.h"
+#include "pw_async/dispatcher.h"  // IWYU pragma: export
+// IWYU pragma: begin_exports
+// IWYU pragma: begin_exports
 #include "pw_async_backend/fake_dispatcher.h"  // nogncheck
+// IWYU pragma: end_exports
+// IWYU pragma: end_exports
 
 namespace pw::async::test {
 

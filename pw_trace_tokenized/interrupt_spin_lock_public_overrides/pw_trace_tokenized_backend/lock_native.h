@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_trace_tokenized/internal/interrupt_spin_lock_native.h"
+#include "pw_trace_tokenized/internal/interrupt_spin_lock_native.h"  // IWYU pragma: export

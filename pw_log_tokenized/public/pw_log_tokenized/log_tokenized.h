@@ -15,14 +15,14 @@
 
 #include <stdint.h>
 
-#include "pw_log_tokenized/config.h"
+#include "pw_log_tokenized/config.h"  // IWYU pragma: export
 #include "pw_preprocessor/util.h"
-#include "pw_tokenizer/tokenize.h"
+#include "pw_tokenizer/tokenize.h"  // IWYU pragma: export
 
 // TODO(hepler): Remove these includes.
 #ifdef __cplusplus
-#include "pw_log_tokenized/metadata.h"
-#endif  // __cplusplus
+#include "pw_log_tokenized/metadata.h"  // IWYU pragma: export
+#endif                                  // __cplusplus
 
 /// @module{pw_log_tokenized}
 

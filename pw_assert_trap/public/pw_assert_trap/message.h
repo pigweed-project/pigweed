@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_string/string.h"
+#include "pw_string/string.h"  // IWYU pragma: export
 
 const std::string_view pw_assert_trap_get_message();
 void pw_assert_trap_clear_message();

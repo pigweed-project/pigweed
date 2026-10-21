@@ -18,7 +18,7 @@
 
 #include "pw_thread/attrs.h"
 #include "pw_thread/stack.h"
-#include "pw_thread_backend/context.h"
+#include "pw_thread_backend/context.h"  // IWYU pragma: export
 
 namespace pw {
 

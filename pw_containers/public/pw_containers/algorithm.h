@@ -19,7 +19,7 @@
 #include <algorithm>
 #include <utility>
 
-#include "pw_containers/internal/algorithm_internal.h"
+#include "pw_containers/internal/algorithm_internal.h"  // IWYU pragma: export
 
 ///  @file pw_containers/algorithm.h
 ///

@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_multibuf/v2/observer.h"
+#include "pw_multibuf/v2/observer.h"  // IWYU pragma: export
 
 namespace pw::multibuf {
 

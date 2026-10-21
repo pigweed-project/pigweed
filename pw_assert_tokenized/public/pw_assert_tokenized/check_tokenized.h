@@ -13,9 +13,9 @@
 // the License.
 #pragma once
 
-#include "pw_assert_tokenized/handler.h"
-#include "pw_log_tokenized/config.h"
-#include "pw_tokenizer/tokenize.h"
+#include "pw_assert_tokenized/handler.h"  // IWYU pragma: export
+#include "pw_log_tokenized/config.h"      // IWYU pragma: export
+#include "pw_tokenizer/tokenize.h"        // IWYU pragma: export
 
 #define _PW_ASSERT_TOKENIZED_TO_HANDLER(str)                                   \
   do {                                                                         \

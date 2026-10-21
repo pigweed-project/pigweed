@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_thread_stl/test_thread_context_native.h"
+#include "pw_thread_stl/test_thread_context_native.h"  // IWYU pragma: export

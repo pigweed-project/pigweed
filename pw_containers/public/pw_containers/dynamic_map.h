@@ -23,7 +23,7 @@
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/unique_ptr.h"
 #include "pw_assert/assert.h"
-#include "pw_containers/internal/traits.h"
+#include "pw_containers/internal/traits.h"  // IWYU pragma: export
 #include "pw_containers/intrusive_map.h"
 
 namespace pw {

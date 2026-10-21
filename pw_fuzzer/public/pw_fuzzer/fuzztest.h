@@ -41,7 +41,7 @@
 #include "pw_containers/inline_queue.h"
 #include "pw_containers/intrusive_list.h"
 #include "pw_containers/vector.h"
-#include "pw_fuzzer/internal/fuzztest.h"
+#include "pw_fuzzer/internal/fuzztest.h"  // IWYU pragma: export
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"

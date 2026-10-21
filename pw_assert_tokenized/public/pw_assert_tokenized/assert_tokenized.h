@@ -13,12 +13,12 @@
 // the License.
 #pragma once
 
-#include <stdint.h>
+#include <stdint.h>  // IWYU pragma: export
 
-#include "pw_assert_tokenized/handler.h"
-#include "pw_preprocessor/arguments.h"
-#include "pw_preprocessor/concat.h"
-#include "pw_tokenizer/tokenize.h"
+#include "pw_assert_tokenized/handler.h"  // IWYU pragma: export
+#include "pw_preprocessor/arguments.h"    // IWYU pragma: export
+#include "pw_preprocessor/concat.h"       // IWYU pragma: export
+#include "pw_tokenizer/tokenize.h"        // IWYU pragma: export
 
 // In C and C++23 (where static constexpr variables are permitted inside
 // constexpr functions per P2647R1), emit the tokenized __FILE__ entry directly

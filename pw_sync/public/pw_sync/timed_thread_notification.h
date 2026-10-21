@@ -84,4 +84,4 @@ class TimedThreadNotification : public ThreadNotification {
 
 }  // namespace pw::sync
 
-#include "pw_sync_backend/timed_thread_notification_inline.h"
+#include "pw_sync_backend/timed_thread_notification_inline.h"  // IWYU pragma: export

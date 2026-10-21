@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_thread_zephyr/context.h"
+#include "pw_thread_zephyr/context.h"  // IWYU pragma: export
 
 namespace pw::thread::backend {
 

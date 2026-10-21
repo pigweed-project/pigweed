@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_log/log.h"
+#include "pw_log/log.h"  // IWYU pragma: export
 
 /// @submodule{pw_log,short}
 

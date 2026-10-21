@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_log/internal/glog_adapter.h"
+#include "pw_log/internal/glog_adapter.h"  // IWYU pragma: export
 #include "pw_preprocessor/concat.h"
 
 /// @submodule{pw_log,glog}

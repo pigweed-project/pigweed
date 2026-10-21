@@ -21,8 +21,8 @@
 #include <cstddef>
 #include <utility>
 
-#include "pw_allocator/internal/control_block.h"
-#include "pw_allocator/internal/managed_ptr.h"
+#include "pw_allocator/internal/control_block.h"  // IWYU pragma: export
+#include "pw_allocator/internal/managed_ptr.h"    // IWYU pragma: export
 #include "pw_allocator/shared_ptr.h"
 
 namespace pw {

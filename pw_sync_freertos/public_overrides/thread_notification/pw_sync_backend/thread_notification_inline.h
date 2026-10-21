@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_sync_freertos/thread_notification_inline.h"
+#include "pw_sync_freertos/thread_notification_inline.h"  // IWYU pragma: export

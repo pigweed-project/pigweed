@@ -13,8 +13,8 @@
 // the License.
 #pragma once
 
-#include "FreeRTOS.h"
-#include "pw_thread_freertos/config.h"
+#include "FreeRTOS.h"                   // IWYU pragma: export
+#include "pw_thread_freertos/config.h"  // IWYU pragma: export
 
 namespace pw::thread::backend {
 

@@ -34,7 +34,7 @@
 #include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_stream/stream.h"
-#include "pw_tokenizer/internal/decode.h"
+#include "pw_tokenizer/internal/decode.h"  // IWYU pragma: export
 #include "pw_tokenizer/token_database.h"
 #include "pw_tokenizer/tokenize.h"
 

@@ -15,9 +15,9 @@
 
 #include <utility>
 
-#include "pw_status/status.h"
-#include "pw_status/status_base.h"
-#include "pw_status/status_with_size.h"
+#include "pw_status/status.h"            // IWYU pragma: export
+#include "pw_status/status_base.h"       // IWYU pragma: export
+#include "pw_status/status_with_size.h"  // IWYU pragma: export
 
 /// @module{pw_status}
 

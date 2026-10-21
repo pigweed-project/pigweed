@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include "pw_bluetooth_proxy/internal/logical_transport.h"
-#include "pw_bluetooth_proxy/l2cap_channel_common.h"
+#include "pw_bluetooth_proxy/internal/logical_transport.h"  // IWYU pragma: export
+#include "pw_bluetooth_proxy/l2cap_channel_common.h"  // IWYU pragma: export
 
 namespace pw::bluetooth::proxy {
 

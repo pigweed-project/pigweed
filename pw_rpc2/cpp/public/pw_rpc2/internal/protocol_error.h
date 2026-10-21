@@ -16,7 +16,7 @@
 #include <cstdint>
 
 #include "pw_enum/traits.h"
-#include "pw_rpc2/internal/protocol_error_enum.h"
+#include "pw_rpc2/internal/protocol_error_enum.h"  // IWYU pragma: export
 
 namespace pw::rpc2::internal {
 

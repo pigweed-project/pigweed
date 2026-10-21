@@ -17,8 +17,8 @@
 #include <type_traits>
 
 #include "pw_span/span.h"
-#include "pw_thread/priority.h"
-#include "pw_thread/stack.h"
+#include "pw_thread/priority.h"  // IWYU pragma: export
+#include "pw_thread/stack.h"     // IWYU pragma: export
 
 namespace pw {
 

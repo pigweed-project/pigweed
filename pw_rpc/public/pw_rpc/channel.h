@@ -20,7 +20,7 @@
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
 #include "pw_result/result.h"
-#include "pw_rpc/internal/config.h"
+#include "pw_rpc/internal/config.h"  // IWYU pragma: export
 #include "pw_rpc/internal/lock.h"
 #include "pw_rpc/internal/packet.h"
 #include "pw_span/span.h"

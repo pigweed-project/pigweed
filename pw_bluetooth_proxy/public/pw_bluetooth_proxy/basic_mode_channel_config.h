@@ -17,7 +17,7 @@
 #include <cstdint>
 
 #include "pw_bluetooth_proxy/connection_handle.h"
-#include "pw_bluetooth_proxy/internal/logical_transport.h"
+#include "pw_bluetooth_proxy/internal/logical_transport.h"  // IWYU pragma: export
 
 namespace pw::bluetooth::proxy {
 

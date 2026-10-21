@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_bluetooth_proxy/internal/generic_l2cap_channel.h"
+#include "pw_bluetooth_proxy/internal/generic_l2cap_channel.h"  // IWYU pragma: export
 
 namespace pw::bluetooth::proxy {
 

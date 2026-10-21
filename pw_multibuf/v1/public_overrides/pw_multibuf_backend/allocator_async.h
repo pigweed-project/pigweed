@@ -13,8 +13,8 @@
 // the License.
 #pragma once
 
-#include "pw_multibuf/v1/allocator.h"
-#include "pw_multibuf/v1/allocator_async.h"
+#include "pw_multibuf/v1/allocator.h"        // IWYU pragma: export
+#include "pw_multibuf/v1/allocator_async.h"  // IWYU pragma: export
 
 namespace pw::multibuf {
 

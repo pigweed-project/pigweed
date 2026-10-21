@@ -15,9 +15,9 @@
 
 #include <optional>
 
-#include "pw_async/context.h"
-#include "pw_async/task_function.h"
-#include "pw_async_backend/task.h"
+#include "pw_async/context.h"        // IWYU pragma: export
+#include "pw_async/task_function.h"  // IWYU pragma: export
+#include "pw_async_backend/task.h"   // IWYU pragma: export
 
 namespace pw::async {
 

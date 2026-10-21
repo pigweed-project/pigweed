@@ -21,7 +21,7 @@
 
 #ifdef __cplusplus
 
-#include "pw_sync_backend/counting_semaphore_native.h"
+#include "pw_sync_backend/counting_semaphore_native.h"  // IWYU pragma: export
 
 namespace pw::sync {
 
@@ -124,7 +124,7 @@ class CountingSemaphore {
 
 }  // namespace pw::sync
 
-#include "pw_sync_backend/counting_semaphore_inline.h"
+#include "pw_sync_backend/counting_semaphore_inline.h"  // IWYU pragma: export
 
 using pw_sync_CountingSemaphore = pw::sync::CountingSemaphore;
 

@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_assert/internal/print_and_abort.h"
+#include "pw_assert/internal/print_and_abort.h"  // IWYU pragma: export

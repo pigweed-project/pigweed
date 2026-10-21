@@ -13,5 +13,5 @@
 // the License.
 #pragma once
 
-#include "pw_multibuf/chunk.h"
-#include "pw_multibuf_backend/header_chunk_region_tracker.h"
+#include "pw_multibuf/chunk.h"  // IWYU pragma: export
+#include "pw_multibuf_backend/header_chunk_region_tracker.h"  // IWYU pragma: export

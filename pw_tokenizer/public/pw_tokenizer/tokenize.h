@@ -36,8 +36,8 @@
 #include "pw_preprocessor/compiler.h"
 #include "pw_preprocessor/concat.h"
 #include "pw_preprocessor/util.h"
-#include "pw_tokenizer/internal/argument_types.h"
-#include "pw_tokenizer/internal/tokenize_string.h"
+#include "pw_tokenizer/internal/argument_types.h"   // IWYU pragma: export
+#include "pw_tokenizer/internal/tokenize_string.h"  // IWYU pragma: export
 
 /// @submodule{pw_tokenizer,tokenize}
 

@@ -16,7 +16,7 @@
 
 #include <cstdint>
 
-#include "pw_bluetooth_proxy/internal/generic_l2cap_channel.h"
+#include "pw_bluetooth_proxy/internal/generic_l2cap_channel.h"  // IWYU pragma: export
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy/l2cap_coc_config.h"
 #include "pw_status/status.h"

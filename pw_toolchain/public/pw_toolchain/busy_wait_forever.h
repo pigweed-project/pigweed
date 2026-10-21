@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_memory/busy_wait_forever.h"
+#include "pw_memory/busy_wait_forever.h"  // IWYU pragma: export

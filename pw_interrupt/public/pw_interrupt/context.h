@@ -30,5 +30,5 @@ bool InInterruptContext();
 // The backend can opt to include an inlined implementation of the following:
 //   bool InInterruptContext();
 #if __has_include("pw_interrupt_backend/context_inline.h")
-#include "pw_interrupt_backend/context_inline.h"
+#include "pw_interrupt_backend/context_inline.h"  // IWYU pragma: export
 #endif  // __has_include("pw_interrupt_backend/context_inline.h")

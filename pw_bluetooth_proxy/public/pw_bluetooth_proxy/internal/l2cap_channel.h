@@ -28,7 +28,7 @@
 #include "pw_bluetooth_proxy/internal/credit_based_flow_control_tx_engine.h"
 #include "pw_bluetooth_proxy/internal/gatt_notify_rx_engine.h"
 #include "pw_bluetooth_proxy/internal/gatt_notify_tx_engine.h"
-#include "pw_bluetooth_proxy/internal/logical_transport.h"
+#include "pw_bluetooth_proxy/internal/logical_transport.h"  // IWYU pragma: export
 #include "pw_bluetooth_proxy/internal/mutex.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy/l2cap_snapshot.h"
@@ -41,9 +41,9 @@
 #include "pw_sync/thread_notification.h"
 
 #if PW_BLUETOOTH_PROXY_ASYNC == 0
-#include "pw_bluetooth_proxy/internal/l2cap_channel_sync.h"
+#include "pw_bluetooth_proxy/internal/l2cap_channel_sync.h"  // IWYU pragma: export
 #else
-#include "pw_bluetooth_proxy/internal/l2cap_channel_async.h"
+#include "pw_bluetooth_proxy/internal/l2cap_channel_async.h"  // IWYU pragma: export
 #endif  // PW_BLUETOOTH_PROXY_ASYNC
 
 namespace pw::bluetooth::proxy {

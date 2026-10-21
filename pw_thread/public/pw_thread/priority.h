@@ -13,8 +13,8 @@
 // the License.
 #pragma once
 
-#include "pw_thread/internal/priority.h"
-#include "pw_thread_backend/priority.h"
+#include "pw_thread/internal/priority.h"  // IWYU pragma: export
+#include "pw_thread_backend/priority.h"   // IWYU pragma: export
 
 namespace pw {
 

@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_log_android/log_android.h"
+#include "pw_log_android/log_android.h"  // IWYU pragma: export

@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_chrono_rp2040/system_clock_inline.h"
+#include "pw_chrono_rp2040/system_clock_inline.h"  // IWYU pragma: export

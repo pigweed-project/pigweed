@@ -18,7 +18,7 @@
 
 #include "pw_bytes/span.h"
 #include "pw_protobuf/serialized_size.h"
-#include "pw_rpc/internal/packet.pwpb.h"
+#include "pw_rpc/internal/packet.pwpb.h"  // IWYU pragma: export
 #include "pw_span/span.h"
 #include "pw_status/status_with_size.h"
 

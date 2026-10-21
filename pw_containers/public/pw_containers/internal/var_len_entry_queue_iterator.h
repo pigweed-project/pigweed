@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_containers/internal/var_len_entry.h"
+#include "pw_containers/internal/var_len_entry.h"  // IWYU pragma: export
 #include "pw_preprocessor/util.h"
 
 #ifndef __cplusplus

@@ -13,8 +13,8 @@
 // the License.
 #pragma once
 
-#include "pw_perf_test/internal/duration_unit.h"
-#include "pw_perf_test_timer_backend/timer.h"
+#include "pw_perf_test/internal/duration_unit.h"  // IWYU pragma: export
+#include "pw_perf_test_timer_backend/timer.h"     // IWYU pragma: export
 
 namespace pw::perf_test::internal {
 

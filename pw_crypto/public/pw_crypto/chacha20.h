@@ -18,7 +18,7 @@
 #include <cstdint>
 
 #include "pw_bytes/span.h"
-#include "pw_crypto/chacha20_backend.h"
+#include "pw_crypto/chacha20_backend.h"  // IWYU pragma: export
 #include "pw_status/status.h"
 
 namespace pw::crypto {

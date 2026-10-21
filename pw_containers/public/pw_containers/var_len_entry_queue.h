@@ -15,8 +15,8 @@
 
 #include <cstdint>
 
-#include "pw_containers/internal/generic_var_len_entry_queue.h"
-#include "pw_containers/internal/raw_storage.h"
+#include "pw_containers/internal/generic_var_len_entry_queue.h"  // IWYU pragma: export
+#include "pw_containers/internal/raw_storage.h"  // IWYU pragma: export
 #include "pw_span/span.h"
 
 namespace pw {

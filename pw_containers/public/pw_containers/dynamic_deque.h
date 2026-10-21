@@ -23,7 +23,7 @@
 
 #include "pw_allocator/allocator.h"
 #include "pw_assert/assert.h"
-#include "pw_containers/internal/generic_deque.h"
+#include "pw_containers/internal/generic_deque.h"  // IWYU pragma: export
 #include "pw_numeric/saturating_arithmetic.h"
 
 namespace pw {

@@ -17,7 +17,7 @@
 #include <cstdint>
 
 #include "pw_bytes/span.h"
-#include "pw_crypto/sha256_backend.h"
+#include "pw_crypto/sha256_backend.h"  // IWYU pragma: export
 #include "pw_log/log.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"

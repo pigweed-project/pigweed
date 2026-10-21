@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_perf_test/internal/chrono_timer_interface.h"
+#include "pw_perf_test/internal/chrono_timer_interface.h"  // IWYU pragma: export

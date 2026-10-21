@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "gtest/gtest.h"
+#include "gtest/gtest.h"  // IWYU pragma: export

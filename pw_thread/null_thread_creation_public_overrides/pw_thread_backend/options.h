@@ -13,9 +13,9 @@
 // the License.
 #pragma once
 
-#include <type_traits>
+#include <type_traits>  // IWYU pragma: export
 
-#include "pw_thread/options.h"
+#include "pw_thread/options.h"  // IWYU pragma: export
 
 namespace pw::thread::backend {
 

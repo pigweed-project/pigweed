@@ -13,10 +13,10 @@
 // the License.
 #pragma once
 
-#include "pw_assert_basic/handler.h"
-#include "pw_preprocessor/arguments.h"
-#include "pw_preprocessor/compiler.h"
-#include "pw_preprocessor/util.h"
+#include "pw_assert_basic/handler.h"    // IWYU pragma: export
+#include "pw_preprocessor/arguments.h"  // IWYU pragma: export
+#include "pw_preprocessor/compiler.h"   // IWYU pragma: export
+#include "pw_preprocessor/util.h"       // IWYU pragma: export
 
 // Use __PRETTY_FUNCTION__, a GNU extension, in place of the __func__ macro when
 // supported. __PRETTY_FUNCTION__ expands to the full C++ function name.

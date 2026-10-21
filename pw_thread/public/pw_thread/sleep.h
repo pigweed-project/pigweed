@@ -48,7 +48,7 @@ void sleep_until(chrono::SystemClock::time_point wakeup_time);
 
 // The backend can opt to include inlined implementations.
 #if __has_include("pw_thread_backend/sleep_inline.h")
-#include "pw_thread_backend/sleep_inline.h"
+#include "pw_thread_backend/sleep_inline.h"  // IWYU pragma: export
 #endif  // __has_include("pw_thread_backend/sleep_inline.h")
 
 #endif  // __cplusplus

@@ -13,8 +13,8 @@
 // the License.
 #pragma once
 
-#include "pw_assert_trap/handler.h"
-#include "pw_preprocessor/arguments.h"
+#include "pw_assert_trap/handler.h"     // IWYU pragma: export
+#include "pw_preprocessor/arguments.h"  // IWYU pragma: export
 
 #define PW_HANDLE_CRASH(...)                                    \
   pw_assert_trap_interrupt_lock();                              \

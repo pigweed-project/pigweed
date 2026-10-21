@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_multibuf/v1/chunk.h"
+#include "pw_multibuf/v1/chunk.h"  // IWYU pragma: export
 
 namespace pw::multibuf {
 

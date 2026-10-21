@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_thread_zephyr/stack.h"
+#include "pw_thread_zephyr/stack.h"  // IWYU pragma: export
 
 namespace pw::thread::backend {
 inline constexpr size_t kMinimumStackSizeBytes =

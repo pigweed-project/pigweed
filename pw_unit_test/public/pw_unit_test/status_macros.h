@@ -13,8 +13,8 @@
 // the License.
 #pragma once
 
-#include "lib/stdcompat/type_traits.h"
-#include "pw_status/status.h"
+#include "lib/stdcompat/type_traits.h"  // IWYU pragma: export
+#include "pw_status/status.h"           // IWYU pragma: export
 
 /// @submodule{pw_unit_test,expectations}
 

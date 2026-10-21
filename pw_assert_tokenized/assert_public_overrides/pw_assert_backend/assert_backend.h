@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_assert_tokenized/assert_tokenized.h"
+#include "pw_assert_tokenized/assert_tokenized.h"  // IWYU pragma: export

@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_thread_stl/yield_inline.h"
+#include "pw_thread_stl/yield_inline.h"  // IWYU pragma: export

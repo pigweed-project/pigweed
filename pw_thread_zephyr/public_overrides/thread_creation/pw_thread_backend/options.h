@@ -13,9 +13,9 @@
 // the License.
 #pragma once
 
-#include "pw_thread/attrs.h"
-#include "pw_thread_backend/context.h"
-#include "pw_thread_zephyr/options.h"
+#include "pw_thread/attrs.h"            // IWYU pragma: export
+#include "pw_thread_backend/context.h"  // IWYU pragma: export
+#include "pw_thread_zephyr/options.h"   // IWYU pragma: export
 
 namespace pw::thread::backend {
 

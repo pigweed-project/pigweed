@@ -17,8 +17,8 @@
 #pragma once
 
 #if defined(__clang__)
-#include <fuzzer/FuzzedDataProvider.h>
-#else  // !defined(__clang__)
+#include <fuzzer/FuzzedDataProvider.h>  // IWYU pragma: export
+#else                                   // !defined(__clang__)
 
 // If a fuzzer wants to use FuzzedDataProvider to build a fuzz target unit
 // test without clang, it can use this trivial class with the same signature.

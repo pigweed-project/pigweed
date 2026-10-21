@@ -13,15 +13,15 @@
 // the License.
 #pragma once
 
-#include <algorithm>
-#include <cstddef>
-#include <initializer_list>
-#include <optional>
+#include <algorithm>         // IWYU pragma: export
+#include <cstddef>           // IWYU pragma: export
+#include <initializer_list>  // IWYU pragma: export
+#include <optional>          // IWYU pragma: export
 
-#include "pw_allocator/synchronized_allocator.h"
-#include "pw_allocator/testing.h"
-#include "pw_assert/assert.h"
-#include "pw_multibuf/simple_allocator.h"
+#include "pw_allocator/synchronized_allocator.h"  // IWYU pragma: export
+#include "pw_allocator/testing.h"                 // IWYU pragma: export
+#include "pw_assert/assert.h"                     // IWYU pragma: export
+#include "pw_multibuf/simple_allocator.h"         // IWYU pragma: export
 
 namespace pw::multibuf::test {
 

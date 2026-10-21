@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_assert_trap/handler.h"
+#include "pw_assert_trap/handler.h"  // IWYU pragma: export
 
 // TODO: https://pwbug.dev/353372406 - handle reentrant crashes
 #define PW_ASSERT_HANDLE_FAILURE(expression)                        \

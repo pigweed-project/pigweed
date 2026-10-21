@@ -13,10 +13,10 @@
 // the License.
 #pragma once
 
-#include "pw_assert/check.h"
+#include "pw_assert/check.h"  // IWYU pragma: export
 #include "pw_log/glog_adapter_config.h"
-#include "pw_log/levels.h"
-#include "pw_log/log.h"
+#include "pw_log/levels.h"  // IWYU pragma: export
+#include "pw_log/log.h"     // IWYU pragma: export
 #include "pw_string/string_builder.h"
 
 namespace pw::log::internal {

@@ -95,7 +95,7 @@ class PW_LOCKABLE("pw::sync::VirtualTimedMutex") VirtualTimedMutex final
 
 }  // namespace pw::sync
 
-#include "pw_sync_backend/timed_mutex_inline.h"
+#include "pw_sync_backend/timed_mutex_inline.h"  // IWYU pragma: export
 
 using pw_sync_TimedMutex = pw::sync::TimedMutex;
 

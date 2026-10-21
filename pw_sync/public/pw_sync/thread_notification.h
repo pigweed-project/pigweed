@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_sync_backend/thread_notification_native.h"
+#include "pw_sync_backend/thread_notification_native.h"  // IWYU pragma: export
 
 namespace pw::sync {
 
@@ -99,4 +99,4 @@ class ThreadNotification {
 
 }  // namespace pw::sync
 
-#include "pw_sync_backend/thread_notification_inline.h"
+#include "pw_sync_backend/thread_notification_inline.h"  // IWYU pragma: export

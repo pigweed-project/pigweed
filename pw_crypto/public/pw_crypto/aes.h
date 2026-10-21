@@ -16,8 +16,8 @@
 
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
-#include "pw_crypto/aes_backend.h"
-#include "pw_crypto/aes_backend_defs.h"
+#include "pw_crypto/aes_backend.h"       // IWYU pragma: export
+#include "pw_crypto/aes_backend_defs.h"  // IWYU pragma: export
 #include "pw_log/log.h"
 #include "pw_status/status.h"
 

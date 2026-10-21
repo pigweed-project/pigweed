@@ -13,10 +13,10 @@
 // the License.
 #pragma once
 
-#include "pw_perf_test/event_handler.h"
-#include "pw_perf_test/internal/test_info.h"
-#include "pw_perf_test/state.h"
-#include "pw_preprocessor/arguments.h"
+#include "pw_perf_test/event_handler.h"       // IWYU pragma: export
+#include "pw_perf_test/internal/test_info.h"  // IWYU pragma: export
+#include "pw_perf_test/state.h"               // IWYU pragma: export
+#include "pw_preprocessor/arguments.h"        // IWYU pragma: export
 
 /// @module{pw_perf_test}
 

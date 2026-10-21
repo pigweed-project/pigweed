@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_async_fuchsia/task.h"
+#include "pw_async_fuchsia/task.h"  // IWYU pragma: export

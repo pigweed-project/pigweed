@@ -17,8 +17,8 @@
 #pragma once
 
 #if defined(__clang__)
-#include <sanitizer/asan_interface.h>
-#else  // !defined(__clang__)
+#include <sanitizer/asan_interface.h>  // IWYU pragma: export
+#else                                  // !defined(__clang__)
 
 #define ASAN_POISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
 #define ASAN_UNPOISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))

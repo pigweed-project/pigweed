@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_thread_backend/id_native.h"
+#include "pw_thread_backend/id_native.h"  // IWYU pragma: export
 
 // This header is deprecated. Include pw_thread/thread.h instead.
 
@@ -34,5 +34,5 @@ thread::backend::NativeId get_id() noexcept;
 
 // The backend can opt to include an inline implementation.
 #if __has_include("pw_thread_backend/id_inline.h")
-#include "pw_thread_backend/id_inline.h"
+#include "pw_thread_backend/id_inline.h"  // IWYU pragma: export
 #endif  // __has_include("pw_thread_backend/id_inline.h")

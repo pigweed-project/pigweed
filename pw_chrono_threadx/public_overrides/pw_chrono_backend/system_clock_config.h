@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_chrono_threadx/system_clock_config.h"
+#include "pw_chrono_threadx/system_clock_config.h"  // IWYU pragma: export

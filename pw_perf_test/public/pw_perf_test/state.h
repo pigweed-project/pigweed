@@ -17,8 +17,8 @@
 #include <limits>
 
 #include "pw_assert/assert.h"
-#include "pw_perf_test/event_handler.h"
-#include "pw_perf_test/internal/timer.h"
+#include "pw_perf_test/event_handler.h"   // IWYU pragma: export
+#include "pw_perf_test/internal/timer.h"  // IWYU pragma: export
 
 namespace pw::perf_test {
 

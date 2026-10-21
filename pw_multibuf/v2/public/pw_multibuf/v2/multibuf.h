@@ -27,10 +27,10 @@
 #include "pw_allocator/null_allocator.h"
 #include "pw_buf/buf.h"
 #include "pw_bytes/span.h"
-#include "pw_multibuf/v2/chunks.h"
-#include "pw_multibuf/v2/internal/byte_iterator.h"
-#include "pw_multibuf/v2/internal/entry.h"
-#include "pw_multibuf/v2/observer.h"
+#include "pw_multibuf/v2/chunks.h"                  // IWYU pragma: export
+#include "pw_multibuf/v2/internal/byte_iterator.h"  // IWYU pragma: export
+#include "pw_multibuf/v2/internal/entry.h"          // IWYU pragma: export
+#include "pw_multibuf/v2/observer.h"                // IWYU pragma: export
 #include "pw_multibuf/v2/properties.h"
 
 namespace pw::multibuf {

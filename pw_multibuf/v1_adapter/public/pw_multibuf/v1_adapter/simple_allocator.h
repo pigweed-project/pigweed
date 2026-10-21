@@ -17,8 +17,8 @@
 #include <optional>
 
 #include "pw_bytes/span.h"
-#include "pw_multibuf/v1_adapter/allocator.h"
-#include "pw_multibuf/v1_adapter/internal/chunk_allocator.h"
+#include "pw_multibuf/v1_adapter/allocator.h"  // IWYU pragma: export
+#include "pw_multibuf/v1_adapter/internal/chunk_allocator.h"  // IWYU pragma: export
 #include "pw_multibuf/v1_adapter/multibuf.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"

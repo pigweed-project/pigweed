@@ -19,8 +19,8 @@
 extern "C++" {
 #endif  // __cplusplus
 
-#include "pw_assert/assert.h"
-#include "pw_preprocessor/util.h"
+#include "pw_assert/assert.h"      // IWYU pragma: export
+#include "pw_preprocessor/util.h"  // IWYU pragma: export
 
 #ifdef __cplusplus
 }  // extern "C++"

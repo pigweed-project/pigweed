@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_sync/backends/binary_semaphore_thread_notification_inline.h"
+#include "pw_sync/backends/binary_semaphore_thread_notification_inline.h"  // IWYU pragma: export

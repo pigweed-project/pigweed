@@ -19,7 +19,7 @@
 
 #include "pw_polyfill/standard.h"
 #include "pw_preprocessor/util.h"
-#include "pw_tokenizer/internal/argument_types.h"
+#include "pw_tokenizer/internal/argument_types.h"  // IWYU pragma: export
 #include "pw_varint/varint.h"
 
 #ifdef __cplusplus

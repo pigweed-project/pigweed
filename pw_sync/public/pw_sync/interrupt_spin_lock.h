@@ -21,7 +21,7 @@
 #ifdef __cplusplus
 
 #include "pw_sync/virtual_basic_lockable.h"
-#include "pw_sync_backend/interrupt_spin_lock_native.h"
+#include "pw_sync_backend/interrupt_spin_lock_native.h"  // IWYU pragma: export
 
 namespace pw::sync {
 
@@ -101,7 +101,7 @@ class PW_LOCKABLE("pw::sync::VirtualInterruptSpinLock")
 
 }  // namespace pw::sync
 
-#include "pw_sync_backend/interrupt_spin_lock_inline.h"
+#include "pw_sync_backend/interrupt_spin_lock_inline.h"  // IWYU pragma: export
 
 using pw_sync_InterruptSpinLock = pw::sync::InterruptSpinLock;
 

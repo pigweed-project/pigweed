@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_thread_threadx/thread_native.h"
+#include "pw_thread_threadx/thread_native.h"  // IWYU pragma: export

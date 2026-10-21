@@ -29,9 +29,9 @@
 #endif  // PW_TRACE_GET_TIME_DELTA
 
 #include "pw_status/status.h"
-#include "pw_tokenizer/tokenize.h"
-#include "pw_trace_tokenized/config.h"
-#include "pw_trace_tokenized/internal/trace_tokenized_internal.h"
+#include "pw_tokenizer/tokenize.h"      // IWYU pragma: export
+#include "pw_trace_tokenized/config.h"  // IWYU pragma: export
+#include "pw_trace_tokenized/internal/trace_tokenized_internal.h"  // IWYU pragma: export
 
 #ifdef __cplusplus
 namespace pw {

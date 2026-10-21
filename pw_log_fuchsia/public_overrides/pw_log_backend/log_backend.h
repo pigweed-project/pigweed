@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_log_fuchsia/log_backend.h"
+#include "pw_log_fuchsia/log_backend.h"  // IWYU pragma: export

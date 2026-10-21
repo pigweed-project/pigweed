@@ -13,8 +13,8 @@
 // the License.
 #pragma once
 
-#include "pw_preprocessor/compiler.h"
-#include "pw_preprocessor/util.h"
+#include "pw_preprocessor/compiler.h"  // IWYU pragma: export
+#include "pw_preprocessor/util.h"      // IWYU pragma: export
 
 PW_EXTERN_C_START
 

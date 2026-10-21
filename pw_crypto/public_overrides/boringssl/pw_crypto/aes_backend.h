@@ -14,4 +14,4 @@
 
 #pragma once
 
-#include "pw_crypto/aes_boringssl.h"
+#include "pw_crypto/aes_boringssl.h"  // IWYU pragma: export

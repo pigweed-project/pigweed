@@ -36,7 +36,7 @@
 
 #include "pw_chrono/system_clock.h"
 #include "pw_sync/mutex.h"
-#include "pw_sync_backend/condition_variable_native.h"
+#include "pw_sync_backend/condition_variable_native.h"  // IWYU pragma: export
 
 namespace pw::sync {
 
@@ -107,4 +107,4 @@ class ConditionVariable {
 
 }  // namespace pw::sync
 
-#include "pw_sync_backend/condition_variable_inline.h"
+#include "pw_sync_backend/condition_variable_inline.h"  // IWYU pragma: export

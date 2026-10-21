@@ -18,7 +18,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "pw_containers/internal/intrusive_queue.h"
+#include "pw_containers/internal/intrusive_queue.h"  // IWYU pragma: export
 #include "pw_containers/intrusive_forward_list.h"
 
 namespace pw {

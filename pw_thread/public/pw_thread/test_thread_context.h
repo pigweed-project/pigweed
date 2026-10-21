@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_thread_backend/test_thread_context_native.h"
+#include "pw_thread_backend/test_thread_context_native.h"  // IWYU pragma: export
 
 namespace pw::thread::test {
 

@@ -15,7 +15,7 @@
 #pragma once
 
 #include "pw_async2/time_provider.h"
-#include "pw_bluetooth_proxy_backend/clock.h"
+#include "pw_bluetooth_proxy_backend/clock.h"  // IWYU pragma: export
 
 namespace pw::bluetooth::proxy {
 

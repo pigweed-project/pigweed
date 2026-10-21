@@ -15,7 +15,7 @@
 #pragma once
 
 #include "pw_bytes/endian.h"
-#include "pw_crypto/ecdh_backend.h"
+#include "pw_crypto/ecdh_backend.h"  // IWYU pragma: export
 #include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"

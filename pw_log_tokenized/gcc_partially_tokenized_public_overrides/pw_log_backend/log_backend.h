@@ -16,9 +16,9 @@
 // the PW_LOG macro as the tokenized logging macro.
 #pragma once
 
-#include "pw_log_tokenized/config.h"
-#include "pw_log_tokenized/log_tokenized.h"
+#include "pw_log_tokenized/config.h"         // IWYU pragma: export
+#include "pw_log_tokenized/log_tokenized.h"  // IWYU pragma: export
 
 #define PW_LOG_FLAG_BITS PW_LOG_TOKENIZED_FLAG_BITS
 
-#include "pw_log_tokenized/gcc_partially_tokenized.h"
+#include "pw_log_tokenized/gcc_partially_tokenized.h"  // IWYU pragma: export

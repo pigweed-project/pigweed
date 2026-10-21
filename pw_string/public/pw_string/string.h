@@ -24,10 +24,10 @@
 #include <type_traits>
 
 #include "pw_assert/assert.h"
-#include "pw_containers/internal/traits.h"
+#include "pw_containers/internal/traits.h"  // IWYU pragma: export
 #include "pw_containers/ptr_iterator.h"
 #include "pw_preprocessor/compiler.h"
-#include "pw_string/internal/string_impl.h"
+#include "pw_string/internal/string_impl.h"  // IWYU pragma: export
 
 // Messages to use in static_assert statements.
 #define _PW_STRING_CAPACITY_TOO_SMALL_FOR_ARRAY                               \

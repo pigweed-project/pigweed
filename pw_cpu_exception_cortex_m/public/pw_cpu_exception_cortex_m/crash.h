@@ -16,7 +16,7 @@
 #include "pw_cpu_exception/state.h"
 // The cpu exception cortex m crash backend must provide a definition for the
 // PW_CPU_EXCEPTION_CORTEX_M_HANDLE_CRASH function macro through this header.
-#include "pw_cpu_exception_cortex_m_backend/crash.h"
+#include "pw_cpu_exception_cortex_m_backend/crash.h"  // IWYU pragma: export
 
 // Handles crashes given a CPU state and an analysis message with optional
 // variable arguments.

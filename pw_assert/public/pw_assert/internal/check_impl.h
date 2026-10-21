@@ -23,7 +23,7 @@
 // IWYU pragma: private, include "pw_assert/check.h"
 // Note: This file depends on the backend header already being included.
 
-#include "pw_assert/config.h"
+#include "pw_assert/config.h"  // IWYU pragma: export
 #include "pw_preprocessor/compiler.h"
 
 /// @module{pw_assert}

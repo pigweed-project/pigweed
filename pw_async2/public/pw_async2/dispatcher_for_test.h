@@ -16,9 +16,9 @@
 #include <atomic>
 #include <utility>
 
-#include "pw_async2/future_task.h"
-#include "pw_async2/runnable_dispatcher.h"
-#include "pw_async2/waker.h"
+#include "pw_async2/future_task.h"          // IWYU pragma: export
+#include "pw_async2/runnable_dispatcher.h"  // IWYU pragma: export
+#include "pw_async2/waker.h"                // IWYU pragma: export
 
 namespace pw::async2 {
 
@@ -147,7 +147,7 @@ class DispatcherForTestFacade final : public RunnableDispatcher {
 
 }  // namespace pw::async2
 
-#include "pw_async2_backend/native_dispatcher_for_test.h"
+#include "pw_async2_backend/native_dispatcher_for_test.h"  // IWYU pragma: export
 
 namespace pw::async2 {
 

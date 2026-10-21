@@ -14,4 +14,4 @@
 
 #pragma once
 
-#include "pw_crypto/sha256_mock.h"
+#include "pw_crypto/sha256_mock.h"  // IWYU pragma: export

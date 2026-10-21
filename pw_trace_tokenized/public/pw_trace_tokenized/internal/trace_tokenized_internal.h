@@ -20,8 +20,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "pw_preprocessor/arguments.h"
-#include "pw_preprocessor/util.h"
+#include "pw_preprocessor/arguments.h"  // IWYU pragma: export
+#include "pw_preprocessor/util.h"       // IWYU pragma: export
 
 // Because __FUNCTION__ is not a string literal to the preprocessor it can't be
 // tokenized. So this backend redefines the implementation to instead use the

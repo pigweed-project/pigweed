@@ -21,7 +21,7 @@
 #ifdef __cplusplus
 
 #include "pw_sync/virtual_basic_lockable.h"
-#include "pw_sync_backend/mutex_native.h"
+#include "pw_sync_backend/mutex_native.h"  // IWYU pragma: export
 
 namespace pw::sync {
 
@@ -102,7 +102,7 @@ class PW_LOCKABLE("pw::sync::VirtualMutex") VirtualMutex final
 
 }  // namespace pw::sync
 
-#include "pw_sync_backend/mutex_inline.h"
+#include "pw_sync_backend/mutex_inline.h"  // IWYU pragma: export
 
 using pw_sync_Mutex = pw::sync::Mutex;
 

@@ -20,4 +20,4 @@
 /// exists only so that it can be replaced by stubs when `FuzzTest` is **not**
 /// enabled.
 
-#include "fuzztest/fuzztest_core.h"
+#include "fuzztest/fuzztest_core.h"  // IWYU pragma: export

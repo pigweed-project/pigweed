@@ -14,7 +14,7 @@
 #pragma once
 
 #include "pw_function/function.h"
-#include "pw_interrupt/context.h"
+#include "pw_interrupt/context.h"  // IWYU pragma: export
 
 namespace pw::interrupt::fake {
 

@@ -50,7 +50,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "pw_fuzzer/internal/fuzztest.h"
+#include "pw_fuzzer/internal/fuzztest.h"  // IWYU pragma: export
 
 namespace fuzztest {
 

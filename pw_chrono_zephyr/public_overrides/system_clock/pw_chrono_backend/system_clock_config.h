@@ -16,4 +16,4 @@
 // the PW_LOG macro as the tokenized logging macro.
 #pragma once
 
-#include "pw_chrono_zephyr/system_clock_config.h"
+#include "pw_chrono_zephyr/system_clock_config.h"  // IWYU pragma: export

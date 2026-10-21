@@ -25,8 +25,8 @@
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/unique_ptr.h"
 #include "pw_assert/assert.h"
-#include "pw_containers/internal/generic_deque.h"
-#include "pw_containers/internal/pod_deque_internal.h"
+#include "pw_containers/internal/generic_deque.h"       // IWYU pragma: export
+#include "pw_containers/internal/pod_deque_internal.h"  // IWYU pragma: export
 #include "pw_containers/storage.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_span/span.h"

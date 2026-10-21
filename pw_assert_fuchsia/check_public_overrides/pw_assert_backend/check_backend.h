@@ -17,4 +17,4 @@
 // (though only pw_assert/check.h can only point to 1 backend).
 #pragma once
 
-#include "pw_assert_fuchsia/check_backend.h"
+#include "pw_assert_fuchsia/check_backend.h"  // IWYU pragma: export

@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_async_fuchsia/fake_dispatcher.h"
+#include "pw_async_fuchsia/fake_dispatcher.h"  // IWYU pragma: export

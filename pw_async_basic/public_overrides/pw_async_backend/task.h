@@ -12,4 +12,4 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 #pragma once
-#include "pw_async_basic/task.h"
+#include "pw_async_basic/task.h"  // IWYU pragma: export

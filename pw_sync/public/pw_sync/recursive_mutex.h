@@ -20,7 +20,7 @@
 
 #ifdef __cplusplus
 
-#include "pw_sync_backend/recursive_mutex_native.h"
+#include "pw_sync_backend/recursive_mutex_native.h"  // IWYU pragma: export
 
 namespace pw::sync {
 
@@ -73,7 +73,7 @@ class PW_LOCKABLE("pw::sync::RecursiveMutex") RecursiveMutex {
 
 }  // namespace pw::sync
 
-#include "pw_sync_backend/recursive_mutex_inline.h"
+#include "pw_sync_backend/recursive_mutex_inline.h"  // IWYU pragma: export
 
 using pw_sync_RecursiveMutex = pw::sync::RecursiveMutex;
 

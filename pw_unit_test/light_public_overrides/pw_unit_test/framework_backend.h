@@ -35,8 +35,8 @@
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_string/string_builder.h"
-#include "pw_unit_test/config.h"
-#include "pw_unit_test/event_handler.h"
+#include "pw_unit_test/config.h"         // IWYU pragma: export
+#include "pw_unit_test/event_handler.h"  // IWYU pragma: export
 
 /// @submodule{pw_unit_test,declaration}
 

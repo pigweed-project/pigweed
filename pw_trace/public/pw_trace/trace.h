@@ -23,8 +23,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "pw_preprocessor/util.h"
-#include "pw_trace/internal/trace_internal.h"
+#include "pw_preprocessor/util.h"              // IWYU pragma: export
+#include "pw_trace/internal/trace_internal.h"  // IWYU pragma: export
 
 // Backend defines PW_TRACE in the form:
 // #define PW_TRACE(event_type, flags, label, group_label, trace_id)
@@ -68,7 +68,7 @@
 //   PW_TRACE_TRACE_ID_DEFAULT: Default value if not trace_id provided.
 //   PW_TRACE_GROUP_LABEL_DEFAULT: Default value if not group_label provided.
 
-#include "pw_trace_backend/trace_backend.h"
+#include "pw_trace_backend/trace_backend.h"  // IWYU pragma: export
 
 // Default: Module name
 #ifndef PW_TRACE_MODULE_NAME

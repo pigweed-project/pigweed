@@ -15,7 +15,7 @@
 
 #include <lib/stdcompat/memory.h>
 
-#include "pw_containers/internal/pod_deque_internal.h"
+#include "pw_containers/internal/pod_deque_internal.h"  // IWYU pragma: export
 
 namespace pw::containers {
 

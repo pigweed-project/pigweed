@@ -16,4 +16,4 @@
 // This file is kept for backward compatibility. New code should use
 // "pw_rpc/test_helpers.h" instead.
 
-#include "pw_rpc/test_helpers.h"
+#include "pw_rpc/test_helpers.h"  // IWYU pragma: export

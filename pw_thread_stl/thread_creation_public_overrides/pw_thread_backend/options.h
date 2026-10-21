@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_thread_stl/options.h"
+#include "pw_thread_stl/options.h"  // IWYU pragma: export
 
 namespace pw::thread::backend {
 

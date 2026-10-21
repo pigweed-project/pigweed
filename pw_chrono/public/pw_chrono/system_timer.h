@@ -14,7 +14,7 @@
 #pragma once
 
 #include "pw_chrono/system_clock.h"
-#include "pw_chrono_backend/system_timer_native.h"
+#include "pw_chrono_backend/system_timer_native.h"  // IWYU pragma: export
 #include "pw_function/function.h"
 
 namespace pw::chrono {
@@ -114,4 +114,4 @@ class SystemTimer {
 
 }  // namespace pw::chrono
 
-#include "pw_chrono_backend/system_timer_inline.h"
+#include "pw_chrono_backend/system_timer_inline.h"  // IWYU pragma: export

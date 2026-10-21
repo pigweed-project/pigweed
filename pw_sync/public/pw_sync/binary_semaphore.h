@@ -21,7 +21,7 @@
 
 #ifdef __cplusplus
 
-#include "pw_sync_backend/binary_semaphore_native.h"
+#include "pw_sync_backend/binary_semaphore_native.h"  // IWYU pragma: export
 
 namespace pw::sync {
 
@@ -128,7 +128,7 @@ class BinarySemaphore {
 
 }  // namespace pw::sync
 
-#include "pw_sync_backend/binary_semaphore_inline.h"
+#include "pw_sync_backend/binary_semaphore_inline.h"  // IWYU pragma: export
 
 using pw_sync_BinarySemaphore = pw::sync::BinarySemaphore;
 

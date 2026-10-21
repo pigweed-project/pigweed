@@ -13,8 +13,8 @@
 // the License.
 #pragma once
 
-#include "pw_containers/internal/aa_tree.h"
-#include "pw_containers/internal/aa_tree_item.h"
+#include "pw_containers/internal/aa_tree.h"       // IWYU pragma: export
+#include "pw_containers/internal/aa_tree_item.h"  // IWYU pragma: export
 
 namespace pw {
 

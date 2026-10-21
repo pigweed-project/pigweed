@@ -15,10 +15,10 @@
 
 #include <stdint.h>
 
-#include "pw_log_tokenized/config.h"
-#include "pw_preprocessor/compiler.h"
+#include "pw_log_tokenized/config.h"   // IWYU pragma: export
+#include "pw_preprocessor/compiler.h"  // IWYU pragma: export
 #include "pw_preprocessor/util.h"
-#include "pw_tokenizer/tokenize.h"
+#include "pw_tokenizer/tokenize.h"  // IWYU pragma: export
 
 /// @module{pw_log_tokenized}
 

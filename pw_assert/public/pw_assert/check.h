@@ -19,7 +19,7 @@
 //
 #pragma once
 
-#include "pw_preprocessor/arguments.h"
+#include "pw_preprocessor/arguments.h"  // IWYU pragma: export
 
 // The pw_assert public API:
 //
@@ -111,7 +111,7 @@
 // The public macro definitions are split out into an impl file to facilitate
 // testing the facade logic directly, without going through the facade/backend
 // build facilities.
-#include "pw_assert/internal/check_impl.h"
+#include "pw_assert/internal/check_impl.h"  // IWYU pragma: export
 
 // The pw_assert_backend must provide these macros:
 //

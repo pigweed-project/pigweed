@@ -16,9 +16,9 @@
 
 #pragma once
 
-#include "pw_preprocessor/arguments.h"
-#include "pw_preprocessor/concat.h"
-#include "pw_trace_backend/trace_backend.h"
+#include "pw_preprocessor/arguments.h"       // IWYU pragma: export
+#include "pw_preprocessor/concat.h"          // IWYU pragma: export
+#include "pw_trace_backend/trace_backend.h"  // IWYU pragma: export
 
 // Default: Flag value if none set
 #ifndef PW_TRACE_FLAGS_DEFAULT

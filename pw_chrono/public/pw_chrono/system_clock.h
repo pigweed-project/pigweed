@@ -26,7 +26,7 @@
 //   constexpr pw::chrono::Epoch pw::chrono::backend::kSystemClockEpoch;
 //   constexpr bool pw::chrono::backend::kSystemClockFreeRunning;
 //   constexpr bool pw::chrono::backend::kSystemClockNmiSafe;
-#include "pw_chrono_backend/system_clock_config.h"
+#include "pw_chrono_backend/system_clock_config.h"  // IWYU pragma: export
 
 #ifdef __cplusplus
 
@@ -195,7 +195,7 @@ using VirtualSystemClock = VirtualClock<SystemClock>;
 // The backend can opt to include an inlined implementation of the following:
 //   int64_t GetSystemClockTickCount();
 #if __has_include("pw_chrono_backend/system_clock_inline.h")
-#include "pw_chrono_backend/system_clock_inline.h"
+#include "pw_chrono_backend/system_clock_inline.h"  // IWYU pragma: export
 #endif  // __has_include("pw_chrono_backend/system_clock_inline.h")
 
 #endif  // __cplusplus
@@ -222,7 +222,7 @@ using VirtualSystemClock = VirtualClock<SystemClock>;
 //   PW_SYSTEM_CLOCK_S_FLOOR(seconds)
 //   PW_SYSTEM_CLOCK_MIN_FLOOR(minutes)
 //   PW_SYSTEM_CLOCK_H_FLOOR(hours)
-#include "pw_chrono/internal/system_clock_macros.h"
+#include "pw_chrono/internal/system_clock_macros.h"  // IWYU pragma: export
 
 PW_EXTERN_C_START
 

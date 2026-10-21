@@ -29,7 +29,7 @@
 #include "lib/stdcompat/utility.h"
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
-#include "pw_containers/internal/generic_deque.h"
+#include "pw_containers/internal/generic_deque.h"  // IWYU pragma: export
 #include "pw_containers/internal/traits.h"
 #include "pw_containers/internal/wrap.h"
 #include "pw_containers/storage.h"

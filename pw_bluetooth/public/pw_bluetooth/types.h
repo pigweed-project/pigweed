@@ -17,8 +17,8 @@
 #include <cstdint>
 #include <string_view>
 
-#include "pw_bluetooth/address.h"
-#include "pw_bluetooth/uuid.h"
+#include "pw_bluetooth/address.h"  // IWYU pragma: export
+#include "pw_bluetooth/uuid.h"     // IWYU pragma: export
 
 namespace pw::bluetooth {
 

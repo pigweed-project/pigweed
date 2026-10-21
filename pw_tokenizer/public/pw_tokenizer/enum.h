@@ -16,8 +16,8 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "pw_preprocessor/apply.h"
-#include "pw_tokenizer/internal/enum.h"
+#include "pw_preprocessor/apply.h"       // IWYU pragma: export
+#include "pw_tokenizer/internal/enum.h"  // IWYU pragma: export
 #include "pw_tokenizer/nested_tokenization.h"
 #include "pw_tokenizer/tokenize.h"
 

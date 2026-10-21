@@ -34,7 +34,7 @@ void yield() noexcept;
 
 // The backend can opt to include an inline implementation.
 #if __has_include("pw_thread_backend/yield_inline.h")
-#include "pw_thread_backend/yield_inline.h"
+#include "pw_thread_backend/yield_inline.h"  // IWYU pragma: export
 #endif  // __has_include("pw_thread_backend/yield_inline.h")
 
 #endif  // __cplusplus

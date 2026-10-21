@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_multibuf_backend/observer.h"
+#include "pw_multibuf_backend/observer.h"  // IWYU pragma: export

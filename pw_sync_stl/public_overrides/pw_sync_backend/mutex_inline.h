@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_sync_stl/mutex_inline.h"
+#include "pw_sync_stl/mutex_inline.h"  // IWYU pragma: export

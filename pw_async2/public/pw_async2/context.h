@@ -16,4 +16,4 @@
 /// @deprecated "pw_async2/context.h" is deprecated. Include "pw_async2/task.h"
 /// instead.
 
-#include "pw_async2/task.h"
+#include "pw_async2/task.h"  // IWYU pragma: export

@@ -16,7 +16,7 @@
 // This header is DEPRECATED. Please include "pw_toolchain/busy_wait_forever.h"
 // instead.
 
-#include "pw_toolchain/busy_wait_forever.h"
+#include "pw_toolchain/busy_wait_forever.h"  // IWYU pragma: export
 
 #ifdef __cplusplus
 

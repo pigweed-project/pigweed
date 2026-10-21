@@ -17,7 +17,7 @@
 
 #include "pw_preprocessor/boolean.h"
 #include "pw_preprocessor/compiler.h"
-#include "pw_preprocessor/internal/arg_count_impl.h"
+#include "pw_preprocessor/internal/arg_count_impl.h"  // IWYU pragma: export
 
 // Expands to a comma followed by __VA_ARGS__, if __VA_ARGS__ is non-empty.
 // Otherwise, expands to nothing. If the final argument is empty, it is omitted.

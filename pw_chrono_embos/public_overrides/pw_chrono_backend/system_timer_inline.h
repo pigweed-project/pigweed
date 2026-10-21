@@ -16,4 +16,4 @@
 // the PW_LOG macro as the tokenized logging macro.
 #pragma once
 
-#include "pw_chrono_embos/system_timer_inline.h"
+#include "pw_chrono_embos/system_timer_inline.h"  // IWYU pragma: export

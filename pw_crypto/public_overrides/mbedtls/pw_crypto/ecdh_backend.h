@@ -14,11 +14,11 @@
 
 #pragma once
 
-#include <mbedtls/bignum.h>
-#include <mbedtls/ecp.h>
+#include <mbedtls/bignum.h>  // IWYU pragma: export
+#include <mbedtls/ecp.h>     // IWYU pragma: export
 
-#include "pw_bytes/span.h"
-#include "pw_status/status.h"
+#include "pw_bytes/span.h"     // IWYU pragma: export
+#include "pw_status/status.h"  // IWYU pragma: export
 
 namespace pw::crypto::ecdh::backend {
 // A RAII wrapper for Mbed-TLS types.

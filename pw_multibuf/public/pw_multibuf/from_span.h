@@ -13,5 +13,5 @@
 // the License.
 #pragma once
 
-#include "pw_multibuf/multibuf.h"
+#include "pw_multibuf/multibuf.h"           // IWYU pragma: export
 #include "pw_multibuf_backend/from_span.h"  // IWYU pragma: export

@@ -15,4 +15,4 @@
 //
 #pragma once
 
-#include "pw_trace_tokenized/trace_tokenized.h"
+#include "pw_trace_tokenized/trace_tokenized.h"  // IWYU pragma: export

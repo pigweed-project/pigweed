@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_sync_zephyr/binary_semaphore_native.h"
+#include "pw_sync_zephyr/binary_semaphore_native.h"  // IWYU pragma: export

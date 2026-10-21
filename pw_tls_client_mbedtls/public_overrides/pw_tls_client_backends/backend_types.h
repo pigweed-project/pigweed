@@ -14,4 +14,4 @@
 
 #pragma once
 
-#include "pw_tls_client_mbedtls/backend_types.h"
+#include "pw_tls_client_mbedtls/backend_types.h"  // IWYU pragma: export

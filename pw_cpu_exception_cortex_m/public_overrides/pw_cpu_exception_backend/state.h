@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_cpu_exception_cortex_m/cpu_state.h"
+#include "pw_cpu_exception_cortex_m/cpu_state.h"  // IWYU pragma: export

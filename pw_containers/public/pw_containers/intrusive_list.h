@@ -22,11 +22,11 @@
 #include <type_traits>
 
 #include "pw_containers/config.h"
-#include "pw_containers/internal/intrusive_item.h"
-#include "pw_containers/internal/intrusive_list.h"
-#include "pw_containers/internal/intrusive_list_item.h"
-#include "pw_containers/internal/intrusive_list_iterator.h"
-#include "pw_containers/internal/legacy_intrusive_list.h"
+#include "pw_containers/internal/intrusive_item.h"       // IWYU pragma: export
+#include "pw_containers/internal/intrusive_list.h"       // IWYU pragma: export
+#include "pw_containers/internal/intrusive_list_item.h"  // IWYU pragma: export
+#include "pw_containers/internal/intrusive_list_iterator.h"  // IWYU pragma: export
+#include "pw_containers/internal/legacy_intrusive_list.h"  // IWYU pragma: export
 #include "pw_containers/intrusive_forward_list.h"
 
 namespace pw {

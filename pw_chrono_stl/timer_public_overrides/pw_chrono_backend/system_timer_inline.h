@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_chrono_stl/system_timer_inline.h"
+#include "pw_chrono_stl/system_timer_inline.h"  // IWYU pragma: export

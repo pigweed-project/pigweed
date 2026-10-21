@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_log_string/handler.h"
+#include "pw_log_string/handler.h"  // IWYU pragma: export
 
 // Log a message with many attributes included. This is a backend implementation
 // for the logging facade in pw_log/log.h.

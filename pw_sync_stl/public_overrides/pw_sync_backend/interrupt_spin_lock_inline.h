@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_sync_stl/interrupt_spin_lock_inline.h"
+#include "pw_sync_stl/interrupt_spin_lock_inline.h"  // IWYU pragma: export

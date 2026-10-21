@@ -13,10 +13,10 @@
 // the License.
 #pragma once
 
-#include "pw_log/levels.h"
-#include "pw_log/log.h"
-#include "pw_log/options.h"
-#include "pw_preprocessor/compiler.h"
+#include "pw_log/levels.h"             // IWYU pragma: export
+#include "pw_log/log.h"                // IWYU pragma: export
+#include "pw_log/options.h"            // IWYU pragma: export
+#include "pw_preprocessor/compiler.h"  // IWYU pragma: export
 
 // Forward directly to the backend PW_HANDLE_LOG() macro rather than PW_LOG().
 // PW_LOG() checks the user-overridable PW_LOG_LEVEL macro, which may not work

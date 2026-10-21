@@ -17,18 +17,18 @@
 #include <cstdint>
 
 #include "pw_bluetooth_proxy/config.h"
-#include "pw_bluetooth_proxy/internal/l2cap_channel.h"
-#include "pw_bluetooth_proxy/internal/logical_transport.h"
+#include "pw_bluetooth_proxy/internal/l2cap_channel.h"  // IWYU pragma: export
+#include "pw_bluetooth_proxy/internal/logical_transport.h"  // IWYU pragma: export
 #include "pw_bluetooth_proxy/internal/mutex.h"
-#include "pw_bluetooth_proxy/l2cap_channel_common.h"
+#include "pw_bluetooth_proxy/l2cap_channel_common.h"  // IWYU pragma: export
 #include "pw_multibuf/multibuf.h"
 #include "pw_status/status.h"
 #include "pw_sync/lock_annotations.h"
 
 #if PW_BLUETOOTH_PROXY_ASYNC == 0
-#include "pw_bluetooth_proxy/internal/generic_l2cap_channel_sync.h"
+#include "pw_bluetooth_proxy/internal/generic_l2cap_channel_sync.h"  // IWYU pragma: export
 #else
-#include "pw_bluetooth_proxy/internal/generic_l2cap_channel_async.h"
+#include "pw_bluetooth_proxy/internal/generic_l2cap_channel_async.h"  // IWYU pragma: export
 #endif  // PW_BLUETOOTH_PROXY_ASYNC
 
 namespace pw::bluetooth::proxy {

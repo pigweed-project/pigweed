@@ -13,12 +13,12 @@
 // the License.
 #pragma once
 
-#include "pw_multibuf/config.h"
+#include "pw_multibuf/config.h"  // IWYU pragma: export
 
 // This adapter will be removed when the migration to v2 is complete.
 #if PW_MULTIBUF_INCLUDE_V1_ADAPTERS
 
-#include "pw_multibuf/v1_adapter/single_chunk_region_tracker.h"
+#include "pw_multibuf/v1_adapter/single_chunk_region_tracker.h"  // IWYU pragma: export
 
 namespace pw::multibuf {
 

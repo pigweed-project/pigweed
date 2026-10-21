@@ -17,7 +17,7 @@
 #include <utility>
 
 #include "pw_containers/inline_deque.h"
-#include "pw_containers/internal/generic_queue.h"
+#include "pw_containers/internal/generic_queue.h"  // IWYU pragma: export
 
 namespace pw {
 namespace containers::internal {

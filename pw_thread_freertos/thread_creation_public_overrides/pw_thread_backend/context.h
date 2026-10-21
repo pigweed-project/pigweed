@@ -13,11 +13,11 @@
 // the License.
 #pragma once
 
-#include <cstddef>
+#include <cstddef>  // IWYU pragma: export
 
-#include "pw_thread_freertos/config.h"
-#include "pw_thread_freertos/context.h"
-#include "pw_toolchain/constexpr_tag.h"
+#include "pw_thread_freertos/config.h"   // IWYU pragma: export
+#include "pw_thread_freertos/context.h"  // IWYU pragma: export
+#include "pw_toolchain/constexpr_tag.h"  // IWYU pragma: export
 
 namespace pw::thread::backend {
 

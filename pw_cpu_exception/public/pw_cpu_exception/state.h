@@ -15,4 +15,4 @@
 
 // The cpu exception entry backend must provide a definition of the
 // pw_cpu_exception_State struct through this header.
-#include "pw_cpu_exception_backend/state.h"
+#include "pw_cpu_exception_backend/state.h"  // IWYU pragma: export

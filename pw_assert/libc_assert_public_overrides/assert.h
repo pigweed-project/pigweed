@@ -13,4 +13,4 @@
 // the License.
 #pragma once
 
-#include "pw_assert/internal/libc_assert.h"
+#include "pw_assert/internal/libc_assert.h"  // IWYU pragma: export

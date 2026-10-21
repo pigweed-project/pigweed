@@ -13,12 +13,12 @@
 // the License.
 #pragma once
 
-#include "pw_log/levels.h"
-#include "pw_log/log.h"
-#include "pw_log/options.h"
-#include "pw_preprocessor/arguments.h"
-#include "pw_preprocessor/compiler.h"
-#include "pw_preprocessor/util.h"
+#include "pw_log/levels.h"              // IWYU pragma: export
+#include "pw_log/log.h"                 // IWYU pragma: export
+#include "pw_log/options.h"             // IWYU pragma: export
+#include "pw_preprocessor/arguments.h"  // IWYU pragma: export
+#include "pw_preprocessor/compiler.h"   // IWYU pragma: export
+#include "pw_preprocessor/util.h"       // IWYU pragma: export
 
 // Die with a message with several attributes included. This crash frontend
 // funnels everything into the logger, which must then handle the true crash

@@ -14,4 +14,4 @@
 
 #pragma once
 
-#include "pw_crypto/sha256_mbedtls.h"
+#include "pw_crypto/sha256_mbedtls.h"  // IWYU pragma: export

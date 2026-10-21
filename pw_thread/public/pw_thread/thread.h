@@ -226,4 +226,4 @@ using Thread = ::pw::thread::Thread;  // Must use `=` for Doxygen to find this.
 
 }  // namespace pw
 
-#include "pw_thread_backend/thread_inline.h"
+#include "pw_thread_backend/thread_inline.h"  // IWYU pragma: export
