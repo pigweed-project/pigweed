@@ -79,6 +79,9 @@ class CallHandle {
   /// `IntrusivePtr<Call>`.
   [[nodiscard]] const IntrusivePtr<Call>& share_call() const { return call_; }
 
+  /// Releases this handle's reference to its call.
+  void reset_call() { call_ = nullptr; }
+
   /// The inputs every outbound packet needs: a reservation attempt, the ID
   /// of the call the packet belongs to, and a reference to the call (used by
   /// terminal packets to close the write side upon commit or fall back on

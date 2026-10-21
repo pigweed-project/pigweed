@@ -14,6 +14,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -27,9 +29,9 @@
 #include "pw_async2/waker.h"
 #include "pw_buf/buf.h"
 #include "pw_containers/intrusive_forward_list.h"
+#include "pw_enum/traits.h"
 #include "pw_intrusive_ptr/intrusive_ptr.h"
 #include "pw_intrusive_ptr/recyclable.h"
-#include "pw_intrusive_ptr/ref_counted.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/protocol_error.h"
 #include "pw_rpc2/status.h"
@@ -64,18 +66,16 @@ class Call;
 /// state is the most likely candidate for sharing across calls.
 ///
 /// @note **Ownership.** Every `Call` is intrusively reference-counted via
-/// `RefCounted<Call>`, `IntrusivePtr<Call>`, and `Recyclable<Call>`,
-/// and every handle holds a reference, so a handle can never outlive the call
-/// it refers to. While registered in its connection's call list, a call refers
-/// back to its `ConnectionTask`. Retiring the call or tearing the connection
-/// down detaches it (replacing the connection pointer with the connection's
-/// `Allocator*` for eventual deallocation), after which its outbound operations
-/// are no-ops and `ReserveWrite()` fails. A completed call reports why it
-/// completed (see `ReserveWrite()`); a detached call that did not complete
-/// reports `kWriteClosed`.
-class Call : public IntrusiveForwardList<Call>::Item,
-             public RefCounted<Call>,
-             public Recyclable<Call> {
+/// `IntrusivePtr<Call>` and `Recyclable<Call>`, and every handle holds a
+/// reference, so a handle can never outlive the call it refers to. While
+/// registered in its connection's call list, a call refers back to its
+/// `ConnectionTask`. Retiring the call or tearing the connection down detaches
+/// it (replacing the connection pointer with the connection's `Allocator*` for
+/// eventual deallocation), after which its outbound operations are no-ops and
+/// `ReserveWrite()` fails. A completed call reports why it completed (see
+/// `ReserveWrite()`); a detached call that did not complete reports
+/// `kWriteClosed`.
+class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
  public:
   virtual ~Call();
 
@@ -215,7 +215,9 @@ class Call : public IntrusiveForwardList<Call>::Item,
   void FinishInvocation();
 
   /// True once the call has completed.
-  [[nodiscard]] bool is_completed() const { return HasReadFlag<kCompleted>(); }
+  [[nodiscard]] bool is_completed() const {
+    return completion_code_ != kUncompleted;
+  }
 
   /// The status the call completed with.
   ///
@@ -231,15 +233,18 @@ class Call : public IntrusiveForwardList<Call>::Item,
   /// - `kDisconnected`: the underlying socket disconnected.
   ///
   /// @pre `is_completed()`.
-  RpcStatus completion_status() const { return completion_status_; }
+  RpcStatus completion_status() const {
+    PW_DASSERT(is_completed());
+    return RpcStatus(static_cast<RpcCode>(completion_code_));
+  }
 
   /// The status to report when an operation on this call fails because its
   /// socket closed. If the call already ended with an error, such as the
   /// `kProtocolError` that this end closed the connection with, that error is
   /// the cause. Otherwise, the socket closed on its own: `kDisconnected`.
   RpcStatus ConnectionClosedStatus() const {
-    if (is_completed() && !completion_status_.ok()) {
-      return completion_status_;
+    if (is_completed() && !completion_status().ok()) {
+      return completion_status();
     }
     return RpcStatus::Disconnected();
   }
@@ -343,15 +348,32 @@ class Call : public IntrusiveForwardList<Call>::Item,
   }
 
  protected:
-  friend class Recyclable<Call>;
-
   /// Constructs a call attached to `connection_task` and allocated from
   /// `connection_task.allocator()`.
   Call(ConnectionTask& connection_task, uint32_t call_id);
 
+ private:
+  template <typename U>
+  friend class ::pw::IntrusivePtr;
+  friend class Recyclable<Call>;
+
+  static constexpr uint8_t kUncompleted = 0xff;
+  static_assert(!IsValidEnum<RpcCode>(kUncompleted));
+
+  // Use custom AddRef/ReleaseRef instead of RefCounted, since the count doesn't
+  // need to be atomic. Also, a uint8_t is sufficient since the ref count peaks
+  // at 5 in normal use (ServerCall, Reader, Writer, ReadFuture, WriteFuture).
+  void AddRef() const {
+    PW_ASSERT(ref_count_ < std::numeric_limits<uint8_t>::max());
+    ++ref_count_;
+  }
+
+  [[nodiscard]] bool ReleaseRef() const { return --ref_count_ == 0; }
+
+  [[nodiscard]] int32_t ref_count() const { return ref_count_; }
+
   void pw_recycle();
 
- private:
   enum WriteFlag : uint8_t {
     // Write side is closed (terminal packet committed/queued, or call closed).
     kClosed = 1 << 0,
@@ -397,13 +419,10 @@ class Call : public IntrusiveForwardList<Call>::Item,
     // single terminal response from the server.
     kSingleResponse = 1 << 3,
 
-    // The call has completed; `completion_status_` holds its status.
-    kCompleted = 1 << 4,
-
     // True while registered with `connection_task_` (`connection_task_` is the
     // active union member). False once detached (`allocator_` is the active
     // union member).
-    kAttached = 1 << 5,
+    kAttached = 1 << 4,
   };
 
   template <WriteFlag kFlag>
@@ -447,6 +466,13 @@ class Call : public IntrusiveForwardList<Call>::Item,
   // observed to be closed.
   void NotifyIfClosed();
 
+  uint32_t call_id_;
+  uint8_t write_flags_ = 0;
+  uint8_t read_flags_ = kAttached;
+  // Set by the first `Complete()`; `kUncompleted` until then.
+  uint8_t completion_code_ = kUncompleted;
+  mutable uint8_t ref_count_ = 0;
+
   // While `kAttached` is set, points to the owning `ConnectionTask`. When
   // detached (`ClearConnectionTask()`), replaced with
   // `&connection_task_->allocator()` so `pw_recycle()` can deallocate `this`
@@ -455,8 +481,6 @@ class Call : public IntrusiveForwardList<Call>::Item,
     ConnectionTask* connection_task_;
     Allocator* allocator_;
   };
-
-  uint32_t call_id_;
 
   // Inline SPSC channel storage.
   async2::ChannelStorage<ConstBuf, 1> storage_;
@@ -470,12 +494,6 @@ class Call : public IntrusiveForwardList<Call>::Item,
   // pending reservation future only while the reader is behind, so that the
   // connection task's wakeup survives until the queue drains.
   async2::FutureOrValue<async2::ReserveSendFuture<ConstBuf>> send_state_;
-
-  uint8_t write_flags_ = 0;
-  uint8_t read_flags_ = kAttached;
-
-  // Set by the first `Complete()`; later completions are ignored.
-  RpcStatus completion_status_;
 };
 
 /// Client-side RPC call state.

@@ -34,28 +34,28 @@ async2::Poll<RpcResult<ConstBuf>> ReadFutureBase::PendRaw(async2::Context& cx) {
   }
 
   PW_AWAIT(std::optional<ConstBuf> val, receive_fut_, cx);
-  // The read is no longer outstanding, so let the next one start even if
-  // this future is kept alive by its owner.
-  ReleaseRead();
-  mark_complete();
 
   // `receive_fut_` is only pendable if this future was created from a call,
   // so the call is guaranteed to be non-null here.
-  if (!val.has_value()) {
+  RpcResult<ConstBuf> result = RpcStatus::EndOfStream();
+  if (val.has_value()) {
+    result = std::move(*val);
+  } else if (call().role() == EndpointRole::kServer &&
+             call().peer_ended_stream()) {
     // A server's reader ends cleanly once the client half-closes its stream,
     // whatever happens to the call afterwards. A client's reader ends with the
     // RPC, since a server that half-closes still sends a terminal packet, so
     // it reports the call's final status.
-    if (call().role() == EndpointRole::kServer && call().peer_ended_stream()) {
-      return async2::Ready(RpcResult<ConstBuf>(RpcStatus::EndOfStream()));
-    }
-    if (call().is_completed() && !call().completion_status().ok()) {
-      return async2::Ready(RpcResult<ConstBuf>(call().completion_status()));
-    }
-    return async2::Ready(RpcResult<ConstBuf>(RpcStatus::EndOfStream()));
+    result = RpcStatus::EndOfStream();
+  } else if (call().is_completed() && !call().completion_status().ok()) {
+    result = call().completion_status();
   }
 
-  return async2::Ready(RpcResult<ConstBuf>(std::move(*val)));
+  // The read is no longer outstanding, so release the claim and call reference
+  // even if this future is kept alive by its owner.
+  ReleaseRead();
+  mark_complete();
+  return async2::Ready(std::move(result));
 }
 
 void ReadFutureBase::PendAndDeserialize(async2::Context& cx,
@@ -142,7 +142,7 @@ void Call::NotifyIfClosed() {
 }
 
 Call::Call(ConnectionTask& connection_task, uint32_t call_id)
-    : connection_task_(&connection_task), call_id_(call_id) {
+    : call_id_(call_id), connection_task_(&connection_task) {
   if (connection_task.role() == EndpointRole::kServer) {
     SetWriteFlag<kServerCall>();
     SetWriteFlag<kStarted>();
@@ -155,8 +155,8 @@ void Call::InitChannel() {
   sender_ = std::move(sender);
   receiver_ = std::move(receiver);
   if (connection_task_->is_closed()) {
-    completion_status_ = connection_task_->close_status();
-    SetReadFlag<kCompleted>();
+    completion_code_ =
+        static_cast<uint8_t>(connection_task_->close_status().code());
     SetWriteFlag<kClosed>();
     ClearConnectionTask();
     sender_.Disconnect();
@@ -211,8 +211,8 @@ void Call::QueueFinish() {
 RpcResult<transport::ReserveWriteFuture> Call::ReserveWrite(
     size_t header_size, size_t max_payload_size) {
   if (is_completed()) {
-    return completion_status_.ok() ? RpcStatus::WriteClosed()
-                                   : completion_status_;
+    return completion_status().ok() ? RpcStatus::WriteClosed()
+                                    : completion_status();
   }
   // A call is only detached without completing once both of its directions
   // have closed, so its write side is closed.
@@ -370,8 +370,7 @@ void Call::Complete(RpcStatus status) {
   // The first completion wins: a call that has already failed keeps its
   // original status even if the connection later closes underneath it.
   if (!is_completed()) {
-    SetReadFlag<kCompleted>();
-    completion_status_ = status;
+    completion_code_ = static_cast<uint8_t>(status.code());
   }
   send_state_.Reset();
   sender_.Disconnect();

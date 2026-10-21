@@ -123,7 +123,9 @@ class ReadFutureBase : public CallHandle, public FutureBase {
   // Releases this future's hold on the call's read stream, if it is active.
   void ReleaseRead() {
     if (is_pendable()) {
+      receive_fut_ = {};
       call().ReleaseRead();
+      reset_call();
     }
   }
 

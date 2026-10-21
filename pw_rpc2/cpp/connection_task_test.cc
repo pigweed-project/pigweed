@@ -83,9 +83,8 @@ class ReadTestTask : public async2::Task {
     if (poll->has_value()) {
       result_ = std::move(**poll);
     } else {
-      RpcStatus status = call_.completion_status();
-      result_ = (call_.is_completed() && !status.ok())
-                    ? status
+      result_ = (call_.is_completed() && !call_.completion_status().ok())
+                    ? call_.completion_status()
                     : RpcStatus::EndOfStream();
     }
     return async2::Ready();
