@@ -23,9 +23,9 @@
 //
 #pragma once
 
-#include "pw_log/config.h"
-#include "pw_log/levels.h"
-#include "pw_log/options.h"
+#include "pw_log/config.h"   // IWYU pragma: export
+#include "pw_log/levels.h"   // IWYU pragma: export
+#include "pw_log/options.h"  // IWYU pragma: export
 
 // log_backend.h must ultimately resolve to a header that implements the macros
 // required by the logging facade, as described below.
@@ -63,7 +63,7 @@
 //     - Optional. If not defined by the backend, the facade's default
 //       implementation defines these in terms of PW_LOG().
 //
-#include "pw_log_backend/log_backend.h"
+#include "pw_log_backend/log_backend.h"  // IWYU pragma: export
 
 /// @module{pw_log}
 
