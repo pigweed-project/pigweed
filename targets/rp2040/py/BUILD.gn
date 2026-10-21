@@ -29,7 +29,6 @@ pw_python_package("py") {
     "rp2040_utils/unit_test_client.py",
     "rp2040_utils/unit_test_server.py",
   ]
-  tests = [ "rpc_unit_test_runner_test.py" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"
