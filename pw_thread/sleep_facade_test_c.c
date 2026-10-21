@@ -15,6 +15,7 @@
 // These tests call the pw_thread module sleep API from C. The return values are
 // checked in the main C++ tests.
 
+#include "pw_chrono/system_clock.h"
 #include "pw_thread/sleep.h"
 
 void pw_this_thread_CallSleepFor(

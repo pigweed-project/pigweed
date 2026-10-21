@@ -15,6 +15,9 @@
 #include "pw_thread/attrs.h"
 
 #include "pw_compilation_testing/negative_compilation.h"
+#include "pw_polyfill/language_feature_macros.h"
+#include "pw_thread/priority.h"
+#include "pw_thread/stack.h"
 #include "pw_thread/thread.h"  // for PW_THREAD_GENERIC_CREATION_IS_SUPPORTED
 #include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"

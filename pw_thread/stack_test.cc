@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_thread/thread.h"  // for PW_THREAD_GENERIC_CREATION_IS_SUPPORTED
 #include "pw_unit_test/framework.h"
 

@@ -110,6 +110,7 @@ pw_facade("test_thread_context") {
   backend = pw_thread_TEST_THREAD_CONTEXT_BACKEND
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_thread/test_thread_context.h" ]
+  public_deps = [ ":options" ]
 }
 
 pw_source_set("thread_core") {

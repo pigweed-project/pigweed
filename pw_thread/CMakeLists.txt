@@ -172,6 +172,8 @@ pw_add_facade(pw_thread.test_thread_context INTERFACE
     public/pw_thread/test_thread_context.h
   PUBLIC_INCLUDES
     public
+  PUBLIC_DEPS
+    pw_thread.options
 )
 
 pw_add_facade(pw_thread.yield STATIC

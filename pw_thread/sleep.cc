@@ -14,6 +14,8 @@
 
 #include "pw_thread/sleep.h"
 
+#include "pw_chrono/system_clock.h"
+
 using pw::chrono::SystemClock;
 
 extern "C" void pw_this_thread_SleepFor(

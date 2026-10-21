@@ -23,6 +23,7 @@
 // so threads with different configurations can be instantiated in tests.
 #pragma once
 
+#include "pw_thread/options.h"
 #include "pw_thread/thread.h"
 
 namespace pw::thread::test {

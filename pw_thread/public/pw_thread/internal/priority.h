@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 
 #include "lib/stdcompat/type_traits.h"
 #include "pw_assert/assert.h"

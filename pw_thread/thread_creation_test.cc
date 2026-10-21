@@ -17,6 +17,10 @@
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_sync/binary_semaphore.h"
+#include "pw_thread/attrs.h"
+#include "pw_thread/context.h"
+#include "pw_thread/native_options.h"
+#include "pw_thread/stack.h"
 #include "pw_thread/thread.h"
 #include "pw_unit_test/framework.h"
 

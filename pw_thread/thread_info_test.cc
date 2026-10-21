@@ -14,6 +14,8 @@
 
 #include "pw_thread/thread_info.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 
 #include "pw_span/span.h"
