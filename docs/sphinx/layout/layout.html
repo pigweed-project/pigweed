@@ -131,3 +131,15 @@ the License.
      when overriding `block content`. #}
   {%- block scripts_end %}{{ _webpack.body_post() }}{%- endblock scripts_end %}
 {%- endblock content %}
+
+{%- block footer %}
+  {{ super() }}
+  {# Stub element required by pydata_sphinx_theme's bootstrap.js (showBackToTop)
+     and pydata-sphinx-theme.js (setupArticleTocSyncing), which unconditionally
+     call getBoundingClientRect() on `.bd-header` and `#pst-header` during
+     DOMContentLoaded. It is hidden via `#pst-header { display: none !important; }`
+     in //docs/common/header.css and tucked away at the very bottom of the page
+     (after `block footer`, right before `</body>`) to minimize the risk of
+     disrupting the page layout if it were ever accidentally rendered. #}
+  <header id="pst-header" class="bd-header"></header>
+{%- endblock footer %}

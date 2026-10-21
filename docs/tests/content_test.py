@@ -71,6 +71,74 @@ class ContentTest(unittest.TestCase):
 
             browser.close()
 
+    def test_no_console_errors(self):
+        """Verifies that loading a representative sample of pages across
+        Sphinx, Doxygen, and Rustdoc produces no console or page errors.
+        """
+        representative_pages = [
+            # Sphinx homepage
+            "index.html",
+            # Sphinx top-level guide page
+            "overview.html",
+            # Sphinx category landing page
+            "os/index.html",
+            # Sphinx module homepage
+            "pw_string/docs.html",
+            # Sphinx module subpage
+            "pw_allocator/backends.html",
+            # Sphinx target documentation page
+            "targets/rp2040/target_docs.html",
+            # Reference landing page
+            "api/index.html",
+            # Doxygen C/C++ API page
+            "api/cc/group__pw__string.html",
+            # Rustdoc crate page
+            "rustdoc/pw_status/index.html",
+        ]
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800}
+            )
+            page = context.new_page()
+
+            current_page = ""
+            errors = []
+            page.on(
+                "console",
+                lambda msg: (
+                    errors.append(
+                        f"[{current_page}] console.{msg.type}: {msg.text}"
+                    )
+                    if msg.type == "error"
+                    else None
+                ),
+            )
+            page.on(
+                "pageerror",
+                lambda err: errors.append(f"[{current_page}] pageerror: {err}"),
+            )
+
+            for rel_path in representative_pages:
+                current_page = rel_path
+                page.goto(
+                    self.server.url_for(rel_path),
+                    wait_until="networkidle",
+                )
+
+            browser.close()
+
+            self.assertEqual(
+                errors,
+                [],
+                "Pages produced console/page errors:\n" + "\n".join(errors),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
