@@ -895,12 +895,15 @@ TEST(TransportTest, ZeroSizeBufferHandling) {
   // Synchronous 0-byte reservation returns a valid reservation with 0 size.
   auto res_sync = conn.TryReserveWrite(0);
   ASSERT_TRUE(res_sync.has_value());
+  EXPECT_NE(res_sync->data(), nullptr);
   EXPECT_EQ(res_sync->size(), 0u);
   EXPECT_TRUE(res_sync->Commit(0));
   EXPECT_EQ(mock->commit_count(), 1u);
-  EXPECT_EQ(mock->PopPacket().size(), 0u);
+  pw::ConstBuf packet = mock->PopPacket();
+  EXPECT_NE(packet, nullptr);
+  EXPECT_TRUE(packet.empty());
 
-  // Asynchronous 0-byte reservation returns immediately resolved future.
+  // Asynchronous 0-byte reservation resolves to a valid 0-byte reservation.
   ReserveWriteFuture res_async_fut = conn.ReserveWrite(0);
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
@@ -1092,6 +1095,31 @@ TEST(TransportTest, LayeredConnectionWriteAndRead) {
     std::memcpy(&crc, outbound_buf.data() + 9, sizeof(uint32_t));
     EXPECT_EQ(crc, MockLayeredSocket::kCrcMagic);
   }
+
+  // Test 0-byte payload write and read through layered socket
+  {
+    std::optional<WriteReservation> res = layered_conn.TryReserveWrite(0);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_NE(res->data(), nullptr);
+    EXPECT_EQ(res->size(), 0u);
+    EXPECT_TRUE(res->Commit(0));
+
+    ASSERT_TRUE(lower_impl->HasReadPacket());
+    pw::ConstBuf outbound_buf = lower_impl->PopPacket();
+    EXPECT_EQ(outbound_buf.size(), MockLayeredSocket::kOverhead);
+
+    layered_impl->EnqueueForRead(std::move(outbound_buf));
+
+    async2::DispatcherForTest dispatcher;
+    dispatcher.AllowBlocking();
+    ReaderTask reader(layered_conn);
+    dispatcher.Post(reader);
+    dispatcher.RunToCompletion();
+
+    ASSERT_TRUE(reader.done());
+    EXPECT_NE(reader.result(), nullptr);
+    EXPECT_TRUE(reader.result().empty());
+  }
 }
 
 TEST(TransportTest, LayeredConnectionTaskInteraction) {
@@ -1155,9 +1183,10 @@ TEST(TransportTest, LayeredConnectionTaskInteraction) {
 TEST(TransportTest, LayeredConnectionCancelReservation) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
-  ReliableDatagramSocket lower_conn = MockSocket::Allocated(allocator);
+  auto* lower_impl = allocator.New<MockSocket>(allocator, allocator);
+  ReliableDatagramSocket lower_conn = lower_impl->WrapSocket();
   ReliableDatagramSocket layered_conn =
-      MockLayeredSocket::Allocated(allocator, lower_conn);
+      MockLayeredSocket::Allocated(allocator, lower_conn, lower_impl);
 
   EXPECT_GT(allocator.allocate_size(), 0u);
   EXPECT_EQ(allocator.deallocate_size(), 0u);
@@ -1169,6 +1198,20 @@ TEST(TransportTest, LayeredConnectionCancelReservation) {
     res->Cancel();
     EXPECT_EQ(allocator.deallocate_size(), 20u + MockLayeredSocket::kOverhead);
   }
+
+  // Canceling a 0-byte reservation that was Adopt()-sliced from a non-empty
+  // lower reservation invokes DoCancelWrite() and releases the lower slot.
+  lower_impl->SetAvailableBytes(MockLayeredSocket::kOverhead);
+  {
+    auto res = layered_conn.TryReserveWrite(0);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res->size(), 0u);
+    EXPECT_FALSE(layered_conn.TryReserveWrite(0).has_value());
+    res->Cancel();
+  }
+  auto res = layered_conn.TryReserveWrite(0);
+  ASSERT_TRUE(res.has_value());
+  res->Cancel();
 }
 
 TEST(TransportTest, LayeredConnectionKeepsConnectionsAlive) {
@@ -1630,6 +1673,69 @@ TEST(TransportTest, MovePendingReserveWriteFuture) {
   };
 
   MoveWriterTask writer(c);
+  dispatcher.Post(writer);
+  dispatcher.RunUntilStalled();
+
+  EXPECT_EQ(writer.result(), Status::Unknown());
+
+  conn->SetAvailableBytes(32);
+  {
+    std::lock_guard lock(*conn);
+    conn->WakeOneWriterLocked();
+  }
+  dispatcher.RunUntilStalled();
+
+  EXPECT_EQ(writer.result(), OkStatus());
+  EXPECT_EQ(conn->commit_count(), 1u);
+}
+
+TEST(TransportTest, OverwriteResolvedReserveWriteFuture) {
+  const size_t kCapacity = 4096;
+  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  auto* conn = allocator.New<MockSocket>(allocator, allocator);
+  ReliableDatagramSocket c = conn->WrapSocket();
+  async2::DispatcherForTest dispatcher;
+
+  conn->SetAvailableBytes(0);
+
+  class OverwriteWriterTask : public async2::Task {
+   public:
+    OverwriteWriterTask(ReliableDatagramSocket connection)
+        : connection_(std::move(connection)),
+          step_(0),
+          result_(Status::Unknown()) {}
+
+    const Status& result() const { return result_; }
+
+   private:
+    async2::Poll<> DoPend(async2::Context& cx) override {
+      if (step_ == 0) {
+        future_ = connection_.ReserveWrite(32);
+        step_ = 1;
+      } else if (step_ == 1) {
+        // Overwrite future_ after it was resolved via WakeOneWriterLocked()
+        // but before polling it again. This cancels the resolved reservation
+        // before locking the new future's socket.
+        future_ = connection_.ReserveWrite(32);
+        step_ = 2;
+      }
+
+      PW_AWAIT(auto res, future_, cx);
+      if (res.has_value()) {
+        result_ = res->Commit(32) ? OkStatus() : Status::Internal();
+      } else {
+        result_ = Status::Aborted();
+      }
+      return async2::Ready();
+    }
+
+    ReliableDatagramSocket connection_;
+    ReserveWriteFuture future_;
+    int step_;
+    Status result_;
+  };
+
+  OverwriteWriterTask writer(c);
   dispatcher.Post(writer);
   dispatcher.RunUntilStalled();
 

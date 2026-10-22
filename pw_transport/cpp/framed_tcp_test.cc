@@ -335,11 +335,14 @@ TEST_F(FramedTcpTest, TryReserveWrite_LimitedByWriteQueueDepth) {
   ASSERT_TRUE(first.has_value());
   ASSERT_TRUE(second.has_value());
   EXPECT_FALSE(client.TryReserveWrite(1).has_value());
-
-  // Empty datagrams have no buffer, so they are not limited.
-  EXPECT_TRUE(client.TryReserveWrite(0).has_value());
+  EXPECT_FALSE(client.TryReserveWrite(0).has_value());
 
   first->Cancel();
+  std::optional<WriteReservation> empty = client.TryReserveWrite(0);
+  ASSERT_TRUE(empty.has_value());
+  EXPECT_FALSE(client.TryReserveWrite(1).has_value());
+
+  empty->Cancel();
   EXPECT_TRUE(client.TryReserveWrite(1).has_value());
 }
 

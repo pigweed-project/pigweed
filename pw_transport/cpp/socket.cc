@@ -110,6 +110,9 @@ ReserveWriteFuture& ReserveWriteFuture::operator=(
     ReserveWriteFuture&& other) noexcept {
   if (this != &other) {
     RemoveFromSocket();
+    // Cancelling a reservation locks its socket. Cancel before moving to
+    // prevent deadlocks if both sockets share the same lock.
+    resolved_value_.reset();
     MoveFrom(other);
   }
   return *this;
@@ -267,13 +270,6 @@ CloseFuture ReliableDatagramSocketImpl::WhenClosed() {
 ReserveWriteFuture ReliableDatagramSocketImpl::ReserveWrite(
     size_t min_size_bytes) {
   PW_ASSERT(min_size_bytes <= max_write_message_size_bytes());
-  if (min_size_bytes == 0) {
-    std::lock_guard lock(*this);
-    if (!is_open()) {
-      return ReserveWriteFuture::Resolved(std::nullopt);
-    }
-    return ReserveWriteFuture::Resolved(CreateReservation(pw::Buf()));
-  }
   return ReserveWriteFuture(*this, min_size_bytes);
 }
 
@@ -283,9 +279,6 @@ std::optional<WriteReservation> ReliableDatagramSocketImpl::TryReserveWrite(
   std::lock_guard lock(*this);
   if (!is_open()) {
     return std::nullopt;
-  }
-  if (min_size_bytes == 0) {
-    return CreateReservation(pw::Buf());
   }
   if (!write_futures_.empty()) {
     ResolveOneWriter();
@@ -318,9 +311,6 @@ bool ReliableDatagramSocketImpl::CommitWrite(pw::Buf buffer) {
 }
 
 void ReliableDatagramSocketImpl::CancelWrite(pw::Buf buffer) {
-  if (buffer.empty()) {
-    return;
-  }
   std::lock_guard lock(*this);
   DoCancelWrite(std::move(buffer));
   WakeOneWriter();

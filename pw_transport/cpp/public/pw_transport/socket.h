@@ -181,8 +181,8 @@ class ReliableDatagramSocket {
   size_t max_read_message_size_bytes() const;
 
   /// Receives a single datagram from the peer, resolving to a `ConstBuf` view
-  /// of its data.
-  /// Resolves to a null `ConstBuf` when the socket is closed.
+  /// of its data. An empty (0-byte) datagram resolves to a non-null empty
+  /// `ConstBuf`; a null `ConstBuf` indicates that the socket is closed.
   ///
   /// Only one `Read` operation may be pended at a time. Pending a second
   /// `ReadFuture` while one is active will assert.
@@ -516,14 +516,11 @@ class PW_LOCKABLE("pw::transport::ReliableDatagramSocketImpl")
   ReadFuture Read() PW_LOCKS_EXCLUDED(*this) { return ReadFuture(*this); }
 
   /// Reserves write space for a datagram of at least `min_size_bytes`.
-  /// If `min_size_bytes` is zero, returns an immediately resolved reservation
-  /// with an empty `Buf` if the socket is open, or `std::nullopt` if closed.
   ReserveWriteFuture ReserveWrite(size_t min_size_bytes)
       PW_LOCKS_EXCLUDED(*this);
 
   /// Synchronously attempts to reserve write space for a datagram of at least
-  /// `min_size_bytes`. If `min_size_bytes` is zero, returns an empty
-  /// reservation immediately.
+  /// `min_size_bytes`.
   [[nodiscard]] std::optional<WriteReservation> TryReserveWrite(
       size_t min_size_bytes) PW_LOCKS_EXCLUDED(*this);
 
@@ -540,8 +537,7 @@ class PW_LOCKABLE("pw::transport::ReliableDatagramSocketImpl")
   /// upon return even if transmission fails or the socket is closed.
   [[nodiscard]] bool CommitWrite(Buf buffer) PW_LOCKS_EXCLUDED(*this);
 
-  /// Cancels a write reservation. Releases empty buffers immediately without
-  /// invoking driver cancellation.
+  /// Cancels a write reservation.
   ///
   /// Takes ownership of `buffer` by value to ensure that the buffer is
   /// released.
@@ -591,8 +587,11 @@ class PW_LOCKABLE("pw::transport::ReliableDatagramSocketImpl")
   }
 
   /// Factory method for subclasses to create reservations.
-  WriteReservation CreateReservation(Buf&& buffer)
+  ///
+  /// @pre `buffer` must not be null (`buffer != nullptr`).
+  WriteReservation CreateReservation(Buf&& buffer = Buf::ZeroLength())
       PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
+    PW_DASSERT(buffer != nullptr);
     return WriteReservation(ReliableDatagramSocket(*this), std::move(buffer));
   }
 
@@ -620,11 +619,19 @@ class PW_LOCKABLE("pw::transport::ReliableDatagramSocketImpl")
 
   /// Implements reading a single datagram from the peer.
   /// Called from ReadFuture::Pend with `*this` locked.
+  ///
+  /// A received zero-length datagram must be returned as a non-null empty
+  /// `ConstBuf` (such as `ConstBuf::ZeroLength()`), since a null `ConstBuf`
+  /// indicates that the socket is closed.
   virtual async2::Poll<ConstBuf> DoRead()
       PW_EXCLUSIVE_LOCKS_REQUIRED(*this) = 0;
 
   /// Implements synchronously reserving write space of at least
   /// `min_size_bytes`. Called with `*this` locked.
+  ///
+  /// When `min_size_bytes` is 0, implementations that do not need header or
+  /// footer space in the buffer may pass `Buf::ZeroLength()` to
+  /// `CreateReservation()`.
   virtual std::optional<WriteReservation> DoTryReserveWrite(
       size_t min_size_bytes) PW_EXCLUSIVE_LOCKS_REQUIRED(*this) = 0;
 

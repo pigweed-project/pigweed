@@ -49,10 +49,6 @@ namespace {
 // Each datagram is preceded by its size as a 32-bit big-endian integer.
 constexpr size_t kFrameHeaderSize = sizeof(uint32_t);
 
-// Received zero-length datagrams use this data address to distinguish
-// them from null `ConstBuf` reads when the socket closes.
-constexpr std::byte kEmptyDatagram{};
-
 constexpr int kListenBacklog = 16;
 
 // Prevents send() from raising SIGPIPE if the peer has disconnected. macOS
@@ -358,9 +354,8 @@ int OpenListeningSocketOnUnusedPort() {
 // A `ReliableDatagramSocketImpl` for a connected TCP socket.
 //
 // A read thread receives datagrams into a bounded queue, and a write thread
-// sends committed datagrams. Each reservation or unsent datagram that holds a
-// buffer uses one of `write_queue_depth` write slots. Zero-length reservations
-// have no buffer, so they don't use a slot.
+// sends committed datagrams. Each reservation or unsent datagram uses one of
+// `write_queue_depth` write slots.
 //
 // Reads on a closed socket return nothing, so when the connection ends, the
 // socket stays open until the datagrams that were already received have been
@@ -548,16 +543,11 @@ bool FramedTcpSocket::DoCommitWrite(Buf&& buffer) {
   // Writes committed after Close() was called or the connection ended are not
   // sent.
   if (is_open() && !disconnected_) {
-    // The queue has room for every datagram that uses a slot, so this only
-    // allocates when zero-length datagrams take up space. The entry is added
-    // before `buffer` is moved into it, so that `buffer` can still be released
-    // if allocation fails.
-    if (write_queue_.try_emplace_back()) {
-      write_queue_.back() = std::move(buffer);
-      datagram_queued_.release();
-      return true;
-    }
-    PW_LOG_ERROR("Failed to queue datagram for sending");
+    // DoTryReserveWrite() ensured there is room, and Start() reserved it, so
+    // this does not allocate.
+    write_queue_.push_back(std::move(buffer));
+    datagram_queued_.release();
+    return true;
   }
   if (ReleaseWriteSlot(std::move(buffer))) {
     WakeOneWriter();
@@ -607,26 +597,22 @@ void FramedTcpSocket::ReadLoop() {
       return;
     }
 
-    ConstBuf datagram = ConstBuf::Unowned(&kEmptyDatagram, 0);
-    if (size > 0) {
-      Buf buffer = Buf::TryAllocate(buffer_allocator_, size);
-      if (buffer == nullptr) {
-        PW_LOG_ERROR("Failed to allocate %u bytes for received datagram",
-                     static_cast<unsigned>(size));
-        EndConnection();
-        return;
-      }
+    Buf datagram = Buf::TryAllocate(buffer_allocator_, size);
+    if (datagram == nullptr) {
+      PW_LOG_ERROR("Failed to allocate %u bytes for received datagram",
+                   static_cast<unsigned>(size));
+      EndConnection();
+      return;
+    }
 
-      status = ReceiveExact(fd_, ByteSpan(buffer.data(), buffer.size()));
-      if (!status.ok()) {
-        const int error = errno;
-        std::lock_guard lock(*this);
-        // The peer disconnected after sending the frame header.
-        EndConnectionAfterIoFailureLocked(
-            status.IsOutOfRange() ? Status::DataLoss() : status, error);
-        return;
-      }
-      datagram = std::move(buffer);
+    status = ReceiveExact(fd_, datagram);
+    if (!status.ok()) {
+      const int error = errno;
+      std::lock_guard lock(*this);
+      // The peer disconnected after sending the frame header.
+      EndConnectionAfterIoFailureLocked(
+          status.IsOutOfRange() ? Status::DataLoss() : status, error);
+      return;
     }
 
     std::lock_guard lock(*this);

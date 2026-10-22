@@ -65,7 +65,7 @@ std::optional<transport::WriteReservation> MockConnection::DoTryReserveWrite(
     return std::nullopt;
   }
   pw::Buf buf = pw::Buf::TryAllocate(alloc_, size);
-  if (buf.empty()) {
+  if (buf == nullptr) {
     return std::nullopt;
   }
   return CreateReservation(std::move(buf));
@@ -108,9 +108,8 @@ bool MockConnection::DoCommitWrite(pw::Buf&& buffer) {
 void MockConnection::DoCancelWrite(pw::Buf&& buffer) { (void)buffer; }
 
 void PushSynAck(pw::Allocator& allocator, MockConnection& connection) {
-  pw::Buf buffer = pw::Buf::TryAllocate(
-      allocator, internal::HandshakePacket::kWireSizeBytes);
-  PW_CHECK(!buffer.empty(), "Could not allocate a handshake packet");
+  pw::Buf buffer =
+      pw::Buf::Allocate(allocator, internal::HandshakePacket::kWireSizeBytes);
   pw::Buf encoded =
       internal::HandshakePacket(internal::HandshakePacket::Type::kSynAck)
           .Encode(std::move(buffer));
@@ -310,7 +309,7 @@ std::optional<transport::WriteReservation> PairedConnection::DoTryReserveWrite(
     return std::nullopt;
   }
   pw::Buf buf = pw::Buf::TryAllocate(alloc_, size);
-  if (buf.empty()) {
+  if (buf == nullptr) {
     return std::nullopt;
   }
   return CreateReservation(std::move(buf));

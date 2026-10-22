@@ -35,6 +35,12 @@ and write messages asynchronously. Writes use a two-phase reservation model:
 transport's outgoing queue is full, the future pends, naturally applying
 backpressure to the sender.
 
+Zero-length datagrams are supported: ``ReserveWrite(0)`` reserves a zero-byte
+write slot, and :cc:`Read <pw::transport::ReliableDatagramSocket::Read>`
+resolves to a non-null, empty :cc:`pw::ConstBuf` (such as
+:cc:`pw::ConstBuf::ZeroLength`) when a zero-byte datagram is received. A null
+``ConstBuf`` (``response == nullptr``) indicates that the socket has closed.
+
 For example, consider a task which sends a message and waits for the peer's
 response:
 
