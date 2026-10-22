@@ -12,14 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# This file contains Emboss definitions of the protocol data units (PDUs)
-# associated with the Attribute Protocol (ATT) as defined in Vol 3 (Host), Part
-# F of the Bluetooth Core Specification. The Emboss compiler is used to generate
-# a C++ header from this file.
+# This file contains Emboss definitions for the Advanced Audio Distribution
+# Profile (A2DP) MPEG-2, 4 AAC Codec Specific Information Elements.
+# The Emboss compiler is used to generate a C++ header from this file.
 
 [$default byte_order: "LittleEndian"]
 [(cpp) namespace: "pw::bluetooth::emboss::a2dp::aac"]
-# Cf. A2DP Spec v1.4 Section 4.5 AAC Codec  interoperability requirements
+# Cf. A2DP Spec v1.4 Section 4.5 AAC Codec interoperability requirements
 
 
 enum ObjectType:
