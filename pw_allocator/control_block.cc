@@ -81,18 +81,22 @@ int32_t ControlBlock::num_shared() const noexcept {
   return UnpackShared(num_weak_and_shared_.load(std::memory_order_relaxed));
 }
 
+int32_t ControlBlock::num_weak() const noexcept {
+  return UnpackWeak(num_weak_and_shared_.load(std::memory_order_acquire));
+}
+
 bool ControlBlock::IncrementShared() {
   uint32_t num = num_weak_and_shared_.load(std::memory_order_relaxed);
   while (true) {
     uint16_t num_weak = UnpackWeak(num);
     uint16_t num_shared = UnpackShared(num);
     if constexpr (Hardening::kIncludesDebugChecks) {
-      PW_CHECK_UINT_GE(num_weak, num_shared);
+      PW_CHECK_UINT_NE(num_weak, 0);
     }
     if (num_shared == 0 || num_shared == 0xFFFF) {
       return false;
     }
-    uint32_t packed = Pack(num_weak + 1, num_shared + 1);
+    uint32_t packed = Pack(num_weak, num_shared + 1);
     if (num_weak_and_shared_.compare_exchange_weak(
             num, packed, std::memory_order_relaxed)) {
       return true;
@@ -105,9 +109,6 @@ bool ControlBlock::IncrementWeak() {
   while (true) {
     uint16_t num_weak = UnpackWeak(num);
     uint16_t num_shared = UnpackShared(num);
-    if constexpr (Hardening::kIncludesDebugChecks) {
-      PW_CHECK_UINT_GE(num_weak, num_shared);
-    }
     if (num_weak == 0 || num_weak == 0xFFFF) {
       return false;
     }
@@ -121,16 +122,12 @@ bool ControlBlock::IncrementWeak() {
 
 ControlBlock::Action ControlBlock::DecrementShared() {
   uint32_t prev =
-      num_weak_and_shared_.fetch_sub(Pack(1, 1), std::memory_order_acq_rel);
-  uint16_t prev_weak = UnpackWeak(prev);
+      num_weak_and_shared_.fetch_sub(Pack(0, 1), std::memory_order_acq_rel);
   uint16_t prev_shared = UnpackShared(prev);
   if constexpr (Hardening::kIncludesDebugChecks) {
-    PW_CHECK_UINT_NE(prev_weak, 0);
+    uint16_t prev_weak = UnpackWeak(prev);
     PW_CHECK_UINT_NE(prev_shared, 0);
-    PW_CHECK_UINT_GE(prev_weak, prev_shared);
-  }
-  if (prev_weak == 1 && prev_shared == 1) {
-    return ControlBlock::Action::kFree;
+    PW_CHECK_UINT_NE(prev_weak, 0);
   }
   if (prev_shared == 1) {
     return ControlBlock::Action::kExpire;
@@ -143,9 +140,7 @@ ControlBlock::Action ControlBlock::DecrementWeak() {
       num_weak_and_shared_.fetch_sub(Pack(1, 0), std::memory_order_acq_rel);
   uint16_t prev_weak = UnpackWeak(prev);
   if constexpr (Hardening::kIncludesDebugChecks) {
-    uint16_t prev_shared = UnpackShared(prev);
     PW_CHECK_UINT_NE(prev_weak, 0);
-    PW_CHECK_UINT_GE(prev_weak, prev_shared);
   }
   if (prev_weak == 1) {
     return ControlBlock::Action::kFree;

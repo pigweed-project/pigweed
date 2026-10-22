@@ -126,15 +126,20 @@ class ControlBlock final {
   /// This method is thread-safe.
   int32_t num_shared() const noexcept;
 
+  /// Returns the number of active weak pointers to the associated object,
+  /// including any collective weak reference held by shared pointers.
+  ///
+  /// This method is thread-safe.
+  int32_t num_weak() const noexcept;
+
   /// If the count of shared pointers is nonzero, increments the count of
   /// shared pointers atomically and returns true; otherwise returns false.
   ///
   /// This method is thread-safe.
   bool IncrementShared();
 
-  /// If the count of either weak or shared pointers is nonzero, increments the
-  /// count of weak pointers atomically and returns true; otherwise returns
-  /// false.
+  /// If the count of weak pointers is nonzero, increments the count of weak
+  /// pointers atomically and returns true; otherwise returns false.
   ///
   /// This method is thread-safe.
   bool IncrementWeak();

@@ -503,11 +503,13 @@ void SharedPtr<T>::reset() noexcept {
     }
   }
 
-  if (action == ControlBlock::Action::kExpire) {
-    // Keep the control block. Trying to promote any of the remaining
-    // `WeakPtr`s will fail.
+  // If other weak references exist, shrink the allocation to release the
+  // object payload while this `SharedPtr` still holds the collective weak
+  // reference, preventing use-after-free races.
+  if (control_block_->num_weak() > 1) {
     Base::Resize(allocator, control_block_, sizeof(ControlBlock));
-  } else {
+  }
+  if (control_block_->DecrementWeak() == ControlBlock::Action::kFree) {
     // No `WeakPtr`s remain, and all of the memory can be freed.
     std::destroy_at(control_block_);
     Base::Deallocate(allocator, control_block_);

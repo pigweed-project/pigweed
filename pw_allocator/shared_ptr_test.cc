@@ -22,6 +22,7 @@
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/internal/counter.h"
 #include "pw_allocator/testing.h"
+#include "pw_allocator/weak_ptr.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -405,6 +406,18 @@ TEST_F(SharedPtrTest, Allocator) {
 
   pw::SharedPtr<Counter> ptr2 = allocator_.MakeShared<Counter>(100u);
   EXPECT_EQ(ptr2.allocator(), &allocator_);
+}
+
+TEST_F(SharedPtrTest, SelfReferentialWeakPtr) {
+  struct SelfRef {
+    pw::WeakPtr<SelfRef> self;
+  };
+  auto ptr = allocator_.MakeShared<SelfRef>();
+  ASSERT_NE(ptr, nullptr);
+  ptr->self = ptr;
+  ptr = nullptr;  // Destroying `self` in ~SelfRef must not free the block.
+  EXPECT_EQ(allocator_.metrics().num_deallocations.value(), 1u);
+  EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), 0u);
 }
 
 }  // namespace
