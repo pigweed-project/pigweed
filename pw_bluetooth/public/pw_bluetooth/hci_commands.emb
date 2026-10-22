@@ -3080,8 +3080,11 @@ struct LERequestPeerSCACommand:
 struct LESetupISODataPathCommand:
   -- 7.8.109 LE Setup ISO Data Path command
   -- HCI_LE_Setup_ISO_Data_Path
+
   let hdr_size = hci.CommandHeader.$size_in_bytes
+
   0     [+hdr_size]                    hci.CommandHeader                   header
+
   $next [+2]                           UInt                                connection_handle
     -- Connection handle of the CIS or BIS
     [requires: 0x0000 <= this <= 0x0EFF]
@@ -3094,6 +3097,7 @@ struct LESetupISODataPathCommand:
     [requires: 0x00 <= this <= 0xFE]
 
   let vcf_size = CodecId.$size_in_bytes
+
   $next [+vcf_size]                    CodecId                             codec_id
     -- Codec to be used
 
