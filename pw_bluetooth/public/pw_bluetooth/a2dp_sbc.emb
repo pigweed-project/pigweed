@@ -55,7 +55,7 @@ enum AllocationMethod:
   -- Cf. A2DP Spec v1.4 Section 4.3.2.5
   [maximum_bits: 2]
   SNR      = 0b10
-  LOUDNESS = 0b10
+  LOUDNESS = 0b01
 
 
 struct CodecSpecificInformationElements:
