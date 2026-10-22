@@ -12,8 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# This file contains Emboss definitions for the logical link control and
-# adaptation protocol (l2cap) frames found in the Bluetooth core specification.
+# This file contains Emboss definitions for RFCOMM frames found in the
+# Bluetooth RFCOMM specification and ETSI TS 07.10.
 # The Emboss compiler is used to generate a C++ header from this file.
 
 [$default byte_order: "LittleEndian"]
@@ -51,10 +51,12 @@ enum RfcommCommandResponseAndDirection:
   -- TODO(b/482441914): Deprecated, use bit flags directly.
   -- RFCOMM Spec v1.2 Section 5.4
   -- GSM 07.10 section 5.2.1.2
-  -- Commands and responses from the responder have C/R = 0. Commands and
-  -- responses from the initiator have C/R = 1.
-  -- For an RFCOMM session, the initiating device is given the direction bit D=1
-  -- (and conversely, D=0 in the other device)
+  -- For UIH frames (and SABM/DISC commands), frames sent by the responder have
+  -- C/R = 0 and frames sent by the initiator have C/R = 1 (for UA/DM responses,
+  -- C/R is 0 from the initiator and 1 from the responder).
+  -- For an RFCOMM session, the initiating device assigns direction bit D=1 to
+  -- DLCIs it initiates (and D=0 to DLCIs initiated by the responder; DLCI 0
+  -- always has D=0).
   [maximum_bits: 2]
   COMMAND_FROM_INITIATOR  = 0b11
   COMMAND_FROM_RESPONDER  = 0b00
@@ -63,7 +65,7 @@ enum RfcommCommandResponseAndDirection:
 
 
 enum RfcommLengthExtended:
-  -- ETSI TS section 5.2.1.5
+  -- ETSI TS section 5.2.1.4
   [maximum_bits: 1]
   NORMAL   = 1
   EXTENDED = 0
@@ -101,15 +103,18 @@ struct RfcommFrame:
     1                  [+2]                 RfcommCommandResponseAndDirection  command_response_direction
 
     1                  [+1]                 Flag                               command_response
-      -- Commands and responses from the responder have C/R = 0. Commands and
-      -- responses from the initiator have C/R = 1.
+      -- For UIH frames (and SABM/DISC commands), C/R = 0 from the responder and
+      -- C/R = 1 from the initiator (reversed for UA/DM responses).
 
     2                  [+1]                 Flag                               direction
-      -- For an RFCOMM session, the initiating device is given the direction bit D=1
-      -- (and conversely, D=0 in the other device)
+      -- Direction bit D of the DLCI (D=1 for DLCIs initiated by the session
+      -- initiator, D=0 for DLCIs initiated by the responder or DLCI 0).
 
     3                  [+5]                 UInt                               channel
       -- ETSI TS 07.10 section 5.2.1.2
+
+    2                  [+6]                 UInt                               dlci
+      -- 6-bit Data Link Connection Identifier (direction bit + 5-bit server channel).
 
   1                  [+1]                   RfcommFrameType                    control
     -- ETSI TS 07.10 section 5.2.1.3
