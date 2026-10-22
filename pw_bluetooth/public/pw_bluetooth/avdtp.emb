@@ -48,7 +48,7 @@ enum MessageType:
 
 enum SignalIdentifierCode:
   -- Cf. 8.5 Signaling message Identifier
-  [maximum_bits: 8]
+  [maximum_bits: 6]
   AVDTP_DISCOVER             = 0x01
   AVDTP_GET_CAPABILITIES     = 0x02
   AVDTP_SET_CONFIGURATION    = 0x03
@@ -110,6 +110,7 @@ enum ErrorCode:
 
 enum MediaType:
   -- Cf. Bluetooth SIG assigned numbers
+  [maximum_bits: 4]
   AUDIO      = 0x00
   VIDEO      = 0x01
   MULTIMEDIA = 0x02
@@ -188,7 +189,7 @@ struct ServiceCapability(remaining_size: UInt:32):
   -- Cf. Table 8.46
   0        [+1]                                         ServiceCategory                        service_category
   1        [+1]                                         UInt                                   length
-  2        [+remaining_size-2]                          UInt:8[remaining_size-2]               raw_service_capability
+  2        [+length]                                    UInt:8[length]                         raw_service_capability
   if service_category == ServiceCategory.MEDIA_CODEC:
     2        [+length]                                  MediaCodecCapability(length)           media_codec_capability
 
@@ -279,15 +280,15 @@ struct GetCapabilitiesCommand:
 
 
 struct GetCapabilitiesResponse(length: UInt:32):
-  -- Cf 8.8.2 AVDTP_GET_ALL_CAPABILITIES_RSP
-  [requires: signaling_header.header.message_type == MessageType.RESPONSE_ACCEPT && signaling_header.signal_identifier == SignalIdentifierCode.AVDTP_GET_ALL_CAPABILITIES]
+  -- Cf 8.7.2 AVDTP_GET_CAPABILITIES_RSP
+  [requires: signaling_header.header.message_type == MessageType.RESPONSE_ACCEPT && signaling_header.signal_identifier == SignalIdentifierCode.AVDTP_GET_CAPABILITIES]
   0     [+2]              SignalingHeader                   signaling_header
   let services_size = length-SignalingHeader.$size_in_bytes
   $next [+services_size]  ServiceCapability(services_size)  service_capabilities
 
 
 struct GetCapabilitiesReject:
-  -- Cf 8.6.3 AVDTP_GET_CAPABILITIES_REJ
+  -- Cf 8.7.3 AVDTP_GET_CAPABILITIES_REJ
   [requires: signaling_header.header.message_type == MessageType.RESPONSE_REJECT && signaling_header.signal_identifier == SignalIdentifierCode.AVDTP_GET_CAPABILITIES]
   0     [+2]  SignalingHeader  signaling_header
   $next [+1]  ErrorCode        error_code
@@ -360,6 +361,19 @@ struct OpenStreamCommand:
   $next [+1]  bits:
     0     [+2]       UInt             rfa
     2     [+6]       Seid             acp_seid
+
+
+struct OpenStreamResponse:
+  -- Cf 8.12.2 AVDTP_OPEN_RSP
+  [requires: signaling_header.header.message_type == MessageType.RESPONSE_ACCEPT && signaling_header.signal_identifier == SignalIdentifierCode.AVDTP_OPEN]
+  0 [+2]  SignalingHeader  signaling_header
+
+
+struct OpenStreamReject:
+  -- Cf 8.12.3 AVDTP_OPEN_REJ
+  [requires: signaling_header.header.message_type == MessageType.RESPONSE_REJECT && signaling_header.signal_identifier == SignalIdentifierCode.AVDTP_OPEN]
+  0     [+2]  SignalingHeader  signaling_header
+  $next [+1]  ErrorCode        error_code
 
 # Cf 8.13 Start Stream
 
@@ -452,11 +466,17 @@ struct AbortCommand:
     0     [+2]       UInt             rfa
     2     [+6]       Seid             acp_seid
 
-# Cf 8.17 DelayReport
+
+struct AbortResponse:
+  -- Cf 8.16.2 AVDTP_ABORT_RSP
+  [requires: signaling_header.header.message_type == MessageType.RESPONSE_ACCEPT && signaling_header.signal_identifier == SignalIdentifierCode.AVDTP_ABORT]
+  0 [+2]  SignalingHeader  signaling_header
+
+# Cf 8.19 DelayReport
 
 
 struct DelayReportCommand:
-  -- Cf 8.17.1 AVDTP_DELAYREPORT_CMD
+  -- Cf 8.19.1 AVDTP_DELAYREPORT_CMD
   [requires: signaling_header.header.message_type == MessageType.COMMAND && signaling_header.signal_identifier == SignalIdentifierCode.AVDTP_DELAYREPORT]
   0     [+2]         SignalingHeader  signaling_header
   $next [+1]  bits:
@@ -464,3 +484,16 @@ struct DelayReportCommand:
     2     [+6]       Seid             acp_seid
 
   $next [+2]         UInt             delay_value       [byte_order: "BigEndian"]
+
+
+struct DelayReportResponse:
+  -- Cf 8.19.2 AVDTP_DELAYREPORT_RSP
+  [requires: signaling_header.header.message_type == MessageType.RESPONSE_ACCEPT && signaling_header.signal_identifier == SignalIdentifierCode.AVDTP_DELAYREPORT]
+  0 [+2]  SignalingHeader  signaling_header
+
+
+struct DelayReportReject:
+  -- Cf 8.19.3 AVDTP_DELAYREPORT_REJ
+  [requires: signaling_header.header.message_type == MessageType.RESPONSE_REJECT && signaling_header.signal_identifier == SignalIdentifierCode.AVDTP_DELAYREPORT]
+  0     [+2]  SignalingHeader  signaling_header
+  $next [+1]  ErrorCode        error_code
