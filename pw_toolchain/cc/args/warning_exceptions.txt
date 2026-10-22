@@ -85,6 +85,10 @@ src:*/pw_bluetooth/snoop.emb.h
 src:*/pw_multibuf/examples/protocol.emb.h
 src:*/runtime/cpp/emboss_array_view.h
 
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/rp2_common/hardware_sync_spin_lock/include/hardware/sync/spin_lock.h
+src:*/src/rp2_common/hardware_uart/include/hardware/uart.h
+
 [macro-redefined]
 # TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
 src:*/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Include/RP2350.h
@@ -143,6 +147,47 @@ src:*/fuzztest/internal/meta.h
 [shorten-64-to-32]
 // TODO: https://pwbug.dev/519755582 - Update fuzztest so we can remove these.
 src:*/fuzztest/fuzzing_bit_gen.h
+
+# TODO: https://pwbug.dev/515087379 - Update emboss so we can remove these.
+src:*/pw_bluetooth/l2cap_frames.emb.h
+src:*/pw_bluetooth/snoop.emb.h
+
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/rp2_common/hardware_gpio/include/hardware/gpio.h
+
+[embedded-directive]
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/rp2350/pico_platform/include/pico/platform.h
+
+[gnu-anonymous-struct]
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/rp2040/hardware_structs/include/hardware/structs/io_bank0.h
+src:*/src/rp2350/hardware_structs/include/hardware/structs/io_bank0.h
+
+[gnu-include-next]
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/rp2_common/pico_clib_interface/include/llvm_libc/time.h
+
+[gnu-statement-expression-from-macro-expansion]
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/rp2_common/hardware_base/include/hardware/address_mapped.h
+src:*/src/rp2_common/hardware_gpio/include/hardware/gpio.h
+src:*/src/rp2_common/hardware_i2c/include/hardware/i2c.h
+src:*/src/rp2_common/hardware_irq/include/hardware/irq.h
+src:*/src/rp2_common/hardware_resets/include/hardware/resets.h
+src:*/src/rp2_common/hardware_spi/include/hardware/spi.h
+src:*/src/rp2_common/hardware_sync_spin_lock/include/hardware/sync/spin_lock.h
+src:*/src/rp2_common/hardware_timer/include/hardware/timer.h
+src:*/src/rp2_common/hardware_uart/include/hardware/uart.h
+
+[nested-anon-types]
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/rp2040/hardware_structs/include/hardware/structs/io_bank0.h
+src:*/src/rp2350/hardware_structs/include/hardware/structs/io_bank0.h
+
+[variadic-macros]
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/rp2_common/hardware_gpio/include/hardware/gpio.h
 
 [unused-template]
 # TODO: https://pwbug.dev/434779927 - Can be removed after abseil is updated.

@@ -23,7 +23,7 @@ inline int64_t GetSystemClockTickCount() {
   // microsecond hardware timer is sufficient. Additionally, the peripheral API
   // for the Pico SDK all expect microseconds from boot, so this is the most
   // appropriate clock to use for that purpose.
-  return time_us_64();
+  return static_cast<int64_t>(time_us_64());
 }
 
 }  // namespace pw::chrono::backend
