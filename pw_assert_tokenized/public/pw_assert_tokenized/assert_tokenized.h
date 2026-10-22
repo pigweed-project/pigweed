@@ -20,14 +20,14 @@
 #include "pw_preprocessor/concat.h"       // IWYU pragma: export
 #include "pw_tokenizer/tokenize.h"        // IWYU pragma: export
 
-// In C and C++23 (where static constexpr variables are permitted inside
-// constexpr functions per P2647R1), emit the tokenized __FILE__ entry directly
-// into the .pw_tokenizer.entries ELF section so no offline file list generation
-// is needed. Fall back to PW_TOKENIZER_STRING_TOKEN(__FILE__) in pre-C++23 C++
-// or when `static` is macro-defined to nothing (e.g. via
+// In C and C++23 (where static variables are permitted inside unreached
+// branches of constexpr functions per P2242R3), emit the tokenized __FILE__
+// entry directly into the .pw_tokenizer.entries ELF section so no offline file
+// list generation is needed. Fall back to PW_TOKENIZER_STRING_TOKEN(__FILE__)
+// in pre-C++23 C++ or when `static` is macro-defined to nothing (e.g. via
 // PW_THIRD_PARTY_FREERTOS_NO_STATICS or FreeRTOS's portREMOVE_STATIC_QUALIFIER,
 // which defines `static` after including headers).
-#if !defined(__cplusplus) || __cpp_constexpr >= 202211L
+#if !defined(__cplusplus) || __cpp_constexpr >= 202110L
 #define _PW_ASSERT_TOKENIZED_FILE_TOKEN \
   PW_CONCAT(_PW_ASSERT_TOKENIZED_FILE_TOKEN_, PW_EMPTY_ARGS(static))(__FILE__)
 #define _PW_ASSERT_TOKENIZED_FILE_TOKEN_0 PW_TOKENIZE_STRING

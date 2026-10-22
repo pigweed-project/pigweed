@@ -50,4 +50,9 @@ TEST(AssertTokenized, CompilesInCAndCpp) {
   TestCppNoStatics();
 }
 
+TEST(AssertTokenized, FileTokenMatchesStringToken) {
+  constexpr uint32_t file_token = _PW_ASSERT_TOKENIZED_FILE_TOKEN;
+  EXPECT_EQ(file_token, PW_TOKENIZER_STRING_TOKEN(__FILE__));
+}
+
 }  // namespace
