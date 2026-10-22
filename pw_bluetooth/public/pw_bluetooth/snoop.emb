@@ -84,9 +84,9 @@ struct EntryHeader:
 struct Entry:
   let header_size = EntryHeader.$size_in_bytes
 
-  0             [+header_size]               EntryHeader                       header
+  0             [+header_size]                 EntryHeader                       header
 
-  header_size   [+header.included_length]    UInt:8[]                          packet_data
+  header_size   [+header.included_length]      UInt:8[]                          packet_data
     --   Variable-length field holding the packet that was captured, beginning
     --   with its datalink header. The Datalink Type field of the file header
     --   can be used to determine how to decode the datalink header. The length
@@ -95,6 +95,7 @@ struct Entry:
     --   particular multi-octet boundary, as might otherwise be suggested by the
     --   diagram.
 
-  header_size   [+1]                         UInt                              packet_h4_type
+  if header.included_length >= 1:
+    header_size   [+1]                         UInt                              packet_h4_type
 
-  header_size+1 [+header.included_length-1]  UInt:8[header.included_length-1]  packet_hci_data
+    header_size+1 [+header.included_length-1]  UInt:8[header.included_length-1]  packet_hci_data
