@@ -429,7 +429,7 @@ TEST_F(FramedTcpTest, Close_DiscardsUnreadDatagrams) {
   ReadFuture read = server->Read();
 
   constexpr auto kFrame =
-      bytes::Array<0, 0, 0, 6, 'u', 'n', 'r', 'e', 'a', 'd'>();
+      bytes::Array<6, 0, 0, 0, 'u', 'n', 'r', 'e', 'a', 'd'>();
   PW_TEST_ASSERT_OK(peer.Write(kFrame));
 
   // Once commits fail, the server has seen that the connection ended, so it
@@ -470,7 +470,7 @@ TEST_F(FramedTcpTest, PeerDisconnect_ReceivedDatagramsCanBeRead) {
   PW_TEST_ASSERT_OK(server);
 
   constexpr auto kFrames =
-      bytes::Array<0, 0, 0, 3, 'o', 'n', 'e', 0, 0, 0, 3, 't', 'w', 'o'>();
+      bytes::Array<3, 0, 0, 0, 'o', 'n', 'e', 3, 0, 0, 0, 't', 'w', 'o'>();
   PW_TEST_ASSERT_OK(peer.Write(kFrames));
 
   // The peer stops sending but keeps receiving, so the server's datagrams are
@@ -593,7 +593,7 @@ TEST_F(FramedTcpTest, WireFormat_Receive) {
 
   // "hello" followed by an empty datagram.
   constexpr auto kFrames =
-      bytes::Array<0, 0, 0, 5, 'h', 'e', 'l', 'l', 'o', 0, 0, 0, 0>();
+      bytes::Array<5, 0, 0, 0, 'h', 'e', 'l', 'l', 'o', 0, 0, 0, 0>();
   PW_TEST_ASSERT_OK(peer.Write(kFrames));
 
   ConstBuf hello = Receive(*server);
@@ -615,7 +615,7 @@ TEST_F(FramedTcpTest, WireFormat_Send) {
 
   ASSERT_TRUE(Send(*server, "abc"));
 
-  constexpr auto kExpected = bytes::Array<0, 0, 0, 3, 'a', 'b', 'c'>();
+  constexpr auto kExpected = bytes::Array<3, 0, 0, 0, 'a', 'b', 'c'>();
   std::array<std::byte, kExpected.size()> frame{};
   PW_TEST_ASSERT_OK(ReadExactly(peer, frame));
   EXPECT_TRUE(frame == kExpected);
@@ -631,7 +631,7 @@ TEST_F(FramedTcpTest, WireFormat_PeerDisconnectsMidDatagram) {
   PW_TEST_ASSERT_OK(server);
 
   // A 10-byte datagram that ends after 3 bytes.
-  constexpr auto kPartialFrame = bytes::Array<0, 0, 0, 10, 'a', 'b', 'c'>();
+  constexpr auto kPartialFrame = bytes::Array<10, 0, 0, 0, 'a', 'b', 'c'>();
   PW_TEST_ASSERT_OK(peer.Write(kPartialFrame));
   peer.Close();
 

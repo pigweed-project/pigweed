@@ -33,7 +33,7 @@
 
 /// A reliable datagram transport over TCP for Linux and macOS hosts.
 ///
-/// Each datagram is sent as a 4-byte, big-endian payload length followed by
+/// Each datagram is sent as a 4-byte, little-endian payload length followed by
 /// the payload. Every socket uses two threads for blocking socket I/O, so this
 /// transport is intended for host-side tools and tests.
 ///

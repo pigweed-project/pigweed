@@ -46,7 +46,7 @@
 namespace pw::transport {
 namespace {
 
-// Each datagram is preceded by its size as a 32-bit big-endian integer.
+// Each datagram is preceded by its size as a 32-bit little-endian integer.
 constexpr size_t kFrameHeaderSize = sizeof(uint32_t);
 
 constexpr int kListenBacklog = 16;
@@ -161,7 +161,7 @@ Status ReceiveExact(int fd, ByteSpan buffer) {
 //   UNAVAILABLE: sendmsg() failed and set errno.
 Status SendFrame(int fd, ConstByteSpan payload) {
   std::array<std::byte, kFrameHeaderSize> header =
-      bytes::CopyInOrder(endian::big, static_cast<uint32_t>(payload.size()));
+      bytes::CopyInOrder(endian::little, static_cast<uint32_t>(payload.size()));
   std::array<iovec, 2> chunks{};
   chunks[0].iov_base = header.data();
   chunks[0].iov_len = header.size();
@@ -587,7 +587,7 @@ void FramedTcpSocket::ReadLoop() {
       return;
     }
 
-    const uint32_t size = bytes::ReadInOrder<uint32_t>(endian::big, header);
+    const uint32_t size = bytes::ReadInOrder<uint32_t>(endian::little, header);
     if (size > max_read_message_size_bytes()) {
       PW_LOG_ERROR(
           "Received %u-byte datagram, which exceeds the %zu-byte limit",
