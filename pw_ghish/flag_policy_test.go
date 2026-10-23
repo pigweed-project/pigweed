@@ -28,6 +28,7 @@ import (
 	"go/token"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -360,11 +361,21 @@ var baselineFlagPolicyCatalog = map[string]flagPolicySpec{
 	"pr sense:prepare":   {Mode: flagModeExtension, Reason: "Safely fetch and switch to target branch"},
 }
 
+var rootAliasTargets = map[string]string{
+	"checks": "pr checks",
+	"view":   "pr view",
+	"diff":   "pr diff",
+	"status": "pr status",
+	"push":   "pr push",
+	"agent":  "hook",
+}
+
 // parseASTFlagDirectives parses all `//ghish:flag` comments across production Go
 // files, verifies that each directive adheres to the required schema and sits
 // immediately above a flag registration call, and returns a map of
-// `<canonicalPath>:<flagName> -> flagPolicySpec` extracted from the AST.
-func parseASTFlagDirectives(t *testing.T) map[string]flagPolicySpec {
+// `<canonicalPath>:<flagName> -> flagPolicySpec` extracted from the AST along
+// with its scoped command-path resolver.
+func parseASTFlagDirectives(t *testing.T) (map[string]flagPolicySpec, func(fnName, cmdVar string) []string) {
 	t.Helper()
 	fset := token.NewFileSet()
 	paths := collectProductionGoFiles(t, false)
@@ -375,7 +386,19 @@ func parseASTFlagDirectives(t *testing.T) map[string]flagPolicySpec {
 		"PrCmd":   "pr",
 		"RunCmd":  "run",
 	}
-	cmdParent := make(map[string]string)
+	cmdParent := make(map[string][]string)
+	// Map constructor functions (such as `newEditCmd()`, `newReviewCmd()`, and
+	// `newPushCommand()`) to the `<funcName>:<ident>` `*cobra.Command` variable
+	// they return so `PrCmd.AddCommand(newEditCmd())` resolves local flag
+	// registrations without colliding across functions.
+	funcReturnIdent := make(map[string]string)
+
+	type addCmdCall struct {
+		fnName string
+		parent string
+		arg    ast.Expr
+	}
+	var addCmdCalls []addCmdCall
 
 	for _, path := range paths {
 		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
@@ -384,95 +407,213 @@ func parseASTFlagDirectives(t *testing.T) map[string]flagPolicySpec {
 		}
 		files = append(files, f)
 
-		ast.Inspect(f, func(n ast.Node) bool {
-			switch stmt := n.(type) {
-			case *ast.ValueSpec:
-				for i, nameIdent := range stmt.Names {
-					if i < len(stmt.Values) {
-						if use := extractCobraCommandUse(stmt.Values[i]); use != "" {
-							cmdUseName[nameIdent.Name] = use
+		for _, decl := range f.Decls {
+			switch d := decl.(type) {
+			case *ast.GenDecl:
+				if d.Tok != token.VAR {
+					continue
+				}
+				for _, spec := range d.Specs {
+					valSpec, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for i, nameIdent := range valSpec.Names {
+						if i < len(valSpec.Values) && nameIdent.Name != "RootCmd" {
+							if use := extractCobraCommandUse(valSpec.Values[i]); use != "" {
+								cmdUseName[nameIdent.Name] = use
+							}
 						}
 					}
 				}
-			case *ast.AssignStmt:
-				for i, lhs := range stmt.Lhs {
-					ident, ok := lhs.(*ast.Ident)
-					if ok && i < len(stmt.Rhs) {
-						if use := extractCobraCommandUse(stmt.Rhs[i]); use != "" {
-							cmdUseName[ident.Name] = use
+			case *ast.FuncDecl:
+				if d.Body == nil {
+					continue
+				}
+				fnName := d.Name.Name
+				if d.Recv == nil {
+					ast.Inspect(d.Body, func(n ast.Node) bool {
+						if _, isClosure := n.(*ast.FuncLit); isClosure {
+							return false
+						}
+						ret, ok := n.(*ast.ReturnStmt)
+						if ok && len(ret.Results) == 1 {
+							if retIdent, ok := ret.Results[0].(*ast.Ident); ok {
+								funcReturnIdent[fnName] = fnName + ":" + retIdent.Name
+							}
+						}
+						return true
+					})
+				}
+				ast.Inspect(d.Body, func(n ast.Node) bool {
+					switch stmt := n.(type) {
+					case *ast.ValueSpec:
+						for i, nameIdent := range stmt.Names {
+							if i < len(stmt.Values) {
+								if use := extractCobraCommandUse(stmt.Values[i]); use != "" {
+									cmdUseName[fnName+":"+nameIdent.Name] = use
+								}
+							}
+						}
+					case *ast.AssignStmt:
+						for i, lhs := range stmt.Lhs {
+							if ident, ok := lhs.(*ast.Ident); ok && i < len(stmt.Rhs) {
+								if use := extractCobraCommandUse(stmt.Rhs[i]); use != "" {
+									cmdUseName[fnName+":"+ident.Name] = use
+								}
+							}
+						}
+					case *ast.CallExpr:
+						sel, ok := stmt.Fun.(*ast.SelectorExpr)
+						if !ok || sel.Sel.Name != "AddCommand" {
+							return true
+						}
+						var parentName string
+						switch x := sel.X.(type) {
+						case *ast.Ident:
+							parentName = x.Name
+						case *ast.SelectorExpr:
+							parentName = x.Sel.Name
+						default:
+							return true
+						}
+						for _, arg := range stmt.Args {
+							addCmdCalls = append(addCmdCalls, addCmdCall{
+								fnName: fnName,
+								parent: parentName,
+								arg:    arg,
+							})
 						}
 					}
-				}
-			case *ast.CallExpr:
-				sel, ok := stmt.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "AddCommand" {
 					return true
-				}
-				parentIdent, ok := sel.X.(*ast.Ident)
-				if !ok {
-					return true
-				}
-				for _, arg := range stmt.Args {
-					if childIdent, ok := arg.(*ast.Ident); ok {
-						cmdParent[childIdent.Name] = parentIdent.Name
-					}
-				}
+				})
 			}
-			return true
-		})
+		}
 	}
 
-	resolveCmdPaths := func(cmdVar string) []string {
+	resolveScopedIdent := func(fnName, ident string) string {
+		if fnName != "" {
+			scoped := fnName + ":" + ident
+			if _, ok := cmdUseName[scoped]; ok {
+				return scoped
+			}
+		}
+		return ident
+	}
+
+	addParent := func(child, parent string) {
+		if !slices.Contains(cmdParent[child], parent) {
+			cmdParent[child] = append(cmdParent[child], parent)
+		}
+	}
+
+	for _, c := range addCmdCalls {
+		parentKey := resolveScopedIdent(c.fnName, c.parent)
+		switch arg := c.arg.(type) {
+		case *ast.Ident:
+			addParent(resolveScopedIdent(c.fnName, arg.Name), parentKey)
+		case *ast.CallExpr:
+			var calleeName string
+			switch fn := arg.Fun.(type) {
+			case *ast.Ident:
+				calleeName = fn.Name
+			case *ast.SelectorExpr:
+				calleeName = fn.Sel.Name
+			}
+			if retVar, ok := funcReturnIdent[calleeName]; ok {
+				addParent(retVar, parentKey)
+			}
+		}
+	}
+
+	resolveCmdPaths := func(fnName, cmdVar string) []string {
+		switch fnName {
+		case "AddPushFlags", "AddCommonPushFlags", "AddCommitMessageFlags":
+			return []string{"pr create", "pr push"}
+		case "AddAsDisabled":
+			return []string{"pr edit"}
+		}
 		if cmdVar == "RootCmd" {
 			return []string{"*"}
 		}
-		// AddPushFlags registers shared flags on both `pr create` and `pr push`.
-		if cmdVar == "cmd" {
-			return []string{"pr create", "pr push"}
+
+		var results []string
+		addResult := func(parts []string) {
+			if len(parts) == 0 {
+				return
+			}
+			p := strings.Join(parts, " ")
+			if canon, hasAlias := rootAliasTargets[p]; hasAlias {
+				p = canon
+			}
+			if !slices.Contains(results, p) {
+				results = append(results, p)
+			}
 		}
-		var parts []string
-		curr := cmdVar
-		for range 5 {
+
+		var walkParents func(curr string, suffix []string, depth int)
+		walkParents = func(curr string, suffix []string, depth int) {
+			if depth > 5 {
+				return
+			}
 			use, ok := cmdUseName[curr]
 			if !ok {
-				break
+				return
 			}
+			nextSuffix := suffix
 			if use != "*" {
-				parts = append([]string{use}, parts...)
+				nextSuffix = append([]string{use}, suffix...)
 			}
-			parent, hasParent := cmdParent[curr]
-			if !hasParent || parent == "RootCmd" {
-				break
+			parents := cmdParent[curr]
+			if len(parents) == 0 {
+				addResult(nextSuffix)
+				return
 			}
-			curr = parent
+			for _, parent := range parents {
+				if parent == "RootCmd" {
+					addResult(nextSuffix)
+					continue
+				}
+				walkParents(parent, nextSuffix, depth+1)
+			}
 		}
-		if len(parts) == 0 {
-			return nil
-		}
-		return []string{strings.Join(parts, " ")}
+
+		walkParents(resolveScopedIdent(fnName, cmdVar), nil, 0)
+		return results
 	}
 
 	directives := make(map[string]flagPolicySpec)
 	for _, f := range files {
 		// Index flag registration calls by line number: `<cmdVar>.Flags().*Var*(..., "<flagName>", ...)`
 		type flagReg struct {
+			fnName   string
 			cmdVar   string
 			flagName string
 		}
 		regByLine := make(map[int]flagReg)
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
+		for _, decl := range f.Decls {
+			fnName := ""
+			if fn, ok := decl.(*ast.FuncDecl); ok {
+				fnName = fn.Name.Name
 			}
-			cmdVar, flagName, ok := extractFlagRegistrationCall(call)
-			if !ok {
+			ast.Inspect(decl, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				cmdVar, flagName, ok := extractFlagRegistrationCall(call)
+				if !ok {
+					return true
+				}
+				line := fset.Position(call.Pos()).Line
+				regByLine[line] = flagReg{
+					fnName:   fnName,
+					cmdVar:   cmdVar,
+					flagName: flagName,
+				}
 				return true
-			}
-			line := fset.Position(call.Pos()).Line
-			regByLine[line] = flagReg{cmdVar: cmdVar, flagName: flagName}
-			return true
-		})
+			})
+		}
 
 		for _, cg := range f.Comments {
 			for _, c := range cg.List {
@@ -490,9 +631,9 @@ func parseASTFlagDirectives(t *testing.T) map[string]flagPolicySpec {
 					t.Errorf("%s:%d: //ghish:flag directive must sit immediately above a Flags().*Var* registration call", pos.Filename, pos.Line)
 					continue
 				}
-				cmdPaths := resolveCmdPaths(reg.cmdVar)
+				cmdPaths := resolveCmdPaths(reg.fnName, reg.cmdVar)
 				if len(cmdPaths) == 0 {
-					t.Errorf("%s:%d: could not resolve Cobra command path for %q on flag --%s", pos.Filename, pos.Line, reg.cmdVar, reg.flagName)
+					t.Errorf("%s:%d: could not resolve Cobra command path for %q (in %s) on flag --%s", pos.Filename, pos.Line, reg.cmdVar, reg.fnName, reg.flagName)
 					continue
 				}
 				for _, cp := range cmdPaths {
@@ -505,7 +646,7 @@ func parseASTFlagDirectives(t *testing.T) map[string]flagPolicySpec {
 	if len(directives) == 0 {
 		t.Errorf("expected at least one //ghish:flag directive in production source files, found 0")
 	}
-	return directives
+	return directives, resolveCmdPaths
 }
 
 func extractCobraCommandUse(expr ast.Expr) string {
@@ -580,7 +721,27 @@ func extractFlagRegistrationCall(call *ast.CallExpr) (cmdVar string, flagName st
 // pw_ghish/*.go and pw_ghish/worktree/*.go and verifies that every directive
 // adheres to the required schema and sits immediately above a flag registration.
 func TestFlagPolicy_DirectivesSyntax(t *testing.T) {
-	_ = parseASTFlagDirectives(t)
+	_, resolveCmdPaths := parseASTFlagDirectives(t)
+
+	for _, tc := range []struct {
+		fnName string
+		cmdVar string
+		want   []string
+	}{
+		{fnName: "newReviewCmd", cmdVar: "cmd", want: []string{"pr review"}},
+		{fnName: "newPushCommand", cmdVar: "cmd", want: []string{"pr push"}},
+		{fnName: "init", cmdVar: "createCmd", want: []string{"pr create"}},
+		{fnName: "newEditCmd", cmdVar: "editCmd", want: []string{"pr edit"}},
+		{fnName: "AddPushFlags", cmdVar: "cmd", want: []string{"pr create", "pr push"}},
+		{fnName: "AddCommitMessageFlags", cmdVar: "cmd", want: []string{"pr create", "pr push"}},
+		{fnName: "AddAsDisabled", cmdVar: "editCmd", want: []string{"pr edit"}},
+		{fnName: "init", cmdVar: "RootCmd", want: []string{"*"}},
+	} {
+		got := resolveCmdPaths(tc.fnName, tc.cmdVar)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("resolveCmdPaths(%q, %q) = %v, want %v", tc.fnName, tc.cmdVar, got, tc.want)
+		}
+	}
 }
 
 // TestFlagPolicy_AllRegisteredFlagsClassified walks the live RootCmd command
@@ -592,16 +753,7 @@ func TestFlagPolicy_DirectivesSyntax(t *testing.T) {
 func TestFlagPolicy_AllRegisteredFlagsClassified(t *testing.T) {
 	setupRootCmdHelp()
 	setupRootAliases()
-	astDirectives := parseASTFlagDirectives(t)
-
-	rootAliasTargets := map[string]string{
-		"checks": "pr checks",
-		"view":   "pr view",
-		"diff":   "pr diff",
-		"status": "pr status",
-		"push":   "pr push",
-		"agent":  "hook",
-	}
+	astDirectives, _ := parseASTFlagDirectives(t)
 
 	var walk func(cmd *cobra.Command, relPath string)
 	walk = func(cmd *cobra.Command, relPath string) {

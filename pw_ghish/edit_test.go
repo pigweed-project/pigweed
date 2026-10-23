@@ -962,3 +962,33 @@ func TestEdit_Trigger_DefaultAndExplicit(t *testing.T) {
 		t.Errorf("got Presubmit-Ready = %d, want 1", payload.Labels["Presubmit-Ready"])
 	}
 }
+
+func TestNewEditCmd_IsolatesOptionsAcrossInstances(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345)
+	server.OnJSON("POST", "/changes/12345/hashtags", http.StatusOK, []string{"alpha"})
+	server.OnJSON("PUT", "/changes/12345/topic", http.StatusOK, `"first-topic"`)
+	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+
+	cmd1 := newEditCmd()
+	cmd1.SetArgs([]string{"12345", "--add-hashtag", "alpha", "--topic", "first-topic"})
+	if err := cmd1.Execute(); err != nil {
+		t.Fatalf("first edit invocation failed: %v", err)
+	}
+
+	cmd2 := newEditCmd()
+	cmd2.SetArgs([]string{"12345", "--cq"})
+	if err := cmd2.Execute(); err != nil {
+		t.Fatalf("second edit invocation failed: %v", err)
+	}
+
+	if n := server.CallCount("POST", "/changes/12345/hashtags"); n != 1 {
+		t.Errorf("expected hashtags endpoint called only once, got %d", n)
+	}
+	if n := server.CallCount("PUT", "/changes/12345/topic"); n != 1 {
+		t.Errorf("expected topic endpoint called only once, got %d", n)
+	}
+	if n := server.CallCount("POST", "/changes/12345/revisions/current/review"); n != 1 {
+		t.Errorf("expected review endpoint called once on second command, got %d", n)
+	}
+}

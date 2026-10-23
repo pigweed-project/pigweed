@@ -25,34 +25,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	editTitle          string
-	editBody           string
-	editAddReviewer    []string
-	editReviewer       []string
-	editAddOwner       bool
-	editOwner          bool
-	editRemoveReviewer []string
-	editAddAssignee    []string
-	editRemoveAssignee []string
-	editAddAttention   []string
-	editRemoveAttn     []string
-	editAddLabels      []string
-	editTopic          string
-	editRemoveTopic    bool
-	editAddHashtags    []string
-	editRemoveHashtags []string
-	editCQ             int
-	editTrigger        int
-	editBug            string
-	editFixed          string
-)
+type editOptions struct {
+	title          string
+	body           string
+	addReviewer    []string
+	reviewer       []string
+	addOwner       bool
+	owner          bool
+	removeReviewer []string
+	addAssignee    []string
+	removeAssignee []string
+	addAttention   []string
+	removeAttn     []string
+	addLabels      []string
+	topic          string
+	removeTopic    bool
+	addHashtags    []string
+	removeHashtags []string
+	cq             int
+	trigger        int
+	bug            string
+	fixed          string
+}
 
-var editCmd = &cobra.Command{
-	Use:   "edit [<id>]",
-	Short: "Edit a change (commit message, reviewers, labels, topic, hashtags)",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+func (opts *editOptions) runE() func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
 		chCtx, err := ResolveChangeContext(cmd, args)
 		if err != nil {
 			return err
@@ -61,37 +58,37 @@ var editCmd = &cobra.Command{
 		changeID := chCtx.ChangeID
 		client := chCtx.Client
 
-		if cmd.Flags().Changed("title") && strings.TrimSpace(editTitle) == "" {
+		if cmd.Flags().Changed("title") && strings.TrimSpace(opts.title) == "" {
 			return fmt.Errorf("cannot set an empty commit title")
 		}
 
-		rawAddReviewers := append([]string{}, editAddReviewer...)
-		rawAddReviewers = append(rawAddReviewers, editReviewer...)
-		if editAddOwner || editOwner {
+		rawAddReviewers := append([]string{}, opts.addReviewer...)
+		rawAddReviewers = append(rawAddReviewers, opts.reviewer...)
+		if opts.addOwner || opts.owner {
 			rawAddReviewers = append(rawAddReviewers, "@owners")
 		}
 
 		hasTrailerEdit := cmd.Flags().Changed("bug") || cmd.Flags().Changed("fixed")
-		hasMsgEdit := editTitle != "" || cmd.Flags().Changed("body") || hasTrailerEdit
-		hasTopicEdit := cmd.Flags().Changed("topic") || editRemoveTopic
-		hasHashtagEdit := len(editAddHashtags) > 0 || len(editRemoveHashtags) > 0
+		hasMsgEdit := opts.title != "" || cmd.Flags().Changed("body") || hasTrailerEdit
+		hasTopicEdit := cmd.Flags().Changed("topic") || opts.removeTopic
+		hasHashtagEdit := len(opts.addHashtags) > 0 || len(opts.removeHashtags) > 0
 		hasCQEdit := cmd.Flags().Changed("cq") || cmd.Flags().Changed("trigger")
-		hasAttentionEdit := len(editAddAttention) > 0 || len(editRemoveAttn) > 0
-		if !hasMsgEdit && len(rawAddReviewers) == 0 && len(editRemoveReviewer) == 0 &&
-			len(editAddAssignee) == 0 && len(editRemoveAssignee) == 0 && len(editAddLabels) == 0 &&
+		hasAttentionEdit := len(opts.addAttention) > 0 || len(opts.removeAttn) > 0
+		if !hasMsgEdit && len(rawAddReviewers) == 0 && len(opts.removeReviewer) == 0 &&
+			len(opts.addAssignee) == 0 && len(opts.removeAssignee) == 0 && len(opts.addLabels) == 0 &&
 			!hasTopicEdit && !hasHashtagEdit && !hasCQEdit && !hasAttentionEdit {
 			return fmt.Errorf("at least one of --title, --body, --bug, --fixed, --add-reviewer, --add-owner, --remove-reviewer, --add-assignee, --remove-assignee, --add-attention, --remove-attention, --add-label, --trigger, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --trigger\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-owner\n  gh pr edit 123 --remove-attention me\n  gh pr edit 123 --add-label Commit-Queue=1")
 		}
 
-		addAttention, err := normalizeAttentionAccounts("--add-attention", editAddAttention)
+		addAttention, err := normalizeAttentionAccounts("--add-attention", opts.addAttention)
 		if err != nil {
 			return err
 		}
-		removeAttention, err := normalizeAttentionAccounts("--remove-attention", editRemoveAttn)
+		removeAttention, err := normalizeAttentionAccounts("--remove-attention", opts.removeAttn)
 		if err != nil {
 			return err
 		}
-		labelVotes, err := parseLabelVotes(editAddLabels)
+		labelVotes, err := parseLabelVotes(opts.addLabels)
 		if err != nil {
 			return err
 		}
@@ -101,8 +98,8 @@ var editCmd = &cobra.Command{
 		// check, so `Fixes #456` cannot slip in through one flag and not
 		// another.
 		for _, text := range []struct{ where, value string }{
-			{"--title", editTitle},
-			{"--body", editBody},
+			{"--title", opts.title},
+			{"--body", opts.body},
 		} {
 			if err := CheckGitHubIssueSyntax(text.value, text.where); err != nil {
 				return err
@@ -112,8 +109,8 @@ var editCmd = &cobra.Command{
 		// --bug/--fixed and hand-written trailer text are two ways to say the
 		// same thing. If they disagree, guessing would silently discard one.
 		trailerFlags := []struct{ flag, key, value string }{
-			{"bug", "Bug", editBug},
-			{"fixed", "Fixed", editFixed},
+			{"bug", "Bug", opts.bug},
+			{"fixed", "Fixed", opts.fixed},
 		}
 		for _, tf := range trailerFlags {
 			if !cmd.Flags().Changed(tf.flag) {
@@ -126,7 +123,7 @@ var editCmd = &cobra.Command{
 					"\"none\".\n\nExample:\n  gh pr edit %s --%s b/123456", tf.flag, changeID, tf.flag)
 			}
 			for _, supplied := range []struct{ where, text string }{
-				{"--body", editBody},
+				{"--body", opts.body},
 			} {
 				if supplied.text == "" || !MentionsTrailerKey(supplied.text, tf.key) {
 					continue
@@ -175,7 +172,7 @@ var editCmd = &cobra.Command{
 			fmt.Fprintf(cmd.OutOrStdout(), "Reviewer added successfully: %s\n", strings.Join(expandedReviewers, ", "))
 		}
 
-		for _, reviewer := range editRemoveReviewer {
+		for _, reviewer := range opts.removeReviewer {
 			_, err = client.Changes.DeleteReviewer(ctx, changeID, reviewer)
 			if err != nil {
 				return fmt.Errorf("error deleting reviewer %s: %w", reviewer, err)
@@ -183,7 +180,7 @@ var editCmd = &cobra.Command{
 			fmt.Fprintln(cmd.OutOrStdout(), "Reviewer removed successfully.")
 		}
 
-		for _, assignee := range editAddAssignee {
+		for _, assignee := range opts.addAssignee {
 			if err := chCtx.AddCC(assignee); err != nil {
 				return err
 			}
@@ -199,7 +196,7 @@ var editCmd = &cobra.Command{
 			fmt.Fprintln(cmd.OutOrStdout(), "Assignee added successfully.")
 		}
 
-		for _, assignee := range editRemoveAssignee {
+		for _, assignee := range opts.removeAssignee {
 			_, err = client.Changes.DeleteReviewer(ctx, changeID, assignee)
 			if err != nil {
 				return fmt.Errorf("error deleting assignee %s: %w", assignee, err)
@@ -233,13 +230,13 @@ var editCmd = &cobra.Command{
 		}
 
 		if hasTopicEdit {
-			if editRemoveTopic || (cmd.Flags().Changed("topic") && strings.TrimSpace(editTopic) == "") {
+			if opts.removeTopic || (cmd.Flags().Changed("topic") && strings.TrimSpace(opts.topic) == "") {
 				if _, err := client.Changes.DeleteTopic(ctx, changeID); err != nil {
 					return chCtx.FormatError(err, "deleting topic on")
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "Topic removed successfully.")
 			} else {
-				targetTopic := strings.TrimSpace(editTopic)
+				targetTopic := strings.TrimSpace(opts.topic)
 				chInfo, chErr := chCtx.GetChange(&gerrit.ChangeOptions{
 					AdditionalFields: []string{"SUBMIT_REQUIREMENTS"},
 				})
@@ -258,8 +255,8 @@ var editCmd = &cobra.Command{
 
 		if hasHashtagEdit {
 			if _, _, err := client.Changes.SetHashtags(ctx, changeID, &gerrit.HashtagsInput{
-				Add:    editAddHashtags,
-				Remove: editRemoveHashtags,
+				Add:    opts.addHashtags,
+				Remove: opts.removeHashtags,
 			}); err != nil {
 				return chCtx.FormatError(err, "updating hashtags on")
 			}
@@ -267,9 +264,9 @@ var editCmd = &cobra.Command{
 		}
 
 		if hasCQEdit {
-			requestedCQ := editCQ
+			requestedCQ := opts.cq
 			if cmd.Flags().Changed("trigger") {
-				requestedCQ = editTrigger
+				requestedCQ = opts.trigger
 			}
 			cqName, cqScore := chCtx.ResolveCQVote(requestedCQ)
 			input := &gerrit.ReviewInput{
@@ -286,7 +283,7 @@ var editCmd = &cobra.Command{
 		}
 
 		return nil
-	},
+	}
 }
 
 var gerritLabelNameRegex = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$`)
@@ -363,10 +360,10 @@ func removeFromAttentionSet(chCtx *ChangeContext, account string) error {
 	return nil
 }
 
-func buildUpdatedCommitMessage(origMessage, changeID string, cmd *cobra.Command, trailerFlags []struct{ flag, key, value string }) (string, error) {
+func buildUpdatedCommitMessage(origMessage, changeID string, cmd *cobra.Command, opts *editOptions, trailerFlags []struct{ flag, key, value string }) (string, error) {
 	newMessage := origMessage
 
-	if editTitle != "" || cmd.Flags().Changed("body") {
+	if opts.title != "" || cmd.Flags().Changed("body") {
 		var origTitle, origBody string
 		lines := strings.Split(origMessage, "\n")
 		origTitle = lines[0]
@@ -375,14 +372,14 @@ func buildUpdatedCommitMessage(origMessage, changeID string, cmd *cobra.Command,
 		}
 
 		targetTitle := origTitle
-		if editTitle != "" {
-			targetTitle = editTitle
+		if opts.title != "" {
+			targetTitle = opts.title
 		}
 
 		targetBody := origBody
 		if cmd.Flags().Changed("body") {
 			origTrailers := ExtractTrailers(origMessage)
-			targetBody = MergeTrailers(editBody, origTrailers)
+			targetBody = MergeTrailers(opts.body, origTrailers)
 		}
 
 		if strings.TrimSpace(targetBody) != "" {
@@ -409,34 +406,48 @@ func buildUpdatedCommitMessage(origMessage, changeID string, cmd *cobra.Command,
 	return newMessage, nil
 }
 
-func init() {
-	editCmd.Flags().StringVar(&editTitle, "title", "", "New commit title (first line of commit message)")
-	editCmd.Flags().StringVar(&editBody, "body", "", "New commit body")
-	editCmd.Flags().StringVar(&editBug, "bug", "",
+func newEditCmd() *cobra.Command {
+	var opts editOptions
+
+	editCmd := &cobra.Command{
+		Use:   "edit [<id>]",
+		Short: "Edit a change (commit message, reviewers, labels, topic, hashtags)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  opts.runE(),
+	}
+
+	editCmd.Flags().StringVar(&opts.title, "title", "", "New commit title (first line of commit message)")
+	editCmd.Flags().StringVar(&opts.body, "body", "", "New commit body")
+	editCmd.Flags().StringVar(&opts.bug, "bug", "",
 		"Set the Bug: trailer, linking a Buganizer issue (accepts 123456, b/123456, an issue URL, a comma-separated list, or \"none\")")
-	editCmd.Flags().StringVar(&editFixed, "fixed", "",
+	editCmd.Flags().StringVar(&opts.fixed, "fixed", "",
 		"Set the Fixed: trailer, linking a Buganizer issue and closing it on submit (same accepted forms as --bug)")
-	editCmd.Flags().StringArrayVar(&editAddReviewer, "add-reviewer", nil, "Add reviewer by email, ID, or @owners")
-	editCmd.Flags().StringArrayVarP(&editReviewer, "reviewer", "r", nil, "Alias for --add-reviewer (ghish-only)")
+	editCmd.Flags().StringArrayVar(&opts.addReviewer, "add-reviewer", nil, "Add reviewer by email, ID, or @owners")
+	editCmd.Flags().StringArrayVarP(&opts.reviewer, "reviewer", "r", nil, "Alias for --add-reviewer (ghish-only)")
 	_ = editCmd.Flags().MarkHidden("reviewer")
-	editCmd.Flags().BoolVar(&editAddOwner, "add-owner", false, "Add module code owners as reviewers (ghish-only)")
-	editCmd.Flags().BoolVar(&editOwner, "owner", false, "Alias for --add-owner (ghish-only)")
+	editCmd.Flags().BoolVar(&opts.addOwner, "add-owner", false, "Add module code owners as reviewers (ghish-only)")
+	editCmd.Flags().BoolVar(&opts.owner, "owner", false, "Alias for --add-owner (ghish-only)")
 	_ = editCmd.Flags().MarkHidden("owner")
-	editCmd.Flags().StringArrayVar(&editRemoveReviewer, "remove-reviewer", nil, "Remove reviewer by email or ID")
-	editCmd.Flags().StringArrayVar(&editAddAssignee, "add-assignee", nil, "Add assignee by email or ID")
-	editCmd.Flags().StringArrayVar(&editRemoveAssignee, "remove-assignee", nil, "Remove assignee by email or ID")
-	editCmd.Flags().StringArrayVar(&editAddAttention, "add-attention", nil,
+	editCmd.Flags().StringArrayVar(&opts.removeReviewer, "remove-reviewer", nil, "Remove reviewer by email or ID")
+	editCmd.Flags().StringArrayVar(&opts.addAssignee, "add-assignee", nil, "Add assignee by email or ID")
+	editCmd.Flags().StringArrayVar(&opts.removeAssignee, "remove-assignee", nil, "Remove assignee by email or ID")
+	editCmd.Flags().StringArrayVar(&opts.addAttention, "add-attention", nil,
 		"Add a user to the attention set by email, account ID, or \"me\" (ghish-only)")
-	editCmd.Flags().StringArrayVar(&editRemoveAttn, "remove-attention", nil,
+	editCmd.Flags().StringArrayVar(&opts.removeAttn, "remove-attention", nil,
 		"Remove a user from the attention set by email, account ID, or \"me\"; they stay a reviewer (ghish-only)")
-	editCmd.Flags().StringArrayVar(&editAddLabels, "add-label", nil, "Add Gerrit labels (e.g., Commit-Queue+1)")
-	editCmd.Flags().IntVar(&editTrigger, "trigger", -1, "Trigger presubmit / Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias --cq)")
+	editCmd.Flags().StringArrayVar(&opts.addLabels, "add-label", nil, "Add Gerrit labels (e.g., Commit-Queue+1)")
+	editCmd.Flags().IntVar(&opts.trigger, "trigger", -1, "Trigger presubmit / Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias --cq)")
 	editCmd.Flags().Lookup("trigger").NoOptDefVal = "1"
-	editCmd.Flags().IntVar(&editCQ, "cq", -1, "Set Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias for --trigger)")
+	editCmd.Flags().IntVar(&opts.cq, "cq", -1, "Set Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias for --trigger)")
 	editCmd.Flags().Lookup("cq").NoOptDefVal = "1"
-	editCmd.Flags().StringVar(&editTopic, "topic", "", "Set Gerrit topic for the change")
-	editCmd.Flags().BoolVar(&editRemoveTopic, "remove-topic", false, "Remove topic from the change")
-	editCmd.Flags().StringArrayVar(&editAddHashtags, "add-hashtag", nil, "Add hashtags to the change")
-	editCmd.Flags().StringArrayVar(&editRemoveHashtags, "remove-hashtag", nil, "Remove hashtags from the change")
-	PrCmd.AddCommand(editCmd)
+	editCmd.Flags().StringVar(&opts.topic, "topic", "", "Set Gerrit topic for the change")
+	editCmd.Flags().BoolVar(&opts.removeTopic, "remove-topic", false, "Remove topic from the change")
+	editCmd.Flags().StringArrayVar(&opts.addHashtags, "add-hashtag", nil, "Add hashtags to the change")
+	editCmd.Flags().StringArrayVar(&opts.removeHashtags, "remove-hashtag", nil, "Remove hashtags from the change")
+
+	return editCmd
+}
+
+func init() {
+	PrCmd.AddCommand(newEditCmd())
 }
