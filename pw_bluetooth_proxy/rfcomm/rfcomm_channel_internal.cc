@@ -352,6 +352,7 @@ Status RfcommChannelInternal::SendAdditionalRxCredits(uint8_t credits) {
   if (credits == 0) {
     return OkStatus();
   }
+  uint8_t new_total_credits;
   {
     std::lock_guard lock(rx_mutex_);
     if (std::numeric_limits<uint8_t>::max() - credits < rx_total_credits_) {
@@ -363,9 +364,10 @@ Status RfcommChannelInternal::SendAdditionalRxCredits(uint8_t credits) {
     } else {
       rx_total_credits_ += credits;
     }
+    new_total_credits = rx_total_credits_;
   }
   PW_LOG_DEBUG(
-      "Max credits increased by: %d (to %d)", credits, rx_total_credits_);
+      "Max credits increased by: %d (to %d)", credits, new_total_credits);
   Result<bool> send_result = SendCredits(credits);
   // If SendCredits did not immediately transmit and notify (e.g. if the credit
   // frame was queued or send failed), notify here so the persistent container
