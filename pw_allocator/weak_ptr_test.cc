@@ -427,6 +427,56 @@ TEST_F(WeakPtrTest, ReassignmentOverwritesWithoutLeak) {
   EXPECT_EQ(metrics.allocated_bytes.value(), 0u);
 }
 
+TEST_F(WeakPtrTest, NullptrAssignment) {
+  auto shared = allocator_.MakeShared<int>(42);
+  pw::WeakPtr<int> weak = shared;
+  EXPECT_FALSE(weak.expired());
+  weak = nullptr;
+  EXPECT_TRUE(weak.expired());
+  EXPECT_EQ(weak.Lock(), nullptr);
+}
+
+TEST_F(WeakPtrTest, StaticPointerCast) {
+  struct Base {
+    virtual ~Base() = default;
+    int x = 1;
+  };
+  struct Derived : Base {
+    int y = 2;
+  };
+
+  auto derived = allocator_.MakeShared<Derived>();
+  pw::WeakPtr<Base> weak_base = derived;
+  pw::WeakPtr<Derived> weak_derived =
+      pw::static_pointer_cast<Derived>(weak_base);
+  EXPECT_FALSE(weak_derived.expired());
+  EXPECT_EQ(weak_derived.Lock(), derived);
+
+  pw::WeakPtr<Base> empty;
+  EXPECT_TRUE(pw::static_pointer_cast<Derived>(empty).expired());
+}
+
+TEST_F(WeakPtrTest, ConstPointerCast) {
+  auto shared = allocator_.MakeShared<int>(42);
+  pw::WeakPtr<const int> const_weak = shared;
+  pw::WeakPtr<int> non_const_weak = pw::const_pointer_cast<int>(const_weak);
+  EXPECT_FALSE(non_const_weak.expired());
+  EXPECT_EQ(non_const_weak.Lock(), shared);
+
+  pw::WeakPtr<const int> empty;
+  EXPECT_TRUE(pw::const_pointer_cast<int>(empty).expired());
+}
+
+TEST_F(WeakPtrTest, OwnerBefore) {
+  auto shared1 = allocator_.MakeShared<int>(1);
+  auto shared2 = allocator_.MakeShared<int>(2);
+  pw::WeakPtr<int> weak1 = shared1;
+  pw::WeakPtr<int> weak2 = shared2;
+
+  EXPECT_TRUE(weak1.owner_before(weak2) || weak2.owner_before(weak1));
+  EXPECT_FALSE(weak1.owner_before(weak1));
+}
+
 }  // namespace
 
 // TODO(b/402489948): Remove when portable atomics are provided by `pw_atomic`.

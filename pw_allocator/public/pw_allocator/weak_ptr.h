@@ -37,6 +37,12 @@ namespace pw {
 template <typename T>
 class WeakPtr;
 
+template <typename To, typename From>
+WeakPtr<To> static_pointer_cast(const WeakPtr<From>& p) noexcept;
+
+template <typename To, typename From>
+WeakPtr<To> const_pointer_cast(const WeakPtr<From>& p) noexcept;
+
 /// A `std::weak_ptr<T>`-like type that integrates with `pw::SharedPtr`.
 ///
 /// @tparam   T   The type being pointed to. This may be an array type, e.g.
@@ -128,6 +134,12 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
             typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
   WeakPtr& operator=(WeakPtr<U>&& other) noexcept;
 
+  /// Sets this `WeakPtr` to null, releasing any currently-held value.
+  WeakPtr& operator=(std::nullptr_t) noexcept {
+    reset();
+    return *this;
+  }
+
   /// Explicit conversion operator for downcasting.
   ///
   /// If an arbitrary type `A` derives from another type `B`, a shared or weak
@@ -142,11 +154,16 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
   template <typename U,
             typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
   explicit operator WeakPtr<U>() const {
-    if (control_block_ != nullptr) {
-      control_block_->IncrementWeak();
-    }
-    return WeakPtr<U>(static_cast<U*>(Base::ptr_), control_block_);
+    return static_pointer_cast<U>(*this);
   }
+
+  /// Creates a new WeakPtr by static casting the given weak pointer.
+  template <typename To, typename From>
+  friend WeakPtr<To> static_pointer_cast(const WeakPtr<From>& p) noexcept;
+
+  /// Creates a new WeakPtr by const casting the given weak pointer.
+  template <typename To, typename From>
+  friend WeakPtr<To> const_pointer_cast(const WeakPtr<From>& p) noexcept;
 
   /// Resets this object to an empty state.
   ///
@@ -178,7 +195,7 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
   /// control blocks.
   template <typename PtrType>
   bool owner_before(const PtrType& other) const noexcept {
-    return control_block_ < other.control_block();
+    return std::less{}(control_block_, other.control_block());
   }
 
  private:
@@ -203,6 +220,24 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
 };
 
 // Template implementations.
+
+template <typename To, typename From>
+WeakPtr<To> static_pointer_cast(const WeakPtr<From>& p) noexcept {
+  using PtrType = typename WeakPtr<To>::element_type*;
+  if (p.control_block_ != nullptr) {
+    p.control_block_->IncrementWeak();
+  }
+  return WeakPtr<To>{static_cast<PtrType>(p.ptr_), p.control_block_};
+}
+
+template <typename To, typename From>
+WeakPtr<To> const_pointer_cast(const WeakPtr<From>& p) noexcept {
+  using PtrType = typename WeakPtr<To>::element_type*;
+  if (p.control_block_ != nullptr) {
+    p.control_block_->IncrementWeak();
+  }
+  return WeakPtr<To>{const_cast<PtrType>(p.ptr_), p.control_block_};
+}
 
 template <typename T>
 template <typename U, typename>
