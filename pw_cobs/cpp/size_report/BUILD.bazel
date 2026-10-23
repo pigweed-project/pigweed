@@ -1,0 +1,71 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("//pw_bloat:pw_cc_size_binary.bzl", "pw_cc_size_binary")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["-layering_check"],
+)
+
+licenses(["notice"])
+
+_DEPS = [
+    "//pw_bloat:bloat_this_binary",
+    "//pw_bytes",
+    "//pw_cobs/cpp:pw_cobs",
+    "//pw_log",
+    "//pw_preprocessor",
+    "//pw_result",
+    "//pw_span",
+    "//pw_status",
+]
+
+pw_cc_size_binary(
+    name = "base",
+    srcs = ["cobs_size_report.cc"],
+    deps = _DEPS,
+)
+
+pw_cc_size_binary(
+    name = "encode_decode",
+    srcs = ["cobs_size_report.cc"],
+    copts = ["-DENABLE_ENCODE_DECODE=1"],
+    deps = _DEPS,
+)
+
+pw_cc_size_binary(
+    name = "in_place",
+    srcs = ["cobs_size_report.cc"],
+    copts = ["-DENABLE_IN_PLACE=1"],
+    deps = _DEPS,
+)
+
+pw_cc_size_binary(
+    name = "streaming_decoder",
+    srcs = ["cobs_size_report.cc"],
+    copts = ["-DENABLE_STREAMING_DECODER=1"],
+    deps = _DEPS,
+)
+
+pw_cc_size_binary(
+    name = "all_cobs",
+    srcs = ["cobs_size_report.cc"],
+    copts = [
+        "-DENABLE_ENCODE_DECODE=1",
+        "-DENABLE_IN_PLACE=1",
+        "-DENABLE_STREAMING_DECODER=1",
+    ],
+    deps = _DEPS,
+)

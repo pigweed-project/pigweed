@@ -1,0 +1,74 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("//pw_bloat:pw_size_diff.bzl", "pw_size_diff")
+load("//pw_bloat:pw_size_table.bzl", "pw_size_table")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+pw_size_diff(
+    name = "encode_decode_size_diff",
+    base = "//pw_cobs/cpp/size_report:base",
+    label = "One-shot COBS encode and decode",
+    target = "//pw_cobs/cpp/size_report:encode_decode",
+)
+
+pw_size_diff(
+    name = "in_place_size_diff",
+    base = "//pw_cobs/cpp/size_report:base",
+    label = "In-place EncodeBuffer",
+    target = "//pw_cobs/cpp/size_report:in_place",
+)
+
+pw_size_diff(
+    name = "streaming_decoder_size_diff",
+    base = "//pw_cobs/cpp/size_report:base",
+    label = "Streaming COBS Decoder",
+    target = "//pw_cobs/cpp/size_report:streaming_decoder",
+)
+
+pw_size_diff(
+    name = "all_cobs_size_diff",
+    base = "//pw_cobs/cpp/size_report:base",
+    label = "All COBS primitives combined",
+    target = "//pw_cobs/cpp/size_report:all_cobs",
+)
+
+pw_size_table(
+    name = "pw_cobs_size_table",
+    reports = [
+        ":encode_decode_size_diff",
+        ":in_place_size_diff",
+        ":streaming_decoder_size_diff",
+        ":all_cobs_size_diff",
+    ],
+)
+
+sphinx_docs_library(
+    name = "docs",
+    srcs = [
+        "design.rst",
+        "docs.rst",
+        "guide.rst",
+        "module.toml",
+        "size.rst",
+        ":pw_cobs_size_table",
+    ],
+    prefix = "pw_cobs/",
+    target_compatible_with = incompatible_with_mcu(),
+)

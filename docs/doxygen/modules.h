@@ -136,6 +136,9 @@
 /// @defgroup pw_clock_tree_mcuxpresso pw_clock_tree_mcuxpresso
 /// @ingroup pw_clock_tree category_nxp
 /// @brief NXP MCUXpresso SDK implementation for pw_clock_tree
+/// @defgroup pw_cobs pw_cobs
+/// @ingroup category_comms
+/// @brief Consistent Overhead Byte Stuffing (COBS) codec and zero-copy frame streamer
 /// @defgroup pw_containers pw_containers
 /// @ingroup category_core
 /// @brief Generic collections of objects for embedded devices

@@ -57,6 +57,7 @@ filegroup(
         "//pw_chrono:doxygen",
         "//pw_clock_tree:doxygen",
         "//pw_clock_tree_mcuxpresso:doxygen",
+        "//pw_cobs/cpp:doxygen",
         "//pw_containers:doxygen",
         "//pw_crypto:doxygen",
         "//pw_digital_io:doxygen",

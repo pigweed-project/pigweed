@@ -298,6 +298,7 @@ sphinx_docs_library(
         "//pw_cli_analytics:docs",
         "//pw_clock_tree:docs",
         "//pw_clock_tree_mcuxpresso:docs",
+        "//pw_cobs:docs",
         "//pw_compilation_testing:docs",
         "//pw_config_loader:docs",
         "//pw_console:docs",

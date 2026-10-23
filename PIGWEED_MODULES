@@ -48,6 +48,7 @@ pw_cli
 pw_cli_analytics
 pw_clock_tree
 pw_clock_tree_mcuxpresso
+pw_cobs
 pw_compilation_testing
 pw_config_loader
 pw_console

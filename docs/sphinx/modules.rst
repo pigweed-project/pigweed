@@ -66,6 +66,7 @@ Module index
    ":ref:`module-pw_cli_analytics`", ":bdg-primary:`stable`", "", ""
    ":ref:`module-pw_clock_tree`", ":bdg-secondary:`unstable`", "Clock tree management for embedded devices", "C++"
    ":ref:`module-pw_clock_tree_mcuxpresso`", ":bdg-secondary:`unstable`", "NXP MCUXpresso SDK implementation for pw_clock_tree", "C++"
+   ":ref:`module-pw_cobs`", ":bdg-warning:`experimental`", "Consistent Overhead Byte Stuffing (COBS) codec and zero-copy frame streamer", "C++"
    ":ref:`module-pw_compilation_testing`", ":bdg-primary:`stable`", "", ""
    ":ref:`module-pw_config_loader`", ":bdg-primary:`stable`", "", ""
    ":ref:`module-pw_console`", ":bdg-primary:`stable`", "Multi-purpose pluggable interactive console for dev & manufacturing", "Python"

@@ -24,6 +24,7 @@ The following table lists all modules related to Comms.
    ":ref:`module-pw_rpc2`", ":bdg-warning:`experimental`", "Next gen, zero-copy async RPC with end-to-end backpressure", "C++"
    ":ref:`module-pw_transport`", ":bdg-warning:`experimental`", "Asynchronous datagram-oriented transport interface", "C++"
    ":ref:`module-pw_channel`", ":bdg-danger:`deprecated`", "Async, zero-copy API for sending and receiving bytes or datagrams", "C++"
+   ":ref:`module-pw_cobs`", ":bdg-warning:`experimental`", "Consistent Overhead Byte Stuffing (COBS) codec and zero-copy frame streamer", "C++"
    ":ref:`module-pw_grpc`", ":bdg-secondary:`unstable`", "pw_rpc over gRPC", "C++"
    ":ref:`module-pw_hdlc`", ":bdg-primary:`stable`", "Simple, robust, and efficient serial communication", "Python, C++, TypeScript"
    ":ref:`module-pw_router`", ":bdg-warning:`experimental`", "Transport-agnostic packet routing", "C++"
@@ -60,6 +61,7 @@ Learn more: :doc:`/bluetooth/index`
    Transport <../pw_transport/docs>
    Bluetooth <../bluetooth/index>
    Channels <../pw_channel/docs>
+   COBS <../pw_cobs/docs>
    gRPC <../pw_grpc/docs>
    HDLC <../pw_hdlc/docs>
    Packet routing <../pw_router/docs>
