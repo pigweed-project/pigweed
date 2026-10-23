@@ -22,6 +22,49 @@ namespace pw::transport {
 
 /// @module{pw_transport}
 
+/// The listening side of a datagram-oriented transport.
+///
+/// A `Listener` accepts inbound connections initiated by remote peers,
+/// ensuring that they are properly established, then provides a handle
+/// which is used to read to or write from that socket.
+///
+/// The `Listener` interface does not specify any addressing or ports, as
+/// those details are protocol-dependent. A concrete `Listener` instance
+/// should be constructed with and internally store any such state if
+/// required.
+///
+/// If a `Listener` is destructed, it must resolve any pending
+/// `AcceptFuture` objects with a `FAILED_PRECONDITION`.
+class Listener {
+ public:
+  /// The future returned by `Accept`, resolving to a `DatagramSocket`
+  /// handle on success.
+  using AcceptFuture = async2::ValueFuture<Result<DatagramSocket>>;
+
+  virtual ~Listener() = default;
+
+  /// Listens for a new connection from a peer, returning it once established.
+  /// `Accept` may be called repeatedly to receive additional connections.
+  ///
+  /// `Accept` must be safe to call from multiple tasks at once, even if the
+  /// underlying implementation runs its operations and resolves its futures
+  /// serially. If multiple calls to `Accept` are made, the order in which
+  /// their futures are resolved is implementation-specific and should not be
+  /// relied upon.
+  ///
+  /// @returns
+  /// * @OK: The connection was established and is ready for use.
+  /// * @FAILED_PRECONDITION: The transport is permanently down.
+  /// * @RESOURCE_EXHAUSTED: The socket object could not be allocated.
+  virtual AcceptFuture Accept() = 0;
+
+ protected:
+  /// Creates a `DatagramSocket` handle from an implementation.
+  static DatagramSocket WrapSocket(DatagramSocketImpl& impl) {
+    return DatagramSocket(impl);
+  }
+};
+
 /// The listening side of a reliable, datagram-oriented transport.
 ///
 /// A `ReliableDatagramListener` accepts inbound connections initiated by remote
@@ -62,6 +105,51 @@ class ReliableDatagramListener {
   /// Creates a `ReliableDatagramSocket` handle from an implementation.
   static ReliableDatagramSocket WrapSocket(ReliableDatagramSocketImpl& impl) {
     return ReliableDatagramSocket(impl);
+  }
+};
+
+/// The establishing side of a datagram-oriented transport.
+///
+/// A connector opens outbound connections to a remote peer, performing any
+/// necessary protocol-level configuration and establishment, then provides
+/// a handle which is used to read to or write from that socket.
+///
+/// The `Connector` interface does not specify any addressing or ports, as
+/// those details are protocol-dependent. A concrete `Connector` instance
+/// should be constructed with and internally store any such state if
+/// required.
+///
+/// If a `Connector` is destructed, it must resolve any pending
+/// `ConnectFuture` objects with a `FAILED_PRECONDITION`.
+class Connector {
+ public:
+  /// The future returned by `Connect`, resolving to a `DatagramSocket`
+  /// handle on success.
+  using ConnectFuture = async2::ValueFuture<Result<DatagramSocket>>;
+
+  virtual ~Connector() = default;
+
+  /// Opens a connection to the peer, returning it once established.
+  ///
+  /// It is up to the implementation to decide whether concurrent connections to
+  /// the peer are allowed. If not supported, subsequent calls to `Connect` when
+  /// a connection is active should return `ALREADY_EXISTS`.
+  /// It must always be possible to call `Connect` again when no connections are
+  /// active and the transport is still alive.
+  ///
+  /// @returns
+  /// * @OK: The connection was established and is ready for use.
+  /// * @UNAVAILABLE: The peer could not be reached.
+  /// * @FAILED_PRECONDITION: The transport is permanently down.
+  /// * @ALREADY_EXISTS: A connection is already active and the transport
+  ///     does not support multiple simultaneous connections.
+  /// * @RESOURCE_EXHAUSTED: The socket object could not be allocated.
+  virtual ConnectFuture Connect() = 0;
+
+ protected:
+  /// Creates a `DatagramSocket` handle from an implementation.
+  static DatagramSocket WrapSocket(DatagramSocketImpl& impl) {
+    return DatagramSocket(impl);
   }
 };
 

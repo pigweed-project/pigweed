@@ -32,10 +32,17 @@ namespace pw::transport {
 namespace {
 
 /// A mock transport that vends connections.
-class MockTransport : public ReliableDatagramListener,
-                      public ReliableDatagramConnector {
+template <typename ListenerBase = ReliableDatagramListener,
+          typename ConnectorBase = ReliableDatagramConnector>
+class BasicMockTransport : public ListenerBase, public ConnectorBase {
  public:
-  ~MockTransport() override {
+  using AcceptFuture = typename ListenerBase::AcceptFuture;
+  using ConnectFuture = typename ConnectorBase::ConnectFuture;
+  using ResultType = typename AcceptFuture::value_type;
+
+  using ListenerBase::WrapSocket;
+
+  ~BasicMockTransport() override {
     accept_provider_.Resolve(Status::FailedPrecondition());
     connect_provider_.Resolve(Status::FailedPrecondition());
   }
@@ -43,45 +50,56 @@ class MockTransport : public ReliableDatagramListener,
   AcceptFuture Accept() override { return accept_provider_.Get(); }
   ConnectFuture Connect() override { return connect_provider_.Get(); }
 
-  void ResolveAccept(Result<ReliableDatagramSocket>&& connection) {
+  void ResolveAccept(ResultType&& connection) {
     accept_provider_.Resolve(std::move(connection));
   }
 
-  void ResolveConnect(Result<ReliableDatagramSocket>&& connection) {
+  void ResolveConnect(ResultType&& connection) {
     connect_provider_.Resolve(std::move(connection));
   }
 
  private:
-  async2::ValueProvider<Result<ReliableDatagramSocket>> accept_provider_;
-  async2::ValueProvider<Result<ReliableDatagramSocket>> connect_provider_;
+  async2::ValueProvider<ResultType> accept_provider_;
+  async2::ValueProvider<ResultType> connect_provider_;
 };
+
+using MockTransport = BasicMockTransport<>;
+using MockDatagramTransport = BasicMockTransport<Listener, Connector>;
 
 /// A mock connection that acts as a one-deep loopback queue.
 /// Writes feed directly into reads.
-class MockSocket : public ReliableDatagramSocketImpl {
+template <typename Base = ReliableDatagramSocketImpl>
+class BasicMockSocket : public Base {
  public:
   friend class MockLayeredSocket;
 
-  // Only exposed for unit testing.
-  using ReliableDatagramSocketImpl::Adopt;
-  using ReliableDatagramSocketImpl::AdoptLocked;
-  using ReliableDatagramSocketImpl::WrapSocket;
+  static constexpr size_t kMaxMessageSizeBytes = 1500;
 
-  static ReliableDatagramSocket Allocated(Allocator& allocator,
-                                          bool* destructed = nullptr) {
-    auto* ptr = allocator.New<MockSocket>(allocator, allocator, destructed);
-    return ptr != nullptr ? ptr->WrapSocket() : ReliableDatagramSocket();
+  // Only exposed for unit testing.
+  using Base::Adopt;
+  using Base::AdoptLocked;
+  using Base::WrapSocket;
+
+  using Handle =
+      std::conditional_t<std::is_same_v<Base, ReliableDatagramSocketImpl>,
+                         ReliableDatagramSocket,
+                         DatagramSocket>;
+
+  static Handle Allocated(Allocator& allocator, bool* destructed = nullptr) {
+    auto* ptr =
+        allocator.New<BasicMockSocket>(allocator, allocator, destructed);
+    return ptr != nullptr ? ptr->WrapSocket() : Handle();
   }
 
-  MockSocket(Allocator& connection_allocator,
-             Allocator& packet_allocator,
-             bool* destructed = nullptr)
-      : ReliableDatagramSocketImpl(connection_allocator, 1500),
+  BasicMockSocket(Allocator& connection_allocator,
+                  Allocator& packet_allocator,
+                  bool* destructed = nullptr)
+      : Base(connection_allocator, kMaxMessageSizeBytes),
         allocator_(packet_allocator),
         block_writes_(false),
         destructed_(destructed) {}
 
-  ~MockSocket() override {
+  ~BasicMockSocket() override {
     if (destructed_) {
       *destructed_ = true;
     }
@@ -95,7 +113,7 @@ class MockSocket : public ReliableDatagramSocketImpl {
     if (packet_.has_value()) {
       pw::ConstBuf buffer(std::move(*packet_));
       packet_.reset();
-      WakeOneWriter();
+      this->WakeOneWriter();
       return async2::Ready(std::move(buffer));
     }
     return async2::Pending();
@@ -115,7 +133,9 @@ class MockSocket : public ReliableDatagramSocketImpl {
     return CreateMockReservation(min_bytes);
   }
 
-  void DoClose() override PW_EXCLUSIVE_LOCKS_REQUIRED(*this) { MarkClosed(); }
+  void DoClose() override PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
+    this->MarkClosed();
+  }
 
   void SetAvailableBytes(std::optional<size_t> bytes) PW_LOCKS_EXCLUDED(*this) {
     std::lock_guard lock(*this);
@@ -123,20 +143,20 @@ class MockSocket : public ReliableDatagramSocketImpl {
   }
 
   void WakeOneWriterLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
-    WakeOneWriter();
+    this->WakeOneWriter();
   }
 
   void SetBlockWrites(bool block) PW_LOCKS_EXCLUDED(*this) {
     std::lock_guard lock(*this);
     block_writes_ = block;
     if (!block_writes_) {
-      WakeAllWriters();
+      this->WakeAllWriters();
     }
   }
 
   void SimulateClose() PW_LOCKS_EXCLUDED(*this) {
     std::lock_guard lock(*this);
-    MarkClosed();
+    this->MarkClosed();
   }
 
   void set_fail_commits(bool fail) PW_LOCKS_EXCLUDED(*this) {
@@ -147,7 +167,7 @@ class MockSocket : public ReliableDatagramSocketImpl {
   void EnqueueForRead(pw::ConstBuf buffer) PW_LOCKS_EXCLUDED(*this) {
     std::lock_guard lock(*this);
     packet_ = std::move(buffer);
-    WakeReader();
+    this->WakeReader();
   }
 
   size_t commit_count() const PW_LOCKS_EXCLUDED(*this) {
@@ -165,7 +185,7 @@ class MockSocket : public ReliableDatagramSocketImpl {
     if (packet_.has_value()) {
       p = std::move(*packet_);
       packet_.reset();
-      WakeOneWriter();
+      this->WakeOneWriter();
     }
     return p;
   }
@@ -178,7 +198,7 @@ class MockSocket : public ReliableDatagramSocketImpl {
     }
     commit_count_++;
     packet_ = pw::ConstBuf(std::move(buffer));
-    WakeReader();
+    this->WakeReader();
     return true;
   }
 
@@ -192,7 +212,7 @@ class MockSocket : public ReliableDatagramSocketImpl {
  private:
   WriteReservation CreateMockReservation(size_t size)
       PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
-    return CreateReservation(pw::Buf::Allocate(allocator_, size));
+    return this->CreateReservation(pw::Buf::Allocate(allocator_, size));
   }
 
   Allocator& allocator_;
@@ -204,6 +224,9 @@ class MockSocket : public ReliableDatagramSocketImpl {
   bool* destructed_;
   mutable sync::InterruptSpinLock lock_;
 };
+
+using MockSocket = BasicMockSocket<ReliableDatagramSocketImpl>;
+using MockDatagramSocket = BasicMockSocket<DatagramSocketImpl>;
 
 /// An example layered connection that wraps another connection and adds a
 /// 4-byte length header and a 4-byte CRC checksum footer, demonstrating
@@ -219,8 +242,8 @@ class MockLayeredSocket : public ReliableDatagramSocketImpl {
 
   static ReliableDatagramSocket Allocated(
       Allocator& allocator,
-      ReliableDatagramSocket lower_connection,
-      MockSocket* lower_mock = nullptr,
+      DatagramSocket lower_connection,
+      DatagramSocketImpl* lower_mock = nullptr,
       bool* destructed = nullptr) {
     auto* ptr = allocator.New<MockLayeredSocket>(
         allocator, std::move(lower_connection), lower_mock, destructed);
@@ -228,8 +251,8 @@ class MockLayeredSocket : public ReliableDatagramSocketImpl {
   }
 
   MockLayeredSocket(Allocator& connection_allocator,
-                    ReliableDatagramSocket lower_connection,
-                    MockSocket* lower_mock = nullptr,
+                    DatagramSocket lower_connection,
+                    DatagramSocketImpl* lower_mock = nullptr,
                     bool* destructed = nullptr)
       : ReliableDatagramSocketImpl(
             connection_allocator,
@@ -337,8 +360,8 @@ class MockLayeredSocket : public ReliableDatagramSocketImpl {
   }
 
  private:
-  ReliableDatagramSocket lower_connection_;
-  MockSocket* lower_mock_;
+  DatagramSocket lower_connection_;
+  DatagramSocketImpl* lower_mock_;
   std::optional<pw::ConstBuf> packet_ PW_GUARDED_BY(*this);
   bool* destructed_;
   mutable sync::InterruptSpinLock lock_;
@@ -347,7 +370,7 @@ class MockLayeredSocket : public ReliableDatagramSocketImpl {
 /// A task that reads a single packet and stores its result.
 class ReaderTask : public async2::Task {
  public:
-  ReaderTask(ReliableDatagramSocket connection)
+  ReaderTask(DatagramSocket connection)
       : connection_(std::move(connection)), started_(false), done_(false) {}
 
   const pw::ConstBuf& result() const { return result_; }
@@ -367,7 +390,7 @@ class ReaderTask : public async2::Task {
     return async2::Ready();
   }
 
-  ReliableDatagramSocket connection_;
+  DatagramSocket connection_;
   pw::ConstBuf result_;
   ReadFuture read_future_;
   bool started_;
@@ -377,7 +400,7 @@ class ReaderTask : public async2::Task {
 /// A task that reserves space and writes a configurable packet.
 class WriterTask : public async2::Task {
  public:
-  WriterTask(ReliableDatagramSocket connection, std::byte value, size_t size)
+  WriterTask(DatagramSocket connection, std::byte value, size_t size)
       : connection_(std::move(connection)),
         value_(value),
         size_(size),
@@ -406,7 +429,7 @@ class WriterTask : public async2::Task {
     return async2::Ready();
   }
 
-  ReliableDatagramSocket connection_;
+  DatagramSocket connection_;
   std::byte value_;
   size_t size_;
   ReserveWriteFuture reserve_future_;
@@ -415,12 +438,16 @@ class WriterTask : public async2::Task {
 };
 
 /// A task that listens for a connection.
-class AcceptTask : public async2::Task {
+template <typename ListenerBase = ReliableDatagramListener>
+class BasicAcceptTask : public async2::Task {
  public:
-  AcceptTask(ReliableDatagramListener& transport)
+  using AcceptFuture = typename ListenerBase::AcceptFuture;
+  using ResultType = typename AcceptFuture::value_type;
+
+  BasicAcceptTask(ListenerBase& transport)
       : transport_(transport), result_(Status::Unknown()), started_(false) {}
 
-  const Result<ReliableDatagramSocket>& result() const { return result_; }
+  const ResultType& result() const { return result_; }
 
  private:
   async2::Poll<> DoPend(async2::Context& cx) override {
@@ -435,19 +462,25 @@ class AcceptTask : public async2::Task {
     return async2::Ready();
   }
 
-  ReliableDatagramListener& transport_;
-  Result<ReliableDatagramSocket> result_;
-  ReliableDatagramListener::AcceptFuture accept_future_;
+  ListenerBase& transport_;
+  ResultType result_;
+  AcceptFuture accept_future_;
   bool started_;
 };
 
+using AcceptTask = BasicAcceptTask<>;
+
 /// A task that opens a connection.
-class ConnectTask : public async2::Task {
+template <typename ConnectorBase = ReliableDatagramConnector>
+class BasicConnectTask : public async2::Task {
  public:
-  ConnectTask(ReliableDatagramConnector& transport)
+  using ConnectFuture = typename ConnectorBase::ConnectFuture;
+  using ResultType = typename ConnectFuture::value_type;
+
+  BasicConnectTask(ConnectorBase& transport)
       : transport_(transport), result_(Status::Unknown()), started_(false) {}
 
-  const Result<ReliableDatagramSocket>& result() const { return result_; }
+  const ResultType& result() const { return result_; }
 
  private:
   async2::Poll<> DoPend(async2::Context& cx) override {
@@ -462,11 +495,13 @@ class ConnectTask : public async2::Task {
     return async2::Ready();
   }
 
-  ReliableDatagramConnector& transport_;
-  Result<ReliableDatagramSocket> result_;
-  ReliableDatagramConnector::ConnectFuture connect_future_;
+  ConnectorBase& transport_;
+  ResultType result_;
+  ConnectFuture connect_future_;
   bool started_;
 };
+
+using ConnectTask = BasicConnectTask<>;
 
 TEST(TransportTest, TaskInteractionFlow) {
   const size_t kCapacity = 4096;
@@ -1752,5 +1787,174 @@ TEST(TransportTest, OverwriteResolvedReserveWriteFuture) {
   EXPECT_EQ(conn->commit_count(), 1u);
 }
 
+// Compile-time checks for conversions between ReliableDatagramSocket and
+// DatagramSocket.
+static_assert(std::is_convertible_v<ReliableDatagramSocket, DatagramSocket>);
+static_assert(
+    std::is_convertible_v<const ReliableDatagramSocket&, DatagramSocket>);
+static_assert(std::is_convertible_v<ReliableDatagramSocket&&, DatagramSocket>);
+static_assert(
+    std::is_convertible_v<ReliableDatagramSocket&, const DatagramSocket&>);
+static_assert(std::is_convertible_v<const ReliableDatagramSocket&,
+                                    const DatagramSocket&>);
+static_assert(std::is_constructible_v<DatagramSocket, ReliableDatagramSocket>);
+static_assert(
+    std::is_constructible_v<DatagramSocket, const ReliableDatagramSocket&>);
+static_assert(std::is_assignable_v<DatagramSocket&, ReliableDatagramSocket>);
+static_assert(
+    std::is_assignable_v<DatagramSocket&, const ReliableDatagramSocket&>);
+
+// ReliableDatagramSocket must NOT bind to a mutable DatagramSocket& (which
+// would allow overwriting it with an unreliable socket).
+static_assert(!std::is_convertible_v<ReliableDatagramSocket, DatagramSocket&>);
+static_assert(!std::is_convertible_v<ReliableDatagramSocket&, DatagramSocket&>);
+static_assert(
+    !std::is_convertible_v<const ReliableDatagramSocket&, DatagramSocket&>);
+
+// DatagramSocket must NOT convert to ReliableDatagramSocket.
+static_assert(!std::is_convertible_v<DatagramSocket, ReliableDatagramSocket>);
+static_assert(!std::is_constructible_v<ReliableDatagramSocket, DatagramSocket>);
+static_assert(
+    !std::is_constructible_v<ReliableDatagramSocket, const DatagramSocket&>);
+static_assert(!std::is_assignable_v<ReliableDatagramSocket&, DatagramSocket>);
+static_assert(
+    !std::is_assignable_v<ReliableDatagramSocket&, const DatagramSocket&>);
+
+TEST(TransportTest, ReliableToDatagramSocketConversions) {
+  constexpr size_t kCapacity = 4096;
+  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  bool destructed = false;
+
+  {
+    ReliableDatagramSocket reliable =
+        MockSocket::Allocated(allocator, &destructed);
+    ASSERT_TRUE(reliable);
+    EXPECT_NE(reliable, nullptr);
+    EXPECT_NE(nullptr, reliable);
+
+    ReliableDatagramSocket reliable_copy = reliable;
+    EXPECT_EQ(reliable, reliable_copy);
+    EXPECT_FALSE(reliable != reliable_copy);
+    reliable_copy = nullptr;
+    EXPECT_NE(reliable, reliable_copy);
+
+    // Const reference conversion binds directly without creating a temporary.
+    const DatagramSocket& const_ref = reliable;
+    EXPECT_TRUE(const_ref);
+    EXPECT_EQ(const_ref, reliable);
+    EXPECT_EQ(reliable, const_ref);
+
+    // Copy conversion (both copy-init and direct-init) shares ownership.
+    DatagramSocket copy = reliable;
+    DatagramSocket direct_copy(reliable);
+    EXPECT_TRUE(copy);
+    EXPECT_EQ(copy, reliable);
+    EXPECT_EQ(reliable, copy);
+    EXPECT_EQ(direct_copy, reliable);
+
+    // Copy assignment from ReliableDatagramSocket.
+    DatagramSocket assigned;
+    assigned = reliable;
+    EXPECT_EQ(assigned, reliable);
+    assigned = nullptr;
+    direct_copy = nullptr;
+
+    // Move conversion (direct-init and move-assignment) transfers ownership.
+    ReliableDatagramSocket reliable_for_direct_move = reliable;
+    DatagramSocket direct_moved(std::move(reliable_for_direct_move));
+    EXPECT_FALSE(reliable_for_direct_move);  // NOLINT(bugprone-use-after-move)
+    EXPECT_EQ(direct_moved, reliable);
+    direct_moved = nullptr;
+
+    DatagramSocket moved;
+    moved = std::move(reliable);
+    EXPECT_FALSE(reliable);        // NOLINT(bugprone-use-after-move)
+    EXPECT_EQ(reliable, nullptr);  // NOLINT(bugprone-use-after-move)
+    EXPECT_TRUE(moved);
+    EXPECT_EQ(moved, copy);
+
+    // Dropping copy still leaves moved alive.
+    copy = nullptr;
+    EXPECT_FALSE(destructed);
+  }
+
+  EXPECT_TRUE(destructed);
+}
+
+TEST(TransportTest, DatagramSocketReadAndWrite) {
+  constexpr size_t kCapacity = 4096;
+  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  bool destructed = false;
+
+  {
+    DatagramSocket sock = MockDatagramSocket::Allocated(allocator, &destructed);
+    ASSERT_TRUE(sock);
+    EXPECT_EQ(sock.max_write_message_size_bytes(),
+              MockDatagramSocket::kMaxMessageSizeBytes);
+    EXPECT_EQ(sock.max_read_message_size_bytes(),
+              MockDatagramSocket::kMaxMessageSizeBytes);
+
+    async2::DispatcherForTest dispatcher;
+    WriterTask writer(sock, std::byte{0x42}, 24);
+    ReaderTask reader(sock);
+
+    dispatcher.Post(writer);
+    dispatcher.Post(reader);
+    dispatcher.RunUntilStalled();
+
+    EXPECT_EQ(writer.result(), OkStatus());
+    EXPECT_TRUE(reader.done());
+    ASSERT_NE(reader.result(), nullptr);
+    EXPECT_EQ(reader.result().size(), 24u);
+    EXPECT_EQ(reader.result()[0], std::byte{0x42});
+  }
+
+  EXPECT_TRUE(destructed);
+}
+
+TEST(TransportTest, LayeredSocketOverUnreliableDatagramSocket) {
+  constexpr size_t kCapacity = 4096;
+  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  auto* lower_impl =
+      allocator.New<MockDatagramSocket>(allocator, allocator, nullptr);
+  DatagramSocket lower_sock = lower_impl->WrapSocket();
+  ReliableDatagramSocket layered_sock =
+      MockLayeredSocket::Allocated(allocator, lower_sock, lower_impl);
+
+  std::optional<WriteReservation> res = layered_sock.TryReserveWrite(16);
+  ASSERT_TRUE(res.has_value());
+  std::memset(res->data(), 0x5a, 16);
+  EXPECT_TRUE(res->Commit(16));
+
+  pw::ConstBuf raw = lower_impl->PopPacket();
+  ASSERT_NE(raw, nullptr);
+  EXPECT_EQ(raw.size(), 16u + MockLayeredSocket::kOverhead);
+}
+
+TEST(TransportTest, UnreliableListenerAndConnector) {
+  constexpr size_t kCapacity = 4096;
+  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  MockDatagramTransport transport;
+  async2::DispatcherForTest dispatcher;
+  dispatcher.AllowBlocking();
+
+  BasicAcceptTask<Listener> accept_task(transport);
+  BasicConnectTask<Connector> connect_task(transport);
+  dispatcher.Post(accept_task);
+  dispatcher.Post(connect_task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  auto* accepted_impl =
+      allocator.New<MockDatagramSocket>(allocator, allocator, nullptr);
+  ASSERT_NE(accepted_impl, nullptr);
+  transport.ResolveAccept(MockDatagramTransport::WrapSocket(*accepted_impl));
+  transport.ResolveConnect(MockDatagramSocket::Allocated(allocator));
+
+  dispatcher.RunToCompletion();
+  ASSERT_TRUE(accept_task.result().ok());
+  EXPECT_TRUE(*accept_task.result());
+  ASSERT_TRUE(connect_task.result().ok());
+  EXPECT_TRUE(*connect_task.result());
+}
 }  // namespace
 }  // namespace pw::transport

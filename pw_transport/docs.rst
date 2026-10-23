@@ -12,16 +12,19 @@ pw_transport
    are likely stable, some changes are still expected to be made around the
    edges. The documentation is also incomplete.
 
-``pw_transport`` defines interfaces for async-native, datagram-oriented,
-reliable network sockets built on :ref:`module-pw_async2`.
+``pw_transport`` defines interfaces for async-native, datagram-oriented
+network sockets built on :ref:`module-pw_async2`.
 
-The core interface in ``pw_transport`` is the :cc:`ReliableDatagramSocket`: an
-abstract handle to some underlying transport, used for reading and writing.
-Sockets make use of :ref:`module-pw_buf` to enable zero-copy reads and writes
-directly into transport buffers.
+The core interfaces in ``pw_transport`` are :cc:`DatagramSocket` and
+:cc:`ReliableDatagramSocket`: abstract handles to some underlying transport,
+used for reading and writing. Any :cc:`ReliableDatagramSocket` can be
+implicitly converted to and used as a :cc:`DatagramSocket`. Sockets make use of
+:ref:`module-pw_buf` to enable zero-copy reads and writes directly into
+transport buffers.
 
 Sockets are provisioned by one of two transport interfaces:
-a :cc:`ReliableDatagramConnector` which establishes them, or a
+a :cc:`Connector <pw::transport::Connector>` / :cc:`ReliableDatagramConnector`
+which establishes them, or a :cc:`Listener <pw::transport::Listener>` /
 :cc:`ReliableDatagramListener` which accepts them from a peer.
 
 -----
@@ -181,10 +184,13 @@ Implementing
 Authors writing an implementation for your own transport are required to
 implement three virtual interfaces:
 
-- :cc:`ReliableDatagramListener`: the listening side of the transport.
-- :cc:`ReliableDatagramConnector`: the establishing side of the transport.
-- :cc:`ReliableDatagramSocketImpl`: the core socket interface backing
-  ``ReliableDatagramSocket`` handles. Allocated and refcounted.
+- :cc:`Listener <pw::transport::Listener>` / :cc:`ReliableDatagramListener`:
+  the listening side of the transport.
+- :cc:`Connector <pw::transport::Connector>` / :cc:`ReliableDatagramConnector`:
+  the establishing side of the transport.
+- :cc:`DatagramSocketImpl` / :cc:`ReliableDatagramSocketImpl`: the core socket
+  interfaces backing ``DatagramSocket`` and ``ReliableDatagramSocket`` handles.
+  Allocated and refcounted.
 
 Refer to the doxygen docs for details of each of these, with requirements and
 preconditions.
