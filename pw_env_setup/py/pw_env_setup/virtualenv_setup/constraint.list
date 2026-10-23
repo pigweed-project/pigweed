@@ -37,8 +37,8 @@ isort==6.0.1
 jedi==0.19.1
 Jinja2==3.1.6
 json5==0.9.11
-jsonschema==4.23.0
-jsonschema-specifications==2024.10.1
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
 kconfiglib==14.1.0
 lockfile==0.12.2
 markupsafe==3.0.4
@@ -75,9 +75,9 @@ python-daemon==3.0.1
 pytz==2023.3
 pyusb==1.2.1
 pyyaml==6.0.3
-referencing==0.36.1
+referencing==0.37.0
 requests==2.33.0
-rpds-py==0.22.3
+rpds-py==0.30.0
 rsa==4.8
 ruamel-yaml==0.18.10
 ruamel-yaml-clib==0.2.12
