@@ -316,8 +316,8 @@ CORE COMMAND CHEAT-SHEET
 4. CREATING & EDITING
    - Create a new change from current HEAD:
      $ %[1]s pr create [-t "Title"] [-b "Body"] [--reviewer "user@google.com"] [--draft]
-   - Edit change metadata or commit message:
-     $ %[1]s pr edit <change_id> [-m "New message"] [--add-reviewer "email"] [--add-label "Code-Review=2"]
+   - Edit change metadata:
+     $ %[1]s pr edit <change_id> [--add-reviewer "email"] [--add-label "Code-Review=2"]
 
 5. REVIEWS & RESPONDING
    - Submit review (Approve / Request changes / Publish staged drafts):
@@ -395,8 +395,7 @@ flag is spelled as it is in 'gh' but the Gerrit concept underneath differs.
 Long form only, because 'gh' gives the shorthand another meaning: --auto
 (gh -a is --assignee), --publish (-p is --project), --force (-f is --fill),
 --trigger/--cq (-t is --title/--template, -q is --jq), --target on 'run view'
-(-t is --template), and --message on 'pr edit' and 'pr merge' (-m is --milestone
-and --merge).
+(-t is --template), and --message on 'pr merge' (-m is --merge).
 
 Not implemented, and loud about it: --jq/-q as an output filter, 'gh api',
 -R/--repo, and 'pr merge --squash/--rebase/--delete-branch'

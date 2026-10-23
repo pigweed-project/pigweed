@@ -26,7 +26,6 @@ import (
 )
 
 var (
-	editMessage        string
 	editTitle          string
 	editBody           string
 	editAddReviewer    []string
@@ -45,7 +44,6 @@ var (
 	editRemoveHashtags []string
 	editCQ             int
 	editTrigger        int
-	editDropTrailers   bool
 	editBug            string
 	editFixed          string
 )
@@ -66,9 +64,6 @@ var editCmd = &cobra.Command{
 		if cmd.Flags().Changed("title") && strings.TrimSpace(editTitle) == "" {
 			return fmt.Errorf("cannot set an empty commit title")
 		}
-		if cmd.Flags().Changed("message") && strings.TrimSpace(editMessage) == "" {
-			return fmt.Errorf("cannot set an empty commit message")
-		}
 
 		rawAddReviewers := append([]string{}, editAddReviewer...)
 		rawAddReviewers = append(rawAddReviewers, editReviewer...)
@@ -77,7 +72,7 @@ var editCmd = &cobra.Command{
 		}
 
 		hasTrailerEdit := cmd.Flags().Changed("bug") || cmd.Flags().Changed("fixed")
-		hasMsgEdit := editMessage != "" || editTitle != "" || cmd.Flags().Changed("body") || hasTrailerEdit
+		hasMsgEdit := editTitle != "" || cmd.Flags().Changed("body") || hasTrailerEdit
 		hasTopicEdit := cmd.Flags().Changed("topic") || editRemoveTopic
 		hasHashtagEdit := len(editAddHashtags) > 0 || len(editRemoveHashtags) > 0
 		hasCQEdit := cmd.Flags().Changed("cq") || cmd.Flags().Changed("trigger")
@@ -85,7 +80,7 @@ var editCmd = &cobra.Command{
 		if !hasMsgEdit && len(rawAddReviewers) == 0 && len(editRemoveReviewer) == 0 &&
 			len(editAddAssignee) == 0 && len(editRemoveAssignee) == 0 && len(editAddLabels) == 0 &&
 			!hasTopicEdit && !hasHashtagEdit && !hasCQEdit && !hasAttentionEdit {
-			return fmt.Errorf("at least one of --message, --title, --body, --bug, --fixed, --add-reviewer, --add-owner, --remove-reviewer, --add-assignee, --remove-assignee, --add-attention, --remove-attention, --add-label, --trigger, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --trigger\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-owner\n  gh pr edit 123 --remove-attention me\n  gh pr edit 123 --add-label Commit-Queue=1")
+			return fmt.Errorf("at least one of --title, --body, --bug, --fixed, --add-reviewer, --add-owner, --remove-reviewer, --add-assignee, --remove-assignee, --add-attention, --remove-attention, --add-label, --trigger, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --trigger\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-owner\n  gh pr edit 123 --remove-attention me\n  gh pr edit 123 --add-label Commit-Queue=1")
 		}
 
 		addAttention, err := normalizeAttentionAccounts("--add-attention", editAddAttention)
@@ -101,25 +96,11 @@ var editCmd = &cobra.Command{
 			return err
 		}
 
-		if editMessage != "" && (editTitle != "" || cmd.Flags().Changed("body")) {
-			return fmt.Errorf("cannot specify both --message and --title/--body")
-		}
-
-		if editDropTrailers && editMessage == "" {
-			return fmt.Errorf("--drop-trailers only applies to --message\n\n" +
-				"--message replaces the entire commit message, so --drop-trailers is how you\n" +
-				"confirm that trailers it leaves out are meant to go. --body and --title never\n" +
-				"drop trailers, so there is nothing for the flag to permit.\n\n" +
-				"Example:\n" +
-				"  gh pr edit 123 --drop-trailers -m \"pw_foo: New message\"")
-		}
-
 		// Reject GitHub issue syntax before anything is written. Every piece
 		// of commit message text the user can supply goes through the same
 		// check, so `Fixes #456` cannot slip in through one flag and not
 		// another.
 		for _, text := range []struct{ where, value string }{
-			{"--message", editMessage},
 			{"--title", editTitle},
 			{"--body", editBody},
 		} {
@@ -145,7 +126,6 @@ var editCmd = &cobra.Command{
 					"\"none\".\n\nExample:\n  gh pr edit %s --%s b/123456", tf.flag, changeID, tf.flag)
 			}
 			for _, supplied := range []struct{ where, text string }{
-				{"--message", editMessage},
 				{"--body", editBody},
 			} {
 				if supplied.text == "" || !MentionsTrailerKey(supplied.text, tf.key) {
@@ -165,7 +145,7 @@ var editCmd = &cobra.Command{
 			// compiled while disabled.
 			_ = buildUpdatedCommitMessage
 			return fmt.Errorf(
-				"editing commit messages via 'gh pr edit' (--title, --body, --message, --bug, --fixed) is currently disabled (see b/567763970).\n\n" +
+				"editing commit messages via 'gh pr edit' (--title, --body, --bug, --fixed) is currently disabled (see b/567763970).\n\n" +
 					"Why: In Gerrit, a CL's description is stored in the Git commit message rather than\n" +
 					"a separate database record. Editing it on the Gerrit server creates a remote patchset\n" +
 					"that diverges from your local Git branch and gets overwritten on the next 'gh pr push'.\n\n" +
@@ -410,50 +390,6 @@ func buildUpdatedCommitMessage(origMessage, changeID string, cmd *cobra.Command,
 		} else {
 			newMessage = strings.TrimSpace(targetTitle) + "\n"
 		}
-	} else if editMessage != "" {
-		origID := ExtractChangeID(origMessage)
-		providedID := ExtractChangeID(editMessage)
-
-		if origID != "" && providedID != "" && origID != providedID {
-			return "", fmt.Errorf("cannot change Gerrit Change-Id from %s to %s", origID, providedID)
-		}
-
-		// --message replaces the whole message, so anything the new
-		// text leaves out is gone and Gerrit keeps no copy. Silently
-		// re-appending the missing trailers would override a
-		// deliberate deletion, so refuse instead and let the user say
-		// which they meant.
-		if !editDropTrailers {
-			var dropped []string
-			for _, trailer := range DroppedTrailers(origMessage, editMessage) {
-				// Change-Id identifies the change itself rather than
-				// anything the author wrote. It is restored below, so
-				// it is never a casualty.
-				if key, ok := trailerKey(trailer); ok && strings.EqualFold(key, "Change-Id") {
-					continue
-				}
-				dropped = append(dropped, trailer)
-			}
-			if len(dropped) > 0 {
-				return "", fmt.Errorf(
-					"--message would delete %d trailer(s) from change %s:\n\n  %s\n\n"+
-						"--message replaces the entire commit message, and Gerrit keeps no copy of the\n"+
-						"previous one. Pick one:\n\n"+
-						"  1. Carry them forward by appending them to your --message text.\n"+
-						"  2. Edit only the prose and keep trailers automatically:\n"+
-						"       gh pr edit %s --body \"...\"\n"+
-						"  3. Confirm you really want them gone:\n"+
-						"       gh pr edit %s --drop-trailers -m \"...\"\n\n"+
-						"To review the current message: gh pr view %s",
-					len(dropped), changeID, strings.Join(dropped, "\n  "),
-					changeID, changeID, changeID)
-			}
-		}
-
-		newMessage = editMessage
-		if providedID == "" && origID != "" {
-			newMessage = strings.TrimRight(editMessage, "\r\n") + "\n\nChange-Id: " + origID + "\n"
-		}
 	}
 
 	// Trailer flags apply last so that they win over whatever the
@@ -474,11 +410,8 @@ func buildUpdatedCommitMessage(origMessage, changeID string, cmd *cobra.Command,
 }
 
 func init() {
-	editCmd.Flags().StringVar(&editMessage, "message", "", "New commit message")
 	editCmd.Flags().StringVar(&editTitle, "title", "", "New commit title (first line of commit message)")
 	editCmd.Flags().StringVar(&editBody, "body", "", "New commit body")
-	editCmd.Flags().BoolVar(&editDropTrailers, "drop-trailers", false,
-		"Allow --message to delete trailers present in the current commit message")
 	editCmd.Flags().StringVar(&editBug, "bug", "",
 		"Set the Bug: trailer, linking a Buganizer issue (accepts 123456, b/123456, an issue URL, a comma-separated list, or \"none\")")
 	editCmd.Flags().StringVar(&editFixed, "fixed", "",

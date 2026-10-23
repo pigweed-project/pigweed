@@ -234,7 +234,7 @@ Gerrit without updating your local Git commit causes the next ``./gh pr push``
 or ``git rebase`` to overwrite the remote edit.
 
 For this reason, commit-message flags on ``pr edit`` (``--title``, ``--body``,
-``--message``, ``--bug``, and ``--fixed``) are currently disabled
+``--bug``, and ``--fixed``) are currently disabled
 (`b/567763970 <https://issues.pigweed.dev/issues/567763970>`_) and print
 instructions for editing the local Git commit message surgically:
 
@@ -642,7 +642,7 @@ Comparison with GitHub CLI (gh pr)
      - Adds ``--cq``, ``--topic``, ``--remove-topic``, ``--add-hashtag``,
        ``--remove-hashtag``, ``-r, --reviewer``, and ``--owner`` /
        ``--add-owner``; ``--add-reviewer`` accepts ``@owners``.
-       Commit-message flags (``--title``, ``--body``, ``--message``, ``--bug``,
+       Commit-message flags (``--title``, ``--body``, ``--bug``,
        ``--fixed``) redirect to local Git commit editing
        (`b/567763970 <https://issues.pigweed.dev/issues/567763970>`_).
    * - ``pr list -a / --assignee``
@@ -676,6 +676,6 @@ Several ``pr`` flags intentionally omit single-letter shorthands because
 upstream ``gh`` binds those letters to other meanings: ``--auto`` (``-a`` is
 ``--assignee``), ``--publish`` (``-p`` is ``--project``), ``--force`` on
 ``checkout`` (``-f`` is ``--fill``), ``--cq`` (``-q`` is ``--jq``), and
-``--message`` on ``edit`` and ``merge`` (``-m`` is ``--milestone`` and
-``--merge``). See :ref:`module-pw_ghish-flag-compatibility` for the cross-CLI
-flag compatibility policy.
+``--message`` on ``merge`` (``-m`` is ``--merge``). See
+:ref:`module-pw_ghish-flag-compatibility` for the cross-CLI flag compatibility
+policy.

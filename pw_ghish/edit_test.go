@@ -162,16 +162,6 @@ func TestEdit_InvalidLabel(t *testing.T) {
 	}
 }
 
-func TestEdit_ErrorWhenBothMessageAndTitleProvided(t *testing.T) {
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--message", "msg", "--title", "title")
-	if err == nil {
-		t.Fatal("Expected error when both --message and --title provided, got nil")
-	}
-	if !strings.Contains(err.Error(), "cannot specify both") {
-		t.Errorf("Expected error message about conflicting flags, got: %v", err)
-	}
-}
-
 func TestEditAddLabel(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
@@ -540,179 +530,6 @@ func TestEdit_DoesNotPromoteProseIntoTrailers(t *testing.T) {
 	}
 }
 
-func TestEdit_RawMessagePreservesChangeID(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	origCommitMsg := "pw_foo: Original Subject\n\nOriginal body line.\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--message", "pw_foo: Complete new message\n\nNew description without Change-Id.")
-	if err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
-
-	sentMessage := getSentCommitMessage(server)
-	if !strings.Contains(sentMessage, "Change-Id: I0123456789abcdef0123456789abcdef01234567") {
-		t.Errorf("DATA LOSS: Raw message wiped Change-Id! got: %q", sentMessage)
-	}
-}
-
-// TestEdit_RawMessageRefusesToDropTrailers covers the trailers `-m` cannot
-// silently discard. `-m` replaces the whole message, so re-appending author
-// trailers behind the user's back would override a deliberate deletion.
-// Deleting them by accident is far more common than deleting them on purpose,
-// so the tool refuses and says exactly what it would have destroyed.
-func TestEdit_RawMessageRefusesToDropTrailers(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	origCommitMsg := strings.Join([]string{
-		"pw_foo: Original Subject",
-		"",
-		"Original body line.",
-		"",
-		"Bug: b/12345",
-		"Co-authored-by: Someone <someone@example.com>",
-		"Change-Id: I0123456789abcdef0123456789abcdef01234567",
-		"",
-	}, "\n")
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--message", "pw_foo: Rewritten\n\nNew description.")
-	if err == nil {
-		t.Fatal("Expected an error when --message would drop trailers, got nil")
-	}
-
-	// Pillar 1: say what would have been destroyed, by name.
-	for _, want := range []string{"Bug: b/12345", "Co-authored-by: Someone <someone@example.com>"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("Error does not name the dropped trailer %q:\n%v", want, err)
-		}
-	}
-	// Pillar 3: an escape hatch the user can actually copy-paste.
-	if !strings.Contains(err.Error(), "--drop-trailers") {
-		t.Errorf("Error does not mention the --drop-trailers escape hatch:\n%v", err)
-	}
-	// Change-Id is the change's identity, not author content; it is always
-	// rescued and so must never be listed as a casualty.
-	if strings.Contains(err.Error(), "Change-Id:") {
-		t.Errorf("Change-Id is auto-preserved and must not be reported as dropped:\n%v", err)
-	}
-	// Nothing may be written when the command refuses.
-	if n := server.CallCount("", "/changes/12345/message"); n != 0 {
-		t.Errorf("Commit message was written despite the refusal (%d calls)", n)
-	}
-}
-
-func TestEdit_RawMessageDropTrailersFlagAllowsTheDrop(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	origCommitMsg := "pw_foo: Original Subject\n\nBody.\n\nBug: b/12345\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	if _, err := executeCommand(RootCmd, "pr", "edit", "12345", "--drop-trailers",
-		"--message", "pw_foo: Rewritten\n\nNew description."); err != nil {
-		t.Fatalf("Command failed with --drop-trailers: %v", err)
-	}
-
-	sentMessage := getSentCommitMessage(server)
-	if strings.Contains(sentMessage, "Bug: b/12345") {
-		t.Errorf("--drop-trailers was requested but Bug: was re-appended:\n%s", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Change-Id: I0123456789abcdef0123456789abcdef01234567") {
-		t.Errorf("Change-Id must survive even --drop-trailers:\n%s", sentMessage)
-	}
-}
-
-// TestEdit_RawMessageCarryingTrailersForwardSucceeds is the intended workflow:
-// the user includes the trailers in the new message, so nothing is lost and no
-// refusal is warranted. A rewritten value counts as carried forward -- the
-// check is per key, not per line, or editing a bug number would be impossible.
-func TestEdit_RawMessageCarryingTrailersForwardSucceeds(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	origCommitMsg := "pw_foo: Original Subject\n\nBody.\n\nBug: b/12345\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	newMsg := "pw_foo: Rewritten\n\nNew description.\n\nBug: b/99999\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"
-	if _, err := executeCommand(RootCmd, "pr", "edit", "12345", "--message", newMsg); err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
-
-	sentMessage := getSentCommitMessage(server)
-	if !strings.Contains(sentMessage, "Bug: b/99999") {
-		t.Errorf("Expected the rewritten Bug value, got:\n%s", sentMessage)
-	}
-}
-
-// TestEdit_RawMessageRefusesToDropCherryPickProvenance covers the keyless
-// footer line, which has no key to compare on and so needs whole-line
-// matching. It records where the commit came from; losing it is unrecoverable.
-func TestEdit_RawMessageRefusesToDropCherryPickProvenance(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	const provenance = "(cherry picked from commit deadbeefdeadbeefdeadbeefdeadbeefdeadbeef)"
-	origCommitMsg := "pw_foo: Original Subject\n\nBody.\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n" + provenance + "\n"
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--message", "pw_foo: Rewritten\n\nNew description.")
-	if err == nil {
-		t.Fatal("Expected an error when --message would drop the cherry-pick footer, got nil")
-	}
-	if !strings.Contains(err.Error(), provenance) {
-		t.Errorf("Error does not name the dropped provenance footer:\n%v", err)
-	}
-}
-
-// TestEdit_DropTrailersWithoutMessageIsRejected keeps the flag honest.
-// --drop-trailers only has meaning for --message, which replaces the whole
-// commit message; --body preserves trailers unconditionally. Accepting the
-// flag silently would let a user believe they had disabled a safety net they
-// never actually touched.
-func TestEdit_DropTrailersWithoutMessageIsRejected(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": "pw_foo: Original Subject\n\nBody.\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n",
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--drop-trailers", "--body", "New body.")
-	if err == nil {
-		t.Fatal("Expected --drop-trailers without --message to be rejected, got nil")
-	}
-	if !strings.Contains(err.Error(), "--drop-trailers") || !strings.Contains(err.Error(), "--message") {
-		t.Errorf("Error should explain that --drop-trailers only applies to --message, got: %v", err)
-	}
-	if n := server.CallCount("", "/changes/12345/message"); n != 0 {
-		t.Errorf("Commit message was written despite the rejection (%d calls)", n)
-	}
-}
-
 // editServer stands up a mock Gerrit serving origCommitMsg for change 12345
 // and accepting a commit message write.
 func editServer(t *testing.T, origCommitMsg string) *MockGerritServer {
@@ -875,7 +692,6 @@ func TestEdit_RejectsGitHubIssueSyntax(t *testing.T) {
 		args []string
 	}{
 		{"in --body", []string{"--body", "Rework the retry loop.\n\nFixes #456"}},
-		{"in --message", []string{"--message", "pw_foo: Rework\n\nCloses #456"}},
 		{"in --title", []string{"--title", "pw_foo: Rework, resolves #456"}},
 	}
 
@@ -914,39 +730,6 @@ func TestEdit_AcceptsGerritBugTrailers(t *testing.T) {
 	}
 }
 
-func TestEdit_ErrorWhenGetCommitFailsOnRawMessage(t *testing.T) {
-	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
-	server := NewMockGerritServer(t)
-	server.OnStatus(http.StatusInternalServerError)
-
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--message", "pw_foo: Complete new message")
-	if err == nil {
-		t.Fatal("Expected error when GetCommit fails, got nil (error was silently swallowed)")
-	}
-	if !strings.Contains(err.Error(), "error fetching current commit message") {
-		t.Errorf("Expected error to mention fetching current commit message, got: %v", err)
-	}
-}
-
-func TestEdit_ErrorWhenMismatchedChangeIDProvided(t *testing.T) {
-	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
-	origCommitMsg := "pw_foo: Original Subject\n\nOriginal body.\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--message", "pw_foo: Subject\n\nBody\n\nChange-Id: I9999999999999999999999999999999999999999")
-	if err == nil {
-		t.Fatal("Expected error when mismatched Change-Id provided, got nil")
-	}
-	if !strings.Contains(err.Error(), "cannot change Gerrit Change-Id") {
-		t.Errorf("Expected error about mismatched Change-Id, got: %v", err)
-	}
-}
-
 func TestEdit_ErrorWhenEmptyTitle(t *testing.T) {
 	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--title", "   ")
 	if err == nil {
@@ -954,16 +737,6 @@ func TestEdit_ErrorWhenEmptyTitle(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cannot set an empty commit title") {
 		t.Errorf("Expected error about empty title, got: %v", err)
-	}
-}
-
-func TestEdit_ErrorWhenEmptyMessage(t *testing.T) {
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--message", "   ")
-	if err == nil {
-		t.Fatal("Expected error when empty message provided, got nil")
-	}
-	if !strings.Contains(err.Error(), "cannot set an empty commit message") {
-		t.Errorf("Expected error about empty message, got: %v", err)
 	}
 }
 
@@ -1117,7 +890,6 @@ func TestEdit_CommitMessageFlagsDisabledRedirectsToLocalGit(t *testing.T) {
 	}{
 		{"title flag", []string{"pr", "edit", "12345", "--title", "pw_foo: New Title"}},
 		{"body flag", []string{"pr", "edit", "12345", "--body", "New description body."}},
-		{"message flag", []string{"pr", "edit", "12345", "--message", "pw_foo: New Title\n\nBody."}},
 		{"bug flag", []string{"pr", "edit", "12345", "--bug", "b/123456"}},
 		{"fixed flag", []string{"pr", "edit", "12345", "--fixed", "b/123456"}},
 	}

@@ -182,35 +182,6 @@ func trailerKey(trailer string) (string, bool) {
 	return strings.TrimSpace(strings.SplitN(first, ":", 2)[0]), true
 }
 
-// DroppedTrailers returns the trailers of origMsg that newMsg does not carry
-// forward. It exists so that a command replacing a whole commit message can
-// tell the user exactly what it is about to destroy instead of destroying it.
-//
-// Presence is judged per key, not per line: rewriting `Bug: b/1` to
-// `Bug: b/2` is an edit, not a deletion, and reporting it as loss would make
-// the check impossible to satisfy. Keyless footers are matched whole.
-//
-// The test is deliberately generous -- a bare `^Key:` line anywhere in newMsg
-// counts -- because the cost of the two errors is not symmetric. A false
-// alarm blocks a user who already did the right thing; a false pass silently
-// destroys history.
-func DroppedTrailers(origMsg, newMsg string) []string {
-	var dropped []string
-	for _, trailer := range ExtractTrailers(origMsg) {
-		key, ok := trailerKey(trailer)
-		if !ok {
-			if !strings.Contains(newMsg, trailer) {
-				dropped = append(dropped, trailer)
-			}
-			continue
-		}
-		if !MentionsTrailerKey(newMsg, key) {
-			dropped = append(dropped, trailer)
-		}
-	}
-	return dropped
-}
-
 // MentionsTrailerKey reports whether text has a line beginning with `key:`.
 //
 // This is the tolerant test, used to answer "has the user already dealt with

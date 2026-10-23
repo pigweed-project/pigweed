@@ -405,7 +405,6 @@ var ghShorthandCollisions = []struct {
 	{"pr edit", "q", "cq", "--jq"},
 	{"pr review", "q", "cq", "--jq"},
 	{"pr merge", "q", "cq", "--jq"},
-	{"pr edit", "m", "message", "--milestone"},
 	{"pr merge", "m", "message", "--merge"},
 	{"run view", "t", "target", "--template"},
 }

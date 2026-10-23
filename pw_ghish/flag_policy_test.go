@@ -199,10 +199,8 @@ var baselineFlagPolicyCatalog = map[string]flagPolicySpec{
 	"pr diff:stat":      {Mode: flagModeExtension, Reason: "Diffstat summary view"},
 
 	// pr edit
-	"pr edit:message":          {Mode: flagModeUnsupportedGuard, GH: "pr edit --body"},
 	"pr edit:title":            {Mode: flagModeUnsupportedGuard, GH: "pr edit --title"},
 	"pr edit:body":             {Mode: flagModeUnsupportedGuard, GH: "pr edit --body"},
-	"pr edit:drop-trailers":    {Mode: flagModeExtension, Reason: "Guard flag for trailer preservation"},
 	"pr edit:bug":              {Mode: flagModeUnsupportedGuard, GH: "pr edit --body"},
 	"pr edit:fixed":            {Mode: flagModeUnsupportedGuard, GH: "pr edit --body"},
 	"pr edit:add-reviewer":     {Mode: flagModeUpstream, GH: "pr edit --add-reviewer"},

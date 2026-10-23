@@ -62,8 +62,7 @@ rather than performing an unintended operation:
   * ``--trigger`` / ``--cq`` on ``pr`` (in ``gh``, ``-t`` is ``--title`` /
     ``--template`` and ``-q`` is ``--jq``)
   * ``--target`` on ``run view`` (in ``gh``, ``-t`` is ``--template``)
-  * ``--message`` on ``pr edit`` and ``pr merge`` (in ``gh``, ``-m`` is
-    ``--milestone`` and ``--merge``)
+  * ``--message`` on ``pr merge`` (in ``gh``, ``-m`` is ``--merge``)
   * ``--all-projects`` on ``pr list`` (in ``gh``, ``-a`` is ``--assignee``)
 
 * **Out-of-scope upstream commands and flags**:

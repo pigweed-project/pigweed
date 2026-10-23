@@ -116,7 +116,7 @@ Commands:
   - *Commit-Message Edits (`b/567763970`)*: Unlike GitHub (where PR titles and
     descriptions live in the server database), Gerrit stores the CL description
     inside the Git commit message of each patchset. Commit-message flags
-    (`--title`, `--body`, `--message`, `--bug`, `--fixed`) are disabled in
+    (`--title`, `--body`, `--bug`, `--fixed`) are disabled in
     `gh pr edit` and redirect to local surgical commit-message editing:
     1. `git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`
     2. Surgically edit `"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"` (preserving `Change-Id:`)
