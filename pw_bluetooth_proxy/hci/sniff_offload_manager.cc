@@ -849,7 +849,7 @@ void SniffOffloadManager::SendCommandComplete(uint16_t opcode,
   cmd_complete.num_hci_command_packets().Write(1);
   cmd_complete.command_opcode_uint().Write(opcode);
 
-  emboss::StatusCode status_code;
+  emboss::StatusCode status_code = emboss::StatusCode::SUCCESS;
   switch (status) {
     case CommandStatus::kSuccess:
       status_code = emboss::StatusCode::SUCCESS;

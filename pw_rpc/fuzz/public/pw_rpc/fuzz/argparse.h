@@ -57,8 +57,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string_view>
+#include <type_traits>
 #include <variant>
 
 #include "pw_containers/vector.h"
@@ -185,8 +187,11 @@ class UnsignedParser : public UnsignedParserBase {
 };
 
 // Holds argument parsers of different types.
-using ArgParserVariant =
-    std::variant<BoolParser, UnsignedParser<uint16_t>, UnsignedParser<size_t>>;
+using ArgParserVariant = std::variant<BoolParser,
+                                      UnsignedParser<unsigned short>,
+                                      UnsignedParser<unsigned int>,
+                                      UnsignedParser<unsigned long>,
+                                      UnsignedParser<unsigned long long>>;
 
 // Parses the command line arguments and sets the values of the given `parsers`.
 Status ParseArgs(Vector<ArgParserVariant>& parsers, int argc, char** argv);

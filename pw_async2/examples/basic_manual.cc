@@ -72,6 +72,7 @@ class ForwardingTask final : public Task {
         return Ready();  // Completes the task.
       }
     }
+    return Ready();
   }
 
  private:

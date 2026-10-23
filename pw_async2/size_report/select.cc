@@ -14,6 +14,7 @@
 
 #include "pw_async2/select.h"
 
+#include <cinttypes>
 #include <cstdint>
 #include <utility>
 
@@ -123,7 +124,7 @@ class SelectComparisonTask : public Task {
 
     Poll<uint32_t> poll_2 = value_2_.Pend(cx);
     if (poll_2.IsReady()) {
-      PW_LOG_INFO("Value 2 ready: %u", *poll_2);
+      PW_LOG_INFO("Value 2 ready: %" PRIu32, *poll_2);
       return Ready();
     }
 
@@ -162,7 +163,7 @@ class SelectComparisonTask : public Task {
     if (result.has_value<0>()) {
       PW_LOG_INFO("Value 1 ready: %d", result.value<0>());
     } else if (result.has_value<1>()) {
-      PW_LOG_INFO("Value 2 ready: %u", result.value<1>());
+      PW_LOG_INFO("Value 2 ready: %" PRIu32, result.value<1>());
     } else if (result.has_value<2>()) {
       PW_LOG_INFO("Value 3 ready: %c", result.value<2>());
     }

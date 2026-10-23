@@ -405,13 +405,13 @@ TEST_F(CoroTest, FreeFunctionThatLooksLikeAMember) {
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
-Generator<int> CountToFive(CoroContext cx) {
+Generator<int> CountToFive(CoroContext) {
   for (int i = 1; i <= 5; ++i) {
     co_yield i;
   }
 }
 
-Coro<int> SumGenerator(CoroContext cx, Generator<int>& gen) {
+Coro<int> SumGenerator(CoroContext, Generator<int>& gen) {
   int sum = 0;
   while (auto val = co_await gen.Next()) {
     sum += *val;
@@ -433,7 +433,7 @@ TEST_F(CoroTest, GeneratorYieldsValues) {
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
-Generator<int> AwaitAndYieldGenerator(CoroContext cx,
+Generator<int> AwaitAndYieldGenerator(CoroContext,
                                       OptionalValueProvider<int>& provider) {
   while (true) {
     std::optional<int> val = co_await provider.Get();
@@ -1014,7 +1014,7 @@ class TrackedObject {
 
 Coro<Status> OuterWithTrackedObjects(CoroContext cx,
                                      std::optional<Status>& returned_status,
-                                     TrackedObject argument,
+                                     TrackedObject,
                                      ObjectState& before_inner,
                                      ObjectState& after_inner) {
   TrackedObject before(before_inner);

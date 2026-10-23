@@ -373,7 +373,7 @@ TEST_F(GattNotifyTest, PayloadIsReturnedOnError) {
   ASSERT_EQ(result.status, Status::FailedPrecondition());
   auto bytes = result.buf->ContiguousSpan().value();
   EXPECT_EQ(bytes.size(), attribute_value.size());
-  EXPECT_EQ(bytes[0], static_cast<const std::byte>(attribute_value[0]));
+  EXPECT_EQ(bytes[0], static_cast<std::byte>(attribute_value[0]));
 }
 
 }  // namespace

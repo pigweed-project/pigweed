@@ -40,30 +40,33 @@ class PayloadReceiver {
     return reinterpret_cast<const char*>(payload_.payload.data());
   }
 
-  Function<void(const pw::rpc::Payload::Message&, Status)> UnaryOnCompleted() {
-    return [this](const pw::rpc::Payload::Message& data, Status) {
+  Function<void(const pw::rpc::pwpb::Payload::Message&, Status)>
+  UnaryOnCompleted() {
+    return [this](const pw::rpc::pwpb::Payload::Message& data, Status) {
       CopyPayload(data);
     };
   }
 
-  Function<void(const pw::rpc::Payload::Message&)> OnNext() {
-    return [this](const pw::rpc::Payload::Message& data) { CopyPayload(data); };
+  Function<void(const pw::rpc::pwpb::Payload::Message&)> OnNext() {
+    return [this](const pw::rpc::pwpb::Payload::Message& data) {
+      CopyPayload(data);
+    };
   }
 
  private:
-  void CopyPayload(const pw::rpc::Payload::Message& data) {
+  void CopyPayload(const pw::rpc::pwpb::Payload::Message& data) {
     payload_ = data;
     sem_.release();
   }
 
   pw::sync::BinarySemaphore sem_;
-  pw::rpc::Payload::Message payload_ = {};
+  pw::rpc::pwpb::Payload::Message payload_ = {};
 };
 
 template <size_t kSize>
-pw::rpc::Payload::Message Payload(const char (&string)[kSize]) {
-  static_assert(kSize <= sizeof(pw::rpc::Payload::Message::payload));
-  pw::rpc::Payload::Message payload{};
+pw::rpc::pwpb::Payload::Message Payload(const char (&string)[kSize]) {
+  static_assert(kSize <= sizeof(pw::rpc::pwpb::Payload::Message::payload));
+  pw::rpc::pwpb::Payload::Message payload{};
   payload.payload.resize(kSize);
   std::memcpy(payload.payload.data(), string, kSize);
   return payload;
@@ -86,7 +89,7 @@ TEST(PwpbRpcIntegrationTest, Unary) {
 }
 
 TEST(PwpbRpcIntegrationTest, Unary_ReuseCall) {
-  pw::rpc::PwpbUnaryReceiver<pw::rpc::Payload::Message> call;
+  pw::rpc::PwpbUnaryReceiver<pw::rpc::pwpb::Payload::Message> call;
   char value[] = {"O_o "};
 
   for (int i = 0; i < kIterations; ++i) {
@@ -114,8 +117,8 @@ TEST(PwpbRpcIntegrationTest, BidirectionalStreaming_MoveCalls) {
     ASSERT_EQ(OkStatus(), call.Write(Payload("Yello")));
     ASSERT_STREQ(receiver.Wait(), "Yello");
 
-    pw::rpc::PwpbClientReaderWriter<pw::rpc::Payload::Message,
-                                    pw::rpc::Payload::Message>
+    pw::rpc::PwpbClientReaderWriter<pw::rpc::pwpb::Payload::Message,
+                                    pw::rpc::pwpb::Payload::Message>
         new_call = std::move(call);
 
     // NOLINTNEXTLINE(bugprone-use-after-move)
@@ -138,8 +141,8 @@ TEST(PwpbRpcIntegrationTest, BidirectionalStreaming_MoveCalls) {
 }
 
 TEST(PwpbRpcIntegrationTest, BidirectionalStreaming_ReuseCall) {
-  pw::rpc::PwpbClientReaderWriter<pw::rpc::Payload::Message,
-                                  pw::rpc::Payload::Message>
+  pw::rpc::PwpbClientReaderWriter<pw::rpc::pwpb::Payload::Message,
+                                  pw::rpc::pwpb::Payload::Message>
       call;
 
   for (int i = 0; i < kIterations; ++i) {

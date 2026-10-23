@@ -56,17 +56,12 @@ size_t OffsetOf(Member Class::* member) {
 /// @return A reference to the container class.
 template <typename Member, typename ClassMember, typename Class>
 const Class& ContainerOf(const Member& ref, ClassMember Class::* member) {
-#ifdef __cpp_lib_is_pointer_interconvertible
-  static_assert(
-      std::is_same_v<Member, ClassMember> ||
-      std::is_pointer_interconvertible_base_of_v<Member, ClassMember>);
-#else
   static_assert(std::is_convertible_v<ClassMember*, Member*>);
   static_assert(std::is_same_v<Member, ClassMember> ||
                 std::is_base_of_v<Member, ClassMember>);
-#endif  // __cpp_lib_is_pointer_interconvertible
+  const auto* class_member = static_cast<const ClassMember*>(&ref);
   return *reinterpret_cast<const Class*>(
-      reinterpret_cast<const std::byte*>(&ref) - OffsetOf(member));
+      reinterpret_cast<const std::byte*>(class_member) - OffsetOf(member));
 }
 
 /// @copydoc ContainerOf

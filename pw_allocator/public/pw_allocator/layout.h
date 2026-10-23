@@ -122,11 +122,11 @@ class Layout {
   size_t alignment_;
 };
 
-inline bool operator==(const Layout& lhs, const Layout& rhs) {
+constexpr bool operator==(const Layout& lhs, const Layout& rhs) {
   return lhs.size() == rhs.size() && lhs.alignment() == rhs.alignment();
 }
 
-inline bool operator!=(const Layout& lhs, const Layout& rhs) {
+constexpr bool operator!=(const Layout& lhs, const Layout& rhs) {
   return !(lhs == rhs);
 }
 

@@ -112,7 +112,7 @@ PW_NO_INLINE Coro<Status> Inner(CoroContext) { co_return OkStatus(); }
 
 Coro<Status> Outer(CoroContext cx,
                    std::optional<Status>& returned_status,
-                   TrackedObject argument,
+                   TrackedObject,
                    ObjectState& before_inner,
                    ObjectState& after_inner) {
   TrackedObject before(before_inner);
@@ -153,7 +153,7 @@ TEST_F(FallibleCoroTaskTest, AllocationFailureInNestedCoroAborts) {
   EXPECT_FALSE(task.value().has_value());
 }
 
-PW_NO_INLINE Coro<Counter> GetAndDouble(CoroContext cx,
+PW_NO_INLINE Coro<Counter> GetAndDouble(CoroContext,
                                         ValueProvider<Counter>& provider) {
   Counter value = co_await provider.Get();
   co_return Counter(value.value * 2);

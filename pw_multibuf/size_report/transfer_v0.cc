@@ -36,8 +36,12 @@ class FakeMultiBuf {
 
   constexpr bool empty() const { return view_.empty(); }
 
-  constexpr iterator begin() const { return view_.begin(); }
-  constexpr iterator end() const { return view_.end(); }
+  constexpr iterator begin() { return view_.begin(); }
+  constexpr const_iterator begin() const {
+    return ConstByteSpan(view_).begin();
+  }
+  constexpr iterator end() { return view_.end(); }
+  constexpr const_iterator end() const { return ConstByteSpan(view_).end(); }
 
   size_t CopyFrom(ConstByteSpan src, size_t offset = 0) {
     if (offset >= size()) {

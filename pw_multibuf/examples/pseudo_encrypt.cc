@@ -112,7 +112,7 @@ class LinkFrame {
  private:
   friend class NetworkPacket;
 
-  constexpr explicit LinkFrame(pw::MultiBuf&& mbuf) : mbuf_(std::move(mbuf)) {
+  explicit LinkFrame(pw::MultiBuf&& mbuf) : mbuf_(std::move(mbuf)) {
     PW_CHECK_UINT_EQ(mbuf_->NumLayers(), 2u);
     ResetLength();
   }

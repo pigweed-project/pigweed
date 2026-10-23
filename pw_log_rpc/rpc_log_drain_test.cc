@@ -15,6 +15,7 @@
 #include "pw_log_rpc/rpc_log_drain.h"
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <string_view>

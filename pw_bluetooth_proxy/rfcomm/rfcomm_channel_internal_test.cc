@@ -705,7 +705,6 @@ TEST_F(RfcommChannelTest, ReceivePacketWithNoCreditsDoesNotUnderflow) {
   ASSERT_EQ(last_received_pdu_.size(), pdu_data.size());
   last_received_pdu_.clear();
 
-  const pw::Vector<uint8_t, 3> pdu_data2 = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
   // Receive another packet. This should be accepted but log a warning.
   channel.HandlePduFromController(0, as_bytes(span(pdu_data)));
   EXPECT_EQ(last_received_pdu_.size(), pdu_data.size());

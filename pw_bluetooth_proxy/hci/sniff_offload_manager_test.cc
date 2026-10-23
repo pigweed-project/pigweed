@@ -2604,7 +2604,7 @@ TEST_F(SniffOffloadManagerTest, ModeChangeEventWithFailureStatusIsIgnored) {
 
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
-std::optional<SniffOffloadManager::CommandOpcode>
+[[maybe_unused]] std::optional<SniffOffloadManager::CommandOpcode>
 SniffOffloadManagerTest::SentCommand::opcode() {
   std::array<std::byte, emboss::CommandHeader::IntrinsicSizeInBytes()> scratch;
   auto span = buf->Get(scratch);
@@ -3046,7 +3046,7 @@ bool SniffOffloadManagerTest::CheckCommandCompleteEventSent(
   return true;
 }
 
-bool SniffOffloadManagerTest::CheckCommandStatusEventSent(
+[[maybe_unused]] bool SniffOffloadManagerTest::CheckCommandStatusEventSent(
     std::optional<CommandOpcode> opcode,
     std::optional<emboss::StatusCode> status) {
   VERIFY_OR_RETURN(!packets_to_host().empty());

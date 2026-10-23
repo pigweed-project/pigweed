@@ -1639,9 +1639,11 @@ TEST(SpanTest, SpanExtentConversions) {
 }
 
 TEST(SpanTest, IteratorConversions) {
+#if !defined(__GLIBCXX__) || !defined(__cpp_lib_span)
   static_assert(std::is_convertible<span<int>::iterator,
                                     span<const int>::iterator>::value,
                 "Error: iterator should be convertible to const iterator");
+#endif  // !defined(__GLIBCXX__) || !defined(__cpp_lib_span)
 
   static_assert(!std::is_convertible<span<const int>::iterator,
                                      span<int>::iterator>::value,

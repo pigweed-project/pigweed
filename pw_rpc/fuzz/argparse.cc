@@ -15,6 +15,7 @@
 #include "pw_rpc/fuzz/argparse.h"
 
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 
 #include "pw_assert/check.h"
@@ -183,7 +184,7 @@ ParseStatus UnsignedParserBase::Parse(std::string_view arg0,
     result = kParsedTwo;
   }
   char* endptr;
-  unsigned long long value = strtoull(arg0.data(), &endptr, 0);
+  unsigned long long value = std::strtoull(arg0.data(), &endptr, 0);
   if (*endptr) {
     PW_LOG_ERROR("Failed to parse number from '%s'", arg0.data());
     return kParseFailure;
