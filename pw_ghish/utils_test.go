@@ -450,7 +450,7 @@ func TestEnsureChangeID_Valid(t *testing.T) {
 
 	cfg := &Config{Git: mockGit}
 	var outBuf, errBuf bytes.Buffer
-	if err := EnsureChangeID(ctx, cfg, &outBuf, &errBuf); err != nil {
+	if err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf); err != nil {
 		t.Fatalf("EnsureChangeID() failed: %v", err)
 	}
 
@@ -496,7 +496,7 @@ func TestExtractChangeID(t *testing.T) {
 func TestEnsureChangeID_NilConfig(t *testing.T) {
 	ctx := context.Background()
 	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, nil, &outBuf, &errBuf)
+	err := EnsureChangeID(ctx, nil, false, &outBuf, &errBuf)
 	if err == nil {
 		t.Fatal("Expected error when cfg is nil, got nil")
 	}
@@ -508,7 +508,7 @@ func TestEnsureChangeID_NilConfig(t *testing.T) {
 func TestEnsureChangeID_NilGit(t *testing.T) {
 	ctx := context.Background()
 	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, &Config{Git: nil}, &outBuf, &errBuf)
+	err := EnsureChangeID(ctx, &Config{Git: nil}, false, &outBuf, &errBuf)
 	if err == nil {
 		t.Fatal("Expected error when cfg.Git is nil, got nil")
 	}
@@ -533,7 +533,7 @@ func TestEnsureChangeID_MissingChangeIDReturnsError(t *testing.T) {
 	}
 	cfg := &Config{Git: mockGit, Host: "invalid-review.invalid"}
 	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, cfg, &outBuf, &errBuf)
+	err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf)
 	if err == nil {
 		t.Fatal("Expected error when Change-Id is missing and cannot be added, got nil")
 	}
@@ -557,7 +557,7 @@ func TestEnsureChangeID_BlockedWhenRemoteTip(t *testing.T) {
 	}).OnCommand("rev-parse --git-dir", t.TempDir()+"\n")
 	cfg := &Config{Git: mockGit, Host: "pigweed-review.googlesource.com"}
 	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, cfg, &outBuf, &errBuf)
+	err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf)
 	if err == nil {
 		t.Fatal("Expected error when HEAD is a remote tip, got nil")
 	}
@@ -600,7 +600,7 @@ func TestEnsureChangeID_AmendsWhenHookInstalled(t *testing.T) {
 
 	cfg := &Config{Git: mockGit}
 	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, cfg, &outBuf, &errBuf)
+	err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf)
 	if err != nil {
 		t.Fatalf("Expected EnsureChangeID to succeed after amend, got error: %v", err)
 	}
@@ -643,7 +643,7 @@ func TestEnsureChangeID_DownloadsHookAndAmends(t *testing.T) {
 
 	cfg := &Config{Git: mockGit, Host: server.URL}
 	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, cfg, &outBuf, &errBuf)
+	err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf)
 	if err != nil {
 		t.Fatalf("Expected EnsureChangeID to succeed with downloaded hook, got: %v", err)
 	}
@@ -662,6 +662,38 @@ func TestEnsureChangeID_DownloadsHookAndAmends(t *testing.T) {
 	}
 	if info.Mode()&0111 == 0 {
 		t.Errorf("Expected hook file to be executable, mode: %v", info.Mode())
+	}
+}
+
+func TestEnsureChangeID_NoVerifyInjectsWithoutHookOrDownload(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	hookDownloaded := false
+	server := NewMockGerritServer(t)
+	server.On("GET", "/tools/hooks/commit-msg", func(w http.ResponseWriter, r *http.Request) {
+		hookDownloaded = true
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	mockGit := (&MockGitRunner{}).
+		OnCommand("rev-parse --git-dir", tempDir+"\n").
+		WithCommit("pw_foo: Subject without Change-Id\n\nBug: b/567763970\n")
+
+	cfg := &Config{Git: mockGit, Host: server.URL}
+	var outBuf, errBuf bytes.Buffer
+	if err := EnsureChangeID(ctx, cfg, true, &outBuf, &errBuf); err != nil {
+		t.Fatalf("EnsureChangeID(noVerify=true) failed: %v", err)
+	}
+	if hookDownloaded {
+		t.Error("expected commit-msg hook not to be downloaded when noVerify=true")
+	}
+	if !mockGit.HasCall("commit --amend --only --allow-empty --no-verify -F ") {
+		t.Errorf("expected commit --amend --only --allow-empty --no-verify -F call, got: %v", mockGit.Calls)
+	}
+	updated := mockGit.LastCommitMessage()
+	if !HasChangeID(updated) {
+		t.Errorf("expected injected Change-Id in amended message, got:\n%s", updated)
 	}
 }
 
@@ -1653,7 +1685,7 @@ func TestValidateChangeIDFooters_And_EnsureChangeID(t *testing.T) {
 			return nil
 		},
 	}
-	err := EnsureChangeID(t.Context(), &Config{Git: mockGit}, io.Discard, io.Discard)
+	err := EnsureChangeID(t.Context(), &Config{Git: mockGit}, false, io.Discard, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), `in HEAD commit message: expected "I" followed by 40 hex digits`) || !strings.Contains(err.Error(), "git commit --amend --only") {
 		t.Fatalf("EnsureChangeID expected malformed Change-Id error for HEAD commit message, got: %v", err)
 	}

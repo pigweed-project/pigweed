@@ -25,6 +25,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestGitClient_CurrentBranch(t *testing.T) {
@@ -1033,6 +1035,69 @@ func (r *testGitRepo) InstallCommitMsgHook() {
 	}
 }
 
+func (r *testGitRepo) BareGitOutput(args ...string) string {
+	r.t.Helper()
+	var stdout, stderr bytes.Buffer
+	runner := &RealGitRunner{Dir: filepath.Dir(r.RemoteDir)}
+	fullArgs := append([]string{"--git-dir=" + r.RemoteDir}, args...)
+	if err := runner.Run(r.t.Context(), &stdout, &stderr, fullArgs...); err != nil {
+		r.t.Fatalf("bare git %v failed: %v (%s)", args, err, stderr.String())
+	}
+	return strings.TrimSpace(stdout.String())
+}
+
+func (r *testGitRepo) InstallHook(name, body string) {
+	r.t.Helper()
+	hookPath := filepath.Join(r.WorkDir, ".git", "hooks", name)
+	if err := os.MkdirAll(filepath.Dir(hookPath), 0o755); err != nil {
+		r.t.Fatalf("mkdir hooks failed: %v", err)
+	}
+	if err := os.WriteFile(hookPath, []byte(body), 0o755); err != nil {
+		r.t.Fatalf("write %s hook failed: %v", name, err)
+	}
+}
+
+func (r *testGitRepo) InstallGerritRefHooks() {
+	r.t.Helper()
+	hooksDir := filepath.Join(r.RemoteDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		r.t.Fatalf("mkdir remote hooks failed: %v", err)
+	}
+	preReceive := "#!/bin/sh\nwhile read old new ref; do [ \"$(git rev-parse --verify -q refs/changes/latest)\" = \"$new\" ] && { echo 'no new changes' >&2; exit 1; }; done\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(hooksDir, "pre-receive"), []byte(preReceive), 0o755); err != nil {
+		r.t.Fatalf("write pre-receive hook failed: %v", err)
+	}
+	postReceive := "#!/bin/sh\nwhile read old new ref; do git update-ref refs/changes/latest \"$new\" && git update-ref -d \"$ref\"; done\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(hooksDir, "post-receive"), []byte(postReceive), 0o755); err != nil {
+		r.t.Fatalf("write post-receive hook failed: %v", err)
+	}
+}
+
+func (r *testGitRepo) BindToCLI() {
+	r.t.Helper()
+	oldGit := DefaultGitRunner
+	oldCWD := MockCWD
+	oldPreRunE := RootCmd.PersistentPreRunE
+	DefaultGitRunner = r.Client
+	MockCWD = r.WorkDir
+	RootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if oldPreRunE != nil {
+			if err := oldPreRunE(cmd, args); err != nil {
+				return err
+			}
+		}
+		if cfg := GetConfig(cmd); cfg != nil {
+			cfg.CWD = r.WorkDir
+		}
+		return nil
+	}
+	r.t.Cleanup(func() {
+		DefaultGitRunner = oldGit
+		MockCWD = oldCWD
+		RootCmd.PersistentPreRunE = oldPreRunE
+	})
+}
+
 func initTestRepoWithOrigin(t *testing.T) (string, GitClient) {
 	t.Helper()
 	r := newTestGitRepo(t)
@@ -1229,4 +1294,311 @@ func TestGitClient_CommitAmendNoEdit_RealGit(t *testing.T) {
 			t.Errorf("expected Change-Id in amended empty commit, got msg=%q err=%v", gotMsg, err)
 		}
 	})
+}
+
+func assertNoCommitTempFiles(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir(%s) failed: %v", dir, err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "ghish-commit-msg-") {
+			t.Errorf("leftover temp file in %s: %s", dir, entry.Name())
+		}
+	}
+}
+
+func TestGitClient_CommitAmendMessage_RealGit(t *testing.T) {
+	ctx := t.Context()
+	r := newTestGitRepo(t)
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+
+	r.StageFile("committed.txt", "v1\n")
+	r.GitOutput("commit", "-m", "pw_foo: Initial draft\n\nChange-Id: I1111111111111111111111111111111111111111\n")
+
+	r.StageFile("staged.txt", "staged content\n")
+	r.WriteFile("committed.txt", "v2 unstaged\n")
+	r.WriteFile("untracked.txt", "untracked content\n")
+	headTreeBefore := r.GitOutput("rev-parse", "HEAD^{tree}")
+	indexTreeBefore := r.GitOutput("write-tree")
+
+	newMsg := "pw_foo: Polished title with `backticks`\n\n--flag-looking-line preserved verbatim\n\nBug: b/567763970\nChange-Id: I1111111111111111111111111111111111111111\n"
+	if err := r.Client.CommitAmendMessage(ctx, newMsg, false, io.Discard, io.Discard); err != nil {
+		t.Fatalf("CommitAmendMessage failed: %v", err)
+	}
+	if got := r.GitOutput("rev-parse", "HEAD^{tree}"); got != headTreeBefore {
+		t.Errorf("HEAD^{tree} changed from %s to %s", headTreeBefore, got)
+	}
+	if got := r.GitOutput("write-tree"); got != indexTreeBefore {
+		t.Errorf("staged index tree changed from %s to %s", indexTreeBefore, got)
+	}
+	if got := r.ReadFile("committed.txt"); got != "v2 unstaged\n" {
+		t.Errorf("unstaged edit lost: %q", got)
+	}
+	if got := r.ReadFile("untracked.txt"); got != "untracked content\n" {
+		t.Errorf("untracked file lost: %q", got)
+	}
+	if gotMsg, err := r.Client.HeadCommitMessage(ctx); err != nil || gotMsg != strings.TrimSpace(newMsg) {
+		t.Errorf("HeadCommitMessage = %q, err=%v; want %q", gotMsg, err, strings.TrimSpace(newMsg))
+	}
+	assertNoCommitTempFiles(t, tmpDir)
+
+	r.InstallHook("pre-commit", "#!/bin/sh\necho 'hook blocked' >&2\nexit 1\n")
+	if err := r.Client.CommitAmendMessage(ctx, newMsg, false, io.Discard, io.Discard); err == nil {
+		t.Fatal("expected failing pre-commit hook to fail CommitAmendMessage when noVerify=false")
+	}
+	if err := r.Client.CommitAmendMessage(ctx, "pw_foo: Bypassed\n\nChange-Id: I1111111111111111111111111111111111111111\n", true, io.Discard, io.Discard); err != nil {
+		t.Fatalf("expected noVerify=true to bypass hook, got: %v", err)
+	}
+	assertNoCommitTempFiles(t, tmpDir)
+}
+
+func TestGitClient_CommitNewAll_RealGit(t *testing.T) {
+	ctx := t.Context()
+
+	t.Run("auto-stages modified tracked files with -a and honors noVerify", func(t *testing.T) {
+		r := newTestGitRepo(t)
+		tmpDir := t.TempDir()
+		t.Setenv("TMPDIR", tmpDir)
+		r.WriteFile("base.txt", "modified tracked content\n")
+		r.InstallHook("pre-commit", "#!/bin/sh\necho 'hook blocked' >&2\nexit 1\n")
+
+		msg := "pw_bar: Add `CommitNewAll` helper\n\n- preserves leading dashes\n--and double dashes\n\nBug: b/567763970\n"
+		if _, err := r.Client.CommitNewAll(ctx, msg, false, io.Discard, io.Discard); err == nil {
+			t.Fatal("expected CommitNewAll with noVerify=false to fail on pre-commit hook")
+		}
+		autoStaged, err := r.Client.CommitNewAll(ctx, msg, true, io.Discard, io.Discard)
+		if err != nil {
+			t.Fatalf("CommitNewAll(noVerify=true) failed: %v", err)
+		}
+		if !autoStaged {
+			t.Errorf("autoStaged = false, want true when index had no staged changes")
+		}
+		if gotMsg, err := r.Client.HeadCommitMessage(ctx); err != nil || gotMsg != strings.TrimSpace(msg) {
+			t.Errorf("HeadCommitMessage = %q, err=%v; want %q", gotMsg, err, strings.TrimSpace(msg))
+		}
+		assertNoCommitTempFiles(t, tmpDir)
+	})
+
+	t.Run("commits only staged files when index is non-empty", func(t *testing.T) {
+		r := newTestGitRepo(t)
+		r.StageFile("selected.txt", "staged feature\n")
+		r.WriteFile("base.txt", "unstaged debug edit\n")
+		autoStaged, err := r.Client.CommitNewAll(ctx, "pw_bar: Commit only staged file\n", false, io.Discard, io.Discard)
+		if err != nil {
+			t.Fatalf("CommitNewAll failed: %v", err)
+		}
+		if autoStaged {
+			t.Errorf("autoStaged = true, want false when staged changes were already present")
+		}
+		if got := r.GitOutput("show", "--pretty=format:", "--name-only", "HEAD"); got != "selected.txt" {
+			t.Errorf("committed files = %q, want selected.txt", got)
+		}
+		if got := r.GitOutput("diff", "--name-only"); got != "base.txt" {
+			t.Errorf("unstaged diff = %q, want base.txt", got)
+		}
+	})
+}
+
+func TestGitClient_UpdateHeadRef_RealGit(t *testing.T) {
+	ctx := t.Context()
+	r := newTestGitRepo(t)
+
+	if err := r.Client.UpdateHeadRef(ctx, "", "abc", "reason"); err == nil {
+		t.Fatal("expected error for empty targetSHA")
+	}
+	if err := r.Client.UpdateHeadRef(ctx, "abc", "", "reason"); err == nil {
+		t.Fatal("expected error for empty expectedCurrentSHA")
+	}
+
+	origSHA := r.GitOutput("rev-parse", "HEAD")
+	r.WriteFile("base.txt", "committed change\n")
+	if _, err := r.Client.CommitNewAll(ctx, "pw_baz: Temporary commit\n", false, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	newSHA := r.GitOutput("rev-parse", "HEAD")
+	r.StageFile("extra.txt", "staged file\n")
+	r.WriteFile("base.txt", "working tree edit\n")
+
+	if err := r.Client.UpdateHeadRef(ctx, origSHA, origSHA, "rollback mismatch"); err == nil {
+		t.Fatal("expected CAS mismatch error")
+	}
+	if err := r.Client.UpdateHeadRef(ctx, origSHA, newSHA, "rollback after failure"); err != nil {
+		t.Fatalf("UpdateHeadRef failed: %v", err)
+	}
+	if got := r.GitOutput("rev-parse", "HEAD"); got != origSHA {
+		t.Fatalf("HEAD = %s, want %s", got, origSHA)
+	}
+	if got := r.ReadFile("base.txt"); got != "working tree edit\n" {
+		t.Errorf("working tree altered: %q", got)
+	}
+	if got := r.ReadFile("extra.txt"); got != "staged file\n" {
+		t.Errorf("staged file altered: %q", got)
+	}
+}
+
+func TestHeadRollbackGuard_RealGit(t *testing.T) {
+	ctx := t.Context()
+	r := newTestGitRepo(t)
+	r.InstallCommitMsgHook()
+	r.InstallGerritRefHooks()
+	r.BindToCLI()
+
+	cfg := &Config{Git: r.Client}
+	origSHA := r.GitOutput("rev-parse", "HEAD")
+
+	r.WriteFile("base.txt", "draft edit\n")
+	guard := newHeadRollbackGuard(ctx, cfg, "test rollback")
+	if err := guard.CommitNewAll(ctx, "pw_foo: Draft commit\n", false, io.Discard, io.Discard); err != nil {
+		t.Fatalf("CommitNewAll failed: %v", err)
+	}
+	guard.Rollback(ctx, io.Discard)
+	if got := r.GitOutput("rev-parse", "HEAD"); got != origSHA {
+		t.Fatalf("Rollback did not restore HEAD: got %s, want %s", got, origSHA)
+	}
+	if hasStaged, err := r.Client.HasStagedChanges(ctx); err != nil || hasStaged {
+		t.Fatalf("expected index tree restored, hasStaged=%v, err=%v", hasStaged, err)
+	}
+
+	guard2 := newHeadRollbackGuard(ctx, cfg, "test keep")
+	if err := guard2.CommitNewAll(ctx, "pw_foo: Kept commit\n", false, io.Discard, io.Discard); err != nil {
+		t.Fatalf("CommitNewAll failed: %v", err)
+	}
+	keptSHA := r.GitOutput("rev-parse", "HEAD")
+	headMsg, err := r.Client.HeadCommitMessage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := guard2.AmendMessageIfChanged(ctx, headMsg, headMsg+"\n", false, io.Discard, io.Discard); err != nil {
+		t.Fatalf("no-op AmendMessageIfChanged failed: %v", err)
+	}
+	if got := r.GitOutput("rev-parse", "HEAD"); got != keptSHA {
+		t.Fatalf("no-op AmendMessageIfChanged rewrote HEAD: got %s, want %s", got, keptSHA)
+	}
+	guard2.Keep()
+	guard2.Rollback(ctx, io.Discard)
+	if got := r.GitOutput("rev-parse", "HEAD"); got != keptSHA {
+		t.Fatalf("Rollback after Keep() moved HEAD: got %s, want %s", got, keptSHA)
+	}
+	r.GitOutput("push", "origin", "HEAD:refs/for/main")
+	if gotBare := r.BareGitOutput("rev-parse", "refs/changes/latest"); gotBare != keptSHA {
+		t.Fatalf("expected refs/changes/latest = %s, got %s", keptSHA, gotBare)
+	}
+}
+
+func TestHeadRollbackGuard_UnbornBranch_RealGit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not found in PATH")
+	}
+	ctx := t.Context()
+	workDir, err := filepath.Abs(t.TempDir())
+	if err != nil {
+		t.Fatalf("filepath.Abs(t.TempDir()) failed: %v", err)
+	}
+	client := NewGitClientInDir(workDir)
+	if err := client.Run(ctx, io.Discard, io.Discard, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+	for _, kv := range [][2]string{
+		{"user.name", "Test User"},
+		{"user.email", "test@example.com"},
+		{"user.signingkey", ""},
+		{"commit.gpgsign", "false"},
+	} {
+		if err := client.Run(ctx, io.Discard, io.Discard, "config", kv[0], kv[1]); err != nil {
+			t.Fatalf("git config %s failed: %v", kv[0], err)
+		}
+	}
+
+	stagedPath := filepath.Join(workDir, "staged.txt")
+	if err := os.WriteFile(stagedPath, []byte("staged unborn content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Run(ctx, io.Discard, io.Discard, "add", "staged.txt"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &Config{Git: client}
+	guard := newHeadRollbackGuard(ctx, cfg, "test unborn rollback")
+	if guard.origHEAD != "" {
+		t.Fatalf("expected empty origHEAD on unborn branch, got %q", guard.origHEAD)
+	}
+	if err := guard.CommitNewAll(ctx, "pw_foo: Initial commit on unborn branch\n", false, io.Discard, io.Discard); err != nil {
+		t.Fatalf("CommitNewAll on unborn branch failed: %v", err)
+	}
+	if sha, err := client.RevParse(ctx, "HEAD"); err != nil || sha == "" {
+		t.Fatalf("expected commit on HEAD before rollback, got sha=%q err=%v", sha, err)
+	}
+
+	guard.Rollback(ctx, io.Discard)
+
+	var symBuf bytes.Buffer
+	if err := client.Run(ctx, &symBuf, io.Discard, "symbolic-ref", "HEAD"); err != nil {
+		t.Fatalf("git symbolic-ref HEAD failed after Rollback: %v", err)
+	}
+	if gotSym := strings.TrimSpace(symBuf.String()); gotSym != "refs/heads/main" {
+		t.Errorf("symbolic-ref HEAD = %q, want refs/heads/main", gotSym)
+	}
+	if err := client.Run(ctx, io.Discard, io.Discard, "rev-parse", "--verify", "HEAD"); err == nil {
+		t.Fatal("expected git rev-parse --verify HEAD to fail after unwinding unborn branch")
+	}
+	if hasStaged, err := client.HasStagedChanges(ctx); err != nil || !hasStaged {
+		t.Errorf("expected staged file preserved in index, got hasStaged=%v err=%v", hasStaged, err)
+	}
+	var lsBuf bytes.Buffer
+	if err := client.Run(ctx, &lsBuf, io.Discard, "ls-files"); err != nil || strings.TrimSpace(lsBuf.String()) != "staged.txt" {
+		t.Errorf("git ls-files = %q (err=%v), want staged.txt", strings.TrimSpace(lsBuf.String()), err)
+	}
+	if data, err := os.ReadFile(stagedPath); err != nil || string(data) != "staged unborn content\n" {
+		t.Errorf("working tree staged.txt = %q (err=%v), want %q", string(data), err, "staged unborn content\n")
+	}
+
+	// Verify autoStaged=true clears index entries via read-tree --empty while preserving working tree.
+	guardAuto := newHeadRollbackGuard(ctx, cfg, "test unborn auto-staged rollback")
+	if err := guardAuto.CommitNewAll(ctx, "pw_foo: Auto-staged unborn commit\n", false, io.Discard, io.Discard); err != nil {
+		t.Fatalf("second CommitNewAll on unborn branch failed: %v", err)
+	}
+	guardAuto.autoStaged = true
+	guardAuto.Rollback(ctx, io.Discard)
+	lsBuf.Reset()
+	if err := client.Run(ctx, &lsBuf, io.Discard, "ls-files"); err != nil || strings.TrimSpace(lsBuf.String()) != "" {
+		t.Errorf("expected empty index after autoStaged unborn rollback, got %q (err=%v)", lsBuf.String(), err)
+	}
+	if data, err := os.ReadFile(stagedPath); err != nil || string(data) != "staged unborn content\n" {
+		t.Errorf("working tree staged.txt after read-tree --empty = %q (err=%v)", string(data), err)
+	}
+}
+
+func TestEnsureChangeID_NoVerifyBypassesHooks_RealGit(t *testing.T) {
+	ctx := t.Context()
+	r := newTestGitRepo(t)
+	r.StageFile("feature.txt", "new feature\n")
+	r.GitOutput("commit", "-m", "pw_foo: Add feature without Change-Id")
+	r.InstallCommitMsgHook()
+	r.InstallHook("pre-commit", "#!/bin/sh\nexit 1\n")
+
+	cfg := &Config{Git: r.Client}
+	if err := EnsureChangeID(ctx, cfg, false, io.Discard, io.Discard); err == nil {
+		t.Fatal("expected EnsureChangeID(noVerify=false) to fail when pre-commit hook exits 1")
+	}
+	r.InstallHook("commit-msg", "#!/bin/sh\nexit 1\n")
+	if err := EnsureChangeID(ctx, cfg, true, io.Discard, io.Discard); err != nil {
+		t.Fatalf("EnsureChangeID(noVerify=true) failed: %v", err)
+	}
+
+	gotMsg, err := r.Client.HeadCommitMessage(ctx)
+	if err != nil {
+		t.Fatalf("HeadCommitMessage failed: %v", err)
+	}
+	if !HasChangeID(gotMsg) {
+		t.Fatalf("expected valid Change-Id in HEAD commit message, got:\n%s", gotMsg)
+	}
+	if err := ValidateChangeIDFooters(gotMsg, ""); err != nil {
+		t.Fatalf("ValidateChangeIDFooters failed on injected Change-Id: %v", err)
+	}
+	if !strings.HasPrefix(gotMsg, "pw_foo: Add feature without Change-Id\n") {
+		t.Errorf("unexpected commit message prefix:\n%s", gotMsg)
+	}
 }

@@ -169,6 +169,107 @@ func defaultBranch(ctx context.Context, cfg *Config, stderr io.Writer) string {
 	return "main"
 }
 
+// headRollbackGuard tracks local HEAD and index mutations performed during
+// `gh pr create` or `gh pr push` and atomically rolls HEAD (and any `-a`
+// auto-staged index entries) back if pre-flight checks or `git push` fail.
+type headRollbackGuard struct {
+	git             GitClient
+	reason          string
+	origHEAD        string
+	autoStaged      bool
+	createdOnUnborn bool
+	committed       bool
+}
+
+// newHeadRollbackGuard records the initial HEAD SHA before any local commit or
+// amend mutation so Rollback can restore it via compare-and-swap on error.
+func newHeadRollbackGuard(ctx context.Context, cfg *Config, reason string) *headRollbackGuard {
+	git := cfg.GitClient()
+	origHEAD, err := git.RevParse(ctx, "HEAD")
+	if err != nil {
+		origHEAD = ""
+	}
+	return &headRollbackGuard{
+		git:      git,
+		reason:   reason,
+		origHEAD: origHEAD,
+	}
+}
+
+// CommitNewAll creates a new commit for staged changes (or modified tracked
+// files via -a, recording auto-staging so Rollback restores the index tree).
+func (g *headRollbackGuard) CommitNewAll(ctx context.Context, msg string, noVerify bool, stdout, stderr io.Writer) error {
+	fmt.Fprintln(stdout, "Creating new commit...")
+	autoStaged, err := g.git.CommitNewAll(ctx, msg, noVerify, stdout, stderr)
+	if err != nil {
+		return fmt.Errorf("error creating commit: %w", err)
+	}
+	g.autoStaged = autoStaged
+	if g.origHEAD == "" {
+		g.createdOnUnborn = true
+	}
+	return nil
+}
+
+// AmendMessageIfChanged amends HEAD's commit message when newMsg differs from
+// origMsg (modulo trailing newlines), skipping no-op amends.
+func (g *headRollbackGuard) AmendMessageIfChanged(ctx context.Context, origMsg, newMsg string, noVerify bool, stdout, stderr io.Writer) error {
+	// HeadCommitMessage trims trailing newlines while CommitMessage.Format()
+	// appends "\n"; use TrimRight so leading whitespace edits are still detected.
+	if strings.TrimRight(origMsg, "\r\n") == strings.TrimRight(newMsg, "\r\n") {
+		return nil
+	}
+	fmt.Fprintln(stdout, "Updating HEAD commit message...")
+	if err := g.git.CommitAmendMessage(ctx, newMsg, noVerify, stdout, stderr); err != nil {
+		return fmt.Errorf("error updating HEAD commit message: %w", err)
+	}
+	return nil
+}
+
+// Keep marks the local commit mutation as finalized so Rollback is a no-op.
+func (g *headRollbackGuard) Keep() {
+	g.committed = true
+}
+
+// Rollback restores HEAD to origHEAD via compare-and-swap (or unwinds a newly
+// created commit on an unborn branch) and restores the index tree if
+// CommitNewAll auto-staged tracked modifications, unless Keep was called.
+func (g *headRollbackGuard) Rollback(ctx context.Context, stderr io.Writer) {
+	if g.committed || (g.origHEAD == "" && !g.createdOnUnborn) {
+		return
+	}
+	rbCtx := context.WithoutCancel(ctx)
+	curHEAD, err := g.git.RevParse(rbCtx, "HEAD")
+	if err != nil || curHEAD == "" || curHEAD == g.origHEAD {
+		return
+	}
+	if g.createdOnUnborn {
+		if rbErr := g.git.Run(rbCtx, io.Discard, io.Discard, "update-ref", "-d", "HEAD", curHEAD); rbErr != nil {
+			if stderr != nil {
+				fmt.Fprintf(stderr, "Warning: failed to roll back unborn HEAD %s: %v\n", curHEAD, rbErr)
+			}
+			return
+		}
+		if g.autoStaged {
+			if idxErr := g.git.Run(rbCtx, io.Discard, io.Discard, "read-tree", "--empty"); idxErr != nil && stderr != nil {
+				fmt.Fprintf(stderr, "Warning: failed to clear index tree: %v\n", idxErr)
+			}
+		}
+		return
+	}
+	if rbErr := g.git.UpdateHeadRef(rbCtx, g.origHEAD, curHEAD, g.reason); rbErr != nil {
+		if stderr != nil {
+			fmt.Fprintf(stderr, "Warning: failed to roll back HEAD from %s to %s: %v\n", curHEAD, g.origHEAD, rbErr)
+		}
+		return
+	}
+	if g.autoStaged {
+		if idxErr := g.git.Run(rbCtx, io.Discard, io.Discard, "read-tree", g.origHEAD); idxErr != nil && stderr != nil {
+			fmt.Fprintf(stderr, "Warning: failed to restore index tree to %s: %v\n", g.origHEAD, idxErr)
+		}
+	}
+}
+
 // resolvePushBranch determines the target branch for a push.
 // Priority:
 // 1. Explicit --base flag
@@ -755,8 +856,8 @@ func CheckCommitMessageWarnings(msg string, label string) []string {
 // VerifyHeadForPush ensures the HEAD commit has a valid Change-Id, checks that
 // the commit message contains no GitHub issue syntax or duplicate Change-Ids,
 // and optionally queries Gerrit for an existing change matching the Change-Id.
-func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, queryExisting bool) (*VerifiedPushState, error) {
-	if err := EnsureChangeID(ctx, cfg, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, queryExisting, noVerify bool) (*VerifiedPushState, error) {
+	if err := EnsureChangeID(ctx, cfg, noVerify, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 		return nil, fmt.Errorf("error verifying Change-Id: %w", err)
 	}
 

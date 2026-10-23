@@ -74,7 +74,7 @@ Supports rich push options:
 			}
 		}
 
-		state, err := VerifyHeadForPush(ctx, cmd, cfg, !force)
+		state, err := VerifyHeadForPush(ctx, cmd, cfg, !force, flags.NoVerify)
 		if err != nil {
 			return err
 		}

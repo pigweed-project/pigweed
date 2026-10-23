@@ -154,14 +154,15 @@ func executeCommandWithStdin(root *cobra.Command, stdin io.Reader, args ...strin
 
 // MockGitRunner implements GitRunner for testing.
 type MockGitRunner struct {
-	mu               sync.Mutex
-	Calls            []string
-	RunFn            func(ctx context.Context, stdout, stderr io.Writer, args ...string) error
-	responses        map[string]string
-	errors           map[string]error
-	defaultBranch    string
-	defaultCommitMsg string
-	mockGitDir       string
+	mu                sync.Mutex
+	Calls             []string
+	CommittedMessages []string
+	RunFn             func(ctx context.Context, stdout, stderr io.Writer, args ...string) error
+	responses         map[string]string
+	errors            map[string]error
+	defaultBranch     string
+	defaultCommitMsg  string
+	mockGitDir        string
 }
 
 func (m *MockGitRunner) cleanupMockGitDir() {
@@ -246,6 +247,22 @@ func (m *MockGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args 
 	if errToReturn != nil {
 		return errToReturn
 	}
+	if len(args) > 0 && args[0] == "commit" {
+		for i := 1; i < len(args)-1; i++ {
+			switch args[i] {
+			case "-F", "--file":
+				if data, readErr := os.ReadFile(args[i+1]); readErr == nil {
+					m.mu.Lock()
+					m.CommittedMessages = append(m.CommittedMessages, string(data))
+					m.mu.Unlock()
+				}
+			case "-m", "--message":
+				m.mu.Lock()
+				m.CommittedMessages = append(m.CommittedMessages, args[i+1])
+				m.mu.Unlock()
+			}
+		}
+	}
 	if hasResp {
 		stdout.Write([]byte(resp))
 		return nil
@@ -325,6 +342,17 @@ func (m *MockGitRunner) LastCall() string {
 		return ""
 	}
 	return m.Calls[len(m.Calls)-1]
+}
+
+// LastCommitMessage returns the message passed via -F or -m to the most recent
+// simulated `git commit` invocation, or "" if none was recorded.
+func (m *MockGitRunner) LastCommitMessage() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.CommittedMessages) == 0 {
+		return ""
+	}
+	return m.CommittedMessages[len(m.CommittedMessages)-1]
 }
 
 func (m *MockGitRunner) HasCall(substr string) bool {

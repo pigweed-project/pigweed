@@ -244,24 +244,8 @@ func TestIssueCreate_AndAmend(t *testing.T) {
 	srv := NewMockIssueTrackerServer(t)
 	srv.Install(t)
 
-	var amendedMsg string
-	gitRunner := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			cmdStr := strings.Join(args, " ")
-			switch {
-			case cmdStr == "log -1 --format=%B HEAD":
-				stdout.Write([]byte("pw_allocator: Refactor block split\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
-			case cmdStr == "branch -r --points-at HEAD":
-				// Not a remote tracking branch tip
-				return nil
-			case strings.HasPrefix(cmdStr, "commit --amend --only -m "):
-				amendedMsg = args[4]
-				return nil
-			}
-			return nil
-		},
-	}
-	gitRunner.OnCommand("rev-parse --git-dir", t.TempDir()+"\n")
+	gitRunner := &MockGitRunner{}
+	gitRunner.OnCommand("log -1 --format=%B HEAD", "pw_allocator: Refactor block split\n\nChange-Id: I1234567890123456789012345678901234567890\n")
 	SetupMockConfig(t, gitRunner)
 
 	// 0. Creating on generic profile without -C or git config fails with 4-pillar actionable error
@@ -300,6 +284,7 @@ func TestIssueCreate_AndAmend(t *testing.T) {
 	}
 
 	// Verify commit message was amended with Bug: b/300001 while preserving Change-Id
+	amendedMsg := gitRunner.LastCommitMessage()
 	if !strings.Contains(amendedMsg, "Bug: b/300001") {
 		t.Errorf("amended commit message missing 'Bug: b/300001':\n%s", amendedMsg)
 	}
@@ -562,18 +547,7 @@ func TestIssueCreate_AmendDeduplicatesExistingBug(t *testing.T) {
 	srv := NewMockIssueTrackerServer(t)
 	srv.Install(t)
 	// NextIssueID starts at 300001 in MockIssueTrackerServer
-	var amendedMsg string
-	gitRunner := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			for i := 0; i < len(args)-1; i++ {
-				if args[i] == "-m" {
-					amendedMsg = args[i+1]
-				}
-			}
-			return nil
-		},
-	}
-	gitRunner.OnCommand("rev-parse --git-dir", t.TempDir()+"\n")
+	gitRunner := &MockGitRunner{}
 	gitRunner.OnCommand("config user.email", "dev@google.com")
 	// Commit already has b/300001 in Bug: trailer
 	gitRunner.OnCommand("log -1 --format=%B HEAD", "pw_foo: Fix bug\n\nBug: b/111111, b/300001\nChange-Id: I1234567890123456789012345678901234567890\n")
@@ -584,6 +558,7 @@ func TestIssueCreate_AmendDeduplicatesExistingBug(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue create --amend failed: %v", err)
 	}
+	amendedMsg := gitRunner.LastCommitMessage()
 	if strings.Count(amendedMsg, "300001") != 1 {
 		t.Errorf("expected b/300001 to appear exactly once in amended message, got:\n%s", amendedMsg)
 	}
@@ -650,17 +625,7 @@ func TestIssueCreate_AmendWithCustomTrailerFormat(t *testing.T) {
 		t.Fatalf("failed to write .ghish.toml: %v", err)
 	}
 
-	var amendedMsg string
-	gitRunner := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			for i := 0; i < len(args)-1; i++ {
-				if args[i] == "-m" {
-					amendedMsg = args[i+1]
-				}
-			}
-			return nil
-		},
-	}
+	gitRunner := &MockGitRunner{}
 	gitRunner.OnCommand("rev-parse --git-dir", filepath.Join(repoDir, ".git")+"\n")
 	gitRunner.OnCommand("log -1 --format=%B HEAD", "acme: Fix sensor init\n\nChange-Id: I1234567890123456789012345678901234567890\n")
 	SetupMockConfig(t, gitRunner)
@@ -673,7 +638,7 @@ func TestIssueCreate_AmendWithCustomTrailerFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue create --amend failed: %v\nOutput: %s", err, out)
 	}
-	if !strings.Contains(amendedMsg, "Bug: 300001") {
+	if amendedMsg := gitRunner.LastCommitMessage(); !strings.Contains(amendedMsg, "Bug: 300001") {
 		t.Errorf("expected amended commit message to use custom trailer format 'Bug: 300001', got:\n%s", amendedMsg)
 	}
 }

@@ -17,9 +17,11 @@ package pw_ghish
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -74,9 +76,21 @@ type GitClient interface {
 	Fetch(ctx context.Context, remote, ref string, stdout, stderr io.Writer) error
 	Checkout(ctx context.Context, ref string, stdout, stderr io.Writer) error
 	CherryPick(ctx context.Context, ref string, stdout, stderr io.Writer) error
+	// HasStagedChanges reports whether the Git index differs from HEAD.
+	HasStagedChanges(ctx context.Context) (bool, error)
+	// CommitNewAll commits only staged index changes if HasStagedChanges is
+	// true (leaving unstaged edits untouched), or passes -a to stage modified
+	// tracked files when nothing is staged yet, reporting whether -a was used.
+	CommitNewAll(ctx context.Context, message string, noVerify bool, stdout, stderr io.Writer) (autoStaged bool, err error)
+	// CommitAmendMessage rewrites HEAD's commit message via a temporary file
+	// without altering HEAD's tree or staged index changes.
+	CommitAmendMessage(ctx context.Context, message string, noVerify bool, stdout, stderr io.Writer) error
 	// CommitAmendNoEdit runs commit-msg hooks on HEAD without altering the commit
 	// tree or staged index entries.
 	CommitAmendNoEdit(ctx context.Context, stdout, stderr io.Writer) error
+	// UpdateHeadRef atomically moves HEAD to targetSHA only if HEAD currently
+	// resolves to expectedCurrentSHA, leaving index and working tree untouched.
+	UpdateHeadRef(ctx context.Context, targetSHA, expectedCurrentSHA, reason string) error
 	IsHeadRemoteTip(ctx context.Context) (bool, []string, error)
 	HeadAuthorEmail(ctx context.Context) (string, error)
 	UserEmail(ctx context.Context) (string, error)
@@ -610,6 +624,77 @@ func (c *defaultGitClient) CheckAmendAllowed(ctx context.Context) error {
 	return nil
 }
 
+// HasStagedChanges reports whether the Git index differs from HEAD.
+func (c *defaultGitClient) HasStagedChanges(ctx context.Context) (bool, error) {
+	var stderr bytes.Buffer
+	err := c.Run(ctx, io.Discard, &stderr, "diff", "--cached", "--quiet")
+	if err == nil {
+		return false, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return true, nil
+	}
+	if errStr := strings.TrimSpace(stderr.String()); errStr != "" {
+		return false, fmt.Errorf("git diff --cached --quiet failed: %w: %s", err, errStr)
+	}
+	return false, fmt.Errorf("git diff --cached --quiet failed: %w", err)
+}
+
+func (c *defaultGitClient) commitWithMessageFile(
+	ctx context.Context,
+	message string,
+	baseArgs []string,
+	noVerify bool,
+	stdout, stderr io.Writer,
+) error {
+	if strings.TrimSpace(message) == "" {
+		return fmt.Errorf("commit message cannot be empty")
+	}
+	tmpFile, err := os.CreateTemp("", "ghish-commit-msg-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary commit message file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	_, writeErr := io.WriteString(tmpFile, message)
+	if err := errors.Join(writeErr, tmpFile.Close()); err != nil {
+		return fmt.Errorf("failed to write temporary commit message file: %w", err)
+	}
+
+	args := append([]string{}, baseArgs...)
+	if noVerify {
+		args = append(args, "--no-verify")
+	}
+	args = append(args, "-F", tmpFile.Name())
+	return c.Run(ctx, stdout, stderr, args...)
+}
+
+// CommitNewAll commits staged index changes (or passes -a when nothing is
+// staged yet) using a temporary commit message file, returning autoStaged=true
+// when -a was used.
+func (c *defaultGitClient) CommitNewAll(ctx context.Context, message string, noVerify bool, stdout, stderr io.Writer) (bool, error) {
+	hasStaged, err := c.HasStagedChanges(ctx)
+	if err != nil {
+		return false, err
+	}
+	autoStaged := !hasStaged
+	baseArgs := []string{"commit", "-a"}
+	if hasStaged {
+		baseArgs = []string{"commit"}
+	}
+	return autoStaged, c.commitWithMessageFile(ctx, message, baseArgs, noVerify, stdout, stderr)
+}
+
+// CommitAmendMessage rewrites HEAD's commit message via a temporary file while
+// preserving staged index changes and intentional empty commits.
+func (c *defaultGitClient) CommitAmendMessage(ctx context.Context, message string, noVerify bool, stdout, stderr io.Writer) error {
+	if err := c.CheckAmendAllowed(ctx); err != nil {
+		return err
+	}
+	return c.commitWithMessageFile(ctx, message, []string{"commit", "--amend", "--only", "--allow-empty"}, noVerify, stdout, stderr)
+}
+
 // CommitAmendNoEdit runs commit-msg hooks on HEAD while preserving staged index
 // changes and intentional empty commits.
 func (c *defaultGitClient) CommitAmendNoEdit(ctx context.Context, stdout, stderr io.Writer) error {
@@ -617,4 +702,25 @@ func (c *defaultGitClient) CommitAmendNoEdit(ctx context.Context, stdout, stderr
 		return err
 	}
 	return c.Run(ctx, stdout, stderr, "commit", "--amend", "--only", "--allow-empty", "--no-edit")
+}
+
+// UpdateHeadRef atomically moves HEAD from expectedCurrentSHA to targetSHA via
+// compare-and-swap without modifying the index or working tree.
+func (c *defaultGitClient) UpdateHeadRef(ctx context.Context, targetSHA, expectedCurrentSHA, reason string) error {
+	targetSHA = strings.TrimSpace(targetSHA)
+	if targetSHA == "" {
+		return fmt.Errorf("update-ref target SHA cannot be empty")
+	}
+	expectedCurrentSHA = strings.TrimSpace(expectedCurrentSHA)
+	if expectedCurrentSHA == "" {
+		return fmt.Errorf("update-ref expected current SHA cannot be empty")
+	}
+	args := []string{"update-ref"}
+	reason = strings.TrimSpace(reason)
+	if reason != "" {
+		args = append(args, "-m", reason)
+	}
+	args = append(args, "HEAD", targetSHA, expectedCurrentSHA)
+	_, err := c.runOutput(ctx, args...)
+	return err
 }

@@ -31,7 +31,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 	force, _ := cmd.Flags().GetBool("force")
 
-	state, err := VerifyHeadForPush(ctx, cmd, cfg, !force)
+	state, err := VerifyHeadForPush(ctx, cmd, cfg, !force, flags.NoVerify)
 	if err != nil {
 		return err
 	}

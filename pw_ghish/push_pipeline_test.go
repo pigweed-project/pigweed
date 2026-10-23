@@ -1055,7 +1055,7 @@ func TestCheckSubmodulePolicy(t *testing.T) {
 		cmd.SetErr(io.Discard)
 		cmd.SetContext(ctx)
 
-		state, err := VerifyHeadForPush(ctx, cmd, cfg, true)
+		state, err := VerifyHeadForPush(ctx, cmd, cfg, true, false)
 		if err != nil {
 			t.Fatalf("VerifyHeadForPush failed: %v", err)
 		}

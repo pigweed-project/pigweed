@@ -903,7 +903,7 @@ var issueCreateCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("created issue b/%d, but failed to update trailer: %w", created.IssueID, err)
 			}
-			if err := cfg.GitClient().Run(ctx, out, cmd.ErrOrStderr(), "commit", "--amend", "--only", "-m", updatedMsg); err != nil {
+			if err := cfg.GitClient().CommitAmendMessage(ctx, updatedMsg, false, out, cmd.ErrOrStderr()); err != nil {
 				return fmt.Errorf("created issue b/%d, but git commit --amend failed: %w", created.IssueID, err)
 			}
 			fmt.Fprintf(out, "✓ Amended HEAD commit with '%s'\n", trailerLine)

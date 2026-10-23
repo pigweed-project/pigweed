@@ -563,8 +563,9 @@ func HasChangeID(commitMsg string) bool {
 }
 
 // EnsureChangeID checks the HEAD commit message for a Change-Id footer before pushing to Gerrit.
-// If missing, it checks for or downloads the Gerrit commit-msg hook and amends the commit.
-func EnsureChangeID(ctx context.Context, cfg *Config, stdout, stderr io.Writer) error {
+// If missing, it injects one in pure Go when noVerify is true or runs the Gerrit commit-msg hook
+// via amend otherwise.
+func EnsureChangeID(ctx context.Context, cfg *Config, noVerify bool, stdout, stderr io.Writer) error {
 	if cfg == nil || cfg.Git == nil {
 		return fmt.Errorf("EnsureChangeID: git runner not initialized")
 	}
@@ -588,6 +589,19 @@ func EnsureChangeID(ctx context.Context, cfg *Config, stdout, stderr io.Writer) 
 	}
 
 	fmt.Fprintln(stderr, "Notice: HEAD commit is missing a Gerrit Change-Id footer.")
+
+	if noVerify {
+		updatedMsg, ok := InjectChangeID(commitMsg)
+		if !ok {
+			return fmt.Errorf("HEAD commit is missing required Gerrit Change-Id")
+		}
+		fmt.Fprintln(stdout, "Amending HEAD commit to insert Change-Id footer...")
+		if err := git.CommitAmendMessage(ctx, updatedMsg, true, stdout, stderr); err != nil {
+			return fmt.Errorf("failed to amend commit with Change-Id: %w", err)
+		}
+		fmt.Fprintln(stdout, "Successfully amended HEAD commit with Change-Id.")
+		return nil
+	}
 
 	// Check if the commit-msg hook is installed
 	gitDir, err := git.GitDir(ctx)

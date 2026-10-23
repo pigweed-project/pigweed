@@ -486,7 +486,7 @@ func TestVerifyHeadForPush(t *testing.T) {
 
 		cfg := &Config{Host: server.URL, Git: mockGit}
 		SetConfig(RootCmd, cfg)
-		state, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, true)
+		state, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, true, false)
 		if err != nil {
 			t.Fatalf("VerifyHeadForPush failed: %v", err)
 		}
@@ -503,7 +503,7 @@ func TestVerifyHeadForPush(t *testing.T) {
 
 		cfg := &Config{Git: mockGit}
 		SetConfig(RootCmd, cfg)
-		_, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, false)
+		_, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, false, false)
 		if err == nil || !strings.Contains(err.Error(), "#123") {
 			t.Errorf("expected GitHub issue syntax error, got: %v", err)
 		}
@@ -516,7 +516,7 @@ func TestVerifyHeadForPush(t *testing.T) {
 
 		cfg := &Config{Git: mockGit}
 		SetConfig(RootCmd, cfg)
-		_, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, false)
+		_, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, false, false)
 		if err == nil || !strings.Contains(err.Error(), "multiple Change-Id footers") {
 			t.Errorf("expected multiple Change-Id footers error, got: %v", err)
 		}
