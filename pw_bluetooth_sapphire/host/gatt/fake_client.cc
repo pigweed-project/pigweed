@@ -32,16 +32,16 @@ void FakeClient::ExchangeMTU(MTUCallback callback) {
   (void)heap_dispatcher_.Post(
       [mtu_status = exchange_mtu_status_,
        mtu = server_mtu_,
-       callback = std::move(callback)](pw::async::Context /*ctx*/,
-                                       pw::Status status) mutable {
+       cb = std::move(callback)](pw::async::Context /*ctx*/,
+                                 pw::Status status) mutable {
         if (!status.ok()) {
           return;
         }
 
         if (mtu_status.is_error()) {
-          callback(fit::error(mtu_status.error_value()));
+          cb(fit::error(mtu_status.error_value()));
         } else {
-          callback(fit::ok(mtu));
+          cb(fit::ok(mtu));
         }
       });
 }
@@ -136,18 +136,18 @@ void FakeClient::DiscoverCharacteristics(
       [this,
        range_start,
        range_end,
-       chrc_callback = std::move(chrc_callback),
-       status_callback = std::move(status_callback)](pw::async::Context /*ctx*/,
-                                                     pw::Status status) {
+       chrc_cb = std::move(chrc_callback),
+       status_cb = std::move(status_callback)](pw::async::Context /*ctx*/,
+                                               pw::Status status) {
         if (!status.ok()) {
           return;
         }
         for (const auto& chrc : chrcs_) {
           if (chrc.handle >= range_start && chrc.handle <= range_end) {
-            chrc_callback(chrc);
+            chrc_cb(chrc);
           }
         }
-        status_callback(chrc_discovery_status_);
+        status_cb(chrc_discovery_status_);
       });
 }
 
@@ -178,18 +178,18 @@ void FakeClient::DiscoverDescriptors(att::Handle range_start,
        discovery_status,
        range_start,
        range_end,
-       desc_callback = std::move(desc_callback),
-       status_callback = std::move(status_callback)](pw::async::Context /*ctx*/,
-                                                     pw::Status status) {
+       desc_cb = std::move(desc_callback),
+       status_cb = std::move(status_callback)](pw::async::Context /*ctx*/,
+                                               pw::Status status) {
         if (!status.ok()) {
           return;
         }
         for (const auto& desc : descs_) {
           if (desc.handle >= range_start && desc.handle <= range_end) {
-            desc_callback(desc);
+            desc_cb(desc);
           }
         }
-        status_callback(discovery_status);
+        status_cb(discovery_status);
       });
 }
 

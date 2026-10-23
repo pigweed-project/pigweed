@@ -1902,13 +1902,12 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionOk) {
 
   int service_request_cb_count = 0;
   auto service_request_cb = [&service_request_cb_count,
-                             open_cb = std::move(open_cb)](Psm psm) mutable
+                             cb = std::move(open_cb)](Psm psm) mutable
       -> std::optional<DynamicChannelRegistry::ServiceInfo> {
     service_request_cb_count++;
     EXPECT_EQ(kPsm, psm);
     if (psm == kPsm) {
-      return DynamicChannelRegistry::ServiceInfo(kChannelParams,
-                                                 open_cb.share());
+      return DynamicChannelRegistry::ServiceInfo(kChannelParams, cb.share());
     }
     return std::nullopt;
   };
@@ -2171,13 +2170,12 @@ TEST_F(BrEdrDynamicChannelTest,
 
   int service_request_cb_count = 0;
   auto service_request_cb = [&service_request_cb_count,
-                             open_cb = std::move(open_cb)](Psm psm) mutable
+                             cb = std::move(open_cb)](Psm psm) mutable
       -> std::optional<DynamicChannelRegistry::ServiceInfo> {
     service_request_cb_count++;
     EXPECT_EQ(kPsm, psm);
     if (psm == kPsm) {
-      return DynamicChannelRegistry::ServiceInfo(kChannelParams,
-                                                 open_cb.share());
+      return DynamicChannelRegistry::ServiceInfo(kChannelParams, cb.share());
     }
     return std::nullopt;
   };

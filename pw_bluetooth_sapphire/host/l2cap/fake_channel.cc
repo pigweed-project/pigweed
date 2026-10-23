@@ -132,10 +132,10 @@ bool FakeChannel::Send(ByteBufferPtr sdu) {
 
   if (send_dispatcher_) {
     (void)send_dispatcher_->Post(
-        [cb = send_cb_.share(), sdu = std::move(sdu)](
+        [cb = send_cb_.share(), pdu = std::move(sdu)](
             pw::async::Context /*ctx*/, pw::Status status) mutable {
           if (status.ok()) {
-            cb(std::move(sdu));
+            cb(std::move(pdu));
           }
         });
   } else {

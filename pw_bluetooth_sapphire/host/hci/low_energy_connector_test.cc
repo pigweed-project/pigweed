@@ -473,16 +473,16 @@ TEST_P(LowEnergyConnectorTest, IncomingConnectDuringConnectionRequest) {
       callback,
       kPwConnectTimeout);
 
-  (void)heap_dispatcher().Post(
-      [kIncomingAddress, this](pw::async::Context /*ctx*/, pw::Status status) {
-        if (!status.ok()) {
-          return;
-        }
+  (void)heap_dispatcher().Post([kIncomingAddress, this](
+                                   pw::async::Context /*ctx*/,
+                                   pw::Status post_status) {
+    if (!post_status.ok()) {
+      return;
+    }
 
-        EventPacket packet =
-            CreateConnectionCompleteSubevent(2, kIncomingAddress);
-        test_device()->SendCommandChannelPacket(packet.data());
-      });
+    EventPacket packet = CreateConnectionCompleteSubevent(2, kIncomingAddress);
+    test_device()->SendCommandChannelPacket(packet.data());
+  });
 
   RunUntilIdle();
 
@@ -532,16 +532,16 @@ TEST_P(LowEnergyConnectorTest,
       callback,
       kPwConnectTimeout);
 
-  (void)heap_dispatcher().Post(
-      [kIncomingAddress, this](pw::async::Context /*ctx*/, pw::Status status) {
-        if (!status.ok()) {
-          return;
-        }
+  (void)heap_dispatcher().Post([kIncomingAddress, this](
+                                   pw::async::Context /*ctx*/,
+                                   pw::Status post_status) {
+    if (!post_status.ok()) {
+      return;
+    }
 
-        EventPacket packet =
-            CreateConnectionCompleteSubevent(2, kIncomingAddress);
-        test_device()->SendCommandChannelPacket(packet.data());
-      });
+    EventPacket packet = CreateConnectionCompleteSubevent(2, kIncomingAddress);
+    test_device()->SendCommandChannelPacket(packet.data());
+  });
 
   RunUntilIdle();
 

@@ -27,9 +27,9 @@ class FakeL2capTest : public ::testing::Test {
   ~FakeL2capTest() override = default;
 
   void SetUp() override {
-    auto send_cb = [this](auto kConnectionHandle, auto cid, auto& buffer) {
+    auto send_cb = [this](auto handle, auto cid, auto& buffer) {
       if (this->send_frame_callback_) {
-        send_frame_callback_(kConnectionHandle, cid, buffer);
+        send_frame_callback_(handle, cid, buffer);
       }
     };
     fake_l2cap_ = std::make_unique<FakeL2cap>(send_cb);

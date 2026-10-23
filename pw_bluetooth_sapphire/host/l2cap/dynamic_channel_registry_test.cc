@@ -272,13 +272,11 @@ TEST(DynamicChannelRegistryTest, AcceptServiceRequestThenOpenOk) {
 
   bool service_request_cb_called = false;
   auto service_request_cb = [&service_request_cb_called,
-                             open_result_cb =
-                                 std::move(open_result_cb)](Psm psm) mutable {
+                             cb = std::move(open_result_cb)](Psm psm) mutable {
     EXPECT_FALSE(service_request_cb_called);
     EXPECT_EQ(kPsm, psm);
     service_request_cb_called = true;
-    return DynamicChannelRegistry::ServiceInfo{ChannelParameters(),
-                                               open_result_cb.share()};
+    return DynamicChannelRegistry::ServiceInfo{ChannelParameters(), cb.share()};
   };
 
   TestDynamicChannelRegistry registry(DoNothing, std::move(service_request_cb));
@@ -308,13 +306,11 @@ TEST(DynamicChannelRegistryTest, AcceptServiceRequestThenOpenFails) {
 
   bool service_request_cb_called = false;
   auto service_request_cb = [&service_request_cb_called,
-                             open_result_cb =
-                                 std::move(open_result_cb)](Psm psm) mutable {
+                             cb = std::move(open_result_cb)](Psm psm) mutable {
     EXPECT_FALSE(service_request_cb_called);
     EXPECT_EQ(kPsm, psm);
     service_request_cb_called = true;
-    return DynamicChannelRegistry::ServiceInfo{ChannelParameters(),
-                                               open_result_cb.share()};
+    return DynamicChannelRegistry::ServiceInfo{ChannelParameters(), cb.share()};
   };
 
   TestDynamicChannelRegistry registry(DoNothing, std::move(service_request_cb));

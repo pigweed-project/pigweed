@@ -600,10 +600,10 @@ class FakeController final : public ControllerTestDoubleBase,
   void SendAclData(pw::span<const std::byte> data) override {
     // Post the packet to simulate async HCI behavior.
     (void)heap_dispatcher().Post(
-        [self = GetWeakPtr(), data = DynamicByteBuffer(BufferView(data))](
+        [self = GetWeakPtr(), buf = DynamicByteBuffer(BufferView(data))](
             pw::async::Context /*ctx*/, pw::Status status) {
           if (self.is_alive() && status.ok()) {
-            self->OnACLDataPacketReceived(BufferView(data));
+            self->OnACLDataPacketReceived(BufferView(buf));
           }
         });
   }
@@ -611,10 +611,10 @@ class FakeController final : public ControllerTestDoubleBase,
   void SendScoData(pw::span<const std::byte> data) override {
     // Post the packet to simulate async HCI behavior.
     (void)heap_dispatcher().Post(
-        [self = GetWeakPtr(), data = DynamicByteBuffer(BufferView(data))](
+        [self = GetWeakPtr(), buf = DynamicByteBuffer(BufferView(data))](
             pw::async::Context /*ctx*/, pw::Status status) {
           if (self.is_alive() && status.ok()) {
-            self->OnScoDataPacketReceived(BufferView(data));
+            self->OnScoDataPacketReceived(BufferView(buf));
           }
         });
   }
@@ -622,10 +622,10 @@ class FakeController final : public ControllerTestDoubleBase,
   void SendIsoData(pw::span<const std::byte> data) override {
     // Post the packet to simulate async HCI behavior.
     (void)heap_dispatcher().Post(
-        [self = GetWeakPtr(), data = DynamicByteBuffer(BufferView(data))](
+        [self = GetWeakPtr(), buf = DynamicByteBuffer(BufferView(data))](
             pw::async::Context /*ctx*/, pw::Status status) {
           if (self.is_alive() && status.ok()) {
-            self->OnIsoDataPacketReceived(BufferView(data));
+            self->OnIsoDataPacketReceived(BufferView(buf));
           }
         });
   }

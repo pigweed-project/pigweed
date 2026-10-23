@@ -217,28 +217,27 @@ void FakeAdapter::FakeLowEnergy::StartAdvertising(
   fake_address_delegate_.EnsureLocalAddress(
       address_type,
       [this,
-       data = std::move(data),
-       scan_rsp = std::move(scan_rsp),
+       adv_data = std::move(data),
+       adv_scan_rsp = std::move(scan_rsp),
        include_tx_power_level,
        extended_pdu,
-       connectable = std::move(connectable),
+       adv_connectable = std::move(connectable),
        anonymous,
-       status_callback = std::move(status_callback)](
+       callback = std::move(status_callback)](
           fit::result<HostError, DeviceAddress> result) mutable {
         if (result.is_error()) {
-          status_callback(AdvertisementInstance(),
-                          fit::error(result.error_value()));
+          callback(AdvertisementInstance(), fit::error(result.error_value()));
           return;
         }
 
         RegisteredAdvertisement adv{
-            .data = std::move(data),
-            .scan_response = std::move(scan_rsp),
+            .data = std::move(adv_data),
+            .scan_response = std::move(adv_scan_rsp),
             .include_tx_power_level = include_tx_power_level,
             .addr_type = result.value().type(),
             .extended_pdu = extended_pdu,
             .anonymous = anonymous,
-            .connectable = std::move(connectable),
+            .connectable = std::move(adv_connectable),
         };
 
         AdvertisementId adv_id = next_advertisement_id_;
@@ -249,9 +248,8 @@ void FakeAdapter::FakeLowEnergy::StartAdvertising(
         auto stop_advertising = [this](AdvertisementId id) {
           advertisements_.erase(id);
         };
-        status_callback(
-            AdvertisementInstance(adv_id, std::move(stop_advertising)),
-            fit::ok());
+        callback(AdvertisementInstance(adv_id, std::move(stop_advertising)),
+                 fit::ok());
       });
 }
 

@@ -36,10 +36,10 @@ class FakeChannelTest : public pw::async::test::FakeDispatcherFixture {
 
  protected:
   struct ChannelOptions {
-    explicit ChannelOptions(ChannelId id, uint16_t mtu = kDefaultMTU)
-        : ChannelOptions(id, id, mtu) {}
-    ChannelOptions(ChannelId id, ChannelId remote_id, uint16_t mtu)
-        : id(id), remote_id(remote_id), mtu(mtu) {}
+    explicit ChannelOptions(ChannelId id_val, uint16_t mtu_val = kDefaultMTU)
+        : ChannelOptions(id_val, id_val, mtu_val) {}
+    ChannelOptions(ChannelId id_val, ChannelId remote_id_val, uint16_t mtu_val)
+        : id(id_val), remote_id(remote_id_val), mtu(mtu_val) {}
 
     ChannelId id;
     ChannelId remote_id;

@@ -1101,8 +1101,8 @@ TEST_F(LowEnergyDiscoveryManagerTest,
 
   std::unordered_set<DeviceAddress> addresses_found;
   LowEnergyDiscoverySession::PeerFoundFunction result_cb =
-      [&addresses_found](const auto& peer) {
-        addresses_found.insert(peer.address());
+      [&addresses_found](const auto& found_peer) {
+        addresses_found.insert(found_peer.address());
       };
 
   hci::DiscoveryFilter discovery_filter;
@@ -2085,7 +2085,7 @@ TEST_F(LowEnergyDiscoveryManagerTest, NewSessionJoinsOngoingScan) {
   auto session = StartDiscoverySession();
   std::unordered_set<PeerId> results;
   session->SetResultCallback(
-      [&](const Peer& peer) { results.insert(peer.identifier()); });
+      [&](const Peer& found_peer) { results.insert(found_peer.identifier()); });
   RunUntilIdle();
   ASSERT_EQ(1u, results.size());
   EXPECT_EQ(peer->identifier(), *results.begin());

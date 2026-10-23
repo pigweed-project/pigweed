@@ -34,10 +34,10 @@ class FunctionTester : public WeakSelf<FunctionTester> {
       fit::function<void(FunctionTester::WeakPtr)> cb) {
     auto weak = GetWeakPtr();
     (void)heap_dispatcher_.Post(
-        [self = std::move(weak), cb = std::move(cb)](pw::async::Context /*ctx*/,
-                                                     pw::Status status) {
+        [self = std::move(weak), callback = std::move(cb)](
+            pw::async::Context /*ctx*/, pw::Status status) {
           if (status.ok()) {
-            cb(self);
+            callback(self);
           }
         });
   }

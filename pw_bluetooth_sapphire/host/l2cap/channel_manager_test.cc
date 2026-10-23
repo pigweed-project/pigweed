@@ -614,15 +614,15 @@ class ChannelManagerMockAclChannelTest : public TestingBase {
       hci_spec::ConnectionHandle conn_handle = kTestHandle1,
       Channel::ClosedCallback closed_cb = DoNothing,
       Channel::RxCallback rx_cb = NopRxCallback) {
-    ChannelCallback open_cb = [activated_cb = std::move(activated_cb),
-                               rx_cb = std::move(rx_cb),
-                               closed_cb =
+    ChannelCallback open_cb = [activated_callback = std::move(activated_cb),
+                               rx_callback = std::move(rx_cb),
+                               closed_callback =
                                    std::move(closed_cb)](auto chan) mutable {
       if (!chan.is_alive() ||
-          !chan->Activate(std::move(rx_cb), std::move(closed_cb))) {
-        activated_cb(Channel::WeakPtr());
+          !chan->Activate(std::move(rx_callback), std::move(closed_callback))) {
+        activated_callback(Channel::WeakPtr());
       } else {
-        activated_cb(std::move(chan));
+        activated_callback(std::move(chan));
       }
     };
     chanmgr()->OpenL2capChannel(
@@ -733,17 +733,17 @@ class ChannelManagerMockAclChannelTest : public TestingBase {
       ChannelCallback activated_cb,
       Channel::ClosedCallback closed_cb = DoNothing,
       Channel::RxCallback rx_cb = NopRxCallback) {
-    OpenOutboundErtmChannel(
-        [activated_cb = std::move(activated_cb),
-         rx_cb = std::move(rx_cb),
-         closed_cb = std::move(closed_cb)](auto chan) mutable {
-          if (!chan.is_alive() ||
-              !chan->Activate(std::move(rx_cb), std::move(closed_cb))) {
-            activated_cb(Channel::WeakPtr());
-          } else {
-            activated_cb(std::move(chan));
-          }
-        });
+    OpenOutboundErtmChannel([activated_callback = std::move(activated_cb),
+                             rx_callback = std::move(rx_cb),
+                             closed_callback =
+                                 std::move(closed_cb)](auto chan) mutable {
+      if (!chan.is_alive() ||
+          !chan->Activate(std::move(rx_callback), std::move(closed_callback))) {
+        activated_callback(Channel::WeakPtr());
+      } else {
+        activated_callback(std::move(chan));
+      }
+    });
   }
 
   void OpenInboundErtmChannel(ChannelCallback channel_cb) {
@@ -2351,10 +2351,10 @@ TEST_F(ChannelManagerMockAclChannelTest,
   auto closed_cb = [&dynamic_channel_closed] { dynamic_channel_closed = true; };
 
   Channel::WeakPtr channel;
-  auto channel_cb = [&channel, closed_cb = std::move(closed_cb)](
+  auto channel_cb = [&channel, closed_callback = std::move(closed_cb)](
                         l2cap::Channel::WeakPtr opened_chan) {
     channel = std::move(opened_chan);
-    EXPECT_TRUE(channel->Activate(NopRxCallback, std::move(closed_cb)));
+    EXPECT_TRUE(channel->Activate(NopRxCallback, std::move(closed_callback)));
   };
 
   EXPECT_FALSE(

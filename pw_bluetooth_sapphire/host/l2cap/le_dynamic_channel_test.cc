@@ -120,8 +120,8 @@ class LeDynamicChannelTest : public pw::async::test::FakeDispatcherFixture {
     auto channel = std::make_shared<std::optional<const DynamicChannel*>>();
     registry()->OpenOutbound(
         request.le_psm, params, [weak = std::weak_ptr(channel)](auto chan) {
-          if (auto channel = weak.lock()) {
-            *channel = chan;
+          if (auto locked_channel = weak.lock()) {
+            *locked_channel = chan;
           }
         });
 

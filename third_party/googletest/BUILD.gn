@@ -23,11 +23,21 @@ import("googletest.gni")
 # library will be available in GN at "$pw_external_googletest".
 if (dir_pw_third_party_googletest != "") {
   config("includes") {
+    cflags = [
+      "-isystem",
+      rebase_path("$dir_pw_third_party_googletest/googletest/include",
+                  root_build_dir),
+      "-isystem",
+      rebase_path("$dir_pw_third_party_googletest/googlemock/include",
+                  root_build_dir),
+    ]
+    asmflags = cflags
+  }
+
+  config("private_config") {
     include_dirs = [
       "$dir_pw_third_party_googletest/googletest",
-      "$dir_pw_third_party_googletest/googletest/include",
       "$dir_pw_third_party_googletest/googlemock",
-      "$dir_pw_third_party_googletest/googlemock/include",
     ]
 
     # Fix some compiler warnings.
@@ -37,10 +47,12 @@ if (dir_pw_third_party_googletest != "") {
       "-Wno-shadow-all",
       "-Wno-switch-enum",
     ]
+    visibility = [ ":*" ]
   }
 
   pw_source_set("googletest") {
     public_configs = [ ":includes" ]
+    configs = [ ":private_config" ]
     public = [
       "$dir_pw_third_party_googletest/googlemock/include/gmock/gmock-matchers.h",
       "$dir_pw_third_party_googletest/googlemock/include/gmock/gmock.h",
@@ -59,11 +71,13 @@ if (dir_pw_third_party_googletest != "") {
 
   pw_source_set("gtest_main") {
     public_deps = [ ":googletest" ]
+    configs = [ ":private_config" ]
     sources = [ "$dir_pw_third_party_googletest/googletest/src/gtest_main.cc" ]
   }
 
   pw_source_set("gmock_main") {
     public_deps = [ ":googletest" ]
+    configs = [ ":private_config" ]
     sources = [ "$dir_pw_third_party_googletest/googlemock/src/gmock_main.cc" ]
   }
 

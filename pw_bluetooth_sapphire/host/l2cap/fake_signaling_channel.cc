@@ -129,9 +129,9 @@ bool FakeSignalingChannel::SendRequest(CommandCode req_code,
       [this, index = transaction_index](pw::async::Context /*ctx*/,
                                         pw::Status status) {
         if (status.ok()) {
-          Transaction& transaction = transactions_[index];
-          transaction.responses_handled =
-              TriggerResponses(transaction, transaction.responses);
+          Transaction& pending_tx = transactions_[index];
+          pending_tx.responses_handled =
+              TriggerResponses(pending_tx, pending_tx.responses);
         }
       });
 

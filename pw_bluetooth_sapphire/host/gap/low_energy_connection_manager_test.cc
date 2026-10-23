@@ -614,7 +614,7 @@ TEST_F(LowEnergyConnectionManagerTest, DeleteRefInClosedCallback) {
   auto obj = std::make_shared<TestObject>(&deleted);
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   int closed_count = 0;
-  auto closed_cb = [&, obj = std::move(obj)] {
+  auto closed_cb = [&, test_obj = std::move(obj)] {
     closed_count++;
     conn_handle = nullptr;
 
@@ -1445,9 +1445,9 @@ TEST_F(LowEnergyConnectionManagerTest, RegisterRemoteInitiatedLink) {
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
   // A Peer should now exist in the cache.
   auto* peer = peer_cache()->FindByAddress(kAddress0);
@@ -1491,9 +1491,9 @@ TEST_F(LowEnergyConnectionManagerTest,
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
   RunUntilIdle();
   ASSERT_TRUE(conn_handle);
@@ -1529,9 +1529,9 @@ TEST_F(LowEnergyConnectionManagerTest,
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
   RunUntilIdle();
   ASSERT_TRUE(conn_handle);
@@ -2666,9 +2666,9 @@ TEST_F(LowEnergyConnectionManagerTest,
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
 
   size_t l2cap_conn_param_update_count = 0;
@@ -2834,9 +2834,9 @@ TEST_F(
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
 
   size_t l2cap_conn_param_update_count = 0;
@@ -2897,9 +2897,9 @@ TEST_F(
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
 
   size_t l2cap_conn_param_update_count = 0;
@@ -2957,9 +2957,9 @@ TEST_F(LowEnergyConnectionManagerTest, HciUpdateConnParamsAfterInterrogation) {
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
 
   size_t l2cap_conn_param_update_count = 0;
@@ -4188,9 +4188,9 @@ TEST_F(
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
   EXPECT_EQ(peer->le()->connection_state(),
             Peer::ConnectionState::kInitializing);
@@ -4285,9 +4285,9 @@ TEST_F(
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
 
   // A Peer should now exist in the cache.
@@ -5393,9 +5393,9 @@ TEST_F(LowEnergyConnectionManagerTest,
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
   RunUntilIdle();
 
@@ -5431,9 +5431,9 @@ TEST_F(LowEnergyConnectionManagerTest,
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
   RunUntilIdle();
 
@@ -5469,9 +5469,9 @@ TEST_F(LowEnergyConnectionManagerTest,
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
   RunUntilIdle();
 
@@ -5512,9 +5512,9 @@ TEST_F(LowEnergyConnectionManagerTest,
 
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
   RunUntilIdle();
 
@@ -5548,9 +5548,9 @@ TEST_F(LowEnergyConnectionManagerTest,
   bool callback_fired = false;
   std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
   conn_mgr()->RegisterRemoteInitiatedLink(
-      std::move(link), BondableMode::Bondable, [&](auto result) {
-        ASSERT_EQ(fit::ok(), result);
-        conn_handle = std::move(result).value();
+      std::move(link), BondableMode::Bondable, [&](auto reg_result) {
+        ASSERT_EQ(fit::ok(), reg_result);
+        conn_handle = std::move(reg_result).value();
       });
   RunUntilIdle();
   ASSERT_TRUE(send_read_remote_features_response);

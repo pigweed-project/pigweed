@@ -770,15 +770,15 @@ TEST_F(CommandChannelTest, EventHandlerEventWhileTransactionPending) {
   EXPECT_CMD_PACKET_OUT(test_device(), req, &req_complete, &event, &event);
 
   int event_count = 0;
-  auto event_cb = [&event_count, kTestEventCode](const EventPacket& event) {
+  auto event_cb = [&event_count, kTestEventCode](const EventPacket& evt) {
     event_count++;
-    EXPECT_EQ(kTestEventCode, event.event_code());
+    EXPECT_EQ(kTestEventCode, evt.event_code());
     EXPECT_EQ(1u,
-              event.view<pw::bluetooth::emboss::EventHeaderView>()
+              evt.view<pw::bluetooth::emboss::EventHeaderView>()
                   .parameter_total_size()
                   .Read());
     EXPECT_EQ(pw::bluetooth::emboss::EventHeader::IntrinsicSizeInBytes() + 1u,
-              event.size());
+              evt.size());
     return EventCallbackResult::kContinue;
   };
 
