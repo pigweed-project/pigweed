@@ -24,9 +24,12 @@
 #include "pw_async2/future_timeout.h"
 #include "pw_async2/join.h"
 #include "pw_async2/poll.h"
+#include "pw_async2/simulated_time_provider.h"
 #include "pw_async2/task.h"
+#include "pw_async2/time_provider.h"
 #include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
+#include "pw_chrono/system_clock.h"
 #include "pw_log/log.h"
 #include "pw_status/status.h"
 #include "pw_unit_test/framework.h"
@@ -208,6 +211,75 @@ pw::async2::Coro<void> SelectExample(pw::async2::CoroContext) {
 }
 // DOCSTAG: [pw_async2-examples-futures-select-coro]
 
+// DOCSTAG: [pw_async2-examples-futures-pw-select-functions]
+ValueFuture<int> ReceiveMessage();
+// DOCSTAG: [pw_async2-examples-futures-pw-select-functions]
+
+// DOCSTAG: [pw_async2-examples-futures-pw-select-task]
+class MessageCounterTask : public pw::async2::Task {
+ public:
+  explicit MessageCounterTask(
+      pw::async2::TimeProvider<pw::chrono::SystemClock>& time)
+      : time_(time) {}
+
+ private:
+  pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
+    // Create the deadline once, so that receiving a message doesn't reset it.
+    if (!deadline_.is_pendable()) {
+      deadline_ = time_.WaitFor(100ms);
+    }
+
+    while (true) {
+      // Re-arm only the futures that completed. The others are still pending.
+      if (!message_.is_pendable()) {
+        message_ = ReceiveMessage();
+      }
+
+      PW_SELECT(auto results, cx, message_, deadline_);
+
+      // More than one future may have completed, so check each result.
+      if (results.has_value<0>()) {
+        count_ += 1;
+      }
+      if (results.has_value<1>()) {
+        PW_LOG_INFO("Received %d messages before the deadline", count_);
+        return pw::async2::Ready();
+      }
+    }
+  }
+
+  pw::async2::TimeProvider<pw::chrono::SystemClock>& time_;
+  pw::async2::TimeFuture<pw::chrono::SystemClock> deadline_;
+  ValueFuture<int> message_;
+  int count_ = 0;
+};
+// DOCSTAG: [pw_async2-examples-futures-pw-select-task]
+
+// DOCSTAG: [pw_async2-examples-futures-pw-select-coro]
+pw::async2::Coro<int> CountMessages(
+    pw::async2::CoroContext,
+    pw::async2::TimeProvider<pw::chrono::SystemClock>& time) {
+  // Create the deadline once, so that receiving a message doesn't reset it.
+  auto deadline = time.WaitFor(100ms);
+  ValueFuture<int> message = ReceiveMessage();
+  int count = 0;
+
+  while (true) {
+    PW_CO_SELECT(auto results, message, deadline);
+
+    // More than one future may have completed, so check each result.
+    if (results.has_value<0>()) {
+      count += 1;
+      message = ReceiveMessage();  // Re-arm only the future that completed.
+    }
+    if (results.has_value<1>()) {
+      PW_LOG_INFO("Received %d messages before the deadline", count);
+      co_return count;
+    }
+  }
+}
+// DOCSTAG: [pw_async2-examples-futures-pw-select-coro]
+
 class IntValueProvider {
  public:
   ValueFuture<int> Get();
@@ -260,6 +332,11 @@ ValueFuture<int> IntValueProvider::Get() {
   return ValueFuture<int>::Resolved(0);
 }
 ValueFuture<int> ValueProvider::Get() { return ValueFuture<int>::Resolved(0); }
+ValueFuture<int> ReceiveMessage() {
+  // No messages arrive in these examples, so the deadline always expires.
+  static pw::async2::ValueProvider<int> provider;
+  return provider.Get();
+}
 
 TEST(Futures, MyTask) {
   pw::async2::DispatcherForTest dispatcher;
@@ -302,6 +379,28 @@ TEST(Futures, SelectExample) {
   pw::allocator::test::AllocatorForTest<1024> allocator;
   pw::async2::DispatcherForTest dispatcher;
   auto task = dispatcher.Post(allocator, SelectExample(allocator));
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+}
+
+TEST(Futures, MessageCounterTask) {
+  pw::async2::SimulatedTimeProvider<pw::chrono::SystemClock> time;
+  pw::async2::DispatcherForTest dispatcher;
+  MessageCounterTask task(time);
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  EXPECT_TRUE(time.AdvanceUntilNextExpiration());
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+}
+
+TEST(Futures, CountMessages) {
+  pw::allocator::test::AllocatorForTest<1024> allocator;
+  pw::async2::SimulatedTimeProvider<pw::chrono::SystemClock> time;
+  pw::async2::DispatcherForTest dispatcher;
+  auto task = dispatcher.Post(allocator, CountMessages(allocator, time));
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  EXPECT_TRUE(time.AdvanceUntilNextExpiration());
   EXPECT_FALSE(dispatcher.RunUntilStalled());
 }
 

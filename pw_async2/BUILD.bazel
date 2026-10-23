@@ -800,7 +800,9 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         ":pw_async2",
+        "//pw_assert:assert",
         "//pw_containers:optional_tuple",
+        "//pw_preprocessor",
     ],
 )
 
@@ -809,12 +811,32 @@ pw_cc_test(
     srcs = [
         "select_test.cc",
     ],
+    has_nc_test = True,
     deps = [
         ":pw_async2",
         ":select",
         ":testing",
         ":value_future",
+        "//pw_containers:optional_tuple",
         "//pw_unit_test:constexpr",
+    ],
+)
+
+pw_cc_test(
+    name = "select_coro_test",
+    srcs = [
+        "select_coro_test.cc",
+    ],
+    deps = [
+        ":coro",
+        ":pw_async2",
+        ":select",
+        ":simulated_time_provider",
+        ":testing",
+        ":time_provider",
+        ":value_future",
+        "//pw_allocator:testing",
+        "//pw_chrono:system_clock",
     ],
 )
 

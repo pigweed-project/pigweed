@@ -264,6 +264,9 @@ Combinators allow for the composition of multiple futures:
 * :cc:`Select <pw::async2::Select>`: Waits for the *first* of a set of
   futures to complete, returning its result.
 
+To wait on the same futures repeatedly, such as in a loop, see
+:ref:`module-pw_async2-futures-select-loop`.
+
 .. _module-pw_async2-guides-aliases:
 
 ------------

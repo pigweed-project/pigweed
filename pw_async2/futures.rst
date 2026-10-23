@@ -739,10 +739,11 @@ results.
 
 Select
 ======
-:cc:`Select` waits for the *first* of multiple futures to complete. It returns a
-:cc:`SelectFuture` which resolves to an :cc:`OptionalTuple` containing the
-result. If additional futures happen to complete between the first future
-completing the task re-running, the tuple stores all of their results.
+:cc:`Select <pw::async2::Select>` waits for the *first* of multiple futures to
+complete. It returns a :cc:`SelectFuture <pw::async2::SelectFuture>` which
+resolves to a :cc:`pw::OptionalTuple` containing the result. If additional
+futures happen to complete between the first future completing and the task
+re-running, the tuple stores all of their results.
 
 .. literalinclude:: examples/futures.cc
    :language: cpp
@@ -764,6 +765,88 @@ completing the task re-running, the tuple stores all of their results.
          :language: cpp
          :start-after: [pw_async2-examples-futures-select-coro]
          :end-before: [pw_async2-examples-futures-select-coro]
+
+``Select`` takes ownership of its futures. When it completes, it destroys all of
+them, including the futures that did not complete.
+
+.. _module-pw_async2-futures-select-loop:
+
+Selecting in a loop
+-------------------
+To wait on the same futures repeatedly, such as in an event loop, use the
+:cc:`PW_SELECT` macro, or :cc:`PW_CO_SELECT` in coroutines. Instead of taking
+ownership of the futures, these macros pend futures that you own in place.
+Futures that did not complete remain pending and can be selected again, so you
+only need to recreate the futures that completed.
+
+Like ``Select``, the macros produce a :cc:`pw::OptionalTuple` containing the
+results of every future that completed.
+
+.. literalinclude:: examples/futures.cc
+   :language: c++
+   :start-after: [pw_async2-examples-futures-pw-select-functions]
+   :end-before: [pw_async2-examples-futures-pw-select-functions]
+
+.. tab-set::
+
+   .. tab-item:: Standard polling
+
+      .. literalinclude:: examples/futures.cc
+         :language: c++
+         :start-after: [pw_async2-examples-futures-pw-select-task]
+         :end-before: [pw_async2-examples-futures-pw-select-task]
+
+   .. tab-item:: C++20 coroutines
+
+      .. literalinclude:: examples/futures.cc
+         :language: c++
+         :start-after: [pw_async2-examples-futures-pw-select-coro]
+         :end-before: [pw_async2-examples-futures-pw-select-coro]
+
+In these examples, the deadline is created once, before waiting for any
+messages. With ``Select``, every received message would destroy the deadline,
+and a deadline recreated for each message would never expire while messages
+keep arriving.
+
+Choosing between Select and the macros
+--------------------------------------
+Use ``Select`` when:
+
+- The futures race once, and the futures that lose should be cancelled. To add
+  a deadline to a single operation, also consider
+  :ref:`timeouts <module-pw_async2-futures-timeout>`.
+- You need the select to be a future. For example, to store it in a task,
+  return it from a function, pass it to another combinator such as
+  :cc:`Join <pw::async2::Join>`, or erase its type with a
+  :ref:`BoxedFuture <module-pw_async2-futures-type-erasure>`.
+
+Use ``PW_SELECT`` or ``PW_CO_SELECT`` when:
+
+- You wait on the same futures repeatedly, such as in a loop.
+- Cancelling the futures that don't complete would lose progress or events.
+  For example, a timer would restart, a pending send would drop its value, or
+  an event source might discard events that arrive while no future is waiting.
+
+The macros have limitations that ``Select`` doesn't:
+
+- **They can't be composed.** The macros are statements, not futures. They
+  can't be stored, returned from a function, or passed to other combinators. To
+  use ``PW_SELECT`` as part of a larger operation, call it from the ``Pend()``
+  function of a :ref:`composite future <module-pw_async2-futures-composite>`
+  that owns the futures.
+- **They only work in specific contexts.** ``PW_SELECT`` returns ``Pending()``
+  from the enclosing function, so it can only be used in functions that return
+  a ``Poll``, such as a task's ``DoPend()`` or a future's ``Pend()``.
+  ``PW_CO_SELECT`` can only be used in coroutines.
+- **You manage the futures.** The futures must be non-const lvalues, such as
+  members of a task or composite future, or local variables in a coroutine.
+  Temporaries are rejected at compile time, since they would be recreated on
+  every poll. You must re-arm the futures that complete, and futures that you
+  no longer need stay active until you destroy them. Futures that are complete
+  or were never armed are skipped, but at least one future must be pendable.
+- **PW_CO_SELECT refers to the futures while suspended.** This is safe for local
+  variables in a coroutine, since coroutine frames never move. Other futures
+  must outlive the ``PW_CO_SELECT`` and must not move while it is suspended.
 
 .. _module-pw_async2-guides-primitives-wakers:
 

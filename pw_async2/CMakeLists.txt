@@ -559,8 +559,10 @@ pw_add_library(pw_async2.select INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_assert.assert
     pw_async2
     pw_containers.optional_tuple
+    pw_preprocessor
 )
 
 pw_add_test(pw_async2.select_test
@@ -571,6 +573,8 @@ pw_add_test(pw_async2.select_test
     pw_async2.select
     pw_async2.testing
     pw_async2.value_future
+    pw_compilation_testing._pigweed_only_negative_compilation
+    pw_containers.optional_tuple
     pw_unit_test.constexpr
   GROUPS
     modules
@@ -709,5 +713,20 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
       pw_async2.testing
       pw_allocator.testing
       pw_containers.vector
+  )
+
+  pw_add_test(pw_async2.select_coro_test
+    SOURCES
+      select_coro_test.cc
+    PRIVATE_DEPS
+      pw_allocator.testing
+      pw_async2
+      pw_async2.coro
+      pw_async2.select
+      pw_async2.simulated_time_provider
+      pw_async2.testing
+      pw_async2.time_provider
+      pw_async2.value_future
+      pw_chrono.system_clock
   )
 endif()

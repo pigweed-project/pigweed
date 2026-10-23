@@ -618,7 +618,9 @@ pw_source_set("select") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
     ":pw_async2",
+    "$dir_pw_assert:assert",
     "$dir_pw_containers:optional_tuple",
+    dir_pw_preprocessor,
   ]
 }
 
@@ -630,8 +632,10 @@ pw_test("select_test") {
     ":select",
     ":testing",
     ":value_future",
+    "$dir_pw_containers:optional_tuple",
     "$dir_pw_unit_test:constexpr",
   ]
+  negative_compilation_tests = true
 }
 
 pw_source_set("cancellable_task") {
@@ -780,6 +784,22 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       "$dir_pw_containers:vector",
     ]
   }
+
+  pw_test("select_coro_test") {
+    enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
+    sources = [ "select_coro_test.cc" ]
+    deps = [
+      ":coro",
+      ":pw_async2",
+      ":select",
+      ":simulated_time_provider",
+      ":testing",
+      ":time_provider",
+      ":value_future",
+      "$dir_pw_allocator:testing",
+      "$dir_pw_chrono:system_clock",
+    ]
+  }
 }
 
 pw_test_group("tests") {
@@ -813,6 +833,7 @@ pw_test_group("tests") {
       ":coro_task_test",
       ":fallible_coro_task_test",
       ":allocate_task_coro_test",
+      ":select_coro_test",
     ]
   }
 }
