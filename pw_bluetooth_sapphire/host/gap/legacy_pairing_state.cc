@@ -250,9 +250,8 @@ std::optional<hci_spec::LinkKey> LegacyPairingState::OnLinkKeyRequest() {
     if (link_key->security().enc_key_size() != hci_spec::kBrEdrLinkKeySize) {
       bt_log(WARN,
              "gap-bredr",
-             "%#.4x (id: %s): recalled link key has unexpected enc_key_size "
-             "%zu (expected %zu)",
-             handle(),
+             "Recalled link key for peer id %s has unexpected enc_key_size "
+             "%zu (expected %zu) before connection is complete",
              bt_str(peer_id_),
              link_key->security().enc_key_size(),
              hci_spec::kBrEdrLinkKeySize);
@@ -377,6 +376,7 @@ void LegacyPairingState::OnPinCodeRequest(UserPinCodeCallback cb) {
         callback(std::nullopt);
       }
     };
+    state_ = State::kWaitUserPinCode;
     pairing_delegate_->DisplayPasskey(
         peer_id_,
         random_pin,
@@ -404,6 +404,7 @@ void LegacyPairingState::OnPinCodeRequest(UserPinCodeCallback cb) {
           callback(std::nullopt);
         }
       };
+  state_ = State::kWaitUserPinCode;
   pairing_delegate_->RequestPasskey(peer_id_, std::move(passkey_cb));
 }
 
@@ -421,9 +422,8 @@ void LegacyPairingState::OnLinkKeyNotification(const UInt128& link_key,
   if (key_type != hci_spec::LinkKeyType::kCombination) {
     bt_log(WARN,
            "gap-bredr",
-           "Legacy Pairing requires Combination key type but link %#.4x for "
-           "peer id %s has type %s",
-           handle(),
+           "Legacy Pairing requires Combination key type but peer id %s has "
+           "type %s before connection is complete",
            bt_str(peer_id_),
            hci_spec::LinkKeyTypeToString(key_type));
     state_ = State::kFailed;
@@ -895,10 +895,10 @@ std::vector<fit::closure> LegacyPairingState::CompletePairingRequests(
 void LegacyPairingState::FailWithUnexpectedEvent(const char* handler_name) {
   bt_log(ERROR,
          "gap-bredr",
-         "Unexpected %s event while in %s state on link %#.4x for peer id %s",
+         "Unexpected %s event while in %s state before connection is "
+         "complete for peer id %s",
          handler_name,
          ToString(state_),
-         handle(),
          bt_str(peer_id_));
   state_ = State::kFailed;
   SignalStatus(ToResult(HostError::kFailed), __func__);
@@ -912,6 +912,8 @@ const char* LegacyPairingState::ToString(LegacyPairingState::State state) {
       return "InitiatorWaitLinkKeyRequest";
     case State::kWaitPinCodeRequest:
       return "kWaitPinCodeRequest";
+    case State::kWaitUserPinCode:
+      return "WaitUserPinCode";
     case State::kWaitLinkKey:
       return "WaitLinkKey";
     case State::kInitiatorWaitAuthComplete:

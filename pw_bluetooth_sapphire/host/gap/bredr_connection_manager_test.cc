@@ -1235,6 +1235,65 @@ TEST_F(BrEdrConnectionManagerLegacyPairingTest,
   QueueDisconnection(kConnectionHandle);
 }
 
+// Responding to a legacy pairing request (HCI_Link_Key_Request event) while an
+// HCI_PIN_Code_Request is pending should fail pairing.
+TEST_F(BrEdrConnectionManagerLegacyPairingTest,
+       RespondToLegacyPairingLinkKeyRequestWhilePinCodeRequestPendingFails) {
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  // Leave the HCI_PIN_Code_Request unanswered so that pairing is still in
+  // progress when the second HCI_Link_Key_Request arrives.
+  int passkey_request_count = 0;
+  pairing_delegate.SetRequestPasskeyCallback(
+      [&passkey_request_count](PeerId,
+                               PairingDelegate::PasskeyResponseCallback) {
+        passkey_request_count++;
+      });
+
+  // Trigger inbound connection but don't complete the connection.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kAcceptConnectionRequest, &kAcceptConnectionRequestRsp);
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+
+  RunUntilIdle();
+
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  ASSERT_TRUE(IsInitializing(peer));
+  ASSERT_FALSE(peer->bredr()->bonded());
+
+  // Initiate pairing from the peer with an HCI_Link_Key_Request event before
+  // the connection completes.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kLinkKeyRequestNegativeReply,
+                        &kLinkKeyRequestNegativeReplyRsp,
+                        &kPinCodeRequest);
+  test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  ASSERT_EQ(1, passkey_request_count);
+
+  // Send another HCI_Link_Key_Request while the HCI_PIN_Code_Request is
+  // pending.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kLinkKeyRequestNegativeReply,
+                        &kLinkKeyRequestNegativeReplyRsp,
+                        &kPinCodeRequest);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kPinCodeRequestNegativeReply,
+                        &kPinCodeRequestNegativeReplyRsp,
+                        &kConnectionCompleteError);
+  test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_EQ(1, passkey_request_count);
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsNotConnected(peer));
+}
+
 // Responding to a legacy pairing request (HCI_PIN_Code_Request event) before
 // the ACL connection is complete should succeed.
 TEST_F(

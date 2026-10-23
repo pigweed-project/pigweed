@@ -180,6 +180,10 @@ class LegacyPairingState final {
     // Wait for HCI_PIN_Code_Request event
     kWaitPinCodeRequest,
 
+    // Wait for the user to provide or confirm a PIN code through the
+    // PairingDelegate
+    kWaitUserPinCode,
+
     // Wait for HCI_Link_Key_Notification
     kWaitLinkKey,
 

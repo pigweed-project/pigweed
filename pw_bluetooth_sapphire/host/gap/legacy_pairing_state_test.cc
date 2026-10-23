@@ -1109,6 +1109,29 @@ TEST_F(
   EXPECT_FALSE(pairing_state.initiator());
 }
 
+TEST_F(
+    LegacyPairingStateTest,
+    PairingStateRemainsResponderIfPairingInitiatedWhileWaitingForUserPinCode) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+
+  LegacyPairingState pairing_state(peer()->GetWeakPtr(),
+                                   pairing_delegate.GetWeakPtr(),
+                                   connection()->GetWeakPtr(),
+                                   /*outgoing_connection=*/false,
+                                   &dispatcher(),
+                                   MakeAuthRequestCallback(),
+                                   NoOpStatusCallback);
+  EXPECT_FALSE(pairing_state.initiator());
+
+  // Leave the PIN code request unanswered so pairing is still waiting for the
+  // user when pairing is initiated.
+  pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
+
+  pairing_state.InitiatePairing(NoOpStatusCallback);
+  EXPECT_EQ(0, auth_request_count());
+  EXPECT_FALSE(pairing_state.initiator());
+}
+
 TEST_F(LegacyPairingStateTest,
        InitiatingPairingAfterErrorTriggersStatusCallbackWithError) {
   NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
@@ -1706,6 +1729,30 @@ TEST_P(HandlesLegacyEvent, InWaitPinCodeRequestState) {
     ASSERT_TRUE(status_handler().status());
     EXPECT_EQ(ToResult(HostError::kFailed), status_handler().status());
   }
+}
+
+TEST_P(HandlesLegacyEvent, InWaitUserPinCodeStateAsResponder) {
+  // Advance state machine.
+  pairing_state().OnPinCodeRequest(NoOpUserPinCodeCallback);
+  ASSERT_EQ(0, status_handler().call_count());
+
+  RETURN_IF_FATAL(InjectEvent());
+  EXPECT_EQ(1, status_handler().call_count());
+  ASSERT_TRUE(status_handler().status());
+  EXPECT_EQ(ToResult(HostError::kFailed), status_handler().status());
+}
+
+TEST_P(HandlesLegacyEvent, InWaitUserPinCodeStateAsInitiator) {
+  // Advance state machine.
+  pairing_state().InitiatePairing(NoOpStatusCallback);
+  EXPECT_EQ(std::nullopt, pairing_state().OnLinkKeyRequest());
+  pairing_state().OnPinCodeRequest(NoOpUserPinCodeCallback);
+  ASSERT_EQ(0, status_handler().call_count());
+
+  RETURN_IF_FATAL(InjectEvent());
+  EXPECT_EQ(1, status_handler().call_count());
+  ASSERT_TRUE(status_handler().status());
+  EXPECT_EQ(ToResult(HostError::kFailed), status_handler().status());
 }
 
 TEST_P(HandlesLegacyEvent, InWaitLinkKeyState) {

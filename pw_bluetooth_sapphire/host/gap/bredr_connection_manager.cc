@@ -1522,19 +1522,23 @@ BrEdrConnectionManager::OnLinkKeyRequest(const hci::EventPacket& event) {
       return hci::CommandChannel::EventCallbackResult::kContinue;
     }
 
-    bool outgoing_connection = connection_req.value()->AwaitingOutgoing();
+    // If we already created a LegacyPairingState object, don't recreate another
+    // one.
+    if (!connection_req.value()->legacy_pairing_state()) {
+      bool outgoing_connection = connection_req.value()->AwaitingOutgoing();
 
-    // The HCI link is not yet established, so |link|, |auth_cb|, and
-    // |status_cb| are not created yet. After the connection is complete, they
-    // are initialized in |PairingStateManager|'s constructor.
-    std::unique_ptr<LegacyPairingState> legacy_pairing_state =
-        std::make_unique<LegacyPairingState>(peer->GetWeakPtr(),
-                                             pairing_delegate_,
-                                             outgoing_connection,
-                                             &dispatcher_);
+      // The HCI link is not yet established, so |link|, |auth_cb|, and
+      // |status_cb| are not created yet. After the connection is complete, they
+      // are initialized in |PairingStateManager|'s constructor.
+      std::unique_ptr<LegacyPairingState> legacy_pairing_state =
+          std::make_unique<LegacyPairingState>(peer->GetWeakPtr(),
+                                               pairing_delegate_,
+                                               outgoing_connection,
+                                               &dispatcher_);
 
-    connection_req.value()->set_legacy_pairing_state(
-        std::move(legacy_pairing_state));
+      connection_req.value()->set_legacy_pairing_state(
+          std::move(legacy_pairing_state));
+    }
 
     link_key =
         connection_req.value()->legacy_pairing_state()->OnLinkKeyRequest();
