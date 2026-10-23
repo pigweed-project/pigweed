@@ -291,6 +291,28 @@ class AclDataChannel {
     /// Record a packet being sent to the controller.
     void RecordPacket(PacketSource source);
 
+    /// Update L2CAP PDU fragmentation tracking for a packet sent from the host
+    /// to the controller.
+    void UpdateHostFragmentationState(pw::span<const uint8_t> hci_span);
+
+    /// Clear in-flight state after the final fragment of a fragmented host
+    /// L2CAP PDU has been handed to the controller. Returns true if a
+    /// fragmented host L2CAP PDU just completed.
+    bool CompleteHostFragmentSend();
+
+    /// Remaining L2CAP PDU bytes expected in subsequent continuing fragments
+    /// from the host on this connection.
+    uint32_t remaining_host_l2cap_bytes() const {
+      return remaining_host_l2cap_bytes_;
+    }
+
+    /// True if the host has sent the start of a fragmented L2CAP PDU on this
+    /// connection and has not yet finished sending all continuing fragments to
+    /// the controller.
+    bool is_host_fragmented_pdu_in_progress() const {
+      return remaining_host_l2cap_bytes_ > 0 || final_host_fragment_in_flight_;
+    }
+
     /// Reclaim a credit for a packet that has completed.
     /// This will decide whether to give the credit to the host or proxy.
     PacketSource ReclaimCredit();
@@ -304,6 +326,8 @@ class AclDataChannel {
     uint16_t num_proxy_pending_packets_ = 0;
     uint16_t num_host_pending_packets_ = 0;
     PacketSource last_reclaimed_ = PacketSource::kProxy;
+    uint32_t remaining_host_l2cap_bytes_ = 0;
+    bool final_host_fragment_in_flight_ = false;
     pw::DynamicQueue<H4PacketWithH4> queue_;
   };
 
@@ -460,6 +484,15 @@ class AclDataChannel {
 
   AclConnection* FindConnectionToDrain(AclTransportType transport)
       PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_);
+
+  AclConnection* FindFragmentedConnectionToDrain(AclTransportType transport)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_);
+
+  bool IsHostFragmentedPduInProgress(AclTransportType transport) const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_);
+
+  bool CompleteHostFragmentSend(uint16_t connection_handle)
+      PW_LOCKS_EXCLUDED(connection_mutex_);
 
   std::optional<H4PacketWithH4> DequeueHostPacket(AclConnection* connection,
                                                   Credits& credits)

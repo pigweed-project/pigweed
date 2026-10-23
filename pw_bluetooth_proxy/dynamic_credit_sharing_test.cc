@@ -817,20 +817,20 @@ TEST_F(DynamicCreditSharingTest, ReleaseFnDoesNotDeadlock) {
   }
 
   // Send second packet from host with a ReleaseFn that calls into proxy.
-  // It should be queued because credits are exhausted.
+  // It should be queued because credits are exhausted. Keep the backing buffer
+  // in scope until the packet is dequeued and its ReleaseFn runs.
+  std::array<uint8_t, 9> host_packet_arr = {
+      0x02,
+      0x23,
+      0x01,
+      0x04,
+      0x00,  // H4 Type, Connection Handle 0x123, Length = 4
+      0x00,
+      0x00,
+      0x01,
+      0x00  // L2CAP Header: Length = 0, CID = 1
+  };
   {
-    std::array<uint8_t, 9> host_packet_arr = {
-        0x02,
-        0x23,
-        0x01,
-        0x04,
-        0x00,  // H4 Type, Connection Handle 0x123, Length = 4
-        0x00,
-        0x00,
-        0x01,
-        0x00  // L2CAP Header: Length = 0, CID = 1
-    };
-
     // Create a packet with a ReleaseFn that calls GetNumFreeLeAclPackets
     // TODO: b/505912880 - It would be better to call HandleH4HciFromHost
     // instead of GetNumFreeLeAclPackets, but that currently deadlocks.
@@ -851,6 +851,828 @@ TEST_F(DynamicCreditSharingTest, ReleaseFnDoesNotDeadlock) {
 
   // The queued packet should be sent out.
   EXPECT_EQ(capture.sends_called, 2);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       HostFragmentedL2capPduIsNotInterleavedByProxyTx) {
+  constexpr uint16_t kConnectionHandle = 0x123;
+  constexpr uint16_t kControllerMaxCredits = 4;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFirstFragmentPayloadSize = 2;
+  constexpr uint16_t kSecondFragmentPayloadSize = 4;
+  constexpr uint16_t kTotalL2capPayloadSize =
+      kFirstFragmentPayloadSize + kSecondFragmentPayloadSize;
+
+  struct SentPacketInfo {
+    emboss::AclDataPacketBoundaryFlag boundary_flag;
+    uint16_t data_total_length;
+  };
+  pw::Vector<SentPacketInfo, 4> sent_packets;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sent_packets](H4PacketWithH4&& packet) {
+        Result<emboss::AclDataFrameHeaderView> acl_view =
+            MakeEmbossView<emboss::AclDataFrameHeaderView>(packet.GetHciSpan());
+        PW_CHECK_OK(acl_view);
+        sent_packets.push_back(SentPacketInfo{
+            .boundary_flag = acl_view->packet_boundary_flag().Read(),
+            .data_total_length = acl_view->data_total_length().Read(),
+        });
+      });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              *GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle});
+
+  // Host sends first fragment of a 2-fragment L2CAP PDU.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage first_fragment,
+      SetupBFrame(kConnectionHandle, kHostCid, kFirstFragmentPayloadSize));
+  first_fragment.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(first_fragment.acl.h4_span()));
+
+  ASSERT_EQ(sent_packets.size(), 1u);
+  EXPECT_EQ(sent_packets[0].boundary_flag,
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+  EXPECT_EQ(sent_packets[0].data_total_length,
+            kFirstFragmentPayloadSize +
+                emboss::BasicL2capHeader::IntrinsicSizeInBytes());
+
+  // Proxy attempts to write a GATT notification while the host L2CAP PDU is
+  // mid-fragmentation. It must remain queued and not interleave.
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sent_packets.size(), 1u);
+
+  // Host sends the continuing fragment that completes the L2CAP PDU.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage continuing_fragment,
+      SetupAcl(kConnectionHandle, kSecondFragmentPayloadSize));
+  continuing_fragment.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(continuing_fragment.h4_span()));
+  RunDispatcher();
+
+  // Both the continuing fragment and the gated proxy packet should now be sent,
+  // in that exact order.
+  ASSERT_EQ(sent_packets.size(), 3u);
+  EXPECT_EQ(sent_packets[1].boundary_flag,
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  EXPECT_EQ(sent_packets[1].data_total_length, kSecondFragmentPayloadSize);
+  EXPECT_EQ(sent_packets[2].boundary_flag,
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       HostThreeFragmentL2capPduIsNotInterleavedByProxyTx) {
+  constexpr uint16_t kConnectionHandle = 0x123;
+  constexpr uint16_t kControllerMaxCredits = 6;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFragment1PayloadSize = 2;
+  constexpr uint16_t kFragment2PayloadSize = 3;
+  constexpr uint16_t kFragment3PayloadSize = 4;
+  constexpr uint16_t kTotalL2capPayloadSize =
+      kFragment1PayloadSize + kFragment2PayloadSize + kFragment3PayloadSize;
+
+  pw::Vector<emboss::AclDataPacketBoundaryFlag, 6> sent_boundary_flags;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sent_boundary_flags](H4PacketWithH4&& packet) {
+        Result<emboss::AclDataFrameHeaderView> acl_view =
+            MakeEmbossView<emboss::AclDataFrameHeaderView>(packet.GetHciSpan());
+        PW_CHECK_OK(acl_view);
+        sent_boundary_flags.push_back(acl_view->packet_boundary_flag().Read());
+      });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              *GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle});
+
+  // Fragment 1 from host.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage fragment_1,
+      SetupBFrame(kConnectionHandle, kHostCid, kFragment1PayloadSize));
+  fragment_1.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(fragment_1.acl.h4_span()));
+  ASSERT_EQ(sent_boundary_flags.size(), 1u);
+
+  // Proxy queues first packet after fragment 1 (must be gated).
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sent_boundary_flags.size(), 1u);
+
+  // Fragment 2 (intermediate continuing fragment) from host.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage fragment_2,
+      SetupAcl(kConnectionHandle, kFragment2PayloadSize));
+  fragment_2.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(fragment_2.h4_span()));
+  RunDispatcher();
+  ASSERT_EQ(sent_boundary_flags.size(), 2u);
+  EXPECT_EQ(sent_boundary_flags[1],
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+
+  // Proxy queues second packet after fragment 2 (must still be gated).
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sent_boundary_flags.size(), 2u);
+
+  // Fragment 3 (final continuing fragment) from host.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage fragment_3,
+      SetupAcl(kConnectionHandle, kFragment3PayloadSize));
+  fragment_3.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(fragment_3.h4_span()));
+  RunDispatcher();
+
+  // All 3 host fragments must precede the 2 proxy packets.
+  ASSERT_EQ(sent_boundary_flags.size(), 5u);
+  EXPECT_EQ(sent_boundary_flags[0],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+  EXPECT_EQ(sent_boundary_flags[1],
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  EXPECT_EQ(sent_boundary_flags[2],
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  EXPECT_EQ(sent_boundary_flags[3],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+  EXPECT_EQ(sent_boundary_flags[4],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       HostFragmentedL2capPduDrainedBeforeProxyAndPrioritizesHostNocp) {
+  constexpr uint16_t kConnectionHandle = 0x123;
+  constexpr uint16_t kControllerMaxCredits = 2;
+  constexpr uint16_t kSingleCredit = 1;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFirstFragmentPayloadSize = 2;
+  constexpr uint16_t kSecondFragmentPayloadSize = 3;
+  constexpr uint16_t kTotalL2capPayloadSize =
+      kFirstFragmentPayloadSize + kSecondFragmentPayloadSize;
+
+  struct Capture {
+    pw::Vector<emboss::AclDataPacketBoundaryFlag, 6> sent_boundary_flags;
+    uint16_t nocps_to_host = 0;
+  } capture;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&capture](H4PacketWithHci&& packet) {
+        pw::span<uint8_t> hci_buffer = packet.GetHciSpan();
+        Result<emboss::EventHeaderView> event =
+            MakeEmbossView<emboss::EventHeaderView>(hci_buffer);
+        if (event.ok() && event->event_code().Read() ==
+                              emboss::EventCode::NUMBER_OF_COMPLETED_PACKETS) {
+          Result<emboss::NumberOfCompletedPacketsEventView> nocp =
+              MakeEmbossView<emboss::NumberOfCompletedPacketsEventView>(
+                  hci_buffer);
+          if (nocp.ok() && nocp->num_handles().Read() > 0) {
+            capture.nocps_to_host +=
+                nocp->nocp_data()[0].num_completed_packets().Read();
+          }
+        }
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&capture](H4PacketWithH4&& packet) {
+        Result<emboss::AclDataFrameHeaderView> acl_view =
+            MakeEmbossView<emboss::AclDataFrameHeaderView>(packet.GetHciSpan());
+        PW_CHECK_OK(acl_view);
+        capture.sent_boundary_flags.push_back(
+            acl_view->packet_boundary_flag().Read());
+      });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              *GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle});
+
+  // 1. Proxy sends 1 packet and Host sends 1 complete packet, then 1 NOCP
+  // arrives so that last_reclaimed_ becomes kHost while 1 proxy packet remains
+  // in flight.
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage complete_host_frame,
+      SetupBFrame(kConnectionHandle, kHostCid, kFirstFragmentPayloadSize));
+  proxy.HandleH4HciFromHost(H4PacketWithH4(complete_host_frame.acl.h4_span()));
+  ASSERT_EQ(capture.sent_boundary_flags.size(), 2u);
+
+  PW_TEST_EXPECT_OK(SendNumberOfCompletedPackets(
+      proxy, {{kConnectionHandle, kSingleCredit}}));
+  RunDispatcher();
+  EXPECT_EQ(capture.nocps_to_host, 1u);
+
+  // 2. Host now sends Fragment 1 (uses the 1 available credit) and queues
+  // Fragment 2, while Proxy also queues a packet.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage first_fragment,
+      SetupBFrame(kConnectionHandle, kHostCid, kFirstFragmentPayloadSize));
+  first_fragment.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(first_fragment.acl.h4_span()));
+
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage continuing_fragment,
+      SetupAcl(kConnectionHandle, kSecondFragmentPayloadSize));
+  continuing_fragment.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(continuing_fragment.h4_span()));
+
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  ASSERT_EQ(capture.sent_boundary_flags.size(), 3u);
+
+  // 3. Reclaim 1 credit via NOCP. Even though last_reclaimed_ was kHost and
+  // a proxy packet is pending, ReclaimCredit() must prioritize kHost while a
+  // fragmented host PDU is in progress, and DrainDynamicQuota must drain the
+  // continuing fragment before the proxy packet.
+  PW_TEST_EXPECT_OK(SendNumberOfCompletedPackets(
+      proxy, {{kConnectionHandle, kSingleCredit}}));
+  RunDispatcher();
+  EXPECT_EQ(capture.nocps_to_host, 2u);
+  ASSERT_EQ(capture.sent_boundary_flags.size(), 4u);
+  EXPECT_EQ(capture.sent_boundary_flags[3],
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+
+  // 4. Next NOCP drains the queued proxy packet.
+  PW_TEST_EXPECT_OK(SendNumberOfCompletedPackets(
+      proxy, {{kConnectionHandle, kSingleCredit}}));
+  RunDispatcher();
+  ASSERT_EQ(capture.sent_boundary_flags.size(), 5u);
+  EXPECT_EQ(capture.sent_boundary_flags[4],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       HostFragmentedL2capPduNotInterleavedInStaticCreditMode) {
+  constexpr uint16_t kConnectionHandle = 0x123;
+  constexpr uint16_t kControllerMaxCredits = 4;
+  constexpr uint16_t kReservedProxyLeCredits = 2;
+  constexpr uint16_t kReservedProxyBrEdrCredits = 0;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFirstFragmentPayloadSize = 2;
+  constexpr uint16_t kSecondFragmentPayloadSize = 3;
+  constexpr uint16_t kTotalL2capPayloadSize =
+      kFirstFragmentPayloadSize + kSecondFragmentPayloadSize;
+
+  pw::Vector<emboss::AclDataPacketBoundaryFlag, 4> sent_boundary_flags;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sent_boundary_flags](H4PacketWithH4&& packet) {
+        Result<emboss::AclDataFrameHeaderView> acl_view =
+            MakeEmbossView<emboss::AclDataFrameHeaderView>(packet.GetHciSpan());
+        PW_CHECK_OK(acl_view);
+        sent_boundary_flags.push_back(acl_view->packet_boundary_flag().Read());
+      });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/
+                              kReservedProxyLeCredits,
+                              /*br_edr_acl_credits_to_reserve=*/
+                              kReservedProxyBrEdrCredits,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle});
+
+  // Host sends first fragment of a fragmented L2CAP PDU.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage first_fragment,
+      SetupBFrame(kConnectionHandle, kHostCid, kFirstFragmentPayloadSize));
+  first_fragment.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(first_fragment.acl.h4_span()));
+  ASSERT_EQ(sent_boundary_flags.size(), 1u);
+
+  // Proxy attempts to write while host PDU is mid-fragmentation; must be gated.
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sent_boundary_flags.size(), 1u);
+
+  // Host sends continuing fragment completing the PDU.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage continuing_fragment,
+      SetupAcl(kConnectionHandle, kSecondFragmentPayloadSize));
+  continuing_fragment.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(continuing_fragment.h4_span()));
+  RunDispatcher();
+
+  ASSERT_EQ(sent_boundary_flags.size(), 3u);
+  EXPECT_EQ(sent_boundary_flags[0],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+  EXPECT_EQ(sent_boundary_flags[1],
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  EXPECT_EQ(sent_boundary_flags[2],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       DisconnectDuringHostFragmentedPduUnblocksProxyTx) {
+  constexpr uint16_t kConnectionHandle1 = 0x123;
+  constexpr uint16_t kConnectionHandle2 = 0x124;
+  constexpr uint16_t kControllerMaxCredits = 4;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFirstFragmentPayloadSize = 2;
+  constexpr uint16_t kTotalL2capPayloadSize = kFirstFragmentPayloadSize + 4;
+
+  int sends_called = 0;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sends_called](H4PacketWithH4&&) { ++sends_called; });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              *GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle1, emboss::StatusCode::SUCCESS));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle2, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel2 =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle2});
+
+  // Host sends first fragment of a fragmented L2CAP PDU on connection 1.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage first_fragment,
+      SetupBFrame(kConnectionHandle1, kHostCid, kFirstFragmentPayloadSize));
+  first_fragment.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(first_fragment.acl.h4_span()));
+  EXPECT_EQ(sends_called, 1);
+
+  // Proxy writes on connection 2; gated while connection 1 is
+  // mid-fragmentation.
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel2.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sends_called, 1);
+
+  // Connection 1 disconnects mid-PDU; connection 2 proxy packet should unblock.
+  PW_TEST_EXPECT_OK(SendDisconnectionCompleteEvent(proxy, kConnectionHandle1));
+  RunDispatcher();
+  EXPECT_EQ(sends_called, 2);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       HostThreeFragmentL2capPduNotInterleavedInStaticCreditMode) {
+  constexpr uint16_t kConnectionHandle = 0x123;
+  constexpr uint16_t kControllerMaxCredits = 6;
+  constexpr uint16_t kReservedProxyLeCredits = 2;
+  constexpr uint16_t kReservedProxyBrEdrCredits = 0;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFragment1PayloadSize = 2;
+  constexpr uint16_t kFragment2PayloadSize = 3;
+  constexpr uint16_t kFragment3PayloadSize = 4;
+  constexpr uint16_t kTotalL2capPayloadSize =
+      kFragment1PayloadSize + kFragment2PayloadSize + kFragment3PayloadSize;
+
+  pw::Vector<emboss::AclDataPacketBoundaryFlag, 6> sent_boundary_flags;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sent_boundary_flags](H4PacketWithH4&& packet) {
+        Result<emboss::AclDataFrameHeaderView> acl_view =
+            MakeEmbossView<emboss::AclDataFrameHeaderView>(packet.GetHciSpan());
+        PW_CHECK_OK(acl_view);
+        sent_boundary_flags.push_back(acl_view->packet_boundary_flag().Read());
+      });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/
+                              kReservedProxyLeCredits,
+                              /*br_edr_acl_credits_to_reserve=*/
+                              kReservedProxyBrEdrCredits,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle});
+
+  // Fragment 1 from host.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage fragment_1,
+      SetupBFrame(kConnectionHandle, kHostCid, kFragment1PayloadSize));
+  fragment_1.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(fragment_1.acl.h4_span()));
+  ASSERT_EQ(sent_boundary_flags.size(), 1u);
+
+  // Proxy queues first packet after fragment 1 (must be gated).
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sent_boundary_flags.size(), 1u);
+
+  // Fragment 2 (intermediate continuing fragment) from host.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage fragment_2,
+      SetupAcl(kConnectionHandle, kFragment2PayloadSize));
+  fragment_2.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(fragment_2.h4_span()));
+  RunDispatcher();
+  ASSERT_EQ(sent_boundary_flags.size(), 2u);
+  EXPECT_EQ(sent_boundary_flags[1],
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+
+  // Proxy queues second packet after fragment 2 (must still be gated).
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sent_boundary_flags.size(), 2u);
+
+  // Fragment 3 (final continuing fragment) from host.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage fragment_3,
+      SetupAcl(kConnectionHandle, kFragment3PayloadSize));
+  fragment_3.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(fragment_3.h4_span()));
+  RunDispatcher();
+
+  // All 3 host fragments must precede the 2 proxy packets.
+  ASSERT_EQ(sent_boundary_flags.size(), 5u);
+  EXPECT_EQ(sent_boundary_flags[0],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+  EXPECT_EQ(sent_boundary_flags[1],
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  EXPECT_EQ(sent_boundary_flags[2],
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  EXPECT_EQ(sent_boundary_flags[3],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+  EXPECT_EQ(sent_boundary_flags[4],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       HostFragmentedL2capPduPrioritizesHostNocpInStaticCreditMode) {
+  constexpr uint16_t kConnectionHandle = 0x123;
+  constexpr uint16_t kControllerMaxCredits = 2;
+  constexpr uint16_t kReservedProxyLeCredits = 1;
+  constexpr uint16_t kReservedProxyBrEdrCredits = 0;
+  constexpr uint16_t kSingleCredit = 1;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFirstFragmentPayloadSize = 2;
+  constexpr uint16_t kSecondFragmentPayloadSize = 3;
+  constexpr uint16_t kTotalL2capPayloadSize =
+      kFirstFragmentPayloadSize + kSecondFragmentPayloadSize;
+
+  struct Capture {
+    pw::Vector<emboss::AclDataPacketBoundaryFlag, 6> sent_boundary_flags;
+    uint16_t nocps_to_host = 0;
+  } capture;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&capture](H4PacketWithHci&& packet) {
+        pw::span<uint8_t> hci_buffer = packet.GetHciSpan();
+        Result<emboss::EventHeaderView> event =
+            MakeEmbossView<emboss::EventHeaderView>(hci_buffer);
+        if (event.ok() && event->event_code().Read() ==
+                              emboss::EventCode::NUMBER_OF_COMPLETED_PACKETS) {
+          Result<emboss::NumberOfCompletedPacketsEventView> nocp =
+              MakeEmbossView<emboss::NumberOfCompletedPacketsEventView>(
+                  hci_buffer);
+          if (nocp.ok() && nocp->num_handles().Read() > 0) {
+            capture.nocps_to_host +=
+                nocp->nocp_data()[0].num_completed_packets().Read();
+          }
+        }
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&capture](H4PacketWithH4&& packet) {
+        Result<emboss::AclDataFrameHeaderView> acl_view =
+            MakeEmbossView<emboss::AclDataFrameHeaderView>(packet.GetHciSpan());
+        PW_CHECK_OK(acl_view);
+        capture.sent_boundary_flags.push_back(
+            acl_view->packet_boundary_flag().Read());
+      });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/
+                              kReservedProxyLeCredits,
+                              /*br_edr_acl_credits_to_reserve=*/
+                              kReservedProxyBrEdrCredits,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle});
+
+  // 1. Proxy sends 1 packet (exhausting its 1 reserved credit) and Host sends
+  // 1 complete packet, then 1 NOCP arrives so last_reclaimed_ becomes kHost
+  // while 1 proxy packet remains in flight.
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage complete_host_frame,
+      SetupBFrame(kConnectionHandle, kHostCid, kFirstFragmentPayloadSize));
+  proxy.HandleH4HciFromHost(H4PacketWithH4(complete_host_frame.acl.h4_span()));
+  ASSERT_EQ(capture.sent_boundary_flags.size(), 2u);
+
+  PW_TEST_EXPECT_OK(SendNumberOfCompletedPackets(
+      proxy, {{kConnectionHandle, kSingleCredit}}));
+  RunDispatcher();
+  EXPECT_EQ(capture.nocps_to_host, 1u);
+
+  // 2. Host sends Fragment 1 of a fragmented PDU. Proxy also queues a packet.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage first_fragment,
+      SetupBFrame(kConnectionHandle, kHostCid, kFirstFragmentPayloadSize));
+  first_fragment.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(first_fragment.acl.h4_span()));
+
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  ASSERT_EQ(capture.sent_boundary_flags.size(), 3u);
+
+  // 3. Reclaim 1 credit via NOCP while Host PDU is mid-fragmentation. Even
+  // though last_reclaimed_ was kHost and 1 proxy packet is pending, the credit
+  // must be returned to the Host so the Host is not starved of credits needed
+  // to send Fragment 2.
+  PW_TEST_EXPECT_OK(SendNumberOfCompletedPackets(
+      proxy, {{kConnectionHandle, kSingleCredit}}));
+  RunDispatcher();
+  EXPECT_EQ(capture.nocps_to_host, 2u);
+  EXPECT_EQ(capture.sent_boundary_flags.size(), 3u);
+
+  // 4. Next NOCP reclaims the proxy's in-flight credit, but proxy TX remains
+  // gated until Host sends Fragment 2.
+  PW_TEST_EXPECT_OK(SendNumberOfCompletedPackets(
+      proxy, {{kConnectionHandle, kSingleCredit}}));
+  RunDispatcher();
+  EXPECT_EQ(capture.sent_boundary_flags.size(), 3u);
+
+  // 5. Host sends Fragment 2; both Fragment 2 and the queued proxy packet are
+  // sent in order.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage continuing_fragment,
+      SetupAcl(kConnectionHandle, kSecondFragmentPayloadSize));
+  continuing_fragment.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(continuing_fragment.h4_span()));
+  RunDispatcher();
+
+  ASSERT_EQ(capture.sent_boundary_flags.size(), 5u);
+  EXPECT_EQ(capture.sent_boundary_flags[3],
+            emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  EXPECT_EQ(capture.sent_boundary_flags[4],
+            emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       DisconnectDuringHostFragmentedPduUnblocksProxyTxInStaticCreditMode) {
+  constexpr uint16_t kConnectionHandle1 = 0x123;
+  constexpr uint16_t kConnectionHandle2 = 0x124;
+  constexpr uint16_t kControllerMaxCredits = 4;
+  constexpr uint16_t kReservedProxyLeCredits = 2;
+  constexpr uint16_t kReservedProxyBrEdrCredits = 0;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFirstFragmentPayloadSize = 2;
+  constexpr uint16_t kTotalL2capPayloadSize = kFirstFragmentPayloadSize + 4;
+
+  int sends_called = 0;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sends_called](H4PacketWithH4&&) { ++sends_called; });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/
+                              kReservedProxyLeCredits,
+                              /*br_edr_acl_credits_to_reserve=*/
+                              kReservedProxyBrEdrCredits,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle1, emboss::StatusCode::SUCCESS));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle2, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel2 =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle2});
+
+  // Host sends first fragment of a fragmented L2CAP PDU on connection 1.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage first_fragment,
+      SetupBFrame(kConnectionHandle1, kHostCid, kFirstFragmentPayloadSize));
+  first_fragment.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(first_fragment.acl.h4_span()));
+  EXPECT_EQ(sends_called, 1);
+
+  // Proxy writes on connection 2; gated while connection 1 is
+  // mid-fragmentation.
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel2.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sends_called, 1);
+
+  // Connection 1 disconnects mid-PDU; connection 2 proxy packet should unblock.
+  PW_TEST_EXPECT_OK(SendDisconnectionCompleteEvent(proxy, kConnectionHandle1));
+  RunDispatcher();
+  EXPECT_EQ(sends_called, 2);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       AbortedHostFragmentedPduByNewUnfragmentedPduUnblocksProxyTx) {
+  constexpr uint16_t kConnectionHandle = 0x123;
+  constexpr uint16_t kControllerMaxCredits = 4;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFirstFragmentPayloadSize = 2;
+  constexpr uint16_t kTotalL2capPayloadSize = kFirstFragmentPayloadSize + 4;
+
+  int sends_called = 0;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sends_called](H4PacketWithH4&&) { ++sends_called; });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              *GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle});
+
+  // 1. Host sends first fragment of a fragmented L2CAP PDU.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage first_fragment,
+      SetupBFrame(kConnectionHandle, kHostCid, kFirstFragmentPayloadSize));
+  first_fragment.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(first_fragment.acl.h4_span()));
+  EXPECT_EQ(sends_called, 1);
+
+  // 2. Proxy queues a packet; gated while host fragmented PDU is in progress.
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sends_called, 1);
+
+  // 3. Host aborts the incomplete PDU by sending a new unfragmented FIRST_*
+  // packet. Once sent, proxy TX must be unblocked.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage unfragmented_pdu,
+      SetupBFrame(kConnectionHandle, kHostCid, kFirstFragmentPayloadSize));
+  proxy.HandleH4HciFromHost(H4PacketWithH4(unfragmented_pdu.acl.h4_span()));
+  RunDispatcher();
+  EXPECT_EQ(sends_called, 3);
+}
+
+TEST_F(DynamicCreditSharingTest,
+       TwoConnectionsWithFragmentedHostPdusKeepProxyGatedUntilBothComplete) {
+  constexpr uint16_t kConnectionHandle1 = 0x123;
+  constexpr uint16_t kConnectionHandle2 = 0x124;
+  constexpr uint16_t kControllerMaxCredits = 6;
+  constexpr uint16_t kReservedProxyLeCredits = 2;
+  constexpr uint16_t kReservedProxyBrEdrCredits = 0;
+  constexpr uint16_t kHostCid = 0x0040;
+  constexpr uint16_t kFirstFragmentPayloadSize = 2;
+  constexpr uint16_t kSecondFragmentPayloadSize = 4;
+  constexpr uint16_t kTotalL2capPayloadSize =
+      kFirstFragmentPayloadSize + kSecondFragmentPayloadSize;
+
+  int sends_called = 0;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sends_called](H4PacketWithH4&&) { ++sends_called; });
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/
+                              kReservedProxyLeCredits,
+                              /*br_edr_acl_credits_to_reserve=*/
+                              kReservedProxyBrEdrCredits,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(
+      SendLeReadBufferResponseFromController(proxy, kControllerMaxCredits));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle1, emboss::StatusCode::SUCCESS));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle2, emboss::StatusCode::SUCCESS));
+
+  GattNotifyChannel channel1 =
+      BuildGattNotifyChannel(proxy, {.handle = kConnectionHandle1});
+
+  // 1. Both connections start a fragmented host L2CAP PDU.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage first_frag_conn1,
+      SetupBFrame(kConnectionHandle1, kHostCid, kFirstFragmentPayloadSize));
+  first_frag_conn1.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(first_frag_conn1.acl.h4_span()));
+
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      BFrameWithStorage first_frag_conn2,
+      SetupBFrame(kConnectionHandle2, kHostCid, kFirstFragmentPayloadSize));
+  first_frag_conn2.writer.pdu_length().Write(kTotalL2capPayloadSize);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(first_frag_conn2.acl.h4_span()));
+  EXPECT_EQ(sends_called, 2);
+
+  // 2. Proxy queues a packet; gated while either connection has a fragmented
+  // host PDU in progress.
+  std::array<uint8_t, 1> attribute_value = {7};
+  PW_TEST_EXPECT_OK(channel1.Write(MultiBufFromArray(attribute_value)).status);
+  RunDispatcher();
+  EXPECT_EQ(sends_called, 2);
+
+  // 3. Connection 1 completes its fragmented PDU; proxy TX remains gated
+  // because Connection 2 still has a fragmented PDU in progress.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage cont_frag_conn1,
+      SetupAcl(kConnectionHandle1, kSecondFragmentPayloadSize));
+  cont_frag_conn1.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(cont_frag_conn1.h4_span()));
+  RunDispatcher();
+  EXPECT_EQ(sends_called, 3);
+
+  // 4. Connection 2 completes its fragmented PDU; now proxy TX is unblocked.
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      AclFrameWithStorage cont_frag_conn2,
+      SetupAcl(kConnectionHandle2, kSecondFragmentPayloadSize));
+  cont_frag_conn2.writer.header().packet_boundary_flag().Write(
+      emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+  proxy.HandleH4HciFromHost(H4PacketWithH4(cont_frag_conn2.h4_span()));
+  RunDispatcher();
+  EXPECT_EQ(sends_called, 5);
 }
 
 }  // namespace

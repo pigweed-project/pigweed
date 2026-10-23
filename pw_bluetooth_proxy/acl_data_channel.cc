@@ -14,14 +14,17 @@
 
 #include "pw_bluetooth_proxy/internal/acl_data_channel.h"
 
+#include <cinttypes>
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <utility>
 
 #include "lib/stdcompat/utility.h"
 #include "pw_assert/check.h"
 #include "pw_bluetooth/emboss_util.h"
 #include "pw_bluetooth/hci_data.emb.h"
+#include "pw_bluetooth/l2cap_frames.emb.h"
 #include "pw_containers/algorithm.h"  // IWYU pragma: keep
 #include "pw_log/log.h"
 #include "pw_multibuf/multibuf.h"
@@ -60,7 +63,15 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
         Credits& credits = LookupCredits(connection_ptr->transport());
 
         if (!credits.dynamic_sharing()) {
+          // In static credit mode, host packets bypass
+          // `connection_ptr->queue()` and `DequeueHostPacket`, so update
+          // fragmentation state here as the packet is sent directly to the
+          // controller. In dynamic sharing mode, fragmentation state is updated
+          // in `DequeueHostPacket` when the packet is actually dequeued to be
+          // sent (so a queued continuing fragment does not clear the
+          // in-progress state before it is sent).
           connection_ptr->RecordPacket(PacketSource::kHost);
+          connection_ptr->UpdateHostFragmentationState(h4_packet.GetHciSpan());
           NotifyCreditMutation(*connection_ptr);
           packet_to_send_directly = std::move(h4_packet);
         } else {
@@ -96,6 +107,9 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
     if (packet_to_send_directly.has_value()) {
       hci_transport_.SendToController(
           std::move(packet_to_send_directly.value()));
+      if (CompleteHostFragmentSend(handle)) {
+        on_tx_credits_fn_();
+      }
     }
 
     if (transport.has_value()) {
@@ -129,9 +143,75 @@ void AclDataChannel::AclConnection::RecordPacket(
   }
 }
 
+void AclDataChannel::AclConnection::UpdateHostFragmentationState(
+    pw::span<const uint8_t> hci_span) {
+  Result<emboss::AclDataFrameView> acl =
+      MakeEmbossView<emboss::AclDataFrameView>(hci_span);
+  if (!acl.ok()) {
+    return;
+  }
+  const uint16_t acl_payload_size = acl->header().data_total_length().Read();
+  const emboss::AclDataPacketBoundaryFlag boundary_flag =
+      acl->header().packet_boundary_flag().Read();
+  const bool was_fragmented = remaining_host_l2cap_bytes_ > 0;
+
+  switch (boundary_flag) {
+    case emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE:
+    case emboss::AclDataPacketBoundaryFlag::FIRST_FLUSHABLE: {
+      if (was_fragmented) {
+        PW_LOG_WARN(
+            "Host started a new L2CAP PDU on connection %#x while %" PRIu32
+            " bytes of the previous PDU were still remaining.",
+            connection_handle_,
+            remaining_host_l2cap_bytes_);
+      }
+      emboss::BasicL2capHeaderView l2cap_header =
+          emboss::MakeBasicL2capHeaderView(
+              acl->payload().BackingStorage().data(),
+              acl->payload().BackingStorage().SizeInBytes());
+      if (!l2cap_header.Ok()) {
+        remaining_host_l2cap_bytes_ = 0;
+        break;
+      }
+      const uint32_t l2cap_frame_length =
+          static_cast<uint32_t>(
+              emboss::BasicL2capHeader::IntrinsicSizeInBytes()) +
+          l2cap_header.pdu_length().Read();
+      if (l2cap_frame_length > acl_payload_size) {
+        remaining_host_l2cap_bytes_ = l2cap_frame_length - acl_payload_size;
+      } else {
+        remaining_host_l2cap_bytes_ = 0;
+      }
+      break;
+    }
+    case emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT: {
+      if (!was_fragmented) {
+        return;
+      }
+      if (acl_payload_size >= remaining_host_l2cap_bytes_) {
+        remaining_host_l2cap_bytes_ = 0;
+      } else {
+        remaining_host_l2cap_bytes_ -= acl_payload_size;
+      }
+      break;
+    }
+    default:
+      remaining_host_l2cap_bytes_ = 0;
+      break;
+  }
+
+  final_host_fragment_in_flight_ =
+      was_fragmented && (remaining_host_l2cap_bytes_ == 0);
+}
+
+bool AclDataChannel::AclConnection::CompleteHostFragmentSend() {
+  return std::exchange(final_host_fragment_in_flight_, false);
+}
+
 AclDataChannel::PacketSource AclDataChannel::AclConnection::ReclaimCredit() {
   if (num_proxy_pending_packets_ > 0 && num_host_pending_packets_ > 0) {
-    if (last_reclaimed_ == PacketSource::kHost) {
+    if (last_reclaimed_ == PacketSource::kHost &&
+        !is_host_fragmented_pdu_in_progress()) {
       last_reclaimed_ = PacketSource::kProxy;
       --num_proxy_pending_packets_;
       return AclDataChannel::PacketSource::kProxy;
@@ -500,6 +580,7 @@ void AclDataChannel::DrainDynamicQuota(AclTransportType transport) {
 
   while (true) {
     std::optional<H4PacketWithH4> packet_to_send;
+    uint16_t sent_connection_handle = 0;
     {
       std::lock_guard lock(connection_mutex_);
       std::lock_guard credit_lock(credit_mutex_);
@@ -510,17 +591,36 @@ void AclDataChannel::DrainDynamicQuota(AclTransportType transport) {
         break;
       }
 
-      if (credits.drain_turn() == PacketSource::kProxy) {
+      if (IsHostFragmentedPduInProgress(transport)) {
+        AclConnection* connection_to_drain =
+            FindFragmentedConnectionToDrain(transport);
+        if (!connection_to_drain) {
+          should_run_proxy_turn = false;
+          break;
+        }
+        sent_connection_handle = connection_to_drain->connection_handle();
+        packet_to_send = DequeueHostPacket(connection_to_drain, credits);
+        NotifyCreditMutation(*connection_to_drain);
+        host_tried_and_empty = false;
+        proxy_tried_and_empty = false;
+        if (connection_to_drain->remaining_host_l2cap_bytes() > 0) {
+          should_run_proxy_turn = false;
+        }
+      } else if (credits.drain_turn() == PacketSource::kProxy) {
         should_run_proxy_turn = true;
         proxy_tried_and_empty = true;
         credits.PassTurn();
       } else {
         AclConnection* connection_to_drain = FindConnectionToDrain(transport);
         if (connection_to_drain) {
+          sent_connection_handle = connection_to_drain->connection_handle();
           packet_to_send = DequeueHostPacket(connection_to_drain, credits);
           NotifyCreditMutation(*connection_to_drain);
           host_tried_and_empty = false;
           proxy_tried_and_empty = false;
+          if (connection_to_drain->remaining_host_l2cap_bytes() > 0) {
+            should_run_proxy_turn = false;
+          }
         } else {
           host_tried_and_empty = true;
           credits.PassTurn();
@@ -530,6 +630,9 @@ void AclDataChannel::DrainDynamicQuota(AclTransportType transport) {
 
     if (packet_to_send.has_value()) {
       hci_transport_.SendToController(std::move(packet_to_send.value()));
+      if (CompleteHostFragmentSend(sent_connection_handle)) {
+        should_run_proxy_turn = true;
+      }
     }
   }
   if (should_run_proxy_turn) {
@@ -550,6 +653,9 @@ void AclDataChannel::HandleConnectionCompleteEvent(uint16_t connection_handle,
 void AclDataChannel::ProcessDisconnectionCompleteEvent(
     uint16_t connection_handle, emboss::StatusCode reason) {
   pw::DynamicQueue<H4PacketWithH4> packets_to_drop(allocator_);
+  bool was_fragmented = false;
+  bool dynamic_sharing = false;
+  AclTransportType transport = AclTransportType::kLe;
   {
     std::lock_guard lock(connection_mutex_);
 
@@ -565,6 +671,9 @@ void AclDataChannel::ProcessDisconnectionCompleteEvent(
     PW_LOG_INFO("Proxy viewed disconnect (reason: %#.2hhx) for connection %#x.",
                 cpp23::to_underlying(reason),
                 connection_handle);
+
+    was_fragmented = connection_ptr->is_host_fragmented_pdu_in_progress();
+    transport = connection_ptr->transport();
 
     if (connection_ptr->num_proxy_pending_packets() > 0 ||
         connection_ptr->num_host_pending_packets() > 0) {
@@ -582,7 +691,8 @@ void AclDataChannel::ProcessDisconnectionCompleteEvent(
     {
       std::lock_guard credit_lock(credit_mutex_);
       Credits& credits = LookupCredits(connection_ptr->transport());
-      if (credits.dynamic_sharing()) {
+      dynamic_sharing = credits.dynamic_sharing();
+      if (dynamic_sharing) {
         credits.DecrementTotalQueuedPackets(connection_ptr->queue().size());
       }
     }
@@ -602,6 +712,14 @@ void AclDataChannel::ProcessDisconnectionCompleteEvent(
   // Important to drop outside of connection lock since freeing packets will
   // result in calls into proxy again.
   packets_to_drop.clear();
+
+  if (was_fragmented) {
+    if (dynamic_sharing) {
+      DrainDynamicQuota(transport);
+    } else {
+      on_tx_credits_fn_();
+    }
+  }
 }
 
 bool AclDataChannel::HasSendAclCapability(AclTransportType transport) const {
@@ -617,7 +735,11 @@ uint16_t AclDataChannel::GetNumFreeAclPackets(
 
 std::optional<AclDataChannel::SendCredit> AclDataChannel::ReserveSendCredit(
     AclTransportType transport) {
+  std::lock_guard connection_lock(connection_mutex_);
   std::lock_guard lock(credit_mutex_);
+  if (IsHostFragmentedPduInProgress(transport)) {
+    return std::nullopt;
+  }
   Credits& credits = LookupCredits(transport);
 
   // In dynamic sharing mode, if it is the host's turn to drain and the host has
@@ -720,6 +842,39 @@ AclDataChannel::AclConnection* AclDataChannel::FindConnectionToDrain(
   return nullptr;
 }
 
+AclDataChannel::AclConnection* AclDataChannel::FindFragmentedConnectionToDrain(
+    AclTransportType transport) {
+  for (auto& connection : acl_connections_) {
+    if (connection.transport() == transport &&
+        connection.is_host_fragmented_pdu_in_progress() &&
+        !connection.queue().empty()) {
+      return &connection;
+    }
+  }
+  return nullptr;
+}
+
+bool AclDataChannel::IsHostFragmentedPduInProgress(
+    AclTransportType transport) const {
+  for (const auto& connection : acl_connections_) {
+    if (connection.transport() == transport &&
+        connection.is_host_fragmented_pdu_in_progress()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool AclDataChannel::CompleteHostFragmentSend(uint16_t connection_handle) {
+  std::lock_guard lock(connection_mutex_);
+  AclConnection* connection_ptr = FindAclConnection(connection_handle);
+  if (!connection_ptr) {
+    return false;
+  }
+  return connection_ptr->CompleteHostFragmentSend() &&
+         !IsHostFragmentedPduInProgress(connection_ptr->transport());
+}
+
 std::optional<H4PacketWithH4> AclDataChannel::DequeueHostPacket(
     AclConnection* connection, Credits& credits) {
   if (connection->queue().empty()) {
@@ -731,6 +886,7 @@ std::optional<H4PacketWithH4> AclDataChannel::DequeueHostPacket(
 
   credits.MarkPending(1, PacketSource::kHost).IgnoreError();
   connection->RecordPacket(PacketSource::kHost);
+  connection->UpdateHostFragmentationState(queued.GetHciSpan());
   return queued;
 }
 
