@@ -176,6 +176,7 @@ class ServerCallTest : public ::testing::Test {
 
 TEST_F(ServerCallTest, SizingAndOffsetCalculations) {
   static_assert(alignof(ServerCall) == alignof(std::max_align_t));
+  static_assert(sizeof(ServerCall) <= 18 * sizeof(void*));
   constexpr size_t kFutureSize = 64;
 
   size_t total = ServerCall::TotalAllocationSize(kFutureSize);

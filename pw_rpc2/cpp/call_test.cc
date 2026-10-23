@@ -33,29 +33,14 @@
 namespace pw::rpc2::internal {
 namespace {
 
+static_assert(sizeof(Call) <= 9 * sizeof(void*));
+static_assert(sizeof(ClientCall) == sizeof(Call));
+
 ConstBuf MakePayload(Allocator& alloc, size_t size, std::byte val) {
   Buf payload = Buf::Allocate(alloc, size);
   std::memset(payload.data(), static_cast<int>(val), size);
   return ConstBuf(std::move(payload));
 }
-
-// Acquires a slot in a call's ingress queue, as the connection task
-// does when it has a message to deliver.
-class ReserveSlotTask : public async2::Task {
- public:
-  explicit ReserveSlotTask(Call& call) : call_(call) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    reserved_ = call_.ReserveMessageSlot(cx);
-    return async2::Ready();
-  }
-
-  bool reserved() const { return reserved_; }
-
- private:
-  Call& call_;
-  bool reserved_ = false;
-};
 
 TEST(CallTest, IngressMessageQueueAndBackpressure) {
   allocator::test::AllocatorForTest<16384> allocator;
@@ -69,21 +54,13 @@ TEST(CallTest, IngressMessageQueueAndBackpressure) {
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
-  ReserveSlotTask reserve1(*call);
-  dispatcher.Post(reserve1);
-  dispatcher.RunUntilStalled();
-  reserve1.Deregister();
-  EXPECT_TRUE(reserve1.reserved());
-
+  EXPECT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(MakePayload(allocator, 5, std::byte(0xAA)));
 
   // The queue holds one message, so no second slot is available until the
   // reader drains it.
-  ReserveSlotTask reserve2(*call);
-  dispatcher.Post(reserve2);
-  dispatcher.RunUntilStalled();
-  reserve2.Deregister();
-  EXPECT_FALSE(reserve2.reserved());
+  EXPECT_TRUE(call->has_buffered_message());
+  EXPECT_FALSE(call->ReserveMessageSlot());
 
   async2::FutureTask read(reader.Read());
   dispatcher.Post(read);
@@ -94,12 +71,7 @@ TEST(CallTest, IngressMessageQueueAndBackpressure) {
   EXPECT_EQ(read.value()->size(), 5u);
 
   // Now queue has space again
-  ReserveSlotTask reserve3(*call);
-  dispatcher.Post(reserve3);
-  dispatcher.RunUntilStalled();
-  reserve3.Deregister();
-  EXPECT_TRUE(reserve3.reserved());
-
+  EXPECT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(MakePayload(allocator, 3, std::byte(0xCC)));
 
   connection_task->Deregister();
@@ -121,11 +93,7 @@ TEST(CallTest, IngressMessageDroppedWhenReadClosed) {
 
   // A closed reader never blocks delivery: no slot is needed because the
   // payload is dropped.
-  ReserveSlotTask reserve(*call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
-  reserve.Deregister();
-  EXPECT_TRUE(reserve.reserved());
+  EXPECT_TRUE(call->ReserveMessageSlot());
 
   // Message should be consumed (dropped) without stalling
   call->OnMessage(MakePayload(allocator, 5, std::byte(0xDD)));
@@ -145,11 +113,7 @@ TEST(CallTest, DeferredResourceResetPostCompletion) {
   RawReader reader = CallAccess::Create<RawReader>(call);
 
   // Buffer a message before completion
-  ReserveSlotTask reserve(*call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
-  reserve.Deregister();
-
+  ASSERT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(MakePayload(allocator, 4, std::byte(0x11)));
 
   // Wire completion occurs
@@ -268,11 +232,7 @@ TEST(CallTest, FinishFollowedByConnectionClosePreservesEndOfStream) {
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
-  ReserveSlotTask reserve(*call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
-  reserve.Deregister();
-
+  ASSERT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(MakePayload(allocator, 3, std::byte(0x42)));
   call->Complete(RpcStatus());
 
@@ -309,11 +269,7 @@ TEST(CallTest, PeerStreamEndKeepsClientReaderOpenUntilTerminal) {
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
-  ReserveSlotTask reserve(*call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
-  reserve.Deregister();
-
+  ASSERT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(MakePayload(allocator, 3, std::byte(0x42)));
   call->OnPeerStreamEnd();
   EXPECT_TRUE(call->peer_ended_stream());
@@ -377,14 +333,10 @@ TEST(CallTest, ServerPeerStreamEndThenConnectionClosePreservesEndOfStream) {
   ASSERT_NE(call, nullptr);
   RawReader reader = CallAccess::Create<RawReader>(call);
 
-  ReserveSlotTask reserve(*call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
-  reserve.Deregister();
-
   // Unlike a client call, a server call's incoming stream ends cleanly once the
   // client half-closes it, even if the call later fails before the server
   // drains the stream.
+  ASSERT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(MakePayload(allocator, 3, std::byte(0x42)));
   call->OnPeerStreamEnd();
   connection_task->CloseConnection(RpcStatus::Closed());
@@ -429,26 +381,9 @@ TEST(CallTest, ServerConnectionCloseWithoutPeerStreamEndReportsCloseStatus) {
   connection_task->Deregister();
 }
 
-TEST(CallTest, DroppingReaderUnblocksReserveReadSlot) {
-  class BlockingReserveSlotTask : public async2::Task {
-   public:
-    explicit BlockingReserveSlotTask(Call& call) : call_(call) {}
-
-    async2::Poll<> DoPend(async2::Context& cx) override {
-      if (!call_.ReserveMessageSlot(cx)) {
-        return async2::Pending();
-      }
-      reserved_ = true;
-      return async2::Ready();
-    }
-
-    bool reserved() const { return reserved_; }
-
-   private:
-    Call& call_;
-    bool reserved_ = false;
-  };
-
+// See also ConnectionTaskTest.ClosingReaderUnblocksStalledIngress, which checks
+// that the connection task resumes delivery.
+TEST(CallTest, DroppingReaderFreesMessageSlot) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -461,28 +396,19 @@ TEST(CallTest, DroppingReaderUnblocksReserveReadSlot) {
 
   std::optional<RawReader> reader = CallAccess::Create<RawReader>(call);
 
-  // Fill the single channel slot.
-  ReserveSlotTask reserve1(*call);
-  dispatcher.Post(reserve1);
-  dispatcher.RunUntilStalled();
-  reserve1.Deregister();
-  ASSERT_TRUE(reserve1.reserved());
+  // Fill the single message slot.
+  ASSERT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(MakePayload(allocator, 4, std::byte(0xAA)));
 
-  // Second reservation stalls because the 1-slot channel is full.
-  BlockingReserveSlotTask reserve2(*call);
-  dispatcher.Post(reserve2);
-  dispatcher.RunUntilStalled();
-  EXPECT_FALSE(reserve2.reserved());
+  // A second reservation fails because the 1-slot buffer is full.
+  EXPECT_FALSE(call->ReserveMessageSlot());
 
-  // Dropping the Reader closes the read side, frees the buffered payload,
-  // and wakes the stalled reservation so ConnectionTask cannot deadlock.
+  // Dropping the Reader closes the read side and frees the buffered payload,
+  // so delivery no longer blocks on this call.
   reader.reset();
   EXPECT_TRUE(call->is_read_closed());
-
-  dispatcher.RunUntilStalled();
-  EXPECT_TRUE(reserve2.reserved());
-  reserve2.Deregister();
+  EXPECT_FALSE(call->has_buffered_message());
+  EXPECT_TRUE(call->ReserveMessageSlot());
 
   connection_task->Deregister();
 }

@@ -222,7 +222,7 @@ class ConnectionTask : public async2::Task {
   /// and transport reads (Stages 1--3).
   bool PendPacket(async2::Context& cx);
 
-  bool DispatchPendingIngressPacket(async2::Context& cx);
+  bool DispatchPendingIngressPacket();
 
   void QueueControlPacket(const OutboundPacket& packet);
 
@@ -233,9 +233,9 @@ class ConnectionTask : public async2::Task {
   Call* FindCallById(uint32_t call_id);
 
   /// Delivers `packet` to `call`, or returns false if the call cannot accept
-  /// it yet and the packet must be stashed. In that case `cx` is woken once
-  /// the call's reader catches up.
-  bool DeliverToCall(Call& call, InboundPacket& packet, async2::Context& cx);
+  /// it yet and the packet must be stashed. In that case this connection task
+  /// is woken once the call's reader catches up.
+  bool DeliverToCall(Call& call, InboundPacket& packet);
 
   // The transport connection.
   transport::ReliableDatagramSocket connection_;

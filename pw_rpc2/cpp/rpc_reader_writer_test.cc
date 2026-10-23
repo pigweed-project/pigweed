@@ -37,24 +37,6 @@ namespace {
 
 namespace flags = ::pw::rpc2::internal::flags;
 
-// Acquires a slot in a call's ingress queue, as the connection task
-// does when it has a message to deliver.
-class ReserveSlotTask : public async2::Task {
- public:
-  explicit ReserveSlotTask(internal::Call& call) : call_(call) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    reserved_ = call_.ReserveMessageSlot(cx);
-    return async2::Ready();
-  }
-
-  bool reserved() const { return reserved_; }
-
- private:
-  internal::Call& call_;
-  bool reserved_ = false;
-};
-
 template <typename Fut>
 class WriteTestTask : public async2::Task {
  public:
@@ -658,12 +640,7 @@ TEST(RawReaderTest, ReadsPayloadBufFromCall) {
   Buf msg = Buf::Allocate(allocator, 4);
   std::memset(msg.data(), 0x55, 4);
 
-  ReserveSlotTask reserve(*call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
-  reserve.Deregister();
-
-  EXPECT_TRUE(reserve.reserved());
+  EXPECT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(ConstBuf(std::move(msg)));
 
   dispatcher.RunUntilStalled();
@@ -684,14 +661,9 @@ void ReadOneMessage(async2::DispatcherForTest& dispatcher,
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
 
-  ReserveSlotTask reserve(call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
-  reserve.Deregister();
-
   Buf msg = Buf::Allocate(allocator, expected_size);
   std::memset(msg.data(), 0x11, expected_size);
-  ASSERT_TRUE(reserve.reserved());
+  ASSERT_TRUE(call.ReserveMessageSlot());
   call.OnMessage(ConstBuf(std::move(msg)));
 
   dispatcher.RunUntilStalled();
@@ -722,14 +694,9 @@ TEST(RawReaderTest, SequentialReadsReuseTheCall) {
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
 
-  ReserveSlotTask reserve(*call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
-  reserve.Deregister();
-
   Buf msg = Buf::Allocate(allocator, 3);
   std::memset(msg.data(), 0x22, 3);
-  ASSERT_TRUE(reserve.reserved());
+  ASSERT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(ConstBuf(std::move(msg)));
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(task.result().has_value() && task.result()->ok());

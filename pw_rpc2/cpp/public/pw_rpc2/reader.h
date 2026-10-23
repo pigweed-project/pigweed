@@ -14,7 +14,6 @@
 #pragma once
 
 #include <cstddef>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -66,8 +65,8 @@ void DeserializeTypeErased(void* result_out, RpcResult<ConstByteSpan> bytes) {
 /// Non-templated base class for `ReadFuture<Message>` and
 /// `ResponseFuture<Response>`.
 ///
-/// Shares the read-claim lifecycle and channel polling logic across all
-/// message types.
+/// Shares the read-claim lifecycle and call polling logic across all message
+/// types.
 class ReadFutureBase : public CallHandle, public FutureBase {
  public:
   ReadFutureBase(const ReadFutureBase&) = delete;
@@ -96,9 +95,6 @@ class ReadFutureBase : public CallHandle, public FutureBase {
     if (this != &other) {
       // Release this future's own hold before adopting `other`'s call.
       ReleaseRead();
-      // `receive_fut_` refers to the call's channel, so replace it before the
-      // call reference, which may be the last one.
-      receive_fut_ = std::move(other.receive_fut_);
       CallHandle::operator=(static_cast<CallHandle&&>(other));
       FutureBase::operator=(static_cast<FutureBase&&>(other));
     }
@@ -116,20 +112,17 @@ class ReadFutureBase : public CallHandle, public FutureBase {
     if (!has_call()) {
       return;
     }
-    receive_fut_ = call().ClaimRead();
+    call().ClaimRead();
     mark_pending();
   }
 
   // Releases this future's hold on the call's read stream, if it is active.
   void ReleaseRead() {
     if (is_pendable()) {
-      receive_fut_ = {};
       call().ReleaseRead();
       reset_call();
     }
   }
-
-  async2::ReceiveFuture<ConstBuf> receive_fut_;
 };
 
 /// Non-templated base class for `ResponseFuture<Response>`.

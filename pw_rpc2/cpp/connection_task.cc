@@ -268,7 +268,7 @@ bool ConnectionTask::PendPacket(async2::Context& cx) {
   }
 
   // Stage 2: Dispatch stashed ingress packet.
-  progressed |= DispatchPendingIngressPacket(cx);
+  progressed |= DispatchPendingIngressPacket();
 
   // Stage 3: Read and dispatch incoming packet from transport.
   progressed |= ReadPacketFromConnection(cx);
@@ -315,13 +315,13 @@ bool ConnectionTask::ProcessOutgoingControlPackets(async2::Context& cx) {
   return true;
 }
 
-bool ConnectionTask::DispatchPendingIngressPacket(async2::Context& cx) {
+bool ConnectionTask::DispatchPendingIngressPacket() {
   if (pending_dispatch_packet_ == nullptr) {
     return false;
   }
   if (Call* call = FindCallById(pending_dispatch_packet_.call_id());
       call != nullptr) {
-    if (!DeliverToCall(*call, pending_dispatch_packet_, cx)) {
+    if (!DeliverToCall(*call, pending_dispatch_packet_)) {
       return false;
     }
   }
@@ -394,7 +394,7 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
       call->Complete(RpcStatus::ProtocolError());
       return true;
     }
-    if (!DeliverToCall(*call, packet, cx)) {
+    if (!DeliverToCall(*call, packet)) {
       pending_dispatch_packet_ = std::move(packet);
     }
     return true;
@@ -426,9 +426,7 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
   return true;
 }
 
-bool ConnectionTask::DeliverToCall(Call& call,
-                                   InboundPacket& packet,
-                                   async2::Context& cx) {
+bool ConnectionTask::DeliverToCall(Call& call, InboundPacket& packet) {
   const PacketType type = packet.type();
   PW_DASSERT(!type.is_start());
   const CloseMode close_mode = type.close_mode();
@@ -485,7 +483,7 @@ bool ConnectionTask::DeliverToCall(Call& call,
           "dropping",
           static_cast<unsigned>(packet.call_id()));
     } else {
-      if (!call.ReserveMessageSlot(cx)) {
+      if (!call.ReserveMessageSlot()) {
         return false;
       }
       call.OnMessage(std::move(packet).TakePayload());

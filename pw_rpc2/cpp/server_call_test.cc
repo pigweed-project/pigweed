@@ -42,24 +42,6 @@ ConstBuf MakeConstBuf(Allocator& alloc, std::string_view str) {
   return ConstBuf(std::move(buf));
 }
 
-// Acquires a slot in a call's ingress queue, as the connection task
-// does when it has a message to deliver.
-class ReserveSlotTask : public async2::Task {
- public:
-  explicit ReserveSlotTask(internal::Call& call) : call_(call) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    reserved_ = call_.ReserveMessageSlot(cx);
-    return async2::Ready();
-  }
-
-  bool reserved() const { return reserved_; }
-
- private:
-  internal::Call& call_;
-  bool reserved_ = false;
-};
-
 template <typename Fut>
 class WriteTestTask : public async2::Task {
  public:
@@ -316,11 +298,7 @@ TEST_F(ServerCallTest, ClientStreamingReadsRequestsThenFinishes) {
   auto responder = internal::CallAccess::Create<RawUnaryWriter>(call);
 
   // 1. Client pushes chunk 1 into server receiver
-  ReserveSlotTask reserve(*call);
-  dispatcher_.Post(reserve);
-  dispatcher_.RunUntilStalled();
-  reserve.Deregister();
-
+  ASSERT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(MakeConstBuf(allocator_, "chunk1"));
 
   ReadTestTask read_task(reader.Read());

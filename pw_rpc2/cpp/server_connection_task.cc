@@ -39,7 +39,7 @@ ConstBuf TakeInitialPayload(Call& call,
     return std::move(packet).TakePayload();
   }
   if (packet_type.has_payload()) {
-    call.DeliverFirstPayloadForStream(std::move(packet).TakePayload());
+    call.OnMessage(std::move(packet).TakePayload());
   }
   if (packet_type.close_mode() == CloseMode::kStreamEnd) {
     call.OnPeerStreamEnd();

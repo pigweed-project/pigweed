@@ -36,24 +36,6 @@ namespace {
 
 namespace flags = ::pw::rpc2::internal::flags;
 
-// Acquires a slot in a call's ingress queue, as the connection task
-// does when it has a message to deliver.
-class ReserveSlotTask : public async2::Task {
- public:
-  explicit ReserveSlotTask(Call& call) : call_(call) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    reserved_ = call_.ReserveMessageSlot(cx);
-    return async2::Ready();
-  }
-
-  bool reserved() const { return reserved_; }
-
- private:
-  Call& call_;
-  bool reserved_ = false;
-};
-
 TEST(ServerDispatchTest, DispatchesIncomingRequest) {
   allocator::test::AllocatorForTest<16384> allocator;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
@@ -121,15 +103,8 @@ TEST(ServerDispatchTest, CallRegistriesAreScopedToTheirConnectionTask) {
   // Only the call on that connection received it: its one-message queue is now
   // full, while the identically numbered call on the other connection is
   // untouched.
-  ReserveSlotTask reserve1(*call1);
-  ReserveSlotTask reserve2(*call2);
-  dispatcher.Post(reserve1);
-  dispatcher.Post(reserve2);
-  dispatcher.RunUntilStalled();
-  reserve1.Deregister();
-  reserve2.Deregister();
-  EXPECT_FALSE(reserve1.reserved());
-  EXPECT_TRUE(reserve2.reserved());
+  EXPECT_TRUE(call1->has_buffered_message());
+  EXPECT_FALSE(call2->has_buffered_message());
 }
 
 TEST(ServerDispatchTest, ConnectionSeveredEndsActiveCallsImmediately) {

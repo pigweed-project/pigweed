@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <new>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -23,9 +24,8 @@
 #include "pw_allocator/allocator.h"
 #include "pw_assert/assert.h"
 #include "pw_assert/check.h"
-#include "pw_async2/channel.h"
 #include "pw_async2/context.h"
-#include "pw_async2/future_or_value.h"
+#include "pw_async2/poll.h"
 #include "pw_async2/waker.h"
 #include "pw_buf/buf.h"
 #include "pw_containers/intrusive_forward_list.h"
@@ -49,21 +49,15 @@ class Call;
 
 /// State shared by the two ends of a single RPC invocation.
 ///
-/// A `Call` owns the ingress queue for one call ID, tracks whether each
-/// direction of the call is still open, and provides the egress reservation
-/// entry point used by `Writer` and `UnaryWriter`.
+/// A `Call` owns the single-slot ingress buffer for one call ID, tracks
+/// whether each direction of the call is still open, and provides the egress
+/// reservation entry point used by `Writer` and `UnaryWriter`.
 ///
 /// @note **Threading.** A `Call` belongs to its connection's dispatcher.
 /// Creating it, polling it, handing packets to it, and destroying it all
 /// happen on that dispatcher's thread, as does every operation on the public
 /// handles that wrap it. It holds no lock and needs none. See the threading
 /// contract in the `pw_rpc2` documentation.
-///
-/// @note **Size.** A `Call` is not small: it embeds an inline SPSC channel and
-/// its storage, an egress reservation future, and a transport connection
-/// handle, and one is allocated per in-flight RPC.
-/// TODO: hepler@ - Audit `sizeof(Call)` and shrink it. The reservation
-/// state is the most likely candidate for sharing across calls.
 ///
 /// @note **Ownership.** Every `Call` is intrusively reference-counted via
 /// `IntrusivePtr<Call>` and `Recyclable<Call>`, and every handle holds a
@@ -105,7 +99,7 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
   /// the RPC. Delivered as `QueueError`.
   void QueueFinish();
 
-  bool is_read_closed() const { return !sender_.is_open(); }
+  bool is_read_closed() const { return HasReadFlag<kIngressClosed>(); }
   bool is_write_closed() const { return HasWriteFlag<kClosed>(); }
 
   /// Closes the write side of the call.
@@ -118,12 +112,11 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
   /// queued remain readable.
   void CloseWrite();
   [[nodiscard]] bool is_closed() const {
-    return (!sender_.is_open() && is_write_closed()) || is_completed();
+    return (is_read_closed() && is_write_closed()) || is_completed();
   }
 
-  /// Closes the read side of the call (both sender and receiver), dropping any
-  /// buffered inbound message and waking the connection if it was waiting for a
-  /// receive slot.
+  /// Closes the read side of the call, dropping any buffered inbound message
+  /// and waking the connection if it was waiting for a receive slot.
   ///
   /// Cancels a client call that has not completed, since nothing will observe
   /// its outcome.
@@ -249,27 +242,30 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
     return RpcStatus::Disconnected();
   }
 
-  /// Acquires a slot in the call's ingress queue, in preparation for a call to
-  /// `OnMessage()`.
+  /// Reserves the call's single message slot for a following `OnMessage()`.
   ///
-  /// Returns true once a slot is held, or if the read side is closed, in which
-  /// case `OnMessage()` discards the payload instead of queuing it. Returns
-  /// false if the reader has not consumed the previous message yet; `cx` is
-  /// woken once it has, and the caller must ask again.
-  [[nodiscard]] bool ReserveMessageSlot(async2::Context& cx);
-
-  /// Delivers an ingress message payload to the call's SPSC queue.
-  /// Requires a successful `ReserveMessageSlot()`.
-  void OnMessage(ConstBuf payload);
-
-  /// Queues the message carried by the packet that started this call.
-  ///
-  /// A newly created call's queue is always empty, so unlike `OnMessage()`
-  /// this needs no prior `ReserveMessageSlot()`.
-  void DeliverFirstPayloadForStream(ConstBuf payload) {
-    const Status status = sender_.TrySend(std::move(payload));
-    PW_DASSERT(status.ok());
+  /// Returns true if the slot is empty, or if the read side is closed (in
+  /// which case `OnMessage()` discards the payload). Returns false if a
+  /// previously delivered message has not yet been consumed by the reader. In
+  /// that case, this registers the connection to be woken once the slot drains
+  /// or the read side closes, and the caller must ask again.
+  [[nodiscard]] bool ReserveMessageSlot() {
+    if (is_read_closed() || !HasReadFlag<kHasMessage>()) {
+      return true;
+    }
+    SetReadFlag<kSenderBlocked>();
+    return false;
   }
+
+  /// True if an inbound message is buffered and waiting for the reader.
+  bool has_buffered_message() const { return HasReadFlag<kHasMessage>(); }
+
+  /// Delivers an ingress message payload to the call's buffer, or discards it
+  /// if the read side is closed.
+  ///
+  /// @pre `ReserveMessageSlot()` returned true (a newly created call's slot is
+  /// always empty).
+  void OnMessage(ConstBuf payload);
 
   /// Handles the peer half-closing its outbound stream
   /// (`CloseMode::kStreamEnd`). The peer sends no more messages afterwards.
@@ -305,12 +301,17 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
   /// @pre The connection has already removed this call from its list.
   void ClearConnectionTask();
 
-  /// Claims this call's read stream and starts a receive on it.
+  /// Claims this call's read stream.
   ///
   /// `ReadFuture` is the call's only reader and holds the claim until the read
   /// resolves, so that a second concurrent read fails loudly instead of
   /// silently splitting the message stream between the two readers.
-  async2::ReceiveFuture<ConstBuf> ClaimRead();
+  void ClaimRead();
+
+  /// Polls for the next inbound message or end-of-stream status.
+  ///
+  /// @pre `ClaimRead()` has been called.
+  async2::Poll<RpcResult<ConstBuf>> PendRead(async2::Context& cx);
 
   /// Releases the claim taken by `ClaimRead()`.
   void ReleaseRead();
@@ -427,6 +428,20 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
     // active union member). False once detached (`allocator_` is the active
     // union member).
     kAttached = 1 << 4,
+
+    // `ConnectionTask::DeliverToCall()` tried to deliver a message while the
+    // call's single-slot buffer was full; wake `connection_task_` when the
+    // slot is drained or closed.
+    kSenderBlocked = 1 << 5,
+
+    // No more inbound messages may be queued for this call. Any message already
+    // buffered in `pending_message_` (`kHasMessage`) can still be drained
+    // unless `CloseRead()` discarded it.
+    kIngressClosed = 1 << 6,
+
+    // True when `pending_message_` (`ConstBuf`) is the active member of the
+    // ingress union; false when `read_waker_` (`async2::Waker`) is active.
+    kHasMessage = 1 << 7,
   };
 
   template <WriteFlag kFlag>
@@ -462,7 +477,28 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
   bool is_read_claimed() const { return HasReadFlag<kClaimed>(); }
   bool is_reader_dropped() const { return HasReadFlag<kReaderDropped>(); }
 
-  void InitChannel();
+  void StorePendingMessage(ConstBuf&& payload) {
+    std::move(read_waker_).Wake();
+    read_waker_.~Waker();
+    ::new (&pending_message_) ConstBuf(std::move(payload));
+    SetReadFlag<kHasMessage>();
+  }
+
+  ConstBuf TakePendingMessage() {
+    ConstBuf msg = std::move(pending_message_);
+    pending_message_.~ConstBuf();
+    ::new (&read_waker_) async2::Waker();
+    ClearReadFlag<kHasMessage>();
+    return msg;
+  }
+
+  void DiscardPendingMessage() {
+    if (HasReadFlag<kHasMessage>()) {
+      TakePendingMessage();
+    }
+  }
+
+  void CloseIngress();
   void QueueWriterDropPacket();
   void FlushDeferredWriterDrop();
 
@@ -486,18 +522,15 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
     Allocator* allocator_;
   };
 
-  // Inline SPSC channel storage.
-  async2::ChannelStorage<ConstBuf, 1> storage_;
-
-  // Ingress SPSC byte channel & read state.
-  async2::Sender<ConstBuf> sender_;
-  async2::Receiver<ConstBuf> receiver_;
-
-  // Slot in the ingress queue, acquired by `ReserveMessageSlot()` and consumed
-  // by `OnMessage()`. Empty whenever no packet is being delivered; it holds a
-  // pending reservation future only while the reader is behind, so that the
-  // connection task's wakeup survives until the queue drains.
-  async2::FutureOrValue<async2::ReserveSendFuture<ConstBuf>> send_state_;
+  // Single-slot ingress state. A reader only parks `read_waker_` when no
+  // message is buffered, and delivering a message immediately wakes and
+  // consumes `read_waker_`, so the two have disjoint lifetimes:
+  // - `!HasReadFlag<kHasMessage>()`: `read_waker_` is the active member.
+  // - `HasReadFlag<kHasMessage>()`: `pending_message_` is the active member.
+  union {
+    async2::Waker read_waker_;
+    ConstBuf pending_message_;
+  };
 };
 
 /// Client-side RPC call state.

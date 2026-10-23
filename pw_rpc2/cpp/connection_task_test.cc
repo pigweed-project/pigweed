@@ -44,28 +44,9 @@ namespace {
 
 namespace flags = ::pw::rpc2::internal::flags;
 
-// Acquires a slot in a call's ingress queue, as the connection task
-// does when it has a message to deliver.
-class ReserveSlotTask : public async2::Task {
- public:
-  explicit ReserveSlotTask(Call& call) : call_(call) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    reserved_ = call_.ReserveMessageSlot(cx);
-    return async2::Ready();
-  }
-
-  bool reserved() const { return reserved_; }
-
- private:
-  Call& call_;
-  bool reserved_ = false;
-};
-
 class ReadTestTask : public async2::Task {
  public:
-  explicit ReadTestTask(Call& call)
-      : receive_fut_(call.ClaimRead()), call_(call) {}
+  explicit ReadTestTask(Call& call) : call_(call) { call_.ClaimRead(); }
 
   ~ReadTestTask() override {
     if (!released_) {
@@ -74,19 +55,13 @@ class ReadTestTask : public async2::Task {
   }
 
   async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = receive_fut_.Pend(cx);
+    auto poll = call_.PendRead(cx);
     if (poll.IsPending()) {
       return async2::Pending();
     }
     call_.ReleaseRead();
     released_ = true;
-    if (poll->has_value()) {
-      result_ = std::move(**poll);
-    } else {
-      result_ = (call_.is_completed() && !call_.completion_status().ok())
-                    ? call_.completion_status()
-                    : RpcStatus::EndOfStream();
-    }
+    result_ = std::move(*poll);
     return async2::Ready();
   }
 
@@ -95,7 +70,6 @@ class ReadTestTask : public async2::Task {
   }
 
  private:
-  async2::ReceiveFuture<pw::ConstBuf> receive_fut_;
   Call& call_;
   bool released_ = false;
   std::optional<RpcResult<pw::ConstBuf>> result_;
@@ -266,15 +240,12 @@ TEST(ConnectionTaskTest, DemuxStreamingMessagesToActiveCallWithBackpressure) {
   task->Wake();
   dispatcher.RunUntilStalled();
 
-  // Message 1 is now in the SPSC channel, which holds one message, so nothing
+  // Message 1 is now in the call's buffer, which holds one message, so nothing
   // can be delivered until it is drained.
-  ReserveSlotTask reserve(*call);
-  dispatcher.Post(reserve);
-  dispatcher.RunUntilStalled();
-  reserve.Deregister();
-  EXPECT_FALSE(reserve.reserved());
+  EXPECT_TRUE(call->has_buffered_message());
 
-  // Step 2: Inject message 2
+  // Step 2: Inject message 2, which the connection task stashes because the
+  // call's buffer is full.
   std::byte msg2_data[2] = {std::byte{10}, std::byte{20}};
   auto pkt2 = PacketFramer::FrameServerMessagePacket(allocator, 42u, msg2_data);
   ASSERT_NE(pkt2, nullptr);
@@ -290,18 +261,66 @@ TEST(ConnectionTaskTest, DemuxStreamingMessagesToActiveCallWithBackpressure) {
   EXPECT_EQ(read_task1.result()->value().size(), 3u);
   read_task1.Deregister();
 
-  // Step 4: Wake task and allow DispatchPendingIngressPacket to deliver message
-  // 2
-  task->Wake();
-  dispatcher.RunUntilStalled();
+  // Draining the buffer wakes the connection task, which delivers the stashed
+  // message 2 without any other prompting.
+  EXPECT_TRUE(call->has_buffered_message());
 
-  // Step 5: Drain message 2
+  // Step 4: Drain message 2
   ReadTestTask read_task2(*call);
   dispatcher.Post(read_task2);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(read_task2.result().has_value() && read_task2.result()->ok());
   EXPECT_EQ(read_task2.result()->value().size(), 2u);
   read_task2.Deregister();
+
+  task->Deregister();
+}
+
+TEST(ConnectionTaskTest, ClosingReaderUnblocksStalledIngress) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+
+  auto task = dispatcher.Post<ClientConnectionTask>(
+      allocator, EstablishedConnection{conn}, allocator);
+  ASSERT_NE(task, nullptr);
+
+  auto blocked_call = ClientCall::Create(*task, 42u);
+  ASSERT_NE(blocked_call, nullptr);
+  auto other_call = ClientCall::Create(*task, 43u);
+  ASSERT_NE(other_call, nullptr);
+
+  // Fill the blocked call's buffer, then stash a second message for it, which
+  // stalls all ingress on the connection.
+  std::byte data[2] = {std::byte{1}, std::byte{2}};
+  auto pkt1 = PacketFramer::FrameServerMessagePacket(allocator, 42u, data);
+  ASSERT_NE(pkt1, nullptr);
+  raw_conn->SetNextRead(std::move(pkt1));
+  task->Wake();
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(blocked_call->has_buffered_message());
+
+  auto pkt2 = PacketFramer::FrameServerMessagePacket(allocator, 42u, data);
+  ASSERT_NE(pkt2, nullptr);
+  raw_conn->SetNextRead(std::move(pkt2));
+  task->Wake();
+  dispatcher.RunUntilStalled();
+
+  // A message for another call waits behind the stashed packet.
+  auto pkt3 = PacketFramer::FrameServerMessagePacket(allocator, 43u, data);
+  ASSERT_NE(pkt3, nullptr);
+  raw_conn->SetNextRead(std::move(pkt3));
+  dispatcher.RunUntilStalled();
+  EXPECT_FALSE(other_call->has_buffered_message());
+
+  // Dropping the blocked call's reader discards its messages and wakes the
+  // connection task, which drops the stashed packet and resumes reading, so
+  // the other call receives its message.
+  blocked_call->CloseReadOnReaderDestroy();
+  EXPECT_TRUE(blocked_call->is_read_closed());
+  EXPECT_FALSE(blocked_call->has_buffered_message());
+  dispatcher.RunUntilStalled();
+  EXPECT_TRUE(other_call->has_buffered_message());
 
   task->Deregister();
 }

@@ -204,8 +204,6 @@ pw_cc_enum_source_set("cpp") {
                   "$dir_pw_assert:assert",
                   "$dir_pw_assert:check",
                   "$dir_pw_async2:box",
-                  "$dir_pw_async2:channel",
-                  "$dir_pw_async2:future_or_value",
                   "$dir_pw_bytes:alignment",
                   "$dir_pw_containers:dynamic_deque",
                   "$dir_pw_containers:forward_list",

@@ -18,7 +18,7 @@
 #include <utility>
 
 #include "pw_assert/check.h"
-#include "pw_async2/await.h"
+#include "pw_async2/try.h"
 #include "pw_log/log.h"
 #include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/reader.h"
@@ -33,26 +33,9 @@ async2::Poll<RpcResult<ConstBuf>> ReadFutureBase::PendRaw(async2::Context& cx) {
              "dispatcher");
   }
 
-  PW_AWAIT(std::optional<ConstBuf> val, receive_fut_, cx);
-
-  // `receive_fut_` is only pendable if this future was created from a call,
-  // so the call is guaranteed to be non-null here.
-  RpcResult<ConstBuf> result = RpcStatus::EndOfStream();
-  if (val.has_value()) {
-    result = std::move(*val);
-  } else if (call().role() == EndpointRole::kServer &&
-             call().peer_ended_stream()) {
-    // A server's reader ends cleanly once the client half-closes its stream,
-    // whatever happens to the call afterwards. A client's reader ends with the
-    // RPC, since a server that half-closes still sends a terminal packet, so
-    // it reports the call's final status.
-    result = RpcStatus::EndOfStream();
-  } else if (call().is_completed() && !call().completion_status().ok()) {
-    result = call().completion_status();
-  }
-
-  // The read is no longer outstanding, so release the claim and call reference
-  // even if this future is kept alive by its owner.
+  PW_TRY_READY_ASSIGN(RpcResult<ConstBuf> result, call().PendRead(cx));
+  // The read is no longer outstanding, so let the next one start even if
+  // this future is kept alive by its owner.
   ReleaseRead();
   mark_complete();
   return async2::Ready(std::move(result));
@@ -74,19 +57,68 @@ void ReadFutureBase::PendAndDeserialize(async2::Context& cx,
 
 // Defined out of line so that the precondition can be checked with
 // `PW_DCHECK`, which carries a message but may not be used in a header.
-async2::ReceiveFuture<ConstBuf> Call::ClaimRead() {
+void Call::ClaimRead() {
   PW_DCHECK(!is_read_claimed(),
             "Only one read may be outstanding on an RPC call at a time");
   PW_DCHECK(!is_reader_dropped(),
             "Cannot read from a call after its reader has closed");
   SetReadFlag<kClaimed>();
-  return receiver_.Receive();
+}
+
+async2::Poll<RpcResult<ConstBuf>> Call::PendRead(async2::Context& cx) {
+  PW_DASSERT(is_read_claimed());
+  if (HasReadFlag<kHasMessage>()) {
+    ConstBuf msg = TakePendingMessage();
+    if (HasReadFlag<kSenderBlocked>()) {
+      ClearReadFlag<kSenderBlocked>();
+      if (is_attached()) {
+        connection_task_->Wake();
+      }
+    }
+    return async2::Ready(RpcResult<ConstBuf>(std::move(msg)));
+  }
+
+  if (HasReadFlag<kIngressClosed>()) {
+    // A server's reader ends cleanly once the client half-closes its stream,
+    // whatever happens to the call afterwards. A client's reader ends with the
+    // RPC, since a server that half-closes still sends a terminal packet, so
+    // it reports the call's final status.
+    if (role() == EndpointRole::kServer && peer_ended_stream()) {
+      return async2::Ready(RpcResult<ConstBuf>(RpcStatus::EndOfStream()));
+    }
+    if (is_completed() && !completion_status().ok()) {
+      return async2::Ready(RpcResult<ConstBuf>(completion_status()));
+    }
+    return async2::Ready(RpcResult<ConstBuf>(RpcStatus::EndOfStream()));
+  }
+
+  PW_ASYNC_STORE_WAKER(cx, read_waker_, "waiting for RPC message");
+  return async2::Pending();
 }
 
 void Call::ReleaseRead() {
   ClearReadFlag<kClaimed>();
+  if (!HasReadFlag<kHasMessage>()) {
+    read_waker_.Clear();
+  }
   if (is_reader_dropped()) {
     CloseRead();
+  }
+}
+
+void Call::CloseIngress() {
+  if (HasReadFlag<kIngressClosed>()) {
+    return;
+  }
+  SetReadFlag<kIngressClosed>();
+  if (!HasReadFlag<kHasMessage>()) {
+    std::move(read_waker_).Wake();
+  }
+  if (HasReadFlag<kSenderBlocked>()) {
+    ClearReadFlag<kSenderBlocked>();
+    if (is_attached()) {
+      connection_task_->Wake();
+    }
   }
 }
 
@@ -94,23 +126,17 @@ void Call::CloseWrite() {
   ClearWriteFlag<kTerminalWritePending>();
   SetWriteFlag<kClosed>();
   if (role() == EndpointRole::kServer) {
-    // Stop accepting messages, but leave the receiver connected so that the
-    // method can still drain any message that was already queued.
-    send_state_.Reset();
-    sender_.Disconnect();
+    // Stop accepting messages, but leave any already-buffered message intact
+    // so that the method can still drain it.
+    CloseIngress();
   }
   NotifyIfClosed();
 }
 
 void Call::CloseRead() {
   SetReadFlag<kReaderDropped>();
-  const bool was_open = sender_.is_open() || receiver_.is_open();
-  receiver_.Disconnect();
-  sender_.Disconnect();
-  send_state_.Reset();
-  if (was_open && is_attached()) {
-    connection_task_->Wake();
-  }
+  DiscardPendingMessage();
+  CloseIngress();
   if (role() == EndpointRole::kClient && !is_completed()) {
     // The client stopped reading before the RPC ended, so nothing will
     // observe its outcome. Cancel it rather than leaving the server to run it
@@ -142,34 +168,29 @@ void Call::NotifyIfClosed() {
 }
 
 Call::Call(ConnectionTask& connection_task, uint32_t call_id)
-    : call_id_(call_id), connection_task_(&connection_task) {
+    : call_id_(call_id), connection_task_(&connection_task), read_waker_() {
   if (connection_task.role() == EndpointRole::kServer) {
     SetWriteFlag<kServerCall>();
     SetWriteFlag<kStarted>();
   }
-  InitChannel();
-}
-
-void Call::InitChannel() {
-  auto [handle, sender, receiver] = async2::CreateSpscChannel(storage_);
-  sender_ = std::move(sender);
-  receiver_ = std::move(receiver);
-  if (connection_task_->is_closed()) {
+  if (connection_task.is_closed()) {
     completion_code_ =
-        static_cast<uint8_t>(connection_task_->close_status().code());
+        static_cast<uint8_t>(connection_task.close_status().code());
+    SetReadFlag<kIngressClosed>();
     SetWriteFlag<kClosed>();
     ClearConnectionTask();
-    sender_.Disconnect();
   } else {
-    connection_task_->RegisterCall(*this);
+    connection_task.RegisterCall(*this);
   }
 }
 
 Call::~Call() {
   DetachFromConnection();
-  sender_.Disconnect();
-  receiver_.Disconnect();
-  send_state_.Reset();
+  if (HasReadFlag<kHasMessage>()) {
+    pending_message_.~ConstBuf();
+  } else {
+    read_waker_.~Waker();
+  }
 }
 
 void Call::ClearConnectionTask() {
@@ -312,38 +333,13 @@ void Call::FinishInvocation() {
   FlushDeferredWriterDrop();
 }
 
-bool Call::ReserveMessageSlot(async2::Context& cx) {
-  if (!sender_.is_open()) {
-    // Trailing messages are discarded rather than queued, so no slot is
-    // needed and delivery never stalls on a closed reader.
-    return true;
-  }
-  if (send_state_.empty()) {
-    send_state_ = sender_.ReserveSend();
-  }
-  if (!send_state_.Advance(cx)) {
-    return false;
-  }
-  if (!send_state_->has_value()) {
-    // The reader disconnected while the slot was pending; drop the state so
-    // that this call discards the payload as any other closed reader would.
-    send_state_.Reset();
-    sender_.Disconnect();
-  }
-  return true;
-}
-
 void Call::OnMessage(ConstBuf payload) {
-  if (!sender_.is_open()) {
+  if (is_read_closed()) {
     PW_LOG_DEBUG("Call %u: received message after read stream closed, dropping",
                  static_cast<unsigned>(call_id_));
     return;
   }
-  PW_DCHECK(send_state_.has_value() && send_state_->has_value(),
-            "OnMessage called without an active SendReservation; call "
-            "ReserveMessageSlot() first");
-  auto reservation = send_state_.Take();
-  reservation->Commit(std::move(payload));
+  StorePendingMessage(std::move(payload));
 }
 
 void Call::OnPeerStreamEnd() {
@@ -356,8 +352,7 @@ void Call::OnPeerStreamEnd() {
     // allows it, so clients must handle it.
     return;
   }
-  send_state_.Reset();
-  sender_.Disconnect();
+  CloseIngress();
   NotifyIfClosed();
 }
 
@@ -372,8 +367,7 @@ void Call::Complete(RpcStatus status) {
   if (!is_completed()) {
     completion_code_ = static_cast<uint8_t>(status.code());
   }
-  send_state_.Reset();
-  sender_.Disconnect();
+  CloseIngress();
   CloseWrite();
 }
 

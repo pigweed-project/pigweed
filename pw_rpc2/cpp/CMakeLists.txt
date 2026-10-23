@@ -195,9 +195,7 @@ pw_add_enum_library(pw_rpc2.cpp
     pw_assert.check
     pw_async2
     pw_async2.box
-    pw_async2.channel
     ${_pw_rpc2_coro_deps}
-    pw_async2.future_or_value
     pw_buf
     pw_bytes
     pw_bytes.alignment
