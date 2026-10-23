@@ -91,5 +91,9 @@ set(pw_trace_tokenizer_time pw_trace_tokenized.host_trace_time CACHE STRING "Tok
 
 pw_set_backend(pw_malloc pw_malloc.best_fit)
 
-set(pw_build_WARNINGS pw_build.strict_warnings pw_build.extra_strict_warnings
-    CACHE STRING "" FORCE)
+set(pw_build_WARNINGS
+    pw_build.strict_warnings
+    pw_build.extra_strict_warnings
+    pw_build.internal_strict_warnings
+  CACHE STRING "" FORCE
+)

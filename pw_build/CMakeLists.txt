@@ -62,8 +62,20 @@ pw_add_library_generic(pw_build.reduced_size INTERFACE
 #
 #   set(pw_build_WARNINGS my_warnings CACHE STRING "" FORCE)
 #
-set(pw_build_WARNINGS pw_build.strict_warnings
-    CACHE STRING "Warnings libraries to use for Pigweed upstream code")
+# Zephyr builds use GNU extensions in headers (e.g. named variadic macros) that
+# conflict with -Wpedantic in pw_build.internal_strict_warnings, and do not
+# yet support -Wconversion.
+if(ZEPHYR_PIGWEED_MODULE_DIR OR CONFIG_ZEPHYR_PIGWEED_MODULE OR DEFINED Zephyr_FOUND)
+  set(pw_build_WARNINGS
+      pw_build.strict_warnings
+      CACHE STRING "Warnings libraries to use for Pigweed upstream code")
+else()
+  set(pw_build_WARNINGS
+      pw_build.strict_warnings
+      pw_build.extra_strict_warnings
+      pw_build.internal_strict_warnings
+      CACHE STRING "Warnings libraries to use for Pigweed upstream code")
+endif()
 
 pw_add_library_generic(pw_build.warnings INTERFACE
   PUBLIC_DEPS
@@ -122,6 +134,18 @@ pw_add_library_generic(pw_build.extra_strict_warnings INTERFACE
 # LINT.ThenChange(//pw_toolchain/cc/args/BUILD.bazel:extra_strict_warnings,//pw_toolchain/cc/args/BUILD.gn:extra_strict_warnings)
 
 # LINT.IfChange(internal_strict_warnings)
+pw_add_library_generic(pw_build.internal_strict_warnings INTERFACE
+  PUBLIC_DEPS
+    pw_build.pedantic_warnings
+  PUBLIC_COMPILE_OPTIONS
+    "-Wconversion"
+    "-Wswitch-enum"
+    $<$<COMPILE_LANGUAGE:CXX>:-Wextra-semi>
+    $<$<C_COMPILER_ID:Clang>:-Wextra-semi>
+    $<$<C_COMPILER_ID:Clang>:-Wshadow-all>
+    $<$<CXX_COMPILER_ID:Clang>:-Wshadow-all>
+)
+
 pw_add_library_generic(pw_build.pedantic_warnings INTERFACE
   PUBLIC_COMPILE_OPTIONS
     # Enable -Wpedantic, but disable a few warnings.
@@ -143,18 +167,21 @@ pw_add_library_generic(pw_build.pedantic_warnings INTERFACE
     $<$<CXX_COMPILER_ID:Clang>:-Wno-gnu-zero-variadic-macro-arguments>
 
     # TODO: b/333712899 - Enable C23 extension warnings.
-    "-Wno-c23-extensions"
+    $<$<C_COMPILER_ID:Clang>:-Wno-c23-extensions>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-c23-extensions>
 
     # TODO: b/335021928 - Enable C++ 20 extension warnings.
     $<$<COMPILE_LANGUAGE:CXX>:-Wno-c++20-extensions>
 
     # TODO: b/335328444 - Enable C++ 20 extension warnings.
-    "-Wno-deprecated-pragma"
+    $<$<C_COMPILER_ID:Clang>:-Wno-deprecated-pragma>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-pragma>
 
     # TODO: b/356904203 - Unblock Clang roll. Missing template argument
     # warning introduced by Clang produces warnings in third party code.
     # Remove this warning suppression after addressing the root cause.
-    "-Wno-missing-template-arg-list-after-template-kw"
+    $<$<C_COMPILER_ID:Clang>:-Wno-missing-template-arg-list-after-template-kw>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-missing-template-arg-list-after-template-kw>
 )
 # LINT.ThenChange(//pw_toolchain/cc/args/BUILD.bazel:internal_strict_warnings,//pw_build/BUILD.gn:internal_strict_warnings)
 

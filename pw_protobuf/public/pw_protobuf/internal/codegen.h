@@ -18,17 +18,10 @@
 #include <utility>
 
 #include "pw_function/function.h"
-#include "pw_preprocessor/compiler.h"
 #include "pw_protobuf/wire_format.h"
 #include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
-
-// TODO: b/259746255 - Remove this manual application of -Wconversion when all
-// of
-//     Pigweed builds with it.
-PW_MODIFY_DIAGNOSTICS_PUSH();
-PW_MODIFY_DIAGNOSTIC(error, "-Wconversion");
 
 namespace pw::protobuf {
 namespace internal {
@@ -382,5 +375,3 @@ constexpr bool IsTriviallyComparable() {
 }
 
 }  // namespace pw::protobuf
-
-PW_MODIFY_DIAGNOSTICS_POP();

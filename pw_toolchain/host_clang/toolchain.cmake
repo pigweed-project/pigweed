@@ -117,6 +117,6 @@ endforeach()
 set(pw_build_WARNINGS
     pw_build.strict_warnings
     pw_build.extra_strict_warnings
-    pw_build.pedantic_warnings
+    pw_build.internal_strict_warnings
   CACHE STRING "" FORCE
 )

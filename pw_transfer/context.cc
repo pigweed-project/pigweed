@@ -768,7 +768,7 @@ void Context::TransmitNextChunk(bool retransmit_requested) {
 
     chunk.set_payload(data.value());
     last_chunk_offset_ = offset_;
-    offset_ += data.value().size();
+    offset_ += static_cast<uint32_t>(data.value().size());
 
     if (total_size != std::numeric_limits<size_t>::max()) {
       chunk.set_remaining_bytes(total_size - offset_);
@@ -970,7 +970,7 @@ void Context::HandleReceivedData(const Chunk& chunk) {
   }
 
   // Update the transfer state.
-  offset_ += chunk.payload().size();
+  offset_ += static_cast<uint32_t>(chunk.payload().size());
 
   // When the client sets remaining_bytes to 0, it indicates completion of the
   // transfer. Acknowledge the completion through a status chunk and clean up.

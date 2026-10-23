@@ -225,7 +225,7 @@ describe a single JSON object, with the following fields:
   .. code-block::
 
      "defaults": {
-       "copts": [ "-Wconversion" ]
+       "copts": [ "-Werror" ]
      }
 
 * ``generate``: Optional boolean indicating whether to generate GN build files a

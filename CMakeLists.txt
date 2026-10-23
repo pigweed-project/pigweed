@@ -20,6 +20,11 @@ project(Pigweed)
 include(pw_build/pigweed.cmake)
 
 if(CONFIG_ZEPHYR_PIGWEED_MODULE)
+  # Zephyr builds do not yet support extra_strict_warnings or internal_strict_warnings.
+  set(pw_build_WARNINGS
+      pw_build.strict_warnings
+      CACHE STRING "Warnings libraries to use for Pigweed upstream code" FORCE)
+
   pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_ASSERT_ZEPHYR
       pw_assert.assert pw_assert_zephyr.assert pw_assert/backend.cmake)
   pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_ASSERT_ZEPHYR
