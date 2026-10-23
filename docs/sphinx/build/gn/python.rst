@@ -724,6 +724,18 @@ Each ``pyproject.toml`` file is required to specify which build system should be
 used for the given Python package. In Pigweed's case it always specifies using
 setuptools.
 
+Warning filters for Python tests (such as treating ``DeprecationWarning`` from
+a Pigweed module as an error) are configured in ``[tool.pytest.ini_options]`` in
+each package's ``pyproject.toml``:
+
+.. code-block:: toml
+
+   [tool.pytest.ini_options]
+   filterwarnings = [
+       'error::DeprecationWarning:package_name.*',
+       'error::DeprecationWarning:__main__',
+   ]
+
 .. seealso::
 
    - ``setup.cfg`` examples at `Configuring setup() using setup.cfg files`_

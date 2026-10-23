@@ -145,6 +145,34 @@ requires = ['setuptools', 'wheel']
 build-backend = 'setuptools.build_meta'
 '''
 
+
+def _generate_pyproject_toml(
+    pkg_data: dict[str, Set[str]],
+    keywords: dict[str, Any],
+) -> str:
+    """Generates pyproject.toml with module-scoped pytest warning filters."""
+    top_level_modules = sorted(
+        {pkg.split('.')[0] for pkg in pkg_data if pkg and pkg != '.'}
+    )
+    if not top_level_modules:
+        pkg_name = keywords.get('metadata', {}).get('name')
+        if pkg_name:
+            top_level_modules = [str(pkg_name)]
+
+    filter_lines = [
+        f"    'error::DeprecationWarning:{mod}.*'," for mod in top_level_modules
+    ]
+    filter_lines.append("    'error::DeprecationWarning:__main__',")
+    filters_block = '\n'.join(filter_lines)
+    return (
+        f'{PYPROJECT_FILE}\n'
+        '[tool.pytest.ini_options]\n'
+        'filterwarnings = [\n'
+        f'{filters_block}\n'
+        ']\n'
+    )
+
+
 # This __init__.py code uses pkgutil.extend_path to treat this Python module as
 # a namespaced package. This allows imports with the same name to live in
 # multiple separate PYTHONPATH locations.
@@ -281,7 +309,9 @@ def main(
             _import_module_in_package_init(files)
 
         # Create the pyproject.toml and setup.cfg files for this package.
-        generated_root.joinpath('pyproject.toml').write_text(PYPROJECT_FILE)
+        generated_root.joinpath('pyproject.toml').write_text(
+            _generate_pyproject_toml(pkg_data, setup_keywords)
+        )
         _generate_setup_cfg(
             pkg_data,
             setup_keywords,

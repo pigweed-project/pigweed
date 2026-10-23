@@ -16,3 +16,11 @@ the License.
 [build-system]
 requires = ['setuptools', 'wheel']
 build-backend = 'setuptools.build_meta'
+{% if module.is_upstream %}
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    'error::DeprecationWarning:{{ module.name.full }}.*',
+    'error::DeprecationWarning:__main__',
+]
+{% endif %}

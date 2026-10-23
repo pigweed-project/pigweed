@@ -14,7 +14,7 @@
 """Background command log parsing classes."""
 
 import abc
-from datetime import datetime
+from datetime import datetime, timezone
 import functools
 import json
 import logging
@@ -121,9 +121,13 @@ class FuchsiaJsonLogParser(BackgroundCommandLogParser):
 
             # Repopulate timestamp with UTC time.
             if self.boot_timestamp:
-                fields['timestamp'] = datetime.utcfromtimestamp(
-                    self.boot_timestamp + seconds_since_boot
-                ).isoformat(sep=' ')
+                fields['timestamp'] = (
+                    datetime.fromtimestamp(
+                        self.boot_timestamp + seconds_since_boot, timezone.utc
+                    )
+                    .replace(tzinfo=None)
+                    .isoformat(sep=' ')
+                )
 
         tag_list = _get_nested_value(
             log, 'data', 'TargetLog', 'metadata', 'tags', default=[]

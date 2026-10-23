@@ -43,6 +43,13 @@ declare_args() {
   # this information run: pw presubmit --step gn_python_test_coverage
   pw_build_PYTHON_TEST_COVERAGE = false
 
+  # If true, GN will run each pw_python_package test using pw_py_test_runner.py
+  # to apply [tool.pytest.ini_options].filterwarnings from the package's
+  # pyproject.toml, and pass --enable-error-code=deprecated to mypy. Defaults to
+  # false so downstream projects are not automatically opted into deprecation
+  # errors.
+  pw_build_PYTHON_TEST_DEPRECATION_WARNINGS = false
+
   # Output format for pylint. Options include "text" and "colorized".
   pw_build_PYLINT_OUTPUT_FORMAT = "colorized"
 
@@ -124,6 +131,10 @@ template("_pw_python_static_analysis_mypy") {
       args +=
           [ "--config-file=" + rebase_path(invoker.mypy_ini, root_build_dir) ]
       inputs = [ invoker.mypy_ini ]
+    }
+
+    if (pw_build_PYTHON_TEST_DEPRECATION_WARNINGS) {
+      args += [ "--enable-error-code=deprecated" ]
     }
 
     args += rebase_path(invoker.sources, root_build_dir)
@@ -770,6 +781,12 @@ template("pw_python_package") {
 
     if (current_toolchain == pw_build_PYTHON_TOOLCHAIN) {
       pw_python_action(_test_target) {
+        inputs = [ test ]
+        _pyproject_tomls = filter_include(_setup_sources, [ "*pyproject.toml" ])
+        _wrap_with_test_runner =
+            pw_build_PYTHON_TEST_DEPRECATION_WARNINGS && _pyproject_tomls != []
+        not_needed([ "_pyproject_tomls" ])
+
         if (pw_build_PYTHON_TEST_COVERAGE) {
           module = "coverage"
           working_directory =
@@ -781,10 +798,20 @@ template("pw_python_package") {
             # Include all source files in the working_directory when calculating
             # coverage.
             "--source=.",
-
-            # Test file to run.
-            get_path_info(test, "file"),
           ]
+          if (_wrap_with_test_runner) {
+            # Test file to run via warning-filter runner.
+            args += [
+              rebase_path("$dir_pw_build/py/pw_build/pw_py_test_runner.py",
+                          get_path_info(test, "dir")),
+              get_path_info(test, "file"),
+            ]
+            inputs += [ "$dir_pw_build/py/pw_build/pw_py_test_runner.py" ] +
+                      _pyproject_tomls
+          } else {
+            # Test file to run.
+            args += [ get_path_info(test, "file") ]
+          }
 
           # Set the coverage file to a location in out/python/gen/
           _coverage_data_file = "$target_gen_dir/$target_name.coverage"
@@ -795,6 +822,10 @@ template("pw_python_package") {
           environment =
               [ "COVERAGE_FILE=" +
                 rebase_path(_coverage_data_file, get_path_info(test, "dir")) ]
+        } else if (_wrap_with_test_runner) {
+          script = "$dir_pw_build/py/pw_build/pw_py_test_runner.py"
+          args = [ rebase_path(test, root_build_dir) ]
+          inputs += _pyproject_tomls
         } else {
           script = test
         }

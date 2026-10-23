@@ -19,6 +19,7 @@ load("@rules_python//python:defs.bzl", "py_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_py_importable_runfile.bzl", "pw_py_importable_runfile")
 load("//pw_build:pw_pylint.bzl", "PylintAspectForTestInfo", "is_rules_python_generated_source", "map_import_path_for_python_path", "pylint_aspect")
+load("//pw_build:python.bzl", "pw_py_test")
 
 def _is_rules_python_generated_source_test_impl(ctx):
     env = unittest.begin(ctx)
@@ -220,12 +221,39 @@ def pw_pylint_test_suite(name):
         visibility = ["//visibility:private"],
     )
 
+    pw_py_test(
+        name = name + "_py_test",
+        srcs = ["pw_pylint_test_example.py"],
+        main = "pw_pylint_test_example.py",
+        # This fake target isn't meant to be built normally, but it is built
+        # when running the test suite.
+        tags = ["manual"],
+        visibility = ["//visibility:private"],
+    )
+
+    pylint_aspect_test(
+        name = name + "_py_test_aspect_test",
+        target_under_test = ":" + name + "_py_test",
+        target_compatible_with = incompatible_with_mcu(),
+        # pw_py_test_runner.py injected into srcs by pw_py_test must be
+        # filtered out so it is not re-linted on every py_test target.
+        expected_sources = [
+            "pw_build/pw_pylint_test_example.py",
+        ],
+        expected_python_path = [
+            ".",
+            "$(BINDIR)",
+        ],
+        visibility = ["//visibility:private"],
+    )
+
     native.test_suite(
         name = name,
         tests = [
             ":" + name + "_is_rules_python_generated_source_test",
             ":" + name + "_map_import_path_for_python_path_test",
             ":" + name + "_aspect_test",
+            ":" + name + "_py_test_aspect_test",
         ],
         visibility = ["//visibility:private"],
     )

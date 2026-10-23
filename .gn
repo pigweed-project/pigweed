@@ -25,6 +25,9 @@ default_args = {
   # Don't allow a plain .options file extension for upstream pwpb code.
   pw_protobuf_compiler_NO_GENERIC_OPTIONS_FILES = true
 
+  # Enable Python deprecation errors in upstream package tests and mypy.
+  pw_build_PYTHON_TEST_DEPRECATION_WARNINGS = true
+
   pw_build_PIP_CONSTRAINTS =
       [ "//pw_env_setup/py/pw_env_setup/virtualenv_setup/constraint.list" ]
 

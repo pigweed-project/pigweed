@@ -20,8 +20,17 @@ import itertools
 import sys
 from pathlib import Path
 from typing import Iterator
+import warnings
 
-import pkg_resources
+# setuptools deprecates pkg_resources and emits a DeprecationWarning with
+# stacklevel=2 on import, attributing the warning to this module
+# (pw_env_setup.python_packages). Suppress the import warning so tests that
+# treat pw_* DeprecationWarnings as errors do not fail.
+# TODO: https://pwbug.dev/563000549 - Migrate from pkg_resources to
+# importlib.metadata and packaging.
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore', DeprecationWarning)
+    import pkg_resources
 
 
 def _installed_packages() -> Iterator[str]:

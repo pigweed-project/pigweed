@@ -58,6 +58,7 @@ pw_py_library(
         "pw_build/mirror_tree.py",
         "pw_build/nop.py",
         "pw_build/pip_install_python_deps.py",
+        "pw_build/pw_py_test_runner.py",
         "pw_build/python_package.py",
         "pw_build/python_runner.py",
         "pw_build/runfiles_manager.py",
@@ -80,6 +81,8 @@ pw_py_library(
         "@rules_python//python/runfiles",
     ],
 )
+
+exports_files(["pw_build/pw_py_test_runner.py"])
 
 pw_py_library(
     name = "copy_from_cipd",
@@ -530,6 +533,17 @@ pw_py_test(
     deps = [
         ":workflows",
         "//pw_build:build_driver_proto_py_pb2",
+    ],
+)
+
+pw_py_test(
+    name = "pw_py_test_runner_test",
+    size = "small",
+    srcs = [
+        "pw_py_test_runner_test.py",
+    ],
+    deps = [
+        ":pw_build",
     ],
 )
 

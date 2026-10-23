@@ -13,6 +13,8 @@
 # the License.
 """Tests for pw_console.log_file_loader."""
 
+import json
+import logging
 from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch, mock_open
@@ -22,6 +24,7 @@ from prompt_toolkit.application import create_app_session
 # inclusive-language: ignore
 from prompt_toolkit.output import DummyOutput as FakeOutput
 
+from pw_console.background_command_log_parsers import FuchsiaJsonLogParser
 from pw_console.log_file_loader import LogFileLoader
 
 
@@ -139,6 +142,41 @@ class TestLogFileLoader(unittest.TestCase):
 
         self.assertEqual(fls1.logger, fls2.logger)
         self.assertEqual(fls1.logger.name, 'pw_console.open_files')
+
+    def test_fuchsia_json_log_parser_utc_timestamp(self) -> None:
+        """Test FuchsiaJsonLogParser formats boot + monotonic timestamps."""
+        parser = FuchsiaJsonLogParser()
+        mock_logger = MagicMock()
+        line = json.dumps(
+            {
+                'data': {
+                    'TargetLog': {
+                        'metadata': {
+                            'severity': 'INFO',
+                            'timestamp': 2_000_000_000,
+                            'tags': ['bt'],
+                        },
+                        'payload': {
+                            'root': {
+                                'keys': {
+                                    'current_boot_timestamp': 1_000_000_000,
+                                },
+                                'message': {'value': 'boot complete'},
+                            },
+                        },
+                    },
+                },
+            }
+        )
+        parser.process_log(mock_logger, line)
+        mock_logger.log.assert_called_once()
+        args, kwargs = mock_logger.log.call_args
+        self.assertEqual(args[0], logging.INFO)
+        self.assertEqual(args[2], '1970-01-01 00:00:03')
+        self.assertEqual(
+            kwargs['extra']['extra_metadata_fields']['timestamp'],
+            '1970-01-01 00:00:03',
+        )
 
 
 if __name__ == '__main__':

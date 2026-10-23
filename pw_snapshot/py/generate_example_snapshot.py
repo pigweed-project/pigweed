@@ -35,7 +35,6 @@ def _add_threads(snapshot: snapshot_pb2.Snapshot) -> snapshot_pb2.Snapshot:
     # Build example interrupt handler thread.
     thread = thread_pb2.Thread()
     thread.name = 'Main Stack (Handler Mode)'.encode()
-    thread.active = True
     thread.stack_start_pointer = 0x2001B000
     thread.stack_pointer = 0x2001AE20
     thread.state = thread_pb2.ThreadState.Enum.INTERRUPT_HANDLER
