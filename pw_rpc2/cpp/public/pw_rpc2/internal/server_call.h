@@ -17,13 +17,10 @@
 #include <cstdint>
 #include <utility>
 
-#include "pw_allocator/allocator.h"
 #include "pw_async2/context.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
-#include "pw_bytes/alignment.h"
 #include "pw_intrusive_ptr/intrusive_ptr.h"
-#include "pw_intrusive_ptr/recyclable.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/method.h"
 #include "pw_rpc2/internal/method_future.h"
@@ -57,8 +54,6 @@ class ServerConnectionTask;
 class alignas(std::max_align_t) ServerCall final : public Call,
                                                    public async2::Task {
  public:
-  ~ServerCall() override;
-
   /// Calculates the total allocation size for `ServerCall` plus trailing
   /// storage.
   static constexpr size_t TotalAllocationSize(size_t future_size) {
@@ -78,9 +73,6 @@ class alignas(std::max_align_t) ServerCall final : public Call,
   static ServerCall* Allocate(ServerConnectionTask& connection_task,
                               uint32_t call_id,
                               const Method& method);
-
-  /// Returns the ID of the method this call was dispatched to.
-  uint32_t method_id() const { return method_->id(); }
 
   /// Emplaces a `MethodFutureImpl<Fut>` directly into `future_storage()` using
   /// `factory` (with C++17 guaranteed copy elision) and finishes the
@@ -115,23 +107,10 @@ class alignas(std::max_align_t) ServerCall final : public Call,
   ///
   /// @pre The caller must have already unlinked this call from its connection's
   /// `calls()` list, and must not call this from inside this call's `DoPend()`.
-  void Retire() {
-    // Move `connection_ref_` to the stack so the `ref` to `*this` is dropped
-    // at the end of the function.
-    IntrusivePtr<Call> ref = std::move(connection_ref_);
+  void Retire();
 
-    Deregister();
-    ClearUserFuture();
-    CloseWriteOnRetire();
-    ClearConnectionTask();
-  }
-
-  /// Reference to the `IntrusivePtr<Call>` keeping this call alive while
-  /// active.
-  ///
-  /// Passed by `const IntrusivePtr<Call>&` when constructing public handles so
-  /// no temporary `IntrusivePtr<Call>` is constructed on the caller's stack.
-  const IntrusivePtr<Call>& shared_call() const { return connection_ref_; }
+  /// Returns an `IntrusivePtr<Call>` referring to this call.
+  IntrusivePtr<Call> shared_call() { return IntrusivePtr<Call>(this); }
 
   /// True once this call is ready to be retired by its connection: either the
   /// user's method future has returned, or the call itself has closed.
@@ -148,14 +127,12 @@ class alignas(std::max_align_t) ServerCall final : public Call,
   /// Either way the call is retired by its connection's next poll, which is
   /// also what frees it; the connection cannot do that from inside this task's
   /// own poll.
-  bool is_retirable() const { return finished_ || is_closed(); }
+  bool is_retirable() const {
+    return HasWriteFlag<kServerFinished>() || is_closed();
+  }
 
  private:
-  /// `method` must outlive this call. Methods live in their service's method
-  /// table, which is `static constexpr`.
-  ServerCall(ServerConnectionTask& connection_task,
-             uint32_t call_id,
-             const Method& method);
+  ServerCall(ServerConnectionTask& connection_task, uint32_t call_id);
 
   /// Advances the user's method future, and asks the connection to retire this
   /// call once it is done with it.
@@ -168,14 +145,6 @@ class alignas(std::max_align_t) ServerCall final : public Call,
   ProtocolError CommitEmplacedFuture(BoxedMethodFuture&& future, bool is_coro);
 
   BoxedMethodFuture user_future_;
-  IntrusivePtr<Call> connection_ref_;
-
-  // The method this call was dispatched to. Carries the method ID and the
-  // size of the trailing future storage, so neither needs its own member. The
-  // storage is aligned to `std::max_align_t` by `ServerCall`'s own alignment.
-  const Method* method_;
-
-  bool finished_ = false;
 };
 
 }  // namespace pw::rpc2::internal

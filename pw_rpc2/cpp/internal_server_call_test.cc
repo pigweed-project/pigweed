@@ -36,10 +36,9 @@ namespace {
 
 namespace flags = ::pw::rpc2::internal::flags;
 
-// `ServerCall` keeps a pointer to the `Method` it was dispatched to, which
-// supplies the method ID and the size and alignment of the trailing future
-// storage. Real methods live in a service's static method table; these tests
-// build one-off descriptors instead.
+// `ServerCall` uses the `Method` descriptor at allocation time to size the
+// trailing future storage. Real methods live in a service's static method
+// table; these tests build one-off descriptors instead.
 constexpr ProtocolError NoInvoke(Service&, ServerCall&, ConstBuf&&) {
   return ProtocolError::kNone;
 }
@@ -183,14 +182,13 @@ TEST_F(ServerCallTest, SizingAndOffsetCalculations) {
   EXPECT_EQ(total, sizeof(ServerCall) + kFutureSize);
 }
 
-TEST_F(ServerCallTest, RecordsIdsAndPlacesFutureStorageAfterServerCall) {
+TEST_F(ServerCallTest, RecordsCallIdAndPlacesFutureStorageAfterServerCall) {
   constexpr size_t kFutureSize = 32;
 
   static constexpr Method kMethod = TestMethod(99, kFutureSize);
   ServerCall& call = AdoptCall(/*call_id=*/7, kMethod);
 
   EXPECT_EQ(call.call_id(), 7u);
-  EXPECT_EQ(call.method_id(), 99u);
 
   std::byte* storage = call.future_storage();
   EXPECT_EQ(storage, reinterpret_cast<std::byte*>(&call) + sizeof(ServerCall));

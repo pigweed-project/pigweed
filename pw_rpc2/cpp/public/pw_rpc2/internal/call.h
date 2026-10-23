@@ -356,6 +356,7 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
   template <typename U>
   friend class ::pw::IntrusivePtr;
   friend class Recyclable<Call>;
+  friend class ServerCall;
 
   static constexpr uint8_t kUncompleted = 0xff;
   static_assert(!IsValidEnum<RpcCode>(kUncompleted));
@@ -401,6 +402,9 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
     // The packet that starts this client call has been committed, so the
     // server knows about the call. Always set for a server call.
     kStarted = 1 << 6,
+
+    // The server call's method task has finished and is ready to be retired.
+    kServerFinished = 1 << 7,
   };
 
   enum ReadFlag : uint8_t {
