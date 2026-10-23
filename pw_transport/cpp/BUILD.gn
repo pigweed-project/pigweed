@@ -78,7 +78,7 @@ pw_test("transport_test") {
   deps = [
     ":socket",
     "$dir_pw_allocator:testing",
-    "$dir_pw_async2:dispatcher",
+    "$dir_pw_async2",
     "$dir_pw_async2:testing",
     "$dir_pw_bytes",
     "$dir_pw_sync:interrupt_spin_lock",

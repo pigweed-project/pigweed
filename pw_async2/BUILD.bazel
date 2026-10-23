@@ -27,12 +27,6 @@ package(
 
 licenses(["notice"])
 
-# TODO: b/481069684 - Remove deprecated alias.
-alias(
-    name = "poll",
-    actual = ":pw_async2",
-)
-
 pw_cc_test(
     name = "poll_test",
     srcs = ["poll_test.cc"],
@@ -116,12 +110,6 @@ cc_library(
         "//pw_chrono:system_clock",
         "//pw_thread:sleep",
     ],
-)
-
-# TODO: b/481069684 - Remove deprecated alias.
-alias(
-    name = "dispatcher",
-    actual = ":pw_async2",
 )
 
 cc_library(
@@ -445,12 +433,6 @@ pw_cc_test(
     ],
 )
 
-# TODO: b/481069684 - Remove deprecated alias.
-alias(
-    name = "func_task",
-    actual = ":pw_async2",
-)
-
 pw_cc_test(
     name = "func_task_test",
     srcs = ["func_task_test.cc"],
@@ -554,7 +536,6 @@ pw_cc_test(
     srcs = ["transform_test.cc"],
     deps = [
         ":channel",
-        ":poll",
         ":pw_async2",
         ":testing",
         ":transform",

@@ -455,7 +455,7 @@ pw_add_test(pw_rpc2.cpp.method_traits_test
   SOURCES
     method_traits_test.cc
   PRIVATE_DEPS
-    pw_async2.poll
+    pw_async2
     pw_buf
     pw_bytes
     pw_rpc2.cpp

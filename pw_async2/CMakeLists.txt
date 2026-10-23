@@ -26,12 +26,6 @@ pw_add_library(pw_async2.config INTERFACE
     ${pw_async2_CONFIG}
 )
 
-# TODO: b/481069684 - Remove deprecated alias.
-pw_add_library(pw_async2.poll INTERFACE
-  PUBLIC_DEPS
-    pw_async2
-)
-
 pw_add_test(pw_async2.poll_test
   SOURCES
     poll_test.cc
@@ -99,11 +93,6 @@ pw_add_library(pw_async2._yield INTERFACE
   PUBLIC_DEPS
     pw_chrono.system_clock
     pw_thread.sleep
-)
-
-pw_add_library(pw_async2.dispatcher INTERFACE
-  PUBLIC_DEPS
-    pw_async2
 )
 
 pw_add_library(pw_async2.testing STATIC
@@ -336,18 +325,6 @@ pw_add_test(pw_async2.transform_test
     pw_async2.transform
     pw_async2.value_future
 )
-
-# TODO: b/481069684 - Remove deprecated alias.
-pw_add_library(pw_async2.func_task INTERFACE
-  PUBLIC_DEPS
-    pw_async2
-)
-
-pw_add_library(pw_async2.pend_func_task INTERFACE
-  PUBLIC_DEPS
-    pw_async2
-)
-
 pw_add_test(pw_async2.func_task_test
   SOURCES
     func_task_test.cc

@@ -41,7 +41,7 @@ pw_add_test(pw_transport.cpp.transport_test
   PRIVATE_DEPS
     pw_transport.cpp.socket
     pw_allocator.testing
-    pw_async2.dispatcher
+    pw_async2
     pw_async2.testing
     pw_bytes
     pw_sync.interrupt_spin_lock

@@ -122,10 +122,6 @@ pw_source_set("yield") {
   visibility = [ ":*" ]
 }
 
-group("dispatcher") {
-  public_deps = [ ":pw_async2" ]
-}
-
 pw_source_set("internal") {
   public_configs = [ ":public_include_path" ]
   public = [
