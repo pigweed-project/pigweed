@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -76,6 +77,9 @@ func (t CommitTrailer) FirstLine() string {
 		if k, v, ok := splitKeyValueTrailer(t.rawFirstLine); ok && k == t.Key && v == t.Value {
 			return t.rawFirstLine
 		}
+	}
+	if t.Value == "" {
+		return t.Key + ":"
 	}
 	return t.Key + ": " + t.Value
 }
@@ -210,11 +214,11 @@ func parseParagraphTrailers(paragraph []string) ([]CommitTrailer, bool) {
 
 	for _, l := range paragraph {
 		trimmedRight := strings.TrimRight(l, "\r")
-		trimmed := strings.TrimSpace(trimmedRight)
 		switch {
 		case len(trailers) > 0 && (strings.HasPrefix(trimmedRight, " ") || strings.HasPrefix(trimmedRight, "\t")):
 			trailers[len(trailers)-1].Continuations = append(trailers[len(trailers)-1].Continuations, trimmedRight)
-		case trailerRegex.MatchString(trimmed):
+		case trailerRegex.MatchString(trimmedRight):
+			trimmed := strings.TrimSpace(trimmedRight)
 			k, v, _ := splitKeyValueTrailer(trimmed)
 			trailers = append(trailers, CommitTrailer{
 				Key:          k,
@@ -222,7 +226,8 @@ func parseParagraphTrailers(paragraph []string) ([]CommitTrailer, bool) {
 				rawFirstLine: trimmed,
 			})
 			sawKeyedTrailer = true
-		case cherryPickFooterRegex.MatchString(trimmed):
+		case cherryPickFooterRegex.MatchString(trimmedRight):
+			trimmed := strings.TrimSpace(trimmedRight)
 			trailers = append(trailers, CommitTrailer{
 				Value:           trimmed,
 				IsKeylessFooter: true,
@@ -281,25 +286,32 @@ func (m *CommitMessage) Format() string {
 	return strings.Join(out, "\n") + "\n"
 }
 
-// ExtractTrailers returns all trailer entries across all trailer paragraphs in
-// the commit message, with bug-style trailer values canonicalized and
+// ActiveFooterStart returns the index of the first paragraph in the trailing
+// contiguous run of trailer paragraphs (or len(m.Paragraphs) if none).
+func (m *CommitMessage) ActiveFooterStart() int {
+	start := len(m.Paragraphs)
+	for start > 0 && m.Paragraphs[start-1].IsTrailerBlock {
+		start--
+	}
+	return start
+}
+
+// ExtractTrailers returns all trailer entries in the trailing contiguous run of
+// trailer paragraphs, with bug-style trailer values canonicalized and
 // continuations folded into the trailer they belong to.
 func (m *CommitMessage) ExtractTrailers() []string {
 	return m.ExtractTrailersWithFormat("")
 }
 
-// ExtractTrailersWithFormat returns all trailer entries across all trailer
-// paragraphs in the commit message, canonicalizing bug-style trailer values
+// ExtractTrailersWithFormat returns all trailer entries in the trailing
+// contiguous run of trailer paragraphs, canonicalizing bug-style trailer values
 // according to trailerFormat (defaulting to "b/{id}" when empty).
 func (m *CommitMessage) ExtractTrailersWithFormat(trailerFormat string) []string {
 	if m == nil || len(m.Paragraphs) == 0 {
 		return nil
 	}
 	var trailers []string
-	for _, p := range m.Paragraphs {
-		if !p.IsTrailerBlock {
-			continue
-		}
+	for _, p := range m.Paragraphs[m.ActiveFooterStart():] {
 		for _, tr := range p.Trailers {
 			if tr.IsKeylessFooter {
 				trailers = append(trailers, tr.Format())
@@ -312,12 +324,13 @@ func (m *CommitMessage) ExtractTrailersWithFormat(trailerFormat string) []string
 }
 
 // UpsertTrailer sets trailerLine as the single trailer for its key:
-//   - If a trailer with the same key (case-insensitive) exists in a trailer
-//     paragraph, the first occurrence is replaced in place and any subsequent
-//     duplicate occurrences (along with their continuation lines) are removed.
-//   - If the key is absent, the trailer is appended to the last trailer
-//     paragraph, or a new trailer paragraph is created at the end of the
-//     message if none exists yet.
+//   - If a trailer with the same key (case-insensitive) exists in a trailing
+//     trailer paragraph, the first occurrence is replaced in place and any
+//     subsequent duplicate occurrences (along with their continuation lines)
+//     are removed.
+//   - If the key is absent, the trailer is appended to the last trailing
+//     trailer paragraph, or a new trailer paragraph is created at the end of
+//     the message if none exists yet.
 func (m *CommitMessage) UpsertTrailer(trailerLine string) error {
 	if m == nil {
 		return fmt.Errorf("internal error: CommitMessage is nil")
@@ -340,11 +353,8 @@ func (m *CommitMessage) UpsertTrailer(trailerLine string) error {
 	replaced := false
 	lastTrailerParaIdx := -1
 
-	for pIdx := range m.Paragraphs {
+	for pIdx := m.ActiveFooterStart(); pIdx < len(m.Paragraphs); pIdx++ {
 		p := &m.Paragraphs[pIdx]
-		if !p.IsTrailerBlock {
-			continue
-		}
 		lastTrailerParaIdx = pIdx
 		kept := make([]CommitTrailer, 0, len(p.Trailers))
 		for _, tr := range p.Trailers {
@@ -362,7 +372,17 @@ func (m *CommitMessage) UpsertTrailer(trailerLine string) error {
 
 	if !replaced {
 		if lastTrailerParaIdx >= 0 {
-			m.Paragraphs[lastTrailerParaIdx].Trailers = append(m.Paragraphs[lastTrailerParaIdx].Trailers, newTr)
+			p := &m.Paragraphs[lastTrailerParaIdx]
+			insertIdx := len(p.Trailers)
+			if _, _, _, isBug := parseBugTrailer(trailerLine); isBug {
+				for i, tr := range p.Trailers {
+					if !tr.IsKeylessFooter && strings.EqualFold(tr.Key, "Change-Id") {
+						insertIdx = i
+						break
+					}
+				}
+			}
+			p.Trailers = slices.Insert(p.Trailers, insertIdx, newTr)
 		} else {
 			m.Paragraphs = append(m.Paragraphs, CommitParagraph{
 				LeadingBlankLines: []string{""},
@@ -375,29 +395,141 @@ func (m *CommitMessage) UpsertTrailer(trailerLine string) error {
 	return nil
 }
 
-// NormalizeBugFooters rewrites bug and fix trailers across all trailer
-// paragraphs to match trailerFormat while leaving prose body paragraphs and
-// non-bug trailers untouched. Returns true if the message contains at least one
-// paragraph after the subject.
+// NormalizeBugFooters rewrites bug and fix trailers across trailing trailer
+// paragraphs to match trailerFormat, deduplicating redundant entries and
+// dropping stale "None" placeholders when a real issue is linked, while leaving
+// prose or indented body paragraphs and non-bug trailers untouched. Returns
+// true if the message contains at least one paragraph after the subject.
+//
+// Examples (with trailerFormat "Bug: b/{id}"):
+//
+//	Bug: 42, 99              -> Bug: b/99
+//	Fixed: 42                   Fixed: b/42
+//
+//	Fixes: b/11              -> Fixed: b/11
+//	Fixed: b/11
+//
+//	Bug: None                -> Fixed: b/42
+//	Fixed: b/42
 func (m *CommitMessage) NormalizeBugFooters(trailerFormat string) bool {
 	if m == nil || m.Subject == "" || len(m.Paragraphs) == 0 {
 		return false
 	}
-	for pIdx := range m.Paragraphs {
-		p := &m.Paragraphs[pIdx]
-		if !p.IsTrailerBlock {
-			continue
+
+	nonClosingKey := "Bug"
+	if trimmedFmt := strings.TrimSpace(trailerFormat); trimmedFmt != "" {
+		if kPart, _, hasColon := strings.Cut(trimmedFmt, ":"); hasColon && strings.TrimSpace(kPart) != "" {
+			nonClosingKey = strings.TrimSpace(kPart)
 		}
-		for tIdx := range p.Trailers {
-			tr := &p.Trailers[tIdx]
+	}
+
+	footerStart := m.ActiveFooterStart()
+
+	closedIDs := make(map[int64]bool)
+	hasRealIssue := false
+	for _, p := range m.Paragraphs[footerStart:] {
+		for _, tr := range p.Trailers {
 			if tr.IsKeylessFooter {
 				continue
 			}
-			first := tr.FirstLine()
-			if _, _, _, ok := parseBugTrailer(first); ok {
-				tr.SetFirstLine(NormalizeTrailerWithFormat(first, trailerFormat))
+			_, val, closes, isBug := parseBugTrailer(tr.FirstLine())
+			if !isBug {
+				continue
+			}
+			trimmedVal := strings.TrimSpace(val)
+			if !strings.EqualFold(trimmedVal, "none") {
+				hasRealIssue = true
+			}
+			if closes {
+				for _, tok := range bugChainSeparatorRegex.Split(trimmedVal, -1) {
+					if id, err := ParseIssueID(strings.TrimSpace(tok)); err == nil {
+						closedIDs[id] = true
+					}
+				}
 			}
 		}
 	}
+
+	seenClosed := make(map[int64]bool)
+	seenOpen := make(map[int64]bool)
+	seenNone := false
+
+	keptParas := make([]CommitParagraph, 0, len(m.Paragraphs))
+	keptParas = append(keptParas, m.Paragraphs[:footerStart]...)
+	for _, p := range m.Paragraphs[footerStart:] {
+		keptTrailers := make([]CommitTrailer, 0, len(p.Trailers))
+		for _, tr := range p.Trailers {
+			if tr.IsKeylessFooter {
+				keptTrailers = append(keptTrailers, tr)
+				continue
+			}
+			first := tr.FirstLine()
+			_, val, closes, isBug := parseBugTrailer(first)
+			if !isBug {
+				keptTrailers = append(keptTrailers, tr)
+				continue
+			}
+			trimmedVal := strings.TrimSpace(val)
+			if strings.EqualFold(trimmedVal, "none") {
+				if hasRealIssue || seenNone {
+					continue
+				}
+				seenNone = true
+				tr.SetFirstLine(NormalizeTrailerWithFormat(first, trailerFormat))
+				keptTrailers = append(keptTrailers, tr)
+				continue
+			}
+
+			var parsedIDs []int64
+			allParsed := true
+			for _, tok := range bugChainSeparatorRegex.Split(trimmedVal, -1) {
+				tok = strings.TrimSpace(tok)
+				if tok == "" {
+					continue
+				}
+				id, err := ParseIssueID(tok)
+				if err != nil {
+					allParsed = false
+					break
+				}
+				parsedIDs = append(parsedIDs, id)
+			}
+			if !allParsed || len(parsedIDs) == 0 {
+				tr.SetFirstLine(NormalizeTrailerWithFormat(first, trailerFormat))
+				keptTrailers = append(keptTrailers, tr)
+				continue
+			}
+
+			var keptTokens []string
+			for _, id := range parsedIDs {
+				if closes {
+					if seenClosed[id] {
+						continue
+					}
+					seenClosed[id] = true
+				} else {
+					if closedIDs[id] || seenOpen[id] {
+						continue
+					}
+					seenOpen[id] = true
+				}
+				keptTokens = append(keptTokens, FormatBugIDWithFormat(id, trailerFormat))
+			}
+			if len(keptTokens) == 0 {
+				continue
+			}
+			outKey := nonClosingKey
+			if closes {
+				outKey = "Fixed"
+			}
+			tr.SetFirstLine(outKey + ": " + strings.Join(keptTokens, ", "))
+			keptTrailers = append(keptTrailers, tr)
+		}
+		if len(keptTrailers) > 0 {
+			p.Trailers = keptTrailers
+			keptParas = append(keptParas, p)
+		}
+	}
+	m.Paragraphs = keptParas
 	return true
 }

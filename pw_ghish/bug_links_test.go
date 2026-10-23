@@ -110,9 +110,14 @@ func TestExtractBugLinks(t *testing.T) {
 			want: []BugLink{},
 		},
 		{
-			name: "trailers in an earlier paragraph still count",
-			msg:  "pw_foo: Add bar\n\nBug: b/123456\n\nSome trailing prose.\n\nChange-Id: I1234\n",
+			name: "trailers in an earlier trailing footer paragraph still count",
+			msg:  "pw_foo: Add bar\n\nSome prose.\n\nBug: b/123456\n\nChange-Id: I1234\n",
 			want: []BugLink{{ID: "b/123456", Closes: false}},
+		},
+		{
+			name: "a bug line above trailing prose is body text, not an active footer",
+			msg:  "pw_foo: Add bar\n\nBug: b/123456\n\nSome trailing prose.\n\nChange-Id: I1234\n",
+			want: []BugLink{},
 		},
 		{
 			name: "continuation lines do not become links",

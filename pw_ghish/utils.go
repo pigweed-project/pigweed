@@ -60,7 +60,7 @@ func readBoundedLog(r io.Reader, limit int64) ([]byte, error) {
 var (
 	changeIDRegex        = regexp.MustCompile(`(?m)^Change-Id:\s+I[0-9a-fA-F]{40}\s*$`)
 	changeIDCaptureRegex = regexp.MustCompile(`(?m)^Change-Id:\s+(I[0-9a-fA-F]{40})\s*$`)
-	trailerRegex         = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*:\s+.*$`)
+	trailerRegex         = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*:(?:\s.*)?$`)
 
 	// gerritURLPlusRegex matches URLs containing /+/ followed by changeID (number or Change-Id) and optional patchset.
 	// e.g. https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267/3
@@ -266,17 +266,28 @@ func MergeTrailers(newBody string, origTrailers []string) string {
 func MergeTrailersWithFormat(newBody string, origTrailers []string, trailerFormat string) string {
 	newBodyTrimmed := strings.TrimRight(newBody, "\r\n")
 
-	// Canonicalize bug values on trailer lines the caller supplied. Note the
-	// match is against l, not strings.TrimSpace(l): an indented line is
-	// content, not a trailer.
-	if newBodyTrimmed != "" {
-		lines := strings.Split(newBodyTrimmed, "\n")
-		for i, l := range lines {
-			if trailerRegex.MatchString(l) {
-				lines[i] = normalizeTrailerValueWithFormat(l, trailerFormat)
+	// Parse newBody as commit body paragraphs so only trailing trailer blocks
+	// (never earlier examples before prose, multi-line prose wrapping onto
+	// `Bug:`/`Change-Id:`, or indented code samples) are normalized or counted as
+	// defining trailer keys.
+	parsedNew := ParseCommitMessage("subject\n\n" + newBodyTrimmed)
+	existingKeys := make(map[string]bool)
+	for pIdx := parsedNew.ActiveFooterStart(); pIdx < len(parsedNew.Paragraphs); pIdx++ {
+		p := &parsedNew.Paragraphs[pIdx]
+		for tIdx := range p.Trailers {
+			tr := &p.Trailers[tIdx]
+			if tr.IsKeylessFooter {
+				continue
 			}
+			existingKeys[strings.ToLower(tr.Key)] = true
+			tr.SetFirstLine(normalizeTrailerValueWithFormat(tr.FirstLine(), trailerFormat))
 		}
-		newBodyTrimmed = strings.Join(lines, "\n")
+	}
+	if len(parsedNew.Paragraphs) == 0 {
+		newBodyTrimmed = ""
+	} else {
+		rebuilt := strings.TrimPrefix(parsedNew.Format(), "subject\n\n")
+		newBodyTrimmed = strings.TrimRight(rebuilt, "\r\n")
 	}
 
 	var toAppend []string
@@ -292,8 +303,7 @@ func MergeTrailersWithFormat(newBody string, origTrailers []string, trailerForma
 			}
 			continue
 		}
-		pattern := `(?mi)^` + regexp.QuoteMeta(key) + `:\s*`
-		if matched, _ := regexp.MatchString(pattern, newBodyTrimmed); !matched {
+		if !existingKeys[strings.ToLower(key)] {
 			toAppend = append(toAppend, tr)
 		}
 	}
@@ -306,9 +316,7 @@ func MergeTrailersWithFormat(newBody string, origTrailers []string, trailerForma
 		return strings.Join(toAppend, "\n") + "\n"
 	}
 
-	lines := strings.Split(newBodyTrimmed, "\n")
-	lastLine := strings.TrimSpace(lines[len(lines)-1])
-	if trailerRegex.MatchString(lastLine) {
+	if n := len(parsedNew.Paragraphs); n > 0 && parsedNew.Paragraphs[n-1].IsTrailerBlock {
 		return newBodyTrimmed + "\n" + strings.Join(toAppend, "\n") + "\n"
 	}
 
@@ -509,6 +517,46 @@ func ParseChangeAndRevision(arg string) (changeID string, revision string) {
 	return t.ChangeID, t.Revision
 }
 
+var validChangeIDValueRegex = regexp.MustCompile(`^I[0-9a-fA-F]{40}$`)
+
+// ValidateChangeIDFooters inspects trailing trailer paragraphs of commitMsg
+// and returns an error if any Change-Id trailer value is malformed (not "I"
+// followed by 40 hex digits). Earlier paragraphs followed by prose are ignored
+// so commit messages discussing example `Change-Id:` lines are not rejected.
+func ValidateChangeIDFooters(commitMsg string, sourceLabel string) error {
+	label := strings.TrimSpace(sourceLabel)
+	if label == "" {
+		label = "commit message"
+	}
+	msg := ParseCommitMessage(commitMsg)
+	for _, p := range msg.Paragraphs[msg.ActiveFooterStart():] {
+		for _, tr := range p.Trailers {
+			if tr.IsKeylessFooter || !strings.EqualFold(tr.Key, "Change-Id") {
+				continue
+			}
+			val := strings.TrimSpace(tr.Value)
+			if len(tr.Continuations) > 0 || !validChangeIDValueRegex.MatchString(val) {
+				if label == "commit message" || label == "HEAD commit message" {
+					return fmt.Errorf(
+						"malformed Gerrit Change-Id trailer %q in %s: expected \"I\" followed by 40 hex digits.\n\n"+
+							"Why: Gerrit requires every Change-Id footer to match `Change-Id: I<40-hex-digits>`.\n"+
+							"Remove the malformed Change-Id line and re-run the Gerrit commit-msg hook via:\n"+
+							"  git commit --amend --only",
+						tr.Format(), label,
+					)
+				}
+				return fmt.Errorf(
+					"malformed Gerrit Change-Id trailer %q in %s: expected \"I\" followed by 40 hex digits.\n\n"+
+						"Why: Gerrit requires every Change-Id footer to match `Change-Id: I<40-hex-digits>`.\n"+
+						"Fix or remove the malformed `Change-Id:` line in %s (omit `Change-Id:` to preserve an existing footer or generate one automatically).",
+					tr.Format(), label, label,
+				)
+			}
+		}
+	}
+	return nil
+}
+
 // HasChangeID returns true if the commit message contains a valid Gerrit Change-Id footer.
 func HasChangeID(commitMsg string) bool {
 	return changeIDRegex.MatchString(commitMsg)
@@ -525,6 +573,10 @@ func EnsureChangeID(ctx context.Context, cfg *Config, stdout, stderr io.Writer) 
 	commitMsg, err := git.HeadCommitMessage(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get HEAD commit message: %w", err)
+	}
+
+	if err := ValidateChangeIDFooters(commitMsg, "HEAD commit message"); err != nil {
+		return err
 	}
 
 	if commitMsg != "" && HasChangeID(commitMsg) {

@@ -1329,6 +1329,31 @@ func TestMergeTrailers(t *testing.T) {
 			t.Errorf("expected the footer line exactly once, got %d:\n%s", n, got)
 		}
 	})
+
+	t.Run("appends missing trailers to whitespace-only body", func(t *testing.T) {
+		got := MergeTrailers("   \n", origTrailers)
+		want := "Bug: b/123456\nChange-Id: I1234567890abcdef1234567890abcdef12345678\n"
+		if got != want {
+			t.Errorf("MergeTrailers got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("preserves prose wrapping onto Bug or Change-Id without dropping trailers", func(t *testing.T) {
+		body := "Explain why commit messages keep\nBug: 12345 and\nChange-Id: footers intact."
+		got := MergeTrailers(body, origTrailers)
+		want := body + "\n\nBug: b/123456\nChange-Id: I1234567890abcdef1234567890abcdef12345678\n"
+		if got != want {
+			t.Errorf("MergeTrailers\n got: %q\nwant: %q", got, want)
+		}
+	})
+
+	t.Run("preserves real Change-Id when body has example Change-Id followed by prose", func(t *testing.T) {
+		got := MergeTrailers("Change-Id: I12345\n\nShort IDs are rejected.", origTrailers)
+		want := "Change-Id: I12345\n\nShort IDs are rejected.\n\nBug: b/123456\nChange-Id: I1234567890abcdef1234567890abcdef12345678\n"
+		if got != want {
+			t.Errorf("MergeTrailers\n got: %q\nwant: %q", got, want)
+		}
+	})
 }
 
 func TestUpsertTrailer(t *testing.T) {
@@ -1347,10 +1372,16 @@ func TestUpsertTrailer(t *testing.T) {
 			want:    "s: t\n\nBody.\n\nBug: b/2\n" + cid + "\n",
 		},
 		{
-			name:    "appends to the existing trailer block when the key is absent",
+			name:    "inserts bug trailer above Change-Id when the key is absent",
 			msg:     "s: t\n\nBody.\n\n" + cid + "\n",
 			trailer: "Bug: b/2",
-			want:    "s: t\n\nBody.\n\n" + cid + "\nBug: b/2\n",
+			want:    "s: t\n\nBody.\n\nBug: b/2\n" + cid + "\n",
+		},
+		{
+			name:    "appends non-bug trailer to the existing trailer block when the key is absent",
+			msg:     "s: t\n\nBody.\n\n" + cid + "\n",
+			trailer: "Reviewed-by: A <a@e.com>",
+			want:    "s: t\n\nBody.\n\n" + cid + "\nReviewed-by: A <a@e.com>\n",
 		},
 		{
 			name:    "starts a trailer block when the message has none",
@@ -1395,7 +1426,7 @@ func TestUpsertTrailer(t *testing.T) {
 			name:    "leaves a lookalike line in a prose paragraph alone",
 			msg:     "s: t\n\nBug: this paragraph is prose\nbecause it has a second line.\n\n" + cid + "\n",
 			trailer: "Bug: b/2",
-			want:    "s: t\n\nBug: this paragraph is prose\nbecause it has a second line.\n\n" + cid + "\nBug: b/2\n",
+			want:    "s: t\n\nBug: this paragraph is prose\nbecause it has a second line.\n\nBug: b/2\n" + cid + "\n",
 		},
 		{
 			name:    "other trailers are untouched",
@@ -1564,4 +1595,66 @@ func TestFindChangeIDInCommitRange(t *testing.T) {
 			t.Errorf("got %q, want empty string", got)
 		}
 	})
+}
+
+func TestValidateChangeIDFooters_And_EnsureChangeID(t *testing.T) {
+	for _, valid := range []string{
+		"pw_foo: Clean subject\n\nChange-Id: I1111111111111111111111111111111111111111\n",
+		"pw_foo: Indented example\n\n  Change-Id: I12345\n\nChange-Id: I1111111111111111111111111111111111111111\n",
+		"pw_foo: Prose after example\n\nChange-Id: I12345\n\nShort IDs are rejected.\n\nChange-Id: I1111111111111111111111111111111111111111\n",
+		"pw_foo: URL and colon token\n\nhttps://example.com/path\n\nfoo:bar\n",
+	} {
+		if err := ValidateChangeIDFooters(valid, ""); err != nil {
+			t.Fatalf("expected commit message %q to pass, got: %v", valid, err)
+		}
+	}
+
+	if got := ExtractTrailers("pw_foo: URL and colon token\n\nhttps://example.com/path\n\nfoo:bar\n"); got != nil {
+		t.Fatalf("expected URLs and colon tokens without space not to match as trailers, got: %#v", got)
+	}
+
+	gotSibling := ExtractTrailers("pw_foo: Sibling\n\nBug: 123\nChange-Id:\n")
+	wantSibling := []string{"Bug: b/123", "Change-Id:"}
+	if !reflect.DeepEqual(gotSibling, wantSibling) {
+		t.Fatalf("ExtractTrailers() = %#v, want %#v", gotSibling, wantSibling)
+	}
+
+	for _, bad := range []string{
+		"pw_foo: Hand-rolled Change-Id\n\nChange-Id: I12345\n",
+		"pw_foo: Missing leading I\n\nChange-Id: 1111111111111111111111111111111111111111\n",
+		"pw_foo: Bare Change-Id\n\nChange-Id:\n",
+		"pw_foo: Trailing-space Change-Id\n\nChange-Id: \n",
+		"pw_foo: Sibling bug + bare Change-Id\n\nBug: b/123\nChange-Id:\n",
+	} {
+		err := ValidateChangeIDFooters(bad, "")
+		if err == nil || !strings.Contains(err.Error(), "malformed Gerrit Change-Id trailer") || !strings.Contains(err.Error(), "git commit --amend --only") {
+			t.Fatalf("expected malformed Change-Id error with amend hint for %q, got: %v", bad, err)
+		}
+	}
+
+	for _, source := range []string{"--body", "--body-file"} {
+		err := ValidateChangeIDFooters("subject\n\nChange-Id: I12345\n", source)
+		wantPrefix := fmt.Sprintf(`malformed Gerrit Change-Id trailer "Change-Id: I12345" in %s: expected "I" followed by 40 hex digits`, source)
+		if err == nil || !strings.Contains(err.Error(), wantPrefix) {
+			t.Fatalf("expected %q in error for %s, got: %v", wantPrefix, source, err)
+		}
+		if strings.Contains(err.Error(), "git commit --amend --only") {
+			t.Fatalf("expected no git commit --amend --only hint for %s, got: %v", source, err)
+		}
+	}
+
+	mockGit := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			if strings.Join(args, " ") == "log -1 --format=%B" {
+				stdout.Write([]byte("pw_foo: Hand-rolled Change-Id\n\nChange-Id: I12345\n"))
+				return nil
+			}
+			t.Fatalf("EnsureChangeID invoked unexpected git command %v when Change-Id is malformed", args)
+			return nil
+		},
+	}
+	err := EnsureChangeID(t.Context(), &Config{Git: mockGit}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), `in HEAD commit message: expected "I" followed by 40 hex digits`) || !strings.Contains(err.Error(), "git commit --amend --only") {
+		t.Fatalf("EnsureChangeID expected malformed Change-Id error for HEAD commit message, got: %v", err)
+	}
 }

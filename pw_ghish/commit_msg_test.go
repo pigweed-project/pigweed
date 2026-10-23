@@ -60,6 +60,15 @@ func TestCommitMessage_ParseAndRoundTripFormat(t *testing.T) {
 			raw:  "pw_foo: Add bar\r\n\r\nBody.\r\n\r\nBug: b/12345\r\n" + cid + "\r\n",
 			want: "pw_foo: Add bar\n\nBody.\n\nBug: b/12345\n" + cid + "\n",
 		},
+		{
+			name: "preserves standalone two-space indented trailer examples",
+			raw: "pw_foo: Document trailer format\n\nExample trailers:\n\n" +
+				"  Bug: b/<id>\n  Fixed: b/<id>\n\n" +
+				"  Change-Id: <id>\n\nBug: b/12345\n" + cid + "\n",
+			want: "pw_foo: Document trailer format\n\nExample trailers:\n\n" +
+				"  Bug: b/<id>\n  Fixed: b/<id>\n\n" +
+				"  Change-Id: <id>\n\nBug: b/12345\n" + cid + "\n",
+		},
 	}
 
 	for _, tc := range tests {
@@ -163,5 +172,115 @@ func TestExtractAndMergeTrailersWithFormat(t *testing.T) {
 		if !strings.Contains(merged, want) {
 			t.Errorf("MergeTrailersWithFormat() missing %q in:\n%s", want, merged)
 		}
+	}
+}
+
+func TestCommitMessage_UpsertAndNormalizeBugFooters(t *testing.T) {
+	tests := []struct {
+		name        string
+		orig        string
+		upsertLine  string
+		trailerFmt  string
+		wantMessage string
+	}{
+		{
+			name:        "Bug upgraded to Fixed stays above Change-Id",
+			orig:        "pw_foo: Fix crash\n\nBug: b/42\nChange-Id: I1111111111111111111111111111111111111111\n",
+			upsertLine:  "Fixed: b/42",
+			trailerFmt:  "Bug: b/{id}",
+			wantMessage: "pw_foo: Fix crash\n\nFixed: b/42\nChange-Id: I1111111111111111111111111111111111111111\n",
+		},
+		{
+			name:        "Bug None replaced by Fixed stays above Change-Id",
+			orig:        "pw_foo: Fix crash\n\nBug: None\nChange-Id: I1111111111111111111111111111111111111111\n",
+			upsertLine:  "Fixed: b/42",
+			trailerFmt:  "Bug: b/{id}",
+			wantMessage: "pw_foo: Fix crash\n\nFixed: b/42\nChange-Id: I1111111111111111111111111111111111111111\n",
+		},
+		{
+			name:        "partial overlap rewrites multi-ID Bug line and keeps Fixed above Change-Id",
+			orig:        "pw_foo: Fix crash\n\nBug: b/42, b/99\nChange-Id: I1111111111111111111111111111111111111111\n",
+			upsertLine:  "Fixed: b/42",
+			trailerFmt:  "Bug: b/{id}",
+			wantMessage: "pw_foo: Fix crash\n\nBug: b/99\nFixed: b/42\nChange-Id: I1111111111111111111111111111111111111111\n",
+		},
+		{
+			name:        "distinct closing bugs Fixes b/11 plus Fixed b/22 preserves both above Change-Id",
+			orig:        "pw_foo: Fix two crashes\n\nFixes: b/11\nChange-Id: I1111111111111111111111111111111111111111\n",
+			upsertLine:  "Fixed: b/22",
+			trailerFmt:  "Bug: b/{id}",
+			wantMessage: "pw_foo: Fix two crashes\n\nFixed: b/11\nFixed: b/22\nChange-Id: I1111111111111111111111111111111111111111\n",
+		},
+		{
+			name:        "respects custom fxbug.dev trailer format",
+			orig:        "zircon: Fix timer\n\nBug: fxbug.dev/42, fxbug.dev/99\nChange-Id: I1111111111111111111111111111111111111111\n",
+			upsertLine:  "Fixed: fxbug.dev/42",
+			trailerFmt:  "Bug: fxbug.dev/{id}",
+			wantMessage: "zircon: Fix timer\n\nBug: fxbug.dev/99\nFixed: fxbug.dev/42\nChange-Id: I1111111111111111111111111111111111111111\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := ParseCommitMessage(tc.orig)
+			if err := msg.UpsertTrailer(tc.upsertLine); err != nil {
+				t.Fatalf("UpsertTrailer(%q) failed: %v", tc.upsertLine, err)
+			}
+			msg.NormalizeBugFooters(tc.trailerFmt)
+			if got := msg.Format(); got != tc.wantMessage {
+				t.Errorf("got:\n%s\nwant:\n%s", got, tc.wantMessage)
+			}
+		})
+	}
+}
+
+func TestCommitMessage_NormalizeBugFooters_DeduplicationAndPlaceholders(t *testing.T) {
+	const cid = "Change-Id: I1111111111111111111111111111111111111111"
+
+	tests := []struct {
+		name string
+		orig string
+		want string
+	}{
+		{
+			name: "deduplicates closing aliases targeting the same bug",
+			orig: "pw_foo: Fix crash\n\nFixes: b/11\nFixed: b/11\n" + cid + "\n",
+			want: "pw_foo: Fix crash\n\nFixed: b/11\n" + cid + "\n",
+		},
+		{
+			name: "drops Fixed None placeholder when a real Bug is linked",
+			orig: "pw_foo: Link issue\n\nFixed: None\nBug: b/42\n" + cid + "\n",
+			want: "pw_foo: Link issue\n\nBug: b/42\n" + cid + "\n",
+		},
+		{
+			name: "collapses multiple None placeholders into one",
+			orig: "pw_foo: Cleanup\n\nBug: None\nFixed: None\n" + cid + "\n",
+			want: "pw_foo: Cleanup\n\nBug: None\n" + cid + "\n",
+		},
+		{
+			name: "deduplicates repeated IDs across multiple Bug lines",
+			orig: "pw_foo: Track bugs\n\nBug: b/11\nBug: b/11, b/22\n" + cid + "\n",
+			want: "pw_foo: Track bugs\n\nBug: b/11\nBug: b/22\n" + cid + "\n",
+		},
+		{
+			name: "leaves two-space indented trailer examples untouched",
+			orig: "pw_foo: Docs\n\n  Bug: 42\n  Fixed: 42\n\nBug: 42\n" + cid + "\n",
+			want: "pw_foo: Docs\n\n  Bug: 42\n  Fixed: 42\n\nBug: b/42\n" + cid + "\n",
+		},
+		{
+			name: "ignores non-footer trailer-like lines above prose",
+			orig: "pw_foo: Docs\n\nBug: 99\n\nProse after example.\n\nBug: 42\n" + cid + "\n",
+			want: "pw_foo: Docs\n\nBug: 99\n\nProse after example.\n\nBug: b/42\n" + cid + "\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := ParseCommitMessage(tc.orig)
+			msg.NormalizeBugFooters("Bug: b/{id}")
+			if got := msg.Format(); got != tc.want {
+				t.Errorf("got:\n%s\nwant:\n%s", got, tc.want)
+			}
+		})
 	}
 }
