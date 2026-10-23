@@ -15,6 +15,7 @@
 package pw_ghish
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,6 +32,7 @@ If a change with the same Change-Id already exists on Gerrit, this command will 
 and suggest using 'gh pr push' to upload a new patchset instead. Use --force to bypass this check.
 
 Supports rich push options:
+  - Commit message & bug trailers: --title, --body, --body-file, --bug, --fixed
   - Reviewers and CCs: --reviewer, --cc
   - Auto-submit: --auto (alias --auto-submit)
   - Scheduled submission (Gerrit Flows): --nightly, --submit-at <HH:MM>
@@ -47,32 +49,13 @@ Supports rich push options:
 		if err := ValidatePushScheduleFlags(cmd, &flags.PushOptions); err != nil {
 			return err
 		}
-		title, _ := cmd.Flags().GetString("title")
-		body, _ := cmd.Flags().GetString("body")
 		force, _ := cmd.Flags().GetBool("force")
 
-		commitMsg := title
-		if body != "" {
-			if commitMsg != "" {
-				commitMsg = commitMsg + "\n\n" + body
-			} else {
-				commitMsg = body
-			}
-		}
-
-		// Check before committing, so that a refusal leaves the working tree
-		// exactly as it was found.
-		if err := CheckGitHubIssueSyntax(commitMsg, "--title/--body"); err != nil {
+		guard, branch, err := prepareCommitForCreate(ctx, cmd, cfg, flags)
+		if err != nil {
 			return err
 		}
-
-		// If title/body was provided, create a commit first
-		if commitMsg != "" {
-			fmt.Fprintln(cmd.OutOrStdout(), "Creating new commit with title and body...")
-			if err := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), "commit", "-a", "-m", commitMsg); err != nil {
-				return fmt.Errorf("error creating commit: %w", err)
-			}
-		}
+		defer guard.Rollback(ctx, cmd.ErrOrStderr())
 
 		state, err := VerifyHeadForPush(ctx, cmd, cfg, !force, flags.NoVerify)
 		if err != nil {
@@ -87,8 +70,6 @@ Supports rich push options:
 			changeURL := fmt.Sprintf("%s/c/%s/+/%d", baseURL, state.ExistingChange.Project, state.ExistingChange.Number)
 			return fmt.Errorf("a pull request for Change-Id %s already exists:\n  %s\n\nTo upload a new patchset, run:\n  gh pr push", state.ChangeID, changeURL)
 		}
-
-		branch := resolvePushBranch(ctx, cfg, flags.Base, cmd.ErrOrStderr())
 
 		// A change that does not exist yet has no labels to read, but the
 		// project it is going to does. Ask, so --auto votes this host's label
@@ -130,6 +111,7 @@ Supports rich push options:
 
 		if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {
 			if autoSubmit.Unsupported != nil && err == autoSubmit.Unsupported {
+				guard.Keep()
 				return err
 			}
 			// The change exists; only the schedule failed. Prefixing this
@@ -137,12 +119,14 @@ Supports rich push options:
 			// again.
 			var flowErr *ScheduleFlowError
 			if errors.As(err, &flowErr) {
+				guard.Keep()
 				flowErr.Done = "change created"
 				return flowErr
 			}
 			return fmt.Errorf("error creating change: %w", err)
 		}
 
+		guard.Keep()
 		fmt.Fprintln(cmd.OutOrStdout(), "\nChange created successfully.")
 		// The change exists, so this is reported last: creating it is not the
 		// part that failed, the promise that something would submit it is.
@@ -154,7 +138,56 @@ func init() {
 	PrCmd.AddCommand(createCmd)
 
 	AddCommonPushFlags(createCmd)
+	AddCommitMessageFlags(createCmd)
 	createCmd.Flags().Bool("force", false, "Force create even if a change with this Change-Id already exists")
-	createCmd.Flags().StringP("title", "t", "", "Title for the change")
-	createCmd.Flags().StringP("body", "b", "", "Body for the change")
+}
+
+func prepareCommitForCreate(
+	ctx context.Context,
+	cmd *cobra.Command,
+	cfg *Config,
+	flags CommonPushFlags,
+) (*headRollbackGuard, string, error) {
+	cmFlags := ParseCommitMessageFlags(cmd)
+	hasCommitMsgFlags := cmFlags.HasAny(cmd)
+	var resolved *ResolvedCommitMessageFlags
+	if hasCommitMsgFlags {
+		var err error
+		resolved, err = ResolveAndValidateCommitMessageFlags(cmd, &cmFlags, "gh pr create")
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	branch := resolvePushBranch(ctx, cfg, flags.Base, cmd.ErrOrStderr())
+	guard := newHeadRollbackGuard(ctx, cfg, "gh pr create: rollback failed create")
+	if !hasCommitMsgFlags {
+		return guard, branch, nil
+	}
+
+	aheadCount, hasRemoteRef, err := validateCommitMsgSingleCommit(ctx, cfg, branch, "create")
+	if err != nil {
+		return nil, "", err
+	}
+
+	trailerFmt, err := ResolveBugTrailerFormat(ctx, cfg)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if guard.origHEAD == "" || (hasRemoteRef && aheadCount == 0) {
+		initialMsg, err := BuildInitialCommitMessage(trailerFmt, resolved)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := guard.CommitNewAll(ctx, initialMsg, flags.NoVerify, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+			return nil, "", err
+		}
+		return guard, branch, nil
+	}
+
+	if err := guard.AmendWithFlags(ctx, cmd, trailerFmt, resolved); err != nil {
+		return nil, "", err
+	}
+	return guard, branch, nil
 }

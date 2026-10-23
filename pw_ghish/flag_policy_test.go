@@ -151,8 +151,6 @@ var baselineFlagPolicyCatalog = map[string]flagPolicySpec{
 	"pr checks:buildbucket-host": {Mode: flagModeExtension, Reason: "Hidden test/custom Buildbucket host override"},
 
 	// pr create & pr push (shared push_pipeline flags)
-	"pr create:title":        {Mode: flagModeUpstream, GH: "pr create --title"},
-	"pr create:body":         {Mode: flagModeUpstream, GH: "pr create --body"},
 	"pr create:force":        {Mode: flagModeExtension, Reason: "Bypass existing Change-Id guard"},
 	"pr push:ready":          {Mode: flagModeExtension, Reason: "Remove Gerrit WIP state on push"},
 	"pr push:force":          {Mode: flagModeExtension, Reason: "Bypass missing Change-Id guard on push"},

@@ -1316,3 +1316,33 @@ func TestExecutePush_NoNewChanges_Nightly_FlowFailure(t *testing.T) {
 		t.Errorf("expected the applied CQ vote to be reported before the failure, got: %s", outBuf.String())
 	}
 }
+
+func TestValidateCommitMsgSingleCommit(t *testing.T) {
+	ctx := t.Context()
+	r := newTestGitRepo(t)
+	cfg := &Config{Git: r.Client}
+
+	if ahead, hasRemote, err := validateCommitMsgSingleCommit(ctx, cfg, "main", "create"); err != nil || ahead != 0 || !hasRemote {
+		t.Fatalf("at origin/main tip: got (%d, %v, %v), want (0, true, nil)", ahead, hasRemote, err)
+	}
+
+	r.WriteFile("base.txt", "commit 1\n")
+	if _, err := r.Client.CommitNewAll(ctx, "pw_foo: First local commit\n", false, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if ahead, hasRemote, err := validateCommitMsgSingleCommit(ctx, cfg, "main", "push"); err != nil || ahead != 1 || !hasRemote {
+		t.Fatalf("single local commit: got (%d, %v, %v), want (1, true, nil)", ahead, hasRemote, err)
+	}
+	if ahead, hasRemote, err := validateCommitMsgSingleCommit(ctx, cfg, "nonexistent-upstream", "push"); err != nil || ahead != 0 || hasRemote {
+		t.Fatalf("missing upstream ref: got (%d, %v, %v), want (0, false, nil)", ahead, hasRemote, err)
+	}
+
+	r.WriteFile("base.txt", "commit 2\n")
+	if _, err := r.Client.CommitNewAll(ctx, "pw_foo: Second local commit\n", false, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	ahead, hasRemote, err := validateCommitMsgSingleCommit(ctx, cfg, "main", "push")
+	if err == nil || ahead != 2 || !hasRemote || !strings.Contains(err.Error(), "git rebase -i origin/main") {
+		t.Fatalf("expected multi-commit error (2, true), got (%d, %v, %v)", ahead, hasRemote, err)
+	}
+}

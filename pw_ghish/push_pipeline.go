@@ -169,6 +169,36 @@ func defaultBranch(ctx context.Context, cfg *Config, stderr io.Writer) string {
 	return "main"
 }
 
+// validateCommitMsgSingleCommit counts local commits ahead of branch and
+// rejects commit-message flags whenever pushing HEAD would include more than
+// one commit, before any local commit mutation occurs.
+func validateCommitMsgSingleCommit(ctx context.Context, cfg *Config, branch, subcmd string) (aheadCount int, hasRemoteRef bool, err error) {
+	aheadCount, aheadErr := cfg.GitClient().CountCommitsAhead(ctx, branch)
+	if aheadErr != nil {
+		if ctx.Err() != nil {
+			return 0, false, ctx.Err()
+		}
+		// Unborn branches or repositories without a local remote-tracking ref
+		// have no stack to disambiguate; let the subsequent commit/push path
+		// handle or report the underlying Git state directly.
+		return 0, false, nil
+	}
+	if aheadCount > 1 {
+		remoteName := cfg.GitClient().ResolveRemote(ctx)
+		return aheadCount, true, fmt.Errorf(
+			"cannot combine commit-message flags (--title, --body, --body-file, --bug, --fixed) with %d commits ahead of %s.\n\n"+
+				"Why: A multi-commit branch contains multiple separate Gerrit changes, so applying commit-message flags on 'gh pr %s' would be ambiguous.\n"+
+				"To update commit messages inside a stack before uploading:\n"+
+				"  git rebase -i %s/%s\n"+
+				"  gh pr %s --stack\n\n"+
+				"To inspect your local stack commits:\n"+
+				"  git log --oneline %s/%s..HEAD",
+			aheadCount, branch, subcmd, remoteName, branch, subcmd, remoteName, branch,
+		)
+	}
+	return aheadCount, true, nil
+}
+
 // headRollbackGuard tracks local HEAD and index mutations performed during
 // `gh pr create` or `gh pr push` and atomically rolls HEAD (and any `-a`
 // auto-staged index entries) back if pre-flight checks or `git push` fail.
@@ -224,6 +254,32 @@ func (g *headRollbackGuard) AmendMessageIfChanged(ctx context.Context, origMsg, 
 		return fmt.Errorf("error updating HEAD commit message: %w", err)
 	}
 	return nil
+}
+
+// AmendWithFlags checks that HEAD is safe to amend, resolves the updated commit
+// message from flags, and amends HEAD only when the message changes.
+func (g *headRollbackGuard) AmendWithFlags(
+	ctx context.Context,
+	cmd *cobra.Command,
+	trailerFmt string,
+	resolved *ResolvedCommitMessageFlags,
+) error {
+	if err := g.git.CheckAmendAllowed(ctx); err != nil {
+		return err
+	}
+	if g.origHEAD == "" {
+		return fmt.Errorf("failed to resolve HEAD before updating commit message")
+	}
+	origMsg, err := g.git.HeadCommitMessage(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read HEAD commit message: %w", err)
+	}
+	updatedMsg, err := BuildUpdatedCommitMessage(origMsg, trailerFmt, resolved)
+	if err != nil {
+		return err
+	}
+	noVerify, _ := cmd.Flags().GetBool("no-verify")
+	return g.AmendMessageIfChanged(ctx, origMsg, updatedMsg, noVerify, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 // Keep marks the local commit mutation as finalized so Rollback is a no-op.

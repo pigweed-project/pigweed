@@ -80,15 +80,42 @@ func TestCreateIntegration(t *testing.T) {
 }
 
 func TestCreateStandardWorkspaceWithTitleAndBody(t *testing.T) {
-	mockGit := NewMockGit(t).WithBranch("main")
-
-	output, err := executeCommand(RootCmd, "pr", "create", "--title", "Standard Title", "--body", "Standard Body")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	cases := []struct {
+		name           string
+		existingCommit string
+		wantCallPrefix string
+		wantMsg        string
+	}{
+		{
+			name:           "creates commit from dirty workspace",
+			wantCallPrefix: "commit -a -F ",
+			wantMsg:        "Standard Title\n\nStandard Body\n",
+		},
+		{
+			name:           "amends unpushed commit preserving Change-Id",
+			existingCommit: "Draft\n\nChange-Id: I0000000000000000000000000000000000000001\n",
+			wantCallPrefix: "commit --amend --only --allow-empty -F ",
+			wantMsg:        "Standard Title\n\nStandard Body\n\nChange-Id: I0000000000000000000000000000000000000001\n",
+		},
 	}
-
-	if !mockGit.HasCall("commit -a -m Standard Title\n\nStandard Body") {
-		t.Errorf("Git calls got = %v, want to contain a commit call with standard title/body elements", mockGit.Calls)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockGit := NewMockGit(t).WithBranch("main")
+			if tc.existingCommit != "" {
+				mockGit.WithCommit(tc.existingCommit).
+					OnCommand("rev-parse HEAD", "deadbeef\n").
+					OnCommand("rev-list --count origin/main..HEAD", "1\n")
+			}
+			if out, err := executeCommand(RootCmd, "pr", "create", "--title", "Standard Title", "--body", "Standard Body"); err != nil {
+				t.Fatalf("pr create failed: %v\nOutput: %s", err, out)
+			}
+			if !mockGit.HasCall(tc.wantCallPrefix) {
+				t.Errorf("Git calls = %v, want prefix %q", mockGit.Calls, tc.wantCallPrefix)
+			}
+			if got := mockGit.LastCommitMessage(); got != tc.wantMsg {
+				t.Errorf("committed message = %q, want %q", got, tc.wantMsg)
+			}
+		})
 	}
 }
 
@@ -754,4 +781,149 @@ func TestCreate_Nightly_FlowsNotEnabled(t *testing.T) {
 	if n := server.CallCount("POST", "/changes/123456/flows"); n != 0 {
 		t.Errorf("expected no flows to be created, got %d", n)
 	}
+}
+
+func TestCreate_RealGit_CommitMessageFlagsAndRollback(t *testing.T) {
+	t.Run("creates commit from dirty tree on upstream tip", func(t *testing.T) {
+		SetTestProfile(t, "pigweed")
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{})
+
+		repo := newTestGitRepo(t)
+		repo.InstallCommitMsgHook()
+		repo.BindToCLI()
+
+		repo.WriteFile("base.txt", "new feature\n")
+
+		if out, err := executeCommand(RootCmd, "pr", "create", "-t", "pw_foo: Add feature", "-b", "Explain why.", "--fixed", "b/567763970"); err != nil {
+			t.Fatalf("pr create failed: %v\nOutput: %s", err, out)
+		}
+
+		pushedMsg := repo.BareGitOutput("log", "-1", "--format=%B", "refs/for/main")
+		wantOrder := "Fixed: b/567763970\nChange-Id: I1111111111111111111111111111111111111111"
+		if !strings.Contains(pushedMsg, wantOrder) {
+			t.Errorf("expected Fixed above Change-Id on refs/for/main, got:\n%s", pushedMsg)
+		}
+	})
+
+	t.Run("creates new commit when local branch sits behind fetched origin/main", func(t *testing.T) {
+		SetTestProfile(t, "pigweed")
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{})
+
+		repo := newTestGitRepo(t)
+		repo.InstallCommitMsgHook()
+		repo.BindToCLI()
+
+		ancestorSHA := repo.GitOutput("rev-parse", "HEAD")
+		ancestorMsg := repo.GitOutput("log", "-1", "--format=%B", "HEAD")
+
+		// Advance origin/main by 1 commit while local branch stays behind at ancestorSHA.
+		repo.GitOutput("branch", "feature", ancestorSHA)
+		repo.StageFile("upstream.txt", "merged upstream\n")
+		repo.GitOutput("commit", "-m", "pw_other: Landed upstream")
+		repo.GitOutput("push", "origin", "main")
+		repo.GitOutput("checkout", "feature")
+
+		repo.WriteFile("base.txt", "feature behind main\n")
+
+		if out, err := executeCommand(RootCmd, "pr", "create", "-t", "pw_foo: Feature from behind branch", "-b", "Fresh commit."); err != nil {
+			t.Fatalf("pr create failed: %v\nOutput: %s", err, out)
+		}
+
+		if gotParent := repo.GitOutput("rev-parse", "HEAD~1"); gotParent != ancestorSHA {
+			t.Fatalf("HEAD~1 = %s, want untouched ancestor %s", gotParent, ancestorSHA)
+		}
+		if gotAncestorMsg := repo.GitOutput("log", "-1", "--format=%B", ancestorSHA); gotAncestorMsg != ancestorMsg {
+			t.Errorf("ancestor commit message = %q, want %q", gotAncestorMsg, ancestorMsg)
+		}
+		if gotFile := repo.BareGitOutput("show", "refs/for/main:base.txt"); gotFile != "feature behind main" {
+			t.Errorf("pushed base.txt = %q, want %q", gotFile, "feature behind main")
+		}
+		pushedMsg := repo.BareGitOutput("log", "-1", "--format=%B", "refs/for/main")
+		if !strings.Contains(pushedMsg, "pw_foo: Feature from behind branch\n\nFresh commit.\n\nChange-Id: I1111111111111111111111111111111111111111") {
+			t.Errorf("unexpected pushed commit message:\n%s", pushedMsg)
+		}
+	})
+
+	t.Run("amends unpushed commit and rolls back on failure", func(t *testing.T) {
+		SetTestProfile(t, "pigweed")
+		changeID := "I1111111111111111111111111111111111111111"
+
+		repo := newTestGitRepo(t)
+		repo.InstallCommitMsgHook()
+		repo.BindToCLI()
+
+		repo.WriteFile("base.txt", "commit 1\n")
+		if _, err := repo.Client.CommitNewAll(t.Context(), "pw_foo: Draft title\n\nDraft body.\n", false, io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		origSHA := repo.GitOutput("rev-parse", "HEAD")
+
+		// Stage an extra file and leave an unstaged edit in the worktree.
+		repo.StageFile("staged.txt", "staged next\n")
+		origIndexTree := repo.GitOutput("write-tree")
+		repo.WriteFile("base.txt", "unstaged worktree\n")
+
+		// Simulate existing Gerrit CL failure AFTER local amend: HEAD, index, and worktree must roll back cleanly.
+		failServer := NewMockGerritServer(t)
+		failServer.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{
+			DefaultMockChange(509225, WithChangeID(changeID)),
+		})
+		if _, err := executeCommand(RootCmd, "pr", "create", "--title", "pw_foo: Aborted title", "--bug", "42"); err == nil {
+			t.Fatal("expected pr create to fail when Change-Id already exists")
+		}
+		if gotSHA := repo.GitOutput("rev-parse", "HEAD"); gotSHA != origSHA {
+			t.Fatalf("rollback failed: HEAD = %s, want %s", gotSHA, origSHA)
+		}
+		if gotIndex := repo.GitOutput("write-tree"); gotIndex != origIndexTree {
+			t.Fatalf("staged index altered on rollback: %s != %s", gotIndex, origIndexTree)
+		}
+
+		// Now succeed against empty Gerrit: amends message without sweeping staged.txt or unstaged base.txt.
+		okServer := NewMockGerritServer(t)
+		okServer.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{})
+		if out, err := executeCommand(RootCmd, "pr", "create", "--title", "pw_foo: Final title", "--bug", "42"); err != nil {
+			t.Fatalf("pr create failed: %v\nOutput: %s", err, out)
+		}
+		pushedMsg := repo.BareGitOutput("log", "-1", "--format=%B", "refs/for/main")
+		if !strings.Contains(pushedMsg, "pw_foo: Final title\n\nDraft body.\n\nBug: b/42\nChange-Id: "+changeID) {
+			t.Errorf("unexpected pushed commit message:\n%s", pushedMsg)
+		}
+		if gotIndex := repo.GitOutput("write-tree"); gotIndex != origIndexTree {
+			t.Errorf("staged index altered after create: %s != %s", gotIndex, origIndexTree)
+		}
+		if got := repo.ReadFile("base.txt"); got != "unstaged worktree\n" {
+			t.Errorf("unstaged worktree altered: %q", got)
+		}
+	})
+
+	t.Run("rolls back auto-committed dirty tree when push fails", func(t *testing.T) {
+		SetTestProfile(t, "pigweed")
+		changeID := "I1111111111111111111111111111111111111111"
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{
+			DefaultMockChange(509225, WithChangeID(changeID)),
+		})
+
+		repo := newTestGitRepo(t)
+		repo.InstallCommitMsgHook()
+		repo.BindToCLI()
+		tipSHA := repo.GitOutput("rev-parse", "HEAD")
+		origIndexTree := repo.GitOutput("write-tree")
+
+		repo.WriteFile("base.txt", "dirty pre-commit\n")
+		if _, err := executeCommand(RootCmd, "pr", "create", "-t", "pw_foo: Attempted create"); err == nil {
+			t.Fatal("expected error when Change-Id already exists")
+		}
+		if gotSHA := repo.GitOutput("rev-parse", "HEAD"); gotSHA != tipSHA {
+			t.Fatalf("expected HEAD rolled back to %s, got %s", tipSHA, gotSHA)
+		}
+		if gotIndex := repo.GitOutput("write-tree"); gotIndex != origIndexTree {
+			t.Fatalf("expected auto-staged index reset to %s, got %s", origIndexTree, gotIndex)
+		}
+		if got := repo.ReadFile("base.txt"); got != "dirty pre-commit\n" {
+			t.Errorf("dirty working tree file lost on rollback: %q", got)
+		}
+	})
 }
