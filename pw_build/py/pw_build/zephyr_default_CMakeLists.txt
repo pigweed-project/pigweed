@@ -16,11 +16,6 @@ cmake_minimum_required(VERSION 3.20)
 
 set(pw_third_party_nanopb_ADD_SUBDIRECTORY ON CACHE BOOL "" FORCE)
 
-# Zephyr builds do not yet support extra_strict_warnings or internal_strict_warnings.
-set(pw_build_WARNINGS
-    pw_build.strict_warnings
-    CACHE STRING "Warnings libraries to use for Pigweed upstream code" FORCE)
-
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(PigweedZephyrTest)
 enable_language(C CXX)
