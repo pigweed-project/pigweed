@@ -120,10 +120,14 @@ class ListWrapper {
 
 }  // namespace internal
 
+/// @module{pw_metric}
+
 /// A list of metrics.
 using MetricList = internal::ListWrapper<UntypedMetric>;
 
 /// A list of metrics groups.
 using GroupList = internal::ListWrapper<Group>;
+
+/// @endmodule
 
 }  // namespace pw::metric

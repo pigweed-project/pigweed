@@ -196,6 +196,8 @@
 /// @defgroup pw_malloc pw_malloc
 /// @ingroup category_memory
 /// @brief Replacement interface for standard libc dynamic memory operations
+/// @defgroup pw_metric pw_metric
+/// @ingroup category_observability
 /// @defgroup pw_multibuf pw_multibuf
 /// @ingroup category_memory
 /// @brief A buffer API optimized for zero-copy messaging

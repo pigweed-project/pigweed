@@ -71,8 +71,10 @@ void SaturatedDecrement(std::atomic<T>& atomic_val, T amount) {
 
 }  // namespace internal
 
-// Currently, this is for tokens, but later may be a char* when non-tokenized
-// metric names are supported.
+/// @module{pw_metric}
+
+/// Currently, this is for tokens, but later may be a `char*` when non-tokenized
+/// metric names are supported.
 using tokenizer::Token;
 
 // The token mask is 28 bits (0x0fffffff) to allow 4 bits for type information
@@ -84,18 +86,13 @@ using tokenizer::Token;
 #define _PW_METRIC_TOKEN_MASK 0x0fffffff
 // LINT.ThenChange(//pw_metric/py/pw_metric/constants.py:metric_masks)
 
-// An individual metric. There are three supported types: uint32_t, float, and
-// optionally uint64_t. More complicated compound metrics can be built on these
-// primitives. See the documentation for a discussion of how this design was
-// selected.
-//
-// Size: 12 bytes / 96 bits - next, name, value.
-//
-// TODO(keir): Implement Set() and Increment() using atomics.
-// TODO(keir): Consider an alternative structure where metrics have pointers to
-// parent groups, which would enable (1) safe destruction and (2) safe static
-// initialization, but at the cost of an additional 4 bytes per metric and 4
-// bytes per group..
+/// Common base class for an individual metric stored in intrusive lists. Holds
+/// the token and type discriminator.
+///
+/// More complicated compound metrics can be built on the primitive typed
+/// metrics.
+///
+/// Size: 8 bytes / 64 bits - next, name_and_type.
 class UntypedMetric : public MetricList::Item {
  public:
   Token name() const { return name_and_type_ & kTokenMask; }
@@ -132,23 +129,25 @@ class UntypedMetric : public MetricList::Item {
   bool is_int32() const { return type() == kTypeInt32; }
   bool is_token() const { return type() == kTypeToken; }
 
-  // Backward compatibility alias.
+  /// Backward compatibility alias.
   [[deprecated("Use is_uint32() instead")]]
   bool is_int() const {
     return is_uint32();
   }
 
-  // Dump a metric or metrics to logs. Level determines the indentation
-  // indent_level up to a maximum of 4. Example output:
-  //
-  //   "$FCM4qQ==": 0
-  //
-  // Note the base64-encoded token name. Detokenization tools are necessary to
-  // convert this to human-readable form.
+  /// Dump a metric or metrics to logs. Level determines the indentation
+  /// `indent_level` up to a maximum of 4. Example output:
+  ///
+  /// @code{.none}
+  /// "$FCM4qQ==": 0
+  /// @endcode
+  ///
+  /// Note the base64-encoded token name. Detokenization tools are necessary to
+  /// convert this to human-readable form.
   void Dump(int indent_level, bool last) const;
   static void Dump(const MetricList& metrics, int indent_level = 0);
 
-  // Backward compatibility helpers.
+  /// Backward compatibility helpers.
   [[deprecated(
       "as_float() is deprecated. Use value() on TypedMetric<float> or "
       "as_double() instead.")]]
@@ -180,16 +179,21 @@ class UntypedMetric : public MetricList::Item {
   friend class MetricWalker;
 };
 
-// Backward compatibility alias.
+/// Backward compatibility alias.
 using Metric [[deprecated(
     "pw::metric::Metric is deprecated. Use pw::metric::TypedMetric<uint32_t> "
     "or pw::metric::TypedMetric<T> directly.")]] = UntypedMetric;
 
+/// Type-safe wrapper for metrics. Only the operations valid for the type `T`
+/// are exposed at compile-time.
 template <typename T>
 class TypedMetric;
 
-// A metric for floats. Does not offer an Increment() function, since it is too
-// easy to do unsafe operations like accumulating small values in floats.
+/// A metric for `float` values.
+///
+/// @note `TypedMetric<float>` does not offer `Increment()` or `Decrement()`
+/// operations, as floating-point addition is prone to precision loss when
+/// accumulating small values.
 template <>
 class TypedMetric<float> : public UntypedMetric {
  public:
@@ -200,14 +204,18 @@ class TypedMetric<float> : public UntypedMetric {
 
   ~TypedMetric() = default;
 
+  /// Atomically set the metric to the given value.
   void Set(float value) { value_.store(value, std::memory_order_relaxed); }
+
+  /// Return the current value of the metric.
   float value() const { return value_.load(std::memory_order_relaxed); }
 
  private:
   std::atomic<float> value_;
 };
 
-// A metric for uint32_ts. Offers both Set() and Increment().
+/// A metric for `uint32_t` values. Offers `Set()`, `Increment()`, and
+/// `Decrement()`.
 template <>
 class TypedMetric<uint32_t> : public UntypedMetric {
  public:
@@ -218,9 +226,16 @@ class TypedMetric<uint32_t> : public UntypedMetric {
 
   ~TypedMetric() = default;
 
+  /// Atomically increment the metric by the given amount (saturating to max).
   void Increment(uint32_t amount = 1u);
+
+  /// Atomically decrement the metric by the given amount (saturating to 0).
   void Decrement(uint32_t amount = 1u);
+
+  /// Atomically set the metric to the given value.
   void Set(uint32_t value) { value_.store(value, std::memory_order_relaxed); }
+
+  /// Return the current value of the metric.
   uint32_t value() const { return value_.load(std::memory_order_relaxed); }
 
  private:
@@ -239,6 +254,7 @@ struct TokenValue {
   constexpr operator uint32_t() const { return value; }
 };
 
+/// A metric for `bool` values.
 template <>
 class TypedMetric<bool> : public UntypedMetric {
  public:
@@ -249,13 +265,17 @@ class TypedMetric<bool> : public UntypedMetric {
 
   ~TypedMetric() = default;
 
+  /// Atomically set the metric to the given value.
   void Set(bool value) { value_.store(value, std::memory_order_relaxed); }
+
+  /// Return the current value of the metric.
   bool value() const { return value_.load(std::memory_order_relaxed); }
 
  private:
   std::atomic<bool> value_;
 };
 
+/// A metric for `int32_t` values.
 template <>
 class TypedMetric<int32_t> : public UntypedMetric {
  public:
@@ -266,15 +286,23 @@ class TypedMetric<int32_t> : public UntypedMetric {
 
   ~TypedMetric() = default;
 
+  /// Atomically increment the metric by the given amount (saturating to max).
   void Increment(int32_t amount = 1);
+
+  /// Atomically decrement the metric by the given amount (saturating to min).
   void Decrement(int32_t amount = 1);
+
+  /// Atomically set the metric to the given value.
   void Set(int32_t value) { value_.store(value, std::memory_order_relaxed); }
+
+  /// Return the current value of the metric.
   int32_t value() const { return value_.load(std::memory_order_relaxed); }
 
  private:
   std::atomic<int32_t> value_;
 };
 
+/// A metric for `TokenValue` values.
 template <>
 class TypedMetric<TokenValue> : public UntypedMetric {
  public:
@@ -285,9 +313,12 @@ class TypedMetric<TokenValue> : public UntypedMetric {
 
   ~TypedMetric() = default;
 
+  /// Atomically set the metric to the given token value.
   void Set(TokenValue value) {
     value_.store(value.value, std::memory_order_relaxed);
   }
+
+  /// Return the current token value of the metric.
   TokenValue value() const {
     return TokenValue(value_.load(std::memory_order_relaxed));
   }
@@ -296,9 +327,10 @@ class TypedMetric<TokenValue> : public UntypedMetric {
   std::atomic<uint32_t> value_;
 };
 
-// A metric tree; consisting of children groups and leaf metrics.
-//
-// Size: 16 bytes/128 bits - next, name, metrics, children.
+/// A metric tree consisting of children groups and leaf metrics.
+///
+/// Size: 16 bytes / 128 bits on 32-bit platforms - next, name, metrics,
+/// children.
 class Group : public GroupList::Item {
  public:
   Group(Token name);
@@ -321,22 +353,38 @@ class Group : public GroupList::Item {
   const MetricList& metrics() const { return metrics_; }
   const GroupList& children() const { return children_; }
 
-  // Dump a metric group or groups to logs. Level determines the indentation
-  // indent_level up to a maximum of 4. Example output:
-  //
-  //   "$6doqFw==": {
-  //     "$05OCZw==": {
-  //       "$VpPfzg==": 1,
-  //       "$LGPMBQ==": 1.000000,
-  //       "$+iJvUg==": 5
-  //     },
-  //     "$9hPNxw==": 65,
-  //     "$oK7HmA==": 13,
-  //     "$FCM4qQ==": 0
-  //   }
-  //
-  // Note the base64-encoded token name. Detokenization tools are necessary to
-  // convert this to human-readable form.
+  /// Recursively dump a metrics group or groups to `pw_log`. Level determines
+  /// the indentation `indent_level` up to a maximum of 4. Produces output like:
+  ///
+  /// @code{.none}
+  /// "$6doqFw==": {
+  ///   "$05OCZw==": {
+  ///     "$VpPfzg==": 1,
+  ///     "$LGPMBQ==": 1.000000,
+  ///     "$+iJvUg==": 5
+  ///   },
+  ///   "$9hPNxw==": 65,
+  ///   "$oK7HmA==": 13,
+  ///   "$FCM4qQ==": 0
+  /// }
+  /// @endcode
+  ///
+  /// Note the metric names are tokenized with base64. Decoding requires using
+  /// the Pigweed detokenizer. With a detokenizing-enabled logger, you could get
+  /// something like:
+  ///
+  /// @code{.none}
+  /// "i2c_1": {
+  ///   "gyro": {
+  ///     "num_sampleses": 1,
+  ///     "init_time_us": 1.000000,
+  ///     "initialized": 5,
+  ///   }
+  ///   "bus_errors": 65,
+  ///   "transactions": 13,
+  ///   "bytes_sent": 0,
+  /// }
+  /// @endcode
   void Dump() const;
   static void Dump(const GroupList& groups, int indent_level = 0);
 
@@ -352,57 +400,75 @@ class Group : public GroupList::Item {
   GroupList children_;
 };
 
-// Declare a metric, optionally adding it to a group. Use:
-//
-//   PW_METRIC(variable_name, metric_name, value)
-//   PW_METRIC(group, variable_name, metric_name, value)
-//
-// - variable_name is an identifier
-// - metric_name is a string name for the metric (will be tokenized)
-// - value must be either a floating point value (3.2f) or unsigned int (21u).
-// - group is a Group instance.
-//
-// The macro declares a variable or member named "name" with type Metric, and
-// works in three contexts: global, local, and member.
-//
-// 1. At global scope
-//
-//    PW_METRIC(foo, 15.5f);
-//
-//    void MyFunc() {
-//      foo.Increment();
-//    }
-//
-// 2. At local function or member function scope:
-//
-//    void MyFunc() {
-//      PW_METRIC(foo, "foo", 15.5f);
-//      foo.Increment();
-//      // foo goes out of scope here; be careful!
-//    }
-//
-// 3. At member level inside a class or struct:
-//
-//    struct MyStructy {
-//      void DoSomething() {
-//        somethings_.Increment();
-//      }
-//      // Every instance of MyStructy will have a separate somethings counter.
-//      PW_METRIC(somethings_, "somethings", 0u);
-//    }
-//
-// You can also put a metric into a group with the macro. Metrics can belong to
-// strictly one group, otherwise a assertion will fail. Example:
-//
-//   PW_METRIC_GROUP(my_group, "my_group_name_here");
-//   PW_METRIC(my_group, foo_, "foo", 0.2f);
-//   PW_METRIC(my_group, bar_, "bar", 44000u);
-//   PW_METRIC(my_group, zap_, "zap", 3.14f);
-//
-// NOTE: If you want a globally registered metric, see pw_metric/global.h; in
-// that contexts, metrics are globally registered without the need to centrally
-// register in a single place.
+/// Declare a metric, optionally adding it to a group.
+///
+/// Overloads:
+/// - `PW_METRIC(variable_name, metric_name, value)`
+/// - `PW_METRIC(group, variable_name, metric_name, value)`
+///
+/// - `variable_name` - An identifier name for the created variable or member.
+///   For example: `i2c_transactions` might be used as a local or global metric;
+///   inside a class, could be named according to members (`i2c_transactions_`
+///   for Google's C++ style).
+/// - `metric_name` - The string name for the metric. This will be tokenized.
+///   There are no restrictions on the contents of the name; however, consider
+///   restricting these to be valid C++ identifiers to ease integration with
+///   other systems.
+/// - `value` - The initial value for the metric. Must be either a floating
+///   point value (e.g. `3.2f`) or unsigned int (e.g. `21u`).
+/// - `group` - A `pw::metric::Group` instance. If provided, the metric is added
+///   to the given group.
+///
+/// The macro declares a variable or member named `variable_name` with type
+/// `pw::metric::TypedMetric<T>`, and works in three contexts: global, local,
+/// and member.
+///
+/// 1. At global scope:
+///    @code{.cpp}
+///    PW_METRIC(foo, "foo", 15.5f);
+///
+///    void MyFunc() { foo.Increment(); }
+///    @endcode
+///
+/// 2. At local function or member function scope:
+///    @code{.cpp}
+///    void MyFunc() {
+///      PW_METRIC(foo, "foo", 15.5f);
+///      foo.Increment();
+///      // foo goes out of scope here; be careful!
+///    }
+///    @endcode
+///
+/// 3. At member level inside a class or struct:
+///    @code{.cpp}
+///    struct MyStructy {
+///      void DoSomething() { somethings_.Increment(); }
+///      // Every instance of MyStructy will have a separate somethings counter.
+///      PW_METRIC(somethings_, "somethings", 0u);
+///    };
+///    @endcode
+///
+/// You can also put a metric into a group with the macro. Metrics can belong to
+/// strictly one group, otherwise an assertion will fail. Example:
+///
+/// @code{.cpp}
+/// PW_METRIC_GROUP(my_group, "my_group_name_here");
+/// PW_METRIC(my_group, foo_, "foo", 0.2f);
+/// PW_METRIC(my_group, bar_, "bar", 44000u);
+/// PW_METRIC(my_group, zap_, "zap", 3.14f);
+/// @endcode
+///
+/// @note If you want a globally registered metric, see `pw_metric/global.h`; in
+/// that context, metrics are globally registered without the need to centrally
+/// register in a single place.
 #define PW_METRIC(...) PW_DELEGATE_BY_ARG_COUNT(_PW_METRIC_, , __VA_ARGS__)
+
+/// Declares a `PW_METRIC` variable with `static` storage. These can be used in
+/// function scopes, but not in classes.
+///
+/// Overloads:
+/// - `PW_METRIC_STATIC(variable_name, metric_name, value)`
+/// - `PW_METRIC_STATIC(group, variable_name, metric_name, value)`
 #define PW_METRIC_STATIC(...) \
   PW_DELEGATE_BY_ARG_COUNT(_PW_METRIC_STATIC_, static, __VA_ARGS__)
 
@@ -411,16 +477,43 @@ class Group : public GroupList::Item {
                      float,                                       \
                      uint32_t>
 
+/// Declare a metric with an explicit type, optionally adding it to a group.
+///
+/// Overloads:
+/// - `PW_METRIC_TYPED(variable_name, metric_name, type, value)`
+/// - `PW_METRIC_TYPED(group, variable_name, metric_name, type, value)`
+///
+/// This macro works identically to `PW_METRIC`, but requires explicitly
+/// specifying the metric type (e.g. `float`, `uint32_t`, or `uint64_t`).
+/// This is useful for declaring 64-bit metrics or when you want to make the
+/// metric's type explicit.
+///
+/// Example:
+/// @code{.cpp}
+/// PW_METRIC_GROUP(my_group, "my_group");
+/// PW_METRIC_TYPED(my_group, my_64bit_metric, "my_64bit_metric", uint64_t,
+/// 0ULL);
+/// @endcode
 #define PW_METRIC_TYPED(...) \
   PW_DELEGATE_BY_ARG_COUNT(_PW_METRIC_TYPED_, , __VA_ARGS__)
 
+/// Declares a `PW_METRIC_TYPED` variable with `static` storage. These can be
+/// used in function scopes, but not in classes.
+///
+/// Overloads:
+/// - `PW_METRIC_TYPED_STATIC(variable_name, metric_name, type, value)`
+/// - `PW_METRIC_TYPED_STATIC(group, variable_name, metric_name, type, value)`
 #define PW_METRIC_TYPED_STATIC(...) \
   PW_DELEGATE_BY_ARG_COUNT(_PW_METRIC_TYPED_STATIC_, static, __VA_ARGS__)
 
-/// Get the token for a given metric name.
+/// Declare a `pw::metric::Token` (`pw::tokenizer::Token`) for a metric with
+/// name `metric_name`. This token matches the `.name()` of a metric with the
+/// same name.
 ///
 /// This is a wrapper around `PW_TOKENIZE_STRING_MASK` and carries the same
 /// semantics.
+///
+/// This is unlikely to be used by most `pw_metric` consumers.
 #define PW_METRIC_TOKEN(metric_name) \
   PW_TOKENIZE_STRING_MASK("metrics", _PW_METRIC_TOKEN_MASK, metric_name)
 
@@ -494,29 +587,43 @@ class Group : public GroupList::Item {
   static_def::pw::metric::TypedMetric<type>& variable_name [[maybe_unused]] = \
       *variable_name##_storage
 
-// Define a metric group. Works like PW_METRIC, and works in the same contexts.
-//
-// Example:
-//
-//   class MySubsystem {
-//    public:
-//     void DoSomething() {
-//       attempts.Increment();
-//       if (ActionSucceeds()) {
-//         successes.Increment();
-//       }
-//     }
-//     const Group& metrics() const { return metrics_; }
-//     Group& metrics() { return metrics_; }
-//
-//    private:
-//     PW_METRIC_GROUP(metrics_, "my_subsystem");
-//     PW_METRIC(metrics_, attempts_, "attempts", 0u);
-//     PW_METRIC(metrics_, successes_, "successes", 0u);
-//   };
-//
+/// Declares a `pw::metric::Group` with name `group_name`; the name is
+/// tokenized. Works similar to `PW_METRIC` and can be used in the same contexts
+/// (global, local, and member). Optionally, the group can be added to a parent
+/// group.
+///
+/// Overloads:
+/// - `PW_METRIC_GROUP(variable_name, group_name)`
+/// - `PW_METRIC_GROUP(parent_group, variable_name, group_name)`
+///
+/// Example:
+/// @code{.cpp}
+/// class MySubsystem {
+///  public:
+///   void DoSomething() {
+///     attempts_.Increment();
+///     if (ActionSucceeds()) {
+///       successes_.Increment();
+///     }
+///   }
+///   const Group& metrics() const { return metrics_; }
+///   Group& metrics() { return metrics_; }
+///
+///  private:
+///   PW_METRIC_GROUP(metrics_, "my_subsystem");
+///   PW_METRIC(metrics_, attempts_, "attempts", 0u);
+///   PW_METRIC(metrics_, successes_, "successes", 0u);
+/// };
+/// @endcode
 #define PW_METRIC_GROUP(...) \
   PW_DELEGATE_BY_ARG_COUNT(_PW_METRIC_GROUP_, , __VA_ARGS__)
+
+/// Declares a `PW_METRIC_GROUP` variable with `static` storage. These can be
+/// used in function scopes, but not in classes.
+///
+/// Overloads:
+/// - `PW_METRIC_GROUP_STATIC(variable_name, group_name)`
+/// - `PW_METRIC_GROUP_STATIC(parent_group, variable_name, group_name)`
 #define PW_METRIC_GROUP_STATIC(...) \
   PW_DELEGATE_BY_ARG_COUNT(_PW_METRIC_GROUP_STATIC_, static, __VA_ARGS__)
 
@@ -548,16 +655,17 @@ class Group : public GroupList::Item {
   static_def::pw::metric::Group& variable_name [[maybe_unused]] =            \
       *variable_name##_storage
 
-// Similar to PW_TOKENIZE_STRING_EXPR, converts a string literal to a
-// ``uint32_t`` token within an expression.
-// Requires C++.
-//
-//   // Tokenizes a string literal in the metric domain within an expression.
-//   DoSomethingWithToken(PW_METRIC_TOKEN_EXPR("Succeed"));
-//
-// @endcode
+/// Similar to `PW_TOKENIZE_STRING_EXPR`, converts a string literal to a
+/// `uint32_t` token within an expression. Requires C++.
+///
+/// @code{.cpp}
+/// // Tokenizes a string literal in the metric domain within an expression.
+/// DoSomethingWithToken(PW_METRIC_TOKEN_EXPR("Succeed"));
+/// @endcode
 #define PW_METRIC_TOKEN_EXPR(metric_name) \
   PW_TOKENIZE_STRING_MASK_EXPR("metrics", _PW_METRIC_TOKEN_MASK, metric_name)
+
+/// @endmodule
 
 }  // namespace pw::metric
 
@@ -565,6 +673,9 @@ class Group : public GroupList::Item {
 
 namespace pw::metric {
 
+/// @module{pw_metric}
+
+/// A metric for `uint64_t` values.
 template <>
 class TypedMetric<uint64_t> : public UntypedMetric {
  public:
@@ -575,15 +686,23 @@ class TypedMetric<uint64_t> : public UntypedMetric {
 
   ~TypedMetric() = default;
 
+  /// Atomically increment the metric by the given amount (saturating to max).
   void Increment(uint64_t amount = 1u);
+
+  /// Atomically decrement the metric by the given amount (saturating to 0).
   void Decrement(uint64_t amount = 1u);
+
+  /// Atomically set the metric to the given value.
   void Set(uint64_t value) { value_.store(value, std::memory_order_relaxed); }
+
+  /// Return the current value of the metric.
   uint64_t value() const { return value_.load(std::memory_order_relaxed); }
 
  private:
   std::atomic<uint64_t> value_;
 };
 
+/// A metric for `int64_t` values.
 template <>
 class TypedMetric<int64_t> : public UntypedMetric {
  public:
@@ -594,15 +713,26 @@ class TypedMetric<int64_t> : public UntypedMetric {
 
   ~TypedMetric() = default;
 
+  /// Atomically increment the metric by the given amount (saturating to max).
   void Increment(int64_t amount = 1);
+
+  /// Atomically decrement the metric by the given amount (saturating to min).
   void Decrement(int64_t amount = 1);
+
+  /// Atomically set the metric to the given value.
   void Set(int64_t value) { value_.store(value, std::memory_order_relaxed); }
+
+  /// Return the current value of the metric.
   int64_t value() const { return value_.load(std::memory_order_relaxed); }
 
  private:
   std::atomic<int64_t> value_;
 };
 
+/// A metric for `double` values.
+///
+/// @note `TypedMetric<double>` does not offer `Increment()` or `Decrement()`
+/// operations for the same reason as `TypedMetric<float>`.
 template <>
 class TypedMetric<double> : public UntypedMetric {
  public:
@@ -613,12 +743,18 @@ class TypedMetric<double> : public UntypedMetric {
 
   ~TypedMetric() = default;
 
+  /// Atomically set the metric to the given value.
   void Set(double value) { value_.store(value, std::memory_order_relaxed); }
+
+  /// Return the current value of the metric.
   double value() const { return value_.load(std::memory_order_relaxed); }
 
  private:
   std::atomic<double> value_;
 };
+
+/// @endmodule
+
 }  // namespace pw::metric
 
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT

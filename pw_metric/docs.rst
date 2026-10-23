@@ -122,8 +122,8 @@ this use case. For example:
 
 In this case, the developer merely had to add the metrics header, define some
 metrics, and then start incrementing them. These metrics will be available
-globally through the ``pw::metric::global_metrics`` object defined in
-``pw_metric/global.h``.
+globally through the :cc:`global_metrics <pw::metric::global_metrics>` object
+defined in ``pw_metric/global.h``.
 
 Why not just use simple counter variables?
 ------------------------------------------
@@ -153,16 +153,18 @@ reasons:
 ---------------------
 Metrics API reference
 ---------------------
-
 The metrics API consists of just a few components:
 
-- The core data structures ``pw::metric::UntypedMetric`` / ``pw::metric::TypedMetric`` and ``pw::metric::Group``
-- The macros for scoped metrics and groups ``PW_METRIC`` and
-  ``PW_METRIC_GROUP``
+- The core data structures :cc:`UntypedMetric <pw::metric::UntypedMetric>` /
+  :cc:`TypedMetric <pw::metric::TypedMetric>` and
+  :cc:`Group <pw::metric::Group>`
+- The macros for scoped metrics and groups :cc:`PW_METRIC` and
+  :cc:`PW_METRIC_GROUP`
 - The macros for globally registered metrics and groups
-  ``PW_METRIC_GLOBAL`` and ``PW_METRIC_GROUP_GLOBAL``
-- The global groups and metrics list: ``pw::metric::global_groups`` and
-  ``pw::metric::global_metrics``.
+  :cc:`PW_METRIC_GLOBAL` and :cc:`PW_METRIC_GROUP_GLOBAL`
+- The global groups and metrics list:
+  :cc:`global_groups <pw::metric::global_groups>` and
+  :cc:`global_metrics <pw::metric::global_metrics>`.
 
 Metric architecture
 -------------------
@@ -170,26 +172,34 @@ To support both 32-bit and 64-bit metrics efficiently without virtual table
 overhead or wasting memory, ``pw_metric`` uses a type-discriminated class
 hierarchy:
 
+.. TODO: b/577210463 - Use unqualified display text without spaces once Doxylink
+   supports template angle brackets inside explicit `<target>` links and
+   normalizes template argument whitespace.
+
 .. list-table::
    :header-rows: 1
 
    * - Class
      - Description
      - Size (32-bit platform)
-   * - ``UntypedMetric``
+   * - :cc:`UntypedMetric <pw::metric::UntypedMetric>`
      - Common base class stored in intrusive lists. Holds the token and type.
      - 8 bytes
-   * - ``TypedMetric<uint32_t>``
-     - Inherits from ``UntypedMetric``, holds a 32-bit ``uint32_t`` payload.
+   * - :cc:`pw::metric::TypedMetric\< uint32_t \>`
+     - Inherits from :cc:`UntypedMetric <pw::metric::UntypedMetric>`, holds a
+       32-bit ``uint32_t`` payload.
      - 12 bytes
-   * - ``TypedMetric<float>``
-     - Inherits from ``UntypedMetric``, holds a 32-bit ``float`` payload.
+   * - :cc:`pw::metric::TypedMetric\< float \>`
+     - Inherits from :cc:`UntypedMetric <pw::metric::UntypedMetric>`, holds a
+       32-bit ``float`` payload.
      - 12 bytes
-   * - ``TypedMetric<uint64_t>``
-     - Inherits from ``UntypedMetric``, holds a 64-bit ``uint64_t`` payload (optional).
+   * - :cc:`pw::metric::TypedMetric\< uint64_t \>`
+     - Inherits from :cc:`UntypedMetric <pw::metric::UntypedMetric>`, holds a
+       64-bit ``uint64_t`` payload (optional).
      - 16 bytes
-   * - ``TypedMetric<int64_t>``
-     - Inherits from ``UntypedMetric``, holds a 64-bit ``int64_t`` payload (optional).
+   * - :cc:`pw::metric::TypedMetric\< int64_t \>`
+     - Inherits from :cc:`UntypedMetric <pw::metric::UntypedMetric>`, holds a
+       64-bit ``int64_t`` payload (optional).
      - 16 bytes
 
 All mutation operations on metrics are atomic, requiring a ``std::atomic``
@@ -219,8 +229,8 @@ by default.
 To opt-in to 64-bit metrics on a target platform:
 
 1.  **Define the configuration macro**: Define
-    ``PW_METRIC_CONFIG_ENABLE_64BIT=1`` in your compiler options
-    or configuration header.
+    ``PW_METRIC_CONFIG_ENABLE_64BIT=1`` (:cc:`PW_METRIC_CONFIG_ENABLE_64BIT`) in
+    your compiler options or configuration header.
 2.  **Link the atomic helper library**: Link the ``cortex_m_64bit_atomics``
     library provided by Pigweed (see below).
 3.  **Include the 64-bit header**: Include ``pw_metric/metric_64bit.h`` in
@@ -238,7 +248,8 @@ Linking the atomic helpers
 Token and type encoding
 ^^^^^^^^^^^^^^^^^^^^^^^
 To minimize memory usage, the metric name (token) and its type are packed
-into a single 32-bit field (``name_and_type_``) in ``UntypedMetric``:
+into a single 32-bit field (``name_and_type_``) in
+:cc:`UntypedMetric <pw::metric::UntypedMetric>`:
 
 - **Lower 28 bits**: The tokenized name (masked with ``0x0fffffff``).
 - **Upper 4 bits**: The type discriminator (masked with ``0xf0000000``).
@@ -261,145 +272,55 @@ provided by ``pw_tokenizer``.
 TypedMetric
 -----------
 The primary way to interact with metrics is through the
-``pw::metric::TypedMetric`` wrappers, which are instantiated by the
-``PW_METRIC`` macros.
+:cc:`TypedMetric <pw::metric::TypedMetric>` wrappers, which are instantiated by
+the :cc:`PW_METRIC` macros. Only the operations valid for the type ``T`` are
+exposed at compile-time:
 
-.. cpp:class:: template <typename T> pw::metric::TypedMetric
+.. TODO: b/577210463 - Use unqualified display text without spaces once Doxylink
+   supports template angle brackets inside explicit `<target>` links and
+   normalizes template argument whitespace.
 
-   Type-safe wrapper for metrics. Only the operations valid for the type ``T``
-   are exposed at compile-time.
+* :cc:`pw::metric::TypedMetric\< uint32_t \>`: Supports
+  ``Increment()`` (saturating to max), ``Decrement()`` (saturating to ``0``),
+  ``Set()``, and ``value()``.
+* :cc:`pw::metric::TypedMetric\< uint64_t \>`: Supports
+  ``Increment()`` (saturating to max), ``Decrement()`` (saturating to ``0``),
+  ``Set()``, and ``value()``.
+* :cc:`pw::metric::TypedMetric\< int32_t \>`: Supports
+  ``Increment()`` (saturating to max), ``Decrement()`` (saturating to min),
+  ``Set()``, and ``value()``.
+* :cc:`pw::metric::TypedMetric\< int64_t \>`: Supports
+  ``Increment()`` (saturating to max), ``Decrement()`` (saturating to min),
+  ``Set()``, and ``value()``.
+* :cc:`pw::metric::TypedMetric\< float \>`: Supports
+  ``Set()`` and ``value()``.
 
-.. cpp:class:: template<> pw::metric::TypedMetric<uint32_t> : public pw::metric::UntypedMetric
+  .. note::
 
-   .. cpp:function:: void Increment(uint32_t amount = 1)
+     ``TypedMetric<float>`` does not offer ``Increment()`` or ``Decrement()``
+     operations, as floating-point addition is prone to precision loss when
+     accumulating small values.
 
-      Atomically increment the metric by the given amount (saturating to max).
+* :cc:`pw::metric::TypedMetric\< double \>`: Supports
+  ``Set()`` and ``value()``.
 
-   .. cpp:function:: void Decrement(uint32_t amount = 1)
+  .. note::
 
-      Atomically decrement the metric by the given amount (saturating to 0).
+     ``TypedMetric<double>`` does not offer ``Increment()`` or ``Decrement()``
+     operations for the same reason as ``TypedMetric<float>``.
 
-   .. cpp:function:: void Set(uint32_t value)
-
-      Atomically set the metric to the given value.
-
-   .. cpp:function:: uint32_t value() const
-
-      Return the current value of the metric.
-
-.. cpp:class:: template<> pw::metric::TypedMetric<uint64_t> : public pw::metric::UntypedMetric
-
-   .. cpp:function:: void Increment(uint64_t amount = 1)
-
-      Atomically increment the metric by the given amount (saturating to max).
-
-   .. cpp:function:: void Decrement(uint64_t amount = 1)
-
-      Atomically decrement the metric by the given amount (saturating to 0).
-
-   .. cpp:function:: void Set(uint64_t value)
-
-      Atomically set the metric to the given value.
-
-   .. cpp:function:: uint64_t value() const
-
-      Return the current value of the metric.
-
-.. cpp:class:: template<> pw::metric::TypedMetric<int64_t> : public pw::metric::UntypedMetric
-
-   .. cpp:function:: void Increment(int64_t amount = 1)
-
-      Atomically increment the metric by the given amount (saturating to max).
-
-   .. cpp:function:: void Decrement(int64_t amount = 1)
-
-      Atomically decrement the metric by the given amount (saturating to min).
-
-   .. cpp:function:: void Set(int64_t value)
-
-      Atomically set the metric to the given value.
-
-   .. cpp:function:: int64_t value() const
-
-      Return the current value of the metric.
-
-.. cpp:class:: template<> pw::metric::TypedMetric<float> : public pw::metric::UntypedMetric
-
-   .. cpp:function:: void Set(float value)
-
-      Atomically set the metric to the given value.
-
-   .. cpp:function:: float value() const
-
-      Return the current value of the metric.
-
-   .. note::
-      ``TypedMetric<float>`` does not offer ``Increment()`` or ``Decrement()``
-      operations, as floating-point addition is prone to precision loss when
-      accumulating small values.
-
-.. cpp:class:: template<> pw::metric::TypedMetric<bool> : public pw::metric::UntypedMetric
-
-   .. cpp:function:: void Set(bool value)
-
-      Atomically set the metric to the given value.
-
-   .. cpp:function:: bool value() const
-
-      Return the current value of the metric.
-
-.. cpp:class:: template<> pw::metric::TypedMetric<int32_t> : public pw::metric::UntypedMetric
-
-   .. cpp:function:: void Increment(int32_t amount = 1)
-
-      Atomically increment the metric by the given amount (saturating to max).
-
-   .. cpp:function:: void Decrement(int32_t amount = 1)
-
-      Atomically decrement the metric by the given amount (saturating to min).
-
-   .. cpp:function:: void Set(int32_t value)
-
-      Atomically set the metric to the given value.
-
-   .. cpp:function:: int32_t value() const
-
-      Return the current value of the metric.
-
-.. cpp:class:: template<> pw::metric::TypedMetric<double> : public pw::metric::UntypedMetric
-
-   .. cpp:function:: void Set(double value)
-
-      Atomically set the metric to the given value.
-
-   .. cpp:function:: double value() const
-
-      Return the current value of the metric.
-
-   .. note::
-      ``TypedMetric<double>`` does not offer ``Increment()`` or ``Decrement()``
-      operations for the same reason as ``TypedMetric<float>``.
-
-.. cpp:struct:: pw::metric::TokenValue
-
-   A wrapper type representing a 32-bit tokenized string value. Used to
-   specialize ``TypedMetric<TokenValue>``.
-
-.. cpp:class:: template<> pw::metric::TypedMetric<TokenValue> : public pw::metric::UntypedMetric
-
-   .. cpp:function:: void Set(TokenValue value)
-
-      Atomically set the metric to the given token value.
-
-   .. cpp:function:: TokenValue value() const
-
-      Return the current token value of the metric.
+* :cc:`pw::metric::TypedMetric\< bool \>`: Supports ``Set()``
+  and ``value()``.
+* :cc:`TokenValue <pw::metric::TokenValue>` /
+  :cc:`pw::metric::TypedMetric\< TokenValue \>`:
+  A wrapper type representing a 32-bit tokenized string value, supporting
+  ``Set()`` and ``value()``.
 
 .. _module-pw_metric-group:
 
 Group
 -----
-The ``pw::metric::Group`` object is simply:
+The :cc:`Group <pw::metric::Group>` object is simply:
 
 - A name for the group
 - A list of children groups
@@ -408,41 +329,38 @@ The ``pw::metric::Group`` object is simply:
 
 The group object is 16 bytes on 32-bit platforms.
 
-.. cpp:class:: pw::metric::Group
+* :cc:`Dump <pw::metric::Group::Dump>`: Recursively dump a metrics group to
+  ``pw_log``. Produces output like:
 
-   .. cpp:function:: Dump(int indent_level = 0)
+  .. code-block:: output
 
-      Recursively dump a metrics group to ``pw_log``. Produces output like:
+     "$6doqFw==": {
+       "$05OCZw==": {
+         "$VpPfzg==": 1,
+         "$LGPMBQ==": 1.000000,
+         "$+iJvUg==": 5,
+       }
+       "$9hPNxw==": 65,
+       "$oK7HmA==": 13,
+       "$FCM4qQ==": 0,
+     }
 
-      .. code-block:: none
+  Note the metric names are tokenized with base64. Decoding requires using
+  the Pigweed detokenizer. With a detokenizing-enabled logger, you could get
+  something like:
 
-         "$6doqFw==": {
-           "$05OCZw==": {
-             "$VpPfzg==": 1,
-             "$LGPMBQ==": 1.000000,
-             "$+iJvUg==": 5,
-           }
-           "$9hPNxw==": 65,
-           "$oK7HmA==": 13,
-           "$FCM4qQ==": 0,
-         }
+  .. code-block:: output
 
-      Note the metric names are tokenized with base64. Decoding requires using
-      the Pigweed detokenizer. With a detokenizing-enabled logger, you could get
-      something like:
-
-      .. code-block:: none
-
-         "i2c_1": {
-           "gyro": {
-             "num_sampleses": 1,
-             "init_time_us": 1.000000,
-             "initialized": 5,
-           }
-           "bus_errors": 65,
-           "transactions": 13,
-           "bytes_sent": 0,
-         }
+     "i2c_1": {
+       "gyro": {
+         "num_sampleses": 1,
+         "init_time_us": 1.000000,
+         "initialized": 5,
+       }
+       "bus_errors": 65,
+       "transactions": 13,
+       "bytes_sent": 0,
+     }
 
 Macros
 ------
@@ -450,195 +368,183 @@ The **macros are the primary mechanism for creating metrics**, and should be
 used instead of directly constructing metrics or groups. The macros handle
 tokenizing the metric and group names.
 
-.. cpp:function:: PW_METRIC(identifier, name, value)
-.. cpp:function:: PW_METRIC(group, identifier, name, value)
-.. cpp:function:: PW_METRIC_STATIC(identifier, name, value)
-.. cpp:function:: PW_METRIC_STATIC(group, identifier, name, value)
+* :cc:`PW_METRIC` / :cc:`PW_METRIC_STATIC`: Declare a metric, optionally adding
+  it to a group.
 
-   Declare a metric, optionally adding it to a group.
+  - **identifier** - An identifier name for the created variable or member.
+    For example: ``i2c_transactions`` might be used as a local or global
+    metric; inside a class, could be named according to members
+    (``i2c_transactions_`` for Google's C++ style).
+  - **name** - The string name for the metric. This will be tokenized. There
+    are no restrictions on the contents of the name; however, consider
+    restricting these to be valid C++ identifiers to ease integration with
+    other systems.
+  - **value** - The initial value for the metric. Must be either a floating
+    point value (e.g. ``3.2f``) or unsigned int (e.g. ``21u``).
+  - **group** - A :cc:`Group <pw::metric::Group>` instance. If provided, the
+    metric is added to the given group.
 
-   - **identifier** - An identifier name for the created variable or member.
-     For example: ``i2c_transactions`` might be used as a local or global
-     metric; inside a class, could be named according to members
-     (``i2c_transactions_`` for Google's C++ style).
-   - **name** - The string name for the metric. This will be tokenized. There
-     are no restrictions on the contents of the name; however, consider
-     restricting these to be valid C++ identifiers to ease integration with
-     other systems.
-   - **value** - The initial value for the metric. Must be either a floating
-     point value (e.g. ``3.2f``) or unsigned int (e.g. ``21u``).
-   - **group** - A ``pw::metric::Group`` instance. If provided, the metric is
-     added to the given group.
+  The macro declares a variable or member named ``identifier`` with type
+  :cc:`TypedMetric <pw::metric::TypedMetric>`, and works in three contexts:
+  global, local, and member.
 
-   The macro declares a variable or member named "name" with type
-   ``pw::metric::TypedMetric<T>``, and works in three contexts: global, local, and
-   member.
+  If the ``_STATIC`` variant is used, the macro declares a variable with static
+  storage. These can be used in function scopes, but not in classes.
 
-   If the ``_STATIC`` variant is used, the macro declares a variable with static
-   storage. These can be used in function scopes, but not in classes.
+  1. At global scope:
 
-   1. At global scope:
+     .. code-block:: c++
 
-      .. code-block:: cpp
+        PW_METRIC(foo, "foo", 15.5f);
 
-         PW_METRIC(foo, "foo", 15.5f);
+        void MyFunc() { foo.Increment(); }
 
-         void MyFunc() { foo.Increment(); }
+  2. At local function or member function scope:
 
-   2. At local function or member function scope:
+     .. code-block:: c++
 
-      .. code-block:: cpp
+        void MyFunc() {
+          PW_METRIC(foo, "foo", 15.5f);
+          foo.Increment();
+          // foo goes out of scope here; be careful!
+        }
 
-         void MyFunc() {
-           PW_METRIC(foo, "foo", 15.5f);
-           foo.Increment();
-           // foo goes out of scope here; be careful!
-         }
+  3. At member level inside a class or struct:
 
-   3. At member level inside a class or struct:
+     .. code-block:: c++
 
-      .. code-block:: cpp
+        struct MyStructy {
+          void DoSomething() { somethings.Increment(); }
+          // Every instance of MyStructy will have a separate somethings counter.
+          PW_METRIC(somethings, "somethings", 0u);
+        }
 
-         struct MyStructy {
-           void DoSomething() { somethings.Increment(); }
-           // Every instance of MyStructy will have a separate somethings counter.
-           PW_METRIC(somethings, "somethings", 0u);
-         }
+  You can also put a metric into a group with the macro. Metrics can belong to
+  strictly one group, otherwise an assertion will fail. Example:
 
-   You can also put a metric into a group with the macro. Metrics can belong to
-   strictly one group, otherwise an assertion will fail. Example:
+  .. code-block:: c++
 
-   .. code-block:: cpp
+     PW_METRIC_GROUP(my_group, "my_group");
+     PW_METRIC(my_group, foo, "foo", 0.2f);
+     PW_METRIC(my_group, bar, "bar", 44000u);
+     PW_METRIC(my_group, zap, "zap", 3.14f);
 
-      PW_METRIC_GROUP(my_group, "my_group");
-      PW_METRIC(my_group, foo, "foo", 0.2f);
-      PW_METRIC(my_group, bar, "bar", 44000u);
-      PW_METRIC(my_group, zap, "zap", 3.14f);
+  .. tip::
 
-   .. tip::
-      If you want a globally registered metric, see ``pw_metric/global.h``; in
-      that context, metrics are globally registered without the need to
-      centrally register in a single place.
+     If you want a globally registered metric, see ``pw_metric/global.h``; in
+     that context, metrics are globally registered without the need to
+     centrally register in a single place.
 
-.. cpp:function:: PW_METRIC_TYPED(identifier, name, type, value)
-.. cpp:function:: PW_METRIC_TYPED(group, identifier, name, type, value)
-.. cpp:function:: PW_METRIC_TYPED_STATIC(identifier, name, type, value)
-.. cpp:function:: PW_METRIC_TYPED_STATIC(group, identifier, name, type, value)
+* :cc:`PW_METRIC_TYPED` / :cc:`PW_METRIC_TYPED_STATIC`: Declare a metric with an
+  explicit type, optionally adding it to a group.
 
-   Declare a metric with an explicit type, optionally adding it to a group.
+  This macro works identically to :cc:`PW_METRIC`, but requires explicitly
+  specifying the metric type (e.g. ``float``, ``uint32_t``, or ``uint64_t``).
+  This is useful for declaring 64-bit metrics or when you want to make the
+  metric's type explicit.
 
-   This macro works identically to ``PW_METRIC``, but requires explicitly
-   specifying the metric type (e.g. ``float``, ``uint32_t``, or ``uint64_t``).
-   This is useful for declaring 64-bit metrics or when you want to make the
-   metric's type explicit.
+  Example:
 
-   Example:
+  .. code-block:: c++
 
-   .. code-block:: cpp
+     PW_METRIC_GROUP(my_group, "my_group");
+     PW_METRIC_TYPED(my_group, my_64bit_metric, "my_64bit_metric", uint64_t, 0ULL);
 
-      PW_METRIC_GROUP(my_group, "my_group");
-      PW_METRIC_TYPED(my_group, my_64bit_metric, "my_64bit_metric", uint64_t, 0ULL);
+* :cc:`PW_METRIC_GROUP` / :cc:`PW_METRIC_GROUP_STATIC`: Declares a
+  :cc:`Group <pw::metric::Group>` with name ``name``; the name is tokenized.
+  Works similar to :cc:`PW_METRIC` and can be used in the same contexts (global,
+  local, and member). Optionally, the group can be added to a parent group.
 
-.. cpp:function:: PW_METRIC_GROUP(identifier, name)
-.. cpp:function:: PW_METRIC_GROUP(parent_group, identifier, name)
-.. cpp:function:: PW_METRIC_GROUP_STATIC(identifier, name)
-.. cpp:function:: PW_METRIC_GROUP_STATIC(parent_group, identifier, name)
+  If the ``_STATIC`` variant is used, the macro declares a variable with static
+  storage. These can be used in function scopes, but not in classes.
 
-   Declares a ``pw::metric::Group`` with name name; the name is tokenized.
-   Works similar to ``PW_METRIC`` and can be used in the same contexts (global,
-   local, and member). Optionally, the group can be added to a parent group.
+  Example:
 
-   If the ``_STATIC`` variant is used, the macro declares a variable with static
-   storage. These can be used in function scopes, but not in classes.
+  .. code-block:: c++
 
-   Example:
+     PW_METRIC_GROUP(my_group, "my_group");
+     PW_METRIC(my_group, foo, "foo", 0.2f);
+     PW_METRIC(my_group, bar, "bar", 44000u);
+     PW_METRIC(my_group, zap, "zap", 3.14f);
 
-   .. code-block:: cpp
+* :cc:`PW_METRIC_GLOBAL`: Declare a :cc:`TypedMetric <pw::metric::TypedMetric>`
+  with name ``name``, and register it in the global metrics list
+  :cc:`global_metrics <pw::metric::global_metrics>`.
 
-      PW_METRIC_GROUP(my_group, "my_group");
-      PW_METRIC(my_group, foo, "foo", 0.2f);
-      PW_METRIC(my_group, bar, "bar", 44000u);
-      PW_METRIC(my_group, zap, "zap", 3.14f);
+  Example:
 
-.. cpp:function:: PW_METRIC_GLOBAL(identifier, name, value)
+  .. code-block:: c++
 
-   Declare a ``pw::metric::TypedMetric<T>`` with name name, and register it in the
-   global metrics list ``pw::metric::global_metrics``.
+     #include "pw_metric/global.h"
+     #include "pw_metric/metric.h"
 
-   Example:
+     // No need to coordinate collection of foo and bar; they're autoregistered.
+     PW_METRIC_GLOBAL(foo, "foo", 0.2f);
+     PW_METRIC_GLOBAL(bar, "bar", 44000u);
 
-   .. code-block:: cpp
+  Note that metrics defined with :cc:`PW_METRIC_GLOBAL` should never be added to
+  groups defined with :cc:`PW_METRIC_GROUP_GLOBAL`. Each metric can only belong
+  to one group, and metrics defined with :cc:`PW_METRIC_GLOBAL` are
+  pre-registered with the global metrics list.
 
-      #include "pw_metric/global.h"
-      #include "pw_metric/metric.h"
+  .. attention::
 
-      // No need to coordinate collection of foo and bar; they're autoregistered.
-      PW_METRIC_GLOBAL(foo, "foo", 0.2f);
-      PW_METRIC_GLOBAL(bar, "bar", 44000u);
+     Do not create :cc:`PW_METRIC_GLOBAL` instances anywhere other than global
+     scope. Putting these on an instance (member context) would lead to dangling
+     pointers and misery. Metrics are never deleted or unregistered!
 
-   Note that metrics defined with ``PW_METRIC_GLOBAL`` should never be added to
-   groups defined with ``PW_METRIC_GROUP_GLOBAL``. Each metric can only belong
-   to one group, and metrics defined with ``PW_METRIC_GLOBAL`` are
-   pre-registered with the global metrics list.
+* :cc:`PW_METRIC_GLOBAL_TYPED`: Declare a
+  :cc:`TypedMetric <pw::metric::TypedMetric>` with name ``name`` and explicit
+  type, and register it in the global metrics list
+  :cc:`global_metrics <pw::metric::global_metrics>`.
 
-   .. attention::
-      Do not create ``PW_METRIC_GLOBAL`` instances anywhere other than global
-      scope. Putting these on an instance (member context) would lead to dangling
-      pointers and misery. Metrics are never deleted or unregistered!
+  This macro works identically to :cc:`PW_METRIC_GLOBAL`, but requires
+  explicitly specifying the metric type (e.g. ``float``, ``uint32_t``, or
+  ``uint64_t``).
 
-.. cpp:function:: PW_METRIC_GLOBAL_TYPED(identifier, name, type, value)
+  Example:
 
-   Declare a ``pw::metric::TypedMetric`` with name name and explicit type, and
-   register it in the global metrics list ``pw::metric::global_metrics``.
+  .. code-block:: c++
 
-   This macro works identically to ``PW_METRIC_GLOBAL``, but requires explicitly
-   specifying the metric type (e.g. ``float``, ``uint32_t``, or ``uint64_t``).
+     #include "pw_metric/global.h"
+     #include "pw_metric/metric.h"
 
-   Example:
+     PW_METRIC_GLOBAL_TYPED(my_global_64bit, "my_global_64bit", uint64_t, 0ULL);
 
-   .. code-block:: cpp
+* :cc:`PW_METRIC_GROUP_GLOBAL`: Declare a :cc:`Group <pw::metric::Group>` with
+  name ``name``, and register it in the global metric groups list
+  :cc:`global_groups <pw::metric::global_groups>`.
 
-      #include "pw_metric/global.h"
-      #include "pw_metric/metric.h"
+  Note that metrics created with :cc:`PW_METRIC_GLOBAL` should never be added to
+  groups! Instead, just create a freestanding metric and register it into the
+  global group (like in the example below).
 
-      PW_METRIC_GLOBAL_TYPED(my_global_64bit, "my_global_64bit", uint64_t, 0ULL);
+  Example:
 
-.. cpp:function:: PW_METRIC_GROUP_GLOBAL(identifier, name)
+  .. code-block:: c++
 
-   Declare a ``pw::metric::Group`` with name name, and register it in the
-   global metric groups list ``pw::metric::global_groups``.
+     #include "pw_metric/global.h"
+     #include "pw_metric/metric.h"
 
-   Note that metrics created with ``PW_METRIC_GLOBAL`` should never be added to
-   groups! Instead, just create a freestanding metric and register it into the
-   global group (like in the example below).
+     // No need to coordinate collection of this group; it's globally registered.
+     PW_METRIC_GROUP_GLOBAL(legacy_system, "legacy_system");
+     PW_METRIC(legacy_system, foo, "foo", 0.2f);
+     PW_METRIC(legacy_system, bar, "bar", 44000u);
 
-   Example:
+  .. attention::
 
-   .. code-block:: cpp
+     Do not create :cc:`PW_METRIC_GROUP_GLOBAL` instances anywhere other than
+     global scope. Putting these on an instance (member context) would lead to
+     dangling pointers and misery. Metrics are never deleted or unregistered!
 
-      #include "pw_metric/global.h"
-      #include "pw_metric/metric.h"
+* :cc:`PW_METRIC_TOKEN` / :cc:`PW_METRIC_TOKEN_EXPR`: Declare a
+  ``pw::metric::Token`` (``pw::tokenizer::Token``) for a metric with name
+  ``name``. This token matches the ``.name()`` of a metric with the same name.
 
-      // No need to coordinate collection of this group; it's globally registered.
-      PW_METRIC_GROUP_GLOBAL(legacy_system, "legacy_system");
-      PW_METRIC(legacy_system, foo, "foo", 0.2f);
-      PW_METRIC(legacy_system, bar, "bar", 44000u);
+  This is a wrapper around :cc:`PW_TOKENIZE_STRING_MASK` and carries the same
+  semantics.
 
-   .. attention::
-      Do not create ``PW_METRIC_GROUP_GLOBAL`` instances anywhere other than
-      global scope. Putting these on an instance (member context) would lead to
-      dangling pointers and misery. Metrics are never deleted or unregistered!
-
-.. cpp:function:: PW_METRIC_TOKEN(name)
-
-   Declare a ``pw::metric::Token`` (``pw::tokenizer::Token``) for a metric with
-   name ``name``. This token matches the ``.name()`` of a metric with the same
-   name.
-
-   This is a wrapper around ``PW_TOKENIZE_STRING_MASK`` and carries the same
-   semantics.
-
-   This is unlikely to be used by most pw_metric consumers.
+  This is unlikely to be used by most ``pw_metric`` consumers.
 
 ----------------------
 Usage & Best Practices
@@ -1062,19 +968,21 @@ chosen some points on the tradeoff curve:
 Migration Guide
 ----------------
 With the addition of strongly-typed metrics (including 64-bit integers, doubles,
-booleans, and tokens), the legacy ``pw::metric::Metric`` class and untyped value
-accessors ``as_int()`` and ``as_float()`` are deprecated and removed in favor of
-type-safe metric representations.
+booleans, and tokens), the legacy :cc:`Metric <pw::metric::Metric>` class and
+untyped value accessors ``as_int()`` and ``as_float()`` are deprecated and
+removed in favor of type-safe metric representations.
 
 Migrating legacy ``pw::metric::Metric``
 ---------------------------------------
-Existing code using ``pw::metric::Metric`` should migrate to
-``pw::metric::TypedMetric<T>`` or ``pw::metric::UntypedMetric``:
+Existing code using :cc:`Metric <pw::metric::Metric>` should migrate to
+:cc:`TypedMetric <pw::metric::TypedMetric>` or
+:cc:`UntypedMetric <pw::metric::UntypedMetric>`:
 
-* When defining metrics, prefer ``PW_METRIC`` or ``PW_METRIC_TYPED`` macros,
-  which declare type-safe ``TypedMetric<T>`` instances automatically:
+* When defining metrics, prefer :cc:`PW_METRIC` or :cc:`PW_METRIC_TYPED` macros,
+  which declare type-safe :cc:`TypedMetric <pw::metric::TypedMetric>` instances
+  automatically:
 
-  .. code-block:: cpp
+  .. code-block:: c++
 
      // Before (legacy):
      pw::metric::Metric my_metric("my_metric", 42u);
@@ -1092,6 +1000,10 @@ Migrating accessors ``as_int()`` and ``as_float()``
 The ``as_int()`` and ``as_float()`` methods on metric objects have been
 replaced with typed accessors:
 
+.. TODO: b/577210463 - Use unqualified display text without spaces once Doxylink
+   supports template angle brackets inside explicit `<target>` links and
+   normalizes template argument whitespace.
+
 .. list-table::
    :header-rows: 1
 
@@ -1100,10 +1012,20 @@ replaced with typed accessors:
      - Description
    * - ``as_int()``
      - ``as_int32()`` / ``as_uint32()`` / ``value()``
-     - Use ``value()`` on a ``TypedMetric<uint32_t>``, or type-checked ``as_int32()`` / ``as_uint32()`` on an ``UntypedMetric``.
+     - Use ``value()`` on a
+       :cc:`pw::metric::TypedMetric\< uint32_t \>`, or
+       type-checked ``as_int32()`` / ``as_uint32()`` on an
+       :cc:`UntypedMetric <pw::metric::UntypedMetric>`.
    * - ``as_float()``
      - ``as_float()`` / ``as_double()`` / ``value()``
-     - Use ``value()`` on a ``TypedMetric<float>``, or ``as_double()`` for double precision.
+     - Use ``value()`` on a
+       :cc:`pw::metric::TypedMetric\< float \>`, or
+       ``as_double()`` for double precision.
+
+-------------
+API reference
+-------------
+Moved: :cc:`pw_metric`
 
 ----------------
 Roadmap & Status

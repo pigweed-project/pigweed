@@ -79,6 +79,7 @@ filegroup(
         "//pw_log_tokenized:doxygen",
         "//pw_malloc:doxygen",
         "//pw_memory:doxygen",
+        "//pw_metric:doxygen",
         "//pw_multibuf:doxygen",
         "//pw_numeric:doxygen",
         "//pw_perf_test:doxygen",

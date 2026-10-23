@@ -15,16 +15,18 @@
 
 #include <atomic>
 
-// Control whether 64-bit metrics are enabled.
-//
-// By default, 64-bit metrics are enabled automatically on 64-bit host platforms
-// (e.g. x86_64, AArch64). On 32-bit target platforms (e.g. ARM Cortex-M),
-// 64-bit metrics are disabled by default to prevent linker errors for atomic
-// libcalls (__atomic_load_8).
-//
-// Downstream projects targeting 32-bit platforms can opt-in to 64-bit metrics
-// by defining PW_METRIC_CONFIG_ENABLE_64BIT=1 and linking the appropriate
-// atomic helper library (e.g. @pigweed//pw_atomic:cortex_m_64bit_atomics).
+/// @module{pw_metric}
+
+/// Control whether 64-bit metrics are enabled.
+///
+/// By default, 64-bit metrics are enabled automatically on 64-bit host
+/// platforms (e.g. x86_64, AArch64). On 32-bit target platforms (e.g. ARM
+/// Cortex-M), 64-bit metrics are disabled by default to prevent linker errors
+/// for atomic libcalls (`__atomic_load_8`).
+///
+/// Downstream projects targeting 32-bit platforms can opt-in to 64-bit metrics
+/// by defining `PW_METRIC_CONFIG_ENABLE_64BIT=1` and linking the appropriate
+/// atomic helper library (e.g. `@pigweed//pw_atomic:cortex_m_64bit_atomics`).
 #ifndef PW_METRIC_CONFIG_ENABLE_64BIT
 #if (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ >= 8) || \
     defined(_WIN64) || defined(__LP64__) || defined(_LP64) ||   \
@@ -34,3 +36,5 @@
 #define PW_METRIC_CONFIG_ENABLE_64BIT 0
 #endif
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+
+/// @endmodule
