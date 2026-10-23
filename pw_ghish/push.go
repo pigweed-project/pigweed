@@ -15,8 +15,10 @@
 package pw_ghish
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -29,9 +31,16 @@ func runPush(cmd *cobra.Command, args []string) error {
 	if err := ValidatePushScheduleFlags(cmd, &flags.PushOptions); err != nil {
 		return err
 	}
+	cmFlags := ParseCommitMessageFlags(cmd)
 	force, _ := cmd.Flags().GetBool("force")
 
-	state, err := VerifyHeadForPush(ctx, cmd, cfg, !force, flags.NoVerify)
+	guard, prefetched, branch, err := prepareCommitForPush(ctx, cmd, cfg, &cmFlags, flags, force)
+	if err != nil {
+		return err
+	}
+	defer guard.Rollback(ctx, cmd.ErrOrStderr())
+
+	state, err := verifyHeadForPush(ctx, cmd, cfg, !force, flags.NoVerify, prefetched)
 	if err != nil {
 		return err
 	}
@@ -56,8 +65,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	branch := flags.Base
-	if branch == "" && state.ExistingChange != nil {
+	if flags.Base == "" && state.ExistingChange != nil && state.ExistingChange.Branch != "" {
 		branch = state.ExistingChange.Branch
 	}
 	if branch == "" {
@@ -120,17 +128,20 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {
 		if autoSubmit.Unsupported != nil && err == autoSubmit.Unsupported {
+			guard.Keep()
 			return err
 		}
 		// The patchset is up; only the schedule failed. Prefixing this with
 		// "error pushing patchset" would send the user to push again.
 		var flowErr *ScheduleFlowError
 		if errors.As(err, &flowErr) {
+			guard.Keep()
 			return err
 		}
 		return fmt.Errorf("error pushing patchset: %w", err)
 	}
 
+	guard.Keep()
 	fmt.Fprintln(cmd.OutOrStdout(), "\nPatchset pushed successfully.")
 	// The patchset is up, so this is reported last: the push is not the part
 	// that failed, the promise that something would submit it is.
@@ -148,6 +159,7 @@ If no change with HEAD's Change-Id exists on Gerrit, this command will error
 and suggest using 'gh pr create' (or restoring an overwritten Change-Id). Use --force to bypass this check.
 
 Supports rich push options:
+  - Commit message & bug trailers: --title, --body, --body-file, --bug, --fixed
   - Reviewers and CCs: --reviewer, --cc
   - Auto-submit: --auto (alias --auto-submit)
   - Scheduled submission (Gerrit Flows): --nightly, --submit-at <HH:MM>
@@ -161,6 +173,7 @@ Supports rich push options:
 	}
 
 	AddCommonPushFlags(cmd)
+	AddCommitMessageFlags(cmd)
 	cmd.Flags().Bool("ready", false, "Mark as ready for review (removes WIP)")
 	cmd.Flags().Bool("force", false, "Force push even if no change with this Change-Id exists on Gerrit")
 
@@ -170,4 +183,98 @@ Supports rich push options:
 func init() {
 	PrCmd.AddCommand(newPushCommand())
 	RootCmd.AddCommand(newPushCommand())
+}
+
+func prepareCommitForPush(
+	ctx context.Context,
+	cmd *cobra.Command,
+	cfg *Config,
+	cmFlags *CommitMessageFlags,
+	flags CommonPushFlags,
+	force bool,
+) (*headRollbackGuard, *VerifiedPushState, string, error) {
+	if !cmFlags.HasAny(cmd) {
+		return newHeadRollbackGuard(ctx, cfg, "gh pr push: rollback failed push"), nil, "", nil
+	}
+
+	resolved, err := ResolveAndValidateCommitMessageFlags(cmd, cmFlags, "gh pr push")
+	if err != nil {
+		return nil, nil, "", err
+	}
+	trailerFmt, err := ResolveBugTrailerFormat(ctx, cfg)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if err := cfg.GitClient().CheckAmendAllowed(ctx); err != nil {
+		return nil, nil, "", err
+	}
+
+	origMsg, err := cfg.GitClient().HeadCommitMessage(ctx)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("failed to read HEAD commit message: %w", err)
+	}
+
+	var prefetched *VerifiedPushState
+	origChangeID := ExtractChangeID(origMsg)
+	if !force && origChangeID != "" {
+		if client, err := NewGerritClient(ctx, cmd); err == nil {
+			existing, queried := queryExistingChangeByID(ctx, client, origChangeID, "DETAILED_LABELS", "SUBMIT_REQUIREMENTS")
+			prefetched = &VerifiedPushState{
+				CommitMsg:      origMsg,
+				ChangeID:       origChangeID,
+				ExistingChange: existing,
+				GerritQueried:  queried,
+			}
+		}
+	}
+	if prefetched != nil && prefetched.GerritQueried && prefetched.ExistingChange == nil && !bodyOverridesChangeID(origChangeID, resolved) {
+		return nil, nil, "", FormatMissingChangePushError(ctx, cmd, cfg, prefetched, flags.Stack)
+	}
+
+	branch := flags.Base
+	if branch == "" && prefetched != nil && prefetched.ExistingChange != nil {
+		branch = prefetched.ExistingChange.Branch
+	}
+	if branch == "" {
+		branch = resolvePushBranch(ctx, cfg, flags.Base, cmd.ErrOrStderr())
+	}
+
+	aheadCount, hasRemoteRef, err := validateCommitMsgSingleCommit(ctx, cfg, branch, "push")
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if hasRemoteRef && aheadCount == 0 {
+		remoteName := cfg.GitClient().ResolveRemote(ctx)
+		return nil, nil, "", fmt.Errorf(
+			"cannot apply commit-message flags: there is no unpushed local commit ahead of %s/%s.\n\n"+
+				"Why: Amending HEAD here would rewrite an upstream commit rather than updating an unpushed Gerrit patchset.\n"+
+				"To create a new change from uncommitted edits, run:\n"+
+				"  gh pr create -t \"<module>: <summary>\"\n\n"+
+				"Or stage and commit your changes first:\n"+
+				"  git add <files> && git commit",
+			remoteName, branch,
+		)
+	}
+
+	guard := newHeadRollbackGuard(ctx, cfg, "gh pr push: rollback failed push")
+	if err := guard.AmendWithFlags(ctx, cmd, trailerFmt, resolved); err != nil {
+		return nil, nil, "", err
+	}
+	return guard, prefetched, branch, nil
+}
+
+func bodyOverridesChangeID(origChangeID string, resolved *ResolvedCommitMessageFlags) bool {
+	if resolved == nil || !resolved.HasBody || strings.TrimSpace(resolved.Body) == "" {
+		return false
+	}
+	parsed := ParseCommitMessage("subject\n\n" + strings.TrimRight(resolved.Body, "\r\n"))
+	for _, p := range parsed.Paragraphs[parsed.ActiveFooterStart():] {
+		for _, tr := range p.Trailers {
+			if !tr.IsKeylessFooter && strings.EqualFold(tr.Key, "Change-Id") {
+				val := strings.TrimSpace(tr.Value)
+				return val != "" && val != origChangeID
+			}
+		}
+	}
+	return false
 }

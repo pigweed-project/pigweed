@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -781,8 +782,8 @@ type VerifiedPushState struct {
 }
 
 // queryExistingChangeByID queries Gerrit for the first change matching changeID.
-// Returns (change, true) if Gerrit responded without error (change is nil if 0 matches),
-// or (nil, false) if Gerrit could not be queried.
+// Returns (change, true) if Gerrit responded definitively (change is nil on 0
+// matches or HTTP 404), or (nil, false) if Gerrit could not be queried.
 func queryExistingChangeByID(ctx context.Context, client *gerrit.Client, changeID string, additionalFields ...string) (*gerrit.ChangeInfo, bool) {
 	if client == nil || changeID == "" {
 		return nil, false
@@ -790,8 +791,14 @@ func queryExistingChangeByID(ctx context.Context, client *gerrit.Client, changeI
 	opt := &gerrit.QueryChangeOptions{}
 	opt.Query = []string{changeID}
 	opt.AdditionalFields = additionalFields
-	changes, _, err := client.Changes.QueryChanges(ctx, opt)
-	if err != nil || changes == nil {
+	changes, resp, err := client.Changes.QueryChanges(ctx, opt)
+	if err != nil {
+		if resp != nil && resp.Response != nil && resp.StatusCode == http.StatusNotFound {
+			return nil, true
+		}
+		return nil, false
+	}
+	if changes == nil {
 		return nil, false
 	}
 	if len(*changes) > 0 {
@@ -913,6 +920,16 @@ func CheckCommitMessageWarnings(msg string, label string) []string {
 // the commit message contains no GitHub issue syntax or duplicate Change-Ids,
 // and optionally queries Gerrit for an existing change matching the Change-Id.
 func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, queryExisting, noVerify bool) (*VerifiedPushState, error) {
+	return verifyHeadForPush(ctx, cmd, cfg, queryExisting, noVerify, nil)
+}
+
+func verifyHeadForPush(
+	ctx context.Context,
+	cmd *cobra.Command,
+	cfg *Config,
+	queryExisting, noVerify bool,
+	prefetched *VerifiedPushState,
+) (*VerifiedPushState, error) {
 	if err := EnsureChangeID(ctx, cfg, noVerify, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 		return nil, fmt.Errorf("error verifying Change-Id: %w", err)
 	}
@@ -935,7 +952,10 @@ func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, que
 	changeID := ExtractChangeID(logMsg)
 	var existing *gerrit.ChangeInfo
 	var queried bool
-	if queryExisting && changeID != "" {
+	if prefetched != nil && prefetched.ChangeID == changeID {
+		existing = prefetched.ExistingChange
+		queried = prefetched.GerritQueried
+	} else if queryExisting && changeID != "" {
 		if client, err := NewGerritClient(ctx, cmd); err == nil {
 			// DETAILED_LABELS and SUBMIT_REQUIREMENTS so callers can see which
 			// labels and submit requirements this host actually defines instead

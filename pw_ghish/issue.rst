@@ -154,9 +154,9 @@ message, pass ``--amend`` to ``./gh issue create``:
    preserving your existing ``Change-Id``, commit description, and any staged
    index changes.
 
-If you have staged changes but have not created a commit yet, use ``--commit``
-instead of ``--amend`` to create a new Git commit using the issue title and
-configured bug trailer.
+If you have uncommitted changes and have not created a local commit yet, file
+the issue first without ``--amend`` and pass ``--bug b/<new-id>`` (or
+``--fixed b/<new-id>``) when running ``./gh pr create -t "<title>"``.
 
 Automatic Buganizer component resolution
 ----------------------------------------
@@ -376,8 +376,8 @@ Gerrit through Git commit trailers rather than pull request prose:
    * - **Linking commits / PRs**
      - Prose keywords in PR description (``Fixes #123``).
      - Git commit trailers (``Bug: b/<id>`` and ``Fixed: b/<id>``). Supported
-       directly via ``issue create --amend``, ``issue create --commit``, and
-       ``pr edit --bug`` / ``--fixed``.
+       directly via ``issue create --amend`` and ``pr create`` / ``pr push``
+       (``--bug`` / ``--fixed``).
    * - **Omitted issue ID**
      - Requires an explicit issue number on ``view``, ``comment``, ``edit``,
        and ``close``.

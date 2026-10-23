@@ -49,8 +49,13 @@ Pushes your local ``HEAD`` commit to Gerrit as a **new** change:
 
 Supported flags
 ===============
-* ``-t, --title <str>`` and ``-b, --body <str>``: Create a new Git commit
-  before pushing.
+* ``-t, --title <str>``, ``-b, --body <str>``, and ``-F, --body-file <file|->``:
+  Create a new Git commit (when on an upstream branch tip) or update your local
+  ``HEAD`` commit message before pushing while preserving any existing
+  ``Change-Id:`` footer and staged index changes. Multi-commit stacks are
+  rejected before amending, and ``HEAD`` rolls back automatically on failure.
+* ``--bug <id>`` / ``--fixed <id>``: Add or update ``Bug:`` or ``Fixed:``
+  commit trailers on ``HEAD`` (accepts bare IDs, ``b/<id>``, URLs, or ``none``).
 * ``-B, --base <branch>``: Target base branch (e.g. ``sandbox/experiment``).
   Defaults to the upstream tracking branch or repository default.
 * ``-r, --reviewer <email|@owners>``: Add reviewers to the change (pass
@@ -128,6 +133,9 @@ Available as ``./gh pr push``, top-level ``./gh push``, or ``./gh pr upload``:
    # Push, mark ready for review, and auto-assign code owners:
    $ ./gh pr push --owner --ready --auto
 
+   # Update the commit message / bug trailer locally and upload a new patchset:
+   $ ./gh pr push --title "pw_foo: Fix edge case" --fixed b/567763970 --cq
+
    # Push a stack and schedule each change in its own off-peak slot:
    $ ./gh pr push --stack --nightly
 
@@ -137,6 +145,13 @@ Available as ``./gh pr push``, top-level ``./gh push``, or ``./gh pr upload``:
 
 Supported flags
 ===============
+* ``-t, --title <str>``, ``-b, --body <str>``, and ``-F, --body-file <file|->``:
+  Update your local ``HEAD`` commit message (``git commit --amend --only``)
+  before pushing while preserving the existing ``Change-Id:`` footer and any
+  staged index changes. Requires a single unpushed commit ahead of the target
+  branch and rolls ``HEAD`` back automatically if uploading fails.
+* ``--bug <id>`` / ``--fixed <id>``: Add or update ``Bug:`` or ``Fixed:``
+  commit trailers on ``HEAD`` (accepts bare IDs, ``b/<id>``, URLs, or ``none``).
 * ``-B, --base <branch>``: Override the target merge branch recorded on Gerrit.
 * ``-r, --reviewer <email|@owners>``: Add reviewers to the change (pass
   ``@owners`` or ``--owner`` to automatically select code owners for the
@@ -621,16 +636,18 @@ Comparison with GitHub CLI (gh pr)
    * - ``pr create``
      - Pushes ``HEAD`` to ``refs/for/<base>`` as a **new** CL.
      - Stops if ``Change-Id`` already exists on Gerrit (use ``pr push``).
-       Adds ``--stack``, ``--cq``, ``--auto``, ``--nightly``, ``--submit-at``,
-       ``--owner`` / ``--add-owner``, ``--add-reviewer``, and
-       ``-o, --push-option``; ``-r`` accepts ``@owners``.
+       Adds ``--bug``, ``--fixed``, ``--stack``, ``--cq``, ``--auto``,
+       ``--nightly``, ``--submit-at``, ``--owner`` / ``--add-owner``,
+       ``--add-reviewer``, and ``-o, --push-option``; ``-r`` accepts
+       ``@owners``.
    * - ``pr push``
      - Uploads a **new patchset** to an existing Gerrit CL.
      - **Gerrit adaptation** (replaces ``git push``). Queries target branch on
-       Gerrit and supports ``--stack``, ``--cq``, ``--auto``, ``--nightly``,
-       ``--submit-at``, ``--publish``, ``--ready``, ``--owner`` /
-       ``--add-owner``, ``--add-reviewer``, and ``-o, --push-option``; ``-r``
-       accepts ``@owners``.
+       Gerrit and supports ``-t, --title``, ``-b, --body``,
+       ``-F, --body-file``, ``--bug``, ``--fixed``, ``--stack``, ``--cq``,
+       ``--auto``, ``--nightly``, ``--submit-at``, ``--publish``, ``--ready``,
+       ``--owner`` / ``--add-owner``, ``--add-reviewer``, and
+       ``-o, --push-option``; ``-r`` accepts ``@owners``.
    * - ``pr view [<id>]``
      - Queries Gerrit REST API for change metadata, votes, and ``--comments``.
      - Supports ``<id>/<patchset>`` and shortlinks (``pwrev/``). ``--json``

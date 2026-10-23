@@ -848,3 +848,248 @@ func TestPush_Stack_PartialFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestPush_CommitMessageFlags_EndToEnd(t *testing.T) {
+	const changeID = "I1111111111111111111111111111111111111111"
+
+	t.Run("amends message, emits post-amend warnings once, and skips no-op amend on retry", func(t *testing.T) {
+		SetTestProfile(t, "pigweed")
+		repo := newTestGitRepo(t)
+		repo.InstallCommitMsgHook()
+		repo.InstallGerritRefHooks()
+		repo.BindToCLI()
+
+		repo.WriteFile("base.txt", "patchset 1\n")
+		draftLongSubject := "pw_foo: Draft subject intentionally exceeding seventy-two columns before amend"
+		if _, err := repo.Client.CommitNewAll(t.Context(), draftLongSubject+"\n\nInitial body.\n\nBug: None\n", false, io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		ps1SHA := repo.GitOutput("rev-parse", "HEAD")
+
+		// Stage a hunk and modify working tree to ensure push only rewrites message.
+		repo.StageFile("staged.txt", "keep staged\n")
+		origIndex := repo.GitOutput("write-tree")
+		repo.WriteFile("base.txt", "unstaged edit\n")
+
+		currentRev := ps1SHA
+		server := NewMockGerritServer(t)
+		server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+			ch := DefaultMockChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+			ch["current_revision"] = currentRev
+			server.RespondJSON(w, http.StatusOK, []map[string]any{ch})
+		})
+		server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
+
+		bodyInput := strings.NewReader("Updated body paragraph.\n")
+		out, err := executeCommandWithStdin(RootCmd, bodyInput, "push", "-t", "pw_foo: Polished title", "-F", "-", "--fixed", "b/567763970")
+		if err != nil {
+			t.Fatalf("gh push failed: %v\nOutput: %s", err, out)
+		}
+		if strings.Contains(out, "exceeds 72-character limit") {
+			t.Errorf("expected post-amend commit message warnings without stale pre-amend warning, got:\n%s", out)
+		}
+		if gotCalls := server.CallCount("GET", "/changes/"); gotCalls != 1 {
+			t.Errorf("GET /changes/ count = %d, want 1", gotCalls)
+		}
+
+		ps2SHA := repo.GitOutput("rev-parse", "HEAD")
+		if ps2SHA == ps1SHA {
+			t.Fatal("expected HEAD SHA to advance after commit message edit")
+		}
+		pushedMsg := repo.BareGitOutput("log", "-1", "--format=%B", "refs/changes/latest")
+		wantMsg := "pw_foo: Polished title\n\nUpdated body paragraph.\n\nFixed: b/567763970\nChange-Id: " + changeID
+		if strings.TrimSpace(pushedMsg) != wantMsg {
+			t.Errorf("pushed message =\n%s\nwant:\n%s", pushedMsg, wantMsg)
+		}
+		if gotIndex := repo.GitOutput("write-tree"); gotIndex != origIndex {
+			t.Errorf("staged index altered: %s != %s", gotIndex, origIndex)
+		}
+		if gotWorktree := repo.ReadFile("base.txt"); gotWorktree != "unstaged edit\n" {
+			t.Errorf("unstaged worktree altered: %q", gotWorktree)
+		}
+
+		// Re-running with identical commit-message flag + --cq must NOT amend again;
+		// it applies CQ via REST because HEAD SHA matches CurrentRevision.
+		currentRev = ps2SHA
+		if out, err := executeCommand(RootCmd, "pr", "push", "--fixed", "567763970", "--cq"); err != nil {
+			t.Fatalf("idempotent retry with --cq failed: %v\nOutput: %s", err, out)
+		}
+		if gotSHA := repo.GitOutput("rev-parse", "HEAD"); gotSHA != ps2SHA {
+			t.Errorf("idempotent retry unexpectedly re-amended HEAD: got %s, want %s", gotSHA, ps2SHA)
+		}
+		if n := server.CallCount("POST", "/changes/"+changeID+"/revisions/current/review"); n != 1 {
+			t.Errorf("expected REST review vote on unchanged SHA %s, got %d calls", ps2SHA, n)
+		}
+	})
+
+	t.Run("targets non-main Gerrit branch without --base", func(t *testing.T) {
+		SetTestProfile(t, "pigweed")
+		repo := newTestGitRepo(t)
+		repo.InstallCommitMsgHook()
+		repo.BindToCLI()
+
+		// Advance release/v1 on origin by 1 commit so a local branch created from
+		// release/v1 (without tracking upstream) is 2 commits ahead of origin/main
+		// but only 1 commit ahead of origin/release/v1.
+		repo.GitOutput("checkout", "-b", "release/v1")
+		repo.StageFile("release.txt", "v1 base\n")
+		repo.GitOutput("commit", "-m", "pw_release: Branch v1")
+		repo.GitOutput("push", "origin", "release/v1")
+
+		repo.GitOutput("checkout", "--no-track", "-b", "backport-fix", "release/v1")
+		repo.WriteFile("base.txt", "backport fix\n")
+		if _, err := repo.Client.CommitNewAll(t.Context(), "pw_foo: Draft backport\n", false, io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{
+			DefaultMockChange(654321, WithChangeID(changeID), WithBranch("release/v1")),
+		})
+
+		out, err := executeCommand(RootCmd, "pr", "push", "-t", "pw_foo: Backport fix to v1", "--bug", "567763970")
+		if err != nil {
+			t.Fatalf("pr push to release/v1 failed: %v\nOutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Pushing patchset for branch release/v1...") {
+			t.Errorf("expected push output for branch release/v1, got:\n%s", out)
+		}
+		if gotCalls := server.CallCount("GET", "/changes/"); gotCalls != 1 {
+			t.Errorf("GET /changes/ count = %d, want 1", gotCalls)
+		}
+		pushedMsg := repo.BareGitOutput("log", "-1", "--format=%B", "refs/for/release/v1")
+		wantMsg := "pw_foo: Backport fix to v1\n\nBug: b/567763970\nChange-Id: " + changeID
+		if strings.TrimSpace(pushedMsg) != wantMsg {
+			t.Errorf("pushed message on refs/for/release/v1 =\n%s\nwant:\n%s", pushedMsg, wantMsg)
+		}
+	})
+
+	t.Run("rejects when HEAD has zero unpushed commits ahead of target branch without mutating HEAD", func(t *testing.T) {
+		SetTestProfile(t, "pigweed")
+		repo := newTestGitRepo(t)
+		repo.InstallCommitMsgHook()
+		repo.BindToCLI()
+
+		// Commit on main with a Change-Id, push to origin/main, then advance
+		// origin/main by one more commit so feature sits behind origin/main (0 ahead,
+		// not at remote tip so CheckAmendAllowed passes).
+		repo.WriteFile("base.txt", "merged change\n")
+		if _, err := repo.Client.CommitNewAll(t.Context(), "pw_foo: Merged commit\n", false, io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		repo.GitOutput("push", "origin", "main")
+		ancestorSHA := repo.GitOutput("rev-parse", "HEAD")
+		ancestorMsg := repo.GitOutput("log", "-1", "--format=%B", "HEAD")
+		repo.GitOutput("branch", "stale-feature", ancestorSHA)
+
+		repo.StageFile("upstream.txt", "next commit\n")
+		repo.GitOutput("commit", "-m", "pw_other: Advance upstream")
+		repo.GitOutput("push", "origin", "main")
+		repo.GitOutput("checkout", "stale-feature")
+
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{
+			DefaultMockChange(777777, WithChangeID(changeID), WithBranch("main")),
+		})
+
+		_, err := executeCommand(RootCmd, "pr", "push", "-t", "pw_foo: Do not rewrite merged commit")
+		if err == nil {
+			t.Fatal("expected error when HEAD has 0 unpushed local commits ahead of origin/main")
+		}
+		for _, want := range []string{"origin/main", "gh pr create", "git commit"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error missing %q, got:\n%v", want, err)
+			}
+		}
+		if gotSHA := repo.GitOutput("rev-parse", "HEAD"); gotSHA != ancestorSHA {
+			t.Fatalf("HEAD SHA mutated: got %s, want %s", gotSHA, ancestorSHA)
+		}
+		if gotMsg := repo.GitOutput("log", "-1", "--format=%B", "HEAD"); gotMsg != ancestorMsg {
+			t.Errorf("HEAD commit message mutated: got %q, want %q", gotMsg, ancestorMsg)
+		}
+	})
+
+	t.Run("missing Gerrit CL on 404 or empty query leaves HEAD untouched", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			setup func(*MockGerritServer)
+		}{
+			{
+				name:  "http 404",
+				setup: func(s *MockGerritServer) { s.OnStatus(http.StatusNotFound) },
+			},
+			{
+				name:  "empty list",
+				setup: func(s *MockGerritServer) { s.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{}) },
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				SetTestProfile(t, "pigweed")
+				repo := newTestGitRepo(t)
+				repo.InstallCommitMsgHook()
+				repo.BindToCLI()
+
+				repo.WriteFile("base.txt", "c1\n")
+				if _, err := repo.Client.CommitNewAll(t.Context(), "pw_foo: Commit 1\n", false, io.Discard, io.Discard); err != nil {
+					t.Fatal(err)
+				}
+				origSHA := repo.GitOutput("rev-parse", "HEAD")
+				origReflogCount := repo.GitOutput("rev-list", "--walk-reflogs", "--count", "HEAD")
+
+				server := NewMockGerritServer(t)
+				tc.setup(server)
+
+				if _, err := executeCommand(RootCmd, "pr", "push", "--title", "pw_foo: Never amended"); err == nil {
+					t.Fatal("expected error when no Gerrit CL exists for HEAD")
+				}
+				if gotSHA := repo.GitOutput("rev-parse", "HEAD"); gotSHA != origSHA {
+					t.Fatalf("HEAD SHA = %s, want %s", gotSHA, origSHA)
+				}
+				if gotReflog := repo.GitOutput("rev-list", "--walk-reflogs", "--count", "HEAD"); gotReflog != origReflogCount {
+					t.Errorf("HEAD reflog mutated (%s -> %s); missing Gerrit CL must fail before amending HEAD", origReflogCount, gotReflog)
+				}
+			})
+		}
+	})
+
+	t.Run("rolls back amended HEAD on push failure and rejects multi-commit stack", func(t *testing.T) {
+		SetTestProfile(t, "pigweed")
+		repo := newTestGitRepo(t)
+		repo.InstallCommitMsgHook()
+		repo.InstallGerritRefHooks()
+		repo.BindToCLI()
+
+		repo.WriteFile("base.txt", "c1\n")
+		if _, err := repo.Client.CommitNewAll(t.Context(), "pw_foo: Commit 1\n", false, io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		origSHA := repo.GitOutput("rev-parse", "HEAD")
+
+		// Forbidden topic fails after local amend and rolls HEAD back to origSHA.
+		server := NewMockGerritServer(t)
+		server.OnDefaultChange(123456, WithChangeID(changeID), func(ch map[string]any) {
+			ch["submit_requirements"] = []map[string]any{
+				{"name": "Topics-Not-Supported", "status": "SATISFIED"},
+			}
+		})
+		if _, err := executeCommand(RootCmd, "pr", "push", "--title", "pw_foo: Rolled back", "--topic", "forbidden"); err == nil {
+			t.Fatal("expected error when topic is forbidden")
+		}
+		if gotSHA := repo.GitOutput("rev-parse", "HEAD"); gotSHA != origSHA {
+			t.Fatalf("expected HEAD rolled back to %s, got %s", origSHA, gotSHA)
+		}
+
+		// Stack of 2 commits is rejected cleanly without mutating HEAD.
+		repo.StageFile("second.txt", "c2\n")
+		if _, err := repo.Client.CommitNewAll(t.Context(), "pw_foo: Commit 2\n\nChange-Id: I2222222222222222222222222222222222222222\n", false, io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		topSHA := repo.GitOutput("rev-parse", "HEAD")
+		if _, err := executeCommand(RootCmd, "pr", "push", "--stack", "--bug", "42"); err == nil {
+			t.Fatal("expected error combining --stack with commit-message flags")
+		}
+		if gotSHA := repo.GitOutput("rev-parse", "HEAD"); gotSHA != topSHA {
+			t.Fatalf("expected stack rejection to leave HEAD at %s, got %s", topSHA, gotSHA)
+		}
+	})
+}
