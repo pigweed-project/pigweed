@@ -14,8 +14,11 @@
 
 #include "pw_async2/system_time_provider.h"
 
+#include "pw_async2/time_provider.h"
+#include "pw_chrono/system_clock.h"
 #include "pw_chrono/system_timer.h"
 #include "pw_memory/no_destructor.h"
+#include "pw_sync/lock_annotations.h"
 
 namespace pw::async2 {
 namespace {

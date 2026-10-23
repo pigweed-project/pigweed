@@ -14,15 +14,17 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <type_traits>
 #include <utility>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/shared_ptr.h"
+#include "pw_assert/assert.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/future_task.h"
-#include "pw_async2/internal/lock.h"  // IWYU pragma: export
+#include "pw_async2/internal/lock.h"
 #include "pw_async2/task.h"
 #include "pw_async2/waker.h"
 #include "pw_containers/intrusive_queue.h"

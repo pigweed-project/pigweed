@@ -14,11 +14,17 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <utility>
 
-#include "pw_async2/future_task.h"          // IWYU pragma: export
-#include "pw_async2/runnable_dispatcher.h"  // IWYU pragma: export
-#include "pw_async2/waker.h"                // IWYU pragma: export
+#include "pw_assert/assert.h"
+#include "pw_async2/future_task.h"
+#include "pw_async2/internal/lock.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/runnable_dispatcher.h"
+#include "pw_async2/task.h"
+#include "pw_async2/waker.h"
+#include "pw_sync/lock_annotations.h"
 
 namespace pw::async2 {
 

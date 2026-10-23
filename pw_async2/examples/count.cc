@@ -13,14 +13,17 @@
 // the License.
 
 // DOCSTAG: [pw_async2-examples-count]
+
 #define PW_LOG_MODULE_NAME "ASYNC_COUNTER"
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/libc_allocator.h"
 #include "pw_assert/check.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/coro.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/system_time_provider.h"
+#include "pw_async2/time_provider.h"
 #include "pw_chrono/system_clock.h"
 #include "pw_log/log.h"
 

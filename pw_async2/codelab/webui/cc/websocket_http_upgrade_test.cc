@@ -23,6 +23,7 @@
 #include <optional>
 #include <string_view>
 
+#include "pw_bytes/span.h"
 #include "pw_fuzzer/fuzztest.h"
 #include "pw_hex_dump/log_bytes.h"
 #include "pw_log/levels.h"

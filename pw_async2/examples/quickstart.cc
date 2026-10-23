@@ -14,7 +14,11 @@
 
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/future.h"
+#include "pw_async2/poll.h"
 #include "pw_async2/system_time_provider.h"
+#include "pw_async2/task.h"
+#include "pw_async2/time_provider.h"
+#include "pw_chrono/system_clock.h"
 #include "pw_log/log.h"
 #include "pw_unit_test/framework.h"
 

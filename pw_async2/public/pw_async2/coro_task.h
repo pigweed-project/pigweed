@@ -17,9 +17,10 @@
 #include <type_traits>
 
 #include "pw_async2/coro.h"
+#include "pw_async2/future.h"
 #include "pw_async2/future_task.h"
+#include "pw_async2/task.h"
 #include "pw_function/function.h"
-
 namespace pw::async2 {
 
 /// @submodule{pw_async2,coroutines}

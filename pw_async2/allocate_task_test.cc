@@ -12,12 +12,20 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <type_traits>
+#include <utility>
+
+#include "pw_allocator/shared_ptr.h"
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/func_task.h"
 #include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_async2/value_future.h"
+#include "pw_async2/waker.h"
 #include "pw_function/function.h"
 #include "pw_status/status.h"
+#include "pw_unit_test/framework.h"
 
 namespace {
 

@@ -12,6 +12,11 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <algorithm>
+#include <cstddef>
+#include <optional>
+#include <utility>
+
 #include "pw_allocator/testing.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/coro.h"

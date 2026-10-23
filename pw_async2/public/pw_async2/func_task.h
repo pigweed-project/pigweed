@@ -16,6 +16,7 @@
 #include <optional>
 #include <type_traits>
 
+#include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_function/function.h"
 

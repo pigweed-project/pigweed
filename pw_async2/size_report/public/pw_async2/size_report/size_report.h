@@ -16,8 +16,9 @@
 #include <cstdint>
 
 #include "pw_allocator/allocator.h"
-#include "pw_async2/dispatcher.h"
-
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
+#include "pw_async2/waker.h"
 namespace pw::async2::size_report {
 
 class MockTask : public Task {

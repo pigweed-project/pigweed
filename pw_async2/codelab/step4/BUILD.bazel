@@ -30,6 +30,7 @@ deps = [
     "//pw_async2/codelab:sensors",
     "//pw_chrono:system_clock",
     "//pw_log",
+    "//pw_polyfill",
     "//pw_sync:interrupt_spin_lock",
     "//pw_sync:lock_annotations",
 ]

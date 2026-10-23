@@ -14,8 +14,12 @@
 
 #pragma once
 
+#include <mutex>
+#include <optional>
+
 #include "pw_async2/time_provider.h"
 #include "pw_sync/interrupt_spin_lock.h"
+#include "pw_sync/lock_annotations.h"
 
 namespace pw::async2 {
 

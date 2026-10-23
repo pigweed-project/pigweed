@@ -13,12 +13,18 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <initializer_list>
+#include <limits>
 #include <optional>
+#include <utility>
 
 #include "pw_async2/await.h"
 #include "pw_async2/channel.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_containers/vector.h"
-
+#include "pw_function/function.h"
 namespace pw::async2::test {
 
 /// A move-only integer wrapper used for testing.

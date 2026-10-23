@@ -13,9 +13,14 @@
 // the License.
 #pragma once
 
-#include "pw_async2/dispatcher.h"
-#include "pw_async2/future.h"
+#include <cstddef>
+#include <tuple>
+#include <utility>
 
+#include "pw_assert/assert.h"
+#include "pw_async2/future.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 namespace pw::async2 {
 
 /// @submodule{pw_async2,combinators}

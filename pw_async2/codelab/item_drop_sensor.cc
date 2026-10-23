@@ -14,6 +14,8 @@
 
 #include "item_drop_sensor.h"
 
+#include "pw_async2/value_future.h"
+
 namespace codelab {
 
 pw::async2::ValueFuture<void> ItemDropSensor::Wait() { return provider_.Get(); }

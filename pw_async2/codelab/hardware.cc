@@ -17,13 +17,16 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <string_view>
 #include <thread>
 
 #include "pw_assert/check.h"
+#include "pw_async2/dispatcher.h"
 #include "pw_log/log.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
 #include "pw_stream/socket_stream.h"
+#include "pw_stream/stream.h"
 #include "pw_stream/sys_io_stream.h"
 #include "pw_string/string.h"
 #include "pw_string/util.h"

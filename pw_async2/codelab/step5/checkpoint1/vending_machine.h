@@ -23,6 +23,8 @@
 #include "pw_async2/poll.h"
 #include "pw_async2/select.h"
 #include "pw_async2/task.h"
+#include "pw_async2/value_future.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_sync/lock_annotations.h"
 

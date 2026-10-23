@@ -15,6 +15,8 @@
 #include "vending_machine.h"
 
 #include "pw_async2/await.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_async2/try.h"
 #include "pw_log/log.h"
 

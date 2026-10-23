@@ -14,15 +14,21 @@
 
 #include "pw_async2/box.h"
 
+#include <utility>
+
 #include "pw_allocator/testing.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/future.h"
+#include "pw_async2/poll.h"
 #include "pw_async2/select.h"
+#include "pw_async2/task.h"
 #include "pw_async2/transform.h"
 #include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
+#include "pw_containers/optional_tuple.h"
+#include "pw_result/result.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

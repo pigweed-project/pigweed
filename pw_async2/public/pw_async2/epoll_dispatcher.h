@@ -13,10 +13,14 @@
 // the License.
 #pragma once
 
+#include <cstddef>
 #include <unordered_map>
 
 #include "pw_assert/assert.h"
+#include "pw_async2/dispatcher.h"
 #include "pw_async2/runnable_dispatcher.h"
+#include "pw_async2/waker.h"
+#include "pw_status/status.h"
 
 namespace pw::async2 {
 

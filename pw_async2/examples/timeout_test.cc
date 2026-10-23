@@ -17,6 +17,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>  // IWYU pragma: keep
+#include <chrono>
 #include <optional>
 #include <thread>
 #include <tuple>

@@ -14,7 +14,6 @@
 #pragma once
 
 #include "pw_async2/value_future.h"
-
 namespace pw::async2 {
 
 /// @submodule{pw_async2,futures}

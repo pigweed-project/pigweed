@@ -13,6 +13,12 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <utility>
+
+#include "pw_containers/intrusive_forward_list.h"
+#include "pw_sync/lock_annotations.h"
+
 #ifdef __cpp_concepts
 #include <concepts>
 #endif  // __cpp_concepts

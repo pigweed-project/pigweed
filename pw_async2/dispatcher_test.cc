@@ -12,9 +12,18 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include "pw_async2/dispatcher.h"
+
+#include <array>
+#include <cstddef>
+
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_async2/value_future.h"
+#include "pw_async2/waker.h"
 #include "pw_containers/vector.h"
+#include "pw_span/span.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::async2 {

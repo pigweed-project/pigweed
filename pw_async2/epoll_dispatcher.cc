@@ -15,9 +15,12 @@
 #include "pw_async2/epoll_dispatcher.h"
 
 #include <fcntl.h>
+#include <stdio.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 
+#include <array>
+#include <cerrno>
 #include <cstring>
 #include <mutex>
 

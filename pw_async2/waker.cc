@@ -16,7 +16,9 @@
 
 #include <mutex>
 
+#include "pw_async2/internal/lock.h"
 #include "pw_async2/task.h"
+#include "pw_log/tokenized_args.h"
 
 namespace pw::async2 {
 

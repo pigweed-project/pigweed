@@ -13,17 +13,29 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <optional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 #include "lib/stdcompat/type_traits.h"
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/deallocator.h"
+#include "pw_assert/assert.h"
 #include "pw_async2/callback_task.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/future.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
+#include "pw_chrono/system_clock.h"
 #include "pw_containers/deque.h"
+#include "pw_containers/storage.h"
 #include "pw_numeric/checked_arithmetic.h"
 #include "pw_result/result.h"
+#include "pw_status/status.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_sync/timed_thread_notification.h"

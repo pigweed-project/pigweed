@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <mutex>
 #include <optional>
 
 #include "coin_slot.h"

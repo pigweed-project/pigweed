@@ -14,17 +14,29 @@
 
 #include "pw_async2/channel.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
 #include <optional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/await.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/internal/channel_test_util.h"
+#include "pw_async2/poll.h"
 #include "pw_async2/select.h"
+#include "pw_async2/task.h"
 #include "pw_async2/value_future.h"
+#include "pw_containers/deque.h"
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
+#include "pw_result/result.h"
+#include "pw_span/span.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

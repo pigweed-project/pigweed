@@ -14,9 +14,12 @@
 #pragma once
 
 #include <mutex>
+#include <utility>
 
 #include "pw_assert/assert.h"
 #include "pw_async2/future.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_sync/lock_annotations.h"
 

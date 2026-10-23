@@ -27,12 +27,14 @@
 // and may be larger than expected.
 
 #include <optional>
+#include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_async2/try.h"
-
 namespace pw::async2::experimental {
 namespace internal {
 

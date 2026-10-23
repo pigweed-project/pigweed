@@ -13,6 +13,9 @@
 // the License.
 
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
+#include "pw_async2/waker.h"
 #include "pw_sync/thread_notification.h"
 #include "pw_thread/sleep.h"
 #include "pw_thread/test_thread_context.h"

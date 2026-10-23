@@ -13,7 +13,10 @@
 // the License.
 #pragma once
 
+#include <tuple>
+
 #include "pw_assert/assert.h"
+#include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_async2/waker.h"
 

@@ -15,7 +15,10 @@
 #include "pw_async2/coro.h"
 
 #include <optional>
+#include <type_traits>
+#include <utility>
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_async2/await.h"
@@ -23,12 +26,17 @@
 #include "pw_async2/func_task.h"
 #include "pw_async2/future.h"
 #include "pw_async2/future_task.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_async2/value_future.h"
+#include "pw_async2/waker.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/test_helpers.h"
 #include "pw_preprocessor/compiler.h"
+#include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
+#include "pw_unit_test/framework.h"
 
 namespace {
 

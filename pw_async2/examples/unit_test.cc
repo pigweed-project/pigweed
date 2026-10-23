@@ -15,6 +15,7 @@
 // DOCSTAG[pw_async2-minimal-test]
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
+#include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_unit_test/framework.h"
 

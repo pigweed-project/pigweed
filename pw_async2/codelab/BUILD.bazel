@@ -61,6 +61,7 @@ cc_library(
         "//pw_function",
         "//pw_log",
         "//pw_status",
+        "//pw_stream",
         "//pw_stream:socket_stream",
         "//pw_stream:sys_io_stream",
         "//pw_string:string",

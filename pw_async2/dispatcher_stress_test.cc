@@ -30,14 +30,21 @@
 #define PW_LOG_MODULE_NAME "pw_async2 test"
 #define PW_LOG_LEVEL PW_LOG_LEVEL_INFO
 
+#include <array>
 #include <atomic>
+#include <cstddef>
 #include <mutex>
+#include <optional>
 #include <random>
+#include <utility>
 
 #include "pw_allocator/libc_allocator.h"
+#include "pw_allocator/shared_ptr.h"
 #include "pw_assert/check.h"
 #include "pw_async2/notified_dispatcher.h"
+#include "pw_async2/poll.h"
 #include "pw_async2/task.h"
+#include "pw_async2/waker.h"
 #include "pw_containers/dynamic_queue.h"
 #include "pw_containers/dynamic_vector.h"
 #include "pw_log/log.h"

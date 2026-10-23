@@ -13,12 +13,14 @@
 // the License.
 #pragma once
 
+#include <mutex>
 #include <optional>
 
 #include "coin_slot.h"
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
+#include "pw_async2/waker.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_sync/lock_annotations.h"
 

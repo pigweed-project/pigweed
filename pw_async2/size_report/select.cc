@@ -14,14 +14,20 @@
 
 #include "pw_async2/select.h"
 
+#include <cstdint>
+#include <utility>
+
 #include "public/pw_async2/size_report/size_report.h"
 #include "pw_assert/check.h"
 #include "pw_async2/await.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/func_task.h"
+#include "pw_async2/poll.h"
 #include "pw_async2/size_report/size_report.h"
+#include "pw_async2/task.h"
 #include "pw_async2/value_future.h"
+#include "pw_async2/waker.h"
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_log/log.h"
 

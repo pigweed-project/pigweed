@@ -22,6 +22,7 @@
 #include <tuple>
 #include <utility>
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/deallocator.h"
 #include "pw_allocator/layout.h"
 #include "pw_assert/check.h"

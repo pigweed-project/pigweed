@@ -14,7 +14,15 @@
 
 #include "pw_async2/channel.h"
 
+#include <cstdint>
+#include <mutex>
+#include <utility>
+
+#include "pw_assert/assert.h"
 #include "pw_assert/check.h"
+#include "pw_async2/future.h"
+#include "pw_async2/task.h"
+#include "pw_async2/waker.h"
 
 namespace pw::async2::internal {
 

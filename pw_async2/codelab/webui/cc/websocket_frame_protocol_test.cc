@@ -26,6 +26,7 @@
 #include "pw_fuzzer/fuzztest.h"
 #include "pw_hex_dump/log_bytes.h"
 #include "pw_log/levels.h"
+#include "pw_log/log.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_unit_test/framework.h"

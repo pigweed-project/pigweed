@@ -23,6 +23,8 @@
 #include "pw_async2/future_or_value.h"
 #include "pw_async2/future_timeout.h"
 #include "pw_async2/join.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
 #include "pw_log/log.h"

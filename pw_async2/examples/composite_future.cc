@@ -12,12 +12,18 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <chrono>
+
+#include "pw_assert/assert.h"
 #include "pw_assert/check.h"
 #include "pw_async2/await.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/func_task.h"
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/simulated_time_provider.h"
+#include "pw_async2/task.h"
+#include "pw_async2/time_provider.h"
 #include "pw_async2/value_future.h"
 #include "pw_chrono/system_clock.h"
 #include "pw_result/result.h"

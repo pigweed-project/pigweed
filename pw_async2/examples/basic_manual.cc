@@ -12,15 +12,20 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <optional>
+#include <utility>
+
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_status/status.h"
+#include "pw_unit_test/framework.h"
 
 // DOCSTAG: [pw_async2-examples-basic-manual]
 #include "pw_async2/await.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_log/log.h"
 
 namespace {

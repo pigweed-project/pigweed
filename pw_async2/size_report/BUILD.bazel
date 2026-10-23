@@ -88,6 +88,7 @@ pw_cc_size_binary(
         "//pw_async2:basic_dispatcher",
         "//pw_async2:coro",
         "//pw_bloat:bloat_this_binary",
+        "//pw_status",
     ],
 )
 
@@ -380,9 +381,10 @@ pw_size_table(
 
 CHANNEL_DEPS = [
     ":size_report",
+    "//pw_allocator",
+    "//pw_async2",
     "//pw_async2:basic_dispatcher",
     "//pw_async2:channel",
-    "//pw_async2",
     "//pw_bloat:bloat_this_binary",
 ]
 

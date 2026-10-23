@@ -14,10 +14,11 @@
 #pragma once
 
 #include <mutex>
+#include <utility>
 
 #include "pw_assert/assert.h"
 #include "pw_async2/internal/config.h"
-#include "pw_async2/internal/lock.h"  // IWYU pragma: export
+#include "pw_async2/internal/lock.h"
 #include "pw_containers/intrusive_forward_list.h"
 #include "pw_log/tokenized_args.h"
 #include "pw_sync/lock_annotations.h"

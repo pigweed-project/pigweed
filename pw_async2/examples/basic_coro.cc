@@ -13,11 +13,16 @@
 // the License.
 
 // DOCSTAG: [pw_async2-examples-basic-coro]
+#include <optional>
+#include <utility>
+
+#include "pw_allocator/shared_ptr.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/coro.h"
 #include "pw_log/log.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
+#include "pw_unit_test/framework.h"
 
 namespace {
 

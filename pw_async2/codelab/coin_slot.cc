@@ -19,6 +19,9 @@
 
 #include "pw_assert/assert.h"
 #include "pw_assert/check.h"
+#include "pw_async2/future.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 
 namespace codelab {
 

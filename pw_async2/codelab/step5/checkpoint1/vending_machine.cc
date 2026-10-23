@@ -15,9 +15,14 @@
 #include "vending_machine.h"
 
 #include <mutex>
+#include <optional>
 
 #include "hardware.h"
 #include "pw_async2/await.h"
+#include "pw_async2/future.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/select.h"
+#include "pw_async2/task.h"
 #include "pw_log/log.h"
 
 namespace codelab {

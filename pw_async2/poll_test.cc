@@ -14,8 +14,10 @@
 
 #include "pw_async2/poll.h"
 
+#include <cstdint>
 #include <optional>
 #include <type_traits>
+#include <utility>
 
 #include "pw_async2/try.h"
 #include "pw_result/result.h"

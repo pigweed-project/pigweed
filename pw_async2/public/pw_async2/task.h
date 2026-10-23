@@ -16,7 +16,7 @@
 #include "pw_allocator/internal/control_block.h"
 #include "pw_allocator/shared_ptr.h"
 #include "pw_assert/assert.h"
-#include "pw_async2/internal/lock.h"  // IWYU pragma: export
+#include "pw_async2/internal/lock.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/waker.h"
 #include "pw_containers/intrusive_forward_list.h"

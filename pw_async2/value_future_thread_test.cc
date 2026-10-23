@@ -13,9 +13,13 @@
 // the License.
 
 #include <atomic>
+#include <optional>
+#include <utility>
 
 #include "pw_async2/callback_task.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_async2/value_future.h"
 #include "pw_thread/sleep.h"
 #include "pw_thread/test_thread_context.h"

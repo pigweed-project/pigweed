@@ -20,7 +20,6 @@
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_function/function.h"
-
 namespace pw::async2 {
 namespace internal {
 

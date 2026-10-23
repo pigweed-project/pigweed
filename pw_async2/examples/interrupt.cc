@@ -24,16 +24,22 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <mutex>
+#include <optional>
 #include <thread>
+#include <utility>
 
 #include "pw_async2/await.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_async2/value_future.h"
 #include "pw_containers/inline_queue.h"
 #include "pw_log/log.h"
+#include "pw_result/result.h"
 #include "pw_status/try.h"
 #include "pw_sync/interrupt_spin_lock.h"
+#include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"
 
 namespace {

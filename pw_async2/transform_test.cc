@@ -14,12 +14,16 @@
 
 #include "pw_async2/transform.h"
 
+#include <type_traits>
+#include <utility>
+
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/value_future.h"
+#include "pw_result/result.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

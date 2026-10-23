@@ -18,8 +18,10 @@
 
 #include <mutex>
 
-#include "pw_async2/dispatcher.h"
-#include "pw_async2/future.h"
+#include "pw_assert/assert.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
+#include "pw_async2/waker.h"
 #include "pw_chrono/virtual_clock.h"
 #include "pw_containers/intrusive_list.h"
 #include "pw_memory/no_destructor.h"

@@ -14,7 +14,13 @@
 
 #include "pw_async2/dispatcher_for_test.h"
 
+#include <atomic>
+#include <utility>
+
 #include "pw_assert/check.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
+#include "pw_async2/waker.h"
 
 namespace pw::async2 {
 namespace {

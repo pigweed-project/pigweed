@@ -14,14 +14,17 @@
 #pragma once
 
 #include <optional>
+#include <type_traits>
+#include <utility>
 
 #include "lib/stdcompat/type_traits.h"
 #include "pw_async2/internal/poll_internal.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_result/result.h"
+#include "pw_span/span.h"
+#include "pw_status/status_with_size.h"
 #include "pw_string/to_string.h"
-
 namespace pw {
 namespace async2 {
 

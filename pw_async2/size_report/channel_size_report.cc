@@ -12,11 +12,17 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <cstdint>
+#include <optional>
+
 #include "public/pw_async2/size_report/size_report.h"
+#include "pw_allocator/allocator.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/func_task.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_bloat/bloat_this_binary.h"
 
 namespace pw::async2::size_report {

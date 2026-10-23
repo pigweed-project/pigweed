@@ -12,11 +12,17 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <type_traits>
+#include <utility>
+
+#include "pw_allocator/shared_ptr.h"
 #include "pw_allocator/testing.h"
 #include "pw_async2/coro.h"
 #include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/future_task.h"
+#include "pw_async2/task.h"
+#include "pw_function/function.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_unit_test/framework.h"
 

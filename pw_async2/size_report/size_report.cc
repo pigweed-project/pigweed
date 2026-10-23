@@ -14,12 +14,17 @@
 
 #include "pw_async2/size_report/size_report.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <mutex>
 #include <optional>
 #include <span>
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/first_fit.h"
+#include "pw_allocator/layout.h"
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_containers/intrusive_forward_list.h"
 #include "pw_preprocessor/compiler.h"

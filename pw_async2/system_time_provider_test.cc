@@ -15,8 +15,14 @@
 #include "pw_async2/system_time_provider.h"
 
 #include <chrono>
+#include <tuple>
+#include <utility>
 
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
+#include "pw_async2/time_provider.h"
+#include "pw_chrono/system_clock.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <cstddef>
 #include <string_view>
 
 #include "pw_async2/dispatcher.h"

@@ -15,6 +15,7 @@
 #include "pw_async2/future_timeout.h"
 
 #include <chrono>  // IWYU pragma: keep
+#include <chrono>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -23,6 +24,7 @@
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
+#include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/simulated_time_provider.h"
 #include "pw_async2/task.h"

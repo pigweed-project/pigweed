@@ -15,14 +15,19 @@
 #include "pw_async2/internal/logging.h"
 // logging.h must be included first
 
+#include <atomic>
 #include <iterator>
 #include <mutex>
+#include <utility>
 
+#include "pw_allocator/shared_ptr.h"
 #include "pw_assert/check.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/internal/config.h"
+#include "pw_async2/internal/lock.h"
 #include "pw_async2/waker.h"
 #include "pw_async2_private/yield.h"
+#include "pw_containers/intrusive_queue.h"
 #include "pw_log/log.h"
 #include "pw_log/tokenized_args.h"
 

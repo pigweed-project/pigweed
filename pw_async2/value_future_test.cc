@@ -14,11 +14,17 @@
 
 #include "pw_async2/value_future.h"
 
+#include <cstddef>
+#include <optional>
 #include <utility>
 
 #include "pw_async2/await.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
+#include "pw_async2/future.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

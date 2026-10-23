@@ -14,15 +14,16 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <tuple>
 #include <utility>
 #include <variant>
 
-#include "pw_async2/dispatcher.h"
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_containers/optional_tuple.h"
-
 namespace pw::async2 {
 
 /// @submodule{pw_async2,combinators}

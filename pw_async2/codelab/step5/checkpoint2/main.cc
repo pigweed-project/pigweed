@@ -12,10 +12,13 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <utility>
+
 #include "coin_slot.h"
 #include "hardware.h"
 #include "item_drop_sensor.h"
 #include "pw_async2/basic_dispatcher.h"
+#include "pw_async2/channel.h"
 #include "vending_machine.h"
 
 namespace {

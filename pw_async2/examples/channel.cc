@@ -14,11 +14,16 @@
 
 #include "pw_async2/channel.h"
 
+#include <optional>
+#include <utility>
+
 #include "pw_allocator/testing.h"
 #include "pw_async2/await.h"
 #include "pw_async2/coro.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/future_task.h"
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
 #include "pw_containers/vector.h"
 #include "pw_unit_test/framework.h"
 

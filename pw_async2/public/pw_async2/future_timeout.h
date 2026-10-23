@@ -30,6 +30,7 @@
 #include "pw_chrono/system_clock.h"
 #include "pw_function/function.h"
 #include "pw_preprocessor/compiler.h"
+#include "pw_result/result.h"
 #include "pw_status/status.h"
 
 namespace pw::async2 {

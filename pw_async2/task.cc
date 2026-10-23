@@ -16,15 +16,20 @@
 // logging.h must be included first
 
 #include <mutex>
+#include <utility>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/internal/control_block.h"
+#include "pw_assert/assert.h"
 #include "pw_assert/check.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/internal/config.h"
+#include "pw_async2/internal/lock.h"
 #include "pw_async2/task.h"
+#include "pw_async2/waker.h"
 #include "pw_async2_private/yield.h"
 #include "pw_log/log.h"
+#include "pw_log/tokenized_args.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_thread/sleep.h"
 
