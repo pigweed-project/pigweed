@@ -21,6 +21,7 @@ pw_add_library(pw_allocator STATIC
     public/pw_allocator/allocator.h
     public/pw_allocator/capability.h
     public/pw_allocator/deallocator.h
+    public/pw_allocator/enable_shared_from_this.h
     public/pw_allocator/internal/bit.h
     public/pw_allocator/internal/control_block.h
     public/pw_allocator/internal/managed_ptr.h
@@ -35,6 +36,7 @@ pw_add_library(pw_allocator STATIC
     pw_allocator.config
     pw_allocator.fragmentation
     pw_allocator.hardening
+    pw_assert.assert
     pw_numeric.checked_arithmetic
     pw_bytes
     pw_preprocessor
@@ -1039,6 +1041,17 @@ pw_add_test(pw_allocator.unique_ptr_test
     pw_allocator.counter
     pw_allocator.testing
     pw_compilation_testing._pigweed_only_negative_compilation
+  GROUPS
+    modules
+    pw_allocator
+)
+
+pw_add_test(pw_allocator.enable_shared_from_this_test
+  SOURCES
+    enable_shared_from_this_test.cc
+  PRIVATE_DEPS
+    pw_allocator
+    pw_allocator.testing
   GROUPS
     modules
     pw_allocator

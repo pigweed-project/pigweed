@@ -29,6 +29,7 @@ pw_source_set("pw_allocator") {
     "public/pw_allocator/allocator.h",
     "public/pw_allocator/capability.h",
     "public/pw_allocator/deallocator.h",
+    "public/pw_allocator/enable_shared_from_this.h",
     "public/pw_allocator/internal/bit.h",
     "public/pw_allocator/internal/control_block.h",
     "public/pw_allocator/internal/managed_ptr.h",
@@ -42,6 +43,7 @@ pw_source_set("pw_allocator") {
     ":config",
     ":fragmentation",
     ":hardening",
+    "$dir_pw_assert:assert",
     "$dir_pw_numeric:checked_arithmetic",
     dir_pw_bytes,
     dir_pw_preprocessor,
@@ -931,6 +933,14 @@ pw_test("unique_ptr_test") {
   negative_compilation_tests = true
 }
 
+pw_test("enable_shared_from_this_test") {
+  deps = [
+    ":pw_allocator",
+    ":testing",
+  ]
+  sources = [ "enable_shared_from_this_test.cc" ]
+}
+
 pw_test("weak_ptr_test") {
   deps = [
     ":counter",
@@ -961,6 +971,7 @@ pw_test_group("tests") {
     ":bump_allocator_test",
     ":chunk_pool_test",
     ":dl_allocator_test",
+    ":enable_shared_from_this_test",
     ":fault_injecting_allocator_test",
     ":fallback_allocator_test",
     ":first_fit_test",

@@ -160,7 +160,10 @@ transparent:
 In a similar fashion, :cc:`SharedPtr <pw::SharedPtr>` and
 :cc:`WeakPtr <pw::WeakPtr>` are smart pointers that resemble
 ``std::shared_ptr`` and ``std::weak_ptr``, respectively, and share ownership of
-allocated memory.
+allocated memory. Classes can inherit from
+:cc:`EnableSharedFromThis <pw::EnableSharedFromThis>` (resembling
+``std::enable_shared_from_this``) to safely obtain a ``SharedPtr`` or
+``WeakPtr`` to ``this`` from within member functions.
 
 Determine an allocation's Layout
 ================================

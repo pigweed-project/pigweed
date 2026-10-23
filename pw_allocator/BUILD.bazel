@@ -35,6 +35,7 @@ cc_library(
         "public/pw_allocator/allocator.h",
         "public/pw_allocator/capability.h",
         "public/pw_allocator/deallocator.h",
+        "public/pw_allocator/enable_shared_from_this.h",
         "public/pw_allocator/internal/bit.h",
         "public/pw_allocator/internal/control_block.h",
         "public/pw_allocator/internal/managed_ptr.h",
@@ -1082,6 +1083,16 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "enable_shared_from_this_test",
+    srcs = ["enable_shared_from_this_test.cc"],
+    deps = [
+        ":pw_allocator",
+        ":testing",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
     name = "weak_ptr_test",
     srcs = ["weak_ptr_test.cc"],
     deps = [
@@ -1128,6 +1139,7 @@ filegroup(
         "public/pw_allocator/config.h",
         "public/pw_allocator/deallocator.h",
         "public/pw_allocator/dl_allocator.h",
+        "public/pw_allocator/enable_shared_from_this.h",
         "public/pw_allocator/fallback_allocator.h",
         "public/pw_allocator/fault_injecting_allocator.h",
         "public/pw_allocator/first_fit.h",

@@ -186,6 +186,9 @@ class WeakPtr final : public ::pw::allocator::internal::WeakManagedPtr<T> {
   template <typename>
   friend class WeakPtr;
 
+  template <typename>
+  friend class EnableSharedFromThis;
+
   ControlBlock* control_block() const { return control_block_; }
 
   explicit WeakPtr(element_type* ptr, ControlBlock* control_block) noexcept

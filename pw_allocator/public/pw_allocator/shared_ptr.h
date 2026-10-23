@@ -25,6 +25,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 #include "pw_allocator/deallocator.h"
@@ -50,6 +51,31 @@ constexpr SharedPtr<To> const_pointer_cast(const SharedPtr<From>& p) noexcept;
 template <typename T>
 class WeakPtr;
 
+namespace allocator::internal {
+
+template <typename T, typename = void>
+struct HasInitializeWeakThis : std::false_type {};
+
+template <typename T>
+struct HasInitializeWeakThis<
+    T,
+    std::void_t<
+        decltype(std::declval<std::remove_cv_t<T>&>().InitializeWeakThis(
+            static_cast<ControlBlock*>(nullptr),
+            static_cast<std::remove_cv_t<T>*>(nullptr)))>> : std::true_type {};
+
+template <typename T>
+void EnableWeakThis(ControlBlock* control_block, T* ptr) {
+  if constexpr (HasInitializeWeakThis<T>::value) {
+    if (ptr != nullptr) {
+      using NonConstT = std::remove_cv_t<T>;
+      const_cast<NonConstT*>(ptr)->InitializeWeakThis(
+          control_block, const_cast<NonConstT*>(ptr));
+    }
+  }
+}
+
+}  // namespace allocator::internal
 namespace async2 {
 class Task;
 }  // namespace async2
@@ -387,11 +413,17 @@ SharedPtr<T>::SharedPtr(UniquePtr<T>& owned) noexcept {
 
   // Create the shared pointer's control block using the restricted method.
   const auto& handle = ControlBlockHandle::GetInstance_DO_NOT_USE();
-  control_block_ =
-      ControlBlock::Create(handle, owned.deallocator(), owned.get(), size);
+  control_block_ = ControlBlock::Create(
+      handle,
+      owned.deallocator(),
+      const_cast<void*>(static_cast<const void*>(owned.get())),
+      size);
 
   if (control_block_ != nullptr) {
     Base::CopyFrom(owned);
+    if constexpr (!std::is_array_v<T>) {
+      allocator::internal::EnableWeakThis(control_block_, Base::get());
+    }
     owned.Release();
   }
 }
@@ -410,6 +442,7 @@ SharedPtr<T> SharedPtr<T>::Create(Allocator* allocator, Args&&... args) {
     return nullptr;
   }
   auto* t = new (control_block->data()) T(std::forward<Args>(args)...);
+  allocator::internal::EnableWeakThis(control_block, t);
   return SharedPtr<T>(t, control_block);
 }
 
