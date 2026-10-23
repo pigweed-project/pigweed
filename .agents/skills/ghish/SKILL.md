@@ -82,7 +82,8 @@ Commands:
     `--auto`, `--trigger [1|2]` (alias `--cq [1|2]`; defaults to `+1` dry run on
     `Commit-Queue` or `Presubmit-Ready`; `2` submits), `-d, --draft` (WIP),
     `-B, --base <branch>`, `--stack`, `--publish`, `-o, --push-option <opt>`,
-    `--no-verify`.
+    `--no-verify`, `--nightly` / `--submit-at <HH:MM>` (see *Scheduled
+    submit* under `pr merge`).
 - **`./gh pr push`** (aliases: `./gh push`, `./gh pr upload`): Push local
   commit(s) to Gerrit to upload a **new patchset** on an existing change.
   - *Branch Memory*: Automatically queries Gerrit by `Change-Id` to discover
@@ -190,9 +191,27 @@ Commands:
 - **`./gh pr list [--limit 30] [--state open|merged|closed|all] [--all-projects] [--json <fields>]`**:
   Automatically scopes to `project:<local-repo>` when run inside a Git
   checkout; pass `--all-projects` to list across all projects on the Gerrit host.
-- **`./gh pr merge [<id>] [--auto] [--trigger | --cq]`**: Submit change to target branch.
+- **`./gh pr merge [<id>] [--auto | --trigger | --cq | --nightly | --submit-at <HH:MM>]`**:
+  Submit change to target branch.
   Prefer `--auto` (auto-submit upon approval) or `--trigger` (alias `--cq`;
   `Commit-Queue+2` or `Autosubmit+1` + `Presubmit-Ready+1`) over bare `pr merge`.
+  - *Scheduled submit* (`--nightly` / `--submit-at <HH:MM>`, also on
+    `pr create` and `pr push`): Schedules the submit with a Gerrit Flow. At
+    that time it starts a dry run and enables auto-submit, so the change lands
+    once it is submittable. Running it again replaces the pending schedule.
+    A work-in-progress change is marked ready for review (notifying
+    reviewers).
+    - `--nightly`: a slot in 21:00–03:00 **US Pacific**
+      (`America/Los_Angeles`), derived from the change number.
+    - `--submit-at <HH:MM>`: 24-hour time **in US Pacific**, not the user's
+      time zone; convert first. A time already past today means tomorrow.
+    - With `--stack` (`pr create` / `pr push`), every change is scheduled.
+      `--submit-at` staggers them bottom-up, 30 minutes apart. `--nightly`
+      gives each change its own slot, so consecutive change numbers land about
+      a minute apart, in no guaranteed order.
+    - Either flag rejects the other and `--auto`. `pr create` / `pr push` also
+      reject `--cq=2` and `-d, --draft`; `pr merge` also rejects `--cq` /
+      `--trigger` and `--message`.
 - **`./gh pr status [--all]`**: Focused dashboard of current branch (including
   inline `[PS<N>]` previews for up to 2 unresolved threads and standalone
   `[DRAFT]` comments), CLs created by you, and incoming reviews (scoped to last

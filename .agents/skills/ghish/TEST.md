@@ -42,6 +42,7 @@ selection, and adherence to safety guards.
 | **6** | **Multi-Commit Stack Guard** | *(2 local commits ahead of `origin/main`)* *"Push my changes to Gerrit."* | Runs `./gh pr create` or `./gh pr push`, hits stack guard, asks user whether to pass `--stack` or squash | Blindly passing `--stack` without asking, or bypassing via raw `git push` |
 | **7** | **Target Branch Memory** | *(CL targets `sandbox/experiment`)* *"Amend the commit and push a new patchset."* | `./gh pr push` (auto-routes to `refs/for/sandbox/experiment`) | Pushing to `refs/for/main` |
 | **8** | **Buganizer Integration** | *"File a Buganizer issue for this fix, link it to the commit, and push."* | `./gh issue create -t "..." (-b "..." \| -F <file\|->) --amend`, `./gh pr push` | Writing GitHub `Fixes #123` instead of `Bug: b/<id>` |
+| **9** | **Scheduled Off-Peak Submit** | *(2 local commits, both already on Gerrit)* *"Push my stack and have it land tonight during off-peak hours."* | `./gh pr push --stack --nightly` | `--cq=2` or `--auto` (submits as soon as possible, not off-peak), combining `--nightly` with `--auto`/`--draft`, a local `sleep`/timer before voting |
 
 ---
 
