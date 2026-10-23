@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -73,10 +74,14 @@ type GitClient interface {
 	Fetch(ctx context.Context, remote, ref string, stdout, stderr io.Writer) error
 	Checkout(ctx context.Context, ref string, stdout, stderr io.Writer) error
 	CherryPick(ctx context.Context, ref string, stdout, stderr io.Writer) error
+	// CommitAmendNoEdit runs commit-msg hooks on HEAD without altering the commit
+	// tree or staged index entries.
 	CommitAmendNoEdit(ctx context.Context, stdout, stderr io.Writer) error
 	IsHeadRemoteTip(ctx context.Context) (bool, []string, error)
 	HeadAuthorEmail(ctx context.Context) (string, error)
 	UserEmail(ctx context.Context) (string, error)
+	// CheckAmendAllowed verifies that HEAD is safe to amend locally (not on a
+	// remote tracking tip, merge commit, or active sequencer operation).
 	CheckAmendAllowed(ctx context.Context) error
 	ResolveRemote(ctx context.Context) string
 	ResolveDefaultBranch(ctx context.Context) string
@@ -517,7 +522,80 @@ func (c *defaultGitClient) UserEmail(ctx context.Context) (string, error) {
 	return c.ConfigGet(ctx, "user.email")
 }
 
+type sequencerMarker struct {
+	name      string
+	operation string
+	fix       string
+}
+
+var activeSequencerMarkers = []sequencerMarker{
+	{
+		name:      "rebase-merge",
+		operation: "interactive rebase",
+		fix:       "  git rebase --continue\n  # or abort:\n  git rebase --abort",
+	},
+	{
+		name:      "rebase-apply",
+		operation: "rebase / patch application",
+		fix:       "  git rebase --continue\n  # or abort:\n  git rebase --abort",
+	},
+	{
+		name:      "MERGE_HEAD",
+		operation: "merge",
+		fix:       "  git merge --continue\n  # or abort:\n  git merge --abort",
+	},
+	{
+		name:      "CHERRY_PICK_HEAD",
+		operation: "cherry-pick",
+		fix:       "  git cherry-pick --continue\n  # or abort:\n  git cherry-pick --abort",
+	},
+	{
+		name:      "REVERT_HEAD",
+		operation: "revert",
+		fix:       "  git revert --continue\n  # or abort:\n  git revert --abort",
+	},
+	{
+		name:      "BISECT_LOG",
+		operation: "bisect",
+		fix:       "  git bisect reset",
+	},
+}
+
+// CheckAmendAllowed verifies that HEAD is safe to amend locally, rejecting
+// active sequencer operations, multi-parent merge commits, and remote tips.
 func (c *defaultGitClient) CheckAmendAllowed(ctx context.Context) error {
+	gitDir, err := c.GitDir(ctx)
+	if err != nil {
+		return err
+	}
+	for _, m := range activeSequencerMarkers {
+		if _, statErr := os.Stat(filepath.Join(gitDir, m.name)); statErr == nil {
+			return fmt.Errorf(
+				"cannot amend HEAD commit: a git %s is currently in progress (%s exists in %s).\n\n"+
+					"Why: Amending during an in-progress %s rewrites intermediate commit state and can corrupt your branch history.\n"+
+					"To finish or cancel the in-progress operation first:\n%s\n\n"+
+					"To inspect current repository status:\n  git status",
+				m.operation, m.name, gitDir, m.operation, m.fix,
+			)
+		}
+	}
+
+	parentsOut, err := c.runOutput(ctx, "rev-list", "--parents", "-n", "1", "HEAD")
+	if err != nil {
+		return err
+	}
+	if fields := strings.Fields(parentsOut); len(fields) > 2 {
+		return fmt.Errorf(
+			"cannot amend HEAD commit: HEAD (%s) is a merge commit with %d parents.\n\n"+
+				"Why: Amending a merge commit rewrites multi-parent merge ancestry, whereas Gerrit changes are single-parent linear commits.\n"+
+				"To linearize your commit history onto the target branch instead:\n"+
+				"  git rebase %s/main\n\n"+
+				"To inspect recent commit ancestry:\n"+
+				"  git log --graph -n 5",
+			fields[0], len(fields)-1, c.ResolveRemote(ctx),
+		)
+	}
+
 	isTip, remotes, err := c.IsHeadRemoteTip(ctx)
 	if err != nil {
 		return err
@@ -532,9 +610,11 @@ func (c *defaultGitClient) CheckAmendAllowed(ctx context.Context) error {
 	return nil
 }
 
+// CommitAmendNoEdit runs commit-msg hooks on HEAD while preserving staged index
+// changes and intentional empty commits.
 func (c *defaultGitClient) CommitAmendNoEdit(ctx context.Context, stdout, stderr io.Writer) error {
 	if err := c.CheckAmendAllowed(ctx); err != nil {
 		return err
 	}
-	return c.Run(ctx, stdout, stderr, "commit", "--amend", "--no-edit")
+	return c.Run(ctx, stdout, stderr, "commit", "--amend", "--only", "--allow-empty", "--no-edit")
 }

@@ -278,8 +278,8 @@ func TestCreate_ChangeID_AutoRepair(t *testing.T) {
 		t.Fatalf("Command failed: %v", err)
 	}
 
-	if !mockGit.HasCall("commit --amend --no-edit") {
-		t.Errorf("Expected git commit --amend --no-edit to be called, calls: %v", mockGit.Calls)
+	if !mockGit.HasCall("commit --amend --only --allow-empty --no-edit") {
+		t.Errorf("Expected git commit --amend --only --allow-empty --no-edit to be called, calls: %v", mockGit.Calls)
 	}
 }
 

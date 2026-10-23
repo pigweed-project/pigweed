@@ -200,6 +200,8 @@ func isOptionalDiscoveryProbe(args []string) bool {
 				return len(args) >= 3 && args[len(args)-1] == "@{u}"
 			}
 		}
+	case "rev-list":
+		return len(args) >= 4 && args[1] == "--parents" && args[2] == "-n" && args[3] == "1"
 	}
 	return false
 }

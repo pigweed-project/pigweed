@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -187,10 +188,14 @@ func TestGitClient_RevParse_And_VerifyRef(t *testing.T) {
 func TestGitClient_Fetch_Checkout_CherryPick_CommitAmend(t *testing.T) {
 	ctx := context.Background()
 
+	gitDir := t.TempDir()
 	var calls []string
 	mock := &MockGitRunner{
 		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 			calls = append(calls, strings.Join(args, " "))
+			if slices.Equal(args, []string{"rev-parse", "--git-dir"}) {
+				stdout.Write([]byte(gitDir + "\n"))
+			}
 			return nil
 		},
 	}
@@ -214,8 +219,10 @@ func TestGitClient_Fetch_Checkout_CherryPick_CommitAmend(t *testing.T) {
 		"fetch origin refs/changes/12/1234/1",
 		"checkout FETCH_HEAD",
 		"cherry-pick FETCH_HEAD",
+		"rev-parse --git-dir",
+		"rev-list --parents -n 1 HEAD",
 		"for-each-ref --points-at=HEAD --format=%(refname) refs/remotes/",
-		"commit --amend --no-edit",
+		"commit --amend --only --allow-empty --no-edit",
 	}
 	if len(calls) != len(expectedCalls) {
 		t.Fatalf("Expected %d calls, got %d: %v", len(expectedCalls), len(calls), calls)
@@ -588,36 +595,97 @@ func TestGitClient_CheckAmendAllowed(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("blocks amend on remote tip", func(t *testing.T) {
-		mock := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 3 && args[0] == "for-each-ref" && args[1] == "--points-at=HEAD" {
-					stdout.Write([]byte("refs/remotes/origin/main\n"))
-					return nil
-				}
-				return fmt.Errorf("unexpected: %v", args)
-			},
-		}
-		client := NewGitClient(mock)
-		err := client.CheckAmendAllowed(ctx)
+		gitDir := t.TempDir()
+		mock := (&MockGitRunner{}).
+			OnCommand("rev-parse --git-dir", gitDir+"\n").
+			OnCommand("rev-list --parents -n 1 HEAD", "deadbeef parent1\n").
+			OnCommand("for-each-ref --points-at=HEAD --format=%(refname) refs/remotes/", "refs/remotes/origin/main\nrefs/remotes/goog/main\n")
+		err := NewGitClient(mock).CheckAmendAllowed(ctx)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		if !strings.Contains(err.Error(), "cannot amend HEAD commit") || !strings.Contains(err.Error(), "refs/remotes/origin/main") {
-			t.Errorf("expected error to explain remote tip block, got: %v", err)
+		if !strings.Contains(err.Error(), "cannot amend HEAD commit") ||
+			!strings.Contains(err.Error(), "refs/remotes/origin/main") ||
+			!strings.Contains(err.Error(), "refs/remotes/goog/main") {
+			t.Errorf("expected error to explain remote tip block across remotes, got: %v", err)
+		}
+	})
+
+	t.Run("blocks amend on active sequencer or conflict marker", func(t *testing.T) {
+		for _, m := range []struct {
+			name    string
+			isDir   bool
+			wantFix string
+		}{
+			{name: "rebase-merge", isDir: true, wantFix: "git rebase --continue"},
+			{name: "rebase-apply", isDir: true, wantFix: "git rebase --continue"},
+			{name: "MERGE_HEAD", wantFix: "git merge --continue"},
+			{name: "CHERRY_PICK_HEAD", wantFix: "git cherry-pick --continue"},
+			{name: "REVERT_HEAD", wantFix: "git revert --continue"},
+			{name: "BISECT_LOG", wantFix: "git bisect reset"},
+		} {
+			t.Run(m.name, func(t *testing.T) {
+				gitDir := t.TempDir()
+				target := filepath.Join(gitDir, m.name)
+				var err error
+				if m.isDir {
+					err = os.MkdirAll(target, 0o755)
+				} else {
+					err = os.WriteFile(target, []byte("0000000\n"), 0o600)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				mock := (&MockGitRunner{}).OnCommand("rev-parse --git-dir", gitDir+"\n")
+				err = NewGitClient(mock).CheckAmendAllowed(ctx)
+				if err == nil || !strings.Contains(err.Error(), m.name) || !strings.Contains(err.Error(), m.wantFix) {
+					t.Fatalf("expected error mentioning %s and %q, got: %v", m.name, m.wantFix, err)
+				}
+				if !slices.Equal(mock.Calls, []string{"rev-parse --git-dir"}) {
+					t.Fatalf("unexpected git calls after sequencer marker found: %v", mock.Calls)
+				}
+			})
+		}
+	})
+
+	t.Run("blocks amend on merge commit", func(t *testing.T) {
+		gitDir := t.TempDir()
+		mock := (&MockGitRunner{}).
+			OnCommand("rev-parse --git-dir", gitDir+"\n").
+			OnCommand("rev-list --parents -n 1 HEAD", "deadbeef parent1 parent2\n").
+			OnCommand("remote", "goog\n")
+		err := NewGitClient(mock).CheckAmendAllowed(ctx)
+		if err == nil || !strings.Contains(err.Error(), "merge commit with 2 parents") || !strings.Contains(err.Error(), "git rebase goog/main") {
+			t.Fatalf("expected merge parent error with resolved remote remediation, got: %v", err)
+		}
+	})
+
+	t.Run("propagates git subcommand errors", func(t *testing.T) {
+		for _, failCmd := range []string{
+			"rev-parse --git-dir",
+			"rev-list --parents -n 1 HEAD",
+			"for-each-ref --points-at=HEAD --format=%(refname) refs/remotes/",
+		} {
+			t.Run(failCmd, func(t *testing.T) {
+				gitDir := t.TempDir()
+				mock := (&MockGitRunner{}).
+					OnCommand("rev-parse --git-dir", gitDir+"\n").
+					OnCommand("rev-list --parents -n 1 HEAD", "deadbeef parent1\n").
+					OnError(failCmd, fmt.Errorf("injected error on %s", failCmd))
+				if err := NewGitClient(mock).CheckAmendAllowed(ctx); err == nil || !strings.Contains(err.Error(), "injected error") {
+					t.Fatalf("expected propagated error from %q, got: %v", failCmd, err)
+				}
+			})
 		}
 	})
 
 	t.Run("allows amend when not on remote tip", func(t *testing.T) {
-		mock := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 3 && args[0] == "for-each-ref" && args[1] == "--points-at=HEAD" {
-					return nil
-				}
-				return fmt.Errorf("unexpected: %v", args)
-			},
-		}
-		client := NewGitClient(mock)
-		if err := client.CheckAmendAllowed(ctx); err != nil {
+		gitDir := t.TempDir()
+		mock := (&MockGitRunner{}).
+			OnCommand("rev-parse --git-dir", gitDir+"\n").
+			OnCommand("rev-list --parents -n 1 HEAD", "deadbeef parent1\n").
+			OnCommand("for-each-ref --points-at=HEAD --format=%(refname) refs/remotes/", "")
+		if err := NewGitClient(mock).CheckAmendAllowed(ctx); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -627,49 +695,34 @@ func TestGitClient_CommitAmendNoEdit_Guarded(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("amend fails and does not invoke git commit when on remote tip", func(t *testing.T) {
-		mock := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 3 && args[0] == "for-each-ref" && args[1] == "--points-at=HEAD" {
-					stdout.Write([]byte("refs/remotes/origin/main\n"))
-					return nil
-				}
-				if len(args) >= 1 && args[0] == "commit" {
-					t.Fatalf("git commit was invoked despite remote tip guard!")
-				}
-				return fmt.Errorf("unexpected: %v", args)
-			},
-		}
-		client := NewGitClient(mock)
-		err := client.CommitAmendNoEdit(ctx, io.Discard, io.Discard)
+		gitDir := t.TempDir()
+		mock := (&MockGitRunner{}).
+			OnCommand("rev-parse --git-dir", gitDir+"\n").
+			OnCommand("rev-list --parents -n 1 HEAD", "deadbeef parent1\n").
+			OnCommand("for-each-ref --points-at=HEAD --format=%(refname) refs/remotes/", "refs/remotes/origin/main\n")
+		err := NewGitClient(mock).CommitAmendNoEdit(ctx, io.Discard, io.Discard)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
 		if !strings.Contains(err.Error(), "cannot amend HEAD commit") {
 			t.Errorf("unexpected error: %v", err)
 		}
+		if mock.HasCall("commit") {
+			t.Fatalf("git commit was invoked despite remote tip guard: %v", mock.Calls)
+		}
 	})
 
 	t.Run("amend succeeds when not on remote tip", func(t *testing.T) {
-		commitInvoked := false
-		mock := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 3 && args[0] == "for-each-ref" && args[1] == "--points-at=HEAD" {
-					return nil
-				}
-				if len(args) >= 3 && args[0] == "commit" && args[1] == "--amend" && args[2] == "--no-edit" {
-					commitInvoked = true
-					return nil
-				}
-				return fmt.Errorf("unexpected: %v", args)
-			},
-		}
-		client := NewGitClient(mock)
-		err := client.CommitAmendNoEdit(ctx, io.Discard, io.Discard)
-		if err != nil {
+		gitDir := t.TempDir()
+		mock := (&MockGitRunner{}).
+			OnCommand("rev-parse --git-dir", gitDir+"\n").
+			OnCommand("rev-list --parents -n 1 HEAD", "deadbeef parent1\n").
+			OnCommand("for-each-ref --points-at=HEAD --format=%(refname) refs/remotes/", "")
+		if err := NewGitClient(mock).CommitAmendNoEdit(ctx, io.Discard, io.Discard); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !commitInvoked {
-			t.Errorf("expected git commit --amend to be invoked")
+		if !mock.HasCall("commit --amend --only --allow-empty --no-edit") {
+			t.Errorf("expected git commit --amend --only --allow-empty --no-edit to be invoked, got: %v", mock.Calls)
 		}
 	})
 }
@@ -880,13 +933,23 @@ func TestStackCommits_SafeResolutionAndNoFullHistoryFallback(t *testing.T) {
 	})
 }
 
-func initTestRepoWithOrigin(t *testing.T) (string, GitClient) {
+type testGitRepo struct {
+	WorkDir   string
+	RemoteDir string
+	Client    GitClient
+	t         *testing.T
+}
+
+func newTestGitRepo(t *testing.T) *testGitRepo {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git binary not found in PATH")
 	}
 	ctx := t.Context()
-	baseDir := t.TempDir()
+	baseDir, err := filepath.Abs(t.TempDir())
+	if err != nil {
+		t.Fatalf("filepath.Abs(t.TempDir()) failed: %v", err)
+	}
 	remoteDir := filepath.Join(baseDir, "origin.git")
 	workDir := filepath.Join(baseDir, "work")
 
@@ -894,33 +957,86 @@ func initTestRepoWithOrigin(t *testing.T) (string, GitClient) {
 	if err := rawGit.Run(ctx, io.Discard, io.Discard, "init", "--bare", "--initial-branch=main", remoteDir); err != nil {
 		t.Fatalf("git init --bare failed: %v", err)
 	}
+	if err := rawGit.Run(ctx, io.Discard, io.Discard, "--git-dir="+remoteDir, "config", "receive.advertisePushOptions", "true"); err != nil {
+		t.Fatalf("git config receive.advertisePushOptions failed: %v", err)
+	}
 	if err := rawGit.Run(ctx, io.Discard, io.Discard, "init", "--initial-branch=main", workDir); err != nil {
 		t.Fatalf("git init work failed: %v", err)
 	}
 
-	client := NewGitClientInDir(workDir)
-	run := func(args ...string) {
-		t.Helper()
-		fullArgs := append([]string{"-c", "commit.gpgsign=false"}, args...)
-		if err := client.Run(ctx, io.Discard, io.Discard, fullArgs...); err != nil {
-			t.Fatalf("git %v failed: %v", args, err)
-		}
+	r := &testGitRepo{
+		WorkDir:   workDir,
+		RemoteDir: remoteDir,
+		Client:    NewGitClientInDir(workDir),
+		t:         t,
 	}
 	for _, kv := range [][2]string{
 		{"user.name", "Test User"},
 		{"user.email", "test@example.com"},
+		{"user.signingkey", ""},
 		{"commit.gpgsign", "false"},
 	} {
-		run("config", kv[0], kv[1])
+		r.GitOutput("config", kv[0], kv[1])
 	}
-	run("remote", "add", "origin", remoteDir)
-	if err := os.WriteFile(filepath.Join(workDir, "base.txt"), []byte("initial\n"), 0o644); err != nil {
-		t.Fatalf("write base.txt failed: %v", err)
+	r.GitOutput("remote", "add", "origin", remoteDir)
+	r.StageFile("base.txt", "initial\n")
+	r.GitOutput("commit", "-m", "Initial commit")
+	r.GitOutput("push", "-u", "origin", "main")
+	return r
+}
+
+func (r *testGitRepo) GitOutput(args ...string) string {
+	r.t.Helper()
+	var stdout, stderr bytes.Buffer
+	fullArgs := append([]string{"-c", "commit.gpgsign=false"}, args...)
+	if err := r.Client.Run(r.t.Context(), &stdout, &stderr, fullArgs...); err != nil {
+		r.t.Fatalf("git %v failed: %v (%s)", args, err, stderr.String())
 	}
-	run("add", "base.txt")
-	run("commit", "-m", "Initial commit")
-	run("push", "-u", "origin", "main")
-	return workDir, client
+	return strings.TrimSpace(stdout.String())
+}
+
+func (r *testGitRepo) WriteFile(rel, content string) {
+	r.t.Helper()
+	full := filepath.Join(r.WorkDir, rel)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		r.t.Fatalf("mkdir %s failed: %v", rel, err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		r.t.Fatalf("write %s failed: %v", rel, err)
+	}
+}
+
+func (r *testGitRepo) StageFile(rel, content string) {
+	r.t.Helper()
+	r.WriteFile(rel, content)
+	r.GitOutput("add", rel)
+}
+
+func (r *testGitRepo) ReadFile(rel string) string {
+	r.t.Helper()
+	data, err := os.ReadFile(filepath.Join(r.WorkDir, rel))
+	if err != nil {
+		r.t.Fatalf("read %s failed: %v", rel, err)
+	}
+	return string(data)
+}
+
+func (r *testGitRepo) InstallCommitMsgHook() {
+	r.t.Helper()
+	hookPath := filepath.Join(r.WorkDir, ".git", "hooks", "commit-msg")
+	if err := os.MkdirAll(filepath.Dir(hookPath), 0o755); err != nil {
+		r.t.Fatalf("mkdir hooks failed: %v", err)
+	}
+	hookScript := "#!/bin/sh\ngrep -q '^Change-Id:' \"$1\" || git interpret-trailers --in-place --trailer \"Change-Id: I1111111111111111111111111111111111111111\" \"$1\"\n"
+	if err := os.WriteFile(hookPath, []byte(hookScript), 0o755); err != nil {
+		r.t.Fatalf("write commit-msg hook failed: %v", err)
+	}
+}
+
+func initTestRepoWithOrigin(t *testing.T) (string, GitClient) {
+	t.Helper()
+	r := newTestGitRepo(t)
+	return r.WorkDir, r.Client
 }
 
 func TestRealGitRunner_IgnoresInheritedGitDirWhenDirExplicit(t *testing.T) {
@@ -1023,4 +1139,94 @@ func TestGitClient_GitDir_MockFallbackAndEmptyOutput(t *testing.T) {
 	if _, err := NewGitClient(emptyRunFnMock).GitDir(ctx); err == nil {
 		t.Errorf("expected GitDir() to error when RunFn writes empty output, got nil")
 	}
+}
+
+func TestGitClient_CheckAmendAllowed_RealGit(t *testing.T) {
+	ctx := t.Context()
+
+	t.Run("blocks upstream tip", func(t *testing.T) {
+		r := newTestGitRepo(t)
+		if err := r.Client.CheckAmendAllowed(ctx); err == nil || !strings.Contains(err.Error(), "refs/remotes/origin/main") {
+			t.Fatalf("expected upstream tip error, got: %v", err)
+		}
+	})
+
+	t.Run("allows non-tip detached HEAD", func(t *testing.T) {
+		r := newTestGitRepo(t)
+		r.StageFile("base.txt", "unpushed\n")
+		r.GitOutput("commit", "-m", "feat: Local commit")
+		r.GitOutput("checkout", "--detach", "HEAD")
+		if err := r.Client.CheckAmendAllowed(ctx); err != nil {
+			t.Fatalf("expected non-tip detached HEAD to allow amend, got: %v", err)
+		}
+	})
+
+	t.Run("blocks 2-parent merge commit", func(t *testing.T) {
+		r := newTestGitRepo(t)
+		r.GitOutput("checkout", "-b", "side")
+		r.StageFile("side.txt", "side\n")
+		r.GitOutput("commit", "-m", "side commit")
+		r.GitOutput("checkout", "main")
+		r.GitOutput("merge", "--no-ff", "-m", "Merge branch 'side'", "side")
+		if err := r.Client.CheckAmendAllowed(ctx); err == nil || !strings.Contains(err.Error(), "merge commit") {
+			t.Fatalf("expected merge commit error, got: %v", err)
+		}
+	})
+}
+
+func TestGitClient_CommitAmendNoEdit_RealGit(t *testing.T) {
+	ctx := t.Context()
+
+	t.Run("preserves staged index, unstaged edits, and untracked files", func(t *testing.T) {
+		r := newTestGitRepo(t)
+		if err := r.Client.CommitAmendNoEdit(ctx, io.Discard, io.Discard); err == nil {
+			t.Fatal("expected CheckAmendAllowed error on origin/main tip")
+		}
+
+		r.StageFile("base.txt", "commit 1\n")
+		r.GitOutput("commit", "-m", "pw_foo: Initial draft")
+		origHeadTree := r.GitOutput("rev-parse", "HEAD^{tree}")
+		r.InstallCommitMsgHook()
+
+		r.StageFile("staged_only.txt", "staged content\n")
+		origIndexTree := r.GitOutput("write-tree")
+		r.WriteFile("base.txt", "unstaged worktree edit\n")
+		r.WriteFile("untracked.txt", "untracked content\n")
+
+		if err := r.Client.CommitAmendNoEdit(ctx, io.Discard, io.Discard); err != nil {
+			t.Fatalf("CommitAmendNoEdit failed: %v", err)
+		}
+		gotMsg, err := r.Client.HeadCommitMessage(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(gotMsg, "Change-Id: I1111111111111111111111111111111111111111") {
+			t.Errorf("expected commit-msg hook output in HEAD message, got:\n%s", gotMsg)
+		}
+		if got := r.GitOutput("rev-parse", "HEAD^{tree}"); got != origHeadTree {
+			t.Errorf("CommitAmendNoEdit swept staged changes into HEAD tree: got %s, want %s", got, origHeadTree)
+		}
+		if got := r.GitOutput("write-tree"); got != origIndexTree {
+			t.Errorf("CommitAmendNoEdit altered .git/index tree: got %s, want %s", got, origIndexTree)
+		}
+		if got := r.ReadFile("base.txt"); got != "unstaged worktree edit\n" {
+			t.Errorf("unstaged edit altered: got %q", got)
+		}
+		if got := r.ReadFile("untracked.txt"); got != "untracked content\n" {
+			t.Errorf("untracked file altered: got %q", got)
+		}
+	})
+
+	t.Run("amends intentional allow-empty commit", func(t *testing.T) {
+		r := newTestGitRepo(t)
+		r.GitOutput("commit", "--allow-empty", "-m", "pw_foo: Trigger CI")
+		r.InstallCommitMsgHook()
+		if err := r.Client.CommitAmendNoEdit(ctx, io.Discard, io.Discard); err != nil {
+			t.Fatalf("CommitAmendNoEdit on --allow-empty commit failed: %v", err)
+		}
+		gotMsg, err := r.Client.HeadCommitMessage(ctx)
+		if err != nil || !strings.Contains(gotMsg, "Change-Id: I1111111111111111111111111111111111111111") {
+			t.Errorf("expected Change-Id in amended empty commit, got msg=%q err=%v", gotMsg, err)
+		}
+	})
 }

@@ -261,6 +261,7 @@ func TestIssueCreate_AndAmend(t *testing.T) {
 			return nil
 		},
 	}
+	gitRunner.OnCommand("rev-parse --git-dir", t.TempDir()+"\n")
 	SetupMockConfig(t, gitRunner)
 
 	// 0. Creating on generic profile without -C or git config fails with 4-pillar actionable error
@@ -572,6 +573,7 @@ func TestIssueCreate_AmendDeduplicatesExistingBug(t *testing.T) {
 			return nil
 		},
 	}
+	gitRunner.OnCommand("rev-parse --git-dir", t.TempDir()+"\n")
 	gitRunner.OnCommand("config user.email", "dev@google.com")
 	// Commit already has b/300001 in Bug: trailer
 	gitRunner.OnCommand("log -1 --format=%B HEAD", "pw_foo: Fix bug\n\nBug: b/111111, b/300001\nChange-Id: I1234567890123456789012345678901234567890\n")
@@ -659,6 +661,7 @@ func TestIssueCreate_AmendWithCustomTrailerFormat(t *testing.T) {
 			return nil
 		},
 	}
+	gitRunner.OnCommand("rev-parse --git-dir", filepath.Join(repoDir, ".git")+"\n")
 	gitRunner.OnCommand("log -1 --format=%B HEAD", "acme: Fix sensor init\n\nChange-Id: I1234567890123456789012345678901234567890\n")
 	SetupMockConfig(t, gitRunner)
 	origMockCWD := MockCWD

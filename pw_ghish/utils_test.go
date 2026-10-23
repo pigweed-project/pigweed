@@ -544,7 +544,7 @@ func TestEnsureChangeID_MissingChangeIDReturnsError(t *testing.T) {
 
 func TestEnsureChangeID_BlockedWhenRemoteTip(t *testing.T) {
 	ctx := context.Background()
-	mockGit := &MockGitRunner{
+	mockGit := (&MockGitRunner{
 		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 			if len(args) >= 2 && args[0] == "log" {
 				stdout.Write([]byte("Subject without change id\n"))
@@ -554,7 +554,7 @@ func TestEnsureChangeID_BlockedWhenRemoteTip(t *testing.T) {
 			}
 			return nil
 		},
-	}
+	}).OnCommand("rev-parse --git-dir", t.TempDir()+"\n")
 	cfg := &Config{Git: mockGit, Host: "pigweed-review.googlesource.com"}
 	var outBuf, errBuf bytes.Buffer
 	err := EnsureChangeID(ctx, cfg, &outBuf, &errBuf)
