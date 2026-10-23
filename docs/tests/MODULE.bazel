@@ -76,6 +76,12 @@ http_archive(
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
+    envsubst = ["PIGWEED_PIP_INDEX_URL"],
+    experimental_index_url = "${PIGWEED_PIP_INDEX_URL:-https://pypi.org/simple}",
+    extra_pip_args = [
+        "--no-index",
+        "--no-build-isolation",
+    ],
     hub_name = "docs_tests_pip",
     python_version = "3.11",
     requirements_lock = "//:requirements.txt",
