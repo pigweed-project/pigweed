@@ -19,6 +19,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -875,4 +878,149 @@ func TestStackCommits_SafeResolutionAndNoFullHistoryFallback(t *testing.T) {
 			}
 		}
 	})
+}
+
+func initTestRepoWithOrigin(t *testing.T) (string, GitClient) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not found in PATH")
+	}
+	ctx := t.Context()
+	baseDir := t.TempDir()
+	remoteDir := filepath.Join(baseDir, "origin.git")
+	workDir := filepath.Join(baseDir, "work")
+
+	rawGit := &RealGitRunner{Dir: baseDir}
+	if err := rawGit.Run(ctx, io.Discard, io.Discard, "init", "--bare", "--initial-branch=main", remoteDir); err != nil {
+		t.Fatalf("git init --bare failed: %v", err)
+	}
+	if err := rawGit.Run(ctx, io.Discard, io.Discard, "init", "--initial-branch=main", workDir); err != nil {
+		t.Fatalf("git init work failed: %v", err)
+	}
+
+	client := NewGitClientInDir(workDir)
+	run := func(args ...string) {
+		t.Helper()
+		fullArgs := append([]string{"-c", "commit.gpgsign=false"}, args...)
+		if err := client.Run(ctx, io.Discard, io.Discard, fullArgs...); err != nil {
+			t.Fatalf("git %v failed: %v", args, err)
+		}
+	}
+	for _, kv := range [][2]string{
+		{"user.name", "Test User"},
+		{"user.email", "test@example.com"},
+		{"commit.gpgsign", "false"},
+	} {
+		run("config", kv[0], kv[1])
+	}
+	run("remote", "add", "origin", remoteDir)
+	if err := os.WriteFile(filepath.Join(workDir, "base.txt"), []byte("initial\n"), 0o644); err != nil {
+		t.Fatalf("write base.txt failed: %v", err)
+	}
+	run("add", "base.txt")
+	run("commit", "-m", "Initial commit")
+	run("push", "-u", "origin", "main")
+	return workDir, client
+}
+
+func TestRealGitRunner_IgnoresInheritedGitDirWhenDirExplicit(t *testing.T) {
+	ctx := t.Context()
+	outerDir, outerClient := initTestRepoWithOrigin(t)
+	innerDir, innerClient := initTestRepoWithOrigin(t)
+
+	if err := outerClient.Run(ctx, io.Discard, io.Discard, "config", "ghish.test.outer", "leaked"); err != nil {
+		t.Fatal(err)
+	}
+	outerSHA, err := outerClient.RevParse(ctx, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate running inside `git rebase -x` or a Git hook where repository
+	// and per-invocation config environment overrides are set.
+	t.Setenv("GIT_DIR", filepath.Join(outerDir, ".git"))
+	t.Setenv("GIT_WORK_TREE", outerDir)
+	t.Setenv("GIT_CONFIG", filepath.Join(outerDir, ".git", "config"))
+	t.Setenv("GIT_CONFIG_PARAMETERS", "'user.name=Inherited Config Params' 'commit.gpgsign=true'")
+	t.Setenv("GIT_CONFIG_COUNT", "2")
+	t.Setenv("GIT_CONFIG_KEY_0", "user.email")
+	t.Setenv("GIT_CONFIG_VALUE_0", "inherited-count@example.com")
+	t.Setenv("GIT_CONFIG_KEY_1", "commit.gpgsign")
+	t.Setenv("GIT_CONFIG_VALUE_1", "true")
+
+	gotGitDir, err := innerClient.GitDir(ctx)
+	if err != nil {
+		t.Fatalf("GitDir failed: %v", err)
+	}
+	wantGitDir := filepath.Join(innerDir, ".git")
+	if gotGitDir != wantGitDir {
+		t.Errorf("GitDir() = %q, want %q", gotGitDir, wantGitDir)
+	}
+
+	if val, err := innerClient.ConfigGet(ctx, "ghish.test.outer"); err == nil {
+		t.Errorf("inherited GIT_CONFIG leaked into inner repo: got %q, want error", val)
+	}
+
+	if err := os.WriteFile(filepath.Join(innerDir, "inner.txt"), []byte("inner commit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := innerClient.Run(ctx, io.Discard, io.Discard, "add", "inner.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := innerClient.Run(ctx, io.Discard, io.Discard, "commit", "-m", "pw_inner: Isolated commit"); err != nil {
+		t.Fatalf("commit in innerDir failed under inherited GIT_DIR/GIT_CONFIG_*: %v", err)
+	}
+
+	authorEmail, err := innerClient.HeadAuthorEmail(ctx)
+	if err != nil || authorEmail != "test@example.com" {
+		t.Errorf("HeadAuthorEmail() = (%q, %v), want (test@example.com, nil)", authorEmail, err)
+	}
+	var authorNameBuf strings.Builder
+	if err := innerClient.Run(ctx, &authorNameBuf, io.Discard, "log", "-1", "--format=%an", "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	if gotName := strings.TrimSpace(authorNameBuf.String()); gotName != "Test User" {
+		t.Errorf("author name = %q, want Test User (GIT_CONFIG_PARAMETERS leaked)", gotName)
+	}
+
+	// Outer repository MUST be completely untouched.
+	afterOuterSHA, err := outerClient.RevParse(ctx, "HEAD")
+	if err != nil || afterOuterSHA != outerSHA {
+		t.Fatalf("inherited GIT_DIR leaked into outer repo: got %s, want %s", afterOuterSHA, outerSHA)
+	}
+}
+
+func TestGitClient_GitDir_MockFallbackAndEmptyOutput(t *testing.T) {
+	ctx := t.Context()
+
+	defaultMock := &MockGitRunner{}
+	t.Cleanup(defaultMock.cleanupMockGitDir)
+	dir1, err := NewGitClient(defaultMock).GitDir(ctx)
+	if err != nil {
+		t.Fatalf("default MockGitRunner GitDir() failed: %v", err)
+	}
+	if dir1 == "" || dir1 == ".git" {
+		t.Fatalf("expected isolated temp dir from default MockGitRunner, got %q", dir1)
+	}
+	if info, statErr := os.Stat(dir1); statErr != nil || !info.IsDir() {
+		t.Fatalf("expected existing directory %q, statErr=%v", dir1, statErr)
+	}
+	dir2, err := NewGitClient(defaultMock).GitDir(ctx)
+	if err != nil || dir2 != dir1 {
+		t.Errorf("expected cached mock git dir %q, got (%q, %v)", dir1, dir2, err)
+	}
+
+	emptyRespMock := (&MockGitRunner{}).OnCommand("rev-parse --git-dir", "  \n")
+	if _, err := NewGitClient(emptyRespMock).GitDir(ctx); err == nil {
+		t.Errorf("expected GitDir() to error on empty OnCommand output, got nil")
+	}
+
+	emptyRunFnMock := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			return nil
+		},
+	}
+	if _, err := NewGitClient(emptyRunFnMock).GitDir(ctx); err == nil {
+		t.Errorf("expected GitDir() to error when RunFn writes empty output, got nil")
+	}
 }

@@ -92,11 +92,16 @@ func gitEnvFromContext(ctx context.Context) []string {
 }
 
 func (r *RealGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cmd := exec.CommandContext(ctx, "git", args...)
+	baseEnv := os.Environ()
 	if r != nil && r.Dir != "" {
 		cmd.Dir = r.Dir
+		baseEnv = scrubRepoLocalGitEnv(baseEnv)
 	}
-	cmd.Env = slices.Concat(os.Environ(), []string{"GH_ISH_ACTIVE=1"}, gitEnvFromContext(ctx))
+	cmd.Env = slices.Concat(baseEnv, []string{"GH_ISH_ACTIVE=1"}, gitEnvFromContext(ctx))
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()

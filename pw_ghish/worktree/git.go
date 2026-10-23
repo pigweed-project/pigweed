@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -118,12 +117,8 @@ func NewExecGitRunner() *ExecGitRunner {
 }
 
 func (g *ExecGitRunner) runGit(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	if err := (&pw_ghish.RealGitRunner{Dir: dir}).Run(context.Background(), &stdout, &stderr, args...); err != nil {
 		errMsg := strings.TrimSpace(stderr.String())
 		if errMsg == "" {
 			errMsg = strings.TrimSpace(stdout.String())

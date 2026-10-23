@@ -161,6 +161,17 @@ type MockGitRunner struct {
 	errors           map[string]error
 	defaultBranch    string
 	defaultCommitMsg string
+	mockGitDir       string
+}
+
+func (m *MockGitRunner) cleanupMockGitDir() {
+	m.mu.Lock()
+	dir := m.mockGitDir
+	m.mockGitDir = ""
+	m.mu.Unlock()
+	if dir != "" {
+		_ = os.RemoveAll(dir)
+	}
 }
 
 func isOptionalDiscoveryProbe(args []string) bool {
@@ -183,7 +194,7 @@ func isOptionalDiscoveryProbe(args []string) bool {
 	case "rev-parse":
 		if len(args) >= 2 {
 			switch args[1] {
-			case "--verify", "--show-toplevel":
+			case "--verify", "--show-toplevel", "--git-dir":
 				return true
 			case "--abbrev-ref":
 				return len(args) >= 3 && args[len(args)-1] == "@{u}"
@@ -210,7 +221,21 @@ func (m *MockGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args 
 		(defaultBranch != "" && len(args) >= 1 && args[0] == "branch") ||
 		(defaultCommitMsg != "" && len(args) >= 2 && args[0] == "log" && args[1] == "-1")
 	if !hasHandler && isOptionalDiscoveryProbe(args) {
+		var gitDir string
+		var gitDirErr error
+		if call == "rev-parse --git-dir" {
+			if m.mockGitDir == "" {
+				m.mockGitDir, gitDirErr = os.MkdirTemp("", "ghish-mock-gitdir-*")
+			}
+			gitDir = m.mockGitDir
+		}
 		m.mu.Unlock()
+		if gitDirErr != nil {
+			return gitDirErr
+		}
+		if gitDir != "" {
+			stdout.Write([]byte(gitDir + "\n"))
+		}
 		return nil
 	}
 	m.Calls = append(m.Calls, call)
@@ -319,7 +344,10 @@ func SetMockGit(t *testing.T, runner *MockGitRunner) *MockGitRunner {
 	}
 	oldGit := DefaultGitRunner
 	DefaultGitRunner = runner
-	t.Cleanup(func() { DefaultGitRunner = oldGit })
+	t.Cleanup(func() {
+		DefaultGitRunner = oldGit
+		runner.cleanupMockGitDir()
+	})
 	return runner
 }
 
@@ -348,7 +376,12 @@ func SetupMockConfig(t *testing.T, gitRunner GitRunner) {
 	t.Helper()
 	oldGit := DefaultGitRunner
 	DefaultGitRunner = &defaultGitRunnerWrapper{inner: gitRunner}
-	t.Cleanup(func() { DefaultGitRunner = oldGit })
+	t.Cleanup(func() {
+		DefaultGitRunner = oldGit
+		if m, ok := gitRunner.(*MockGitRunner); ok {
+			m.cleanupMockGitDir()
+		}
+	})
 
 	oldPreRunE := RootCmd.PersistentPreRunE
 	RootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {

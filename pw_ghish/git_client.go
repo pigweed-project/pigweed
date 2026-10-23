@@ -19,8 +19,36 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 )
+
+func isRepoLocalGitEnvKey(key string) bool {
+	switch key {
+	case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
+		"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"GIT_COMMON_DIR", "GIT_PREFIX",
+		"GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT":
+		return true
+	}
+	return false
+}
+
+// scrubRepoLocalGitEnv returns a copy of env with repository-local Git
+// environment overrides removed so git subprocesses executing in an explicit
+// directory operate on that directory rather than an inherited outer repo
+// (such as during `git rebase -x` or git hook execution).
+func scrubRepoLocalGitEnv(env []string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		if isRepoLocalGitEnvKey(k) {
+			continue
+		}
+		filtered = append(filtered, kv)
+	}
+	return filtered
+}
 
 // StackCommit represents a single commit in a local stack ahead of a target branch.
 type StackCommit struct {
@@ -346,8 +374,14 @@ func (c *defaultGitClient) GitDir(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return "", fmt.Errorf("git rev-parse --git-dir returned empty path")
+	}
+	if !filepath.IsAbs(dir) {
+		if realRunner, ok := c.runner.(*RealGitRunner); ok && realRunner.Dir != "" {
+			dir = filepath.Join(realRunner.Dir, dir)
+		}
 	}
 	return dir, nil
 }

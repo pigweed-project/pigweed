@@ -535,18 +535,6 @@ func TestLive_CommentTreeVerification(t *testing.T) {
 	t.Logf("Formatted comment forest length: %d characters across %d comments", len(formatted), totalComments)
 }
 
-type dirGitRunner struct {
-	dir string
-}
-
-func (r *dirGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = r.dir
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	return cmd.Run()
-}
-
 func TestLive_GitRemoteTipIntegration(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Fatalf("test environment setup broken: git executable not found in PATH: %v (git is required for live git integration test)", err)
@@ -561,11 +549,10 @@ func TestLive_GitRemoteTipIntegration(t *testing.T) {
 	}
 	execGit := func(dir string, args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v failed in %s: %v\nOutput: %s", args, dir, err, string(out))
+		var out bytes.Buffer
+		fullArgs := append([]string{"-c", "commit.gpgsign=false"}, args...)
+		if err := (&RealGitRunner{Dir: dir}).Run(ctx, &out, &out, fullArgs...); err != nil {
+			t.Fatalf("git %v failed in %s: %v\nOutput: %s", args, dir, err, out.String())
 		}
 	}
 
@@ -587,8 +574,7 @@ func TestLive_GitRemoteTipIntegration(t *testing.T) {
 	execGit(workDir, "push", "origin", "main")
 
 	// Point client to the real working directory
-	runner := &dirGitRunner{dir: workDir}
-	client := NewGitClient(runner)
+	client := NewGitClientInDir(workDir)
 
 	// In workDir, HEAD is currently pointing directly to refs/remotes/origin/main
 	isTip, remotes, err := client.IsHeadRemoteTip(ctx)

@@ -15,12 +15,15 @@
 package worktree
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"pigweed.dev/pw_ghish"
 )
 
 func TestExecGitRunner_RealWorktreeAndSymlinkLifecycle(t *testing.T) {
@@ -36,11 +39,10 @@ func TestExecGitRunner_RealWorktreeAndSymlinkLifecycle(t *testing.T) {
 
 	runGitCmd := func(dir string, args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		var out bytes.Buffer
+		fullArgs := append([]string{"-c", "commit.gpgsign=false"}, args...)
+		if err := (&pw_ghish.RealGitRunner{Dir: dir}).Run(t.Context(), &out, &out, fullArgs...); err != nil {
+			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, out.String())
 		}
 	}
 
