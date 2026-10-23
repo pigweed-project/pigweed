@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -117,29 +118,47 @@ func TestEdit_ErrorWhenNoFlagsProvided(t *testing.T) {
 	}
 }
 
-func TestEdit_ErrorInvalidLabelFormat(t *testing.T) {
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--add-label", "InvalidFormat")
-	if err == nil {
-		t.Fatal("Expected error on invalid label format, got nil")
+func TestEdit_InvalidLabel(t *testing.T) {
+	tests := []struct {
+		label   string
+		wantErr string
+	}{
+		{"InvalidFormat", "must be in the format 'Name+Score', 'Name-Score', or 'Name=Score'"},
+		{"NotAValidLabel", "must be in the format 'Name+Score', 'Name-Score', or 'Name=Score'"},
+		{"+1", "must be in the format 'Name+Score', 'Name-Score', or 'Name=Score'"},
+		{"-1", "must be in the format 'Name+Score', 'Name-Score', or 'Name=Score'"},
+		{"=1", "must be in the format 'Name+Score', 'Name-Score', or 'Name=Score'"},
+		{"   =1", "must be in the format 'Name+Score', 'Name-Score', or 'Name=Score'"},
+		{"+Commit-Queue+1", "must be in the format 'Name+Score', 'Name-Score', or 'Name=Score'"},
+		{"-Commit-Queue+1", "must be in the format 'Name+Score', 'Name-Score', or 'Name=Score'"},
+		{"Foo--1", "must be in the format 'Name+Score', 'Name-Score', or 'Name=Score'"},
+		{"Commit-Queue=ready", "score must be an integer"},
+		{"Commit-Queue= 1", "score must be an integer"},
 	}
-	if !strings.Contains(err.Error(), "must be in the format 'Name+Score' or 'Name=Score'") {
-		t.Errorf("Expected label format explanation, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "Commit-Queue=1") {
-		t.Errorf("Expected example in error, got: %v", err)
-	}
-}
 
-func TestEdit_ErrorInvalidLabelScore(t *testing.T) {
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--add-label", "Commit-Queue=ready")
-	if err == nil {
-		t.Fatal("Expected error on non-integer score, got nil")
-	}
-	if !strings.Contains(err.Error(), "score must be an integer") {
-		t.Errorf("Expected integer score requirement explanation, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "Commit-Queue=1") {
-		t.Errorf("Expected example in error, got: %v", err)
+	for _, tc := range tests {
+		t.Run(tc.label, func(t *testing.T) {
+			server := NewMockGerritServer(t)
+			server.OnJSON("POST", "/changes/12345/reviewers", http.StatusOK, map[string]any{})
+			server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+
+			_, err := executeCommand(
+				RootCmd,
+				"pr", "edit", "12345",
+				"--add-reviewer", "reviewer@google.com",
+				"--add-label", tc.label,
+				"--host", server.URL,
+			)
+			if err == nil {
+				t.Fatalf("expected error for malformed --add-label %q, got nil", tc.label)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("label %q: expected error containing %q, got %v", tc.label, tc.wantErr, err)
+			}
+			if got := len(server.Requests()); got != 0 {
+				t.Errorf("expected zero Gerrit HTTP requests on invalid label %q, got %d (%+v)", tc.label, got, server.Requests())
+			}
+		})
 	}
 }
 
@@ -153,31 +172,42 @@ func TestEdit_ErrorWhenBothMessageAndTitleProvided(t *testing.T) {
 	}
 }
 
-func TestEdit_ErrorWhenInvalidLabel(t *testing.T) {
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--add-label", "NotAValidLabel")
-	if err == nil {
-		t.Fatal("Expected error on invalid label syntax, got nil")
-	}
-	if !strings.Contains(err.Error(), "must be in the format") {
-		t.Errorf("Expected error message about label format, got: %v", err)
-	}
-}
-
 func TestEditAddLabel(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
 
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--add-label", "Commit-Queue=+1", "--add-label", "Fuchsia-Auto-Submit=1")
+	output, err := executeCommand(
+		RootCmd,
+		"pr", "edit", "12345",
+		"--add-label", "Code-Review-1",
+		"--add-label", "Verified=-1",
+		"--add-label", "Commit-Queue=+1",
+		"--add-label", "Fuchsia-Auto-Submit=1",
+	)
 	if err != nil {
 		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
 	}
 
-	if server.CallCount("", "/changes/12345/revisions/current/review") != 1 {
-		t.Error("Expected SetReview API to be called for labels")
+	if server.CallCount("POST", "/changes/12345/revisions/current/review") != 1 {
+		t.Fatal("Expected SetReview API to be called for labels")
 	}
 
 	if !strings.Contains(output, "Labels added successfully") {
 		t.Errorf("Unexpected output: %s", output)
+	}
+
+	var payload gerrit.ReviewInput
+	if err := json.Unmarshal(server.LastRequest().Body, &payload); err != nil {
+		t.Fatalf("Failed to decode review payload: %v", err)
+	}
+	wantLabels := map[string]int{
+		"Code-Review":         -1,
+		"Verified":            -1,
+		"Commit-Queue":        1,
+		"Fuchsia-Auto-Submit": 1,
+	}
+	if !maps.Equal(payload.Labels, wantLabels) {
+		t.Errorf("labels = %v, want %v", payload.Labels, wantLabels)
 	}
 }
 

@@ -17,6 +17,7 @@ package pw_ghish
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -92,6 +93,10 @@ var editCmd = &cobra.Command{
 			return err
 		}
 		removeAttention, err := normalizeAttentionAccounts("--remove-attention", editRemoveAttn)
+		if err != nil {
+			return err
+		}
+		labelVotes, err := parseLabelVotes(editAddLabels)
 		if err != nil {
 			return err
 		}
@@ -236,30 +241,9 @@ var editCmd = &cobra.Command{
 			fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from the attention set.\n", account)
 		}
 
-		if len(editAddLabels) > 0 {
+		if len(labelVotes) > 0 {
 			input := &gerrit.ReviewInput{
-				Labels: make(map[string]int),
-			}
-			for _, labelStr := range editAddLabels {
-				var labelName string
-				var scoreStr string
-
-				if idx := strings.Index(labelStr, "="); idx != -1 {
-					labelName = labelStr[:idx]
-					scoreStr = labelStr[idx+1:]
-				} else if idx := strings.LastIndexAny(labelStr, "+-"); idx != -1 {
-					labelName = labelStr[:idx]
-					scoreStr = labelStr[idx:]
-				} else {
-					return fmt.Errorf("error parsing label %q: must be in the format 'Name+Score' or 'Name=Score' (e.g. --add-label Commit-Queue=1 or Code-Review+2)", labelStr)
-				}
-
-				score, err := strconv.Atoi(scoreStr)
-				if err != nil {
-					return fmt.Errorf("error parsing score in label %q: score must be an integer (e.g. Commit-Queue=1, Code-Review+2): %w", labelStr, err)
-				}
-
-				input.Labels[labelName] = score
+				Labels: labelVotes,
 			}
 
 			if err := chCtx.SetReviewRevision("current", input); err != nil {
@@ -323,6 +307,34 @@ var editCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+var gerritLabelNameRegex = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$`)
+
+func parseLabelVotes(rawLabels []string) (map[string]int, error) {
+	if len(rawLabels) == 0 {
+		return nil, nil
+	}
+	labels := make(map[string]int, len(rawLabels))
+	for _, labelStr := range rawLabels {
+		var labelName, scoreStr string
+		if idx := strings.Index(labelStr, "="); idx != -1 {
+			labelName = labelStr[:idx]
+			scoreStr = labelStr[idx+1:]
+		} else if idx := strings.LastIndexAny(labelStr, "+-"); idx != -1 {
+			labelName = labelStr[:idx]
+			scoreStr = labelStr[idx:]
+		}
+		if !gerritLabelNameRegex.MatchString(labelName) {
+			return nil, fmt.Errorf("error parsing label %q: must be in the format 'Name+Score', 'Name-Score', or 'Name=Score' (e.g. --add-label Commit-Queue=1, Code-Review+2, or Code-Review-1)", labelStr)
+		}
+		score, err := strconv.Atoi(scoreStr)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing score in label %q: score must be an integer (e.g. Commit-Queue=1, Code-Review+2): %w", labelStr, err)
+		}
+		labels[labelName] = score
+	}
+	return labels, nil
 }
 
 // attentionSetReason is recorded by Gerrit alongside each attention set
