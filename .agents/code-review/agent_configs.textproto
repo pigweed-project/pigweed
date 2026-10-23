@@ -1,0 +1,79 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+# Gerrit CL Review Agent configuration exposing Pigweed in-tree skills via the
+# Code Review Agent Configuration Service (CRACS).
+#
+# Skills resolve under .agents/skills/<name>/SKILL.md. All entries must carry
+# the "code-review-agent" tag and are scoped to the pigweed/pigweed project.
+
+configs: {
+  id: "pigweed-code-review"
+  display_name: "Pigweed Code Review"
+  description: "Pigweed review checklist (docs/sphinx/code_reviews.rst), language style guides, functionality, and security."
+  tags: "code-review-agent"
+  skills: "code_review"
+  include_filters: {
+    project: "pigweed/pigweed"
+    path_regex: ".*"
+  }
+}
+
+configs: {
+  id: "pigweed-pw-async2"
+  display_name: "Pigweed pw_async2"
+  description: "pw_async2 futures, tasks, dispatchers, wakers, and coroutine best practices."
+  tags: "code-review-agent"
+  skills: "pw_async2"
+  include_filters: {
+    project: "pigweed/pigweed"
+    path_regex: "pw_async2/.*"
+  }
+}
+
+configs: {
+  id: "pigweed-pw-rpc"
+  display_name: "Pigweed pw_rpc Services"
+  description: "Defining, implementing, and testing pw_rpc services in C++."
+  tags: "code-review-agent"
+  skills: "pw_rpc_creating_services"
+  include_filters: {
+    project: "pigweed/pigweed"
+    path_regex: "pw_rpc/.*"
+  }
+}
+
+configs: {
+  id: "pigweed-bluetooth"
+  display_name: "Pigweed Bluetooth"
+  description: "pw_bluetooth_* modules and Bluetooth Core Specification conventions."
+  tags: "code-review-agent"
+  skills: "bluetooth"
+  include_filters: {
+    project: "pigweed/pigweed"
+    path_regex: "pw_bluetooth[^/]*/.*"
+  }
+}
+
+configs: {
+  id: "pigweed-docs"
+  display_name: "Pigweed Docs"
+  description: "reStructuredText style guide, changelog, and Doxygen API reference conventions."
+  tags: "code-review-agent"
+  skills: "docs"
+  include_filters: {
+    project: "pigweed/pigweed"
+    path_regex: ".*\\.rst"
+  }
+}
