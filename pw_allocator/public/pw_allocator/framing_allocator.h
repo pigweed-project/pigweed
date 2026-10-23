@@ -13,17 +13,28 @@
 // the License.
 #pragma once
 
+#include <lib/stdcompat/bit.h>
+
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <iterator>
 #include <type_traits>
 #include <utility>
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/bump_allocator.h"
+#include "pw_allocator/deallocator.h"
 #include "pw_allocator/forwarding_allocator.h"
 #include "pw_allocator/hardening.h"
 #include "pw_allocator/layout.h"
 #include "pw_assert/assert.h"
 #include "pw_bytes/alignment.h"
+#include "pw_bytes/span.h"
+#include "pw_numeric/checked_arithmetic.h"
 #include "pw_preprocessor/compiler.h"
+#include "pw_result/result.h"
 #include "pw_status/try.h"
 
 namespace pw::allocator {

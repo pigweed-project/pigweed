@@ -14,6 +14,8 @@
 
 #include "pw_allocator/benchmarks/benchmark.h"
 
+#include <cstddef>
+
 #include "pw_allocator/benchmarks/measurements.h"
 #include "pw_allocator/fragmentation.h"
 #include "pw_allocator/test_harness.h"

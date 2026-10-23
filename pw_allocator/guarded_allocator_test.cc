@@ -14,6 +14,7 @@
 
 #include "pw_allocator/guarded_allocator.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -22,9 +23,13 @@
 #include <optional>
 
 #include "pw_allocator/first_fit.h"
+#include "pw_allocator/layout.h"
 #include "pw_allocator/sync_allocator_testing.h"
 #include "pw_sync/interrupt_spin_lock.h"
+#include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"
+#include "pw_sync/no_lock.h"
+#include "pw_thread/thread.h"
 #include "pw_unit_test/framework.h"
 
 // TODO: https://pwbug.dev/365161669 - Express joinability as a build-system

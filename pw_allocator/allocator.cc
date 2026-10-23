@@ -17,7 +17,9 @@
 #include <algorithm>
 #include <cstring>
 
+#include "pw_allocator/layout.h"
 #include "pw_bytes/alignment.h"
+#include "pw_result/result.h"
 
 namespace pw {
 

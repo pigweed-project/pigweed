@@ -14,8 +14,17 @@
 
 #include "pw_allocator/fallback_allocator.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <optional>
+
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/capability.h"
+#include "pw_allocator/fragmentation.h"
+#include "pw_allocator/hardening.h"
+#include "pw_allocator/layout.h"
 #include "pw_assert/check.h"
+#include "pw_result/result.h"
 
 namespace pw::allocator {
 

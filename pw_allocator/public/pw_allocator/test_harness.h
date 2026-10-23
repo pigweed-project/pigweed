@@ -14,10 +14,12 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <variant>
 
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/layout.h"
 #include "pw_containers/intrusive_list.h"
 #include "pw_containers/vector.h"
 #include "pw_random/xor_shift.h"

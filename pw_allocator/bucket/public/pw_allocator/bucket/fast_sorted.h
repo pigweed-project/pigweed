@@ -14,8 +14,11 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
+#include <utility>
 
 #include "pw_allocator/bucket/base.h"
+#include "pw_allocator/layout.h"
 #include "pw_containers/intrusive_multimap.h"
 #include "pw_function/function.h"
 

@@ -19,6 +19,7 @@
 #include <cstdint>
 
 #include "pw_allocator/internal/counter.h"
+#include "pw_allocator/layout.h"
 #include "pw_allocator/testing.h"
 #include "pw_unit_test/framework.h"
 

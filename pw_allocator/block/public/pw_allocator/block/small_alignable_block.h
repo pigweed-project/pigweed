@@ -15,9 +15,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include "pw_allocator/block/alignable.h"
+#include "pw_allocator/block/allocatable.h"
+#include "pw_allocator/block/result.h"
 #include "pw_allocator/block/small_block_base.h"
+#include "pw_allocator/layout.h"
+#include "pw_status/status_with_size.h"
 
 namespace pw::allocator {
 

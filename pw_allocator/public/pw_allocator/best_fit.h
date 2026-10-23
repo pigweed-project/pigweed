@@ -14,13 +14,19 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <tuple>
 
 #include "pw_allocator/block/detailed_block.h"
+#include "pw_allocator/block/result.h"
 #include "pw_allocator/block_allocator.h"
 #include "pw_allocator/bucket/fast_sorted.h"
 #include "pw_allocator/bucket/sorted.h"
 #include "pw_allocator/config.h"
+#include "pw_allocator/layout.h"
+#include "pw_bytes/span.h"
+#include "pw_status/status.h"
 
 namespace pw::allocator {
 

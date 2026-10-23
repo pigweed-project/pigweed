@@ -14,6 +14,8 @@
 
 #include "pw_allocator/benchmarks/measurements.h"
 
+#include <cstddef>
+
 #include "pw_metric/metric.h"
 #include "pw_unit_test/framework.h"
 

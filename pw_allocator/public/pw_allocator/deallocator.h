@@ -13,11 +13,14 @@
 // the License.
 #pragma once
 
+#include <cstddef>
 #include <memory>
+#include <type_traits>
 
 #include "pw_allocator/capability.h"
 #include "pw_allocator/hardening.h"
 #include "pw_allocator/layout.h"
+#include "pw_assert/assert.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"

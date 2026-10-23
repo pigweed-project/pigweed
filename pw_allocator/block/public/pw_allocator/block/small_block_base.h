@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <limits>
 

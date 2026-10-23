@@ -19,6 +19,7 @@
 #include <cstdint>
 
 #include "pw_allocator/capability.h"
+#include "pw_allocator/deallocator.h"
 #include "pw_allocator/layout.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"

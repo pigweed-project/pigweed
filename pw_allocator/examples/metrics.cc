@@ -18,9 +18,11 @@
 #include <string_view>
 
 #include "examples/named_u32.h"
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_allocator/tracking_allocator.h"
 #include "pw_metric/metric.h"
+#include "pw_unit_test/framework.h"
 
 namespace examples {
 

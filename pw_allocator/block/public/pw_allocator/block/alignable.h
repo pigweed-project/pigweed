@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "lib/stdcompat/bit.h"
 #include "pw_allocator/block/allocatable.h"
@@ -23,6 +24,7 @@
 #include "pw_allocator/layout.h"
 #include "pw_bytes/alignment.h"
 #include "pw_status/status.h"
+#include "pw_status/status_with_size.h"
 
 namespace pw::allocator {
 namespace internal {

@@ -16,7 +16,9 @@
 
 #include <cstdint>
 
+#include "pw_allocator/block/testing.h"
 #include "pw_allocator/block_allocator_testing.h"
+#include "pw_allocator/layout.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

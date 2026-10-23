@@ -13,12 +13,14 @@
 // the License.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "pw_allocator/abstract_pool.h"
 #include "pw_allocator/capability.h"
 #include "pw_allocator/layout.h"
 #include "pw_bytes/span.h"
+#include "pw_result/result.h"
 #include "pw_status/status.h"
 
 namespace pw::allocator {

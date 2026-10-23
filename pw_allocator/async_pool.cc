@@ -14,6 +14,10 @@
 
 #include "pw_allocator/async_pool.h"
 
+#include "pw_async2/poll.h"
+#include "pw_async2/task.h"
+#include "pw_async2/waker.h"
+
 namespace pw::allocator {
 
 void AsyncPool::DoDeallocate(void* ptr) {

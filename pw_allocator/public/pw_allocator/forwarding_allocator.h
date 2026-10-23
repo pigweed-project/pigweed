@@ -17,7 +17,9 @@
 #include <optional>
 
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/deallocator.h"
 #include "pw_allocator/layout.h"
+#include "pw_assert/assert.h"
 #include "pw_result/result.h"
 
 namespace pw::allocator {

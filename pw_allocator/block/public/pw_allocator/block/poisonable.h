@@ -17,10 +17,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
 #include "lib/stdcompat/bit.h"
 #include "pw_allocator/block/contiguous.h"
 #include "pw_allocator/config.h"
+#include "pw_allocator/hardening.h"
 
 namespace pw::allocator {
 namespace internal {

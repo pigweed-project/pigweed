@@ -14,6 +14,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 
 #include "pw_allocator/allocator.h"
@@ -26,6 +27,7 @@
 #include "pw_allocator/config.h"
 #include "pw_allocator/fragmentation.h"
 #include "pw_allocator/hardening.h"
+#include "pw_allocator/layout.h"
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
 #include "pw_result/result.h"

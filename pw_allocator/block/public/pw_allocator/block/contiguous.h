@@ -13,6 +13,10 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+
 #include "lib/stdcompat/bit.h"
 #include "pw_allocator/block/basic.h"
 #include "pw_allocator/hardening.h"

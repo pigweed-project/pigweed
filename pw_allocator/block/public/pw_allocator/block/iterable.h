@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+#include <type_traits>
+
 #include "pw_allocator/block/contiguous.h"
 
 namespace pw::allocator {

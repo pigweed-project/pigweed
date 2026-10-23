@@ -14,12 +14,16 @@
 
 #include "pw_allocator/async_pool.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "pw_allocator/chunk_pool.h"
+#include "pw_allocator/layout.h"
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
+#include "pw_async2/poll.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

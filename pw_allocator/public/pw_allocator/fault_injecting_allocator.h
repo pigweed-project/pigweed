@@ -13,7 +13,13 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <optional>
+
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/forwarding_allocator.h"
+#include "pw_result/result.h"
+#include "pw_status/status.h"
 
 namespace pw::allocator::test {
 

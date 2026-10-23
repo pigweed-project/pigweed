@@ -13,7 +13,10 @@
 // the License.
 #pragma once
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #include "lib/stdcompat/bit.h"
 #include "pw_allocator/block/poisonable.h"

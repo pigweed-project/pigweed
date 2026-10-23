@@ -13,7 +13,11 @@
 // the License.
 #pragma once
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <initializer_list>
+#include <iterator>
 #include <limits>
 
 #include "lib/stdcompat/bit.h"

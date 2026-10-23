@@ -17,10 +17,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/block/small_block.h"
 #include "pw_allocator/block_allocator.h"
+#include "pw_allocator/layout.h"
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_bytes/span.h"
 

@@ -14,6 +14,12 @@
 
 #include "pw_allocator/shared_ptr.h"
 
+#include <cstdint>
+#include <utility>
+
+#include "pw_allocator/config.h"
+#include "pw_allocator/unique_ptr.h"
+
 // TODO(b/402489948): Remove when portable atomics are provided by `pw_atomic`.
 #if PW_ALLOCATOR_HAS_ATOMICS
 

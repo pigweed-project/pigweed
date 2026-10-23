@@ -14,6 +14,8 @@
 
 #include "pw_allocator/block/detailed_block.h"
 
+#include <cstdint>
+
 #include "pw_allocator/bucket/fast_sorted.h"
 #include "pw_allocator/size_report/size_report.h"
 #include "pw_bloat/bloat_this_binary.h"

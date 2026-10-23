@@ -14,7 +14,10 @@
 
 #include "pw_allocator/internal/managed_ptr.h"
 
+#include <cstddef>
+
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/capability.h"
 #include "pw_allocator/deallocator.h"
 
 namespace pw::allocator::internal {

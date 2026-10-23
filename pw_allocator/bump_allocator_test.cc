@@ -14,9 +14,13 @@
 
 #include "pw_allocator/bump_allocator.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 
 #include "lib/stdcompat/bit.h"
+#include "pw_allocator/layout.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

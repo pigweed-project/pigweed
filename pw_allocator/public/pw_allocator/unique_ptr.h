@@ -17,9 +17,10 @@
 #include <type_traits>
 #include <utility>
 
+#include "pw_allocator/capability.h"
 #include "pw_allocator/config.h"
 #include "pw_allocator/deallocator.h"
-#include "pw_allocator/internal/managed_ptr.h"
+#include "pw_allocator/internal/managed_ptr.h"  // IWYU pragma: export
 #include "pw_allocator/layout.h"
 #include "pw_preprocessor/compiler.h"
 

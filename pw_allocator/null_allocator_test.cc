@@ -14,6 +14,10 @@
 
 #include "pw_allocator/null_allocator.h"
 
+#include <cstddef>
+
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/layout.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

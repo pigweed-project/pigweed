@@ -14,8 +14,14 @@
 
 #include "pw_allocator/benchmarks/benchmark.h"
 
+#include <chrono>
+#include <cstdint>
+
 #include "pw_allocator/fragmentation.h"
+#include "pw_allocator/layout.h"
+#include "pw_assert/assert.h"
 #include "pw_assert/check.h"
+#include "pw_chrono/system_clock.h"
 
 namespace pw::allocator::internal {
 

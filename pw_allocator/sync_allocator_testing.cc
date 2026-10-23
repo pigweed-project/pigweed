@@ -14,11 +14,18 @@
 
 #include "pw_allocator/sync_allocator_testing.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <tuple>
 
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/layout.h"
 #include "pw_containers/vector.h"
+#include "pw_status/status.h"
 #include "pw_status/status_with_size.h"
+#include "pw_thread/thread.h"
 #include "pw_thread/yield.h"
+#include "pw_unit_test/framework.h"
 
 // TODO: https://pwbug.dev/365161669 - Express joinability as a build-system
 // constraint.

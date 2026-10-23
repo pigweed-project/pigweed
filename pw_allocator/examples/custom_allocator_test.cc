@@ -14,11 +14,13 @@
 
 #include "examples/custom_allocator.h"
 
+#include <cstddef>
 #include <cstdint>
 
 #include "examples/custom_allocator_test_harness.h"
 #include "examples/named_u32.h"
 #include "pw_allocator/fuzzing.h"
+#include "pw_allocator/test_harness.h"
 #include "pw_allocator/testing.h"
 #include "pw_containers/vector.h"
 #include "pw_fuzzer/fuzztest.h"

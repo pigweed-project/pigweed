@@ -15,6 +15,7 @@
 #include "pw_allocator/fragmentation.h"
 
 #include <cstddef>
+#include <limits>
 
 #include "pw_allocator/testing.h"
 #include "pw_unit_test/framework.h"

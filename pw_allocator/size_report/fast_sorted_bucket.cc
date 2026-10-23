@@ -12,6 +12,10 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
 #include "pw_allocator/bucket/fast_sorted.h"
 #include "pw_allocator/size_report/size_report.h"
 #include "pw_bloat/bloat_this_binary.h"

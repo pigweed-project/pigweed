@@ -18,11 +18,13 @@
 #include <cstdint>
 #include <limits>
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/sync_allocator_testing.h"
 #include "pw_allocator/test_harness.h"
 #include "pw_allocator/testing.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_sync/mutex.h"
+#include "pw_thread/thread.h"
 #include "pw_unit_test/framework.h"
 
 // TODO: https://pwbug.dev/365161669 - Express joinability as a build-system

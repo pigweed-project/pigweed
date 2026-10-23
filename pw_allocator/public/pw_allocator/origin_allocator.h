@@ -23,7 +23,7 @@
 #include "pw_tokenizer/tokenize.h"
 
 #if PW_ALLOCATOR_HAS_ATOMICS
-#include "pw_allocator/internal/control_block.h"  // IWYU pragma: export
+#include "pw_allocator/internal/control_block.h"
 #include "pw_allocator/shared_ptr.h"
 #endif  // PW_ALLOCATOR_HAS_ATOMICS
 

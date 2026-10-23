@@ -13,8 +13,11 @@
 // the License.
 #pragma once
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
+#include <optional>
 
 #include "pw_allocator/fault_injecting_allocator.h"
 #include "pw_allocator/first_fit.h"
@@ -24,6 +27,7 @@
 #include "pw_allocator/tracking_allocator.h"
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
+#include "pw_metric/metric.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_tokenizer/tokenize.h"

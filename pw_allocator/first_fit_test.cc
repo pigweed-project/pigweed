@@ -14,10 +14,18 @@
 
 #include "pw_allocator/first_fit.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "pw_allocator/block/detailed_block.h"
+#include "pw_allocator/block/testing.h"
 #include "pw_allocator/block_allocator_testing.h"
+#include "pw_allocator/fuzzing.h"
+#include "pw_allocator/layout.h"
+#include "pw_allocator/test_harness.h"
+#include "pw_containers/vector.h"
+#include "pw_fuzzer/fuzztest.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

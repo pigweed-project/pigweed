@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "pw_allocator/capability.h"
 #include "pw_allocator/deallocator.h"

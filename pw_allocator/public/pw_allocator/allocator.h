@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <type_traits>
 
 #include "pw_allocator/capability.h"
 #include "pw_allocator/config.h"

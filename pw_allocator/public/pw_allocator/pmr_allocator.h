@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/config.h"
 #include "pw_status/status_with_size.h"

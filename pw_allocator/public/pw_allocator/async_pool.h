@@ -15,6 +15,7 @@
 
 #include "pw_allocator/deallocator.h"
 #include "pw_allocator/forwarding_pool.h"
+#include "pw_allocator/pool.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_async2/waker.h"

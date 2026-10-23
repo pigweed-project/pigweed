@@ -14,11 +14,14 @@
 
 #include "pw_allocator/allocator.h"
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 
 #include "pw_allocator/abstract_allocator.h"
 #include "pw_allocator/capability.h"
 #include "pw_allocator/internal/counter.h"
+#include "pw_allocator/layout.h"
 #include "pw_allocator/testing.h"
 #include "pw_unit_test/framework.h"
 

@@ -34,6 +34,7 @@ cc_library(
     hdrs = [
         "public/pw_allocator/benchmarks/measurements.h",
     ],
+    implementation_deps = ["//pw_assert:assert"],
     strip_include_prefix = "public",
     deps = [
         "//pw_chrono:system_clock",
@@ -52,7 +53,10 @@ cc_library(
         "public/pw_allocator/benchmarks/benchmark.h",
         "public/pw_allocator/benchmarks/config.h",
     ],
-    implementation_deps = ["//pw_assert:check"],
+    implementation_deps = [
+        "//pw_assert:assert",
+        "//pw_assert:check",
+    ],
     strip_include_prefix = "public",
     target_compatible_with = select({
         "@platforms//os:linux": [],

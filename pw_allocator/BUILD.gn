@@ -305,7 +305,7 @@ pw_source_set("first_fit") {
 pw_source_set("forwarding_allocator") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/forwarding_allocator.h" ]
-  deps = [
+  public_deps = [
     dir_pw_allocator,
     dir_pw_result,
   ]
@@ -314,7 +314,7 @@ pw_source_set("forwarding_allocator") {
 pw_source_set("forwarding_pool") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/forwarding_pool.h" ]
-  deps = [
+  public_deps = [
     dir_pw_allocator,
     dir_pw_result,
   ]
@@ -448,6 +448,7 @@ pw_source_set("synchronized_allocator") {
   public = [ "public/pw_allocator/synchronized_allocator.h" ]
   public_deps = [
     ":forwarding_allocator",
+    ":pw_allocator",
     "$dir_pw_sync:borrow",
     "$dir_pw_sync:lock_annotations",
     "$dir_pw_sync:no_lock",

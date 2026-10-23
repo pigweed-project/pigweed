@@ -14,7 +14,13 @@
 
 #include "pw_allocator/bump_allocator.h"
 
+#include <cstddef>
+#include <optional>
+#include <utility>
+
+#include "pw_allocator/fragmentation.h"
 #include "pw_bytes/alignment.h"
+#include "pw_bytes/span.h"
 
 namespace pw::allocator {
 

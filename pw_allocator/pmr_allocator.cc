@@ -14,6 +14,11 @@
 
 #include "pw_allocator/pmr_allocator.h"
 
+#include <cstddef>
+#include <memory_resource>
+
+#include "pw_allocator/hardening.h"
+#include "pw_allocator/layout.h"
 #include "pw_assert/check.h"
 
 namespace pw::allocator::internal {

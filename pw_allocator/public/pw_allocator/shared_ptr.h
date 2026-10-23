@@ -13,6 +13,11 @@
 // the License.
 #pragma once
 
+#include <functional>
+#include <memory>
+#include <type_traits>
+
+#include "pw_allocator/capability.h"
 #include "pw_allocator/config.h"
 
 // TODO(b/402489948): Remove when portable atomics are provided by `pw_atomic`.

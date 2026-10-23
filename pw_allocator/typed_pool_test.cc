@@ -19,6 +19,7 @@
 #include <cstdint>
 
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/unique_ptr.h"
 #include "pw_bytes/alignment.h"
 #include "pw_unit_test/framework.h"
 

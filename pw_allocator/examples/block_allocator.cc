@@ -13,10 +13,12 @@
 // the License.
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "examples/named_u32.h"
 #include "pw_allocator/first_fit.h"
+#include "pw_allocator/layout.h"
 #include "pw_unit_test/framework.h"
 
 namespace examples {

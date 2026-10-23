@@ -15,6 +15,8 @@
 // DOCSTAG: [pw_allocator-examples-size_report]
 #include "pw_allocator/size_report/size_report.h"
 
+#include <cstdint>
+
 #include "examples/custom_allocator.h"
 #include "pw_allocator/best_fit.h"
 #include "pw_bloat/bloat_this_binary.h"

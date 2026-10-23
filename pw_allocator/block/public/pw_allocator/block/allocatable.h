@@ -14,12 +14,14 @@
 #pragma once
 
 #include <cstddef>
+#include <type_traits>
 
 #include "pw_allocator/block/contiguous.h"
 #include "pw_allocator/block/result.h"
 #include "pw_allocator/hardening.h"
 #include "pw_allocator/layout.h"
 #include "pw_bytes/alignment.h"
+#include "pw_numeric/checked_arithmetic.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"
 

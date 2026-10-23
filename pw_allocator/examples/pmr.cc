@@ -13,9 +13,12 @@
 // the License.
 
 // DOCSTAG: [pw_allocator-examples-pmr]
+#include <iterator>
 #include <map>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/pmr_allocator.h"

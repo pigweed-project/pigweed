@@ -13,10 +13,15 @@
 // the License.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <initializer_list>
+#include <utility>
 
 #include "lib/stdcompat/bit.h"
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/block/detailed_block.h"
 #include "pw_allocator/block/testing.h"
 #include "pw_allocator/block_allocator.h"
@@ -26,7 +31,10 @@
 #include "pw_allocator/test_harness.h"
 #include "pw_assert/assert.h"
 #include "pw_bytes/alignment.h"
+#include "pw_bytes/span.h"
+#include "pw_containers/vector.h"
 #include "pw_status/status.h"
+#include "pw_status/status_with_size.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::allocator::test {

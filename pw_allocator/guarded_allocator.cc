@@ -13,7 +13,10 @@
 // the License.
 #include "pw_allocator/guarded_allocator.h"
 
+#include <cstddef>
+
 #include "lib/stdcompat/bit.h"
+#include "pw_allocator/framing_allocator.h"
 #include "pw_allocator/internal/bit.h"
 #include "pw_assert/check.h"
 

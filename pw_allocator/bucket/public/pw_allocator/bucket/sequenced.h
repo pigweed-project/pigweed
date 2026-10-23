@@ -18,6 +18,7 @@
 #include <iterator>
 
 #include "pw_allocator/bucket/base.h"
+#include "pw_allocator/layout.h"
 #include "pw_containers/intrusive_list.h"
 
 namespace pw::allocator {

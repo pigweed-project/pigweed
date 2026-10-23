@@ -15,6 +15,10 @@
 #include "pw_allocator/fuzzing.h"
 
 #include <climits>
+#include <cstddef>
+
+#include "pw_allocator/test_harness.h"
+#include "pw_fuzzer/fuzztest.h"
 
 namespace pw::allocator::test {
 namespace {

@@ -14,6 +14,11 @@
 
 #include "pw_allocator/allocator_as_pool.h"
 
+#include "pw_allocator/abstract_pool.h"
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/layout.h"
+#include "pw_result/result.h"
+
 namespace pw::allocator {
 
 AllocatorAsPool::AllocatorAsPool(pw::Allocator& allocator, const Layout& layout)

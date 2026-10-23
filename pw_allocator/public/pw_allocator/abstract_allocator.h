@@ -19,6 +19,7 @@
 #include "pw_allocator/abstract_deallocator.h"
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/capability.h"
+#include "pw_allocator/config.h"
 
 namespace pw::allocator {
 

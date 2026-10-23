@@ -82,6 +82,7 @@ pw_cc_test(
     srcs = ["block_allocator.cc"],
     deps = [
         ":named_u32",
+        "//pw_allocator",
         "//pw_allocator:first_fit",
     ],
 )
@@ -105,6 +106,7 @@ pw_cc_test(
         ":custom_allocator_test_harness",
         ":named_u32",
         "//pw_allocator:fuzzing",
+        "//pw_allocator:test_harness",
         "//pw_allocator:testing",
         "//pw_containers:vector",
         "//pw_fuzzer:fuzztest",
@@ -120,6 +122,7 @@ pw_cc_test(
         "//pw_allocator:first_fit",
         "//pw_allocator:worst_fit",
         "//pw_allocator/block:detailed_block",
+        "//pw_preprocessor",
     ],
 )
 
@@ -128,6 +131,7 @@ pw_cc_test(
     srcs = ["metrics.cc"],
     deps = [
         ":named_u32",
+        "//pw_allocator",
         "//pw_allocator:metrics",
         "//pw_allocator:testing",
         "//pw_allocator:tracking_allocator",
@@ -182,10 +186,12 @@ pw_cc_test(
     }),
     deps = [
         ":named_u32",
+        "//pw_allocator",
         "//pw_allocator:synchronized_allocator",
         "//pw_allocator:testing",
         "//pw_assert:check",
         "//pw_sync:interrupt_spin_lock",
+        "//pw_thread:options",
         "//pw_thread:test_thread_context",
         "//pw_thread:thread",
         "//pw_thread:thread_core",

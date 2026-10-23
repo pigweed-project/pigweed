@@ -14,14 +14,19 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #include "lib/stdcompat/bit.h"
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/forwarding_allocator.h"
 #include "pw_allocator/framing_allocator.h"
 #include "pw_allocator/internal/bit.h"
 #include "pw_allocator/layout.h"
 #include "pw_allocator/synchronized_allocator.h"
+#include "pw_assert/assert.h"
 #include "pw_result/result.h"
 #include "pw_sync/borrow.h"
+#include "pw_sync/no_lock.h"
 
 namespace pw::allocator {
 

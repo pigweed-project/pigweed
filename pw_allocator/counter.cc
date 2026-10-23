@@ -14,6 +14,8 @@
 
 #include "pw_allocator/internal/counter.h"
 
+#include <cstddef>
+
 namespace pw::allocator::test {
 
 size_t Counter::num_ctor_calls_ = 0;

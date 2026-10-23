@@ -14,6 +14,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 #include "pw_bytes/span.h"
 #include "pw_string/string.h"

@@ -15,6 +15,7 @@
 #include "pw_allocator/fragmentation.h"
 
 #include <cmath>
+#include <cstddef>
 #include <tuple>
 
 #include "pw_assert/check.h"

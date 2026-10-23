@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <cstdint>
+#include <utility>
+
 #ifndef PW_ALLOCATOR_SIZE_REPORT_BASE
 #include "pw_allocator/pmr_allocator.h"  // nogncheck
 #endif

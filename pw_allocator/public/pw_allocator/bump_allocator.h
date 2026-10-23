@@ -14,9 +14,11 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 
 #include "pw_allocator/abstract_allocator.h"
 #include "pw_allocator/capability.h"
+#include "pw_allocator/unique_ptr.h"
 #include "pw_bytes/span.h"
 
 namespace pw::allocator {

@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/framing_allocator.h"
 #include "pw_tokenizer/tokenize.h"
 

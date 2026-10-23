@@ -16,7 +16,9 @@
 // DOCSTAG: [pw_allocator-examples-custom_allocator]
 #include <cstddef>
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/forwarding_allocator.h"
+#include "pw_allocator/layout.h"
 
 namespace examples {
 

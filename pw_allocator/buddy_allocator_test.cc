@@ -18,8 +18,15 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "pw_allocator/deallocator.h"
+#include "pw_allocator/fragmentation.h"
 #include "pw_allocator/fuzzing.h"
+#include "pw_allocator/layout.h"
+#include "pw_allocator/test_harness.h"
 #include "pw_bytes/alignment.h"
+#include "pw_bytes/span.h"
+#include "pw_containers/vector.h"
+#include "pw_fuzzer/fuzztest.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

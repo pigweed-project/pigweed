@@ -15,12 +15,18 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 
 #include "pw_allocator/abstract_allocator.h"
 #include "pw_allocator/block/basic.h"
 #include "pw_allocator/bucket/unordered.h"
+#include "pw_allocator/capability.h"
+#include "pw_allocator/layout.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/vector.h"
+#include "pw_result/result.h"
+#include "pw_span/span.h"
 #include "pw_status/try.h"
 
 namespace pw::allocator {

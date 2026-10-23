@@ -14,8 +14,18 @@
 
 #include "pw_allocator/size_report/size_report.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <tuple>
+
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/block_allocator.h"
 #include "pw_allocator/layout.h"
+#include "pw_allocator/unique_ptr.h"
+#include "pw_bloat/bloat_this_binary.h"
 #include "pw_bytes/alignment.h"
+#include "pw_bytes/span.h"
 
 namespace pw::allocator::size_report {
 

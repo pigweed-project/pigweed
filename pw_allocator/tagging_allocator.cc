@@ -14,6 +14,8 @@
 
 #include "pw_allocator/tagging_allocator.h"
 
+#include "pw_tokenizer/tokenize.h"
+
 namespace pw::allocator {
 
 pw::tokenizer::Token TaggingAllocator::GetToken(const void* ptr) const {

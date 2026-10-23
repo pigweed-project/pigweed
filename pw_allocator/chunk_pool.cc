@@ -14,9 +14,20 @@
 
 #include "pw_allocator/chunk_pool.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <new>
+
 #include "lib/stdcompat/bit.h"
+#include "pw_allocator/abstract_pool.h"
+#include "pw_allocator/hardening.h"
+#include "pw_allocator/layout.h"
 #include "pw_assert/check.h"
 #include "pw_bytes/alignment.h"
+#include "pw_bytes/span.h"
+#include "pw_result/result.h"
+#include "pw_status/status.h"
 
 namespace pw::allocator {
 

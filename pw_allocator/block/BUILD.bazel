@@ -71,6 +71,7 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         "//pw_allocator:hardening",
+        "//pw_bytes",
         "//pw_bytes:alignment",
         "//pw_result",
         "//pw_status",

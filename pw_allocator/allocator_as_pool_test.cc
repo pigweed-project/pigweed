@@ -14,6 +14,7 @@
 
 #include "pw_allocator/allocator_as_pool.h"
 
+#include <cstddef>
 #include <cstdint>
 
 #include "pw_allocator/layout.h"

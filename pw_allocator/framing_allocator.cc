@@ -14,6 +14,8 @@
 
 #include "pw_allocator/framing_allocator.h"
 
+#include <cstddef>
+
 #include "pw_assert/check.h"
 
 namespace pw::allocator::internal {

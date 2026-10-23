@@ -14,11 +14,17 @@
 
 #include "pw_allocator/pmr_allocator.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <deque>
 #include <forward_list>
+#include <functional>
 #include <list>
 #include <map>
 #include <set>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>

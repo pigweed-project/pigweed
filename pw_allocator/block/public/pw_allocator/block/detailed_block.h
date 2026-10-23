@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <type_traits>
 
 #include "pw_allocator/block/alignable.h"
 #include "pw_allocator/block/allocatable.h"
@@ -31,6 +32,7 @@
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
 #include "pw_status/status.h"
+#include "pw_status/status_with_size.h"
 
 namespace pw::allocator {
 

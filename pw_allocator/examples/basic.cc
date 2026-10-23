@@ -12,9 +12,14 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <cstdint>
+#include <string_view>
+
 #include "examples/named_u32.h"
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/layout.h"
 #include "pw_allocator/testing.h"
+#include "pw_allocator/unique_ptr.h"
 #include "pw_unit_test/framework.h"
 
 namespace examples {

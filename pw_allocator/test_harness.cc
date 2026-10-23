@@ -19,10 +19,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <variant>
 
 #include "lib/stdcompat/bit.h"
+#include "pw_allocator/layout.h"
 #include "pw_assert/assert.h"
 #include "pw_assert/check.h"
+#include "pw_containers/vector.h"
 
 namespace pw::allocator::test {
 namespace {

@@ -15,8 +15,12 @@
 
 #include <cstddef>
 #include <mutex>
+#include <optional>
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/forwarding_allocator.h"
+#include "pw_assert/assert.h"
+#include "pw_result/result.h"
 #include "pw_sync/borrow.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_sync/no_lock.h"

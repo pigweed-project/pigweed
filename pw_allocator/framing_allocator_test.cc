@@ -15,10 +15,16 @@
 #include "pw_allocator/framing_allocator.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <optional>
 
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/config.h"
+#include "pw_allocator/layout.h"
 #include "pw_allocator/testing.h"
+#include "pw_bytes/span.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_unit_test/framework.h"
 

@@ -14,6 +14,11 @@
 
 #include "pw_allocator/benchmarks/measurements.h"
 
+#include <cstddef>
+
+#include "pw_assert/assert.h"
+#include "pw_metric/metric.h"
+
 namespace pw::allocator {
 namespace internal {
 

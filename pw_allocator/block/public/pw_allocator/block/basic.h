@@ -21,6 +21,7 @@
 #include "lib/stdcompat/bit.h"
 #include "pw_allocator/hardening.h"
 #include "pw_bytes/alignment.h"
+#include "pw_bytes/span.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 

@@ -14,14 +14,25 @@
 
 #include "pw_allocator/buddy_allocator.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <optional>
 #include <utility>
 
 #include "lib/stdcompat/bit.h"
+#include "pw_allocator/bucket/unordered.h"
+#include "pw_allocator/fragmentation.h"
 #include "pw_allocator/hardening.h"
 #include "pw_allocator/internal/bit.h"
+#include "pw_allocator/layout.h"
 #include "pw_assert/check.h"
 #include "pw_bytes/alignment.h"
+#include "pw_bytes/span.h"
+#include "pw_result/result.h"
+#include "pw_span/span.h"
+#include "pw_status/status.h"
+#include "pw_status/status_with_size.h"
 
 namespace pw::allocator::internal {
 

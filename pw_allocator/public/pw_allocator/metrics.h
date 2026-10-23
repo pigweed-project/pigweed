@@ -13,8 +13,10 @@
 // the License.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "pw_allocator/allocator.h"
 #include "pw_metric/metric.h"

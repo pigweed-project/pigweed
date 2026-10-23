@@ -54,6 +54,7 @@ cc_library(
         ":config",
         ":fragmentation",
         ":hardening",
+        "//pw_assert:assert",
         "//pw_bytes",
         "//pw_numeric:checked_arithmetic",
         "//pw_preprocessor",
@@ -143,6 +144,7 @@ cc_library(
     deps = [
         ":abstract_pool",
         ":pw_allocator",
+        "//pw_result",
         "//pw_status",
     ],
 )
@@ -213,6 +215,7 @@ cc_library(
     srcs = ["buddy_allocator.cc"],
     hdrs = ["public/pw_allocator/buddy_allocator.h"],
     implementation_deps = [
+        ":fragmentation",
         ":pw_allocator",
         "//pw_assert:check",
         "//pw_bytes:alignment",
@@ -226,6 +229,8 @@ cc_library(
         "//pw_allocator/bucket:unordered",
         "//pw_bytes",
         "//pw_containers:vector",
+        "//pw_result",
+        "//pw_span",
         "//pw_status",
     ],
 )
@@ -234,6 +239,7 @@ cc_library(
     name = "bump_allocator",
     srcs = ["bump_allocator.cc"],
     hdrs = ["public/pw_allocator/bump_allocator.h"],
+    implementation_deps = [":fragmentation"],
     strip_include_prefix = "public",
     deps = [
         ":abstract_allocator",
@@ -248,6 +254,7 @@ cc_library(
     srcs = ["chunk_pool.cc"],
     hdrs = ["public/pw_allocator/chunk_pool.h"],
     implementation_deps = [
+        ":hardening",
         "//pw_assert:check",
         "//pw_bytes:alignment",
         "//third_party/fuchsia:stdcompat",
@@ -280,7 +287,11 @@ cc_library(
     name = "fallback_allocator",
     srcs = ["fallback_allocator.cc"],
     hdrs = ["public/pw_allocator/fallback_allocator.h"],
-    implementation_deps = ["//pw_assert:check"],
+    implementation_deps = [
+        ":fragmentation",
+        ":hardening",
+        "//pw_assert:check",
+    ],
     strip_include_prefix = "public",
     deps = [
         ":pw_allocator",
@@ -346,9 +357,13 @@ cc_library(
         ":hardening",
         "//pw_allocator",
         "//pw_assert:assert",
+        "//pw_bytes",
         "//pw_bytes:alignment",
+        "//pw_numeric:checked_arithmetic",
         "//pw_preprocessor",
+        "//pw_result",
         "//pw_status",
+        "//third_party/fuchsia:stdcompat",
     ],
 )
 
@@ -382,11 +397,14 @@ cc_library(
     ],
     strip_include_prefix = "public",
     deps = [
+        ":forwarding_allocator",
         "//pw_allocator",
         "//pw_allocator:framing_allocator",
         "//pw_allocator:synchronized_allocator",
+        "//pw_assert:assert",
         "//pw_result",
         "//pw_sync:borrow",
+        "//pw_sync:no_lock",
     ],
 )
 
@@ -451,7 +469,10 @@ cc_library(
     name = "pmr_allocator",
     srcs = ["pmr_allocator.cc"],
     hdrs = ["public/pw_allocator/pmr_allocator.h"],
-    implementation_deps = ["//pw_assert:check"],
+    implementation_deps = [
+        ":hardening",
+        "//pw_assert:check",
+    ],
     strip_include_prefix = "public",
     deps = [
         ":config",
@@ -479,6 +500,7 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         ":framing_allocator",
+        ":pw_allocator",
         "//pw_tokenizer",
     ],
 )
@@ -734,6 +756,12 @@ pw_cc_test(
     deps = [
         ":best_fit",
         ":block_allocator_testing",
+        ":fuzzing",
+        ":pw_allocator",
+        ":test_harness",
+        "//pw_allocator/block:testing",
+        "//pw_containers:vector",
+        "//pw_fuzzer:fuzztest",
     ],
 )
 
@@ -743,7 +771,12 @@ pw_cc_test(
     deps = [
         ":block_allocator_testing",
         ":bucket_allocator",
+        ":fuzzing",
         ":pw_allocator",
+        ":test_harness",
+        "//pw_allocator/block:testing",
+        "//pw_containers:vector",
+        "//pw_fuzzer:fuzztest",
     ],
 )
 
@@ -752,9 +785,15 @@ pw_cc_test(
     srcs = ["buddy_allocator_test.cc"],
     deps = [
         ":buddy_allocator",
+        ":fragmentation",
         ":fuzzing",
+        ":pw_allocator",
+        ":test_harness",
         ":testing",
+        "//pw_bytes",
         "//pw_bytes:alignment",
+        "//pw_containers:vector",
+        "//pw_fuzzer:fuzztest",
     ],
 )
 
@@ -763,6 +802,7 @@ pw_cc_test(
     srcs = ["bump_allocator_test.cc"],
     deps = [
         ":bump_allocator",
+        ":pw_allocator",
         ":testing",
         "//third_party/fuchsia:stdcompat",
     ],
@@ -774,6 +814,7 @@ pw_cc_test(
     deps = [
         ":chunk_pool",
         ":counter",
+        ":pw_allocator",
         ":testing",
     ],
 )
@@ -784,6 +825,12 @@ pw_cc_test(
     deps = [
         ":block_allocator_testing",
         ":dl_allocator",
+        ":fuzzing",
+        ":pw_allocator",
+        ":test_harness",
+        "//pw_allocator/block:testing",
+        "//pw_containers:vector",
+        "//pw_fuzzer:fuzztest",
         "//pw_unit_test",
     ],
 )
@@ -792,6 +839,7 @@ pw_cc_test(
     name = "fault_injecting_allocator_test",
     srcs = ["fault_injecting_allocator_test.cc"],
     deps = [
+        ":fragmentation",
         ":testing",
         "//pw_allocator",
     ],
@@ -802,6 +850,7 @@ pw_cc_test(
     srcs = ["fallback_allocator_test.cc"],
     deps = [
         ":fallback_allocator",
+        ":pw_allocator",
         ":testing",
         "//pw_status",
     ],
@@ -813,7 +862,13 @@ pw_cc_test(
     deps = [
         ":block_allocator_testing",
         ":first_fit",
+        ":fuzzing",
+        ":pw_allocator",
+        ":test_harness",
         "//pw_allocator/block:detailed_block",
+        "//pw_allocator/block:testing",
+        "//pw_containers:vector",
+        "//pw_fuzzer:fuzztest",
         "//third_party/fuchsia:stdcompat",
     ],
 )
@@ -832,8 +887,11 @@ pw_cc_test(
     srcs = ["framing_allocator_test.cc"],
     has_nc_test = True,
     deps = [
+        ":config",
         ":framing_allocator",
+        ":pw_allocator",
         ":testing",
+        "//pw_bytes",
     ],
 )
 
@@ -846,6 +904,7 @@ pw_cc_test(
     deps = [
         ":freertos_allocator_headers",
         ":freertos_testing",
+        ":pw_allocator",
         ":testing",
     ],
 )
@@ -856,9 +915,13 @@ pw_cc_test(
     deps = [
         ":first_fit",
         ":guarded_allocator",
+        ":pw_allocator",
         ":sync_allocator_testing",
         "//pw_sync:interrupt_spin_lock",
+        "//pw_sync:lock_annotations",
         "//pw_sync:mutex",
+        "//pw_sync:no_lock",
+        "//pw_thread:thread",
         "//pw_unit_test",
     ],
 )
@@ -879,6 +942,7 @@ pw_cc_test(
     srcs = ["libc_allocator_test.cc"],
     deps = [
         ":libc_allocator",
+        ":pw_allocator",
         ":testing",
     ],
 )
@@ -886,7 +950,10 @@ pw_cc_test(
 pw_cc_test(
     name = "metrics_test",
     srcs = ["metrics_test.cc"],
-    deps = [":metrics"],
+    deps = [
+        ":metrics",
+        "//pw_status",
+    ],
 )
 
 pw_cc_test(
@@ -894,6 +961,7 @@ pw_cc_test(
     srcs = ["null_allocator_test.cc"],
     deps = [
         ":null_allocator",
+        ":pw_allocator",
         ":testing",
     ],
 )
@@ -902,6 +970,7 @@ pw_cc_test(
     name = "origin_allocator_test",
     srcs = ["origin_allocator_test.cc"],
     deps = [
+        ":config",
         ":origin_allocator",
         ":pw_allocator",
         ":testing",
@@ -922,6 +991,7 @@ pw_cc_test(
     name = "shared_ptr_test",
     srcs = ["shared_ptr_test.cc"],
     deps = [
+        ":config",
         ":counter",
         ":pw_allocator",
         ":testing",
@@ -938,12 +1008,14 @@ pw_cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":pw_allocator",
         ":sync_allocator_testing",
         ":synchronized_allocator",
         ":test_harness",
         ":testing",
         "//pw_sync:interrupt_spin_lock",
         "//pw_sync:mutex",
+        "//pw_thread:thread",
         "//pw_unit_test",
     ],
 )
@@ -952,6 +1024,7 @@ pw_cc_test(
     name = "tagging_allocator_test",
     srcs = ["tagging_allocator_test.cc"],
     deps = [
+        ":pw_allocator",
         ":tagging_allocator",
         ":testing",
         "//pw_tokenizer",
@@ -963,7 +1036,9 @@ pw_cc_test(
     srcs = ["tlsf_allocator_test.cc"],
     deps = [
         ":block_allocator_testing",
+        ":pw_allocator",
         ":tlsf_allocator",
+        "//pw_allocator/block:testing",
     ],
 )
 
@@ -972,12 +1047,15 @@ pw_cc_test(
     srcs = ["tracking_allocator_test.cc"],
     deps = [
         ":first_fit",
+        ":fragmentation",
         ":metrics",
         ":pw_allocator",
         ":testing",
         ":tracking_allocator",
         "//pw_log",
         "//pw_metric:metric",
+        "//pw_result",
+        "//pw_status",
     ],
 )
 
@@ -1007,6 +1085,7 @@ pw_cc_test(
     name = "weak_ptr_test",
     srcs = ["weak_ptr_test.cc"],
     deps = [
+        ":config",
         ":counter",
         ":pw_allocator",
         ":testing",
@@ -1018,7 +1097,13 @@ pw_cc_test(
     srcs = ["worst_fit_test.cc"],
     deps = [
         ":block_allocator_testing",
+        ":fuzzing",
+        ":pw_allocator",
+        ":test_harness",
         ":worst_fit",
+        "//pw_allocator/block:testing",
+        "//pw_containers:vector",
+        "//pw_fuzzer:fuzztest",
     ],
 )
 

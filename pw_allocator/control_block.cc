@@ -14,11 +14,16 @@
 
 #include "pw_allocator/internal/control_block.h"
 
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+
 #include "lib/stdcompat/bit.h"
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/capability.h"
 #include "pw_allocator/deallocator.h"
 #include "pw_allocator/hardening.h"
+#include "pw_allocator/layout.h"
 #include "pw_assert/check.h"
 #include "pw_bytes/alignment.h"
 

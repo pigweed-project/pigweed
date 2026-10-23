@@ -15,8 +15,10 @@
 // DOCSTAG: [pw_allocator-examples-custom_allocator]
 #include "examples/custom_allocator.h"
 
+#include <cstddef>
 #include <cstdint>
 
+#include "pw_allocator/allocator.h"
 #include "pw_allocator/capability.h"
 #include "pw_log/log.h"
 #include "pw_result/result.h"

@@ -16,6 +16,7 @@
 #include "pw_allocator/abstract_pool.h"
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/layout.h"
+#include "pw_result/result.h"
 #include "pw_status/status.h"
 
 namespace pw::allocator {

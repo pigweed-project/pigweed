@@ -12,6 +12,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <cstddef>
+
 #include "FreeRTOS.h"
 #include "pw_allocator/testing.h"
 

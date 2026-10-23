@@ -12,11 +12,17 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <array>
+#include <cstdint>
+
 #include "examples/named_u32.h"
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/layout.h"
 #include "pw_allocator/synchronized_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_assert/check.h"
 #include "pw_sync/interrupt_spin_lock.h"
+#include "pw_thread/options.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
 #include "pw_thread/thread_core.h"

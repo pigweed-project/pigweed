@@ -15,6 +15,7 @@
 #include "pw_allocator/layout.h"
 
 #include <cstddef>
+#include <cstdint>
 
 #include "pw_result/result.h"
 #include "pw_status/status.h"

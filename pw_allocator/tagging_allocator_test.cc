@@ -14,6 +14,9 @@
 
 #include "pw_allocator/tagging_allocator.h"
 
+#include <cstddef>
+
+#include "pw_allocator/layout.h"
 #include "pw_allocator/testing.h"
 #include "pw_tokenizer/tokenize.h"
 #include "pw_unit_test/framework.h"

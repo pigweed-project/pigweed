@@ -14,6 +14,12 @@
 
 #include "pw_allocator/freertos_allocator.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/layout.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

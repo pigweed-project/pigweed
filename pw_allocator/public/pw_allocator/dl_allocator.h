@@ -13,15 +13,26 @@
 // the License.
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <tuple>
 
 #include "pw_allocator/block/detailed_block.h"
+#include "pw_allocator/block/result.h"
 #include "pw_allocator/block_allocator.h"
 #include "pw_allocator/bucket/fast_sorted.h"
 #include "pw_allocator/bucket/unordered.h"
 #include "pw_allocator/config.h"
+#include "pw_allocator/hardening.h"
 #include "pw_allocator/internal/bit.h"
+#include "pw_allocator/layout.h"
+#include "pw_assert/assert.h"
+#include "pw_bytes/alignment.h"
+#include "pw_bytes/span.h"
+#include "pw_status/status.h"
 
 namespace pw::allocator {
 

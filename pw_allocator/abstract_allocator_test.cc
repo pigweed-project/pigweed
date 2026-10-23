@@ -15,6 +15,7 @@
 #include "pw_allocator/abstract_allocator.h"
 
 #include <cstddef>
+#include <limits>
 #include <optional>
 
 #include "pw_allocator/layout.h"

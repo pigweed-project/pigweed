@@ -14,6 +14,7 @@
 
 #include "pw_allocator/block/poisonable.h"
 
+#include "pw_allocator/hardening.h"
 #include "pw_assert/check.h"
 
 namespace pw::allocator::internal {

@@ -21,6 +21,7 @@
 #include "pw_allocator/capability.h"
 #include "pw_allocator/deallocator.h"
 #include "pw_allocator/hardening.h"
+#include "pw_assert/assert.h"
 
 namespace pw {
 

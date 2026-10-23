@@ -14,7 +14,14 @@
 
 #include "pw_allocator/origin_allocator.h"
 
+#include <cstddef>
+#include <cstdint>
+
+#include "pw_allocator/config.h"
+#include "pw_allocator/layout.h"
+#include "pw_allocator/shared_ptr.h"
 #include "pw_allocator/testing.h"
+#include "pw_allocator/unique_ptr.h"
 #include "pw_tokenizer/tokenize.h"
 #include "pw_unit_test/framework.h"
 

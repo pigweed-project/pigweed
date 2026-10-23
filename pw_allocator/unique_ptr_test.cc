@@ -15,6 +15,8 @@
 #include "pw_allocator/unique_ptr.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <utility>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/internal/counter.h"

@@ -13,10 +13,13 @@
 // the License.
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 
 #include "pw_allocator/chunk_pool.h"
 #include "pw_allocator/hardening.h"
+#include "pw_allocator/unique_ptr.h"
 #include "pw_bytes/span.h"
 
 namespace pw::allocator {

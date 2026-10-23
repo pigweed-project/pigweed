@@ -16,8 +16,10 @@
 #include <cstddef>
 #include <optional>
 
+#include "pw_allocator/deallocator.h"
 #include "pw_allocator/layout.h"
 #include "pw_allocator/pool.h"
+#include "pw_assert/assert.h"
 #include "pw_result/result.h"
 
 namespace pw::allocator {

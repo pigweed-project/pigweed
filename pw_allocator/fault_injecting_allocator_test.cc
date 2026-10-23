@@ -14,6 +14,10 @@
 
 #include "pw_allocator/fault_injecting_allocator.h"
 
+#include <cstddef>
+#include <optional>
+
+#include "pw_allocator/fragmentation.h"
 #include "pw_allocator/layout.h"
 #include "pw_allocator/testing.h"
 #include "pw_unit_test/framework.h"

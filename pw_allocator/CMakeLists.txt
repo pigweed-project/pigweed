@@ -454,6 +454,7 @@ pw_add_library(pw_allocator.synchronized_allocator INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_allocator
     pw_allocator.forwarding_allocator
     pw_sync.borrow
     pw_sync.lock_annotations
@@ -466,6 +467,7 @@ pw_add_library(pw_allocator.tagging_allocator STATIC
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_allocator
     pw_allocator.framing_allocator
     pw_tokenizer
   SOURCES
