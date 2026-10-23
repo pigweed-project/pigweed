@@ -621,3 +621,67 @@ default_component = 2000200
 		})
 	}
 }
+
+func TestResolveBugTrailerFormat(t *testing.T) {
+	ctx := t.Context()
+
+	t.Run("nil config", func(t *testing.T) {
+		got, err := ResolveBugTrailerFormat(ctx, nil)
+		if err != nil {
+			t.Fatalf("ResolveBugTrailerFormat(nil) unexpected error: %v", err)
+		}
+		if got != "Bug: b/{id}" {
+			t.Errorf("ResolveBugTrailerFormat(nil) = %q, want %q", got, "Bug: b/{id}")
+		}
+	})
+
+	t.Run("empty config", func(t *testing.T) {
+		got, err := ResolveBugTrailerFormat(ctx, &Config{ProjectConfig: &ProjectConfig{}})
+		if err != nil {
+			t.Fatalf("ResolveBugTrailerFormat(empty) unexpected error: %v", err)
+		}
+		if got != "Bug: b/{id}" {
+			t.Errorf("ResolveBugTrailerFormat(empty) = %q, want %q", got, "Bug: b/{id}")
+		}
+	})
+
+	t.Run("issue prefix fallback", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".ghish.toml"), []byte("[issue]\nprefix = \"fxb/\"\n"), 0644); err != nil {
+			t.Fatalf("failed to write .ghish.toml: %v", err)
+		}
+		got, err := ResolveBugTrailerFormat(ctx, &Config{CWD: dir, Git: &MockGitRunner{}})
+		if err != nil {
+			t.Fatalf("ResolveBugTrailerFormat(prefix) unexpected error: %v", err)
+		}
+		if got != "Bug: fxb/{id}" {
+			t.Errorf("ResolveBugTrailerFormat(prefix) = %q, want %q", got, "Bug: fxb/{id}")
+		}
+	})
+
+	t.Run("trailer_format overrides prefix", func(t *testing.T) {
+		dir := t.TempDir()
+		tomlData := "[issue]\nprefix = \"fxb/\"\ntrailer_format = \"Bug: fxbug.dev/{id}\"\n"
+		if err := os.WriteFile(filepath.Join(dir, ".ghish.toml"), []byte(tomlData), 0644); err != nil {
+			t.Fatalf("failed to write .ghish.toml: %v", err)
+		}
+		got, err := ResolveBugTrailerFormat(ctx, &Config{CWD: dir, Git: &MockGitRunner{}})
+		if err != nil {
+			t.Fatalf("ResolveBugTrailerFormat(trailer_format+prefix) unexpected error: %v", err)
+		}
+		if got != "Bug: fxbug.dev/{id}" {
+			t.Errorf("ResolveBugTrailerFormat(trailer_format+prefix) = %q, want %q", got, "Bug: fxbug.dev/{id}")
+		}
+	})
+
+	t.Run("malformed .ghish.toml returns error", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".ghish.toml"), []byte("[issue]\nunknown_key = true\n"), 0644); err != nil {
+			t.Fatalf("failed to write .ghish.toml: %v", err)
+		}
+		got, err := ResolveBugTrailerFormat(ctx, &Config{CWD: dir, Git: &MockGitRunner{}})
+		if err == nil {
+			t.Fatalf("ResolveBugTrailerFormat(malformed) = %q, want error", got)
+		}
+	})
+}

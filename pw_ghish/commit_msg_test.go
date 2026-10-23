@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -132,5 +133,35 @@ func TestCommitMessage_IRStructureAndDirectManipulation(t *testing.T) {
 
 	if got := ir.Format(); got != want {
 		t.Errorf("reconstituted commit message mismatch:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestExtractAndMergeTrailersWithFormat(t *testing.T) {
+	origMsg := "fuchsia: Fix zircon timer\n\n" +
+		"Bug: https://issues.fuchsia.dev/issues/420001\n" +
+		"  (tracked in zircon bug scrub)\n" +
+		"Change-Id: I1111111111111111111111111111111111111111\n"
+	trailers := ParseCommitMessage(origMsg).ExtractTrailersWithFormat("Bug: fxbug.dev/{id}")
+	wantTrailers := []string{
+		"Bug: fxbug.dev/420001\n  (tracked in zircon bug scrub)",
+		"Change-Id: I1111111111111111111111111111111111111111",
+	}
+	if !reflect.DeepEqual(trailers, wantTrailers) {
+		t.Fatalf("ExtractTrailersWithFormat() = %#v, want %#v", trailers, wantTrailers)
+	}
+
+	merged := MergeTrailersWithFormat(
+		"fuchsia: Fix zircon timer\n\nUpdated body.\n\nFixed: 420002\n",
+		trailers,
+		"Bug: fxbug.dev/{id}",
+	)
+	for _, want := range []string{
+		"Fixed: fxbug.dev/420002",
+		"Bug: fxbug.dev/420001\n  (tracked in zircon bug scrub)",
+		"Change-Id: I1111111111111111111111111111111111111111",
+	} {
+		if !strings.Contains(merged, want) {
+			t.Errorf("MergeTrailersWithFormat() missing %q in:\n%s", want, merged)
+		}
 	}
 }

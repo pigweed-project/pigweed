@@ -923,3 +923,24 @@ func (c *ProjectConfig) ExpandIssueLabel(label string) string {
 	}
 	return label
 }
+
+const defaultBugTrailerFormat = "Bug: b/{id}"
+
+// ResolveBugTrailerFormat returns the configured bug trailer template from
+// `.ghish.toml` / `git config` (`issue.trailer_format`, then `issue.prefix`),
+// falling back to `"Bug: b/{id}"` when unset.
+func ResolveBugTrailerFormat(ctx context.Context, cfg *Config) (string, error) {
+	pcfg, err := cfg.LoadProjectConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+	if pcfg != nil {
+		if fmtStr := strings.TrimSpace(pcfg.Issue.TrailerFormat); fmtStr != "" {
+			return fmtStr, nil
+		}
+		if prefix := strings.TrimSpace(pcfg.Issue.Prefix); prefix != "" {
+			return fmt.Sprintf("Bug: %s{id}", prefix), nil
+		}
+	}
+	return defaultBugTrailerFormat, nil
+}

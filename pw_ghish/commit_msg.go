@@ -285,6 +285,13 @@ func (m *CommitMessage) Format() string {
 // the commit message, with bug-style trailer values canonicalized and
 // continuations folded into the trailer they belong to.
 func (m *CommitMessage) ExtractTrailers() []string {
+	return m.ExtractTrailersWithFormat("")
+}
+
+// ExtractTrailersWithFormat returns all trailer entries across all trailer
+// paragraphs in the commit message, canonicalizing bug-style trailer values
+// according to trailerFormat (defaulting to "b/{id}" when empty).
+func (m *CommitMessage) ExtractTrailersWithFormat(trailerFormat string) []string {
 	if m == nil || len(m.Paragraphs) == 0 {
 		return nil
 	}
@@ -298,11 +305,7 @@ func (m *CommitMessage) ExtractTrailers() []string {
 				trailers = append(trailers, tr.Format())
 				continue
 			}
-			first := normalizeTrailerValue(tr.FirstLine())
-			if len(tr.Continuations) > 0 {
-				first += "\n" + strings.Join(tr.Continuations, "\n")
-			}
-			trailers = append(trailers, first)
+			trailers = append(trailers, normalizeTrailerValueWithFormat(tr.Format(), trailerFormat))
 		}
 	}
 	return trailers

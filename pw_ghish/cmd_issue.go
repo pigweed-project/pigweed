@@ -757,8 +757,13 @@ var issueCreateCmd = &cobra.Command{
 			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
 		}
 
+		var trailerFmt string
 		if issueCreateAmend {
 			if err := cfg.GitClient().CheckAmendAllowed(ctx); err != nil {
+				return err
+			}
+			trailerFmt, err = ResolveBugTrailerFormat(ctx, cfg)
+			if err != nil {
 				return err
 			}
 		}
@@ -868,11 +873,6 @@ var issueCreateCmd = &cobra.Command{
 			origMsg, err := cfg.GitClient().CommitMessage(ctx, "HEAD")
 			if err != nil {
 				return fmt.Errorf("created issue b/%d, but failed to read HEAD commit message for --amend: %w", created.IssueID, err)
-			}
-
-			var trailerFmt string
-			if pcfg != nil {
-				trailerFmt = strings.TrimSpace(pcfg.Issue.TrailerFormat)
 			}
 
 			existingLinks := ExtractBugLinks(origMsg)

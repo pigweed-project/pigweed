@@ -152,14 +152,19 @@ func ExtractTrailers(commitMsg string) []string {
 	return ParseCommitMessage(commitMsg).ExtractTrailers()
 }
 
-// normalizeTrailerValue canonicalizes the value of a bug-style trailer while
-// preserving the key exactly as the author wrote it.
-func normalizeTrailerValue(trailerLine string) string {
-	key, value, _, ok := parseBugTrailer(trailerLine)
+// normalizeTrailerValueWithFormat canonicalizes the value of a bug-style
+// trailer while preserving the key and any continuation lines as written.
+func normalizeTrailerValueWithFormat(trailerLine, trailerFormat string) string {
+	first, rest, hasCont := strings.Cut(trailerLine, "\n")
+	key, value, _, ok := parseBugTrailer(first)
 	if !ok {
 		return trailerLine
 	}
-	return key + ": " + NormalizeBugChain(value)
+	normalized := key + ": " + NormalizeBugChainWithFormat(value, trailerFormat)
+	if hasCont {
+		return normalized + "\n" + rest
+	}
+	return normalized
 }
 
 // trailerKey returns the key of a trailer line. The second result is false for
@@ -252,6 +257,13 @@ func UpsertTrailer(commitMsg, trailerLine string) (string, error) {
 // style guide indents code samples by two spaces, and "  key: value" inside
 // one is body text that must keep its indentation.
 func MergeTrailers(newBody string, origTrailers []string) string {
+	return MergeTrailersWithFormat(newBody, origTrailers, "")
+}
+
+// MergeTrailersWithFormat appends any trailers from origTrailers whose key is
+// not already defined in newBody, canonicalizing bug trailer values according
+// to trailerFormat while preserving any continuation lines.
+func MergeTrailersWithFormat(newBody string, origTrailers []string, trailerFormat string) string {
 	newBodyTrimmed := strings.TrimRight(newBody, "\r\n")
 
 	// Canonicalize bug values on trailer lines the caller supplied. Note the
@@ -261,7 +273,7 @@ func MergeTrailers(newBody string, origTrailers []string) string {
 		lines := strings.Split(newBodyTrimmed, "\n")
 		for i, l := range lines {
 			if trailerRegex.MatchString(l) {
-				lines[i] = normalizeTrailerValue(l)
+				lines[i] = normalizeTrailerValueWithFormat(l, trailerFormat)
 			}
 		}
 		newBodyTrimmed = strings.Join(lines, "\n")
@@ -269,7 +281,7 @@ func MergeTrailers(newBody string, origTrailers []string) string {
 
 	var toAppend []string
 	for _, orig := range origTrailers {
-		tr := normalizeTrailerValue(orig)
+		tr := normalizeTrailerValueWithFormat(orig, trailerFormat)
 		// A line with no `Key:` prefix is a footer such as
 		// "(cherry picked from commit abc)". It has no key to deduplicate on,
 		// so match the whole line; dropping it would discard provenance.
