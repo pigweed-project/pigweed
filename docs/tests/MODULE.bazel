@@ -31,6 +31,15 @@ local_path_override(
     path = "../..",
 )
 
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = [
+        # Updates internal pip/packaging/pip-tools and publish certifi (GHSA-f8vq-jw3w-q789, GHSA-6q48-6c7w-9gw2)
+        "//:0003-Update-rules_python-pip-and-certifi.patch",
+    ],
+)
+
 http_archive = use_repo_rule(
     "@bazel_tools//tools/build_defs/repo:http.bzl",
     "http_archive",

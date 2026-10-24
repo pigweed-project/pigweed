@@ -47,6 +47,15 @@ single_version_override(
     ],
 )
 
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = [
+        # Updates internal pip/packaging/pip-tools and publish certifi (GHSA-f8vq-jw3w-q789, GHSA-6q48-6c7w-9gw2)
+        "//:0003-Update-rules_python-pip-and-certifi.patch",
+    ],
+)
+
 pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
 pw_rust.toolchain(cipd_tag = "git_revisions:d32e620a107b5b3dccd9ddb53fa124956a92b589,a3f244e2d5550e110daee562b88bee247b75d66c")
 use_repo(pw_rust, "pw_rust_toolchains")

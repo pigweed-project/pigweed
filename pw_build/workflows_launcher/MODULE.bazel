@@ -23,6 +23,15 @@ local_path_override(
     path = "../..",
 )
 
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = [
+        # Updates internal pip/packaging/pip-tools and publish certifi (GHSA-f8vq-jw3w-q789, GHSA-6q48-6c7w-9gw2)
+        "//:0003-Update-rules_python-pip-and-certifi.patch",
+    ],
+)
+
 # LINT.IfChange(protobuf)
 bazel_dep(name = "protobuf", version = "36.2", repo_name = "com_google_protobuf")
 # LINT.ThenChange(//MODULE.bazel:protobuf)
