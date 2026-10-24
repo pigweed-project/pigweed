@@ -29,6 +29,27 @@ every finding cites a rule.
 - `pw_ghish/AGENTS.md` -- `pw_ghish` architecture, safety, portability, and
   review invariants
 
+## UI & Output Infrastructure Checklist
+
+Every `pw_ghish` command change MUST use the shared UI and output primitives:
+
+- **Command kind (`command_kind.go`)**: Every runnable Cobra command declares a
+  valid `ghish:kind` annotation (`mutation`, `view`, `list`, `stream`, `meta`).
+- **Mutation receipts (`ui.go`)**: Every `mutation` command confirms completion
+  via `FormatReceipt` / `PrintReceipt` (`✓ <Action>...`, indented key-value
+  context, and `Next: gh ...`) rather than ad-hoc `fmt.Fprintf` banners.
+- **Verdict & Next headers**: Every `view` and `list` command surfaces
+  `Verdict:` and `Next:` lines for deterministic human/agent scanning.
+- **Environment & styling (`environment.go`, `ui.go`)**: Never embed raw ANSI
+  escape sequences outside `ui.go`; gate all terminal styling on `ColorEnabled`
+  (`IsTTY` / `IsAgentEnv` in `environment.go`), use `PadRightStyled` for aligned
+  columns, and use canonical BMP glyphs (`GlyphPass`, `GlyphFail`, `GlyphWarn`,
+  `GlyphRunning`, `GlyphPending`, `GlyphDot`, `GlyphArrow`).
+- **JSON output (`render.go`)**: `--json <fields>` flags validate unknown
+  fields with `UnknownJSONFieldsError` (sorted field names), and `--json` mode
+  emits a single JSON value with bare ASCII status enums and no receipts or
+  ANSI sequences on `stdout`.
+
 ## Workflow
 
 Read and follow `.agents/skills/review/reviewer_workflow.md`.

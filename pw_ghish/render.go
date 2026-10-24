@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 	"text/template"
 )
@@ -139,12 +141,32 @@ func filterMap(m map[string]any, fields []string) (map[string]any, error) {
 		}
 	}
 	if len(unknown) > 0 {
-		var available []string
-		for k := range m {
-			available = append(available, k)
-		}
-		return nil, fmt.Errorf("unknown JSON field(s): %s (available: %s)",
-			strings.Join(unknown, ", "), strings.Join(available, ", "))
+		return nil, &UnknownJSONFieldsError{Unknown: unknown, Available: slices.Sorted(maps.Keys(m))}
 	}
 	return result, nil
+}
+
+// UnknownJSONFieldsError reports `--json <fields>` names a command does not
+// offer, together with the sorted set it does offer, so callers (and the JSON
+// output contract test, which requests every field) can discover the
+// command's field set without parsing the message. Its message matches gh's.
+//
+// For Renderer-based commands Available is the set of keys in the rendered
+// data, so it can omit fields the command only emits for some inputs (e.g.
+// `pr view`'s bug and bugs), and an empty list result is never validated.
+type UnknownJSONFieldsError struct {
+	Unknown   []string
+	Available []string
+}
+
+func (e *UnknownJSONFieldsError) Error() string {
+	quoted := make([]string, len(e.Unknown))
+	for i, f := range e.Unknown {
+		quoted[i] = fmt.Sprintf("%q", f)
+	}
+	noun := "field"
+	if len(quoted) > 1 {
+		noun = "fields"
+	}
+	return fmt.Sprintf("Unknown JSON %s: %s\nAvailable fields:\n  %s", noun, strings.Join(quoted, ", "), strings.Join(e.Available, "\n  "))
 }

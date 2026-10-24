@@ -145,7 +145,7 @@ func TestRender_JSON_UnknownFieldError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when unknown field requested in JSONFields, got nil")
 	}
-	if !strings.Contains(err.Error(), "unknown JSON field") {
+	if !strings.Contains(err.Error(), "Unknown JSON field") {
 		t.Errorf("expected error about unknown JSON field, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "nonexistent_field") {
@@ -169,7 +169,7 @@ func TestRender_JSON_List_UnknownFieldError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when unknown field requested in list JSONFields, got nil")
 	}
-	if !strings.Contains(err.Error(), "unknown JSON field") {
+	if !strings.Contains(err.Error(), "Unknown JSON field") {
 		t.Errorf("expected error about unknown JSON field, got: %v", err)
 	}
 }
