@@ -29,7 +29,9 @@ Waker& Waker::operator=(Waker&& other) noexcept {
     return *this;
   }
   task_ = other.task_;
-  set_wait_reason(other.wait_reason_);
+#if PW_ASYNC2_DEBUG_WAIT_REASON
+  wait_reason_ = other.wait_reason_;
+#endif  // PW_ASYNC2_DEBUG_WAIT_REASON
   other.RemoveTask();
   task_->AddWakerLocked(*this);
   return *this;

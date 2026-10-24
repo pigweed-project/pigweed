@@ -29,8 +29,8 @@
 /// system which value you wish to select by adding one of the following
 /// constraint_values to the target platform:
 ///
-///   - `@pigweed//pw_async2:debug_wait_reason_disabled` (default)
-///   - `@pigweed//pw_async2:debug_wait_reason_enabled`
+///   - `@pigweed//pw_async2:debug_wait_reason_disabled`
+///   - `@pigweed//pw_async2:debug_wait_reason_enabled` (default)
 #ifndef PW_ASYNC2_DEBUG_WAIT_REASON
 #define PW_ASYNC2_DEBUG_WAIT_REASON 1
 #endif  // PW_ASYNC2_DEBUG_WAIT_REASON
