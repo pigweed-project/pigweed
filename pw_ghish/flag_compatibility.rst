@@ -122,6 +122,6 @@ The four supported ``mode`` values are:
   different underlying Gerrit or Buganizer concept (requires
   ``gh="<subcmd> --<flag>"``, ``doc="ghDivergenceHelp"``, and an entry in
   ``ghDivergenceHelp`` in ``root.go``).
-* ``mode=unsupported-guard``: Intercepts an unsupported upstream ``gh`` flag to
+* ``mode=unsupported-guard``: Intercepts an unsupported or disabled flag to
   return an actionable error explaining the Gerrit alternative (requires
-  ``gh="<subcmd> --<flag>"``).
+  ``gh="<subcmd> --<flag>"`` or ``reason="<why>"``).

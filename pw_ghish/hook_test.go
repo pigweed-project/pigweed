@@ -92,8 +92,8 @@ func TestCheckAgentCommand(t *testing.T) {
 	}
 	for _, cmd := range blockedChangeIDClobber {
 		reason := CheckAgentCommand(cmd)
-		if !strings.Contains(reason, "Change-Id") || !strings.Contains(reason, "COMMIT_EDITMSG_TMP") {
-			t.Errorf("expected CheckAgentCommand(%q) to block Change-Id clobbering with surgical file-edit instructions, got: %q", cmd, reason)
+		if !strings.Contains(reason, "Change-Id") || !strings.Contains(reason, "COMMIT_EDITMSG_TMP") || !strings.Contains(reason, "./gh pr push") || !strings.Contains(reason, "[--bug b/<id> | --fixed b/<id>]") {
+			t.Errorf("expected CheckAgentCommand(%q) to block Change-Id clobbering with ./gh pr push and surgical file-edit instructions, got: %q", cmd, reason)
 		}
 	}
 

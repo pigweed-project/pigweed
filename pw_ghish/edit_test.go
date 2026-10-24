@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/http"
 	"strings"
@@ -24,79 +25,46 @@ import (
 	"github.com/andygrunwald/go-gerrit"
 )
 
-func getSentCommitMessage(server *MockGerritServer) string {
-	for _, req := range server.Requests() {
-		if strings.Contains(req.Path, "message") {
-			var payload struct {
-				Message string `json:"message"`
-			}
-			_ = json.Unmarshal(req.Body, &payload)
-			return payload.Message
+func TestEdit_HelpHidesCommitMessageFlags(t *testing.T) {
+	cmd := newEditCmd()
+	for _, name := range []string{"title", "body", "body-file", "bug", "fixed"} {
+		f := cmd.Flags().Lookup(name)
+		if f == nil {
+			t.Fatalf("expected hidden unsupported-guard flag --%s to be registered on edit command", name)
+		}
+		if !f.Hidden {
+			t.Errorf("expected flag --%s on edit command to be hidden", name)
 		}
 	}
-	return ""
-}
 
-func TestEditIntegration(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "Old Title",
-		"message": "Old Title\n\nExisting body line.\n\nChange-Id: I1234567890123456789012345678901234567890\n",
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--title", "New Title")
+	helpOut, err := executeCommand(RootCmd, "pr", "edit", "--help")
 	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+		t.Fatalf("pr edit --help failed: %v", err)
 	}
-
-	if server.CallCount("GET", "/changes/12345/revisions/current/commit") != 1 {
-		t.Error("Expected GetCommit API to be called to fetch existing message")
+	for _, hidden := range []string{"--title", "--body", "--body-file", "--bug", "--fixed"} {
+		if strings.Contains(helpOut, hidden) {
+			t.Errorf("expected pr edit --help to hide %s, got:\n%s", hidden, helpOut)
+		}
 	}
-	if server.CallCount("", "/changes/12345/message") != 1 {
-		t.Error("Expected SetCommitMessage API to be called")
-	}
-
-	if !strings.Contains(output, "Commit message updated successfully") {
-		t.Errorf("Unexpected output: %s", output)
-	}
-
-	sentMessage := getSentCommitMessage(server)
-	if !strings.HasPrefix(sentMessage, "New Title") {
-		t.Errorf("Expected sentMessage to start with 'New Title', got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Existing body line.") {
-		t.Errorf("DATA LOSS: sentMessage lost existing body! got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Change-Id: I1234567890123456789012345678901234567890") {
-		t.Errorf("DATA LOSS: sentMessage lost Change-Id! got: %q", sentMessage)
-	}
-}
-
-func TestEdit_PreservesTitleAndChangeIDWhenUpdatingBody(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "Original Title",
-		"message": "Original Title\n\nOld body.\n\nChange-Id: Iabcdef1234567890abcdef1234567890abcdef12\n",
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--body", "Brand new body details.")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	sentMessage := getSentCommitMessage(server)
-	if !strings.HasPrefix(sentMessage, "Original Title") {
-		t.Errorf("DATA LOSS: sentMessage lost title! got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Brand new body details.") {
-		t.Errorf("Expected sentMessage to contain new body! got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Change-Id: Iabcdef1234567890abcdef1234567890abcdef12") {
-		t.Errorf("DATA LOSS: sentMessage lost Change-Id! got: %q", sentMessage)
+	for _, visible := range []string{
+		"--add-reviewer",
+		"--add-owner",
+		"--remove-reviewer",
+		"--add-assignee",
+		"--remove-assignee",
+		"--add-attention",
+		"--remove-attention",
+		"--add-label",
+		"--trigger",
+		"--cq",
+		"--topic",
+		"--remove-topic",
+		"--add-hashtag",
+		"--remove-hashtag",
+	} {
+		if !strings.Contains(helpOut, visible) {
+			t.Errorf("expected pr edit --help to advertise %s, got:\n%s", visible, helpOut)
+		}
 	}
 }
 
@@ -114,6 +82,11 @@ func TestEdit_ErrorWhenNoFlagsProvided(t *testing.T) {
 	for _, flag := range []string{"--add-attention", "--remove-attention"} {
 		if !strings.Contains(err.Error(), flag) {
 			t.Errorf("Expected error message to list %s, got: %v", flag, err)
+		}
+	}
+	for _, hidden := range []string{"--title", "--body", "--body-file", "--bug", "--fixed"} {
+		if strings.Contains(err.Error(), hidden) {
+			t.Errorf("Expected bare pr edit error to omit %s, got:\n%v", hidden, err)
 		}
 	}
 }
@@ -377,369 +350,6 @@ func TestEditAttentionRejectsEmptyAccount(t *testing.T) {
 	}
 }
 
-func TestEdit_PreservesAllTrailersWhenUpdatingBody(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	origCommitMsg := "pw_foo: Original Subject\n\nOriginal body line.\n\nBug: b/12345\nChange-Id: I0123456789abcdef0123456789abcdef01234567\nReviewed-on: https://pigweed-review.googlesource.com/12345\n"
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--body", "Updated body text without trailers.")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	sentMessage := getSentCommitMessage(server)
-	if !strings.HasPrefix(sentMessage, "pw_foo: Original Subject") {
-		t.Errorf("DATA LOSS: Title was not preserved! got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Updated body text without trailers.") {
-		t.Errorf("Expected new body to be present, got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Bug: b/12345") {
-		t.Errorf("DATA LOSS: Bug trailer was lost! got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Change-Id: I0123456789abcdef0123456789abcdef01234567") {
-		t.Errorf("DATA LOSS: Change-Id was lost! got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Reviewed-on: https://pigweed-review.googlesource.com/12345") {
-		t.Errorf("DATA LOSS: Reviewed-on trailer was lost! got: %q", sentMessage)
-	}
-}
-
-func TestEdit_OverridingSpecificTrailerPreservesOthers(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	origCommitMsg := "pw_foo: Original Subject\n\nOriginal body line.\n\nBug: b/12345\nChange-Id: I0123456789abcdef0123456789abcdef01234567\nReviewed-on: https://pigweed-review.googlesource.com/12345\n"
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--body", "Updated body text.\n\nBug: b/99999")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	sentMessage := getSentCommitMessage(server)
-	if strings.Contains(sentMessage, "Bug: b/12345") {
-		t.Errorf("Expected old Bug: b/12345 to be replaced by new bug, but found in: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Bug: b/99999") {
-		t.Errorf("Expected new Bug: b/99999 to be present, got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Change-Id: I0123456789abcdef0123456789abcdef01234567") {
-		t.Errorf("DATA LOSS: Change-Id was lost! got: %q", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Reviewed-on: https://pigweed-review.googlesource.com/12345") {
-		t.Errorf("DATA LOSS: Reviewed-on trailer was lost! got: %q", sentMessage)
-	}
-}
-
-// TestEdit_PreservesTrailersWhenMessageEndsInProse pins the bug that motivated
-// rewriting ExtractTrailers. The old implementation looked only at the final
-// paragraph, so a commit message ending in prose -- an extremely common shape,
-// e.g. "Note: reviewers, ..." -- lost its real trailer block. A hardcoded
-// allowlist then rescued a handful of well-known keys, which is why this was
-// not caught earlier: Change-Id and Bug survived, and everything else
-// (Co-authored-by, Cq-Include-Trybots, the cherry-pick provenance footer) was
-// silently deleted. Verified RED against the previous implementation.
-func TestEdit_PreservesTrailersWhenMessageEndsInProse(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	origCommitMsg := strings.Join([]string{
-		"pw_foo: Original Subject",
-		"",
-		"Original body line.",
-		"",
-		"Bug: b/12345",
-		"Change-Id: I0123456789abcdef0123456789abcdef01234567",
-		"Co-authored-by: Someone <someone@example.com>",
-		"(cherry picked from commit deadbeefdeadbeefdeadbeefdeadbeefdeadbeef)",
-		"",
-		"Note: reviewers please look at the retry logic.",
-		"It changed subtly in the last patchset.",
-		"",
-	}, "\n")
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--body", "Updated body text.")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	sentMessage := getSentCommitMessage(server)
-	for _, want := range []string{
-		"Bug: b/12345",
-		"Change-Id: I0123456789abcdef0123456789abcdef01234567",
-		"Co-authored-by: Someone <someone@example.com>",
-		"(cherry picked from commit deadbeefdeadbeefdeadbeefdeadbeefdeadbeef)",
-	} {
-		if !strings.Contains(sentMessage, want) {
-			t.Errorf("DATA LOSS: %q missing from rewritten message:\n%s", want, sentMessage)
-		}
-	}
-	if !strings.Contains(sentMessage, "Updated body text.") {
-		t.Errorf("Expected new body to be present, got:\n%s", sentMessage)
-	}
-}
-
-// TestEdit_DoesNotPromoteProseIntoTrailers is the other half of the contract:
-// widening the trailer scan to every paragraph must not turn ordinary prose
-// that happens to contain a colon into a trailer that survives a body rewrite.
-func TestEdit_DoesNotPromoteProseIntoTrailers(t *testing.T) {
-	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
-	origCommitMsg := strings.Join([]string{
-		"pw_foo: Original Subject",
-		"",
-		"Warning: this paragraph is prose, not a trailer block.",
-		"It spans two lines, which is what proves it is prose.",
-		"",
-		"Change-Id: I0123456789abcdef0123456789abcdef01234567",
-		"",
-	}, "\n")
-
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": "pw_foo: Original Subject",
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-
-	if _, err := executeCommand(RootCmd, "pr", "edit", "12345", "--body", "Updated body text."); err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
-
-	sentMessage := getSentCommitMessage(server)
-	if strings.Contains(sentMessage, "Warning: this paragraph is prose") {
-		t.Errorf("Prose was promoted into a trailer and re-appended:\n%s", sentMessage)
-	}
-	if !strings.Contains(sentMessage, "Change-Id: I0123456789abcdef0123456789abcdef01234567") {
-		t.Errorf("DATA LOSS: Change-Id was lost!\n%s", sentMessage)
-	}
-}
-
-// editServer stands up a mock Gerrit serving origCommitMsg for change 12345
-// and accepting a commit message write.
-func editServer(t *testing.T, origCommitMsg string) *MockGerritServer {
-	t.Helper()
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
-		"subject": strings.SplitN(origCommitMsg, "\n", 2)[0],
-		"message": origCommitMsg,
-	})
-	server.OnJSON("", "/changes/12345/message", http.StatusOK, map[string]any{})
-	return server
-}
-
-const editOrigMsg = "pw_foo: Original Subject\n\nOriginal body line.\n\n" +
-	"Co-authored-by: Someone <someone@example.com>\n" +
-	"Change-Id: I0123456789abcdef0123456789abcdef01234567\n"
-
-func TestEdit_BugFlag(t *testing.T) {
-	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
-	tests := []struct {
-		name string
-		orig string
-		args []string
-		want string
-	}{
-		{
-			// A bare number is what an agent has after reading a bug URL, and
-			// what a human types. Accepting only `b/123456` would push the
-			// normalization work back onto the caller.
-			name: "bare number becomes a canonical trailer",
-			orig: editOrigMsg,
-			args: []string{"--bug", "123456"},
-			want: "Bug: b/123456",
-		},
-		{
-			name: "issue URL becomes a canonical trailer",
-			orig: editOrigMsg,
-			args: []string{"--bug", "https://issues.pigweed.dev/issues/123456"},
-			want: "Bug: b/123456",
-		},
-		{
-			// The whole point of (c): gh-ish writes Pigweed's house spelling,
-			// not GitHub's.
-			name: "--fixed writes Fixed:, not Fixes:",
-			orig: editOrigMsg,
-			args: []string{"--fixed", "999"},
-			want: "Fixed: b/999",
-		},
-		{
-			name: "replaces an existing bug rather than adding a second",
-			orig: "pw_foo: S\n\nBody.\n\nBug: b/1\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n",
-			args: []string{"--bug", "b/2"},
-			want: "Bug: b/2",
-		},
-		{
-			name: "none is a valid answer",
-			orig: editOrigMsg,
-			args: []string{"--bug", "none"},
-			want: "Bug: None",
-		},
-		{
-			name: "multiple bugs are accepted",
-			orig: editOrigMsg,
-			args: []string{"--bug", "123456, 789012"},
-			want: "Bug: b/123456, b/789012",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := editServer(t, tt.orig)
-			args := append([]string{"pr", "edit", "12345"}, tt.args...)
-			if _, err := executeCommand(RootCmd, args...); err != nil {
-				t.Fatalf("Command failed: %v", err)
-			}
-			sent := getSentCommitMessage(server)
-			if !strings.Contains(sent, tt.want) {
-				t.Errorf("Expected %q in the new message, got:\n%s", tt.want, sent)
-			}
-			// Setting one trailer must never cost another.
-			if !strings.Contains(sent, "Change-Id: I0123456789abcdef0123456789abcdef01234567") {
-				t.Errorf("DATA LOSS: Change-Id was lost:\n%s", sent)
-			}
-		})
-	}
-}
-
-// TestEdit_BugFlagLeavesEverythingElseAlone checks that a trailer-only edit is
-// exactly that: no title change, no body change, no collateral trailer loss.
-func TestEdit_BugFlagLeavesEverythingElseAlone(t *testing.T) {
-	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
-	server := editServer(t, editOrigMsg)
-	if _, err := executeCommand(RootCmd, "pr", "edit", "12345", "--bug", "b/42"); err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
-	sent := getSentCommitMessage(server)
-	for _, want := range []string{
-		"pw_foo: Original Subject",
-		"Original body line.",
-		"Co-authored-by: Someone <someone@example.com>",
-		"Change-Id: I0123456789abcdef0123456789abcdef01234567",
-		"Bug: b/42",
-	} {
-		if !strings.Contains(sent, want) {
-			t.Errorf("Expected %q to survive a --bug-only edit, got:\n%s", want, sent)
-		}
-	}
-}
-
-func TestEdit_BugFlagCombinesWithBody(t *testing.T) {
-	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
-	server := editServer(t, editOrigMsg)
-	if _, err := executeCommand(RootCmd, "pr", "edit", "12345",
-		"--body", "A new description.", "--bug", "b/42"); err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
-	sent := getSentCommitMessage(server)
-	for _, want := range []string{"A new description.", "Bug: b/42", "Co-authored-by: Someone"} {
-		if !strings.Contains(sent, want) {
-			t.Errorf("Expected %q in the new message, got:\n%s", want, sent)
-		}
-	}
-}
-
-// TestEdit_BugFlagConflictingWithBodyIsRejected covers the ambiguity. If the
-// flag says one bug and the hand-written text says another, guessing which the
-// user meant would silently discard one of them.
-func TestEdit_BugFlagConflictingWithBodyIsRejected(t *testing.T) {
-	server := editServer(t, editOrigMsg)
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345",
-		"--body", "A new description.\n\nBug: b/7", "--bug", "b/42")
-	if err == nil {
-		t.Fatal("Expected an error when --bug and --body both set a Bug: trailer, got nil")
-	}
-	if !strings.Contains(err.Error(), "--bug") || !strings.Contains(err.Error(), "Bug:") {
-		t.Errorf("Error should name both the flag and the trailer, got: %v", err)
-	}
-	if n := server.CallCount("", "/changes/12345/message"); n != 0 {
-		t.Errorf("Commit message was written despite the conflict (%d calls)", n)
-	}
-}
-
-func TestEdit_BugFlagEmptyValueIsRejected(t *testing.T) {
-	editServer(t, editOrigMsg)
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--bug", "")
-	if err == nil {
-		t.Fatal("Expected an error for an empty --bug value, got nil")
-	}
-	if !strings.Contains(err.Error(), "--bug") {
-		t.Errorf("Error should name the flag, got: %v", err)
-	}
-}
-
-// TestEdit_RejectsGitHubIssueSyntax is the reason this feature exists: an
-// agent carrying `gh` habits writes "Fixes #456", which Gerrit does not parse.
-// Accepting it would leave the bug silently unlinked.
-func TestEdit_RejectsGitHubIssueSyntax(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-	}{
-		{"in --body", []string{"--body", "Rework the retry loop.\n\nFixes #456"}},
-		{"in --title", []string{"--title", "pw_foo: Rework, resolves #456"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := editServer(t, editOrigMsg)
-			args := append([]string{"pr", "edit", "12345"}, tt.args...)
-			_, err := executeCommand(RootCmd, args...)
-			if err == nil {
-				t.Fatal("Expected GitHub issue syntax to be rejected, got nil")
-			}
-			if !strings.Contains(err.Error(), "#456") {
-				t.Errorf("Error should quote the offending reference, got: %v", err)
-			}
-			if !strings.Contains(err.Error(), "--fixed") {
-				t.Errorf("Error should point at the --fixed flag, got: %v", err)
-			}
-			if n := server.CallCount("", "/changes/12345/message"); n != 0 {
-				t.Errorf("Commit message was written despite the rejection (%d calls)", n)
-			}
-		})
-	}
-}
-
-// TestEdit_AcceptsGerritBugTrailers is the false-positive guard: the correct
-// spelling must sail straight through.
-func TestEdit_AcceptsGerritBugTrailers(t *testing.T) {
-	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
-	server := editServer(t, editOrigMsg)
-	if _, err := executeCommand(RootCmd, "pr", "edit", "12345",
-		"--body", "Rework the retry loop.\n\nFixed: b/456"); err != nil {
-		t.Fatalf("A correct Gerrit trailer was rejected: %v", err)
-	}
-	if !strings.Contains(getSentCommitMessage(server), "Fixed: b/456") {
-		t.Errorf("Expected Fixed: b/456 to be written, got:\n%s", getSentCommitMessage(server))
-	}
-}
-
-func TestEdit_ErrorWhenEmptyTitle(t *testing.T) {
-	_, err := executeCommand(RootCmd, "pr", "edit", "12345", "--title", "   ")
-	if err == nil {
-		t.Fatal("Expected error when empty title provided, got nil")
-	}
-	if !strings.Contains(err.Error(), "cannot set an empty commit title") {
-		t.Errorf("Expected error about empty title, got: %v", err)
-	}
-}
-
 func TestEdit_SetTopic(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("PUT", "/changes/12345/topic", http.StatusOK, `"my-feature-topic"`)
@@ -883,39 +493,71 @@ func TestEdit_CQ_UsesPresubmitReadyWhenNoCommitQueue(t *testing.T) {
 	}
 }
 
-func TestEdit_CommitMessageFlagsDisabledRedirectsToLocalGit(t *testing.T) {
+type failingStdinReader struct {
+	readCalled bool
+}
+
+func (r *failingStdinReader) Read([]byte) (int, error) {
+	r.readCalled = true
+	return 0, errors.New("unexpected read from stdin")
+}
+
+func TestEdit_CommitMessageFlagsGuard(t *testing.T) {
 	tests := []struct {
-		name string
-		args []string
+		name      string
+		args      []string
+		wantSub   []string
+		forbidSub []string
 	}{
-		{"title flag", []string{"pr", "edit", "12345", "--title", "pw_foo: New Title"}},
-		{"body flag", []string{"pr", "edit", "12345", "--body", "New description body."}},
-		{"bug flag", []string{"pr", "edit", "12345", "--bug", "b/123456"}},
-		{"fixed flag", []string{"pr", "edit", "12345", "--fixed", "b/123456"}},
+		{"no target", []string{"pr", "edit", "-t", "pw_foo: Title", "--bug", "b/123456"}, []string{"gh pr push", "gh pr create"}, []string{"gh pr checkout", "COMMIT_EDITMSG_TMP"}},
+		{"with target", []string{"pr", "edit", "12345\x1b[31m", "-b", "Updated body", "--fixed", "b/123456"}, []string{"gh pr checkout 12345", "gh pr push", "gh pr create"}, []string{"\x1b"}},
+		{"body-file", []string{"pr", "edit", "-F", "nonexistent-body.txt"}, []string{"gh pr push", "gh pr create"}, nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := editServer(t, editOrigMsg)
+			server := NewMockGerritServer(t)
+			SetupMockConfig(t, &MockGitRunner{})
 			_, err := executeCommand(RootCmd, tt.args...)
 			if err == nil {
-				t.Fatalf("Expected error when using commit-message edit flags (%v), got nil", tt.args)
+				t.Fatalf("Expected error for %v, got nil", tt.args)
 			}
-			for _, want := range []string{
-				"b/567763970",
-				"COMMIT_EDITMSG_TMP",
-				"git commit --amend --only -F",
-				"Change-Id:",
-				"git rebase",
-			} {
+			if len(server.Requests()) != 0 {
+				t.Errorf("Expected zero Gerrit HTTP requests, got %d: %+v", len(server.Requests()), server.Requests())
+			}
+			for _, want := range tt.wantSub {
 				if !strings.Contains(err.Error(), want) {
-					t.Errorf("Expected error to contain %q, got:\n%v", want, err)
+					t.Errorf("Expected error to contain %q, got:\n%s", want, err.Error())
 				}
 			}
-			if n := server.CallCount("", "/changes/12345/message"); n != 0 {
-				t.Errorf("Expected no SetCommitMessage API call, got %d", n)
+			for _, forbid := range tt.forbidSub {
+				if strings.Contains(err.Error(), forbid) {
+					t.Errorf("Expected error not to contain %q, got:\n%s", forbid, err.Error())
+				}
 			}
 		})
+	}
+}
+
+func TestEdit_BodyFileStdinDoesNotReadStdin(t *testing.T) {
+	server := NewMockGerritServer(t)
+	SetupMockConfig(t, &MockGitRunner{})
+	stdin := &failingStdinReader{}
+
+	_, err := executeCommandWithStdin(RootCmd, stdin, "pr", "edit", "123", "-F", "-")
+	if err == nil {
+		t.Fatal("Expected disabled-flag guard error for 'pr edit 123 -F -', got nil")
+	}
+	if stdin.readCalled {
+		t.Error("Expected 'pr edit 123 -F -' not to read from stdin")
+	}
+	if len(server.Requests()) != 0 {
+		t.Errorf("Expected zero Gerrit HTTP requests, got %d: %+v", len(server.Requests()), server.Requests())
+	}
+	for _, want := range []string{"cannot update commit messages", "gh pr checkout 123", "gh pr push"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Expected error to contain %q, got:\n%s", want, err.Error())
+		}
 	}
 }
 

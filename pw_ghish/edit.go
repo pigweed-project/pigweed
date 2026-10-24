@@ -23,11 +23,11 @@ import (
 
 	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type editOptions struct {
-	title          string
-	body           string
+	commitMsg      CommitMessageFlags
 	addReviewer    []string
 	reviewer       []string
 	addOwner       bool
@@ -44,12 +44,17 @@ type editOptions struct {
 	removeHashtags []string
 	cq             int
 	trigger        int
-	bug            string
-	fixed          string
 }
 
 func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		if opts.commitMsg.HasAny(cmd) {
+			return formatEditCommitMsgGuardError(args)
+		}
+		if !hasChangedLocalFlag(cmd) {
+			return noEditFlagsError(cmd)
+		}
+
 		chCtx, err := ResolveChangeContext(cmd, args)
 		if err != nil {
 			return err
@@ -58,26 +63,10 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 		changeID := chCtx.ChangeID
 		client := chCtx.Client
 
-		if cmd.Flags().Changed("title") && strings.TrimSpace(opts.title) == "" {
-			return fmt.Errorf("cannot set an empty commit title")
-		}
-
 		rawAddReviewers := append([]string{}, opts.addReviewer...)
 		rawAddReviewers = append(rawAddReviewers, opts.reviewer...)
 		if opts.addOwner || opts.owner {
 			rawAddReviewers = append(rawAddReviewers, "@owners")
-		}
-
-		hasTrailerEdit := cmd.Flags().Changed("bug") || cmd.Flags().Changed("fixed")
-		hasMsgEdit := opts.title != "" || cmd.Flags().Changed("body") || hasTrailerEdit
-		hasTopicEdit := cmd.Flags().Changed("topic") || opts.removeTopic
-		hasHashtagEdit := len(opts.addHashtags) > 0 || len(opts.removeHashtags) > 0
-		hasCQEdit := cmd.Flags().Changed("cq") || cmd.Flags().Changed("trigger")
-		hasAttentionEdit := len(opts.addAttention) > 0 || len(opts.removeAttn) > 0
-		if !hasMsgEdit && len(rawAddReviewers) == 0 && len(opts.removeReviewer) == 0 &&
-			len(opts.addAssignee) == 0 && len(opts.removeAssignee) == 0 && len(opts.addLabels) == 0 &&
-			!hasTopicEdit && !hasHashtagEdit && !hasCQEdit && !hasAttentionEdit {
-			return fmt.Errorf("at least one of --title, --body, --bug, --fixed, --add-reviewer, --add-owner, --remove-reviewer, --add-assignee, --remove-assignee, --add-attention, --remove-attention, --add-label, --trigger, --cq, --topic, --remove-topic, --add-hashtag, or --remove-hashtag must be specified\n\nExample edit commands:\n  gh pr edit 123 --title \"New title\"\n  gh pr edit 123 --bug b/456\n  gh pr edit 123 --trigger\n  gh pr edit 123 --cq\n  gh pr edit 123 --topic \"my-feature\"\n  gh pr edit 123 --add-hashtag \"bugfix\"\n  gh pr edit 123 --add-reviewer user@google.com\n  gh pr edit 123 --add-owner\n  gh pr edit 123 --remove-attention me\n  gh pr edit 123 --add-label Commit-Queue=1")
 		}
 
 		addAttention, err := normalizeAttentionAccounts("--add-attention", opts.addAttention)
@@ -91,72 +80,6 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 		labelVotes, err := parseLabelVotes(opts.addLabels)
 		if err != nil {
 			return err
-		}
-
-		// Reject GitHub issue syntax before anything is written. Every piece
-		// of commit message text the user can supply goes through the same
-		// check, so `Fixes #456` cannot slip in through one flag and not
-		// another.
-		for _, text := range []struct{ where, value string }{
-			{"--title", opts.title},
-			{"--body", opts.body},
-		} {
-			if err := CheckGitHubIssueSyntax(text.value, text.where); err != nil {
-				return err
-			}
-		}
-
-		// --bug/--fixed and hand-written trailer text are two ways to say the
-		// same thing. If they disagree, guessing would silently discard one.
-		trailerFlags := []struct{ flag, key, value string }{
-			{"bug", "Bug", opts.bug},
-			{"fixed", "Fixed", opts.fixed},
-		}
-		for _, tf := range trailerFlags {
-			if !cmd.Flags().Changed(tf.flag) {
-				continue
-			}
-			if strings.TrimSpace(tf.value) == "" {
-				return fmt.Errorf("--%s requires a value\n\n"+
-					"Accepted forms: a bare number (123456), a Buganizer ID (b/123456), an issue\n"+
-					"URL (https://issues.pigweed.dev/issues/123456), a comma-separated list, or\n"+
-					"\"none\".\n\nExample:\n  gh pr edit %s --%s b/123456", tf.flag, changeID, tf.flag)
-			}
-			for _, supplied := range []struct{ where, text string }{
-				{"--body", opts.body},
-			} {
-				if supplied.text == "" || !MentionsTrailerKey(supplied.text, tf.key) {
-					continue
-				}
-				return fmt.Errorf("--%s and %s both set a %s: trailer\n\n"+
-					"Only one of them can win, and picking for you would silently discard the\n"+
-					"other. Remove the %s: line from %s, or drop --%s.",
-					tf.flag, supplied.where, tf.key, tf.key, supplied.where, tf.flag)
-			}
-		}
-
-		if hasMsgEdit {
-			// TODO(b/567763970): Re-enable commit-message editing once safe
-			// local/remote synchronization is implemented. Keep
-			// buildUpdatedCommitMessage referenced so its implementation stays
-			// compiled while disabled.
-			_ = buildUpdatedCommitMessage
-			return fmt.Errorf(
-				"editing commit messages via 'gh pr edit' (--title, --body, --bug, --fixed) is currently disabled (see b/567763970).\n\n" +
-					"Why: In Gerrit, a CL's description is stored in the Git commit message rather than\n" +
-					"a separate database record. Editing it on the Gerrit server creates a remote patchset\n" +
-					"that diverges from your local Git branch and gets overwritten on the next 'gh pr push'.\n\n" +
-					"To update a commit message locally:\n" +
-					"  1. For the current HEAD commit (surgical file edit, preserving Change-Id:):\n" +
-					"       git log -1 --format=%%B HEAD > \"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP\"\n" +
-					"       # Edit COMMIT_EDITMSG_TMP surgically (keep the Change-Id: footer!)\n" +
-					"       git commit --amend --only -F \"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP\"\n" +
-					"       ./gh pr push\n" +
-					"  2. For an earlier commit in a stack:\n" +
-					"       Use 'git rebase' to update the commit message (retaining each commit's\n" +
-					"       Change-Id: footer, or only the earliest commit's Change-Id when squashing),\n" +
-					"       then run './gh pr push --stack'.",
-			)
 		}
 
 		expandedReviewers, err := ExpandReviewersForChange(cmd, chCtx, rawAddReviewers)
@@ -229,7 +152,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), "Labels added successfully.")
 		}
 
-		if hasTopicEdit {
+		if cmd.Flags().Changed("topic") || opts.removeTopic {
 			if opts.removeTopic || (cmd.Flags().Changed("topic") && strings.TrimSpace(opts.topic) == "") {
 				if _, err := client.Changes.DeleteTopic(ctx, changeID); err != nil {
 					return chCtx.FormatError(err, "deleting topic on")
@@ -253,7 +176,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			}
 		}
 
-		if hasHashtagEdit {
+		if len(opts.addHashtags) > 0 || len(opts.removeHashtags) > 0 {
 			if _, _, err := client.Changes.SetHashtags(ctx, changeID, &gerrit.HashtagsInput{
 				Add:    opts.addHashtags,
 				Remove: opts.removeHashtags,
@@ -263,7 +186,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), "Hashtags updated successfully.")
 		}
 
-		if hasCQEdit {
+		if cmd.Flags().Changed("cq") || cmd.Flags().Changed("trigger") {
 			requestedCQ := opts.cq
 			if cmd.Flags().Changed("trigger") {
 				requestedCQ = opts.trigger
@@ -360,50 +283,71 @@ func removeFromAttentionSet(chCtx *ChangeContext, account string) error {
 	return nil
 }
 
-func buildUpdatedCommitMessage(origMessage, changeID string, cmd *cobra.Command, opts *editOptions, trailerFlags []struct{ flag, key, value string }) (string, error) {
-	newMessage := origMessage
-
-	if opts.title != "" || cmd.Flags().Changed("body") {
-		var origTitle, origBody string
-		lines := strings.Split(origMessage, "\n")
-		origTitle = lines[0]
-		if len(lines) > 1 {
-			origBody = strings.TrimPrefix(strings.Join(lines[1:], "\n"), "\n")
+func hasChangedLocalFlag(cmd *cobra.Command) bool {
+	changed := false
+	cmd.LocalFlags().VisitAll(func(fl *pflag.Flag) {
+		if fl.Name != "help" && fl.Changed {
+			changed = true
 		}
+	})
+	return changed
+}
 
-		targetTitle := origTitle
-		if opts.title != "" {
-			targetTitle = opts.title
+func noEditFlagsError(cmd *cobra.Command) error {
+	var flags []string
+	cmd.LocalFlags().VisitAll(func(fl *pflag.Flag) {
+		if !fl.Hidden && fl.Name != "help" {
+			flags = append(flags, "--"+fl.Name)
 		}
+	})
+	var list string
+	switch len(flags) {
+	case 0:
+		list = "an edit flag"
+	case 1:
+		list = flags[0]
+	default:
+		list = strings.Join(flags[:len(flags)-1], ", ") + ", or " + flags[len(flags)-1]
+	}
+	return fmt.Errorf(
+		"at least one of %s must be specified\n\n"+
+			"Example edit commands:\n"+
+			"  gh pr edit 123 --trigger\n"+
+			"  gh pr edit 123 --cq\n"+
+			"  gh pr edit 123 --topic \"my-feature\"\n"+
+			"  gh pr edit 123 --add-hashtag \"bugfix\"\n"+
+			"  gh pr edit 123 --add-reviewer user@google.com\n"+
+			"  gh pr edit 123 --add-owner\n"+
+			"  gh pr edit 123 --remove-attention me\n"+
+			"  gh pr edit 123 --add-label Commit-Queue=1",
+		list,
+	)
+}
 
-		targetBody := origBody
-		if cmd.Flags().Changed("body") {
-			origTrailers := ExtractTrailers(origMessage)
-			targetBody = MergeTrailers(opts.body, origTrailers)
-		}
-
-		if strings.TrimSpace(targetBody) != "" {
-			newMessage = strings.TrimSpace(targetTitle) + "\n\n" + strings.TrimLeft(targetBody, "\r\n")
-		} else {
-			newMessage = strings.TrimSpace(targetTitle) + "\n"
+func formatEditCommitMsgGuardError(args []string) error {
+	var checkoutHint string
+	if len(args) > 0 {
+		if target := strings.TrimSpace(SanitizeUntrustedText(args[0])); target != "" {
+			checkoutHint = fmt.Sprintf(
+				"\n  gh pr checkout %s   # if not already checked out locally",
+				target,
+			)
 		}
 	}
 
-	// Trailer flags apply last so that they win over whatever the
-	// message construction above produced, and so that --bug works on
-	// its own without touching the rest of the message.
-	for _, tf := range trailerFlags {
-		if !cmd.Flags().Changed(tf.flag) {
-			continue
-		}
-		var err error
-		newMessage, err = UpsertTrailer(newMessage, NormalizeTrailer(tf.key+": "+tf.value))
-		if err != nil {
-			return "", fmt.Errorf("error setting the %s: trailer on change %s: %w", tf.key, changeID, err)
-		}
-	}
-
-	return newMessage, nil
+	return fmt.Errorf(
+		"cannot update commit messages or bug trailers with 'gh pr edit'.\n\n"+
+			"Why: 'gh pr edit' updates server-side Gerrit metadata (reviewers, labels,\n"+
+			"attention set, topic, hashtags) without creating a patchset. In Gerrit, commit\n"+
+			"titles, descriptions, and Bug:/Fixed: trailers live inside the Git commit\n"+
+			"message of each patchset.\n\n"+
+			"To update the local commit message or trailers and upload cleanly:%s\n"+
+			"  gh pr push --title \"...\" --fixed b/123456\n"+
+			"  gh pr create --title \"...\" --bug b/123456   # for a brand-new CL\n\n"+
+			"For an earlier commit in a stack, edit via 'git rebase -i' (preserving each\n"+
+			"commit's Change-Id:) and run 'gh pr push --stack'.",
+		checkoutHint,
+	)
 }
 
 func newEditCmd() *cobra.Command {
@@ -411,17 +355,12 @@ func newEditCmd() *cobra.Command {
 
 	editCmd := &cobra.Command{
 		Use:   "edit [<id>]",
-		Short: "Edit a change (commit message, reviewers, labels, topic, hashtags)",
+		Short: "Edit change metadata (reviewers, attention set, labels, topic, hashtags)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  opts.runE(),
 	}
 
-	editCmd.Flags().StringVar(&opts.title, "title", "", "New commit title (first line of commit message)")
-	editCmd.Flags().StringVar(&opts.body, "body", "", "New commit body")
-	editCmd.Flags().StringVar(&opts.bug, "bug", "",
-		"Set the Bug: trailer, linking a Buganizer issue (accepts 123456, b/123456, an issue URL, a comma-separated list, or \"none\")")
-	editCmd.Flags().StringVar(&opts.fixed, "fixed", "",
-		"Set the Fixed: trailer, linking a Buganizer issue and closing it on submit (same accepted forms as --bug)")
+	opts.commitMsg.AddAsDisabled(editCmd)
 	editCmd.Flags().StringArrayVar(&opts.addReviewer, "add-reviewer", nil, "Add reviewer by email, ID, or @owners")
 	editCmd.Flags().StringArrayVarP(&opts.reviewer, "reviewer", "r", nil, "Alias for --add-reviewer (ghish-only)")
 	_ = editCmd.Flags().MarkHidden("reviewer")

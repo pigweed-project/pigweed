@@ -122,8 +122,9 @@ func TestGitHubIssueSyntaxError(t *testing.T) {
 		"Gerrit",     // pillar 2: why it does not work
 		"Fixed: b/",  // pillar 3: the trailer to use instead
 		"Bug: b/",    // pillar 3: the non-closing variant
-		"--fixed",    // pillar 3: the flag that writes it for you
-		"--bug",
+		"gh pr push --fixed b/<id>",
+		"gh pr push --bug b/<id>",
+		"gh pr create --fixed b/<id>",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("Error message is missing %q:\n%s", want, msg)

@@ -107,8 +107,8 @@ func validateFlagPolicySpec(spec flagPolicySpec) error {
 			return fmt.Errorf("mode=divergent requires both gh=\"<subcmd> --<flag>\" and doc=\"ghDivergenceHelp\"")
 		}
 	case flagModeUnsupportedGuard:
-		if strings.TrimSpace(spec.GH) == "" {
-			return fmt.Errorf("mode=unsupported-guard requires gh=\"<subcmd> --<flag>\"")
+		if strings.TrimSpace(spec.GH) == "" && strings.TrimSpace(spec.Reason) == "" {
+			return fmt.Errorf("mode=unsupported-guard requires gh=\"<subcmd> --<flag>\" or reason=\"<explanation>\"")
 		}
 	default:
 		return fmt.Errorf("mode=%q must be one of upstream, extension, divergent, or unsupported-guard", spec.Mode)
@@ -198,10 +198,6 @@ var baselineFlagPolicyCatalog = map[string]flagPolicySpec{
 	"pr diff:stat":      {Mode: flagModeExtension, Reason: "Diffstat summary view"},
 
 	// pr edit
-	"pr edit:title":            {Mode: flagModeUnsupportedGuard, GH: "pr edit --title"},
-	"pr edit:body":             {Mode: flagModeUnsupportedGuard, GH: "pr edit --body"},
-	"pr edit:bug":              {Mode: flagModeUnsupportedGuard, GH: "pr edit --body"},
-	"pr edit:fixed":            {Mode: flagModeUnsupportedGuard, GH: "pr edit --body"},
 	"pr edit:add-reviewer":     {Mode: flagModeUpstream, GH: "pr edit --add-reviewer"},
 	"pr edit:reviewer":         {Mode: flagModeExtension, Reason: "Hidden alias for --add-reviewer"},
 	"pr edit:add-owner":        {Mode: flagModeExtension, Reason: "Resolve and add Gerrit module code owners"},
@@ -859,5 +855,17 @@ func TestFlagPolicy_WorktreeCommandsUseRunE(t *testing.T) {
 	})
 	if foundFlags == 0 {
 		t.Errorf("expected flag registrations in %s, found 0", wtCmdPath)
+	}
+}
+
+func TestValidateFlagPolicySpec_UnsupportedGuard(t *testing.T) {
+	if err := validateFlagPolicySpec(flagPolicySpec{Mode: flagModeUnsupportedGuard, GH: "pr edit --title"}); err != nil {
+		t.Fatalf("expected gh= spec to validate, got: %v", err)
+	}
+	if err := validateFlagPolicySpec(flagPolicySpec{Mode: flagModeUnsupportedGuard, Reason: "Hidden guard redirecting --bug to gh pr push"}); err != nil {
+		t.Fatalf("expected reason= spec to validate, got: %v", err)
+	}
+	if err := validateFlagPolicySpec(flagPolicySpec{Mode: flagModeUnsupportedGuard}); err == nil {
+		t.Fatal("expected empty unsupported-guard spec to fail validation")
 	}
 }

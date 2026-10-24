@@ -242,29 +242,25 @@ Supported flags
 
 Editing commit messages and bug trailers
 ========================================
-Unlike GitHub (where pull request titles and descriptions live in the server
-database independently of Git commits), Gerrit stores the CL description inside
-the Git commit message of each patchset. Editing the commit message remotely on
-Gerrit without updating your local Git commit causes the next ``./gh pr push``
-or ``git rebase`` to overwrite the remote edit.
-
-For this reason, commit-message flags on ``pr edit`` (``--title``, ``--body``,
-``--bug``, and ``--fixed``) are currently disabled
-(`b/567763970 <https://issues.pigweed.dev/issues/567763970>`_) and print
-instructions for editing the local Git commit message surgically:
+Pass commit-message flags directly to ``./gh pr push`` (or ``./gh pr create``
+for a new CL) to update ``HEAD``'s message or bug trailers without clobbering
+``Change-Id:``:
 
 .. code-block:: console
 
-   # 1. Dump the current commit message to a temporary file:
-   $ git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"
+   # Update commit title, body, or bug trailers and upload a patchset:
+   $ ./gh pr push --title "pw_string: Fix bounds check" --fixed b/315378787
 
-   # 2. Edit "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP" surgically (keeping the existing Change-Id: line intact),
-   #    then apply the updated message and upload a new patchset:
-   $ git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"
-   $ ./gh pr push
+   # Read a multi-line commit body from a file or stdin preserving trailers:
+   $ ./gh pr push -F commit_body.txt
 
-For an earlier commit in a multi-CL stack, use ``git rebase -i`` while
-preserving every commit's ``Change-Id:`` footer, then run
+Passing ``--title``, ``--body``, ``-F``/``--body-file``, ``--bug``, or
+``--fixed`` to ``./gh pr edit`` fails immediately without contacting Gerrit and
+directs you to ``gh pr push``.
+
+For an earlier commit in a multi-CL stack, update commit messages locally with
+``git rebase -i`` (retaining every commit's ``Change-Id:`` footer, or only the
+earliest commit's ``Change-Id:`` when squashing), then run
 ``./gh pr push --stack``.
 
 GitHub ``#123`` closing keyword guard
@@ -659,9 +655,9 @@ Comparison with GitHub CLI (gh pr)
      - Adds ``--cq``, ``--topic``, ``--remove-topic``, ``--add-hashtag``,
        ``--remove-hashtag``, ``-r, --reviewer``, and ``--owner`` /
        ``--add-owner``; ``--add-reviewer`` accepts ``@owners``.
-       Commit-message flags (``--title``, ``--body``, ``--bug``,
-       ``--fixed``) redirect to local Git commit editing
-       (`b/567763970 <https://issues.pigweed.dev/issues/567763970>`_).
+       Commit-message flags (``--title``, ``--body``, ``--body-file``,
+       ``--bug``, ``--fixed``) are hidden guards that direct callers to
+       ``gh pr push``.
    * - ``pr list -a / --assignee``
      - Filters changes by Gerrit ``reviewer:``.
      - Gerrit 3.8+ removed assignees; ``-a`` queries reviewers instead.

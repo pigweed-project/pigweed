@@ -78,12 +78,13 @@ Commands:
     remotes (`gerrit.remote` in `.ghish.toml`, `branch.<cur>.remote`, `goog`,
     `aosp`, `partner`) and default branches (`gerrit.default_branch`, tracked
     upstream merge branch, `refs/remotes/<remote>/HEAD`, `main`).
-  - Flags: `-r, --reviewer <email|@owners>`, `--owner`, `-c, --cc <email>`,
-    `--auto`, `--trigger [1|2]` (alias `--cq [1|2]`; defaults to `+1` dry run on
-    `Commit-Queue` or `Presubmit-Ready`; `2` submits), `-d, --draft` (WIP),
-    `-B, --base <branch>`, `--stack`, `--publish`, `-o, --push-option <opt>`,
-    `--no-verify`, `--nightly` / `--submit-at <HH:MM>` (see *Scheduled
-    submit* under `pr merge`).
+  - Flags: `-t, --title <str>`, `-b, --body <str>`, `-F, --body-file <file|->`,
+    `--bug <id>`, `--fixed <id>`, `-r, --reviewer <email|@owners>`, `--owner`,
+    `-c, --cc <email>`, `--auto`, `--trigger [1|2]` (alias `--cq [1|2]`;
+    defaults to `+1` dry run on `Commit-Queue` or `Presubmit-Ready`; `2`
+    submits), `-d, --draft` (WIP), `-B, --base <branch>`, `--stack`,
+    `--publish`, `-o, --push-option <opt>`, `--no-verify`, `--nightly` /
+    `--submit-at <HH:MM>` (see *Scheduled submit* under `pr merge`).
 - **`./gh pr push`** (aliases: `./gh push`, `./gh pr upload`): Push local
   commit(s) to Gerrit to upload a **new patchset** on an existing change.
   - *Branch Memory*: Automatically queries Gerrit by `Change-Id` to discover
@@ -91,8 +92,9 @@ Commands:
     on the right branch.
   - *Stack & Submodule Guards*: Enforces stack and submodule safety checks
     before pushing.
-  - Supports `--ready` (remove WIP) and all `create` flags (including `--owner`
-    and `-r @owners`).
+  - Supports `--ready` (remove WIP) and all `create` flags (including `-t`,
+    `-b`, `-F`, `--bug`, `--fixed` to safely amend `HEAD`'s commit message and
+    trailers, rolling back `HEAD` automatically if pre-flight or push fails).
   - *Smart Fallback*: If pushed with `--trigger` / `--cq` or metadata on an
     already up-to-date commit, `pr push` automatically applies updates via the
     Gerrit API instead of failing.
@@ -114,14 +116,10 @@ Commands:
     (`--remove-topic`, `--add-hashtag`, `--remove-hashtag`). Rejects `--topic`
     and `-o topic=...` before pushing if the project sets `Topics-Not-Supported`
     or `forbid_topics = true` in `.ghish.toml`.
-  - *Commit-Message Edits (`b/567763970`)*: Unlike GitHub (where PR titles and
-    descriptions live in the server database), Gerrit stores the CL description
-    inside the Git commit message of each patchset. Commit-message flags
-    (`--title`, `--body`, `--bug`, `--fixed`) are disabled in
-    `gh pr edit` and redirect to local surgical commit-message editing:
-    1. `git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`
-    2. Surgically edit `"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"` (preserving `Change-Id:`)
-    3. `git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP" && ./gh pr push`
+  - *Commit Messages & Bug Trailers*: `pr edit` only updates server metadata.
+    To update a CL's commit title, description, or `Bug:`/`Fixed:` trailers,
+    pass `-t/--title`, `-b/--body`, `-F/--body-file`, `--bug`, or `--fixed` on
+    `./gh pr push` (or `./gh pr create` for a new CL).
 
 ### 3. Review & Comment
 - **`./gh pr comment [<id>] --path <file> [--line <line>] (-m <msg> | -F <file|->)`** (or `-b <msg>`):
@@ -227,17 +225,17 @@ Commands:
 ### 6. Buganizer Issue Management (`./gh issue`)
 - **`./gh issue status`** & **`./gh issue list [--assignee @me|<email>] [--state open|closed|all] [--label P1|S2|bug|vulnerability|component:<id|alias>|hotlist:<id|alias>|!hotlist:<id|alias>] [--search "<q>"]`**.
 - **`./gh issue view [<id>|<url>] [--comments] [--json <fields>]`**: View issue
-  (resolves `Bug:`/`Fixed:`/`Fixes:`/`Closes:` trailer from `HEAD` if `<id>` is omitted).
-- **`./gh issue develop <id> [--checkout | -w|--worktree]`**: Create feature
-  branch or allocate an isolated warm worktree slot (`./gh wt use --issue <id>`).
-- **`./gh issue create -t "<title>" (-b "<body>" | -F <file|->) [-C <component-id>] [--amend | --commit]`**:
-  Create a Buganizer issue (`--amend` appends `Bug: b/<new-id>` or configured
-  `issue.trailer_format` to `HEAD` using `git commit --amend --only`). Resolves
-  component ID via `-C`/`-l component:<id|alias>` -> `[issue.path_components]` ->
-  nearest `OWNERS` (`# COMPONENT:` / `# Buganizer component:`) ->
-  `issue.default_component` -> `ghish.componentid` -> profile default.
-- **`./gh issue comment [<id>] (-m "<text>" | -b "<text>" | -F <file|->)`**, **`./gh issue edit [<id>]`**,
-  **`./gh issue close [<id>]`**, **`./gh issue reopen [<id>]`**.
+  (resolves `Bug:`/`Fixed:`/`Fixes:` trailer from `HEAD` if `<id>` is omitted).
+- **`./gh issue develop [<id>] [-b <base>] [-n <name>] [-w|--worktree]`**:
+  Create branch or allocate a warm worktree slot (`./gh wt use --issue <id>`).
+- **`./gh issue create -t <txt> (-b <msg> | -F <file|->) [-C <id>] [--amend]`**
+  Create issue (`--amend` adds `Bug: b/<id>` or `issue.trailer_format` to
+  `HEAD`; pre-commit, pass `--bug b/<id>` to `./gh pr create -t ...`); resolves
+  component via `-C`/`-l`, `.ghish.toml`, or `OWNERS`.
+- **`./gh issue comment [<id>] (-m|-b <msg> | -F <file|->)`**
+- **`./gh issue edit [<id>] [-t <txt>] [--add-assignee <email>] [-l <label>]`**
+- **`./gh issue close [<id>] [-r <reason>] [--duplicate-of <n>] [-c|-m <msg>]`**
+- **`./gh issue reopen [<id>] [-c|-m <msg>]`**
 
 ### 7. Where `gh` Habits Break
 Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
@@ -297,13 +295,12 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 5. **Never Ignore Command Failures or Exit Codes**: Invalid inputs fail fast
    with non-zero exit codes. Always inspect stderr and address reported errors.
 6. **Preserve `Change-Id` and Commit Trailers**: Preserve `Change-Id` footers
-   when editing, amending, squashing, or rebasing commits. Gerrit uses these to
-   link git commits to Change Lists. If multiple commits are combined, ensure
-   ONLY the `Change-Id` from the earliest commit in the series is retained in
-   the final commit message. To edit a commit message, dump it to a file
-   (`git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`), edit the file
-   surgically while keeping `Change-Id:` intact, and apply with
-   `git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`.
+   when editing, amending, squashing, or rebasing commits. Prefer
+   `./gh pr push --title/--body/-F/--bug/--fixed` (or `./gh pr create ...`) to
+   update `HEAD`'s commit message and trailers safely. For local rebases or
+   squashes, keep ONLY the earliest commit's `Change-Id`, or dump to
+   `COMMIT_EDITMSG_TMP` (`git log -1 --format=%B HEAD > <tmp>`), edit
+   surgically, and apply with `git commit --amend --only -F <tmp>`.
 7. **Link Bugs With Trailers, Never `Fixes #N` or Fabricated Bug IDs**: GitHub's
    `Fixes #456` does **nothing** on Gerrit. Use `Bug: b/456` or `Fixed: b/456`
    trailers in the commit message (or `./gh issue create --amend`), and verify

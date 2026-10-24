@@ -183,11 +183,10 @@ disabled).
    `./gh pr checks --watch --fail-fast` as a background command and stop
    calling tools until notified.
 5. **NEVER clobber `Change-Id` footers**: Never run `git commit --amend -m`
-   without the existing `Change-Id:`. To amend code without changing the
-   message, use `git commit --amend --no-edit`. To edit a commit message, dump
-   it to a file (`git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`), edit
-   the file surgically while keeping the original `Change-Id:` intact, and
-   apply it with `git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`.
+   without the existing `Change-Id:`. Use `git commit --amend --no-edit` for
+   code-only amends, `-t`/`-b`/`-F`/`--bug`/`--fixed` on `./gh pr push` or
+   `./gh pr create` for single-commit message edits, or surgical temp-file
+   amends (`git commit --amend --only -F <file>`) during rebases.
 
 ### Quick Command Reference
 
@@ -196,8 +195,10 @@ disabled).
   - Unified patch diff: `./gh pr diff [<id>]`
   - Check out a CL locally: `./gh pr checkout <id>`
 - **Create, push, or edit a CL**:
-  - Create new CL: `./gh pr create [--cq] [--draft] [-r <email>]`
-  - Upload new patchset: `./gh pr push [--cq] [--stack]`
+  - Create new CL: `./gh pr create [--cq] [--draft] [-r <email>]` (accepts
+    `-t`, `-b`, `-F`, `--bug`, `--fixed`)
+  - Upload new patchset: `./gh pr push [--cq] [--stack]` (single-commit CLs
+    also accept `-t`, `-b`, `-F`, `--bug`, `--fixed`)
   - Edit CL metadata (CQ, reviewers, topic, hashtags):
     `./gh pr edit [<id>] [--cq] [--add-reviewer <email>] [--topic <name>]`
 - **Respond to or post review comments** (stage inline replies first, then publish once):

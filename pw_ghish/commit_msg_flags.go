@@ -97,13 +97,35 @@ func ParseCommitMessageFlags(cmd *cobra.Command) CommitMessageFlags {
 	}
 }
 
+var commitMessageFlagNames = [...]string{"title", "body", "body-file", "bug", "fixed"}
+
+// AddAsDisabled registers commit-message flags on editCmd as hidden
+// unsupported-guard flags so callers receive an actionable redirect error
+// instead of an unknown-flag error while `--help` only lists supported flags.
+func (f *CommitMessageFlags) AddAsDisabled(editCmd *cobra.Command) {
+	//ghish:flag mode=unsupported-guard gh="pr edit --title"
+	editCmd.Flags().StringVarP(&f.Title, "title", "t", "", "New commit title (first line of commit message)")
+	//ghish:flag mode=unsupported-guard gh="pr edit --body"
+	editCmd.Flags().StringVarP(&f.Body, "body", "b", "", "New commit body")
+	//ghish:flag mode=unsupported-guard gh="pr edit --body-file"
+	editCmd.Flags().StringVarP(&f.BodyFile, "body-file", "F", "", "Read commit body from file")
+	//ghish:flag mode=unsupported-guard reason="Hidden guard redirecting --bug to gh pr push"
+	editCmd.Flags().StringVar(&f.Bug, "bug", "", "Set the Bug: trailer")
+	//ghish:flag mode=unsupported-guard reason="Hidden guard redirecting --fixed to gh pr push"
+	editCmd.Flags().StringVar(&f.Fixed, "fixed", "", "Set the Fixed: trailer")
+	for _, name := range commitMessageFlagNames {
+		_ = editCmd.Flags().MarkHidden(name)
+	}
+}
+
 // HasAny reports whether any commit-message flag was explicitly provided on cmd.
 func (f CommitMessageFlags) HasAny(cmd *cobra.Command) bool {
-	return cmd.Flags().Changed("title") ||
-		cmd.Flags().Changed("body") ||
-		cmd.Flags().Changed("body-file") ||
-		cmd.Flags().Changed("bug") ||
-		cmd.Flags().Changed("fixed")
+	for _, name := range commitMessageFlagNames {
+		if cmd.Flags().Changed(name) {
+			return true
+		}
+	}
+	return false
 }
 
 var githubHashIssueTokenRegex = regexp.MustCompile(`^#(\d+)$`)

@@ -232,9 +232,12 @@ func CheckAgentCommand(command string) string {
 func formatChangeIDClobberBlockMessage(detail string) string {
 	return fmt.Sprintf(
 		"Blocked %s: overwriting or dropping an existing 'Change-Id:' trailer causes Gerrit to create a duplicate CL or reject the push.\n"+
+			"  • Update commit title, body, or bug trailers safely when uploading (recommended):\n"+
+			"      ./gh pr push --title \"<subject>\" --body \"<body>\" [--bug b/<id> | --fixed b/<id>]\n"+
+			"      (or './gh pr create --title ...' for a brand-new CL)\n"+
 			"  • Amend staged files without changing the message:\n"+
 			"      git commit --amend --no-edit\n"+
-			"  • Surgically edit the commit message via a file (preferred over re-typing -m):\n"+
+			"  • Surgically edit the commit message via a file (for local rebases or squashes):\n"+
 			"      1. Dump current message: git log -1 --format=%%B HEAD > \"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP\"\n"+
 			"      2. Edit COMMIT_EDITMSG_TMP surgically (keep the original 'Change-Id: I...' footer intact;\n"+
 			"         if combining multiple commits, keep ONLY the earliest commit's Change-Id)\n"+

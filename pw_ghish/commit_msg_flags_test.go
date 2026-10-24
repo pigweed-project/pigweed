@@ -18,10 +18,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type zeroByteReader struct{}
@@ -523,4 +525,27 @@ func TestBuildInitialCommitMessage(t *testing.T) {
 			t.Errorf("got:\n%q\nwant:\n%q", got, want)
 		}
 	})
+}
+
+func TestCommitMessageFlags_AddAsDisabledParity(t *testing.T) {
+	enabled := &cobra.Command{Use: "create"}
+	AddCommitMessageFlags(enabled)
+
+	disabled := &cobra.Command{Use: "edit"}
+	var flags CommitMessageFlags
+	flags.AddAsDisabled(disabled)
+
+	var enabledSpecs, disabledSpecs []string
+	enabled.Flags().VisitAll(func(fl *pflag.Flag) {
+		enabledSpecs = append(enabledSpecs, fl.Name+":"+fl.Shorthand)
+	})
+	disabled.Flags().VisitAll(func(fl *pflag.Flag) {
+		if !fl.Hidden {
+			t.Errorf("expected disabled flag --%s to be hidden", fl.Name)
+		}
+		disabledSpecs = append(disabledSpecs, fl.Name+":"+fl.Shorthand)
+	})
+	if !slices.Equal(enabledSpecs, disabledSpecs) {
+		t.Fatalf("flag parity mismatch: enabled=%v, disabled=%v", enabledSpecs, disabledSpecs)
+	}
 }

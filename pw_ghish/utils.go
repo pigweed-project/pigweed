@@ -182,22 +182,6 @@ func trailerKey(trailer string) (string, bool) {
 	return strings.TrimSpace(strings.SplitN(first, ":", 2)[0]), true
 }
 
-// MentionsTrailerKey reports whether text has a line beginning with `key:`.
-//
-// This is the tolerant test, used to answer "has the user already dealt with
-// this trailer?" -- for refusing to drop a trailer, and for detecting that a
-// flag and a hand-written message both try to set the same one. It accepts
-// leading whitespace on purpose, so that a slightly misindented line still
-// counts as the user having addressed it.
-//
-// It is deliberately not the test MergeTrailers uses, which requires the line
-// to sit flush against the left margin because there an indented line is a
-// code sample whose indentation must survive.
-func MentionsTrailerKey(text, key string) bool {
-	matched, _ := regexp.MatchString(`(?mi)^\s*`+regexp.QuoteMeta(key)+`:`, text)
-	return matched
-}
-
 // UpsertTrailer returns commitMsg with trailerLine as the one and only trailer
 // for its key: an existing trailer with that key is replaced where it stands,
 // duplicates are collapsed, and if the key is absent the line is appended to

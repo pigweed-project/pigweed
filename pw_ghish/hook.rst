@@ -74,8 +74,10 @@ execution:
        ``git commit -m`` without ``Change-Id:``, multiple ``Change-Id:``
        footers, or ``git filter-branch``
      - **Blocked**: Prevents overwriting, dropping, or duplicating Gerrit
-       ``Change-Id:`` footers; directs the agent to ``git commit --amend
-       --no-edit`` or surgical file editing via ``"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`` and
+       ``Change-Id:`` footers; directs the agent to ``./gh pr push --title
+       ... --body ... [--bug ... | --fixed ...]`` (or ``./gh pr create ...``),
+       ``git commit --amend --no-edit``, or surgical file editing via
+       ``"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`` and
        ``git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"``.
    * - Raw ``git push`` (except ``--help``)
      - **Blocked**: Directs the agent to ``./gh pr create`` (new CL),

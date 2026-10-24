@@ -67,8 +67,9 @@ Changes to ``pw_ghish`` follow strict CLI reliability and testing conventions
   ``cmd.OutOrStdout()`` and diagnostics/warnings to ``cmd.ErrOrStderr()`` so
   unit tests can capture both streams hermetically.
 * **Commit trailer preservation**: Commands that modify commit messages (such as
-  ``pr edit`` and ``issue create --amend``) parse and preserve existing Git
-  trailers (``Change-Id:``, ``Bug:``, ``Fixed:``, ``Reviewed-on:``).
+  ``pr create``, ``pr push``, and ``issue create --amend``) parse and preserve
+  existing Git trailers (``Change-Id:``, ``Bug:``, ``Fixed:``,
+  ``Reviewed-on:``).
 * **Actionable error messages**: Errors state what failed, why (the precondition
   or server state), the exact command to fix it, and an inspection command to
   check current state.

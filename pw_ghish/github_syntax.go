@@ -106,8 +106,9 @@ func GitHubIssueSyntaxError(refs []GitHubIssueRef, where string) error {
 			"  Bug: b/<id>      links the bug without closing it\n\n"+
 			"gh-ish can write the trailer for you, and accepts a bare number, a b/ ID, or\n"+
 			"an issue URL:\n\n"+
-			"  gh pr edit <change> --fixed b/<id>\n"+
-			"  gh pr edit <change> --bug b/<id>\n\n"+
+			"  gh pr push --fixed b/<id>\n"+
+			"  gh pr push --bug b/<id>\n"+
+			"  gh pr create --fixed b/<id>\n\n"+
 			"This is not translated automatically on purpose: #%s is a repo-local GitHub\n"+
 			"number, so b/%s would almost certainly be an unrelated Buganizer issue.",
 		where, strings.Join(quoted, "\n"), refs[0].Match, refs[0].Number, refs[0].Number)

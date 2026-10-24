@@ -76,6 +76,7 @@ go_library(
         "@com_github_andygrunwald_go_gerrit//:go-gerrit",
         "@com_github_burntsushi_toml//:toml",
         "@com_github_spf13_cobra//:cobra",
+        "@com_github_spf13_pflag//:pflag",
     ],
 )
 

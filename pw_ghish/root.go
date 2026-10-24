@@ -313,11 +313,13 @@ CORE COMMAND CHEAT-SHEET
    - Cherry-pick a change onto the active branch:
      $ %[1]s pr cherry-pick <change_id>
 
-4. CREATING & EDITING
+4. CREATING, PUSHING & EDITING
    - Create a new change from current HEAD:
-     $ %[1]s pr create [-t "Title"] [-b "Body"] [--reviewer "user@google.com"] [--draft]
-   - Edit change metadata:
-     $ %[1]s pr edit <change_id> [--add-reviewer "email"] [--add-label "Code-Review=2"]
+     $ %[1]s pr create [-t "Title"] [-b "Body"] [--bug b/<id>] [--reviewer "user@google.com"] [--draft]
+   - Push a new patchset (and optionally update commit message or trailers):
+     $ %[1]s pr push [-t "New title"] [-b "New body"] [--fixed b/<id>] [--cq]
+   - Edit change metadata (reviewers, CQ, topic, hashtags) without uploading a patchset:
+     $ %[1]s pr edit <change_id> [--cq] [--topic <name>] [--add-reviewer "email"] [--add-label "Code-Review=2"]
 
 5. REVIEWS & RESPONDING
    - Submit review (Approve / Request changes / Publish staged drafts):
