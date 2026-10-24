@@ -16,6 +16,9 @@ package pw_ghish
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -245,5 +248,214 @@ func TestIssueStatus_AnnotatesWorktreeResidency(t *testing.T) {
 	}
 	if !strings.Contains(out, "MOUNTED") || !strings.Contains(out, "pw-02") {
 		t.Errorf("expected issue status to annotate issue #315378787 with MOUNTED (pw-02), got:\n%s", out)
+	}
+}
+
+func locateRepoRootScript(t *testing.T, name string) string {
+	t.Helper()
+	candidates := []string{
+		filepath.Join("..", name),
+	}
+	if realTestFile, err := filepath.EvalSymlinks("workspace_hook_test.go"); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(filepath.Dir(realTestFile)), name))
+	}
+	for _, c := range candidates {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			abs, err := filepath.Abs(c)
+			if err == nil {
+				return abs
+			}
+			return c
+		}
+	}
+	t.Fatalf("could not locate repository root script %q (tried %v)", name, candidates)
+	return ""
+}
+
+func setupFakeGhWrapperRepo(t *testing.T) (repoDir string, hashFile string, binDir string, readGitCalls func() []string) {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git binary not found in PATH")
+	}
+
+	repoDir = t.TempDir()
+	src := locateRepoRootScript(t, "gh")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", src, err)
+	}
+	dst := filepath.Join(repoDir, "gh")
+	if err := os.WriteFile(dst, data, 0o755); err != nil {
+		t.Fatalf("WriteFile(%s): %v", dst, err)
+	}
+
+	dirs := []string{
+		filepath.Join(repoDir, "pw_ghish"),
+		filepath.Join(repoDir, "out", "gh"),
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s): %v", d, err)
+		}
+	}
+
+	files := map[string]string{
+		filepath.Join(repoDir, "MODULE.bazel"):            "module()\n",
+		filepath.Join(repoDir, "MODULE.bazel.lock"):       "{}\n",
+		filepath.Join(repoDir, "pw_ghish", "BUILD.bazel"): "# build\n",
+		filepath.Join(repoDir, "pw_ghish", "README.md"):   "# docs\n",
+		filepath.Join(repoDir, "pw_ghish", "docs.rst"):    "Docs\n====\n",
+		filepath.Join(repoDir, "pw_ghish", "root.go"):     "package pw_ghish\n",
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s): %v", path, err)
+		}
+	}
+
+	runGit := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command(realGit, args...)
+		cmd.Dir = repoDir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_NOSYSTEM=1",
+			"GIT_AUTHOR_NAME=Test",
+			"GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=Test",
+			"GIT_COMMITTER_EMAIL=test@example.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, string(out))
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	runGit("init", "-q", "--initial-branch=main")
+	runGit("config", "commit.gpgsign", "false")
+	runGit("add", ".")
+	runGit("commit", "-q", "-m", "initial")
+
+	treeHash := runGit("rev-parse", "HEAD:pw_ghish")
+	lockHash := runGit("rev-parse", "HEAD:MODULE.bazel.lock")
+
+	cachedBin := filepath.Join(repoDir, "out", "gh", "gh-ish")
+	cachedScript := "#!/bin/sh\necho \"CACHED_GH_ISH invoked_as=${GH_ISH_INVOKED_AS:-} args=$*\"\n"
+	if err := os.WriteFile(cachedBin, []byte(cachedScript), 0o755); err != nil {
+		t.Fatalf("WriteFile(%s): %v", cachedBin, err)
+	}
+
+	hashFile = filepath.Join(repoDir, "out", "gh", "git_hash")
+	if err := os.WriteFile(hashFile, []byte(treeHash+":"+lockHash+":\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s): %v", hashFile, err)
+	}
+
+	binDir = t.TempDir()
+	gitLogPath := filepath.Join(t.TempDir(), "git.log")
+	gitWrapper := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '" + gitLogPath + "'\nexec '" + realGit + "' \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(gitWrapper), 0o755); err != nil {
+		t.Fatalf("WriteFile(git wrapper): %v", err)
+	}
+	poisonBazelisk := "#!/bin/sh\necho \"UNEXPECTED_BAZELISK_SUBPROCESS\" >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(binDir, "bazelisk"), []byte(poisonBazelisk), 0o755); err != nil {
+		t.Fatalf("WriteFile(poison bazelisk): %v", err)
+	}
+
+	readGitCalls = func() []string {
+		t.Helper()
+		data, err := os.ReadFile(gitLogPath)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatalf("ReadFile(%s): %v", gitLogPath, err)
+		}
+		_ = os.Remove(gitLogPath)
+		var calls []string
+		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			if line != "" {
+				calls = append(calls, line)
+			}
+		}
+		return calls
+	}
+
+	return repoDir, hashFile, binDir, readGitCalls
+}
+
+func TestGhWrapper_WarmFastPathAndRebuildDetection(t *testing.T) {
+	repoDir, hashFile, binDir, readGitCalls := setupFakeGhWrapperRepo(t)
+
+	baseEnv := append(os.Environ(),
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"PW_GH_FORCE_BUILD=",
+		"PW_GH_USE_CIPD=",
+		"GH_ISH_INVOKED_AS=",
+	)
+
+	// 1. Warm fast-path: spawns at most 2 fast read-only git calls (rev-parse + diff-index) and 0 bazelisk calls.
+	cmd := exec.Command(filepath.Join(repoDir, "gh"), "--help")
+	cmd.Dir = repoDir
+	cmd.Env = baseEnv
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("./gh --help on warm fast-path failed: %v\nOutput:\n%s", err, string(out))
+	}
+	if !strings.Contains(string(out), "CACHED_GH_ISH invoked_as= args=--help") {
+		t.Errorf("unexpected warm fast-path output: %s", string(out))
+	}
+	if calls := readGitCalls(); len(calls) > 2 {
+		t.Errorf("warm fast-path spawned %d git calls, want <= 2: %v", len(calls), calls)
+	}
+
+	// 2. Modifying .md or .rst files in pw_ghish/ must NOT trigger a rebuild.
+	for _, docFile := range []string{"README.md", "docs.rst"} {
+		docPath := filepath.Join(repoDir, "pw_ghish", docFile)
+		if err := os.WriteFile(docPath, []byte("updated documentation\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s): %v", docPath, err)
+		}
+	}
+	cmdDoc := exec.Command(filepath.Join(repoDir, "gh"), "--version")
+	cmdDoc.Dir = repoDir
+	cmdDoc.Env = baseEnv
+	outDoc, err := cmdDoc.CombinedOutput()
+	if err != nil {
+		t.Fatalf("./gh --version after modifying .md/.rst failed: %v\nOutput:\n%s", err, string(outDoc))
+	}
+	if !strings.Contains(string(outDoc), "CACHED_GH_ISH invoked_as= args=--version") {
+		t.Errorf("expected cached binary when only .md/.rst changed, got: %s", string(outDoc))
+	}
+	if calls := readGitCalls(); len(calls) > 2 {
+		t.Errorf("warm fast-path with dirty .md/.rst spawned %d git calls, want <= 2: %v", len(calls), calls)
+	}
+
+	// 3. Modifying a tracked .go file in pw_ghish/ MUST trigger a rebuild.
+	goFile := filepath.Join(repoDir, "pw_ghish", "root.go")
+	if err := os.WriteFile(goFile, []byte("package pw_ghish\n// modified\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s): %v", goFile, err)
+	}
+
+	fakeBazelisk := `#!/bin/sh
+mkdir -p bazel-bin/pw_ghish/gh-ish_
+cat > bazel-bin/pw_ghish/gh-ish_/gh-ish << 'EOF'
+#!/bin/sh
+echo "REBUILT_GH_ISH args=$*"
+EOF
+chmod +x bazel-bin/pw_ghish/gh-ish_/gh-ish
+`
+	if err := os.WriteFile(filepath.Join(binDir, "bazelisk"), []byte(fakeBazelisk), 0o755); err != nil {
+		t.Fatalf("WriteFile(fake bazelisk): %v", err)
+	}
+
+	cmdRebuild := exec.Command(filepath.Join(repoDir, "gh"), "pr", "status")
+	cmdRebuild.Dir = repoDir
+	cmdRebuild.Env = baseEnv
+	outRebuild, err := cmdRebuild.CombinedOutput()
+	if err != nil {
+		t.Fatalf("./gh after modifying .go file failed: %v\nOutput:\n%s", err, string(outRebuild))
+	}
+	if !strings.Contains(string(outRebuild), "REBUILT_GH_ISH args=pr status") {
+		t.Errorf("expected rebuild when tracked .go file is modified, got: %s", string(outRebuild))
+	}
+	if _, err := os.Stat(hashFile); !os.IsNotExist(err) {
+		t.Errorf("expected git_hash to be removed after dirty rebuild, got err=%v", err)
 	}
 }

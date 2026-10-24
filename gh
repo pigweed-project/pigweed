@@ -26,21 +26,60 @@
 
 set -e
 
-if test -n "$BASH"; then
-  declare -r _PW_SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# Resolve the directory containing this script using pure Bash parameter
+# expansion when invoked as a non-symlinked path (e.g. `./gh`) to avoid
+# spawning `dirname` and `readlink` subshells on the warm fast-path.
+if [ -n "$BASH" ] && [ ! -L "${BASH_SOURCE[0]}" ]; then
+  case "${BASH_SOURCE[0]}" in
+    ./gh | gh) _PW_SCRIPT_DIR="$PWD" ;;
+    */*)
+      _PW_SCRIPT_DIR="${BASH_SOURCE[0]%/*}"
+      case "$_PW_SCRIPT_DIR" in
+        /*)
+          case "$_PW_SCRIPT_DIR" in
+            */.* | */..) _PW_SCRIPT_DIR="$(cd "$_PW_SCRIPT_DIR" && pwd)" ;;
+          esac
+          ;;
+        .) _PW_SCRIPT_DIR="$PWD" ;;
+        *) _PW_SCRIPT_DIR="$(cd "$_PW_SCRIPT_DIR" && pwd)" ;;
+      esac
+      ;;
+    *) _PW_SCRIPT_DIR="$PWD" ;;
+  esac
+elif test -n "$BASH"; then
+  _PW_SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 elif test -n "$ZSH_NAME"; then
-  declare -r _PW_SCRIPT_DIR="${0:A:h}"
+  _PW_SCRIPT_DIR="${0:A:h}"
 else
-  declare -r _PW_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  _PW_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 fi
+declare -r _PW_SCRIPT_DIR
 
 export BAZELISK_SKIP_WRAPPER=1
 
-_CALLER_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || true)
-_COMMON_GIT_DIR=$(git -C "$_PW_SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+# Resolve the repository paths and the content hashes of pw_ghish/ and
+# MODULE.bazel.lock in a single lock-free `git rev-parse` call. The combined
+# hash is compared against `out/gh/git_hash` (written after each build) to
+# detect when the cached `out/gh/gh-ish` binary needs to be rebuilt.
+{ read -r _SCRIPT_TOP; read -r _COMMON_GIT_DIR; read -r _TREE_HASH; read -r _LOCK_HASH; } < <(
+  GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 \
+  git -C "$_PW_SCRIPT_DIR" rev-parse \
+    --show-toplevel \
+    --path-format=absolute --git-common-dir \
+    HEAD:pw_ghish HEAD:MODULE.bazel.lock 2>/dev/null || true
+)
 _MAIN_REPO_DIR=""
 if [ -n "$_COMMON_GIT_DIR" ]; then
   _MAIN_REPO_DIR=$(dirname "$_COMMON_GIT_DIR")
+fi
+if [ "$PWD" = "$_PW_SCRIPT_DIR" ] || [ "$PWD" -ef "$_PW_SCRIPT_DIR" ] || { [[ "$PWD" == "${_PW_SCRIPT_DIR}/"* ]] && [ ! -e "$PWD/.git" ]; }; then
+  _CALLER_TOPLEVEL="$_SCRIPT_TOP"
+else
+  _CALLER_TOPLEVEL=$(GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 git rev-parse --show-toplevel 2>/dev/null || true)
+fi
+_CURRENT_HASH=""
+if [ -n "$_TREE_HASH" ] && [ -n "$_LOCK_HASH" ]; then
+  _CURRENT_HASH="${_TREE_HASH}:${_LOCK_HASH}:"
 fi
 
 if [ -d "${_PW_SCRIPT_DIR}/environment/cipd/packages/bazelisk" ]; then
@@ -75,7 +114,7 @@ export BUILD_WORKING_DIRECTORY="${PWD}"
 # When invoked from a downstream superproject (e.g. via a `gh -> pigweed/gh`
 # symlink) or when PW_GH_USE_CIPD is set, prefer the CIPD prebuilt binary so
 # downstream GN/CMake projects do not pay a Bazel + Go toolchain build penalty.
-if [ -z "${PW_GH_FORCE_BUILD:-}" ] && { [ -n "${PW_GH_USE_CIPD:-}" ] || { [ -n "$_CALLER_TOPLEVEL" ] && [ "$_CALLER_TOPLEVEL" != "$_PW_SCRIPT_DIR" ]; }; }; then
+if [ -z "${PW_GH_FORCE_BUILD:-}" ] && { [ -n "${PW_GH_USE_CIPD:-}" ] || { [ -n "$_CALLER_TOPLEVEL" ] && [ "$_CALLER_TOPLEVEL" != "$_PW_SCRIPT_DIR" ] && [ ! "$_CALLER_TOPLEVEL" -ef "$_PW_SCRIPT_DIR" ]; }; }; then
   for _CIPD_GH in \
     "${PW_GH_BIN:-}" \
     "${PW_ENVIRONMENT_ROOT:-}/cipd/packages/pigweed/gh-ish" \
@@ -87,6 +126,24 @@ if [ -z "${PW_GH_FORCE_BUILD:-}" ] && { [ -n "${PW_GH_USE_CIPD:-}" ] || { [ -n "
       exec "$_CIPD_GH" "$@"
     fi
   done
+fi
+
+# Prebuilt cache directory (defaults to out/gh, which is .gitignored in Pigweed).
+declare -r _GH_DIR="${_PW_GH_OUT_DIR:-${_PW_SCRIPT_DIR}/out/gh}"
+declare -r _GH_BIN="${_GH_DIR}/gh-ish"
+declare -r _GH_HASH_FILE="${_GH_DIR}/git_hash"
+
+# Run the cached binary directly when pw_ghish and its dependencies have not
+# changed since the last build, avoiding Bazel startup overhead. Documentation
+# edits under pw_ghish/ are ignored since they do not affect the binary.
+if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -x "$_GH_BIN" ] && [ -f "$_GH_HASH_FILE" ] && [ -n "$_CURRENT_HASH" ]; then
+  read -r _SAVED_HASH < "$_GH_HASH_FILE" 2>/dev/null || true
+  if [ "$_CURRENT_HASH" = "$_SAVED_HASH" ] &&
+     GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 \
+     git -C "$_PW_SCRIPT_DIR" diff-index --quiet HEAD -- \
+       pw_ghish ':(exclude)*.md' ':(exclude)*.rst' 2>/dev/null; then
+    exec "$_GH_BIN" "$@"
+  fi
 fi
 
 # Building gh-ish from source requires a Pigweed checkout with Bazel build files
@@ -127,9 +184,12 @@ _pw_gh_exec_cipd() {
   local bin="${root}/gh-ish"
   local stamp="${root}/.pw_gh_ensured"
 
+  local now="${EPOCHSECONDS:-$(date +%s)}"
+  local mtime
+  mtime=$(stat -c %Y "$stamp" 2>/dev/null || stat -f %m "$stamp" 2>/dev/null || echo 0)
   if [ ! -x "$bin" ] ||
     [ "$(cat "$stamp" 2>/dev/null || true)" != "$want" ] ||
-    [ -n "$(find "$stamp" -mmin +1440 2>/dev/null || true)" ]; then
+    [ $((now - mtime)) -gt 86400 ]; then
     mkdir -p "$root"
     if [ -t 2 ]; then
       printf " ⏱  Fetching %s from CIPD...\n" "$want" >&2
@@ -149,21 +209,15 @@ _pw_gh_exec_cipd() {
   exec "$bin" "$@"
 }
 
-# Prebuilt cache directory (defaults to out/gh, which is .gitignored in Pigweed).
-declare -r _GH_DIR="${_PW_GH_OUT_DIR:-${_PW_SCRIPT_DIR}/out/gh}"
-declare -r _GH_BIN="${_GH_DIR}/gh-ish"
-declare -r _GH_HASH_FILE="${_GH_DIR}/git_hash"
-
-_CURRENT_HASH=$(git -C "$_PW_SCRIPT_DIR" rev-parse HEAD:pw_ghish HEAD:MODULE.bazel.lock 2>/dev/null | tr '\n' ':' || true)
 if [ -z "$_CURRENT_HASH" ]; then
-  _CURRENT_HASH=$(git -C "$_PW_SCRIPT_DIR" rev-parse HEAD 2>/dev/null || true)
+  _CURRENT_HASH=$(GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 git -C "$_PW_SCRIPT_DIR" rev-parse HEAD 2>/dev/null || true)
 fi
 if [ -z "$_CURRENT_HASH" ] && [ -n "${PW_GH_DEBUG:-}" ]; then
   echo "Warning: git rev-parse HEAD failed in $_PW_SCRIPT_DIR; caching disabled." >&2
 fi
 
 _STALE=1
-_DIRTY=$(git -C "$_PW_SCRIPT_DIR" status --porcelain -- pw_ghish ':(exclude)*.md' 2>/dev/null || true)
+_DIRTY=$(GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 git -C "$_PW_SCRIPT_DIR" status --porcelain -- pw_ghish ':(exclude)*.md' ':(exclude)*.rst' 2>/dev/null || true)
 if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -z "$_DIRTY" ] && [ -n "$_CURRENT_HASH" ]; then
   if [ -f "$_GH_BIN" ] && [ -f "$_GH_HASH_FILE" ]; then
     _SAVED_HASH=$(cat "$_GH_HASH_FILE" 2>/dev/null || true)
@@ -171,7 +225,7 @@ if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -z "$_DIRTY" ] && [ -n "$_CURRENT_HASH" 
       _STALE=0
     fi
   fi
-  if [ $_STALE -eq 1 ] && [ -n "$_MAIN_REPO_DIR" ] && [ "$_MAIN_REPO_DIR" != "$_PW_SCRIPT_DIR" ]; then
+  if [ $_STALE -eq 1 ] && [ -n "$_MAIN_REPO_DIR" ] && [ "$_MAIN_REPO_DIR" != "$_PW_SCRIPT_DIR" ] && [ ! "$_MAIN_REPO_DIR" -ef "$_PW_SCRIPT_DIR" ]; then
     if [ -f "${_MAIN_REPO_DIR}/out/gh/gh-ish" ] && [ -f "${_MAIN_REPO_DIR}/out/gh/git_hash" ]; then
       _MAIN_SAVED_HASH=$(cat "${_MAIN_REPO_DIR}/out/gh/git_hash" 2>/dev/null || true)
       if [ "$_CURRENT_HASH" = "$_MAIN_SAVED_HASH" ]; then
@@ -190,25 +244,63 @@ if [ $_STALE -eq 1 ] && [ -z "${PW_GH_FORCE_BUILD:-}" ] && ! _pw_gh_can_build; t
 fi
 
 if [ $_STALE -eq 1 ]; then
-  if [ -t 1 ]; then
+  # Build chatter never goes to stdout, and reaches stderr only when stderr is
+  # a terminal. When stderr is a pipe (`./gh wt close p 2>&1 | head -1`),
+  # Bazel's "INFO:" lines would be the first thing the reader sees; once it
+  # exits, Bazel's next write fails, the build "fails", and `set -e` aborts
+  # here before the requested command ever runs. Capture the output instead
+  # and replay it only if the build really fails.
+  if [ -t 2 ]; then
     if [ -n "$_DIRTY" ]; then
-      printf " ⏱  Building gh-ish (local uncommitted changes in pw_ghish)...\n"
+      printf " ⏱  Building gh-ish (local uncommitted changes in pw_ghish)...\n" >&2
     else
-      printf " ⏱  Building gh-ish (commit %.8s)...\n" "${_CURRENT_HASH:-unknown}"
+      printf " ⏱  Building gh-ish (commit %.8s)...\n" "${_CURRENT_HASH:-unknown}" >&2
     fi
   fi
 
-  _LOCK_DIRTY=$(git -C "$_PW_SCRIPT_DIR" status --porcelain -- MODULE.bazel.lock 2>/dev/null || true)
+  _LOCK_DIRTY=$(GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 git -C "$_PW_SCRIPT_DIR" status --porcelain -- MODULE.bazel.lock 2>/dev/null || true)
+  _BUILD_STATUS=0
+  _BUILD_LOG=""
+  _pw_gh_cleanup_build() {
+    if [ -n "$_BUILD_LOG" ]; then
+      rm -f "$_BUILD_LOG"
+    fi
+    if [ -z "$_LOCK_DIRTY" ]; then
+      git -C "$_PW_SCRIPT_DIR" checkout -- MODULE.bazel.lock 2>/dev/null || true
+    fi
+  }
+  # Clean up the log and restore MODULE.bazel.lock however the build ends.
+  # INT/TERM exit through the EXIT trap; the traps are cleared before `exec`,
+  # which skips them anyway.
+  trap '_pw_gh_cleanup_build' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if [ ! -t 2 ]; then
+    mkdir -p "$_GH_DIR"
+    _BUILD_LOG="${_GH_DIR}/build.$$.log"
+    exec 3>"$_BUILD_LOG"
+  else
+    exec 3>&2
+  fi
   (
     cd "$_PW_SCRIPT_DIR"
     bazelisk build \
       --noshow_progress \
       --noshow_loading_progress \
       //pw_ghish:gh-ish
-  )
-  if [ -z "$_LOCK_DIRTY" ]; then
-    git -C "$_PW_SCRIPT_DIR" checkout -- MODULE.bazel.lock 2>/dev/null || true
+  ) >&3 2>&3 || _BUILD_STATUS=$?
+  exec 3>&-
+  if [ "$_BUILD_STATUS" -ne 0 ]; then
+    # Report from subshells: if stderr is a closed pipe, SIGPIPE kills only
+    # the subshell, so the build's own status still reaches the caller.
+    if [ -n "$_BUILD_LOG" ]; then
+      (cat "$_BUILD_LOG" >&2) || :
+    fi
+    (echo "Error: failed to build //pw_ghish:gh-ish (exit ${_BUILD_STATUS})." >&2) || :
+    exit "$_BUILD_STATUS"
   fi
+  _pw_gh_cleanup_build
+  trap - EXIT INT TERM
 
   _BUILT_BIN="${_PW_SCRIPT_DIR}/bazel-bin/pw_ghish/gh-ish_/gh-ish"
   if [ ! -f "$_BUILT_BIN" ]; then
