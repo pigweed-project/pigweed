@@ -47,6 +47,10 @@ class TraceTestInterface {
     const char* module;
     uint32_t trace_id;
     PW_TRACE_TIME_TYPE trace_time = 0;
+    // Whether trace_time was decoded from the event. The decoded time can
+    // legitimately be 0 (e.g. consecutive events within one clock tick), so it
+    // cannot be used as its own sentinel.
+    bool has_trace_time = false;
     bool operator==(const TraceInfo& b) const {
       return trace_ref == b.trace_ref && event_type == b.event_type &&
              module == b.module && trace_id == b.trace_id;
@@ -127,7 +131,7 @@ class TraceTestInterface {
         reinterpret_cast<TraceTestInterface*>(user_data);
     test_interface->sink_bytes_received_ += size;
 
-    if (test_interface->current_trace_event_.trace_time == 0) {
+    if (!test_interface->current_trace_event_.has_trace_time) {
       // bytes 0-3 is token, time start from offset 4
       size_t offset = 4;
       auto byte_ptr = static_cast<const std::byte*>(bytes) + offset;
@@ -135,13 +139,11 @@ class TraceTestInterface {
       uint64_t time;
       size_t length = pw::varint::Decode(byte_span, &time);
       EXPECT_NE(length, 0u);
-      if (test_interface->trace_time == 0) {
-        test_interface->trace_time = static_cast<PW_TRACE_TIME_TYPE>(time);
-      } else {
-        test_interface->trace_time += static_cast<PW_TRACE_TIME_TYPE>(time);
-      }
+      // Each event encodes the time elapsed since the previous event.
+      test_interface->trace_time += static_cast<PW_TRACE_TIME_TYPE>(time);
       test_interface->current_trace_event_.trace_time =
           test_interface->trace_time;
+      test_interface->current_trace_event_.has_trace_time = true;
     }
   }
 
@@ -168,7 +170,7 @@ class TraceTestInterface {
     }
     TraceInfo actual = buffer_.front();
     buffer_.pop_front();
-    EXPECT_GT(actual.trace_time, 0u);
+    EXPECT_TRUE(actual.has_trace_time);
     return actual == expected && actual.trace_time >= time_l &&
            actual.trace_time <= time_r;
   }
