@@ -638,7 +638,7 @@
     },
     "//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
-        "bzlTransitiveDigest": "Jp9Qih1UnyHgkb8VcZwWb1BLFmJ0jvWM908sMmHY+ns=",
+        "bzlTransitiveDigest": "KjWX8LFoQ1ZppKFhmDH4AOVBvoQu3XzMIDz7r59TCRE=",
         "usagesDigest": "Y9laJPwKQJi1EAXaRaJWV8XYAKJONQitNKW+ODTvPi0=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"

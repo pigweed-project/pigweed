@@ -396,28 +396,34 @@ def _BUILD_for_toolchain_repo(hosts, extra_targets, channels):
 
     for channel in channels:
         for host in hosts:
-            build_file += _pw_rust_toolchain(
-                name = "host_rust_toolchain_{}_{}_{}".format(host["os"], host["cpu"], channel["name"]),
-                analyzer_toolchain_name = "host_rust_analyzer_toolchain_{}_{}_{}".format(host["os"], host["cpu"], channel["name"]),
-                rustfmt_toolchain_name = "host_rustfmt_toolchain_{}_{}_{}".format(host["os"], host["cpu"], channel["name"]),
-                exec_compatible_with = [
-                    "@platforms//cpu:{}".format(host["cpu"]),
-                    "@platforms//os:{}".format(host["os"]),
-                ],
-                target_compatible_with = [
-                    "@platforms//cpu:{}".format(host["cpu"]),
-                    "@platforms//os:{}".format(host["os"]),
-                ],
-                target_settings = channel["target_settings"],
-                dylib_ext = host["dylib_ext"],
-                target_repo = "@rust_toolchain_target_{}_{}".format(host["triple"], host["cpu"]),
-                toolchain_repo = "@rust_toolchain_host_{}_{}".format(host["os"], host["cpu"]),
-                rust_analyzer_repo = "@rust_analyzer_{}_{}".format(host["os"], host["cpu"]),
-                exec_triple = host["triple"],
-                target_triple = host["triple"],
-                extra_rustc_flags = channel["extra_rustc_flags"],
-                default_edition = channel.get("default_edition"),
-            )
+            for prefix, std_constraint, build_std in [
+                ("host", "@pigweed//pw_build/constraints/rust:std", False),
+                ("host_no_std", "@pigweed//pw_build/constraints/rust:no_std", True),
+            ]:
+                build_file += _pw_rust_toolchain(
+                    name = "{}_rust_toolchain_{}_{}_{}".format(prefix, host["os"], host["cpu"], channel["name"]),
+                    analyzer_toolchain_name = "{}_rust_analyzer_toolchain_{}_{}_{}".format(prefix, host["os"], host["cpu"], channel["name"]),
+                    rustfmt_toolchain_name = "{}_rustfmt_toolchain_{}_{}_{}".format(prefix, host["os"], host["cpu"], channel["name"]),
+                    exec_compatible_with = [
+                        "@platforms//cpu:{}".format(host["cpu"]),
+                        "@platforms//os:{}".format(host["os"]),
+                    ],
+                    target_compatible_with = [
+                        "@platforms//cpu:{}".format(host["cpu"]),
+                        "@platforms//os:{}".format(host["os"]),
+                        std_constraint,
+                    ],
+                    target_settings = channel["target_settings"],
+                    dylib_ext = host["dylib_ext"],
+                    target_repo = "@rust_toolchain_target_{}_{}".format(host["triple"], host["cpu"]),
+                    toolchain_repo = "@rust_toolchain_host_{}_{}".format(host["os"], host["cpu"]),
+                    rust_analyzer_repo = "@rust_analyzer_{}_{}".format(host["os"], host["cpu"]),
+                    exec_triple = host["triple"],
+                    target_triple = host["triple"],
+                    extra_rustc_flags = channel["extra_rustc_flags"],
+                    build_std = build_std,
+                    default_edition = channel.get("default_edition"),
+                )
 
             for target in extra_targets:
                 build_file += _pw_rust_toolchain(
