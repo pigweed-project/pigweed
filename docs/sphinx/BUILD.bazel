@@ -307,6 +307,7 @@ sphinx_docs_library(
         "//pw_cpu_exception_cortex_m:docs",
         "//pw_cpu_exception_risc_v:docs",
         "//pw_crypto:docs",
+        "//pw_daq:docs",
         "//pw_digital_io:docs",
         "//pw_digital_io_linux:docs",
         "//pw_digital_io_mcuxpresso:docs",

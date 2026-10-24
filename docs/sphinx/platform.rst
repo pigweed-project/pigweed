@@ -559,6 +559,7 @@ Learn more: :doc:`test/index`
 
    ":ref:`module-pw_unit_test`", ":bdg-primary:`stable`", "GoogleTest for embedded", ""
    ":ref:`module-pw_compilation_testing`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_daq`", ":bdg-warning:`experimental`", "", ""
    ":ref:`module-pw_fuzzer`", ":bdg-secondary:`unstable`", "Better C++ code through easier fuzzing", "C++"
    ":ref:`module-pw_hil`", ":bdg-warning:`experimental`", "", ""
    ":ref:`module-pw_perf_test`", ":bdg-secondary:`unstable`", "Micro-benchmarks that are easy to write and run", "C++"

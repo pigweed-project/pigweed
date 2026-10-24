@@ -57,6 +57,7 @@ pw_cpu_exception
 pw_cpu_exception_cortex_m
 pw_cpu_exception_risc_v
 pw_crypto
+pw_daq
 pw_digital_io
 pw_digital_io_linux
 pw_digital_io_mcuxpresso

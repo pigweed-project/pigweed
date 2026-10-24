@@ -75,6 +75,7 @@ Module index
    ":ref:`module-pw_cpu_exception_cortex_m`", ":bdg-primary:`stable`", "", ""
    ":ref:`module-pw_cpu_exception_risc_v`", ":bdg-primary:`stable`", "", ""
    ":ref:`module-pw_crypto`", ":bdg-primary:`stable`", "", ""
+   ":ref:`module-pw_daq`", ":bdg-warning:`experimental`", "", ""
    ":ref:`module-pw_digital_io`", ":bdg-primary:`stable`", "Digital I/O interface", "C++"
    ":ref:`module-pw_digital_io_linux`", ":bdg-primary:`stable`", "Digital I/O interface for Linux userspace", "C++"
    ":ref:`module-pw_digital_io_mcuxpresso`", ":bdg-primary:`stable`", "Digital I/O for NXP MCUXpresso", "C++"
