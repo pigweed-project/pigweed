@@ -22,8 +22,12 @@ licenses(["notice"])
 sphinx_docs_library(
     name = "docs",
     srcs = [
+        "daq_cli.rst",
+        "daq_lib.rst",
+        "design.rst",
         "docs.rst",
         "module.toml",
+        "//pw_daq/backends:docs",
     ],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],

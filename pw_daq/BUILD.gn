@@ -22,5 +22,13 @@ pw_test_group("tests") {
 }
 
 pw_doc_group("docs") {
-  sources = [ "docs.rst" ]
+  sources = [
+    "backends/dhalsim/docs.rst",
+    "backends/docs.rst",
+    "backends/mock/docs.rst",
+    "daq_cli.rst",
+    "daq_lib.rst",
+    "design.rst",
+    "docs.rst",
+  ]
 }
