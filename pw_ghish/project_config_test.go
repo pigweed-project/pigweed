@@ -685,3 +685,77 @@ func TestResolveBugTrailerFormat(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadProjectConfig_RealGitRunnerUsesFilesystemTopLevel(t *testing.T) {
+	r := newTestGitRepo(t)
+	subDir := filepath.Join(r.WorkDir, "nested", "module")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(r.WorkDir, ".ghish.toml"), []byte("[gerrit]\nremote = \"goog\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, ".ghish.toml"), []byte("[gerrit]\ndefault_branch = \"dev\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projCfg, err := LoadProjectConfig(t.Context(), &RealGitRunner{Dir: subDir}, subDir)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig with RealGitRunner failed: %v", err)
+	}
+	if projCfg.Gerrit.Remote != "goog" {
+		t.Errorf("Gerrit.Remote = %q, want goog", projCfg.Gerrit.Remote)
+	}
+	if projCfg.Gerrit.DefaultBranch != "dev" {
+		t.Errorf("Gerrit.DefaultBranch = %q, want dev", projCfg.Gerrit.DefaultBranch)
+	}
+}
+
+// TestGitConfigOnlyProjectConfig_ReusesPrefetch checks that the issue
+// component lookup reads ghish.* overrides from the shared NUL-delimited
+// prefetch (no extra subprocess once it ran), so a value containing a newline
+// cannot inject a second key the way the line format could.
+func TestGitConfigOnlyProjectConfig_ReusesPrefetch(t *testing.T) {
+	isolateGitEnv(t)
+	dir := initTestRepo(t)
+	runTestGit(t, dir, "config", "ghish.issue.defaultcomponent", "123")
+	// In line format this value would parse as a second, injected key.
+	runTestGit(t, dir, "config", "ghish.gerrit.project", "proj\nghish.issue.defaultcomponent 999")
+	dg := NewGitClientInDir(dir).(*defaultGitClient)
+	if _, seeded := dg.ensurePrefetched(t.Context()); !seeded {
+		t.Fatal("test setup: config prefetch did not run")
+	}
+
+	pcfg := DefaultProjectConfig()
+	var applied bool
+	var err error
+	calls := recordGitCalls(t, func() { applied, err = dg.applyGitConfigToProjectConfig(t.Context(), pcfg) })
+	if err != nil {
+		t.Fatalf("applyGitConfigToProjectConfig() failed: %v", err)
+	}
+	if len(calls) != 0 {
+		t.Errorf("applyGitConfigToProjectConfig() spawned %q, want no subprocesses after the prefetch", calls)
+	}
+	if !applied {
+		t.Fatal("applyGitConfigToProjectConfig() = false, want the ghish.* overrides applied")
+	}
+	if got := pcfg.Issue.DefaultComponent; got != 123 {
+		t.Errorf("Issue.DefaultComponent = %d, want 123 (a newline in another value must not inject a key)", got)
+	}
+}
+
+// TestGitConfigOnlyProjectConfig_NoOverrides checks that a repository without
+// ghish.* keys reports applied=false, so later component tiers apply.
+func TestGitConfigOnlyProjectConfig_NoOverrides(t *testing.T) {
+	isolateGitEnv(t)
+	dir := initTestRepo(t)
+	dg := NewGitClientInDir(dir).(*defaultGitClient)
+	pcfg := DefaultProjectConfig()
+	applied, err := dg.applyGitConfigToProjectConfig(t.Context(), pcfg)
+	if err != nil {
+		t.Fatalf("applyGitConfigToProjectConfig() failed: %v", err)
+	}
+	if applied {
+		t.Errorf("applyGitConfigToProjectConfig() = true, want false without ghish.* keys")
+	}
+}

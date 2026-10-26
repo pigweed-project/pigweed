@@ -227,7 +227,27 @@ func LoadProjectConfig(ctx context.Context, git GitRunner, startDir string) (*Pr
 	cfg := DefaultProjectConfig()
 
 	topLevel := ""
-	if git != nil {
+	realGit, isReal := asRealGitRunner(git)
+	if isReal {
+		if startDir == "" {
+			if realGit != nil && realGit.Dir != "" {
+				startDir = realGit.Dir
+			} else if wd, err := os.Getwd(); err == nil {
+				startDir = wd
+			}
+		}
+		if startDir != "" {
+			if absStart, err := filepath.Abs(startDir); err == nil {
+				startDir = absStart
+			}
+			cand := findGitTopLevelOnDisk(startDir)
+			if _, err := os.Stat(filepath.Join(cand, ".git")); err == nil {
+				topLevel = cand
+			}
+		}
+	}
+
+	if topLevel == "" && git != nil {
 		var out bytes.Buffer
 		if err := git.Run(ctx, &out, io.Discard, "rev-parse", "--show-toplevel"); err == nil {
 			topLevel = strings.TrimSpace(out.String())
@@ -235,8 +255,8 @@ func LoadProjectConfig(ctx context.Context, git GitRunner, startDir string) (*Pr
 	}
 
 	if startDir == "" {
-		if realGit, ok := git.(*RealGitRunner); ok {
-			if realGit.Dir != "" {
+		if isReal {
+			if realGit != nil && realGit.Dir != "" {
 				startDir = realGit.Dir
 			} else if wd, err := os.Getwd(); err == nil {
 				startDir = wd
@@ -245,7 +265,7 @@ func LoadProjectConfig(ctx context.Context, git GitRunner, startDir string) (*Pr
 			startDir = topLevel
 		}
 	} else if git != nil {
-		if _, isReal := git.(*RealGitRunner); !isReal && topLevel == "" {
+		if !isReal && topLevel == "" {
 			if wd, err := os.Getwd(); err == nil && filepath.Clean(startDir) == filepath.Clean(wd) {
 				startDir = ""
 			}
@@ -283,13 +303,8 @@ func LoadProjectConfig(ctx context.Context, git GitRunner, startDir string) (*Pr
 		}
 	}
 
-	if git != nil {
-		var out bytes.Buffer
-		if err := git.Run(ctx, &out, io.Discard, "config", "--get-regexp", `^ghish\.`); err == nil {
-			if err := applyGitConfigOverrides(out.String(), cfg); err != nil {
-				return nil, err
-			}
-		}
+	if err := applyGitConfigFromRunner(ctx, git, cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
@@ -685,7 +700,14 @@ func splitCSV(val string) []string {
 	return out
 }
 
+// applyGitConfigOverrides applies line-format `git config --get-regexp`
+// output ("key value" per line) on top of dst.
 func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
+	return applyGitConfigEntries(parseGitConfigLines(output), dst)
+}
+
+// applyGitConfigEntries applies `ghish.*` git config entries on top of dst.
+func applyGitConfigEntries(entries []gitConfigEntry, dst *ProjectConfig) error {
 	if dst.Issue.PathComponents == nil {
 		dst.Issue.PathComponents = make(map[string]int64)
 	}
@@ -695,13 +717,8 @@ func applyGitConfigOverrides(output string, dst *ProjectConfig) error {
 	if dst.Issue.Hotlists == nil {
 		dst.Issue.Hotlists = make(map[string]int64)
 	}
-	for _, rawLine := range strings.Split(output, "\n") {
-		line := strings.TrimSpace(rawLine)
-		if line == "" {
-			continue
-		}
-		key, val, _ := strings.Cut(line, " ")
-		val = strings.TrimSpace(val)
+	for _, e := range entries {
+		key, val := e.key, strings.TrimSpace(e.val)
 		if !strings.HasPrefix(key, "ghish.") {
 			continue
 		}

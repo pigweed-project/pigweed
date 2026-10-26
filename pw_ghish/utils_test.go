@@ -965,6 +965,47 @@ func TestResolveActiveChangeID(t *testing.T) {
 		}
 	})
 
+	t.Run("feature branch with HEAD Change-Id does not resolve default branch", func(t *testing.T) {
+		mock := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				cmd := strings.Join(args, " ")
+				switch cmd {
+				case "branch --show-current":
+					stdout.Write([]byte("my-feature\n"))
+					return nil
+				case "config --get ghish.gerrit.defaultbranch":
+					return fmt.Errorf("exit status 1")
+				case "log -1 --format=%B":
+					stdout.Write([]byte("feat: Fast path\n\nChange-Id: Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e\n"))
+					return nil
+				default:
+					t.Fatalf("unexpected git subprocess on feature branch fast path: %s", cmd)
+					return fmt.Errorf("unexpected: %s", cmd)
+				}
+			},
+		}
+		id, err := ResolveActiveChangeID(ctx, &Config{Git: mock})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if id != "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e" {
+			t.Errorf("got %q, want Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e", id)
+		}
+	})
+
+	t.Run("on custom default branch with 0 commits ahead", func(t *testing.T) {
+		cfg := &Config{
+			Git: (&MockGitRunner{}).
+				WithBranch("develop").
+				OnCommand("config --get ghish.gerrit.defaultbranch", "develop\n").
+				OnCommand("rev-list --count origin/develop..HEAD", "0\n"),
+		}
+		_, err := ResolveActiveChangeID(ctx, cfg)
+		if err == nil || !strings.Contains(err.Error(), "synced with origin") {
+			t.Fatalf("expected synced with origin error on custom default branch, got: %v", err)
+		}
+	})
+
 	t.Run("nil config or git", func(t *testing.T) {
 		_, err := ResolveActiveChangeID(ctx, nil)
 		if err == nil {

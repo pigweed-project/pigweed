@@ -19,15 +19,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"runtime/debug"
-	"slices"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -44,68 +40,10 @@ var (
 	ProfileFlag string
 )
 
-// GitRunner defines the interface for running git commands.
-type GitRunner interface {
-	Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error
-}
-
-// RealGitRunner implements GitRunner using os/exec.
-type RealGitRunner struct {
-	Dir string
-}
-
-const gitEnvKey contextKey = "gitEnv"
-
-func withGitEnv(ctx context.Context, env ...string) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, gitEnvKey, slices.Concat(gitEnvFromContext(ctx), env))
-}
-
-func withGitConfigEnv(ctx context.Context, kv ...string) context.Context {
-	var count int
-	for _, entry := range slices.Concat(os.Environ(), gitEnvFromContext(ctx)) {
-		if v, ok := strings.CutPrefix(entry, "GIT_CONFIG_COUNT="); ok {
-			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-				count = n
-			}
-		}
-	}
-	var env []string
-	for i := 0; i+1 < len(kv); i += 2 {
-		env = append(env,
-			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", count, kv[i]),
-			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", count, kv[i+1]),
-		)
-		count++
-	}
-	return withGitEnv(ctx, append([]string{fmt.Sprintf("GIT_CONFIG_COUNT=%d", count)}, env...)...)
-}
-
-func gitEnvFromContext(ctx context.Context) []string {
-	if ctx == nil {
-		return nil
-	}
-	env, _ := ctx.Value(gitEnvKey).([]string)
-	return env
-}
-
-func (r *RealGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	cmd := exec.CommandContext(ctx, "git", args...)
-	baseEnv := os.Environ()
-	if r != nil && r.Dir != "" {
-		cmd.Dir = r.Dir
-		baseEnv = scrubRepoLocalGitEnv(baseEnv)
-	}
-	cmd.Env = slices.Concat(baseEnv, []string{"GH_ISH_ACTIVE=1"}, gitEnvFromContext(ctx))
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	return cmd.Run()
-}
+// configMu guards lazy field initialization on Config instances so Config
+// remains safe to copy by value (e.g., `cfgCopy := *cfg`) without copying a
+// sync.Mutex.
+var configMu sync.Mutex
 
 // Config holds the configuration for the CLI.
 type Config struct {
@@ -116,6 +54,82 @@ type Config struct {
 	Profile       ProjectProfile
 	ProjectConfig *ProjectConfig
 	loadedCWD     string
+
+	gitClient       GitClient
+	gitClientRunner GitRunner
+}
+
+func (c *Config) cachedProjectConfig() (*ProjectConfig, bool) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	if c.ProjectConfig != nil && c.loadedCWD == c.CWD {
+		return c.ProjectConfig, true
+	}
+	return c.ProjectConfig, false
+}
+
+func (c *Config) setProjectConfig(projCfg *ProjectConfig, cwd string) {
+	configMu.Lock()
+	c.ProjectConfig = projCfg
+	c.loadedCWD = cwd
+	configMu.Unlock()
+}
+
+func (c *Config) cachedProfile() ProjectProfile {
+	configMu.Lock()
+	defer configMu.Unlock()
+	return c.Profile
+}
+
+func (c *Config) setProfile(p ProjectProfile) ProjectProfile {
+	configMu.Lock()
+	c.Profile = p
+	configMu.Unlock()
+	return p
+}
+
+func (c *Config) hasProjectConfigFile() bool {
+	if c == nil || c.CWD == "" {
+		return false
+	}
+	if dc, ok := c.GitClient().(*defaultGitClient); ok {
+		return dc.hasProjectConfigFile(c.CWD)
+	}
+	return hasProjectConfigFileOnDisk(c.CWD)
+}
+
+func (c *Config) projectConfigIfPresent(ctx context.Context) *ProjectConfig {
+	if c == nil {
+		return nil
+	}
+	if projCfg, _ := c.cachedProjectConfig(); projCfg != nil {
+		return projCfg
+	}
+	if !c.hasProjectConfigFile() {
+		return nil
+	}
+	loaded, err := c.LoadProjectConfig(ctx)
+	if err != nil {
+		slog.Warn("failed to load .ghish.toml project config", "cwd", c.CWD, "err", err)
+		return nil
+	}
+	return loaded
+}
+
+// ConfiguredDefaultBranch returns any explicitly configured default branch from
+// ProjectConfig (.ghish.toml) or git config ghish.gerrit.defaultbranch without
+// running full remote HEAD / ref verification probes.
+func (c *Config) ConfiguredDefaultBranch(ctx context.Context) string {
+	if c == nil {
+		return ""
+	}
+	if projCfg := c.projectConfigIfPresent(ctx); projCfg != nil {
+		return strings.TrimSpace(projCfg.Gerrit.DefaultBranch)
+	}
+	if dc, ok := c.GitClient().(*defaultGitClient); ok {
+		return dc.configuredDefaultBranch(ctx)
+	}
+	return ""
 }
 
 // ResolveRemote determines the active git remote name for this repository.
@@ -123,15 +137,12 @@ func (c *Config) ResolveRemote(ctx context.Context) string {
 	if c == nil {
 		return "origin"
 	}
-	if strings.TrimSpace(c.Remote) != "" {
-		return strings.TrimSpace(c.Remote)
+	if r := strings.TrimSpace(c.Remote); r != "" {
+		return r
 	}
-	if c.ProjectConfig != nil && strings.TrimSpace(c.ProjectConfig.Gerrit.Remote) != "" {
-		return strings.TrimSpace(c.ProjectConfig.Gerrit.Remote)
-	}
-	if hasProjectConfigFileOnDisk(c.CWD) {
-		if projCfg, err := c.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Gerrit.Remote) != "" {
-			return strings.TrimSpace(projCfg.Gerrit.Remote)
+	if projCfg := c.projectConfigIfPresent(ctx); projCfg != nil {
+		if r := strings.TrimSpace(projCfg.Gerrit.Remote); r != "" {
+			return r
 		}
 	}
 	return c.GitClient().ResolveRemote(ctx)
@@ -142,12 +153,9 @@ func (c *Config) ResolveDefaultBranch(ctx context.Context) string {
 	if c == nil {
 		return "main"
 	}
-	if c.ProjectConfig != nil && strings.TrimSpace(c.ProjectConfig.Gerrit.DefaultBranch) != "" {
-		return strings.TrimSpace(c.ProjectConfig.Gerrit.DefaultBranch)
-	}
-	if hasProjectConfigFileOnDisk(c.CWD) {
-		if projCfg, err := c.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Gerrit.DefaultBranch) != "" {
-			return strings.TrimSpace(projCfg.Gerrit.DefaultBranch)
+	if projCfg := c.projectConfigIfPresent(ctx); projCfg != nil {
+		if b := strings.TrimSpace(projCfg.Gerrit.DefaultBranch); b != "" {
+			return b
 		}
 	}
 	return c.GitClient().ResolveDefaultBranch(ctx)
@@ -159,18 +167,22 @@ func (c *Config) LoadProjectConfig(ctx context.Context) (*ProjectConfig, error) 
 	if c == nil {
 		return DefaultProjectConfig(), nil
 	}
-	if c.ProjectConfig != nil && c.loadedCWD == c.CWD {
-		SetCustomShortlinks(c.ProjectConfig.Gerrit.Shortlinks)
-		return c.ProjectConfig, nil
+	if projCfg, validForCWD := c.cachedProjectConfig(); projCfg != nil && validForCWD {
+		SetCustomShortlinks(projCfg.Gerrit.Shortlinks)
+		return projCfg, nil
 	}
-	projCfg, err := LoadProjectConfig(ctx, c.Git, c.CWD)
+	gitRunner := c.Git
+	if _, isReal := asRealGitRunner(gitRunner); isReal {
+		gitRunner = c.GitClient()
+	}
+	projCfg, err := LoadProjectConfig(ctx, gitRunner, c.CWD)
 	if err != nil {
 		return nil, err
 	}
-	c.ProjectConfig = projCfg
-	c.loadedCWD = c.CWD
-	if projCfg != nil {
-		SetCustomShortlinks(projCfg.Gerrit.Shortlinks)
+	c.setProjectConfig(projCfg, c.CWD)
+	SetCustomShortlinks(projCfg.Gerrit.Shortlinks)
+	if dc, ok := c.GitClient().(*defaultGitClient); ok {
+		dc.seedProjectConfigDefaults(projCfg)
 	}
 	return projCfg, nil
 }
@@ -186,19 +198,17 @@ func (c *Config) GetProjectConfig(ctx context.Context) *ProjectConfig {
 
 // GetProfile returns the project profile for the configuration.
 func (c *Config) GetProfile(ctx context.Context) ProjectProfile {
-	if c.Profile != nil {
-		return c.Profile
+	if p := c.cachedProfile(); p != nil {
+		return p
 	}
 	if ProfileFlag != "" {
 		if p, ok := GetProfile(ProfileFlag); ok {
-			c.Profile = p
-			return c.Profile
+			return c.setProfile(p)
 		}
 	}
 	if c.Host != "" {
 		if p, err := DetectProfile("", c.Host, ""); err == nil && p.Name() != "generic" {
-			c.Profile = p
-			return c.Profile
+			return c.setProfile(p)
 		}
 	}
 	var remoteURL string
@@ -216,8 +226,7 @@ func (c *Config) GetProfile(ctx context.Context) ProjectProfile {
 	if err != nil {
 		return profiles["generic"]
 	}
-	c.Profile = p
-	return c.Profile
+	return c.setProfile(p)
 }
 
 type contextKey string
@@ -680,15 +689,6 @@ func chdirToBuildWorkingDirectory() error {
 	return nil
 }
 
-// Execute runs the root command.
-func Execute() error {
-	setupRootCmdHelp()
-	setupRootAliases()
-	rejectUnknownSubcommands(RootCmd)
-	RootCmd.SetArgs(NormalizeCQArgs(os.Args[1:]))
-	return RootCmd.Execute()
-}
-
 // GerritURL returns the Gerrit host URL, detecting it from git config.
 func (c *Config) GerritURL(ctx context.Context) (string, error) {
 	var host string
@@ -855,4 +855,13 @@ func FindLatestChangeBySubject(ctx context.Context, cmd *cobra.Command, subject 
 	}
 
 	return (*changes)[0].Number, nil
+}
+
+// Execute runs the root command.
+func Execute() error {
+	setupRootCmdHelp()
+	setupRootAliases()
+	rejectUnknownSubcommands(RootCmd)
+	RootCmd.SetArgs(NormalizeCQArgs(os.Args[1:]))
+	return RootCmd.Execute()
 }

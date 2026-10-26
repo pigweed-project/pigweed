@@ -157,6 +157,7 @@ go_test(
         "exit_test.go",
         "flag_policy_test.go",
         "flows_test.go",
+        "git_client_prefetch_test.go",
         "git_client_test.go",
         "github_syntax_test.go",
         "hook_test.go",

@@ -521,26 +521,37 @@ func HasChangeID(commitMsg string) bool {
 // If missing, it injects one in pure Go when noVerify is true or runs the Gerrit commit-msg hook
 // via amend otherwise.
 func EnsureChangeID(ctx context.Context, cfg *Config, noVerify bool, stdout, stderr io.Writer) error {
+	_, err := ensureChangeID(ctx, cfg, noVerify, stdout, stderr)
+	return err
+}
+
+// ensureChangeID is EnsureChangeID, also returning HEAD's commit message as
+// it stands afterwards (as HeadCommitMessage read it), so callers that go on
+// to inspect the message do not run `git log -1 --format=%B` again. It
+// returns "" when HEAD's message is not known without reading it again (after
+// a --no-verify amend, since `git commit` may rewrite the message it was
+// given); a known message always carries a Change-Id, so it is never "".
+func ensureChangeID(ctx context.Context, cfg *Config, noVerify bool, stdout, stderr io.Writer) (string, error) {
 	if cfg == nil || cfg.Git == nil {
-		return fmt.Errorf("EnsureChangeID: git runner not initialized")
+		return "", fmt.Errorf("EnsureChangeID: git runner not initialized")
 	}
 
 	git := cfg.GitClient()
 	commitMsg, err := git.HeadCommitMessage(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get HEAD commit message: %w", err)
+		return "", fmt.Errorf("failed to get HEAD commit message: %w", err)
 	}
 
 	if err := ValidateChangeIDFooters(commitMsg, "HEAD commit message"); err != nil {
-		return err
+		return "", err
 	}
 
 	if commitMsg != "" && HasChangeID(commitMsg) {
-		return nil
+		return commitMsg, nil
 	}
 
 	if err := git.CheckAmendAllowed(ctx); err != nil {
-		return fmt.Errorf("cannot insert Change-Id: %w", err)
+		return "", fmt.Errorf("cannot insert Change-Id: %w", err)
 	}
 
 	fmt.Fprintln(stderr, "Notice: HEAD commit is missing a Gerrit Change-Id footer.")
@@ -548,23 +559,24 @@ func EnsureChangeID(ctx context.Context, cfg *Config, noVerify bool, stdout, std
 	if noVerify {
 		updatedMsg, ok := InjectChangeID(commitMsg)
 		if !ok {
-			return fmt.Errorf("HEAD commit is missing required Gerrit Change-Id")
+			return "", fmt.Errorf("HEAD commit is missing required Gerrit Change-Id")
 		}
 		fmt.Fprintln(stdout, "Amending HEAD commit to insert Change-Id footer...")
 		if err := git.CommitAmendMessage(ctx, updatedMsg, true, stdout, stderr); err != nil {
-			return fmt.Errorf("failed to amend commit with Change-Id: %w", err)
+			return "", fmt.Errorf("failed to amend commit with Change-Id: %w", err)
 		}
 		fmt.Fprintln(stdout, "Successfully amended HEAD commit with Change-Id.")
-		return nil
+		// `git commit` may have rewritten updatedMsg; let the caller re-read.
+		return "", nil
 	}
 
 	// Check if the commit-msg hook is installed
 	gitDir, err := git.GitDir(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to resolve git directory: %w", err)
+		return "", fmt.Errorf("failed to resolve git directory: %w", err)
 	}
 	if gitDir == "" {
-		return fmt.Errorf("resolved git directory is empty")
+		return "", fmt.Errorf("resolved git directory is empty")
 	}
 	hookPath := filepath.Join(gitDir, "hooks", "commit-msg")
 
@@ -612,17 +624,17 @@ func EnsureChangeID(ctx context.Context, cfg *Config, noVerify bool, stdout, std
 	if hookInstalled {
 		fmt.Fprintln(stdout, "Amending HEAD commit to insert Change-Id footer...")
 		if err := git.CommitAmendNoEdit(ctx, stdout, stderr); err != nil {
-			return fmt.Errorf("failed to amend commit with Change-Id: %w", err)
+			return "", fmt.Errorf("failed to amend commit with Change-Id: %w", err)
 		}
 
 		// Re-verify that the commit now actually has a Change-Id
 		amendedMsg, err := git.HeadCommitMessage(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to verify amended commit message: %w", err)
+			return "", fmt.Errorf("failed to verify amended commit message: %w", err)
 		}
 		if HasChangeID(amendedMsg) {
 			fmt.Fprintln(stdout, "Successfully amended HEAD commit with Change-Id.")
-			return nil
+			return amendedMsg, nil
 		}
 		fmt.Fprintln(stderr, "Warning: commit-msg hook executed but Change-Id was not inserted.")
 	}
@@ -639,18 +651,26 @@ To install the hook and generate a Change-Id:
   git commit --amend --no-edit
 `, gerritHost)
 
-	return fmt.Errorf("HEAD commit is missing required Gerrit Change-Id")
+	return "", fmt.Errorf("HEAD commit is missing required Gerrit Change-Id")
 }
 
 // CountCommitsAhead returns the number of commits in <remote>/<branch>..HEAD.
 // If the remote branch cannot be verified or rev-list fails, it returns 0 and the error.
 func CountCommitsAhead(ctx context.Context, git GitRunner, branch string) (int, error) {
+	count, _, err := countCommitsAhead(ctx, git, branch)
+	return count, err
+}
+
+// countCommitsAhead is CountCommitsAhead, also returning the
+// <remote>/<branch> ref it verified, so a caller that goes on to list the
+// same range (StackCommits) need not verify it again.
+func countCommitsAhead(ctx context.Context, git GitRunner, branch string) (int, string, error) {
 	if git == nil {
-		return 0, fmt.Errorf("git runner cannot be nil")
+		return 0, "", fmt.Errorf("git runner cannot be nil")
 	}
 	branch = strings.TrimSpace(branch)
 	if branch == "" {
-		return 0, fmt.Errorf("cannot count commits ahead: branch name is empty")
+		return 0, "", fmt.Errorf("cannot count commits ahead: branch name is empty")
 	}
 	remote := "origin"
 	if gc, ok := git.(GitClient); ok {
@@ -665,25 +685,25 @@ func CountCommitsAhead(ctx context.Context, git GitRunner, branch string) (int, 
 	if err := git.Run(ctx, io.Discard, &verifyErr, "rev-parse", "--verify", targetRef); err != nil {
 		errStr := strings.TrimSpace(verifyErr.String())
 		if errStr != "" {
-			return 0, fmt.Errorf("git rev-parse --verify %s failed: %w: %s", targetRef, err, errStr)
+			return 0, "", fmt.Errorf("git rev-parse --verify %s failed: %w: %s", targetRef, err, errStr)
 		}
-		return 0, fmt.Errorf("git rev-parse --verify %s failed: %w", targetRef, err)
+		return 0, "", fmt.Errorf("git rev-parse --verify %s failed: %w", targetRef, err)
 	}
 	var outBuf, listErr bytes.Buffer
 	rangeSpec := fmt.Sprintf("%s/%s..HEAD", remote, branch)
 	if err := git.Run(ctx, &outBuf, &listErr, "rev-list", "--count", rangeSpec); err != nil {
 		errStr := strings.TrimSpace(listErr.String())
 		if errStr != "" {
-			return 0, fmt.Errorf("git rev-list --count %s failed: %w: %s", rangeSpec, err, errStr)
+			return 0, "", fmt.Errorf("git rev-list --count %s failed: %w: %s", rangeSpec, err, errStr)
 		}
-		return 0, fmt.Errorf("git rev-list --count %s failed: %w", rangeSpec, err)
+		return 0, "", fmt.Errorf("git rev-list --count %s failed: %w", rangeSpec, err)
 	}
 	var count int
 	trimmed := strings.TrimSpace(outBuf.String())
 	if _, err := fmt.Sscanf(trimmed, "%d", &count); err != nil {
-		return 0, fmt.Errorf("failed to parse commit count from output %q: %w", trimmed, err)
+		return 0, "", fmt.Errorf("failed to parse commit count from output %q: %w", trimmed, err)
 	}
-	return count, nil
+	return count, targetRef, nil
 }
 
 // isChangeIdentifier returns true if arg is a change number, Change-Id, number/patchset,
@@ -740,8 +760,11 @@ func ResolveActiveChangeID(ctx context.Context, cfg *Config) (string, error) {
 		return "", fmt.Errorf("failed to determine current branch: %w", err)
 	}
 
-	defBranch := cfg.ResolveDefaultBranch(ctx)
-	if currentBranch == "main" || (defBranch != "" && currentBranch == defBranch) {
+	configuredDefaultBranch := cfg.ConfiguredDefaultBranch(ctx)
+	isDefaultBranch := currentBranch == "main" ||
+		currentBranch == "master" || // inclusive-language: ignore
+		(configuredDefaultBranch != "" && currentBranch == configuredDefaultBranch)
+	if isDefaultBranch {
 		if count, err := git.CountCommitsAhead(ctx, currentBranch); err == nil && count == 0 {
 			return "", fmt.Errorf("no change ID specified and current branch %q is synced with origin (no active change).\n\n"+
 				"To inspect or check out existing changes:\n"+
@@ -782,6 +805,7 @@ func ResolveActiveChangeID(ctx context.Context, cfg *Config) (string, error) {
 
 	// 4. Check recent commits ahead of <remote>/<defaultBranch>
 	remote := cfg.ResolveRemote(ctx)
+	defBranch := cfg.ResolveDefaultBranch(ctx)
 	if id := findChangeIDInCommitRange(ctx, git, fmt.Sprintf("%s/%s..HEAD", remote, defBranch)); id != "" {
 		return id, nil
 	}
@@ -920,15 +944,15 @@ var OpenBrowserFn = func(urlStr string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", urlStr)
+		cmd = ExecCommand("open", urlStr)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", urlStr)
+		cmd = ExecCommand("rundll32", "url.dll,FileProtocolHandler", urlStr)
 	default:
 		browser := os.Getenv("BROWSER")
 		if browser != "" {
-			cmd = exec.Command(browser, urlStr)
+			cmd = ExecCommand(browser, urlStr)
 		} else {
-			cmd = exec.Command("xdg-open", urlStr)
+			cmd = ExecCommand("xdg-open", urlStr)
 		}
 	}
 	return cmd.Start()

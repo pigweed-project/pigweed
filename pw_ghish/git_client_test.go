@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -236,17 +237,6 @@ func TestGitClient_Fetch_Checkout_CherryPick_CommitAmend(t *testing.T) {
 	}
 }
 
-func TestGitClient_NilRunnerError(t *testing.T) {
-	client := &defaultGitClient{runner: nil}
-	err := client.Run(context.Background(), io.Discard, io.Discard, "status")
-	if err == nil {
-		t.Fatal("expected error with nil runner, got nil")
-	}
-	if !strings.Contains(err.Error(), "git runner not initialized") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
 func TestConfig_GitClient_Fallback(t *testing.T) {
 	var cfg *Config
 	client := cfg.GitClient()
@@ -283,14 +273,6 @@ func TestGitClient_VerifyRef_Robustness(t *testing.T) {
 		}
 	})
 
-	t.Run("nil context returns error", func(t *testing.T) {
-		client := NewGitClient(&MockGitRunner{})
-		_, err := client.VerifyRef(nil, "refs/heads/main")
-		if err == nil {
-			t.Fatal("expected error for nil context, got nil")
-		}
-	})
-
 	t.Run("canceled context returns error", func(t *testing.T) {
 		cancCtx, cancel := context.WithCancel(ctx)
 		cancel()
@@ -298,14 +280,6 @@ func TestGitClient_VerifyRef_Robustness(t *testing.T) {
 		_, err := client.VerifyRef(cancCtx, "refs/heads/main")
 		if err == nil {
 			t.Fatal("expected error for canceled context, got nil")
-		}
-	})
-
-	t.Run("uninitialized runner returns error", func(t *testing.T) {
-		client := &defaultGitClient{runner: nil}
-		_, err := client.VerifyRef(ctx, "refs/heads/main")
-		if err == nil {
-			t.Fatal("expected error for uninitialized runner, got nil")
 		}
 	})
 
@@ -427,13 +401,6 @@ func TestGitClient_Run_Robustness(t *testing.T) {
 		},
 	}
 	client := NewGitClient(mock)
-
-	t.Run("nil context returns error", func(t *testing.T) {
-		err := client.Run(nil, io.Discard, io.Discard, "status")
-		if err == nil {
-			t.Fatal("expected error for nil context, got nil")
-		}
-	})
 
 	t.Run("nil stdout and stderr do not panic", func(t *testing.T) {
 		err := client.Run(context.Background(), nil, nil, "status")
@@ -852,7 +819,10 @@ func TestResolveDefaultBranch_PriorityOrder(t *testing.T) {
 		mock := &MockGitRunner{
 			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 				cmd := strings.Join(args, " ")
-				if cmd == "rev-parse --verify refs/remotes/origin/master" || cmd == "rev-parse --verify refs/heads/master" {
+				if strings.HasPrefix(cmd, "for-each-ref --format=%(refname) ") {
+					// Only master refs resolve; nested refs below a
+					// candidate pattern must not count as a match.
+					fmt.Fprint(stdout, "refs/heads/main/nested\nrefs/remotes/origin/master\nrefs/heads/master\n")
 					return nil
 				}
 				return fmt.Errorf("not found: %s", cmd)
@@ -1600,5 +1570,333 @@ func TestEnsureChangeID_NoVerifyBypassesHooks_RealGit(t *testing.T) {
 	}
 	if !strings.HasPrefix(gotMsg, "pw_foo: Add feature without Change-Id\n") {
 		t.Errorf("unexpected commit message prefix:\n%s", gotMsg)
+	}
+}
+
+func TestGitClient_MemoizationAndCacheInvalidation(t *testing.T) {
+	ctx := t.Context()
+	currentBranch := "feature-a"
+	emailVal := "first@example.com"
+	gitDirVal := "/repo/.git"
+
+	mock := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			cmd := strings.Join(args, " ")
+			switch cmd {
+			case "branch --show-current":
+				stdout.Write([]byte(currentBranch + "\n"))
+				return nil
+			case "rev-parse --git-dir":
+				stdout.Write([]byte(gitDirVal + "\n"))
+				return nil
+			case "config --get user.email":
+				stdout.Write([]byte(emailVal + "\n"))
+				return nil
+			case "config --get branch.feature-a.remote":
+				stdout.Write([]byte("goog\n"))
+				return nil
+			case "config --get branch.feature-a.merge":
+				stdout.Write([]byte("refs/heads/main\n"))
+				return nil
+			case "config --get missing.key":
+				return fmt.Errorf("exit status 1")
+			case "checkout feature-b", "config user.email second@example.com":
+				return nil
+			default:
+				return fmt.Errorf("unhandled: %s", cmd)
+			}
+		},
+	}
+
+	client := NewGitClient(mock)
+
+	for range 5 {
+		if b, err := client.CurrentBranch(ctx); err != nil || b != "feature-a" {
+			t.Fatalf("CurrentBranch() = (%q, %v), want feature-a", b, err)
+		}
+		if gd, err := client.GitDir(ctx); err != nil || gd != "/repo/.git" {
+			t.Fatalf("GitDir() = (%q, %v), want /repo/.git", gd, err)
+		}
+		if v, err := client.ConfigGet(ctx, "user.email"); err != nil || v != "first@example.com" {
+			t.Fatalf("ConfigGet(user.email) = (%q, %v), want first@example.com", v, err)
+		}
+		if _, err := client.ConfigGet(ctx, "missing.key"); err == nil {
+			t.Fatal("expected error for missing.key")
+		}
+		if r := client.ResolveRemote(ctx); r != "goog" {
+			t.Fatalf("ResolveRemote() = %q, want goog", r)
+		}
+		if d := client.ResolveDefaultBranch(ctx); d != "main" {
+			t.Fatalf("ResolveDefaultBranch() = %q, want main", d)
+		}
+	}
+
+	counts := make(map[string]int)
+	for _, call := range mock.Calls {
+		counts[call]++
+	}
+	for _, key := range []string{
+		"branch --show-current",
+		"rev-parse --git-dir",
+		"config --get user.email",
+		"config --get missing.key",
+		"config --get branch.feature-a.remote",
+		"config --get branch.feature-a.merge",
+	} {
+		if counts[key] != 1 {
+			t.Errorf("call %q count = %d, want 1 (calls: %v)", key, counts[key], mock.Calls)
+		}
+	}
+
+	// Mutating operations (Checkout, config write) must invalidate cached state.
+	currentBranch = "feature-b"
+	gitDirVal = "/repo/.git/worktrees/feature-b"
+	if err := client.Checkout(ctx, "feature-b", io.Discard, io.Discard); err != nil {
+		t.Fatalf("Checkout failed: %v", err)
+	}
+	if b, err := client.CurrentBranch(ctx); err != nil || b != "feature-b" {
+		t.Fatalf("CurrentBranch() after Checkout = (%q, %v), want feature-b", b, err)
+	}
+	if gd, err := client.GitDir(ctx); err != nil || gd != "/repo/.git/worktrees/feature-b" {
+		t.Fatalf("GitDir() after Checkout = (%q, %v), want /repo/.git/worktrees/feature-b", gd, err)
+	}
+
+	emailVal = "second@example.com"
+	if err := client.Run(ctx, io.Discard, io.Discard, "config", "user.email", "second@example.com"); err != nil {
+		t.Fatalf("config set failed: %v", err)
+	}
+	if v, err := client.ConfigGet(ctx, "user.email"); err != nil || v != "second@example.com" {
+		t.Fatalf("ConfigGet(user.email) after config write = (%q, %v), want second@example.com", v, err)
+	}
+}
+
+func TestIsReadOnlyGitQuery(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"rev-parse", "--git-dir"}, true},
+		{[]string{"diff-index", "--quiet", "HEAD", "--"}, true},
+		{[]string{"config", "--get", "user.email"}, true},
+		{[]string{"config", "user.email"}, true},
+		{[]string{"config", "user.email", "new@example.com"}, false},
+		{[]string{"config", "--unset", "user.email"}, false},
+		{[]string{"branch", "--show-current"}, true},
+		{[]string{"branch", "-D", "old"}, false},
+		{[]string{"branch", "new-branch"}, false},
+		{[]string{"remote"}, true},
+		{[]string{"remote", "-v"}, true},
+		{[]string{"remote", "--verbose"}, true},
+		{[]string{"remote", "-v", "show", "origin"}, true},
+		{[]string{"remote", "get-url", "origin"}, true},
+		{[]string{"remote", "add", "origin", "https://example.com"}, false},
+		{[]string{"remote", "-v", "add", "origin", "https://example.com"}, false},
+		{[]string{"symbolic-ref", "-q", "refs/remotes/origin/HEAD"}, true},
+		{[]string{"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, false},
+		{[]string{"symbolic-ref", "-d", "refs/remotes/origin/HEAD"}, false},
+	} {
+		if got := isReadOnlyGitQuery(tc.args); got != tc.want {
+			t.Errorf("isReadOnlyGitQuery(%q) = %v, want %v", tc.args, got, tc.want)
+		}
+	}
+}
+
+func TestSeedPrefetchedGitConfig(t *testing.T) {
+	ctx := t.Context()
+	mock := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			cmd := strings.Join(args, " ")
+			if cmd == "config --get core.bare" {
+				stdout.Write([]byte("false\n"))
+				return nil
+			}
+			return fmt.Errorf("unexpected git subprocess: %s", cmd)
+		},
+	}
+
+	dc := NewGitClient(mock).(*defaultGitClient)
+	dc.seedPrefetchedGitConfig(strings.Join([]string{
+		"user.email erahm@google.com",
+		"init.defaultbranch main",
+		"branch.MyFeature.remote goog",
+		"remote.goog.url https://pigweed.googlesource.com/pigweed/pigweed",
+		"ghish.authmode googler",
+	}, "\n"))
+
+	// Hits in prefetched sections (both exact subsection case and case-insensitive key) must spawn 0 subprocesses.
+	if got, err := dc.ConfigGet(ctx, "user.email"); err != nil || got != "erahm@google.com" {
+		t.Fatalf("ConfigGet(user.email) = (%q, %v), want erahm@google.com", got, err)
+	}
+	if got, err := dc.ConfigGet(ctx, "init.defaultBranch"); err != nil || got != "main" {
+		t.Fatalf("ConfigGet(init.defaultBranch) = (%q, %v), want main", got, err)
+	}
+	if got, err := dc.ConfigGet(ctx, "branch.MyFeature.remote"); err != nil || got != "goog" {
+		t.Fatalf("ConfigGet(branch.MyFeature.remote) = (%q, %v), want goog", got, err)
+	}
+	if got, err := dc.ConfigGet(ctx, "remote.goog.url"); err != nil || got != "https://pigweed.googlesource.com/pigweed/pigweed" {
+		t.Fatalf("ConfigGet(remote.goog.url) = (%q, %v)", got, err)
+	}
+
+	// Negative lookups in prefetched sections must fail immediately without spawning git.
+	for _, missingKey := range []string{
+		"ghish.gerrit.remote",
+		"branch.other.remote",
+		"remote.origin.url",
+		"user.signingkey",
+		"http.cookiefile",
+	} {
+		if _, err := dc.ConfigGet(ctx, missingKey); err == nil {
+			t.Fatalf("expected error for missing prefetched key %q, got nil", missingKey)
+		}
+	}
+	if len(mock.Calls) != 0 {
+		t.Fatalf("expected 0 git subprocesses for prefetched sections, got: %v", mock.Calls)
+	}
+
+	// Non-prefetched section (core.*) still delegates to git runner.
+	if got, err := dc.ConfigGet(ctx, "core.bare"); err != nil || got != "false" {
+		t.Fatalf("ConfigGet(core.bare) = (%q, %v), want false", got, err)
+	}
+	if len(mock.Calls) != 1 || mock.Calls[0] != "config --get core.bare" {
+		t.Fatalf("unexpected mock calls: %v", mock.Calls)
+	}
+}
+
+func TestRealGitRunner_ReadOnlyEnvFlags(t *testing.T) {
+	ctx := t.Context()
+	runner := &RealGitRunner{}
+
+	readOnlyCases := [][]string{
+		{"rev-parse", "HEAD"},
+		{"config", "user.email"},
+		{"config", "--get", "user.email"},
+		{"branch", "--show-current"},
+		{"branch"},
+		{"log", "-1"},
+		{"status", "--porcelain"},
+		{"diff", "HEAD"},
+		{"diff-index", "--quiet", "HEAD"},
+		{"remote", "-v"},
+		{"remote", "get-url", "origin"},
+		{"symbolic-ref", "HEAD"},
+		{"rev-list", "HEAD"},
+		{"ls-files"},
+		{"show", "HEAD"},
+		{"cat-file", "-t", "HEAD"},
+		{"for-each-ref"},
+		{"name-rev", "HEAD"},
+		{"describe", "--tags"},
+		{"shortlog", "-s"},
+	}
+	for _, baseArgs := range readOnlyCases {
+		for _, prefix := range [][]string{
+			nil,
+			{"-C", "/tmp/repo"},
+			{"-c", "color.ui=false"},
+			{"--git-dir", "/tmp/repo/.git", "--work-tree", "/tmp/repo"},
+			{"--no-pager"},
+		} {
+			args := slices.Concat(prefix, baseArgs)
+			if !isReadOnlyGitQuery(args) {
+				t.Errorf("isReadOnlyGitQuery(%v) = false, want true", args)
+			}
+			env := runner.buildEnv(ctx, args)
+			if !slices.Contains(env, "GIT_CONFIG_NOSYSTEM=1") {
+				t.Errorf("buildEnv(%v) missing GIT_CONFIG_NOSYSTEM=1: %v", args, env)
+			}
+			if !slices.Contains(env, "GIT_OPTIONAL_LOCKS=0") {
+				t.Errorf("buildEnv(%v) missing GIT_OPTIONAL_LOCKS=0: %v", args, env)
+			}
+		}
+	}
+
+	writeCases := [][]string{
+		{"commit"},
+		{"push"},
+		{"fetch"},
+		{"checkout"},
+		{"cherry-pick"},
+		{"update-ref"},
+		{"add"},
+		{"init"},
+		{"merge"},
+		{"rebase"},
+		{"reset"},
+		{"branch", "new-branch"},
+		{"branch", "-D", "old-branch"},
+		{"config", "user.name", "Alice"},
+		{"remote", "add", "origin", "https://example.com"},
+		{"symbolic-ref", "HEAD", "refs/heads/main"},
+	}
+	for _, baseArgs := range writeCases {
+		args := slices.Concat([]string{"-c", "commit.gpgsign=false"}, baseArgs)
+		if isReadOnlyGitQuery(args) {
+			t.Errorf("isReadOnlyGitQuery(%v) = true, want false", args)
+		}
+		env := runner.buildEnv(ctx, args)
+		if slices.Contains(env, "GIT_CONFIG_NOSYSTEM=1") {
+			t.Errorf("buildEnv(%v) unexpectedly set GIT_CONFIG_NOSYSTEM=1", args)
+		}
+		if slices.Contains(env, "GIT_OPTIONAL_LOCKS=0") {
+			t.Errorf("buildEnv(%v) unexpectedly set GIT_OPTIONAL_LOCKS=0", args)
+		}
+	}
+
+	// Verify RealGitRunner.Run passes GIT_CONFIG_NOSYSTEM=1 to git subprocesses
+	// so GIT_CONFIG_SYSTEM is ignored during read-only config lookups.
+	r := newTestGitRepo(t)
+	sysCfg := filepath.Join(t.TempDir(), "system-gitconfig")
+	if err := os.WriteFile(sysCfg, []byte("[ghish \"test\"]\n\tsystemonly = from-system\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_SYSTEM", sysCfg)
+	if val, err := r.Client.ConfigGet(ctx, "ghish.test.systemonly"); err == nil {
+		t.Errorf("expected GIT_CONFIG_NOSYSTEM=1 to skip GIT_CONFIG_SYSTEM on read-only git config, got %q", val)
+	}
+}
+
+func TestConfig_MemoizesGitClientRemoteDefaultBranchAndGerritURL(t *testing.T) {
+	ctx := t.Context()
+	mock := (&MockGitRunner{}).
+		WithBranch("my-feature").
+		OnCommand("config --get branch.my-feature.remote", "goog\n").
+		OnCommand("config --get branch.my-feature.merge", "refs/heads/release-v1\n").
+		OnCommand("config --get remote.goog.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
+
+	cfg := &Config{Git: mock}
+
+	if cfg.GitClient() != cfg.GitClient() {
+		t.Fatal("expected Config.GitClient() to return the cached GitClient instance")
+	}
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got := cfg.ResolveRemote(ctx); got != "goog" {
+				t.Errorf("ResolveRemote() = %q, want goog", got)
+			}
+			if got := cfg.ResolveDefaultBranch(ctx); got != "release-v1" {
+				t.Errorf("ResolveDefaultBranch() = %q, want release-v1", got)
+			}
+			if got, err := cfg.GerritURL(ctx); err != nil || got != "https://pigweed-review.googlesource.com/a" {
+				t.Errorf("GerritURL() = (%q, %v), want https://pigweed-review.googlesource.com/a", got, err)
+			}
+			if got := cfg.GerritHost(ctx); got != "pigweed-review.googlesource.com" {
+				t.Errorf("GerritHost() = %q, want pigweed-review.googlesource.com", got)
+			}
+		}()
+	}
+	wg.Wait()
+
+	counts := make(map[string]int)
+	for _, call := range mock.Calls {
+		counts[call]++
+	}
+	for cmd, n := range counts {
+		if n > 1 {
+			t.Errorf("duplicate git subprocess %q invoked %d times (all calls: %v)", cmd, n, mock.Calls)
+		}
 	}
 }

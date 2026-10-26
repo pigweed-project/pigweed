@@ -189,10 +189,10 @@ func FormatProfileRerunCommand(p ProjectProfile, change GerritChangeRef, builder
 var (
 	lookPathFn = exec.LookPath
 	execCmdFn  = func(ctx context.Context, name string, args []string, stdout, stderr io.Writer) error {
-		cmd := exec.CommandContext(ctx, name, args...)
+		cmd := ExecCommandContext(ctx, name, args...)
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
-		return cmd.Run()
+		return runBoundingOrphanedPipes(cmd)
 	}
 )
 
