@@ -21,6 +21,10 @@
 // All emboss headers are listed (even if they don't have explicit tests) to
 // ensure they are compiled.
 #include "pw_bluetooth/emboss_util.h"
+#include "pw_bluetooth/a2dp_aac.emb.h"  // IWYU pragma: keep
+#include "pw_bluetooth/a2dp_android_opus.emb.h"  // IWYU pragma: keep
+#include "pw_bluetooth/a2dp_sbc.emb.h"  // IWYU pragma: keep
+#include "pw_bluetooth/a2dp_vendor_codec.emb.h"  // IWYU pragma: keep
 #include "pw_bluetooth/att.emb.h"  // IWYU pragma: keep
 #include "pw_bluetooth/hci_commands.emb.h"  // IWYU pragma: keep
 #include "pw_bluetooth/hci_common.emb.h"
@@ -32,6 +36,8 @@
 #include "pw_bluetooth/l2cap_frames.emb.h"  // IWYU pragma: keep
 #include "pw_bluetooth/rfcomm_frames.emb.h"  // IWYU pragma: keep
 #include "pw_bluetooth/avctp_avrcp.emb.h"    // IWYU pragma: keep
+#include "pw_bluetooth/avdtp.emb.h"          // IWYU pragma: keep
+#include "pw_bluetooth/snoop.emb.h"          // IWYU pragma: keep
 // clang-format on
 
 namespace pw::bluetooth {

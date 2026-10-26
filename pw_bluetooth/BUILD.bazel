@@ -315,21 +315,25 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_a2dp_aac",
+    includes = ["public"],
     deps = [":_emboss_a2dp_aac"],
 )
 
 cc_library(
     name = "emboss_a2dp_android_opus",
+    includes = ["public"],
     deps = [":_emboss_a2dp_android_opus"],
 )
 
 cc_library(
     name = "emboss_a2dp_sbc",
+    includes = ["public"],
     deps = [":_emboss_a2dp_sbc"],
 )
 
 cc_library(
     name = "emboss_a2dp_vendor",
+    includes = ["public"],
     deps = [":_emboss_a2dp_vendor"],
 )
 
@@ -518,13 +522,19 @@ pw_cc_test(
     deps = [
         # All emboss targets are listed (even if they don't have explicit tests)
         # to ensure they are compiled.
-        ":emboss_util",
+        ":emboss_a2dp_aac",
+        ":emboss_a2dp_android_opus",
+        ":emboss_a2dp_sbc",
+        ":emboss_a2dp_vendor",
         ":emboss_att",
+        ":emboss_avctp_avrcp",
+        ":emboss_avdtp",
         ":emboss_hci",
         ":emboss_hci_test",
         ":emboss_l2cap_frames",
         ":emboss_rfcomm_frames",
-        ":emboss_avctp_avrcp",
+        ":emboss_snoop",
+        ":emboss_util",
         "//third_party/fuchsia:stdcompat",
     ],
 )

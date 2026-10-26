@@ -227,6 +227,38 @@ emboss_cc_library(pw_bluetooth.emboss_rfcomm_frames
     public/pw_bluetooth/rfcomm_frames.emb
 )
 
+emboss_cc_library(pw_bluetooth.emboss_a2dp_aac
+  SOURCES
+    public/pw_bluetooth/a2dp_aac.emb
+)
+
+emboss_cc_library(pw_bluetooth.emboss_a2dp_android_opus
+  SOURCES
+    public/pw_bluetooth/a2dp_android_opus.emb
+)
+
+emboss_cc_library(pw_bluetooth.emboss_a2dp_sbc
+  SOURCES
+    public/pw_bluetooth/a2dp_sbc.emb
+)
+
+emboss_cc_library(pw_bluetooth.emboss_a2dp_vendor
+  SOURCES
+    public/pw_bluetooth/a2dp_vendor_codec.emb
+)
+
+emboss_cc_library(pw_bluetooth.emboss_avdtp
+  SOURCES
+    public/pw_bluetooth/avdtp.emb
+  IMPORT_DIRS
+    public
+  DEPS
+    pw_bluetooth.emboss_a2dp_aac
+    pw_bluetooth.emboss_a2dp_android_opus
+    pw_bluetooth.emboss_a2dp_sbc
+    pw_bluetooth.emboss_a2dp_vendor
+)
+
 emboss_cc_library(pw_bluetooth.emboss_avctp_avrcp
   SOURCES
     public/pw_bluetooth/avctp_avrcp.emb
@@ -332,12 +364,18 @@ pw_add_test(pw_bluetooth.emboss_test
 
     # All emboss targets are listed (even if they don't have explicit tests) to
     # ensure they are compiled.
+    pw_bluetooth.emboss_a2dp_aac
+    pw_bluetooth.emboss_a2dp_android_opus
+    pw_bluetooth.emboss_a2dp_sbc
+    pw_bluetooth.emboss_a2dp_vendor
     pw_bluetooth.emboss_att
     pw_bluetooth.emboss_avctp_avrcp
+    pw_bluetooth.emboss_avdtp
     pw_bluetooth.emboss_hci_group
     pw_bluetooth.emboss_hci_test
     pw_bluetooth.emboss_l2cap_frames
     pw_bluetooth.emboss_rfcomm_frames
+    pw_bluetooth.emboss_snoop
     pw_bluetooth.emboss_util
     pw_third_party.fuchsia.stdcompat
   GROUPS

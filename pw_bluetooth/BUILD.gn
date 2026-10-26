@@ -200,6 +200,26 @@ if (dir_pw_third_party_emboss != "") {
     visibility = [ ":*" ]
   }
 
+  emboss_cc_library("emboss_a2dp_aac") {
+    public_configs = [ ":emboss_include_path" ]
+    source = "public/pw_bluetooth/a2dp_aac.emb"
+  }
+
+  emboss_cc_library("emboss_a2dp_android_opus") {
+    public_configs = [ ":emboss_include_path" ]
+    source = "public/pw_bluetooth/a2dp_android_opus.emb"
+  }
+
+  emboss_cc_library("emboss_a2dp_sbc") {
+    public_configs = [ ":emboss_include_path" ]
+    source = "public/pw_bluetooth/a2dp_sbc.emb"
+  }
+
+  emboss_cc_library("emboss_a2dp_vendor") {
+    public_configs = [ ":emboss_include_path" ]
+    source = "public/pw_bluetooth/a2dp_vendor_codec.emb"
+  }
+
   emboss_cc_library("emboss_att") {
     public_configs = [ ":emboss_include_path" ]
     source = "public/pw_bluetooth/att.emb"
@@ -217,6 +237,24 @@ if (dir_pw_third_party_emboss != "") {
   emboss_cc_library("emboss_avctp_avrcp") {
     public_configs = [ ":emboss_include_path" ]
     source = "public/pw_bluetooth/avctp_avrcp.emb"
+  }
+
+  emboss_cc_library("emboss_avdtp") {
+    public_configs = [ ":emboss_include_path" ]
+    source = "public/pw_bluetooth/avdtp.emb"
+    imports = [
+      "public/pw_bluetooth/a2dp_aac.emb",
+      "public/pw_bluetooth/a2dp_android_opus.emb",
+      "public/pw_bluetooth/a2dp_sbc.emb",
+      "public/pw_bluetooth/a2dp_vendor_codec.emb",
+    ]
+    import_dirs = [ "public" ]
+    deps = [
+      ":emboss_a2dp_aac",
+      ":emboss_a2dp_android_opus",
+      ":emboss_a2dp_sbc",
+      ":emboss_a2dp_vendor",
+    ]
   }
 
   emboss_cc_library("emboss_hci_android") {
@@ -295,10 +333,25 @@ if (dir_pw_third_party_emboss != "") {
     ]
   }
 } else {
+  group("emboss_a2dp_aac") {
+  }
+
+  group("emboss_a2dp_android_opus") {
+  }
+
+  group("emboss_a2dp_sbc") {
+  }
+
+  group("emboss_a2dp_vendor") {
+  }
+
   group("emboss_att") {
   }
 
   group("emboss_avctp_avrcp") {
+  }
+
+  group("emboss_avdtp") {
   }
 
   group("emboss_hci_android") {
@@ -329,6 +382,9 @@ if (dir_pw_third_party_emboss != "") {
   }
 
   group("emboss_rfcomm_frames") {
+  }
+
+  group("emboss_snoop") {
   }
 }
 
@@ -389,12 +445,18 @@ pw_test("emboss_test") {
   deps = [
     # All emboss targets are listed (even if they don't have explicit tests) to
     # ensure they are compiled.
+    ":emboss_a2dp_aac",
+    ":emboss_a2dp_android_opus",
+    ":emboss_a2dp_sbc",
+    ":emboss_a2dp_vendor",
     ":emboss_att",
     ":emboss_avctp_avrcp",
+    ":emboss_avdtp",
     ":emboss_hci_group",
     ":emboss_hci_test",
     ":emboss_l2cap_frames",
     ":emboss_rfcomm_frames",
+    ":emboss_snoop",
     ":emboss_util",
     "$pw_external_fuchsia:stdcompat",
   ]
