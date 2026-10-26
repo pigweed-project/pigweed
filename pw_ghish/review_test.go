@@ -329,7 +329,7 @@ func TestReviewCmd_PublishDrafts(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("cmd.Execute failed: %v", err)
 	}
-	if !strings.Contains(out.String(), "Review submitted successfully (published pending drafts).") {
+	if !strings.Contains(out.String(), "✓ Review submitted successfully (published pending drafts).") {
 		t.Errorf("expected publish confirmation in output, got: %q", out.String())
 	}
 

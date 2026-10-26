@@ -1195,11 +1195,13 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 			t.Errorf("bearer token or auth header leaked into git command args: %v", mockGit.Calls)
 		}
 		wantEnv := []string{
-			"GIT_CONFIG_COUNT=2",
-			"GIT_CONFIG_KEY_0=url.https://pigweed.googlesource.com/.insteadOf",
-			"GIT_CONFIG_VALUE_0=sso://pigweed/",
-			"GIT_CONFIG_KEY_1=http.https://pigweed.googlesource.com/.extraHeader",
-			"GIT_CONFIG_VALUE_1=Authorization: Bearer mac-luci-bearer-tok",
+			"GIT_CONFIG_COUNT=3",
+			"GIT_CONFIG_KEY_0=color.ui",
+			"GIT_CONFIG_VALUE_0=false",
+			"GIT_CONFIG_KEY_1=url.https://pigweed.googlesource.com/.insteadOf",
+			"GIT_CONFIG_VALUE_1=sso://pigweed/",
+			"GIT_CONFIG_KEY_2=http.https://pigweed.googlesource.com/.extraHeader",
+			"GIT_CONFIG_VALUE_2=Authorization: Bearer mac-luci-bearer-tok",
 		}
 		if !slices.Equal(gotEnv, wantEnv) {
 			t.Errorf("git env = %v, want %v", gotEnv, wantEnv)

@@ -22,9 +22,10 @@ import (
 )
 
 var reopenCmd = &cobra.Command{
-	Use:   "reopen [<id>]",
-	Short: "Reopen (restore) a change",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "reopen [<id>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Reopen (restore) a change",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		chCtx, err := ResolveChangeContext(cmd, args)
 		if err != nil {
@@ -40,7 +41,10 @@ var reopenCmd = &cobra.Command{
 			return chCtx.FormatError(err, "reopening")
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "Change reopened (restored) successfully.")
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Change %s reopened (restored) successfully.", chCtx.ChangeID),
+			Next:    fmt.Sprintf("gh pr view %s", chCtx.ChangeID),
+		})
 		return nil
 	},
 }

@@ -33,8 +33,11 @@ func TestCloseIntegration(t *testing.T) {
 		t.Error("Expected AbandonChange API to be called")
 	}
 
-	if !strings.Contains(output, "closed (abandoned) successfully") {
+	if !strings.Contains(output, "✓ Change 12345 closed (abandoned) successfully.") {
 		t.Errorf("Unexpected output: %s", output)
+	}
+	if !strings.Contains(output, "Next:   gh pr reopen 12345  (or gh pr list)") {
+		t.Errorf("Expected Next hint in output: %s", output)
 	}
 }
 

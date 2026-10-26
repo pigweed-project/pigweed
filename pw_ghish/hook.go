@@ -87,9 +87,10 @@ var (
 )
 
 var hookPreToolUseCmd = &cobra.Command{
-	Use:   "pre-tool-use",
-	Short: "Evaluate an AI agent PreToolUse / beforeShellExecution JSON payload from stdin",
-	Args:  cobra.NoArgs,
+	Use:         "pre-tool-use",
+	Annotations: map[string]string{KindAnnotation: KindMeta},
+	Short:       "Evaluate an AI agent PreToolUse / beforeShellExecution JSON payload from stdin",
+	Args:        cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rawInput, err := io.ReadAll(cmd.InOrStdin())
 		if err != nil {
@@ -105,9 +106,10 @@ var hookPreToolUseCmd = &cobra.Command{
 }
 
 var hookCommitMsgCmd = &cobra.Command{
-	Use:   "commit-msg <file>",
-	Short: "Ensure a Gerrit Change-Id trailer is present in a commit message file",
-	Args:  cobra.ExactArgs(1),
+	Use:         "commit-msg <file>",
+	Annotations: map[string]string{KindAnnotation: KindMeta},
+	Short:       "Ensure a Gerrit Change-Id trailer is present in a commit message file",
+	Args:        cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return EnsureChangeIDInFile(args[0])
 	},
@@ -115,6 +117,7 @@ var hookCommitMsgCmd = &cobra.Command{
 
 var hookPrePushCmd = &cobra.Command{
 	Use:          "pre-push",
+	Annotations:  map[string]string{KindAnnotation: KindMeta},
 	Short:        "Enforce that git push is invoked via ./gh when ghish.blockrawpush is enabled",
 	Args:         cobra.ArbitraryArgs,
 	SilenceUsage: true,
@@ -143,24 +146,27 @@ var hookPrePushCmd = &cobra.Command{
 }
 
 var hookInstallCmd = &cobra.Command{
-	Use:   "install",
-	Short: "Install opt-in AI agent PreToolUse hooks and/or Git repository hooks",
-	Args:  cobra.NoArgs,
-	RunE:  runHookInstall,
+	Use:         "install",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Install opt-in AI agent PreToolUse hooks and/or Git repository hooks",
+	Args:        cobra.NoArgs,
+	RunE:        runHookInstall,
 }
 
 var hookUninstallCmd = &cobra.Command{
-	Use:   "uninstall",
-	Short: "Remove installed AI agent PreToolUse hooks and/or Git pre-push hooks",
-	Args:  cobra.NoArgs,
-	RunE:  runHookUninstall,
+	Use:         "uninstall",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Remove installed AI agent PreToolUse hooks and/or Git pre-push hooks",
+	Args:        cobra.NoArgs,
+	RunE:        runHookUninstall,
 }
 
 var hookStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show installation status of AI agent and Git hooks",
-	Args:  cobra.NoArgs,
-	RunE:  runHookStatus,
+	Use:         "status",
+	Annotations: map[string]string{KindAnnotation: KindView},
+	Short:       "Show installation status of AI agent and Git hooks",
+	Args:        cobra.NoArgs,
+	RunE:        runHookStatus,
 }
 
 func init() {
@@ -1140,6 +1146,10 @@ func runHookInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	PrintReceipt(out, Receipt{
+		Summary: "Installed gh-ish hooks",
+		Next:    "gh hook status",
+	})
 	return nil
 }
 
@@ -1195,6 +1205,10 @@ func runHookUninstall(cmd *cobra.Command, args []string) error {
 		_, _ = fmt.Fprintf(out, "Disabled ghish.blockrawpush and removed %s\n", prePushPath)
 	}
 
+	PrintReceipt(out, Receipt{
+		Summary: "Uninstalled gh-ish hooks",
+		Next:    "gh hook status",
+	})
 	return nil
 }
 
@@ -1211,30 +1225,60 @@ func runHookStatus(cmd *cobra.Command, args []string) error {
 	}
 	_, _ = fmt.Fprintf(out, "Staged Binary: %s (%s)\n\n", stagedBin, binStatus)
 
+	var activeCount, disabledCount int
 	_, _ = fmt.Fprintln(out, "Agent PreToolUse Hooks (user-level):")
 	for _, target := range []string{"jetski", "claude", "cursor"} {
 		status := "disabled"
+		glyph := StyleDim(out, "-")
 		if isAgentHookInstalled(homeDir, target) {
 			status = "enabled"
+			glyph = StyleGreen(out, GlyphPass)
+			activeCount++
+		} else {
+			disabledCount++
 		}
-		_, _ = fmt.Fprintf(out, "  %-8s %-10s (%s)\n", target+":", status, agentConfigPath(homeDir, target))
+		_, _ = fmt.Fprintf(out, "  %s %-8s %-10s (%s)\n", glyph, target+":", status, agentConfigPath(homeDir, target))
 	}
 
 	_, _ = fmt.Fprintln(out, "\nGit Repository Hooks:")
 	hooksDir, err := resolveGitHooksDir(cmd)
 	if err != nil {
 		_, _ = fmt.Fprintln(out, "  (not inside a Git repository)")
+		_, _ = fmt.Fprintf(out, "\nVerdict: %d active, %d disabled\n", activeCount, disabledCount)
+		if disabledCount > 0 {
+			_, _ = fmt.Fprintln(out, "Next:    gh hook install --agent --block-raw-push")
+		} else {
+			_, _ = fmt.Fprintln(out, "Next:    gh pr status")
+		}
 		return nil
 	}
+
 	commitMsgStatus := "missing"
+	commitMsgGlyph := StyleDim(out, "-")
 	if info, err := os.Stat(filepath.Join(hooksDir, "commit-msg")); err == nil && info.Mode()&0111 != 0 {
 		commitMsgStatus = "installed"
+		commitMsgGlyph = StyleGreen(out, GlyphPass)
+		activeCount++
+	} else {
+		disabledCount++
 	}
 	prePushStatus := "disabled"
+	prePushGlyph := StyleDim(out, "-")
 	if info, err := os.Stat(filepath.Join(hooksDir, "pre-push")); err == nil && info.Mode()&0111 != 0 {
 		prePushStatus = "installed"
+		prePushGlyph = StyleGreen(out, GlyphPass)
+		activeCount++
+	} else {
+		disabledCount++
 	}
-	_, _ = fmt.Fprintf(out, "  commit-msg: %s\n", commitMsgStatus)
-	_, _ = fmt.Fprintf(out, "  pre-push:   %s\n", prePushStatus)
+	_, _ = fmt.Fprintf(out, "  %s commit-msg: %s\n", commitMsgGlyph, commitMsgStatus)
+	_, _ = fmt.Fprintf(out, "  %s pre-push:   %s\n", prePushGlyph, prePushStatus)
+
+	_, _ = fmt.Fprintf(out, "\nVerdict: %d active, %d disabled\n", activeCount, disabledCount)
+	if disabledCount > 0 {
+		_, _ = fmt.Fprintln(out, "Next:    gh hook install --agent --block-raw-push")
+	} else {
+		_, _ = fmt.Fprintln(out, "Next:    gh pr status")
+	}
 	return nil
 }

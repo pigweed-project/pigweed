@@ -23,8 +23,9 @@ import (
 )
 
 var readyCmd = &cobra.Command{
-	Use:   "ready [<id>]",
-	Short: "Mark a change as ready for review",
+	Use:         "ready [<id>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Mark a change as ready for review",
 	Long: `Mark a change as ready for review.
 
 With -u, --undo, converts the change back to work-in-progress (WIP / draft).
@@ -57,7 +58,10 @@ code owners (ghish-only).`,
 			if err := chCtx.SetWorkInProgress(message); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Change marked as work in progress successfully.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: "Change marked as work in progress successfully.",
+				Next:    fmt.Sprintf("gh pr view %s", chCtx.ChangeID),
+			})
 			return nil
 		}
 
@@ -85,13 +89,21 @@ code owners (ghish-only).`,
 			}
 		}
 		if len(reviewers) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "Reviewer added successfully: %s\n", strings.Join(reviewers, ", "))
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: fmt.Sprintf("Reviewer added successfully: %s", strings.Join(reviewers, ", ")),
+			})
 		}
 
 		if !alreadyReady {
-			fmt.Fprintln(cmd.OutOrStdout(), "Change marked ready for review successfully.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: "Change marked ready for review successfully.",
+				Next:    fmt.Sprintf("gh pr view %s", chCtx.ChangeID),
+			})
 		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "Change is ready for review.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: "Change is ready for review.",
+				Next:    fmt.Sprintf("gh pr view %s", chCtx.ChangeID),
+			})
 		}
 		return nil
 	},

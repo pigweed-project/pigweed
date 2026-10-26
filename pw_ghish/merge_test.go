@@ -36,8 +36,11 @@ func TestMergeIntegration_ImmediateSubmit(t *testing.T) {
 		t.Error("Expected SubmitChange API to be called")
 	}
 
-	if !strings.Contains(output, "merged (submitted) successfully") {
+	if !strings.Contains(output, "✓ Change merged (submitted) successfully.") {
 		t.Errorf("Unexpected output: %s", output)
+	}
+	if !strings.Contains(output, "Next:   gh pr view 12345") {
+		t.Errorf("Expected Next hint in output: %s", output)
 	}
 }
 
@@ -68,8 +71,11 @@ func TestMergeIntegration_AutoSubmit_Pigweed(t *testing.T) {
 		t.Errorf("Message got %q, want %q", capturedInput.Message, "Auto-submitting")
 	}
 
-	if !strings.Contains(output, "Auto-submit enabled for change 12345 (Pigweed-Auto-Submit+1)") {
+	if !strings.Contains(output, "✓ Auto-submit enabled for change 12345 (Pigweed-Auto-Submit+1).") {
 		t.Errorf("Unexpected output: %s", output)
+	}
+	if !strings.Contains(output, "Next:   gh pr checks 12345 --watch") {
+		t.Errorf("Expected Next hint in output: %s", output)
 	}
 }
 
@@ -431,7 +437,7 @@ func TestMergeIntegration_Nightly(t *testing.T) {
 		}
 	}
 
-	wantOut := "Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles)."
+	wantOut := "✓ Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles)."
 	if !strings.Contains(output, wantOut) {
 		t.Errorf("Output got %q, want %q", output, wantOut)
 	}

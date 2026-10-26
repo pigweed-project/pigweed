@@ -1522,3 +1522,37 @@ func (c *defaultGitClient) UpdateHeadRef(ctx context.Context, targetSHA, expecte
 	_, err := c.runOutput(ctx, args...)
 	return err
 }
+
+func filterGitPushProgress(output string) string {
+	if output == "" {
+		return ""
+	}
+	lines := strings.Split(output, "\n")
+	var kept []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if isGitPushProgressLine(trimmed) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+func isGitPushProgressLine(trimmed string) bool {
+	for _, prefix := range []string{
+		"Counting objects:",
+		"Enumerating objects:",
+		"Compressing objects:",
+		"Delta compression",
+		"Writing objects:",
+		"Total ",
+		"remote: Resolving deltas:",
+		"remote: Processing changes:",
+	} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
+}

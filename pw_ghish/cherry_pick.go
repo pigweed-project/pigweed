@@ -21,9 +21,10 @@ import (
 )
 
 var cherryPickCmd = &cobra.Command{
-	Use:   "cherry-pick <id>",
-	Short: "Cherry-pick a pull request's changes locally",
-	Args:  cobra.ExactArgs(1),
+	Use:         "cherry-pick <id>",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Cherry-pick a pull request's changes locally",
+	Args:        cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		chCtx, err := ResolveChangeContext(cmd, args)
 		if err != nil {
@@ -62,7 +63,15 @@ var cherryPickCmd = &cobra.Command{
 				"  git cherry-pick --abort", err)
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Change %d cherry-picked successfully.\n", change.Number)
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Change %d cherry-picked successfully.", change.Number),
+			Details: []ReceiptField{
+				{Key: "Ref", Value: ref},
+				{Key: "Subject", Value: SanitizeUntrustedText(change.Subject)},
+			},
+			URL:  chCtx.ChangeURL(change),
+			Next: "gh pr push",
+		})
 		return nil
 	},
 }

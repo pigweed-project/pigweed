@@ -92,7 +92,10 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			}
 		}
 		if len(expandedReviewers) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "Reviewer added successfully: %s\n", strings.Join(expandedReviewers, ", "))
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: fmt.Sprintf("Reviewer added successfully: %s", strings.Join(expandedReviewers, ", ")),
+				Next:    fmt.Sprintf("gh pr view %s", changeID),
+			})
 		}
 
 		for _, reviewer := range opts.removeReviewer {
@@ -100,7 +103,10 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			if err != nil {
 				return fmt.Errorf("error deleting reviewer %s: %w", reviewer, err)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Reviewer removed successfully.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: "Reviewer removed successfully.",
+				Next:    fmt.Sprintf("gh pr view %s", changeID),
+			})
 		}
 
 		for _, assignee := range opts.addAssignee {
@@ -116,7 +122,10 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			if err := chCtx.SetReviewRevision("current", review); err != nil {
 				return fmt.Errorf("error adding assignee to attention set %s: %w", assignee, err)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Assignee added successfully.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: "Assignee added successfully.",
+				Next:    fmt.Sprintf("gh pr view %s", changeID),
+			})
 		}
 
 		for _, assignee := range opts.removeAssignee {
@@ -124,21 +133,30 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			if err != nil {
 				return fmt.Errorf("error deleting assignee %s: %w", assignee, err)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Assignee removed successfully.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: "Assignee removed successfully.",
+				Next:    fmt.Sprintf("gh pr view %s", changeID),
+			})
 		}
 
 		for _, account := range addAttention {
 			if err := addToAttentionSet(chCtx, account); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Added %s to the attention set.\n", account)
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: fmt.Sprintf("Added %s to the attention set.", account),
+				Next:    fmt.Sprintf("gh pr view %s", changeID),
+			})
 		}
 
 		for _, account := range removeAttention {
 			if err := removeFromAttentionSet(chCtx, account); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Removed %s from the attention set.\n", account)
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: fmt.Sprintf("Removed %s from the attention set.", account),
+				Next:    fmt.Sprintf("gh pr view %s", changeID),
+			})
 		}
 
 		if len(labelVotes) > 0 {
@@ -149,7 +167,10 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			if err := chCtx.SetReviewRevision("current", input); err != nil {
 				return fmt.Errorf("error applying labels for change %s: %w", changeID, err)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Labels added successfully.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: "Labels added successfully.",
+				Next:    fmt.Sprintf("gh pr view %s", changeID),
+			})
 		}
 
 		if cmd.Flags().Changed("topic") || opts.removeTopic {
@@ -157,7 +178,10 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 				if _, err := client.Changes.DeleteTopic(ctx, changeID); err != nil {
 					return chCtx.FormatError(err, "deleting topic on")
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "Topic removed successfully.")
+				PrintReceipt(cmd.OutOrStdout(), Receipt{
+					Summary: "Topic removed successfully.",
+					Next:    fmt.Sprintf("gh pr view %s", changeID),
+				})
 			} else {
 				targetTopic := strings.TrimSpace(opts.topic)
 				chInfo, chErr := chCtx.GetChange(&gerrit.ChangeOptions{
@@ -172,7 +196,10 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 				if _, _, err := client.Changes.SetTopic(ctx, changeID, &gerrit.TopicInput{Topic: targetTopic}); err != nil {
 					return chCtx.FormatError(err, "setting topic on")
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Topic set to %q successfully.\n", targetTopic)
+				PrintReceipt(cmd.OutOrStdout(), Receipt{
+					Summary: fmt.Sprintf("Topic set to %q successfully.", targetTopic),
+					Next:    fmt.Sprintf("gh pr view %s", changeID),
+				})
 			}
 		}
 
@@ -183,7 +210,10 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			}); err != nil {
 				return chCtx.FormatError(err, "updating hashtags on")
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Hashtags updated successfully.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: "Hashtags updated successfully.",
+				Next:    fmt.Sprintf("gh pr view %s", changeID),
+			})
 		}
 
 		if cmd.Flags().Changed("cq") || cmd.Flags().Changed("trigger") {
@@ -199,9 +229,15 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 				return chCtx.FormatError(err, fmt.Sprintf("setting %s on", cqName))
 			}
 			if cqScore == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s vote removed successfully.\n", cqName)
+				PrintReceipt(cmd.OutOrStdout(), Receipt{
+					Summary: fmt.Sprintf("%s vote removed successfully.", cqName),
+					Next:    fmt.Sprintf("gh pr view %s", changeID),
+				})
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s+%d set successfully.\n", cqName, cqScore)
+				PrintReceipt(cmd.OutOrStdout(), Receipt{
+					Summary: fmt.Sprintf("%s+%d set successfully.", cqName, cqScore),
+					Next:    fmt.Sprintf("gh pr view %s", changeID),
+				})
 			}
 		}
 
@@ -354,10 +390,11 @@ func newEditCmd() *cobra.Command {
 	var opts editOptions
 
 	editCmd := &cobra.Command{
-		Use:   "edit [<id>]",
-		Short: "Edit change metadata (reviewers, attention set, labels, topic, hashtags)",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  opts.runE(),
+		Use:         "edit [<id>]",
+		Annotations: map[string]string{KindAnnotation: KindMutation},
+		Short:       "Edit change metadata (reviewers, attention set, labels, topic, hashtags)",
+		Args:        cobra.MaximumNArgs(1),
+		RunE:        opts.runE(),
 	}
 
 	opts.commitMsg.AddAsDisabled(editCmd)

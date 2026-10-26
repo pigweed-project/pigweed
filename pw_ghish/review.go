@@ -37,8 +37,9 @@ type reviewOptions struct {
 func newReviewCmd() *cobra.Command {
 	opts := reviewOptions{cq: -1, trigger: -1}
 	cmd := &cobra.Command{
-		Use:   "review [<id>]",
-		Short: "Review a change",
+		Use:         "review [<id>]",
+		Annotations: map[string]string{KindAnnotation: KindMutation},
+		Short:       "Review a change",
 		Long: `Review a Gerrit change by adding a message, approving, requesting changes, publishing draft comments, or voting on presubmit / Commit-Queue.
 
 If no change ID is specified, the active change for the current branch is reviewed.
@@ -133,6 +134,7 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 				}
 			}
 			var actions []string
+			votedCQ := false
 			if opts.approve {
 				input.Labels[reviewLabel.Name] = reviewLabel.Value
 				actions = append(actions, fmt.Sprintf("%s+%d", reviewLabel.Name, reviewLabel.Value))
@@ -151,6 +153,9 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 					actions = append(actions, fmt.Sprintf("%s=0", cqName))
 				} else {
 					actions = append(actions, fmt.Sprintf("%s+%d", cqName, cqScore))
+					if cqScore > 0 {
+						votedCQ = true
+					}
 				}
 			}
 			if opts.publish {
@@ -164,10 +169,20 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 				return err
 			}
 
+			nextStep := fmt.Sprintf("gh pr view %s", chCtx.ChangeID)
+			if votedCQ {
+				nextStep = fmt.Sprintf("gh pr checks %s --watch [--fail-fast]", chCtx.ChangeID)
+			}
 			if len(actions) > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Review submitted successfully (%s).\n", strings.Join(actions, ", "))
+				PrintReceipt(cmd.OutOrStdout(), Receipt{
+					Summary: fmt.Sprintf("Review submitted successfully (%s).", strings.Join(actions, ", ")),
+					Next:    nextStep,
+				})
 			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "Review submitted successfully.")
+				PrintReceipt(cmd.OutOrStdout(), Receipt{
+					Summary: "Review submitted successfully.",
+					Next:    nextStep,
+				})
 			}
 			return nil
 		},

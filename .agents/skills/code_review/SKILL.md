@@ -28,7 +28,7 @@ Evaluate every change against:
    - **Gerrit CL (`<id>` or current branch):**
      ```bash
      ./gh pr view [<id>] --comments
-     ./gh pr diff [<id>] > patch_CL_<ID>.diff
+     ./gh pr diff [<id>] --all > patch_CL_<ID>.diff  # or: ./gh pr checkout <id>
      ```
 2. **Track & Analyze (`tasks.md`):**
    - Create a `tasks.md` artifact in the conversation's artifacts directory (`write_to_file` with `ArtifactMetadata`) listing the Review Criteria as checkboxes, and check each item off as you analyze the diff.

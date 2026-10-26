@@ -33,8 +33,11 @@ func TestReopenIntegration(t *testing.T) {
 		t.Error("Expected RestoreChange API to be called")
 	}
 
-	if !strings.Contains(output, "Change reopened (restored) successfully") {
+	if !strings.Contains(output, "✓ Change 12345 reopened (restored) successfully.") {
 		t.Errorf("Unexpected output: %s", output)
+	}
+	if !strings.Contains(output, "Next:   gh pr view 12345") {
+		t.Errorf("Expected Next hint in output: %s", output)
 	}
 }
 

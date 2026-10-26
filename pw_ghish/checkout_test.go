@@ -218,6 +218,15 @@ func TestCheckout_DetachedHeadWarning(t *testing.T) {
 		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
 	}
 
+	if !strings.Contains(output, "✓ Checked out change 12345 at FETCH_HEAD.") {
+		t.Errorf("Expected output to contain receipt, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Ref:    FETCH_HEAD") {
+		t.Errorf("Expected output to contain Ref detail, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Next:   git checkout -b <branch-name>  (or gh pr view 12345)") {
+		t.Errorf("Expected output to contain Next hint, got:\n%s", output)
+	}
 	if !strings.Contains(output, "detached HEAD") {
 		t.Errorf("Expected output to mention 'detached HEAD', got:\n%s", output)
 	}
@@ -259,8 +268,14 @@ func TestCheckout_WithBranchFlag(t *testing.T) {
 	if !checkoutBranchFound {
 		t.Errorf("Expected 'checkout -b my-feature FETCH_HEAD' in calls: %v", mockGit.Calls)
 	}
-	if !strings.Contains(output, `onto new branch "my-feature"`) {
+	if !strings.Contains(output, `✓ Checked out change 12345 onto new branch "my-feature".`) {
 		t.Errorf("Expected output to mention checked out onto new branch, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Branch: my-feature") {
+		t.Errorf("Expected output to contain Branch detail, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Next:   gh pr view 12345") {
+		t.Errorf("Expected output to contain Next hint, got:\n%s", output)
 	}
 }
 

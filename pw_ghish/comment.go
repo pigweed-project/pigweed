@@ -93,9 +93,10 @@ func resolveCommentMessage(message, body, bodyFile string, stdin io.Reader, requ
 }
 
 var commentCmd = &cobra.Command{
-	Use:   "comment [<id>]",
-	Short: "Add, update, or delete a comment on a change",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "comment [<id>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Add, update, or delete a comment on a change",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if commentLine < 0 {
 			return fmt.Errorf("--line must be a positive line number (got %d)", commentLine)
@@ -187,8 +188,11 @@ var commentCmd = &cobra.Command{
 				return chCtx.FormatError(dErr, "deleting draft comment for")
 			}
 			delPS := effectivePatchSet(existing.PatchSet, explicitPatchsetNum)
-			fmt.Fprintf(cmd.OutOrStdout(), "Draft comment deleted successfully (%s).\n",
-				formatCommentTargetWithPatchSet(targetPath, commentLine, delPS))
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: fmt.Sprintf("Draft comment deleted successfully (%s).",
+					formatCommentTargetWithPatchSet(targetPath, commentLine, delPS)),
+				Next: fmt.Sprintf("gh pr view %s --comments", changeID),
+			})
 			return nil
 		}
 
@@ -331,9 +335,11 @@ var commentCmd = &cobra.Command{
 				savedPS = savedDraft.PatchSet
 			}
 			ps := effectivePatchSet(savedPS, fallbackPS, explicitPatchsetNum)
-			fmt.Fprintf(cmd.OutOrStdout(), "Draft comment %s successfully %s.\n",
-				action, formatCommentActionSummary(targetPath, commentLine, ps, draftInput.InReplyTo != "", draftInput.Unresolved))
-			fmt.Fprintln(cmd.OutOrStdout(), "Run 'gh pr review --publish' (or 'gh pr push --publish') once all comments are staged to publish them in a single review.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: fmt.Sprintf("Draft comment %s successfully %s.",
+					action, formatCommentActionSummary(targetPath, commentLine, ps, draftInput.InReplyTo != "", draftInput.Unresolved)),
+				Next: "gh pr review --publish  (or gh pr push --publish)",
+			})
 			return nil
 		}
 
@@ -362,8 +368,11 @@ var commentCmd = &cobra.Command{
 		}
 
 		ps := effectivePatchSet(parentPatchSet, explicitPatchsetNum)
-		fmt.Fprintf(cmd.OutOrStdout(), "Comment submitted successfully %s.\n",
-			formatCommentActionSummary(targetPath, commentLine, ps, inReplyTo != "", unresolved))
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Comment submitted successfully %s.",
+				formatCommentActionSummary(targetPath, commentLine, ps, inReplyTo != "", unresolved)),
+			Next: fmt.Sprintf("gh pr view %s --comments", changeID),
+		})
 		return nil
 	},
 }

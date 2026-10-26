@@ -15,9 +15,11 @@
 package pw_ghish
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -126,7 +128,20 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Pushing patchset for branch %s...\n", branch)
 
-	if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {
+	var pushBuf bytes.Buffer
+	origOut := cmd.OutOrStdout()
+	origErr := cmd.ErrOrStderr()
+	cmd.SetOut(io.MultiWriter(origOut, &pushBuf))
+	cmd.SetErr(io.MultiWriter(origErr, &pushBuf))
+	err = executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify)
+	if cmd.HasParent() {
+		cmd.SetOut(nil)
+		cmd.SetErr(nil)
+	} else {
+		cmd.SetOut(origOut)
+		cmd.SetErr(origErr)
+	}
+	if err != nil {
 		if autoSubmit.Unsupported != nil && err == autoSubmit.Unsupported {
 			guard.Keep()
 			return err
@@ -142,7 +157,20 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 
 	guard.Keep()
-	fmt.Fprintln(cmd.OutOrStdout(), "\nPatchset pushed successfully.")
+	fmt.Fprintln(cmd.OutOrStdout())
+	var details []ReceiptField
+	if branch != "" {
+		details = append(details, ReceiptField{Key: "Branch", Value: branch})
+	}
+	if state != nil && state.ChangeID != "" {
+		details = append(details, ReceiptField{Key: "Change", Value: state.ChangeID})
+	}
+	PrintReceipt(cmd.OutOrStdout(), Receipt{
+		Summary: "Patchset pushed successfully.",
+		Details: details,
+		URL:     ExtractGerritURLFromGitOutput(pushBuf.String()),
+		Next:    "gh pr checks --watch [--fail-fast]",
+	})
 	// The patchset is up, so this is reported last: the push is not the part
 	// that failed, the promise that something would submit it is.
 	return autoSubmit.Unsupported
@@ -150,9 +178,10 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 func newPushCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "push",
-		Aliases: []string{"upload"},
-		Short:   "Push current HEAD commit to Gerrit as a patchset",
+		Use:         "push",
+		Annotations: map[string]string{KindAnnotation: KindMutation},
+		Aliases:     []string{"upload"},
+		Short:       "Push current HEAD commit to Gerrit as a patchset",
 		Long: `Push the current HEAD commit to Gerrit to upload a new patchset.
 
 If no change with HEAD's Change-Id exists on Gerrit, this command will error

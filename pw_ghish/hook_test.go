@@ -264,6 +264,8 @@ func TestHookInstallStatusUninstallAndPrePush(t *testing.T) {
 
 	fakeGit := &hookFakeGitRunner{gitDir: filepath.Join(tmpRepo, ".git")}
 
+	isolateRootCmdForTest(t)
+
 	// 1. Missing flags on install must fail fast with actionable error.
 	hookInstallAgentFlag = ""
 	hookInstallGitFlag = false
@@ -298,6 +300,9 @@ func TestHookInstallStatusUninstallAndPrePush(t *testing.T) {
 	RootCmd.SetArgs([]string{"hook", "install", "--agent=all", "--git", "--block-raw-push"})
 	if err := RootCmd.Execute(); err != nil {
 		t.Fatalf("hook install failed: %v", err)
+	}
+	if !strings.Contains(outBuf.String(), "Installed gh-ish hooks") || !strings.Contains(outBuf.String(), "Next:   gh hook status") {
+		t.Errorf("expected hook install receipt in output, got:\n%s", outBuf.String())
 	}
 	for _, target := range []string{"jetski", "claude", "cursor"} {
 		if !isAgentHookInstalled(tmpHome, target) {
@@ -343,7 +348,8 @@ func TestHookInstallStatusUninstallAndPrePush(t *testing.T) {
 	if err := RootCmd.Execute(); err != nil {
 		t.Fatalf("hook status failed: %v", err)
 	}
-	if !strings.Contains(outBuf.String(), "enabled") || !strings.Contains(outBuf.String(), "installed") {
+	if !strings.Contains(outBuf.String(), "enabled") || !strings.Contains(outBuf.String(), "installed") ||
+		!strings.Contains(outBuf.String(), "Verdict: 5 active, 0 disabled") || !strings.Contains(outBuf.String(), "Next:    gh pr status") {
 		t.Errorf("unexpected hook status output:\n%s", outBuf.String())
 	}
 
@@ -352,6 +358,9 @@ func TestHookInstallStatusUninstallAndPrePush(t *testing.T) {
 	RootCmd.SetArgs([]string{"hook", "uninstall", "--agent=all", "--git"})
 	if err := RootCmd.Execute(); err != nil {
 		t.Fatalf("hook uninstall failed: %v", err)
+	}
+	if !strings.Contains(outBuf.String(), "Uninstalled gh-ish hooks") || !strings.Contains(outBuf.String(), "Next:   gh hook status") {
+		t.Errorf("expected hook uninstall receipt in output, got:\n%s", outBuf.String())
 	}
 	for _, target := range []string{"jetski", "claude", "cursor"} {
 		if isAgentHookInstalled(tmpHome, target) {

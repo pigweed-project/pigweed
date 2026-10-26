@@ -15,6 +15,8 @@
 package pw_ghish
 
 import (
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -155,4 +157,78 @@ func TestDiff_Stat(t *testing.T) {
 	if !strings.Contains(output, "1 file changed, 10 insertions(+), 5 deletions(-)") {
 		t.Errorf("Expected diffstat summary line, got:\n%s", output)
 	}
+}
+
+func TestDiff_FoldsLongPatchAndHonorsAll(t *testing.T) {
+	preamble := "From 0123456789abcdef Mon Sep 17 00:00:00 2001\nSubject: [PATCH] pw_ghish: Budget diff output\n\nChange-Id: I1234567890abcdef\n---"
+	var sections []string
+	sections = append(sections, preamble)
+
+	// 1. A generated lockfile section (50 lines)
+	var lockLines []string
+	lockLines = append(lockLines, "diff --git a/MODULE.bazel.lock b/MODULE.bazel.lock", "--- a/MODULE.bazel.lock", "+++ b/MODULE.bazel.lock")
+	for i := 0; i < 47; i++ {
+		lockLines = append(lockLines, fmt.Sprintf("+lock_line_%d", i))
+	}
+	sections = append(sections, strings.Join(lockLines, "\n"))
+
+	// 2. First regular file (250 lines) -> fits within 400-line budget
+	var file1Lines []string
+	file1Lines = append(file1Lines, "diff --git a/pw_ghish/first.go b/pw_ghish/first.go", "--- a/pw_ghish/first.go", "+++ b/pw_ghish/first.go")
+	for i := 0; i < 247; i++ {
+		file1Lines = append(file1Lines, fmt.Sprintf("+first_file_line_%d", i))
+	}
+	sections = append(sections, strings.Join(file1Lines, "\n"))
+
+	// 3. Second regular file (250 lines) -> pushes total over 400 lines, should be omitted by default
+	var file2Lines []string
+	file2Lines = append(file2Lines, "diff --git a/pw_ghish/second.go b/pw_ghish/second.go", "--- a/pw_ghish/second.go", "+++ b/pw_ghish/second.go")
+	for i := 0; i < 247; i++ {
+		file2Lines = append(file2Lines, fmt.Sprintf("+second_file_line_%d", i))
+	}
+	sections = append(sections, strings.Join(file2Lines, "\n"))
+
+	fullPatch := strings.Join(sections, "\n")
+	encodedPatch := base64.StdEncoding.EncodeToString([]byte(fullPatch))
+
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345/revisions/current/patch", http.StatusOK, fmt.Sprintf("%q", encodedPatch))
+
+	t.Run("default diff preserves preamble, folds lockfile, and truncates at 400-line budget", func(t *testing.T) {
+		output, err := executeCommand(RootCmd, "pr", "diff", "12345")
+		if err != nil {
+			t.Fatalf("pr diff failed: %v\nOutput: %s", err, output)
+		}
+		if !strings.Contains(output, "Subject: [PATCH] pw_ghish: Budget diff output") {
+			t.Errorf("expected commit preamble to be preserved before Files changed header, got:\n%s", output)
+		}
+		if !strings.Contains(output, "Files changed: 3 (555 diff lines)") {
+			t.Errorf("expected Files changed header, got:\n%s", output)
+		}
+		if !strings.Contains(output, "# [folded generated/lockfile MODULE.bazel.lock (50 lines) — use --all or --path MODULE.bazel.lock to view]") {
+			t.Errorf("expected folded lockfile notice, got:\n%s", output)
+		}
+		if !strings.Contains(output, "+first_file_line_0") {
+			t.Errorf("expected first.go to be included in full, got:\n%s", output)
+		}
+		if strings.Contains(output, "+second_file_line_0") {
+			t.Errorf("expected second.go to be omitted due to 400-line budget, got:\n%s", output)
+		}
+		wantFooter := "… 1 more file(s) (250 lines omitted) · run 'gh pr diff 12345 --all' or 'gh pr diff 12345 --path <file>' to view full patch (or 'gh pr checkout 12345' / 'gh pr cherry-pick 12345')"
+		if !strings.Contains(output, wantFooter) {
+			t.Errorf("expected unfold footer %q, got:\n%s", wantFooter, output)
+		}
+	})
+
+	t.Run("--all outputs full untruncated diff", func(t *testing.T) {
+		output, err := executeCommand(RootCmd, "pr", "diff", "12345", "--all")
+		if err != nil {
+			t.Fatalf("pr diff --all failed: %v\nOutput: %s", err, output)
+		}
+		for _, want := range []string{"+lock_line_0", "+first_file_line_0", "+second_file_line_0"} {
+			if !strings.Contains(output, want) {
+				t.Errorf("expected %q in --all output, got:\n%s", want, output)
+			}
+		}
+	})
 }

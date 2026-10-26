@@ -25,7 +25,8 @@ import (
 )
 
 func TestPushIntegration(t *testing.T) {
-	mockGit := NewMockGit(t).WithBranch("feature-branch")
+	mockGit := NewMockGit(t).WithBranch("feature-branch").
+		OnCommand("push origin HEAD:refs/for/feature-branch", "Counting objects: 5, done.\nDelta compression using up to 8 threads.\nWriting objects: 100% (5/5), 1.20 KiB | 1.20 MiB/s, done.\nTotal 5 (delta 3), reused 0 (delta 0)\nremote: Resolving deltas: 100% (3/3)\nremote: Processing changes: refs: 1, done\nremote:   https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/396894 pw_ghish: Add UI\n")
 
 	output, err := executeCommand(RootCmd, "pr", "push")
 	if err != nil {
@@ -35,6 +36,23 @@ func TestPushIntegration(t *testing.T) {
 	wantOutput := "Pushing patchset for branch feature-branch..."
 	if !strings.Contains(output, wantOutput) {
 		t.Errorf("pr push output got = %q, want it to contain = %q", output, wantOutput)
+	}
+	if !strings.Contains(output, "✓ Patchset pushed successfully.") {
+		t.Errorf("pr push output got = %q, want receipt", output)
+	}
+	if !strings.Contains(output, "Branch: feature-branch") {
+		t.Errorf("pr push output got = %q, want Branch detail", output)
+	}
+	if !strings.Contains(output, "Next:   gh pr checks --watch") {
+		t.Errorf("pr push output got = %q, want Next hint", output)
+	}
+	if !strings.Contains(output, "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/396894") {
+		t.Errorf("pr push output got = %q, want extracted Gerrit URL", output)
+	}
+	for _, noisy := range []string{"Counting objects:", "Delta compression", "Writing objects:", "remote: Resolving deltas:", "remote: Processing changes:"} {
+		if strings.Contains(output, noisy) {
+			t.Errorf("expected noisy git progress line %q to be filtered from output:\n%s", noisy, output)
+		}
 	}
 
 	wantPush := "push origin HEAD:refs/for/feature-branch"
@@ -396,7 +414,7 @@ func TestPush_NewChangeWithForceSucceeds(t *testing.T) {
 	if !mockGit.HasCall("push") {
 		t.Errorf("Expected git push to be called with --force, calls: %v", mockGit.Calls)
 	}
-	if !strings.Contains(output, "Patchset pushed successfully.") {
+	if !strings.Contains(output, "✓ Patchset pushed successfully.") {
 		t.Errorf("Unexpected output: %s", output)
 	}
 }

@@ -29,6 +29,8 @@ func TestCherryPickIntegration(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345", http.StatusOK, `{
 		"_number": 12345,
+		"project": "pigweed/pigweed",
+		"subject": "pw_rpc: Fix framing",
 		"current_revision": "rev1",
 		"revisions": {
 			"rev1": {
@@ -56,6 +58,17 @@ func TestCherryPickIntegration(t *testing.T) {
 
 	if !strings.Contains(mockGit.Calls[1], "cherry-pick FETCH_HEAD") {
 		t.Errorf("Expected cherry-pick call. Got: %s", mockGit.Calls[1])
+	}
+
+	for _, want := range []string{
+		"✓ Change 12345 cherry-picked successfully.",
+		"Ref:    refs/changes/45/12345/1",
+		"Subject: pw_rpc: Fix framing",
+		"Next:   gh pr push",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("Expected output to contain %q, got:\n%s", want, output)
+		}
 	}
 }
 

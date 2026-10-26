@@ -51,6 +51,18 @@ type ChangeContext struct {
 	Project  string
 }
 
+// ChangeURL returns the canonical web URL for change on this Gerrit host.
+func (c *ChangeContext) ChangeURL(change *gerrit.ChangeInfo) string {
+	if c == nil || change == nil {
+		return ""
+	}
+	project := change.Project
+	if project == "" {
+		project = c.Project
+	}
+	return fmt.Sprintf("https://%s/c/%s/+/%d", strings.TrimSuffix(c.Host, "/a"), project, change.Number)
+}
+
 func isLoopbackTestHost(h string) bool {
 	cleaned := CleanGerritHost(h)
 	return cleaned == "localhost" || cleaned == "127.0.0.1" || cleaned == "[::1]" ||

@@ -44,7 +44,7 @@ func TestCommentCmd_InReplyTo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Command failed: %v", err)
 		}
-		if !strings.Contains(out, "Draft comment saved successfully on test.txt:10 (reply).") {
+		if !strings.Contains(out, "✓ Draft comment saved successfully on test.txt:10 (reply).") {
 			t.Errorf("Expected draft saved message, got: %q", out)
 		}
 		if !strings.Contains(out, "gh pr review --publish") {
@@ -622,8 +622,8 @@ func TestCommentCmd_DeleteDraft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Command failed: %v", err)
 	}
-	if !strings.Contains(out, "Draft comment deleted successfully (ring_buffer.cc:84 [PS2]).") {
-		t.Errorf("Expected 'Draft comment deleted successfully (ring_buffer.cc:84 [PS2]).', got: %q", out)
+	if !strings.Contains(out, "✓ Draft comment deleted successfully (ring_buffer.cc:84 [PS2]).") {
+		t.Errorf("Expected '✓ Draft comment deleted successfully (ring_buffer.cc:84 [PS2]).', got: %q", out)
 	}
 
 	req := server.LastRequest()
@@ -851,7 +851,7 @@ func TestCommentCmd_FileLevelThreadResolve(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Command failed: %v", err)
 		}
-		if !strings.Contains(out, "Comment submitted successfully on test.txt [PS2] (reply, resolved).") {
+		if !strings.Contains(out, "✓ Comment submitted successfully on test.txt [PS2] (reply, resolved).") {
 			t.Errorf("Expected confirmation for file-level thread reply, got: %q", out)
 		}
 

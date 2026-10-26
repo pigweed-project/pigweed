@@ -22,9 +22,10 @@ import (
 )
 
 var closeCmd = &cobra.Command{
-	Use:   "close [<id>]",
-	Short: "Close (abandon) a change",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "close [<id>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Close (abandon) a change",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		chCtx, err := ResolveChangeContext(cmd, args)
 		if err != nil {
@@ -40,7 +41,10 @@ var closeCmd = &cobra.Command{
 			return chCtx.FormatError(err, "closing")
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Change %s closed (abandoned) successfully.\n", chCtx.ChangeID)
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Change %s closed (abandoned) successfully.", chCtx.ChangeID),
+			Next:    fmt.Sprintf("gh pr reopen %s  (or gh pr list)", chCtx.ChangeID),
+		})
 		return nil
 	},
 }

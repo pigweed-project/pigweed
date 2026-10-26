@@ -313,9 +313,10 @@ projects on the Gerrit host):
 
 Inspecting a change: ``pr view``
 ================================
-Displays change metadata, including owner, reviewers, attention set status,
-and current review scores. When called without arguments, ``pr view`` inspects
-the active change for your current branch:
+Displays change metadata, including an answer-first ``Verdict:`` and actionable
+``Next:`` hint, owner, reviewers, attention set status, and current review
+scores. When called without arguments, ``pr view`` inspects the active change
+for your current branch:
 
 .. code-block:: console
 
@@ -325,12 +326,19 @@ the active change for your current branch:
    # Include inline comment threads and unpublished drafts grouped by file and line:
    $ ./gh pr view 413992 --comments
 
+   # Expand all comment threads (including resolved threads) without folding:
+   $ ./gh pr view 413992 --comments --all
+
    # Output JSON (strictly validated against supported fields, including comments and drafts):
    $ ./gh pr view 413992 --json number,title,state,author,files,bug,bugs,comments,drafts
 
 ``pr view --comments`` renders each thread with its ``[PS<N>]`` patchset tag,
 ``[DRAFT]`` indicator, and ``[resolved]`` / ``[unresolved]`` status (or
-``Comments: None`` when no comments or drafts exist).
+``Comments: None`` when no comments or drafts exist). By default, resolved
+threads are omitted with a summary count when unresolved threads exist (or when
+more than two resolved threads exist), and unresolved threads beyond the first
+five are folded into one-line previews; pass ``--all`` to expand all threads in
+full.
 
 ``pr view --json bug,bugs`` parses commit message trailers on the patchset:
 ``bug`` returns a comma-separated string, while ``bugs`` returns objects with
@@ -339,13 +347,19 @@ the active change for your current branch:
 
 Viewing patch diffs: ``pr diff``
 ================================
-Displays the unified diff of the latest patchset, or a specific revision:
+Displays the unified diff of the latest patchset, or a specific revision.
+Diffs larger than 400 lines automatically fold generated/lockfile sections and
+truncate remaining files with an explicit recovery footer; pass ``--all`` to
+view the full untruncated diff or ``--path <pattern>`` to filter to matching
+files:
 
 .. code-block:: console
 
    $ ./gh pr diff
    $ ./gh pr diff 413992
    $ ./gh pr diff 413992/2
+   $ ./gh pr diff 413992 --all
+   $ ./gh pr diff 413992 --path pw_ghish/view.go
 
 Local checkout and cherry-pick
 ==============================
@@ -487,6 +501,10 @@ checks and automated Gerrit gates pass, ``8`` while running or pending, and
    $ ./gh pr checks
    $ ./gh pr checks --watch --fail-fast
    $ ./gh pr checks --all
+
+The default output ends with a ``Verdict:``/``Next:`` footer naming the single
+next command; in that mode the ``Error:`` line on stderr is a one-line summary
+(``--json`` and ``--template`` keep the full remediation text).
 
 For full documentation on ``pr checks`` and ``gh run``, see
 :ref:`module-pw_ghish-run`.

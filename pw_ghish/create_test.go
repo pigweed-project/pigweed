@@ -57,7 +57,8 @@ func TestDefaultBranch(t *testing.T) {
 }
 
 func TestCreateIntegration(t *testing.T) {
-	mockGit := NewMockGit(t).WithBranch("feature-branch")
+	mockGit := NewMockGit(t).WithBranch("feature-branch").
+		OnCommand("push origin HEAD:refs/for/feature-branch", "remote:   https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/396894 pw_ghish: Add UI [NEW]\n")
 
 	output, err := executeCommand(RootCmd, "pr", "create")
 	if err != nil {
@@ -67,6 +68,18 @@ func TestCreateIntegration(t *testing.T) {
 	wantOutput := "Creating change for branch feature-branch..."
 	if !strings.Contains(output, wantOutput) {
 		t.Errorf("pr create output got = %q, want it to contain = %q", output, wantOutput)
+	}
+	if !strings.Contains(output, "✓ Change created successfully.") {
+		t.Errorf("pr create output got = %q, want receipt", output)
+	}
+	if !strings.Contains(output, "Branch: feature-branch") {
+		t.Errorf("pr create output got = %q, want Branch detail", output)
+	}
+	if !strings.Contains(output, "Next:   gh pr checks --watch") {
+		t.Errorf("pr create output got = %q, want Next hint", output)
+	}
+	if !strings.Contains(output, "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/396894") {
+		t.Errorf("pr create output got = %q, want extracted Gerrit URL", output)
 	}
 
 	if len(mockGit.Calls) < 2 {
@@ -392,8 +405,8 @@ func TestCreate_ExistingChangeWithForce(t *testing.T) {
 	if !mockGit.HasCall("push") {
 		t.Errorf("Expected git push to be called with --force, calls: %v", mockGit.Calls)
 	}
-	if !strings.Contains(output, "Change created successfully.") {
-		t.Errorf("Expected output to contain 'Change created successfully.', got: %s", output)
+	if !strings.Contains(output, "✓ Change created successfully.") {
+		t.Errorf("Expected output to contain '✓ Change created successfully.', got: %s", output)
 	}
 }
 
@@ -421,8 +434,8 @@ func TestCreate_MultiCommitStackGuard_AllowsWithStack(t *testing.T) {
 		t.Fatalf("Expected --stack to succeed, got: %v", err)
 	}
 
-	if !strings.Contains(output, "Change created successfully.") {
-		t.Errorf("Expected output to contain 'Change created successfully.', got: %s", output)
+	if !strings.Contains(output, "✓ Change created successfully.") {
+		t.Errorf("Expected output to contain '✓ Change created successfully.', got: %s", output)
 	}
 }
 

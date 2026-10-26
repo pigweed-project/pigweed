@@ -23,9 +23,10 @@ import (
 var checkoutBranch string
 
 var checkoutCmd = &cobra.Command{
-	Use:   "checkout [<id>]",
-	Short: "Check out a pull request's branch locally",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "checkout [<id>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Check out a pull request's branch locally",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		chCtx, err := ResolveChangeContext(cmd, args)
 		if err != nil {
@@ -63,7 +64,14 @@ var checkoutCmd = &cobra.Command{
 					"Or if the branch already exists, delete it or specify a different branch name.",
 					change.Number, checkoutBranch, err, chCtx.ChangeID, checkoutBranch)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Checked out change %d onto new branch %q.\n", change.Number, checkoutBranch)
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: fmt.Sprintf("Checked out change %d onto new branch %q.", change.Number, checkoutBranch),
+				Details: []ReceiptField{
+					{Key: "Branch", Value: checkoutBranch},
+					{Key: "Subject", Value: SanitizeUntrustedText(change.Subject)},
+				},
+				Next: fmt.Sprintf("gh pr view %d", change.Number),
+			})
 			return nil
 		}
 
@@ -77,9 +85,17 @@ var checkoutCmd = &cobra.Command{
 				change.Number, err, chCtx.ChangeID)
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Checked out change %d at FETCH_HEAD.\n\n"+
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Checked out change %d at FETCH_HEAD.", change.Number),
+			Details: []ReceiptField{
+				{Key: "Ref", Value: "FETCH_HEAD"},
+				{Key: "Subject", Value: SanitizeUntrustedText(change.Subject)},
+			},
+			Next: fmt.Sprintf("git checkout -b <branch-name>  (or gh pr view %d)", change.Number),
+		})
+		fmt.Fprint(cmd.OutOrStdout(), "\n"+
 			"Notice: You are in 'detached HEAD' state. To create a local branch for this change, run:\n"+
-			"  git checkout -b <branch-name> FETCH_HEAD\n", change.Number)
+			"  git checkout -b <branch-name> FETCH_HEAD\n")
 		return nil
 	},
 }

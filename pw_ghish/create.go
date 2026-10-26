@@ -15,17 +15,20 @@
 package pw_ghish
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
 
 var createCmd = &cobra.Command{
-	Use:   "create",
-	Short: "Create a new change by pushing current HEAD to Gerrit",
+	Use:         "create",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Create a new change by pushing current HEAD to Gerrit",
 	Long: `Create a new Gerrit change by pushing the current HEAD commit to refs/for/<branch>.
 
 If a change with the same Change-Id already exists on Gerrit, this command will error
@@ -109,7 +112,20 @@ Supports rich push options:
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Creating change for branch %s...\n", branch)
 
-		if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {
+		var pushBuf bytes.Buffer
+		origOut := cmd.OutOrStdout()
+		origErr := cmd.ErrOrStderr()
+		cmd.SetOut(io.MultiWriter(origOut, &pushBuf))
+		cmd.SetErr(io.MultiWriter(origErr, &pushBuf))
+		err = executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify)
+		if cmd.HasParent() {
+			cmd.SetOut(nil)
+			cmd.SetErr(nil)
+		} else {
+			cmd.SetOut(origOut)
+			cmd.SetErr(origErr)
+		}
+		if err != nil {
 			if autoSubmit.Unsupported != nil && err == autoSubmit.Unsupported {
 				guard.Keep()
 				return err
@@ -127,7 +143,20 @@ Supports rich push options:
 		}
 
 		guard.Keep()
-		fmt.Fprintln(cmd.OutOrStdout(), "\nChange created successfully.")
+		fmt.Fprintln(cmd.OutOrStdout())
+		var details []ReceiptField
+		if branch != "" {
+			details = append(details, ReceiptField{Key: "Branch", Value: branch})
+		}
+		if state != nil && state.ChangeID != "" {
+			details = append(details, ReceiptField{Key: "Change", Value: state.ChangeID})
+		}
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: "Change created successfully.",
+			Details: details,
+			URL:     ExtractGerritURLFromGitOutput(pushBuf.String()),
+			Next:    "gh pr checks --watch [--fail-fast]",
+		})
 		// The change exists, so this is reported last: creating it is not the
 		// part that failed, the promise that something would submit it is.
 		return autoSubmit.Unsupported

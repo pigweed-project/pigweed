@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -355,6 +356,20 @@ func resolvePushBranch(ctx context.Context, cfg *Config, baseFlag string, stderr
 		} else {
 			remote = git.ResolveRemote(ctx)
 		}
+		if dg, isDefault := git.(*defaultGitClient); isDefault && dg.runsRealGit() {
+			// One for-each-ref answers this probe and, if it fails,
+			// the default branch's ref probe below. (Mock runners keep
+			// the rev-parse probe their scripted answers expect.)
+			ok, err := dg.probeRemoteBranch(ctx, remote, curr)
+			if err == nil {
+				if ok {
+					return curr
+				}
+				return defaultBranch(ctx, cfg, stderr)
+			}
+			// Fall back to rev-parse, which reports the same thing.
+			slog.Debug("for-each-ref probe failed; falling back to rev-parse --verify", "err", err)
+		}
 		if ok, err := git.VerifyRef(ctx, remote+"/"+curr); err == nil && ok {
 			return curr
 		}
@@ -367,7 +382,17 @@ func resolvePushBranch(ctx context.Context, cfg *Config, baseFlag string, stderr
 // and validates commit messages and Change-Ids across all commits in the stack when available.
 // Returns an actionable error if count > 1 and stack is false.
 func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stack bool, commandName string) error {
-	count, countErr := git.CountCommitsAhead(ctx, branch)
+	// The default client hands back the base ref the count verified, so
+	// listing the stack below does not verify it a second time.
+	dg, isDefault := git.(*defaultGitClient)
+	var count int
+	var verifiedBase string
+	var countErr error
+	if isDefault {
+		count, verifiedBase, countErr = dg.countCommitsAheadRef(ctx, branch)
+	} else {
+		count, countErr = git.CountCommitsAhead(ctx, branch)
+	}
 	if countErr != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -389,7 +414,13 @@ func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stac
 		return fmt.Errorf("pushing HEAD would push %d commits targeting branch %q.\n\nTo target a different base branch, specify:\n  gh pr push --base <branch>\n\nTo push a stack of %d changes, pass --stack", count, branch, count)
 	}
 
-	commits, err := git.StackCommits(ctx, branch)
+	var commits []StackCommit
+	var err error
+	if isDefault && verifiedBase != "" {
+		commits, err = dg.stackCommitsFrom(ctx, verifiedBase)
+	} else {
+		commits, err = git.StackCommits(ctx, branch)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -480,12 +511,14 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 	}
 	pushArgs = append(pushArgs, remote, "HEAD:"+refStr)
 
-	var errBuf bytes.Buffer
-	err := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), &errBuf, pushArgs...)
+	var outBuf, errBuf bytes.Buffer
+	pushCtx := withGitConfigEnv(ctx, "color.ui", "false")
+	err := cfg.GitClient().Run(pushCtx, &outBuf, &errBuf, pushArgs...)
 	if err != nil && isGitPushSSOAuthError(errBuf.String()) {
-		if fbErr, fbBuf, fbUsed := retryPushWithoutSSO(ctx, cmd, cfg, remote, pushArgs); fbUsed {
+		if fbErr, fbBuf, fbUsed := retryPushWithoutSSO(pushCtx, cmd, cfg, remote, pushArgs); fbUsed {
 			err = fbErr
 			errBuf = fbBuf
+			outBuf.Reset()
 		}
 	}
 	if err != nil {
@@ -496,7 +529,7 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 				host = "<gerrit-host>"
 			}
 			hookURL := fmt.Sprintf("https://%s/tools/hooks/commit-msg", host)
-			return fmt.Errorf("remote rejected push because a commit is missing a Change-Id in its footer.\n\nGerrit requires a Change-Id line in each commit message.\nTo resolve this:\n  1. Ensure the commit-msg hook is installed:\n     curl -Lo .git/hooks/commit-msg %s && chmod +x .git/hooks/commit-msg\n  2. Amend your commit to generate the Change-Id:\n     git commit --amend --no-edit\n  3. Retry push:\n     gh pr push\n\nUnderlying error: %w", hookURL, err)
+			return fmt.Errorf("remote rejected push because a commit is missing a Change-Id in its footer.\n\nGerrit requires a Change-Id line in each commit message.\nTo resolve this:\n  1. Ensure the commit-msg hook is installed:\n     gh hook install\n     (or: curl -Lo .git/hooks/commit-msg %s && chmod +x .git/hooks/commit-msg)\n  2. Amend your commit to generate the Change-Id:\n     git commit --amend --no-edit\n  3. Retry push:\n     gh pr push\n\nUnderlying error: %w", hookURL, err)
 		}
 		if strings.Contains(errStr, "no new changes") {
 			if hasMetadataUpdates(pushOpts) {
@@ -514,10 +547,17 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 				"  gh pr edit --topic <topic>\n" +
 				"  gh pr edit --add-reviewer <user>")
 		}
-		cmd.ErrOrStderr().Write(errBuf.Bytes())
+		_, _ = cmd.OutOrStdout().Write(outBuf.Bytes())
+		_, _ = cmd.ErrOrStderr().Write(errBuf.Bytes())
 		return err
 	}
-	cmd.ErrOrStderr().Write(errBuf.Bytes())
+	if VerboseFlag {
+		_, _ = cmd.OutOrStdout().Write(outBuf.Bytes())
+		_, _ = cmd.ErrOrStderr().Write(errBuf.Bytes())
+	} else {
+		_, _ = io.WriteString(cmd.OutOrStdout(), filterGitPushProgress(outBuf.String()))
+		_, _ = io.WriteString(cmd.ErrOrStderr(), filterGitPushProgress(errBuf.String()))
+	}
 
 	return scheduleSubmitFlowForPush(cmd, nil, pushOpts, "patchset pushed")
 }
@@ -930,13 +970,15 @@ func verifyHeadForPush(
 	queryExisting, noVerify bool,
 	prefetched *VerifiedPushState,
 ) (*VerifiedPushState, error) {
-	if err := EnsureChangeID(ctx, cfg, noVerify, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+	logMsg, err := ensureChangeID(ctx, cfg, noVerify, cmd.OutOrStdout(), cmd.ErrOrStderr())
+	if err != nil {
 		return nil, fmt.Errorf("error verifying Change-Id: %w", err)
 	}
-
-	logMsg, err := cfg.GitClient().HeadCommitMessage(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error reading HEAD commit message: %w", err)
+	if logMsg == "" {
+		logMsg, err = cfg.GitClient().HeadCommitMessage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error reading HEAD commit message: %w", err)
+		}
 	}
 	if err := CheckGitHubIssueSyntax(logMsg, "the HEAD commit message"); err != nil {
 		return nil, err

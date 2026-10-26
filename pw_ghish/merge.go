@@ -36,8 +36,9 @@ type mergeOptions struct {
 func newMergeCmd() *cobra.Command {
 	opts := mergeOptions{}
 	cmd := &cobra.Command{
-		Use:   "merge [<id>]",
-		Short: "Merge (submit) a change",
+		Use:         "merge [<id>]",
+		Annotations: map[string]string{KindAnnotation: KindMutation},
+		Short:       "Merge (submit) a change",
 		Long: `Merge (submit) a Gerrit change, or enable auto-submit / Commit-Queue / scheduled submission.
 
 When --auto is passed, pw_ghish detects the host's auto-submit label from the
@@ -94,7 +95,10 @@ Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for au
 				if err != nil {
 					return err
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), scheduled.Summary())
+				PrintReceipt(cmd.OutOrStdout(), Receipt{
+					Summary: scheduled.Summary(),
+					Next:    fmt.Sprintf("gh pr view %s", chCtx.ChangeID),
+				})
 				return nil
 			}
 
@@ -144,7 +148,9 @@ Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for au
 				// The vote landed, but it was a consolation prize: say so
 				// instead of reporting auto-submit that is not happening.
 				if unsupported != nil {
-					fmt.Fprintf(cmd.OutOrStdout(), "%s set for change %s.\n", strings.Join(voteStrs, ", "), chCtx.ChangeID)
+					PrintReceipt(cmd.OutOrStdout(), Receipt{
+						Summary: fmt.Sprintf("%s set for change %s.", strings.Join(voteStrs, ", "), chCtx.ChangeID),
+					})
 					return unsupported
 				}
 
@@ -152,7 +158,10 @@ Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for au
 				if isCQ {
 					targetDesc = "Commit-Queue"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s enabled for change %s (%s).\n", targetDesc, chCtx.ChangeID, strings.Join(voteStrs, ", "))
+				PrintReceipt(cmd.OutOrStdout(), Receipt{
+					Summary: fmt.Sprintf("%s enabled for change %s (%s).", targetDesc, chCtx.ChangeID, strings.Join(voteStrs, ", ")),
+					Next:    fmt.Sprintf("gh pr checks %s --watch [--fail-fast]", chCtx.ChangeID),
+				})
 				return nil
 			}
 
@@ -175,7 +184,10 @@ Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for au
 				return fmt.Errorf("error merging change %s: %w", chCtx.ChangeID, err)
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Change merged (submitted) successfully.")
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: "Change merged (submitted) successfully.",
+				Next:    fmt.Sprintf("gh pr view %s", chCtx.ChangeID),
+			})
 			return nil
 		},
 	}

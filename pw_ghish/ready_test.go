@@ -34,8 +34,11 @@ func TestReadyIntegration(t *testing.T) {
 		t.Error("Expected SetReadyForReview API to be called")
 	}
 
-	if !strings.Contains(output, "Change marked ready for review successfully") {
+	if !strings.Contains(output, "✓ Change marked ready for review successfully.") {
 		t.Errorf("Unexpected output: %s", output)
+	}
+	if !strings.Contains(output, "Next:   gh pr view 12345") {
+		t.Errorf("Expected Next hint in output: %s", output)
 	}
 }
 
@@ -73,8 +76,11 @@ func TestReady_WithMessage(t *testing.T) {
 		t.Errorf("expected message %q, got %v", "Ready for review!", captured["message"])
 	}
 
-	if !strings.Contains(output, "Change marked ready for review successfully") {
+	if !strings.Contains(output, "✓ Change marked ready for review successfully.") {
 		t.Errorf("Unexpected output: %s", output)
+	}
+	if !strings.Contains(output, "Next:   gh pr view 12345") {
+		t.Errorf("Expected Next hint in output: %s", output)
 	}
 }
 
@@ -91,7 +97,7 @@ func TestReady_Undo(t *testing.T) {
 		t.Error("Expected WIP API to be called")
 	}
 
-	if !strings.Contains(output, "Change marked as work in progress successfully") {
+	if !strings.Contains(output, "✓ Change marked as work in progress successfully.") {
 		t.Errorf("Unexpected output: %s", output)
 	}
 }
@@ -117,7 +123,7 @@ func TestReady_Undo_WithMessage(t *testing.T) {
 		t.Errorf("expected message %q, got %v", "WIP: need more work", captured["message"])
 	}
 
-	if !strings.Contains(output, "Change marked as work in progress successfully") {
+	if !strings.Contains(output, "✓ Change marked as work in progress successfully.") {
 		t.Errorf("Unexpected output: %s", output)
 	}
 }

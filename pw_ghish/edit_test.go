@@ -155,7 +155,7 @@ func TestEditAddLabel(t *testing.T) {
 		t.Fatal("Expected SetReview API to be called for labels")
 	}
 
-	if !strings.Contains(output, "Labels added successfully") {
+	if !strings.Contains(output, "✓ Labels added successfully.") {
 		t.Errorf("Unexpected output: %s", output)
 	}
 
@@ -362,7 +362,7 @@ func TestEdit_SetTopic(t *testing.T) {
 	if server.CallCount("PUT", "/changes/12345/topic") != 1 {
 		t.Errorf("Expected SetTopic API to be called, got calls: %v", server.Requests())
 	}
-	if !strings.Contains(output, "Topic set to \"my-feature-topic\" successfully.") {
+	if !strings.Contains(output, "✓ Topic set to \"my-feature-topic\" successfully.") {
 		t.Errorf("Unexpected output: %s", output)
 	}
 }
@@ -379,7 +379,7 @@ func TestEdit_RemoveTopic(t *testing.T) {
 	if server.CallCount("DELETE", "/changes/12345/topic") != 1 {
 		t.Errorf("Expected DeleteTopic API to be called, got calls: %v", server.Requests())
 	}
-	if !strings.Contains(output, "Topic removed successfully.") {
+	if !strings.Contains(output, "✓ Topic removed successfully.") {
 		t.Errorf("Unexpected output: %s", output)
 	}
 }
@@ -396,7 +396,7 @@ func TestEdit_Hashtags(t *testing.T) {
 	if server.CallCount("POST", "/changes/12345/hashtags") != 1 {
 		t.Errorf("Expected SetHashtags API to be called, got calls: %v", server.Requests())
 	}
-	if !strings.Contains(output, "Hashtags updated successfully.") {
+	if !strings.Contains(output, "✓ Hashtags updated successfully.") {
 		t.Errorf("Unexpected output: %s", output)
 	}
 }
