@@ -121,6 +121,7 @@ subagent handles the file. Work from the diff gathered in Step 1.
    | `*.py`, `*.pyi` | `python-reviewer` | `.agents/agents/python_reviewer.md` |
    | `*.rs` | `rust-reviewer` | `.agents/agents/rust_reviewer.md` |
    | `pw_ghish/**` | `go-ghish-reviewer` | `.agents/agents/go_ghish_reviewer.md` |
+   | `pw_ghish/**`, `gh` | `ghish-security-reviewer` | `.agents/agents/ghish_security_reviewer.md` |
 
 2. **Cut one patch per reviewer without reading it.** `out=$(mktemp -d)`, then
    `git diff origin/main...HEAD -- <its files> > "$out/<agent>.patch"` (Mode
@@ -174,8 +175,9 @@ these six Pigweed dimensions:
 - **Rust / `pw_kernel` (if applicable)**: Verify `no_std` compliance, minimal
   `unsafe` blocks with explicit `// SAFETY:` justifications, and panic-free
   error propagation.
-- **`pw_ghish` (if applicable)**: For `pw_ghish` changes, launch the `pw_ghish`
-  subagent reviewer (`.agents/agents/go_ghish_reviewer.md`).
+- **`pw_ghish` (if applicable)**: For `pw_ghish` or `./gh` changes, launch the
+  `pw_ghish` subagent reviewers (`.agents/agents/go_ghish_reviewer.md` and
+  `.agents/agents/ghish_security_reviewer.md`).
 
 #### 3. Build System Parity (`Bazel` + `GN` + `CMake`)
 - If a source file (`.cc`), public header (`.h`), or dependency was added or

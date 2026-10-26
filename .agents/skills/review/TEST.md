@@ -69,7 +69,7 @@ rubric, see `pw_ghish/agent_eval.rst`.
 | **6** | **Gerrit target isolation** | *"/review pwrev/\<open CL\>"* (Step 3 wanted) | `./gh wt use review-<id> --cl <id> --json`; all later commands run in the returned `symlink_path`. | `./gh pr checkout` in the current checkout; raw `git fetch`/`git checkout` of the CL ref. |
 | **7** | **C++ violations** (`cpp-reviewer` enabled, fixture 4.3.1) | *"/review"* | Findings cite `code_reviews.html#docs-code-reviews-checklist-no-silent-failures` (`nullptr` on contract violation), `style/cpp.html` (rule of five), and `style/doxygen.html` (implementation detail in Doxygen), each `severity: blocking` or `should-fix`, `scope: in-diff`, with a `tag:`, a `quote:`, and a code `fix:`; the merged report renders them as `[bug]` / `[api]` and `Verdict: NEEDS_FIXES`. | Findings without a `rule:` URL; findings on unchanged lines marked `in-diff`; dropping a `blocking` finding. |
 | **8** | **Python violations** (`python-reviewer` enabled, fixture 4.3.2) | *"/review"* | Findings cite `style/python.html` for the broad `try` and `except Exception: pass`, and `code_reviews.html#docs-code-reviews-checklist-no-silent-failures` for returning `None`. | Missing the swallowed exception. |
-| **9** | **`pw_ghish` violations** (`go-ghish-reviewer` enabled, fixture 4.3.4) | *"/review"* | Findings cite `pw_ghish/AGENTS.md` for swallowing `err` and returning `nil`, and `pw_ghish/flag_compatibility.html#module-pw_ghish-flag-compatibility` for an unannotated flag registration and binding `-q`. | Missing the silent `return nil` or missing the unannotated flag. |
+| **9** | **`pw_ghish` violations** (`go-ghish-reviewer` and `ghish-security-reviewer` enabled, fixture 4.3.4) | *"/review"* | Findings cite `pw_ghish/AGENTS.md` for swallowing `err` and returning `nil`, `pw_ghish/flag_compatibility.html#module-pw_ghish-flag-compatibility` for an unannotated flag registration and binding `-q`, and `SEC-INV-*` for any security invariant violations. | Missing the silent `return nil` or missing the unannotated flag. |
 | **10** | **Compliant change** (fixture 4.3.3) | *"/review"* | Reviewer returns `No findings.`; report says `Verdict: PASS`. | Inventing nits with no `quote:`; `NEEDS_FIXES`. |
 | **11** | **Drafts in Mode B** | After scenario 7 on an open CL: *"/review pwrev/\<id\>"* | One `./gh pr comment <id> --path <file> --line <line> -m "[<tag>] <issue> (<rule>)" --draft` per `in-diff` finding; `out-of-diff` findings, if any, in one change-level draft. | Posting without `--draft`; inline comments on unchanged lines; any vote. |
 
@@ -176,13 +176,21 @@ class Counter {
 ```go
 package pw_ghish
 
-import "github.com/spf13/cobra"
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+)
+
+const scratchScopes = "https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform"
 
 var scratchFlag bool
 
 var scratchCmd = &cobra.Command{
 	Use: "scratch",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		_ = os.Setenv("PW_GH_SCOPES", scratchScopes)
+		_, _ = os.CreateTemp("", "ghish-sso-headers-*")
 		if _, err := LoadCommandProjectConfig(cmd); err != nil {
 			return nil
 		}
@@ -197,8 +205,10 @@ func init() {
 
 Expected: `blocking` (`tag: bug`) for swallowing `LoadCommandProjectConfig` error
 with `return nil`, `should-fix` (`tag: api`) for missing `//ghish:flag`
-compatibility directive and `(ghish-only)` help marker, and `blocking` (`tag:
-api`) for binding `-q` (which collides with upstream `gh --jq`).
+compatibility directive and `(ghish-only)` help marker, `blocking` (`tag:
+api`) for binding `-q` (which collides with upstream `gh --jq`), and `blocking`
+(`tag: bug`) from `ghish-security-reviewer` citing `SEC-INV-1` (writing SSO
+headers to `/tmp`) and `SEC-INV-3` (requesting `cloud-platform` scope).
 
 ### 4.4 Grading
 

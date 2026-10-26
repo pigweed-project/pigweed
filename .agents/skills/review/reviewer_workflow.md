@@ -82,6 +82,7 @@ nits never do, and the coordinator keeps at most three of them.
 | Rust API Guidelines | `https://rust-lang.github.io/api-guidelines/<page>.html#<anchor>` |
 | Google style guides | `https://google.github.io/styleguide/<guide>.html#<anchor>` |
 | `pw_ghish/<page>.rst` | `https://pigweed.dev/pw_ghish/<page>.html#<rst label>` |
+| `.agents/agents/ghish_security_reviewer.md` | `SEC-INV-<N>` (or `.agents/agents/ghish_security_reviewer.md#SEC-INV-<N>`) |
 
 The anchor is the `.. _label:` line above the section with every `_`
 replaced by `-` (Sphinx normalizes ids). For example, the label

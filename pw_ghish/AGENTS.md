@@ -11,7 +11,7 @@
 
 ## STRICT ENGINEERING & REVIEW INVARIANTS
 
-Every change to `pw_ghish` (and every review via `/review` and `.agents/agents/go_ghish_reviewer.md`) MUST enforce these 14 non-negotiable invariants. Regressing into silent failures, swallowed errors, defensive masking, data loss, policy leakage, or hacking without tests is STRICTLY PROHIBITED.
+Every change to `pw_ghish` (and every review via `/review`, `.agents/agents/go_ghish_reviewer.md`, and `.agents/agents/ghish_security_reviewer.md`) MUST enforce these 14 non-negotiable invariants. Regressing into silent failures, swallowed errors, defensive masking, data loss, policy leakage, or hacking without tests is STRICTLY PROHIBITED.
 
 ### 1. NO SILENT FAILURES (`RunE` & EXPLICIT `Try*` CONTRACTS)
 * **MANDATORY**: Every Cobra subcommand with an action MUST use `RunE: func(cmd *cobra.Command, args []string) error`. NEVER use void-returning `Run`.
@@ -122,5 +122,5 @@ Every change to `pw_ghish` (and every review via `/review` and `.agents/agents/g
 
 * **User & API Documentation**: [`docs.rst`](docs.rst), [`subcommands.rst`](subcommands.rst), [`project_setup.rst`](project_setup.rst), [`flag_compatibility.rst`](flag_compatibility.rst)
 * **Pigweed Go Style Guide**: [`../docs/sphinx/style/go.rst`](../docs/sphinx/style/go.rst)
-* **Agent Skill & Reviewer Definitions**: [`.agents/skills/ghish/SKILL.md`](../.agents/skills/ghish/SKILL.md), [`.agents/agents/go_ghish_reviewer.md`](../.agents/agents/go_ghish_reviewer.md)
+* **Agent Skill & Reviewer Definitions**: [`.agents/skills/ghish/SKILL.md`](../.agents/skills/ghish/SKILL.md), [`.agents/agents/go_ghish_reviewer.md`](../.agents/agents/go_ghish_reviewer.md), [`.agents/agents/ghish_security_reviewer.md`](../.agents/agents/ghish_security_reviewer.md)
 * **Live Test Suite**: [`live_test.go`](live_test.go)
