@@ -459,3 +459,39 @@ chmod +x bazel-bin/pw_ghish/gh-ish_/gh-ish
 		t.Errorf("expected git_hash to be removed after dirty rebuild, got err=%v", err)
 	}
 }
+
+// The binary passes the wrapper's environment to every subprocess, including
+// git hooks run by `./gh pr create`. Pigweed's environment parser rejects
+// unrecognized PW_ variables, so the wrapper must not export any.
+func TestGhWrapper_ExportsNoPwVariables(t *testing.T) {
+	repoDir, _, binDir, _ := setupFakeGhWrapperRepo(t)
+
+	// Replace the cached binary with one that prints its environment.
+	cachedBin := filepath.Join(repoDir, "out", "gh", "gh-ish")
+	if err := os.WriteFile(cachedBin, []byte("#!/bin/sh\nenv\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(%s): %v", cachedBin, err)
+	}
+
+	// Start without PW_ variables so that any in the output came from the
+	// wrapper.
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "PW_") {
+			env = append(env, kv)
+		}
+	}
+	env = append(env, "PATH="+binDir+":"+os.Getenv("PATH"))
+
+	cmd := exec.Command(filepath.Join(repoDir, "gh"), "pr", "status")
+	cmd.Dir = repoDir
+	cmd.Env = env
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("./gh pr status failed: %v\nOutput:\n%s", err, string(out))
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasPrefix(line, "PW_") {
+			t.Errorf("gh wrapper exported %q to the binary's environment", line)
+		}
+	}
+}

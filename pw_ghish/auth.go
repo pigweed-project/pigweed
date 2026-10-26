@@ -1145,6 +1145,11 @@ var OAuthTokenCommandRunner = func(ctx context.Context, name string, args ...str
 	return ExecCommandContext(ctx, name, args...).Output()
 }
 
+// scriptDirEnvVar names the directory of the `gh` wrapper script, which the
+// wrapper exports for the binary. See the wrapper for why it uses the _PW_
+// prefix.
+const scriptDirEnvVar = "_PW_GH_SCRIPT_DIR"
+
 // findLuciAuthBinary locates the 'luci-auth' executable.
 //
 // Why this fallback exists (User Workflow Note):
@@ -1174,7 +1179,7 @@ func findLuciAuthBinary(ctx context.Context) string {
 			filepath.Join(wsDir, ".environment", "cipd", "packages", "luci", "luci-auth"),
 		)
 	}
-	if scriptDir := strings.TrimSpace(os.Getenv("PW_GH_SCRIPT_DIR")); scriptDir != "" {
+	if scriptDir := strings.TrimSpace(os.Getenv(scriptDirEnvVar)); scriptDir != "" {
 		candidates = append(candidates,
 			filepath.Join(scriptDir, "environment", "cipd", "packages", "luci", "luci-auth"),
 			filepath.Join(scriptDir, ".environment", "cipd", "packages", "luci", "luci-auth"),

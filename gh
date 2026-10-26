@@ -101,7 +101,12 @@ elif [ -n "${PW_ENVIRONMENT_ROOT:-}" ] && [ -d "${PW_ENVIRONMENT_ROOT}/cipd/pack
   export PATH="${PW_ENVIRONMENT_ROOT}/cipd/packages/luci:${PATH}"
 fi
 
-export PW_GH_SCRIPT_DIR="${_PW_SCRIPT_DIR}"
+# Internal handoff to the binary, which passes its environment to every
+# subprocess, including git hooks run by `./gh pr create`. Pigweed's
+# environment parser rejects unrecognized PW_ variables there. This is not a
+# Pigweed setting, so rather than registering it with that parser, it uses the
+# _PW_ prefix for internal variables, which the parser does not check.
+export _PW_GH_SCRIPT_DIR="${_PW_SCRIPT_DIR}"
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
   if [ -n "$_CALLER_TOPLEVEL" ]; then
     export BUILD_WORKSPACE_DIRECTORY="$_CALLER_TOPLEVEL"

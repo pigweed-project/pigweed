@@ -930,7 +930,7 @@ func TestFindLuciAuthBinary_WorktreeCommonGitDir(t *testing.T) {
 
 	t.Setenv("PW_ENVIRONMENT_ROOT", "")
 	t.Setenv("BUILD_WORKSPACE_DIRECTORY", "")
-	t.Setenv("PW_GH_SCRIPT_DIR", "")
+	t.Setenv(scriptDirEnvVar, "")
 
 	mainRepoRoot := filepath.Join(t.TempDir(), "pigweed")
 	expectedLuciAuth := filepath.Join(mainRepoRoot, "environment", "cipd", "packages", "luci", "luci-auth")
@@ -962,7 +962,7 @@ func TestFindLuciAuthBinary_ScriptDirFallback(t *testing.T) {
 
 	t.Setenv("PW_ENVIRONMENT_ROOT", "")
 	t.Setenv("BUILD_WORKSPACE_DIRECTORY", otherRepoDir)
-	t.Setenv("PW_GH_SCRIPT_DIR", pwScriptDir)
+	t.Setenv(scriptDirEnvVar, pwScriptDir)
 
 	LookPathFn = func(file string) (string, error) {
 		if file == expectedLuciAuth {
@@ -1410,7 +1410,7 @@ func TestFindLuciAuthBinary_SkipsGitRevParseWhenFoundInScriptDir(t *testing.T) {
 
 	t.Setenv("PW_ENVIRONMENT_ROOT", "")
 	t.Setenv("BUILD_WORKSPACE_DIRECTORY", "")
-	t.Setenv("PW_GH_SCRIPT_DIR", pwScriptDir)
+	t.Setenv(scriptDirEnvVar, pwScriptDir)
 
 	LookPathFn = func(file string) (string, error) {
 		if file == expectedLuciAuth {
