@@ -24,7 +24,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 )
@@ -78,6 +77,12 @@ type FailureReport struct {
 	LogName      string `json:"logName,omitempty"`
 	LogSnippet   string `json:"logSnippet,omitempty"`
 	FullLogURL   string `json:"fullLogUrl,omitempty"`
+	// LogTotalLines is the line count of the full log LogSnippet was tailed
+	// from, or 0 if unknown. It lets the text report state how many lines
+	// were really omitted rather than counting only within the snippet.
+	// Providers that do not set it (currently Busytown) fall back to
+	// counting omitted lines within the snippet.
+	LogTotalLines int `json:"-"`
 	// Patchset is set only when the build ran on an earlier code-equivalent
 	// patchset rather than the one requested.
 	Patchset int `json:"patchset,omitempty"`
@@ -553,11 +558,18 @@ func (c *LUCIClient) GetBuildDetails(ctx context.Context, buildID string) (*LUCI
 
 // FetchLogStream downloads raw text logs from LogDog (?format=raw), optionally returning the last maxLines.
 func (c *LUCIClient) FetchLogStream(ctx context.Context, viewURL string, maxLines int) (string, error) {
+	text, _, err := c.fetchLogStreamTail(ctx, viewURL, maxLines)
+	return text, err
+}
+
+// fetchLogStreamTail is FetchLogStream that also returns the number of lines
+// in the full log before tailing.
+func (c *LUCIClient) fetchLogStreamTail(ctx context.Context, viewURL string, maxLines int) (string, int, error) {
 	if c == nil {
-		return "", fmt.Errorf("LUCIClient is nil")
+		return "", 0, fmt.Errorf("LUCIClient is nil")
 	}
 	if viewURL == "" {
-		return "", fmt.Errorf("viewURL cannot be empty")
+		return "", 0, fmt.Errorf("viewURL cannot be empty")
 	}
 	httpClient := c.HTTPClient
 	if httpClient == nil {
@@ -566,7 +578,7 @@ func (c *LUCIClient) FetchLogStream(ctx context.Context, viewURL string, maxLine
 
 	parsed, err := url.Parse(viewURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid log URL %q: %w", viewURL, err)
+		return "", 0, fmt.Errorf("invalid log URL %q: %w", viewURL, err)
 	}
 
 	q := parsed.Query()
@@ -575,40 +587,40 @@ func (c *LUCIClient) FetchLogStream(ctx context.Context, viewURL string, maxLine
 
 	req, err := http.NewRequestWithContext(ctx, "GET", parsed.String(), nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create log request: %w", err)
+		return "", 0, fmt.Errorf("failed to create log request: %w", err)
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch log: %w", err)
+		return "", 0, fmt.Errorf("failed to fetch log: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxHTTPBodyBytes))
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			return "", newLUCIHTTPAuthError("LogDog", resp.StatusCode, body)
+			return "", 0, newLUCIHTTPAuthError("LogDog", resp.StatusCode, body)
 		}
-		return "", fmt.Errorf("LogDog returned HTTP %d: %s", resp.StatusCode, string(body))
+		return "", 0, fmt.Errorf("LogDog returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	rawBytes, err := readBoundedLog(resp.Body, maxHTTPBodyBytes)
 	if err != nil {
-		return "", fmt.Errorf("failed to read log body: %w", err)
+		return "", 0, fmt.Errorf("failed to read log body: %w", err)
 	}
 
 	text := string(rawBytes)
-	if maxLines <= 0 {
-		return text, nil
-	}
-
 	trimmed := strings.TrimRight(text, "\r\n")
-	lines := strings.Split(trimmed, "\n")
-	if len(lines) <= maxLines {
-		return text, nil
+	totalLines := 0
+	if trimmed != "" {
+		totalLines = strings.Count(trimmed, "\n") + 1
+	}
+	if maxLines <= 0 || totalLines <= maxLines {
+		return text, totalLines, nil
 	}
 
-	return strings.Join(lines[len(lines)-maxLines:], "\n"), nil
+	lines := strings.Split(trimmed, "\n")
+	return strings.Join(lines[len(lines)-maxLines:], "\n"), totalLines, nil
 }
 
 var defaultPreferredLogs = []string{"failure summary", "failure_summary", "stdout", "stderr", "full contents"}
@@ -734,11 +746,12 @@ func (c *LUCIClient) ExtractFailureReportWithOptions(ctx context.Context, b *LUC
 	if targetLog != nil && targetLog.ViewURL != "" {
 		report.LogName = targetLog.Name
 		report.FullLogURL = targetLog.ViewURL
-		snippet, err := c.FetchLogStream(ctx, targetLog.ViewURL, maxLogLines)
+		snippet, totalLines, err := c.fetchLogStreamTail(ctx, targetLog.ViewURL, maxLogLines)
 		if err != nil {
 			report.LogSnippet = fmt.Sprintf("[Error fetching log stream from %s: %v]", targetLog.ViewURL, err)
 		} else {
 			report.LogSnippet = strings.TrimSpace(snippet)
+			report.LogTotalLines = totalLines
 		}
 	}
 
@@ -758,179 +771,6 @@ func FetchLogStream(ctx context.Context, viewURL string, maxLines int, httpClien
 // ExtractFailureReport analyzes steps in a failing build and retrieves the primary failure diagnostics.
 func (b *LUCIBuildDetails) ExtractFailureReport(ctx context.Context, maxLogLines int, httpClient *http.Client) *FailureReport {
 	return NewLUCIClient("", httpClient).ExtractFailureReport(ctx, b, maxLogLines)
-}
-
-// cleanBuildSummary removes internal infra experiment noise from the top-level build summary.
-func cleanBuildSummary(summary string) string {
-	summary = strings.TrimSpace(summary)
-	if summary == "" {
-		return ""
-	}
-	lines := strings.Split(summary, "\n")
-	var kept []string
-	inExperiments := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "**Experiments**") || strings.HasPrefix(trimmed, "Experiments:") {
-			inExperiments = true
-			continue
-		}
-		if inExperiments {
-			if strings.HasPrefix(trimmed, "* ") || strings.HasPrefix(trimmed, "- ") || trimmed == "" {
-				continue
-			}
-			inExperiments = false
-		}
-		kept = append(kept, line)
-	}
-	return strings.TrimSpace(strings.Join(kept, "\n"))
-}
-
-// cleanStepSummary sanitizes recipe step summaries, filtering out multi-line dumps,
-// Python repr objects, raw JSON/dicts, and disk usage noise.
-func cleanStepSummary(summary string) string {
-	summary = strings.TrimSpace(summary)
-	if summary == "" {
-		return ""
-	}
-	// Suppress multi-line summaries or raw data dumps
-	if strings.Contains(summary, "\n") {
-		return ""
-	}
-	// Suppress Python repr / object dumps
-	if strings.HasPrefix(summary, "Change(") || strings.HasPrefix(summary, "applied [") || strings.HasPrefix(summary, "[Change(") {
-		return ""
-	}
-	// Suppress JSON / YAML / dict dumps
-	if strings.HasPrefix(summary, "{") || strings.HasPrefix(summary, "[") || strings.HasPrefix(summary, "remote:") || strings.Contains(summary, "{\"") || strings.Contains(summary, "{'") {
-		return ""
-	}
-	// Suppress disk usage noise
-	if strings.Contains(summary, "GB used") {
-		return ""
-	}
-	// Suppress markdown links/bullets that don't belong inline
-	if strings.HasPrefix(summary, "* ") || strings.HasPrefix(summary, "- ") {
-		return ""
-	}
-	if len(summary) > 120 {
-		return summary[:117] + "..."
-	}
-	return summary
-}
-
-var (
-	diffFileRegex = regexp.MustCompile(`^\+\+\+\s+(?:[ab]/)?([^\s\t]+)`)
-	botPathRegex  = regexp.MustCompile(`\[\.\.\.\]/[^:]+/`)
-)
-
-// extractStepDiagnostic extracts a concise single-line failure diagnostic from
-// recipe step summaries (such as unified diffs, compiler diagnostics, or failure reasons).
-func extractStepDiagnostic(summary string) string {
-	summary = strings.TrimSpace(summary)
-	summary = strings.Trim(summary, "`")
-	summary = strings.TrimSpace(summary)
-	if summary == "" {
-		return ""
-	}
-
-	// 1. Check for unified diff headers (linters and formatters)
-	var diffFiles []string
-	lines := strings.Split(summary, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		m := diffFileRegex.FindStringSubmatch(line)
-		if len(m) > 1 {
-			rawPath := m[1]
-			cleanPath := rawPath
-			if idx := strings.Index(cleanPath, "/co/"); idx != -1 {
-				cleanPath = cleanPath[idx+4:]
-			} else if idx := strings.Index(cleanPath, "/checkout/"); idx != -1 {
-				cleanPath = cleanPath[idx+10:]
-			} else if strings.Contains(cleanPath, "/s/w/ir/") {
-				parts := strings.Split(cleanPath, "/")
-				cleanPath = parts[len(parts)-1]
-			}
-			cleanPath = strings.TrimSpace(cleanPath)
-			if cleanPath != "" {
-				diffFiles = append(diffFiles, cleanPath)
-			}
-		}
-	}
-	diffFiles = dedup(diffFiles)
-	if len(diffFiles) == 1 {
-		return fmt.Sprintf("formatting diff in %s", diffFiles[0])
-	} else if len(diffFiles) > 1 && len(diffFiles) <= 3 {
-		return fmt.Sprintf("formatting diff in %d files: %s", len(diffFiles), strings.Join(diffFiles, ", "))
-	} else if len(diffFiles) > 3 {
-		return fmt.Sprintf("formatting diff in %d files: %s, %s (+%d more)", len(diffFiles), diffFiles[0], diffFiles[1], len(diffFiles)-2)
-	}
-
-	// 2. Check for compiler, linter, or fatal error lines
-	var errorLine string
-	for i, line := range lines {
-		l := strings.TrimSpace(line)
-		if l == "" || strings.HasPrefix(l, "``") || strings.HasPrefix(l, "---") || strings.HasPrefix(l, "+++") {
-			continue
-		}
-		if strings.Contains(l, "error:") || strings.Contains(l, "error [") || strings.Contains(l, "fatal error:") {
-			cleaned := botPathRegex.ReplaceAllString(l, "")
-			// If the line ends with "error:", pull in the next non-empty line
-			if (strings.HasSuffix(cleaned, "error:") || strings.HasSuffix(cleaned, "fatal error:")) && i+1 < len(lines) {
-				next := strings.TrimSpace(lines[i+1])
-				if next != "" && !strings.HasPrefix(next, "``") {
-					cleaned = cleaned + " " + next
-				}
-			}
-			errorLine = cleaned
-			break
-		}
-		if strings.HasPrefix(l, "FAILED:") && errorLine == "" {
-			errorLine = l
-		}
-	}
-	if errorLine != "" {
-		if len(errorLine) > 80 {
-			errorLine = errorLine[:77] + "..."
-		}
-		return errorLine
-	}
-
-	// 3. Check for test failure summaries (e.g. "Found 1 error in 1 file", "FAILED (failures=1)")
-	for _, line := range lines {
-		l := strings.TrimSpace(line)
-		if strings.HasPrefix(l, "Found ") && strings.Contains(l, "error") {
-			if len(l) > 80 {
-				l = l[:77] + "..."
-			}
-			return l
-		}
-	}
-
-	// 4. Single-line summary fallback if clean and not raw data
-	if !strings.Contains(summary, "\n") {
-		clean := cleanStepSummary(summary)
-		if clean != "" {
-			return clean
-		}
-	}
-
-	// 5. First non-empty, non-fence, non-header line as fallback
-	for _, line := range lines {
-		l := strings.TrimSpace(line)
-		if l == "" || strings.HasPrefix(l, "``") || strings.HasPrefix(l, "[ACTION") || strings.HasPrefix(l, "python ") {
-			continue
-		}
-		if strings.HasPrefix(l, "Change(") || strings.HasPrefix(l, "{") || strings.HasPrefix(l, "[") {
-			continue
-		}
-		if len(l) > 80 {
-			l = l[:77] + "..."
-		}
-		return l
-	}
-
-	return ""
 }
 
 // FormatBuildSteps formats the step-by-step progress and status of a LUCI build.
@@ -981,23 +821,45 @@ func FormatBuildStepsVerbose(b *LUCIBuildDetails, verbose bool) string {
 		return sb.String()
 	}
 
+	const maxExpandedPassingSteps = 8
+
 	// Map existing step names to determine true top-level steps
 	stepNames := make(map[string]bool, len(b.Steps))
 	for _, s := range b.Steps {
 		stepNames[s.Name] = true
 	}
 
-	for _, s := range b.Steps {
-		// A step is top-level if it contains no '|', OR if its parent does not exist in b.Steps.
-		isTopLevel := true
-		if strings.Contains(s.Name, "|") {
-			parent := strings.Split(s.Name, "|")[0]
-			if stepNames[parent] {
-				isTopLevel = false
+	isTopLevelStep := func(s LUCIStep) bool {
+		if !strings.Contains(s.Name, "|") {
+			return true
+		}
+		parent := strings.Split(s.Name, "|")[0]
+		return !stepNames[parent]
+	}
+
+	hasNonPassingChild := func(parentName string) bool {
+		prefix := parentName + "|"
+		for _, child := range b.Steps {
+			if strings.HasPrefix(child.Name, prefix) && child.Status != "SUCCESS" {
+				return true
 			}
 		}
+		return false
+	}
 
-		if !isTopLevel {
+	passingTopLevelCount := 0
+	for _, s := range b.Steps {
+		if isTopLevelStep(s) && s.Status == "SUCCESS" && !hasNonPassingChild(s.Name) {
+			passingTopLevelCount++
+		}
+	}
+	collapsePassingSteps := passingTopLevelCount > maxExpandedPassingSteps
+
+	for _, s := range b.Steps {
+		if !isTopLevelStep(s) {
+			continue
+		}
+		if collapsePassingSteps && s.Status == "SUCCESS" && !hasNonPassingChild(s.Name) {
 			continue
 		}
 
@@ -1058,119 +920,53 @@ func FormatBuildStepsVerbose(b *LUCIBuildDetails, verbose bool) string {
 			}
 		}
 	}
+	if collapsePassingSteps {
+		fmt.Fprintf(&sb, "  ✓  %d passing steps omitted (use -v to list)\n", passingTopLevelCount)
+	}
 	return sb.String()
 }
 
-// deduplicateSummaryAgainstLog removes fenced code blocks and truncation notices
-// from summary when logSnippet already provides the full failure log content,
-// preserving actionable footer lines (such as `fx repro` instructions).
-func deduplicateSummaryAgainstLog(summary, logSnippet string) string {
-	summary = strings.TrimSpace(summary)
-	if summary == "" || logSnippet == "" {
-		return summary
-	}
-	if strings.Contains(logSnippet, summary) {
-		return ""
-	}
-	lines := strings.Split(summary, "\n")
-	var kept []string
-	inFence := false
-	fenceMarker := ""
-	var fenceLines []string
+// maxExpandedPassingChecks is the maximum number of passing (SUCCESS) checks
+// rendered individually in default human-readable `pr checks` and `run view`
+// output before collapsing into a single summary line (unless --all is set).
+const maxExpandedPassingChecks = 5
 
-	flushFenceIfNotRedundant := func() {
-		if len(fenceLines) == 0 {
-			return
-		}
-		firstNonEmpty := ""
-		for _, fl := range fenceLines[1:] {
-			t := strings.TrimSpace(fl)
-			if t != "" && !strings.HasPrefix(t, "```") {
-				firstNonEmpty = t
-				break
-			}
-		}
-		if firstNonEmpty == "" || !strings.Contains(logSnippet, firstNonEmpty) {
-			kept = append(kept, fenceLines...)
-		}
-		fenceLines = nil
+func nonPassingStatusRank(status string) int {
+	switch status {
+	case "FAILURE", "INFRA_FAILURE":
+		return 0
+	case "STARTED", "SCHEDULED":
+		return 1
+	default:
+		return 2
 	}
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !inFence && strings.HasPrefix(trimmed, "```") {
-			inFence = true
-			fenceMarker = "```"
-			if strings.HasPrefix(trimmed, "````") {
-				fenceMarker = "````"
-			}
-			fenceLines = append(fenceLines, line)
-			continue
-		}
-		if inFence {
-			fenceLines = append(fenceLines, line)
-			if strings.HasPrefix(trimmed, fenceMarker) {
-				inFence = false
-				flushFenceIfNotRedundant()
-			}
-			continue
-		}
-		if strings.HasPrefix(trimmed, "(failure summary truncated") {
-			continue
-		}
-		kept = append(kept, line)
-	}
-	if inFence {
-		flushFenceIfNotRedundant()
-	}
-	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
-// FormatFailureReports formats diagnostic failure reports into a readable string.
-func FormatFailureReports(reports []FailureReport) string {
-	var sb strings.Builder
-	for i, r := range reports {
-		if i > 0 {
-			sb.WriteString("\n")
+// PartitionAndOrderBuilds separates builds into non-passing and passing (SUCCESS)
+// slices. Non-passing builds are ordered with failures (FAILURE, INFRA_FAILURE)
+// first, then running/scheduled (STARTED, SCHEDULED), then canceled/other,
+// preserving relative order within each group.
+func PartitionAndOrderBuilds(builds []bbBuild) (nonPassing, passing []bbBuild) {
+	var failed, running, other []bbBuild
+	for _, b := range builds {
+		if b.Status == "SUCCESS" {
+			passing = append(passing, b)
+			continue
 		}
-		sb.WriteString("================================================================================\n")
-		if r.Patchset > 0 {
-			fmt.Fprintf(&sb, "FAILURE: %s (Build %s, from patchset %d)\n", r.Builder, r.BuildID, r.Patchset)
-		} else {
-			fmt.Fprintf(&sb, "FAILURE: %s (Build %s)\n", r.Builder, r.BuildID)
-		}
-		fmt.Fprintf(&sb, "Status: %s | URL: %s\n", r.Status, r.BuildURL)
-		if r.FailedStep != "" {
-			fmt.Fprintf(&sb, "Step: %s\n", r.FailedStep)
-		}
-		sb.WriteString("================================================================================\n")
-		stepSum := deduplicateSummaryAgainstLog(r.StepSummary, r.LogSnippet)
-		if stepSum != "" {
-			sb.WriteString(stepSum)
-			sb.WriteString("\n")
-		}
-		buildSum := deduplicateSummaryAgainstLog(r.BuildSummary, r.LogSnippet)
-		if buildSum != "" && !strings.Contains(stepSum, buildSum) {
-			if stepSum != "" {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(buildSum)
-			sb.WriteString("\n")
-		}
-		if r.LogSnippet != "" {
-			header := "Log Snippet"
-			if r.LogName != "" {
-				header = fmt.Sprintf("Log Snippet (%s)", r.LogName)
-			}
-			fmt.Fprintf(&sb, "\n--- %s ---\n", header)
-			sb.WriteString(r.LogSnippet)
-			sb.WriteString("\n")
-		}
-		if r.FullLogURL != "" {
-			fmt.Fprintf(&sb, "\nFull Log URL: %s\n", r.FullLogURL)
+		switch nonPassingStatusRank(b.Status) {
+		case 0:
+			failed = append(failed, b)
+		case 1:
+			running = append(running, b)
+		default:
+			other = append(other, b)
 		}
 	}
-	return sb.String()
+	nonPassing = make([]bbBuild, 0, len(failed)+len(running)+len(other))
+	nonPassing = append(nonPassing, failed...)
+	nonPassing = append(nonPassing, running...)
+	nonPassing = append(nonPassing, other...)
+	return nonPassing, passing
 }
 
 // formatCheckSummary returns a 1-line summary of checks status, highlighting failures.
@@ -1230,10 +1026,10 @@ func formatCheckSummary(builds []bbBuild, changeNum int) string {
 
 	if running > 0 {
 		if passed > 0 {
-			return fmt.Sprintf("● %d passed, %d running (use 'gh pr checks --watch' to monitor)", passed, running)
+			return fmt.Sprintf(GlyphRunning+" %d passed, %d running (use 'gh pr checks --watch' to monitor)", passed, running)
 		}
-		return fmt.Sprintf("● %d running (use 'gh pr checks --watch' to monitor)", running)
+		return fmt.Sprintf(GlyphRunning+" %d running (use 'gh pr checks --watch' to monitor)", running)
 	}
 
-	return fmt.Sprintf("✓ %d passing", passed)
+	return fmt.Sprintf(GlyphPass+" %d passing", passed)
 }

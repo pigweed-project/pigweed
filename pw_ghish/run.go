@@ -17,7 +17,9 @@ package pw_ghish
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -168,6 +170,7 @@ Commands:
 
 var runListCmd = &cobra.Command{
 	Use:          "list [<id>[/<patchset>]]",
+	Annotations:  map[string]string{KindAnnotation: KindList},
 	Short:        "List recent CI/CD workflow runs for a change",
 	SilenceUsage: true,
 	Args:         cobra.MaximumNArgs(1),
@@ -211,15 +214,7 @@ var runListCmd = &cobra.Command{
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Showing %d checks for Change %d (Patchset %d) • %s\n\n", len(relevant), res.Change.Number, res.PatchsetNum, res.Change.Subject)
 
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "STATUS\tBUILDER\tDURATION\tID\tURL")
-		for _, b := range relevant {
-			sym := getStatusSymbol(b.Status)
-			dur := formatDuration(b.StartTime, b.EndTime)
-			urlStr := BuildURL(b)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n", sym, b.Builder.Builder, dur, b.ID, urlStr, patchsetNote(b.Patchset, res.PatchsetNum))
-		}
-		w.Flush()
+		writeRunListTable(cmd.OutOrStdout(), relevant, res.PatchsetNum, runListAll || VerboseFlag)
 
 		if notice := FormatOmittedExperimentalNotice(omittedExp); notice != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
@@ -227,12 +222,130 @@ var runListCmd = &cobra.Command{
 		if notice := FormatHiddenByConfigNotice(hiddenCount, projCfg.CI.HideTagFilters); notice != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
 		}
+		writeRunVerdictFooter(cmd.OutOrStdout(), res.Change.Number, relevant)
 		return nil
 	},
 }
 
+// writeRunListTable renders the `run list` STATUS/BUILDER/DURATION/ID/URL
+// table, ordering failures first and collapsing passing builds beyond
+// maxExpandedPassingChecks unless showAllPassing is set.
+func writeRunListTable(out io.Writer, relevant []bbBuild, patchsetNum int, showAllPassing bool) {
+	nonPassingBuilds, passingBuilds := PartitionAndOrderBuilds(relevant)
+	collapsePassing := !showAllPassing && len(passingBuilds) > maxExpandedPassingChecks
+
+	if len(nonPassingBuilds) > 0 || !collapsePassing {
+		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "STATUS\tBUILDER\tDURATION\tID\tURL")
+		renderListRow := func(b bbBuild) {
+			sym := getStatusSymbol(b.Status)
+			dur := formatDuration(b.StartTime, b.EndTime)
+			urlStr := BuildURL(b)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n", sym, b.Builder.Builder, dur, b.ID, urlStr, patchsetNote(b.Patchset, patchsetNum))
+		}
+		for _, b := range nonPassingBuilds {
+			renderListRow(b)
+		}
+		if !collapsePassing {
+			for _, b := range passingBuilds {
+				renderListRow(b)
+			}
+		}
+		w.Flush()
+	}
+	if collapsePassing {
+		fmt.Fprintf(out, "  ✓  %d passing checks omitted (use --all to list)\n", len(passingBuilds))
+	}
+}
+
+// ciVerdict tallies one patchset's blocking checks for the Verdict:/Next:
+// footer shared by `run list`, `run view`, and `pr checks`.
+type ciVerdict struct {
+	total    int
+	failed   int
+	canceled int
+	running  int
+	passed   int
+	// failedGates lists Gerrit gates (submit requirements or automated
+	// labels) that failed; they only affect the verdict when no check failed.
+	failedGates []string
+	// experimental counts non-blocking builders; it only explains an empty
+	// result.
+	experimental int
+	// pendingNext overrides the Next: command for a PENDING verdict; the
+	// default is `gh run watch <id>`.
+	pendingNext string
+}
+
+// tallyCIVerdict classifies builds with classifyCheckStatus, so the verdict
+// fails closed exactly like the `gh pr checks` exit code. Experimental
+// builders are non-blocking: like `pr checks`, they are counted separately
+// and never affect the verdict, even when shown with --experimental.
+func tallyCIVerdict(builds []bbBuild) ciVerdict {
+	var v ciVerdict
+	for _, b := range builds {
+		if b.IsExperimental() {
+			v.experimental++
+			continue
+		}
+		v.total++
+		switch classifyCheckStatus(b.Status) {
+		case checkFailed:
+			v.failed++
+		case checkCanceled:
+			v.canceled++
+		case checkPending:
+			v.running++
+		case checkPassed:
+			v.passed++
+		}
+	}
+	return v
+}
+
+// writeRunVerdictFooter writes the shared CI Verdict:/Next: footer for the
+// given builds.
+func writeRunVerdictFooter(out io.Writer, changeNum int, relevant []bbBuild) {
+	writeCIVerdictFooter(out, changeNum, tallyCIVerdict(relevant))
+}
+
+// writeCIVerdictFooter writes a blank line followed by a one-line Verdict:
+// and the single most useful Next: command. Precedence (failed, failed gates,
+// canceled, running, none, passed) matches checksExitStatus.
+func writeCIVerdictFooter(out io.Writer, changeNum int, v ciVerdict) {
+	fmt.Fprintln(out)
+	switch {
+	case v.failed > 0:
+		fmt.Fprintf(out, "Verdict: FAILED (%d of %d checks failed)\n", v.failed, v.total)
+		fmt.Fprintf(out, "Next:    gh run view %d --log-failed  (or gh run rerun %d --failed)\n", changeNum, changeNum)
+	case len(v.failedGates) > 0:
+		fmt.Fprintf(out, "Verdict: FAILED (Gerrit gates failed: %s)\n", strings.Join(v.failedGates, ", "))
+		fmt.Fprintf(out, "Next:    gh pr view %d --comments\n", changeNum)
+	case v.canceled > 0:
+		fmt.Fprintf(out, "Verdict: CANCELED (%d of %d checks canceled, likely superseded by a newer patchset)\n", v.canceled, v.total)
+		fmt.Fprintf(out, "Next:    gh pr checks %d  (or gh pr edit %d --cq)\n", changeNum, changeNum)
+	case v.running > 0:
+		next := v.pendingNext
+		if next == "" {
+			next = fmt.Sprintf("gh run watch %d", changeNum)
+		}
+		fmt.Fprintf(out, "Verdict: PENDING (%d running, %d passed)\n", v.running, v.passed)
+		fmt.Fprintf(out, "Next:    %s\n", next)
+	case v.total == 0 && v.experimental > 0:
+		fmt.Fprintf(out, "Verdict: NO BLOCKING CHECKS (%d non-blocking experimental builders ran)\n", v.experimental)
+		fmt.Fprintf(out, "Next:    gh pr checks %d --experimental\n", changeNum)
+	case v.total == 0:
+		fmt.Fprintln(out, "Verdict: NO CHECKS (CI not scheduled yet, or no tryjobs configured)")
+		fmt.Fprintf(out, "Next:    gh pr edit %d --cq\n", changeNum)
+	default:
+		fmt.Fprintf(out, "Verdict: PASSED (%s passed)\n", countNoun(v.passed, "check"))
+		fmt.Fprintf(out, "Next:    gh pr view %d\n", changeNum)
+	}
+}
+
 var runViewCmd = &cobra.Command{
 	Use:          "view [<id> | <builder>] [flags]",
+	Annotations:  map[string]string{KindAnnotation: KindView},
 	Short:        "View details, step trees, or logs for a CI/CD build",
 	SilenceUsage: true,
 	Args:         cobra.MaximumNArgs(2),
@@ -390,26 +503,48 @@ var runViewCmd = &cobra.Command{
 				activeProvider = &BuildbucketProvider{LUCIClient: luciClient}
 			}
 
-			var reports []FailureReport
-			for _, b := range targetBuilds {
+			fetched := make([]*FailureReport, len(targetBuilds))
+			fetchErrs := make([]error, len(targetBuilds))
+			sem := make(chan struct{}, 8)
+			var wg sync.WaitGroup
+			for i, b := range targetBuilds {
 				if b.Status != "FAILURE" && b.Status != "INFRA_FAILURE" {
 					continue
 				}
-				rep, err := activeProvider.FetchFailureReportWithOptions(ctx, b, FailureReportOptions{
-					MaxLogLines:            maxLines,
-					PreferredLogs:          projCfg.PreferredLogs(),
-					IncludeSummaryMarkdown: projCfg.IncludeSummaryMarkdown(),
-					Target:                 runViewTarget,
-				})
-				if err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to get details for build %s: %v\n", b.ID, err)
+				wg.Add(1)
+				go func(idx int, build bbBuild) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+
+					rep, err := activeProvider.FetchFailureReportWithOptions(ctx, build, FailureReportOptions{
+						MaxLogLines:            maxLines,
+						PreferredLogs:          projCfg.PreferredLogs(),
+						IncludeSummaryMarkdown: projCfg.IncludeSummaryMarkdown(),
+						Target:                 runViewTarget,
+					})
+					if err != nil {
+						fetchErrs[idx] = err
+						return
+					}
+					if rep != nil {
+						if res != nil && build.Patchset > 0 && build.Patchset != res.PatchsetNum {
+							rep.Patchset = build.Patchset
+						}
+						fetched[idx] = rep
+					}
+				}(i, b)
+			}
+			wg.Wait()
+
+			var reports []FailureReport
+			for i, b := range targetBuilds {
+				if fetchErrs[i] != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to get details for build %s: %v\n", b.ID, fetchErrs[i])
 					continue
 				}
-				if rep != nil {
-					if res != nil && b.Patchset > 0 && b.Patchset != res.PatchsetNum {
-						rep.Patchset = b.Patchset
-					}
-					reports = append(reports, *rep)
+				if fetched[i] != nil {
+					reports = append(reports, *fetched[i])
 				}
 			}
 
@@ -534,35 +669,32 @@ var runViewCmd = &cobra.Command{
 		}
 		filteredBuilds, hiddenCount := FilterBuildsByTags(deduplicateLatestBuilds(res.Builds), hideFilters)
 		relevant, omittedExp := FilterExperimentalBuilds(filteredBuilds, runViewExperimental)
-		hasFailure := false
-		hasRunning := false
-		passedCount := 0
-		failedCount := 0
-
-		for _, b := range relevant {
-			if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
-				hasFailure = true
-				failedCount++
-			} else if b.Status == "STARTED" || b.Status == "SCHEDULED" {
-				hasRunning = true
-			} else if b.Status == "SUCCESS" {
-				passedCount++
-			}
-		}
+		// Derive the header from the same tally as the Verdict: footer so
+		// the two can never disagree.
+		verdict := tallyCIVerdict(relevant)
+		passedCount := verdict.passed
+		failedCount := verdict.failed
 
 		if len(relevant) == 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "No checks scheduled for Change %d (Patchset %d).\n", res.Change.Number, res.PatchsetNum)
 			return nil
 		}
 
-		overallSymbol := "✓"
+		overallSymbol := GlyphPass
 		overallStatus := "SUCCESS"
-		if hasFailure {
-			overallSymbol = "✗"
+		switch {
+		case verdict.failed > 0:
+			overallSymbol = GlyphFail
 			overallStatus = "FAILURE"
-		} else if hasRunning {
-			overallSymbol = "*"
+		case verdict.canceled > 0:
+			overallSymbol = GlyphFail
+			overallStatus = "CANCELED"
+		case verdict.running > 0:
+			overallSymbol = GlyphRunning
 			overallStatus = "RUNNING"
+		case verdict.total == 0:
+			overallSymbol = GlyphWarn
+			overallStatus = "NO_BLOCKING_CHECKS"
 		}
 
 		changeURL := fmt.Sprintf("https://%s/c/%s/+/%d", res.GerritHost, res.Change.Project, res.Change.Number)
@@ -600,13 +732,36 @@ var runViewCmd = &cobra.Command{
 		fmt.Fprintf(cmd.OutOrStdout(), "URL:     %s\n\n", changeURL)
 		fmt.Fprintln(cmd.OutOrStdout(), "JOBS")
 
+		nonPassingBuilds, passingBuilds := PartitionAndOrderBuilds(relevant)
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		for _, b := range relevant {
+		renderJobRow := func(b bbBuild) {
 			sym := getStatusSymbol(b.Status)
 			dur := formatDuration(b.StartTime, b.EndTime)
-			fmt.Fprintf(w, "%s\t%s\tin %s\t(ID %s)%s\n", sym, b.Builder.Builder, dur, b.ID, patchsetNote(b.Patchset, res.PatchsetNum))
+			infraNote := ""
+			if b.Status == "INFRA_FAILURE" {
+				infraNote = " [infra failure]"
+			}
+			fmt.Fprintf(w, "%s\t%s\tin %s\t(ID %s)%s%s\n", sym, b.Builder.Builder, dur, b.ID, patchsetNote(b.Patchset, res.PatchsetNum), infraNote)
+		}
+		for _, b := range nonPassingBuilds {
+			renderJobRow(b)
+		}
+		if !runViewAll && len(passingBuilds) > maxExpandedPassingChecks {
+			if len(nonPassingBuilds) == 0 {
+				fmt.Fprintf(w, "✓\tAll %d checks passed (use --all to list)\n", len(passingBuilds))
+			} else {
+				fmt.Fprintf(w, "✓\t%d passing checks omitted (use --all to list)\n", len(passingBuilds))
+			}
+		} else {
+			for _, b := range passingBuilds {
+				renderJobRow(b)
+			}
 		}
 		w.Flush()
+
+		for _, cluster := range ClusterFailedBuilds(relevant) {
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", cluster)
+		}
 
 		if notice := FormatOmittedExperimentalNotice(omittedExp); notice != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
@@ -616,21 +771,25 @@ var runViewCmd = &cobra.Command{
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout())
-		fmt.Fprintf(cmd.OutOrStdout(), "To view failed logs:   gh run view %d --log-failed\n", res.Change.Number)
+		if verdict.failed > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "To view failed logs:   gh run view %d --log-failed\n", res.Change.Number)
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "To view step tree:     gh run view %d -j <builder>\n", res.Change.Number)
-		if hasFailure {
+		if verdict.failed > 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "If flaky, rerun:       gh run rerun %d --failed\n", res.Change.Number)
 			if hint := effectiveLocalPresubmitHint(projCfg, res.Profile); hint != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "To reproduce locally:  %s\n", hint)
 			}
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "To view in browser:    gh run view %d -w\n", res.Change.Number)
+		writeRunVerdictFooter(cmd.OutOrStdout(), res.Change.Number, relevant)
 		return nil
 	},
 }
 
 var runRerunCmd = &cobra.Command{
 	Use:          "rerun [<id> | <builder>] [flags]",
+	Annotations:  map[string]string{KindAnnotation: KindMutation},
 	Short:        "Rerun CI/CD checks for a change",
 	SilenceUsage: true,
 	Args:         cobra.MaximumNArgs(2),
@@ -706,7 +865,19 @@ var runRerunCmd = &cobra.Command{
 			setProviderProfile(provider, res.Profile, cmd)
 		}
 
-		return provider.RerunBuilds(ctx, chRef, buildsToRerun, runRerunDryRun, cmd.OutOrStdout())
+		if err := provider.RerunBuilds(ctx, chRef, buildsToRerun, runRerunDryRun, cmd.OutOrStdout()); err != nil {
+			return err
+		}
+		if !runRerunDryRun {
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: fmt.Sprintf("Triggered rerun for Change %d (Patchset %d)", res.Change.Number, res.PatchsetNum),
+				Details: []ReceiptField{
+					{Key: "Builders", Value: fmt.Sprintf("%d triggered", len(buildsToRerun))},
+				},
+				Next: fmt.Sprintf("gh run watch %d", res.Change.Number),
+			})
+		}
+		return nil
 	},
 }
 
@@ -724,6 +895,7 @@ func allBusytownBuilds(builds []bbBuild) bool {
 
 var runWatchCmd = &cobra.Command{
 	Use:          "watch [<id>[/<patchset>]]",
+	Annotations:  map[string]string{KindAnnotation: KindStream},
 	Short:        "Watch checks until they finish",
 	SilenceUsage: true,
 	Args:         cobra.MaximumNArgs(1),
@@ -736,7 +908,8 @@ var runWatchCmd = &cobra.Command{
 func init() {
 	runListCmd.Flags().BoolVar(&runListJSON, "json", false, "Output JSON with specified fields")
 	runListCmd.Flags().BoolVarP(&runListExperimental, "experimental", "e", false, "Include non-blocking experimental checks")
-	runListCmd.Flags().BoolVar(&runListAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters")
+	//ghish:flag mode=extension reason="Show all individual passing checks without collapsing"
+	runListCmd.Flags().BoolVar(&runListAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters (ghish-only)")
 	runListCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	runListCmd.Flags().MarkHidden("buildbucket-host")
 
@@ -748,7 +921,8 @@ func init() {
 	runViewCmd.Flags().BoolVarP(&runViewWeb, "web", "w", false, "Open check in web browser")
 	runViewCmd.Flags().BoolVar(&runViewJSON, "json", false, "Output in JSON format")
 	runViewCmd.Flags().BoolVarP(&runViewExperimental, "experimental", "e", false, "Include non-blocking experimental checks")
-	runViewCmd.Flags().BoolVar(&runViewAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters")
+	//ghish:flag mode=extension reason="Show all individual passing checks without collapsing"
+	runViewCmd.Flags().BoolVar(&runViewAll, "all", false, "Show all passing checks without collapsing and include hidden builds (ghish-only)")
 	runViewCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	runViewCmd.Flags().MarkHidden("buildbucket-host")
 
@@ -762,7 +936,8 @@ func init() {
 	runWatchCmd.Flags().DurationVarP(&checksInterval, "interval", "i", 15*time.Second, "Refresh interval")
 	runWatchCmd.Flags().BoolVar(&checksFailFast, "fail-fast", false, "Exit immediately if any check fails")
 	runWatchCmd.Flags().BoolVarP(&checksExperimental, "experimental", "e", false, "Include non-blocking experimental checks")
-	runWatchCmd.Flags().BoolVar(&checksAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters")
+	//ghish:flag mode=extension reason="Show all individual passing checks without collapsing"
+	runWatchCmd.Flags().BoolVar(&checksAll, "all", false, "Show all passing checks without collapsing and include hidden builds (ghish-only)")
 	runWatchCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	runWatchCmd.Flags().MarkHidden("buildbucket-host")
 

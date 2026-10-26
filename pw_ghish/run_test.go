@@ -18,11 +18,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestRunList(t *testing.T) {
@@ -169,7 +174,7 @@ func TestRunView_VerboseSteps(t *testing.T) {
 	if !strings.Contains(output, "Steps for pigweed-compile (Build 111)") {
 		t.Errorf("Expected steps header, got:\n%s", output)
 	}
-	if !strings.Contains(output, "✓  setup") || !strings.Contains(output, "*  compile") {
+	if !strings.Contains(output, "✓  setup") || !strings.Contains(output, "●  compile") {
 		t.Errorf("Expected step items, got:\n%s", output)
 	}
 
@@ -540,10 +545,10 @@ func TestRunView_JobFlag_LogFailed_IgnoresSupersededFailure(t *testing.T) {
 		t.Fatalf("run view -j --log-failed failed: %v\nOutput: %s", err, output)
 	}
 
-	if strings.Contains(output, "802") {
+	if containsBuildID(output, "802") {
 		t.Errorf("reported superseded patchset 8 failure (build 802), got:\n%s", output)
 	}
-	if !strings.Contains(output, "901") {
+	if !containsBuildID(output, "901") {
 		t.Errorf("expected newest build 901 from patchset 9, got:\n%s", output)
 	}
 }
@@ -590,19 +595,26 @@ func newReusedBuildServer(t *testing.T) *MockGerritServer {
 	return server
 }
 
+// containsBuildID reports whether s mentions the build ID id as a whole
+// number. A plain substring match is flaky because mock-server URLs embed
+// random ports (e.g. 127.0.0.1:41801 contains "801").
+func containsBuildID(s, id string) bool {
+	return regexp.MustCompile(`\b` + regexp.QuoteMeta(id) + `\b`).MatchString(s)
+}
+
 // checkReusedBuildNotes verifies that the line mentioning build 801 is labeled
 // with patchset 8 and the line mentioning build 901 carries no label.
 func checkReusedBuildNotes(t *testing.T, output string) {
 	t.Helper()
 	var saw801, saw901 bool
 	for _, line := range strings.Split(output, "\n") {
-		if strings.Contains(line, "801") {
+		if containsBuildID(line, "801") {
 			saw801 = true
 			if !strings.Contains(line, "(from patchset 8)") {
 				t.Errorf("expected build 801 line to contain %q, got: %q", "(from patchset 8)", line)
 			}
 		}
-		if strings.Contains(line, "901") {
+		if containsBuildID(line, "901") {
 			saw901 = true
 			if strings.Contains(line, "from patchset") {
 				t.Errorf("build 901 ran on the current patchset and should not be labeled, got: %q", line)
@@ -844,5 +856,311 @@ func TestRunRerun_Failed_SkipsSubbuildsWithSkipRetryTag(t *testing.T) {
 	}
 	if strings.Contains(output, "core.x64-subbuild") {
 		t.Errorf("Expected child subbuild with skip-retry-in-gerrit:subbuild tag to be skipped, got:\n%s", output)
+	}
+}
+
+func TestRunView_LogFailed_ParallelAndDeterministicOrder(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("Parallel Failure Reports"))
+	server.OnSearchBuilds(
+		FakeBuild("101", "builder-alpha", "FAILURE"),
+		FakeBuild("102", "builder-beta", "FAILURE"),
+		FakeBuild("103", "builder-gamma", "INFRA_FAILURE"),
+		FakeBuild("104", "builder-delta", "FAILURE"),
+	)
+
+	var inFlight atomic.Int32
+	allArrived := make(chan struct{})
+	var allOnce sync.Once
+
+	detailsByID := map[string]*LUCIBuildDetails{
+		"101": FakeBuildDetails("101", "builder-alpha", "FAILURE", WithBuildSummary("alpha failure")),
+		"102": FakeBuildDetails("102", "builder-beta", "FAILURE", WithBuildSummary("beta failure")),
+		"103": FakeBuildDetails("103", "builder-gamma", "INFRA_FAILURE", WithBuildSummary("gamma failure")),
+		"104": FakeBuildDetails("104", "builder-delta", "FAILURE", WithBuildSummary("delta failure")),
+	}
+
+	server.On("POST", "/prpc/buildbucket.v2.Builds/GetBuild", func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		var req struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(bodyBytes, &req)
+
+		if inFlight.Add(1) == 4 {
+			allOnce.Do(func() { close(allArrived) })
+		}
+		timeout := time.NewTimer(2 * time.Second)
+		defer timeout.Stop()
+		select {
+		case <-allArrived:
+		case <-timeout.C:
+			t.Errorf("expected all 4 GetBuild RPCs to run in parallel, only %d arrived concurrently", inFlight.Load())
+		}
+		server.RespondJSON(w, http.StatusOK, detailsByID[req.ID])
+	})
+
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "--log-failed", "--json")
+	if err != nil {
+		t.Fatalf("run view --log-failed --json failed: %v\nOutput: %s", err, output)
+	}
+
+	var reports []FailureReport
+	if err := json.Unmarshal([]byte(output), &reports); err != nil {
+		t.Fatalf("failed to parse JSON reports: %v\nOutput: %s", err, output)
+	}
+	if len(reports) != 4 {
+		t.Fatalf("expected 4 failure reports, got %d", len(reports))
+	}
+	wantBuilders := []string{"builder-alpha", "builder-beta", "builder-gamma", "builder-delta"}
+	for i, want := range wantBuilders {
+		if reports[i].Builder != want {
+			t.Errorf("reports[%d].Builder = %q, want %q (deterministic order violated)", i, reports[i].Builder, want)
+		}
+	}
+}
+
+func TestRunView_Summary_CollapsesPassingChecksAndExpandsWithAll(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("Run View Collapse Passing"))
+	server.OnSearchBuilds(fakeTenPassOneFailBuilds()...)
+
+	output, err := executeCommand(RootCmd, "run", "view", "12345")
+	if err != nil {
+		t.Fatalf("run view failed: %v\nOutput: %s", err, output)
+	}
+	if !strings.Contains(output, "fail-builder") {
+		t.Errorf("Expected fail-builder in output, got:\n%s", output)
+	}
+	wantOmitted := "10 passing checks omitted (use --all to list)"
+	if !strings.Contains(output, wantOmitted) {
+		t.Errorf("Expected %q in output, got:\n%s", wantOmitted, output)
+	}
+	if strings.Contains(output, "pass-builder-01") {
+		t.Errorf("Expected individual passing checks to be collapsed in default run view, got:\n%s", output)
+	}
+
+	allOutput, err := executeCommand(RootCmd, "run", "view", "12345", "--all")
+	if err != nil {
+		t.Fatalf("run view --all failed: %v\nOutput: %s", err, allOutput)
+	}
+	for i := 1; i <= 10; i++ {
+		name := fmt.Sprintf("pass-builder-%02d", i)
+		if !strings.Contains(allOutput, name) {
+			t.Errorf("Expected %q in --all output, got:\n%s", name, allOutput)
+		}
+	}
+	if strings.Contains(allOutput, "passing checks omitted") {
+		t.Errorf("Expected no omitted passing line with --all, got:\n%s", allOutput)
+	}
+}
+
+func TestRunView_Summary_AllGreenOmitsLogFailedFooter(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("All Green Run View"))
+	server.OnSearchBuilds(
+		FakeBuild("101", "builder-pass-1", "SUCCESS"),
+		FakeBuild("102", "builder-pass-2", "SUCCESS"),
+	)
+
+	output, err := executeCommand(RootCmd, "run", "view", "12345")
+	if err != nil {
+		t.Fatalf("run view failed: %v\nOutput: %s", err, output)
+	}
+	if strings.Contains(output, "To view failed logs:") {
+		t.Errorf("Expected 'To view failed logs:' footer to be omitted when all checks pass, got:\n%s", output)
+	}
+	if !strings.Contains(output, "To view step tree:     gh run view 12345 -j <builder>") {
+		t.Errorf("Expected step tree footer in output, got:\n%s", output)
+	}
+}
+
+func TestRunRerun_CompletionReceipt(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("Rerun Receipt"), WithCurrentPatchset(4))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-linux", "FAILURE", WithBucket("pigweed.try")),
+	)
+
+	restore := SetRerunExecForTesting(
+		func(name string) (string, error) { return "/usr/bin/bb", nil },
+		func(ctx context.Context, name string, args []string, stdout, stderr io.Writer) error { return nil },
+	)
+	defer restore()
+
+	output, err := executeCommand(RootCmd, "run", "rerun", "12345", "--failed")
+	if err != nil {
+		t.Fatalf("run rerun --failed failed: %v\nOutput: %s", err, output)
+	}
+	wantReceipt := "✓ Triggered rerun for Change 12345 (Patchset 4)"
+	if !strings.Contains(output, wantReceipt) {
+		t.Errorf("Expected completion receipt %q in output, got:\n%s", wantReceipt, output)
+	}
+	if !strings.Contains(output, "Builders: 1 triggered") {
+		t.Errorf("Expected 'Builders: 1 triggered' in rerun receipt, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Next:     gh run watch 12345") {
+		t.Errorf("Expected 'Next:     gh run watch 12345' in rerun receipt, got:\n%s", output)
+	}
+
+	dryOutput, err := executeCommand(RootCmd, "run", "rerun", "12345", "--failed", "--dry-run")
+	if err != nil {
+		t.Fatalf("run rerun --failed --dry-run failed: %v\nOutput: %s", err, dryOutput)
+	}
+	if strings.Contains(dryOutput, wantReceipt) {
+		t.Errorf("Did not expect completion receipt on --dry-run, got:\n%s", dryOutput)
+	}
+}
+
+func TestRunList_CollapsesPassingChecksAndPrintsVerdictAndNext(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("Run List Collapse Passing"))
+	server.OnSearchBuilds(fakeTenPassOneFailBuilds()...)
+
+	output, err := executeCommand(RootCmd, "run", "list", "12345")
+	if err != nil {
+		t.Fatalf("run list failed: %v\nOutput: %s", err, output)
+	}
+	if !strings.Contains(output, "fail-builder") {
+		t.Errorf("Expected fail-builder in run list output, got:\n%s", output)
+	}
+	wantOmitted := "✓  10 passing checks omitted (use --all to list)"
+	if !strings.Contains(output, wantOmitted) {
+		t.Errorf("Expected %q in run list output, got:\n%s", wantOmitted, output)
+	}
+	if strings.Contains(output, "pass-builder-01") {
+		t.Errorf("Expected individual passing checks to be collapsed in default run list, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Verdict: FAILED (1 of 11 checks failed)") {
+		t.Errorf("Expected Verdict line in run list output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Next:    gh run view 12345 --log-failed  (or gh run rerun 12345 --failed)") {
+		t.Errorf("Expected Next line in run list output, got:\n%s", output)
+	}
+
+	verboseOutput, err := executeCommand(RootCmd, "run", "list", "12345", "-v")
+	if err != nil {
+		t.Fatalf("run list -v failed: %v\nOutput: %s", err, verboseOutput)
+	}
+	if !strings.Contains(verboseOutput, "pass-builder-01") || !strings.Contains(verboseOutput, "pass-builder-10") {
+		t.Errorf("Expected all passing checks in run list -v output, got:\n%s", verboseOutput)
+	}
+}
+
+func TestWriteCIVerdictFooter(t *testing.T) {
+	tests := []struct {
+		name        string
+		v           ciVerdict
+		wantVerdict string
+		wantNext    string
+	}{
+		{
+			name:        "failed",
+			v:           ciVerdict{total: 5, failed: 2, passed: 3},
+			wantVerdict: "Verdict: FAILED (2 of 5 checks failed)",
+			wantNext:    "Next:    gh run view 7 --log-failed  (or gh run rerun 7 --failed)",
+		},
+		{
+			name:        "failed gates only",
+			v:           ciVerdict{total: 2, passed: 2, failedGates: []string{"Lint (-1)", "Verified"}},
+			wantVerdict: "Verdict: FAILED (Gerrit gates failed: Lint (-1), Verified)",
+			wantNext:    "Next:    gh pr view 7 --comments",
+		},
+		{
+			name:        "canceled",
+			v:           ciVerdict{total: 4, canceled: 2, passed: 2},
+			wantVerdict: "Verdict: CANCELED (2 of 4 checks canceled, likely superseded by a newer patchset)",
+			wantNext:    "Next:    gh pr checks 7  (or gh pr edit 7 --cq)",
+		},
+		{
+			name:        "running uses gh run watch by default",
+			v:           ciVerdict{total: 3, running: 1, passed: 2},
+			wantVerdict: "Verdict: PENDING (1 running, 2 passed)",
+			wantNext:    "Next:    gh run watch 7",
+		},
+		{
+			name:        "running honors pendingNext",
+			v:           ciVerdict{total: 1, running: 1, pendingNext: "gh pr checks 7 --watch --fail-fast"},
+			wantVerdict: "Verdict: PENDING (1 running, 0 passed)",
+			wantNext:    "Next:    gh pr checks 7 --watch --fail-fast",
+		},
+		{
+			name:        "only experimental builders",
+			v:           ciVerdict{experimental: 2},
+			wantVerdict: "Verdict: NO BLOCKING CHECKS (2 non-blocking experimental builders ran)",
+			wantNext:    "Next:    gh pr checks 7 --experimental",
+		},
+		{
+			name:        "no checks",
+			v:           ciVerdict{},
+			wantVerdict: "Verdict: NO CHECKS (CI not scheduled yet, or no tryjobs configured)",
+			wantNext:    "Next:    gh pr edit 7 --cq",
+		},
+		{
+			name:        "passed singular",
+			v:           ciVerdict{total: 1, passed: 1},
+			wantVerdict: "Verdict: PASSED (1 check passed)",
+			wantNext:    "Next:    gh pr view 7",
+		},
+		{
+			name:        "passed plural",
+			v:           ciVerdict{total: 3, passed: 3},
+			wantVerdict: "Verdict: PASSED (3 checks passed)",
+			wantNext:    "Next:    gh pr view 7",
+		},
+		{
+			name:        "failed beats gates, canceled, and running",
+			v:           ciVerdict{total: 4, failed: 1, canceled: 1, running: 1, passed: 1, failedGates: []string{"Lint"}},
+			wantVerdict: "Verdict: FAILED (1 of 4 checks failed)",
+			wantNext:    "Next:    gh run view 7 --log-failed",
+		},
+		{
+			name:        "gates beat canceled and running",
+			v:           ciVerdict{total: 2, canceled: 1, running: 1, failedGates: []string{"Lint"}},
+			wantVerdict: "Verdict: FAILED (Gerrit gates failed: Lint)",
+		},
+		{
+			name:        "canceled beats running",
+			v:           ciVerdict{total: 2, canceled: 1, running: 1},
+			wantVerdict: "Verdict: CANCELED (1 of 2 checks canceled",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sb strings.Builder
+			writeCIVerdictFooter(&sb, 7, tt.v)
+			out := sb.String()
+			if !strings.HasPrefix(out, "\n") {
+				t.Errorf("footer must start with a blank line, got %q", out)
+			}
+			if !strings.Contains(out, tt.wantVerdict) {
+				t.Errorf("missing %q in:\n%s", tt.wantVerdict, out)
+			}
+			if tt.wantNext != "" && !strings.Contains(out, tt.wantNext) {
+				t.Errorf("missing %q in:\n%s", tt.wantNext, out)
+			}
+			if n := strings.Count(out, "Verdict:"); n != 1 {
+				t.Errorf("want exactly one Verdict: line, got %d:\n%s", n, out)
+			}
+			if n := strings.Count(out, "Next:"); n != 1 {
+				t.Errorf("want exactly one Next: line, got %d:\n%s", n, out)
+			}
+		})
+	}
+}
+
+func TestTallyCIVerdict_FailsClosedAndSkipsExperimental(t *testing.T) {
+	builds := []bbBuild{
+		FakeBuild("1", "ok", "SUCCESS"),
+		FakeBuild("2", "weird", "WHO_KNOWS"),
+		FakeBuild("3", "stopped", "CANCELED"),
+		FakeBuild("4", "busy", "SCHEDULED"),
+		FakeBuild("5", "exp", "FAILURE", WithCritical("NO")),
+	}
+	got := tallyCIVerdict(builds)
+	want := ciVerdict{total: 4, failed: 1, canceled: 1, running: 1, passed: 1, experimental: 1}
+	if got.total != want.total || got.failed != want.failed || got.canceled != want.canceled ||
+		got.running != want.running || got.passed != want.passed || got.experimental != want.experimental {
+		t.Errorf("tallyCIVerdict() = %+v, want %+v", got, want)
 	}
 }

@@ -72,14 +72,29 @@ change:
    Checks for Change 413992 (Patchset 1)
      ✓  static-checks-pigweed           16s       https://ci.chromium.org/b/8680709829694997521
 
+   Verdict: PASSED (1 check passed)
+   Next:    gh pr view 413992
+
    # Check a historical patchset:
    $ ./gh pr checks 413992/1
 
+The default output ends with the same ``Verdict:``/``Next:`` footer as
+``gh run list`` (``FAILED``, ``CANCELED``, ``PENDING``, ``NO CHECKS``, or
+``PASSED``); while checks are running, ``Next:`` suggests
+``gh pr checks <id> --watch --fail-fast``. Because the footer already names the
+next step, the ``Error:`` line on stderr is then a one-line summary;
+``--json`` and ``--template`` output has no footer and keeps the full
+remediation text in the error.
+
 By default, non-blocking experimental builders (``cq_experimental``) are
 omitted from the display. Pass ``--experimental`` (or ``-e``) to include them.
-When ``ci.hide_tag_filters`` is configured in ``.ghish.toml`` or ``git config``
-(for example, ``hide-in-gerrit:subbuild`` on orchestrator builds), matching
-child subbuilds are hidden by default and can be shown with ``--all``:
+When more than 5 passing checks are present, ``pr checks`` and ``run view``
+order failing, in-progress, and canceled checks first and collapse passing
+checks into a single summary line (``<N> passing checks omitted (use --all to
+list)``). When ``ci.hide_tag_filters`` is configured in ``.ghish.toml`` or
+``git config`` (for example, ``hide-in-gerrit:subbuild`` on orchestrator
+builds), matching child subbuilds are also hidden by default and can be shown
+with ``--all``:
 
 .. code-block:: console
 
@@ -137,6 +152,12 @@ failing checks print their step failure summary and log snippet upon exit:
    # Output JSON:
    $ ./gh pr checks --json checks,submitBlockers
 
+In ``--json`` output, each entry in ``checks`` and ``gerritGates`` reports its
+state in ``status`` (Buildbucket statuses such as ``SUCCESS`` or ``FAILURE``;
+submit-requirement statuses such as ``SATISFIED``, ``UNSATISFIED``,
+``APPROVED``, or ``REJECTED``). The ``✓``/``✗`` glyphs in text output are
+display-only and are not part of the JSON.
+
 Process exit code contract
 ==========================
 ``./gh pr checks`` reports the state of the change through its process exit
@@ -183,11 +204,13 @@ in flight on the previous one:
 
    $ ./gh pr checks 472267/43
    ...
+   Verdict: CANCELED (29 of 75 checks canceled, likely superseded by a newer patchset)
+   Next:    gh pr checks 472267  (or gh pr edit 472267 --cq)
    Error: 29 of 75 checks were canceled on Change 472267 (Patchset 43): ... and 24 more.
 
-   Checks are usually canceled because a newer patchset superseded this one.
-   To query the current patchset instead:
-     gh pr checks 472267
+With ``--json`` or ``--template`` there is no ``Verdict:``/``Next:`` footer, so
+the error instead carries the full remediation text (why checks get canceled,
+and the commands to query the current patchset or start a fresh dry run).
 
 Reused builds from equivalent earlier patchsets
 -----------------------------------------------
@@ -442,6 +465,9 @@ Key behavioral and flag differences
   changes (e.g. ``TRIVIAL_REBASE``, ``NO_CODE_CHANGE``) are automatically
   included and annotated with ``(from patchset <N>)``, matching LUCI CV's build
   reuse rules.
+* ``--all`` **flag (ghish-only)**: On ``pr checks``, ``run list``, and
+  ``run view``, ``--all`` expands all individual passing checks without
+  collapsing and includes child subbuilds hidden by ``ci.hide_tag_filters``.
 * ``--target <target>`` **flag (ghish-only)**: On ``run view``, ``--target``
   specifies the Android Busytown target name when inspecting a direct build ID
   (e.g. ``gh run view P99164207 --target firmware_host_tests --log-failed``).

@@ -1620,7 +1620,7 @@ func TestChecks_EquivalentPatchsets_SuccessBeatsNewerCancel(t *testing.T) {
 	if !strings.Contains(out, "https://ci.chromium.org/b/901") {
 		t.Errorf("expected successful build 901 from patchset 9, got:\n%s", out)
 	}
-	if strings.Contains(out, "1001") {
+	if containsBuildID(out, "1001") {
 		t.Errorf("canceled build 1001 should be superseded by the older success, got:\n%s", out)
 	}
 }
@@ -1827,5 +1827,179 @@ func TestLookupChangeLabel_CaseInsensitive(t *testing.T) {
 	}
 	if gotInfo.Recommended.AccountID != 1 {
 		t.Errorf("lookupChangeLabel Recommended.AccountID = %d, want 1", gotInfo.Recommended.AccountID)
+	}
+}
+
+func fakeTenPassOneFailBuilds() []bbBuild {
+	var builds []bbBuild
+	for i := 1; i <= 10; i++ {
+		builds = append(builds, FakeBuild(
+			fmt.Sprintf("10%d", i),
+			fmt.Sprintf("pass-builder-%02d", i),
+			"SUCCESS",
+			WithBucket("pigweed.try"),
+		))
+	}
+	builds = append(builds, FakeBuild("201", "fail-builder", "FAILURE", WithBucket("pigweed.try")))
+	return builds
+}
+
+func TestChecks_CollapsesPassingChecksByDefaultAndExpandsWithAll(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("Collapse Passing Checks"), WithCurrentPatchset(3))
+	server.OnSearchBuilds(fakeTenPassOneFailBuilds()...)
+
+	// Default: > 5 passing checks are collapsed, failing check is shown first.
+	output, err := executeCommand(RootCmd, "pr", "checks", "12345")
+	if got := ExitCodeFor(err); got != ExitCodeFailure {
+		t.Fatalf("ExitCodeFor(%v) = %d, want %d\nOutput: %s", err, got, ExitCodeFailure, output)
+	}
+	if !strings.Contains(output, "fail-builder") {
+		t.Errorf("Expected fail-builder in output, got:\n%s", output)
+	}
+	wantOmitted := "10 passing checks omitted (use --all to list)"
+	if !strings.Contains(output, wantOmitted) {
+		t.Errorf("Expected %q in output, got:\n%s", wantOmitted, output)
+	}
+	if strings.Contains(output, "pass-builder-01") {
+		t.Errorf("Expected individual passing checks to be collapsed in default view, got:\n%s", output)
+	}
+
+	// With --all: all 10 passing checks are expanded.
+	allOutput, err := executeCommand(RootCmd, "pr", "checks", "12345", "--all")
+	if got := ExitCodeFor(err); got != ExitCodeFailure {
+		t.Fatalf("ExitCodeFor(%v) = %d, want %d\nOutput: %s", err, got, ExitCodeFailure, allOutput)
+	}
+	for i := 1; i <= 10; i++ {
+		name := fmt.Sprintf("pass-builder-%02d", i)
+		if !strings.Contains(allOutput, name) {
+			t.Errorf("Expected %q in --all output, got:\n%s", name, allOutput)
+		}
+	}
+	if strings.Contains(allOutput, "passing checks omitted") {
+		t.Errorf("Expected no omitted passing line with --all, got:\n%s", allOutput)
+	}
+}
+
+func TestChecks_InfraFailureAnnotationAndFailureClustering(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("Infra Failure & Clustering"))
+	server.OnSearchBuilds(
+		FakeBuild("1", "pass-builder", "SUCCESS", WithBucket("pigweed.try")),
+		FakeBuild("2", "infra-builder-1", "INFRA_FAILURE", WithBucket("pigweed.try"), WithSummary("Task did not start, no resource\nextra details 1")),
+		FakeBuild("3", "infra-builder-2", "INFRA_FAILURE", WithBucket("pigweed.try"), WithSummary("Task did not start, no resource\nextra details 2")),
+	)
+
+	output, err := executeCommand(RootCmd, "pr", "checks", "12345")
+	if got := ExitCodeFor(err); got != ExitCodeFailure {
+		t.Fatalf("ExitCodeFor(%v) = %d, want %d\nOutput: %s", err, got, ExitCodeFailure, output)
+	}
+	if !strings.Contains(output, "[infra failure]") {
+		t.Errorf("Expected [infra failure] annotation in output, got:\n%s", output)
+	}
+	wantCluster := "Cluster: 2 builders failed with the same diagnostic: Task did not start, no resource"
+	if !strings.Contains(output, wantCluster) {
+		t.Errorf("Expected failure cluster %q in output, got:\n%s", wantCluster, output)
+	}
+	if strings.Index(output, "infra-builder-1") > strings.Index(output, "pass-builder") {
+		t.Errorf("Expected failed builders to be ordered before passing builders, got:\n%s", output)
+	}
+}
+
+func TestChecks_ExplicitLogFailedFlagWithoutWatch(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("Explicit Log Failed"))
+	server.OnSearchBuilds(
+		FakeBuild("200", "static-checks", "FAILURE", WithBucket("pigweed.try")),
+	)
+	server.OnGetBuild(FakeBuildDetails("200", "static-checks", "FAILURE", WithBuildSummary("clang-format diff detected")))
+
+	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--log-failed", "--buildbucket-host", server.URL)
+	if got := ExitCodeFor(err); got != ExitCodeFailure {
+		t.Fatalf("ExitCodeFor(%v) = %d, want %d\nOutput: %s", err, got, ExitCodeFailure, output)
+	}
+	if !strings.Contains(output, "FAILURE: static-checks (Build 200)") {
+		t.Errorf("Expected failure report header with --log-failed, got:\n%s", output)
+	}
+	if !strings.Contains(output, "clang-format diff detected") {
+		t.Errorf("Expected failure summary with --log-failed, got:\n%s", output)
+	}
+}
+
+// TestChecksExitStatus_VerdictShown verifies that once the Verdict:/Next:
+// footer is printed, the error keeps only its summary (plus the repro hint
+// and the pending exit-code note), while the exit code is unchanged.
+func TestChecksExitStatus_VerdictShown(t *testing.T) {
+	failed := checkTally{
+		blocking:           2,
+		failed:             []bbBuild{exitStatusBuild("pigweed-linux", "FAILURE")},
+		localPresubmitHint: "./pw presubmit --step lint",
+	}
+	pending := checkTally{blocking: 1, pending: []bbBuild{exitStatusBuild("pigweed-mac", "STARTED")}}
+	canceled := checkTally{blocking: 1, canceled: []bbBuild{exitStatusBuild("pigweed-win", "CANCELED")}}
+	gates := checkTally{blocking: 1, failedGates: []string{"Lint (-1)"}}
+	none := checkTally{}
+
+	tests := []struct {
+		name        string
+		tally       checkTally
+		wantCode    int
+		wantSummary string
+		// proseOnly appears only when the footer was not shown.
+		proseOnly string
+		// alwaysKept appears in both modes.
+		alwaysKept string
+	}{
+		{"failed", failed, ExitCodeFailure, `check "pigweed-linux" failed on Change 12345 (Patchset 2).`, "gh run rerun 12345 --failed", "./pw presubmit --step lint"},
+		{"pending", pending, ExitCodePending, "1 of 1 checks are still running", "gh pr checks 12345 --watch", `Exit code 8 means "checks pending"`},
+		{"canceled", canceled, ExitCodeFailure, `check "pigweed-win" was canceled`, "gh pr edit 12345 --cq", ""},
+		{"gates", gates, ExitCodeFailure, "Gerrit gate(s) failed on Change 12345 (Patchset 2): Lint (-1).", "gh pr view 12345 --comments", ""},
+		{"no checks", none, ExitCodeFailure, "no checks reported on Change 12345 (Patchset 2).", "gh pr edit 12345 --cq", ""},
+	}
+	for _, tt := range tests {
+		for _, shown := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/verdictShown=%v", tt.name, shown), func(t *testing.T) {
+				tally := tt.tally
+				tally.verdictShown = shown
+				err := checksExitStatus(12345, 2, tally)
+				if got := ExitCodeFor(err); got != tt.wantCode {
+					t.Fatalf("exit code = %d, want %d (err = %v)", got, tt.wantCode, err)
+				}
+				msg := err.Error()
+				if !strings.Contains(msg, tt.wantSummary) {
+					t.Errorf("missing summary %q in:\n%s", tt.wantSummary, msg)
+				}
+				if tt.alwaysKept != "" && !strings.Contains(msg, tt.alwaysKept) {
+					t.Errorf("missing %q in:\n%s", tt.alwaysKept, msg)
+				}
+				if hasProse := strings.Contains(msg, tt.proseOnly); hasProse == shown {
+					t.Errorf("remediation %q present = %v, want %v:\n%s", tt.proseOnly, hasProse, !shown, msg)
+				}
+			})
+		}
+	}
+}
+
+// TestChecks_PendingFooterSuggestsWatchFailFast checks the pr checks footer
+// uses the documented agent watch command rather than `gh run watch`.
+func TestChecks_PendingFooterSuggestsWatchFailFast(t *testing.T) {
+	server := exitCodeChecksServer(t, map[string]string{"a": "STARTED", "b": "SUCCESS"}, nil)
+	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--buildbucket-host", server.URL)
+	if got := ExitCodeFor(err); got != ExitCodePending {
+		t.Fatalf("exit code = %d, want %d\nOutput:\n%s", got, ExitCodePending, output)
+	}
+	for _, want := range []string{"Verdict: PENDING (1 running, 1 passed)", "Next:    gh pr checks 12345 --watch --fail-fast"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("missing %q in:\n%s", want, output)
+		}
+	}
+}
+
+func TestChecks_JSON_RejectsWatch(t *testing.T) {
+	for _, flag := range []string{"--watch", "--fail-fast"} {
+		_, err := executeCommand(RootCmd, "pr", "checks", "12345", "--json", "status", flag)
+		if err == nil || !strings.Contains(err.Error(), "cannot use `--watch` with `--json` flag") {
+			t.Errorf("pr checks --json %s: err = %v, want cannot use `--watch` with `--json` flag", flag, err)
+		}
 	}
 }

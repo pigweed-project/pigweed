@@ -793,13 +793,13 @@ func TestFormatBuildSteps(t *testing.T) {
 	if !strings.Contains(formatted, "Steps for pigweed-linux-static-analysis (Build 8671031638107722737)") {
 		t.Errorf("missing header in formatted output:\n%s", formatted)
 	}
-	if !strings.Contains(formatted, "Status: STARTED *") {
+	if !strings.Contains(formatted, "Status: STARTED ●") {
 		t.Errorf("missing status symbol in formatted output:\n%s", formatted)
 	}
 	if !strings.Contains(formatted, "✓  setup") {
 		t.Errorf("missing step setup in formatted output:\n%s", formatted)
 	}
-	if !strings.Contains(formatted, "*  static_analysis") {
+	if !strings.Contains(formatted, "●  static_analysis") {
 		t.Errorf("missing running step static_analysis in formatted output:\n%s", formatted)
 	}
 	if !strings.Contains(formatted, "Summary: running clang-tidy") {
@@ -1050,54 +1050,6 @@ func TestSearchBuilds_MaskIncludesExperimentalFields(t *testing.T) {
 	}
 }
 
-func TestExtractStepDiagnostic(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "empty",
-			input:    "",
-			expected: "",
-		},
-		{
-			name:     "single file diff",
-			input:    "````\n--- /b/s/w/ir/x/w/co/docs/common/header.js  (original)\n+++ /b/s/w/ir/x/w/co/docs/common/header.js  (reformatted)\n@@ -67,7 +67,11 @@\n````",
-			expected: "formatting diff in docs/common/header.js",
-		},
-		{
-			name:     "multi file diff",
-			input:    "````\n--- /b/s/w/ir/x/w/co/docs/common/header.py  (original)\n+++ /b/s/w/ir/x/w/co/docs/common/header.py  (reformatted)\n--- /b/s/w/ir/x/w/co/docs/common/nav.py  (original)\n+++ /b/s/w/ir/x/w/co/docs/common/nav.py  (reformatted)\n--- /b/s/w/ir/x/w/co/docs/tests/header_test.py  (original)\n+++ /b/s/w/ir/x/w/co/docs/tests/header_test.py  (reformatted)\n--- /b/s/w/ir/x/w/co/docs/tests/search_test.py  (original)\n+++ /b/s/w/ir/x/w/co/docs/tests/search_test.py  (reformatted)\n````",
-			expected: "formatting diff in 4 files: docs/common/header.py, docs/common/nav.py (+2 more)",
-		},
-		{
-			name:     "compiler error with line number",
-			input:    "````\n[ACTION //pw_build/py:workflows.lint.mypy(//pw_build/python_toolchain:python)]\nFAILED: [code=1] python/gen/pw_build/py/workflows.lint.mypy.pw_pystamp\npython [...]/py/pw_build/python_runner.py ...\n[...]/pw_build/workflows/build_driver.py:66: error: Argument 1 to \"ParseDict\" has incompatible type \"str\"\nFound 1 error in 1 file (checked 13 source files)\n````",
-			expected: "build_driver.py:66: error: Argument 1 to \"ParseDict\" has incompatible type \"str\"",
-		},
-		{
-			name:     "split line compiler error where error message is on next line",
-			input:    "````\n[ACTION //pw_build/py:workflows.lint.mypy(//pw_build/python_toolchain:python)]\nFAILED: [code=1] python/gen/pw_build/py/workflows.lint.mypy.pw_pystamp\n[...]/pw_build/workflows/build_driver.py:66: error:\nArgument 1 to \"ParseDict\" has incompatible type \"str\"; expected \"dict[str, Any]\"\nFound 1 error in 1 file\n````",
-			expected: "build_driver.py:66: error: Argument 1 to \"ParseDict\" has incompatible type \"s...",
-		},
-		{
-			name:     "single line failure message",
-			input:    "ninja execution failed",
-			expected: "ninja execution failed",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			actual := extractStepDiagnostic(tc.input)
-			if actual != tc.expected {
-				t.Errorf("extractStepDiagnostic() =\n%q\nwant:\n%q", actual, tc.expected)
-			}
-		})
-	}
-}
-
 func TestFormatBuildSteps_FailureSummaryWithDiagnostic(t *testing.T) {
 	build := &LUCIBuildDetails{
 		ID: "8671182706745774001",
@@ -1152,63 +1104,6 @@ func TestFormatBuildSteps_FailureSummaryWithDiagnostic(t *testing.T) {
 	}
 }
 
-func TestCleanStepSummary(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "empty",
-			input:    "",
-			expected: "",
-		},
-		{
-			name:     "short error",
-			input:    "ninja: error: 'foo.cc' not found",
-			expected: "ninja: error: 'foo.cc' not found",
-		},
-		{
-			name:     "longer useful error between 60 and 120 chars",
-			input:    "clang: error: unable to execute command: Segmentation fault (core dumped) in /workspace/pigweed/foo/bar.cc:42",
-			expected: "clang: error: unable to execute command: Segmentation fault (core dumped) in /workspace/pigweed/foo/bar.cc:42",
-		},
-		{
-			name:     "error exceeding 120 chars truncated",
-			input:    "this is a very long error message that exceeds one hundred and twenty characters in length and therefore should be truncated cleanly with an ellipsis",
-			expected: "this is a very long error message that exceeds one hundred and twenty characters in length and therefore should be tr...",
-		},
-		{
-			name:     "json dump suppressed",
-			input:    "{\"error\": \"details\", \"status\": 500}",
-			expected: "",
-		},
-		{
-			name:     "embedded json data dump suppressed",
-			input:    "returned unexpected payload: {\"key\": \"value\"}",
-			expected: "",
-		},
-		{
-			name:     "python repr suppressed",
-			input:    "Change(number=123, project='pw')",
-			expected: "",
-		},
-		{
-			name:     "multiline suppressed",
-			input:    "line 1\nline 2",
-			expected: "",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := cleanStepSummary(tc.input)
-			if got != tc.expected {
-				t.Errorf("cleanStepSummary(%q) = %q, want %q", tc.input, got, tc.expected)
-			}
-		})
-	}
-}
 func TestSearchBuilds_Pagination(t *testing.T) {
 	ctx := context.Background()
 	calls := 0
@@ -1498,5 +1393,68 @@ func TestFilterBuildsByTags(t *testing.T) {
 	}
 	if hidden != 2 {
 		t.Errorf("hidden = %d, want 2", hidden)
+	}
+}
+
+func TestPartitionAndOrderBuilds(t *testing.T) {
+	builds := []bbBuild{
+		FakeBuild("1", "pass-1", "SUCCESS"),
+		FakeBuild("2", "cancel-1", "CANCELED"),
+		FakeBuild("3", "sched-1", "SCHEDULED"),
+		FakeBuild("4", "fail-1", "FAILURE"),
+		FakeBuild("5", "start-1", "STARTED"),
+		FakeBuild("6", "infra-1", "INFRA_FAILURE"),
+		FakeBuild("7", "pass-2", "SUCCESS"),
+	}
+
+	nonPassing, passing := PartitionAndOrderBuilds(builds)
+	if len(passing) != 2 || passing[0].Builder.Builder != "pass-1" || passing[1].Builder.Builder != "pass-2" {
+		t.Errorf("passing = %+v, want [pass-1, pass-2]", passing)
+	}
+
+	wantOrder := []string{"fail-1", "infra-1", "sched-1", "start-1", "cancel-1"}
+	if len(nonPassing) != len(wantOrder) {
+		t.Fatalf("len(nonPassing) = %d, want %d (%+v)", len(nonPassing), len(wantOrder), nonPassing)
+	}
+	for i, want := range wantOrder {
+		if nonPassing[i].Builder.Builder != want {
+			t.Errorf("nonPassing[%d] = %q, want %q", i, nonPassing[i].Builder.Builder, want)
+		}
+	}
+}
+
+func TestFormatBuildStepsVerbose_CollapsesMoreThanEightPassingSteps(t *testing.T) {
+	var steps []LUCIStep
+	for i := 1; i <= 9; i++ {
+		steps = append(steps, LUCIStep{
+			Name:   fmt.Sprintf("setup_step_%02d", i),
+			Status: "SUCCESS",
+		})
+	}
+	steps = append(steps, LUCIStep{
+		Name:   "compile",
+		Status: "FAILURE",
+	})
+	build := &LUCIBuildDetails{
+		ID:      "9001",
+		Builder: bbBuilder{Builder: "pigweed-linux"},
+		Status:  "FAILURE",
+		Steps:   steps,
+	}
+
+	compact := FormatBuildStepsVerbose(build, false)
+	if !strings.Contains(compact, "✗  compile") {
+		t.Errorf("Expected failing step 'compile' in compact step tree, got:\n%s", compact)
+	}
+	if !strings.Contains(compact, "✓  9 passing steps omitted (use -v to list)") {
+		t.Errorf("Expected collapsed passing steps summary in compact step tree, got:\n%s", compact)
+	}
+	if strings.Contains(compact, "setup_step_01") {
+		t.Errorf("Did not expect individual passing steps when > 8 passing steps and !verbose, got:\n%s", compact)
+	}
+
+	verbose := FormatBuildStepsVerbose(build, true)
+	if !strings.Contains(verbose, "setup_step_01") || !strings.Contains(verbose, "setup_step_09") {
+		t.Errorf("Expected all passing steps in verbose step tree, got:\n%s", verbose)
 	}
 }

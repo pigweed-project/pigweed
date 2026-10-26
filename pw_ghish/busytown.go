@@ -15,7 +15,6 @@
 package pw_ghish
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -24,7 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -54,7 +52,7 @@ var (
 
 	// BusytownExecCommandFn executes local accelerator binaries (fetch_artifact, ants_cli).
 	BusytownExecCommandFn = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return exec.CommandContext(ctx, name, args...).CombinedOutput()
+		return ExecCommandContext(ctx, name, args...).CombinedOutput()
 	}
 
 	// getBusytownHTTPClient returns an authenticated HTTP client for Android Build / ci.android.com.
@@ -613,60 +611,9 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 	return buildLog, antsOutput, logURL
 }
 
-func isBusytownFailureMarker(line string) bool {
-	l := strings.TrimSpace(line)
-	return strings.HasPrefix(l, "FAILED:") ||
-		strings.Contains(l, ": error:") ||
-		strings.Contains(l, ": fatal error:") ||
-		strings.HasPrefix(l, "ninja: build stopped")
-}
-
-func extractBusytownFailureSnippet(rawLog string, maxLines int) string {
-	if maxLines <= 0 {
-		maxLines = 40
-	}
-	rawLog = strings.TrimSpace(rawLog)
-	if rawLog == "" {
-		return ""
-	}
-
-	scanner := bufio.NewScanner(strings.NewReader(rawLog))
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	tail := make([]string, 0, maxLines)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if isBusytownFailureMarker(line) {
-			snippet := make([]string, 0, maxLines)
-			contextCount := 2
-			if len(tail) < contextCount {
-				contextCount = len(tail)
-			}
-			if contextCount > 0 {
-				snippet = append(snippet, tail[len(tail)-contextCount:]...)
-			}
-			if len(snippet) < maxLines {
-				snippet = append(snippet, line)
-			}
-			for len(snippet) < maxLines && scanner.Scan() {
-				snippet = append(snippet, scanner.Text())
-			}
-			return strings.TrimSpace(strings.Join(snippet, "\n"))
-		}
-		if len(tail) == maxLines {
-			copy(tail, tail[1:])
-			tail[maxLines-1] = line
-		} else {
-			tail = append(tail, line)
-		}
-	}
-
-	return strings.TrimSpace(strings.Join(tail, "\n"))
-}
-
 func (p *BusytownProvider) fetchBusytownFailureSnippet(ctx context.Context, bid, target, invocationID string, maxLines int) (snippet string, logURL string) {
 	buildLog, antsOut, logURL := p.fetchBusytownLogs(ctx, bid, target, invocationID)
-	snippet = extractBusytownFailureSnippet(buildLog, maxLines)
+	snippet = extractFailureSnippet(buildLog, maxLines)
 	if antsOut != "" {
 		if snippet != "" {
 			snippet = snippet + "\n\nAnTS Failed Tests:\n" + antsOut

@@ -40,8 +40,10 @@ var (
 )
 
 const defaultChecksTemplate = `Checks for Change {{.number}} (Patchset {{.patchset}})
-{{range .checks}}  {{.StatusSymbol}}  {{printf "%-40s" .Name}}  {{printf "%-8s" .Duration}}  {{.URL}}{{if and .Patchset (ne .Patchset $.patchset)}} (from patchset {{.Patchset}}){{end}}
-{{end}}{{if gt .omittedExperimental 0}}
+{{range .checks}}  {{.StatusSymbol}}  {{printf "%-40s" .Name}}  {{printf "%-8s" .Duration}}  {{.URL}}{{if and .Patchset (ne .Patchset $.patchset)}} (from patchset {{.Patchset}}){{end}}{{if eq .Status "INFRA_FAILURE"}} [infra failure]{{end}}
+{{end}}{{if .omittedPassingLine}}  ✓  {{.omittedPassingLine}}
+{{end}}{{if .failureClusters}}{{range .failureClusters}}  {{.}}
+{{end}}{{end}}{{if gt .omittedExperimental 0}}
 ({{ .omittedExperimental }} non-blocking experimental builder{{if ne .omittedExperimental 1}}s{{end}} omitted; add --experimental to see them)
 {{end}}{{if .hiddenByConfigNote}}
 {{.hiddenByConfigNote}}
@@ -55,9 +57,11 @@ Not yet submittable: {{range $i, $b := .submitBlockers}}{{if $i}}, {{end}}{{$b}}
 // GerritGateItem represents a Gerrit submit requirement or automated gate label
 // surfaced in `gh pr checks`.
 type GerritGateItem struct {
-	Name         string `json:"name"`
-	Status       string `json:"status"`
-	StatusSymbol string `json:"statusSymbol"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	// StatusSymbol is the glyph text output shows for the gate; it is
+	// display-only and never part of --json output (use Status).
+	StatusSymbol string `json:"-"`
 	Summary      string `json:"summary,omitempty"`
 }
 
@@ -125,7 +129,7 @@ func ExtractGerritGates(change *gerrit.ChangeInfo) ([]GerritGateItem, []string) 
 			items = append(items, GerritGateItem{
 				Name:         sr.Name,
 				Status:       sr.Status,
-				StatusSymbol: "✓",
+				StatusSymbol: GlyphPass,
 				Summary:      summary,
 			})
 		case "UNSATISFIED", "ERROR":
@@ -142,7 +146,7 @@ func ExtractGerritGates(change *gerrit.ChangeInfo) ([]GerritGateItem, []string) 
 				items = append(items, GerritGateItem{
 					Name:         sr.Name,
 					Status:       sr.Status,
-					StatusSymbol: "✗",
+					StatusSymbol: GlyphFail,
 					Summary:      summary,
 				})
 				if labelSummary != "" {
@@ -179,7 +183,7 @@ func ExtractGerritGates(change *gerrit.ChangeInfo) ([]GerritGateItem, []string) 
 			items = append(items, GerritGateItem{
 				Name:         name,
 				Status:       "REJECTED",
-				StatusSymbol: "✗",
+				StatusSymbol: GlyphFail,
 				Summary:      summary,
 			})
 			failedGates = append(failedGates, fmt.Sprintf("%s (%s)", name, summary))
@@ -188,7 +192,7 @@ func ExtractGerritGates(change *gerrit.ChangeInfo) ([]GerritGateItem, []string) 
 			items = append(items, GerritGateItem{
 				Name:         name,
 				Status:       "APPROVED",
-				StatusSymbol: "✓",
+				StatusSymbol: GlyphPass,
 				Summary:      summary,
 			})
 		}
@@ -226,11 +230,13 @@ func summarizeGateLabel(name string, info gerrit.LabelInfo) string {
 }
 
 type CheckItem struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Bucket       string `json:"bucket"`
-	Status       string `json:"status"`
-	StatusSymbol string `json:"statusSymbol"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Bucket string `json:"bucket"`
+	Status string `json:"status"`
+	// StatusSymbol is the glyph text output shows for Status; it is
+	// display-only and never part of --json output.
+	StatusSymbol string `json:"-"`
 	Duration     string `json:"duration"`
 	URL          string `json:"url"`
 	Summary      string `json:"summary,omitempty"`
@@ -420,15 +426,15 @@ func (c *equivalentBuildCache) refresh(ctx context.Context, provider CIProvider,
 func getStatusSymbol(status string) string {
 	switch status {
 	case "SUCCESS":
-		return "✓"
+		return GlyphPass
 	case "FAILURE":
-		return "✗"
+		return GlyphFail
 	case "INFRA_FAILURE":
-		return "!"
+		return GlyphWarn
 	case "STARTED":
-		return "*"
+		return GlyphRunning
 	case "SCHEDULED":
-		return "?"
+		return GlyphPending
 	default:
 		return "-"
 	}
@@ -534,6 +540,7 @@ func deduplicateLatestBuilds(builds []bbBuild) []bbBuild {
 
 var checksCmd = &cobra.Command{
 	Use:          "checks [<id>[/<patchset>]]",
+	Annotations:  map[string]string{KindAnnotation: KindList},
 	Short:        "Show CI/CD status (from Buildbucket)",
 	SilenceUsage: true,
 	Long: `Show CI/CD check/build status (via LUCI Buildbucket) for a Gerrit change.
@@ -548,6 +555,12 @@ Use --fail-fast to exit immediately as soon as any check fails.
 Use --web (-w) to open checks in the browser.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// As in gh: --watch prints progress frames, which would break the
+		// single JSON value --json promises on stdout.
+		if checksJSON != "" && (checksWatch || checksFailFast) {
+			return fmt.Errorf("cannot use `--watch` with `--json` flag\n" +
+				"Remediation: wait with `gh pr checks --watch` (its exit code reports the outcome), then run `gh pr checks --json <fields>`")
+		}
 		rawID, err := ResolveTargetChangeID(cmd.Context(), cmd, args)
 		if err != nil {
 			return err
@@ -721,6 +734,7 @@ Use --web (-w) to open checks in the browser.`,
 		}
 
 		var checks []CheckItem
+		var displayedBuilds []bbBuild
 		var tally checkTally
 		omittedCount := 0 // Experimental builders hidden from the output.
 		for _, b := range builds {
@@ -733,6 +747,7 @@ Use --web (-w) to open checks in the browser.`,
 				}
 			}
 			checks = append(checks, NewCheckItem(b))
+			displayedBuilds = append(displayedBuilds, b)
 			if isExp {
 				// Experimental builders are non-blocking by definition: the
 				// Commit-Queue ignores them, so a failing one must not make
@@ -760,13 +775,37 @@ Use --web (-w) to open checks in the browser.`,
 			submitBlockers = append(submitBlockers, extractBlockers(res.Change)...)
 		}
 
+		renderChecks := checks
+		var omittedPassingLine string
+		var failureClusters []string
+		if checksJSON == "" && checksTemplateStr == "" {
+			nonPassingBuilds, passingBuilds := PartitionAndOrderBuilds(displayedBuilds)
+			if !checksAll && !checksWatch && len(passingBuilds) > maxExpandedPassingChecks {
+				renderChecks = BuildCheckItems(nonPassingBuilds)
+				if len(nonPassingBuilds) == 0 {
+					omittedPassingLine = fmt.Sprintf("All %d checks passed (use --all to list)", len(passingBuilds))
+				} else {
+					omittedPassingLine = fmt.Sprintf("%d passing checks omitted (use --all to list)", len(passingBuilds))
+				}
+			} else {
+				renderChecks = BuildCheckItems(slices.Concat(nonPassingBuilds, passingBuilds))
+			}
+			failureClusters = ClusterFailedBuilds(displayedBuilds)
+		}
+
 		data := map[string]any{
 			"number":              res.Change.Number,
 			"patchset":            res.PatchsetNum,
 			"equivalentPatchsets": res.EquivalentPatchsets,
-			"checks":              checks,
+			"checks":              renderChecks,
 			"omittedExperimental": omittedCount,
 			"submitBlockers":      submitBlockers,
+		}
+		if omittedPassingLine != "" {
+			data["omittedPassingLine"] = omittedPassingLine
+		}
+		if len(failureClusters) > 0 {
+			data["failureClusters"] = failureClusters
 		}
 		if len(gerritGates) > 0 || checksJSON != "" {
 			if gerritGates == nil {
@@ -789,7 +828,7 @@ Use --web (-w) to open checks in the browser.`,
 			return fmt.Errorf("error rendering output: %w", err)
 		}
 
-		if checksWatch && checksLogFailed && len(failedBuilds) > 0 {
+		if (checksWatch || cmd.Flags().Changed("log-failed")) && checksLogFailed && len(failedBuilds) > 0 {
 			var reports []FailureReport
 			for _, fb := range failedBuilds {
 				rep, err := provider.FetchFailureReportWithOptions(ctx, fb, FailureReportOptions{
@@ -805,9 +844,28 @@ Use --web (-w) to open checks in the browser.`,
 				}
 			}
 			if len(reports) > 0 {
-				fmt.Fprintln(cmd.OutOrStdout())
-				fmt.Fprint(cmd.OutOrStdout(), FormatFailureReports(reports))
+				// Under --json, stdout carries only the JSON value.
+				reportOut := cmd.OutOrStdout()
+				if checksJSON != "" {
+					reportOut = cmd.ErrOrStderr()
+				}
+				fmt.Fprintln(reportOut)
+				fmt.Fprint(reportOut, FormatFailureReports(reports))
 			}
+		}
+
+		if checksJSON == "" && checksTemplateStr == "" {
+			writeCIVerdictFooter(cmd.OutOrStdout(), res.Change.Number, ciVerdict{
+				total:        tally.blocking,
+				failed:       len(tally.failed),
+				canceled:     len(tally.canceled),
+				running:      len(tally.pending),
+				passed:       tally.blocking - len(tally.failed) - len(tally.canceled) - len(tally.pending),
+				failedGates:  tally.failedGates,
+				experimental: tally.experimental,
+				pendingNext:  fmt.Sprintf("gh pr checks %d --watch --fail-fast", res.Change.Number),
+			})
+			tally.verdictShown = true
 		}
 
 		return checksExitStatus(res.Change.Number, res.PatchsetNum, tally)
@@ -826,6 +884,10 @@ type checkTally struct {
 	experimental       int
 	localPresubmitHint string
 	failedGates        []string
+	// verdictShown records that a Verdict:/Next: footer was already written
+	// to stdout, so the error keeps only its one-line summary instead of
+	// repeating the remediation commands.
+	verdictShown bool
 }
 
 // checksExitStatus maps the resolved state of a change's checks onto the
@@ -851,6 +913,15 @@ type checkTally struct {
 func checksExitStatus(changeNum, patchset int, t checkTally) error {
 	location := fmt.Sprintf("Change %d (Patchset %d)", changeNum, patchset)
 
+	// fail returns an error carrying summary, plus the remediation prose
+	// unless the Verdict:/Next: footer already showed the next step.
+	fail := func(code int, summary, remediation string) error {
+		if t.verdictShown {
+			return NewExitCodeError(code, "%s.", summary)
+		}
+		return NewExitCodeError(code, "%s.\n\n%s", summary, remediation)
+	}
+
 	if len(t.failed) > 0 {
 		var summary string
 		if len(t.failed) == 1 {
@@ -864,6 +935,12 @@ func checksExitStatus(changeNum, patchset int, t checkTally) error {
 		if t.localPresubmitHint != "" {
 			reproHint = fmt.Sprintf("\nTo reproduce locally:\n  %s", t.localPresubmitHint)
 		}
+		if t.verdictShown {
+			if reproHint != "" {
+				return NewExitCodeError(ExitCodeFailure, "%s.\n%s", summary, reproHint)
+			}
+			return NewExitCodeError(ExitCodeFailure, "%s.", summary)
+		}
 		return NewExitCodeError(ExitCodeFailure,
 			"%s.\n\n"+
 				"To inspect the failure logs and step diagnostics:\n"+
@@ -874,11 +951,10 @@ func checksExitStatus(changeNum, patchset int, t checkTally) error {
 	}
 
 	if len(t.failedGates) > 0 {
-		return NewExitCodeError(ExitCodeFailure,
-			"Gerrit gate(s) failed on %s: %s.\n\n"+
-				"To inspect change details and robot comments:\n"+
-				"  gh pr view %d --comments",
-			location, strings.Join(t.failedGates, ", "), changeNum)
+		return fail(ExitCodeFailure,
+			fmt.Sprintf("Gerrit gate(s) failed on %s: %s", location, strings.Join(t.failedGates, ", ")),
+			fmt.Sprintf("To inspect change details and robot comments:\n"+
+				"  gh pr view %d --comments", changeNum))
 	}
 
 	// A canceled check did not pass, so this is not exit 0, but it also did
@@ -894,45 +970,49 @@ func checksExitStatus(changeNum, patchset int, t checkTally) error {
 			summary = fmt.Sprintf("%d of %d checks were canceled on %s: %s",
 				len(t.canceled), t.blocking, location, builderList(t.canceled, patchset))
 		}
-		return NewExitCodeError(ExitCodeFailure,
-			"%s.\n\n"+
-				"Checks are usually canceled because a newer patchset superseded this one.\n"+
+		return fail(ExitCodeFailure, summary,
+			fmt.Sprintf("Checks are usually canceled because a newer patchset superseded this one.\n"+
 				"To query the current patchset instead:\n"+
 				"  gh pr checks %d\n"+
 				"To start a fresh Commit-Queue dry run:\n"+
-				"  gh pr edit %d --cq",
-			summary, changeNum, changeNum)
+				"  gh pr edit %d --cq", changeNum, changeNum))
 	}
 
 	if len(t.pending) > 0 {
+		summary := fmt.Sprintf("%d of %d checks are still running on %s: %s",
+			len(t.pending), t.blocking, location, builderList(t.pending, patchset))
+		if t.verdictShown {
+			// Keep the exit-code explanation: callers otherwise read a
+			// non-zero exit as a failure.
+			return NewExitCodeError(ExitCodePending,
+				"%s.\nExit code %d means \"checks pending\", matching 'gh pr checks'; it is not a failure.",
+				summary, ExitCodePending)
+		}
 		return NewExitCodeError(ExitCodePending,
-			"%d of %d checks are still running on %s: %s.\n\n"+
+			"%s.\n\n"+
 				"Exit code %d means \"checks pending\", matching 'gh pr checks'; it is not a failure.\n"+
 				"To block until every check finishes:\n"+
 				"  gh pr checks %d --watch\n"+
 				"To stop as soon as any check fails:\n"+
 				"  gh pr checks %d --watch --fail-fast",
-			len(t.pending), t.blocking, location, builderList(t.pending, patchset),
-			ExitCodePending, changeNum, changeNum)
+			summary, ExitCodePending, changeNum, changeNum)
 	}
 
 	if t.blocking == 0 {
 		if t.experimental > 0 {
-			return NewExitCodeError(ExitCodeFailure,
-				"no blocking checks reported on %s.\n\n"+
-					"%d non-blocking experimental builder(s) ran, but experimental builders do not gate submission.\n"+
+			return fail(ExitCodeFailure,
+				fmt.Sprintf("no blocking checks reported on %s", location),
+				fmt.Sprintf("%d non-blocking experimental builder(s) ran, but experimental builders do not gate submission.\n"+
 					"To see them:\n"+
-					"  gh pr checks %d --experimental",
-				location, t.experimental, changeNum)
+					"  gh pr checks %d --experimental", t.experimental, changeNum))
 		}
-		return NewExitCodeError(ExitCodeFailure,
-			"no checks reported on %s.\n\n"+
-				"CI may not have been scheduled yet, or this change has no tryjobs configured.\n"+
+		return fail(ExitCodeFailure,
+			fmt.Sprintf("no checks reported on %s", location),
+			fmt.Sprintf("CI may not have been scheduled yet, or this change has no tryjobs configured.\n"+
 				"To trigger a Commit-Queue dry run:\n"+
 				"  gh pr edit %d --cq\n"+
 				"To wait for checks to appear and finish:\n"+
-				"  gh pr checks %d --watch",
-			location, changeNum, changeNum)
+				"  gh pr checks %d --watch", changeNum, changeNum))
 	}
 
 	return nil
@@ -966,7 +1046,8 @@ func init() {
 	checksCmd.Flags().StringVar(&checksJSON, "json", "", "Output JSON with specified fields")
 	checksCmd.Flags().StringVarP(&checksTemplateStr, "template", "t", "", "Format output using a Go template")
 	checksCmd.Flags().BoolVarP(&checksExperimental, "experimental", "e", false, "Include non-blocking experimental checks")
-	checksCmd.Flags().BoolVar(&checksAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters")
+	//ghish:flag mode=extension reason="Show all individual passing checks without collapsing"
+	checksCmd.Flags().BoolVar(&checksAll, "all", false, "Show all passing checks without collapsing and include hidden builds (ghish-only)")
 	checksCmd.Flags().BoolVar(&checksWatch, "watch", false, "Watch checks until they finish")
 	checksCmd.Flags().BoolVarP(&checksWeb, "web", "w", false, "Open checks in web browser")
 	checksCmd.Flags().BoolVar(&checksFailFast, "fail-fast", false, "Exit immediately if any check fails when using --watch flag")
