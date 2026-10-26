@@ -17,6 +17,11 @@
 
 /// @module{pw_metric}
 
+/// User-provided header to optionally override options in this file.
+#if defined(PW_METRIC_CONFIG_HEADER)
+#include PW_METRIC_CONFIG_HEADER
+#endif  // defined(PW_METRIC_CONFIG_HEADER)
+
 /// Control whether 64-bit metrics are enabled.
 ///
 /// By default, 64-bit metrics are enabled automatically on 64-bit host

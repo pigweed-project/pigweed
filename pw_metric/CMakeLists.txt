@@ -14,14 +14,25 @@
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 
-pw_add_library(pw_metric STATIC
+pw_add_module_config(pw_metric_CONFIG)
+
+pw_add_library(pw_metric.config INTERFACE
   HEADERS
     public/pw_metric/config.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${pw_metric_CONFIG}
+)
+
+pw_add_library(pw_metric STATIC
+  HEADERS
     public/pw_metric/metric.h
     public/pw_metric/list.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_metric.config
     pw_tokenizer.base64
     pw_assert
     pw_containers

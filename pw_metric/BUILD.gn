@@ -15,6 +15,7 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_bloat/bloat.gni")
+import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_chrono/backend.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
@@ -22,14 +23,26 @@ import("$dir_pw_sync/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 import("$pw_external_nanopb/nanopb.gni")
 
+declare_args() {
+  # The build target that overrides the default configuration options for this
+  # module. This should point to a source set that provides defines through a
+  # public config (which may -include a file or add defines directly).
+  pw_metric_CONFIG = pw_build_DEFAULT_MODULE_CONFIG
+}
+
 config("default_config") {
   include_dirs = [ "public" ]
+}
+
+pw_source_set("config") {
+  public = [ "public/pw_metric/config.h" ]
+  public_configs = [ ":default_config" ]
+  public_deps = [ pw_metric_CONFIG ]
 }
 
 pw_source_set("pw_metric") {
   public_configs = [ ":default_config" ]
   public = [
-    "public/pw_metric/config.h",
     "public/pw_metric/list.h",
     "public/pw_metric/metric.h",
   ]
@@ -38,6 +51,7 @@ pw_source_set("pw_metric") {
     "metric_64bit.cc",
   ]
   public_deps = [
+    ":config",
     "$dir_pw_memory:no_destructor",
     "$dir_pw_numeric:checked_arithmetic",
     "$dir_pw_tokenizer:base64",

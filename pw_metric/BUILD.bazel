@@ -37,13 +37,24 @@ package(
 licenses(["notice"])
 
 cc_library(
+    name = "config",
+    hdrs = ["public/pw_metric/config.h"],
+    strip_include_prefix = "public",
+    deps = [":config_override"],
+)
+
+label_flag(
+    name = "config_override",
+    build_setting_default = "//pw_build:default_module_config",
+)
+
+cc_library(
     name = "metric",
     srcs = [
         "metric.cc",
         "metric_64bit.cc",
     ],
     hdrs = [
-        "public/pw_metric/config.h",
         "public/pw_metric/global.h",
         "public/pw_metric/list.h",
         "public/pw_metric/metric.h",
@@ -51,6 +62,7 @@ cc_library(
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
+        ":config",
         "//pw_containers:intrusive_list",
         "//pw_log",
         "//pw_memory:no_destructor",
