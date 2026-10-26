@@ -1223,9 +1223,9 @@ func formatCheckSummary(builds []bbBuild, changeNum int) string {
 		}
 
 		if len(failedBuilders) == 1 {
-			return fmt.Sprintf("✖ 1 failed: %s %s", failList, suffix)
+			return fmt.Sprintf(GlyphFail+" 1 failed: %s %s", failList, suffix)
 		}
-		return fmt.Sprintf("✖ %d failed: %s %s", len(failedBuilders), failList, suffix)
+		return fmt.Sprintf(GlyphFail+" %d failed: %s %s", len(failedBuilders), failList, suffix)
 	}
 
 	if running > 0 {

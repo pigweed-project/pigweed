@@ -281,6 +281,22 @@ func BuildCommentThreads(path string, fileComments []gerrit.CommentInfo, draftRe
 	return threads
 }
 
+// CountUnresolvedThreads returns the number of unresolved comment threads in published.
+func CountUnresolvedThreads(published map[string][]gerrit.CommentInfo) int {
+	count := 0
+	for path, fileComments := range published {
+		if len(fileComments) == 0 {
+			continue
+		}
+		for _, th := range BuildCommentThreads(path, fileComments, nil) {
+			if th.Unresolved {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 // FindLatestCommentAtLine searches a slice of comments on a file for the most recent
 // comment located at the specified line number.
 func FindLatestCommentAtLine(fileComments []gerrit.CommentInfo, line int) *gerrit.CommentInfo {
@@ -436,6 +452,67 @@ func formatThreadResolutionTag(path string, root *CommentNode) string {
 	return " [resolved]"
 }
 
+// CommentFormatOptions configures resolved-thread suppression and unresolved
+// thread hysteresis folding in FormatCommentForestWithOptions.
+type CommentFormatOptions struct {
+	IncludeAll            bool
+	MaxExpandedUnresolved int
+}
+
+func isActionableThread(root *CommentNode) bool {
+	nodes := collectThreadNodes(root)
+	for _, n := range nodes {
+		if n.IsDraft {
+			return true
+		}
+	}
+	if u := resolveThreadUnresolved(nodes, false); u != nil && *u {
+		return true
+	}
+	return false
+}
+
+func latestThreadNode(root *CommentNode) *CommentNode {
+	nodes := collectThreadNodes(root)
+	var latest *CommentNode
+	for _, n := range nodes {
+		if latest == nil || isOlderOrEarlierInThread(latest, n) {
+			latest = n
+		}
+	}
+	if latest == nil {
+		return root
+	}
+	return latest
+}
+
+func printCommentTreeNode(b *strings.Builder, path string, n *CommentNode, depth int, parentPatchSet int) {
+	author := formatCommentNodeAuthor(n, depth)
+	message := strings.TrimSpace(n.Comment.Message)
+
+	indent := strings.Repeat("  ", depth)
+	if depth == 0 {
+		line := "-"
+		if n.Comment.Line != 0 {
+			line = fmt.Sprintf("%d", n.Comment.Line)
+		}
+		psTag := formatPatchSetTag(n.Comment.PatchSet)
+		statusTag := formatThreadResolutionTag(path, n)
+		fmt.Fprintf(b, "  Line %s%s: %s%s\n    %s\n", line, psTag, author, statusTag, message)
+	} else {
+		psTag := ""
+		if n.Comment.PatchSet > 0 && n.Comment.PatchSet != parentPatchSet {
+			psTag = formatPatchSetTag(n.Comment.PatchSet)
+		}
+		indentedMsg := strings.ReplaceAll(message, "\n", "\n"+indent+"       ")
+		fmt.Fprintf(b, "%s  -> %s%s: %s\n", indent, author, psTag, indentedMsg)
+	}
+
+	for _, child := range n.Children {
+		printCommentTreeNode(b, path, child, depth+1, n.Comment.PatchSet)
+	}
+}
+
 // FormatCommentForest renders a nested, human-readable terminal tree of comments
 // grouped by file in alphabetical order.
 func FormatCommentForest(comments map[string][]gerrit.CommentInfo) string {
@@ -446,6 +523,14 @@ func FormatCommentForest(comments map[string][]gerrit.CommentInfo) string {
 // combining published comments and unpublished drafts grouped by file in
 // alphabetical order.
 func FormatCommentForestWithDrafts(published, drafts map[string][]gerrit.CommentInfo) string {
+	return FormatCommentForestWithOptions(published, drafts, CommentFormatOptions{IncludeAll: true})
+}
+
+// FormatCommentForestWithOptions renders a nested, human-readable terminal tree
+// combining published comments and unpublished drafts grouped by file in
+// alphabetical order, optionally suppressing resolved threads and folding excess
+// unresolved threads when opts.IncludeAll is false.
+func FormatCommentForestWithOptions(published, drafts map[string][]gerrit.CommentInfo, opts CommentFormatOptions) string {
 	if len(published) == 0 && len(drafts) == 0 {
 		return ""
 	}
@@ -465,7 +550,14 @@ func FormatCommentForestWithDrafts(published, drafts map[string][]gerrit.Comment
 		return ""
 	}
 
-	var b strings.Builder
+	type fileForest struct {
+		path  string
+		roots []*CommentNode
+	}
+	var forests []fileForest
+	actionableCount := 0
+	resolvedCount := 0
+
 	for _, path := range slices.Sorted(maps.Keys(pathSet)) {
 		var filePublished []gerrit.CommentInfo
 		if published != nil {
@@ -480,45 +572,90 @@ func FormatCommentForestWithDrafts(published, drafts map[string][]gerrit.Comment
 		if len(roots) == 0 {
 			continue
 		}
+		forests = append(forests, fileForest{path: path, roots: roots})
+		for _, r := range roots {
+			if isActionableThread(r) {
+				actionableCount++
+			} else {
+				resolvedCount++
+			}
+		}
+	}
 
-		if isPatchsetLevelPath(path) {
+	if len(forests) == 0 {
+		return ""
+	}
+
+	suppressResolved := !opts.IncludeAll && resolvedCount > 0 && (actionableCount > 0 || resolvedCount > 2)
+	maxExpanded := opts.MaxExpandedUnresolved
+	if maxExpanded <= 0 {
+		maxExpanded = 5
+	}
+	foldUnresolved := !opts.IncludeAll && actionableCount > maxExpanded
+
+	type foldedThread struct {
+		path string
+		root *CommentNode
+	}
+	var folded []foldedThread
+	expandedActionable := 0
+
+	var b strings.Builder
+	for _, ff := range forests {
+		var rootsToPrint []*CommentNode
+		for _, r := range ff.roots {
+			if isActionableThread(r) {
+				if foldUnresolved && expandedActionable >= maxExpanded {
+					folded = append(folded, foldedThread{path: ff.path, root: r})
+					continue
+				}
+				expandedActionable++
+				rootsToPrint = append(rootsToPrint, r)
+			} else {
+				if suppressResolved {
+					continue
+				}
+				rootsToPrint = append(rootsToPrint, r)
+			}
+		}
+
+		if len(rootsToPrint) == 0 {
+			continue
+		}
+
+		if isPatchsetLevelPath(ff.path) {
 			fmt.Fprintf(&b, "File: /PATCHSET_LEVEL (Change comment)\n")
 		} else {
-			fmt.Fprintf(&b, "File: %s\n", path)
+			fmt.Fprintf(&b, "File: %s\n", ff.path)
 		}
 
-		var printNode func(*CommentNode, int, int)
-		printNode = func(n *CommentNode, depth int, parentPatchSet int) {
-			author := formatCommentNodeAuthor(n, depth)
-			message := strings.TrimSpace(n.Comment.Message)
-
-			indent := strings.Repeat("  ", depth)
-			if depth == 0 {
-				line := "-"
-				if n.Comment.Line != 0 {
-					line = fmt.Sprintf("%d", n.Comment.Line)
-				}
-				psTag := formatPatchSetTag(n.Comment.PatchSet)
-				statusTag := formatThreadResolutionTag(path, n)
-				fmt.Fprintf(&b, "  Line %s%s: %s%s\n    %s\n", line, psTag, author, statusTag, message)
-			} else {
-				psTag := ""
-				if n.Comment.PatchSet > 0 && n.Comment.PatchSet != parentPatchSet {
-					psTag = formatPatchSetTag(n.Comment.PatchSet)
-				}
-				indentedMsg := strings.ReplaceAll(message, "\n", "\n"+indent+"       ")
-				fmt.Fprintf(&b, "%s  -> %s%s: %s\n", indent, author, psTag, indentedMsg)
-			}
-
-			for _, child := range n.Children {
-				printNode(child, depth+1, n.Comment.PatchSet)
-			}
-		}
-
-		for _, r := range roots {
-			printNode(r, 0, 0)
+		for _, r := range rootsToPrint {
+			printCommentTreeNode(&b, ff.path, r, 0, 0)
 		}
 		fmt.Fprintln(&b)
+	}
+
+	if len(folded) > 0 {
+		for _, ft := range folded {
+			latest := latestThreadNode(ft.root)
+			lineNum := ft.root.Comment.Line
+			if lineNum == 0 && latest.Comment.Line > 0 {
+				lineNum = latest.Comment.Line
+			}
+			ps := latest.Comment.PatchSet
+			if ps == 0 {
+				ps = ft.root.Comment.PatchSet
+			}
+			loc := formatCommentTargetWithPatchSet(ft.path, lineNum, ps)
+			author := formatCommentNodeAuthor(latest, 0)
+			snippet := formatCommentSnippet(latest.Comment.Message, 80)
+			fmt.Fprintf(&b, "  • %s %s: %s\n", loc, author, snippet)
+		}
+		fmt.Fprintf(&b, "  (use --all to expand all %d unresolved threads)\n", actionableCount)
+	}
+
+	if suppressResolved {
+		fmt.Fprintf(&b, "  (✓ %d resolved thread(s) omitted; use --all to view all)\n", resolvedCount)
 	}
 
 	return b.String()

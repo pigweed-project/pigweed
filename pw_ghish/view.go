@@ -15,7 +15,10 @@
 package pw_ghish
 
 import (
+	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +31,7 @@ import (
 var (
 	jsonOutputFields string
 	showComments     bool
+	viewAllComments  bool
 	templateStr      string
 	viewWeb          bool
 )
@@ -35,7 +39,9 @@ var (
 const defaultViewTemplate = `Change {{.number}}
 Subject: {{.title}}
 Status:  {{.state}}
-Owner:   {{.author}}
+{{if .verdict}}Verdict: {{.verdict}}
+{{end}}{{if .next}}Next:    {{.next}}
+{{end}}Owner:   {{.author}}
 {{if .patchset}}Patchset: {{.patchset}}
 {{end}}{{if .assignees}}Assignees: {{.assignees}}
 {{end}}{{if .reviewers}}Reviewers: {{.reviewers}}
@@ -57,9 +63,10 @@ Labels:
 {{end}}`
 
 var viewCmd = &cobra.Command{
-	Use:   "view [<id>]",
-	Short: "View a change",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "view [<id>]",
+	Annotations: map[string]string{KindAnnotation: KindView},
+	Short:       "View a change",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		chCtx, err := ResolveChangeContext(cmd, args)
 		if err != nil {
@@ -80,8 +87,61 @@ var viewCmd = &cobra.Command{
 			AdditionalFields: additionalFields,
 		}
 
+		wantCommentsJSON := requestsAnyJSONField(jsonOutputFields, "comments")
+		wantDraftsJSON := requestsAnyJSONField(jsonOutputFields, "drafts")
+		wantFilesJSON := requestsAnyJSONField(jsonOutputFields, "files")
+		needComments := !viewWeb && (showComments || wantCommentsJSON)
+		needDrafts := !viewWeb && (showComments || wantDraftsJSON)
+
+		var (
+			wg            sync.WaitGroup
+			fileList      []map[string]any
+			filesErr      error
+			comments      map[string][]gerrit.CommentInfo
+			drafts        map[string][]gerrit.CommentInfo
+			commentsErr   error
+			draftsErr     error
+			checksSummary string
+		)
+
+		// Wave 1: Prefetch comments and drafts concurrently with GetChange
+		// since they only require changeID.
+		wave1Ctx, cancelWave1 := context.WithCancel(ctx)
+		defer cancelWave1()
+		if needComments {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				cMap, _, err := client.Changes.ListChangeComments(wave1Ctx, changeID)
+				if err != nil {
+					commentsErr = err
+					return
+				}
+				if cMap != nil {
+					comments = *cMap
+				}
+			}()
+		}
+
+		if needDrafts {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				dMap, _, err := client.Changes.ListChangeDrafts(wave1Ctx, changeID)
+				if err != nil {
+					draftsErr = err
+					return
+				}
+				if dMap != nil {
+					drafts = *dMap
+				}
+			}()
+		}
+
 		change, err := chCtx.GetChange(opt)
 		if err != nil {
+			cancelWave1()
+			wg.Wait()
 			return fmt.Errorf("failed to get change %s: %w", changeID, err)
 		}
 
@@ -117,6 +177,8 @@ var viewCmd = &cobra.Command{
 				}
 			}
 		} else if chCtx.Revision != "" && chCtx.Revision != "current" {
+			cancelWave1()
+			wg.Wait()
 			return err
 		}
 
@@ -132,68 +194,26 @@ var viewCmd = &cobra.Command{
 		gHost = CanonicalGerritHost(gHost)
 		projCfg, _ := LoadCommandProjectConfig(cmd)
 
-		wantCommentsJSON := requestsAnyJSONField(jsonOutputFields, "comments")
-		wantDraftsJSON := requestsAnyJSONField(jsonOutputFields, "drafts")
-		wantFilesJSON := requestsAnyJSONField(jsonOutputFields, "files")
-		needComments := showComments || wantCommentsJSON
-		needDrafts := showComments || wantDraftsJSON
-
-		var (
-			wg            sync.WaitGroup
-			fileList      []map[string]any
-			filesErr      error
-			comments      map[string][]gerrit.CommentInfo
-			drafts        map[string][]gerrit.CommentInfo
-			commentsErr   error
-			draftsErr     error
-			checksSummary string
-		)
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			files, _, err := client.Changes.ListFiles(ctx, changeID, revisionToFetch, nil)
-			if err != nil {
-				filesErr = err
-				return
-			}
-			if files != nil {
-				for path, info := range files {
-					fileList = append(fileList, map[string]any{
-						"path":      path,
-						"additions": info.LinesInserted,
-						"deletions": info.LinesDeleted,
-					})
-				}
-			}
-		}()
-
-		if needComments {
+		// Wave 2: Fetch revision files (only when requested via --json files or
+		// --template) and CI checks concurrently while Wave 1 comments/drafts complete.
+		needFiles := wantFilesJSON || (templateStr != "" && strings.Contains(templateStr, ".files"))
+		if needFiles {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				cMap, _, err := client.Changes.ListChangeComments(ctx, changeID)
+				files, _, err := client.Changes.ListFiles(ctx, changeID, revisionToFetch, nil)
 				if err != nil {
-					commentsErr = err
+					filesErr = err
 					return
 				}
-				if cMap != nil {
-					comments = *cMap
-				}
-			}()
-		}
-
-		if needDrafts {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				dMap, _, err := client.Changes.ListChangeDrafts(ctx, changeID)
-				if err != nil {
-					draftsErr = err
-					return
-				}
-				if dMap != nil {
-					drafts = *dMap
+				if files != nil {
+					for path, info := range files {
+						fileList = append(fileList, map[string]any{
+							"path":      path,
+							"additions": info.LinesInserted,
+							"deletions": info.LinesDeleted,
+						})
+					}
 				}
 			}()
 		}
@@ -208,7 +228,7 @@ var viewCmd = &cobra.Command{
 				if err == nil && builds != nil {
 					checksSummary = formatCheckSummary(deduplicateLatestBuilds(builds), change.Number)
 				} else if ExitCodeFor(err) == ExitCodeAuth {
-					checksSummary = "✖ LUCI authentication required (run 'luci-auth login' or 'gh auth status')"
+					checksSummary = GlyphFail + " LUCI authentication required (run 'luci-auth login' or 'gh auth status')"
 				}
 			}()
 		}
@@ -232,12 +252,16 @@ var viewCmd = &cobra.Command{
 			drafts = map[string][]gerrit.CommentInfo{}
 		}
 
+		verdict, nextHint := computeChangeVerdict(change, checksSummary, comments, showComments)
+
 		data := map[string]any{
 			"number":         change.Number,
 			"patchset":       patchset,
 			"title":          change.Subject,
 			"state":          change.Status,
 			"status":         change.Status,
+			"verdict":        verdict,
+			"next":           nextHint,
 			"author":         owner,
 			"assignees":      strings.Join(assignees, ", "),
 			"reviewers":      strings.Join(reviewers, ", "),
@@ -280,7 +304,9 @@ var viewCmd = &cobra.Command{
 				"hasScore":        hasScore,
 				"hasAnyScore":     hasAnyScore,
 				"printComments": func(c map[string][]gerrit.CommentInfo) string {
-					return FormatCommentForestWithDrafts(c, drafts)
+					return FormatCommentForestWithOptions(c, drafts, CommentFormatOptions{
+						IncludeAll: viewAllComments,
+					})
 				},
 			},
 		}
@@ -441,10 +467,88 @@ func getLabelSummary(info gerrit.LabelInfo) string {
 	return fmt.Sprintf("%+d (%s)", value, descriptor)
 }
 
+// computeChangeVerdict derives a compact answer-first verdict and an optional
+// actionable next-step command from the change metadata already fetched by
+// viewCmd.
+func computeChangeVerdict(change *gerrit.ChangeInfo, checksSummary string, comments map[string][]gerrit.CommentInfo, commentsFetched bool) (verdict string, next string) {
+	if change == nil {
+		return "", ""
+	}
+	switch change.Status {
+	case "MERGED":
+		return "MERGED", ""
+	case "ABANDONED":
+		return "ABANDONED", ""
+	}
+	if change.WorkInProgress {
+		return "WIP", fmt.Sprintf("gh pr ready %d", change.Number)
+	}
+
+	var blockReasons []string
+	for _, labelName := range slices.Sorted(maps.Keys(change.Labels)) {
+		info := change.Labels[labelName]
+		val, voted := castVote(info)
+		if info.Rejected.AccountID != 0 || info.Disliked.AccountID != 0 || (voted && val < 0) {
+			if voted && val < 0 {
+				blockReasons = append(blockReasons, fmt.Sprintf("%s %+d", labelName, val))
+			} else {
+				blockReasons = append(blockReasons, fmt.Sprintf("%s rejected", labelName))
+			}
+		}
+	}
+
+	ciFailed := strings.Contains(checksSummary, "failed")
+	if ciFailed {
+		blockReasons = append(blockReasons, "CI failed")
+	}
+
+	for _, sr := range change.SubmitRequirements {
+		nameLower := strings.ToLower(sr.Name)
+		if strings.EqualFold(sr.Status, "UNSATISFIED") &&
+			(strings.Contains(nameLower, "merge") || strings.Contains(nameLower, "conflict")) {
+			blockReasons = append(blockReasons, "merge conflict")
+			break
+		}
+	}
+
+	unresolvedCount := CountUnresolvedThreads(comments)
+	if unresolvedCount == 0 && change.UnresolvedCommentCount > 0 {
+		unresolvedCount = change.UnresolvedCommentCount
+	}
+
+	if len(blockReasons) > 0 {
+		verdict = fmt.Sprintf("BLOCKED (%s)", strings.Join(blockReasons, ", "))
+		switch {
+		case ciFailed:
+			next = fmt.Sprintf("gh run view %d --log-failed", change.Number)
+		case unresolvedCount > 0 || !commentsFetched:
+			next = fmt.Sprintf("gh pr view %d --comments", change.Number)
+		default:
+			next = fmt.Sprintf("gh pr diff %d", change.Number)
+		}
+		return verdict, next
+	}
+
+	crApproved := false
+	if cr, ok := change.Labels["Code-Review"]; ok {
+		crApproved = strings.Contains(getLabelSummary(cr), "Approved")
+	}
+	if change.Submittable || crApproved {
+		return "READY (submittable)", fmt.Sprintf("gh pr merge %d --auto", change.Number)
+	}
+
+	if unresolvedCount > 0 {
+		next = fmt.Sprintf("gh pr view %d --comments", change.Number)
+	}
+	return "IN REVIEW (waiting on Code-Review +2)", next
+}
+
 func init() {
 	viewCmd.Flags().StringVar(&jsonOutputFields, "json", "", "Output JSON with specified fields")
 	viewCmd.Flags().StringVarP(&templateStr, "template", "t", "", "Format output using a Go template")
 	viewCmd.Flags().BoolVarP(&showComments, "comments", "c", false, "Show comments")
+	//ghish:flag mode=extension reason="Show all comments including resolved threads without folding"
+	viewCmd.Flags().BoolVar(&viewAllComments, "all", false, "Include all resolved comment threads without folding (ghish-only)")
 	viewCmd.Flags().BoolVarP(&viewWeb, "web", "w", false, "Open change in web browser")
 	viewCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	viewCmd.Flags().MarkHidden("buildbucket-host")

@@ -73,12 +73,12 @@ func resolveDefaultListProject(ctx context.Context, cmd *cobra.Command) (string,
 }
 
 const defaultListTemplate = `ID         STATUS     SUBJECT                                            OWNER
-----------------------------------------------------------------------------------------------
-{{range .}}{{printf "%-10d %-10s %-50.50s %-20s\n" .number .state .title .author}}{{end}}`
+{{range .}}{{printf "%-10d %-10s %-50.50s %s\n" .number .state .title .author}}{{end}}`
 
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List open changes",
+	Use:         "list",
+	Annotations: map[string]string{KindAnnotation: KindList},
+	Short:       "List open changes",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if _, err := LoadCommandProjectConfig(cmd); err != nil {
@@ -119,10 +119,32 @@ var listCmd = &cobra.Command{
 			queryParts = append(queryParts, fmt.Sprintf("branch:%s", listBase))
 		}
 
+		var resolvedSelfRef string
+		resolveSelfRef := func() string {
+			if resolvedSelfRef != "" {
+				return resolvedSelfRef
+			}
+			resolvedSelfRef = "self"
+			if activeAccountCacheDir() != "" {
+				cfg := GetConfig(cmd)
+				if cfg == nil {
+					cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
+				}
+				gHost := cfg.GerritHost(ctx)
+				if isHostFlagChanged(cmd) && HostFlag != "" {
+					gHost = CanonicalGerritHost(HostFlag)
+				}
+				if acc := PeekSelfAccountCache(gHost); acc != nil && acc.AccountID > 0 {
+					resolvedSelfRef = fmt.Sprintf("%d", acc.AccountID)
+				}
+			}
+			return resolvedSelfRef
+		}
+
 		if listAssignee != "" {
 			assignee := listAssignee
 			if assignee == "@me" || assignee == "me" {
-				assignee = "self"
+				assignee = resolveSelfRef()
 			}
 			queryParts = append(queryParts, fmt.Sprintf("reviewer:%s", assignee))
 		}
@@ -130,7 +152,7 @@ var listCmd = &cobra.Command{
 		if listAuthor != "" {
 			author := listAuthor
 			if author == "@me" || author == "me" {
-				author = "self"
+				author = resolveSelfRef()
 			}
 			queryParts = append(queryParts, fmt.Sprintf("owner:%s", author))
 		}
@@ -146,7 +168,7 @@ var listCmd = &cobra.Command{
 		if listReviewer != "" {
 			reviewer := listReviewer
 			if reviewer == "@me" || reviewer == "me" {
-				reviewer = "self"
+				reviewer = resolveSelfRef()
 			}
 			queryParts = append(queryParts, fmt.Sprintf("reviewer:%s", reviewer))
 		}
@@ -230,6 +252,9 @@ var listCmd = &cobra.Command{
 
 		if err := r.Render(data); err != nil {
 			return fmt.Errorf("failed to render output: %w", err)
+		}
+		if !cmd.Flags().Changed("json") && !cmd.Flags().Changed("template") && changes != nil && len(*changes) > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "\nShowing %d open changes.\nNext: gh pr view <id>  (or gh pr checkout <id>)\n", len(*changes))
 		}
 		return nil
 	},

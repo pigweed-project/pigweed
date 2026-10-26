@@ -68,7 +68,7 @@ func AnalyzeComments(published map[string][]gerrit.CommentInfo, drafts map[strin
 
 	var allThreadsTotal int
 	var resolvedCount int
-	var unresolvedList []UnresolvedComment
+	unresolvedList := []UnresolvedComment{} // [] rather than null in --json output
 	unresolvedCommentIDs := make(map[string]bool)
 
 	for _, path := range slices.Sorted(maps.Keys(published)) {

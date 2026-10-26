@@ -22,7 +22,9 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/andygrunwald/go-gerrit"
 )
@@ -101,7 +103,7 @@ func TestStatus_WritesToCmdOut(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	resetAllFlags(RootCmd)
+	isolateRootCmdForTest(t)
 	RootCmd.SetOut(&buf)
 	RootCmd.SetErr(&buf)
 	RootCmd.SetArgs([]string{"pr", "status"})
@@ -112,6 +114,9 @@ func TestStatus_WritesToCmdOut(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "88888") || !strings.Contains(buf.String(), "Status Change Subject") {
 		t.Errorf("Expected buf to receive rendered output, got:\n%s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "Next: gh pr view <id>  (or gh pr checks)") {
+		t.Errorf("Expected status output to contain Next hint, got:\n%s", buf.String())
 	}
 }
 
@@ -485,8 +490,8 @@ func TestStatus_CurrentBranch_CommentsFailureGraceful(t *testing.T) {
 	if !strings.Contains(out, "Active Feature Subject") {
 		t.Errorf("Expected active feature subject in output despite comments failure, got:\n%s", out)
 	}
-	if !strings.Contains(out, "✖ Failed to load comments") {
-		t.Errorf("Expected status output to surface '✖ Failed to load comments' instead of silently claiming None, got:\n%s", out)
+	if !strings.Contains(out, "✗ Failed to load comments") {
+		t.Errorf("Expected status output to surface '✗ Failed to load comments' instead of silently claiming None, got:\n%s", out)
 	}
 }
 
@@ -592,7 +597,7 @@ func TestStatus_CurrentBranch_ChecksSummary_Failing(t *testing.T) {
 		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
 	}
 
-	if !strings.Contains(out, "Checks:      ✖ 1 failed: pigweed-lint (run 'gh run view 472267 --log-failed' to view errors)") {
+	if !strings.Contains(out, "Checks:      ✗ 1 failed: pigweed-lint (run 'gh run view 472267 --log-failed' to view errors)") {
 		t.Errorf("Expected failure summary in status output, got:\n%s", out)
 	}
 }
@@ -804,5 +809,129 @@ func TestExtractBlockers_DynamicSubmitRequirements(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("extractBlockers()[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestStatus_Pipeline1ParallelPrefetch_CommentsAndDrafts(t *testing.T) {
+	mockGitForFeatureBranch(t)
+	server := newStatusMockServer(t)
+
+	commentsArrived := make(chan struct{})
+	draftsArrived := make(chan struct{})
+	var commentsOnce, draftsOnce sync.Once
+
+	server.On("GET", "/changes/*/comments", func(w http.ResponseWriter, r *http.Request) {
+		commentsOnce.Do(func() { close(commentsArrived) })
+		timeout := time.NewTimer(2 * time.Second)
+		defer timeout.Stop()
+		select {
+		case <-draftsArrived:
+		case <-timeout.C:
+			t.Errorf("ListChangeDrafts did not arrive concurrently with ListChangeComments in pr status Pipeline 1")
+		}
+		server.RespondJSON(w, http.StatusOK, map[string][]gerrit.CommentInfo{
+			"pw_ghish/status.go": {
+				{
+					ID:         "c1",
+					Line:       42,
+					PatchSet:   1,
+					Unresolved: boolPtr(true),
+					Author:     gerrit.AccountInfo{Email: "reviewer@google.com"},
+					Message:    "Concurrent status comment.",
+				},
+			},
+		})
+	})
+	server.On("GET", "/changes/*/drafts", func(w http.ResponseWriter, r *http.Request) {
+		draftsOnce.Do(func() { close(draftsArrived) })
+		timeout := time.NewTimer(2 * time.Second)
+		defer timeout.Stop()
+		select {
+		case <-commentsArrived:
+		case <-timeout.C:
+			t.Errorf("ListChangeComments did not arrive concurrently with ListChangeDrafts in pr status Pipeline 1")
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{})
+	})
+	server.On("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", func(w http.ResponseWriter, r *http.Request) {
+		wantOpts := []string{"DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS"}
+		if !slices.Equal(r.URL.Query()["o"], wantOpts) {
+			t.Errorf("GetChange o=%v, want %v", r.URL.Query()["o"], wantOpts)
+		}
+		server.RespondJSON(w, http.StatusOK, defaultStatusActiveChange)
+	})
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
+
+	out, err := executeCommand(RootCmd, "pr", "status")
+	if err != nil {
+		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Concurrent status comment.") {
+		t.Errorf("expected concurrent status comment in output, got:\n%s", out)
+	}
+}
+
+func TestStatus_UsesCachedSelfAccountAndNumericQueries(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("GH_ISH_ACCOUNT_CACHE_DIR", cacheDir)
+	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", gerrit.AccountInfo{
+		AccountID: 1132682,
+		Name:      "Cached Dev",
+	}, time.Now())
+
+	mockGit := mockGitForMainBranch(t)
+	mockGit.OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
+
+	server := NewMockGerritServer(t)
+	server.On("GET", "/changes/*", func(w http.ResponseWriter, r *http.Request) {
+		qs := r.URL.Query()["q"]
+		batches := make([][]gerrit.ChangeInfo, len(qs))
+		server.RespondJSON(w, http.StatusOK, batches)
+	})
+
+	outStr, err := executeCommand(RootCmd, "pr", "status", "--host", "pigweed-review.googlesource.com")
+	if err != nil {
+		t.Fatalf("pr status failed: %v\nOutput: %s", err, outStr)
+	}
+
+	if got := server.CallCount("GET", "/accounts/self"); got != 0 {
+		t.Errorf("expected 0 /accounts/self requests on cache hit, got %d", got)
+	}
+	var capturedQueries []string
+	for _, req := range server.Requests() {
+		capturedQueries = append(capturedQueries, req.URL.Query()["q"]...)
+	}
+	allQ := strings.Join(capturedQueries, " ")
+	if !strings.Contains(allQ, "owner:1132682") || !strings.Contains(allQ, "reviewer:1132682") {
+		t.Errorf("expected queries to rewrite self to 1132682, got %v", capturedQueries)
+	}
+	if strings.Contains(allQ, "owner:self") || strings.Contains(allQ, "reviewer:self") {
+		t.Errorf("expected queries to omit :self when cached AccountID is available, got %v", capturedQueries)
+	}
+}
+
+func TestStatusVerdict(t *testing.T) {
+	change := func(attention bool) map[string]any { return map[string]any{"attention": attention} }
+	tests := []struct {
+		name               string
+		created, reviewing []map[string]any
+		want               string
+	}{
+		{"empty", nil, nil, "nothing awaits you (0 changes open, 0 review requests)"},
+		{"nothing pending singular", []map[string]any{change(false)}, []map[string]any{change(false)},
+			"nothing awaits you (1 change open, 1 review request)"},
+		{"singular", []map[string]any{change(true)}, []map[string]any{change(true), change(false)},
+			"1 of your 1 change needs attention, 1 review request awaits you"},
+		{"plural", []map[string]any{change(true), change(true), change(false)}, []map[string]any{change(true), change(true)},
+			"2 of your 3 changes need attention, 2 review requests await you"},
+		{"only reviews", []map[string]any{change(false), change(false)}, []map[string]any{change(true)},
+			"0 of your 2 changes need attention, 1 review request awaits you"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := statusVerdict(tt.created, tt.reviewing); got != tt.want {
+				t.Errorf("statusVerdict() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

@@ -22,8 +22,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"text/template"
+	"time"
 
 	"github.com/andygrunwald/go-gerrit"
 	"github.com/google/go-cmp/cmp"
@@ -355,7 +357,7 @@ func TestView_WritesToCmdOut(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	resetAllFlags(RootCmd)
+	isolateRootCmdForTest(t)
 	RootCmd.SetOut(&buf)
 	RootCmd.SetErr(&buf)
 	RootCmd.SetArgs([]string{"pr", "view", "12345"})
@@ -482,7 +484,7 @@ func TestFormatCheckSummary(t *testing.T) {
 				{Status: "SUCCESS", Builder: bbBuilder{Builder: "builder-1"}},
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "pigweed-lint"}},
 			},
-			want: "✖ 1 failed: pigweed-lint (run 'gh run view 12345 --log-failed' to view errors)",
+			want: "✗ 1 failed: pigweed-lint (run 'gh run view 12345 --log-failed' to view errors)",
 		},
 		{
 			name: "multiple failures detected",
@@ -490,7 +492,7 @@ func TestFormatCheckSummary(t *testing.T) {
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "builder-a"}},
 				{Status: "INFRA_FAILURE", Builder: bbBuilder{Builder: "builder-b"}},
 			},
-			want: "✖ 2 failed: builder-a, builder-b (run 'gh run view 12345 --log-failed' to view errors)",
+			want: "✗ 2 failed: builder-a, builder-b (run 'gh run view 12345 --log-failed' to view errors)",
 		},
 		{
 			name: "running and passed",
@@ -513,7 +515,7 @@ func TestFormatCheckSummary(t *testing.T) {
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "pigweed-lint"}},
 				{Status: "STARTED", Builder: bbBuilder{Builder: "builder-running"}},
 			},
-			want: "✖ 1 failed: pigweed-lint (1 running; run 'gh run view 12345 --log-failed' to view errors)",
+			want: "✗ 1 failed: pigweed-lint (1 running; run 'gh run view 12345 --log-failed' to view errors)",
 		},
 		{
 			name: "more than 3 failures",
@@ -523,7 +525,7 @@ func TestFormatCheckSummary(t *testing.T) {
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "b3"}},
 				{Status: "FAILURE", Builder: bbBuilder{Builder: "b4"}},
 			},
-			want: "✖ 4 failed: b1, b2, b3, and 1 more (run 'gh run view 12345 --log-failed' to view errors)",
+			want: "✗ 4 failed: b1, b2, b3, and 1 more (run 'gh run view 12345 --log-failed' to view errors)",
 		},
 		{
 			name: "experimental failure ignored",
@@ -588,7 +590,7 @@ func TestView_DisplaysChecks_Failing(t *testing.T) {
 		t.Fatalf("pr view failed: %v\nOutput: %s", err, output)
 	}
 
-	if !strings.Contains(output, "Checks:  ✖ 1 failed: pigweed-lint (run 'gh run view 12345 --log-failed' to view errors)") {
+	if !strings.Contains(output, "Checks:  ✗ 1 failed: pigweed-lint (run 'gh run view 12345 --log-failed' to view errors)") {
 		t.Errorf("Expected failure indicator for pigweed-lint, got:\n%s", output)
 	}
 }
@@ -1052,4 +1054,274 @@ func TestView_ErrorWhenDraftsOrFilesFail(t *testing.T) {
 			t.Errorf("expected error mentioning list files failure, got: %v", err)
 		}
 	})
+}
+
+func TestView_Wave1ParallelPrefetch_CommentsAndDrafts(t *testing.T) {
+	server := NewMockGerritServer(t)
+
+	commentsArrived := make(chan struct{})
+	draftsArrived := make(chan struct{})
+	var commentsOnce, draftsOnce sync.Once
+
+	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
+	server.On("GET", "/changes/12345/comments", func(w http.ResponseWriter, r *http.Request) {
+		commentsOnce.Do(func() { close(commentsArrived) })
+		server.RespondJSON(w, http.StatusOK, map[string]any{
+			"pw_ghish/view.go": []map[string]any{
+				{
+					"id":         "c1",
+					"line":       10,
+					"patch_set":  1,
+					"unresolved": true,
+					"author":     map[string]any{"name": "Reviewer"},
+					"message":    "Wave 1 comment",
+				},
+			},
+		})
+	})
+	server.On("GET", "/changes/12345/drafts", func(w http.ResponseWriter, r *http.Request) {
+		draftsOnce.Do(func() { close(draftsArrived) })
+		server.RespondJSON(w, http.StatusOK, map[string]any{
+			"pw_ghish/view.go": []map[string]any{
+				{
+					"id":         "d1",
+					"line":       20,
+					"patch_set":  1,
+					"unresolved": true,
+					"message":    "Wave 1 draft",
+				},
+			},
+		})
+	})
+	server.On("GET", "/changes/12345", func(w http.ResponseWriter, r *http.Request) {
+		wantOpts := []string{"DETAILED_LABELS", "ALL_REVISIONS", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
+		if diff := cmp.Diff(wantOpts, r.URL.Query()["o"]); diff != "" {
+			t.Errorf("options mismatch (-want +got):\n%s", diff)
+		}
+		timeout := time.NewTimer(2 * time.Second)
+		defer timeout.Stop()
+		select {
+		case <-commentsArrived:
+		case <-timeout.C:
+			t.Errorf("ListChangeComments did not arrive concurrently with GetChange in Wave 1")
+		}
+		select {
+		case <-draftsArrived:
+		case <-timeout.C:
+			t.Errorf("ListChangeDrafts did not arrive concurrently with GetChange in Wave 1")
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{
+			"project":          "pigweed/pigweed",
+			"_number":          12345,
+			"subject":          "Wave 1 Prefetch Subject",
+			"status":           "NEW",
+			"current_revision": "rev1",
+			"revisions": map[string]any{
+				"rev1": map[string]any{"_number": 1},
+			},
+		})
+	})
+
+	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
+	if err != nil {
+		t.Fatalf("pr view --comments failed: %v\nOutput: %s", err, output)
+	}
+	if !strings.Contains(output, "Wave 1 comment") || !strings.Contains(output, "Wave 1 draft") {
+		t.Errorf("expected Wave 1 comment and draft in output, got:\n%s", output)
+	}
+}
+
+func TestView_Comments_SuppressesResolvedThreadsAndAllFlag(t *testing.T) {
+	registerMockChange := func(srv *MockGerritServer, changeID int, subject string, ps int, comments map[string]any) {
+		srv.OnJSON("GET", fmt.Sprintf("/changes/%d/revisions/current/files*", changeID), http.StatusOK, map[string]any{})
+		srv.OnJSON("GET", fmt.Sprintf("/changes/%d/comments", changeID), http.StatusOK, comments)
+		srv.OnJSON("GET", fmt.Sprintf("/changes/%d/drafts", changeID), http.StatusOK, map[string]any{})
+		srv.OnJSON("GET", fmt.Sprintf("/changes/%d*", changeID), http.StatusOK, map[string]any{
+			"project":          "pigweed/pigweed",
+			"_number":          changeID,
+			"subject":          subject,
+			"status":           "NEW",
+			"current_revision": "rev1",
+			"revisions": map[string]any{
+				"rev1": map[string]any{"_number": ps},
+			},
+		})
+	}
+
+	server := NewMockGerritServer(t)
+	registerMockChange(server, 12345, "Comment Suppression Subject", 2, map[string]any{
+		"a.cc": []map[string]any{
+			{
+				"id":         "res_1",
+				"line":       10,
+				"patch_set":  1,
+				"unresolved": false,
+				"author":     map[string]any{"name": "Reviewer"},
+				"message":    "Resolved nit 1",
+			},
+			{
+				"id":         "res_2",
+				"line":       20,
+				"patch_set":  1,
+				"unresolved": false,
+				"author":     map[string]any{"name": "Reviewer"},
+				"message":    "Resolved nit 2",
+			},
+			{
+				"id":         "unres_1",
+				"line":       30,
+				"patch_set":  2,
+				"unresolved": true,
+				"author":     map[string]any{"name": "Reviewer"},
+				"message":    "Actionable issue 1",
+			},
+		},
+	})
+
+	t.Run("default --comments omits resolved threads when unresolved exist", func(t *testing.T) {
+		output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
+		if err != nil {
+			t.Fatalf("pr view --comments failed: %v\nOutput: %s", err, output)
+		}
+		if !strings.Contains(output, "Actionable issue 1") {
+			t.Errorf("expected unresolved thread in output, got:\n%s", output)
+		}
+		if strings.Contains(output, "Resolved nit 1") || strings.Contains(output, "Resolved nit 2") {
+			t.Errorf("expected resolved threads to be omitted without --all, got:\n%s", output)
+		}
+		if !strings.Contains(output, "(✓ 2 resolved thread(s) omitted; use --all to view all)") {
+			t.Errorf("expected omitted summary footer in output, got:\n%s", output)
+		}
+	})
+
+	t.Run("--comments --all expands all resolved threads", func(t *testing.T) {
+		output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments", "--all")
+		if err != nil {
+			t.Fatalf("pr view --comments --all failed: %v\nOutput: %s", err, output)
+		}
+		for _, want := range []string{"Resolved nit 1", "Resolved nit 2", "Actionable issue 1"} {
+			if !strings.Contains(output, want) {
+				t.Errorf("expected %q in --all output, got:\n%s", want, output)
+			}
+		}
+		if strings.Contains(output, "resolved thread(s) omitted") {
+			t.Errorf("did not expect omitted notice when --all is passed, got:\n%s", output)
+		}
+	})
+
+	t.Run("folds unresolved threads beyond 5 when --all is not set", func(t *testing.T) {
+		var manyComments []map[string]any
+		for i := 1; i <= 7; i++ {
+			manyComments = append(manyComments, map[string]any{
+				"id":         fmt.Sprintf("u_%d", i),
+				"line":       i * 10,
+				"patch_set":  1,
+				"unresolved": true,
+				"author":     map[string]any{"name": "Alice"},
+				"message":    fmt.Sprintf("Unresolved comment body %d", i),
+			})
+		}
+		server2 := NewMockGerritServer(t)
+		registerMockChange(server2, 22222, "Many Unresolved Subject", 1, map[string]any{
+			"many.cc": manyComments,
+		})
+
+		output, err := executeCommand(RootCmd, "pr", "view", "22222", "--comments")
+		if err != nil {
+			t.Fatalf("pr view --comments failed: %v\nOutput: %s", err, output)
+		}
+		if !strings.Contains(output, "• many.cc:60 [PS1] Alice: Unresolved comment body 6") {
+			t.Errorf("expected folded 6th thread summary, got:\n%s", output)
+		}
+		if !strings.Contains(output, "(use --all to expand all 7 unresolved threads)") {
+			t.Errorf("expected expand notice for 7 unresolved threads, got:\n%s", output)
+		}
+	})
+}
+
+func TestView_VerdictAndNextSteps(t *testing.T) {
+	tests := []struct {
+		name        string
+		change      *gerrit.ChangeInfo
+		checks      string
+		comments    map[string][]gerrit.CommentInfo
+		fetched     bool
+		wantVerdict string
+		wantNext    string
+	}{
+		{
+			name:        "failing checks",
+			change:      &gerrit.ChangeInfo{Number: 1002},
+			checks:      "CI failed: pw-presubmit",
+			wantVerdict: "BLOCKED (CI failed)",
+			wantNext:    "gh run view 1002 --log-failed",
+		},
+		{
+			name:        "unresolved comments",
+			change:      &gerrit.ChangeInfo{Number: 1004},
+			comments:    map[string][]gerrit.CommentInfo{"a.cc": {{Unresolved: boolPtr(true)}}},
+			fetched:     true,
+			wantVerdict: "IN REVIEW (waiting on Code-Review +2)",
+			wantNext:    "gh pr view 1004 --comments",
+		},
+		{
+			name:        "self drafts",
+			change:      &gerrit.ChangeInfo{Number: 1003, WorkInProgress: true},
+			wantVerdict: "WIP",
+			wantNext:    "gh pr ready 1003",
+		},
+		{
+			name:        "submittable",
+			change:      &gerrit.ChangeInfo{Number: 1001, Submittable: true},
+			wantVerdict: "READY (submittable)",
+			wantNext:    "gh pr merge 1001 --auto",
+		},
+		{
+			name:        "in-review fallback to UnresolvedCommentCount",
+			change:      &gerrit.ChangeInfo{Number: 1005, UnresolvedCommentCount: 2},
+			wantVerdict: "IN REVIEW (waiting on Code-Review +2)",
+			wantNext:    "gh pr view 1005 --comments",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotVerdict, gotNext := computeChangeVerdict(tt.change, tt.checks, tt.comments, tt.fetched)
+			if gotVerdict != tt.wantVerdict {
+				t.Errorf("computeChangeVerdict() verdict = %q, want %q", gotVerdict, tt.wantVerdict)
+			}
+			if gotNext != tt.wantNext {
+				t.Errorf("computeChangeVerdict() next = %q, want %q", gotNext, tt.wantNext)
+			}
+		})
+	}
+}
+
+func TestView_Wave1CancelsCommentsAndDraftsOnGetChange404(t *testing.T) {
+	server := NewMockGerritServer(t)
+	commentsStarted := make(chan struct{})
+	commentsCanceled := make(chan struct{})
+	var startOnce sync.Once
+
+	server.On("GET", "/changes/99999/comments", func(w http.ResponseWriter, r *http.Request) {
+		startOnce.Do(func() { close(commentsStarted) })
+		<-r.Context().Done()
+		close(commentsCanceled)
+	})
+	server.On("GET", "/changes/99999/drafts", func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	})
+	server.On("GET", "/changes/99999*", func(w http.ResponseWriter, r *http.Request) {
+		<-commentsStarted
+		http.Error(w, "Not found", http.StatusNotFound)
+	})
+
+	_, err := executeCommand(RootCmd, "pr", "view", "99999", "--comments")
+	if err == nil {
+		t.Fatal("expected error when GetChange returns 404")
+	}
+	select {
+	case <-commentsCanceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected Wave 1 ListChangeComments context to be canceled when GetChange fails")
+	}
 }

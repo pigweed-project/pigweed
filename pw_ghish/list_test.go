@@ -20,6 +20,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/andygrunwald/go-gerrit"
 )
 
 func TestListIntegration(t *testing.T) {
@@ -46,6 +49,12 @@ func TestListIntegration(t *testing.T) {
 	if !strings.Contains(output, "johndoe") {
 		t.Errorf("Expected output to contain owner 'johndoe', got:\n%s", output)
 	}
+	if !strings.Contains(output, "Showing 1 open changes.") {
+		t.Errorf("Expected output to contain footer count, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Next: gh pr view <id>  (or gh pr checkout <id>)") {
+		t.Errorf("Expected output to contain Next hint, got:\n%s", output)
+	}
 }
 
 func TestList_WritesToCmdOut(t *testing.T) {
@@ -53,7 +62,7 @@ func TestList_WritesToCmdOut(t *testing.T) {
 	server.OnJSON("GET", "/changes/", http.StatusOK, `[{"_number": 99999, "subject": "Custom Out Subject", "status": "NEW", "owner": {"username": "alice"}}]`)
 
 	var buf bytes.Buffer
-	resetAllFlags(RootCmd)
+	isolateRootCmdForTest(t)
 	RootCmd.SetOut(&buf)
 	RootCmd.SetErr(&buf)
 	RootCmd.SetArgs([]string{"pr", "list"})
@@ -151,5 +160,60 @@ func TestList_DefaultProjectScopeAndAllProjects(t *testing.T) {
 	}
 	if strings.Contains(capturedQuery, "project:") {
 		t.Errorf("Expected 'pr list --host fuchsia-review.googlesource.com' query to omit local 'project:', got %q", capturedQuery)
+	}
+}
+
+func TestList_UsesCachedSelfAccountForMeFilters(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("GH_ISH_ACCOUNT_CACHE_DIR", cacheDir)
+
+	mockGit := SetMockGit(t, nil)
+	mockGit.OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
+
+	server := NewMockGerritServer(t)
+	var capturedQuery string
+	server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = strings.Join(r.URL.Query()["q"], " ")
+		server.RespondJSON(w, http.StatusOK, []any{})
+	})
+
+	// 1. Cold cache miss must not issue an extra /accounts/self RPC; falls back to :self.
+	isolateRootCmdForTest(t)
+	HostFlag = ""
+	var buf bytes.Buffer
+	RootCmd.SetOut(&buf)
+	RootCmd.SetErr(&buf)
+	RootCmd.SetArgs([]string{"pr", "list", "--author", "@me", "--reviewer", "@me"})
+	if err := RootCmd.Execute(); err != nil {
+		t.Fatalf("pr list cold cache failed: %v\nOutput: %s", err, buf.String())
+	}
+	if got := server.CallCount("GET", "/accounts/self"); got != 0 {
+		t.Errorf("expected 0 /accounts/self requests on cold cache miss, got %d", got)
+	}
+	if !strings.Contains(capturedQuery, "owner:self") || !strings.Contains(capturedQuery, "reviewer:self") {
+		t.Errorf("expected cold cache query to contain owner:self and reviewer:self, got %q", capturedQuery)
+	}
+
+	// 2. Warm cache hit rewrites @me to numeric AccountID without /accounts/self RPC.
+	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", gerrit.AccountInfo{
+		AccountID: 1132682,
+		Name:      "Cached Dev",
+	}, time.Now())
+
+	isolateRootCmdForTest(t)
+	HostFlag = ""
+	buf.Reset()
+	RootCmd.SetOut(&buf)
+	RootCmd.SetErr(&buf)
+	RootCmd.SetArgs([]string{"pr", "list", "--author", "@me", "--reviewer", "@me"})
+	if err := RootCmd.Execute(); err != nil {
+		t.Fatalf("pr list --author @me --reviewer @me failed: %v\nOutput: %s", err, buf.String())
+	}
+
+	if got := server.CallCount("GET", "/accounts/self"); got != 0 {
+		t.Errorf("expected 0 /accounts/self requests on cache hit, got %d", got)
+	}
+	if !strings.Contains(capturedQuery, "owner:1132682") || !strings.Contains(capturedQuery, "reviewer:1132682") {
+		t.Errorf("expected query to contain owner:1132682 and reviewer:1132682, got %q", capturedQuery)
 	}
 }
