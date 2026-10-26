@@ -126,7 +126,7 @@ struct IsoDataFrameHeader:
   -- Bits 15, 30, and 31 are reserved for future use (RFU)
   0  [+4]  bits:
     0  [+12]      UInt           connection_handle
-      -- Connection handle to be used for transmitting an ISO SUD or fragment.
+      -- Connection handle to be used for transmitting an ISO SDU or fragment.
       [requires: 0x0000 <= this <= 0x0EFF]
 
     12 [+2]       IsoDataPbFlag  pb_flag
@@ -203,7 +203,7 @@ struct ScoDataHeader:
   -- Bits 14, and 15 are reserved for future use (RFU)
   0  [+3]  bits:
     0  [+12]      UInt                 connection_handle
-      -- Connection handle to be used for transmitting an ISO SUD or fragment.
+      -- Connection handle to be used for transmitting a synchronous data packet.
       [requires: 0x0000 <= this <= 0x0EFF]
 
     12 [+2]       ScoDataPacketStatus  packet_status_flag
