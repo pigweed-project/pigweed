@@ -137,10 +137,14 @@ status with Gerrit review and CI checks:
 
    $ ./gh wt list
    MOUNTED PROJECTS (2/10 Slots Occupied, 8 Available)
-   =====================================================
-   PROJECT          SLOT   STATUS              GERRIT CL & DETAILS                             RECOMMENDED ACTION
-   rpc-buffer-fix   pw-01  🔥 NEEDS_ATTENTION  pwrev/471888 (CR:+1, 2 threads, 0 failing)      Inspect via `./gh pr view --comments`
-   sensor-driver    pw-02  ✨ CLEAN_SYNCED     Synced with origin/main                         Ready for hacking
+   PROJECT         SLOT   STATUS             DETAILS
+   rpc-buffer-fix  pw-01  ✗ NEEDS_ATTENTION  pwrev/471888 (CR:+1, 2 threads, 0 failing) → ./gh pr view
+   sensor-driver   pw-02  · CLEAN_SYNCED     Synced with origin/main
+
+   Parked projects: none
+
+   Verdict: 2/10 slots occupied (8 available)
+   Next:    gh wt use <project>  (or gh wt next <project>)
 
 5. Shelve or Advance Projects
 =============================
@@ -150,7 +154,8 @@ branch or Gerrit tracking, park the project:
 .. code-block:: console
 
    $ ./gh wt park rpc-buffer-fix
-   💤 Parked project "rpc-buffer-fix" (slot freed; branch and Gerrit CL remain tracked)
+   ✓ Parked project "rpc-buffer-fix" (slot freed; branch and Gerrit CL remain tracked in `./gh wt list`)
+     Next:   gh wt use rpc-buffer-fix  (or gh wt list)
 
 When a CL merges on a long-lived topic project and you are ready to start the
 next CL in the same area, rebase the slot onto ``origin/main`` in place:
@@ -158,7 +163,8 @@ next CL in the same area, rebase the slot onto ``origin/main`` in place:
 .. code-block:: console
 
    $ ./gh wt next sensor-driver
-   ✨ Rebased project "sensor-driver" onto origin/main in-place! Ready for next CL.
+   ✓ Rebased project "sensor-driver" onto origin/main in-place! Ready for next CL.
+     Next:   gh pr create
 
 --------------
 CLI User Guide
@@ -174,11 +180,17 @@ cache snippet:
 
 .. code-block:: console
 
-   # Perform a read-only diagnostic check of the environment:
-   $ ./gh wt init --check
+   # Perform a read-only diagnostic check of the environment
+   # (`./gh wt init --check` is equivalent):
+   $ ./gh wt audit
 
    # Initialize or repair the environment with 10 physical slots:
    $ ./gh wt init --slots 10
+
+Each checklist row starts with ``✓`` (ok), ``+`` (repaired), ``⚠`` (warning),
+or ``✗`` (error). With ``--json``, ``./gh wt audit`` and ``./gh wt init`` print
+``{"checklist": [...], "error": "..."}`` where each item's ``status`` is the
+bare value ``ok``, ``repaired``, ``warning``, or ``error``.
 
 Mounting or Resuming a Project
 ==============================
@@ -232,15 +244,16 @@ code review state:
 
    $ ./gh wt list
    MOUNTED PROJECTS (2/10 Slots Occupied, 8 Available)
-   =====================================================
-   PROJECT          SLOT   STATUS              GERRIT CL & DETAILS                                     RECOMMENDED ACTION
-   rpc-buffer-fix   pw-01  🔥 NEEDS_ATTENTION  b/315378787 • pwrev/471888 (CR:+1, 2 threads, 0 failing)  Inspect via `./gh pr view --comments`
-   sensor-driver    pw-02  ✨ CLEAN_SYNCED     Synced with origin/main                                 Ready for hacking
+   PROJECT         SLOT   STATUS             DETAILS
+   rpc-buffer-fix  pw-01  ✗ NEEDS_ATTENTION  b/315378787 • pwrev/471888 (CR:+1, 2 threads, 0 failing) → ./gh pr view
+   sensor-driver   pw-02  · CLEAN_SYNCED     Synced with origin/main
 
    PARKED PROJECTS (1 Shelved in Git/Gerrit — 0 Slots Used)
-   =========================================================
-   PROJECT          SLOT   STATUS              GERRIT CL & DETAILS                                     RECOMMENDED ACTION
-   bazel-cleanup    -      🚀 READY_TO_LAND    pwrev/470111 (CR+2, CQ ready)                           Approved! Ready to land (`./gh pr merge --cq`)
+   PROJECT        SLOT  STATUS           DETAILS
+   bazel-cleanup  -     ✓ READY_TO_LAND  pwrev/470111 (CR+2, CQ ready) → ./gh pr merge --cq
+
+   Verdict: 2/10 slots occupied (8 available)
+   Next:    gh wt use <project>  (or gh wt next <project>)
 
 For large fleets of parked projects, ``./gh wt list`` reuses the cached
 ``Change-Id`` recorded when each project was parked and batches Gerrit
@@ -249,7 +262,12 @@ workstreams can be monitored quickly without exceeding Gerrit query term limits.
 
 Status Badges
 -------------
-``./gh wt list`` classifies projects using six status badges:
+``./gh wt list`` classifies projects using seven status badges, each led by a
+canonical glyph (``✗`` act now, ``✓`` done or ready, ``○`` waiting on others,
+``⚠`` unknown, ``●`` local work, ``·`` nothing to do). The glyph is display
+only: ``./gh wt list --json`` reports the bare value in each project's
+``status`` field (for example ``"status": "LOCAL_WIP"``), and ``./gh sense
+--json`` reports the current project's value as ``worktree.current_status``:
 
 .. list-table::
    :header-rows: 1
@@ -257,25 +275,28 @@ Status Badges
    * - Badge
      - Condition
      - Recommended Action
-   * - ``✨ CLEAN_SYNCED``
+   * - ``· CLEAN_SYNCED``
      - Clean working tree with no commits ahead of ``origin/main``.
      - Ready for new work.
-   * - ``✎ LOCAL_WIP``
+   * - ``● LOCAL_WIP``
      - Uncommitted edits or local commits not yet uploaded to Gerrit.
      - Commit changes or upload via ``./gh pr create``.
-   * - ``⏳ IN_REVIEW``
+   * - ``○ IN_REVIEW``
      - Open Gerrit CL awaiting reviewer feedback or CI completion.
      - Safe candidate to shelve via ``./gh wt park``.
-   * - ``🔥 NEEDS_ATTENTION``
+   * - ``✗ NEEDS_ATTENTION``
      - Open Gerrit CL with unresolved comment threads, negative CR score, or
        failing CI checks.
      - Inspect feedback via ``./gh pr view --comments`` or ``./gh pr checks``.
-   * - ``🚀 READY_TO_LAND``
+   * - ``✓ READY_TO_LAND``
      - Open Gerrit CL with ``Code-Review+2`` and no blocking threads or failures.
      - Submit via ``./gh pr merge --cq``.
-   * - ``🎉 CL_MERGED``
+   * - ``✓ CL_MERGED``
      - Associated Gerrit CL has been merged into ``origin/main``.
      - Run ``./gh wt next`` to rebase for the next CL, or close the project.
+   * - ``⚠ GERRIT_OFFLINE``
+     - The project has a ``Change-Id`` but Gerrit could not be reached.
+     - Check network or authentication, then retry ``./gh wt list``.
 
 Integration with Buganizer Issues (gh issue)
 ============================================
@@ -294,8 +315,8 @@ slots with Buganizer issues:
   exist on ``HEAD``.
 * **Cross-tool visibility**: ``./gh wt list`` displays linked issue IDs
   (``b/<id>``) alongside Gerrit CL details, while ``./gh issue status`` displays
-  ``[📂 MOUNTED: pw-XX]`` or ``[💤 PARKED]`` badges next to issues with active
-  worktrees.
+  ``[● MOUNTED (pw-XX): <project-path>]`` or ``[○ PARKED: branch <branch>]``
+  badges next to issues with active worktrees.
 * **Lifecycle reminders**: When you close a project via ``./gh wt close``, if
   an associated Buganizer issue is still open, ``./gh wt`` prints a reminder to
   resolve the issue via ``./gh issue close <id>``.

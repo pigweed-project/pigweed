@@ -949,3 +949,120 @@ func TestSenseCandidateIssues_ScopedToProjectComponent(t *testing.T) {
 		t.Errorf("merged CL candidate issues = %+v (err=%v), want only issue #2", rep.CandidateIssues, err)
 	}
 }
+
+func TestFormatSenseStatusCard_BoundsIssueCommentsAndCandidates(t *testing.T) {
+	report := &SenseReport{
+		Modality:   "CRANK_BUG",
+		Confidence: "HIGH",
+		Summary:    "Bug b/567763970 needs implementation.",
+		Git:        SenseGitState{Branch: "main"},
+		Target: &SenseTargetState{
+			TargetType:   "bug",
+			NormalizedID: "567763970",
+			Issue: &SenseIssueInfo{
+				Number:   567763970,
+				Title:    "Bound sense context",
+				State:    "OPEN",
+				Priority: "P2",
+				Comments: []SenseIssueComment{
+					{Number: 2, Author: "a@google.com", CreatedAt: "2026-10-01", Message: "Earliest comment #2 should be omitted"},
+					{Number: 3, Author: "b@google.com", CreatedAt: "2026-10-02", Message: "Second earliest comment #3 should be omitted"},
+					{Number: 4, Author: "c@google.com", CreatedAt: "2026-10-03", Message: "Kept comment #4"},
+					{Number: 5, Author: "d@google.com", CreatedAt: "2026-10-04", Message: "Commit landed.\n<details><summary>Expand for full commit details</summary>\n45 lines of verbose gitwatcher bloat\n</details>"},
+					{Number: 6, Author: "e@google.com", CreatedAt: "2026-10-05", Message: "Kept comment #6"},
+					{Number: 7, Author: "f@google.com", CreatedAt: "2026-10-06", Message: strings.Repeat("Long comment text ", 10)},
+					{Number: 8, Author: "g@google.com", CreatedAt: "2026-10-07", Message: "Latest comment #8"},
+				},
+			},
+		},
+		CandidateIssues: []SenseIssueSummary{
+			{Number: 1001, Priority: "P1", Title: "Candidate 1"},
+			{Number: 1002, Priority: "P1", Title: "Candidate 2"},
+			{Number: 1003, Priority: "P2", Title: "Candidate 3"},
+			{Number: 1004, Priority: "P2", Title: "Candidate 4"},
+			{Number: 1005, Priority: "P2", Title: "Candidate 5"},
+			{Number: 1006, Priority: "P3", Title: "Candidate 6 omitted"},
+			{Number: 1007, Priority: "P3", Title: "Candidate 7 omitted"},
+		},
+	}
+
+	card := FormatSenseStatusCard(report)
+
+	for _, want := range []string{
+		"Verdict:  ● CRANK_BUG (Confidence: HIGH)",
+		"Comments (7):",
+		"  ... +2 earlier comments (use 'gh issue view 567763970 --comments' to view)",
+		"#4 (c@google.com 2026-10-03): Kept comment #4",
+		"#5 (d@google.com 2026-10-04): Commit landed.",
+		"#8 (g@google.com 2026-10-07): Latest comment #8",
+		"  - b/1005 [P2] Candidate 5",
+		"  ... +2 more open issues",
+	} {
+		if !strings.Contains(card, want) {
+			t.Errorf("expected status card to contain %q, got:\n%s", want, card)
+		}
+	}
+
+	for _, unwanted := range []string{
+		"Earliest comment #2",
+		"Second earliest comment #3",
+		"Expand for full commit details",
+		"45 lines of verbose gitwatcher bloat",
+		"<details>",
+		"Candidate 6 omitted",
+		"Candidate 7 omitted",
+	} {
+		if strings.Contains(card, unwanted) {
+			t.Errorf("expected status card NOT to contain %q, got:\n%s", unwanted, card)
+		}
+	}
+
+	// Verify PICK_BUG_FROM_BUGANIZER recommends `gh issue develop <id> --worktree` instead of `/crank`
+	_, _, _, pickSteps, _ := classifySenseModality(
+		SenseGitState{Branch: "main"},
+		SenseWorktreeState{CurrentStatusBadge: "READY_FOR_NEXT"},
+		nil,
+		nil,
+		SenseOncallState{},
+		3,
+	)
+	if len(pickSteps) == 0 || !strings.Contains(pickSteps[0], "gh issue develop <id> --worktree") || strings.Contains(pickSteps[0], "/crank") {
+		t.Errorf("expected PICK_BUG_FROM_BUGANIZER step to recommend 'gh issue develop <id> --worktree' without '/crank', got: %v", pickSteps)
+	}
+}
+
+func TestParseSenseHeadCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want senseHeadCommit
+	}{
+		{
+			name: "full record",
+			raw:  "abc123\x001700000000\x00pw_foo: Subject\n\nBody\n\nChange-Id: I1\n",
+			want: senseHeadCommit{sha: "abc123", commitTime: "1700000000", message: "pw_foo: Subject\n\nBody\n\nChange-Id: I1"},
+		},
+		{
+			name: "NUL inside the message is kept",
+			raw:  "abc\x001\x00a\x00b",
+			want: senseHeadCommit{sha: "abc", commitTime: "1", message: "a\x00b"},
+		},
+		{
+			name: "empty message",
+			raw:  "abc\x001\x00",
+			want: senseHeadCommit{sha: "abc", commitTime: "1"},
+		},
+		{
+			name: "malformed output keeps present fields",
+			raw:  "abc\n",
+			want: senseHeadCommit{sha: "abc"},
+		},
+		{name: "empty", raw: "", want: senseHeadCommit{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseSenseHeadCommit(tc.raw); got != tc.want {
+				t.Errorf("parseSenseHeadCommit(%q) = %+v, want %+v", tc.raw, got, tc.want)
+			}
+		})
+	}
+}

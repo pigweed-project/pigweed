@@ -340,7 +340,7 @@ var baselineFlagPolicyCatalog = map[string]flagPolicySpec{
 	"hook uninstall:agent":        {Mode: flagModeExtension, Reason: "Remove AI agent PreToolUse hook"},
 	"hook uninstall:git":          {Mode: flagModeExtension, Reason: "Remove Git pre-push guard"},
 
-	// sense (registered at root and under pr)
+	// sense (registered at root, under pr, and under wt)
 	"sense:json":         {Mode: flagModeExtension, Reason: "Structured JSON output for /crank"},
 	"sense:status":       {Mode: flagModeExtension, Reason: "Compact text status briefing"},
 	"sense:dry-run":      {Mode: flagModeExtension, Reason: "Alias for --status"},
@@ -353,6 +353,12 @@ var baselineFlagPolicyCatalog = map[string]flagPolicySpec{
 	"pr sense:fleet":     {Mode: flagModeExtension, Reason: "Query status across all gh wt worktrees"},
 	"pr sense:all-slots": {Mode: flagModeExtension, Reason: "Alias for --fleet"},
 	"pr sense:prepare":   {Mode: flagModeExtension, Reason: "Safely fetch and switch to target branch"},
+	"wt sense:json":      {Mode: flagModeExtension, Reason: "Structured JSON output for /crank"},
+	"wt sense:status":    {Mode: flagModeExtension, Reason: "Compact text status briefing"},
+	"wt sense:dry-run":   {Mode: flagModeExtension, Reason: "Alias for --status"},
+	"wt sense:fleet":     {Mode: flagModeExtension, Reason: "Query status across all gh wt worktrees"},
+	"wt sense:all-slots": {Mode: flagModeExtension, Reason: "Alias for --fleet"},
+	"wt sense:prepare":   {Mode: flagModeExtension, Reason: "Safely fetch and switch to target branch"},
 }
 
 var rootAliasTargets = map[string]string{

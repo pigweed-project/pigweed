@@ -220,7 +220,7 @@ func TestList_SurfacesGerritOfflineWarningAndBadge(t *testing.T) {
 		t.Fatalf("expected 1 mounted project, got %d", len(report.MountedProjects))
 	}
 	if report.MountedProjects[0].StatusBadge != BadgeGerritOffline {
-		t.Errorf("expected StatusBadge %q when Gerrit is offline, got %q (%s)",
+		t.Errorf("expected status %q when Gerrit is offline, got %q (%s)",
 			BadgeGerritOffline, report.MountedProjects[0].StatusBadge, report.MountedProjects[0].Details)
 	}
 }

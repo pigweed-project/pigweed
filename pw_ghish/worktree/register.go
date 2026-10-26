@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
@@ -75,19 +76,91 @@ func BatchChangeIDQueries(changeIDs []string, batchSize int) []string {
 	return queries
 }
 
-func (a *gerritStatusAdapter) QueryChangesByID(ctx context.Context, changeIDs []string) (map[string]ChangeStatus, error) {
+const maxGerritBatchConcurrency = 4
+
+func changesToStatusMap(changes *[]gerrit.ChangeInfo) map[string]ChangeStatus {
+	batchMap := make(map[string]ChangeStatus)
+	if changes == nil {
+		return batchMap
+	}
+	for _, c := range *changes {
+		batchMap[c.ChangeID] = ChangeStatus{
+			ChangeID:          c.ChangeID,
+			Number:            c.Number,
+			Status:            c.Status,
+			CodeReviewScore:   pw_ghish.ExtractLabelScore(c.Labels, "Code-Review"),
+			CommitQueueScore:  pw_ghish.ExtractLabelScore(c.Labels, "Commit-Queue"),
+			UnresolvedThreads: c.UnresolvedCommentCount,
+			Subject:           c.Subject,
+		}
+	}
+	return batchMap
+}
+
+func queryChangeBatches(
+	ctx context.Context,
+	queries []string,
+	queryBatch func(ctx context.Context, query string) (*[]gerrit.ChangeInfo, error),
+) (map[string]ChangeStatus, error) {
 	res := make(map[string]ChangeStatus)
-	queries := BatchChangeIDQueries(changeIDs, maxGerritQueryBatchSize)
 	if len(queries) == 0 {
 		return res, nil
+	}
+	if len(queries) == 1 {
+		changes, err := queryBatch(ctx, queries[0])
+		if err != nil {
+			return res, err
+		}
+		return changesToStatusMap(changes), nil
+	}
+
+	type batchResult struct {
+		statuses map[string]ChangeStatus
+		err      error
+	}
+	batchResults := make([]batchResult, len(queries))
+	sem := make(chan struct{}, maxGerritBatchConcurrency)
+	var wg sync.WaitGroup
+	for i, q := range queries {
+		wg.Add(1)
+		go func(idx int, query string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			changes, err := queryBatch(ctx, query)
+			if err != nil {
+				batchResults[idx] = batchResult{err: err}
+				return
+			}
+			batchResults[idx] = batchResult{statuses: changesToStatusMap(changes)}
+		}(i, q)
+	}
+	wg.Wait()
+
+	for _, br := range batchResults {
+		if br.err != nil {
+			return res, br.err
+		}
+		for k, v := range br.statuses {
+			res[k] = v
+		}
+	}
+	return res, nil
+}
+
+func (a *gerritStatusAdapter) QueryChangesByID(ctx context.Context, changeIDs []string) (map[string]ChangeStatus, error) {
+	queries := BatchChangeIDQueries(changeIDs, maxGerritQueryBatchSize)
+	if len(queries) == 0 {
+		return make(map[string]ChangeStatus), nil
 	}
 
 	client, err := pw_ghish.NewGerritClient(ctx, a.rootCmd)
 	if err != nil {
-		return res, err
+		return make(map[string]ChangeStatus), err
 	}
 
-	for _, query := range queries {
+	return queryChangeBatches(ctx, queries, func(ctx context.Context, query string) (*[]gerrit.ChangeInfo, error) {
 		opt := &gerrit.QueryChangeOptions{
 			QueryOptions: gerrit.QueryOptions{
 				Query: []string{query},
@@ -96,28 +169,9 @@ func (a *gerritStatusAdapter) QueryChangesByID(ctx context.Context, changeIDs []
 				AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE"},
 			},
 		}
-
 		changes, _, err := client.Changes.QueryChanges(ctx, opt)
-		if err != nil {
-			return res, err
-		}
-		if changes == nil {
-			continue
-		}
-
-		for _, c := range *changes {
-			res[c.ChangeID] = ChangeStatus{
-				ChangeID:          c.ChangeID,
-				Number:            c.Number,
-				Status:            c.Status,
-				CodeReviewScore:   pw_ghish.ExtractLabelScore(c.Labels, "Code-Review"),
-				CommitQueueScore:  pw_ghish.ExtractLabelScore(c.Labels, "Commit-Queue"),
-				UnresolvedThreads: c.UnresolvedCommentCount,
-				Subject:           c.Subject,
-			}
-		}
-	}
-	return res, nil
+		return changes, err
+	})
 }
 
 // ResolveCLFetchRef resolves a Gerrit CL number, URL, shortlink, or Change-Id to its git fetch ref and Change-Id.

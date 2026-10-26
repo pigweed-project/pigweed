@@ -70,7 +70,7 @@ func isCIVerdict(err error) bool {
 
 // checksSummaryGlyphs are the leading status markers `pr view` and
 // `pr status` use to summarize CI in one line.
-var checksSummaryGlyphs = []string{"✓", "✖", "●"}
+var checksSummaryGlyphs = []string{"✓", "✗", "●"}
 
 // assertChecksSummary requires summary to be a recognized CI summary, without
 // dictating which verdict it reports.
@@ -649,11 +649,10 @@ func TestLive_Checks_List(t *testing.T) {
 
 	var data struct {
 		Checks []struct {
-			Name         string `json:"name"`
-			Status       string `json:"status"`
-			StatusSymbol string `json:"statusSymbol"`
-			Duration     string `json:"duration"`
-			URL          string `json:"url"`
+			Name     string `json:"name"`
+			Status   string `json:"status"`
+			Duration string `json:"duration"`
+			URL      string `json:"url"`
 		} `json:"checks"`
 	}
 	if err := json.Unmarshal([]byte(jsonOutput), &data); err != nil {
@@ -672,7 +671,7 @@ func TestLive_Checks_List(t *testing.T) {
 		if !strings.HasPrefix(c.URL, "https://ci.chromium.org/b/") {
 			t.Errorf("Expected URL prefix https://ci.chromium.org/b/, got %q", c.URL)
 		}
-		if c.Status == "SUCCESS" && c.StatusSymbol == "✓" {
+		if c.Status == "SUCCESS" {
 			foundSuccess = true
 		}
 	}
@@ -953,8 +952,8 @@ func TestLive_View_DisplaysChecks_Failing(t *testing.T) {
 		t.Fatalf("pr view 467905/22 failed: %v\nOutput: %s", err, output)
 	}
 
-	if !strings.Contains(output, "Checks:  ✖") {
-		t.Errorf("Expected 'Checks:  ✖' in pr view output, got:\n%s", output)
+	if !strings.Contains(output, "Checks:  ✗") {
+		t.Errorf("Expected 'Checks:  ✗' in pr view output, got:\n%s", output)
 	}
 	if !strings.Contains(output, "pigweed-lintformat") {
 		t.Errorf("Expected failed builder 'pigweed-lintformat' in pr view output, got:\n%s", output)

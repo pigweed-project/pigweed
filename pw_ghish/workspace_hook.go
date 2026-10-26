@@ -39,7 +39,10 @@ type WorkspaceProjectMatch struct {
 	IssueID     int64  `json:"issue_id,omitempty"`
 	SymlinkPath string `json:"symlink_path,omitempty"`
 	ChangeID    string `json:"change_id,omitempty"`
-	StatusBadge string `json:"status_badge,omitempty"`
+	// StatusBadge is the project's `gh wt list` status, a bare ASCII enum
+	// (NEEDS_ATTENTION, READY_TO_LAND, IN_REVIEW, GERRIT_OFFLINE, CL_MERGED,
+	// LOCAL_WIP, or CLEAN_SYNCED).
+	StatusBadge string `json:"status,omitempty"`
 	Details     string `json:"details,omitempty"`
 	ProjectUUID string `json:"project_uuid,omitempty"`
 }
@@ -54,7 +57,7 @@ type WorkspaceSenseResult struct {
 	CurrentSlot              string                  `json:"current_slot"`
 	CurrentSymlinkPath       string                  `json:"current_symlink_path,omitempty"`
 	CurrentIssueID           int64                   `json:"current_issue_id,omitempty"`
-	CurrentStatusBadge       string                  `json:"current_status_badge"`
+	CurrentStatusBadge       string                  `json:"current_status"`
 	CurrentDetails           string                  `json:"current_details"`
 	CurrentRecommendedAction string                  `json:"current_recommended_action"`
 	TotalSlots               int                     `json:"total_slots"`

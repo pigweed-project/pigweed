@@ -36,20 +36,40 @@ import (
 )
 
 const (
-	staleBehindThreshold   = 20
-	staleAgeSeconds        = 3 * 24 * 3600 // 3 days
-	maxInlineFailingBuilds = 2
-	maxInlineLogLines      = 18
+	staleBehindThreshold    = 20
+	staleAgeSeconds         = 3 * 24 * 3600 // 3 days
+	maxInlineFailingBuilds  = 2
+	maxInlineLogLines       = 18
+	maxSenseIssueComments   = 5
+	maxSenseCommentPreview  = 120
+	maxSenseCandidateIssues = 5
 )
 
 var (
-	primaryOncallRegex   = regexp.MustCompile(`primary:\s*"([^"]+)"`)
-	secondaryOncallRegex = regexp.MustCompile(`secondary:\s*"([^"]+)"`)
-	chatRoomURLRegex     = regexp.MustCompile(`(?i)^https?://chat\.google\.com/(?:u/\d+/)?(?:room|dm)/([A-Za-z0-9_-]+)(?:/([A-Za-z0-9_.-]+))?(?:/([A-Za-z0-9_.-]+))?(?:[?#].*)?$`)
-	chatMailURLRegex     = regexp.MustCompile(`(?i)^https?://mail\.google\.com/chat/(?:u/\d+/)?#chat/(?:space|dm)/([A-Za-z0-9_-]+)(?:/([A-Za-z0-9_.-]+))?(?:/([A-Za-z0-9_.-]+))?(?:[?#].*)?$`)
-	chatResourceRegex    = regexp.MustCompile(`^spaces/([A-Za-z0-9_-]+)(?:/threads/([A-Za-z0-9_.-]+))?(?:/messages/([A-Za-z0-9_.-]+))?$`)
-	mergeTreeConflictRe  = regexp.MustCompile(`CONFLICT \([^)]+\): Merge conflict in (.+)`)
+	primaryOncallRegex    = regexp.MustCompile(`primary:\s*"([^"]+)"`)
+	secondaryOncallRegex  = regexp.MustCompile(`secondary:\s*"([^"]+)"`)
+	chatRoomURLRegex      = regexp.MustCompile(`(?i)^https?://chat\.google\.com/(?:u/\d+/)?(?:room|dm)/([A-Za-z0-9_-]+)(?:/([A-Za-z0-9_.-]+))?(?:/([A-Za-z0-9_.-]+))?(?:[?#].*)?$`)
+	chatMailURLRegex      = regexp.MustCompile(`(?i)^https?://mail\.google\.com/chat/(?:u/\d+/)?#chat/(?:space|dm)/([A-Za-z0-9_-]+)(?:/([A-Za-z0-9_.-]+))?(?:/([A-Za-z0-9_.-]+))?(?:[?#].*)?$`)
+	chatResourceRegex     = regexp.MustCompile(`^spaces/([A-Za-z0-9_-]+)(?:/threads/([A-Za-z0-9_.-]+))?(?:/messages/([A-Za-z0-9_.-]+))?$`)
+	mergeTreeConflictRe   = regexp.MustCompile(`CONFLICT \([^)]+\): Merge conflict in (.+)`)
+	senseDetailsBlockRe   = regexp.MustCompile(`(?is)<details\b[^>]*>.*?</details>`)
+	senseUnclosedDetailRe = regexp.MustCompile(`(?is)<details\b[^>]*>.*$`)
+	senseHTMLTagRe        = regexp.MustCompile(`(?is)</?(?:details|summary)\b[^>]*>`)
 )
+
+func formatSenseCommentPreview(msg string) string {
+	cleaned := senseDetailsBlockRe.ReplaceAllString(msg, " ")
+	cleaned = senseUnclosedDetailRe.ReplaceAllString(cleaned, " ")
+	cleaned = strings.Join(strings.Fields(cleaned), " ")
+	if cleaned == "" {
+		fallback := senseHTMLTagRe.ReplaceAllString(msg, " ")
+		cleaned = strings.Join(strings.Fields(fallback), " ")
+	}
+	if len(cleaned) > maxSenseCommentPreview {
+		cleaned = strings.TrimSpace(cleaned[:maxSenseCommentPreview-3]) + "..."
+	}
+	return cleaned
+}
 
 // SenseGitState holds local Git repository state for `./gh sense`.
 type SenseGitState struct {
@@ -89,10 +109,14 @@ type SenseGitWorktreeEntry struct {
 }
 
 // SenseWorktreeState holds local `gh wt` and `git worktree` state for `./gh sense`.
+//
+// CurrentStatusBadge is the current worktree's status, a bare ASCII enum: the
+// `gh wt list` status of a pool-managed project, otherwise inferred by
+// inferSingleWorktreeBadge.
 type SenseWorktreeState struct {
 	CurrentProject           string                  `json:"current_project,omitempty"`
 	CurrentSlot              string                  `json:"current_slot,omitempty"`
-	CurrentStatusBadge       string                  `json:"current_status_badge,omitempty"`
+	CurrentStatusBadge       string                  `json:"current_status,omitempty"`
 	CurrentDetails           string                  `json:"current_details,omitempty"`
 	CurrentRecommendedAction string                  `json:"current_recommended_action,omitempty"`
 	IsUnmanagedGitWorktree   bool                    `json:"is_unmanaged_git_worktree,omitempty"`
@@ -435,8 +459,9 @@ func NewSenseCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "sense [<target>]",
-		Short: "Sense Git, worktree, Gerrit CL, CI, issue, and oncall context and classify workflow modality",
+		Use:         "sense [<target>]",
+		Annotations: map[string]string{KindAnnotation: KindView},
+		Short:       "Sense Git, worktree, Gerrit CL, CI, issue, and oncall context and classify workflow modality",
 		Long: `Perform fast context sensing across local Git state, worktrees,
 active Gerrit CL threads/drafts, CI checks, issue tracker metadata, and optional oncall schedules.
 
@@ -853,7 +878,11 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 		if gClient, gErr := NewGerritClient(aCtx, cmd); gErr != nil {
 			warnings.addf("skipping Gerrit account lookup for CL ownership: %v", firstLine(gErr.Error()))
 		} else if gClient != nil {
-			if acc, _, accErr := gClient.Accounts.GetAccount(aCtx, "self"); accErr != nil {
+			var gHost string
+			if cfg != nil {
+				gHost = cfg.GerritHost(aCtx)
+			}
+			if acc, accErr := GetSelfAccountCached(aCtx, gClient, gHost); accErr != nil {
 				warnings.addf("skipping Gerrit account lookup for CL ownership: %v", firstLine(accErr.Error()))
 			} else if acc != nil {
 				oncallSt.UserAccountID = acc.AccountID
@@ -1222,6 +1251,40 @@ func inferSingleWorktreeBadge(git SenseGitState, cl *SenseCLState) string {
 	return "READY_FOR_NEXT"
 }
 
+// senseHeadLogFormat is the `git log` format that returns HEAD's SHA,
+// committer timestamp, and raw message in one NUL-separated record.
+const senseHeadLogFormat = "--format=%H%x00%ct%x00%B"
+
+// senseHeadLogArgs reads HEAD's identity in one `git log`.
+// --no-show-signature keeps `log.showSignature=true` from printing signature
+// verification text ahead of the formatted record on signed commits.
+var senseHeadLogArgs = []string{"log", "-1", "--no-show-signature", senseHeadLogFormat, "HEAD"}
+
+// senseHeadCommit is HEAD's identity as reported by a single
+// `git log -1 --no-show-signature --format=%H%x00%ct%x00%B HEAD`.
+type senseHeadCommit struct {
+	sha        string
+	commitTime string
+	message    string
+}
+
+// parseSenseHeadCommit splits NUL-separated `%H%x00%ct%x00%B` output. Fields
+// are trimmed like the separate `rev-parse HEAD`, `log --format=%ct`, and
+// `log --format=%B` outputs they replace; malformed output yields the fields
+// that are present.
+func parseSenseHeadCommit(raw string) senseHeadCommit {
+	parts := strings.SplitN(raw, "\x00", 3)
+	var h senseHeadCommit
+	h.sha = strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		h.commitTime = strings.TrimSpace(parts[1])
+	}
+	if len(parts) > 2 {
+		h.message = strings.TrimSpace(parts[2])
+	}
+	return h
+}
+
 func senseGitAndWorktrees(ctx context.Context, cfg *Config, cwd string, meta senseProjectMeta, warnings *senseWarnCollector) (SenseGitState, []SenseGitWorktreeEntry) {
 	st := SenseGitState{
 		BaseRef: meta.baseRef,
@@ -1247,9 +1310,12 @@ func senseGitAndWorktrees(ctx context.Context, cfg *Config, cwd string, meta sen
 		st.Branch = br
 	}
 
-	if sha, err := git.RevParse(ctx, "HEAD"); err == nil {
-		st.HeadSHA = sha
+	// One `git log` returns HEAD's SHA, committer time, and message.
+	var head senseHeadCommit
+	if raw, err := runGit(senseHeadLogArgs...); err == nil {
+		head = parseSenseHeadCommit(raw)
 	}
+	st.HeadSHA = head.sha
 
 	baseRef := st.effectiveBaseRef()
 	if lr, err := runGit("rev-list", "--left-right", "--count", baseRef+"...HEAD"); err == nil && lr != "" {
@@ -1270,7 +1336,7 @@ func senseGitAndWorktrees(ctx context.Context, cfg *Config, cwd string, meta sen
 		}
 	}
 
-	if msg, err := git.CommitMessage(ctx, "HEAD"); err == nil && msg != "" {
+	if msg := head.message; msg != "" {
 		lines := strings.Split(msg, "\n")
 		if len(lines) > 0 {
 			st.CommitSubject = strings.TrimSpace(lines[0])
@@ -1292,7 +1358,7 @@ func senseGitAndWorktrees(ctx context.Context, cfg *Config, cwd string, meta sen
 		}
 	}
 
-	if ctStr, err := runGit("log", "-1", "--format=%ct", "HEAD"); err == nil && ctStr != "" {
+	if ctStr := head.commitTime; ctStr != "" {
 		if ct, parseErr := strconv.ParseInt(ctStr, 10, 64); parseErr == nil && ct > 0 {
 			if age := time.Now().Unix() - ct; age > 0 {
 				st.CommitAgeSeconds = age
@@ -1357,7 +1423,7 @@ func senseGitAndWorktrees(ctx context.Context, cfg *Config, cwd string, meta sen
 			{"BISECT_LOG", "bisect"},
 			{"REVERT_HEAD", "revert"},
 		} {
-			if _, statErr := os.Stat(filepath.Join(gitDir, item.marker)); statErr == nil {
+			if sequencerMarkerExists(ctx, git, gitDir, item.marker) {
 				st.InProgressOp = item.op
 				if item.op == "rebase" {
 					st.RebaseInProgress = true
@@ -2416,7 +2482,7 @@ func classifySenseModalityWithMeta(
 
 	// Tier 4: Current branch's CL was MERGED (or ABANDONED) or clean on base branch
 	isMergedCheckout := (activeCL != nil && (activeCL.Status == "MERGED" || activeCL.Status == "ABANDONED")) ||
-		strings.Contains(wt.CurrentStatusBadge, "READY_FOR_NEXT")
+		wt.CurrentStatusBadge == "READY_FOR_NEXT"
 
 	if isMergedCheckout {
 		clStatusNote := fmt.Sprintf("Clean worktree at `%s`", baseRef)
@@ -2453,7 +2519,7 @@ func classifySenseModalityWithMeta(
 				nil
 		}
 
-		pickStep := fmt.Sprintf("Select top candidate issue below and run `/crank %s<id>`.", meta.issuePrefix)
+		pickStep := "Select top candidate issue below and run `./gh issue develop <id> --worktree`."
 		if candidateCount == 0 {
 			pickStep = "No open issues assigned to user; run `./gh issue list` to browse open P0–P2 issues or ask the user for a target."
 		}
@@ -2495,12 +2561,37 @@ func truncateLines(s string, maxLines int, maxChars int) string {
 	return strings.Join(lines, "\n")
 }
 
+func senseVerdictGlyph(r *SenseReport) string {
+	if r == nil {
+		return GlyphPending
+	}
+	if len(r.SafetyGates) > 0 || r.Modality == "RESUME_CONFLICT_RESOLUTION" || r.Git.RebaseVerdict == "REBASE_CONFLICT" {
+		return GlyphWarn
+	}
+	if r.ActiveCL != nil {
+		if len(r.ActiveCL.FailingChecks) > 0 {
+			return GlyphFail
+		}
+		if r.ActiveCL.PendingChecksCount > 0 {
+			return GlyphRunning
+		}
+		if r.ActiveCL.Submittable && len(r.ActiveCL.ExternalUnresolvedThreads) == 0 && len(r.ActiveCL.AuthorSelfDrafts) == 0 {
+			return GlyphPass
+		}
+	}
+	if r.Confidence == "LOW" {
+		return GlyphPending
+	}
+	return GlyphRunning
+}
+
 // FormatSenseStatusCard renders a compact, token-efficient directive briefing for both LLMs and humans.
 func FormatSenseStatusCard(r *SenseReport) string {
 	if r == nil {
 		return ""
 	}
 	var sb strings.Builder
+	fmt.Fprintf(&sb, "Verdict:  %s %s (Confidence: %s)\n", senseVerdictGlyph(r), r.Modality, r.Confidence)
 	fmt.Fprintf(&sb, "Modality: %s (Confidence: %s)\n", r.Modality, r.Confidence)
 	fmt.Fprintf(&sb, "Summary:  %s\n", r.Summary)
 
@@ -2513,7 +2604,7 @@ func FormatSenseStatusCard(r *SenseReport) string {
 		}
 	}
 
-	badge := r.Worktree.CurrentStatusBadge
+	badge := FormatStatusWithGlyph(r.Worktree.CurrentStatusBadge)
 	if badge == "" {
 		badge = "-"
 	}
@@ -2562,7 +2653,7 @@ func FormatSenseStatusCard(r *SenseReport) string {
 			if p.Details != "" {
 				det = " — " + p.Details
 			}
-			fmt.Fprintf(&sb, "  - %-22s [%-7s slot=%-5s] %s%s\n", p.Project, p.Residency, slotLabel, p.StatusBadge, det)
+			fmt.Fprintf(&sb, "  - %-22s [%-7s slot=%-5s] %s%s\n", p.Project, p.Residency, slotLabel, FormatStatusWithGlyph(p.StatusBadge), det)
 		}
 	}
 
@@ -2692,8 +2783,14 @@ func FormatSenseStatusCard(r *SenseReport) string {
 		}
 		if len(iss.Comments) > 0 {
 			fmt.Fprintf(&sb, "  Comments (%d):\n", len(iss.Comments))
-			for _, c := range iss.Comments {
-				fmt.Fprintf(&sb, "    #%d (%s %s): %s\n", c.Number, c.Author, c.CreatedAt, strings.ReplaceAll(c.Message, "\n", " "))
+			visible := iss.Comments
+			if len(visible) > maxSenseIssueComments {
+				fmt.Fprintf(&sb, "  ... +%d earlier comments (use 'gh issue view %d --comments' to view)\n",
+					len(visible)-maxSenseIssueComments, iss.Number)
+				visible = visible[len(visible)-maxSenseIssueComments:]
+			}
+			for _, c := range visible {
+				fmt.Fprintf(&sb, "    #%d (%s %s): %s\n", c.Number, c.Author, c.CreatedAt, formatSenseCommentPreview(c.Message))
 			}
 		}
 		if len(iss.RelatedCLs) > 0 {
@@ -2715,7 +2812,11 @@ func FormatSenseStatusCard(r *SenseReport) string {
 
 	if len(r.CandidateIssues) > 0 {
 		sb.WriteString("Candidate Open Issues:\n")
-		for _, ci := range r.CandidateIssues {
+		for i, ci := range r.CandidateIssues {
+			if i >= maxSenseCandidateIssues {
+				fmt.Fprintf(&sb, "  ... +%d more open issues\n", len(r.CandidateIssues)-maxSenseCandidateIssues)
+				break
+			}
 			fmt.Fprintf(&sb, "  - b/%d [%s] %s\n", ci.Number, ci.Priority, ci.Title)
 		}
 	}

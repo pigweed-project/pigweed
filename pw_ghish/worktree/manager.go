@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"pigweed.dev/pw_ghish"
@@ -57,7 +58,7 @@ type ProjectListEntry struct {
 	Slot              string      `json:"slot"` // "pw-01" or "-"
 	Branch            string      `json:"branch"`
 	IssueID           int64       `json:"issue_id,omitempty"`
-	StatusBadge       StatusBadge `json:"status_badge"`
+	StatusBadge       StatusBadge `json:"status"`
 	Details           string      `json:"details"`
 	RecommendedAction string      `json:"recommended_action"`
 	ActiveLeases      []string    `json:"active_leases,omitempty"`
@@ -871,7 +872,7 @@ func (m *Manager) checkoutSlotBranchLocked(
 		if existsInGit {
 			return m.Git.ResetBranch(targetSlot.Path, branch, baseRef)
 		}
-		return m.Git.SwitchBranch(targetSlot.Path, branch, baseRef)
+		return m.Git.CreateBranch(targetSlot.Path, branch, baseRef)
 	}
 
 	// Case 1: desiredBranch is currently checked out in another worktree (e.g., ~/wrk/pw-ghish) or owned by another project.
@@ -900,7 +901,7 @@ func (m *Manager) checkoutSlotBranchLocked(
 		return "", nil, err
 	}
 	if !existsInGit {
-		if switchErr := m.Git.SwitchBranch(targetSlot.Path, desiredBranch, createFrom); switchErr != nil {
+		if switchErr := m.Git.CreateBranch(targetSlot.Path, desiredBranch, createFrom); switchErr != nil {
 			// Defense-in-depth fallback if git reports a worktree collision race
 			if strings.Contains(switchErr.Error(), "already used by worktree") {
 				checkedOutByOther[desiredBranch] = "another worktree"
@@ -921,7 +922,7 @@ func (m *Manager) checkoutSlotBranchLocked(
 	// desiredBranch already exists in local Git (`refs/heads/<desiredBranch>`).
 	if !forceResetToCreateFrom {
 		// Resuming a PARKED project or checking out an explicit --branch without --cl: preserve existing commits on the branch.
-		if switchErr := m.Git.SwitchBranch(targetSlot.Path, desiredBranch, ""); switchErr != nil {
+		if switchErr := m.Git.SwitchExistingBranch(targetSlot.Path, desiredBranch); switchErr != nil {
 			if strings.Contains(switchErr.Error(), "already used by worktree") {
 				checkedOutByOther[desiredBranch] = "another worktree"
 				actualBranch := m.nextAvailableBranchNameLocked(st, targetSlot.Path, projectName, desiredBranch, checkedOutByOther)
@@ -1058,26 +1059,52 @@ func (m *Manager) selectVictimSlotForSwap(st *State, now time.Time) (*Slot, *Pro
 		slot *Slot
 		proj *Project
 	}
-	var candidates []candidate
-
-	for _, slot := range st.Slots {
-		if slot.Project == "" {
+	slotNames := slices.Sorted(maps.Keys(st.Slots))
+	var eligible []candidate
+	for _, slotName := range slotNames {
+		slot := st.Slots[slotName]
+		if slot == nil || slot.Project == "" {
 			continue
 		}
 		// Rule 1: Never swap out a slot with an active write lease
 		if slot.ActiveWriteLease(now) != nil {
 			continue
 		}
-		// Rule 2: Never swap out a slot with uncommitted working tree edits (DIRTY) or status errors (FAIL-CLOSED)
-		status, err := m.Git.StatusPorcelain(slot.Path)
-		if err != nil || strings.TrimSpace(status) != "" {
-			continue
-		}
 		proj, ok := st.Projects[slot.Project]
 		if !ok {
 			continue
 		}
-		candidates = append(candidates, candidate{slot: slot, proj: proj})
+		eligible = append(eligible, candidate{slot: slot, proj: proj})
+	}
+
+	// Check working-tree cleanliness across eligible slots concurrently (bounded
+	// to 8 parallel git status subprocesses) so slot eviction does not block on
+	// serial git status calls across all slots.
+	cleanResults := make([]bool, len(eligible))
+	if len(eligible) > 0 {
+		sem := make(chan struct{}, 8)
+		var wg sync.WaitGroup
+		for i, cand := range eligible {
+			wg.Add(1)
+			go func(idx int, slotPath string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				status, err := m.Git.StatusPorcelain(slotPath)
+				cleanResults[idx] = err == nil && strings.TrimSpace(status) == ""
+			}(i, cand.slot.Path)
+		}
+		wg.Wait()
+	}
+
+	var candidates []candidate
+	for i, cand := range eligible {
+		// Rule 2: Never swap out a slot with uncommitted working tree edits (DIRTY) or status errors (FAIL-CLOSED)
+		if !cleanResults[i] {
+			continue
+		}
+		candidates = append(candidates, cand)
 	}
 
 	if len(candidates) == 0 {
@@ -1321,7 +1348,8 @@ func (m *Manager) Close(projectName string, force bool) error {
 
 // List builds the live DashboardReport combining local Git status and Gerrit review statuses.
 func (m *Manager) List(ctx context.Context) (*DashboardReport, error) {
-	var report DashboardReport
+	// Empty, not nil, so `wt list --json` reports [] rather than null.
+	report := DashboardReport{MountedProjects: []ProjectListEntry{}, ParkedProjects: []ProjectListEntry{}}
 	err := m.Store.WithLock(func() error {
 		st, err := m.loadOrInitState(0)
 		if err != nil {
@@ -1330,25 +1358,83 @@ func (m *Manager) List(ctx context.Context) (*DashboardReport, error) {
 		now := m.Now()
 		report.TotalSlots = st.SlotCount
 
-		// Collect Change-IDs across all MOUNTED and PARKED projects
+		// Collect Change-IDs across all MOUNTED and PARKED projects in deterministic order.
+		projNames := slices.Sorted(maps.Keys(st.Projects))
 		var changeIDs []string
 		changeIDSet := make(map[string]bool)
 		dirtyMap := make(map[string]bool)
 		aheadMap := make(map[string]int)
 
-		for _, proj := range st.Projects {
+		type mountedSlotTarget struct {
+			proj *Project
+			path string
+		}
+		type mountedSlotResult struct {
+			isDirty bool
+			ahead   int
+			cid     string
+			cidErr  error
+		}
+
+		var mountedProjs []mountedSlotTarget
+		for _, name := range projNames {
+			proj := st.Projects[name]
 			if proj.Residency == ResidencyMounted && proj.Slot != "" {
-				if slot, ok := st.Slots[proj.Slot]; ok {
-					if status, err := m.Git.StatusPorcelain(slot.Path); err == nil && strings.TrimSpace(status) != "" {
-						dirtyMap[proj.Name] = true
-					}
-					cid, ahead, cidErr := m.extractProjectChangeID(slot.Path, "HEAD")
-					aheadMap[proj.Name] = ahead
-					if cidErr == nil {
-						proj.LastKnownChangeID = cid
-					}
+				if slot, ok := st.Slots[proj.Slot]; ok && slot != nil && slot.Path != "" {
+					mountedProjs = append(mountedProjs, mountedSlotTarget{proj: proj, path: slot.Path})
 				}
-			} else if proj.Residency == ResidencyParked {
+			}
+		}
+
+		dirtyResults := make([]bool, len(mountedProjs))
+		slotResults := make([]mountedSlotResult, len(mountedProjs))
+		if len(mountedProjs) > 0 {
+			sem := make(chan struct{}, 12)
+			var wg sync.WaitGroup
+			for i, target := range mountedProjs {
+				wg.Add(2)
+				go func(idx int, slotPath string) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+
+					status, statusErr := m.Git.StatusPorcelain(slotPath)
+					dirtyResults[idx] = statusErr == nil && strings.TrimSpace(status) != ""
+				}(i, target.path)
+
+				go func(idx int, slotPath string) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+
+					cid, ahead, cidErr := m.extractProjectChangeID(slotPath, "HEAD")
+					slotResults[idx] = mountedSlotResult{
+						ahead:  ahead,
+						cid:    cid,
+						cidErr: cidErr,
+					}
+				}(i, target.path)
+			}
+			wg.Wait()
+			for i := range slotResults {
+				slotResults[i].isDirty = dirtyResults[i]
+			}
+		}
+
+		for i, target := range mountedProjs {
+			res := slotResults[i]
+			if res.isDirty {
+				dirtyMap[target.proj.Name] = true
+			}
+			aheadMap[target.proj.Name] = res.ahead
+			if res.cidErr == nil {
+				target.proj.LastKnownChangeID = res.cid
+			}
+		}
+
+		for _, name := range projNames {
+			proj := st.Projects[name]
+			if proj.Residency == ResidencyParked {
 				if proj.LastKnownChangeID != "" {
 					// Parked projects already persist LastKnownChangeID on unmount;
 					// reuse it directly to avoid 2N git subprocesses across large parked fleets.
@@ -1379,7 +1465,8 @@ func (m *Manager) List(ctx context.Context) (*DashboardReport, error) {
 		}
 
 		// Classify projects
-		for _, proj := range st.Projects {
+		for _, name := range projNames {
+			proj := st.Projects[name]
 			var cs *ChangeStatus
 			if proj.LastKnownChangeID != "" && gerritMap != nil {
 				if found, ok := gerritMap[proj.LastKnownChangeID]; ok {
@@ -1463,6 +1550,10 @@ func (m *Manager) List(ctx context.Context) (*DashboardReport, error) {
 // ahead of origin/main. If rev has 0 commits ahead of origin/main, any Change-Id on rev
 // belongs to upstream origin/main and NOT to this project.
 func (m *Manager) extractProjectChangeID(repoOrWorktreePath, rev string) (string, int, error) {
+	if execGit, ok := m.Git.(*ExecGitRunner); ok {
+		ahead, cid, err := execGit.InspectHeadAheadChangeID(repoOrWorktreePath, "origin/main", rev)
+		return cid, ahead, err
+	}
 	ahead, err := m.Git.CommitsAhead(repoOrWorktreePath, "origin/main", rev)
 	if err != nil {
 		return "", 0, err

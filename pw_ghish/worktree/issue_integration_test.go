@@ -16,8 +16,14 @@ package worktree
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"pigweed.dev/pw_ghish"
 )
 
 func TestWTUse_WithIssueFlag_AutoNamesAndPersistsIssueID(t *testing.T) {
@@ -107,25 +113,69 @@ func TestWorkspaceIntegrationHook_EndToEnd(t *testing.T) {
 	}
 }
 
+// stubIssueTracker makes `wt use --issue` hermetic: it isolates HOME and the
+// working directory from the developer's environment and routes the Issue
+// Tracker client to an in-process server, so the derived project name never
+// depends on real credentials or network access. An empty title makes the
+// server answer 404 (issue not visible), the same as an unauthenticated run.
+func stubIssueTracker(t *testing.T, title string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(t.TempDir())
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if title == "" || !strings.HasPrefix(r.URL.Path, "/issues/315378787") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issueId":    "315378787",
+			"issueState": map[string]any{"title": title},
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	old := pw_ghish.NewIssueTrackerClientForCommand
+	pw_ghish.NewIssueTrackerClientForCommand = func(context.Context, *cobra.Command) (*pw_ghish.IssueTrackerClient, error) {
+		return &pw_ghish.IssueTrackerClient{
+			Endpoint:      server.URL,
+			HTTPClient:    server.Client(),
+			TokenProvider: func(context.Context) (string, error) { return "test-token", nil },
+		}, nil
+	}
+	t.Cleanup(func() { pw_ghish.NewIssueTrackerClientForCommand = old })
+}
+
 func TestCLI_WTUseWithIssue_And_WTCloseReminder(t *testing.T) {
-	mgr, _, _, _ := setupTestManager(t, 2)
+	for _, tc := range []struct {
+		name, title, project string
+	}{
+		{name: "issue not visible", title: "", project: "b-315378787"},
+		{name: "issue title slugged", title: "Fix channel framing", project: "b-315378787-fix-channel-framing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubIssueTracker(t, tc.title)
+			mgr, _, _, _ := setupTestManager(t, 2)
 
-	// 1. Run `gh wt use --issue 315378787`
-	outUse, err := execWTCommand(t, mgr, "use", "--issue", "315378787")
-	if err != nil {
-		t.Fatalf("wt use --issue 315378787 failed: %v\nOutput: %s", err, outUse)
-	}
-	if !strings.Contains(outUse, "b/315378787") {
-		t.Errorf("expected 'wt use --issue' output to display Issue: b/315378787, got:\n%s", outUse)
-	}
+			// 1. Run `gh wt use --issue 315378787`
+			outUse, err := execWTCommand(t, mgr, "use", "--issue", "315378787")
+			if err != nil {
+				t.Fatalf("wt use --issue 315378787 failed: %v\nOutput: %s", err, outUse)
+			}
+			if !strings.Contains(outUse, "b/315378787") {
+				t.Errorf("expected 'wt use --issue' output to display Issue: b/315378787, got:\n%s", outUse)
+			}
 
-	// 2. Run `gh wt close b-315378787` and verify helpful issue reminder
-	outClose, err := execWTCommand(t, mgr, "close", "b-315378787")
-	if err != nil {
-		t.Fatalf("wt close b-315378787 failed: %v\nOutput: %s", err, outClose)
-	}
-	if !strings.Contains(outClose, "gh issue close 315378787") {
-		t.Errorf("expected 'wt close' output to remind user to close issue b/315378787, got:\n%s", outClose)
+			// 2. Run `gh wt close <project>` and verify helpful issue reminder
+			outClose, err := execWTCommand(t, mgr, "close", tc.project)
+			if err != nil {
+				t.Fatalf("wt close %s failed: %v\nOutput: %s", tc.project, err, outClose)
+			}
+			if !strings.Contains(outClose, "gh issue close 315378787") {
+				t.Errorf("expected 'wt close' output to remind user to close issue b/315378787, got:\n%s", outClose)
+			}
+		})
 	}
 }
 

@@ -78,6 +78,13 @@ type GitRunner interface {
 	// SwitchBranch switches a worktree directory to branchName. If createFromRef is non-empty
 	// and branchName does not exist locally, creates it tracking createFromRef using non-forcing -c.
 	SwitchBranch(worktreePath, branchName, createFromRef string) error
+	// SwitchExistingBranch switches a worktree directory to branchName, which the caller
+	// has already verified exists locally (BranchExists), without verifying it again.
+	SwitchExistingBranch(worktreePath, branchName string) error
+	// CreateBranch creates branchName from createFromRef (origin/main when empty) using
+	// non-forcing `git switch -c`, for a branch the caller has already verified does not
+	// exist locally (BranchExists). If it exists after all, git refuses to clobber it.
+	CreateBranch(worktreePath, branchName, createFromRef string) error
 	// ResetBranch creates or resets branchName to targetRef (`git switch -C <branchName> <targetRef>`).
 	// Callers MUST verify that branchName has 0 unmerged commits ahead of origin/main before calling.
 	ResetBranch(worktreePath, branchName, targetRef string) error
@@ -116,9 +123,24 @@ func NewExecGitRunner() *ExecGitRunner {
 	return &ExecGitRunner{}
 }
 
-func (g *ExecGitRunner) runGit(dir string, args ...string) (string, error) {
+// RunInDir executes a git subprocess inside dir, scrubbing inherited repository-local
+// Git environment overrides and setting read-only lock/system-config environment flags
+// for read-only git subcommands.
+func (g *ExecGitRunner) RunInDir(dir string, args ...string) (string, error) {
+	cmd := pw_ghish.ExecCommand("git", args...)
+	baseEnv := os.Environ()
+	if dir != "" {
+		cmd.Dir = dir
+		baseEnv = pw_ghish.ScrubRepoLocalGitEnv(baseEnv)
+	}
+	cmd.Env = append(baseEnv, "GH_ISH_ACTIVE=1")
+	if pw_ghish.IsReadOnlyGitQuery(args) {
+		cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_OPTIONAL_LOCKS=0")
+	}
 	var stdout, stderr bytes.Buffer
-	if err := (&pw_ghish.RealGitRunner{Dir: dir}).Run(context.Background(), &stdout, &stderr, args...); err != nil {
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
 		errMsg := strings.TrimSpace(stderr.String())
 		if errMsg == "" {
 			errMsg = strings.TrimSpace(stdout.String())
@@ -126,6 +148,10 @@ func (g *ExecGitRunner) runGit(dir string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s in %s failed: %w\nDetails: %s", strings.Join(args, " "), dir, err, errMsg)
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+func (g *ExecGitRunner) runGit(dir string, args ...string) (string, error) {
+	return g.RunInDir(dir, args...)
 }
 
 func (g *ExecGitRunner) WorktreeAddDetached(primaryRepo, worktreePath string) error {
@@ -194,9 +220,17 @@ func (g *ExecGitRunner) SwitchBranch(worktreePath, branchName, createFromRef str
 		return fmt.Errorf("failed to check if branch %q exists in %s: %w", branchName, worktreePath, err)
 	}
 	if exists {
-		_, err := g.runGit(worktreePath, "switch", branchName)
-		return err
+		return g.SwitchExistingBranch(worktreePath, branchName)
 	}
+	return g.CreateBranch(worktreePath, branchName, createFromRef)
+}
+
+func (g *ExecGitRunner) SwitchExistingBranch(worktreePath, branchName string) error {
+	_, err := g.runGit(worktreePath, "switch", branchName)
+	return err
+}
+
+func (g *ExecGitRunner) CreateBranch(worktreePath, branchName, createFromRef string) error {
 	baseRef, err := g.resolveBaseRef(worktreePath, createFromRef)
 	if err != nil {
 		return err
@@ -261,6 +295,29 @@ func (g *ExecGitRunner) ExtractChangeID(repoOrWorktreePath, rev string) (string,
 		return "", err
 	}
 	return pw_ghish.ExtractChangeID(msg), nil
+}
+
+// InspectHeadAheadChangeID checks in a single git subprocess whether rev has commits
+// ahead of baseRef and, if so, parses the Change-Id trailer from the tip commit message.
+func (g *ExecGitRunner) InspectHeadAheadChangeID(dir, baseRef, rev string) (ahead int, changeID string, err error) {
+	if baseRef == "" {
+		baseRef = "origin/main"
+	}
+	out, err := g.runGit(dir, "log", "-n", "1", "--format=%H%x00%B", fmt.Sprintf("%s..%s", baseRef, rev))
+	if err != nil && baseRef == "origin/main" {
+		if out2, err2 := g.runGit(dir, "log", "-n", "1", "--format=%H%x00%B", fmt.Sprintf("main..%s", rev)); err2 == nil {
+			out = out2
+			err = nil
+		}
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	if strings.TrimSpace(out) == "" {
+		return 0, "", nil
+	}
+	_, msg, _ := strings.Cut(out, "\x00")
+	return 1, pw_ghish.ExtractChangeID(msg), nil
 }
 
 func (g *ExecGitRunner) CommitsAhead(repoOrWorktreePath, baseRef, rev string) (int, error) {

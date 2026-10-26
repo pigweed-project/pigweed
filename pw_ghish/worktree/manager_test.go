@@ -19,11 +19,16 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/andygrunwald/go-gerrit"
 )
 
 // MockGitRunner simulates Git worktree and branch operations in memory/tempdir.
@@ -96,6 +101,18 @@ func (m *MockGitRunner) SwitchBranch(worktreePath, branchName, createFromRef str
 		m.Commits[worktreePath] = "deadbeef1234567890"
 	}
 	return nil
+}
+
+func (m *MockGitRunner) SwitchExistingBranch(worktreePath, branchName string) error {
+	return m.SwitchBranch(worktreePath, branchName, "")
+}
+
+func (m *MockGitRunner) CreateBranch(worktreePath, branchName, createFromRef string) error {
+	// Like non-forcing `git switch -c`, never clobber an existing branch.
+	if m.ExistingBranches[branchName] {
+		return fmt.Errorf("fatal: a branch named '%s' already exists", branchName)
+	}
+	return m.SwitchBranch(worktreePath, branchName, createFromRef)
 }
 
 func (m *MockGitRunner) ResetBranch(worktreePath, branchName, targetRef string) error {
@@ -733,5 +750,232 @@ func TestManager_ResolveProjectFromSlotSymlinkAndSubdir(t *testing.T) {
 	err = mgr.Next("")
 	if err == nil || !strings.Contains(err.Error(), "not an unmanaged worktree") {
 		t.Errorf("expected Next('') in unmanaged worktree to return actionable error, got: %v", err)
+	}
+}
+
+type barrierGitRunner struct {
+	*MockGitRunner
+	inFlight      atomic.Int32
+	maxConcurrent atomic.Int32
+	barrierOnce   sync.Once
+	arrived       atomic.Int32
+	targetCount   int32
+	releaseCh     chan struct{}
+}
+
+func (b *barrierGitRunner) StatusPorcelain(worktreePath string) (string, error) {
+	cur := b.inFlight.Add(1)
+	for {
+		prev := b.maxConcurrent.Load()
+		if cur <= prev || b.maxConcurrent.CompareAndSwap(prev, cur) {
+			break
+		}
+	}
+	defer b.inFlight.Add(-1)
+
+	if b.targetCount > 0 && b.releaseCh != nil {
+		if b.arrived.Add(1) == b.targetCount {
+			b.barrierOnce.Do(func() {
+				close(b.releaseCh)
+			})
+		}
+		select {
+		case <-b.releaseCh:
+		case <-time.After(3 * time.Second):
+		}
+	}
+	return b.MockGitRunner.StatusPorcelain(worktreePath)
+}
+
+type recordingGerritStatus struct {
+	*MockGerritStatus
+	lastChangeIDs []string
+}
+
+func (r *recordingGerritStatus) QueryChangesByID(ctx context.Context, changeIDs []string) (map[string]ChangeStatus, error) {
+	r.lastChangeIDs = slices.Clone(changeIDs)
+	return r.MockGerritStatus.QueryChangesByID(ctx, changeIDs)
+}
+
+func TestManager_List_ConcurrentAndDeterministic(t *testing.T) {
+	mgr, mockGit, mockGerrit, _ := setupTestManager(t, 4)
+
+	// Mount 4 projects in non-alphabetical order so map/slot ordering differs from project name order.
+	mountOrder := []string{"proj-delta", "proj-alpha", "proj-charlie", "proj-bravo"}
+	slotByProj := make(map[string]string)
+	for i, name := range mountOrder {
+		res, err := mgr.Use(name, "", "", LeaseModeWrite, fmt.Sprintf("agent-%d", i+1))
+		if err != nil {
+			t.Fatalf("Use(%q) failed: %v", name, err)
+		}
+		slotByProj[name] = res.SlotPath
+		cid := fmt.Sprintf("I%040d", i+1)
+		mockGit.ChangeIDs[res.SlotPath] = cid
+		mockGit.AheadCounts[res.SlotPath] = 1
+		mockGerrit.Statuses[cid] = ChangeStatus{
+			ChangeID:        cid,
+			Number:          1000 + i,
+			Status:          "NEW",
+			CodeReviewScore: 2,
+		}
+	}
+	// Mark proj-charlie dirty.
+	mockGit.DirtyPaths[slotByProj["proj-charlie"]] = true
+
+	barrierGit := &barrierGitRunner{
+		MockGitRunner: mockGit,
+		targetCount:   4,
+		releaseCh:     make(chan struct{}),
+	}
+	recGerrit := &recordingGerritStatus{MockGerritStatus: mockGerrit}
+	mgr.Git = barrierGit
+	mgr.GerritStatus = recGerrit
+
+	firstReport, err := mgr.List(t.Context())
+	if err != nil {
+		t.Fatalf("List() failed: %v", err)
+	}
+
+	if gotMax := barrierGit.maxConcurrent.Load(); gotMax < 4 {
+		t.Errorf("expected all 4 mounted slots to be inspected concurrently (maxConcurrent >= 4), got %d", gotMax)
+	}
+
+	// Verify changeIDs were collected in deterministic project-name order:
+	// proj-alpha (I...2), proj-bravo (I...4), proj-charlie (I...3), proj-delta (I...1).
+	wantChangeIDs := []string{
+		fmt.Sprintf("I%040d", 2),
+		fmt.Sprintf("I%040d", 4),
+		fmt.Sprintf("I%040d", 3),
+		fmt.Sprintf("I%040d", 1),
+	}
+	if !slices.Equal(recGerrit.lastChangeIDs, wantChangeIDs) {
+		t.Errorf("changeIDs order = %v, want deterministic %v", recGerrit.lastChangeIDs, wantChangeIDs)
+	}
+
+	// Disable one-shot barrier and verify repeated List() calls produce identical DashboardReport output.
+	barrierGit.targetCount = 0
+	for iter := 0; iter < 5; iter++ {
+		rep, err := mgr.List(t.Context())
+		if err != nil {
+			t.Fatalf("List() iter %d failed: %v", iter, err)
+		}
+		if len(rep.MountedProjects) != len(firstReport.MountedProjects) {
+			t.Fatalf("iter %d: MountedProjects len = %d, want %d", iter, len(rep.MountedProjects), len(firstReport.MountedProjects))
+		}
+		for i := range rep.MountedProjects {
+			got := rep.MountedProjects[i]
+			want := firstReport.MountedProjects[i]
+			if got.Project != want.Project || got.Slot != want.Slot || got.StatusBadge != want.StatusBadge || got.IsDirty != want.IsDirty {
+				t.Errorf("iter %d entry %d = %+v, want %+v", iter, i, got, want)
+			}
+		}
+	}
+}
+
+func TestQueryChangeBatches_ConcurrentBounded(t *testing.T) {
+	queries := []string{"q0", "q1", "q2", "q3", "q4", "q5"}
+	var inFlight, maxConcurrent atomic.Int32
+	var readyOnce sync.Once
+	var arrived atomic.Int32
+	releaseCh := make(chan struct{})
+
+	res, err := queryChangeBatches(t.Context(), queries, func(ctx context.Context, q string) (*[]gerrit.ChangeInfo, error) {
+		cur := inFlight.Add(1)
+		for {
+			prev := maxConcurrent.Load()
+			if cur <= prev || maxConcurrent.CompareAndSwap(prev, cur) {
+				break
+			}
+		}
+		defer inFlight.Add(-1)
+
+		if arrived.Add(1) == maxGerritBatchConcurrency {
+			readyOnce.Do(func() {
+				close(releaseCh)
+			})
+		}
+		select {
+		case <-releaseCh:
+		case <-time.After(3 * time.Second):
+		}
+
+		changes := []gerrit.ChangeInfo{
+			{
+				ChangeID: "I-" + q,
+				Number:   100,
+				Status:   "NEW",
+				Subject:  "Subject for " + q,
+			},
+		}
+		return &changes, nil
+	})
+	if err != nil {
+		t.Fatalf("queryChangeBatches failed: %v", err)
+	}
+	if gotMax := maxConcurrent.Load(); gotMax != maxGerritBatchConcurrency {
+		t.Errorf("expected maxConcurrent == %d, got %d", maxGerritBatchConcurrency, gotMax)
+	}
+	if len(res) != len(queries) {
+		t.Fatalf("expected %d merged statuses, got %d", len(queries), len(res))
+	}
+	for _, q := range queries {
+		cid := "I-" + q
+		if cs, ok := res[cid]; !ok || cs.Subject != "Subject for "+q {
+			t.Errorf("missing or mismatched status for %q: %+v", cid, cs)
+		}
+	}
+}
+
+func TestExecGitRunner_InspectHeadAheadChangeID(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not found in PATH")
+	}
+	repoDir := t.TempDir()
+	runner := NewExecGitRunner()
+
+	mustRunGit := func(args ...string) {
+		t.Helper()
+		fullArgs := append([]string{"-c", "commit.gpgsign=false"}, args...)
+		if _, err := runner.RunInDir(repoDir, fullArgs...); err != nil {
+			t.Fatalf("git %v failed: %v", args, err)
+		}
+	}
+
+	mustRunGit("init", "-b", "main")
+	mustRunGit("config", "user.email", "test@pigweed.dev")
+	mustRunGit("config", "user.name", "Test User")
+	mustRunGit("config", "commit.gpgsign", "false")
+
+	baseCID := "I1111111111111111111111111111111111111111"
+	if err := os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("# Base\n"), 0644); err != nil {
+		t.Fatalf("WriteFile README.md failed: %v", err)
+	}
+	mustRunGit("add", "README.md")
+	mustRunGit("commit", "-m", "Initial base commit\n\nChange-Id: "+baseCID)
+
+	// 1. When HEAD == main, ahead must be 0 and changeID must be empty (never leaking baseCID).
+	ahead, cid, err := runner.InspectHeadAheadChangeID(repoDir, "origin/main", "HEAD")
+	if err != nil {
+		t.Fatalf("InspectHeadAheadChangeID at base failed: %v", err)
+	}
+	if ahead != 0 || cid != "" {
+		t.Errorf("InspectHeadAheadChangeID at base = (ahead=%d, cid=%q), want (0, \"\")", ahead, cid)
+	}
+
+	// 2. Create a feature branch with 1 commit ahead of main carrying a Change-Id trailer.
+	mustRunGit("checkout", "-b", "feature")
+	wantCID := "I2222222222222222222222222222222222222222"
+	if err := os.WriteFile(filepath.Join(repoDir, "feature.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("WriteFile feature.go failed: %v", err)
+	}
+	mustRunGit("add", "feature.go")
+	mustRunGit("commit", "-m", "Add feature\n\nChange-Id: "+wantCID)
+
+	ahead, cid, err = runner.InspectHeadAheadChangeID(repoDir, "origin/main", "HEAD")
+	if err != nil {
+		t.Fatalf("InspectHeadAheadChangeID on feature branch failed: %v", err)
+	}
+	if ahead != 1 || cid != wantCID {
+		t.Errorf("InspectHeadAheadChangeID on feature branch = (ahead=%d, cid=%q), want (1, %q)", ahead, cid, wantCID)
 	}
 }

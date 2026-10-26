@@ -61,7 +61,7 @@ When the user instructs you to work on a specific project (e.g., *"Project rpc-f
 ./gh wt init --check         # Read-only health check of slots, hooks, unmanaged worktrees, Bazel caches, and IDE sync
 ./gh wt init --slots 10      # Idempotently create/repair slots and configure shared Bazel caches
 ./gh wt use <project>        # One-shot allocate/resume slot, auto-resolving any unmanaged worktree branch collisions
-./gh wt list [--json]        # Live dashboard with Gerrit review/CI badges (🔥 NEEDS_ATTENTION, 🚀 READY_TO_LAND)
+./gh wt list [--json]        # Live dashboard with Gerrit review/CI badges (✗ NEEDS_ATTENTION, ✓ READY_TO_LAND; --json: "status": "NEEDS_ATTENTION")
 ./gh wt next [<project>]     # After a CL merges: fetch origin & rebase mounted slot onto origin/main in-place
 ./gh wt park [<project>]     # Shelve clean mounted slot to PARKED (0 disk slots; dirty trees require --force)
 ./gh wt close <project>      # Permanently close a completed workstream

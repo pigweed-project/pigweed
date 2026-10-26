@@ -342,7 +342,7 @@ func (m *MockGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args 
 	m.mu.Lock()
 	call := strings.Join(args, " ")
 	resp, hasResp := m.responses[call]
-	if !hasResp && call == "log -1 --no-show-signature --format=%H%x00%ct%x00%B HEAD" {
+	if !hasResp && call == strings.Join(senseHeadLogArgs, " ") {
 		resp, hasResp = m.synthesizeSenseHeadLogLocked()
 	}
 	var errToReturn error

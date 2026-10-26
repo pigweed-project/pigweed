@@ -20,17 +20,37 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"pigweed.dev/pw_ghish"
 )
 
-// ChecklistStatus represents the status icon of a preflight item.
+// ChecklistStatus is the outcome of a preflight item: a bare ASCII enum in
+// --json output, rendered as a glyph (Glyph) in text output.
 type ChecklistStatus string
 
 const (
-	ChecklistOK       ChecklistStatus = "✓"
-	ChecklistRepaired ChecklistStatus = "+"
-	ChecklistWarning  ChecklistStatus = "!"
-	ChecklistError    ChecklistStatus = "✗"
+	ChecklistOK       ChecklistStatus = "ok"
+	ChecklistRepaired ChecklistStatus = "repaired"
+	ChecklistWarning  ChecklistStatus = "warning"
+	ChecklistError    ChecklistStatus = "error"
 )
+
+// Glyph returns the symbol text output shows for the status: ✓ ok,
+// + repaired, ⚠ warning, ✗ error.
+func (s ChecklistStatus) Glyph() string {
+	switch s {
+	case ChecklistOK:
+		return pw_ghish.GlyphPass
+	case ChecklistRepaired:
+		return "+"
+	case ChecklistWarning:
+		return pw_ghish.GlyphWarn
+	case ChecklistError:
+		return pw_ghish.GlyphFail
+	default:
+		return string(s)
+	}
+}
 
 // ChecklistItem represents a single diagnostic line output by `gh wt init`.
 type ChecklistItem struct {

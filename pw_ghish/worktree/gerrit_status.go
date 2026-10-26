@@ -18,20 +18,38 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"pigweed.dev/pw_ghish"
 )
 
-// StatusBadge classifies the Git & Gerrit review state of a project.
+// StatusBadge classifies the Git & Gerrit review state of a project. Its
+// value is a bare ASCII enum (READY_TO_LAND), which is what --json output
+// carries; text output renders it with Display, which leads with a
+// canonical pw_ghish glyph (see ui.go) so `wt list` stays plain BMP text:
+// ✗ needs action from you, ✓ done or ready to land, ○ waiting on others,
+// ⚠ state unknown, ● local work in progress, and · nothing to do.
 type StatusBadge string
 
 const (
-	BadgeNeedsAttention StatusBadge = "🔥 NEEDS_ATTENTION"
-	BadgeReadyToLand    StatusBadge = "🚀 READY_TO_LAND"
-	BadgeInReview       StatusBadge = "⏳ IN_REVIEW"
-	BadgeGerritOffline  StatusBadge = "⏳ GERRIT_OFFLINE"
-	BadgeCLMerged       StatusBadge = "🎉 CL_MERGED"
-	BadgeLocalWIP       StatusBadge = "✎ LOCAL_WIP"
-	BadgeCleanSynced    StatusBadge = "✨ CLEAN_SYNCED"
+	BadgeNeedsAttention StatusBadge = "NEEDS_ATTENTION"
+	BadgeReadyToLand    StatusBadge = "READY_TO_LAND"
+	BadgeInReview       StatusBadge = "IN_REVIEW"
+	BadgeGerritOffline  StatusBadge = "GERRIT_OFFLINE"
+	BadgeCLMerged       StatusBadge = "CL_MERGED"
+	BadgeLocalWIP       StatusBadge = "LOCAL_WIP"
+	BadgeCleanSynced    StatusBadge = "CLEAN_SYNCED"
 )
+
+// Glyph returns the canonical glyph text output shows before the badge, or
+// "" for an unknown badge.
+func (b StatusBadge) Glyph() string {
+	return pw_ghish.StatusGlyph(string(b))
+}
+
+// Display returns the badge as text output shows it, e.g. "● LOCAL_WIP".
+func (b StatusBadge) Display() string {
+	return pw_ghish.FormatStatusWithGlyph(string(b))
+}
 
 // ChangeStatus captures Gerrit review and CI health for a single Change-Id.
 type ChangeStatus struct {
@@ -93,8 +111,14 @@ func ComputeStatusBadgeWithShortlink(isDirty bool, localCommitsAhead int, change
 			return BadgeCLMerged, details, "Run `./gh wt next` for next CL, or `park`/`close`"
 		case "NEW":
 			if cs.UnresolvedThreads > 0 || cs.CodeReviewScore < 0 || cs.ChecksFailing > 0 {
-				details = fmt.Sprintf("%s/%d (CR:%+d, %d threads, %d failing checks)",
-					pfx, cs.Number, cs.CodeReviewScore, cs.UnresolvedThreads, cs.ChecksFailing)
+				parts := []string{fmt.Sprintf("CR:%+d", cs.CodeReviewScore)}
+				if cs.UnresolvedThreads > 0 {
+					parts = append(parts, fmt.Sprintf("%d threads", cs.UnresolvedThreads))
+				}
+				if cs.ChecksFailing > 0 {
+					parts = append(parts, fmt.Sprintf("%d failing", cs.ChecksFailing))
+				}
+				details = fmt.Sprintf("%s/%d (%s)", pfx, cs.Number, strings.Join(parts, ", "))
 				return BadgeNeedsAttention, details, "Inspect via `./gh pr view --comments` or `./gh pr checks`"
 			}
 			if cs.CodeReviewScore >= 2 {
@@ -110,13 +134,17 @@ func ComputeStatusBadgeWithShortlink(isDirty bool, localCommitsAhead int, change
 	}
 
 	if isDirty {
-		return BadgeLocalWIP, "Uncommitted working tree changes (DIRTY)", "Protected from auto-swap; commit or stash changes"
+		return BadgeLocalWIP, "Uncommitted changes (DIRTY)", "Protected from auto-swap; commit or stash changes"
 	}
 	if gerritOffline && changeID != "" {
-		return BadgeGerritOffline, fmt.Sprintf("%s (Gerrit unreachable)", changeID), "Check network/auth or retry `./gh wt list`"
+		shortCID := changeID
+		if len(shortCID) > 10 {
+			shortCID = shortCID[:10]
+		}
+		return BadgeGerritOffline, fmt.Sprintf("%s (Gerrit unreachable)", shortCID), "Check network/auth or retry `./gh wt list`"
 	}
 	if localCommitsAhead > 0 || changeID != "" {
-		return BadgeLocalWIP, "Local commits (no CL uploaded yet)", "Upload CL via `./gh pr create`"
+		return BadgeLocalWIP, "Local commits (no CL)", "Upload CL via `./gh pr create`"
 	}
 	return BadgeCleanSynced, "Synced with origin/main", "Ready for hacking"
 }

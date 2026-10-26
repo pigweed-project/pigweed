@@ -137,10 +137,14 @@ func isRepoLocalGitEnvKey(key string) bool {
 	return false
 }
 
-// scrubRepoLocalGitEnv returns a copy of env with repository-local Git
+// ScrubRepoLocalGitEnv returns a copy of env with repository-local Git
 // environment overrides removed so git subprocesses executing in an explicit
 // directory operate on that directory rather than an inherited outer repo
 // (such as during `git rebase -x` or git hook execution).
+func ScrubRepoLocalGitEnv(env []string) []string {
+	return scrubRepoLocalGitEnv(env)
+}
+
 func scrubRepoLocalGitEnv(env []string) []string {
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {
@@ -277,6 +281,13 @@ func splitGitSubcommand(args []string) (string, []string) {
 		}
 	}
 	return "", nil
+}
+
+// IsReadOnlyGitQuery reports whether git args invoke a read-only plumbing or
+// inspection subcommand that neither mutates repository state nor requires
+// index locks or system-level git config.
+func IsReadOnlyGitQuery(args []string) bool {
+	return isReadOnlyGitQuery(args)
 }
 
 func isReadOnlyGitQuery(args []string) bool {

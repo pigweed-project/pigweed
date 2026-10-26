@@ -55,6 +55,7 @@ go_test(
         "integration_test.go",
         "issue_integration_test.go",
         "manager_test.go",
+        "perfbudget_test.go",
         "register_test.go",
         "state_test.go",
     ],
@@ -71,5 +72,6 @@ go_test(
     deps = [
         "//pw_ghish",
         "@com_github_andygrunwald_go_gerrit//:go-gerrit",
+        "@com_github_spf13_cobra//:cobra",
     ],
 )
