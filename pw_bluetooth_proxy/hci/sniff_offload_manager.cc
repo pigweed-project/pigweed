@@ -18,7 +18,7 @@
 #include "pw_assert/check.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/future.h"
-#include "pw_async2/try.h"
+#include "pw_async2/waker.h"
 #include "pw_bluetooth/emboss_util.h"
 #include "pw_bluetooth/hci_android.emb.h"
 #include "pw_bluetooth/hci_commands.emb.h"
@@ -257,6 +257,8 @@ class SniffOffloadManager::ConnectionFsm final {
     void WaitFor(Clock::duration duration)
         PW_EXCLUSIVE_LOCKS_REQUIRED(fsm_.manager_.mutex_) {
       timeout_future_ = fsm_.manager_.time_provider_.WaitFor(duration);
+      // The new timer has no waker until this task pends it.
+      waker_.Wake();
     }
     void AssertLockHeld(ConnectionFsm& caller) const
         PW_ASSERT_EXCLUSIVE_LOCK(fsm_.manager_.mutex_)
@@ -270,6 +272,8 @@ class SniffOffloadManager::ConnectionFsm final {
     SniffOffloadManager::ConnectionFsm& fsm_;
     async2::TimeFuture<Clock> timeout_future_
         PW_GUARDED_BY(fsm_.manager_.mutex_);
+    // Wakes this task when `WaitFor()` replaces `timeout_future_`.
+    async2::Waker waker_;
   };
 
   using SniffOffloadParameters = SniffOffloadParametersInput;
@@ -1214,7 +1218,11 @@ async2::Poll<> SniffOffloadManager::ConnectionFsm::TimeoutTask::DoPend(
       timeout_future_ =
           fsm_.manager_.time_provider_.WaitUntil(Clock::time_point::max());
     }
-    PW_TRY_READY(timeout_future_.Pend(cx));
+    if (timeout_future_.Pend(cx).IsPending()) {
+      PW_ASYNC_STORE_WAKER(
+          cx, waker_, "SniffOffloadManager waiting for timer to be reset");
+      return async2::Pending();
+    }
     fsm_.HandleTimeout();
   }
 }
