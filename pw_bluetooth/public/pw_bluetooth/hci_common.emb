@@ -124,7 +124,7 @@ enum OpCode:
     -- Disconnect Command (v1.1) (BR/EDR & LE)
 
   CREATE_CONNECTION_CANCEL                                     = 0x0408
-    -- Create Connection Cancel (v1.1) (BR/EDR)
+    -- Create Connection Cancel (v1.2) (BR/EDR)
 
   ACCEPT_CONNECTION_REQUEST                                    = 0x0409
     -- Accept Connection Request (v1.1) (BR/EDR)
@@ -204,7 +204,7 @@ enum OpCode:
   REMOTE_OOB_EXTENDED_DATA_REQUEST_REPLY                       = 0x0445
     -- Remote OOB Extended Data Request Reply Command (4.1) (BR/EDR)
 
-  ### Link Policy Commands - Core Spec v5.4, Part E, Section 7.32 (OGF 0x02)
+  ### Link Policy Commands - Core Spec v5.4, Part E, Section 7.2 (OGF 0x02)
 
   SNIFF_MODE                                                   = 0x0803
     -- Sniff Mode Command
@@ -254,7 +254,7 @@ enum OpCode:
     -- Write Class Of Device Command (v1.1) (BR/EDR)
 
   READ_TRANSMIT_POWER_LEVEL                                    = 0x0C2D
-    -- Read Transmit Transmit Power Level Command (v1.1) (BR/EDR & LE)
+    -- Read Transmit Power Level Command (v1.1) (BR/EDR & LE)
 
   READ_SYNCHRONOUS_FLOW_CONTROL_ENABLE                         = 0x0C2E
     -- Read Synchronous Flow Control Enable Command (v1.1) (BR/EDR)
@@ -263,31 +263,31 @@ enum OpCode:
     -- Write Synchronous Flow Control Enable Command (v1.1) (BR/EDR)
 
   SET_CONTROLLER_TO_HOST_FLOW_CONTROL                          = 0x0C31
-    -- Set Controller To Host Flow Control Command () ()
+    -- Set Controller To Host Flow Control Command (v1.1) (BR/EDR & LE)
 
   HOST_BUFFER_SIZE                                             = 0x0C33
-    -- Host Buffer Size Command () ()
+    -- Host Buffer Size Command (v1.1) (BR/EDR & LE)
 
   HOST_NUMBER_OF_COMPLETED_PACKETS                             = 0x0C35
-    -- Host Number Of Completed Packets Command () ()
+    -- Host Number Of Completed Packets Command (v1.1) (BR/EDR & LE)
 
   READ_LINK_SUPERVISION_TIMEOUT                                = 0x0C36
-    -- Read Link Supervision Timeout Command () ()
+    -- Read Link Supervision Timeout Command (v1.1) (BR/EDR)
 
   WRITE_LINK_SUPERVISION_TIMEOUT                               = 0x0C37
-    -- Write Link Supervision Timeout Command () ()
+    -- Write Link Supervision Timeout Command (v1.1) (BR/EDR)
 
   READ_NUMBER_OF_SUPPORTED_IAC                                 = 0x0C38
-    -- Read Number Of Supported IAC Command () ()
+    -- Read Number Of Supported IAC Command (v1.1) (BR/EDR)
 
   READ_CURRENT_IAC_LAP                                         = 0x0C39
-    -- Read Current IAC LAP Command () ()
+    -- Read Current IAC LAP Command (v1.1) (BR/EDR)
 
   WRITE_CURRENT_IAC_LAP                                        = 0x0C3A
-    -- Write Current IAC LAP Command () ()
+    -- Write Current IAC LAP Command (v1.1) (BR/EDR)
 
   SET_AFH_HOST_CHANNEL_CLASSIFICATION                          = 0x0C3F
-    -- Set AFH Host Channel Classification Command () ()
+    -- Set AFH Host Channel Classification Command (v1.2) (BR/EDR)
 
   READ_INQUIRY_SCAN_TYPE                                       = 0x0C42
     -- Read Inquiry Scan Type (v1.2) (BR/EDR)
@@ -831,8 +831,8 @@ enum LeSubEventCode:
   CHANNEL_SELECTION_ALGORITHM                    = 0x14
   PERIODIC_ADVERTISING_SYNC_TRANSFER_RECEIVED    = 0x18
   CIS_ESTABLISHED                                = 0x19
-  REQUEST_PEER_SCA_COMPLETE                      = 0x1F
   CIS_REQUEST                                    = 0x1A
+  REQUEST_PEER_SCA_COMPLETE                      = 0x1F
   BIG_INFO_ADVERTISING_REPORT                    = 0x22
   SUBRATE_CHANGE                                 = 0x23
   PERIODIC_ADVERTISING_SYNC_ESTABLISHED_V2       = 0x24
@@ -1191,10 +1191,10 @@ enum LEPeerAddressTypeNoAnon:
 bits ClockOffset:
   -- Clock Offset. The lower 15 bits are set to the clock offset as retrieved
   -- by an Inquiry. The highest bit is set to 1 if the rest of this parameter
-  -- is valid.
-  15 [+1]     Flag  valid
-  if valid:
-    0  [+15]  UInt  clock_offset
+  -- is valid (for commands that use Clock_Offset_Valid_Flag; in Inquiry Result
+  -- events bit 15 is reserved).
+  0  [+15]  UInt  clock_offset
+  15 [+1]   Flag  valid
 
 
 enum LEPrimaryAdvertisingPHY:
@@ -1438,7 +1438,7 @@ struct EventPacket:
 
 struct CommandCompleteEvent:
   -- Core Spec v5.3 Vol 4, Part E, Section 7.7.14
-  -- EventHeader.opcode == 0xe
+  -- EventHeader.event_code == 0xe
   let hdr_size = EventHeader.$size_in_bytes
   let event_fixed_size = $size_in_bytes-hdr_size
   let return_parameters_size = header.parameter_total_size-event_fixed_size
@@ -1466,6 +1466,9 @@ bits PacketType:
   2  [+1]  Flag  disable_3_dh1
   3  [+1]  Flag  enable_dm1     # Note: always on in >= v1.2
   4  [+1]  Flag  enable_dh1
+  5  [+1]  Flag  enable_hv1     # Used for HCI_Change_Connection_Packet_Type
+  6  [+1]  Flag  enable_hv2     # Used for HCI_Change_Connection_Packet_Type
+  7  [+1]  Flag  enable_hv3     # Used for HCI_Change_Connection_Packet_Type
   8  [+1]  Flag  disable_2_dh3
   9  [+1]  Flag  disable_3_dh3
   10 [+1]  Flag  enable_dm3
