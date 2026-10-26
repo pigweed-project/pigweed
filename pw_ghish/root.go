@@ -856,12 +856,3 @@ func FindLatestChangeBySubject(ctx context.Context, cmd *cobra.Command, subject 
 
 	return (*changes)[0].Number, nil
 }
-
-// Execute runs the root command.
-func Execute() error {
-	setupRootCmdHelp()
-	setupRootAliases()
-	rejectUnknownSubcommands(RootCmd)
-	RootCmd.SetArgs(NormalizeCQArgs(os.Args[1:]))
-	return RootCmd.Execute()
-}

@@ -18,6 +18,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -67,9 +69,7 @@ func ValidateAuthStatusJSONFields(fieldsStr string) ([]string, error) {
 	fields := SplitJSONFields(trimmed)
 	for _, f := range fields {
 		if !allowedAuthStatusJSONFields[f] {
-			return nil, fmt.Errorf("unknown JSON field: %q\n\n"+
-				"Available fields for gh auth status --json:\n"+
-				"  mode, modeReason, authenticated, healthy, gerrit, luci, buganizer", f)
+			return nil, &UnknownJSONFieldsError{Unknown: []string{f}, Available: slices.Sorted(maps.Keys(allowedAuthStatusJSONFields))}
 		}
 	}
 	return fields, nil
@@ -275,12 +275,12 @@ func formatAuthStatusReport(r *AuthStatusReport) string {
 	fmt.Fprintf(&sb, "Authentication Mode: %s (%s)\n\n", r.Mode, r.ModeReason)
 
 	writeService := func(title string, s ServiceAuthStatus, required bool) {
-		sym := "✓"
+		sym := GlyphPass
 		if !s.Authenticated {
 			if required {
-				sym = "✗"
+				sym = GlyphFail
 			} else {
-				sym = "!"
+				sym = GlyphWarn
 			}
 		}
 		fmt.Fprintf(&sb, "%s\n", title)
@@ -301,6 +301,21 @@ func formatAuthStatusReport(r *AuthStatusReport) string {
 	writeService(r.LUCI.Host+" (LUCI Buildbucket & LogDog)", r.LUCI, r.Mode == AuthModeGoogler)
 	sb.WriteString("\n")
 	writeService(r.Buganizer.Host+" (Google Issue Tracker)", r.Buganizer, false)
+	sb.WriteString("\n")
+
+	if r.Healthy {
+		fmt.Fprintf(&sb, "Verdict: authenticated (%s mode; all required services healthy)\n", r.Mode)
+		sb.WriteString("Next:    gh pr status\n")
+	} else {
+		fmt.Fprintf(&sb, "Verdict: unauthenticated (%s mode; login required)\n", r.Mode)
+		nextCmd := "gh auth login"
+		if !r.Gerrit.Authenticated && r.Gerrit.Remediation != "" {
+			nextCmd = r.Gerrit.Remediation
+		} else if !r.LUCI.Authenticated && r.LUCI.Remediation != "" {
+			nextCmd = r.LUCI.Remediation
+		}
+		fmt.Fprintf(&sb, "Next:    %s\n", nextCmd)
+	}
 
 	return sb.String()
 }
@@ -366,6 +381,7 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 // AuthCmd is the top-level 'gh auth' command.
 var AuthCmd = &cobra.Command{
 	Use:          "auth",
+	Annotations:  map[string]string{KindAnnotation: KindView},
 	Short:        "Inspect authentication state across Gerrit, LUCI, and Buganizer",
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
@@ -374,6 +390,7 @@ var AuthCmd = &cobra.Command{
 
 var authStatusCmd = &cobra.Command{
 	Use:          "status",
+	Annotations:  map[string]string{KindAnnotation: KindView},
 	Short:        "View authentication status across Gerrit, LUCI Buildbucket/LogDog, and Buganizer",
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,

@@ -23,11 +23,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"regexp"
 	"slices"
 	"strconv"
@@ -327,7 +327,7 @@ func (rt *ssoClientRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	execFn := rt.exec
 	if execFn == nil {
 		execFn = func(ctx context.Context, args ...string) ([]byte, error) {
-			return exec.CommandContext(ctx, "sso_client", args...).CombinedOutput()
+			return ExecCommandContext(ctx, "sso_client", args...).CombinedOutput()
 		}
 	}
 	out, err := execFn(req.Context(), args...)
@@ -354,11 +354,70 @@ func parseSSOClientResponse(out []byte, req *http.Request) (*http.Response, erro
 	return resp, nil
 }
 
-var (
-	quotaProjectMu     sync.Mutex
-	cachedQuotaProject string
-	quotaProjectProbed bool
-)
+type quotaProjectCacheState struct {
+	mu      sync.Mutex
+	project string
+	checked bool
+	runner  GitRunner
+	probed  bool
+}
+
+var quotaProjectCache quotaProjectCacheState
+
+func (c *quotaProjectCacheState) lookup(runner GitRunner) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.project != "" {
+		return c.project, true
+	}
+	if c.checked && c.runner == runner {
+		return c.project, true
+	}
+	return "", false
+}
+
+func (c *quotaProjectCacheState) storeConfigResult(runner GitRunner, proj string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.project = proj
+	c.checked = true
+	c.runner = runner
+	return proj
+}
+
+func (c *quotaProjectCacheState) isProbed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.probed
+}
+
+func (c *quotaProjectCacheState) markProbed() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.probed = true
+}
+
+func (c *quotaProjectCacheState) storeProbed(proj string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.project = proj
+	c.probed = true
+}
+
+func (c *quotaProjectCacheState) clearProject() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.project = ""
+}
+
+func (c *quotaProjectCacheState) reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.project = ""
+	c.checked = false
+	c.runner = nil
+	c.probed = false
+}
 
 // DefaultPigweedQuotaProject is the shared Pigweed GCP project configured to
 // host One Platform quota buckets for Buganizer API calls (zero billing cost;
@@ -395,42 +454,75 @@ func ConfiguredIssueTrackerQuotaProject(ctx context.Context, _ string) string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	var runner GitRunner = DefaultGitRunner
+	runner := quotaProjectGitRunner(ctx)
+	projectConfigLoaded := false
 	if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil {
-		if cfg.ProjectConfig != nil && strings.TrimSpace(cfg.ProjectConfig.Issue.QuotaProject) != "" {
-			return strings.TrimSpace(cfg.ProjectConfig.Issue.QuotaProject)
-		}
-		if hasProjectConfigFileOnDisk(cfg.CWD) {
-			if projCfg, err := cfg.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Issue.QuotaProject) != "" {
-				return strings.TrimSpace(projCfg.Issue.QuotaProject)
+		if cfg.ProjectConfig != nil {
+			projectConfigLoaded = true
+			if qp := strings.TrimSpace(cfg.ProjectConfig.Issue.QuotaProject); qp != "" {
+				return qp
 			}
-		}
-		if cfg.Git != nil {
-			runner = cfg.Git
+		} else if hasProjectConfigFileOnDisk(cfg.CWD) {
+			if projCfg, err := cfg.LoadProjectConfig(ctx); err == nil && projCfg != nil {
+				projectConfigLoaded = true
+				if qp := strings.TrimSpace(projCfg.Issue.QuotaProject); qp != "" {
+					return qp
+				}
+			}
 		}
 	}
 
-	quotaProjectMu.Lock()
-	if cachedQuotaProject != "" {
-		v := cachedQuotaProject
-		quotaProjectMu.Unlock()
+	if v, ok := quotaProjectCache.lookup(runner); ok {
 		return v
 	}
-	quotaProjectMu.Unlock()
 
-	gitClient := NewGitClient(runner)
-	for _, key := range []string{"ghish.issue.quotaproject", "ghish.bugs.quotaproject", "ghish.quotaproject"} {
+	keys := []string{"ghish.issue.quotaproject", "ghish.bugs.quotaproject", "ghish.quotaproject"}
+	if projectConfigLoaded {
+		// LoadProjectConfig already queried git config --get-regexp ^ghish\. and
+		// applied ghish.issue.quotaproject and ghish.bugs.quotaproject.
+		keys = []string{"ghish.quotaproject"}
+	}
+
+	gitClient := sharedGitClientForRunner(ctx, runner)
+	for _, key := range keys {
 		if val, err := gitClient.ConfigGet(ctx, key); err == nil {
 			if v := strings.TrimSpace(val); v != "" {
-				quotaProjectMu.Lock()
-				cachedQuotaProject = v
-				quotaProjectMu.Unlock()
-				return v
+				return quotaProjectCache.storeConfigResult(runner, v)
 			}
 		}
 	}
 
-	return ""
+	return quotaProjectCache.storeConfigResult(runner, "")
+}
+
+// quotaProjectGitRunner returns the git runner of the command Config carried
+// by ctx, or DefaultGitRunner when ctx carries none, so quota project
+// lookups and writes target the command's repository instead of whatever
+// repository the process working directory happens to be in.
+func quotaProjectGitRunner(ctx context.Context) GitRunner {
+	if ctx != nil {
+		if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil && cfg.Git != nil {
+			return cfg.Git
+		}
+	}
+	return DefaultGitRunner
+}
+
+// tryRunQuotaProjectGitConfig runs `git config <args>` through the command's
+// shared git client (see quotaProjectGitRunner), so the write invalidates
+// that client's config cache. Best-effort contract: persisting the quota
+// project is a cache for the next invocation; failure only costs a re-probe.
+func tryRunQuotaProjectGitConfig(ctx context.Context, args ...string) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var stderr bytes.Buffer
+	gitClient := sharedGitClientForRunner(ctx, quotaProjectGitRunner(ctx))
+	if err := gitClient.Run(ctx, nil, &stderr, append([]string{"config"}, args...)...); err != nil {
+		// OK: the cached git config value is an optimization only.
+		slog.Debug("failed to update cached quota project in git config",
+			"args", args, "err", err, "stderr", strings.TrimSpace(stderr.String()))
+	}
 }
 
 // DefaultIssueTrackerQuotaProject resolves a GCP project ID for X-Goog-User-Project.
@@ -453,31 +545,21 @@ func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
 		return ""
 	}
 
-	quotaProjectMu.Lock()
-	alreadyProbed := quotaProjectProbed
-	quotaProjectMu.Unlock()
-	if alreadyProbed {
+	if quotaProjectCache.isProbed() {
 		return ""
 	}
 
-	markProbed := func() {
-		quotaProjectMu.Lock()
-		quotaProjectProbed = true
-		quotaProjectMu.Unlock()
-	}
+	markProbed := quotaProjectCache.markProbed
 
 	cacheAndReturn := func(projID string) string {
-		quotaProjectMu.Lock()
-		cachedQuotaProject = projID
-		quotaProjectProbed = true
-		quotaProjectMu.Unlock()
-		_ = exec.CommandContext(ctx, "git", "config", "ghish.quotaproject", projID).Run()
+		quotaProjectCache.storeProbed(projID)
+		tryRunQuotaProjectGitConfig(ctx, "ghish.quotaproject", projID)
 		return projID
 	}
 
 	// Priority 1: Check explicit gcloud billing/quota_project configuration.
 	if _, err := LookPathFn("gcloud"); err == nil {
-		if out, err := exec.CommandContext(ctx, "gcloud", "config", "get-value", "billing/quota_project").Output(); err == nil {
+		if out, err := ExecCommandContext(ctx, "gcloud", "config", "get-value", "billing/quota_project").Output(); err == nil {
 			if v := strings.TrimSpace(string(out)); v != "" && v != "(unset)" {
 				if probeQuotaProject(ctx, token, v) {
 					return cacheAndReturn(v)
@@ -493,7 +575,7 @@ func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
 
 	// Priority 3: Check active gcloud default project.
 	if _, err := LookPathFn("gcloud"); err == nil {
-		if out, err := exec.CommandContext(ctx, "gcloud", "config", "get-value", "project").Output(); err == nil {
+		if out, err := ExecCommandContext(ctx, "gcloud", "config", "get-value", "project").Output(); err == nil {
 			if v := strings.TrimSpace(string(out)); v != "" && v != "(unset)" && v != DefaultPigweedQuotaProject {
 				if probeQuotaProject(ctx, token, v) {
 					return cacheAndReturn(v)
@@ -615,11 +697,11 @@ func ResolveIssueTrackerTokenWithSource(ctx context.Context) (string, string, er
 	}
 	issueTokenMu.Unlock()
 
-	if tok, src, err := resolveOAuthTokenFromCLI(ctx, []string{DefaultBuganizerScopes}); err == nil && tok != "" {
+	if tok, src, exp, err := resolveOAuthTokenWithExpiry(ctx, []string{DefaultBuganizerScopes}); err == nil && tok != "" {
 		issueTokenMu.Lock()
 		cachedIssueToken = tok
 		cachedIssueTokenSource = src
-		cachedIssueTokenExpiry = time.Now().Add(5 * time.Minute)
+		cachedIssueTokenExpiry = exp
 		issueTokenMu.Unlock()
 		return tok, src, nil
 	}
@@ -728,11 +810,9 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 			strings.Contains(rawErr, "SERVICE_DISABLED") ||
 			strings.Contains(rawErr, "has not been used in project") ||
 			strings.Contains(rawErr, "cannot be identified with a client project") {
-			quotaProjectMu.Lock()
-			cachedQuotaProject = ""
-			quotaProjectMu.Unlock()
+			quotaProjectCache.clearProject()
 			if strings.Contains(c.Endpoint, "googleapis.com") {
-				_ = exec.CommandContext(ctx, "git", "config", "--unset", "ghish.quotaproject").Run()
+				tryRunQuotaProjectGitConfig(ctx, "--unset", "ghish.quotaproject")
 			}
 			svcName := "issuetracker.googleapis.com"
 			if strings.Contains(c.Endpoint, ".corp.googleapis.com") {
@@ -1391,10 +1471,7 @@ func ValidateIssueJSONFields(fieldsStr string) ([]string, error) {
 			continue
 		}
 		if !allowedIssueJSONFields[f] {
-			return nil, fmt.Errorf("unknown JSON field: %q\n\n"+
-				"Available fields for gh issue --json:\n"+
-				"  number, title, state, stateReason, body, author, assignees, labels,\n"+
-				"  comments, createdAt, updatedAt, closedAt, url, priority, severity, type, componentId, hotlistIds", f)
+			return nil, &UnknownJSONFieldsError{Unknown: []string{f}, Available: slices.Sorted(maps.Keys(allowedIssueJSONFields))}
 		}
 		fields = append(fields, f)
 	}

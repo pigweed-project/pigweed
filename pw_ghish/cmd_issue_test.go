@@ -118,7 +118,7 @@ func TestIssueView_ExplicitAndSmartBranchInference(t *testing.T) {
 
 	// Unknown JSON field must fail loudly
 	_, errBadJSON := executeCommand(RootCmd, "issue", "view", "345678", "--json", "number,unknownField")
-	if errBadJSON == nil || !strings.Contains(errBadJSON.Error(), "unknown JSON field") {
+	if errBadJSON == nil || !strings.Contains(errBadJSON.Error(), "Unknown JSON field") {
 		t.Errorf("expected unknown JSON field error, got: %v", errBadJSON)
 	}
 }

@@ -1400,3 +1400,88 @@ func TestAuthEnvVars_TrimSpace(t *testing.T) {
 		t.Errorf("TokenTransport.Token = %q, want 'my-trimmed-token'", tokTr.Token)
 	}
 }
+
+func TestFindLuciAuthBinary_SkipsGitRevParseWhenFoundInScriptDir(t *testing.T) {
+	origLookPath := LookPathFn
+	defer func() { LookPathFn = origLookPath }()
+
+	pwScriptDir := filepath.Join(t.TempDir(), "pigweed-checkout")
+	expectedLuciAuth := filepath.Join(pwScriptDir, "environment", "cipd", "packages", "luci", "luci-auth")
+
+	t.Setenv("PW_ENVIRONMENT_ROOT", "")
+	t.Setenv("BUILD_WORKSPACE_DIRECTORY", "")
+	t.Setenv("PW_GH_SCRIPT_DIR", pwScriptDir)
+
+	LookPathFn = func(file string) (string, error) {
+		if file == expectedLuciAuth {
+			return expectedLuciAuth, nil
+		}
+		return "", os.ErrNotExist
+	}
+
+	var gitCalled bool
+	mockGit := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			gitCalled = true
+			return fmt.Errorf("unexpected git call: %v", args)
+		},
+	}
+	ctx := context.WithValue(t.Context(), configKey, &Config{Git: mockGit})
+
+	got := findLuciAuthBinary(ctx)
+	if got != expectedLuciAuth {
+		t.Errorf("findLuciAuthBinary() = %q, want %q", got, expectedLuciAuth)
+	}
+	if gitCalled {
+		t.Errorf("expected findLuciAuthBinary to return early without running git rev-parse --git-common-dir")
+	}
+}
+
+func TestLUCIAuthTransport_MemoizesAuthModeAcrossRequests(t *testing.T) {
+	ResetAuthTokenCaches()
+	t.Cleanup(ResetAuthTokenCaches)
+
+	origFlag := AuthModeFlag
+	AuthModeFlag = ""
+	defer func() { AuthModeFlag = origFlag }()
+	t.Setenv("GH_ISH_AUTH_MODE", "")
+	t.Setenv("GH_ISH_AUTH_METHOD", "")
+
+	origLookPath := LookPathFn
+	LookPathFn = func(file string) (string, error) {
+		return "", os.ErrNotExist
+	}
+	defer func() { LookPathFn = origLookPath }()
+
+	origResolver := LUCITokenResolver
+	LUCITokenResolver = func(ctx context.Context) (string, string, error) {
+		return "luci-tok", "luci-auth", nil
+	}
+	defer func() { LUCITokenResolver = origResolver }()
+
+	var gitConfigCalls int
+	mockGit := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			gitConfigCalls++
+			if len(args) >= 3 && args[0] == "config" && args[1] == "--get" && args[2] == "user.email" {
+				_, _ = stdout.Write([]byte("dev@google.com\n"))
+				return nil
+			}
+			return fmt.Errorf("not set")
+		},
+	}
+	cfg := &Config{Git: mockGit}
+	rec := &mockTransportRecorder{}
+	tr := &LUCIAuthTransport{Base: rec, Cfg: cfg}
+
+	for i := range 3 {
+		req, _ := http.NewRequest("POST", "https://cr-buildbucket.appspot.com/prpc/buildbucket.v2.Builds/GetBuild", nil)
+		if _, err := tr.RoundTrip(req); err != nil {
+			t.Fatalf("RoundTrip(%d) failed: %v", i, err)
+		}
+	}
+	// Only the first request should query git config (ghish.authmode + user.email = 2 calls).
+	if gitConfigCalls > 2 {
+		t.Errorf("gitConfigCalls across 3 LUCI requests = %d, want <= 2", gitConfigCalls)
+	}
+}

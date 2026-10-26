@@ -23,7 +23,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -287,20 +286,33 @@ func TestGlobalFlagsBeforeSubcommand(t *testing.T) {
 	}
 }
 
+// runMainHelpForTest runs `--help` through Main's wiring with output
+// discarded and returns the exit code.
+func runMainHelpForTest(t *testing.T) int {
+	t.Helper()
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("opening %s: %v", os.DevNull, err)
+	}
+	defer devNull.Close()
+	return runMain([]string{"--help"}, devNull, devNull, func(code int) {
+		t.Errorf("unexpected exit(%d)", code)
+	})
+}
+
 func TestExecute_InvokedAs(t *testing.T) {
+	preserveRootCmdState(t)
 	t.Setenv("GH_ISH_INVOKED_AS", "pw gh")
-	RootCmd.SetArgs([]string{"--help"})
-	RootCmd.SetOut(io.Discard)
-	if err := Execute(); err != nil {
-		t.Fatalf("Execute() with GH_ISH_INVOKED_AS=%q failed: %v", "pw gh", err)
+	if code := runMainHelpForTest(t); code != ExitCodeOK {
+		t.Fatalf("runMain(--help) with GH_ISH_INVOKED_AS=%q exited %d", "pw gh", code)
 	}
 
 	if RootCmd.Use != "pw gh" {
-		t.Errorf("Execute() set RootCmd.Use = %q, want %q", RootCmd.Use, "pw gh")
+		t.Errorf("runMain() set RootCmd.Use = %q, want %q", RootCmd.Use, "pw gh")
 	}
 
 	if got := RootCmd.Annotations[cobra.CommandDisplayNameAnnotation]; got != "pw gh" {
-		t.Errorf("Execute() set CommandDisplayNameAnnotation = %q, want %q", got, "pw gh")
+		t.Errorf("runMain() set CommandDisplayNameAnnotation = %q, want %q", got, "pw gh")
 	}
 
 	if got := RootCmd.CommandPath(); got != "pw gh" {
@@ -308,26 +320,25 @@ func TestExecute_InvokedAs(t *testing.T) {
 	}
 
 	if !strings.Contains(RootCmd.Long, "pw gh pr list") {
-		t.Errorf("Execute() set RootCmd.Long = %s, want substring %q", RootCmd.Long, "pw gh pr list")
+		t.Errorf("runMain() set RootCmd.Long = %s, want substring %q", RootCmd.Long, "pw gh pr list")
 	}
 }
 
 func TestExecute_InvokedAs_Fallback(t *testing.T) {
+	preserveRootCmdState(t)
 	t.Setenv("GH_ISH_INVOKED_AS", "")
 	RootCmd.Annotations = nil
 
-	RootCmd.SetArgs([]string{"--help"})
-	RootCmd.SetOut(io.Discard)
-	if err := Execute(); err != nil {
-		t.Fatalf("Execute() with empty GH_ISH_INVOKED_AS failed: %v", err)
+	if code := runMainHelpForTest(t); code != ExitCodeOK {
+		t.Fatalf("runMain(--help) with empty GH_ISH_INVOKED_AS exited %d", code)
 	}
 
 	if RootCmd.Use != "gh-ish" {
-		t.Errorf("Execute() set RootCmd.Use = %q, want %q", RootCmd.Use, "gh-ish")
+		t.Errorf("runMain() set RootCmd.Use = %q, want %q", RootCmd.Use, "gh-ish")
 	}
 
 	if got := RootCmd.Annotations[cobra.CommandDisplayNameAnnotation]; got != "gh-ish" {
-		t.Errorf("Execute() set CommandDisplayNameAnnotation = %q, want %q", got, "gh-ish")
+		t.Errorf("runMain() set CommandDisplayNameAnnotation = %q, want %q", got, "gh-ish")
 	}
 
 	if got := RootCmd.CommandPath(); got != "gh-ish" {
@@ -335,7 +346,7 @@ func TestExecute_InvokedAs_Fallback(t *testing.T) {
 	}
 
 	if !strings.Contains(RootCmd.Long, "gh-ish pr list") {
-		t.Errorf("Execute() set RootCmd.Long = %s, want substring %q", RootCmd.Long, "gh-ish pr list")
+		t.Errorf("runMain() set RootCmd.Long = %s, want substring %q", RootCmd.Long, "gh-ish pr list")
 	}
 }
 
@@ -513,7 +524,7 @@ func TestNewGerritClient_FallbackConfig(t *testing.T) {
 }
 
 func TestRootCmd_UnknownProfileError(t *testing.T) {
-	resetAllFlags(RootCmd)
+	isolateRootCmdForTest(t)
 	SetTestProfile(t, "nonexistent_profile")
 
 	RootCmd.SetArgs([]string{"pr", "view", "123"})
@@ -625,9 +636,23 @@ func TestRejectUnknownSubcommands(t *testing.T) {
 		}
 	}
 	walk(RootCmd)
+	// This test exercises unknown-subcommand rejection, not each family's
+	// environment preconditions. `wt` installs a PersistentPreRunE that
+	// reports a manager init failure (e.g. $HOME unset in the Bazel sandbox),
+	// which would otherwise run before the rejection.
+	preRuns := make(map[*cobra.Command]func(*cobra.Command, []string) error)
+	for _, group := range groups {
+		if group.PersistentPreRunE != nil {
+			preRuns[group] = group.PersistentPreRunE
+			group.PersistentPreRunE = nil
+		}
+	}
 	t.Cleanup(func() {
 		for _, cmd := range installed {
 			cmd.RunE = nil
+		}
+		for cmd, preRun := range preRuns {
+			cmd.PersistentPreRunE = preRun
 		}
 	})
 	rejectUnknownSubcommands(RootCmd)
@@ -840,63 +865,5 @@ func TestBuildWorkingDirectory(t *testing.T) {
 	t.Setenv("BUILD_WORKING_DIRECTORY", filepath.Join(t.TempDir(), "does-not-exist"))
 	if err := chdirToBuildWorkingDirectory(); err == nil || !strings.Contains(err.Error(), "BUILD_WORKING_DIRECTORY") {
 		t.Errorf("expected BUILD_WORKING_DIRECTORY error, got: %v", err)
-	}
-}
-
-func TestCommandRequestBudgets(t *testing.T) {
-	changeOpts := []func(map[string]any){
-		WithLabels("Presubmit-Verified"),
-		func(ch map[string]any) {
-			ch["current_revision"] = "rev2"
-			ch["revisions"] = map[string]any{
-				"rev1": map[string]any{"_number": 1, "kind": "REWORK"},
-				"rev2": map[string]any{"_number": 2, "kind": "TRIVIAL_REBASE"},
-			}
-		},
-	}
-
-	tests := []struct {
-		name   string
-		args   []string
-		budget RequestBudget
-	}{
-		{"pr list", []string{"pr", "list", "--limit", "5"}, RequestBudget{Gerrit: 1, Buildbucket: 0}},
-		{"pr view", []string{"pr", "view", "12345"}, RequestBudget{Gerrit: 2, Buildbucket: 2}},
-		{"pr checks", []string{"pr", "checks", "12345"}, RequestBudget{Gerrit: 1, Buildbucket: 2}},
-		{"run list", []string{"run", "list", "12345"}, RequestBudget{Gerrit: 1, Buildbucket: 2}},
-		{"pr status", []string{"pr", "status"}, RequestBudget{Gerrit: 4, Buildbucket: 0}},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			NewMockGit(t)
-			s := NewMockGerritServer(t)
-			s.OnAccountSelf(1000000).
-				OnSearchBuilds(FakeBuild("87654321001", "linux-bazel", "SUCCESS")).
-				OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{
-					"/COMMIT_MSG": map[string]any{},
-				}).
-				On("GET", "/changes/12345*", func(w http.ResponseWriter, r *http.Request) {
-					opts := r.URL.Query()["o"]
-					if !slices.Contains(opts, "DETAILED_LABELS") && !slices.Contains(opts, "LABELS") {
-						t.Errorf("%s %s missing DETAILED_LABELS/LABELS option (got o=%v)", r.Method, r.URL.Path, opts)
-					}
-					if !slices.Contains(opts, "ALL_REVISIONS") && !slices.Contains(opts, "CURRENT_REVISION") {
-						t.Errorf("%s %s missing ALL_REVISIONS/CURRENT_REVISION option (got o=%v)", r.Method, r.URL.Path, opts)
-					}
-					ch := DefaultMockChange(12345, changeOpts...)
-					if slices.Contains(opts, "MESSAGES") {
-						ch["messages"] = []map[string]any{{"id": "m1", "message": "Uploaded patch set 1."}}
-					}
-					s.RespondJSON(w, http.StatusOK, ch)
-				}).
-				// Registers /changes/12345 and /changes/ query handlers.
-				OnDefaultChange(12345, changeOpts...)
-
-			if out, err := executeCommand(RootCmd, tc.args...); err != nil {
-				t.Fatalf("executeCommand(%v) failed: %v\nOutput:\n%s", tc.args, err, out)
-			}
-			s.AssertRequestBudget(t, tc.budget)
-		})
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -704,26 +705,10 @@ func TestIssueTrackerClient_QuotaProjectErrorRemediation(t *testing.T) {
 }
 
 func TestConfiguredIssueTrackerQuotaProject_ProjectConfigAndGitConfig(t *testing.T) {
-	t.Setenv("GHISH_QUOTA_PROJECT", "")
-	t.Setenv("GOOGLE_CLOUD_QUOTA_PROJECT", "")
-
-	quotaProjectMu.Lock()
-	origCached := cachedQuotaProject
-	origProbed := quotaProjectProbed
-	cachedQuotaProject = ""
-	quotaProjectProbed = false
-	quotaProjectMu.Unlock()
-	t.Cleanup(func() {
-		quotaProjectMu.Lock()
-		cachedQuotaProject = origCached
-		quotaProjectProbed = origProbed
-		quotaProjectMu.Unlock()
-	})
+	resetQuotaProjectCacheForTest(t)
 
 	t.Run("uses ProjectConfig Issue.QuotaProject", func(t *testing.T) {
-		quotaProjectMu.Lock()
-		cachedQuotaProject = ""
-		quotaProjectMu.Unlock()
+		quotaProjectCache.reset()
 
 		pcfg := DefaultProjectConfig()
 		pcfg.Issue.QuotaProject = "acme-quota-project"
@@ -738,9 +723,7 @@ func TestConfiguredIssueTrackerQuotaProject_ProjectConfigAndGitConfig(t *testing
 	})
 
 	t.Run("uses git config ghish.issue.quotaproject", func(t *testing.T) {
-		quotaProjectMu.Lock()
-		cachedQuotaProject = ""
-		quotaProjectMu.Unlock()
+		ResetAuthTokenCaches()
 
 		mockGit := &MockGitRunner{}
 		mockGit.OnCommand("config --get ghish.issue.quotaproject", "git-issue-quota-proj\n")
@@ -751,11 +734,33 @@ func TestConfiguredIssueTrackerQuotaProject_ProjectConfigAndGitConfig(t *testing
 		}
 	})
 
+	t.Run("memoizes empty result and skips duplicate git config calls when ProjectConfig is loaded", func(t *testing.T) {
+		ResetAuthTokenCaches()
+
+		var gitCalls int
+		mockGit := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				gitCalls++
+				return errors.New("not configured")
+			},
+		}
+		cfg := &Config{
+			Git:           mockGit,
+			ProjectConfig: DefaultProjectConfig(),
+		}
+		ctx := context.WithValue(context.Background(), configKey, cfg)
+		for i := range 3 {
+			if got := ConfiguredIssueTrackerQuotaProject(ctx, "tok"); got != "" {
+				t.Errorf("call %d: ConfiguredIssueTrackerQuotaProject() = %q, want empty", i, got)
+			}
+		}
+		if gitCalls != 1 {
+			t.Errorf("gitCalls = %d, want 1 (only ghish.quotaproject checked once)", gitCalls)
+		}
+	})
+
 	t.Run("corp endpoint with sso_client uses ConfiguredIssueTrackerQuotaProject without network probes", func(t *testing.T) {
-		quotaProjectMu.Lock()
-		cachedQuotaProject = ""
-		quotaProjectProbed = false
-		quotaProjectMu.Unlock()
+		quotaProjectCache.reset()
 
 		origLookPath := LookPathFn
 		LookPathFn = func(file string) (string, error) {
@@ -776,4 +781,86 @@ func TestConfiguredIssueTrackerQuotaProject_ProjectConfigAndGitConfig(t *testing
 			t.Errorf("QuotaProjectProvider() on unconfigured corp client = %q, want empty string", got)
 		}
 	})
+}
+
+// resetQuotaProjectCacheForTest clears the process-wide quota project cache
+// (and quota env overrides) for the duration of t so every budgeted command
+// performs its own git config lookups.
+func resetQuotaProjectCacheForTest(t *testing.T) {
+	t.Helper()
+	t.Setenv("GHISH_QUOTA_PROJECT", "")
+	t.Setenv("GOOGLE_CLOUD_QUOTA_PROJECT", "")
+	quotaProjectCache.reset()
+	t.Cleanup(quotaProjectCache.reset)
+}
+
+// TestIssueTrackerClient_QuotaProjectErrorUnsetsViaConfiguredRunner verifies
+// that a rejected quota project is unset through the command's configured git
+// runner (not a bare `git config` in the process working directory) and that
+// the shared git client's config cache is invalidated by the write.
+func TestIssueTrackerClient_QuotaProjectErrorUnsetsViaConfiguredRunner(t *testing.T) {
+	resetQuotaProjectCacheForTest(t)
+
+	mockGit := &MockGitRunner{}
+	mockGit.OnCommand("config --get ghish.quotaproject", "stale-project\n")
+	cfg := &Config{Git: mockGit}
+	ctx := context.WithValue(context.Background(), configKey, cfg)
+
+	// Warm the shared client's config cache.
+	if got, err := cfg.GitClient().ConfigGet(ctx, "ghish.quotaproject"); err != nil || strings.TrimSpace(got) != "stale-project" {
+		t.Fatalf("ConfigGet() = %q, %v; want stale-project", got, err)
+	}
+
+	client := &IssueTrackerClient{
+		Endpoint: "https://issuetracker.googleapis.com/v1",
+		HTTPClient: &http.Client{
+			Transport: testRoundTripper(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusForbidden,
+					Body:       io.NopCloser(strings.NewReader(`{"error":{"details":[{"reason":"USER_PROJECT_DENIED"}]}}`)),
+					Header:     make(http.Header),
+				}, nil
+			}),
+		},
+		TokenProvider:        func(context.Context) (string, error) { return "test-token", nil },
+		QuotaProjectProvider: func(context.Context, string) string { return "stale-project" },
+	}
+	if _, err := client.GetIssue(ctx, 12345); err == nil || !strings.Contains(err.Error(), "quota project error") {
+		t.Fatalf("GetIssue() error = %v, want quota project error", err)
+	}
+	if !slices.Contains(mockGit.Calls, "config --unset ghish.quotaproject") {
+		t.Fatalf("configured runner calls = %q, want `config --unset ghish.quotaproject`", mockGit.Calls)
+	}
+
+	// The unset must invalidate the shared client's cache: the next read
+	// goes back to git rather than returning the stale cached value.
+	mockGit.OnCommand("config --get ghish.quotaproject", "")
+	before := len(mockGit.Calls)
+	got, _ := cfg.GitClient().ConfigGet(ctx, "ghish.quotaproject")
+	if strings.TrimSpace(got) == "stale-project" {
+		t.Errorf("ConfigGet() after unset returned stale cached value %q", got)
+	}
+	if len(mockGit.Calls) == before {
+		t.Errorf("ConfigGet() after unset did not re-query git; cache was not invalidated")
+	}
+}
+
+// TestTryRunQuotaProjectGitConfig_UsesConfiguredRunner verifies that
+// persisting a probed quota project writes through the command's configured
+// git runner, and that a failing write is best-effort (no panic, no error).
+func TestTryRunQuotaProjectGitConfig_UsesConfiguredRunner(t *testing.T) {
+	mockGit := &MockGitRunner{}
+	ctx := context.WithValue(context.Background(), configKey, &Config{Git: mockGit})
+	tryRunQuotaProjectGitConfig(ctx, "ghish.quotaproject", "probed-project")
+	if got := mockGit.LastCall(); got != "config ghish.quotaproject probed-project" {
+		t.Errorf("LastCall() = %q, want %q", got, "config ghish.quotaproject probed-project")
+	}
+
+	failing := &MockGitRunner{}
+	failing.OnError("config", errors.New("read-only config"))
+	ctx = context.WithValue(context.Background(), configKey, &Config{Git: failing})
+	tryRunQuotaProjectGitConfig(ctx, "ghish.quotaproject", "probed-project")
+	if !failing.HasCall("config ghish.quotaproject probed-project") {
+		t.Errorf("failing runner calls = %q, want the write attempted", failing.Calls)
+	}
 }

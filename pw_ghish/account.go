@@ -16,9 +16,17 @@ package pw_ghish
 
 import (
 	"cmp"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/andygrunwald/go-gerrit"
 )
@@ -127,4 +135,245 @@ func FormatChangeReviewersAndAssignees(change *gerrit.ChangeInfo) (assignees []s
 	}
 
 	return assignees, reviewers
+}
+
+const (
+	selfAccountCacheTTLSeconds = 86400
+	maxAccountCacheBytes       = 64 * 1024
+)
+
+type cachedSelfAccountEntry struct {
+	Account   gerrit.AccountInfo `json:"account"`
+	SavedUnix int64              `json:"saved_unix"`
+}
+
+type selfAccountCacheFile struct {
+	Accounts map[string]cachedSelfAccountEntry `json:"accounts"`
+}
+
+var (
+	selfAccountCacheMu  sync.Mutex
+	memSelfAccountCache = make(map[string]cachedSelfAccountEntry)
+)
+
+func activeAccountCacheDir() string {
+	if strings.TrimSpace(os.Getenv("GH_ISH_ACCOUNT_CACHE")) == "0" {
+		return ""
+	}
+	if dir := strings.TrimSpace(os.Getenv("GH_ISH_ACCOUNT_CACHE_DIR")); dir != "" {
+		return dir
+	}
+	if os.Getenv("TEST_TMPDIR") != "" || strings.HasSuffix(os.Args[0], ".test") {
+		return ""
+	}
+	if xdg := strings.TrimSpace(os.Getenv("XDG_CACHE_HOME")); xdg != "" {
+		return filepath.Join(xdg, "pw_ghish")
+	}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		return filepath.Join(home, ".cache", "pw_ghish")
+	}
+	return ""
+}
+
+func isLoopbackGerritHost(gerritHost string) bool {
+	lower := strings.ToLower(gerritHost)
+	return strings.Contains(lower, "127.0.0.1") ||
+		strings.Contains(lower, "localhost") ||
+		strings.Contains(lower, "[::1]")
+}
+
+func readSelfAccountCacheLocked(dir string) selfAccountCacheFile {
+	var cache selfAccountCacheFile
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		if err != nil && !os.IsNotExist(err) {
+			// OK: best-effort disk cache
+			slog.Debug("failed to stat account cache dir", "dir", dir, "err", err)
+		}
+		return selfAccountCacheFile{Accounts: make(map[string]cachedSelfAccountEntry)}
+	}
+	path := filepath.Join(dir, "accounts.json")
+	if pInfo, err := os.Lstat(path); err != nil || !pInfo.Mode().IsRegular() {
+		if err != nil && !os.IsNotExist(err) {
+			// OK: best-effort disk cache
+			slog.Debug("failed to stat account cache file", "path", path, "err", err)
+		}
+		return selfAccountCacheFile{Accounts: make(map[string]cachedSelfAccountEntry)}
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			// OK: best-effort disk cache
+			slog.Debug("failed to open account cache file", "path", path, "err", err)
+		}
+		return selfAccountCacheFile{Accounts: make(map[string]cachedSelfAccountEntry)}
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxAccountCacheBytes))
+	if err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to read account cache file", "path", path, "err", err)
+		return selfAccountCacheFile{Accounts: make(map[string]cachedSelfAccountEntry)}
+	}
+	if err := json.Unmarshal(data, &cache); err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to unmarshal account cache file", "path", path, "err", err)
+		return selfAccountCacheFile{Accounts: make(map[string]cachedSelfAccountEntry)}
+	}
+	if cache.Accounts == nil {
+		return selfAccountCacheFile{Accounts: make(map[string]cachedSelfAccountEntry)}
+	}
+	return cache
+}
+
+func writeSelfAccountCacheLocked(dir string, cache selfAccountCacheFile) {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to create account cache dir", "dir", dir, "err", err)
+		return
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to chmod account cache dir", "dir", dir, "err", err)
+		return
+	}
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		// OK: best-effort disk cache
+		slog.Debug("account cache dir failed safety check", "dir", dir, "err", err)
+		return
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to marshal account cache", "err", err)
+		return
+	}
+	tmp, err := os.CreateTemp(dir, "accounts-*.tmp")
+	if err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to create temp account cache file", "dir", dir, "err", err)
+		return
+	}
+	tmpName := tmp.Name()
+	if err := os.Chmod(tmpName, 0600); err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to chmod temp account cache file", "path", tmpName, "err", err)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return
+	}
+	if _, err := tmp.Write(data); err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to write temp account cache file", "path", tmpName, "err", err)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to close temp account cache file", "path", tmpName, "err", err)
+		_ = os.Remove(tmpName)
+		return
+	}
+	targetPath := filepath.Join(dir, "accounts.json")
+	if err := os.Rename(tmpName, targetPath); err != nil {
+		// OK: best-effort disk cache
+		slog.Debug("failed to rename temp account cache file", "from", tmpName, "to", targetPath, "err", err)
+		_ = os.Remove(tmpName)
+	}
+}
+
+func isValidSelfAccountCacheEntry(entry cachedSelfAccountEntry, nowUnix int64) bool {
+	return entry.Account.AccountID > 0 &&
+		entry.SavedUnix > 0 &&
+		nowUnix >= entry.SavedUnix &&
+		nowUnix-entry.SavedUnix < selfAccountCacheTTLSeconds
+}
+
+func tryReadSelfAccountCache(dir, hostKey string, now time.Time) (gerrit.AccountInfo, bool) {
+	selfAccountCacheMu.Lock()
+	defer selfAccountCacheMu.Unlock()
+	nowUnix := now.Unix()
+	memKey := dir + "\x00" + hostKey
+	if entry, ok := memSelfAccountCache[memKey]; ok {
+		if isValidSelfAccountCacheEntry(entry, nowUnix) {
+			return entry.Account, true
+		}
+		delete(memSelfAccountCache, memKey)
+	}
+	cache := readSelfAccountCacheLocked(dir)
+	entry, ok := cache.Accounts[hostKey]
+	if !ok || !isValidSelfAccountCacheEntry(entry, nowUnix) {
+		return gerrit.AccountInfo{}, false
+	}
+	memSelfAccountCache[memKey] = entry
+	return entry.Account, true
+}
+
+func tryWriteSelfAccountCache(dir, hostKey string, acc gerrit.AccountInfo, now time.Time) {
+	if acc.AccountID <= 0 {
+		return
+	}
+	selfAccountCacheMu.Lock()
+	defer selfAccountCacheMu.Unlock()
+	cache := readSelfAccountCacheLocked(dir)
+	nowUnix := now.Unix()
+	for k, v := range cache.Accounts {
+		if !isValidSelfAccountCacheEntry(v, nowUnix) {
+			delete(cache.Accounts, k)
+			delete(memSelfAccountCache, dir+"\x00"+k)
+		}
+	}
+	entry := cachedSelfAccountEntry{
+		Account:   acc,
+		SavedUnix: nowUnix,
+	}
+	cache.Accounts[hostKey] = entry
+	memSelfAccountCache[dir+"\x00"+hostKey] = entry
+	writeSelfAccountCacheLocked(dir, cache)
+}
+
+func resetSelfAccountMemCache() {
+	selfAccountCacheMu.Lock()
+	clear(memSelfAccountCache)
+	selfAccountCacheMu.Unlock()
+}
+
+// PeekSelfAccountCache checks the in-memory and on-disk accounts.json cache for
+// gerritHost and returns the cached *gerrit.AccountInfo on hit, or nil on miss
+// without making any network RPC.
+func PeekSelfAccountCache(gerritHost string) *gerrit.AccountInfo {
+	hostKey := strings.ToLower(strings.TrimSpace(CleanGerritHost(gerritHost)))
+	if hostKey == "" || isLoopbackGerritHost(gerritHost) {
+		return nil
+	}
+	cacheDir := activeAccountCacheDir()
+	if cacheDir == "" {
+		return nil
+	}
+	if acc, ok := tryReadSelfAccountCache(cacheDir, hostKey, time.Now()); ok {
+		return &acc
+	}
+	return nil
+}
+
+// GetSelfAccountCached returns the authenticated user's Gerrit AccountInfo for gerritHost,
+// consulting a 24-hour disk cache (accounts.json) before querying GET /a/accounts/self.
+func GetSelfAccountCached(ctx context.Context, client *gerrit.Client, gerritHost string) (*gerrit.AccountInfo, error) {
+	if cached := PeekSelfAccountCache(gerritHost); cached != nil {
+		return cached, nil
+	}
+
+	acc, _, err := client.Accounts.GetAccount(ctx, "self")
+	if err != nil {
+		return nil, err
+	}
+	hostKey := strings.ToLower(strings.TrimSpace(CleanGerritHost(gerritHost)))
+	if hostKey != "" && !isLoopbackGerritHost(gerritHost) && acc != nil && acc.AccountID > 0 {
+		if cacheDir := activeAccountCacheDir(); cacheDir != "" {
+			tryWriteSelfAccountCache(cacheDir, hostKey, *acc, time.Now())
+		}
+	}
+	return acc, nil
 }

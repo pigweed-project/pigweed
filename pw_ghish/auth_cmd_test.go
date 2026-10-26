@@ -62,6 +62,8 @@ func TestAuthStatus_AllHealthyGoogler(t *testing.T) {
 		"(LUCI Buildbucket & LogDog)",
 		"issuetracker.googleapis.com (Google Issue Tracker)",
 		"quota project: pigweed-infra",
+		"Verdict: authenticated (googler mode; all required services healthy)",
+		"Next:    gh pr status",
 	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("output missing %q:\n%s", want, output)
@@ -104,7 +106,7 @@ func TestAuthStatus_JSON(t *testing.T) {
 
 	// Unknown JSON field should fail fast
 	_, err = executeCommand(RootCmd, "auth", "status", "--auth-mode", "googler", "--json", "unknownField")
-	if err == nil || !strings.Contains(err.Error(), "unknown JSON field") {
+	if err == nil || !strings.Contains(err.Error(), "Unknown JSON field") {
 		t.Errorf("expected unknown JSON field error, got: %v", err)
 	}
 }
@@ -212,6 +214,9 @@ func TestAuthStatus_CommunityModeUnauthenticatedGerrit(t *testing.T) {
 	}
 	if !strings.Contains(output, "No Gerrit credentials configured") {
 		t.Errorf("expected friendly unauthenticated Gerrit message in community mode, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Verdict: unauthenticated (community mode; login required)") || !strings.Contains(output, "Next:") {
+		t.Errorf("expected unauthenticated Verdict and Next in output, got:\n%s", output)
 	}
 }
 

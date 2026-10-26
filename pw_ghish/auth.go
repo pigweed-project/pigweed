@@ -48,6 +48,21 @@ const (
 // AuthModeFlag is the global --auth-mode flag value.
 var AuthModeFlag string
 
+type authModeCacheKey struct {
+	flag      string
+	envMode   string
+	envMethod string
+	cfg       *Config
+}
+
+var (
+	authModeCacheMu    sync.Mutex
+	cachedAuthModeKey  authModeCacheKey
+	cachedAuthModeVal  AuthMode
+	cachedAuthModeWhy  string
+	authModeCacheValid bool
+)
+
 // ResolveAuthMode determines the active AuthMode (googler, community, or none) and a
 // human-readable explanation of how it was selected.
 //
@@ -61,13 +76,41 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		ctx = context.Background()
 	}
 
+	cacheKey := authModeCacheKey{
+		flag:      strings.TrimSpace(AuthModeFlag),
+		envMode:   strings.TrimSpace(os.Getenv("GH_ISH_AUTH_MODE")),
+		envMethod: strings.TrimSpace(os.Getenv("GH_ISH_AUTH_METHOD")),
+		cfg:       cfg,
+	}
+	if cfg != nil {
+		authModeCacheMu.Lock()
+		if authModeCacheValid && cachedAuthModeKey == cacheKey {
+			m, r := cachedAuthModeVal, cachedAuthModeWhy
+			authModeCacheMu.Unlock()
+			return m, r, nil
+		}
+		authModeCacheMu.Unlock()
+	}
+
+	cacheAndReturn := func(m AuthMode, reason string) (AuthMode, string, error) {
+		if cfg != nil {
+			authModeCacheMu.Lock()
+			cachedAuthModeKey = cacheKey
+			cachedAuthModeVal = m
+			cachedAuthModeWhy = reason
+			authModeCacheValid = true
+			authModeCacheMu.Unlock()
+		}
+		return m, reason, nil
+	}
+
 	var rawMode, source string
-	if v := strings.TrimSpace(AuthModeFlag); v != "" {
-		rawMode = v
-		source = fmt.Sprintf("--auth-mode=%s", v)
-	} else if v := strings.TrimSpace(os.Getenv("GH_ISH_AUTH_MODE")); v != "" {
-		rawMode = v
-		source = fmt.Sprintf("GH_ISH_AUTH_MODE=%s", v)
+	if cacheKey.flag != "" {
+		rawMode = cacheKey.flag
+		source = fmt.Sprintf("--auth-mode=%s", cacheKey.flag)
+	} else if cacheKey.envMode != "" {
+		rawMode = cacheKey.envMode
+		source = fmt.Sprintf("GH_ISH_AUTH_MODE=%s", cacheKey.envMode)
 	} else if cfg != nil && cfg.Git != nil {
 		if v, err := cfg.GitClient().ConfigGet(ctx, "ghish.authmode"); err == nil && strings.TrimSpace(v) != "" {
 			rawMode = strings.TrimSpace(v)
@@ -79,7 +122,7 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		normalized := AuthMode(strings.ToLower(rawMode))
 		switch normalized {
 		case AuthModeGoogler, AuthModeCommunity, AuthModeNone:
-			return normalized, source, nil
+			return cacheAndReturn(normalized, source)
 		case AuthModeAuto:
 			// Proceed to auto-detection below.
 		default:
@@ -94,37 +137,40 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		}
 	}
 
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("GH_ISH_AUTH_METHOD")), string(AuthMethodNone)) {
-		return AuthModeNone, "GH_ISH_AUTH_METHOD=none", nil
+	if strings.EqualFold(cacheKey.envMethod, string(AuthMethodNone)) {
+		return cacheAndReturn(AuthModeNone, "GH_ISH_AUTH_METHOD=none")
 	}
 
 	if _, err := LookPathFn("gob-curl"); err == nil {
-		return AuthModeGoogler, "auto-detected (gob-curl on PATH)", nil
+		return cacheAndReturn(AuthModeGoogler, "auto-detected (gob-curl on PATH)")
 	}
 	if _, err := LookPathFn("sso_client"); err == nil {
-		return AuthModeGoogler, "auto-detected (sso_client on PATH)", nil
+		return cacheAndReturn(AuthModeGoogler, "auto-detected (sso_client on PATH)")
 	}
 
-	gitRunner := DefaultGitRunner
+	var gc GitClient
 	if cfg != nil && cfg.Git != nil {
-		gitRunner = cfg.Git
+		// Share the Config's client so these lookups hit its git config
+		// prefetch instead of spawning `git config --get` per key.
+		gc = cfg.GitClient()
+	} else if DefaultGitRunner != nil {
+		gc = NewGitClient(DefaultGitRunner)
 	}
-	if gitRunner != nil {
-		gc := NewGitClient(gitRunner)
+	if gc != nil {
 		if email, err := gc.ConfigGet(ctx, "user.email"); err == nil {
 			email = strings.TrimSpace(email)
 			if strings.HasSuffix(strings.ToLower(email), "@google.com") {
-				return AuthModeGoogler, fmt.Sprintf("auto-detected (git user.email %s)", email), nil
+				return cacheAndReturn(AuthModeGoogler, fmt.Sprintf("auto-detected (git user.email %s)", email))
 			}
 		}
 		if origin, err := gc.ConfigGet(ctx, "remote.origin.url"); err == nil {
 			if scheme, _, ok := parseInternalGitURL(origin); ok {
-				return AuthModeGoogler, fmt.Sprintf("auto-detected (%s:// git remote)", scheme), nil
+				return cacheAndReturn(AuthModeGoogler, fmt.Sprintf("auto-detected (%s:// git remote)", scheme))
 			}
 		}
 	}
 
-	return AuthModeCommunity, "auto-detected (community environment)", nil
+	return cacheAndReturn(AuthModeCommunity, "auto-detected (community environment)")
 }
 
 // AuthMethod describes the authentication strategy.
@@ -152,7 +198,7 @@ func (t *fallbackTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if t.unauthenticated && !t.disallowAnonFallback && req.Method == "GET" &&
 		strings.Contains(req.URL.Host, ".googlesource.com") && strings.Contains(req.URL.Path, "/a/") {
 		newReq := req.Clone(req.Context())
-		newReq.URL.Path = strings.Replace(req.URL.Path, "/a/", "/", 1)
+		newReq.URL.Path = strings.Replace(newReq.URL.Path, "/a/", "/", 1)
 		return t.base.RoundTrip(newReq)
 	}
 
@@ -167,7 +213,7 @@ func (t *fallbackTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		if req.Method == "GET" {
 			fmt.Fprintf(os.Stderr, "Warning: authenticated request to %s returned %d; falling back to anonymous\n", req.URL.Path, resp.StatusCode)
 			newReq := req.Clone(req.Context())
-			newReq.URL.Path = strings.Replace(req.URL.Path, "/a/", "/", 1)
+			newReq.URL.Path = strings.Replace(newReq.URL.Path, "/a/", "/", 1)
 			return t.base.RoundTrip(newReq)
 		}
 	}
@@ -310,7 +356,7 @@ func (t *GobCurlTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func newGobCurlCommand(ctx context.Context, path string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := ExecCommandContext(ctx, path, args...)
 	cmd.Cancel = func() error {
 		return cmd.Process.Signal(os.Interrupt)
 	}
@@ -632,7 +678,7 @@ func findGitCookieFile(ctx context.Context, runner ...GitRunner) string {
 	if len(runner) > 0 && runner[0] != nil {
 		r = runner[0]
 	}
-	if p, err := NewGitClient(r).ConfigGet(ctx, "http.cookiefile"); err == nil && p != "" {
+	if p, err := sharedGitClientForRunner(ctx, r).ConfigGet(ctx, "http.cookiefile"); err == nil && p != "" {
 		if strings.HasPrefix(p, "~/") {
 			if home, err := os.UserHomeDir(); err == nil {
 				p = filepath.Join(home, p[2:])
@@ -1096,7 +1142,7 @@ const DefaultBuganizerScopes = "https://www.googleapis.com/auth/buganizer https:
 // OAuthTokenCommandRunner executes external CLI token helpers (luci-auth, gcloud).
 // It can be overridden in unit tests to prevent spawning real subprocesses.
 var OAuthTokenCommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
+	return ExecCommandContext(ctx, name, args...).Output()
 }
 
 // findLuciAuthBinary locates the 'luci-auth' executable.
@@ -1140,6 +1186,12 @@ func findLuciAuthBinary(ctx context.Context) string {
 			filepath.Join(cwd, ".environment", "cipd", "packages", "luci", "luci-auth"),
 		)
 	}
+	for _, cand := range candidates {
+		if path, err := LookPathFn(cand); err == nil && path != "" {
+			return path
+		}
+	}
+
 	var runner GitRunner = DefaultGitRunner
 	if ctx != nil {
 		if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil && cfg.Git != nil {
@@ -1153,43 +1205,66 @@ func findLuciAuthBinary(ctx context.Context) string {
 			if commonGitDir != "" {
 				if abs, err := filepath.Abs(commonGitDir); err == nil {
 					repoRoot := filepath.Dir(abs)
-					candidates = append(candidates,
+					for _, cand := range []string{
 						filepath.Join(repoRoot, "environment", "cipd", "packages", "luci", "luci-auth"),
 						filepath.Join(repoRoot, ".environment", "cipd", "packages", "luci", "luci-auth"),
-					)
+					} {
+						if path, err := LookPathFn(cand); err == nil && path != "" {
+							return path
+						}
+					}
 				}
 			}
-		}
-	}
-	for _, cand := range candidates {
-		if path, err := LookPathFn(cand); err == nil && path != "" {
-			return path
 		}
 	}
 	return ""
 }
 
-// resolveOAuthTokenFromCLI attempts to mint an OAuth2 access token from luci-auth
-// (trying each scope string in luciScopes; "" means default luci-auth scopes) and
-// then falls back to gcloud. It returns the token and a human-readable source label.
-func resolveOAuthTokenFromCLI(ctx context.Context, luciScopes []string) (token string, source string, err error) {
+const (
+	oauthTokenCacheTTL   = 5 * time.Minute
+	defaultOAuthTokenTTL = 30 * time.Minute
+	maxOAuthTokenTTL     = 45 * time.Minute
+)
+
+func parseOAuthTokenOutput(out []byte, now time.Time) (string, time.Time) {
+	tok := strings.TrimSpace(string(out))
+	expiry := now.Add(defaultOAuthTokenTTL)
+	var parsed struct {
+		Token  string `json:"token"`
+		Expiry int64  `json:"expiry"`
+	}
+	if json.Unmarshal(out, &parsed) == nil {
+		tok = strings.TrimSpace(parsed.Token)
+		if parsed.Expiry > 0 {
+			expiry = time.Unix(parsed.Expiry, 0).Add(-60 * time.Second)
+			if maxExpiry := now.Add(maxOAuthTokenTTL); expiry.After(maxExpiry) {
+				expiry = maxExpiry
+			}
+		}
+	}
+	return tok, expiry
+}
+
+func resolveOAuthTokenWithExpiry(ctx context.Context, luciScopes []string) (token string, source string, expiry time.Time, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if len(luciScopes) == 0 {
+		luciScopes = []string{""}
+	}
+
 	if luciAuthBin := findLuciAuthBinary(ctx); luciAuthBin != "" {
-		if len(luciScopes) == 0 {
-			luciScopes = []string{""}
-		}
 		for _, sc := range luciScopes {
 			var args []string
 			if sc == "" {
-				args = []string{"token"}
+				args = []string{"token", "-json-output", "-"}
 			} else {
-				args = []string{"token", "-scopes", sc}
+				args = []string{"token", "-scopes", sc, "-json-output", "-"}
 			}
 			if out, err := OAuthTokenCommandRunner(ctx, luciAuthBin, args...); err == nil {
-				if tok := strings.TrimSpace(string(out)); tok != "" {
-					return tok, "luci-auth", nil
+				tok, exp := parseOAuthTokenOutput(out, time.Now())
+				if tok != "" {
+					return tok, "luci-auth", exp, nil
 				}
 			}
 		}
@@ -1202,16 +1277,23 @@ func resolveOAuthTokenFromCLI(ctx context.Context, luciScopes []string) (token s
 		} {
 			if out, err := OAuthTokenCommandRunner(ctx, "gcloud", args...); err == nil {
 				if tok := strings.TrimSpace(string(out)); tok != "" {
-					return tok, "gcloud", nil
+					exp := time.Now().Add(defaultOAuthTokenTTL)
+					return tok, "gcloud", exp, nil
 				}
 			}
 		}
 	}
 
-	return "", "", fmt.Errorf("no active OAuth2 token found from luci-auth or gcloud")
+	return "", "", time.Time{}, fmt.Errorf("no active OAuth2 token found from luci-auth or gcloud")
 }
 
-const oauthTokenCacheTTL = 5 * time.Minute
+// resolveOAuthTokenFromCLI attempts to mint an OAuth2 access token from luci-auth
+// (trying each scope string in luciScopes; "" means default luci-auth scopes) and
+// then falls back to gcloud. It returns the token and a human-readable source label.
+func resolveOAuthTokenFromCLI(ctx context.Context, luciScopes []string) (token string, source string, err error) {
+	tok, src, _, err := resolveOAuthTokenWithExpiry(ctx, luciScopes)
+	return tok, src, err
+}
 
 var (
 	luciTokenMu           sync.Mutex
@@ -1277,6 +1359,11 @@ func ResetAuthTokenCaches() {
 	cachedRPCClients = nil
 	rpcClientMu.Unlock()
 
+	authModeCacheMu.Lock()
+	authModeCacheValid = false
+	cachedAuthModeKey = authModeCacheKey{}
+	authModeCacheMu.Unlock()
+
 	luciTokenMu.Lock()
 	cachedLUCIToken = ""
 	cachedLUCITokenSource = ""
@@ -1303,6 +1390,9 @@ func ResetAuthTokenCaches() {
 	cachedIssueTokenSource = ""
 	cachedIssueTokenExpiry = time.Time{}
 	issueTokenMu.Unlock()
+
+	quotaProjectCache.reset()
+	resetSelfAccountMemCache()
 }
 
 func invalidateCachedGerritToken(rejected string) {
@@ -1329,7 +1419,8 @@ func DefaultGerritToken(ctx context.Context) (string, string, error) {
 
 	gerritTokenMu.Lock()
 	defer gerritTokenMu.Unlock()
-	if cachedGerritToken != "" && time.Now().Before(cachedGerritTokenExpiry) {
+	now := time.Now()
+	if cachedGerritToken != "" && now.Before(cachedGerritTokenExpiry) {
 		return cachedGerritToken, cachedGerritTokenSource, nil
 	}
 	if gerritTokenProbeFailed {
@@ -1345,18 +1436,7 @@ func DefaultGerritToken(ctx context.Context) (string, string, error) {
 	for _, sc := range []string{DefaultGerritScopes, ScopeGerritCodeReview} {
 		out, err := OAuthTokenCommandRunner(ctx, luciAuthBin, "token", "-scopes", sc, "-json-output", "-")
 		if err == nil {
-			tok := strings.TrimSpace(string(out))
-			expiry := time.Now().Add(oauthTokenCacheTTL)
-			var parsed struct {
-				Token  string `json:"token"`
-				Expiry int64  `json:"expiry"`
-			}
-			if json.Unmarshal(out, &parsed) == nil {
-				tok = strings.TrimSpace(parsed.Token)
-				if parsed.Expiry > 0 {
-					expiry = time.Unix(parsed.Expiry, 0).Add(-60 * time.Second)
-				}
-			}
+			tok, expiry := parseOAuthTokenOutput(out, time.Now())
 			if tok != "" {
 				cachedGerritToken = tok
 				cachedGerritTokenSource = "luci-auth"
@@ -1390,7 +1470,7 @@ func DefaultAndroidBuildToken(ctx context.Context) (string, error) {
 	androidBuildTokenMu.Unlock()
 
 	scopeJoined := strings.Join(DefaultAndroidBuildScopes, " ")
-	tok, src, err := resolveOAuthTokenFromCLI(ctx, []string{
+	tok, src, exp, err := resolveOAuthTokenWithExpiry(ctx, []string{
 		scopeJoined,
 		ScopeAndroidBuildInternal,
 		"",
@@ -1402,7 +1482,7 @@ func DefaultAndroidBuildToken(ctx context.Context) (string, error) {
 	androidBuildTokenMu.Lock()
 	cachedAndroidBuildToken = tok
 	cachedAndroidBuildTokenSource = src
-	cachedAndroidBuildTokenExpiry = time.Now().Add(oauthTokenCacheTTL)
+	cachedAndroidBuildTokenExpiry = exp
 	androidBuildTokenMu.Unlock()
 	return tok, nil
 }
@@ -1446,7 +1526,7 @@ func DefaultLUCIToken(ctx context.Context) (string, string, error) {
 		return cachedLUCIToken, cachedLUCITokenSource, nil
 	}
 
-	tok, src, err := resolveOAuthTokenFromCLI(ctx, []string{"", DefaultBuganizerScopes})
+	tok, src, exp, err := resolveOAuthTokenWithExpiry(ctx, []string{"", DefaultBuganizerScopes})
 	if err != nil {
 		return "", "", NewExitCodeError(ExitCodeAuth,
 			"failed to obtain LUCI OAuth2 token: %w.\n\n"+
@@ -1464,7 +1544,7 @@ func DefaultLUCIToken(ctx context.Context) (string, string, error) {
 
 	cachedLUCIToken = tok
 	cachedLUCITokenSource = src
-	cachedLUCITokenExpiry = time.Now().Add(oauthTokenCacheTTL)
+	cachedLUCITokenExpiry = exp
 	return tok, src, nil
 }
 
@@ -1478,6 +1558,12 @@ var LUCITokenResolver = DefaultLUCIToken
 type LUCIAuthTransport struct {
 	Base http.RoundTripper
 	Cfg  *Config
+
+	mu               sync.Mutex
+	cachedMode       AuthMode
+	cachedModeReason string
+	cachedModeKey    authModeCacheKey
+	modeResolved     bool
 }
 
 func (t *LUCIAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -1494,9 +1580,27 @@ func (t *LUCIAuthTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		base = http.DefaultTransport
 	}
 
-	mode, modeReason, err := ResolveAuthMode(ctx, cfg)
-	if err != nil {
-		return nil, err
+	key := authModeCacheKey{
+		flag:      strings.TrimSpace(AuthModeFlag),
+		envMode:   strings.TrimSpace(os.Getenv("GH_ISH_AUTH_MODE")),
+		envMethod: strings.TrimSpace(os.Getenv("GH_ISH_AUTH_METHOD")),
+		cfg:       cfg,
+	}
+	t.mu.Lock()
+	mode, modeReason, ok := t.cachedMode, t.cachedModeReason, t.modeResolved && t.cachedModeKey == key
+	t.mu.Unlock()
+	if !ok {
+		var err error
+		mode, modeReason, err = ResolveAuthMode(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		t.mu.Lock()
+		t.cachedMode = mode
+		t.cachedModeReason = modeReason
+		t.cachedModeKey = key
+		t.modeResolved = true
+		t.mu.Unlock()
 	}
 	if mode == AuthModeNone {
 		return base.RoundTrip(req)
