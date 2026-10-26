@@ -85,6 +85,7 @@ SOURCE_FILES_FILTER_GN_EXCLUDE = FileFilter(
         r'\bjava/',
         r'\bjava_jni/',
         r'\bpw_bluetooth_sapphire/fuchsia/',
+        r'\bpw_hal/',
         r'\bpw_ide/bazel/',
         r'\bpw_kernel/',
         r'\bpw_tokenizer/performance_test/',
