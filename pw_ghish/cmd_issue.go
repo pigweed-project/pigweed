@@ -24,12 +24,20 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 )
+
+const maxDefaultIssueStatusItems = 10
+
+func shortIssueUser(email string) string {
+	return strings.TrimSuffix(strings.TrimSpace(email), "@google.com")
+}
 
 func resolveTargetIssueID(ctx context.Context, cmd *cobra.Command, args []string) (int64, error) {
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
@@ -173,11 +181,13 @@ func ResolveIssueComponent(ctx context.Context, cfg *Config, explicitFlag int64,
 				return 0, err
 			}
 		} else if dg, ok := cfg.GitClient().(*defaultGitClient); ok {
-			if out, err := dg.runOutput(ctx, "config", "--get-regexp", `^ghish\.`); err == nil && strings.TrimSpace(out) != "" {
-				pcfg = DefaultProjectConfig()
-				if err := applyGitConfigOverrides(out, pcfg); err != nil {
-					return 0, err
-				}
+			cand := DefaultProjectConfig()
+			applied, err := dg.applyGitConfigToProjectConfig(ctx, cand)
+			if err != nil {
+				return 0, err
+			}
+			if applied {
+				pcfg = cand
 			}
 		}
 	}
@@ -351,16 +361,161 @@ func readBodyInput(bodyFlag, bodyFileFlag string, stdin io.Reader) (string, erro
 
 // --- Subcommands ---
 
+// IssueComment aliases BuganizerComment for issue comment summarization helpers.
+type IssueComment = BuganizerComment
+
+const maxDefaultIssueComments = 15
+
+var (
+	issueCommentURLRegex     = regexp.MustCompile(`https?://[^\s)>\]"]+`)
+	issueDetailsBlockRegex   = regexp.MustCompile(`(?is)<details\b[^>]*>.*?</details>`)
+	issueSummaryTagRegex     = regexp.MustCompile(`(?is)<summary\b[^>]*>.*?</summary>`)
+	issueDetailsTagOpenClose = regexp.MustCompile(`(?i)</?details\b[^>]*>`)
+	issueExpandDetailsPhrase = regexp.MustCompile(`(?i)expand for full commit details:?`)
+)
+
+func isCommitMetadataLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return true
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return true
+	}
+	if strings.HasPrefix(lower, "the following revision refers to this bug") ||
+		strings.HasPrefix(lower, "expand for full commit details") {
+		return true
+	}
+	if strings.HasPrefix(lower, "commit ") && len(trimmed) > 7 {
+		return true
+	}
+	for _, prefix := range []string{
+		"project:",
+		"branch:",
+		"author:",
+		"date:",
+		"link:",
+		"commit:",
+		"bug:",
+		"fixed:",
+		"fixes:",
+		"change-id:",
+		"reviewed-on:",
+		"reviewed-by:",
+		"commit-queue:",
+		"auto-submit:",
+		"presubmit-verified:",
+		"signed-off-by:",
+		"cq-include-trybots:",
+	} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// summarizeBotIssueComment detects automated GitWatcher / commit-mirror / bot
+// comments on a Buganizer issue and returns a compact 1-line summary:
+//
+//	"  • [Commit #N] <timestamp>: <subject> (<link>)"
+func summarizeBotIssueComment(c IssueComment) (summaryLine string, isBot bool) {
+	author := strings.ToLower(c.EffectiveAuthorEmail())
+	body := strings.TrimSpace(SanitizeUntrustedText(c.Comment))
+	lowerBody := strings.ToLower(body)
+
+	authorIsBot := strings.Contains(author, "gitwatcher") ||
+		strings.Contains(author, "robot") ||
+		strings.Contains(author, "buganizer-system") ||
+		strings.Contains(author, "blunderbuss")
+
+	hasCommitHeaders := false
+	hasProjectLine := false
+	hasBranchLine := false
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Project:") {
+			hasProjectLine = true
+		} else if strings.HasPrefix(trimmed, "Branch:") {
+			hasBranchLine = true
+		}
+		if hasProjectLine && hasBranchLine {
+			hasCommitHeaders = true
+			break
+		}
+	}
+	bodyIsCommitDump := (strings.Contains(lowerBody, "<details") && strings.Contains(lowerBody, "expand for full commit details")) ||
+		hasCommitHeaders ||
+		(authorIsBot && strings.Contains(body, "Project:") && (strings.Contains(body, "Reviewed-on:") || strings.Contains(body, "Link:")))
+
+	if !authorIsBot && !bodyIsCommitDump {
+		return "", false
+	}
+
+	var link string
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "link:") || strings.HasPrefix(lower, "reviewed-on:") {
+			if m := issueCommentURLRegex.FindString(trimmed); m != "" {
+				link = m
+				break
+			}
+		}
+	}
+	if link == "" {
+		link = issueCommentURLRegex.FindString(body)
+	}
+
+	outsideDetails := issueDetailsBlockRegex.ReplaceAllString(body, "")
+	var subject string
+	for _, line := range strings.Split(outsideDetails, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !isCommitMetadataLine(trimmed) {
+			subject = trimmed
+			break
+		}
+	}
+	if subject == "" {
+		stripped := issueSummaryTagRegex.ReplaceAllString(body, "")
+		stripped = issueDetailsTagOpenClose.ReplaceAllString(stripped, "")
+		stripped = issueExpandDetailsPhrase.ReplaceAllString(stripped, "")
+		for _, line := range strings.Split(stripped, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if !isCommitMetadataLine(trimmed) {
+				subject = trimmed
+				break
+			}
+		}
+	}
+	if link != "" && strings.Contains(subject, link) {
+		subject = strings.TrimSpace(strings.ReplaceAll(subject, "("+link+")", ""))
+		subject = strings.TrimSpace(strings.ReplaceAll(subject, link, ""))
+	}
+	if subject == "" {
+		subject = "automated commit update"
+	}
+
+	ts := c.CreatedTime.Format(time.RFC3339)
+	if link != "" {
+		return fmt.Sprintf("  • [Commit #%d] %s: %s (%s)", c.CommentNumber, ts, subject, link), true
+	}
+	return fmt.Sprintf("  • [Commit #%d] %s: %s", c.CommentNumber, ts, subject), true
+}
+
 var (
 	issueViewComments bool
+	issueViewAll      bool
 	issueViewWeb      bool
 	issueViewJSON     string
 )
 
 var issueViewCmd = &cobra.Command{
-	Use:   "view [<number> | <url>]",
-	Short: "View a Buganizer issue",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "view [<number> | <url>]",
+	Annotations: map[string]string{KindAnnotation: KindView},
+	Short:       "View a Buganizer issue",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		jsonFields, err := ValidateIssueJSONFields(issueViewJSON)
@@ -390,23 +545,38 @@ var issueViewCmd = &cobra.Command{
 			return err
 		}
 
-		issue, err := client.GetIssue(ctx, issueID)
-		if err != nil {
-			return err
-		}
-
-		var comments []BuganizerComment
-		needComments := issueViewComments
-		for _, f := range jsonFields {
-			if f == "comments" || f == "body" {
-				needComments = true
-			}
-		}
+		var (
+			issue       *BuganizerIssue
+			issueErr    error
+			comments    []BuganizerComment
+			commentsErr error
+		)
+		needComments := issueViewComments || issueViewAll || slices.Contains(jsonFields, "comments") || slices.Contains(jsonFields, "body")
 		if needComments {
-			comments, err = client.ListAllComments(ctx, issueID)
-			if err != nil {
-				return err
-			}
+			cCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				issue, issueErr = client.GetIssue(ctx, issueID)
+				if issueErr != nil {
+					cancel()
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				comments, commentsErr = client.ListAllComments(cCtx, issueID)
+			}()
+			wg.Wait()
+		} else {
+			issue, issueErr = client.GetIssue(ctx, issueID)
+		}
+		if issueErr != nil {
+			return issueErr
+		}
+		if commentsErr != nil {
+			return commentsErr
 		}
 
 		if len(jsonFields) > 0 {
@@ -421,6 +591,24 @@ var issueViewCmd = &cobra.Command{
 
 		out := cmd.OutOrStdout()
 		fmt.Fprintf(out, "%s #%d\n", SanitizeUntrustedText(issue.State.Title), issue.IssueID)
+		verdictState := "CLOSED"
+		if IsIssueOpen(issue.State.Status) {
+			verdictState = "OPEN"
+		}
+		priSev := issue.State.Priority
+		if issue.State.Severity != "" {
+			if priSev != "" {
+				priSev = fmt.Sprintf("%s/%s", priSev, issue.State.Severity)
+			} else {
+				priSev = issue.State.Severity
+			}
+		}
+		verdictDetail := strings.TrimSpace(fmt.Sprintf("%s %s", issue.State.Status, priSev))
+		if verdictDetail != "" {
+			fmt.Fprintf(out, "Verdict:   %s (%s)\n", verdictState, verdictDetail)
+		} else {
+			fmt.Fprintf(out, "Verdict:   %s\n", verdictState)
+		}
 		fmt.Fprintf(out, "Status:    %s\n", issue.State.Status)
 		if issue.State.Priority != "" {
 			fmt.Fprintf(out, "Priority:  %s\n", issue.State.Priority)
@@ -442,12 +630,12 @@ var issueViewCmd = &cobra.Command{
 			fmt.Fprintf(out, "Hotlists:  %s\n", strings.Join(hids, ", "))
 		}
 		if issue.State.Assignee != nil && issue.State.Assignee.EmailAddress != "" {
-			fmt.Fprintf(out, "Assignee:  %s\n", issue.State.Assignee.EmailAddress)
+			fmt.Fprintf(out, "Assignee:  %s\n", shortIssueUser(issue.State.Assignee.EmailAddress))
 		} else {
 			fmt.Fprintf(out, "Assignee:  (unassigned)\n")
 		}
 		if issue.State.Reporter != nil && issue.State.Reporter.EmailAddress != "" {
-			fmt.Fprintf(out, "Reporter:  %s\n", issue.State.Reporter.EmailAddress)
+			fmt.Fprintf(out, "Reporter:  %s\n", shortIssueUser(issue.State.Reporter.EmailAddress))
 		}
 		fmt.Fprintf(out, "URL:       %s\n\n", profile.IssueWebURL(int64(issue.IssueID)))
 
@@ -461,11 +649,47 @@ var issueViewCmd = &cobra.Command{
 		footer := "--- END UNTRUSTED ISSUE DESCRIPTION ---"
 		fmt.Fprintln(out, FormatUntrustedBlock(header, footer, desc))
 
-		if issueViewComments && len(comments) > 1 {
+		if (issueViewComments || issueViewAll) && len(comments) > 1 {
 			fmt.Fprintln(out, "\nComments:")
+			var thread []BuganizerComment
 			for i, c := range comments {
 				if c.CommentNumber == 1 || (c.CommentNumber == 0 && i == 0) {
 					continue
+				}
+				thread = append(thread, c)
+			}
+
+			if !issueViewAll {
+				humanCount := 0
+				for _, c := range thread {
+					if _, isBot := summarizeBotIssueComment(c); !isBot {
+						humanCount++
+					}
+				}
+				if humanCount > maxDefaultIssueComments {
+					toSkipHumans := humanCount - maxDefaultIssueComments
+					skipped := 0
+					cutoff := 0
+					for idx, c := range thread {
+						if _, isBot := summarizeBotIssueComment(c); !isBot {
+							skipped++
+							if skipped == toSkipHumans {
+								cutoff = idx + 1
+								break
+							}
+						}
+					}
+					fmt.Fprintf(out, "  (… %d earlier comments omitted; use --all to view all)\n", cutoff)
+					thread = thread[cutoff:]
+				}
+			}
+
+			for _, c := range thread {
+				if !issueViewAll {
+					if summaryLine, isBot := summarizeBotIssueComment(c); isBot {
+						fmt.Fprintln(out, summaryLine)
+						continue
+					}
 				}
 				author := c.EffectiveAuthorEmail()
 				cHeader := fmt.Sprintf("--- BEGIN UNTRUSTED COMMENT #%d by %s (%s) ---",
@@ -474,6 +698,12 @@ var issueViewCmd = &cobra.Command{
 				fmt.Fprintln(out, "")
 				fmt.Fprintln(out, FormatUntrustedBlock(cHeader, cFooter, c.Comment))
 			}
+		}
+
+		if IsIssueOpen(issue.State.Status) {
+			fmt.Fprintf(out, "\nNext: gh issue develop %d  (or gh issue comment %d -b \"...\")\n", issue.IssueID, issue.IssueID)
+		} else {
+			fmt.Fprintf(out, "\nNext: gh issue reopen %d\n", issue.IssueID)
 		}
 
 		return nil
@@ -493,9 +723,10 @@ var (
 )
 
 var issueListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List Buganizer issues",
-	Args:  cobra.NoArgs,
+	Use:         "list",
+	Annotations: map[string]string{KindAnnotation: KindList},
+	Short:       "List Buganizer issues",
+	Args:        cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		jsonFields, err := ValidateIssueJSONFields(issueListJSON)
@@ -601,10 +832,11 @@ var issueListCmd = &cobra.Command{
 			return nil
 		}
 
+		fmt.Fprintln(out, "ID           STATUS      PRI     ASSIGNEE                  TITLE")
 		for _, iss := range resp.Issues {
 			assignee := "unassigned"
 			if iss.State.Assignee != nil && iss.State.Assignee.EmailAddress != "" {
-				assignee = iss.State.Assignee.EmailAddress
+				assignee = shortIssueUser(iss.State.Assignee.EmailAddress)
 			}
 			pri := iss.State.Priority
 			if pri == "" {
@@ -613,9 +845,10 @@ var issueListCmd = &cobra.Command{
 			if iss.State.Severity != "" {
 				pri = fmt.Sprintf("%s/%s", pri, iss.State.Severity)
 			}
-			fmt.Fprintf(out, "b/%-9d  %-10s  %-4s  %-24s  %s\n",
+			fmt.Fprintf(out, "b/%-9d  %-10s  %-6s  %-24s  %s\n",
 				iss.IssueID, iss.State.Status, pri, assignee, SanitizeUntrustedText(iss.State.Title))
 		}
+		fmt.Fprintf(out, "\nNext: gh issue view %d  (or gh issue develop %d)\n", resp.Issues[0].IssueID, resp.Issues[0].IssueID)
 		return nil
 	},
 }
@@ -623,9 +856,10 @@ var issueListCmd = &cobra.Command{
 var issueStatusJSON string
 
 var issueStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show status of relevant Buganizer issues",
-	Args:  cobra.NoArgs,
+	Use:         "status",
+	Annotations: map[string]string{KindAnnotation: KindList},
+	Short:       "Show status of relevant Buganizer issues",
+	Args:        cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		jsonFields, err := ValidateIssueJSONFields(issueStatusJSON)
@@ -691,30 +925,56 @@ var issueStatusCmd = &cobra.Command{
 				return ""
 			}
 			if ws.Residency == "MOUNTED" {
-				return fmt.Sprintf("  [📂 MOUNTED (%s): %s]", ws.Slot, ws.SymlinkPath)
+				return fmt.Sprintf("  [%s MOUNTED (%s): %s]", GlyphRunning, ws.Slot, ws.SymlinkPath)
 			}
-			return fmt.Sprintf("  [💤 PARKED: branch %s]", ws.Branch)
+			return fmt.Sprintf("  [%s PARKED: branch %s]", GlyphPending, ws.Branch)
 		}
 
 		out := cmd.OutOrStdout()
-		fmt.Fprintf(out, "Issues assigned to you (%s):\n", email)
+		shortEmail := shortIssueUser(email)
+		fmt.Fprintf(out, "Issues assigned to you (%s):\n", shortEmail)
 		if len(assignedResp.Issues) == 0 {
 			fmt.Fprintln(out, "  None")
 		} else {
-			for _, iss := range assignedResp.Issues {
+			shown := assignedResp.Issues
+			if !VerboseFlag && len(shown) > maxDefaultIssueStatusItems {
+				shown = shown[:maxDefaultIssueStatusItems]
+			}
+			for _, iss := range shown {
 				fmt.Fprintf(out, "  b/%-9d  %-4s  %s%s\n",
 					iss.IssueID, iss.State.Priority, SanitizeUntrustedText(iss.State.Title), formatWS(int64(iss.IssueID)))
+			}
+			if !VerboseFlag && len(assignedResp.Issues) > maxDefaultIssueStatusItems {
+				fmt.Fprintf(out, "  ... and %d more issues (use 'gh issue list --assignee me' or '-v' to view all)\n",
+					len(assignedResp.Issues)-maxDefaultIssueStatusItems)
 			}
 		}
 
-		fmt.Fprintf(out, "\nIssues opened by you (%s):\n", email)
+		fmt.Fprintf(out, "\nIssues opened by you (%s):\n", shortEmail)
 		if len(reportedResp.Issues) == 0 {
 			fmt.Fprintln(out, "  None")
 		} else {
-			for _, iss := range reportedResp.Issues {
+			shown := reportedResp.Issues
+			if !VerboseFlag && len(shown) > maxDefaultIssueStatusItems {
+				shown = shown[:maxDefaultIssueStatusItems]
+			}
+			for _, iss := range shown {
 				fmt.Fprintf(out, "  b/%-9d  %-4s  %s%s\n",
 					iss.IssueID, iss.State.Priority, SanitizeUntrustedText(iss.State.Title), formatWS(int64(iss.IssueID)))
 			}
+			if !VerboseFlag && len(reportedResp.Issues) > maxDefaultIssueStatusItems {
+				fmt.Fprintf(out, "  ... and %d more issues (use 'gh issue list --assignee me' or '-v' to view all)\n",
+					len(reportedResp.Issues)-maxDefaultIssueStatusItems)
+			}
+		}
+
+		fmt.Fprintf(out, "\nVerdict: %d assigned, %d reported\n", len(assignedResp.Issues), len(reportedResp.Issues))
+		if len(assignedResp.Issues) > 0 {
+			fmt.Fprintf(out, "Next: gh issue develop %d\n", assignedResp.Issues[0].IssueID)
+		} else if len(reportedResp.Issues) > 0 {
+			fmt.Fprintf(out, "Next: gh issue develop %d\n", reportedResp.Issues[0].IssueID)
+		} else {
+			fmt.Fprintln(out, "Next: gh issue create")
 		}
 		return nil
 	},
@@ -735,9 +995,10 @@ var (
 )
 
 var issueCreateCmd = &cobra.Command{
-	Use:   "create",
-	Short: "Create a new Buganizer issue",
-	Args:  cobra.NoArgs,
+	Use:         "create",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Create a new Buganizer issue",
+	Args:        cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		title := strings.TrimSpace(issueCreateTitle)
@@ -867,7 +1128,7 @@ var issueCreateCmd = &cobra.Command{
 
 		profile := cfg.GetProfile(ctx)
 		out := cmd.OutOrStdout()
-		fmt.Fprintf(out, "✓ Created issue b/%d: %s\n", created.IssueID, created.State.Title)
+		var details []ReceiptField
 
 		if issueCreateAmend {
 			origMsg, err := cfg.GitClient().CommitMessage(ctx, "HEAD")
@@ -906,10 +1167,18 @@ var issueCreateCmd = &cobra.Command{
 			if err := cfg.GitClient().CommitAmendMessage(ctx, updatedMsg, false, out, cmd.ErrOrStderr()); err != nil {
 				return fmt.Errorf("created issue b/%d, but git commit --amend failed: %w", created.IssueID, err)
 			}
-			fmt.Fprintf(out, "✓ Amended HEAD commit with '%s'\n", trailerLine)
+			details = append(details, ReceiptField{
+				Key:   "Amended",
+				Value: fmt.Sprintf("HEAD commit with '%s'", trailerLine),
+			})
 		}
 
-		fmt.Fprintln(out, profile.IssueWebURL(int64(created.IssueID)))
+		PrintReceipt(out, Receipt{
+			Summary: fmt.Sprintf("Created issue b/%d: %s", created.IssueID, SanitizeUntrustedText(created.State.Title)),
+			Details: details,
+			URL:     profile.IssueWebURL(int64(created.IssueID)),
+			Next:    fmt.Sprintf("gh issue develop %d", created.IssueID),
+		})
 		return nil
 	},
 }
@@ -930,9 +1199,10 @@ var (
 )
 
 var issueEditCmd = &cobra.Command{
-	Use:   "edit [<number> | <url>]",
-	Short: "Edit an existing Buganizer issue",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "edit [<number> | <url>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Edit an existing Buganizer issue",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		issueID, err := resolveTargetIssueID(ctx, cmd, args)
@@ -1050,7 +1320,12 @@ var issueEditCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ Updated issue b/%d (%s)\n", updated.IssueID, updated.State.Status)
+		profile := cfg.GetProfile(ctx)
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Updated issue b/%d (%s)", updated.IssueID, updated.State.Status),
+			URL:     profile.IssueWebURL(int64(updated.IssueID)),
+			Next:    fmt.Sprintf("gh issue view %d", updated.IssueID),
+		})
 		return nil
 	},
 }
@@ -1063,9 +1338,10 @@ var (
 )
 
 var issueCloseCmd = &cobra.Command{
-	Use:   "close [<number> | <url>]",
-	Short: "Close a Buganizer issue",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "close [<number> | <url>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Close a Buganizer issue",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		issueID, err := resolveTargetIssueID(ctx, cmd, args)
@@ -1109,7 +1385,16 @@ var issueCloseCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ Closed issue b/%d as %s\n", updated.IssueID, updated.State.Status)
+		cfg := GetConfig(cmd)
+		if cfg == nil {
+			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
+		}
+		profile := cfg.GetProfile(ctx)
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Closed issue b/%d as %s", updated.IssueID, updated.State.Status),
+			URL:     profile.IssueWebURL(int64(updated.IssueID)),
+			Next:    fmt.Sprintf("gh issue view %d", updated.IssueID),
+		})
 		return nil
 	},
 }
@@ -1120,9 +1405,10 @@ var (
 )
 
 var issueReopenCmd = &cobra.Command{
-	Use:   "reopen [<number> | <url>]",
-	Short: "Reopen a closed Buganizer issue",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "reopen [<number> | <url>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Reopen a closed Buganizer issue",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		issueID, err := resolveTargetIssueID(ctx, cmd, args)
@@ -1148,7 +1434,16 @@ var issueReopenCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ Reopened issue b/%d (%s)\n", updated.IssueID, updated.State.Status)
+		cfg := GetConfig(cmd)
+		if cfg == nil {
+			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
+		}
+		profile := cfg.GetProfile(ctx)
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Reopened issue b/%d (%s)", updated.IssueID, updated.State.Status),
+			URL:     profile.IssueWebURL(int64(updated.IssueID)),
+			Next:    fmt.Sprintf("gh issue develop %d", updated.IssueID),
+		})
 		return nil
 	},
 }
@@ -1160,9 +1455,10 @@ var (
 )
 
 var issueCommentCmd = &cobra.Command{
-	Use:   "comment [<number> | <url>]",
-	Short: "Add a comment to a Buganizer issue",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "comment [<number> | <url>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Add a comment to a Buganizer issue",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		issueID, err := resolveTargetIssueID(ctx, cmd, args)
@@ -1198,7 +1494,16 @@ var issueCommentCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ Added comment #%d to issue b/%d\n", comment.CommentNumber, issueID)
+		cfg := GetConfig(cmd)
+		if cfg == nil {
+			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
+		}
+		profile := cfg.GetProfile(ctx)
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Added comment #%d to issue b/%d", comment.CommentNumber, issueID),
+			URL:     profile.IssueWebURL(issueID),
+			Next:    fmt.Sprintf("gh issue view %d --comments", issueID),
+		})
 		return nil
 	},
 }
@@ -1211,9 +1516,10 @@ var (
 )
 
 var issueDevelopCmd = &cobra.Command{
-	Use:   "develop [<number> | <url>]",
-	Short: "Create and check out a development branch (or warm worktree slot) for a Buganizer issue",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "develop [<number> | <url>]",
+	Annotations: map[string]string{KindAnnotation: KindMutation},
+	Short:       "Create and check out a development branch (or warm worktree slot) for a Buganizer issue",
+	Args:        cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		issueID, err := resolveTargetIssueID(ctx, cmd, args)
@@ -1248,6 +1554,7 @@ var issueDevelopCmd = &cobra.Command{
 			}
 		}
 
+		profile := cfg.GetProfile(ctx)
 		if useWorktree {
 			if RegisteredWorkspaceIntegration == nil {
 				return fmt.Errorf("worktree integration is not available in this build")
@@ -1257,22 +1564,23 @@ var issueDevelopCmd = &cobra.Command{
 				return wtErr
 			}
 			if issueDevelopJSON {
-				payload := map[string]any{
-					"issue_id":     issue.IssueID,
+				return writeIssueDevelopJSON(cmd.OutOrStdout(), map[string]any{
+					"issue_id":     int64(issue.IssueID),
 					"branch":       branchName,
 					"slot":         slotName,
 					"symlink_path": symlinkPath,
-				}
-				data, jsonErr := json.MarshalIndent(payload, "", "  ")
-				if jsonErr != nil {
-					return jsonErr
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(data))
-				return nil
+				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "✓ Mounted issue b/%d (%s) in warm worktree slot %s\n",
-				issue.IssueID, SanitizeUntrustedText(issue.State.Title), slotName)
-			fmt.Fprintf(cmd.OutOrStdout(), "  Directory: %s\n  Branch:    %s\n", symlinkPath, branchName)
+			PrintReceipt(cmd.OutOrStdout(), Receipt{
+				Summary: fmt.Sprintf("Mounted issue b/%d (%s) in warm worktree slot %s",
+					issue.IssueID, SanitizeUntrustedText(issue.State.Title), slotName),
+				Details: []ReceiptField{
+					{Key: "Directory", Value: symlinkPath},
+					{Key: "Branch", Value: branchName},
+				},
+				URL:  profile.IssueWebURL(int64(issue.IssueID)),
+				Next: fmt.Sprintf("cd %s", symlinkPath),
+			})
 			return nil
 		}
 
@@ -1281,22 +1589,55 @@ var issueDevelopCmd = &cobra.Command{
 			gitArgs = append(gitArgs, issueDevelopBase)
 		}
 
-		if err := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), gitArgs...); err != nil {
+		// Under --json, stdout carries only the JSON payload, so git's own
+		// output goes to stderr.
+		gitOut := cmd.OutOrStdout()
+		if issueDevelopJSON {
+			gitOut = cmd.ErrOrStderr()
+		}
+		if err := cfg.GitClient().Run(ctx, gitOut, cmd.ErrOrStderr(), gitArgs...); err != nil {
 			return fmt.Errorf("failed to create development branch %q: %w", branchName, err)
 		}
+		if issueDevelopJSON {
+			return writeIssueDevelopJSON(cmd.OutOrStdout(), map[string]any{
+				"issue_id": int64(issue.IssueID),
+				"branch":   branchName,
+			})
+		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ Checked out new branch %q for issue b/%d (%s)\n",
-			branchName, issue.IssueID, SanitizeUntrustedText(issue.State.Title))
+		PrintReceipt(cmd.OutOrStdout(), Receipt{
+			Summary: fmt.Sprintf("Checked out new branch %q for issue b/%d (%s)",
+				branchName, issue.IssueID, SanitizeUntrustedText(issue.State.Title)),
+			Details: []ReceiptField{
+				{Key: "Branch", Value: branchName},
+			},
+			URL:  profile.IssueWebURL(int64(issue.IssueID)),
+			Next: "gh pr create",
+		})
 		if RegisteredWorkspaceIntegration != nil && RegisteredWorkspaceIntegration.IsEnabled() {
-			fmt.Fprintf(cmd.ErrOrStderr(), "💡 Tip: Run './gh issue develop %d --worktree' (or './gh wt use --issue %d') to open issues in isolated warm worktree slots.\n",
-				issue.IssueID, issue.IssueID)
+			fmt.Fprintf(cmd.ErrOrStderr(), "%s Tip: Run './gh issue develop %d --worktree' (or './gh wt use --issue %d') to open issues in isolated warm worktree slots.\n",
+				GlyphArrow, issue.IssueID, issue.IssueID)
 		}
 		return nil
 	},
 }
 
+// writeIssueDevelopJSON prints the `issue develop --json` payload: the
+// issue (issue_id as a JSON number, as in `wt use --json`) and branch, plus
+// the slot and symlink path when a worktree slot was allocated.
+func writeIssueDevelopJSON(out io.Writer, payload map[string]any) error {
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding issue develop JSON: %w", err)
+	}
+	_, err = fmt.Fprintln(out, string(data))
+	return err
+}
+
 func init() {
 	issueViewCmd.Flags().BoolVarP(&issueViewComments, "comments", "c", false, "View issue comments")
+	//ghish:flag mode=extension reason="Show all raw issue comments including full bot commit dumps"
+	issueViewCmd.Flags().BoolVar(&issueViewAll, "all", false, "Show all raw comments without collapsing bot commit messages (ghish-only)")
 	issueViewCmd.Flags().BoolVarP(&issueViewWeb, "web", "w", false, "Open issue in browser")
 	issueViewCmd.Flags().StringVar(&issueViewJSON, "json", "", "Output JSON with the specified comma-separated fields")
 
@@ -1360,7 +1701,7 @@ func init() {
 	issueDevelopCmd.Flags().StringVarP(&issueDevelopBase, "base", "b", "", "Base branch to branch from")
 	issueDevelopCmd.Flags().StringVarP(&issueDevelopName, "name", "n", "", "Custom branch name")
 	issueDevelopCmd.Flags().BoolVarP(&issueDevelopWorktree, "worktree", "w", false, "Allocate or mount an isolated warm worktree slot via gh wt")
-	issueDevelopCmd.Flags().BoolVar(&issueDevelopJSON, "json", false, "Output allocated worktree metadata as JSON")
+	issueDevelopCmd.Flags().BoolVar(&issueDevelopJSON, "json", false, "Output the issue, branch, and any allocated worktree slot as JSON")
 
 	IssueCmd.AddCommand(issueViewCmd)
 	IssueCmd.AddCommand(issueListCmd)

@@ -18,10 +18,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestIssueView_ExplicitAndSmartBranchInference(t *testing.T) {
@@ -53,11 +57,14 @@ func TestIssueView_ExplicitAndSmartBranchInference(t *testing.T) {
 	}
 	for _, want := range []string{
 		"pw_rpc: Fix channel deadlock #345678",
+		"Verdict:   OPEN (ASSIGNED P1/S2)",
 		"ASSIGNED",
 		"P1",
-		"owner@google.com",
+		"Assignee:  owner",
+		"Reporter:  author",
 		"--- BEGIN UNTRUSTED ISSUE DESCRIPTION (b/345678) ---",
 		"Detailed bug report body.",
+		"Next: gh issue develop 345678  (or gh issue comment 345678 -b \"...\")",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("issue view output missing %q; got:\n%s", want, out)
@@ -164,6 +171,9 @@ func TestIssueList_FiltersAndJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue list failed: %v", err)
 	}
+	if !strings.Contains(out, "ID           STATUS      PRI     ASSIGNEE                  TITLE") {
+		t.Errorf("issue list missing table header:\n%s", out)
+	}
 	if !strings.Contains(out, "First open issue") || !strings.Contains(out, "Second open issue assigned") {
 		t.Errorf("issue list missing open issues:\n%s", out)
 	}
@@ -235,8 +245,18 @@ func TestIssueStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue status failed: %v\nOutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Assigned to me issue") || !strings.Contains(out, "Reported by me issue") {
-		t.Errorf("issue status missing expected issues:\n%s", out)
+	for _, want := range []string{
+		"Assigned to me issue",
+		"Reported by me issue",
+		"Verdict: 1 assigned, 1 reported",
+		"Next: gh issue develop 201",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("issue status missing %q; got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "📂") || strings.Contains(out, "💤") {
+		t.Errorf("issue status should not contain non-BMP emojis; got:\n%s", out)
 	}
 }
 
@@ -267,6 +287,16 @@ func TestIssueCreate_AndAmend(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("issue create --amend failed: %v\nOutput: %s", err, out)
+	}
+	for _, want := range []string{
+		"✓ Created issue b/300001: pw_allocator: Fix split block alignment",
+		"Amended: HEAD commit with 'Bug: b/300001'",
+		"URL:    https://issues.pigweed.dev/issues/300001",
+		"Next:   gh issue develop 300001",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("issue create receipt missing %q; got:\n%s", want, out)
+		}
 	}
 
 	createdIssue, err := srv.Client().GetIssue(context.Background(), 300001)
@@ -311,9 +341,12 @@ func TestIssueEdit_Close_Reopen_Comment(t *testing.T) {
 	SetupMockConfig(t, gitRunner)
 
 	// 1. Edit title, label (P0), hotlist, and add assignee -> transitions NEW -> ASSIGNED and calls /v1/hotlists/7777/entries
-	_, err := executeCommand(RootCmd, "issue", "edit", "400", "-t", "Edited bug title", "-l", "P0", "-l", "hotlist:7777", "--add-assignee", "bob@google.com")
+	outEdit, err := executeCommand(RootCmd, "issue", "edit", "400", "-t", "Edited bug title", "-l", "P0", "-l", "hotlist:7777", "--add-assignee", "bob@google.com")
 	if err != nil {
-		t.Fatalf("issue edit failed: %v", err)
+		t.Fatalf("issue edit failed: %v\nOutput: %s", err, outEdit)
+	}
+	if !strings.Contains(outEdit, "✓ Updated issue b/400 (ASSIGNED)") || !strings.Contains(outEdit, "Next:   gh issue view 400") {
+		t.Errorf("issue edit receipt missing GlyphPass or Next; got:\n%s", outEdit)
 	}
 	iss, _ := srv.Client().GetIssue(context.Background(), 400)
 	if iss.State.Title != "Edited bug title" || iss.State.Priority != "P0" || iss.State.Status != "ASSIGNED" {
@@ -334,9 +367,12 @@ func TestIssueEdit_Close_Reopen_Comment(t *testing.T) {
 	}
 
 	// 2. Comment
-	_, err = executeCommand(RootCmd, "issue", "comment", "400", "-b", "Progress update comment")
+	outComment, err := executeCommand(RootCmd, "issue", "comment", "400", "-b", "Progress update comment")
 	if err != nil {
-		t.Fatalf("issue comment failed: %v", err)
+		t.Fatalf("issue comment failed: %v\nOutput: %s", err, outComment)
+	}
+	if !strings.Contains(outComment, "✓ Added comment #2 to issue b/400") || !strings.Contains(outComment, "Next:   gh issue view 400 --comments") {
+		t.Errorf("issue comment receipt missing GlyphPass or Next; got:\n%s", outComment)
 	}
 	comments, _ := srv.Client().ListComments(context.Background(), 400, 10, "")
 	if len(comments.IssueComments) != 2 || comments.IssueComments[1].Comment != "Progress update comment" {
@@ -347,9 +383,12 @@ func TestIssueEdit_Close_Reopen_Comment(t *testing.T) {
 	}
 
 	// 3. Close with reason "not planned"
-	_, err = executeCommand(RootCmd, "issue", "close", "400", "-r", "not planned", "-c", "Closing as obsolete")
+	outClose, err := executeCommand(RootCmd, "issue", "close", "400", "-r", "not planned", "-c", "Closing as obsolete")
 	if err != nil {
-		t.Fatalf("issue close failed: %v", err)
+		t.Fatalf("issue close failed: %v\nOutput: %s", err, outClose)
+	}
+	if !strings.Contains(outClose, "✓ Closed issue b/400 as OBSOLETE") || !strings.Contains(outClose, "Next:   gh issue view 400") {
+		t.Errorf("issue close receipt missing GlyphPass or Next; got:\n%s", outClose)
 	}
 	iss, _ = srv.Client().GetIssue(context.Background(), 400)
 	if iss.State.Status != "OBSOLETE" {
@@ -357,9 +396,12 @@ func TestIssueEdit_Close_Reopen_Comment(t *testing.T) {
 	}
 
 	// 4. Reopen
-	_, err = executeCommand(RootCmd, "issue", "reopen", "400", "-c", "Reopening issue")
+	outReopen, err := executeCommand(RootCmd, "issue", "reopen", "400", "-c", "Reopening issue")
 	if err != nil {
-		t.Fatalf("issue reopen failed: %v", err)
+		t.Fatalf("issue reopen failed: %v\nOutput: %s", err, outReopen)
+	}
+	if !strings.Contains(outReopen, "✓ Reopened issue b/400 (ASSIGNED)") || !strings.Contains(outReopen, "Next:   gh issue develop 400") {
+		t.Errorf("issue reopen receipt missing GlyphPass or Next; got:\n%s", outReopen)
 	}
 	iss, _ = srv.Client().GetIssue(context.Background(), 400)
 	if iss.State.Status != "ASSIGNED" {
@@ -408,6 +450,53 @@ func TestIssueDevelop(t *testing.T) {
 	wantBranch := "b-505-pw-bluetooth-add-le-gatt-client-support"
 	if checkedOutBranch != wantBranch {
 		t.Errorf("checked out branch = %q, want %q", checkedOutBranch, wantBranch)
+	}
+	if !strings.Contains(out, "✓ Checked out new branch \"b-505-pw-bluetooth-add-le-gatt-client-support\"") ||
+		!strings.Contains(out, "Next:   gh pr create") {
+		t.Errorf("issue develop receipt missing GlyphPass or Next; got:\n%s", out)
+	}
+}
+
+func TestIssueDevelop_JSON(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+	srv.SeedIssue(&BuganizerIssue{
+		IssueID: 345678,
+		State: BuganizerState{
+			ComponentID: 1194524,
+			Status:      "NEW",
+			Title:       "pw_rpc: Fix channel deadlock",
+		},
+	}, "Description")
+	SetupMockConfig(t, &MockGitRunner{})
+
+	out, err := executeCommand(RootCmd, "issue", "develop", "345678", "--json")
+	if err != nil {
+		t.Fatalf("issue develop --json failed: %v\nOutput: %s", err, out)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal issue develop --json: %v\nOutput: %s", err, out)
+	}
+	wantBranch := "b-345678-pw-rpc-fix-channel-deadlock"
+	if got["issue_id"] != float64(345678) || got["branch"] != wantBranch {
+		t.Errorf("issue develop --json = %#v, want issue_id=345678 (number) and branch=%q", got, wantBranch)
+	}
+
+	prevWT := RegisteredWorkspaceIntegration
+	RegisteredWorkspaceIntegration = &mockWorkspaceIntegration{enabled: true}
+	t.Cleanup(func() { RegisteredWorkspaceIntegration = prevWT })
+
+	outWT, err := executeCommand(RootCmd, "issue", "develop", "345678", "--worktree", "--json")
+	if err != nil {
+		t.Fatalf("issue develop --worktree --json failed: %v\nOutput: %s", err, outWT)
+	}
+	var gotWT map[string]any
+	if err := json.Unmarshal([]byte(outWT), &gotWT); err != nil {
+		t.Fatalf("unmarshal issue develop --worktree --json: %v\nOutput: %s", err, outWT)
+	}
+	if gotWT["issue_id"] != float64(345678) || gotWT["branch"] != wantBranch || gotWT["slot"] != "pw-02" || gotWT["symlink_path"] != "/mock/projects/"+wantBranch {
+		t.Errorf("issue develop --worktree --json = %#v", gotWT)
 	}
 }
 
@@ -1011,5 +1100,218 @@ triage = 7777
 	reopenedIss, _ := srv.Client().GetIssue(context.Background(), 300002)
 	if reopenedIss.State.Status != "ACCEPTED" {
 		t.Errorf("expected status ACCEPTED after reopen, got %q", reopenedIss.State.Status)
+	}
+}
+
+func TestIssueView_Comments_ParallelFetch(t *testing.T) {
+	commentsArrived := make(chan struct{})
+	var commentsOnce sync.Once
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/issues/345678/comments":
+			commentsOnce.Do(func() { close(commentsArrived) })
+			_ = json.NewEncoder(w).Encode(ListIssueCommentsResponse{
+				IssueComments: []BuganizerComment{
+					{CommentNumber: 1, Comment: "Initial description."},
+					{CommentNumber: 2, Comment: "Parallel comment #2."},
+				},
+			})
+		case "/v1/issues/345678":
+			timeout := time.NewTimer(2 * time.Second)
+			defer timeout.Stop()
+			select {
+			case <-commentsArrived:
+			case <-timeout.C:
+				t.Errorf("ListAllComments did not arrive concurrently with GetIssue")
+			}
+			_ = json.NewEncoder(w).Encode(BuganizerIssue{
+				IssueID: 345678,
+				State: BuganizerState{
+					ComponentID: 1194524,
+					Type:        "BUG",
+					Status:      "ASSIGNED",
+					Priority:    "P1",
+					Title:       "Parallel Issue View Test",
+				},
+				Description: &BuganizerComment{CommentNumber: 1, Comment: "Initial description."},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(ts.Close)
+
+	srv := &MockIssueTrackerServer{Server: ts}
+	srv.Install(t)
+
+	gitRunner := &MockGitRunner{}
+	SetupMockConfig(t, gitRunner)
+
+	out, err := executeCommand(RootCmd, "issue", "view", "345678", "--comments")
+	if err != nil {
+		t.Fatalf("issue view --comments failed: %v\nOutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Parallel Issue View Test") || !strings.Contains(out, "Parallel comment #2.") {
+		t.Errorf("unexpected output:\n%s", out)
+	}
+}
+
+func TestIssueView_Comments_CollapsesBotSpamAndRespectsAllFlag(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+
+	srv.SeedIssue(&BuganizerIssue{
+		IssueID: 567763970,
+		State: BuganizerState{
+			ComponentID: 1194524,
+			Type:        "BUG",
+			Status:      "ASSIGNED",
+			Priority:    "P2",
+			Title:       "pw_ghish: Track CLI improvements",
+		},
+	}, "Initial tracking bug description.")
+
+	t1 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 10, 22, 13, 0, 0, 0, time.UTC)
+	gitwatcherDump := strings.Join([]string{
+		"Project: pigweed/pigweed",
+		"Branch:  main",
+		"Author:  Dev User <dev@google.com>",
+		"Link:    https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/500001",
+		"",
+		"pw_ghish: Add initial issue subcommand",
+		"",
+		"<details><summary>Expand for full commit details</summary>",
+		"",
+		"pw_ghish: Add initial issue subcommand",
+		"",
+		"Full 45-line commit body with exhaustive details.",
+		"Bug: 567763970",
+		"Reviewed-on: https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/500001",
+		"</details>",
+	}, "\n")
+
+	srv.Comments[567763970] = append(srv.Comments[567763970],
+		BuganizerComment{
+			CommentNumber: 2,
+			Author:        &BuganizerUser{EmailAddress: "dx-workflow-gitwatcher@prod.google.com"},
+			CreatedTime:   t1,
+			Comment:       gitwatcherDump,
+		},
+		BuganizerComment{
+			CommentNumber: 3,
+			Author:        &BuganizerUser{EmailAddress: "reviewer@google.com"},
+			CreatedTime:   t2,
+			Comment:       "Human review note: please also check sense output size.",
+		},
+	)
+
+	gitRunner := &MockGitRunner{}
+	SetupMockConfig(t, gitRunner)
+
+	// 1. Default `issue view --comments` collapses gitwatcher dump into 1-line summary
+	outDefault, err := executeCommand(RootCmd, "issue", "view", "567763970", "--comments")
+	if err != nil {
+		t.Fatalf("issue view --comments failed: %v\nOutput: %s", err, outDefault)
+	}
+	wantSummary := "  • [Commit #2] 2026-10-22T12:00:00Z: pw_ghish: Add initial issue subcommand (https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/500001)"
+	if !strings.Contains(outDefault, wantSummary) {
+		t.Errorf("expected collapsed bot summary %q in default output, got:\n%s", wantSummary, outDefault)
+	}
+	if strings.Contains(outDefault, "Expand for full commit details") || strings.Contains(outDefault, "Full 45-line commit body") {
+		t.Errorf("expected <details> dump to be collapsed by default, got:\n%s", outDefault)
+	}
+	if !strings.Contains(outDefault, "Human review note: please also check sense output size.") {
+		t.Errorf("expected human comment #3 to remain visible, got:\n%s", outDefault)
+	}
+
+	// 2. `issue view --comments --all` expands full raw bot comment
+	outAll, err := executeCommand(RootCmd, "issue", "view", "567763970", "--comments", "--all")
+	if err != nil {
+		t.Fatalf("issue view --comments --all failed: %v\nOutput: %s", err, outAll)
+	}
+	for _, want := range []string{
+		"--- BEGIN UNTRUSTED COMMENT #2 by dx-workflow-gitwatcher@prod.google.com",
+		"Expand for full commit details",
+		"Full 45-line commit body with exhaustive details.",
+		"Human review note: please also check sense output size.",
+	} {
+		if !strings.Contains(outAll, want) {
+			t.Errorf("expected --all output to contain %q, got:\n%s", want, outAll)
+		}
+	}
+
+	// 3. When >15 human comments exist, default view shows the most recent 15 and prints omission notice
+	for i := 4; i <= 21; i++ {
+		srv.Comments[567763970] = append(srv.Comments[567763970], BuganizerComment{
+			CommentNumber: i,
+			Author:        &BuganizerUser{EmailAddress: "human@google.com"},
+			CreatedTime:   t2.Add(time.Duration(i) * time.Minute),
+			Comment:       "Human discussion comment #" + strings.Repeat("x", 3),
+		})
+	}
+	outCapped, err := executeCommand(RootCmd, "issue", "view", "567763970", "--comments")
+	if err != nil {
+		t.Fatalf("issue view --comments (capped) failed: %v", err)
+	}
+	if !strings.Contains(outCapped, "earlier comments omitted; use --all to view all)") {
+		t.Errorf("expected omission notice when >15 human comments exist, got:\n%s", outCapped)
+	}
+	if !strings.Contains(outCapped, "COMMENT #21") || strings.Contains(outCapped, "COMMENT #3 ") {
+		t.Errorf("expected latest human comments kept and earliest omitted, got:\n%s", outCapped)
+	}
+
+	// 4. Human comment mentioning Project: and Reviewed-on: in prose is not collapsed as a bot commit dump
+	humanProse := IssueComment{
+		CommentNumber: 4,
+		Author:        &BuganizerUser{EmailAddress: "alice@google.com"},
+		Comment:       "Verified in Project: pigweed, Reviewed-on: https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/12345",
+	}
+	if summary, isBot := summarizeBotIssueComment(humanProse); isBot {
+		t.Errorf("expected human comment mentioning Project: and Reviewed-on: in prose not to be folded as bot commit dump, got: %q", summary)
+	}
+}
+
+func TestIssueStatus_FoldsBeyondTenIssues(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+
+	gitRunner := &MockGitRunner{}
+	gitRunner.OnCommand("config --get user.email", "dev@google.com\n")
+	SetupMockConfig(t, gitRunner)
+	SetTestProfile(t, "pigweed")
+
+	for i := 1001; i <= 1012; i++ {
+		srv.SeedIssue(&BuganizerIssue{
+			IssueID: FlexInt64(i),
+			State: BuganizerState{
+				ComponentID: 1194524,
+				Status:      "ASSIGNED",
+				Priority:    "P2",
+				Title:       "Assigned bulk issue",
+				Assignee:    &BuganizerUser{EmailAddress: "dev@google.com"},
+			},
+		}, "Body")
+	}
+
+	outStatus, err := executeCommand(RootCmd, "issue", "status")
+	if err != nil {
+		t.Fatalf("issue status failed: %v\nOutput: %s", err, outStatus)
+	}
+	if !strings.Contains(outStatus, "... and 2 more issues") {
+		t.Errorf("issue status missing folding message; got:\n%s", outStatus)
+	}
+	if strings.Contains(outStatus, "b/1012") {
+		t.Errorf("expected issue #1012 to be folded by default; got:\n%s", outStatus)
+	}
+
+	outAll, err := executeCommand(RootCmd, "issue", "status", "-v")
+	if err != nil {
+		t.Fatalf("issue status -v failed: %v\nOutput: %s", err, outAll)
+	}
+	if !strings.Contains(outAll, "b/1012") {
+		t.Errorf("expected issue #1012 to be visible with -v; got:\n%s", outAll)
 	}
 }

@@ -61,8 +61,9 @@ assigned to you and open issues reported by you:
 
 If you use :ref:`module-pw_ghish-worktree` to manage parallel tasks,
 ``./gh issue status`` automatically annotates issues that have an active
-worktree project with their residency badge (such as ``[📂 MOUNTED: pw-01]`` or
-``[💤 PARKED]``), showing which bugs are currently checked out on disk.
+worktree project with their residency badge (such as
+``[● MOUNTED (pw-01): <project-path>]`` or ``[○ PARKED: branch <branch>]``),
+showing which bugs are currently checked out on disk.
 
 Searching and filtering: issue list
 ===================================
@@ -100,8 +101,11 @@ history:
    # View issue summary and description:
    $ ./gh issue view 315378787
 
-   # Include the full chronological comment thread:
+   # Include the full chronological comment thread (collapsing automated bot commit dumps):
    $ ./gh issue view 315378787 --comments
+
+   # Show all raw comments without collapsing bot commit messages:
+   $ ./gh issue view 315378787 --comments --all
 
 ---------------------
 Step 2: Starting work
