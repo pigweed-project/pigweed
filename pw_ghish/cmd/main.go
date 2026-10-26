@@ -22,10 +22,5 @@ import (
 )
 
 func main() {
-	// Errors carry their own exit code so that commands can honor established
-	// CLI contracts (notably `gh pr checks`, which exits 8 when checks are
-	// still pending). Anything without an explicit code exits 1.
-	if err := pw_ghish.Execute(); err != nil {
-		os.Exit(pw_ghish.ExitCodeFor(err))
-	}
+	os.Exit(pw_ghish.Main(os.Args[1:], os.Stdout, os.Stderr, os.Exit))
 }

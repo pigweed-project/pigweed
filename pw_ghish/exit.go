@@ -39,6 +39,13 @@ const (
 	// 0 here would make `gh pr checks && gh pr merge` merge a change whose CI
 	// is still running.
 	ExitCodePending = 8
+
+	// ExitCodeBrokenPipe indicates that the command finished but its output
+	// pipe was closed early (e.g. `gh ... | head -1`). It is 128+SIGPIPE, the
+	// status a shell reports for a process killed by SIGPIPE, so `set -o
+	// pipefail` scripts see the truncation the same way they would for
+	// `git log | head`. Mutations still run to completion first.
+	ExitCodeBrokenPipe = 141
 )
 
 // ExitCodeError is an error that carries the process exit code the CLI should

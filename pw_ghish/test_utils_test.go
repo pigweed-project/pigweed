@@ -38,12 +38,21 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// resetAllFlags resets every flag in the command tree to its default and
+// clears its Changed bit, except the flags in testPreservedFlags: tests set
+// their package variables directly (e.g. HostFlag = server.URL or
+// SetTestProfile) before executing, so only their Changed bit is cleared here.
+// Callers that execute commands use snapshotFlags (via
+// executeCommandWithStdin or isolateRootCmdForTest) to undo the execution's
+// flag values and Changed bits afterwards, so a parsed command line (e.g.
+// `--host`, `--profile fuchsia`) never leaks into later tests that read flag
+// state directly (isHostFlagChanged, cmd.Flags().Changed, package flag vars).
 func resetAllFlags(cmd *cobra.Command) {
 	if !cmd.HasParent() {
 		ResetAuthTokenCaches()
 	}
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Name == "host" || f.Name == "profile" || f.Name == "buildbucket-host" {
+		if testPreservedFlags[f.Name] {
 			f.Changed = false
 			return
 		}
@@ -55,7 +64,7 @@ func resetAllFlags(cmd *cobra.Command) {
 		f.Changed = false
 	})
 	cmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
-		if f.Name == "host" || f.Name == "profile" || f.Name == "buildbucket-host" {
+		if testPreservedFlags[f.Name] {
 			f.Changed = false
 			return
 		}
@@ -72,6 +81,78 @@ func resetAllFlags(cmd *cobra.Command) {
 	}
 }
 
+// flagState is the value and Changed bit of one flag at snapshot time.
+type flagState struct {
+	value   string
+	slice   []string
+	isSlice bool
+	changed bool
+}
+
+// snapshotFlags records the value and Changed bit of every local and
+// persistent flag on every command in the tree rooted at root and returns a
+// function that restores them. Flags shared between commands (inherited
+// persistent flags, or several flags bound to one package variable) are
+// recorded once per *pflag.Flag.
+func snapshotFlags(root *cobra.Command) (restore func()) {
+	states := make(map[*pflag.Flag]flagState)
+	record := func(f *pflag.Flag) {
+		if _, seen := states[f]; seen {
+			return
+		}
+		st := flagState{value: f.Value.String(), changed: f.Changed}
+		if sv, ok := f.Value.(pflag.SliceValue); ok {
+			st.slice, st.isSlice = slices.Clone(sv.GetSlice()), true
+		}
+		states[f] = st
+	}
+	var walk func(*cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		cmd.Flags().VisitAll(record)
+		cmd.PersistentFlags().VisitAll(record)
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(root)
+	return func() {
+		for f, st := range states {
+			if f.Value.String() != st.value {
+				var err error
+				if st.isSlice {
+					err = f.Value.(pflag.SliceValue).Replace(st.slice)
+				} else {
+					err = f.Value.Set(st.value)
+				}
+				if err != nil {
+					panic(fmt.Sprintf("restoring flag --%s to %q: %v", f.Name, st.value, err))
+				}
+			}
+			f.Changed = st.changed
+		}
+	}
+}
+
+// isolateRootCmdForTest resets RootCmd's flags like executeCommand does and
+// restores their values, Changed bits, args, and output writers when t
+// finishes. Use it in tests that call RootCmd.Execute() directly.
+func isolateRootCmdForTest(t *testing.T) {
+	t.Helper()
+	setupRootAliases()
+	resetAllFlags(RootCmd)
+	restore := snapshotFlags(RootCmd)
+	t.Cleanup(func() {
+		restore()
+		RootCmd.SetArgs(nil)
+		RootCmd.SetOut(nil)
+		RootCmd.SetErr(nil)
+	})
+}
+
+// testPreservedFlags names the flags whose package variables tests assign
+// directly; see resetAllFlags.
+var testPreservedFlags = map[string]bool{"host": true, "profile": true, "buildbucket-host": true}
+
 func init() {
 	setupRootAliases()
 	// Pin scheduleNowFn to 19:00 UTC (12:00 PM PDT) in tests so evening
@@ -83,23 +164,67 @@ func init() {
 	}
 }
 
-// executeCommand runs a cobra command and captures stdout.
+// preserveRootCmdState snapshots the RootCmd state that Execute() mutates
+// (Use, Long, and Annotations via setupRootCmdHelp, and the group RunE
+// handlers installed by rejectUnknownSubcommands) and restores it when t
+// finishes, so tests that call Execute() do not change the command tree seen
+// by tests that run after them.
+func preserveRootCmdState(t *testing.T) {
+	t.Helper()
+	use, long := RootCmd.Use, RootCmd.Long
+	annotations := maps.Clone(RootCmd.Annotations)
+	runEs := make(map[*cobra.Command]func(*cobra.Command, []string) error)
+	var walk func(*cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		runEs[cmd] = cmd.RunE
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(RootCmd)
+	t.Cleanup(func() {
+		RootCmd.Use, RootCmd.Long = use, long
+		RootCmd.Annotations = annotations
+		for cmd, runE := range runEs {
+			cmd.RunE = runE
+		}
+		RootCmd.SetArgs(nil)
+		RootCmd.SetOut(nil)
+	})
+}
+
+// executeCommand runs a cobra command and captures combined stdout and stderr.
 func executeCommand(root *cobra.Command, args ...string) (string, error) {
 	return executeCommandWithStdin(root, nil, args...)
 }
 
-// executeCommandWithStdin runs a cobra command with the provided stdin reader and captures stdout.
+// executeCommandWithStdin runs a cobra command with the provided stdin reader
+// and captures combined stdout and stderr.
 func executeCommandWithStdin(root *cobra.Command, stdin io.Reader, args ...string) (string, error) {
+	var buf bytes.Buffer
+	err := executeCommandIO(root, stdin, &buf, &buf, args...)
+	return buf.String(), err
+}
+
+// executeCommandIO runs a cobra command with stdin, capturing stdout (including
+// direct writes to os.Stdout) into stdout and stderr into stderr. When stderr
+// is nil or equal to stdout, stderr shares the stdout pipe so both streams
+// merge in order.
+func executeCommandIO(root *cobra.Command, stdin io.Reader, stdout, stderr io.Writer, args ...string) error {
 	setupRootAliases()
 	resetAllFlags(root)
 	if MockCWD != "" {
 		root.SetContext(context.WithValue(root.Context(), configKey, &Config{CWD: MockCWD}))
 	}
 
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("creating stdout pipe: %w", err)
+	}
 	oldStdout := os.Stdout
 	os.Stdout = w
 
+	restoreFlags := snapshotFlags(root)
 	savedHostFlag := HostFlag
 	oldNewGerritClient := NewGerritClient
 	NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
@@ -127,29 +252,35 @@ func executeCommandWithStdin(root *cobra.Command, stdin io.Reader, args ...strin
 	defer func() {
 		NewGerritClient = oldNewGerritClient
 		HostFlag = savedHostFlag
+		restoreFlags()
 		root.SetIn(nil)
+		root.SetOut(nil)
+		root.SetErr(nil)
 	}()
 
+	errOut := stderr
+	if errOut == nil || errOut == stdout {
+		errOut = w
+	}
 	root.SetIn(stdin)
 	root.SetOut(w)
-	root.SetErr(w)
+	root.SetErr(errOut)
 	root.SetArgs(NormalizeCQArgs(args))
 
-	var buf bytes.Buffer
 	readDone := make(chan struct{})
 	go func() {
-		_, _ = buf.ReadFrom(r)
+		_, _ = io.Copy(stdout, r)
 		close(readDone)
 	}()
 
-	err := root.Execute()
+	runErr := root.Execute()
 
 	_ = w.Close()
 	os.Stdout = oldStdout
 	<-readDone
 	_ = r.Close()
 
-	return buf.String(), err
+	return runErr
 }
 
 // MockGitRunner implements GitRunner for testing.
@@ -211,6 +342,9 @@ func (m *MockGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args 
 	m.mu.Lock()
 	call := strings.Join(args, " ")
 	resp, hasResp := m.responses[call]
+	if !hasResp && call == "log -1 --no-show-signature --format=%H%x00%ct%x00%B HEAD" {
+		resp, hasResp = m.synthesizeSenseHeadLogLocked()
+	}
 	var errToReturn error
 	for pattern, err := range m.errors {
 		if call == pattern || strings.HasPrefix(call, pattern) {
@@ -279,6 +413,24 @@ func (m *MockGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args 
 		return m.RunFn(ctx, stdout, stderr, args...)
 	}
 	return nil
+}
+
+// synthesizeSenseHeadLogLocked answers the combined sense HEAD query
+// (senseHeadLogArgs) from the per-field responses
+// registered for the separate `rev-parse HEAD`, `log -1 --format=%ct HEAD`,
+// and `log -1 --format=%B HEAD` commands (or WithCommit's default message),
+// so fixtures can keep mocking the individual fields.
+func (m *MockGitRunner) synthesizeSenseHeadLogLocked() (string, bool) {
+	sha, hasSHA := m.responses["rev-parse HEAD"]
+	ct, hasCT := m.responses["log -1 --format=%ct HEAD"]
+	msg, hasMsg := m.responses["log -1 --format=%B HEAD"]
+	if !hasMsg {
+		msg, hasMsg = m.defaultCommitMsg, m.defaultCommitMsg != ""
+	}
+	if !hasSHA && !hasCT && !hasMsg {
+		return "", false
+	}
+	return strings.TrimSpace(sha) + "\x00" + strings.TrimSpace(ct) + "\x00" + msg, true
 }
 
 // OnCommand registers a fixed stdout response for an exact command argument string.
@@ -1049,8 +1201,35 @@ func FakeLog(name, viewURL string) LUCILog {
 }
 
 // OnGetBuild registers a GetBuild mock responding with the provided build details.
+// If details is a map (e.g. map[string]*LUCIBuildDetails or map[string]any), it
+// responds with the entry matching the request's build ID.
 func (s *MockGerritServer) OnGetBuild(details any) *MockGerritServer {
-	return s.OnJSON("POST", "/prpc/buildbucket.v2.Builds/GetBuild", http.StatusOK, details)
+	switch m := details.(type) {
+	case map[string]*LUCIBuildDetails:
+		return s.On("POST", "/prpc/buildbucket.v2.Builds/GetBuild", func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				ID string `json:"id"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || m[req.ID] == nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			s.RespondJSON(w, http.StatusOK, m[req.ID])
+		})
+	case map[string]any:
+		return s.On("POST", "/prpc/buildbucket.v2.Builds/GetBuild", func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				ID string `json:"id"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || m[req.ID] == nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			s.RespondJSON(w, http.StatusOK, m[req.ID])
+		})
+	default:
+		return s.OnJSON("POST", "/prpc/buildbucket.v2.Builds/GetBuild", http.StatusOK, details)
+	}
 }
 
 // MockIssueTrackerServer provides an in-memory Google Issue Tracker v1 REST server for testing.
