@@ -178,6 +178,16 @@ implementations of ``ReliableDatagramListener`` and
 Instances of these objects can then be configured for specific endpoints and
 passed around into APIs that consume ``pw_transport``.
 
+In-Memory Forwarding Sockets
+============================
+:cc:`ForwardingDatagramSocketPair` creates a connected pair of in-memory
+:cc:`ReliableDatagramSocket` endpoints (``first()`` and ``second()``) that
+forward datagrams to each other without copying. It is useful for unit testing
+and in-process communication between tasks.
+:cc:`ForwardingDatagramSocketOptions` configures the queue depth, which limits
+the write reservations and unread datagrams in each direction, and the maximum
+datagram size in each direction.
+
 ------------
 Implementing
 ------------

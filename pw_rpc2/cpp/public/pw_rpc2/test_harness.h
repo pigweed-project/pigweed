@@ -32,6 +32,7 @@
 #include "pw_rpc2/service.h"
 #include "pw_rpc2/status.h"
 #include "pw_status/status.h"
+#include "pw_transport/forwarding_socket.h"
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 #include "pw_async2/coro.h"
@@ -45,7 +46,7 @@ namespace pw::rpc2::test {
 /// client.
 ///
 /// Instantiates and connects a real `Server` (hosting `ServiceImpl`) and a
-/// `Client` over an in-memory `PairedConnection` on a single
+/// `Client` over an in-memory `ForwardingDatagramSocketPair` on a single
 /// `DispatcherForTest`. Tests drive RPCs through the generated `raw` or `pwpb`
 /// client API using `RunToCompletion()`, `RunInTaskUntilStalled()`, or
 /// `dispatcher()`.
@@ -71,11 +72,11 @@ class TestHarness {
     PW_CHECK_OK(server_.RegisterListenerBlocking(transport_));
     server_.Start();
 
-    PairedConnections paired = MakePairedConnections(allocator_);
-    transport_.ResolveAccept(std::move(paired.second));
+    auto paired = transport::ForwardingDatagramSocketPair::Create(allocator_);
+    transport_.ResolveAccept(paired.second());
 
     RpcResult<Client> client = RunToCompletion(
-        Client::Connect(dispatcher_, allocator_, std::move(paired.first)));
+        Client::Connect(dispatcher_, allocator_, paired.first()));
     PW_CHECK_OK(client.status());
     client_ = std::move(*client);
   }

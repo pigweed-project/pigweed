@@ -13,7 +13,7 @@
 // the License.
 
 // End-to-end tests: generated clients talk to generated services through a
-// real `Server` over in-memory `PairedConnection` links.
+// real `Server` over in-memory `ForwardingDatagramSocketPair` links.
 
 #include <algorithm>
 #include <array>
@@ -42,6 +42,8 @@
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
 #include "pw_span/span.h"
+#include "pw_transport/forwarding_socket.h"
+#include "pw_transport/socket.h"
 #include "pw_unit_test/framework.h"
 #include "pw_unit_test/status_macros.h"
 
@@ -607,8 +609,7 @@ class E2ETest : public ::testing::Test {
   // A connected client and both ends of the link it runs over.
   struct Connection {
     Client client;
-    test::PairedConnection* client_end = nullptr;
-    test::PairedConnection* server_end = nullptr;
+    transport::ForwardingDatagramSocketPair sockets;
   };
 
   explicit E2ETest(ServiceKind service_kind = ServiceKind::kRaw)
@@ -641,14 +642,15 @@ class E2ETest : public ::testing::Test {
 
   // Connects a new client to the server through `listener`.
   Connection& ConnectClient(test::MockTransport& listener) {
-    test::PairedConnections link = test::MakePairedConnections(allocator_);
-    connections_.emplace_back();
+    connections_.emplace_back(Connection{
+        .client = Client(),
+        .sockets = transport::ForwardingDatagramSocketPair::Create(
+            allocator_, {.queue_depth = 1}),
+    });
     Connection& connection = connections_.back();
-    connection.client_end = link.client_raw();
-    connection.server_end = link.server_raw();
-    listener.ResolveAccept(std::move(link.server()));
+    listener.ResolveAccept(connection.sockets.second());
     RpcResult<Client> client = RunToCompletion(
-        Client::Connect(dispatcher_, allocator_, std::move(link.client())));
+        Client::Connect(dispatcher_, allocator_, connection.sockets.first()));
     PW_TEST_EXPECT_OK(client.status());
     if (client.ok()) {
       connection.client = std::move(*client);
@@ -671,11 +673,8 @@ class E2ETest : public ::testing::Test {
   }
 
   // Severs both ends of `connection`'s link at once. Neither end is told why:
-  // each just sees its socket close. The server frees its end once it notices,
-  // so `connection`'s raw pointers must not be used afterwards.
-  static void SeverLink(Connection& connection) {
-    connection.client_end->SimulateDisconnect(/*disconnect_peer=*/true);
-  }
+  // each just sees its socket close.
+  static void SeverLink(Connection& connection) { connection.sockets.Close(); }
 
   // Makes a raw `EchoUnary` call and checks that it echoes `request`.
   bool ExpectEcho(const RawClient& client, ConstByteSpan request) {
@@ -870,7 +869,8 @@ TEST_F(E2ETest, ConcurrentCallsOnOneConnectionGetTheirOwnResponses) {
       MakePayload(16, 1), MakePayload(32, 2), MakePayload(48, 3)};
 
   // Hold the responses at the server until all three calls are in flight.
-  connection.server_end->SetBlockReserveWrite(true);
+  transport::WriteReservation write_blocker =
+      connection.sockets.second().TryReserveWrite(0).value();
   std::array<async2::FutureTask<RawEchoFuture>, 3> calls;
   for (size_t i = 0; i < calls.size(); ++i) {
     calls[i].emplace_future(client, requests[i]);
@@ -882,7 +882,7 @@ TEST_F(E2ETest, ConcurrentCallsOnOneConnectionGetTheirOwnResponses) {
     EXPECT_FALSE(call.has_value());
   }
 
-  connection.server_end->SetBlockReserveWrite(false);
+  write_blocker.Cancel();
   dispatcher_.RunUntilStalled();
   for (size_t i = 0; i < calls.size(); ++i) {
     ASSERT_TRUE(calls[i].has_value());
@@ -906,7 +906,8 @@ TEST_F(E2ETest, MultiInterfaceBackpressureOnOneConnectionDoesNotStallOthers) {
 
   // Block the server's writes to client 1 before it sends anything, so every
   // echo is held at the server.
-  blocked.server_end->SetBlockReserveWrite(true);
+  transport::WriteReservation write_blocker =
+      blocked.sockets.second().TryReserveWrite(0).value();
   for (const Payload& message : messages) {
     PW_TEST_ASSERT_OK(
         RunToCompletion(stream.writer().WriteCopy(ConstBuf::Unowned(message))));
@@ -920,7 +921,7 @@ TEST_F(E2ETest, MultiInterfaceBackpressureOnOneConnectionDoesNotStallOthers) {
   EXPECT_TRUE(ExpectEcho(client3, MakePayload(kMaxPayloadSize, 30)));
   EXPECT_FALSE(first_echo.has_value());
 
-  blocked.server_end->SetBlockReserveWrite(false);
+  write_blocker.Cancel();
   dispatcher_.RunUntilStalled();
   ASSERT_TRUE(first_echo.has_value());
   PW_TEST_ASSERT_OK(first_echo.value());
@@ -964,7 +965,8 @@ TEST_F(E2ETest, MultiInterfaceDisconnectWithEchoesInFlight) {
 
   PW_TEST_ASSERT_OK_AND_ASSIGN(auto stream,
                                RunToCompletion(client1.EchoBidiStream()));
-  severed.server_end->SetBlockReserveWrite(true);
+  transport::WriteReservation write_blocker =
+      severed.sockets.second().TryReserveWrite(0).value();
   for (uint32_t i = 0; i < 3; ++i) {
     PW_TEST_ASSERT_OK(RunToCompletion(
         stream.writer().WriteCopy(ConstBuf::Unowned(MakePayload(16, i)))));
@@ -975,6 +977,7 @@ TEST_F(E2ETest, MultiInterfaceDisconnectWithEchoesInFlight) {
   ASSERT_FALSE(echo.has_value());
 
   SeverLink(severed);
+  write_blocker.Cancel();
   dispatcher_.RunUntilStalled();
   ASSERT_TRUE(echo.has_value());
   EXPECT_EQ(echo.value().status(), RpcStatus::Disconnected());
@@ -1055,7 +1058,8 @@ TEST_F(E2ETest, RepeatedBackpressureReturnsMemoryToBaseline) {
   size_t first_round_in_flight = 0;
   for (size_t round = 0; round < kRounds; ++round) {
     std::array<Payload, kMessagesPerRound> messages;
-    connection.server_end->SetBlockReserveWrite(true);
+    transport::WriteReservation write_blocker =
+        connection.sockets.second().TryReserveWrite(0).value();
     for (size_t i = 0; i < messages.size(); ++i) {
       messages[i] =
           MakePayload(32, static_cast<uint32_t>(round * kMessagesPerRound + i));
@@ -1078,7 +1082,7 @@ TEST_F(E2ETest, RepeatedBackpressureReturnsMemoryToBaseline) {
       ASSERT_EQ(in_flight, first_round_in_flight);
     }
 
-    connection.server_end->SetBlockReserveWrite(false);
+    write_blocker.Cancel();
     dispatcher_.RunUntilStalled();
     ASSERT_TRUE(first_echo.has_value());
     PW_TEST_ASSERT_OK(first_echo.value());
@@ -1140,7 +1144,8 @@ TEST_F(ProxyTest, ForwardsUnaryCallsToBackend) {
   // Hold the backend's responses until all three forwarded calls reach it.
   const std::array<Payload, 3> requests = {
       MakePayload(16, 10), MakePayload(32, 11), MakePayload(48, 12)};
-  backend_->server_end->SetBlockReserveWrite(true);
+  transport::WriteReservation write_blocker =
+      backend_->sockets.second().TryReserveWrite(0).value();
   std::array<async2::FutureTask<RawEchoFuture>, 3> calls;
   for (size_t i = 0; i < calls.size(); ++i) {
     calls[i].emplace_future(frontend_, requests[i]);
@@ -1152,7 +1157,7 @@ TEST_F(ProxyTest, ForwardsUnaryCallsToBackend) {
     EXPECT_FALSE(call.has_value());
   }
 
-  backend_->server_end->SetBlockReserveWrite(false);
+  write_blocker.Cancel();
   dispatcher_.RunUntilStalled();
   for (size_t i = 0; i < calls.size(); ++i) {
     ASSERT_TRUE(calls[i].has_value());
@@ -1163,7 +1168,8 @@ TEST_F(ProxyTest, ForwardsUnaryCallsToBackend) {
 
 TEST_F(ProxyTest, BackendDisconnectCancelsFrontendCall) {
   // Hold the proxy's request to the backend, then sever the backend link.
-  backend_->client_end->SetBlockReserveWrite(true);
+  transport::WriteReservation write_blocker =
+      backend_->sockets.first().TryReserveWrite(0).value();
   const Payload request = MakePayload(kMaxPayloadSize, 1);
   async2::FutureTask call(RawEchoFuture(frontend_, request));
   dispatcher_.Post(call);
@@ -1171,6 +1177,7 @@ TEST_F(ProxyTest, BackendDisconnectCancelsFrontendCall) {
   ASSERT_FALSE(call.has_value());
 
   SeverLink(*backend_);
+  write_blocker.Cancel();
   dispatcher_.RunUntilStalled();
   ASSERT_TRUE(call.has_value());
   EXPECT_EQ(call.value().status(), RpcStatus::Cancelled());

@@ -51,6 +51,7 @@
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
 #include "pw_status/status.h"
+#include "pw_transport/forwarding_socket.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc2::test {
@@ -473,11 +474,12 @@ class ServiceTest : public ::testing::Test {
     server_.Start();
     started_ = true;
 
-    auto connections = MakePairedConnections(allocator_);
-    transport_.ResolveAccept(connections.server());
+    auto connections =
+        transport::ForwardingDatagramSocketPair::Create(allocator_);
+    transport_.ResolveAccept(connections.second());
     ::pw::rpc2::RpcResult<pw::rpc2::Client> client =
         RunToCompletion(::pw::rpc2::Client::Connect(
-            dispatcher_, allocator_, connections.client()));
+            dispatcher_, allocator_, connections.first()));
     PW_TEST_ASSERT_OK(client.status());
     client_.emplace(std::move(*client), dispatcher_);
   }

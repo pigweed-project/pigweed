@@ -51,6 +51,7 @@
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
 #include "pw_status/status.h"
+#include "pw_transport/forwarding_socket.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -1160,11 +1161,12 @@ class TestServer {
     }
     server_.Start();
 
-    auto paired = test::MakePairedConnections(allocator_);
-    transport_.ResolveAccept(paired.second);
+    auto paired =
+        pw::transport::ForwardingDatagramSocketPair::Create(allocator_);
+    transport_.ResolveAccept(paired.second());
 
     async2::FutureTask connect(
-        Client::Connect(dispatcher_, allocator_, paired.first));
+        Client::Connect(dispatcher_, allocator_, paired.first()));
     dispatcher_.Post(connect);
     dispatcher_.RunUntilStalled();
     if (!connect.has_value() || !connect.value().ok()) {

@@ -244,7 +244,6 @@ cc_library(
         "public/pw_rpc2/internal/packet_testing.h",
         "public/pw_rpc2/internal/test_utils.h",
     ],
-    implementation_deps = ["//pw_log"],
     strip_include_prefix = "public",
     deps = [
         ":cpp",
@@ -282,6 +281,7 @@ cc_library(
         "//pw_async2",
         "//pw_async2:testing",
         "//pw_status",
+        "//pw_transport/cpp:forwarding_socket",
     ],
 )
 
@@ -312,6 +312,7 @@ pw_cc_test(
         "//pw_async2",
         "//pw_async2:testing",
         "//pw_bytes",
+        "//pw_transport/cpp:forwarding_socket",
         "//pw_transport/cpp:socket",
         "//pw_unit_test",
     ],
@@ -591,6 +592,7 @@ pw_cc_test(
         "//pw_buf",
         "//pw_bytes",
         "//pw_status",
+        "//pw_transport/cpp:forwarding_socket",
         "//pw_unit_test",
     ],
 )
@@ -611,6 +613,7 @@ pw_cc_test(
         "//pw_bytes",
         "//pw_polyfill",
         "//pw_status",
+        "//pw_transport/cpp:forwarding_socket",
         "//pw_unit_test",
     ],
 )
@@ -648,6 +651,8 @@ pw_cc_test(
         "//pw_buf",
         "//pw_bytes",
         "//pw_status",
+        "//pw_transport/cpp:forwarding_socket",
+        "//pw_transport/cpp:socket",
         "//pw_unit_test",
     ],
 )
@@ -667,6 +672,8 @@ pw_cc_test(
         "//pw_bytes",
         "//pw_containers:vector",
         "//pw_span",
+        "//pw_transport/cpp:forwarding_socket",
+        "//pw_transport/cpp:socket",
         "//pw_unit_test",
         "//pw_unit_test:status_macros",
     ],

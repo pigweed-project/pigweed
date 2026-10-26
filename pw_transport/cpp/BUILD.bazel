@@ -54,6 +54,29 @@ alias(
     actual = ":socket",
 )
 
+cc_library(
+    name = "forwarding_socket",
+    srcs = ["forwarding_socket.cc"],
+    hdrs = ["public/pw_transport/forwarding_socket.h"],
+    implementation_deps = [
+        "//pw_assert:assert",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_buf",
+        "//pw_containers:queue",
+        "//pw_intrusive_ptr",
+        "//pw_status",
+        "//pw_sync:interrupt_spin_lock",
+        "//pw_sync:lock_annotations",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":socket",
+        "//pw_allocator",
+        "//pw_result",
+    ],
+)
+
 # Intended for tests and examples, so restricted to upstream Pigweed.
 cc_library(
     name = "framed_tcp",
@@ -85,8 +108,26 @@ cc_library(
 filegroup(
     name = "doxygen",
     srcs = [
+        "public/pw_transport/forwarding_socket.h",
         "public/pw_transport/socket.h",
         "public/pw_transport/transport.h",
+    ],
+)
+
+pw_cc_test(
+    name = "forwarding_socket_test",
+    srcs = ["forwarding_socket_test.cc"],
+    deps = [
+        ":forwarding_socket",
+        ":socket",
+        "//pw_allocator:null_allocator",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_result",
+        "//pw_status",
+        "//pw_unit_test:status_macros",
     ],
 )
 

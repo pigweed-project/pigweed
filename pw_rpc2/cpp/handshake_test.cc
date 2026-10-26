@@ -27,6 +27,7 @@
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/status.h"
+#include "pw_transport/forwarding_socket.h"
 #include "pw_transport/socket.h"
 #include "pw_unit_test/framework.h"
 
@@ -110,10 +111,10 @@ TEST(HandshakeTest, InitiatorAndResponderSuccessful3WayHandshake) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  auto paired = test::MakePairedConnections(allocator);
+  auto paired = transport::ForwardingDatagramSocketPair::Create(allocator);
 
-  HandshakeTestTask initiator_task(InitiatorHandshakeFuture(paired.first));
-  HandshakeTestTask responder_task(ResponderHandshakeFuture(paired.second));
+  HandshakeTestTask initiator_task(InitiatorHandshakeFuture(paired.first()));
+  HandshakeTestTask responder_task(ResponderHandshakeFuture(paired.second()));
 
   dispatcher.Post(initiator_task);
   dispatcher.Post(responder_task);
@@ -130,22 +131,25 @@ TEST(HandshakeTest, InitiatorAndResponderSuccessful3WayHandshake) {
   EXPECT_EQ(responder_task.result()->value().info.negotiated_version, 1u);
   EXPECT_TRUE(responder_task.result()->value().connection);
 
-  // Initiator committed 2 packets: SYN, ACK
-  EXPECT_EQ(paired.first_raw->commit_count(), 2u);
-  // Responder committed 1 packet: SYN-ACK
-  EXPECT_EQ(paired.second_raw->commit_count(), 1u);
+  // The responder needed the initiator's SYN and ACK, and the initiator needed
+  // the responder's SYN-ACK. Nothing is left unread, so neither side sent any
+  // other packets.
+  transport::ReadFuture initiator_read = paired.first().Read();
+  EXPECT_TRUE(dispatcher.RunInTaskUntilStalled(initiator_read).IsPending());
+  transport::ReadFuture responder_read = paired.second().Read();
+  EXPECT_TRUE(dispatcher.RunInTaskUntilStalled(responder_read).IsPending());
 }
 
 TEST(HandshakeTest, VersionNegotiationInitiatorHigher) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  auto paired = test::MakePairedConnections(allocator);
+  auto paired = transport::ForwardingDatagramSocketPair::Create(allocator);
 
   HandshakeTestTask initiator_task(
-      InitiatorHandshakeFuture(paired.first, HandshakeInfo{2}));
+      InitiatorHandshakeFuture(paired.first(), HandshakeInfo{2}));
   HandshakeTestTask responder_task(
-      ResponderHandshakeFuture(paired.second, HandshakeInfo{1}));
+      ResponderHandshakeFuture(paired.second(), HandshakeInfo{1}));
 
   dispatcher.Post(initiator_task);
   dispatcher.Post(responder_task);
@@ -167,12 +171,12 @@ TEST(HandshakeTest, VersionNegotiationResponderHigher) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  auto paired = test::MakePairedConnections(allocator);
+  auto paired = transport::ForwardingDatagramSocketPair::Create(allocator);
 
   HandshakeTestTask initiator_task(
-      InitiatorHandshakeFuture(paired.first, HandshakeInfo{1}));
+      InitiatorHandshakeFuture(paired.first(), HandshakeInfo{1}));
   HandshakeTestTask responder_task(
-      ResponderHandshakeFuture(paired.second, HandshakeInfo{2}));
+      ResponderHandshakeFuture(paired.second(), HandshakeInfo{2}));
 
   dispatcher.Post(initiator_task);
   dispatcher.Post(responder_task);
@@ -591,12 +595,12 @@ TEST(HandshakeTest, VersionNegotiationBothAboveOne) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  auto paired = test::MakePairedConnections(allocator);
+  auto paired = transport::ForwardingDatagramSocketPair::Create(allocator);
 
   HandshakeTestTask initiator_task(
-      InitiatorHandshakeFuture(paired.first, HandshakeInfo{3}));
+      InitiatorHandshakeFuture(paired.first(), HandshakeInfo{3}));
   HandshakeTestTask responder_task(
-      ResponderHandshakeFuture(paired.second, HandshakeInfo{2}));
+      ResponderHandshakeFuture(paired.second(), HandshakeInfo{2}));
 
   dispatcher.Post(initiator_task);
   dispatcher.Post(responder_task);

@@ -44,6 +44,8 @@
 #include "pw_rpc2/writer.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
+#include "pw_transport/forwarding_socket.h"
+#include "pw_transport/socket.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc2::mixed_apis {
@@ -457,18 +459,20 @@ class MixedApisTest : public ::testing::Test {
     server_.Start();
     started_ = true;
 
-    auto connections = ::pw::rpc2::test::MakePairedConnections(allocator_);
-    server_connection_ = connections.server_raw();
-    transport_.ResolveAccept(connections.server());
+    auto connections = transport::ForwardingDatagramSocketPair::Create(
+        allocator_, {.queue_depth = 1});
+    server_connection_ = connections.second();
+    transport_.ResolveAccept(connections.second());
     ::pw::rpc2::RpcResult<pw::rpc2::Client> client =
         RunToCompletion(::pw::rpc2::Client::Connect(
-            dispatcher_, allocator_, connections.client()));
+            dispatcher_, allocator_, connections.first()));
     PW_TEST_ASSERT_OK(client.status());
     client_.emplace(std::move(*client), dispatcher_);
   }
 
   void TearDown() override {
     client_.reset();
+    server_connection_ = {};
     if (started_) {
       auto closed = server_.Close();
       transport_.ResolveAccept(::pw::Status::Cancelled());
@@ -520,12 +524,13 @@ class MixedApisTest : public ::testing::Test {
     auto call = RunToCompletion(std::move(future));
     PW_TEST_ASSERT_OK(call);
 
-    server_connection_->SetBlockReserveWrite(true);
+    transport::WriteReservation write_blocker =
+        server_connection_.TryReserveWrite(0).value();
     for (uint32_t value : {4u, 9u}) {
       PW_TEST_EXPECT_OK(
           RunToCompletion(call->writer().Write(MixedRequest{.value = value})));
     }
-    server_connection_->SetBlockReserveWrite(false);
+    write_blocker.Cancel();
 
     PW_TEST_EXPECT_OK(RunToCompletion(call->writer().Finish()));
     ExpectStream(call->reader(), {4u, 9u});
@@ -543,7 +548,7 @@ class MixedApisTest : public ::testing::Test {
   MixedApiService service_;
   ::pw::rpc2::Server server_;
   ::pw::rpc2::test::MockTransport transport_;
-  ::pw::rpc2::test::PairedConnection* server_connection_ = nullptr;
+  ::pw::transport::ReliableDatagramSocket server_connection_;
   std::optional<::pw::rpc2::test::ScopedClient> client_;
   bool started_ = false;
 };
