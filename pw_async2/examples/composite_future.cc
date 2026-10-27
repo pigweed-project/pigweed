@@ -13,6 +13,7 @@
 // the License.
 
 #include <chrono>
+#include <utility>
 
 #include "pw_assert/assert.h"
 #include "pw_assert/check.h"
@@ -73,10 +74,22 @@ class ReadSensorWithRetryFuture {
   // Future concept requirement: define the result value type.
   using value_type = pw::Result<int>;
 
-  // Futures must be default constructible and movable.
+  // Futures must be default constructible and movable. Moving a future
+  // transfers its operation, leaving the moved-from future empty.
   ReadSensorWithRetryFuture() = default;
-  ReadSensorWithRetryFuture(ReadSensorWithRetryFuture&&) = default;
-  ReadSensorWithRetryFuture& operator=(ReadSensorWithRetryFuture&&) = default;
+  ReadSensorWithRetryFuture(ReadSensorWithRetryFuture&& other) {
+    *this = std::move(other);
+  }
+  ReadSensorWithRetryFuture& operator=(ReadSensorWithRetryFuture&& other) {
+    state_ = std::exchange(other.state_, State::kUninitialized);
+    sensor_ = other.sensor_;
+    time_provider_ = other.time_provider_;
+    retries_left_ = other.retries_left_;
+    immediate_error_ = other.immediate_error_;
+    read_future_ = std::move(other.read_future_);
+    timer_future_ = std::move(other.timer_future_);
+    return *this;
+  }
 
   // Future concept requirement: check if the operation can be pended.
   bool is_pendable() const {
@@ -351,6 +364,18 @@ TEST(CompositeFutureTest, SynchronousInvalidArgumentValidation) {
 
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
+}
+
+TEST(CompositeFutureTest, MovedFromFutureIsEmpty) {
+  SimulatedTimeProvider<SystemClock> time_provider;
+  MockSensor sensor;
+
+  ReadSensorWithRetryFuture future = ReadSensorWithRetry(sensor, time_provider);
+  ReadSensorWithRetryFuture moved = std::move(future);
+
+  EXPECT_FALSE(future.is_pendable());  // NOLINT(bugprone-use-after-move)
+  EXPECT_FALSE(future.is_complete());  // NOLINT(bugprone-use-after-move)
+  EXPECT_TRUE(moved.is_pendable());
 }
 
 }  // namespace

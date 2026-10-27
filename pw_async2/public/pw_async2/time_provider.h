@@ -17,6 +17,7 @@
 #include <stddef.h>
 
 #include <mutex>
+#include <utility>
 
 #include "pw_assert/assert.h"
 #include "pw_async2/poll.h"
@@ -135,11 +136,15 @@ class [[nodiscard]] TimeFuture
   }
 
   TimeFuture& operator=(TimeFuture&& other) {
+    if (this == &other) {
+      return *this;
+    }
     Unlist();
 
     std::lock_guard lock(internal::time_lock());
-    provider_ = other.provider_;
-    expiration_ = other.expiration_;
+    provider_ = std::exchange(other.provider_, nullptr);
+    expiration_ = std::exchange(other.expiration_, value_type{});
+    waker_ = std::move(other.waker_);
 
     // Replace the entry of `other_` in the list.
     if (!other.unlisted()) {
@@ -147,9 +152,6 @@ class [[nodiscard]] TimeFuture
       while (&*std::next(previous) != &other) {
         previous++;
       }
-
-      // NOTE: this will leave `other` reporting (falsely) that it has expired.
-      // However, `other` should not be used post-`move`.
       other.unlist(&*previous);
       provider_->futures_.insert_after(previous, *this);
     }

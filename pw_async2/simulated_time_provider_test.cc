@@ -181,4 +181,80 @@ TEST(SimulatedTimeProvider, MultipleMovedTimersExpireInOrder) {
   EXPECT_TRUE(t3.completed_);
 }
 
+// Owns a timer and moves it to another member on request, as the owner of a
+// pended future may do between polls.
+class RelocatingWaitTask : public Task {
+ public:
+  explicit RelocatingWaitTask(TimeFuture<SystemClock>&& future)
+      : first_(std::move(future)) {}
+
+  void MoveTimer() {
+    second_ = std::move(first_);
+    moved_ = true;
+  }
+
+  const TimeFuture<SystemClock>& first() const { return first_; }
+  const TimeFuture<SystemClock>& second() const { return second_; }
+  bool completed() const { return completed_; }
+
+ private:
+  Poll<> DoPend(Context& cx) final {
+    TimeFuture<SystemClock>& future = moved_ ? second_ : first_;
+    if (future.Pend(cx).IsPending()) {
+      return Pending();
+    }
+    completed_ = true;
+    return Ready();
+  }
+
+  TimeFuture<SystemClock> first_;
+  TimeFuture<SystemClock> second_;
+  bool moved_ = false;
+  bool completed_ = false;
+};
+
+TEST(SimulatedTimeProvider, TimerMovedAfterPendWakesTask) {
+  SimulatedTimeProvider<SystemClock> tp;
+  RelocatingWaitTask task(tp.WaitFor(1h));
+  DispatcherForTest dispatcher;
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  // Move the timer after it has stored the task's waker.
+  task.MoveTimer();
+  EXPECT_FALSE(task.first().is_pendable());
+  EXPECT_FALSE(task.first().is_complete());
+  EXPECT_TRUE(task.second().is_pendable());
+
+  EXPECT_TRUE(tp.AdvanceUntilNextExpiration());
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+  EXPECT_TRUE(task.completed());
+}
+
+TEST(SimulatedTimeProvider, MovedFromTimerIsEmpty) {
+  SimulatedTimeProvider<SystemClock> tp;
+  TimeFuture<SystemClock> timer = tp.WaitFor(1h);
+  TimeFuture<SystemClock> moved(std::move(timer));
+
+  EXPECT_FALSE(timer.is_pendable());  // NOLINT(bugprone-use-after-move)
+  EXPECT_FALSE(timer.is_complete());  // NOLINT(bugprone-use-after-move)
+  EXPECT_TRUE(moved.is_pendable());
+}
+
+TEST(SimulatedTimeProvider, SelfMoveAssignedTimerStillExpires) {
+  SimulatedTimeProvider<SystemClock> tp;
+  WaitTask task(tp.WaitFor(1h));
+  DispatcherForTest dispatcher;
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  auto& future_ref = task.future_;  // Use a reference to avoid -Wself-move.
+  task.future_ = std::move(future_ref);
+  EXPECT_TRUE(task.future_.is_pendable());  // NOLINT(bugprone-use-after-move)
+
+  EXPECT_TRUE(tp.AdvanceUntilNextExpiration());
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
+  EXPECT_TRUE(task.completed_);
+}
+
 }  // namespace

@@ -32,6 +32,9 @@ A ``Future<T>`` exposes the following API:
   future does not represent an asynchronous operation and is neither pendable
   nor complete.
 - A destructor that abandons the future so no further operations will access it.
+- A move constructor and move assignment operator. Moving a future transfers
+  its asynchronous operation, including any stored waker or registration with a
+  provider, to the destination. The moved-from future is left empty.
 - ``value_type``: Type alias for the value produced by the future; ``void`` if
   the future produces no value. The :cc:`FutureValue<Future>
   <pw::async2::FutureValue>` helper resolves to the future's ``value_type``, but
