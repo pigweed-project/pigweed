@@ -24,6 +24,7 @@ KERNEL_COMMON_FLAGS = {
 }
 
 KERNEL_DEVICE_COMMON_FLAGS = dicts.add(KERNEL_COMMON_FLAGS, {
+    "@pigweed//pw_assert/rust:pw_assert_backend": "@pigweed//pw_assert/rust:pw_assert_backend_pw_log",
     # Don't use LTO on host builds, as it doesn't
     # currently work on mac x86. There's also no real size
     # constraints on host builds.  Once b/419358200 is
