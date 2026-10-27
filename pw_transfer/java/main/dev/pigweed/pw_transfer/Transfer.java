@@ -190,7 +190,7 @@ abstract class Transfer<T> extends AbstractFuture<T> {
   }
 
   final void handleTimeoutIfDeadlineExceeded() {
-    if (Instant.now().isAfter(deadline)) {
+    if (!Instant.now().isBefore(deadline)) {
       try {
         state.handleTimeout();
       } catch (TransferAbortedException e) {

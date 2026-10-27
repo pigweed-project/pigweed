@@ -180,9 +180,9 @@ class TransferEventHandler {
    */
   void runForTestsThatMustTimeOut() {
     while (processEvents) {
-      while (!events.isEmpty()) {
+      do {
         handleNextEvent();
-      }
+      } while (processEvents && !events.isEmpty());
       handleTimeouts();
     }
   }
@@ -191,7 +191,9 @@ class TransferEventHandler {
   void stop() {
     enqueueEvent(() -> {
       logger.atFine().log("Terminating TransferEventHandler");
-      sessionIdToTransfer.values().forEach(Transfer::handleTermination);
+      for (Transfer<?> transfer : sessionIdToTransfer.values().toArray(Transfer<?>[] ::new)) {
+        transfer.handleTermination();
+      }
       processEvents = false;
     });
   }
@@ -199,7 +201,18 @@ class TransferEventHandler {
   /** Blocks until all events currently in the queue are processed; for test use only. */
   void waitUntilEventsAreProcessedForTest() {
     Semaphore semaphore = new Semaphore(0);
-    enqueueEvent(semaphore::release);
+    Event releaseWhenDone = new Event() {
+      @Override
+      public void handle() {
+        handleTimeouts();
+        if (events.isEmpty() && Instant.now().isBefore(getNextTimeout())) {
+          semaphore.release();
+        } else {
+          enqueueEvent(this);
+        }
+      }
+    };
+    enqueueEvent(releaseWhenDone);
     try {
       semaphore.acquire();
     } catch (InterruptedException e) {
@@ -300,9 +313,9 @@ class TransferEventHandler {
   private abstract class ChunkHandler implements StreamObserver<Chunk> {
     @Override
     public final void onNext(Chunk chunkProto) {
-      VersionedChunk chunk = VersionedChunk.fromMessage(chunkProto, legacyIdToSessionId);
-
       enqueueEvent(() -> {
+        VersionedChunk chunk = VersionedChunk.fromMessage(chunkProto, legacyIdToSessionId);
+
         Transfer<?> transfer;
         if (chunk.sessionId() == VersionedChunk.UNKNOWN_SESSION_ID
             || (transfer = sessionIdToTransfer.get(chunk.sessionId())) == null) {
