@@ -24,10 +24,40 @@ import subprocess
 import sys
 import stat
 import tempfile
+import time
 
 # Grabbing datetime string once so it will always be the same for all GnTarget
 # objects.
 _DATETIME_STRING = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+
+# pip's default socket timeout is 15 seconds. pip's own retry logic (--retries)
+# only covers establishing a connection and receiving response headers. A read
+# timeout while streaming a response body (e.g. a wheel or its metadata from
+# files.pythonhosted.org) is not retried by pip versions older than 25.1, so a
+# single stalled read fails the entire install. Use a more forgiving timeout
+# unless the user has explicitly configured one in the environment.
+_PIP_DEFAULT_TIMEOUT_SECONDS = '60'
+
+# Number of attempts for commands that download packages from the network.
+_NETWORK_COMMAND_ATTEMPTS = 3
+
+# Delay between attempts, multiplied by the attempt number.
+_NETWORK_RETRY_DELAY_SECONDS = 5
+
+# Substrings in pip output that indicate a transient network failure, in which
+# case simply rerunning the command is likely to succeed.
+_TRANSIENT_NETWORK_ERRORS = (
+    'ReadTimeoutError',
+    'ConnectTimeoutError',
+    'NewConnectionError',
+    'IncompleteRead',
+    'ProtocolError',
+    'ConnectionResetError',
+    'RemoteDisconnected',
+    'Read timed out',
+    'Connection reset by peer',
+    'Temporary failure in name resolution',
+)
 
 
 def _is_windows() -> bool:
@@ -79,19 +109,84 @@ def _required_packages(requirements):
     return packages
 
 
-def _check_call(args, **kwargs):
-    stdout = kwargs.get('stdout', sys.stdout)
+def _is_transient_network_failure(output: str) -> bool:
+    """Returns whether command output indicates a transient network error."""
+    return any(error in output for error in _TRANSIENT_NETWORK_ERRORS)
 
-    with tempfile.TemporaryFile(mode='w+') as temp:
-        try:
-            kwargs['stdout'] = temp
-            kwargs['stderr'] = subprocess.STDOUT
-            print(args, kwargs, file=temp)
-            subprocess.check_call(args, **kwargs)
-        except subprocess.CalledProcessError:
-            temp.seek(0)
-            stdout.write(temp.read())
-            raise
+
+def _pip_network_env() -> dict[str, str]:
+    """Returns a copy of os.environ with network-friendly pip settings."""
+    environ = dict(os.environ)
+    environ.setdefault('PIP_DEFAULT_TIMEOUT', _PIP_DEFAULT_TIMEOUT_SECONDS)
+    return environ
+
+
+def _wait_before_retry(attempt: int, attempts: int, out) -> None:
+    delay = _NETWORK_RETRY_DELAY_SECONDS * attempt
+    print(
+        f'Transient network error detected (attempt {attempt}/{attempts}); '
+        f'retrying in {delay} seconds.',
+        file=out,
+        flush=True,
+    )
+    time.sleep(delay)
+
+
+def _check_call(args, retry_on_network_errors=False, **kwargs):
+    stdout = kwargs.get('stdout', sys.stdout)
+    attempts = _NETWORK_COMMAND_ATTEMPTS if retry_on_network_errors else 1
+
+    for attempt in range(1, attempts + 1):
+        with tempfile.TemporaryFile(mode='w+') as temp:
+            try:
+                kwargs['stdout'] = temp
+                kwargs['stderr'] = subprocess.STDOUT
+                # Don't dump the (large) environment into the log.
+                logged_kwargs = {k: v for k, v in kwargs.items() if k != 'env'}
+                print(args, logged_kwargs, file=temp)
+                subprocess.check_call(args, **kwargs)
+                return
+            except subprocess.CalledProcessError:
+                temp.seek(0)
+                output = temp.read()
+                stdout.write(output)
+                if attempt < attempts and _is_transient_network_failure(output):
+                    _wait_before_retry(attempt, attempts, stdout)
+                    continue
+                raise
+
+
+def _check_call_logged(args, log_path, retry_on_network_errors=False, **kwargs):
+    """Runs a command, writing its output to log_path.
+
+    On failure, raises a CalledProcessError whose output is the full contents
+    of log_path.
+    """
+    attempts = _NETWORK_COMMAND_ATTEMPTS if retry_on_network_errors else 1
+
+    with open(log_path, 'w') as outs:
+        print(args, file=outs)
+
+    for attempt in range(1, attempts + 1):
+        start = os.path.getsize(log_path)
+        with open(log_path, 'a') as outs:
+            kwargs['stdout'] = outs
+            kwargs['stderr'] = outs
+            returncode = subprocess.call(args, **kwargs)
+        if returncode == 0:
+            return
+
+        with open(log_path, 'rb') as ins:
+            ins.seek(start)
+            output = ins.read().decode('utf-8', errors='replace')
+
+        if attempt < attempts and _is_transient_network_failure(output):
+            with open(log_path, 'a') as outs:
+                _wait_before_retry(attempt, attempts, outs)
+            continue
+
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as ins:
+            raise subprocess.CalledProcessError(returncode, args, ins.read())
 
 
 def _find_files_by_name(roots, name, allow_nesting=False):
@@ -322,7 +417,9 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
                 + pip_install_args
                 + args
             )
-            return _check_call(cmd)
+            return _check_call(
+                cmd, retry_on_network_errors=True, env=_pip_network_env()
+            )
 
     constraint_args = []
     if constraints:
@@ -410,17 +507,17 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
 
         ninja_log = 'ninja-{}.log'.format(gn_target.name)
         ninja_log_path = os.path.join(venv_path, ninja_log)
-        try:
-            with open(ninja_log_path, 'w') as outs:
-                ninja_cmd = ['ninja', '-C', build_dir, '-v']
-                ninja_cmd.append(gn_target.target)
-                print(ninja_cmd, file=outs)
-                subprocess.check_call(ninja_cmd, stdout=outs, stderr=outs)
-        except subprocess.CalledProcessError as err:
-            with open(ninja_log_path, 'r') as ins:
-                raise subprocess.CalledProcessError(
-                    err.returncode, err.cmd, ins.read()
-                )
+        ninja_cmd = ['ninja', '-C', build_dir, '-v']
+        ninja_cmd.append(gn_target.target)
+        # The ninja build runs pip to install Python packages, which may hit
+        # transient network errors. Rerunning ninja only reruns the failed
+        # steps.
+        _check_call_logged(
+            ninja_cmd,
+            ninja_log_path,
+            retry_on_network_errors=True,
+            env=_pip_network_env(),
+        )
 
         with open(os.path.join(venv_path, 'pip-list.log'), 'w') as outs:
             subprocess.check_call(

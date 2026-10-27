@@ -53,6 +53,7 @@ pw_python_package("py") {
     "environment_test.py",
     "json_visitor_test.py",
     "python_packages_test.py",
+    "virtualenv_setup_install_test.py",
   ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"

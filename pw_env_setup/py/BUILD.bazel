@@ -196,3 +196,9 @@ pw_py_test(
     tags = ["manual"],  # TODO: b/431912506 - Fix this test in Bazel.
     deps = [":pw_env_setup_private"],
 )
+
+pw_py_test(
+    name = "virtualenv_setup_install_test",
+    srcs = ["virtualenv_setup_install_test.py"],
+    deps = [":pw_env_setup_private"],
+)
