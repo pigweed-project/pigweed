@@ -77,10 +77,18 @@ class EnumDescriptor(_ParsedEnum[EnumValue]):
         """Returns a unique version hash for the enum."""
         sorted_values = sorted(self.values, key=lambda v: (v.value, v.name))
         h = hashlib.sha256()
-        h.update(self.cc_full_name.encode())
+
+        def add(field: str) -> None:
+            # Length-prefix each field so that different sequences of fields
+            # never hash the same bytes (e.g. 1, "0X" vs. 10, "X").
+            data = field.encode()
+            h.update(f"{len(data)}:".encode())
+            h.update(data)
+
+        add(self.cc_full_name)
         for v in sorted_values:
-            h.update(str(v.value).encode())
-            h.update(v.name.encode())
+            add(str(v.value))
+            add(v.name)
         return "_pw_enum_" + h.hexdigest()[:12]
 
     @property

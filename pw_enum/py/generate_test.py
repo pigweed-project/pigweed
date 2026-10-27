@@ -254,6 +254,25 @@ class TestEnumGeneration(unittest.TestCase):
         )
         self.assertNotEqual(enum1.version, enum2.version)
 
+    def test_version_separates_fields(self) -> None:
+        """Test that values and names that concatenate equally differ."""
+        enum1 = EnumDescriptor(
+            name="MyEnum",
+            scopes=("my", "ns"),
+            cc_full_name="::my::ns::MyEnum",
+            line=0,
+            values=(EnumValue(cc_name="kA", value=1, name="0X"),),
+        )
+        enum2 = EnumDescriptor(
+            name="MyEnum",
+            scopes=("my", "ns"),
+            cc_full_name="::my::ns::MyEnum",
+            line=0,
+            # "1" + "0X" and "10" + "X" are both "10X".
+            values=(EnumValue(cc_name="kA", value=10, name="X"),),
+        )
+        self.assertNotEqual(enum1.version, enum2.version)
+
     def test_no_namespace(self) -> None:
         """Test footer generation for enums without a namespace."""
         enums = [
