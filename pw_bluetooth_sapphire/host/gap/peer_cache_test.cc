@@ -1823,6 +1823,40 @@ TEST_F(PeerCacheExpirationTest,
   EXPECT_EQ(0, peers_removed());
 }
 
+TEST_F(PeerCacheExpirationTest,
+       DualModePeerRemainsNonTemporaryWhileEitherTransportIsConnected) {
+  ASSERT_FALSE(GetDefaultPeer()->bonded());
+  std::optional<Peer::ConnectionToken> le_token =
+      GetDefaultPeer()->MutLe().RegisterConnection();
+  std::optional<Peer::ConnectionToken> bredr_token =
+      GetDefaultPeer()->MutBrEdr().RegisterConnection();
+  ASSERT_EQ(TechnologyType::kDualMode, GetDefaultPeer()->technology());
+  ASSERT_FALSE(GetDefaultPeer()->temporary());
+
+  // Disconnecting LE while BR/EDR is still connected shouldn't make the peer
+  // temporary.
+  le_token.reset();
+  EXPECT_FALSE(GetDefaultPeer()->temporary());
+  RunFor(kCacheTimeout);
+  ASSERT_TRUE(IsDefaultPeerPresent());
+
+  // Disconnecting BR/EDR while LE is still connected shouldn't make the peer
+  // temporary.
+  le_token = GetDefaultPeer()->MutLe().RegisterConnection();
+  bredr_token.reset();
+  EXPECT_FALSE(GetDefaultPeer()->temporary());
+  RunFor(kCacheTimeout);
+  ASSERT_TRUE(IsDefaultPeerPresent());
+
+  // Once no transport is connected, the unbonded peer should become temporary
+  // and expire out of the cache.
+  le_token.reset();
+  EXPECT_TRUE(GetDefaultPeer()->temporary());
+  RunFor(kCacheTimeout);
+  EXPECT_FALSE(IsDefaultPeerPresent());
+  EXPECT_EQ(1, peers_removed());
+}
+
 TEST_F(PeerCacheExpirationTest, ExpirationUpdatesAddressMap) {
   ASSERT_TRUE(IsDefaultPeerAddressInCache());
   ASSERT_TRUE(IsOtherTransportAddressInCache());

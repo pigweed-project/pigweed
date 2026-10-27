@@ -689,8 +689,8 @@ class Peer final {
   // device:
   //   a. A device is temporary by default.
   //   b. A device becomes non-temporary when it gets connected.
-  //   c. A device becomes temporary again when disconnected unless it is
-  //      bonded.
+  //   c. A device becomes temporary again once it's disconnected over all
+  //      transports, unless it's bonded.
   //
   // Temporary devices are never bonded.
   bool temporary() const { return *temporary_; }

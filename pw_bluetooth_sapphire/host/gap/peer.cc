@@ -830,21 +830,22 @@ bool Peer::TryMakeNonTemporary() {
 }
 
 bool Peer::TryMakeTemporary() {
-  if (le() && le()->connection_state() == ConnectionState::kNotConnected &&
-      !bonded()) {
-    bt_log(DEBUG, "gap", "LE became temporary: %s:", bt_str(*this));
-    temporary_.Set(true);
-    return true;
-  }
   // Temporary peers expire out of the cache. A dual-mode peer shares a single
-  // record, so an LE bond should keep it non-temporary even without a BR/EDR
-  // bond.
-  if (bredr() && !bonded()) {
-    bt_log(DEBUG, "gap", "BR/EDR became temporary: %s:", bt_str(*this));
-    temporary_.Set(true);
-    return true;
+  // record, so a bond or connection on either transport should keep it
+  // non-temporary.
+  if (bonded()) {
+    return false;
   }
-  return false;
+  if (le() && le()->connection_state() != ConnectionState::kNotConnected) {
+    return false;
+  }
+  if (bredr() &&
+      bredr()->connection_state() != ConnectionState::kNotConnected) {
+    return false;
+  }
+  bt_log(DEBUG, "gap", "became temporary: %s:", bt_str(*this));
+  temporary_.Set(true);
+  return true;
 }
 
 void Peer::UpdateExpiry() {
