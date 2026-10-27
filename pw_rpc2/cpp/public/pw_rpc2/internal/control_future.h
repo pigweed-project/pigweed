@@ -27,7 +27,7 @@
 #include "pw_sync/lock_annotations.h"
 
 namespace pw::transport {
-class ReliableDatagramListener;
+class ReliableListener;
 }  // namespace pw::transport
 
 namespace pw::rpc2 {
@@ -130,7 +130,7 @@ class [[nodiscard]] ControlFuture {
       : core_(async2::FutureState::kReadyForCompletion), status_(status) {}
 
   /// A pending future. `listener` is set for listener registrations.
-  explicit ControlFuture(transport::ReliableDatagramListener* listener)
+  explicit ControlFuture(transport::ReliableListener* listener)
       : core_(async2::FutureState::kPending), listener_(listener) {}
 
   /// Resolves the future, waking any task pending it. The future must already
@@ -154,7 +154,7 @@ class [[nodiscard]] ControlFuture {
     return status_;
   }
 
-  transport::ReliableDatagramListener& listener_locked() const
+  transport::ReliableListener& listener_locked() const
       PW_EXCLUSIVE_LOCKS_REQUIRED(internal::ControlLock()) {
     PW_DASSERT(listener_ != nullptr);
     return *listener_;
@@ -164,7 +164,7 @@ class [[nodiscard]] ControlFuture {
   // is never observed. Observing it would be a bug.
   RpcStatus status_ PW_GUARDED_BY(internal::ControlLock()) =
       RpcStatus::ProtocolError();
-  transport::ReliableDatagramListener* listener_
+  transport::ReliableListener* listener_
       PW_GUARDED_BY(internal::ControlLock()) = nullptr;
 };
 

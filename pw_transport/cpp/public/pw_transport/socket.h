@@ -33,14 +33,14 @@ namespace pw::transport {
 
 /// @module{pw_transport}
 
-class DatagramSocket;
-class DatagramSocketImpl;
-class ReliableDatagramSocket;
-class ReliableDatagramSocketImpl;
+class Socket;
+class SocketImpl;
+class ReliableSocket;
+class ReliableSocketImpl;
 class Listener;
 class Connector;
-class ReliableDatagramListener;
-class ReliableDatagramConnector;
+class ReliableListener;
+class ReliableConnector;
 class WriteReservation;
 class ReadFuture;
 class ReserveWriteFuture;
@@ -71,8 +71,7 @@ class BaseSocketFuture {
   void Wake() PW_EXCLUSIVE_LOCKS_REQUIRED(*socket_) { core_.Wake(); }
 
  protected:
-  explicit BaseSocketFuture(DatagramSocketImpl& socket)
-      PW_LOCKS_EXCLUDED(socket);
+  explicit BaseSocketFuture(SocketImpl& socket) PW_LOCKS_EXCLUDED(socket);
 
   explicit constexpr BaseSocketFuture(async2::FutureState::Pending)
       : core_(async2::FutureState::kPending) {}
@@ -80,8 +79,7 @@ class BaseSocketFuture {
   // Unlists this future and removes a reference from its socket.
   void RemoveFromSocket() PW_LOCKS_EXCLUDED(*socket_);
 
-  IntrusivePtr<DatagramSocketImpl> Finish()
-      PW_EXCLUSIVE_LOCKS_REQUIRED(*socket_) {
+  IntrusivePtr<SocketImpl> Finish() PW_EXCLUSIVE_LOCKS_REQUIRED(*socket_) {
     core_.Unlist();
     core_.MarkComplete();
     return std::move(socket_);
@@ -96,9 +94,8 @@ class BaseSocketFuture {
     core_.MarkComplete();
   }
 
-  void StoreSocket(DatagramSocketImpl& socket)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(socket) {
-    socket_ = IntrusivePtr<DatagramSocketImpl>(&socket);
+  void StoreSocket(SocketImpl& socket) PW_EXCLUSIVE_LOCKS_REQUIRED(socket) {
+    socket_ = IntrusivePtr<SocketImpl>(&socket);
   }
 
   void ClearSocket() { socket_ = nullptr; }
@@ -106,10 +103,8 @@ class BaseSocketFuture {
     socket_ = std::move(other.socket_);
   }
 
-  DatagramSocketImpl* socket() PW_LOCK_RETURNED(socket_.get()) {
-    return socket_.get();
-  }
-  const DatagramSocketImpl* socket() const PW_LOCK_RETURNED(socket_.get()) {
+  SocketImpl* socket() PW_LOCK_RETURNED(socket_.get()) { return socket_.get(); }
+  const SocketImpl* socket() const PW_LOCK_RETURNED(socket_.get()) {
     return socket_.get();
   }
 
@@ -118,14 +113,14 @@ class BaseSocketFuture {
   }
 
  private:
-  friend class ::pw::transport::DatagramSocketImpl;
+  friend class ::pw::transport::SocketImpl;
   friend class ::pw::transport::ReserveWriteFuture;
   friend class ::pw::transport::CloseFuture;
 
   void MoveFrom(BaseSocketFuture& other)
       PW_LOCKS_EXCLUDED(*socket_, *other.socket_);
 
-  IntrusivePtr<DatagramSocketImpl> socket_;
+  IntrusivePtr<SocketImpl> socket_;
   async2::FutureCore core_ PW_GUARDED_BY(*socket_);
 
  public:
@@ -136,53 +131,53 @@ class BaseSocketFuture {
 
 /// A handle to a datagram-oriented transport socket.
 ///
-/// `DatagramSocket` is the base interface for reading and writing datagrams
-/// over some underlying transport. All reads and writes operate using `Buf`
-/// objects, which represent views into some memory region specific to the
-/// socket. This makes zero-copy reads and writes possible, if the
-/// implementation chooses to support it.
+/// `Socket` is the base interface for reading and writing datagrams over some
+/// underlying transport. All reads and writes operate using `Buf` objects,
+/// which represent views into some memory region specific to the socket. This
+/// makes zero-copy reads and writes possible, if the implementation chooses to
+/// support it.
 ///
-/// Unlike `ReliableDatagramSocket`, a `DatagramSocket` does not guarantee
-/// reliable or in-order delivery; datagrams may be dropped, duplicated, or
-/// reordered depending on the underlying transport. However, any
-/// `ReliableDatagramSocket` can be implicitly converted to and used as a
-/// `DatagramSocket`.
+/// A future byte-oriented socket will be `ByteSocket` (which is reliable).
+///
+/// Unlike `ReliableSocket`, a `Socket` does not guarantee reliable or in-order
+/// delivery; datagrams may be dropped, duplicated, or reordered depending on
+/// the underlying transport. However, any `ReliableSocket` can be implicitly
+/// converted to and used as a `Socket`.
 ///
 /// The underlying socket begins open, but may close at any time. Once closed,
-/// all operations on the socket will report failures. A `DatagramSocket`
-/// cannot be reopened. A new one must be provisioned from a `Listener` or a
-/// `Connector`.
+/// all operations on the socket will report failures. A `Socket` cannot be
+/// reopened. A new one must be provisioned from a `Listener` or a `Connector`.
 ///
-/// A `DatagramSocket` is cheaply copyable and always safe to access, ensuring
-/// that the underlying socket state is valid as long as a handle is held.
-/// Users should drop their handles once no longer needed to ensure prompt
-/// resource reclamation.
-class DatagramSocket {
+/// A `Socket` is cheaply copyable and always safe to access, ensuring that the
+/// underlying socket state is valid as long as a handle is held.  Users should
+/// drop their handles once no longer needed to ensure prompt resource
+/// reclamation.
+class Socket {
  public:
-  constexpr DatagramSocket() : impl_(nullptr) {}
-  constexpr DatagramSocket(std::nullptr_t) : impl_(nullptr) {}
+  constexpr Socket() : impl_(nullptr) {}
+  constexpr Socket(std::nullptr_t) : impl_(nullptr) {}
 
-  DatagramSocket(const DatagramSocket& other) = default;
-  DatagramSocket(DatagramSocket&& other) noexcept = default;
-  DatagramSocket& operator=(const DatagramSocket& other) = default;
-  DatagramSocket& operator=(DatagramSocket&& other) noexcept = default;
+  Socket(const Socket& other) = default;
+  Socket(Socket&& other) noexcept = default;
+  Socket& operator=(const Socket& other) = default;
+  Socket& operator=(Socket&& other) noexcept = default;
 
-  DatagramSocket& operator=(std::nullptr_t) noexcept {
+  Socket& operator=(std::nullptr_t) noexcept {
     impl_ = nullptr;
     return *this;
   }
 
-  DatagramSocket(ReliableDatagramSocket&& other) noexcept;
-  DatagramSocket& operator=(ReliableDatagramSocket&& other) noexcept;
+  Socket(ReliableSocket&& other) noexcept;
+  Socket& operator=(ReliableSocket&& other) noexcept;
 
-  ~DatagramSocket() = default;
+  ~Socket() = default;
 
   explicit operator bool() const { return impl_ != nullptr; }
 
-  friend bool operator==(const DatagramSocket& lhs, const DatagramSocket& rhs) {
+  friend bool operator==(const Socket& lhs, const Socket& rhs) {
     return lhs.impl_ == rhs.impl_;
   }
-  friend bool operator!=(const DatagramSocket& lhs, const DatagramSocket& rhs) {
+  friend bool operator!=(const Socket& lhs, const Socket& rhs) {
     return lhs.impl_ != rhs.impl_;
   }
 
@@ -210,7 +205,6 @@ class DatagramSocket {
   ///
   /// Resolves to a `std::optional<WriteReservation>` that allows writing to
   /// that buffer, or `std::nullopt` if the socket has closed.
-  ///
   ///
   /// Multiple reservations or reservation requests can be outstanding at once.
   /// If multiple pending requests exist, the order in which they are resolved
@@ -248,110 +242,116 @@ class DatagramSocket {
   CloseFuture WhenClosed() const;
 
  private:
-  friend class DatagramSocketImpl;
-  friend class ReliableDatagramSocket;
+  friend class SocketImpl;
+  friend class ReliableSocket;
   friend class Listener;
   friend class Connector;
   friend class WriteReservation;
 
-  explicit DatagramSocket(DatagramSocketImpl& impl) : impl_(&impl) {}
+  explicit Socket(SocketImpl& impl) : impl_(&impl) {}
 
   /// Resets the handle, decrementing the reference count.
   void Reset() { impl_ = nullptr; }
 
-  IntrusivePtr<DatagramSocketImpl> impl_;
+  IntrusivePtr<SocketImpl> impl_;
 };
 
-bool operator==(const DatagramSocket& lhs, const DatagramSocket& rhs);
-bool operator!=(const DatagramSocket& lhs, const DatagramSocket& rhs);
+/// @deprecated Use `pw::transport::Socket` instead.
+using DatagramSocket [[deprecated("Use pw::transport::Socket instead")]] =
+    Socket;
+
+bool operator==(const Socket& lhs, const Socket& rhs);
+bool operator!=(const Socket& lhs, const Socket& rhs);
 
 /// A handle to an established, reliable, datagram-oriented transport socket.
 ///
-/// `ReliableDatagramSocket` is the interface for reading and writing datagrams
-/// over some underlying transport. All reads and writes operate using `Buf`
-/// objects, which represent views into some memory region specific to the
-/// socket. This makes zero-copy reads and writes possible, if the
-/// implementation chooses to support it.
+/// `ReliableSocket` is the interface for reading and writing datagrams over
+/// some underlying transport. All reads and writes operate using `Buf` objects,
+/// which represent views into some memory region specific to the socket. This
+/// makes zero-copy reads and writes possible, if the implementation chooses to
+/// support it.
 ///
 /// Datagrams are delivered reliably and in order. If a packet cannot be
 /// delivered in order, the socket must close.
 ///
-/// Any `ReliableDatagramSocket` can be implicitly converted to a
-/// `DatagramSocket` (by value, rvalue, or `const` reference).
+/// Any `ReliableSocket` can be implicitly converted to a `Socket` (by value,
+/// rvalue, or `const` reference).
 ///
 /// The underlying socket begins established and open, but may close at any
-/// time. Once closed, all operations on the socket will report failures.
-/// A `ReliableDatagramSocket` cannot be reopened. A new one must be provisioned
-/// from a `ReliableDatagramListener` or a `ReliableDatagramConnector`.
+/// time. Once closed, all operations on the socket will report failures.  A
+/// `ReliableSocket` cannot be reopened. A new one must be provisioned from a
+/// `ReliableListener` or a `ReliableConnector`.
 ///
-/// A `ReliableDatagramSocket` is cheaply copyable and always safe to access,
-/// ensuring that the underlying socket state is valid as long as a handle is
-/// held. Users should drop their handles once no longer needed to ensure prompt
-/// resource reclamation.
-class ReliableDatagramSocket {
+/// A `ReliableSocket` is cheaply copyable and always safe to access, ensuring
+/// that the underlying socket state is valid as long as a handle is held. Users
+/// should drop their handles once no longer needed to ensure prompt resource
+/// reclamation.
+class ReliableSocket {
  public:
-  constexpr ReliableDatagramSocket() = default;
-  constexpr ReliableDatagramSocket(std::nullptr_t) : socket_(nullptr) {}
+  constexpr ReliableSocket() = default;
+  constexpr ReliableSocket(std::nullptr_t) : socket_(nullptr) {}
 
-  ReliableDatagramSocket(const ReliableDatagramSocket& other) = default;
-  ReliableDatagramSocket(ReliableDatagramSocket&& other) noexcept = default;
-  ReliableDatagramSocket& operator=(const ReliableDatagramSocket& other) =
-      default;
-  ReliableDatagramSocket& operator=(ReliableDatagramSocket&& other) noexcept =
-      default;
+  ReliableSocket(const ReliableSocket& other) = default;
+  ReliableSocket(ReliableSocket&& other) noexcept = default;
+  ReliableSocket& operator=(const ReliableSocket& other) = default;
+  ReliableSocket& operator=(ReliableSocket&& other) noexcept = default;
 
-  ~ReliableDatagramSocket() = default;
+  ~ReliableSocket() = default;
 
-  /// A `ReliableDatagramSocket` can be used as a `DatagramSocket`. Conversion
-  /// to a mutable `DatagramSocket&` is not supported, since that would permit
-  /// assigning a `DatagramSocket` to a `ReliableDatagramSocket` through the
+  /// A `ReliableSocket` can be used as a `Socket`. Conversion
+  /// to a mutable `Socket&` is not supported, since that would permit
+  /// assigning a `Socket` to a `ReliableSocket` through the
   /// reference.
-  constexpr operator const DatagramSocket&() const noexcept { return socket_; }
+  constexpr operator const Socket&() const noexcept { return socket_; }
 
   explicit operator bool() const { return static_cast<bool>(socket_); }
 
-  /// @copydoc DatagramSocket::max_write_message_size_bytes
+  /// @copydoc Socket::max_write_message_size_bytes
   size_t max_write_message_size_bytes() const {
     return socket_.max_write_message_size_bytes();
   }
 
-  /// @copydoc DatagramSocket::max_read_message_size_bytes
+  /// @copydoc Socket::max_read_message_size_bytes
   size_t max_read_message_size_bytes() const {
     return socket_.max_read_message_size_bytes();
   }
 
-  /// @copydoc DatagramSocket::Read
+  /// @copydoc Socket::Read
   ReadFuture Read() const;
 
-  /// @copydoc DatagramSocket::ReserveWrite
+  /// @copydoc Socket::ReserveWrite
   ReserveWriteFuture ReserveWrite(size_t min_size_bytes) const;
 
-  /// @copydoc DatagramSocket::TryReserveWrite
+  /// @copydoc Socket::TryReserveWrite
   [[nodiscard]] std::optional<WriteReservation> TryReserveWrite(
       size_t min_size_bytes) const;
 
-  /// @copydoc DatagramSocket::Close
+  /// @copydoc Socket::Close
   CloseFuture Close() const;
 
-  /// @copydoc DatagramSocket::WhenClosed
+  /// @copydoc Socket::WhenClosed
   CloseFuture WhenClosed() const;
 
  private:
-  friend class DatagramSocket;
-  friend class ReliableDatagramSocketImpl;
-  friend class ReliableDatagramListener;
-  friend class ReliableDatagramConnector;
+  friend class Socket;
+  friend class ReliableSocketImpl;
+  friend class ReliableListener;
+  friend class ReliableConnector;
 
-  explicit ReliableDatagramSocket(ReliableDatagramSocketImpl& impl);
+  explicit ReliableSocket(ReliableSocketImpl& impl);
 
-  DatagramSocket socket_;
+  Socket socket_;
 };
 
-inline DatagramSocket::DatagramSocket(ReliableDatagramSocket&& other) noexcept
-    : DatagramSocket(std::move(other.socket_)) {}
+/// @deprecated Use `pw::transport::ReliableSocket` instead.
+using ReliableDatagramSocket
+    [[deprecated("Use pw::transport::ReliableSocket instead")]] =
+        ReliableSocket;
 
-inline DatagramSocket& DatagramSocket::operator=(
-    ReliableDatagramSocket&& other) noexcept {
+inline Socket::Socket(ReliableSocket&& other) noexcept
+    : Socket(std::move(other.socket_)) {}
+
+inline Socket& Socket::operator=(ReliableSocket&& other) noexcept {
   *this = std::move(other.socket_);
   return *this;
 }
@@ -359,12 +359,12 @@ inline DatagramSocket& DatagramSocket::operator=(
 /// A handle representing ownership of a buffer reservation for writing a
 /// packet, providing container-like access to the underlying buffer.
 ///
-/// A socket may close between the time a `WriteReservation` is provisioned
-/// and `Commit` is called. If this occurs, `Commit` will return `false`, and
-/// no packet will be queued.
+/// A socket may close between the time a `WriteReservation` is provisioned and
+/// `Commit` is called. If this occurs, `Commit` will return `false`, and no
+/// packet will be queued.
 ///
-/// Destructing a `WriteReservation` releases the underlying buffer back to
-/// the transport.
+/// Destructing a `WriteReservation` releases the underlying buffer back to the
+/// transport.
 class WriteReservation {
  public:
   using iterator = Buf::iterator;
@@ -401,9 +401,8 @@ class WriteReservation {
 
   /// Commits the written data in the reserved buffer, queueing it for
   /// transmission. Truncates the buffer to `size_bytes`. Returns true on
-  /// success, or false if the socket has closed or transmission fails.
-  /// Once committed, the reservation is consumed and cannot be reused or
-  /// canceled.
+  /// success, or false if the socket has closed or transmission fails.  Once
+  /// committed, the reservation is consumed and cannot be reused or canceled.
   ///
   /// `size_bytes` must not exceed the reservation's size, or it will assert.
   [[nodiscard]] bool Commit(size_t size_bytes);
@@ -413,16 +412,16 @@ class WriteReservation {
   void Cancel();
 
  private:
-  friend class DatagramSocketImpl;
+  friend class SocketImpl;
 
-  DatagramSocket socket_;
+  Socket socket_;
   Buf buffer_;
 
-  WriteReservation(DatagramSocket socket, Buf&& buffer)
+  WriteReservation(Socket socket, Buf&& buffer)
       : socket_(std::move(socket)), buffer_(std::move(buffer)) {}
 };
 
-/// Future representing receiving a single datagram from a `DatagramSocket`.
+/// Future representing receiving a single datagram from a `Socket`.
 class [[nodiscard]] ReadFuture final : public internal::BaseSocketFuture {
  public:
   using value_type = ConstBuf;
@@ -438,14 +437,14 @@ class [[nodiscard]] ReadFuture final : public internal::BaseSocketFuture {
       PW_LOCKS_EXCLUDED(*this->socket());
 
  private:
-  friend class DatagramSocket;
-  friend class DatagramSocketImpl;
+  friend class Socket;
+  friend class SocketImpl;
 
   static ReadFuture Resolved(ConstBuf&& buffer) {
     return ReadFuture(std::move(buffer));
   }
 
-  explicit ReadFuture(DatagramSocketImpl& socket);
+  explicit ReadFuture(SocketImpl& socket);
 
   explicit ReadFuture(ConstBuf&& buffer)
       : BaseSocketFuture(async2::FutureState::kPending),
@@ -457,7 +456,7 @@ class [[nodiscard]] ReadFuture final : public internal::BaseSocketFuture {
 static_assert(async2::Future<ReadFuture>);
 
 /// Future representing reserving write space for a datagram in a
-/// `DatagramSocket`.
+/// `Socket`.
 class [[nodiscard]] ReserveWriteFuture final
     : public internal::BaseSocketFuture {
  public:
@@ -478,8 +477,8 @@ class [[nodiscard]] ReserveWriteFuture final
       PW_LOCKS_EXCLUDED(*this->socket());
 
  private:
-  friend class DatagramSocket;
-  friend class DatagramSocketImpl;
+  friend class Socket;
+  friend class SocketImpl;
   friend class internal::BaseSocketFuture;
 
   static ReserveWriteFuture Resolved(
@@ -498,7 +497,7 @@ class [[nodiscard]] ReserveWriteFuture final
     return future.core();
   }
 
-  ReserveWriteFuture(DatagramSocketImpl& socket, size_t min_size_bytes)
+  ReserveWriteFuture(SocketImpl& socket, size_t min_size_bytes)
       : BaseSocketFuture(socket), min_size_bytes_(min_size_bytes) {}
 
   explicit ReserveWriteFuture(std::optional<WriteReservation>&& reservation)
@@ -518,7 +517,7 @@ class [[nodiscard]] ReserveWriteFuture final
 
 static_assert(async2::Future<ReserveWriteFuture>);
 
-/// Future representing waiting for a `DatagramSocket` to close.
+/// Future representing waiting for a `Socket` to close.
 class CloseFuture final : public internal::BaseSocketFuture {
  public:
   using value_type = void;
@@ -533,8 +532,8 @@ class CloseFuture final : public internal::BaseSocketFuture {
   async2::Poll<> Pend(async2::Context& cx) PW_LOCKS_EXCLUDED(*this->socket());
 
  private:
-  friend class DatagramSocket;
-  friend class DatagramSocketImpl;
+  friend class Socket;
+  friend class SocketImpl;
 
   static CloseFuture Resolved() {
     return CloseFuture(async2::FutureState::kPending);
@@ -543,8 +542,7 @@ class CloseFuture final : public internal::BaseSocketFuture {
   explicit constexpr CloseFuture(async2::FutureState::Pending)
       : BaseSocketFuture(async2::FutureState::kPending) {}
 
-  explicit CloseFuture(DatagramSocketImpl& socket)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(socket);
+  explicit CloseFuture(SocketImpl& socket) PW_EXCLUSIVE_LOCKS_REQUIRED(socket);
 };
 
 static_assert(async2::Future<CloseFuture>);
@@ -571,13 +569,13 @@ static_assert(async2::Future<CloseFuture>);
 /// Implementations of the protected virtual methods (`DoRead`, `DoCommitWrite`,
 /// `DoCancelWrite`, `DoClose`, `DoTryReserveWrite`) are called while the
 /// socket lock is held. Subclasses must NOT call public methods on
-/// `DatagramSocketImpl` (such as `CommitWrite`, `CancelWrite`,
+/// `SocketImpl` (such as `CommitWrite`, `CancelWrite`,
 /// `TryReserveWrite`, `Close`, or `Adopt`) from within these callbacks, as
 /// doing so will attempt to re-acquire the lock and cause a deadlock when using
 /// non-recursive locks.
-class PW_LOCKABLE("pw::transport::DatagramSocketImpl") DatagramSocketImpl
-    : public RefCounted<DatagramSocketImpl>,
-      public Recyclable<DatagramSocketImpl> {
+class PW_LOCKABLE("pw::transport::SocketImpl") SocketImpl
+    : public RefCounted<SocketImpl>,
+      public Recyclable<SocketImpl> {
  public:
   enum class State : uint8_t {
     kOpen,
@@ -585,7 +583,7 @@ class PW_LOCKABLE("pw::transport::DatagramSocketImpl") DatagramSocketImpl
     kClosed,
   };
 
-  virtual ~DatagramSocketImpl() { MarkClosed(); }
+  virtual ~SocketImpl() { MarkClosed(); }
 
   // Acquires the socket's lock.
   virtual void lock() const PW_EXCLUSIVE_LOCK_FUNCTION() = 0;
@@ -651,20 +649,18 @@ class PW_LOCKABLE("pw::transport::DatagramSocketImpl") DatagramSocketImpl
  protected:
   /// Base constructor for an allocated, ref-counted socket.
   /// The socket is automatically destroyed and freed once no active
-  /// `DatagramSocket` handles or futures reference it.
-  constexpr DatagramSocketImpl(Allocator& allocator,
-                               size_t max_write_message_size_bytes,
-                               size_t max_read_message_size_bytes)
+  /// `Socket` handles or futures reference it.
+  constexpr SocketImpl(Allocator& allocator,
+                       size_t max_write_message_size_bytes,
+                       size_t max_read_message_size_bytes)
       : allocator_(allocator),
         max_write_message_size_bytes_(max_write_message_size_bytes),
         max_read_message_size_bytes_(max_read_message_size_bytes) {}
 
-  constexpr DatagramSocketImpl(Allocator& allocator,
-                               size_t max_message_size_bytes)
-      : DatagramSocketImpl(
-            allocator, max_message_size_bytes, max_message_size_bytes) {}
+  constexpr SocketImpl(Allocator& allocator, size_t max_message_size_bytes)
+      : SocketImpl(allocator, max_message_size_bytes, max_message_size_bytes) {}
 
-  DatagramSocket WrapSocket() { return DatagramSocket(*this); }
+  Socket WrapSocket() { return Socket(*this); }
 
   /// Marks the socket as closed, resolving any pending `Close()` or
   /// `WhenClosed()` futures.
@@ -697,7 +693,7 @@ class PW_LOCKABLE("pw::transport::DatagramSocketImpl") DatagramSocketImpl
   WriteReservation CreateReservation(Buf&& buffer = Buf::ZeroLength())
       PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
     PW_DASSERT(buffer != nullptr);
-    return WriteReservation(DatagramSocket(*this), std::move(buffer));
+    return WriteReservation(Socket(*this), std::move(buffer));
   }
 
   /// Associates an existing `WriteReservation` with this socket, slicing
@@ -714,9 +710,9 @@ class PW_LOCKABLE("pw::transport::DatagramSocketImpl") DatagramSocketImpl
                    size_t suffix_trim = 0) PW_EXCLUSIVE_LOCKS_REQUIRED(*this);
 
  private:
-  friend class DatagramSocket;
+  friend class Socket;
   friend class WriteReservation;
-  friend class Recyclable<DatagramSocketImpl>;
+  friend class Recyclable<SocketImpl>;
   friend class ReadFuture;
   friend class ReserveWriteFuture;
   friend class CloseFuture;
@@ -800,73 +796,76 @@ class PW_LOCKABLE("pw::transport::DatagramSocketImpl") DatagramSocketImpl
   internal::BaseSocketFuture::List closed_futures_ PW_GUARDED_BY(*this);
 };
 
+/// @deprecated Use `pw::transport::SocketImpl` instead.
+using DatagramSocketImpl
+    [[deprecated("Use pw::transport::SocketImpl instead")]] = SocketImpl;
+
 /// Implementation base class for reliable, in-order datagram sockets.
 ///
-/// Inherits the transport lifecycle and operations of `DatagramSocketImpl`,
+/// Inherits the transport lifecycle and operations of `SocketImpl`,
 /// adding the guarantee that datagrams are delivered reliably and in order,
 /// and that the socket closes if in-order delivery cannot be maintained.
-class ReliableDatagramSocketImpl : public DatagramSocketImpl {
+class ReliableSocketImpl : public SocketImpl {
  protected:
-  using DatagramSocketImpl::DatagramSocketImpl;
+  using SocketImpl::SocketImpl;
 
-  ReliableDatagramSocket WrapSocket() { return ReliableDatagramSocket(*this); }
+  ReliableSocket WrapSocket() { return ReliableSocket(*this); }
 };
 
-inline ReliableDatagramSocket::ReliableDatagramSocket(
-    ReliableDatagramSocketImpl& impl)
+/// @deprecated Use `pw::transport::ReliableSocketImpl` instead.
+using ReliableDatagramSocketImpl
+    [[deprecated("Use pw::transport::ReliableSocketImpl instead")]] =
+        ReliableSocketImpl;
+
+inline ReliableSocket::ReliableSocket(ReliableSocketImpl& impl)
     : socket_(impl) {}
 
-inline size_t DatagramSocket::max_write_message_size_bytes() const {
+inline size_t Socket::max_write_message_size_bytes() const {
   return impl_ != nullptr ? impl_->max_write_message_size_bytes() : 0;
 }
 
-inline size_t DatagramSocket::max_read_message_size_bytes() const {
+inline size_t Socket::max_read_message_size_bytes() const {
   return impl_ != nullptr ? impl_->max_read_message_size_bytes() : 0;
 }
 
-inline ReadFuture DatagramSocket::Read() const {
+inline ReadFuture Socket::Read() const {
   return impl_ != nullptr ? impl_->Read() : ReadFuture::Resolved(ConstBuf());
 }
 
-inline ReserveWriteFuture DatagramSocket::ReserveWrite(
-    size_t min_size_bytes) const {
+inline ReserveWriteFuture Socket::ReserveWrite(size_t min_size_bytes) const {
   return impl_ != nullptr ? impl_->ReserveWrite(min_size_bytes)
                           : ReserveWriteFuture::Resolved(std::nullopt);
 }
 
-inline std::optional<WriteReservation> DatagramSocket::TryReserveWrite(
+inline std::optional<WriteReservation> Socket::TryReserveWrite(
     size_t min_size_bytes) const {
   return impl_ != nullptr ? impl_->TryReserveWrite(min_size_bytes)
                           : std::nullopt;
 }
 
-inline CloseFuture DatagramSocket::Close() const {
+inline CloseFuture Socket::Close() const {
   return impl_ != nullptr ? impl_->Close() : CloseFuture::Resolved();
 }
 
-inline CloseFuture DatagramSocket::WhenClosed() const {
+inline CloseFuture Socket::WhenClosed() const {
   return impl_ != nullptr ? impl_->WhenClosed() : CloseFuture::Resolved();
 }
 
-inline ReadFuture ReliableDatagramSocket::Read() const {
-  return socket_.Read();
-}
+inline ReadFuture ReliableSocket::Read() const { return socket_.Read(); }
 
-inline ReserveWriteFuture ReliableDatagramSocket::ReserveWrite(
+inline ReserveWriteFuture ReliableSocket::ReserveWrite(
     size_t min_size_bytes) const {
   return socket_.ReserveWrite(min_size_bytes);
 }
 
-inline std::optional<WriteReservation> ReliableDatagramSocket::TryReserveWrite(
+inline std::optional<WriteReservation> ReliableSocket::TryReserveWrite(
     size_t min_size_bytes) const {
   return socket_.TryReserveWrite(min_size_bytes);
 }
 
-inline CloseFuture ReliableDatagramSocket::Close() const {
-  return socket_.Close();
-}
+inline CloseFuture ReliableSocket::Close() const { return socket_.Close(); }
 
-inline CloseFuture ReliableDatagramSocket::WhenClosed() const {
+inline CloseFuture ReliableSocket::WhenClosed() const {
   return socket_.WhenClosed();
 }
 

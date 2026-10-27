@@ -351,7 +351,7 @@ int OpenListeningSocketOnUnusedPort() {
   return OpenListeningSocket(0, /*reuse_address=*/false);
 }
 
-// A `ReliableDatagramSocketImpl` for a connected TCP socket.
+// A `ReliableSocketImpl` for a connected TCP socket.
 //
 // A read thread receives datagrams into a bounded queue, and a write thread
 // sends committed datagrams. Each reservation or unsent datagram uses one of
@@ -360,17 +360,17 @@ int OpenListeningSocketOnUnusedPort() {
 // Reads on a closed socket return nothing, so when the connection ends, the
 // socket stays open until the datagrams that were already received have been
 // read. Commits fail in the meantime.
-class FramedTcpSocket final : public ReliableDatagramSocketImpl {
+class FramedTcpSocket final : public ReliableSocketImpl {
  public:
   // Creates a socket that owns `fd`, which must be a connected TCP socket in
   // blocking mode. Closes `fd` on failure.
-  static Result<ReliableDatagramSocket> Create(Allocator& allocator,
-                                               int fd,
-                                               const FramedTcpOptions& options);
+  static Result<ReliableSocket> Create(Allocator& allocator,
+                                       int fd,
+                                       const FramedTcpOptions& options);
 
   // Use `Create`. The constructor is only public for `Allocator::New`.
   FramedTcpSocket(Allocator& allocator, int fd, const FramedTcpOptions& options)
-      : ReliableDatagramSocketImpl(allocator, options.max_message_size_bytes),
+      : ReliableSocketImpl(allocator, options.max_message_size_bytes),
         buffer_allocator_(allocator),
         fd_(fd),
         read_queue_depth_(options.read_queue_depth),
@@ -466,7 +466,7 @@ class FramedTcpSocket final : public ReliableDatagramSocketImpl {
   Thread write_thread_;
 };
 
-Result<ReliableDatagramSocket> FramedTcpSocket::Create(
+Result<ReliableSocket> FramedTcpSocket::Create(
     Allocator& allocator, int fd, const FramedTcpOptions& options) {
   FramedTcpSocket* impl =
       allocator.New<FramedTcpSocket>(allocator, fd, options);
@@ -478,7 +478,7 @@ Result<ReliableDatagramSocket> FramedTcpSocket::Create(
 
   // The handle owns the socket. If Start() fails, dropping the handle destroys
   // the socket, which closes `fd`.
-  ReliableDatagramSocket handle = impl->WrapSocket();
+  ReliableSocket handle = impl->WrapSocket();
   if (!impl->Start()) {
     return Status::ResourceExhausted();
   }
@@ -853,7 +853,7 @@ uint16_t FramedTcpListener::port() const {
   return port_;
 }
 
-ReliableDatagramListener::AcceptFuture FramedTcpListener::Accept() {
+ReliableListener::AcceptFuture FramedTcpListener::Accept() {
   std::lock_guard lock(lock_);
   if (unclaimed_.has_value()) {
     AcceptFuture future = AcceptFuture::Resolved(std::move(*unclaimed_));
@@ -928,7 +928,7 @@ bool FramedTcpListener::WaitForUnclaimedSlot() {
   }
 }
 
-void FramedTcpListener::Deliver(Result<ReliableDatagramSocket>&& result) {
+void FramedTcpListener::Deliver(Result<ReliableSocket>&& result) {
   std::lock_guard lock(lock_);
   if (state_ != State::kListening) {
     // `result` is a temporary in the caller, so it is destroyed after the
@@ -975,7 +975,7 @@ FramedTcpConnector::~FramedTcpConnector() {
       [](ConnectFuture&) { return Status::FailedPrecondition(); });
 }
 
-ReliableDatagramConnector::ConnectFuture FramedTcpConnector::Connect() {
+ReliableConnector::ConnectFuture FramedTcpConnector::Connect() {
   std::lock_guard lock(lock_);
   if (!thread_.joinable()) {
     if (!wake_pipe_.Open().ok()) {
@@ -1005,7 +1005,7 @@ void FramedTcpConnector::ConnectLoop() {
         break;
       }
 
-      Result<ReliableDatagramSocket> result = ConnectToPeer();
+      Result<ReliableSocket> result = ConnectToPeer();
       if (result.status().IsCancelled()) {
         return;  // The connector is being destroyed.
       }
@@ -1017,7 +1017,7 @@ void FramedTcpConnector::ConnectLoop() {
   }
 }
 
-Result<ReliableDatagramSocket> FramedTcpConnector::ConnectToPeer() {
+Result<ReliableSocket> FramedTcpConnector::ConnectToPeer() {
   std::array<char, 6> port_string{};  // Up to 5 digits and a null terminator.
   PW_CHECK_OK(ToString(port_, port_string).status());
 

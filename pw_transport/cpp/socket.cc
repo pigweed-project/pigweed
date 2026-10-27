@@ -23,11 +23,11 @@ namespace pw::transport {
 
 namespace internal {
 
-BaseSocketFuture::BaseSocketFuture(DatagramSocketImpl& socket)
+BaseSocketFuture::BaseSocketFuture(SocketImpl& socket)
     : core_(async2::FutureState::kPending) {
   std::lock_guard lock(socket);
   if (socket.is_open()) {
-    socket_ = pw::IntrusivePtr<DatagramSocketImpl>(&socket);
+    socket_ = pw::IntrusivePtr<SocketImpl>(&socket);
   }
 }
 
@@ -67,17 +67,17 @@ void BaseSocketFuture::RemoveFromSocket() {
 
 }  // namespace internal
 
-ReadFuture::ReadFuture(DatagramSocketImpl& socket) : BaseSocketFuture(socket) {}
+ReadFuture::ReadFuture(SocketImpl& socket) : BaseSocketFuture(socket) {}
 
 async2::Poll<pw::ConstBuf> ReadFuture::Pend(async2::Context& cx) {
-  DatagramSocketImpl* sock = socket();
+  SocketImpl* sock = socket();
   if (sock == nullptr) {
     PW_DASSERT(is_pendable());
     MarkCompletedWhenSocketUnbound();
     return async2::Ready(std::move(resolved_value_));
   }
 
-  IntrusivePtr<DatagramSocketImpl> completed_socket;
+  IntrusivePtr<SocketImpl> completed_socket;
   std::lock_guard lock(*sock);
   PW_DASSERT(is_pendable());
 
@@ -92,7 +92,7 @@ async2::Poll<pw::ConstBuf> ReadFuture::Pend(async2::Context& cx) {
     return async2::Ready(pw::ConstBuf());
   }
 
-  PW_ASYNC_STORE_WAKER(cx, core().waker(), "DatagramSocket::Read");
+  PW_ASYNC_STORE_WAKER(cx, core().waker(), "Socket::Read");
   if (!core().in_list()) {
     PW_ASSERT(sock->read_futures_.empty());
     sock->add_read_future(*this);
@@ -140,14 +140,14 @@ void ReserveWriteFuture::Resolve(
 
 async2::Poll<std::optional<WriteReservation>> ReserveWriteFuture::Pend(
     async2::Context& cx) {
-  DatagramSocketImpl* sock = socket();
+  SocketImpl* sock = socket();
   if (sock == nullptr) {
     PW_DASSERT(is_pendable());
     MarkCompletedWhenSocketUnbound();
     return async2::Ready(std::move(resolved_value_));
   }
 
-  IntrusivePtr<DatagramSocketImpl> completed_socket;
+  IntrusivePtr<SocketImpl> completed_socket;
   std::lock_guard lock(*sock);
   PW_DASSERT(is_pendable());
 
@@ -161,7 +161,7 @@ async2::Poll<std::optional<WriteReservation>> ReserveWriteFuture::Pend(
     return async2::Ready(std::optional<WriteReservation>(std::nullopt));
   }
 
-  PW_ASYNC_STORE_WAKER(cx, core().waker(), "DatagramSocket::ReserveWrite");
+  PW_ASYNC_STORE_WAKER(cx, core().waker(), "Socket::ReserveWrite");
   if (!core().in_list()) {
     sock->add_write_future(*this);
   }
@@ -174,7 +174,7 @@ async2::Poll<std::optional<WriteReservation>> ReserveWriteFuture::Pend(
   return async2::Pending();
 }
 
-CloseFuture::CloseFuture(DatagramSocketImpl& socket)
+CloseFuture::CloseFuture(SocketImpl& socket)
     : BaseSocketFuture(async2::FutureState::kPending) {
   if (socket.is_closed()) {
     return;
@@ -184,14 +184,14 @@ CloseFuture::CloseFuture(DatagramSocketImpl& socket)
 }
 
 async2::Poll<> CloseFuture::Pend(async2::Context& cx) {
-  DatagramSocketImpl* sock = socket();
+  SocketImpl* sock = socket();
   if (sock == nullptr) {
     PW_DASSERT(is_pendable());
     MarkCompletedWhenSocketUnbound();
     return async2::Ready();
   }
 
-  IntrusivePtr<DatagramSocketImpl> completed_socket;
+  IntrusivePtr<SocketImpl> completed_socket;
   std::lock_guard lock(*sock);
   PW_DASSERT(is_pendable());
 
@@ -200,7 +200,7 @@ async2::Poll<> CloseFuture::Pend(async2::Context& cx) {
     return async2::Ready();
   }
 
-  PW_ASYNC_STORE_WAKER(cx, core().waker(), "DatagramSocket::Closed");
+  PW_ASYNC_STORE_WAKER(cx, core().waker(), "Socket::Closed");
   return async2::Pending();
 }
 
@@ -232,13 +232,13 @@ void WriteReservation::Cancel() {
   buffer_.reset();
 }
 
-void DatagramSocketImpl::pw_recycle() {
+void SocketImpl::pw_recycle() {
   pw::Allocator& alloc = allocator_;
   std::destroy_at(this);
   alloc.Deallocate(this);
 }
 
-void DatagramSocketImpl::MarkClosed() {
+void SocketImpl::MarkClosed() {
   if (state_ != State::kClosed) {
     state_ = State::kClosed;
     WakeReader();
@@ -251,7 +251,7 @@ void DatagramSocketImpl::MarkClosed() {
   }
 }
 
-CloseFuture DatagramSocketImpl::Close() {
+CloseFuture SocketImpl::Close() {
   std::lock_guard lock(*this);
   if (state_ == State::kOpen) {
     state_ = State::kClosing;
@@ -260,17 +260,17 @@ CloseFuture DatagramSocketImpl::Close() {
   return CloseFuture(*this);
 }
 
-CloseFuture DatagramSocketImpl::WhenClosed() {
+CloseFuture SocketImpl::WhenClosed() {
   std::lock_guard lock(*this);
   return CloseFuture(*this);
 }
 
-ReserveWriteFuture DatagramSocketImpl::ReserveWrite(size_t min_size_bytes) {
+ReserveWriteFuture SocketImpl::ReserveWrite(size_t min_size_bytes) {
   PW_ASSERT(min_size_bytes <= max_write_message_size_bytes());
   return ReserveWriteFuture(*this, min_size_bytes);
 }
 
-std::optional<WriteReservation> DatagramSocketImpl::TryReserveWrite(
+std::optional<WriteReservation> SocketImpl::TryReserveWrite(
     size_t min_size_bytes) {
   PW_ASSERT(min_size_bytes <= max_write_message_size_bytes());
   std::lock_guard lock(*this);
@@ -284,7 +284,7 @@ std::optional<WriteReservation> DatagramSocketImpl::TryReserveWrite(
   return DoTryReserveWrite(min_size_bytes);
 }
 
-bool DatagramSocketImpl::ResolveOneWriter() PW_NO_LOCK_SAFETY_ANALYSIS {
+bool SocketImpl::ResolveOneWriter() PW_NO_LOCK_SAFETY_ANALYSIS {
   std::optional<WriteReservation> reservation;
   ReserveWriteFuture* future = write_futures_.Remove(
       [&](ReserveWriteFuture& f) PW_NO_LOCK_SAFETY_ANALYSIS {
@@ -298,7 +298,7 @@ bool DatagramSocketImpl::ResolveOneWriter() PW_NO_LOCK_SAFETY_ANALYSIS {
   return false;
 }
 
-bool DatagramSocketImpl::CommitWrite(pw::Buf buffer) {
+bool SocketImpl::CommitWrite(pw::Buf buffer) {
   PW_ASSERT(buffer.size() <= max_write_message_size_bytes());
   std::lock_guard lock(*this);
   if (is_closed()) {
@@ -307,16 +307,16 @@ bool DatagramSocketImpl::CommitWrite(pw::Buf buffer) {
   return DoCommitWrite(std::move(buffer));
 }
 
-void DatagramSocketImpl::CancelWrite(pw::Buf buffer) {
+void SocketImpl::CancelWrite(pw::Buf buffer) {
   std::lock_guard lock(*this);
   DoCancelWrite(std::move(buffer));
   WakeOneWriter();
 }
 
-void DatagramSocketImpl::AdoptLocked(WriteReservation& reservation,
-                                     size_t prefix_trim,
-                                     size_t suffix_trim) {
-  reservation.socket_ = DatagramSocket(*this);
+void SocketImpl::AdoptLocked(WriteReservation& reservation,
+                             size_t prefix_trim,
+                             size_t suffix_trim) {
+  reservation.socket_ = Socket(*this);
   reservation.buffer_ =
       pw::Slice(std::move(reservation.buffer_),
                 prefix_trim,

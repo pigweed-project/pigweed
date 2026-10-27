@@ -47,8 +47,8 @@
 namespace pw::transport {
 namespace {
 
-using AcceptFuture = ReliableDatagramListener::AcceptFuture;
-using ConnectFuture = ReliableDatagramConnector::ConnectFuture;
+using AcceptFuture = ReliableListener::AcceptFuture;
+using ConnectFuture = ReliableConnector::ConnectFuture;
 
 constexpr const char* kLocalhost = "127.0.0.1";
 
@@ -121,13 +121,13 @@ class FramedTcpTest : public ::testing::Test {
   // two ends of the connection.
   Status Connect(FramedTcpListener& listener,
                  FramedTcpConnector& connector,
-                 ReliableDatagramSocket& client,
-                 ReliableDatagramSocket& server) {
+                 ReliableSocket& client,
+                 ReliableSocket& server) {
     AcceptFuture accept = listener.Accept();
     ConnectFuture connect = connector.Connect();
-    Result<ReliableDatagramSocket> connected = Wait(connect);
+    Result<ReliableSocket> connected = Wait(connect);
     PW_TRY(connected.status());
-    Result<ReliableDatagramSocket> accepted = Wait(accept);
+    Result<ReliableSocket> accepted = Wait(accept);
     PW_TRY(accepted.status());
     client = std::move(*connected);
     server = std::move(*accepted);
@@ -135,7 +135,7 @@ class FramedTcpTest : public ::testing::Test {
   }
 
   // Sends `data` as one datagram, waiting for space if necessary.
-  bool Send(const ReliableDatagramSocket& socket, std::string_view data) {
+  bool Send(const ReliableSocket& socket, std::string_view data) {
     ReserveWriteFuture reserve = socket.ReserveWrite(data.size());
     std::optional<WriteReservation> reservation = Wait(reserve);
     if (!reservation.has_value()) {
@@ -148,7 +148,7 @@ class FramedTcpTest : public ::testing::Test {
   }
 
   // Receives one datagram. Returns a null buffer if the socket closed.
-  ConstBuf Receive(const ReliableDatagramSocket& socket) {
+  ConstBuf Receive(const ReliableSocket& socket) {
     ReadFuture read = socket.Read();
     return Wait(read);
   }
@@ -188,8 +188,8 @@ TEST_F(FramedTcpTest, SendAndReceive_BothDirections) {
   FramedTcpListener listener(allocator_);
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   ASSERT_TRUE(Send(client, "hello"));
@@ -212,8 +212,8 @@ TEST_F(FramedTcpTest, SendAndReceive_ManyDatagramsInOrder) {
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(
       allocator_, kLocalhost, listener.port(), options);
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   constexpr int kDatagrams = 26;
@@ -233,8 +233,8 @@ TEST_F(FramedTcpTest, SendAndReceive_EmptyDatagram) {
   FramedTcpListener listener(allocator_);
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   ASSERT_TRUE(Send(client, ""));
@@ -257,8 +257,8 @@ TEST_F(FramedTcpTest, SendAndReceive_LargeDatagram) {
   FramedTcpListener listener(allocator, options);
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator, kLocalhost, listener.port(), options);
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   auto pattern = [](size_t i) { return static_cast<std::byte>(i % 251); };
@@ -285,11 +285,11 @@ TEST_F(FramedTcpTest, SendAndReceive_ThroughMultipleConnections) {
   FramedTcpListener listener(allocator_);
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
-  ReliableDatagramSocket client_1;
-  ReliableDatagramSocket server_1;
+  ReliableSocket client_1;
+  ReliableSocket server_1;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client_1, server_1));
-  ReliableDatagramSocket client_2;
-  ReliableDatagramSocket server_2;
+  ReliableSocket client_2;
+  ReliableSocket server_2;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client_2, server_2));
 
   ASSERT_TRUE(Send(client_2, "two"));
@@ -304,8 +304,8 @@ TEST_F(FramedTcpTest, SendAndReceive_ThroughMultipleConnections) {
 }
 
 TEST_F(FramedTcpTest, Sockets_OutliveListenerAndConnector) {
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   {
     FramedTcpListener listener(allocator_);
     PW_TEST_ASSERT_OK(listener.Listen());
@@ -326,8 +326,8 @@ TEST_F(FramedTcpTest, TryReserveWrite_LimitedByWriteQueueDepth) {
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(
       allocator_, kLocalhost, listener.port(), options);
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   std::optional<WriteReservation> first = client.TryReserveWrite(1);
@@ -350,8 +350,8 @@ TEST_F(FramedTcpTest, Close_SendsCommittedDatagramsFirst) {
   FramedTcpListener listener(allocator_);
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   constexpr std::array<std::string_view, 3> kDatagrams = {
@@ -378,8 +378,8 @@ TEST_F(FramedTcpTest, Close_CommitAfterCloseFails) {
   FramedTcpListener listener(allocator_);
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   std::optional<WriteReservation> reservation = client.TryReserveWrite(4);
@@ -397,8 +397,8 @@ TEST_F(FramedTcpTest, Close_WhileReadQueueIsFull) {
   FramedTcpListener listener(allocator_, options);
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   ASSERT_TRUE(Send(client, "first"));
@@ -422,7 +422,7 @@ TEST_F(FramedTcpTest, Close_DiscardsUnreadDatagrams) {
   const int peer_fd = ConnectToLoopback(listener.port());
   ASSERT_NE(peer_fd, -1);
   stream::SocketStream peer(peer_fd);
-  Result<ReliableDatagramSocket> server = Wait(accept);
+  Result<ReliableSocket> server = Wait(accept);
   PW_TEST_ASSERT_OK(server);
 
   // Start a read before the socket closes.
@@ -447,8 +447,8 @@ TEST_F(FramedTcpTest, PeerDisconnect_ClosesSocket) {
   FramedTcpListener listener(allocator_);
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   // Dropping the last handle closes the connection.
@@ -466,7 +466,7 @@ TEST_F(FramedTcpTest, PeerDisconnect_ReceivedDatagramsCanBeRead) {
   const int peer_fd = ConnectToLoopback(listener.port());
   ASSERT_NE(peer_fd, -1);
   stream::SocketStream peer(peer_fd);
-  Result<ReliableDatagramSocket> server = Wait(accept);
+  Result<ReliableSocket> server = Wait(accept);
   PW_TEST_ASSERT_OK(server);
 
   constexpr auto kFrames =
@@ -498,8 +498,8 @@ TEST_F(FramedTcpTest, OversizedDatagram_ClosesSocket) {
   FramedTcpListener listener(allocator_, options);
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
-  ReliableDatagramSocket client;
-  ReliableDatagramSocket server;
+  ReliableSocket client;
+  ReliableSocket server;
   PW_TEST_ASSERT_OK(Connect(listener, connector, client, server));
 
   ASSERT_TRUE(Send(client, "too long"));
@@ -514,7 +514,7 @@ TEST_F(FramedTcpTest, Accept_BeforeListen_WaitsForConnection) {
   PW_TEST_ASSERT_OK(listener.Listen());
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
   ConnectFuture connect = connector.Connect();
-  Result<ReliableDatagramSocket> client = Wait(connect);
+  Result<ReliableSocket> client = Wait(connect);
   PW_TEST_ASSERT_OK(client);
   PW_TEST_EXPECT_OK(Wait(accept));
 }
@@ -525,11 +525,11 @@ TEST_F(FramedTcpTest, Accept_AfterPeerConnects_ReturnsConnection) {
   FramedTcpConnector connector(allocator_, kLocalhost, listener.port());
 
   ConnectFuture connect = connector.Connect();
-  Result<ReliableDatagramSocket> client = Wait(connect);
+  Result<ReliableSocket> client = Wait(connect);
   PW_TEST_ASSERT_OK(client);
 
   AcceptFuture accept = listener.Accept();
-  Result<ReliableDatagramSocket> server = Wait(accept);
+  Result<ReliableSocket> server = Wait(accept);
   PW_TEST_ASSERT_OK(server);
 
   ASSERT_TRUE(Send(*client, "hello"));
@@ -588,7 +588,7 @@ TEST_F(FramedTcpTest, WireFormat_Receive) {
   AcceptFuture accept = listener.Accept();
   stream::SocketStream peer;
   PW_TEST_ASSERT_OK(peer.Connect(kLocalhost, listener.port()));
-  Result<ReliableDatagramSocket> server = Wait(accept);
+  Result<ReliableSocket> server = Wait(accept);
   PW_TEST_ASSERT_OK(server);
 
   // "hello" followed by an empty datagram.
@@ -610,7 +610,7 @@ TEST_F(FramedTcpTest, WireFormat_Send) {
   AcceptFuture accept = listener.Accept();
   stream::SocketStream peer;
   PW_TEST_ASSERT_OK(peer.Connect(kLocalhost, listener.port()));
-  Result<ReliableDatagramSocket> server = Wait(accept);
+  Result<ReliableSocket> server = Wait(accept);
   PW_TEST_ASSERT_OK(server);
 
   ASSERT_TRUE(Send(*server, "abc"));
@@ -627,7 +627,7 @@ TEST_F(FramedTcpTest, WireFormat_PeerDisconnectsMidDatagram) {
   AcceptFuture accept = listener.Accept();
   stream::SocketStream peer;
   PW_TEST_ASSERT_OK(peer.Connect(kLocalhost, listener.port()));
-  Result<ReliableDatagramSocket> server = Wait(accept);
+  Result<ReliableSocket> server = Wait(accept);
   PW_TEST_ASSERT_OK(server);
 
   // A 10-byte datagram that ends after 3 bytes.
@@ -648,7 +648,7 @@ TEST_F(FramedTcpTest, DropSocket_WhileSendIsBlocked) {
   AcceptFuture accept = listener.Accept();
   stream::SocketStream peer;
   PW_TEST_ASSERT_OK(peer.Connect(kLocalhost, listener.port()));
-  Result<ReliableDatagramSocket> server = Wait(accept);
+  Result<ReliableSocket> server = Wait(accept);
   PW_TEST_ASSERT_OK(server);
 
   std::optional<WriteReservation> reservation = server->TryReserveWrite(kSize);

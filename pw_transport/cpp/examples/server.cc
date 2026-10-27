@@ -63,7 +63,7 @@ std::optional<uint16_t> ParsePort(std::string_view arg) {
 // Replies to each datagram received on one connection.
 class ConnectionTask : public async2::Task {
  public:
-  ConnectionTask(int id, ReliableDatagramSocket socket)
+  ConnectionTask(int id, ReliableSocket socket)
       : id_(id), socket_(std::move(socket)) {}
 
  private:
@@ -114,7 +114,7 @@ class ConnectionTask : public async2::Task {
   }
 
   const int id_;
-  ReliableDatagramSocket socket_;
+  ReliableSocket socket_;
   State state_ = State::kReceiving;
   int requests_received_ = 0;
   StringBuffer<64> reply_;
@@ -127,7 +127,7 @@ class AcceptTask : public async2::Task {
  public:
   AcceptTask(Allocator& allocator,
              async2::Dispatcher& dispatcher,
-             ReliableDatagramListener& listener)
+             ReliableListener& listener)
       : allocator_(allocator), dispatcher_(dispatcher), listener_(listener) {}
 
  private:
@@ -136,7 +136,7 @@ class AcceptTask : public async2::Task {
       if (!accept_future_.is_pendable()) {
         accept_future_ = listener_.Accept();
       }
-      PW_AWAIT(Result<ReliableDatagramSocket> socket, accept_future_, cx);
+      PW_AWAIT(Result<ReliableSocket> socket, accept_future_, cx);
       if (socket.status().IsResourceExhausted()) {
         PW_LOG_WARN("Failed to accept a connection; continuing");
         continue;
@@ -160,8 +160,8 @@ class AcceptTask : public async2::Task {
 
   Allocator& allocator_;
   async2::Dispatcher& dispatcher_;
-  ReliableDatagramListener& listener_;
-  ReliableDatagramListener::AcceptFuture accept_future_;
+  ReliableListener& listener_;
+  ReliableListener::AcceptFuture accept_future_;
   int next_connection_id_ = 1;
 };
 

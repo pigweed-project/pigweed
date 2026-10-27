@@ -15,31 +15,34 @@ pw_transport
 ``pw_transport`` defines interfaces for async-native, datagram-oriented
 network sockets built on :ref:`module-pw_async2`.
 
-The core interfaces in ``pw_transport`` are :cc:`DatagramSocket` and
-:cc:`ReliableDatagramSocket`: abstract handles to some underlying transport,
-used for reading and writing. Any :cc:`ReliableDatagramSocket` can be
-implicitly converted to and used as a :cc:`DatagramSocket`. Sockets make use of
-:ref:`module-pw_buf` to enable zero-copy reads and writes directly into
-transport buffers.
+The core interfaces in ``pw_transport`` are :cc:`Socket <pw::transport::Socket>`
+and :cc:`ReliableSocket <pw::transport::ReliableSocket>`: abstract handles to
+some underlying transport, used for reading and writing. Any :cc:`ReliableSocket
+<pw::transport::ReliableSocket>` can be implicitly converted to and used as a
+:cc:`Socket <pw::transport::Socket>`. Sockets make use of :ref:`module-pw_buf`
+to enable zero-copy reads and writes directly into transport buffers.
 
 Sockets are provisioned by one of two transport interfaces:
-a :cc:`Connector <pw::transport::Connector>` / :cc:`ReliableDatagramConnector`
-which establishes them, or a :cc:`Listener <pw::transport::Listener>` /
-:cc:`ReliableDatagramListener` which accepts them from a peer.
+a :cc:`Connector <pw::transport::Connector>` / :cc:`ReliableConnector
+<pw::transport::ReliableConnector>` which establishes them, or a :cc:`Listener
+<pw::transport::Listener>` / :cc:`ReliableListener
+<pw::transport::ReliableListener>` which accepts them from a peer.
 
 -----
 Usage
 -----
-Once a :cc:`ReliableDatagramSocket` is obtained from a
-:cc:`ReliableDatagramConnector` or :cc:`ReliableDatagramListener`, tasks read
+Once a :cc:`ReliableSocket <pw::transport::ReliableSocket>` is obtained from a
+:cc:`ReliableConnector <pw::transport::ReliableConnector>` or
+:cc:`ReliableListener <pw::transport::ReliableListener>`, tasks read
 and write messages asynchronously. Writes use a two-phase reservation model:
-:cc:`ReliableDatagramSocket::ReserveWrite` returns a future that resolves to a
+:cc:`ReliableSocket::ReserveWrite <pw::transport::ReliableSocket::ReserveWrite>`
+returns a future that resolves to a
 :cc:`WriteReservation` once buffer space is available. If the underlying
 transport's outgoing queue is full, the future pends, naturally applying
 backpressure to the sender.
 
 Zero-length datagrams are supported: ``ReserveWrite(0)`` reserves a zero-byte
-write slot, and :cc:`Read <pw::transport::ReliableDatagramSocket::Read>`
+write slot, and :cc:`Read <pw::transport::ReliableSocket::Read>`
 resolves to a non-null, empty :cc:`pw::ConstBuf` (such as
 :cc:`pw::ConstBuf::ZeroLength`) when a zero-byte datagram is received. A null
 ``ConstBuf`` (``response == nullptr``) indicates that the socket has closed.
@@ -55,8 +58,7 @@ response:
 
          class RequestResponseTask : public pw::async2::Task {
           public:
-           explicit RequestResponseTask(
-               pw::transport::ReliableDatagramConnector& connector)
+           explicit RequestResponseTask(pw::transport::ReliableConnector& connector)
                : connector_(connector) {}
 
           private:
@@ -117,10 +119,10 @@ response:
              }
            }
 
-           pw::transport::ReliableDatagramConnector& connector_;
-           pw::transport::ReliableDatagramSocket socket_;
+           pw::transport::ReliableConnector& connector_;
+           pw::transport::ReliableSocket socket_;
            State state_ = State::kConnecting;
-           pw::transport::ReliableDatagramConnector::ConnectFuture connect_future_;
+           pw::transport::ReliableConnector::ConnectFuture connect_future_;
            pw::transport::ReserveWriteFuture reserve_future_;
            pw::transport::ReadFuture read_future_;
          };
@@ -130,9 +132,8 @@ response:
       .. code-block:: cpp
 
          pw::async2::Coro<pw::Status> SendAndReceive(
-             pw::async2::CoroContext&,
-             pw::transport::ReliableDatagramConnector& connector) {
-           PW_CO_TRY_ASSIGN(pw::transport::ReliableDatagramSocket socket,
+             pw::async2::CoroContext&, pw::transport::ReliableConnector& connector) {
+           PW_CO_TRY_ASSIGN(pw::transport::ReliableSocket socket,
                             co_await connector.Connect());
 
            // Reserve space in an outgoing transport buffer.
@@ -163,16 +164,16 @@ Addressing
 ==========
 ``pw_transport`` does not define an addressing layer, as this is inherently
 platform and protocol dependent. Where required, addressing should be built into
-implementations of ``ReliableDatagramListener`` and
-``ReliableDatagramConnector``. For example:
+implementations of ``Listener`` / ``ReliableListener`` and
+``Connector`` / ``ReliableConnector``. For example:
 
 .. code-block:: cpp
 
-   class FramedTcpConnector : public pw::transport::ReliableDatagramConnector {
+   class FramedTcpConnector : public pw::transport::ReliableConnector {
     public:
      FramedTcpConnector(std::string_view host, uint16_t port);
 
-     pw::transport::ReliableDatagramConnector::ConnectFuture Connect() override;
+     pw::transport::ReliableConnector::ConnectFuture Connect() override;
    };
 
 Instances of these objects can then be configured for specific endpoints and
@@ -194,13 +195,13 @@ Implementing
 Authors writing an implementation for your own transport are required to
 implement three virtual interfaces:
 
-- :cc:`Listener <pw::transport::Listener>` / :cc:`ReliableDatagramListener`:
-  the listening side of the transport.
-- :cc:`Connector <pw::transport::Connector>` / :cc:`ReliableDatagramConnector`:
-  the establishing side of the transport.
-- :cc:`DatagramSocketImpl` / :cc:`ReliableDatagramSocketImpl`: the core socket
-  interfaces backing ``DatagramSocket`` and ``ReliableDatagramSocket`` handles.
-  Allocated and refcounted.
+- :cc:`Listener <pw::transport::Listener>` / :cc:`ReliableListener
+  <pw::transport::ReliableListener>`: the listening side of the transport.
+- :cc:`Connector <pw::transport::Connector>` / :cc:`ReliableConnector
+  <pw::transport::ReliableConnector>`: the establishing side of the transport.
+- :cc:`SocketImpl <pw::transport::SocketImpl>` / :cc:`ReliableSocketImpl
+  <pw::transport::ReliableSocketImpl>`: the core socket interfaces backing
+  ``Socket`` and ``ReliableSocket`` handles. Allocated and refcounted.
 
 Refer to the doxygen docs for details of each of these, with requirements and
 preconditions.

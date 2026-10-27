@@ -37,9 +37,9 @@ namespace pw::transport {
 /// `AcceptFuture` objects with a `FAILED_PRECONDITION`.
 class Listener {
  public:
-  /// The future returned by `Accept`, resolving to a `DatagramSocket`
+  /// The future returned by `Accept`, resolving to a `Socket`
   /// handle on success.
-  using AcceptFuture = async2::ValueFuture<Result<DatagramSocket>>;
+  using AcceptFuture = async2::ValueFuture<Result<Socket>>;
 
   virtual ~Listener() = default;
 
@@ -59,32 +59,30 @@ class Listener {
   virtual AcceptFuture Accept() = 0;
 
  protected:
-  /// Creates a `DatagramSocket` handle from an implementation.
-  static DatagramSocket WrapSocket(DatagramSocketImpl& impl) {
-    return DatagramSocket(impl);
-  }
+  /// Creates a `Socket` handle from an implementation.
+  static Socket WrapSocket(SocketImpl& impl) { return Socket(impl); }
 };
 
 /// The listening side of a reliable, datagram-oriented transport.
 ///
-/// A `ReliableDatagramListener` accepts inbound connections initiated by remote
+/// A `ReliableListener` accepts inbound connections initiated by remote
 /// peers, ensuring that they are properly established, then provides a handle
 /// which is used to read to or write from that socket.
 ///
-/// The `ReliableDatagramListener` interface does not specify any addressing or
+/// The `ReliableListener` interface does not specify any addressing or
 /// ports, as those details are protocol-dependent. A concrete
-/// `ReliableDatagramListener` instance should be constructed with and
+/// `ReliableListener` instance should be constructed with and
 /// internally store any such state if required.
 ///
-/// If a `ReliableDatagramListener` is destructed, it must resolve any pending
+/// If a `ReliableListener` is destructed, it must resolve any pending
 /// `AcceptFuture` objects with a `FAILED_PRECONDITION`.
-class ReliableDatagramListener {
+class ReliableListener {
  public:
-  /// The future returned by `Accept`, resolving to a `ReliableDatagramSocket`
+  /// The future returned by `Accept`, resolving to a `ReliableSocket`
   /// handle on success.
-  using AcceptFuture = async2::ValueFuture<Result<ReliableDatagramSocket>>;
+  using AcceptFuture = async2::ValueFuture<Result<ReliableSocket>>;
 
-  virtual ~ReliableDatagramListener() = default;
+  virtual ~ReliableListener() = default;
 
   /// Listens for a new connection from a peer, returning it once established.
   /// `Accept` may be called repeatedly to receive additional connections.
@@ -102,11 +100,16 @@ class ReliableDatagramListener {
   virtual AcceptFuture Accept() = 0;
 
  protected:
-  /// Creates a `ReliableDatagramSocket` handle from an implementation.
-  static ReliableDatagramSocket WrapSocket(ReliableDatagramSocketImpl& impl) {
-    return ReliableDatagramSocket(impl);
+  /// Creates a `ReliableSocket` handle from an implementation.
+  static ReliableSocket WrapSocket(ReliableSocketImpl& impl) {
+    return ReliableSocket(impl);
   }
 };
+
+/// @deprecated Use `pw::transport::ReliableListener` instead.
+using ReliableDatagramListener
+    [[deprecated("Use pw::transport::ReliableListener instead")]] =
+        ReliableListener;
 
 /// The establishing side of a datagram-oriented transport.
 ///
@@ -123,9 +126,9 @@ class ReliableDatagramListener {
 /// `ConnectFuture` objects with a `FAILED_PRECONDITION`.
 class Connector {
  public:
-  /// The future returned by `Connect`, resolving to a `DatagramSocket`
+  /// The future returned by `Connect`, resolving to a `Socket`
   /// handle on success.
-  using ConnectFuture = async2::ValueFuture<Result<DatagramSocket>>;
+  using ConnectFuture = async2::ValueFuture<Result<Socket>>;
 
   virtual ~Connector() = default;
 
@@ -147,10 +150,8 @@ class Connector {
   virtual ConnectFuture Connect() = 0;
 
  protected:
-  /// Creates a `DatagramSocket` handle from an implementation.
-  static DatagramSocket WrapSocket(DatagramSocketImpl& impl) {
-    return DatagramSocket(impl);
-  }
+  /// Creates a `Socket` handle from an implementation.
+  static Socket WrapSocket(SocketImpl& impl) { return Socket(impl); }
 };
 
 /// The establishing side of a reliable, datagram-oriented transport.
@@ -159,20 +160,20 @@ class Connector {
 /// necessary protocol-level configuration and establishment, then provides
 /// a handle which is used to read to or write from that socket.
 ///
-/// The `ReliableDatagramConnector` interface does not specify any addressing or
+/// The `ReliableConnector` interface does not specify any addressing or
 /// ports, as those details are protocol-dependent. A concrete
-/// `ReliableDatagramConnector` instance should be constructed with and
+/// `ReliableConnector` instance should be constructed with and
 /// internally store any such state if required.
 ///
-/// If a `ReliableDatagramConnector` is destructed, it must resolve any pending
+/// If a `ReliableConnector` is destructed, it must resolve any pending
 /// `ConnectFuture` objects with a `FAILED_PRECONDITION`.
-class ReliableDatagramConnector {
+class ReliableConnector {
  public:
-  /// The future returned by `Connect`, resolving to a `ReliableDatagramSocket`
+  /// The future returned by `Connect`, resolving to a `ReliableSocket`
   /// handle on success.
-  using ConnectFuture = async2::ValueFuture<Result<ReliableDatagramSocket>>;
+  using ConnectFuture = async2::ValueFuture<Result<ReliableSocket>>;
 
-  virtual ~ReliableDatagramConnector() = default;
+  virtual ~ReliableConnector() = default;
 
   /// Opens a connection to the peer, returning it once established.
   ///
@@ -192,11 +193,16 @@ class ReliableDatagramConnector {
   virtual ConnectFuture Connect() = 0;
 
  protected:
-  /// Creates a `ReliableDatagramSocket` handle from an implementation.
-  static ReliableDatagramSocket WrapSocket(ReliableDatagramSocketImpl& impl) {
-    return ReliableDatagramSocket(impl);
+  /// Creates a `ReliableSocket` handle from an implementation.
+  static ReliableSocket WrapSocket(ReliableSocketImpl& impl) {
+    return ReliableSocket(impl);
   }
 };
+
+/// @deprecated Use `pw::transport::ReliableConnector` instead.
+using ReliableDatagramConnector
+    [[deprecated("Use pw::transport::ReliableConnector instead")]] =
+        ReliableConnector;
 
 /// @endmodule
 

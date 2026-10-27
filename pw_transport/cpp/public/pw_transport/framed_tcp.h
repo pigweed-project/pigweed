@@ -93,7 +93,7 @@ class WakePipe {
 
 }  // namespace internal
 
-/// A `ReliableDatagramListener` that accepts TCP connections.
+/// A `ReliableListener` that accepts TCP connections.
 ///
 /// The listener accepts IPv4 and IPv6 connections on all local interfaces. It
 /// accepts connections on a background thread. If a connection arrives without
@@ -102,7 +102,7 @@ class WakePipe {
 ///
 /// On destruction, pending `Accept` futures resolve to `FAILED_PRECONDITION`.
 /// Sockets that were already accepted remain open.
-class FramedTcpListener final : public ReliableDatagramListener {
+class FramedTcpListener final : public ReliableListener {
  public:
   explicit FramedTcpListener(Allocator& allocator,
                              const FramedTcpOptions& options = {});
@@ -150,8 +150,7 @@ class FramedTcpListener final : public ReliableDatagramListener {
 
   void AcceptLoop() PW_LOCKS_EXCLUDED(lock_);
   bool WaitForUnclaimedSlot() PW_LOCKS_EXCLUDED(lock_);
-  void Deliver(Result<ReliableDatagramSocket>&& result)
-      PW_LOCKS_EXCLUDED(lock_);
+  void Deliver(Result<ReliableSocket>&& result) PW_LOCKS_EXCLUDED(lock_);
   void Stop() PW_LOCKS_EXCLUDED(lock_);
 
   Allocator& allocator_;
@@ -167,9 +166,9 @@ class FramedTcpListener final : public ReliableDatagramListener {
   uint16_t port_ PW_GUARDED_BY(lock_) = 0;
 
   // A connection that was accepted when no Accept() call was waiting.
-  std::optional<Result<ReliableDatagramSocket>> unclaimed_ PW_GUARDED_BY(lock_);
+  std::optional<Result<ReliableSocket>> unclaimed_ PW_GUARDED_BY(lock_);
 
-  async2::ValueListProvider<Result<ReliableDatagramSocket>> accept_provider_;
+  async2::ValueListProvider<Result<ReliableSocket>> accept_provider_;
 
   // Released when `unclaimed_` is claimed or the listener stops.
   sync::ThreadNotification unclaimed_slot_available_;
@@ -178,7 +177,7 @@ class FramedTcpListener final : public ReliableDatagramListener {
   Thread thread_;
 };
 
-/// A `ReliableDatagramConnector` that opens TCP connections to a peer.
+/// A `ReliableConnector` that opens TCP connections to a peer.
 ///
 /// Connections are opened on a background thread. Multiple connections can be
 /// open at once.
@@ -186,7 +185,7 @@ class FramedTcpListener final : public ReliableDatagramListener {
 /// Destruction cancels any connection in progress, resolving pending `Connect`
 /// futures with `FAILED_PRECONDITION`. Sockets that were already connected
 /// remain open.
-class FramedTcpConnector final : public ReliableDatagramConnector {
+class FramedTcpConnector final : public ReliableConnector {
  public:
   /// The maximum length of the `host` string.
   static constexpr size_t kMaxHostLength = 253;
@@ -217,7 +216,7 @@ class FramedTcpConnector final : public ReliableDatagramConnector {
 
  private:
   void ConnectLoop() PW_LOCKS_EXCLUDED(lock_);
-  Result<ReliableDatagramSocket> ConnectToPeer();
+  Result<ReliableSocket> ConnectToPeer();
 
   Allocator& allocator_;
   const FramedTcpOptions options_;
@@ -230,7 +229,7 @@ class FramedTcpConnector final : public ReliableDatagramConnector {
   sync::Mutex lock_;
   bool stopping_ PW_GUARDED_BY(lock_) = false;
 
-  async2::ValueListProvider<Result<ReliableDatagramSocket>> connect_provider_;
+  async2::ValueListProvider<Result<ReliableSocket>> connect_provider_;
 
   // Released when Connect() is called or the connector is destroyed.
   sync::ThreadNotification connect_requested_;

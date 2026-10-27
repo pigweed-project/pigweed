@@ -23,7 +23,7 @@ The core size report measures the cost of adding :cc:`Server <pw::rpc2::Server>`
 and :cc:`Client <pw::rpc2::Client>` to an embedded system that already includes
 a :cc:`async2::BasicDispatcher <pw::async2::BasicDispatcher>`, a
 :cc:`allocator::FirstFitAllocator <pw::allocator::FirstFitAllocator>`, and a
-:cc:`transport::ReliableDatagramSocket <pw::transport::ReliableDatagramSocket>`
+:cc:`transport::ReliableSocket <pw::transport::ReliableSocket>`
 transport implementation.
 
 The table below reports:

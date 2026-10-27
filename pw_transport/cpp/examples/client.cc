@@ -70,7 +70,7 @@ std::optional<uint16_t> ParsePort(std::string_view arg) {
 // Connects to the server, sends messages, and waits for a reply to each one.
 class ClientTask : public async2::Task {
  public:
-  ClientTask(ReliableDatagramConnector& connector,
+  ClientTask(ReliableConnector& connector,
              async2::TimeProvider<chrono::SystemClock>& time,
              int message_count)
       : connector_(connector), time_(time), message_count_(message_count) {}
@@ -94,7 +94,7 @@ class ClientTask : public async2::Task {
           if (!connect_future_.is_pendable()) {
             connect_future_ = connector_.Connect();
           }
-          PW_AWAIT(Result<ReliableDatagramSocket> socket, connect_future_, cx);
+          PW_AWAIT(Result<ReliableSocket> socket, connect_future_, cx);
           if (!socket.ok()) {
             PW_LOG_ERROR("Failed to connect: %s", socket.status().str());
             return async2::Ready();
@@ -171,17 +171,17 @@ class ClientTask : public async2::Task {
     state_ = State::kSending;
   }
 
-  ReliableDatagramConnector& connector_;
+  ReliableConnector& connector_;
   async2::TimeProvider<chrono::SystemClock>& time_;
   const int message_count_;
 
   State state_ = State::kConnecting;
-  ReliableDatagramSocket socket_;
+  ReliableSocket socket_;
   int messages_sent_ = 0;
   bool succeeded_ = false;
   StringBuffer<64> message_;
 
-  ReliableDatagramConnector::ConnectFuture connect_future_;
+  ReliableConnector::ConnectFuture connect_future_;
   ReserveWriteFuture reserve_future_;
   ReadFuture read_future_;
   async2::TimeFuture<chrono::SystemClock> delay_future_;

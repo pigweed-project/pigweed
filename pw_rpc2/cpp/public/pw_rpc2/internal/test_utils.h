@@ -52,7 +52,7 @@ namespace pw::rpc2::test {
 /// `ReliableDatagramSocket`'s constructor is private: handles are normally
 /// minted by a `ReliableDatagramListener` or `ReliableDatagramConnector` from
 /// their protected `WrapSocket` hook. Tests frequently want a handle to a bare
-/// `ReliableDatagramSocketImpl` with no transport behind it, so this class
+/// `ReliableSocketImpl` with no transport behind it, so this class
 /// inherits the hook and republishes it. It is abstract and is never
 /// instantiated; only its static `WrapSocket` is used.
 class SocketFactory : public transport::ReliableDatagramListener {
@@ -62,11 +62,11 @@ class SocketFactory : public transport::ReliableDatagramListener {
 
 /// Returns a `ReliableDatagramSocket` handle to `impl` for testing.
 inline transport::ReliableDatagramSocket WrapSocket(
-    transport::ReliableDatagramSocketImpl& impl) {
+    transport::ReliableSocketImpl& impl) {
   return SocketFactory::WrapSocket(impl);
 }
 
-class MockConnection : public transport::ReliableDatagramSocketImpl {
+class MockConnection : public transport::ReliableSocketImpl {
  public:
   /// Maximum number of committed (written) packets retained for inspection.
   /// Committing more than this many packets is a fatal error rather than a
@@ -123,7 +123,7 @@ class MockConnection : public transport::ReliableDatagramSocketImpl {
   /// requires the caller to already hold it.
   bool is_closed() const PW_LOCKS_EXCLUDED(*this) {
     std::lock_guard lock(*this);
-    return ReliableDatagramSocketImpl::is_closed();
+    return ReliableSocketImpl::is_closed();
   }
 
   void lock() const PW_EXCLUSIVE_LOCK_FUNCTION() override { lock_.lock(); }

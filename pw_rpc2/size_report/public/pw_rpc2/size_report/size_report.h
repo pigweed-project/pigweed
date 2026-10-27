@@ -33,11 +33,11 @@ namespace pw::rpc2::size_report {
 
 Allocator& GetAllocator();
 
-class MockConnection : public transport::ReliableDatagramSocketImpl {
+class MockConnection : public transport::ReliableSocketImpl {
  public:
-  MockConnection() : ReliableDatagramSocketImpl(GetAllocator(), 1500) {}
+  MockConnection() : ReliableSocketImpl(GetAllocator(), 1500) {}
   explicit MockConnection(Allocator& allocator)
-      : ReliableDatagramSocketImpl(allocator, 1500) {}
+      : ReliableSocketImpl(allocator, 1500) {}
   ~MockConnection() override;
 
   async2::Poll<pw::ConstBuf> DoRead() override
@@ -65,22 +65,21 @@ class MockConnection : public transport::ReliableDatagramSocketImpl {
   mutable sync::InterruptSpinLock lock_;
 };
 
-class MockListener : public transport::ReliableDatagramListener {
+class MockListener : public transport::ReliableListener {
  public:
   ~MockListener() override;
 
   /// Republished so that size report binaries can mint socket handles for a
-  /// `MockConnection`; `ReliableDatagramSocket`'s constructor is private to
+  /// `MockConnection`; `ReliableSocket`'s constructor is private to
   /// transport implementations.
-  using transport::ReliableDatagramListener::WrapSocket;
+  using transport::ReliableListener::WrapSocket;
 
-  transport::ReliableDatagramListener::AcceptFuture Accept() override {
+  transport::ReliableListener::AcceptFuture Accept() override {
     return accept_provider_.Get();
   }
 
  private:
-  async2::ValueProvider<Result<transport::ReliableDatagramSocket>>
-      accept_provider_;
+  async2::ValueProvider<Result<transport::ReliableSocket>> accept_provider_;
 };
 
 uint32_t SetBaseline(uint32_t mask);
