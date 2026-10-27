@@ -34,20 +34,23 @@ void TransferService::HandleChunk(ConstByteSpan message,
   }
 
   if (chunk->IsInitialChunk()) {
-    uint32_t resource_id =
-        chunk->is_legacy() ? chunk->session_id() : chunk->resource_id().value();
-
+    uint32_t resource_id;
     uint32_t session_id;
     if (chunk->is_legacy()) {
+      resource_id = chunk->session_id();
       session_id = chunk->session_id();
-    } else if (chunk->desired_session_id().has_value()) {
+    } else if (chunk->desired_session_id().has_value() &&
+               chunk->resource_id().has_value()) {
+      resource_id = chunk->resource_id().value();
       session_id = chunk->desired_session_id().value();
     } else {
-      // Non-legacy start chunks are required to use desired_session_id.
-      thread_.SendServerStatus(type,
-                               chunk->session_id(),
-                               chunk->protocol_version(),
-                               Status::DataLoss());
+      // Non-legacy start chunks are required to specify desired_session_id and
+      // resource_id.
+      thread_.SendServerStatus(
+          type,
+          chunk->desired_session_id().value_or(chunk->session_id()),
+          chunk->protocol_version(),
+          Status::DataLoss());
       return;
     }
 

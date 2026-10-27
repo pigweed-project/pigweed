@@ -3487,5 +3487,19 @@ TEST_F(ConcurrentServerLifecycleTest, ConcurrentTransfers_TracksSeparately) {
   EXPECT_EQ(tracker_.GetSession(session_b).end_status, Status::DataLoss());
 }
 
+TEST_F(ReadTransfer, Version2_StartMissingResourceId_SendsDataLoss) {
+  ctx_.SendClientStream(
+      EncodeChunk(Chunk(ProtocolVersion::kVersionTwo, Chunk::Type::kStart)
+                      .set_desired_session_id(kArbitrarySessionId)));
+  transfer_thread_.WaitUntilEventIsProcessed();
+
+  EXPECT_FALSE(handler_.prepare_read_called);
+  ASSERT_EQ(ctx_.total_responses(), 1u);
+  Chunk response = DecodeChunk(ctx_.responses().back());
+  EXPECT_EQ(response.session_id(), kArbitrarySessionId);
+  ASSERT_TRUE(response.status().has_value());
+  EXPECT_EQ(response.status().value(), Status::DataLoss());
+}
+
 }  // namespace
 }  // namespace pw::transfer::test
