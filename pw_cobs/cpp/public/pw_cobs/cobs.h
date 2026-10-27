@@ -359,6 +359,22 @@ class Decoder {
   /// `Clear()`).
   constexpr bool in_progress() const { return code_ != 0; }
 
+  /// Returns the number of guaranteed non-zero data bytes remaining in the
+  /// active COBS block. When `in_progress()` is true, at least
+  /// `remaining_in_run() + 1` wire bytes must arrive before the current frame
+  /// can terminate at a `0x00` delimiter.
+  constexpr size_t remaining_in_run() const { return remaining_in_run_; }
+
+  /// Processes up to the first `0x00` frame delimiter in @p input, setting
+  /// @p bytes_consumed to the number of bytes consumed from @p input (including
+  /// the terminating `0x00` delimiter when a frame completes).
+  ///
+  /// Unlike `Process(ConstByteSpan, Callback)`, which consumes all of @p input
+  /// and invokes a callback for every frame, `ProcessChunk` stops at the first
+  /// frame boundary so pull/poll-based callers (such as `pw_async2` receive
+  /// tasks draining a ring or DMA buffer) can return one frame per poll.
+  Result<ByteSpan> ProcessChunk(ConstByteSpan input, size_t& bytes_consumed);
+
   /// Processes a single incoming wire byte @p b.
   ///
   /// The decoder automatically resets at every `0x00` delimiter (whether the
@@ -385,9 +401,9 @@ class Decoder {
   template <typename Callback>
   void Process(ConstByteSpan data, Callback&& callback) {
     while (!data.empty()) {
-      ConstByteSpan remaining;
-      Result<ByteSpan> result = ProcessChunk(data, remaining);
-      data = remaining;
+      size_t bytes_consumed = 0;
+      Result<ByteSpan> result = ProcessChunk(data, bytes_consumed);
+      data = data.subspan(bytes_consumed);
       if (!result.status().IsUnavailable()) {
         callback(result);
       }
@@ -396,8 +412,6 @@ class Decoder {
 
  private:
   friend Result<ByteSpan> Decode(ConstByteSpan encoded, ByteSpan output);
-
-  Result<ByteSpan> ProcessChunk(ConstByteSpan input, ConstByteSpan& remaining);
 
   ByteSpan decode_buffer_;
   size_t write_pos_ = 0;

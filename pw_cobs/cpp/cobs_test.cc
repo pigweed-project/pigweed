@@ -750,5 +750,20 @@ TEST(CobsDecoder, ProcessSpanHandlesMultipleBackToBackValidAndInvalidFrames) {
   EXPECT_EQ(first_bytes[1], std::byte{0x00});
 }
 
+TEST(CobsDecoder, RemainingInRunAndProcessChunk) {
+  DecoderBuffer<8> dec;
+  EXPECT_EQ(dec.remaining_in_run(), 0u);
+  EXPECT_EQ(dec.Process(std::byte{0x04}).status(), Status::Unavailable());
+  EXPECT_EQ(dec.remaining_in_run(), 3u);
+
+  constexpr auto kRest = bytes::Array<0x11, 0x22, 0x33, 0x00, 0x02, 0x44>();
+  size_t bytes_consumed = 0;
+  Result<ByteSpan> res = dec.ProcessChunk(kRest, bytes_consumed);
+  ASSERT_EQ(res.status(), OkStatus());
+  ASSERT_EQ(res->size(), 3u);
+  EXPECT_EQ(dec.remaining_in_run(), 0u);
+  EXPECT_EQ(bytes_consumed, 4u);
+}
+
 }  // namespace
 }  // namespace pw::cobs

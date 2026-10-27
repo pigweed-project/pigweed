@@ -23,13 +23,63 @@ namespace {
 constexpr std::byte kFrameDelimiter{0x00};
 constexpr uint8_t kMaxRunCode = 0xFF;
 
+using Word = uintptr_t;
+
+constexpr bool HasZeroByte(Word word) {
+  constexpr Word kLsbPerByte = ~Word{0} / 0xFFu;
+  constexpr Word kMsbPerByte = kLsbPerByte * 0x80u;
+  return ((word - kLsbPerByte) & ~word & kMsbPerByte) != 0;
+}
+
 size_t FindFirstZero(ConstByteSpan span) {
-  const void* zero =
-      !span.empty() ? std::memchr(span.data(), 0, span.size()) : nullptr;
-  if (zero == nullptr) {
-    return span.size();
+  const std::byte* const start = span.data();
+  const std::byte* p = start;
+  const std::byte* const end = start + span.size();
+  while (static_cast<size_t>(end - p) >= sizeof(Word)) {
+    Word word;
+    std::memcpy(&word, p, sizeof(word));
+    if (HasZeroByte(word)) {
+      break;
+    }
+    p += sizeof(word);
   }
-  return static_cast<size_t>(static_cast<const std::byte*>(zero) - span.data());
+  while (p < end && *p != kFrameDelimiter) {
+    ++p;
+  }
+  return static_cast<size_t>(p - start);
+}
+
+// Single-pass word-wise scan and copy of non-zero bytes.
+size_t CopyNonZero(std::byte* dst, const std::byte* src, size_t max_len) {
+  size_t i = 0;
+  while (max_len - i >= sizeof(Word)) {
+    Word word;
+    std::memcpy(&word, src + i, sizeof(word));
+    if (HasZeroByte(word)) {
+      break;
+    }
+    std::memcpy(dst + i, &word, sizeof(word));
+    i += sizeof(word);
+  }
+  while (i < max_len && src[i] != kFrameDelimiter) {
+    dst[i] = src[i];
+    ++i;
+  }
+  return i;
+}
+
+void CopyForwardWords(std::byte* dst, const std::byte* src, size_t count) {
+  size_t i = 0;
+  while (count - i >= sizeof(Word)) {
+    Word word;
+    std::memcpy(&word, src + i, sizeof(word));
+    std::memcpy(dst + i, &word, sizeof(word));
+    i += sizeof(word);
+  }
+  while (i < count) {
+    dst[i] = src[i];
+    ++i;
+  }
 }
 
 }  // namespace
@@ -58,7 +108,15 @@ ConstByteSpan Streamer::Write(ConstByteSpan data) {
 
     const size_t max_run = std::min(
         {data.size(), avail_out, static_cast<size_t>(kMaxRunCode - code_)});
-    const size_t non_zero = FindFirstZero(data.first(max_run));
+    std::byte* const out_ptr = buffer_.data() + write_pos_;
+    const bool single_pass =
+        (write_pos_ + max_run + 1 < buffer_.size()) &&
+        (out_ptr != data.data()) &&
+        ((code_pos_ == lead_offset_) ||
+         (max_run == static_cast<size_t>(kMaxRunCode - code_)));
+    const size_t non_zero = single_pass
+                                ? CopyNonZero(out_ptr, data.data(), max_run)
+                                : FindFirstZero(data.first(max_run));
     const bool hit_zero =
         (non_zero < max_run) ||
         ((non_zero < data.size()) && (code_ + non_zero < kMaxRunCode) &&
@@ -74,8 +132,8 @@ ConstByteSpan Streamer::Write(ConstByteSpan data) {
     }
 
     if (non_zero > 0) {
-      if (buffer_.data() + write_pos_ != data.data()) {
-        std::memmove(buffer_.data() + write_pos_, data.data(), non_zero);
+      if (!single_pass && out_ptr != data.data()) {
+        CopyForwardWords(out_ptr, data.data(), non_zero);
       }
       write_pos_ += non_zero;
       code_ = static_cast<uint8_t>(code_ + non_zero);
@@ -148,9 +206,9 @@ Result<ByteSpan> Decode(ConstByteSpan encoded, ByteSpan output) {
     return Status::DataLoss();
   }
   Decoder decoder(output);
-  ConstByteSpan remaining;
-  Result<ByteSpan> result = decoder.ProcessChunk(encoded, remaining);
-  if (!remaining.empty()) {
+  size_t bytes_consumed = 0;
+  Result<ByteSpan> result = decoder.ProcessChunk(encoded, bytes_consumed);
+  if (bytes_consumed != encoded.size()) {
     return Status::DataLoss();
   }
   return result;
@@ -177,25 +235,32 @@ void Decoder::Clear() {
 }
 
 Result<ByteSpan> Decoder::Process(std::byte b) {
-  ConstByteSpan remaining;
-  return ProcessChunk(ConstByteSpan(&b, 1), remaining);
+  size_t bytes_consumed = 0;
+  return ProcessChunk(ConstByteSpan(&b, 1), bytes_consumed);
 }
 
 Result<ByteSpan> Decoder::ProcessChunk(ConstByteSpan input,
-                                       ConstByteSpan& remaining) {
+                                       size_t& bytes_consumed) {
+  const size_t initial_size = input.size();
   while (!input.empty()) {
     if (remaining_in_run_ > 0) {
       const size_t step = std::min(input.size(), remaining_in_run_);
-      const size_t zero_pos = FindFirstZero(input.first(step));
-      if (zero_pos < step) {
-        remaining = input.subspan(zero_pos + 1);
-        Clear();
-        return Status::DataLoss();
-      }
       if (!overflowed_ && decode_buffer_.size() - write_pos_ >= step) {
-        std::memcpy(decode_buffer_.data() + write_pos_, input.data(), step);
+        const size_t copied =
+            CopyNonZero(decode_buffer_.data() + write_pos_, input.data(), step);
+        if (copied < step) {
+          bytes_consumed = initial_size - input.size() + copied + 1;
+          Clear();
+          return Status::DataLoss();
+        }
         write_pos_ += step;
       } else {
+        const size_t zero_pos = FindFirstZero(input.first(step));
+        if (zero_pos < step) {
+          bytes_consumed = initial_size - input.size() + zero_pos + 1;
+          Clear();
+          return Status::DataLoss();
+        }
         overflowed_ = true;
       }
       remaining_in_run_ -= step;
@@ -210,7 +275,7 @@ Result<ByteSpan> Decoder::ProcessChunk(ConstByteSpan input,
       if (code_ == 0) {
         continue;
       }
-      remaining = input;
+      bytes_consumed = initial_size - input.size();
       const size_t total_len = write_pos_;
       const bool had_overflow = overflowed_;
       Clear();
@@ -229,7 +294,7 @@ Result<ByteSpan> Decoder::ProcessChunk(ConstByteSpan input,
     remaining_in_run_ = code - 1;
   }
 
-  remaining = {};
+  bytes_consumed = initial_size;
   return Status::Unavailable();
 }
 

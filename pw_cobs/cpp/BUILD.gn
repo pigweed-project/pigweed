@@ -15,6 +15,7 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
+import("$dir_pw_perf_test/perf_test.gni")
 import("$dir_pw_unit_test/test.gni")
 
 config("public_include_path") {
@@ -48,4 +49,13 @@ pw_test("cobs_test") {
 
 pw_test_group("tests") {
   tests = [ ":cobs_test" ]
+}
+
+pw_perf_test("cobs_perf_test") {
+  sources = [ "cobs_perf_test.cc" ]
+  deps = [
+    ":pw_cobs",
+    "$dir_pw_assert:check",
+    "$dir_pw_bytes",
+  ]
 }
