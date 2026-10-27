@@ -20,8 +20,6 @@
 #include <cstddef>
 #include <memory>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "pw_bytes/array.h"
 #include "pw_bytes/span.h"
 #include "pw_chrono/system_clock.h"
@@ -30,6 +28,7 @@
 #include "pw_thread/sleep.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
+#include "pw_unit_test/framework.h"
 
 namespace pw::hal::uart {
 namespace {
