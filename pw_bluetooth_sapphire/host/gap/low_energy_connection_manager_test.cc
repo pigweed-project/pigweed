@@ -2603,7 +2603,7 @@ TEST_F(LowEnergyConnectionManagerTest, ConnectInterrogationFailure) {
   ASSERT_TRUE(error.has_value());
   EXPECT_FALSE(peer->connected());
   EXPECT_FALSE(peer->le()->connected());
-  EXPECT_FALSE(peer->temporary());
+  EXPECT_TRUE(peer->temporary());
 }
 
 TEST_F(LowEnergyConnectionManagerTest,
@@ -2638,7 +2638,7 @@ TEST_F(LowEnergyConnectionManagerTest,
   ASSERT_TRUE(peer);
   EXPECT_FALSE(peer->connected());
   EXPECT_FALSE(peer->le()->connected());
-  EXPECT_FALSE(peer->temporary());
+  EXPECT_TRUE(peer->temporary());
 }
 
 TEST_F(LowEnergyConnectionManagerTest,
@@ -3572,7 +3572,7 @@ TEST_F(LowEnergyConnectionManagerTest,
   RunUntilIdle();
   EXPECT_TRUE(connected_peers().empty());
   EXPECT_EQ(connect_cb_count, 1);
-  EXPECT_FALSE(peer->temporary());
+  EXPECT_TRUE(peer->temporary());
   EXPECT_EQ(Peer::ConnectionState::kNotConnected,
             peer->le()->connection_state());
 }
@@ -3674,7 +3674,7 @@ TEST_F(LowEnergyConnectionManagerTest,
   RunFor(std::chrono::seconds(1));
   EXPECT_EQ(connect_cb_count, 1);
   EXPECT_EQ(0u, connected_peers().size());
-  EXPECT_FALSE(peer->temporary());
+  EXPECT_TRUE(peer->temporary());
   EXPECT_EQ(Peer::ConnectionState::kNotConnected,
             peer->le()->connection_state());
 }

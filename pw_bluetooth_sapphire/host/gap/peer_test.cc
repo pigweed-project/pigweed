@@ -870,14 +870,17 @@ TEST_F(PeerTest, RegisterAndUnregisterTwoLowEnergyConnections) {
 #endif  // NINSPECT
 }
 
-TEST_F(PeerTest, RegisterAndUnregisterLowEnergyConnectionsWhenIdentityKnown) {
-  EXPECT_TRUE(peer().identity_known());
+TEST_F(PeerTest, RegisterAndUnregisterLowEnergyConnectionsWhenBonded) {
+  sm::PairingData data;
+  data.peer_ltk = kLTK;
+  data.local_ltk = kLTK;
+  ASSERT_TRUE(peer().MutLe().SetBondData(data));
+  ASSERT_TRUE(peer().bonded());
   std::optional<Peer::ConnectionToken> token =
       peer().MutLe().RegisterConnection();
   EXPECT_FALSE(peer().temporary());
   token.reset();
-  // The peer's identity is known, so it should stay non-temporary upon
-  // disconnection.
+  // The peer is bonded, so it should stay non-temporary upon disconnection.
   EXPECT_FALSE(peer().temporary());
   EXPECT_EQ(peer().le()->connection_state(),
             Peer::ConnectionState::kNotConnected);
@@ -889,14 +892,17 @@ TEST_F(PeerTest, RegisterAndUnregisterLowEnergyConnectionsWhenIdentityKnown) {
 }
 
 TEST_F(PeerTest,
-       RegisterAndUnregisterInitializingLowEnergyConnectionsWhenIdentityKnown) {
-  EXPECT_TRUE(peer().identity_known());
+       RegisterAndUnregisterInitializingLowEnergyConnectionsWhenBonded) {
+  sm::PairingData data;
+  data.peer_ltk = kLTK;
+  data.local_ltk = kLTK;
+  ASSERT_TRUE(peer().MutLe().SetBondData(data));
+  ASSERT_TRUE(peer().bonded());
   std::optional<Peer::InitializingConnectionToken> token =
       peer().MutLe().RegisterInitializingConnection();
   EXPECT_FALSE(peer().temporary());
   token.reset();
-  // The peer's identity is known, so it should stay non-temporary upon
-  // disconnection.
+  // The peer is bonded, so it should stay non-temporary upon disconnection.
   EXPECT_FALSE(peer().temporary());
   EXPECT_EQ(peer().le()->connection_state(),
             Peer::ConnectionState::kNotConnected);

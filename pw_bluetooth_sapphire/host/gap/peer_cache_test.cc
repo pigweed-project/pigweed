@@ -48,6 +48,8 @@ constexpr int8_t kTestRSSI = 10;
 
 const DeviceAddress kAddrBrEdr(DeviceAddress::Type::kBREDR,
                                {0xFF, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA});
+const DeviceAddress kAddrBrEdr2(DeviceAddress::Type::kBREDR,
+                                {0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
 const DeviceAddress kAddrLePublic(DeviceAddress::Type::kLEPublic,
                                   {6, 5, 4, 3, 2, 1});
 // LE Public Device Address that has the same value as a BR/EDR BD_ADDR, e.g. on
@@ -1574,6 +1576,7 @@ class PeerCacheExpirationTest : public pw::async::test::FakeDispatcherFixture {
     RunUntilIdle();
   }
 
+  PeerCache& cache() { return cache_; }
   Peer* GetDefaultPeer() { return cache_.FindById(peer_id_); }
   Peer* GetPeerById(PeerId id) { return cache_.FindById(id); }
   bool IsDefaultPeerAddressInCache() const {
@@ -1673,23 +1676,23 @@ TEST_F(PeerCacheExpirationTest, LePeerBecomesNonTemporaryWhenConnecting) {
   ASSERT_TRUE(IsDefaultPeerPresent());
 }
 
-TEST_F(PeerCacheExpirationTest, LEPublicPeerRemainsNonTemporaryOnDisconnect) {
-  ASSERT_TRUE(IsDefaultPeerPresent());
-  ASSERT_EQ(kAddrLeAlias, GetDefaultPeer()->address());
-  {
-    Peer::ConnectionToken conn_token =
-        GetDefaultPeer()->MutLe().RegisterConnection();
-    ASSERT_FALSE(GetDefaultPeer()->temporary());
+TEST_F(PeerCacheExpirationTest, LEPublicPeerBecomesTemporaryOnDisconnect) {
+  ASSERT_TRUE(GetDefaultPeer()->identity_known());
+  ASSERT_FALSE(GetDefaultPeer()->bonded());
 
-    RunFor(kCacheTimeout + std::chrono::seconds(1));
-    ASSERT_TRUE(IsDefaultPeerPresent());
-    ASSERT_TRUE(GetDefaultPeer()->identity_known());
-    // Destroy conn_token at end of scope
-  }
-  EXPECT_FALSE(GetDefaultPeer()->temporary());
-
+  std::optional<Peer::ConnectionToken> conn_token =
+      GetDefaultPeer()->MutLe().RegisterConnection();
+  ASSERT_FALSE(GetDefaultPeer()->temporary());
   RunFor(kCacheTimeout);
-  EXPECT_TRUE(IsDefaultPeerPresent());
+  ASSERT_TRUE(IsDefaultPeerPresent());
+
+  // The peer's identity is known but it isn't bonded, so it should become
+  // temporary upon disconnection.
+  conn_token.reset();
+  EXPECT_TRUE(GetDefaultPeer()->temporary());
+  RunFor(kCacheTimeout);
+  EXPECT_FALSE(IsDefaultPeerPresent());
+  EXPECT_EQ(1, peers_removed());
 }
 
 TEST_F(PeerCacheExpirationTest, LERandomPeerBecomesTemporaryOnDisconnect) {
@@ -1729,39 +1732,68 @@ TEST_F(PeerCacheExpirationTest, LERandomPeerBecomesTemporaryOnDisconnect) {
   EXPECT_EQ(2, peers_removed());
 }
 
-TEST_F(PeerCacheExpirationTest, BrEdrPeerRemainsNonTemporaryOnDisconnect) {
-  // Create our Peer, and get it into the kConnected state.
-  PeerId custom_peer_id;
-  std::optional<Peer::ConnectionToken> conn_token;
-  {
-    auto* custom_peer = NewPeer(kAddrLePublic, /*connectable=*/true);
-    ASSERT_TRUE(custom_peer);
-    conn_token = custom_peer->MutLe().RegisterConnection();
-    custom_peer_id = custom_peer->identifier();
-  }
+TEST_F(PeerCacheExpirationTest, BrEdrPeerBecomesTemporaryOnDisconnect) {
+  Peer* peer = NewPeer(kAddrBrEdr2, /*connectable=*/true);
+  ASSERT_TRUE(peer);
+  ASSERT_FALSE(peer->bonded());
+  PeerId peer_id = peer->identifier();
 
-  // Verify that the connected peer does not expire out of the cache.
-  // Then disconnect the peer, in preparation for the next stage of our test.
-  {
-    EXPECT_EQ(0, peers_removed());
-    RunFor(kCacheTimeout * 10);
-    EXPECT_EQ(1, peers_removed());  // Default peer timed out.
-    auto* custom_peer = GetPeerById(custom_peer_id);
-    ASSERT_TRUE(custom_peer);
-    ASSERT_TRUE(custom_peer->identity_known());
-    EXPECT_FALSE(custom_peer->temporary());
-
-    conn_token.reset();
-    ASSERT_TRUE(GetPeerById(custom_peer_id));
-    EXPECT_FALSE(custom_peer->temporary());
-  }
-
-  // Verify that the disconnected peer does _not_ expire out of the cache.
-  // We expect the peer to remain, because BrEdr peers are non-temporary
-  // even when disconnected.
+  std::optional<Peer::ConnectionToken> conn_token =
+      peer->MutBrEdr().RegisterConnection();
+  ASSERT_FALSE(peer->temporary());
   RunFor(kCacheTimeout);
-  EXPECT_TRUE(GetPeerById(custom_peer_id));
-  EXPECT_EQ(1, peers_removed());
+  EXPECT_EQ(1, peers_removed());  // Default peer timed out.
+  ASSERT_TRUE(GetPeerById(peer_id));
+
+  // The peer isn't bonded, so it should become temporary upon disconnection and
+  // expire out of the cache.
+  conn_token.reset();
+  EXPECT_TRUE(peer->temporary());
+  RunFor(kCacheTimeout);
+  EXPECT_FALSE(GetPeerById(peer_id));
+  EXPECT_EQ(2, peers_removed());
+}
+
+TEST_F(PeerCacheExpirationTest,
+       BrEdrBondedPeerRemainsNonTemporaryOnDisconnect) {
+  Peer* peer = NewPeer(kAddrBrEdr2, /*connectable=*/true);
+  ASSERT_TRUE(peer);
+  ASSERT_TRUE(cache().StoreBrEdrBond(kAddrBrEdr2, kBrEdrKey));
+  ASSERT_TRUE(peer->bonded());
+  PeerId peer_id = peer->identifier();
+
+  std::optional<Peer::ConnectionToken> conn_token =
+      peer->MutBrEdr().RegisterConnection();
+  ASSERT_FALSE(peer->temporary());
+
+  // The peer is bonded, so it should remain non-temporary upon disconnection
+  // and not expire out of the cache.
+  conn_token.reset();
+  EXPECT_FALSE(peer->temporary());
+  RunFor(kCacheTimeout);
+  EXPECT_TRUE(GetPeerById(peer_id));
+  EXPECT_EQ(1, peers_removed());  // Only the default peer timed out.
+}
+
+TEST_F(PeerCacheExpirationTest, LEBondedPeerRemainsNonTemporaryOnDisconnect) {
+  // Bond the peer over LE, and get it into the kConnected state.
+  sm::PairingData data;
+  data.peer_ltk = kLTK;
+  data.local_ltk = kLTK;
+  ASSERT_TRUE(GetDefaultPeer()->MutLe().StoreBond(data));
+  ASSERT_TRUE(GetDefaultPeer()->bonded());
+
+  std::optional<Peer::ConnectionToken> conn_token =
+      GetDefaultPeer()->MutLe().RegisterConnection();
+  ASSERT_FALSE(GetDefaultPeer()->temporary());
+
+  // The peer is bonded, so it should remain non-temporary upon disconnection
+  // and not expire out of the cache.
+  conn_token.reset();
+  EXPECT_FALSE(GetDefaultPeer()->temporary());
+  RunFor(kCacheTimeout);
+  EXPECT_TRUE(IsDefaultPeerPresent());
+  EXPECT_EQ(0, peers_removed());
 }
 
 TEST_F(PeerCacheExpirationTest,

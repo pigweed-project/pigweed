@@ -689,9 +689,8 @@ class Peer final {
   // device:
   //   a. A device is temporary by default.
   //   b. A device becomes non-temporary when it gets connected.
-  //   c. A device becomes temporary again when disconnected only if its
-  //      identity is not known (i.e. identity_known() returns false). This only
-  //      applies to LE devices that use the privacy feature.
+  //   c. A device becomes temporary again when disconnected unless it is
+  //      bonded.
   //
   // Temporary devices are never bonded.
   bool temporary() const { return *temporary_; }

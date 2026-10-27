@@ -495,8 +495,6 @@ void Peer::BrEdrData::OnConnectionStateMaybeChanged(ConnectionState previous) {
     peer_->peer_metrics_->LogBrEdrDisconnection();
   }
 
-  peer_->UpdateExpiry();
-
   // Transition to or from kConnected state is a notifyable change.
   if (previous == ConnectionState::kConnected ||
       connection_state() == ConnectionState::kConnected) {
@@ -511,6 +509,8 @@ void Peer::BrEdrData::OnConnectionStateMaybeChanged(ConnectionState previous) {
   } else {
     peer_->TryMakeNonTemporary();
   }
+
+  peer_->UpdateExpiry();
 }
 
 void Peer::BrEdrData::SetInquiryData(
@@ -831,7 +831,7 @@ bool Peer::TryMakeNonTemporary() {
 
 bool Peer::TryMakeTemporary() {
   if (le() && le()->connection_state() == ConnectionState::kNotConnected &&
-      !identity_known()) {
+      !bonded()) {
     bt_log(DEBUG, "gap", "LE became temporary: %s:", bt_str(*this));
     temporary_.Set(true);
     return true;
