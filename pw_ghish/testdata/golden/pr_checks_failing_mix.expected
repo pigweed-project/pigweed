@@ -1,0 +1,10 @@
+Checks for Change 12345 (Patchset 2)
+  ✗  pigweed-lint                              1m0s      https://ci.chromium.org/b/2001
+  ⚠  pigweed-infra-1                           1m0s      https://ci.chromium.org/b/2002 [infra failure]
+  ⚠  pigweed-infra-2                           1m0s      https://ci.chromium.org/b/2003 [infra failure]
+  ✓  12 passing checks omitted (use --all to list)
+  Cluster: 2 builders failed with the same diagnostic: bot died unexpectedly
+
+Verdict: FAILED (3 of 15 checks failed)
+Next:    gh run view 12345 --log-failed  (or gh run rerun 12345 --failed)
+Error: 3 of 15 checks failed on Change 12345 (Patchset 2): pigweed-infra-1, pigweed-infra-2, pigweed-lint.

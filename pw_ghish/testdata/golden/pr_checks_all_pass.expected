@@ -1,0 +1,5 @@
+Checks for Change 12345 (Patchset 2)
+  ✓  All 72 checks passed (use --all to list)
+
+Verdict: PASSED (72 checks passed)
+Next:    gh pr view 12345

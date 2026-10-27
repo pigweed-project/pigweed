@@ -290,3 +290,114 @@ func TestInvariants_BoundedHTTPBodyReads(t *testing.T) {
 		})
 	}
 }
+
+// TestInvariants_NoRawANSIEscapesOutsideUIGo verifies that no production Go
+// file outside ui.go embeds raw ANSI CSI escape sequences (`\x1b[` or `\033[`),
+// ensuring all terminal styling goes through ColorEnabled and PadRightStyled in
+// ui.go (AGENTS.md invariant #15).
+func TestInvariants_NoRawANSIEscapesOutsideUIGo(t *testing.T) {
+	for _, path := range collectProductionGoFiles(t, true) {
+		if filepath.Base(path) == "ui.go" {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("os.ReadFile(%q): %v", path, err)
+		}
+		src := string(data)
+		if strings.Contains(src, `\x1b[`) || strings.Contains(src, `\033[`) {
+			t.Errorf("%s: contains raw ANSI escape sequence outside ui.go; use Style* and PadRightStyled helpers in ui.go so NO_COLOR, non-TTY pipes, and coding agents receive pure plaintext (AGENTS.md invariant #15)", path)
+		}
+	}
+}
+
+// TestInvariants_SubprocessesUseCountingHelper verifies via AST inspection that
+// no production file outside procexec.go creates processes without going
+// through ExecCommand / ExecCommandContext (AGENTS.md invariant #16).
+func TestInvariants_SubprocessesUseCountingHelper(t *testing.T) {
+	allowlist := []string{"procexec.go"}
+	fset := token.NewFileSet()
+	for _, path := range collectProductionGoFiles(t, true) {
+		if slices.Contains(allowlist, path) {
+			continue
+		}
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatalf("ParseFile(%q): %v", path, err)
+		}
+		for _, v := range findUncountedProcessSpawns(fset, f) {
+			t.Errorf("%s bypasses the counting subprocess choke point; use ExecCommand / ExecCommandContext from procexec.go so perf budget tests can deterministically count commands constructed per CLI invocation (AGENTS.md invariant #16)", v)
+		}
+	}
+}
+
+// findUncountedProcessSpawns reports exec.Command / exec.CommandContext calls
+// (including via a dot-import of os/exec), exec.Cmd composite literals, and
+// os.StartProcess / syscall.Exec / syscall.ForkExec references in f.
+func findUncountedProcessSpawns(fset *token.FileSet, f *ast.File) []string {
+	// banned maps an import path to the identifiers that spawn processes.
+	banned := map[string][]string{
+		"os/exec": {"Command", "CommandContext"},
+		"os":      {"StartProcess"},
+		"syscall": {"Exec", "ForkExec"},
+	}
+	pkgs := map[string]string{} // local name -> import path
+	var dotImports []string
+	for _, imp := range f.Imports {
+		ipath := strings.Trim(imp.Path.Value, `"`)
+		if _, ok := banned[ipath]; !ok {
+			continue
+		}
+		name := filepath.Base(ipath)
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		if name == "." {
+			dotImports = append(dotImports, ipath)
+			continue
+		}
+		pkgs[name] = ipath
+	}
+	if len(pkgs) == 0 && len(dotImports) == 0 {
+		return nil
+	}
+	isExecCmdType := func(e ast.Expr) bool {
+		switch typ := e.(type) {
+		case *ast.SelectorExpr:
+			id, ok := typ.X.(*ast.Ident)
+			return ok && pkgs[id.Name] == "os/exec" && typ.Sel.Name == "Cmd"
+		case *ast.Ident:
+			return typ.Name == "Cmd" && slices.Contains(dotImports, "os/exec")
+		}
+		return false
+	}
+	var found []string
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.SelectorExpr:
+			id, ok := x.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if ipath, ok := pkgs[id.Name]; ok && slices.Contains(banned[ipath], x.Sel.Name) {
+				found = append(found, fset.Position(x.Pos()).String()+": "+id.Name+"."+x.Sel.Name)
+			}
+		case *ast.CompositeLit:
+			if isExecCmdType(x.Type) {
+				found = append(found, fset.Position(x.Pos()).String()+": exec.Cmd literal")
+			}
+		case *ast.CallExpr:
+			id, ok := x.Fun.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			for _, ipath := range dotImports {
+				if slices.Contains(banned[ipath], id.Name) {
+					found = append(found, fset.Position(x.Pos()).String()+": dot-imported "+ipath+"."+id.Name)
+				}
+			}
+		}
+		return true
+	})
+	return found
+}

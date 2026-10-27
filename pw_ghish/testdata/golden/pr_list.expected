@@ -1,0 +1,8 @@
+ID         STATUS     SUBJECT                                            OWNER
+12340      NEW        pw_rpc: Fix channel deadlock                       dev0
+12341      NEW        pw_log: Add tokenized backend                      dev1
+12342      NEW        pw_ghish: Add golden snapshots                     dev2
+12343      NEW        docs: Fix typo in style guide                      dev3
+
+Showing 4 open changes.
+Next: gh pr view <id>  (or gh pr checkout <id>)

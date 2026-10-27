@@ -1,0 +1,9 @@
+Showing 120 checks for Change 12345 (Patchset 5) • Run list flood
+
+STATUS  BUILDER        DURATION  ID    URL
+✗       pigweed-linux  1m0s      2001  https://ci.chromium.org/b/2001
+✗       pigweed-mac    1m0s      2002  https://ci.chromium.org/b/2002
+  ✓  118 passing checks omitted (use --all to list)
+
+Verdict: FAILED (2 of 120 checks failed)
+Next:    gh run view 12345 --log-failed  (or gh run rerun 12345 --failed)

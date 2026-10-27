@@ -212,11 +212,11 @@ The Workflow
       ...
       ✗  docs-builder                    2m36s     https://ci.chromium.org/b/8671020269272436273
       ...
-      FAILURE: docs-builder (Build 8671020269272436273)
+      ✗ FAILURE: docs-builder (Build 8671020269272436273)
         Failing Step: "ninja"
         Summary: Sphinx documentation build failed: undefined label 'module-pw_foo'
 
-        --- Log Snippet (stdout) ---
+        Log Snippet (stdout):
         pw_foo/docs.rst:14: WARNING: undefined label: 'module-pw_foo'
 
    .. tip::

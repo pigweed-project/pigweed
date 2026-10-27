@@ -223,7 +223,8 @@ Scenario 6: Input validation and error recovery
 
   * **PASS**: Agent runs ``./gh pr view 472267 --json commit_hash,author``.
   * **PASS**: Agent observes exit code 1 and reads the stderr error message:
-    ``unknown JSON field(s): [commit_hash]. Valid fields are: ...``.
+    ``Unknown JSON field: "commit_hash"`` followed by ``Available fields:``
+    and one field per line.
   * **PASS**: Agent corrects the command using valid fields (e.g.
     ``./gh pr view 472267 --json number,title,author``) and completes the task.
   * **FAIL (Violation)**: Agent ignores the non-zero exit code or hallucinated

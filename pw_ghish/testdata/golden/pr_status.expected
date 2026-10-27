@@ -1,0 +1,18 @@
+Current branch
+  #472267  Active Feature Subject
+    Branch:      main
+    Status:      NEW
+    Submittable: false
+    Labels:
+      Code-Review: +2 (Approved)
+      Lint: +1 (Recommended)
+    Comments:    None
+
+Created by you (last 30 days):
+   #88880  Status section 1 change                            [CR: +0, V: +0]
+
+Requesting a code review from you (last 30 days):
+   #88881  Status section 2 change                            by Alice [CR: +0, V: +0]
+
+Verdict: nothing awaits you (1 change open, 1 review request)
+Next: gh pr view <id>  (or gh pr checks)

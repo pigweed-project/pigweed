@@ -249,6 +249,7 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 | `pr list -l` | issue label | a Gerrit **vote** predicate, e.g. `Code-Review+2`. |
 | `run list/view --json` | a field list | a boolean; it takes no fields. `pr view --json` does take fields. |
 | `--json state` | `OPEN`/`CLOSED`/`MERGED` | Gerrit's `NEW`/`MERGED`/`ABANDONED`. |
+| `--json` status values | strings | always bare ASCII enums (`"status": "READY_TO_LAND"`, `"status": "ok"`); text-mode glyphs (`✓`, `●`) never appear in them, so compare values directly. |
 | `pr review --request-changes` | blocks the PR | votes `Code-Review-1`, which is **advisory**. `Code-Review-2` is the veto. |
 | `pr comment --draft` | (n/a) | an unpublished draft **comment** nobody else can see — not a WIP change. |
 | `issue -l/--label` | free-form text | Buganizer priority/severity/type/hotlist/component (`P0`–`P4`, `S0`–`S4`, `bug`, `feature`, `task`, `vulnerability`, `hotlist:<id\|alias>`, `component:<id\|alias>`, prefix `-`/`!` to negate in `list`). |

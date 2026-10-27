@@ -1,0 +1,76 @@
+✗ FAILURE: pigweed-linux-clang (Build 201)
+Status: FAILURE | URL: https://ci.chromium.org/b/201
+Step: compile
+ninja: build stopped: subcommand failed.
+
+Log Snippet (stdout):
+... (175 earlier log lines omitted; run 'gh run view -j pigweed-linux-clang --log' for full log)
+[176/200] ninja: compiling pw_rpc/channel_176.cc
+[177/200] ninja: compiling pw_rpc/channel_177.cc
+[178/200] ninja: compiling pw_rpc/channel_178.cc
+[179/200] ninja: compiling pw_rpc/channel_179.cc
+[180/200] ninja: compiling pw_rpc/channel_180.cc
+[181/200] ninja: compiling pw_rpc/channel_181.cc
+[182/200] ninja: compiling pw_rpc/channel_182.cc
+[183/200] ninja: compiling pw_rpc/channel_183.cc
+[184/200] ninja: compiling pw_rpc/channel_184.cc
+[185/200] ninja: compiling pw_rpc/channel_185.cc
+[186/200] ninja: compiling pw_rpc/channel_186.cc
+[187/200] ninja: compiling pw_rpc/channel_187.cc
+[188/200] ninja: compiling pw_rpc/channel_188.cc
+[189/200] ninja: compiling pw_rpc/channel_189.cc
+[190/200] ninja: compiling pw_rpc/channel_190.cc
+[191/200] ninja: compiling pw_rpc/channel_191.cc
+[192/200] ninja: compiling pw_rpc/channel_192.cc
+[193/200] ninja: compiling pw_rpc/channel_193.cc
+[194/200] ninja: compiling pw_rpc/channel_194.cc
+[195/200] ninja: compiling pw_rpc/channel_195.cc
+[196/200] ninja: compiling pw_rpc/channel_196.cc
+[197/200] ninja: compiling pw_rpc/channel_197.cc
+[198/200] ninja: compiling pw_rpc/channel_198.cc
+[199/200] ninja: compiling pw_rpc/channel_199.cc
+[200/200] ninja: compiling pw_rpc/channel_200.cc
+
+Full Log URL: http://mock-server/logs/201
+
+✗ FAILURE: pigweed-linux-gcc (Build 202)
+Status: FAILURE | URL: https://ci.chromium.org/b/202
+Step: compile
+Same failure output as pigweed-linux-clang (omitted duplicate log)
+
+Full Log URL: http://mock-server/logs/202
+
+✗ FAILURE: pigweed-mac (Build 203)
+Status: FAILURE | URL: https://ci.chromium.org/b/203
+Step: compile
+ninja: build stopped: subcommand failed.
+
+Log Snippet (stdout):
+... (175 earlier log lines omitted; run 'gh run view -j pigweed-mac --log' for full log)
+[176/200] xcode: compiling pw_rpc/channel_176.cc
+[177/200] xcode: compiling pw_rpc/channel_177.cc
+[178/200] xcode: compiling pw_rpc/channel_178.cc
+[179/200] xcode: compiling pw_rpc/channel_179.cc
+[180/200] xcode: compiling pw_rpc/channel_180.cc
+[181/200] xcode: compiling pw_rpc/channel_181.cc
+[182/200] xcode: compiling pw_rpc/channel_182.cc
+[183/200] xcode: compiling pw_rpc/channel_183.cc
+[184/200] xcode: compiling pw_rpc/channel_184.cc
+[185/200] xcode: compiling pw_rpc/channel_185.cc
+[186/200] xcode: compiling pw_rpc/channel_186.cc
+[187/200] xcode: compiling pw_rpc/channel_187.cc
+[188/200] xcode: compiling pw_rpc/channel_188.cc
+[189/200] xcode: compiling pw_rpc/channel_189.cc
+[190/200] xcode: compiling pw_rpc/channel_190.cc
+[191/200] xcode: compiling pw_rpc/channel_191.cc
+[192/200] xcode: compiling pw_rpc/channel_192.cc
+[193/200] xcode: compiling pw_rpc/channel_193.cc
+[194/200] xcode: compiling pw_rpc/channel_194.cc
+[195/200] xcode: compiling pw_rpc/channel_195.cc
+[196/200] xcode: compiling pw_rpc/channel_196.cc
+[197/200] xcode: compiling pw_rpc/channel_197.cc
+[198/200] xcode: compiling pw_rpc/channel_198.cc
+[199/200] xcode: compiling pw_rpc/channel_199.cc
+[200/200] xcode: compiling pw_rpc/channel_200.cc
+
+Full Log URL: http://mock-server/logs/203

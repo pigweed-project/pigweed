@@ -1,0 +1,18 @@
+Issues assigned to you (dev):
+  b/1001       P2    Assigned bulk issue 01
+  b/1002       P2    Assigned bulk issue 02
+  b/1003       P2    Assigned bulk issue 03
+  b/1004       P2    Assigned bulk issue 04
+  b/1005       P2    Assigned bulk issue 05
+  b/1006       P2    Assigned bulk issue 06
+  b/1007       P2    Assigned bulk issue 07
+  b/1008       P2    Assigned bulk issue 08
+  b/1009       P2    Assigned bulk issue 09
+  b/1010       P2    Assigned bulk issue 10
+  ... and 22 more issues (use 'gh issue list --assignee me' or '-v' to view all)
+
+Issues opened by you (dev):
+  b/2001       P3    Reported by me
+
+Verdict: 32 assigned, 1 reported
+Next: gh issue develop 1001

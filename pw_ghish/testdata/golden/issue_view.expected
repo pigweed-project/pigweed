@@ -1,0 +1,16 @@
+pw_rpc: Fix channel deadlock #345678
+Verdict:   OPEN (ASSIGNED P1/S2)
+Status:    ASSIGNED
+Priority:  P1
+Severity:  S2
+Type:      BUG
+Component: 1194524
+Assignee:  owner
+Reporter:  author
+URL:       https://issues.pigweed.dev/issues/345678
+
+--- BEGIN UNTRUSTED ISSUE DESCRIPTION (b/345678) ---
+Detailed report for pw_rpc: Fix channel deadlock.
+--- END UNTRUSTED ISSUE DESCRIPTION ---
+
+Next: gh issue develop 345678  (or gh issue comment 345678 -b "...")

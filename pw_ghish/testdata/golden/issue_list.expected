@@ -1,0 +1,6 @@
+ID           STATUS      PRI     ASSIGNEE                  TITLE
+b/101        NEW         P2/S2   unassigned                First open issue
+b/102        ASSIGNED    P1/S2   alice                     Second open issue assigned
+b/103        ACCEPTED    P3/S2   bob                       Third open issue accepted
+
+Next: gh issue view 101  (or gh issue develop 101)

@@ -93,3 +93,17 @@ For common operations, ``./gh`` provides top-level aliases and global flags:
     ``community``, or ``none``). See :ref:`module-pw_ghish-auth-modes`.
   * ``-v, --verbose``: Enable debug logging.
   * ``--version``: Print the build's VCS revision (or ``devel``).
+
+---------------------------
+Machine-readable ``--json``
+---------------------------
+Commands with a ``--json`` flag print exactly one JSON value on stdout (any
+diagnostics go to stderr). gh-compatible commands (``pr view``, ``pr list``,
+``pr status``, ``pr checks``, ``issue view``, ``issue list``,
+``issue status``, ``auth status``) take ``--json <fields>`` and reject unknown
+fields with the list of available ones; ghish-only commands (``run list``,
+``run view``, ``sense``, ``issue develop``, and the ``wt`` family) take a bare
+``--json``. Status-like values are bare ASCII enums such as
+``"status": "READY_TO_LAND"`` or ``"status": "ok"``; the glyphs shown in text
+output (``✓``, ``●``, ``⚠``) never appear in them. See
+:ref:`module-pw_ghish-developing-json-contract`.

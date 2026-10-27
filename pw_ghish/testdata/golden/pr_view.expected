@@ -1,0 +1,21 @@
+Change 12345
+Subject: pw_rpc: Fix channel deadlock
+Status:  NEW
+Verdict: BLOCKED (CI failed)
+Next:    gh run view 12345 --log-failed
+Owner:   Test User
+Patchset: 3
+Assignees: Test User, helper (cc)
+Reviewers: Alice (attention)
+Branch:  main
+Project: pigweed/pigweed
+Topic:   deadlock-fix
+Hashtags: rpc
+Bug:     b/345678
+Checks:  ✗ 1 failed: pigweed-lint (run 'gh run view 12345 --log-failed' to view errors)
+
+Release the channel lock before invoking callbacks.
+
+Bug: b/345678
+Change-Id: I12345
+

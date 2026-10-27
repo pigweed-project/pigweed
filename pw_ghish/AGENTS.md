@@ -11,7 +11,7 @@
 
 ## STRICT ENGINEERING & REVIEW INVARIANTS
 
-Every change to `pw_ghish` (and every review via `/review`, `.agents/agents/go_ghish_reviewer.md`, and `.agents/agents/ghish_security_reviewer.md`) MUST enforce these 14 non-negotiable invariants. Regressing into silent failures, swallowed errors, defensive masking, data loss, policy leakage, or hacking without tests is STRICTLY PROHIBITED.
+Every change to `pw_ghish` (and every review via `/review`, `.agents/agents/go_ghish_reviewer.md`, and `.agents/agents/ghish_security_reviewer.md`) MUST enforce these 16 non-negotiable invariants. Regressing into silent failures, swallowed errors, defensive masking, data loss, policy leakage, context bloat, or hacking without tests is STRICTLY PROHIBITED.
 
 ### 1. NO SILENT FAILURES (`RunE` & EXPLICIT `Try*` CONTRACTS)
 * **MANDATORY**: Every Cobra subcommand with an action MUST use `RunE: func(cmd *cobra.Command, args []string) error`. NEVER use void-returning `Run`.
@@ -95,6 +95,25 @@ Every change to `pw_ghish` (and every review via `/review`, `.agents/agents/go_g
 ### 14. DOCUMENTATION & SKILL SYNCHRONIZATION
 * **Programmatic Doc Sync (`doc_sync_test.go`)**: Every non-hidden Cobra subcommand and flag MUST be documented in its `pw_ghish/<family>.rst` reference page, every `.ghish.toml` `[section]` and `key` MUST be documented in [`project_setup.rst`](project_setup.rst), and every `./gh` example in [`.agents/skills/ghish/SKILL.md`](../.agents/skills/ghish/SKILL.md) MUST use valid subcommands and flags.
 * **Skill Conciseness Budget**: Keep [`.agents/skills/ghish/SKILL.md`](../.agents/skills/ghish/SKILL.md) high-density and under **300 lines**—put exhaustive tutorials and prose in `pw_ghish/*.rst`, not in the always-loaded skill file.
+
+### 15. UI DESIGN LANGUAGE, RECEIPTS & CONTEXT BUDGETING
+* **Answer-First & Progressive Disclosure (`--all`)**:
+  * Never flood stdout with unbounded lists of passing CI checks (`>5` passing checks must collapse unless `--all` is passed, ordering failing/running checks first and clustering identical failure diagnostics via `ClusterFailedBuilds`), resolved review threads (`FormatCommentForestWithOptions`), automated bot commit dumps (`summarizeBotIssueComment`), or multi-thousand-line diffs (`defaultDiffMaxLines = 400`, folding lockfiles/generated files unless `--all` or `--path` is passed).
+  * Every folded section MUST print a concise 1-line summary with the exact `--all` or `--path` command to unfold it.
+* **Canonical Glyphs & TTY/Agent Color Discipline (`ui.go`)**:
+  * Use canonical BMP glyph constants (`GlyphPass = "✓"`, `GlyphFail = "✗"`, `GlyphWarn = "⚠"`, `GlyphRunning = "●"`, `GlyphPending = "○"`, `GlyphDot = "·"`, `GlyphArrow = "→"`). Do not introduce decorative ASCII `===` walls or ad-hoc emojis in core commands.
+  * Never hardcode raw ANSI escape sequences (`\x1b[` or `\033[`) outside `pw_ghish/ui.go` (enforced by `TestInvariants_NoRawANSIEscapesOutsideUIGo`). Always use `Style*` and `PadRightStyled(w, ...)` so non-TTY pipes, `NO_COLOR`, `TERM=dumb`, and coding-agent environments (`IsAgentEnv()`) receive pure, column-aligned plaintext.
+* **Structured Mutation Receipts (`PrintReceipt` / `FormatReceipt`)**:
+  * Every mutating command (annotated `ghish:kind: mutation`) MUST emit a structured `✓ <Summary>` receipt with contextual `Details`, `URL`, and `Next:` step hints.
+* **Declared Command Kinds & Smoke Harness (`command_kind.go`, `kind_contract_test.go`)**:
+  * Follow the **New command checklist** in [`developing.rst`](developing.rst): declare `Annotations: map[string]string{KindAnnotation: Kind<Mutation|View|List|Stream|Meta>}` inline on every runnable `cobra.Command` (and `OutputAnnotation: OutputRaw` if stdout is a raw machine artifact like `pr diff`), and add a `kindSmokeArgs` entry in [`kind_contract_test.go`](kind_contract_test.go) for every runnable `mutation`/`view`/`list` command. Do NOT add `kindSmokeSkip`, `kindSmokeContractGaps`, or `kindSmokeDuplicateSubprocesses` entries to bypass failures on new code.
+* **JSON Output Contract (`--json`)**:
+  * Under `--json`, stdout MUST be a single JSON value (no receipts, progress, warnings, ANSI escapes, or `Verdict:`/`Next:` lines), empty slices and maps MUST marshal as `[]` and `{}` rather than `null`, enum-like fields MUST contain bare ASCII identifiers (never terminal glyphs), and gh-compatible `--json <fields>` flags MUST reject unknown fields with `UnknownJSONFieldsError`. See [`developing.rst`](developing.rst) ("JSON output contract").
+
+### 16. PERFORMANCE BUDGETS (COUNTS, NOT CLOCKS)
+* **Counts, Never Wall-Clock**: Perf regressions fail presubmit via deterministic counts only: commands constructed (≈ subprocesses spawned) and HTTP requests issued. NEVER add a presubmit assertion on elapsed time; wall-clock numbers live only in the informational `live_bench_test.go` (`//go:build live`).
+* **Single Subprocess Choke Point**: Construct every external process via `ExecCommand` / `ExecCommandContext` in [`procexec.go`](procexec.go) (`pw_ghish.ExecCommand` from `worktree/`). Direct `exec.Command` / `exec.CommandContext`, `exec.Cmd` literals, `os.StartProcess`, and `syscall.Exec` / `syscall.ForkExec` are prohibited elsewhere.
+* **Staying Within Budgets**: Keep commands within their kind's default subprocess and RPC count budgets (`kind_contract_test.go`) and exact hot-command pins ([`perfbudget_test.go`](perfbudget_test.go), [`worktree/perfbudget_test.go`](worktree/perfbudget_test.go)). When a budget test fails, prefer removing the extra work (memoize on `Config`/`GitClient`, batch queries, parallelize); if an increase is intentional, update the pin or `ghish:budget-exempt` reason in the same CL and justify it in the CL description.
 
 ---
 
