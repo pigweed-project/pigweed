@@ -12,8 +12,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-// This timing interface enables and targets ARM registers to enable clock cycle
-// counting. The documentation can be found here:
+// This timing interface enables and targets ARM Cortex-M registers to enable
+// clock cycle counting. Look at the official ARM documentation for more info.
 // https://developer.arm.com/documentation/ddi0337/e/System-Debug/DWT?lang=en
 // https://developer.arm.com/documentation/ddi0337/e/CEGHJDCF
 
@@ -30,7 +30,7 @@ inline volatile uint32_t& kDwtCtrl =
     *reinterpret_cast<volatile uint32_t*>(0xE0001000);
 // Creates a reference to the memory address in which the DWT register stores
 // clock incrementations
-inline volatile uint32_t& kDwtCcynt =
+inline volatile uint32_t& kDwtCyccnt =
     *reinterpret_cast<volatile uint32_t*>(0xE0001004);
 // Creates a reference to the location of the Debug Exception and Monitor
 // Control register.
@@ -42,19 +42,19 @@ using Timestamp = uint32_t;
 inline constexpr DurationUnit kDurationUnit = DurationUnit::kClockCycle;
 
 [[nodiscard]] inline bool TimerPrepare() {
-  kDemcr |= 0x01000000;    // Enables the DWT control register
-  kDwtCtrl |= 0x00000001;  // Enables the DWT clock
-  kDwtCcynt = 0x00000000;  // Intializes the clock to 0
-  return (kDemcr & 0x01000000) && (kDwtCtrl & 0x00000001);
+  kDemcr |= 0x01000000u;     // Enables the DWT control register
+  kDwtCtrl |= 0x00000001u;   // Enables the DWT clock
+  kDwtCyccnt = 0x00000000u;  // Initializes the clock to 0
+  return (kDemcr & 0x01000000u) && (kDwtCtrl & 0x00000001u);
 }
 
-// Disables the DWT clock
+// Disables DWT clock
 inline void TimerCleanup() { kDwtCtrl &= ~0x00000001u; }
 
-inline Timestamp GetCurrentTimestamp() { return kDwtCcynt; }
+inline Timestamp GetCurrentTimestamp() { return kDwtCyccnt; }
 
-// Warning: this duration will overflow if the duration is greater that 2^32
-// clock cycles.
+// Warning, this duration will overflow if the duration exceeds 2^32 clock
+// cycles
 inline int64_t GetDuration(Timestamp begin, Timestamp end) {
   return static_cast<int64_t>(end - begin);
 }

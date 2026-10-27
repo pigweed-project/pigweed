@@ -46,6 +46,8 @@ _target_config = {
   pw_assert_BACKEND = dir_pw_assert_basic
   pw_boot_BACKEND = "$dir_pw_boot_cortex_m"
   pw_log_BACKEND = dir_pw_log_basic
+  pw_perf_test_TIMER_INTERFACE_BACKEND =
+      "$dir_pw_perf_test:arm_cortex_systick_timer"
   pw_sys_io_BACKEND = dir_pw_sys_io_baremetal_lm3s6965evb
   pw_rpc_system_server_BACKEND = "$dir_pw_hdlc:hdlc_sys_io_system_server"
   pw_sync_INTERRUPT_SPIN_LOCK_BACKEND =

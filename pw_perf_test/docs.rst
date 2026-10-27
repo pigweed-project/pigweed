@@ -39,6 +39,9 @@ If necessary, configure your toolchain for performance testing:
            ``pw_chrono::SystemClock`` to measure time.
          - ``@pigweed//pw_perf_test:arm_cortex_timer``: Uses cycle count
            registers available on ARM-Cortex to measure time.
+         - ``@pigweed//pw_perf_test:arm_cortex_systick_timer``: Uses the
+           architectural 24-bit SysTick counter on baremetal ARM Cortex-M
+           targets without ``DWT->CYCCNT`` (such as Cortex-M0/M0+/M23 or QEMU).
 
        - Currently, only the logging event handler is supported for Bazel.
 
@@ -52,6 +55,9 @@ If necessary, configure your toolchain for performance testing:
            ``pw_chrono::SystemClock`` to measure time.
          - ``"$dir_pw_perf_test:arm_cortex_timer"``: Uses cycle count
            registers available on ARM-Cortex to measure time.
+         - ``"$dir_pw_perf_test:arm_cortex_systick_timer"``: Uses the
+           architectural 24-bit SysTick counter on baremetal ARM Cortex-M
+           targets without ``DWT->CYCCNT`` (such as Cortex-M0/M0+/M23 or QEMU).
 
        - ``pw_perf_test_MAIN_FUNCTION``: Indicates the GN target that provides
          a ``main`` function that sets the event handler and runs tests. The

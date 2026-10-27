@@ -168,8 +168,6 @@ pw_cc_test(
     srcs = ["timer_test.cc"],
     deps = [
         ":timer",
-        "//pw_chrono:system_clock",
-        "//pw_thread:sleep",
     ],
 )
 
@@ -203,7 +201,7 @@ pw_cc_test(
     ],
 )
 
-# ARM Cortex timer facade implementation
+# ARM Cortex timer facade implementations
 
 cc_library(
     name = "arm_cortex_timer",
@@ -213,6 +211,22 @@ cc_library(
     ],
     includes = [
         "arm_cortex_cyccnt_public_overrides",
+        "public",
+    ],
+    deps = [
+        ":duration_unit",
+        ":timer.facade",
+    ],
+)
+
+cc_library(
+    name = "arm_cortex_systick_timer",
+    hdrs = [
+        "arm_cortex_systick_public_overrides/pw_perf_test_timer_backend/timer.h",
+        "public/pw_perf_test/internal/systick_timer_interface.h",
+    ],
+    includes = [
+        "arm_cortex_systick_public_overrides",
         "public",
     ],
     deps = [

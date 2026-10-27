@@ -69,6 +69,7 @@ platform(
         # TODO: b/415389061 - While this is being built with newlib nano, malloc
         # needs to be wrapped.
         "//pw_malloc:backend": "//pw_malloc:bucket_allocator",
+        "//pw_perf_test:test_timer_backend": "//pw_perf_test:arm_cortex_systick_timer",
         "//pw_rust/examples/linker_scripts:linker_script_for_rust_examples": "//pw_rust/examples/linker_scripts:qemu-rust-lm3s6965",
         "//pw_sys_io:backend": "//pw_sys_io_baremetal_lm3s6965evb",
         "//pw_toolchain/arm_gcc:freestanding": "False",

@@ -166,7 +166,7 @@ pw_test("chrono_timer_test") {
   ]
 }
 
-# ARM Cortex timer facade implementation
+# ARM Cortex timer facade implementations
 
 config("arm_config") {
   include_dirs = [ "arm_cortex_cyccnt_public_overrides" ]
@@ -189,6 +189,29 @@ pw_source_set("pw_perf_test_arm_cortex") {
     "arm_cortex_cyccnt_public_overrides/pw_perf_test_timer_backend/timer.h",
   ]
   public_deps = [ ":arm_cortex_timer" ]
+}
+
+config("arm_systick_config") {
+  include_dirs = [ "arm_cortex_systick_public_overrides" ]
+  visibility = [ ":*" ]
+}
+
+pw_source_set("arm_cortex_systick_timer") {
+  public_configs = [
+    ":public_include_path",
+    ":arm_systick_config",
+  ]
+  public = [ "public/pw_perf_test/internal/systick_timer_interface.h" ]
+  public_deps = [ ":duration_unit" ]
+  visibility = [ ":*" ]
+}
+
+pw_source_set("pw_perf_test_arm_cortex_systick") {
+  public_configs = [ ":arm_systick_config" ]
+  public = [
+    "arm_cortex_systick_public_overrides/pw_perf_test_timer_backend/timer.h",
+  ]
+  public_deps = [ ":arm_cortex_systick_timer" ]
 }
 
 # Module-level targets
