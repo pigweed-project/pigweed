@@ -61,13 +61,35 @@ export BAZELISK_SKIP_WRAPPER=1
 # MODULE.bazel.lock in a single lock-free `git rev-parse` call. The combined
 # hash is compared against `out/gh/git_hash` (written after each build) to
 # detect when the cached `out/gh/gh-ish` binary needs to be rebuilt.
-{ read -r _SCRIPT_TOP; read -r _COMMON_GIT_DIR; read -r _TREE_HASH; read -r _LOCK_HASH; } < <(
+#
+# Outside a Pigweed checkout (e.g. a copy of this script in another repository)
+# `git rev-parse` fails on `HEAD:pw_ghish`, echoing the unresolved argument and
+# printing fewer lines than expected. Tolerate missing lines, since a failed
+# `read` would otherwise end the script silently under `set -e`, and discard
+# anything that isn't an object ID.
+_SCRIPT_TOP=""
+_COMMON_GIT_DIR=""
+_TREE_HASH=""
+_LOCK_HASH=""
+{
+  read -r _SCRIPT_TOP || :
+  read -r _COMMON_GIT_DIR || :
+  read -r _TREE_HASH || :
+  read -r _LOCK_HASH || :
+} < <(
   GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 \
   git -C "$_PW_SCRIPT_DIR" rev-parse \
     --show-toplevel \
     --path-format=absolute --git-common-dir \
     HEAD:pw_ghish HEAD:MODULE.bazel.lock 2>/dev/null || true
 )
+_pw_gh_is_object_id() {
+  [[ "$1" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]
+}
+if ! _pw_gh_is_object_id "$_TREE_HASH" || ! _pw_gh_is_object_id "$_LOCK_HASH"; then
+  _TREE_HASH=""
+  _LOCK_HASH=""
+fi
 _MAIN_REPO_DIR=""
 if [ -n "$_COMMON_GIT_DIR" ]; then
   _MAIN_REPO_DIR=$(dirname "$_COMMON_GIT_DIR")
