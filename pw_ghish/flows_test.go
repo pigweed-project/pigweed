@@ -184,6 +184,87 @@ func TestAddScheduleMinutes(t *testing.T) {
 	}
 }
 
+func TestStackScheduleSlots(t *testing.T) {
+	pdt := time.FixedZone("PDT", -7*60*60)
+	tests := []struct {
+		name     string
+		now      time.Time // Wednesday 2026-09-30 in PDT.
+		submitAt string
+		n        int
+		want     []scheduleSlot
+	}{
+		{
+			// Zero-padded like a single change's --submit-at.
+			name: "single-digit hour", now: time.Date(2026, 9, 30, 12, 0, 0, 0, pdt), submitAt: "9:05", n: 2,
+			want: []scheduleSlot{{"09:05", "tomorrow"}, {"09:35", "tomorrow"}},
+		},
+		{
+			name: "one change", now: time.Date(2026, 9, 30, 12, 0, 0, 0, pdt), submitAt: "21:00", n: 1,
+			want: []scheduleSlot{{"21:00", "today"}},
+		},
+		{
+			name: "spaced 30 minutes apart", now: time.Date(2026, 9, 30, 12, 0, 0, 0, pdt), submitAt: "21:00", n: 3,
+			want: []scheduleSlot{{"21:00", "today"}, {"21:30", "today"}, {"22:00", "today"}},
+		},
+		{
+			// A late bottom slot runs past the end of the nightly window
+			// rather than being squeezed into it.
+			name: "past the nightly window", now: time.Date(2026, 9, 30, 12, 0, 0, 0, pdt), submitAt: "02:50", n: 3,
+			want: []scheduleSlot{{"02:50", "tomorrow"}, {"03:20", "tomorrow"}, {"03:50", "tomorrow"}},
+		},
+		{
+			name: "bottom today, top after midnight", now: time.Date(2026, 9, 30, 12, 0, 0, 0, pdt), submitAt: "23:50", n: 2,
+			want: []scheduleSlot{{"23:50", "today"}, {"00:20", "tomorrow"}},
+		},
+		{
+			// Choosing each day on its own would put the top change at
+			// today 22:00, before the bottom change.
+			name: "now between bottom and top", now: time.Date(2026, 9, 30, 21, 45, 0, 0, pdt), submitAt: "21:30", n: 2,
+			want: []scheduleSlot{{"21:30", "tomorrow"}, {"22:00", "tomorrow"}},
+		},
+		{
+			// Two days out is named by its weekday.
+			name: "bottom tomorrow, top after midnight", now: time.Date(2026, 9, 30, 23, 55, 0, 0, pdt), submitAt: "23:50", n: 2,
+			want: []scheduleSlot{{"23:50", "tomorrow"}, {"00:20", "Friday"}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			origNow := scheduleNowFn
+			t.Cleanup(func() { scheduleNowFn = origNow })
+			scheduleNowFn = func() time.Time { return tc.now }
+
+			got, err := stackScheduleSlots(nil, tc.submitAt, tc.n, DefaultScheduleTimezone)
+			if err != nil {
+				t.Fatalf("stackScheduleSlots(%q, %d) failed: %v", tc.submitAt, tc.n, err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("stackScheduleSlots(%q, %d) = %v, want %v", tc.submitAt, tc.n, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStackScheduleSlots_InvalidTime(t *testing.T) {
+	if _, err := stackScheduleSlots(nil, "24:00", 2, DefaultScheduleTimezone); err == nil {
+		t.Error("stackScheduleSlots(\"24:00\") succeeded, want an invalid time error")
+	}
+}
+
+// An invalid --submit-at time still gives --submit-at retry commands, not
+// --nightly ones.
+func TestScheduleSubmitFlowForStack_InvalidSubmitAtRetry(t *testing.T) {
+	opts := PushOptions{SubmitAt: "24:00", StackChangeIDs: []string{"I1", "I2"}}
+	err := scheduleSubmitFlowForStack(nil, opts, "stack pushed")
+	var flowErr *ScheduleFlowError
+	if !errors.As(err, &flowErr) {
+		t.Fatalf("expected a ScheduleFlowError, got %T: %v", err, err)
+	}
+	if strings.Contains(flowErr.Retry, "--nightly") || !strings.Contains(flowErr.Retry, "pr merge I2 --submit-at 24:00") {
+		t.Errorf("Retry = %q, want --submit-at 24:00 retries", flowErr.Retry)
+	}
+}
+
 func TestCreateScheduledSubmitFlow_NumericChangeID(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(123456, WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))

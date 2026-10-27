@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPushIntegration(t *testing.T) {
@@ -779,9 +780,10 @@ func stackScheduleFixture(t *testing.T, failTop bool) (*MockGerritServer, *MockG
 	return server, mockGit
 }
 
-// With --stack --nightly, every change in the stack gets a flow at its own
-// nightly slot, as if each had been scheduled alone.
-func TestPush_Stack_Nightly_SchedulesEveryChange(t *testing.T) {
+// With --stack --nightly, the bottom change gets its own nightly slot and each
+// change above it 30 minutes later, rather than each taking the slot of its
+// own change number.
+func TestPush_Stack_Nightly_StaggersChanges(t *testing.T) {
 	SetTestProfile(t, "pigweed")
 	server, mockGit := stackScheduleFixture(t, false)
 
@@ -797,7 +799,7 @@ func TestPush_Stack_Nightly_SchedulesEveryChange(t *testing.T) {
 		when string
 	}{
 		{111111, "tomorrow at 00:51"}, // 111111 % 360 = 231 minutes after 21:00.
-		{123456, "tomorrow at 02:36"}, // 123456 % 360 = 336 minutes after 21:00.
+		{123456, "tomorrow at 01:21"}, // 30 minutes after the bottom change.
 	} {
 		path := fmt.Sprintf("/changes/%d/flows", tc.num)
 		if n := server.CallCount("POST", path); n != 1 {
@@ -831,6 +833,41 @@ func TestPush_Stack_SubmitAt_StaggersChanges(t *testing.T) {
 	}
 }
 
+// When "now" falls between the bottom change's time and the next one's, every
+// change still goes to the same day as the bottom change, so the stack keeps
+// its order.
+func TestPush_Stack_SubmitAt_KeepsOrderAcrossNow(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	origNow := scheduleNowFn
+	t.Cleanup(func() { scheduleNowFn = origNow })
+	scheduleNowFn = func() time.Time {
+		return time.Date(2026, 10, 1, 4, 45, 0, 0, time.UTC) // 21:45 PDT
+	}
+	server, _ := stackScheduleFixture(t, false)
+
+	output, err := executeCommand(RootCmd, "pr", "push", "--base", "main", "--stack", "--submit-at", "21:30")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+	for _, want := range []string{
+		"Created submit flow for Change 111111 (scheduled for tomorrow at 21:30 in America/Los_Angeles).",
+		"Created submit flow for Change 123456 (scheduled for tomorrow at 22:00 in America/Los_Angeles).",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("output missing %q, got: %s", want, output)
+		}
+	}
+	var topBody string
+	for _, req := range server.Requests() {
+		if req.Method == "POST" && req.Path == "/changes/123456/flows" {
+			topBody = string(req.Body)
+		}
+	}
+	if !strings.Contains(topBody, "wait until tomorrow at 22:00 in America/Los_Angeles") {
+		t.Errorf("top change's flow request = %s, want it to wait until tomorrow at 22:00", topBody)
+	}
+}
+
 // If one change in the stack fails to schedule, the error says how far it got
 // and gives retry commands only for the changes still unscheduled.
 func TestPush_Stack_PartialFailure(t *testing.T) {
@@ -839,7 +876,9 @@ func TestPush_Stack_PartialFailure(t *testing.T) {
 		args      []string
 		wantRetry string
 	}{
-		{"nightly", []string{"--nightly"}, "pr merge I2222222222222222222222222222222222222222 --nightly"},
+		// The bottom change's slot (00:51) is known by then, so the top
+		// change's retry pins its staggered time.
+		{"nightly", []string{"--nightly"}, "pr merge I2222222222222222222222222222222222222222 --submit-at 01:21"},
 		{"submit-at", []string{"--submit-at", "20:00"}, "pr merge I2222222222222222222222222222222222222222 --submit-at 20:30"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

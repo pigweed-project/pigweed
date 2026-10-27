@@ -73,9 +73,10 @@ Supported flags
   enables auto-submit, which lands the change once it is submittable. A
   work-in-progress change is marked ready for review. Running it again
   replaces the change's pending schedule rather than adding to it.
-  With ``--stack``, every change in the stack is scheduled: ``--nightly``
-  gives each change its own off-peak slot, and ``--submit-at`` gives the
-  bottom change the requested time and each change above it 30 minutes later.
+  With ``--stack``, every change in the stack is scheduled: the bottom change
+  gets its off-peak slot (``--nightly``) or the requested time
+  (``--submit-at``), and each change above it 30 minutes later, even if that
+  runs past the off-peak window.
 * ``--trigger [1|2]`` (alias ``--cq [1|2]``): Trigger a presubmit /
   Commit-Queue dry run (default ``1`` when omitted; specify ``2`` to submit).
   See :ref:`module-pw_ghish-pr-cq-auto` for how ``--trigger``/``--cq``,
@@ -136,7 +137,8 @@ Available as ``./gh pr push``, top-level ``./gh push``, or ``./gh pr upload``:
    # Update the commit message / bug trailer locally and upload a new patchset:
    $ ./gh pr push --title "pw_foo: Fix edge case" --fixed b/567763970 --cq
 
-   # Push a stack and schedule each change in its own off-peak slot:
+   # Push a stack and schedule the bottom change in its off-peak slot and each
+   # change above it 30 minutes later:
    $ ./gh pr push --stack --nightly
 
    # Push a stack and schedule it from 21:00, one change every 30 minutes
@@ -169,9 +171,10 @@ Supported flags
   enables auto-submit, which lands the change once it is submittable. A
   work-in-progress change is marked ready for review. Running it again
   replaces the change's pending schedule rather than adding to it.
-  With ``--stack``, every change in the stack is scheduled: ``--nightly``
-  gives each change its own off-peak slot, and ``--submit-at`` gives the
-  bottom change the requested time and each change above it 30 minutes later.
+  With ``--stack``, every change in the stack is scheduled: the bottom change
+  gets its off-peak slot (``--nightly``) or the requested time
+  (``--submit-at``), and each change above it 30 minutes later, even if that
+  runs past the off-peak window.
 * ``--trigger [1|2]`` (alias ``--cq [1|2]``): Trigger a presubmit /
   Commit-Queue dry run (default ``1`` when omitted; specify ``2`` to submit).
   If the local commit matches the latest patchset on Gerrit, votes are applied

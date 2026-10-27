@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -288,6 +289,13 @@ func noFlowDryRunError(change *gerrit.ChangeInfo) error {
 // is always fetched, because its labels name the labels to vote; if it lacks
 // either, an error is returned before any flow is created.
 func (c *ChangeContext) CreateScheduledSubmitFlow(changeNum int, customTime string, tz string) (ScheduledSubmitFlow, error) {
+	return c.createScheduledSubmitFlow(changeNum, customTime, "", tz)
+}
+
+// createScheduledSubmitFlow is CreateScheduledSubmitFlow with an explicit day
+// for the flow condition ("today", "tomorrow", or a weekday name). An empty
+// day means the next occurrence of the time, as ScheduleDay picks it.
+func (c *ChangeContext) createScheduledSubmitFlow(changeNum int, customTime string, day string, tz string) (ScheduledSubmitFlow, error) {
 	if c == nil {
 		return ScheduledSubmitFlow{}, fmt.Errorf("internal error: ChangeContext is nil")
 	}
@@ -325,7 +333,10 @@ func (c *ChangeContext) CreateScheduledSubmitFlow(changeNum int, customTime stri
 	if err != nil {
 		return ScheduledSubmitFlow{}, err
 	}
-	dayWord := ScheduleDay(targetTime, tz)
+	dayWord := day
+	if dayWord == "" {
+		dayWord = ScheduleDay(targetTime, tz)
+	}
 	scheduledWhen := fmt.Sprintf("%s at %s", dayWord, targetTime)
 
 	var cleanHost string
@@ -603,43 +614,145 @@ func scheduleSubmitFlowForPush(cmd *cobra.Command, chCtx *ChangeContext, opts Pu
 	return nil
 }
 
-// stackSubmitAtSpacing is how far apart --submit-at schedules consecutive
-// changes in a stack.
-const stackSubmitAtSpacing = 30 * time.Minute
+// stackScheduleSpacing is how far apart --nightly and --submit-at schedule
+// consecutive changes in a stack.
+const stackScheduleSpacing = 30 * time.Minute
 
 // scheduleSubmitFlowForStack schedules a submit flow on every change in
 // opts.StackChangeIDs (bottom first), spread out rather than all at once.
 //
 // Each change needs its own flow, because the votes a flow casts apply only to
-// the change it is on. With --nightly, each change gets its own nightly slot
-// from its own change number, exactly as scheduling it alone would. With
-// --submit-at, the bottom change gets the requested time and each change above
-// it stackSubmitAtSpacing later.
+// the change it is on. The bottom change gets the requested --submit-at time,
+// or with --nightly its own nightly slot, and each change above it
+// stackScheduleSpacing later. With --nightly, the slots are not taken from
+// each change's own number: consecutive change numbers would land a minute
+// apart, in no particular order. Times past the end of the nightly window are
+// kept rather than squeezed into it.
 func scheduleSubmitFlowForStack(cmd *cobra.Command, opts PushOptions, done string) error {
 	ids := opts.StackChangeIDs
-	times := make([]string, len(ids)) // "" means each change's --nightly slot.
+	// With --nightly, slots stays empty ("--nightly" in retry commands) until
+	// the bottom change's slot is known.
+	slots := make([]scheduleSlot, len(ids))
 	if opts.SubmitAt != "" {
-		for i := range ids {
-			t, err := addScheduleMinutes(opts.SubmitAt, time.Duration(i)*stackSubmitAtSpacing)
-			if err != nil {
-				return &ScheduleFlowError{Done: done, Retry: stackRetryCommands(ids, times), Err: err}
+		var err error
+		if slots, err = stackScheduleSlots(nil, opts.SubmitAt, len(ids), DefaultScheduleTimezone); err != nil {
+			// Keep --submit-at in the retry commands rather than falling
+			// back to --nightly, even though the time needs fixing.
+			fallback := make([]scheduleSlot, len(ids))
+			for i := range fallback {
+				fallback[i].Time = opts.SubmitAt
 			}
-			times[i] = t
+			return &ScheduleFlowError{Done: done, Total: len(ids), Retry: stackRetryCommands(ids, fallback), Err: err}
 		}
 	}
 
 	for i, id := range ids {
 		chCtx, err := ResolveChangeContext(cmd, []string{id})
+		if err == nil && i == 0 && opts.SubmitAt == "" {
+			var nightly []scheduleSlot
+			if nightly, err = stackScheduleSlots(chCtx, "", len(ids), DefaultScheduleTimezone); err == nil {
+				slots = nightly
+			}
+		}
 		if err == nil {
 			var scheduled ScheduledSubmitFlow
-			if scheduled, err = chCtx.CreateScheduledSubmitFlow(0, times[i], DefaultScheduleTimezone); err == nil {
+			if scheduled, err = chCtx.createScheduledSubmitFlow(0, slots[i].Time, slots[i].Day, DefaultScheduleTimezone); err == nil {
 				fmt.Fprintln(cmd.OutOrStdout(), scheduled.Summary())
 				continue
 			}
 		}
-		return &ScheduleFlowError{Done: done, Scheduled: i, Total: len(ids), Retry: stackRetryCommands(ids[i:], times[i:]), Err: err}
+		return &ScheduleFlowError{Done: done, Scheduled: i, Total: len(ids), Retry: stackRetryCommands(ids[i:], slots[i:]), Err: err}
 	}
 	return nil
+}
+
+// scheduleSlot is when one change in a stack is scheduled.
+type scheduleSlot struct {
+	// Time is "HH:MM", or "" for the change's own --nightly slot.
+	Time string
+	// Day is "today", "tomorrow", or a weekday name, or "" to let
+	// ScheduleDay pick the next occurrence of Time.
+	Day string
+}
+
+// stackScheduleSlots returns when each of n stacked changes is scheduled,
+// bottom first: at submitAt for the bottom change, or if submitAt is empty, at
+// the nightly slot of bottom (the bottom change), then each
+// stackScheduleSpacing later.
+//
+// The bottom change gets the next occurrence of its time in tz, and every
+// change above it is counted from that moment, so the days follow the stack
+// order. Picking "today" or "tomorrow" for each time on its own would not: at
+// 21:45 with the bottom change at 21:30, the bottom change would go to
+// tomorrow 21:30 but the next one to today 22:00, almost a day early. A
+// change two or more days out is named by its weekday.
+//
+// If tz cannot be loaded, Day is left empty and each change falls back to
+// ScheduleDay.
+func stackScheduleSlots(bottom *ChangeContext, submitAt string, n int, tz string) ([]scheduleSlot, error) {
+	base := submitAt
+	if base != "" {
+		// Same validation and zero-padding as a single change's --submit-at.
+		var err error
+		if base, err = ValidateScheduleTime(base); err != nil {
+			return nil, err
+		}
+	} else {
+		change, err := bottom.GetChange(nil)
+		if err != nil {
+			return nil, err
+		}
+		if base, err = ComputeScheduleTime(change.Number, ""); err != nil {
+			return nil, err
+		}
+	}
+	hhmm, err := time.Parse("15:04", base)
+	if err != nil {
+		return nil, fmt.Errorf("invalid time %q: %w", base, err)
+	}
+
+	slots := make([]scheduleSlot, n)
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		// OK: without time zone data, fall back to each change's own
+		// ScheduleDay, as before stacks were counted from the bottom change.
+		slog.Debug("stack schedule: cannot load time zone", "tz", tz, "err", err)
+		for i := range slots {
+			t, err := addScheduleMinutes(base, time.Duration(i)*stackScheduleSpacing)
+			if err != nil {
+				return nil, err
+			}
+			slots[i] = scheduleSlot{Time: t}
+		}
+		return slots, nil
+	}
+
+	now := scheduleNowFn().In(loc)
+	first := time.Date(now.Year(), now.Month(), now.Day(), hhmm.Hour(), hhmm.Minute(), 0, 0, loc)
+	if !first.After(now) {
+		first = first.AddDate(0, 0, 1)
+	}
+	for i := range slots {
+		at := first.Add(time.Duration(i) * stackScheduleSpacing)
+		slots[i] = scheduleSlot{Time: at.Format("15:04"), Day: scheduleDayWord(now, at)}
+	}
+	return slots, nil
+}
+
+// scheduleDayWord names the day of at relative to now, both in the same
+// location: "today", "tomorrow", or the weekday name for later days.
+func scheduleDayWord(now, at time.Time) string {
+	y, m, d := now.Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	y, m, d = at.Date()
+	days := int(time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Sub(today).Hours() / 24)
+	switch days {
+	case 0:
+		return "today"
+	case 1:
+		return "tomorrow"
+	}
+	return at.Weekday().String()
 }
 
 // addScheduleMinutes returns the "HH:MM" time d after hhmm, wrapping past
@@ -653,14 +766,14 @@ func addScheduleMinutes(hhmm string, d time.Duration) (string, error) {
 }
 
 // stackRetryCommands returns one `pr merge` invocation per change in ids,
-// joined for display in ScheduleFlowError. times[i] is the --submit-at time
-// for ids[i], or "" for --nightly.
-func stackRetryCommands(ids []string, times []string) string {
+// joined for display in ScheduleFlowError. slots[i].Time is the --submit-at
+// time for ids[i], or "" for --nightly.
+func stackRetryCommands(ids []string, slots []scheduleSlot) string {
 	cmds := make([]string, len(ids))
 	for i, id := range ids {
 		sched := " --nightly"
-		if times[i] != "" {
-			sched = " --submit-at " + times[i]
+		if slots[i].Time != "" {
+			sched = " --submit-at " + slots[i].Time
 		}
 		cmds[i] = RootCmd.CommandPath() + " pr merge " + id + sched
 	}

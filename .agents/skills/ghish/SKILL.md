@@ -204,9 +204,8 @@ Commands:
     - `--submit-at <HH:MM>`: 24-hour time **in US Pacific**, not the user's
       time zone; convert first. A time already past today means tomorrow.
     - With `--stack` (`pr create` / `pr push`), every change is scheduled.
-      `--submit-at` staggers them bottom-up, 30 minutes apart. `--nightly`
-      gives each change its own slot, so consecutive change numbers land about
-      a minute apart, in no guaranteed order.
+      The bottom change gets its nightly slot or the `--submit-at` time, and
+      each change above it 30 minutes later (even past 03:00).
     - Either flag rejects the other and `--auto`. `pr create` / `pr push` also
       reject `--cq=2` and `-d, --draft`; `pr merge` also rejects `--cq` /
       `--trigger` and `--message`.
