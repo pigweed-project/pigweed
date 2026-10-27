@@ -30,7 +30,7 @@ enum CoreSpecificationVersion:
   V1_1     = 0x01  # v1.1
   V1_2     = 0x02  # v1.2
   V2_0_EDR = 0x03  # v2.0+EDR
-  V2_1_EDR = 0x04  # v2.0+EDR
+  V2_1_EDR = 0x04  # v2.1+EDR
   V3_0_HS  = 0x05  # v3.0+HS
   V4_0     = 0x06  # v4.0
   V4_1     = 0x07  # v4.1
@@ -57,6 +57,7 @@ enum AclConnectionMode:
 
 
 enum EncryptionStatus:
+  [maximum_bits: 8]
   OFF                                = 0x00
   ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE = 0x01
   ON_WITH_AES_FOR_BREDR              = 0x02
@@ -271,9 +272,14 @@ bits LEFeatureSet:
   $next [+1]  Flag  channel_classification
   $next [+1]  Flag  advertising_coding_selection
   $next [+1]  Flag  advertising_coding_selection_host_support
-  $next [+1]  Flag  reserved                                        # Bit 42 is skipped
+  $next [+1]  Flag  decision_based_advertising_filtering
   $next [+1]  Flag  periodic_advertising_with_responses_advertiser
   $next [+1]  Flag  periodic_advertising_with_responses_scanner
+  $next [+1]  Flag  unsegmented_framed_mode
+  $next [+1]  Flag  channel_sounding
+  $next [+1]  Flag  channel_sounding_host_support
+  $next [+1]  Flag  channel_sounding_tone_quality_indication
+  63    [+1]  Flag  ll_extended_feature_set
 
 
 enum LEAdvertisingEventType:
@@ -531,13 +537,16 @@ struct SupportedCommands:
     3  [+1]       Flag  write_pin_type
     5  [+1]       Flag  read_stored_link_key
     6  [+1]       Flag  write_stored_link_key
-    7  [+1]       Flag  deleted_stored_link_key
+    7  [+1]       Flag  deleted_stored_link_key                                       # deprecated
+    7  [+1]       Flag  delete_stored_link_key
 
   7  [+1]  bits:
     0  [+1]       Flag  write_local_name
     1  [+1]       Flag  read_local_name
-    2  [+1]       Flag  read_connection_attempt_timeout
-    3  [+1]       Flag  write_connection_attempt_timeout
+    2  [+1]       Flag  read_connection_attempt_timeout                               # deprecated
+    2  [+1]       Flag  read_connection_accept_timeout
+    3  [+1]       Flag  write_connection_attempt_timeout                              # deprecated
+    3  [+1]       Flag  write_connection_accept_timeout
     4  [+1]       Flag  read_page_timeout
     5  [+1]       Flag  write_page_timeout
     6  [+1]       Flag  read_scan_enable
@@ -580,6 +589,8 @@ struct SupportedCommands:
 
   12 [+1]  bits:
     1  [+1]       Flag  set_afh_host_channel_classification
+    2  [+1]       Flag  le_cs_read_remote_fae_table
+    3  [+1]       Flag  le_cs_write_cached_remote_fae_table
     4  [+1]       Flag  read_inquiry_scan_type
     5  [+1]       Flag  write_inquiry_scan_type
     6  [+1]       Flag  read_inquiry_mode
@@ -600,7 +611,8 @@ struct SupportedCommands:
   15 [+1]  bits:
     1  [+1]       Flag  read_bdaddr
     2  [+1]       Flag  read_failed_contact_counter
-    3  [+1]       Flag  reset_failed_contact_c_ounter
+    3  [+1]       Flag  reset_failed_contact_c_ounter                                 # deprecated
+    3  [+1]       Flag  reset_failed_contact_counter
     4  [+1]       Flag  read_link_quality
     5  [+1]       Flag  read_rssi
     6  [+1]       Flag  read_afh_channel_map
@@ -613,6 +625,8 @@ struct SupportedCommands:
     3  [+1]       Flag  setup_synchronous_connection_request
     4  [+1]       Flag  accept_synchronous_connection_request
     5  [+1]       Flag  reject_synchronous_connection_request
+    6  [+1]       Flag  le_cs_create_config
+    7  [+1]       Flag  le_cs_remove_config
 
   17 [+1]  bits:
     0  [+1]       Flag  read_extended_inquiry_response
@@ -644,6 +658,9 @@ struct SupportedCommands:
     2  [+1]       Flag  send_keypress_notification
     3  [+1]       Flag  io_capability_request_negative_reply
     4  [+1]       Flag  read_encryption_key_size
+    5  [+1]       Flag  le_cs_read_local_supported_capabilities
+    6  [+1]       Flag  le_cs_read_remote_supported_capabilities
+    7  [+1]       Flag  le_cs_write_cached_remote_supported_capabilities
 
   21 [+1]  bits:
     0  [+1]       Flag  create_physical_link
@@ -669,14 +686,19 @@ struct SupportedCommands:
     0  [+1]       Flag  read_flow_control_mode
     1  [+1]       Flag  write_flow_control_mode
     2  [+1]       Flag  read_data_block_size
+    3  [+1]       Flag  le_cs_test
+    4  [+1]       Flag  le_cs_test_end
 
   24 [+1]  bits:
     0  [+1]       Flag  read_enhanced_transmit_power_level
+    1  [+1]       Flag  le_cs_security_enable
     2  [+1]       Flag  read_best_effort_flush_timeout
     3  [+1]       Flag  write_best_effort_flush_timeout
     4  [+1]       Flag  short_range_mode
-    5  [+1]       Flag  read_le_host_supported
+    5  [+1]       Flag  read_le_host_supported                                        # deprecated
+    5  [+1]       Flag  read_le_host_support
     6  [+1]       Flag  write_le_host_support
+    7  [+1]       Flag  le_cs_set_default_settings
 
   25 [+1]  bits:
     0  [+1]       Flag  le_set_event_mask
@@ -708,15 +730,20 @@ struct SupportedCommands:
     7  [+1]       Flag  le_rand
 
   28 [+1]  bits:
-    0  [+1]       Flag  le_start_encryption
+    0  [+1]       Flag  le_start_encryption                                           # deprecated
+    0  [+1]       Flag  le_enable_encryption
     1  [+1]       Flag  le_long_term_key_request_reply
     2  [+1]       Flag  le_long_term_key_request_negative_reply
     3  [+1]       Flag  le_read_supported_states
     4  [+1]       Flag  le_receiver_test_v1
     5  [+1]       Flag  le_transmitter_test_v1
     6  [+1]       Flag  le_test_end
+    7  [+1]       Flag  le_enable_monitoring_advertisers
 
   29 [+1]  bits:
+    0  [+1]       Flag  le_cs_set_channel_classification
+    1  [+1]       Flag  le_cs_set_procedure_parameters
+    2  [+1]       Flag  le_cs_procedure_enable
     3  [+1]       Flag  enhanced_setup_synchronous_connection
     4  [+1]       Flag  enhanced_accept_synchronous_connection
     5  [+1]       Flag  read_local_supported_codecs
@@ -836,7 +863,8 @@ struct SupportedCommands:
   41 [+1]  bits:
     0  [+1]       Flag  le_set_periodic_advertising_sync_transfer_parameters
     1  [+1]       Flag  le_set_default_periodic_advertising_sync_transfer_parameters
-    2  [+1]       Flag  le_generate_dh_key_v3
+    2  [+1]       Flag  le_generate_dh_key_v3                                         # deprecated
+    2  [+1]       Flag  le_generate_dh_key_v2
     3  [+1]       Flag  read_local_simple_pairing_options
     4  [+1]       Flag  le_modify_sleep_clock_accuracy
     5  [+1]       Flag  le_read_buffer_size_v2
@@ -880,11 +908,15 @@ struct SupportedCommands:
     3  [+1]       Flag  read_local_supported_codec_capabilities
     4  [+1]       Flag  read_local_supported_controller_delay
     5  [+1]       Flag  configure_data_path
+    6  [+1]       Flag  le_set_data_related_address_changes
+    7  [+1]       Flag  set_min_encryption_key_size
 
   46 [+1]  bits:
     0  [+1]       Flag  le_set_default_subrate
     1  [+1]       Flag  le_subrate_request
     2  [+1]       Flag  le_set_extended_advertising_parameters_v2
+    3  [+1]       Flag  le_set_decision_data
+    4  [+1]       Flag  le_set_decision_instructions
     5  [+1]       Flag  le_set_periodic_advertising_subevent_data
     6  [+1]       Flag  le_set_periodic_advertising_response_data
     7  [+1]       Flag  le_set_periodic_sync_subevent
@@ -892,6 +924,22 @@ struct SupportedCommands:
   47 [+1]  bits:
     0  [+1]       Flag  le_extended_create_connection_v2
     1  [+1]       Flag  le_set_periodic_advertising_parameters_v2
+    2  [+1]       Flag  le_read_all_local_supported_features
+    3  [+1]       Flag  le_read_all_remote_features
+    4  [+1]       Flag  le_set_host_feature_v2
+    5  [+1]       Flag  le_add_device_to_monitored_advertisers_list
+    6  [+1]       Flag  le_remove_device_from_monitored_advertisers_list
+    7  [+1]       Flag  le_clear_monitored_advertisers_list
+
+  48 [+1]  bits:
+    0  [+1]       Flag  le_read_monitored_advertisers_list_size
+    1  [+1]       Flag  le_frame_space_update
+    2  [+1]       Flag  le_set_resolvable_private_address_timeout_v2
+    3  [+1]       Flag  le_enable_ota_utp_mode
+    4  [+1]       Flag  le_utp_send
+    5  [+1]       Flag  le_connection_rate_request
+    6  [+1]       Flag  le_set_default_rate_parameters
+    7  [+1]       Flag  le_read_minimum_supported_connection_interval
 
   63 [+1]         UInt  reserved
 
@@ -1099,11 +1147,14 @@ struct ReadLocalSupportedCommandsCommandCompleteEvent:
 struct ReadLocalSupportedFeaturesCommandCompleteEvent:
   -- 7.7.14 Command Complete event (7.4.3 Read Local Supported Features command)
   let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  0          [+hdr_size]  hci.CommandCompleteEvent  command_complete
   let header = command_complete.header
-  $next [+1]         hci.StatusCode            status
-  $next [+8]         UInt                      lmp_features
+  hdr_size   [+1]         hci.StatusCode            status
+  hdr_size+1 [+8]         UInt                      lmp_features       # deprecated
     -- Bit Mask List of LMP features.
+
+  hdr_size+1 [+8]         LmpFeatures(0)            lmp_features_bits
+    -- Page 0 of the LMP features.
 
 
 struct ReadLocalExtendedFeaturesCommandCompleteEvent:
@@ -1139,7 +1190,7 @@ struct ReadBufferSizeCommandCompleteEvent:
   $next [+1]         UInt                      synchronous_data_packet_length
     -- Maximum length (in octets) of the data portion of each HCI Synchronous
     -- Data packet that the Controller is able to accept.
-    [requires: 0x01 <= this <= 0xFF]
+    [requires: 0x00 <= this <= 0xFF]
 
   $next [+2]         UInt                      total_num_acl_data_packets
     -- Total number of HCI ACL Data packets that can be stored in the data
@@ -1427,11 +1478,11 @@ struct ModeChangeEvent:
   $next [+2]         UInt               interval
     -- Hold mode:
     --   Number of baseband slots to wait
-    --   Hold interval = N * 0x625ms (1 Baseband slot)
+    --   Hold interval = N * 0.625ms (1 Baseband slot)
     --   Time range: 1.25ms to 40.9s
     -- Sniff mode:
     --   Number of baseband slots between sniff anchor points
-    --   Time between sniff anchor points = N * 0x625ms (1 Baseband slot)
+    --   Time between sniff anchor points = N * 0.625ms (1 Baseband slot)
     --   Time range: 1.25ms to 40.9s
     [requires: 0x0000 <= this <= 0xFFFE]
 
@@ -1857,7 +1908,7 @@ struct LEAdvertisingReportData:
 struct LEAdvertisingReportSubevent:
   0     [+LEMetaEvent.$size_in_bytes]  LEMetaEvent           le_meta_event
   $next [+1]                           UInt                  num_reports
-    [requires: 0x01 <= this <= 0x0A]
+    [requires: 0x01 <= this <= 0x19]
 
   # The -1 at the end is sizeof(num_reports).
   let reports_size = le_meta_event.return_parameters_size-1
@@ -2110,71 +2161,6 @@ struct LEPeriodicAdvertisingSyncEstablishedSubeventV1:
   $next [+1]                           LEClockAccuracy    advertiser_clock_accuracy
 
 
-struct LEPeriodicAdvertisingSyncTransferReceivedSubeventV1:
-  -- 7.7.65.24 LE Periodic Advertising Sync Transfer Received event (v6.1) (LE)
-  -- HCI_LE_Periodic_Advertising_Sync_Transfer_Received
-  0     [+LEMetaEvent.$size_in_bytes]  LEMetaEvent        le_meta_event
-  $next [+1]                           hci.StatusCode     status
-  $next [+2]                           UInt               connection_handle
-    [requires: 0x0000 <= this <= 0x0EFF]
-
-  $next [+2]                           UInt               service_data
-  $next [+2]                           UInt               sync_handle
-    [requires: 0x0000 <= this <= 0x0EFF]
-
-  $next [+1]                           UInt               advertising_sid
-    [requires: 0x00 <= this <= 0x0F]
-
-  $next [+1]                           hci.LEAddressType  advertiser_address_type
-  $next [+hci.BdAddr.$size_in_bytes]   hci.BdAddr         advertiser_address
-  $next [+1]                           hci.LEPhy          advertiser_phy
-  $next [+2]                           UInt               periodic_advertising_interval
-    -- Time = N * 1.25 ms
-    -- Range: 7.5 ms to 81.91875 s
-    [requires: 0x0006 <= this <= 0xFFFF]
-
-  $next [+1]                           LEClockAccuracy    advertiser_clock_accuracy
-
-
-struct LEPeriodicAdvertisingSyncTransferReceivedSubeventV2:
-  -- 7.7.65.26 LE Periodic Advertising Sync Transfer Received event (v6.1) (LE)
-  -- HCI_LE_Periodic_Advertising_Sync_Transfer_Received
-  0     [+LEMetaEvent.$size_in_bytes]  LEMetaEvent        le_meta_event
-  $next [+1]                           hci.StatusCode     status
-  $next [+2]                           UInt               connection_handle
-    [requires: 0x0000 <= this <= 0x0EFF]
-
-  $next [+2]                           UInt               service_data
-  $next [+2]                           UInt               sync_handle
-    [requires: 0x0000 <= this <= 0x0EFF]
-
-  $next [+1]                           UInt               advertising_sid
-    [requires: 0x00 <= this <= 0x0F]
-
-  $next [+1]                           hci.LEAddressType  advertiser_address_type
-  $next [+hci.BdAddr.$size_in_bytes]   hci.BdAddr         advertiser_address
-  $next [+1]                           hci.LEPhy          advertiser_phy
-  $next [+2]                           UInt               periodic_advertising_interval
-    -- Time = N * 1.25 ms
-    -- Range: 7.5 ms to 81.91875 s
-    [requires: 0x0006 <= this <= 0xFFFF]
-
-  $next [+1]                           LEClockAccuracy    advertiser_clock_accuracy
-  $next [+1]                           UInt               num_subevents
-    [requires: 0x01 <= this <= 0x80]
-
-  $next [+1]                           UInt               subevent_interval
-    -- Time = N * 1.25 ms
-    -- Range: 7.5 ms to 318.75 ms
-    [requires: 0x06 <= this <= 0xFF]
-
-  $next [+1]                           UInt               response_slot_delay
-  $next [+1]                           UInt               response_slot_spacing
-    -- Time = N * 0.125 ms
-    -- Range: 0.25 ms to 31.875
-    [requires: 0x02 <= this <= 0xFF]
-
-
 struct LEPeriodicAdvertisingSyncEstablishedSubeventV2:
   -- 7.7.65.14 LE Periodic Advertising Sync Established event v2 (v6.1) (LE)
   -- HCI_LE_Periodic_Advertising_Sync_Established
@@ -2249,42 +2235,6 @@ struct LEPeriodicAdvertisingSyncLostSubevent:
     [requires: 0x0000 <= this <= 0x0EFF]
 
 
-enum BigFraming:
-  [maximum_bits: 8]
-  UNFRAMED = 0x00
-  FRAMED   = 0x01
-
-
-struct LEBigInfoAdvertisingReportSubevent:
-  -- 7.7.65.34 LE BIGInfo Advertising Report event (v6.1) (LE)
-  -- HCI_LE_BIGInfo_Advertising_Report
-  0     [+LEMetaEvent.$size_in_bytes]  LEMetaEvent  le_meta_event
-  $next [+2]                           UInt         sync_handle
-    [requires: 0x0000 <= this <= 0x0EFF]
-
-  $next [+1]                           UInt         num_bis
-  $next [+1]                           UInt         nse
-  $next [+2]                           UInt         iso_interval
-  $next [+1]                           UInt         bn
-  $next [+1]                           UInt         pto
-  $next [+1]                           UInt         irc
-  $next [+2]                           UInt         max_pdu
-  $next [+3]                           UInt         sdu_interval
-  $next [+2]                           UInt         max_sdu
-  $next [+1]                           IsoPhyType   phy
-  $next [+1]                           BigFraming   framing
-  $next [+1]                           UInt         encryption
-
-# 7.7.65.15 LE Periodic Advertising Report event
-# HCI_LE_Periodic_Advertising_Report
-# TODO: b/265052417 - Definition needs to be added
-
-
-# 7.7.65.16 LE Periodic Advertising Sync Lost event
-# HCI_LE_Periodic_Advertising_Sync_Lost
-# TODO: b/265052417 - Definition needs to be added
-
-
 struct LEScanTimeoutSubevent:
   -- 7.7.65.17 LE Scan Timeout event
   -- HCI_LE_Scan_Timeout
@@ -2334,9 +2284,69 @@ struct LEChannelSelectionAlgorithmSubevent:
 # TODO: b/265052417 - Definition needs to be added
 
 
-# 7.7.65.24 LE Periodic Advertising Sync Transfer Received event
-# HCI_LE_Periodic_Advertising_Sync_Transfer_Received
-# TODO: b/265052417 - Definition needs to be added
+struct LEPeriodicAdvertisingSyncTransferReceivedSubeventV1:
+  -- 7.7.65.24 LE Periodic Advertising Sync Transfer Received event (v6.1) (LE)
+  -- HCI_LE_Periodic_Advertising_Sync_Transfer_Received
+  0     [+LEMetaEvent.$size_in_bytes]  LEMetaEvent        le_meta_event
+  $next [+1]                           hci.StatusCode     status
+  $next [+2]                           UInt               connection_handle
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+2]                           UInt               service_data
+  $next [+2]                           UInt               sync_handle
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+1]                           UInt               advertising_sid
+    [requires: 0x00 <= this <= 0x0F]
+
+  $next [+1]                           hci.LEAddressType  advertiser_address_type
+  $next [+hci.BdAddr.$size_in_bytes]   hci.BdAddr         advertiser_address
+  $next [+1]                           hci.LEPhy          advertiser_phy
+  $next [+2]                           UInt               periodic_advertising_interval
+    -- Time = N * 1.25 ms
+    -- Range: 7.5 ms to 81.91875 s
+    [requires: 0x0006 <= this <= 0xFFFF]
+
+  $next [+1]                           LEClockAccuracy    advertiser_clock_accuracy
+
+
+struct LEPeriodicAdvertisingSyncTransferReceivedSubeventV2:
+  -- 7.7.65.24 LE Periodic Advertising Sync Transfer Received event v2 (v6.1) (LE)
+  -- HCI_LE_Periodic_Advertising_Sync_Transfer_Received
+  0     [+LEMetaEvent.$size_in_bytes]  LEMetaEvent        le_meta_event
+  $next [+1]                           hci.StatusCode     status
+  $next [+2]                           UInt               connection_handle
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+2]                           UInt               service_data
+  $next [+2]                           UInt               sync_handle
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+1]                           UInt               advertising_sid
+    [requires: 0x00 <= this <= 0x0F]
+
+  $next [+1]                           hci.LEAddressType  advertiser_address_type
+  $next [+hci.BdAddr.$size_in_bytes]   hci.BdAddr         advertiser_address
+  $next [+1]                           hci.LEPhy          advertiser_phy
+  $next [+2]                           UInt               periodic_advertising_interval
+    -- Time = N * 1.25 ms
+    -- Range: 7.5 ms to 81.91875 s
+    [requires: 0x0006 <= this <= 0xFFFF]
+
+  $next [+1]                           LEClockAccuracy    advertiser_clock_accuracy
+  $next [+1]                           UInt               num_subevents
+    [requires: 0x00 <= this <= 0x80]
+
+  $next [+1]                           UInt               subevent_interval
+    -- Time = N * 1.25 ms
+    -- Range: 7.5 ms to 318.75 ms
+    [requires: this == 0x00 || (0x06 <= this <= 0xFF)]
+
+  $next [+1]                           UInt               response_slot_delay
+  $next [+1]                           UInt               response_slot_spacing
+    -- Time = N * 0.125 ms
+    -- Range: 0.25 ms to 31.875
+    [requires: this == 0x00 || (0x02 <= this <= 0xFF)]
 
 
 struct LECISEstablishedSubevent:
@@ -2477,10 +2487,31 @@ struct LERequestPeerSCACompleteSubevent:
 # TODO: b/265052417 - Definition needs to be added
 
 
-# 7.7.65.34 LE BIGInfo Advertising Report event
-# HCI_LE_BIGInfo_Advertising_Report
-# TODO: b/265052417 - Definition needs to be added
+enum BigFraming:
+  [maximum_bits: 8]
+  UNFRAMED = 0x00
+  FRAMED   = 0x01
 
+
+struct LEBigInfoAdvertisingReportSubevent:
+  -- 7.7.65.34 LE BIGInfo Advertising Report event (v6.1) (LE)
+  -- HCI_LE_BIGInfo_Advertising_Report
+  0     [+LEMetaEvent.$size_in_bytes]  LEMetaEvent  le_meta_event
+  $next [+2]                           UInt         sync_handle
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+1]                           UInt         num_bis
+  $next [+1]                           UInt         nse
+  $next [+2]                           UInt         iso_interval
+  $next [+1]                           UInt         bn
+  $next [+1]                           UInt         pto
+  $next [+1]                           UInt         irc
+  $next [+2]                           UInt         max_pdu
+  $next [+3]                           UInt         sdu_interval
+  $next [+2]                           UInt         max_sdu
+  $next [+1]                           IsoPhyType   phy
+  $next [+1]                           BigFraming   framing
+  $next [+1]                           UInt         encryption
 
 # 7.7.65.35 LE Subrate Change event
 # HCI_LE_Subrate_Change
