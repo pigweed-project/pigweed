@@ -15,11 +15,32 @@
 
 from typing import Any
 
+from docutils import nodes  # type: ignore[import-untyped]
 from sphinx.application import Sphinx
+from sphinx.util import logging
 
 from docs.common.metadata.validate import validate_categories
 from .header import postprocess
 from .search import generate_search_index
+
+_LOG = logging.getLogger(__name__)
+
+
+def _on_doctree_read(app: Sphinx, doctree: nodes.document) -> None:
+    del app
+    for node in doctree.findall(
+        lambda n: isinstance(n, (nodes.strong, nodes.emphasis))
+    ):
+        text = node.astext()
+        if "``" in text:
+            _LOG.warning(
+                "reStructuredText does not support nested inline code (``...``) "
+                "inside %s (**...** or *...*): %r. Close the bold/italic span "
+                "before opening ``...``.",
+                node.tagname,
+                text,
+                location=node,
+            )
 
 
 def _on_build_finished(app: Sphinx, exception: Exception | None) -> None:
@@ -32,6 +53,7 @@ def _on_build_finished(app: Sphinx, exception: Exception | None) -> None:
 
 
 def setup(app: Sphinx) -> dict[str, Any]:
+    app.connect("doctree-read", _on_doctree_read)
     app.connect("build-finished", _on_build_finished)
     return {
         "version": "0.1",

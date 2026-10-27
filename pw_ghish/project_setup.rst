@@ -650,7 +650,7 @@ Patterns in ``[issue.path_components]`` support directory prefixes
 (``"pw_kernel/"`` or ``"pw_kernel"``), single-level globs
 (``"pw_bluetooth_sapphire/*"``), recursive globs (``"targets/**"`` or ``"**"``),
 and standard ``path.Match`` character classes. When multiple patterns match a
-candidate path, the **longest pattern string (``len(pattern)``) wins**.
+candidate path, the **longest pattern string** (``len(pattern)``) **wins**.
 
 ``ResolveIssueComponent`` resolves the target Buganizer component ID using a
 6-tier cascade:
@@ -661,7 +661,7 @@ candidate path, the **longest pattern string (``len(pattern)``) wins**.
    (``git diff-tree --no-commit-id --name-only -r HEAD``) or, when ``HEAD`` has
    no candidate paths, ``$PWD`` relative to the repository root. Longest
    matching pattern wins.
-3. **Nearest ``OWNERS`` file** (when ``use_owners_components = true``): Walks
+3. **Nearest** ``OWNERS`` **file** (when ``use_owners_components = true``): Walks
    upward from each modified file's directory (or ``$PWD``) to the repository
    root looking for ``# COMPONENT: [b/]<id>`` or
    ``# Buganizer component: [b/]<id>``.

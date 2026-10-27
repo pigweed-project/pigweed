@@ -437,7 +437,7 @@ LUCI / Busytown vs. GitHub Actions concept map
      - LUCI recipes emit nested substeps; ``run view -j`` collapses passing
        subtrees and surfaces 1-line failure summaries.
    * - **Action Logs**
-     - **Buildbucket Step Logs / Busytown ``build.log`` & AnTS**
+     - **Buildbucket Step Logs / Busytown** ``build.log`` **& AnTS**
      - ``--log-failed`` downloads the step failure summary and ``stdout``/``stderr``
        (LUCI) or ``build.log`` and failed AnTS tests (Busytown).
    * - **Rerun Workflow** (``gh run rerun``)

@@ -65,7 +65,7 @@ Command families
        symlinks, and sync Antigravity (Jetski) IDE workspaces.
    * - :ref:`gh sense <module-pw_ghish-sense>`
      - *(None — gh-ish extension)*
-     - **Context Sensing & ``/crank``**
+     - **Context Sensing &** ``/crank``
      - Gather Git, worktree, Gerrit review, LUCI CI, and issue state in one
        pass to power ``/crank`` and safe branch preparation.
 

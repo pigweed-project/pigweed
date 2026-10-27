@@ -268,11 +268,11 @@ container that holds either the active pending future or its resolved result:
    ``FutureOrValue`` is designed **only** to be used as internal private member
    state inside the final consumer task or composite future.
 
-   * **Never return ``FutureOrValue`` from APIs.** A ``FutureOrValue`` is not a
-     future; it is storage. APIs must always return futures directly.
-   * **Do not pass ``FutureOrValue`` around.** ``FutureOrValue`` should never
-     leave its owning task or composite future. Once a future is moved in, it
-     should stay in place until the value is extracted.
+   * **Never return** ``FutureOrValue`` **from APIs.** A ``FutureOrValue`` is
+     not a future; it is storage. APIs must always return futures directly.
+   * **Do not pass** ``FutureOrValue`` **around.** ``FutureOrValue`` should
+     never leave its owning task or composite future. Once a future is moved in,
+     it should stay in place until the value is extracted.
    * **Do not** use ``FutureOrValue`` when results are consumed immediately
      upon resolution (store and poll the raw future directly instead).
    * In C++20 coroutines, use :cc:`Coro <pw::async2::Coro>` or combinators

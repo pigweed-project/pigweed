@@ -210,11 +210,11 @@ the application's requirements. The lock facade is configured by setting the
 
 Two backends are provided:
 
-*   **``interrupt_spin_lock`` (Default):** This backend uses a
+*   ``interrupt_spin_lock`` **(Default):** This backend uses a
     ``pw::sync::InterruptSpinLock`` to provide thread-safe and ISR-safe
     locking. This is the default and recommended backend for most use cases.
 
-*   **``no_lock``:** This backend provides no locking. It is suitable for
+*   ``no_lock``: This backend provides no locking. It is suitable for
     single-threaded environments where locking is not required, or when the
     application can guarantee that tracing functions are not called from
     multiple threads or ISRs simultaneously.

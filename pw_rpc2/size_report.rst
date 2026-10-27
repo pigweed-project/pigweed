@@ -87,11 +87,11 @@ from the incremental cost of adding a generated service over the core server
 baseline (see :cs:`pw_rpc2/size_report/service_codegen_size_report.cc` for the
 service implementations):
 
-1. **One-time ``pw_protobuf`` table encoder/decoder and ``pw_rpc2`` PWPB
-   serialization**: One-time cost of linking :cc:`pw::protobuf::StreamEncoder`,
-   :cc:`pw::protobuf::StreamDecoder`, and ``pw_rpc2`` PWPB serialization helpers
-   when using ``pwpb`` RPCs (not needed for ``raw`` RPCs or if already linked
-   elsewhere in the binary).
+1. **One-time** ``pw_protobuf`` **table encoder/decoder and** ``pw_rpc2``
+   **PWPB serialization**: One-time cost of linking
+   :cc:`pw::protobuf::StreamEncoder`, :cc:`pw::protobuf::StreamDecoder`, and
+   ``pw_rpc2`` PWPB serialization helpers when using ``pwpb`` RPCs (not needed
+   for ``raw`` RPCs or if already linked elsewhere in the binary).
 2. **Single unary RPC service** (``UnarySizeReport::Service``):
    Incremental cost of adding a 1-method unary service in ``raw`` vs. ``pwpb``
    (with futures or C++20 coroutines).
@@ -110,9 +110,9 @@ separately from the incremental cost of calling generated
 :cs:`pw_rpc2/size_report/client_codegen_size_report.cc` for the client
 implementation):
 
-1. **One-time ``pw_protobuf`` table encoder/decoder and ``pw_rpc2`` PWPB
-   serialization**: One-time table serialization cost when using ``pwpb`` client
-   calls.
+1. **One-time** ``pw_protobuf`` **table encoder/decoder and** ``pw_rpc2``
+   **PWPB serialization**: One-time table serialization cost when using ``pwpb``
+   client calls.
 2. **Single unary RPC call**: Incremental cost of calling
    ``SizeReport::Client::MeasureUnary`` via ``raw`` vs. ``pwpb``.
 3. **All four RPC call types**: Incremental cost of calling unary, server

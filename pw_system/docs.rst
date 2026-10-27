@@ -75,7 +75,7 @@ progress)
    configuration is complete, your target initialization should call
    ``pw::system::Init()`` and then start the RTOS scheduler (e.g.
    ``vTaskStartScheduler()``).
-#. **Implement ``pw::system::UserAppInit()`` in your application.**
+#. **Implement** ``pw::system::UserAppInit()`` **in your application.**
    This is where most of your project's application-specific logic goes. This
    could be starting threads, registering RPC services, turning on Bluetooth,
    or more. In ``UserAppInit()``, the RTOS will be running so you're free to use
