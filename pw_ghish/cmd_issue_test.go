@@ -26,6 +26,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestIssueView_ExplicitAndSmartBranchInference(t *testing.T) {
@@ -629,6 +631,79 @@ func TestIssueEdit_AddAssigneeMe(t *testing.T) {
 	}
 	if iss.State.Status != "ASSIGNED" {
 		t.Errorf("Status = %q, want ASSIGNED", iss.State.Status)
+	}
+}
+
+func TestIssueEdit_AddRemoveCC(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+
+	srv.SeedIssue(&BuganizerIssue{
+		IssueID: 889,
+		State: BuganizerState{
+			ComponentID: 1194524,
+			Status:      "NEW",
+			Title:       "Issue with CCs",
+			CCs: []BuganizerUser{
+				{EmailAddress: "carol@example.com"},
+				{EmailAddress: "me-developer@example.com"},
+			},
+		},
+	}, "Description")
+
+	gitRunner := &MockGitRunner{}
+	gitRunner.OnCommand("config --get user.email", "me-developer@example.com")
+	SetupMockConfig(t, gitRunner)
+
+	out, err := executeCommand(RootCmd, "issue", "edit", "889",
+		"--add-cc", "alice@example.com, bob@example.com",
+		"--remove-cc", "me")
+	if err != nil {
+		t.Fatalf("issue edit --add-cc/--remove-cc failed: %v\nOutput: %s", err, out)
+	}
+
+	iss, err := srv.Client().GetIssue(t.Context(), 889)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	var got []string
+	for _, u := range iss.State.CCs {
+		got = append(got, u.EmailAddress)
+	}
+	want := []string{"carol@example.com", "alice@example.com", "bob@example.com"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("CCs mismatch (-want +got):\n%s", diff)
+	}
+	if iss.State.Status != "NEW" {
+		t.Errorf("Status = %q, want NEW (CC edits must not change status)", iss.State.Status)
+	}
+}
+
+func TestIssueModifier_CC(t *testing.T) {
+	mod := NewIssueModifier(&BuganizerIssue{IssueID: 1})
+	for _, email := range []string{"a@example.com", "A@example.com"} {
+		if err := mod.AddCC(email); err != nil {
+			t.Fatalf("AddCC(%q): %v", email, err)
+		}
+	}
+	if err := mod.RemoveCC("b@example.com"); err != nil {
+		t.Fatalf("RemoveCC: %v", err)
+	}
+	req := mod.BuildRequest()
+	if req.AddMask != "ccs" || req.RemoveMask != "ccs" {
+		t.Errorf("masks = (%q, %q), want (\"ccs\", \"ccs\")", req.AddMask, req.RemoveMask)
+	}
+	if diff := cmp.Diff([]BuganizerUser{{EmailAddress: "a@example.com"}}, req.Add.CCs); diff != "" {
+		t.Errorf("Add.CCs mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]BuganizerUser{{EmailAddress: "b@example.com"}}, req.Remove.CCs); diff != "" {
+		t.Errorf("Remove.CCs mismatch (-want +got):\n%s", diff)
+	}
+
+	for _, bad := range []string{"", "  ", "not-an-email"} {
+		if err := NewIssueModifier(nil).AddCC(bad); err == nil {
+			t.Errorf("AddCC(%q) succeeded, want error", bad)
+		}
 	}
 }
 

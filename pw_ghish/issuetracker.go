@@ -1247,6 +1247,33 @@ func (m *IssueModifier) RemoveAssignee() {
 	}
 }
 
+// AddCC adds a user to the issue's CC list.
+func (m *IssueModifier) AddCC(email string) error {
+	return queueCC(m.addState, email, "--add-cc", func() { m.addMask("ccs") })
+}
+
+// RemoveCC removes a user from the issue's CC list.
+func (m *IssueModifier) RemoveCC(email string) error {
+	return queueCC(m.removeState, email, "--remove-cc", func() { m.remMask("ccs") })
+}
+
+func queueCC(state *BuganizerState, email, flag string, mark func()) error {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return fmt.Errorf("%s cannot be empty", flag)
+	}
+	if !strings.Contains(email, "@") {
+		return fmt.Errorf("invalid %s %q; expected an email address or 'me'", flag, email)
+	}
+	if !slices.ContainsFunc(state.CCs, func(u BuganizerUser) bool {
+		return strings.EqualFold(u.EmailAddress, email)
+	}) {
+		state.CCs = append(state.CCs, BuganizerUser{EmailAddress: email})
+	}
+	mark()
+	return nil
+}
+
 // HasMetadataChanges returns true if at least one issueState field mask has been queued for ModifyIssue.
 func (m *IssueModifier) HasMetadataChanges() bool {
 	return len(m.addMasks) > 0 || len(m.removeMasks) > 0

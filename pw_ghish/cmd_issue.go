@@ -1187,6 +1187,8 @@ var (
 	issueEditTitle          string
 	issueEditAddAssignee    string
 	issueEditRemoveAssignee string
+	issueEditAddCCs         []string
+	issueEditRemoveCCs      []string
 	issueEditAddLabels      []string
 	issueEditRemoveLabels   []string
 	issueEditAddHotlists    []string
@@ -1288,6 +1290,24 @@ var issueEditCmd = &cobra.Command{
 		}
 		if issueEditRemoveAssignee != "" {
 			mod.RemoveAssignee()
+		}
+		for _, cc := range issueEditAddCCs {
+			email, err := resolveUserEmailArg(ctx, cfg, cc)
+			if err != nil {
+				return err
+			}
+			if err := mod.AddCC(email); err != nil {
+				return err
+			}
+		}
+		for _, cc := range issueEditRemoveCCs {
+			email, err := resolveUserEmailArg(ctx, cfg, cc)
+			if err != nil {
+				return err
+			}
+			if err := mod.RemoveCC(email); err != nil {
+				return err
+			}
 		}
 		if issueEditStatus != "" {
 			if err := mod.SetStatus(issueEditStatus); err != nil {
@@ -1669,6 +1689,10 @@ func init() {
 	issueEditCmd.Flags().StringVarP(&issueEditTitle, "title", "t", "", "New issue title")
 	issueEditCmd.Flags().StringVar(&issueEditAddAssignee, "add-assignee", "", "Set issue assignee email")
 	issueEditCmd.Flags().StringVar(&issueEditRemoveAssignee, "remove-assignee", "", "Remove issue assignee")
+	//ghish:flag mode=extension reason="Add users to the Buganizer CC list"
+	issueEditCmd.Flags().StringSliceVar(&issueEditAddCCs, "add-cc", nil, "Add comma-separated emails (or 'me') to the CC list (ghish-only)")
+	//ghish:flag mode=extension reason="Remove users from the Buganizer CC list"
+	issueEditCmd.Flags().StringSliceVar(&issueEditRemoveCCs, "remove-cc", nil, "Remove comma-separated emails (or 'me') from the CC list (ghish-only)")
 	issueEditCmd.Flags().StringSliceVarP(&issueEditAddLabels, "add-label", "l", nil, "Add priority/severity/type/hotlist labels")
 	issueEditCmd.Flags().StringSliceVar(&issueEditRemoveLabels, "remove-label", nil, "Remove priority/severity/type/hotlist labels")
 	//ghish:flag mode=extension reason="Add issue to Buganizer hotlist ID or alias"

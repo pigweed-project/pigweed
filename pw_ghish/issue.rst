@@ -257,6 +257,10 @@ Modify the title, description, assignee, or structured Buganizer fields using
    $ ./gh issue edit --add-label hotlist:9876543
    $ ./gh issue edit --remove-label hotlist:9876543
 
+   # Add or remove users from the CC list (comma-separated emails, or "me"):
+   $ ./gh issue edit 315378787 --add-cc alice@google.com,bob@google.com
+   $ ./gh issue edit 315378787 --remove-cc me
+
 ``pw_ghish`` translates GitHub CLI's ``--label`` / ``--add-label`` /
 ``--remove-label`` flags into native Buganizer fields:
 
