@@ -21,6 +21,10 @@ use log_if::debug_if;
 use pw_log::info;
 use regs::{rw_block_reg, rw_int_field};
 
+use crate::exceptions::RiscVInterruptController;
+use crate::regs::Interrupt;
+use crate::timer;
+
 const LOG_INTERRUPTS: bool = false;
 
 // TODO: Once the kernel supports more than one HART, we'll need to configure the number of contexts.
@@ -118,38 +122,57 @@ unsafe extern "Rust" {
     static PW_KERNEL_INTERRUPT_TABLE: &'static [InterruptTableEntry<Plic>];
 }
 
-pub fn interrupt(from_userspace: bool) {
-    // Claim the interrupt
-    let icr = Icr;
-    let irq = icr.read(&CONTEXT_0).irq();
-
-    if irq == 0 {
-        return;
-    }
-
-    debug_if!(LOG_INTERRUPTS, "Interrupt {}", irq as u32);
-
-    // This lookup is not behind a lock as the table is static.  A locking scheme
-    // will be required if we ever make the interrupt table dynamic.
-    let Some(handler) = unsafe { PW_KERNEL_INTERRUPT_TABLE }
-        .get(irq as usize)
-        .copied()
-        .flatten()
-    else {
-        pw_assert::panic!("Unhandled interrupt: irq={}", irq as u32);
-    };
-
-    unsafe { handler(from_userspace) };
-
-    // It is up to the interrupt handler to call userspace_interrupt_ack()
-    // or kernel_interrupt_handler_exit() (kernel drivers) to release the claim.
-}
-
 pub struct Plic {}
 
 impl Plic {
     pub const fn new() -> Self {
         Self {}
+    }
+}
+
+impl RiscVInterruptController for Plic {
+    fn handle_interrupt(interrupt: Interrupt, from_userspace: bool) {
+        match interrupt {
+            Interrupt::MachineTimer => timer::mtimer_tick(from_userspace),
+            Interrupt::MachineExternal => Self::external_interrupt(from_userspace),
+            // The PLIC only routes machine external interrupts; hart-local
+            // lines and other standard interrupt codes are not supported.
+            Interrupt::Local(_) | Interrupt::Unknown(_) => {
+                pw_assert::panic!(
+                    "Unhandled interrupt: interrupt_number={:#010x}",
+                    interrupt.raw_cause() as usize
+                );
+            }
+        }
+    }
+}
+
+impl Plic {
+    fn external_interrupt(from_userspace: bool) {
+        // Claim the interrupt
+        let icr = Icr;
+        let irq = icr.read(&CONTEXT_0).irq();
+
+        if irq == 0 {
+            return;
+        }
+
+        debug_if!(LOG_INTERRUPTS, "Interrupt {}", irq as u32);
+
+        // This lookup is not behind a lock as the table is static.  A locking scheme
+        // will be required if we ever make the interrupt table dynamic.
+        let Some(handler) = unsafe { PW_KERNEL_INTERRUPT_TABLE }
+            .get(irq as usize)
+            .copied()
+            .flatten()
+        else {
+            pw_assert::panic!("Unhandled interrupt: irq={}", irq as u32);
+        };
+
+        unsafe { handler(from_userspace) };
+
+        // It is up to the interrupt handler to call userspace_interrupt_ack()
+        // or kernel_interrupt_handler_exit() (kernel drivers) to release the claim.
     }
 }
 

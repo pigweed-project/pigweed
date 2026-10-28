@@ -22,21 +22,40 @@ pub(crate) use riscv_macro::kernel_only_exception as exception;
 #[cfg(feature = "user_space")]
 pub(crate) use riscv_macro::user_space_exception as exception;
 
+use crate::InterruptController;
 #[cfg(feature = "exceptions_reload_pmp")]
 use crate::MemoryConfig;
-#[cfg(not(feature = "veer_pic"))]
-use crate::plic as pic;
 use crate::regs::{
-    Cause, Exception, Interrupt, MCause, MCauseVal, MStatus, MStatusVal, MtVal, MtVec, MtVecMode,
-    PrivilegeLevel,
+    Exception, Interrupt, MCause, MCauseVal, MStatus, MStatusVal, Mie, MieVal, MtVal, MtVec,
+    MtVecMode, PrivilegeLevel,
 };
-use crate::timer;
-#[cfg(feature = "veer_pic")]
-use crate::veer_pic as pic;
 
 const LOG_EXCEPTIONS: bool = false;
 
+/// RISC-V-specific interrupt controller hook invoked by the trap handler.
+pub trait RiscVInterruptController: kernel::interrupt_controller::InterruptController {
+    /// Handle an interrupt trap.
+    ///
+    /// `interrupt` is the decoded `mcause` interrupt code. The interrupt
+    /// controller decides how each code is routed (e.g. machine timer,
+    /// machine external via a PLIC/PIC claim, or platform hart-local lines).
+    fn handle_interrupt(interrupt: Interrupt, from_userspace: bool);
+}
+
 pub fn early_init() {
+    // Startup contract: pw_kernel only services the machine timer and machine
+    // external interrupts. `mie` has no architecturally defined reset value, so
+    // mask every other source (hart-local lines >= 16, software, supervisor,
+    // counter-overflow) that a bootloader or prior stage may have left enabled;
+    // those codes route to the controller's `Local(_)` / `Unknown(_)` arms,
+    // which panic.
+    //
+    // `MTIE` and `MEIE` are preserved rather than cleared: the interrupt
+    // controller's `early_init()` runs before this and has already set `MEIE`.
+    // `MTIE` is re-initialized by `timer::early_init()`.
+    let mie = Mie::read();
+    Mie::write(MieVal(0).with_mtie(mie.mtie()).with_meie(mie.meie()));
+
     // Explicitly set up MTVEC to point to the kernel's handler to ensure
     // that it is set to the correct mode.
     let (base, mode) = match KernelConfig::get_exception_mode() {
@@ -93,7 +112,7 @@ fn exception_handler(exception: Exception, mepc: usize, frame: &mut TrapFrame) {
     debug_if!(
         LOG_EXCEPTIONS,
         "Exception: exception_number={:#010x}, mepc={:#010x}, mstatus={:#010x}",
-        exception as usize,
+        exception.raw_cause() as usize,
         mepc as usize,
         MStatus::read().0 as usize,
     );
@@ -113,7 +132,7 @@ fn exception_handler(exception: Exception, mepc: usize, frame: &mut TrapFrame) {
             }
         }
         Exception::Breakpoint => {
-            // Breakpoint is currently use to handle kernel panics.  Don't call
+            // Breakpoint is currently used to handle kernel panics. Don't call
             // back into `handle_terminal_exception` and instead terminate the
             // kernel.
             dump_exception_frame(frame);
@@ -131,11 +150,11 @@ fn exception_handler(exception: Exception, mepc: usize, frame: &mut TrapFrame) {
 }
 
 // Default interrupt handler
-unsafe fn interrupt_handler(interrupt: Interrupt, mepc: usize, frame: &TrapFrame) {
+fn interrupt_handler(interrupt: Interrupt, mepc: usize, frame: &TrapFrame) {
     debug_if!(
         LOG_EXCEPTIONS,
         "Interrupt: interrupt_number={:#010x}, mepc={:#010x}, frame={:#010x}, mstatus={:#010x}",
-        interrupt as usize,
+        interrupt.raw_cause() as usize,
         mepc as usize,
         core::ptr::addr_of!(frame) as usize,
         frame.status as usize,
@@ -143,20 +162,9 @@ unsafe fn interrupt_handler(interrupt: Interrupt, mepc: usize, frame: &TrapFrame
 
     let from_userspace = !is_exception_from_kernel(frame);
 
-    match interrupt {
-        Interrupt::MachineTimer => {
-            timer::mtimer_tick(from_userspace);
-        }
-        Interrupt::MachineExternal => {
-            pic::interrupt(from_userspace);
-        }
-        _ => {
-            pw_assert::panic!(
-                "Unhandled interrupt: interrupt_number={:#010x}",
-                interrupt as usize
-            );
-        }
-    }
+    // The interrupt controller owns the routing policy for every interrupt
+    // code (timer, external, hart-local, ...).
+    InterruptController::handle_interrupt(interrupt, from_userspace);
 }
 
 #[exception(exception = "_start_trap")]
@@ -168,9 +176,12 @@ unsafe extern "C" fn trap_handler(mcause: MCauseVal, mepc: usize, frame: &mut Tr
         MemoryConfig::KERNEL_THREAD_MEMORY_CONFIG.write();
     }
 
-    match mcause.cause() {
-        Cause::Interrupt(interrupt) => unsafe { interrupt_handler(interrupt, mepc, frame) },
-        Cause::Exception(exception) => exception_handler(exception, mepc, frame),
+    if mcause.is_interrupt() {
+        interrupt_handler(Interrupt::from_raw_cause(mcause.raw_cause()), mepc, frame);
+    } else {
+        // `mcause` bit XLEN-1 is the interrupt flag; when clear, the trap is a
+        // synchronous exception.
+        exception_handler(Exception::from_raw_cause(mcause.raw_cause()), mepc, frame);
     }
 
     #[cfg(feature = "exceptions_reload_pmp")]

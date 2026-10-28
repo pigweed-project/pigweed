@@ -21,10 +21,12 @@ use log_if::debug_if;
 use pw_log::info;
 use regs::{rw_block_reg, rw_bool_field, rw_int_field};
 
-use crate::exceptions::_start_trap;
+use crate::exceptions::{_start_trap, RiscVInterruptController};
+use crate::regs::Interrupt;
 use crate::regs::veer::{
     MEIVT_NUM_ENTRIES, MeiCPCT, MeiCPCTVal, MeiHAP, MeiPT, MeiPTVal, MeiVT, MeiVTVal,
 };
+use crate::timer;
 
 const LOG_INTERRUPTS: bool = false;
 
@@ -213,45 +215,64 @@ unsafe extern "Rust" {
     static PW_KERNEL_INTERRUPT_TABLE: &'static [InterruptTableEntry<VeerPic>];
 }
 
-pub fn interrupt(from_userspace: bool) {
-    // Claim the interrupt.  The VeeR document leads me to believe that I
-    // need to write to MEICPCT to capture the interrupt value into meihap.
-    MeiCPCT::write(MeiCPCTVal::default());
-    let meihap = MeiHAP::read();
-    let irq = u32::from(meihap.claimid());
-
-    if irq == 0 {
-        return;
-    }
-
-    // Disable the source and clear the claim on the interrupt.
-    set_interrupt_enable(irq, false);
-    let mut clr = MeiGwClr {};
-    clr.write(&CONTEXT_0, irq, MeiGwClrValue::default());
-
-    debug_if!(LOG_INTERRUPTS, "Interrupt {}", irq as u32);
-
-    // This lookup is not behind a lock as the table is static.  A locking scheme
-    // will be required if we ever make the interrupt table dynamic.
-    let Some(handler) = unsafe { PW_KERNEL_INTERRUPT_TABLE }
-        .get(irq as usize)
-        .copied()
-        .flatten()
-    else {
-        pw_assert::panic!("Unhandled interrupt: irq={}", irq as u32);
-    };
-
-    unsafe { handler(from_userspace) };
-
-    // It is up to the interrupt handler to call userspace_interrupt_ack()
-    // or kernel_interrupt_handler_exit() (kernel drivers) to release the claim.
-}
-
 pub struct VeerPic {}
 
 impl VeerPic {
     pub const fn new() -> Self {
         Self {}
+    }
+}
+
+impl RiscVInterruptController for VeerPic {
+    fn handle_interrupt(interrupt: Interrupt, from_userspace: bool) {
+        match interrupt {
+            Interrupt::MachineTimer => timer::mtimer_tick(from_userspace),
+            Interrupt::MachineExternal => Self::external_interrupt(from_userspace),
+            // Hart-local lines (e.g. the VeeR internal timers) and other
+            // standard interrupt codes are not supported yet.
+            Interrupt::Local(_) | Interrupt::Unknown(_) => {
+                pw_assert::panic!(
+                    "Unhandled interrupt: interrupt_number={:#010x}",
+                    interrupt.raw_cause() as usize
+                );
+            }
+        }
+    }
+}
+
+impl VeerPic {
+    fn external_interrupt(from_userspace: bool) {
+        // Claim the interrupt.  The VeeR document leads me to believe that I
+        // need to write to MEICPCT to capture the interrupt value into meihap.
+        MeiCPCT::write(MeiCPCTVal::default());
+        let meihap = MeiHAP::read();
+        let irq = u32::from(meihap.claimid());
+
+        if irq == 0 {
+            return;
+        }
+
+        // Disable the source and clear the claim on the interrupt.
+        set_interrupt_enable(irq, false);
+        let mut clr = MeiGwClr {};
+        clr.write(&CONTEXT_0, irq, MeiGwClrValue::default());
+
+        debug_if!(LOG_INTERRUPTS, "Interrupt {}", irq as u32);
+
+        // This lookup is not behind a lock as the table is static.  A locking scheme
+        // will be required if we ever make the interrupt table dynamic.
+        let Some(handler) = unsafe { PW_KERNEL_INTERRUPT_TABLE }
+            .get(irq as usize)
+            .copied()
+            .flatten()
+        else {
+            pw_assert::panic!("Unhandled interrupt: irq={}", irq as u32);
+        };
+
+        unsafe { handler(from_userspace) };
+
+        // It is up to the interrupt handler to call userspace_interrupt_ack()
+        // or kernel_interrupt_handler_exit() (kernel drivers) to release the claim.
     }
 }
 
@@ -286,7 +307,7 @@ impl InterruptController for VeerPic {
         // VeeR jumps to the word at `MEIVT + 4 * claimid`, not through mtvec,
         // so this redirect is independent of the mtvec trap mode. Point every
         // entry at `_start_trap` so interrupts take the standard trap path
-        // where `interrupt()` recovers the claim id. Read the symbol rather
+        // where `handle_interrupt()` recovers the claim id. Read the symbol rather
         // than mtvec, which `exceptions::early_init` programs only after this
         // runs. Fill the table before `set_mext()`.
         let base = VeerPicConfig::MEIVT_BASE_ADDRESS;
