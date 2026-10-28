@@ -1290,6 +1290,93 @@ TEST_F(LowEnergyConnectionManagerTest, DisconnectEvent) {
   EXPECT_EQ(2, closed_count);
 }
 
+// Regression test for b/525209445.
+TEST_F(LowEnergyConnectionManagerTest,
+       DisconnectEventToleratesClosedCallbackDestroyingSiblingHandle) {
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  std::unique_ptr<LowEnergyConnectionHandle> handle_a;
+  std::unique_ptr<LowEnergyConnectionHandle> handle_b;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&handle_a](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        handle_a = std::move(result).value();
+      },
+      kConnectionOptions);
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&handle_b](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        handle_b = std::move(result).value();
+      },
+      kConnectionOptions);
+  RunUntilIdle();
+  ASSERT_TRUE(handle_a);
+  ASSERT_TRUE(handle_b);
+
+  // Handles are notified in an unspecified order, so whichever handle is closed
+  // first destroys the other, which is still active.
+  handle_a->set_closed_callback([&handle_b] { handle_b.reset(); });
+  handle_b->set_closed_callback([&handle_a] { handle_a.reset(); });
+
+  test_device()->Disconnect(kAddress0);
+  RunUntilIdle();
+
+  // Whichever closed callback ran first destroyed the other handle.
+  EXPECT_TRUE((handle_a == nullptr) ^ (handle_b == nullptr));
+  EXPECT_TRUE(connected_peers().empty());
+}
+
+// Regression test for b/525209445.
+TEST_F(LowEnergyConnectionManagerTest,
+       DisconnectEventDoesNotNotifyHandleReleasedByClosedCallback) {
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  std::unique_ptr<LowEnergyConnectionHandle> handle_a;
+  std::unique_ptr<LowEnergyConnectionHandle> handle_b;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&handle_a](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        handle_a = std::move(result).value();
+      },
+      kConnectionOptions);
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&handle_b](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        handle_b = std::move(result).value();
+      },
+      kConnectionOptions);
+  RunUntilIdle();
+  ASSERT_TRUE(handle_a);
+  ASSERT_TRUE(handle_b);
+
+  // Handles are notified in an unspecified order, so whichever handle is closed
+  // first releases the other. A released handle must not be notified.
+  int closed_count = 0;
+  handle_a->set_closed_callback([&closed_count, &handle_b] {
+    closed_count++;
+    ASSERT_TRUE(handle_b->active());
+    handle_b->Release();
+  });
+  handle_b->set_closed_callback([&closed_count, &handle_a] {
+    closed_count++;
+    ASSERT_TRUE(handle_a->active());
+    handle_a->Release();
+  });
+
+  test_device()->Disconnect(kAddress0);
+  RunUntilIdle();
+
+  EXPECT_EQ(1, closed_count);
+  EXPECT_FALSE(handle_a->active());
+  EXPECT_FALSE(handle_b->active());
+}
+
 TEST_F(LowEnergyConnectionManagerTest, DisconnectAfterRefsReleased) {
   auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
   test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));

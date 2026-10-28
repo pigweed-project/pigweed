@@ -115,6 +115,7 @@ LowEnergyConnection::LowEnergyConnection(
         return static_cast<int64_t>(refs.size());
       }),
       weak_self_(this),
+      weak_self_for_refs_(this),
       weak_delegate_(this) {
   PW_CHECK(peer_.is_alive());
   PW_CHECK(link_);
@@ -154,14 +155,27 @@ LowEnergyConnection::~LowEnergyConnection() {
   // Notify all active references that the link is gone. This will
   // synchronously notify all refs.
   CloseRefs();
+
+  // All handles are now inactive and can no longer call back into this
+  // connection.
+  weak_self_for_refs_.InvalidatePtrs();
 }
 
 std::unique_ptr<bt::gap::LowEnergyConnectionHandle>
 LowEnergyConnection::AddRef() {
   auto self = GetWeakPtr();
-  auto release_cb = [self](LowEnergyConnectionHandle* handle) {
+  auto self_for_refs = weak_self_for_refs_.GetWeakPtr();
+  auto release_cb = [self, self_for_refs](LowEnergyConnectionHandle* handle) {
     if (self.is_alive()) {
       self->conn_mgr_->ReleaseReference(handle);
+      return;
+    }
+    // |self| is invalidated at the start of ~LowEnergyConnection, after this
+    // connection has been removed from |conn_mgr_|. If |self_for_refs| is still
+    // alive, a closed callback run by CloseRefs() released a sibling handle.
+    // Drop it so that CloseRefs() does not visit it after it is freed.
+    if (self_for_refs.is_alive()) {
+      self_for_refs->DropRef(handle);
     }
   };
   auto accept_cis_cb = [self](iso::CigCisIdentifier id,
@@ -794,11 +808,14 @@ void LowEnergyConnection::OnGattServicesResult(att::Result<> status,
 }
 
 void LowEnergyConnection::CloseRefs() {
-  for (auto* ref : *refs_.Mutable()) {
+  // A closed callback may release or destroy other handles, which removes them
+  // from |refs_| (see AddRef()). Remove each handle before notifying it so that
+  // iteration is not invalidated and released handles are never visited.
+  while (!refs_->empty()) {
+    LowEnergyConnectionHandle* ref = *refs_->begin();
+    refs_.Mutable()->erase(ref);
     ref->MarkClosed();
   }
-
-  refs_.Mutable()->clear();
 }
 
 void LowEnergyConnection::OnPairingComplete(sm::Result<> status) {

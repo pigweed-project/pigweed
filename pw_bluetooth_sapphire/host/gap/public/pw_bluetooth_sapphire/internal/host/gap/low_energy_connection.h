@@ -410,6 +410,10 @@ class LowEnergyConnection final : public sm::Delegate {
   std::optional<GenericAccessClient> gap_service_client_;
 
   WeakSelf<LowEnergyConnection> weak_self_;
+  // Vended only to connection handles so that handles released during
+  // CloseRefs() can still be dropped from |refs_| after |weak_self_| has been
+  // invalidated. Explicitly invalidated at the end of the destructor body.
+  WeakSelf<LowEnergyConnection> weak_self_for_refs_;
   WeakSelf<sm::Delegate> weak_delegate_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(LowEnergyConnection);
