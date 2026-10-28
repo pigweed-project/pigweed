@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -471,11 +472,6 @@ func (m *MockGitRunner) WithCommit(msg string) *MockGitRunner {
 	return m
 }
 
-// WithCleanStatus configures git status --porcelain to report a clean working tree.
-func (m *MockGitRunner) WithCleanStatus() *MockGitRunner {
-	return m.OnCommand("status --porcelain", "")
-}
-
 // NewMockGit creates a MockGitRunner, registers it with SetMockGit, and returns it.
 func NewMockGit(t *testing.T) *MockGitRunner {
 	t.Helper()
@@ -485,15 +481,6 @@ func NewMockGit(t *testing.T) *MockGitRunner {
 	}
 	SetMockGit(t, runner)
 	return runner
-}
-
-func (m *MockGitRunner) LastCall() string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.Calls) == 0 {
-		return ""
-	}
-	return m.Calls[len(m.Calls)-1]
 }
 
 // LastCommitMessage returns the message passed via -F or -m to the most recent
@@ -690,6 +677,7 @@ func SetAuthResolvers(r AuthResolvers) {
 // environment can't leak into a test.
 var hermeticAuthEnvVars = []string{
 	"GH_ISH_AUTH_MODE",
+	// Removed variable; cleared so a stale export doesn't fail every test.
 	"GH_ISH_AUTH_METHOD",
 	"GERRIT_TOKEN",
 	"GHISH_LUCI_TOKEN",
@@ -721,6 +709,14 @@ func failClosedAuthResolvers() AuthResolvers {
 	return r
 }
 
+// WithHermeticAuth clears the credential environment variables, resets auth
+// caches, and installs fail-closed tool lookup, the production Gerrit and Issue
+// Tracker token resolvers, and stub LUCI, Android Build, and quota-project
+// resolvers (overridden by non-nil fields in overrides). It restores the
+// previous resolvers and clears auth caches on test cleanup.
+//
+// A test that assigns LookPathFn directly, rather than through this helper,
+// must also call ResetAuthTokenCaches.
 // hermeticAuthActive reports whether WithHermeticAuth is currently active in
 // the running test, so NewMockGerritServer does not clobber resolvers installed
 // by an earlier WithHermeticAuth call.
@@ -855,19 +851,35 @@ func (s *MockGerritServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		Header: r.Header.Clone(),
 	})
 
-	// Match route (in registered order), normalizing optional /a prefix
-	var matchedHandler http.HandlerFunc
+	var matchedHandler, wildcardHandler http.HandlerFunc
+	bestWildcardLen := -1
 	reqPath := strings.TrimPrefix(r.URL.Path, "/a")
-	for _, route := range s.routes {
+	for i := len(s.routes) - 1; i >= 0; i-- {
+		route := s.routes[i]
 		if route.Method != "" && route.Method != r.Method {
 			continue
 		}
-		routePath := strings.TrimPrefix(route.Path, "/a")
-		matchGlob, _ := path.Match(routePath, reqPath)
-		if routePath == reqPath || matchGlob || (strings.HasSuffix(routePath, "*") && strings.HasPrefix(reqPath, strings.TrimSuffix(routePath, "*"))) {
-			matchedHandler = route.Handler
-			break
+		p := strings.TrimPrefix(route.Path, "/a")
+		if !strings.ContainsAny(p, "*?[") {
+			if p == reqPath {
+				matchedHandler = route.Handler
+				break
+			}
+			continue
 		}
+		litLen := len(strings.ReplaceAll(p, "*", ""))
+		if matched, _ := path.Match(p, reqPath); matched {
+			litLen += 1000
+		} else if prefix, ok := strings.CutSuffix(p, "*"); !ok || !strings.HasPrefix(reqPath, prefix) {
+			continue
+		}
+		if litLen > bestWildcardLen {
+			wildcardHandler = route.Handler
+			bestWildcardLen = litLen
+		}
+	}
+	if matchedHandler == nil {
+		matchedHandler = wildcardHandler
 	}
 	fallbackStatus := s.fallbackStatus
 	fallbackBody := s.fallbackBody
@@ -886,6 +898,15 @@ func (s *MockGerritServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // On registers a custom handler for a method and path.
+//
+// Route matching strips any leading "/a" prefix and selects routes in the
+// following order of precedence:
+//  1. Exact path match (later registrations override earlier ones).
+//  2. Single-segment glob match via path.Match (later registrations win ties,
+//     and longer literal lengths take precedence).
+//  3. Multi-segment prefix wildcard ending in a trailing "*" (longer literal
+//     prefixes take precedence; "*" in the middle of a path only matches within
+//     a single path segment via path.Match).
 func (s *MockGerritServer) On(method, path string, handler http.HandlerFunc) *MockGerritServer {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -977,42 +998,6 @@ func (s *MockGerritServer) LastRequest() *MockRequest {
 	return &req
 }
 
-// RequestBudget specifies the expected Gerrit REST and Buildbucket pRPC request
-// counts for a single command invocation.
-type RequestBudget struct {
-	Gerrit      int
-	Buildbucket int
-}
-
-// AssertRequestBudget fails if the recorded Gerrit or Buildbucket request counts
-// do not match b, or if any identical request was sent more than once.
-func (s *MockGerritServer) AssertRequestBudget(t *testing.T, b RequestBudget) {
-	t.Helper()
-	reqs := s.Requests()
-	var gerritReqs, bbReqs int
-	seen := make(map[string]int, len(reqs))
-	var summary []string
-	for _, r := range reqs {
-		if strings.HasPrefix(r.Path, "/prpc/") {
-			bbReqs++
-		} else {
-			gerritReqs++
-		}
-		key := r.Method + " " + r.Path + "?" + r.URL.RawQuery + " " + string(r.Body)
-		seen[key]++
-		summary = append(summary, fmt.Sprintf("  %s %s?%s", r.Method, r.Path, r.URL.RawQuery))
-	}
-	if gerritReqs != b.Gerrit || bbReqs != b.Buildbucket {
-		t.Errorf("request budget mismatch: got gerrit=%d (want %d), buildbucket=%d (want %d)\nrequests:\n%s",
-			gerritReqs, b.Gerrit, bbReqs, b.Buildbucket, strings.Join(summary, "\n"))
-	}
-	for _, k := range slices.Sorted(maps.Keys(seen)) {
-		if seen[k] > 1 {
-			t.Errorf("duplicate request (%dx): %s", seen[k], k)
-		}
-	}
-}
-
 // -----------------------------------------------------------------------------
 // Declarative Gerrit Fixtures
 // -----------------------------------------------------------------------------
@@ -1080,34 +1065,107 @@ func WithChangeID(changeID string) func(map[string]any) {
 	}
 }
 
+func ensureMockRevision(ch map[string]any, revName string) map[string]any {
+	revs, ok := ch["revisions"].(map[string]any)
+	if !ok {
+		revs = make(map[string]any)
+		ch["revisions"] = revs
+	}
+	revMap, ok := revs[revName].(map[string]any)
+	if !ok {
+		revMap = map[string]any{}
+		revs[revName] = revMap
+	}
+	return revMap
+}
+
+// setCurrentMockRevision updates current_revision on ch and carries forward any
+// existing commit metadata from the previous current_revision if the target
+// revision does not already define one, keeping WithCommitMessage order-independent.
+func setCurrentMockRevision(ch map[string]any, revName string) map[string]any {
+	prevRev, _ := ch["current_revision"].(string)
+	var prevCommit any
+	if prevRev != "" && prevRev != revName {
+		if revs, ok := ch["revisions"].(map[string]any); ok {
+			if prevMap, ok := revs[prevRev].(map[string]any); ok {
+				prevCommit = prevMap["commit"]
+			}
+		}
+	}
+	ch["current_revision"] = revName
+	revMap := ensureMockRevision(ch, revName)
+	if prevCommit != nil {
+		if _, ok := revMap["commit"]; !ok {
+			revMap["commit"] = prevCommit
+		}
+	}
+	return revMap
+}
+
 // WithCurrentPatchset configures current_revision and revisions map.
 func WithCurrentPatchset(patchset int) func(map[string]any) {
 	return func(ch map[string]any) {
 		revName := fmt.Sprintf("rev%d", patchset)
-		ch["current_revision"] = revName
-		revs, ok := ch["revisions"].(map[string]any)
-		if !ok {
-			revs = make(map[string]any)
-		}
-		revs[revName] = map[string]any{"_number": patchset}
-		ch["revisions"] = revs
+		revMap := setCurrentMockRevision(ch, revName)
+		revMap["_number"] = patchset
 	}
 }
 
-// OnDefaultChange registers GET /changes/<number>* returning DefaultMockChange.
+// WithCommitMessage embeds commit.message on the mock change's current_revision.
+// It may be passed before or after WithCurrentPatchset / WithPatchsetKind.
+func WithCommitMessage(msg string) func(map[string]any) {
+	return func(ch map[string]any) {
+		revName, _ := ch["current_revision"].(string)
+		if revName == "" {
+			revName = "rev1"
+			ch["current_revision"] = revName
+		}
+		revMap := ensureMockRevision(ch, revName)
+		if _, ok := revMap["_number"]; !ok {
+			revMap["_number"] = 1
+		}
+		revMap["commit"] = map[string]any{"message": msg}
+	}
+}
+
+// WithPatchsetKind adds or updates rev<patchset> in revisions with _number and
+// kind, and updates current_revision if patchset is the highest revision number.
+func WithPatchsetKind(patchset int, kind string) func(map[string]any) {
+	return func(ch map[string]any) {
+		revName := fmt.Sprintf("rev%d", patchset)
+		revMap := ensureMockRevision(ch, revName)
+		revMap["_number"] = patchset
+		revMap["kind"] = kind
+		revs := ch["revisions"].(map[string]any)
+
+		maxNum := -1
+		maxRev := ""
+		for rName, raw := range revs {
+			if rMap, ok := raw.(map[string]any); ok {
+				if num, ok := rMap["_number"].(int); ok && num > maxNum {
+					maxNum = num
+					maxRev = rName
+				}
+			}
+		}
+		if maxRev != "" {
+			setCurrentMockRevision(ch, maxRev)
+		}
+	}
+}
+
+// OnDefaultChange registers GET /changes/<number> and /changes/<number>/detail returning DefaultMockChange.
 func (s *MockGerritServer) OnDefaultChange(number any, opts ...func(map[string]any)) *MockGerritServer {
 	num := 1
-	var pattern string
-	switch v := number.(type) {
-	case int:
+	if v, ok := number.(int); ok {
 		num = v
-		pattern = fmt.Sprintf("/changes/%d*", v)
-	case string:
-		pattern = fmt.Sprintf("/changes/%s*", v)
 	}
 	ch := DefaultMockChange(num, opts...)
-	if cID, ok := ch["change_id"].(string); ok && cID != "" {
-		s.OnJSON("GET", fmt.Sprintf("/changes/%s*", cID), http.StatusOK, ch)
+	if v, ok := number.(string); ok && strings.HasPrefix(v, "I") && ch["change_id"] == "I1" {
+		ch["change_id"] = v
+		if ch["id"] == "pigweed~main~I1" {
+			ch["id"] = "pigweed~main~" + v
+		}
 	}
 	s.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
 		if qs := r.URL.Query()["q"]; len(qs) > 1 {
@@ -1118,71 +1176,63 @@ func (s *MockGerritServer) OnDefaultChange(number any, opts ...func(map[string]a
 		}
 		s.RespondJSON(w, http.StatusOK, []map[string]any{ch})
 	})
+	if cID, ok := ch["change_id"].(string); ok && cID != "" {
+		s.OnJSON("GET", fmt.Sprintf("/changes/%s", cID), http.StatusOK, ch)
+		s.OnJSON("GET", fmt.Sprintf("/changes/%s/detail", cID), http.StatusOK, ch)
+		s.OnJSON("GET", fmt.Sprintf("/changes/*~%s", cID), http.StatusOK, ch)
+		s.OnJSON("GET", fmt.Sprintf("/changes/*~%s/detail", cID), http.StatusOK, ch)
+	}
 	if _, ok := number.(int); ok {
-		// Registered ahead of the wildcard below, which would otherwise
-		// answer GET .../flows and .../is-flows-enabled with the change
-		// itself. Hosts in tests have flows enabled unless a test says
-		// otherwise with OnFlowsEnabled.
 		s.OnJSON("GET", fmt.Sprintf("/changes/%d/flows", num), http.StatusOK, []any{})
 		s.OnJSON("GET", fmt.Sprintf("/changes/%d/is-flows-enabled", num), http.StatusOK, map[string]any{"enabled": true})
 	}
-	return s.OnJSON("GET", pattern, http.StatusOK, ch)
+	s.OnJSON("GET", fmt.Sprintf("/changes/%v/detail", number), http.StatusOK, ch)
+	return s.OnJSON("GET", fmt.Sprintf("/changes/%v", number), http.StatusOK, ch)
 }
 
 // OnFlowsEnabled registers GET /changes/<number>/is-flows-enabled responding
-// with status and, for a 2xx status, {"enabled": enabled}. It takes priority
-// over routes registered earlier, including OnDefaultChange's.
+// with status and, for a 2xx status, {"enabled": enabled}.
 func (s *MockGerritServer) OnFlowsEnabled(number int, status int, enabled bool) *MockGerritServer {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	route := MockRoute{
-		Method: "GET",
-		Path:   fmt.Sprintf("/changes/%d/is-flows-enabled", number),
-		Handler: func(w http.ResponseWriter, r *http.Request) {
-			if status < 200 || status > 299 {
-				w.WriteHeader(status)
-				return
-			}
-			s.RespondJSON(w, status, map[string]any{"enabled": enabled})
-		},
-	}
-	s.routes = append([]MockRoute{route}, s.routes...)
-	return s
+	return s.On("GET", fmt.Sprintf("/changes/%d/is-flows-enabled", number), func(w http.ResponseWriter, r *http.Request) {
+		if status < 200 || status > 299 {
+			w.WriteHeader(status)
+			return
+		}
+		s.RespondJSON(w, status, map[string]any{"enabled": enabled})
+	})
 }
 
-// OnFlows registers GET /changes/<number>/flows returning flows. It takes
-// priority over routes registered earlier, including OnDefaultChange's.
+// OnFlows registers GET /changes/<number>/flows returning flows.
 func (s *MockGerritServer) OnFlows(number int, flows ...FlowInfo) *MockGerritServer {
 	if flows == nil {
 		flows = []FlowInfo{}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	route := MockRoute{
-		Method: "GET",
-		Path:   fmt.Sprintf("/changes/%d/flows", number),
-		Handler: func(w http.ResponseWriter, r *http.Request) {
-			s.RespondJSON(w, http.StatusOK, flows)
-		},
-	}
-	s.routes = append([]MockRoute{route}, s.routes...)
-	return s
+	return s.OnJSON("GET", fmt.Sprintf("/changes/%d/flows", number), http.StatusOK, flows)
 }
 
-// OnCommitMessage registers GET /changes/<number>/revisions/current/commit returning a commit message.
-func (s *MockGerritServer) OnCommitMessage(number int, message string) *MockGerritServer {
-	return s.OnJSON("GET", fmt.Sprintf("/changes/%d/revisions/current/commit", number), http.StatusOK, map[string]any{
-		"message": message,
-	})
+// OnComments registers GET /changes/<number>/comments returning comments.
+func (s *MockGerritServer) OnComments(number any, comments any) *MockGerritServer {
+	if comments == nil {
+		comments = map[string][]CommentInfo{}
+	}
+	return s.OnJSON("GET", fmt.Sprintf("/changes/%v/comments", number), http.StatusOK, comments)
+}
+
+// OnDrafts registers GET /changes/<number>/drafts returning drafts.
+func (s *MockGerritServer) OnDrafts(number any, drafts any) *MockGerritServer {
+	if drafts == nil {
+		drafts = map[string][]CommentInfo{}
+	}
+	return s.OnJSON("GET", fmt.Sprintf("/changes/%v/drafts", number), http.StatusOK, drafts)
 }
 
 // OnReview registers POST /changes/<number>/revisions/current/review.
-func (s *MockGerritServer) OnReview(number int, payload ...any) *MockGerritServer {
+func (s *MockGerritServer) OnReview(number any, payload ...any) *MockGerritServer {
 	var resp any = map[string]any{}
 	if len(payload) > 0 {
 		resp = payload[0]
 	}
-	return s.OnJSON("POST", fmt.Sprintf("/changes/%d/revisions/current/review", number), http.StatusOK, resp)
+	return s.OnJSON("POST", fmt.Sprintf("/changes/%v/revisions/current/review", number), http.StatusOK, resp)
 }
 
 // OnAccountSelf registers GET /accounts/self returning the specified account ID.
@@ -1213,11 +1263,6 @@ func FakeBuild(id, builder, status string, opts ...func(*bbBuild)) bbBuild {
 		opt(&b)
 	}
 	return b
-}
-
-// WithCreateTime sets the createTime RFC3339 timestamp on a fake build.
-func WithCreateTime(createTime string) func(*bbBuild) {
-	return func(b *bbBuild) { b.CreateTime = createTime }
 }
 
 // WithBucket sets the bucket for a fake build.
@@ -1281,9 +1326,47 @@ func (s *MockGerritServer) OnSearchBuilds(builds ...bbBuild) *MockGerritServer {
 	})
 }
 
-// OnSearchBuildsStatus registers a SearchBuilds mock returning a custom HTTP status code and body.
-func (s *MockGerritServer) OnSearchBuildsStatus(status int, body string) *MockGerritServer {
-	return s.OnString("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", status, "text/plain", body)
+// OnSearchBuildsSequence registers a SearchBuilds mock that returns each slice
+// in polls sequentially across requests (repeating the final slice once
+// exhausted). Requests may arrive concurrently, so the poll counter is atomic.
+func (s *MockGerritServer) OnSearchBuildsSequence(polls ...[]bbBuild) *MockGerritServer {
+	var count atomic.Int64
+	return s.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		idx := int(count.Add(1) - 1)
+		if idx >= len(polls) {
+			idx = len(polls) - 1
+		}
+		var builds []bbBuild
+		if idx >= 0 && len(polls) > 0 {
+			builds = polls[idx]
+		}
+		if builds == nil {
+			builds = []bbBuild{}
+		}
+		s.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	})
+}
+
+// OnSearchBuildsByPatchset registers a SearchBuilds mock that dispatches by
+// the requested Gerrit patchset number in the Buildbucket predicate.
+func (s *MockGerritServer) OnSearchBuildsByPatchset(byPS map[int][]bbBuild) *MockGerritServer {
+	return s.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.t.Errorf("OnSearchBuildsByPatchset: failed to decode request body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var ps int
+		if len(req.Predicate.GerritChanges) > 0 {
+			ps = req.Predicate.GerritChanges[0].Patchset
+		}
+		builds := byPS[ps]
+		if builds == nil {
+			builds = []bbBuild{}
+		}
+		s.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	})
 }
 
 // FakeBuildDetails creates a LUCIBuildDetails fixture for testing.
@@ -1306,11 +1389,6 @@ func FakeBuildDetails(id, builder, status string, opts ...func(*LUCIBuildDetails
 // WithBuildSummary sets the summary markdown on a build details fixture.
 func WithBuildSummary(summary string) func(*LUCIBuildDetails) {
 	return func(d *LUCIBuildDetails) { d.SummaryMarkdown = summary }
-}
-
-// WithCancellation sets the cancellation markdown on a build details fixture.
-func WithCancellation(summary string) func(*LUCIBuildDetails) {
-	return func(d *LUCIBuildDetails) { d.CancellationMarkdown = summary }
 }
 
 // WithSteps sets the steps on a build details fixture.
@@ -1838,4 +1916,136 @@ func applyIssueModify(issue *BuganizerIssue, req *ModifyIssueRequest) {
 			}
 		}
 	}
+}
+
+func TestMockGerritServer_HelpersAndRoutePrecedence(t *testing.T) {
+	t.Run("route precedence and /a prefix stripping", func(t *testing.T) {
+		s := NewMockGerritServer(t)
+		s.OnString("GET", "/changes/*", http.StatusOK, "text/plain", "short-prefix")
+		s.OnString("GET", "/changes/100/revisions/*", http.StatusOK, "text/plain", "longer-prefix")
+		s.OnString("GET", "/changes/*/detail", http.StatusOK, "text/plain", "glob-early")
+		s.OnString("GET", "/changes/*/detail", http.StatusOK, "text/plain", "glob-late")
+		s.OnString("GET", "/changes/100/detail", http.StatusOK, "text/plain", "exact-early")
+		s.OnString("GET", "/a/changes/100/detail", http.StatusOK, "text/plain", "exact-late")
+		s.OnString("GET", "/changes/*", http.StatusOK, "text/plain", "trailing-wildcard-after-exact")
+
+		getBody := func(reqPath string) string {
+			t.Helper()
+			resp, err := s.Server.Client().Get(s.URL + reqPath)
+			if err != nil {
+				t.Fatalf("GET %s error: %v", reqPath, err)
+			}
+			defer resp.Body.Close()
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("ReadAll(%s) error: %v", reqPath, err)
+			}
+			return string(b)
+		}
+
+		// Exact match beats both earlier and later wildcard routes, and later
+		// exact registration overrides earlier exact registration across /a.
+		if got := getBody("/changes/100/detail"); got != "exact-late" {
+			t.Errorf("GET /changes/100/detail = %q, want exact-late", got)
+		}
+		if got := getBody("/a/changes/100/detail"); got != "exact-late" {
+			t.Errorf("GET /a/changes/100/detail = %q, want exact-late", got)
+		}
+		// Single-segment path.Match glob beats multi-segment trailing-* prefix,
+		// and later identical glob registration wins (reverse-order scan).
+		if got := getBody("/changes/200/detail"); got != "glob-late" {
+			t.Errorf("GET /changes/200/detail = %q, want glob-late", got)
+		}
+		// Longer literal prefix beats shorter prefix.
+		if got := getBody("/changes/100/revisions/rev1/files"); got != "longer-prefix" {
+			t.Errorf("GET /changes/100/revisions/rev1/files = %q, want longer-prefix", got)
+		}
+	})
+
+	t.Run("WithPatchsetKind and WithCommitMessage order independence", func(t *testing.T) {
+		ch := DefaultMockChange(42,
+			WithCommitMessage("Subject\n\nChange-Id: I42"),
+			WithPatchsetKind(1, "REWORK"),
+			WithPatchsetKind(3, "TRIVIAL_REBASE"),
+			WithPatchsetKind(2, "NO_CODE_CHANGE"),
+		)
+		if got := ch["current_revision"]; got != "rev3" {
+			t.Errorf("current_revision = %v, want rev3", got)
+		}
+		revs := ch["revisions"].(map[string]any)
+		rev3 := revs["rev3"].(map[string]any)
+		if got := rev3["kind"]; got != "TRIVIAL_REBASE" {
+			t.Errorf("rev3.kind = %v, want TRIVIAL_REBASE", got)
+		}
+		commitMap, ok := rev3["commit"].(map[string]any)
+		if !ok || commitMap["message"] != "Subject\n\nChange-Id: I42" {
+			t.Errorf("rev3.commit = %#v, want preserved commit message", rev3["commit"])
+		}
+	})
+
+	t.Run("OnSearchBuildsSequence", func(t *testing.T) {
+		s := NewMockGerritServer(t)
+		s.OnSearchBuildsSequence(
+			[]bbBuild{FakeBuild("1", "b1", "STARTED")},
+			[]bbBuild{FakeBuild("1", "b1", "SUCCESS")},
+		)
+		for i, wantStatus := range []string{"STARTED", "SUCCESS", "SUCCESS"} {
+			resp, err := s.Server.Client().Post(s.URL+"/prpc/buildbucket.v2.Builds/SearchBuilds", "application/json", strings.NewReader(`{}`))
+			if err != nil {
+				t.Fatalf("poll %d error: %v", i, err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			var decoded bbSearchBuildsResponse
+			if err := json.Unmarshal(stripXSSIPrefix(raw), &decoded); err != nil {
+				t.Fatalf("poll %d decode error: %v", i, err)
+			}
+			if len(decoded.Builds) != 1 || decoded.Builds[0].Status != wantStatus {
+				t.Errorf("poll %d builds = %+v, want status %q", i, decoded.Builds, wantStatus)
+			}
+		}
+	})
+
+	t.Run("OnSearchBuildsByPatchset", func(t *testing.T) {
+		s := NewMockGerritServer(t)
+		s.OnSearchBuildsByPatchset(map[int][]bbBuild{
+			2: {FakeBuild("20", "linux", "SUCCESS")},
+		})
+
+		postSearch := func(body string) (int, []bbBuild) {
+			t.Helper()
+			resp, err := s.Server.Client().Post(s.URL+"/prpc/buildbucket.v2.Builds/SearchBuilds", "application/json", strings.NewReader(body))
+			if err != nil {
+				t.Fatalf("Post error: %v", err)
+			}
+			defer resp.Body.Close()
+			raw, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				return resp.StatusCode, nil
+			}
+			var decoded bbSearchBuildsResponse
+			if err := json.Unmarshal(stripXSSIPrefix(raw), &decoded); err != nil {
+				t.Fatalf("decode error: %v", err)
+			}
+			return resp.StatusCode, decoded.Builds
+		}
+
+		status, builds := postSearch(`{"predicate":{"gerritChanges":[{"patchset":2}]}}`)
+		if status != http.StatusOK || len(builds) != 1 || builds[0].ID != "20" {
+			t.Errorf("patchset 2 = (%d, %+v), want 200 with build 20", status, builds)
+		}
+		status, builds = postSearch(`{"predicate":{"gerritChanges":[{"patchset":99}]}}`)
+		if status != http.StatusOK || len(builds) != 0 {
+			t.Errorf("unmatched patchset = (%d, %+v), want 200 with empty slice", status, builds)
+		}
+
+		origT := s.t
+		fakeT := &testing.T{}
+		s.t = fakeT
+		status, _ = postSearch(`{malformed-json`)
+		s.t = origT
+		if status != http.StatusBadRequest || !fakeT.Failed() {
+			t.Errorf("malformed JSON = (status %d, failed=%v), want (400, true)", status, fakeT.Failed())
+		}
+	})
 }

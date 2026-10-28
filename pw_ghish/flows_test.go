@@ -697,9 +697,8 @@ func TestCreateScheduledSubmitFlow_DeleteFails(t *testing.T) {
 // no way to tell whether they would duplicate a schedule already in place.
 func TestCreateScheduledSubmitFlow_ListFails(t *testing.T) {
 	server := NewMockGerritServer(t)
-	// Registered first so it wins over OnDefaultChange's empty flow list.
-	server.OnString("GET", "/changes/123456/flows", http.StatusInternalServerError, "text/plain", "backend unavailable")
 	server.OnDefaultChange(123456, WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+	server.OnString("GET", "/changes/123456/flows", http.StatusInternalServerError, "text/plain", "backend unavailable")
 	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
 
 	chCtx := &ChangeContext{

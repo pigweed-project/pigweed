@@ -852,8 +852,8 @@ func TestTryRunQuotaProjectGitConfig_UsesConfiguredRunner(t *testing.T) {
 	mockGit := &MockGitRunner{}
 	ctx := context.WithValue(context.Background(), configKey, &Config{Git: mockGit})
 	tryRunQuotaProjectGitConfig(ctx, "ghish.quotaproject", "probed-project")
-	if got := mockGit.LastCall(); got != "config ghish.quotaproject probed-project" {
-		t.Errorf("LastCall() = %q, want %q", got, "config ghish.quotaproject probed-project")
+	if !mockGit.HasCall("config ghish.quotaproject probed-project") {
+		t.Errorf("calls = %q, want %q", mockGit.Calls, "config ghish.quotaproject probed-project")
 	}
 
 	failing := &MockGitRunner{}

@@ -26,7 +26,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,7 +38,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -264,10 +262,10 @@ func installKindSmokeGerrit(s *MockGerritServer, builds ...bbBuild) {
 		},
 	}
 	change := DefaultMockChange(KindSmokeChange, changeOpts...)
+	s.OnDefaultChange(KindSmokeChange, changeOpts...)
 	// Queries naming KindSmokeFreshChangeID find nothing, so `pr create`
 	// from a commit carrying it creates a new change; every other query
-	// finds change 12345, as OnDefaultChange's handler (registered after
-	// this one) would answer.
+	// finds change 12345, overriding OnDefaultChange's /changes/ handler.
 	s.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
 		qs := r.URL.Query()["q"]
 		found := []map[string]any{change}
@@ -289,8 +287,8 @@ func installKindSmokeGerrit(s *MockGerritServer, builds ...bbBuild) {
 		OnSearchBuilds(builds...).
 		OnJSON("GET", "/changes/12345/revisions/current/patch", http.StatusOK, `"`+base64.StdEncoding.EncodeToString([]byte(kindSmokePatch))+`"`).
 		OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{"/COMMIT_MSG": ok}).
-		OnJSON("GET", "/changes/*/comments", http.StatusOK, map[string][]gerrit.CommentInfo{}).
-		OnJSON("GET", "/changes/*/drafts", http.StatusOK, map[string][]gerrit.CommentInfo{}).
+		OnComments("*", nil).
+		OnDrafts("*", nil).
 		OnJSON("POST", "/changes/12345/abandon", http.StatusOK, DefaultMockChange(KindSmokeChange, append(changeOpts, WithStatus("ABANDONED"))...)).
 		OnJSON("POST", "/changes/12345/restore", http.StatusOK, DefaultMockChange(KindSmokeChange, changeOpts...)).
 		OnJSON("POST", "/changes/12345/ready", http.StatusOK, ok).
@@ -299,9 +297,7 @@ func installKindSmokeGerrit(s *MockGerritServer, builds ...bbBuild) {
 		OnJSON("PUT", "/changes/12345/topic", http.StatusOK, "smoke").
 		OnJSON("POST", "/changes/12345/revisions/current/cherrypick", http.StatusOK, DefaultMockChange(12346, WithBranch("release"))).
 		OnJSON("POST", "/changes/12345/revisions/*/cherrypick", http.StatusOK, DefaultMockChange(12346, WithBranch("release"))).
-		OnReview(KindSmokeChange).
-		OnJSON("POST", "/changes/12345/revisions/*/review", http.StatusOK, ok).
-		OnDefaultChange(KindSmokeChange, changeOpts...)
+		OnJSON("POST", "/changes/12345/revisions/*/review", http.StatusOK, ok)
 }
 
 // kindSmokePatch is the unified diff the mock serves for change 12345: two
@@ -481,27 +477,7 @@ func (f *KindSmokeFixture) ServeFailingBuild(t *testing.T) {
 			),
 		),
 	)
-	routes := []MockRoute{
-		{Method: "POST", Path: "/prpc/buildbucket.v2.Builds/SearchBuilds", Handler: func(w http.ResponseWriter, r *http.Request) {
-			s.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
-		}},
-		{Method: "POST", Path: "/prpc/buildbucket.v2.Builds/GetBuild", Handler: func(w http.ResponseWriter, r *http.Request) {
-			var req struct {
-				ID string `json:"id"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID != details.ID {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			s.RespondJSON(w, http.StatusOK, details)
-		}},
-		{Method: "GET", Path: "/logs/87654321002", Handler: func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/plain")
-			_, _ = w.Write([]byte("[1/2] compiling pw_feature/feature.cc\nFAILED: pw_feature/feature.cc.o\n"))
-		}},
-	}
-	// Ahead of the fixture's passing SearchBuilds route.
-	s.mu.Lock()
-	s.routes = append(routes, s.routes...)
-	s.mu.Unlock()
+	s.OnSearchBuilds(builds...).
+		OnGetBuild(map[string]*LUCIBuildDetails{details.ID: details}).
+		OnString("GET", "/logs/87654321002", http.StatusOK, "text/plain", "[1/2] compiling pw_feature/feature.cc\nFAILED: pw_feature/feature.cc.o\n")
 }
