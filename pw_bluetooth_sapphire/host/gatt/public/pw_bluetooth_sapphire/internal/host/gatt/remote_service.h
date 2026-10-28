@@ -137,6 +137,10 @@ class RemoteService final {
   // internal GATT UUID such as a service or characteristic declaration (the
   // callback will be invoked with an error in this case).
   //
+  // At most kMaxReadByTypeResults results (values and errors) are collected.
+  // If the peer returns more than that, the procedure is stopped and the
+  // callback is invoked with HostError::kTooManyResults and no results.
+  //
   // NOTE: The values returned may be truncated, as indicated by
   // ReadByTypeResult.maybe_truncated. ReadCharacteristic(),
   // ReadLongCharacteristic(), ReadDescriptor(), and ReadLongDescriptor() should
@@ -149,6 +153,25 @@ class RemoteService final {
   using ReadByTypeCallback =
       fit::function<void(att::Result<>, std::vector<ReadByTypeResult>)>;
   void ReadByType(const UUID& type, ReadByTypeCallback callback);
+
+  // The maximum number of results collected by a single ReadByType()
+  // procedure. This is a memory budget that bounds what a peer can make us
+  // allocate by returning a large number of matching attributes. Each result
+  // costs a ReadByTypeResult vector slot (16 bytes on 32-bit, 32 bytes on
+  // 64-bit), a heap-allocated DynamicByteBuffer (16 / 32 bytes) and the value,
+  // which is at most att::kMaxReadByTypeValueLength (253) bytes. The worst
+  // case is therefore ~143 KiB (32-bit) / ~159 KiB (64-bit), plus allocator
+  // overhead and vector growth slack.
+  //
+  // The FIDL servers have their own, lower caps for max-length values:
+  // fuchsia.bluetooth.gatt returns at most MAX_READ_BY_TYPE_RESULTS (189)
+  // results and fuchsia.bluetooth.gatt2 at most one channel message (64 KiB,
+  // i.e. fewer than 260 max-length values), and both report TOO_MANY_RESULTS
+  // beyond that. This limit is above those, so for FIDL clients it only fails
+  // reads that would have failed anyway (just sooner), except gatt2 reads of
+  // more than 512 small values. Real services expose far fewer attributes of
+  // one type.
+  static constexpr size_t kMaxReadByTypeResults = 512;
 
   // Sends a write request to the characteristic with the given identifier.
   //

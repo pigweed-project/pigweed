@@ -2631,6 +2631,155 @@ TEST_F(RemoteServiceManagerTest,
   EXPECT_EQ(ToResult(HostError::kPacketMalformed), *status);
 }
 
+TEST_F(RemoteServiceManagerTest, ReadByTypeSucceedsWithMaxReadByTypeResults) {
+  constexpr size_t kMaxResults = RemoteService::kMaxReadByTypeResults;
+  constexpr att::Handle kStartHandle = 1;
+  constexpr att::Handle kEndHandle = std::numeric_limits<att::Handle>::max();
+  constexpr att::Handle kLastValueHandle =
+      static_cast<att::Handle>(kStartHandle + kMaxResults - 1);
+  auto service = SetUpFakeService(ServiceData(
+      ServiceKind::PRIMARY, kStartHandle, kEndHandle, kTestServiceUuid1));
+
+  constexpr UUID kCharUuid(uint16_t{0xfefe});
+  const StaticByteBuffer kValue(0x01);
+  constexpr size_t kValuesPerResponse = 64;
+
+  fake_client()->set_read_by_type_request_callback(
+      [&](const UUID&, att::Handle start, att::Handle, auto callback) {
+        if (start > kLastValueHandle) {
+          callback(fit::error(Client::ReadByTypeError{
+              att::Error(att::ErrorCode::kAttributeNotFound), start}));
+          return;
+        }
+        std::vector<Client::ReadByTypeValue> values;
+        for (att::Handle handle = start;
+             handle <= kLastValueHandle && values.size() < kValuesPerResponse;
+             handle++) {
+          values.push_back({handle, kValue.view(), /*maybe_truncated=*/false});
+        }
+        callback(fit::ok(std::move(values)));
+      });
+
+  size_t callback_count = 0;
+  std::optional<att::Result<>> status;
+  std::vector<RemoteService::ReadByTypeResult> results;
+  service->ReadByType(kCharUuid, [&](att::Result<> cb_status, auto values) {
+    callback_count++;
+    status = cb_status;
+    results = std::move(values);
+  });
+
+  RunUntilIdle();
+  EXPECT_EQ(1u, callback_count);
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(fit::ok(), *status);
+  ASSERT_EQ(kMaxResults, results.size());
+  EXPECT_EQ(CharacteristicHandle(kStartHandle), results.front().handle);
+  EXPECT_EQ(CharacteristicHandle(kLastValueHandle), results.back().handle);
+}
+
+// Regression test for b/525207411.
+TEST_F(RemoteServiceManagerTest,
+       ReadByTypeFailsWhenResultsExceedMaxReadByTypeResults) {
+  constexpr size_t kMaxResults = RemoteService::kMaxReadByTypeResults;
+  constexpr att::Handle kStartHandle = 1;
+  constexpr att::Handle kEndHandle = std::numeric_limits<att::Handle>::max();
+  // One more matching attribute than the limit allows.
+  constexpr att::Handle kLastValueHandle =
+      static_cast<att::Handle>(kStartHandle + kMaxResults);
+  auto service = SetUpFakeService(ServiceData(
+      ServiceKind::PRIMARY, kStartHandle, kEndHandle, kTestServiceUuid1));
+
+  constexpr UUID kCharUuid(uint16_t{0xfefe});
+  const StaticByteBuffer kValue(0x01);
+  constexpr size_t kValuesPerResponse = 64;
+
+  fake_client()->set_read_by_type_request_callback(
+      [&](const UUID&, att::Handle start, att::Handle, auto callback) {
+        if (start > kLastValueHandle) {
+          ADD_FAILURE() << "Read continued past the result limit";
+          callback(fit::error(Client::ReadByTypeError{
+              att::Error(att::ErrorCode::kAttributeNotFound), start}));
+          return;
+        }
+        std::vector<Client::ReadByTypeValue> values;
+        for (att::Handle handle = start;
+             handle <= kLastValueHandle && values.size() < kValuesPerResponse;
+             handle++) {
+          values.push_back({handle, kValue.view(), /*maybe_truncated=*/false});
+        }
+        callback(fit::ok(std::move(values)));
+      });
+
+  size_t callback_count = 0;
+  std::optional<att::Result<>> status;
+  size_t result_count = 0;
+  service->ReadByType(kCharUuid, [&](att::Result<> cb_status, auto values) {
+    callback_count++;
+    status = cb_status;
+    result_count = values.size();
+  });
+
+  RunUntilIdle();
+  EXPECT_EQ(1u, callback_count);
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(ToResult(HostError::kTooManyResults), *status);
+  EXPECT_EQ(0u, result_count);
+}
+
+// Regression test for b/525207411.
+TEST_F(RemoteServiceManagerTest,
+       ReadByTypeFailsWhenErrorResultsExceedMaxReadByTypeResults) {
+  constexpr size_t kMaxResults = RemoteService::kMaxReadByTypeResults;
+  constexpr att::Handle kStartHandle = 1;
+  constexpr att::Handle kEndHandle = std::numeric_limits<att::Handle>::max();
+  // One more erroring attribute than the limit allows.
+  constexpr att::Handle kLastErrorHandle =
+      static_cast<att::Handle>(kStartHandle + kMaxResults);
+  auto service = SetUpFakeService(ServiceData(
+      ServiceKind::PRIMARY, kStartHandle, kEndHandle, kTestServiceUuid1));
+
+  constexpr UUID kCharUuid(uint16_t{0xfefe});
+
+  // Responses carry a single handle each, so complete requests from the loop
+  // below instead of from within the request to avoid deep recursion.
+  Client::ReadByTypeCallback pending_callback;
+  att::Handle pending_start = 0;
+  fake_client()->set_read_by_type_request_callback(
+      [&](const UUID&, att::Handle start, att::Handle, auto callback) {
+        pending_start = start;
+        pending_callback = std::move(callback);
+      });
+
+  size_t callback_count = 0;
+  std::optional<att::Result<>> status;
+  size_t result_count = 0;
+  service->ReadByType(kCharUuid, [&](att::Result<> cb_status, auto values) {
+    callback_count++;
+    status = cb_status;
+    result_count = values.size();
+  });
+
+  while (pending_callback) {
+    Client::ReadByTypeCallback callback = std::move(pending_callback);
+    pending_callback = nullptr;
+    if (pending_start > kLastErrorHandle) {
+      ADD_FAILURE() << "Read continued past the result limit";
+      callback(fit::error(Client::ReadByTypeError{
+          att::Error(att::ErrorCode::kAttributeNotFound), pending_start}));
+      continue;
+    }
+    callback(fit::error(Client::ReadByTypeError{
+        att::Error(att::ErrorCode::kReadNotPermitted), pending_start}));
+  }
+
+  RunUntilIdle();
+  EXPECT_EQ(1u, callback_count);
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(ToResult(HostError::kTooManyResults), *status);
+  EXPECT_EQ(0u, result_count);
+}
+
 TEST_F(RemoteServiceManagerTest, ReadByTypeReturnsErrorIfUuidIsInternal) {
   const std::array<UUID, 10> kInternalUuids = {
       types::kPrimaryService,

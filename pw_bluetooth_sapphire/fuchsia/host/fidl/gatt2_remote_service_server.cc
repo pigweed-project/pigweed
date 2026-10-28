@@ -214,6 +214,17 @@ void Gatt2RemoteServiceServer::ReadByType(::fuchsia::bluetooth::Uuid uuid,
                  bt_str(self->peer_id_));
           cb(fpromise::error(fbg::Error::INVALID_PARAMETERS));
           return;
+        } else if (status == ToResult(bt::HostError::kTooManyResults)) {
+          // RemoteService::ReadByType() fails with kTooManyResults when the
+          // peer returns more than RemoteService::kMaxReadByTypeResults
+          // results.
+          bt_log(INFO,
+                 "fidl",
+                 "%s: too many results (peer: %s)",
+                 func,
+                 bt_str(self->peer_id_));
+          cb(fpromise::error(fbg::Error::TOO_MANY_RESULTS));
+          return;
         } else if (status.is_error()) {
           cb(fpromise::error(fbg::Error::UNLIKELY_ERROR));
           return;

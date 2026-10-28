@@ -65,6 +65,11 @@ enum class HostError : uint8_t {
   // Write)
   kNotReliable,
 
+  // An operation produced more results than the host accepts (e.g. a peer
+  // returned more attributes than a GATT procedure collects). Unlike
+  // kOutOfMemory, this does not indicate an allocation failure.
+  kTooManyResults,
+
   // Generic error code. Use this only if another error code does not accurately
   // capture the failure condition.
   kFailed,

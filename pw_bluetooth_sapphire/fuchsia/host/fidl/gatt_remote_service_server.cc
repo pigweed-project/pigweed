@@ -304,6 +304,19 @@ void GattRemoteServiceServer::ReadByType(fuchsia::bluetooth::Uuid uuid,
             self->binding()->Close(ZX_ERR_INVALID_ARGS);
             return;
           }
+          if (status.error_value().is(bt::HostError::kTooManyResults)) {
+            // RemoteService::ReadByType() fails with kTooManyResults when the
+            // peer returns more than RemoteService::kMaxReadByTypeResults
+            // results.
+            bt_log(INFO,
+                   "fidl",
+                   "%s: too many results (peer: %s)",
+                   func,
+                   bt_str(self->peer_id_));
+            cb(fpromise::error(
+                fuchsia::bluetooth::gatt::Error::TOO_MANY_RESULTS));
+            return;
+          }
           cb(fpromise::error(
               fidl_helpers::GattErrorToFidl(status.error_value())));
           return;

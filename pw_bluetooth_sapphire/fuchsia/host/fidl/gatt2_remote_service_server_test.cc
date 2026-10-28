@@ -307,6 +307,31 @@ TEST_F(Gatt2RemoteServiceServerTest, ReadByTypeReturnsError) {
   EXPECT_EQ(fbg::Error::UNLIKELY_ERROR, err);
 }
 
+// An allocation failure is not reported as TOO_MANY_RESULTS.
+TEST_F(Gatt2RemoteServiceServerTest,
+       ReadByTypeOutOfMemoryReturnsUnlikelyError) {
+  constexpr bt::UUID kCharUuid(uint16_t{0xfefe});
+
+  size_t read_count = 0;
+  fake_client()->set_read_by_type_request_callback(
+      [&](const bt::UUID&, bt::att::Handle, bt::att::Handle, auto callback) {
+        ASSERT_EQ(0u, read_count++);
+        // bt::gatt::Client reports a PDU allocation failure this way.
+        callback(fit::error(bt::gatt::Client::ReadByTypeError{
+            bt::Error(bt::HostError::kOutOfMemory), std::nullopt}));
+      });
+
+  std::optional<fbg::RemoteService_ReadByType_Result> fidl_result;
+  service_proxy()->ReadByType(
+      fuchsia::bluetooth::Uuid{kCharUuid.value()},
+      [&](auto cb_result) { fidl_result = std::move(cb_result); });
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(fidl_result.has_value());
+  ASSERT_TRUE(fidl_result->is_err());
+  EXPECT_EQ(fbg::Error::UNLIKELY_ERROR, fidl_result->err());
+}
+
 TEST_F(Gatt2RemoteServiceServerTest, ReadByTypeInvalidUuid) {
   constexpr bt::UUID kCharUuid = bt::gatt::types::kCharacteristicDeclaration;
 
@@ -330,22 +355,28 @@ TEST_F(Gatt2RemoteServiceServerTest, ReadByTypeInvalidUuid) {
 
 TEST_F(Gatt2RemoteServiceServerTest, ReadByTypeTooManyResults) {
   constexpr bt::UUID kCharUuid(uint16_t{0xfefe});
-  const auto value =
-      bt::StaticByteBuffer(0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06);
+  constexpr size_t kValueSize = 150;
+  static_assert(kValueSize <= bt::att::kMaxReadByTypeValueLength);
+  bt::DynamicByteBuffer value(kValueSize);
+  value.Fill(0xAB);
+
+  // Return enough results that the value payloads alone exceed the channel
+  // limit (each encoded result is larger than its value payload), while
+  // staying within the number of results RemoteService::ReadByType() accepts,
+  // so that the FIDL message size limit is what fails the read:
+  //   (65536 / 150 + 1) * 150 = 437 * 150 = 65550 > 65536, and 437 <= 512.
+  constexpr size_t kValueCount =
+      static_cast<size_t>(ZX_CHANNEL_MAX_MSG_BYTES) / kValueSize + 1;
+  static_assert(kValueCount * kValueSize >
+                static_cast<size_t>(ZX_CHANNEL_MAX_MSG_BYTES));
+  static_assert(kValueCount <= bt::gatt::RemoteService::kMaxReadByTypeResults);
 
   size_t read_count = 0;
   fake_client()->set_read_by_type_request_callback([&](const bt::UUID& type,
                                                        bt::att::Handle start,
                                                        bt::att::Handle end,
                                                        auto callback) {
-    read_count++;
-
-    // Ensure that more results are received than can fit in a channel. Each
-    // result is larger than the value payload, so receiving as many values as
-    // will fit in a channel is guaranteed to fill the channel and then some.
-    const size_t max_value_count =
-        static_cast<size_t>(ZX_CHANNEL_MAX_MSG_BYTES) / value.size();
-    if (read_count == max_value_count) {
+    if (read_count++ == kValueCount) {
       callback(fit::error(bt::gatt::Client::ReadByTypeError{
           bt::att::Error(bt::att::ErrorCode::kAttributeNotFound), start}));
       return;
@@ -368,6 +399,55 @@ TEST_F(Gatt2RemoteServiceServerTest, ReadByTypeTooManyResults) {
       fuchsia::bluetooth::Uuid{kCharUuid.value()},
       [&](auto cb_result) { fidl_result = std::move(cb_result); });
   RunLoopUntilIdle();
+  // All values were read, and the read completed with kAttributeNotFound.
+  EXPECT_EQ(kValueCount + 1, read_count);
+  ASSERT_TRUE(fidl_result.has_value());
+  ASSERT_TRUE(fidl_result->is_err());
+  const auto& err = fidl_result->err();
+  EXPECT_EQ(fbg::Error::TOO_MANY_RESULTS, err);
+}
+
+// Regression test for b/525207411.
+TEST_F(Gatt2RemoteServiceServerTest,
+       ReadByTypeExceedingMaxReadByTypeResultsReturnsTooManyResults) {
+  constexpr bt::UUID kCharUuid(uint16_t{0xfefe});
+  const auto value = bt::StaticByteBuffer(0x01);
+
+  // Small values, so that the results would fit in a FIDL message if
+  // RemoteService::ReadByType() did not limit them.
+  constexpr size_t kValueCount =
+      bt::gatt::RemoteService::kMaxReadByTypeResults + 1;
+
+  size_t read_count = 0;
+  fake_client()->set_read_by_type_request_callback([&](const bt::UUID& type,
+                                                       bt::att::Handle start,
+                                                       bt::att::Handle end,
+                                                       auto callback) {
+    if (read_count++ == kValueCount) {
+      ADD_FAILURE() << "Read continued past the result limit";
+      callback(fit::error(bt::gatt::Client::ReadByTypeError{
+          bt::att::Error(bt::att::ErrorCode::kAttributeNotFound), start}));
+      return;
+    }
+
+    // Dispatch callback to prevent recursing too deep and breaking the stack.
+    (void)heap_dispatcher().Post(
+        [start, cb = std::move(callback), &value = value](
+            pw::async::Context /*ctx*/, pw::Status status) {
+          if (status.ok()) {
+            std::vector<bt::gatt::Client::ReadByTypeValue> values = {
+                {start, value.view(), /*maybe_truncated=*/false}};
+            cb(fit::ok(values));
+          }
+        });
+  });
+
+  std::optional<fbg::RemoteService_ReadByType_Result> fidl_result;
+  service_proxy()->ReadByType(
+      fuchsia::bluetooth::Uuid{kCharUuid.value()},
+      [&](auto cb_result) { fidl_result = std::move(cb_result); });
+  RunLoopUntilIdle();
+  EXPECT_EQ(kValueCount, read_count);
   ASSERT_TRUE(fidl_result.has_value());
   ASSERT_TRUE(fidl_result->is_err());
   const auto& err = fidl_result->err();

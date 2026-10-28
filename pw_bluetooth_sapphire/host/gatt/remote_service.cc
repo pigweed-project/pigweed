@@ -778,6 +778,17 @@ void RemoteService::ReadByTypeHelper(
           return;
         }
 
+        if (values_accum.size() >= kMaxReadByTypeResults) {
+          bt_log(WARN,
+                 "gatt",
+                 "ReadByType exceeded max results (%zu); aborting",
+                 kMaxReadByTypeResults);
+          deferred_cb = [&cb] {
+            cb(fit::error(Error(HostError::kTooManyResults)), /*values=*/{});
+          };
+          return;
+        }
+
         values_accum.push_back(
             RemoteService::ReadByTypeResult{CharacteristicHandle(error_handle),
                                             fit::error(error.protocol_error()),
@@ -807,6 +818,19 @@ void RemoteService::ReadByTypeHelper(
     // Client already checks for invalid response where status is success but no
     // values are returned.
     PW_CHECK(!values.empty());
+
+    // Fail the procedure rather than accumulating an unbounded number of
+    // peer-controlled results.
+    if (values.size() > kMaxReadByTypeResults - values_accum.size()) {
+      bt_log(WARN,
+             "gatt",
+             "ReadByType exceeded max results (%zu); aborting",
+             kMaxReadByTypeResults);
+      deferred_cb = [&cb] {
+        cb(fit::error(Error(HostError::kTooManyResults)), /*values=*/{});
+      };
+      return;
+    }
 
     // Convert and accumulate values.
     for (const auto& val : values) {

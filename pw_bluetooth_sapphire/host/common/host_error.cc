@@ -48,6 +48,8 @@ std::string HostErrorToString(HostError error) {
       return "insufficient security";
     case HostError::kNotReliable:
       return "not reliable";
+    case HostError::kTooManyResults:
+      return "too many results";
     case HostError::kFailed:
       return "failed";
   }
