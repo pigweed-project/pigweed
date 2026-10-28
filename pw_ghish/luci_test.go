@@ -1423,6 +1423,37 @@ func TestPartitionAndOrderBuilds(t *testing.T) {
 	}
 }
 
+func TestSelectVisibleBuilds(t *testing.T) {
+	var sixPassing []bbBuild
+	for i := 1; i <= 6; i++ {
+		sixPassing = append(sixPassing, FakeBuild(fmt.Sprintf("%d", i), fmt.Sprintf("pass-%d", i), "SUCCESS"))
+	}
+	failBuild := FakeBuild("99", "fail-1", "FAILURE")
+
+	tests := []struct {
+		name        string
+		builds      []bbBuild
+		showAll     bool
+		wantVisible int
+		wantOmitted string
+	}{
+		{name: "empty", builds: nil, showAll: false, wantVisible: 0, wantOmitted: ""},
+		{name: "five passing uncollapsed", builds: sixPassing[:5], showAll: false, wantVisible: 5, wantOmitted: ""},
+		{name: "six all-passing collapsed", builds: sixPassing, showAll: false, wantVisible: 0, wantOmitted: "All 6 checks passed (use --all to list)"},
+		{name: "six all-passing expanded", builds: sixPassing, showAll: true, wantVisible: 6, wantOmitted: ""},
+		{name: "mixed collapsed", builds: append([]bbBuild{failBuild}, sixPassing...), showAll: false, wantVisible: 1, wantOmitted: "6 passing checks omitted (use --all to list)"},
+		{name: "mixed expanded", builds: append([]bbBuild{failBuild}, sixPassing...), showAll: true, wantVisible: 7, wantOmitted: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			vis, omitted := selectVisibleBuilds(tc.builds, tc.showAll)
+			if len(vis) != tc.wantVisible || omitted != tc.wantOmitted {
+				t.Errorf("selectVisibleBuilds() = (%d builds, %q), want (%d builds, %q)", len(vis), omitted, tc.wantVisible, tc.wantOmitted)
+			}
+		})
+	}
+}
+
 func TestFormatBuildStepsVerbose_CollapsesMoreThanEightPassingSteps(t *testing.T) {
 	var steps []LUCIStep
 	for i := 1; i <= 9; i++ {

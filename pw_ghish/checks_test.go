@@ -2003,3 +2003,29 @@ func TestChecks_JSON_RejectsWatch(t *testing.T) {
 		}
 	}
 }
+
+func TestChecks_AllPassingCollapsedAndWatchExpanded(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345)
+	var builds []bbBuild
+	for i := 1; i <= 6; i++ {
+		builds = append(builds, FakeBuild(fmt.Sprintf("%d", i), fmt.Sprintf("pass-builder-%d", i), "SUCCESS"))
+	}
+	server.OnSearchBuilds(builds...)
+
+	collapsedOut, err := executeCommand(RootCmd, "pr", "checks", "12345")
+	if err != nil {
+		t.Fatalf("pr checks failed: %v\nOutput: %s", err, collapsedOut)
+	}
+	if !strings.Contains(collapsedOut, "All 6 checks passed (use --all to list)") || strings.Contains(collapsedOut, "pass-builder-1") {
+		t.Errorf("expected collapsed all-passing summary without individual rows, got:\n%s", collapsedOut)
+	}
+
+	watchOut, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "-i", "0")
+	if err != nil {
+		t.Fatalf("pr checks --watch failed: %v\nOutput: %s", err, watchOut)
+	}
+	if !strings.Contains(watchOut, "pass-builder-1") || !strings.Contains(watchOut, "pass-builder-6") {
+		t.Errorf("expected --watch to expand all 6 passing builders, got:\n%s", watchOut)
+	}
+}

@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -967,6 +968,19 @@ func PartitionAndOrderBuilds(builds []bbBuild) (nonPassing, passing []bbBuild) {
 	nonPassing = append(nonPassing, running...)
 	nonPassing = append(nonPassing, other...)
 	return nonPassing, passing
+}
+
+// selectVisibleBuilds partitions builds with failures first and collapses
+// passing builds beyond maxExpandedPassingChecks unless showAllPassing is set.
+func selectVisibleBuilds(builds []bbBuild, showAllPassing bool) (visible []bbBuild, omittedPassingLine string) {
+	nonPassingBuilds, passingBuilds := PartitionAndOrderBuilds(builds)
+	if !showAllPassing && len(passingBuilds) > maxExpandedPassingChecks {
+		if len(nonPassingBuilds) == 0 {
+			return nonPassingBuilds, fmt.Sprintf("All %d checks passed (use --all to list)", len(passingBuilds))
+		}
+		return nonPassingBuilds, fmt.Sprintf("%d passing checks omitted (use --all to list)", len(passingBuilds))
+	}
+	return slices.Concat(nonPassingBuilds, passingBuilds), ""
 }
 
 // formatCheckSummary returns a 1-line summary of checks status, highlighting failures.

@@ -779,17 +779,9 @@ Use --web (-w) to open checks in the browser.`,
 		var omittedPassingLine string
 		var failureClusters []string
 		if checksJSON == "" && checksTemplateStr == "" {
-			nonPassingBuilds, passingBuilds := PartitionAndOrderBuilds(displayedBuilds)
-			if !checksAll && !checksWatch && len(passingBuilds) > maxExpandedPassingChecks {
-				renderChecks = BuildCheckItems(nonPassingBuilds)
-				if len(nonPassingBuilds) == 0 {
-					omittedPassingLine = fmt.Sprintf("All %d checks passed (use --all to list)", len(passingBuilds))
-				} else {
-					omittedPassingLine = fmt.Sprintf("%d passing checks omitted (use --all to list)", len(passingBuilds))
-				}
-			} else {
-				renderChecks = BuildCheckItems(slices.Concat(nonPassingBuilds, passingBuilds))
-			}
+			var visibleBuilds []bbBuild
+			visibleBuilds, omittedPassingLine = selectVisibleBuilds(displayedBuilds, checksAll || checksWatch)
+			renderChecks = BuildCheckItems(visibleBuilds)
 			failureClusters = ClusterFailedBuilds(displayedBuilds)
 		}
 

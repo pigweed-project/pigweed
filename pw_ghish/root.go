@@ -17,7 +17,6 @@ package pw_ghish
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -524,11 +523,6 @@ func init() {
 	RootCmd.PersistentFlags().BoolVarP(&VerboseFlag, "verbose", "v", false, "Enable verbose (debug) logging")
 	RootCmd.PersistentFlags().StringVar(&ProfileFlag, "profile", "", "Project profile (pigweed, fuchsia, generic)")
 	RootCmd.PersistentFlags().StringVar(&AuthModeFlag, "auth-mode", "", "Authentication mode (auto, googler, community, none)")
-
-	flag.StringVar(&HostFlag, "host", "", "Gerrit host to connect to")
-	flag.BoolVar(&VerboseFlag, "verbose", false, "Enable verbose (debug) logging")
-	flag.StringVar(&ProfileFlag, "profile", "", "Project profile (pigweed, fuchsia, generic)")
-	flag.StringVar(&AuthModeFlag, "auth-mode", "", "Authentication mode (auto, googler, community, none)")
 }
 
 type rpcClientKey struct {

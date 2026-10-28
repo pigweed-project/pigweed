@@ -16,13 +16,13 @@ package pw_ghish
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -249,40 +249,60 @@ func TestFindLatestChangeBySubject(t *testing.T) {
 }
 
 func TestGlobalFlagsBeforeSubcommand(t *testing.T) {
-	oldHost := HostFlag
-	defer func() { HostFlag = oldHost }()
-
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	fs.StringVar(&HostFlag, "host", "", "Gerrit host to connect to")
-
-	args := []string{"--host", "pigweed-review.googlesource.com", "pr", "view", "1298665"}
-	if err := fs.Parse(args); err != nil {
-		t.Fatalf("fs.Parse() failed: %v", err)
+	wantArgs := []string{"pr", "view", "1298665"}
+	tests := []struct {
+		name  string
+		flags []string
+		check func(t *testing.T)
+	}{
+		{
+			name:  "host",
+			flags: []string{"--host", "pigweed-review.googlesource.com"},
+			check: func(t *testing.T) {
+				if HostFlag != "pigweed-review.googlesource.com" {
+					t.Errorf("HostFlag = %q, want %q", HostFlag, "pigweed-review.googlesource.com")
+				}
+			},
+		},
+		{
+			name:  "verbose",
+			flags: []string{"--verbose"},
+			check: func(t *testing.T) {
+				if !VerboseFlag {
+					t.Errorf("VerboseFlag = false, want true")
+				}
+			},
+		},
+		{
+			name:  "profile",
+			flags: []string{"--profile", "fuchsia"},
+			check: func(t *testing.T) {
+				if ProfileFlag != "fuchsia" {
+					t.Errorf("ProfileFlag = %q, want %q", ProfileFlag, "fuchsia")
+				}
+			},
+		},
+		{
+			name:  "auth-mode",
+			flags: []string{"--auth-mode", "community"},
+			check: func(t *testing.T) {
+				if AuthModeFlag != "community" {
+					t.Errorf("AuthModeFlag = %q, want %q", AuthModeFlag, "community")
+				}
+			},
+		},
 	}
-
-	if HostFlag != "pigweed-review.googlesource.com" {
-		t.Errorf("HostFlag = %q, want %q", HostFlag, "pigweed-review.googlesource.com")
-	}
-
-	if len(fs.Args()) != 3 || fs.Args()[0] != "pr" {
-		t.Errorf("fs.Args() = %v, want [pr view 1298665]", fs.Args())
-	}
-
-	RootCmd.SetArgs(fs.Args())
-	if err := RootCmd.ParseFlags(fs.Args()); err != nil {
-		t.Fatalf("RootCmd.ParseFlags() failed: %v", err)
-	}
-
-	if HostFlag != "pigweed-review.googlesource.com" {
-		t.Errorf("HostFlag after Cobra parse = %q, want %q", HostFlag, "pigweed-review.googlesource.com")
-	}
-
-	if RootCmd.Use != "gh-ish" {
-		t.Errorf("init() set RootCmd.Use = %q, want %q", RootCmd.Use, "gh-ish")
-	}
-
-	if got := RootCmd.Annotations[cobra.CommandDisplayNameAnnotation]; got != "gh-ish" {
-		t.Errorf("init() set CommandDisplayNameAnnotation = %q, want %q", got, "gh-ish")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateRootCmdForTest(t)
+			if err := RootCmd.ParseFlags(slices.Concat(tc.flags, wantArgs)); err != nil {
+				t.Fatalf("RootCmd.ParseFlags() failed: %v", err)
+			}
+			tc.check(t)
+			if !slices.Equal(RootCmd.Flags().Args(), wantArgs) {
+				t.Errorf("RootCmd.Flags().Args() = %v, want %v", RootCmd.Flags().Args(), wantArgs)
+			}
+		})
 	}
 }
 

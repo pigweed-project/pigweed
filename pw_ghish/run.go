@@ -231,30 +231,18 @@ var runListCmd = &cobra.Command{
 // table, ordering failures first and collapsing passing builds beyond
 // maxExpandedPassingChecks unless showAllPassing is set.
 func writeRunListTable(out io.Writer, relevant []bbBuild, patchsetNum int, showAllPassing bool) {
-	nonPassingBuilds, passingBuilds := PartitionAndOrderBuilds(relevant)
-	collapsePassing := !showAllPassing && len(passingBuilds) > maxExpandedPassingChecks
-
-	if len(nonPassingBuilds) > 0 || !collapsePassing {
+	visible, omittedLine := selectVisibleBuilds(relevant, showAllPassing)
+	if len(visible) > 0 {
 		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "STATUS\tBUILDER\tDURATION\tID\tURL")
-		renderListRow := func(b bbBuild) {
-			sym := getStatusSymbol(b.Status)
-			dur := formatDuration(b.StartTime, b.EndTime)
-			urlStr := BuildURL(b)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n", sym, b.Builder.Builder, dur, b.ID, urlStr, patchsetNote(b.Patchset, patchsetNum))
-		}
-		for _, b := range nonPassingBuilds {
-			renderListRow(b)
-		}
-		if !collapsePassing {
-			for _, b := range passingBuilds {
-				renderListRow(b)
-			}
+		for _, b := range visible {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n",
+				getStatusSymbol(b.Status), b.Builder.Builder, formatDuration(b.StartTime, b.EndTime), b.ID, BuildURL(b), patchsetNote(b.Patchset, patchsetNum))
 		}
 		w.Flush()
 	}
-	if collapsePassing {
-		fmt.Fprintf(out, "  ✓  %d passing checks omitted (use --all to list)\n", len(passingBuilds))
+	if omittedLine != "" {
+		fmt.Fprintf(out, "  %s  %s\n", GlyphPass, omittedLine)
 	}
 }
 
@@ -732,32 +720,22 @@ var runViewCmd = &cobra.Command{
 		fmt.Fprintf(cmd.OutOrStdout(), "URL:     %s\n\n", changeURL)
 		fmt.Fprintln(cmd.OutOrStdout(), "JOBS")
 
-		nonPassingBuilds, passingBuilds := PartitionAndOrderBuilds(relevant)
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		renderJobRow := func(b bbBuild) {
-			sym := getStatusSymbol(b.Status)
-			dur := formatDuration(b.StartTime, b.EndTime)
-			infraNote := ""
-			if b.Status == "INFRA_FAILURE" {
-				infraNote = " [infra failure]"
+		visible, omittedLine := selectVisibleBuilds(relevant, runViewAll)
+		if len(visible) > 0 || omittedLine != "" {
+			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			for _, b := range visible {
+				infraNote := ""
+				if b.Status == "INFRA_FAILURE" {
+					infraNote = " [infra failure]"
+				}
+				fmt.Fprintf(w, "%s\t%s\tin %s\t(ID %s)%s%s\n",
+					getStatusSymbol(b.Status), b.Builder.Builder, formatDuration(b.StartTime, b.EndTime), b.ID, patchsetNote(b.Patchset, res.PatchsetNum), infraNote)
 			}
-			fmt.Fprintf(w, "%s\t%s\tin %s\t(ID %s)%s%s\n", sym, b.Builder.Builder, dur, b.ID, patchsetNote(b.Patchset, res.PatchsetNum), infraNote)
-		}
-		for _, b := range nonPassingBuilds {
-			renderJobRow(b)
-		}
-		if !runViewAll && len(passingBuilds) > maxExpandedPassingChecks {
-			if len(nonPassingBuilds) == 0 {
-				fmt.Fprintf(w, "✓\tAll %d checks passed (use --all to list)\n", len(passingBuilds))
-			} else {
-				fmt.Fprintf(w, "✓\t%d passing checks omitted (use --all to list)\n", len(passingBuilds))
+			if omittedLine != "" {
+				fmt.Fprintf(w, "%s\t%s\n", GlyphPass, omittedLine)
 			}
-		} else {
-			for _, b := range passingBuilds {
-				renderJobRow(b)
-			}
+			w.Flush()
 		}
-		w.Flush()
 
 		for _, cluster := range ClusterFailedBuilds(relevant) {
 			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", cluster)

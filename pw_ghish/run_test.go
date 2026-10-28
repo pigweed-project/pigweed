@@ -1164,3 +1164,37 @@ func TestTallyCIVerdict_FailsClosedAndSkipsExperimental(t *testing.T) {
 		t.Errorf("tallyCIVerdict() = %+v, want %+v", got, want)
 	}
 }
+
+func TestRunListAndView_AllPassingCollapsedAndExpandedWithAll(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("All Green Change"))
+	var builds []bbBuild
+	for i := 1; i <= 6; i++ {
+		builds = append(builds, FakeBuild(fmt.Sprintf("%d", i), fmt.Sprintf("pass-builder-%d", i), "SUCCESS"))
+	}
+	server.OnSearchBuilds(builds...)
+
+	listOut, err := executeCommand(RootCmd, "run", "list", "12345")
+	if err != nil {
+		t.Fatalf("run list failed: %v\nOutput: %s", err, listOut)
+	}
+	if !strings.Contains(listOut, "All 6 checks passed (use --all to list)") || strings.Contains(listOut, "STATUS") || strings.Contains(listOut, "pass-builder-1") {
+		t.Errorf("run list collapsed = %q, want summary line without STATUS header or builder rows", listOut)
+	}
+
+	listAllOut, err := executeCommand(RootCmd, "run", "list", "12345", "--all")
+	if err != nil {
+		t.Fatalf("run list --all failed: %v\nOutput: %s", err, listAllOut)
+	}
+	if !strings.Contains(listAllOut, "pass-builder-1") || !strings.Contains(listAllOut, "pass-builder-6") {
+		t.Errorf("run list --all = %q, want all 6 passing builders", listAllOut)
+	}
+
+	viewOut, err := executeCommand(RootCmd, "run", "view", "12345")
+	if err != nil {
+		t.Fatalf("run view failed: %v\nOutput: %s", err, viewOut)
+	}
+	if !strings.Contains(viewOut, "All 6 checks passed (use --all to list)") || strings.Contains(viewOut, "pass-builder-1") {
+		t.Errorf("run view collapsed = %q, want collapsed all-passing summary without builder rows", viewOut)
+	}
+}
