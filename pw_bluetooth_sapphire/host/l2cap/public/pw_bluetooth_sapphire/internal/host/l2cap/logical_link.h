@@ -55,11 +55,11 @@ class SignalingChannel;
 class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
  public:
   // Returns a function that accepts opened channels for a registered local
-  // service identified by |psm| on a given connection identified by |handle|,
-  // or nullptr if there is no service registered for that PSM.
+  // service identified by |psm| on links of type |link_type|, or nullptr if
+  // there is no service registered for that PSM and link type.
   using QueryServiceCallback =
       fit::function<std::optional<ChannelManager::ServiceInfo>(
-          hci_spec::ConnectionHandle handle, Psm psm)>;
+          bt::LinkType link_type, Psm psm)>;
 
   // Maximum pending PDUs allowed to be buffered per channel before signaling an
   // error.

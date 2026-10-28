@@ -13,7 +13,9 @@
 // the License.
 
 #pragma once
+#include <map>
 #include <unordered_set>
+#include <utility>
 
 #include "pw_bluetooth_sapphire/internal/host/l2cap/autosniff.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel.h"
@@ -114,10 +116,11 @@ class FakeL2cap final : public ChannelManager {
                         Psm psm,
                         ChannelParameters params,
                         ChannelCallback cb) override;
-  bool RegisterService(Psm psm,
+  bool RegisterService(bt::LinkType link_type,
+                       Psm psm,
                        ChannelParameters params,
                        ChannelCallback channel_callback) override;
-  void UnregisterService(Psm psm) override;
+  void UnregisterService(bt::LinkType link_type, Psm psm) override;
 
   WeakSelf<internal::LogicalLink>::WeakPtr LogicalLinkForTesting(
       hci_spec::ConnectionHandle) override {
@@ -208,7 +211,7 @@ class FakeL2cap final : public ChannelManager {
   ConnectionParameterUpdateRequestResponder
       connection_parameter_update_request_responder_;
 
-  std::unordered_map<Psm, ServiceInfo> registered_services_;
+  std::map<std::pair<bt::LinkType, Psm>, ServiceInfo> registered_services_;
 
   pw::async::HeapDispatcher heap_dispatcher_;
 

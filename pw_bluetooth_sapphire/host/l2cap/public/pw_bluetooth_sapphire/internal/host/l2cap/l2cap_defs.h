@@ -311,6 +311,23 @@ inline constexpr Psm kInvalidPsm = 0x0000;
 // Defined in 5.2, Vol 3, Part A, 4.2.
 inline constexpr Psm kMinDynamicPsm = 0x1001;
 
+// Core Spec v6.2, Vol 3, Part A, Sec 4.22: LE Simplified PSMs (SPSMs) are two
+// octets, but Table 4.15 only defines 0x0001-0x00FF; higher values are reserved
+// for future use.
+inline constexpr Psm kMaxLeSpsm = 0x00FF;
+
+// Returns true if |psm| is a valid BR/EDR PSM. Core Spec v6.2, Vol 3, Part A,
+// Sec 4.2: PSMs shall be odd and the least significant bit of the most
+// significant byte shall be zero.
+constexpr bool IsValidBrEdrPsm(Psm psm) {
+  return ((psm & 0x0001) == 0x0001) && ((psm & 0x0100) == 0x0000);
+}
+
+// Returns true if |psm| is a valid LE SPSM.
+constexpr bool IsValidLeSpsm(Psm psm) {
+  return psm != kInvalidPsm && psm <= kMaxLeSpsm;
+}
+
 // Well-known Protocol and Service Multiplexer values defined by the Bluetooth
 // SIG in Logical Link Control Assigned Numbers
 // https://www.bluetooth.com/specifications/assigned-numbers/logical-link-control

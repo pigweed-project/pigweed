@@ -47,24 +47,6 @@ bool IsQueuedPsm(
   return iter != queued_psms->end();
 }
 
-// Returns true if the |psm| is considered valid.
-bool IsValidPsm(l2cap::Psm psm) {
-  // The least significant bit of the most significant octet must be 0
-  // (Core 5.4, Vol 3, Part A, 4.2).
-  constexpr uint16_t MS_OCTET_MASK = 0x0100;
-  if (psm & MS_OCTET_MASK) {
-    return false;
-  }
-
-  // The least significant bit of all other octets must be 1
-  // (Core 5.4, Vol 3, Part A, 4.2).
-  constexpr uint16_t LOWER_OCTET_MASK = 0x0001;
-  if ((psm & LOWER_OCTET_MASK) != LOWER_OCTET_MASK) {
-    return false;
-  }
-  return true;
-}
-
 // Updates the L2CAP |protocol| with the provided dynamic |new_psm|.
 // Returns true if the list was updated, false if |protocol| is invalid.
 bool UpdateProtocolWithL2capPsm(DataElement* protocol, l2cap::Psm new_psm) {
@@ -258,6 +240,7 @@ Server::Server(l2cap::ChannelManager* l2cap)
   l2cap::ChannelParameters sdp_chan_params;
   sdp_chan_params.mode = l2cap::RetransmissionAndFlowControlMode::kBasic;
   l2cap_->RegisterService(
+      bt::LinkType::kACL,
       l2cap::kSDP,
       sdp_chan_params,
       [self = weak_ptr_factory_.GetWeakPtr()](auto channel) {
@@ -275,7 +258,9 @@ Server::Server(l2cap::ChannelManager* l2cap)
   UpdateInspectProperties();
 }
 
-Server::~Server() { l2cap_->UnregisterService(l2cap::kSDP); }
+Server::~Server() {
+  l2cap_->UnregisterService(bt::LinkType::kACL, l2cap::kSDP);
+}
 
 void Server::AttachInspect(inspect::Node& parent, std::string name) {
   inspect_properties_.sdp_server_node = parent.CreateChild(name);
@@ -352,7 +337,7 @@ l2cap::Psm Server::GetDynamicPsm(const ProtocolQueue* queued_psms) const {
 
   // Check if the PSM is valid (e.g. valid construction, not allocated, & not
   // queued).
-  if ((IsValidPsm(psm)) && (!IsAllocated(psm)) &&
+  if ((l2cap::IsValidBrEdrPsm(psm)) && (!IsAllocated(psm)) &&
       (!IsQueuedPsm(queued_psms, psm))) {
     bt_log(TRACE, "sdp", "Generated random dynamic PSM %#.4x", psm);
     return psm;
@@ -361,7 +346,7 @@ l2cap::Psm Server::GetDynamicPsm(const ProtocolQueue* queued_psms) const {
   // Otherwise, fall back to sequentially finding the next available PSM.
   bool search_wrapped = false;
   for (uint16_t next_psm = psm + 2; next_psm <= UINT16_MAX; next_psm += 2) {
-    if ((IsValidPsm(next_psm)) && (!IsAllocated(next_psm)) &&
+    if ((l2cap::IsValidBrEdrPsm(next_psm)) && (!IsAllocated(next_psm)) &&
         (!IsQueuedPsm(queued_psms, next_psm))) {
       bt_log(TRACE, "sdp", "Generated sequential dynamic PSM %#.4x", next_psm);
       return next_psm;
@@ -537,6 +522,7 @@ RegistrationHandle Server::RegisterService(std::vector<ServiceRecord> records,
   for (const auto& psm : psms_to_register) {
     bt_log(TRACE, "sdp", "Allocating PSM %#.4x for new service", psm);
     l2cap_->RegisterService(
+        bt::LinkType::kACL,
         psm,
         chan_params,
         [l2cap_psm = psm, conn_cb_shared = conn_cb.share()](
@@ -605,7 +591,7 @@ bool Server::UnregisterService(RegistrationHandle handle) {
     if (psms_it) {
       for (const auto& psm : psms_it.mapped()) {
         bt_log(DEBUG, "sdp", "removing registration for psm %#.4x", psm);
-        l2cap_->UnregisterService(psm);
+        l2cap_->UnregisterService(bt::LinkType::kACL, psm);
         psm_to_service_.erase(psm);
       }
     }

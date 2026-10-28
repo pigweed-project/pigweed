@@ -165,8 +165,10 @@ class ChannelManager {
                                 l2cap::ChannelParameters params,
                                 l2cap::ChannelCallback cb) = 0;
 
-  // Registers a handler for peer-initiated dynamic channel requests that have
-  // the Protocol/Service Multiplexing (PSM) code |psm|. The local device will
+  // Registers a handler for peer-initiated dynamic channel requests on
+  // |link_type| links (kACL or kLE) that have the Protocol/Service Multiplexing
+  // (PSM) code |psm|. BR/EDR PSMs and LE SPSMs are separate namespaces, so the
+  // same value may be registered once for each link type. The local device will
   // attempt to configure these channels using the preferred parameters
   // |params|, but will accept different channel parameters required by the peer
   // if they are higher priority.
@@ -174,21 +176,22 @@ class ChannelManager {
   // |cb| will be called with the channel created by each inbound connection
   // request received. Handlers must be unregistered before they are replaced.
   //
-  // Returns false if |psm| is invalid or already has a handler registered.
+  // Returns false if |link_type| is not kACL or kLE, if |psm| or the mode in
+  // |params| is invalid for |link_type|, or if |psm| already has a handler
+  // registered for |link_type|.
   //
-  // Inbound connection requests with a PSM that has no registered handler will
-  // be rejected.
-  //
-  // TODO(fxbug.dev/42181829): Dynamic PSMs may need their routing space (ACL or
-  // LE) identified
-  virtual bool RegisterService(l2cap::Psm psm,
+  // Inbound connection requests with a PSM that has no registered handler for
+  // the link's type will be rejected.
+  virtual bool RegisterService(bt::LinkType link_type,
+                               l2cap::Psm psm,
                                l2cap::ChannelParameters params,
                                l2cap::ChannelCallback callback) = 0;
 
   // Removes the handler for inbound channel requests for the previously-
-  // registered service identified by |psm|. This only prevents new inbound
-  // channels from being opened but does not close already-open channels.
-  virtual void UnregisterService(l2cap::Psm psm) = 0;
+  // registered service identified by |link_type| and |psm|. This only prevents
+  // new inbound channels from being opened but does not close already-open
+  // channels.
+  virtual void UnregisterService(bt::LinkType link_type, l2cap::Psm psm) = 0;
 
   // Returns a pointer to the internal LogicalLink with the corresponding link
   // |handle|, or nullptr if none exists. NOTE: This is intended ONLY for unit

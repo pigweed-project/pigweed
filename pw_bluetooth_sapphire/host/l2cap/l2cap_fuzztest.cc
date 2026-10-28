@@ -153,6 +153,7 @@ class DataFuzzTest : public TestingBase {
 
   void RegisterService() {
     channel_manager_->RegisterService(
+        bt::LinkType::kACL,
         l2cap::kAVDTP,
         l2cap::ChannelParameters(),
         [this](l2cap::Channel::WeakPtr chan) {

@@ -72,7 +72,7 @@ bool FakeL2cap::TriggerInboundL2capChannel(hci_spec::ConnectionHandle handle,
                                            l2cap::ChannelId remote_id,
                                            uint16_t max_tx_sdu_size) {
   LinkData& link_data = ConnectedLinkData(handle);
-  auto cb_iter = registered_services_.find(psm);
+  auto cb_iter = registered_services_.find({link_data.type, psm});
 
   // No service registered for the PSM.
   if (cb_iter == registered_services_.end()) {
@@ -270,17 +270,20 @@ void FakeL2cap::OpenL2capChannel(hci_spec::ConnectionHandle handle,
       });
 }
 
-bool FakeL2cap::RegisterService(l2cap::Psm psm,
+bool FakeL2cap::RegisterService(bt::LinkType link_type,
+                                l2cap::Psm psm,
                                 l2cap::ChannelParameters params,
                                 l2cap::ChannelCallback channel_callback) {
-  PW_DCHECK(registered_services_.count(psm) == 0);
+  PW_DCHECK(link_type == bt::LinkType::kACL || link_type == bt::LinkType::kLE);
+  PW_DCHECK(registered_services_.count({link_type, psm}) == 0);
   registered_services_.emplace(
-      psm, ServiceInfo(params, std::move(channel_callback)));
+      std::make_pair(link_type, psm),
+      ServiceInfo(params, std::move(channel_callback)));
   return true;
 }
 
-void FakeL2cap::UnregisterService(l2cap::Psm psm) {
-  registered_services_.erase(psm);
+void FakeL2cap::UnregisterService(bt::LinkType link_type, l2cap::Psm psm) {
+  registered_services_.erase({link_type, psm});
 }
 
 FakeL2cap::~FakeL2cap() {

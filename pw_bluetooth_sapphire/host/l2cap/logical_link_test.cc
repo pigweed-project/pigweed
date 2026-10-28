@@ -66,9 +66,7 @@ class LogicalLinkTest : public TestingBase {
   void NewLogicalLink(bt::LinkType type = bt::LinkType::kLE,
                       bool random_channel_ids = true) {
     const size_t kMaxPayload = kDefaultMTU;
-    auto query_service_cb = [](hci_spec::ConnectionHandle, Psm) {
-      return std::nullopt;
-    };
+    auto query_service_cb = [](bt::LinkType, Psm) { return std::nullopt; };
     a2dp_offload_manager_ = std::make_unique<A2dpOffloadManager>(
         transport()->command_channel()->AsWeakPtr());
     link_ = std::make_unique<LogicalLink>(

@@ -16,6 +16,11 @@
 
 #include <pw_assert/check.h>
 
+#include <map>
+#include <optional>
+#include <string>
+#include <utility>
+
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/common/weak_self.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/a2dp_offload_manager.h"
@@ -31,6 +36,43 @@ constexpr const char* kInspectServiceNodePrefix = "service_";
 constexpr const char* kInspectLogicalLinksNodeName = "logical_links";
 constexpr const char* kInspectLogicalLinkNodePrefix = "logical_link_";
 constexpr const char* kInspectPsmPropertyName = "psm";
+constexpr const char* kInspectLinkTypePropertyName = "link_type";
+
+constexpr bool IsValidPsm(bt::LinkType link_type, Psm psm) {
+  switch (link_type) {
+    case bt::LinkType::kACL:
+      return IsValidBrEdrPsm(psm);
+    case bt::LinkType::kLE:
+      return IsValidLeSpsm(psm);
+    case bt::LinkType::kSCO:
+    case bt::LinkType::kESCO:
+      return false;
+  }
+  return false;
+}
+
+// Returns true if dynamic channels on |link_type| links can use |mode|. An
+// unset mode uses the link type's default.
+bool IsModeSupported(bt::LinkType link_type,
+                     const std::optional<AnyChannelMode>& mode) {
+  switch (link_type) {
+    case bt::LinkType::kACL:
+      return !mode.has_value() ||
+             *mode == RetransmissionAndFlowControlMode::kBasic ||
+             *mode == RetransmissionAndFlowControlMode::kEnhancedRetransmission;
+    case bt::LinkType::kLE:
+      return !mode.has_value() ||
+             *mode == CreditBasedFlowControlMode::kLeCreditBasedFlowControl;
+    case bt::LinkType::kSCO:
+    case bt::LinkType::kESCO:
+      return false;
+  }
+  return false;
+}
+
+std::string ModeToString(const std::optional<AnyChannelMode>& mode) {
+  return mode.has_value() ? AnyChannelModeToString(*mode) : "unset";
+}
 
 }  // namespace
 
@@ -74,10 +116,11 @@ class ChannelManagerImpl final : public ChannelManager {
                         ChannelParameters params,
                         ChannelCallback cb) override;
 
-  bool RegisterService(Psm psm,
+  bool RegisterService(bt::LinkType link_type,
+                       Psm psm,
                        ChannelParameters params,
                        ChannelCallback cb) override;
-  void UnregisterService(Psm psm) override;
+  void UnregisterService(bt::LinkType link_type, Psm psm) override;
 
   void RequestConnectionParameterUpdate(
       hci_spec::ConnectionHandle handle,
@@ -112,14 +155,13 @@ class ChannelManagerImpl final : public ChannelManager {
   std::optional<internal::LogicalLink::WeakPtr> GetLogicalLink(
       hci_spec::ConnectionHandle handle);
 
-  // If a service (identified by |psm|) requested has been registered, return a
-  // ServiceInfo object containing preferred channel parameters and a callback
-  // that passes an inbound channel to the registrant. The callback may be
-  // called repeatedly to pass multiple channels for |psm|, but should not be
+  // If a service identified by |psm| has been registered for |link_type|,
+  // return a ServiceInfo object containing preferred channel parameters and a
+  // callback that passes an inbound channel to the registrant. The callback may
+  // be called repeatedly to pass multiple channels for |psm|, but should not be
   // stored because the service may be unregistered at a later time. Calls for
   // unregistered services return null.
-  std::optional<ServiceInfo> QueryService(hci_spec::ConnectionHandle handle,
-                                          Psm psm);
+  std::optional<ServiceInfo> QueryService(bt::LinkType link_type, Psm psm);
 
   pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider_;
 
@@ -151,11 +193,15 @@ class ChannelManagerImpl final : public ChannelManager {
   struct ServiceData {
     void AttachInspect(inspect::Node& parent);
     ServiceInfo info;
+    bt::LinkType link_type;
     Psm psm;
     inspect::Node node;
     inspect::StringProperty psm_property;
+    inspect::StringProperty link_type_property;
   };
-  using ServiceMap = std::unordered_map<Psm, ServiceData>;
+  // BR/EDR PSMs and LE SPSMs are separate namespaces, so services are keyed by
+  // both link type and PSM.
+  using ServiceMap = std::map<std::pair<bt::LinkType, Psm>, ServiceData>;
   ServiceMap services_;
   inspect::Node services_node_;
   inspect::Node node_;
@@ -311,33 +357,68 @@ void ChannelManagerImpl::OpenL2capChannel(hci_spec::ConnectionHandle handle,
     return;
   }
 
+  if (!IsModeSupported(link.value()->type(), params.mode)) {
+    bt_log(ERROR,
+           "l2cap",
+           "Cannot open channel with mode %s on %s link (handle: %#.4x)",
+           ModeToString(params.mode).c_str(),
+           LinkTypeToString(link.value()->type()).c_str(),
+           handle);
+    cb(Channel::WeakPtr());
+    return;
+  }
+
   link.value()->OpenChannel(psm, params, std::move(cb));
 }
 
-bool ChannelManagerImpl::RegisterService(Psm psm,
+bool ChannelManagerImpl::RegisterService(bt::LinkType link_type,
+                                         Psm psm,
                                          ChannelParameters params,
                                          ChannelCallback cb) {
-  // v5.0 Vol 3, Part A, Sec 4.2: PSMs shall be odd and the least significant
-  // bit of the most significant byte shall be zero
-  if (((psm & 0x0001) != 0x0001) || ((psm & 0x0100) != 0x0000)) {
+  if (!IsValidPsm(link_type, psm)) {
+    bt_log(ERROR,
+           "l2cap",
+           "Cannot register service: invalid PSM %#.4x for %s link",
+           psm,
+           LinkTypeToString(link_type).c_str());
     return false;
   }
 
-  auto iter = services_.find(psm);
+  if (!IsModeSupported(link_type, params.mode)) {
+    bt_log(ERROR,
+           "l2cap",
+           "Cannot register service for PSM %#.4x: mode %s not supported on %s "
+           "link",
+           psm,
+           ModeToString(params.mode).c_str(),
+           LinkTypeToString(link_type).c_str());
+    return false;
+  }
+
+  auto iter = services_.find({link_type, psm});
   if (iter != services_.end()) {
+    bt_log(WARN,
+           "l2cap",
+           "Cannot register service: PSM %#.4x already registered for %s link",
+           psm,
+           LinkTypeToString(link_type).c_str());
     return false;
   }
 
   ServiceData service{.info = ServiceInfo(params, std::move(cb)),
+                      .link_type = link_type,
                       .psm = psm,
                       .node = {},
-                      .psm_property = {}};
+                      .psm_property = {},
+                      .link_type_property = {}};
   service.AttachInspect(services_node_);
-  services_.emplace(psm, std::move(service));
+  services_.emplace(std::make_pair(link_type, psm), std::move(service));
   return true;
 }
 
-void ChannelManagerImpl::UnregisterService(Psm psm) { services_.erase(psm); }
+void ChannelManagerImpl::UnregisterService(bt::LinkType link_type, Psm psm) {
+  services_.erase({link_type, psm});
+}
 
 void ChannelManagerImpl::RequestConnectionParameterUpdate(
     hci_spec::ConnectionHandle handle,
@@ -364,7 +445,7 @@ void ChannelManagerImpl::AttachInspect(inspect::Node& parent,
   node_ = parent.CreateChild(name);
 
   services_node_ = node_.CreateChild(kInspectServicesNodeName);
-  for (auto& [psm, service] : services_) {
+  for (auto& [_, service] : services_) {
     service.AttachInspect(services_node_);
   }
 
@@ -488,8 +569,8 @@ internal::LogicalLink* ChannelManagerImpl::RegisterInternal(
 }
 
 std::optional<ChannelManager::ServiceInfo> ChannelManagerImpl::QueryService(
-    hci_spec::ConnectionHandle, Psm psm) {
-  auto iter = services_.find(psm);
+    bt::LinkType link_type, Psm psm) {
+  auto iter = services_.find({link_type, psm});
   if (iter == services_.end()) {
     return std::nullopt;
   }
@@ -507,6 +588,8 @@ void ChannelManagerImpl::ServiceData::AttachInspect(inspect::Node& parent) {
   }
   node = parent.CreateChild(parent.UniqueName(kInspectServiceNodePrefix));
   psm_property = node.CreateString(kInspectPsmPropertyName, PsmToString(psm));
+  link_type_property = node.CreateString(kInspectLinkTypePropertyName,
+                                         LinkTypeToString(link_type));
 }
 
 std::unique_ptr<ChannelManager> ChannelManager::Create(

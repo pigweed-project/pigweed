@@ -304,9 +304,7 @@ void BrEdrCommandHandler::ServeConnectionRequest(
 
     ConnectionResponder responder(sig_responder, remote_cid);
 
-    // v5.0 Vol 3, Part A, Sec 4.2: PSMs shall be odd and the least significant
-    // bit of the most significant byte shall be zero
-    if (((psm & 0x0001) != 0x0001) || ((psm & 0x0100) != 0x0000)) {
+    if (!IsValidBrEdrPsm(psm)) {
       bt_log(DEBUG,
              "l2cap-bredr",
              "Rejecting connection for invalid PSM %#.4x from channel %#.4x",

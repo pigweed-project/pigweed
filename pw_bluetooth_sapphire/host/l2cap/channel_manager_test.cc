@@ -60,6 +60,26 @@ constexpr hci::AclDataChannel::PacketPriority kLowPriority =
 constexpr hci::AclDataChannel::PacketPriority kHighPriority =
     hci::AclDataChannel::PacketPriority::kHigh;
 constexpr ChannelParameters kChannelParams;
+constexpr ChannelParameters kBasicModeParams{
+    .mode = RetransmissionAndFlowControlMode::kBasic,
+    .max_rx_sdu_size = std::nullopt,
+    .flush_timeout = std::nullopt,
+};
+constexpr ChannelParameters kErtmModeParams{
+    .mode = RetransmissionAndFlowControlMode::kEnhancedRetransmission,
+    .max_rx_sdu_size = std::nullopt,
+    .flush_timeout = std::nullopt,
+};
+constexpr ChannelParameters kLeCreditBasedModeParams{
+    .mode = CreditBasedFlowControlMode::kLeCreditBasedFlowControl,
+    .max_rx_sdu_size = std::nullopt,
+    .flush_timeout = std::nullopt,
+};
+constexpr ChannelParameters kEnhancedCreditBasedModeParams{
+    .mode = CreditBasedFlowControlMode::kEnhancedCreditBasedFlowControl,
+    .max_rx_sdu_size = std::nullopt,
+    .flush_timeout = std::nullopt,
+};
 
 constexpr pw::chrono::SystemClock::duration kFlushTimeout =
     std::chrono::milliseconds(10);
@@ -75,6 +95,12 @@ void NopLeConnParamCallback(const hci_spec::LEPreferredConnectionParameters&) {}
 void NopSecurityCallback(hci_spec::ConnectionHandle,
                          sm::SecurityLevel,
                          sm::ResultFunction<>) {}
+void NopChannelCallback(Channel::WeakPtr) {}
+
+// Returns a callback that stores the channel it receives in |out|.
+ChannelCallback StoreChannel(Channel::WeakPtr* out) {
+  return [out](Channel::WeakPtr chan) { *out = std::move(chan); };
+}
 
 // Holds expected outbound data packets including the source location where the
 // expectation is set.
@@ -260,6 +286,38 @@ auto InboundConnectionRequest(CommandId id) {
       UpperBits(kTestPsm),
       LowerBits(kRemoteId),
       UpperBits(kRemoteId));
+}
+
+auto InboundLeConnectionRequest(CommandId id, Psm psm) {
+  return testing::AclLeCreditBasedConnectionReq(id,
+                                                kTestHandle1,
+                                                psm,
+                                                kFirstDynamicChannelId,
+                                                kDefaultMTU,
+                                                kMaxInboundPduPayloadSize,
+                                                /*credits=*/1);
+}
+
+auto OutboundLeConnectionResponse(CommandId id) {
+  return testing::AclLeCreditBasedConnectionRsp(
+      id,
+      kTestHandle1,
+      /*cid=*/kFirstDynamicChannelId,
+      /*mtu=*/kDefaultMTU,
+      /*mps=*/kMaxInboundPduPayloadSize,
+      /*credits=*/kLocalRxCredits,
+      LECreditBasedConnectionResult::kSuccess);
+}
+
+auto OutboundLeConnectionRefusal(CommandId id,
+                                 LECreditBasedConnectionResult result) {
+  return testing::AclLeCreditBasedConnectionRsp(id,
+                                                kTestHandle1,
+                                                /*cid=*/kInvalidChannelId,
+                                                /*mtu=*/0,
+                                                /*mps=*/0,
+                                                /*credits=*/0,
+                                                result);
 }
 
 auto OutboundConnectionRequest(CommandId id) {
@@ -766,7 +824,7 @@ class ChannelManagerMockAclChannelTest : public TestingBase {
         kTestHandle1,
         kFixedChannelsSupportedBitSignaling));
     EXPECT_TRUE(chanmgr()->RegisterService(
-        kTestPsm, chan_params, std::move(channel_cb)));
+        bt::LinkType::kACL, kTestPsm, chan_params, std::move(channel_cb)));
 
     const auto config_req_id = NextCommandId();
     EXPECT_ACL_PACKET_OUT_(OutboundConnectionResponse(kPeerConnReqId),
@@ -2357,12 +2415,14 @@ TEST_F(ChannelManagerMockAclChannelTest,
     EXPECT_TRUE(channel->Activate(NopRxCallback, std::move(closed_callback)));
   };
 
-  EXPECT_FALSE(
-      chanmgr()->RegisterService(kBadPsm0, ChannelParameters(), channel_cb));
-  EXPECT_FALSE(
-      chanmgr()->RegisterService(kBadPsm1, ChannelParameters(), channel_cb));
-  EXPECT_TRUE(chanmgr()->RegisterService(
-      kTestPsm, ChannelParameters(), std::move(channel_cb)));
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kBadPsm0, ChannelParameters(), channel_cb));
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kBadPsm1, ChannelParameters(), channel_cb));
+  EXPECT_TRUE(chanmgr()->RegisterService(bt::LinkType::kACL,
+                                         kTestPsm,
+                                         ChannelParameters(),
+                                         std::move(channel_cb)));
 
   const auto config_req_id = NextCommandId();
   EXPECT_ACL_PACKET_OUT_(OutboundConnectionResponse(1), kHighPriority);
@@ -2585,7 +2645,7 @@ TEST_F(ChannelManagerMockAclChannelTest, MtuInboundChannelConfiguration) {
   };
 
   EXPECT_TRUE(chanmgr()->RegisterService(
-      kTestPsm, kChannelParams, std::move(channel_cb)));
+      bt::LinkType::kACL, kTestPsm, kChannelParams, std::move(channel_cb)));
 
   CommandId kPeerConnectionRequestId = 3;
   const auto config_req_id = NextCommandId();
@@ -2699,8 +2759,8 @@ TEST_F(ChannelManagerMockAclChannelTest,
     EXPECT_TRUE(channel->Activate(NopRxCallback, DoNothing));
   };
 
-  EXPECT_TRUE(
-      chanmgr()->RegisterService(kTestPsm, chan_params, std::move(channel_cb)));
+  EXPECT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kTestPsm, chan_params, std::move(channel_cb)));
 
   const auto config_req_id = NextCommandId();
   EXPECT_ACL_PACKET_OUT_(OutboundConnectionResponse(kPeerConnReqId),
@@ -2772,7 +2832,7 @@ TEST_F(
   };
 
   EXPECT_TRUE(chanmgr()->RegisterService(
-      kTestPsm, kChannelParams, std::move(channel_cb)));
+      bt::LinkType::kACL, kTestPsm, kChannelParams, std::move(channel_cb)));
 
   CommandId kPeerConnectionRequestId = 3;
   CommandId kLocalConfigRequestId = NextCommandId();
@@ -3673,12 +3733,14 @@ TEST_F(ChannelManagerMockAclChannelTest, InspectHierarchy) {
   inspect::Inspector inspector;
   chanmgr()->AttachInspect(inspector.GetRoot(), "l2cap");
 
-  chanmgr()->RegisterService(kSDP, kChannelParams, [](auto) {});
+  chanmgr()->RegisterService(
+      bt::LinkType::kACL, kSDP, kChannelParams, [](auto) {});
   auto services_matcher =
       AllOf(NodeMatches(NameMatches("services")),
-            ChildrenMatch(ElementsAre(NodeMatches(
-                AllOf(NameMatches("service_0x0"),
-                      PropertyList(ElementsAre(StringIs("psm", "SDP"))))))));
+            ChildrenMatch(ElementsAre(NodeMatches(AllOf(
+                NameMatches("service_0x0"),
+                PropertyList(UnorderedElementsAre(
+                    StringIs("psm", "SDP"), StringIs("link_type", "ACL"))))))));
 
   QueueRegisterACL(kTestHandle1,
                    pw::bluetooth::emboss::ConnectionRole::CENTRAL);
@@ -3871,8 +3933,8 @@ TEST_F(ChannelManagerMockAclChannelTest,
     EXPECT_TRUE(channel->Activate(NopRxCallback, DoNothing));
   };
 
-  EXPECT_TRUE(
-      chanmgr()->RegisterService(kTestPsm, chan_params, std::move(channel_cb)));
+  EXPECT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kTestPsm, chan_params, std::move(channel_cb)));
 
   CommandId kPeerConnectionRequestId = 3;
   const auto config_req_id = NextCommandId();
@@ -4258,7 +4320,8 @@ TEST_F(ChannelManagerRealAclChannelTest,
     channel = std::move(activated_chan);
   };
 
-  chanmgr()->RegisterService(kPsm, kChannelParameters, std::move(chan_cb));
+  chanmgr()->RegisterService(
+      bt::LinkType::kACL, kPsm, kChannelParameters, std::move(chan_cb));
   RunUntilIdle();
 
   constexpr l2cap::CommandId kConnectionReqId = 1;
@@ -4377,7 +4440,7 @@ TEST_F(ChannelManagerRealAclChannelTest,
     EXPECT_EQ(kTestHandle1, activated_chan->link_handle());
     channel = std::move(activated_chan);
   };
-  chanmgr()->RegisterService(kPsm, chan_params, chan_cb);
+  chanmgr()->RegisterService(bt::LinkType::kACL, kPsm, chan_params, chan_cb);
 
   QueueInboundL2capConnection(
       kTestHandle1, kPsm, kLocalId, kRemoteId, chan_params, chan_params);
@@ -4985,6 +5048,231 @@ TEST_F(ChannelManagerMockAclChannelTest,
   ReceiveAclDataPacket(
       testing::AclBFrame(kTestHandle1, channel->id(), segment_1));
   EXPECT_EQ(lease_provider().lease_count(), 0u);
+}
+
+// Tests that an LE credit-based connection request for an SPSM that is only
+// registered as a BR/EDR PSM (as the SDP server does) is rejected.
+TEST_F(ChannelManagerMockAclChannelTest,
+       LeConnectionRequestForBrEdrServiceIsRejected) {
+  Channel::WeakPtr channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kSDP, kBasicModeParams, StoreChannel(&channel)));
+  LEFixedChannels fixed_channels =
+      RegisterLE(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+
+  constexpr CommandId kPeerConnReqId = 1;
+  EXPECT_LE_PACKET_OUT(
+      OutboundLeConnectionRefusal(
+          kPeerConnReqId, LECreditBasedConnectionResult::kPsmNotSupported),
+      kHighPriority);
+  ReceiveAclDataPacket(InboundLeConnectionRequest(kPeerConnReqId, kSDP));
+  RunUntilIdle();
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_FALSE(channel.is_alive());
+}
+
+// Tests that the same PSM value can be registered for both link types and that
+// an LE connection request is routed to the LE service.
+TEST_F(ChannelManagerMockAclChannelTest,
+       LeConnectionRequestRoutedToLeServiceWithSamePsm) {
+  Channel::WeakPtr bredr_channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kSDP, kChannelParams, StoreChannel(&bredr_channel)));
+  Channel::WeakPtr le_channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(bt::LinkType::kLE,
+                                         kSDP,
+                                         kLeCreditBasedModeParams,
+                                         StoreChannel(&le_channel)));
+  LEFixedChannels fixed_channels =
+      RegisterLE(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+
+  constexpr CommandId kPeerConnReqId = 1;
+  EXPECT_LE_PACKET_OUT(OutboundLeConnectionResponse(kPeerConnReqId),
+                       kHighPriority);
+  ReceiveAclDataPacket(InboundLeConnectionRequest(kPeerConnReqId, kSDP));
+  RunUntilIdle();
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_FALSE(bredr_channel.is_alive());
+  ASSERT_TRUE(le_channel.is_alive());
+  EXPECT_EQ(CreditBasedFlowControlMode::kLeCreditBasedFlowControl,
+            le_channel->mode());
+}
+
+// Tests that a BR/EDR connection request for a PSM that is only registered as
+// an LE SPSM is rejected.
+TEST_F(ChannelManagerMockAclChannelTest,
+       BrEdrConnectionRequestForLeServiceIsRejected) {
+  Channel::WeakPtr channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, kTestPsm, kChannelParams, StoreChannel(&channel)));
+  QueueRegisterACL(kTestHandle1,
+                   pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+
+  constexpr CommandId kPeerConnReqId = 1;
+  EXPECT_ACL_PACKET_OUT_(
+      testing::AclConnectionRsp(kPeerConnReqId,
+                                kTestHandle1,
+                                kRemoteId,
+                                /*dst_id=*/kInvalidChannelId,
+                                ConnectionResult::kPsmNotSupported),
+      kHighPriority);
+  ReceiveAclDataPacket(InboundConnectionRequest(kPeerConnReqId));
+  RunUntilIdle();
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_FALSE(channel.is_alive());
+}
+
+// Tests that a BR/EDR connection request received before the link is
+// registered is routed to the service once the link is registered.
+TEST_F(ChannelManagerMockAclChannelTest,
+       BrEdrConnectionRequestQueuedBeforeLinkRegistrationSucceeds) {
+  Channel::WeakPtr channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kTestPsm, kChannelParams, StoreChannel(&channel)));
+
+  constexpr CommandId kPeerConnReqId = 1;
+  ReceiveAclDataPacket(InboundConnectionRequest(kPeerConnReqId));
+
+  const auto extended_features_id = NextCommandId();
+  const auto fixed_channels_supported_id = NextCommandId();
+  const auto config_req_id = NextCommandId();
+  EXPECT_ACL_PACKET_OUT_(MakeExtendedFeaturesInformationRequest(
+                             extended_features_id, kTestHandle1),
+                         kHighPriority);
+  EXPECT_ACL_PACKET_OUT_(testing::AclFixedChannelsSupportedInfoReq(
+                             fixed_channels_supported_id, kTestHandle1),
+                         kHighPriority);
+  EXPECT_ACL_PACKET_OUT_(OutboundConnectionResponse(kPeerConnReqId),
+                         kHighPriority);
+  EXPECT_ACL_PACKET_OUT_(OutboundConfigurationRequest(config_req_id),
+                         kHighPriority);
+  RegisterACL(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  RunUntilIdle();
+  EXPECT_TRUE(AllExpectedPacketsSent());
+
+  EXPECT_ACL_PACKET_OUT_(OutboundConfigurationResponse(kPeerConfigRequestId),
+                         kHighPriority);
+  ReceiveAclDataPacket(InboundConfigurationRequest(kPeerConfigRequestId));
+  ReceiveAclDataPacket(InboundConfigurationResponse(config_req_id));
+  RunUntilIdle();
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_TRUE(channel.is_alive());
+}
+
+// Tests that an LE credit-based connection request received before the link is
+// registered is routed to the service once the link is registered.
+TEST_F(ChannelManagerMockAclChannelTest,
+       LeConnectionRequestQueuedBeforeLinkRegistrationSucceeds) {
+  static constexpr Psm kPsm = 0x0015;
+  Channel::WeakPtr channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, kPsm, kChannelParams, StoreChannel(&channel)));
+
+  constexpr CommandId kPeerConnReqId = 1;
+  ReceiveAclDataPacket(InboundLeConnectionRequest(kPeerConnReqId, kPsm));
+
+  EXPECT_LE_PACKET_OUT(OutboundLeConnectionResponse(kPeerConnReqId),
+                       kHighPriority);
+  LEFixedChannels fixed_channels =
+      RegisterLE(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  RunUntilIdle();
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_TRUE(channel.is_alive());
+}
+
+// Tests that RegisterService rejects channel modes that the link type does not
+// support.
+TEST_F(ChannelManagerMockAclChannelTest,
+       RegisterServiceRejectsModeForOtherLinkType) {
+  EXPECT_FALSE(chanmgr()->RegisterService(bt::LinkType::kACL,
+                                          kAVDTP,
+                                          kLeCreditBasedModeParams,
+                                          NopChannelCallback));
+  EXPECT_FALSE(chanmgr()->RegisterService(bt::LinkType::kACL,
+                                          kAVDTP,
+                                          kEnhancedCreditBasedModeParams,
+                                          NopChannelCallback));
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, kAVDTP, kBasicModeParams, NopChannelCallback));
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, kAVDTP, kErtmModeParams, NopChannelCallback));
+  EXPECT_FALSE(chanmgr()->RegisterService(bt::LinkType::kLE,
+                                          kAVDTP,
+                                          kEnhancedCreditBasedModeParams,
+                                          NopChannelCallback));
+}
+
+// Tests that RegisterService validates PSMs using the rules for the link type
+// (LE SPSMs are 0x0001-0x00FF and are not subject to the BR/EDR bit rules) and
+// rejects link types that do not carry dynamic channels.
+TEST_F(ChannelManagerMockAclChannelTest,
+       RegisterServiceValidatesPsmForLinkType) {
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, kInvalidPsm, kChannelParams, NopChannelCallback));
+  EXPECT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, 0x0080, kChannelParams, NopChannelCallback));
+  EXPECT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, 0x00FF, kChannelParams, NopChannelCallback));
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, 0x0100, kChannelParams, NopChannelCallback));
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, 0x0080, kChannelParams, NopChannelCallback));
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kSCO, kAVDTP, kChannelParams, NopChannelCallback));
+}
+
+// Tests that a PSM can be registered once per link type and that unregistering
+// it for one link type leaves the other registration in place.
+TEST_F(ChannelManagerMockAclChannelTest,
+       RegisterServiceAllowsSamePsmOncePerLinkType) {
+  EXPECT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kAVDTP, kChannelParams, NopChannelCallback));
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kAVDTP, kChannelParams, NopChannelCallback));
+  EXPECT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, kAVDTP, kChannelParams, NopChannelCallback));
+
+  chanmgr()->UnregisterService(bt::LinkType::kLE, kAVDTP);
+  EXPECT_FALSE(chanmgr()->RegisterService(
+      bt::LinkType::kACL, kAVDTP, kChannelParams, NopChannelCallback));
+  EXPECT_TRUE(chanmgr()->RegisterService(
+      bt::LinkType::kLE, kAVDTP, kChannelParams, NopChannelCallback));
+}
+
+// Tests that OpenL2capChannel fails without sending a connection request when
+// the channel mode is not supported on the link type.
+TEST_F(ChannelManagerMockAclChannelTest,
+       OpenL2capChannelRejectsModeForOtherLinkType) {
+  LEFixedChannels fixed_channels =
+      RegisterLE(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  QueueRegisterACL(kTestHandle2,
+                   pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  RunUntilIdle();
+  ASSERT_TRUE(AllExpectedPacketsSent());
+
+  auto expect_open_fails = [this](hci_spec::ConnectionHandle handle,
+                                  const ChannelParameters& params) {
+    std::optional<Channel::WeakPtr> channel;
+    chanmgr()->OpenL2capChannel(
+        handle, kTestPsm, params, [&channel](Channel::WeakPtr chan) {
+          channel = std::move(chan);
+        });
+    RunUntilIdle();
+    ASSERT_TRUE(channel.has_value());
+    EXPECT_FALSE(channel->is_alive());
+  };
+  expect_open_fails(kTestHandle1, kBasicModeParams);
+  expect_open_fails(kTestHandle1, kErtmModeParams);
+  expect_open_fails(kTestHandle1, kEnhancedCreditBasedModeParams);
+  expect_open_fails(kTestHandle2, kLeCreditBasedModeParams);
+  expect_open_fails(kTestHandle2, kEnhancedCreditBasedModeParams);
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
 }
 
 TEST_F(

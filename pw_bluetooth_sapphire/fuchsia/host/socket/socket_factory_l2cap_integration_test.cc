@@ -77,7 +77,8 @@ TEST_F(SocketFactoryL2capIntegrationTest, InboundL2capSocket) {
     EXPECT_EQ(kLinkHandle, cb_chan->link_handle());
     channel = std::move(cb_chan);
   };
-  chanmgr()->RegisterService(kPsm, kChannelParameters, std::move(chan_cb));
+  chanmgr()->RegisterService(
+      bt::LinkType::kACL, kPsm, kChannelParameters, std::move(chan_cb));
   RunLoopUntilIdle();
 
   QueueInboundL2capConnection(kLinkHandle, kPsm, kLocalId, kRemoteId);

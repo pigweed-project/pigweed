@@ -668,7 +668,7 @@ LogicalLink::OnServiceRequest(Psm psm) {
   PW_DCHECK(!closed_);
 
   // Query upper layer for a service handler attached to this PSM.
-  auto result = query_service_cb_(handle_, psm);
+  auto result = query_service_cb_(type_, psm);
   if (!result) {
     return std::nullopt;
   }
