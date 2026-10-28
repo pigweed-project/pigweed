@@ -693,7 +693,7 @@ func (c *Config) GerritURL(ctx context.Context) (string, error) {
 		}
 	}
 	if rawHost != "" {
-		if canon := CanonicalGerritHost(rawHost); strings.HasSuffix(canon, ".googlesource.com") {
+		if canon := CanonicalGerritHost(rawHost); isGoogleGerritHost(canon) {
 			return "https://" + canon + "/a", nil
 		}
 		host = rawHost
@@ -717,7 +717,7 @@ func (c *Config) GerritURL(ctx context.Context) (string, error) {
 				"  2. Or specify the Gerrit host explicitly via flag:\n" +
 				"     gh pr <subcommand> --host <project>-review.googlesource.com")
 		}
-		if canon := CanonicalGerritHost(urlStr); strings.HasSuffix(canon, ".googlesource.com") {
+		if canon := CanonicalGerritHost(urlStr); isGoogleGerritHost(canon) {
 			return "https://" + canon + "/a", nil
 		}
 		if before, ok := strings.CutSuffix(urlStr, ".git"); ok {
@@ -728,7 +728,7 @@ func (c *Config) GerritURL(ctx context.Context) (string, error) {
 
 	// Apply /a suffix for googlesource.com hosts if not present
 	u, err := url.Parse(host)
-	if err == nil && strings.HasSuffix(u.Host, ".googlesource.com") && !strings.HasSuffix(host, "/a") {
+	if err == nil && isGoogleGerritHost(u.Hostname()) && !strings.HasSuffix(host, "/a") {
 		host = host + "/a"
 	}
 
@@ -804,6 +804,21 @@ func CanonicalGerritHost(raw string) string {
 		}
 	}
 	return h
+}
+
+// isGoogleGerritHost reports whether h, a hostname without a port, is a
+// Google-hosted Gerrit (*.googlesource.com, after CanonicalGerritHost). Only
+// these hosts receive auto-minted luci-auth tokens.
+func isGoogleGerritHost(h string) bool {
+	h = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(h)), ".")
+	// Only bare hostnames: CanonicalGerritHost would otherwise parse URLs
+	// such as sso://evil/x, and a port or path means the caller passed
+	// something other than a hostname.
+	if h == "" || strings.ContainsAny(h, "/:") {
+		return false
+	}
+	canon := CanonicalGerritHost(h)
+	return strings.HasSuffix(canon, ".googlesource.com") && !strings.HasPrefix(canon, ".")
 }
 
 // GerritHost returns the canonical Gerrit hostname (without scheme or path),

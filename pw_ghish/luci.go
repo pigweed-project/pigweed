@@ -385,7 +385,7 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 		return fmt.Errorf("Buildbucket %s/%s returned HTTP %d: %s", service, method, httpResp.StatusCode, string(bodyBytes))
 	}
 
-	bodyBytes = bytes.TrimPrefix(bodyBytes, []byte(")]}'\n"))
+	bodyBytes = stripXSSIPrefix(bodyBytes)
 	if VerboseFlag {
 		fmt.Fprintf(os.Stderr, "[debug] pRPC response: %s\n", string(bodyBytes))
 	}

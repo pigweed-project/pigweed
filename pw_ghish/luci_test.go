@@ -411,6 +411,25 @@ func TestCallPRPC_Invariants(t *testing.T) {
 	})
 }
 
+func TestCallPRPC_CRLFXSSIPrefix(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(")]}'\r\n{\"reply\":\"crlf\"}"))
+	}))
+	defer server.Close()
+
+	var resp struct {
+		Reply string `json:"reply"`
+	}
+	if err := NewLUCIClient(server.URL, server.Client()).CallPRPC(t.Context(), "test.Service", "Echo", struct{}{}, &resp); err != nil {
+		t.Fatalf("CallPRPC failed: %v", err)
+	}
+	if resp.Reply != "crlf" {
+		t.Errorf("reply = %q, want %q", resp.Reply, "crlf")
+	}
+}
+
 func TestCallPRPC_Errors(t *testing.T) {
 	ctx := context.Background()
 

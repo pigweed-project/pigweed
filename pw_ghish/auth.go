@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -818,6 +819,204 @@ func isLoopbackHost(host string) bool {
 	default:
 		return false
 	}
+}
+
+func isHTTPSOrLoopbackURL(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	if strings.EqualFold(u.Scheme, "https") {
+		return true
+	}
+	return strings.EqualFold(u.Scheme, "http") && isLoopbackHost(u.Hostname())
+}
+
+func stripAuthOnCrossHostRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("stopped after 10 redirects")
+	}
+	if len(via) > 0 && req != nil && req.URL != nil && via[0].URL != nil {
+		if !isHTTPSOrLoopbackURL(req.URL) || !strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) {
+			req.Header.Del("Authorization")
+		}
+	}
+	return nil
+}
+
+// urlHostIn reports whether u is HTTPS (or loopback HTTP) and its hostname
+// equals one of hosts, case-insensitively. Empty hosts never match.
+func urlHostIn(u *url.URL, hosts ...string) bool {
+	if !isHTTPSOrLoopbackURL(u) {
+		return false
+	}
+	return slices.ContainsFunc(hosts, func(h string) bool {
+		return h != "" && strings.EqualFold(u.Hostname(), h)
+	})
+}
+
+// ensureSafeHTTPClient returns c with CheckRedirect set to
+// stripAuthOnCrossHostRedirect (copying c if it has no CheckRedirect). A nil c
+// gives a client with no Timeout: requests are bounded by their context, so
+// Ctrl-C cancels them and long log downloads are not cut off.
+func ensureSafeHTTPClient(c *http.Client) *http.Client {
+	if c == nil {
+		return &http.Client{CheckRedirect: stripAuthOnCrossHostRedirect}
+	}
+	if c.CheckRedirect == nil {
+		cp := *c
+		cp.CheckRedirect = stripAuthOnCrossHostRedirect
+		return &cp
+	}
+	return c
+}
+
+type resolvedGerritAuth struct {
+	method   AuthMethod
+	desc     string
+	token    string
+	dynamic  bool
+	unauthed bool
+	cause    error // why no credential was found when unauthed
+}
+
+// errNonGoogleGerritHost is the resolvedGerritAuth cause when luci-auth is
+// skipped because the Gerrit host is not Google-hosted.
+var errNonGoogleGerritHost = errors.New("luci-auth tokens are only sent to *.googlesource.com")
+
+// allowLoopbackGerritAuthForTests lets loopback Gerrit hosts (httptest
+// servers) receive auto-minted luci-auth tokens. Only the unit-test TestMain
+// sets it; in production a loopback host is treated like any other
+// non-Google host, so a local process cannot harvest the luci-auth token.
+var allowLoopbackGerritAuthForTests = false
+
+// isGerritAutoAuthHost reports whether hostname h may receive an auto-minted
+// luci-auth token: a Google-hosted Gerrit, or loopback under the test hook.
+func isGerritAutoAuthHost(h string) bool {
+	return isGoogleGerritHost(h) || (allowLoopbackGerritAuthForTests && isLoopbackHost(h))
+}
+
+func gerritTokenFromEnv() (string, error) {
+	tok := strings.TrimSpace(os.Getenv("GERRIT_TOKEN"))
+	if strings.Contains(tok, ":") {
+		return "", NewExitCodeError(ExitCodeAuth,
+			"GERRIT_TOKEN looks like a username:password pair, but HTTP Basic auth "+
+				"(used by non-Google Gerrit servers) is not supported yet.\n\n"+
+				"Set GERRIT_TOKEN to an OAuth2 access token for a *.googlesource.com "+
+				"Gerrit host, or unset it to use luci-auth:\n"+
+				"  unset GERRIT_TOKEN")
+	}
+	return tok, nil
+}
+
+// resolveGerritAuth picks the Gerrit credential for gerritHost (a hostname or
+// URL) in mode: none when authentication is disabled, else GERRIT_TOKEN, else
+// a luci-auth token. Auto-minted luci-auth tokens are only used for
+// Google-hosted Gerrit (isGerritAutoAuthHost); an explicit GERRIT_TOKEN goes
+// to any configured host. When no credential is found, the result is unauthed
+// and cause says why.
+func resolveGerritAuth(ctx context.Context, gerritHost string, mode AuthMode) (resolvedGerritAuth, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if mode == AuthModeNone {
+		return resolvedGerritAuth{
+			method:   AuthMethodNone,
+			desc:     "disabled (--auth-mode=none)",
+			unauthed: true,
+		}, nil
+	}
+	tok, err := gerritTokenFromEnv()
+	if err != nil {
+		return resolvedGerritAuth{
+			method: AuthMethodToken,
+			desc:   "token (GERRIT_TOKEN)",
+		}, err
+	}
+	if tok != "" {
+		return resolvedGerritAuth{
+			method: AuthMethodToken,
+			desc:   "token (GERRIT_TOKEN)",
+			token:  tok,
+		}, nil
+	}
+	if !isGerritAutoAuthHost(hostnameOf(gerritHost)) {
+		return resolvedGerritAuth{
+			method:   AuthMethodNone,
+			desc:     "none",
+			unauthed: true,
+			cause:    errNonGoogleGerritHost,
+		}, nil
+	}
+	tok, src, err := GerritTokenResolver(ctx)
+	if err == nil && tok != "" {
+		return resolvedGerritAuth{
+			method:  AuthMethodToken,
+			desc:    fmt.Sprintf("token (%s)", cmp.Or(src, "luci-auth")),
+			token:   tok,
+			dynamic: true,
+		}, nil
+	}
+	if err == nil {
+		err = errors.New("luci-auth returned no Gerrit token")
+	}
+	return resolvedGerritAuth{
+		method:   AuthMethodNone,
+		desc:     "none",
+		unauthed: true,
+		cause:    err,
+	}, nil
+}
+
+// gerritGooglerAuthError explains why googler mode refuses an unauthenticated
+// Gerrit client for gerritHost.
+func gerritGooglerAuthError(modeReason, gerritHost string, cause error) error {
+	cleanHost := cmp.Or(CleanGerritHost(gerritHost), "<host>")
+	if errors.Is(cause, errNonGoogleGerritHost) {
+		return NewExitCodeError(ExitCodeAuth,
+			"Gerrit host %s is not a Google-hosted Gerrit (*.googlesource.com); gh-ish only sends "+
+				"luci-auth tokens to Google hosts.\n\n"+
+				"Remediation:\n"+
+				"  1. Set a token for this host: export GERRIT_TOKEN=\"<token>\"\n"+
+				"  2. Or use --auth-mode=community for anonymous reads",
+			cleanHost)
+	}
+	return NewExitCodeError(ExitCodeAuth,
+		"Gerrit authentication required in googler mode (%s): no Gerrit credentials found for %s (%v).\n\n"+
+			"Cause: In googler mode, gh-ish does not fall back to unauthenticated Gerrit requests.\n\n"+
+			"Remediation:\n"+
+			"  1. (Corp users) Run 'gcert' (with sso-cred-helper) or 'luci-auth login -scopes %q'.\n"+
+			"  2. Or set a token: export GERRIT_TOKEN=\"<token>\"\n"+
+			"  3. Or switch to community mode: export GH_ISH_AUTH_MODE=community\n"+
+			"  4. Inspect auth status: gh auth status",
+		modeReason, cleanHost, cause, DefaultGerritScopes)
+}
+
+func resolveGerritClientAuth(ctx context.Context, gerritURL string) (GerritAuth, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cfg, _ := ctx.Value(configKey).(*Config)
+	mode, modeReason, err := ResolveAuthMode(ctx, cfg)
+	if err != nil {
+		return GerritAuth{}, err
+	}
+	res, err := resolveGerritAuth(ctx, gerritURL, mode)
+	if err != nil {
+		return GerritAuth{}, err
+	}
+	if res.unauthed && mode == AuthModeGoogler {
+		return GerritAuth{}, gerritGooglerAuthError(modeReason, gerritURL, res.cause)
+	}
+	auth := GerritAuth{AllowAnonymousFallback: mode != AuthModeGoogler}
+	switch {
+	case res.unauthed:
+	case res.dynamic:
+		auth.Dynamic = true
+		auth.modeReason = modeReason
+	default:
+		auth.StaticToken = res.token
+	}
+	return auth, nil
 }
 
 func setTokenAuthHeader(req *http.Request, tok string) {

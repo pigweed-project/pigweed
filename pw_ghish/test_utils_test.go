@@ -619,6 +619,20 @@ type MockRequest struct {
 	Header http.Header
 }
 
+// DecodeRequest unmarshals req.Body as JSON into T, failing the test
+// immediately if req is nil or JSON decoding fails.
+func DecodeRequest[T any](t testing.TB, req *MockRequest) T {
+	t.Helper()
+	if req == nil {
+		t.Fatal("DecodeRequest: expected recorded request, got nil")
+	}
+	var out T
+	if err := json.Unmarshal(req.Body, &out); err != nil {
+		t.Fatalf("DecodeRequest(%s %s): failed to unmarshal %T: %v\nBody: %s", req.Method, req.Path, out, err, string(req.Body))
+	}
+	return out
+}
+
 // AuthResolvers groups the pluggable authentication and token resolution hooks
 // used across Gerrit, LUCI, Android Build, and Google Issue Tracker. Tests
 // install them with SetAuthResolvers or WithHermeticAuth.

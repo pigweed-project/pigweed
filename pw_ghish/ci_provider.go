@@ -31,7 +31,6 @@ type (
 	bbStep           = LUCIStep
 	bbBuilderID      = bbBuilder
 	GerritChangeInfo = gerrit.ChangeInfo
-	GerritClient     = gerrit.Client
 	ChangeRef        = GerritChangeRef
 )
 
@@ -55,11 +54,10 @@ type CIProvider interface {
 
 // BuildbucketProvider implements CIProvider for LUCI Buildbucket v2 and LogDog.
 type BuildbucketProvider struct {
-	LUCIClient   *LUCIClient
-	GerritClient *GerritClient
-	Cfg          *Config
-	Profile      ProjectProfile
-	ErrOut       io.Writer
+	LUCIClient *LUCIClient
+	Cfg        *Config
+	Profile    ProjectProfile
+	ErrOut     io.Writer
 }
 
 func (p *BuildbucketProvider) Name() string {
@@ -418,10 +416,9 @@ func isBusytownCandidate(host string, change *GerritChangeInfo) bool {
 
 // ResolveCIProvider selects and constructs the active CIProvider based on
 // `.ghish.toml` `[ci] providers` configuration or auto-detection from the Gerrit host/change.
-func ResolveCIProvider(cfg *Config, pcfg *ProjectConfig, gerritClient *GerritClient, host string, change *GerritChangeInfo) CIProvider {
+func ResolveCIProvider(cfg *Config, pcfg *ProjectConfig, gerritClient *gerrit.Client, host string, change *GerritChangeInfo) CIProvider {
 	bbProv := &BuildbucketProvider{
-		GerritClient: gerritClient,
-		Cfg:          cfg,
+		Cfg: cfg,
 	}
 	btProv := &BusytownProvider{
 		GerritClient: gerritClient,

@@ -133,7 +133,7 @@ func BusytownBuildURL(buildID, target string) string {
 
 // BusytownProvider implements CIProvider for Android Busytown / TreeHugger (`treetop~` + `ci.android.com`).
 type BusytownProvider struct {
-	GerritClient *GerritClient
+	GerritClient *gerrit.Client
 	Cfg          *Config
 }
 

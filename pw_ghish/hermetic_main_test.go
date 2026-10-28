@@ -41,6 +41,7 @@ func TestMain(m *testing.M) {
 	// auto-detection never sees their user.email.
 	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	allowLoopbackGerritAuthForTests = true
 	failClosed := failClosedAuthResolvers()
 	SetAuthResolvers(failClosed)
 	// `bb` and the Busytown accelerators (fetch_artifact, ants_cli) carry the
