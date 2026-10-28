@@ -12,22 +12,29 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//pw_build:pw_ts.bzl", "pw_ts_library", "pw_ts_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-js_library(
+pw_ts_library(
     name = "js_files",
     srcs = [
         "crc32.ts",
         "decoder.ts",
-        "decoder_test.ts",
         "encoder.ts",
-        "encoder_test.ts",
         "index.ts",
         "protocol.ts",
         "util.ts",
     ],
+)
+
+pw_ts_test(
+    name = "hdlc_test",
+    srcs = [
+        "decoder_test.ts",
+        "encoder_test.ts",
+    ],
+    deps = [":js_files"],
 )

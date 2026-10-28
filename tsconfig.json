@@ -18,6 +18,9 @@
     "skipLibCheck": true,
     "module": "esnext",
     "paths": {
+      "pigweedjs/pw_build/*": [
+        "./pw_build/ts/*"
+      ],
       "pigweedjs/pw_*": [
         "./pw_*/ts"
       ],
@@ -26,6 +29,9 @@
       ],
       "pigweedjs/types/*": [
         "./pw_web/ts/types/*"
+      ],
+      "*": [
+        "./pw_web/node_modules/*"
       ]
     },
     "typeRoots": [

@@ -12,22 +12,34 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//pw_build:pw_ts.bzl", "pw_ts_library", "pw_ts_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-js_library(
+pw_ts_library(
     name = "js_files",
     srcs = [
         "detokenizer.ts",
         "index.ts",
+        "int_testdata.ts",
         "printf_decoder.ts",
         "token_database.ts",
         "//pw_tokenizer:js_protos",
     ],
     deps = [
         "//pw_base64/ts:js_files",
+        "//pw_hdlc/ts:js_files",
     ],
+)
+
+pw_ts_test(
+    name = "tokenizer_test",
+    srcs = [
+        "detokenizer_test.ts",
+        "parser_test.ts",
+        "printf_decoder_test.ts",
+    ],
+    deps = [":js_files"],
 )

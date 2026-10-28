@@ -103,6 +103,20 @@ js_binary(
 )
 
 directory_path(
+    name = "tsc_entry_point",
+    directory = ":node_modules/typescript/dir",
+    path = "bin/tsc",
+    target_compatible_with = incompatible_with_mcu(),
+)
+
+js_binary(
+    name = "tsc_bin",
+    entry_point = ":tsc_entry_point",
+    target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
+)
+
+directory_path(
     name = "prettier_entry_point",
     directory = ":node_modules/prettier/dir",
     path = "bin/prettier.cjs",
@@ -153,15 +167,25 @@ js_run_binary(
         ":node_modules",
         "//pw_log:js_protos",
         "//pw_protobuf:js_protos",
-        "//pw_protobuf_compiler/ts:js_files",
-        "//pw_rpc/ts:js_files",
-        "//pw_tokenizer/ts:js_files",
-        "//pw_transfer/ts:js_files",
+        "//pw_protobuf_compiler:js_protos",
+        "//pw_rpc:js_protos",
+        "//pw_rpc/ts:js_protos",
+        "//pw_rpc2/cpp:js_protos",
+        "//pw_rpc2/cpp/examples/echo:js_protos",
+        "//pw_tokenizer:js_protos",
+        "//pw_transfer:js_protos",
     ],
     chdir = package_name(),
     out_dirs = ["dist/protos"],
     target_compatible_with = incompatible_with_mcu(),
     tool = ":build_protos_binary",
+)
+
+js_library(
+    name = "protos_lib",
+    srcs = [":build_protos"],
+    target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
 )
 
 js_run_binary(

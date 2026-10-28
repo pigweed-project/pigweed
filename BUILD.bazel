@@ -275,5 +275,5 @@ filegroup(
 copy_to_bin(
     name = "tsconfig",
     srcs = ["tsconfig.json"],
-    visibility = ["//pw_web:__subpackages__"],
+    visibility = ["//visibility:public"],
 )

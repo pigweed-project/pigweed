@@ -12,31 +12,55 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@pigweed//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("//pw_build:pw_ts.bzl", "pw_ts_library", "pw_ts_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-js_library(
+copy_to_bin(
+    name = "js_protos",
+    srcs = [
+        "test.proto",
+        "test2.proto",
+    ],
+)
+
+pw_ts_library(
     name = "js_files",
     srcs = [
         "call.ts",
         "client.ts",
         "descriptors.ts",
+        "docs_example.ts",
         "hash.ts",
         "index.ts",
         "method.ts",
         "packets.ts",
         "queue.ts",
         "rpc_classes.ts",
-        "test.proto",
-        "test2.proto",
-    ] + [
+        ":js_protos",
         "//pw_rpc:js_protos",
     ],
+    deps = [
+        "//pw_protobuf_compiler/ts:js_files",
+        "//pw_status/ts:js_files",
+        "//pw_web:protos_lib",
+    ],
+)
+
+pw_ts_test(
+    name = "rpc_test",
+    srcs = [
+        "call_test.ts",
+        "client_test.ts",
+        "descriptors_test.ts",
+        "packets_test.ts",
+    ],
+    deps = [":js_files"],
 )
 
 sphinx_docs_library(

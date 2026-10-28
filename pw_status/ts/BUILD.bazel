@@ -12,13 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//pw_build:pw_ts.bzl", "pw_ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-js_library(
+pw_ts_library(
     name = "js_files",
     srcs = [
         "index.ts",

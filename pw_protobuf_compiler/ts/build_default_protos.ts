@@ -41,6 +41,8 @@ const protos = [
   'pw_rpc/internal/packet.proto',
   'pw_protobuf_compiler/pw_protobuf_compiler_protos/nested/more_nesting/test.proto',
   'pw_protobuf_compiler/pw_protobuf_compiler_protos/test.proto',
+  'pw_rpc2/cpp/pw_rpc2_test.proto',
+  'pw_rpc2/cpp/examples/echo/echo.proto',
 ];
 
 const remapProtos = {
@@ -71,4 +73,9 @@ protos.forEach((protoPath) => {
   fs.writeFileSync(protoDistPath, protoData);
 });
 
-buildProtos(newProtoPaths, OUT_DIR, outputCollectionName, OUT_DIR);
+Promise.resolve(
+  buildProtos(newProtoPaths, OUT_DIR, outputCollectionName, OUT_DIR),
+).catch((err: unknown) => {
+  console.error(err);
+  process.exit(1);
+});

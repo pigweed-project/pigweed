@@ -62,8 +62,9 @@ const onError = (error: Error) => {
   console.error(`RPC error: ${error}`);
 };
 
+const call = bidiStub.invoke(onNext, onComplete, onError);
 const request = new bidiStub.method.requestType();
-bidiStub.invoke(request, onNext, onComplete, onError);
+call.send(request);
 // DOCSTAG: [pw_rpc-ts-callback-invocation]
 
 // DOCSTAG: [pw_rpc-ts-unary-promise]
@@ -97,9 +98,8 @@ async function callServerStreaming(): Promise<void> {
   }
 
   // Await remaining responses until stream completion:
-  const responses = call.getResponses();
-  while (!responses.done) {
-    console.log(await responses.value());
+  for await (const response of call.getResponses()) {
+    console.log(response);
   }
 }
 // DOCSTAG: [pw_rpc-ts-server-streaming-promise]

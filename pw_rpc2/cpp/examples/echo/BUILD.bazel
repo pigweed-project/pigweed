@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
@@ -151,4 +152,10 @@ sphinx_docs_library(
         "server_polling.cc",
     ],
     target_compatible_with = incompatible_with_mcu(),
+)
+
+copy_to_bin(
+    name = "js_protos",
+    srcs = ["echo.proto"],
+    visibility = ["//visibility:public"],
 )

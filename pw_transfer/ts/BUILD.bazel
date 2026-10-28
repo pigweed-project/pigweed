@@ -12,13 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//pw_build:pw_ts.bzl", "pw_ts_library", "pw_ts_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-js_library(
+pw_ts_library(
     name = "js_files",
     srcs = [
         "client.ts",
@@ -26,4 +26,15 @@ js_library(
         "transfer.ts",
         "//pw_transfer:js_protos",
     ],
+    deps = [
+        "//pw_rpc/ts:js_files",
+        "//pw_status/ts:js_files",
+        "//pw_web:protos_lib",
+    ],
+)
+
+pw_ts_test(
+    name = "transfer_test",
+    srcs = ["transfer_test.ts"],
+    deps = [":js_files"],
 )
