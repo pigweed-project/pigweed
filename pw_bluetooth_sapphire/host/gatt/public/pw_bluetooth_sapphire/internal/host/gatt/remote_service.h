@@ -16,6 +16,8 @@
 #include <lib/fit/function.h>
 #include <lib/fit/result.h>
 
+#include <optional>
+
 #include "pw_bluetooth_sapphire/internal/host/att/att.h"
 #include "pw_bluetooth_sapphire/internal/host/common/macros.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/client.h"
@@ -240,8 +242,6 @@ class RemoteService final {
  private:
   friend class internal::RemoteServiceManager;
 
-  static constexpr size_t kSentinel = std::numeric_limits<size_t>::max();
-
   // Returns a pointer to the characteristic with |id|. Returns nullptr if not
   // found.
   fit::result<Error<>> GetCharacteristic(CharacteristicHandle id,
@@ -255,6 +255,19 @@ class RemoteService final {
   // Called immediately after characteristic discovery to initiate descriptor
   // discovery.
   void StartDescriptorDiscovery();
+
+  // Discovers the descriptors of the characteristic at |iter| and then of each
+  // following characteristic, one at a time, until all are discovered or an
+  // error occurs.
+  void DiscoverDescriptorsFrom(
+      std::map<CharacteristicHandle, RemoteCharacteristic>::iterator iter);
+
+  // Called when descriptor discovery for the characteristic with |chrc_handle|
+  // completes. |discovery_id| identifies the descriptor discovery procedure
+  // that the request belongs to.
+  void OnDescriptorDiscoveryComplete(uint32_t discovery_id,
+                                     CharacteristicHandle chrc_handle,
+                                     att::Result<> status);
 
   // Completes all pending characteristic discovery requests.
   void CompleteCharacteristicDiscovery(att::Result<> status);
@@ -288,9 +301,7 @@ class RemoteService final {
                         ReadByTypeCallback callback);
 
   // Returns true if characteristic discovery has completed.
-  inline bool HasCharacteristics() const {
-    return remaining_descriptor_requests_ == 0u;
-  }
+  inline bool HasCharacteristics() const { return characteristics_discovered_; }
 
   // Called by RemoteServiceManager when a notification is received for one of
   // this service's characteristics.
@@ -307,16 +318,30 @@ class RemoteService final {
   using PendingDiscoveryList = std::vector<CharacteristicCallback>;
   PendingDiscoveryList pending_discov_reqs_;
 
-  // The known characteristics of this service. If not |characteristics_ready_|,
-  // this may contain a partial list of characteristics stored during the
-  // discovery process.
-  //
-  // The id of each characteristic corresponds to its index in this vector.
+  // The known characteristics of this service, keyed (and therefore ordered) by
+  // characteristic value handle. If not |characteristics_discovered_|, this may
+  // contain a partial list of characteristics stored during the discovery
+  // process.
   std::map<CharacteristicHandle, RemoteCharacteristic> characteristics_;
 
-  // The number of pending characteristic descriptor discoveries.
-  // Characteristics get marked as ready when this number reaches 0.
-  size_t remaining_descriptor_requests_;
+  // True once characteristic discovery (including descriptor discovery) has
+  // completed successfully.
+  bool characteristics_discovered_ = false;
+
+  // Identifies the current descriptor discovery procedure. Incremented each
+  // time descriptor discovery starts so that results from an earlier procedure
+  // are ignored.
+  uint32_t descriptor_discovery_id_ = 0;
+
+  // True while DiscoverDescriptorsFrom() is waiting for a characteristic's
+  // descriptor discovery call to return. Used to continue discovery in a loop,
+  // rather than recursively, when a request completes synchronously.
+  bool in_descriptor_discovery_loop_ = false;
+
+  // The characteristic whose descriptor discovery completed successfully while
+  // inside DiscoverDescriptorsFrom(). Discovery continues with the
+  // characteristic after it.
+  std::optional<CharacteristicHandle> last_sync_descriptor_discovery_;
 
   // Indicates whether the service was changed, as indicated by a service
   // changed notification.

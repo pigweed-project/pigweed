@@ -16,6 +16,10 @@
 
 #include <pw_assert/check.h>
 
+#include <iterator>
+#include <optional>
+#include <utility>
+
 #include "lib/fit/defer.h"
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/common/macros.h"
@@ -59,9 +63,7 @@ CharacteristicMap CharacteristicsToCharacteristicMap(
 
 RemoteService::RemoteService(const ServiceData& service_data,
                              Client::WeakPtr client)
-    : service_data_(service_data),
-      client_(std::move(client)),
-      remaining_descriptor_requests_(kSentinel) {
+    : service_data_(service_data), client_(std::move(client)) {
   PW_DCHECK(client_.is_alive());
 }
 
@@ -125,7 +127,7 @@ void RemoteService::DiscoverCharacteristics(CharacteristicCallback callback) {
       if (status.is_ok()) {
         // This marks that characteristic discovery has completed
         // successfully.
-        self->remaining_descriptor_requests_ = 0u;
+        self->characteristics_discovered_ = true;
       }
 
       // Skip descriptor discovery and end the procedure as no characteristics
@@ -441,58 +443,31 @@ void RemoteService::DisableNotifications(
 
 void RemoteService::StartDescriptorDiscovery() {
   PW_DCHECK(!pending_discov_reqs_.empty());
+  PW_DCHECK(!HasCharacteristics());
 
   PW_CHECK(!characteristics_.empty());
-  remaining_descriptor_requests_ = characteristics_.size();
 
+  // Invalidate the results of any earlier descriptor discovery procedure.
+  descriptor_discovery_id_++;
+  DiscoverDescriptorsFrom(characteristics_.begin());
+}
+
+void RemoteService::DiscoverDescriptorsFrom(
+    std::map<CharacteristicHandle, RemoteCharacteristic>::iterator iter) {
   auto self = GetWeakPtr();
+  const uint32_t discovery_id = descriptor_discovery_id_;
 
-  // Callback called for each characteristic. This may be called in any
-  // order since we request the descriptors of all characteristics all at
-  // once.
-  auto desc_done_callback = [self](att::Result<> status) {
-    if (!self.is_alive()) {
-      return;
-    }
-
-    // Do nothing if discovery was concluded earlier (which would have cleared
-    // the pending discovery requests).
-    if (self->pending_discov_reqs_.empty()) {
-      return;
-    }
-
-    if (status.is_ok()) {
-      self->remaining_descriptor_requests_ -= 1;
-
-      // Defer handling
-      if (self->remaining_descriptor_requests_ > 0) {
-        return;
-      }
-
-      // HasCharacteristics() should return true now.
-      PW_DCHECK(self->HasCharacteristics());
-
-      // Fall through and notify clients below.
-    } else {
-      PW_DCHECK(!self->HasCharacteristics());
-      bt_log(DEBUG, "gatt", "descriptor discovery failed %s", bt_str(status));
-      self->characteristics_.clear();
-
-      // Fall through and notify the clients below.
-    }
-
-    self->CompleteCharacteristicDiscovery(status);
-  };
-
-  // Characteristics are stored in an (ordered) std::map by value_handle, so we
-  // iterate in order; according to the spec (BT 5.0 Vol 3, part G, 3.3), the
-  // value handle must appear immediately after the characteristic handle so the
-  // handles are also guaranteed to be in order. Therefore we can use the next
-  // in the iteration to calculate the handle range.
-  for (auto iter = characteristics_.begin(); iter != characteristics_.end();
-       ++iter) {
-    auto next = iter;
-    ++next;
+  // Descriptors are discovered one characteristic at a time, so that at most
+  // one descriptor discovery request is outstanding regardless of how many
+  // characteristics the peer declares. A request that completes synchronously
+  // continues this loop rather than recursing, which bounds stack usage.
+  while (iter != characteristics_.end()) {
+    // Characteristics are stored in an (ordered) std::map by value_handle, so
+    // we iterate in order; according to the spec (BT 5.0 Vol 3, part G, 3.3),
+    // the value handle must appear immediately after the characteristic handle
+    // so the handles are also guaranteed to be in order. Therefore we can use
+    // the next in the iteration to calculate the handle range.
+    auto next = std::next(iter);
     att::Handle end_handle;
     if (next == characteristics_.end()) {
       end_handle = service_data_.range_end;
@@ -500,13 +475,68 @@ void RemoteService::StartDescriptorDiscovery() {
       end_handle = next->second.info().handle - 1;
     }
 
-    PW_DCHECK(client_.is_alive());
-    iter->second.DiscoverDescriptors(end_handle, desc_done_callback);
+    const CharacteristicHandle chrc_handle = iter->first;
+    auto desc_done_callback = [self, discovery_id, chrc_handle](
+                                  att::Result<> status) {
+      if (!self.is_alive()) {
+        return;
+      }
+      self->OnDescriptorDiscoveryComplete(discovery_id, chrc_handle, status);
+    };
 
-    if (!self.is_alive() || self->characteristics_.empty()) {
+    PW_DCHECK(client_.is_alive());
+    in_descriptor_discovery_loop_ = true;
+    last_sync_descriptor_discovery_.reset();
+    iter->second.DiscoverDescriptors(end_handle, std::move(desc_done_callback));
+    if (!self.is_alive() || discovery_id != descriptor_discovery_id_) {
       return;
     }
+    in_descriptor_discovery_loop_ = false;
+
+    // Only set if the request completed synchronously and successfully.
+    // Otherwise, the request is still pending or discovery has concluded.
+    std::optional<CharacteristicHandle> last =
+        std::exchange(last_sync_descriptor_discovery_, std::nullopt);
+    if (!last.has_value()) {
+      return;
+    }
+
+    // Look up the next characteristic again rather than reusing |next|, in
+    // case the characteristics changed during the request.
+    iter = characteristics_.upper_bound(*last);
   }
+
+  // The descriptors of every characteristic have been discovered.
+  characteristics_discovered_ = true;
+  CompleteCharacteristicDiscovery(fit::ok());
+}
+
+void RemoteService::OnDescriptorDiscoveryComplete(
+    uint32_t discovery_id,
+    CharacteristicHandle chrc_handle,
+    att::Result<> status) {
+  // Ignore results that belong to an earlier descriptor discovery procedure,
+  // or arrive after discovery was concluded (which would have cleared the
+  // pending discovery requests).
+  if (discovery_id != descriptor_discovery_id_ ||
+      pending_discov_reqs_.empty()) {
+    return;
+  }
+
+  if (status.is_error()) {
+    PW_DCHECK(!HasCharacteristics());
+    bt_log(DEBUG, "gatt", "descriptor discovery failed %s", bt_str(status));
+    characteristics_.clear();
+    CompleteCharacteristicDiscovery(status);
+    return;
+  }
+
+  if (in_descriptor_discovery_loop_) {
+    // Let the DiscoverDescriptorsFrom() loop on the stack continue.
+    last_sync_descriptor_discovery_ = chrc_handle;
+    return;
+  }
+  DiscoverDescriptorsFrom(characteristics_.upper_bound(chrc_handle));
 }
 
 fit::result<Error<>> RemoteService::GetCharacteristic(
@@ -558,7 +588,7 @@ fit::result<Error<>> RemoteService::GetDescriptor(
 
 void RemoteService::CompleteCharacteristicDiscovery(att::Result<> status) {
   PW_DCHECK(!pending_discov_reqs_.empty());
-  PW_DCHECK(status.is_error() || remaining_descriptor_requests_ == 0u);
+  PW_DCHECK(status.is_error() || characteristics_discovered_);
 
   // We return a new copy of only the immutable data of our characteristics and
   // their descriptors. This requires a copy, which *could* be expensive in the

@@ -893,9 +893,9 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsOfMultipleEarlyFail) {
 
   RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
-  // There should have been two descriptor discovery requests as discovery
-  // should have been skipped for characteristic #2 due to its handles.
-  EXPECT_EQ(2u, fake_client()->desc_discovery_count());
+  // Discovery should stop after the first request fails, as descriptor
+  // discovery requests are issued one at a time.
+  EXPECT_EQ(1u, fake_client()->desc_discovery_count());
   EXPECT_FALSE(service->IsDiscovered());
   EXPECT_EQ(ToResult(HostError::kNotSupported), status);
 }
@@ -1174,12 +1174,11 @@ TEST_F(RemoteServiceManagerTest,
   EXPECT_EQ(ToResult(HostError::kPacketMalformed), status);
 }
 
-// Test that if descriptor discovery fails for a sibling characteristic,
-// clearing characteristics_ while an ExtendedProperties ReadRequest is pending,
-// we do not crash when the read response callback attempts to access the
-// deleted characteristic.
+// Test that descriptor discovery for a sibling characteristic waits for a
+// pending ExtendedProperties ReadRequest, and that a subsequent sibling error
+// fails discovery.
 TEST_F(RemoteServiceManagerTest,
-       DiscoverDescriptorsSiblingErrorDeferredExtPropReadDoesNotCrash) {
+       DiscoverDescriptorsSiblingErrorAfterDeferredExtPropReadFailsDiscovery) {
   ServiceData data(ServiceKind::PRIMARY, 1, 7, kTestServiceUuid1);
   auto service = SetUpFakeService(data);
 
@@ -1216,16 +1215,67 @@ TEST_F(RemoteServiceManagerTest,
 
   RunUntilIdle();
 
+  // The second characteristic's descriptors are not requested until the read
+  // completes.
   ASSERT_TRUE(deferred_read_cb.has_value());
   EXPECT_EQ(4, read_handle);
+  EXPECT_EQ(1u, fake_client()->desc_discovery_count());
+  EXPECT_FALSE(discover_done);
+
+  StaticByteBuffer ext_prop_value(0x01, 0x00);
+  (*deferred_read_cb)(fit::ok(), ext_prop_value, /*maybe_truncated=*/false);
+  RunUntilIdle();
+
+  EXPECT_EQ(2u, fake_client()->desc_discovery_count());
   ASSERT_TRUE(discover_done);
   EXPECT_TRUE(discover_status.is_error());
   EXPECT_FALSE(service->IsDiscovered());
+}
+
+// Test that if the service is destroyed while an ExtendedProperties
+// ReadRequest is pending, we do not crash when the read response callback
+// attempts to access the deleted characteristic.
+TEST_F(
+    RemoteServiceManagerTest,
+    DiscoverDescriptorsDeferredExtPropReadAfterServiceDestroyedDoesNotCrash) {
+  ServiceData data(ServiceKind::PRIMARY, 1, 7, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+
+  // ExtendedProperties is set on fake_char1. This will trigger a
+  // ReadRequest for its descriptor.
+  CharacteristicData fake_char1(
+      Property::kExtendedProperties, std::nullopt, 2, 3, kTestUuid3);
+  DescriptorData fake_desc1(4, types::kCharacteristicExtProperties);
+  CharacteristicData fake_char2(0, std::nullopt, 5, 6, kTestUuid3);
+  DescriptorData fake_desc2(7, kTestUuid4);
+  SetCharacteristicsAndDescriptors({fake_char1, fake_char2},
+                                   {fake_desc1, fake_desc2});
+
+  std::optional<Client::ReadCallback> deferred_read_cb;
+  fake_client()->set_read_request_callback(
+      [&](att::Handle, Client::ReadCallback callback) {
+        deferred_read_cb = std::move(callback);
+      });
+
+  bool discover_done = false;
+  service->DiscoverCharacteristics(
+      [&](att::Result<>, const auto&) { discover_done = true; });
+
+  RunUntilIdle();
+  ASSERT_TRUE(deferred_read_cb.has_value());
+  EXPECT_FALSE(discover_done);
+
+  // Destroying the RemoteServiceManager destroys the service and its
+  // characteristics.
+  DestroyServiceManager();
+  EXPECT_FALSE(service.is_alive());
 
   // Deliver the deferred read response to the destroyed characteristic
   // callback and expect it not to crash.
   StaticByteBuffer ext_prop_value(0x01, 0x00);
   (*deferred_read_cb)(fit::ok(), ext_prop_value, /*maybe_truncated=*/false);
+  RunUntilIdle();
+  EXPECT_FALSE(discover_done);
 }
 
 // Test that if RemoteService is destroyed synchronously inside the
@@ -1297,6 +1347,259 @@ TEST_F(RemoteServiceManagerTest,
   RunUntilIdle();
 
   EXPECT_TRUE(callback_called);
+}
+
+// Regression test for b/525217209. Descriptor discovery must keep at most one
+// request outstanding at a time, so that the number of characteristics declared
+// by the peer does not determine how many requests are queued at once.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverDescriptorsOfMultipleIssuesOneRequestAtATime) {
+  // Every characteristic is followed by a one-handle gap, so each of them
+  // requires a descriptor discovery request.
+  CharacteristicData fake_char1(0, std::nullopt, 2, 3, kTestUuid3);
+  CharacteristicData fake_char2(0, std::nullopt, 5, 6, kTestUuid3);
+  CharacteristicData fake_char3(0, std::nullopt, 8, 9, kTestUuid3);
+
+  ServiceData data(ServiceKind::PRIMARY, 1, 10, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+  fake_client()->set_characteristics({{fake_char1, fake_char2, fake_char3}});
+
+  struct DescriptorRequest {
+    att::Handle range_start;
+    att::Handle range_end;
+    att::ResultFunction<> status_callback;
+  };
+  std::vector<DescriptorRequest> requests;
+  fake_client()->set_discover_descriptors_callback(
+      [&](att::Handle range_start,
+          att::Handle range_end,
+          auto,
+          att::ResultFunction<> status_callback) {
+        requests.push_back(
+            {range_start, range_end, std::move(status_callback)});
+      });
+
+  std::optional<att::Result<>> status;
+  service->DiscoverCharacteristics(
+      [&](att::Result<> cb_status, const auto&) { status = cb_status; });
+  RunUntilIdle();
+
+  // Only the first characteristic's descriptors are requested.
+  ASSERT_EQ(1u, requests.size());
+  EXPECT_EQ(4u, requests[0].range_start);
+  EXPECT_EQ(4u, requests[0].range_end);
+
+  // The next request is only issued once the previous one completes. Move each
+  // callback out before invoking it, since completing a request synchronously
+  // appends the next request to |requests|.
+  auto status_callback = std::move(requests[0].status_callback);
+  status_callback(fit::ok());
+  RunUntilIdle();
+  ASSERT_EQ(2u, requests.size());
+  EXPECT_EQ(7u, requests[1].range_start);
+  EXPECT_EQ(7u, requests[1].range_end);
+
+  status_callback = std::move(requests[1].status_callback);
+  status_callback(fit::ok());
+  RunUntilIdle();
+  ASSERT_EQ(3u, requests.size());
+  EXPECT_EQ(10u, requests[2].range_start);
+  EXPECT_EQ(10u, requests[2].range_end);
+  EXPECT_FALSE(status.has_value());
+  EXPECT_FALSE(service->IsDiscovered());
+
+  status_callback = std::move(requests[2].status_callback);
+  status_callback(fit::ok());
+  RunUntilIdle();
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(fit::ok(), *status);
+  EXPECT_TRUE(service->IsDiscovered());
+}
+
+// A characteristic discovery request made while descriptor discovery is in
+// progress must not start another discovery procedure, and must complete along
+// with the original request.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverCharacteristicsDuringDescriptorDiscoveryCompletesBothRequests) {
+  CharacteristicData fake_char1(0, std::nullopt, 2, 3, kTestUuid3);
+  CharacteristicData fake_char2(0, std::nullopt, 5, 6, kTestUuid3);
+
+  ServiceData data(ServiceKind::PRIMARY, 1, 7, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+  fake_client()->set_characteristics({{fake_char1, fake_char2}});
+
+  std::vector<att::ResultFunction<>> requests;
+  fake_client()->set_discover_descriptors_callback(
+      [&](att::Handle, att::Handle, auto, att::ResultFunction<> callback) {
+        requests.push_back(std::move(callback));
+      });
+
+  std::optional<att::Result<>> status1;
+  service->DiscoverCharacteristics(
+      [&](att::Result<> cb_status, const auto&) { status1 = cb_status; });
+  RunUntilIdle();
+  ASSERT_EQ(1u, requests.size());
+
+  std::optional<att::Result<>> status2;
+  service->DiscoverCharacteristics(
+      [&](att::Result<> cb_status, const auto&) { status2 = cb_status; });
+  RunUntilIdle();
+  EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
+  ASSERT_EQ(1u, requests.size());
+
+  auto status_callback = std::move(requests[0]);
+  status_callback(fit::ok());
+  RunUntilIdle();
+  ASSERT_EQ(2u, requests.size());
+  EXPECT_FALSE(status1.has_value());
+  EXPECT_FALSE(status2.has_value());
+
+  status_callback = std::move(requests[1]);
+  status_callback(fit::ok());
+  RunUntilIdle();
+  EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
+  EXPECT_EQ(2u, requests.size());
+  ASSERT_TRUE(status1.has_value());
+  EXPECT_EQ(fit::ok(), *status1);
+  ASSERT_TRUE(status2.has_value());
+  EXPECT_EQ(fit::ok(), *status2);
+  EXPECT_TRUE(service->IsDiscovered());
+}
+
+// Characteristic discovery can be retried on the same service after descriptor
+// discovery fails, and the retry discovers the descriptors of every
+// characteristic again.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverCharacteristicsAfterDescriptorDiscoveryFailureRetries) {
+  CharacteristicData fake_char1(0, std::nullopt, 2, 3, kTestUuid3);
+  DescriptorData fake_desc1(4, kTestUuid4);
+  CharacteristicData fake_char2(0, std::nullopt, 5, 6, kTestUuid3);
+  DescriptorData fake_desc2(7, kTestUuid4);
+
+  ServiceData data(ServiceKind::PRIMARY, 1, 7, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+  SetCharacteristicsAndDescriptors({fake_char1, fake_char2},
+                                   {fake_desc1, fake_desc2});
+
+  // The second request of the first attempt fails.
+  fake_client()->set_descriptor_discovery_status(
+      ToResult(HostError::kNotSupported), 2);
+
+  std::optional<att::Result<>> status;
+  service->DiscoverCharacteristics(
+      [&](att::Result<> cb_status, const auto&) { status = cb_status; });
+  RunUntilIdle();
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(ToResult(HostError::kNotSupported), *status);
+  EXPECT_FALSE(service->IsDiscovered());
+  EXPECT_EQ(2u, fake_client()->desc_discovery_count());
+
+  fake_client()->set_descriptor_discovery_status(fit::ok());
+  status.reset();
+  service->DiscoverCharacteristics([&](att::Result<> cb_status,
+                                       const auto& chrcs) {
+    status = cb_status;
+    std::map<CharacteristicHandle,
+             std::pair<CharacteristicData,
+                       std::map<DescriptorHandle, DescriptorData>>>
+        expected = {{CharacteristicHandle(3), {fake_char1, {{4, fake_desc1}}}},
+                    {CharacteristicHandle(6), {fake_char2, {{7, fake_desc2}}}}};
+    EXPECT_EQ(expected, chrcs);
+  });
+  RunUntilIdle();
+  EXPECT_EQ(2u, fake_client()->chrc_discovery_count());
+  EXPECT_EQ(4u, fake_client()->desc_discovery_count());
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(fit::ok(), *status);
+  EXPECT_TRUE(service->IsDiscovered());
+}
+
+// Descriptor discovery requests that complete synchronously must still cause
+// the descriptors of every characteristic to be discovered.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverDescriptorsSynchronousSuccessDiscoversAllCharacteristics) {
+  CharacteristicData fake_char1(0, std::nullopt, 2, 3, kTestUuid3);
+  DescriptorData fake_desc1(4, kTestUuid4);
+  CharacteristicData fake_char2(0, std::nullopt, 5, 6, kTestUuid3);
+  DescriptorData fake_desc2(7, kTestUuid4);
+
+  ServiceData data(ServiceKind::PRIMARY, 1, 7, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+  fake_client()->set_characteristics({{fake_char1, fake_char2}});
+
+  size_t request_count = 0;
+  fake_client()->set_discover_descriptors_callback(
+      [&](att::Handle range_start,
+          att::Handle range_end,
+          Client::DescriptorCallback desc_callback,
+          att::ResultFunction<> status_callback) {
+        request_count++;
+        for (const DescriptorData& desc : {fake_desc1, fake_desc2}) {
+          if (desc.handle >= range_start && desc.handle <= range_end) {
+            desc_callback(desc);
+          }
+        }
+        status_callback(fit::ok());
+      });
+
+  std::optional<att::Result<>> status;
+  service->DiscoverCharacteristics([&](att::Result<> cb_status,
+                                       const auto& chrcs) {
+    status = cb_status;
+    std::map<CharacteristicHandle,
+             std::pair<CharacteristicData,
+                       std::map<DescriptorHandle, DescriptorData>>>
+        expected = {{CharacteristicHandle(3), {fake_char1, {{4, fake_desc1}}}},
+                    {CharacteristicHandle(6), {fake_char2, {{7, fake_desc2}}}}};
+    EXPECT_EQ(expected, chrcs);
+  });
+  RunUntilIdle();
+
+  EXPECT_EQ(2u, request_count);
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(fit::ok(), *status);
+  EXPECT_TRUE(service->IsDiscovered());
+}
+
+// A descriptor discovery request that fails synchronously after an earlier one
+// succeeded synchronously must fail discovery without issuing further requests.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverDescriptorsSynchronousErrorStopsDiscovery) {
+  CharacteristicData fake_char1(0, std::nullopt, 2, 3, kTestUuid3);
+  CharacteristicData fake_char2(0, std::nullopt, 5, 6, kTestUuid3);
+  CharacteristicData fake_char3(0, std::nullopt, 8, 9, kTestUuid3);
+
+  ServiceData data(ServiceKind::PRIMARY, 1, 10, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+  fake_client()->set_characteristics({{fake_char1, fake_char2, fake_char3}});
+
+  // The first request succeeds and the second fails, both synchronously.
+  size_t request_count = 0;
+  fake_client()->set_discover_descriptors_callback(
+      [&](att::Handle,
+          att::Handle,
+          Client::DescriptorCallback,
+          att::ResultFunction<> status_callback) {
+        request_count++;
+        if (request_count == 2) {
+          status_callback(ToResult(HostError::kNotSupported));
+          return;
+        }
+        status_callback(fit::ok());
+      });
+
+  std::optional<att::Result<>> status;
+  service->DiscoverCharacteristics(
+      [&](att::Result<> cb_status, const auto& chrcs) {
+        status = cb_status;
+        EXPECT_TRUE(chrcs.empty());
+      });
+  RunUntilIdle();
+
+  EXPECT_EQ(2u, request_count);
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(ToResult(HostError::kNotSupported), *status);
+  EXPECT_FALSE(service->IsDiscovered());
 }
 
 constexpr CharacteristicHandle kDefaultCharacteristic(3);
