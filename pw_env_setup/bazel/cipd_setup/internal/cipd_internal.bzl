@@ -153,7 +153,7 @@ def cipd_client_impl(rctx):
         sha256 = get_client_cipd_digest(rctx),
         executable = True,
     )
-    rctx.file("BUILD", "exports_files([\"cipd\"])")
+    rctx.file("BUILD", "exports_files([\"cipd\"], visibility = [\"//visibility:public\"])")
 
 def cipd_repository_base(rctx, packages):
     """Populates the base contents of a CIPD repository.
@@ -219,7 +219,10 @@ def _cipd_repository_impl(rctx, packages):
         rctx.file("BUILD", rctx.read(rctx.attr.build_file))
     elif not rctx.path("BUILD").exists and not rctx.path("BUILD.bazel").exists:
         rctx.file("BUILD", """
-exports_files(glob(["**"]))
+exports_files(
+    glob(["**"]),
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "all",
@@ -282,7 +285,7 @@ def cipd_deps_impl(repository_ctx):
     pigweed_deps = json.decode(
         repository_ctx.read(repository_ctx.attr._pigweed_packages_json),
     )["packages"]
-    repository_ctx.file("BUILD", "exports_files(glob([\"**/*\"]))\n")
+    repository_ctx.file("BUILD", "exports_files(glob([\"**/*\"]), visibility = [\"//visibility:public\"])\n")
 
     repository_ctx.file("cipd_init.bzl", CIPD_INIT_BZL_TEMPLATE.format(
         cipd_deps = "\n".join([

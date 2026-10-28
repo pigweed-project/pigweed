@@ -12,4 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-exports_files(["doxylink.BUILD.bazel"])
+exports_files(
+    ["doxylink.BUILD.bazel"],
+    visibility = ["//visibility:public"],
+)

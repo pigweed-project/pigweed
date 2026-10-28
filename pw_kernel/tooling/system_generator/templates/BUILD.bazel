@@ -24,4 +24,5 @@ exports_files(
         "pigweed_linker_sections.ld.jinja",
         "multi_process_app.rs.jinja",
     ],
+    visibility = ["//visibility:public"],
 )

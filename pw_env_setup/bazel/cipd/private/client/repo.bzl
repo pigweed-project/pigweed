@@ -43,7 +43,7 @@ def _client_repo_impl(rctx):
     )
 
     # Write a BUILD file with an export so it can be used as "@<repo_name>//:cipd".
-    rctx.file("BUILD", "exports_files([\"cipd\"])")
+    rctx.file("BUILD", "exports_files([\"cipd\"], visibility = [\"//visibility:public\"])")
 
     # rctx.repo_metadata is only available in Bazel>=8.3.0
     if hasattr(rctx, "repo_metadata"):

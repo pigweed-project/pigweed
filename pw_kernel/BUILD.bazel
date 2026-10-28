@@ -18,6 +18,7 @@ load("//pw_build:pw_rust_docs.bzl", "pw_rust_docs")
 
 exports_files(
     ["rustfmt.toml"],
+    visibility = ["//visibility:public"],
 )
 
 alias(

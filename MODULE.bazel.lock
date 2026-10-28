@@ -595,7 +595,7 @@
     },
     "//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
       "general": {
-        "bzlTransitiveDigest": "8ANRjMkuiXHMgW6VBkHehB4PcxmW7HeHkU6VIG1r0d0=",
+        "bzlTransitiveDigest": "D+er3Gbi1SNnQ8bbUWWB60rvovzr4n7efHm3ukW7kro=",
         "usagesDigest": "wF1xf/84bfEcmbSFTd/ZVcCunCQ8VmufLzbrSzvwF9g=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -638,7 +638,7 @@
     },
     "//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
-        "bzlTransitiveDigest": "KjWX8LFoQ1ZppKFhmDH4AOVBvoQu3XzMIDz7r59TCRE=",
+        "bzlTransitiveDigest": "WBzXi4/e9a/yjsFC8k3FD+QUVicPMBVnLJlb6SsISmQ=",
         "usagesDigest": "JxrDXByciKLPXWk5xZ6Mp5LYjg1Qfv/1a9YK0RFcvF0=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"

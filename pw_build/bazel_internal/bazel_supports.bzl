@@ -55,7 +55,7 @@ _SUPPORTS_DEFS = (
 )
 
 def _bazel_supports_repo_impl(rctx):
-    rctx.file("BUILD", "exports_files([\"bazel_supports.bzl\"])")
+    rctx.file("BUILD", "exports_files([\"bazel_supports.bzl\"], visibility = [\"//visibility:public\"])")
 
     # `native.bazel_version` is not officially documented, and is only
     # available in a few contexts: WORKSPACE files (deprecated), and repository

@@ -12,7 +12,10 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-exports_files(glob(["**"]))
+exports_files(
+    glob(["**"]),
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "all",

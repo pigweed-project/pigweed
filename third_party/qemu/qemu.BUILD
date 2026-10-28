@@ -23,6 +23,11 @@ package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
+exports_files([
+    "bin/qemu-system-arm",
+    "bin/qemu-system-riscv32",
+])
+
 native_binary(
     name = "qemu-system-arm",
     src = "bin/qemu-system-arm",

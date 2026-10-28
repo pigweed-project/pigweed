@@ -34,6 +34,8 @@ package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
+exports_files(["size_report.proto"])
+
 cc_library(
     name = "size_report",
     srcs = ["size_report.cc"],

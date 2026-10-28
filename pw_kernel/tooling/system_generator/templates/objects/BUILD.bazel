@@ -21,4 +21,5 @@ exports_files(
         "thread.rs.jinja",
         "wait_group.rs.jinja",
     ],
+    visibility = ["//visibility:public"],
 )

@@ -20,6 +20,11 @@ package(
     features = ["-layering_check"],
 )
 
+exports_files(
+    ["rp2040_utils/unit_test_server.py"],
+    visibility = ["//visibility:public"],
+)
+
 pw_py_binary(
     name = "flash",
     srcs = [

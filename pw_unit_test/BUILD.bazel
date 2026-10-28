@@ -33,6 +33,14 @@ package(
 
 licenses(["notice"])
 
+exports_files(
+    [
+        "public/pw_unit_test/config.h",
+        "public/pw_unit_test/ffi_test_runner.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 label_flag(
     name = "main",
     build_setting_default = ":simple_printing_main",

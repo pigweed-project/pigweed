@@ -20,7 +20,7 @@ module(
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_platform", version = "0.1.0")
-bazel_dep(name = "rules_python", version = "1.8.5")
+bazel_dep(name = "rules_python", version = "1.9.1")
 bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "zephyr-bazel", version = "0.0.1")
@@ -62,16 +62,16 @@ inject_repo(zephyr_patch, "cmsis_6")
 
 inject_repo(zephyr_patch, "hal_rpi_pico")
 
-new_git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
+git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
-new_git_repository(
+git_repository(
     name = "cmsis_6",
     build_file = "@zephyr-bazel//modules:cmsis_6.BUILD",
     commit = "30a859f44ef8ab4dc8f84b03ed586fd16ccf9d74",
     remote = "https://github.com/zephyrproject-rtos/CMSIS_6.git",
 )
 
-new_git_repository(
+git_repository(
     name = "hal_rpi_pico",
     build_file = "@zephyr-bazel//modules:hal_rpi_pico.BUILD",
     commit = "562b41e10a1d8b1a761b253b107c5c6a84cf4535",

@@ -15,7 +15,10 @@
 
 def _resolution_repo_impl(rctx):
     rctx.file("BUILD", """
-exports_files(["resolution.md", "resolution.bzl"])
+exports_files(
+    ["resolution.md", "resolution.bzl"],
+    visibility = ["//visibility:public"],
+)
 sh_binary(
     name = "show",
     srcs = ["show.sh"],

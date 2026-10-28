@@ -29,7 +29,10 @@ $ParanoidMode CheckPresence
 """
 
 _BUILD_FILE_TEMPLATE = """
-exports_files(glob(["**"]))
+exports_files(
+    glob(["**"]),
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "all",

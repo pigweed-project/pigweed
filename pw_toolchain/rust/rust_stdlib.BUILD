@@ -14,7 +14,10 @@
 
 load("@rules_rust//rust:toolchain.bzl", "rust_stdlib_filegroup")
 
-exports_files(glob(["**"]))
+exports_files(
+    glob(["**"]),
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "all",

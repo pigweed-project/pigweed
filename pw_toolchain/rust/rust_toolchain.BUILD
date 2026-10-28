@@ -16,7 +16,10 @@ load("@pigweed//pw_toolchain/rust:no_stdlibs.bzl", "build_with_core_only", "buil
 load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_stdlib_filegroup")
 
-exports_files(glob(["**"]))
+exports_files(
+    glob(["**"]),
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "all",

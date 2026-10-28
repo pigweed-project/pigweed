@@ -24,6 +24,8 @@ package(
 
 licenses(["notice"])
 
+exports_files(["task_helpers.cc"])
+
 pw_cc_test(
     name = "basic",
     srcs = [

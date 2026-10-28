@@ -14,13 +14,16 @@
 """Copies a source file to bazel-bin at the same workspace-relative path."""
 
 # buildifier: disable=bzl-visibility
+load("@bazel_skylib//rules/private:copy_common.bzl", "OsInfo")
+
+# buildifier: disable=bzl-visibility
 load("@bazel_skylib//rules/private:copy_file_private.bzl", "copy_bash", "copy_cmd")
 
 def _copy_to_bin_impl(ctx):
     all_dst = []
     for src in ctx.files.srcs:
         dst = ctx.actions.declare_file(src.basename, sibling = src)
-        if ctx.attr.is_windows:
+        if ctx.attr._exec_is_windows[OsInfo].is_windows:
             copy_cmd(ctx, src, dst)
         else:
             copy_bash(ctx, src, dst)
@@ -30,8 +33,11 @@ def _copy_to_bin_impl(ctx):
 _copy_to_bin = rule(
     implementation = _copy_to_bin_impl,
     attrs = {
-        "is_windows": attr.bool(mandatory = True, doc = "Automatically set by macro"),
         "srcs": attr.label_list(mandatory = True, allow_files = True),
+        "_exec_is_windows": attr.label(
+            default = "@bazel_skylib//rules/private:is_windows",
+            cfg = "exec",
+        ),
     },
 )
 
@@ -54,9 +60,5 @@ def copy_to_bin(name, srcs, **kwargs):
     _copy_to_bin(
         name = name,
         srcs = srcs,
-        is_windows = select({
-            "@bazel_tools//src/conditions:host_windows": True,
-            "//conditions:default": False,
-        }),
         **kwargs
     )
