@@ -114,6 +114,17 @@
 #define PW_SYSTEM_ENABLE_THREAD_SNAPSHOT_SERVICE 1
 #endif  // PW_SYSTEM_ENABLE_THREAD_SNAPSHOT_SERVICE
 
+// PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE specifies if the RPC query service is
+// enabled. This service exposes an RPC interface for querying the available
+// services and their methods on the device.
+//
+// This defaults to disabled because it is considered a debug interface.
+//
+// Defaults to 0 (disabled).
+#ifndef PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE
+#define PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE 0
+#endif  // PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE
+
 // PW_SYSTEM_WORK_QUEUE_MAX_ENTRIES specifies the maximum number of work queue
 // entries that may be staged at once.
 //

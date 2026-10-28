@@ -310,11 +310,14 @@ pw_proto_library(pw_rpc.protos
     benchmark.proto
     internal/packet.proto
     echo.proto
+    query.proto
   INPUTS
     benchmark.options
     benchmark.pwpb_options
     echo.options
     echo.pwpb_options
+    query.options
+    query.pwpb_options
   PREFIX
     pw_rpc
 )

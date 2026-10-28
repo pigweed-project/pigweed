@@ -258,6 +258,7 @@ cc_library(
         ":file_manager",
         ":file_service",
         ":log",
+        ":query_service",
         ":rpc_server",
         ":target_hooks",
         ":thread_snapshot_service",
@@ -421,6 +422,20 @@ cc_library(
 )
 
 cc_library(
+    name = "query_service",
+    srcs = [
+        "query_service.cc",
+    ],
+    hdrs = [
+        "public/pw_system/query_service.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_rpc/pwpb:query_service",
+    ],
+)
+
+cc_library(
     name = "crash_handler",
     srcs = [
         "crash_handler.cc",
@@ -579,6 +594,7 @@ pw_cc_binary(
     # testonly dependencies.
     testonly = True,
     srcs = ["example_user_app_init.cc"],
+    defines = ["PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE=1"],
     # This needs extra platform configuration to work (even on the host), so
     # don't try to build the cc_binary without it.
     tags = ["manual"],
@@ -610,6 +626,7 @@ cc_library(
         ":file_manager",
         ":file_service",
         ":log",
+        ":query_service",
         ":thread_snapshot_service",
         ":transfer_service",
         ":work_queue",

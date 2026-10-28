@@ -159,6 +159,19 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "query_service",
+    srcs = ["query_service.cc"],
+    hdrs = ["public/pw_rpc/query_service_pwpb.h"],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_assert:check",
+        "//pw_log",
+        "//pw_rpc",
+        "//pw_rpc:query_pwpb_rpc",
+    ],
+)
+
 # TODO: b/242059613 - Enable this library when logging_event_handler can be used.
 filegroup(
     name = "client_integration_test",
@@ -303,6 +316,16 @@ pw_cc_test(
     deps = [
         ":echo_service",
         ":test_method_context",
+    ],
+)
+
+pw_cc_test(
+    name = "query_service_test",
+    srcs = ["query_service_test.cc"],
+    deps = [
+        ":query_service",
+        ":test_method_context",
+        "//pw_rpc:internal_test_utils",
     ],
 )
 

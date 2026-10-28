@@ -29,8 +29,13 @@ from typing import (
 from google.protobuf.message import DecodeError, Message
 from pw_status import Status
 
-from pw_rpc import descriptors, packets
-from pw_rpc.descriptors import Channel, Service, Method, PendingRpc
+from pw_rpc import descriptors, ids, packets
+from pw_rpc.descriptors import (
+    Channel,
+    Method,
+    PendingRpc,
+    Service,
+)
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 
 _LOG = logging.getLogger(__package__)
@@ -276,6 +281,26 @@ class ServiceClient(descriptors.ServiceAccessor):
         self._channel = channel
         self._service = service
 
+    @property
+    def name(self) -> str:
+        """Returns the short name of the service."""
+        return self._service.name
+
+    @property
+    def full_name(self) -> str:
+        """Returns the full name of the service."""
+        return self._service.full_name
+
+    @property
+    def _method_names(self) -> dict[int, str]:
+        """Returns a mapping from method ID to method name."""
+        return self._service._method_names  # pylint: disable=protected-access
+
+    def _method_name(self, method_id: int) -> str:
+        """Returns the name of the method with the given ID."""
+        # pylint: disable=protected-access
+        return self._service._method_name(method_id)
+
     def __repr__(self) -> str:
         return (
             f'Service({self._service.full_name!r}, '
@@ -381,6 +406,120 @@ class ChannelClient:
         """Iterates over all method clients in this ChannelClient."""
         for service_client in self.rpcs:
             yield from service_client
+
+    def _get_query_service(self) -> ServiceClient:
+        try:
+            return self.rpcs['pw.rpc.Query']
+        except KeyError as err:
+            raise Error(
+                'This device does not support querying services. '
+                'Register the pw.rpc.Query service on the device first.'
+            ) from err
+
+    def query_services(
+        self, timeout_s: float | None = None
+    ) -> dict[str, list[str]]:
+        """Queries the RPC server for registered services and methods by name.
+
+        Uses Query on the server to retrieve registered service and method IDs,
+        and translates them into service and method names using the client's
+        known service descriptors.
+
+        Returns:
+            A dictionary mapping service names to lists of method names.
+        """
+        query_service = self._get_query_service()
+
+        status, responses = query_service.ListServices(
+            pw_rpc_timeout_s=timeout_s
+        )
+        if not status.ok():
+            raise Error(f'ListServices failed with status {status}')
+
+        service_ids = (
+            service_id
+            for response in responses
+            for service_id in response.service_ids
+        )
+
+        results: dict[str, list[str]] = {}
+        for service_id in service_ids:
+            if service_id in self.rpcs:
+                service_client = self.rpcs[service_id]
+                service_name = service_client.full_name
+            else:
+                service_client = None
+                service_name = f'unknown_service_0x{service_id:08x}'
+
+            status, method_responses = query_service.ListMethods(
+                service_id=service_id, pw_rpc_timeout_s=timeout_s
+            )
+            if not status.ok():
+                results[service_name] = []
+                continue
+
+            method_ids = (
+                method_id
+                for response in method_responses
+                for method_id in response.method_ids
+            )
+            method_names: list[str] = []
+            for method_id in method_ids:
+                # pylint: disable=protected-access
+                if (
+                    service_client is not None
+                    and method_id in service_client._method_names
+                ):
+                    method_names.append(service_client._method_name(method_id))
+                else:
+                    method_names.append(f'unknown_method_0x{method_id:08x}')
+                # pylint: enable=protected-access
+
+            results[service_name] = method_names
+
+        return results
+
+    def is_service_available(
+        self, service: str, timeout_s: float | None = None
+    ) -> bool:
+        """Checks if a service is available on the RPC server.
+
+        Args:
+            service: Full service name (str).
+        """
+        query_service = self._get_query_service()
+        service_id = ids.calculate(service)
+        status, response = query_service.IsServiceAvailable(
+            service_id=service_id, pw_rpc_timeout_s=timeout_s
+        )
+        if not status.ok():
+            raise Error(f'IsServiceAvailable failed with status {status}')
+        return response.is_available
+
+    def is_method_available(
+        self,
+        service: str,
+        method: str,
+        timeout_s: float | None = None,
+    ) -> bool:
+        """Checks if a method is available on the RPC server.
+
+        Args:
+            service: Full service name (str).
+            method: Method name (str).
+        """
+        query_service = self._get_query_service()
+        service_id = ids.calculate(service)
+        method_id = ids.calculate(method)
+
+        status, response = query_service.IsMethodAvailable(
+            service_id=service_id,
+            method_id=method_id,
+            pw_rpc_timeout_s=timeout_s,
+        )
+        if not status.ok():
+            raise Error(f'IsMethodAvailable failed with status {status}')
+        return response.is_available
 
     def __repr__(self) -> str:
         return (

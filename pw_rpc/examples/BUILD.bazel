@@ -293,6 +293,15 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "query_service_example",
+    srcs = ["query_service_example.cc"],
+    deps = [
+        "//pw_rpc",
+        "//pw_rpc/pwpb:query_service",
+    ],
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [
@@ -309,6 +318,7 @@ sphinx_docs_library(
         "ingress_thread.cc",
         "nanopb_chat_service.cc",
         "pwpb_chat_service.cc",
+        "query_service_example.cc",
         "raw_service.cc",
         "sensor_service.cc",
         "sensor_service.h",

@@ -131,6 +131,17 @@ pw_source_set("echo_service") {
   sources = [ "public/pw_rpc/echo_service_pwpb.h" ]
 }
 
+pw_source_set("query_service") {
+  public_configs = [ ":public" ]
+  public_deps = [ "..:protos.pwpb_rpc" ]
+  public = [ "public/pw_rpc/query_service_pwpb.h" ]
+  sources = [ "query_service.cc" ]
+  deps = [
+    dir_pw_assert,
+    dir_pw_log,
+  ]
+}
+
 pw_source_set("client_integration_test") {
   testonly = pw_unit_test_TESTONLY
   public_configs = [ ":public" ]
@@ -157,6 +168,7 @@ pw_test_group("tests") {
     ":method_test",
     ":method_info_test",
     ":method_union_test",
+    ":query_service_test",
     ":server_callback_test",
     ":server_reader_writer_test",
     ":serde_test",
@@ -282,6 +294,16 @@ pw_test("method_union_test") {
     "..:test_utils",
   ]
   sources = [ "method_union_test.cc" ]
+}
+
+pw_test("query_service_test") {
+  deps = [
+    ":query_service",
+    ":test_method_context",
+    "..:protos.pwpb_rpc",
+    "..:test_utils",
+  ]
+  sources = [ "query_service_test.cc" ]
 }
 
 pw_test("serde_test") {

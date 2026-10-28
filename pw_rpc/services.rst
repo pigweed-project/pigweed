@@ -234,3 +234,40 @@ Streaming RPC test example
    :language: cpp
    :start-after: [pw_rpc-examples-sensor-stream-test]
    :end-before: [pw_rpc-examples-sensor-stream-test]
+
+.. _module-pw_rpc-services-query-service:
+
+=================================================
+Introspecting services and methods (QueryService)
+=================================================
+``pw_rpc`` provides an optional introspection service, ``Query`` (defined in
+``pw_rpc/query.proto`` and implemented by ``pw::rpc::QueryService``), that
+allows clients to query a running RPC server for its registered services and
+supported methods.
+
+.. note::
+
+   This interface is intended for debug and development purposes and should not
+   be relied upon in production.
+
+The service provides four RPC methods:
+
+* ``ListServices``: Streams all registered 32-bit service IDs.
+* ``ListMethods``: Streams all 32-bit method IDs supported by a service.
+* ``IsServiceAvailable``: Checks whether a specific service ID is registered.
+* ``IsMethodAvailable``: Checks whether a specific method ID is supported by a
+  service.
+
+-------------------
+Server setup (C++)
+-------------------
+Instantiate ``QueryService`` and initialize it with your ``pw::rpc::Server``:
+
+.. literalinclude:: examples/query_service_example.cc
+   :language: cpp
+   :start-after: [pw_rpc-examples-query-service]
+   :end-before: [pw_rpc-examples-query-service]
+
+In ``pw_system``, ``QueryService`` is included and can be enabled by setting the
+configuration option ``PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE`` to ``1`` in your
+build configuration.

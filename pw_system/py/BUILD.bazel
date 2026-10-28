@@ -41,6 +41,7 @@ pw_py_library(
         "//pw_metric:metric_proto_py_pb2",
         "//pw_metric/py:pw_metric",
         "//pw_rpc:echo_py_pb2",
+        "//pw_rpc:query_py_pb2",
         "//pw_rpc/py:pw_rpc",
         "//pw_snapshot/py:pw_snapshot",
         "//pw_stream/py:pw_stream",

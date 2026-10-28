@@ -31,6 +31,7 @@
 #include "pw_system/file_service.h"
 #include "pw_system/internal/async_packet_io.h"
 #include "pw_system/log.h"
+#include "pw_system/query_service.h"
 #include "pw_system/thread_snapshot_service.h"
 #include "pw_system/transfer_service.h"
 #include "pw_system/work_queue.h"
@@ -169,6 +170,10 @@ async2::Poll<> AsyncCore::InitTask(async2::Context&) {
     PW_CONSTINIT static ThreadContextFor<kTransferThread> transfer_thread;
     Thread(transfer_thread, GetTransferThread()).detach();
     InitTransferService();
+  }
+
+  if (PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE != 0) {
+    RegisterQueryService(System().rpc_server());
   }
 
   PW_LOG_INFO("pw_system initialization complete");

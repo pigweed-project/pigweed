@@ -93,5 +93,47 @@ class MethodTest(unittest.TestCase):
         self.assertIs(result, msg)
 
 
+class ServiceAndMethodsMappingTest(unittest.TestCase):
+    """Tests name-to-ID and ID-to-name mappings.
+
+    Tests mappings on Service, Methods, and Services.
+    """
+
+    # pylint: disable=protected-access
+
+    def setUp(self):
+        (module,) = python_protos.compile_and_import_strings([TEST_PROTO])
+        self._service = descriptors.Service.from_descriptor(
+            module.DESCRIPTOR.services_by_name['PublicService']
+        )
+        self._services = descriptors.Services([self._service])
+
+    def test_service_method_ids_and_names(self):
+        self.assertIn('SomeUnary', self._service._method_ids)
+        method_id = self._service._method_ids['SomeUnary']
+        self.assertEqual(self._service._method_id('SomeUnary'), method_id)
+        self.assertEqual(self._service._method_name(method_id), 'SomeUnary')
+        self.assertEqual(self._service._method_names[method_id], 'SomeUnary')
+
+    def test_methods_collection_ids_and_names(self):
+        methods = self._service.methods
+        self.assertIn('SomeServerStreaming', methods._method_ids)
+        method_id = methods._method_id('SomeServerStreaming')
+        self.assertEqual(methods._method_name(method_id), 'SomeServerStreaming')
+        self.assertEqual(
+            methods._method_names[method_id], 'SomeServerStreaming'
+        )
+
+    def test_services_collection_ids_and_names(self):
+        self.assertIn('pw.test1.PublicService', self._services._service_ids)
+        service_id = self._services._service_id('pw.test1.PublicService')
+        self.assertEqual(
+            self._services._service_name(service_id), 'pw.test1.PublicService'
+        )
+        self.assertEqual(
+            self._services._service_names[service_id], 'pw.test1.PublicService'
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

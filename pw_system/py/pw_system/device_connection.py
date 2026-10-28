@@ -39,6 +39,7 @@ from pw_file import file_pb2
 from pw_log.proto import log_pb2
 from pw_metric_proto import metric_service_pb2
 from pw_rpc import echo_pb2
+from pw_rpc import query_pb2
 from pw_stream import stream_readers
 from pw_thread_protos import thread_snapshot_service_pb2
 from pw_trace_protos import trace_service_pb2
@@ -190,6 +191,7 @@ def create_device_serial_or_socket_connection(
     protos.append(thread_snapshot_service_pb2)
     protos.append(file_pb2)
     protos.append(echo_pb2)
+    protos.append(query_pb2)
     protos.append(trace_service_pb2)
     protos.append(device_service_pb2)
 

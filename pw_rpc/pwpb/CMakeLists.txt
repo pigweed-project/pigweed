@@ -128,6 +128,20 @@ pw_add_library(pw_rpc.pwpb.echo_service INTERFACE
     pw_rpc.protos.pwpb_rpc
 )
 
+pw_add_library(pw_rpc.pwpb.query_service STATIC
+  SOURCES
+    query_service.cc
+  HEADERS
+    public/pw_rpc/query_service_pwpb.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_rpc.protos.pwpb_rpc
+  PRIVATE_DEPS
+    pw_assert
+    pw_log
+)
+
 pw_add_library(pw_rpc.pwpb.client_integration_test STATIC
   SOURCES
     client_integration_test.cc
@@ -221,6 +235,17 @@ pw_add_test(pw_rpc.pwpb.echo_service_test
   PRIVATE_DEPS
     pw_rpc.pwpb.echo_service
     pw_rpc.pwpb.server_api
+    pw_rpc.pwpb.test_method_context
+  GROUPS
+    modules
+    pw_rpc.pwpb
+)
+
+pw_add_test(pw_rpc.pwpb.query_service_test
+  SOURCES
+    query_service_test.cc
+  PRIVATE_DEPS
+    pw_rpc.pwpb.query_service
     pw_rpc.pwpb.test_method_context
   GROUPS
     modules

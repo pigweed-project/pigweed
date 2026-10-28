@@ -126,6 +126,24 @@ class Service:
     def package(self):
         return self._descriptor.file.package
 
+    @property
+    def _method_ids(self) -> dict[str, int]:
+        """Returns a mapping from method name to method ID."""
+        return {m.name: m.id for m in self.methods}
+
+    @property
+    def _method_names(self) -> dict[int, str]:
+        """Returns a mapping from method ID to method name."""
+        return {m.id: m.name for m in self.methods}
+
+    def _method_id(self, name: str) -> int:
+        """Returns the ID of the method with the given name."""
+        return self.methods[name].id
+
+    def _method_name(self, method_id: int) -> str:
+        """Returns the name of the method with the given ID."""
+        return self.methods[method_id].name
+
     @classmethod
     def from_descriptor(cls, descriptor: ServiceDescriptor) -> Service:
         service = cls(
@@ -443,12 +461,48 @@ class Methods(ServiceAccessor[Method]):
     def __init__(self, method: Iterable[Method]):
         super().__init__(method)
 
+    @property
+    def _method_ids(self) -> dict[str, int]:
+        """Returns a mapping from method name to method ID."""
+        return {m.name: m.id for m in self}
+
+    @property
+    def _method_names(self) -> dict[int, str]:
+        """Returns a mapping from method ID to method name."""
+        return {m.id: m.name for m in self}
+
+    def _method_id(self, name: str) -> int:
+        """Returns the ID of the method with the given name."""
+        return self[name].id
+
+    def _method_name(self, method_id: int) -> str:
+        """Returns the name of the method with the given ID."""
+        return self[method_id].name
+
 
 class Services(ServiceAccessor[Service]):
     """A collection of Service descriptors."""
 
     def __init__(self, services: Iterable[Service]):
         super().__init__(services)
+
+    @property
+    def _service_ids(self) -> dict[str, int]:
+        """Returns a mapping from service full name to service ID."""
+        return {s.full_name: s.id for s in self}
+
+    @property
+    def _service_names(self) -> dict[int, str]:
+        """Returns a mapping from service ID to service full name."""
+        return {s.id: s.full_name for s in self}
+
+    def _service_id(self, name: str) -> int:
+        """Returns the ID of the service with the given name."""
+        return self[name].id
+
+    def _service_name(self, service_id: int) -> str:
+        """Returns the full name of the service with the given ID."""
+        return self[service_id].full_name
 
 
 def get_method(service_accessor: ServiceAccessor, name: str):

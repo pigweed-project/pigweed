@@ -101,7 +101,35 @@ class Server : public internal::Endpoint {
 
  private:
   friend class internal::Call;
+  friend class QueryService;
   friend class ServerTestHelper;
+
+  // Iterates over all registered services.
+  template <typename UnaryFunc>
+  UnaryFunc ForEachService(UnaryFunc func) const
+      PW_LOCKS_EXCLUDED(internal::rpc_lock()) {
+    internal::RpcLockGuard lock;
+
+    for (const auto& service : services_) {
+      func(service);
+    }
+
+    return func;
+  }
+
+  template <typename UnaryPred>
+  const Service* FindServiceIf(UnaryPred predicate)
+      PW_LOCKS_EXCLUDED(internal::rpc_lock()) {
+    internal::RpcLockGuard lock;
+
+    for (const auto& service : services_) {
+      if (predicate(service)) {
+        return &service;
+      }
+    }
+
+    return nullptr;
+  }
 
   // Give gRPC integration access to FindMethod and internal::Packet version of
   // ProcessPacket

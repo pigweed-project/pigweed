@@ -14,6 +14,8 @@
 
 #include "pw_rpc/service.h"
 
+#include <vector>
+
 #include "pw_rpc/internal/method.h"
 #include "pw_unit_test/framework.h"
 
@@ -23,6 +25,15 @@ class ServiceTestHelper {
  public:
   static const internal::Method* FindMethod(Service& service, uint32_t id) {
     return service.FindMethod(id);
+  }
+
+  template <typename UnaryFunctor>
+  static UnaryFunctor ForEachMethod(const Service& service, UnaryFunctor func) {
+    return service.ForEachMethod(func);
+  }
+
+  static bool HasMethod(const Service& service, uint32_t id) {
+    return service.HasMethod(id);
   }
 };
 
@@ -63,6 +74,27 @@ class TestService : public Service {
   };
 };
 
+TEST(Service, MultipleMethods_ForEachMethod) {
+  TestService service;
+  std::vector<char> seen;
+  ServiceTestHelper::ForEachMethod(
+      service, [&seen](const internal::Method& method) {
+        seen.push_back(static_cast<const ServiceTestMethod&>(method).value);
+      });
+  EXPECT_EQ(seen, std::vector<char>({'a', 'b', 'c'}));
+}
+
+TEST(Service, MultipleMethods_HasMethod) {
+  TestService service;
+
+  EXPECT_TRUE(ServiceTestHelper::HasMethod(service, 123));
+  EXPECT_TRUE(ServiceTestHelper::HasMethod(service, 456));
+  EXPECT_TRUE(ServiceTestHelper::HasMethod(service, 789));
+  EXPECT_FALSE(ServiceTestHelper::HasMethod(service, 0));
+  EXPECT_FALSE(ServiceTestHelper::HasMethod(service, 457));
+  EXPECT_FALSE(ServiceTestHelper::HasMethod(service, 999));
+}
+
 TEST(Service, MultipleMethods_FindMethod_Present) {
   TestService service;
   EXPECT_EQ(ServiceTestHelper::FindMethod(service, 123),
@@ -85,6 +117,23 @@ class EmptyTestService : public Service {
   constexpr EmptyTestService() : Service(0xabcd, kMethods) {}
   static constexpr std::array<ServiceTestMethodUnion, 0> kMethods = {};
 };
+
+TEST(Service, NoMethods_ForEachMethod_DoesNotCallPredicate) {
+  EmptyTestService service;
+  bool predicate_called = false;
+  ServiceTestHelper::ForEachMethod(
+      service, [&predicate_called](const internal::Method&) {
+        predicate_called = true;
+      });
+  EXPECT_FALSE(predicate_called);
+}
+
+TEST(Service, NoMethods_HasMethod_ReturnsFalse) {
+  EmptyTestService service;
+  EXPECT_FALSE(ServiceTestHelper::HasMethod(service, 123));
+  EXPECT_FALSE(ServiceTestHelper::HasMethod(service, 456));
+  EXPECT_FALSE(ServiceTestHelper::HasMethod(service, 789));
+}
 
 TEST(Service, NoMethods_FindMethod_NotPresent) {
   EmptyTestService service;

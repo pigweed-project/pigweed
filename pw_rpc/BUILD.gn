@@ -417,12 +417,15 @@ pw_proto_library("protos") {
     "benchmark.proto",
     "echo.proto",
     "internal/packet.proto",
+    "query.proto",
   ]
   inputs = [
     "benchmark.options",
     "benchmark.pwpb_options",
     "echo.options",
     "echo.pwpb_options",
+    "query.options",
+    "query.pwpb_options",
   ]
   python_package = "py"
   prefix = "pw_rpc"

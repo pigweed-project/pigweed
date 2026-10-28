@@ -212,6 +212,25 @@ class Device:
         """Sends a string to the device and back, returning the result."""
         return self.rpcs.pw.rpc.EchoService.Echo(msg=msg).unwrap_or_raise().msg
 
+    def query_services(self) -> dict[str, list[str]]:
+        """Queries the device for available RPC services and methods by name."""
+        channel_client = next(iter(self.client.client.channels()))
+        return channel_client.query_services(timeout_s=self.rpc_timeout_s)
+
+    def is_service_available(self, service: str) -> bool:
+        """Checks if a service is available on the device."""
+        channel_client = next(iter(self.client.client.channels()))
+        return channel_client.is_service_available(
+            service, timeout_s=self.rpc_timeout_s
+        )
+
+    def is_method_available(self, service: str, method: str) -> bool:
+        """Checks if a method is available on the device."""
+        channel_client = next(iter(self.client.client.channels()))
+        return channel_client.is_method_available(
+            service, method, timeout_s=self.rpc_timeout_s
+        )
+
     def reboot(self):
         """Triggers a reboot to run asynchronously on the device.
 

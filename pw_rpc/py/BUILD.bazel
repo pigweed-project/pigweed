@@ -188,6 +188,7 @@ pw_py_test(
     deps = [
         ":pw_rpc",
         "//pw_rpc:internal_packet_proto_pb2",
+        "//pw_rpc:query_py_pb2",
         "//pw_status/py:pw_status",
     ],
 )

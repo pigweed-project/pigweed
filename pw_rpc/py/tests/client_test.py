@@ -20,7 +20,7 @@ from typing import Any, Callable
 from pw_protobuf_compiler import python_protos
 from pw_status import Status
 
-from pw_rpc import callback_client, client, packets
+from pw_rpc import callback_client, client, packets, query_pb2
 import pw_rpc.ids
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from pw_rpc.descriptors import RpcIds
@@ -194,6 +194,36 @@ class ChannelClientTest(unittest.TestCase):
             self._channel_client.method('pw.test2.Alpha.Unary'),
             self._channel_client.rpcs.pw.test2.Alpha.Unary,
         )
+
+    def test_service_client_properties(self) -> None:
+        service = self._channel_client.rpcs.pw.test1.PublicService
+        self.assertEqual(service.name, 'PublicService')
+        self.assertEqual(service.full_name, 'pw.test1.PublicService')
+
+    def test_service_client_method_ids_and_names(self) -> None:
+        # pylint: disable=protected-access
+        service = self._channel_client.rpcs.pw.test1.PublicService
+        method_id = pw_rpc.ids.calculate('SomeUnary')
+        self.assertEqual(service._method_name(method_id), 'SomeUnary')
+        self.assertEqual(service._method_names[method_id], 'SomeUnary')
+
+    def test_query_services_fails_when_query_service_not_present(self) -> None:
+        with self.assertRaises(client.Error):
+            self._channel_client.query_services()
+
+    def test_is_service_available_fails_when_query_service_not_present(
+        self,
+    ) -> None:
+        with self.assertRaises(client.Error):
+            self._channel_client.is_service_available('pw.test1.PublicService')
+
+    def test_is_method_available_fails_when_query_service_not_present(
+        self,
+    ) -> None:
+        with self.assertRaises(client.Error):
+            self._channel_client.is_method_available(
+                'pw.test1.PublicService', 'SomeUnary'
+            )
 
 
 class ClientTest(unittest.TestCase):
@@ -423,6 +453,121 @@ class ClientTest(unittest.TestCase):
                 )
             ),
             Status.OK,
+        )
+
+
+class QueryServiceIntegrationTest(unittest.TestCase):
+    """Tests query_services, is_service_available, and is_method_available."""
+
+    def setUp(self) -> None:
+        self._protos = python_protos.Library.from_strings([TEST_PROTO_1])
+        self._client = client.Client.from_modules(
+            callback_client.Impl(),
+            [client.Channel(CLIENT_FIRST_CHANNEL_ID, self._handle_packet)],
+            [*self._protos.modules(), query_pb2],
+        )
+        self._channel_client = self._client.channel(CLIENT_FIRST_CHANNEL_ID)
+
+        self._public_service_id = pw_rpc.ids.calculate('pw.test1.PublicService')
+        self._some_unary_id = pw_rpc.ids.calculate('SomeUnary')
+        self._query_service_id = pw_rpc.ids.calculate('pw.rpc.Query')
+        self._list_services_id = pw_rpc.ids.calculate('ListServices')
+        self._list_methods_id = pw_rpc.ids.calculate('ListMethods')
+        self._is_service_avail_id = pw_rpc.ids.calculate('IsServiceAvailable')
+        self._is_method_avail_id = pw_rpc.ids.calculate('IsMethodAvailable')
+
+    def _handle_packet(self, data: bytes) -> None:
+        req_packet = packets.decode(data)
+        if req_packet.service_id != self._query_service_id:
+            return
+
+        rpc_ids = RpcIds(
+            req_packet.channel_id,
+            req_packet.service_id,
+            req_packet.method_id,
+            req_packet.call_id,
+        )
+
+        if req_packet.method_id == self._list_services_id:
+            services_resp = query_pb2.ListServicesResponse(
+                service_ids=[self._public_service_id, 0x12345678]
+            )
+            self._client.process_packet(
+                packets.encode_server_stream(rpc_ids, services_resp)
+            )
+            self._client.process_packet(packets.encode_response(rpc_ids))
+        elif req_packet.method_id == self._list_methods_id:
+            methods_req = query_pb2.ListMethodsRequest.FromString(
+                req_packet.payload
+            )
+            if methods_req.service_id == self._public_service_id:
+                methods_resp = query_pb2.ListMethodsResponse(
+                    method_ids=[self._some_unary_id, 0x87654321]
+                )
+            else:
+                methods_resp = query_pb2.ListMethodsResponse(
+                    method_ids=[0x99999999]
+                )
+            self._client.process_packet(
+                packets.encode_server_stream(rpc_ids, methods_resp)
+            )
+            self._client.process_packet(packets.encode_response(rpc_ids))
+        elif req_packet.method_id == self._is_service_avail_id:
+            service_avail_req = query_pb2.IsServiceAvailableRequest.FromString(
+                req_packet.payload
+            )
+            avail_resp = query_pb2.IsAvailableResponse(
+                is_available=(
+                    service_avail_req.service_id == self._public_service_id
+                )
+            )
+            self._client.process_packet(
+                packets.encode_response(rpc_ids, avail_resp)
+            )
+        elif req_packet.method_id == self._is_method_avail_id:
+            method_avail_req = query_pb2.IsMethodAvailableRequest.FromString(
+                req_packet.payload
+            )
+            is_avail = (
+                method_avail_req.service_id == self._public_service_id
+                and method_avail_req.method_id == self._some_unary_id
+            )
+            avail_resp = query_pb2.IsAvailableResponse(is_available=is_avail)
+            self._client.process_packet(
+                packets.encode_response(rpc_ids, avail_resp)
+            )
+
+    def test_query_services(self) -> None:
+        result = self._channel_client.query_services()
+        self.assertIn('pw.test1.PublicService', result)
+        self.assertEqual(
+            result['pw.test1.PublicService'],
+            ['SomeUnary', 'unknown_method_0x87654321'],
+        )
+        self.assertIn('unknown_service_0x12345678', result)
+        self.assertEqual(
+            result['unknown_service_0x12345678'],
+            ['unknown_method_0x99999999'],
+        )
+
+    def test_is_service_available(self) -> None:
+        self.assertTrue(
+            self._channel_client.is_service_available('pw.test1.PublicService')
+        )
+        self.assertFalse(
+            self._channel_client.is_service_available('pw.nonexistent.Service')
+        )
+
+    def test_is_method_available(self) -> None:
+        self.assertTrue(
+            self._channel_client.is_method_available(
+                'pw.test1.PublicService', 'SomeUnary'
+            )
+        )
+        self.assertFalse(
+            self._channel_client.is_method_available(
+                'pw.test1.PublicService', 'NonExistentMethod'
+            )
         )
 
 

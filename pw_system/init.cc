@@ -52,6 +52,10 @@
 #include "pw_system/crash_snapshot.h"
 #endif  // PW_SYSTEM_ENABLE_CRASH_HANDLER
 
+#if PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE
+#include "pw_system/query_service.h"
+#endif  // PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE
+
 namespace pw::system {
 namespace {
 metric::MetricService metric_service(metric::global_metrics,
@@ -98,6 +102,10 @@ void InitImpl() {
 #if PW_SYSTEM_ENABLE_THREAD_SNAPSHOT_SERVICE
   RegisterThreadSnapshotService(GetRpcServer());
 #endif  // PW_SYSTEM_ENABLE_THREAD_SNAPSHOT_SERVICE
+
+#if PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE
+  RegisterQueryService(GetRpcServer());
+#endif  // PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE
 
   PW_LOG_INFO("Starting threads");
   // Start threads.

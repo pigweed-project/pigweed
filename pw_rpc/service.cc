@@ -15,9 +15,12 @@
 #include "pw_rpc/service.h"
 
 #include <cstddef>
-#include <type_traits>
 
 namespace pw::rpc {
+
+bool Service::HasMethod(uint32_t method_id) const {
+  return FindMethod(method_id) != nullptr;
+}
 
 const internal::Method* Service::FindMethod(uint32_t method_id) const {
   const internal::MethodUnion* method_impl = methods_;

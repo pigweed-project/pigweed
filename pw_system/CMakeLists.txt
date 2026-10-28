@@ -257,6 +257,17 @@ pw_add_library(pw_system.device_service STATIC
     pw_system.device_service_pwpb
 )
 
+pw_add_library(pw_system.query_service STATIC
+  HEADERS
+    public/pw_system/query_service.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_rpc.pwpb.query_service
+  SOURCES
+    query_service.cc
+)
+
 pw_add_library(pw_system.init STATIC
   HEADERS
     public/pw_system/init.h
@@ -270,6 +281,7 @@ pw_add_library(pw_system.init STATIC
     pw_system.file_manager
     pw_system.file_service
     pw_system.log
+    pw_system.query_service
     pw_system.rpc_server
     pw_system.target_hooks.facade
     pw_system.thread_snapshot_service
@@ -403,6 +415,7 @@ pw_add_library(pw_system.async STATIC
     pw_system.file_manager
     pw_system.file_service
     pw_system.log
+    pw_system.query_service
     pw_system.thread_snapshot_service
     pw_system.transfer_service
     pw_system.work_queue

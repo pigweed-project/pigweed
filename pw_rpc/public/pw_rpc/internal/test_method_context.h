@@ -35,6 +35,12 @@ class InvocationContext {
   InvocationContext& operator=(const InvocationContext&) = delete;
   InvocationContext& operator=(InvocationContext&&) = delete;
 
+  Channel& channel() { return channel_; }
+  const Channel& channel() const { return channel_; }
+
+  Server& server() { return server_; }
+  const Server& server() const { return server_; }
+
   Service& service() { return service_; }
   const Service& service() const { return service_; }
 

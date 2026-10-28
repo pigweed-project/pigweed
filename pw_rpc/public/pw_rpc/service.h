@@ -75,8 +75,25 @@ class Service : public IntrusiveList<Service>::Item {
   }
 
  private:
+  friend class QueryService;
   friend class Server;
   friend class ServiceTestHelper;
+
+  template <typename UnaryFunctor>
+  UnaryFunctor ForEachMethod(UnaryFunctor func) const {
+    const internal::MethodUnion* method_impl = methods_;
+
+    for (size_t i = 0; i < method_count_; ++i) {
+      func(method_impl->method());
+      const auto raw = reinterpret_cast<const std::byte*>(method_impl);
+      method_impl =
+          reinterpret_cast<const internal::MethodUnion*>(raw + method_size_);
+    }
+
+    return func;
+  }
+
+  bool HasMethod(uint32_t method_id) const;
 
   // Finds the method with the provided method_id. Returns nullptr if no match.
   const internal::Method* FindMethod(uint32_t method_id) const;

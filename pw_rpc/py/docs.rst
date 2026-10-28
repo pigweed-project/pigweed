@@ -14,7 +14,24 @@ and debugging RPC performance.
 pw_rpc.client
 =============
 .. automodule:: pw_rpc.client
-  :members: Client, ClientImpl
+  :members: Client, ClientImpl, ChannelClient, ServiceClient
+
+Querying services and methods
+-----------------------------
+The Python RPC client supports querying an RPC server running ``pw.rpc.Query``
+to introspect available services and methods by name:
+
+.. code-block:: py
+
+   # Query the server for registered services and methods:
+   available_services = channel_client.query_services()
+   # Returns: {'pw.rpc.EchoService': ['Echo'], ...}
+
+   # Check if a specific service or method is registered:
+   if channel_client.is_service_available('pw.rpc.EchoService'):
+       ...
+   if channel_client.is_method_available('pw.rpc.EchoService', 'Echo'):
+       ...
 
 pw_rpc.client_utils
 ===================
@@ -41,6 +58,10 @@ pw_rpc.descriptors
   :members:
     Channel,
     ChannelManipulator,
+    Service,
+    Services,
+    Method,
+    Methods,
 
 pw_rpc.console_tools
 ====================

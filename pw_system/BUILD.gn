@@ -170,6 +170,7 @@ pw_source_set("init") {
     ":file_manager",
     ":file_service",
     ":log",
+    ":query_service",
     ":rpc_server",
     ":target_hooks.facade",
     ":thread_snapshot_service",
@@ -370,6 +371,17 @@ pw_source_set("thread_snapshot_service") {
   deps = [ "$dir_pw_thread:thread_snapshot_service" ]
 }
 
+pw_source_set("query_service") {
+  public = [ "public/pw_system/query_service.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [ "$dir_pw_rpc:server" ]
+  sources = [ "query_service.cc" ]
+  deps = [
+    "$dir_pw_rpc:server",
+    "$dir_pw_rpc/pwpb:query_service",
+  ]
+}
+
 pw_facade("target_hooks") {
   backend = pw_system_TARGET_HOOKS_BACKEND
   public = [ "public/pw_system/target_hooks.h" ]
@@ -437,6 +449,7 @@ pw_source_set("async") {
     ":file_manager",
     ":file_service",
     ":log",
+    ":query_service",
     ":thread_snapshot_service",
     ":transfer_service",
     ":work_queue",
@@ -468,6 +481,7 @@ pw_executable("system_example") {
     "$dir_pw_thread:sleep",
     "$dir_pw_trace",
   ]
+  defines = [ "PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE=1" ]
 }
 
 pw_source_set("async_packet_io") {
