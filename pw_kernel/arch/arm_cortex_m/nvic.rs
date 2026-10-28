@@ -36,9 +36,19 @@ impl InterruptController for Nvic {
 
     fn early_init(&self) {
         info!("Initializing NVIC");
-        let nvic_regs = regs::Nvic {};
-        // Set all of the NVIC external IRQs to the same priority as SysTick.
+        let mut nvic_regs = regs::Nvic {};
+        // Disable and clear any pending state on every external IRQ. The NVIC
+        // enable/pending registers are not architecturally reset on a warm
+        // reset, so a bootloader or prior stage may have left interrupts armed
+        // that would otherwise fire as soon as the kernel enables interrupts.
+        // It is up to the kernel driver or interrupt object to enable the
+        // interrupts it services.
+        //
+        // Also set all of the NVIC external IRQs to the same priority as
+        // SysTick.
         for i in 0..NvicConfig::MAX_IRQS {
+            nvic_regs.disable(i as usize);
+            nvic_regs.clear_pending(i as usize);
             nvic_regs.set_priority(i as usize, threads::InterruptPriority::Interrupt as u8);
         }
     }

@@ -230,7 +230,6 @@ impl Arch for crate::Arch {
         // TODO: set up the cpu here:
         //  --interrupt vector table--
         //  irq priority levels
-        //  clear pending interrupts
         //  FPU initial state
         //  enable cache (if present)
         //  enable cycle counter?
