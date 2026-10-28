@@ -20,11 +20,13 @@
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/zx/channel.h>
 #include <lib/zx/time.h>
 #include <zircon/types.h>
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "gtest/gtest.h"
@@ -78,12 +80,18 @@ class OutgoingLoopTestFixture : public ::testing::Test {
     return std::move(*client_end);
   }
 
-  // Returns true if the EmulatorService instance `name` is published, by
-  // opening its directory.
-  bool EmulatorServiceIsServed(const std::string& name) {
-    std::string path = std::string("svc/") +
-                       fuchsia_hardware_bluetooth::EmulatorService::Name + "/" +
-                       name;
+  // Returns true if the EmulatorService instance `name` is published.
+  bool EmulatorServiceIsServed(std::string_view name) {
+    return ServiceInstanceIsPublished(
+        fuchsia_hardware_bluetooth::EmulatorService::Name, name);
+  }
+
+  // Returns true if `instance` of `service` is published, by opening its
+  // directory.
+  bool ServiceInstanceIsPublished(std::string_view service,
+                                  std::string_view instance) {
+    std::string path =
+        std::string("svc/").append(service).append("/").append(instance);
     zx::result dir = component::OpenDirectoryAt(outgoing_client(), path);
     if (dir.is_error()) {
       return false;
@@ -103,7 +111,7 @@ class OutgoingLoopTestFixture : public ::testing::Test {
 
   // Returns true if a Vendor client connected through the
   // fuchsia.hardware.bluetooth.Service instance `name` can complete a request.
-  bool VendorServiceIsServed(const std::string& name) {
+  bool VendorServiceIsServed(std::string_view name) {
     std::string path =
         "svc/" + component::MakeServiceMemberPath<
                      fuchsia_hardware_bluetooth::Service::Vendor>(name);
@@ -125,13 +133,16 @@ class OutgoingLoopTestFixture : public ::testing::Test {
     return ok;
   }
 
-  // Returns true if the peer of `client_end` has been closed.
-  template <typename Protocol>
-  static bool PeerClosed(const fidl::ClientEnd<Protocol>& client_end) {
+  // Returns true if the peer of `channel` has been closed.
+  static bool PeerClosed(const zx::channel& channel) {
     zx_signals_t observed = 0;
-    zx_status_t status = client_end.channel().wait_one(
+    zx_status_t status = channel.wait_one(
         ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
     return status == ZX_OK && (observed & ZX_CHANNEL_PEER_CLOSED);
+  }
+  template <typename Protocol>
+  static bool PeerClosed(const fidl::ClientEnd<Protocol>& client_end) {
+    return PeerClosed(client_end.channel());
   }
 
  private:

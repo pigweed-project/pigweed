@@ -17,9 +17,7 @@
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <pw_assert/check.h>
-#include <zircon/status.h>
 
-#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -28,13 +26,30 @@
 
 namespace bt_hci_virtual {
 
-VirtualController::VirtualController()
-    : DriverBase2("bt_hci_virtual"),
-      devfs_connector_(fit::bind_member<&VirtualController::Connect>(this)) {}
+VirtualControllerDriver::VirtualControllerDriver()
+    : DriverBase2("bt_hci_virtual"), devfs_connector_([this](auto request) {
+        controller_->Connect(std::move(request));
+      }) {}
 
-zx::result<> VirtualController::Start(fdf::DriverContext context) {
+zx::result<> VirtualControllerDriver::Start(fdf::DriverContext context) {
   node_ = fidl::WireClient(take_node(), dispatcher());
   pw::log_fuchsia::InitializeLogging(dispatcher());
+  controller_.emplace(
+      dispatcher(),
+      &outgoing()->component(),
+      VirtualController::NodeHooks{
+          .add_emulator_node =
+              fit::bind_member<&VirtualControllerDriver::AddEmulatorNode>(this),
+          .remove_emulator_node =
+              fit::bind_member<&VirtualControllerDriver::RemoveEmulatorNode>(
+                  this),
+          .add_loopback_node =
+              fit::bind_member<&VirtualControllerDriver::AddLoopbackNode>(this),
+          .remove_loopback_node =
+              fit::bind_member<&VirtualControllerDriver::RemoveLoopbackNode>(
+                  this),
+      });
+
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
     fdf::error("Failed to bind devfs connector to dispatcher: {}", connector);
@@ -54,99 +69,28 @@ zx::result<> VirtualController::Start(fdf::DriverContext context) {
                   .Build();
 
   // Add bt_hci_virtual child node
-  AddChildNode(args,
-               "bt_hci_virtual child node",
-               virtual_controller_child_node_,
-               node_controller_,
-               this);
+  zx_status_t status = AddChildNode(args,
+                                    "bt_hci_virtual child node",
+                                    virtual_controller_child_node_,
+                                    node_controller_,
+                                    this);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
 
   return zx::ok();
 }
 
-void VirtualController::CreateEmulator(
-    CreateEmulatorCompleter::Sync& completer) {
-  // Every call creates a new, independently owned emulator. The unique name
-  // identifies it as the devfs node name, the vendor service instance name,
-  // and the value returned to the caller, which uses it to find its emulator
-  // (and nobody else's).
-  std::string name =
-      std::string(kEmulatorNamePrefix) + std::to_string(next_emulator_id_++);
-  auto [it, inserted] = emulators_.try_emplace(
-      name, std::make_unique<EmulatorDevice>(dispatcher()));
-  PW_CHECK(inserted);
-  Emulator& emulator = it->second;
+zx_status_t VirtualControllerDriver::AddEmulatorNode(const std::string& name,
+                                                     EmulatorDevice& device) {
+  auto [it, inserted] = emulator_nodes_.try_emplace(name, device);
+  PW_CHECK(inserted, "Node for emulator %s already exists", name.c_str());
+  EmulatorNode& emulator = it->second;
 
-  auto shutdown_cb = [this, name]() {
-    auto entry = emulators_.find(name);
-    PW_CHECK(entry != emulators_.end(),
-             "ShutdownCallback ran for unknown emulator %s",
-             name.c_str());
-    fdf::info("Releasing EmulatorDevice {}", name);
-    // Remove the emulator's node. When the shutdown was triggered by the
-    // owning Emulator connection closing, this is what tears the node down.
-    RemoveNode(entry->second.node, entry->second.node_controller);
-    emulators_.erase(entry);
-  };
-
-  zx_status_t status = emulator.device->Initialize(
-      name, std::move(shutdown_cb), &outgoing()->component());
-  // A failure to add the node is reported too: without one the caller could
-  // never find the emulator, so it must not get a name that will never appear.
-  if (status == ZX_OK) {
-    status = AddEmulatorNode(name, emulator);
-  }
-  if (status != ZX_OK) {
-    fdf::error(
-        "Failed to create emulator {}: {}", name, zx_status_get_string(status));
-    // Shutdown() invokes `shutdown_cb`, which removes the node if one was
-    // added and erases the entry (destroying the device).
-    emulator.device->Shutdown();
-    completer.ReplyError(status);
-    return;
-  }
-  completer.ReplySuccess(
-      fidl::StringView::FromExternal(name.data(), name.size()));
-}
-
-void VirtualController::CreateLoopbackDevice(
-    CreateLoopbackDeviceRequestView request,
-    CreateLoopbackDeviceCompleter::Sync& completer) {
-  // This replaces any previous loopback device; its node must go before
-  // another one of the same name can be added.
-  RemoveNode(loopback_child_node_, loopback_node_controller_);
-  loopback_device_ = std::make_unique<LoopbackDevice>(dispatcher());
-
-  PW_CHECK(request->has_uart_channel());
-  zx_status_t status =
-      loopback_device_->Initialize(std::move(request->uart_channel()),
-                                   kLoopbackName,
-                                   &outgoing()->component());
-  if (status == ZX_OK) {
-    fidl::Arena args_arena;
-    auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
-                    .name(fidl::StringView(args_arena, kLoopbackName))
-                    .Build();
-    // The loopback node has no children, so it needs no event handler.
-    status = AddChildNode(args,
-                          "loopback device node",
-                          loopback_child_node_,
-                          loopback_node_controller_,
-                          nullptr);
-  }
-  if (status != ZX_OK) {
-    fdf::error("Failed to bind: {}", zx_status_get_string(status));
-    RemoveNode(loopback_child_node_, loopback_node_controller_);
-    loopback_device_.reset();
-    return;
-  }
-  fdf::info("LoopbackDevice successfully initialized");
-}
-
-zx_status_t VirtualController::AddEmulatorNode(const std::string& name,
-                                               Emulator& emulator) {
   zx::result connector = emulator.connector.Bind(dispatcher());
   if (connector.is_error()) {
     fdf::error("Failed to bind devfs connector to dispatcher: {}", connector);
+    emulator_nodes_.erase(it);
     return connector.error_value();
   }
 
@@ -168,29 +112,53 @@ zx_status_t VirtualController::AddEmulatorNode(const std::string& name,
                                     emulator.node_controller,
                                     &emulator);
   if (status != ZX_OK) {
+    emulator_nodes_.erase(it);
     return status;
   }
   fdf::info("EmulatorDevice {} successfully initialized", name);
   return ZX_OK;
 }
 
-void VirtualController::handle_unknown_method(
-    fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::VirtualController>
-        metadata,
-    fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::error(
-      "Unknown method in VirtualController request, closing with "
-      "ZX_ERR_NOT_SUPPORTED");
-  completer.Close(ZX_ERR_NOT_SUPPORTED);
+void VirtualControllerDriver::RemoveEmulatorNode(const std::string& name) {
+  auto entry = emulator_nodes_.find(name);
+  if (entry == emulator_nodes_.end()) {
+    // The node was never added (`AddEmulatorNode` failed).
+    return;
+  }
+  fdf::info("Removing emulator node {}", name);
+  // When the shutdown was triggered by the owning Emulator connection closing,
+  // this is what tears the node down.
+  RemoveNode(entry->second.node, entry->second.node_controller);
+  emulator_nodes_.erase(entry);
 }
 
-void VirtualController::Connect(
-    fidl::ServerEnd<fuchsia_hardware_bluetooth::VirtualController> request) {
-  virtual_controller_binding_group_.AddBinding(
-      dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
+zx_status_t VirtualControllerDriver::AddLoopbackNode(const std::string& name,
+                                                     LoopbackDevice&) {
+  fidl::Arena args_arena;
+  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
+                  .name(fidl::StringView(args_arena, name))
+                  .Build();
+  // The loopback node has no children, so it needs no event handler.
+  zx_status_t status = AddChildNode(args,
+                                    "loopback device node",
+                                    loopback_child_node_,
+                                    loopback_node_controller_,
+                                    nullptr);
+  if (status != ZX_OK) {
+    return status;
+  }
+  fdf::info("Loopback node {} added", name);
+  return ZX_OK;
 }
 
-zx_status_t VirtualController::AddChildNode(
+void VirtualControllerDriver::RemoveLoopbackNode(const std::string& name) {
+  if (loopback_node_controller_.is_valid()) {
+    fdf::info("Removing loopback node {}", name);
+  }
+  RemoveNode(loopback_child_node_, loopback_node_controller_);
+}
+
+zx_status_t VirtualControllerDriver::AddChildNode(
     fuchsia_driver_framework::wire::NodeAddArgs args,
     std::string_view log_name,
     fidl::WireClient<fuchsia_driver_framework::Node>& child_node,
@@ -242,7 +210,7 @@ zx_status_t VirtualController::AddChildNode(
   return ZX_OK;
 }
 
-void VirtualController::RemoveNode(
+void VirtualControllerDriver::RemoveNode(
     fidl::WireClient<fuchsia_driver_framework::Node>& child_node,
     fidl::WireClient<fuchsia_driver_framework::NodeController>&
         node_controller) {
@@ -271,4 +239,4 @@ void VirtualController::RemoveNode(
 
 }  // namespace bt_hci_virtual
 
-FUCHSIA_DRIVER_EXPORT2(bt_hci_virtual::VirtualController);
+FUCHSIA_DRIVER_EXPORT2(bt_hci_virtual::VirtualControllerDriver);

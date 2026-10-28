@@ -29,16 +29,12 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "pw_bluetooth_sapphire/fuchsia/bt_hci_virtual/virtual_controller.h"
 
 namespace bt_hci_virtual {
 namespace {
 
 namespace fhb = fuchsia_hardware_bluetooth;
-
-// Name of the first emulator a fresh driver creates. The regression test needs
-// it before calling CreateEmulator, to occupy it on the fake framework node.
-const std::string kFirstEmulatorName =
-    std::string(VirtualController::kEmulatorNamePrefix) + "0";
 
 // Upper bound on how long a test waits for the driver and the fake framework
 // node (which runs on another thread) to converge. Generous because the tests
@@ -55,13 +51,13 @@ class Environment : public fdf_testing::Environment {
 
 class Config final {
  public:
-  using DriverType = VirtualController;
+  using DriverType = VirtualControllerDriver;
   using EnvironmentType = Environment;
 };
 
-// Drives a real VirtualController through its FIDL surface, with the SDK's
-// fake driver-framework Node standing in for driver_manager.
-class VirtualControllerTest : public ::testing::Test {
+// Drives a real VirtualControllerDriver through its FIDL surface, with the
+// SDK's fake driver-framework Node standing in for driver_manager.
+class VirtualControllerDriverTest : public ::testing::Test {
  public:
   void SetUp() override {
     zx::result start = driver_test_.StartDriver();
@@ -69,7 +65,7 @@ class VirtualControllerTest : public ::testing::Test {
 
     zx::result client_end =
         driver_test_.ConnectThroughDevfs<fhb::VirtualController>(
-            std::string(VirtualController::kNodeName));
+            std::string(VirtualControllerDriver::kNodeName));
     ASSERT_TRUE(client_end.is_ok()) << client_end.status_string();
     controller_.Bind(std::move(*client_end), dispatcher());
   }
@@ -242,16 +238,30 @@ class VirtualControllerTest : public ::testing::Test {
 
 // Start() adds the devfs node through which clients reach VirtualController,
 // and nothing else.
-TEST_F(VirtualControllerTest, StartAddsControllerNode) {
-  EXPECT_EQ(
-      ChildNodeNames(),
-      std::vector<std::string>{std::string(VirtualController::kNodeName)});
+TEST_F(VirtualControllerDriverTest, StartAddsControllerNode) {
+  EXPECT_EQ(ChildNodeNames(),
+            std::vector<std::string>{
+                std::string(VirtualControllerDriver::kNodeName)});
+}
+
+// Start() fails if the framework refuses the controller's node, rather than
+// running without one.
+TEST(VirtualControllerDriverStartTest, StartFailsWhenNodeCannotBeAdded) {
+  fdf_testing::ForegroundDriverTest<Config> driver_test;
+  driver_test.RunInNodeContext([](fdf_testing::TestNode& node) {
+    const std::string name(VirtualControllerDriver::kNodeName);
+    node.children().try_emplace(name, name, node.dispatcher());
+  });
+
+  zx::result start = driver_test.StartDriver();
+  EXPECT_TRUE(start.is_error());
 }
 
 // Each CreateEmulator call produces a distinct emulator with its own node,
 // EmulatorService instance and vendor service instance, and closing one
 // emulator's owner tears down only that emulator.
-TEST_F(VirtualControllerTest, CreateEmulatorTwiceYieldsIndependentEmulators) {
+TEST_F(VirtualControllerDriverTest,
+       CreateEmulatorTwiceYieldsIndependentEmulators) {
   zx::result first = CreateEmulator();
   ASSERT_TRUE(first.is_ok()) << first.status_string();
   zx::result second = CreateEmulator();
@@ -281,7 +291,7 @@ TEST_F(VirtualControllerTest, CreateEmulatorTwiceYieldsIndependentEmulators) {
 
 // An emulator created after a previous one was torn down gets a new name, so
 // it cannot collide with the node being removed.
-TEST_F(VirtualControllerTest, RecreateAfterTeardownGetsFreshName) {
+TEST_F(VirtualControllerDriverTest, RecreateAfterTeardownGetsFreshName) {
   zx::result first = CreateEmulator();
   ASSERT_TRUE(first.is_ok()) << first.status_string();
   {
@@ -299,26 +309,27 @@ TEST_F(VirtualControllerTest, RecreateAfterTeardownGetsFreshName) {
 // Regression test: if the framework refuses the emulator's node, the caller
 // must get an error rather than a name that will never appear, and the driver
 // must still be able to create emulators afterwards.
-TEST_F(VirtualControllerTest, CreateEmulatorFailsWhenNodeCannotBeAdded) {
-  OccupyChildNodeName(kFirstEmulatorName);
+TEST_F(VirtualControllerDriverTest, CreateEmulatorFailsWhenNodeCannotBeAdded) {
+  const std::string first_name = VirtualController::FirstEmulatorName();
+  OccupyChildNodeName(first_name);
 
   zx::result first = CreateEmulator();
   EXPECT_TRUE(first.is_error());
   // Only the controller's own node and the occupied name exist; the failed
   // attempt added nothing.
   EXPECT_EQ(ChildNodeNames(),
-            (std::vector<std::string>{std::string(VirtualController::kNodeName),
-                                      kFirstEmulatorName}));
+            (std::vector<std::string>{
+                std::string(VirtualControllerDriver::kNodeName), first_name}));
 
   zx::result second = CreateEmulator();
   ASSERT_TRUE(second.is_ok()) << second.status_string();
-  EXPECT_NE(*second, kFirstEmulatorName);
+  EXPECT_NE(*second, first_name);
   EXPECT_TRUE(HasChildNode(*second));
 }
 
 // Calling CreateLoopbackDevice again replaces the previous loopback device and
 // its child node.
-TEST_F(VirtualControllerTest, CreateLoopbackDeviceTwiceReplacesDevice) {
+TEST_F(VirtualControllerDriverTest, CreateLoopbackDeviceTwiceReplacesDevice) {
   const std::string name(VirtualController::kLoopbackName);
 
   zx::channel first_uart = CreateLoopbackDevice();

@@ -46,8 +46,9 @@ fuchsia_driver_bind_bytecode(
     ],
 )
 
-# The virtual devices. Independent of the driver framework and of any pw_log
-# backend, so that a plain component can host them as well as the driver.
+# The virtual devices and the VirtualController that creates them. Shared by
+# the component and the driver, so it has no driver framework dependencies and
+# no pw_log backend: each binary links its own.
 fuchsia_cc_library(
     name = "virtual_sources",
     testonly = True,
@@ -55,15 +56,18 @@ fuchsia_cc_library(
         "emulated_peer.cc",
         "emulator.cc",
         "loopback.cc",
+        "virtual_controller.cc",
     ],
     hdrs = [
         "emulated_peer.h",
         "emulator.h",
         "loopback.h",
         "vendor_service_publisher.h",
+        "virtual_controller.h",
     ],
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
+        "//pw_assert:check",
         "//pw_async_fuchsia:dispatcher",
         "//pw_bluetooth_sapphire/fuchsia/host/fidl:helpers",
         "//pw_bluetooth_sapphire/host/common",
@@ -211,6 +215,13 @@ fuchsia_cc_library(
     ],
 )
 
+fuchsia_cc_test(
+    name = "virtual_controller_test",
+    srcs = ["virtual_controller_test.cc"],
+    visibility = ["//visibility:public"],
+    deps = [":outgoing_loop_test_fixture"],
+)
+
 fuchsia_unittest_package(
     name = "test_pkg",
     package_name = "bt-hci-virtual-unittests",
@@ -220,6 +231,7 @@ fuchsia_unittest_package(
         ":controller_test",
         ":emulator_test",
         ":loopback_test",
+        ":virtual_controller_test",
     ],
     visibility = ["//visibility:public"],
 )
