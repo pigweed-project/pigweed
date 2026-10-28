@@ -811,6 +811,15 @@ func hostnameOf(raw string) string {
 	return CleanGerritHost(raw)
 }
 
+func isLoopbackHost(host string) bool {
+	switch strings.ToLower(hostnameOf(host)) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
+}
+
 func setTokenAuthHeader(req *http.Request, tok string) {
 	if strings.Contains(tok, ":") {
 		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(tok)))

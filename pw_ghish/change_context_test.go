@@ -977,24 +977,28 @@ func TestEquivalentPatchsets(t *testing.T) {
 	assertIntsEqual(t, EquivalentPatchsets(change, 99), []int{99})
 }
 
-func TestIsLoopbackTestHost(t *testing.T) {
+func TestIsLoopbackHost(t *testing.T) {
 	tests := []struct {
 		host string
 		want bool
 	}{
 		{"localhost", true},
 		{"127.0.0.1", true},
+		{"::1", true},
 		{"[::1]", true},
+		{"localhost:8080", true},
+		{"127.0.0.1:8080", true},
 		{"http://localhost", true},
 		{"http://127.0.0.1:8080", true},
 		{"https://[::1]:9090", true},
+		{"", false},
 		{"localhost.example.com", false},
 		{"127.0.0.10", false},
 		{"pigweed-review.googlesource.com", false},
 	}
 	for _, tc := range tests {
-		if got := isLoopbackTestHost(tc.host); got != tc.want {
-			t.Errorf("isLoopbackTestHost(%q) = %v, want %v", tc.host, got, tc.want)
+		if got := isLoopbackHost(tc.host); got != tc.want {
+			t.Errorf("isLoopbackHost(%q) = %v, want %v", tc.host, got, tc.want)
 		}
 	}
 }

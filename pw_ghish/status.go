@@ -86,7 +86,7 @@ var statusCmd = &cobra.Command{
 		)
 		selfRef := "self"
 		if activeAccountCacheDir() != "" && cfg != nil {
-			if host := cfg.GerritHost(ctx); host != "" && !isLoopbackGerritHost(host) {
+			if host := cfg.GerritHost(ctx); host != "" && !isLoopbackHost(host) {
 				if cached := PeekSelfAccountCache(host); cached != nil && cached.AccountID > 0 {
 					selfAccount = cached
 					selfRef = fmt.Sprintf("%d", cached.AccountID)

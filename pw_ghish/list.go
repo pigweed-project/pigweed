@@ -58,7 +58,7 @@ func resolveDefaultListProject(ctx context.Context, cmd *cobra.Command) (string,
 	targetHost := ""
 	if isHostFlagChanged(cmd) {
 		targetHost = CanonicalGerritHost(HostFlag)
-	} else if cfg.Host != "" && !isLoopbackTestHost(cfg.Host) {
+	} else if cfg.Host != "" && !isLoopbackHost(cfg.Host) {
 		targetHost = CanonicalGerritHost(cfg.Host)
 	}
 	if targetHost != "" {

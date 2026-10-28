@@ -175,13 +175,6 @@ func activeAccountCacheDir() string {
 	return ""
 }
 
-func isLoopbackGerritHost(gerritHost string) bool {
-	lower := strings.ToLower(gerritHost)
-	return strings.Contains(lower, "127.0.0.1") ||
-		strings.Contains(lower, "localhost") ||
-		strings.Contains(lower, "[::1]")
-}
-
 func readSelfAccountCacheLocked(dir string) selfAccountCacheFile {
 	var cache selfAccountCacheFile
 	info, err := os.Lstat(dir)
@@ -345,7 +338,7 @@ func resetSelfAccountMemCache() {
 // without making any network RPC.
 func PeekSelfAccountCache(gerritHost string) *gerrit.AccountInfo {
 	hostKey := strings.ToLower(strings.TrimSpace(CleanGerritHost(gerritHost)))
-	if hostKey == "" || isLoopbackGerritHost(gerritHost) {
+	if hostKey == "" || isLoopbackHost(gerritHost) {
 		return nil
 	}
 	cacheDir := activeAccountCacheDir()
@@ -370,7 +363,7 @@ func GetSelfAccountCached(ctx context.Context, client *gerrit.Client, gerritHost
 		return nil, err
 	}
 	hostKey := strings.ToLower(strings.TrimSpace(CleanGerritHost(gerritHost)))
-	if hostKey != "" && !isLoopbackGerritHost(gerritHost) && acc != nil && acc.AccountID > 0 {
+	if hostKey != "" && !isLoopbackHost(gerritHost) && acc != nil && acc.AccountID > 0 {
 		if cacheDir := activeAccountCacheDir(); cacheDir != "" {
 			tryWriteSelfAccountCache(cacheDir, hostKey, *acc, time.Now())
 		}

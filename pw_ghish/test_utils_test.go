@@ -228,7 +228,7 @@ func executeCommandIO(root *cobra.Command, stdin io.Reader, stdout, stderr io.Wr
 	savedHostFlag := HostFlag
 	oldNewGerritClient := NewGerritClient
 	NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		if isLoopbackTestHost(savedHostFlag) {
+		if isLoopbackHost(savedHostFlag) {
 			return gerrit.NewClient(ctx, savedHostFlag, http.DefaultClient)
 		}
 		host, _ := cmd.Flags().GetString("host")
@@ -619,6 +619,136 @@ type MockRequest struct {
 	Header http.Header
 }
 
+// AuthResolvers groups the pluggable authentication and token resolution hooks
+// used across Gerrit, LUCI, Android Build, and Google Issue Tracker. Tests
+// install them with SetAuthResolvers or WithHermeticAuth.
+type AuthResolvers struct {
+	LookPath                 func(file string) (string, error)
+	CommandRunner            func(ctx context.Context, name string, args ...string) ([]byte, error)
+	GerritToken              func(ctx context.Context) (string, string, error)
+	LUCIToken                func(ctx context.Context) (string, string, error)
+	AndroidBuildToken        func(ctx context.Context) (string, error)
+	IssueTrackerToken        func(ctx context.Context) (string, string, error)
+	IssueTrackerQuotaProject func(ctx context.Context, token string) string
+}
+
+// currentAuthResolvers returns the active package authentication resolvers.
+func currentAuthResolvers() AuthResolvers {
+	return AuthResolvers{
+		LookPath:                 LookPathFn,
+		CommandRunner:            OAuthTokenCommandRunner,
+		GerritToken:              GerritTokenResolver,
+		LUCIToken:                LUCITokenResolver,
+		AndroidBuildToken:        AndroidBuildTokenResolver,
+		IssueTrackerToken:        IssueTrackerTokenResolver,
+		IssueTrackerQuotaProject: IssueTrackerQuotaProjectResolver,
+	}
+}
+
+// SetAuthResolvers replaces each active package authentication resolver with
+// the corresponding non-nil field of r.
+func SetAuthResolvers(r AuthResolvers) {
+	if r.LookPath != nil {
+		LookPathFn = r.LookPath
+	}
+	if r.CommandRunner != nil {
+		OAuthTokenCommandRunner = r.CommandRunner
+	}
+	if r.GerritToken != nil {
+		GerritTokenResolver = r.GerritToken
+	}
+	if r.LUCIToken != nil {
+		LUCITokenResolver = r.LUCIToken
+	}
+	if r.AndroidBuildToken != nil {
+		AndroidBuildTokenResolver = r.AndroidBuildToken
+	}
+	if r.IssueTrackerToken != nil {
+		IssueTrackerTokenResolver = r.IssueTrackerToken
+	}
+	if r.IssueTrackerQuotaProject != nil {
+		IssueTrackerQuotaProjectResolver = r.IssueTrackerQuotaProject
+	}
+}
+
+// hermeticAuthEnvVars are the environment variables that supply credentials or
+// select an auth mode. Hermetic tests clear them so the developer's
+// environment can't leak into a test.
+var hermeticAuthEnvVars = []string{
+	"GH_ISH_AUTH_MODE",
+	"GH_ISH_AUTH_METHOD",
+	"GERRIT_TOKEN",
+	"GHISH_LUCI_TOKEN",
+	"LUCI_TOKEN",
+	"GHISH_ANDROID_BUILD_TOKEN",
+	"GHISH_ISSUE_TOKEN",
+	"BUGANIZER_TOKEN",
+	"GHISH_QUOTA_PROJECT",
+	"GOOGLE_CLOUD_QUOTA_PROJECT",
+	"LUCI_AUTH_CREDENTIAL_HELPER",
+}
+
+// productionAuthResolvers holds the production resolvers, captured during
+// package initialization before TestMain or any test replaces them.
+var productionAuthResolvers = currentAuthResolvers()
+
+// failClosedAuthResolvers returns the production resolvers with credential
+// tool lookup and token subprocesses made to fail. The production token
+// resolvers fail closed because tool lookup fails, while still honoring
+// explicit token environment variables.
+func failClosedAuthResolvers() AuthResolvers {
+	r := productionAuthResolvers
+	r.LookPath = func(file string) (string, error) {
+		return "", fmt.Errorf("hermetic test: %s not found in PATH", file)
+	}
+	r.CommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("hermetic test: unexpected command %s", name)
+	}
+	return r
+}
+
+// hermeticAuthActive reports whether WithHermeticAuth is currently active in
+// the running test, so NewMockGerritServer does not clobber resolvers installed
+// by an earlier WithHermeticAuth call.
+var hermeticAuthActive bool
+
+// WithHermeticAuth resets auth caches and installs fail-closed tool lookup, the
+// production Gerrit and Issue Tracker token resolvers, and stub LUCI, Android
+// Build, and quota-project resolvers (overridden by non-nil fields in
+// overrides). Ambient credential environment variables are cleared at test
+// binary startup by TestMain. WithHermeticAuth restores the previous resolvers
+// and clears auth caches on test cleanup.
+//
+// A test that assigns LookPathFn directly, rather than through this helper,
+// must also call ResetAuthTokenCaches.
+func WithHermeticAuth(t testing.TB, overrides AuthResolvers) {
+	t.Helper()
+	prev := currentAuthResolvers()
+	prevActive := hermeticAuthActive
+	hermeticAuthActive = true
+
+	// Start from the production resolvers rather than prev, so a nested call
+	// undoes an earlier direct assignment.
+	hermetic := failClosedAuthResolvers()
+	hermetic.LUCIToken = func(ctx context.Context) (string, string, error) {
+		return "mock-luci-token", "test", nil
+	}
+	hermetic.AndroidBuildToken = func(ctx context.Context) (string, error) {
+		return "mock-android-build-token", nil
+	}
+	hermetic.IssueTrackerQuotaProject = func(context.Context, string) string {
+		return "mock-quota-project"
+	}
+	ResetAuthTokenCaches()
+	SetAuthResolvers(hermetic)
+	SetAuthResolvers(overrides)
+	t.Cleanup(func() {
+		SetAuthResolvers(prev)
+		hermeticAuthActive = prevActive
+		ResetAuthTokenCaches()
+	})
+}
+
 // MockRoute defines matching criteria and handler for a route.
 type MockRoute struct {
 	Method  string // empty matches any method
@@ -643,8 +773,9 @@ type MockGerritServer struct {
 // and restores them on test cleanup.
 func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	t.Helper()
-	ResetAuthTokenCaches()
-	t.Cleanup(ResetAuthTokenCaches)
+	if !hermeticAuthActive {
+		WithHermeticAuth(t, AuthResolvers{})
+	}
 	s := &MockGerritServer{
 		t:              t,
 		fallbackStatus: http.StatusNotFound,

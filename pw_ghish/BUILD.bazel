@@ -166,6 +166,7 @@ go_test(
         "git_client_test.go",
         "github_syntax_test.go",
         "golden_test.go",
+        "hermetic_main_test.go",
         "hook_test.go",
         "invariants_ast_test.go",
         "issuetracker_test.go",

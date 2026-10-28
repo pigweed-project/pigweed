@@ -1681,6 +1681,10 @@ func TestSeedPrefetchedGitConfig(t *testing.T) {
 }
 
 func TestRealGitRunner_ReadOnlyEnvFlags(t *testing.T) {
+	// TestMain sets GIT_CONFIG_NOSYSTEM=1 for every test; clear it so only
+	// buildEnv can add it.
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "")
+	os.Unsetenv("GIT_CONFIG_NOSYSTEM")
 	ctx := t.Context()
 	runner := &RealGitRunner{}
 

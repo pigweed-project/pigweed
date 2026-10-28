@@ -44,6 +44,10 @@ Running tests
 
       $ bazelisk test //pw_ghish/...
 
+   Unit tests run under a package ``TestMain`` (``hermetic_main_test.go``)
+   that makes credential tool lookup and token subprocesses fail and refuses
+   non-loopback HTTP; install credentials with ``WithHermeticAuth``.
+
 2. **Live integration tests** (run manually with workstation credentials against
    ``pigweed-review.googlesource.com``, Buildbucket, and Buganizer):
 

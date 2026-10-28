@@ -926,9 +926,6 @@ func TestGobCurlTransport_FailureReturnsExitCodeAuth(t *testing.T) {
 }
 
 func TestFindLuciAuthBinary_WorktreeCommonGitDir(t *testing.T) {
-	origLookPath := LookPathFn
-	defer func() { LookPathFn = origLookPath }()
-
 	t.Setenv("PW_ENVIRONMENT_ROOT", "")
 	t.Setenv("BUILD_WORKSPACE_DIRECTORY", "")
 	t.Setenv(scriptDirEnvVar, "")
@@ -936,27 +933,25 @@ func TestFindLuciAuthBinary_WorktreeCommonGitDir(t *testing.T) {
 	mainRepoRoot := filepath.Join(t.TempDir(), "pigweed")
 	expectedLuciAuth := filepath.Join(mainRepoRoot, "environment", "cipd", "packages", "luci", "luci-auth")
 
-	LookPathFn = func(file string) (string, error) {
-		if file == expectedLuciAuth {
-			return expectedLuciAuth, nil
-		}
-		return "", os.ErrNotExist
-	}
+	WithHermeticAuth(t, AuthResolvers{
+		LookPath: func(file string) (string, error) {
+			if file == expectedLuciAuth {
+				return expectedLuciAuth, nil
+			}
+			return "", os.ErrNotExist
+		},
+	})
 
 	mockGit := &MockGitRunner{}
 	mockGit.OnCommand("rev-parse --git-common-dir", filepath.Join(mainRepoRoot, ".git")+"\n")
-	ctx := context.WithValue(context.Background(), configKey, &Config{Git: mockGit})
+	ctx := context.WithValue(t.Context(), configKey, &Config{Git: mockGit})
 
-	got := findLuciAuthBinary(ctx)
-	if got != expectedLuciAuth {
+	if got := findLuciAuthBinary(ctx); got != expectedLuciAuth {
 		t.Errorf("findLuciAuthBinary() = %q, want %q", got, expectedLuciAuth)
 	}
 }
 
 func TestFindLuciAuthBinary_ScriptDirFallback(t *testing.T) {
-	origLookPath := LookPathFn
-	defer func() { LookPathFn = origLookPath }()
-
 	otherRepoDir := filepath.Join(t.TempDir(), "other-repo")
 	pwScriptDir := filepath.Join(t.TempDir(), "pigweed-checkout")
 	expectedLuciAuth := filepath.Join(pwScriptDir, "environment", "cipd", "packages", "luci", "luci-auth")
@@ -965,19 +960,24 @@ func TestFindLuciAuthBinary_ScriptDirFallback(t *testing.T) {
 	t.Setenv("BUILD_WORKSPACE_DIRECTORY", otherRepoDir)
 	t.Setenv(scriptDirEnvVar, pwScriptDir)
 
-	LookPathFn = func(file string) (string, error) {
-		if file == expectedLuciAuth {
-			return expectedLuciAuth, nil
-		}
-		return "", os.ErrNotExist
-	}
+	WithHermeticAuth(t, AuthResolvers{
+		LookPath: func(file string) (string, error) {
+			if file == expectedLuciAuth {
+				return expectedLuciAuth, nil
+			}
+			return "", os.ErrNotExist
+		},
+	})
 
 	mockGit := &MockGitRunner{}
-	ctx := context.WithValue(context.Background(), configKey, &Config{Git: mockGit})
+	ctx := context.WithValue(t.Context(), configKey, &Config{Git: mockGit})
 
 	got := findLuciAuthBinary(ctx)
 	if got != expectedLuciAuth {
 		t.Errorf("findLuciAuthBinary() = %q, want %q", got, expectedLuciAuth)
+	}
+	if len(mockGit.Calls) != 0 {
+		t.Errorf("expected findLuciAuthBinary to return early without running git rev-parse --git-common-dir, got: %v", mockGit.Calls)
 	}
 }
 
@@ -1047,26 +1047,20 @@ func TestLUCIAuthTransport(t *testing.T) {
 
 func TestDefaultGerritToken_CachesJSONExpiry(t *testing.T) {
 	t.Setenv("GERRIT_TOKEN", "")
-	ResetAuthTokenCaches()
-	t.Cleanup(ResetAuthTokenCaches)
-
-	origLookPath := LookPathFn
-	LookPathFn = func(file string) (string, error) {
-		if file == "luci-auth" {
-			return "/usr/bin/luci-auth", nil
-		}
-		return "", os.ErrNotExist
-	}
-	t.Cleanup(func() { LookPathFn = origLookPath })
-
 	wantExpiry := time.Now().Add(45 * time.Minute).Unix()
 	var runnerCalls int
-	origRunner := OAuthTokenCommandRunner
-	OAuthTokenCommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		runnerCalls++
-		return fmt.Appendf(nil, `{"token":"gerrit-json-token","expiry":%d}`, wantExpiry), nil
-	}
-	t.Cleanup(func() { OAuthTokenCommandRunner = origRunner })
+	WithHermeticAuth(t, AuthResolvers{
+		LookPath: func(file string) (string, error) {
+			if file == "luci-auth" {
+				return "/usr/bin/luci-auth", nil
+			}
+			return "", os.ErrNotExist
+		},
+		CommandRunner: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			runnerCalls++
+			return fmt.Appendf(nil, `{"token":"gerrit-json-token","expiry":%d}`, wantExpiry), nil
+		},
+	})
 
 	for range 2 {
 		tok, src, err := DefaultGerritToken(t.Context())
@@ -1402,42 +1396,6 @@ func TestAuthEnvVars_TrimSpace(t *testing.T) {
 	}
 }
 
-func TestFindLuciAuthBinary_SkipsGitRevParseWhenFoundInScriptDir(t *testing.T) {
-	origLookPath := LookPathFn
-	defer func() { LookPathFn = origLookPath }()
-
-	pwScriptDir := filepath.Join(t.TempDir(), "pigweed-checkout")
-	expectedLuciAuth := filepath.Join(pwScriptDir, "environment", "cipd", "packages", "luci", "luci-auth")
-
-	t.Setenv("PW_ENVIRONMENT_ROOT", "")
-	t.Setenv("BUILD_WORKSPACE_DIRECTORY", "")
-	t.Setenv(scriptDirEnvVar, pwScriptDir)
-
-	LookPathFn = func(file string) (string, error) {
-		if file == expectedLuciAuth {
-			return expectedLuciAuth, nil
-		}
-		return "", os.ErrNotExist
-	}
-
-	var gitCalled bool
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			gitCalled = true
-			return fmt.Errorf("unexpected git call: %v", args)
-		},
-	}
-	ctx := context.WithValue(t.Context(), configKey, &Config{Git: mockGit})
-
-	got := findLuciAuthBinary(ctx)
-	if got != expectedLuciAuth {
-		t.Errorf("findLuciAuthBinary() = %q, want %q", got, expectedLuciAuth)
-	}
-	if gitCalled {
-		t.Errorf("expected findLuciAuthBinary to return early without running git rev-parse --git-common-dir")
-	}
-}
-
 func TestLUCIAuthTransport_MemoizesAuthModeAcrossRequests(t *testing.T) {
 	ResetAuthTokenCaches()
 	t.Cleanup(ResetAuthTokenCaches)
@@ -1488,9 +1446,6 @@ func TestLUCIAuthTransport_MemoizesAuthModeAcrossRequests(t *testing.T) {
 }
 
 func TestOAuthTokenCommand_AutoConfiguresSSOCredHelper(t *testing.T) {
-	origLookPath := LookPathFn
-	t.Cleanup(func() { LookPathFn = origLookPath })
-
 	tests := []struct {
 		name           string
 		hasHelper      bool
@@ -1553,15 +1508,17 @@ func TestOAuthTokenCommand_AutoConfiguresSSOCredHelper(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			LookPathFn = func(file string) (string, error) {
-				if tc.lookPathErr != nil {
-					return "", tc.lookPathErr
-				}
-				if tc.hasHelper && file == ssoCredHelperPath {
-					return ssoCredHelperPath, nil
-				}
-				return "", os.ErrNotExist
-			}
+			WithHermeticAuth(t, AuthResolvers{
+				LookPath: func(file string) (string, error) {
+					if tc.lookPathErr != nil {
+						return "", tc.lookPathErr
+					}
+					if tc.hasHelper && file == ssoCredHelperPath {
+						return ssoCredHelperPath, nil
+					}
+					return "", os.ErrNotExist
+				},
+			})
 			t.Setenv("GHISH_PARENT_ENV_CANARY", "preserved")
 			t.Setenv("LUCI_AUTH_CREDENTIAL_HELPER", tc.envVal)
 			if !tc.envSet {

@@ -35,21 +35,12 @@ func TestAuthStatus_AllHealthyGoogler(t *testing.T) {
 		"email":       "keir@google.com",
 	})
 
-	origLUCI := LUCITokenResolver
-	LUCITokenResolver = func(ctx context.Context) (string, string, error) {
-		return "luci-tok", "luci-auth token", nil
-	}
-	defer func() { LUCITokenResolver = origLUCI }()
-
-	origIT := IssueTrackerTokenResolver
-	IssueTrackerTokenResolver = func(ctx context.Context) (string, string, error) {
-		return "it-tok", "luci-auth token", nil
-	}
-	defer func() { IssueTrackerTokenResolver = origIT }()
-
-	origQuota := IssueTrackerQuotaProjectResolver
-	IssueTrackerQuotaProjectResolver = func(ctx context.Context, token string) string { return "pigweed-infra" }
-	defer func() { IssueTrackerQuotaProjectResolver = origQuota }()
+	WithHermeticAuth(t, AuthResolvers{
+		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
+			return "it-tok", "luci-auth token", nil
+		},
+		IssueTrackerQuotaProject: func(ctx context.Context, _ string) string { return "pigweed-infra" },
+	})
 
 	output, err := executeCommand(RootCmd, "auth", "status", "--auth-mode", "googler")
 	if err != nil {
@@ -79,17 +70,11 @@ func TestAuthStatus_JSON(t *testing.T) {
 		"email":       "keir@google.com",
 	})
 
-	origLUCI := LUCITokenResolver
-	LUCITokenResolver = func(ctx context.Context) (string, string, error) {
-		return "luci-tok", "luci-auth token", nil
-	}
-	defer func() { LUCITokenResolver = origLUCI }()
-
-	origIT := IssueTrackerTokenResolver
-	IssueTrackerTokenResolver = func(ctx context.Context) (string, string, error) {
-		return "it-tok", "luci-auth token", nil
-	}
-	defer func() { IssueTrackerTokenResolver = origIT }()
+	WithHermeticAuth(t, AuthResolvers{
+		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
+			return "it-tok", "luci-auth token", nil
+		},
+	})
 
 	output, err := executeCommand(RootCmd, "auth", "status", "--auth-mode", "googler", "--json", "mode,healthy,gerrit")
 	if err != nil {
@@ -119,17 +104,14 @@ func TestAuthStatus_GooglerFailsWithExitCode4WhenLUCIUnauthenticated(t *testing.
 		"email":       "keir@google.com",
 	})
 
-	origLUCI := LUCITokenResolver
-	LUCITokenResolver = func(ctx context.Context) (string, string, error) {
-		return "", "", fmt.Errorf("interactive login required")
-	}
-	defer func() { LUCITokenResolver = origLUCI }()
-
-	origIT := IssueTrackerTokenResolver
-	IssueTrackerTokenResolver = func(ctx context.Context) (string, string, error) {
-		return "it-tok", "luci-auth token", nil
-	}
-	defer func() { IssueTrackerTokenResolver = origIT }()
+	WithHermeticAuth(t, AuthResolvers{
+		LUCIToken: func(ctx context.Context) (string, string, error) {
+			return "", "", fmt.Errorf("interactive login required")
+		},
+		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
+			return "it-tok", "luci-auth token", nil
+		},
+	})
 
 	output, err := executeCommand(RootCmd, "auth", "status", "--auth-mode", "googler")
 	if err == nil {
@@ -151,23 +133,14 @@ func TestAuthStatus_CommunityModeHealthyWithoutLUCIToken(t *testing.T) {
 		"email":       "contributor@example.com",
 	})
 
-	origLookPath := LookPathFn
-	LookPathFn = func(file string) (string, error) {
-		return "", fmt.Errorf("not found: %s", file)
-	}
-	defer func() { LookPathFn = origLookPath }()
-
-	origLUCI := LUCITokenResolver
-	LUCITokenResolver = func(ctx context.Context) (string, string, error) {
-		return "", "", fmt.Errorf("luci-auth not found")
-	}
-	defer func() { LUCITokenResolver = origLUCI }()
-
-	origIT := IssueTrackerTokenResolver
-	IssueTrackerTokenResolver = func(ctx context.Context) (string, string, error) {
-		return "", "", fmt.Errorf("gcloud not found")
-	}
-	defer func() { IssueTrackerTokenResolver = origIT }()
+	WithHermeticAuth(t, AuthResolvers{
+		LUCIToken: func(ctx context.Context) (string, string, error) {
+			return "", "", fmt.Errorf("luci-auth not found")
+		},
+		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
+			return "", "", fmt.Errorf("gcloud not found")
+		},
+	})
 
 	output, err := executeCommand(RootCmd, "auth", "status", "--auth-mode", "community")
 	if err != nil {
@@ -187,23 +160,14 @@ func TestAuthStatus_CommunityModeUnauthenticatedGerrit(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("GERRIT_TOKEN", "")
 
-	origLookPath := LookPathFn
-	LookPathFn = func(file string) (string, error) {
-		return "", fmt.Errorf("not found: %s", file)
-	}
-	defer func() { LookPathFn = origLookPath }()
-
-	origLUCI := LUCITokenResolver
-	LUCITokenResolver = func(ctx context.Context) (string, string, error) {
-		return "", "", fmt.Errorf("luci-auth not found")
-	}
-	defer func() { LUCITokenResolver = origLUCI }()
-
-	origIT := IssueTrackerTokenResolver
-	IssueTrackerTokenResolver = func(ctx context.Context) (string, string, error) {
-		return "", "", fmt.Errorf("gcloud not found")
-	}
-	defer func() { IssueTrackerTokenResolver = origIT }()
+	WithHermeticAuth(t, AuthResolvers{
+		LUCIToken: func(ctx context.Context) (string, string, error) {
+			return "", "", fmt.Errorf("luci-auth not found")
+		},
+		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
+			return "", "", fmt.Errorf("gcloud not found")
+		},
+	})
 
 	output, err := executeCommand(RootCmd, "auth", "status", "--auth-mode", "community")
 	if err == nil {
@@ -265,11 +229,11 @@ func TestView_SurfacesLUCIAuthErrorInGooglerMode(t *testing.T) {
 	}
 	defer func() { getLUCIHTTPClient = origLUCIClient }()
 
-	origLUCI := LUCITokenResolver
-	LUCITokenResolver = func(ctx context.Context) (string, string, error) {
-		return "", "", NewExitCodeError(ExitCodeAuth, "no token")
-	}
-	defer func() { LUCITokenResolver = origLUCI }()
+	WithHermeticAuth(t, AuthResolvers{
+		LUCIToken: func(ctx context.Context) (string, string, error) {
+			return "", "", NewExitCodeError(ExitCodeAuth, "no token")
+		},
+	})
 
 	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--auth-mode", "googler")
 	if err != nil {

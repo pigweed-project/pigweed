@@ -67,25 +67,33 @@ type KindSmokeFixture struct {
 }
 
 // loopbackOnlyTransport is installed as http.DefaultTransport for the
-// fixture's lifetime: it forwards requests to loopback hosts (the mock
-// servers) and refuses and records every other request, so a command that
-// reaches for the real network fails instead of silently escaping the
-// fixture.
+// fixture's lifetime (and, by TestMain, for the whole unit test binary): it
+// forwards requests to loopback hosts (the mock servers) and refuses and
+// records every other request, so a command that reaches for the real network
+// fails instead of silently escaping the fixture.
 type loopbackOnlyTransport struct {
-	inner   http.RoundTripper
-	mu      sync.Mutex
-	refused []string
+	inner http.RoundTripper
+	// logRefusals also reports each refused request on stderr, so a refusal
+	// is visible even when a best-effort caller swallows the error.
+	logRefusals bool
+	mu          sync.Mutex
+	refused     []string
 }
 
 func (l *loopbackOnlyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	switch r.URL.Hostname() {
-	case "127.0.0.1", "::1", "localhost":
+	if isLoopbackHost(r.URL.Host) {
 		return l.inner.RoundTrip(r)
+	}
+	if r.Body != nil {
+		_ = r.Body.Close()
 	}
 	l.mu.Lock()
 	l.refused = append(l.refused, r.Method+" "+r.URL.String())
 	l.mu.Unlock()
-	return nil, fmt.Errorf("kind smoke fixture: refusing non-loopback request to %s", r.URL)
+	if l.logRefusals {
+		fmt.Fprintf(os.Stderr, "hermetic test: refusing non-loopback request to %s\n", r.URL)
+	}
+	return nil, fmt.Errorf("hermetic test: refusing non-loopback request to %s", r.URL)
 }
 
 // takeRefused returns and forgets the refused requests.
@@ -168,28 +176,16 @@ func NewKindSmokeFixture(t *testing.T) *KindSmokeFixture {
 		func(string) (string, error) { return "/usr/bin/bb", nil },
 		func(context.Context, string, []string, io.Writer, io.Writer) error { return nil },
 	))
-	// Make tool discovery host-independent: no gob-curl, sso_client,
-	// luci-auth, gcloud, or git-remote-rpc, whatever the developer or CI
-	// machine has installed, and fixed credentials so nothing shells out to
-	// a token helper.
-	prevLookPath := LookPathFn
-	LookPathFn = func(name string) (string, error) {
-		return "", fmt.Errorf("%s: not on the kind smoke fixture's PATH", name)
-	}
-	prevLUCI, prevIT, prevQuota := LUCITokenResolver, IssueTrackerTokenResolver, IssueTrackerQuotaProjectResolver
-	LUCITokenResolver = func(context.Context) (string, string, error) { return "smoke-luci-token", "kind smoke fixture", nil }
-	IssueTrackerTokenResolver = func(context.Context) (string, string, error) { return "smoke-it-token", "kind smoke fixture", nil }
-	IssueTrackerQuotaProjectResolver = func(context.Context, string) string { return "smoke-quota-project" }
-	t.Cleanup(func() {
-		LookPathFn = prevLookPath
-		LUCITokenResolver, IssueTrackerTokenResolver, IssueTrackerQuotaProjectResolver = prevLUCI, prevIT, prevQuota
-	})
-
 	network := &loopbackOnlyTransport{inner: http.DefaultTransport}
 	http.DefaultTransport = network
 	t.Cleanup(func() { http.DefaultTransport = network.inner })
 
 	s := NewMockGerritServer(t)
+	WithHermeticAuth(t, AuthResolvers{
+		LUCIToken:                func(context.Context) (string, string, error) { return "smoke-luci-token", "kind smoke fixture", nil },
+		IssueTrackerToken:        func(context.Context) (string, string, error) { return "smoke-it-token", "kind smoke fixture", nil },
+		IssueTrackerQuotaProject: func(context.Context, string) string { return "smoke-quota-project" },
+	})
 	installKindSmokeGerrit(s)
 
 	issues := NewMockIssueTrackerServer(t)

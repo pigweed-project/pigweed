@@ -63,12 +63,6 @@ func (c *ChangeContext) ChangeURL(change *gerrit.ChangeInfo) string {
 	return fmt.Sprintf("https://%s/c/%s/+/%d", strings.TrimSuffix(c.Host, "/a"), project, change.Number)
 }
 
-func isLoopbackTestHost(h string) bool {
-	cleaned := CleanGerritHost(h)
-	return cleaned == "localhost" || cleaned == "127.0.0.1" || cleaned == "[::1]" ||
-		strings.HasPrefix(cleaned, "127.0.0.1:") || strings.HasPrefix(cleaned, "[::1]:") || strings.HasPrefix(cleaned, "localhost:")
-}
-
 // ResolveChangeContext resolves the target change ID from args or git branch,
 // parses change ID and revision, initializes the Gerrit client, and returns a ChangeContext.
 // It fails fast if target ID resolution fails or client creation fails.
@@ -99,7 +93,7 @@ func ResolveChangeContext(cmd *cobra.Command, args []string) (*ChangeContext, er
 		cfg = &Config{Git: DefaultGitRunner}
 	}
 	hostFlagChanged := isHostFlagChanged(cmd)
-	if parsed.Host != "" && !hostFlagChanged && !isLoopbackTestHost(cfg.Host) {
+	if parsed.Host != "" && !hostFlagChanged && !isLoopbackHost(cfg.Host) {
 		cfg.Host = parsed.Host
 		SetConfig(cmd, cfg)
 		ctx = cmd.Context()
@@ -515,13 +509,13 @@ func (c *ChangeContext) ResolveProfile(project ...string) (ProjectProfile, error
 		return DetectProfile("", "", ProfileFlag)
 	}
 	var gHost string
-	if c.Host != "" && !isLoopbackTestHost(c.Host) {
+	if c.Host != "" && !isLoopbackHost(c.Host) {
 		gHost = c.Host
 	} else if c.Client != nil {
 		u := c.Client.BaseURL()
 		gHost = CanonicalGerritHost(u.String())
 	}
-	if (gHost == "" || isLoopbackTestHost(gHost)) && c.Config != nil {
+	if (gHost == "" || isLoopbackHost(gHost)) && c.Config != nil {
 		if cfgHost := c.Config.GerritHost(c.Context); cfgHost != "" {
 			gHost = cfgHost
 		}
