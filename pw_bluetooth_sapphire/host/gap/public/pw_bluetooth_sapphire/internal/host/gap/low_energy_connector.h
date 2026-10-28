@@ -82,6 +82,10 @@ class LowEnergyConnector final {
   // |name|.
   void AttachInspect(inspect::Node& parent, std::string name);
 
+  // Returns true if this connector currently owns a LowEnergyConnection (i.e.
+  // a link to the peer has been established and is being interrogated).
+  bool has_connection() const { return connection_ != nullptr; }
+
  private:
   enum class State {
     kDefault,
@@ -195,7 +199,8 @@ class LowEnergyConnector final {
 
   hci::Transport::WeakPtr hci_;
 
-  // Only used to construct a LowEnergyConnection.
+  // Used to construct a LowEnergyConnection and to check that no other
+  // LowEnergyConnection to the peer exists before creating one.
   WeakSelf<LowEnergyConnectionManager>::WeakPtr le_connection_manager_;
 
   hci::LocalAddressDelegate* local_address_delegate_;

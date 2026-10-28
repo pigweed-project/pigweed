@@ -483,21 +483,30 @@ void LowEnergyConnectionManager::RegisterRemoteInitiatedLink(
   // TODO(fxbug.dev/42143994): Use own address when storing the connection.
   // Currently this will refuse the connection and disconnect the link if |peer|
   // is already connected to us by a different local address.
-  if (connections_.find(peer_id) != connections_.end()) {
+  //
+  // This also refuses the link while another link to |peer| (local- or
+  // remote-initiated) is still being interrogated. Accepting it would create a
+  // second internal::LowEnergyConnection for the peer, and destroying the
+  // duplicate would tear down the GATT state of the other link.
+  if (HasConnectionToPeer(peer_id)) {
     bt_log(INFO,
            "gap-le",
-           "multiple links from peer; remote-initiated connection refused "
-           "(peer: %s)",
+           "link to peer already exists or is initializing; remote-initiated "
+           "connection refused (peer: %s)",
            bt_str(peer_id));
     callback(fit::error(HostError::kFailed));
     return;
   }
 
+  // Not expected to happen given HasConnectionToPeer() above, since remote
+  // connectors own their link from StartInbound() until they are removed.
+  // Checked here rather than on the result of emplace() because |callback| is
+  // moved into the request first and would be dropped without being called.
   if (remote_connectors_.find(peer_id) != remote_connectors_.end()) {
-    bt_log(INFO,
+    bt_log(WARN,
            "gap-le",
-           "remote connector for peer already exists; connection refused "
-           "(peer: %s)",
+           "remote connector for peer already exists; remote-initiated "
+           "connection refused (peer: %s)",
            bt_str(peer_id));
     callback(fit::error(HostError::kFailed));
     return;
@@ -676,6 +685,19 @@ void LowEnergyConnectionManager::ReleaseReference(
          bt_str(conn->peer_id()));
   inspect_properties_.disconnect_zero_ref_count_.Add(1);
   CleanUpConnection(std::move(conn), LowEnergyDisconnectReason::kZeroRef);
+}
+
+bool LowEnergyConnectionManager::HasConnectionToPeer(PeerId peer_id) const {
+  if (connections_.find(peer_id) != connections_.end()) {
+    return true;
+  }
+  if (current_request_ && current_request_->request.peer_id() == peer_id &&
+      current_request_->connector->has_connection()) {
+    return true;
+  }
+  auto remote_iter = remote_connectors_.find(peer_id);
+  return remote_iter != remote_connectors_.end() &&
+         remote_iter->second.connector->has_connection();
 }
 
 void LowEnergyConnectionManager::TryCreateNextConnection() {

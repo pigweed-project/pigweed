@@ -1630,6 +1630,179 @@ TEST_F(LowEnergyConnectionManagerTest,
   EXPECT_TRUE(peer->le()->connected());
 }
 
+// Regression test for b/525199651. A remote-initiated link from a peer whose
+// local-initiated link is still being interrogated must be refused without
+// disturbing the GATT state of the local-initiated link.
+TEST_F(LowEnergyConnectionManagerTest,
+       RemoteInitiatedLinkRefusedWhileLocalInitiatedLinkInterrogating) {
+  // The fixture's connection state callback does not support two links to the
+  // same address.
+  test_device()->set_connection_state_callback(nullptr);
+
+  Peer* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  // Stall interrogation of all links.
+  std::vector<fit::closure> features_unpause;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLEReadRemoteFeatures, [&](fit::closure unpause) {
+        features_unpause.push_back(std::move(unpause));
+      });
+
+  std::optional<ConnectionResult> outbound_result;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&](auto result) { outbound_result = std::move(result); },
+      kConnectionOptions);
+  RunUntilIdle();
+  ASSERT_FALSE(outbound_result.has_value());
+  ASSERT_EQ(features_unpause.size(), 1u);
+
+  // FakeLayer keeps remote services in the same per-peer entry that
+  // AddConnection() and RemoveConnection() manage, so this service is only
+  // alive while the peer is registered with GATT.
+  gatt::ServiceData service_data(gatt::ServiceKind::PRIMARY,
+                                 /*start=*/0x0100,
+                                 /*end=*/0x010F,
+                                 UUID(uint16_t{0x180D}));
+  auto [remote_svc, service_client] =
+      fake_gatt()->AddPeerService(peer->identifier(), service_data);
+  ASSERT_TRUE(remote_svc.is_alive());
+
+  // Create a second link to the same peer, this time initiated by the peer.
+  // FakeController only allows this if the peer is not marked as connected.
+  test_device()->FindPeer(kAddress0)->set_connected(false);
+  test_device()->ConnectLowEnergy(
+      kAddress0, pw::bluetooth::emboss::ConnectionRole::PERIPHERAL);
+  RunUntilIdle();
+  test_device()->FindPeer(kAddress0)->set_connected(true);
+  std::unique_ptr<hci::LowEnergyConnection> inbound_link =
+      MoveLastRemoteInitiated();
+  ASSERT_TRUE(inbound_link);
+
+  std::optional<ConnectionResult> inbound_result;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(inbound_link), BondableMode::Bondable, [&](auto result) {
+        inbound_result = std::move(result);
+      });
+  // The link is refused synchronously, without being interrogated. These are
+  // not ASSERTs because returning early would leave pending callbacks that
+  // reference locals of this test.
+  EXPECT_TRUE(inbound_result.has_value() && inbound_result->is_error() &&
+              inbound_result->error_value() == HostError::kFailed);
+  EXPECT_EQ(features_unpause.size(), 1u);
+  RunUntilIdle();
+  EXPECT_TRUE(remote_svc.is_alive());
+
+  test_device()->clear_pause_listener_for_opcode(
+      hci_spec::kLEReadRemoteFeatures);
+  for (fit::closure& unpause : features_unpause) {
+    unpause();
+  }
+  RunUntilIdle();
+
+  ASSERT_TRUE(outbound_result.has_value());
+  ASSERT_TRUE(outbound_result->is_ok());
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle =
+      std::move(*outbound_result).value();
+  ASSERT_TRUE(conn_handle);
+  EXPECT_TRUE(conn_handle->active());
+  EXPECT_EQ(peer->le()->connection_state(), Peer::ConnectionState::kConnected);
+  EXPECT_TRUE(remote_svc.is_alive());
+}
+
+// Regression test for b/525199651. A local-initiated link to a peer whose
+// remote-initiated link is still being interrogated must be refused without
+// disturbing the GATT state of the remote-initiated link.
+TEST_F(LowEnergyConnectionManagerTest,
+       LocalInitiatedLinkRefusedWhileRemoteInitiatedLinkInterrogating) {
+  // The fixture's connection state callback does not support two links to the
+  // same address.
+  test_device()->set_connection_state_callback(nullptr);
+
+  Peer* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  // Stall interrogation of all links.
+  std::vector<fit::closure> features_unpause;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLEReadRemoteFeatures, [&](fit::closure unpause) {
+        features_unpause.push_back(std::move(unpause));
+      });
+
+  test_device()->ConnectLowEnergy(kAddress0);
+  RunUntilIdle();
+  std::unique_ptr<hci::LowEnergyConnection> inbound_link =
+      MoveLastRemoteInitiated();
+  ASSERT_TRUE(inbound_link);
+
+  std::optional<ConnectionResult> inbound_result;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(inbound_link), BondableMode::Bondable, [&](auto result) {
+        inbound_result = std::move(result);
+      });
+  RunUntilIdle();
+  ASSERT_FALSE(inbound_result.has_value());
+  ASSERT_EQ(features_unpause.size(), 1u);
+
+  // FakeLayer keeps remote services in the same per-peer entry that
+  // AddConnection() and RemoveConnection() manage, so this service is only
+  // alive while the peer is registered with GATT.
+  gatt::ServiceData service_data(gatt::ServiceKind::PRIMARY,
+                                 /*start=*/0x0100,
+                                 /*end=*/0x010F,
+                                 UUID(uint16_t{0x180D}));
+  auto [remote_svc, service_client] =
+      fake_gatt()->AddPeerService(peer->identifier(), service_data);
+  ASSERT_TRUE(remote_svc.is_alive());
+
+  // Hold any HCI_Disconnect until the FakePeer connection state is restored
+  // below.
+  std::vector<fit::closure> disconnect_unpause;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kDisconnect, [&](fit::closure unpause) {
+        disconnect_unpause.push_back(std::move(unpause));
+      });
+
+  // Create a second link to the same peer, this time initiated locally.
+  // FakeController only allows this if the peer is not marked as connected.
+  test_device()->FindPeer(kAddress0)->set_connected(false);
+  std::optional<ConnectionResult> outbound_result;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&](auto result) { outbound_result = std::move(result); },
+      kConnectionOptions);
+  RunUntilIdle();
+  test_device()->FindPeer(kAddress0)->set_connected(true);
+  // The link is refused as soon as it is established, without being
+  // interrogated. These are not ASSERTs because returning early would leave
+  // pending callbacks that reference locals of this test.
+  EXPECT_TRUE(outbound_result.has_value() && outbound_result->is_error() &&
+              outbound_result->error_value() == HostError::kFailed);
+  EXPECT_EQ(features_unpause.size(), 1u);
+  EXPECT_TRUE(remote_svc.is_alive());
+
+  test_device()->clear_pause_listener_for_opcode(hci_spec::kDisconnect);
+  for (fit::closure& unpause : disconnect_unpause) {
+    unpause();
+  }
+  test_device()->clear_pause_listener_for_opcode(
+      hci_spec::kLEReadRemoteFeatures);
+  for (fit::closure& unpause : features_unpause) {
+    unpause();
+  }
+  RunUntilIdle();
+
+  ASSERT_TRUE(inbound_result.has_value());
+  ASSERT_TRUE(inbound_result->is_ok());
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle =
+      std::move(*inbound_result).value();
+  ASSERT_TRUE(conn_handle);
+  EXPECT_TRUE(conn_handle->active());
+  EXPECT_EQ(peer->le()->connection_state(), Peer::ConnectionState::kConnected);
+  EXPECT_TRUE(remote_svc.is_alive());
+}
+
 // Listener receives remote initiated connection ref for a known peer with the
 // same BR/EDR address.
 TEST_F(LowEnergyConnectionManagerTest,

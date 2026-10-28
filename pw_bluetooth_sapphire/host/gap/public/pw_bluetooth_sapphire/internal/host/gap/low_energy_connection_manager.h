@@ -270,11 +270,26 @@ class LowEnergyConnectionManager final {
 
  private:
   friend class internal::LowEnergyConnection;
+  friend class internal::LowEnergyConnector;
 
   // Mapping from peer identifiers to open LE connections.
   using ConnectionMap =
       std::unordered_map<PeerId,
                          std::unique_ptr<internal::LowEnergyConnection>>;
+
+  // Returns true if an internal::LowEnergyConnection exists for |peer_id|,
+  // either in |connections_| or owned by an in-progress connector (e.g. one
+  // that is interrogating the peer). At most one may exist per peer because
+  // per-peer state, such as the GATT registration, is keyed by PeerId.
+  //
+  // Connectors that do not own a connection are ignored. This lets a connector
+  // call this method for its own peer before creating its connection, and
+  // allows a remote-initiated link while a local-initiated connector is still
+  // connecting.
+  //
+  // Called by RegisterRemoteInitiatedLink() and by internal::LowEnergyConnector
+  // before creating a connection.
+  bool HasConnectionToPeer(PeerId peer_id) const;
 
   // Called by LowEnergyConnectionHandle::Release().
   void ReleaseReference(LowEnergyConnectionHandle* handle);

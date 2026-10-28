@@ -16,6 +16,7 @@
 
 #include <pw_assert/check.h>
 
+#include "pw_bluetooth_sapphire/internal/host/gap/low_energy_connection_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/peer_cache.h"
 
 namespace bt::gap::internal {
@@ -292,6 +293,21 @@ void LowEnergyConnector::OnConnectResult(
 bool LowEnergyConnector::InitializeConnection(
     std::unique_ptr<hci::LowEnergyConnection> link) {
   PW_CHECK(link);
+
+  // Only one LowEnergyConnection may exist per peer, as per-peer state (e.g.
+  // the GATT registration) is keyed by PeerId. Refuse this link if a link to
+  // the peer was already established in the other direction, as destroying a
+  // duplicate connection would tear down the state of the existing one.
+  if (le_connection_manager_->HasConnectionToPeer(peer_id_)) {
+    bt_log(INFO,
+           "gap-le",
+           "link to peer already exists; refusing duplicate link (peer: %s, "
+           "handle: %#.4x)",
+           bt_str(peer_id_),
+           link->handle());
+    NotifyFailure();
+    return false;
+  }
 
   auto peer_disconnect_cb =
       fit::bind_member<&LowEnergyConnector::OnPeerDisconnect>(this);
