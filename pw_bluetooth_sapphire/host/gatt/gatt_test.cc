@@ -413,6 +413,46 @@ TEST_F(GattTest, MultipleRegisterRemoteServiceWatcherForPeers) {
   EXPECT_EQ(watcher_data_2[1].added[0]->handle(), kSvcStartHandle1);
 }
 
+// Regression test for b/523286163.
+TEST_F(GattTest, RemoteServiceWatchersCanUnregisterThemselvesWhenNotified) {
+  const att::Handle kSvcStartHandle(42);
+  const att::Handle kSvcEndHandle(kSvcStartHandle);
+  fake_client()->set_services({ServiceData(ServiceKind::PRIMARY,
+                                           kSvcStartHandle,
+                                           kSvcEndHandle,
+                                           kTestServiceUuid0)});
+
+  // Each watcher unregisters itself, which destroys it, so captures must not
+  // be accessed after the UnregisterRemoteServiceWatcher() call.
+  int watcher_0_count = 0;
+  std::optional<GATT::RemoteServiceWatcherId> watcher_0_id;
+  watcher_0_id = gatt()->RegisterRemoteServiceWatcherForPeer(
+      kPeerId,
+      [this, &watcher_0_count, &watcher_0_id](
+          auto /*removed*/, auto /*added*/, auto /*modified*/) {
+        watcher_0_count++;
+        gatt()->UnregisterRemoteServiceWatcher(*watcher_0_id);
+      });
+  int watcher_1_count = 0;
+  std::optional<GATT::RemoteServiceWatcherId> watcher_1_id;
+  watcher_1_id = gatt()->RegisterRemoteServiceWatcherForPeer(
+      kPeerId,
+      [this, &watcher_1_count, &watcher_1_id](
+          auto /*removed*/, auto /*added*/, auto /*modified*/) {
+        watcher_1_count++;
+        gatt()->UnregisterRemoteServiceWatcher(*watcher_1_id);
+      });
+
+  gatt()->AddConnection(kPeerId, take_client(), CreateMockServer);
+  gatt()->InitializeClient(kPeerId, /*services_to_discover=*/{});
+  RunUntilIdle();
+
+  EXPECT_EQ(1, watcher_0_count);
+  EXPECT_EQ(1, watcher_1_count);
+  EXPECT_FALSE(gatt()->UnregisterRemoteServiceWatcher(*watcher_0_id));
+  EXPECT_FALSE(gatt()->UnregisterRemoteServiceWatcher(*watcher_1_id));
+}
+
 TEST_F(GattTest, ServiceDiscoveryFailureShutsDownConnection) {
   testing::MockServer::WeakPtr mock_server;
   auto mock_server_factory = [&](PeerId peer_id,
@@ -806,6 +846,35 @@ TEST_F(GattTest, MtuExchangeFailsListenersNotNotifiedConnectionShutdown) {
   EXPECT_TRUE(mock_server->was_shut_down());
 }
 
+// Regression test for b/523286163.
+TEST_F(GattTest, PeerMtuListenersCanUnregisterThemselvesWhenNotified) {
+  // Each listener unregisters itself, which destroys it, so captures must not
+  // be accessed after the UnregisterPeerMtuListener() call.
+  int listener_0_count = 0;
+  std::optional<GATT::PeerMtuListenerId> listener_0_id;
+  listener_0_id = gatt()->RegisterPeerMtuListener(
+      [this, &listener_0_count, &listener_0_id](PeerId, uint16_t) {
+        listener_0_count++;
+        gatt()->UnregisterPeerMtuListener(*listener_0_id);
+      });
+  int listener_1_count = 0;
+  std::optional<GATT::PeerMtuListenerId> listener_1_id;
+  listener_1_id = gatt()->RegisterPeerMtuListener(
+      [this, &listener_1_count, &listener_1_id](PeerId, uint16_t) {
+        listener_1_count++;
+        gatt()->UnregisterPeerMtuListener(*listener_1_id);
+      });
+
+  gatt()->AddConnection(kPeerId0, take_client(), CreateMockServer);
+  gatt()->InitializeClient(kPeerId0, {});
+  RunUntilIdle();
+
+  EXPECT_EQ(1, listener_0_count);
+  EXPECT_EQ(1, listener_1_count);
+  EXPECT_FALSE(gatt()->UnregisterPeerMtuListener(*listener_0_id));
+  EXPECT_FALSE(gatt()->UnregisterPeerMtuListener(*listener_1_id));
+}
+
 const std::vector<uint8_t> kIndicateVal{12u};
 class GattIndicateMultipleConnectedPeersTest : public GattTest {
  protected:
@@ -913,6 +982,40 @@ TEST_F(GattIndicateMultipleConnectedPeersTest,
   // again with success.
   indication_ack_cb_1_(fit::ok());
   EXPECT_EQ(ToResult(att::ErrorCode::kRequestNotSupported), res);
+}
+
+// Regression test for b/523286163.
+TEST_F(GattIndicateMultipleConnectedPeersTest,
+       UpdateConnectedPeersCallbackCanRemoveAllConnections) {
+  // Model a peer that has not configured indications: the server fails the
+  // update synchronously, like AttBasedServer::SendUpdate does.
+  int update_count = 0;
+  auto fail_update = [&update_count](auto /*ignore*/,
+                                     auto /*ignore*/,
+                                     const ByteBuffer& /*ignore*/,
+                                     IndicationCallback ind_cb) {
+    update_count++;
+    ind_cb(ToResult(HostError::kNotSupported));
+  };
+  mock_server_0_->set_update_handler(fail_update);
+  mock_server_1_->set_update_handler(fail_update);
+
+  // The first failure synchronously removes every connection.
+  std::optional<att::Result<>> res;
+  IndicationCallback indication_cb = [this, &res](att::Result<> cb_res) {
+    res = cb_res;
+    gatt()->RemoveConnection(kPeerId0);
+    gatt()->RemoveConnection(kPeerId1);
+  };
+  gatt()->UpdateConnectedPeers(
+      svc_id_, kChrcId, kIndicateVal, std::move(indication_cb));
+  RunUntilIdle();
+
+  EXPECT_EQ(ToResult(HostError::kNotSupported), res);
+  EXPECT_FALSE(mock_server_0_.is_alive());
+  EXPECT_FALSE(mock_server_1_.is_alive());
+  // The peer removed by the callback must not be sent the update.
+  EXPECT_EQ(1, update_count);
 }
 
 TEST_F(GattTest, RemoveConnectionInsideValueCallback) {

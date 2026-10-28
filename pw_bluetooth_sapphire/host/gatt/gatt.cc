@@ -17,7 +17,9 @@
 #include <lib/fit/defer.h>
 #include <pw_assert/check.h>
 
+#include <algorithm>
 #include <unordered_map>
+#include <vector>
 
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/client.h"
@@ -197,14 +199,20 @@ class Impl final : public GATT {
             }
           };
     }
-    for (auto& iter : connections_) {
+    for (PeerId peer_id : ConnectedPeerIds()) {
+      // |connections_| may have been modified by a callback invoked during a
+      // previous iteration, so look up each peer again.
+      auto iter = connections_.find(peer_id);
+      if (iter == connections_.end()) {
+        continue;
+      }
       // The `shared_peer_results_cb.share()` *does* propagate indication vs.
       // notification-ness correctly - `fit::function(nullptr).share` just
       // creates another null fit::function.
-      iter.second.server()->SendUpdate(service_id,
-                                       chrc_id,
-                                       BufferView(value.data(), value.size()),
-                                       shared_peer_results_cb.share());
+      iter->second.server()->SendUpdate(service_id,
+                                        chrc_id,
+                                        BufferView(value.data(), value.size()),
+                                        shared_peer_results_cb.share());
     }
   }
 
@@ -228,8 +236,19 @@ class Impl final : public GATT {
       return;
     }
     auto mtu_cb = [this, peer_id](uint16_t mtu) {
-      for (auto& [_id, listener] : peer_mtu_listeners_) {
-        listener(peer_id, mtu);
+      // Listeners may register or unregister listeners (including themselves),
+      // so iterate over a snapshot of the IDs and look up each one again.
+      std::vector<PeerMtuListenerId> listener_ids;
+      listener_ids.reserve(peer_mtu_listeners_.size());
+      for (const auto& [id, _listener] : peer_mtu_listeners_) {
+        listener_ids.push_back(id);
+      }
+      for (PeerMtuListenerId id : listener_ids) {
+        auto listener_iter = peer_mtu_listeners_.find(id);
+        if (listener_iter == peer_mtu_listeners_.end()) {
+          continue;
+        }
+        listener_iter->second(peer_id, mtu);
       }
     };
 
@@ -301,13 +320,39 @@ class Impl final : public GATT {
                          const std::vector<att::Handle>& removed,
                          const std::vector<RemoteService::WeakPtr>& added,
                          const std::vector<RemoteService::WeakPtr>& modified) {
+    // Watchers may register or unregister watchers (including themselves), so
+    // iterate over a snapshot of the IDs and look up each one again.
+    std::vector<RemoteServiceWatcherId> watcher_ids;
     auto peer_watcher_range =
         peer_remote_service_watchers_.equal_range(peer_id);
     for (auto it = peer_watcher_range.first; it != peer_watcher_range.second;
          it++) {
+      watcher_ids.push_back(it->second.first);
+    }
+    for (RemoteServiceWatcherId watcher_id : watcher_ids) {
+      peer_watcher_range = peer_remote_service_watchers_.equal_range(peer_id);
+      auto it = std::find_if(peer_watcher_range.first,
+                             peer_watcher_range.second,
+                             [watcher_id](const auto& entry) {
+                               return entry.second.first == watcher_id;
+                             });
+      if (it == peer_watcher_range.second) {
+        continue;
+      }
       TRACE_DURATION("bluetooth", "GATT::OnServiceChanged notify watcher");
       it->second.second(removed, added, modified);
     }
+  }
+
+  // Returns the IDs of all connected peers. Use this to iterate over
+  // connections while invoking callbacks that may add or remove connections.
+  std::vector<PeerId> ConnectedPeerIds() const {
+    std::vector<PeerId> peer_ids;
+    peer_ids.reserve(connections_.size());
+    for (const auto& [peer_id, _connection] : connections_) {
+      peer_ids.push_back(peer_id);
+    }
+    return peer_ids;
   }
 
   // The registry containing all local GATT services. This represents a single
