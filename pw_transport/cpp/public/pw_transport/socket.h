@@ -256,10 +256,6 @@ class Socket {
   IntrusivePtr<SocketImpl> impl_;
 };
 
-/// @deprecated Use `pw::transport::Socket` instead.
-using DatagramSocket [[deprecated("Use pw::transport::Socket instead")]] =
-    Socket;
-
 bool operator==(const Socket& lhs, const Socket& rhs);
 bool operator!=(const Socket& lhs, const Socket& rhs);
 
@@ -342,11 +338,6 @@ class ReliableSocket {
 
   Socket socket_;
 };
-
-/// @deprecated Use `pw::transport::ReliableSocket` instead.
-using ReliableDatagramSocket
-    [[deprecated("Use pw::transport::ReliableSocket instead")]] =
-        ReliableSocket;
 
 inline Socket::Socket(ReliableSocket&& other) noexcept
     : Socket(std::move(other.socket_)) {}
@@ -796,10 +787,6 @@ class PW_LOCKABLE("pw::transport::SocketImpl") SocketImpl
   internal::BaseSocketFuture::List closed_futures_ PW_GUARDED_BY(*this);
 };
 
-/// @deprecated Use `pw::transport::SocketImpl` instead.
-using DatagramSocketImpl
-    [[deprecated("Use pw::transport::SocketImpl instead")]] = SocketImpl;
-
 /// Implementation base class for reliable, in-order datagram sockets.
 ///
 /// Inherits the transport lifecycle and operations of `SocketImpl`,
@@ -811,11 +798,6 @@ class ReliableSocketImpl : public SocketImpl {
 
   ReliableSocket WrapSocket() { return ReliableSocket(*this); }
 };
-
-/// @deprecated Use `pw::transport::ReliableSocketImpl` instead.
-using ReliableDatagramSocketImpl
-    [[deprecated("Use pw::transport::ReliableSocketImpl instead")]] =
-        ReliableSocketImpl;
 
 inline ReliableSocket::ReliableSocket(ReliableSocketImpl& impl)
     : socket_(impl) {}

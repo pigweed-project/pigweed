@@ -52,7 +52,7 @@ struct ForwardingDatagramSocketOptions {
   size_t max_second_to_first_size_bytes = kDefaultMaxDatagramSizeBytes;
 };
 
-/// A connected pair of in-memory `ReliableDatagramSocket` endpoints that
+/// A connected pair of in-memory `ReliableSocket` endpoints that
 /// forward datagrams to each other.
 ///
 /// Writes committed on `first()` are delivered as reads on `second()`, and
@@ -61,7 +61,7 @@ struct ForwardingDatagramSocketOptions {
 /// underlying `Buf` from the writer's reservation to the reader's queue.
 ///
 /// The underlying socket endpoints are reference-counted and allocated from the
-/// provided `Allocator`. Copies of the `ReliableDatagramSocket` handles
+/// provided `Allocator`. Copies of the `ReliableSocket` handles
 /// returned by `first()` and `second()` may outlive the
 /// `ForwardingDatagramSocketPair` object itself; the shared state is
 /// automatically destroyed and deallocated once all handles and futures for
@@ -136,10 +136,10 @@ class ForwardingDatagramSocketPair {
   ~ForwardingDatagramSocketPair() = default;
 
   /// Returns the first socket in the pair.
-  const ReliableDatagramSocket& first() const { return first_; }
+  const ReliableSocket& first() const { return first_; }
 
   /// Returns the second socket in the pair.
-  const ReliableDatagramSocket& second() const { return second_; }
+  const ReliableSocket& second() const { return second_; }
 
   /// Terminally closes both sockets in the pair immediately, discarding any
   /// unread datagrams in both directions.
@@ -149,12 +149,11 @@ class ForwardingDatagramSocketPair {
   }
 
  private:
-  ForwardingDatagramSocketPair(ReliableDatagramSocket&& first,
-                               ReliableDatagramSocket&& second)
+  ForwardingDatagramSocketPair(ReliableSocket&& first, ReliableSocket&& second)
       : first_(std::move(first)), second_(std::move(second)) {}
 
-  ReliableDatagramSocket first_;
-  ReliableDatagramSocket second_;
+  ReliableSocket first_;
+  ReliableSocket second_;
 };
 
 /// @endmodule

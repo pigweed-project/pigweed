@@ -53,7 +53,7 @@ RpcStatus ServerTask::RegisterService(Service& service) {
 }
 
 ControlFuture ServerTask::RegisterListener(
-    transport::ReliableDatagramListener& listener) {
+    transport::ReliableListener& listener) {
   ControlFuture future(&listener);
   SubmitListener(future);
   return future;
@@ -294,8 +294,7 @@ void ServerTask::PollListeners(async2::Context& cx) {
     // Whatever happens to the connection below, the accept future is consumed.
     accepted = true;
     auto socket = std::move(poll->value());
-    record.accept_future() =
-        transport::ReliableDatagramListener::AcceptFuture();
+    record.accept_future() = transport::ReliableListener::AcceptFuture();
 
     if (!connections_.try_push_front(nullptr)) {
       PW_LOG_ERROR(

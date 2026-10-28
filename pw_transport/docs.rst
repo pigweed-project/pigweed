@@ -182,7 +182,7 @@ passed around into APIs that consume ``pw_transport``.
 In-Memory Forwarding Sockets
 ============================
 :cc:`ForwardingDatagramSocketPair` creates a connected pair of in-memory
-:cc:`ReliableDatagramSocket` endpoints (``first()`` and ``second()``) that
+:cc:`ReliableSocket` endpoints (``first()`` and ``second()``) that
 forward datagrams to each other without copying. It is useful for unit testing
 and in-process communication between tasks.
 :cc:`ForwardingDatagramSocketOptions` configures the queue depth, which limits

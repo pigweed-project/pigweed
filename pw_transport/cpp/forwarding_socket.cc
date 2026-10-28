@@ -61,16 +61,16 @@ class SharedLock final : public RefCounted<SharedLock>,
 // Both sockets in a pair use the same `SharedLock`, so holding `*this` also
 // guards `*sibling_`. Clang's thread safety analysis cannot express that the
 // two capabilities alias, so methods that touch the sibling's state disable it.
-class ForwardingDatagramSocket final : public ReliableDatagramSocketImpl {
+class ForwardingDatagramSocket final : public ReliableSocketImpl {
  public:
   ForwardingDatagramSocket(Allocator& allocator,
                            IntrusivePtr<SharedLock> lock,
                            FixedQueue<ConstBuf>&& read_queue,
                            size_t max_write_message_size_bytes,
                            size_t max_read_message_size_bytes)
-      : ReliableDatagramSocketImpl(allocator,
-                                   max_write_message_size_bytes,
-                                   max_read_message_size_bytes),
+      : ReliableSocketImpl(allocator,
+                           max_write_message_size_bytes,
+                           max_read_message_size_bytes),
         allocator_(allocator),
         lock_(std::move(lock)),
         read_queue_(std::move(read_queue)) {}
@@ -85,7 +85,7 @@ class ForwardingDatagramSocket final : public ReliableDatagramSocketImpl {
     sibling_ = sibling;
   }
 
-  using ReliableDatagramSocketImpl::WrapSocket;
+  using ReliableSocketImpl::WrapSocket;
 
   void lock() const
       PW_EXCLUSIVE_LOCK_FUNCTION() PW_NO_LOCK_SAFETY_ANALYSIS override {

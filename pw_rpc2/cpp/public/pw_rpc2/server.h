@@ -121,8 +121,7 @@ class Server {
   /// Before `Start()`, the registration is applied on the calling thread and
   /// the future is returned already resolved; the listener begins accepting
   /// when the server starts.
-  ControlFuture RegisterListener(
-      transport::ReliableDatagramListener& listener) {
+  ControlFuture RegisterListener(transport::ReliableListener& listener) {
     return task_.RegisterListener(listener);
   }
 
@@ -130,8 +129,7 @@ class Server {
   /// registered. Returns the same codes as `RegisterListener()`.
   ///
   /// @pre Must not be called from the server's own dispatcher thread.
-  RpcStatus RegisterListenerBlocking(
-      transport::ReliableDatagramListener& listener) {
+  RpcStatus RegisterListenerBlocking(transport::ReliableListener& listener) {
     return task_.RegisterListenerBlocking(listener);
   }
 

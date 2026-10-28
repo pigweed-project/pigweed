@@ -119,7 +119,7 @@ uint32_t SetBaseline(uint32_t mask) {
   auto accept_fut = listener.Accept();
   (void)accept_fut;
   MockConnection conn(GetAllocator());
-  transport::ReliableDatagramSocket sock = MockListener::WrapSocket(conn);
+  transport::ReliableSocket sock = MockListener::WrapSocket(conn);
   (void)sock;
   if (dispatcher.RunUntilStalled()) {
     value |= mask;

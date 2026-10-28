@@ -51,7 +51,7 @@ class ForwardingDatagramSocketTest : public ::testing::Test {
     return dispatcher_.RunInTaskUntilStalled(future).value();
   }
 
-  bool TrySend(const ReliableDatagramSocket& socket, std::string_view data) {
+  bool TrySend(const ReliableSocket& socket, std::string_view data) {
     std::optional<WriteReservation> reservation =
         socket.TryReserveWrite(data.size());
     if (!reservation.has_value()) {
@@ -63,7 +63,7 @@ class ForwardingDatagramSocketTest : public ::testing::Test {
     return reservation->Commit(data.size());
   }
 
-  ConstBuf Receive(const ReliableDatagramSocket& socket) {
+  ConstBuf Receive(const ReliableSocket& socket) {
     ReadFuture read = socket.Read();
     return RunToCompletion(read);
   }
@@ -506,8 +506,8 @@ TEST_F(ForwardingDatagramSocketTest, PairClose_ClosesBothImmediately) {
 }
 
 TEST_F(ForwardingDatagramSocketTest, Sockets_OutlivePair) {
-  ReliableDatagramSocket first;
-  ReliableDatagramSocket second;
+  ReliableSocket first;
+  ReliableSocket second;
   {
     auto pair = ForwardingDatagramSocketPair::Create(allocator_);
     first = pair.first();
@@ -522,8 +522,8 @@ TEST_F(ForwardingDatagramSocketTest, Sockets_OutlivePair) {
 
 TEST_F(ForwardingDatagramSocketTest,
        DropLastHandle_ClosesPeerAfterDrainingCommittedDatagrams) {
-  ReliableDatagramSocket first;
-  ReliableDatagramSocket second;
+  ReliableSocket first;
+  ReliableSocket second;
   {
     auto pair = ForwardingDatagramSocketPair::Create(allocator_);
     first = pair.first();

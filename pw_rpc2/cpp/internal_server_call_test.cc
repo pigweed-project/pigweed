@@ -168,7 +168,7 @@ class ServerCallTest : public ::testing::Test {
   // Declared before the server, which is bound to it for the server's life.
   async2::DispatcherForTest dispatcher_;
   ServerTask server_{fixture_alloc_, dispatcher_};
-  transport::ReliableDatagramSocket connection_;
+  transport::ReliableSocket connection_;
   test::MockConnection* raw_conn_ = nullptr;
   SharedPtr<ServerConnectionTask> connection_task_;
   bool posted_ = false;

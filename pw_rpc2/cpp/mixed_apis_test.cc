@@ -548,7 +548,7 @@ class MixedApisTest : public ::testing::Test {
   MixedApiService service_;
   ::pw::rpc2::Server server_;
   ::pw::rpc2::test::MockTransport transport_;
-  ::pw::transport::ReliableDatagramSocket server_connection_;
+  ::pw::transport::ReliableSocket server_connection_;
   std::optional<::pw::rpc2::test::ScopedClient> client_;
   bool started_ = false;
 };

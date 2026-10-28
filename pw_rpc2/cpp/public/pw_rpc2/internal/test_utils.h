@@ -47,21 +47,21 @@
 
 namespace pw::rpc2::test {
 
-/// Exposes `ReliableDatagramListener::WrapSocket` to test code.
+/// Exposes `ReliableListener::WrapSocket` to test code.
 ///
-/// `ReliableDatagramSocket`'s constructor is private: handles are normally
-/// minted by a `ReliableDatagramListener` or `ReliableDatagramConnector` from
+/// `ReliableSocket`'s constructor is private: handles are normally
+/// minted by a `ReliableListener` or `ReliableConnector` from
 /// their protected `WrapSocket` hook. Tests frequently want a handle to a bare
 /// `ReliableSocketImpl` with no transport behind it, so this class
 /// inherits the hook and republishes it. It is abstract and is never
 /// instantiated; only its static `WrapSocket` is used.
-class SocketFactory : public transport::ReliableDatagramListener {
+class SocketFactory : public transport::ReliableListener {
  public:
-  using transport::ReliableDatagramListener::WrapSocket;
+  using transport::ReliableListener::WrapSocket;
 };
 
-/// Returns a `ReliableDatagramSocket` handle to `impl` for testing.
-inline transport::ReliableDatagramSocket WrapSocket(
+/// Returns a `ReliableSocket` handle to `impl` for testing.
+inline transport::ReliableSocket WrapSocket(
     transport::ReliableSocketImpl& impl) {
   return SocketFactory::WrapSocket(impl);
 }
@@ -147,10 +147,10 @@ class MockConnection : public transport::ReliableSocketImpl {
 };
 
 // Safe RAII factory helper that allocates MockConnection on a Pigweed Allocator
-// and returns both the transport::ReliableDatagramSocket handle and raw pointer
+// and returns both the transport::ReliableSocket handle and raw pointer
 // for testing.
-inline std::pair<transport::ReliableDatagramSocket, MockConnection*>
-MakeMockConnection(pw::Allocator& allocator) {
+inline std::pair<transport::ReliableSocket, MockConnection*> MakeMockConnection(
+    pw::Allocator& allocator) {
   auto* raw = allocator.New<MockConnection>(allocator);
   return {WrapSocket(*raw), raw};
 }
@@ -167,7 +167,7 @@ void PushSynAck(pw::Allocator& allocator, MockConnection& connection);
 /// `MakeMockPeer()` instead when a test does not care about the handshake.
 Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
                          pw::Allocator& allocator,
-                         transport::ReliableDatagramSocket connection,
+                         transport::ReliableSocket connection,
                          MockConnection& raw_connection);
 
 /// Starts a call on `connection_task` as the server does for a request, but
@@ -623,8 +623,8 @@ MockPeer MakeMockPeer(async2::RunnableDispatcher& dispatcher,
                       pw::Allocator& allocator);
 
 /// Bidirectional mock usable both as a server listener and a client connector.
-class MockTransport : public transport::ReliableDatagramListener,
-                      public transport::ReliableDatagramConnector {
+class MockTransport : public transport::ReliableListener,
+                      public transport::ReliableConnector {
  public:
   MockTransport() = default;
   ~MockTransport() override {
@@ -636,33 +636,33 @@ class MockTransport : public transport::ReliableDatagramListener,
     }
   }
 
-  transport::ReliableDatagramConnector::ConnectFuture Connect() override {
+  transport::ReliableConnector::ConnectFuture Connect() override {
     if (pending_connect_result_.has_value()) {
       auto res = std::move(*pending_connect_result_);
       pending_connect_result_.reset();
-      return transport::ReliableDatagramConnector::ConnectFuture::Resolved(
+      return transport::ReliableConnector::ConnectFuture::Resolved(
           std::move(res));
     }
     return connect_provider_.Get();
   }
-  transport::ReliableDatagramListener::AcceptFuture Accept() override {
+  transport::ReliableListener::AcceptFuture Accept() override {
     if (pending_accept_result_.has_value()) {
       auto res = std::move(*pending_accept_result_);
       pending_accept_result_.reset();
-      return transport::ReliableDatagramListener::AcceptFuture::Resolved(
+      return transport::ReliableListener::AcceptFuture::Resolved(
           std::move(res));
     }
     return accept_provider_.Get();
   }
 
-  void ResolveConnect(Result<transport::ReliableDatagramSocket> res) {
+  void ResolveConnect(Result<transport::ReliableSocket> res) {
     if (connect_provider_.has_future()) {
       connect_provider_.Resolve(std::move(res));
     } else {
       pending_connect_result_ = std::move(res);
     }
   }
-  void ResolveAccept(Result<transport::ReliableDatagramSocket> res) {
+  void ResolveAccept(Result<transport::ReliableSocket> res) {
     if (accept_provider_.has_future()) {
       accept_provider_.Resolve(std::move(res));
     } else {
@@ -679,14 +679,10 @@ class MockTransport : public transport::ReliableDatagramListener,
   }
 
  private:
-  async2::ValueProvider<Result<transport::ReliableDatagramSocket>>
-      connect_provider_;
-  async2::ValueProvider<Result<transport::ReliableDatagramSocket>>
-      accept_provider_;
-  std::optional<Result<transport::ReliableDatagramSocket>>
-      pending_connect_result_;
-  std::optional<Result<transport::ReliableDatagramSocket>>
-      pending_accept_result_;
+  async2::ValueProvider<Result<transport::ReliableSocket>> connect_provider_;
+  async2::ValueProvider<Result<transport::ReliableSocket>> accept_provider_;
+  std::optional<Result<transport::ReliableSocket>> pending_connect_result_;
+  std::optional<Result<transport::ReliableSocket>> pending_accept_result_;
 };
 
 /// Closes `client` and runs `dispatcher` until the connection is torn down.

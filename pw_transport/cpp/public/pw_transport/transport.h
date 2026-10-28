@@ -106,11 +106,6 @@ class ReliableListener {
   }
 };
 
-/// @deprecated Use `pw::transport::ReliableListener` instead.
-using ReliableDatagramListener
-    [[deprecated("Use pw::transport::ReliableListener instead")]] =
-        ReliableListener;
-
 /// The establishing side of a datagram-oriented transport.
 ///
 /// A connector opens outbound connections to a remote peer, performing any
@@ -198,11 +193,6 @@ class ReliableConnector {
     return ReliableSocket(impl);
   }
 };
-
-/// @deprecated Use `pw::transport::ReliableConnector` instead.
-using ReliableDatagramConnector
-    [[deprecated("Use pw::transport::ReliableConnector instead")]] =
-        ReliableConnector;
 
 /// @endmodule
 

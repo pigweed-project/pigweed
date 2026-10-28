@@ -33,7 +33,7 @@ void HandshakeFutureBase::Cancel() {
   io_fut_ = std::monostate{};
   if (connection_) {
     connection_.Close();
-    connection_ = transport::ReliableDatagramSocket{};
+    connection_ = transport::ReliableSocket{};
   }
 }
 

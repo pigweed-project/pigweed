@@ -125,7 +125,7 @@ Coro<pw::rpc2::RpcStatus> RunClient(
     CoroContext cx,
     Dispatcher& dispatcher,
     pw::Allocator& allocator,
-    pw::transport::ReliableDatagramConnector& connector) {
+    pw::transport::ReliableConnector& connector) {
   PW_CO_TRY_ASSIGN(
       pw::rpc2::Client client,
       co_await pw::rpc2::Client::Connect(dispatcher, allocator, connector));

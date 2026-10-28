@@ -118,7 +118,7 @@ void PushSynAck(pw::Allocator& allocator, MockConnection& connection) {
 
 Client ConnectMockClient(async2::RunnableDispatcher& dispatcher,
                          pw::Allocator& allocator,
-                         transport::ReliableDatagramSocket connection,
+                         transport::ReliableSocket connection,
                          MockConnection& raw_connection) {
   async2::FutureTask connect(
       Client::Connect(dispatcher, allocator, std::move(connection)));

@@ -61,7 +61,7 @@ int Measure() {
   Allocator& alloc = GetAllocator();
 
   MockConnection mock_conn(alloc);
-  transport::ReliableDatagramSocket conn = MockListener::WrapSocket(mock_conn);
+  transport::ReliableSocket conn = MockListener::WrapSocket(mock_conn);
   auto fut = Client::Connect(dispatcher, alloc, std::move(conn));
   ClientMeasurementTask task(std::move(fut));
   dispatcher.Post(task);

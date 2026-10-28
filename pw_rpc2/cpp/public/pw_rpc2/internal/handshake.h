@@ -40,7 +40,7 @@ struct HandshakeInfo {
 
 /// Represents an established RPC connection produced by a successful handshake.
 struct EstablishedConnection {
-  transport::ReliableDatagramSocket connection;
+  transport::ReliableSocket connection;
   HandshakeInfo info{};
 };
 
@@ -49,7 +49,7 @@ class HandshakeFutureBase {
  protected:
   constexpr HandshakeFutureBase() = default;
 
-  HandshakeFutureBase(transport::ReliableDatagramSocket connection,
+  HandshakeFutureBase(transport::ReliableSocket connection,
                       HandshakeInfo local_info)
       : connection_(std::move(connection)), handshake_info_(local_info) {}
 
@@ -66,7 +66,7 @@ class HandshakeFutureBase {
 
   void Cancel();
 
-  transport::ReliableDatagramSocket connection_;
+  transport::ReliableSocket connection_;
   HandshakeInfo handshake_info_{};
   std::variant<std::monostate,
                transport::ReserveWriteFuture,
@@ -141,7 +141,7 @@ class HandshakeFutureImpl : public HandshakeFutureBase {
 
   constexpr HandshakeFutureImpl() = default;
 
-  explicit HandshakeFutureImpl(transport::ReliableDatagramSocket connection,
+  explicit HandshakeFutureImpl(transport::ReliableSocket connection,
                                HandshakeInfo local_info = {})
       : HandshakeFutureBase(std::move(connection), local_info),
         stage_(Stage::kSyn) {}
@@ -176,9 +176,8 @@ class InitiatorHandshakeFuture final : public HandshakeFutureImpl {
  public:
   constexpr InitiatorHandshakeFuture() = default;
 
-  explicit InitiatorHandshakeFuture(
-      transport::ReliableDatagramSocket connection,
-      HandshakeInfo local_info = {})
+  explicit InitiatorHandshakeFuture(transport::ReliableSocket connection,
+                                    HandshakeInfo local_info = {})
       : HandshakeFutureImpl(std::move(connection), local_info) {}
 
   InitiatorHandshakeFuture(InitiatorHandshakeFuture&&) noexcept = default;
@@ -205,9 +204,8 @@ class ResponderHandshakeFuture final : public HandshakeFutureImpl {
  public:
   constexpr ResponderHandshakeFuture() = default;
 
-  explicit ResponderHandshakeFuture(
-      transport::ReliableDatagramSocket connection,
-      HandshakeInfo local_info = {})
+  explicit ResponderHandshakeFuture(transport::ReliableSocket connection,
+                                    HandshakeInfo local_info = {})
       : HandshakeFutureImpl(std::move(connection), local_info) {}
 
   ResponderHandshakeFuture(ResponderHandshakeFuture&&) noexcept = default;

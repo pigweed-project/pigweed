@@ -85,17 +85,17 @@ class ClientFuture {
 
   struct Completed {};
 
-  using Connector = transport::ReliableDatagramConnector*;
-  using ConnectFuture = transport::ReliableDatagramConnector::ConnectFuture;
+  using Connector = transport::ReliableConnector*;
+  using ConnectFuture = transport::ReliableConnector::ConnectFuture;
 
   ClientFuture(async2::Dispatcher& dispatcher,
                Allocator& allocator,
-               transport::ReliableDatagramConnector& connector)
+               transport::ReliableConnector& connector)
       : dispatcher_(&dispatcher), allocator_(&allocator), state_(&connector) {}
 
   ClientFuture(async2::Dispatcher& dispatcher,
                Allocator& allocator,
-               transport::ReliableDatagramSocket&& connection)
+               transport::ReliableSocket&& connection)
       : dispatcher_(&dispatcher),
         allocator_(&allocator),
         state_(std::in_place_type<internal::InitiatorHandshakeFuture>,
@@ -163,7 +163,7 @@ class Client {
   /// `dispatcher`.
   static ClientFuture Connect(async2::Dispatcher& dispatcher,
                               Allocator& allocator,
-                              transport::ReliableDatagramConnector& connector) {
+                              transport::ReliableConnector& connector) {
     return ClientFuture(dispatcher, allocator, connector);
   }
 
@@ -174,7 +174,7 @@ class Client {
   /// `dispatcher`.
   static ClientFuture Connect(async2::Dispatcher& dispatcher,
                               Allocator& allocator,
-                              transport::ReliableDatagramSocket connection) {
+                              transport::ReliableSocket connection) {
     return ClientFuture(dispatcher, allocator, std::move(connection));
   }
 

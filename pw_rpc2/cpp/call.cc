@@ -244,8 +244,7 @@ RpcResult<transport::ReserveWriteFuture> Call::ReserveWrite(
       HasWriteFlag<kWriterDropped>()) {
     return RpcStatus::WriteClosed();
   }
-  transport::ReliableDatagramSocket& connection =
-      connection_task_->connection();
+  transport::ReliableSocket& connection = connection_task_->connection();
   // The transport asserts on requests larger than it can write, so reject
   // them here instead. Compare against the remaining space rather than adding
   // the sizes, which could overflow.

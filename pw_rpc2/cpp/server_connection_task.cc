@@ -49,10 +49,9 @@ ConstBuf TakeInitialPayload(Call& call,
 
 }  // namespace
 
-ServerConnectionTask::ServerConnectionTask(
-    transport::ReliableDatagramSocket connection,
-    Allocator& allocator,
-    ServerTask& server_task)
+ServerConnectionTask::ServerConnectionTask(transport::ReliableSocket connection,
+                                           Allocator& allocator,
+                                           ServerTask& server_task)
     : ConnectionTask(std::move(connection), allocator, EndpointRole::kServer),
       server_task_(server_task),
       handshake_future_(this->connection()) {}

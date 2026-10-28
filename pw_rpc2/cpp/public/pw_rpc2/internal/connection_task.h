@@ -50,7 +50,7 @@ class SendControlPacketFuture : public FutureBase {
 
   constexpr SendControlPacketFuture() = default;
 
-  SendControlPacketFuture(transport::ReliableDatagramSocket connection,
+  SendControlPacketFuture(transport::ReliableSocket connection,
                           OutboundPacket packet)
       : FutureBase(async2::FutureState::kPending),
         packet_(packet),
@@ -136,7 +136,7 @@ class ConnectionTask : public async2::Task {
   void CloseConnection(RpcStatus reason);
 
   /// @pre Must be called from this connection's dispatcher thread.
-  transport::ReliableDatagramSocket& connection() { return connection_; }
+  transport::ReliableSocket& connection() { return connection_; }
   Allocator& allocator() { return allocator_; }
   EndpointRole role() const { return role_; }
   bool is_closed() const { return state() == State::kClosed; }
@@ -170,7 +170,7 @@ class ConnectionTask : public async2::Task {
     kClosed,
   };
 
-  ConnectionTask(transport::ReliableDatagramSocket connection,
+  ConnectionTask(transport::ReliableSocket connection,
                  Allocator& allocator,
                  EndpointRole role);
 
@@ -238,7 +238,7 @@ class ConnectionTask : public async2::Task {
   bool DeliverToCall(Call& call, InboundPacket& packet);
 
   // The transport connection.
-  transport::ReliableDatagramSocket connection_;
+  transport::ReliableSocket connection_;
   Allocator& allocator_;
 
   // The connection state machine and fixed endpoint role.

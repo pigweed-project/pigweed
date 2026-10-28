@@ -115,7 +115,7 @@ async2::Poll<RpcStatus> SendControlPacketFuture::Pend(async2::Context& cx) {
   return async2::Ready(RpcStatus());
 }
 
-ConnectionTask::ConnectionTask(transport::ReliableDatagramSocket connection,
+ConnectionTask::ConnectionTask(transport::ReliableSocket connection,
                                Allocator& allocator,
                                EndpointRole role)
     : connection_(std::move(connection)),

@@ -42,7 +42,7 @@ class ServerConnectionTask final : public ConnectionTask {
   /// outside the server --- only tests do this --- must be deregistered and
   /// released before the server goes, or the dispatcher will outlive the
   /// server and destroy the connection too late.
-  ServerConnectionTask(transport::ReliableDatagramSocket connection,
+  ServerConnectionTask(transport::ReliableSocket connection,
                        Allocator& allocator,
                        ServerTask& server_task);
 

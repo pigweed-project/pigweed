@@ -77,19 +77,19 @@ class ControlTask : public async2::Task {
   RpcStatus status_ = RpcStatus::ProtocolError();
 };
 
-class MockServerListener : public transport::ReliableDatagramListener {
+class MockServerListener : public transport::ReliableListener {
  public:
   MockServerListener() = default;
   ~MockServerListener() override {
     accept_provider_.Resolve(Status::Cancelled());
   }
 
-  transport::ReliableDatagramListener::AcceptFuture Accept() override {
+  transport::ReliableListener::AcceptFuture Accept() override {
     ++accept_calls_;
     return accept_provider_.Get();
   }
 
-  void ResolveAccept(Result<transport::ReliableDatagramSocket> res) {
+  void ResolveAccept(Result<transport::ReliableSocket> res) {
     accept_provider_.Resolve(std::move(res));
   }
 
@@ -98,8 +98,7 @@ class MockServerListener : public transport::ReliableDatagramListener {
   size_t accept_calls() const { return accept_calls_; }
 
  private:
-  async2::ValueProvider<Result<transport::ReliableDatagramSocket>>
-      accept_provider_;
+  async2::ValueProvider<Result<transport::ReliableSocket>> accept_provider_;
   size_t accept_calls_ = 0;
 };
 
@@ -239,7 +238,7 @@ void EstablishServerConnection(Allocator& allocator,
                                [[maybe_unused]] Server& server,
                                MockServerListener& transport,
                                test::MockConnection* raw_conn,
-                               transport::ReliableDatagramSocket conn) {
+                               transport::ReliableSocket conn) {
   dispatcher.RunUntilStalled();
   transport.ResolveAccept(conn);
   dispatcher.RunUntilStalled();
@@ -991,7 +990,7 @@ TEST(ServerTest, ListenerKeepsAcceptingAfterConnectionAllocationFailure) {
   dispatcher.RunUntilStalled();
 
   // The first connection cannot be served and is dropped.
-  transport::ReliableDatagramSocket dropped_conn =
+  transport::ReliableSocket dropped_conn =
       test::MakeMockConnection(backing_allocator).first;
   failing_allocator.DisableAllocate();
   transport.ResolveAccept(std::move(dropped_conn));

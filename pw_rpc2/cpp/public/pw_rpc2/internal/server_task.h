@@ -75,12 +75,12 @@ class ListenerRecord {
   /// with `set_listener()`.
   constexpr ListenerRecord() = default;
 
-  void set_listener(transport::ReliableDatagramListener& listener) {
+  void set_listener(transport::ReliableListener& listener) {
     listener_ = &listener;
   }
 
-  transport::ReliableDatagramListener& listener() { return *listener_; }
-  transport::ReliableDatagramListener::AcceptFuture& accept_future() {
+  transport::ReliableListener& listener() { return *listener_; }
+  transport::ReliableListener::AcceptFuture& accept_future() {
     return accept_future_;
   }
 
@@ -89,12 +89,12 @@ class ListenerRecord {
   bool is_accepting() const { return accepting_; }
   void stop_accepting() {
     accepting_ = false;
-    accept_future_ = transport::ReliableDatagramListener::AcceptFuture();
+    accept_future_ = transport::ReliableListener::AcceptFuture();
   }
 
  private:
-  transport::ReliableDatagramListener* listener_ = nullptr;
-  transport::ReliableDatagramListener::AcceptFuture accept_future_;
+  transport::ReliableListener* listener_ = nullptr;
+  transport::ReliableListener::AcceptFuture accept_future_;
   bool accepting_ = true;
 };
 
@@ -146,9 +146,8 @@ class ServerTask final : public async2::Task {
 
   /// Resolves to `kOk`, `kClosed` if the server is closing or closed, or
   /// `kResourceExhausted` if the listener's record could not be allocated.
-  ControlFuture RegisterListener(transport::ReliableDatagramListener& listener);
-  RpcStatus RegisterListenerBlocking(
-      transport::ReliableDatagramListener& listener) {
+  ControlFuture RegisterListener(transport::ReliableListener& listener);
+  RpcStatus RegisterListenerBlocking(transport::ReliableListener& listener) {
     return BlockOn(RegisterListener(listener));
   }
 

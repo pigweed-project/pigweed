@@ -356,7 +356,7 @@ class ClientTask : public Task {
  public:
   ClientTask(Dispatcher& dispatcher,
              pw::Allocator& allocator,
-             pw::transport::ReliableDatagramConnector& connector)
+             pw::transport::ReliableConnector& connector)
       : dispatcher_(dispatcher), allocator_(allocator), connector_(connector) {}
 
   // Returns the result of the RPCs once the task has completed.
@@ -448,7 +448,7 @@ class ClientTask : public Task {
 
   Dispatcher& dispatcher_;
   pw::Allocator& allocator_;
-  pw::transport::ReliableDatagramConnector& connector_;
+  pw::transport::ReliableConnector& connector_;
 
   State state_ = State::kConnecting;
   pw::rpc2::RpcStatus status_;
