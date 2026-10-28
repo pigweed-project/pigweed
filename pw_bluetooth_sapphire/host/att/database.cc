@@ -311,7 +311,18 @@ void Database::ExecuteWriteQueue(PeerId peer_id,
       break;
     }
 
-    if (next.value().size() > kMaxAttributeValueLength) {
+    const size_t offset = next.offset();
+    if (offset > kMaxAttributeValueLength) {
+      bt_log(DEBUG,
+             "att",
+             "execute write to handle %#.4x - invalid offset: %zu",
+             next.handle(),
+             offset);
+      attr_write_cb(fit::error(ErrorCode::kInvalidOffset));
+      break;
+    }
+
+    if (offset + next.value().size() > kMaxAttributeValueLength) {
       attr_write_cb(fit::error(ErrorCode::kInvalidAttributeValueLength));
       break;
     }

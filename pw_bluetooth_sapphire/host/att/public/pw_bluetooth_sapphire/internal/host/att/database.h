@@ -154,8 +154,9 @@ class Database final : public WeakSelf<Database> {
   //
   // Attribute value validation (such as offset and length checks) are expected
   // to be done by the application that has set up the attribute. This function
-  // does check for the validity of a given attribute handle and whether the
-  // attribute supports writes.
+  // does check for the validity of a given attribute handle, whether the
+  // attribute supports writes, and that each write fits within
+  // kMaxAttributeValueLength.
   using WriteQueueResult = fit::result<std::tuple<Handle, ErrorCode>>;
   using WriteCallback = fit::callback<void(WriteQueueResult)>;
   void ExecuteWriteQueue(PeerId peer_id,

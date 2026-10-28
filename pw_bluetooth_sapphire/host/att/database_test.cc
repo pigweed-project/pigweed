@@ -600,6 +600,16 @@ class DatabaseExecuteWriteQueueTest : public ::testing::Test {
     pw.result_callback(status);
   }
 
+  // Executes a queue holding a single write of |value| at |offset| to
+  // test_handle1().
+  void ExecuteSingleWrite(PeerId peer_id,
+                          uint16_t offset,
+                          const ByteBuffer& value) {
+    PrepareWriteQueue wq;
+    wq.push(QueuedWrite(test_handle1_, offset, value));
+    ExecuteWriteQueue(peer_id, std::move(wq));
+  }
+
   std::optional<Database::WriteQueueResult> result() const { return result_; }
   int callback_count() const { return callback_count_; }
 
@@ -683,6 +693,45 @@ TEST_F(DatabaseExecuteWriteQueueTest, ValueLength) {
   ASSERT_EQ(fit::failed(), result());
   EXPECT_EQ(std::tuple(attr->handle(), ErrorCode::kInvalidAttributeValueLength),
             result()->error_value());
+}
+
+// Reject a write with an out-of-range offset.
+TEST_F(DatabaseExecuteWriteQueueTest,
+       OffsetBeyondMaxAttributeValueLengthIsInvalidOffset) {
+  SetUpAttributes();
+  ExecuteSingleWrite(kPeerId, kMaxAttributeValueLength + 1, kTestValue1);
+  ASSERT_EQ(fit::failed(), result());
+  EXPECT_EQ(std::tuple(test_handle1(), ErrorCode::kInvalidOffset),
+            result()->error_value());
+  EXPECT_TRUE(pending_writes().empty());
+}
+
+// Reject a write that starts in range but ends past the maximum value length.
+TEST_F(DatabaseExecuteWriteQueueTest,
+       OffsetPlusLengthBeyondMaxAttributeValueLengthIsInvalidValueLength) {
+  SetUpAttributes();
+  ExecuteSingleWrite(
+      kPeerId,
+      static_cast<uint16_t>(kMaxAttributeValueLength - kTestValue1.size() + 1),
+      kTestValue1);
+  ASSERT_EQ(fit::failed(), result());
+  EXPECT_EQ(std::tuple(test_handle1(), ErrorCode::kInvalidAttributeValueLength),
+            result()->error_value());
+  EXPECT_TRUE(pending_writes().empty());
+}
+
+// Deliver a write that ends exactly at the maximum value length.
+TEST_F(DatabaseExecuteWriteQueueTest,
+       WriteEndingAtMaxAttributeValueLengthIsDelivered) {
+  SetUpAttributes();
+  const uint16_t kOffset =
+      static_cast<uint16_t>(kMaxAttributeValueLength - kTestValue1.size());
+  ExecuteSingleWrite(kPeerId, kOffset, kTestValue1);
+  ASSERT_EQ(1u, pending_writes().size());
+  EXPECT_EQ(kOffset, pending_writes().front().offset);
+
+  ResolveNextPendingWrite(fit::ok());
+  EXPECT_EQ(fit::ok(), result());
 }
 
 TEST_F(DatabaseExecuteWriteQueueTest, WritingStaticValueNotPermitted) {
