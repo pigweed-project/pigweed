@@ -239,6 +239,20 @@ be used. This has an added benefit of creating a virtual include directory that
 provides stronger correctness guarantees. More information can be found at
 https://pwbug.dev/378564135.
 
+.. _docs-pw-style-bazel-implementation-deps:
+
+Keep ``deps`` minimal and use ``implementation_deps`` for private ones
+======================================================================
+List in ``deps`` only the targets whose headers the library's own public
+headers include. Dependencies that only source files or private headers use
+belong in ``implementation_deps``.
+
+Reasoning: ``deps`` are transitive, so every entry is exposed to every
+dependent's include path and build graph. Keeping private dependencies in
+``implementation_deps`` keeps the public interface honest, speeds up builds,
+and prevents dependents from accidentally relying on headers that are not part
+of the library's API.
+
 Use ``pw_cc_binary`` and ``pw_cc_test``
 =======================================
 Use ``pw_cc_binary`` instead of ``cc_binary`` and ``pw_cc_test`` instead of

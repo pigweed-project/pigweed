@@ -34,3 +34,45 @@ using the following snippet at the beginning of their ``__init__.py``:
    # Note: This needs to be done in every nested `__init__.py` that will contain
    # overlapping generated files.
    __path__ = __import__('pkgutil').extend_path(__path__, __name__)
+
+.. _docs-style-python-error-handling:
+
+--------------
+Error handling
+--------------
+* Keep ``try`` blocks narrow. Only the statements that can raise go inside;
+  data preparation and logging go before or after the block.
+* Raise on a violated precondition, with ``ValueError``, ``TypeError``, or an
+  assertion as appropriate. Do not return ``None`` or another sentinel in its
+  place.
+* Pass ``check=True`` to ``subprocess.run``, or handle ``returncode``
+  explicitly.
+
+.. _docs-style-python-types:
+
+-----------------------------
+Type annotations and defaults
+-----------------------------
+* Annotate the parameters and return type of every public function and method.
+* Never use a mutable default argument. Default to ``None`` and create the
+  object in the function body.
+* Use ``Path`` rather than ``str`` for file system paths, imported with
+  ``from pathlib import Path``.
+
+.. _docs-style-python-tests:
+
+-----
+Tests
+-----
+* Prefer real implementations over mocks: use temporary directories and real
+  child processes instead of patching ``os``, ``pathlib``, or
+  ``builtins.open``.
+* Parse output files and assert on their structure, not on exact strings.
+
+.. _docs-style-python-build:
+
+-----------------
+Build integration
+-----------------
+List every new module in the package's ``BUILD.bazel`` and ``BUILD.gn`` so
+that presubmit builds, lints, type-checks, and tests it.
