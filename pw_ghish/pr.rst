@@ -455,6 +455,26 @@ unpublished drafts exist at the same location across different patchsets,
 ``--line`` for inline threads) so a change-level comment cannot accidentally
 resolve a thread.
 
+Comments written by a coding agent are marked as AI-generated (Gerrit's
+``is_ai`` comment field), which Gerrit shows with a Gemini icon. ``pr comment``
+and ``pr review`` take ``--agent=auto|true|false``:
+
+* ``auto`` (the default) marks comments when ghish runs under a coding agent,
+  detected the same way as ghish's other agent-aware behavior (for example
+  ``AI_AGENT``, ``ANTIGRAVITY_AGENT``, ``CLAUDECODE``, or ``GEMINI_CLI``).
+* ``--agent`` (or ``--agent=true``) and ``--agent=false`` override detection.
+  ``--agent=false`` also clears the mark when updating an existing draft.
+
+Gerrit review messages cannot be marked, so when a change-level comment or a
+``pr review`` message is marked as AI-generated, ghish posts it as a
+patchset-level comment in the same review instead of as the review message.
+
+.. code-block:: console
+
+   # Post a human-written reply from inside an agent session:
+   $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 \
+       -m "Ack." --agent=false
+
 Lifecycle transitions: ``pr ready``, ``pr close``, and ``pr reopen``
 ====================================================================
 Control the work-in-progress (WIP) and abandoned state of a change:

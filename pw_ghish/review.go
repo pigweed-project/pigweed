@@ -32,10 +32,11 @@ type reviewOptions struct {
 	publish        bool
 	cq             int
 	trigger        int
+	agent          agentFlag
 }
 
 func newReviewCmd() *cobra.Command {
-	opts := reviewOptions{cq: -1, trigger: -1}
+	opts := reviewOptions{cq: -1, trigger: -1, agent: agentAuto}
 	cmd := &cobra.Command{
 		Use:         "review [<id>]",
 		Annotations: map[string]string{KindAnnotation: KindMutation},
@@ -165,7 +166,12 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 				actions = append(actions, "message")
 			}
 
-			if err := chCtx.SetReview(input); err != nil {
+			isAI := opts.agent.isAI()
+			if msg != "" && isAI != nil && *isAI {
+				if err := postReview(chCtx.Context, chCtx.Client, chCtx.ChangeID, chCtx.Revision, aiMessageReview(*input, msg, isAI)); err != nil {
+					return chCtx.FormatError(err, "setting review for")
+				}
+			} else if err := chCtx.SetReview(input); err != nil {
 				return err
 			}
 
@@ -199,6 +205,7 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 	cmd.Flags().Lookup("trigger").NoOptDefVal = "1"
 	cmd.Flags().IntVar(&opts.cq, "cq", -1, "Set Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove; alias for --trigger) (ghish-only)")
 	cmd.Flags().Lookup("cq").NoOptDefVal = "1"
+	cmd.Flags().VarPF(&opts.agent, "agent", "", agentFlagUsage).NoOptDefVal = string(agentTrue)
 
 	return cmd
 }

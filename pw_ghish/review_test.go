@@ -426,3 +426,54 @@ func TestReviewCmd_BodyFileStdin(t *testing.T) {
 		}
 	})
 }
+
+func TestReviewCmd_Agent(t *testing.T) {
+	tests := []struct {
+		name       string
+		agent      bool
+		args       []string
+		wantAIText bool // message sent as an is_ai patchset-level comment
+	}{
+		{name: "human", args: []string{"--approve", "-m", "LGTM"}},
+		{name: "agent", agent: true, args: []string{"--approve", "-m", "LGTM"}, wantAIText: true},
+		{name: "--agent", args: []string{"-m", "LGTM", "--agent"}, wantAIText: true},
+		{name: "agent --agent=false", agent: true, args: []string{"-m", "LGTM", "--agent=false"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, name := range agentEnvVars {
+				t.Setenv(name, "")
+			}
+			if tc.agent {
+				t.Setenv("ANTIGRAVITY_AGENT", "1")
+			}
+			server := NewMockGerritServer(t)
+			server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+
+			if _, err := executeCommand(RootCmd, append([]string{"pr", "review", "123"}, tc.args...)...); err != nil {
+				t.Fatalf("command failed: %v", err)
+			}
+			var body struct {
+				Message  string                      `json:"message"`
+				Labels   map[string]int              `json:"labels"`
+				Comments map[string][]map[string]any `json:"comments"`
+			}
+			if err := json.Unmarshal(server.LastRequest().Body, &body); err != nil {
+				t.Fatal(err)
+			}
+			if !tc.wantAIText {
+				if body.Message != "LGTM" || body.Comments != nil {
+					t.Errorf("want plain message, got message %q comments %v", body.Message, body.Comments)
+				}
+				return
+			}
+			c := body.Comments["/PATCHSET_LEVEL"]
+			if body.Message != "" || len(c) != 1 || c[0]["message"] != "LGTM" || c[0]["is_ai"] != true {
+				t.Errorf("want is_ai patchset-level comment, got message %q comments %v", body.Message, body.Comments)
+			}
+			if tc.name == "agent" && body.Labels["Code-Review"] != 2 {
+				t.Errorf("approve vote lost: labels %v", body.Labels)
+			}
+		})
+	}
+}

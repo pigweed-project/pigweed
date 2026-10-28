@@ -15,6 +15,8 @@
 package pw_ghish
 
 import (
+	"cmp"
+	"context"
 	"fmt"
 	"io"
 	"maps"
@@ -38,6 +40,7 @@ var (
 	commentDraft       bool
 	commentPublish     bool
 	commentDeleteDraft bool
+	commentAgent       = agentAuto
 )
 
 // resolveCommentMessage validates and resolves --message (-m), --body (-b), and
@@ -280,13 +283,18 @@ var commentCmd = &cobra.Command{
 			unresolved = &unresolvedTrue
 		}
 
+		isAI := commentAgent.isAI()
+
 		if isDraft {
-			draftInput := &gerrit.CommentInput{
-				Path:       targetPath,
-				Line:       commentLine,
-				Message:    message,
-				InReplyTo:  inReplyTo,
-				Unresolved: unresolved,
+			draftInput := &commentInput{
+				CommentInput: gerrit.CommentInput{
+					Path:       targetPath,
+					Line:       commentLine,
+					Message:    message,
+					InReplyTo:  inReplyTo,
+					Unresolved: unresolved,
+				},
+				IsAI: isAI,
 			}
 			if commentFile != "" && commentLine != 0 {
 				draftInput.Side = "REVISION"
@@ -315,17 +323,23 @@ var commentCmd = &cobra.Command{
 				if existingDraft.Side != "" {
 					draftInput.Side = existingDraft.Side
 				}
-				var uErr error
-				savedDraft, _, uErr = client.Changes.UpdateDraft(ctx, changeID, draftRev, existingDraft.ID, draftInput)
+				path, uErr := draftPath(changeID, draftRev, existingDraft.ID)
 				if uErr != nil {
+					return chCtx.FormatError(uErr, "updating draft comment for")
+				}
+				savedDraft = new(gerrit.CommentInfo)
+				if _, uErr = client.Call(ctx, "PUT", path, draftInput, savedDraft); uErr != nil {
 					return chCtx.FormatError(uErr, "updating draft comment for")
 				}
 				fallbackPS = existingDraft.PatchSet
 				action = "updated"
 			} else {
-				var cErr error
-				savedDraft, _, cErr = client.Changes.CreateDraft(ctx, changeID, targetPatchset, draftInput)
+				path, cErr := draftsPath(changeID, targetPatchset)
 				if cErr != nil {
+					return chCtx.FormatError(cErr, "creating draft comment for")
+				}
+				savedDraft = new(gerrit.CommentInfo)
+				if _, cErr = client.Call(ctx, "PUT", path, draftInput, savedDraft); cErr != nil {
 					return chCtx.FormatError(cErr, "creating draft comment for")
 				}
 			}
@@ -343,28 +357,29 @@ var commentCmd = &cobra.Command{
 			return nil
 		}
 
-		input := &gerrit.ReviewInput{
-			Drafts: "KEEP",
-		}
-
-		if commentFile != "" {
-			input.Comments = make(map[string][]gerrit.CommentInput)
-			comment := gerrit.CommentInput{
+		comment := commentInput{
+			CommentInput: gerrit.CommentInput{
 				Line:       commentLine,
 				Message:    message,
 				InReplyTo:  inReplyTo,
 				Unresolved: unresolved,
-			}
-			if commentLine != 0 {
-				comment.Side = "REVISION"
-			}
-			input.Comments[commentFile] = []gerrit.CommentInput{comment}
+			},
+			IsAI: isAI,
+		}
+		if commentLine != 0 {
+			comment.Side = "REVISION"
+		}
+		input := &reviewInput{ReviewInput: gerrit.ReviewInput{Drafts: "KEEP"}}
+		if commentFile != "" || (isAI != nil && *isAI) {
+			// Only comments can carry is_ai, so AI change-level text is posted as
+			// a patchset-level comment rather than the review message.
+			input.Comments = map[string][]commentInput{targetPath: {comment}}
 		} else {
 			input.Message = message
 		}
 
-		if err := chCtx.SetReviewRevision(targetPatchset, input); err != nil {
-			return fmt.Errorf("failed to set review/comment for change %s: %w", changeID, err)
+		if err := postReview(ctx, client, changeID, targetPatchset, input); err != nil {
+			return chCtx.FormatError(err, "posting comment for")
 		}
 
 		ps := effectivePatchSet(parentPatchSet, explicitPatchsetNum)
@@ -375,6 +390,63 @@ var commentCmd = &cobra.Command{
 		})
 		return nil
 	},
+}
+
+// commentInput is a gerrit.CommentInput plus Gerrit's is_ai field, which
+// go-gerrit does not model.
+type commentInput struct {
+	gerrit.CommentInput
+	IsAI *bool `json:"is_ai,omitempty"`
+}
+
+// reviewInput is a gerrit.ReviewInput whose comments can carry is_ai. Its
+// Comments field shadows the embedded one when encoded as JSON.
+type reviewInput struct {
+	gerrit.ReviewInput
+	Comments map[string][]commentInput `json:"comments,omitempty"`
+}
+
+// aiMessageReview returns input with message moved into a patchset-level
+// comment marked with isAI, because review messages cannot carry is_ai. It is
+// still a single review, so votes and draft handling are unchanged.
+func aiMessageReview(input gerrit.ReviewInput, message string, isAI *bool) *reviewInput {
+	input.Message = ""
+	return &reviewInput{
+		ReviewInput: input,
+		Comments: map[string][]commentInput{
+			"/PATCHSET_LEVEL": {{CommentInput: gerrit.CommentInput{Message: message}, IsAI: isAI}},
+		},
+	}
+}
+
+// postReview posts a review built from reviewInput, which go-gerrit's
+// SetReview cannot send.
+func postReview(ctx context.Context, client *gerrit.Client, changeID, revision string, input *reviewInput) error {
+	path, err := reviewPath(changeID, revision)
+	if err != nil {
+		return err
+	}
+	_, err = client.Call(ctx, "POST", path, input, nil)
+	return err
+}
+
+// The REST paths below are built by hand only because go-gerrit cannot send
+// is_ai. Call sites use these builders rather than formatting paths, so every
+// segment is escaped by gerritPath. An empty revision means "current".
+
+// draftsPath is the endpoint that creates a draft on a revision (PUT).
+func draftsPath(changeID, revision string) (string, error) {
+	return gerritPath("changes/%s/revisions/%s/drafts", changeID, cmp.Or(revision, "current"))
+}
+
+// draftPath is the endpoint that updates an existing draft (PUT).
+func draftPath(changeID, revision, draftID string) (string, error) {
+	return gerritPath("changes/%s/revisions/%s/drafts/%s", changeID, cmp.Or(revision, "current"), draftID)
+}
+
+// reviewPath is the endpoint that posts a review on a revision (POST).
+func reviewPath(changeID, revision string) (string, error) {
+	return gerritPath("changes/%s/revisions/%s/review", changeID, cmp.Or(revision, "current"))
 }
 
 func effectivePatchSet(patchSets ...int) int {
@@ -525,5 +597,7 @@ func init() {
 	commentCmd.Flags().BoolVar(&commentPublish, "publish", false, "Publish inline or file comment immediately instead of staging as a draft (ghish-only)")
 	//ghish:flag mode=extension reason="Delete unpublished Gerrit server-side draft comment"
 	commentCmd.Flags().BoolVar(&commentDeleteDraft, "delete-draft", false, "Delete an unpublished draft comment at the target location (ghish-only)")
+	//ghish:flag mode=extension reason="Gerrit is_ai marker for agent-written comments"
+	commentCmd.Flags().VarPF(&commentAgent, "agent", "", agentFlagUsage).NoOptDefVal = string(agentTrue)
 	PrCmd.AddCommand(commentCmd)
 }

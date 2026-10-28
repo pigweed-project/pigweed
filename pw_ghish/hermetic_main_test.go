@@ -37,6 +37,11 @@ func TestMain(m *testing.M) {
 	for _, v := range hermeticAuthEnvVars {
 		os.Unsetenv(v)
 	}
+	// Clear coding-agent variables so that --agent's auto-detection behaves
+	// the same whether or not tests run under an agent.
+	for _, v := range agentEnvVars {
+		os.Unsetenv(v)
+	}
 	// Ignore the developer's global and system git config so auth-mode
 	// auto-detection never sees their user.email.
 	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)

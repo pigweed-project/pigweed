@@ -1051,3 +1051,112 @@ func TestCommentCmd_BodyFileStdin(t *testing.T) {
 		}
 	})
 }
+
+func TestCommentPathBuilders(t *testing.T) {
+	builders := []struct {
+		name string
+		got  func() (string, error)
+		want string
+	}{
+		{"review with empty revision", func() (string, error) { return reviewPath("123", "") }, "changes/123/revisions/current/review"},
+		{"review with patchset", func() (string, error) { return reviewPath("123", "2") }, "changes/123/revisions/2/review"},
+		{"drafts", func() (string, error) { return draftsPath("123", "2") }, "changes/123/revisions/2/drafts"},
+		{"drafts with empty revision", func() (string, error) { return draftsPath("123", "") }, "changes/123/revisions/current/drafts"},
+		{"draft", func() (string, error) { return draftPath("123", "2", "abc_def") }, "changes/123/revisions/2/drafts/abc_def"},
+		{"draft ID escaped", func() (string, error) { return draftPath("123", "2", "../x") }, "changes/123/revisions/2/drafts/..%2Fx"},
+		{"revision escaped", func() (string, error) { return draftsPath("123", "../../abandon") }, "changes/123/revisions/..%2F..%2Fabandon/drafts"},
+	}
+	for _, tc := range builders {
+		got, err := tc.got()
+		if err != nil || got != tc.want {
+			t.Errorf("%s: got %q, %v; want %q", tc.name, got, err, tc.want)
+		}
+	}
+
+	if _, err := reviewPath("bad%zz", "current"); err == nil {
+		t.Error("reviewPath with a malformed escape succeeded, want error")
+	}
+	if _, err := draftPath("123", "2", "bad%zz"); err == nil {
+		t.Error("draftPath with a malformed escape succeeded, want error")
+	}
+}
+
+// lastCommentIsAI decodes the last request body, which is a draft
+// CommentInput or a ReviewInput with one comment, and returns that comment.
+func lastComment(t *testing.T, server *MockGerritServer) (path string, comment map[string]any) {
+	t.Helper()
+	req := server.LastRequest()
+	if req == nil {
+		t.Fatal("no request captured")
+	}
+	var body map[string]any
+	if err := json.Unmarshal(req.Body, &body); err != nil {
+		t.Fatalf("decoding %q: %v", req.Body, err)
+	}
+	comments, ok := body["comments"].(map[string]any)
+	if !ok {
+		return "", body
+	}
+	if len(comments) != 1 {
+		t.Fatalf("want 1 comment file, got %v", comments)
+	}
+	for p, list := range comments {
+		return p, list.([]any)[0].(map[string]any)
+	}
+	panic("unreachable")
+}
+
+func TestCommentCmd_Agent(t *testing.T) {
+	tests := []struct {
+		name     string
+		agent    bool
+		args     []string
+		wantPath string // file key in a published review; "" for drafts
+		wantAI   any    // true, false, or nil (field absent)
+	}{
+		{name: "draft, human", args: []string{"--path", "a.cc", "--line", "3"}, wantAI: nil},
+		{name: "draft, agent", agent: true, args: []string{"--path", "a.cc", "--line", "3"}, wantAI: true},
+		{name: "draft, --agent", args: []string{"--path", "a.cc", "--line", "3", "--agent"}, wantAI: true},
+		{name: "draft, agent --agent=false", agent: true, args: []string{"--path", "a.cc", "--line", "3", "--agent=false"}, wantAI: false},
+		{name: "publish inline, agent", agent: true, args: []string{"--path", "a.cc", "--line", "3", "--publish"}, wantPath: "a.cc", wantAI: true},
+		{name: "change-level, agent", agent: true, wantPath: "/PATCHSET_LEVEL", wantAI: true},
+		{name: "change-level, human (review message)", wantPath: "", wantAI: nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, name := range agentEnvVars {
+				t.Setenv(name, "")
+			}
+			if tc.agent {
+				t.Setenv("ANTIGRAVITY_AGENT", "1")
+			}
+			server := NewMockGerritServer(t)
+			server.OnJSON("GET", "/changes/123/comments", http.StatusOK, map[string]any{})
+			server.OnJSON("GET", "/changes/123/drafts", http.StatusOK, map[string]any{})
+			server.OnJSON("PUT", "/changes/123/revisions/current/drafts", http.StatusOK, map[string]any{})
+			server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+
+			args := append([]string{"pr", "comment", "123", "-m", "note"}, tc.args...)
+			if _, err := executeCommand(RootCmd, args...); err != nil {
+				t.Fatalf("command failed: %v", err)
+			}
+			path, comment := lastComment(t, server)
+			if path != tc.wantPath {
+				t.Errorf("comment path = %q, want %q", path, tc.wantPath)
+			}
+			if comment["message"] != "note" {
+				t.Errorf("comment message = %v, want note", comment["message"])
+			}
+			if got, ok := comment["is_ai"]; ok != (tc.wantAI != nil) || (ok && got != tc.wantAI) {
+				t.Errorf("is_ai = %v (present %v), want %v", got, ok, tc.wantAI)
+			}
+		})
+	}
+}
+
+func TestCommentCmd_AgentRejectsBadValue(t *testing.T) {
+	_, err := executeCommand(RootCmd, "pr", "comment", "123", "-m", "x", "--agent=banana")
+	if err == nil || !strings.Contains(err.Error(), "must be auto, true, or false") {
+		t.Fatalf("got %v, want invalid --agent error", err)
+	}
+}

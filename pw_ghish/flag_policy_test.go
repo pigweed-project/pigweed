@@ -241,6 +241,7 @@ var baselineFlagPolicyCatalog = map[string]flagPolicySpec{
 	"pr merge:stack":       {Mode: flagModeExtension, Reason: "Schedule Gerrit Flow across all changes in a stack"},
 
 	// pr review
+	"pr review:agent":           {Mode: flagModeExtension, Reason: "Gerrit is_ai marker for agent-written comments"},
 	"pr review:message":         {Mode: flagModeUpstream, GH: "pr review --body"},
 	"pr review:body":            {Mode: flagModeUpstream, GH: "pr review --body"},
 	"pr review:body-file":       {Mode: flagModeUpstream, GH: "pr review --body-file"},

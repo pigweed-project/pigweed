@@ -15,8 +15,10 @@
 package pw_ghish
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -73,4 +75,57 @@ func ColorEnabled(w io.Writer) bool {
 		return true
 	}
 	return IsTTY(w)
+}
+
+// agentFlag is the value of the --agent flag, which marks content ghish posts
+// (Gerrit comments today; Buganizer comments can reuse it) as written by a
+// coding agent. Gerrit receives it as the is_ai comment field.
+type agentFlag string
+
+const (
+	agentAuto  agentFlag = "auto" // Marked when IsAgentEnv reports a coding agent.
+	agentTrue  agentFlag = "true"
+	agentFalse agentFlag = "false"
+)
+
+const agentFlagUsage = "Mark as written by a coding agent (shown as AI-generated): auto, true, or false. " +
+	"auto marks it when run by a coding agent; --agent alone means true (ghish-only)"
+
+func (f *agentFlag) String() string { return string(*f) }
+func (f *agentFlag) Type() string   { return "auto|true|false" }
+
+// Set accepts "auto" or any value strconv.ParseBool accepts.
+func (f *agentFlag) Set(s string) error {
+	if s == string(agentAuto) {
+		*f = agentAuto
+		return nil
+	}
+	b, err := strconv.ParseBool(s)
+	if err != nil {
+		return fmt.Errorf("must be auto, true, or false: %w", err)
+	}
+	*f = agentFalse
+	if b {
+		*f = agentTrue
+	}
+	return nil
+}
+
+// isAI returns the AI marker to send (Gerrit's is_ai), or nil to leave it
+// unset. Leaving it unset keeps an existing Gerrit draft's value; Gerrit only
+// clears it on an explicit false.
+func (f agentFlag) isAI() *bool {
+	t, fl := true, false
+	switch f {
+	case agentTrue:
+		return &t
+	case agentFalse:
+		return &fl
+	case agentAuto:
+		if IsAgentEnv() {
+			return &t
+		}
+		return nil
+	}
+	panic(fmt.Sprintf("invalid agentFlag %q", string(f)))
 }

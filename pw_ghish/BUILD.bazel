@@ -158,6 +158,7 @@ go_test(
         "diff_test.go",
         "doc_sync_test.go",
         "edit_test.go",
+        "environment_test.go",
         "exit_test.go",
         "export_test.go",
         "failure_detector_test.go",
