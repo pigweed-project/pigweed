@@ -357,6 +357,7 @@ def update(  # pylint: disable=too-many-locals
         hasher.update(ins.read())
     digest = hasher.hexdigest()
 
+    hash_unchanged = False
     with open(os.path.join(root_install_dir, 'hash.log'), 'w') as hashlog:
         print('calculated digest:', digest, file=hashlog)
 
@@ -364,30 +365,37 @@ def update(  # pylint: disable=too-many-locals
         print('hash file path:', hash_file, file=hashlog)
         print('exists:', os.path.isfile(hash_file), file=hashlog)
         print('trust_hash:', trust_hash, file=hashlog)
-        if trust_hash and os.path.isfile(hash_file):
+        if (
+            trust_hash
+            and os.path.isfile(hash_file)
+            and os.path.isdir(install_dir)
+        ):
             with open(hash_file, 'r') as ins:
                 digest_file = ins.read().strip()
                 print('contents:', digest_file, file=hashlog)
                 print('equal:', digest == digest_file, file=hashlog)
                 if digest == digest_file:
-                    return True
+                    hash_unchanged = True
 
-    if not check_auth(cipd, package_files, cipd_service_account, spin):
-        return False
+    if not hash_unchanged:
+        if not check_auth(cipd, package_files, cipd_service_account, spin):
+            return False
 
-    log = os.path.join(root_install_dir, 'packages.log')
-    try:
-        with open(log, 'w') as outs:
-            print(*cmd, file=outs)
-            subprocess.check_call(cmd, stdout=outs, stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError:
-        with open(log, 'r') as ins:
-            sys.stderr.write(repr(cmd))
-            sys.stderr.write(ins.read())
-            raise
+        log = os.path.join(root_install_dir, 'packages.log')
+        try:
+            with open(log, 'w') as outs:
+                print(*cmd, file=outs)
+                subprocess.check_call(
+                    cmd, stdout=outs, stderr=subprocess.STDOUT
+                )
+        except subprocess.CalledProcessError:
+            with open(log, 'r') as ins:
+                sys.stderr.write(repr(cmd))
+                sys.stderr.write(ins.read())
+                raise
 
-    with open(hash_file, 'w') as outs:
-        print(digest, file=outs)
+        with open(hash_file, 'w') as outs:
+            print(digest, file=outs)
 
     # Set environment variables so tools can later find things under, for
     # example, 'share'.
