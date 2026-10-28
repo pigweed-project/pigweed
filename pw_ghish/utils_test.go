@@ -19,10 +19,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
-	"os"
-	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -437,31 +435,6 @@ func TestHasChangeID(t *testing.T) {
 	}
 }
 
-func TestEnsureChangeID_Valid(t *testing.T) {
-	ctx := context.Background()
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"))
-			}
-			return nil
-		},
-	}
-
-	cfg := &Config{Git: mockGit}
-	var outBuf, errBuf bytes.Buffer
-	if err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf); err != nil {
-		t.Fatalf("EnsureChangeID() failed: %v", err)
-	}
-
-	// Should not invoke commit --amend because Change-Id is already present
-	for _, call := range mockGit.Calls {
-		if strings.Contains(call, "amend") {
-			t.Errorf("Unexpected git amend call when Change-Id was already present: %s", call)
-		}
-	}
-}
-
 func TestExtractChangeID(t *testing.T) {
 	tests := []struct {
 		desc string
@@ -493,207 +466,166 @@ func TestExtractChangeID(t *testing.T) {
 	}
 }
 
-func TestEnsureChangeID_NilConfig(t *testing.T) {
-	ctx := context.Background()
-	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, nil, false, &outBuf, &errBuf)
-	if err == nil {
-		t.Fatal("Expected error when cfg is nil, got nil")
-	}
-	if !strings.Contains(err.Error(), "git runner not initialized") {
-		t.Errorf("Expected error to mention git runner not initialized, got: %v", err)
-	}
-}
-
-func TestEnsureChangeID_NilGit(t *testing.T) {
-	ctx := context.Background()
-	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, &Config{Git: nil}, false, &outBuf, &errBuf)
-	if err == nil {
-		t.Fatal("Expected error when cfg.Git is nil, got nil")
-	}
-	if !strings.Contains(err.Error(), "git runner not initialized") {
-		t.Errorf("Expected error to mention git runner not initialized, got: %v", err)
-	}
-}
-
-func TestEnsureChangeID_MissingChangeIDReturnsError(t *testing.T) {
-	ctx := context.Background()
-	tempDir := t.TempDir()
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject without change ID\n\nBody.\n"))
-			}
-			if len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--git-dir" {
-				stdout.Write([]byte(tempDir + "\n"))
-			}
-			return nil
+func TestEnsureChangeID(t *testing.T) {
+	tests := []struct {
+		name            string
+		nilCfg          bool
+		nilGit          bool
+		noVerify        bool
+		setupGit        func(m *MockGitRunner)
+		wantErrContains []string
+		wantAmendPrefix string
+		wantMsgRe       string
+	}{
+		{
+			name:            "nil config",
+			nilCfg:          true,
+			wantErrContains: []string{"git runner not initialized"},
+		},
+		{
+			name:            "nil git runner",
+			nilGit:          true,
+			wantErrContains: []string{"git runner not initialized"},
+		},
+		{
+			name: "already has valid Change-Id",
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("Commit subject\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n")
+			},
+		},
+		{
+			name: "empty commit message returns error",
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("")
+			},
+			wantErrContains: []string{"missing required Gerrit Change-Id"},
+		},
+		{
+			name: "HeadCommitMessage error returns error",
+			setupGit: func(m *MockGitRunner) {
+				m.OnError("log -1 --format=%B", fmt.Errorf("git log failed"))
+			},
+			wantErrContains: []string{"failed to get HEAD commit message", "git log failed"},
+		},
+		{
+			name: "malformed Change-Id returns error without amending",
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("pw_foo: Hand-rolled Change-Id\n\nChange-Id: I12345\n")
+			},
+			wantErrContains: []string{
+				`in HEAD commit message: expected "I" followed by 40 hex digits`,
+				"./gh pr push",
+			},
+		},
+		{
+			name: "blocked when HEAD is remote tip",
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("Subject without change id\n").
+					OnCommand("for-each-ref --points-at=HEAD --format=%(refname) refs/remotes/", "refs/remotes/origin/main\n")
+			},
+			wantErrContains: []string{"cannot amend HEAD commit", "refs/remotes/origin/main"},
+		},
+		{
+			name: "amend failure returns error",
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("Commit subject without change ID\n\nBody.\n").
+					OnError("commit --amend", fmt.Errorf("amend failed"))
+			},
+			wantErrContains: []string{"failed to amend commit with Change-Id"},
+		},
+		{
+			name: "injects Change-Id with noVerify=false",
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("pw_foo: Subject without Change-Id\n\nBug: b/567763970\n")
+			},
+			wantAmendPrefix: "commit --amend --only --allow-empty -F ",
+			wantMsgRe:       `^pw_foo: Subject without Change-Id\n\nBug: b/567763970\nChange-Id: I[0-9a-f]{40}\n$`,
+		},
+		{
+			name:     "injects Change-Id with noVerify=true",
+			noVerify: true,
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("pw_foo: Subject without Change-Id\n\nBug: b/567763970\n")
+			},
+			wantAmendPrefix: "commit --amend --only --allow-empty --no-verify -F ",
+			wantMsgRe:       `^pw_foo: Subject without Change-Id\n\nBug: b/567763970\nChange-Id: I[0-9a-f]{40}\n$`,
+		},
+		{
+			name: "autosquash fixup HEAD returns error without amending",
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("\nfixup! pw_foo: Fix bar\n")
+			},
+			wantErrContains: []string{
+				"HEAD commit \"fixup! pw_foo: Fix bar\" is a fixup!/squash!/amend! commit, which gets no Change-Id.",
+				"git rebase -i --autosquash <base>",
+			},
+		},
+		{
+			name: "autosquash squash HEAD returns error without amending",
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("squash! pw_foo: Fix bar\n")
+			},
+			wantErrContains: []string{"is a fixup!/squash!/amend! commit"},
+		},
+		{
+			name: "autosquash amend HEAD returns error without amending",
+			setupGit: func(m *MockGitRunner) {
+				m.WithCommit("amend! pw_foo: Fix bar\n")
+			},
+			wantErrContains: []string{"is a fixup!/squash!/amend! commit"},
 		},
 	}
-	cfg := &Config{Git: mockGit, Host: "invalid-review.invalid"}
-	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf)
-	if err == nil {
-		t.Fatal("Expected error when Change-Id is missing and cannot be added, got nil")
-	}
-	if !strings.Contains(err.Error(), "missing required Gerrit Change-Id") {
-		t.Errorf("Expected error about missing Change-Id, got: %v", err)
-	}
-}
 
-func TestEnsureChangeID_BlockedWhenRemoteTip(t *testing.T) {
-	ctx := context.Background()
-	mockGit := (&MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "log" {
-				stdout.Write([]byte("Subject without change id\n"))
-			}
-			if len(args) >= 3 && args[0] == "for-each-ref" && args[1] == "--points-at=HEAD" {
-				stdout.Write([]byte("refs/remotes/origin/main\n"))
-			}
-			return nil
-		},
-	}).OnCommand("rev-parse --git-dir", t.TempDir()+"\n")
-	cfg := &Config{Git: mockGit, Host: "pigweed-review.googlesource.com"}
-	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf)
-	if err == nil {
-		t.Fatal("Expected error when HEAD is a remote tip, got nil")
-	}
-	if !strings.Contains(err.Error(), "cannot amend HEAD commit") || !strings.Contains(err.Error(), "refs/remotes/origin/main") {
-		t.Errorf("Expected error to explain remote tip amend guard, got: %v", err)
-	}
-}
-
-func TestEnsureChangeID_AmendsWhenHookInstalled(t *testing.T) {
-	ctx := context.Background()
-	tempDir := t.TempDir()
-	hooksDir := filepath.Join(tempDir, "hooks")
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		t.Fatalf("Failed to create hooks dir: %v", err)
-	}
-	hookPath := filepath.Join(hooksDir, "commit-msg")
-	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
-		t.Fatalf("Failed to write hook: %v", err)
-	}
-
-	amended := false
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 1 && args[0] == "commit" && args[1] == "--amend" {
-				amended = true
-			}
-			if len(args) >= 2 && args[0] == "log" {
-				if amended {
-					stdout.Write([]byte("Commit subject\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
-				} else {
-					stdout.Write([]byte("Commit subject without change ID\n"))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var cfg *Config
+			var mockGit *MockGitRunner
+			if !tc.nilCfg {
+				cfg = &Config{Host: "pigweed-review.googlesource.com"}
+				if !tc.nilGit {
+					mockGit = &MockGitRunner{}
+					if tc.setupGit != nil {
+						tc.setupGit(mockGit)
+					}
+					cfg.Git = mockGit
 				}
 			}
-			if len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--git-dir" {
-				stdout.Write([]byte(tempDir + "\n"))
-			}
-			return nil
-		},
-	}
 
-	cfg := &Config{Git: mockGit}
-	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf)
-	if err != nil {
-		t.Fatalf("Expected EnsureChangeID to succeed after amend, got error: %v", err)
-	}
-	if !amended {
-		t.Error("Expected git commit --amend to be invoked")
-	}
-}
-
-func TestEnsureChangeID_DownloadsHookAndAmends(t *testing.T) {
-	ctx := context.Background()
-	tempDir := t.TempDir()
-
-	hookDownloaded := false
-	server := NewMockGerritServer(t)
-	server.On("GET", "/tools/hooks/commit-msg", func(w http.ResponseWriter, r *http.Request) {
-		hookDownloaded = true
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("#!/bin/sh\nexit 0\n"))
-	})
-
-	amended := false
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 1 && args[0] == "commit" && args[1] == "--amend" {
-				amended = true
-			}
-			if len(args) >= 2 && args[0] == "log" {
-				if amended {
-					stdout.Write([]byte("Commit subject\n\nChange-Id: I9999999999999999999999999999999999999999\n"))
-				} else {
-					stdout.Write([]byte("Commit subject without change ID\n"))
+			var outBuf, errBuf bytes.Buffer
+			err := EnsureChangeID(t.Context(), cfg, tc.noVerify, &outBuf, &errBuf)
+			if len(tc.wantErrContains) > 0 {
+				if err == nil {
+					t.Fatalf("expected error containing %v, got nil", tc.wantErrContains)
 				}
+				for _, sub := range tc.wantErrContains {
+					if !strings.Contains(err.Error(), sub) {
+						t.Errorf("error %q missing %q", err.Error(), sub)
+					}
+				}
+				return
 			}
-			if len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--git-dir" {
-				stdout.Write([]byte(tempDir + "\n"))
+			if err != nil {
+				t.Fatalf("EnsureChangeID() unexpected error: %v", err)
 			}
-			return nil
-		},
-	}
-
-	cfg := &Config{Git: mockGit, Host: server.URL}
-	var outBuf, errBuf bytes.Buffer
-	err := EnsureChangeID(ctx, cfg, false, &outBuf, &errBuf)
-	if err != nil {
-		t.Fatalf("Expected EnsureChangeID to succeed with downloaded hook, got: %v", err)
-	}
-
-	if !hookDownloaded {
-		t.Error("Expected hook to be downloaded from Gerrit server")
-	}
-	if !amended {
-		t.Error("Expected commit --amend to be called after installing hook")
-	}
-
-	hookPath := filepath.Join(tempDir, "hooks", "commit-msg")
-	info, err := os.Stat(hookPath)
-	if err != nil {
-		t.Fatalf("Expected hook file to exist at %s: %v", hookPath, err)
-	}
-	if info.Mode()&0111 == 0 {
-		t.Errorf("Expected hook file to be executable, mode: %v", info.Mode())
-	}
-}
-
-func TestEnsureChangeID_NoVerifyInjectsWithoutHookOrDownload(t *testing.T) {
-	ctx := context.Background()
-	tempDir := t.TempDir()
-
-	hookDownloaded := false
-	server := NewMockGerritServer(t)
-	server.On("GET", "/tools/hooks/commit-msg", func(w http.ResponseWriter, r *http.Request) {
-		hookDownloaded = true
-		w.WriteHeader(http.StatusInternalServerError)
-	})
-
-	mockGit := (&MockGitRunner{}).
-		OnCommand("rev-parse --git-dir", tempDir+"\n").
-		WithCommit("pw_foo: Subject without Change-Id\n\nBug: b/567763970\n")
-
-	cfg := &Config{Git: mockGit, Host: server.URL}
-	var outBuf, errBuf bytes.Buffer
-	if err := EnsureChangeID(ctx, cfg, true, &outBuf, &errBuf); err != nil {
-		t.Fatalf("EnsureChangeID(noVerify=true) failed: %v", err)
-	}
-	if hookDownloaded {
-		t.Error("expected commit-msg hook not to be downloaded when noVerify=true")
-	}
-	if !mockGit.HasCall("commit --amend --only --allow-empty --no-verify -F ") {
-		t.Errorf("expected commit --amend --only --allow-empty --no-verify -F call, got: %v", mockGit.Calls)
-	}
-	updated := mockGit.LastCommitMessage()
-	if !HasChangeID(updated) {
-		t.Errorf("expected injected Change-Id in amended message, got:\n%s", updated)
+			if tc.wantAmendPrefix == "" {
+				if mockGit.HasCall("commit --amend") {
+					t.Errorf("unexpected git commit --amend call: %v", mockGit.Calls)
+				}
+				return
+			}
+			if !mockGit.HasCall(tc.wantAmendPrefix) {
+				t.Errorf("expected %q call, got: %v", tc.wantAmendPrefix, mockGit.Calls)
+			}
+			if !strings.Contains(errBuf.String(), "missing a Gerrit Change-Id footer") {
+				t.Errorf("stderr = %q, want missing Change-Id notice", errBuf.String())
+			}
+			if !strings.Contains(outBuf.String(), "Successfully amended HEAD commit with Change-Id.") {
+				t.Errorf("stdout = %q, want amend confirmation", outBuf.String())
+			}
+			if updated := mockGit.LastCommitMessage(); !regexp.MustCompile(tc.wantMsgRe).MatchString(updated) {
+				t.Errorf("amended message = %q, want match for %q", updated, tc.wantMsgRe)
+			}
+		})
 	}
 }
 
@@ -1605,7 +1537,7 @@ func TestFindChangeIDInCommitRange(t *testing.T) {
 	})
 }
 
-func TestValidateChangeIDFooters_And_EnsureChangeID(t *testing.T) {
+func TestValidateChangeIDFooters(t *testing.T) {
 	for _, valid := range []string{
 		"pw_foo: Clean subject\n\nChange-Id: I1111111111111111111111111111111111111111\n",
 		"pw_foo: Indented example\n\n  Change-Id: I12345\n\nChange-Id: I1111111111111111111111111111111111111111\n",
@@ -1635,8 +1567,8 @@ func TestValidateChangeIDFooters_And_EnsureChangeID(t *testing.T) {
 		"pw_foo: Sibling bug + bare Change-Id\n\nBug: b/123\nChange-Id:\n",
 	} {
 		err := ValidateChangeIDFooters(bad, "")
-		if err == nil || !strings.Contains(err.Error(), "malformed Gerrit Change-Id trailer") || !strings.Contains(err.Error(), "git commit --amend --only") {
-			t.Fatalf("expected malformed Change-Id error with amend hint for %q, got: %v", bad, err)
+		if err == nil || !strings.Contains(err.Error(), "malformed Gerrit Change-Id trailer") || !strings.Contains(err.Error(), "./gh pr push") {
+			t.Fatalf("expected malformed Change-Id error with push hint for %q, got: %v", bad, err)
 		}
 	}
 
@@ -1646,23 +1578,8 @@ func TestValidateChangeIDFooters_And_EnsureChangeID(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), wantPrefix) {
 			t.Fatalf("expected %q in error for %s, got: %v", wantPrefix, source, err)
 		}
-		if strings.Contains(err.Error(), "git commit --amend --only") {
-			t.Fatalf("expected no git commit --amend --only hint for %s, got: %v", source, err)
+		if strings.Contains(err.Error(), "./gh pr push") {
+			t.Fatalf("expected no ./gh pr push hint for %s, got: %v", source, err)
 		}
-	}
-
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if strings.Join(args, " ") == "log -1 --format=%B" {
-				stdout.Write([]byte("pw_foo: Hand-rolled Change-Id\n\nChange-Id: I12345\n"))
-				return nil
-			}
-			t.Fatalf("EnsureChangeID invoked unexpected git command %v when Change-Id is malformed", args)
-			return nil
-		},
-	}
-	err := EnsureChangeID(t.Context(), &Config{Git: mockGit}, false, io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), `in HEAD commit message: expected "I" followed by 40 hex digits`) || !strings.Contains(err.Error(), "git commit --amend --only") {
-		t.Fatalf("EnsureChangeID expected malformed Change-Id error for HEAD commit message, got: %v", err)
 	}
 }

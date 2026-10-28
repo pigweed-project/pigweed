@@ -19,15 +19,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -495,8 +492,7 @@ func ValidateChangeIDFooters(commitMsg string, sourceLabel string) error {
 					return fmt.Errorf(
 						"malformed Gerrit Change-Id trailer %q in %s: expected \"I\" followed by 40 hex digits.\n\n"+
 							"Why: Gerrit requires every Change-Id footer to match `Change-Id: I<40-hex-digits>`.\n"+
-							"Remove the malformed Change-Id line and re-run the Gerrit commit-msg hook via:\n"+
-							"  git commit --amend --only",
+							"Remove the malformed `Change-Id:` line from the commit message and re-run `./gh pr push` (or `./gh pr create`), which injects a valid Change-Id automatically.",
 						tr.Format(), label,
 					)
 				}
@@ -518,8 +514,7 @@ func HasChangeID(commitMsg string) bool {
 }
 
 // EnsureChangeID checks the HEAD commit message for a Change-Id footer before pushing to Gerrit.
-// If missing, it injects one in pure Go when noVerify is true or runs the Gerrit commit-msg hook
-// via amend otherwise.
+// If missing, it injects one in pure Go via InjectChangeID and amends HEAD.
 func EnsureChangeID(ctx context.Context, cfg *Config, noVerify bool, stdout, stderr io.Writer) error {
 	_, err := ensureChangeID(ctx, cfg, noVerify, stdout, stderr)
 	return err
@@ -529,8 +524,8 @@ func EnsureChangeID(ctx context.Context, cfg *Config, noVerify bool, stdout, std
 // it stands afterwards (as HeadCommitMessage read it), so callers that go on
 // to inspect the message do not run `git log -1 --format=%B` again. It
 // returns "" when HEAD's message is not known without reading it again (after
-// a --no-verify amend, since `git commit` may rewrite the message it was
-// given); a known message always carries a Change-Id, so it is never "".
+// an amend, since `git commit` may rewrite the message it was given); a known
+// message always carries a Change-Id, so it is never "".
 func ensureChangeID(ctx context.Context, cfg *Config, noVerify bool, stdout, stderr io.Writer) (string, error) {
 	if cfg == nil || cfg.Git == nil {
 		return "", fmt.Errorf("EnsureChangeID: git runner not initialized")
@@ -550,108 +545,27 @@ func ensureChangeID(ctx context.Context, cfg *Config, noVerify bool, stdout, std
 		return commitMsg, nil
 	}
 
+	updatedMsg, ok := InjectChangeID(commitMsg)
+	if !ok {
+		if subject, _, _ := strings.Cut(strings.TrimSpace(commitMsg), "\n"); autosquashSubjectRegex.MatchString(subject) {
+			return "", fmt.Errorf("HEAD commit %q is a fixup!/squash!/amend! commit, which gets no Change-Id.\n\n"+
+				"Squash it into the commit it amends before uploading:\n  git rebase -i --autosquash <base>", subject)
+		}
+		return "", fmt.Errorf("HEAD commit is missing required Gerrit Change-Id")
+	}
+
 	if err := git.CheckAmendAllowed(ctx); err != nil {
 		return "", fmt.Errorf("cannot insert Change-Id: %w", err)
 	}
 
 	fmt.Fprintln(stderr, "Notice: HEAD commit is missing a Gerrit Change-Id footer.")
-
-	if noVerify {
-		updatedMsg, ok := InjectChangeID(commitMsg)
-		if !ok {
-			return "", fmt.Errorf("HEAD commit is missing required Gerrit Change-Id")
-		}
-		fmt.Fprintln(stdout, "Amending HEAD commit to insert Change-Id footer...")
-		if err := git.CommitAmendMessage(ctx, updatedMsg, true, stdout, stderr); err != nil {
-			return "", fmt.Errorf("failed to amend commit with Change-Id: %w", err)
-		}
-		fmt.Fprintln(stdout, "Successfully amended HEAD commit with Change-Id.")
-		// `git commit` may have rewritten updatedMsg; let the caller re-read.
-		return "", nil
+	fmt.Fprintln(stdout, "Amending HEAD commit to insert Change-Id footer...")
+	if err := git.CommitAmendMessage(ctx, updatedMsg, noVerify, stdout, stderr); err != nil {
+		return "", fmt.Errorf("failed to amend commit with Change-Id: %w", err)
 	}
-
-	// Check if the commit-msg hook is installed
-	gitDir, err := git.GitDir(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve git directory: %w", err)
-	}
-	if gitDir == "" {
-		return "", fmt.Errorf("resolved git directory is empty")
-	}
-	hookPath := filepath.Join(gitDir, "hooks", "commit-msg")
-
-	hookInstalled := false
-	if fi, err := os.Stat(hookPath); err == nil && (fi.Mode()&0111 != 0) {
-		hookInstalled = true
-	} else {
-		// Attempt to download the hook from the Gerrit host
-		gerritURL, err := cfg.GerritURL(ctx)
-		if err != nil || gerritURL == "" {
-			fmt.Fprintf(stderr, "Warning: could not resolve Gerrit URL to download commit-msg hook: %v\n", err)
-		} else {
-			baseURL := strings.TrimSuffix(gerritURL, "/a")
-			hookURL := baseURL + "/tools/hooks/commit-msg"
-
-			client := &http.Client{Timeout: 5 * time.Second}
-			resp, err := client.Get(hookURL)
-			if err != nil {
-				fmt.Fprintf(stderr, "Warning: failed to download commit-msg hook from %s: %v\n", hookURL, err)
-			} else {
-				defer resp.Body.Close()
-				if resp.StatusCode != http.StatusOK {
-					fmt.Fprintf(stderr, "Warning: failed to download commit-msg hook from %s: HTTP %d\n", hookURL, resp.StatusCode)
-				} else {
-					body, rErr := readBoundedBody(resp.Body, maxHTTPBodyBytes)
-					if rErr != nil {
-						fmt.Fprintf(stderr, "Warning: failed to read commit-msg hook response: %v\n", rErr)
-					} else if len(body) == 0 {
-						fmt.Fprintf(stderr, "Warning: downloaded commit-msg hook is empty\n")
-					} else {
-						if err := os.MkdirAll(filepath.Dir(hookPath), 0755); err != nil {
-							fmt.Fprintf(stderr, "Warning: failed to create hooks directory: %v\n", err)
-						} else if err := os.WriteFile(hookPath, body, 0755); err != nil {
-							fmt.Fprintf(stderr, "Warning: failed to write commit-msg hook: %v\n", err)
-						} else {
-							fmt.Fprintf(stdout, "Downloaded and installed Gerrit commit-msg hook to %s\n", hookPath)
-							hookInstalled = true
-						}
-					}
-				}
-			}
-		}
-	}
-
-	if hookInstalled {
-		fmt.Fprintln(stdout, "Amending HEAD commit to insert Change-Id footer...")
-		if err := git.CommitAmendNoEdit(ctx, stdout, stderr); err != nil {
-			return "", fmt.Errorf("failed to amend commit with Change-Id: %w", err)
-		}
-
-		// Re-verify that the commit now actually has a Change-Id
-		amendedMsg, err := git.HeadCommitMessage(ctx)
-		if err != nil {
-			return "", fmt.Errorf("failed to verify amended commit message: %w", err)
-		}
-		if HasChangeID(amendedMsg) {
-			fmt.Fprintln(stdout, "Successfully amended HEAD commit with Change-Id.")
-			return amendedMsg, nil
-		}
-		fmt.Fprintln(stderr, "Warning: commit-msg hook executed but Change-Id was not inserted.")
-	}
-
-	// If we reached here, provide the offramp instructions to the user/agent
-	gerritHost := cfg.Host
-	if gerritHost == "" {
-		gerritHost = "<gerrit-host>"
-	}
-	fmt.Fprintf(stderr, `Hint: Gerrit requires a Change-Id in your commit message footer.
-To install the hook and generate a Change-Id:
-  curl -Lo $(git rev-parse --git-dir)/hooks/commit-msg https://%s/tools/hooks/commit-msg
-  chmod +x $(git rev-parse --git-dir)/hooks/commit-msg
-  git commit --amend --no-edit
-`, gerritHost)
-
-	return "", fmt.Errorf("HEAD commit is missing required Gerrit Change-Id")
+	fmt.Fprintln(stdout, "Successfully amended HEAD commit with Change-Id.")
+	// `git commit` may have rewritten updatedMsg; let the caller re-read.
+	return "", nil
 }
 
 // CountCommitsAhead returns the number of commits in <remote>/<branch>..HEAD.

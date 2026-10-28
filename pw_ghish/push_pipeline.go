@@ -524,12 +524,7 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 	if err != nil {
 		errStr := errBuf.String()
 		if strings.Contains(errStr, "missing Change-Id") {
-			host := cfg.Host
-			if host == "" {
-				host = "<gerrit-host>"
-			}
-			hookURL := fmt.Sprintf("https://%s/tools/hooks/commit-msg", host)
-			return fmt.Errorf("remote rejected push because a commit is missing a Change-Id in its footer.\n\nGerrit requires a Change-Id line in each commit message.\nTo resolve this:\n  1. Ensure the commit-msg hook is installed:\n     gh hook install\n     (or: curl -Lo .git/hooks/commit-msg %s && chmod +x .git/hooks/commit-msg)\n  2. Amend your commit to generate the Change-Id:\n     git commit --amend --no-edit\n  3. Retry push:\n     gh pr push\n\nUnderlying error: %w", hookURL, err)
+			return fmt.Errorf("remote rejected push because a commit is missing a Change-Id in its footer.\n\nGerrit requires a Change-Id line in each commit message.\nTo resolve this:\n  1. Install the gh-ish commit-msg hook:\n     ./gh hook install --git\n  2. Amend your commit to generate the Change-Id:\n     git commit --amend --no-edit\n  3. Retry push:\n     ./gh pr push\n\nUnderlying error: %w", err)
 		}
 		if strings.Contains(errStr, "no new changes") {
 			if hasMetadataUpdates(pushOpts) {

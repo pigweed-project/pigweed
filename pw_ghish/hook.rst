@@ -101,9 +101,12 @@ gh hook commit-msg
    $ ./gh hook commit-msg <path-to-commit-msg-file>
 
 Ensures a valid Gerrit ``Change-Id: I<sha1>`` trailer is present in the commit
-message file, inserting it before ``Signed-off-by:`` (or at the end of the
-message) using Go's standard ``crypto/sha1`` without requiring ``awk`` or
-``/dev/urandom``.
+message file. It adds the trailer to the message's final trailer paragraph,
+before the first ``Signed-off-by:``, else last in that paragraph (so ``Bug:``
+and ``Fixed:`` stay above it), or starts a new paragraph if there isn't one. It
+ignores git's trailing comment block, and skips
+``fixup!``, ``squash!``, and ``amend!`` commits. It's written in Go, so it needs
+neither ``awk`` nor ``/dev/urandom``.
 
 gh hook pre-push
 ================

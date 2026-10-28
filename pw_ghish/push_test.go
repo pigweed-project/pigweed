@@ -162,16 +162,26 @@ func TestPush_ErrorReturnedWhenPushFails(t *testing.T) {
 	}
 }
 
-func TestPush_FailsWhenMissingChangeID(t *testing.T) {
-	tempDir := t.TempDir()
-	NewMockGit(t).WithBranch("main").WithCommit("Commit message without change ID\n").OnCommand("rev-parse --git-dir", tempDir+"\n")
+func TestPush_ChangeID_AutoRepairAndValidation(t *testing.T) {
+	mockGit := NewMockGit(t).
+		WithBranch("main").
+		WithCommit("Commit message without change ID\n")
 
-	_, err := executeCommand(RootCmd, "pr", "push")
-	if err == nil {
-		t.Fatal("Expected error when Change-Id is missing, got nil")
+	if _, err := executeCommand(RootCmd, "pr", "push"); err != nil {
+		t.Fatalf("pr push failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Change-Id") {
-		t.Errorf("Expected error to mention Change-Id, got: %v", err)
+	if !mockGit.HasCall("commit --amend --only --allow-empty -F ") {
+		t.Errorf("expected commit --amend -F call, got: %v", mockGit.Calls)
+	}
+	if !HasChangeID(mockGit.LastCommitMessage()) {
+		t.Errorf("expected Change-Id in amended message, got:\n%s", mockGit.LastCommitMessage())
+	}
+
+	for _, badCommit := range []string{"", "fixup! pw_foo: Fix\n"} {
+		NewMockGit(t).WithBranch("main").WithCommit(badCommit)
+		if _, err := executeCommand(RootCmd, "pr", "push"); err == nil {
+			t.Errorf("expected pr push to fail for commit %q, got nil", badCommit)
+		}
 	}
 }
 

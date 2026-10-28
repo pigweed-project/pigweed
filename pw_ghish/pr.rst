@@ -110,12 +110,12 @@ proceed:
 
    $ ./gh pr create --stack
 
-Automated Change-Id hook installation
-=====================================
+Automated Change-Id injection
+=============================
 Gerrit requires a ``Change-Id: I...`` footer in each commit message. If your
-commit is missing a ``Change-Id``, ``pr create`` automatically downloads the
-Gerrit ``commit-msg`` hook if absent and runs ``git commit --amend --no-edit``
-before pushing.
+commit is missing a ``Change-Id``, ``pr create`` automatically adds a fresh
+``Change-Id`` trailer, placed where Gerrit's ``commit-msg`` hook would put it,
+and amends ``HEAD`` before pushing.
 
 ----------------------------
 Uploading patchsets: pr push

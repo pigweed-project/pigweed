@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -64,8 +65,9 @@ var (
 		`(?:search_builds\.py|\./pw\s+change\s+(?:comments|push|review))\b`,
 	)
 
-	changeIDLineRegex      = regexp.MustCompile(`(?m)^Change-Id:\s*I[0-9a-fA-F]{40}\s*$`)
-	signedOffByPrefixRegex = regexp.MustCompile(`^Signed-off-by:`)
+	// autosquashSubjectRegex matches subjects that `git rebase --autosquash`
+	// folds into another commit; Gerrit's commit-msg hook leaves them alone.
+	autosquashSubjectRegex = regexp.MustCompile(`^(?:fixup|squash|amend)! `)
 )
 
 // HookCmd manages AI agent PreToolUse hooks and Git lifecycle hooks.
@@ -487,10 +489,10 @@ func checkGitCommitTokens(rest []string, fullCommand, priorSegments string, sawH
 		if err := CheckMultipleChangeIDs(combined, "commit message"); err != nil {
 			return formatChangeIDClobberBlockMessage(fmt.Sprintf("'git commit' with multiple Change-Id trailers (%v)", err))
 		}
-		if hasAmend && !changeIDLineRegex.MatchString(combined) {
+		if hasAmend && !HasChangeID(combined) {
 			return formatChangeIDClobberBlockMessage("'git commit --amend -m' without a 'Change-Id:' trailer")
 		}
-		if sawHistoryResetOrSquash && !changeIDLineRegex.MatchString(combined) {
+		if sawHistoryResetOrSquash && !HasChangeID(combined) {
 			return formatChangeIDClobberBlockMessage("'git reset / merge --squash' followed by 'git commit -m' without preserving the original 'Change-Id:' trailer")
 		}
 	}
@@ -501,7 +503,7 @@ func checkGitCommitTokens(rest []string, fullCommand, priorSegments string, sawH
 			if err := CheckMultipleChangeIDs(normalizedCmd, "stdin commit message"); err != nil {
 				return formatChangeIDClobberBlockMessage(fmt.Sprintf("'git commit -F -' with multiple Change-Id trailers (%v)", err))
 			}
-			if (hasAmend || sawHistoryResetOrSquash) && !changeIDLineRegex.MatchString(normalizedCmd) {
+			if (hasAmend || sawHistoryResetOrSquash) && !HasChangeID(normalizedCmd) {
 				return formatChangeIDClobberBlockMessage("'git commit --amend -F -' without a 'Change-Id:' trailer in stdin")
 			}
 		} else if filePath != "" && !strings.Contains(priorSegments, filePath) {
@@ -510,7 +512,7 @@ func checkGitCommitTokens(rest []string, fullCommand, priorSegments string, sawH
 				if mErr := CheckMultipleChangeIDs(content, filePath); mErr != nil {
 					return formatChangeIDClobberBlockMessage(fmt.Sprintf("'git commit -F %s' with multiple Change-Id trailers (%v)", filePath, mErr))
 				}
-				if (hasAmend || sawHistoryResetOrSquash) && !changeIDLineRegex.MatchString(content) {
+				if (hasAmend || sawHistoryResetOrSquash) && !HasChangeID(content) {
 					return formatChangeIDClobberBlockMessage(fmt.Sprintf("'git commit --amend -F %s' because %s does not contain a 'Change-Id:' trailer", filePath, filePath))
 				}
 			}
@@ -724,7 +726,7 @@ func EnsureChangeIDInFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read commit message file %s: %w", path, err)
 	}
-	updated, changed := InjectChangeID(string(data))
+	updated, changed := injectChangeIDInCommitMsgFile(string(data), "")
 	if !changed {
 		return nil
 	}
@@ -734,67 +736,105 @@ func EnsureChangeIDInFile(path string) error {
 	return nil
 }
 
-// InjectChangeID inserts a Gerrit Change-Id trailer into msg if one is not already present.
+// InjectChangeID returns msg with a new Gerrit Change-Id trailer and true, or
+// msg unchanged and false when it already has a Change-Id, is empty, or is a
+// fixup!/squash!/amend! commit. The Change-Id goes before the first
+// Signed-off-by in the final trailer paragraph, else last in that paragraph
+// (so Bug: and Fixed: stay above it); if the final paragraph isn't entirely
+// trailers, it starts a new paragraph.
+//
+// msg is a committed message (for example from `git log --format=%B`), so no
+// line is treated as a comment: `#include <foo.h>` is body text.
 func InjectChangeID(msg string) (string, bool) {
-	// Strip comment lines (starting with '#') when checking for existing Change-Id or empty message.
-	lines := strings.Split(strings.ReplaceAll(msg, "\r\n", "\n"), "\n")
-	var nonCommentLines []string
-	for _, line := range lines {
-		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
-			nonCommentLines = append(nonCommentLines, line)
+	return injectChangeID(msg, "")
+}
+
+// injectChangeID is InjectChangeID with a caller-chosen changeID (or a newly
+// generated one when changeID == "").
+func injectChangeID(msg, changeID string) (string, bool) {
+	// git strips leading blank lines, so the first non-blank line is the
+	// subject. Drop them before parsing; otherwise a subject like
+	// `pw_foo: Fix` would parse as a trailer paragraph.
+	body := strings.ReplaceAll(msg, "\r\n", "\n")
+	for {
+		line, rest, ok := strings.Cut(body, "\n")
+		if !ok || strings.TrimSpace(line) != "" {
+			break
 		}
+		body = rest
 	}
-	cleanMsg := strings.TrimSpace(strings.Join(nonCommentLines, "\n"))
-	if cleanMsg == "" {
+	m := ParseCommitMessage(body)
+	if strings.TrimSpace(m.Subject) == "" && len(m.Paragraphs) == 0 {
 		return msg, false
 	}
-	if changeIDLineRegex.MatchString(cleanMsg) {
+	if autosquashSubjectRegex.MatchString(m.Subject) {
 		return msg, false
 	}
-
-	var randBytes [32]byte
-	_, _ = rand.Read(randBytes[:])
-	h := sha1.New()
-	_, _ = fmt.Fprintf(h, "%s\n%d\n%x", cleanMsg, time.Now().UnixNano(), randBytes)
-	changeIDLine := "Change-Id: I" + hex.EncodeToString(h.Sum(nil))
-
-	var out []string
-	inserted := false
-	for _, line := range lines {
-		if !inserted && signedOffByPrefixRegex.MatchString(line) {
-			out = append(out, changeIDLine)
-			inserted = true
-		}
-		out = append(out, line)
+	if HasChangeID(msg) {
+		return msg, false
 	}
-	if !inserted {
-		// Insert before trailing git comment block if present, else append at end.
-		commentIdx := -1
-		for i, line := range out {
-			if strings.HasPrefix(strings.TrimSpace(line), "#") {
-				commentIdx = i
-				break
-			}
-		}
-		if commentIdx >= 0 {
-			prefix := out[:commentIdx]
-			suffix := out[commentIdx:]
-			for len(prefix) > 0 && strings.TrimSpace(prefix[len(prefix)-1]) == "" {
-				prefix = prefix[:len(prefix)-1]
-			}
-			var combined []string
-			combined = append(combined, prefix...)
-			combined = append(combined, "", changeIDLine, "")
-			combined = append(combined, suffix...)
-			out = combined
-		} else {
-			for len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
-				out = out[:len(out)-1]
-			}
-			out = append(out, "", changeIDLine, "")
+	if changeID == "" {
+		var randBytes [32]byte
+		_, _ = rand.Read(randBytes[:])
+		h := sha1.New()
+		_, _ = fmt.Fprintf(h, "%s\n%d\n%x", msg, time.Now().UnixNano(), randBytes)
+		changeID = "I" + hex.EncodeToString(h.Sum(nil))
+	}
+	tr := CommitTrailer{Key: "Change-Id", Value: changeID}
+	last := len(m.Paragraphs) - 1
+	if last < 0 || !m.Paragraphs[last].IsTrailerBlock {
+		m.Paragraphs = append(m.Paragraphs, CommitParagraph{
+			LeadingBlankLines: []string{""},
+			IsTrailerBlock:    true,
+			Trailers:          []CommitTrailer{tr},
+		})
+		return m.Format(), true
+	}
+	p := &m.Paragraphs[last]
+	at := len(p.Trailers)
+	for i, t := range p.Trailers {
+		if !t.IsKeylessFooter && strings.EqualFold(t.Key, "Signed-off-by") {
+			at = i
+			break
 		}
 	}
-	return strings.Join(out, "\n"), true
+	p.Trailers = slices.Insert(p.Trailers, at, tr)
+	return m.Format(), true
+}
+
+// commitMsgScissors is the line `git commit -v` puts above the diff; git
+// discards it and everything below it.
+const commitMsgScissors = "# ------------------------ >8 ------------------------"
+
+// injectChangeIDInCommitMsgFile is injectChangeID for the file git passes to a
+// commit-msg hook. Like `git interpret-trailers` (which Gerrit's hook uses), it
+// sets aside the trailing block of lines starting with "#" (plus everything
+// from the scissors line on), so the Change-Id lands in the message's last
+// paragraph, then puts that block back. Comment lines inside the message are
+// left untouched: with `--cleanup=whitespace` (the default for `git commit -m`)
+// or `verbatim`, git keeps them.
+func injectChangeIDInCommitMsgFile(content, changeID string) (string, bool) {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	end := len(lines)
+	for i, l := range lines {
+		if strings.TrimRight(l, " \t") == commitMsgScissors {
+			end = i
+			break
+		}
+	}
+	cut := end
+	for cut > 0 && (strings.TrimSpace(lines[cut-1]) == "" || strings.HasPrefix(lines[cut-1], "#")) {
+		cut--
+	}
+	updated, ok := injectChangeID(strings.Join(lines[:cut], "\n"), changeID)
+	if !ok {
+		return content, false
+	}
+	tail := strings.TrimLeft(strings.Join(lines[cut:], "\n"), "\n")
+	if tail == "" {
+		return updated, true
+	}
+	return updated + "\n" + tail, true
 }
 
 func parseAgentTargets(raw string) ([]string, error) {

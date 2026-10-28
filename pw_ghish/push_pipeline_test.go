@@ -371,6 +371,9 @@ func TestExecutePush_MissingChangeIdInStderr(t *testing.T) {
 	if !strings.Contains(err.Error(), "git commit --amend --no-edit") {
 		t.Errorf("expected amend instructions in error, got: %v", err)
 	}
+	if strings.Contains(err.Error(), "curl") {
+		t.Errorf("hint still mentions curl: %v", err)
+	}
 }
 
 func TestExecutePush_WithTopicAndHashtags(t *testing.T) {

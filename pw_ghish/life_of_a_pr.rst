@@ -64,8 +64,8 @@ a Commit-Queue dry run (``--cq``), and enable auto-submit (``--auto``):
 
 What this command does:
 
-* Installs the Gerrit ``commit-msg`` hook and adds a ``Change-Id:`` footer if
-  your commit does not have one yet.
+* Automatically injects a ``Change-Id:`` footer and amends ``HEAD`` if your
+  commit does not have one yet.
 * Pushes ``HEAD`` to ``refs/for/main`` to create Patchset 1.
 * Resolves ``--owner`` (or ``-r @owners``) for the modified files (or adds an
   explicit ``-r reviewer@google.com``) as a reviewer. (If you prefer to wait

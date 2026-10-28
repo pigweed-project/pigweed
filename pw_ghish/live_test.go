@@ -590,11 +590,6 @@ func TestLive_GitRemoteTipIntegration(t *testing.T) {
 		t.Fatal("expected CheckAmendAllowed to fail when on remote tracking tip, got nil")
 	}
 
-	// CommitAmendNoEdit must fail
-	if err := client.CommitAmendNoEdit(ctx, io.Discard, io.Discard); err == nil {
-		t.Fatal("expected CommitAmendNoEdit to fail when on remote tracking tip, got nil")
-	}
-
 	// 3. Now make a local unpushed commit on top of main
 	if err := os.WriteFile(readme, []byte("hello world\n"), 0644); err != nil {
 		t.Fatalf("failed to update readme: %v", err)
@@ -613,11 +608,6 @@ func TestLive_GitRemoteTipIntegration(t *testing.T) {
 	// CheckAmendAllowed must now succeed
 	if err := client.CheckAmendAllowed(ctx); err != nil {
 		t.Fatalf("expected CheckAmendAllowed to succeed on local commit, got: %v", err)
-	}
-
-	// CommitAmendNoEdit must now succeed
-	if err := client.CommitAmendNoEdit(ctx, io.Discard, io.Discard); err != nil {
-		t.Fatalf("expected CommitAmendNoEdit to succeed on local commit, got: %v", err)
 	}
 }
 

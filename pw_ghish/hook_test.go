@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -177,44 +178,138 @@ func TestEvaluatePreToolUsePayload_Harnesses(t *testing.T) {
 	}
 }
 
-func TestInjectChangeID(t *testing.T) {
-	msg := "pw_foo: Fix bar\n\nDetailed body.\n"
-	updated, changed := InjectChangeID(msg)
-	if !changed {
-		t.Fatalf("expected InjectChangeID to insert Change-Id")
+func TestInjectChangeID_Placement(t *testing.T) {
+	cid := "I" + strings.Repeat("1", 40)
+	cl := "Change-Id: " + cid
+	existing := "pw_foo: Fix\n\nChange-Id: I" + strings.Repeat("a", 40) + "\n"
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{name: "body only", in: "pw_foo: Fix bar\n\nDetailed body.\n", want: "pw_foo: Fix bar\n\nDetailed body.\n\n" + cl + "\n", wantOK: true},
+		{name: "subject only", in: "pw_foo: Fix bar\n", want: "pw_foo: Fix bar\n\n" + cl + "\n", wantOK: true},
+		{name: "subject without trailing newline", in: "pw_foo: Fix bar", want: "pw_foo: Fix bar\n\n" + cl + "\n", wantOK: true},
+		{name: "Bug only stays a footer", in: "pw_foo: Fix bar\n\nBody.\n\nBug: b/123\n", want: "pw_foo: Fix bar\n\nBody.\n\nBug: b/123\n" + cl + "\n", wantOK: true},
+		{name: "Bug and Signed-off-by", in: "pw_foo: Fix bar\n\nBody.\n\nBug: b/123\nSigned-off-by: Alice <alice@example.com>\n", want: "pw_foo: Fix bar\n\nBody.\n\nBug: b/123\n" + cl + "\nSigned-off-by: Alice <alice@example.com>\n", wantOK: true},
+		{name: "case-insensitive Signed-off-by", in: "pw_foo: Fix\n\nsigned-off-by: A <a@x.com>\n", want: "pw_foo: Fix\n\n" + cl + "\nsigned-off-by: A <a@x.com>\n", wantOK: true},
+		{name: "two Signed-off-by only", in: "pw_foo: Fix bar\n\nSigned-off-by: A <a@x.com>\nSigned-off-by: B <b@x.com>\n", want: "pw_foo: Fix bar\n\n" + cl + "\nSigned-off-by: A <a@x.com>\nSigned-off-by: B <b@x.com>\n", wantOK: true},
+		{name: "Fixed with continuation", in: "pw_foo: Fix\n\nFixed: b/1\nTest: one\n  two\n", want: "pw_foo: Fix\n\nFixed: b/1\nTest: one\n  two\n" + cl + "\n", wantOK: true},
+		{name: "cherry-pick footer", in: "pw_foo: Fix\n\nBug: b/1\n(cherry picked from commit abc123)\n", want: "pw_foo: Fix\n\nBug: b/1\n(cherry picked from commit abc123)\n" + cl + "\n", wantOK: true},
+		{name: "#include mid-body", in: "pw_foo: Fix include\n\n#include <foo.h>\nis now required.\n\nBug: b/123\n", want: "pw_foo: Fix include\n\n#include <foo.h>\nis now required.\n\nBug: b/123\n" + cl + "\n", wantOK: true},
+		{name: "#include last line", in: "pw_foo: Fix\n\nAdd\n#include <foo.h>\n", want: "pw_foo: Fix\n\nAdd\n#include <foo.h>\n\n" + cl + "\n", wantOK: true},
+		{name: "markdown heading", in: "pw_foo: Docs\n\n# Heading\n\nText.\n", want: "pw_foo: Docs\n\n# Heading\n\nText.\n\n" + cl + "\n", wantOK: true},
+		{name: "CRLF", in: "pw_foo: Fix\r\n\r\nBody\r\n", want: "pw_foo: Fix\n\nBody\n\n" + cl + "\n", wantOK: true},
+		{name: "Co-authored-by and Signed-off-by", in: "pw_foo: Fix\n\nCo-authored-by: B <b@x.com>\nSigned-off-by: A <a@x.com>\n", want: "pw_foo: Fix\n\nCo-authored-by: B <b@x.com>\n" + cl + "\nSigned-off-by: A <a@x.com>\n", wantOK: true},
+		// A paragraph made only of `Key: value` lines is a trailer block, as in git.
+		{name: "pseudo-trailer paragraph", in: "pw_foo: Fix\n\nNote: foo\n", want: "pw_foo: Fix\n\nNote: foo\n" + cl + "\n", wantOK: true},
+		// Unlike git's 25%-with-a-git-generated-trailer rule, a paragraph is only a trailer block if every line is a trailer, so the Change-Id starts a new final paragraph.
+		{name: "body then Signed-off-by in one paragraph", in: "pw_foo: Fix\n\nBody.\nSigned-off-by: A <a@x.com>\n", want: "pw_foo: Fix\n\nBody.\nSigned-off-by: A <a@x.com>\n\n" + cl + "\n", wantOK: true},
+		{name: "cherry-pick footer only", in: "pw_foo: Fix\n\nBody.\n\n(cherry picked from commit abc123)\n", want: "pw_foo: Fix\n\nBody.\n\n(cherry picked from commit abc123)\n\n" + cl + "\n", wantOK: true},
+		{name: "Bug right after subject", in: "pw_foo: Fix\nBug: b/1\n", want: "pw_foo: Fix\n\nBug: b/1\n" + cl + "\n", wantOK: true},
+		{name: "leading blank line", in: "\npw_foo: Fix\n", want: "pw_foo: Fix\n\n" + cl + "\n", wantOK: true},
+		{name: "fixup!", in: "fixup! pw_foo: Fix bar\n", want: "fixup! pw_foo: Fix bar\n"},
+		{name: "leading blank line before fixup!", in: "\nfixup! pw_foo: Fix bar\n", want: "\nfixup! pw_foo: Fix bar\n"},
+		{name: "squash!", in: "squash! pw_foo: Fix bar\n\nBody.\n", want: "squash! pw_foo: Fix bar\n\nBody.\n"},
+		{name: "amend!", in: "amend! pw_foo: Fix bar\n\nNew msg.\n", want: "amend! pw_foo: Fix bar\n\nNew msg.\n"},
+		{name: "not autosquash without space", in: "fixup!pw_foo: no space\n", want: "fixup!pw_foo: no space\n\n" + cl + "\n", wantOK: true},
+		{name: "already has Change-Id", in: existing, want: existing},
+		{name: "empty", in: "", want: ""},
+		{name: "blank", in: "\n  \n", want: "\n  \n"},
 	}
-	if !changeIDLineRegex.MatchString(updated) {
-		t.Errorf("expected valid Change-Id line in:\n%s", updated)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := injectChangeID(tc.in, cid)
+			if got != tc.want || ok != tc.wantOK {
+				t.Errorf("injectChangeID(%q) = (%q, %v), want (%q, %v)", tc.in, got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestInjectChangeIDInCommitMsgFile(t *testing.T) {
+	cid := "I" + strings.Repeat("1", 40)
+	cl := "Change-Id: " + cid
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{name: "editor template", in: "pw_foo: Fix bar\n\nBug: b/123\n\n# Please enter the commit message for your changes.\n# Lines starting with '#' will be ignored.\n", want: "pw_foo: Fix bar\n\nBug: b/123\n" + cl + "\n\n# Please enter the commit message for your changes.\n# Lines starting with '#' will be ignored.\n", wantOK: true},
+		{name: "verbose scissors", in: "pw_foo: Fix\n\n# Please enter\n# ------------------------ >8 ------------------------\n# Do not modify or remove the line above.\ndiff --git a/x b/x\n+#include <y>\n", want: "pw_foo: Fix\n\n" + cl + "\n\n# Please enter\n# ------------------------ >8 ------------------------\n# Do not modify or remove the line above.\ndiff --git a/x b/x\n+#include <y>\n", wantOK: true},
+		{name: "verbose scissors with trailing whitespace", in: "pw_foo: Fix\n\n# Please enter\n# ------------------------ >8 ------------------------  \t \n# Do not modify or remove the line above.\ndiff --git a/x b/x\n+#include <y>\n", want: "pw_foo: Fix\n\n" + cl + "\n\n# Please enter\n# ------------------------ >8 ------------------------  \t \n# Do not modify or remove the line above.\ndiff --git a/x b/x\n+#include <y>\n", wantOK: true},
+		{name: "-m message without comments", in: "pw_foo: Fix\n\nBug: b/1\n", want: "pw_foo: Fix\n\nBug: b/1\n" + cl + "\n", wantOK: true},
+		{name: "only comments", in: "\n# Please enter the commit message\n", want: "\n# Please enter the commit message\n"},
+		{name: "has Change-Id above comments", in: "pw_foo: Fix\n\n" + cl + "\n\n# Please enter\n", want: "pw_foo: Fix\n\n" + cl + "\n\n# Please enter\n"},
+		{name: "CRLF", in: "pw_foo: Fix\r\n\r\nBug: b/1\r\n\r\n# Please enter\r\n", want: "pw_foo: Fix\n\nBug: b/1\n" + cl + "\n\n# Please enter\n", wantOK: true},
+		{name: "fixup", in: "fixup! pw_foo: Fix\n\n# Please enter\n", want: "fixup! pw_foo: Fix\n\n# Please enter\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := injectChangeIDInCommitMsgFile(tc.in, cid)
+			if got != tc.want || ok != tc.wantOK {
+				t.Errorf("injectChangeIDInCommitMsgFile(%q) = (%q, %v), want (%q, %v)", tc.in, got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestInjectChangeID_GeneratesValidID(t *testing.T) {
+	updated, changed := InjectChangeID("pw_foo: Fix\n")
+	if !changed || !HasChangeID(updated) {
+		t.Fatalf("InjectChangeID() = (%q, %v), want a valid Change-Id line", updated, changed)
+	}
+	again, changedAgain := InjectChangeID(updated)
+	if changedAgain || again != updated {
+		t.Errorf("InjectChangeID(%q) = (%q, %v), want unchanged", updated, again, changedAgain)
+	}
+}
+
+func TestEnsureChangeIDInFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
+	in := "pw_foo: Fix bar\n\nBug: b/123\n\n# Please enter the commit message for your changes.\n# Lines starting with '#' will be ignored.\n"
+	if err := os.WriteFile(p, []byte(in), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureChangeIDInFile(p); err != nil {
+		t.Fatalf("EnsureChangeIDInFile() error: %v", err)
+	}
+	first, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := regexp.MustCompile(`^pw_foo: Fix bar\n\nBug: b/123\nChange-Id: I[0-9a-f]{40}\n\n# Please enter`)
+	if !want.Match(first) {
+		t.Fatalf("unexpected file contents:\n%s", first)
+	}
+	if err := EnsureChangeIDInFile(p); err != nil {
+		t.Fatalf("second EnsureChangeIDInFile() error: %v", err)
+	}
+	second, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Errorf("second EnsureChangeIDInFile() changed the file:\n%s\nto:\n%s", first, second)
 	}
 
-	// Idempotency: second call must not add another Change-Id.
-	updated2, changed2 := InjectChangeID(updated)
-	if changed2 || updated2 != updated {
-		t.Errorf("expected InjectChangeID to be idempotent when Change-Id exists")
+	if err := EnsureChangeIDInFile(filepath.Join(t.TempDir(), "nonexistent")); err == nil {
+		t.Errorf("EnsureChangeIDInFile(nonexistent) = nil, want error")
 	}
-
-	// Insert before Signed-off-by:
-	signedMsg := "pw_foo: Fix bar\n\nSigned-off-by: Alice <alice@example.com>\n"
-	updatedSigned, changedSigned := InjectChangeID(signedMsg)
-	if !changedSigned {
-		t.Fatalf("expected Change-Id insertion before Signed-off-by")
-	}
-	changeIdx := strings.Index(updatedSigned, "Change-Id: I")
-	signedIdx := strings.Index(updatedSigned, "Signed-off-by:")
-	if changeIdx < 0 || signedIdx < 0 || changeIdx > signedIdx {
-		t.Errorf("expected Change-Id before Signed-off-by, got:\n%s", updatedSigned)
-	}
-
-	// Insert before trailing # git comment block:
-	commentMsg := "pw_foo: Fix bar\n\nDetailed body.\n\n# Please enter the commit message for your changes.\n# Lines starting with '#' will be ignored.\n"
-	updatedComment, changedComment := InjectChangeID(commentMsg)
-	if !changedComment {
-		t.Fatalf("expected Change-Id insertion before trailing comment block")
-	}
-	changeCommentIdx := strings.Index(updatedComment, "Change-Id: I")
-	hashIdx := strings.Index(updatedComment, "# Please enter the commit message")
-	if changeCommentIdx < 0 || hashIdx < 0 || changeCommentIdx > hashIdx {
-		t.Errorf("expected Change-Id before trailing # comment block, got:\n%s", updatedComment)
+	for _, untouched := range []string{"fixup! pw_foo: Fix\n", "\n# Only comments\n"} {
+		f := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
+		if err := os.WriteFile(f, []byte(untouched), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := EnsureChangeIDInFile(f); err != nil {
+			t.Fatalf("EnsureChangeIDInFile(%q) error: %v", untouched, err)
+		}
+		got, err := os.ReadFile(f)
+		if err != nil || string(got) != untouched {
+			t.Errorf("EnsureChangeIDInFile(%q) wrote %q, err=%v; want unchanged", untouched, got, err)
+		}
 	}
 }
 

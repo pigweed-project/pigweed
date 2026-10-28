@@ -189,9 +189,6 @@ type GitClient interface {
 	// CommitAmendMessage rewrites HEAD's commit message via a temporary file
 	// without altering HEAD's tree or staged index changes.
 	CommitAmendMessage(ctx context.Context, message string, noVerify bool, stdout, stderr io.Writer) error
-	// CommitAmendNoEdit runs commit-msg hooks on HEAD without altering the commit
-	// tree or staged index entries.
-	CommitAmendNoEdit(ctx context.Context, stdout, stderr io.Writer) error
 	// UpdateHeadRef atomically moves HEAD to targetSHA only if HEAD currently
 	// resolves to expectedCurrentSHA, leaving index and working tree untouched.
 	UpdateHeadRef(ctx context.Context, targetSHA, expectedCurrentSHA, reason string) error
@@ -1502,15 +1499,6 @@ func (c *defaultGitClient) CommitAmendMessage(ctx context.Context, message strin
 		return err
 	}
 	return c.commitWithMessageFile(ctx, message, []string{"commit", "--amend", "--only", "--allow-empty"}, noVerify, stdout, stderr)
-}
-
-// CommitAmendNoEdit runs commit-msg hooks on HEAD while preserving staged index
-// changes and intentional empty commits.
-func (c *defaultGitClient) CommitAmendNoEdit(ctx context.Context, stdout, stderr io.Writer) error {
-	if err := c.CheckAmendAllowed(ctx); err != nil {
-		return err
-	}
-	return c.Run(ctx, stdout, stderr, "commit", "--amend", "--only", "--allow-empty", "--no-edit")
 }
 
 // UpdateHeadRef atomically moves HEAD from expectedCurrentSHA to targetSHA via

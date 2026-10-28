@@ -231,9 +231,9 @@ func TestValidateCommitStack_VerifiesBaseOnce(t *testing.T) {
 }
 
 // TestVerifyHeadForPush_ReadsHeadMessageOnce checks that verifyHeadForPush
-// reuses the HEAD message EnsureChangeID read when no amend happened or when
-// the commit-msg hook path already re-read it, and re-reads it after a
-// --no-verify amend inserted the Change-Id.
+// reuses the HEAD message EnsureChangeID read when no amend happened, and
+// re-reads it once after EnsureChangeID amends HEAD to insert a missing
+// Change-Id (both with --no-verify and when a commit-msg hook runs).
 func TestVerifyHeadForPush_ReadsHeadMessageOnce(t *testing.T) {
 	const changeID = "I2222222222222222222222222222222222222222"
 	const hookChangeID = "I3333333333333333333333333333333333333333"

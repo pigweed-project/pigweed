@@ -284,48 +284,25 @@ func TestCreate_AutoSubmitAmbiguousProjectLabelsIsAnError(t *testing.T) {
 }
 
 func TestCreate_ChangeID_AutoRepair(t *testing.T) {
-	tempDir := t.TempDir()
-	hooksDir := filepath.Join(tempDir, "hooks")
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		t.Fatalf("Failed to create hooks dir: %v", err)
-	}
-	hookPath := filepath.Join(hooksDir, "commit-msg")
-	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
-		t.Fatalf("Failed to write hook: %v", err)
-	}
-
-	amended := false
-	mockGit := NewMockGit(t).WithBranch("main").WithCommit("")
-	mockGit.RunFn = func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-		if len(args) > 1 && args[0] == "commit" && args[1] == "--amend" {
-			amended = true
-		}
-		if len(args) >= 2 && args[0] == "log" {
-			if amended {
-				stdout.Write([]byte("Commit message\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
-			} else {
-				stdout.Write([]byte("Commit message without change ID\n"))
-			}
-		}
-		if len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--git-dir" {
-			stdout.Write([]byte(tempDir + "\n"))
-		}
-		return nil
-	}
+	mockGit := NewMockGit(t).
+		WithBranch("main").
+		WithCommit("Commit message without change ID\n")
 
 	_, err := executeCommand(RootCmd, "pr", "create")
 	if err != nil {
 		t.Fatalf("Command failed: %v", err)
 	}
 
-	if !mockGit.HasCall("commit --amend --only --allow-empty --no-edit") {
-		t.Errorf("Expected git commit --amend --only --allow-empty --no-edit to be called, calls: %v", mockGit.Calls)
+	if !mockGit.HasCall("commit --amend --only --allow-empty -F ") {
+		t.Errorf("Expected git commit --amend --only --allow-empty -F to be called, calls: %v", mockGit.Calls)
+	}
+	if !HasChangeID(mockGit.LastCommitMessage()) {
+		t.Errorf("Expected Change-Id to be injected into amended commit message, got:\n%s", mockGit.LastCommitMessage())
 	}
 }
 
 func TestCreate_FailsWhenMissingChangeID(t *testing.T) {
-	tempDir := t.TempDir()
-	NewMockGit(t).WithBranch("main").WithCommit("Commit message without change ID\n").OnCommand("rev-parse --git-dir", tempDir+"\n")
+	NewMockGit(t).WithBranch("main").WithCommit("")
 
 	_, err := executeCommand(RootCmd, "pr", "create")
 	if err == nil {
