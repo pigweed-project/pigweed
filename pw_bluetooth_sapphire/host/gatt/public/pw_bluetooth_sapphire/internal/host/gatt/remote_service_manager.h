@@ -34,6 +34,23 @@ namespace internal {
 // as services get discovered.
 class RemoteServiceManager final {
  public:
+  // The maximum number of services tracked for a peer, which bounds the memory
+  // a peer can make us allocate by declaring a large number of services. If a
+  // peer reports more services than this, either during initialization or in
+  // response to a Service Changed indication, service discovery is stopped and
+  // a HostError::kOutOfMemory error is reported (see Initialize() and
+  // set_fatal_error_callback()).
+  //
+  // Each tracked service costs a RemoteService (~92 bytes on 32-bit targets,
+  // ~144 bytes on 64-bit hosts), a ServiceMap node (~24 / ~48 bytes) and a
+  // WeakPtr reference (~8 / ~16 bytes), i.e. ~125 / ~210 bytes before
+  // allocator overhead and before any characteristics are discovered. The
+  // worst case is therefore ~31 KiB (32-bit) / ~52 KiB (64-bit) per peer,
+  // instead of the several MiB a peer could make us allocate without a limit.
+  // Real devices expose far fewer services (typically well under 50), so 256
+  // leaves ample headroom.
+  static constexpr size_t kMaxRemoteServices = 256;
+
   RemoteServiceManager(std::unique_ptr<Client> client);
   ~RemoteServiceManager();
 
@@ -42,6 +59,16 @@ class RemoteServiceManager final {
   // share handles with `added` services.
   void set_service_watcher(RemoteServiceWatcher watcher) {
     svc_watcher_ = std::move(watcher);
+  }
+
+  // Sets a handler that is called if, after initialization, the peer reports
+  // changes to its services that cannot be applied (e.g. a Service Changed
+  // indication that would exceed kMaxRemoteServices). The changes are not
+  // applied and the owner is expected to close the connection. Errors that
+  // occur during initialization are reported to the Initialize() callback
+  // instead.
+  void set_fatal_error_callback(fit::callback<void(att::Error)> callback) {
+    fatal_error_callback_ = std::move(callback);
   }
 
   // Initiates the Exchange MTU procedure followed by service discovery.
@@ -96,6 +123,12 @@ class RemoteServiceManager final {
     ServiceChangedCharacteristicValue value;
     // The cache of services discovered in the changed range.
     std::map<att::Handle, ServiceData> services;
+    // The maximum number of services in the changed range that keep the total
+    // number of services within kMaxRemoteServices.
+    size_t max_services = 0;
+    // Set if more than |max_services| services were discovered in the changed
+    // range.
+    bool exceeded_max_services = false;
   };
 
   // If the GATT Profile service has been discovered, returns the service.
@@ -119,13 +152,14 @@ class RemoteServiceManager final {
   void InitializeGattProfileService(att::ResultFunction<> callback);
 
   // Create a RemoteService and insert it into the services map, discarding
-  // duplicates.
-  void AddService(const ServiceData& service_data);
+  // duplicates. Returns an error, without adding the service, if
+  // kMaxRemoteServices services are already tracked.
+  att::Result<> AddService(const ServiceData& service_data);
 
   // Discover services of the indicated |kind|.
   // If |service_uuids| is non-empty, only discovers services with the given
   // UUIDs. |status_cb| will be called when the operation completes.
-  using ServiceCallback = fit::function<void(const ServiceData&)>;
+  using ServiceCallback = Client::ServiceCallback;
   void DiscoverServicesOfKind(ServiceKind kind,
                               std::vector<UUID> service_uuids,
                               att::ResultFunction<> status_cb);
@@ -154,9 +188,15 @@ class RemoteServiceManager final {
   // If a service changed notification is queued and none are currently being
   // handled, start processing the next notification. |on_complete| is called
   // when all pending service changed notifications have been processed
-  // (immediately if there are none).
+  // (immediately if there are none), or with an error if a service change
+  // could not be applied.
   void MaybeHandleNextServiceChangedNotification(
-      fit::callback<void()> on_complete = nullptr);
+      att::ResultCallback<> on_complete = nullptr);
+
+  // Called when the current service change cannot be applied. Drops all
+  // pending service changes and reports |error| to the Initialize() callback
+  // if initialization is in progress, or to |fatal_error_callback_| otherwise.
+  void OnServiceChangedFatalError(att::Error error);
 
   // Apply service changed discovery results to |services_|. If initialization
   // is complete, notify |svc_watcher_|.
@@ -177,6 +217,7 @@ class RemoteServiceManager final {
 
   bool initialized_;
   RemoteServiceWatcher svc_watcher_;
+  fit::callback<void(att::Error)> fatal_error_callback_;
 
   // Requests queued during calls ListServices() before initialization.
   std::queue<ServiceListRequest> pending_list_services_requests_;
@@ -193,7 +234,7 @@ class RemoteServiceManager final {
 
   // Callbacks passed to MaybeHandleNextServiceChangedNotification. Will be
   // called when all queued service changes have been processed.
-  std::vector<fit::callback<void()>> service_changes_complete_callbacks_;
+  std::vector<att::ResultCallback<>> service_changes_complete_callbacks_;
 
   WeakSelf<RemoteServiceManager> weak_self_;
 

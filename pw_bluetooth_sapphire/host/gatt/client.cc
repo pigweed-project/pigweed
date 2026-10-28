@@ -360,8 +360,11 @@ class Impl final : public Client {
         ServiceData service(kind, start, end, uuid);
         last_handle = service.range_end;
 
-        // Notify the handler.
-        svc_cb(service);
+        // Notify the handler, which may stop the procedure.
+        if (att::Result<> svc_result = svc_cb(service); svc_result.is_error()) {
+          res_cb(svc_result);
+          return;
+        }
 
         attr_data_list = attr_data_list.view(entry_length);
       }
@@ -538,8 +541,11 @@ class Impl final : public Client {
 
         ServiceData service(kind, start_handle, end_handle, uuid);
 
-        // Notify the handler.
-        svc_cb(service);
+        // Notify the handler, which may stop the procedure.
+        if (att::Result<> svc_result = svc_cb(service); svc_result.is_error()) {
+          res_cb(svc_result);
+          return;
+        }
 
         // HandlesInformationList is a single element of the list.
         size_t entry_length = sizeof(att::HandlesInformationList);

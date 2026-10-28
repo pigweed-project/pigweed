@@ -58,7 +58,8 @@ class Connection final {
   // Performs MTU exchange, then primary service discovery. Shuts down the
   // connection on failure. If |service_uuids| is non-empty, discovery is only
   // performed for services with the indicated UUIDs. Returns the agreed-upon
-  // MTU via |mtu_cb|.
+  // MTU via |mtu_cb|. The connection is also shut down if the peer later
+  // reports service changes that cannot be applied.
   //
   // If an error occurs, the `on_error` callback will be called with the
   // corresponding error code

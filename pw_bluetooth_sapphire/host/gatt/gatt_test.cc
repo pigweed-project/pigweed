@@ -24,6 +24,7 @@
 #include "pw_bluetooth_sapphire/internal/host/gatt/gatt_defs.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/local_service_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/mock_server.h"
+#include "pw_bluetooth_sapphire/internal/host/gatt/remote_service_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_channel.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/inspect_util.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/test_helpers.h"
@@ -434,6 +435,119 @@ TEST_F(GattTest, ServiceDiscoveryFailureShutsDownConnection) {
   EXPECT_EQ(InspectProfileDiscoveryFailureCount(), 1u);
 #endif
   EXPECT_TRUE(mock_server->was_shut_down());
+}
+
+// Regression test for b/525209028.
+TEST_F(GattTest,
+       InitializeClientShutsDownConnectionWhenServicesExceedMaxRemoteServices) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  std::vector<ServiceData> services;
+  for (size_t i = 0; i < kMaxServices + 1; ++i) {
+    const att::Handle handle = static_cast<att::Handle>(i + 1);
+    services.emplace_back(
+        ServiceKind::PRIMARY, handle, handle, kTestServiceUuid0);
+  }
+  fake_client()->set_services(std::move(services));
+
+  testing::MockServer::WeakPtr mock_server;
+  auto mock_server_factory = [&](PeerId peer_id,
+                                 LocalServiceManager::WeakPtr local_services) {
+    auto unique_mock_server = std::make_unique<testing::MockServer>(
+        peer_id, std::move(local_services));
+    mock_server = unique_mock_server->AsMockWeakPtr();
+    return unique_mock_server;
+  };
+  gatt()->AddConnection(kPeerId, take_client(), std::move(mock_server_factory));
+  ASSERT_TRUE(mock_server.is_alive());
+
+  std::optional<att::Result<>> list_status;
+  gatt()->ListServices(
+      kPeerId, /*uuids=*/{}, [&](att::Result<> status, ServiceList) {
+        list_status = status;
+      });
+
+  gatt()->InitializeClient(kPeerId, std::vector<UUID>{});
+  RunUntilIdle();
+
+  ASSERT_TRUE(list_status.has_value());
+  EXPECT_EQ(ToResult(HostError::kOutOfMemory), *list_status);
+#ifndef NINSPECT
+  EXPECT_EQ(InspectProfileDiscoveryFailureCount(), 1u);
+#endif
+  EXPECT_TRUE(mock_server->was_shut_down());
+}
+
+// Regression test for b/525209028.
+TEST_F(GattTest, ServiceChangedExceedingMaxRemoteServicesShutsDownConnection) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  const att::Handle kGattSvcStartHandle(1);
+  const att::Handle kSvcChangedChrcHandle(2);
+  const att::Handle kSvcChangedChrcValueHandle(3);
+  const att::Handle kCCCDescriptorHandle(4);
+  const att::Handle kGattSvcEndHandle(kCCCDescriptorHandle);
+  const att::Handle kFirstHandle(5);
+  const att::Handle kLastHandle =
+      static_cast<att::Handle>(kFirstHandle + kMaxServices - 1);
+
+  ServiceData gatt_svc(ServiceKind::PRIMARY,
+                       kGattSvcStartHandle,
+                       kGattSvcEndHandle,
+                       types::kGenericAttributeService);
+  CharacteristicData service_changed_chrc(Property::kIndicate,
+                                          std::nullopt,
+                                          kSvcChangedChrcHandle,
+                                          kSvcChangedChrcValueHandle,
+                                          types::kServiceChangedCharacteristic);
+  DescriptorData ccc_descriptor(kCCCDescriptorHandle,
+                                types::kClientCharacteristicConfig);
+  fake_client()->set_services({gatt_svc});
+  fake_client()->set_characteristics({service_changed_chrc});
+  fake_client()->set_descriptors({ccc_descriptor});
+  fake_client()->set_write_request_callback(
+      [](att::Handle, const auto&, auto status_callback) {
+        status_callback(fit::ok());
+      });
+
+  int svc_watcher_count = 0;
+  gatt()->RegisterRemoteServiceWatcherForPeer(
+      kPeerId, [&](auto, auto, auto) { svc_watcher_count++; });
+
+  testing::MockServer::WeakPtr mock_server;
+  auto mock_server_factory = [&](PeerId peer_id,
+                                 LocalServiceManager::WeakPtr local_services) {
+    auto unique_mock_server = std::make_unique<testing::MockServer>(
+        peer_id, std::move(local_services));
+    mock_server = unique_mock_server->AsMockWeakPtr();
+    return unique_mock_server;
+  };
+  gatt()->AddConnection(kPeerId, take_client(), std::move(mock_server_factory));
+  gatt()->InitializeClient(kPeerId, std::vector<UUID>{});
+  RunUntilIdle();
+  ASSERT_TRUE(mock_server.is_alive());
+  EXPECT_FALSE(mock_server->was_shut_down());
+  EXPECT_EQ(1, svc_watcher_count);
+
+  // Indicate that services were added such that, together with the GATT
+  // Profile service, they exceed the limit by one.
+  std::vector<ServiceData> services{gatt_svc};
+  for (size_t i = 0; i < kMaxServices; ++i) {
+    const att::Handle handle = static_cast<att::Handle>(kFirstHandle + i);
+    services.emplace_back(
+        ServiceKind::PRIMARY, handle, handle, kTestServiceUuid0);
+  }
+  fake_client()->set_services(std::move(services));
+  StaticByteBuffer svc_changed_range_buffer(LowerBits(kFirstHandle),
+                                            UpperBits(kFirstHandle),
+                                            LowerBits(kLastHandle),
+                                            UpperBits(kLastHandle));
+  fake_client()->SendNotification(/*indicate=*/true,
+                                  kSvcChangedChrcValueHandle,
+                                  svc_changed_range_buffer,
+                                  /*maybe_truncated=*/false);
+  RunUntilIdle();
+
+  EXPECT_TRUE(mock_server->was_shut_down());
+  EXPECT_EQ(1, svc_watcher_count);
 }
 
 #ifndef NINSPECT

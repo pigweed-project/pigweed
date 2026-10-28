@@ -69,7 +69,7 @@ auto MakeFindInformation(att::Handle range_start = 0x0001,
   );
 }
 
-void NopSvcCallback(const gatt::ServiceData&) {}
+att::Result<> NopSvcCallback(const gatt::ServiceData&) { return fit::ok(); }
 void NopChrcCallback(const gatt::CharacteristicData&) {}
 void NopDescCallback(const gatt::DescriptorData&) {}
 
@@ -516,6 +516,7 @@ TEST_F(ClientTest, DiscoverPrimary16BitResultsSingleRequest) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kDiscoverPrimaryRequest);
@@ -560,6 +561,7 @@ TEST_F(ClientTest, DiscoverPrimary128BitResultSingleRequest) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kDiscoverPrimaryRequest);
@@ -687,6 +689,7 @@ TEST_F(ClientTest, DiscoverAllPrimaryMultipleRequests) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kExpectedRequest0, &kResponse0);
@@ -712,6 +715,59 @@ TEST_F(ClientTest, DiscoverAllPrimaryMultipleRequests) {
   EXPECT_EQ(0x0008, services[2].range_start);
   EXPECT_EQ(0x0009, services[2].range_end);
   EXPECT_EQ(kTestUuid3, services[2].type);
+}
+
+TEST_F(ClientTest, DiscoverServicesInRangeStopsWhenServiceCallbackFails) {
+  const att::Handle kRangeStart = 0x0010;
+  const att::Handle kRangeEnd = 0x0020;
+
+  const StaticByteBuffer kExpectedRequest(
+      0x10,  // opcode: read by group type request
+      LowerBits(kRangeStart),
+      UpperBits(kRangeStart),  // start handle
+      LowerBits(kRangeEnd),
+      UpperBits(kRangeEnd),  // end handle
+      0x00,
+      0x28  // type: primary service (0x2800)
+  );
+
+  // The response doesn't reach the end of the handle range, so a further
+  // request would normally be sent.
+  const StaticByteBuffer kResponse(0x11,  // opcode: read by group type response
+                                   0x06,  // data length: 6 (16-bit UUIDs)
+                                   0x10,
+                                   0x00,  // svc 0 start: 0x0010
+                                   0x11,
+                                   0x00,  // svc 0 end: 0x0011
+                                   0xAD,
+                                   0xDE,  // svc 0 uuid: 0xDEAD
+                                   0x12,
+                                   0x00,  // svc 1 start: 0x0012
+                                   0x13,
+                                   0x00,  // svc 1 end: 0x0013
+                                   0xEF,
+                                   0xBE  // svc 1 uuid: 0xBEEF
+  );
+
+  std::optional<att::Result<>> status;
+  auto res_cb = [&status](att::Result<> val) { status = val; };
+
+  std::vector<ServiceData> services;
+  auto svc_cb = [&services](const ServiceData& svc) {
+    services.push_back(svc);
+    return att::Result<>(ToResult(HostError::kOutOfMemory));
+  };
+
+  EXPECT_PACKET_OUT(kExpectedRequest, &kResponse);
+  client()->DiscoverServicesInRange(
+      ServiceKind::PRIMARY, kRangeStart, kRangeEnd, svc_cb, res_cb);
+  RunUntilIdle();
+  EXPECT_TRUE(AllExpectedPacketsSent());
+
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(ToResult(HostError::kOutOfMemory), *status);
+  ASSERT_EQ(1u, services.size());
+  EXPECT_EQ(0x0010, services[0].range_start);
 }
 
 TEST_F(ClientTest, DiscoverServicesInRangeMultipleRequests) {
@@ -803,6 +859,7 @@ TEST_F(ClientTest, DiscoverServicesInRangeMultipleRequests) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kExpectedRequest0, &kResponse0);
@@ -861,6 +918,7 @@ TEST_F(ClientTest, DiscoverServicesInRangeFailsIfServiceResultIsOutOfRange) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kExpectedRequest);
@@ -908,6 +966,7 @@ TEST_F(ClientTest, DiscoverServicesSucceedsWithServiceEndPastRangeEnd) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kExpectedRequest);
@@ -1040,6 +1099,41 @@ TEST_F(ClientTest, DiscoverPrimaryWithUuidsServicesOutOfOrder) {
   EXPECT_EQ(ToResult(HostError::kPacketMalformed), *status);
 }
 
+TEST_F(ClientTest, DiscoverPrimaryWithUuidsStopsWhenServiceCallbackFails) {
+  std::optional<att::Result<>> status;
+  auto res_cb = [&status](att::Result<> val) { status = val; };
+
+  std::vector<ServiceData> services;
+  auto svc_cb = [&services](const ServiceData& svc) {
+    services.push_back(svc);
+    return att::Result<>(ToResult(HostError::kOutOfMemory));
+  };
+
+  // The response doesn't reach the end of the handle range, so a further
+  // request would normally be sent.
+  const StaticByteBuffer kResponse(0x07,  // opcode: find by type value response
+                                   0x01,
+                                   0x00,  // svc 1 start: 0x0001
+                                   0x05,
+                                   0x00,  // svc 1 end: 0x0005
+                                   0x06,
+                                   0x00,  // svc 2 start: 0x0006
+                                   0x07,
+                                   0x00  // svc 2 end: 0x0007
+  );
+
+  EXPECT_PACKET_OUT(kDiscoverPrimary16ByUUID, &kResponse);
+  client()->DiscoverServicesWithUuids(
+      ServiceKind::PRIMARY, svc_cb, res_cb, {kTestUuid1});
+  RunUntilIdle();
+  EXPECT_TRUE(AllExpectedPacketsSent());
+
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(ToResult(HostError::kOutOfMemory), *status);
+  ASSERT_EQ(1u, services.size());
+  EXPECT_EQ(0x0001, services[0].range_start);
+}
+
 TEST_F(ClientTest, DiscoverPrimaryWithUuids16BitResultsSingleRequest) {
   att::Result<> status = ToResult(HostError::kFailed);
   auto res_cb = [&status](att::Result<> val) { status = val; };
@@ -1047,6 +1141,7 @@ TEST_F(ClientTest, DiscoverPrimaryWithUuids16BitResultsSingleRequest) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   const StaticByteBuffer kResponse(0x07,  // opcode: find by type value response
@@ -1085,6 +1180,7 @@ TEST_F(ClientTest, DiscoverPrimaryWithUuids128BitResultSingleRequest) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   const StaticByteBuffer kResponse(0x07,  // opcode: find by type value response
@@ -1175,6 +1271,7 @@ TEST_F(ClientTest, DiscoverAllPrimaryWithUuidsMultipleRequests) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kExpectedRequest0, &kResponse0);
@@ -1283,6 +1380,7 @@ TEST_F(ClientTest, DiscoverPrimaryWithUuidsMultipleUuids) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kExpectedRequest0, &kResponse0);
@@ -1388,6 +1486,7 @@ TEST_F(ClientTest, DiscoverServicesWithUuidsInRangeMultipleUuids) {
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kExpectedRequest0, &kResponse0);
@@ -1447,6 +1546,7 @@ TEST_F(ClientTest,
   std::vector<ServiceData> services;
   auto svc_cb = [&services](const ServiceData& svc) {
     services.push_back(svc);
+    return att::Result<>(fit::ok());
   };
 
   EXPECT_PACKET_OUT(kExpectedRequest, &kResponse);

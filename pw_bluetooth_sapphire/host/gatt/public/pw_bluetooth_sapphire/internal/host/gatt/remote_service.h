@@ -90,6 +90,12 @@ class RemoteService final {
   // Performs characteristic discovery and reports the result asynchronously in
   // |callback|. Returns the cached results if characteristics were already
   // discovered.
+  //
+  // If this service is destroyed while discovery is pending (e.g. because a
+  // Service Changed indication modified or removed it, or the connection is
+  // being torn down), |callback| is called synchronously from the destructor
+  // with HostError::kFailed. By then, this service's WeakPtrs are no longer
+  // alive and its removed handlers have already run.
   using CharacteristicCallback =
       fit::function<void(att::Result<>, const CharacteristicMap&)>;
   void DiscoverCharacteristics(CharacteristicCallback callback);

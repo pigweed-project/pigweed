@@ -76,7 +76,14 @@ class Client {
   // ATT transactions, it is possible for |status_callback| to be called with an
   // error even if some services have been discovered. It is up to the client
   // to clear any cached state in this case.
-  using ServiceCallback = fit::function<void(const ServiceData&)>;
+  //
+  // The return value of |service_callback| only controls whether the procedure
+  // continues; errors are never delivered to |service_callback|. Returning
+  // fit::ok() continues discovery. Returning an error stops it: no further
+  // requests are sent, no further services are reported, and that error
+  // becomes the result of the procedure, which is reported (unchanged) through
+  // |status_callback| like any other error.
+  using ServiceCallback = fit::function<att::Result<>(const ServiceData&)>;
   virtual void DiscoverServices(ServiceKind kind,
                                 ServiceCallback svc_callback,
                                 att::ResultFunction<> status_callback) = 0;

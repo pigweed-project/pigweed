@@ -238,6 +238,81 @@ TEST_F(RemoteServiceManagerTest, Initialize) {
   EXPECT_EQ(svc2.type, services[1]->uuid());
 }
 
+// Returns |count| one-handle primary services starting at |first_handle|.
+std::vector<ServiceData> MakeOneHandleServices(att::Handle first_handle,
+                                               size_t count) {
+  std::vector<ServiceData> services;
+  for (size_t i = 0; i < count; ++i) {
+    const att::Handle handle = static_cast<att::Handle>(first_handle + i);
+    services.emplace_back(
+        ServiceKind::PRIMARY, handle, handle, kTestServiceUuid1);
+  }
+  return services;
+}
+
+TEST_F(RemoteServiceManagerTest, InitializeSucceedsWithMaxRemoteServices) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  fake_client()->set_services(MakeOneHandleServices(1, kMaxServices));
+
+  ServiceList services;
+  mgr()->set_service_watcher(
+      [&services](auto /*removed*/, ServiceList added, auto /*modified*/) {
+        services.insert(services.end(), added.begin(), added.end());
+      });
+
+  att::Result<> status = ToResult(HostError::kFailed);
+  mgr()->Initialize([&status](att::Result<> val) { status = val; },
+                    NopMtuCallback);
+  RunUntilIdle();
+
+  EXPECT_EQ(fit::ok(), status);
+  EXPECT_EQ(kMaxServices, services.size());
+}
+
+// Regression test for b/525209028.
+TEST_F(RemoteServiceManagerTest,
+       InitializeFailsWhenServicesExceedMaxRemoteServices) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  fake_client()->set_services(MakeOneHandleServices(1, kMaxServices + 1));
+
+  std::vector<ServiceKind> discovered_kinds;
+  fake_client()->set_discover_services_callback(
+      [&discovered_kinds](ServiceKind kind) {
+        discovered_kinds.push_back(kind);
+        return fit::ok();
+      });
+
+  int svc_watcher_count = 0;
+  mgr()->set_service_watcher(
+      [&svc_watcher_count](auto, auto, auto) { svc_watcher_count++; });
+
+  std::optional<att::Result<>> list_status;
+  ServiceList listed;
+  mgr()->ListServices(std::vector<UUID>(),
+                      [&](att::Result<> cb_status, ServiceList cb_services) {
+                        list_status = cb_status;
+                        listed = std::move(cb_services);
+                      });
+
+  att::Result<> status = fit::ok();
+  mgr()->Initialize([&status](att::Result<> val) { status = val; },
+                    NopMtuCallback);
+  RunUntilIdle();
+
+  EXPECT_EQ(ToResult(HostError::kOutOfMemory), status);
+  EXPECT_EQ(0, svc_watcher_count);
+  ASSERT_TRUE(list_status.has_value());
+  EXPECT_EQ(ToResult(HostError::kOutOfMemory), *list_status);
+  EXPECT_TRUE(listed.empty());
+  EXPECT_FALSE(mgr()->FindService(1).is_alive());
+
+  // Discovery stopped at the primary service discovery that exceeded the
+  // limit (the first discovery is for the GATT Profile service), so secondary
+  // services were never requested.
+  EXPECT_THAT(discovered_kinds,
+              ElementsAre(ServiceKind::PRIMARY, ServiceKind::PRIMARY));
+}
+
 TEST_F(RemoteServiceManagerTest, InitializeFailure) {
   fake_client()->set_discover_services_callback([](ServiceKind kind) {
     if (kind == ServiceKind::PRIMARY) {
@@ -1257,25 +1332,115 @@ TEST_F(
         deferred_read_cb = std::move(callback);
       });
 
-  bool discover_done = false;
-  service->DiscoverCharacteristics(
-      [&](att::Result<>, const auto&) { discover_done = true; });
+  int discover_count = 0;
+  att::Result<> discover_status = fit::ok();
+  service->DiscoverCharacteristics([&](att::Result<> status, const auto&) {
+    discover_count++;
+    discover_status = status;
+  });
 
   RunUntilIdle();
   ASSERT_TRUE(deferred_read_cb.has_value());
-  EXPECT_FALSE(discover_done);
+  EXPECT_EQ(0, discover_count);
 
   // Destroying the RemoteServiceManager destroys the service and its
-  // characteristics.
+  // characteristics, which completes the pending discovery with an error.
   DestroyServiceManager();
   EXPECT_FALSE(service.is_alive());
+  EXPECT_EQ(1, discover_count);
+  EXPECT_EQ(ToResult(HostError::kFailed), discover_status);
 
   // Deliver the deferred read response to the destroyed characteristic
   // callback and expect it not to crash.
   StaticByteBuffer ext_prop_value(0x01, 0x00);
   (*deferred_read_cb)(fit::ok(), ext_prop_value, /*maybe_truncated=*/false);
   RunUntilIdle();
-  EXPECT_FALSE(discover_done);
+  EXPECT_EQ(1, discover_count);
+}
+
+// Regression test for b/525209028.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverCharacteristicsCompletesWithErrorWhenServiceDestroyed) {
+  ServiceData data(ServiceKind::PRIMARY, kStart, kEnd, kTestServiceUuid1);
+  RemoteService::WeakPtr service = SetUpFakeService(data);
+  ASSERT_TRUE(service.is_alive());
+
+  CharacteristicData fake_chrc(
+      0, std::nullopt, kCharDecl, kCharValue, kTestUuid3);
+  SetCharacteristicsAndDescriptors({fake_chrc});
+
+  // Hold descriptor discovery so that characteristic discovery stays pending.
+  std::optional<att::ResultFunction<>> desc_status_cb;
+  fake_client()->set_discover_descriptors_callback(
+      [&desc_status_cb](att::Handle,
+                        att::Handle,
+                        auto /*desc_callback*/,
+                        att::ResultFunction<> status_callback) {
+        desc_status_cb = std::move(status_callback);
+      });
+
+  int callback_count = 0;
+  auto callback = [&callback_count](att::Result<> status, const auto&) {
+    callback_count++;
+    EXPECT_EQ(ToResult(HostError::kFailed), status);
+  };
+  service->DiscoverCharacteristics(callback);
+  service->DiscoverCharacteristics(callback);
+  RunUntilIdle();
+  ASSERT_TRUE(desc_status_cb.has_value());
+  EXPECT_EQ(0, callback_count);
+
+  DestroyServiceManager();
+  EXPECT_FALSE(service.is_alive());
+  EXPECT_EQ(2, callback_count);
+
+  // A late descriptor discovery result does not complete the requests again.
+  (*desc_status_cb)(fit::ok());
+  RunUntilIdle();
+  EXPECT_EQ(2, callback_count);
+}
+
+// Regression test for b/525209028.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverCharacteristicsCompletesOnDestructionWithServiceWeakPtrInvalid) {
+  ServiceData data(ServiceKind::PRIMARY, kStart, kEnd, kTestServiceUuid1);
+  RemoteService::WeakPtr service = SetUpFakeService(data);
+  ASSERT_TRUE(service.is_alive());
+
+  CharacteristicData fake_chrc(
+      0, std::nullopt, kCharDecl, kCharValue, kTestUuid3);
+  SetCharacteristicsAndDescriptors({fake_chrc});
+
+  // Hold descriptor discovery so that characteristic discovery stays pending.
+  std::optional<att::ResultFunction<>> desc_status_cb;
+  fake_client()->set_discover_descriptors_callback(
+      [&desc_status_cb](att::Handle,
+                        att::Handle,
+                        auto /*desc_callback*/,
+                        att::ResultFunction<> status_callback) {
+        desc_status_cb = std::move(status_callback);
+      });
+
+  // A client that retries discovery on failure must not be able to queue a
+  // request on the service that is being destroyed, as that request would
+  // never complete.
+  std::optional<bool> service_alive_in_callback;
+  int retry_callback_count = 0;
+  service->DiscoverCharacteristics([&](att::Result<> status, const auto&) {
+    EXPECT_EQ(ToResult(HostError::kFailed), status);
+    service_alive_in_callback = service.is_alive();
+    if (service.is_alive()) {
+      service->DiscoverCharacteristics(
+          [&](att::Result<>, const auto&) { retry_callback_count++; });
+    }
+  });
+  RunUntilIdle();
+  ASSERT_TRUE(desc_status_cb.has_value());
+
+  DestroyServiceManager();
+  ASSERT_TRUE(service_alive_in_callback.has_value());
+  EXPECT_FALSE(*service_alive_in_callback);
+  EXPECT_EQ(0, retry_callback_count);
 }
 
 // Test that if RemoteService is destroyed synchronously inside the
@@ -3971,6 +4136,17 @@ class RemoteServiceManagerServiceChangedTest : public RemoteServiceManagerTest {
 
   int service_changed_ccc_write_count() const { return write_request_count_; }
 
+  // Sends a Service Changed indication for the range [start, end].
+  void SendServiceChanged(att::Handle start, att::Handle end) {
+    StaticByteBuffer range(
+        LowerBits(start), UpperBits(start), LowerBits(end), UpperBits(end));
+    fake_client()->SendNotification(
+        /*indicate=*/true,
+        service_changed_characteristic().value_handle,
+        range,
+        /*maybe_truncated=*/false);
+  }
+
  private:
   std::vector<ServiceWatcherData> svc_watcher_data_;
   int write_request_count_ = 0;
@@ -4070,6 +4246,238 @@ TEST_F(RemoteServiceManagerServiceChangedTest,
   RunUntilIdle();
   // The notification should have been safely ignored.
   ASSERT_EQ(0u, svc_watcher_data().size());
+}
+
+TEST_F(RemoteServiceManagerServiceChangedTest,
+       ServiceChangedReachingMaxRemoteServicesIsApplied) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  // The GATT Profile service is already tracked, so kMaxServices - 1 more
+  // services fit.
+  const att::Handle kFirstHandle = gatt_service().range_end + 1;
+  const att::Handle kLastHandle =
+      static_cast<att::Handle>(kFirstHandle + kMaxServices - 2);
+  std::vector<ServiceData> fake_services =
+      MakeOneHandleServices(kFirstHandle, kMaxServices - 1);
+  fake_services.push_back(gatt_service());
+  fake_client()->set_services(std::move(fake_services));
+
+  auto svc_changed_range_buffer = StaticByteBuffer(LowerBits(kFirstHandle),
+                                                   UpperBits(kFirstHandle),
+                                                   LowerBits(kLastHandle),
+                                                   UpperBits(kLastHandle));
+  fake_client()->SendNotification(/*indicate=*/true,
+                                  service_changed_characteristic().value_handle,
+                                  svc_changed_range_buffer,
+                                  /*maybe_truncated=*/false);
+  RunUntilIdle();
+
+  ASSERT_EQ(1u, svc_watcher_data().size());
+  EXPECT_EQ(kMaxServices - 1, svc_watcher_data()[0].added.size());
+}
+
+// Regression test for b/525209028.
+TEST_F(RemoteServiceManagerServiceChangedTest,
+       ServiceChangedExceedingMaxRemoteServicesIsNotApplied) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  // Together with the GATT Profile service, these services exceed the limit by
+  // one.
+  const att::Handle kFirstHandle = gatt_service().range_end + 1;
+  const att::Handle kLastHandle =
+      static_cast<att::Handle>(kFirstHandle + kMaxServices - 1);
+  std::vector<ServiceData> fake_services =
+      MakeOneHandleServices(kFirstHandle, kMaxServices);
+  fake_services.push_back(gatt_service());
+  fake_client()->set_services(std::move(fake_services));
+
+  std::vector<ServiceKind> discovered_kinds;
+  fake_client()->set_discover_services_callback(
+      [&discovered_kinds](ServiceKind kind) {
+        discovered_kinds.push_back(kind);
+        return fit::ok();
+      });
+
+  auto svc_changed_range_buffer = StaticByteBuffer(LowerBits(kFirstHandle),
+                                                   UpperBits(kFirstHandle),
+                                                   LowerBits(kLastHandle),
+                                                   UpperBits(kLastHandle));
+  fake_client()->SendNotification(/*indicate=*/true,
+                                  service_changed_characteristic().value_handle,
+                                  svc_changed_range_buffer,
+                                  /*maybe_truncated=*/false);
+  RunUntilIdle();
+
+  // None of the changes were applied, and discovery stopped before requesting
+  // secondary services.
+  EXPECT_EQ(0u, svc_watcher_data().size());
+  EXPECT_FALSE(mgr()->FindService(kFirstHandle).is_alive());
+  EXPECT_THAT(discovered_kinds, ElementsAre(ServiceKind::PRIMARY));
+
+  ServiceList services;
+  mgr()->ListServices(std::vector<UUID>(),
+                      [&services](auto, ServiceList cb_services) {
+                        services = std::move(cb_services);
+                      });
+  ASSERT_EQ(1u, services.size());
+  EXPECT_EQ(types::kGenericAttributeService, services[0]->uuid());
+}
+
+TEST_F(RemoteServiceManagerServiceChangedTest,
+       ServiceChangedOverlappingTrackedServicesAtMaxRemoteServicesIsApplied) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  // Track kMaxServices services: the GATT Profile service plus
+  // kMaxServices - 1 others.
+  const att::Handle kFirstHandle = gatt_service().range_end + 1;
+  const att::Handle kRangeEnd =
+      static_cast<att::Handle>(kFirstHandle + kMaxServices - 1);
+  std::vector<ServiceData> fake_services =
+      MakeOneHandleServices(kFirstHandle, kMaxServices - 1);
+  fake_services.push_back(gatt_service());
+  fake_client()->set_services(fake_services);
+  SendServiceChanged(kFirstHandle, kRangeEnd);
+  RunUntilIdle();
+  ASSERT_EQ(1u, svc_watcher_data().size());
+  ASSERT_EQ(kMaxServices - 1, svc_watcher_data()[0].added.size());
+
+  // The peer re-reports the same services in a range that covers all tracked
+  // services except the GATT Profile service. The total stays at the limit.
+  SendServiceChanged(kFirstHandle, kRangeEnd);
+  RunUntilIdle();
+  ASSERT_EQ(2u, svc_watcher_data().size());
+  EXPECT_EQ(0u, svc_watcher_data()[1].added.size());
+  EXPECT_EQ(0u, svc_watcher_data()[1].removed.size());
+  EXPECT_EQ(kMaxServices - 1, svc_watcher_data()[1].modified.size());
+}
+
+TEST_F(RemoteServiceManagerServiceChangedTest,
+       ServiceChangedOverlappingTrackedServicesBeyondMaxIsNotApplied) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  // Track kMaxServices services: the GATT Profile service plus
+  // kMaxServices - 1 others.
+  const att::Handle kFirstHandle = gatt_service().range_end + 1;
+  const att::Handle kRangeEnd =
+      static_cast<att::Handle>(kFirstHandle + kMaxServices - 1);
+  std::vector<ServiceData> fake_services =
+      MakeOneHandleServices(kFirstHandle, kMaxServices - 1);
+  fake_services.push_back(gatt_service());
+  fake_client()->set_services(fake_services);
+  SendServiceChanged(kFirstHandle, kRangeEnd);
+  RunUntilIdle();
+  ASSERT_EQ(1u, svc_watcher_data().size());
+  RemoteService::WeakPtr first_service = mgr()->FindService(kFirstHandle);
+  ASSERT_TRUE(first_service.is_alive());
+
+  // The peer now reports one more service in the same range, which would
+  // exceed the limit.
+  fake_services = MakeOneHandleServices(kFirstHandle, kMaxServices);
+  fake_services.push_back(gatt_service());
+  fake_client()->set_services(fake_services);
+  SendServiceChanged(kFirstHandle, kRangeEnd);
+  RunUntilIdle();
+
+  // The tracked services are unchanged.
+  EXPECT_EQ(1u, svc_watcher_data().size());
+  EXPECT_TRUE(first_service.is_alive());
+  EXPECT_FALSE(mgr()->FindService(kRangeEnd).is_alive());
+  ServiceList services;
+  mgr()->ListServices(std::vector<UUID>(),
+                      [&services](auto, ServiceList cb_services) {
+                        services = std::move(cb_services);
+                      });
+  EXPECT_EQ(kMaxServices, services.size());
+}
+
+// Regression test for b/525209028.
+TEST_F(RemoteServiceManagerServiceChangedTest,
+       ServiceChangedBeyondMaxReportsFatalErrorAndDropsQueuedChanges) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  std::vector<att::Error> fatal_errors;
+  mgr()->set_fatal_error_callback(
+      [&fatal_errors](att::Error error) { fatal_errors.push_back(error); });
+
+  // Together with the GATT Profile service, these services exceed the limit by
+  // one.
+  const att::Handle kFirstHandle = gatt_service().range_end + 1;
+  const att::Handle kLastHandle =
+      static_cast<att::Handle>(kFirstHandle + kMaxServices - 1);
+  std::vector<ServiceData> fake_services =
+      MakeOneHandleServices(kFirstHandle, kMaxServices);
+  fake_services.push_back(gatt_service());
+  fake_client()->set_services(std::move(fake_services));
+
+  int discover_services_count = 0;
+  fake_client()->set_discover_services_callback(
+      [&discover_services_count](ServiceKind) {
+        discover_services_count++;
+        return fit::ok();
+      });
+
+  // The second indication is queued while the first one is processed. On its
+  // own it would be applied, since it covers a single service.
+  SendServiceChanged(kFirstHandle, kLastHandle);
+  SendServiceChanged(kFirstHandle, kFirstHandle);
+  RunUntilIdle();
+
+  ASSERT_EQ(1u, fatal_errors.size());
+  EXPECT_EQ(att::Error(HostError::kOutOfMemory), fatal_errors[0]);
+  // Only the primary service discovery of the first indication ran.
+  EXPECT_EQ(1, discover_services_count);
+  EXPECT_EQ(0u, svc_watcher_data().size());
+  EXPECT_FALSE(mgr()->FindService(kFirstHandle).is_alive());
+}
+
+// Regression test for b/525209028.
+TEST_F(RemoteServiceManagerServiceChangedTest,
+       ServiceChangedModifyingServiceCompletesPendingDiscoveryAfterReplacing) {
+  const att::Handle kSvc1StartHandle(5);
+  const att::Handle kSvc1ChrcHandle(6);
+  const att::Handle kSvc1ChrcValueHandle(7);
+  const att::Handle kSvc1EndHandle(8);
+  ServiceData svc1(ServiceKind::PRIMARY,
+                   kSvc1StartHandle,
+                   kSvc1EndHandle,
+                   kTestServiceUuid1);
+  CharacteristicData svc1_chrc(
+      0, std::nullopt, kSvc1ChrcHandle, kSvc1ChrcValueHandle, kTestUuid3);
+  fake_client()->set_services({gatt_service(), svc1});
+  SendServiceChanged(kSvc1StartHandle, kSvc1EndHandle);
+  RunUntilIdle();
+  ASSERT_EQ(1u, svc_watcher_data().size());
+  ASSERT_EQ(1u, svc_watcher_data()[0].added.size());
+  RemoteService::WeakPtr old_service = svc_watcher_data()[0].added[0];
+
+  // Hold descriptor discovery so that characteristic discovery stays pending.
+  fake_client()->set_characteristics(
+      {service_changed_characteristic(), svc1_chrc});
+  std::optional<att::ResultFunction<>> desc_status_cb;
+  fake_client()->set_discover_descriptors_callback(
+      [&desc_status_cb](att::Handle,
+                        att::Handle,
+                        auto /*desc_callback*/,
+                        att::ResultFunction<> status_callback) {
+        desc_status_cb = std::move(status_callback);
+      });
+
+  std::optional<bool> old_service_alive_in_callback;
+  std::optional<bool> replacement_found_in_callback;
+  old_service->DiscoverCharacteristics([&](att::Result<> status, const auto&) {
+    EXPECT_EQ(ToResult(HostError::kFailed), status);
+    old_service_alive_in_callback = old_service.is_alive();
+    replacement_found_in_callback =
+        mgr()->FindService(kSvc1StartHandle).is_alive();
+  });
+  RunUntilIdle();
+  ASSERT_TRUE(desc_status_cb.has_value());
+
+  // Indicate that the service was modified, which replaces it.
+  SendServiceChanged(kSvc1StartHandle, kSvc1EndHandle);
+  RunUntilIdle();
+
+  ASSERT_EQ(2u, svc_watcher_data().size());
+  EXPECT_EQ(1u, svc_watcher_data()[1].modified.size());
+  ASSERT_TRUE(old_service_alive_in_callback.has_value());
+  EXPECT_FALSE(*old_service_alive_in_callback);
+  ASSERT_TRUE(replacement_found_in_callback.has_value());
+  EXPECT_TRUE(*replacement_found_in_callback);
 }
 
 TEST_F(RemoteServiceManagerServiceChangedTest,
@@ -4324,6 +4732,75 @@ TEST_F(RemoteServiceManagerTest, ServiceChangedDuringInitialization) {
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(1, write_request_count);
   EXPECT_EQ(1, svc_watcher_count);
+}
+
+// Regression test for b/525209028.
+TEST_F(RemoteServiceManagerTest,
+       ServiceChangedDuringInitializationExceedingMaxRemoteServicesFails) {
+  constexpr size_t kMaxServices = RemoteServiceManager::kMaxRemoteServices;
+  const att::Handle kGattSvcStartHandle(1);
+  const att::Handle kSvcChangedChrcHandle(2);
+  const att::Handle kSvcChangedChrcValueHandle(3);
+  const att::Handle kCCCDescriptorHandle(4);
+  const att::Handle kGattSvcEndHandle(kCCCDescriptorHandle);
+  const att::Handle kFirstHandle(5);
+  const att::Handle kLastHandle =
+      static_cast<att::Handle>(kFirstHandle + kMaxServices - 1);
+
+  ServiceData gatt_svc(ServiceKind::PRIMARY,
+                       kGattSvcStartHandle,
+                       kGattSvcEndHandle,
+                       types::kGenericAttributeService);
+  CharacteristicData service_changed_chrc(Property::kIndicate,
+                                          std::nullopt,
+                                          kSvcChangedChrcHandle,
+                                          kSvcChangedChrcValueHandle,
+                                          types::kServiceChangedCharacteristic);
+  DescriptorData ccc_descriptor(kCCCDescriptorHandle,
+                                types::kClientCharacteristicConfig);
+  fake_client()->set_services({gatt_svc});
+  fake_client()->set_characteristics({service_changed_chrc});
+  fake_client()->set_descriptors({ccc_descriptor});
+  fake_client()->set_write_request_callback(
+      [](att::Handle, const auto&, auto status_callback) {
+        status_callback(fit::ok());
+      });
+
+  int svc_watcher_count = 0;
+  mgr()->set_service_watcher(
+      [&svc_watcher_count](auto, auto, auto) { svc_watcher_count++; });
+
+  // During secondary service discovery (the third discovery), indicate that
+  // services were added such that, together with the GATT Profile service,
+  // they exceed the limit by one.
+  int discover_services_count = 0;
+  fake_client()->set_discover_services_callback([&](ServiceKind /*kind*/) {
+    if (discover_services_count == 2) {
+      std::vector<ServiceData> services =
+          MakeOneHandleServices(kFirstHandle, kMaxServices);
+      services.push_back(gatt_svc);
+      fake_client()->set_services(std::move(services));
+      auto svc_changed_range_buffer = StaticByteBuffer(LowerBits(kFirstHandle),
+                                                       UpperBits(kFirstHandle),
+                                                       LowerBits(kLastHandle),
+                                                       UpperBits(kLastHandle));
+      fake_client()->SendNotification(/*indicate=*/true,
+                                      kSvcChangedChrcValueHandle,
+                                      svc_changed_range_buffer,
+                                      /*maybe_truncated=*/false);
+    }
+    discover_services_count++;
+    return fit::ok();
+  });
+
+  std::optional<att::Result<>> status;
+  mgr()->Initialize([&status](att::Result<> val) { status = val; },
+                    NopMtuCallback);
+  RunUntilIdle();
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(ToResult(HostError::kOutOfMemory), *status);
+  EXPECT_EQ(0, svc_watcher_count);
+  EXPECT_FALSE(mgr()->FindService(kFirstHandle).is_alive());
 }
 
 TEST_F(RemoteServiceManagerServiceChangedTest,

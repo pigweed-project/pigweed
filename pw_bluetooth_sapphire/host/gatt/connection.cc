@@ -34,6 +34,17 @@ Connection::Connection(std::unique_ptr<Client> client,
   remote_service_manager_ =
       std::make_unique<RemoteServiceManager>(std::move(client));
   remote_service_manager_->set_service_watcher(std::move(svc_watcher));
+  remote_service_manager_->set_fatal_error_callback(
+      [self = weak_self_.GetWeakPtr()](att::Error error) {
+        if (!self.is_alive()) {
+          return;
+        }
+        bt_log(WARN,
+               "gatt",
+               "client error after setup (%s); shutting down",
+               bt_str(error));
+        self->ShutDown();
+      });
 }
 
 void Connection::Initialize(

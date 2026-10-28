@@ -14,6 +14,8 @@
 
 #include "pw_bluetooth_sapphire/internal/host/gatt/fake_client.h"
 
+#include <memory>
+#include <optional>
 #include <unordered_set>
 
 #include "pw_bluetooth_sapphire/internal/host/gatt/client.h"
@@ -97,6 +99,9 @@ void FakeClient::DiscoverServicesWithUuidsInRange(
 
   std::unordered_set<UUID> uuids_set(uuids.cbegin(), uuids.cend());
 
+  // Set if |svc_callback| returns an error, which stops the procedure.
+  auto stop_error = std::make_shared<std::optional<att::Error>>();
+
   if (callback_status.is_ok()) {
     for (const ServiceData& svc : services_) {
       bool uuid_matches =
@@ -104,10 +109,14 @@ void FakeClient::DiscoverServicesWithUuidsInRange(
       if (svc.kind == kind && uuid_matches && svc.range_start >= start &&
           svc.range_start <= end) {
         (void)heap_dispatcher_.Post(
-            [svc, cb = svc_callback.share()](pw::async::Context /*ctx*/,
-                                             pw::Status status) {
-              if (status.ok()) {
-                cb(svc);
+            [svc, cb = svc_callback.share(), stop_error](
+                pw::async::Context /*ctx*/, pw::Status status) {
+              if (!status.ok() || stop_error->has_value()) {
+                return;
+              }
+              att::Result<> result = cb(svc);
+              if (result.is_error()) {
+                *stop_error = result.error_value();
               }
             });
       }
@@ -115,11 +124,16 @@ void FakeClient::DiscoverServicesWithUuidsInRange(
   }
 
   (void)heap_dispatcher_.Post(
-      [callback_status, cb = std::move(status_callback)](
+      [callback_status, cb = std::move(status_callback), stop_error](
           pw::async::Context /*ctx*/, pw::Status status) {
-        if (status.ok()) {
-          cb(callback_status);
+        if (!status.ok()) {
+          return;
         }
+        if (stop_error->has_value()) {
+          cb(fit::error(stop_error->value()));
+          return;
+        }
+        cb(callback_status);
       });
 }
 

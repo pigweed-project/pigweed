@@ -17,6 +17,9 @@
 #include <pw_assert/check.h>
 #include <pw_bytes/endian.h>
 
+#include <iterator>
+#include <utility>
+
 #include "pw_bluetooth_sapphire/internal/host/att/error.h"
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/remote_service.h"
@@ -182,8 +185,8 @@ void RemoteServiceManager::Initialize(
             // discovery completes. (Core Spec v5.3, Vol 3, Part G,
             // Sec 2.5.2)
             self->MaybeHandleNextServiceChangedNotification(
-                [self, cb = std::move(discover_cb)]() mutable {
-                  cb(fit::ok());
+                [cb = std::move(discover_cb)](att::Result<> status) mutable {
+                  cb(status);
                 });
           });
     });
@@ -352,7 +355,8 @@ void RemoteServiceManager::DiscoverGattProfileService(
                          std::move(status_cb));
 }
 
-void RemoteServiceManager::AddService(const ServiceData& service_data) {
+att::Result<> RemoteServiceManager::AddService(
+    const ServiceData& service_data) {
   att::Handle handle = service_data.range_start;
   auto iter = services_.find(handle);
   if (iter != services_.end()) {
@@ -364,17 +368,29 @@ void RemoteServiceManager::AddService(const ServiceData& service_data) {
              "found duplicate service attribute handle! (%#.4x)",
              handle);
     }
-    return;
+    return fit::ok();
+  }
+
+  // Bound the memory a peer can make us allocate by declaring a large number
+  // of services. Returning an error stops service discovery.
+  if (services_.size() >= kMaxRemoteServices) {
+    bt_log(WARN,
+           "gatt",
+           "peer has more than %zu services (at %#.4x); stopping discovery",
+           kMaxRemoteServices,
+           handle);
+    return ToResult(HostError::kOutOfMemory);
   }
 
   auto svc =
       std::make_unique<RemoteService>(service_data, client_->GetWeakPtr());
   if (!svc) {
     bt_log(DEBUG, "gatt", "failed to allocate RemoteService");
-    return;
+    return ToResult(HostError::kOutOfMemory);
   }
 
   services_[handle] = std::move(svc);
+  return fit::ok();
 }
 
 void RemoteServiceManager::DiscoverServicesOfKind(
@@ -384,9 +400,11 @@ void RemoteServiceManager::DiscoverServicesOfKind(
   auto self = weak_self_.GetWeakPtr();
   ServiceCallback svc_cb = [self](const ServiceData& service_data) {
     // The Client's Bearer may outlive this object.
-    if (self.is_alive()) {
-      self->AddService(service_data);
+    // Stop discovery, as there is nowhere to add the service.
+    if (!self.is_alive()) {
+      return att::Result<>(ToResult(HostError::kFailed));
     }
+    return self->AddService(service_data);
   };
 
   if (!service_uuids.empty()) {
@@ -425,9 +443,11 @@ void RemoteServiceManager::DiscoverServices(
 
   ServiceCallback svc_cb = [self](const ServiceData& service_data) {
     // The Client's Bearer may outlive this object.
-    if (self.is_alive()) {
-      self->AddService(service_data);
+    // Stop discovery, as there is nowhere to add the service.
+    if (!self.is_alive()) {
+      return att::Result<>(ToResult(HostError::kFailed));
     }
+    return self->AddService(service_data);
   };
 
   DiscoverPrimaryAndSecondaryServicesInRange(std::move(service_uuids),
@@ -593,7 +613,7 @@ void RemoteServiceManager::OnServiceChangedNotification(
 }
 
 void RemoteServiceManager::MaybeHandleNextServiceChangedNotification(
-    fit::callback<void()> on_complete) {
+    att::ResultCallback<> on_complete) {
   if (on_complete) {
     service_changes_complete_callbacks_.push_back(std::move(on_complete));
   }
@@ -604,7 +624,7 @@ void RemoteServiceManager::MaybeHandleNextServiceChangedNotification(
 
   if (queued_service_changes_.empty()) {
     for (auto& cb : service_changes_complete_callbacks_) {
-      cb();
+      cb(fit::ok());
     }
     service_changes_complete_callbacks_.clear();
     return;
@@ -612,27 +632,57 @@ void RemoteServiceManager::MaybeHandleNextServiceChangedNotification(
 
   bt_log(DEBUG, "gatt", "handling next Service Changed notification");
 
+  const ServiceChangedCharacteristicValue& value =
+      queued_service_changes_.front();
+  // Services outside of the changed range are unaffected, so only the
+  // remaining capacity is available to services in the changed range.
+  const size_t services_in_range = static_cast<size_t>(
+      std::distance(services_.lower_bound(value.range_start_handle),
+                    services_.upper_bound(value.range_end_handle)));
+  const size_t services_outside_range = services_.size() - services_in_range;
+  PW_DCHECK(services_outside_range <= kMaxRemoteServices);
   current_service_change_ = ServiceChangedState{
-      .value = queued_service_changes_.front(), .services = {}};
+      .value = value,
+      .services = {},
+      .max_services = kMaxRemoteServices - services_outside_range};
   queued_service_changes_.pop();
 
   auto self = weak_self_.GetWeakPtr();
   ServiceCallback svc_cb = [self](const ServiceData& service_data) {
-    if (self.is_alive()) {
-      PW_CHECK(self->current_service_change_.has_value());
-      // gatt::Client verifies that service discovery results are in the
-      // requested range.
-      PW_CHECK(service_data.range_start >=
-               self->current_service_change_->value.range_start_handle);
-      PW_CHECK(service_data.range_start <=
-               self->current_service_change_->value.range_end_handle);
-      self->current_service_change_->services.emplace(service_data.range_start,
-                                                      service_data);
+    // Stop discovery, as there is nowhere to add the service.
+    if (!self.is_alive()) {
+      return att::Result<>(ToResult(HostError::kFailed));
     }
+    PW_CHECK(self->current_service_change_.has_value());
+    ServiceChangedState& service_change = *self->current_service_change_;
+    // gatt::Client verifies that service discovery results are in the
+    // requested range.
+    PW_CHECK(service_data.range_start >=
+             service_change.value.range_start_handle);
+    PW_CHECK(service_data.range_start <= service_change.value.range_end_handle);
+    // Returning an error stops service discovery.
+    if (service_change.services.size() >= service_change.max_services) {
+      bt_log(WARN,
+             "gatt",
+             "Service Changed would exceed %zu services (at %#.4x); stopping "
+             "discovery",
+             kMaxRemoteServices,
+             service_data.range_start);
+      service_change.exceeded_max_services = true;
+      return att::Result<>(ToResult(HostError::kOutOfMemory));
+    }
+    service_change.services.emplace(service_data.range_start, service_data);
+    return att::Result<>(fit::ok());
   };
 
   att::ResultFunction<> status_cb = [self](att::Result<> status) mutable {
     if (!self.is_alive()) {
+      return;
+    }
+
+    PW_CHECK(self->current_service_change_.has_value());
+    if (self->current_service_change_->exceeded_max_services) {
+      self->OnServiceChangedFatalError(att::Error(HostError::kOutOfMemory));
       return;
     }
 
@@ -641,7 +691,6 @@ void RemoteServiceManager::MaybeHandleNextServiceChangedNotification(
             WARN,
             "gatt",
             "service discovery for service changed notification failed")) {
-      PW_CHECK(self->current_service_change_.has_value());
       self->ProcessServiceChangedDiscoveryResults(
           self->current_service_change_.value());
     }
@@ -660,6 +709,33 @@ void RemoteServiceManager::MaybeHandleNextServiceChangedNotification(
       self->current_service_change_->value.range_end_handle,
       std::move(svc_cb),
       std::move(status_cb));
+}
+
+void RemoteServiceManager::OnServiceChangedFatalError(att::Error error) {
+  bt_log(WARN,
+         "gatt",
+         "unable to apply Service Changed notification: %s",
+         bt_str(error));
+
+  // Drop the current and all queued service changes. The peer's services can
+  // no longer be kept in sync, so the connection is expected to be closed.
+  current_service_change_.reset();
+  queued_service_changes_ = {};
+
+  if (!initialized_) {
+    // Service changes are only processed during initialization as its last
+    // step, so fail initialization.
+    auto callbacks = std::move(service_changes_complete_callbacks_);
+    service_changes_complete_callbacks_.clear();
+    for (auto& cb : callbacks) {
+      cb(fit::error(error));
+    }
+    return;
+  }
+
+  if (fatal_error_callback_) {
+    fatal_error_callback_(error);
+  }
 }
 
 void RemoteServiceManager::ProcessServiceChangedDiscoveryResults(
@@ -712,23 +788,28 @@ void RemoteServiceManager::ProcessServiceChangedDiscoveryResults(
     }
 
     // Destroy the old service and replace with a new service in order to easily
-    // cancel ongoing procedures and ensure clients handle service change.
+    // cancel ongoing procedures and ensure clients handle service change. The
+    // new service is put in place first so that callbacks run by the old
+    // service's destructor don't observe an empty map entry.
     service_iter->second->set_service_changed(true);
-    service_iter->second.reset();
-    if (!self.is_alive()) {
-      return;
-    }
-
     auto new_service = std::make_unique<RemoteService>(new_service_data,
                                                        client_->GetWeakPtr());
     PW_CHECK(new_service->handle() == service_iter->first);
     modified_services.push_back(new_service->GetWeakPtr());
-    service_iter->second = std::move(new_service);
+    std::unique_ptr<RemoteService> old_service =
+        std::exchange(service_iter->second, std::move(new_service));
+    old_service.reset();
+    if (!self.is_alive()) {
+      return;
+    }
   }
 
   ServiceList added_services;
   added_services.reserve(added_data.size());
   for (ServiceData service_data : added_data) {
+    // MaybeHandleNextServiceChangedNotification() limits the number of
+    // discovered services such that the result fits.
+    PW_DCHECK(services_.size() < kMaxRemoteServices);
     auto service =
         std::make_unique<RemoteService>(service_data, client_->GetWeakPtr());
     added_services.push_back(service->GetWeakPtr());

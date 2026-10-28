@@ -73,9 +73,21 @@ RemoteService::~RemoteService() {
   }
   characteristics_.clear();
 
+  // Removal handlers may still use this service's WeakPtrs (e.g. FIDL servers
+  // disable notifications from their destructors), so they run before the
+  // WeakPtrs are invalidated.
   std::vector<fit::callback<void()>> rm_handlers = std::move(rm_handlers_);
   for (auto& handler : rm_handlers) {
     handler();
+  }
+
+  // Complete pending characteristic discovery requests, which would otherwise
+  // never be completed. Invalidate WeakPtrs first so that the callbacks can't
+  // queue new requests on this service.
+  weak_self_.InvalidatePtrs();
+  PendingDiscoveryList pending_discov_reqs = std::move(pending_discov_reqs_);
+  for (auto& discovery_req_cb : pending_discov_reqs) {
+    discovery_req_cb(ToResult(HostError::kFailed), CharacteristicMap());
   }
 }
 
