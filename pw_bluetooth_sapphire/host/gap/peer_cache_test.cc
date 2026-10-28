@@ -1010,6 +1010,53 @@ TEST_F(PeerCacheTestBondingTest, StoreLowEnergyBondWithXTransportKeyNoBrEdr) {
 }
 
 TEST_F(PeerCacheTestBondingTest,
+       StoreLowEnergyBondWithXTransportKeyRpaWithPublicIdentitySucceeds) {
+  const sm::Key kIrk(sm::SecurityProperties(), Random<UInt128>());
+  const DeviceAddress kRpa = sm::util::GenerateRpa(kIrk.value());
+  ASSERT_TRUE(NewPeer(kRpa, /*connectable=*/true));
+  ASSERT_FALSE(peer()->identity_known());
+
+  sm::PairingData data;
+  data.peer_ltk = kLTK;
+  data.local_ltk = kLTK;
+  data.irk = kIrk;
+  data.identity_address = kAddrLeAlias;
+  data.cross_transport_key = kSecureBrEdrKey;
+
+  EXPECT_TRUE(cache()->StoreLowEnergyBond(peer()->identifier(), data));
+  EXPECT_TRUE(peer()->le()->bonded());
+  EXPECT_EQ(kAddrLeAlias, peer()->address());
+  EXPECT_TRUE(peer()->identity_known());
+  ASSERT_TRUE(peer()->bredr().has_value());
+  EXPECT_TRUE(peer()->bredr()->bonded());
+  EXPECT_EQ(kSecureBrEdrKey, peer()->bredr()->link_key().value());
+  EXPECT_EQ(peer(), cache()->FindByAddress(kRpa));
+  EXPECT_EQ(peer(), cache()->FindByAddress(kAddrLeAlias));
+  EXPECT_EQ(peer(), cache()->FindByAddress(kAddrBrEdr));
+  EXPECT_EQ(bonded_callback_count(), 1);
+}
+
+TEST_F(PeerCacheTestBondingTest,
+       StoreLowEnergyBondWithXTransportKeyRandomAddressIgnored) {
+  ASSERT_TRUE(NewPeer(kAddrLeRandom, /*connectable=*/true));
+
+  sm::PairingData data;
+  data.peer_ltk = kLTK;
+  data.local_ltk = kLTK;
+  data.irk = sm::Key(sm::SecurityProperties(), Random<UInt128>());
+  data.identity_address = kAddrLeRandom;
+  data.cross_transport_key = kSecureBrEdrKey;
+
+  EXPECT_TRUE(cache()->StoreLowEnergyBond(peer()->identifier(), data));
+  EXPECT_TRUE(peer()->le()->bonded());
+  EXPECT_FALSE(peer()->bredr().has_value());
+  EXPECT_EQ(nullptr,
+            cache()->FindByAddress(DeviceAddress(DeviceAddress::Type::kBREDR,
+                                                 kAddrLeRandom.value())));
+  EXPECT_EQ(bonded_callback_count(), 1);
+}
+
+TEST_F(PeerCacheTestBondingTest,
        StoreLowEnergyBondWithInsecureXTransportKeyExistingBrEdr) {
   // The peer is already dual-mode with a secure BR/EDR key.
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(kSecureBrEdrKey));

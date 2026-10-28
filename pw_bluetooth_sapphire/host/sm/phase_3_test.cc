@@ -55,17 +55,18 @@ const SecurityProperties kDefaultProperties(SecurityLevel::kEncrypted,
                                             kMaxEncryptionKeySize,
                                             /*secure_connections=*/false);
 
+const DeviceAddress kSampleDeviceAddress(DeviceAddress::Type::kLEPublic, {1});
+
 struct Phase3Args {
   PairingFeatures features = kDefaultFeatures;
   SecurityProperties le_props = kDefaultProperties;
+  DeviceAddress peer_address = kSampleDeviceAddress;
 };
 
 const hci_spec::LinkKey kSampleLinkKey(
     /*value=*/UInt128{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
     /*rand=*/0x1234,
     /*ediv=*/0x5678);
-
-const DeviceAddress kSampleDeviceAddress(DeviceAddress::Type::kLEPublic, {1});
 
 class Phase3Test : public l2cap::testing::FakeChannelTest {
  public:
@@ -96,6 +97,7 @@ class Phase3Test : public l2cap::testing::FakeChannelTest {
                                         role,
                                         phase_args.features,
                                         phase_args.le_props,
+                                        phase_args.peer_address,
                                         [this](PairingData pairing_results) {
                                           phase_3_complete_count_++;
                                           pairing_data_ = pairing_results;
@@ -620,6 +622,165 @@ TEST_F(Phase3Test, BadIdentityAddressType) {
   EXPECT_EQ(1, listener()->pairing_error_count());
 }
 
+TEST_F(Phase3Test, NonStaticRandomIdentityAddressRejected) {
+  const std::array<DeviceAddress, 3> kInvalidStaticRandomAddrs = {
+      // Resolvable Private Address (MSBs == 0b01)
+      DeviceAddress(DeviceAddress::Type::kLERandom,
+                    {0x01, 0x02, 0x03, 0x04, 0x05, 0x40}),
+      // Non-Resolvable Private Address (MSBs == 0b00)
+      DeviceAddress(DeviceAddress::Type::kLERandom,
+                    {0x01, 0x02, 0x03, 0x04, 0x05, 0x00}),
+      // Reserved random address MSBs (MSBs == 0b10)
+      DeviceAddress(DeviceAddress::Type::kLERandom,
+                    {0x01, 0x02, 0x03, 0x04, 0x05, 0x80}),
+  };
+
+  for (bt::LinkType link_type : {bt::LinkType::kLE, bt::LinkType::kACL}) {
+    for (const DeviceAddress& invalid_addr : kInvalidStaticRandomAddrs) {
+      SCOPED_TRACE(invalid_addr.ToString());
+      ASSERT_FALSE(invalid_addr.IsStaticRandom());
+
+      Phase3Args args;
+      args.features.local_key_distribution = 0u;
+      args.features.remote_key_distribution = KeyDistGen::kIdKey;
+      args.peer_address = link_type == bt::LinkType::kLE
+                              ? invalid_addr
+                              : DeviceAddress(DeviceAddress::Type::kBREDR, {1});
+      NewPhase3(args, link_type);
+      phase_3()->Start();
+      Receive128BitCmd(kIdentityInformation, UInt128());
+
+      const StaticByteBuffer<PacketSize<ErrorCode>()> kExpectedFailure{
+          kPairingFailed, ErrorCode::kInvalidParameters};
+      ASSERT_TRUE(ReceiveAndExpect(MakeIdentityAddress(invalid_addr),
+                                   kExpectedFailure));
+      EXPECT_EQ(1, listener()->pairing_error_count());
+      EXPECT_EQ(Error(ErrorCode::kInvalidParameters), listener()->last_error());
+      EXPECT_EQ(0, phase_3_complete_count());
+      EXPECT_FALSE(pairing_data().identity_address.has_value());
+    }
+  }
+}
+
+TEST_F(Phase3Test, StaticRandomIdentityAddressAccepted) {
+  const Key kIrk(kDefaultProperties,
+                 {1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0});
+  const DeviceAddress kStaticRandomAddr(DeviceAddress::Type::kLERandom,
+                                        {0x01, 0x02, 0x03, 0x04, 0x05, 0xC0});
+  ASSERT_TRUE(kStaticRandomAddr.IsStaticRandom());
+
+  Phase3Args args;
+  args.features.local_key_distribution = 0u;
+  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.le_props = kIrk.security();
+  args.peer_address = kStaticRandomAddr;
+  NewPhase3(args);
+  phase_3()->Start();
+  Receive128BitCmd(kIdentityInformation, kIrk.value());
+  ReceiveIdentityAddress(kStaticRandomAddr);
+  RunUntilIdle();
+
+  EXPECT_EQ(0, listener()->pairing_error_count());
+  EXPECT_EQ(1, phase_3_complete_count());
+  ASSERT_TRUE(pairing_data().identity_address.has_value());
+  EXPECT_EQ(kStaticRandomAddr, *pairing_data().identity_address);
+}
+
+TEST_F(Phase3Test, UnverifiedLeIdentityAddressRejectedAndMatchingRpaAccepted) {
+  const UInt128 kValidIrk = {1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+  const DeviceAddress kPeerRpa = util::GenerateRpa(kValidIrk);
+  const DeviceAddress kPeerStaticRandom(DeviceAddress::Type::kLERandom,
+                                        {0x01, 0x02, 0x03, 0x04, 0x05, 0xC0});
+  ASSERT_TRUE(kPeerStaticRandom.IsStaticRandom());
+  const DeviceAddress kPeerNrpa(DeviceAddress::Type::kLERandom,
+                                {0x01, 0x02, 0x03, 0x04, 0x05, 0x00});
+  ASSERT_TRUE(kPeerNrpa.IsNonResolvablePrivate());
+  const DeviceAddress kClaimedIdentity(DeviceAddress::Type::kLEPublic,
+                                       {0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+  const StaticByteBuffer<PacketSize<ErrorCode>()> kExpectedFailure{
+      kPairingFailed, ErrorCode::kInvalidParameters};
+
+  // Mismatched public link address claiming another peer's identity.
+  {
+    Phase3Args args;
+    args.features.local_key_distribution = 0u;
+    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.peer_address = kSampleDeviceAddress;
+    NewPhase3(args);
+    phase_3()->Start();
+    Receive128BitCmd(kIdentityInformation, kValidIrk);
+    ASSERT_TRUE(ReceiveAndExpect(MakeIdentityAddress(kClaimedIdentity),
+                                 kExpectedFailure));
+    EXPECT_EQ(1, listener()->pairing_error_count());
+    EXPECT_EQ(0, phase_3_complete_count());
+    EXPECT_FALSE(pairing_data().identity_address.has_value());
+  }
+
+  // Mismatched static random link address claiming another peer's identity.
+  {
+    Phase3Args args;
+    args.features.local_key_distribution = 0u;
+    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.peer_address = kPeerStaticRandom;
+    NewPhase3(args);
+    phase_3()->Start();
+    Receive128BitCmd(kIdentityInformation, kValidIrk);
+    ASSERT_TRUE(ReceiveAndExpect(MakeIdentityAddress(kClaimedIdentity),
+                                 kExpectedFailure));
+    EXPECT_EQ(1, listener()->pairing_error_count());
+    EXPECT_EQ(0, phase_3_complete_count());
+    EXPECT_FALSE(pairing_data().identity_address.has_value());
+  }
+
+  // NRPA connection attempting to distribute an identity address.
+  {
+    Phase3Args args;
+    args.features.local_key_distribution = 0u;
+    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.peer_address = kPeerNrpa;
+    NewPhase3(args);
+    phase_3()->Start();
+    Receive128BitCmd(kIdentityInformation, kValidIrk);
+    ASSERT_TRUE(ReceiveAndExpect(MakeIdentityAddress(kClaimedIdentity),
+                                 kExpectedFailure));
+    EXPECT_EQ(1, listener()->pairing_error_count());
+    EXPECT_EQ(0, phase_3_complete_count());
+    EXPECT_FALSE(pairing_data().identity_address.has_value());
+  }
+
+  // RPA connection with non-matching IRK claiming another peer's identity.
+  {
+    Phase3Args args;
+    args.features.local_key_distribution = 0u;
+    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.peer_address = kPeerRpa;
+    NewPhase3(args);
+    phase_3()->Start();
+    Receive128BitCmd(kIdentityInformation, UInt128{9});
+    ASSERT_TRUE(ReceiveAndExpect(MakeIdentityAddress(kClaimedIdentity),
+                                 kExpectedFailure));
+    EXPECT_EQ(1, listener()->pairing_error_count());
+    EXPECT_EQ(0, phase_3_complete_count());
+    EXPECT_FALSE(pairing_data().identity_address.has_value());
+  }
+
+  // RPA connection resolved by the distributed IRK succeeds.
+  {
+    Phase3Args args;
+    args.features.local_key_distribution = 0u;
+    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.peer_address = kPeerRpa;
+    NewPhase3(args);
+    phase_3()->Start();
+    Receive128BitCmd(kIdentityInformation, kValidIrk);
+    ReceiveIdentityAddress(kClaimedIdentity);
+    RunUntilIdle();
+    EXPECT_EQ(0, listener()->pairing_error_count());
+    EXPECT_EQ(1, phase_3_complete_count());
+    EXPECT_EQ(kClaimedIdentity, pairing_data().identity_address);
+  }
+}
+
 // Pairing completes after obtaining identity information only.
 TEST_F(Phase3Test, InitiatorCompleteWithIdKey) {
   const Key kIrk =
@@ -825,7 +986,9 @@ TEST_F(Phase3Test, ResponderLocalLTKMaxLength) {
 }
 
 TEST_F(Phase3Test, ResponderLocalIdKeyDistributionWithRemoteKeys) {
+  const DeviceAddress kPeerAddr(DeviceAddress::Type::kLEPublic, {2});
   Phase3Args args;
+  args.peer_address = kPeerAddr;
   args.features.initiator = false;
   args.features.local_key_distribution = KeyDistGen::kIdKey;
   args.features.remote_key_distribution = KeyDistGen::kIdKey;
@@ -854,7 +1017,6 @@ TEST_F(Phase3Test, ResponderLocalIdKeyDistributionWithRemoteKeys) {
 
   // Ensure that most significant (16 - kNegotiatedMaxKeySize) bytes are zero.
   const Key kIrk(kDefaultProperties, Random<UInt128>());
-  const DeviceAddress kPeerAddr(DeviceAddress::Type::kLEPublic, {2});
   Receive128BitCmd(kIdentityInformation, kIrk.value());
   ReceiveIdentityAddress(kPeerAddr);
   RunUntilIdle();

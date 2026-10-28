@@ -792,6 +792,7 @@ void SecurityManagerImpl::OnFeatureExchange(PairingFeatures features,
         role(),
         *features_,
         bredr_security_properties,
+        bredr_link_->peer_address(),
         fit::bind_member<&SecurityManagerImpl::OnBrEdrPairingComplete>(this));
     std::get<Phase3>(current_phase_).Start();
   } else if (features.secure_connections) {
@@ -968,6 +969,7 @@ void SecurityManagerImpl::EndPhase2() {
     OnLowEnergyPairingComplete(PairingData());
     return;
   }
+  PW_CHECK(low_energy_link_.is_alive());
   auto self = weak_listener_.GetWeakPtr();
   current_phase_.emplace<Phase3>(
       sm_chan_->GetWeakPtr(),
@@ -975,6 +977,7 @@ void SecurityManagerImpl::EndPhase2() {
       role(),
       *features_,
       security(),
+      low_energy_link_->peer_address(),
       fit::bind_member<&SecurityManagerImpl::OnLowEnergyPairingComplete>(this));
   std::get<Phase3>(current_phase_).Start();
 }

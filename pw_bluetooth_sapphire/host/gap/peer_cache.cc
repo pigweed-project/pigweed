@@ -213,7 +213,7 @@ bool PeerCache::StoreLowEnergyBond(PeerId identifier,
   peer_metrics_.LogLeBondSuccessEvent();
 
   if (bond_data.cross_transport_key.has_value()) {
-    if (peer->identity_known()) {
+    if (peer->address().IsPublic()) {
       if (!peer->MutBrEdr().SetBondData(
               bond_data.cross_transport_key.value())) {
         bt_log(WARN,
@@ -225,8 +225,8 @@ bool PeerCache::StoreLowEnergyBond(PeerId identifier,
     } else {
       bt_log(WARN,
              "gap",
-             "cannot use BR/EDR cross transport key without identity address "
-             "(peer: %s)",
+             "cannot use BR/EDR cross transport key without public identity "
+             "address (peer: %s)",
              bt_str(peer->identifier()));
     }
   }

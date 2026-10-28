@@ -51,11 +51,11 @@ const DeviceAddress kLocalAddr(DeviceAddress::Type::kLEPublic,
 const DeviceAddress kLocalBrEdrAddr(DeviceAddress::Type::kBREDR,
                                     {0xA6, 0xA5, 0xA4, 0xA3, 0xA2, 0xA1});
 const DeviceAddress kPeerAddr(DeviceAddress::Type::kLERandom,
-                              {0xB6, 0xB5, 0xB4, 0xB3, 0xB2, 0xB1});
+                              {0xB6, 0xB5, 0xB4, 0xB3, 0xB2, 0xF1});
 const DeviceAddress kPeerPublicAddr(DeviceAddress::Type::kLEPublic,
                                     {0xC6, 0xC5, 0xC4, 0xC3, 0xC2, 0xC1});
 const DeviceAddress kPeerBrEdrAddr(DeviceAddress::Type::kBREDR,
-                                   {0xB6, 0xB5, 0xB4, 0xB3, 0xB2, 0xB1});
+                                   {0xB6, 0xB5, 0xB4, 0xB3, 0xB2, 0xF1});
 
 const bt::sm::LTK kAuthenticatedSecureKey(
     sm::SecurityProperties(/*encrypted=*/true,

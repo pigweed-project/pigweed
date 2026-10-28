@@ -38,10 +38,12 @@ Phase3::Phase3(PairingChannel::WeakPtr chan,
                Role role,
                PairingFeatures features,
                SecurityProperties le_sec,
+               const DeviceAddress& peer_address,
                Phase3CompleteCallback on_complete)
     : PairingPhase(std::move(chan), std::move(listener), role),
       features_(features),
       le_sec_(le_sec),
+      peer_address_(peer_address),
       obtained_remote_keys_(0),
       sent_local_keys_(false),
       on_complete_(std::move(on_complete)) {
@@ -216,7 +218,7 @@ void Phase3::OnIdentityAddressInformation(
     Abort(ErrorCode::kUnspecifiedReason);
     return;
   }
-  auto type = DeviceAddress::Type::kLERandom;
+  DeviceAddress::Type type = DeviceAddress::Type::kLERandom;
   if (params.type != AddressType::kStaticRandom) {
     if (params.type != AddressType::kPublic) {
       bt_log(WARN,
@@ -228,7 +230,41 @@ void Phase3::OnIdentityAddressInformation(
     }
     type = DeviceAddress::Type::kLEPublic;
   }
-  auto identity_address = DeviceAddress(type, params.bd_addr);
+
+  const DeviceAddress identity_address(type, params.bd_addr);
+  // Core Spec v6.0, Vol 6, Part B, Section 1.3.2.1: The two most significant
+  // bits of a static address shall be equal to 1.
+  if (params.type == AddressType::kStaticRandom &&
+      !identity_address.IsStaticRandom()) {
+    bt_log(WARN,
+           "sm",
+           "received non-static random identity address: %s",
+           bt_str(identity_address));
+    Abort(ErrorCode::kInvalidParameters);
+    return;
+  }
+
+  // Core Spec v6.0, Vol 3, Part H, Section 3.6.5 and Vol 6, Part B,
+  // Section 1.3.2.3: Over LE, the distributed identity address must match the
+  // peer's public/static connection address or correspond to an RPA resolved by
+  // the distributed IRK.
+  if (sm_chan().link_type() == bt::LinkType::kLE) {
+    const bool matches_direct_identity =
+        (peer_address_.IsPublic() || peer_address_.IsStaticRandom()) &&
+        (identity_address == peer_address_);
+    const bool resolves_rpa = peer_address_.IsResolvablePrivate() &&
+                              util::IrkCanResolveRpa(*irk_, peer_address_);
+    if (!matches_direct_identity && !resolves_rpa) {
+      bt_log(WARN,
+             "sm",
+             "received unverified identity address %s for LE peer %s",
+             bt_str(identity_address),
+             bt_str(peer_address_));
+      Abort(ErrorCode::kInvalidParameters);
+      return;
+    }
+  }
+
   // Store the identity address and mark all identity info as received.
   identity_address_ = identity_address;
   obtained_remote_keys_ |= KeyDistGen::kIdKey;

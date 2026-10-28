@@ -48,11 +48,13 @@ class Phase3 final : public PairingPhase, public PairingChannelHandler {
   //     some keys to distribute if Phase3 exists - construction will panic if
   //     both the local & remote key_distribution fields of features are 0.
   //   - |le_sec|: The current security properties of key encrypting the link.
+  //   - |peer_address|: The connection address of the remote peer.
   Phase3(PairingChannel::WeakPtr chan,
          Listener::WeakPtr listener,
          Role role,
          PairingFeatures features,
          SecurityProperties le_sec,
+         const DeviceAddress& peer_address,
          Phase3CompleteCallback on_complete);
   ~Phase3() override { InvalidatePairingChannelHandler(); }
 
@@ -127,6 +129,9 @@ class Phase3 final : public PairingPhase, public PairingChannelHandler {
 
   // Current security properties of the LE-U link.
   const SecurityProperties le_sec_;
+
+  // Remote peer address used on the active connection.
+  const DeviceAddress peer_address_;
 
   // The remote keys that have been obtained so far.
   KeyDistGenField obtained_remote_keys_;
