@@ -112,6 +112,7 @@ EmulatorDevice::EmulatorDevice(async_dispatcher_t* dispatcher)
 EmulatorDevice::~EmulatorDevice() {
   pw_dispatcher_.Cancel(shutdown_task_);
   UnpublishHci();
+  UnpublishEmulatorService();
   fake_device_.Stop();
 }
 
@@ -124,8 +125,8 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
   if (outgoing_ == nullptr) {
     bt_log(WARN,
            "bt-hci-virtual",
-           "No outgoing directory provided; fuchsia.hardware.bluetooth.Service "
-           "cannot be published");
+           "No outgoing directory provided; fuchsia.hardware.bluetooth "
+           "services cannot be published");
   }
 
   // The generator is process-wide and may only be installed once.
@@ -156,6 +157,31 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
   fake_device_.set_connection_state_callback(
       fit::bind_member<&EmulatorDevice::OnPeerConnectionStateChanged>(this));
 
+  if (outgoing_ == nullptr) {
+    return ZX_OK;
+  }
+  return PublishEmulatorService();
+}
+
+zx_status_t EmulatorDevice::PublishEmulatorService() {
+  // A failed AddService() removes the instance, so never add it twice.
+  if (emulator_service_published_) {
+    return ZX_ERR_ALREADY_EXISTS;
+  }
+  fhbt::EmulatorService::InstanceHandler handler({
+      .device = fit::bind_member<&EmulatorDevice::ConnectEmulator>(this),
+  });
+  zx::result result =
+      outgoing_->AddService<fhbt::EmulatorService>(std::move(handler), name_);
+  if (result.is_error()) {
+    bt_log(ERROR,
+           "bt-hci-virtual",
+           "Failed to add fuchsia.hardware.bluetooth.EmulatorService %s: %s",
+           name_.c_str(),
+           result.status_string());
+    return result.error_value();
+  }
+  emulator_service_published_ = true;
   return ZX_OK;
 }
 
@@ -167,6 +193,7 @@ void EmulatorDevice::Shutdown() {
 
   pw_dispatcher_.Cancel(shutdown_task_);
   UnpublishHci();
+  UnpublishEmulatorService();
   fake_device_.Stop();
   peers_.clear();
   controller_parameters_completer_.reset();
@@ -526,6 +553,21 @@ void EmulatorDevice::OnPeerConnectionStateChanged(
 }
 
 void EmulatorDevice::UnpublishHci() { vendor_service_.Unpublish(); }
+
+void EmulatorDevice::UnpublishEmulatorService() {
+  if (!emulator_service_published_) {
+    return;
+  }
+  emulator_service_published_ = false;
+  zx::result result = outgoing_->RemoveService<fhbt::EmulatorService>(name_);
+  if (result.is_error()) {
+    bt_log(WARN,
+           "bt-hci-virtual",
+           "Failed to remove fuchsia.hardware.bluetooth.EmulatorService %s: %s",
+           name_.c_str(),
+           result.status_string());
+  }
+}
 
 void EmulatorDevice::SendEventToHost(pw::span<const std::byte> buffer) {
   if (hci_transport_bindings_.size() == 0) {

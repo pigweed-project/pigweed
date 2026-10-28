@@ -45,13 +45,19 @@ class EmulatorDevice
   explicit EmulatorDevice(async_dispatcher_t* dispatcher);
   ~EmulatorDevice();
 
+  EmulatorDevice(const EmulatorDevice&) = delete;
+  EmulatorDevice& operator=(const EmulatorDevice&) = delete;
+  EmulatorDevice(EmulatorDevice&&) = delete;
+  EmulatorDevice& operator=(EmulatorDevice&&) = delete;
+
   // Methods used by the VirtualController to control the EmulatorDevice's
   // lifecycle.
   //
-  // `name` identifies this emulator: if `outgoing` is non-null, `Publish`
-  // publishes the fuchsia.hardware.bluetooth.Service instance `name` to it.
-  // `outgoing` must already be served and must outlive this object. `shutdown`
-  // is invoked by `Shutdown()`.
+  // `name` identifies this emulator: if `outgoing` is non-null, `Initialize()`
+  // publishes the fuchsia.hardware.bluetooth.EmulatorService instance `name`
+  // to it, and `Publish` later publishes the fuchsia.hardware.bluetooth.Service
+  // instance `name`. `outgoing` must already be served and must outlive this
+  // object. `shutdown` is invoked by `Shutdown()`.
   zx_status_t Initialize(std::string_view name,
                          ShutdownCallback shutdown,
                          component::OutgoingDirectory* outgoing = nullptr);
@@ -134,6 +140,9 @@ class EmulatorDevice
   // Unpublish fuchsia.hardware.bluetooth.Service
   void UnpublishHci();
 
+  zx_status_t PublishEmulatorService();
+  void UnpublishEmulatorService();
+
   void OnPeerConnectionStateChanged(const bt::DeviceAddress& address,
                                     bt::hci_spec::ConnectionHandle handle,
                                     bool connected,
@@ -192,6 +201,8 @@ class EmulatorDevice
 
   component::OutgoingDirectory* outgoing_ = nullptr;
   std::string name_;
+  // True while the EmulatorService instance `name_` is in `outgoing_`.
+  bool emulator_service_published_ = false;
   VendorServicePublisher vendor_service_;
 };
 

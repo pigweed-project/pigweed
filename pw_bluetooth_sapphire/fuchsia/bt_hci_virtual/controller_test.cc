@@ -202,6 +202,31 @@ class VirtualControllerTest : public ::testing::Test {
     return *ok;
   }
 
+  // Returns true if an Emulator client connected through the
+  // fuchsia.hardware.bluetooth.EmulatorService instance `name` gets a reply.
+  // The connection is closed again before returning, so this must not be the
+  // emulator's first connection (that would make it the owner). The request is
+  // Publish, so call this only after `Publish(name)`: the reply is then the
+  // HCI_ALREADY_PUBLISHED domain error and nothing changes.
+  bool EmulatorServiceIsServed(const std::string& name) {
+    zx::result client_end =
+        driver_test_.Connect<fhb::EmulatorService::Device>(name);
+    if (client_end.is_error()) {
+      return false;
+    }
+    fidl::Client<fhb::Emulator> client(std::move(*client_end), dispatcher());
+    std::optional<bool> served;
+    client->Publish(fhb::EmulatorSettings())
+        .ThenExactlyOnce([&served](fidl::Result<fhb::Emulator::Publish>& res) {
+          served = res.is_ok() || res.error_value().is_domain_error();
+        });
+    if (!WaitUntil([&served] { return served.has_value(); })) {
+      ADD_FAILURE() << "timed out waiting for Emulator reply";
+      return false;
+    }
+    return *served;
+  }
+
   // Pre-populates a child node named `name` on the fake framework node so that
   // the driver's next AddChild with that name fails with NAME_ALREADY_EXISTS.
   void OccupyChildNodeName(const std::string& name) {
@@ -223,9 +248,9 @@ TEST_F(VirtualControllerTest, StartAddsControllerNode) {
       std::vector<std::string>{std::string(VirtualController::kNodeName)});
 }
 
-// Each CreateEmulator call produces a distinct emulator with its own node and
-// vendor service instance, and closing one emulator's owner tears down only
-// that emulator.
+// Each CreateEmulator call produces a distinct emulator with its own node,
+// EmulatorService instance and vendor service instance, and closing one
+// emulator's owner tears down only that emulator.
 TEST_F(VirtualControllerTest, CreateEmulatorTwiceYieldsIndependentEmulators) {
   zx::result first = CreateEmulator();
   ASSERT_TRUE(first.is_ok()) << first.status_string();
@@ -239,14 +264,18 @@ TEST_F(VirtualControllerTest, CreateEmulatorTwiceYieldsIndependentEmulators) {
   fidl::ClientEnd<fhb::Emulator> second_owner = ConnectEmulator(*second);
   ASSERT_NO_FATAL_FAILURE(Publish(*first));
   ASSERT_NO_FATAL_FAILURE(Publish(*second));
+  EXPECT_TRUE(EmulatorServiceIsServed(*first));
+  EXPECT_TRUE(EmulatorServiceIsServed(*second));
   EXPECT_TRUE(VendorServiceIsServed(*first));
   EXPECT_TRUE(VendorServiceIsServed(*second));
 
   // Closing one owner tears down only that emulator.
   first_owner.reset();
   ASSERT_TRUE(WaitUntil([&] { return !HasChildNode(*first); }));
+  EXPECT_FALSE(EmulatorServiceIsServed(*first));
   EXPECT_FALSE(VendorServiceIsServed(*first));
   EXPECT_TRUE(HasChildNode(*second));
+  EXPECT_TRUE(EmulatorServiceIsServed(*second));
   EXPECT_TRUE(VendorServiceIsServed(*second));
 }
 

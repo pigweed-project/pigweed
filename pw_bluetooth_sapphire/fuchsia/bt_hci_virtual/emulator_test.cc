@@ -294,5 +294,44 @@ TEST_F(EmulatorTest, RandomGeneratorInstalledOnceAcrossMultipleEmulators) {
   EXPECT_EQ(bt::random_generator(), installed);
 }
 
+// Initialize() publishes the EmulatorService instance named after the device,
+// through which a client reaches this device's Emulator protocol.
+TEST_F(EmulatorTest, InitializePublishesEmulatorService) {
+  EXPECT_TRUE(EmulatorServiceIsServed(kEmulatorName));
+  EXPECT_FALSE(EmulatorServiceIsServed("some-other-emulator"));
+  EXPECT_EQ(shutdown_count(), 0);
+}
+
+// The first client to connect through the EmulatorService instance is the
+// device's owner, exactly like one handed to ConnectEmulator() directly.
+TEST_F(EmulatorTest, EmulatorServiceClientCanOwnAndPublish) {
+  std::optional<fidl::Client<fhb::Emulator>> owner;
+  owner.emplace(ConnectEmulatorService(kEmulatorName), dispatcher());
+  ASSERT_NO_FATAL_FAILURE(Publish(*owner));
+  EXPECT_TRUE(VendorServiceIsServed());
+
+  owner.reset();
+  RunUntilIdle();
+  EXPECT_EQ(shutdown_count(), 1);
+  EXPECT_EQ(device(), nullptr);
+}
+
+// Shutdown() removes the EmulatorService instance along with the vendor
+// service instance.
+TEST_F(EmulatorTest, ShutdownUnpublishesEmulatorService) {
+  std::optional<fidl::Client<fhb::Emulator>> owner;
+  owner.emplace(ConnectEmulator(), dispatcher());
+  ASSERT_NO_FATAL_FAILURE(Publish(*owner));
+  ASSERT_TRUE(EmulatorServiceIsServed(kEmulatorName));
+  ASSERT_TRUE(VendorServiceIsServed());
+
+  device()->Shutdown();
+  RunUntilIdle();
+
+  EXPECT_EQ(shutdown_count(), 1);
+  EXPECT_FALSE(EmulatorServiceIsServed(kEmulatorName));
+  EXPECT_FALSE(VendorServiceIsServed());
+}
+
 }  // namespace
 }  // namespace bt_hci_virtual

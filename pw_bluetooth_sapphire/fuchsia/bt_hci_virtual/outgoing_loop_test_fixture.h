@@ -17,11 +17,13 @@
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/zx/time.h>
 #include <zircon/types.h>
 
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -55,6 +57,48 @@ class OutgoingLoopTestFixture : public ::testing::Test {
 
   fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_client() const {
     return outgoing_client_.borrow();
+  }
+
+  // Connects a new Emulator client through the EmulatorService instance `name`
+  // and returns its client end (invalid, with a test failure, on error).
+  fidl::ClientEnd<fuchsia_hardware_bluetooth::Emulator> ConnectEmulatorService(
+      const std::string& name) {
+    std::string path =
+        "svc/" + component::MakeServiceMemberPath<
+                     fuchsia_hardware_bluetooth::EmulatorService::Device>(name);
+    zx::result client_end =
+        component::ConnectAt<fuchsia_hardware_bluetooth::Emulator>(
+            outgoing_client(), path);
+    if (client_end.is_error()) {
+      ADD_FAILURE() << "ConnectAt(" << path
+                    << ") failed: " << client_end.status_string();
+      return {};
+    }
+    RunUntilIdle();
+    return std::move(*client_end);
+  }
+
+  // Returns true if the EmulatorService instance `name` is published, by
+  // opening its directory.
+  bool EmulatorServiceIsServed(const std::string& name) {
+    std::string path = std::string("svc/") +
+                       fuchsia_hardware_bluetooth::EmulatorService::Name + "/" +
+                       name;
+    zx::result dir = component::OpenDirectoryAt(outgoing_client(), path);
+    if (dir.is_error()) {
+      return false;
+    }
+    // The open is pipelined, so make a round trip to learn whether it
+    // succeeded.
+    fidl::WireClient<fuchsia_io::Directory> client(std::move(*dir),
+                                                   dispatcher());
+    std::optional<bool> served;
+    client->Query().ThenExactlyOnce(
+        [&served](fidl::WireUnownedResult<fuchsia_io::Directory::Query>& res) {
+          served = res.ok();
+        });
+    RunUntilIdle();
+    return served.value_or(false);
   }
 
   // Returns true if a Vendor client connected through the
