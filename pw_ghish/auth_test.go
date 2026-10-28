@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1483,5 +1484,107 @@ func TestLUCIAuthTransport_MemoizesAuthModeAcrossRequests(t *testing.T) {
 	// Only the first request should query git config (ghish.authmode + user.email = 2 calls).
 	if gitConfigCalls > 2 {
 		t.Errorf("gitConfigCalls across 3 LUCI requests = %d, want <= 2", gitConfigCalls)
+	}
+}
+
+func TestOAuthTokenCommand_AutoConfiguresSSOCredHelper(t *testing.T) {
+	origLookPath := LookPathFn
+	t.Cleanup(func() { LookPathFn = origLookPath })
+
+	tests := []struct {
+		name           string
+		hasHelper      bool
+		lookPathErr    error
+		envSet         bool
+		envVal         string
+		bin            string
+		args           []string
+		wantInjectedTo string
+	}{
+		{
+			name:           "injects LUCI_AUTH_CREDENTIAL_HELPER when unset and helper exists",
+			hasHelper:      true,
+			bin:            "luci-auth",
+			args:           []string{"token"},
+			wantInjectedTo: ssoCredHelperPath,
+		},
+		{
+			name:           "injects for resolved absolute luci-auth path",
+			hasHelper:      true,
+			bin:            "/opt/cipd/packages/luci/luci-auth",
+			args:           []string{"token"},
+			wantInjectedTo: ssoCredHelperPath,
+		},
+		{
+			name:      "preserves existing LUCI_AUTH_CREDENTIAL_HELPER when already set",
+			hasHelper: true,
+			envSet:    true,
+			envVal:    "/custom/cred-helper",
+			bin:       "luci-auth",
+			args:      []string{"token"},
+		},
+		{
+			name:      "respects explicit empty LUCI_AUTH_CREDENTIAL_HELPER opt-out",
+			hasHelper: true,
+			envSet:    true,
+			envVal:    "",
+			bin:       "luci-auth",
+			args:      []string{"token"},
+		},
+		{
+			name:      "does not inject when helper binary is missing on disk",
+			hasHelper: false,
+			bin:       "luci-auth",
+			args:      []string{"token"},
+		},
+		{
+			name:        "does not inject when LookPath returns permission error",
+			lookPathErr: os.ErrPermission,
+			bin:         "luci-auth",
+			args:        []string{"token"},
+		},
+		{
+			name:      "does not inject for non-luci-auth commands",
+			hasHelper: true,
+			bin:       "gcloud",
+			args:      []string{"auth", "print-access-token"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			LookPathFn = func(file string) (string, error) {
+				if tc.lookPathErr != nil {
+					return "", tc.lookPathErr
+				}
+				if tc.hasHelper && file == ssoCredHelperPath {
+					return ssoCredHelperPath, nil
+				}
+				return "", os.ErrNotExist
+			}
+			t.Setenv("GHISH_PARENT_ENV_CANARY", "preserved")
+			t.Setenv("LUCI_AUTH_CREDENTIAL_HELPER", tc.envVal)
+			if !tc.envSet {
+				_ = os.Unsetenv("LUCI_AUTH_CREDENTIAL_HELPER")
+			}
+
+			cmd := newOAuthTokenCommand(t.Context(), tc.bin, tc.args...)
+			if tc.wantInjectedTo == "" {
+				if cmd.Env != nil {
+					t.Errorf("cmd.Env = %v, want nil", cmd.Env)
+				}
+				if tc.envSet && !slices.Contains(cmd.Environ(), "LUCI_AUTH_CREDENTIAL_HELPER="+tc.envVal) {
+					t.Errorf("cmd.Environ() missing preserved LUCI_AUTH_CREDENTIAL_HELPER=%q", tc.envVal)
+				}
+				return
+			}
+			wantEntry := "LUCI_AUTH_CREDENTIAL_HELPER=" + tc.wantInjectedTo
+			if !slices.Contains(cmd.Env, wantEntry) {
+				t.Errorf("cmd.Env missing %q: %v", wantEntry, cmd.Env)
+			}
+			if !slices.Contains(cmd.Env, "GHISH_PARENT_ENV_CANARY=preserved") {
+				t.Errorf("cmd.Env lost parent environment variables: %v", cmd.Env)
+			}
+		})
 	}
 }

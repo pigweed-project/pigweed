@@ -1139,10 +1139,37 @@ func NewAuthTransport(gerritHost string) (http.RoundTripper, error) {
 // DefaultBuganizerScopes are the OAuth2 scopes required for Google Issue Tracker and GCP quota checks.
 const DefaultBuganizerScopes = "https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform"
 
+// ssoCredHelperPath is the Corp Linux path for the SSO credential helper
+// used by luci-auth v1.6+ to mint OAuth2 tokens directly from 7-day gcert
+// LOAS2 credentials. Non-login shells (spawned by IDEs, coding agents, or
+// scripts) often do not source /etc/profile.d/sso-cred-helper.sh, leaving
+// LUCI_AUTH_CREDENTIAL_HELPER unset.
+const ssoCredHelperPath = "/usr/bin/sso-cred-helper"
+
+// hasSSOCredHelper reports whether the Corp Linux SSO credential helper is
+// installed at ssoCredHelperPath.
+func hasSSOCredHelper() bool {
+	path, err := LookPathFn(ssoCredHelperPath)
+	return err == nil && path != ""
+}
+
+// newOAuthTokenCommand constructs an exec.Cmd for an external OAuth CLI helper
+// and auto-injects LUCI_AUTH_CREDENTIAL_HELPER when invoking luci-auth on Corp
+// Linux if LUCI_AUTH_CREDENTIAL_HELPER is unset in the environment.
+func newOAuthTokenCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := ExecCommandContext(ctx, name, args...)
+	if filepath.Base(name) == "luci-auth" {
+		if _, set := os.LookupEnv("LUCI_AUTH_CREDENTIAL_HELPER"); !set && hasSSOCredHelper() {
+			cmd.Env = append(cmd.Environ(), "LUCI_AUTH_CREDENTIAL_HELPER="+ssoCredHelperPath)
+		}
+	}
+	return cmd
+}
+
 // OAuthTokenCommandRunner executes external CLI token helpers (luci-auth, gcloud).
 // It can be overridden in unit tests to prevent spawning real subprocesses.
 var OAuthTokenCommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return ExecCommandContext(ctx, name, args...).Output()
+	return newOAuthTokenCommand(ctx, name, args...).Output()
 }
 
 // scriptDirEnvVar names the directory of the `gh` wrapper script, which the
