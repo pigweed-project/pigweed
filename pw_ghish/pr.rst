@@ -68,11 +68,13 @@ Supported flags
   upload.
 * ``--nightly`` / ``--submit-at <HH:MM>``: Schedule submission via a Gerrit
   Flow for off-peak hours (``21:00``–``03:00`` PT/MTV) or a specific 24-hour
-  time in PT/MTV. At the scheduled time it starts a dry run
-  (``Commit-Queue+1``, or ``Presubmit-Ready+1`` on hosts that use it) and
-  enables auto-submit, which lands the change once it is submittable. A
-  work-in-progress change is marked ready for review. Running it again
-  replaces the change's pending schedule rather than adding to it.
+  time in PT/MTV. ``--nightly`` picks a slot from the change number; run
+  inside the off-peak window after that slot has passed, it schedules the
+  next minute instead of waiting for the next night. At the scheduled time it
+  starts a dry run (``Commit-Queue+1``, or ``Presubmit-Ready+1`` on hosts that
+  use it) and enables auto-submit, which lands the change once it is
+  submittable. A work-in-progress change is marked ready for review. Running
+  it again replaces the change's pending schedule rather than adding to it.
   With ``--stack``, every change in the stack is scheduled: the bottom change
   gets its off-peak slot (``--nightly``) or the requested time
   (``--submit-at``), and each change above it 30 minutes later, even if that
@@ -166,11 +168,13 @@ Supported flags
 * ``--auto`` (alias ``--auto-submit``): Vote the host's auto-submit label.
 * ``--nightly`` / ``--submit-at <HH:MM>``: Schedule submission via a Gerrit
   Flow for off-peak hours (``21:00``–``03:00`` PT/MTV) or a specific 24-hour
-  time in PT/MTV. At the scheduled time it starts a dry run
-  (``Commit-Queue+1``, or ``Presubmit-Ready+1`` on hosts that use it) and
-  enables auto-submit, which lands the change once it is submittable. A
-  work-in-progress change is marked ready for review. Running it again
-  replaces the change's pending schedule rather than adding to it.
+  time in PT/MTV. ``--nightly`` picks a slot from the change number; run
+  inside the off-peak window after that slot has passed, it schedules the
+  next minute instead of waiting for the next night. At the scheduled time it
+  starts a dry run (``Commit-Queue+1``, or ``Presubmit-Ready+1`` on hosts that
+  use it) and enables auto-submit, which lands the change once it is
+  submittable. A work-in-progress change is marked ready for review. Running
+  it again replaces the change's pending schedule rather than adding to it.
   With ``--stack``, every change in the stack is scheduled: the bottom change
   gets its off-peak slot (``--nightly``) or the requested time
   (``--submit-at``), and each change above it 30 minutes later, even if that

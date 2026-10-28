@@ -184,6 +184,51 @@ func TestAddScheduleMinutes(t *testing.T) {
 	}
 }
 
+func TestNightlyScheduleTime(t *testing.T) {
+	pdt := time.FixedZone("PDT", -7*60*60)
+	// The daylight saving case needs the real zone rather than a fixed offset.
+	la, err := time.LoadLocation(DefaultScheduleTimezone)
+	if err != nil {
+		t.Fatalf("time.LoadLocation(%q): %v", DefaultScheduleTimezone, err)
+	}
+	tests := []struct {
+		name      string
+		now       time.Time
+		changeNum int
+		want      string
+	}{
+		// 111111 % 360 = 231 minutes after 21:00 = 00:51.
+		{"before the window", time.Date(2026, 9, 30, 12, 0, 0, 0, pdt), 111111, "00:51"},
+		{"after the window", time.Date(2026, 9, 30, 5, 0, 0, 0, pdt), 111111, "00:51"},
+		{"in the window, slot ahead after midnight", time.Date(2026, 9, 30, 21, 45, 0, 0, pdt), 111111, "00:51"},
+		// 390 % 360 = 30 minutes after 21:00 = 21:30.
+		{"in the window, slot passed", time.Date(2026, 9, 30, 21, 45, 30, 0, pdt), 390, "21:46"},
+		// 420 % 360 = 60 minutes after 21:00 = 22:00.
+		{"after midnight, slot passed", time.Date(2026, 10, 1, 1, 0, 0, 0, pdt), 420, "01:01"},
+		// 123456 % 360 = 336 minutes after 21:00 = 02:36.
+		{"after midnight, slot ahead", time.Date(2026, 10, 1, 1, 0, 0, 0, pdt), 123456, "02:36"},
+		// Daylight saving time ends at 02:00 on 2026-11-01, so the night is
+		// an hour longer; 330 % 360 = 330 minutes after 21:00 = 02:30, still
+		// ahead at 02:00 PST.
+		{"daylight saving ends during the night", time.Date(2026, 11, 1, 2, 0, 0, 0, la), 330, "02:30"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			origNow := scheduleNowFn
+			t.Cleanup(func() { scheduleNowFn = origNow })
+			scheduleNowFn = func() time.Time { return tc.now }
+
+			got, err := nightlyScheduleTime(tc.changeNum, DefaultScheduleTimezone)
+			if err != nil {
+				t.Fatalf("nightlyScheduleTime(%d) failed: %v", tc.changeNum, err)
+			}
+			if got != tc.want {
+				t.Errorf("nightlyScheduleTime(%d) at %v = %q, want %q", tc.changeNum, tc.now, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStackScheduleSlots(t *testing.T) {
 	pdt := time.FixedZone("PDT", -7*60*60)
 	tests := []struct {

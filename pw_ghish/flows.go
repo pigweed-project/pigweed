@@ -169,6 +169,53 @@ func ComputeScheduleTime(changeNum int, customTime string) (string, error) {
 	return fmt.Sprintf("%02d:%02d", targetHour, targetMin), nil
 }
 
+// nightlyScheduleTime returns the "HH:MM" --nightly time for changeNum in tz:
+// its slot in the 21:00 to 03:00 window (see ComputeScheduleTime), unless now
+// is already inside the window and tonight's slot has passed. Then it returns
+// the next minute rather than waiting for the next night: the change is
+// already off-peak. A slot still ahead in the window is kept, so changes stay
+// spread out by change number.
+func nightlyScheduleTime(changeNum int, tz string) (string, error) {
+	slot, err := ComputeScheduleTime(changeNum, "")
+	if err != nil {
+		return "", err
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		// OK: without time zone data, "now" in tz is unknown, so keep the
+		// slot as before.
+		slog.Debug("nightly schedule: cannot load time zone", "tz", tz, "err", err)
+		return slot, nil
+	}
+	now := scheduleNowFn().In(loc)
+	// windowDay is the day tonight's window started: today from 21:00,
+	// yesterday before 03:00.
+	var windowDay int
+	switch {
+	case now.Hour() >= 21:
+		windowDay = now.Day()
+	case now.Hour() < 3:
+		windowDay = now.Day() - 1
+	default:
+		return slot, nil // Outside the window.
+	}
+	hhmm, err := time.Parse("15:04", slot)
+	if err != nil {
+		return "", fmt.Errorf("invalid time %q: %w", slot, err)
+	}
+	// Built from the wall clock rather than by adding a duration to 21:00,
+	// so a daylight saving change during the night does not move it.
+	slotDay := windowDay
+	if hhmm.Hour() < 21 {
+		slotDay++ // After midnight.
+	}
+	slotAt := time.Date(now.Year(), now.Month(), slotDay, hhmm.Hour(), hhmm.Minute(), 0, 0, loc)
+	if slotAt.After(now) {
+		return slot, nil
+	}
+	return now.Truncate(time.Minute).Add(time.Minute).Format("15:04"), nil
+}
+
 // ScheduleDay returns "today" if targetTime ("HH:MM") is still in the future
 // today in tz, or "tomorrow" if targetTime has already passed today in tz.
 func ScheduleDay(targetTime string, tz string) string {
@@ -329,7 +376,12 @@ func (c *ChangeContext) createScheduledSubmitFlow(changeNum int, customTime stri
 		return ScheduledSubmitFlow{}, err
 	}
 
-	targetTime, err := ComputeScheduleTime(changeNum, customTime)
+	var targetTime string
+	if customTime != "" {
+		targetTime, err = ValidateScheduleTime(customTime)
+	} else {
+		targetTime, err = nightlyScheduleTime(changeNum, tz)
+	}
 	if err != nil {
 		return ScheduledSubmitFlow{}, err
 	}
@@ -702,7 +754,7 @@ func stackScheduleSlots(bottom *ChangeContext, submitAt string, n int, tz string
 		if err != nil {
 			return nil, err
 		}
-		if base, err = ComputeScheduleTime(change.Number, ""); err != nil {
+		if base, err = nightlyScheduleTime(change.Number, tz); err != nil {
 			return nil, err
 		}
 	}

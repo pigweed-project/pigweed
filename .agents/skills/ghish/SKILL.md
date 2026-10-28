@@ -200,7 +200,8 @@ Commands:
     A work-in-progress change is marked ready for review (notifying
     reviewers).
     - `--nightly`: a slot in 21:00–03:00 **US Pacific**
-      (`America/Los_Angeles`), derived from the change number.
+      (`America/Los_Angeles`), derived from the change number. Run inside the
+      window after the slot has passed, it schedules the next minute.
     - `--submit-at <HH:MM>`: 24-hour time **in US Pacific**, not the user's
       time zone; convert first. A time already past today means tomorrow.
     - With `--stack` (`pr create` / `pr push`), every change is scheduled.
