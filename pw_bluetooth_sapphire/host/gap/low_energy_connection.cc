@@ -767,22 +767,7 @@ void LowEnergyConnection::OnGattServicesResult(att::Result<> status,
   gap_service_client_.emplace(peer_id(), services.front());
   auto self = weak_self_.GetWeakPtr();
 
-  gap_service_client_->ReadDeviceName([self](att::Result<std::string> result) {
-    if (!self.is_alive() || result.is_error()) {
-      return;
-    }
-
-    self->peer_->RegisterName(result.value(),
-                              Peer::NameSource::kGenericAccessService);
-  });
-
-  gap_service_client_->ReadAppearance([self](att::Result<uint16_t> result) {
-    if (!self.is_alive() || result.is_error()) {
-      return;
-    }
-
-    self->peer_->SetAppearance(result.value());
-  });
+  MaybeReadGapServiceIdentity();
 
   if (!peer_->le()->preferred_connection_parameters().has_value()) {
     gap_service_client_->ReadPeripheralPreferredConnectionParameters(
@@ -805,6 +790,52 @@ void LowEnergyConnection::OnGattServicesResult(att::Result<> status,
           self->peer_->MutLe().SetPreferredConnectionParameters(params);
         });
   }
+}
+
+void LowEnergyConnection::MaybeReadGapServiceIdentity() {
+  if (!gap_service_client_.has_value() || gap_service_identity_requested_) {
+    return;
+  }
+
+  // After a peer is bonded, don't update its identity information (name and
+  // appearance) until an encrypted connection has been established. Like
+  // advertising data and inquiry results, GAP service values read over an
+  // unencrypted link are unauthenticated.
+  if (peer_->bonded() && !sm_->security().encrypted()) {
+    bt_log(INFO,
+           "gap-le",
+           "deferring GAP service name and appearance read for bonded peer "
+           "until link is encrypted (peer: %s)",
+           bt_str(peer_id()));
+    return;
+  }
+  gap_service_identity_requested_ = true;
+
+  auto self = weak_self_.GetWeakPtr();
+  gap_service_client_->ReadDeviceName([self](att::Result<std::string> result) {
+    if (!self.is_alive() || result.is_error()) {
+      return;
+    }
+    // Don't update a bonded peer's name unless the link is encrypted.
+    if (self->peer_->bonded() && !self->sm_->security().encrypted()) {
+      return;
+    }
+
+    self->peer_->RegisterName(result.value(),
+                              Peer::NameSource::kGenericAccessService);
+  });
+
+  gap_service_client_->ReadAppearance([self](att::Result<uint16_t> result) {
+    if (!self.is_alive() || result.is_error()) {
+      return;
+    }
+    // Don't update a bonded peer's appearance unless the link is encrypted.
+    if (self->peer_->bonded() && !self->sm_->security().encrypted()) {
+      return;
+    }
+
+    self->peer_->SetAppearance(result.value());
+  });
 }
 
 void LowEnergyConnection::CloseRefs() {
@@ -850,6 +881,10 @@ void LowEnergyConnection::OnNewSecurityProperties(
          bt_str(peer_id()));
   // Update the data plane with the correct link security level.
   l2cap_->AssignLinkSecurityProperties(link_->handle(), sec);
+
+  // The GAP service identity of a bonded peer is only read once the link is
+  // encrypted.
+  MaybeReadGapServiceIdentity();
 }
 
 std::optional<sm::IdentityInfo>

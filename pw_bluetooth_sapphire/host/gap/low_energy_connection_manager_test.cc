@@ -2658,6 +2658,106 @@ TEST_F(LowEnergyConnectionManagerTest,
   EXPECT_FALSE(peer->le()->preferred_connection_parameters());
 }
 
+// Adds a GAP service to `peer_id` that exposes the Device Name and Appearance
+// characteristics with the given values.
+void AddGapServiceWithNameAndAppearance(gatt::testing::FakeLayer* fake_gatt,
+                                        PeerId peer_id,
+                                        const std::string& name,
+                                        uint16_t appearance) {
+  gatt::ServiceData service_data(gatt::ServiceKind::PRIMARY,
+                                 /*start=*/0x0001,
+                                 /*end=*/0x0009,
+                                 kGenericAccessService);
+  auto [remote_svc, service_client] =
+      fake_gatt->AddPeerService(peer_id, service_data);
+
+  constexpr att::Handle kNameValueHandle = 0x0003;
+  constexpr att::Handle kAppearanceValueHandle = 0x0005;
+  gatt::CharacteristicData name_char(gatt::kRead,
+                                     /*ext_props=*/std::nullopt,
+                                     /*handle=*/0x0002,
+                                     kNameValueHandle,
+                                     kDeviceNameCharacteristic);
+  gatt::CharacteristicData appearance_char(gatt::kRead,
+                                           /*ext_props=*/std::nullopt,
+                                           /*handle=*/0x0004,
+                                           kAppearanceValueHandle,
+                                           kAppearanceCharacteristic);
+  service_client->set_characteristics({name_char, appearance_char});
+
+  DynamicByteBuffer name_value(BufferView(name.data(), name.size()));
+  StaticByteBuffer appearance_value(static_cast<uint8_t>(appearance & 0xFF),
+                                    static_cast<uint8_t>(appearance >> 8));
+  service_client->set_read_request_callback(
+      [name_value, appearance_value](att::Handle handle, auto read_cb) {
+        if (handle == kNameValueHandle) {
+          read_cb(fit::ok(), name_value, /*maybe_truncated=*/false);
+        } else if (handle == kAppearanceValueHandle) {
+          read_cb(fit::ok(), appearance_value, /*maybe_truncated=*/false);
+        }
+      });
+}
+
+// Verify that identity information (name and appearance) for a bonded peer is
+// not updated from its GAP service when received over an unencrypted
+// connection, and is updated once the connection is encrypted (see
+// b/523274478).
+TEST_F(LowEnergyConnectionManagerTest,
+       BondedPeerNameAndAppearanceUpdatedFromGapServiceOnlyWhenEncrypted) {
+  const std::string kBondedName = "BondedName";
+  constexpr uint16_t kBondedAppearance = 0x0001;
+  const std::string kRemoteName = "RemoteName";
+  constexpr uint16_t kRemoteAppearance = 0x0002;
+  Peer* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  peer->RegisterName(kBondedName, Peer::NameSource::kNameDiscoveryProcedure);
+  peer->SetAppearance(kBondedAppearance);
+  sm::PairingData bond;
+  bond.peer_ltk = kLTK;
+  bond.local_ltk = kLTK;
+  ASSERT_TRUE(peer->MutLe().SetBondData(bond));
+  AddGapServiceWithNameAndAppearance(
+      fake_gatt(), peer->identifier(), kRemoteName, kRemoteAppearance);
+
+  // The remote device initiates the connection, so the local device is the
+  // peripheral and does not start encryption.
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+  test_device()->ConnectLowEnergy(kAddress0);
+  RunUntilIdle();
+  auto link = MoveLastRemoteInitiated();
+  ASSERT_TRUE(link);
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(link), BondableMode::Bondable, [&](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      });
+  RunUntilIdle();
+  ASSERT_TRUE(conn_handle);
+  ASSERT_FALSE(conn_handle->security().encrypted());
+
+  ASSERT_TRUE(peer->name());
+  EXPECT_EQ(*peer->name(), kBondedName);
+  EXPECT_EQ(peer->name_source(), Peer::NameSource::kNameDiscoveryProcedure);
+  ASSERT_TRUE(peer->appearance());
+  EXPECT_EQ(*peer->appearance(), kBondedAppearance);
+
+  // The GAP service values are trusted once the link is encrypted.
+  std::optional<sm::Result<>> pair_status;
+  conn_mgr()->Pair(peer->identifier(),
+                   sm::SecurityLevel::kEncrypted,
+                   BondableMode::Bondable,
+                   [&](sm::Result<> status) { pair_status = status; });
+  RunUntilIdle();
+  ASSERT_EQ(pair_status, fit::ok());
+  ASSERT_TRUE(conn_handle->security().encrypted());
+
+  ASSERT_TRUE(peer->name());
+  EXPECT_EQ(*peer->name(), kRemoteName);
+  EXPECT_EQ(peer->name_source(), Peer::NameSource::kGenericAccessService);
+  ASSERT_TRUE(peer->appearance());
+  EXPECT_EQ(*peer->appearance(), kRemoteAppearance);
+}
+
 // Listener receives remote initiated connection ref.
 TEST_F(LowEnergyConnectionManagerTest, PassBondableThroughRemoteInitiatedLink) {
   test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));

@@ -310,6 +310,14 @@ class LowEnergyConnection final : public sm::Delegate {
   // guaranteed).
   void OnGattServicesResult(att::Result<> status, gatt::ServiceList services);
 
+  // Reads the Device Name and Appearance characteristics from the peer's GAP
+  // service and stores them in `peer_`, once the GAP service has been
+  // discovered. If the peer is bonded, this waits until the link is encrypted,
+  // as an unauthenticated device could otherwise spoof the bonded peer's
+  // address and overwrite its name. Does nothing if they have already been
+  // requested.
+  void MaybeReadGapServiceIdentity();
+
   // Notifies all connection refs of disconnection.
   void CloseRefs();
 
@@ -408,6 +416,10 @@ class LowEnergyConnection final : public sm::Delegate {
 
   // Null until service discovery completes.
   std::optional<GenericAccessClient> gap_service_client_;
+
+  // Set to true when the Device Name and Appearance have been requested from
+  // `gap_service_client_`.
+  bool gap_service_identity_requested_ = false;
 
   WeakSelf<LowEnergyConnection> weak_self_;
   // Vended only to connection handles so that handles released during

@@ -90,6 +90,11 @@ void TestSecurityManager::UpgradeSecurity(SecurityLevel level,
   last_requested_upgrade_ = level;
   set_security(SecurityProperties(
       level, kMaxEncryptionKeySize, /*secure_connections=*/true));
+  // Like SecurityManager, notify the delegate of the new link security
+  // properties before completing the request.
+  if (delegate_.is_alive()) {
+    delegate_->OnNewSecurityProperties(security());
+  }
   callback(fit::ok(), security());
 }
 
