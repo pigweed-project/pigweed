@@ -218,6 +218,10 @@ Result<Chunk> Chunk::Parse(ConstByteSpan message) {
     return Status::DataLoss();
   }
 
+  if (chunk.IsTerminatingChunk() && !chunk.status_.has_value()) {
+    return Status::DataLoss();
+  }
+
   if (status.ok() || status.IsOutOfRange()) {
     return chunk;
   }

@@ -77,5 +77,17 @@ TEST(Chunk, Parse_InitialChunkWithPayload_Fails) {
   EXPECT_EQ(parse_result.status(), Status::DataLoss());
 }
 
+TEST(Chunk, Parse_TerminatingChunkWithoutStatus_Fails) {
+  Chunk chunk(ProtocolVersion::kVersionTwo, Chunk::Type::kCompletion);
+  chunk.set_session_id(42);
+
+  std::array<std::byte, 64> buffer;
+  auto encode_result = chunk.Encode(buffer);
+  ASSERT_EQ(encode_result.status(), OkStatus());
+
+  auto parse_result = Chunk::Parse(encode_result.value());
+  EXPECT_EQ(parse_result.status(), Status::DataLoss());
+}
+
 }  // namespace
 }  // namespace pw::transfer::internal
