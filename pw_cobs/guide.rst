@@ -154,3 +154,26 @@ Or feed one byte at a time:
    if (result.ok()) {
      HandlePacket(*result);
    }
+
+.. _module-pw_cobs-guide-python:
+
+------
+Python
+------
+The ``pw_cobs`` Python package (``//pw_cobs/py:pw_cobs``) provides pure-Python
+equivalents of the C++ encoding and decoding primitives:
+
+.. code-block:: python
+
+   from pw_cobs import Decoder, Streamer, decode, encode
+
+   wire_frame = encode(b'hello')
+   assert decode(wire_frame) == b'hello'
+
+   streamer = Streamer(buffer_size=257)
+   wire_chunks = b''.join(streamer.stream(b'hello', b' world'))
+
+   decoder = Decoder(max_payload_size=256)
+   for frame in decoder.process(wire_chunks):
+       if frame.ok():
+           handle_packet(frame.payload)

@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//pw_perf_test:pw_cc_perf_test.bzl", "pw_cc_perf_test")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
@@ -65,5 +66,26 @@ pw_cc_perf_test(
         "//pw_assert:check",
         "//pw_bytes",
         "//pw_perf_test",
+    ],
+)
+
+run_binary(
+    name = "generate_cobs_generated_test",
+    outs = ["cobs_generated_test.cc"],
+    args = [
+        "--generate-cc-test",
+        "$(execpath :cobs_generated_test.cc)",
+    ],
+    tool = "//pw_cobs/py:generate_cobs_test",
+)
+
+pw_cc_test(
+    name = "cobs_generated_test",
+    srcs = [":generate_cobs_generated_test"],
+    deps = [
+        ":pw_cobs",
+        "//pw_bytes",
+        "//pw_span",
+        "//pw_status",
     ],
 )

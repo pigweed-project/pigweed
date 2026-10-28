@@ -36,6 +36,7 @@ pw_python_group("core_pigweed_python_packages") {
     "$dir_pw_chrono/py",
     "$dir_pw_cli/py",
     "$dir_pw_cli_analytics/py",
+    "$dir_pw_cobs/py",
     "$dir_pw_compilation_testing/py",
     "$dir_pw_console/py",
     "$dir_pw_containers/py",
