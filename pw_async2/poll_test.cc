@@ -60,6 +60,47 @@ struct Immovable {
   MoveOnly value_;
 };
 
+class Copyable {
+ public:
+  explicit Copyable(int value) : value_(value) {}
+
+  Copyable(const Copyable& other)
+      : value_(other.value_), moved_from_(other.moved_from_) {}
+
+  Copyable& operator=(const Copyable& other) {
+    value_ = other.value_;
+    moved_from_ = other.moved_from_;
+    constructed_by_move_ = false;
+    return *this;
+  }
+
+  Copyable(Copyable&& other) noexcept
+      : value_(other.value_),
+        moved_from_(other.moved_from_),
+        constructed_by_move_(true) {
+    other.value_ = -1;
+    other.moved_from_ = true;
+  }
+
+  Copyable& operator=(Copyable&& other) noexcept {
+    value_ = other.value_;
+    moved_from_ = other.moved_from_;
+    constructed_by_move_ = true;
+    other.value_ = -1;
+    other.moved_from_ = true;
+    return *this;
+  }
+
+  int value() const { return value_; }
+  bool moved_from() const { return moved_from_; }
+  bool constructed_by_move() const { return constructed_by_move_; }
+
+ private:
+  int value_;
+  bool moved_from_ = false;
+  bool constructed_by_move_ = false;
+};
+
 TEST(Poll, ConstructsReadyInPlace) {
   Poll<Immovable> mr(std::in_place, MoveOnly(5));
   EXPECT_TRUE(mr.IsReady());
@@ -152,6 +193,92 @@ TEST(ReadyFunction, ConstructsReadyFromValueType) {
   Poll<MoveOnly> mr = Ready(MoveOnly(5));
   EXPECT_TRUE(mr.IsReady());
   EXPECT_EQ(mr->value(), 5);
+}
+
+TEST(Poll, CopiesNonConstLvalueOnConversion) {
+  Copyable original(42);
+  Poll<Copyable> poll = original;
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+  EXPECT_FALSE(original.moved_from());
+  EXPECT_EQ(original.value(), 42);
+}
+
+TEST(Poll, CopiesConstLvalueOnConversion) {
+  const Copyable original(42);
+  Poll<Copyable> poll = original;
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+}
+
+TEST(Poll, CopiesNonConstLvalueInPlace) {
+  Copyable original(42);
+  Poll<Copyable> poll(std::in_place, original);
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+  EXPECT_FALSE(original.moved_from());
+  EXPECT_EQ(original.value(), 42);
+}
+
+TEST(Poll, CopiesNonConstLvalueOnReturn) {
+  Copyable member(42);
+  auto get_poll = [&member]() -> Poll<Copyable> { return member; };
+  Poll<Copyable> poll = get_poll();
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+  EXPECT_FALSE(member.moved_from());
+  EXPECT_EQ(member.value(), 42);
+}
+
+TEST(Poll, CopiesNonConstLvalueOnAssignment) {
+  Copyable original(42);
+  Poll<Copyable> poll = Pending();
+  poll = original;
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+  EXPECT_FALSE(original.moved_from());
+  EXPECT_EQ(original.value(), 42);
+}
+
+TEST(Poll, MovesRvalue) {
+  Copyable original(42);
+  Poll<Copyable> poll = std::move(original);
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+  EXPECT_TRUE(poll->constructed_by_move());
+}
+
+TEST(ReadyFunction, CopiesNonConstLvalue) {
+  Copyable original(42);
+  Poll<Copyable> poll = Ready(original);
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+  EXPECT_FALSE(original.moved_from());
+  EXPECT_EQ(original.value(), 42);
+}
+
+TEST(ReadyFunction, CopiesConstLvalue) {
+  const Copyable original(42);
+  Poll<Copyable> poll = Ready(original);
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+}
+
+TEST(ReadyFunction, CopiesNonConstLvalueInPlace) {
+  Copyable original(42);
+  Poll<Copyable> poll = Ready<Copyable>(std::in_place, original);
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+  EXPECT_FALSE(original.moved_from());
+  EXPECT_EQ(original.value(), 42);
+}
+
+TEST(ReadyFunction, MovesRvalue) {
+  Copyable original(42);
+  Poll<Copyable> poll = Ready(std::move(original));
+  ASSERT_TRUE(poll.IsReady());
+  EXPECT_EQ(poll->value(), 42);
+  EXPECT_TRUE(poll->constructed_by_move());
 }
 
 PollResult<int> EndToEndTest(int input) {

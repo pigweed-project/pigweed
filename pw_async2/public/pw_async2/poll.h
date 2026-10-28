@@ -191,7 +191,7 @@ class PW_ASYNC2_POLL_NODISCARD Poll {
   // In-place construction of `Ready` variant.
   template <typename... Args>
   constexpr Poll(std::in_place_t, Args&&... args)
-      : value_(std::in_place, std::move(args)...) {}
+      : value_(std::in_place, std::forward<Args>(args)...) {}
 
   // Convert from `T`
   constexpr Poll(value_type&& value) : value_(std::move(value)) {}
@@ -345,8 +345,8 @@ constexpr Poll<T> Ready(std::in_place_t, Args&&... args) {
 
 /// Returns a value indicating completion with some result.
 template <typename T>
-constexpr Poll<std::remove_reference_t<T>> Ready(T&& value) {
-  return Poll<std::remove_reference_t<T>>(std::forward<T>(value));
+constexpr Poll<std::decay_t<T>> Ready(T&& value) {
+  return Poll<std::decay_t<T>>(std::forward<T>(value));
 }
 
 /// Returns a value indicating that an operation was not yet able to complete.
