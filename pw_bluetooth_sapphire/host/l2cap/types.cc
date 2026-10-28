@@ -20,46 +20,10 @@
 
 namespace bt::l2cap {
 namespace {
-// Helper for implementing the AnyChannelMode equality operators.
-template <typename T, typename... Alternatives>
-bool VariantEqualsHelper(const std::variant<Alternatives...>& v, const T& x) {
-  return std::holds_alternative<T>(v) && (std::get<T>(v) == x);
-}
-
 // Size for a string/buffer that ensures that pw::ToString<AnyChannelMode> will
 // succeed.
 constexpr size_t kAnyChannelModeMaxStringSize = 40;
 }  // namespace
-
-// Allow checking equality of AnyChannelMode with variant members.
-bool operator==(const AnyChannelMode& any,
-                RetransmissionAndFlowControlMode mode) {
-  return VariantEqualsHelper(any, mode);
-}
-bool operator==(RetransmissionAndFlowControlMode mode,
-                const AnyChannelMode& any) {
-  return VariantEqualsHelper(any, mode);
-}
-bool operator==(const AnyChannelMode& any, CreditBasedFlowControlMode mode) {
-  return VariantEqualsHelper(any, mode);
-}
-bool operator==(CreditBasedFlowControlMode mode, const AnyChannelMode& any) {
-  return VariantEqualsHelper(any, mode);
-}
-bool operator!=(const AnyChannelMode& any,
-                RetransmissionAndFlowControlMode mode) {
-  return !VariantEqualsHelper(any, mode);
-}
-bool operator!=(RetransmissionAndFlowControlMode mode,
-                const AnyChannelMode& any) {
-  return !VariantEqualsHelper(any, mode);
-}
-bool operator!=(const AnyChannelMode& any, CreditBasedFlowControlMode mode) {
-  return !VariantEqualsHelper(any, mode);
-}
-bool operator!=(CreditBasedFlowControlMode mode, const AnyChannelMode& any) {
-  return !VariantEqualsHelper(any, mode);
-}
 
 std::string AnyChannelModeToString(const AnyChannelMode& mode) {
   std::string buffer(kAnyChannelModeMaxStringSize, 0);

@@ -53,8 +53,8 @@ constexpr bool IsValidPsm(bt::LinkType link_type, Psm psm) {
 
 // Returns true if dynamic channels on |link_type| links can use |mode|. An
 // unset mode uses the link type's default.
-bool IsModeSupported(bt::LinkType link_type,
-                     const std::optional<AnyChannelMode>& mode) {
+constexpr bool IsModeSupported(bt::LinkType link_type,
+                               const std::optional<AnyChannelMode>& mode) {
   switch (link_type) {
     case bt::LinkType::kACL:
       return !mode.has_value() ||

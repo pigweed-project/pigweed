@@ -72,18 +72,48 @@ using SecurityUpgradeCallback =
 using AnyChannelMode =
     std::variant<RetransmissionAndFlowControlMode, CreditBasedFlowControlMode>;
 
-bool operator==(const AnyChannelMode& any,
-                RetransmissionAndFlowControlMode mode);
-bool operator==(RetransmissionAndFlowControlMode mode,
-                const AnyChannelMode& any);
-bool operator==(const AnyChannelMode& any, CreditBasedFlowControlMode mode);
-bool operator==(CreditBasedFlowControlMode mode, const AnyChannelMode& any);
-bool operator!=(const AnyChannelMode& any,
-                RetransmissionAndFlowControlMode mode);
-bool operator!=(RetransmissionAndFlowControlMode mode,
-                const AnyChannelMode& any);
-bool operator!=(const AnyChannelMode& any, CreditBasedFlowControlMode mode);
-bool operator!=(CreditBasedFlowControlMode mode, const AnyChannelMode& any);
+namespace internal {
+// Helper for implementing the AnyChannelMode equality operators.
+template <typename T, typename... Alternatives>
+constexpr bool VariantEquals(const std::variant<Alternatives...>& v,
+                             const T& x) {
+  return std::holds_alternative<T>(v) && (std::get<T>(v) == x);
+}
+}  // namespace internal
+
+// Allow checking equality of AnyChannelMode with variant members.
+constexpr bool operator==(const AnyChannelMode& any,
+                          RetransmissionAndFlowControlMode mode) {
+  return internal::VariantEquals(any, mode);
+}
+constexpr bool operator==(RetransmissionAndFlowControlMode mode,
+                          const AnyChannelMode& any) {
+  return internal::VariantEquals(any, mode);
+}
+constexpr bool operator==(const AnyChannelMode& any,
+                          CreditBasedFlowControlMode mode) {
+  return internal::VariantEquals(any, mode);
+}
+constexpr bool operator==(CreditBasedFlowControlMode mode,
+                          const AnyChannelMode& any) {
+  return internal::VariantEquals(any, mode);
+}
+constexpr bool operator!=(const AnyChannelMode& any,
+                          RetransmissionAndFlowControlMode mode) {
+  return !internal::VariantEquals(any, mode);
+}
+constexpr bool operator!=(RetransmissionAndFlowControlMode mode,
+                          const AnyChannelMode& any) {
+  return !internal::VariantEquals(any, mode);
+}
+constexpr bool operator!=(const AnyChannelMode& any,
+                          CreditBasedFlowControlMode mode) {
+  return !internal::VariantEquals(any, mode);
+}
+constexpr bool operator!=(CreditBasedFlowControlMode mode,
+                          const AnyChannelMode& any) {
+  return !internal::VariantEquals(any, mode);
+}
 std::string AnyChannelModeToString(const AnyChannelMode& mode);
 pw::StatusWithSize AnyChannelModeToPwString(const AnyChannelMode& mode,
                                             pw::span<char> span);
