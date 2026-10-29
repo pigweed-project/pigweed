@@ -168,7 +168,6 @@ class TestCipdSetupUpdate(unittest.TestCase):
             Path('kythe.json'),
             Path('luci.json'),
             Path('msrv_python.json'),
-            Path('python310.json'),
             Path('rbe.json'),
             Path('testing.json'),
             Path('web.json'),

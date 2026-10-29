@@ -140,6 +140,9 @@ class Zephyr(pw_package.git_repo.GitRepo):
                     f'{path}/scripts/requirements.txt',
                     '-c',
                     str(constraint),
+                    # Pin zephyr numpy to a version with prebuilts available for
+                    # Python: 3.11, 3.12, 3.13, 3.14
+                    'numpy==2.3.5',
                 ]
             )
 

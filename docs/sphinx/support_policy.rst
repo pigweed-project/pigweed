@@ -66,6 +66,22 @@ Notice of upcoming version support changes
 ------
 Python
 ------
-Pigweed officially supports Python 3.10 and 3.11. Moving forward, Pigweed will
-follow Python's `official supported versions`_. Pigweed will drop support for
-Python versions as they reach end-of-life.
+Pigweed officially supports Python **3.11** (minimum supported version) through
+**3.14** and follows Python's `official supported versions`_ and drops
+support for Python versions as they reach end-of-life.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Python Version
+     - Supported Build Systems
+   * - 3.11 (minimum)
+     - GN
+   * - 3.12
+     - Bazel
+   * - 3.13
+     - GN, Planned: Bazel
+   * - 3.14
+     - Planned: GN, Bazel
+   * - 3.15
+     - Planned: GN, Bazel
