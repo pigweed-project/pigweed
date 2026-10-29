@@ -112,11 +112,19 @@ enum class ConnectionState : uint8_t {
 };
 
 // Sniff modes and transitional states between them.
-enum class ConnectionMode : uint8_t {
-  kActive,
-  kTransitionActiveToSniff,
-  kSniff,
-  kTransitionSniffToActive,
+struct ConnectionMode final {
+  struct Active final {
+    std::optional<async2::TimeFuture<Clock>> timer;
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    bool is_resynchronizing = false;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  };
+  struct TransitionActiveToSniff final {};
+  struct Sniff final {};
+  struct TransitionSniffToActive final {};
+
+  using Variant = std::
+      variant<Active, TransitionActiveToSniff, Sniff, TransitionSniffToActive>;
 };
 
 }  // namespace
@@ -190,7 +198,8 @@ class SniffOffloadManager::ConnectionFsm final {
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   bool is_resynchronizing() const PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_) {
-    return is_resynchronizing_;
+    const auto* active = std::get_if<ConnectionMode::Active>(&connection_mode_);
+    return active != nullptr && active->is_resynchronizing;
   }
   SniffConnectionSnapshot CaptureLocked() const
       PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
@@ -253,11 +262,7 @@ class SniffOffloadManager::ConnectionFsm final {
 
     async2::Poll<> DoPend(async2::Context&) override;
 
-    // Wait for the specified time, overriding any previous wait.
-    void WaitFor(Clock::duration duration)
-        PW_EXCLUSIVE_LOCKS_REQUIRED(fsm_.manager_.mutex_) {
-      timeout_future_ = fsm_.manager_.time_provider_.WaitFor(duration);
-      // The new timer has no waker until this task pends it.
+    void Wake() PW_EXCLUSIVE_LOCKS_REQUIRED(fsm_.manager_.mutex_) {
       waker_.Wake();
     }
     void AssertLockHeld(ConnectionFsm& caller) const
@@ -270,10 +275,7 @@ class SniffOffloadManager::ConnectionFsm final {
 
    private:
     SniffOffloadManager::ConnectionFsm& fsm_;
-    async2::TimeFuture<Clock> timeout_future_
-        PW_GUARDED_BY(fsm_.manager_.mutex_);
-    // Wakes this task when `WaitFor()` replaces `timeout_future_`.
-    async2::Waker waker_;
+    async2::Waker waker_ PW_GUARDED_BY(fsm_.manager_.mutex_);
   };
 
   using SniffOffloadParameters = SniffOffloadParametersInput;
@@ -285,11 +287,8 @@ class SniffOffloadManager::ConnectionFsm final {
       PW_GUARDED_BY(manager_.mutex_);
 
   bool enabled_ PW_GUARDED_BY(manager_.mutex_) = false;
-  ConnectionMode connection_mode_ PW_GUARDED_BY(manager_.mutex_) =
-      ConnectionMode::kActive;
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  bool is_resynchronizing_ PW_GUARDED_BY(manager_.mutex_) = false;
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  ConnectionMode::Variant connection_mode_ PW_GUARDED_BY(manager_.mutex_) =
+      ConnectionMode::Active{};
 
   TimeoutTask timeout_task_{*this};
 };
@@ -1035,20 +1034,17 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleInput(ModeChangeInput&& input) {
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  is_resynchronizing_ = false;
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   auto mode_change = std::move(input);
   switch (mode_change.current_mode) {
     case emboss::AclConnectionMode::ACTIVE:
-      connection_mode_ = ConnectionMode::kActive;
+      connection_mode_ = ConnectionMode::Active{};
       ResetTimer();
       break;
     case emboss::AclConnectionMode::SNIFF:
-      connection_mode_ = ConnectionMode::kSniff;
+      connection_mode_ = ConnectionMode::Sniff{};
       break;
     case emboss::AclConnectionMode::HOLD:
-      connection_mode_ = ConnectionMode::kSniff;
+      connection_mode_ = ConnectionMode::Sniff{};
       PW_LOG_WARN("Got unexpected 'HOLD' mode.");
       break;
     default:
@@ -1059,40 +1055,32 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(ModeChangeInput&& input) {
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleTimeout() {
+  if ([[maybe_unused]] auto* active =
+          std::get_if<ConnectionMode::Active>(&connection_mode_)) {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  is_resynchronizing_ = false;
+    active->is_resynchronizing = false;
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  switch (connection_mode_) {
-    case ConnectionMode::kActive:
-      if (should_control()) {
-        SendEnterSniffMode();
-        connection_mode_ = ConnectionMode::kTransitionActiveToSniff;
-      }
-      break;
-    case ConnectionMode::kTransitionActiveToSniff:
-    case ConnectionMode::kSniff:
-    case ConnectionMode::kTransitionSniffToActive:
-      break;
+    if (should_control()) {
+      SendEnterSniffMode();
+      connection_mode_ = ConnectionMode::TransitionActiveToSniff{};
+    }
   }
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleInput(AclActivity&& input) {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  is_resynchronizing_ = false;
+  if (auto* active = std::get_if<ConnectionMode::Active>(&connection_mode_)) {
+    active->is_resynchronizing = false;
+  }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   auto activity = std::move(input);
-  switch (connection_mode_) {
-    case ConnectionMode::kActive:
-      break;
-    case ConnectionMode::kTransitionActiveToSniff:
-    case ConnectionMode::kSniff:
-      if (ShouldExitSniff(activity.direction)) {
-        SendExitSniffMode();
-        connection_mode_ = ConnectionMode::kTransitionSniffToActive;
-      }
-      break;
-    case ConnectionMode::kTransitionSniffToActive:
-      break;
+  if (std::holds_alternative<ConnectionMode::TransitionActiveToSniff>(
+          connection_mode_) ||
+      std::holds_alternative<ConnectionMode::Sniff>(connection_mode_)) {
+    if (ShouldExitSniff(activity.direction)) {
+      SendExitSniffMode();
+      connection_mode_ = ConnectionMode::TransitionSniffToActive{};
+    }
   }
 
   ResetTimer();
@@ -1103,9 +1091,13 @@ void SniffOffloadManager::ConnectionFsm::ResetTimer() {
     return;
   }
 
-  timeout_task_.AssertLockHeld(*this);
-  timeout_task_.WaitFor(std::chrono::ceil<Clock::duration>(
-      std::chrono::milliseconds(parameters_->link_inactivity_timeout)));
+  if (auto* active = std::get_if<ConnectionMode::Active>(&connection_mode_)) {
+    active->timer =
+        manager_.time_provider_.WaitFor(std::chrono::ceil<Clock::duration>(
+            std::chrono::milliseconds(parameters_->link_inactivity_timeout)));
+    timeout_task_.AssertLockHeld(*this);
+    timeout_task_.Wake();
+  }
 }
 
 void SniffOffloadManager::ConnectionFsm::SendEnterSniffMode() {
@@ -1214,15 +1206,21 @@ async2::Poll<> SniffOffloadManager::ConnectionFsm::TimeoutTask::DoPend(
     async2::Context& cx) {
   while (true) {
     std::lock_guard lock(fsm_.manager_.mutex_);
-    if (!timeout_future_.is_pendable() || timeout_future_.is_complete()) {
-      timeout_future_ =
-          fsm_.manager_.time_provider_.WaitUntil(Clock::time_point::max());
-    }
-    if (timeout_future_.Pend(cx).IsPending()) {
+    auto* active = std::get_if<ConnectionMode::Active>(&fsm_.connection_mode_);
+    if (active == nullptr || !active->timer.has_value() ||
+        active->timer->Pend(cx).IsPending()) {
+      // Store `waker_` whenever returning Pending(). This is not a fake waker
+      // used to bypass DoPend()'s "waker must be stored" requirement: when a
+      // timer is already active, its `Pend(cx)` registers a waker for timer
+      // expiration, while `waker_` is used by `ResetTimer()` and
+      // `HandleCommandStatus()` (via `Wake()`) to wake this task when a new
+      // timer is armed—even when no timer was previously active—so `DoPend()`
+      // polls the new `TimeFuture` and registers its expiration waker.
       PW_ASYNC_STORE_WAKER(
           cx, waker_, "SniffOffloadManager waiting for timer to be reset");
       return async2::Pending();
     }
+    active->timer.reset();
     fsm_.HandleTimeout();
   }
 }
@@ -1252,9 +1250,9 @@ SniffConnectionSnapshot SniffOffloadManager::ConnectionFsm::CaptureLocked()
 
 void SniffOffloadManager::ConnectionFsm::RestoreLocked(
     const SniffConnectionSnapshot& snapshot, bool enabled) {
-  is_resynchronizing_ = true;
   enabled_ = enabled;
-  connection_mode_ = ConnectionMode::kActive;
+  connection_mode_ =
+      ConnectionMode::Active{.timer = std::nullopt, .is_resynchronizing = true};
   bool has_parameters =
       snapshot.max_interval != 0 || snapshot.min_interval != 0 ||
       snapshot.attempt != 0 || snapshot.timeout != 0 ||

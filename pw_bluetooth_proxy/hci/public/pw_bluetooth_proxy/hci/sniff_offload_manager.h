@@ -192,7 +192,7 @@ class SniffOffloadManager final {
   /// saved snapshot.
   ///
   /// Reconstructs connection state machines for each handle present in the
-  /// snapshot and baselines all recovered links to ConnectionMode::kActive.
+  /// snapshot and baselines all recovered links to ConnectionMode::Active.
   /// Hardware resynchronization via `InitiateHardwareResynchronization()` must
   /// be performed after resuming packet traffic.
   ///

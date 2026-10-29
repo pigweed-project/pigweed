@@ -263,7 +263,7 @@ deferred resynchronization on active subsystems:
 2. **SniffOffloadManager (if used):**
    ``hci::SniffOffloadManager::InitiateHardwareResynchronization``
    dispatches proactive ``HCI_Exit_Sniff_Mode`` commands to the controller to
-   align hardware state to the ``ConnectionMode::kActive`` baseline.
+   align hardware state to the ``ConnectionMode::Active`` baseline.
 
 If ``SniffOffloadManager`` is not used, only ACL credit resynchronization is
 performed.
