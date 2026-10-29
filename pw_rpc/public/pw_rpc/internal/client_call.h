@@ -150,19 +150,22 @@ class UnaryResponseClientCall : public ClientCall {
   void MoveUnaryResponseClientCallFrom(UnaryResponseClientCall& other)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
     MoveClientCallFrom(other);
-    on_completed_ = std::move(other.on_completed_);
+    set_on_completed_locked(std::move(other.on_completed_));
   }
 
-  void set_on_completed(Function<void(ConstByteSpan, Status)>&& on_completed)
+  // The previous callback is destroyed after rpc_lock() is released.
+  void set_on_completed(Function<void(ConstByteSpan, Status)> on_completed)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     RpcLockGuard lock;
     set_on_completed_locked(std::move(on_completed));
   }
 
+  // The previous on_completed is swapped into `on_completed` so the caller can
+  // destroy it without holding rpc_lock().
   void set_on_completed_locked(
       Function<void(ConstByteSpan, Status)>&& on_completed)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    on_completed_ = std::move(on_completed);
+    on_completed_.swap(on_completed);
   }
 
  private:
@@ -255,18 +258,21 @@ class StreamResponseClientCall : public ClientCall {
   void MoveStreamResponseClientCallFrom(StreamResponseClientCall& other)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
     MoveClientCallFrom(other);
-    on_completed_ = std::move(other.on_completed_);
+    set_on_completed_locked(std::move(other.on_completed_));
   }
 
-  void set_on_completed(Function<void(Status)>&& on_completed)
+  // The previous callback is destroyed after rpc_lock() is released.
+  void set_on_completed(Function<void(Status)> on_completed)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     RpcLockGuard lock;
     set_on_completed_locked(std::move(on_completed));
   }
 
+  // The previous on_completed is swapped into `on_completed` so the caller can
+  // destroy it without holding rpc_lock().
   void set_on_completed_locked(Function<void(Status)>&& on_completed)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    on_completed_ = std::move(on_completed);
+    on_completed_.swap(on_completed);
   }
 
  private:

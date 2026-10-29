@@ -23,6 +23,7 @@
 #include "pw_rpc/internal/endpoint.h"
 #include "pw_rpc/internal/method.h"
 #include "pw_rpc/internal/packet.pwpb.h"
+#include "pw_rpc/internal/server_call.h"
 #include "pw_status/status_with_size.h"
 #include "pw_status/try.h"
 
@@ -164,8 +165,10 @@ void Call::MoveFrom(Call& other) {
   // callbacks_executing_ is not moved since it is associated with the object in
   // memory, not the call.
 
-  on_error_ = std::move(other.on_error_);
-  on_next_ = std::move(other.on_next_);
+  // The setters swap this call's previous callbacks into `other`, so they are
+  // destroyed with `other` rather than while rpc_lock() is held.
+  set_on_error_locked(std::move(other.on_error_));
+  set_on_next_locked(std::move(other.on_next_));
 
   if (other.active_locked()) {
     // Mark the other call inactive, unregister it, and register this one.
@@ -204,16 +207,28 @@ void Call::WaitUntilReadyForMove(Call& destination, Call& source) {
 }
 
 void Call::CallOnError(Status error) {
-  auto on_error_local = std::move(on_error_);
+  // The call is closed, so none of its callbacks can be invoked again. Take
+  // them so that they are destroyed after the lock is released.
+  Callbacks callbacks = TakeCallbacksLocked();
+#if PW_RPC_COMPLETION_REQUEST_CALLBACK
+  // Only ServerCall constructs calls with the kServerCall type.
+  Function<void()> on_completion_requested;
+  if (properties_.call_type() == kServerCall) {
+    on_completion_requested =
+        static_cast<ServerCall&>(*this).TakeOnCompletionRequestedLocked();
+  }
+#endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK
 
   CallbackStarted();
 
   rpc_lock().unlock();
-  if (on_error_local) {
-    on_error_local(error);
+  if (callbacks.on_error) {
+    callbacks.on_error(error);
   }
 
   // This mutex lock could be avoided by making callbacks_executing_ atomic.
+  // `lock` is declared after the taken callbacks so they are destroyed after
+  // CallbackFinished() and after rpc_lock() is released.
   RpcLockGuard lock;
   CallbackFinished();
 }
@@ -294,7 +309,9 @@ void Call::CloseAndMarkForCleanup(Status error) {
   endpoint_->CloseCallAndMarkForCleanup(*this, error);
 }
 
-void Call::HandlePayload(ConstByteSpan payload) {
+// The proto struct on_next wrapper releases rpc_lock(), which the thread safety
+// analysis cannot see through the Function call.
+void Call::HandlePayload(ConstByteSpan payload) PW_NO_LOCK_SAFETY_ANALYSIS {
   // pw_rpc only supports handling packets for a particular RPC one at a time.
   // Check if any callbacks are running and drop the packet if they are.
   //
@@ -323,12 +340,17 @@ void Call::HandlePayload(ConstByteSpan payload) {
   CallbackStarted();
 
   if (hold_lock_while_invoking_callback_with_payload()) {
+    // The wrapper decodes the payload, invokes the proto struct callback, and
+    // finishes handling the payload, releasing rpc_lock() (see
+    // DecodeToStructAndInvokeOnNext()). The call may have been destroyed when
+    // it returns.
     on_next_local(payload);
-  } else {
-    rpc_lock().unlock();
-    on_next_local(payload);
-    rpc_lock().lock();
+    return;
   }
+
+  rpc_lock().unlock();
+  on_next_local(payload);
+  rpc_lock().lock();
 
   CallbackFinished();
 
@@ -345,6 +367,23 @@ void Call::HandlePayload(ConstByteSpan payload) {
   if (endpoint_ != nullptr) {
     // Clean up calls in case decoding failed.
     endpoint_->CleanUpCalls();
+  } else {
+    rpc_lock().unlock();
+  }
+}
+
+void Call::FinishHandlingPayload() {
+  // Read endpoint_ first, since the call may be destroyed once the callback is
+  // finished and the lock is released.
+  Endpoint* endpoint = endpoint_;
+  CallbackFinished();
+
+  // The call could have been reinitialized and cleaned up already by another
+  // thread that acquired the rpc_lock() while the callback was executing
+  // without lock held.
+  if (endpoint != nullptr) {
+    // Clean up calls in case decoding failed.
+    endpoint->CleanUpCalls();
   } else {
     rpc_lock().unlock();
   }

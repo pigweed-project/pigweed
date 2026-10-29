@@ -14,8 +14,10 @@
 
 #include "pw_rpc/pwpb/server_reader_writer.h"
 
+#include <memory>
 #include <optional>
 
+#include "pw_rpc/internal/test_utils.h"
 #include "pw_rpc/pwpb/fake_channel_output.h"
 #include "pw_rpc/pwpb/test_method_context.h"
 #include "pw_rpc/service.h"
@@ -446,5 +448,46 @@ TEST(PwpbServerReader, CallbacksMoveCorrectly) {
   EXPECT_EQ(request.status_code, received_request.status_code);
 }
 
+TEST(PwpbServerReader, OnNextThatFinishesCall_DestroysCallbackAfterItReturns) {
+  PW_PWPB_TEST_METHOD_CONTEXT(TestServiceImpl, TestClientStreamRpc) ctx;
+
+  bool owner_destroyed = false;
+  auto owner = std::make_unique<internal::CallOwner<
+      PwpbServerReader<TestRequest::Message, TestStreamResponse::Message>>>();
+  owner->destroyed = &owner_destroyed;
+  owner->call = ctx.reader();
+  auto& call = owner->call;
+
+  // The callback owns the call. Finishing the call from the callback means the
+  // callback is not restored, so it is destroyed, which destroys the call.
+  call.set_on_next(
+      [captured_owner = std::move(owner)](const TestRequest::Message&) {
+        EXPECT_EQ(OkStatus(), captured_owner->call.Finish({}));
+      });
+  ASSERT_FALSE(owner_destroyed);
+
+  ctx.SendClientStream({.integer = 1, .status_code = 0});
+  EXPECT_TRUE(owner_destroyed);
+}
+
+TEST(PwpbServerReaderWriter,
+     MoveAssignTemporary_DestroysPreviousOnNextOutsideRpcLock) {
+  PW_PWPB_TEST_METHOD_CONTEXT(TestServiceImpl, TestBidirectionalStreamRpc) ctx;
+  PwpbServerReaderWriter<TestRequest::Message, TestStreamResponse::Message>
+      call = ctx.reader_writer();
+
+  bool owner_destroyed = false;
+  auto owner = std::make_unique<internal::CallOwner<
+      PwpbServerReaderWriter<TestRequest::Message,
+                             TestStreamResponse::Message>>>();
+  owner->destroyed = &owner_destroyed;
+  call.set_on_next(
+      [captured_owner = std::move(owner)](const TestRequest::Message&) {});
+
+  call = {};
+
+  EXPECT_FALSE(call.active());
+  EXPECT_TRUE(owner_destroyed);
+}
 }  // namespace
 }  // namespace pw::rpc

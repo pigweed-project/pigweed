@@ -193,6 +193,7 @@ pw_test("client_reader_writer_test") {
     ":client_testing",
     "$dir_pw_sync:mutex",
     "..:test_protos.pwpb_rpc",
+    "..:test_utils",
   ]
   enable_if = pw_sync_MUTEX_BACKEND != ""
   sources = [ "client_reader_writer_test.cc" ]
@@ -328,6 +329,7 @@ pw_test("server_reader_writer_test") {
     ":server_api",
     ":test_method_context",
     "..:test_protos.pwpb_rpc",
+    "..:test_utils",
   ]
   sources = [ "server_reader_writer_test.cc" ]
 }

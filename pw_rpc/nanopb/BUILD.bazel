@@ -211,6 +211,7 @@ pw_cc_test(
     deps = [
         ":client_api",
         ":client_testing",
+        "//pw_rpc:internal_test_utils",
         "//pw_rpc:pw_rpc_test_nanopb_rpc",
     ],
 )
@@ -327,6 +328,7 @@ pw_cc_test(
     deps = [
         ":test_method_context",
         "//pw_rpc",
+        "//pw_rpc:internal_test_utils",
         "//pw_rpc:pw_rpc_test_nanopb_rpc",
     ],
 )

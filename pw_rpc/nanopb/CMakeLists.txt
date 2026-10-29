@@ -166,6 +166,7 @@ pw_add_test(pw_rpc.nanopb.client_reader_writer_test
     pw_rpc.nanopb.client_api
     pw_rpc.nanopb.client_testing
     pw_rpc.test_protos.nanopb_rpc
+    pw_rpc.test_utils
   GROUPS
     modules
     pw_rpc.nanopb
@@ -329,6 +330,7 @@ pw_add_test(pw_rpc.nanopb.server_reader_writer_test
     pw_rpc.nanopb.server_api
     pw_rpc.nanopb.test_method_context
     pw_rpc.test_protos.nanopb_rpc
+    pw_rpc.test_utils
   GROUPS
     modules
     pw_rpc.nanopb

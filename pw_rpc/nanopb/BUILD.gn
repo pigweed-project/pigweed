@@ -208,6 +208,7 @@ pw_test("client_reader_writer_test") {
     ":client_api",
     ":client_testing",
     "..:test_protos.nanopb_rpc",
+    "..:test_utils",
   ]
   sources = [ "client_reader_writer_test.cc" ]
   enable_if = dir_pw_third_party_nanopb != ""
@@ -345,6 +346,7 @@ pw_test("server_reader_writer_test") {
     ":server_api",
     ":test_method_context",
     "..:test_protos.nanopb_rpc",
+    "..:test_utils",
   ]
   sources = [ "server_reader_writer_test.cc" ]
   enable_if = dir_pw_third_party_nanopb != ""

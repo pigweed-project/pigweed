@@ -25,6 +25,15 @@ class ServerCall : public Call {
  public:
   void HandleClientRequestedCompletion() PW_UNLOCK_FUNCTION(rpc_lock());
 
+#if PW_RPC_COMPLETION_REQUEST_CALLBACK
+  // Moves out the completion request callback so that it can be destroyed
+  // after rpc_lock() is released.
+  Function<void()> TakeOnCompletionRequestedLocked()
+      PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
+    return std::move(on_client_requested_completion_);
+  }
+#endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK
+
  protected:
   constexpr ServerCall() = default;
 
@@ -50,7 +59,7 @@ class ServerCall : public Call {
   // conditionally disabled with a helpful static_assert message.
   template <typename UnusedType = void>
   void set_on_completion_requested(
-      [[maybe_unused]] Function<void()>&& on_client_requested_completion)
+      [[maybe_unused]] Function<void()> on_client_requested_completion)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     static_assert(cfg::kClientStreamEndCallbackEnabled<UnusedType>,
                   "The client stream end callback is disabled, so "
@@ -66,13 +75,14 @@ class ServerCall : public Call {
   // Sets the provided on_client_requested_completion callback if
   // PW_RPC_COMPLETION_REQUEST_CALLBACK is defined. Unlike
   // set_on_completion_requested this API will not raise a static_assert
-  // message at compile time even when the macro is not defined.
+  // message at compile time even when the macro is not defined. The previous
+  // callback is destroyed after rpc_lock() is released.
   void set_on_completion_requested_if_enabled(
-      Function<void()>&& on_client_requested_completion)
+      Function<void()> on_client_requested_completion)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
 #if PW_RPC_COMPLETION_REQUEST_CALLBACK
     RpcLockGuard lock;
-    on_client_requested_completion_ = std::move(on_client_requested_completion);
+    on_client_requested_completion_.swap(on_client_requested_completion);
 #else
     on_client_requested_completion = nullptr;
 #endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK

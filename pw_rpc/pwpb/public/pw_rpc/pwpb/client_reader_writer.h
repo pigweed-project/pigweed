@@ -131,8 +131,9 @@ class PwpbUnaryResponseClientCall : public UnaryResponseClientCall {
     set_pwpb_on_completed_locked(std::move(other.pwpb_on_completed_));
   }
 
+  // The previous callback is destroyed after rpc_lock() is released.
   void set_on_completed(
-      Function<void(const Response& response, Status)>&& on_completed)
+      Function<void(const Response& response, Status)> on_completed)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     RpcLockGuard lock;
     set_pwpb_on_completed_locked(std::move(on_completed));
@@ -175,10 +176,12 @@ class PwpbUnaryResponseClientCall : public UnaryResponseClientCall {
     client.CleanUpCalls();
   }
 
+  // The previous callback is swapped into `on_completed` so the caller can
+  // destroy it without holding rpc_lock().
   void set_pwpb_on_completed_locked(
       Function<void(const Response& response, Status)>&& on_completed)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    pwpb_on_completed_ = std::move(on_completed);
+    pwpb_on_completed_.swap(on_completed);
 
     UnaryResponseClientCall::set_on_completed_locked(
         [this](ConstByteSpan payload, Status status)
@@ -297,7 +300,8 @@ class PwpbStreamResponseClientCall : public StreamResponseClientCall {
     set_pwpb_on_next_locked(std::move(other.pwpb_on_next_));
   }
 
-  void set_on_next(Function<void(const Response& response)>&& on_next)
+  // The previous callback is destroyed after rpc_lock() is released.
+  void set_on_next(Function<void(const Response& response)> on_next)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     RpcLockGuard lock;
     set_pwpb_on_next_locked(std::move(on_next));
@@ -341,15 +345,23 @@ class PwpbStreamResponseClientCall : public StreamResponseClientCall {
     client.CleanUpCalls();
   }
 
+  // The previous callback is swapped into `on_next` so the caller can
+  // destroy it without holding rpc_lock().
   void set_pwpb_on_next_locked(
       Function<void(const Response& response)>&& on_next)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    pwpb_on_next_ = std::move(on_next);
+    pwpb_on_next_.swap(on_next);
 
     Call::set_on_next_locked(
         [this](ConstByteSpan payload) PW_NO_LOCK_SAFETY_ANALYSIS {
           DecodeToStructAndInvokeOnNext(
-              payload, serde_->response(), pwpb_on_next_);
+              payload,
+              serde_->response(),
+              pwpb_on_next_,
+              [this](Function<void(const Response&)>&& restored)
+                  PW_NO_LOCK_SAFETY_ANALYSIS {
+                    set_pwpb_on_next_locked(std::move(restored));
+                  });
         });
   }
 

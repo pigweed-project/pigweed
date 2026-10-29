@@ -89,8 +89,9 @@ class NanopbUnaryResponseClientCall : public UnaryResponseClientCall {
     return *this;
   }
 
+  // The previous callback is destroyed after rpc_lock() is released.
   void set_on_completed(
-      Function<void(const Response& response, Status)>&& on_completed)
+      Function<void(const Response& response, Status)> on_completed)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     RpcLockGuard lock;
     set_nanopb_on_completed_locked(std::move(on_completed));
@@ -102,10 +103,12 @@ class NanopbUnaryResponseClientCall : public UnaryResponseClientCall {
   }
 
  private:
+  // The previous callback is swapped into `on_completed` so the caller can
+  // destroy it without holding rpc_lock().
   void set_nanopb_on_completed_locked(
       Function<void(const Response& response, Status)>&& on_completed)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    nanopb_on_completed_ = std::move(on_completed);
+    nanopb_on_completed_.swap(on_completed);
 
     UnaryResponseClientCall::set_on_completed_locked(
         [this](ConstByteSpan payload, Status status)
@@ -191,22 +194,31 @@ class NanopbStreamResponseClientCall : public StreamResponseClientCall {
     return NanopbSendStream(*this, payload, serde_);
   }
 
-  void set_on_next(Function<void(const Response& response)>&& on_next)
+  // The previous callback is destroyed after rpc_lock() is released.
+  void set_on_next(Function<void(const Response& response)> on_next)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     RpcLockGuard lock;
     set_nanopb_on_next_locked(std::move(on_next));
   }
 
  private:
+  // The previous callback is swapped into `on_next` so the caller can
+  // destroy it without holding rpc_lock().
   void set_nanopb_on_next_locked(
       Function<void(const Response& response)>&& on_next)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    nanopb_on_next_ = std::move(on_next);
+    nanopb_on_next_.swap(on_next);
 
     Call::set_on_next_locked(
         [this](ConstByteSpan payload) PW_NO_LOCK_SAFETY_ANALYSIS {
           DecodeToStructAndInvokeOnNext(
-              payload, serde_->response(), nanopb_on_next_);
+              payload,
+              serde_->response(),
+              nanopb_on_next_,
+              [this](Function<void(const Response&)>&& restored)
+                  PW_NO_LOCK_SAFETY_ANALYSIS {
+                    set_nanopb_on_next_locked(std::move(restored));
+                  });
         });
   }
 

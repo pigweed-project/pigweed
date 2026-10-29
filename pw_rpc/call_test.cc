@@ -19,7 +19,9 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <utility>
 
+#include "pw_rpc/internal/client_call.h"
 #include "pw_rpc/internal/test_utils.h"
 #include "pw_rpc/service.h"
 #include "pw_rpc_private/fake_server_reader_writer.h"
@@ -406,6 +408,239 @@ TEST_F(ServerReaderWriterTest, Close_ClearsCallAndChannelId) {
   RpcLockGuard lock;
   EXPECT_EQ(reader_writer_.id(), 0u);
   EXPECT_EQ(reader_writer_.channel_id_locked(), 0u);
+}
+
+TEST_F(ServerReaderWriterTest,
+       SetCallbacks_DestroysReplacedCallbacksOutsideRpcLock) {
+  bool on_next_destroyed = false;
+  bool on_error_destroyed = false;
+  reader_writer_.set_on_next(
+      [capture = LockAcquiringCapture(on_next_destroyed)](ConstByteSpan) {});
+  reader_writer_.set_on_error(
+      [capture = LockAcquiringCapture(on_error_destroyed)](Status) {});
+
+  EXPECT_FALSE(on_next_destroyed);
+  EXPECT_FALSE(on_error_destroyed);
+
+  reader_writer_.set_on_next(nullptr);
+  EXPECT_TRUE(on_next_destroyed);
+
+  reader_writer_.set_on_error(nullptr);
+  EXPECT_TRUE(on_error_destroyed);
+
+#if PW_RPC_COMPLETION_REQUEST_CALLBACK
+  bool on_completion_destroyed = false;
+  reader_writer_.set_on_completion_requested_if_enabled(
+      [capture = LockAcquiringCapture(on_completion_destroyed)]() {});
+  EXPECT_FALSE(on_completion_destroyed);
+
+  reader_writer_.set_on_completion_requested_if_enabled(nullptr);
+  EXPECT_TRUE(on_completion_destroyed);
+#endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK
+}
+
+TEST_F(ServerReaderWriterTest, HandleError_DestroysCallbacksOutsideRpcLock) {
+  bool on_next_destroyed = false;
+  bool on_error_destroyed = false;
+  reader_writer_.set_on_next(
+      [capture = LockAcquiringCapture(on_next_destroyed)](ConstByteSpan) {});
+  reader_writer_.set_on_error(
+      [capture = LockAcquiringCapture(on_error_destroyed)](Status) {});
+#if PW_RPC_COMPLETION_REQUEST_CALLBACK
+  bool on_completion_destroyed = false;
+  reader_writer_.set_on_completion_requested_if_enabled(
+      [capture = LockAcquiringCapture(on_completion_destroyed)]() {});
+#endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK
+
+  rpc_lock().lock();
+  reader_writer_.as_server_call().HandleError(Status::Aborted());
+
+  EXPECT_TRUE(on_next_destroyed);
+  EXPECT_TRUE(on_error_destroyed);
+#if PW_RPC_COMPLETION_REQUEST_CALLBACK
+  EXPECT_TRUE(on_completion_destroyed);
+#endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK
+}
+
+TEST_F(ServerReaderWriterTest,
+       MoveAssignTemporary_DestroysPreviousCallbacksOutsideRpcLock) {
+  bool on_next_destroyed = false;
+  bool on_error_destroyed = false;
+  reader_writer_.set_on_next(
+      [capture = LockAcquiringCapture(on_next_destroyed)](ConstByteSpan) {});
+  reader_writer_.set_on_error(
+      [capture = LockAcquiringCapture(on_error_destroyed)](Status) {});
+#if PW_RPC_COMPLETION_REQUEST_CALLBACK
+  bool on_completion_destroyed = false;
+  reader_writer_.set_on_completion_requested_if_enabled(
+      [capture = LockAcquiringCapture(on_completion_destroyed)]() {});
+#endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK
+
+  reader_writer_ = FakeServerReaderWriter();
+
+  EXPECT_FALSE(reader_writer_.active());
+  EXPECT_TRUE(on_next_destroyed);
+  EXPECT_TRUE(on_error_destroyed);
+#if PW_RPC_COMPLETION_REQUEST_CALLBACK
+  EXPECT_TRUE(on_completion_destroyed);
+#endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK
+}
+
+TEST_F(ServerReaderWriterTest,
+       MoveAssign_PreviousCallbacksDestroyedWithMovedFromCall) {
+  rpc_lock().lock();
+  auto source = std::make_optional<FakeServerReaderWriter>(
+      context_.get(/*id=*/123).ClaimLocked());
+  rpc_lock().unlock();
+
+  bool source_destroyed = false;
+  bool destination_destroyed = false;
+  source->set_on_error(
+      [capture = LockAcquiringCapture(source_destroyed)](Status) {});
+  reader_writer_.set_on_error(
+      [capture = LockAcquiringCapture(destination_destroyed)](Status) {});
+
+  reader_writer_ = std::move(*source);
+
+  EXPECT_TRUE(reader_writer_.active());
+  EXPECT_FALSE(source_destroyed);
+  EXPECT_FALSE(destination_destroyed);
+
+  source.reset();
+  EXPECT_TRUE(destination_destroyed);
+
+  reader_writer_.set_on_error(nullptr);
+  EXPECT_TRUE(source_destroyed);
+}
+
+class FakeUnaryClientCall : public UnaryResponseClientCall {
+ public:
+  constexpr FakeUnaryClientCall() = default;
+  FakeUnaryClientCall(LockedEndpoint& client,
+                      uint32_t channel_id,
+                      uint32_t service_id,
+                      uint32_t method_id)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock())
+      : UnaryResponseClientCall(client,
+                                channel_id,
+                                service_id,
+                                method_id,
+                                RawCallProps(MethodType::kUnary)) {}
+  FakeUnaryClientCall(FakeUnaryClientCall&&) = default;
+  FakeUnaryClientCall& operator=(FakeUnaryClientCall&&) = default;
+  ~FakeUnaryClientCall() { DestroyClientCall(); }
+  using UnaryResponseClientCall::set_on_completed;
+};
+
+class FakeStreamClientCall : public StreamResponseClientCall {
+ public:
+  constexpr FakeStreamClientCall() = default;
+  FakeStreamClientCall(LockedEndpoint& client,
+                       uint32_t channel_id,
+                       uint32_t service_id,
+                       uint32_t method_id)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock())
+      : StreamResponseClientCall(client,
+                                 channel_id,
+                                 service_id,
+                                 method_id,
+                                 RawCallProps(MethodType::kServerStreaming)) {}
+  FakeStreamClientCall(FakeStreamClientCall&&) = default;
+  FakeStreamClientCall& operator=(FakeStreamClientCall&&) = default;
+  ~FakeStreamClientCall() { DestroyClientCall(); }
+  using StreamResponseClientCall::set_on_completed;
+};
+
+TEST(ClientCallTest, UnaryHandleCompleted_DestroysCallbacksOutsideRpcLock) {
+  ClientContextForTest<> context;
+  bool on_completed_destroyed = false;
+  bool on_error_destroyed = false;
+  FakeUnaryClientCall call =
+      UnaryResponseClientCall::Start<FakeUnaryClientCall>(
+          context.client(),
+          context.channel_id(),
+          context.service_id(),
+          context.method_id(),
+          [capture = LockAcquiringCapture(on_completed_destroyed)](
+              ConstByteSpan, Status) {},
+          [capture = LockAcquiringCapture(on_error_destroyed)](Status) {},
+          {});
+
+  EXPECT_EQ(OkStatus(), context.SendResponse(OkStatus()));
+  EXPECT_FALSE(call.active());
+  EXPECT_TRUE(on_completed_destroyed);
+  EXPECT_TRUE(on_error_destroyed);
+}
+
+TEST(ClientCallTest, StreamHandleCompleted_DestroysCallbacksOutsideRpcLock) {
+  ClientContextForTest<> context;
+  bool on_next_destroyed = false;
+  bool on_completed_destroyed = false;
+  bool on_error_destroyed = false;
+  FakeStreamClientCall call =
+      StreamResponseClientCall::Start<FakeStreamClientCall>(
+          context.client(),
+          context.channel_id(),
+          context.service_id(),
+          context.method_id(),
+          [capture = LockAcquiringCapture(on_next_destroyed)](ConstByteSpan) {},
+          [capture = LockAcquiringCapture(on_completed_destroyed)](Status) {},
+          [capture = LockAcquiringCapture(on_error_destroyed)](Status) {},
+          {});
+
+  EXPECT_EQ(OkStatus(), context.SendResponse(OkStatus()));
+  EXPECT_FALSE(call.active());
+  EXPECT_TRUE(on_next_destroyed);
+  EXPECT_TRUE(on_completed_destroyed);
+  EXPECT_TRUE(on_error_destroyed);
+}
+
+TEST(ClientCallTest,
+     UnaryMoveAssignTemporary_DestroysPreviousCallbacksOutsideRpcLock) {
+  ClientContextForTest<> context;
+  bool on_completed_destroyed = false;
+  bool on_error_destroyed = false;
+  FakeUnaryClientCall call =
+      UnaryResponseClientCall::Start<FakeUnaryClientCall>(
+          context.client(),
+          context.channel_id(),
+          context.service_id(),
+          context.method_id(),
+          [capture = LockAcquiringCapture(on_completed_destroyed)](
+              ConstByteSpan, Status) {},
+          [capture = LockAcquiringCapture(on_error_destroyed)](Status) {},
+          {});
+
+  call = FakeUnaryClientCall();
+
+  EXPECT_FALSE(call.active());
+  EXPECT_TRUE(on_completed_destroyed);
+  EXPECT_TRUE(on_error_destroyed);
+}
+
+TEST(ClientCallTest,
+     StreamMoveAssignTemporary_DestroysPreviousCallbacksOutsideRpcLock) {
+  ClientContextForTest<> context;
+  bool on_next_destroyed = false;
+  bool on_completed_destroyed = false;
+  bool on_error_destroyed = false;
+  FakeStreamClientCall call =
+      StreamResponseClientCall::Start<FakeStreamClientCall>(
+          context.client(),
+          context.channel_id(),
+          context.service_id(),
+          context.method_id(),
+          [capture = LockAcquiringCapture(on_next_destroyed)](ConstByteSpan) {},
+          [capture = LockAcquiringCapture(on_completed_destroyed)](Status) {},
+          [capture = LockAcquiringCapture(on_error_destroyed)](Status) {},
+          {});
+
+  call = FakeStreamClientCall();
+
+  EXPECT_FALSE(call.active());
+  EXPECT_TRUE(on_next_destroyed);
+  EXPECT_TRUE(on_completed_destroyed);
+  EXPECT_TRUE(on_error_destroyed);
 }
 
 }  // namespace

@@ -404,37 +404,57 @@ class Call : public IntrusiveForwardList<Call>::Item, private rpc::Writer {
     callbacks_executing_ -= 1;
   }
 
-  // This call must be in a closed state when this is called.
+  // Marks the on_next callback finished, cleans up calls, and releases
+  // rpc_lock(). The call must not be accessed after this returns.
+  void FinishHandlingPayload() PW_UNLOCK_FUNCTION(rpc_lock());
+
+  struct Callbacks {
+    Function<void(Status)> on_error;
+    Function<void(ConstByteSpan)> on_next;
+  };
+
+  // Moves out the on_error and on_next callbacks so that they can be destroyed
+  // after rpc_lock() is released.
+  Callbacks TakeCallbacksLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
+    return {std::move(on_error_), std::move(on_next_)};
+  }
+
+  // This call must be in a closed state when this is called. This call's
+  // previous callbacks are swapped into `other`.
   void MoveFrom(Call& other) PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());
 
   Endpoint& endpoint() const PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
     return *endpoint_;
   }
 
-  // Public function that sets the on_next function in the raw API.
-  void set_on_next(Function<void(ConstByteSpan)>&& on_next)
+  // Public function that sets the on_next function in the raw API. The
+  // previous callback is destroyed after rpc_lock() is released.
+  void set_on_next(Function<void(ConstByteSpan)> on_next)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     RpcLockGuard lock;
     set_on_next_locked(std::move(on_next));
   }
 
-  // Internal function that sets on_next.
+  // Internal function that sets on_next. The previous on_next is swapped into
+  // `on_next` so the caller can destroy it without holding rpc_lock().
   void set_on_next_locked(Function<void(ConstByteSpan)>&& on_next)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    on_next_ = std::move(on_next);
+    on_next_.swap(on_next);
   }
 
-  // Public function that sets the on_error callback.
-  void set_on_error(Function<void(Status)>&& on_error)
+  // Public function that sets the on_error callback. The previous callback is
+  // destroyed after rpc_lock() is released.
+  void set_on_error(Function<void(Status)> on_error)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     RpcLockGuard lock;
     set_on_error_locked(std::move(on_error));
   }
 
-  // Internal function that sets on_error.
+  // Internal function that sets on_error. The previous on_error is swapped into
+  // `on_error` so the caller can destroy it without holding rpc_lock().
   void set_on_error_locked(Function<void(Status)>&& on_error)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    on_error_ = std::move(on_error);
+    on_error_.swap(on_error);
   }
 
   void MarkStreamCompleted() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
@@ -481,64 +501,78 @@ class Call : public IntrusiveForwardList<Call>::Item, private rpc::Writer {
   // This must ONLY be called from derived classes the wrap the on_next
   // callback. These classes MUST indicate that they call calls in their
   // constructor.
-  template <typename Decoder, typename ProtoStruct>
+  //
+  // HandlePayload() invokes the wrapper between CallbackStarted() and
+  // returning, so this function finishes handling the payload and releases
+  // rpc_lock(). If the callback can be restored, `restore_on_next` is called
+  // with it to reinstall it. Otherwise, it is destroyed after
+  // CallbackFinished() and after rpc_lock() is released, so its captures may
+  // destroy the call.
+  template <typename Decoder, typename ProtoStruct, typename RestoreOnNext>
   void DecodeToStructAndInvokeOnNext(
       ConstByteSpan payload,
       const Decoder& decoder,
-      Function<void(const ProtoStruct&)>& proto_on_next)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    if (proto_on_next == nullptr) {
-      return;
+      Function<void(const ProtoStruct&)>& proto_on_next,
+      RestoreOnNext&& restore_on_next) PW_UNLOCK_FUNCTION(rpc_lock()) {
+    // Declared first so that it is destroyed last.
+    Function<void(const ProtoStruct&)> proto_on_next_local;
+
+    if (proto_on_next != nullptr) {
+      ProtoStruct proto_struct{};
+
+      if (decoder.Decode(payload, proto_struct).ok()) {
+        const uint32_t original_id = id();
+        proto_on_next_local = std::move(proto_on_next);
+
+        rpc_lock().unlock();
+        proto_on_next_local(proto_struct);
+        rpc_lock().lock();
+
+        // Restore the original callback if the original call is still active
+        // and the callback has not been replaced.
+        // NOLINTNEXTLINE(bugprone-use-after-move)
+        const bool callback_replaced = proto_on_next != nullptr;
+        if (active_locked() && id() == original_id && !callback_replaced) {
+          restore_on_next(std::move(proto_on_next_local));
+        }
+      } else {
+        CloseAndMarkForCleanup(Status::DataLoss());
+      }
     }
 
-    ProtoStruct proto_struct{};
-
-    if (!decoder.Decode(payload, proto_struct).ok()) {
-      CloseAndMarkForCleanup(Status::DataLoss());
-      return;
-    }
-
-    const uint32_t original_id = id();
-    auto proto_on_next_local = std::move(proto_on_next);
-
-    rpc_lock().unlock();
-    proto_on_next_local(proto_struct);
-    rpc_lock().lock();
-
-    // Restore the original callback if the original call is still active and
-    // the callback has not been replaced.
-    // NOLINTNEXTLINE(bugprone-use-after-move)
-    if (active_locked() && id() == original_id && proto_on_next == nullptr) {
-      proto_on_next = std::move(proto_on_next_local);
-    }
+    FinishHandlingPayload();
   }
 
-  // The call is already unregistered and closed.
+  // The call is already unregistered and closed. HandleCompleted() invokes the
+  // wrapper between CallbackStarted() and returning, so this function calls
+  // CallbackFinished() and releases rpc_lock(). The callbacks are destroyed
+  // after that, so their captures may destroy the call.
   template <typename Decoder, typename ProtoStruct>
   void DecodeToStructAndInvokeOnCompleted(
       ConstByteSpan payload,
       const Decoder& decoder,
       Function<void(const ProtoStruct&, Status)>& proto_on_completed,
       Status status) PW_UNLOCK_FUNCTION(rpc_lock()) {
-    // Always move proto_on_completed so it goes out of scope in this function.
     auto proto_on_completed_local = std::move(proto_on_completed);
-
-    // Move on_error in case an error occurs.
-    auto on_error_local = std::move(on_error_);
+    // Take on_error in case an error occurs.
+    Callbacks callbacks = TakeCallbacksLocked();
 
     // Release the lock before decoding, since decoder is a global.
     rpc_lock().unlock();
 
-    if (proto_on_completed_local == nullptr) {
-      return;
+    if (proto_on_completed_local != nullptr) {
+      ProtoStruct proto_struct{};
+      if (decoder.Decode(payload, proto_struct).ok()) {
+        proto_on_completed_local(proto_struct, status);
+      } else if (callbacks.on_error != nullptr) {
+        callbacks.on_error(Status::DataLoss());
+      }
     }
 
-    ProtoStruct proto_struct{};
-    if (decoder.Decode(payload, proto_struct).ok()) {
-      proto_on_completed_local(proto_struct, status);
-    } else if (on_error_local != nullptr) {
-      on_error_local(Status::DataLoss());
-    }
+    // `lock` is declared after the local callbacks so they are destroyed after
+    // CallbackFinished() and after rpc_lock() is released.
+    RpcLockGuard lock;
+    CallbackFinished();
   }
 
   // An active call cannot be moved if its callbacks are running. This function

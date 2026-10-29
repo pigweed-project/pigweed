@@ -173,6 +173,7 @@ pw_add_test(pw_rpc.pwpb.client_reader_writer_test
     pw_rpc.pwpb.client_api
     pw_rpc.pwpb.client_testing
     pw_rpc.test_protos.pwpb_rpc
+    pw_rpc.test_utils
   GROUPS
     modules
     pw_rpc.pwpb
@@ -347,6 +348,7 @@ pw_add_test(pw_rpc.pwpb.server_reader_writer_test
     pw_rpc.pwpb.server_api
     pw_rpc.pwpb.test_method_context
     pw_rpc.test_protos.pwpb_rpc
+    pw_rpc.test_utils
   GROUPS
     modules
     pw_rpc.pwpb

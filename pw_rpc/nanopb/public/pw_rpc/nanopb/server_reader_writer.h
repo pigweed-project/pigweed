@@ -118,22 +118,31 @@ class BaseNanopbServerReader : public NanopbServerCall {
     return *this;
   }
 
-  void set_on_next(Function<void(const Request& request)>&& on_next)
+  // The previous callback is destroyed after rpc_lock() is released.
+  void set_on_next(Function<void(const Request& request)> on_next)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
     RpcLockGuard lock;
     set_nanopb_on_next_locked(std::move(on_next));
   }
 
  private:
+  // The previous callback is swapped into `on_next` so the caller can
+  // destroy it without holding rpc_lock().
   void set_nanopb_on_next_locked(
       Function<void(const Request& request)>&& on_next)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
-    nanopb_on_next_ = std::move(on_next);
+    nanopb_on_next_.swap(on_next);
 
     Call::set_on_next_locked(
         [this](ConstByteSpan payload) PW_NO_LOCK_SAFETY_ANALYSIS {
           DecodeToStructAndInvokeOnNext(
-              payload, serde().request(), nanopb_on_next_);
+              payload,
+              serde().request(),
+              nanopb_on_next_,
+              [this](Function<void(const Request&)>&& restored)
+                  PW_NO_LOCK_SAFETY_ANALYSIS {
+                    set_nanopb_on_next_locked(std::move(restored));
+                  });
         });
   }
 

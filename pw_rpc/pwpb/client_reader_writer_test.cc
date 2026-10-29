@@ -14,8 +14,10 @@
 
 #include "pw_rpc/pwpb/client_reader_writer.h"
 
+#include <memory>
 #include <optional>
 
+#include "pw_rpc/internal/test_utils.h"
 #include "pw_rpc/pwpb/client_reader_writer.h"
 #include "pw_rpc/pwpb/client_testing.h"
 #include "pw_rpc_test_protos/test.rpc.pwpb.h"
@@ -389,6 +391,51 @@ TEST(PwpbClientReaderWriter, CallbacksMoveCorrectly) {
   EXPECT_EQ(payload.number, 5050u);
 }
 
+TEST(PwpbUnaryReceiver, OnCompleted_DestroysCallbacksAfterTheyReturn) {
+  PwpbClientTestContext ctx;
+
+  bool owner_destroyed = false;
+  auto owner = std::make_unique<
+      internal::CallOwner<PwpbUnaryReceiver<TestResponse::Message>>>();
+  owner->destroyed = &owner_destroyed;
+  auto& call = owner->call;
+
+  // The callback owns the call, so destroying the callback destroys the call.
+  call =
+      TestService::TestUnaryRpc(ctx.client(),
+                                ctx.channel().id(),
+                                {},
+                                [captured_owner = std::move(owner)](
+                                    const TestResponse::Message&, Status) {});
+  ASSERT_FALSE(owner_destroyed);
+
+  ctx.server().SendResponse<TestService::TestUnaryRpc>({}, OkStatus());
+  EXPECT_TRUE(owner_destroyed);
+}
+
+TEST(PwpbClientReader, OnNextThatCancelsCall_DestroysCallbackAfterItReturns) {
+  PwpbClientTestContext ctx;
+
+  bool owner_destroyed = false;
+  auto owner = std::make_unique<
+      internal::CallOwner<PwpbClientReader<TestStreamResponse::Message>>>();
+  owner->destroyed = &owner_destroyed;
+  auto& call = owner->call;
+
+  // The callback owns the call. Cancelling the call from the callback means
+  // the callback is not restored, so it is destroyed, which destroys the call.
+  call = TestService::TestServerStreamRpc(
+      ctx.client(),
+      ctx.channel().id(),
+      {},
+      [captured_owner = std::move(owner)](const TestStreamResponse::Message&) {
+        EXPECT_EQ(OkStatus(), captured_owner->call.Cancel());
+      });
+  ASSERT_FALSE(owner_destroyed);
+
+  ctx.server().SendServerStream<TestService::TestServerStreamRpc>({});
+  EXPECT_TRUE(owner_destroyed);
+}
 }  // namespace
 }  // namespace pw::rpc
 

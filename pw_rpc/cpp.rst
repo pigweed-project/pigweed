@@ -519,6 +519,30 @@ Destructors & moves wait for callbacks to complete
       See https://pigweed.dev/pw_rpc/cpp.html#destructors-moves-wait-for-callbacks-to-complete
       for details.
 
+Callbacks are destroyed outside the RPC lock
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+``pw_rpc`` never destroys a callback while holding its internal lock. Callbacks
+may capture objects whose destructors acquire other locks or call into
+``pw_rpc``, such as a ``std::shared_ptr`` or ``pw::IntrusivePtr`` to the object
+that owns the call. Callbacks are destroyed on the thread that releases them,
+after the lock is released, when:
+
+* A callback is replaced or cleared with ``set_on_next``, ``set_on_error``,
+  ``set_on_completed``, or ``set_on_completion_requested``. The previous
+  callback is destroyed by the end of the statement that calls the setter.
+* A call completes or fails. The call's ``on_error`` and raw ``on_next``
+  callbacks, and a server call's ``on_completion_requested`` callback, are
+  released after the final callback returns.
+* An ``on_next`` callback closes its call or replaces itself. The original
+  callback is released after it returns.
+* A call object is overwritten by move assignment. Move assignment swaps the
+  callbacks, so the destination's previous callbacks are destroyed with the
+  moved-from call. For ``call = {}``, that is at the end of the statement.
+
+Typed ``on_next`` and ``on_completed`` callbacks of ``pw_protobuf`` and Nanopb
+calls are not released when a call fails. They are released when the call
+object is destroyed or overwritten, or when the callback is replaced.
+
 Only one thread at a time may execute ``on_next``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Only one thread may execute the ``on_next`` callback for a specific service

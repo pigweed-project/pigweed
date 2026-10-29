@@ -59,8 +59,9 @@ void ServerCall::MoveServerCallFrom(ServerCall& other) {
   MoveFrom(other);
 
 #if PW_RPC_COMPLETION_REQUEST_CALLBACK
-  on_client_requested_completion_ =
-      std::move(other.on_client_requested_completion_);
+  // Swap so that this call's previous callback is destroyed with `other`
+  // rather than while rpc_lock() is held.
+  on_client_requested_completion_.swap(other.on_client_requested_completion_);
 #endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK
 }
 

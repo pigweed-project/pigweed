@@ -19,10 +19,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include "pw_assert/assert.h"
 #include "pw_rpc/channel.h"
 #include "pw_rpc/client.h"
+#include "pw_rpc/internal/lock.h"
 #include "pw_rpc/internal/method.h"
 #include "pw_rpc/internal/packet.h"
 #include "pw_rpc/raw/fake_channel_output.h"
@@ -31,6 +33,57 @@
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc::internal {
+
+// Callback capture that acquires rpc_lock() in its destructor and records that
+// it was destroyed. If pw_rpc destroys a callback that holds this capture while
+// rpc_lock() is held, the test self-deadlocks and fails with a timeout rather
+// than an assertion failure.
+class LockAcquiringCapture {
+ public:
+  explicit constexpr LockAcquiringCapture(bool& destroyed)
+      : destroyed_(&destroyed) {}
+
+  LockAcquiringCapture(LockAcquiringCapture&& other) noexcept
+      : destroyed_(std::exchange(other.destroyed_, nullptr)) {}
+
+  LockAcquiringCapture& operator=(LockAcquiringCapture&& other) noexcept {
+    if (this != &other) {
+      Reset();
+      destroyed_ = std::exchange(other.destroyed_, nullptr);
+    }
+    return *this;
+  }
+
+  ~LockAcquiringCapture() { Reset(); }
+
+ private:
+  void Reset() {
+    if (destroyed_ != nullptr) {
+      RpcLockGuard lock;
+      *destroyed_ = true;
+      destroyed_ = nullptr;
+    }
+  }
+
+  bool* destroyed_;
+};
+
+// Owns a call object and records when it is destroyed. A call object acquires
+// rpc_lock() when it is destroyed, so if pw_rpc destroys a callback that
+// captures a CallOwner while holding rpc_lock(), the test deadlocks. If pw_rpc
+// destroys the capture while the owned call's callback is still running, the
+// call's destructor waits for its own callback and crashes.
+template <typename CallType>
+struct CallOwner {
+  CallType call;
+  bool* destroyed = nullptr;
+
+  ~CallOwner() {
+    if (destroyed != nullptr) {
+      *destroyed = true;
+    }
+  }
+};
 
 // Version of the Server with extra methods exposed for testing.
 class TestServer : public Server {

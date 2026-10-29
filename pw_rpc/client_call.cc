@@ -30,18 +30,26 @@ void UnaryResponseClientCall::HandleCompleted(
   auto on_completed_local = std::move(on_completed_);
   CallbackStarted();
 
-  // The lock is only released when calling into user code. If the callback is
-  // wrapped, this on_completed is an internal function that expects the lock to
-  // be held, and releases it before invoking user code.
-  if (!hold_lock_while_invoking_callback_with_payload()) {
-    rpc_lock().unlock();
+  // If the callback is wrapped, this on_completed is an internal function that
+  // expects the lock to be held. It releases the lock before invoking user
+  // code, calls CallbackFinished(), and destroys the callbacks after releasing
+  // the lock (see DecodeToStructAndInvokeOnCompleted()).
+  if (hold_lock_while_invoking_callback_with_payload() &&
+      on_completed_local != nullptr) {
+    on_completed_local(response, status);
+    return;
   }
+
+  Callbacks callbacks = TakeCallbacksLocked();
+  rpc_lock().unlock();
 
   if (on_completed_local) {
     on_completed_local(response, status);
   }
 
   // This mutex lock could be avoided by making callbacks_executing_ atomic.
+  // `lock` is declared after the taken callbacks so they are destroyed after
+  // CallbackFinished() and after rpc_lock() is released.
   RpcLockGuard lock;
   CallbackFinished();
 }
@@ -49,6 +57,7 @@ void UnaryResponseClientCall::HandleCompleted(
 void StreamResponseClientCall::HandleCompleted(Status status) {
   UnregisterAndMarkClosed();
   auto on_completed_local = std::move(on_completed_);
+  Callbacks callbacks = TakeCallbacksLocked();
   CallbackStarted();
   rpc_lock().unlock();
 
@@ -57,6 +66,8 @@ void StreamResponseClientCall::HandleCompleted(Status status) {
   }
 
   // This mutex lock could be avoided by making callbacks_executing_ atomic.
+  // `lock` is declared after the taken callbacks so they are destroyed after
+  // CallbackFinished() and after rpc_lock() is released.
   RpcLockGuard lock;
   CallbackFinished();
 }
