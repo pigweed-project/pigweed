@@ -22,32 +22,47 @@
 #include "pw_preprocessor/concat.h"          // IWYU pragma: export
 #include "pw_trace_backend/trace_backend.h"  // IWYU pragma: export
 
-// Default: Flag value if none set
+/// @module{pw_trace}
+
+/// The default `flags` value for trace events when no flags are provided. The
+/// backend can define this macro to change the default. Defaults to `0`.
 #ifndef PW_TRACE_FLAGS_DEFAULT
 #define PW_TRACE_FLAGS_DEFAULT 0
 #endif  // PW_TRACE_FLAGS_DEFAULT
 
-// Default: PW_TRACE_TRACE_ID_DEFAULT
+/// The default `trace_id` value for trace events when no trace ID is provided.
+/// The backend can define this macro to change the default. Defaults to `0`.
 #ifndef PW_TRACE_TRACE_ID_DEFAULT
 #define PW_TRACE_TRACE_ID_DEFAULT 0
 #endif  // PW_TRACE_TRACE_ID_DEFAULT
 
-// Default: PW_TRACE_GROUP_LABEL_DEFAULT
+/// The default `group_label` value for trace events when no group label is
+/// provided. The backend can define this macro to change the default. Defaults
+/// to an empty string.
 #ifndef PW_TRACE_GROUP_LABEL_DEFAULT
 #define PW_TRACE_GROUP_LABEL_DEFAULT ""
 #endif  // PW_TRACE_GROUP_LABEL_DEFAULT
 
-// These macros can be used to determine if a trace type contrains span or group
-// label
+/// Evaluates to `true` if trace events of the given `TRACE_TYPE` contain a
+/// `trace_id`. The backend can override this macro.
+///
+/// @param[in] TRACE_TYPE The `PW_TRACE_TYPE_*` macro value to check.
 #ifndef PW_TRACE_HAS_TRACE_ID
 #define PW_TRACE_HAS_TRACE_ID(TRACE_TYPE)         \
   ((TRACE_TYPE) == PW_TRACE_TYPE_ASYNC_START ||   \
    (TRACE_TYPE) == PW_TRACE_TYPE_ASYNC_INSTANT || \
    (TRACE_TYPE) == PW_TRACE_TYPE_ASYNC_END)
 #endif  // PW_TRACE_HAS_TRACE_ID
+
+/// Evaluates to `true` if trace events of the given `TRACE_TYPE` contain a
+/// `group_label`. The backend can override this macro. Defaults to `false`.
+///
+/// @param[in] TRACE_TYPE The `PW_TRACE_TYPE_*` macro value to check.
 #ifndef PW_TRACE_HAS_GROUP_LABEL
 #define PW_TRACE_HAS_GROUP_LABEL(TRACE_TYPE) (false)
 #endif  // PW_TRACE_HAS_GROUP_LABEL
+
+/// @endmodule
 
 // Default: behaviour for unimplemented trace event types
 #ifndef _PW_TRACE_DISABLED
@@ -59,17 +74,49 @@ static inline void _pw_trace_disabled(int x, ...) { (void)x; }
   } while (false)
 #endif  // _PW_TRACE_DISABLED
 
-// Default: label used for PW_TRACE_FUNCTION trace events
+/// @module{pw_trace}
+
+/// The label used for `PW_TRACE_FUNCTION` trace events. The backend can
+/// override this macro. Defaults to `__PRETTY_FUNCTION__`.
 #ifndef PW_TRACE_FUNCTION_LABEL
 #define PW_TRACE_FUNCTION_LABEL __PRETTY_FUNCTION__
 #endif
 
-// Control to enable/disable tracing.  If 0, no traces are emitted.
-//
-// Defaults to enabled.
+/// Controls whether tracing is enabled in the current file. A value of `0`
+/// causes traces to be disabled. A non-zero value enables traces.
+///
+/// While tracing defaults to enabled, it is best practice to define
+/// `PW_TRACE_ENABLE` explicitly in files that use tracing, as the default may
+/// change in the future. A good pattern is to have a module-level
+/// configuration parameter for enabling tracing and to define
+/// `PW_TRACE_ENABLE` in terms of that at the top of each of the module's
+/// files:
+///
+/// @code{.cpp}
+/// // Enable tracing based on pw_example module config parameter.
+/// #define PW_TRACE_ENABLE PW_EXAMPLE_TRACE_ENABLE
+/// @endcode
+///
+/// Specific trace points (or sets of points) can also be enabled or disabled
+/// by redefining `PW_TRACE_ENABLE` around them:
+///
+/// @code{.cpp}
+/// // Assuming tracing is disabled at the top of the file.
+///
+/// // Enable specific trace.
+/// #undef PW_TRACE_ENABLE
+/// #define PW_TRACE_ENABLE 1
+/// PW_TRACE_INSTANT("important trace");
+///
+/// // Set traces back to disabled. PW_TRACE_ENABLE can not be left undefined.
+/// #undef PW_TRACE_ENABLE
+/// #define PW_TRACE_ENABLE 0
+/// @endcode
 #ifndef PW_TRACE_ENABLE
 #define PW_TRACE_ENABLE 1
 #endif  // PW_TRACE_ENABLE
+
+/// @endmodule
 
 #define _PW_TRACE_IF_ENABLED(event_type, flags, label, group_label, trace_id) \
   do {                                                                        \

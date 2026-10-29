@@ -103,6 +103,7 @@ filegroup(
         "//pw_thread:doxygen",
         "//pw_tokenizer:doxygen",
         "//pw_toolchain:doxygen",
+        "//pw_trace:doxygen",
         "//pw_trace_tokenized:doxygen",
         "//pw_transfer:doxygen",
         "//pw_transport/cpp:doxygen",

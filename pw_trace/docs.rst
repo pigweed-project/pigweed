@@ -97,25 +97,24 @@ Example
 ------------
 Trace macros
 ------------
-
 The ``pw_trace`` public API provides three basic trace events:
 
-- ``PW_TRACE_INSTANT`` - This is used to trace an instant event, which has no
+- :cc:`PW_TRACE_INSTANT` - This is used to trace an instant event, which has no
   duration.
-- ``PW_TRACE_START`` & ``PW_TRACE_END`` - Trace 'start' and 'end' events are
-  paired together to measure the duration of an event.
+- :cc:`PW_TRACE_START` & :cc:`PW_TRACE_END` - Trace 'start' and 'end' events
+  are paired together to measure the duration of an event.
 
 These trace event macros all have the same arguments:
 
-- *label* - Each of these trace events must have a label, which is a string
+- ``label`` - Each of these trace events must have a label, which is a string
   describing the event. In addition to the required label, each of these traces
   can optionally provide a group label and trace id.
-- *group_label* - The *optional* group label is used if many traces are all
+- ``group_label`` - The *optional* group label is used if many traces are all
   measuring the same thing and should be grouped together. This information will
   be used when visualizing the trace to ensure the information appears together.
-- *trace_id* - The *optional* trace id is similar to the group_id, but instead
-  groups events using a runtime value. This can be used if multiple trace flow
-  might happen at the same time and need to be grouped together.
+- ``trace_id`` - The *optional* trace id is similar to the ``group_label``, but
+  instead groups events using a runtime value. This can be used if multiple
+  trace flow might happen at the same time and need to be grouped together.
   For example, this could be used to trace data packets flowing through the
   system; when a new sample might arrive before the previous packet is finished
   processing. This would result in two start events occurring before the end
@@ -128,20 +127,20 @@ These trace event macros all have the same arguments:
 
 This results in 9 different trace calls:
 
-.. cpp:function:: PW_TRACE_INSTANT(label)
-.. cpp:function:: PW_TRACE_INSTANT(label, group_label)
-.. cpp:function:: PW_TRACE_INSTANT(label, group_label, trace_id)
-.. cpp:function:: PW_TRACE_START(label)
-.. cpp:function:: PW_TRACE_START(label, group_label)
-.. cpp:function:: PW_TRACE_START(label, group_label, trace_id)
-.. cpp:function:: PW_TRACE_END(label)
-.. cpp:function:: PW_TRACE_END(label, group_label)
-.. cpp:function:: PW_TRACE_END(label, group_label, trace_id)
+- :cc:`PW_TRACE_INSTANT(label) <PW_TRACE_INSTANT>`
+- :cc:`PW_TRACE_INSTANT(label, group_label) <PW_TRACE_INSTANT>`
+- :cc:`PW_TRACE_INSTANT(label, group_label, trace_id) <PW_TRACE_INSTANT>`
+- :cc:`PW_TRACE_START(label) <PW_TRACE_START>`
+- :cc:`PW_TRACE_START(label, group_label) <PW_TRACE_START>`
+- :cc:`PW_TRACE_START(label, group_label, trace_id) <PW_TRACE_START>`
+- :cc:`PW_TRACE_END(label) <PW_TRACE_END>`
+- :cc:`PW_TRACE_END(label, group_label) <PW_TRACE_END>`
+- :cc:`PW_TRACE_END(label, group_label, trace_id) <PW_TRACE_END>`
 
 Modules
 -------
 In addition to these arguments, traces can be grouped into modules similar to
-logging. This is done by redefining the ``PW_TRACE_MODULE_NAME``.
+logging. This is done by redefining the :cc:`PW_TRACE_MODULE_NAME`.
 
 Flags
 -----
@@ -149,56 +148,63 @@ Each trace event also has a flags field which can be used to provide additional
 compile time trace information. Each trace macro has a matching macro which
 allows specifying the flag:
 
-.. cpp:function:: PW_TRACE_INSTANT_FLAG(flag, label)
-.. cpp:function:: PW_TRACE_INSTANT_FLAG(flag, label, group_label)
-.. cpp:function:: PW_TRACE_INSTANT_FLAG(flag, label, group_label, trace_id)
-.. cpp:function:: PW_TRACE_START_FLAG(flag, label)
-.. cpp:function:: PW_TRACE_START_FLAG(flag, label, group_label)
-.. cpp:function:: PW_TRACE_START_FLAG(flag, label, group_label, trace_id)
-.. cpp:function:: PW_TRACE_END_FLAG(flag, label)
-.. cpp:function:: PW_TRACE_END_FLAG(flag, label, group_label)
-.. cpp:function:: PW_TRACE_END_FLAG(flag, label, group_label, trace_id)
+- :cc:`PW_TRACE_INSTANT_FLAG(flag, label) <PW_TRACE_INSTANT_FLAG>`
+- :cc:`PW_TRACE_INSTANT_FLAG(flag, label, group_label) <PW_TRACE_INSTANT_FLAG>`
+- :cc:`PW_TRACE_INSTANT_FLAG(flag, label, group_label, trace_id)
+  <PW_TRACE_INSTANT_FLAG>`
+- :cc:`PW_TRACE_START_FLAG(flag, label) <PW_TRACE_START_FLAG>`
+- :cc:`PW_TRACE_START_FLAG(flag, label, group_label) <PW_TRACE_START_FLAG>`
+- :cc:`PW_TRACE_START_FLAG(flag, label, group_label, trace_id)
+  <PW_TRACE_START_FLAG>`
+- :cc:`PW_TRACE_END_FLAG(flag, label) <PW_TRACE_END_FLAG>`
+- :cc:`PW_TRACE_END_FLAG(flag, label, group_label) <PW_TRACE_END_FLAG>`
+- :cc:`PW_TRACE_END_FLAG(flag, label, group_label, trace_id)
+  <PW_TRACE_END_FLAG>`
 
-When not specified the flag uses the value of the macro ``PW_TRACE_FLAGS``.
+When not specified the flag uses the value of the macro :cc:`PW_TRACE_FLAGS`.
 
 Data
 ----
 Each macro also has a variant which allows appending additional data:
 
-.. cpp:function:: PW_TRACE_INSTANT_DATA(label, data_format_string, data, size)
-.. cpp:function:: PW_TRACE_INSTANT_DATA(\
-   label, group_label, data_format_string, data, size)
-.. cpp:function:: PW_TRACE_INSTANT_DATA(\
-   label, group_label, trace_id, data_format_string, data, size)
-.. cpp:function:: PW_TRACE_START_DATA(label, data_format_string, data, size)
-.. cpp:function:: PW_TRACE_START_DATA(\
-   label, group_label, data_format_string, data, size)
-.. cpp:function:: PW_TRACE_START_DATA(\
-   label, group_label, trace_id, data_format_string, data, size)
-.. cpp:function:: PW_TRACE_END_DATA(label, data_format_string, data, size)
-.. cpp:function:: PW_TRACE_END_DATA(\
-   label, group_label, data_format_string, data, size)
-.. cpp:function:: PW_TRACE_END_DATA(\
-   label, group_label, trace_id, data_format_string, data, size)
+- :cc:`PW_TRACE_INSTANT_DATA(label, data_format_string, data, size)
+  <PW_TRACE_INSTANT_DATA>`
+- :cc:`PW_TRACE_INSTANT_DATA(label, group_label, data_format_string, data, size)
+  <PW_TRACE_INSTANT_DATA>`
+- :cc:`PW_TRACE_INSTANT_DATA(label, group_label, trace_id, data_format_string,
+  data, size) <PW_TRACE_INSTANT_DATA>`
+- :cc:`PW_TRACE_START_DATA(label, data_format_string, data, size)
+  <PW_TRACE_START_DATA>`
+- :cc:`PW_TRACE_START_DATA(label, group_label, data_format_string, data, size)
+  <PW_TRACE_START_DATA>`
+- :cc:`PW_TRACE_START_DATA(label, group_label, trace_id, data_format_string,
+  data, size) <PW_TRACE_START_DATA>`
+- :cc:`PW_TRACE_END_DATA(label, data_format_string, data, size)
+  <PW_TRACE_END_DATA>`
+- :cc:`PW_TRACE_END_DATA(label, group_label, data_format_string, data, size)
+  <PW_TRACE_END_DATA>`
+- :cc:`PW_TRACE_END_DATA(label, group_label, trace_id, data_format_string,
+  data, size) <PW_TRACE_END_DATA>`
 
 These macros require 3 additional arguments:
 
-- *data_format_string* - A string which is used by the decoder to identify the
+- ``data_format_string`` - A string which is used by the decoder to identify the
   data. This could for example either be printf style tokens, python struct
   packed fmt string or a custom label recognized by the decoder.
-- *data* - A pointer to a buffer of arbitrary caller-provided data (void*).
-- *size* - The size of the data (size_t).
+- ``data`` - A pointer to a buffer of arbitrary caller-provided data
+  (``void*``).
+- ``size`` - The size of the data (``size_t``).
 
 Currently the included python tool supports a few different options for
-*data_format_string*:
+``data_format_string``:
 
-- *@pw_arg_label* - Uses the string in the data as the trace event label.
-- *@pw_arg_group* - Uses the string in the data as the trace event group.
-- *@pw_arg_counter* - Uses the data as a little endian integer value, and
+- ``@pw_arg_label`` - Uses the string in the data as the trace event label.
+- ``@pw_arg_group`` - Uses the string in the data as the trace event group.
+- ``@pw_arg_counter`` - Uses the data as a little endian integer value, and
   visualizes it as a counter value in the trace (on a graph).
-- *@pw_py_struct_fmt:* - Interprets the string after the ":" as a python struct
-  format string, and uses that format string to unpack the data elements. This
-  can be used to either provide a single value type, or provide multiple
+- ``@pw_py_struct_fmt:`` - Interprets the string after the ":" as a python
+  struct format string, and uses that format string to unpack the data elements.
+  This can be used to either provide a single value type, or provide multiple
   different values with a variety of types. Options for format string types can
   be found here: https://docs.python.org/3/library/struct.html#format-characters
   . The data is always assumed to be packed with little-endian ordering if not
@@ -208,7 +214,7 @@ Currently the included python tool supports a few different options for
     data_format_string = "@pw_py_struct_fmt:ll"
     data = 0x1400000014000000
     args = {data_0: 20, data_1:20}
-- *@pw_py_map_fmt:* - Interprets the string after the ":" as a dictionary
+- ``@pw_py_map_fmt:`` - Interprets the string after the ":" as a dictionary
   relating the data field name to the python struct format string. Once
   collected, the format strings are concatenated and used to unpack the data
   elements as above. The data is always assumed to be packed with little-endian
@@ -222,7 +228,7 @@ Currently the included python tool supports a few different options for
 - Pluggable format handlers - Custom data format handlers can be implemented
   within Pigweed or by clients. These data formats are not supported by default;
   clients must explicitly register a custom handler using the decoder's
-  `register_plugin_data_format_handler()` API to enable specialized decoding.
+  ``register_plugin_data_format_handler()`` API to enable specialized decoding.
 
   The plugin format string can optionally include parameters after a colon, for example
   ``@format_name:yyy``. The decoder will look up the handler using the portion
@@ -232,42 +238,42 @@ Currently the included python tool supports a few different options for
 
   Currently, Pigweed implements the following plugin format:
 
-  - **`@pw_trace_tokenized_token_label`** - Extracts a token (little-endian, first
+  - ``@pw_trace_tokenized_token_label`` - Extracts a token (little-endian, first
     4-bytes of the data field) and looks it up in a database to resolve and use
     the result as the trace event label.
 
 .. tip::
 
   It is ok for only one event of a start/end pair to contain data, as long the
-  *label*, *group_label*, and *trace_id*, are all the same.
+  ``label``, ``group_label``, and ``trace_id``, are all the same.
 
 C++ Only Traces
 ---------------
 Scope API measures durations until the object loses scope. This can for
 example, provide a convenient method of tracing functions or loops.
 
-.. cpp:function:: PW_TRACE_SCOPE(label)
-.. cpp:function:: PW_TRACE_SCOPE(label, group_label)
-.. cpp:function:: PW_TRACE_SCOPE(label, group_label, trace_id)
+- :cc:`PW_TRACE_SCOPE(label) <PW_TRACE_SCOPE>`
+- :cc:`PW_TRACE_SCOPE(label, group_label) <PW_TRACE_SCOPE>`
+- :cc:`PW_TRACE_SCOPE(label, group_label, trace_id) <PW_TRACE_SCOPE>`
 
 Function API measures durations until the function returns. This is the only
-macro which does not require a *label*, and instead uses the function name as the
-label. It still can optionally be provided a *group_id*.
+macro which does not require a ``label``, and instead uses the function name as
+the label. It still can optionally be provided a ``group_label``.
 
-.. cpp:function:: PW_TRACE_FUNCTION()
-.. cpp:function:: PW_TRACE_FUNCTION(group_label)
-.. cpp:function:: PW_TRACE_FUNCTION(group_label, trace_id)
+- :cc:`PW_TRACE_FUNCTION() <PW_TRACE_FUNCTION>`
+- :cc:`PW_TRACE_FUNCTION(group_label) <PW_TRACE_FUNCTION>`
+- :cc:`PW_TRACE_FUNCTION(group_label, trace_id) <PW_TRACE_FUNCTION>`
 
 Compile time enabling/disabling
 -------------------------------
 Traces in a file can be enabled/disabled at compile time by defining through
-the ``PW_TRACE_ENABLE`` macro.  A value of 0 causes traces to be disabled.
-A non-zero value will enable traces.  While tracing defaults to enabled,
-it is best practice to define ``PW_TRACE_ENABLE`` explicitly in files that
+the :cc:`PW_TRACE_ENABLE` macro. A value of 0 causes traces to be disabled.
+A non-zero value will enable traces. While tracing defaults to enabled,
+it is best practice to define :cc:`PW_TRACE_ENABLE` explicitly in files that
 use tracing as the default may change in the future.
 
 A good pattern is to have a module level configuration parameter for enabling
-tracing and define ``PW_TRACE_ENABLE`` in terms of that at the top of each
+tracing and define :cc:`PW_TRACE_ENABLE` in terms of that at the top of each
 of the module's files:
 
 
@@ -299,14 +305,14 @@ Backend API
 Each of the trace event macros get sent to one of two macros which are
 implemented by the backend:
 
-.. cpp:function:: PW_TRACE(event_type, flags, label, group_label, trace_id)
-.. cpp:function:: PW_TRACE_DATA(event_type, flags, label, group_label, \
-   trace_id, data_format_string, data, size)
+- :cc:`PW_TRACE(event_type, flags, label, group_label, trace_id) <PW_TRACE>`
+- :cc:`PW_TRACE_DATA(event_type, flags, label, group_label, trace_id,
+  data_format_string, data, size) <PW_TRACE_DATA>`
 
 The ``event_type`` value will be whatever the backend defined for that specific
 trace type using the macros defined below.
 
-The backend can optionally not define ``PW_TRACE_DATA`` to have those traces
+The backend can optionally not define :cc:`PW_TRACE_DATA` to have those traces
 disabled.
 
 Trace types
@@ -319,15 +325,17 @@ Although there are only 3 basic trace types, each has 3 variants:
 
 This combination creates 9 different trace event types:
 
-- *PW_TRACE_TYPE_INSTANT*: Instant trace, with only a label.
-- *PW_TRACE_TYPE_DURATION_START*: Start trace, with only a label.
-- *PW_TRACE_TYPE_DURATION_END*: End trace, with only a label.
-- *PW_TRACE_TYPE_INSTANT_GROUP*: Instant trace, with a label and a group.
-- *PW_TRACE_TYPE_DURATION_GROUP_START*: Start trace, with a label and a group.
-- *PW_TRACE_TYPE_DURATION_GROUP_END*: End trace, with a label and a group.
-- *PW_TRACE_TYPE_ASYNC_INSTANT*: Instant trace, with label, group, and trace_id
-- *PW_TRACE_TYPE_ASYNC_START*: Start trace, with label, group, and trace_id.
-- *PW_TRACE_TYPE_ASYNC_END*: End trace, with label, group, and trace_id.
+- :cc:`PW_TRACE_TYPE_INSTANT`: Instant trace, with only a label.
+- :cc:`PW_TRACE_TYPE_DURATION_START`: Start trace, with only a label.
+- :cc:`PW_TRACE_TYPE_DURATION_END`: End trace, with only a label.
+- :cc:`PW_TRACE_TYPE_INSTANT_GROUP`: Instant trace, with a label and a group.
+- :cc:`PW_TRACE_TYPE_DURATION_GROUP_START`: Start trace, with a label and a
+  group.
+- :cc:`PW_TRACE_TYPE_DURATION_GROUP_END`: End trace, with a label and a group.
+- :cc:`PW_TRACE_TYPE_ASYNC_INSTANT`: Instant trace, with label, group, and
+  trace_id
+- :cc:`PW_TRACE_TYPE_ASYNC_START`: Start trace, with label, group, and trace_id.
+- :cc:`PW_TRACE_TYPE_ASYNC_END`: End trace, with label, group, and trace_id.
 
 The backend must define these macros to have them enabled. If any are left
 undefined, any traces of that type are removed.
@@ -337,9 +345,14 @@ Defaults
 The backend can use these macros to change what the default value is if not
 provided.
 
-- *PW_TRACE_FLAGS_DEFAULT*: Default value if no flags are provided.
-- *PW_TRACE_TRACE_ID_DEFAULT*: Default value if no trace_id provided.
-- *PW_TRACE_GROUP_LABEL_DEFAULT*: Default value if no group_label provided.
+- :cc:`PW_TRACE_FLAGS_DEFAULT`: Default value if no flags are provided.
+- :cc:`PW_TRACE_TRACE_ID_DEFAULT`: Default value if no trace_id provided.
+- :cc:`PW_TRACE_GROUP_LABEL_DEFAULT`: Default value if no group_label provided.
+
+-------------
+API reference
+-------------
+Moved: :cc:`pw_trace`
 
 ----------
 Sample App
@@ -350,7 +363,7 @@ trace backends can include the sample app in their own examples to show how to
 use other features.
 
 The sample app contains 3 "fake" tasks, which are each in their own
-`PW_TRACE_MODULE`.
+:cc:`PW_TRACE_MODULE_NAME`.
 
 - *Input*: Simulating a driver, which gets data periodically, and sends to
   *Processing* task.

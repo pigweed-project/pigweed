@@ -166,3 +166,12 @@ sphinx_docs_library(
     prefix = "pw_trace/",
     target_compatible_with = incompatible_with_mcu(),
 )
+
+filegroup(
+    name = "doxygen",
+    srcs = [
+        "public/pw_trace/internal/null.h",
+        "public/pw_trace/internal/trace_internal.h",
+        "public/pw_trace/trace.h",
+    ],
+)
