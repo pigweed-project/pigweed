@@ -347,10 +347,7 @@ template("pw_python_venv") {
         venv = get_label_info(":${invoker.target_name}", "label_no_toolchain")
 
         args = pw_build_PYTHON_PIP_DEFAULT_OPTIONS
-        args += [
-          "install",
-          "--upgrade",
-        ]
+        args += [ "install" ]
 
         if (_output_logs) {
           _pip_install_log_file =
