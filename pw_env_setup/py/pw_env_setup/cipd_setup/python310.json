@@ -17,12 +17,12 @@
       "path": "pigweed/third_party/python_packages/310/${platform}",
       "platforms": [
         "linux-amd64",
-        "mac-amd64",
+        "mac-arm64",
         "windows-amd64"
       ],
       "subdir": "pip_cache",
       "tags": [
-        "git_revision:cb7ccab675369646b46c335761b4bf0c19f38251"
+        "git_revision:312e7b9aa44745801b1ada9a29c093576a739bee"
       ]
     }
   ]
