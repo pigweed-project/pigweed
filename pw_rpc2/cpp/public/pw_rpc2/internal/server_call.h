@@ -25,10 +25,9 @@
 #include "pw_rpc2/internal/method.h"
 #include "pw_rpc2/internal/method_future.h"
 #include "pw_rpc2/internal/protocol_error.h"
+#include "pw_rpc2/internal/server_connection_task.h"
 
 namespace pw::rpc2::internal {
-
-class ServerConnectionTask;
 
 /// One server-side RPC invocation: the call state, the task that runs the
 /// user's method future, and that future's storage, in a single
@@ -111,6 +110,14 @@ class alignas(std::max_align_t) ServerCall final : public Call,
 
   /// Returns an `IntrusivePtr<Call>` referring to this call.
   IntrusivePtr<Call> shared_call() { return IntrusivePtr<Call>(this); }
+
+  /// Returns the connection this call arrived on.
+  ///
+  /// @pre The call must still be attached to its connection, which it is
+  /// while its method is being invoked or its future is alive.
+  ServerConnectionTask& server_connection_task() const {
+    return static_cast<ServerConnectionTask&>(connection_task());
+  }
 
   /// True once this call is ready to be retired by its connection: either the
   /// user's method future has returned, or the call itself has closed.

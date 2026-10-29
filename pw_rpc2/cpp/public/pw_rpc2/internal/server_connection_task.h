@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+#include <cstdint>
+
 #include "pw_allocator/allocator.h"
 #include "pw_async2/context.h"
 #include "pw_rpc2/internal/connection_task.h"
@@ -28,6 +30,33 @@ namespace internal {
 
 class ServerCall;
 class ServerTask;
+
+class ServerConnectionTask;
+
+/// Identifies a `ServerConnectionTask` without referring to it.
+///
+/// An ID may be kept after its connection closes or is destroyed, since it can
+/// only be compared, never used to reach the connection. A connection created
+/// later may reuse the ID of one that was destroyed, so an ID identifies a
+/// connection only while that connection is alive.
+class ConnectionId {
+ public:
+  /// Constructs an ID that identifies no connection.
+  constexpr ConnectionId() = default;
+
+  explicit ConnectionId(const ServerConnectionTask* connection)
+      : value_(reinterpret_cast<uintptr_t>(connection)) {}
+
+  friend constexpr bool operator==(ConnectionId lhs, ConnectionId rhs) {
+    return lhs.value_ == rhs.value_;
+  }
+  friend constexpr bool operator!=(ConnectionId lhs, ConnectionId rhs) {
+    return lhs.value_ != rhs.value_;
+  }
+
+ private:
+  uintptr_t value_ = 0;
+};
 
 /// Connection task specialized for servers, managing the responder handshake,
 /// incoming request dispatch, and lifecycle of server calls.
@@ -57,6 +86,12 @@ class ServerConnectionTask final : public ConnectionTask {
   /// Retires every call on this connection, even ones that are still running.
   /// On an open connection, running calls end as if their methods returned.
   void ForceRetireAllCalls();
+
+  /// The server that accepted this connection.
+  ServerTask& server_task() const { return server_task_; }
+
+  /// This connection's ID, which is unique among live connections.
+  ConnectionId id() const { return ConnectionId(this); }
 
  private:
   bool PollOpenConnection(async2::Context& cx) override;

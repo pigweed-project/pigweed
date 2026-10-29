@@ -174,6 +174,14 @@ class ServerTask final : public async2::Task {
   /// Called by a connection task as it retires.
   void RemoveConnection(ServerConnectionTask& connection);
 
+  /// Returns whether `id` identifies one of this server's open connections.
+  ///
+  /// A connection is removed once it closes, after its calls are retired.
+  /// Since a later connection may reuse a destroyed connection's ID, a `true`
+  /// result identifies a live connection with that ID, not necessarily the one
+  /// the ID was taken from.
+  bool HasConnection(ConnectionId id) const;
+
  private:
   static constexpr log::Token kTaskName =
       PW_LOG_TOKEN("pw_async2", "pw::rpc2::Server");

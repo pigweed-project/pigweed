@@ -584,6 +584,11 @@ struct CallAccess {
   static uint32_t call_id(const HandleType& handle) {
     return handle.call().call_id();
   }
+
+  template <typename HandleType>
+  static Call& call(const HandleType& handle) {
+    return handle.call();
+  }
 };
 
 }  // namespace pw::rpc2::internal

@@ -347,6 +347,15 @@ Service* ServerTask::FindService(uint32_t service_id) {
   return nullptr;
 }
 
+bool ServerTask::HasConnection(ConnectionId id) const {
+  for (const SharedPtr<ServerConnectionTask>& task : connections_) {
+    if (ConnectionId(task.get()) == id) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void ServerTask::RemoveConnection(ServerConnectionTask& connection) {
   auto previous = connections_.before_begin();
   for (auto it = connections_.begin(); it != connections_.end(); ++it) {

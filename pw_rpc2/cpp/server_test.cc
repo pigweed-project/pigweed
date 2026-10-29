@@ -33,6 +33,8 @@
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/packet_testing.h"
 #include "pw_rpc2/internal/server_call.h"
+#include "pw_rpc2/internal/server_connection_task.h"
+#include "pw_rpc2/internal/server_task.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/method_type.h"
 #include "pw_rpc2/reader.h"
@@ -231,6 +233,37 @@ class StallingService : public Service {
 
   std::array<internal::Method, 1> methods_;
   int future_destructions_ = 0;
+};
+
+// Service whose only method records the connection it was called on, then
+// rejects the call.
+class ConnectionRecordingService : public Service {
+ public:
+  explicit ConnectionRecordingService(uint32_t service_id)
+      : Service(service_id, methods_),
+        methods_({
+            internal::Method(1u,
+                             MethodType::kUnary,
+                             sizeof(internal::MethodFutureImpl<ReadyFuture>),
+                             &InvokeRecord),
+        }) {}
+
+  internal::ConnectionId last_connection() const { return last_connection_; }
+  internal::ServerTask* server_task() const { return server_task_; }
+
+ private:
+  static ProtocolError InvokeRecord(Service& service,
+                                    internal::ServerCall& call,
+                                    ConstBuf&&) {
+    auto& self = static_cast<ConnectionRecordingService&>(service);
+    self.last_connection_ = call.server_connection_task().id();
+    self.server_task_ = &call.server_connection_task().server_task();
+    return ProtocolError::kInvalidRequestPayload;
+  }
+
+  std::array<internal::Method, 1> methods_;
+  internal::ConnectionId last_connection_;
+  internal::ServerTask* server_task_ = nullptr;
 };
 
 void EstablishServerConnection(Allocator& allocator,
@@ -515,6 +548,66 @@ TEST(ServerTest, CloseBlockingTearsDownListenersAndConnections) {
   thread.join();
 
   EXPECT_TRUE(raw_conn->is_closed());
+}
+
+TEST(ServerTest, HasConnectionTracksOpenConnections) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  Server server(allocator, dispatcher);
+  ConnectionRecordingService service(300u);
+  PW_TEST_EXPECT_OK(server.RegisterService(service));
+
+  MockServerListener transport;
+  PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
+  server.Start();
+
+  auto [conn1, raw_conn1] = test::MakeMockConnection(allocator);
+  EstablishServerConnection(
+      allocator, dispatcher, server, transport, raw_conn1, conn1);
+  auto [conn2, raw_conn2] = test::MakeMockConnection(allocator);
+  EstablishServerConnection(
+      allocator, dispatcher, server, transport, raw_conn2, conn2);
+
+  // Learn each connection's ID by calling the recording service on it.
+  auto record_connection = [&](test::MockConnection* raw_conn,
+                               uint32_t call_id) {
+    auto pkt = internal::PacketFramer::FrameStartUnaryPacket(
+        allocator, call_id, /*service_id=*/300u, /*method_id=*/1u, {});
+    PW_CHECK(pkt != nullptr);
+    raw_conn->SetNextRead(std::move(pkt));
+    dispatcher.RunUntilStalled();
+    return service.last_connection();
+  };
+  const internal::ConnectionId connection1 = record_connection(raw_conn1, 1u);
+  const internal::ConnectionId connection2 = record_connection(raw_conn2, 1u);
+  ASSERT_TRUE(connection1 != internal::ConnectionId());
+  ASSERT_TRUE(connection2 != internal::ConnectionId());
+  ASSERT_TRUE(connection1 != connection2);
+
+  internal::ServerTask& server_task = *service.server_task();
+  EXPECT_TRUE(server_task.HasConnection(connection1));
+  EXPECT_TRUE(server_task.HasConnection(connection2));
+  EXPECT_FALSE(server_task.HasConnection(internal::ConnectionId()));
+
+  // An undecodable packet makes the server close the first connection.
+  pw::Buf garbage =
+      pw::Buf::Allocate(allocator, sizeof(internal::PacketHeader));
+  std::memset(garbage.data(), 0, garbage.size());
+  garbage[offsetof(internal::PacketHeader, type)] = std::byte{0xFF};
+  raw_conn1->SetNextRead(std::move(garbage));
+  dispatcher.RunUntilStalled();
+  ASSERT_TRUE(raw_conn1->is_closed());
+
+  // An ID may be checked after its connection closes.
+  EXPECT_FALSE(server_task.HasConnection(connection1));
+  EXPECT_TRUE(server_task.HasConnection(connection2));
+
+  ControlTask close_task(server.Close());
+  dispatcher.Post(close_task);
+  dispatcher.RunUntilStalled();
+  EXPECT_TRUE(close_task.done());
+  EXPECT_FALSE(server_task.HasConnection(connection2));
 }
 
 // The listener teardown path runs on the dispatcher when `Close()` is polled,
