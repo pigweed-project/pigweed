@@ -85,7 +85,6 @@ class BaseChannelImpl : public AnyChannel {
   const Channel& channel() const { return *this; }
 
   using Channel::as;
-  using Channel::IgnoreDatagramBoundaries;
 
   // Use the Channel's version of the AnyChannel API, so unsupported methods are
   // disabled.

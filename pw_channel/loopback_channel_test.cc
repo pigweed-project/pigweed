@@ -32,10 +32,8 @@ using ::pw::async2::Poll;
 using ::pw::async2::Ready;
 using ::pw::async2::Task;
 using ::pw::operator""_b;
-using ::pw::channel::DatagramReader;
+using ::pw::channel::ByteReaderWriter;
 using ::pw::channel::LoopbackByteChannel;
-using ::pw::channel::LoopbackDatagramChannel;
-using ::pw::channel::ReliableByteReader;
 using ::pw::multibuf::test::SimpleAllocatorForTest;
 
 template <typename ChannelKind>
@@ -67,50 +65,10 @@ class ReaderTask : public Task {
   ChannelKind& channel_;
 };
 
-TEST(LoopbackDatagramChannel, LoopsEmptyDatagrams) {
-  SimpleAllocatorForTest alloc;
-  LoopbackDatagramChannel channel(alloc);
-  ReaderTask<DatagramReader> read_task(channel.channel());
-
-  DispatcherForTest dispatcher;
-  dispatcher.Post(read_task);
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
-  EXPECT_EQ(read_task.poll_count, 1);
-  EXPECT_EQ(read_task.read_count, 0);
-  EXPECT_EQ(read_task.bytes_read_count, 0);
-
-  PW_TEST_EXPECT_OK(channel.StageWrite(alloc.BufWith({})));
-
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
-  EXPECT_EQ(read_task.poll_count, 2);
-  EXPECT_EQ(read_task.read_count, 1);
-  EXPECT_EQ(read_task.bytes_read_count, 0);
-}
-
-TEST(LoopbackDatagramChannel, LoopsDatagrams) {
-  SimpleAllocatorForTest alloc;
-  LoopbackDatagramChannel channel(alloc);
-  ReaderTask<DatagramReader> read_task(channel.channel());
-
-  DispatcherForTest dispatcher;
-  dispatcher.Post(read_task);
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
-  EXPECT_EQ(read_task.poll_count, 1);
-  EXPECT_EQ(read_task.read_count, 0);
-  EXPECT_EQ(read_task.bytes_read_count, 0);
-
-  PW_TEST_EXPECT_OK(channel.StageWrite(alloc.BufWith({1_b, 2_b, 3_b})));
-
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
-  EXPECT_EQ(read_task.poll_count, 2);
-  EXPECT_EQ(read_task.read_count, 1);
-  EXPECT_EQ(read_task.bytes_read_count, 3);
-}
-
 TEST(LoopbackByteChannel, IgnoresEmptyWrites) {
   SimpleAllocatorForTest alloc;
   LoopbackByteChannel channel(alloc);
-  ReaderTask<ReliableByteReader> read_task(channel.channel());
+  ReaderTask<ByteReaderWriter> read_task(channel.channel());
 
   DispatcherForTest dispatcher;
   dispatcher.Post(read_task);
@@ -130,7 +88,7 @@ TEST(LoopbackByteChannel, IgnoresEmptyWrites) {
 TEST(LoopbackByteChannel, LoopsData) {
   SimpleAllocatorForTest alloc;
   LoopbackByteChannel channel(alloc);
-  ReaderTask<ReliableByteReader> read_task(channel.channel());
+  ReaderTask<ByteReaderWriter> read_task(channel.channel());
 
   DispatcherForTest dispatcher;
   dispatcher.Post(read_task);

@@ -33,8 +33,6 @@ using ::pw::async2::PollResult;
 using ::pw::async2::Ready;
 using ::pw::async2::Task;
 using ::pw::async2::Waker;
-using ::pw::channel::ByteReader;
-using ::pw::channel::DatagramReader;
 using ::pw::multibuf::MultiBuf;
 
 // Creates and initializes a MultiBuf to the specified value.
@@ -249,7 +247,8 @@ TEST(ForwardingDatagramChannel, ForwardsDatagrams) {
 TEST(ForwardingDatagramchannel, PendCloseAwakensAndClosesPeer) {
   class TryToReadUntilClosed : public Task {
    public:
-    TryToReadUntilClosed(DatagramReader& reader) : reader_(reader) {}
+    TryToReadUntilClosed(pw::channel::DatagramReaderWriter& reader)
+        : reader_(reader) {}
 
     int packets_read = 0;
     Waker waker;
@@ -272,7 +271,7 @@ TEST(ForwardingDatagramchannel, PendCloseAwakensAndClosesPeer) {
       return Ready();
     }
 
-    DatagramReader& reader_;
+    pw::channel::DatagramReaderWriter& reader_;
   };
 
   pw::async2::DispatcherForTest dispatcher;
@@ -471,7 +470,8 @@ TEST(ForwardingByteChannel, WriteDataInMultiplePieces) {
 TEST(ForwardingByteChannel, PendCloseAwakensAndClosesPeer) {
   class TryToReadUntilClosed : public Task {
    public:
-    TryToReadUntilClosed(ByteReader& reader) : reader_(reader) {}
+    TryToReadUntilClosed(pw::channel::ByteReaderWriter& reader)
+        : reader_(reader) {}
 
     int bytes_read = 0;
     Waker waker;
@@ -494,7 +494,7 @@ TEST(ForwardingByteChannel, PendCloseAwakensAndClosesPeer) {
       EXPECT_EQ(read->status(), pw::Status::FailedPrecondition());
       return Ready();
     }
-    ByteReader& reader_;
+    pw::channel::ByteReaderWriter& reader_;
   };
 
   pw::async2::DispatcherForTest dispatcher;

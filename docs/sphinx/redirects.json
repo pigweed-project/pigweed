@@ -122,6 +122,7 @@
   "pw_bluetooth_sapphire/reference": "../api/cc/group__pw__bluetooth__sapphire.html",
   "pw_build/cmake": "../build/cmake/api.html",
   "pw_bytes/api": "../api/cc/group__pw__bytes.html",
+  "pw_channel/guides": "./docs.html",
   "pw_channel/reference": "../api/cc/group__pw__channel.html",
   "pw_clock_tree/api": "../api/cc/group__pw__clock__tree.html",
   "pw_clock_tree/implementations": "./backends.html",

@@ -42,7 +42,6 @@ using ::pw::channel::ByteChannel;
 using ::pw::channel::DatagramWriter;
 using ::pw::channel::kReadable;
 using ::pw::channel::kReliable;
-using ::pw::channel::kSeekable;
 using ::pw::channel::kWritable;
 using ::pw::multibuf::MultiBuf;
 using ::pw::multibuf::MultiBufAllocator;
@@ -51,8 +50,7 @@ using ::pw::multibuf::v1::MultiBufAllocationFuture;
 
 static_assert(sizeof(::pw::channel::AnyChannel) == 2 * sizeof(void*));
 
-static_assert((kReliable < kReadable) && (kReadable < kWritable) &&
-              (kWritable < kSeekable));
+static_assert((kReliable < kReadable) && (kReadable < kWritable));
 
 class ReliableByteReaderWriterStub
     : public pw::channel::ByteChannelImpl<kReliable, kReadable, kWritable> {
@@ -195,9 +193,7 @@ class BadChannel : public pw::channel::ByteChannelImpl<pw::channel::kReliable> {
 #elif PW_NC_TEST(TooMany)
 PW_NC_EXPECT("Too many properties given");
 bool Illegal(
-    pw::channel::
-        ByteChannel<kReliable, kReliable, kReliable, kReadable, kWritable>&
-            foo) {
+    pw::channel::ByteChannel<kReliable, kReliable, kReadable, kWritable>& foo) {
   return foo.is_read_open();
 }
 #elif PW_NC_TEST(Duplicates)
@@ -464,7 +460,8 @@ const pw::channel::ByteChannel<kReadable>& TakesAReadableByteChannel(
   return channel;
 }
 
-void TakesAWritableByteChannel(const pw::channel::ByteChannel<kWritable>&) {}
+[[maybe_unused]] void TakesAWritableByteChannel(
+    const pw::channel::ByteChannel<kWritable>&) {}
 
 TEST(Channel, Conversions) {
   static constexpr size_t kArbitraryDataSize = 128;
@@ -496,10 +493,6 @@ TEST(Channel, Conversions) {
   // TakesAChannel(byte_channel.channel());
   TakesAChannel(byte_channel.as<pw::channel::AnyChannel>());
 
-  TakesAWritableByteChannel(datagram_channel.IgnoreDatagramBoundaries());
-  TakesAWritableByteChannel(
-      datagram_channel.channel().IgnoreDatagramBoundaries());
-
   [[maybe_unused]] const pw::channel::AnyChannel& plain = byte_channel;
 
 #if PW_NC_TEST(CannotImplicitlyLoseWritability)
@@ -508,12 +501,6 @@ TEST(Channel, Conversions) {
 #elif PW_NC_TEST(CannotExplicitlyLoseWritability)
   PW_NC_EXPECT("Cannot use a non-writable channel as a writable channel");
   TakesAWritableByteChannel(byte_channel.as<kWritable>());
-#elif PW_NC_TEST(CannotIgnoreDatagramBoundariesOnByteChannel)
-  PW_NC_EXPECT("only be called to use a datagram channel to a byte channel");
-  std::ignore = byte_channel.IgnoreDatagramBoundaries();
-#elif PW_NC_TEST(CannotIgnoreDatagramBoundariesOnByteChannelImpl)
-  PW_NC_EXPECT("only be called to use a datagram channel to a byte channel");
-  std::ignore = byte_channel.channel().IgnoreDatagramBoundaries();
 #endif  // PW_NC_TEST
 }
 

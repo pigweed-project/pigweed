@@ -36,10 +36,16 @@ namespace pw::channel {
 /// the other holds it.
 ///
 /// ***This must only be called at-most once.***
-ByteReaderWriter& Rp2StdioChannelInit(
-    pw::multibuf::MultiBufAllocator& read_allocator,
-    pw::multibuf::MultiBufAllocator& write_allocator);
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
+[[deprecated(
+    "pw_channel is deprecated; use pw::transport::Socket or "
+    "pw::transport::ReliableSocket")]] ByteReaderWriter&
+Rp2StdioChannelInit(pw::multibuf::MultiBufAllocator& read_allocator,
+                    pw::multibuf::MultiBufAllocator& write_allocator);
 
 /// @}
+/// @endmodule
 
 }  // namespace pw::channel

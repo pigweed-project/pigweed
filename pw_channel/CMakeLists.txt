@@ -24,12 +24,10 @@ pw_add_library(pw_channel INTERFACE
     pw_async2
     pw_bytes
     pw_channel.properties
-    pw_memory._sibling_cast
     pw_multibuf
     pw_multibuf.allocator
     pw_multibuf.v1.allocator_async
     pw_result
-    pw_span
     pw_status
   PUBLIC_INCLUDES
     public

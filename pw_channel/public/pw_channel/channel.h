@@ -22,13 +22,11 @@
 // | _| >  <|  _/ _||   /| || |\/| | _|| .` | | |/ _ \| |__
 // |___/_/\_\_| |___|_|_\___|_|  |_|___|_|\_| |_/_/ \_\____|
 //
-// This module is in an early, experimental state. The APIs are in flux and may
-// change without notice. Please do not rely on it in production code, but feel
-// free to explore and share feedback with the Pigweed team!
+// pw_channel is deprecated and has been replaced by pw_transport. Please do not
+// rely on it in new code.
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <utility>
 
 #include "pw_async2/dispatcher.h"
@@ -46,15 +44,14 @@ namespace pw::channel {
 /// The basic `Channel` type. Unlike `AnyChannel`, the `Channel`'s properties
 /// are expressed in template parameters and thus reflected in the type.
 ///
-/// Properties must be specified in order (`kDatagram`, `kReliable`,
-/// `kReadable`, `kWritable`, `kSeekable`) and without duplicates.
+/// Properties must be specified in order (`kReliable`, `kReadable`,
+/// `kWritable`) and without duplicates.
 ///
 /// To implement a `Channel`, inherit from `ChannelImpl` with the specified
 /// properties.
 ///
-/// @deprecated `Channel` has not been updated for pw_async2 futures or the new
-/// `pw::MultiBuf`. It will be updated and renamed to avoid conflicts with
-/// `pw::async2::Channel`s.
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 template <DataType kDataType, Property... kProperties>
 class Channel {
  public:
@@ -64,10 +61,6 @@ class Channel {
   /// Returns whether the channel type is reliable.
   [[nodiscard]] static constexpr bool reliable() {
     return ((kProperties == Property::kReliable) || ...);
-  }
-  /// Returns whether the channel type is seekable.
-  [[nodiscard]] static constexpr bool seekable() {
-    return ((kProperties == Property::kSeekable) || ...);
   }
   /// Returns whether the channel type is readable.
   [[nodiscard]] static constexpr bool readable() {
@@ -142,25 +135,6 @@ class Channel {
     return as<Channel<data_type(), kOtherChannelProperties...>>();
   }
 
-  /// @returns A byte channel reference to a datagram channel
-  [[nodiscard]] Channel<DataType::kByte, kProperties...>&
-  IgnoreDatagramBoundaries() {
-    static_assert(kDataType == DataType::kDatagram,
-                  "IgnoreDatagramBoundaries() may only be called to use a "
-                  "datagram channel to a byte channel");
-    return static_cast<Channel<DataType::kByte, kProperties...>&>(
-        static_cast<AnyChannel&>(*this));
-  }
-
-  [[nodiscard]] const Channel<DataType::kByte, kProperties...>&
-  IgnoreDatagramBoundaries() const {
-    static_assert(kDataType == DataType::kDatagram,
-                  "IgnoreDatagramBoundaries() may only be called to use a "
-                  "datagram channel to a byte channel");
-    return static_cast<const Channel<DataType::kByte, kProperties...>&>(
-        static_cast<const AnyChannel&>(*this));
-  }
-
  private:
   static_assert(internal::PropertiesAreValid<kProperties...>());
 
@@ -177,12 +151,13 @@ class Channel {
 /// latest ``pw::async2::Context`` that was provided. Notably, this means
 /// that it is not possible to read from the channel in one task while
 /// writing to it from another task: a single task must own and operate
-/// the channel. In the future, a wrapper will be offered which will
-/// allow the channel to be split into a read half and a write half which
-/// can be used from independent tasks.
+/// the channel.
 ///
 /// To implement a `Channel`, inherit from `ChannelImpl` with the specified
 /// properties.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 class AnyChannel
     : private Channel<DataType::kByte, kReadable>,
       private Channel<DataType::kByte, kWritable>,
@@ -199,11 +174,6 @@ class AnyChannel
  public:
   virtual ~AnyChannel() = default;
 
-  // Returned by Position() if getting the position is not supported.
-  // TODO: b/323622630 - `Seek` and `Position` are not yet implemented.
-  // static constexpr size_t kUnknownPosition =
-  //     std::numeric_limits<size_t>::max();
-
   // Channel properties
 
   /// Returns the data type of the channel implementation.
@@ -212,11 +182,6 @@ class AnyChannel
   /// Returns whether the channel implementation is reliable.
   [[nodiscard]] constexpr bool reliable() const {
     return (properties_ & Property::kReliable) != 0;
-  }
-
-  /// Returns whether the channel implementation is seekable.
-  [[nodiscard]] constexpr bool seekable() const {
-    return (properties_ & Property::kSeekable) != 0;
   }
 
   /// Returns whether the channel implementation is readable.
@@ -258,9 +223,8 @@ class AnyChannel
   /// * @UNIMPLEMENTED: The channel does not support reading.
   /// * @FAILED_PRECONDITION: The channel is closed.
   /// * @OUT_OF_RANGE: The end of the stream was reached. This may be thought of
-  ///   as reaching the end of a file. Future reads may succeed after seeking
-  ///   backwards, but no more new data will be produced. The channel is still
-  ///   open; writes and seeks may succeed.
+  ///   as reaching the end of a file. No more new data will be produced. The
+  ///   channel is still open; writes may succeed.
   async2::PollResult<multibuf::MultiBuf> PendRead(async2::Context& cx) {
     if (!is_read_open()) {
       return Status::FailedPrecondition();
@@ -378,30 +342,6 @@ class AnyChannel
     return status;
   }
 
-  /// Seek changes the position in the stream.
-  ///
-  /// TODO: b/323622630 - `Seek` and `Position` are not yet implemented.
-  ///
-  /// Any ``PendRead`` or ``Write`` calls following a call to ``Seek`` will be
-  /// relative to the new position. Already-written data still being flushed
-  /// will be output relative to the old position.
-  ///
-  /// @returns
-  /// * @OK: The current position was successfully changed.
-  /// * @UNIMPLEMENTED: The channel does not support seeking.
-  /// * @FAILED_PRECONDITION: The channel is closed.
-  /// * @NOT_FOUND: The seek was to a valid position, but the channel is no
-  ///   longer capable of seeking to this position (partially seekable
-  ///   channels only).
-  /// * @OUT_OF_RANGE: The seek went beyond the end of the stream.
-  Status Seek(async2::Context& cx, ptrdiff_t position, Whence whence);
-
-  /// Returns the current position in the stream, or `kUnknownPosition` if
-  /// unsupported.
-  ///
-  /// TODO: b/323622630 - `Seek` and `Position` are not yet implemented.
-  size_t Position() const;
-
   /// Closes the channel, flushing any data.
   ///
   /// @returns
@@ -467,13 +407,6 @@ class AnyChannel
 
   virtual pw::async2::Poll<Status> DoPendWrite(async2::Context& cx) = 0;
 
-  // Seek functions
-  /// TODO: b/323622630 - `Seek` and `Position` are not yet implemented.
-
-  // virtual Status DoSeek(ptrdiff_t position, Whence whence) = 0;
-
-  // virtual size_t DoPosition() const = 0;
-
   // Common functions
   virtual async2::Poll<Status> DoPendClose(async2::Context& cx) = 0;
 
@@ -484,39 +417,96 @@ class AnyChannel
 };
 
 /// A `ByteChannel` exchanges data as a stream of bytes.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 template <Property... kProperties>
 using ByteChannel = Channel<DataType::kByte, kProperties...>;
 
 /// A `DatagramChannel` exchanges data as a series of datagrams.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 template <Property... kProperties>
 using DatagramChannel = Channel<DataType::kDatagram, kProperties...>;
 
 /// Unreliable byte-oriented `Channel` that supports reading.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using ByteReader = ByteChannel<kReadable>;
 /// Unreliable byte-oriented `Channel` that supports writing.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using ByteWriter = ByteChannel<kWritable>;
 /// Unreliable byte-oriented `Channel` that supports reading and writing.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using ByteReaderWriter = ByteChannel<kReadable, kWritable>;
 
 /// Reliable byte-oriented `Channel` that supports reading.
-using ReliableByteReader = ByteChannel<kReliable, kReadable>;
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
+using ReliableByteReader
+    [[deprecated("pw_channel is deprecated; use pw::transport::Socket or "
+                 "pw::transport::ReliableSocket")]] =
+        ByteChannel<kReliable, kReadable>;
 /// Reliable byte-oriented `Channel` that supports writing.
-using ReliableByteWriter = ByteChannel<kReliable, kWritable>;
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
+using ReliableByteWriter
+    [[deprecated("pw_channel is deprecated; use pw::transport::Socket or "
+                 "pw::transport::ReliableSocket")]] =
+        ByteChannel<kReliable, kWritable>;
 /// Reliable byte-oriented `Channel` that supports reading and writing.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using ReliableByteReaderWriter = ByteChannel<kReliable, kReadable, kWritable>;
 
 /// Unreliable datagram-oriented `Channel` that supports reading.
-using DatagramReader = DatagramChannel<kReadable>;
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
+using DatagramReader
+    [[deprecated("pw_channel is deprecated; use pw::transport::Socket or "
+                 "pw::transport::ReliableSocket")]] =
+        DatagramChannel<kReadable>;
 /// Unreliable datagram-oriented `Channel` that supports writing.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using DatagramWriter = DatagramChannel<kWritable>;
 /// Unreliable datagram-oriented `Channel` that supports reading and writing.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using DatagramReaderWriter = DatagramChannel<kReadable, kWritable>;
 
 /// Reliable datagram-oriented `Channel` that supports reading.
-using ReliableDatagramReader = DatagramChannel<kReliable, kReadable>;
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
+using ReliableDatagramReader
+    [[deprecated("pw_channel is deprecated; use pw::transport::Socket or "
+                 "pw::transport::ReliableSocket")]] =
+        DatagramChannel<kReliable, kReadable>;
 /// Reliable datagram-oriented `Channel` that supports writing.
-using ReliableDatagramWriter = DatagramChannel<kReliable, kWritable>;
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
+using ReliableDatagramWriter
+    [[deprecated("pw_channel is deprecated; use pw::transport::Socket or "
+                 "pw::transport::ReliableSocket")]] =
+        DatagramChannel<kReliable, kWritable>;
 /// Reliable datagram-oriented `Channel` that supports reading and writing.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using ReliableDatagramReaderWriter =
     DatagramChannel<kReliable, kReadable, kWritable>;
 
@@ -531,18 +521,30 @@ using ReliableDatagramReaderWriter =
 /// A `ChannelImpl` has a corresponding `Channel` type
 /// (`ChannelImpl<>::Channel`). Call the `channel()` method to convert the
 /// `ChannelImpl` to its corresponding `Channel`.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 template <DataType kDataType, Property... kProperties>
 class ChannelImpl {
   static_assert(internal::PropertiesAreValid<kProperties...>());
 };
 
 /// Implement a byte-oriented `Channel` with the specified properties.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 template <Property... kProperties>
 using ByteChannelImpl = ChannelImpl<DataType::kByte, kProperties...>;
 
 /// Implement a datagram-oriented `Channel` with the specified properties.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 template <Property... kProperties>
-using DatagramChannelImpl = ChannelImpl<DataType::kDatagram, kProperties...>;
+using DatagramChannelImpl
+    [[deprecated("pw_channel is deprecated; use pw::transport::Socket or "
+                 "pw::transport::ReliableSocket")]] =
+        ChannelImpl<DataType::kDatagram, kProperties...>;
 
 /// Implement the specified `Channel` type. This is intended for use with the
 /// reader/writer aliases:
@@ -550,10 +552,13 @@ using DatagramChannelImpl = ChannelImpl<DataType::kDatagram, kProperties...>;
 /// @code{.cpp}
 /// class MyChannel : public pw::channel::Implement<pw::channel::ByteReader> {};
 /// @endcode
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 template <typename ChannelType>
 class Implement;
 
-/// @}
+/// @endmodule
 
 template <DataType kDataType, Property... kProperties>
 class Implement<Channel<kDataType, kProperties...>>

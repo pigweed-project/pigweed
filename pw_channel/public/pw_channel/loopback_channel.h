@@ -30,53 +30,21 @@ namespace pw::channel {
 /// @defgroup pw_channel_loopback Loopback
 /// @{
 
-// Channel implementation which will read its own writes.
+/// Channel implementation which will read its own writes.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 template <DataType kType>
 class LoopbackChannel;
 
-/// Alias for a loopback channel that sends and receives datagrams.
-using LoopbackDatagramChannel = LoopbackChannel<DataType::kDatagram>;
-
 /// Alias for a loopback channel that sends and receives bytes.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using LoopbackByteChannel = LoopbackChannel<DataType::kByte>;
 
 /// @}
-
-template <>
-class LoopbackChannel<DataType::kDatagram>
-    : public Implement<ReliableDatagramReaderWriter> {
- public:
-  LoopbackChannel(multibuf::MultiBufAllocator& write_allocator)
-      : write_alloc_future_(write_allocator) {}
-  LoopbackChannel(const LoopbackChannel&) = delete;
-  LoopbackChannel& operator=(const LoopbackChannel&) = delete;
-
-  LoopbackChannel(LoopbackChannel&&) = default;
-  LoopbackChannel& operator=(LoopbackChannel&&) = default;
-
- private:
-  async2::PollResult<multibuf::MultiBuf> DoPendRead(
-      async2::Context& cx) override;
-
-  async2::Poll<Status> DoPendReadyToWrite(async2::Context& cx) final;
-
-  async2::PollOptional<multibuf::MultiBuf> DoPendAllocateWriteBuffer(
-      async2::Context& cx, size_t min_bytes) final {
-    write_alloc_future_.SetDesiredSize(min_bytes);
-    return write_alloc_future_.Pend(cx);
-  }
-
-  Status DoStageWrite(multibuf::MultiBuf&& data) final;
-
-  async2::Poll<Status> DoPendWrite(async2::Context&) final;
-
-  async2::Poll<Status> DoPendClose(async2::Context&) final;
-
-  multibuf::v1::MultiBufAllocationFuture write_alloc_future_;
-  std::optional<multibuf::MultiBuf> queue_;
-
-  async2::Waker waker_;
-};
+/// @endmodule
 
 template <>
 class LoopbackChannel<DataType::kByte>

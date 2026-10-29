@@ -25,6 +25,7 @@
 #include "pw_multibuf/simple_allocator.h"
 
 namespace pw::hdlc {
+
 namespace {
 
 using ::pw::allocator::test::AllocatorForTest;
@@ -38,9 +39,7 @@ using ::pw::async2::PollResult;
 using ::pw::async2::Ready;
 using ::pw::async2::Task;
 using ::pw::operator""_b;
-using ::pw::channel::DatagramReader;
-using ::pw::channel::DatagramWriter;
-using ::pw::channel::ForwardingByteChannelPair;
+using ::pw::channel::DatagramReaderWriter;
 using ::pw::channel::ForwardingDatagramChannelPair;
 using ::pw::channel::LoopbackByteChannel;
 using ::pw::multibuf::MultiBuf;
@@ -63,7 +62,8 @@ class SimpleAllocatorForTest {
 
 class SendDatagrams : public Task {
  public:
-  SendDatagrams(pw::InlineQueue<MultiBuf>& to_send, DatagramWriter& channel)
+  SendDatagrams(pw::InlineQueue<MultiBuf>& to_send,
+                DatagramReaderWriter& channel)
       : to_send_(to_send), channel_(channel) {}
 
  private:
@@ -79,13 +79,14 @@ class SendDatagrams : public Task {
   }
 
   pw::InlineQueue<MultiBuf>& to_send_;
-  DatagramWriter& channel_;
+  DatagramReaderWriter& channel_;
 };
 
 static constexpr size_t kMaxReceiveDatagrams = 16;
 class ReceiveDatagramsUntilClosed : public Task {
  public:
-  ReceiveDatagramsUntilClosed(DatagramReader& channel) : channel_(channel) {}
+  ReceiveDatagramsUntilClosed(DatagramReaderWriter& channel)
+      : channel_(channel) {}
 
   pw::Vector<MultiBuf, kMaxReceiveDatagrams> received;
 
@@ -106,7 +107,7 @@ class ReceiveDatagramsUntilClosed : public Task {
     return Ready();
   }
 
-  DatagramReader& channel_;
+  DatagramReaderWriter& channel_;
 };
 
 template <typename ActualIterable, typename ExpectedIterable>
@@ -208,9 +209,9 @@ TEST(Router, PendOnClosedIoChannelReturnsReady) {
 
   SimpleAllocatorForTest alloc;
 
-  ForwardingByteChannelPair byte_pair(*alloc, *alloc);
+  LoopbackByteChannel byte_channel(*alloc);
   std::array<std::byte, kDecodeBufferSize> decode_buffer;
-  Router router(byte_pair.first(), decode_buffer);
+  Router router(byte_channel.channel(), decode_buffer);
 
   ForwardingDatagramChannelPair datagram_pair(*alloc, *alloc);
   ReceiveDatagramsUntilClosed recv_task(datagram_pair.first());
@@ -229,7 +230,7 @@ TEST(Router, PendOnClosedIoChannelReturnsReady) {
 
   // Close the underlying byte channel.
   FuncTask close_task([&](Context& cx) {
-    EXPECT_EQ(byte_pair.second().PendClose(cx), Ready(OkStatus()));
+    EXPECT_EQ(byte_channel.PendClose(cx), Ready(OkStatus()));
     return Ready();
   });
   dispatcher.Post(close_task);
@@ -239,4 +240,5 @@ TEST(Router, PendOnClosedIoChannelReturnsReady) {
 }
 
 }  // namespace
+
 }  // namespace pw::hdlc

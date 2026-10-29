@@ -143,11 +143,12 @@ struct LiveForeverTestData {
 TEST(StreamChannel, ReadsAndWritesData) {
   static pw::NoDestructor<LiveForeverTestData> test_data;
   static pw::RuntimeInitGlobal<pw::channel::StreamChannel> stream_channel(
-      test_data->allocator,
       test_data->channel_input_pipe.GetReader(),
       test_data->read_thread_cx.options(),
+      test_data->allocator,
       test_data->channel_output_pipe.GetWriter(),
-      test_data->write_thread_cx.options());
+      test_data->write_thread_cx.options(),
+      test_data->allocator);
 
   FuncTask read_task([&](Context& cx) -> Poll<> {
     auto read = stream_channel->PendRead(cx);

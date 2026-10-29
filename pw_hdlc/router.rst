@@ -6,6 +6,13 @@ Router
 .. pigweed-module-subpage::
    :name: pw_hdlc
 
+.. admonition:: ``pw::hdlc::Router`` is deprecated
+   :class: warning
+
+   ``pw::hdlc::Router`` is deprecated along with :ref:`module-pw_channel`.
+   Use :ref:`module-pw_transport` (such as :cc:`pw::transport::Socket`
+   from ``pw_transport:socket``) instead.
+
 :cc:`pw::hdlc::Router` is an experimental asynchronous HDLC router using
 ``pw_channel``.
 

@@ -22,9 +22,7 @@
 // | _| >  <|  _/ _||   /| || |\/| | _|| .` | | |/ _ \| |__
 // |___/_/\_\_| |___|_|_\___|_|  |_|___|_|\_| |_/_/ \_\____|
 //
-// This module is in an early, experimental state. The APIs are in flux and may
-// change without notice. Please do not rely on it in production code, but feel
-// free to explore and share feedback with the Pigweed team!
+// This class is deprecated along with pw_channel. Do not use it in new code.
 
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/poll.h"
@@ -40,10 +38,11 @@ namespace pw::hdlc {
 
 /// A router that multiplexes multiple datagram-oriented ``Channel`` s
 /// over a single byte-oriented ``Channel`` using HDLC framing.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 class Router final {
  public:
-  class Registration;
-
   /// Constructs a ``Router``
   ///
   /// @param[in] io_channel  The channel on which to send and receive encoded
@@ -213,5 +212,7 @@ class Router final {
   /// This is used to provide fairness between the channel outputs.
   size_t next_first_read_index_ = 0;
 };
+
+/// @endmodule
 
 }  // namespace pw::hdlc

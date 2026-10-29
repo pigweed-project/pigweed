@@ -45,6 +45,9 @@ class ForwardingChannel;
 ///
 /// `ForwardingChannelPair` enables connecting two subsystems that communicate
 /// with channels without implementing a custom channel.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 template <DataType kType>
 class ForwardingChannelPair {
  public:
@@ -89,13 +92,20 @@ class ForwardingChannelPair {
 };
 
 /// Alias for a pair of forwarding datagram channels.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using ForwardingDatagramChannelPair =
     ForwardingChannelPair<DataType::kDatagram>;
 
 /// Alias for a pair of forwarding byte channels.
+///
+/// @deprecated pw_channel is deprecated; use pw::transport::Socket or
+/// pw::transport::ReliableSocket.
 using ForwardingByteChannelPair = ForwardingChannelPair<DataType::kByte>;
 
 /// @}
+/// @endmodule
 
 namespace internal {
 
