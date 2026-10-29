@@ -457,6 +457,22 @@ class CommandMultiplexer final {
       return command_opcode_;
     }
 
+    std::optional<InterceptorId> TakeCompleterId()
+        PW_EXCLUSIVE_LOCKS_REQUIRED(cmd_mux_.mutex_) {
+      if (completer_.has_value() && completer_->id().is_valid()) {
+        return std::move(completer_->id());
+      }
+      return std::nullopt;
+    }
+
+    void AssertLockHeld(const CommandMultiplexer& caller) const
+        PW_ASSERT_EXCLUSIVE_LOCK(cmd_mux_.mutex_)
+            PW_EXCLUSIVE_LOCKS_REQUIRED(caller.mutex_) {
+      // Should be impossible to ever be unsatisfied, but assert to satisfy the
+      // thread safety analysis.
+      PW_ASSERT(&caller == &cmd_mux_);
+    }
+
    private:
     static constexpr Private kPrivateValue{};
 
@@ -465,7 +481,7 @@ class CommandMultiplexer final {
 
     CommandMultiplexer& cmd_mux_;
     pw::bluetooth::emboss::OpCode command_opcode_;
-    std::optional<EventInterceptor> completer_;
+    std::optional<EventInterceptor> completer_ PW_GUARDED_BY(cmd_mux_.mutex_);
     EventHandler external_handler_;
   };
 

@@ -2156,6 +2156,37 @@ void TestReset(Accessor test) {
   EXPECT_TRUE(active_cmd_result.has_value());
   EXPECT_EQ(test.packets_to_controller().size(), 1u);
   test.packets_to_controller().pop_front();
+
+  test.hci_cmd_mux().Reset();
+
+  // Send a Command Complete event for the previously active command. Since
+  // Reset() cleared active_command_queue_ and unregistered its completion
+  // interceptor, the handler should not be called and the event should be
+  // forwarded to the host.
+  test.GiveCommandCredit({.opcode = 0x1001});
+  EXPECT_FALSE(event_handler_called);
+
+  // Sending the same command again after Reset() should succeed (no
+  // ALREADY_EXISTS failure from a stale completion interceptor).
+  MultiBuf::Instance retry_cmd_buf(test.allocator());
+  retry_cmd_buf->Insert(retry_cmd_buf->end(),
+                        read_local_version_information_packet_bytes);
+  auto retry_cmd_result = test.hci_cmd_mux().SendCommand(
+      {std::move(retry_cmd_buf)},
+      [&](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+        event_handler_called = true;
+        return {};
+      },
+      emboss::EventCode::COMMAND_COMPLETE);
+  EXPECT_TRUE(retry_cmd_result.has_value());
+  EXPECT_EQ(test.packets_to_controller().size(), 1u);
+  test.packets_to_controller().pop_front();
+
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      auto evt_buf, test.AllocBuf(MakeCommandCompletePacket(0x1001, 1)));
+  test.hci_cmd_mux().HandleH4FromController(std::move(evt_buf));
+  EXPECT_TRUE(event_handler_called);
+  EXPECT_TRUE(test.packets_to_host().empty());
 }
 
 TEST_F(CommandMultiplexerTest, ResetAsync) { TestReset(accessor_async2()); }

@@ -110,6 +110,12 @@ void CommandMultiplexer::DoReset() {
       "Resetting command multiplexer, clearing command queue and resetting "
       "command credits.");
   command_queue_.clear();
+  for (auto& active_command : active_command_queue_) {
+    active_command->AssertLockHeld(*this);
+    if (auto id = active_command->TakeCompleterId(); id.has_value()) {
+      RemoveEventInterceptor(std::move(*id));
+    }
+  }
   active_command_queue_.clear();
   command_credits_ = 1u;
   NotifyStateUpdate();
@@ -885,6 +891,7 @@ CommandMultiplexer::ActiveSentCommandData::From(CommandMultiplexer& parent,
     return nullptr;
   }
 
+  active->AssertLockHeld(parent);
   active->completer_ = std::move(completer.value());
   active->external_handler_ = std::move(data.external_handler);
   return active;
