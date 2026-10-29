@@ -46,6 +46,8 @@ constexpr size_t kAllocatorSize = 1024;
 constexpr size_t kInternalAllocatorSize = 512;
 constexpr auto kDefaultErrorAction = SniffOffloadManager::ErrorAction::kIgnore;
 constexpr auto kDefaultLinkInactivityTimeout = std::chrono::milliseconds(1000);
+constexpr size_t kMaxTransitionRetries = 5;
+constexpr auto kRetryBackoffBase = std::chrono::milliseconds(50);
 constexpr auto kTick = Clock::duration(1);
 constexpr uint16_t kConnectionHandle = 0x123;
 
@@ -1391,15 +1393,586 @@ TEST_F(SniffOffloadManagerTest, ProcessCommandStatus) {
   EXPECT_TRUE(CheckSniffModeSent());
   EXPECT_TRUE(NoErrors());
 
+  for (size_t retry = 0; retry < kMaxTransitionRetries; ++retry) {
+    const auto backoff = kRetryBackoffBase * (1u << retry);
+    EXPECT_EQ(SimulateCommandStatus(
+                  MakeCommandStatus(CommandOpcode::SNIFF_MODE,
+                                    emboss::StatusCode::UNKNOWN_CONNECTION_ID)),
+              OkStatus());
+    EXPECT_TRUE(packets_to_controller().empty());
+
+    AdvanceTime(backoff / 2);
+    EXPECT_TRUE(packets_to_controller().empty());
+
+    AdvanceTime(backoff / 2 + kTick);
+    EXPECT_TRUE(CheckSniffModeSent(0x123));
+    EXPECT_TRUE(NoErrors());
+  }
+
   EXPECT_EQ(SimulateCommandStatus(
                 MakeCommandStatus(CommandOpcode::SNIFF_MODE,
                                   emboss::StatusCode::UNKNOWN_CONNECTION_ID)),
             OkStatus());
-  EXPECT_EQ(PopLastError(), Error({ErrorReason::kCommandStatusFailed}));
+  EXPECT_EQ(
+      PopLastError(),
+      Error({ErrorReason::kCommandStatusFailed, ConnectionHandle{0x123}}));
 
   EXPECT_TRUE(NoErrors());
   EXPECT_TRUE(packets_to_controller().empty());
   EXPECT_TRUE(packets_to_host().empty());
+
+  // After all retries fail in TransitionActiveToSniff, state is reset to Active
+  // and the idle timer is started; when it expires, ConnectionFsm attempts to
+  // transition to sniff mode again.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x123));
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       ProcessCommandStatusExitSniffModeRetriesAndFailsAfterMaxRetries) {
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_TRUE(NoErrors());
+
+  for (size_t retry = 0; retry < kMaxTransitionRetries; ++retry) {
+    const auto backoff = kRetryBackoffBase * (1u << retry);
+    EXPECT_EQ(SimulateCommandStatus(
+                  MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                    emboss::StatusCode::COMMAND_DISALLOWED)),
+              OkStatus());
+    EXPECT_TRUE(packets_to_controller().empty());
+
+    AdvanceTime(backoff / 2);
+    EXPECT_TRUE(packets_to_controller().empty());
+
+    AdvanceTime(backoff / 2 + kTick);
+    EXPECT_TRUE(CheckSniffExitSent(0x123));
+    EXPECT_TRUE(NoErrors());
+  }
+
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_FALSE(CheckSniffExitSent(0x123));
+  EXPECT_EQ(
+      PopLastError(),
+      Error({ErrorReason::kCommandStatusFailed, ConnectionHandle{0x123}}));
+  EXPECT_TRUE(NoErrors());
+
+  // After all retries fail in TransitionSniffToActive, state is reset to Sniff;
+  // the next AclActivity attempts to transition to Active again.
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest, ModeChangeCancelsPendingRetryTimers) {
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+
+  // Trigger TransitionActiveToSniff and fail CommandStatus to start retry
+  // timer.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x123));
+  EXPECT_EQ(
+      SimulateCommandStatus(MakeCommandStatus(
+          CommandOpcode::SNIFF_MODE, emboss::StatusCode::COMMAND_DISALLOWED)),
+      OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+
+  // ModeChange(SNIFF) before retry backoff expires cancels the retry timer.
+  AdvanceTime(kRetryBackoffBase / 2);
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+  AdvanceTime(kRetryBackoffBase + kTick);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // Trigger TransitionSniffToActive and fail CommandStatus to start retry
+  // timer.
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+
+  // ModeChange(ACTIVE) before retry backoff expires cancels the retry timer.
+  AdvanceTime(kRetryBackoffBase / 2);
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::ACTIVE)),
+            kPassthroughResume);
+  AdvanceTime(kRetryBackoffBase + kTick);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       AclActivityCancelsPendingTransitionActiveToSniffRetryTimer) {
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+
+  // Trigger TransitionActiveToSniff and fail CommandStatus to start retry
+  // timer.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x123));
+  EXPECT_EQ(
+      SimulateCommandStatus(MakeCommandStatus(
+          CommandOpcode::SNIFF_MODE, emboss::StatusCode::COMMAND_DISALLOWED)),
+      OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+
+  // AclActivity before retry backoff expires cancels the retry timer, resets
+  // the state to Active (no ExitSniffMode sent), and starts the idle timer.
+  AdvanceTime(kRetryBackoffBase / 2);
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(packets_to_controller().empty());
+
+  // After the original retry backoff expires, no retry for SniffMode should be
+  // sent.
+  AdvanceTime(kRetryBackoffBase / 2 + kTick);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // When the newly started idle timer expires, SniffMode is sent again.
+  AdvanceTime(kDefaultLinkInactivityTimeout - kRetryBackoffBase / 2);
+  EXPECT_TRUE(CheckSniffModeSent(0x123));
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       ExitSniffModeRetryAbortsWhenLinkInactivityTimeoutElapsed) {
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+
+  // Trigger TransitionSniffToActive via ACL activity.
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+
+  // First failure happens before link_inactivity_timeout elapses -> schedules
+  // retry 1.
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  AdvanceTime(kRetryBackoffBase + kTick);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+
+  // Advance past link_inactivity_timeout since the last AclActivity before the
+  // second CommandStatus failure arrives.
+  AdvanceTime(kDefaultLinkInactivityTimeout);
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_TRUE(NoErrors());
+
+  // No retry should be scheduled because link_inactivity_timeout elapsed.
+  AdvanceTime(kRetryBackoffBase * 2 + kTick);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // State was set back to Sniff, so new AclActivity attempts ExitSniffMode
+  // again.
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       ProcessCommandStatusIgnoresFailureWhenModeAlreadyChanged) {
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+
+  // Transition Active -> Sniff, then ModeChange(SNIFF) arrives before
+  // CommandStatus(SNIFF_MODE) failure.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x123));
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+  EXPECT_EQ(
+      SimulateCommandStatus(MakeCommandStatus(
+          CommandOpcode::SNIFF_MODE, emboss::StatusCode::COMMAND_DISALLOWED)),
+      OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // Transition Sniff -> Active, then ModeChange(ACTIVE) arrives before
+  // CommandStatus(EXIT_SNIFF_MODE) failure.
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::ACTIVE)),
+            kPassthroughResume);
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // Transition Active -> Sniff, then AclActivity arrives while SniffMode is in
+  // flight (transitioning to TransitionSniffToActive), before
+  // CommandStatus(SNIFF_MODE) failure arrives.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x123));
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_EQ(
+      SimulateCommandStatus(MakeCommandStatus(
+          CommandOpcode::SNIFF_MODE, emboss::StatusCode::COMMAND_DISALLOWED)),
+      OkStatus());
+  EXPECT_EQ(SimulateCommandStatus(MakeCommandStatus(
+                CommandOpcode::EXIT_SNIFF_MODE, emboss::StatusCode::SUCCESS)),
+            OkStatus());
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::ACTIVE)),
+            kPassthroughResume);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // Transition Active -> Sniff, then connection disconnects before
+  // CommandStatus(SNIFF_MODE) failure arrives.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x123));
+  EXPECT_EQ(Simulate(DisconnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::SNIFF_MODE,
+                                  emboss::StatusCode::UNKNOWN_CONNECTION_ID)),
+            OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       ProcessCommandStatusExitSniffModeRetriesInPreferActiveAndPushActive) {
+  struct {
+    SniffOffloadManager::SendCommandFunc send_command;
+    bool fail_send_command = false;
+  } ctx{MakeDefaultSendCommand()};
+  MakeSniffOffloadWithHandlers(
+      [&ctx](MultiBuf::Instance&& buf,
+             SniffOffloadManager::CompletionEvent completion) -> Status {
+        if (ctx.fail_send_command) {
+          return Status::Unavailable();
+        }
+        return ctx.send_command(std::move(buf), completion);
+      },
+      MakeDefaultSendEvent(),
+      MakeDefaultOnError());
+
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(
+      Simulate(WriteSniffOffloadParameters(
+          0x123, {.sniff_max_interval = 1, .link_inactivity_timeout = 0})),
+      kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+
+  // If SendExitSniffMode fails synchronously, connection_mode_ reverts to Sniff
+  // so subsequent ACL activity retries ExitSniffMode.
+  ctx.fail_send_command = true;
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_EQ(PopLastError(),
+            Error({ErrorReason::kSendCommandFailed, ConnectionHandle{0x123}}));
+  ctx.fail_send_command = false;
+
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_TRUE(NoErrors());
+
+  // Advance time past link_inactivity_timeout (0ms) before CommandStatus
+  // arrives; kPreferActive must still retry rather than checking
+  // link_inactivity_timeout.
+  AdvanceTime(std::chrono::milliseconds(10));
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+
+  AdvanceTime(kRetryBackoffBase + kTick);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_EQ(SimulateCommandStatus(MakeCommandStatus(
+                CommandOpcode::EXIT_SNIFF_MODE, emboss::StatusCode::SUCCESS)),
+            OkStatus());
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::ACTIVE)),
+            kPassthroughResume);
+  EXPECT_TRUE(NoErrors());
+
+  // Switching from kControlStarted to kPreferActive while a
+  // TransitionSniffToActive retry timer is pending must not deregister the
+  // retry timer task.
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+
+  EXPECT_EQ(
+      Simulate(WriteSniffOffloadParameters(
+          0x123, {.sniff_max_interval = 1, .link_inactivity_timeout = 0})),
+      kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+
+  AdvanceTime(kRetryBackoffBase + kTick);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_EQ(SimulateCommandStatus(MakeCommandStatus(
+                CommandOpcode::EXIT_SNIFF_MODE, emboss::StatusCode::SUCCESS)),
+            OkStatus());
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+
+  // Entering kPushActive while in Sniff mode transitions to
+  // TransitionSniffToActive and retries if ExitSniffMode fails.
+  EXPECT_EQ(
+      Simulate(WriteSniffOffloadParameters(
+          0x123, {.sniff_max_interval = 0, .link_inactivity_timeout = 0})),
+      kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  AdvanceTime(std::chrono::milliseconds(10));
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  AdvanceTime(kRetryBackoffBase + kTick);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       DisableWhileRetryPendingRevertsModeWithoutSendingCommand) {
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+
+  // Trigger TransitionActiveToSniff and fail CommandStatus to start retry
+  // timer.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x123));
+  EXPECT_EQ(
+      SimulateCommandStatus(MakeCommandStatus(
+          CommandOpcode::SNIFF_MODE, emboss::StatusCode::COMMAND_DISALLOWED)),
+      OkStatus());
+
+  // Disable sniff offload before the retry timer expires.
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(false)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+
+  // Advancing past the retry backoff must not crash or send SniffMode, and
+  // reverts connection_mode_ to Active.
+  AdvanceTime(kRetryBackoffBase + kTick);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // Re-enable and transition to Sniff, then trigger TransitionSniffToActive and
+  // fail CommandStatus to start retry timer.
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+
+  // Disable sniff offload before the retry timer expires.
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(false)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+
+  // Advancing past the retry backoff must not crash or send ExitSniffMode, and
+  // reverts connection_mode_ to Sniff.
+  AdvanceTime(kRetryBackoffBase + kTick);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest, ProcessCommandStatusFifoQueue) {
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(ConnectionComplete(0x456)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x456)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x456));
+
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x456, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+
+  // Both connections are in Sniff mode. Simulate ACL TX activity on 0x123
+  // first, then 0x456.
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+
+  SimulateAclActivity(0x456, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x456));
+
+  // Sending SniffSubrating (kCommandComplete) while commands are in flight must
+  // not use or corrupt the pending_commands_ queue.
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x456)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x456));
+
+  // The queue has [0x123, 0x456].
+  // The first CommandStatus arrives for 0x123 with a failure
+  // (COMMAND_DISALLOWED), scheduling a retry for 0x123.
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // 10ms later, the second CommandStatus arrives for 0x456 with a failure
+  // (COMMAND_DISALLOWED), scheduling a retry for 0x456.
+  // Now both ConnectionFsms have retries pending at the same time.
+  constexpr auto kStaggerDelay = std::chrono::milliseconds(10);
+  AdvanceTime(kStaggerDelay);
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // Sending SniffSubrating while multiple retries are pending also does not use
+  // the queue.
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+
+  // Advance to kRetryBackoffBase + kTick for 0x123: 0x123's retry fires first.
+  AdvanceTime(kRetryBackoffBase - kStaggerDelay + kTick);
+  EXPECT_TRUE(CheckSniffExitSent(0x123));
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // Advance kStaggerDelay (kRetryBackoffBase + kTick total for 0x456): 0x456's
+  // retry fires second.
+  AdvanceTime(kStaggerDelay);
+  EXPECT_TRUE(CheckSniffExitSent(0x456));
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  // The queue now has [0x123, 0x456] from the two retries.
+  // First CommandStatus (for 0x123) succeeds; second CommandStatus (for 0x456)
+  // fails and schedules retry 2 (kRetryBackoffBase * 2) for 0x456.
+  EXPECT_EQ(SimulateCommandStatus(MakeCommandStatus(
+                CommandOpcode::EXIT_SNIFF_MODE, emboss::StatusCode::SUCCESS)),
+            OkStatus());
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  AdvanceTime(kRetryBackoffBase * 2 + kTick);
+  EXPECT_TRUE(CheckSniffExitSent(0x456));
+  EXPECT_TRUE(NoErrors());
 }
 
 TEST_F(SniffOffloadManagerTest, ProcessLeGetVendorCapabilities) {

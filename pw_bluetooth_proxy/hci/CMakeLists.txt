@@ -116,6 +116,7 @@ set(sniff_offload_deps
   pw_bluetooth.emboss_util
   pw_bluetooth_proxy.clock
   pw_containers.dynamic_map
+  pw_containers.dynamic_queue
   pw_function
   pw_multibuf.v2.multibuf
   pw_sync.lock_annotations

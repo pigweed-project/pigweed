@@ -27,6 +27,7 @@
 #include "pw_bluetooth_proxy/hci/sniff_offload_snapshot.h"
 #include "pw_bluetooth_proxy/hci/types.h"
 #include "pw_containers/dynamic_map.h"
+#include "pw_containers/dynamic_queue.h"
 #include "pw_function/function.h"
 #include "pw_multibuf/v2/multibuf.h"
 #include "pw_result/result.h"
@@ -220,10 +221,10 @@ class SniffOffloadManager final {
   class ConnectionFsm;
 
   // Wrappers for injected functions.
-  void SendCommand(MultiBuf::Instance&& command_packet,
-                   CompletionEvent completion,
-                   std::optional<ConnectionHandle> connection_handle =
-                       std::nullopt) PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status SendCommand(MultiBuf::Instance&& command_packet,
+                     CompletionEvent completion,
+                     std::optional<ConnectionHandle> connection_handle =
+                         std::nullopt) PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void SendEvent(MultiBuf::Instance&& event_packet,
                  std::optional<ConnectionHandle> connection_handle =
                      std::nullopt) PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -277,6 +278,11 @@ class SniffOffloadManager final {
     ConnectionFsm& fsm;
   };
 
+  struct PendingCommand final {
+    CommandOpcode opcode;
+    std::optional<ConnectionHandle> connection_handle;
+  };
+
   // Internal actions and helpers.
   void SendCommandComplete(uint16_t opcode,
                            CommandStatus status = CommandStatus::kSuccess)
@@ -305,6 +311,7 @@ class SniffOffloadManager final {
   // Internal state.
   std::variant<Disabled, Enabled> state_ PW_GUARDED_BY(mutex_) = Disabled{};
   ConnectionMap connections_ PW_GUARDED_BY(mutex_);
+  pw::DynamicQueue<PendingCommand> pending_commands_ PW_GUARDED_BY(mutex_);
 
   bool suppress_mode_change_event_ PW_GUARDED_BY(mutex_) = false;
   bool suppress_sniff_subrating_event_ PW_GUARDED_BY(mutex_) = false;

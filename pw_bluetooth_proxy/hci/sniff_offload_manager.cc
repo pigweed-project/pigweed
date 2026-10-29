@@ -69,6 +69,8 @@ constexpr auto kCommandCompleteEventCode =
 
 constexpr uint16_t kPushActiveInterval = 0x0000;
 constexpr uint16_t kPreferActiveInterval = 0x0001;
+constexpr uint8_t kMaxTransitionRetries = 5;
+constexpr auto kRetryBackoffBase = std::chrono::milliseconds(50);
 
 namespace WriteSniffOffloadEnableCommand =
     vendor::android_hci::WriteSniffOffloadEnableCommand;
@@ -119,9 +121,16 @@ struct ConnectionMode final {
     bool is_resynchronizing = false;
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   };
-  struct TransitionActiveToSniff final {};
+  struct TransitionActiveToSniff final {
+    uint8_t retries = 0;
+    std::optional<async2::TimeFuture<Clock>> timer;
+  };
   struct Sniff final {};
-  struct TransitionSniffToActive final {};
+  struct TransitionSniffToActive final {
+    uint8_t retries = 0;
+    std::optional<async2::TimeFuture<Clock>> timer;
+    Clock::time_point last_acl_activity;
+  };
 
   using Variant = std::
       variant<Active, TransitionActiveToSniff, Sniff, TransitionSniffToActive>;
@@ -193,7 +202,11 @@ class SniffOffloadManager::ConnectionFsm final {
     kBypass,
   };
 
-  void SendExitSniffMode(PreconditionCheck check = PreconditionCheck::kEnforce)
+  Status SendExitSniffMode(
+      PreconditionCheck check = PreconditionCheck::kEnforce)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
+
+  Status HandleCommandStatus(emboss::OpCode opcode, emboss::StatusCode status)
       PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
@@ -224,10 +237,14 @@ class SniffOffloadManager::ConnectionFsm final {
       PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
 
   void HandleTimeout() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
+  async2::Poll<> PendRetryTimer(async2::Context& cx)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
 
   void ResetTimer() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
+  void EnterPushActive() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
+  void EnterPreferActive() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
 
-  void SendEnterSniffMode() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
+  Status SendEnterSniffMode() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
   void SendSniffSubrating() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
 
   bool ShouldExitSniff(Direction direction)
@@ -307,7 +324,8 @@ SniffOffloadManager::SniffOffloadManager(
       send_command_(std::move(send_command)),
       send_event_(std::move(send_event)),
       on_error_(std::move(on_error)),
-      connections_(allocator)
+      connections_(allocator),
+      pending_commands_(allocator)
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
       ,
       state_update_callback_(std::move(state_update_callback))
@@ -348,6 +366,7 @@ void SniffOffloadManager::DoReset() {
     fsm.Stop();
   }
   connections_.clear();
+  pending_commands_.clear();
   state_ = Disabled();
   suppress_mode_change_event_ = false;
   suppress_sniff_subrating_event_ = false;
@@ -419,6 +438,13 @@ Status SniffOffloadManager::ProcessCommandStatus(const MultiBuf& event_packet) {
       return Status::FailedPrecondition();
   }
 
+  std::optional<ConnectionHandle> pending_handle;
+  if (!pending_commands_.empty() &&
+      pending_commands_.front().opcode == opcode) {
+    pending_handle = pending_commands_.front().connection_handle;
+    pending_commands_.pop();
+  }
+
   auto status = view->status().Read();
   if (status != emboss::StatusCode::SUCCESS) {
     if (opcode == emboss::OpCode::EXIT_SNIFF_MODE &&
@@ -429,6 +455,26 @@ Status SniffOffloadManager::ProcessCommandStatus(const MultiBuf& event_packet) {
           "resynchronization; controller is already in active mode.");
       return OkStatus();
     }
+
+    if (pending_handle.has_value()) {
+      auto iter = connections_.find(cpp23::to_underlying(*pending_handle));
+      if (iter == connections_.end()) {
+        PW_LOG_DEBUG(
+            "Connection 0x%04x disconnected before command status was "
+            "processed (opcode: 0x%04x, status: 0x%02x)",
+            cpp23::to_underlying(*pending_handle),
+            cpp23::to_underlying(opcode),
+            cpp23::to_underlying(status));
+        return OkStatus();
+      }
+      auto& fsm = iter->second;
+      fsm.AssertLockHeld(*this);
+      if (!fsm.HandleCommandStatus(opcode, status).ok()) {
+        OnError(ErrorReason::kCommandStatusFailed, *pending_handle);
+      }
+      return OkStatus();
+    }
+
     PW_LOG_ERROR("Command failed (opcode: 0x%04x, status: 0x%04x)",
                  cpp23::to_underlying(opcode),
                  cpp23::to_underlying(status));
@@ -879,14 +925,30 @@ void SniffOffloadManager::SendCommandComplete(uint16_t opcode,
   SendEvent(std::move(*buf));
 }
 
-void SniffOffloadManager::SendCommand(
+Status SniffOffloadManager::SendCommand(
     MultiBuf::Instance&& command_packet,
     CompletionEvent completion,
     std::optional<ConnectionHandle> connection_handle) {
-  if (!send_command_(std::move(command_packet), completion).ok()) {
+  std::optional<CommandOpcode> opcode;
+  if (completion == CompletionEvent::kCommandStatus) {
+    Scratch<emboss::CommandHeader::IntrinsicSizeInBytes()> scratch;
+    auto span = command_packet->Get(scratch);
+    auto view = MakeEmbossView<emboss::CommandHeaderView>(span);
+    if (view.ok() && view->Ok()) {
+      opcode = view->opcode().Read();
+    }
+  }
+  Status status = send_command_(std::move(command_packet), completion);
+  if (status.ok()) {
+    if (opcode.has_value() &&
+        !pending_commands_.try_push({*opcode, connection_handle})) {
+      PW_LOG_ERROR("Failed to push to pending commands queue.");
+    }
+  } else {
     PW_LOG_WARN("Failed to send command.");
     OnError(ErrorReason::kSendCommandFailed, connection_handle);
   }
+  return status;
 }
 
 void SniffOffloadManager::SendEvent(
@@ -964,6 +1026,82 @@ void SniffOffloadManager::ConnectionFsm::OnInput(Input&& input) {
       std::move(input));
 }
 
+Status SniffOffloadManager::ConnectionFsm::HandleCommandStatus(
+    emboss::OpCode opcode, emboss::StatusCode status) {
+  if (opcode == emboss::OpCode::EXIT_SNIFF_MODE) {
+    if (std::holds_alternative<ConnectionMode::Active>(connection_mode_)) {
+      PW_LOG_DEBUG(
+          "Mode changed before ExitSniffMode command was processed "
+          "(status: 0x%02x)",
+          cpp23::to_underlying(status));
+      return OkStatus();
+    }
+    if (auto* transition = std::get_if<ConnectionMode::TransitionSniffToActive>(
+            &connection_mode_)) {
+      if (transition->retries < kMaxTransitionRetries) {
+        if (should_control() &&
+            manager_.time_provider_.now() - transition->last_acl_activity >
+                std::chrono::ceil<Clock::duration>(std::chrono::milliseconds(
+                    parameters_->link_inactivity_timeout))) {
+          PW_LOG_DEBUG(
+              "Link inactivity timeout elapsed before ExitSniffMode retry; "
+              "remaining in sniff mode");
+          connection_mode_ = ConnectionMode::Sniff{};
+          return OkStatus();
+        }
+        PW_LOG_WARN("ExitSniffMode command failed (status: 0x%02x), retrying",
+                    cpp23::to_underlying(status));
+        transition->timer =
+            manager_.time_provider_.WaitFor(std::chrono::ceil<Clock::duration>(
+                kRetryBackoffBase * (1u << transition->retries)));
+        transition->retries++;
+        Start();
+        timeout_task_.AssertLockHeld(*this);
+        timeout_task_.Wake();
+        return OkStatus();
+      }
+      PW_LOG_ERROR("Transitioning to active mode failed (status: 0x%02x)",
+                   cpp23::to_underlying(status));
+      connection_mode_ = ConnectionMode::Sniff{};
+      return Status::Internal();
+    }
+  } else if (opcode == emboss::OpCode::SNIFF_MODE) {
+    if (!std::holds_alternative<ConnectionMode::TransitionActiveToSniff>(
+            connection_mode_)) {
+      PW_LOG_DEBUG(
+          "Mode was changed before SniffMode command was processed "
+          "(status: 0x%02x)",
+          cpp23::to_underlying(status));
+      return OkStatus();
+    }
+    if (auto* transition = std::get_if<ConnectionMode::TransitionActiveToSniff>(
+            &connection_mode_)) {
+      if (transition->retries < kMaxTransitionRetries) {
+        PW_LOG_WARN("SniffMode command failed (status: 0x%02x), retrying",
+                    cpp23::to_underlying(status));
+        transition->timer =
+            manager_.time_provider_.WaitFor(std::chrono::ceil<Clock::duration>(
+                kRetryBackoffBase * (1u << transition->retries)));
+        transition->retries++;
+        Start();
+        timeout_task_.AssertLockHeld(*this);
+        timeout_task_.Wake();
+        return OkStatus();
+      }
+      PW_LOG_ERROR("Transitioning to sniff mode failed (status: 0x%02x)",
+                   cpp23::to_underlying(status));
+      connection_mode_ = ConnectionMode::Active{};
+      ResetTimer();
+      return Status::Internal();
+    }
+  }
+
+  PW_LOG_ERROR("Command failed (opcode: 0x%04x, status: 0x%04x)",
+               cpp23::to_underlying(opcode),
+               cpp23::to_underlying(status));
+  return Status::Internal();
+}
+
 void SniffOffloadManager::ConnectionFsm::HandleInput(EnableInput&& input) {
   [[maybe_unused]] auto _ = std::move(input);
   enabled_ = true;
@@ -975,11 +1113,10 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(EnableInput&& input) {
       SendSniffSubrating();
       break;
     case ConnectionState::kPushActive:
-      SendExitSniffMode();
-      Stop();
+      EnterPushActive();
       break;
     case ConnectionState::kPreferActive:
-      Stop();
+      EnterPreferActive();
       break;
     case ConnectionState::kPendingParameters:
       break;
@@ -1006,14 +1143,13 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(
   }
 
   if (connection_state() == ConnectionState::kPushActive) {
-    SendExitSniffMode();
-    Stop();  // Do not trigger timeouts.
+    EnterPushActive();
     NotifyStateUpdate();
     return;
   }
 
   if (connection_state() == ConnectionState::kPreferActive) {
-    Stop();  // Do not trigger timeouts.
+    EnterPreferActive();
     NotifyStateUpdate();
     return;
   }
@@ -1034,6 +1170,15 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleInput(ModeChangeInput&& input) {
+  if (auto* active_to_sniff =
+          std::get_if<ConnectionMode::TransitionActiveToSniff>(
+              &connection_mode_)) {
+    active_to_sniff->timer.reset();
+  } else if (auto* sniff_to_active =
+                 std::get_if<ConnectionMode::TransitionSniffToActive>(
+                     &connection_mode_)) {
+    sniff_to_active->timer.reset();
+  }
   auto mode_change = std::move(input);
   switch (mode_change.current_mode) {
     case emboss::AclConnectionMode::ACTIVE:
@@ -1061,10 +1206,55 @@ void SniffOffloadManager::ConnectionFsm::HandleTimeout() {
     active->is_resynchronizing = false;
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
     if (should_control()) {
-      SendEnterSniffMode();
-      connection_mode_ = ConnectionMode::TransitionActiveToSniff{};
+      if (SendEnterSniffMode().ok()) {
+        connection_mode_ = ConnectionMode::TransitionActiveToSniff{};
+      } else {
+        ResetTimer();
+      }
     }
   }
+}
+
+async2::Poll<> SniffOffloadManager::ConnectionFsm::PendRetryTimer(
+    async2::Context& cx) {
+  if (auto* active_to_sniff =
+          std::get_if<ConnectionMode::TransitionActiveToSniff>(
+              &connection_mode_);
+      active_to_sniff != nullptr && active_to_sniff->timer.has_value()) {
+    if (active_to_sniff->timer->Pend(cx).IsPending()) {
+      return async2::Pending();
+    }
+    active_to_sniff->timer.reset();
+    if (should_control()) {
+      if (!SendEnterSniffMode().ok()) {
+        connection_mode_ = ConnectionMode::Active{};
+        ResetTimer();
+      }
+    } else {
+      connection_mode_ = ConnectionMode::Active{};
+    }
+    return async2::Ready();
+  }
+  if (auto* sniff_to_active =
+          std::get_if<ConnectionMode::TransitionSniffToActive>(
+              &connection_mode_);
+      sniff_to_active != nullptr && sniff_to_active->timer.has_value()) {
+    if (sniff_to_active->timer->Pend(cx).IsPending()) {
+      return async2::Pending();
+    }
+    sniff_to_active->timer.reset();
+    if (enabled_ && (connection_state() == ConnectionState::kControlStarted ||
+                     connection_state() == ConnectionState::kPushActive ||
+                     connection_state() == ConnectionState::kPreferActive)) {
+      if (!SendExitSniffMode().ok()) {
+        connection_mode_ = ConnectionMode::Sniff{};
+      }
+    } else {
+      connection_mode_ = ConnectionMode::Sniff{};
+    }
+    return async2::Ready();
+  }
+  return async2::Pending();
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleInput(AclActivity&& input) {
@@ -1073,13 +1263,30 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(AclActivity&& input) {
     active->is_resynchronizing = false;
   }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  if (auto* sniff_to_active =
+          std::get_if<ConnectionMode::TransitionSniffToActive>(
+              &connection_mode_)) {
+    sniff_to_active->last_acl_activity = manager_.time_provider_.now();
+  }
   auto activity = std::move(input);
   if (std::holds_alternative<ConnectionMode::TransitionActiveToSniff>(
           connection_mode_) ||
       std::holds_alternative<ConnectionMode::Sniff>(connection_mode_)) {
     if (ShouldExitSniff(activity.direction)) {
-      SendExitSniffMode();
-      connection_mode_ = ConnectionMode::TransitionSniffToActive{};
+      if (auto* active_to_sniff =
+              std::get_if<ConnectionMode::TransitionActiveToSniff>(
+                  &connection_mode_);
+          active_to_sniff != nullptr && active_to_sniff->timer.has_value()) {
+        active_to_sniff->timer.reset();
+        connection_mode_ = ConnectionMode::Active{};
+      } else if (SendExitSniffMode().ok()) {
+        connection_mode_ = ConnectionMode::TransitionSniffToActive{
+            .retries = 0,
+            .timer = std::nullopt,
+            .last_acl_activity = manager_.time_provider_.now()};
+      } else {
+        connection_mode_ = ConnectionMode::Sniff{};
+      }
     }
   }
 
@@ -1100,7 +1307,48 @@ void SniffOffloadManager::ConnectionFsm::ResetTimer() {
   }
 }
 
-void SniffOffloadManager::ConnectionFsm::SendEnterSniffMode() {
+void SniffOffloadManager::ConnectionFsm::EnterPushActive() {
+  if (auto* active = std::get_if<ConnectionMode::Active>(&connection_mode_)) {
+    active->timer.reset();
+  } else if (auto* active_to_sniff =
+                 std::get_if<ConnectionMode::TransitionActiveToSniff>(
+                     &connection_mode_);
+             active_to_sniff != nullptr && active_to_sniff->timer.has_value()) {
+    active_to_sniff->timer.reset();
+    connection_mode_ = ConnectionMode::Active{};
+  }
+  Status status = SendExitSniffMode();
+  if (!std::holds_alternative<ConnectionMode::Active>(connection_mode_)) {
+    if (status.ok()) {
+      connection_mode_ = ConnectionMode::TransitionSniffToActive{
+          .retries = 0,
+          .timer = std::nullopt,
+          .last_acl_activity = manager_.time_provider_.now()};
+    } else {
+      connection_mode_ = ConnectionMode::Sniff{};
+    }
+  }
+  Stop();  // Do not trigger timeouts.
+}
+
+void SniffOffloadManager::ConnectionFsm::EnterPreferActive() {
+  if (auto* active = std::get_if<ConnectionMode::Active>(&connection_mode_)) {
+    active->timer.reset();
+  } else if (auto* active_to_sniff =
+                 std::get_if<ConnectionMode::TransitionActiveToSniff>(
+                     &connection_mode_);
+             active_to_sniff != nullptr && active_to_sniff->timer.has_value()) {
+    active_to_sniff->timer.reset();
+    connection_mode_ = ConnectionMode::Active{};
+  }
+  const auto* sniff_to_active =
+      std::get_if<ConnectionMode::TransitionSniffToActive>(&connection_mode_);
+  if (sniff_to_active == nullptr || !sniff_to_active->timer.has_value()) {
+    Stop();  // Do not trigger timeouts.
+  }
+}
+
+Status SniffOffloadManager::ConnectionFsm::SendEnterSniffMode() {
   Scratch<emboss::SniffModeCommand::IntrinsicSizeInBytes()> scratch;
 
   PW_CHECK(should_control());
@@ -1124,10 +1372,11 @@ void SniffOffloadManager::ConnectionFsm::SendEnterSniffMode() {
   if (!buf.ok()) {
     PW_LOG_WARN("Failed to allocate buffer for EnterSniffMode command.");
     manager_.OnError(ErrorReason::kCannotAllocateBuffer, handle_);
-    return;
+    return buf.status();
   }
 
-  manager_.SendCommand(std::move(*buf), CompletionEvent::kCommandStatus);
+  return manager_.SendCommand(
+      std::move(*buf), CompletionEvent::kCommandStatus, handle_);
 }
 
 void SniffOffloadManager::ConnectionFsm::SendSniffSubrating() {
@@ -1156,10 +1405,11 @@ void SniffOffloadManager::ConnectionFsm::SendSniffSubrating() {
     return;
   }
 
-  manager_.SendCommand(std::move(*buf), CompletionEvent::kCommandComplete);
+  manager_.SendCommand(std::move(*buf), CompletionEvent::kCommandComplete)
+      .IgnoreError();
 }
 
-void SniffOffloadManager::ConnectionFsm::SendExitSniffMode(
+Status SniffOffloadManager::ConnectionFsm::SendExitSniffMode(
     PreconditionCheck check) {
   Scratch<emboss::ExitSniffModeCommand::IntrinsicSizeInBytes()> scratch;
 
@@ -1183,10 +1433,14 @@ void SniffOffloadManager::ConnectionFsm::SendExitSniffMode(
   if (!buf.ok()) {
     PW_LOG_WARN("Failed to allocate buffer for ExitSniffMode command.");
     manager_.OnError(ErrorReason::kCannotAllocateBuffer, handle_);
-    return;
+    return buf.status();
   }
 
-  manager_.SendCommand(std::move(*buf), CompletionEvent::kCommandStatus);
+  return manager_.SendCommand(std::move(*buf),
+                              CompletionEvent::kCommandStatus,
+                              check == PreconditionCheck::kEnforce
+                                  ? std::optional(handle_)
+                                  : std::nullopt);
 }
 
 bool SniffOffloadManager::ConnectionFsm::ShouldExitSniff(Direction direction) {
@@ -1206,6 +1460,9 @@ async2::Poll<> SniffOffloadManager::ConnectionFsm::TimeoutTask::DoPend(
     async2::Context& cx) {
   while (true) {
     std::lock_guard lock(fsm_.manager_.mutex_);
+    if (fsm_.PendRetryTimer(cx).IsReady()) {
+      continue;
+    }
     auto* active = std::get_if<ConnectionMode::Active>(&fsm_.connection_mode_);
     if (active == nullptr || !active->timer.has_value() ||
         active->timer->Pend(cx).IsPending()) {
@@ -1337,7 +1594,8 @@ void SniffOffloadManager::InitiateHardwareResynchronization() {
   std::lock_guard lock(mutex_);
   for (auto& [_, fsm] : connections_) {
     fsm.AssertLockHeld(*this);
-    fsm.SendExitSniffMode(ConnectionFsm::PreconditionCheck::kBypass);
+    fsm.SendExitSniffMode(ConnectionFsm::PreconditionCheck::kBypass)
+        .IgnoreError();
   }
 }
 

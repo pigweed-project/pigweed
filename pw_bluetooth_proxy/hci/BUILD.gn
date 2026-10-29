@@ -113,6 +113,7 @@ _sniff_offload_deps = [
   "$dir_pw_bluetooth:emboss_util",
   "$dir_pw_bluetooth_proxy:clock",
   "$dir_pw_containers:dynamic_map",
+  "$dir_pw_containers:dynamic_queue",
   "$dir_pw_function",
   "$dir_pw_multibuf/v2:multibuf",
   "$dir_pw_sync:lock_annotations",
