@@ -2221,6 +2221,31 @@ TEST_F(ChannelManagerRealAclChannelTest,
   EXPECT_TRUE(dynamic_channel_closed);
 }
 
+TEST_F(
+    ChannelManagerMockAclChannelTest,
+    ACLOutboundDynamicChannelRemoteDisconnectRemovesConnectionInClosedCallback) {
+  QueueRegisterACL(kTestHandle1,
+                   pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  RunUntilIdle();
+
+  bool closed_cb_called = false;
+  Channel::WeakPtr channel = SetUpOutboundChannel(
+      kLocalId, kRemoteId, /*closed_cb=*/[this, &closed_cb_called] {
+        closed_cb_called = true;
+        chanmgr()->RemoveConnection(kTestHandle1);
+      });
+  ASSERT_TRUE(channel.is_alive());
+
+  EXPECT_ACL_PACKET_OUT_(OutboundDisconnectionResponse(7), kHighPriority);
+  ReceiveAclDataPacket(
+      testing::AclDisconnectionReq(7, kTestHandle1, kRemoteId, kLocalId));
+  RunUntilIdle();
+
+  EXPECT_TRUE(closed_cb_called);
+  EXPECT_FALSE(channel.is_alive());
+  EXPECT_TRUE(AllExpectedPacketsSent());
+}
+
 TEST_F(ChannelManagerMockAclChannelTest,
        ACLOutboundDynamicChannelDataNotBuffered) {
   QueueRegisterACL(kTestHandle1,

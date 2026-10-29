@@ -201,7 +201,11 @@ void DynamicChannelRegistry::ActivateChannel(
 
 void DynamicChannelRegistry::OnChannelDisconnected(DynamicChannel* channel) {
   if (channel->opened()) {
+    auto self = GetWeakPtr();
     close_cb_(channel);
+    if (!self.is_alive()) {
+      return;
+    }
   }
   RemoveChannel(channel);
 }

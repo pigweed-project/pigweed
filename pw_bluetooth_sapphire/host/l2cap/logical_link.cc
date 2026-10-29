@@ -698,8 +698,13 @@ void LogicalLink::OnChannelDisconnectRequest(const DynamicChannel* dyn_chan) {
   PW_DCHECK(channel->remote_id() == dyn_chan->remote_cid());
 
   // Signal closure because this is a remote disconnection.
+  auto self = GetWeakPtr();
+  const ChannelId cid = dyn_chan->local_cid();
   channel->OnClosed();
-  channels_.erase(iter);
+  if (!self.is_alive() || closed_) {
+    return;
+  }
+  channels_.erase(cid);
 
   // Reset round robin iterator
   current_channel_ = channels_.begin();
