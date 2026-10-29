@@ -1514,6 +1514,73 @@ TEST(ChannelStorage, Reuse_Void) {
   EXPECT_FALSE(void_storage.active());
 }
 
+TEST(ChannelStorage, ReuseResetsEndpointCounts) {
+  ChannelStorage<int, 2> storage;
+  DispatcherForTest dispatcher;
+
+  // Lifetime 1: sender disconnects first, closing the channel while receiver
+  // is still alive.
+  {
+    auto [handle, sender, receiver] = CreateSpscChannel(storage);
+    handle.Release();
+    sender.Disconnect();
+    EXPECT_FALSE(receiver.is_open());
+  }
+  ASSERT_FALSE(storage.active());
+
+  // Lifetime 2: receiver disconnecting must close the channel.
+  {
+    auto [handle, sender, receiver] = CreateSpscChannel(storage);
+    handle.Release();
+    receiver.Disconnect();
+    EXPECT_FALSE(sender.is_open());
+  }
+  ASSERT_FALSE(storage.active());
+
+  // Lifetime 3: sender disconnecting must close the channel and wake a
+  // pending receive future; explicit handle.Close() also leaves stale counts
+  // if not reset on reopen.
+  {
+    auto [handle, sender, channel_receiver] = CreateSpscChannel(storage);
+    handle.Release();
+
+    ReceiveFuture<int> receive_future;
+    FuncTask receive_task([receiver = std::move(channel_receiver),
+                           &receive_future](Context& cx) -> Poll<> {
+      if (!receive_future.is_pendable()) {
+        receive_future = receiver.Receive();
+      }
+      PW_AWAIT(std::optional<int> result, receive_future, cx);
+      EXPECT_FALSE(result.has_value());
+      return Ready();
+    });
+    dispatcher.Post(receive_task);
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+    sender.Disconnect();
+    dispatcher.RunToCompletion();
+  }
+  ASSERT_FALSE(storage.active());
+
+  // Lifetime 4: explicit handle.Close() while all endpoints are alive.
+  {
+    auto [handle, sender, receiver] = CreateSpscChannel(storage);
+    handle.Close();
+    EXPECT_FALSE(sender.is_open());
+    EXPECT_FALSE(receiver.is_open());
+  }
+  ASSERT_FALSE(storage.active());
+
+  // Repeated reuse (> uint8_t max) where an endpoint outlives channel closure.
+  for (int i = 0; i < 300; ++i) {
+    auto [handle, sender, receiver] = CreateSpscChannel(storage);
+    handle.Release();
+    sender.Disconnect();
+    EXPECT_FALSE(receiver.is_open());
+  }
+  EXPECT_FALSE(storage.active());
+}
+
 TEST(Channel, ConstSenderAndReceiver) {
   ChannelStorage<int, 2> storage;
   auto [handle, mutable_sender, mutable_receiver] = CreateSpscChannel(storage);

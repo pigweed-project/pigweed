@@ -279,7 +279,11 @@ class PW_LOCKABLE("pw::async2::internal::BaseChannel") BaseChannel {
   // Reopens the channel for reuse.
   void ReopenLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
     PW_DASSERT(!active_locked());
+    PW_DASSERT(reservations_ == 0);
     closed_ = false;
+    sender_count_ = 0;
+    receiver_count_ = 0;
+    handle_count_ = 0;
   }
 
  private:
