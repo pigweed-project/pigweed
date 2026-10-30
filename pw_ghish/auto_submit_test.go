@@ -19,19 +19,17 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 func TestFindAutoSubmitLabel_MatchesHostSpellings(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
-		labels map[string]gerrit.LabelInfo
+		labels map[string]LabelInfo
 		want   LabelVote
 	}{
 		{
 			name: "pigweed",
-			labels: map[string]gerrit.LabelInfo{
+			labels: map[string]LabelInfo{
 				"Code-Review":         {},
 				"Commit-Queue":        {},
 				"Pigweed-Auto-Submit": {},
@@ -40,35 +38,35 @@ func TestFindAutoSubmitLabel_MatchesHostSpellings(t *testing.T) {
 		},
 		{
 			name: "fuchsia",
-			labels: map[string]gerrit.LabelInfo{
+			labels: map[string]LabelInfo{
 				"Fuchsia-Auto-Submit": {},
 			},
 			want: LabelVote{Name: "Fuchsia-Auto-Submit", Value: 1},
 		},
 		{
 			name: "chromium",
-			labels: map[string]gerrit.LabelInfo{
+			labels: map[string]LabelInfo{
 				"Auto-Submit": {},
 			},
 			want: LabelVote{Name: "Auto-Submit", Value: 1},
 		},
 		{
 			name: "unhyphenated",
-			labels: map[string]gerrit.LabelInfo{
+			labels: map[string]LabelInfo{
 				"Autosubmit": {},
 			},
 			want: LabelVote{Name: "Autosubmit", Value: 1},
 		},
 		{
 			name: "underscored and lowercased",
-			labels: map[string]gerrit.LabelInfo{
+			labels: map[string]LabelInfo{
 				"auto_submit": {},
 			},
 			want: LabelVote{Name: "auto_submit", Value: 1},
 		},
 		{
 			name: "votes the label maximum, not a fixed +1",
-			labels: map[string]gerrit.LabelInfo{
+			labels: map[string]LabelInfo{
 				"Auto-Submit": {Values: map[string]string{" 0": "No", "+1": "Yes", "+2": "Yes, really"}},
 			},
 			want: LabelVote{Name: "Auto-Submit", Value: 2},
@@ -90,7 +88,7 @@ func TestFindAutoSubmitLabel_MatchesHostSpellings(t *testing.T) {
 }
 
 func TestFindAutoSubmitLabel_NoMatch(t *testing.T) {
-	labels := map[string]gerrit.LabelInfo{
+	labels := map[string]LabelInfo{
 		"Code-Review":  {},
 		"Commit-Queue": {},
 	}
@@ -117,7 +115,7 @@ func TestFindAutoSubmitLabel_RejectsNonSeparators(t *testing.T) {
 		"Auto/Submit",
 	} {
 		t.Run(name, func(t *testing.T) {
-			labels := map[string]gerrit.LabelInfo{name: {}}
+			labels := map[string]LabelInfo{name: {}}
 			got, ok, err := FindAutoSubmitLabel(labels)
 			if err != nil {
 				t.Fatalf("FindAutoSubmitLabel(%q) returned error: %v", name, err)
@@ -133,7 +131,7 @@ func TestFindAutoSubmitLabel_RejectsNonSeparators(t *testing.T) {
 // one would vote a label that may not gate submission at all, and the change
 // would sit there looking handed off, so this has to fail loudly.
 func TestFindAutoSubmitLabel_AmbiguousIsAnError(t *testing.T) {
-	labels := map[string]gerrit.LabelInfo{
+	labels := map[string]LabelInfo{
 		"Pigweed-Auto-Submit": {},
 		"Auto-Submit":         {},
 		"Code-Review":         {},
@@ -157,7 +155,7 @@ func TestFindAutoSubmitLabel_AmbiguousIsAnError(t *testing.T) {
 }
 
 func TestDecideAutoSubmit_UsesTheHostsLabel(t *testing.T) {
-	labels := map[string]gerrit.LabelInfo{
+	labels := map[string]LabelInfo{
 		"Code-Review": {},
 		"Auto-Submit": {},
 	}
@@ -177,7 +175,7 @@ func TestDecideAutoSubmit_UsesTheHostsLabel(t *testing.T) {
 // is not going to do that, so saying nothing and voting something adjacent
 // would leave the user believing their change was handed off.
 func TestDecideAutoSubmit_NoLabelReportsCommitQueueDryRunAndFails(t *testing.T) {
-	labels := map[string]gerrit.LabelInfo{
+	labels := map[string]LabelInfo{
 		"Code-Review":  {},
 		"Commit-Queue": {Values: map[string]string{" 0": "no", "+1": "dry run", "+2": "submit"}},
 	}
@@ -203,7 +201,7 @@ func TestDecideAutoSubmit_NoLabelReportsCommitQueueDryRunAndFails(t *testing.T) 
 // With nothing to vote there is no reason to let the caller act first, so this
 // is a plain error rather than a decision carrying one.
 func TestDecideAutoSubmit_NoLabelAndNoCommitQueueIsAHardError(t *testing.T) {
-	labels := map[string]gerrit.LabelInfo{
+	labels := map[string]LabelInfo{
 		"Code-Review": {},
 		"Verified":    {},
 	}
@@ -224,7 +222,7 @@ func TestDecideAutoSubmit_NoLabelAndNoCommitQueueIsAHardError(t *testing.T) {
 // A Commit Queue that cannot be voted +1 is no use as a dry run, so this is
 // the same as having none.
 func TestDecideAutoSubmit_CommitQueueWithoutDryRunIsNotOffered(t *testing.T) {
-	labels := map[string]gerrit.LabelInfo{
+	labels := map[string]LabelInfo{
 		"Commit-Queue": {Values: map[string]string{" 0": "no"}},
 	}
 	got, err := DecideAutoSubmit(labels, "change 1")
@@ -246,7 +244,7 @@ func TestDecideAutoSubmit_NoLabelsAtAllIsAnError(t *testing.T) {
 }
 
 func TestDecideAutoSubmit_AmbiguousIsAHardError(t *testing.T) {
-	labels := map[string]gerrit.LabelInfo{
+	labels := map[string]LabelInfo{
 		"Auto-Submit":         {},
 		"Pigweed-Auto-Submit": {},
 		"Commit-Queue":        {},
@@ -263,7 +261,7 @@ func TestDecideAutoSubmit_AmbiguousIsAHardError(t *testing.T) {
 }
 
 func TestFormatLabelNames(t *testing.T) {
-	labels := map[string]gerrit.LabelInfo{
+	labels := map[string]LabelInfo{
 		"Commit-Queue": {},
 		"Code-Review":  {},
 	}
@@ -306,7 +304,7 @@ func TestListProjectLabels(t *testing.T) {
 		{"name": "Auto-Submit", "values": map[string]string{" 0": "no", "+1": "yes"}},
 	})
 
-	defs, err := ListProjectLabels(context.Background(), server.Client(), "pigweed/pigweed")
+	defs, err := server.Client().ListProjectLabels(context.Background(), "pigweed/pigweed")
 	if err != nil {
 		t.Fatalf("ListProjectLabels() failed: %v", err)
 	}
@@ -419,7 +417,7 @@ func TestDecideAutoSubmitForNewChange(t *testing.T) {
 }
 
 func TestCommitQueueDryRunVote_PresubmitReadyFallback(t *testing.T) {
-	labels := map[string]gerrit.LabelInfo{
+	labels := map[string]LabelInfo{
 		"Code-Review":     {},
 		"Presubmit-Ready": {Values: map[string]string{" 0": "no", "+1": "ready"}},
 	}
@@ -434,7 +432,7 @@ func TestCommitQueueDryRunVote_PresubmitReadyFallback(t *testing.T) {
 
 func TestDecideCQSubmit(t *testing.T) {
 	t.Run("Commit-Queue present votes Commit-Queue+2", func(t *testing.T) {
-		labels := map[string]gerrit.LabelInfo{
+		labels := map[string]LabelInfo{
 			"Code-Review":  {},
 			"Commit-Queue": {Values: map[string]string{" 0": "no", "+1": "dry run", "+2": "submit"}},
 		}
@@ -448,7 +446,7 @@ func TestDecideCQSubmit(t *testing.T) {
 	})
 
 	t.Run("Autosubmit and Presubmit-Ready without Commit-Queue votes both", func(t *testing.T) {
-		labels := map[string]gerrit.LabelInfo{
+		labels := map[string]LabelInfo{
 			"Code-Review":     {},
 			"Autosubmit":      {Values: map[string]string{" 0": "no", "+1": "yes"}},
 			"Presubmit-Ready": {Values: map[string]string{" 0": "no", "+1": "ready"}},
@@ -465,11 +463,11 @@ func TestDecideCQSubmit(t *testing.T) {
 	})
 
 	t.Run("Autosubmit with Presubmit-Verified already approved skips Presubmit-Ready", func(t *testing.T) {
-		labels := map[string]gerrit.LabelInfo{
+		labels := map[string]LabelInfo{
 			"Code-Review":        {},
 			"Autosubmit":         {Values: map[string]string{" 0": "no", "+1": "yes"}},
 			"Presubmit-Ready":    {Values: map[string]string{" 0": "no", "+1": "ready"}},
-			"Presubmit-Verified": {Approved: gerrit.AccountInfo{AccountID: 100}},
+			"Presubmit-Verified": {Approved: AccountInfo{AccountID: 100}},
 		}
 		votes, err := DecideCQSubmit(labels, "change 1")
 		if err != nil {
@@ -481,11 +479,11 @@ func TestDecideCQSubmit(t *testing.T) {
 	})
 
 	t.Run("Autosubmit with Verified already approved skips Presubmit-Ready", func(t *testing.T) {
-		labels := map[string]gerrit.LabelInfo{
+		labels := map[string]LabelInfo{
 			"Code-Review":     {},
 			"Autosubmit":      {Values: map[string]string{" 0": "no", "+1": "yes"}},
 			"Presubmit-Ready": {Values: map[string]string{" 0": "no", "+1": "ready"}},
-			"Verified":        {Approved: gerrit.AccountInfo{AccountID: 100}},
+			"Verified":        {Approved: AccountInfo{AccountID: 100}},
 		}
 		votes, err := DecideCQSubmit(labels, "change 1")
 		if err != nil {
@@ -497,12 +495,65 @@ func TestDecideCQSubmit(t *testing.T) {
 	})
 
 	t.Run("neither Commit-Queue nor Autosubmit/Presubmit-Ready returns error", func(t *testing.T) {
-		labels := map[string]gerrit.LabelInfo{
+		labels := map[string]LabelInfo{
 			"Code-Review": {},
 		}
 		_, err := DecideCQSubmit(labels, "change 1")
 		if err == nil {
 			t.Fatal("expected error when no CQ or Autosubmit label exists, got nil")
 		}
+	})
+}
+
+func TestChangeContext_LabelDecisionMethodsRequestDetailedLabels(t *testing.T) {
+	t.Run("ResolveCQVote", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnDefaultChange(12345, WithLabels("Code-Review", "Presubmit-Ready"))
+		chCtx := &ChangeContext{
+			Context:  t.Context(),
+			Client:   server.Client(),
+			ChangeID: "12345",
+		}
+		name, score := chCtx.ResolveCQVote(1)
+		if name != "Presubmit-Ready" || score != 1 {
+			t.Errorf("ResolveCQVote(1) = (%q, %d), want (\"Presubmit-Ready\", 1)", name, score)
+		}
+		server.AssertOptions(t, "GET", "/changes/12345", "DETAILED_LABELS")
+	})
+
+	t.Run("DecideCQSubmit", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnDefaultChange(12345, WithLabels("Code-Review", "Commit-Queue"))
+		chCtx := &ChangeContext{
+			Context:  t.Context(),
+			Client:   server.Client(),
+			ChangeID: "12345",
+		}
+		votes, err := chCtx.DecideCQSubmit()
+		if err != nil {
+			t.Fatalf("DecideCQSubmit() failed: %v", err)
+		}
+		if len(votes) != 1 || votes[0] != (LabelVote{Name: "Commit-Queue", Value: 2}) {
+			t.Errorf("DecideCQSubmit() = %+v, want [Commit-Queue=2]", votes)
+		}
+		server.AssertOptions(t, "GET", "/changes/12345", "DETAILED_LABELS")
+	})
+
+	t.Run("DecideAutoSubmit", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnDefaultChange(12345, WithLabels("Code-Review", "Pigweed-Auto-Submit"))
+		chCtx := &ChangeContext{
+			Context:  t.Context(),
+			Client:   server.Client(),
+			ChangeID: "12345",
+		}
+		dec, err := chCtx.DecideAutoSubmit()
+		if err != nil {
+			t.Fatalf("DecideAutoSubmit() failed: %v", err)
+		}
+		if dec.Vote != (LabelVote{Name: "Pigweed-Auto-Submit", Value: 1}) {
+			t.Errorf("DecideAutoSubmit() = %+v, want Pigweed-Auto-Submit=1", dec.Vote)
+		}
+		server.AssertOptions(t, "GET", "/changes/12345", "DETAILED_LABELS")
 	})
 }

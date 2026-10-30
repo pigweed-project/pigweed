@@ -27,8 +27,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 func TestQueryBuildbucket_Success(t *testing.T) {
@@ -151,6 +149,7 @@ func TestChecksIntegration_JSON(t *testing.T) {
 }
 
 func TestChecks_ErrorWhenInvalidPatchsetNumber(t *testing.T) {
+	NewMockGerritServer(t)
 	_, err := executeCommand(RootCmd, "pr", "checks", "12345/notanumber")
 	if err == nil {
 		t.Fatal("Expected error on invalid patchset number, got nil")
@@ -1626,10 +1625,10 @@ func TestChecks_GerritGates_FailedLintLabelEvenWithZeroBuilds(t *testing.T) {
 }
 
 func TestLookupChangeLabel_CaseInsensitive(t *testing.T) {
-	change := &gerrit.ChangeInfo{
-		Labels: map[string]gerrit.LabelInfo{
+	change := &ChangeInfo{
+		Labels: map[string]LabelInfo{
 			"LINT": {
-				Recommended: gerrit.AccountInfo{AccountID: 1},
+				Recommended: AccountInfo{AccountID: 1},
 			},
 		},
 	}

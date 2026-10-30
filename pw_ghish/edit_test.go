@@ -459,6 +459,7 @@ func TestEdit_CQAndTrigger(t *testing.T) {
 			if !strings.Contains(output, tt.wantOut) {
 				t.Errorf("Unexpected output: %s, want %q", output, tt.wantOut)
 			}
+			server.AssertOptions(t, "GET", "/changes/12345", "DETAILED_LABELS")
 			payload := DecodeRequest[ReviewInput](t, server.LastRequest())
 			if diff := cmp.Diff(tt.wantLabels, payload.Labels); diff != "" {
 				t.Errorf("labels mismatch (-want +got):\n%s", diff)

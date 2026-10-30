@@ -24,17 +24,18 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
+	"github.com/spf13/cobra"
 )
 
 // FormatAccount formats a Gerrit AccountInfo consistently across all commands.
 // It prioritizes Username (LDAP username, matching GitHub CLI login behavior),
 // falls back to display Name, and finally falls back to Email.
-func FormatAccount(acc gerrit.AccountInfo) string {
+func FormatAccount(acc AccountInfo) string {
 	if u := strings.TrimSpace(acc.Username); u != "" {
 		return u
 	}
@@ -51,7 +52,7 @@ func FormatAccount(acc gerrit.AccountInfo) string {
 }
 
 // BuildAttentionMap creates a fast lookup set of account IDs present in the attention set.
-func BuildAttentionMap(attnSet map[string]gerrit.AttentionSetInfo) map[int]bool {
+func BuildAttentionMap(attnSet map[string]AttentionSetInfo) map[int]bool {
 	m := make(map[int]bool)
 	for _, info := range attnSet {
 		if info.Account.AccountID != 0 {
@@ -62,7 +63,7 @@ func BuildAttentionMap(attnSet map[string]gerrit.AttentionSetInfo) map[int]bool 
 }
 
 // FormatReviewer formats a Gerrit account with its role (CC or Reviewer) and attention set status.
-func FormatReviewer(acc gerrit.AccountInfo, inAttention bool, isCC bool) string {
+func FormatReviewer(acc AccountInfo, inAttention bool, isCC bool) string {
 	name := FormatAccount(acc)
 	switch {
 	case isCC && inAttention:
@@ -78,7 +79,7 @@ func FormatReviewer(acc gerrit.AccountInfo, inAttention bool, isCC bool) string 
 
 // FormatChangeReviewersAndAssignees extracts and formats the assignees and reviewers
 // lists for a change, incorporating CC annotations and Attention Set status.
-func FormatChangeReviewersAndAssignees(change *gerrit.ChangeInfo) (assignees []string, reviewers []string) {
+func FormatChangeReviewersAndAssignees(change *ChangeInfo) (assignees []string, reviewers []string) {
 	if change == nil {
 		return nil, nil
 	}
@@ -119,13 +120,13 @@ func FormatChangeReviewersAndAssignees(change *gerrit.ChangeInfo) (assignees []s
 	// 4. Remaining accounts in the attention set that were not in Owner, CC, or REVIEWER.
 	// Sort by AccountID for deterministic output.
 	if len(change.AttentionSet) > 0 {
-		var remaining []gerrit.AttentionSetInfo
+		var remaining []AttentionSetInfo
 		for _, info := range change.AttentionSet {
 			if info.Account.AccountID != 0 && !seenAccs[info.Account.AccountID] {
 				remaining = append(remaining, info)
 			}
 		}
-		slices.SortFunc(remaining, func(a, b gerrit.AttentionSetInfo) int {
+		slices.SortFunc(remaining, func(a, b AttentionSetInfo) int {
 			return cmp.Compare(a.Account.AccountID, b.Account.AccountID)
 		})
 		for _, info := range remaining {
@@ -143,8 +144,8 @@ const (
 )
 
 type cachedSelfAccountEntry struct {
-	Account   gerrit.AccountInfo `json:"account"`
-	SavedUnix int64              `json:"saved_unix"`
+	Account   AccountInfo `json:"account"`
+	SavedUnix int64       `json:"saved_unix"`
 }
 
 type selfAccountCacheFile struct {
@@ -284,7 +285,7 @@ func isValidSelfAccountCacheEntry(entry cachedSelfAccountEntry, nowUnix int64) b
 		nowUnix-entry.SavedUnix < selfAccountCacheTTLSeconds
 }
 
-func tryReadSelfAccountCache(dir, hostKey string, now time.Time) (gerrit.AccountInfo, bool) {
+func tryReadSelfAccountCache(dir, hostKey string, now time.Time) (AccountInfo, bool) {
 	selfAccountCacheMu.Lock()
 	defer selfAccountCacheMu.Unlock()
 	nowUnix := now.Unix()
@@ -298,13 +299,13 @@ func tryReadSelfAccountCache(dir, hostKey string, now time.Time) (gerrit.Account
 	cache := readSelfAccountCacheLocked(dir)
 	entry, ok := cache.Accounts[hostKey]
 	if !ok || !isValidSelfAccountCacheEntry(entry, nowUnix) {
-		return gerrit.AccountInfo{}, false
+		return AccountInfo{}, false
 	}
 	memSelfAccountCache[memKey] = entry
 	return entry.Account, true
 }
 
-func tryWriteSelfAccountCache(dir, hostKey string, acc gerrit.AccountInfo, now time.Time) {
+func tryWriteSelfAccountCache(dir, hostKey string, acc AccountInfo, now time.Time) {
 	if acc.AccountID <= 0 {
 		return
 	}
@@ -334,9 +335,9 @@ func resetSelfAccountMemCache() {
 }
 
 // PeekSelfAccountCache checks the in-memory and on-disk accounts.json cache for
-// gerritHost and returns the cached *gerrit.AccountInfo on hit, or nil on miss
+// gerritHost and returns the cached *AccountInfo on hit, or nil on miss
 // without making any network RPC.
-func PeekSelfAccountCache(gerritHost string) *gerrit.AccountInfo {
+func PeekSelfAccountCache(gerritHost string) *AccountInfo {
 	hostKey := strings.ToLower(strings.TrimSpace(CleanGerritHost(gerritHost)))
 	if hostKey == "" || isLoopbackHost(gerritHost) {
 		return nil
@@ -351,14 +352,43 @@ func PeekSelfAccountCache(gerritHost string) *gerrit.AccountInfo {
 	return nil
 }
 
+// CachedSelfAccountRef returns the cached numeric Gerrit account ID for cmd's
+// target Gerrit host when client is authenticated and a warm accounts.json
+// entry exists, or ("self", nil) otherwise without making any network RPC or
+// spawning git subprocesses when unauthenticated.
+func CachedSelfAccountRef(ctx context.Context, cmd *cobra.Command, client *GerritClient) (string, *AccountInfo) {
+	if client == nil || !client.Authenticated() || activeAccountCacheDir() == "" {
+		return "self", nil
+	}
+	var gerritHost string
+	if cmd != nil && isHostFlagChanged(cmd) && HostFlag != "" {
+		gerritHost = CanonicalGerritHost(HostFlag)
+	} else {
+		cfg := GetConfig(cmd)
+		if cfg == nil && cmd != nil {
+			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
+		}
+		if cfg != nil {
+			gerritHost = cfg.GerritHost(ctx)
+		}
+	}
+	if acc := PeekSelfAccountCache(gerritHost); acc != nil && acc.AccountID > 0 {
+		return strconv.Itoa(acc.AccountID), acc
+	}
+	return "self", nil
+}
+
 // GetSelfAccountCached returns the authenticated user's Gerrit AccountInfo for gerritHost,
 // consulting a 24-hour disk cache (accounts.json) before querying GET /a/accounts/self.
-func GetSelfAccountCached(ctx context.Context, client *gerrit.Client, gerritHost string) (*gerrit.AccountInfo, error) {
+func GetSelfAccountCached(ctx context.Context, client *GerritClient, gerritHost string) (*AccountInfo, error) {
+	if client == nil || !client.Authenticated() {
+		return nil, fmt.Errorf("cannot resolve self account: Gerrit client is unauthenticated")
+	}
 	if cached := PeekSelfAccountCache(gerritHost); cached != nil {
 		return cached, nil
 	}
 
-	acc, _, err := client.Accounts.GetAccount(ctx, "self")
+	acc, err := client.GetSelfAccount(ctx)
 	if err != nil {
 		return nil, err
 	}

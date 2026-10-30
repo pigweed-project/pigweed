@@ -34,7 +34,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -227,31 +226,7 @@ func executeCommandIO(root *cobra.Command, stdin io.Reader, stdout, stderr io.Wr
 
 	restoreFlags := snapshotFlags(root)
 	savedHostFlag := HostFlag
-	oldNewGerritClient := NewGerritClient
-	NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		if isLoopbackHost(savedHostFlag) {
-			return gerrit.NewClient(ctx, savedHostFlag, http.DefaultClient)
-		}
-		host, _ := cmd.Flags().GetString("host")
-		if host == "" {
-			host = HostFlag
-		}
-		if host == "" {
-			return gerrit.NewClient(ctx, "https://fuchsia-review.googlesource.com", &http.Client{
-				Transport: &mockTransport{
-					roundTrip: func(req *http.Request) (*http.Response, error) {
-						return nil, fmt.Errorf("no mock Gerrit server configured for %s", req.URL)
-					},
-				},
-			})
-		}
-		if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
-			host = "https://" + host
-		}
-		return gerrit.NewClient(ctx, host, http.DefaultClient)
-	}
 	defer func() {
-		NewGerritClient = oldNewGerritClient
 		HostFlag = savedHostFlag
 		restoreFlags()
 		root.SetIn(nil)
@@ -582,7 +557,7 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // SetMockGerritClient overrides NewGerritClient for the duration of the test.
-func SetMockGerritClient(t *testing.T, fn func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error)) {
+func SetMockGerritClient(t *testing.T, fn func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error)) {
 	t.Helper()
 	orig := NewGerritClient
 	NewGerritClient = fn
@@ -803,8 +778,8 @@ func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	t.Cleanup(func() { buildbucketHost = oldBBHost })
 
 	origClient := NewGerritClient
-	NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, s.URL, s.Server.Client())
+	NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error) {
+		return NewGerritClientWithHTTP(s.URL, s.Server.Client(), mockGerritAuth), nil
 	}
 	t.Cleanup(func() { NewGerritClient = origClient })
 
@@ -834,10 +809,25 @@ func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	return s
 }
 
-// Client returns a gerrit.Client pointed to this mock server.
-func (s *MockGerritServer) Client() *gerrit.Client {
-	c, _ := gerrit.NewClient(context.Background(), s.URL, s.Server.Client())
-	return c
+// mockGerritAuth authenticates mock-server clients with a static token (sent
+// only to the loopback server) so commands that fetch the self account when
+// authenticated behave as they do for a logged-in user.
+var mockGerritAuth = GerritAuth{StaticToken: "test-gerrit-token"}
+
+// Client returns a GerritClient pointed to this mock server.
+func (s *MockGerritServer) Client() *GerritClient {
+	return NewGerritClientWithHTTP(s.URL, s.Server.Client(), mockGerritAuth)
+}
+
+// UseResolvedAuth wires NewGerritClient through newGerritClientForURL against
+// this mock server so tests exercise production credential resolution (such as
+// --auth-mode=none or unauthenticated community mode) rather than mockGerritAuth.
+func (s *MockGerritServer) UseResolvedAuth() *MockGerritServer {
+	s.t.Helper()
+	SetMockGerritClient(s.t, func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error) {
+		return newGerritClientForURL(ctx, s.URL, s.Server.Client())
+	})
+	return s
 }
 
 func (s *MockGerritServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
@@ -996,6 +986,51 @@ func (s *MockGerritServer) LastRequest() *MockRequest {
 	}
 	req := s.requests[len(s.requests)-1]
 	return &req
+}
+
+// AssertOptions verifies that at least one recorded request matching method and
+// path (ignoring any leading "/a" prefix) exists and includes every option in
+// wantOpts in its "o" query parameters.
+func (s *MockGerritServer) AssertOptions(t testing.TB, method, path string, wantOpts ...string) {
+	t.Helper()
+	wantPath := strings.TrimPrefix(path, "/a")
+	reqs := s.Requests()
+	var matchedOpts [][]string
+	for _, req := range reqs {
+		if method != "" && req.Method != method {
+			continue
+		}
+		if wantPath != "" {
+			gotPath := strings.TrimPrefix(req.Path, "/a")
+			gotEscaped := ""
+			if req.URL != nil {
+				gotEscaped = strings.TrimPrefix(req.URL.EscapedPath(), "/a")
+			}
+			if gotPath != wantPath && gotEscaped != wantPath {
+				continue
+			}
+		}
+		var got []string
+		if req.URL != nil {
+			got = req.URL.Query()["o"]
+		}
+		allPresent := true
+		for _, want := range wantOpts {
+			if !slices.Contains(got, want) {
+				allPresent = false
+				break
+			}
+		}
+		if allPresent {
+			return
+		}
+		matchedOpts = append(matchedOpts, got)
+	}
+	if len(matchedOpts) == 0 {
+		t.Errorf("AssertOptions(%s %s, %v): no matching request recorded; requests: %+v", method, path, wantOpts, reqs)
+		return
+	}
+	t.Errorf("AssertOptions(%s %s, %v): matching request(s) had o=%v", method, path, wantOpts, matchedOpts)
 }
 
 // -----------------------------------------------------------------------------

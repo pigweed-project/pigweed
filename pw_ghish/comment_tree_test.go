@@ -18,15 +18,13 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 func TestBuildCommentForest_Empty(t *testing.T) {
 	if roots := BuildCommentForest(nil); roots != nil {
 		t.Errorf("expected nil roots for nil comments, got %v", roots)
 	}
-	if roots := BuildCommentForest([]gerrit.CommentInfo{}); roots != nil {
+	if roots := BuildCommentForest([]CommentInfo{}); roots != nil {
 		t.Errorf("expected nil roots for empty comments, got %v", roots)
 	}
 }
@@ -36,7 +34,7 @@ func TestBuildCommentForest_LinearChain(t *testing.T) {
 	t2 := t1.Add(time.Minute)
 	t3 := t2.Add(time.Minute)
 
-	comments := []gerrit.CommentInfo{
+	comments := []CommentInfo{
 		{ID: "c1", Line: 10, Message: "Root", Updated: timeTimestamp(t1)},
 		{ID: "c2", InReplyTo: "c1", Line: 10, Message: "Reply 1", Updated: timeTimestamp(t2)},
 		{ID: "c3", InReplyTo: "c2", Line: 10, Message: "Reply 2", Updated: timeTimestamp(t3)},
@@ -62,7 +60,7 @@ func TestBuildCommentForest_Branching(t *testing.T) {
 	t2 := t1.Add(time.Minute)
 	t3 := t2.Add(time.Minute)
 
-	comments := []gerrit.CommentInfo{
+	comments := []CommentInfo{
 		{ID: "c1", Line: 20, Message: "Root", Updated: timeTimestamp(t1)},
 		{ID: "c2", InReplyTo: "c1", Line: 20, Message: "Branch A", Updated: timeTimestamp(t2)},
 		{ID: "c3", InReplyTo: "c1", Line: 20, Message: "Branch B", Updated: timeTimestamp(t3)},
@@ -82,7 +80,7 @@ func TestBuildCommentForest_Branching(t *testing.T) {
 }
 
 func TestBuildCommentForest_OrphanPromotion(t *testing.T) {
-	comments := []gerrit.CommentInfo{
+	comments := []CommentInfo{
 		{ID: "c1", Line: 10, Message: "Root"},
 		{ID: "c2", InReplyTo: "missing_parent", Line: 15, Message: "Orphan"},
 	}
@@ -98,7 +96,7 @@ func TestBuildCommentForest_OrphanPromotion(t *testing.T) {
 
 func TestBuildCommentForest_CycleHandling(t *testing.T) {
 	t.Run("direct cycle c1 <-> c2", func(t *testing.T) {
-		comments := []gerrit.CommentInfo{
+		comments := []CommentInfo{
 			{ID: "c1", InReplyTo: "c2", Line: 10, Message: "C1"},
 			{ID: "c2", InReplyTo: "c1", Line: 10, Message: "C2"},
 		}
@@ -111,7 +109,7 @@ func TestBuildCommentForest_CycleHandling(t *testing.T) {
 	})
 
 	t.Run("self-loop c1 -> c1", func(t *testing.T) {
-		comments := []gerrit.CommentInfo{
+		comments := []CommentInfo{
 			{ID: "c1", InReplyTo: "c1", Line: 10, Message: "Self"},
 		}
 
@@ -126,7 +124,7 @@ func TestBuildCommentForest_CycleHandling(t *testing.T) {
 }
 
 func TestBuildCommentForest_Sorting(t *testing.T) {
-	comments := []gerrit.CommentInfo{
+	comments := []CommentInfo{
 		{ID: "c3", Line: 50, Message: "Line 50"},
 		{ID: "c1", Line: 0, Message: "File-level"},
 		{ID: "c2", Line: 10, Message: "Line 10"},
@@ -146,7 +144,7 @@ func TestBuildCommentThreads(t *testing.T) {
 	t1 := time.Now()
 	t2 := t1.Add(time.Minute)
 
-	comments := []gerrit.CommentInfo{
+	comments := []CommentInfo{
 		{ID: "c1", Line: 10, PatchSet: 1, Unresolved: boolPtr(true), Updated: timeTimestamp(t1), Message: "Fix this"},
 		{ID: "c2", InReplyTo: "c1", Line: 10, PatchSet: 2, Unresolved: boolPtr(false), Updated: timeTimestamp(t2), Message: "Fixed"},
 		{ID: "c3", Line: 30, PatchSet: 2, Unresolved: boolPtr(true), Updated: timeTimestamp(t2), Message: "Another issue"},
@@ -196,7 +194,7 @@ func TestFindLatestCommentAtLine(t *testing.T) {
 	t2 := t1.Add(time.Minute)
 	t3 := t2.Add(time.Minute)
 
-	comments := []gerrit.CommentInfo{
+	comments := []CommentInfo{
 		{ID: "c1", Line: 10, Updated: timeTimestamp(t1)},
 		{ID: "c2", Line: 10, Updated: timeTimestamp(t3)},
 		{ID: "c3", Line: 10, Updated: timeTimestamp(t2)},
@@ -240,19 +238,19 @@ func TestFormatCommentForest(t *testing.T) {
 	})
 
 	t.Run("formats nested multi-file comments with indentation", func(t *testing.T) {
-		comments := map[string][]gerrit.CommentInfo{
+		comments := map[string][]CommentInfo{
 			"b_file.go": {
 				{
 					ID:      "c1",
 					Line:    15,
-					Author:  gerrit.AccountInfo{Name: "Alice"},
+					Author:  AccountInfo{Name: "Alice"},
 					Message: "Please rename this function.",
 				},
 				{
 					ID:        "c2",
 					InReplyTo: "c1",
 					Line:      15,
-					Author:    gerrit.AccountInfo{Name: "Bob"},
+					Author:    AccountInfo{Name: "Bob"},
 					Message:   "Done.\nRenamed to Init().",
 				},
 			},
@@ -260,7 +258,7 @@ func TestFormatCommentForest(t *testing.T) {
 				{
 					ID:      "c0",
 					Line:    0,
-					Author:  gerrit.AccountInfo{Name: "Reviewer"},
+					Author:  AccountInfo{Name: "Reviewer"},
 					Message: "Overall looks good.",
 				},
 			},
@@ -292,25 +290,25 @@ func TestFormatCommentForest(t *testing.T) {
 	})
 
 	t.Run("formats published comments and drafts with resolution and draft indicators", func(t *testing.T) {
-		published := map[string][]gerrit.CommentInfo{
+		published := map[string][]CommentInfo{
 			"ring_buffer.cc": {
 				{
 					ID:         "c1",
 					Line:       42,
-					Author:     gerrit.AccountInfo{Name: "Alice"},
+					Author:     AccountInfo{Name: "Alice"},
 					Unresolved: boolPtr(true),
 					Message:    "Why was this file deleted?",
 				},
 				{
 					ID:         "c2",
 					Line:       100,
-					Author:     gerrit.AccountInfo{Name: "Bob"},
+					Author:     AccountInfo{Name: "Bob"},
 					Unresolved: boolPtr(false),
 					Message:    "Looks good.",
 				},
 			},
 		}
-		drafts := map[string][]gerrit.CommentInfo{
+		drafts := map[string][]CommentInfo{
 			"ring_buffer.cc": {
 				{
 					ID:         "d1",
@@ -347,13 +345,13 @@ func TestFormatCommentForest(t *testing.T) {
 	})
 
 	t.Run("includes patchset tags on roots, cross-patchset replies, and cleans up /PATCHSET_LEVEL", func(t *testing.T) {
-		published := map[string][]gerrit.CommentInfo{
+		published := map[string][]CommentInfo{
 			"ring_buffer.cc": {
 				{
 					ID:         "c1",
 					Line:       42,
 					PatchSet:   1,
-					Author:     gerrit.AccountInfo{Name: "Alice"},
+					Author:     AccountInfo{Name: "Alice"},
 					Unresolved: boolPtr(true),
 					Message:    "Comment on PS1",
 				},
@@ -362,13 +360,13 @@ func TestFormatCommentForest(t *testing.T) {
 					InReplyTo:  "c1",
 					Line:       42,
 					PatchSet:   2,
-					Author:     gerrit.AccountInfo{Name: "Bob"},
+					Author:     AccountInfo{Name: "Bob"},
 					Unresolved: boolPtr(false),
 					Message:    "Fixed in PS2",
 				},
 			},
 		}
-		drafts := map[string][]gerrit.CommentInfo{
+		drafts := map[string][]CommentInfo{
 			"/PATCHSET_LEVEL": {
 				{
 					ID:         "d_top",
@@ -402,7 +400,7 @@ func TestFindDraftAtTarget(t *testing.T) {
 	t1 := time.Now()
 	t2 := t1.Add(time.Minute)
 
-	drafts := []gerrit.CommentInfo{
+	drafts := []CommentInfo{
 		{ID: "d_line_old", Line: 10, PatchSet: 1, Updated: timeTimestamp(t1), Message: "Old standalone draft"},
 		{ID: "d_line_new", Line: 10, PatchSet: 2, Updated: timeTimestamp(t2), Message: "New standalone draft"},
 		{ID: "d_reply", Line: 10, PatchSet: 2, InReplyTo: "parent_1", Updated: timeTimestamp(t1), Message: "Reply draft"},
@@ -422,7 +420,7 @@ func TestFindDraftAtTarget(t *testing.T) {
 	})
 
 	t.Run("does NOT clobber standalone draft when replying to published comment thread", func(t *testing.T) {
-		standaloneOnly := []gerrit.CommentInfo{
+		standaloneOnly := []CommentInfo{
 			{ID: "d_standalone", Line: 10, PatchSet: 2, Updated: timeTimestamp(t2), Message: "Standalone draft"},
 		}
 		if got := FindDraftAtTarget(standaloneOnly, 10, "published_parent_id"); got != nil {
@@ -454,7 +452,7 @@ func TestBranchedThreadChronologicalResolution(t *testing.T) {
 	//   Branch A: root -> branchA (t2, unresolved=true) -> leafA (t4, unresolved=false)
 	//   Branch B: root -> branchB (t3, unresolved=true)
 	// Depth-first traversal visits Branch B last, but leafA (t4) is chronologically newer than branchB (t3).
-	comments := []gerrit.CommentInfo{
+	comments := []CommentInfo{
 		{ID: "root", Line: 10, Updated: timeTimestamp(t1), Unresolved: boolPtr(true), Message: "Root"},
 		{ID: "branchA", InReplyTo: "root", Line: 10, Updated: timeTimestamp(t2), Unresolved: boolPtr(true), Message: "Branch A"},
 		{ID: "branchB", InReplyTo: "root", Line: 10, Updated: timeTimestamp(t3), Unresolved: boolPtr(true), Message: "Branch B"},
@@ -474,7 +472,7 @@ func TestFindMatchingDraftsAtTarget_PatchSetFilter(t *testing.T) {
 	t1 := time.Now()
 	t2 := t1.Add(time.Minute)
 
-	drafts := []gerrit.CommentInfo{
+	drafts := []CommentInfo{
 		{ID: "d_ps1", Line: 10, PatchSet: 1, Updated: timeTimestamp(t1), Message: "PS1 draft"},
 		{ID: "d_ps2", Line: 10, PatchSet: 2, Updated: timeTimestamp(t2), Message: "PS2 draft"},
 	}
@@ -494,7 +492,7 @@ func TestFindLatestCommentAtLineForPatchSet(t *testing.T) {
 	t1 := time.Now()
 	t2 := t1.Add(time.Minute)
 
-	comments := []gerrit.CommentInfo{
+	comments := []CommentInfo{
 		{ID: "c_ps1", Line: 10, PatchSet: 1, Updated: timeTimestamp(t1)},
 		{ID: "c_ps2", Line: 10, PatchSet: 2, Updated: timeTimestamp(t2)},
 	}

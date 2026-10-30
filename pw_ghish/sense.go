@@ -19,8 +19,10 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -31,7 +33,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +49,8 @@ const (
 var (
 	primaryOncallRegex    = regexp.MustCompile(`primary:\s*"([^"]+)"`)
 	secondaryOncallRegex  = regexp.MustCompile(`secondary:\s*"([^"]+)"`)
+	httpStatusInErrRe     = regexp.MustCompile(`(?i)\bhttp\s+([1-5]\d\d)\b`)
+	status404TokenRe      = regexp.MustCompile(`\b404\b`)
 	chatRoomURLRegex      = regexp.MustCompile(`(?i)^https?://chat\.google\.com/(?:u/\d+/)?(?:room|dm)/([A-Za-z0-9_-]+)(?:/([A-Za-z0-9_.-]+))?(?:/([A-Za-z0-9_.-]+))?(?:[?#].*)?$`)
 	chatMailURLRegex      = regexp.MustCompile(`(?i)^https?://mail\.google\.com/chat/(?:u/\d+/)?#chat/(?:space|dm)/([A-Za-z0-9_-]+)(?:/([A-Za-z0-9_.-]+))?(?:/([A-Za-z0-9_.-]+))?(?:[?#].*)?$`)
 	chatResourceRegex     = regexp.MustCompile(`^spaces/([A-Za-z0-9_-]+)(?:/threads/([A-Za-z0-9_.-]+))?(?:/messages/([A-Za-z0-9_.-]+))?$`)
@@ -877,7 +880,7 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 		// OK: on any error, ownership falls back to email/login matching.
 		if gClient, gErr := NewGerritClient(aCtx, cmd); gErr != nil {
 			warnings.addf("skipping Gerrit account lookup for CL ownership: %v", firstLine(gErr.Error()))
-		} else if gClient != nil {
+		} else if gClient != nil && gClient.Authenticated() {
 			var gHost string
 			if cfg != nil {
 				gHost = cfg.GerritHost(aCtx)
@@ -950,8 +953,15 @@ func isNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
-	return reStatus404.MatchString(msg) || strings.Contains(strings.ToLower(msg), "not found") || strings.Contains(strings.ToLower(msg), "does not exist")
+	if gErr, ok := errors.AsType[*GerritAPIError](err); ok {
+		return gErr.StatusCode == http.StatusNotFound
+	}
+	raw := err.Error()
+	if m := httpStatusInErrRe.FindStringSubmatch(raw); len(m) == 2 {
+		return m[1] == "404"
+	}
+	msg := strings.ToLower(raw)
+	return strings.Contains(msg, "not found") || strings.Contains(msg, "does not exist") || status404TokenRe.MatchString(msg)
 }
 
 // CanSafelyPrepareWorktree evaluates the 7 Ironclad Non-Clobbering Safety Gates before `--prepare`
@@ -1617,21 +1627,13 @@ func senseBugTarget(
 				}
 				return
 			}
-			changes, _, qErr := gClient.Changes.QueryChanges(qCtx, &gerrit.QueryChangeOptions{
-				QueryOptions: gerrit.QueryOptions{
-					Query: []string{fmt.Sprintf("message:%d", targetBugID)},
-					Limit: 5,
-				},
-				ChangeOptions: gerrit.ChangeOptions{
-					AdditionalFields: []string{"DETAILED_ACCOUNTS"},
-				},
-			})
+			changes, qErr := gClient.QueryChanges(qCtx, fmt.Sprintf("message:%d", targetBugID), 5, "DETAILED_ACCOUNTS")
 			if qErr != nil {
 				warnings.addf("issue %s: related Gerrit CL query failed: %v", meta.issueRef(targetBugID), firstLine(qErr.Error()))
 				return
 			}
 			if changes != nil {
-				for _, ch := range *changes {
+				for _, ch := range changes {
 					relatedCLs = append(relatedCLs, SenseRelatedCL{
 						Number:   ch.Number,
 						ShortRef: meta.clRef(ch.Number),
@@ -1745,7 +1747,7 @@ func senseCandidateIssues(ctx context.Context, cmd *cobra.Command, cfg *Config, 
 	return out
 }
 
-func extractChangeOwner(change *gerrit.ChangeInfo) string {
+func extractChangeOwner(change *ChangeInfo) string {
 	if change == nil {
 		return ""
 	}
@@ -1776,7 +1778,7 @@ func senseReviewStep(cl string) string {
 	return fmt.Sprintf("Review CL %s (`./gh pr view %s --comments`) and coordinate with its owner instead of pushing to it.", cl, cl)
 }
 
-func extractChangeRevisionInfo(change *gerrit.ChangeInfo, localHeadSHA string) (patchsetNum int, fetchRef string, headUploaded bool) {
+func extractChangeRevisionInfo(change *ChangeInfo, localHeadSHA string) (patchsetNum int, fetchRef string, headUploaded bool) {
 	if change == nil {
 		return 0, "", false
 	}
@@ -1803,15 +1805,15 @@ func extractChangeRevisionInfo(change *gerrit.ChangeInfo, localHeadSHA string) (
 func fetchCommentsMapWithFallback(
 	primaryID string,
 	fallbackID string,
-	fetchFn func(id string) (*map[string][]gerrit.CommentInfo, *gerrit.Response, error),
-) (map[string][]gerrit.CommentInfo, error) {
-	cMap, _, err := fetchFn(primaryID)
+	fetchFn func(id string) (map[string][]CommentInfo, error),
+) (map[string][]CommentInfo, error) {
+	cMap, err := fetchFn(primaryID)
 	if err == nil && cMap != nil {
-		return *cMap, nil
+		return cMap, nil
 	}
 	if fallbackID != "" && fallbackID != primaryID {
-		if cMap2, _, err2 := fetchFn(fallbackID); err2 == nil && cMap2 != nil {
-			return *cMap2, nil
+		if cMap2, err2 := fetchFn(fallbackID); err2 == nil && cMap2 != nil {
+			return cMap2, nil
 		}
 	}
 	return nil, err
@@ -1844,10 +1846,7 @@ func senseGerritCL(
 	}
 	gHost = CanonicalGerritHost(gHost)
 
-	opt := &gerrit.ChangeOptions{
-		AdditionalFields: []string{"DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS"},
-	}
-	change, _, err := client.Changes.GetChange(ctx, parsed.ChangeID, opt)
+	change, err := client.GetChange(ctx, parsed.ChangeID, "DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS")
 	if err != nil {
 		return nil, FormatGerritError(err, "getting", parsed.ChangeID, gHost)
 	}
@@ -1860,8 +1859,8 @@ func senseGerritCL(
 
 	var (
 		subWg               sync.WaitGroup
-		publishedComments   map[string][]gerrit.CommentInfo
-		draftComments       map[string][]gerrit.CommentInfo
+		publishedComments   map[string][]CommentInfo
+		draftComments       map[string][]CommentInfo
 		failingChecks       = []CheckItem{}
 		failingCheckDetails []SenseFailingCheckDetail
 		pendingCount        int
@@ -1877,28 +1876,31 @@ func senseGerritCL(
 			changeIDStr = change.ChangeID
 		}
 
-		subWg.Add(2)
+		subWg.Add(1)
 		go func() {
 			defer subWg.Done()
 			var cErr error
-			publishedComments, cErr = fetchCommentsMapWithFallback(changeIDStr, numStr, func(id string) (*map[string][]gerrit.CommentInfo, *gerrit.Response, error) {
-				return client.Changes.ListChangeComments(ctx, id)
+			publishedComments, cErr = fetchCommentsMapWithFallback(changeIDStr, numStr, func(id string) (map[string][]CommentInfo, error) {
+				return client.ListChangeComments(ctx, id)
 			})
 			if cErr != nil {
 				warnings.addf("CL #%d: failed to load comments: %v", change.Number, firstLine(cErr.Error()))
 			}
 		}()
 
-		go func() {
-			defer subWg.Done()
-			var dErr error
-			draftComments, dErr = fetchCommentsMapWithFallback(changeIDStr, numStr, func(id string) (*map[string][]gerrit.CommentInfo, *gerrit.Response, error) {
-				return client.Changes.ListChangeDrafts(ctx, id)
-			})
-			if dErr != nil {
-				warnings.addf("CL #%d: failed to load drafts: %v", change.Number, firstLine(dErr.Error()))
-			}
-		}()
+		if client.Authenticated() {
+			subWg.Add(1)
+			go func() {
+				defer subWg.Done()
+				var dErr error
+				draftComments, dErr = fetchCommentsMapWithFallback(changeIDStr, numStr, func(id string) (map[string][]CommentInfo, error) {
+					return client.ListChangeDrafts(ctx, id)
+				})
+				if dErr != nil {
+					warnings.addf("CL #%d: failed to load drafts: %v", change.Number, firstLine(dErr.Error()))
+				}
+			}()
+		}
 
 		if patchsetNum > 0 && change.Project != "" && gHost != "" {
 			patchsets := EquivalentPatchsets(change, patchsetNum)
@@ -1986,12 +1988,12 @@ func senseGerritCL(
 		authorDrafts = enrichCommentsWithLocalCode(cwd, authorDrafts)
 	}
 
-	crScore := extractLabelScore(change.Labels, "Code-Review")
-	vScore := extractLabelScore(change.Labels, "Verified")
+	crScore := ExtractLabelScore(change.Labels, "Code-Review")
+	vScore := ExtractLabelScore(change.Labels, "Verified")
 	if _, hasVerified := change.Labels["Verified"]; !hasVerified {
-		vScore = extractLabelScore(change.Labels, "Presubmit-Verified")
+		vScore = ExtractLabelScore(change.Labels, "Presubmit-Verified")
 	}
-	cqScore := extractLabelScore(change.Labels, "Commit-Queue")
+	cqScore := ExtractLabelScore(change.Labels, "Commit-Queue")
 
 	mergeable := true
 	if !change.Mergeable {

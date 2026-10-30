@@ -19,12 +19,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
-
-	"github.com/andygrunwald/go-gerrit"
-	"github.com/spf13/cobra"
 )
 
 func TestAuthStatus_AllHealthyGoogler(t *testing.T) {
@@ -125,6 +121,35 @@ func TestAuthStatus_GooglerFailsWithExitCode4WhenLUCIUnauthenticated(t *testing.
 	}
 }
 
+// TestAuthStatus_AccountIDOnly checks that an account with only an ID is
+// labeled once, not as "account #N (account #N)".
+func TestAuthStatus_AccountIDOnly(t *testing.T) {
+	NewMockGerritServer(t).OnAccountSelf(1001)
+
+	WithHermeticAuth(t, AuthResolvers{
+		LookPath: func(file string) (string, error) {
+			if file == "sso_client" {
+				return "/usr/bin/sso_client", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
+		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
+			return "it-tok", "luci-auth token", nil
+		},
+	})
+
+	output, err := executeCommand(RootCmd, "auth", "status", "--auth-mode", "googler")
+	if err != nil {
+		t.Fatalf("expected auth status to succeed, got error: %v\nOutput:\n%s", err, output)
+	}
+	if !strings.Contains(output, "as account #1001") {
+		t.Errorf("expected output to contain %q, got:\n%s", "as account #1001", output)
+	}
+	if strings.Contains(output, "account #1001 (account #1001)") {
+		t.Errorf("expected the account ID only once, got:\n%s", output)
+	}
+}
+
 func TestAuthStatus_CommunityModeHealthyWithoutLUCIToken(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/accounts/self", http.StatusOK, map[string]any{
@@ -209,19 +234,7 @@ func TestAuthStatus_NoneModeJSON(t *testing.T) {
 }
 
 func TestView_SurfacesLUCIAuthErrorInGooglerMode(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
-		"_number":          12345,
-		"subject":          "Test change",
-		"status":           "NEW",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("GET", "/changes/12345/revisions/current/files/", http.StatusOK, map[string]any{})
+	server := NewMockGerritServer(t).OnDefaultChange(12345)
 
 	origLUCIClient := getLUCIHTTPClient
 	getLUCIHTTPClient = func(ctx context.Context, bbHost string) *http.Client {
@@ -241,73 +254,5 @@ func TestView_SurfacesLUCIAuthErrorInGooglerMode(t *testing.T) {
 	}
 	if !strings.Contains(output, "LUCI authentication required") {
 		t.Errorf("expected pr view to surface LUCI authentication required in Checks line, got:\n%s", output)
-	}
-}
-
-func TestAuthStatus_ReportsFallbackMethodWhenGobCurlExpired(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/accounts/self", http.StatusOK, map[string]any{
-		"_account_id": 1001,
-		"name":        "Keir Mierle",
-		"email":       "keir@google.com",
-	})
-
-	tmpDir := t.TempDir()
-	mockScript := tmpDir + "/mock-gob-curl-expired.sh"
-	if err := os.WriteFile(mockScript, []byte("#!/bin/sh\nprintf 'sso: credentials expired\\n' >&2\nexit 1\n"), 0755); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	origLookPath := LookPathFn
-	LookPathFn = func(file string) (string, error) {
-		if file == "gob-curl" {
-			return mockScript, nil
-		}
-		return "", fmt.Errorf("not found: %s", file)
-	}
-	defer func() { LookPathFn = origLookPath }()
-
-	origGerrit := GerritTokenResolver
-	GerritTokenResolver = func(ctx context.Context) (string, string, error) {
-		return "luci-gerrit-token", "luci-auth", nil
-	}
-	defer func() { GerritTokenResolver = origGerrit }()
-
-	origLUCI := LUCITokenResolver
-	LUCITokenResolver = func(ctx context.Context) (string, string, error) {
-		return "luci-tok", "luci-auth token", nil
-	}
-	defer func() { LUCITokenResolver = origLUCI }()
-
-	origIT := IssueTrackerTokenResolver
-	IssueTrackerTokenResolver = func(ctx context.Context) (string, string, error) {
-		return "it-tok", "luci-auth token", nil
-	}
-	defer func() { IssueTrackerTokenResolver = origIT }()
-
-	gobTr := &GobCurlTransport{
-		Path:         mockScript,
-		AutoFallback: true,
-		Base:         server.Server.Client().Transport,
-	}
-	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, server.URL, &http.Client{
-			Transport: &fallbackTransport{
-				base:                 gobTr,
-				disallowAnonFallback: true,
-			},
-		})
-	})
-
-	ctx := context.Background()
-	report, err := CheckAuthStatus(ctx, RootCmd)
-	if err != nil {
-		t.Fatalf("CheckAuthStatus failed: %v", err)
-	}
-	if !report.Healthy || !report.Gerrit.Authenticated {
-		t.Fatalf("expected report to be healthy and Gerrit authenticated via fallback, got: %+v", report)
-	}
-	if !strings.Contains(report.Gerrit.Method, "luci-auth") || !strings.Contains(report.Gerrit.Method, "gob-curl") {
-		t.Errorf("Gerrit.Method = %q, want luci-auth fallback description", report.Gerrit.Method)
 	}
 }

@@ -1583,29 +1583,3 @@ func TestValidateChangeIDFooters(t *testing.T) {
 		}
 	}
 }
-
-func TestGerritPath(t *testing.T) {
-	tests := []struct{ id, want string }{
-		{"123", "changes/123/revisions/current/review"},
-		{"pigweed/pigweed~123", "changes/pigweed%2Fpigweed~123/revisions/current/review"},
-		{"pigweed%2Fpigweed~123", "changes/pigweed%2Fpigweed~123/revisions/current/review"},
-		{"../abandon#", "changes/..%2Fabandon%23/revisions/current/review"},
-	}
-	for _, tc := range tests {
-		got, err := gerritPath("changes/%s/revisions/%s/review", tc.id, "current")
-		if err != nil || got != tc.want {
-			t.Errorf("gerritPath(%q) = %q, %v; want %q", tc.id, got, err, tc.want)
-		}
-	}
-
-	if _, err := gerritPath("changes/%s/review", "bad%zz"); err == nil {
-		t.Error("gerritPath with a malformed escape succeeded, want error")
-	}
-
-	defer func() {
-		if recover() == nil {
-			t.Error("gerritPath with a wrong segment count did not panic")
-		}
-	}()
-	_, _ = gerritPath("changes/%s/revisions/%s/review", "123")
-}

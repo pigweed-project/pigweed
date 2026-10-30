@@ -15,8 +15,6 @@
 package pw_ghish
 
 import (
-	"cmp"
-	"context"
 	"fmt"
 	"io"
 	"maps"
@@ -25,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -162,13 +159,9 @@ var commentCmd = &cobra.Command{
 		}
 
 		if commentDeleteDraft {
-			drafts, _, dErr := client.Changes.ListChangeDrafts(ctx, changeID)
+			draftMap, dErr := client.ListChangeDrafts(ctx, changeID)
 			if dErr != nil {
 				return chCtx.FormatError(dErr, "listing draft comments for")
-			}
-			var draftMap map[string][]gerrit.CommentInfo
-			if drafts != nil {
-				draftMap = *drafts
 			}
 			matches := matchDraftsWithRevisionFallback(draftMap[targetPath], commentLine, "", explicitPatchsetNum, explicitPatchset)
 			if len(matches) == 0 {
@@ -187,7 +180,7 @@ var commentCmd = &cobra.Command{
 					formatCommentLocation(targetPath, commentLine), changeID)
 			}
 			draftRev := draftRevisionForAPI(existing.PatchSet, targetPatchset)
-			if _, dErr := client.Changes.DeleteDraft(ctx, changeID, draftRev, existing.ID); dErr != nil {
+			if dErr := client.DeleteDraft(ctx, changeID, draftRev, existing.ID); dErr != nil {
 				return chCtx.FormatError(dErr, "deleting draft comment for")
 			}
 			delPS := effectivePatchSet(existing.PatchSet, explicitPatchsetNum)
@@ -205,7 +198,7 @@ var commentCmd = &cobra.Command{
 			foundThread    bool
 		)
 		if commentFile != "" {
-			comments, _, err := client.Changes.ListChangeComments(ctx, changeID)
+			comments, err := client.ListChangeComments(ctx, changeID)
 			if err != nil {
 				if commentResolved {
 					return fmt.Errorf("failed to list change comments to resolve thread: %w", chCtx.FormatError(err, "listing comments for"))
@@ -213,7 +206,7 @@ var commentCmd = &cobra.Command{
 				return chCtx.FormatError(err, "listing comments for")
 			}
 			if comments != nil {
-				if fileComments, ok := (*comments)[commentFile]; ok {
+				if fileComments, ok := comments[commentFile]; ok {
 					latestComment := FindLatestCommentAtLineForPatchSet(fileComments, commentLine, explicitPatchsetNum)
 					if latestComment == nil && !explicitPatchset && explicitPatchsetNum > 0 {
 						// When the CL was referenced with a patchset suffix (e.g. pwrev/123/23)
@@ -242,14 +235,14 @@ var commentCmd = &cobra.Command{
 		// (without --path) default to publishing immediately unless --draft is passed.
 		isDraft := commentDraft || (commentFile != "" && !commentPublish)
 
-		var existingDraft *gerrit.CommentInfo
+		var existingDraft *CommentInfo
 		if isDraft || (commentResolved && !foundThread) {
-			drafts, _, dErr := client.Changes.ListChangeDrafts(ctx, changeID)
+			drafts, dErr := client.ListChangeDrafts(ctx, changeID)
 			if dErr != nil {
 				return chCtx.FormatError(dErr, "listing draft comments for")
 			}
 			if drafts != nil {
-				matches := matchDraftsWithRevisionFallback((*drafts)[targetPath], commentLine, inReplyTo, explicitPatchsetNum, explicitPatchset)
+				matches := matchDraftsWithRevisionFallback(drafts[targetPath], commentLine, inReplyTo, explicitPatchsetNum, explicitPatchset)
 				if len(matches) > 1 && isDraft {
 					return formatAmbiguousDraftError(changeID, targetPath, commentLine, matches, false)
 				}
@@ -286,22 +279,20 @@ var commentCmd = &cobra.Command{
 		isAI := commentAgent.isAI()
 
 		if isDraft {
-			draftInput := &commentInput{
-				CommentInput: gerrit.CommentInput{
-					Path:       targetPath,
-					Line:       commentLine,
-					Message:    message,
-					InReplyTo:  inReplyTo,
-					Unresolved: unresolved,
-				},
-				IsAI: isAI,
+			draftInput := &CommentInput{
+				Path:       targetPath,
+				Line:       commentLine,
+				Message:    message,
+				InReplyTo:  inReplyTo,
+				Unresolved: unresolved,
+				IsAI:       isAI,
 			}
 			if commentFile != "" && commentLine != 0 {
 				draftInput.Side = "REVISION"
 			}
 
 			var (
-				savedDraft *gerrit.CommentInfo
+				savedDraft *CommentInfo
 				fallbackPS = parentPatchSet
 				action     = "saved"
 			)
@@ -323,23 +314,17 @@ var commentCmd = &cobra.Command{
 				if existingDraft.Side != "" {
 					draftInput.Side = existingDraft.Side
 				}
-				path, uErr := draftPath(changeID, draftRev, existingDraft.ID)
+				var uErr error
+				savedDraft, uErr = client.UpdateDraft(ctx, changeID, draftRev, existingDraft.ID, draftInput)
 				if uErr != nil {
-					return chCtx.FormatError(uErr, "updating draft comment for")
-				}
-				savedDraft = new(gerrit.CommentInfo)
-				if _, uErr = client.Call(ctx, "PUT", path, draftInput, savedDraft); uErr != nil {
 					return chCtx.FormatError(uErr, "updating draft comment for")
 				}
 				fallbackPS = existingDraft.PatchSet
 				action = "updated"
 			} else {
-				path, cErr := draftsPath(changeID, targetPatchset)
+				var cErr error
+				savedDraft, cErr = client.CreateDraft(ctx, changeID, targetPatchset, draftInput)
 				if cErr != nil {
-					return chCtx.FormatError(cErr, "creating draft comment for")
-				}
-				savedDraft = new(gerrit.CommentInfo)
-				if _, cErr = client.Call(ctx, "PUT", path, draftInput, savedDraft); cErr != nil {
 					return chCtx.FormatError(cErr, "creating draft comment for")
 				}
 			}
@@ -357,29 +342,30 @@ var commentCmd = &cobra.Command{
 			return nil
 		}
 
-		comment := commentInput{
-			CommentInput: gerrit.CommentInput{
+		input := &ReviewInput{
+			Drafts: "KEEP",
+		}
+
+		if commentFile != "" || (isAI != nil && *isAI) {
+			comment := CommentInput{
 				Line:       commentLine,
 				Message:    message,
 				InReplyTo:  inReplyTo,
 				Unresolved: unresolved,
-			},
-			IsAI: isAI,
-		}
-		if commentLine != 0 {
-			comment.Side = "REVISION"
-		}
-		input := &reviewInput{ReviewInput: gerrit.ReviewInput{Drafts: "KEEP"}}
-		if commentFile != "" || (isAI != nil && *isAI) {
+				IsAI:       isAI,
+			}
+			if commentLine != 0 {
+				comment.Side = "REVISION"
+			}
 			// Only comments can carry is_ai, so AI change-level text is posted as
 			// a patchset-level comment rather than the review message.
-			input.Comments = map[string][]commentInput{targetPath: {comment}}
+			input.Comments = map[string][]CommentInput{targetPath: {comment}}
 		} else {
 			input.Message = message
 		}
 
-		if err := postReview(ctx, client, changeID, targetPatchset, input); err != nil {
-			return chCtx.FormatError(err, "posting comment for")
+		if err := chCtx.SetReviewRevision(targetPatchset, input); err != nil {
+			return err
 		}
 
 		ps := effectivePatchSet(parentPatchSet, explicitPatchsetNum)
@@ -392,61 +378,15 @@ var commentCmd = &cobra.Command{
 	},
 }
 
-// commentInput is a gerrit.CommentInput plus Gerrit's is_ai field, which
-// go-gerrit does not model.
-type commentInput struct {
-	gerrit.CommentInput
-	IsAI *bool `json:"is_ai,omitempty"`
-}
-
-// reviewInput is a gerrit.ReviewInput whose comments can carry is_ai. Its
-// Comments field shadows the embedded one when encoded as JSON.
-type reviewInput struct {
-	gerrit.ReviewInput
-	Comments map[string][]commentInput `json:"comments,omitempty"`
-}
-
 // aiMessageReview returns input with message moved into a patchset-level
 // comment marked with isAI, because review messages cannot carry is_ai. It is
 // still a single review, so votes and draft handling are unchanged.
-func aiMessageReview(input gerrit.ReviewInput, message string, isAI *bool) *reviewInput {
+func aiMessageReview(input ReviewInput, message string, isAI *bool) *ReviewInput {
 	input.Message = ""
-	return &reviewInput{
-		ReviewInput: input,
-		Comments: map[string][]commentInput{
-			"/PATCHSET_LEVEL": {{CommentInput: gerrit.CommentInput{Message: message}, IsAI: isAI}},
-		},
+	input.Comments = map[string][]CommentInput{
+		"/PATCHSET_LEVEL": {{Message: message, IsAI: isAI}},
 	}
-}
-
-// postReview posts a review built from reviewInput, which go-gerrit's
-// SetReview cannot send.
-func postReview(ctx context.Context, client *gerrit.Client, changeID, revision string, input *reviewInput) error {
-	path, err := reviewPath(changeID, revision)
-	if err != nil {
-		return err
-	}
-	_, err = client.Call(ctx, "POST", path, input, nil)
-	return err
-}
-
-// The REST paths below are built by hand only because go-gerrit cannot send
-// is_ai. Call sites use these builders rather than formatting paths, so every
-// segment is escaped by gerritPath. An empty revision means "current".
-
-// draftsPath is the endpoint that creates a draft on a revision (PUT).
-func draftsPath(changeID, revision string) (string, error) {
-	return gerritPath("changes/%s/revisions/%s/drafts", changeID, cmp.Or(revision, "current"))
-}
-
-// draftPath is the endpoint that updates an existing draft (PUT).
-func draftPath(changeID, revision, draftID string) (string, error) {
-	return gerritPath("changes/%s/revisions/%s/drafts/%s", changeID, cmp.Or(revision, "current"), draftID)
-}
-
-// reviewPath is the endpoint that posts a review on a revision (POST).
-func reviewPath(changeID, revision string) (string, error) {
-	return gerritPath("changes/%s/revisions/%s/review", changeID, cmp.Or(revision, "current"))
+	return &input
 }
 
 func effectivePatchSet(patchSets ...int) int {
@@ -491,7 +431,7 @@ func formatCommentActionSummary(targetPath string, line int, patchSet int, isRep
 //     (i.e. the patchset came from a positional URL/shortlink like `pwrev/123/23`),
 //     it falls back to drafts across earlier patchsets so drafts carried forward
 //     from earlier patchsets are still found and updated/deleted cleanly.
-func matchDraftsWithRevisionFallback(fileDrafts []gerrit.CommentInfo, line int, inReplyTo string, patchSet int, explicitPatchsetFlag bool) []gerrit.CommentInfo {
+func matchDraftsWithRevisionFallback(fileDrafts []CommentInfo, line int, inReplyTo string, patchSet int, explicitPatchsetFlag bool) []CommentInfo {
 	if patchSet > 0 {
 		psMatches := FindMatchingDraftsAtTarget(fileDrafts, line, inReplyTo, patchSet)
 		if len(psMatches) > 0 || explicitPatchsetFlag {
@@ -520,7 +460,7 @@ func formatCommentLocation(path string, line int) string {
 	return formatShortCommentTarget(path, line)
 }
 
-func formatMissingDraftToDeleteError(changeID, path string, line, patchSet int, drafts map[string][]gerrit.CommentInfo) error {
+func formatMissingDraftToDeleteError(changeID, path string, line, patchSet int, drafts map[string][]CommentInfo) error {
 	loc := formatCommentLocation(path, line)
 	if patchSet > 0 {
 		loc = fmt.Sprintf("%s (patchset %d)", loc, patchSet)
@@ -553,7 +493,7 @@ func formatMissingDraftToDeleteError(changeID, path string, line, patchSet int, 
 		loc, changeID, changeID, strings.Join(available, "\n"), changeID)
 }
 
-func formatAmbiguousDraftError(changeID, path string, line int, matches []gerrit.CommentInfo, isDelete bool) error {
+func formatAmbiguousDraftError(changeID, path string, line int, matches []CommentInfo, isDelete bool) error {
 	loc := formatCommentLocation(path, line)
 	action := "update"
 	flagHint := "--draft"

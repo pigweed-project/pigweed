@@ -20,8 +20,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 // Note: Consider special handling/filtering for robot comments (e.g. from automated linters/builders) in the future.
@@ -52,7 +50,7 @@ type CommentsSummary struct {
 }
 
 // AnalyzeComments processes published comments and drafts into a CommentsSummary with hysteresis-based formatting.
-func AnalyzeComments(published map[string][]gerrit.CommentInfo, drafts map[string][]gerrit.CommentInfo) CommentsSummary {
+func AnalyzeComments(published map[string][]CommentInfo, drafts map[string][]CommentInfo) CommentsSummary {
 	draftsCount := 0
 	draftReplies := make(map[string]bool)
 	if drafts != nil {
@@ -126,7 +124,7 @@ func AnalyzeComments(published map[string][]gerrit.CommentInfo, drafts map[strin
 	var standaloneDrafts []UnresolvedComment
 	for _, path := range slices.Sorted(maps.Keys(drafts)) {
 		fileDrafts := slices.Clone(drafts[path])
-		slices.SortFunc(fileDrafts, func(a, b gerrit.CommentInfo) int {
+		slices.SortFunc(fileDrafts, func(a, b CommentInfo) int {
 			if c := cmp.Compare(a.Line, b.Line); c != 0 {
 				return c
 			}

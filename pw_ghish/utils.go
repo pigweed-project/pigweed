@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -871,39 +870,6 @@ var OpenBrowserFn = func(urlStr string) error {
 		}
 	}
 	return cmd.Start()
-}
-
-// gerritPath fills each %s in format with a URL-path-escaped segment. Use it
-// for every hand-built Gerrit REST path (for example with client.Call) instead
-// of escaping segments ad hoc.
-//
-// Escaping is needed because segments come from user input (the change
-// argument, --patchset) and from Gerrit responses (draft IDs). Unescaped, a
-// change argument like "../abandon#" would send the request to a different
-// endpoint, such as abandoning the change; a CQ security scanner flags such
-// unescaped paths.
-//
-// Each segment is decoded before it is escaped, so an already-escaped change
-// ID such as "project%2Fname~123" is sent as is rather than double-escaped to
-// "project%252Fname~123", which Gerrit rejects with 404. A segment with a
-// malformed escape (such as "%zz") returns an error instead of being passed
-// through.
-//
-// format must contain exactly one %s per segment; a mismatch is a programmer
-// error and panics.
-func gerritPath(format string, segments ...string) (string, error) {
-	if n := strings.Count(format, "%s"); n != len(segments) {
-		panic(fmt.Sprintf("gerritPath: %q has %d segments, got %d", format, n, len(segments)))
-	}
-	args := make([]any, len(segments))
-	for i, s := range segments {
-		decoded, err := url.PathUnescape(s)
-		if err != nil {
-			return "", fmt.Errorf("invalid Gerrit path segment %q: %w", s, err)
-		}
-		args[i] = url.PathEscape(decoded)
-	}
-	return fmt.Sprintf(format, args...), nil
 }
 
 // dedup returns a new slice with duplicate elements removed, preserving the

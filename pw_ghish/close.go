@@ -17,7 +17,6 @@ package pw_ghish
 import (
 	"fmt"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -32,11 +31,7 @@ var closeCmd = &cobra.Command{
 			return err
 		}
 
-		input := &gerrit.AbandonInput{
-			Message: "Abandoned via gh-ish",
-		}
-
-		_, _, err = chCtx.Client.Changes.AbandonChange(chCtx.Context, chCtx.ChangeID, input)
+		_, err = chCtx.Client.AbandonChange(chCtx.Context, chCtx.ChangeID, "Abandoned via gh-ish")
 		if err != nil {
 			return chCtx.FormatError(err, "closing")
 		}

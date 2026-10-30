@@ -21,8 +21,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 func TestList_WritesToCmdOut(t *testing.T) {
@@ -65,6 +63,7 @@ func TestList_WritesToCmdOut(t *testing.T) {
 }
 
 func TestList_ErrorWhenInvalidState(t *testing.T) {
+	NewMockGerritServer(t)
 	_, err := executeCommand(RootCmd, "pr", "list", "--state", "bogus")
 	if err == nil {
 		t.Fatal("Expected error when invalid state provided, got nil")
@@ -183,7 +182,7 @@ func TestList_UsesCachedSelfAccountForMeFilters(t *testing.T) {
 	}
 
 	// 2. Warm cache hit rewrites @me to numeric AccountID without /accounts/self RPC.
-	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", gerrit.AccountInfo{
+	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", AccountInfo{
 		AccountID: 1132682,
 		Name:      "Cached Dev",
 	}, time.Now())
@@ -203,5 +202,38 @@ func TestList_UsesCachedSelfAccountForMeFilters(t *testing.T) {
 	}
 	if !strings.Contains(capturedQuery, "owner:1132682") || !strings.Contains(capturedQuery, "reviewer:1132682") {
 		t.Errorf("expected query to contain owner:1132682 and reviewer:1132682, got %q", capturedQuery)
+	}
+}
+
+func TestList_UnauthenticatedIgnoresCachedSelfAccount(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("GH_ISH_ACCOUNT_CACHE_DIR", cacheDir)
+	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", AccountInfo{
+		AccountID: 1132682,
+		Name:      "Cached Dev",
+	}, time.Now())
+
+	mockGit := SetMockGit(t, nil)
+	mockGit.OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
+
+	server := NewMockGerritServer(t).UseResolvedAuth()
+	var capturedQuery string
+	server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = strings.Join(r.URL.Query()["q"], " ")
+		server.RespondJSON(w, http.StatusOK, []any{})
+	})
+
+	out, err := executeCommand(RootCmd, "pr", "list", "--author", "@me", "--auth-mode=none", "--host", "pigweed-review.googlesource.com")
+	if err != nil {
+		t.Fatalf("pr list --author @me --auth-mode=none failed: %v\nOutput: %s", err, out)
+	}
+	if got := server.CallCount("GET", "/accounts/self"); got != 0 {
+		t.Errorf("expected 0 /accounts/self requests with --auth-mode=none, got %d", got)
+	}
+	if !strings.Contains(capturedQuery, "owner:self") {
+		t.Errorf("expected unauthenticated query to send owner:self instead of cached account ID, got %q", capturedQuery)
+	}
+	if strings.Contains(capturedQuery, "1132682") {
+		t.Errorf("expected unauthenticated query to ignore cached numeric account ID 1132682, got %q", capturedQuery)
 	}
 }

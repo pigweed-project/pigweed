@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -882,5 +883,86 @@ func TestGerritClient_Endpoints(t *testing.T) {
 		if err := emptyCall(); err == nil || !strings.Contains(err.Error(), "changeID is required") {
 			t.Errorf("expected empty changeID error, got %v", err)
 		}
+	}
+}
+
+func TestGerritClient_PathSegmentEscapingAndTraversalSafety(t *testing.T) {
+	ctx := t.Context()
+	var gotMethod, gotEscapedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotEscapedPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(")]}'\n{}\n"))
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewGerritClientWithHTTP(srv.URL, srv.Client(), GerritAuth{})
+
+	for _, tc := range []struct {
+		name            string
+		call            func() error
+		wantMethod      string
+		wantEscapedPath string
+	}{
+		{
+			name:            "unencoded project-qualified change ID",
+			call:            func() error { _, err := client.GetChangeDetail(ctx, "pigweed/pigweed~123"); return err },
+			wantMethod:      http.MethodGet,
+			wantEscapedPath: "/changes/pigweed%2Fpigweed~123/detail",
+		},
+		{
+			name:            "pre-encoded project-qualified change ID is not double-encoded",
+			call:            func() error { _, err := client.GetChangeDetail(ctx, "pigweed%2Fpigweed~123"); return err },
+			wantMethod:      http.MethodGet,
+			wantEscapedPath: "/changes/pigweed%2Fpigweed~123/detail",
+		},
+		{
+			name:            "traversal and fragment in change ID",
+			call:            func() error { _, err := client.GetChangeDetail(ctx, "../abandon#"); return err },
+			wantMethod:      http.MethodGet,
+			wantEscapedPath: "/changes/..%2Fabandon%23/detail",
+		},
+		{
+			name:            "traversal in revision ID",
+			call:            func() error { _, err := client.ListFiles(ctx, "123", "../../abandon"); return err },
+			wantMethod:      http.MethodGet,
+			wantEscapedPath: "/changes/123/revisions/..%2F..%2Fabandon/files",
+		},
+		{
+			name: "traversal in UpdateDraft draft ID",
+			call: func() error {
+				_, err := client.UpdateDraft(ctx, "123", "current", "../x", &CommentInput{Message: "m"})
+				return err
+			},
+			wantMethod:      http.MethodPut,
+			wantEscapedPath: "/changes/123/revisions/current/drafts/..%2Fx",
+		},
+		{
+			name:            "traversal in DeleteDraft draft ID",
+			call:            func() error { return client.DeleteDraft(ctx, "123", "current", "../x") },
+			wantMethod:      http.MethodDelete,
+			wantEscapedPath: "/changes/123/revisions/current/drafts/..%2Fx",
+		},
+		{
+			name:            "malformed percent-escape is escaped raw",
+			call:            func() error { _, err := client.GetChangeDetail(ctx, "bad%zz"); return err },
+			wantMethod:      http.MethodGet,
+			wantEscapedPath: "/changes/bad%25zz/detail",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotMethod, gotEscapedPath = "", ""
+			if err := tc.call(); err != nil {
+				t.Fatalf("%s error: %v", tc.name, err)
+			}
+			if gotMethod != tc.wantMethod || gotEscapedPath != tc.wantEscapedPath {
+				t.Errorf("%s sent %s %s, want %s %s", tc.name, gotMethod, gotEscapedPath, tc.wantMethod, tc.wantEscapedPath)
+			}
+			if strings.Contains(gotEscapedPath, "%252F") {
+				t.Errorf("%s double-encoded slash in %q", tc.name, gotEscapedPath)
+			}
+		})
 	}
 }

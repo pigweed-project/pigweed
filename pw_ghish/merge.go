@@ -19,7 +19,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -127,7 +126,7 @@ Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for au
 					unsupported = decision.Unsupported
 				}
 
-				reviewInput := &gerrit.ReviewInput{
+				reviewInput := &ReviewInput{
 					Message: opts.message,
 					Labels:  make(map[string]int, len(votes)),
 				}
@@ -165,19 +164,9 @@ Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for au
 				return nil
 			}
 
-			input := &gerrit.SubmitInput{
-				WaitForMerge: true,
-			}
-
-			_, resp, err := chCtx.Client.Changes.SubmitChange(chCtx.Context, chCtx.ChangeID, input)
+			_, err = chCtx.Client.SubmitChange(chCtx.Context, chCtx.ChangeID)
 			if err != nil {
-				var isConflict bool
-				if resp != nil && resp.StatusCode == http.StatusConflict {
-					isConflict = true
-				} else if strings.Contains(err.Error(), "409") || strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "not ready") {
-					isConflict = true
-				}
-				if isConflict {
+				if IsGerritHTTPStatus(err, http.StatusConflict) {
 					cmdPath := cmd.CommandPath()
 					return fmt.Errorf("change %s cannot be merged immediately: submit requirements (such as Code-Review or Presubmit-Verified) are not yet met.\n\nHint: In Gerrit/LUCI projects, changes are submitted via the Commit Queue:\n  - To enable auto-submission when approved:  %s %s --auto\n  - To trigger Commit-Queue+2 directly:       %s %s --cq", chCtx.ChangeID, cmdPath, chCtx.ChangeID, cmdPath, chCtx.ChangeID)
 				}

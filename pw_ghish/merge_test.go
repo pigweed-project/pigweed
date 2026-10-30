@@ -16,7 +16,6 @@ package pw_ghish
 
 import (
 	"net/http"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -56,6 +55,7 @@ func TestMergeIntegration_AutoSubmit_Pigweed(t *testing.T) {
 	if server.CallCount("POST", "/changes/12345/revisions/current/review") != 1 {
 		t.Fatal("Expected SetReview API to be called for auto-submit")
 	}
+	server.AssertOptions(t, "GET", "/changes/12345", "DETAILED_LABELS")
 
 	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 
@@ -88,6 +88,7 @@ func TestMergeIntegration_AutoSubmit_NoLabelDryRunsAndFails(t *testing.T) {
 	if server.CallCount("POST", "/changes/54321/revisions/current/review") != 1 {
 		t.Fatal("Expected SetReview API to be called for --auto fallback dry run")
 	}
+	server.AssertOptions(t, "GET", "/changes/54321", "DETAILED_LABELS")
 
 	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 	if capturedInput.Labels["Commit-Queue"] != 1 {
@@ -127,6 +128,7 @@ func TestMergeIntegration_CQ_Pigweed(t *testing.T) {
 	if server.CallCount("POST", "/changes/12345/revisions/current/review") != 1 {
 		t.Fatal("Expected SetReview API to be called for --cq")
 	}
+	server.AssertOptions(t, "GET", "/changes/12345", "DETAILED_LABELS")
 
 	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 
@@ -249,11 +251,7 @@ func TestMergeIntegration_LabelSelection(t *testing.T) {
 					t.Errorf("Expected output to contain %q, got: %s", want, output)
 				}
 			}
-			if !slices.ContainsFunc(server.Requests(), func(req MockRequest) bool {
-				return req.Method == http.MethodGet && req.Path == "/changes/12345" && slices.Contains(req.URL.Query()["o"], "DETAILED_LABELS")
-			}) {
-				t.Errorf("expected GET /changes/12345 with o=DETAILED_LABELS; requests: %+v", server.Requests())
-			}
+			server.AssertOptions(t, "GET", "/changes/12345", "DETAILED_LABELS")
 			if tc.wantNoReview && server.CallCount("POST", "/changes/12345/revisions/current/review") != 0 {
 				t.Error("Expected no vote to be attempted")
 			}
@@ -318,6 +316,7 @@ func TestMergeIntegration_Trigger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Command failed with --trigger: %v\nOutput: %s", err, output)
 	}
+	server.AssertOptions(t, "GET", "/changes/12345", "DETAILED_LABELS")
 
 	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 	if capturedInput.Labels["Autosubmit"] != 1 || capturedInput.Labels["Presubmit-Ready"] != 1 {
@@ -361,6 +360,7 @@ func TestMergeIntegration_ScheduledFlow(t *testing.T) {
 			if server.CallCount("POST", "/changes/123456/flows") != 1 {
 				t.Fatalf("Expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
 			}
+			server.AssertOptions(t, "GET", "/changes/123456", "DETAILED_LABELS")
 
 			capturedFlow := DecodeRequest[FlowInput](t, server.LastRequest())
 			if len(capturedFlow.StageExpressions) != 2 {

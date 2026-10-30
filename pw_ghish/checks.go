@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -74,9 +73,9 @@ func isHumanReviewRequirement(name string) bool {
 	}
 }
 
-func lookupChangeLabel(change *gerrit.ChangeInfo, name string) (string, gerrit.LabelInfo, bool) {
+func lookupChangeLabel(change *ChangeInfo, name string) (string, LabelInfo, bool) {
 	if change == nil || len(change.Labels) == 0 {
-		return "", gerrit.LabelInfo{}, false
+		return "", LabelInfo{}, false
 	}
 	if info, ok := change.Labels[name]; ok {
 		return name, info, true
@@ -86,14 +85,14 @@ func lookupChangeLabel(change *gerrit.ChangeInfo, name string) (string, gerrit.L
 			return k, info, true
 		}
 	}
-	return "", gerrit.LabelInfo{}, false
+	return "", LabelInfo{}, false
 }
 
 // ExtractGerritGates inspects a Gerrit change's submit requirements and automated
 // gate labels (such as Lint, Copybara-Verified, Presubmit-Verified, Verified,
 // and Topics-Not-Supported), returning the display items and a slice of failed
 // gate descriptions.
-func ExtractGerritGates(change *gerrit.ChangeInfo) ([]GerritGateItem, []string) {
+func ExtractGerritGates(change *ChangeInfo) ([]GerritGateItem, []string) {
 	if change == nil {
 		return nil, nil
 	}
@@ -201,7 +200,7 @@ func ExtractGerritGates(change *gerrit.ChangeInfo) ([]GerritGateItem, []string) 
 	return items, failedGates
 }
 
-func labelHasPositiveApproval(info gerrit.LabelInfo) bool {
+func labelHasPositiveApproval(info LabelInfo) bool {
 	if info.Approved.AccountID != 0 || info.Recommended.AccountID != 0 || info.Value > 0 {
 		return true
 	}
@@ -211,7 +210,7 @@ func labelHasPositiveApproval(info gerrit.LabelInfo) bool {
 	return false
 }
 
-func summarizeGateLabel(name string, info gerrit.LabelInfo) string {
+func summarizeGateLabel(name string, info LabelInfo) string {
 	if v, voted := castVote(info); voted {
 		if v < 0 {
 			return fmt.Sprintf("%s%d", name, v)
@@ -392,7 +391,7 @@ func (c *equivalentBuildCache) record(patchset int, builds []bbBuild) {
 
 // refresh queries the CI provider for every patchset that isn't settled and
 // returns the builds across all patchsets, in patchsets order.
-func (c *equivalentBuildCache) refresh(ctx context.Context, provider CIProvider, gerritHost string, changeNum int, patchsets []int, change *GerritChangeInfo) ([]bbBuild, error) {
+func (c *equivalentBuildCache) refresh(ctx context.Context, provider CIProvider, gerritHost string, changeNum int, patchsets []int, change *ChangeInfo) ([]bbBuild, error) {
 	var toQuery []int
 	for _, ps := range patchsets {
 		if _, ok := c.settled[ps]; !ok {

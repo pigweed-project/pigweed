@@ -23,7 +23,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -86,7 +85,7 @@ type AutoSubmitDecision struct {
 //     Unsupported, so the change is still verified while the user is told
 //     that nothing will submit it.
 //   - none at all: an error, cast before anything is done.
-func DecideAutoSubmit(labels map[string]gerrit.LabelInfo, subject string) (AutoSubmitDecision, error) {
+func DecideAutoSubmit(labels map[string]LabelInfo, subject string) (AutoSubmitDecision, error) {
 	if len(labels) == 0 {
 		return AutoSubmitDecision{}, fmt.Errorf("--auto: %s reports no labels, so pw_ghish cannot tell which one requests automatic submission.\n\n"+
 			"To vote a label anyway, name it:\n"+
@@ -123,7 +122,7 @@ func DecideAutoSubmit(labels map[string]gerrit.LabelInfo, subject string) (AutoS
 // ok is false when nothing matches. More than one match is an error rather
 // than a pick: the labels are not interchangeable, and choosing wrong votes a
 // label that does not submit anything.
-func FindAutoSubmitLabel(labels map[string]gerrit.LabelInfo) (LabelVote, bool, error) {
+func FindAutoSubmitLabel(labels map[string]LabelInfo) (LabelVote, bool, error) {
 	matches := matchingLabels(labels, autoSubmitLabelPattern)
 	if len(matches) == 0 {
 		return LabelVote{}, false, nil
@@ -136,7 +135,7 @@ func FindAutoSubmitLabel(labels map[string]gerrit.LabelInfo) (LabelVote, bool, e
 }
 
 // matchingLabels returns the sorted names of the labels matching pattern.
-func matchingLabels(labels map[string]gerrit.LabelInfo, pattern *regexp.Regexp) []string {
+func matchingLabels(labels map[string]LabelInfo, pattern *regexp.Regexp) []string {
 	var matches []string
 	for name := range labels {
 		if pattern.MatchString(name) {
@@ -172,7 +171,7 @@ func ambiguousAutoSubmitError(matches []string) error {
 // Commit Queue and calling it auto-submit, as pw_ghish used to -- means the
 // user walks away believing the change is handed off. If it is not, they find
 // out days later.
-func noAutoSubmitError(subject string, labels map[string]gerrit.LabelInfo, dryRun LabelVote, hasCQ bool) error {
+func noAutoSubmitError(subject string, labels map[string]LabelInfo, dryRun LabelVote, hasCQ bool) error {
 	root := RootCmd.CommandPath()
 	if hasCQ {
 		return fmt.Errorf("--auto: %s has no auto-submit label, so nothing will submit this change once it passes.\n\n"+
@@ -201,7 +200,7 @@ func noAutoSubmitError(subject string, labels map[string]gerrit.LabelInfo, dryRu
 // The permitted range only arrives with DETAILED_LABELS. Without it the vote
 // falls back to +1, which is the maximum of every auto-submit label in use
 // (they are all [0, +1] or [-1, +1] toggles).
-func autoSubmitVote(info gerrit.LabelInfo) int {
+func autoSubmitVote(info LabelInfo) int {
 	if _, high, ok := labelRange(info); ok && high > 0 {
 		return high
 	}
@@ -219,7 +218,7 @@ func autoSubmitVote(info gerrit.LabelInfo) int {
 // ok is false when the host has no Commit Queue or Presubmit-Ready label, when
 // it has more than one label that could be one, or when the label does not
 // permit +1.
-func commitQueueDryRunVote(labels map[string]gerrit.LabelInfo) (LabelVote, bool) {
+func commitQueueDryRunVote(labels map[string]LabelInfo) (LabelVote, bool) {
 	for _, pat := range []*regexp.Regexp{commitQueueLabelPattern, presubmitReadyLabelPattern} {
 		matches := matchingLabels(labels, pat)
 		if len(matches) != 1 {
@@ -239,7 +238,7 @@ func commitQueueDryRunVote(labels map[string]gerrit.LabelInfo) (LabelVote, bool)
 // it uses Commit-Queue; if Presubmit-Ready is present instead, it uses
 // Presubmit-Ready (clamping positive scores to the label's maximum, typically
 // +1). Falls back to Commit-Queue when labels are empty or neither is found.
-func ResolveCQVoteForLabels(labels map[string]gerrit.LabelInfo, score int) (string, int) {
+func ResolveCQVoteForLabels(labels map[string]LabelInfo, score int) (string, int) {
 	if len(labels) == 0 {
 		return "Commit-Queue", score
 	}
@@ -264,16 +263,14 @@ func ResolveCQVoteForLabels(labels map[string]gerrit.LabelInfo, score int) (stri
 // whether to vote Commit-Queue or Presubmit-Ready for `--trigger` / `--cq`.
 func (c *ChangeContext) ResolveCQVote(score int) (string, int) {
 	if c != nil {
-		if change, err := c.GetChange(&gerrit.ChangeOptions{
-			AdditionalFields: []string{"DETAILED_LABELS"},
-		}); err == nil && change != nil && len(change.Labels) > 0 {
+		if change, err := c.GetChange("DETAILED_LABELS"); err == nil && change != nil && len(change.Labels) > 0 {
 			return ResolveCQVoteForLabels(change.Labels, score)
 		}
 	}
 	return "Commit-Queue", score
 }
 
-func labelHasPositiveVote(labels map[string]gerrit.LabelInfo, name string) bool {
+func labelHasPositiveVote(labels map[string]LabelInfo, name string) bool {
 	info, ok := labels[name]
 	if !ok {
 		return false
@@ -293,7 +290,7 @@ func labelHasPositiveVote(labels map[string]gerrit.LabelInfo, name string) bool 
 //   - Otherwise, if Autosubmit / Auto-Submit and/or Presubmit-Ready exist on
 //     the change, vote Autosubmit+1 (and Presubmit-Ready+1 if neither
 //     Presubmit-Verified nor Verified is already positive).
-func DecideCQSubmit(labels map[string]gerrit.LabelInfo, subject string) ([]LabelVote, error) {
+func DecideCQSubmit(labels map[string]LabelInfo, subject string) ([]LabelVote, error) {
 	if matches := matchingLabels(labels, commitQueueLabelPattern); len(matches) == 1 {
 		name := matches[0]
 		score := 2
@@ -331,9 +328,7 @@ func (c *ChangeContext) DecideCQSubmit() ([]LabelVote, error) {
 	if c == nil {
 		return nil, fmt.Errorf("internal error: ChangeContext is nil")
 	}
-	if change, err := c.GetChange(&gerrit.ChangeOptions{
-		AdditionalFields: []string{"DETAILED_LABELS"},
-	}); err == nil && change != nil && len(change.Labels) > 0 {
+	if change, err := c.GetChange("DETAILED_LABELS"); err == nil && change != nil && len(change.Labels) > 0 {
 		return DecideCQSubmit(change.Labels, fmt.Sprintf("change %s", c.ChangeID))
 	}
 	if profile, err := c.ResolveProfile(); err == nil && profile != nil {
@@ -346,7 +341,7 @@ func (c *ChangeContext) DecideCQSubmit() ([]LabelVote, error) {
 
 // FormatLabelNames renders a host's label names for diagnostics, so an error
 // about a missing label can show what the host does offer instead.
-func FormatLabelNames(labels map[string]gerrit.LabelInfo) string {
+func FormatLabelNames(labels map[string]LabelInfo) string {
 	if len(labels) == 0 {
 		return "none reported"
 	}
@@ -362,63 +357,31 @@ func (c *ChangeContext) DecideAutoSubmit() (AutoSubmitDecision, error) {
 	if c == nil {
 		return AutoSubmitDecision{}, fmt.Errorf("internal error: ChangeContext is nil")
 	}
-	change, err := c.GetChange(&gerrit.ChangeOptions{
-		AdditionalFields: []string{"DETAILED_LABELS"},
-	})
+	change, err := c.GetChange("DETAILED_LABELS")
 	if err != nil {
 		return AutoSubmitDecision{}, err
 	}
 	return DecideAutoSubmit(change.Labels, fmt.Sprintf("change %s", c.ChangeID))
 }
 
-// LabelDefinition is one entry of a project's label list, as returned by
-// Gerrit's "GET /projects/{project}/labels/" endpoint. Only the fields needed
-// to identify a label and its range are decoded.
-type LabelDefinition struct {
-	Name   string            `json:"name"`
-	Values map[string]string `json:"values"`
-}
-
-// ListProjectLabels returns the labels a project defines.
-//
-// This is how a label name can be learned before any change exists, which is
-// the situation `gh pr create --auto` is in: there is no ChangeInfo to read,
-// but the project already knows what its labels are called.
-func ListProjectLabels(ctx context.Context, client *gerrit.Client, project string) ([]LabelDefinition, error) {
-	if client == nil {
-		return nil, fmt.Errorf("internal error: gerrit client is nil")
-	}
-	if project == "" {
-		return nil, fmt.Errorf("internal error: project is empty")
-	}
-	var labels []LabelDefinition
-	// The project name contains slashes ("pigweed/pigweed") and has to be
-	// escaped, or Gerrit reads the rest of the name as more path segments.
-	path := fmt.Sprintf("projects/%s/labels/", url.PathEscape(project))
-	if _, err := client.Call(ctx, "GET", path, nil, &labels); err != nil {
-		return nil, err
-	}
-	return labels, nil
-}
-
 // labelInfoFromDefinitions adapts project label definitions to the same shape
 // a change reports, so both sources go through one matcher and one idea of
 // what score to cast.
-func labelInfoFromDefinitions(defs []LabelDefinition) map[string]gerrit.LabelInfo {
-	labels := make(map[string]gerrit.LabelInfo, len(defs))
+func labelInfoFromDefinitions(defs []LabelDefinition) map[string]LabelInfo {
+	labels := make(map[string]LabelInfo, len(defs))
 	for _, def := range defs {
 		if def.Name == "" {
 			continue
 		}
-		labels[def.Name] = gerrit.LabelInfo{Values: def.Values}
+		labels[def.Name] = LabelInfo{Values: def.Values}
 	}
 	return labels
 }
 
 // DecideAutoSubmitForNewChange resolves what --auto should do to a change that
 // does not exist yet, by asking the project which labels it defines.
-func DecideAutoSubmitForNewChange(ctx context.Context, client *gerrit.Client, project string) (AutoSubmitDecision, error) {
-	defs, err := ListProjectLabels(ctx, client, project)
+func DecideAutoSubmitForNewChange(ctx context.Context, client *GerritClient, project string) (AutoSubmitDecision, error) {
+	defs, err := client.ListProjectLabels(ctx, project)
 	if err != nil {
 		root := RootCmd.CommandPath()
 		return AutoSubmitDecision{}, fmt.Errorf("--auto: cannot read the labels of project %s, so pw_ghish cannot tell which one requests automatic submission: %w\n\n"+

@@ -26,8 +26,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 const (
@@ -104,7 +102,7 @@ func isDigitsOnly(s string) bool {
 	return digitsOnlyPattern.MatchString(s)
 }
 
-func formatGerritTimestamp(ts gerrit.Timestamp) string {
+func formatGerritTimestamp(ts Timestamp) string {
 	if ts.Time.IsZero() {
 		return ""
 	}
@@ -133,7 +131,7 @@ func BusytownBuildURL(buildID, target string) string {
 
 // BusytownProvider implements CIProvider for Android Busytown / TreeHugger (`treetop~` + `ci.android.com`).
 type BusytownProvider struct {
-	GerritClient *gerrit.Client
+	GerritClient *GerritClient
 	Cfg          *Config
 }
 
@@ -229,30 +227,23 @@ func parseTreetopTasksPayload(rawBytes []byte) ([]busytownTaskJSON, error) {
 	return wrapper.Results, nil
 }
 
-func (p *BusytownProvider) SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *GerritChangeInfo) ([]bbBuild, error) {
+func (p *BusytownProvider) SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *ChangeInfo) ([]bbBuild, error) {
 	if p.GerritClient != nil && changeNum > 0 && patchsetNum > 0 {
 		endpoint := fmt.Sprintf("changes/%d/revisions/%d/treetop~presubmittasks", changeNum, patchsetNum)
-		req, err := p.GerritClient.NewRequest(ctx, "GET", endpoint, nil)
-		if err == nil {
-			var buf bytes.Buffer
-			resp, doErr := p.GerritClient.Do(req, &buf)
-			if doErr == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				if tasks, parseErr := parseTreetopTasksPayload(buf.Bytes()); parseErr == nil && len(tasks) > 0 {
-					builds := convertTreetopTasksToBuilds(tasks)
-					for i := range builds {
-						builds[i].Patchset = patchsetNum
-					}
-					return builds, nil
+		if rawBody, doErr := p.GerritClient.doRaw(ctx, http.MethodGet, endpoint, nil, nil, maxHTTPBodyBytes); doErr == nil {
+			if tasks, parseErr := parseTreetopTasksPayload(rawBody); parseErr == nil && len(tasks) > 0 {
+				builds := convertTreetopTasksToBuilds(tasks)
+				for i := range builds {
+					builds[i].Patchset = patchsetNum
 				}
+				return builds, nil
 			}
 		}
 	}
 
 	// Fallback: parse Gerrit change messages and Presubmit-Verified labels from TreeHugger.
 	if change != nil && len(change.Messages) == 0 && p.GerritClient != nil && changeNum > 0 {
-		if detailed, _, err := p.GerritClient.Changes.GetChangeDetail(ctx, fmt.Sprintf("%d", changeNum), &gerrit.ChangeOptions{
-			AdditionalFields: []string{"MESSAGES", "DETAILED_LABELS", "CURRENT_REVISION"},
-		}); err == nil && detailed != nil {
+		if detailed, err := p.GerritClient.GetChangeDetail(ctx, fmt.Sprintf("%d", changeNum), "MESSAGES", "DETAILED_LABELS", "CURRENT_REVISION"); err == nil && detailed != nil {
 			change.Messages = detailed.Messages
 			if len(change.Labels) == 0 {
 				change.Labels = detailed.Labels
@@ -351,7 +342,7 @@ func convertTreetopTasksToBuilds(tasks []busytownTaskJSON) []bbBuild {
 	return builds
 }
 
-func messagePatchsetNum(msg *gerrit.ChangeMessageInfo) int {
+func messagePatchsetNum(msg *ChangeMessageInfo) int {
 	if msg == nil {
 		return 0
 	}
@@ -367,13 +358,13 @@ func messagePatchsetNum(msg *gerrit.ChangeMessageInfo) int {
 	return 0
 }
 
-func parseTreeHuggerMessagesFallback(change *GerritChangeInfo, patchsetNum int) []bbBuild {
+func parseTreeHuggerMessagesFallback(change *ChangeInfo, patchsetNum int) []bbBuild {
 	if change == nil {
 		return nil
 	}
 
-	var startMsg *gerrit.ChangeMessageInfo
-	var latestMsg *gerrit.ChangeMessageInfo
+	var startMsg *ChangeMessageInfo
+	var latestMsg *ChangeMessageInfo
 	var workplanID string
 	for i := range change.Messages {
 		msg := &change.Messages[i]
@@ -737,21 +728,17 @@ func (p *BusytownProvider) RerunBuilds(ctx context.Context, ch ChangeRef, builds
 	}
 
 	fmt.Fprintf(out, "Triggering Busytown / TreeHugger presubmit rerun on Change %d (Patchset %d)...\n", ch.ChangeID, ch.Patchset)
-	req, err := p.GerritClient.NewRequest(ctx, "POST", endpoint, map[string]any{})
-	if err == nil {
-		resp, doErr := p.GerritClient.Do(req, nil)
-		if doErr == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return nil
-		}
+	if err := p.GerritClient.do(ctx, http.MethodPost, endpoint, nil, struct{}{}, nil); err == nil {
+		return nil
 	}
 
 	// Fallback: vote Presubmit-Ready+1 via SetReview
-	reviewIn := &gerrit.ReviewInput{
+	reviewIn := &ReviewInput{
 		Labels: map[string]int{
 			"Presubmit-Ready": 1,
 		},
 	}
-	if err := SetReviewSafe(ctx, p.GerritClient, fmt.Sprintf("%d", ch.ChangeID), fmt.Sprintf("%d", ch.Patchset), reviewIn); err != nil {
+	if _, err := p.GerritClient.SetReview(ctx, fmt.Sprintf("%d", ch.ChangeID), fmt.Sprintf("%d", ch.Patchset), reviewIn); err != nil {
 		return fmt.Errorf("failed to trigger Busytown presubmit rerun via treetop~runaction or Presubmit-Ready+1 fallback: %w", err)
 	}
 	return nil

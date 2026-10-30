@@ -16,8 +16,11 @@ package worktree
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,7 +31,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
+	"github.com/spf13/cobra"
+	"pigweed.dev/pw_ghish"
 )
 
 // MockGitRunner simulates Git worktree and branch operations in memory/tempdir.
@@ -879,7 +883,7 @@ func TestQueryChangeBatches_ConcurrentBounded(t *testing.T) {
 	var arrived atomic.Int32
 	releaseCh := make(chan struct{})
 
-	res, err := queryChangeBatches(t.Context(), queries, func(ctx context.Context, q string) (*[]gerrit.ChangeInfo, error) {
+	res, err := queryChangeBatches(t.Context(), queries, func(ctx context.Context, q string) ([]pw_ghish.ChangeInfo, error) {
 		cur := inFlight.Add(1)
 		for {
 			prev := maxConcurrent.Load()
@@ -899,7 +903,7 @@ func TestQueryChangeBatches_ConcurrentBounded(t *testing.T) {
 		case <-time.After(3 * time.Second):
 		}
 
-		changes := []gerrit.ChangeInfo{
+		changes := []pw_ghish.ChangeInfo{
 			{
 				ChangeID: "I-" + q,
 				Number:   100,
@@ -907,7 +911,7 @@ func TestQueryChangeBatches_ConcurrentBounded(t *testing.T) {
 				Subject:  "Subject for " + q,
 			},
 		}
-		return &changes, nil
+		return changes, nil
 	})
 	if err != nil {
 		t.Fatalf("queryChangeBatches failed: %v", err)
@@ -923,6 +927,22 @@ func TestQueryChangeBatches_ConcurrentBounded(t *testing.T) {
 		if cs, ok := res[cid]; !ok || cs.Subject != "Subject for "+q {
 			t.Errorf("missing or mismatched status for %q: %+v", cid, cs)
 		}
+	}
+}
+
+func TestQueryChangeBatches_PropagatesError(t *testing.T) {
+	queries := []string{"q0", "q1", "q2"}
+	_, err := queryChangeBatches(t.Context(), queries, func(ctx context.Context, q string) ([]pw_ghish.ChangeInfo, error) {
+		if q == "q1" {
+			return nil, fmt.Errorf("gerrit batch query failed on %s", q)
+		}
+		return []pw_ghish.ChangeInfo{{ChangeID: "I-" + q, Number: 100, Status: "NEW"}}, nil
+	})
+	if err == nil {
+		t.Fatal("expected queryChangeBatches to propagate error when a batch fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "gerrit batch query failed on q1") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -977,5 +997,93 @@ func TestExecGitRunner_InspectHeadAheadChangeID(t *testing.T) {
 	}
 	if ahead != 1 || cid != wantCID {
 		t.Errorf("InspectHeadAheadChangeID on feature branch = (ahead=%d, cid=%q), want (1, %q)", ahead, cid, wantCID)
+	}
+}
+
+func TestGerritStatusAdapter_QueryChangesByID(t *testing.T) {
+	const (
+		cid1 = "I1111111111111111111111111111111111111111"
+		cid2 = "I2222222222222222222222222222222222222222"
+	)
+
+	var gotOpts []string
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/changes/" {
+			http.NotFound(w, r)
+			return
+		}
+		gotOpts = r.URL.Query()["o"]
+		gotQuery = strings.Join(r.URL.Query()["q"], " ")
+		payload, err := json.Marshal([]map[string]any{
+			{
+				"change_id":                cid1,
+				"_number":                  101,
+				"status":                   "NEW",
+				"subject":                  "pw_rpc: Approved change",
+				"unresolved_comment_count": 2,
+				"submittable":              true,
+				"labels": map[string]any{
+					"Code-Review":        map[string]any{"all": []map[string]any{{"value": 2}}},
+					"Commit-Queue":       map[string]any{"all": []map[string]any{{"value": 1}}},
+					"Presubmit-Verified": map[string]any{"all": []map[string]any{{"value": 1}}},
+				},
+			},
+			{
+				"change_id": cid2,
+				"_number":   102,
+				"status":    "NEW",
+				"subject":   "pw_log: Blocked change",
+				"labels": map[string]any{
+					"Code-Review":  map[string]any{"all": []map[string]any{{"value": 2}, {"value": -1}}},
+					"Commit-Queue": map[string]any{"all": []map[string]any{{"value": 2}}},
+					"Verified":     map[string]any{"all": []map[string]any{{"value": -1}}},
+				},
+			},
+		})
+		if err != nil {
+			t.Errorf("json.Marshal: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(append([]byte(")]}'\n"), payload...))
+	}))
+	defer srv.Close()
+
+	origNewClient := pw_ghish.NewGerritClient
+	pw_ghish.NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*pw_ghish.GerritClient, error) {
+		return pw_ghish.NewGerritClientWithHTTP(srv.URL, srv.Client(), pw_ghish.GerritAuth{}), nil
+	}
+	t.Cleanup(func() { pw_ghish.NewGerritClient = origNewClient })
+
+	adapter := &gerritStatusAdapter{rootCmd: &cobra.Command{}}
+	statuses, err := adapter.QueryChangesByID(t.Context(), []string{cid1, cid2})
+	if err != nil {
+		t.Fatalf("QueryChangesByID failed: %v", err)
+	}
+
+	for _, wantOpt := range []string{"DETAILED_LABELS", "SUBMITTABLE"} {
+		if !slices.Contains(gotOpts, wantOpt) {
+			t.Errorf("QueryChangesByID o=%v, missing %q", gotOpts, wantOpt)
+		}
+	}
+	if !strings.Contains(gotQuery, "change:"+cid1) || !strings.Contains(gotQuery, "change:"+cid2) {
+		t.Errorf("QueryChangesByID q=%q, want both change IDs", gotQuery)
+	}
+
+	st1, ok := statuses[cid1]
+	if !ok {
+		t.Fatalf("missing status for %s in %+v", cid1, statuses)
+	}
+	if st1.Number != 101 || st1.CodeReviewScore != 2 || st1.CommitQueueScore != 1 || st1.UnresolvedThreads != 2 {
+		t.Errorf("status[%s] = %+v, want Number=101 CR=+2 CQ=+1 UnresolvedThreads=2", cid1, st1)
+	}
+
+	st2, ok := statuses[cid2]
+	if !ok {
+		t.Fatalf("missing status for %s in %+v", cid2, statuses)
+	}
+	if st2.Number != 102 || st2.CodeReviewScore != -1 || st2.CommitQueueScore != 2 {
+		t.Errorf("status[%s] = %+v, want Number=102 CR=-1 CQ=+2", cid2, st2)
 	}
 }

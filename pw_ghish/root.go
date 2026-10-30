@@ -26,7 +26,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -525,60 +524,18 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&AuthModeFlag, "auth-mode", "", "Authentication mode (auto, googler, community, none)")
 }
 
-type rpcClientKey struct {
-	host, cwd, home, profile, authModeFlag, authModeEnv, authMethodEnv, gerritToken string
-	git                                                                             GitRunner
-}
-
-var (
-	rpcClientMu      sync.Mutex
-	cachedRPCClients map[rpcClientKey]*http.Client
-)
-
-func rpcClientCacheKey(ctx context.Context, gerritHost string) rpcClientKey {
-	var cwd string
-	git := DefaultGitRunner
-	if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil {
-		cwd = cfg.CWD
-		if cfg.Git != nil {
-			git = cfg.Git
-		}
-	}
-	return rpcClientKey{
-		host:          CanonicalGerritHost(gerritHost),
-		cwd:           cwd,
-		git:           git,
-		home:          os.Getenv("HOME"),
-		profile:       strings.TrimSpace(ProfileFlag),
-		authModeFlag:  strings.TrimSpace(AuthModeFlag),
-		authModeEnv:   strings.TrimSpace(os.Getenv("GH_ISH_AUTH_MODE")),
-		authMethodEnv: strings.TrimSpace(os.Getenv("GH_ISH_AUTH_METHOD")),
-		gerritToken:   strings.TrimSpace(os.Getenv("GERRIT_TOKEN")),
-	}
-}
-
-// getRPCClient returns an HTTP client configured with authenticated transport.
-var getRPCClient = func(ctx context.Context, gerritHost string) (*http.Client, error) {
-	key := rpcClientCacheKey(ctx, gerritHost)
-	rpcClientMu.Lock()
-	defer rpcClientMu.Unlock()
-	if c := cachedRPCClients[key]; c != nil {
-		return c, nil
-	}
-	tr, err := NewAuthTransportContext(ctx, gerritHost)
+// newGerritClientForURL builds a GerritClient for gerritURL with the auth
+// that resolveGerritClientAuth picks. hc may be nil.
+func newGerritClientForURL(ctx context.Context, gerritURL string, hc *http.Client) (*GerritClient, error) {
+	auth, err := resolveGerritClientAuth(ctx, gerritURL)
 	if err != nil {
 		return nil, err
 	}
-	c := &http.Client{Transport: tr}
-	if cachedRPCClients == nil {
-		cachedRPCClients = make(map[rpcClientKey]*http.Client)
-	}
-	cachedRPCClients[key] = c
-	return c, nil
+	return NewGerritClientWithHTTP(gerritURL, hc, auth), nil
 }
 
 // NewGerritClient creates a new Gerrit client. It can be overridden in tests.
-var NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
+var NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error) {
 	config := GetConfig(cmd)
 	if config == nil {
 		config = &Config{
@@ -594,12 +551,10 @@ var NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Cli
 		return nil, err
 	}
 
-	httpClient, err := getRPCClient(ctx, gerritURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get HTTP client: %w", err)
-	}
-
-	return gerrit.NewClient(ctx, gerritURL, httpClient)
+	// No client Timeout: synchronous submits and large diffs can take
+	// longer than any fixed limit. The auth policy error is already an
+	// ExitCodeError, so return it as is.
+	return newGerritClientForURL(ctx, gerritURL, nil)
 }
 
 var rootAliasesOnce sync.Once
@@ -848,20 +803,14 @@ func FindLatestChangeBySubject(ctx context.Context, cmd *cobra.Command, subject 
 		query += fmt.Sprintf(` message:"%s"`, subject)
 	}
 
-	opt := &gerrit.QueryChangeOptions{
-		QueryOptions: gerrit.QueryOptions{
-			Query: []string{query},
-			Limit: 1,
-		},
-	}
-	changes, _, err := client.Changes.QueryChanges(ctx, opt)
+	changes, err := client.QueryChanges(ctx, query, 1)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query changes: %w", err)
 	}
 
-	if changes == nil || len(*changes) == 0 {
+	if len(changes) == 0 {
 		return 0, fmt.Errorf("no changes found matching query: %s", query)
 	}
 
-	return (*changes)[0].Number, nil
+	return changes[0].Number, nil
 }

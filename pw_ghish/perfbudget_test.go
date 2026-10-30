@@ -34,7 +34,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -368,9 +367,9 @@ func perfFailureReports() []FailureReport {
 
 // perfCommentForest returns 10 files × 3 threads × (root + 2 replies) of
 // published comments plus one draft reply per file.
-func perfCommentForest() (published, drafts map[string][]gerrit.CommentInfo) {
-	published = map[string][]gerrit.CommentInfo{}
-	drafts = map[string][]gerrit.CommentInfo{}
+func perfCommentForest() (published, drafts map[string][]CommentInfo) {
+	published = map[string][]CommentInfo{}
+	drafts = map[string][]CommentInfo{}
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	unresolved := true
 	for f := range 10 {
@@ -378,12 +377,12 @@ func perfCommentForest() (published, drafts map[string][]gerrit.CommentInfo) {
 		for th := range 3 {
 			root := fmt.Sprintf("f%d-t%d", f, th)
 			for r := range 3 {
-				c := gerrit.CommentInfo{
+				c := CommentInfo{
 					ID:         fmt.Sprintf("%s-c%d", root, r),
 					Line:       10 + th*20,
 					PatchSet:   2,
 					Unresolved: &unresolved,
-					Author:     gerrit.AccountInfo{Email: fmt.Sprintf("reviewer%d@example.com", r)},
+					Author:     AccountInfo{Email: fmt.Sprintf("reviewer%d@example.com", r)},
 					Message:    fmt.Sprintf("Comment %d on thread %d: please check the buffer bounds before copying.", r, th),
 					Updated:    timeTimestamp(base.Add(time.Duration(f*100+th*10+r) * time.Minute)),
 				}
@@ -393,7 +392,7 @@ func perfCommentForest() (published, drafts map[string][]gerrit.CommentInfo) {
 				published[path] = append(published[path], c)
 			}
 		}
-		drafts[path] = []gerrit.CommentInfo{{
+		drafts[path] = []CommentInfo{{
 			ID:        fmt.Sprintf("f%d-draft", f),
 			InReplyTo: fmt.Sprintf("f%d-t0-c2", f),
 			Line:      10,

@@ -18,16 +18,14 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 func boolPtr(b bool) *bool {
 	return &b
 }
 
-func timeTimestamp(t time.Time) *gerrit.Timestamp {
-	return &gerrit.Timestamp{Time: t}
+func timeTimestamp(t time.Time) *Timestamp {
+	return &Timestamp{Time: t}
 }
 
 func TestAnalyzeComments_Empty(t *testing.T) {
@@ -41,7 +39,7 @@ func TestAnalyzeComments_Empty(t *testing.T) {
 }
 
 func TestAnalyzeComments_OnlyDrafts(t *testing.T) {
-	drafts := map[string][]gerrit.CommentInfo{
+	drafts := map[string][]CommentInfo{
 		"pw_ghish/main.go": {
 			{ID: "d1", Line: 10, PatchSet: 2, Message: "Draft 1"},
 			{ID: "d2", Line: 20, PatchSet: 2, Message: "Draft 2"},
@@ -63,7 +61,7 @@ func TestAnalyzeComments_OnlyDrafts(t *testing.T) {
 }
 
 func TestAnalyzeComments_ThreeDrafts_Hysteresis(t *testing.T) {
-	drafts := map[string][]gerrit.CommentInfo{
+	drafts := map[string][]CommentInfo{
 		"a.go": {{ID: "d1", Line: 10, PatchSet: 1, Message: "Draft 1"}},
 		"b.go": {{ID: "d2", Line: 20, PatchSet: 1, Message: "Draft 2"}},
 		"c.go": {{ID: "d3", Line: 30, PatchSet: 1, Message: "Draft 3"}},
@@ -89,7 +87,7 @@ func TestAnalyzeComments_ThreeDrafts_Hysteresis(t *testing.T) {
 
 func TestAnalyzeComments_AllResolved(t *testing.T) {
 	now := time.Now()
-	published := map[string][]gerrit.CommentInfo{
+	published := map[string][]CommentInfo{
 		"pw_ghish/status.go": {
 			{
 				ID:         "c1",
@@ -121,7 +119,7 @@ func TestAnalyzeComments_AllResolved(t *testing.T) {
 
 func TestAnalyzeComments_AllResolved_WithDrafts(t *testing.T) {
 	now := time.Now()
-	published := map[string][]gerrit.CommentInfo{
+	published := map[string][]CommentInfo{
 		"pw_ghish/status.go": {
 			{
 				ID:         "c1",
@@ -141,7 +139,7 @@ func TestAnalyzeComments_AllResolved_WithDrafts(t *testing.T) {
 			},
 		},
 	}
-	drafts := map[string][]gerrit.CommentInfo{
+	drafts := map[string][]CommentInfo{
 		"pw_ghish/other.go": {
 			{ID: "d1", Message: "Unpublished thought"},
 		},
@@ -161,14 +159,14 @@ func TestAnalyzeComments_AllResolved_WithDrafts(t *testing.T) {
 }
 
 func TestAnalyzeComments_OneUnresolved(t *testing.T) {
-	published := map[string][]gerrit.CommentInfo{
+	published := map[string][]CommentInfo{
 		"pw_ghish/status.go": {
 			{
 				ID:         "c1",
 				Line:       142,
 				PatchSet:   14,
 				Unresolved: boolPtr(true),
-				Author:     gerrit.AccountInfo{Email: "reviewer@google.com"},
+				Author:     AccountInfo{Email: "reviewer@google.com"},
 				Message:    "Consider sorting these keys so test output is deterministic.",
 			},
 		},
@@ -184,14 +182,14 @@ func TestAnalyzeComments_OneUnresolved(t *testing.T) {
 }
 
 func TestAnalyzeComments_TwoUnresolved_OutOfThreeThreads(t *testing.T) {
-	published := map[string][]gerrit.CommentInfo{
+	published := map[string][]CommentInfo{
 		"pw_ghish/status.go": {
 			{
 				ID:         "c1",
 				Line:       142,
 				PatchSet:   14,
 				Unresolved: boolPtr(true),
-				Author:     gerrit.AccountInfo{Email: "reviewer@google.com"},
+				Author:     AccountInfo{Email: "reviewer@google.com"},
 				Message:    "Sorting issue.",
 			},
 		},
@@ -201,7 +199,7 @@ func TestAnalyzeComments_TwoUnresolved_OutOfThreeThreads(t *testing.T) {
 				Line:       55,
 				PatchSet:   15,
 				Unresolved: boolPtr(true),
-				Author:     gerrit.AccountInfo{Name: "Alice Reviewer"},
+				Author:     AccountInfo{Name: "Alice Reviewer"},
 				Message:    "Handle patchset 0.",
 			},
 			{
@@ -209,12 +207,12 @@ func TestAnalyzeComments_TwoUnresolved_OutOfThreeThreads(t *testing.T) {
 				Line:       90,
 				PatchSet:   15,
 				Unresolved: boolPtr(false),
-				Author:     gerrit.AccountInfo{Name: "Alice Reviewer"},
+				Author:     AccountInfo{Name: "Alice Reviewer"},
 				Message:    "Resolved nit.",
 			},
 		},
 	}
-	drafts := map[string][]gerrit.CommentInfo{
+	drafts := map[string][]CommentInfo{
 		"pw_ghish/status.go": {
 			{ID: "d1", InReplyTo: "c1", Message: "Draft reply on status.go"},
 		},
@@ -237,15 +235,15 @@ func TestAnalyzeComments_TwoUnresolved_OutOfThreeThreads(t *testing.T) {
 }
 
 func TestAnalyzeComments_ThreeUnresolved_Hysteresis(t *testing.T) {
-	published := map[string][]gerrit.CommentInfo{
+	published := map[string][]CommentInfo{
 		"a.go": {
-			{ID: "c1", Line: 10, PatchSet: 1, Unresolved: boolPtr(true), Author: gerrit.AccountInfo{Name: "Rev1"}, Message: "First issue"},
+			{ID: "c1", Line: 10, PatchSet: 1, Unresolved: boolPtr(true), Author: AccountInfo{Name: "Rev1"}, Message: "First issue"},
 		},
 		"b.go": {
-			{ID: "c2", Line: 20, PatchSet: 2, Unresolved: boolPtr(true), Author: gerrit.AccountInfo{Name: "Rev2"}, Message: "Second issue"},
+			{ID: "c2", Line: 20, PatchSet: 2, Unresolved: boolPtr(true), Author: AccountInfo{Name: "Rev2"}, Message: "Second issue"},
 		},
 		"c.go": {
-			{ID: "c3", Line: 30, PatchSet: 3, Unresolved: boolPtr(true), Author: gerrit.AccountInfo{Name: "Rev3"}, Message: "Third issue"},
+			{ID: "c3", Line: 30, PatchSet: 3, Unresolved: boolPtr(true), Author: AccountInfo{Name: "Rev3"}, Message: "Third issue"},
 		},
 	}
 	summary := AnalyzeComments(published, nil)
@@ -272,13 +270,13 @@ func TestAnalyzeComments_ThreeUnresolved_Hysteresis(t *testing.T) {
 }
 
 func TestAnalyzeComments_ChangeLevelComment(t *testing.T) {
-	published := map[string][]gerrit.CommentInfo{
+	published := map[string][]CommentInfo{
 		"/PATCHSET_LEVEL": {
 			{
 				ID:         "c1",
 				PatchSet:   14,
 				Unresolved: boolPtr(true),
-				Author:     gerrit.AccountInfo{Email: "approver@google.com"},
+				Author:     AccountInfo{Email: "approver@google.com"},
 				Message:    "Please update the commit message description.",
 			},
 		},
@@ -298,7 +296,7 @@ func TestAnalyzeComments_ChangeLevelComment(t *testing.T) {
 
 func TestAnalyzeComments_MultiLineAndLongSnippet(t *testing.T) {
 	longMsg := "This is the first line.\nThis is the second line with lots of text that goes way beyond eighty characters to verify truncation is working properly."
-	published := map[string][]gerrit.CommentInfo{
+	published := map[string][]CommentInfo{
 		"foo.go": {
 			{
 				ID:         "c1",
@@ -327,7 +325,7 @@ func TestAnalyzeComments_ReviewerReopensThread(t *testing.T) {
 	t2 := t1.Add(time.Minute)
 	t3 := t2.Add(time.Minute)
 
-	published := map[string][]gerrit.CommentInfo{
+	published := map[string][]CommentInfo{
 		"bar.go": {
 			{
 				ID:         "c1",
@@ -335,7 +333,7 @@ func TestAnalyzeComments_ReviewerReopensThread(t *testing.T) {
 				PatchSet:   1,
 				Unresolved: boolPtr(true),
 				Updated:    timeTimestamp(t1),
-				Author:     gerrit.AccountInfo{Name: "Reviewer"},
+				Author:     AccountInfo{Name: "Reviewer"},
 				Message:    "Needs refactor",
 			},
 			{
@@ -345,7 +343,7 @@ func TestAnalyzeComments_ReviewerReopensThread(t *testing.T) {
 				PatchSet:   2,
 				Unresolved: boolPtr(false), // author thought they resolved it
 				Updated:    timeTimestamp(t2),
-				Author:     gerrit.AccountInfo{Name: "Author"},
+				Author:     AccountInfo{Name: "Author"},
 				Message:    "Refactored",
 			},
 			{
@@ -355,7 +353,7 @@ func TestAnalyzeComments_ReviewerReopensThread(t *testing.T) {
 				PatchSet:   3,
 				Unresolved: boolPtr(true), // reviewer reopens
 				Updated:    timeTimestamp(t3),
-				Author:     gerrit.AccountInfo{Name: "Reviewer"},
+				Author:     AccountInfo{Name: "Reviewer"},
 				Message:    "Still not right, please check nil case",
 			},
 		},

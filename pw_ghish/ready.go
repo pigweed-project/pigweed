@@ -16,9 +16,9 @@ package pw_ghish
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -71,12 +71,12 @@ code owners (ghish-only).`,
 		}
 
 		alreadyReady := false
-		if _, err := chCtx.Client.Changes.SetReadyForReview(chCtx.Context, chCtx.ChangeID, &gerrit.ReadyForReviewInput{Message: message}); err != nil {
+		if err := chCtx.Client.SetReadyForReview(chCtx.Context, chCtx.ChangeID, message); err != nil {
 			// Only ignore HTTP 409 ("not work in progress") when -r/--reviewer or
 			// --owner is specified so `gh pr ready -r` / `gh pr ready --owner` can
 			// idempotently add reviewers to an already-ready CL while bare
 			// `gh pr ready` preserves its existing 409 error behavior.
-			if len(reviewers) > 0 && isAlreadyReadyConflict(err) {
+			if len(reviewers) > 0 && IsGerritHTTPStatus(err, http.StatusConflict) {
 				alreadyReady = true
 			} else {
 				return chCtx.FormatError(err, "marking change as ready for review")
@@ -84,7 +84,7 @@ code owners (ghish-only).`,
 		}
 
 		for _, reviewer := range reviewers {
-			if _, _, err := chCtx.Client.Changes.AddReviewer(chCtx.Context, chCtx.ChangeID, &gerrit.ReviewerInput{Reviewer: reviewer}); err != nil {
+			if err := chCtx.Client.AddReviewer(chCtx.Context, chCtx.ChangeID, reviewer, ""); err != nil {
 				return chCtx.FormatError(err, fmt.Sprintf("adding reviewer %s to", reviewer))
 			}
 		}
@@ -107,17 +107,6 @@ code owners (ghish-only).`,
 		}
 		return nil
 	},
-}
-
-func isAlreadyReadyConflict(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	return reStatus409.MatchString(errStr) ||
-		strings.Contains(strings.ToLower(errStr), "not work in progress") ||
-		strings.Contains(strings.ToLower(errStr), "not wip") ||
-		strings.Contains(strings.ToLower(errStr), "conflict")
 }
 
 func init() {

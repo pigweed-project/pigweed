@@ -23,28 +23,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/google/go-cmp/cmp"
 )
 
 // narrowLabel builds a LabelInfo for a label whose range is [low, high],
 // voted at value. Gerrit sets Approved/Rejected when a vote hits the label's
 // maximum/minimum, whatever those happen to be.
-func narrowLabel(low, high, value int) gerrit.LabelInfo {
-	info := gerrit.LabelInfo{Values: map[string]string{}}
+func narrowLabel(low, high, value int) LabelInfo {
+	info := LabelInfo{Values: map[string]string{}}
 	for v := low; v <= high; v++ {
 		info.Values[fmt.Sprintf("%+d", v)] = "desc"
 	}
 	if value != 0 {
-		info.All = []gerrit.ApprovalInfo{
-			{AccountInfo: gerrit.AccountInfo{AccountID: 1}, Value: value},
+		info.All = []ApprovalInfo{
+			{AccountInfo: AccountInfo{AccountID: 1}, Value: value},
 		}
 	}
 	switch value {
 	case high:
-		info.Approved = gerrit.AccountInfo{AccountID: 1}
+		info.Approved = AccountInfo{AccountID: 1}
 	case low:
-		info.Rejected = gerrit.AccountInfo{AccountID: 1}
+		info.Rejected = AccountInfo{AccountID: 1}
 	}
 	return info
 }
@@ -52,7 +51,7 @@ func narrowLabel(low, high, value int) gerrit.LabelInfo {
 func TestGetLabelSummary(t *testing.T) {
 	for _, tt := range []struct {
 		name string
-		info gerrit.LabelInfo
+		info LabelInfo
 		want string
 	}{
 		// Labels that top out at +1 must never be reported as +2: that is
@@ -69,16 +68,16 @@ func TestGetLabelSummary(t *testing.T) {
 		{"Code-Review rejected", narrowLabel(-2, 2, -2), "-2 (Rejected)"},
 
 		{"no score", narrowLabel(-2, 2, 0), "No score"},
-		{"empty label", gerrit.LabelInfo{}, "No score"},
+		{"empty label", LabelInfo{}, "No score"},
 
 		// A negative vote outranks a positive one, matching Gerrit.
 		{
 			"negative outranks positive",
-			gerrit.LabelInfo{
+			LabelInfo{
 				Values: map[string]string{"-2": "d", "-1": "d", "+0": "d", "+1": "d", "+2": "d"},
-				All: []gerrit.ApprovalInfo{
-					{AccountInfo: gerrit.AccountInfo{AccountID: 1}, Value: 2},
-					{AccountInfo: gerrit.AccountInfo{AccountID: 2}, Value: -1},
+				All: []ApprovalInfo{
+					{AccountInfo: AccountInfo{AccountID: 1}, Value: 2},
+					{AccountInfo: AccountInfo{AccountID: 2}, Value: -1},
 				},
 			},
 			"-1 (Disliked)",
@@ -88,7 +87,7 @@ func TestGetLabelSummary(t *testing.T) {
 		// the state without inventing a number.
 		{
 			"approved without detail",
-			gerrit.LabelInfo{Approved: gerrit.AccountInfo{AccountID: 1}},
+			LabelInfo{Approved: AccountInfo{AccountID: 1}},
 			"Approved",
 		},
 	} {
@@ -638,8 +637,8 @@ func TestView_CommentsAndDrafts(t *testing.T) {
 			t.Fatalf("pr view --json comments,drafts failed: %v\nOutput: %s", err, output)
 		}
 		var got struct {
-			Comments map[string][]gerrit.CommentInfo `json:"comments"`
-			Drafts   map[string][]gerrit.CommentInfo `json:"drafts"`
+			Comments map[string][]CommentInfo `json:"comments"`
+			Drafts   map[string][]CommentInfo `json:"drafts"`
 		}
 		if err := json.Unmarshal([]byte(output), &got); err != nil {
 			t.Fatalf("failed to parse JSON: %v\nOutput: %s", err, output)
@@ -658,6 +657,35 @@ func TestView_CommentsAndDrafts(t *testing.T) {
 			t.Fatalf("expected 1 standalone draft on ring_buffer.h, got %+v", got.Drafts)
 		}
 	})
+}
+
+func TestView_UnauthenticatedCommentsSkipsDrafts(t *testing.T) {
+	server := NewMockGerritServer(t).UseResolvedAuth()
+	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
+	server.OnComments(12345, map[string][]CommentInfo{
+		"pw_ring_buffer/ring_buffer.cc": {
+			{
+				ID:         "pub_1",
+				Line:       42,
+				PatchSet:   2,
+				Unresolved: boolPtr(true),
+				Author:     AccountInfo{Name: "Ben Lawson"},
+				Message:    "Public review comment",
+			},
+		},
+	})
+	server.OnDefaultChange(12345, WithSubject("Unauth Comments Test"), WithCurrentPatchset(2), WithCommitMessage("pw_ring_buffer: Test\n\nChange-Id: I1234\n"))
+
+	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments", "--auth-mode=none")
+	if err != nil {
+		t.Fatalf("pr view --comments --auth-mode=none failed: %v\nOutput: %s", err, output)
+	}
+	if !strings.Contains(output, "Public review comment") {
+		t.Errorf("expected published comment in output, got:\n%s", output)
+	}
+	if got := server.CallCount("GET", "/changes/12345/drafts"); got != 0 {
+		t.Errorf("expected 0 requests to /changes/12345/drafts with --auth-mode=none, got %d", got)
+	}
 }
 
 func TestView_EmptyCommentsShowsNone(t *testing.T) {
@@ -698,7 +726,25 @@ func TestView_OnlyDrafts_RendersCommentsSection(t *testing.T) {
 	}
 }
 
-func TestView_ErrorWhenDraftsOrFilesFail(t *testing.T) {
+func TestView_ErrorWhenMetadataFetchFails(t *testing.T) {
+	t.Run("fails when ListChangeComments fails during --comments", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
+		server.On("GET", "/changes/12345/comments", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "Comments DB error", http.StatusInternalServerError)
+		})
+		server.OnDrafts(12345, nil)
+		server.OnDefaultChange(12345, WithSubject("Comments Error Test"))
+
+		_, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
+		if err == nil {
+			t.Fatal("expected error when ListChangeComments fails during --comments, got nil")
+		}
+		if !strings.Contains(err.Error(), "error listing comments for change 12345") {
+			t.Errorf("expected error mentioning comments failure, got: %v", err)
+		}
+	})
+
 	t.Run("fails when ListChangeDrafts fails during --comments", func(t *testing.T) {
 		server := NewMockGerritServer(t)
 		server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
@@ -911,43 +957,43 @@ func TestView_Comments_SuppressesResolvedThreadsAndAllFlag(t *testing.T) {
 func TestView_VerdictAndNextSteps(t *testing.T) {
 	tests := []struct {
 		name        string
-		change      *gerrit.ChangeInfo
+		change      *ChangeInfo
 		checks      string
-		comments    map[string][]gerrit.CommentInfo
+		comments    map[string][]CommentInfo
 		fetched     bool
 		wantVerdict string
 		wantNext    string
 	}{
 		{
 			name:        "failing checks",
-			change:      &gerrit.ChangeInfo{Number: 1002},
+			change:      &ChangeInfo{Number: 1002},
 			checks:      "CI failed: pw-presubmit",
 			wantVerdict: "BLOCKED (CI failed)",
 			wantNext:    "gh run view 1002 --log-failed",
 		},
 		{
 			name:        "unresolved comments",
-			change:      &gerrit.ChangeInfo{Number: 1004},
-			comments:    map[string][]gerrit.CommentInfo{"a.cc": {{Unresolved: boolPtr(true)}}},
+			change:      &ChangeInfo{Number: 1004},
+			comments:    map[string][]CommentInfo{"a.cc": {{Unresolved: boolPtr(true)}}},
 			fetched:     true,
 			wantVerdict: "IN REVIEW (waiting on Code-Review +2)",
 			wantNext:    "gh pr view 1004 --comments",
 		},
 		{
 			name:        "self drafts",
-			change:      &gerrit.ChangeInfo{Number: 1003, WorkInProgress: true},
+			change:      &ChangeInfo{Number: 1003, WorkInProgress: true},
 			wantVerdict: "WIP",
 			wantNext:    "gh pr ready 1003",
 		},
 		{
 			name:        "submittable",
-			change:      &gerrit.ChangeInfo{Number: 1001, Submittable: true},
+			change:      &ChangeInfo{Number: 1001, Submittable: true},
 			wantVerdict: "READY (submittable)",
 			wantNext:    "gh pr merge 1001 --auto",
 		},
 		{
 			name:        "in-review fallback to UnresolvedCommentCount",
-			change:      &gerrit.ChangeInfo{Number: 1005, UnresolvedCommentCount: 2},
+			change:      &ChangeInfo{Number: 1005, UnresolvedCommentCount: 2},
 			wantVerdict: "IN REVIEW (waiting on Code-Review +2)",
 			wantNext:    "gh pr view 1005 --comments",
 		},

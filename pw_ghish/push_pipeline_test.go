@@ -25,7 +25,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -644,8 +643,8 @@ func TestCheckSubmodulePolicy(t *testing.T) {
 		mock.OnCommand("diff-tree --no-commit-id -r HEAD", diffTreeWithSubmodule)
 		client := NewGitClient(mock)
 		pcfg := DefaultProjectConfig()
-		change := &gerrit.ChangeInfo{
-			SubmitRequirements: []gerrit.SubmitRequirementResultInfo{
+		change := &ChangeInfo{
+			SubmitRequirements: []SubmitRequirementResultInfo{
 				{Name: "No-Submodule-Changes", Status: "UNSATISFIED"},
 			},
 		}
@@ -739,11 +738,11 @@ func TestCheckSubmodulePolicy(t *testing.T) {
 	t.Run("VerifyHeadForPush requests SUBMIT_REQUIREMENTS so CheckSubmodulePolicy enforces No-Submodule-Changes", func(t *testing.T) {
 		server := NewMockGerritServer(t)
 		changeID := "I1234567890123456789012345678901234567890"
-		server.OnJSON("GET", "/changes/", http.StatusOK, []gerrit.ChangeInfo{
+		server.OnJSON("GET", "/changes/", http.StatusOK, []ChangeInfo{
 			{
 				Number:   42,
 				ChangeID: changeID,
-				SubmitRequirements: []gerrit.SubmitRequirementResultInfo{
+				SubmitRequirements: []SubmitRequirementResultInfo{
 					{Name: "No-Submodule-Changes", Status: "UNSATISFIED"},
 				},
 			},
@@ -1012,4 +1011,56 @@ func TestValidateCommitMsgSingleCommit(t *testing.T) {
 	if err == nil || ahead != 2 || !hasRemote || !strings.Contains(err.Error(), "git rebase -i origin/main") {
 		t.Fatalf("expected multi-commit error (2, true), got (%d, %v, %v)", ahead, hasRemote, err)
 	}
+}
+
+func TestQueryExistingChangeByID(t *testing.T) {
+	ctx := t.Context()
+	const changeID = "I1234567890123456789012345678901234567890"
+
+	if ch, ok := queryExistingChangeByID(ctx, nil, changeID); ch != nil || ok {
+		t.Errorf("nil client = (%v, %v), want (nil, false)", ch, ok)
+	}
+
+	t.Run("HTTP 404 returns (nil, true)", func(t *testing.T) {
+		server := NewMockGerritServer(t).OnStatus(http.StatusNotFound)
+		ch, ok := queryExistingChangeByID(ctx, server.Client(), changeID)
+		if ch != nil || !ok {
+			t.Errorf("HTTP 404 = (%v, %v), want (nil, true)", ch, ok)
+		}
+	})
+
+	t.Run("HTTP 500 returns (nil, false)", func(t *testing.T) {
+		server := NewMockGerritServer(t).OnStatus(http.StatusInternalServerError)
+		ch, ok := queryExistingChangeByID(ctx, server.Client(), changeID)
+		if ch != nil || ok {
+			t.Errorf("HTTP 500 = (%v, %v), want (nil, false)", ch, ok)
+		}
+	})
+
+	t.Run("HTTP 200 empty slice returns (nil, true)", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []ChangeInfo{})
+		ch, ok := queryExistingChangeByID(ctx, server.Client(), changeID)
+		if ch != nil || !ok {
+			t.Errorf("HTTP 200 [] = (%v, %v), want (nil, true)", ch, ok)
+		}
+	})
+
+	t.Run("HTTP 200 null returns (nil, true)", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnString("GET", "/changes/", http.StatusOK, "application/json", ")]}'\nnull\n")
+		ch, ok := queryExistingChangeByID(ctx, server.Client(), changeID)
+		if ch != nil || !ok {
+			t.Errorf("HTTP 200 null = (%v, %v), want (nil, true)", ch, ok)
+		}
+	})
+
+	t.Run("HTTP 200 match returns (&change, true)", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []ChangeInfo{{Number: 42, ChangeID: changeID}})
+		ch, ok := queryExistingChangeByID(ctx, server.Client(), changeID)
+		if ch == nil || ch.Number != 42 || !ok {
+			t.Errorf("HTTP 200 match = (%v, %v), want (#42, true)", ch, ok)
+		}
+	})
 }

@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -119,7 +118,7 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 				return err
 			}
 
-			input := &gerrit.ReviewInput{
+			input := &ReviewInput{
 				Message: msg,
 				Labels:  make(map[string]int),
 				Drafts:  "KEEP",
@@ -168,10 +167,9 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 
 			isAI := opts.agent.isAI()
 			if msg != "" && isAI != nil && *isAI {
-				if err := postReview(chCtx.Context, chCtx.Client, chCtx.ChangeID, chCtx.Revision, aiMessageReview(*input, msg, isAI)); err != nil {
-					return chCtx.FormatError(err, "setting review for")
-				}
-			} else if err := chCtx.SetReview(input); err != nil {
+				input = aiMessageReview(*input, msg, isAI)
+			}
+			if err := chCtx.SetReview(input); err != nil {
 				return err
 			}
 

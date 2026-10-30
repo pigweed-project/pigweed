@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -453,7 +452,7 @@ func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stac
 
 // checkPushSubmodulePolicy resolves and caches the Gerrit remote on cfg, gathers stack
 // commits when stack is true, and enforces CheckSubmodulePolicy before pushing.
-func checkPushSubmodulePolicy(ctx context.Context, cmd *cobra.Command, cfg *Config, existing *gerrit.ChangeInfo, branch string, stack bool) error {
+func checkPushSubmodulePolicy(ctx context.Context, cmd *cobra.Command, cfg *Config, existing *ChangeInfo, branch string, stack bool) error {
 	remote := cfg.ResolveRemote(ctx)
 	if cfg.Remote == "" {
 		cfg.Remote = remote
@@ -719,7 +718,7 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 	}
 
 	if cqScore > 0 || pushOpts.Publish || pushOpts.AutoSubmit {
-		input := &gerrit.ReviewInput{}
+		input := &ReviewInput{}
 		labels := map[string]int{}
 		if cqScore > 0 {
 			labels[cqLabelName] = cqScore
@@ -751,13 +750,13 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 	}
 
 	if pushOpts.Topic != "" {
-		if _, _, err := chCtx.Client.Changes.SetTopic(chCtx.Context, chCtx.ChangeID, &gerrit.TopicInput{Topic: pushOpts.Topic}); err != nil {
+		if err := chCtx.Client.SetTopic(chCtx.Context, chCtx.ChangeID, pushOpts.Topic); err != nil {
 			return chCtx.FormatError(err, "setting topic on")
 		}
 	}
 
 	if len(pushOpts.Hashtags) > 0 {
-		if _, _, err := chCtx.Client.Changes.SetHashtags(chCtx.Context, chCtx.ChangeID, &gerrit.HashtagsInput{Add: pushOpts.Hashtags}); err != nil {
+		if err := chCtx.Client.SetHashtags(chCtx.Context, chCtx.ChangeID, pushOpts.Hashtags, nil); err != nil {
 			return chCtx.FormatError(err, "setting hashtags on")
 		}
 	}
@@ -767,13 +766,13 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 			return err
 		}
 	} else if pushOpts.Ready {
-		if _, err := chCtx.Client.Changes.SetReadyForReview(chCtx.Context, chCtx.ChangeID, &gerrit.ReadyForReviewInput{}); err != nil {
+		if err := chCtx.Client.SetReadyForReview(chCtx.Context, chCtx.ChangeID, ""); err != nil {
 			return chCtx.FormatError(err, "marking ready for review")
 		}
 	}
 
 	for _, r := range pushOpts.Reviewers {
-		if _, _, err := chCtx.Client.Changes.AddReviewer(chCtx.Context, chCtx.ChangeID, &gerrit.ReviewerInput{Reviewer: r}); err != nil {
+		if err := chCtx.Client.AddReviewer(chCtx.Context, chCtx.ChangeID, r, ""); err != nil {
 			return chCtx.FormatError(err, fmt.Sprintf("adding reviewer %s to", r))
 		}
 	}
@@ -812,32 +811,26 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 type VerifiedPushState struct {
 	CommitMsg      string
 	ChangeID       string
-	ExistingChange *gerrit.ChangeInfo
+	ExistingChange *ChangeInfo
 	GerritQueried  bool
 }
 
 // queryExistingChangeByID queries Gerrit for the first change matching changeID.
 // Returns (change, true) if Gerrit responded definitively (change is nil on 0
 // matches or HTTP 404), or (nil, false) if Gerrit could not be queried.
-func queryExistingChangeByID(ctx context.Context, client *gerrit.Client, changeID string, additionalFields ...string) (*gerrit.ChangeInfo, bool) {
+func queryExistingChangeByID(ctx context.Context, client *GerritClient, changeID string, additionalFields ...string) (*ChangeInfo, bool) {
 	if client == nil || changeID == "" {
 		return nil, false
 	}
-	opt := &gerrit.QueryChangeOptions{}
-	opt.Query = []string{changeID}
-	opt.AdditionalFields = additionalFields
-	changes, resp, err := client.Changes.QueryChanges(ctx, opt)
+	changes, err := client.QueryChanges(ctx, changeID, 0, additionalFields...)
 	if err != nil {
-		if resp != nil && resp.Response != nil && resp.StatusCode == http.StatusNotFound {
+		if IsGerritHTTPStatus(err, http.StatusNotFound) {
 			return nil, true
 		}
 		return nil, false
 	}
-	if changes == nil {
-		return nil, false
-	}
-	if len(*changes) > 0 {
-		return &(*changes)[0], true
+	if len(changes) > 0 {
+		return &changes[0], true
 	}
 	return nil, true
 }
@@ -845,7 +838,7 @@ func queryExistingChangeByID(ctx context.Context, client *gerrit.Client, changeI
 // DetectClobberedChangeID inspects HEAD@{1} in the local Git reflog when
 // HEAD's Change-Id is not found on Gerrit. If HEAD@{1} carried a different
 // Change-Id that does exist on Gerrit, it returns that Change-Id and ChangeInfo.
-func DetectClobberedChangeID(ctx context.Context, cmd *cobra.Command, cfg *Config, currentChangeID string) (string, *gerrit.ChangeInfo) {
+func DetectClobberedChangeID(ctx context.Context, cmd *cobra.Command, cfg *Config, currentChangeID string) (string, *ChangeInfo) {
 	if cfg == nil {
 		return "", nil
 	}
@@ -987,7 +980,7 @@ func verifyHeadForPush(
 	}
 
 	changeID := ExtractChangeID(logMsg)
-	var existing *gerrit.ChangeInfo
+	var existing *ChangeInfo
 	var queried bool
 	if prefetched != nil && prefetched.ChangeID == changeID {
 		existing = prefetched.ExistingChange
@@ -1026,7 +1019,7 @@ func RequestedTopic(opts PushOptions) string {
 // CheckTopicAllowed verifies that setting a Gerrit topic is permitted by the
 // repository's configuration (.ghish.toml / git config) and by the change's
 // SubmitRequirements (such as Topics-Not-Supported).
-func CheckTopicAllowed(ctx context.Context, cfg *Config, existing *gerrit.ChangeInfo, topic string, commandHint string) error {
+func CheckTopicAllowed(ctx context.Context, cfg *Config, existing *ChangeInfo, topic string, commandHint string) error {
 	var projCfg *ProjectConfig
 	if cfg != nil {
 		var err error
@@ -1095,7 +1088,7 @@ func VerifyStackChanges(ctx context.Context, cmd *cobra.Command, cfg *Config, br
 		return nil
 	}
 
-	existingByIdx := make([]*gerrit.ChangeInfo, len(commits))
+	existingByIdx := make([]*ChangeInfo, len(commits))
 	for i, c := range commits {
 		if c.ChangeID == headState.ChangeID {
 			existingByIdx[i] = headState.ExistingChange
@@ -1174,7 +1167,7 @@ type submoduleModification struct {
 // modifications and enforces the repository's submodule policy ("allow",
 // "forbid-manual-rolls", "warn-unpushed", "require-pushed") or Gerrit's
 // "No-Submodule-Changes" submit requirement.
-func CheckSubmodulePolicy(ctx context.Context, git GitClient, pcfg *ProjectConfig, existing *gerrit.ChangeInfo, remote, branch string, commits []StackCommit, stderr io.Writer) error {
+func CheckSubmodulePolicy(ctx context.Context, git GitClient, pcfg *ProjectConfig, existing *ChangeInfo, remote, branch string, commits []StackCommit, stderr io.Writer) error {
 	hasNoSubmoduleSR := false
 	if existing != nil {
 		for _, sr := range existing.SubmitRequirements {

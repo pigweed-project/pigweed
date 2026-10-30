@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"regexp"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,20 +30,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	reStatus401 = regexp.MustCompile(`\b401\b`)
-	reStatus403 = regexp.MustCompile(`\b403\b`)
-	reStatus404 = regexp.MustCompile(`\b404\b`)
-	reStatus409 = regexp.MustCompile(`\b409\b`)
-)
-
 // ChangeContext encapsulates the resolved change, command context, git config,
 // and Gerrit client for a change-focused subcommand.
 type ChangeContext struct {
 	Context  context.Context
 	Cmd      *cobra.Command
 	Config   *Config
-	Client   *gerrit.Client
+	Client   *GerritClient
 	TargetID string
 	ChangeID string
 	Revision string
@@ -52,7 +45,7 @@ type ChangeContext struct {
 }
 
 // ChangeURL returns the canonical web URL for change on this Gerrit host.
-func (c *ChangeContext) ChangeURL(change *gerrit.ChangeInfo) string {
+func (c *ChangeContext) ChangeURL(change *ChangeInfo) string {
 	if c == nil || change == nil {
 		return ""
 	}
@@ -134,7 +127,7 @@ func (c *ChangeContext) GitClient() (GitClient, error) {
 }
 
 // GetChange fetches the ChangeInfo from Gerrit for this change.
-func (c *ChangeContext) GetChange(opt *gerrit.ChangeOptions) (*gerrit.ChangeInfo, error) {
+func (c *ChangeContext) GetChange(additionalFields ...string) (*ChangeInfo, error) {
 	if c == nil {
 		return nil, fmt.Errorf("internal error: ChangeContext is nil")
 	}
@@ -148,7 +141,7 @@ func (c *ChangeContext) GetChange(opt *gerrit.ChangeOptions) (*gerrit.ChangeInfo
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	change, _, err := c.Client.Changes.GetChange(ctx, c.ChangeID, opt)
+	change, err := c.Client.GetChange(ctx, c.ChangeID, additionalFields...)
 	if err != nil {
 		return nil, c.FormatError(err, "getting")
 	}
@@ -167,12 +160,9 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 	if errors.As(err, &exitErr) {
 		return err
 	}
-	errStr := err.Error()
 
 	// 1. Authentication failures (HTTP 401 / 403)
-	if reStatus401.MatchString(errStr) || strings.Contains(errStr, "Unauthorized") ||
-		reStatus403.MatchString(errStr) || strings.Contains(errStr, "Forbidden") ||
-		strings.Contains(errStr, "Authentication required") {
+	if IsGerritHTTPStatus(err, http.StatusUnauthorized) || IsGerritHTTPStatus(err, http.StatusForbidden) {
 		cleanHost := CleanGerritHost(gerritHost)
 		if cleanHost == "" {
 			cleanHost = "<host>"
@@ -188,7 +178,7 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 	}
 
 	// 2. Change Not Found (HTTP 404)
-	if reStatus404.MatchString(errStr) || strings.Contains(errStr, "Not Found") {
+	if IsGerritHTTPStatus(err, http.StatusNotFound) {
 		cleanHost := CleanGerritHost(gerritHost)
 		if cleanHost == "" {
 			cleanHost = "Gerrit"
@@ -203,8 +193,8 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 	}
 
 	// 3. State conflicts (HTTP 409 Conflict)
-	if reStatus409.MatchString(errStr) || strings.Contains(strings.ToLower(errStr), "conflict") {
-		lower := strings.ToLower(errStr)
+	if IsGerritHTTPStatus(err, http.StatusConflict) {
+		lower := strings.ToLower(err.Error())
 		if strings.Contains(lower, "merged") {
 			return fmt.Errorf("error %s change %s: change is already merged and cannot be modified.\n\nUnderlying error: %w", actionDesc, changeID, err)
 		}
@@ -249,37 +239,37 @@ func (c *ChangeContext) FormatError(err error, actionDesc string) error {
 }
 
 // SetReview applies a review input using the ChangeContext's resolved revision.
-func (c *ChangeContext) SetReview(input *gerrit.ReviewInput) error {
+func (c *ChangeContext) SetReview(input *ReviewInput) error {
 	if c == nil {
 		return fmt.Errorf("internal error: ChangeContext is nil")
 	}
-	if err := SetReviewSafe(c.Context, c.Client, c.ChangeID, c.Revision, input); err != nil {
+	if _, err := c.Client.SetReview(c.Context, c.ChangeID, c.Revision, input); err != nil {
 		return c.FormatError(err, "setting review for")
 	}
 	return nil
 }
 
 // SetReviewRevision applies a review input targeting an explicit revision.
-func (c *ChangeContext) SetReviewRevision(revision string, input *gerrit.ReviewInput) error {
+func (c *ChangeContext) SetReviewRevision(revision string, input *ReviewInput) error {
 	if c == nil {
 		return fmt.Errorf("internal error: ChangeContext is nil")
 	}
-	if err := SetReviewSafe(c.Context, c.Client, c.ChangeID, revision, input); err != nil {
+	if _, err := c.Client.SetReview(c.Context, c.ChangeID, revision, input); err != nil {
 		return c.FormatError(err, "setting review for")
 	}
 	return nil
 }
 
 // ExtractRevision extracts the requested revision from a change.
-func (c *ChangeContext) ExtractRevision(change *gerrit.ChangeInfo) (gerrit.RevisionInfo, error) {
+func (c *ChangeContext) ExtractRevision(change *ChangeInfo) (RevisionInfo, error) {
 	if c == nil {
-		return gerrit.RevisionInfo{}, fmt.Errorf("internal error: ChangeContext is nil")
+		return RevisionInfo{}, fmt.Errorf("internal error: ChangeContext is nil")
 	}
 	return ExtractRevision(change, c.Revision, c.ChangeID)
 }
 
 // ExtractFetchRef extracts the git fetch ref from a change and revision.
-func (c *ChangeContext) ExtractFetchRef(change *gerrit.ChangeInfo, rev gerrit.RevisionInfo) (string, error) {
+func (c *ChangeContext) ExtractFetchRef(change *ChangeInfo, rev RevisionInfo) (string, error) {
 	if c == nil {
 		return "", fmt.Errorf("internal error: ChangeContext is nil")
 	}
@@ -289,17 +279,15 @@ func (c *ChangeContext) ExtractFetchRef(change *gerrit.ChangeInfo, rev gerrit.Re
 // ResolveFetchRef fetches the change (requesting ALL_REVISIONS when a specific
 // revision is targeted, or CURRENT_REVISION otherwise), extracts the target
 // revision, and returns the change info along with its git fetch ref.
-func (c *ChangeContext) ResolveFetchRef() (*gerrit.ChangeInfo, string, error) {
+func (c *ChangeContext) ResolveFetchRef() (*ChangeInfo, string, error) {
 	if c == nil {
 		return nil, "", fmt.Errorf("internal error: ChangeContext is nil")
 	}
-	opt := &gerrit.ChangeOptions{}
+	field := "CURRENT_REVISION"
 	if c.Revision != "" && c.Revision != "current" {
-		opt.AdditionalFields = []string{"ALL_REVISIONS"}
-	} else {
-		opt.AdditionalFields = []string{"CURRENT_REVISION"}
+		field = "ALL_REVISIONS"
 	}
-	change, err := c.GetChange(opt)
+	change, err := c.GetChange(field)
 	if err != nil {
 		return nil, "", err
 	}
@@ -317,6 +305,8 @@ func (c *ChangeContext) ResolveFetchRef() (*gerrit.ChangeInfo, string, error) {
 // SetReviewSafe invokes client.Changes.SetReview while safely ignoring the known
 // go-gerrit unmarshaling bug where the "labels" field in ReviewResult fails type
 // assertion on certain Gerrit versions. All genuine API/network errors are preserved.
+//
+// NOTE: Retained temporarily until go-gerrit is removed in pwrev/514150.
 func SetReviewSafe(ctx context.Context, client *gerrit.Client, changeID, revision string, input *gerrit.ReviewInput) error {
 	if ctx == nil {
 		return fmt.Errorf("internal error: context is nil")
@@ -348,9 +338,9 @@ func SetReviewSafe(ctx context.Context, client *gerrit.Client, changeID, revisio
 // ExtractRevision finds the requested revision in a ChangeInfo.
 // If reqRev is empty or "current", it returns the CurrentRevision.
 // Otherwise it matches by patchset number (e.g. "3") or revision ID/hash prefix.
-func ExtractRevision(change *gerrit.ChangeInfo, reqRev string, changeID ...string) (gerrit.RevisionInfo, error) {
+func ExtractRevision(change *ChangeInfo, reqRev string, changeID ...string) (RevisionInfo, error) {
 	if change == nil {
-		return gerrit.RevisionInfo{}, fmt.Errorf("internal error: change is nil")
+		return RevisionInfo{}, fmt.Errorf("internal error: change is nil")
 	}
 	idStr := ""
 	if len(changeID) > 0 && changeID[0] != "" {
@@ -377,15 +367,15 @@ func ExtractRevision(change *gerrit.ChangeInfo, reqRev string, changeID ...strin
 			}
 		}
 		available := availablePatchsets(change)
-		return gerrit.RevisionInfo{}, fmt.Errorf("revision %s not found for change %s (available patchsets: %s)", reqRev, idStr, available)
+		return RevisionInfo{}, fmt.Errorf("revision %s not found for change %s (available patchsets: %s)", reqRev, idStr, available)
 	}
 
 	if change.CurrentRevision == "" {
-		return gerrit.RevisionInfo{}, fmt.Errorf("current revision not found for change %s", idStr)
+		return RevisionInfo{}, fmt.Errorf("current revision not found for change %s", idStr)
 	}
 	revision, ok := change.Revisions[change.CurrentRevision]
 	if !ok {
-		return gerrit.RevisionInfo{}, fmt.Errorf("current revision not found for change %s", idStr)
+		return RevisionInfo{}, fmt.Errorf("current revision not found for change %s", idStr)
 	}
 	return revision, nil
 }
@@ -393,7 +383,7 @@ func ExtractRevision(change *gerrit.ChangeInfo, reqRev string, changeID ...strin
 // ExtractFetchRef extracts the git fetch ref from a change and revision,
 // checking protocols in deterministic order ("http", "anonymous http", "sso", "ssh", or sorted)
 // and falling back to rev.Ref or standard Gerrit ref formatting "refs/changes/XX/YYYY/ZZ".
-func ExtractFetchRef(change *gerrit.ChangeInfo, rev gerrit.RevisionInfo, changeID ...string) (string, error) {
+func ExtractFetchRef(change *ChangeInfo, rev RevisionInfo, changeID ...string) (string, error) {
 	if change == nil {
 		return "", fmt.Errorf("internal error: change is nil")
 	}
@@ -435,7 +425,7 @@ func ExtractFetchRef(change *gerrit.ChangeInfo, rev gerrit.RevisionInfo, changeI
 	return ref, nil
 }
 
-func changeIdentifier(change *gerrit.ChangeInfo) string {
+func changeIdentifier(change *ChangeInfo) string {
 	if change == nil {
 		return "unknown"
 	}
@@ -451,7 +441,7 @@ func changeIdentifier(change *gerrit.ChangeInfo) string {
 	return "unknown"
 }
 
-func availablePatchsets(change *gerrit.ChangeInfo) string {
+func availablePatchsets(change *ChangeInfo) string {
 	if change == nil || len(change.Revisions) == 0 {
 		return "none"
 	}
@@ -512,8 +502,7 @@ func (c *ChangeContext) ResolveProfile(project ...string) (ProjectProfile, error
 	if c.Host != "" && !isLoopbackHost(c.Host) {
 		gHost = c.Host
 	} else if c.Client != nil {
-		u := c.Client.BaseURL()
-		gHost = CanonicalGerritHost(u.String())
+		gHost = CanonicalGerritHost(c.Client.BaseURL())
 	}
 	if (gHost == "" || isLoopbackHost(gHost)) && c.Config != nil {
 		if cfgHost := c.Config.GerritHost(c.Context); cfgHost != "" {
@@ -558,7 +547,7 @@ func IsEquivalentRevisionKind(kind string) bool {
 // where code did not change relative to patchset N-1 (such as TRIVIAL_REBASE
 // or NO_CODE_CHANGE), patchset N-1 is included and the walk continues until
 // a REWORK (or the earliest patchset) is reached.
-func EquivalentPatchsets(change *gerrit.ChangeInfo, targetPatchset int) []int {
+func EquivalentPatchsets(change *ChangeInfo, targetPatchset int) []int {
 	if targetPatchset <= 0 {
 		return nil
 	}
@@ -566,13 +555,13 @@ func EquivalentPatchsets(change *gerrit.ChangeInfo, targetPatchset int) []int {
 		return []int{targetPatchset}
 	}
 
-	revs := make([]gerrit.RevisionInfo, 0, len(change.Revisions))
+	revs := make([]RevisionInfo, 0, len(change.Revisions))
 	for _, rev := range change.Revisions {
 		if rev.Number > 0 {
 			revs = append(revs, rev)
 		}
 	}
-	slices.SortFunc(revs, func(a, b gerrit.RevisionInfo) int {
+	slices.SortFunc(revs, func(a, b RevisionInfo) int {
 		return cmp.Compare(a.Number, b.Number)
 	})
 
@@ -601,7 +590,7 @@ func EquivalentPatchsets(change *gerrit.ChangeInfo, targetPatchset int) []int {
 // host, CIProvider, and builds for CI/CD commands (checks, run).
 type CIContext struct {
 	*ChangeContext
-	Change              *gerrit.ChangeInfo
+	Change              *ChangeInfo
 	PatchsetNum         int
 	EquivalentPatchsets []int
 	GerritHost          string
@@ -629,9 +618,7 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 		}
 		patchsetNum = n
 	}
-	change, err := chCtx.GetChange(&gerrit.ChangeOptions{
-		AdditionalFields: []string{"ALL_REVISIONS", "DETAILED_LABELS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS", "MESSAGES"},
-	})
+	change, err := chCtx.GetChange("ALL_REVISIONS", "DETAILED_LABELS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS", "MESSAGES")
 	if err != nil {
 		return nil, err
 	}
@@ -702,15 +689,7 @@ func setProviderProfile(p CIProvider, profile ProjectProfile, cmd *cobra.Command
 
 // SetWorkInProgress marks the change as Work-In-Progress (WIP / draft) with an optional message.
 func (c *ChangeContext) SetWorkInProgress(message string) error {
-	var payload any
-	if message != "" {
-		payload = map[string]any{"message": message}
-	}
-	req, err := c.Client.NewRequest(c.Context, "POST", fmt.Sprintf("changes/%s/wip", c.ChangeID), payload)
-	if err != nil {
-		return c.FormatError(err, "marking change as work in progress on")
-	}
-	if _, err := c.Client.Do(req, nil); err != nil {
+	if err := c.Client.SetWorkInProgress(c.Context, c.ChangeID, message); err != nil {
 		return c.FormatError(err, "marking change as work in progress on")
 	}
 	return nil
@@ -718,12 +697,7 @@ func (c *ChangeContext) SetWorkInProgress(message string) error {
 
 // AddCC adds a user to the change's CC list via Gerrit REST API.
 func (c *ChangeContext) AddCC(cc string) error {
-	ccPayload := map[string]any{"reviewer": cc, "state": "CC"}
-	req, err := c.Client.NewRequest(c.Context, "POST", fmt.Sprintf("changes/%s/reviewers", c.ChangeID), ccPayload)
-	if err != nil {
-		return c.FormatError(err, "adding CC on")
-	}
-	if _, err := c.Client.Do(req, nil); err != nil {
+	if err := c.Client.AddReviewer(c.Context, c.ChangeID, cc, "CC"); err != nil {
 		return c.FormatError(err, "adding CC on")
 	}
 	return nil

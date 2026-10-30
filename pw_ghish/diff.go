@@ -17,11 +17,11 @@ package pw_ghish
 import (
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +34,7 @@ var (
 	diffPaths    []string
 )
 
-func formatDiffStat(files map[string]gerrit.FileInfo) string {
+func formatDiffStat(files map[string]FileInfo) string {
 	var paths []string
 	maxPathLen := 0
 	totalInsertions := 0
@@ -93,10 +93,9 @@ var diffCmd = &cobra.Command{
 		}
 
 		if diffNameOnly || diffStat {
-			files, _, err := chCtx.Client.Changes.ListFiles(chCtx.Context, chCtx.ChangeID, chCtx.Revision, nil)
+			files, err := chCtx.Client.ListFiles(chCtx.Context, chCtx.ChangeID, chCtx.Revision)
 			if err != nil {
-				errStr := err.Error()
-				if (strings.Contains(errStr, "404") || strings.Contains(errStr, "Not Found")) && chCtx.Revision != "current" && chCtx.Revision != "" {
+				if IsGerritHTTPStatus(err, http.StatusNotFound) && chCtx.Revision != "current" && chCtx.Revision != "" {
 					return fmt.Errorf("error listing files for change %s (patchset %s): patchset not found (HTTP 404).\n\nTo view the change and available patchsets, run:\n  gh pr view %s\n\nUnderlying error: %w", chCtx.ChangeID, chCtx.Revision, chCtx.ChangeID, err)
 				}
 				return chCtx.FormatError(err, "listing files for")
@@ -121,27 +120,26 @@ var diffCmd = &cobra.Command{
 			return nil
 		}
 
-		patchPtr, _, err := chCtx.Client.Changes.GetPatch(chCtx.Context, chCtx.ChangeID, chCtx.Revision, nil)
+		patchStr, err := chCtx.Client.GetPatch(chCtx.Context, chCtx.ChangeID, chCtx.Revision)
 		if err != nil {
-			errStr := err.Error()
-			if (strings.Contains(errStr, "404") || strings.Contains(errStr, "Not Found")) && chCtx.Revision != "current" && chCtx.Revision != "" {
+			if IsGerritHTTPStatus(err, http.StatusNotFound) && chCtx.Revision != "current" && chCtx.Revision != "" {
 				return fmt.Errorf("error getting patch for change %s (patchset %s): patchset not found (HTTP 404).\n\nTo view the change and available patchsets, run:\n  gh pr view %s\n\nUnderlying error: %w", chCtx.ChangeID, chCtx.Revision, chCtx.ChangeID, err)
 			}
 			return chCtx.FormatError(err, "getting patch for")
 		}
 
-		if patchPtr == nil {
+		if patchStr == "" {
 			fmt.Fprintln(cmd.OutOrStdout(), "No patch returned.")
 			return nil
 		}
 
-		decoded, err := base64.StdEncoding.DecodeString(*patchPtr)
+		decoded, err := base64.StdEncoding.DecodeString(patchStr)
 		rawPatch := string(decoded)
 		if err != nil {
 			// If it's not base64, check if it's already a raw diff
-			trimmed := strings.TrimSpace(*patchPtr)
+			trimmed := strings.TrimSpace(patchStr)
 			if strings.HasPrefix(trimmed, "diff --git") || strings.HasPrefix(trimmed, "From ") || strings.HasPrefix(trimmed, "Index: ") {
-				rawPatch = *patchPtr
+				rawPatch = patchStr
 			} else {
 				return fmt.Errorf("failed to decode patch diff: %w", err)
 			}

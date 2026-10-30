@@ -20,13 +20,11 @@ import (
 	"maps"
 	"slices"
 	"strings"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 // CommentNode represents a single node within a threaded comment hierarchy.
 type CommentNode struct {
-	Comment  gerrit.CommentInfo
+	Comment  CommentInfo
 	IsDraft  bool
 	Children []*CommentNode
 }
@@ -35,8 +33,8 @@ type CommentNode struct {
 type CommentThread struct {
 	Path          string
 	Root          *CommentNode
-	Comments      []gerrit.CommentInfo
-	Latest        gerrit.CommentInfo
+	Comments      []CommentInfo
+	Latest        CommentInfo
 	Line          int
 	Unresolved    bool
 	HasDraftReply bool
@@ -44,7 +42,7 @@ type CommentThread struct {
 
 // isNewerComment reports whether candidate is more recent than current based on
 // Updated timestamp, falling back to PatchSet number and ID.
-func isNewerComment(candidate, current *gerrit.CommentInfo) bool {
+func isNewerComment(candidate, current *CommentInfo) bool {
 	if current == nil {
 		return true
 	}
@@ -63,7 +61,7 @@ func isNewerComment(candidate, current *gerrit.CommentInfo) bool {
 // BuildCommentForest organizes a flat list of comments on a single file into a
 // forest (slice of root trees), resolving InReplyTo parentage, detecting cycles,
 // promoting orphaned replies to roots, and sorting threads by line and timestamp.
-func BuildCommentForest(comments []gerrit.CommentInfo) []*CommentNode {
+func BuildCommentForest(comments []CommentInfo) []*CommentNode {
 	return BuildCommentForestWithDrafts(comments, nil)
 }
 
@@ -71,7 +69,7 @@ func BuildCommentForest(comments []gerrit.CommentInfo) []*CommentNode {
 // on a single file into a unified threaded forest. Draft replies attach to their
 // parent published or draft comment via InReplyTo, while standalone drafts become
 // root nodes marked with IsDraft.
-func BuildCommentForestWithDrafts(published, drafts []gerrit.CommentInfo) []*CommentNode {
+func BuildCommentForestWithDrafts(published, drafts []CommentInfo) []*CommentNode {
 	total := len(published) + len(drafts)
 	if total == 0 {
 		return nil
@@ -225,7 +223,7 @@ func resolveThreadUnresolved(nodes []*CommentNode, includeDrafts bool) *bool {
 
 // BuildCommentThreads builds structured CommentThread instances for a file,
 // computing resolution status, draft reply flags, and latest active comment.
-func BuildCommentThreads(path string, fileComments []gerrit.CommentInfo, draftReplies map[string]bool) []*CommentThread {
+func BuildCommentThreads(path string, fileComments []CommentInfo, draftReplies map[string]bool) []*CommentThread {
 	roots := BuildCommentForest(fileComments)
 	if len(roots) == 0 {
 		return nil
@@ -234,7 +232,7 @@ func BuildCommentThreads(path string, fileComments []gerrit.CommentInfo, draftRe
 	threads := make([]*CommentThread, 0, len(roots))
 	for _, root := range roots {
 		nodes := collectThreadNodes(root)
-		inThread := make([]gerrit.CommentInfo, len(nodes))
+		inThread := make([]CommentInfo, len(nodes))
 		for i, n := range nodes {
 			inThread[i] = n.Comment
 		}
@@ -282,7 +280,7 @@ func BuildCommentThreads(path string, fileComments []gerrit.CommentInfo, draftRe
 }
 
 // CountUnresolvedThreads returns the number of unresolved comment threads in published.
-func CountUnresolvedThreads(published map[string][]gerrit.CommentInfo) int {
+func CountUnresolvedThreads(published map[string][]CommentInfo) int {
 	count := 0
 	for path, fileComments := range published {
 		if len(fileComments) == 0 {
@@ -299,14 +297,14 @@ func CountUnresolvedThreads(published map[string][]gerrit.CommentInfo) int {
 
 // FindLatestCommentAtLine searches a slice of comments on a file for the most recent
 // comment located at the specified line number.
-func FindLatestCommentAtLine(fileComments []gerrit.CommentInfo, line int) *gerrit.CommentInfo {
+func FindLatestCommentAtLine(fileComments []CommentInfo, line int) *CommentInfo {
 	return FindLatestCommentAtLineForPatchSet(fileComments, line, 0)
 }
 
 // FindLatestCommentAtLineForPatchSet searches a slice of comments on a file for the
 // most recent comment at line, optionally restricted to patchSet (when patchSet > 0).
-func FindLatestCommentAtLineForPatchSet(fileComments []gerrit.CommentInfo, line int, patchSet int) *gerrit.CommentInfo {
-	var latest *gerrit.CommentInfo
+func FindLatestCommentAtLineForPatchSet(fileComments []CommentInfo, line int, patchSet int) *CommentInfo {
+	var latest *CommentInfo
 	for i := range fileComments {
 		c := &fileComments[i]
 		if c.Line != line {
@@ -330,16 +328,16 @@ func FindLatestCommentAtLineForPatchSet(fileComments []gerrit.CommentInfo, line 
 //     standalone drafts (InReplyTo == "") and draft replies on other threads on the same
 //     line are never matched so unrelated drafts are never clobbered.
 //   - If inReplyTo == "", all drafts at line are matched.
-func FindMatchingDraftsAtTarget(fileDrafts []gerrit.CommentInfo, line int, inReplyTo string, patchSet int) []gerrit.CommentInfo {
+func FindMatchingDraftsAtTarget(fileDrafts []CommentInfo, line int, inReplyTo string, patchSet int) []CommentInfo {
 	if len(fileDrafts) == 0 {
 		return nil
 	}
-	matchesPatchSet := func(d gerrit.CommentInfo) bool {
+	matchesPatchSet := func(d CommentInfo) bool {
 		return patchSet <= 0 || d.PatchSet == 0 || d.PatchSet == patchSet
 	}
 
 	if inReplyTo != "" {
-		var exactReplies []gerrit.CommentInfo
+		var exactReplies []CommentInfo
 		for _, d := range fileDrafts {
 			if !matchesPatchSet(d) {
 				continue
@@ -351,7 +349,7 @@ func FindMatchingDraftsAtTarget(fileDrafts []gerrit.CommentInfo, line int, inRep
 		return exactReplies
 	}
 
-	var matches []gerrit.CommentInfo
+	var matches []CommentInfo
 	for _, d := range fileDrafts {
 		if !matchesPatchSet(d) {
 			continue
@@ -366,9 +364,9 @@ func FindMatchingDraftsAtTarget(fileDrafts []gerrit.CommentInfo, line int, inRep
 // FindDraftAtTarget searches a slice of draft comments on a file for an existing
 // draft to update or delete. When inReplyTo is non-empty, only draft replies are
 // considered so standalone drafts on the same line are not clobbered.
-func FindDraftAtTarget(fileDrafts []gerrit.CommentInfo, line int, inReplyTo string) *gerrit.CommentInfo {
+func FindDraftAtTarget(fileDrafts []CommentInfo, line int, inReplyTo string) *CommentInfo {
 	matches := FindMatchingDraftsAtTarget(fileDrafts, line, inReplyTo, 0)
-	var latest *gerrit.CommentInfo
+	var latest *CommentInfo
 	for i := range matches {
 		if isNewerComment(&matches[i], latest) {
 			latest = &matches[i]
@@ -515,14 +513,14 @@ func printCommentTreeNode(b *strings.Builder, path string, n *CommentNode, depth
 
 // FormatCommentForest renders a nested, human-readable terminal tree of comments
 // grouped by file in alphabetical order.
-func FormatCommentForest(comments map[string][]gerrit.CommentInfo) string {
+func FormatCommentForest(comments map[string][]CommentInfo) string {
 	return FormatCommentForestWithDrafts(comments, nil)
 }
 
 // FormatCommentForestWithDrafts renders a nested, human-readable terminal tree
 // combining published comments and unpublished drafts grouped by file in
 // alphabetical order.
-func FormatCommentForestWithDrafts(published, drafts map[string][]gerrit.CommentInfo) string {
+func FormatCommentForestWithDrafts(published, drafts map[string][]CommentInfo) string {
 	return FormatCommentForestWithOptions(published, drafts, CommentFormatOptions{IncludeAll: true})
 }
 
@@ -530,7 +528,7 @@ func FormatCommentForestWithDrafts(published, drafts map[string][]gerrit.Comment
 // combining published comments and unpublished drafts grouped by file in
 // alphabetical order, optionally suppressing resolved threads and folding excess
 // unresolved threads when opts.IncludeAll is false.
-func FormatCommentForestWithOptions(published, drafts map[string][]gerrit.CommentInfo, opts CommentFormatOptions) string {
+func FormatCommentForestWithOptions(published, drafts map[string][]CommentInfo, opts CommentFormatOptions) string {
 	if len(published) == 0 && len(drafts) == 0 {
 		return ""
 	}
@@ -559,11 +557,11 @@ func FormatCommentForestWithOptions(published, drafts map[string][]gerrit.Commen
 	resolvedCount := 0
 
 	for _, path := range slices.Sorted(maps.Keys(pathSet)) {
-		var filePublished []gerrit.CommentInfo
+		var filePublished []CommentInfo
 		if published != nil {
 			filePublished = published[path]
 		}
-		var fileDrafts []gerrit.CommentInfo
+		var fileDrafts []CommentInfo
 		if drafts != nil {
 			fileDrafts = drafts[path]
 		}

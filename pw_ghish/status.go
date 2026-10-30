@@ -16,15 +16,12 @@ package pw_ghish
 
 import (
 	"cmp"
-	"context"
 	"fmt"
 	"maps"
-	"net/url"
 	"slices"
 	"strings"
 	"sync"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +42,7 @@ const defaultStatusTemplate = `{{if .current_branch}}Current branch
 {{end}}{{if .current_branch.comments_summary}}    Comments:{{.current_branch.comments_summary}}
 {{end}}{{else}}  {{.current_branch.message}}
 {{end}}
-{{end}}Created by you{{if .time_filtered}} (last 30 days){{end}}:
+{{end}}{{if .authenticated}}Created by you{{if .time_filtered}} (last 30 days){{end}}:
 {{if .created_by_you}}{{range .created_by_you}} {{if .attention}}*{{else}} {{end}} #{{.number}}  {{printf "%-50.50s" .title}} [CR: {{printf "%+d" .cr_score}}, V: {{printf "%+d" .v_score}}]
 {{if .submittable}}    Submittable: true
 {{end}}{{if .blockers}}    Blockers: {{.blockers}}
@@ -61,7 +58,11 @@ Requesting a code review from you{{if .time_filtered}} (last 30 days){{end}}:
 {{end}}
 Verdict: {{.verdict}}
 Next: gh pr view <id>  (or gh pr checks)
-`
+{{else}}Personal changes and review requests skipped ({{.verdict}}).
+
+Verdict: {{.verdict}}
+Next: gh auth status
+{{end}}`
 
 var statusCmd = &cobra.Command{
 	Use:         "status",
@@ -81,18 +82,10 @@ var statusCmd = &cobra.Command{
 		}
 
 		var (
-			selfAccount *gerrit.AccountInfo
+			selfAccount *AccountInfo
 			selfErr     error
 		)
-		selfRef := "self"
-		if activeAccountCacheDir() != "" && cfg != nil {
-			if host := cfg.GerritHost(ctx); host != "" && !isLoopbackHost(host) {
-				if cached := PeekSelfAccountCache(host); cached != nil && cached.AccountID > 0 {
-					selfAccount = cached
-					selfRef = fmt.Sprintf("%d", cached.AccountID)
-				}
-			}
-		}
+		selfRef, selfAccount := CachedSelfAccountRef(ctx, cmd, client)
 
 		// Prepare queries
 		var myQuery string
@@ -115,7 +108,7 @@ var statusCmd = &cobra.Command{
 			currentBranchData map[string]any
 
 			// 3. My changes
-			myBatches  [][]gerrit.ChangeInfo
+			myBatches  = make([][]ChangeInfo, len(queries))
 			batchesErr error
 
 			moreCreated, moreReviewing int
@@ -153,10 +146,7 @@ var statusCmd = &cobra.Command{
 				gHost = cfg.GerritHost(ctx)
 			}()
 
-			opt := &gerrit.ChangeOptions{
-				AdditionalFields: []string{"DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS"},
-			}
-			activeChange, _, cErr := client.Changes.GetChange(ctx, activeID, opt)
+			activeChange, cErr := client.GetChange(ctx, activeID, "DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS")
 			hostWg.Wait()
 			if cErr != nil || activeChange == nil {
 				currentBranchData = map[string]any{
@@ -223,8 +213,8 @@ var statusCmd = &cobra.Command{
 
 			var (
 				subWg             sync.WaitGroup
-				publishedComments map[string][]gerrit.CommentInfo
-				draftComments     map[string][]gerrit.CommentInfo
+				publishedComments map[string][]CommentInfo
+				draftComments     map[string][]CommentInfo
 				commentsErr       error
 				draftsErr         error
 			)
@@ -250,22 +240,16 @@ var statusCmd = &cobra.Command{
 			subWg.Add(1)
 			go func() {
 				defer subWg.Done()
-				var cMap *map[string][]gerrit.CommentInfo
-				cMap, _, commentsErr = client.Changes.ListChangeComments(ctx, activeID)
-				if commentsErr == nil && cMap != nil {
-					publishedComments = *cMap
-				}
+				publishedComments, commentsErr = client.ListChangeComments(ctx, activeID)
 			}()
 
-			subWg.Add(1)
-			go func() {
-				defer subWg.Done()
-				var dMap *map[string][]gerrit.CommentInfo
-				dMap, _, draftsErr = client.Changes.ListChangeDrafts(ctx, activeID)
-				if draftsErr == nil && dMap != nil {
-					draftComments = *dMap
-				}
-			}()
+			if client.Authenticated() {
+				subWg.Add(1)
+				go func() {
+					defer subWg.Done()
+					draftComments, draftsErr = client.ListChangeDrafts(ctx, activeID)
+				}()
+			}
 
 			subWg.Wait()
 
@@ -292,43 +276,45 @@ var statusCmd = &cobra.Command{
 			}
 		}()
 
-		// Pipeline 2: Self account (when not already resolved from cache above)
-		if selfAccount == nil && selfErr == nil {
+		if client.Authenticated() {
+			// Pipeline 2: Self account (when not already resolved from cache above)
+			if selfAccount == nil && selfErr == nil {
+				rootWg.Add(1)
+				go func() {
+					defer rootWg.Done()
+					var gHost string
+					if cfg != nil {
+						gHost = cfg.GerritHost(ctx)
+					}
+					acc, err := GetSelfAccountCached(ctx, client, gHost)
+					selfErr = err
+					if err == nil {
+						selfAccount = acc
+					}
+				}()
+			}
+
+			// Pipeline 3: Created by you and reviewing
 			rootWg.Add(1)
 			go func() {
 				defer rootWg.Done()
-				var gHost string
-				if cfg != nil {
-					gHost = cfg.GerritHost(ctx)
-				}
-				acc, err := GetSelfAccountCached(ctx, client, gHost)
-				selfErr = err
-				if err == nil {
-					selfAccount = acc
+				myBatches, batchesErr = client.QueryChangesMulti(ctx, queries, statusChangeFields...)
+			}()
+
+			// Pipeline 4: Older change counts
+			rootWg.Add(1)
+			go func() {
+				defer rootWg.Done()
+				if !statusAll {
+					olderQueries := []string{
+						fmt.Sprintf("owner:%s status:open age:30d limit:100", selfRef),
+						fmt.Sprintf("reviewer:%s status:open -owner:%s age:30d limit:100", selfRef, selfRef),
+					}
+					batches, _ := client.QueryChangesMulti(ctx, olderQueries)
+					moreCreated, moreReviewing = len(batches[0]), len(batches[1])
 				}
 			}()
 		}
-
-		// Pipeline 3: Created by you and reviewing
-		rootWg.Add(1)
-		go func() {
-			defer rootWg.Done()
-			myBatches, batchesErr = queryStatusChanges(ctx, client, queries, statusChangeFields)
-		}()
-
-		// Pipeline 4: Older change counts
-		rootWg.Add(1)
-		go func() {
-			defer rootWg.Done()
-			if !statusAll {
-				olderQueries := []string{
-					fmt.Sprintf("owner:%s status:open age:30d limit:100", selfRef),
-					fmt.Sprintf("reviewer:%s status:open -owner:%s age:30d limit:100", selfRef, selfRef),
-				}
-				batches, _ := queryStatusChanges(ctx, client, olderQueries, nil)
-				moreCreated, moreReviewing = len(batches[0]), len(batches[1])
-			}
-		}()
 
 		rootWg.Wait()
 
@@ -339,15 +325,18 @@ var statusCmd = &cobra.Command{
 			return fmt.Errorf("failed to query my changes: %w", batchesErr)
 		}
 
-		myAccountID := selfAccount.AccountID
+		var myAccountID int
+		if selfAccount != nil {
+			myAccountID = selfAccount.AccountID
+		}
 
-		processChanges := func(changes []gerrit.ChangeInfo) []map[string]any {
+		processChanges := func(changes []ChangeInfo) []map[string]any {
 			result := []map[string]any{} // [] rather than null in --json output
 			for _, change := range changes {
-				crScore := extractLabelScore(change.Labels, "Code-Review")
-				vScore := extractLabelScore(change.Labels, "Verified")
+				crScore := ExtractLabelScore(change.Labels, "Code-Review")
+				vScore := ExtractLabelScore(change.Labels, "Verified")
 				if _, hasVerified := change.Labels["Verified"]; !hasVerified {
-					vScore = extractLabelScore(change.Labels, "Presubmit-Verified")
+					vScore = ExtractLabelScore(change.Labels, "Presubmit-Verified")
 				}
 
 				attnMap := BuildAttentionMap(change.AttentionSet)
@@ -375,11 +364,23 @@ var statusCmd = &cobra.Command{
 
 		createdByYou := processChanges(myBatches[0])
 		reviewing := processChanges(myBatches[1])
+		verdict := statusVerdict(createdByYou, reviewing)
+		if !client.Authenticated() {
+			host := CleanGerritHost(HostFlag)
+			if host == "" && cfg != nil {
+				host = CleanGerritHost(cfg.Host)
+			}
+			if host == "" {
+				host = CleanGerritHost(client.BaseURL())
+			}
+			verdict = fmt.Sprintf("not signed in to %s", cmp.Or(host, "Gerrit"))
+		}
 		data := map[string]any{
+			"authenticated":  client.Authenticated(),
 			"current_branch": currentBranchData,
 			"created_by_you": createdByYou,
 			"reviewing":      reviewing,
-			"verdict":        statusVerdict(createdByYou, reviewing),
+			"verdict":        verdict,
 			"time_filtered":  !statusAll,
 			"more_created":   moreCreated,
 			"more_reviewing": moreReviewing,
@@ -446,31 +447,10 @@ func countNoun(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-func queryStatusChanges(ctx context.Context, client *gerrit.Client, queries, fields []string) ([][]gerrit.ChangeInfo, error) {
-	qs := url.Values{"q": queries}
-	if len(fields) > 0 {
-		qs["o"] = fields
-	}
-	req, err := client.NewRequest(ctx, "GET", "changes/?"+qs.Encode(), nil)
-	if err != nil {
-		return make([][]gerrit.ChangeInfo, len(queries)), err
-	}
-	var batches [][]gerrit.ChangeInfo
-	_, err = client.Do(req, &batches)
-	for len(batches) < len(queries) {
-		batches = append(batches, nil)
-	}
-	return batches, err
-}
-
 // ExtractLabelScore extracts the decisive score for a label from ApprovalInfo entries.
 // In Gerrit, any negative score (e.g., -1, -2) blocks submission or indicates attention needed,
 // otherwise the highest positive score wins.
-func ExtractLabelScore(labels map[string]gerrit.LabelInfo, labelName string) int {
-	return extractLabelScore(labels, labelName)
-}
-
-func extractLabelScore(labels map[string]gerrit.LabelInfo, labelName string) int {
+func ExtractLabelScore(labels map[string]LabelInfo, labelName string) int {
 	info, ok := labels[labelName]
 	if !ok {
 		return 0
@@ -479,7 +459,7 @@ func extractLabelScore(labels map[string]gerrit.LabelInfo, labelName string) int
 	return score
 }
 
-func labelHasNegativeVote(info gerrit.LabelInfo) bool {
+func labelHasNegativeVote(info LabelInfo) bool {
 	if info.Rejected.AccountID != 0 || info.Disliked.AccountID != 0 || info.Value < 0 {
 		return true
 	}
@@ -490,7 +470,7 @@ func labelHasNegativeVote(info gerrit.LabelInfo) bool {
 }
 
 // extractBlockers computes blocking reasons for an unsubmitted change.
-func extractBlockers(change *gerrit.ChangeInfo) []string {
+func extractBlockers(change *ChangeInfo) []string {
 	if change == nil || change.Submittable {
 		return nil
 	}

@@ -113,24 +113,7 @@ func TestGerritURL_MissingOriginRemoteErrorWithGuidance(t *testing.T) {
 	}
 }
 
-func TestNewGerritClient_RPCFailure(t *testing.T) {
-	orig := getRPCClient
-	getRPCClient = func(ctx context.Context, host string) (*http.Client, error) {
-		return nil, fmt.Errorf("mocked RPC failure")
-	}
-	defer func() { getRPCClient = orig }()
-
-	cmd := &cobra.Command{}
-	cmd.SetContext(context.Background())
-	SetConfig(cmd, &Config{Host: "example.com"})
-
-	_, err := NewGerritClient(context.Background(), cmd)
-	if err == nil {
-		t.Fatal("Expected NewGerritClient to fail due to RPC failure, but it succeeded")
-	}
-}
-
-func TestGetRPCClient_ReusesClientPerHost(t *testing.T) {
+func TestNewGerritClient_MemoizesAuthMode(t *testing.T) {
 	ResetAuthTokenCaches()
 	t.Cleanup(ResetAuthTokenCaches)
 	oldModeFlag := AuthModeFlag
@@ -152,26 +135,6 @@ func TestGetRPCClient_ReusesClientPerHost(t *testing.T) {
 	}
 	if len(mockGit.Calls) != 1 {
 		t.Errorf("git calls across repeated NewGerritClient = %v, want 1", mockGit.Calls)
-	}
-
-	mustClient := func(host string) *http.Client {
-		c, err := getRPCClient(cmd.Context(), host)
-		if err != nil {
-			t.Fatalf("getRPCClient(%q) failed: %v", host, err)
-		}
-		return c
-	}
-	c1 := mustClient("https://pigweed-review.googlesource.com/a")
-	c2 := mustClient("pigweed-review.googlesource.com")
-	if c1 != c2 || c1.Transport != c2.Transport {
-		t.Errorf("expected same client and transport for canonical host, got %p (%p) vs %p (%p)", c1, c1.Transport, c2, c2.Transport)
-	}
-	if mustClient("https://fuchsia-review.googlesource.com/a") == c1 {
-		t.Error("expected distinct client for different Gerrit host")
-	}
-	ResetAuthTokenCaches()
-	if mustClient("https://pigweed-review.googlesource.com/a") == c1 {
-		t.Error("expected new client after ResetAuthTokenCaches")
 	}
 }
 
@@ -522,6 +485,9 @@ func TestGetConfig_NilSafety(t *testing.T) {
 }
 
 func TestNewGerritClient_FallbackConfig(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
+	t.Setenv("GH_ISH_AUTH_MODE", "community")
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(")]}'\n{\"_account_id\": 1}"))
@@ -540,6 +506,30 @@ func TestNewGerritClient_FallbackConfig(t *testing.T) {
 	}
 	if client == nil {
 		t.Fatal("Expected non-nil client")
+	}
+	if client.BaseURL() != server.URL {
+		t.Errorf("client.BaseURL() = %q, want %q", client.BaseURL(), server.URL)
+	}
+	if client.Authenticated() {
+		t.Errorf("expected unauthenticated client in community mode with no credentials")
+	}
+}
+
+func TestNewGerritClient_GooglerModeWithoutCredentials(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
+	t.Setenv("GH_ISH_AUTH_MODE", "googler")
+
+	oldHost := HostFlag
+	t.Cleanup(func() { HostFlag = oldHost })
+	HostFlag = "pigweed-review.googlesource.com"
+
+	cmd := &cobra.Command{}
+	client, err := NewGerritClient(context.Background(), cmd)
+	if err == nil {
+		t.Fatalf("expected error in googler mode without credentials, got client %v", client)
+	}
+	if got := ExitCodeFor(err); got != ExitCodeAuth {
+		t.Errorf("ExitCodeFor(err) = %d, want ExitCodeAuth (%d); err = %v", got, ExitCodeAuth, err)
 	}
 }
 

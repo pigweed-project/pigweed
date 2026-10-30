@@ -339,6 +339,7 @@ func TestCreateScheduledSubmitFlow_NumericChangeID(t *testing.T) {
 	if server.CallCount("POST", "/changes/123456/flows") != 1 {
 		t.Fatalf("expected 1 POST to /changes/123456/flows, got %d", server.CallCount("POST", "/changes/123456/flows"))
 	}
+	server.AssertOptions(t, "GET", "/changes/123456", "DETAILED_LABELS")
 
 	var postReqs []MockRequest
 	for _, r := range server.Requests() {
@@ -412,6 +413,7 @@ func TestCreateScheduledSubmitFlow_ResolvesChangeID(t *testing.T) {
 	if server.CallCount("POST", "/changes/123456/flows") != 1 {
 		t.Fatalf("expected 1 POST to /changes/123456/flows, got %d", server.CallCount("POST", "/changes/123456/flows"))
 	}
+	server.AssertOptions(t, "GET", "/changes/"+changeID, "DETAILED_LABELS")
 	var postReqs []MockRequest
 	for _, r := range server.Requests() {
 		if r.Method == "POST" && r.Path == "/changes/123456/flows" {

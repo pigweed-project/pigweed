@@ -20,18 +20,15 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 // Type aliases unifying CIProvider signatures with existing LUCI and Gerrit types.
 type (
-	CIBuild          = bbBuild
-	bbBuildDetails   = LUCIBuildDetails
-	bbStep           = LUCIStep
-	bbBuilderID      = bbBuilder
-	GerritChangeInfo = gerrit.ChangeInfo
-	ChangeRef        = GerritChangeRef
+	CIBuild        = bbBuild
+	bbBuildDetails = LUCIBuildDetails
+	bbStep         = LUCIStep
+	bbBuilderID    = bbBuilder
+	ChangeRef      = GerritChangeRef
 )
 
 // FailureReportOptions configures failure log extraction across CI providers.
@@ -46,7 +43,7 @@ type FailureReportOptions struct {
 // and check reruns across backends (LUCI Buildbucket and Android Busytown / TreeHugger).
 type CIProvider interface {
 	Name() string
-	SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *GerritChangeInfo) ([]bbBuild, error)
+	SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *ChangeInfo) ([]bbBuild, error)
 	GetBuildDetails(ctx context.Context, buildID string, b *bbBuild) (*bbBuildDetails, error)
 	FetchFailureReportWithOptions(ctx context.Context, b bbBuild, opts FailureReportOptions) (*FailureReport, error)
 	RerunBuilds(ctx context.Context, ch ChangeRef, builds []bbBuild, dryRun bool, out io.Writer) error
@@ -68,6 +65,9 @@ func (p *BuildbucketProvider) luciClient(ctx context.Context) *LUCIClient {
 	if p.LUCIClient != nil {
 		return p.LUCIClient
 	}
+	if p.Cfg != nil && ctx != nil && ctx.Value(configKey) == nil {
+		ctx = context.WithValue(ctx, configKey, p.Cfg)
+	}
 	return NewLUCIClient(buildbucketHost, getLUCIHTTPClient(ctx, buildbucketHost))
 }
 
@@ -82,7 +82,7 @@ func stampBuildbucketBuilds(builds []bbBuild) {
 	}
 }
 
-func (p *BuildbucketProvider) SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *GerritChangeInfo) ([]bbBuild, error) {
+func (p *BuildbucketProvider) SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *ChangeInfo) ([]bbBuild, error) {
 	project := ""
 	if change != nil {
 		project = change.Project
@@ -97,7 +97,7 @@ func (p *BuildbucketProvider) SearchBuilds(ctx context.Context, host string, cha
 }
 
 // SearchBuildsByPatchset queries Buildbucket concurrently across all patchsets in patchsets.
-func (p *BuildbucketProvider) SearchBuildsByPatchset(ctx context.Context, host string, changeNum int, patchsets []int, change *GerritChangeInfo) ([][]bbBuild, error) {
+func (p *BuildbucketProvider) SearchBuildsByPatchset(ctx context.Context, host string, changeNum int, patchsets []int, change *ChangeInfo) ([][]bbBuild, error) {
 	project := ""
 	if change != nil {
 		project = change.Project
@@ -187,7 +187,7 @@ type providerFailure struct {
 	err  error
 }
 
-func (c *CompositeCIProvider) SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *GerritChangeInfo) ([]bbBuild, error) {
+func (c *CompositeCIProvider) SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *ChangeInfo) ([]bbBuild, error) {
 	var all []bbBuild
 	var firstErr error
 	var failedProviders []providerFailure
@@ -216,7 +216,7 @@ func (c *CompositeCIProvider) SearchBuilds(ctx context.Context, host string, cha
 }
 
 // SearchBuildsByPatchset queries all configured providers across patchsets and merges per-patchset builds.
-func (c *CompositeCIProvider) SearchBuildsByPatchset(ctx context.Context, host string, changeNum int, patchsets []int, change *GerritChangeInfo) ([][]bbBuild, error) {
+func (c *CompositeCIProvider) SearchBuildsByPatchset(ctx context.Context, host string, changeNum int, patchsets []int, change *ChangeInfo) ([][]bbBuild, error) {
 	if len(patchsets) == 0 {
 		return nil, fmt.Errorf("patchsets cannot be empty")
 	}
@@ -254,7 +254,7 @@ func (c *CompositeCIProvider) SearchBuildsByPatchset(ctx context.Context, host s
 }
 
 // SearchProviderBuildsByPatchset queries a CIProvider for builds on each of the given patchsets.
-func SearchProviderBuildsByPatchset(ctx context.Context, p CIProvider, host string, changeNum int, patchsets []int, change *GerritChangeInfo) ([][]bbBuild, error) {
+func SearchProviderBuildsByPatchset(ctx context.Context, p CIProvider, host string, changeNum int, patchsets []int, change *ChangeInfo) ([][]bbBuild, error) {
 	if p == nil {
 		return nil, fmt.Errorf("CIProvider is nil")
 	}
@@ -286,7 +286,7 @@ func SearchProviderBuildsByPatchset(ctx context.Context, p CIProvider, host stri
 
 // SearchProviderBuildsForPatchsets queries a CIProvider across one or more equivalent patchsets
 // (ordered newest first) and returns the concatenated builds in that order.
-func SearchProviderBuildsForPatchsets(ctx context.Context, p CIProvider, host string, changeNum int, patchsets []int, change *GerritChangeInfo) ([]bbBuild, error) {
+func SearchProviderBuildsForPatchsets(ctx context.Context, p CIProvider, host string, changeNum int, patchsets []int, change *ChangeInfo) ([]bbBuild, error) {
 	perPS, err := SearchProviderBuildsByPatchset(ctx, p, host, changeNum, patchsets, change)
 	if err != nil {
 		return nil, err
@@ -391,7 +391,7 @@ func (c *CompositeCIProvider) RerunBuilds(ctx context.Context, ch ChangeRef, bui
 	return nil
 }
 
-func isBusytownCandidate(host string, change *GerritChangeInfo) bool {
+func isBusytownCandidate(host string, change *ChangeInfo) bool {
 	lowerHost := strings.ToLower(host)
 	if strings.Contains(lowerHost, "android") {
 		return true
@@ -416,7 +416,7 @@ func isBusytownCandidate(host string, change *GerritChangeInfo) bool {
 
 // ResolveCIProvider selects and constructs the active CIProvider based on
 // `.ghish.toml` `[ci] providers` configuration or auto-detection from the Gerrit host/change.
-func ResolveCIProvider(cfg *Config, pcfg *ProjectConfig, gerritClient *gerrit.Client, host string, change *GerritChangeInfo) CIProvider {
+func ResolveCIProvider(cfg *Config, pcfg *ProjectConfig, gerritClient *GerritClient, host string, change *ChangeInfo) CIProvider {
 	bbProv := &BuildbucketProvider{
 		Cfg: cfg,
 	}

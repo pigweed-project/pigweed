@@ -17,6 +17,7 @@ package pw_ghish
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -142,11 +143,9 @@ func TestResolveChangeContext_TargetResolutionError(t *testing.T) {
 }
 
 func TestResolveChangeContext_ClientCreationError(t *testing.T) {
-	origNewClient := NewGerritClient
-	NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
+	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error) {
 		return nil, fmt.Errorf("simulated auth failure")
-	}
-	t.Cleanup(func() { NewGerritClient = origNewClient })
+	})
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
@@ -271,11 +270,11 @@ func TestSetReviewSafe_InvariantChecks(t *testing.T) {
 }
 
 func TestExtractFetchRef_ProtocolOrder(t *testing.T) {
-	change := &gerrit.ChangeInfo{Number: 12345}
+	change := &ChangeInfo{Number: 12345}
 
 	t.Run("prefers http protocol", func(t *testing.T) {
-		rev := gerrit.RevisionInfo{
-			Fetch: map[string]gerrit.FetchInfo{
+		rev := RevisionInfo{
+			Fetch: map[string]FetchInfo{
 				"anonymous http": {Ref: "refs/changes/45/12345/anon"},
 				"http":           {Ref: "refs/changes/45/12345/http"},
 				"ssh":            {Ref: "refs/changes/45/12345/ssh"},
@@ -291,8 +290,8 @@ func TestExtractFetchRef_ProtocolOrder(t *testing.T) {
 	})
 
 	t.Run("falls back to anonymous http", func(t *testing.T) {
-		rev := gerrit.RevisionInfo{
-			Fetch: map[string]gerrit.FetchInfo{
+		rev := RevisionInfo{
+			Fetch: map[string]FetchInfo{
 				"anonymous http": {Ref: "refs/changes/45/12345/anon"},
 			},
 		}
@@ -306,8 +305,8 @@ func TestExtractFetchRef_ProtocolOrder(t *testing.T) {
 	})
 
 	t.Run("falls back to other protocol", func(t *testing.T) {
-		rev := gerrit.RevisionInfo{
-			Fetch: map[string]gerrit.FetchInfo{
+		rev := RevisionInfo{
+			Fetch: map[string]FetchInfo{
 				"ssh": {Ref: "refs/changes/45/12345/ssh"},
 			},
 		}
@@ -321,7 +320,7 @@ func TestExtractFetchRef_ProtocolOrder(t *testing.T) {
 	})
 
 	t.Run("falls back to standard gerrit ref format", func(t *testing.T) {
-		rev := gerrit.RevisionInfo{
+		rev := RevisionInfo{
 			Number: 4,
 			Fetch:  nil,
 		}
@@ -335,8 +334,8 @@ func TestExtractFetchRef_ProtocolOrder(t *testing.T) {
 	})
 
 	t.Run("error when no ref available", func(t *testing.T) {
-		emptyChange := &gerrit.ChangeInfo{Number: 0}
-		rev := gerrit.RevisionInfo{Number: 0}
+		emptyChange := &ChangeInfo{Number: 0}
+		rev := RevisionInfo{Number: 0}
 		_, err := ExtractFetchRef(emptyChange, rev)
 		if err == nil {
 			t.Fatal("expected error when no ref could be determined, got nil")
@@ -347,7 +346,7 @@ func TestExtractFetchRef_ProtocolOrder(t *testing.T) {
 	})
 
 	t.Run("nil change returns error", func(t *testing.T) {
-		_, err := ExtractFetchRef(nil, gerrit.RevisionInfo{})
+		_, err := ExtractFetchRef(nil, RevisionInfo{})
 		if err == nil {
 			t.Fatal("expected error for nil change, got nil")
 		}
@@ -355,10 +354,10 @@ func TestExtractFetchRef_ProtocolOrder(t *testing.T) {
 }
 
 func TestExtractRevision(t *testing.T) {
-	change := &gerrit.ChangeInfo{
+	change := &ChangeInfo{
 		ChangeID:        "I123",
 		CurrentRevision: "rev2",
-		Revisions: map[string]gerrit.RevisionInfo{
+		Revisions: map[string]RevisionInfo{
 			"rev1": {Number: 1, Ref: "refs/changes/1"},
 			"rev2": {Number: 2, Ref: "refs/changes/2"},
 			"rev3": {Number: 3, Ref: "refs/changes/3"},
@@ -416,9 +415,9 @@ func TestExtractRevision(t *testing.T) {
 	})
 
 	t.Run("returns error when current revision missing", func(t *testing.T) {
-		brokenChange := &gerrit.ChangeInfo{
+		brokenChange := &ChangeInfo{
 			CurrentRevision: "nonexistent",
-			Revisions:       map[string]gerrit.RevisionInfo{},
+			Revisions:       map[string]RevisionInfo{},
 		}
 		_, err := ExtractRevision(brokenChange, "current")
 		if err == nil {
@@ -451,10 +450,7 @@ func TestChangeContext_Methods(t *testing.T) {
 	}`)
 	server.OnJSON("POST", "/changes/12345/revisions/rev1/review", http.StatusOK, map[string]any{})
 
-	client, err := gerrit.NewClient(context.Background(), server.URL, nil)
-	if err != nil {
-		t.Fatalf("gerrit.NewClient failed: %v", err)
-	}
+	client := server.Client()
 
 	mockGit := &MockGitRunner{}
 	cfg := &Config{Git: mockGit}
@@ -491,7 +487,7 @@ func TestChangeContext_Methods(t *testing.T) {
 	})
 
 	t.Run("GetChange success", func(t *testing.T) {
-		change, err := chCtx.GetChange(nil)
+		change, err := chCtx.GetChange()
 		if err != nil {
 			t.Fatalf("GetChange failed: %v", err)
 		}
@@ -501,14 +497,14 @@ func TestChangeContext_Methods(t *testing.T) {
 	})
 
 	t.Run("SetReview success", func(t *testing.T) {
-		err := chCtx.SetReview(&gerrit.ReviewInput{Message: "test"})
+		err := chCtx.SetReview(&ReviewInput{Message: "test"})
 		if err != nil {
 			t.Fatalf("SetReview failed: %v", err)
 		}
 	})
 
 	t.Run("ExtractRevision and ExtractFetchRef", func(t *testing.T) {
-		change, err := chCtx.GetChange(nil)
+		change, err := chCtx.GetChange()
 		if err != nil {
 			t.Fatalf("GetChange failed: %v", err)
 		}
@@ -537,35 +533,35 @@ func TestChangeContext_NilReceiverInvariants(t *testing.T) {
 	})
 
 	t.Run("GetChange nil receiver", func(t *testing.T) {
-		_, err := nilCtx.GetChange(nil)
+		_, err := nilCtx.GetChange()
 		if err == nil || !strings.Contains(err.Error(), "ChangeContext is nil") {
 			t.Errorf("expected 'ChangeContext is nil', got: %v", err)
 		}
 	})
 
 	t.Run("SetReview nil receiver", func(t *testing.T) {
-		err := nilCtx.SetReview(&gerrit.ReviewInput{})
+		err := nilCtx.SetReview(&ReviewInput{})
 		if err == nil || !strings.Contains(err.Error(), "ChangeContext is nil") {
 			t.Errorf("expected 'ChangeContext is nil', got: %v", err)
 		}
 	})
 
 	t.Run("SetReviewRevision nil receiver", func(t *testing.T) {
-		err := nilCtx.SetReviewRevision("current", &gerrit.ReviewInput{})
+		err := nilCtx.SetReviewRevision("current", &ReviewInput{})
 		if err == nil || !strings.Contains(err.Error(), "ChangeContext is nil") {
 			t.Errorf("expected 'ChangeContext is nil', got: %v", err)
 		}
 	})
 
 	t.Run("ExtractRevision nil receiver", func(t *testing.T) {
-		_, err := nilCtx.ExtractRevision(&gerrit.ChangeInfo{})
+		_, err := nilCtx.ExtractRevision(&ChangeInfo{})
 		if err == nil || !strings.Contains(err.Error(), "ChangeContext is nil") {
 			t.Errorf("expected 'ChangeContext is nil', got: %v", err)
 		}
 	})
 
 	t.Run("ExtractFetchRef nil receiver", func(t *testing.T) {
-		_, err := nilCtx.ExtractFetchRef(&gerrit.ChangeInfo{}, gerrit.RevisionInfo{})
+		_, err := nilCtx.ExtractFetchRef(&ChangeInfo{}, RevisionInfo{})
 		if err == nil || !strings.Contains(err.Error(), "ChangeContext is nil") {
 			t.Errorf("expected 'ChangeContext is nil', got: %v", err)
 		}
@@ -591,10 +587,10 @@ func TestSetReviewSafe_AdditionalInvariants(t *testing.T) {
 }
 
 func TestExtractRevision_ShortSHAAndActionableError(t *testing.T) {
-	change := &gerrit.ChangeInfo{
+	change := &ChangeInfo{
 		Number:   12345,
 		ChangeID: "I12345",
-		Revisions: map[string]gerrit.RevisionInfo{
+		Revisions: map[string]RevisionInfo{
 			"abcdef1234567890abcdef1234567890abcdef12": {Number: 1},
 			"fedcba0987654321fedcba0987654321fedcba09": {Number: 2},
 		},
@@ -622,10 +618,10 @@ func TestExtractRevision_ShortSHAAndActionableError(t *testing.T) {
 }
 
 func TestExtractFetchRef_RevRefFallbackAndDeterminism(t *testing.T) {
-	change := &gerrit.ChangeInfo{Number: 12345}
+	change := &ChangeInfo{Number: 12345}
 
 	t.Run("falls back to rev.Ref if fetch map empty", func(t *testing.T) {
-		rev := gerrit.RevisionInfo{
+		rev := RevisionInfo{
 			Ref: "refs/changes/45/12345/special",
 		}
 		ref, err := ExtractFetchRef(change, rev)
@@ -638,8 +634,8 @@ func TestExtractFetchRef_RevRefFallbackAndDeterminism(t *testing.T) {
 	})
 
 	t.Run("deterministic key order when non-standard protocols", func(t *testing.T) {
-		rev := gerrit.RevisionInfo{
-			Fetch: map[string]gerrit.FetchInfo{
+		rev := RevisionInfo{
+			Fetch: map[string]FetchInfo{
 				"zebra": {Ref: "refs/changes/zebra"},
 				"alpha": {Ref: "refs/changes/alpha"},
 			},
@@ -670,39 +666,120 @@ func TestResolveChangeContext_CanceledContext(t *testing.T) {
 	}
 }
 
-func TestFormatGerritError_Auth401(t *testing.T) {
-	rawErr := fmt.Errorf("API call to http://example.com failed: 401 Unauthorized")
-	formatted := FormatGerritError(rawErr, "submitting review for", "12345", "https://pigweed-review.googlesource.com")
-	if formatted == nil {
-		t.Fatal("expected formatted error, got nil")
-	}
-	msg := formatted.Error()
-	if !strings.Contains(msg, "authentication required") {
-		t.Errorf("expected 'authentication required', got: %s", msg)
-	}
-	if !strings.Contains(msg, "https://pigweed-review.googlesource.com/new-password") {
-		t.Errorf("expected new-password URL, got: %s", msg)
-	}
-	if !strings.Contains(msg, "GERRIT_TOKEN") {
-		t.Errorf("expected GERRIT_TOKEN hint, got: %s", msg)
-	}
-	if !strings.Contains(msg, "gcert") {
-		t.Errorf("expected gcert hint, got: %s", msg)
-	}
-}
-
-func TestFormatGerritError_NotFound404(t *testing.T) {
-	rawErr := fmt.Errorf("API call failed: 404 Not Found")
-	formatted := FormatGerritError(rawErr, "getting", "99999", "https://pigweed-review.googlesource.com")
-	if formatted == nil {
-		t.Fatal("expected formatted error, got nil")
-	}
-	msg := formatted.Error()
-	if !strings.Contains(msg, "not found") {
-		t.Errorf("expected 'not found', got: %s", msg)
-	}
-	if !strings.Contains(msg, "gh pr list") {
-		t.Errorf("expected 'gh pr list', got: %s", msg)
+func TestFormatGerritError(t *testing.T) {
+	const host = "https://pigweed-review.googlesource.com"
+	for _, tc := range []struct {
+		name         string
+		err          error
+		action       string
+		changeID     string
+		wantExitCode int
+		wantContains []string
+		wantAbsent   []string
+	}{
+		{
+			name:         "HTTP 401 Unauthorized",
+			err:          &GerritAPIError{StatusCode: http.StatusUnauthorized, Body: "Unauthorized"},
+			action:       "submitting review for",
+			changeID:     "12345",
+			wantExitCode: ExitCodeAuth,
+			wantContains: []string{"authentication required", "https://pigweed-review.googlesource.com/new-password", "GERRIT_TOKEN", "gcert"},
+		},
+		{
+			name:         "HTTP 403 Forbidden",
+			err:          &GerritAPIError{StatusCode: http.StatusForbidden, Body: "Forbidden"},
+			action:       "submitting review for",
+			changeID:     "12345",
+			wantExitCode: ExitCodeAuth,
+			wantContains: []string{"authentication required", "https://pigweed-review.googlesource.com/new-password", "GERRIT_TOKEN", "gcert"},
+		},
+		{
+			name:         "HTTP 404 Not Found",
+			err:          &GerritAPIError{StatusCode: http.StatusNotFound, Body: "Not found: 99999"},
+			action:       "getting",
+			changeID:     "99999",
+			wantExitCode: ExitCodeFailure,
+			wantContains: []string{"change not found", "gh pr list"},
+		},
+		{
+			name:         "wrapped GerritAPIError 404",
+			err:          fmt.Errorf("outer: %w", &GerritAPIError{StatusCode: http.StatusNotFound, Body: "Not found"}),
+			action:       "getting",
+			changeID:     "99999",
+			wantExitCode: ExitCodeFailure,
+			wantContains: []string{"change not found", "gh pr list", "outer:"},
+		},
+		{
+			name:         "HTTP 409 Conflict merged",
+			err:          &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is merged"},
+			action:       "closing",
+			changeID:     "12345",
+			wantExitCode: ExitCodeFailure,
+			wantContains: []string{"already merged"},
+		},
+		{
+			name:         "HTTP 409 Conflict abandoned",
+			err:          &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is abandoned"},
+			action:       "closing",
+			changeID:     "12345",
+			wantExitCode: ExitCodeFailure,
+			wantContains: []string{"already closed (abandoned)"},
+		},
+		{
+			name:         "HTTP 409 Conflict ready",
+			err:          &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is not work in progress"},
+			action:       "marking as ready",
+			changeID:     "12345",
+			wantExitCode: ExitCodeFailure,
+			wantContains: []string{"already marked as ready for review"},
+		},
+		{
+			name:         "HTTP 409 Conflict open",
+			err:          &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is new"},
+			action:       "restoring",
+			changeID:     "12345",
+			wantExitCode: ExitCodeFailure,
+			wantContains: []string{"already open"},
+		},
+		{
+			name:         "plain non-API error mentioning 404 passes through",
+			err:          errors.New("404 Not Found"),
+			action:       "getting",
+			changeID:     "12345",
+			wantExitCode: ExitCodeFailure,
+			wantContains: []string{"error getting change 12345: 404 Not Found"},
+			wantAbsent:   []string{"change not found", "gh pr list"},
+		},
+		{
+			name:         "plain non-API error mentioning 401 passes through without ExitCodeAuth",
+			err:          errors.New("401 Unauthorized"),
+			action:       "getting",
+			changeID:     "12345",
+			wantExitCode: ExitCodeFailure,
+			wantContains: []string{"error getting change 12345: 401 Unauthorized"},
+			wantAbsent:   []string{"authentication required", "GERRIT_TOKEN"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			formatted := FormatGerritError(tc.err, tc.action, tc.changeID, host)
+			if formatted == nil {
+				t.Fatal("expected formatted error, got nil")
+			}
+			if got := ExitCodeFor(formatted); got != tc.wantExitCode {
+				t.Errorf("ExitCodeFor() = %d, want %d (err: %v)", got, tc.wantExitCode, formatted)
+			}
+			msg := formatted.Error()
+			for _, want := range tc.wantContains {
+				if !strings.Contains(msg, want) {
+					t.Errorf("expected %q in error, got:\n%s", want, msg)
+				}
+			}
+			for _, absent := range tc.wantAbsent {
+				if strings.Contains(msg, absent) {
+					t.Errorf("expected %q to be absent from error, got:\n%s", absent, msg)
+				}
+			}
+		})
 	}
 }
 
@@ -721,7 +798,7 @@ func TestChangeContext_SetReview_AuthErrorFormatted(t *testing.T) {
 		t.Fatalf("ResolveChangeContext failed: %v", err)
 	}
 
-	rErr := chCtx.SetReview(&gerrit.ReviewInput{Message: "test"})
+	rErr := chCtx.SetReview(&ReviewInput{Message: "test"})
 	if rErr == nil {
 		t.Fatal("expected error on 401 Unauthorized, got nil")
 	}
@@ -733,51 +810,56 @@ func TestChangeContext_SetReview_AuthErrorFormatted(t *testing.T) {
 	}
 }
 
-func TestFormatGerritError_Conflict409_Merged(t *testing.T) {
-	rawErr := fmt.Errorf("API call failed: 409 Conflict: change is merged")
-	formatted := FormatGerritError(rawErr, "closing", "12345", "https://pigweed-review.googlesource.com")
-	if formatted == nil {
-		t.Fatal("expected formatted error, got nil")
-	}
-	msg := formatted.Error()
-	if !strings.Contains(msg, "already merged") {
-		t.Errorf("expected 'already merged' in error, got: %s", msg)
-	}
-}
-
-func TestFormatGerritError_Conflict409_Abandoned(t *testing.T) {
-	rawErr := fmt.Errorf("API call failed: 409 Conflict: change is abandoned")
-	formatted := FormatGerritError(rawErr, "closing", "12345", "https://pigweed-review.googlesource.com")
-	if formatted == nil {
-		t.Fatal("expected formatted error, got nil")
-	}
-	msg := formatted.Error()
-	if !strings.Contains(msg, "already closed (abandoned)") {
-		t.Errorf("expected 'already closed (abandoned)' in error, got: %s", msg)
-	}
-}
-
-func TestFormatGerritError_Conflict409_Ready(t *testing.T) {
-	rawErr := fmt.Errorf("API call failed: 409 Conflict: change is not work in progress")
-	formatted := FormatGerritError(rawErr, "marking as ready", "12345", "https://pigweed-review.googlesource.com")
-	if formatted == nil {
-		t.Fatal("expected formatted error, got nil")
-	}
-	msg := formatted.Error()
-	if !strings.Contains(msg, "already marked as ready for review") {
-		t.Errorf("expected 'already marked as ready for review' in error, got: %s", msg)
-	}
-}
-
-func TestFormatGerritError_Conflict409_Open(t *testing.T) {
-	rawErr := fmt.Errorf("API call failed: 409 Conflict: change is new")
-	formatted := FormatGerritError(rawErr, "restoring", "12345", "https://pigweed-review.googlesource.com")
-	if formatted == nil {
-		t.Fatal("expected formatted error, got nil")
-	}
-	msg := formatted.Error()
-	if !strings.Contains(msg, "already open") {
-		t.Errorf("expected 'already open' in error, got: %s", msg)
+func TestChangeContext_ResolveFetchRef(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		revision string
+		wantOpt  string
+		wantRef  string
+	}{
+		{
+			name:     "empty revision requests CURRENT_REVISION",
+			revision: "",
+			wantOpt:  "CURRENT_REVISION",
+			wantRef:  "refs/changes/45/12345/2",
+		},
+		{
+			name:     "current revision requests CURRENT_REVISION",
+			revision: "current",
+			wantOpt:  "CURRENT_REVISION",
+			wantRef:  "refs/changes/45/12345/2",
+		},
+		{
+			name:     "specific patchset requests ALL_REVISIONS",
+			revision: "1",
+			wantOpt:  "ALL_REVISIONS",
+			wantRef:  "refs/changes/45/12345/1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewMockGerritServer(t)
+			server.OnDefaultChange(12345, func(ch map[string]any) {
+				ch["current_revision"] = "rev2"
+				ch["revisions"] = map[string]any{
+					"rev1": map[string]any{"_number": 1, "ref": "refs/changes/45/12345/1"},
+					"rev2": map[string]any{"_number": 2, "ref": "refs/changes/45/12345/2"},
+				}
+			})
+			chCtx := &ChangeContext{
+				Context:  t.Context(),
+				Client:   server.Client(),
+				ChangeID: "12345",
+				Revision: tc.revision,
+			}
+			_, ref, err := chCtx.ResolveFetchRef()
+			if err != nil {
+				t.Fatalf("ResolveFetchRef() failed: %v", err)
+			}
+			if ref != tc.wantRef {
+				t.Errorf("ResolveFetchRef() ref = %q, want %q", ref, tc.wantRef)
+			}
+			server.AssertOptions(t, "GET", "/changes/12345", tc.wantOpt)
+		})
 	}
 }
 
@@ -812,7 +894,7 @@ func TestResolveProfile(t *testing.T) {
 	}
 
 	// 4. ChangeContext.ResolveProfile with populated context
-	client, _ := gerrit.NewClient(ctx, "https://pigweed-review.googlesource.com", nil)
+	client := NewGerritClientWithHTTP("https://pigweed-review.googlesource.com", nil, GerritAuth{})
 	chCtx := &ChangeContext{
 		Context:  ctx,
 		Client:   client,
@@ -880,8 +962,10 @@ func TestChangeContext_Mutations(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
 
-	server.OnJSON("POST", "/a/changes/12345/wip", http.StatusOK, map[string]any{})
-	server.OnJSON("POST", "/a/changes/12345/reviewers", http.StatusOK, map[string]any{})
+	server.OnJSON("POST", "/changes/12345/wip", http.StatusOK, map[string]any{})
+	server.OnJSON("POST", "/changes/12345/reviewers", http.StatusOK, map[string]any{})
+	server.OnJSON("PUT", "/changes/12345/topic", http.StatusOK, `"my-topic"`)
+	server.OnJSON("POST", "/changes/12345/abandon", http.StatusOK, map[string]any{"status": "ABANDONED"})
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
@@ -893,10 +977,31 @@ func TestChangeContext_Mutations(t *testing.T) {
 	}
 
 	if err := chCtx.SetWorkInProgress("moving to draft"); err != nil {
-		t.Errorf("SetWorkInProgress failed: %v", err)
+		t.Fatalf("SetWorkInProgress failed: %v", err)
 	}
+	if wip := DecodeRequest[messageInput](t, server.LastRequest()); wip.Message != "moving to draft" {
+		t.Errorf("SetWorkInProgress body = %+v, want message=\"moving to draft\"", wip)
+	}
+
 	if err := chCtx.AddCC("cc@google.com"); err != nil {
-		t.Errorf("AddCC failed: %v", err)
+		t.Fatalf("AddCC failed: %v", err)
+	}
+	if rev := DecodeRequest[reviewerInput](t, server.LastRequest()); rev.Reviewer != "cc@google.com" || rev.State != "CC" {
+		t.Errorf("AddCC body = %+v, want reviewer=\"cc@google.com\" state=\"CC\"", rev)
+	}
+
+	if err := chCtx.Client.SetTopic(chCtx.Context, chCtx.ChangeID, "my-topic"); err != nil {
+		t.Fatalf("SetTopic failed: %v", err)
+	}
+	if top := DecodeRequest[topicInput](t, server.LastRequest()); top.Topic != "my-topic" {
+		t.Errorf("SetTopic body = %+v, want topic=\"my-topic\"", top)
+	}
+
+	if _, err := chCtx.Client.AbandonChange(chCtx.Context, chCtx.ChangeID, "no longer needed"); err != nil {
+		t.Fatalf("AbandonChange failed: %v", err)
+	}
+	if ab := DecodeRequest[messageInput](t, server.LastRequest()); ab.Message != "no longer needed" {
+		t.Errorf("AbandonChange body = %+v, want message=\"no longer needed\"", ab)
 	}
 }
 
@@ -925,9 +1030,9 @@ func TestIsEquivalentRevisionKind(t *testing.T) {
 func TestEquivalentPatchsets(t *testing.T) {
 	// Patchset 10 is a trivial rebase, patchset 9 is a commit-message-only change (NO_CODE_CHANGE),
 	// patchset 8 is a rework, and patchset 7 is a rework.
-	change := &gerrit.ChangeInfo{
+	change := &ChangeInfo{
 		CurrentRevision: "rev10",
-		Revisions: map[string]gerrit.RevisionInfo{
+		Revisions: map[string]RevisionInfo{
 			"rev7":  {Number: 7, Kind: "REWORK"},
 			"rev8":  {Number: 8, Kind: "REWORK"},
 			"rev9":  {Number: 9, Kind: "NO_CODE_CHANGE"},
@@ -957,8 +1062,8 @@ func TestEquivalentPatchsets(t *testing.T) {
 	assertIntsEqual(t, EquivalentPatchsets(change, 8), []int{8})
 
 	// All non-rework kinds chain back to the preceding REWORK.
-	allKindsChange := &gerrit.ChangeInfo{
-		Revisions: map[string]gerrit.RevisionInfo{
+	allKindsChange := &ChangeInfo{
+		Revisions: map[string]RevisionInfo{
 			"r1": {Number: 1, Kind: "REWORK"},
 			"r2": {Number: 2, Kind: "NO_CHANGE"},
 			"r3": {Number: 3, Kind: "NO_CODE_CHANGE"},

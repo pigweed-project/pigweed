@@ -20,14 +20,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -268,7 +266,7 @@ type flowVotes struct {
 // label the host does not define fails when nobody is watching, and the change
 // silently never submits. Refusing up front, before any flow exists, is the
 // only point at which the user can still be told.
-func resolveFlowVotes(change *gerrit.ChangeInfo) (flowVotes, error) {
+func resolveFlowVotes(change *ChangeInfo) (flowVotes, error) {
 	autoSubmit, ok, err := FindAutoSubmitLabel(change.Labels)
 	if err != nil {
 		return flowVotes{}, err
@@ -288,7 +286,7 @@ func resolveFlowVotes(change *gerrit.ChangeInfo) (flowVotes, error) {
 
 // noFlowAutoSubmitError reports that a change's host has no auto-submit label,
 // so a scheduled flow cannot arrange for the change to be submitted.
-func noFlowAutoSubmitError(change *gerrit.ChangeInfo) error {
+func noFlowAutoSubmitError(change *ChangeInfo) error {
 	root := RootCmd.CommandPath()
 	return fmt.Errorf("--nightly/--submit-at: change %d has no auto-submit label, so a scheduled flow cannot arrange for it to be submitted.\n\n"+
 		"Labels here: %s\n\n"+
@@ -300,7 +298,7 @@ func noFlowAutoSubmitError(change *gerrit.ChangeInfo) error {
 // noFlowDryRunError reports that a change's host has no single Commit-Queue
 // or Presubmit-Ready label permitting +1, so a scheduled flow has no way to
 // start presubmit verification.
-func noFlowDryRunError(change *gerrit.ChangeInfo) error {
+func noFlowDryRunError(change *ChangeInfo) error {
 	root := RootCmd.CommandPath()
 	return fmt.Errorf("--nightly/--submit-at: change %d has no Commit-Queue or Presubmit-Ready label that accepts +1, so a scheduled flow cannot start its presubmits.\n\n"+
 		"Labels here: %s\n\n"+
@@ -355,9 +353,7 @@ func (c *ChangeContext) createScheduledSubmitFlow(changeNum int, customTime stri
 
 	// The change's labels are required, not optional: they name the
 	// labels the flows vote (see resolveFlowVotes).
-	change, err := c.GetChange(&gerrit.ChangeOptions{
-		AdditionalFields: []string{"DETAILED_LABELS"},
-	})
+	change, err := c.GetChange("DETAILED_LABELS")
 	if err != nil {
 		return ScheduledSubmitFlow{}, err
 	}
@@ -396,8 +392,7 @@ func (c *ChangeContext) createScheduledSubmitFlow(changeNum int, customTime stri
 		cleanHost = c.Config.GerritHost(c.Context)
 	}
 	if cleanHost == "" && c.Client != nil {
-		baseURL := c.Client.BaseURL()
-		cleanHost = CleanGerritHost(baseURL.String())
+		cleanHost = CleanGerritHost(c.Client.BaseURL())
 	}
 	if cleanHost == "" {
 		return ScheduledSubmitFlow{}, fmt.Errorf("could not determine Gerrit host for flow condition")
@@ -414,7 +409,7 @@ func (c *ChangeContext) createScheduledSubmitFlow(changeNum int, customTime stri
 	// leaves the old schedule, if any, in place.
 	markedReady := false
 	if change.WorkInProgress {
-		if _, err := c.Client.Changes.SetReadyForReview(c.Context, strconv.Itoa(changeNum), &gerrit.ReadyForReviewInput{}); err != nil {
+		if err := c.Client.SetReadyForReview(c.Context, strconv.Itoa(changeNum), ""); err != nil {
 			return ScheduledSubmitFlow{}, c.FormatError(err, "marking ready for review")
 		}
 		markedReady = true
@@ -450,12 +445,7 @@ func (c *ChangeContext) createScheduledSubmitFlow(changeNum int, customTime stri
 		},
 	}
 
-	endpoint := fmt.Sprintf("changes/%d/flows", changeNum)
-	req, err := c.Client.NewRequest(c.Context, "POST", endpoint, payload)
-	if err != nil {
-		return ScheduledSubmitFlow{}, c.FormatError(err, "creating submit flow on")
-	}
-	if _, err := c.Client.Do(req, nil); err != nil {
+	if err := c.Client.CreateFlow(c.Context, changeNum, payload); err != nil {
 		return ScheduledSubmitFlow{}, c.FormatError(err, "creating submit flow on")
 	}
 
@@ -503,13 +493,8 @@ func isScheduledSubmitFlow(flow FlowInfo, votes flowVotes) bool {
 // It runs before any new flow is created, so a failure here can leave fewer
 // flows than before but never more.
 func (c *ChangeContext) deleteScheduledSubmitFlows(changeNum int, votes flowVotes) (int, error) {
-	listEndpoint := fmt.Sprintf("changes/%d/flows", changeNum)
-	req, err := c.Client.NewRequest(c.Context, "GET", listEndpoint, nil)
+	existing, err := c.Client.ListFlows(c.Context, changeNum)
 	if err != nil {
-		return 0, c.FormatError(err, "listing existing flows on")
-	}
-	var existing []FlowInfo
-	if _, err := c.Client.Do(req, &existing); err != nil {
 		return 0, c.FormatError(err, "listing existing flows on")
 	}
 
@@ -518,12 +503,7 @@ func (c *ChangeContext) deleteScheduledSubmitFlows(changeNum int, votes flowVote
 		if flow.UUID == "" || !isScheduledSubmitFlow(flow, votes) {
 			continue
 		}
-		delEndpoint := fmt.Sprintf("changes/%d/flows/%s", changeNum, url.PathEscape(flow.UUID))
-		req, err := c.Client.NewRequest(c.Context, "DELETE", delEndpoint, nil)
-		if err != nil {
-			return deleted, c.FormatError(err, "deleting previously scheduled submit flow on")
-		}
-		if _, err := c.Client.Do(req, nil); err != nil {
+		if err := c.Client.DeleteFlow(c.Context, changeNum, flow.UUID); err != nil {
 			return deleted, c.FormatError(err, "deleting previously scheduled submit flow on")
 		}
 		deleted++
@@ -565,23 +545,15 @@ type isFlowsEnabledInfo struct {
 // have the endpoint. 404 is only read that way because callers have already
 // fetched the change, so it cannot mean the change is missing. Any other
 // failure is returned as is rather than guessed to mean flows are disabled.
-func checkFlowsEnabled(ctx context.Context, client *gerrit.Client, host string, changeNum int) error {
-	endpoint := fmt.Sprintf("changes/%d/is-flows-enabled", changeNum)
+func checkFlowsEnabled(ctx context.Context, client *GerritClient, host string, changeNum int) error {
 	const action = "checking whether Gerrit Flows are enabled for"
-	req, err := client.NewRequest(ctx, "GET", endpoint, nil)
+	info, err := client.IsFlowsEnabled(ctx, changeNum)
 	if err != nil {
-		return FormatGerritError(err, action, strconv.Itoa(changeNum), host)
-	}
-	var info isFlowsEnabledInfo
-	resp, err := client.Do(req, &info)
-	if err != nil {
-		if resp != nil {
-			switch resp.StatusCode {
-			case http.StatusMethodNotAllowed:
-				return &FlowsNotEnabledError{Host: host, ChangeNum: changeNum, Reason: "no flow service is installed"}
-			case http.StatusNotFound:
-				return &FlowsNotEnabledError{Host: host, ChangeNum: changeNum, Reason: "the server predates Gerrit 3.13, which added flows"}
-			}
+		switch {
+		case IsGerritHTTPStatus(err, http.StatusMethodNotAllowed):
+			return &FlowsNotEnabledError{Host: host, ChangeNum: changeNum, Reason: "no flow service is installed"}
+		case IsGerritHTTPStatus(err, http.StatusNotFound):
+			return &FlowsNotEnabledError{Host: host, ChangeNum: changeNum, Reason: "the server predates Gerrit 3.13, which added flows"}
 		}
 		return FormatGerritError(err, action, strconv.Itoa(changeNum), host)
 	}
@@ -750,7 +722,7 @@ func stackScheduleSlots(bottom *ChangeContext, submitAt string, n int, tz string
 			return nil, err
 		}
 	} else {
-		change, err := bottom.GetChange(nil)
+		change, err := bottom.GetChange()
 		if err != nil {
 			return nil, err
 		}

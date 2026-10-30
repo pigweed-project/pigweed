@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -121,22 +120,8 @@ var listCmd = &cobra.Command{
 
 		var resolvedSelfRef string
 		resolveSelfRef := func() string {
-			if resolvedSelfRef != "" {
-				return resolvedSelfRef
-			}
-			resolvedSelfRef = "self"
-			if activeAccountCacheDir() != "" {
-				cfg := GetConfig(cmd)
-				if cfg == nil {
-					cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
-				}
-				gHost := cfg.GerritHost(ctx)
-				if isHostFlagChanged(cmd) && HostFlag != "" {
-					gHost = CanonicalGerritHost(HostFlag)
-				}
-				if acc := PeekSelfAccountCache(gHost); acc != nil && acc.AccountID > 0 {
-					resolvedSelfRef = fmt.Sprintf("%d", acc.AccountID)
-				}
+			if resolvedSelfRef == "" {
+				resolvedSelfRef, _ = CachedSelfAccountRef(ctx, cmd, client)
 			}
 			return resolvedSelfRef
 		}
@@ -186,22 +171,12 @@ var listCmd = &cobra.Command{
 			queryString = "status:open" // Fallback if no filters
 		}
 
-		opt := &gerrit.QueryChangeOptions{
-			QueryOptions: gerrit.QueryOptions{
-				Query: []string{queryString},
-				Limit: listLimit,
-			},
-			ChangeOptions: gerrit.ChangeOptions{
-				AdditionalFields: []string{"DETAILED_ACCOUNTS"},
-			},
-		}
-
-		changes, _, err := client.Changes.QueryChanges(ctx, opt)
+		changes, err := client.QueryChanges(ctx, queryString, listLimit, "DETAILED_ACCOUNTS")
 		if err != nil {
 			return fmt.Errorf("failed to query changes: %w", err)
 		}
 
-		if listJSON == "" && listTemplateStr == "" && (changes == nil || len(*changes) == 0) {
+		if listJSON == "" && listTemplateStr == "" && len(changes) == 0 {
 			var msg string
 			switch listState {
 			case "open":
@@ -228,7 +203,7 @@ var listCmd = &cobra.Command{
 
 		data := []map[string]any{}
 		if changes != nil {
-			for _, c := range *changes {
+			for _, c := range changes {
 				owner := FormatAccount(c.Owner)
 				data = append(data, map[string]any{
 					"number":  c.Number,
@@ -253,8 +228,8 @@ var listCmd = &cobra.Command{
 		if err := r.Render(data); err != nil {
 			return fmt.Errorf("failed to render output: %w", err)
 		}
-		if !cmd.Flags().Changed("json") && !cmd.Flags().Changed("template") && changes != nil && len(*changes) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "\nShowing %d open changes.\nNext: gh pr view <id>  (or gh pr checkout <id>)\n", len(*changes))
+		if !cmd.Flags().Changed("json") && !cmd.Flags().Changed("template") && len(changes) > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "\nShowing %d open changes.\nNext: gh pr view <id>  (or gh pr checkout <id>)\n", len(changes))
 		}
 		return nil
 	},

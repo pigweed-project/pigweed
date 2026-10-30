@@ -950,35 +950,6 @@ func TestCommentCmd_BodyFileStdin(t *testing.T) {
 	})
 }
 
-func TestCommentPathBuilders(t *testing.T) {
-	builders := []struct {
-		name string
-		got  func() (string, error)
-		want string
-	}{
-		{"review with empty revision", func() (string, error) { return reviewPath("123", "") }, "changes/123/revisions/current/review"},
-		{"review with patchset", func() (string, error) { return reviewPath("123", "2") }, "changes/123/revisions/2/review"},
-		{"drafts", func() (string, error) { return draftsPath("123", "2") }, "changes/123/revisions/2/drafts"},
-		{"drafts with empty revision", func() (string, error) { return draftsPath("123", "") }, "changes/123/revisions/current/drafts"},
-		{"draft", func() (string, error) { return draftPath("123", "2", "abc_def") }, "changes/123/revisions/2/drafts/abc_def"},
-		{"draft ID escaped", func() (string, error) { return draftPath("123", "2", "../x") }, "changes/123/revisions/2/drafts/..%2Fx"},
-		{"revision escaped", func() (string, error) { return draftsPath("123", "../../abandon") }, "changes/123/revisions/..%2F..%2Fabandon/drafts"},
-	}
-	for _, tc := range builders {
-		got, err := tc.got()
-		if err != nil || got != tc.want {
-			t.Errorf("%s: got %q, %v; want %q", tc.name, got, err, tc.want)
-		}
-	}
-
-	if _, err := reviewPath("bad%zz", "current"); err == nil {
-		t.Error("reviewPath with a malformed escape succeeded, want error")
-	}
-	if _, err := draftPath("123", "2", "bad%zz"); err == nil {
-		t.Error("draftPath with a malformed escape succeeded, want error")
-	}
-}
-
 // lastCommentIsAI decodes the last request body, which is a draft
 // CommentInput or a ReviewInput with one comment, and returns that comment.
 func lastComment(t *testing.T, server *MockGerritServer) (path string, comment map[string]any) {

@@ -16,12 +16,10 @@ package pw_ghish
 
 import (
 	"fmt"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -87,7 +85,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 			return err
 		}
 		for _, reviewer := range expandedReviewers {
-			if _, _, err := client.Changes.AddReviewer(ctx, changeID, &gerrit.ReviewerInput{Reviewer: reviewer}); err != nil {
+			if err := client.AddReviewer(ctx, changeID, reviewer, ""); err != nil {
 				return chCtx.FormatError(err, fmt.Sprintf("adding reviewer %s to", reviewer))
 			}
 		}
@@ -99,7 +97,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 		}
 
 		for _, reviewer := range opts.removeReviewer {
-			_, err = client.Changes.DeleteReviewer(ctx, changeID, reviewer)
+			err = client.DeleteReviewer(ctx, changeID, reviewer)
 			if err != nil {
 				return fmt.Errorf("error deleting reviewer %s: %w", reviewer, err)
 			}
@@ -114,8 +112,8 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 				return err
 			}
 
-			review := &gerrit.ReviewInput{
-				AddToAttentionSet: []gerrit.AttentionSetInput{
+			review := &ReviewInput{
+				AddToAttentionSet: []AttentionSetInput{
 					{User: assignee, Reason: "Assigned via gh-ish"},
 				},
 			}
@@ -129,7 +127,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 		}
 
 		for _, assignee := range opts.removeAssignee {
-			_, err = client.Changes.DeleteReviewer(ctx, changeID, assignee)
+			err = client.DeleteReviewer(ctx, changeID, assignee)
 			if err != nil {
 				return fmt.Errorf("error deleting assignee %s: %w", assignee, err)
 			}
@@ -160,7 +158,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 		}
 
 		if len(labelVotes) > 0 {
-			input := &gerrit.ReviewInput{
+			input := &ReviewInput{
 				Labels: labelVotes,
 			}
 
@@ -175,7 +173,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 
 		if cmd.Flags().Changed("topic") || opts.removeTopic {
 			if opts.removeTopic || (cmd.Flags().Changed("topic") && strings.TrimSpace(opts.topic) == "") {
-				if _, err := client.Changes.DeleteTopic(ctx, changeID); err != nil {
+				if err := client.DeleteTopic(ctx, changeID); err != nil {
 					return chCtx.FormatError(err, "deleting topic on")
 				}
 				PrintReceipt(cmd.OutOrStdout(), Receipt{
@@ -184,16 +182,14 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 				})
 			} else {
 				targetTopic := strings.TrimSpace(opts.topic)
-				chInfo, chErr := chCtx.GetChange(&gerrit.ChangeOptions{
-					AdditionalFields: []string{"SUBMIT_REQUIREMENTS"},
-				})
+				chInfo, chErr := chCtx.GetChange("SUBMIT_REQUIREMENTS")
 				if chErr != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to query submit requirements for change %s before setting topic: %v\n", changeID, chErr)
 				}
 				if err := CheckTopicAllowed(ctx, chCtx.Config, chInfo, targetTopic, fmt.Sprintf("gh pr edit %s (without --topic)", changeID)); err != nil {
 					return err
 				}
-				if _, _, err := client.Changes.SetTopic(ctx, changeID, &gerrit.TopicInput{Topic: targetTopic}); err != nil {
+				if err := client.SetTopic(ctx, changeID, targetTopic); err != nil {
 					return chCtx.FormatError(err, "setting topic on")
 				}
 				PrintReceipt(cmd.OutOrStdout(), Receipt{
@@ -204,10 +200,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 		}
 
 		if len(opts.addHashtags) > 0 || len(opts.removeHashtags) > 0 {
-			if _, _, err := client.Changes.SetHashtags(ctx, changeID, &gerrit.HashtagsInput{
-				Add:    opts.addHashtags,
-				Remove: opts.removeHashtags,
-			}); err != nil {
+			if err := client.SetHashtags(ctx, changeID, opts.addHashtags, opts.removeHashtags); err != nil {
 				return chCtx.FormatError(err, "updating hashtags on")
 			}
 			PrintReceipt(cmd.OutOrStdout(), Receipt{
@@ -222,7 +215,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 				requestedCQ = opts.trigger
 			}
 			cqName, cqScore := chCtx.ResolveCQVote(requestedCQ)
-			input := &gerrit.ReviewInput{
+			input := &ReviewInput{
 				Labels: map[string]int{cqName: cqScore},
 			}
 			if err := chCtx.SetReviewRevision("current", input); err != nil {
@@ -301,9 +294,7 @@ func normalizeAttentionAccounts(flag string, accounts []string) ([]string, error
 // Gerrit's dedicated endpoint, which, unlike posting a review, creates no
 // change message and does not apply the automatic attention set rules.
 func addToAttentionSet(chCtx *ChangeContext, account string) error {
-	endpoint := fmt.Sprintf("changes/%s/attention", url.PathEscape(chCtx.ChangeID))
-	input := &gerrit.AttentionSetInput{User: account, Reason: attentionSetReason}
-	if _, err := chCtx.Client.Call(chCtx.Context, "POST", endpoint, input, nil); err != nil {
+	if err := chCtx.Client.AddToAttentionSet(chCtx.Context, chCtx.ChangeID, account, attentionSetReason); err != nil {
 		return chCtx.FormatError(err, fmt.Sprintf("adding %s to the attention set of", account))
 	}
 	return nil
@@ -312,8 +303,7 @@ func addToAttentionSet(chCtx *ChangeContext, account string) error {
 // removeFromAttentionSet removes account from the change's attention set.
 // The account remains a reviewer or CC.
 func removeFromAttentionSet(chCtx *ChangeContext, account string) error {
-	input := &gerrit.AttentionSetInput{Reason: attentionSetReason}
-	if _, err := chCtx.Client.Changes.RemoveAttention(chCtx.Context, chCtx.ChangeID, url.PathEscape(account), input); err != nil {
+	if err := chCtx.Client.RemoveFromAttentionSet(chCtx.Context, chCtx.ChangeID, account, attentionSetReason); err != nil {
 		return chCtx.FormatError(err, fmt.Sprintf("removing %s from the attention set of", account))
 	}
 	return nil

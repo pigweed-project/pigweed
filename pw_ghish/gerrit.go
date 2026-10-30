@@ -236,6 +236,7 @@ type CommentInput struct {
 	Updated    *Timestamp    `json:"updated,omitempty"`
 	Message    string        `json:"message,omitempty"`
 	Unresolved *bool         `json:"unresolved,omitempty"`
+	IsAI       *bool         `json:"is_ai,omitempty"`
 }
 
 // ReviewInput contains options for setting a review on a revision.
@@ -653,6 +654,18 @@ func formatByteLimit(n int64) string {
 	return fmt.Sprintf("%d bytes", n)
 }
 
+// escapePathSegment URL-escapes a single Gerrit REST path segment, decoding
+// once first so already-encoded identifiers (such as "pigweed%2Fpigweed~123")
+// are preserved rather than double-encoded to "%252F". If s contains a
+// malformed percent-escape, s is escaped raw so untrusted characters cannot
+// pass through unescaped.
+func escapePathSegment(s string) string {
+	if decoded, err := url.PathUnescape(s); err == nil {
+		return url.PathEscape(decoded)
+	}
+	return url.PathEscape(s)
+}
+
 // GetSelfAccount fetches the authenticated user's AccountInfo ("GET /accounts/self").
 func (c *GerritClient) GetSelfAccount(ctx context.Context) (*AccountInfo, error) {
 	var account AccountInfo
@@ -669,7 +682,7 @@ func (c *GerritClient) GetChange(ctx context.Context, changeID string, additiona
 		q = url.Values{"o": additionalFields}
 	}
 	var change ChangeInfo
-	endpoint := fmt.Sprintf("changes/%s", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s", escapePathSegment(changeID))
 	if err := c.do(ctx, http.MethodGet, endpoint, q, nil, &change); err != nil {
 		return nil, err
 	}
@@ -683,7 +696,7 @@ func (c *GerritClient) GetChangeDetail(ctx context.Context, changeID string, add
 		q = url.Values{"o": additionalFields}
 	}
 	var change ChangeInfo
-	endpoint := fmt.Sprintf("changes/%s/detail", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/detail", escapePathSegment(changeID))
 	if err := c.do(ctx, http.MethodGet, endpoint, q, nil, &change); err != nil {
 		return nil, err
 	}
@@ -748,8 +761,8 @@ func (c *GerritClient) QueryChangesMulti(ctx context.Context, queries []string, 
 func revisionEndpoint(changeID, revisionID, suffix string) string {
 	return fmt.Sprintf(
 		"changes/%s/revisions/%s/%s",
-		url.PathEscape(changeID),
-		url.PathEscape(cmp.Or(revisionID, "current")),
+		escapePathSegment(changeID),
+		escapePathSegment(cmp.Or(revisionID, "current")),
 		strings.TrimPrefix(suffix, "/"),
 	)
 }
@@ -778,7 +791,7 @@ func (c *GerritClient) SetReview(ctx context.Context, changeID, revision string,
 
 // SubmitChange submits a change ("POST /changes/{change-id}/submit").
 func (c *GerritClient) SubmitChange(ctx context.Context, changeID string) (*ChangeInfo, error) {
-	endpoint := fmt.Sprintf("changes/%s/submit", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/submit", escapePathSegment(changeID))
 	var change ChangeInfo
 	if err := c.do(ctx, http.MethodPost, endpoint, nil, &submitInput{WaitForMerge: true}, &change); err != nil {
 		return nil, err
@@ -788,7 +801,7 @@ func (c *GerritClient) SubmitChange(ctx context.Context, changeID string) (*Chan
 
 // AbandonChange abandons a change ("POST /changes/{change-id}/abandon").
 func (c *GerritClient) AbandonChange(ctx context.Context, changeID, message string) (*ChangeInfo, error) {
-	endpoint := fmt.Sprintf("changes/%s/abandon", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/abandon", escapePathSegment(changeID))
 	var change ChangeInfo
 	if err := c.do(ctx, http.MethodPost, endpoint, nil, &messageInput{Message: message}, &change); err != nil {
 		return nil, err
@@ -798,7 +811,7 @@ func (c *GerritClient) AbandonChange(ctx context.Context, changeID, message stri
 
 // RestoreChange restores an abandoned change ("POST /changes/{change-id}/restore").
 func (c *GerritClient) RestoreChange(ctx context.Context, changeID, message string) (*ChangeInfo, error) {
-	endpoint := fmt.Sprintf("changes/%s/restore", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/restore", escapePathSegment(changeID))
 	var change ChangeInfo
 	if err := c.do(ctx, http.MethodPost, endpoint, nil, &messageInput{Message: message}, &change); err != nil {
 		return nil, err
@@ -808,19 +821,19 @@ func (c *GerritClient) RestoreChange(ctx context.Context, changeID, message stri
 
 // SetReadyForReview marks a WIP change as ready for review ("POST /changes/{change-id}/ready").
 func (c *GerritClient) SetReadyForReview(ctx context.Context, changeID, message string) error {
-	endpoint := fmt.Sprintf("changes/%s/ready", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/ready", escapePathSegment(changeID))
 	return c.do(ctx, http.MethodPost, endpoint, nil, &messageInput{Message: message}, nil)
 }
 
 // SetWorkInProgress marks a change as work in progress ("POST /changes/{change-id}/wip").
 func (c *GerritClient) SetWorkInProgress(ctx context.Context, changeID, message string) error {
-	endpoint := fmt.Sprintf("changes/%s/wip", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/wip", escapePathSegment(changeID))
 	return c.do(ctx, http.MethodPost, endpoint, nil, &messageInput{Message: message}, nil)
 }
 
 // AddReviewer adds a reviewer or CC to a change ("POST /changes/{change-id}/reviewers").
 func (c *GerritClient) AddReviewer(ctx context.Context, changeID, reviewer, state string) error {
-	endpoint := fmt.Sprintf("changes/%s/reviewers", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/reviewers", escapePathSegment(changeID))
 	return c.do(ctx, http.MethodPost, endpoint, nil, &reviewerInput{
 		Reviewer: reviewer,
 		State:    state,
@@ -829,13 +842,13 @@ func (c *GerritClient) AddReviewer(ctx context.Context, changeID, reviewer, stat
 
 // DeleteReviewer removes a reviewer from a change ("DELETE /changes/{change-id}/reviewers/{account-id}").
 func (c *GerritClient) DeleteReviewer(ctx context.Context, changeID, accountID string) error {
-	endpoint := fmt.Sprintf("changes/%s/reviewers/%s", url.PathEscape(changeID), url.PathEscape(accountID))
+	endpoint := fmt.Sprintf("changes/%s/reviewers/%s", escapePathSegment(changeID), escapePathSegment(accountID))
 	return c.do(ctx, http.MethodDelete, endpoint, nil, nil, nil)
 }
 
 // AddToAttentionSet adds a user to the attention set ("POST /changes/{change-id}/attention").
 func (c *GerritClient) AddToAttentionSet(ctx context.Context, changeID, user, reason string) error {
-	endpoint := fmt.Sprintf("changes/%s/attention", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/attention", escapePathSegment(changeID))
 	return c.do(ctx, http.MethodPost, endpoint, nil, &AttentionSetInput{
 		User:   user,
 		Reason: reason,
@@ -844,7 +857,7 @@ func (c *GerritClient) AddToAttentionSet(ctx context.Context, changeID, user, re
 
 // RemoveFromAttentionSet removes a user from the attention set ("DELETE /changes/{change-id}/attention/{account-id}").
 func (c *GerritClient) RemoveFromAttentionSet(ctx context.Context, changeID, accountID, reason string) error {
-	endpoint := fmt.Sprintf("changes/%s/attention/%s", url.PathEscape(changeID), url.PathEscape(accountID))
+	endpoint := fmt.Sprintf("changes/%s/attention/%s", escapePathSegment(changeID), escapePathSegment(accountID))
 	return c.do(ctx, http.MethodDelete, endpoint, nil, &AttentionSetInput{
 		Reason: reason,
 	}, nil)
@@ -852,19 +865,19 @@ func (c *GerritClient) RemoveFromAttentionSet(ctx context.Context, changeID, acc
 
 // SetTopic sets the topic on a change ("PUT /changes/{change-id}/topic").
 func (c *GerritClient) SetTopic(ctx context.Context, changeID, topic string) error {
-	endpoint := fmt.Sprintf("changes/%s/topic", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/topic", escapePathSegment(changeID))
 	return c.do(ctx, http.MethodPut, endpoint, nil, &topicInput{Topic: topic}, nil)
 }
 
 // DeleteTopic deletes the topic on a change ("DELETE /changes/{change-id}/topic").
 func (c *GerritClient) DeleteTopic(ctx context.Context, changeID string) error {
-	endpoint := fmt.Sprintf("changes/%s/topic", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/topic", escapePathSegment(changeID))
 	return c.do(ctx, http.MethodDelete, endpoint, nil, nil, nil)
 }
 
 // SetHashtags adds and/or removes hashtags on a change ("POST /changes/{change-id}/hashtags").
 func (c *GerritClient) SetHashtags(ctx context.Context, changeID string, add, remove []string) error {
-	endpoint := fmt.Sprintf("changes/%s/hashtags", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/hashtags", escapePathSegment(changeID))
 	return c.do(ctx, http.MethodPost, endpoint, nil, &hashtagsInput{
 		Add:    add,
 		Remove: remove,
@@ -873,7 +886,7 @@ func (c *GerritClient) SetHashtags(ctx context.Context, changeID string, add, re
 
 // ListChangeComments lists published inline comments on a change ("GET /changes/{change-id}/comments").
 func (c *GerritClient) ListChangeComments(ctx context.Context, changeID string) (map[string][]CommentInfo, error) {
-	endpoint := fmt.Sprintf("changes/%s/comments", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/comments", escapePathSegment(changeID))
 	var comments map[string][]CommentInfo
 	if err := c.do(ctx, http.MethodGet, endpoint, nil, nil, &comments); err != nil {
 		return nil, err
@@ -883,7 +896,7 @@ func (c *GerritClient) ListChangeComments(ctx context.Context, changeID string) 
 
 // ListChangeDrafts lists draft inline comments on a change ("GET /changes/{change-id}/drafts").
 func (c *GerritClient) ListChangeDrafts(ctx context.Context, changeID string) (map[string][]CommentInfo, error) {
-	endpoint := fmt.Sprintf("changes/%s/drafts", url.PathEscape(changeID))
+	endpoint := fmt.Sprintf("changes/%s/drafts", escapePathSegment(changeID))
 	var drafts map[string][]CommentInfo
 	if err := c.do(ctx, http.MethodGet, endpoint, nil, nil, &drafts); err != nil {
 		return nil, err
@@ -903,7 +916,7 @@ func (c *GerritClient) CreateDraft(ctx context.Context, changeID, revision strin
 
 // UpdateDraft updates an existing draft comment ("PUT /changes/{change-id}/revisions/{revision-id}/drafts/{draft-id}").
 func (c *GerritClient) UpdateDraft(ctx context.Context, changeID, revision, draftID string, input *CommentInput) (*CommentInfo, error) {
-	endpoint := revisionEndpoint(changeID, revision, "drafts/"+url.PathEscape(draftID))
+	endpoint := revisionEndpoint(changeID, revision, "drafts/"+escapePathSegment(draftID))
 	var updated CommentInfo
 	if err := c.do(ctx, http.MethodPut, endpoint, nil, input, &updated); err != nil {
 		return nil, err
@@ -913,7 +926,7 @@ func (c *GerritClient) UpdateDraft(ctx context.Context, changeID, revision, draf
 
 // DeleteDraft deletes a draft comment ("DELETE /changes/{change-id}/revisions/{revision-id}/drafts/{draft-id}").
 func (c *GerritClient) DeleteDraft(ctx context.Context, changeID, revision, draftID string) error {
-	endpoint := revisionEndpoint(changeID, revision, "drafts/"+url.PathEscape(draftID))
+	endpoint := revisionEndpoint(changeID, revision, "drafts/"+escapePathSegment(draftID))
 	return c.do(ctx, http.MethodDelete, endpoint, nil, nil, nil)
 }
 
@@ -947,12 +960,31 @@ func (c *GerritClient) GetPatch(ctx context.Context, changeID, revision string) 
 	return string(cleaned), nil
 }
 
+// LabelDefinition is one entry of a project's label list, as returned by
+// Gerrit's "GET /projects/{project}/labels/" endpoint. Only the fields needed
+// to identify a label and its range are decoded.
+type LabelDefinition struct {
+	Name   string            `json:"name"`
+	Values map[string]string `json:"values"`
+}
+
+// CodeOwnerInfo represents a single code owner suggestion returned by Gerrit's
+// code-owners plugin.
+type CodeOwnerInfo struct {
+	Account  AccountInfo        `json:"account"`
+	Scorings map[string]float64 `json:"scorings"`
+}
+
+type codeOwnersResponse struct {
+	CodeOwners []CodeOwnerInfo `json:"code_owners"`
+}
+
 // ListProjectLabels lists label definitions for a Gerrit project ("GET /projects/{project-name}/labels/").
 func (c *GerritClient) ListProjectLabels(ctx context.Context, project string) ([]LabelDefinition, error) {
 	if c == nil || project == "" {
 		return nil, fmt.Errorf("client and project are required")
 	}
-	endpoint := fmt.Sprintf("projects/%s/labels/", url.PathEscape(project))
+	endpoint := fmt.Sprintf("projects/%s/labels/", escapePathSegment(project))
 	var labels []LabelDefinition
 	if err := c.do(ctx, http.MethodGet, endpoint, nil, nil, &labels); err != nil {
 		return nil, err
@@ -965,7 +997,7 @@ func (c *GerritClient) QueryChangeCodeOwners(ctx context.Context, changeID, revi
 	if c == nil || changeID == "" || filePath == "" {
 		return nil, fmt.Errorf("client, changeID, and filePath are required")
 	}
-	endpoint := revisionEndpoint(changeID, revision, "code_owners/"+url.PathEscape(filePath))
+	endpoint := revisionEndpoint(changeID, revision, "code_owners/"+escapePathSegment(filePath))
 	q := url.Values{
 		"limit": []string{"10"},
 		"o":     []string{"DETAILS"},
@@ -984,9 +1016,9 @@ func (c *GerritClient) QueryBranchCodeOwners(ctx context.Context, project, branc
 	}
 	endpoint := fmt.Sprintf(
 		"projects/%s/branches/%s/code_owners/%s",
-		url.PathEscape(project),
-		url.PathEscape(branch),
-		url.PathEscape(filePath),
+		escapePathSegment(project),
+		escapePathSegment(branch),
+		escapePathSegment(filePath),
 	)
 	q := url.Values{
 		"limit": []string{"10"},
@@ -1027,6 +1059,6 @@ func (c *GerritClient) CreateFlow(ctx context.Context, changeNum int, payload Fl
 
 // DeleteFlow deletes a flow on a change ("DELETE /changes/{change-num}/flows/{flow-id}").
 func (c *GerritClient) DeleteFlow(ctx context.Context, changeNum int, flowUUID string) error {
-	endpoint := fmt.Sprintf("changes/%d/flows/%s", changeNum, url.PathEscape(flowUUID))
+	endpoint := fmt.Sprintf("changes/%d/flows/%s", changeNum, escapePathSegment(flowUUID))
 	return c.do(ctx, http.MethodDelete, endpoint, nil, nil, nil)
 }

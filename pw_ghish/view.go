@@ -24,7 +24,6 @@ import (
 	"sync"
 	"text/template"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -83,22 +82,19 @@ var viewCmd = &cobra.Command{
 		} else {
 			additionalFields = []string{"DETAILED_LABELS", "ALL_REVISIONS", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
 		}
-		opt := &gerrit.ChangeOptions{
-			AdditionalFields: additionalFields,
-		}
 
 		wantCommentsJSON := requestsAnyJSONField(jsonOutputFields, "comments")
 		wantDraftsJSON := requestsAnyJSONField(jsonOutputFields, "drafts")
 		wantFilesJSON := requestsAnyJSONField(jsonOutputFields, "files")
 		needComments := !viewWeb && (showComments || wantCommentsJSON)
-		needDrafts := !viewWeb && (showComments || wantDraftsJSON)
+		needDrafts := !viewWeb && ((showComments && client.Authenticated()) || wantDraftsJSON)
 
 		var (
 			wg            sync.WaitGroup
 			fileList      []map[string]any
 			filesErr      error
-			comments      map[string][]gerrit.CommentInfo
-			drafts        map[string][]gerrit.CommentInfo
+			comments      map[string][]CommentInfo
+			drafts        map[string][]CommentInfo
 			commentsErr   error
 			draftsErr     error
 			checksSummary string
@@ -112,14 +108,7 @@ var viewCmd = &cobra.Command{
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				cMap, _, err := client.Changes.ListChangeComments(wave1Ctx, changeID)
-				if err != nil {
-					commentsErr = err
-					return
-				}
-				if cMap != nil {
-					comments = *cMap
-				}
+				comments, commentsErr = client.ListChangeComments(wave1Ctx, changeID)
 			}()
 		}
 
@@ -127,18 +116,11 @@ var viewCmd = &cobra.Command{
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				dMap, _, err := client.Changes.ListChangeDrafts(wave1Ctx, changeID)
-				if err != nil {
-					draftsErr = err
-					return
-				}
-				if dMap != nil {
-					drafts = *dMap
-				}
+				drafts, draftsErr = client.ListChangeDrafts(wave1Ctx, changeID)
 			}()
 		}
 
-		change, err := chCtx.GetChange(opt)
+		change, err := chCtx.GetChange(additionalFields...)
 		if err != nil {
 			cancelWave1()
 			wg.Wait()
@@ -201,7 +183,7 @@ var viewCmd = &cobra.Command{
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				files, _, err := client.Changes.ListFiles(ctx, changeID, revisionToFetch, nil)
+				files, err := client.ListFiles(ctx, changeID, revisionToFetch)
 				if err != nil {
 					filesErr = err
 					return
@@ -246,10 +228,10 @@ var viewCmd = &cobra.Command{
 		}
 
 		if comments == nil {
-			comments = map[string][]gerrit.CommentInfo{}
+			comments = map[string][]CommentInfo{}
 		}
 		if drafts == nil {
-			drafts = map[string][]gerrit.CommentInfo{}
+			drafts = map[string][]CommentInfo{}
 		}
 
 		verdict, nextHint := computeChangeVerdict(change, checksSummary, comments, showComments)
@@ -303,7 +285,7 @@ var viewCmd = &cobra.Command{
 				"getLabelSummary": getLabelSummary,
 				"hasScore":        hasScore,
 				"hasAnyScore":     hasAnyScore,
-				"printComments": func(c map[string][]gerrit.CommentInfo) string {
+				"printComments": func(c map[string][]CommentInfo) string {
 					return FormatCommentForestWithOptions(c, drafts, CommentFormatOptions{
 						IncludeAll: viewAllComments,
 					})
@@ -360,11 +342,11 @@ To fix this:
 		field, changeID, field, changeID, field, changeID)
 }
 
-func hasScore(info gerrit.LabelInfo) bool {
+func hasScore(info LabelInfo) bool {
 	return getLabelSummary(info) != "No score"
 }
 
-func hasAnyScore(labels map[string]gerrit.LabelInfo) bool {
+func hasAnyScore(labels map[string]LabelInfo) bool {
 	for _, info := range labels {
 		if hasScore(info) {
 			return true
@@ -377,7 +359,7 @@ func hasAnyScore(labels map[string]gerrit.LabelInfo) bool {
 //
 // LabelInfo.Values is populated when DETAILED_LABELS is requested; ok is
 // false when the range could not be determined.
-func labelRange(info gerrit.LabelInfo) (low, high int, ok bool) {
+func labelRange(info LabelInfo) (low, high int, ok bool) {
 	for value := range info.Values {
 		n, err := strconv.Atoi(strings.TrimSpace(value))
 		if err != nil {
@@ -397,7 +379,7 @@ func labelRange(info gerrit.LabelInfo) (low, high int, ok bool) {
 // castVote returns the most significant vote on a label: the lowest negative
 // vote if anyone objected, otherwise the highest positive vote. This mirrors
 // how Gerrit itself collapses a label down to a single displayed value.
-func castVote(info gerrit.LabelInfo) (value int, voted bool) {
+func castVote(info LabelInfo) (value int, voted bool) {
 	low, high := 0, 0
 	for _, approval := range info.All {
 		v := int(approval.Value)
@@ -426,7 +408,7 @@ func castVote(info gerrit.LabelInfo) (value int, voted bool) {
 // so the number is read from the vote itself and only the wording is derived
 // from the label's range. Reporting a fixed +2 here would print a score the
 // label cannot hold.
-func getLabelSummary(info gerrit.LabelInfo) string {
+func getLabelSummary(info LabelInfo) string {
 	low, high, haveRange := labelRange(info)
 
 	value, voted := castVote(info)
@@ -470,7 +452,7 @@ func getLabelSummary(info gerrit.LabelInfo) string {
 // computeChangeVerdict derives a compact answer-first verdict and an optional
 // actionable next-step command from the change metadata already fetched by
 // viewCmd.
-func computeChangeVerdict(change *gerrit.ChangeInfo, checksSummary string, comments map[string][]gerrit.CommentInfo, commentsFetched bool) (verdict string, next string) {
+func computeChangeVerdict(change *ChangeInfo, checksSummary string, comments map[string][]CommentInfo, commentsFetched bool) (verdict string, next string) {
 	if change == nil {
 		return "", ""
 	}

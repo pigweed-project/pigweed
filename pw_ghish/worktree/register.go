@@ -20,7 +20,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 	"pigweed.dev/pw_ghish"
 )
@@ -78,12 +77,9 @@ func BatchChangeIDQueries(changeIDs []string, batchSize int) []string {
 
 const maxGerritBatchConcurrency = 4
 
-func changesToStatusMap(changes *[]gerrit.ChangeInfo) map[string]ChangeStatus {
+func changesToStatusMap(changes []pw_ghish.ChangeInfo) map[string]ChangeStatus {
 	batchMap := make(map[string]ChangeStatus)
-	if changes == nil {
-		return batchMap
-	}
-	for _, c := range *changes {
+	for _, c := range changes {
 		batchMap[c.ChangeID] = ChangeStatus{
 			ChangeID:          c.ChangeID,
 			Number:            c.Number,
@@ -100,7 +96,7 @@ func changesToStatusMap(changes *[]gerrit.ChangeInfo) map[string]ChangeStatus {
 func queryChangeBatches(
 	ctx context.Context,
 	queries []string,
-	queryBatch func(ctx context.Context, query string) (*[]gerrit.ChangeInfo, error),
+	queryBatch func(ctx context.Context, query string) ([]pw_ghish.ChangeInfo, error),
 ) (map[string]ChangeStatus, error) {
 	res := make(map[string]ChangeStatus)
 	if len(queries) == 0 {
@@ -160,17 +156,8 @@ func (a *gerritStatusAdapter) QueryChangesByID(ctx context.Context, changeIDs []
 		return make(map[string]ChangeStatus), err
 	}
 
-	return queryChangeBatches(ctx, queries, func(ctx context.Context, query string) (*[]gerrit.ChangeInfo, error) {
-		opt := &gerrit.QueryChangeOptions{
-			QueryOptions: gerrit.QueryOptions{
-				Query: []string{query},
-			},
-			ChangeOptions: gerrit.ChangeOptions{
-				AdditionalFields: []string{"DETAILED_LABELS", "SUBMITTABLE"},
-			},
-		}
-		changes, _, err := client.Changes.QueryChanges(ctx, opt)
-		return changes, err
+	return queryChangeBatches(ctx, queries, func(ctx context.Context, query string) ([]pw_ghish.ChangeInfo, error) {
+		return client.QueryChanges(ctx, query, 0, "DETAILED_LABELS", "SUBMITTABLE")
 	})
 }
 

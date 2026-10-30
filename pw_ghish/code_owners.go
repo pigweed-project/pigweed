@@ -20,27 +20,14 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
-
-// CodeOwnerInfo represents a single code owner suggestion returned by Gerrit's
-// code-owners plugin.
-type CodeOwnerInfo struct {
-	Account  gerrit.AccountInfo `json:"account"`
-	Scorings map[string]float64 `json:"scorings"`
-}
-
-type codeOwnersResponse struct {
-	CodeOwners []CodeOwnerInfo `json:"code_owners"`
-}
 
 // IsOwnersToken reports whether a reviewer argument requests automatic code
 // owner resolution (@owners or owners).
@@ -106,7 +93,7 @@ func ExpandReviewersForChange(cmd *cobra.Command, chCtx *ChangeContext, reviewer
 // ExpandReviewersForPush expands any @owners tokens in reviewers prior to
 // pushing a change or patchset. If reviewers contains no @owners tokens, it is
 // returned as-is without extra RPCs or git calls.
-func ExpandReviewersForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, existingChange *gerrit.ChangeInfo, reviewers []string) ([]string, error) {
+func ExpandReviewersForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, existingChange *ChangeInfo, reviewers []string) ([]string, error) {
 	items := splitReviewerArgs(reviewers)
 	if !hasOwnersTokenInItems(items) {
 		return items, nil
@@ -156,7 +143,7 @@ func ResolveCodeOwnersForChange(chCtx *ChangeContext) ([]string, error) {
 	repoRoot := resolveRepoRoot(ctx, chCtx.Config)
 
 	queryFn := func(filePath string) ([]CodeOwnerInfo, error) {
-		return queryChangeCodeOwners(ctx, client, changeID, "current", filePath)
+		return client.QueryChangeCodeOwners(ctx, changeID, "current", filePath)
 	}
 	recentAuthorsFn := func(filePath string) []string {
 		return listRecentFileAuthors(ctx, chCtx.Config, filePath)
@@ -171,7 +158,7 @@ func ResolveCodeOwnersForChange(chCtx *ChangeContext) ([]string, error) {
 
 // ResolveCodeOwnersForPush finds the minimal covering set of code owners for a
 // commit being pushed via `gh pr create` or `gh pr push`.
-func ResolveCodeOwnersForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, existingChange *gerrit.ChangeInfo) ([]string, error) {
+func ResolveCodeOwnersForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, existingChange *ChangeInfo) ([]string, error) {
 	authorEmail := resolveLocalAuthorEmail(ctx, cfg, existingChange)
 	files := listHeadChangedFiles(ctx, cfg)
 	repoRoot := resolveRepoRoot(ctx, cfg)
@@ -200,7 +187,7 @@ func ResolveCodeOwnersForPush(ctx context.Context, cmd *cobra.Command, cfg *Conf
 			chID = existingChange.ChangeID
 		}
 		if chID != "" {
-			if fMap, _, err := client.Changes.ListFiles(ctx, chID, "current", nil); err == nil {
+			if fMap, err := client.ListFiles(ctx, chID, "current"); err == nil {
 				files = extractModifiedFilePaths(fMap)
 			}
 		}
@@ -216,13 +203,13 @@ func ResolveCodeOwnersForPush(ctx context.Context, cmd *cobra.Command, cfg *Conf
 				chID = existingChange.ChangeID
 			}
 			if chID != "" {
-				if res, err := queryChangeCodeOwners(ctx, client, chID, "current", filePath); err == nil && len(res) > 0 {
+				if res, err := client.QueryChangeCodeOwners(ctx, chID, "current", filePath); err == nil && len(res) > 0 {
 					return res, nil
 				}
 			}
 		}
 		if project != "" {
-			return queryBranchCodeOwners(ctx, client, project, branch, filePath)
+			return client.QueryBranchCodeOwners(ctx, project, branch, filePath)
 		}
 		return nil, fmt.Errorf("gerrit project unknown")
 	}
@@ -248,49 +235,12 @@ func noEligibleOwnersError(subject string) error {
 		subject, root, root, root)
 }
 
-func queryChangeCodeOwners(ctx context.Context, client *gerrit.Client, changeID, revision, filePath string) ([]CodeOwnerInfo, error) {
-	if client == nil || changeID == "" || filePath == "" {
-		return nil, fmt.Errorf("invalid arguments for queryChangeCodeOwners")
-	}
-	if revision == "" {
-		revision = "current"
-	}
-	endpoint := fmt.Sprintf("changes/%s/revisions/%s/code_owners/%s?limit=10&o=DETAILS",
-		url.PathEscape(changeID),
-		url.PathEscape(revision),
-		url.PathEscape(filePath),
-	)
-	var resp codeOwnersResponse
-	if _, err := client.Call(ctx, "GET", endpoint, nil, &resp); err != nil {
-		return nil, err
-	}
-	return resp.CodeOwners, nil
-}
-
-func queryBranchCodeOwners(ctx context.Context, client *gerrit.Client, project, branch, filePath string) ([]CodeOwnerInfo, error) {
-	if client == nil || project == "" || branch == "" || filePath == "" {
-		return nil, fmt.Errorf("invalid arguments for queryBranchCodeOwners")
-	}
-	endpoint := fmt.Sprintf("projects/%s/branches/%s/code_owners/%s?limit=10&o=DETAILS",
-		url.PathEscape(project),
-		url.PathEscape(branch),
-		url.PathEscape(filePath),
-	)
-	var resp codeOwnersResponse
-	if _, err := client.Call(ctx, "GET", endpoint, nil, &resp); err != nil {
-		return nil, err
-	}
-	return resp.CodeOwners, nil
-}
-
 func resolveChangeAuthorEmail(chCtx *ChangeContext) string {
 	if chCtx == nil {
 		return ""
 	}
-	if change, err := chCtx.GetChange(&gerrit.ChangeOptions{
-		AdditionalFields: []string{"DETAILED_ACCOUNTS"},
-	}); err == nil && change != nil {
-		// gerrit.ChangeInfo.Owner is a value struct (gerrit.AccountInfo), not a pointer.
+	if change, err := chCtx.GetChange("DETAILED_ACCOUNTS"); err == nil && change != nil {
+		// ChangeInfo.Owner is a value struct (AccountInfo), not a pointer.
 		if e := strings.TrimSpace(change.Owner.Email); e != "" {
 			return e
 		}
@@ -298,8 +248,8 @@ func resolveChangeAuthorEmail(chCtx *ChangeContext) string {
 	return resolveLocalAuthorEmail(chCtx.Context, chCtx.Config, nil)
 }
 
-func resolveLocalAuthorEmail(ctx context.Context, cfg *Config, existing *gerrit.ChangeInfo) string {
-	// gerrit.ChangeInfo.Owner is a value struct (gerrit.AccountInfo), not a pointer.
+func resolveLocalAuthorEmail(ctx context.Context, cfg *Config, existing *ChangeInfo) string {
+	// ChangeInfo.Owner is a value struct (AccountInfo), not a pointer.
 	if existing != nil && strings.TrimSpace(existing.Owner.Email) != "" {
 		return strings.TrimSpace(existing.Owner.Email)
 	}
@@ -323,7 +273,7 @@ func listChangeFiles(chCtx *ChangeContext) []string {
 	if rev == "" {
 		rev = "current"
 	}
-	if fMap, _, err := chCtx.Client.Changes.ListFiles(chCtx.Context, chCtx.ChangeID, rev, nil); err == nil && len(fMap) > 0 {
+	if fMap, err := chCtx.Client.ListFiles(chCtx.Context, chCtx.ChangeID, rev); err == nil && len(fMap) > 0 {
 		if paths := extractModifiedFilePaths(fMap); len(paths) > 0 {
 			return paths
 		}
@@ -331,7 +281,7 @@ func listChangeFiles(chCtx *ChangeContext) []string {
 	return listHeadChangedFiles(chCtx.Context, chCtx.Config)
 }
 
-func extractModifiedFilePaths(fMap map[string]gerrit.FileInfo) []string {
+func extractModifiedFilePaths(fMap map[string]FileInfo) []string {
 	var paths []string
 	for p := range fMap {
 		if p == "/COMMIT_MSG" || p == "COMMIT_MSG" || p == "/MERGE_LIST" || p == "MERGE_LIST" || p == "/PATCHSET_LEVEL" || p == "PATCHSET_LEVEL" {

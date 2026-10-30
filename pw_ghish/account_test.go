@@ -23,18 +23,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
+	"github.com/spf13/cobra"
 )
 
 func TestFormatAccount(t *testing.T) {
 	tests := []struct {
 		name     string
-		acc      gerrit.AccountInfo
+		acc      AccountInfo
 		expected string
 	}{
 		{
 			name: "username takes highest priority",
-			acc: gerrit.AccountInfo{
+			acc: AccountInfo{
 				AccountID: 100,
 				Username:  "jdoe",
 				Name:      "John Doe",
@@ -44,7 +44,7 @@ func TestFormatAccount(t *testing.T) {
 		},
 		{
 			name: "name takes priority when username is empty",
-			acc: gerrit.AccountInfo{
+			acc: AccountInfo{
 				AccountID: 101,
 				Name:      "Jane Smith",
 				Email:     "jsmith@example.com",
@@ -53,7 +53,7 @@ func TestFormatAccount(t *testing.T) {
 		},
 		{
 			name: "email used when username and name are empty",
-			acc: gerrit.AccountInfo{
+			acc: AccountInfo{
 				AccountID: 102,
 				Email:     "bot@example.com",
 			},
@@ -61,19 +61,19 @@ func TestFormatAccount(t *testing.T) {
 		},
 		{
 			name: "account ID used when string fields are empty",
-			acc: gerrit.AccountInfo{
+			acc: AccountInfo{
 				AccountID: 103,
 			},
 			expected: "account #103",
 		},
 		{
 			name:     "empty account info returns empty string",
-			acc:      gerrit.AccountInfo{},
+			acc:      AccountInfo{},
 			expected: "",
 		},
 		{
 			name: "whitespace is trimmed",
-			acc: gerrit.AccountInfo{
+			acc: AccountInfo{
 				Username: "  trimmed_user  ",
 				Name:     "  Trimmed Name  ",
 			},
@@ -106,10 +106,10 @@ func TestBuildAttentionMap(t *testing.T) {
 	})
 
 	t.Run("populates valid account IDs and ignores 0", func(t *testing.T) {
-		attnSet := map[string]gerrit.AttentionSetInfo{
-			"10": {Account: gerrit.AccountInfo{AccountID: 10}},
-			"20": {Account: gerrit.AccountInfo{AccountID: 20}},
-			"0":  {Account: gerrit.AccountInfo{AccountID: 0}},
+		attnSet := map[string]AttentionSetInfo{
+			"10": {Account: AccountInfo{AccountID: 10}},
+			"20": {Account: AccountInfo{AccountID: 20}},
+			"0":  {Account: AccountInfo{AccountID: 0}},
 		}
 		m := BuildAttentionMap(attnSet)
 		if !m[10] {
@@ -128,7 +128,7 @@ func TestBuildAttentionMap(t *testing.T) {
 }
 
 func TestFormatReviewer(t *testing.T) {
-	acc := gerrit.AccountInfo{Name: "Alice"}
+	acc := AccountInfo{Name: "Alice"}
 
 	tests := []struct {
 		name        string
@@ -181,12 +181,12 @@ func TestFormatChangeReviewersAndAssignees(t *testing.T) {
 	})
 
 	t.Run("comprehensive change formatting", func(t *testing.T) {
-		change := &gerrit.ChangeInfo{
-			Owner: gerrit.AccountInfo{
+		change := &ChangeInfo{
+			Owner: AccountInfo{
 				AccountID: 1,
 				Name:      "Owner Alice",
 			},
-			Reviewers: map[string][]gerrit.AccountInfo{
+			Reviewers: map[string][]AccountInfo{
 				"REVIEWER": {
 					{AccountID: 2, Name: "Bob"},
 					{AccountID: 3, Name: "Charlie"},
@@ -196,11 +196,11 @@ func TestFormatChangeReviewersAndAssignees(t *testing.T) {
 					{AccountID: 5, Name: "Eve"},
 				},
 			},
-			AttentionSet: map[string]gerrit.AttentionSetInfo{
-				"1": {Account: gerrit.AccountInfo{AccountID: 1, Name: "Owner Alice"}},
-				"2": {Account: gerrit.AccountInfo{AccountID: 2, Name: "Bob"}},
-				"5": {Account: gerrit.AccountInfo{AccountID: 5, Name: "Eve"}},
-				"9": {Account: gerrit.AccountInfo{AccountID: 9, Name: "Frank"}}, // remaining attention set
+			AttentionSet: map[string]AttentionSetInfo{
+				"1": {Account: AccountInfo{AccountID: 1, Name: "Owner Alice"}},
+				"2": {Account: AccountInfo{AccountID: 2, Name: "Bob"}},
+				"5": {Account: AccountInfo{AccountID: 5, Name: "Eve"}},
+				"9": {Account: AccountInfo{AccountID: 9, Name: "Frank"}}, // remaining attention set
 			},
 		}
 
@@ -242,10 +242,7 @@ func TestGetSelfAccountCached(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := gerrit.NewClient(t.Context(), srv.URL, srv.Client())
-	if err != nil {
-		t.Fatalf("gerrit.NewClient failed: %v", err)
-	}
+	client := NewGerritClientWithHTTP(srv.URL, srv.Client(), mockGerritAuth)
 
 	// 0. PeekSelfAccountCache returns nil on cold cache miss without making RPCs.
 	if got := PeekSelfAccountCache("pigweed-review.googlesource.com"); got != nil {
@@ -253,6 +250,15 @@ func TestGetSelfAccountCached(t *testing.T) {
 	}
 	if selfCalls != 0 {
 		t.Fatalf("selfCalls after cold PeekSelfAccountCache = %d, want 0", selfCalls)
+	}
+
+	// An unauthenticated client cannot have a self account; no request.
+	anon := NewGerritClientWithHTTP(srv.URL, srv.Client(), GerritAuth{})
+	if acc, err := GetSelfAccountCached(t.Context(), anon, "pigweed-review.googlesource.com"); err == nil || acc != nil {
+		t.Fatalf("GetSelfAccountCached(unauthenticated) = (%+v, %v), want error", acc, err)
+	}
+	if selfCalls != 0 {
+		t.Fatalf("selfCalls after unauthenticated GetSelfAccountCached = %d, want 0", selfCalls)
 	}
 
 	// 1. First call fetches from Gerrit and writes accounts.json to disk.
@@ -283,10 +289,21 @@ func TestGetSelfAccountCached(t *testing.T) {
 	}
 
 	// 2. Clear in-memory cache to force reading from accounts.json on disk,
-	// then verify PeekSelfAccountCache and GetSelfAccountCached hit disk with zero RPCs.
+	// then verify PeekSelfAccountCache, CachedSelfAccountRef, and GetSelfAccountCached hit disk with zero RPCs.
 	resetSelfAccountMemCache()
 	if peeked := PeekSelfAccountCache("https://pigweed-review.googlesource.com"); peeked == nil || peeked.AccountID != 100042 {
 		t.Fatalf("PeekSelfAccountCache on warm disk cache = %+v, want AccountID=100042", peeked)
+	}
+	cmd := &cobra.Command{}
+	SetConfig(cmd, &Config{Host: "https://pigweed-review.googlesource.com"})
+	if ref, acc := CachedSelfAccountRef(t.Context(), cmd, client); ref != "100042" || acc == nil || acc.AccountID != 100042 {
+		t.Fatalf("CachedSelfAccountRef(authenticated) = (%q, %+v), want (\"100042\", AccountID=100042)", ref, acc)
+	}
+	if ref, acc := CachedSelfAccountRef(t.Context(), cmd, anon); ref != "self" || acc != nil {
+		t.Fatalf("CachedSelfAccountRef(unauthenticated) = (%q, %+v), want (\"self\", nil)", ref, acc)
+	}
+	if ref, acc := CachedSelfAccountRef(t.Context(), cmd, nil); ref != "self" || acc != nil {
+		t.Fatalf("CachedSelfAccountRef(nil) = (%q, %+v), want (\"self\", nil)", ref, acc)
 	}
 	acc2, err := GetSelfAccountCached(t.Context(), client, "https://pigweed-review.googlesource.com")
 	if err != nil {
@@ -316,7 +333,7 @@ func TestSelfAccountCache_EdgeCases(t *testing.T) {
 
 	t.Run("TTL expiration and future timestamp rejection", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "cache")
-		acc := gerrit.AccountInfo{AccountID: 77, Username: "bob"}
+		acc := AccountInfo{AccountID: 77, Username: "bob"}
 
 		// Entry at exact TTL boundary is expired when read at now.
 		tryWriteSelfAccountCache(dir, "expired-host.example.com", acc, now.Add(-time.Duration(selfAccountCacheTTLSeconds)*time.Second))
@@ -332,7 +349,7 @@ func TestSelfAccountCache_EdgeCases(t *testing.T) {
 		}
 
 		// Writing a new entry at now prunes expired entries while preserving valid ones.
-		tryWriteSelfAccountCache(dir, "second-fresh.example.com", gerrit.AccountInfo{AccountID: 88}, now)
+		tryWriteSelfAccountCache(dir, "second-fresh.example.com", AccountInfo{AccountID: 88}, now)
 		disk := readSelfAccountCacheLocked(dir)
 		if _, ok := disk.Accounts["expired-host.example.com"]; ok {
 			t.Error("expected expired-host.example.com to be pruned on write")
@@ -351,7 +368,7 @@ func TestSelfAccountCache_EdgeCases(t *testing.T) {
 		}
 
 		// Account with AccountID <= 0 is ignored and never written.
-		tryWriteSelfAccountCache(dir, "zero-id.example.com", gerrit.AccountInfo{AccountID: 0, Username: "ghost"}, now)
+		tryWriteSelfAccountCache(dir, "zero-id.example.com", AccountInfo{AccountID: 0, Username: "ghost"}, now)
 		if _, ok := tryReadSelfAccountCache(dir, "zero-id.example.com", now); ok {
 			t.Error("entry with AccountID <= 0 should not be cached")
 		}
@@ -369,7 +386,7 @@ func TestSelfAccountCache_EdgeCases(t *testing.T) {
 		if _, ok := tryReadSelfAccountCache(dir, "pigweed-review.googlesource.com", now); ok {
 			t.Error("expected cache miss on corrupt JSON")
 		}
-		tryWriteSelfAccountCache(dir, "pigweed-review.googlesource.com", gerrit.AccountInfo{AccountID: 99, Username: "carol"}, now)
+		tryWriteSelfAccountCache(dir, "pigweed-review.googlesource.com", AccountInfo{AccountID: 99, Username: "carol"}, now)
 		resetSelfAccountMemCache()
 		if got, ok := tryReadSelfAccountCache(dir, "pigweed-review.googlesource.com", now); !ok || got.AccountID != 99 {
 			t.Errorf("after overwriting corrupt JSON: got (%+v, %v), want AccountID=99, true", got, ok)
@@ -386,7 +403,7 @@ func TestSelfAccountCache_EdgeCases(t *testing.T) {
 		if err := os.Symlink(realDir, symlinkDir); err != nil {
 			t.Fatal(err)
 		}
-		tryWriteSelfAccountCache(symlinkDir, "host.example.com", gerrit.AccountInfo{AccountID: 55}, now)
+		tryWriteSelfAccountCache(symlinkDir, "host.example.com", AccountInfo{AccountID: 55}, now)
 		if _, err := os.Stat(filepath.Join(realDir, "accounts.json")); !os.IsNotExist(err) {
 			t.Errorf("expected write through symlinked dir to be refused, stat err = %v", err)
 		}

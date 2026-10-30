@@ -16,6 +16,8 @@ package pw_ghish
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1012,5 +1014,143 @@ func TestParseSenseHeadCommit(t *testing.T) {
 				t.Errorf("parseSenseHeadCommit(%q) = %+v, want %+v", tc.raw, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestIsNotFoundError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "GerritAPIError 404",
+			err:  &GerritAPIError{StatusCode: http.StatusNotFound, Status: "404 Not Found", Body: "empty"},
+			want: true,
+		},
+		{
+			name: "wrapped GerritAPIError 404",
+			err:  FormatGerritError(&GerritAPIError{StatusCode: http.StatusNotFound, Body: "empty"}, "getting", "123", "pigweed-review.googlesource.com"),
+			want: true,
+		},
+		{
+			name: "GerritAPIError 500 mentioning 404 and not found",
+			err:  &GerritAPIError{StatusCode: http.StatusInternalServerError, Status: "500 Internal Server Error", Body: "backend 404 shard not found"},
+			want: false,
+		},
+		{
+			name: "wrapped GerritAPIError 500 mentioning 404",
+			err:  fmt.Errorf("outer: %w", &GerritAPIError{StatusCode: http.StatusInternalServerError, Body: "error 404"}),
+			want: false,
+		},
+		{
+			name: "Buildbucket HTTP 404 without not found text",
+			err:  errors.New("Buildbucket GetBuild returned HTTP 404: empty"),
+			want: true,
+		},
+		{
+			name: "Buildbucket HTTP 500 mentioning 404",
+			err:  errors.New("Buildbucket GetBuild returned HTTP 500: build 404 failed"),
+			want: false,
+		},
+		{
+			name: "Issue Tracker HTTP 404",
+			err:  errors.New("Google Issue Tracker API returned HTTP 404 for GET https://issuetracker.corp.googleapis.com/v1/issues/123: {}"),
+			want: true,
+		},
+		{
+			name: "Issue Tracker HTTP 500 on issue 404",
+			err:  errors.New("Google Issue Tracker API returned HTTP 500 for GET https://issuetracker.corp.googleapis.com/v1/issues/404: backend not found"),
+			want: false,
+		},
+		{
+			name: "does not exist string",
+			err:  errors.New("resource does not exist"),
+			want: true,
+		},
+		{
+			name: "not found string",
+			err:  errors.New("record not found"),
+			want: true,
+		},
+		{
+			name: "generic error",
+			err:  errors.New("connection reset by peer"),
+			want: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isNotFoundError(tc.err); got != tc.want {
+				t.Errorf("isNotFoundError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSense_UnauthenticatedSkipsSelfAccountAndDrafts(t *testing.T) {
+	const cid = "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e"
+	server := NewMockGerritServer(t).UseResolvedAuth()
+	server.OnDefaultChange(472267,
+		WithChangeID(cid),
+		WithSubject("pw_rpc: Public change"),
+		WithCurrentPatchset(2),
+		func(ch map[string]any) {
+			// Numeric-only owner triggers needsOwnerLookup, which must skip
+			// /accounts/self without warning when unauthenticated.
+			ch["owner"] = map[string]any{"_account_id": 1001}
+		},
+	)
+	server.OnComments("*", map[string][]CommentInfo{
+		"pw_rpc/channel.cc": {
+			{
+				ID:         "c1",
+				Line:       88,
+				PatchSet:   2,
+				Unresolved: boolPtr(true),
+				Author:     AccountInfo{Email: "reviewer@example.com"},
+				Message:    "Public review comment on channel.cc.",
+			},
+		},
+	})
+	server.OnSearchBuilds(FakeBuild("901", "pw-presubmit", "SUCCESS"))
+
+	gitRunner := &MockGitRunner{}
+	SetupMockConfig(t, gitRunner)
+	gitRunner.OnCommand("branch --show-current", "rpc-fix\n").
+		OnCommand("rev-list --left-right --count origin/main...HEAD", "0\t1\n").
+		OnCommand("status --porcelain", "").
+		WithCommit("pw_rpc: Public change\n\nChange-Id: " + cid + "\n")
+
+	out, err := executeCommand(RootCmd, "sense", "--json", "--auth-mode=none")
+	if err != nil {
+		t.Fatalf("gh sense --json --auth-mode=none failed: %v\nOutput: %s", err, out)
+	}
+
+	var report SenseReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("failed to parse SenseReport JSON: %v\nOutput: %s", err, out)
+	}
+
+	if len(report.Warnings) != 0 {
+		t.Errorf("expected zero warnings with --auth-mode=none, got: %v", report.Warnings)
+	}
+	if report.ActiveCL == nil || report.ActiveCL.Number != 472267 {
+		t.Fatalf("expected ActiveCL #472267 to populate publicly, got: %+v", report.ActiveCL)
+	}
+	if len(report.ActiveCL.ExternalUnresolvedThreads) != 1 || !strings.Contains(report.ActiveCL.ExternalUnresolvedThreads[0].Message, "Public review comment on channel.cc.") {
+		t.Errorf("expected public comment to populate, got: %+v", report.ActiveCL.ExternalUnresolvedThreads)
+	}
+	for _, req := range server.Requests() {
+		if strings.Contains(req.Path, "/accounts/self") {
+			t.Errorf("unexpected /accounts/self request with --auth-mode=none: %s %s", req.Method, req.Path)
+		}
+		if strings.Contains(req.Path, "/drafts") {
+			t.Errorf("unexpected /drafts request with --auth-mode=none: %s %s", req.Method, req.Path)
+		}
 	}
 }

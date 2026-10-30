@@ -17,7 +17,6 @@ package pw_ghish
 import (
 	"fmt"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -32,11 +31,7 @@ var reopenCmd = &cobra.Command{
 			return err
 		}
 
-		input := &gerrit.RestoreInput{
-			Message: "Restored via gh-ish",
-		}
-
-		_, _, err = chCtx.Client.Changes.RestoreChange(chCtx.Context, chCtx.ChangeID, input)
+		_, err = chCtx.Client.RestoreChange(chCtx.Context, chCtx.ChangeID, "Restored via gh-ish")
 		if err != nil {
 			return chCtx.FormatError(err, "reopening")
 		}

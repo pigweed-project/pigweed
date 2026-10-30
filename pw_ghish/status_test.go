@@ -22,8 +22,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 const statusChangeID = "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e"
@@ -65,12 +63,94 @@ func TestStatus_ErrorWhenSelfAccountFails(t *testing.T) {
 	}
 }
 
+func TestStatus_UnauthenticatedSkipsSelfAccount(t *testing.T) {
+	t.Run("main branch makes zero Gerrit requests and reports unauthenticated state", func(t *testing.T) {
+		server := NewMockGerritServer(t).UseResolvedAuth()
+		mockGitForMainBranch(t)
+
+		out, err := executeCommand(RootCmd, "pr", "status", "--auth-mode=none")
+		if err != nil {
+			t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
+		}
+		if reqs := server.Requests(); len(reqs) != 0 {
+			t.Errorf("unauthenticated pr status on main made %d requests (%v), want 0", len(reqs), reqs)
+		}
+		for _, want := range []string{
+			"not signed in",
+			"Next: gh auth status",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected output to contain %q, got:\n%s", want, out)
+			}
+		}
+		if strings.Contains(out, "Created by you") {
+			t.Errorf("expected unauthenticated output to omit empty personal sections, got:\n%s", out)
+		}
+
+		jsonOut, err := executeCommand(RootCmd, "pr", "status", "--auth-mode=none", "--json", "authenticated")
+		if err != nil {
+			t.Fatalf("pr status --json authenticated failed: %v\nOutput: %s", err, jsonOut)
+		}
+		var parsed struct {
+			Authenticated *bool `json:"authenticated"`
+		}
+		if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+			t.Fatalf("failed to decode JSON %q: %v", jsonOut, err)
+		}
+		if parsed.Authenticated == nil || *parsed.Authenticated {
+			t.Errorf("authenticated = %v, want false (raw: %s)", parsed.Authenticated, jsonOut)
+		}
+	})
+
+	t.Run("active PR branch renders public comments and metadata while skipping drafts", func(t *testing.T) {
+		const changeID = "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e"
+		server := NewMockGerritServer(t).UseResolvedAuth()
+		server.OnDefaultChange(472267, WithSubject("Unauthed Active Subject"), WithChangeID(changeID))
+		server.OnComments(changeID, map[string][]CommentInfo{
+			"foo.cc": {
+				{
+					ID:         "c1",
+					Line:       12,
+					PatchSet:   1,
+					Unresolved: boolPtr(true),
+					Message:    "Please add a guard",
+				},
+			},
+		})
+		mockGitForFeatureBranch(t)
+
+		out, err := executeCommand(RootCmd, "pr", "status", "--auth-mode=none")
+		if err != nil {
+			t.Fatalf("pr status --auth-mode=none failed: %v\nOutput: %s", err, out)
+		}
+		for _, want := range []string{
+			"#472267  Unauthed Active Subject",
+			"1 unresolved",
+			"not signed in",
+			"Next: gh auth status",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected output to contain %q, got:\n%s", want, out)
+			}
+		}
+		if got := server.CallCount("GET", "/accounts/self"); got != 0 {
+			t.Errorf("expected 0 /accounts/self requests, got %d", got)
+		}
+		if got := server.CallCount("GET", "/changes/"+changeID+"/drafts"); got != 0 {
+			t.Errorf("expected 0 /drafts requests when unauthenticated, got %d", got)
+		}
+		if got := server.CallCount("GET", "/changes/"+changeID+"/comments"); got != 1 {
+			t.Errorf("expected 1 /comments request, got %d", got)
+		}
+	})
+}
+
 func TestStatus_CurrentBranch_ActivePR(t *testing.T) {
 	server := newStatusMockServer(t)
 	onActiveChange(server, func(ch map[string]any) {
 		// Ranges mirror the real Pigweed labels: Code-Review and Lint
 		// span -2..+2, but Presubmit-Verified tops out at +1.
-		ch["labels"] = map[string]gerrit.LabelInfo{
+		ch["labels"] = map[string]LabelInfo{
 			"Code-Review":        narrowLabel(-2, 2, 2),
 			"Presubmit-Verified": narrowLabel(-1, 1, 1),
 			"Lint":               narrowLabel(-2, 2, 1),
@@ -145,9 +225,9 @@ func TestStatus_CurrentBranch_NamedBranchNoActivePR(t *testing.T) {
 }
 
 func TestStatus_30DayFilter_And_MoreOlderChanges(t *testing.T) {
-	var older []gerrit.ChangeInfo
+	var older []ChangeInfo
 	for i := 1; i <= 7; i++ {
-		older = append(older, gerrit.ChangeInfo{Number: 10000 + i})
+		older = append(older, ChangeInfo{Number: 10000 + i})
 	}
 
 	server := newStatusMockServer(t)
@@ -164,12 +244,12 @@ func TestStatus_30DayFilter_And_MoreOlderChanges(t *testing.T) {
 				t.Errorf("older count-only batch should have no o= params, got %v", opts)
 			}
 		}
-		batches := make([][]gerrit.ChangeInfo, len(qs))
+		batches := make([][]ChangeInfo, len(qs))
 		for i, query := range qs {
 			if strings.Contains(query, "age:30d") && !strings.Contains(query, "-age:30d") {
 				batches[i] = older
 			} else {
-				batches[i] = []gerrit.ChangeInfo{}
+				batches[i] = []ChangeInfo{}
 			}
 		}
 		server.RespondJSON(w, http.StatusOK, batches)
@@ -471,7 +551,7 @@ func TestStatus_CurrentBranch_ChecksSummary(t *testing.T) {
 func TestExtractLabelScore(t *testing.T) {
 	tests := []struct {
 		name      string
-		labels    map[string]gerrit.LabelInfo
+		labels    map[string]LabelInfo
 		labelName string
 		want      int
 	}{
@@ -483,15 +563,15 @@ func TestExtractLabelScore(t *testing.T) {
 		},
 		{
 			name:      "missing label",
-			labels:    map[string]gerrit.LabelInfo{},
+			labels:    map[string]LabelInfo{},
 			labelName: "Code-Review",
 			want:      0,
 		},
 		{
 			name: "highest positive score wins",
-			labels: map[string]gerrit.LabelInfo{
+			labels: map[string]LabelInfo{
 				"Code-Review": {
-					All: []gerrit.ApprovalInfo{
+					All: []ApprovalInfo{
 						{Value: 1},
 						{Value: 2},
 						{Value: 1},
@@ -503,9 +583,9 @@ func TestExtractLabelScore(t *testing.T) {
 		},
 		{
 			name: "negative score overrides positive scores",
-			labels: map[string]gerrit.LabelInfo{
+			labels: map[string]LabelInfo{
 				"Code-Review": {
-					All: []gerrit.ApprovalInfo{
+					All: []ApprovalInfo{
 						{Value: 2},
 						{Value: -1},
 						{Value: 1},
@@ -517,9 +597,9 @@ func TestExtractLabelScore(t *testing.T) {
 		},
 		{
 			name: "lowest negative score wins",
-			labels: map[string]gerrit.LabelInfo{
+			labels: map[string]LabelInfo{
 				"Code-Review": {
-					All: []gerrit.ApprovalInfo{
+					All: []ApprovalInfo{
 						{Value: -1},
 						{Value: -2},
 						{Value: 2},
@@ -533,8 +613,8 @@ func TestExtractLabelScore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := extractLabelScore(tt.labels, tt.labelName); got != tt.want {
-				t.Errorf("extractLabelScore() = %d, want %d", got, tt.want)
+			if got := ExtractLabelScore(tt.labels, tt.labelName); got != tt.want {
+				t.Errorf("ExtractLabelScore() = %d, want %d", got, tt.want)
 			}
 		})
 	}
@@ -543,19 +623,19 @@ func TestExtractLabelScore(t *testing.T) {
 func TestExtractBlockers(t *testing.T) {
 	tests := []struct {
 		name   string
-		change *gerrit.ChangeInfo
+		change *ChangeInfo
 		want   []string
 	}{
 		{
 			name:   "submittable change has no blockers",
-			change: &gerrit.ChangeInfo{Submittable: true},
+			change: &ChangeInfo{Submittable: true},
 			want:   nil,
 		},
 		{
 			name: "missing Code-Review and Verified approvals",
-			change: &gerrit.ChangeInfo{
+			change: &ChangeInfo{
 				Submittable: false,
-				Labels: map[string]gerrit.LabelInfo{
+				Labels: map[string]LabelInfo{
 					"Code-Review": {},
 					"Verified":    {},
 				},
@@ -564,11 +644,11 @@ func TestExtractBlockers(t *testing.T) {
 		},
 		{
 			name: "rejected label reported",
-			change: &gerrit.ChangeInfo{
+			change: &ChangeInfo{
 				Submittable: false,
-				Labels: map[string]gerrit.LabelInfo{
-					"Code-Review": {Approved: gerrit.AccountInfo{AccountID: 1}},
-					"Lint":        {Rejected: gerrit.AccountInfo{AccountID: 2}},
+				Labels: map[string]LabelInfo{
+					"Code-Review": {Approved: AccountInfo{AccountID: 1}},
+					"Lint":        {Rejected: AccountInfo{AccountID: 2}},
 				},
 			},
 			want: []string{"Lint (Rejected)"},
@@ -591,17 +671,17 @@ func TestExtractBlockers(t *testing.T) {
 }
 
 func TestExtractBlockers_DynamicSubmitRequirements(t *testing.T) {
-	change := &gerrit.ChangeInfo{
+	change := &ChangeInfo{
 		Submittable: false,
-		SubmitRequirements: []gerrit.SubmitRequirementResultInfo{
+		SubmitRequirements: []SubmitRequirementResultInfo{
 			{Name: "Code-Review", Status: "UNSATISFIED"},
 			{Name: "Lint", Status: "SATISFIED"},
 			{Name: "Copybara-Verified", Status: "UNSATISFIED"},
 			{Name: "Topics-Not-Supported", Status: "UNSATISFIED"},
 		},
-		Labels: map[string]gerrit.LabelInfo{
+		Labels: map[string]LabelInfo{
 			"Code-Review":       {},
-			"Lint":              {Approved: gerrit.AccountInfo{AccountID: 1}},
+			"Lint":              {Approved: AccountInfo{AccountID: 1}},
 			"Copybara-Verified": {},
 		},
 	}
@@ -639,14 +719,14 @@ func TestStatus_Pipeline1ParallelPrefetch_CommentsAndDrafts(t *testing.T) {
 		case <-timeout.C:
 			t.Errorf("ListChangeDrafts did not arrive concurrently with ListChangeComments in pr status Pipeline 1")
 		}
-		server.RespondJSON(w, http.StatusOK, map[string][]gerrit.CommentInfo{
+		server.RespondJSON(w, http.StatusOK, map[string][]CommentInfo{
 			"pw_ghish/status.go": {
 				{
 					ID:         "c1",
 					Line:       42,
 					PatchSet:   1,
 					Unresolved: boolPtr(true),
-					Author:     gerrit.AccountInfo{Email: "reviewer@google.com"},
+					Author:     AccountInfo{Email: "reviewer@google.com"},
 					Message:    "Concurrent status comment.",
 				},
 			},
@@ -692,7 +772,7 @@ func TestStatus_Pipeline1ParallelPrefetch_CommentsAndDrafts(t *testing.T) {
 func TestStatus_UsesCachedSelfAccountAndNumericQueries(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Setenv("GH_ISH_ACCOUNT_CACHE_DIR", cacheDir)
-	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", gerrit.AccountInfo{
+	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", AccountInfo{
 		AccountID: 1132682,
 		Name:      "Cached Dev",
 	}, time.Now())
@@ -703,7 +783,7 @@ func TestStatus_UsesCachedSelfAccountAndNumericQueries(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.On("GET", "/changes/*", func(w http.ResponseWriter, r *http.Request) {
 		qs := r.URL.Query()["q"]
-		batches := make([][]gerrit.ChangeInfo, len(qs))
+		batches := make([][]ChangeInfo, len(qs))
 		server.RespondJSON(w, http.StatusOK, batches)
 	})
 

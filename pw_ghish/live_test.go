@@ -32,7 +32,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -101,7 +100,7 @@ func TestLive_GerritAuthAndMetadata(t *testing.T) {
 		t.Skipf("Skipping live test: could not initialize Gerrit client: %v", err)
 	}
 
-	self, _, err := client.Accounts.GetAccount(ctx, "self")
+	self, err := client.GetSelfAccount(ctx)
 	if err != nil {
 		t.Skipf("Skipping live test: cannot authenticate to production Gerrit: %v", err)
 	}
@@ -203,12 +202,12 @@ func TestLive_DraftCommentRoundTrip(t *testing.T) {
 		if cleanedUp {
 			return
 		}
-		if draftsMap, _, err := client.Changes.ListChangeDrafts(ctx, "472267"); err == nil && draftsMap != nil {
-			for filePath, comments := range *draftsMap {
+		if draftsMap, err := client.ListChangeDrafts(ctx, "472267"); err == nil {
+			for filePath, comments := range draftsMap {
 				if filePath == "pw_ghish/docs.rst" {
 					for _, c := range comments {
 						if strings.Contains(c.Message, draftMsg) {
-							_, _ = client.Changes.DeleteDraft(ctx, "472267", "current", c.ID)
+							_ = client.DeleteDraft(ctx, "472267", "current", c.ID)
 						}
 					}
 				}
@@ -222,13 +221,13 @@ func TestLive_DraftCommentRoundTrip(t *testing.T) {
 	}
 
 	// 2. Query draft comments via Gerrit REST API
-	draftsMap, _, err := client.Changes.ListChangeDrafts(ctx, "472267")
+	draftsMap, err := client.ListChangeDrafts(ctx, "472267")
 	if err != nil {
 		t.Fatalf("Failed to list drafts from Gerrit: %v", err)
 	}
 
 	var foundDraftID string
-	for filePath, comments := range *draftsMap {
+	for filePath, comments := range draftsMap {
 		if filePath == "pw_ghish/docs.rst" {
 			for _, c := range comments {
 				if strings.Contains(c.Message, draftMsg) {
@@ -245,7 +244,7 @@ func TestLive_DraftCommentRoundTrip(t *testing.T) {
 	t.Logf("Draft comment verified on live Gerrit (Draft ID: %s)", foundDraftID)
 
 	// 3. Clean up the draft comment immediately
-	_, err = client.Changes.DeleteDraft(ctx, "472267", "current", foundDraftID)
+	err = client.DeleteDraft(ctx, "472267", "current", foundDraftID)
 	if err != nil {
 		t.Errorf("Failed to cleanup draft comment %s: %v", foundDraftID, err)
 	} else {
@@ -459,17 +458,17 @@ func TestLive_CommentTreeVerification(t *testing.T) {
 
 	// Fetch comments from CL 413992 (pw_multibuf, known to have rich inline comment threads)
 	changeIDs := []string{"413992", "473645", "472267"}
-	var foundComments map[string][]gerrit.CommentInfo
+	var foundComments map[string][]CommentInfo
 	var targetCL string
 
 	for _, cl := range changeIDs {
-		comments, _, err := client.Changes.ListChangeComments(ctx, cl)
+		comments, err := client.ListChangeComments(ctx, cl)
 		if err != nil {
 			t.Logf("Warning: could not list comments for CL %s: %v", cl, err)
 			continue
 		}
-		if comments != nil && len(*comments) > 0 {
-			foundComments = *comments
+		if len(comments) > 0 {
+			foundComments = comments
 			targetCL = cl
 			break
 		}
@@ -826,9 +825,9 @@ func TestLive_List_AuthorMe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGerritClient failed: %v", err)
 	}
-	self, _, err := client.Accounts.GetAccount(ctx, "self")
+	self, err := client.GetSelfAccount(ctx)
 	if err != nil {
-		t.Fatalf("GetAccount(self) failed: %v", err)
+		t.Fatalf("GetSelfAccount() failed: %v", err)
 	}
 
 	output, err := executeLiveCommand("pr", "list", "--author", "@me", "--state", "all", "--limit", "5", "--json", "number,author")

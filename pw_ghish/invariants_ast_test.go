@@ -28,7 +28,9 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -170,9 +172,143 @@ func TestInvariants_NoDirectExitOrStdoutPrint(t *testing.T) {
 	}
 }
 
+var gerritReviewEndpointRe = regexp.MustCompile(`(?:^|/)review(?:[/?#]|$)`)
+
+func exprTargetsReviewEndpoint(e ast.Expr, localExprs map[string]ast.Expr, seen map[string]bool) bool {
+	if e == nil {
+		return false
+	}
+	switch x := e.(type) {
+	case *ast.BasicLit:
+		if x.Kind != token.STRING {
+			return false
+		}
+		s, err := strconv.Unquote(x.Value)
+		if err != nil {
+			s = strings.Trim(x.Value, `"`+"`")
+		}
+		return strings.Contains(s, "/review") && gerritReviewEndpointRe.MatchString(s)
+	case *ast.Ident:
+		if seen[x.Name] {
+			return false
+		}
+		next, ok := localExprs[x.Name]
+		if !ok {
+			return false
+		}
+		seen[x.Name] = true
+		return exprTargetsReviewEndpoint(next, localExprs, seen)
+	case *ast.BinaryExpr:
+		return exprTargetsReviewEndpoint(x.X, localExprs, seen) ||
+			exprTargetsReviewEndpoint(x.Y, localExprs, seen)
+	case *ast.CallExpr:
+		if id, ok := x.Fun.(*ast.Ident); ok && id.Name == "revisionEndpoint" && len(x.Args) >= 3 {
+			if suffixTargetsReview(x.Args[2], localExprs, seen) {
+				return true
+			}
+		}
+		if sel, ok := x.Fun.(*ast.SelectorExpr); ok {
+			if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "fmt" && sel.Sel.Name == "Sprintf" {
+				for i, arg := range x.Args {
+					if i == 0 {
+						if exprTargetsReviewEndpoint(arg, localExprs, seen) {
+							return true
+						}
+						continue
+					}
+					if suffixTargetsReview(arg, localExprs, seen) {
+						return true
+					}
+				}
+			}
+		}
+		for _, arg := range x.Args {
+			if exprTargetsReviewEndpoint(arg, localExprs, seen) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func suffixTargetsReview(e ast.Expr, localExprs map[string]ast.Expr, seen map[string]bool) bool {
+	switch x := e.(type) {
+	case *ast.BasicLit:
+		if x.Kind != token.STRING {
+			return false
+		}
+		s, err := strconv.Unquote(x.Value)
+		if err != nil {
+			s = strings.Trim(x.Value, `"`+"`")
+		}
+		return gerritReviewEndpointRe.MatchString(s)
+	case *ast.Ident:
+		if seen[x.Name] {
+			return false
+		}
+		next, ok := localExprs[x.Name]
+		if !ok {
+			return false
+		}
+		seen[x.Name] = true
+		return suffixTargetsReview(next, localExprs, seen)
+	}
+	return exprTargetsReviewEndpoint(e, localExprs, seen)
+}
+
+func checkFuncBodyForDirectReviewCalls(t *testing.T, fset *token.FileSet, fn *ast.FuncDecl, checkLegacyGoGerrit bool) {
+	t.Helper()
+	localExprs := make(map[string]ast.Expr)
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch stmt := n.(type) {
+		case *ast.AssignStmt:
+			for i, lhs := range stmt.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && i < len(stmt.Rhs) {
+					localExprs[id.Name] = stmt.Rhs[i]
+				}
+			}
+		case *ast.ValueSpec:
+			for i, id := range stmt.Names {
+				if i < len(stmt.Values) {
+					localExprs[id.Name] = stmt.Values[i]
+				}
+			}
+		}
+		return true
+	})
+
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if checkLegacyGoGerrit && sel.Sel.Name == "SetReview" {
+			if innerSel, ok := sel.X.(*ast.SelectorExpr); ok && innerSel.Sel.Name == "Changes" {
+				pos := fset.Position(call.Pos())
+				t.Errorf("%s:%d: direct call to %s.Changes.SetReview in %s; use ChangeContext.SetReview or SetReviewSafe",
+					pos.Filename, pos.Line, innerSel.X, fn.Name.Name)
+			}
+		}
+		if (sel.Sel.Name == "do" || sel.Sel.Name == "doRaw") && len(call.Args) >= 3 {
+			if exprTargetsReviewEndpoint(call.Args[2], localExprs, make(map[string]bool)) {
+				pos := fset.Position(call.Pos())
+				t.Errorf("%s:%d: direct %s call to Gerrit /review endpoint in %s; use GerritClient.SetReview (via ChangeContext.SetReview) to preserve Drafts: \"KEEP\" and labels-unmarshal safety",
+					pos.Filename, pos.Line, sel.Sel.Name, fn.Name.Name)
+			}
+		}
+		return true
+	})
+}
+
 // TestInvariants_SetReviewGoesThroughSetReviewSafe verifies that no production
-// code invokes go-gerrit's `.Changes.SetReview(` directly outside `SetReviewSafe`
-// in change_context.go, preserving `Drafts: KEEP` and labels-unmarshal safety.
+// code invokes go-gerrit's `.Changes.SetReview(` outside `SetReviewSafe` in
+// change_context.go or targets a Gerrit `/review` endpoint via `do` / `doRaw`
+// outside `GerritClient.SetReview` in gerrit.go, preserving `Drafts: "KEEP"`
+// and labels-unmarshal safety.
 func TestInvariants_SetReviewGoesThroughSetReviewSafe(t *testing.T) {
 	fset := token.NewFileSet()
 
@@ -187,26 +323,14 @@ func TestInvariants_SetReviewGoesThroughSetReviewSafe(t *testing.T) {
 			if !ok || fn.Body == nil {
 				continue
 			}
-			if filepath.Base(path) == "change_context.go" && fn.Name.Name == "SetReviewSafe" {
+			base := filepath.Base(path)
+			if base == "change_context.go" && fn.Name.Name == "SetReviewSafe" {
 				continue
 			}
-
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "SetReview" {
-					return true
-				}
-				if innerSel, ok := sel.X.(*ast.SelectorExpr); ok && innerSel.Sel.Name == "Changes" {
-					pos := fset.Position(call.Pos())
-					t.Errorf("%s:%d: direct call to %s.Changes.SetReview in %s; use ChangeContext.SetReview or SetReviewSafe",
-						pos.Filename, pos.Line, innerSel.X, fn.Name.Name)
-				}
-				return true
-			})
+			if base == "gerrit.go" && fn.Name.Name == "SetReview" {
+				continue
+			}
+			checkFuncBodyForDirectReviewCalls(t, fset, fn, true)
 		}
 	}
 }

@@ -140,3 +140,20 @@ func TestReady_Undo_ErrorWhenNotFound(t *testing.T) {
 		t.Errorf("Expected error to mention 'marking change as work in progress', got: %v", err)
 	}
 }
+
+func TestReady_NonConflictErrorDoesNotAddReviewers(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnString("POST", "/changes/12345/ready", http.StatusInternalServerError, "text/plain", "change is not work in progress")
+	server.OnJSON("POST", "/changes/12345/reviewers", http.StatusOK, map[string]any{})
+
+	_, err := executeCommand(RootCmd, "pr", "ready", "12345", "-r", "reviewer@google.com")
+	if err == nil {
+		t.Fatal("expected error when /ready returns HTTP 500, got nil")
+	}
+	if !strings.Contains(err.Error(), "marking change as ready for review") {
+		t.Errorf("expected error to mention 'marking change as ready for review', got: %v", err)
+	}
+	if got := server.CallCount("POST", "/changes/12345/reviewers"); got != 0 {
+		t.Errorf("expected 0 POST calls to /changes/12345/reviewers on HTTP 500, got %d", got)
+	}
+}

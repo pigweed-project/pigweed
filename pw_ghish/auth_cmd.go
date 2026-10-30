@@ -127,17 +127,12 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 		gerritStatus.Method = "none"
 		gerritStatus.Message = "Authentication disabled (--auth-mode=none)"
 	} else {
-		clearLastGobCurlFallback()
 		client, clientErr := NewGerritClient(ctx, cmd)
 		if clientErr != nil {
 			gerritStatus.Authenticated = false
 			gerritStatus.Message = firstLine(clientErr.Error())
 		} else {
-			acc, _, accErr := client.Accounts.GetAccount(ctx, "self")
-			if fbMethod, fbDesc := getLastGobCurlFallback(); fbDesc != "" {
-				gerritMethod = fbMethod
-				gerritStatus.Method = fbDesc
-			}
+			acc, accErr := client.GetSelfAccount(ctx)
 			if accErr == nil && acc != nil && (acc.AccountID != 0 || acc.Email != "" || acc.Username != "" || acc.Name != "") {
 				gerritStatus.Authenticated = true
 				acctLabel := FormatAccount(*acc)
@@ -145,7 +140,9 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 					acctLabel = fmt.Sprintf("%s <%s>", acctLabel, acc.Email)
 				}
 				if acc.AccountID != 0 {
-					acctLabel = fmt.Sprintf("%s (account #%d)", acctLabel, acc.AccountID)
+					if idTag := fmt.Sprintf("account #%d", acc.AccountID); acctLabel != idTag {
+						acctLabel = fmt.Sprintf("%s (%s)", acctLabel, idTag)
+					}
 				}
 				gerritStatus.Account = acctLabel
 				gerritStatus.Message = fmt.Sprintf("Logged in to %s as %s", gerritHost, acctLabel)

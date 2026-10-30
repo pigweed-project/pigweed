@@ -98,19 +98,60 @@ func TestDiff_RawDiffPassThrough(t *testing.T) {
 	}
 }
 
+func TestDiff_EmptyPatchPrintsNotice(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(*MockGerritServer)
+	}{
+		{
+			name: "empty raw body",
+			setup: func(s *MockGerritServer) {
+				s.OnString("GET", "/changes/12345/revisions/current/patch", http.StatusOK, "text/plain", "")
+			},
+		},
+		{
+			name: "empty JSON string",
+			setup: func(s *MockGerritServer) {
+				s.OnJSON("GET", "/changes/12345/revisions/current/patch", http.StatusOK, "")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewMockGerritServer(t)
+			tc.setup(server)
+
+			out, err := executeCommand(RootCmd, "pr", "diff", "12345")
+			if err != nil {
+				t.Fatalf("unexpected error for empty patch: %v", err)
+			}
+			if strings.TrimSpace(out) != "No patch returned." {
+				t.Errorf("output = %q, want %q", strings.TrimSpace(out), "No patch returned.")
+			}
+		})
+	}
+}
+
 func TestDiff_ErrorWhenPatchsetNotFound_SuggestsView(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnStatus(http.StatusNotFound)
 
-	_, err := executeCommand(RootCmd, "pr", "diff", "12345/99")
-	if err == nil {
-		t.Fatal("Expected error when patchset not found, got nil")
-	}
-	if !strings.Contains(err.Error(), "patchset not found") {
-		t.Errorf("Expected patchset not found explanation, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "gh pr view 12345") {
-		t.Errorf("Expected suggestion to run 'gh pr view 12345', got: %v", err)
+	for _, args := range [][]string{
+		{"pr", "diff", "12345/99"},
+		{"pr", "diff", "12345/99", "--name-only"},
+		{"pr", "diff", "12345/99", "--stat"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			_, err := executeCommand(RootCmd, args...)
+			if err == nil {
+				t.Fatalf("Expected error when patchset not found for %v, got nil", args)
+			}
+			if !strings.Contains(err.Error(), "patchset not found") {
+				t.Errorf("Expected patchset not found explanation, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), "gh pr view 12345") {
+				t.Errorf("Expected suggestion to run 'gh pr view 12345', got: %v", err)
+			}
+		})
 	}
 }
 

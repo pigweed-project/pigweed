@@ -1595,10 +1595,6 @@ var DefaultAndroidBuildScopes = []string{
 
 // ResetAuthTokenCaches clears in-memory OAuth token caches for Gerrit, LUCI, Android Build, and Issue Tracker.
 func ResetAuthTokenCaches() {
-	rpcClientMu.Lock()
-	cachedRPCClients = nil
-	rpcClientMu.Unlock()
-
 	authModeCacheMu.Lock()
 	authModeCacheValid = false
 	cachedAuthModeKey = authModeCacheKey{}
