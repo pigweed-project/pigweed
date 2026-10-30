@@ -4748,6 +4748,167 @@ TEST_F(SecurityManagerTest, BrEdrInitiatorSpoofedIdentityAddressNotStored) {
   EXPECT_FALSE(pairing_data().identity_address.has_value());
 }
 
+TEST_F(SecurityManagerTest,
+       BrEdrInitiatorCtkdDisallowedWhileLePairingInProgress) {
+  NewBrEdrSecurityManager(Role::kInitiator);
+  bredr_link()->StartEncryption(
+      pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR);
+  bredr_link()->set_link_key(
+      hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
+      hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(16);
+
+  gap::Peer::PairingToken le_token = peer().MutLe().RegisterPairing();
+
+  std::optional<Result<>> ctkd_result;
+  auto ctkd_cb = [&ctkd_result](Result<> result) { ctkd_result = result; };
+  pairing()->InitiateBrEdrCrossTransportKeyDerivation(std::move(ctkd_cb));
+  RunUntilIdle();
+
+  EXPECT_EQ(0, pairing_request_count());
+  EXPECT_FALSE(peer().MutBrEdr().is_pairing());
+  ASSERT_TRUE(ctkd_result.has_value());
+  ASSERT_TRUE(ctkd_result->is_error());
+  EXPECT_TRUE(ctkd_result->error_value().is(HostError::kInsufficientSecurity));
+  EXPECT_EQ(0, pairing_data_callback_count());
+}
+
+TEST_F(SecurityManagerTest,
+       BrEdrResponderCtkdRejectedWhileLePairingInProgress) {
+  NewBrEdrSecurityManager(Role::kResponder);
+  bredr_link()->StartEncryption(
+      pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR);
+  bredr_link()->set_link_key(
+      hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
+      hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(16);
+
+  gap::Peer::PairingToken le_token = peer().MutLe().RegisterPairing();
+
+  PairingRequestParams preq;
+  preq.io_capability = IOCapability::kNoInputNoOutput;
+  preq.oob_data_flag = OOBDataFlag::kNotPresent;
+  preq.auth_req = AuthReq::kCT2;
+  preq.max_encryption_key_size = kMaxEncryptionKeySize;
+  preq.initiator_key_dist_gen = KeyDistGen::kEncKey;
+  preq.responder_key_dist_gen = KeyDistGen::kEncKey;
+  ReceivePairingFeatures(preq, /*peer_initiator=*/true);
+  RunUntilIdle();
+
+  EXPECT_EQ(0, pairing_response_count());
+  EXPECT_EQ(1, pairing_failed_count());
+  ASSERT_TRUE(received_error_code().has_value());
+  EXPECT_EQ(received_error_code().value(),
+            ErrorCode::kCrossTransportKeyDerivationNotAllowed);
+  EXPECT_EQ(0, pairing_complete_count());
+  EXPECT_FALSE(peer().MutBrEdr().is_pairing());
+}
+
+TEST_F(SecurityManagerTest, BrEdrCtkdAbortedIfLePairingStartsDuringPhase1) {
+  NewBrEdrSecurityManager(Role::kInitiator);
+  bredr_link()->StartEncryption(
+      pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR);
+  bredr_link()->set_link_key(
+      hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
+      hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(16);
+
+  IdentityInfo local_id_info;
+  local_id_info.irk = UInt128{{1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0}};
+  local_id_info.address = kLocalAddr;
+  set_local_id_info(local_id_info);
+
+  std::optional<Result<>> ctkd_result;
+  auto ctkd_cb = [&ctkd_result](Result<> result) { ctkd_result = result; };
+  pairing()->InitiateBrEdrCrossTransportKeyDerivation(std::move(ctkd_cb));
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+
+  // LE pairing begins while SMP Phase 1 feature exchange is in flight.
+  gap::Peer::PairingToken le_token = peer().MutLe().RegisterPairing();
+
+  PairingRequestParams preq;
+  preq.io_capability = IOCapability::kNoInputNoOutput;
+  preq.oob_data_flag = OOBDataFlag::kNotPresent;
+  preq.auth_req = AuthReq::kCT2;
+  preq.max_encryption_key_size = kMaxEncryptionKeySize;
+  preq.initiator_key_dist_gen = KeyDistGen::kEncKey | KeyDistGen::kIdKey;
+  preq.responder_key_dist_gen = KeyDistGen::kEncKey | KeyDistGen::kIdKey;
+  ReceivePairingFeatures(preq, /*peer_initiator=*/false);
+  RunUntilIdle();
+
+  // Must abort before Phase 3 distributes local IRK or stores any LE bond.
+  EXPECT_EQ(0, id_info_count());
+  EXPECT_EQ(0, id_addr_info_count());
+  EXPECT_EQ(1, pairing_failed_count());
+  ASSERT_TRUE(received_error_code().has_value());
+  EXPECT_EQ(received_error_code().value(),
+            ErrorCode::kCrossTransportKeyDerivationNotAllowed);
+  ASSERT_TRUE(ctkd_result.has_value());
+  EXPECT_TRUE(ctkd_result->is_error());
+  EXPECT_EQ(0, pairing_data_callback_count());
+  EXPECT_FALSE(peer().le()->bond_data().has_value());
+  EXPECT_FALSE(peer().MutBrEdr().is_pairing());
+}
+
+TEST_F(SecurityManagerTest, BrEdrCtkdAbortedIfLePairingStartsDuringPhase3) {
+  NewBrEdrSecurityManager(Role::kInitiator);
+  bredr_link()->StartEncryption(
+      pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR);
+  bredr_link()->set_link_key(
+      hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
+      hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(16);
+
+  IdentityInfo local_id_info;
+  local_id_info.irk = UInt128{{1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0}};
+  local_id_info.address = kLocalAddr;
+  set_local_id_info(local_id_info);
+
+  std::optional<Result<>> ctkd_result;
+  auto ctkd_cb = [&ctkd_result](Result<> result) { ctkd_result = result; };
+  pairing()->InitiateBrEdrCrossTransportKeyDerivation(std::move(ctkd_cb));
+  RunUntilIdle();
+
+  PairingRequestParams preq;
+  preq.io_capability = IOCapability::kNoInputNoOutput;
+  preq.oob_data_flag = OOBDataFlag::kNotPresent;
+  preq.auth_req = AuthReq::kCT2;
+  preq.max_encryption_key_size = kMaxEncryptionKeySize;
+  preq.initiator_key_dist_gen = KeyDistGen::kEncKey | KeyDistGen::kIdKey;
+  preq.responder_key_dist_gen = KeyDistGen::kEncKey | KeyDistGen::kIdKey;
+  ReceivePairingFeatures(preq, /*peer_initiator=*/false);
+  RunUntilIdle();
+  ASSERT_FALSE(ctkd_result.has_value());
+
+  const UInt128 kIrk =
+      UInt128{{2, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0}};
+  ReceiveIdentityResolvingKey(kIrk);
+  RunUntilIdle();
+  ASSERT_FALSE(ctkd_result.has_value());
+
+  // LE pairing starts right before the peer's final Phase 3 key arrives (which
+  // would otherwise cause Initiator Phase 3 to send local IRK & complete).
+  gap::Peer::PairingToken le_token = peer().MutLe().RegisterPairing();
+
+  ReceiveIdentityAddress(kPeerAddr);
+  RunUntilIdle();
+
+  // Must abort with kCrossTransportKeyDerivationNotAllowed without sending
+  // local IRK/IdentityAddress or storing any LE bond.
+  EXPECT_EQ(0, id_info_count());
+  EXPECT_EQ(0, id_addr_info_count());
+  EXPECT_EQ(1, pairing_failed_count());
+  ASSERT_TRUE(received_error_code().has_value());
+  EXPECT_EQ(received_error_code().value(),
+            ErrorCode::kCrossTransportKeyDerivationNotAllowed);
+  EXPECT_EQ(0, pairing_data_callback_count());
+  EXPECT_FALSE(peer().le()->bond_data().has_value());
+  ASSERT_TRUE(ctkd_result.has_value());
+  EXPECT_TRUE(ctkd_result->is_error());
+  EXPECT_FALSE(peer().MutBrEdr().is_pairing());
+}
+
 TEST_F(ResponderPairingTest,
        BrEdrPairingInProgressErrorInResponseToPairingRequest) {
   InitializePeer(kPeerPublicAddr);

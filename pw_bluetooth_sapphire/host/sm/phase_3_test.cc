@@ -1150,5 +1150,79 @@ TEST_F(Phase3Test, BrEdrResponderIdKeysExchangedSuccessfully) {
   EXPECT_EQ(kPeerAddr, *pairing_data().identity_address);
 }
 
+TEST_F(Phase3Test, BrEdrResponderAbortsWhenCtkdDisallowedBeforeInitiatorKeys) {
+  Phase3Args args;
+  args.features.initiator = false;
+  args.features.local_key_distribution = 0u;
+  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  NewPhase3(args, LinkType::kACL);
+  phase_3()->Start();
+  RunUntilIdle();
+
+  // CTKD becomes disallowed (e.g. LE pairing started) before the Initiator's
+  // identity keys arrive.
+  listener()->set_bredr_ctkd_allowed(false);
+  const StaticByteBuffer<PacketSize<ErrorCode>()> kExpectedFailure{
+      kPairingFailed, ErrorCode::kCrossTransportKeyDerivationNotAllowed};
+  EXPECT_TRUE(
+      ReceiveAndExpect(Make128BitCmd(kIdentityInformation, Random<UInt128>()),
+                       kExpectedFailure));
+
+  EXPECT_EQ(1, listener()->pairing_error_count());
+  EXPECT_EQ(Error(ErrorCode::kCrossTransportKeyDerivationNotAllowed),
+            listener()->last_error());
+  EXPECT_EQ(0, phase_3_complete_count());
+}
+
+TEST_F(Phase3Test, BrEdrPeerPairingFailedNotRepliedToWhenCtkdDisallowed) {
+  Phase3Args args;
+  args.features.initiator = false;
+  args.features.local_key_distribution = 0u;
+  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  NewPhase3(args, LinkType::kACL);
+
+  size_t sent_msg_count = 0;
+  fake_chan()->SetSendCallback(
+      [&](ByteBufferPtr /*ignore*/) { sent_msg_count++; }, dispatcher());
+  phase_3()->Start();
+  listener()->set_bredr_ctkd_allowed(false);
+
+  // A peer's Pairing Failed must be surfaced as-is and never answered with
+  // another Pairing Failed (Core Spec v6.2, Vol 3, Part H, Section 3.5.5).
+  const StaticByteBuffer<PacketSize<ErrorCode>()> kPeerFailure{
+      kPairingFailed, ErrorCode::kPairingNotSupported};
+  fake_chan()->Receive(kPeerFailure);
+  RunUntilIdle();
+
+  EXPECT_EQ(0u, sent_msg_count);
+  EXPECT_EQ(1, listener()->pairing_error_count());
+  EXPECT_EQ(Error(ErrorCode::kPairingNotSupported), listener()->last_error());
+  EXPECT_EQ(0, phase_3_complete_count());
+}
+
+TEST_F(Phase3Test, LePairingIgnoresBrEdrCtkdDisallowed) {
+  const LTK kExpectedLtk = LTK(kDefaultProperties, kSampleLinkKey);
+  Phase3Args args;
+  args.features.initiator = false;
+  args.features.secure_connections = false;
+  args.features.local_key_distribution = 0u;
+  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.le_props = kExpectedLtk.security();
+  NewPhase3(args);
+  // The BR/EDR CTKD check only applies to ACL links.
+  listener()->set_bredr_ctkd_allowed(false);
+
+  phase_3()->Start();
+  Receive128BitCmd(kEncryptionInformation, kExpectedLtk.key().value());
+  ReceiveCentralIdentification(kExpectedLtk.key().rand(),
+                               kExpectedLtk.key().ediv());
+  RunUntilIdle();
+
+  EXPECT_EQ(0, listener()->pairing_error_count());
+  EXPECT_EQ(1, phase_3_complete_count());
+  ASSERT_TRUE(pairing_data().peer_ltk.has_value());
+  EXPECT_EQ(kExpectedLtk, *pairing_data().peer_ltk);
+}
+
 }  // namespace
 }  // namespace bt::sm

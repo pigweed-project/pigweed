@@ -400,6 +400,18 @@ void Phase3::OnRxBFrame(ByteBufferPtr sdu) {
   ValidPacketReader reader = maybe_reader.value();
   Code smp_code = reader.code();
 
+  if (smp_code != kPairingFailed &&
+      sm_chan().link_type() == bt::LinkType::kACL) {
+    PW_CHECK(listener().is_alive());
+    if (!listener()->IsBrEdrCrossTransportKeyDerivationAllowed()) {
+      bt_log(WARN,
+             "sm",
+             "aborting BR/EDR CTKD in Phase 3: CTKD is no longer allowed");
+      Abort(ErrorCode::kCrossTransportKeyDerivationNotAllowed);
+      return;
+    }
+  }
+
   switch (smp_code) {
     case kPairingFailed:
       OnFailure(Error(reader.payload<ErrorCode>()));

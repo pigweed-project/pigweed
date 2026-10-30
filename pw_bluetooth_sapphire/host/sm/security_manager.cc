@@ -183,6 +183,7 @@ class SecurityManagerImpl final : public SecurityManager,
                       Delegate::DisplayMethod method,
                       ConfirmCallback cb) override;
   void RequestPasskey(PasskeyResponseCallback respond) override;
+  bool IsBrEdrCrossTransportKeyDerivationAllowed() const override;
 
   // PairingChannel::Handler overrides. SecurityManagerImpl is only the fallback
   // handler, meaning these methods are only called by PairingChannel when no
@@ -223,9 +224,6 @@ class SecurityManagerImpl final : public SecurityManager,
   // match. Disconnects the link if it finds an issue. Should only be called
   // when an LTK is expected to exist.
   Result<> ValidateExistingLocalLtk();
-
-  // Returns true only if all security conditions are met for BR/EDR CTKD.
-  bool IsBrEdrCrossTransportKeyDerivationAllowed();
 
   std::optional<sm::LTK> GetExistingLtkFromPeerCache();
 
@@ -763,7 +761,8 @@ void SecurityManagerImpl::OnFeatureExchange(PairingFeatures features,
 
   auto self = weak_listener_.GetWeakPtr();
   if (bredr_link_.is_alive()) {
-    if (!features_->generate_ct_key.has_value()) {
+    if (!features_->generate_ct_key.has_value() ||
+        !IsBrEdrCrossTransportKeyDerivationAllowed()) {
       Abort(ErrorCode::kCrossTransportKeyDerivationNotAllowed);
       return;
     }
@@ -1111,6 +1110,14 @@ void SecurityManagerImpl::OnBrEdrPairingComplete(PairingData pairing_data) {
   PW_CHECK(features_.has_value());
   PW_CHECK(features_->generate_ct_key.has_value());
   PW_CHECK(delegate_.is_alive());
+
+  if (!IsBrEdrCrossTransportKeyDerivationAllowed()) {
+    bt_log(WARN,
+           "sm",
+           "aborting completed BR/EDR CTKD because CTKD is no longer allowed");
+    Abort(ErrorCode::kCrossTransportKeyDerivationNotAllowed);
+    return;
+  }
 
   bt_log(INFO, "sm", "BR/EDR cross-transport key derivation complete");
 
@@ -1538,7 +1545,7 @@ Result<> SecurityManagerImpl::ValidateExistingLocalLtk() {
   return status;
 }
 
-bool SecurityManagerImpl::IsBrEdrCrossTransportKeyDerivationAllowed() {
+bool SecurityManagerImpl::IsBrEdrCrossTransportKeyDerivationAllowed() const {
   if (!is_controller_remote_public_key_validation_supported_) {
     bt_log(DEBUG,
            "sm",
@@ -1591,7 +1598,13 @@ bool SecurityManagerImpl::IsBrEdrCrossTransportKeyDerivationAllowed() {
     }
   }
 
-  // TODO(fxbug.dev/388607971): check for LE pairing in progress
+  if (peer_->le() && peer_->le()->is_pairing()) {
+    bt_log(INFO,
+           "sm",
+           "%s: LE pairing in progress; disallowing BR/EDR CTKD",
+           __FUNCTION__);
+    return false;
+  }
 
   return true;
 }

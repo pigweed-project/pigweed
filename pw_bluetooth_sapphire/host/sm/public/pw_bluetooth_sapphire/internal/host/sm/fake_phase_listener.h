@@ -67,9 +67,16 @@ class FakeListener : public PairingPhase::Listener {
     last_error_ = error;
   }
 
+  // PairingPhase::Listener override:
+  bool IsBrEdrCrossTransportKeyDerivationAllowed() const override {
+    return bredr_ctkd_allowed_;
+  }
+
   PairingPhase::Listener::WeakPtr as_weak_ptr() {
     return weak_self_.GetWeakPtr();
   }
+
+  void set_bredr_ctkd_allowed(bool allowed) { bredr_ctkd_allowed_ = allowed; }
 
   void set_identity_info(std::optional<IdentityInfo> value) {
     identity_info_ = value;
@@ -108,6 +115,7 @@ class FakeListener : public PairingPhase::Listener {
 
   int pairing_error_count_ = 0;
   std::optional<Error> last_error_;
+  bool bredr_ctkd_allowed_ = true;
 
   WeakSelf<PairingPhase::Listener> weak_self_;
 };

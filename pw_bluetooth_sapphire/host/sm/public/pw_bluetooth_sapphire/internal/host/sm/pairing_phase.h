@@ -64,6 +64,10 @@ class PairingPhase {
     // method should destroy the Phase that calls it.
     virtual void OnPairingFailed(Error error) = 0;
 
+    // Returns true if BR/EDR cross-transport key derivation is currently
+    // allowed. Only checked when pairing over a BR/EDR ACL link.
+    virtual bool IsBrEdrCrossTransportKeyDerivationAllowed() const = 0;
+
     using WeakPtr = WeakSelf<Listener>::WeakPtr;
   };
 
