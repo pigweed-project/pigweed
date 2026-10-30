@@ -52,11 +52,16 @@ These steps can be adapted as needed.
 
    * In GN and CMake, this is done automatically.
    * In Bazel, include ``"@pigweed//pw_tokenizer:linker_script"`` in the
-     ``deps`` of your main binary rule (assuming you're already overriding the
-     default linker script).
-   * If your binary does not use a custom linker script, you can pass
-     ``add_tokenizer_sections_to_default_script.ld`` to the linker which will
-     augment the default linker script (rather than override it).
+     ``deps`` of your main binary rule. This automatically selects
+     ``"@pigweed//pw_tokenizer:add_tokenizer_sections_to_default_script"`` on
+     Linux (to augment the default host linker script) and
+     ``"@pigweed//pw_tokenizer:tokenizer_linker_sections"`` on other platforms
+     (assuming you're already overriding the default linker script). You can
+     also depend on either of those targets directly.
+   * In other build systems, if your binary does not use a custom linker script,
+     you can pass ``pw_add_tokenizer_sections_to_default_script.ld`` to the
+     linker which will augment the default linker script (rather than override
+     it).
    * Alternatively, include ``pw_tokenizer/pw_tokenizer_linker_sections.ld``
      from your project's linker script by depending on
      ``"@pigweed//pw_tokenizer:pw_tokenizer_linker_sections_ld"``.

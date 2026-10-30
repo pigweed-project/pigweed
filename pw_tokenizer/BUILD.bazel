@@ -83,8 +83,21 @@ cc_library(
 )
 
 pw_linker_script(
-    name = "linker_script",
+    name = "tokenizer_linker_sections",
     linker_script = "pw_tokenizer_linker_sections.ld",
+)
+
+pw_linker_script(
+    name = "add_tokenizer_sections_to_default_script",
+    linker_script = "pw_add_tokenizer_sections_to_default_script.ld",
+)
+
+alias(
+    name = "linker_script",
+    actual = select({
+        "@platforms//os:linux": ":add_tokenizer_sections_to_default_script",
+        "//conditions:default": ":tokenizer_linker_sections",
+    }),
 )
 
 cc_library(
