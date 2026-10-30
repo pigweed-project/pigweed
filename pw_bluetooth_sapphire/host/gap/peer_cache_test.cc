@@ -1637,6 +1637,23 @@ class PeerCacheExpirationTest : public pw::async::test::FakeDispatcherFixture {
     return cache_.NewPeer(address, connectable);
   }
   int peers_removed() const { return peers_removed_; }
+  void AddTemporaryPeers(size_t count, bool advance_time = true) {
+    for (size_t i = 0; i < count; i++) {
+      if (advance_time) {
+        // Advance time so that each peer has a distinct last-updated time.
+        RunFor(std::chrono::milliseconds(1));
+      }
+      // Encode |i| in the last two address bytes so each peer is distinct.
+      DeviceAddress address(DeviceAddress::Type::kLEPublic,
+                            {0xAA,
+                             0xBB,
+                             0xCC,
+                             0x00,
+                             static_cast<uint8_t>(i >> 8),
+                             static_cast<uint8_t>(i)});
+      ASSERT_TRUE(NewPeer(address, /*connectable=*/true));
+    }
+  }
 
  private:
   PeerCache cache_{dispatcher()};
@@ -1975,6 +1992,60 @@ TEST_F(PeerCacheExpirationTest, RegisterNameUpdatesExpiration) {
   ASSERT_TRUE(IsDefaultPeerPresent());
   GetDefaultPeer()->RegisterName({});
   RunFor(std::chrono::milliseconds(1));
+  EXPECT_TRUE(IsDefaultPeerPresent());
+}
+
+TEST_F(PeerCacheExpirationTest,
+       NewTemporaryPeerAtLimitEvictsLeastRecentlyUpdatedPeer) {
+  // The default peer is the oldest.
+  AddTemporaryPeers(kMaxTemporaryPeers - 1);
+  ASSERT_EQ(kMaxTemporaryPeers, cache().count());
+  ASSERT_EQ(0, peers_removed());
+
+  RunFor(std::chrono::milliseconds(1));
+  Peer* newest = NewPeer(kAddrLeRandom, /*connectable=*/true);
+  ASSERT_TRUE(newest);
+  EXPECT_EQ(kMaxTemporaryPeers, cache().count());
+  EXPECT_EQ(1, peers_removed());
+  EXPECT_FALSE(IsDefaultPeerPresent());
+  EXPECT_TRUE(GetPeerById(newest->identifier()));
+}
+
+TEST_F(PeerCacheExpirationTest,
+       NewTemporaryPeerAtLimitEvictsOnePeerWhenLastUpdatedTimesTie) {
+  // The default peer is the oldest, while the other peers share the same
+  // last-updated time.
+  RunFor(std::chrono::milliseconds(1));
+  AddTemporaryPeers(kMaxTemporaryPeers + 1, /*advance_time=*/false);
+
+  EXPECT_EQ(kMaxTemporaryPeers, cache().count());
+  EXPECT_EQ(2, peers_removed());
+  EXPECT_FALSE(IsDefaultPeerPresent());
+}
+
+TEST_F(PeerCacheExpirationTest, UpdatedTemporaryPeerIsNotEvictedFirst) {
+  AddTemporaryPeers(kMaxTemporaryPeers - 1);
+  ASSERT_EQ(kMaxTemporaryPeers, cache().count());
+
+  // Tickle the default peer so it's the most recently updated.
+  RunFor(std::chrono::milliseconds(1));
+  GetDefaultPeer()->RegisterName("nombre");
+
+  RunFor(std::chrono::milliseconds(1));
+  ASSERT_TRUE(NewPeer(kAddrLeRandom, /*connectable=*/true));
+  EXPECT_EQ(kMaxTemporaryPeers, cache().count());
+  EXPECT_EQ(1, peers_removed());
+  EXPECT_TRUE(IsDefaultPeerPresent());
+}
+
+TEST_F(PeerCacheExpirationTest, NonTemporaryPeersDoNotCountTowardLimit) {
+  Peer::ConnectionToken conn_token =
+      GetDefaultPeer()->MutLe().RegisterConnection();
+  ASSERT_FALSE(GetDefaultPeer()->temporary());
+
+  AddTemporaryPeers(kMaxTemporaryPeers + 1);
+  EXPECT_EQ(kMaxTemporaryPeers + 1, cache().count());
+  EXPECT_EQ(1, peers_removed());
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 

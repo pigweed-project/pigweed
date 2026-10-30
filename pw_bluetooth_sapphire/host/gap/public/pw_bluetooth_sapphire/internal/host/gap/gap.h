@@ -191,6 +191,10 @@ inline constexpr uint16_t kLEInitialConnIntervalCodedMax = 0x0078;  // 150 ms
 inline constexpr pw::chrono::SystemClock::duration kCacheTimeout =
     std::chrono::seconds(60);
 
+// Maximum number of temporary peers kept in the cache. When a new peer would
+// exceed this, the least recently updated temporary peer is removed first.
+inline constexpr size_t kMaxTemporaryPeers = 512;
+
 // Time interval between random address changes when privacy is enabled (see
 // T_GAP(private_addr_int) in 5.0 Vol 3, Part C, Appendix A)
 inline constexpr pw::chrono::SystemClock::duration kPrivateAddressTimeout =

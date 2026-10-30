@@ -197,10 +197,19 @@ class PeerCache final {
     // cancel |remove_peer_callback|.
     SmartTask* removal_task() { return &removal_task_; }
 
+    // Time at which the peer was last updated, as recorded by UpdateExpiry().
+    pw::chrono::SystemClock::time_point last_updated() const {
+      return last_updated_;
+    }
+    void set_last_updated(pw::chrono::SystemClock::time_point time) {
+      last_updated_ = time;
+    }
+
    private:
     std::unique_ptr<Peer> peer_;
     fit::closure remove_peer_callback_;
     SmartTask removal_task_;
+    pw::chrono::SystemClock::time_point last_updated_;
   };
 
   // Create and track a record of a remote peer with a given |identifier|,
@@ -232,6 +241,10 @@ class PeerCache final {
 
   // Removes |peer| from this cache, and notifies listeners of the removal.
   void RemovePeer(Peer* peer);
+
+  // Removes the least recently updated temporary peers until there's room for
+  // one more without exceeding kMaxTemporaryPeers.
+  void MakeRoomForTemporaryPeer();
 
   // Search for an unique peer ID by its peer address |address|, by both
   // technologies if it is a public address. |address| should be already

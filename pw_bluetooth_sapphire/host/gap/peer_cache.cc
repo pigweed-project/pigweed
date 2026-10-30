@@ -41,6 +41,7 @@ DeviceAddress GetAliasAddress(const DeviceAddress& address) {
 }  // namespace
 
 Peer* PeerCache::NewPeer(const DeviceAddress& address, bool connectable) {
+  MakeRoomForTemporaryPeer();
   auto* const peer = InsertPeerRecord(RandomPeerId(), address, connectable);
   if (peer) {
     UpdateExpiry(*peer);
@@ -494,6 +495,7 @@ void PeerCache::UpdateExpiry(const Peer& peer) {
   PW_DCHECK(peer_record.peer() == &peer);
 
   peer_record.removal_task()->Cancel();
+  peer_record.set_last_updated(dispatcher_.now());
 
   // Previous expiry task has been canceled. Re-schedule only if the peer is
   // temporary.
@@ -551,6 +553,35 @@ void PeerCache::RemovePeer(Peer* peer) {
   peers_.erase(peer_record_it);  // Destroys |peer|.
   if (peer_removed_callback_) {
     peer_removed_callback_(id);
+  }
+}
+
+void PeerCache::MakeRoomForTemporaryPeer() {
+  // Peers that become temporary on disconnect are not evicted until the next
+  // new peer, so more than one may need to be removed.
+  while (peers_.size() >= kMaxTemporaryPeers) {
+    size_t temporary_count = 0;
+    Peer* oldest = nullptr;
+    pw::chrono::SystemClock::time_point oldest_time;
+    for (auto& [id, record] : peers_) {
+      if (!record.peer()->temporary()) {
+        continue;
+      }
+      temporary_count++;
+      // Ties are broken arbitrarily.
+      if (!oldest || record.last_updated() < oldest_time) {
+        oldest = record.peer();
+        oldest_time = record.last_updated();
+      }
+    }
+    if (temporary_count < kMaxTemporaryPeers) {
+      return;
+    }
+    bt_log(DEBUG,
+           "gap",
+           "too many temporary peers, removing %s",
+           bt_str(oldest->identifier()));
+    RemovePeer(oldest);
   }
 }
 
