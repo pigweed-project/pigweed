@@ -833,11 +833,110 @@ TEST_F(BearerTest, UpgradeSecuritySynchronousFailureIsHandledGracefully) {
   StaticByteBuffer kExpectedReq(kTestRequest);
   EXPECT_PACKET_OUT(kExpectedReq);
   bearer()->StartTransaction(NewBuffer(kTestRequest), cb);
+  bearer()->StartTransaction(NewBuffer(kTestRequest2),
+                             [](Bearer::TransactionResult) { FAIL(); });
 
   // Simulate receiving the error response.
   fake_att_chan()->Receive(kErrorResponseInsuffAuth);
   EXPECT_TRUE(err_cb_called);
   EXPECT_TRUE(security_cb_called);
+}
+
+TEST_F(BearerTest, UpgradeSecuritySynchronousSuccessDeletesBearerInRetry) {
+  bool security_cb_called = false;
+  fake_att_chan()->SetSecurityCallback(
+      [this, &security_cb_called](hci_spec::ConnectionHandle /*handle*/,
+                                  sm::SecurityLevel level,
+                                  sm::ResultFunction<> callback) {
+        security_cb_called = true;
+        fake_chan()->set_security(
+            sm::SecurityProperties(level, 16, /*secure_connections=*/false));
+        callback(fit::ok());
+      },
+      dispatcher());
+  fake_att_chan()->set_run_upgrade_security_cb_synchronously(true);
+
+  StaticByteBuffer kErrorResponseInsuffAuth(
+      kErrorResponse,
+      kTestRequest,  // request opcode
+      0x01,
+      0x00,  // handle
+      ErrorCode::kInsufficientAuthentication);
+  StaticByteBuffer kResponse(kTestResponse, 'T', 'e', 's', 't');
+
+  size_t send_count = 0;
+  fake_chan()->SetSendCallback(
+      [this, &send_count, &kErrorResponseInsuffAuth, &kResponse](
+          auto cb_packet) {
+        send_count++;
+        EXPECT_EQ(kTestRequest, (*cb_packet)[0]);
+        if (send_count == 1) {
+          fake_chan()->Receive(kErrorResponseInsuffAuth);
+        } else if (send_count == 2) {
+          fake_chan()->Receive(kResponse);
+        } else {
+          FAIL();
+        }
+      });
+
+  bool cb_called = false;
+  auto cb = [this, &cb_called, &kResponse](Bearer::TransactionResult result) {
+    ASSERT_FALSE(cb_called);
+    ASSERT_TRUE(result.is_ok());
+    cb_called = true;
+    EXPECT_TRUE(ContainersEqual(kResponse, result.value().data()));
+    DeleteBearer();
+  };
+
+  bearer()->StartTransaction(NewBuffer(kTestRequest), std::move(cb));
+
+  EXPECT_EQ(2u, send_count);
+  EXPECT_TRUE(security_cb_called);
+  EXPECT_TRUE(cb_called);
+}
+
+TEST_F(BearerTest,
+       UpgradeSecuritySynchronousFailureDestroysSecurityCallbackClosure) {
+  std::optional<sm::ResultFunction<>> stored_security_cb;
+  fake_att_chan()->SetSecurityCallback(
+      [&stored_security_cb](hci_spec::ConnectionHandle /*handle*/,
+                            sm::SecurityLevel /*level*/,
+                            sm::ResultFunction<> callback) {
+        stored_security_cb = std::move(callback);
+        (*stored_security_cb)(fit::error(HostError::kFailed));
+      },
+      dispatcher());
+  fake_att_chan()->set_run_upgrade_security_cb_synchronously(true);
+
+  StaticByteBuffer kErrorResponseInsuffAuth(
+      kErrorResponse,
+      kTestRequest,  // request opcode
+      0x01,
+      0x00,  // handle
+      ErrorCode::kInsufficientAuthentication);
+
+  bool err_cb_called = false;
+  auto cb = [this, &err_cb_called, &stored_security_cb](
+                Bearer::TransactionResult result) {
+    err_cb_called = true;
+    ASSERT_TRUE(result.is_error());
+    // Destroy both the bearer and the stored security callback closure while
+    // executing inside the transaction error callback (simulating
+    // SecurityManagerImpl tearing down its request_queue_ during connection
+    // destruction).
+    DeleteBearer();
+    stored_security_cb.reset();
+    EXPECT_EQ(Error(ErrorCode::kInsufficientAuthentication),
+              result.error_value().first);
+    EXPECT_EQ(0x0001, result.error_value().second);
+  };
+
+  StaticByteBuffer kExpectedReq(kTestRequest);
+  EXPECT_PACKET_OUT(kExpectedReq);
+  bearer()->StartTransaction(NewBuffer(kTestRequest), std::move(cb));
+
+  fake_att_chan()->Receive(kErrorResponseInsuffAuth);
+  EXPECT_TRUE(err_cb_called);
 }
 
 TEST_F(BearerTest, RegisterHandlerErrorClosed) {
@@ -863,8 +962,70 @@ TEST_F(BearerTest, UnregisterHandler) {
   bearer()->UnregisterHandler(id0);
 
   // It should be possible to register new handlers for the same opcodes.
-  id0 = bearer()->RegisterHandler(kNotification, NopHandler);
-  EXPECT_NE(Bearer::kInvalidHandlerId, id0);
+  auto id1 = bearer()->RegisterHandler(kNotification, NopHandler);
+  EXPECT_NE(Bearer::kInvalidHandlerId, id1);
+
+  // Unregistering the stale id0 again should not erase the newly registered
+  // handler for kNotification.
+  bearer()->UnregisterHandler(id0);
+  EXPECT_EQ(Bearer::kInvalidHandlerId,
+            bearer()->RegisterHandler(kNotification, NopHandler));
+}
+
+TEST_F(BearerTest, HandlerUnregistersItselfDuringNotification) {
+  Bearer::HandlerId id = Bearer::kInvalidHandlerId;
+  size_t call_count = 0;
+  id = bearer()->RegisterHandler(
+      kNotification,
+      [this, &id, &call_count, step = std::make_unique<size_t>(1)](
+          Bearer::TransactionId tid, const PacketReader& /*packet*/) {
+        EXPECT_EQ(Bearer::kInvalidTransactionId, tid);
+        bearer()->UnregisterHandler(id);
+        call_count += *step;
+      });
+  EXPECT_NE(Bearer::kInvalidHandlerId, id);
+
+  StaticByteBuffer notification(kNotification, 0x01, 0x02);
+  fake_chan()->Receive(notification);
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, call_count);
+
+  // Subsequent notification should be dropped without calling handler.
+  fake_chan()->Receive(notification);
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, call_count);
+}
+
+TEST_F(BearerTest, HandlerUnregistersItselfDuringRequest) {
+  bool response_sent = false;
+  fake_chan()->SetSendCallback(
+      [&response_sent](auto packet) {
+        response_sent = true;
+        EXPECT_EQ(kTestResponse, (*packet)[0]);
+      },
+      dispatcher());
+
+  Bearer::HandlerId id = Bearer::kInvalidHandlerId;
+  size_t call_count = 0;
+  id = bearer()->RegisterHandler(
+      kTestRequest,
+      [this, &id, &call_count, step = std::make_unique<size_t>(1)](
+          Bearer::TransactionId tid, const PacketReader& /*packet*/) {
+        EXPECT_NE(Bearer::kInvalidTransactionId, tid);
+        bearer()->UnregisterHandler(id);
+        call_count += *step;
+        EXPECT_TRUE(bearer()->Reply(tid, NewBuffer(kTestResponse)));
+      });
+  EXPECT_NE(Bearer::kInvalidHandlerId, id);
+
+  StaticByteBuffer request(kTestRequest);
+  fake_chan()->Receive(request);
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, call_count);
+  EXPECT_TRUE(response_sent);
 }
 
 TEST_F(BearerTest, RemoteTransactionNoHandler) {
@@ -1321,6 +1482,41 @@ TEST_F(BearerTest, ResponseShutsDownBearer) {
     DeleteBearer();
   };
   bearer()->StartTransaction(NewBuffer(kTestRequest), cb);
+  bearer()->StartTransaction(NewBuffer(kTestRequest2),
+                             [](Bearer::TransactionResult) { FAIL(); });
+
+  RunUntilIdle();
+  EXPECT_TRUE(chan_cb_called);
+  EXPECT_TRUE(cb_called);
+}
+
+// Verify proper operation if an indication confirmation callback frees the
+// bearer while another indication is queued.
+TEST_F(BearerTest, ConfirmationShutsDownBearer) {
+  StaticByteBuffer conf(kConfirmation);
+
+  bool chan_cb_called = false;
+  auto chan_cb = [this, &chan_cb_called, &conf](auto cb_packet) {
+    ASSERT_FALSE(chan_cb_called);
+    EXPECT_EQ(kIndication, (*cb_packet)[0]);
+
+    chan_cb_called = true;
+    fake_chan()->Receive(conf);
+  };
+  fake_chan()->SetSendCallback(chan_cb, dispatcher());
+
+  bool cb_called = false;
+  auto cb = [this, &cb_called, &conf](Bearer::TransactionResult result) {
+    ASSERT_FALSE(cb_called);
+    ASSERT_TRUE(result.is_ok());
+
+    cb_called = true;
+    EXPECT_TRUE(ContainersEqual(conf, result.value().data()));
+    DeleteBearer();
+  };
+  bearer()->StartTransaction(NewBuffer(kIndication), cb);
+  bearer()->StartTransaction(NewBuffer(kIndication),
+                             [](Bearer::TransactionResult) { FAIL(); });
 
   RunUntilIdle();
   EXPECT_TRUE(chan_cb_called);
@@ -1366,6 +1562,8 @@ TEST_F(BearerTest, ErrorResponseShutsDownBearer) {
     DeleteBearer();
   };
   bearer()->StartTransaction(NewBuffer(kTestRequest), cb);
+  bearer()->StartTransaction(NewBuffer(kTestRequest2),
+                             [](Bearer::TransactionResult) { FAIL(); });
 
   RunUntilIdle();
   EXPECT_TRUE(err_cb_called);
@@ -1420,6 +1618,24 @@ class BearerTestSecurity : public BearerTest {
         dispatcher());
   }
 
+  // Sets up the fake channel to respond with matching response opcodes for
+  // test requests.
+  void SetUpMatchingResponder() {
+    fake_chan()->SetSendCallback(
+        [this](auto packet) {
+          att_request_count_++;
+          OpCode req = (*packet)[0];
+          if (req == kTestRequest) {
+            fake_chan()->Receive(StaticByteBuffer(kTestResponse));
+          } else if (req == kTestRequest2) {
+            fake_chan()->Receive(StaticByteBuffer(kTestResponse2));
+          } else if (req == kTestRequest3) {
+            fake_chan()->Receive(StaticByteBuffer(kTestResponse3));
+          }
+        },
+        dispatcher());
+  }
+
   // Resolves the currently pending security request.
   void ResolvePendingSecurityRequest(sm::Result<> status) {
     ASSERT_TRUE(security_responder_);
@@ -1432,6 +1648,12 @@ class BearerTestSecurity : public BearerTest {
     // Clear the responder before invoking it.
     auto f = std::move(security_responder_);
     f(status);
+  }
+
+  // Drops the currently pending security request callback without invoking it.
+  void DropPendingSecurityRequest() {
+    ASSERT_TRUE(security_responder_);
+    security_responder_ = nullptr;
   }
 
   void SendRequest() {
@@ -1668,13 +1890,15 @@ TEST_F(BearerTestSecurity, SecurityUpgradeSucceedsAfterBearerShutDown) {
   EXPECT_EQ(0u, request_success_count());
   EXPECT_EQ(0u, request_error_count());
 
-  // Shut down the bearer while the security upgrade request is pending.
+  // Shutting down the bearer while the security upgrade request is pending
+  // immediately fails the pending transaction.
   bearer()->ShutDown();
   ASSERT_FALSE(bearer()->is_open());
+  EXPECT_EQ(1u, request_error_count());
+  EXPECT_EQ(ToResult(HostError::kFailed), last_request_status());
 
-  // Resolving the security upgrade with ok after the bearer is closed should
-  // resolve the transaction with its original error instead of stranding it in
-  // the closed bearer's request queue.
+  // Resolving the security upgrade with ok after the bearer is closed is a
+  // no-op and does not re-send or invoke the callback again.
   SetUpResponder();
   ResolvePendingSecurityRequest(fit::ok());
   RunUntilIdle();
@@ -1683,8 +1907,354 @@ TEST_F(BearerTestSecurity, SecurityUpgradeSucceedsAfterBearerShutDown) {
   EXPECT_EQ(1u, security_request_count());
   EXPECT_EQ(0u, request_success_count());
   EXPECT_EQ(1u, request_error_count());
+  EXPECT_EQ(ToResult(HostError::kFailed), last_request_status());
+}
+
+TEST_F(BearerTestSecurity, SecurityUpgradeFailsAndDeletesBearer) {
+  SetUpErrorResponder(ErrorCode::kInsufficientAuthentication);
+
+  bool err_cb_called = false;
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest),
+      [this, &err_cb_called](Bearer::TransactionResult result) {
+        err_cb_called = true;
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(Error(ErrorCode::kInsufficientAuthentication),
+                  result.error_value().first);
+        DeleteBearer();
+      });
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
+  EXPECT_FALSE(err_cb_called);
+
+  ResolvePendingSecurityRequest(ToResult(HostError::kFailed));
+  RunUntilIdle();
+
+  EXPECT_TRUE(err_cb_called);
+}
+
+TEST_F(BearerTestSecurity, SubsequentRequestsHeldWhileSecurityUpgradeInFlight) {
+  // Configure the channel to respond to the first request with an
+  // authentication error requiring security upgrade.
+  SetUpErrorResponder(ErrorCode::kInsufficientAuthentication);
+  SendRequest();
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
+  EXPECT_EQ(0u, request_success_count());
+  EXPECT_EQ(0u, request_error_count());
+
+  // Queue a second request while the security upgrade is in flight.
+  bool second_cb_called = false;
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest2),
+      [&second_cb_called](Bearer::TransactionResult result) {
+        second_cb_called = true;
+        EXPECT_TRUE(result.is_ok());
+      });
+  RunUntilIdle();
+
+  // The second request must not be sent ahead of the pending security-upgrade
+  // retry (Core Spec Vol 3, Part F, Section 3.3.2; Part G, Section 8.1).
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
+  EXPECT_FALSE(second_cb_called);
+
+  // Once security upgrade succeeds, the first request is retried and completes,
+  // followed by the second request.
+  SetUpMatchingResponder();
+  ResolvePendingSecurityRequest(fit::ok());
+  RunUntilIdle();
+
+  EXPECT_EQ(3u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
+  EXPECT_EQ(1u, request_success_count());
+  EXPECT_TRUE(second_cb_called);
+}
+
+TEST_F(BearerTestSecurity, QueuedRequestsSentAfterSecurityUpgradeFails) {
+  SetUpErrorResponder(ErrorCode::kInsufficientAuthentication);
+  SendRequest();
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
+
+  bool second_cb_called = false;
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest2),
+      [&second_cb_called](Bearer::TransactionResult result) {
+        second_cb_called = true;
+        EXPECT_TRUE(result.is_ok());
+      });
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_FALSE(second_cb_called);
+
+  SetUpMatchingResponder();
+  ResolvePendingSecurityRequest(ToResult(HostError::kFailed));
+  RunUntilIdle();
+
+  // The first request failed, but the second request should not stall and
+  // should execute successfully.
+  EXPECT_EQ(1u, request_error_count());
   EXPECT_EQ(ToResult(ErrorCode::kInsufficientAuthentication),
             last_request_status());
+  EXPECT_TRUE(second_cb_called);
+  EXPECT_EQ(2u, att_request_count());
+}
+
+TEST_F(BearerTestSecurity, RetriedRequestHasHeadOfLinePriority) {
+  SetUpErrorResponder(ErrorCode::kInsufficientAuthentication);
+
+  std::vector<OpCode> resolved_order;
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest),
+      [&resolved_order](Bearer::TransactionResult result) {
+        EXPECT_TRUE(result.is_ok());
+        resolved_order.push_back(kTestRequest);
+      });
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
+
+  // Enqueue a second and third request while pairing is in flight.
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest2),
+      [&resolved_order](Bearer::TransactionResult result) {
+        EXPECT_TRUE(result.is_ok());
+        resolved_order.push_back(kTestRequest2);
+      });
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest3),
+      [&resolved_order](Bearer::TransactionResult result) {
+        EXPECT_TRUE(result.is_ok());
+        resolved_order.push_back(kTestRequest3);
+      });
+  RunUntilIdle();
+
+  std::vector<OpCode> sent_opcodes;
+  fake_chan()->SetSendCallback(
+      [&sent_opcodes, this](auto packet) {
+        OpCode req = (*packet)[0];
+        sent_opcodes.push_back(req);
+        if (req == kTestRequest) {
+          fake_chan()->Receive(StaticByteBuffer(kTestResponse));
+        } else if (req == kTestRequest2) {
+          fake_chan()->Receive(StaticByteBuffer(kTestResponse2));
+        } else if (req == kTestRequest3) {
+          fake_chan()->Receive(StaticByteBuffer(kTestResponse3));
+        }
+      },
+      dispatcher());
+
+  ResolvePendingSecurityRequest(fit::ok());
+  RunUntilIdle();
+
+  // The retried request must be sent before requests queued while pairing was
+  // underway.
+  const std::vector<OpCode> expected_sent = {
+      kTestRequest, kTestRequest2, kTestRequest3};
+  EXPECT_EQ(expected_sent, sent_opcodes);
+  EXPECT_EQ(expected_sent, resolved_order);
+}
+
+TEST_F(BearerTestSecurity, ShutDownDuringSecurityUpgradeResolvesInFifoOrder) {
+  SetUpErrorResponder(ErrorCode::kInsufficientAuthentication);
+
+  std::vector<OpCode> resolved_order;
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest),
+      [&resolved_order](Bearer::TransactionResult result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(Error(HostError::kFailed), result.error_value().first);
+        resolved_order.push_back(kTestRequest);
+      });
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
+
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest2),
+      [&resolved_order](Bearer::TransactionResult result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(Error(HostError::kFailed), result.error_value().first);
+        resolved_order.push_back(kTestRequest2);
+      });
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest3),
+      [&resolved_order](Bearer::TransactionResult result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(Error(HostError::kFailed), result.error_value().first);
+        resolved_order.push_back(kTestRequest3);
+      });
+  RunUntilIdle();
+  EXPECT_TRUE(resolved_order.empty());
+
+  bearer()->ShutDown();
+  ASSERT_FALSE(bearer()->is_open());
+
+  const std::vector<OpCode> expected_order = {
+      kTestRequest, kTestRequest2, kTestRequest3};
+  EXPECT_EQ(expected_order, resolved_order);
+
+  // Dropping the pending security callback after ShutDown must not double-fire.
+  DropPendingSecurityRequest();
+  EXPECT_EQ(expected_order, resolved_order);
+}
+
+TEST_F(BearerTestSecurity,
+       ChannelCloseDuringSecurityUpgradeResolvesInFifoOrder) {
+  SetUpErrorResponder(ErrorCode::kInsufficientAuthentication);
+
+  std::vector<OpCode> resolved_order;
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest),
+      [&resolved_order](Bearer::TransactionResult result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(Error(HostError::kFailed), result.error_value().first);
+        resolved_order.push_back(kTestRequest);
+      });
+  RunUntilIdle();
+
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest2),
+      [&resolved_order](Bearer::TransactionResult result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(Error(HostError::kFailed), result.error_value().first);
+        resolved_order.push_back(kTestRequest2);
+      });
+  RunUntilIdle();
+  EXPECT_TRUE(resolved_order.empty());
+
+  fake_chan()->Close();
+  DropPendingSecurityRequest();
+  RunUntilIdle();
+
+  ASSERT_FALSE(bearer()->is_open());
+  const std::vector<OpCode> expected_order = {kTestRequest, kTestRequest2};
+  EXPECT_EQ(expected_order, resolved_order);
+}
+
+TEST_F(BearerTestSecurity,
+       SecurityUpgradeCallbackDroppedUninvokedFailsAndUnblocksQueue) {
+  constexpr Handle kTestAttrHandle = 0x0001;
+  SetUpErrorResponder(ErrorCode::kInsufficientAuthentication, kTestAttrHandle);
+
+  std::optional<std::pair<Error, Handle>> first_error;
+  bearer()->StartTransaction(NewBuffer(kTestRequest),
+                             [&first_error](Bearer::TransactionResult result) {
+                               ASSERT_TRUE(result.is_error());
+                               first_error = result.error_value();
+                             });
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
+  EXPECT_FALSE(first_error.has_value());
+
+  bool second_cb_called = false;
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest2),
+      [&second_cb_called](Bearer::TransactionResult result) {
+        second_cb_called = true;
+        EXPECT_TRUE(result.is_ok());
+      });
+  RunUntilIdle();
+  EXPECT_FALSE(second_cb_called);
+
+  // Dropping the security callback without invoking it while the bearer is
+  // open must fail the pending request with its original ATT error and unblock
+  // subsequent queued requests.
+  SetUpMatchingResponder();
+  DropPendingSecurityRequest();
+  RunUntilIdle();
+
+  ASSERT_TRUE(first_error.has_value());
+  EXPECT_EQ(Error(ErrorCode::kInsufficientAuthentication), first_error->first);
+  EXPECT_EQ(kTestAttrHandle, first_error->second);
+  EXPECT_TRUE(second_cb_called);
+  EXPECT_EQ(2u, att_request_count());
+}
+
+TEST_F(BearerTest, SynchronousUninvokedUpgradeSecurityCallbackUnblocksQueue) {
+  // No security callback configured + synchronous mode: UpgradeSecurity drops
+  // |callback| immediately without invoking it, matching ChannelImpl on an
+  // inactive channel/link.
+  fake_att_chan()->set_run_upgrade_security_cb_synchronously(true);
+
+  constexpr Handle kTestAttrHandle = 0x0001;
+  StaticByteBuffer kErrorResponseInsuffAuth(
+      kErrorResponse,
+      kTestRequest,
+      LowerBits(kTestAttrHandle),
+      UpperBits(kTestAttrHandle),
+      ErrorCode::kInsufficientAuthentication);
+  StaticByteBuffer kResponse2(kTestResponse2);
+
+  size_t send_count = 0;
+  fake_chan()->SetSendCallback(
+      [this, &send_count, &kErrorResponseInsuffAuth, &kResponse2](auto packet) {
+        send_count++;
+        if (send_count == 1) {
+          EXPECT_EQ(kTestRequest, (*packet)[0]);
+          fake_chan()->Receive(kErrorResponseInsuffAuth);
+        } else if (send_count == 2) {
+          EXPECT_EQ(kTestRequest2, (*packet)[0]);
+          fake_chan()->Receive(kResponse2);
+        } else {
+          FAIL();
+        }
+      },
+      dispatcher());
+
+  bool first_failed = false;
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest),
+      [&first_failed, kTestAttrHandle](Bearer::TransactionResult result) {
+        first_failed = true;
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(Error(ErrorCode::kInsufficientAuthentication),
+                  result.error_value().first);
+        EXPECT_EQ(kTestAttrHandle, result.error_value().second);
+      });
+
+  bool second_succeeded = false;
+  bearer()->StartTransaction(
+      NewBuffer(kTestRequest2),
+      [&second_succeeded](Bearer::TransactionResult result) {
+        second_succeeded = true;
+        EXPECT_TRUE(result.is_ok());
+      });
+
+  RunUntilIdle();
+  EXPECT_TRUE(first_failed);
+  EXPECT_TRUE(second_succeeded);
+  EXPECT_EQ(2u, send_count);
+}
+
+TEST_F(BearerTestSecurity,
+       DestroyBearerDuringSecurityUpgradeDoesNotInvokeCallbacks) {
+  SetUpErrorResponder(ErrorCode::kInsufficientAuthentication);
+
+  bearer()->StartTransaction(NewBuffer(kTestRequest),
+                             [](Bearer::TransactionResult) { FAIL(); });
+  RunUntilIdle();
+  EXPECT_EQ(1u, security_request_count());
+
+  bearer()->StartTransaction(NewBuffer(kTestRequest2),
+                             [](Bearer::TransactionResult) { FAIL(); });
+  RunUntilIdle();
+
+  DeleteBearer();
+  ResolvePendingSecurityRequest(ToResult(HostError::kFailed));
+  RunUntilIdle();
 }
 
 }  // namespace

@@ -205,10 +205,12 @@ Bearer::PendingRemoteTransaction::PendingRemoteTransaction(TransactionId id_in,
 Bearer::TransactionQueue::TransactionQueue(TransactionQueue&& other)
     : queue_(std::move(other.queue_)),
       current_(std::move(other.current_)),
+      security_upgrade_(std::move(other.security_upgrade_)),
       timeout_task_(other.timeout_task_.dispatcher()) {
   // The move constructor is only used during shut down below. So we simply
   // cancel the task and not worry about moving it.
   other.timeout_task_.Cancel();
+  other.security_upgrade_.reset();
 }
 
 Bearer::PendingTransactionPtr Bearer::TransactionQueue::ClearCurrent() {
@@ -220,72 +222,100 @@ Bearer::PendingTransactionPtr Bearer::TransactionQueue::ClearCurrent() {
   return std::move(current_);
 }
 
-void Bearer::TransactionQueue::Enqueue(PendingTransactionPtr transaction) {
-  queue_.push(std::move(transaction));
+void Bearer::TransactionQueue::Enqueue(PendingTransactionPtr&& transaction) {
+  queue_.push_back(std::move(transaction));
+}
+
+void Bearer::TransactionQueue::EnqueueFront(
+    PendingTransactionPtr&& transaction) {
+  queue_.push_front(std::move(transaction));
+}
+
+void Bearer::TransactionQueue::SetSecurityUpgrade(
+    PendingTransactionPtr&& transaction, std::pair<Error, Handle> error) {
+  PW_DCHECK(!security_upgrade_);
+  PW_DCHECK(transaction);
+  security_upgrade_ = PendingSecurityUpgrade{
+      .transaction = std::move(transaction),
+      .error = std::move(error),
+  };
+}
+
+std::optional<Bearer::TransactionQueue::PendingSecurityUpgrade>
+Bearer::TransactionQueue::TakeSecurityUpgrade() {
+  std::optional<PendingSecurityUpgrade> pending = std::move(security_upgrade_);
+  security_upgrade_.reset();
+  return pending;
 }
 
 void Bearer::TransactionQueue::TrySendNext(
-    const l2cap::Channel::WeakPtr& chan,
+    WeakPtr bearer,
     pw::async::TaskFunction timeout_cb,
     pw::chrono::SystemClock::duration timeout) {
-  PW_DCHECK(chan.is_alive());
+  PW_DCHECK(bearer.is_alive());
+  PW_DCHECK(bearer->is_open());
 
-  // Abort if a transaction is currently pending or there are no transactions
-  // queued.
-  if (current_ || queue_.empty()) {
-    return;
-  }
-
-  // Advance to the next transaction.
-  current_ = std::move(queue_.front());
-  queue_.pop();
-  while (current()) {
+  while (!security_upgrade_ && !current_ && !queue_.empty()) {
     PW_DCHECK(!timeout_task_.is_pending());
-    PW_DCHECK(current()->pdu);
+
+    auto transaction = std::move(queue_.front());
+    queue_.pop_front();
+    PW_DCHECK(transaction);
+    PW_DCHECK(transaction->pdu);
 
     // We copy the PDU payload in case it needs to be retried following a
     // security upgrade.
-    auto pdu = NewBuffer(current()->pdu->size());
+    auto pdu = NewBuffer(transaction->pdu->size());
     if (pdu) {
-      current()->pdu->Copy(pdu.get());
+      transaction->pdu->Copy(pdu.get());
+      current_ = std::move(transaction);
       timeout_task_.set_function(std::move(timeout_cb));
       timeout_task_.PostAfter(timeout);
-      chan->Send(std::move(pdu));
+      bearer->chan_->Send(std::move(pdu));
       break;
     }
 
     bt_log(TRACE, "att", "Failed to start transaction: out of memory!");
-    auto t = std::move(current_);
-    t->callback(
-        fit::error(std::pair(Error(HostError::kOutOfMemory), kInvalidHandle)));
-
-    // Process the next command until we can send OR we have drained the queue.
-    if (queue_.empty()) {
-      break;
+    auto cb = std::move(transaction->callback);
+    transaction.reset();
+    cb(fit::error(std::pair(Error(HostError::kOutOfMemory), kInvalidHandle)));
+    if (!bearer.is_alive() || !bearer->is_open()) {
+      return;
     }
-    current_ = std::move(queue_.front());
-    queue_.pop();
   }
 }
 
 void Bearer::TransactionQueue::Reset() {
   timeout_task_.Cancel();
-  queue_ = {};
+  queue_.clear();
   current_ = nullptr;
+  security_upgrade_.reset();
 }
 
 void Bearer::TransactionQueue::InvokeErrorAll(Error error) {
   if (current_) {
-    current_->callback(fit::error(std::pair(error, kInvalidHandle)));
-    current_ = nullptr;
+    auto current = std::move(current_);
     timeout_task_.Cancel();
+    if (current->callback) {
+      current->callback(fit::error(std::pair(error, kInvalidHandle)));
+    }
+  }
+
+  if (security_upgrade_) {
+    auto pending = std::move(*security_upgrade_);
+    security_upgrade_.reset();
+    if (pending.transaction->callback) {
+      pending.transaction->callback(
+          fit::error(std::pair(error, kInvalidHandle)));
+    }
   }
 
   while (!queue_.empty()) {
-    if (queue_.front()->callback) {
-      queue_.front()->callback(fit::error(std::pair(error, kInvalidHandle)));
+    auto t = std::move(queue_.front());
+    queue_.pop_front();
+    if (t->callback) {
+      t->callback(fit::error(std::pair(error, kInvalidHandle)));
     }
-    queue_.pop();
   }
 }
 
@@ -311,6 +341,7 @@ Bearer::Bearer(l2cap::Channel::WeakPtr chan, pw::async::Dispatcher& dispatcher)
 }
 
 Bearer::~Bearer() {
+  weak_self_.InvalidatePtrs();
   chan_ = nullptr;
 
   request_queue_.Reset();
@@ -470,6 +501,7 @@ void Bearer::UnregisterHandler(HandlerId id) {
   }
 
   OpCode opcode = iter->second;
+  handler_id_map_.erase(iter);
   handlers_.erase(opcode);
 }
 
@@ -543,6 +575,25 @@ bool Bearer::IsPacketValid(const ByteBuffer& packet) {
   return packet.size() != 0u && packet.size() <= mtu_;
 }
 
+// static
+void Bearer::FailSecurityUpgrade(WeakPtr self) {
+  if (!self.is_alive() || !self->is_open()) {
+    return;
+  }
+  std::optional<TransactionQueue::PendingSecurityUpgrade> pending =
+      self->request_queue_.TakeSecurityUpgrade();
+  if (!pending.has_value()) {
+    return;
+  }
+  auto cb = std::move(pending->transaction->callback);
+  auto error_pair = std::move(pending->error);
+  pending.reset();
+  cb(fit::error(std::move(error_pair)));
+  if (self.is_alive() && self->is_open()) {
+    self->TryStartNextTransaction(&self->request_queue_);
+  }
+}
+
 void Bearer::TryStartNextTransaction(TransactionQueue* tq) {
   PW_DCHECK(tq);
 
@@ -552,10 +603,11 @@ void Bearer::TryStartNextTransaction(TransactionQueue* tq) {
   }
 
   tq->TrySendNext(
-      chan_.get(),
-      [this](pw::async::Context /*ctx*/, pw::Status status) {
-        if (status.ok()) {
-          ShutDownInternal(/*due_to_timeout=*/true);
+      weak_self_.GetWeakPtr(),
+      [self = weak_self_.GetWeakPtr()](pw::async::Context /*ctx*/,
+                                       pw::Status status) {
+        if (self.is_alive() && status.ok()) {
+          self->ShutDownInternal(/*due_to_timeout=*/true);
         }
       },
       kTransactionTimeout);
@@ -577,12 +629,12 @@ void Bearer::SendErrorResponse(OpCode request_opcode,
   chan_->Send(std::move(buffer));
 }
 
-void Bearer::HandleEndTransaction(TransactionQueue* tq,
-                                  const PacketReader& packet) {
+void Bearer::HandleEndTransaction(bool is_request, const PacketReader& packet) {
   PW_DCHECK(is_open());
-  PW_DCHECK(tq);
 
-  if (!tq->current()) {
+  TransactionQueue& tq = is_request ? request_queue_ : indication_queue_;
+
+  if (!tq.current()) {
     bt_log(DEBUG,
            "att",
            "received unexpected transaction PDU (opcode: %#.2x)",
@@ -596,7 +648,7 @@ void Bearer::HandleEndTransaction(TransactionQueue* tq,
 
   if (packet.opcode() == kErrorResponse) {
     // We should never hit this branch for indications.
-    PW_DCHECK(tq->current()->opcode != kIndication);
+    PW_DCHECK(tq.current()->opcode != kIndication);
 
     if (packet.payload_size() == sizeof(ErrorResponseParams)) {
       const auto& payload = packet.payload<ErrorResponseParams>();
@@ -615,9 +667,9 @@ void Bearer::HandleEndTransaction(TransactionQueue* tq,
     target_opcode = MatchingTransactionCode(packet.opcode());
   }
 
-  PW_DCHECK(tq->current()->opcode != kInvalidOpCode);
+  PW_DCHECK(tq.current()->opcode != kInvalidOpCode);
 
-  if (tq->current()->opcode != target_opcode) {
+  if (tq.current()->opcode != target_opcode) {
     bt_log(DEBUG,
            "att",
            "received bad transaction PDU (opcode: %#.2x)",
@@ -627,7 +679,7 @@ void Bearer::HandleEndTransaction(TransactionQueue* tq,
   }
 
   // The transaction is complete.
-  auto transaction = tq->ClearCurrent();
+  auto transaction = tq.ClearCurrent();
   PW_DCHECK(transaction);
 
   const sm::SecurityLevel security_requirement =
@@ -639,16 +691,22 @@ void Bearer::HandleEndTransaction(TransactionQueue* tq,
     // The transaction callback may result in our connection being closed.
     auto self = weak_self_.GetWeakPtr();
 
-    // Resolve the transaction.
+    // Resolve the transaction. Move the callback to the stack and reset the
+    // transaction first in case invoking the callback destroys the bearer.
+    auto cb = std::move(transaction->callback);
+    transaction.reset();
     if (error.has_value()) {
-      transaction->callback(fit::error(error.value()));
+      cb(fit::error(error.value()));
     } else {
-      transaction->callback(fit::ok(packet));
+      cb(fit::ok(packet));
     }
 
+    // Check if the bearer was destroyed in the callback.
     if (self.is_alive()) {
-      // Send out the next queued transaction
-      TryStartNextTransaction(tq);
+      // Send out the next queued transaction.
+      TransactionQueue* queue =
+          is_request ? &self->request_queue_ : &self->indication_queue_;
+      self->TryStartNextTransaction(queue);
     }
     return;
   }
@@ -660,25 +718,31 @@ void Bearer::HandleEndTransaction(TransactionQueue* tq,
          "level: %s",
          bt_str(error->first),
          sm::LevelToString(security_requirement));
-  // NOTE: UpgradeSecurity can fail synchronously which will cascade into
-  // LEConnectionManager synchronously closing the connection. We have to be
-  // very careful after this call since `self` could have been destroyed.
-  //
-  // NOTE^2: The above may technically be UB since the lifetime of Bearer is
-  // ended when its destructor is called but we still continue execution of one
-  // of its member functions. However, this is probably fine in practice if we
-  // are careful to not use the `this` pointer.
+  // UpgradeSecurity can fail synchronously (or drop its callback without
+  // invoking it when the channel/link is inactive), which may cascade into
+  // LEConnectionManager closing the connection and destroying the Bearer. Keep
+  // the pending transaction owned by |request_queue_| so ShutDownInternal()
+  // fails it in FIFO order and ~Bearer() drops it without invoking callbacks.
+  request_queue_.SetSecurityUpgrade(std::move(transaction), *std::move(error));
   auto self = weak_self_.GetWeakPtr();
   chan_->UpgradeSecurity(
       security_requirement,
-      [self,
-       err = *std::move(error),
-       security_requirement,
-       t = std::move(transaction)](sm::Result<> status) mutable {
-        // If the security upgrade failed or the bearer got destroyed or closed,
-        // then resolve the transaction with the original error.
-        if (!self.is_alive() || !self->is_open() || status.is_error()) {
-          t->callback(fit::error(std::move(err)));
+      [self, security_requirement, on_drop = fit::defer([self]() {
+                                     FailSecurityUpgrade(self);
+                                   })](sm::Result<> status) mutable {
+        on_drop.cancel();
+        auto self_copy = self;
+        if (!self_copy.is_alive() || !self_copy->is_open()) {
+          return;
+        }
+        if (status.is_error()) {
+          FailSecurityUpgrade(std::move(self_copy));
+          return;
+        }
+
+        std::optional<TransactionQueue::PendingSecurityUpgrade> pending =
+            self_copy->request_queue_.TakeSecurityUpgrade();
+        if (!pending.has_value()) {
           return;
         }
 
@@ -687,18 +751,14 @@ void Bearer::HandleEndTransaction(TransactionQueue* tq,
         // 3, Part C, 10.3.2).
 
         // Re-send the request as described in the Core Spec v5.0, Vol 3, Part
-        // G, 8.1. Since |t| was originally resolved with an Error Response, it
-        // must have come out of |request_queue_|.
-        PW_DCHECK(GetMethodType(t->opcode) == MethodType::kRequest);
-        t->security_retry_level = security_requirement;
-        self->request_queue_.Enqueue(std::move(t));
-        self->TryStartNextTransaction(&self->request_queue_);
+        // G, 8.1. Since |pending| was originally resolved with an Error
+        // Response, it must have come out of |request_queue_|.
+        PW_DCHECK(GetMethodType(pending->transaction->opcode) ==
+                  MethodType::kRequest);
+        pending->transaction->security_retry_level = security_requirement;
+        self_copy->request_queue_.EnqueueFront(std::move(pending->transaction));
+        self_copy->TryStartNextTransaction(&self_copy->request_queue_);
       });
-
-  if (self.is_alive()) {
-    // Move on to the next queued transaction.
-    self->TryStartNextTransaction(tq);
-  }
 }
 
 Bearer::HandlerId Bearer::NextHandlerId() {
@@ -749,7 +809,8 @@ void Bearer::HandleBeginTransaction(RemoteTransaction* currently_pending,
   auto id = NextRemoteTransactionId();
   *currently_pending = PendingRemoteTransaction(id, packet.opcode());
 
-  iter->second(id, packet);
+  Handler handler = iter->second.share();
+  handler(id, packet);
 }
 
 Bearer::RemoteTransaction* Bearer::FindRemoteTransaction(TransactionId id) {
@@ -775,7 +836,8 @@ void Bearer::HandlePDUWithoutResponse(const PacketReader& packet) {
     return;
   }
 
-  iter->second(kInvalidTransactionId, packet);
+  Handler handler = iter->second.share();
+  handler(kInvalidTransactionId, packet);
 }
 
 void Bearer::OnChannelClosed() {
@@ -812,10 +874,10 @@ void Bearer::OnRxBFrame(ByteBufferPtr sdu) {
   PW_MODIFY_DIAGNOSTIC(ignored, "-Wswitch-enum");
   switch (GetMethodType(packet.opcode())) {
     case MethodType::kResponse:
-      HandleEndTransaction(&request_queue_, packet);
+      HandleEndTransaction(/*is_request=*/true, packet);
       break;
     case MethodType::kConfirmation:
-      HandleEndTransaction(&indication_queue_, packet);
+      HandleEndTransaction(/*is_request=*/false, packet);
       break;
     case MethodType::kRequest:
       HandleBeginTransaction(&remote_request_, packet);

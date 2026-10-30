@@ -17,9 +17,12 @@
 #include <pw_assert/check.h>
 #include <pw_async/dispatcher.h>
 
+#include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 #include <unordered_map>
+#include <utility>
 
 #include "pw_bluetooth_sapphire/internal/host/att/att.h"
 #include "pw_bluetooth_sapphire/internal/host/att/error.h"
@@ -212,11 +215,19 @@ class Bearer final {
   // transactions.
   class TransactionQueue {
    public:
-    TransactionQueue(pw::async::Dispatcher& dispatcher)
+    struct PendingSecurityUpgrade {
+      PendingTransactionPtr transaction;
+      std::pair<Error, Handle> error;
+    };
+
+    explicit TransactionQueue(pw::async::Dispatcher& dispatcher)
         : timeout_task_(dispatcher) {}
     ~TransactionQueue() = default;
 
     TransactionQueue(TransactionQueue&& other);
+    TransactionQueue& operator=(TransactionQueue&&) = delete;
+    TransactionQueue(const TransactionQueue&) = delete;
+    TransactionQueue& operator=(const TransactionQueue&) = delete;
 
     // Returns the transaction that has been sent to the peer and is currently
     // pending completion.
@@ -226,26 +237,41 @@ class Bearer final {
     // timeout task. Returns ownership of any pending transaction to the caller.
     PendingTransactionPtr ClearCurrent();
 
-    // Tries to initiate the next transaction. Sends the PDU over |chan| if
-    // successful.
-    void TrySendNext(const l2cap::Channel::WeakPtr& chan,
+    // Tries to initiate the next transaction. Sends the PDU over |bearer|'s
+    // channel if successful. |bearer| is checked for liveness if an error
+    // callback runs synchronously.
+    void TrySendNext(WeakPtr bearer,
                      pw::async::TaskFunction timeout_cb,
                      pw::chrono::SystemClock::duration timeout);
 
-    // Adds |next| to the transaction queue.
-    void Enqueue(PendingTransactionPtr transaction);
+    // Adds |transaction| to the back of the transaction queue.
+    void Enqueue(PendingTransactionPtr&& transaction);
+
+    // Adds |transaction| to the front of the transaction queue.
+    void EnqueueFront(PendingTransactionPtr&& transaction);
+
+    // Stores |transaction| and its originating |error| while a link security
+    // upgrade is in flight.
+    void SetSecurityUpgrade(PendingTransactionPtr&& transaction,
+                            std::pair<Error, Handle> error);
+
+    // Takes ownership of any pending security-upgrade transaction.
+    std::optional<PendingSecurityUpgrade> TakeSecurityUpgrade();
 
     // Resets the contents of this queue to their default state.
     void Reset();
 
-    // Invokes the error callbacks of all transactions with |status|.
+    // Invokes the error callbacks of all transactions with |error|.
     void InvokeErrorAll(Error error);
 
    private:
-    std::queue<std::unique_ptr<PendingTransaction>> queue_;
+    std::deque<std::unique_ptr<PendingTransaction>> queue_;
     std::unique_ptr<PendingTransaction> current_;
+    std::optional<PendingSecurityUpgrade> security_upgrade_;
     SmartTask timeout_task_;
   };
+
+  static void FailSecurityUpgrade(WeakPtr self);
 
   bool SendInternal(ByteBufferPtr pdu, TransactionCallback callback);
 
@@ -264,7 +290,7 @@ class Bearer final {
                          ErrorCode error_code);
 
   // Called when the peer sends us a response or confirmation PDU.
-  void HandleEndTransaction(TransactionQueue* tq, const PacketReader& packet);
+  void HandleEndTransaction(bool is_request, const PacketReader& packet);
 
   // Returns the next handler ID and increments the counter.
   HandlerId NextHandlerId();
