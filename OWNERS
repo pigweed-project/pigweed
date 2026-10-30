@@ -10,6 +10,7 @@ include EXTENDED_OWNERS
 # Note: a core Pigweed team member should be among the OWNERS for each module.
 asadmemon@google.com #{LAST_RESORT_SUGGESTION}
 davidroth@google.com #{LAST_RESORT_SUGGESTION}
+erahm@google.com #{LAST_RESORT_SUGGESTION}
 frolv@google.com #{LAST_RESORT_SUGGESTION}
 hayala@google.com #{LAST_RESORT_SUGGESTION}
 hepler@google.com #{LAST_RESORT_SUGGESTION}
