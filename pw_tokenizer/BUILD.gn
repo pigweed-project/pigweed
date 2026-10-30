@@ -296,6 +296,7 @@ pw_python_action("generate_data_driven_detokenize_test") {
   ]
   python_deps = [
     "$dir_pw_build/py",
+    "$dir_pw_codegen/py",
     "py",
   ]
   visibility = [ ":*" ]

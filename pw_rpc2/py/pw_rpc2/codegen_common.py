@@ -34,7 +34,7 @@ from typing import Iterable, Sequence
 
 from google.protobuf import descriptor_pb2
 
-from pw_protobuf.output_file import OutputFile
+from pw_codegen import OutputFile, cpp
 from pw_protobuf.symbol_name_mapping import fix_cc_identifier
 
 _HASH_CONSTANT = 65599
@@ -107,7 +107,7 @@ class Method:
 
     @property
     def cpp_name(self) -> str:
-        return fix_cc_identifier(self.name)
+        return cpp.fix_identifier(self.name)
 
     @property
     def id(self) -> int:
@@ -135,7 +135,7 @@ class Service:
 
     @property
     def cpp_name(self) -> str:
-        return fix_cc_identifier(self.name)
+        return cpp.fix_identifier(self.name)
 
     @property
     def id(self) -> int:
@@ -168,6 +168,7 @@ def services_in(
 
 def cpp_namespace(package: str, *subnamespaces: str) -> str:
     """Returns the C++ namespace (without leading ::) for a proto package."""
+    # Match pw_protobuf's package namespace escaping (e.g. Message -> Message_).
     parts = [fix_cc_identifier(part) for part in package.split('.') if part]
     return '::'.join(parts + list(subnamespaces))
 
@@ -364,25 +365,10 @@ def _write_preamble(
     output.write_line('// clang-format off')
     output.write_line('#pragma once')
 
-    unique = set(includes)
-    system = sorted(i for i in unique if i.startswith('<'))
-    local = sorted(i for i in unique if not i.startswith('<'))
-    for group in (system, local):
-        if group:
-            output.write_line()
-            for include in group:
-                output.write_line(f'#include {include}')
-
-
-def _write_namespace_open(output: OutputFile, namespace: str) -> None:
-    output.write_line()
-    output.write_line(f'namespace {namespace} {{')
-    output.write_line()
-
-
-def _write_namespace_close(output: OutputFile, namespace: str) -> None:
-    output.write_line()
-    output.write_line(f'}}  // namespace {namespace}')
+    if include_lines := cpp.includes(includes):
+        output.write_line()
+        for line in include_lines:
+            output.write_line(line)
 
 
 def _write_method_tags(output: OutputFile, service: Service) -> None:
@@ -467,10 +453,8 @@ def _write_client_forward_declarations(
     for service in services:
         for flavor in FLAVORS:
             if flavor != gen.flavor:
-                namespace = flavor_namespace(service, flavor)
-                _write_namespace_open(output, namespace)
-                output.write_line('class Client;')
-                _write_namespace_close(output, namespace)
+                with cpp.namespace(output, flavor_namespace(service, flavor)):
+                    output.write_line('class Client;')
 
 
 def _write_service_info(
@@ -520,36 +504,37 @@ def _write_copy_methods(
             output.write_line(f'{gen.response_type(method)}>{suffix}')
 
     output.write_line('class Client;')
-    _write_namespace_open(output, INTERNAL_NAMESPACE)
-    output.write_line(
-        '// Provides `client.Method::Copy(buf)` for unary and server streaming '
-        'methods.'
-    )
-    output.write_line(f'class {COPY_METHODS}')
-    for i, method in enumerate(methods):
-        prefix = '    : public ' if i == 0 else '      public '
-        suffix = ',' if i < len(methods) - 1 else ' {'
-        write_copy_method(prefix, method, suffix, indent=10)
-    output.write_line(' public:')
-    with output.indent():
+    with cpp.namespace(output, INTERNAL_NAMESPACE):
         output.write_line(
-            '// These alias the classes that provide `Copy()`, not the method'
+            '// Provides `client.Method::Copy(buf)` for unary and server '
+            'streaming methods.'
         )
-        output.write_line(
-            '// tags of the same names (e.g. `Client::Method` is not `Method`).'
-        )
-        for method in methods:
-            write_copy_method(f'using {method.cpp_name} = ', method, ';')
-    output.write_line()
-    output.write_line(' protected:')
-    with output.indent():
-        output.write_line(f'constexpr {COPY_METHODS}() = default;')
-        output.write_line(f'constexpr {COPY_METHODS}(')
-        output.write_line(f'    const {COPY_METHODS}&) = default;')
-        output.write_line(f'constexpr {COPY_METHODS}& operator=(')
-        output.write_line(f'    const {COPY_METHODS}&) = default;')
-    output.write_line('};')
-    _write_namespace_close(output, INTERNAL_NAMESPACE)
+        output.write_line(f'class {COPY_METHODS}')
+        for i, method in enumerate(methods):
+            prefix = '    : public ' if i == 0 else '      public '
+            suffix = ',' if i < len(methods) - 1 else ' {'
+            write_copy_method(prefix, method, suffix, indent=10)
+        output.write_line(' public:')
+        with output.indent():
+            output.write_line(
+                '// These alias the classes that provide `Copy()`, not the '
+                'method'
+            )
+            output.write_line(
+                '// tags of the same names (e.g. `Client::Method` is not '
+                '`Method`).'
+            )
+            for method in methods:
+                write_copy_method(f'using {method.cpp_name} = ', method, ';')
+        output.write_line()
+        output.write_line(' protected:')
+        with output.indent():
+            output.write_line(f'constexpr {COPY_METHODS}() = default;')
+            output.write_line(f'constexpr {COPY_METHODS}(')
+            output.write_line(f'    const {COPY_METHODS}&) = default;')
+            output.write_line(f'constexpr {COPY_METHODS}& operator=(')
+            output.write_line(f'    const {COPY_METHODS}&) = default;')
+        output.write_line('};')
     output.write_line()
 
 
@@ -839,27 +824,24 @@ def generate_headers(
     )
 
     for service in services:
-        namespace = gen.service_namespace(service)
-        _write_namespace_open(header, namespace)
-        if service.methods:
-            _write_method_tags(header, service)
+        with cpp.namespace(header, gen.service_namespace(service)):
+            if service.methods:
+                _write_method_tags(header, service)
+                header.write_line()
+            _write_client(header, gen, service)
             header.write_line()
-        _write_client(header, gen, service)
-        header.write_line()
-        _write_service(header, gen, service)
-        _write_namespace_close(header, namespace)
+            _write_service(header, gen, service)
 
     if services:
         _write_client_forward_declarations(header, gen, services)
-        _write_namespace_open(header, 'pw::rpc2::internal')
-        for i, service in enumerate(services):
-            if i:
-                header.write_line()
-            _write_service_info(header, gen, service)
-            if service.methods:
-                header.write_line()
-                _write_method_info(header, gen, service)
-        _write_namespace_close(header, 'pw::rpc2::internal')
+        with cpp.namespace(header, 'pw::rpc2::internal'):
+            for i, service in enumerate(services):
+                if i:
+                    header.write_line()
+                _write_service_info(header, gen, service)
+                if service.methods:
+                    header.write_line()
+                    _write_method_info(header, gen, service)
 
     stubs = OutputFile(stubs_header_name(proto_file.name, gen.flavor))
     _write_preamble(
@@ -868,9 +850,7 @@ def generate_headers(
         [f'"{main_name}"', *(_STUBS_INCLUDES if services else [])],
     )
     for service in services:
-        namespace = gen.service_namespace(service)
-        _write_namespace_open(stubs, namespace)
-        _write_stub(stubs, gen, service)
-        _write_namespace_close(stubs, namespace)
+        with cpp.namespace(stubs, gen.service_namespace(service)):
+            _write_stub(stubs, gen, service)
 
     return [header, stubs]

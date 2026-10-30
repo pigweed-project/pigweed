@@ -22,5 +22,8 @@ pw_py_library(
     ],
     imports = ["."],
     visibility = ["//visibility:public"],
-    deps = ["@pigweed_python_packages//cryptography"],
+    deps = [
+        "//pw_codegen/py:pw_codegen",
+        "@pigweed_python_packages//cryptography",
+    ],
 )

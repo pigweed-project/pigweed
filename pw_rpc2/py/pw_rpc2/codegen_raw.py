@@ -17,7 +17,7 @@ from typing import Iterable, Sequence
 
 from google.protobuf import descriptor_pb2
 
-from pw_protobuf.output_file import OutputFile
+from pw_codegen import OutputFile
 
 from pw_rpc2.codegen_common import (
     CLIENT_BASE,

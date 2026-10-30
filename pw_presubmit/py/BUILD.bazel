@@ -37,6 +37,7 @@ pw_py_library(
     visibility = ["//visibility:private"],
     deps = [
         "//pw_cli/py",
+        "//pw_codegen/py:pw_codegen",
     ],
 )
 

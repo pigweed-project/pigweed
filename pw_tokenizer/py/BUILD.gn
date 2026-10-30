@@ -64,6 +64,7 @@ pw_python_package("py") {
   python_test_deps = [
     ":test_proto.python",
     "$dir_pw_build/py",
+    "$dir_pw_codegen/py",
   ]
   inputs = [
     "elf_reader_test_binary.elf",

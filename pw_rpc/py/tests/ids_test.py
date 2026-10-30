@@ -18,6 +18,7 @@ from typing import Iterator
 
 from pw_build.generated_tests import Context, TestGenerator
 from pw_build import generated_tests
+from pw_codegen import cpp
 from pw_rpc import ids
 
 _CC_HEADER = """\
@@ -39,7 +40,7 @@ def _cc_test(ctx: Context) -> Iterator[str]:
 
     yield f'TEST(RpcIds, {ctx.cc_name()}) {{'
     yield f'    EXPECT_EQ(0x{expected_id:08x}u,'
-    yield f'              Hash({generated_tests.cc_string(name)}sv));'
+    yield f'              Hash({cpp.string_literal(name)}sv));'
     yield '}'
 
 

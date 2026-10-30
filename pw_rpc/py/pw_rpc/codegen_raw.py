@@ -16,7 +16,7 @@
 import os
 from typing import Iterable
 
-from pw_protobuf.output_file import OutputFile
+from pw_codegen import OutputFile
 from pw_protobuf.proto_tree import ProtoServiceMethod
 from pw_protobuf.proto_tree import build_node_tree
 from pw_rpc import codegen

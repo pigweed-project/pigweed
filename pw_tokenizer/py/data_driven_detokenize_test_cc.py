@@ -15,7 +15,8 @@
 
 from typing import Iterator
 
-from pw_build.generated_tests import Context, cc_string
+from pw_build.generated_tests import Context
+from pw_codegen import cpp
 import detokenize_test_cases as shared
 
 _CPP_HEADER = """
@@ -37,17 +38,17 @@ _CPP_FOOTER = """
 """
 
 _CPP_DATABASE_DEFS = f"""
-constexpr char kTestDatabaseRaw[] = {cc_string(shared.TEST_DATABASE)};
+constexpr char kTestDatabaseRaw[] = {cpp.string_literal(shared.TEST_DATABASE)};
 constexpr pw::tokenizer::TokenDatabase kTestDatabase =
     pw::tokenizer::TokenDatabase::Create<kTestDatabaseRaw>();
 
 constexpr char kDataWithArgumentsRaw[] =
-    {cc_string(shared.DATA_WITH_ARGUMENTS)};
+    {cpp.string_literal(shared.DATA_WITH_ARGUMENTS)};
 constexpr pw::tokenizer::TokenDatabase kDataWithArguments =
     pw::tokenizer::TokenDatabase::Create<kDataWithArgumentsRaw>();
 
 constexpr char kDataWithCollisionsRaw[] =
-    {cc_string(shared.DATA_WITH_COLLISIONS)};
+    {cpp.string_literal(shared.DATA_WITH_COLLISIONS)};
 constexpr pw::tokenizer::TokenDatabase kDataWithCollisions =
     pw::tokenizer::TokenDatabase::Create<kDataWithCollisionsRaw>();
 """
@@ -58,7 +59,8 @@ def _cpp_test_text(ctx: Context) -> Iterator[str]:
     yield f"""\
 TEST(DetokenizeTest, {ctx.cc_name()}) {{
   const pw::tokenizer::Detokenizer detok(kTestDatabase);
-  EXPECT_EQ(detok.DetokenizeText({cc_string(data)}sv), {cc_string(expected)});
+  EXPECT_EQ(detok.DetokenizeText({cpp.string_literal(data)}sv),
+            {cpp.string_literal(expected)});
 }}"""
 
 
@@ -67,10 +69,10 @@ def _cpp_test_optional(ctx: Context) -> Iterator[str]:
     yield f"""\
 TEST(DetokenizeOptionalTest, {ctx.cc_name()}) {{
   const pw::tokenizer::Detokenizer detok(kTestDatabase);
-  constexpr std::string_view data = {cc_string(data)}sv;
+  constexpr std::string_view data = {cpp.string_literal(data)}sv;
   EXPECT_EQ(
       detok.DecodeOptionallyTokenizedData(pw::as_bytes(pw::span(data))),
-      {cc_string(expected)}
+      {cpp.string_literal(expected)}
   );
 }}"""
 
@@ -80,12 +82,12 @@ def _cpp_test_with_args(ctx: Context) -> Iterator[str]:
     yield f"""\
 TEST(DetokenizeWithArgsBinTest, {ctx.cc_name()}) {{
   const pw::tokenizer::Detokenizer detok(kDataWithArguments);
-  constexpr std::string_view data = {cc_string(data)}sv;
+  constexpr std::string_view data = {cpp.string_literal(data)}sv;
   const auto result = detok.Detokenize(pw::as_bytes(pw::span(data)));
   if (pw::tokenizer::test::FormatIsSupported(detok, data)) {{
-    EXPECT_EQ(result.BestString(), {cc_string(expected)});
+    EXPECT_EQ(result.BestString(), {cpp.string_literal(expected)});
   }} else {{
-    EXPECT_NE(result.BestString(), {cc_string(expected)});
+    EXPECT_NE(result.BestString(), {cpp.string_literal(expected)});
   }}
 }}"""
 
@@ -95,10 +97,10 @@ def _cpp_test_with_collisions(ctx: Context) -> Iterator[str]:
     yield f"""\
 TEST(DetokenizeWithCollisionsTest, {ctx.cc_name()}) {{
   const pw::tokenizer::Detokenizer detok(kDataWithCollisions);
-  constexpr std::string_view data = {cc_string(data)}sv;
+  constexpr std::string_view data = {cpp.string_literal(data)}sv;
   EXPECT_EQ(
       detok.Detokenize(pw::as_bytes(pw::span(data))).BestString(),
-      {cc_string(expected)}
+      {cpp.string_literal(expected)}
   );
 }}"""
 

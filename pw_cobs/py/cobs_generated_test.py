@@ -24,10 +24,9 @@ from pw_build.generated_tests import (
     GroupOrTest,
     PyTest,
     TestGenerator,
-    cc_string,
 )
-
 from pw_cobs import cobs
+from pw_codegen import cpp
 
 
 def _nonzero_255(count: int, start: int = 1) -> bytes:
@@ -560,11 +559,11 @@ def _cc_encode_test(ctx: Context[EncodeCase]) -> Iterator[str]:
     yield f'TEST(CobsGeneratedEncode, {ctx.cc_name()}) {{'
     yield (
         f'  static constexpr auto kDecoded = '
-        f'bytes::String({cc_string(decoded)});'
+        f'bytes::String({cpp.string_literal(decoded)});'
     )
     yield (
         f'  static constexpr auto kEncoded = '
-        f'bytes::String({cc_string(encoded)});'
+        f'bytes::String({cpp.string_literal(encoded)});'
     )
     yield f'  CheckEncodeCase<{len(decoded)}>(kDecoded, kEncoded);'
     yield '}'
@@ -588,12 +587,12 @@ def _cc_decode_test(ctx: Context[DecodeCase]) -> Iterator[str]:
     yield f'TEST(CobsGeneratedDecode, {ctx.cc_name()}) {{'
     yield (
         f'  static constexpr auto kEncoded = '
-        f'bytes::String({cc_string(encoded)});'
+        f'bytes::String({cpp.string_literal(encoded)});'
     )
     if decoded is not None:
         yield (
             f'  static constexpr auto kDecoded = '
-            f'bytes::String({cc_string(decoded)});'
+            f'bytes::String({cpp.string_literal(decoded)});'
         )
         yield f'  CheckDecodeOk<{len(encoded)}>(kEncoded, kDecoded);'
     else:
@@ -647,7 +646,10 @@ _STATUS_CC = {
 def _cc_decoder_test(ctx: Context[DecoderCase]) -> Iterator[str]:
     buffer_size, wire, expected = ctx.test_case
     yield f'TEST(CobsGeneratedDecoder, {ctx.cc_name()}) {{'
-    yield f'  static constexpr auto kWire = bytes::String({cc_string(wire)});'
+    yield (
+        f'  static constexpr auto kWire = '
+        f'bytes::String({cpp.string_literal(wire)});'
+    )
     if not expected:
         yield (
             f'  CheckDecoderCase<{buffer_size}>('
@@ -660,7 +662,7 @@ def _cc_decoder_test(ctx: Context[DecoderCase]) -> Iterator[str]:
         if frame.status is cobs.DecodeStatus.OK:
             yield (
                 f'  static constexpr auto kFrame{i} = '
-                f'bytes::String({cc_string(frame.decoded)});'
+                f'bytes::String({cpp.string_literal(frame.decoded)});'
             )
 
     yield (

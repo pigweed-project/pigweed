@@ -577,6 +577,7 @@ Learn more: :doc:`build/index`
 
    ":ref:`module-pw_build`", ":bdg-primary:`stable`", "Integrations for Bazel, GN, and CMake", "Bazel, CMake, GN, Rust"
    ":ref:`module-pw_build_info`", ":bdg-primary:`stable`", "Generate, embed, and parse build-related information", "Bazel, CMake, GN"
+   ":ref:`module-pw_codegen`", ":bdg-secondary:`unstable`", "Source code generation utilities", "Python"
    ":ref:`module-pw_rust`", ":bdg-warning:`experimental`", "", ""
 
 ----------

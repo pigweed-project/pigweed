@@ -26,13 +26,13 @@ pw_python_package("py") {
     "pw_protobuf/codegen_pwpb.py",
     "pw_protobuf/edition_constants.py",
     "pw_protobuf/options.py",
-    "pw_protobuf/output_file.py",
     "pw_protobuf/plugin.py",
     "pw_protobuf/proto_tree.py",
     "pw_protobuf/symbol_name_mapping.py",
   ]
   python_deps = [
     "$dir_pw_cli/py",
+    "$dir_pw_codegen/py",
     "..:codegen_protos.python",
     "..:common_protos.python",
   ]

@@ -111,34 +111,5 @@ class TestTestGenerator(unittest.TestCase):
         self.assertEqual(output.getvalue(), expected)
 
 
-class TestCcString(unittest.TestCase):
-    def test_basic_string(self) -> None:
-        self.assertEqual(generated_tests.cc_string('hello'), '"hello"')
-
-    def test_escapes(self) -> None:
-        self.assertEqual(
-            generated_tests.cc_string('hello\nworld'), r'"hello\nworld"'
-        )
-        self.assertEqual(generated_tests.cc_string('"quoted"'), r'"\"quoted\""')
-
-    def test_bytes(self) -> None:
-        self.assertEqual(generated_tests.cc_string(b'\x00\xff'), r'"\x00\xff"')
-        self.assertEqual(generated_tests.cc_string(b'hello'), '"hello"')
-
-    def test_mixed_hex_and_ascii(self) -> None:
-        self.assertEqual(
-            generated_tests.cc_string(b'\xff\xfe' b'a'), r'"\xff\xfe""a"'
-        )
-        self.assertEqual(
-            generated_tests.cc_string(b'\xff\xfe' b'F'), r'"\xff\xfe""F"'
-        )
-        self.assertEqual(
-            generated_tests.cc_string(b'\xff\xfe' b'g'), r'"\xff\xfeg"'
-        )
-        self.assertEqual(
-            generated_tests.cc_string(b'\xff\xfe' b'G'), r'"\xff\xfeG"'
-        )
-
-
 if __name__ == '__main__':
     unittest.main()

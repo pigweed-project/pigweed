@@ -32,4 +32,5 @@ pw_python_package("py") {
     "generate_test.py",
     "parse_test.py",
   ]
+  python_deps = [ "$dir_pw_codegen/py" ]
 }

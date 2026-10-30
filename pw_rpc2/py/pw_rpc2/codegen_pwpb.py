@@ -19,7 +19,7 @@ from typing import Iterable, Sequence
 
 from google.protobuf import descriptor_pb2
 
-from pw_protobuf.output_file import OutputFile
+from pw_codegen import OutputFile
 from pw_protobuf.symbol_name_mapping import fix_cc_identifier
 
 from pw_rpc2.codegen_common import (

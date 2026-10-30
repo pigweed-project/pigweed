@@ -1,0 +1,83 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+pw_py_library(
+    name = "pw_codegen",
+    srcs = [
+        "pw_codegen/__init__.py",
+        "pw_codegen/cpp.py",
+        "pw_codegen/java.py",
+        "pw_codegen/output_file.py",
+        "pw_codegen/python.py",
+        "pw_codegen/rust.py",
+        "pw_codegen/typescript.py",
+    ],
+    data = ["pw_codegen/py.typed"],
+    imports = ["."],
+)
+
+pw_py_test(
+    name = "codegen_test",
+    size = "small",
+    srcs = ["codegen_test.py"],
+    deps = [":pw_codegen"],
+)
+
+pw_py_test(
+    name = "cpp_test",
+    size = "small",
+    srcs = ["cpp_test.py"],
+    deps = [":pw_codegen"],
+)
+
+pw_py_test(
+    name = "java_test",
+    size = "small",
+    srcs = ["java_test.py"],
+    deps = [":pw_codegen"],
+)
+
+pw_py_test(
+    name = "output_file_test",
+    size = "small",
+    srcs = ["output_file_test.py"],
+    deps = [":pw_codegen"],
+)
+
+pw_py_test(
+    name = "python_test",
+    size = "small",
+    srcs = ["python_test.py"],
+    deps = [":pw_codegen"],
+)
+
+pw_py_test(
+    name = "rust_test",
+    size = "small",
+    srcs = ["rust_test.py"],
+    deps = [":pw_codegen"],
+)
+
+pw_py_test(
+    name = "typescript_test",
+    size = "small",
+    srcs = ["typescript_test.py"],
+    deps = [":pw_codegen"],
+)

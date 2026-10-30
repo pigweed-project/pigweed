@@ -34,6 +34,7 @@ pw_py_library(
     ],
     imports = ["."],
     deps = [
+        "//pw_codegen/py:pw_codegen",
         "//pw_software_update:tuf_py_pb2",
         "//pw_software_update:update_bundle_py_pb2",
         "@pigweed_python_packages//cryptography",

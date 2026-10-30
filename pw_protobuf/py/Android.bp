@@ -38,6 +38,7 @@ python_library_host {
     ],
     libs: [
         "libprotobuf-python",
+        "pw_codegen_py_lib",
         "pw_protobuf_codegen_protos_py_lib",
         "pw_protobuf_protos_py_lib",
     ],

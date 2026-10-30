@@ -29,7 +29,10 @@ pw_python_package("py") {
     "cobs_generated_test.py",
     "cobs_test.py",
   ]
-  python_test_deps = [ "$dir_pw_build/py" ]
+  python_test_deps = [
+    "$dir_pw_build/py",
+    "$dir_pw_codegen/py",
+  ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"

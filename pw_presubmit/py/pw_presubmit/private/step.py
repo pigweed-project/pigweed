@@ -20,18 +20,12 @@ import copy
 import dataclasses
 import logging
 from pathlib import Path
-import re
 from typing import Callable, Iterable, Pattern, TypeVar
 
 
 from pw_cli.file_filter import FileFilter
+from pw_codegen import camel_to_snake
 from pw_presubmit.private.result import Failure
-
-
-def _camel_to_snake(name: str) -> str:
-    """Translates CamelCase to snake_case."""
-    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
 
 _LOG = logging.getLogger("pw_presubmit")
@@ -107,7 +101,7 @@ class Step(ABC):
         self._filter = file_filter.concat(
             exclude=exclude, endswith=endswith, name=match_name, suffix=suffix
         )
-        self._name = _camel_to_snake(type(self).__name__)
+        self._name = camel_to_snake(type(self).__name__)
 
     @property
     def name(self) -> str:
@@ -192,7 +186,7 @@ def step(
                 )
                 self.__doc__ = func.__doc__
                 if name is None:
-                    self._name = _camel_to_snake(func.__name__)
+                    self._name = camel_to_snake(func.__name__)
                 else:
                     self._name = name
 

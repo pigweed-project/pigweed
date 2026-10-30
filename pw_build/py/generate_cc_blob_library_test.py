@@ -68,29 +68,9 @@ BAR_BLOB = """\
 constexpr std::array<std::byte, 10> barBlob = {
     std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
     std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x08},
-    std::byte{0x09}, std::byte{0x0A},
+    std::byte{0x09}, std::byte{0x0a},
 };
 """
-
-
-class TestSplitIntoChunks(unittest.TestCase):
-    """Unit tests for the split_into_chunks() function."""
-
-    def test_perfect_split(self):
-        """Tests basic splitting where the iterable divides perfectly."""
-        data = (1, 7, 0, 1)
-        self.assertEqual(
-            ((1, 7), (0, 1)),
-            tuple(generate_cc_blob_library.split_into_chunks(data, 2)),
-        )
-
-    def test_split_with_remainder(self):
-        """Tests basic splitting where there is a remainder."""
-        data = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
-        self.assertEqual(
-            ((1, 2, 3), (4, 5, 6), (7, 8, 9), (10,)),
-            tuple(generate_cc_blob_library.split_into_chunks(data, 3)),
-        )
 
 
 class TestHeaderFromBlobs(unittest.TestCase):

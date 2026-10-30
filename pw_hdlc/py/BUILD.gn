@@ -40,6 +40,7 @@ pw_python_package("py") {
   ]
   python_test_deps = [
     "$dir_pw_build/py",
+    "$dir_pw_codegen/py",
     "$dir_pw_log:protos.python",
     "$dir_pw_tokenizer/py:test_proto.python",
   ]

@@ -19,7 +19,7 @@ from typing import Callable, Sequence
 from google.protobuf import descriptor_pb2
 from google.protobuf.compiler import plugin_pb2
 
-from pw_protobuf.output_file import OutputFile
+from pw_codegen import OutputFile
 
 ProcessProtoFile = Callable[
     [

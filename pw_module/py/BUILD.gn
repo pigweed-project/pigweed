@@ -34,6 +34,7 @@ pw_python_package("py") {
   python_deps = [
     "$dir_pw_build/py",
     "$dir_pw_cli/py",
+    "$dir_pw_codegen/py",
     "$dir_pw_presubmit/py",
   ]
   inputs = [

@@ -17,7 +17,7 @@ import abc
 import os
 from typing import cast, Any, Iterable
 
-from pw_protobuf.output_file import OutputFile
+from pw_codegen import OutputFile, cpp
 from pw_protobuf.proto_tree import ProtoNode, ProtoService, ProtoServiceMethod
 from pw_rpc import ids
 
@@ -144,11 +144,10 @@ def generate_package(
     gen.line('// clang-format off')
     gen.line('#pragma once\n')
 
-    gen.line('#include <array>')
-    gen.line('#include <cstdint>')
-    gen.line('#include <type_traits>\n')
-
     include_lines = [
+        '<array>',
+        '<cstdint>',
+        '<type_traits>',
         '#include "pw_rpc/internal/config.h"',
         '#include "pw_rpc/internal/method_info.h"',
         '#include "pw_rpc/internal/method_lookup.h"',
@@ -156,24 +155,21 @@ def generate_package(
         '#include "pw_rpc/method_type.h"',
         '#include "pw_rpc/service.h"',
         '#include "pw_rpc/service_id.h"',
+        *gen.includes(file_descriptor_proto.name),
     ]
-    include_lines += gen.includes(file_descriptor_proto.name)
-
-    for include_line in sorted(include_lines):
+    for include_line in cpp.includes(include_lines):
         gen.line(include_line)
 
     gen.line()
 
-    if proto_package.cpp_namespace(codegen_subnamespace=None):
-        file_namespace = proto_package.cpp_namespace(codegen_subnamespace=None)
-        if file_namespace.startswith('::'):
-            file_namespace = file_namespace[2:]
+    file_namespace = proto_package.cpp_namespace(
+        codegen_subnamespace=None
+    ).removeprefix('::')
+    if file_namespace:
+        gen.line(cpp.namespace_open(file_namespace))
 
-        gen.line(f'namespace {file_namespace} {{')
-    else:
-        file_namespace = ''
-
-    gen.line(f'namespace pw_rpc::{gen.name()} {{')
+    rpc_namespace = f'pw_rpc::{gen.name()}'
+    gen.line(cpp.namespace_open(rpc_namespace))
     gen.line()
 
     services = [
@@ -186,10 +182,10 @@ def generate_package(
         _generate_service_and_client(gen, service)
 
     gen.line()
-    gen.line(f'}}  // namespace pw_rpc::{gen.name()}\n')
+    gen.line(f'{cpp.namespace_close(rpc_namespace)}\n')
 
     if file_namespace:
-        gen.line('}  // namespace ' + file_namespace)
+        gen.line(cpp.namespace_close(file_namespace))
 
     gen.line()
     gen.line(
@@ -540,19 +536,7 @@ def package_stubs(
     proto_package: ProtoNode, gen: CodeGenerator, stub_generator: StubGenerator
 ) -> None:
     """Generates the RPC stubs for a package."""
-    if proto_package.cpp_namespace(codegen_subnamespace=None):
-        file_ns = proto_package.cpp_namespace(codegen_subnamespace=None)
-        if file_ns.startswith('::'):
-            file_ns = file_ns[2:]
-
-        def start_ns():
-            return gen.line(f'namespace {file_ns} {{\n')
-
-        def finish_ns():
-            return gen.line(f'}}  // namespace {file_ns}\n')
-
-    else:
-        start_ns = finish_ns = lambda: None
+    file_ns = proto_package.cpp_namespace(codegen_subnamespace=None)
 
     services = [
         cast(ProtoService, node)
@@ -563,24 +547,16 @@ def package_stubs(
     gen.line('#ifdef _PW_RPC_COMPILE_GENERATED_SERVICE_STUBS')
     gen.line(_STUBS_COMMENT)
 
-    gen.line(f'#include "{gen.output.name()}"\n')
+    gen.line(f'#include "{gen.output.name()}"')
 
-    start_ns()
+    with cpp.namespace(gen.output, file_ns):
+        for node in services:
+            _service_declaration_stub(node, gen, stub_generator)
 
-    for node in services:
-        _service_declaration_stub(node, gen, stub_generator)
-
-    gen.line()
-
-    finish_ns()
-
-    start_ns()
-
-    for node in services:
-        _service_definition_stub(node, gen, stub_generator)
-        gen.line()
-
-    finish_ns()
+    with cpp.namespace(gen.output, file_ns):
+        for node in services:
+            _service_definition_stub(node, gen, stub_generator)
+            gen.line()
 
     gen.line('#endif  // _PW_RPC_COMPILE_GENERATED_SERVICE_STUBS')
 

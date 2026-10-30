@@ -27,7 +27,6 @@ try:
         EnumValue,
         parse_enums,
         ParseError,
-        camel_to_upper_snake,
         is_ok_name,
         StatusInfo,
     )
@@ -38,10 +37,22 @@ except ImportError:  # Support running without installing this Python package.
         EnumValue,
         parse_enums,
         ParseError,
-        camel_to_upper_snake,
         is_ok_name,
         StatusInfo,
     )
+
+try:
+    from pw_codegen import camel_to_upper_snake, cpp
+except ImportError:  # Support running without installing Python packages.
+    sys.path.append(
+        str(Path(__file__).resolve().parents[3] / "pw_codegen" / "py")
+    )
+    from pw_codegen import camel_to_upper_snake, cpp
+
+
+def _legacy_camel_to_upper_snake(name: str) -> str:
+    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).upper()
 
 
 def _generate_macro_defs(enum_desc: EnumDescriptor) -> Iterator[str]:
@@ -55,6 +66,16 @@ def _generate_macro_defs(enum_desc: EnumDescriptor) -> Iterator[str]:
         f'PW_LOG_TOKEN_FMT("{enum_desc.cc_versioned_name}")'
     )
 
+    # Temporarily emit legacy double-underscore aliases for downstream
+    # consumers while they migrate to the single-underscore names.
+    legacy_prefix = _legacy_camel_to_upper_snake("_".join(enum_desc.scopes))
+    if legacy_prefix:
+        legacy_prefix += "_"
+    legacy_macro = legacy_prefix + _legacy_camel_to_upper_snake(enum_desc.name)
+    if legacy_macro != macro:
+        yield f"#define {legacy_macro}_DOMAIN {macro}_DOMAIN"
+        yield f"#define {legacy_macro}_FMT {macro}_FMT"
+
 
 def _group_by_value(enum_desc: EnumDescriptor) -> list[list[EnumValue]]:
     """Groups enumerators by value, in ascending order of value.
@@ -66,28 +87,6 @@ def _group_by_value(enum_desc: EnumDescriptor) -> list[list[EnumValue]]:
     for v in sorted(enum_desc.values, key=lambda val: (val.value, val.name)):
         grouped[v.value].append(v)
     return list(grouped.values())
-
-
-_ESCAPE_MAP = {
-    ord("\\"): b"\\\\",
-    ord('"'): b"\\\"",
-    ord("\n"): b"\\n",
-    ord("\r"): b"\\r",
-    ord("\t"): b"\\t",
-}
-
-
-def _escape_cc(s: str) -> str:
-    """Escapes quotes, backslashes, and control characters for C++ strings."""
-    escaped = bytearray()
-    for b in s.encode("utf-8"):
-        if b in _ESCAPE_MAP:
-            escaped.extend(_ESCAPE_MAP[b])
-        elif b < 32 or b >= 127:
-            escaped.extend(f"\\x{b:02x}".encode("ascii"))
-        else:
-            escaped.append(b)
-    return escaped.decode("ascii")
 
 
 def _is_contiguous(distinct_values: list[EnumValue]) -> bool:
@@ -151,7 +150,7 @@ def _generate_to_string(
         label = group[0].cc_name
         name = "|".join(dict.fromkeys(v.name for v in group))
         yield f"      case {enum_desc.cc_full_name}::{label}:"
-        yield f'        return "{_escape_cc(name)}";'
+        yield f"        return {cpp.string_literal(name)};"
     yield "    }"
     yield f'    return "Unknown {enum_desc.cc_full_name} value";'
     yield "  }"
@@ -166,7 +165,7 @@ def _generate_enum_traits(
     cc_name = enum_desc.cc_full_name
     is_contiguous = _is_contiguous(distinct_values)
 
-    yield "namespace pw {"
+    yield cpp.namespace_open("pw")
     yield "template <>"
     yield f"struct EnumTraits<{cc_name}> {{"
     # Marks this specialization as generated. pw::has_enum_traits_v detects
@@ -217,7 +216,7 @@ def _generate_enum_traits(
     yield ""
     yield from _generate_to_string(enum_desc, value_groups)
     yield "};"
-    yield "}  // namespace pw"
+    yield cpp.namespace_close("pw")
 
 
 def _generate_tokenization(
@@ -232,7 +231,10 @@ def _generate_tokenization(
         # Aliases share a token; their names are joined with "|".
         name = "|".join(dict.fromkeys(v.name for v in group))
         comma = "" if i == len(value_groups) - 1 else ","
-        yield f'                         ({label}, "{_escape_cc(name)}"){comma}'
+        yield (
+            f"                         ({label}, "
+            f"{cpp.string_literal(name)}){comma}"
+        )
     yield ");"
 
 
@@ -333,7 +335,7 @@ def _generate_status_class(enum_desc: EnumDescriptor) -> Iterator[str]:
     )
 
     if status.scopes:
-        yield f"namespace {'::'.join(status.scopes)} {{"
+        yield cpp.namespace_open("::".join(status.scopes))
 
     yield f"class [[nodiscard]] {status.name} final"
     yield f"    : public ::pw::StatusBase<{status.name}, {ok_expr}> {{"
@@ -345,7 +347,7 @@ def _generate_status_class(enum_desc: EnumDescriptor) -> Iterator[str]:
     yield "};"
 
     if status.scopes:
-        yield f"}}  // namespace {'::'.join(status.scopes)}"
+        yield cpp.namespace_close("::".join(status.scopes))
 
 
 def _generate_single_enum_footer(enum_desc: EnumDescriptor) -> Iterator[str]:

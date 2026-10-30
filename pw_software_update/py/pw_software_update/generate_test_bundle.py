@@ -20,6 +20,7 @@ import sys
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 
+from pw_codegen import cpp
 from pw_software_update import dev_sign, keys, metadata, root_metadata
 from pw_software_update.update_bundle_pb2 import Manifest, UpdateBundle
 from pw_software_update.tuf_pb2 import (
@@ -97,9 +98,7 @@ TARGET_FILES_WITHOUT_USER_MANIFEST = {
 def byte_array_declaration(data: bytes, name: str) -> str:
     """Generates a byte C array declaration for a byte array"""
     type_name = "[[maybe_unused]] const std::byte"
-    byte_str = "".join([f"std::byte{{0x{b:02x}}}," for b in data])
-    array_body = f"{{{byte_str}}}"
-    return f"{type_name} {name}[] = {array_body};"
+    return f"{type_name} {name}[] = {cpp.byte_array(data)};"
 
 
 def proto_array_declaration(proto, name: str) -> str:

@@ -30,6 +30,7 @@ python_binary_host {
     ],
     libs: [
         "libprotobuf-python",
+        "pw_codegen_py_lib",
         "pw_protobuf_compiler_py_lib",
         "pw_protobuf_plugin_py_lib",
         "pw_rpc_internal_packet_py_lib",
@@ -51,6 +52,7 @@ python_binary_host {
     ],
     libs: [
         "libprotobuf-python",
+        "pw_codegen_py_lib",
         "pw_protobuf_compiler_py_lib",
         "pw_protobuf_plugin_py_lib",
         "pw_rpc_internal_packet_py_lib",
@@ -72,6 +74,7 @@ python_binary_host {
     ],
     libs: [
         "libprotobuf-python",
+        "pw_codegen_py_lib",
         "pw_protobuf_compiler_py_lib",
         "pw_protobuf_plugin_py_lib",
         "pw_rpc_internal_packet_py_lib",

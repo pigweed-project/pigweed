@@ -57,6 +57,7 @@ pw_py_test(
     deps = [
         ":pw_hdlc",
         "//pw_build/py:pw_build",
+        "//pw_codegen/py:pw_codegen",
     ],
 )
 

@@ -16,11 +16,8 @@
 import io
 from typing import Iterator
 
-from pw_build.generated_tests import (
-    Context,
-    java_bytes,
-    java_string,
-)
+from pw_build.generated_tests import Context
+from pw_codegen import java
 from pw_tokenizer import tokens
 from pw_tokenizer.detokenize import Detokenizer
 import detokenize_test_cases as shared
@@ -45,19 +42,19 @@ _JAVA_FOOTER = """\
 _TEST_DB = Detokenizer(
     tokens.Database(tokens.parse_binary(io.BytesIO(shared.TEST_DATABASE)))
 )
-_TEST_DB_STR = java_string(str(_TEST_DB.database))
+_TEST_DB_STR = java.string_literal(str(_TEST_DB.database))
 
 _ARGS_DB = Detokenizer(
     tokens.Database(tokens.parse_binary(io.BytesIO(shared.DATA_WITH_ARGUMENTS)))
 )
-_ARGS_DB_STR = java_string(str(_ARGS_DB.database))
+_ARGS_DB_STR = java.string_literal(str(_ARGS_DB.database))
 
 _COLLISIONS_DB = Detokenizer(
     tokens.Database(
         tokens.parse_binary(io.BytesIO(shared.DATA_WITH_COLLISIONS))
     )
 )
-_COLLISIONS_DB_STR = java_string(str(_COLLISIONS_DB.database))
+_COLLISIONS_DB_STR = java.string_literal(str(_COLLISIONS_DB.database))
 
 _JAVA_DATABASE_DEFS = f"""\
   private static final String TEST_DATABASE = {_TEST_DB_STR};
@@ -72,8 +69,8 @@ def _java_test_text(ctx: Context) -> Iterator[str]:
   @Test
   public void {ctx.java_name()}() {{
     try (Detokenizer detok = Detokenizer.fromCsv(TEST_DATABASE)) {{
-      assertThat(detok.detokenizeText({java_string(data)}))
-          .isEqualTo({java_string(expected)});
+      assertThat(detok.detokenizeText({java.string_literal(data)}))
+          .isEqualTo({java.string_literal(expected)});
     }}
   }}"""
 
@@ -85,13 +82,13 @@ def _java_test_optional(ctx: Context) -> Iterator[str]:
     if not detok.detokenize(data).ok():
         assertion = ".isNull()"
     else:
-        assertion = f".isEqualTo({java_string(expected)})"
+        assertion = f".isEqualTo({java.string_literal(expected)})"
 
     yield f"""\
   @Test
   public void {ctx.java_name()}() {{
     try (Detokenizer detok = Detokenizer.fromCsv(TEST_DATABASE)) {{
-      assertThat(detok.detokenize({java_bytes(data)}))
+      assertThat(detok.detokenize({java.byte_array(data)}))
           {assertion};
     }}
   }}"""
@@ -106,13 +103,13 @@ def _java_test_with_args(ctx: Context) -> Iterator[str]:
     if not detok.detokenize(data).ok():
         assertion = ".isNull()"
     else:
-        assertion = f".isEqualTo({java_string(expected)})"
+        assertion = f".isEqualTo({java.string_literal(expected)})"
 
     yield f"""\
   @Test
   public void {ctx.java_name()}() {{
     try (Detokenizer detok = Detokenizer.fromCsv(DATA_WITH_ARGUMENTS)) {{
-      assertThat(detok.detokenize({java_bytes(data)}))
+      assertThat(detok.detokenize({java.byte_array(data)}))
           {assertion};
     }}
   }}"""
@@ -127,13 +124,13 @@ def _java_test_with_collisions(ctx: Context) -> Iterator[str]:
     if not detok.detokenize(data).ok():
         assertion = ".isNull()"
     else:
-        assertion = f".isEqualTo({java_string(expected)})"
+        assertion = f".isEqualTo({java.string_literal(expected)})"
 
     yield f"""\
   @Test
   public void {ctx.java_name()}() {{
     try (Detokenizer detok = Detokenizer.fromCsv(DATA_WITH_COLLISIONS)) {{
-      assertThat(detok.detokenize({java_bytes(data)}))
+      assertThat(detok.detokenize({java.byte_array(data)}))
           {assertion};
     }}
   }}"""

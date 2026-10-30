@@ -16,11 +16,8 @@
 import io
 from typing import Iterator
 
-from pw_build.generated_tests import (
-    Context,
-    rust_bytes,
-    rust_string,
-)
+from pw_build.generated_tests import Context
+from pw_codegen import rust
 from pw_tokenizer import tokens
 from pw_tokenizer.detokenize import Detokenizer
 import detokenize_test_cases as shared
@@ -34,19 +31,19 @@ use pw_tokenizer::detokenize::Detokenizer;
 _TEST_DB = Detokenizer(
     tokens.Database(tokens.parse_binary(io.BytesIO(shared.TEST_DATABASE)))
 )
-_TEST_DB_STR = rust_string(str(_TEST_DB.database))
+_TEST_DB_STR = rust.string_literal(str(_TEST_DB.database))
 
 _ARGS_DB = Detokenizer(
     tokens.Database(tokens.parse_binary(io.BytesIO(shared.DATA_WITH_ARGUMENTS)))
 )
-_ARGS_DB_STR = rust_string(str(_ARGS_DB.database))
+_ARGS_DB_STR = rust.string_literal(str(_ARGS_DB.database))
 
 _COLLISIONS_DB = Detokenizer(
     tokens.Database(
         tokens.parse_binary(io.BytesIO(shared.DATA_WITH_COLLISIONS))
     )
 )
-_COLLISIONS_DB_STR = rust_string(str(_COLLISIONS_DB.database))
+_COLLISIONS_DB_STR = rust.string_literal(str(_COLLISIONS_DB.database))
 
 _RUST_DATABASE_DEFS = f"""\
 const TEST_DATABASE: &str = {_TEST_DB_STR};
@@ -62,8 +59,8 @@ def _rust_test_text(ctx: Context) -> Iterator[str]:
     fn {ctx.py_name()}() {{
         let detok = Detokenizer::from_csv(TEST_DATABASE).unwrap();
         assert_eq!(
-            detok.detokenize_text({rust_string(data)}),
-            {rust_string(expected)}
+            detok.detokenize_text({rust.string_literal(data)}),
+            {rust.string_literal(expected)}
         );
     }}"""
 
@@ -76,12 +73,12 @@ def _generate_rust_detokenize_test(
         assertions = "assert!(!res.is_ok);"
     else:
         assertions = f"""assert!(res.is_ok);
-        assert_eq!(res.best_string(), {rust_string(expected)});"""
+        assert_eq!(res.best_string(), {rust.string_literal(expected)});"""
     yield f"""\
     #[test]
     fn {ctx.py_name()}() {{
         let detok = Detokenizer::from_csv({database_const_ident}).unwrap();
-        let res = detok.detokenize({rust_bytes(data)});
+        let res = detok.detokenize({rust.byte_slice(data)});
         {assertions}
     }}"""
 

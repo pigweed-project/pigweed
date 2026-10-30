@@ -25,6 +25,7 @@ pw_py_library(
         "pw_enum/parse.py",
     ],
     imports = ["."],
+    deps = ["//pw_codegen/py:pw_codegen"],
 )
 
 pw_py_binary(

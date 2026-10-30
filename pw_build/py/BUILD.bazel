@@ -73,6 +73,7 @@ pw_py_library(
     imports = ["."],
     deps = [
         "//pw_cli/py:pw_cli",
+        "//pw_codegen/py:pw_codegen",
         "//pw_config_loader/py:pw_config_loader",
         "@pigweed_python_packages//jsonschema",
         "@pigweed_python_packages//patch",
@@ -151,6 +152,9 @@ pw_py_binary(
     # See the last point in
     # https://github.com/bazel-contrib/rules_python/blob/main/docs/precompiling.md#known-issues-caveats-and-idiosyncrasies
     tags = ["nomypy"],
+    deps = [
+        "//pw_codegen/py:pw_codegen",
+    ],
 )
 
 pw_py_binary(

@@ -25,7 +25,6 @@ filegroup(
         "pw_protobuf/codegen_pwpb.py",
         "pw_protobuf/edition_constants.py",
         "pw_protobuf/options.py",
-        "pw_protobuf/output_file.py",
         "pw_protobuf/plugin.py",
         "pw_protobuf/proto_tree.py",
         "pw_protobuf/symbol_name_mapping.py",
@@ -43,6 +42,7 @@ pw_py_library(
     ],
     deps = [
         "//pw_build:python_protobuf_runtime",
+        "//pw_codegen/py:pw_codegen",
         "//pw_protobuf:codegen_protos_pb2",
         "//pw_protobuf:field_options_proto_pb2",
     ],
@@ -67,6 +67,7 @@ pw_py_library(
     deps = [
         "//pw_build:python_protobuf_runtime",
         "//pw_cli/py:pw_cli",
+        "//pw_codegen/py:pw_codegen",
         "//pw_protobuf:codegen_protos_pb2",
         "//pw_protobuf:field_options_proto_pb2",
     ],

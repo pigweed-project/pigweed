@@ -31,7 +31,6 @@ from pw_enum.parse import (
     _parse_evaluation_output,
     _resolve_compiler,
     _same_file,
-    camel_to_upper_snake,
     is_ok_name,
     _default_display_name,
 )
@@ -851,17 +850,6 @@ class TestDefaultDisplayName(unittest.TestCase):
         self.assertEqual(_default_display_name("kool"), "kool")
         self.assertEqual(_default_display_name("kO"), "O")
         self.assertEqual(_default_display_name("k"), "k")
-
-
-class TestCamelToUpperSnake(unittest.TestCase):
-    """Test CamelCase to UPPER_SNAKE_CASE conversion."""
-
-    def test_camel_to_upper_snake(self) -> None:
-        self.assertEqual(camel_to_upper_snake("MyEnum"), "MY_ENUM")
-        self.assertEqual(camel_to_upper_snake("myEnum"), "MY_ENUM")
-        self.assertEqual(camel_to_upper_snake("HTTPServer"), "HTTP_SERVER")
-        self.assertEqual(camel_to_upper_snake("JSONParser"), "JSON_PARSER")
-        self.assertEqual(camel_to_upper_snake("URL"), "URL")
 
 
 if __name__ == "__main__":

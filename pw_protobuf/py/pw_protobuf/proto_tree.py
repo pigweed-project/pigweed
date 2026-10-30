@@ -30,6 +30,7 @@ from typing import (
 
 from google.protobuf import descriptor_pb2
 
+from pw_codegen import cpp, snake_to_pascal
 from pw_protobuf import edition_constants, options, symbol_name_mapping
 from pw_protobuf_codegen_protos.codegen_options_pb2 import CodegenOptions
 from pw_protobuf_protos.field_options_pb2 import pwpb as pwpb_field_options
@@ -374,12 +375,7 @@ class ProtoEnum(ProtoNode):
 
     def add_value(self, name: str, value: int) -> None:
         self._values.append(
-            (
-                ProtoMessageField.upper_snake_case(
-                    symbol_name_mapping.fix_cc_enum_value_name(name)
-                ),
-                value,
-            )
+            (symbol_name_mapping.fix_cc_enum_value_name(name).upper(), value)
         )
 
     def _supports_child(self, child: ProtoNode) -> bool:
@@ -535,18 +531,18 @@ class ProtoMessageField:
         self._oneof: ProtoMessage.OneOf | None = None
 
     def name(self) -> str:
-        return self.upper_camel_case(self._field_name)
+        return snake_to_pascal(self._field_name)
 
     def field_name(self) -> str:
         return self._field_name
 
     def enum_name(self) -> str:
-        return 'k' + self.name()
+        return cpp.constant_style(self._field_name)
 
     def legacy_enum_name(self) -> str:
-        return self.upper_snake_case(
-            symbol_name_mapping.fix_cc_enum_value_name(self._field_name)
-        )
+        return symbol_name_mapping.fix_cc_enum_value_name(
+            self._field_name
+        ).upper()
 
     def number(self) -> int:
         return self._number
@@ -570,17 +566,6 @@ class ProtoMessageField:
         if self._oneof is not None and not self._oneof.is_synthetic():
             return self._oneof
         return None
-
-    @staticmethod
-    def upper_camel_case(field_name: str) -> str:
-        """Converts a field name to UpperCamelCase."""
-        name_components = field_name.split('_')
-        return ''.join([word.lower().capitalize() for word in name_components])
-
-    @staticmethod
-    def upper_snake_case(field_name: str) -> str:
-        """Converts a field name to UPPER_SNAKE_CASE."""
-        return field_name.upper()
 
 
 class ProtoServiceMethod:

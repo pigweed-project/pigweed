@@ -128,6 +128,7 @@ pw_py_library(
     deps = [
         ":pw_tokenizer",
         "//pw_build/py:pw_build",
+        "//pw_codegen/py:pw_codegen",
     ],
 )
 

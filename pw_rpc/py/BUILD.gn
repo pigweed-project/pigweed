@@ -73,6 +73,7 @@ pw_python_package("py") {
     "tests/packets_test.py",
   ]
   python_deps = [
+    "$dir_pw_codegen/py",
     "$dir_pw_log:protos.python",
     "$dir_pw_log/py",
     "$dir_pw_protobuf/py",

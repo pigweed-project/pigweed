@@ -40,6 +40,7 @@ from pw_cli.diff import colorize_diff
 from pw_cli.status_reporter import StatusReporter
 from pw_cli import git_repo
 from pw_cli.tool_runner import BasicSubprocessRunner
+from pw_codegen import snake_to_pascal
 import pw_env_setup.config_file
 
 from pw_module.templates import get_template
@@ -186,74 +187,22 @@ def _prompt_overwrite(file_path: Path, new_contents: str) -> bool:
     return False
 
 
-# TODO(frolv): Adapted from pw_protobuf. Consolidate them.
 class _OutputFile:
-    DEFAULT_INDENT_WIDTH = 2
+    def __init__(self, path: Path) -> None:
+        self.path = path
 
-    def __init__(self, file: Path, indent_width: int = DEFAULT_INDENT_WIDTH):
-        self._file = file
-        self._content: list[str] = []
-        self._indent_width: int = indent_width
-        self._indentation = 0
+    def write(self, content: str) -> None:
+        """Writes file contents, prompting the user if necessary."""
+        if not content.endswith('\n'):
+            content += '\n'
 
-    def line(self, line: str = '') -> None:
-        if line:
-            self._content.append(' ' * self._indentation)
-            self._content.append(line)
-        self._content.append('\n')
-
-    def indent(
-        self,
-        width: int | None = None,
-    ) -> _OutputFile._IndentationContext:
-        """Increases the indentation level of the output."""
-        return self._IndentationContext(
-            self, width if width is not None else self._indent_width
-        )
-
-    @property
-    def path(self) -> Path:
-        return self._file
-
-    @property
-    def content(self) -> str:
-        return ''.join(self._content)
-
-    def write(self, content: str | None = None) -> None:
-        """Write file contents. Prompts the user if necessary.
-
-        Args:
-          content: If provided will write this text to the file instead of
-              calling self.content.
-        """
-        output_text = self.content
-        if content:
-            output_text = content
-
-        if not output_text.endswith('\n'):
-            output_text += '\n'
-
-        if _prompt_overwrite(self._file, new_contents=output_text):
-            _report_write_file(self._file)
-            self._file.write_text(output_text)
+        if _prompt_overwrite(self.path, new_contents=content):
+            _report_write_file(self.path)
+            self.path.write_text(content)
 
     def write_template(self, template_name: str, **template_args) -> None:
         template = get_template(template_name)
-        rendered_template = template.render(**template_args)
-        self.write(content=rendered_template)
-
-    class _IndentationContext:
-        """Context that increases the output's indentation when it is active."""
-
-        def __init__(self, output: _OutputFile, width: int):
-            self._output = output
-            self._width: int = width
-
-        def __enter__(self):
-            self._output._indentation += self._width
-
-        def __exit__(self, typ, value, traceback):
-            self._output._indentation -= self._width
+        self.write(template.render(**template_args))
 
 
 class _ModuleName:
@@ -299,9 +248,6 @@ class _ModuleName:
     @property
     def default_namespace(self) -> str:
         return f'{self._prefix}::{self._main}'
-
-    def upper_camel_case(self) -> str:
-        return ''.join(s.capitalize() for s in self._main.split('_'))
 
     @property
     def header_line(self) -> str:
@@ -527,7 +473,7 @@ class _CcLanguageGenerator(_LanguageGenerator):
             license=_PIGWEED_LICENSE_CC if self._ctx.is_upstream else '',
             namespace=namespace,
             header_path=main_header.path.relative_to(self._public_dir),
-            camel_case_name=self._ctx.name.upper_camel_case(),
+            camel_case_name=snake_to_pascal(self._ctx.name.main),
         )
 
         self._ctx.add_cc_target(

@@ -295,6 +295,7 @@ function(_pw_generate_protos TARGET LANGUAGE)
 
   # Construct PYTHONPATH for the protoc plugins.
   set(python_paths
+      "$ENV{PW_ROOT}/pw_codegen/py"
       "$ENV{PW_ROOT}/pw_protobuf/py"
       "$ENV{PW_ROOT}/pw_status/py"
       "$ENV{PW_ROOT}/pw_protobuf_compiler/py"

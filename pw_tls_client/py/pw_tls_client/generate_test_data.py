@@ -27,6 +27,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+from pw_codegen import cpp
+
 CERTS_AND_KEYS_HEADER = """// Copyright 2021 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -176,23 +178,11 @@ class Server(Subject):
         super().__init__(*args, extensions=ext, **kwargs)
 
 
-def c_escaped_string(data: bytes):
-    """Generates a C byte string representation for a byte array
-
-    For example, given a byte sequence of [0x12, 0x34, 0x56]. The function
-    generates the following byte string code:
-
-            {"\x12\x34\x56", 3}
-    """
-    body = ''.join([f'\\x{b:02x}' for b in data])
-    return f'{{\"{body}\", {len(data)}}}'
-
-
 def byte_array_declaration(data: bytes, name: str) -> str:
     """Generates a ConstByteSpan declaration for a byte array"""
     type_name = '[[maybe_unused]] const pw::ConstByteSpan'
-    array_body = f'pw::as_bytes(pw::span{c_escaped_string(data)})'
-    return f'{type_name} {name} = {array_body};'
+    escaped = f'{{{cpp.string_literal(data)}, {len(data)}}}'
+    return f'{type_name} {name} = pw::as_bytes(pw::span{escaped});'
 
 
 class Codegen:

@@ -26,7 +26,16 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+
+try:
+    from pw_codegen import camel_to_upper_snake
+except ImportError:  # Support running without installing Python packages.
+    sys.path.append(
+        str(Path(__file__).resolve().parents[3] / "pw_codegen" / "py")
+    )
+    from pw_codegen import camel_to_upper_snake
 
 
 class ParseError(Exception):
@@ -95,12 +104,6 @@ class EnumDescriptor(_ParsedEnum[EnumValue]):
     def cc_versioned_name(self) -> str:
         """Returns the fully qualified versioned C++ name of the enum."""
         return "::" + "::".join(self.scopes + (self.version, self.name))
-
-
-def camel_to_upper_snake(name: str) -> str:
-    """Converts CamelCase to UPPER_SNAKE_CASE."""
-    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).upper()
 
 
 def _raise_error(msg: str, line: int, path: Path) -> None:

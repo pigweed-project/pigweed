@@ -54,6 +54,7 @@ pw_py_binary(
     deps = [
         ":pw_rpc",
         "//pw_build:python_protobuf_runtime",
+        "//pw_codegen/py:pw_codegen",
         "//pw_protobuf/py:plugin_library",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc:internal_packet_proto_pb2",
@@ -70,6 +71,7 @@ pw_py_binary(
     deps = [
         ":pw_rpc",
         "//pw_build:python_protobuf_runtime",
+        "//pw_codegen/py:pw_codegen",
         "//pw_protobuf/py:plugin_library",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc:internal_packet_proto_pb2",
@@ -86,6 +88,7 @@ pw_py_binary(
     deps = [
         ":pw_rpc",
         "//pw_build:python_protobuf_runtime",
+        "//pw_codegen/py:pw_codegen",
         "//pw_protobuf/py:plugin_library",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc:internal_packet_proto_pb2",
@@ -106,6 +109,7 @@ pw_py_library(
     imports = ["."],
     deps = [
         "//pw_build:python_protobuf_runtime",
+        "//pw_codegen/py:pw_codegen",
         "//pw_protobuf/py:pw_protobuf",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc:internal_packet_proto_pb2",
@@ -224,6 +228,7 @@ pw_py_test(
     deps = [
         ":pw_rpc",
         "//pw_build/py:pw_build",
+        "//pw_codegen/py:pw_codegen",
         "//pw_protobuf_compiler:pw_protobuf_compiler_protos_py_pb2",
     ],
 )

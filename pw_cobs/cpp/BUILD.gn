@@ -45,6 +45,7 @@ pw_python_action("generate_cobs_generated_test") {
   args = [ "--generate-cc-test" ] + rebase_path(outputs, root_build_dir)
   python_deps = [
     "$dir_pw_build/py",
+    "$dir_pw_codegen/py",
     "../py",
   ]
   visibility = [ ":*" ]

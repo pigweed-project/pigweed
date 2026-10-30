@@ -40,7 +40,10 @@ pw_python_package("py") {
     "codegen_test.py",
     "plugin_test.py",
   ]
-  python_deps = [ "$dir_pw_protobuf/py" ]
+  python_deps = [
+    "$dir_pw_codegen/py",
+    "$dir_pw_protobuf/py",
+  ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"

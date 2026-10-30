@@ -22,6 +22,7 @@ import unittest
 
 from pw_build import generated_tests
 from pw_build.generated_tests import Context, PyTest, TestGenerator, GroupOrTest
+from pw_codegen import cpp, typescript
 
 from pw_hdlc.decode import (
     Frame,
@@ -441,19 +442,18 @@ def _cpp_test(ctx: Context) -> Iterator[str]:
     frames = [
         f for f in list(FrameDecoder().process(data)) if not _py_only_frame(f)
     ]
-    data_bytes = ''.join(rf'\x{byte:02x}' for byte in data)
-
     yield f'TEST(Decoder, {ctx.cc_name()}) {{'
-    yield f'  static constexpr auto kData = bytes::String("{data_bytes}");\n'
+    yield (
+        f'  static constexpr auto kData = '
+        f'bytes::String({cpp.string_literal(data)});\n'
+    )
 
     for i, frame in enumerate(frames, 1):
         if frame.ok() or frame.status is FrameStatus.BAD_ADDRESS:
-            frame_bytes = ''.join(
-                rf'\x{byte:02x}' for byte in frame.raw_decoded
-            )
+            frame_str = cpp.string_literal(frame.raw_decoded)
             yield (
                 f'  static constexpr auto kDecodedFrame{i:02} = '
-                f'bytes::String("{frame_bytes}");'
+                f'bytes::String({frame_str});'
             )
         else:
             yield f'  // Frame {i}: {frame.status.value}'
@@ -568,37 +568,29 @@ def _define_raw_decoder_py_test(ctx: Context) -> PyTest:
     return test
 
 
-def _ts_byte_array(data: bytes) -> str:
-    return '[' + ', '.join(rf'0x{byte:02x}' for byte in data) + ']'
-
-
 def _ts_test(ctx: Context) -> Iterator[str]:
     """Generates a TS test for the provided test data."""
     data, _, _ = ctx.test_case
     frames = [
         f for f in list(FrameDecoder().process(data)) if not _py_only_frame(f)
     ]
-    data_bytes = _ts_byte_array(data)
 
     yield f'  it(\'{ctx.ts_name()}\', () => {{'
-    yield f'    const data = new Uint8Array({data_bytes});'
+    yield f'    const data = {typescript.byte_array(data)};'
 
     yield '    const expectedFrames = ['
     for frame in frames:
-        control_bytes = _ts_byte_array(frame.control)
-        frame_bytes = _ts_byte_array(frame.data)
+        control = typescript.byte_array(frame.control)
+        frame_data = typescript.byte_array(frame.data)
 
         if frame is Expected:
             yield (
                 f'      new Expected({frame.address}, '
-                f'new Uint8Array({control_bytes}), '
-                f'new Uint8Array({frame_bytes}), {frame.status}),'
+                f'{control}, {frame_data}, {frame.status}),'
             )
         else:
-            raw = _ts_byte_array(frame.raw_encoded)
-            yield (
-                f'      new ExpectedRaw(new Uint8Array({raw}), {frame.status}),'
-            )
+            raw = typescript.byte_array(frame.raw_encoded)
+            yield f'      new ExpectedRaw({raw}, {frame.status}),'
 
     yield '    ].values();\n'
 

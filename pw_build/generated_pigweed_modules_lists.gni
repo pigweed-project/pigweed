@@ -81,6 +81,7 @@ declare_args() {
   dir_pw_clock_tree_mcuxpresso =
       get_path_info("../pw_clock_tree_mcuxpresso", "abspath")
   dir_pw_cobs = get_path_info("../pw_cobs", "abspath")
+  dir_pw_codegen = get_path_info("../pw_codegen", "abspath")
   dir_pw_compilation_testing =
       get_path_info("../pw_compilation_testing", "abspath")
   dir_pw_config_loader = get_path_info("../pw_config_loader", "abspath")
@@ -297,6 +298,7 @@ declare_args() {
     dir_pw_clock_tree,
     dir_pw_clock_tree_mcuxpresso,
     dir_pw_cobs,
+    dir_pw_codegen,
     dir_pw_compilation_testing,
     dir_pw_config_loader,
     dir_pw_console,
@@ -498,6 +500,7 @@ declare_args() {
     "$dir_pw_clock_tree:tests",
     "$dir_pw_clock_tree_mcuxpresso:tests",
     "$dir_pw_cobs:tests",
+    "$dir_pw_codegen:tests",
     "$dir_pw_compilation_testing:tests",
     "$dir_pw_config_loader:tests",
     "$dir_pw_console:tests",

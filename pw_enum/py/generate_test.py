@@ -105,6 +105,38 @@ class TestEnumGeneration(unittest.TestCase):
         self.assertIn("_PW_TOKENIZE_ENUM_DOMAIN(::my::ns::MyEnum,", footer)
         self.assertIn('(kMyValue, "MY_VALUE")', footer)
         self.assertIn('(kB, "B")', footer)
+        self.assertEqual(footer.count("#define "), 2)
+
+    def test_nested_class_scope_macro_names(self) -> None:
+        """Test macro generation for an enum nested in a PascalCase class."""
+        enums = [
+            EnumDescriptor(
+                name="AlgorithmState",
+                scopes=("my_ns", "MyClass"),
+                cc_full_name="::my_ns::MyClass::AlgorithmState",
+                line=0,
+                values=(EnumValue(cc_name="kIdle", value=0, name="IDLE"),),
+            )
+        ]
+        footer = "\n".join(generate_footer(enums)) + "\n"
+        self.assertIn(
+            "#define MY_NS_MY_CLASS_ALGORITHM_STATE_FMT PW_LOG_TOKEN_FMT",
+            footer,
+        )
+        self.assertIn(
+            '#define MY_NS_MY_CLASS_ALGORITHM_STATE_DOMAIN "::my_ns::MyClass::',
+            footer,
+        )
+        self.assertIn(
+            "#define MY_NS__MY_CLASS_ALGORITHM_STATE_DOMAIN "
+            "MY_NS_MY_CLASS_ALGORITHM_STATE_DOMAIN",
+            footer,
+        )
+        self.assertIn(
+            "#define MY_NS__MY_CLASS_ALGORITHM_STATE_FMT "
+            "MY_NS_MY_CLASS_ALGORITHM_STATE_FMT",
+            footer,
+        )
 
     def test_traits_single_value(self) -> None:
         """Test that a single-valued enum is validated with an equality."""

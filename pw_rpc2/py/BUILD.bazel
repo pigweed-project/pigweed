@@ -30,6 +30,7 @@ pw_py_library(
     imports = ["."],
     deps = [
         "//pw_build:python_protobuf_runtime",
+        "//pw_codegen/py:pw_codegen",
         "//pw_protobuf/py:plugin_library",
     ],
 )

@@ -115,6 +115,7 @@ The following table lists all modules related to Build systems.
 
    ":ref:`module-pw_build`", ":bdg-primary:`stable`", "Integrations for Bazel, GN, and CMake", "Bazel, CMake, GN, Rust"
    ":ref:`module-pw_build_info`", ":bdg-primary:`stable`", "Generate, embed, and parse build-related information", "Bazel, CMake, GN"
+   ":ref:`module-pw_codegen`", ":bdg-secondary:`unstable`", "Source code generation utilities", "Python"
    ":ref:`module-pw_rust`", ":bdg-warning:`experimental`", "", ""
 
 .. Do not edit this toctree. To add non-module docs to this category,
@@ -126,6 +127,7 @@ The following table lists all modules related to Build systems.
 
    Build integrations <../pw_build/docs>
    Build info <../pw_build_info/docs>
+   Code generation <../pw_codegen/docs>
    Rust <../pw_rust/docs>
 
 .. +----------------------------------------------------------+

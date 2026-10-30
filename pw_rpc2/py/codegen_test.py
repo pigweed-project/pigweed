@@ -748,6 +748,35 @@ class CommonOutputTest(unittest.TestCase):
         # The service ID is the hash of the proto name.
         self.assertIn(f'{hash_65599("pw.delete.v1.Svc"):#010x}', header)
 
+    def test_service_and_method_reserved_words_vs_pwpb_names(self) -> None:
+        header, _ = _raw(
+            _file(
+                package='pkg.Message',
+                services=[
+                    _service(
+                        'Message',
+                        [
+                            _method('delete'),
+                            _method('errno'),
+                            _method('Fields'),
+                        ],
+                    )
+                ],
+            )
+        )
+        # Package namespace uses pwpb identifier escaping (`Message` ->
+        # `Message_`), while service and method names only escape C++ reserved
+        # words (`delete_`, `errno_`, preserving `Message` and `Fields`).
+        self.assertIn(
+            'namespace pkg::Message_::pw_rpc2::raw::Message {', header
+        )
+        self.assertIn('struct delete_ final {', header)
+        self.assertIn('struct errno_ final {', header)
+        self.assertIn('struct Fields final {', header)
+        self.assertIn(f'{hash_65599("pkg.Message.Message"):#010x}', header)
+        self.assertIn(f'{hash_65599("delete"):#010x}', header)
+        self.assertIn(f'{hash_65599("errno"):#010x}', header)
+
     def test_multiple_services(self) -> None:
         for process, flavor in ((_raw, 'raw'), (_pwpb, 'pwpb')):
             header, stubs = process(
