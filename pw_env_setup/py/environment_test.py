@@ -441,12 +441,41 @@ class WindowsEnvironmentTest(
 class PosixEnvironmentTest(
     _PrependAppendEnvironmentTest, _AppendPrependTestMixin
 ):
+    """Environment tests for POSIX shells."""
+
     def __init__(self, *args, **kwargs):
         kwargs['pathsep'] = ':'
         kwargs['windows'] = False
         kwargs['allcaps'] = False
         super().__init__(*args, **kwargs)
         self.real_windows = os.name == 'nt'
+
+    def test_quiet_written(self):
+        if not self.run_shell_tests:
+            return
+
+        self.env.echo('hello')
+        self.env.doctor()
+        with tempfile.NamedTemporaryFile(
+            prefix='pw-test-quiet-', suffix='.sh', delete=False, mode='w+'
+        ) as temp:
+            temp_name = temp.name
+            self.env.write(temp, shell_file=temp_name)
+
+        try:
+            res = subprocess.run(
+                ['sh', '-u', '-c', '. "$1"', 'sh', temp_name],
+                capture_output=True,
+                env={
+                    'PATH': '/usr/bin:/bin',
+                    'PW_ACTIVATE_SKIP_CHECKS': '1',
+                    'PW_ENVSETUP_QUIET': '1',
+                },
+                check=True,
+            )
+            self.assertEqual(res.stdout, b'')
+        finally:
+            os.unlink(temp_name)
 
 
 class WindowsCaseInsensitiveTest(unittest.TestCase):

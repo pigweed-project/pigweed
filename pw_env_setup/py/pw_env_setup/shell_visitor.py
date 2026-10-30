@@ -149,13 +149,10 @@ class ShellVisitor(_BaseShellVisitor):
         self._outs.write('if [ "$?" -ne 0 ]; then\n  return 1\nfi\n')
 
     def visit_doctor(self, doctor):
-        self._outs.write('if [ -z "$PW_ACTIVATE_SKIP_CHECKS" ]; then\n')
+        self._outs.write('if [ -z "${PW_ACTIVATE_SKIP_CHECKS:-}" ]; then\n')
         self.visit_command(doctor)
         self._outs.write('else\n')
-        self._outs.write(
-            'echo Skipping environment check because '
-            'PW_ACTIVATE_SKIP_CHECKS is set\n'
-        )
+        self.visit_echo(doctor.skip_echo)
         self._outs.write('fi\n')
 
     def visit_blank_line(self, blank_line):
@@ -297,10 +294,7 @@ class FishShellVisitor(ShellVisitor):
         self._outs.write('if not set -q PW_ACTIVATE_SKIP_CHECKS\n')
         self.visit_command(doctor)
         self._outs.write('else\n')
-        self._outs.write(
-            'echo Skipping environment check because '
-            'PW_ACTIVATE_SKIP_CHECKS is set\n'
-        )
+        self.visit_echo(doctor.skip_echo)
         self._outs.write('end\n')
 
 

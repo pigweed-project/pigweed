@@ -270,6 +270,10 @@ class Doctor(Command):
             'doctor',
         ]
         super().__init__(command=cmd, *args, **kwargs)
+        self.skip_echo = Echo(
+            'Skipping environment check because PW_ACTIVATE_SKIP_CHECKS is set',
+            newline=True,
+        )
 
     def accept(self, visitor):
         visitor.visit_doctor(self)
