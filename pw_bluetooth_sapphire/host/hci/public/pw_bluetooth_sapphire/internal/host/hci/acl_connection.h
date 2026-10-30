@@ -51,6 +51,7 @@ class AclConnection : public Connection {
   // The current long term key of the connection.
   const std::optional<hci_spec::LinkKey>& ltk() const { return ltk_; }
 
+  bool use_secure_connections() const { return use_secure_connections_; }
   void set_use_secure_connections(bool use_secure_connections) {
     use_secure_connections_ = use_secure_connections;
   }
@@ -106,8 +107,8 @@ class AclConnection : public Connection {
   // This connection's current link key.
   std::optional<hci_spec::LinkKey> ltk_;
 
-  // Flag indicating if peer and local Secure Connections support are both
-  // present. Set in OnLinkKeyNotification in SecureSimplePairingState
+  // Flag indicating if BR/EDR Secure Connections is used for this link. Set in
+  // OnLinkKeyRequest and OnLinkKeyNotification in SecureSimplePairingState.
   bool use_secure_connections_ = false;
 
   pw::bluetooth::emboss::EncryptionStatus encryption_status_ =

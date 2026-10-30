@@ -67,8 +67,8 @@ SecureSimplePairingState::SecureSimplePairingState(
       fit::bind_member<&SecureSimplePairingState::OnEncryptionChange>(this));
   cleanup_cb_ = [](SecureSimplePairingState* self) {
     self->link_->set_encryption_change_callback(nullptr);
-    auto callbacks_to_signal =
-        self->CompletePairingRequests(ToResult(HostError::kLinkDisconnected));
+    hci::Result<> status = ToResult(HostError::kLinkDisconnected);
+    auto callbacks_to_signal = self->CompletePairingRequests(status);
 
     bt_log(TRACE,
            "gap-bredr",
@@ -473,8 +473,6 @@ std::optional<hci_spec::LinkKey> SecureSimplePairingState::OnLinkKeyRequest() {
 
     PW_CHECK(peer_->bredr()->link_key().has_value());
     link_key = peer_->bredr()->link_key();
-    PW_DCHECK(link_key->security().enc_key_size() ==
-              hci_spec::kBrEdrLinkKeySize);
     if (link_key->security().enc_key_size() != hci_spec::kBrEdrLinkKeySize) {
       bt_log(WARN,
              "gap-bredr",
@@ -485,9 +483,17 @@ std::optional<hci_spec::LinkKey> SecureSimplePairingState::OnLinkKeyRequest() {
              link_key->security().enc_key_size(),
              hci_spec::kBrEdrLinkKeySize);
     }
-
-    const auto link_key_type = link_key->security().GetLinkKeyType();
-    link_->set_link_key(link_key->key(), link_key_type);
+    if (security_mode_ == BrEdrSecurityMode::SecureConnectionsOnly &&
+        link_key->security().level() !=
+            sm::SecurityLevel::kSecureAuthenticated) {
+      bt_log(WARN,
+             "gap-bredr",
+             "%#.4x (id: %s): recalled link key has insufficient security for "
+             "Secure Connections Only mode; ignoring",
+             handle(),
+             bt_str(peer_id()));
+      link_key = std::nullopt;
+    }
   } else {
     bt_log(
         INFO, "gap-bredr", "peer %s not bonded", bt_str(peer_->identifier()));
@@ -497,6 +503,10 @@ std::optional<hci_spec::LinkKey> SecureSimplePairingState::OnLinkKeyRequest() {
   // the peer initiates the authentication procedure).
   if (!is_pairing()) {
     if (link_key.has_value()) {
+      link_->set_link_key(link_key->key(),
+                          link_key->security().GetLinkKeyType());
+      link_->set_use_secure_connections(
+          link_key->security().secure_connections());
       current_pairing_ = Pairing::MakeResponderForBonded(
           peer_->MutBrEdr().RegisterPairing(), dispatcher_);
       state_ = State::kWaitEncryption;
@@ -510,6 +520,9 @@ std::optional<hci_spec::LinkKey> SecureSimplePairingState::OnLinkKeyRequest() {
       SecurityPropertiesMeetRequirements(
           link_key->security(), current_pairing_->preferred_security)) {
     // Skip Simple Pairing and just perform authentication with existing key.
+    link_->set_link_key(link_key->key(), link_key->security().GetLinkKeyType());
+    link_->set_use_secure_connections(
+        link_key->security().secure_connections());
     state_ = State::kInitiatorWaitAuthComplete;
     return link_key->key();
   }
@@ -628,30 +641,61 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     return;
   }
 
-  // If peer and local Secure Connections support are present, the pairing logic
-  // needs to verify that the Link Key Type received in the Link Key
-  // Notification event is one of the Secure Connections types (0x07 and 0x08).
-  //
-  // Core Spec v5.2 Vol 4, Part E, 7.7.24: The values 0x07 and 0x08 shall only
-  // be used when the Host has indicated support for Secure Connections in the
-  // Secure_Connections_Host_Support parameter.
-  if (IsPeerSecureConnectionsSupported() &&
-      local_secure_connections_supported) {
-    if (!sec_props.secure_connections()) {
-      bt_log(WARN,
-             "gap-bredr",
-             "Link Key Type must be a Secure Connections key type;"
-             " Received type: %hhu (handle: %#.4x, id: %s)",
-             static_cast<unsigned char>(key_type),
-             handle(),
-             bt_str(peer_id()));
-      state_ = State::kFailed;
-      SignalStatus(ToResult(HostError::kInsufficientSecurity),
-                   "OnLinkKeyNotification requires Secure Connections");
-      return;
-    }
-    link_->set_use_secure_connections(true);
+  // Prevent downgrade: If the peer is already bonded with Secure Connections,
+  // reject any new link key that does not use Secure Connections.
+  if (peer_->bredr() && peer_->bredr()->bonded() &&
+      peer_->bredr()->link_key().has_value() &&
+      peer_->bredr()->link_key()->security().secure_connections() &&
+      !sec_props.secure_connections()) {
+    bt_log(WARN,
+           "gap-bredr",
+           "Rejecting re-pairing downgrade from Secure Connections to non-SC "
+           "key for peer %s (handle: %#.4x)",
+           bt_str(peer_id()),
+           handle());
+    state_ = State::kFailed;
+    SignalStatus(ToResult(HostError::kInsufficientSecurity),
+                 "OnLinkKeyNotification rejecting downgrade from Secure "
+                 "Connections");
+    return;
   }
+
+  // Core Spec v6.0, Vol 4, Part E, Section 7.7.24: The values 0x07 and 0x08
+  // shall only be used when the Host has indicated support for Secure
+  // Connections in the Secure_Connections_Host_Support parameter.
+  if (sec_props.secure_connections() && !local_secure_connections_supported) {
+    bt_log(WARN,
+           "gap-bredr",
+           "Received Secure Connections link key type %hhu when local Secure "
+           "Connections is not supported (handle: %#.4x, id: %s)",
+           static_cast<unsigned char>(key_type),
+           handle(),
+           bt_str(peer_id()));
+    state_ = State::kFailed;
+    SignalStatus(ToResult(HostError::kInsufficientSecurity),
+                 "OnLinkKeyNotification unexpected Secure Connections key");
+    return;
+  }
+
+  // If peer and local Secure Connections support are present, verify that the
+  // Link Key Type received in the Link Key Notification event is one of the
+  // Secure Connections types (0x07 and 0x08).
+  if (IsPeerSecureConnectionsSupported() &&
+      local_secure_connections_supported && !sec_props.secure_connections()) {
+    bt_log(WARN,
+           "gap-bredr",
+           "Link Key Type must be a Secure Connections key type;"
+           " Received type: %hhu (handle: %#.4x, id: %s)",
+           static_cast<unsigned char>(key_type),
+           handle(),
+           bt_str(peer_id()));
+    state_ = State::kFailed;
+    SignalStatus(ToResult(HostError::kInsufficientSecurity),
+                 "OnLinkKeyNotification requires Secure Connections");
+    return;
+  }
+
+  link_->set_use_secure_connections(sec_props.secure_connections());
 
   link_->set_link_key(hci_spec::LinkKey(link_key, 0, 0), key_type);
   if (initiator()) {
@@ -1026,7 +1070,7 @@ void SecureSimplePairingState::SignalStatus(hci::Result<> status,
 }
 
 std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
-    hci::Result<> status) {
+    hci::Result<>& status) {
   std::vector<fit::closure> callbacks_to_signal;
 
   if (status.is_ok() && is_pairing()) {
@@ -1046,6 +1090,19 @@ std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
              "Connections Only mode",
              link_->encryption_key_size().value());
       status = ToResult(HostError::kInsufficientSecurity);
+    } else if (link_->use_secure_connections() &&
+               link_->encryption_status() !=
+                   pw::bluetooth::emboss::EncryptionStatus::
+                       ON_WITH_AES_FOR_BREDR) {
+      bt_log(WARN,
+             "gap",
+             "Secure Connections link does not have AES encryption enabled "
+             "(status: %hhu)",
+             static_cast<unsigned char>(link_->encryption_status()));
+      status = ToResult(HostError::kInsufficientSecurity);
+    }
+    if (status.is_error()) {
+      state_ = State::kFailed;
     }
   }
 

@@ -89,6 +89,21 @@ const auto kTestLegacyLinkKeyType = hci_spec::LinkKeyType::kCombination;
 const auto kTestChangedLinkKeyType = hci_spec::LinkKeyType::kChangedCombination;
 const BrEdrSecurityRequirements kNoSecurityRequirements{
     .authentication = false, .secure_connections = false};
+const StaticByteBuffer kTestReadEncryptionKeySizeCmd(0x08,
+                                                     0x14,  // opcode
+                                                     0x02,  // parameter size
+                                                     0x0B,
+                                                     0x0A  // handle: 0x0A0B
+);
+const StaticByteBuffer kTestKeySizeComplete(0x0E,  // Command Complete
+                                            0x07,  // parameters total size
+                                            0xFF,  // num command packets
+                                            0x08,
+                                            0x14,  // opcode
+                                            0x00,  // status: SUCCESS
+                                            0x0B,
+                                            0x0A,  // handle: 0x0A0B
+                                            sm::kMaxEncryptionKeySize);
 
 void NoOpStatusCallback(hci_spec::ConnectionHandle, hci::Result<>) {}
 void NoOpUserConfirmationCallback(bool) {}
@@ -2212,7 +2227,7 @@ TEST_P(HandlesEvent, InIdleStateAfterOnePairing) {
   ASSERT_TRUE(pairing_state().initiator());
 
   // Successfully enabling encryption should allow pairing to start again.
-  pairing_state().OnEncryptionChange(fit::ok(true));
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   EXPECT_EQ(1, status_handler().call_count());
   ASSERT_TRUE(status_handler().status());
   EXPECT_EQ(fit::ok(), *status_handler().status());
@@ -4197,6 +4212,651 @@ TEST_F(PairingStateTest, MultipleDifferentTransactionCollisionsAsPeripheral) {
   connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   ASSERT_EQ(1, status_handler.call_count());
   ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(fit::ok(), *status_handler.status());
+}
+
+TEST_F(PairingStateTest, BondedSecureConnectionsReconnectRejectsE0Encryption) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK stored_sc_key(sm::SecurityProperties(
+                            hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                            sm::kMaxEncryptionKeySize),
+                        kTestLinkKey);
+  ASSERT_TRUE(stored_sc_key.security().secure_connections());
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_sc_key));
+
+  std::optional<hci_spec::LinkKey> reply = pairing_state.OnLinkKeyRequest();
+  ASSERT_TRUE(reply.has_value());
+  EXPECT_EQ(kTestLinkKey, reply.value());
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  TestStatusHandler sc_request_handler;
+  pairing_state.InitiatePairing(
+      BrEdrSecurityRequirements{.authentication = true,
+                                .secure_connections = true},
+      sc_request_handler.MakeStatusCallback());
+
+  test_device()->SendCommandChannelPacket(testing::EncryptionChangeEventPacket(
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      kTestHandle,
+      hci_spec::EncryptionStatus::kOn));
+  RunUntilIdle();
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+
+  ASSERT_EQ(1, sc_request_handler.call_count());
+  ASSERT_TRUE(sc_request_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *sc_request_handler.status());
+}
+
+TEST_F(PairingStateTest, BondedSecureConnectionsReconnectAcceptsAesEncryption) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK stored_sc_key(sm::SecurityProperties(
+                            hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                            sm::kMaxEncryptionKeySize),
+                        kTestLinkKey);
+  ASSERT_TRUE(stored_sc_key.security().secure_connections());
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_sc_key));
+
+  std::optional<hci_spec::LinkKey> reply = pairing_state.OnLinkKeyRequest();
+  ASSERT_TRUE(reply.has_value());
+  EXPECT_EQ(kTestLinkKey, reply.value());
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  TestStatusHandler sc_request_handler;
+  pairing_state.InitiatePairing(
+      BrEdrSecurityRequirements{.authentication = true,
+                                .secure_connections = true},
+      sc_request_handler.MakeStatusCallback());
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kTestReadEncryptionKeySizeCmd, &kTestKeySizeComplete);
+  test_device()->SendCommandChannelPacket(testing::EncryptionChangeEventPacket(
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      kTestHandle,
+      hci_spec::EncryptionStatus::kBredrSecureConnections));
+  RunUntilIdle();
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(fit::ok(), *status_handler.status());
+
+  ASSERT_EQ(1, sc_request_handler.call_count());
+  ASSERT_TRUE(sc_request_handler.status().has_value());
+  EXPECT_EQ(fit::ok(), *sc_request_handler.status());
+}
+
+TEST_F(PairingStateTest,
+       InitiatorBondedSecureConnectionsReconnectRejectsE0Encryption) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK stored_sc_key(sm::SecurityProperties(
+                            hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                            sm::kMaxEncryptionKeySize),
+                        kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_sc_key));
+
+  TestStatusHandler sc_request_handler;
+  pairing_state.InitiatePairing(
+      BrEdrSecurityRequirements{.authentication = true,
+                                .secure_connections = true},
+      sc_request_handler.MakeStatusCallback());
+  EXPECT_EQ(1u, auth_request_count());
+
+  std::optional<hci_spec::LinkKey> reply = pairing_state.OnLinkKeyRequest();
+  ASSERT_TRUE(reply.has_value());
+  EXPECT_EQ(kTestLinkKey, reply.value());
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  pairing_state.OnAuthenticationComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_EQ(1, connection()->start_encryption_count());
+
+  test_device()->SendCommandChannelPacket(testing::EncryptionChangeEventPacket(
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      kTestHandle,
+      hci_spec::EncryptionStatus::kOn));
+  RunUntilIdle();
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+
+  ASSERT_EQ(1, sc_request_handler.call_count());
+  ASSERT_TRUE(sc_request_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *sc_request_handler.status());
+}
+
+TEST_F(PairingStateTest,
+       InitiatorBondedSecureConnectionsReconnectAcceptsAesEncryption) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK stored_sc_key(sm::SecurityProperties(
+                            hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                            sm::kMaxEncryptionKeySize),
+                        kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_sc_key));
+
+  TestStatusHandler sc_request_handler;
+  pairing_state.InitiatePairing(
+      BrEdrSecurityRequirements{.authentication = true,
+                                .secure_connections = true},
+      sc_request_handler.MakeStatusCallback());
+  EXPECT_EQ(1u, auth_request_count());
+
+  std::optional<hci_spec::LinkKey> reply = pairing_state.OnLinkKeyRequest();
+  ASSERT_TRUE(reply.has_value());
+  EXPECT_EQ(kTestLinkKey, reply.value());
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  // Controller notifies that authentication is complete.
+  pairing_state.OnAuthenticationComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  // The local device now attempts to enable encryption.
+  EXPECT_EQ(1, connection()->start_encryption_count());
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kTestReadEncryptionKeySizeCmd, &kTestKeySizeComplete);
+  test_device()->SendCommandChannelPacket(testing::EncryptionChangeEventPacket(
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      kTestHandle,
+      hci_spec::EncryptionStatus::kBredrSecureConnections));
+  RunUntilIdle();
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(fit::ok(), *status_handler.status());
+
+  ASSERT_EQ(1, sc_request_handler.call_count());
+  ASSERT_TRUE(sc_request_handler.status().has_value());
+  EXPECT_EQ(fit::ok(), *sc_request_handler.status());
+}
+
+TEST_F(
+    PairingStateTest,
+    OnLinkKeyRequestRejectingUnauthenticatedScKeyDoesNotMutateConnectionState) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK stored_unauth_sc_key(
+      sm::SecurityProperties(
+          hci_spec::LinkKeyType::kUnauthenticatedCombination256,
+          sm::kMaxEncryptionKeySize),
+      kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_unauth_sc_key));
+
+  pairing_state.InitiatePairing(
+      BrEdrSecurityRequirements{.authentication = true,
+                                .secure_connections = true},
+      NoOpStatusCallback);
+
+  EXPECT_EQ(std::nullopt, pairing_state.OnLinkKeyRequest());
+  EXPECT_FALSE(connection()->ltk().has_value());
+  EXPECT_FALSE(connection()->use_secure_connections());
+}
+
+TEST_F(PairingStateTest,
+       SecureConnectionsOnlyModeIgnoresStoredNonSecureConnectionsLinkKey) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+  pairing_state.set_security_mode(BrEdrSecurityMode::SecureConnectionsOnly);
+
+  sm::LTK stored_legacy_key(
+      sm::SecurityProperties(
+          hci_spec::LinkKeyType::kAuthenticatedCombination192,
+          sm::kMaxEncryptionKeySize),
+      kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_legacy_key));
+
+  EXPECT_EQ(std::nullopt, pairing_state.OnLinkKeyRequest());
+  EXPECT_FALSE(connection()->ltk().has_value());
+  EXPECT_FALSE(connection()->use_secure_connections());
+}
+
+TEST_F(
+    PairingStateTest,
+    SecureConnectionsOnlyModeIgnoresStoredUnauthenticatedSecureConnectionsKey) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+  pairing_state.set_security_mode(BrEdrSecurityMode::SecureConnectionsOnly);
+
+  sm::LTK stored_unauth_sc_key(
+      sm::SecurityProperties(
+          hci_spec::LinkKeyType::kUnauthenticatedCombination256,
+          sm::kMaxEncryptionKeySize),
+      kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_unauth_sc_key));
+
+  EXPECT_EQ(std::nullopt, pairing_state.OnLinkKeyRequest());
+  EXPECT_FALSE(connection()->ltk().has_value());
+  EXPECT_FALSE(connection()->use_secure_connections());
+}
+
+TEST_F(PairingStateTest,
+       SecureConnectionsOnlyModeIgnoresStoredWeakKeySizeSecureConnectionsKey) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+  pairing_state.set_security_mode(BrEdrSecurityMode::SecureConnectionsOnly);
+
+  sm::LTK stored_weak_sc_key(
+      sm::SecurityProperties(
+          hci_spec::LinkKeyType::kAuthenticatedCombination256,
+          sm::kMaxEncryptionKeySize - 1),
+      kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_weak_sc_key));
+
+  EXPECT_EQ(std::nullopt, pairing_state.OnLinkKeyRequest());
+  EXPECT_FALSE(connection()->ltk().has_value());
+  EXPECT_FALSE(connection()->use_secure_connections());
+}
+
+TEST_F(PairingStateTest, CompletePairingRequestsRejectsNonAesEncryptionStatus) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK stored_sc_key(sm::SecurityProperties(
+                            hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                            sm::kMaxEncryptionKeySize),
+                        kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_sc_key));
+
+  ASSERT_TRUE(pairing_state.OnLinkKeyRequest().has_value());
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  TestStatusHandler sc_request_handler;
+  pairing_state.InitiatePairing(
+      BrEdrSecurityRequirements{.authentication = true,
+                                .secure_connections = true},
+      sc_request_handler.MakeStatusCallback());
+
+  // Set encryption_status on connection to E0 and trigger encryption change ok.
+  // CompletePairingRequests should verify AES is active and fail with
+  // kInsufficientSecurity.
+  connection()->set_encryption_status(pw::bluetooth::emboss::EncryptionStatus::
+                                          ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE);
+  connection()->set_encryption_key_size(sm::kMaxEncryptionKeySize);
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
+  RunUntilIdle();
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+
+  ASSERT_EQ(1, sc_request_handler.call_count());
+  ASSERT_TRUE(sc_request_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *sc_request_handler.status());
+
+  // State must have transitioned to kFailed so subsequent pairing requests do
+  // not fast-path to success.
+  TestStatusHandler post_failure_handler;
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                post_failure_handler.MakeStatusCallback());
+  ASSERT_EQ(1, post_failure_handler.call_count());
+  ASSERT_TRUE(post_failure_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kCanceled), *post_failure_handler.status());
+}
+
+TEST_F(
+    PairingStateTest,
+    ResponderBondedSecureConnectionsReconnectWithoutQueuedRequestsRejectsE0) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK stored_sc_key(sm::SecurityProperties(
+                            hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                            sm::kMaxEncryptionKeySize),
+                        kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_sc_key));
+
+  ASSERT_TRUE(pairing_state.OnLinkKeyRequest().has_value());
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  connection()->set_encryption_status(pw::bluetooth::emboss::EncryptionStatus::
+                                          ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE);
+  connection()->set_encryption_key_size(sm::kMaxEncryptionKeySize);
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
+  RunUntilIdle();
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+}
+
+TEST_F(PairingStateTest,
+       OnLinkKeyNotificationRejectsSecureConnectionsKeyWhenLocalNotSupported) {
+  NoOpPairingDelegate pairing_delegate(sm::IOCapability::kDisplayOnly);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  pairing_state.OnIoCapabilityResponse(IoCapability::DISPLAY_YES_NO);
+  static_cast<void>(pairing_state.OnIoCapabilityRequest());
+  pairing_state.OnUserConfirmationRequest(kTestPasskey,
+                                          NoOpUserConfirmationCallback);
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  pairing_state.OnLinkKeyNotification(
+      kTestLinkKeyValue,
+      kTestUnauthenticatedLinkKeyType256,
+      /*local_secure_connections_supported=*/false);
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+  EXPECT_FALSE(connection()->ltk().has_value());
+  EXPECT_FALSE(connection()->use_secure_connections());
+}
+
+TEST_F(
+    PairingStateTest,
+    OnLinkKeyNotificationEnforcesAesWhenPeerSecureConnectionsFeaturesMissing) {
+  NoOpPairingDelegate pairing_delegate(sm::IOCapability::kDisplayOnly);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  // Peer extended LMP features are NOT set, so IsPeerSecureConnectionsSupported
+  // returns false, yet the controller reports a P-256 link key.
+  pairing_state.OnIoCapabilityResponse(IoCapability::DISPLAY_YES_NO);
+  static_cast<void>(pairing_state.OnIoCapabilityRequest());
+  pairing_state.OnUserConfirmationRequest(kTestPasskey,
+                                          NoOpUserConfirmationCallback);
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  pairing_state.OnLinkKeyNotification(
+      kTestLinkKeyValue,
+      kTestUnauthenticatedLinkKeyType256,
+      /*local_secure_connections_supported=*/true);
+
+  EXPECT_EQ(0, status_handler.call_count());
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  // Subsequent E0 encryption must be rejected.
+  connection()->set_encryption_status(pw::bluetooth::emboss::EncryptionStatus::
+                                          ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE);
+  connection()->set_encryption_key_size(sm::kMaxEncryptionKeySize);
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
+  RunUntilIdle();
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+}
+
+TEST_F(PairingStateTest, RePairingDowngradeFromSecureConnectionsRejected) {
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+  pairing_delegate.SetConfirmPairingCallback([](PeerId, auto cb) { cb(true); });
+  pairing_delegate.SetCompletePairingCallback(
+      [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
+
+  TestStatusHandler status_handler;
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK stored_sc_key(sm::SecurityProperties(
+                            hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                            sm::kMaxEncryptionKeySize),
+                        kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_sc_key));
+
+  ASSERT_TRUE(pairing_state.OnLinkKeyRequest().has_value());
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  // Peer lost bond and initiates non-SC Simple Pairing from kWaitEncryption.
+  pairing_state.OnIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT);
+  ASSERT_EQ(IoCapability::DISPLAY_YES_NO,
+            *pairing_state.OnIoCapabilityRequest());
+  pairing_state.OnUserConfirmationRequest(kTestPasskey,
+                                          NoOpUserConfirmationCallback);
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  pairing_state.OnLinkKeyNotification(
+      kTestLinkKeyValue,
+      kTestUnauthenticatedLinkKeyType192,
+      /*local_secure_connections_supported=*/false);
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+  EXPECT_FALSE(peer()->MutBrEdr().is_pairing());
+}
+
+TEST_F(PairingStateTest, RePairingWithSecureConnectionsSucceeds) {
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+  pairing_delegate.SetDisplayPasskeyCallback(
+      [](PeerId, uint32_t, auto, auto confirm_cb) {
+        ASSERT_TRUE(confirm_cb);
+        confirm_cb(true);
+      });
+  pairing_delegate.SetCompletePairingCallback(
+      [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
+
+  TestStatusHandler status_handler;
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK stored_sc_key(sm::SecurityProperties(
+                            hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                            sm::kMaxEncryptionKeySize),
+                        kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(stored_sc_key));
+
+  ASSERT_TRUE(pairing_state.OnLinkKeyRequest().has_value());
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  // Set peer lmp_features for Secure Connections support.
+  peer()->SetFeaturePage(
+      1u,
+      static_cast<uint64_t>(
+          hci_spec::LMPFeature::kSecureConnectionsHostSupport));
+  peer()->SetFeaturePage(
+      2u,
+      static_cast<uint64_t>(
+          hci_spec::LMPFeature::kSecureConnectionsControllerSupport));
+
+  // Peer lost bond and initiates re-pairing with SC.
+  pairing_state.OnIoCapabilityResponse(IoCapability::DISPLAY_YES_NO);
+  ASSERT_EQ(IoCapability::DISPLAY_YES_NO,
+            *pairing_state.OnIoCapabilityRequest());
+  pairing_state.OnUserConfirmationRequest(kTestPasskey,
+                                          NoOpUserConfirmationCallback);
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  pairing_state.OnLinkKeyNotification(
+      kTestLinkKeyValue,
+      hci_spec::LinkKeyType::kAuthenticatedCombination256,
+      /*local_secure_connections_supported=*/true);
+
+  EXPECT_TRUE(connection()->use_secure_connections());
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kTestReadEncryptionKeySizeCmd, &kTestKeySizeComplete);
+  test_device()->SendCommandChannelPacket(testing::EncryptionChangeEventPacket(
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      kTestHandle,
+      hci_spec::EncryptionStatus::kBredrSecureConnections));
+  RunUntilIdle();
+
+  ASSERT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
   EXPECT_EQ(fit::ok(), *status_handler.status());
 }
 }  // namespace

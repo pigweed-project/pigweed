@@ -113,10 +113,9 @@ CommandChannel::EventCallbackResult AclConnection::OnEncryptionChangeEvent(
          encryption_enabled ? "enabled" : "disabled",
          bt_str(result));
 
-  // If peer and local Secure Connections support are present, the pairing logic
-  // needs to verify that the status received in the Encryption Changed event is
-  // for AES encryption.
-  if (use_secure_connections_ &&
+  // If BR/EDR Secure Connections is used on this link, verify that a successful
+  // Encryption Change event enables AES encryption.
+  if (result.is_ok() && use_secure_connections_ &&
       encryption_status_ !=
           pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR) {
     bt_log(DEBUG,
@@ -155,6 +154,20 @@ AclConnection::OnEncryptionKeyRefreshCompleteEvent(const EventPacket& event) {
 
   Result<> status = event.ToResult();
   bt_log(DEBUG, "hci", "encryption key refresh %s", bt_str(status));
+
+  // If BR/EDR Secure Connections is used on this link, verify that a successful
+  // Encryption Key Refresh event has AES encryption enabled.
+  if (status.is_ok() && use_secure_connections_ &&
+      encryption_status_ !=
+          pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR) {
+    bt_log(DEBUG,
+           "hci",
+           "BR/EDR Secure Connection key refresh must use AES encryption. "
+           "Closing connection...");
+    HandleEncryptionStatus(fit::error(Error(HostError::kInsufficientSecurity)),
+                           /*key_refreshed=*/true);
+    return CommandChannel::EventCallbackResult::kContinue;
+  }
 
   // Report that encryption got disabled on failure status. The accuracy of this
   // isn't that important since the link will be disconnected.

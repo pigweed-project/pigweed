@@ -486,10 +486,12 @@ class SecureSimplePairingState final {
   void SignalStatus(hci::Result<> status, const char* caller);
 
   // Determines which pairing requests have been completed by the current link
-  // key and/or status and removes them from the queue. If any pairing requests
-  // were not completed, starts a new pairing procedure. Returns a list of
-  // closures that call the status callbacks of completed pairing requests.
-  std::vector<fit::closure> CompletePairingRequests(hci::Result<> status);
+  // key and/or status and removes them from the queue. Overrides |status| to an
+  // error and transitions |state_| to State::kFailed if link security
+  // invariants are violated. If any pairing requests were not completed, starts
+  // a new pairing procedure. Returns a list of closures that call the status
+  // callbacks of completed pairing requests.
+  std::vector<fit::closure> CompletePairingRequests(hci::Result<>& status);
 
   // Starts the pairing procedure for the next queued pairing request, if any.
   void InitiateNextPairingRequest();

@@ -472,6 +472,15 @@ const StaticByteBuffer kEncryptionChangeEvent(
     0x01   // encryption enabled: E0 for BR/EDR or AES-CCM for LE
 );
 
+const StaticByteBuffer kEncryptionChangeEventAes(
+    hci_spec::kEncryptionChangeEventCode,
+    4,     // parameter total size
+    0x00,  // status
+    0xAA,
+    0x0B,  // connection handle
+    0x02   // encryption enabled: AES-CCM for BR/EDR
+);
+
 const StaticByteBuffer kReadEncryptionKeySize(
     LowerBits(hci_spec::kReadEncryptionKeySize),
     UpperBits(hci_spec::kReadEncryptionKeySize),
@@ -830,6 +839,14 @@ class BrEdrConnectionManagerTest : public TestingBase,
     test_device()->SendCommandChannelPacket(remote_extended2_complete_packet);
   }
 
+  static const ByteBuffer& EncryptionChangeEventForKeyType(
+      hci_spec::LinkKeyType key_type) {
+    return sm::SecurityProperties(key_type, /*enc_key_size=*/std::nullopt)
+                   .secure_connections()
+               ? static_cast<const ByteBuffer&>(kEncryptionChangeEventAes)
+               : static_cast<const ByteBuffer&>(kEncryptionChangeEvent);
+  }
+
   void QueueSuccessfulPairing(
       hci_spec::LinkKeyType key_type =
           hci_spec::LinkKeyType::kAuthenticatedCombination192) {
@@ -863,7 +880,7 @@ class BrEdrConnectionManagerTest : public TestingBase,
     EXPECT_CMD_PACKET_OUT(test_device(),
                           kSetConnectionEncryption,
                           &kSetConnectionEncryptionRsp,
-                          &kEncryptionChangeEvent);
+                          &EncryptionChangeEventForKeyType(key_type));
     EXPECT_CMD_PACKET_OUT(
         test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
   }
@@ -904,7 +921,7 @@ class BrEdrConnectionManagerTest : public TestingBase,
     EXPECT_CMD_PACKET_OUT(test_device(),
                           kSetConnectionEncryption,
                           &kSetConnectionEncryptionRsp,
-                          &kEncryptionChangeEvent);
+                          &EncryptionChangeEventForKeyType(key_type));
     EXPECT_CMD_PACKET_OUT(
         test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
   }
@@ -6379,7 +6396,7 @@ TEST_F(BrEdrConnectionManagerTest, SecureConnectionsOnlyRejectsWeakKeySize) {
   EXPECT_CMD_PACKET_OUT(test_device(),
                         kSetConnectionEncryption,
                         &kSetConnectionEncryptionRsp,
-                        &kEncryptionChangeEvent);
+                        &kEncryptionChangeEventAes);
 
   // Mock key size 8 response.
   const StaticByteBuffer kReadEncryptionKeySizeRspSmall(

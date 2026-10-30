@@ -44,8 +44,11 @@ void FakeBrEdrConnection::TriggerEncryptionChangeCallback(
 void FakeBrEdrConnection::Disconnect(pw::bluetooth::emboss::StatusCode) {}
 
 bool FakeBrEdrConnection::StartEncryption() {
-  return StartEncryption(pw::bluetooth::emboss::EncryptionStatus::
-                             ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE);
+  return StartEncryption(
+      use_secure_connections()
+          ? pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR
+          : pw::bluetooth::emboss::EncryptionStatus::
+                ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE);
 }
 
 bool FakeBrEdrConnection::StartEncryption(
