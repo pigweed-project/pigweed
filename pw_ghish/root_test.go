@@ -586,31 +586,8 @@ func TestRootAliases_Execution(t *testing.T) {
 		"/COMMIT_MSG":      map[string]any{},
 		"pw_ghish/file.go": map[string]any{"lines_inserted": 1, "lines_deleted": 1},
 	})
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Alias Test Change",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-pass",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Alias Test Change"))
+	server.OnSearchBuilds(FakeBuild("111", "builder-pass", "SUCCESS"))
 
 	// 1. Root "view 12345"
 	outView, err := executeCommand(RootCmd, "view", "12345")

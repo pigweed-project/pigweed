@@ -17,88 +17,204 @@ package pw_ghish
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/andygrunwald/go-gerrit"
+	"github.com/google/go-cmp/cmp"
 )
 
-func TestReviewCmd_Approve(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"123", "--approve", "-m", "Looks good"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
+func TestReviewCmd_FlagsAndLabels(t *testing.T) {
+	tests := []struct {
+		name         string
+		changeID     int
+		changeLabels []string
+		args         []string
+		wantMessage  string
+		wantLabels   map[string]int
+		wantDrafts   string
+		wantOut      string
+	}{
+		{
+			name:        "approve with message",
+			changeID:    123,
+			args:        []string{"123", "--approve", "-m", "Looks good"},
+			wantMessage: "Looks good",
+			wantLabels:  map[string]int{"Code-Review": 2},
+			wantDrafts:  "KEEP",
+		},
+		{
+			name:        "request changes with message",
+			changeID:    456,
+			args:        []string{"456", "--request-changes", "-m", "Needs fixes"},
+			wantMessage: "Needs fixes",
+			wantLabels:  map[string]int{"Code-Review": -1},
+			wantDrafts:  "KEEP",
+		},
+		{
+			name:        "comment flag with message",
+			changeID:    123,
+			args:        []string{"123", "--comment", "-m", "Just a question"},
+			wantMessage: "Just a question",
+			wantDrafts:  "KEEP",
+		},
+		{
+			name:         "cq default",
+			changeID:     123,
+			changeLabels: []string{"Code-Review", "Commit-Queue"},
+			args:         NormalizeCQArgs([]string{"123", "--cq"}),
+			wantLabels:   map[string]int{"Commit-Queue": 1},
+			wantDrafts:   "KEEP",
+		},
+		{
+			name:         "approve and cq",
+			changeID:     123,
+			changeLabels: []string{"Code-Review", "Commit-Queue"},
+			args:         NormalizeCQArgs([]string{"123", "--approve", "--cq", "-m", "LGTM"}),
+			wantMessage:  "LGTM",
+			wantLabels:   map[string]int{"Code-Review": 2, "Commit-Queue": 1},
+			wantDrafts:   "KEEP",
+		},
+		{
+			name:         "cq explicit",
+			changeID:     123,
+			changeLabels: []string{"Code-Review", "Commit-Queue"},
+			args:         NormalizeCQArgs([]string{"123", "--cq", "2"}),
+			wantLabels:   map[string]int{"Commit-Queue": 2},
+			wantDrafts:   "KEEP",
+		},
+		{
+			name:         "cq falls back to Commit-Queue when change lookup 404s",
+			changeID:     123,
+			changeLabels: nil,
+			args:         NormalizeCQArgs([]string{"123", "--cq"}),
+			wantLabels:   map[string]int{"Commit-Queue": 1},
+			wantDrafts:   "KEEP",
+		},
+		{
+			name:         "cq uses Presubmit-Ready when no Commit-Queue",
+			changeID:     123,
+			changeLabels: []string{"Code-Review", "Presubmit-Ready"},
+			args:         NormalizeCQArgs([]string{"123", "--cq"}),
+			wantLabels:   map[string]int{"Presubmit-Ready": 1},
+			wantDrafts:   "KEEP",
+		},
+		{
+			name:       "publish drafts",
+			changeID:   123,
+			args:       []string{"123", "--publish"},
+			wantDrafts: "PUBLISH_ALL_REVISIONS",
+			wantOut:    "✓ Review submitted successfully (published pending drafts).",
+		},
+		{
+			name:        "default keeps drafts and supports upstream shorthand flags",
+			changeID:    123,
+			args:        []string{"123", "-r", "-b", "Please add a unit test"},
+			wantMessage: "Please add a unit test",
+			wantLabels:  map[string]int{"Code-Review": -1},
+			wantDrafts:  "KEEP",
+		},
+		{
+			name:         "trigger",
+			changeID:     123,
+			changeLabels: []string{"Code-Review", "Presubmit-Ready"},
+			args:         NormalizeCQArgs([]string{"123", "--trigger"}),
+			wantLabels:   map[string]int{"Presubmit-Ready": 1},
+			wantDrafts:   "KEEP",
+		},
 	}
 
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Message != "Looks good" {
-		t.Errorf("got message %q, want %q", capturedInput.Message, "Looks good")
-	}
-	if capturedInput.Labels["Code-Review"] != 2 {
-		t.Errorf("got Code-Review %d, want 2", capturedInput.Labels["Code-Review"])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := NewMockGerritServer(t)
+			if len(tt.changeLabels) > 0 {
+				server.OnDefaultChange(tt.changeID, WithLabels(tt.changeLabels...))
+			}
+			server.OnReview(tt.changeID)
+
+			var out strings.Builder
+			cmd := newReviewCmd()
+			cmd.SetContext(t.Context())
+			cmd.SetOut(&out)
+			cmd.SetArgs(tt.args)
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("cmd.Execute failed: %v", err)
+			}
+			if tt.wantOut != "" && !strings.Contains(out.String(), tt.wantOut) {
+				t.Errorf("output = %q, want substring %q", out.String(), tt.wantOut)
+			}
+
+			capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
+			if capturedInput.Message != tt.wantMessage {
+				t.Errorf("got message %q, want %q", capturedInput.Message, tt.wantMessage)
+			}
+			if diff := cmp.Diff(tt.wantLabels, capturedInput.Labels); diff != "" {
+				t.Errorf("labels mismatch (-want +got):\n%s", diff)
+			}
+			if capturedInput.Drafts != tt.wantDrafts {
+				t.Errorf("got Drafts = %q, want %q", capturedInput.Drafts, tt.wantDrafts)
+			}
+		})
 	}
 }
 
-func TestReviewCmd_RequestChanges(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/456/revisions/current/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"456", "--request-changes", "-m", "Needs fixes"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
+func TestReviewCmd_ValidationErrors(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantErrs []string
+	}{
+		{
+			name:     "both approve and request-changes",
+			args:     []string{"123", "--approve", "--request-changes"},
+			wantErrs: []string{"cannot specify more than one"},
+		},
+		{
+			name:     "no flags specified",
+			args:     []string{"123"},
+			wantErrs: []string{"no review action or message specified", "--approve"},
+		},
+		{
+			name:     "comment without message",
+			args:     []string{"123", "--comment"},
+			wantErrs: []string{"--comment requires a message"},
+		},
+		{
+			name:     "multiple actions",
+			args:     []string{"123", "--approve", "--comment", "-m", "hi"},
+			wantErrs: []string{"cannot specify more than one"},
+		},
 	}
 
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Message != "Needs fixes" {
-		t.Errorf("got message %q, want %q", capturedInput.Message, "Needs fixes")
-	}
-	if capturedInput.Labels["Code-Review"] != -1 {
-		t.Errorf("got Code-Review %d, want -1", capturedInput.Labels["Code-Review"])
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := NewMockGerritServer(t)
+			server.OnDefaultChange(123)
 
-func TestReviewCmd_ErrorWhenBothApproveAndRequestChanges(t *testing.T) {
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"123", "--approve", "--request-changes"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("Expected error when both --approve and --request-changes are specified, got nil")
+			cmd := newReviewCmd()
+			cmd.SetContext(t.Context())
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatalf("expected error for args %v, got nil", tt.args)
+			}
+			for _, want := range tt.wantErrs {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("expected error to contain %q, got: %v", want, err)
+				}
+			}
+		})
 	}
 }
 
 func TestReviewCmd_DefaultActivePR(t *testing.T) {
+	const changeID = "I1234567890abcdef1234567890abcdef12345678"
 	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/I1234567890abcdef1234567890abcdef12345678/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(changeID)
 
-	mockGit := SetMockGit(t, &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "branch" && args[1] == "--show-current" {
-				stdout.Write([]byte("my-feature\n"))
-				return nil
-			}
-			if len(args) >= 3 && args[0] == "log" && args[1] == "-1" {
-				stdout.Write([]byte("Commit on feature branch\n\nChange-Id: I1234567890abcdef1234567890abcdef12345678\n"))
-				return nil
-			}
-			return fmt.Errorf("not handled")
-		},
-	})
+	mockGit := NewMockGit(t).
+		WithBranch("my-feature").
+		WithCommit("Commit on feature branch\n\nChange-Id: " + changeID + "\n")
 
 	cmd := newReviewCmd()
 	cmd.SetContext(context.Background())
@@ -110,13 +226,10 @@ func TestReviewCmd_DefaultActivePR(t *testing.T) {
 	}
 
 	req := server.LastRequest()
-	if req == nil || req.Path != "/changes/I1234567890abcdef1234567890abcdef12345678/revisions/current/review" {
-		t.Errorf("got path %v, want /changes/I1234567890abcdef1234567890abcdef12345678/revisions/current/review", req)
+	if req == nil || req.Path != "/changes/"+changeID+"/revisions/current/review" {
+		t.Fatalf("got path %v, want /changes/%s/revisions/current/review", req, changeID)
 	}
-	var capturedInput gerrit.ReviewInput
-	if req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
+	capturedInput := DecodeRequest[ReviewInput](t, req)
 	if capturedInput.Message != "LGTM from active branch" {
 		t.Errorf("got message %q, want %q", capturedInput.Message, "LGTM from active branch")
 	}
@@ -125,273 +238,45 @@ func TestReviewCmd_DefaultActivePR(t *testing.T) {
 	}
 }
 
-func TestReviewCmd_SpecificPatchset(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/472267/revisions/3/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"472267/3", "--approve"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
+func TestReviewCmd_TargetResolution(t *testing.T) {
+	tests := []struct {
+		name     string
+		target   string
+		wantPath string
+	}{
+		{
+			name:     "specific patchset shorthand",
+			target:   "472267/3",
+			wantPath: "/changes/472267/revisions/3/review",
+		},
+		{
+			name:     "full Gerrit URL with patchset",
+			target:   "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267/4",
+			wantPath: "/changes/472267/revisions/4/review",
+		},
 	}
 
-	if server.CallCount("POST", "/changes/472267/revisions/3/review") != 1 {
-		t.Errorf("expected 1 call to /changes/472267/revisions/3/review, got %d", server.CallCount("POST", "/changes/472267/revisions/3/review"))
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := NewMockGerritServer(t)
+			server.OnJSON("POST", tt.wantPath, http.StatusOK, map[string]any{})
 
-func TestReviewCmd_URL(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/472267/revisions/4/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267/4", "--approve"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
-	}
-
-	if server.CallCount("POST", "/changes/472267/revisions/4/review") != 1 {
-		t.Errorf("expected 1 call to /changes/472267/revisions/4/review, got %d", server.CallCount("POST", "/changes/472267/revisions/4/review"))
-	}
-}
-
-func TestReviewCmd_ErrorWhenNoFlagsSpecified(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/123", http.StatusOK, map[string]any{
-		"_number": 123,
-	})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"123"})
-
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error when running review with no flags, got nil")
-	}
-	if !strings.Contains(err.Error(), "no review action or message specified") {
-		t.Errorf("expected error to mention 'no review action or message specified', got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "--approve") {
-		t.Errorf("expected error to provide debug crumbs with '--approve', got: %v", err)
-	}
-}
-
-func TestReviewCmd_CommentFlagWithMessage(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"123", "--comment", "-m", "Just a question"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Message != "Just a question" {
-		t.Errorf("got message %q, want %q", capturedInput.Message, "Just a question")
-	}
-	if len(capturedInput.Labels) != 0 {
-		t.Errorf("expected no label votes with --comment, got: %v", capturedInput.Labels)
-	}
-}
-
-func TestReviewCmd_ErrorWhenCommentWithoutMessage(t *testing.T) {
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"123", "--comment"})
-
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error when running review with --comment but no message, got nil")
-	}
-	if !strings.Contains(err.Error(), "--comment requires a message") {
-		t.Errorf("expected error to mention '--comment requires a message', got: %v", err)
-	}
-}
-
-func TestReviewCmd_ErrorWhenMultipleActions(t *testing.T) {
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"123", "--approve", "--comment", "-m", "hi"})
-
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error when combining --approve and --comment, got nil")
-	}
-	if !strings.Contains(err.Error(), "cannot specify more than one") {
-		t.Errorf("expected error to mention 'cannot specify more than one', got: %v", err)
-	}
-}
-
-func TestReviewCmd_CQ_Default(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs(NormalizeCQArgs([]string{"123", "--cq"}))
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Labels["Commit-Queue"] != 1 {
-		t.Errorf("got Commit-Queue = %d, want 1", capturedInput.Labels["Commit-Queue"])
-	}
-}
-
-func TestReviewCmd_ApproveAndCQ(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs(NormalizeCQArgs([]string{"123", "--approve", "--cq", "-m", "LGTM"}))
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Labels["Code-Review"] != 2 {
-		t.Errorf("got Code-Review = %d, want 2", capturedInput.Labels["Code-Review"])
-	}
-	if capturedInput.Labels["Commit-Queue"] != 1 {
-		t.Errorf("got Commit-Queue = %d, want 1", capturedInput.Labels["Commit-Queue"])
-	}
-}
-
-func TestReviewCmd_CQ_Explicit(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs(NormalizeCQArgs([]string{"123", "--cq", "2"}))
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Labels["Commit-Queue"] != 2 {
-		t.Errorf("got Commit-Queue = %d, want 2", capturedInput.Labels["Commit-Queue"])
-	}
-}
-
-func TestReviewCmd_CQ_UsesPresubmitReadyWhenNoCommitQueue(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(123, WithLabels("Code-Review", "Presubmit-Ready"))
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs(NormalizeCQArgs([]string{"123", "--cq"}))
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Labels["Presubmit-Ready"] != 1 {
-		t.Errorf("got Presubmit-Ready = %d, want 1 (labels: %v)", capturedInput.Labels["Presubmit-Ready"], capturedInput.Labels)
-	}
-}
-
-func TestReviewCmd_PublishDrafts(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
-
-	var out strings.Builder
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"123", "--publish"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
-	}
-	if !strings.Contains(out.String(), "✓ Review submitted successfully (published pending drafts).") {
-		t.Errorf("expected publish confirmation in output, got: %q", out.String())
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Drafts != "PUBLISH_ALL_REVISIONS" {
-		t.Errorf("got Drafts = %q, want PUBLISH_ALL_REVISIONS", capturedInput.Drafts)
-	}
-}
-
-func TestReviewCmd_DefaultKeepsDraftsAndSupportsUpstreamFlags(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{"123", "-r", "-b", "Please add a unit test"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Labels["Code-Review"] != -1 {
-		t.Errorf("got Code-Review = %d, want -1", capturedInput.Labels["Code-Review"])
-	}
-	if capturedInput.Message != "Please add a unit test" {
-		t.Errorf("got Message = %q, want %q", capturedInput.Message, "Please add a unit test")
-	}
-	if capturedInput.Drafts != "KEEP" {
-		t.Errorf("got Drafts = %q, want KEEP", capturedInput.Drafts)
-	}
-}
-
-func TestReviewCmd_Trigger(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(123, WithLabels("Code-Review", "Presubmit-Ready"))
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
-
-	cmd := newReviewCmd()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs(NormalizeCQArgs([]string{"123", "--trigger"}))
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cmd.Execute failed: %v", err)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Labels["Presubmit-Ready"] != 1 {
-		t.Errorf("got Presubmit-Ready = %d, want 1 (labels: %v)", capturedInput.Labels["Presubmit-Ready"], capturedInput.Labels)
+			cmd := newReviewCmd()
+			cmd.SetContext(t.Context())
+			cmd.SetArgs([]string{tt.target, "--approve"})
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("cmd.Execute failed: %v", err)
+			}
+			if server.CallCount("POST", tt.wantPath) != 1 {
+				t.Errorf("expected 1 call to %s, got %d", tt.wantPath, server.CallCount("POST", tt.wantPath))
+			}
+		})
 	}
 }
 
 func TestReviewCmd_BodyFileStdin(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(123)
 
 	t.Run("reads review message from stdin via -F -", func(t *testing.T) {
 		reviewBody := "Detailed review summary:\n- Checked stack usage\n- Verified BUILD.gn parity"
@@ -403,10 +288,7 @@ func TestReviewCmd_BodyFileStdin(t *testing.T) {
 			t.Fatalf("cmd.Execute failed: %v", err)
 		}
 
-		var capturedInput gerrit.ReviewInput
-		if req := server.LastRequest(); req != nil {
-			json.Unmarshal(req.Body, &capturedInput)
-		}
+		capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 		if capturedInput.Message != reviewBody {
 			t.Errorf("got Message = %q, want %q", capturedInput.Message, reviewBody)
 		}

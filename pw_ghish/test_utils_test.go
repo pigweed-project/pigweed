@@ -1348,7 +1348,10 @@ func (s *MockGerritServer) OnSearchBuildsSequence(polls ...[]bbBuild) *MockGerri
 }
 
 // OnSearchBuildsByPatchset registers a SearchBuilds mock that dispatches by
-// the requested Gerrit patchset number in the Buildbucket predicate.
+// the single requested Gerrit patchset number in the Buildbucket predicate.
+// Requests with len(gerritChanges) != 1 or an unlisted patchset fail the test
+// with HTTP 400; callers expecting an empty result for a patchset should list
+// `ps: nil` explicitly.
 func (s *MockGerritServer) OnSearchBuildsByPatchset(byPS map[int][]bbBuild) *MockGerritServer {
 	return s.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
 		var req bbSearchBuildsRequest
@@ -1357,11 +1360,18 @@ func (s *MockGerritServer) OnSearchBuildsByPatchset(byPS map[int][]bbBuild) *Moc
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		var ps int
-		if len(req.Predicate.GerritChanges) > 0 {
-			ps = req.Predicate.GerritChanges[0].Patchset
+		if len(req.Predicate.GerritChanges) != 1 {
+			s.t.Errorf("OnSearchBuildsByPatchset: got %d gerritChanges, want 1", len(req.Predicate.GerritChanges))
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
-		builds := byPS[ps]
+		ps := req.Predicate.GerritChanges[0].Patchset
+		builds, ok := byPS[ps]
+		if !ok {
+			s.t.Errorf("OnSearchBuildsByPatchset: unexpected SearchBuilds call for patchset %d", ps)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		if builds == nil {
 			builds = []bbBuild{}
 		}
@@ -2010,6 +2020,7 @@ func TestMockGerritServer_HelpersAndRoutePrecedence(t *testing.T) {
 		s := NewMockGerritServer(t)
 		s.OnSearchBuildsByPatchset(map[int][]bbBuild{
 			2: {FakeBuild("20", "linux", "SUCCESS")},
+			3: nil,
 		})
 
 		postSearch := func(body string) (int, []bbBuild) {
@@ -2034,18 +2045,24 @@ func TestMockGerritServer_HelpersAndRoutePrecedence(t *testing.T) {
 		if status != http.StatusOK || len(builds) != 1 || builds[0].ID != "20" {
 			t.Errorf("patchset 2 = (%d, %+v), want 200 with build 20", status, builds)
 		}
-		status, builds = postSearch(`{"predicate":{"gerritChanges":[{"patchset":99}]}}`)
-		if status != http.StatusOK || len(builds) != 0 {
-			t.Errorf("unmatched patchset = (%d, %+v), want 200 with empty slice", status, builds)
+		status, builds = postSearch(`{"predicate":{"gerritChanges":[{"patchset":3}]}}`)
+		if status != http.StatusOK || builds == nil || len(builds) != 0 {
+			t.Errorf("listed nil patchset 3 = (%d, %#v), want 200 with empty non-nil slice", status, builds)
 		}
 
-		origT := s.t
-		fakeT := &testing.T{}
-		s.t = fakeT
-		status, _ = postSearch(`{malformed-json`)
-		s.t = origT
-		if status != http.StatusBadRequest || !fakeT.Failed() {
-			t.Errorf("malformed JSON = (status %d, failed=%v), want (400, true)", status, fakeT.Failed())
+		for _, badBody := range []string{
+			`{malformed-json`,
+			`{"predicate":{}}`,
+			`{"predicate":{"gerritChanges":[{"patchset":99}]}}`,
+		} {
+			origT := s.t
+			fakeT := &testing.T{}
+			s.t = fakeT
+			status, _ = postSearch(badBody)
+			s.t = origT
+			if status != http.StatusBadRequest || !fakeT.Failed() {
+				t.Errorf("postSearch(%s) = (status %d, failed=%v), want (400, true)", badBody, status, fakeT.Failed())
+			}
 		}
 	})
 }

@@ -15,93 +15,17 @@
 package pw_ghish
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"testing"
-	"text/template"
 	"time"
 
 	"github.com/andygrunwald/go-gerrit"
 	"github.com/google/go-cmp/cmp"
 )
-
-func TestDefaultViewTemplate(t *testing.T) {
-	data := map[string]any{
-		"number":    12345,
-		"patchset":  3,
-		"title":     "Test Subject",
-		"state":     "NEW",
-		"author":    "Test User",
-		"assignees": "Test User (attention), helper (cc)",
-		"reviewers": "Alice (attention), Bob",
-		"branch":    "main",
-		"project":   "test-project",
-		"topic":     "test-topic",
-		"labels": map[string]gerrit.LabelInfo{
-			"Code-Review": {
-				Approved: gerrit.AccountInfo{AccountID: 1},
-				// Only the keys are parsed; the descriptions are
-				// placeholders. Avoid Gerrit's real wording here, as its
-				// -2 text trips the submission-blocking phrase lint.
-				Values: map[string]string{
-					"-2": "Veto",
-					"-1": "Negative",
-					" 0": "No score",
-					"+1": "Positive",
-					"+2": "Approved",
-				},
-				All: []gerrit.ApprovalInfo{
-					{AccountInfo: gerrit.AccountInfo{AccountID: 1}, Value: 2},
-				},
-			},
-		},
-	}
-
-	tmpl, err := template.New("test").Funcs(template.FuncMap{
-		"getLabelSummary": getLabelSummary,
-		"hasScore":        hasScore,
-		"hasAnyScore":     hasAnyScore,
-		"printComments":   func(map[string][]gerrit.CommentInfo) string { return "" },
-	}).Parse(defaultViewTemplate)
-	if err != nil {
-		t.Fatalf("failed to parse defaultViewTemplate: %v", err)
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		t.Fatalf("failed to execute template: %v", err)
-	}
-
-	got := buf.String()
-	want := `Change 12345
-Subject: Test Subject
-Status:  NEW
-Owner:   Test User
-Patchset: 3
-Assignees: Test User (attention), helper (cc)
-Reviewers: Alice (attention), Bob
-Branch:  main
-Project: test-project
-Topic:   test-topic
-
-Labels:
-  Code-Review: +2 (Approved)`
-
-	// Normalize whitespace for easier comparison if needed, or check exact.
-	// Let's check exact but ignore leading/trailing newlines for robustness.
-	got = strings.TrimSpace(got)
-	want = strings.TrimSpace(want)
-
-	if got != want {
-		t.Errorf("template output mismatch\ngot:\n%s\nwant:\n%s", got, want)
-	}
-}
 
 // narrowLabel builds a LabelInfo for a label whose range is [low, high],
 // voted at value. Gerrit sets Approved/Rejected when a vote hits the label's
@@ -177,87 +101,41 @@ func TestGetLabelSummary(t *testing.T) {
 }
 
 func TestPrViewIntegration(t *testing.T) {
-	// Mock Gerrit response
-	mockChange := map[string]any{
-		"_number": 12345,
-		"subject": "Test Subject",
-		"status":  "NEW",
-		"owner": map[string]any{
-			"_account_id": 1,
-			"name":        "Test User",
-			"email":       "test@google.com",
-		},
-		"reviewers": map[string]any{
-			"REVIEWER": []any{
-				map[string]any{"_account_id": 2, "name": "Alice"},
-			},
-			"CC": []any{
-				map[string]any{"_account_id": 3, "name": "helper"},
-			},
-		},
-		"attention_set": map[string]any{
-			"2": map[string]any{"account": map[string]any{"_account_id": 2, "name": "Alice"}},
-		},
-		"branch":           "main",
-		"project":          "test-project",
-		"topic":            "test-topic",
-		"hashtags":         []any{"feature-x", "infra"},
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{
-				"_number": 3,
-				"commit": map[string]any{
-					"subject": "Test Subject",
-					"message": "Test Subject\n\nThis is the detailed commit body.\n",
-				},
-			},
-		},
-		"labels": map[string]any{
-			"Code-Review": map[string]any{
-				"approved": map[string]any{
-					"account_id": 1,
-				},
-			},
-			"Lint": map[string]any{},
-		},
-	}
-
-	mockAbandonedChange := map[string]any{
-		"_number": 67890,
-		"subject": "Abandoned Subject",
-		"status":  "ABANDONED",
-		"owner": map[string]any{
-			"_account_id": 1,
-			"name":        "Test User",
-			"email":       "test@google.com",
-		},
-		"current_revision": "deadbeef1234567890abcdef1234567890abcdef",
-		"revisions": map[string]any{
-			"deadbeef1234567890abcdef1234567890abcdef": map[string]any{
-				"_number": 1,
-			},
-		},
-		"branch":  "main",
-		"project": "test-project",
-	}
-
+	owner := map[string]any{"_account_id": 1, "name": "Test User", "email": "test@google.com"}
 	server := NewMockGerritServer(t)
-	server.On("GET", "/changes/12345", func(w http.ResponseWriter, r *http.Request) {
-		wantOpts := []string{"DETAILED_LABELS", "ALL_REVISIONS", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
-		if diff := cmp.Diff(wantOpts, r.URL.Query()["o"]); diff != "" {
-			t.Errorf("options mismatch (-want +got):\n%s", diff)
-		}
-		server.RespondJSON(w, http.StatusOK, mockChange)
-	})
-	server.On("GET", "/changes/67890", func(w http.ResponseWriter, r *http.Request) {
-		wantOpts := []string{"DETAILED_LABELS", "ALL_REVISIONS", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
-		if diff := cmp.Diff(wantOpts, r.URL.Query()["o"]); diff != "" {
-			t.Errorf("options mismatch (-want +got):\n%s", diff)
-		}
-		server.RespondJSON(w, http.StatusOK, mockAbandonedChange)
-	})
-	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/67890/revisions/current/files*", http.StatusOK, map[string]any{})
+	server.OnDefaultChange(12345,
+		WithSubject("Test Subject"),
+		WithCurrentPatchset(3),
+		WithProjectName("test-project"),
+		WithCommitMessage("Test Subject\n\nThis is the detailed commit body.\n"),
+		func(ch map[string]any) {
+			ch["owner"] = owner
+			ch["topic"] = "test-topic"
+			ch["hashtags"] = []string{"feature-x", "infra"}
+			ch["reviewers"] = map[string]any{
+				"REVIEWER": []any{map[string]any{"_account_id": 2, "name": "Alice"}},
+				"CC":       []any{map[string]any{"_account_id": 3, "name": "helper"}},
+			}
+			ch["attention_set"] = map[string]any{
+				"2": map[string]any{"account": map[string]any{"_account_id": 2, "name": "Alice"}},
+			}
+			ch["labels"] = map[string]any{
+				"Code-Review": map[string]any{
+					"approved": map[string]any{"_account_id": 1},
+					"values":   map[string]string{"-2": "Veto", "-1": "Negative", " 0": "No score", "+1": "Positive", "+2": "Approved"},
+					"all":      []any{map[string]any{"_account_id": 1, "value": 2}},
+				},
+				"Lint": map[string]any{},
+			}
+		},
+	)
+	server.OnDefaultChange(67890,
+		WithSubject("Abandoned Subject"),
+		WithStatus("ABANDONED"),
+		WithProjectName("test-project"),
+		func(ch map[string]any) { ch["owner"] = owner },
+	)
+	server.OnJSON("GET", "/changes/*/revisions/current/files*", http.StatusOK, map[string]any{})
 
 	oldJSON := jsonOutputFields
 	defer func() { jsonOutputFields = oldJSON }()
@@ -280,13 +158,14 @@ func TestPrViewIntegration(t *testing.T) {
 				"Owner:   Test User",
 				"Assignees: Test User, helper (cc)",
 				"Reviewers: Alice (attention)",
+				"Branch:  main",
+				"Project: test-project",
 				"Topic:   test-topic",
 				"Hashtags: feature-x, infra",
+				"Labels:\n  Code-Review: +2 (Approved)",
 				"This is the detailed commit body.",
 			},
-			dontCont: []string{
-				"Lint: No score",
-			},
+			dontCont: []string{"Lint: No score"},
 		},
 		{
 			name:     "json output",
@@ -341,33 +220,10 @@ func TestPrViewIntegration(t *testing.T) {
 			}
 		})
 	}
-}
 
-func TestView_WritesToCmdOut(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
-		"project": "test-project",
-		"_number": 12345,
-		"subject": "View Subject",
-		"status":  "NEW",
-		"owner": map[string]any{
-			"name": "Test User",
-		},
-	})
-
-	var buf bytes.Buffer
-	isolateRootCmdForTest(t)
-	RootCmd.SetOut(&buf)
-	RootCmd.SetErr(&buf)
-	RootCmd.SetArgs([]string{"pr", "view", "12345"})
-
-	if err := RootCmd.Execute(); err != nil {
-		t.Fatalf("RootCmd.Execute() failed: %v", err)
-	}
-
-	if !strings.Contains(buf.String(), "Change 12345") || !strings.Contains(buf.String(), "View Subject") {
-		t.Errorf("Expected buf to receive rendered output, got:\n%s", buf.String())
+	wantOpts := []string{"DETAILED_LABELS", "ALL_REVISIONS", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
+	if diff := cmp.Diff(wantOpts, server.Requests()[0].URL.Query()["o"]); diff != "" {
+		t.Errorf("options mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -387,36 +243,11 @@ func TestView_ErrorWhenNotFound(t *testing.T) {
 func TestView_DefaultActivePR(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e", http.StatusOK, gerrit.ChangeInfo{
-		ChangeID: "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-		Number:   472267,
-		Subject:  "Default Active PR Subject",
-		Status:   "NEW",
-		Branch:   "main",
-		Project:  "test-project",
-	})
+	server.OnDefaultChange(472267, WithChangeID("Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e"), WithSubject("Default Active PR Subject"))
 
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "branch" && args[1] == "--show-current" {
-				stdout.Write([]byte("my-feature\n"))
-				return nil
-			}
-			if len(args) >= 3 && args[0] == "log" && args[1] == "-1" {
-				stdout.Write([]byte("commit msg\n\nChange-Id: Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e\n"))
-				return nil
-			}
-			return nil
-		},
-	}
-	SetMockGit(t, mockGit)
-
-	cfg := &Config{
-		Git:  mockGit,
-		Host: server.URL,
-	}
-	SetConfig(RootCmd, cfg)
-	defer SetConfig(RootCmd, nil)
+	NewMockGit(t).
+		WithBranch("my-feature").
+		WithCommit("commit msg\n\nChange-Id: Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e\n")
 
 	out, err := executeCommand(RootCmd, "pr", "view")
 	if err != nil {
@@ -429,26 +260,10 @@ func TestView_DefaultActivePR(t *testing.T) {
 }
 
 func TestView_NoActivePR_Error(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "branch" && args[1] == "--show-current" {
-				stdout.Write([]byte("main\n"))
-				return nil
-			}
-			if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-				stdout.Write([]byte("0\n"))
-				return nil
-			}
-			return nil
-		},
-	}
-	SetMockGit(t, mockGit)
-
-	cfg := &Config{
-		Git: mockGit,
-	}
-	SetConfig(RootCmd, cfg)
-	defer SetConfig(RootCmd, nil)
+	NewMockGit(t).
+		WithBranch("main").
+		WithCommit("commit without change-id\n").
+		OnCommand("rev-list --count", "0\n")
 
 	_, err := executeCommand(RootCmd, "pr", "view")
 	if err == nil {
@@ -550,42 +365,13 @@ func TestFormatCheckSummary(t *testing.T) {
 func TestView_DisplaysChecks_Failing(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"project":          "pigweed/pigweed",
-		"_number":          12345,
-		"subject":          "Check Failing View Test",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{
-				"_number": 1,
-			},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "1",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-lint",
-				},
-				"status": "FAILURE",
-			},
-			{
-				"id": "2",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-build",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Check Failing View Test")).
+		OnSearchBuilds(
+			FakeBuild("1", "pigweed-lint", "FAILURE"),
+			FakeBuild("2", "pigweed-build", "SUCCESS"),
+		)
 
-	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "pr", "view", "12345")
 	if err != nil {
 		t.Fatalf("pr view failed: %v\nOutput: %s", err, output)
 	}
@@ -598,33 +384,10 @@ func TestView_DisplaysChecks_Failing(t *testing.T) {
 func TestView_JSON_Checks(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"project":          "pigweed/pigweed",
-		"_number":          12345,
-		"subject":          "Check JSON View Test",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{
-				"_number": 1,
-			},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "1",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-build",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Check JSON View Test")).
+		OnSearchBuilds(FakeBuild("1", "pigweed-build", "SUCCESS"))
 
-	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--buildbucket-host", server.URL, "--json", "number,checks")
+	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--json", "number,checks")
 	if err != nil {
 		t.Fatalf("pr view failed: %v\nOutput: %s", err, output)
 	}
@@ -644,16 +407,7 @@ func TestView_JSON_Checks(t *testing.T) {
 func TestView_WebBrowserOpen(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"project":          "pigweed/pigweed",
-		"_number":          12345,
-		"subject":          "Web View Test",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Web View Test"))
 
 	var openedURL string
 	oldOpenBrowser := OpenBrowserFn
@@ -682,19 +436,7 @@ func bugViewServer(t *testing.T, commitMsg string) *MockGerritServer {
 	t.Helper()
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"project":          "pigweed/pigweed",
-		"_number":          12345,
-		"subject":          "pw_foo: Add bar",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{
-				"_number": 1,
-				"commit":  map[string]any{"message": commitMsg},
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("pw_foo: Add bar"), WithCommitMessage(commitMsg))
 	return server
 }
 
@@ -820,19 +562,7 @@ func TestView_WithoutCommitMessageStillViewsOtherFields(t *testing.T) {
 func TestView_NonexistentRevisionError(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"project":          "pigweed/pigweed",
-		"_number":          12345,
-		"subject":          "Revision Error Test",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{
-				"_number": 1,
-				"commit":  map[string]any{"message": "pw_foo: Add bar\n\nChange-Id: I1234\n"},
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Revision Error Test"), WithCommitMessage("pw_foo: Add bar\n\nChange-Id: I1234\n"))
 
 	_, err := executeCommand(RootCmd, "pr", "view", "12345/99")
 	if err == nil {
@@ -846,7 +576,7 @@ func TestView_NonexistentRevisionError(t *testing.T) {
 func TestView_CommentsAndDrafts(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345/comments", http.StatusOK, map[string]any{
+	server.OnComments(12345, map[string]any{
 		"pw_ring_buffer/ring_buffer.cc": []map[string]any{
 			{
 				"id":         "pub_1",
@@ -858,7 +588,7 @@ func TestView_CommentsAndDrafts(t *testing.T) {
 			},
 		},
 	})
-	server.OnJSON("GET", "/changes/12345/drafts", http.StatusOK, map[string]any{
+	server.OnDrafts(12345, map[string]any{
 		"pw_ring_buffer/ring_buffer.cc": []map[string]any{
 			{
 				"id":          "draft_1",
@@ -879,19 +609,7 @@ func TestView_CommentsAndDrafts(t *testing.T) {
 			},
 		},
 	})
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"project":          "pigweed/pigweed",
-		"_number":          12345,
-		"subject":          "Drafts View Test",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{
-				"_number": 2,
-				"commit":  map[string]any{"message": "pw_ring_buffer: Test\n\nChange-Id: I1234\n"},
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Drafts View Test"), WithCurrentPatchset(2), WithCommitMessage("pw_ring_buffer: Test\n\nChange-Id: I1234\n"))
 
 	t.Run("terminal output renders published comments and drafts", func(t *testing.T) {
 		output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
@@ -945,18 +663,7 @@ func TestView_CommentsAndDrafts(t *testing.T) {
 func TestView_EmptyCommentsShowsNone(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345/comments", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345/drafts", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"project":          "pigweed/pigweed",
-		"_number":          12345,
-		"subject":          "No Comments Test",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
+	server.OnComments(12345, nil).OnDrafts(12345, nil).OnDefaultChange(12345, WithSubject("No Comments Test"))
 
 	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
 	if err != nil {
@@ -970,8 +677,7 @@ func TestView_EmptyCommentsShowsNone(t *testing.T) {
 func TestView_OnlyDrafts_RendersCommentsSection(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345/comments", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/12345/drafts", http.StatusOK, map[string]any{
+	server.OnComments(12345, nil).OnDrafts(12345, map[string]any{
 		"foo.cc": []map[string]any{
 			{
 				"id":         "draft_only",
@@ -981,17 +687,7 @@ func TestView_OnlyDrafts_RendersCommentsSection(t *testing.T) {
 				"message":    "Private steering note",
 			},
 		},
-	})
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"project":          "pigweed/pigweed",
-		"_number":          12345,
-		"subject":          "Only Drafts Test",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
+	}).OnDefaultChange(12345, WithSubject("Only Drafts Test"))
 
 	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
 	if err != nil {
@@ -1006,20 +702,11 @@ func TestView_ErrorWhenDraftsOrFilesFail(t *testing.T) {
 	t.Run("fails when ListChangeDrafts fails during --comments", func(t *testing.T) {
 		server := NewMockGerritServer(t)
 		server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
-		server.OnJSON("GET", "/changes/12345/comments", http.StatusOK, map[string]any{})
+		server.OnComments(12345, nil)
 		server.On("GET", "/changes/12345/drafts", func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Drafts DB error", http.StatusInternalServerError)
 		})
-		server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-			"project":          "pigweed/pigweed",
-			"_number":          12345,
-			"subject":          "Drafts Error Test",
-			"status":           "NEW",
-			"current_revision": "rev1",
-			"revisions": map[string]any{
-				"rev1": map[string]any{"_number": 1},
-			},
-		})
+		server.OnDefaultChange(12345, WithSubject("Drafts Error Test"))
 
 		_, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
 		if err == nil {
@@ -1035,16 +722,7 @@ func TestView_ErrorWhenDraftsOrFilesFail(t *testing.T) {
 		server.On("GET", "/changes/12345/revisions/current/files*", func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Files DB error", http.StatusInternalServerError)
 		})
-		server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-			"project":          "pigweed/pigweed",
-			"_number":          12345,
-			"subject":          "Files Error Test",
-			"status":           "NEW",
-			"current_revision": "rev1",
-			"revisions": map[string]any{
-				"rev1": map[string]any{"_number": 1},
-			},
-		})
+		server.OnDefaultChange(12345, WithSubject("Files Error Test"))
 
 		_, err := executeCommand(RootCmd, "pr", "view", "12345", "--json", "files")
 		if err == nil {
@@ -1134,18 +812,9 @@ func TestView_Wave1ParallelPrefetch_CommentsAndDrafts(t *testing.T) {
 func TestView_Comments_SuppressesResolvedThreadsAndAllFlag(t *testing.T) {
 	registerMockChange := func(srv *MockGerritServer, changeID int, subject string, ps int, comments map[string]any) {
 		srv.OnJSON("GET", fmt.Sprintf("/changes/%d/revisions/current/files*", changeID), http.StatusOK, map[string]any{})
-		srv.OnJSON("GET", fmt.Sprintf("/changes/%d/comments", changeID), http.StatusOK, comments)
-		srv.OnJSON("GET", fmt.Sprintf("/changes/%d/drafts", changeID), http.StatusOK, map[string]any{})
-		srv.OnJSON("GET", fmt.Sprintf("/changes/%d*", changeID), http.StatusOK, map[string]any{
-			"project":          "pigweed/pigweed",
-			"_number":          changeID,
-			"subject":          subject,
-			"status":           "NEW",
-			"current_revision": "rev1",
-			"revisions": map[string]any{
-				"rev1": map[string]any{"_number": ps},
-			},
-		})
+		srv.OnComments(changeID, comments)
+		srv.OnDrafts(changeID, map[string]any{})
+		srv.OnDefaultChange(changeID, WithSubject(subject), WithCurrentPatchset(ps))
 	}
 
 	server := NewMockGerritServer(t)

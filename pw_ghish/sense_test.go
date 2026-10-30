@@ -21,8 +21,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 func TestParseSenseTargetArg(t *testing.T) {
@@ -85,72 +83,47 @@ func TestSense_CrankChatThread(t *testing.T) {
 }
 
 func TestSense_DriveActiveCL_UnresolvedAndSelfDraftsAndFailingChecks(t *testing.T) {
+	const cid = "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e"
 	server := NewMockGerritServer(t)
-	activeChange := gerrit.ChangeInfo{
-		ChangeID:        "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-		Number:          472267,
-		Project:         "pigweed/pigweed",
-		Subject:         "pw_rpc: Fix channel packet framing",
-		Status:          "NEW",
-		Branch:          "main",
-		CurrentRevision: "rev2",
-		Revisions: map[string]gerrit.RevisionInfo{
-			"rev2": {Number: 2},
-		},
-		Labels: map[string]gerrit.LabelInfo{
-			"Commit-Queue": {
-				All: []gerrit.ApprovalInfo{
-					{Value: 1},
+	server.OnDefaultChange(472267,
+		WithChangeID(cid),
+		WithSubject("pw_rpc: Fix channel packet framing"),
+		WithCurrentPatchset(2),
+		func(ch map[string]any) {
+			ch["labels"] = map[string]any{
+				"Commit-Queue": map[string]any{
+					"all": []map[string]any{{"value": 1}},
 				},
-			},
+			}
 		},
-	}
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, activeChange)
-	server.OnJSON("GET", "/changes/*/comments", http.StatusOK, map[string][]gerrit.CommentInfo{
-		"pw_rpc/channel.cc": {
+	)
+	server.OnComments("*", map[string]any{
+		"pw_rpc/channel.cc": []map[string]any{
 			{
-				ID:         "c1",
-				Line:       88,
-				PatchSet:   2,
-				Unresolved: boolPtr(true),
-				Author:     gerrit.AccountInfo{Email: "reviewer@example.com"},
-				Message:    "Check buffer bounds before copying.",
+				"id":         "c1",
+				"line":       88,
+				"patch_set":  2,
+				"unresolved": true,
+				"author":     map[string]any{"email": "reviewer@example.com"},
+				"message":    "Check buffer bounds before copying.",
 			},
 		},
 	})
-	server.OnJSON("GET", "/changes/*/drafts", http.StatusOK, map[string][]gerrit.CommentInfo{
-		"pw_rpc/channel_test.cc": {
+	server.OnDrafts("*", map[string]any{
+		"pw_rpc/channel_test.cc": []map[string]any{
 			{
-				ID:         "d_self",
-				Line:       42,
-				PatchSet:   2,
-				Unresolved: boolPtr(true),
-				Message:    "Add negative test for zero-length packet here.",
+				"id":         "d_self",
+				"line":       42,
+				"patch_set":  2,
+				"unresolved": true,
+				"message":    "Add negative test for zero-length packet here.",
 			},
 		},
 	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "870001",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-linux-bazel",
-				},
-				"status": "FAILURE",
-			},
-			{
-				"id": "870002",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-linux-gn",
-				},
-				"status": "STARTED",
-			},
-		},
-	})
+	server.OnSearchBuilds(
+		FakeBuild("870001", "pigweed-linux-bazel", "FAILURE", WithBuildProject("pigweed"), WithBucket("try")),
+		FakeBuild("870002", "pigweed-linux-gn", "STARTED", WithBuildProject("pigweed"), WithBucket("try")),
+	)
 
 	gitRunner := &MockGitRunner{}
 	SetupMockConfig(t, gitRunner)
@@ -278,21 +251,12 @@ func TestSense_CrankBug_WithParkedWorktree_AndComments(t *testing.T) {
 
 func TestSense_AdoptCL_And_StatusCard(t *testing.T) {
 	server := NewMockGerritServer(t)
-	targetChange := gerrit.ChangeInfo{
-		ChangeID:        "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-		Number:          472267,
-		Project:         "pigweed/pigweed",
-		Subject:         "pw_string: Add InlineString constructor",
-		Status:          "NEW",
-		Branch:          "main",
-		CurrentRevision: "rev1",
-		Revisions: map[string]gerrit.RevisionInfo{
-			"rev1": {Number: 1},
-		},
-	}
-	server.OnJSON("GET", "/changes/472267*", http.StatusOK, targetChange)
-	server.OnJSON("GET", "/changes/*/comments", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/*/drafts", http.StatusOK, map[string]any{})
+	server.OnDefaultChange(472267,
+		WithChangeID("Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e"),
+		WithSubject("pw_string: Add InlineString constructor"),
+	)
+	server.OnComments("*", nil)
+	server.OnDrafts("*", nil)
 
 	gitRunner := &MockGitRunner{}
 	SetupMockConfig(t, gitRunner)
@@ -320,7 +284,6 @@ func TestSense_AdoptCL_And_StatusCard(t *testing.T) {
 	gitRunner.OnCommand("branch --show-current", "inline-string-ctor\n")
 	gitRunner.OnCommand("log -1 --format=%B HEAD", "pw_string: Add InlineString constructor\n\nChange-Id: Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e\n")
 	gitRunner.OnCommand("rev-list --left-right --count origin/main...HEAD", "0\t1\n")
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, targetChange)
 
 	outCheckedOut, err := executeCommand(RootCmd, "sense", "pwrev/472267", "--json")
 	if err != nil {
@@ -701,30 +664,18 @@ func TestSense_MultiProjectAndShortlinkNeutrality(t *testing.T) {
 
 	// 3. Running `gh sense --profile fuchsia` with custom git config remote/branch uses upstream/trunk, fxrev/, and fxb/.
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/accounts/self*", http.StatusOK, gerrit.AccountInfo{
-		AccountID: 1001,
-		Name:      "Fuchsia Author",
-		Email:     "author@fuchsia.dev",
-	})
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, gerrit.ChangeInfo{
-		ID:              "fuchsia~trunk~Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-		Project:         "fuchsia",
-		Branch:          "trunk",
-		ChangeID:        "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-		Subject:         "[zircon] Fix handle table race",
-		Status:          "NEW",
-		Number:          888777,
-		CurrentRevision: "rev1",
-		Owner: gerrit.AccountInfo{
-			Name:  "Fuchsia Author",
-			Email: "author@fuchsia.dev",
+	server.OnAccountSelf(1001)
+	server.OnDefaultChange(888777,
+		WithProjectName("fuchsia"),
+		WithBranch("trunk"),
+		WithChangeID("Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e"),
+		WithSubject("[zircon] Fix handle table race"),
+		func(ch map[string]any) {
+			ch["owner"] = AccountInfo{Name: "Fuchsia Author", Email: "author@fuchsia.dev"}
 		},
-		Revisions: map[string]gerrit.RevisionInfo{
-			"rev1": {Number: 1},
-		},
-	})
-	server.OnJSON("GET", "/changes/*/comments", http.StatusOK, map[string][]gerrit.CommentInfo{})
-	server.OnJSON("GET", "/changes/*/drafts", http.StatusOK, map[string][]gerrit.CommentInfo{})
+	)
+	server.OnComments("*", nil)
+	server.OnDrafts("*", nil)
 
 	gitRunner := &MockGitRunner{}
 	SetupMockConfig(t, gitRunner)
@@ -761,10 +712,7 @@ func TestSense_MultiProjectAndShortlinkNeutrality(t *testing.T) {
 
 func TestSense_NoSilentFailures(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/accounts/self*", http.StatusOK, gerrit.AccountInfo{
-		AccountID: 1001,
-		Email:     "dev@example.com",
-	})
+	server.OnAccountSelf(1001)
 	server.OnJSON("GET", "/changes/*", http.StatusInternalServerError, map[string]string{
 		"error": "internal Gerrit storage error",
 	})

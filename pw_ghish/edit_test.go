@@ -15,14 +15,13 @@
 package pw_ghish
 
 import (
-	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/andygrunwald/go-gerrit"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestEdit_HelpHidesCommitMessageFlags(t *testing.T) {
@@ -113,7 +112,7 @@ func TestEdit_InvalidLabel(t *testing.T) {
 		t.Run(tc.label, func(t *testing.T) {
 			server := NewMockGerritServer(t)
 			server.OnJSON("POST", "/changes/12345/reviewers", http.StatusOK, map[string]any{})
-			server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+			server.OnReview(12345)
 
 			_, err := executeCommand(
 				RootCmd,
@@ -137,7 +136,7 @@ func TestEdit_InvalidLabel(t *testing.T) {
 
 func TestEditAddLabel(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(12345)
 
 	output, err := executeCommand(
 		RootCmd,
@@ -159,10 +158,7 @@ func TestEditAddLabel(t *testing.T) {
 		t.Errorf("Unexpected output: %s", output)
 	}
 
-	var payload gerrit.ReviewInput
-	if err := json.Unmarshal(server.LastRequest().Body, &payload); err != nil {
-		t.Fatalf("Failed to decode review payload: %v", err)
-	}
+	payload := DecodeRequest[ReviewInput](t, server.LastRequest())
 	wantLabels := map[string]int{
 		"Code-Review":         -1,
 		"Verified":            -1,
@@ -213,7 +209,7 @@ func TestEditRemoveMultipleReviewers(t *testing.T) {
 func TestEditAddAssignee(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("POST", "/changes/12345/reviewers", http.StatusOK, map[string]any{})
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(12345)
 
 	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--add-assignee", "helper@google.com")
 	if err != nil {
@@ -232,18 +228,6 @@ func TestEditAddAssignee(t *testing.T) {
 	}
 }
 
-// attentionRequestInput decodes the AttentionSetInput sent in req.
-func attentionRequestInput(t *testing.T, req MockRequest) gerrit.AttentionSetInput {
-	t.Helper()
-	var input gerrit.AttentionSetInput
-	if len(req.Body) > 0 {
-		if err := json.Unmarshal(req.Body, &input); err != nil {
-			t.Fatalf("failed to decode attention set input %q: %v", req.Body, err)
-		}
-	}
-	return input
-}
-
 func TestEditAddAttention(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("POST", "/changes/12345/attention", http.StatusOK, map[string]any{"_account_id": 1})
@@ -259,7 +243,7 @@ func TestEditAddAttention(t *testing.T) {
 		if req.Method != "POST" || req.Path != "/changes/12345/attention" {
 			continue
 		}
-		input := attentionRequestInput(t, req)
+		input := DecodeRequest[AttentionSetInput](t, &req)
 		if input.Reason == "" {
 			t.Errorf("attention set input for %q has no reason; Gerrit requires one", input.User)
 		}
@@ -320,7 +304,7 @@ func TestEditAttentionMeMeansSelf(t *testing.T) {
 			if req == nil || req.Path != "/changes/12345/attention" {
 				t.Fatalf("--add-attention %s: last request = %+v, want POST /changes/12345/attention", alias, req)
 			}
-			if got := attentionRequestInput(t, *req).User; got != "self" {
+			if got := DecodeRequest[AttentionSetInput](t, req).User; got != "self" {
 				t.Errorf("--add-attention %s: user = %q, want %q", alias, got, "self")
 			}
 		})
@@ -401,95 +385,85 @@ func TestEdit_Hashtags(t *testing.T) {
 	}
 }
 
-func TestEdit_CQ_Default(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--cq", "--host", server.URL)
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+func TestEdit_CQAndTrigger(t *testing.T) {
+	tests := []struct {
+		name         string
+		changeLabels []string
+		args         []string
+		wantOut      string
+		wantLabels   map[string]int
+	}{
+		{
+			name:         "cq default",
+			changeLabels: []string{"Code-Review", "Commit-Queue"},
+			args:         []string{"--cq"},
+			wantOut:      "Commit-Queue+1 set successfully.",
+			wantLabels:   map[string]int{"Commit-Queue": 1},
+		},
+		{
+			name:         "cq explicit",
+			changeLabels: []string{"Code-Review", "Commit-Queue"},
+			args:         []string{"--cq", "2"},
+			wantOut:      "Commit-Queue+2 set successfully.",
+			wantLabels:   map[string]int{"Commit-Queue": 2},
+		},
+		{
+			name:         "cq remove",
+			changeLabels: []string{"Code-Review", "Commit-Queue"},
+			args:         []string{"--cq", "0"},
+			wantOut:      "Commit-Queue vote removed successfully.",
+			wantLabels:   map[string]int{"Commit-Queue": 0},
+		},
+		{
+			name:         "cq falls back to Commit-Queue when change lookup 404s",
+			changeLabels: nil,
+			args:         []string{"--cq"},
+			wantOut:      "Commit-Queue+1 set successfully.",
+			wantLabels:   map[string]int{"Commit-Queue": 1},
+		},
+		{
+			name:         "cq uses Presubmit-Ready when no Commit-Queue",
+			changeLabels: []string{"Code-Review", "Presubmit-Ready"},
+			args:         []string{"--cq"},
+			wantOut:      "Presubmit-Ready+1 set successfully.",
+			wantLabels:   map[string]int{"Presubmit-Ready": 1},
+		},
+		{
+			name:         "trigger default",
+			changeLabels: []string{"Code-Review", "Presubmit-Ready"},
+			args:         []string{"--trigger"},
+			wantOut:      "Presubmit-Ready+1 set successfully.",
+			wantLabels:   map[string]int{"Presubmit-Ready": 1},
+		},
+		{
+			name:         "trigger explicit",
+			changeLabels: []string{"Code-Review", "Commit-Queue"},
+			args:         []string{"--trigger=2"},
+			wantOut:      "Commit-Queue+2 set successfully.",
+			wantLabels:   map[string]int{"Commit-Queue": 2},
+		},
 	}
 
-	if server.CallCount("POST", "/changes/12345/revisions/current/review") != 1 {
-		t.Errorf("Expected review API to be called, got calls: %v", server.Requests())
-	}
-	if !strings.Contains(output, "Commit-Queue+1 set successfully.") {
-		t.Errorf("Unexpected output: %s", output)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := NewMockGerritServer(t)
+			if len(tt.changeLabels) > 0 {
+				server.OnDefaultChange(12345, WithLabels(tt.changeLabels...))
+			}
+			server.OnReview(12345)
 
-	var payload gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &payload)
-	}
-	if payload.Labels["Commit-Queue"] != 1 {
-		t.Errorf("got Commit-Queue = %d, want 1", payload.Labels["Commit-Queue"])
-	}
-}
-
-func TestEdit_CQ_Explicit(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--cq", "2", "--host", server.URL)
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	if !strings.Contains(output, "Commit-Queue+2 set successfully.") {
-		t.Errorf("Unexpected output: %s", output)
-	}
-
-	var payload gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &payload)
-	}
-	if payload.Labels["Commit-Queue"] != 2 {
-		t.Errorf("got Commit-Queue = %d, want 2", payload.Labels["Commit-Queue"])
-	}
-}
-
-func TestEdit_CQ_Remove(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--cq", "0", "--host", server.URL)
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	if !strings.Contains(output, "Commit-Queue vote removed successfully.") {
-		t.Errorf("Unexpected output: %s", output)
-	}
-
-	var payload gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &payload)
-	}
-	if payload.Labels["Commit-Queue"] != 0 {
-		t.Errorf("got Commit-Queue = %d, want 0", payload.Labels["Commit-Queue"])
-	}
-}
-
-func TestEdit_CQ_UsesPresubmitReadyWhenNoCommitQueue(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(12345, WithLabels("Code-Review", "Presubmit-Ready"))
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--cq", "--host", server.URL)
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	if !strings.Contains(output, "Presubmit-Ready+1 set successfully.") {
-		t.Errorf("Unexpected output: %s", output)
-	}
-
-	var payload gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &payload)
-	}
-	if payload.Labels["Presubmit-Ready"] != 1 {
-		t.Errorf("got Presubmit-Ready = %d, want 1 (labels: %v)", payload.Labels["Presubmit-Ready"], payload.Labels)
+			output, err := executeCommand(RootCmd, append([]string{"pr", "edit", "12345"}, tt.args...)...)
+			if err != nil {
+				t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+			}
+			if !strings.Contains(output, tt.wantOut) {
+				t.Errorf("Unexpected output: %s, want %q", output, tt.wantOut)
+			}
+			payload := DecodeRequest[ReviewInput](t, server.LastRequest())
+			if diff := cmp.Diff(tt.wantLabels, payload.Labels); diff != "" {
+				t.Errorf("labels mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -583,34 +557,12 @@ func TestEdit_TopicForbiddenBySubmitRequirement(t *testing.T) {
 	}
 }
 
-func TestEdit_Trigger_DefaultAndExplicit(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(12345, WithLabels("Code-Review", "Presubmit-Ready"))
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "edit", "12345", "--trigger", "--host", server.URL)
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-	if !strings.Contains(output, "Presubmit-Ready+1 set successfully.") {
-		t.Errorf("Unexpected output: %s", output)
-	}
-
-	var payload gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &payload)
-	}
-	if payload.Labels["Presubmit-Ready"] != 1 {
-		t.Errorf("got Presubmit-Ready = %d, want 1", payload.Labels["Presubmit-Ready"])
-	}
-}
-
 func TestNewEditCmd_IsolatesOptionsAcrossInstances(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
 	server.OnJSON("POST", "/changes/12345/hashtags", http.StatusOK, []string{"alpha"})
 	server.OnJSON("PUT", "/changes/12345/topic", http.StatusOK, `"first-topic"`)
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(12345)
 
 	cmd1 := newEditCmd()
 	cmd1.SetArgs([]string{"12345", "--add-hashtag", "alpha", "--topic", "first-topic"})

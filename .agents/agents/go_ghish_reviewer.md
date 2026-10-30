@@ -72,6 +72,11 @@ checklist** in `pw_ghish/developing.rst`:
    gh-compatible `--json <fields>` flags reject unknown fields via
    `UnknownJSONFieldsError`.
 
+## Tests
+
+Verify test changes against `pw_ghish/AGENTS.md` §11 (`MOCK TESTS vs. GERRIT
+REALITY`).
+
 ## Workflow
 
 Read and follow `.agents/skills/review/reviewer_workflow.md`.

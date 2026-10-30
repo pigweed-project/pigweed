@@ -218,42 +218,13 @@ func isolatePerfGitEnv(t *testing.T) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", globalCfg)
 	t.Setenv("GIT_DEFAULT_REF_FORMAT", "files")
+	t.Setenv("GHISH_QUOTA_PROJECT", "")
+	t.Setenv("GOOGLE_CLOUD_QUOTA_PROJECT", "")
 }
 
 // perfChangeID is the Change-Id trailer of HEAD in the perf fixture repo; the
 // mock Gerrit change carries the same ID so branch-to-change inference works.
 const perfChangeID = "I0123456789abcdef0123456789abcdef01234567"
-
-// newPerfFixture builds a real git repository bound to the CLI (so every git
-// invocation is a real, counted subprocess) on a feature branch whose HEAD
-// carries perfChangeID, and a mock Gerrit/Buildbucket server answering every
-// read RPC issued by the budgeted commands.
-func newPerfFixture(t *testing.T) (gerritReqs, issueReqs *requestCounter) {
-	t.Helper()
-	isolatePerfGitEnv(t)
-	newKindSmokeGitRepo(t)
-
-	s := NewMockGerritServer(t)
-	installKindSmokeGerrit(s,
-		FakeBuild("87654321001", "linux-bazel", "SUCCESS"),
-		FakeBuild("87654321002", "linux-gn", "FAILURE"),
-	)
-
-	issues := NewMockIssueTrackerServer(t)
-	// Use the real (network-free) git-config quota project lookup instead of
-	// the mock's canned provider so its git calls are counted too.
-	resetQuotaProjectCacheForTest(t)
-	old := NewIssueTrackerClientForCommand
-	NewIssueTrackerClientForCommand = func(context.Context, *cobra.Command) (*IssueTrackerClient, error) {
-		c := issues.Client()
-		c.QuotaProjectProvider = ConfiguredIssueTrackerQuotaProject
-		return c, nil
-	}
-	t.Cleanup(func() { NewIssueTrackerClientForCommand = old })
-	seedKindSmokeIssue(issues)
-
-	return countRequests(t, s.Server), countRequests(t, issues.Server)
-}
 
 // commandBudget pins the exact deterministic cost of one CLI invocation.
 type commandBudget struct {
@@ -306,22 +277,33 @@ var perfBudgetPins = []commandBudget{
 func TestPerfBudget_Commands(t *testing.T) {
 	for _, b := range perfBudgetPins {
 		t.Run(b.name, func(t *testing.T) {
-			reqs, issueReqs := newPerfFixture(t)
-			var out string
-			var err error
-			n, calls := countSubprocesses(t, func() {
-				out, err = executeCommand(RootCmd, b.args...)
-			})
-			if err != nil && !b.allowErr {
-				t.Fatalf("executeCommand(%v) failed: %v\nOutput:\n%s", b.args, err, out)
+			f := NewKindSmokeFixture(t)
+			f.gerrit.OnSearchBuilds(
+				FakeBuild("87654321001", "linux-bazel", "SUCCESS"),
+				FakeBuild("87654321002", "linux-gn", "FAILURE"),
+			)
+			// Use the real (network-free) git-config quota project lookup
+			// instead of the mocks' canned provider so its git calls are
+			// counted too.
+			prevNewIT := NewIssueTrackerClientForCommand
+			NewIssueTrackerClientForCommand = func(ctx context.Context, cmd *cobra.Command) (*IssueTrackerClient, error) {
+				c, err := prevNewIT(ctx, cmd)
+				if c != nil {
+					c.QuotaProjectProvider = ConfiguredIssueTrackerQuotaProject
+				}
+				return c, err
 			}
-			slices.Sort(calls)
-			assertBudget(t, b.name+" subprocesses", n, b.subprocesses, calls)
-			rpcDetails := append(reqs.RouteCounts(), fmt.Sprintf("(peak in-flight: %d)", reqs.Peak()))
-			assertBudget(t, b.name+" Gerrit/Buildbucket RPCs", reqs.Total(), b.requests, rpcDetails)
-			assertBudget(t, b.name+" Issue Tracker RPCs", issueReqs.Total(), b.issueRequests, issueReqs.RouteCounts())
-			reqs.assertNoDuplicateRequests(t, b.name, b.paginated...)
-			issueReqs.assertNoDuplicateRequests(t, b.name+" (Issue Tracker)", b.paginated...)
+			t.Cleanup(func() { NewIssueTrackerClientForCommand = prevNewIT })
+			res := f.Run(t, b.args)
+			if res.Err != nil && !b.allowErr {
+				t.Fatalf("executeCommand(%v) failed: %v\nOutput:\n%s", b.args, res.Err, res.Out)
+			}
+			assertBudget(t, b.name+" subprocesses", len(res.Subprocesses), b.subprocesses, res.Subprocesses)
+			rpcDetails := append(f.gerritReqs.RouteCounts(), fmt.Sprintf("(peak in-flight: %d)", f.gerritReqs.Peak()))
+			assertBudget(t, b.name+" Gerrit/Buildbucket RPCs", f.gerritReqs.Total(), b.requests, rpcDetails)
+			assertBudget(t, b.name+" Issue Tracker RPCs", f.issueReqs.Total(), b.issueRequests, f.issueReqs.RouteCounts())
+			f.gerritReqs.assertNoDuplicateRequests(t, b.name, b.paginated...)
+			f.issueReqs.assertNoDuplicateRequests(t, b.name+" (Issue Tracker)", b.paginated...)
 		})
 	}
 }

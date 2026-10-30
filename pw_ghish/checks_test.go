@@ -358,21 +358,10 @@ func TestChecks_JSON_FiltersUnlessExperimental(t *testing.T) {
 func TestChecks_Watch_Success(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		status := "STARTED"
-		if pollCount >= 2 {
-			status = "SUCCESS"
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": []any{
-				FakeBuild("100", "pigweed-linux", status, WithTimes("2026-05-26T20:00:00Z", "")),
-			},
-		})
-	})
+	server.OnSearchBuildsSequence(
+		[]bbBuild{FakeBuild("100", "pigweed-linux", "STARTED", WithTimes("2026-05-26T20:00:00Z", ""))},
+		[]bbBuild{FakeBuild("100", "pigweed-linux", "SUCCESS", WithTimes("2026-05-26T20:00:00Z", ""))},
+	)
 
 	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--interval", "5ms", "--buildbucket-host", server.URL)
 	if err != nil {
@@ -385,71 +374,24 @@ func TestChecks_Watch_Success(t *testing.T) {
 	if !strings.Contains(output, "✓  pigweed-linux") {
 		t.Errorf("Expected output to contain success symbol ✓, got:\n%s", output)
 	}
-	if pollCount < 2 {
-		t.Errorf("Expected at least 2 polls, got %d", pollCount)
-	}
-}
-
-func TestChecks_Watch_FailFast(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		failStatus := "STARTED"
-		if pollCount >= 2 {
-			failStatus = "FAILURE"
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": []any{
-				FakeBuild("100", "pigweed-linux", "STARTED"),
-				FakeBuild("200", "static-checks", failStatus),
-			},
-		})
-	})
-
-	server.OnGetBuild(FakeBuildDetails("200", "static-checks", "FAILURE", WithBuildSummary("python formatting check failed")))
-
-	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--fail-fast", "--interval", "5ms", "--buildbucket-host", server.URL)
-	if err == nil {
-		t.Fatalf("Expected command to fail on check failure, but succeeded. Output:\n%s", output)
-	}
-
-	if !strings.Contains(output, "static-checks") {
-		t.Errorf("Expected output to contain static-checks, got:\n%s", output)
-	}
-	if !strings.Contains(output, "FAILURE: static-checks (Build 200)") {
-		t.Errorf("Expected auto failure report in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "python formatting check failed") {
-		t.Errorf("Expected failure summary in output, got:\n%s", output)
-	}
-	if pollCount != 2 {
-		t.Errorf("Expected fail-fast to stop at poll 2, got pollCount=%d", pollCount)
+	if got := server.CallCount("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds"); got < 2 {
+		t.Errorf("Expected at least 2 polls, got %d", got)
 	}
 }
 
 func TestChecks_Watch_FailFast_IgnoresExperimental(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		prodStatus := "STARTED"
-		if pollCount >= 2 {
-			prodStatus = "SUCCESS"
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": []any{
-				FakeBuild("100", "pigweed-linux", prodStatus),
-				FakeBuild("200", "exp-builder", "FAILURE", WithCritical("NO")),
-			},
-		})
-	})
+	server.OnSearchBuildsSequence(
+		[]bbBuild{
+			FakeBuild("100", "pigweed-linux", "STARTED"),
+			FakeBuild("200", "exp-builder", "FAILURE", WithCritical("NO")),
+		},
+		[]bbBuild{
+			FakeBuild("100", "pigweed-linux", "SUCCESS"),
+			FakeBuild("200", "exp-builder", "FAILURE", WithCritical("NO")),
+		},
+	)
 
 	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--fail-fast", "--interval", "5ms", "--buildbucket-host", server.URL)
 	if err != nil {
@@ -485,25 +427,16 @@ func TestChecks_Watch_LogFailed_Disabled(t *testing.T) {
 func TestChecks_Watch_AllCompleted_WithFailures(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		s1 := "STARTED"
-		s2 := "STARTED"
-		if pollCount >= 2 {
-			s1 = "SUCCESS"
-			s2 = "FAILURE"
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": []any{
-				FakeBuild("100", "prod-1", s1),
-				FakeBuild("200", "prod-2", s2),
-			},
-		})
-	})
-
+	server.OnSearchBuildsSequence(
+		[]bbBuild{
+			FakeBuild("100", "prod-1", "STARTED"),
+			FakeBuild("200", "prod-2", "STARTED"),
+		},
+		[]bbBuild{
+			FakeBuild("100", "prod-1", "SUCCESS"),
+			FakeBuild("200", "prod-2", "FAILURE"),
+		},
+	)
 	server.OnGetBuild(FakeBuildDetails("200", "prod-2", "FAILURE", WithBuildSummary("compiler error")))
 
 	// Run without --fail-fast: watches until both finish
@@ -526,22 +459,16 @@ func TestChecks_Watch_AllCompleted_WithFailures(t *testing.T) {
 func TestChecks_Watch_RerunSupersedesOldFailure(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		retryStatus := "STARTED"
-		if pollCount >= 2 {
-			retryStatus = "SUCCESS"
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": []any{
-				FakeBuild("200", "pigweed-linux", retryStatus),
-				FakeBuild("100", "pigweed-linux", "FAILURE"),
-			},
-		})
-	})
+	server.OnSearchBuildsSequence(
+		[]bbBuild{
+			FakeBuild("200", "pigweed-linux", "STARTED"),
+			FakeBuild("100", "pigweed-linux", "FAILURE"),
+		},
+		[]bbBuild{
+			FakeBuild("200", "pigweed-linux", "SUCCESS"),
+			FakeBuild("100", "pigweed-linux", "FAILURE"),
+		},
+	)
 
 	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--fail-fast", "--interval", "5ms", "--buildbucket-host", server.URL)
 	if err != nil {
@@ -559,26 +486,20 @@ func TestChecks_Watch_RerunSupersedesOldFailure(t *testing.T) {
 func TestChecks_Watch_CompletionBreadcrumbs(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		s1 := "STARTED"
-		s2 := "STARTED"
-		if pollCount >= 2 {
-			s1 = "SUCCESS"
-		}
-		if pollCount >= 3 {
-			s2 = "SUCCESS"
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": []any{
-				FakeBuild("1", "builder-one", s1, WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:01:00Z")),
-				FakeBuild("2", "builder-two", s2, WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:02:00Z")),
-			},
-		})
-	})
+	server.OnSearchBuildsSequence(
+		[]bbBuild{
+			FakeBuild("1", "builder-one", "STARTED", WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:01:00Z")),
+			FakeBuild("2", "builder-two", "STARTED", WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:02:00Z")),
+		},
+		[]bbBuild{
+			FakeBuild("1", "builder-one", "SUCCESS", WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:01:00Z")),
+			FakeBuild("2", "builder-two", "STARTED", WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:02:00Z")),
+		},
+		[]bbBuild{
+			FakeBuild("1", "builder-one", "SUCCESS", WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:01:00Z")),
+			FakeBuild("2", "builder-two", "SUCCESS", WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:02:00Z")),
+		},
+	)
 
 	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--interval", "5ms", "--buildbucket-host", server.URL)
 	if err != nil {
@@ -599,21 +520,9 @@ func TestChecks_Watch_CompletionBreadcrumbs(t *testing.T) {
 func TestChecks_Watch_Heartbeat(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		status := "STARTED"
-		if pollCount >= 6 {
-			status = "SUCCESS"
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": []any{
-				FakeBuild("1", "long-builder", status, WithTimes("2026-05-26T20:00:00Z", "")),
-			},
-		})
-	})
+	running := []bbBuild{FakeBuild("1", "long-builder", "STARTED", WithTimes("2026-05-26T20:00:00Z", ""))}
+	passed := []bbBuild{FakeBuild("1", "long-builder", "SUCCESS", WithTimes("2026-05-26T20:00:00Z", ""))}
+	server.OnSearchBuildsSequence(running, running, running, running, running, passed)
 
 	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--interval", "5ms", "--buildbucket-host", server.URL)
 	if err != nil {
@@ -628,30 +537,27 @@ func TestChecks_Watch_Heartbeat(t *testing.T) {
 func TestChecks_Watch_FailFast_BreadcrumbAndDiagnostics(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		status := "STARTED"
-		if pollCount >= 2 {
-			status = "FAILURE"
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": []any{
-				FakeBuild("1", "failing-builder", status, WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:01:30Z")),
-			},
-		})
-	})
-
+	server.OnSearchBuildsSequence(
+		[]bbBuild{
+			FakeBuild("1", "failing-builder", "STARTED", WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:01:30Z")),
+			FakeBuild("2", "running-builder", "STARTED", WithTimes("2026-05-26T20:00:00Z", "")),
+		},
+		[]bbBuild{
+			FakeBuild("1", "failing-builder", "FAILURE", WithTimes("2026-05-26T20:00:00Z", "2026-05-26T20:01:30Z")),
+			FakeBuild("2", "running-builder", "STARTED", WithTimes("2026-05-26T20:00:00Z", "")),
+		},
+	)
 	server.OnGetBuild(FakeBuildDetails("1", "failing-builder", "FAILURE", WithBuildSummary("test failed: connection refused")))
 
 	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--fail-fast", "--interval", "5ms", "--buildbucket-host", server.URL)
 	if err == nil {
 		t.Fatalf("Expected error when fail-fast triggered, got nil. Output:\n%s", output)
 	}
+	if pollCount := server.CallCount("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds"); pollCount != 2 {
+		t.Errorf("pollCount = %d, want 2 (--fail-fast should stop while running-builder is still STARTED)", pollCount)
+	}
 
-	if !strings.Contains(output, "✗  failing-builder failed (1m30s) [1/1]") {
+	if !strings.Contains(output, "✗  failing-builder failed (1m30s) [1/2]") {
 		t.Errorf("Expected failure breadcrumb, got:\n%s", output)
 	}
 	if !strings.Contains(output, "--fail-fast triggered: stopping watch.") {
@@ -660,30 +566,19 @@ func TestChecks_Watch_FailFast_BreadcrumbAndDiagnostics(t *testing.T) {
 	if !strings.Contains(output, "FAILURE: failing-builder (Build 1)") {
 		t.Errorf("Expected failure diagnostics, got:\n%s", output)
 	}
+	if !strings.Contains(output, "test failed: connection refused") {
+		t.Errorf("Expected failure summary in output, got:\n%s", output)
+	}
 }
 
 func TestChecks_Watch_InitialWaitingToScheduled(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		var builds []any
-		if pollCount == 2 {
-			builds = []any{
-				FakeBuild("1", "builder-one", "STARTED"),
-			}
-		} else if pollCount >= 3 {
-			builds = []any{
-				FakeBuild("1", "builder-one", "SUCCESS"),
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": builds,
-		})
-	})
+	server.OnSearchBuildsSequence(
+		nil,
+		[]bbBuild{FakeBuild("1", "builder-one", "STARTED")},
+		[]bbBuild{FakeBuild("1", "builder-one", "SUCCESS")},
+	)
 
 	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--interval", "5ms", "--buildbucket-host", server.URL)
 	if err != nil {
@@ -701,33 +596,18 @@ func TestChecks_Watch_InitialWaitingToScheduled(t *testing.T) {
 func TestChecks_Watch_InitialStatusBreakdown(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345)
-
-	pollCount := 0
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		pollCount++
-		var builds []any
-
-		if pollCount == 1 {
-			// Initial state: builder-one is already passed, builder-two and builder-three are running
-			builds = []any{
-				FakeBuild("1", "builder-one", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:01:00Z")),
-				FakeBuild("2", "builder-two", "STARTED", WithTimes("2026-09-08T10:00:00Z", "")),
-				FakeBuild("3", "builder-three", "STARTED", WithTimes("2026-09-08T10:00:00Z", "")),
-			}
-		} else {
-			// Subsequent state: all passed
-			builds = []any{
-				FakeBuild("1", "builder-one", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:01:00Z")),
-				FakeBuild("2", "builder-two", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:02:00Z")),
-				FakeBuild("3", "builder-three", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:03:00Z")),
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"builds": builds,
-		})
-	})
+	server.OnSearchBuildsSequence(
+		[]bbBuild{
+			FakeBuild("1", "builder-one", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:01:00Z")),
+			FakeBuild("2", "builder-two", "STARTED", WithTimes("2026-09-08T10:00:00Z", "")),
+			FakeBuild("3", "builder-three", "STARTED", WithTimes("2026-09-08T10:00:00Z", "")),
+		},
+		[]bbBuild{
+			FakeBuild("1", "builder-one", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:01:00Z")),
+			FakeBuild("2", "builder-two", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:02:00Z")),
+			FakeBuild("3", "builder-three", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:03:00Z")),
+		},
+	)
 
 	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--interval", "5ms", "--buildbucket-host", server.URL)
 	if err != nil {
@@ -1409,57 +1289,22 @@ func TestChecks_EquivalentPatchsets(t *testing.T) {
 	// Patchset 8 is REWORK (ran pigweed-linux=SUCCESS and static-checks-pigweed=FAILURE),
 	// Patchset 7 is REWORK (had a failing build that must NOT be included).
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
-		"id":               "pigweed%2Fpigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"change_id":        "I12345",
-		"subject":          "pw_ghish: Test equivalent patchsets",
-		"status":           "NEW",
-		"_number":          12345,
-		"current_revision": "rev10",
-		"revisions": map[string]any{
-			"rev7":  map[string]any{"_number": 7, "kind": "REWORK"},
-			"rev8":  map[string]any{"_number": 8, "kind": "REWORK"},
-			"rev9":  map[string]any{"_number": 9, "kind": "NO_CODE_CHANGE"},
-			"rev10": map[string]any{"_number": 10, "kind": "TRIVIAL_REBASE"},
+	server.OnDefaultChange(12345,
+		WithSubject("pw_ghish: Test equivalent patchsets"),
+		WithPatchsetKind(7, "REWORK"),
+		WithPatchsetKind(8, "REWORK"),
+		WithPatchsetKind(9, "NO_CODE_CHANGE"),
+		WithPatchsetKind(10, "TRIVIAL_REBASE"),
+	)
+	server.OnSearchBuildsByPatchset(map[int][]bbBuild{
+		10: nil,
+		9: {
+			FakeBuild("901", "static-checks-pigweed", "SUCCESS"),
 		},
-	})
-
-	var mu sync.Mutex
-	var queriedPatchsets []int
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		var req bbSearchBuildsRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("failed to decode SearchBuilds request: %v", err)
-		}
-		if len(req.Predicate.GerritChanges) != 1 {
-			t.Fatalf("expected 1 GerritChange in predicate, got %d", len(req.Predicate.GerritChanges))
-		}
-		ps := req.Predicate.GerritChanges[0].Patchset
-		mu.Lock()
-		queriedPatchsets = append(queriedPatchsets, ps)
-		mu.Unlock()
-
-		var builds []bbBuild
-		switch ps {
-		case 10:
-			// No builds scheduled on the trivial rebase patchset 10
-		case 9:
-			// Commit-message-only change fixed static-checks-pigweed
-			builds = []bbBuild{
-				FakeBuild("901", "static-checks-pigweed", "SUCCESS"),
-			}
-		case 8:
-			// Full CQ run on patchset 8 had pigweed-linux pass and static-checks-pigweed fail
-			builds = []bbBuild{
-				FakeBuild("801", "pigweed-linux", "SUCCESS"),
-				FakeBuild("802", "static-checks-pigweed", "FAILURE"),
-			}
-		default:
-			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
-		}
-		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+		8: {
+			FakeBuild("801", "pigweed-linux", "SUCCESS"),
+			FakeBuild("802", "static-checks-pigweed", "FAILURE"),
+		},
 	})
 
 	out, err := executeCommand(RootCmd, "pr", "checks", "12345")
@@ -1467,10 +1312,13 @@ func TestChecks_EquivalentPatchsets(t *testing.T) {
 		t.Fatalf("expected pr checks 12345 to pass across equivalent patchsets [10, 9, 8], got error: %v\nOutput:\n%s", err, out)
 	}
 
-	// The patchsets are queried concurrently, so only the set is fixed.
-	mu.Lock()
-	queried := append([]int(nil), queriedPatchsets...)
-	mu.Unlock()
+	var queried []int
+	for _, r := range server.Requests() {
+		if r.Path == "/prpc/buildbucket.v2.Builds/SearchBuilds" {
+			req := DecodeRequest[bbSearchBuildsRequest](t, &r)
+			queried = append(queried, req.Predicate.GerritChanges[0].Patchset)
+		}
+	}
 	slices.SortFunc(queried, func(a, b int) int { return cmp.Compare(b, a) })
 	if want := "[10 9 8]"; fmt.Sprint(queried) != want {
 		t.Errorf("queried patchsets = %v, want %s", queried, want)
@@ -1580,37 +1428,14 @@ func TestDeduplicateLatestBuilds(t *testing.T) {
 // 10. LUCI CV counts the patchset 9 success, so pr checks must too.
 func TestChecks_EquivalentPatchsets_SuccessBeatsNewerCancel(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
-		"id":               "pigweed%2Fpigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"change_id":        "I12345",
-		"subject":          "pw_ghish: Test canceled on equivalent patchset",
-		"status":           "NEW",
-		"_number":          12345,
-		"current_revision": "rev10",
-		"revisions": map[string]any{
-			"rev9":  map[string]any{"_number": 9, "kind": "REWORK"},
-			"rev10": map[string]any{"_number": 10, "kind": "TRIVIAL_REBASE"},
-		},
-	})
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		var req bbSearchBuildsRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
-			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
-			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
-			return
-		}
-		var builds []bbBuild
-		switch ps := req.Predicate.GerritChanges[0].Patchset; ps {
-		case 10:
-			builds = []bbBuild{FakeBuild("1001", "pigweed-linux", "CANCELED")}
-		case 9:
-			builds = []bbBuild{FakeBuild("901", "pigweed-linux", "SUCCESS")}
-		default:
-			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
-		}
-		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	server.OnDefaultChange(12345,
+		WithSubject("pw_ghish: Test canceled on equivalent patchset"),
+		WithPatchsetKind(9, "REWORK"),
+		WithPatchsetKind(10, "TRIVIAL_REBASE"),
+	)
+	server.OnSearchBuildsByPatchset(map[int][]bbBuild{
+		10: {FakeBuild("1001", "pigweed-linux", "CANCELED")},
+		9:  {FakeBuild("901", "pigweed-linux", "SUCCESS")},
 	})
 
 	out, err := executeCommand(RootCmd, "pr", "checks", "12345")
@@ -1634,21 +1459,12 @@ func TestChecks_Watch_SkipsSettledEquivalentPatchsets(t *testing.T) {
 	//   first, then passes on the next query.
 	// Patchset 8 (REWORK): docs already passed.
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
-		"id":               "pigweed%2Fpigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"change_id":        "I12345",
-		"subject":          "pw_ghish: Test watch caching",
-		"status":           "NEW",
-		"_number":          12345,
-		"current_revision": "rev10",
-		"revisions": map[string]any{
-			"rev8":  map[string]any{"_number": 8, "kind": "REWORK"},
-			"rev9":  map[string]any{"_number": 9, "kind": "NO_CODE_CHANGE"},
-			"rev10": map[string]any{"_number": 10, "kind": "TRIVIAL_REBASE"},
-		},
-	})
+	server.OnDefaultChange(12345,
+		WithSubject("pw_ghish: Test watch caching"),
+		WithPatchsetKind(8, "REWORK"),
+		WithPatchsetKind(9, "NO_CODE_CHANGE"),
+		WithPatchsetKind(10, "TRIVIAL_REBASE"),
+	)
 
 	var mu sync.Mutex
 	queries := make(map[int]int)

@@ -17,7 +17,6 @@ package pw_ghish
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -102,174 +101,116 @@ func TestAddAndParseCommonPushFlags(t *testing.T) {
 
 func TestValidateCommitStack(t *testing.T) {
 	ctx := context.Background()
+	id1 := "I1111111111111111111111111111111111111111"
+	id2 := "I2222222222222222222222222222222222222222"
 
-	t.Run("single commit passes", func(t *testing.T) {
-		mockGit := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-					stdout.Write([]byte("1\n"))
-				}
-				return nil
-			},
-		}
-		client := NewGitClient(mockGit)
-		err := ValidateCommitStack(ctx, client, "main", false, "create")
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
+	tests := []struct {
+		name       string
+		count      string
+		stackLog   string
+		allowStack bool
+		cmdName    string
+		wantErrs   []string
+	}{
+		{
+			name:    "single commit passes",
+			count:   "1\n",
+			cmdName: "create",
+		},
+		{
+			name:     "zero commits errors in create",
+			count:    "0\n",
+			cmdName:  "create",
+			wantErrs: []string{"HEAD has 0 commits ahead", "git commit"},
+		},
+		{
+			name:     "multiple commits without stack errors in create",
+			count:    "3\n",
+			cmdName:  "create",
+			wantErrs: []string{"gh pr create --base", "--stack"},
+		},
+		{
+			name:     "multiple commits without stack errors in push",
+			count:    "3\n",
+			cmdName:  "push",
+			wantErrs: []string{"gh pr push --base", "--stack"},
+		},
+		{
+			name:       "multiple commits with stack passes",
+			count:      "3\n",
+			allowStack: true,
+			cmdName:    "create",
+		},
+		{
+			name:       "rejects unsquashed fixup commit in stack",
+			count:      "1\n",
+			stackLog:   fmt.Sprintf("aaa1111\x00fixup! pw_ghish: Base\x00fixup! pw_ghish: Base\n\nChange-Id: %s\n\x1e", id1),
+			allowStack: true,
+			cmdName:    "push",
+			wantErrs:   []string{"unsquashed fixup/squash commit"},
+		},
+		{
+			name:  "rejects duplicate Change-Id in stack",
+			count: "2\n",
+			stackLog: fmt.Sprintf(
+				"aaa1111\x00pw_ghish: First\x00pw_ghish: First\n\nChange-Id: %s\n\x1e"+
+					"bbb2222\x00pw_ghish: Second\x00pw_ghish: Second\n\nChange-Id: %s\n\x1e",
+				id1, id1,
+			),
+			allowStack: true,
+			cmdName:    "push",
+			wantErrs:   []string{"share the same Change-Id"},
+		},
+		{
+			name:  "rejects commit with multiple Change-Id footers in stack",
+			count: "1\n",
+			stackLog: fmt.Sprintf(
+				"aaa1111\x00pw_ghish: Squashed\x00pw_ghish: Squashed\n\nChange-Id: %s\nChange-Id: %s\n\x1e",
+				id1, id2,
+			),
+			allowStack: true,
+			cmdName:    "push",
+			wantErrs:   []string{"multiple Change-Id footers"},
+		},
+	}
 
-	t.Run("zero commits errors in create", func(t *testing.T) {
-		mockGit := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-					stdout.Write([]byte("0\n"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockGit := &MockGitRunner{
+				RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+					if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
+						stdout.Write([]byte(tt.count))
+					}
+					if len(args) >= 2 && args[0] == "log" && args[1] == "--reverse" && tt.stackLog != "" {
+						stdout.Write([]byte(tt.stackLog))
+					}
+					return nil
+				},
+			}
+			err := ValidateCommitStack(ctx, NewGitClient(mockGit), "main", tt.allowStack, tt.cmdName)
+			if len(tt.wantErrs) == 0 {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
 				}
-				return nil
-			},
-		}
-		client := NewGitClient(mockGit)
-		err := ValidateCommitStack(ctx, client, "main", false, "create")
-		if err == nil {
-			t.Fatal("expected error when 0 commits ahead in create, got nil")
-		}
-		if !strings.Contains(err.Error(), "HEAD has 0 commits ahead") || !strings.Contains(err.Error(), "git commit") {
-			t.Errorf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("multiple commits without stack errors in create", func(t *testing.T) {
-		mockGit := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-					stdout.Write([]byte("3\n"))
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %v, got nil", tt.wantErrs)
+			}
+			for _, want := range tt.wantErrs {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("expected error to contain %q, got: %v", want, err)
 				}
-				return nil
-			},
-		}
-		client := NewGitClient(mockGit)
-		err := ValidateCommitStack(ctx, client, "main", false, "create")
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !strings.Contains(err.Error(), "gh pr create --base") || !strings.Contains(err.Error(), "--stack") {
-			t.Errorf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("multiple commits without stack errors in push", func(t *testing.T) {
-		mockGit := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-					stdout.Write([]byte("3\n"))
-				}
-				return nil
-			},
-		}
-		client := NewGitClient(mockGit)
-		err := ValidateCommitStack(ctx, client, "main", false, "push")
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !strings.Contains(err.Error(), "gh pr push --base") || !strings.Contains(err.Error(), "--stack") {
-			t.Errorf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("multiple commits with stack passes", func(t *testing.T) {
-		mockGit := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-					stdout.Write([]byte("3\n"))
-				}
-				return nil
-			},
-		}
-		client := NewGitClient(mockGit)
-		err := ValidateCommitStack(ctx, client, "main", true, "create")
-		if err != nil {
-			t.Errorf("unexpected error with stack=true: %v", err)
-		}
-	})
+			}
+		})
+	}
 
 	t.Run("canceled context fails immediately", func(t *testing.T) {
 		cancCtx, cancel := context.WithCancel(ctx)
 		cancel()
 		client := NewGitClient(&MockGitRunner{})
-		err := ValidateCommitStack(cancCtx, client, "main", false, "create")
-		if err == nil {
+		if err := ValidateCommitStack(cancCtx, client, "main", false, "create"); err == nil {
 			t.Fatal("expected error for canceled context, got nil")
-		}
-	})
-
-	t.Run("rejects unsquashed fixup commit in stack", func(t *testing.T) {
-		id1 := "I1111111111111111111111111111111111111111"
-		stackLog := fmt.Sprintf("aaa1111\x00fixup! pw_ghish: Base\x00fixup! pw_ghish: Base\n\nChange-Id: %s\n\x1e", id1)
-		mockGit := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-					stdout.Write([]byte("1\n"))
-				}
-				if len(args) >= 2 && args[0] == "log" && args[1] == "--reverse" {
-					stdout.Write([]byte(stackLog))
-				}
-				return nil
-			},
-		}
-		client := NewGitClient(mockGit)
-		err := ValidateCommitStack(ctx, client, "main", true, "push")
-		if err == nil || !strings.Contains(err.Error(), "unsquashed fixup/squash commit") {
-			t.Fatalf("expected unsquashed fixup error, got: %v", err)
-		}
-	})
-
-	t.Run("rejects duplicate Change-Id in stack", func(t *testing.T) {
-		id1 := "I1111111111111111111111111111111111111111"
-		stackLog := fmt.Sprintf(
-			"aaa1111\x00pw_ghish: First\x00pw_ghish: First\n\nChange-Id: %s\n\x1e"+
-				"bbb2222\x00pw_ghish: Second\x00pw_ghish: Second\n\nChange-Id: %s\n\x1e",
-			id1, id1,
-		)
-		mockGit := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-					stdout.Write([]byte("2\n"))
-				}
-				if len(args) >= 2 && args[0] == "log" && args[1] == "--reverse" {
-					stdout.Write([]byte(stackLog))
-				}
-				return nil
-			},
-		}
-		client := NewGitClient(mockGit)
-		err := ValidateCommitStack(ctx, client, "main", true, "push")
-		if err == nil || !strings.Contains(err.Error(), "share the same Change-Id") {
-			t.Fatalf("expected duplicate Change-Id error, got: %v", err)
-		}
-	})
-
-	t.Run("rejects commit with multiple Change-Id footers in stack", func(t *testing.T) {
-		id1 := "I1111111111111111111111111111111111111111"
-		id2 := "I2222222222222222222222222222222222222222"
-		stackLog := fmt.Sprintf(
-			"aaa1111\x00pw_ghish: Squashed\x00pw_ghish: Squashed\n\nChange-Id: %s\nChange-Id: %s\n\x1e",
-			id1, id2,
-		)
-		mockGit := &MockGitRunner{
-			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-					stdout.Write([]byte("1\n"))
-				}
-				if len(args) >= 2 && args[0] == "log" && args[1] == "--reverse" {
-					stdout.Write([]byte(stackLog))
-				}
-				return nil
-			},
-		}
-		client := NewGitClient(mockGit)
-		err := ValidateCommitStack(ctx, client, "main", true, "push")
-		if err == nil || !strings.Contains(err.Error(), "multiple Change-Id footers") {
-			t.Fatalf("expected multiple Change-Id footers error, got: %v", err)
 		}
 	})
 }
@@ -416,22 +357,23 @@ func TestExecutePush_WithTopicAndHashtags(t *testing.T) {
 	}
 }
 
-func TestExecutePush_NoNewChanges_FallbackREST(t *testing.T) {
+const noNewChangesChangeID = "I1234567890123456789012345678901234567890"
+
+func runNoNewChangesPush(t *testing.T, pushOpts PushOptions, setup func(*MockGerritServer)) (*MockGerritServer, string, error) {
+	t.Helper()
 	ctx := context.Background()
 	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/I1234567890123456789012345678901234567890/revisions/current/review", http.StatusOK, map[string]any{})
-	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
-	})
-
+	if setup != nil {
+		setup(server)
+	}
 	mockGit := &MockGitRunner{
 		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main%l=Commit-Queue+1 (no new changes)\nerror: failed to push some refs\n"))
+				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
 				return fmt.Errorf("exit status 1")
 			}
 			if len(args) > 0 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
+				stdout.Write([]byte("Commit subject\n\nChange-Id: " + noNewChangesChangeID + "\n"))
 				return nil
 			}
 			return nil
@@ -442,31 +384,31 @@ func TestExecutePush_NoNewChanges_FallbackREST(t *testing.T) {
 		Host:    server.URL,
 		Profile: profiles["pigweed"],
 	}
-
 	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
+	var outBuf bytes.Buffer
 	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
+	cmd.SetErr(&outBuf)
 	cmd.SetContext(ctx)
 	SetConfig(cmd, cfg)
 
-	pushOpts := PushOptions{
-		CQ: 1,
-	}
-
 	err := executePush(ctx, cmd, cfg, "main", pushOpts, false)
+	return server, outBuf.String(), err
+}
+
+func TestExecutePush_NoNewChanges_FallbackREST(t *testing.T) {
+	server, out, err := runNoNewChangesPush(t, PushOptions{CQ: 1}, func(s *MockGerritServer) {
+		s.OnReview(noNewChangesChangeID)
+	})
 	if err != nil {
 		t.Fatalf("unexpected error, should have fallen back to REST: %v", err)
 	}
-
-	if !strings.Contains(outBuf.String(), "applied metadata updates to Change") {
-		t.Errorf("expected output to mention applied metadata updates, got: %s", outBuf.String())
+	if !strings.Contains(out, "applied metadata updates to Change") {
+		t.Errorf("expected output to mention applied metadata updates, got: %s", out)
 	}
-	if !strings.Contains(outBuf.String(), "Commit-Queue+1 set successfully") {
-		t.Errorf("expected output to mention Commit-Queue+1, got: %s", outBuf.String())
+	if !strings.Contains(out, "Commit-Queue+1 set successfully") {
+		t.Errorf("expected output to mention Commit-Queue+1, got: %s", out)
 	}
-
-	if server.CallCount("POST", "/changes/I1234567890123456789012345678901234567890/revisions/current/review") != 1 {
+	if server.CallCount("POST", "/changes/"+noNewChangesChangeID+"/revisions/current/review") != 1 {
 		t.Errorf("expected review API to be called on Gerrit server, got calls: %v", server.Requests())
 	}
 }
@@ -474,101 +416,33 @@ func TestExecutePush_NoNewChanges_FallbackREST(t *testing.T) {
 // --auto with nothing to push still has to land on the label this host names,
 // which means asking the change rather than replaying the profile default.
 func TestExecutePush_NoNewChanges_FallbackREST_AutoSubmit(t *testing.T) {
-	ctx := context.Background()
-	changeID := "I1234567890123456789012345678901234567890"
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(changeID, WithLabels("Code-Review", "Auto-Submit"))
-	server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
-	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
+	server, out, err := runNoNewChangesPush(t, PushOptions{AutoSubmit: true}, func(s *MockGerritServer) {
+		s.OnDefaultChange(noNewChangesChangeID, WithLabels("Code-Review", "Auto-Submit"))
+		s.OnReview(noNewChangesChangeID)
 	})
-
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
-				return fmt.Errorf("exit status 1")
-			}
-			if len(args) > 0 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject\n\nChange-Id: " + changeID + "\n"))
-				return nil
-			}
-			return nil
-		},
-	}
-	cfg := &Config{
-		Git:     mockGit,
-		Host:    server.URL,
-		Profile: profiles["pigweed"],
-	}
-
-	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetContext(ctx)
-	SetConfig(cmd, cfg)
-
-	if err := executePush(ctx, cmd, cfg, "main", PushOptions{AutoSubmit: true}, false); err != nil {
+	if err != nil {
 		t.Fatalf("unexpected error, should have fallen back to REST: %v", err)
 	}
 
-	var capturedInput gerrit.ReviewInput
-	for _, req := range server.Requests() {
-		if req.Method == "POST" && strings.HasSuffix(req.Path, "/review") {
-			json.Unmarshal(req.Body, &capturedInput)
-		}
-	}
+	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 	if capturedInput.Labels["Auto-Submit"] != 1 {
 		t.Errorf("Labels got %v, want Auto-Submit=1", capturedInput.Labels)
 	}
 	if _, voted := capturedInput.Labels["Pigweed-Auto-Submit"]; voted {
 		t.Errorf("Labels got %v, want no vote on the profile's label", capturedInput.Labels)
 	}
-	if !strings.Contains(outBuf.String(), "Auto-submit enabled (Auto-Submit+1)") {
-		t.Errorf("expected output to name the label voted, got: %s", outBuf.String())
+	if !strings.Contains(out, "Auto-submit enabled (Auto-Submit+1)") {
+		t.Errorf("expected output to name the label voted, got: %s", out)
 	}
 }
 
 // The metadata-only path applies what it can and then says --auto could not be
 // honored, rather than reporting auto-submit that is not going to happen.
 func TestExecutePush_NoNewChanges_FallbackREST_AutoSubmitUnsupported(t *testing.T) {
-	ctx := context.Background()
-	changeID := "I1234567890123456789012345678901234567890"
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(changeID, WithLabels("Code-Review", "Commit-Queue"))
-	server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
-	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
+	server, out, err := runNoNewChangesPush(t, PushOptions{AutoSubmit: true}, func(s *MockGerritServer) {
+		s.OnDefaultChange(noNewChangesChangeID, WithLabels("Code-Review", "Commit-Queue"))
+		s.OnReview(noNewChangesChangeID)
 	})
-
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
-				return fmt.Errorf("exit status 1")
-			}
-			if len(args) > 0 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject\n\nChange-Id: " + changeID + "\n"))
-				return nil
-			}
-			return nil
-		},
-	}
-	cfg := &Config{
-		Git:     mockGit,
-		Host:    server.URL,
-		Profile: profiles["pigweed"],
-	}
-
-	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetContext(ctx)
-	SetConfig(cmd, cfg)
-
-	err := executePush(ctx, cmd, cfg, "main", PushOptions{AutoSubmit: true}, false)
 	if err == nil {
 		t.Fatal("expected an error for a host with no auto-submit label")
 	}
@@ -576,53 +450,92 @@ func TestExecutePush_NoNewChanges_FallbackREST_AutoSubmitUnsupported(t *testing.
 		t.Errorf("expected the error to name the problem, got: %v", err)
 	}
 
-	var capturedInput gerrit.ReviewInput
+	var capturedInput ReviewInput
 	for _, req := range server.Requests() {
 		if req.Method == "POST" && strings.HasSuffix(req.Path, "/review") {
-			json.Unmarshal(req.Body, &capturedInput)
+			capturedInput = DecodeRequest[ReviewInput](t, &req)
 		}
 	}
 	if capturedInput.Labels["Commit-Queue"] != 1 {
 		t.Errorf("Labels got %v, want the Commit-Queue dry run", capturedInput.Labels)
 	}
-	if strings.Contains(outBuf.String(), "Auto-submit enabled") {
-		t.Errorf("output claims auto-submit was enabled when it was not: %s", outBuf.String())
+	if strings.Contains(out, "Auto-submit enabled") {
+		t.Errorf("output claims auto-submit was enabled when it was not: %s", out)
 	}
 }
 
 func TestExecutePush_NoNewChanges_NoOptions(t *testing.T) {
-	ctx := context.Background()
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
-				return fmt.Errorf("exit status 1")
-			}
-			return nil
-		},
-	}
-	cfg := &Config{
-		Git:     mockGit,
-		Host:    "pigweed-review.googlesource.com",
-		Profile: profiles["pigweed"],
-	}
-
-	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	SetConfig(cmd, cfg)
-
-	err := executePush(ctx, cmd, cfg, "main", PushOptions{}, false)
+	_, _, err := runNoNewChangesPush(t, PushOptions{}, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-
 	if !strings.Contains(err.Error(), "no new changes to push") {
 		t.Errorf("expected error to mention 'no new changes to push', got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "gh pr edit --cq") {
 		t.Errorf("expected error to suggest 'gh pr edit --cq', got: %v", err)
+	}
+}
+
+func TestExecutePush_NoNewChanges_Nightly_FallbackREST(t *testing.T) {
+	server, out, err := runNoNewChangesPush(t, PushOptions{Nightly: true, ChangeNumber: 123456}, func(s *MockGerritServer) {
+		s.OnDefaultChange(123456, WithChangeID(noNewChangesChangeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+		s.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+	})
+	if err != nil {
+		t.Fatalf("unexpected error, should have fallen back to REST: %v", err)
+	}
+	if server.CallCount("POST", "/changes/123456/flows") != 1 {
+		t.Fatalf("expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
+	}
+	if !strings.Contains(out, "Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles).") {
+		t.Errorf("unexpected output: %s", out)
+	}
+}
+
+func TestExecutePush_NoNewChanges_Publish_FallbackREST(t *testing.T) {
+	server, out, err := runNoNewChangesPush(t, PushOptions{Publish: true}, func(s *MockGerritServer) {
+		s.OnReview(noNewChangesChangeID)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error, should have fallen back to REST: %v", err)
+	}
+	if !strings.Contains(out, "applied metadata updates to Change") {
+		t.Errorf("expected output to mention applied metadata updates, got: %s", out)
+	}
+	if !strings.Contains(out, "Draft comments published successfully") {
+		t.Errorf("expected output to mention Draft comments published, got: %s", out)
+	}
+	if server.CallCount("POST", "/changes/"+noNewChangesChangeID+"/revisions/current/review") != 1 {
+		t.Fatalf("expected review API to be called on Gerrit server, got calls: %v", server.Requests())
+	}
+	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
+	if capturedInput.Drafts != "PUBLISH_ALL_REVISIONS" {
+		t.Errorf("expected Drafts=%q, got %q", "PUBLISH_ALL_REVISIONS", capturedInput.Drafts)
+	}
+}
+
+func TestExecutePush_NoNewChanges_RESTFailure(t *testing.T) {
+	_, _, err := runNoNewChangesPush(t, PushOptions{Publish: true}, func(s *MockGerritServer) {
+		s.OnStatus(http.StatusInternalServerError)
+	})
+	if err == nil {
+		t.Fatal("expected error on REST failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to apply metadata updates via Gerrit API") {
+		t.Errorf("expected error message mentioning failed to apply metadata updates, got: %v", err)
+	}
+}
+
+func TestExecutePush_NoNewChanges_CC_Failure(t *testing.T) {
+	_, _, err := runNoNewChangesPush(t, PushOptions{CC: []string{"bad@domain.invalid"}}, func(s *MockGerritServer) {
+		s.OnStatus(http.StatusBadRequest)
+	})
+	if err == nil {
+		t.Fatal("expected error on CC REST failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to apply metadata updates via Gerrit API") {
+		t.Errorf("expected error message mentioning failed to apply metadata updates, got: %v", err)
 	}
 }
 
@@ -655,216 +568,6 @@ func TestHasMetadataUpdates(t *testing.T) {
 				t.Errorf("hasMetadataUpdates(%+v) = false, want true", tc.opts)
 			}
 		})
-	}
-}
-
-func TestExecutePush_NoNewChanges_Nightly_FallbackREST(t *testing.T) {
-	ctx := context.Background()
-	changeID := "I1234567890123456789012345678901234567890"
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
-	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
-	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
-	})
-
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
-				return fmt.Errorf("exit status 1")
-			}
-			if len(args) > 0 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject\n\nChange-Id: " + changeID + "\n"))
-				return nil
-			}
-			return nil
-		},
-	}
-	cfg := &Config{
-		Git:     mockGit,
-		Host:    server.URL,
-		Profile: profiles["pigweed"],
-	}
-
-	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetContext(ctx)
-	SetConfig(cmd, cfg)
-
-	pushOpts := PushOptions{
-		Nightly:      true,
-		ChangeNumber: 123456,
-	}
-
-	if err := executePush(ctx, cmd, cfg, "main", pushOpts, false); err != nil {
-		t.Fatalf("unexpected error, should have fallen back to REST: %v", err)
-	}
-
-	if server.CallCount("POST", "/changes/123456/flows") != 1 {
-		t.Fatalf("expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
-	}
-	if !strings.Contains(outBuf.String(), "Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles).") {
-		t.Errorf("unexpected output: %s", outBuf.String())
-	}
-}
-
-func TestExecutePush_NoNewChanges_Publish_FallbackREST(t *testing.T) {
-	ctx := context.Background()
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/I1234567890123456789012345678901234567890/revisions/current/review", http.StatusOK, map[string]any{})
-	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
-	})
-
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main%publish-comments (no new changes)\nerror: failed to push some refs\n"))
-				return fmt.Errorf("exit status 1")
-			}
-			if len(args) > 0 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
-				return nil
-			}
-			return nil
-		},
-	}
-	cfg := &Config{
-		Git:     mockGit,
-		Host:    server.URL,
-		Profile: profiles["pigweed"],
-	}
-
-	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetContext(ctx)
-	SetConfig(cmd, cfg)
-
-	pushOpts := PushOptions{
-		Publish: true,
-	}
-
-	err := executePush(ctx, cmd, cfg, "main", pushOpts, false)
-	if err != nil {
-		t.Fatalf("unexpected error, should have fallen back to REST: %v", err)
-	}
-
-	if !strings.Contains(outBuf.String(), "applied metadata updates to Change") {
-		t.Errorf("expected output to mention applied metadata updates, got: %s", outBuf.String())
-	}
-	if !strings.Contains(outBuf.String(), "Draft comments published successfully") {
-		t.Errorf("expected output to mention Draft comments published, got: %s", outBuf.String())
-	}
-
-	if server.CallCount("POST", "/changes/I1234567890123456789012345678901234567890/revisions/current/review") != 1 {
-		t.Fatalf("expected review API to be called on Gerrit server, got calls: %v", server.Requests())
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Drafts != "PUBLISH_ALL_REVISIONS" {
-		t.Errorf("expected Drafts=%q, got %q", "PUBLISH_ALL_REVISIONS", capturedInput.Drafts)
-	}
-}
-
-func TestExecutePush_NoNewChanges_RESTFailure(t *testing.T) {
-	ctx := context.Background()
-	server := NewMockGerritServer(t)
-	server.OnStatus(http.StatusInternalServerError)
-	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
-	})
-
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main%publish-comments (no new changes)\nerror: failed to push some refs\n"))
-				return fmt.Errorf("exit status 1")
-			}
-			if len(args) > 0 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
-				return nil
-			}
-			return nil
-		},
-	}
-	cfg := &Config{
-		Git:     mockGit,
-		Host:    server.URL,
-		Profile: profiles["pigweed"],
-	}
-
-	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetContext(ctx)
-	SetConfig(cmd, cfg)
-
-	pushOpts := PushOptions{
-		Publish: true,
-	}
-
-	err := executePush(ctx, cmd, cfg, "main", pushOpts, false)
-	if err == nil {
-		t.Fatal("expected error on REST failure, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to apply metadata updates via Gerrit API") {
-		t.Errorf("expected error message mentioning failed to apply metadata updates, got: %v", err)
-	}
-}
-
-func TestExecutePush_NoNewChanges_CC_Failure(t *testing.T) {
-	ctx := context.Background()
-	server := NewMockGerritServer(t)
-	server.OnStatus(http.StatusBadRequest)
-	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
-	})
-
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main%cc=bad (no new changes)\nerror: failed to push some refs\n"))
-				return fmt.Errorf("exit status 1")
-			}
-			if len(args) > 0 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
-				return nil
-			}
-			return nil
-		},
-	}
-	cfg := &Config{
-		Git:     mockGit,
-		Host:    server.URL,
-		Profile: profiles["pigweed"],
-	}
-
-	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetContext(ctx)
-	SetConfig(cmd, cfg)
-
-	pushOpts := PushOptions{
-		CC: []string{"bad@domain.invalid"},
-	}
-
-	err := executePush(ctx, cmd, cfg, "main", pushOpts, false)
-	if err == nil {
-		t.Fatal("expected error on CC REST failure, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to apply metadata updates via Gerrit API") {
-		t.Errorf("expected error message mentioning failed to apply metadata updates, got: %v", err)
 	}
 }
 
@@ -1044,9 +747,6 @@ func TestCheckSubmodulePolicy(t *testing.T) {
 					{Name: "No-Submodule-Changes", Status: "UNSATISFIED"},
 				},
 			},
-		})
-		SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-			return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
 		})
 
 		mock := &MockGitRunner{}
@@ -1265,49 +965,11 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 // before scheduling, and a flow failure is not reported as a failure to apply
 // them.
 func TestExecutePush_NoNewChanges_Nightly_FlowFailure(t *testing.T) {
-	ctx := context.Background()
-	changeID := "I1234567890123456789012345678901234567890"
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
-	server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
-	server.OnString("POST", "/changes/123456/flows", http.StatusInternalServerError, "text/plain", "flows disabled")
-	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
-		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
+	_, out, err := runNoNewChangesPush(t, PushOptions{CQ: 1, Nightly: true, ChangeNumber: 123456}, func(s *MockGerritServer) {
+		s.OnDefaultChange(123456, WithChangeID(noNewChangesChangeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+		s.OnReview(noNewChangesChangeID)
+		s.OnString("POST", "/changes/123456/flows", http.StatusInternalServerError, "text/plain", "flows disabled")
 	})
-
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
-				return fmt.Errorf("exit status 1")
-			}
-			if len(args) > 0 && args[0] == "log" {
-				stdout.Write([]byte("Commit subject\n\nChange-Id: " + changeID + "\n"))
-				return nil
-			}
-			return nil
-		},
-	}
-	cfg := &Config{
-		Git:     mockGit,
-		Host:    server.URL,
-		Profile: profiles["pigweed"],
-	}
-
-	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetContext(ctx)
-	SetConfig(cmd, cfg)
-
-	pushOpts := PushOptions{
-		CQ:           1,
-		Nightly:      true,
-		ChangeNumber: 123456,
-	}
-
-	err := executePush(ctx, cmd, cfg, "main", pushOpts, false)
 	if err == nil {
 		t.Fatal("expected an error when flow creation fails, got nil")
 	}
@@ -1317,8 +979,8 @@ func TestExecutePush_NoNewChanges_Nightly_FlowFailure(t *testing.T) {
 	if strings.Contains(err.Error(), "failed to apply metadata updates") {
 		t.Errorf("error must not claim the metadata updates failed, got: %v", err)
 	}
-	if !strings.Contains(outBuf.String(), "Commit-Queue+1 set successfully") {
-		t.Errorf("expected the applied CQ vote to be reported before the failure, got: %s", outBuf.String())
+	if !strings.Contains(out, "Commit-Queue+1 set successfully") {
+		t.Errorf("expected the applied CQ vote to be reported before the failure, got: %s", out)
 	}
 }
 

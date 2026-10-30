@@ -15,12 +15,10 @@
 package pw_ghish
 
 import (
-	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
-
-	"github.com/andygrunwald/go-gerrit"
 )
 
 func TestMergeIntegration_ImmediateSubmit(t *testing.T) {
@@ -48,7 +46,7 @@ func TestMergeIntegration_AutoSubmit_Pigweed(t *testing.T) {
 	SetTestProfile(t, "pigweed")
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345, WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(12345)
 
 	output, err := executeCommand(RootCmd, "pr", "merge", "12345", "--auto", "--message", "Auto-submitting")
 	if err != nil {
@@ -59,10 +57,7 @@ func TestMergeIntegration_AutoSubmit_Pigweed(t *testing.T) {
 		t.Fatal("Expected SetReview API to be called for auto-submit")
 	}
 
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
+	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 
 	if capturedInput.Labels["Pigweed-Auto-Submit"] != 1 {
 		t.Errorf("Labels got %v, want Pigweed-Auto-Submit=1", capturedInput.Labels)
@@ -79,45 +74,11 @@ func TestMergeIntegration_AutoSubmit_Pigweed(t *testing.T) {
 	}
 }
 
-// The label name belongs to the host, not to the profile: a chrome-internal or
-// Chromium change calls it Auto-Submit, and voting Pigweed-Auto-Submit there is
-// rejected by Gerrit as an unknown label.
-func TestMergeIntegration_AutoSubmit_UsesLabelFromChange(t *testing.T) {
-	SetTestProfile(t, "pigweed")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(12345, WithLabels("Code-Review", "Commit-Queue", "Auto-Submit"))
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "merge", "12345", "--auto")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-
-	if capturedInput.Labels["Auto-Submit"] != 1 {
-		t.Errorf("Labels got %v, want Auto-Submit=1", capturedInput.Labels)
-	}
-	if _, voted := capturedInput.Labels["Pigweed-Auto-Submit"]; voted {
-		t.Errorf("Labels got %v, want no vote on the profile's label", capturedInput.Labels)
-	}
-	if !strings.Contains(output, "Auto-submit enabled for change 12345 (Auto-Submit+1)") {
-		t.Errorf("Unexpected output: %s", output)
-	}
-}
-
-// Fuchsia lands changes through the Commit Queue and has no auto-submit label,
-// so --auto cannot be honored there. Voting Commit-Queue+2 and calling it
-// auto-submit (as pw_ghish used to) hides that; the dry run runs the checks and
-// the error says who has to submit it.
 func TestMergeIntegration_AutoSubmit_NoLabelDryRunsAndFails(t *testing.T) {
 	SetTestProfile(t, "fuchsia")
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(54321, WithLabels("Code-Review", "Commit-Queue"))
-	server.OnJSON("POST", "/changes/54321/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(54321)
 
 	output, err := executeCommand(RootCmd, "pr", "merge", "54321", "--auto")
 	if err == nil {
@@ -125,21 +86,15 @@ func TestMergeIntegration_AutoSubmit_NoLabelDryRunsAndFails(t *testing.T) {
 	}
 
 	if server.CallCount("POST", "/changes/54321/revisions/current/review") != 1 {
-		t.Fatal("Expected the Commit-Queue dry run to still be requested")
+		t.Fatal("Expected SetReview API to be called for --auto fallback dry run")
 	}
 
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	// +1 is the dry run. +2 would submit the change, which is not something
-	// pw_ghish should do because it could not find the label asked for.
+	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 	if capturedInput.Labels["Commit-Queue"] != 1 {
 		t.Errorf("Labels got %v, want Commit-Queue=1", capturedInput.Labels)
 	}
-
-	if strings.Contains(output, "Auto-submit enabled") {
-		t.Errorf("Output claims auto-submit was enabled when it was not: %s", output)
+	if !strings.Contains(output, "Commit-Queue+1 set for change 54321.") || strings.Contains(output, "Auto-submit enabled") {
+		t.Errorf("Unexpected output: %s", output)
 	}
 	for _, want := range []string{"has no auto-submit label", "--cq"} {
 		if !strings.Contains(err.Error(), want) {
@@ -148,105 +103,8 @@ func TestMergeIntegration_AutoSubmit_NoLabelDryRunsAndFails(t *testing.T) {
 	}
 }
 
-// A Fuchsia host that does define an auto-submit label is auto-submitted
-// through it, with no Commit-Queue consolation prize.
-func TestMergeIntegration_AutoSubmit_FuchsiaPrefersChangeLabel(t *testing.T) {
-	SetTestProfile(t, "fuchsia")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(54321, WithLabels("Code-Review", "Commit-Queue", "Fuchsia-Auto-Submit"))
-	server.OnJSON("POST", "/changes/54321/revisions/current/review", http.StatusOK, map[string]any{})
-
-	if _, err := executeCommand(RootCmd, "pr", "merge", "54321", "--auto"); err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-
-	if capturedInput.Labels["Fuchsia-Auto-Submit"] != 1 {
-		t.Errorf("Labels got %v, want Fuchsia-Auto-Submit=1", capturedInput.Labels)
-	}
-	if _, voted := capturedInput.Labels["Commit-Queue"]; voted {
-		t.Errorf("Labels got %v, want no Commit-Queue vote alongside the real label", capturedInput.Labels)
-	}
-}
-
-// Nothing to vote means nothing to do, so this fails before touching the
-// change rather than doing half of what was asked.
-func TestMergeIntegration_AutoSubmit_NoLabelAndNoCommitQueue(t *testing.T) {
-	SetTestProfile(t, "generic")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(99999, WithLabels("Code-Review"))
-
-	output, err := executeCommand(RootCmd, "pr", "merge", "99999", "--auto")
-	if err == nil {
-		t.Fatal("Expected error for a host with no auto-submit label, got nil")
-	}
-
-	if !strings.Contains(output, "has no auto-submit label") {
-		t.Errorf("Expected output to mention the missing auto-submit label, got: %s", output)
-	}
-	if server.CallCount("POST", "/changes/99999/revisions/current/review") != 0 {
-		t.Error("Expected no vote to be attempted when there is nothing worth voting")
-	}
-}
-
-// A change that reports no labels at all says nothing about what this host
-// supports, and the profile is no longer allowed to fill in the blank.
-func TestMergeIntegration_AutoSubmit_ChangeWithNoLabels(t *testing.T) {
-	SetTestProfile(t, "pigweed")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(99999)
-
-	_, err := executeCommand(RootCmd, "pr", "merge", "99999", "--auto")
-	if err == nil {
-		t.Fatal("Expected error when the change reports no labels, got nil")
-	}
-	if !strings.Contains(err.Error(), "reports no labels") {
-		t.Errorf("Expected the error to say the labels are unknown, got: %v", err)
-	}
-	if server.CallCount("POST", "/changes/99999/revisions/current/review") != 0 {
-		t.Error("Expected no vote to be attempted when the labels are unknown")
-	}
-}
-
-// A host that defines labels but no auto-submit label should say so, and name
-// the labels it does define, rather than failing on a Gerrit 400.
-func TestMergeIntegration_AutoSubmit_ErrorListsAvailableLabels(t *testing.T) {
-	SetTestProfile(t, "generic")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(99999, WithLabels("Code-Review", "Verified"))
-
-	_, err := executeCommand(RootCmd, "pr", "merge", "99999", "--auto")
-	if err == nil {
-		t.Fatal("Expected error when no auto-submit label exists, got nil")
-	}
-	for _, want := range []string{"has no auto-submit label", "Code-Review, Verified", "--add-label"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("Expected error to contain %q, got: %v", want, err)
-		}
-	}
-}
-
-func TestMergeIntegration_AutoSubmit_Alias(t *testing.T) {
-	SetTestProfile(t, "pigweed")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(11111, WithLabels("Code-Review", "Pigweed-Auto-Submit"))
-	server.OnJSON("POST", "/changes/11111/revisions/current/review", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "merge", "11111", "--auto-submit")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	if server.CallCount("POST", "/changes/11111/revisions/current/review") != 1 {
-		t.Fatal("Expected SetReview API to be called using --auto-submit alias")
-	}
-}
-
 func TestMergeIntegration_ErrorOnExplicitPatchset(t *testing.T) {
+	NewMockGerritServer(t)
 	_, err := executeCommand(RootCmd, "pr", "merge", "12345/3")
 	if err == nil {
 		t.Fatal("Expected error when merging explicit patchset, got nil")
@@ -259,7 +117,7 @@ func TestMergeIntegration_ErrorOnExplicitPatchset(t *testing.T) {
 func TestMergeIntegration_CQ_Pigweed(t *testing.T) {
 	SetTestProfile(t, "pigweed")
 	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(12345)
 
 	output, err := executeCommand(RootCmd, "pr", "merge", "12345", "--cq")
 	if err != nil {
@@ -270,10 +128,7 @@ func TestMergeIntegration_CQ_Pigweed(t *testing.T) {
 		t.Fatal("Expected SetReview API to be called for --cq")
 	}
 
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
+	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 
 	if capturedInput.Labels["Commit-Queue"] != 2 {
 		t.Errorf("Labels got %v, want Commit-Queue=2", capturedInput.Labels)
@@ -284,53 +139,144 @@ func TestMergeIntegration_CQ_Pigweed(t *testing.T) {
 	}
 }
 
-func TestMergeIntegration_CQ_GenericProfile_WithCommitQueue(t *testing.T) {
-	SetTestProfile(t, "generic")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(12345, WithLabels("Code-Review", "Commit-Queue"))
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+// TestMergeIntegration_LabelSelection checks which label pr merge votes on
+// for a change's labels under each profile, and how it fails when the change
+// has no usable label.
+func TestMergeIntegration_LabelSelection(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+		labels  []string
+		args    []string
+		// wantErr lists substrings of the returned error; empty means success.
+		wantErr     []string
+		wantOut     []string
+		wantVotes   map[string]int
+		wantNoVotes []string
+		// wantNoReview asserts that no vote was attempted.
+		wantNoReview bool
+	}{
+		{
+			name:      "auto-submit alias",
+			profile:   "pigweed",
+			labels:    []string{"Code-Review", "Pigweed-Auto-Submit"},
+			args:      []string{"--auto-submit"},
+			wantVotes: map[string]int{"Pigweed-Auto-Submit": 1},
+		},
+		{
+			name:         "change with no labels",
+			profile:      "pigweed",
+			args:         []string{"--auto"},
+			wantErr:      []string{"reports no labels"},
+			wantNoReview: true,
+		},
+		{
+			name:    "error lists available labels",
+			profile: "generic",
+			labels:  []string{"Code-Review", "Verified"},
+			args:    []string{"--auto"},
+			wantErr: []string{"has no auto-submit label", "Code-Review, Verified", "--add-label"},
+		},
+		{
+			name:        "fuchsia prefers the change's label",
+			profile:     "fuchsia",
+			labels:      []string{"Code-Review", "Commit-Queue", "Fuchsia-Auto-Submit"},
+			args:        []string{"--auto"},
+			wantVotes:   map[string]int{"Fuchsia-Auto-Submit": 1},
+			wantNoVotes: []string{"Commit-Queue"},
+		},
+		{
+			name:         "no auto-submit label and no Commit-Queue",
+			profile:      "generic",
+			labels:       []string{"Code-Review"},
+			args:         []string{"--auto"},
+			wantErr:      []string{"has no auto-submit label"},
+			wantNoReview: true,
+		},
+		{
+			name:        "uses the change's label over the profile's",
+			profile:     "pigweed",
+			labels:      []string{"Code-Review", "Commit-Queue", "Auto-Submit"},
+			args:        []string{"--auto"},
+			wantOut:     []string{"Auto-submit enabled for change 12345 (Auto-Submit+1)"},
+			wantVotes:   map[string]int{"Auto-Submit": 1},
+			wantNoVotes: []string{"Pigweed-Auto-Submit"},
+		},
+		{
+			name:      "generic --cq with Autosubmit and Presubmit-Ready",
+			profile:   "generic",
+			labels:    []string{"Code-Review", "Autosubmit", "Presubmit-Ready"},
+			args:      []string{"--cq"},
+			wantOut:   []string{"Autosubmit+1", "Presubmit-Ready+1"},
+			wantVotes: map[string]int{"Autosubmit": 1, "Presubmit-Ready": 1},
+		},
+		{
+			name:      "generic --cq with Commit-Queue",
+			profile:   "generic",
+			labels:    []string{"Code-Review", "Commit-Queue"},
+			args:      []string{"--cq"},
+			wantOut:   []string{"Commit-Queue enabled for change 12345 (Commit-Queue+2)"},
+			wantVotes: map[string]int{"Commit-Queue": 2},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			SetTestProfile(t, tc.profile)
+			server := NewMockGerritServer(t)
+			var opts []func(map[string]any)
+			if len(tc.labels) > 0 {
+				opts = append(opts, WithLabels(tc.labels...))
+			}
+			server.OnDefaultChange(12345, opts...)
+			server.OnReview(12345)
 
-	output, err := executeCommand(RootCmd, "pr", "merge", "12345", "--cq")
-	if err != nil {
-		t.Fatalf("Command failed on generic profile with Commit-Queue: %v\nOutput: %s", err, output)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Labels["Commit-Queue"] != 2 {
-		t.Errorf("Labels got %v, want Commit-Queue=2", capturedInput.Labels)
-	}
-	if !strings.Contains(output, "Commit-Queue enabled for change 12345 (Commit-Queue+2)") {
-		t.Errorf("Unexpected output: %s", output)
-	}
-}
-
-func TestMergeIntegration_CQ_GenericProfile_WithAutosubmitAndPresubmitReady(t *testing.T) {
-	SetTestProfile(t, "generic")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(12345, WithLabels("Code-Review", "Autosubmit", "Presubmit-Ready"))
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "merge", "12345", "--cq")
-	if err != nil {
-		t.Fatalf("Command failed on generic profile with Autosubmit+Presubmit-Ready: %v\nOutput: %s", err, output)
-	}
-
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
-	if capturedInput.Labels["Autosubmit"] != 1 || capturedInput.Labels["Presubmit-Ready"] != 1 {
-		t.Errorf("Labels got %v, want Autosubmit=1 and Presubmit-Ready=1", capturedInput.Labels)
-	}
-	if !strings.Contains(output, "Autosubmit+1") || !strings.Contains(output, "Presubmit-Ready+1") {
-		t.Errorf("Unexpected output: %s", output)
+			output, err := executeCommand(RootCmd, append([]string{"pr", "merge", "12345"}, tc.args...)...)
+			if len(tc.wantErr) == 0 && err != nil {
+				t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+			}
+			if len(tc.wantErr) > 0 {
+				if err == nil {
+					t.Fatalf("Expected an error, got nil.\nOutput: %s", output)
+				}
+				for _, want := range tc.wantErr {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("Expected error to contain %q, got: %v", want, err)
+					}
+				}
+			}
+			for _, want := range tc.wantOut {
+				if !strings.Contains(output, want) {
+					t.Errorf("Expected output to contain %q, got: %s", want, output)
+				}
+			}
+			if !slices.ContainsFunc(server.Requests(), func(req MockRequest) bool {
+				return req.Method == http.MethodGet && req.Path == "/changes/12345" && slices.Contains(req.URL.Query()["o"], "DETAILED_LABELS")
+			}) {
+				t.Errorf("expected GET /changes/12345 with o=DETAILED_LABELS; requests: %+v", server.Requests())
+			}
+			if tc.wantNoReview && server.CallCount("POST", "/changes/12345/revisions/current/review") != 0 {
+				t.Error("Expected no vote to be attempted")
+			}
+			if len(tc.wantVotes) == 0 && len(tc.wantNoVotes) == 0 {
+				return
+			}
+			input := DecodeRequest[ReviewInput](t, server.LastRequest())
+			for label, want := range tc.wantVotes {
+				if got := input.Labels[label]; got != want {
+					t.Errorf("Labels got %v, want %s=%d", input.Labels, label, want)
+				}
+			}
+			for _, label := range tc.wantNoVotes {
+				if _, voted := input.Labels[label]; voted {
+					t.Errorf("Labels got %v, want no %s vote", input.Labels, label)
+				}
+			}
+		})
 	}
 }
 
 func TestMergeIntegration_ErrorWhenBothAutoAndCQ(t *testing.T) {
+	NewMockGerritServer(t)
 	_, err := executeCommand(RootCmd, "pr", "merge", "12345", "--auto", "--cq")
 	if err == nil {
 		t.Fatal("Expected error when passing both --auto and --cq, got nil")
@@ -366,112 +312,75 @@ func TestMergeIntegration_Trigger(t *testing.T) {
 	SetTestProfile(t, "generic")
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345, WithLabels("Code-Review", "Autosubmit", "Presubmit-Ready"))
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(12345)
 
 	output, err := executeCommand(RootCmd, "pr", "merge", "12345", "--trigger")
 	if err != nil {
 		t.Fatalf("Command failed with --trigger: %v\nOutput: %s", err, output)
 	}
 
-	var capturedInput gerrit.ReviewInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedInput)
-	}
+	capturedInput := DecodeRequest[ReviewInput](t, server.LastRequest())
 	if capturedInput.Labels["Autosubmit"] != 1 || capturedInput.Labels["Presubmit-Ready"] != 1 {
 		t.Errorf("Labels got %v, want Autosubmit=1 and Presubmit-Ready=1", capturedInput.Labels)
 	}
 }
 
-func TestMergeIntegration_Nightly(t *testing.T) {
-	SetTestProfile(t, "pigweed")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(123456, WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
-	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "merge", "123456", "--nightly")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	if server.CallCount("POST", "/changes/123456/flows") != 1 {
-		t.Fatalf("Expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
-	}
-
-	var postReqs []MockRequest
-	for _, r := range server.Requests() {
-		if r.Method == "POST" && r.Path == "/changes/123456/flows" {
-			postReqs = append(postReqs, r)
-		}
-	}
-	if len(postReqs) != 1 {
-		t.Fatalf("Expected 1 POST request, got %d", len(postReqs))
-	}
-
-	wantFlows := []struct {
-		condSubstr string
-		cqVote     string
+func TestMergeIntegration_ScheduledFlow(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           []string
+		wantCondSubstr string
+		wantOut        string
 	}{
 		{
-			condSubstr: "/c/123456 is is:open, wait until tomorrow at 02:36 in America/Los_Angeles",
-			cqVote:     "Commit-Queue+1",
+			name:           "nightly",
+			args:           []string{"pr", "merge", "123456", "--nightly"},
+			wantCondSubstr: "/c/123456 is is:open, wait until tomorrow at 02:36 in America/Los_Angeles",
+			wantOut:        "✓ Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles).",
+		},
+		{
+			name:           "submit-at",
+			args:           []string{"pr", "merge", "123456", "--submit-at", "21:00"},
+			wantCondSubstr: "/c/123456 is is:open, wait until today at 21:00 in America/Los_Angeles",
+			wantOut:        "Created submit flow for Change 123456 (scheduled for today at 21:00 in America/Los_Angeles).",
 		},
 	}
 
-	for i, want := range wantFlows {
-		var capturedFlow FlowInput
-		if err := json.Unmarshal(postReqs[i].Body, &capturedFlow); err != nil {
-			t.Fatalf("request %d: failed to unmarshal FlowInput: %v", i, err)
-		}
-		if len(capturedFlow.StageExpressions) != 2 {
-			t.Fatalf("request %d: expected 2 stage expressions, got %d", i, len(capturedFlow.StageExpressions))
-		}
-		wantVotes := []string{want.cqVote, "Pigweed-Auto-Submit+1"}
-		for sIdx, wantVote := range wantVotes {
-			stage := capturedFlow.StageExpressions[sIdx]
-			if !strings.Contains(stage.Condition, want.condSubstr) {
-				t.Errorf("request %d stage %d: unexpected flow condition: %q, want substring %q", i, sIdx, stage.Condition, want.condSubstr)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetTestProfile(t, "pigweed")
+			server := NewMockGerritServer(t)
+			server.OnDefaultChange(123456, WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
+			server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+
+			output, err := executeCommand(RootCmd, tt.args...)
+			if err != nil {
+				t.Fatalf("Command failed: %v\nOutput: %s", err, output)
 			}
-			if stage.Action.Name != "vote" || len(stage.Action.Parameters) != 1 || stage.Action.Parameters[0] != wantVote {
-				t.Errorf("request %d stage %d: unexpected flow action: %+v, want vote %s", i, sIdx, stage.Action, wantVote)
+
+			if server.CallCount("POST", "/changes/123456/flows") != 1 {
+				t.Fatalf("Expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
 			}
-		}
-	}
 
-	wantOut := "✓ Created submit flow for Change 123456 (scheduled for tomorrow at 02:36 in America/Los_Angeles)."
-	if !strings.Contains(output, wantOut) {
-		t.Errorf("Output got %q, want %q", output, wantOut)
-	}
-}
+			capturedFlow := DecodeRequest[FlowInput](t, server.LastRequest())
+			if len(capturedFlow.StageExpressions) != 2 {
+				t.Fatalf("Expected 2 stage expressions, got %d", len(capturedFlow.StageExpressions))
+			}
+			wantVotes := []string{"Commit-Queue+1", "Pigweed-Auto-Submit+1"}
+			for sIdx, wantVote := range wantVotes {
+				stage := capturedFlow.StageExpressions[sIdx]
+				if !strings.Contains(stage.Condition, tt.wantCondSubstr) {
+					t.Errorf("stage %d: unexpected flow condition: %q, want substring %q", sIdx, stage.Condition, tt.wantCondSubstr)
+				}
+				if stage.Action.Name != "vote" || len(stage.Action.Parameters) != 1 || stage.Action.Parameters[0] != wantVote {
+					t.Errorf("stage %d: unexpected flow action: %+v, want vote %s", sIdx, stage.Action, wantVote)
+				}
+			}
 
-func TestMergeIntegration_SubmitAt(t *testing.T) {
-	SetTestProfile(t, "pigweed")
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(123456, WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
-	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
-
-	output, err := executeCommand(RootCmd, "pr", "merge", "123456", "--submit-at", "21:00")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	if server.CallCount("POST", "/changes/123456/flows") != 1 {
-		t.Fatalf("Expected POST /changes/123456/flows to be called once, got %d", server.CallCount("POST", "/changes/123456/flows"))
-	}
-
-	var capturedFlow FlowInput
-	if req := server.LastRequest(); req != nil {
-		json.Unmarshal(req.Body, &capturedFlow)
-	}
-	if len(capturedFlow.StageExpressions) != 2 {
-		t.Fatalf("Expected 2 stage expressions, got %d", len(capturedFlow.StageExpressions))
-	}
-	if !strings.Contains(capturedFlow.StageExpressions[0].Condition, "wait until today at 21:00 in America/Los_Angeles") {
-		t.Errorf("Unexpected flow condition: %q", capturedFlow.StageExpressions[0].Condition)
-	}
-
-	wantOut := "Created submit flow for Change 123456 (scheduled for today at 21:00 in America/Los_Angeles)."
-	if !strings.Contains(output, wantOut) {
-		t.Errorf("Output got %q, want %q", output, wantOut)
+			if !strings.Contains(output, tt.wantOut) {
+				t.Errorf("Output got %q, want substring %q", output, tt.wantOut)
+			}
+		})
 	}
 }
 
@@ -541,6 +450,7 @@ func TestMergeIntegration_ScheduledFlagConflicts(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			NewMockGerritServer(t)
 			_, err := executeCommand(RootCmd, tc.args...)
 			if err == nil {
 				t.Fatalf("Expected error for args %v, got nil", tc.args)

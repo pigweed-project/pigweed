@@ -15,10 +15,7 @@
 package pw_ghish
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -29,95 +26,30 @@ import (
 	"github.com/andygrunwald/go-gerrit"
 )
 
-var defaultStatusActiveChange = gerrit.ChangeInfo{
-	ChangeID: "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-	Number:   472267,
-	Subject:  "Active Feature Subject",
-	Branch:   "main",
-	Status:   "NEW",
-}
+const statusChangeID = "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e"
 
 func newStatusMockServer(t *testing.T) *MockGerritServer {
-	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/accounts/self", http.StatusOK, map[string]any{"_account_id": 1000000})
-	return server
+	return NewMockGerritServer(t).OnAccountSelf(1000000)
+}
+
+// onActiveChange serves the current branch's change without leaking it
+// into the owner/reviewer queries.
+func onActiveChange(s *MockGerritServer, opts ...func(map[string]any)) *MockGerritServer {
+	opts = append([]func(map[string]any){WithChangeID(statusChangeID), WithSubject("Active Feature Subject")}, opts...)
+	return s.OnDefaultChange(472267, opts...).OnJSON("GET", "/changes/", http.StatusOK, []any{})
 }
 
 func mockGitForFeatureBranch(t *testing.T) *MockGitRunner {
-	return SetMockGit(t, &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "branch" && args[1] == "--show-current" {
-				stdout.Write([]byte("feature-branch\n"))
-				return nil
-			}
-			if len(args) >= 3 && args[0] == "log" && args[1] == "-1" {
-				stdout.Write([]byte("commit msg\n\nChange-Id: Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e\n"))
-				return nil
-			}
-			return nil
-		},
-	})
+	return NewMockGit(t).
+		WithBranch("feature-branch").
+		WithCommit("commit msg\n\nChange-Id: " + statusChangeID + "\n")
 }
 
 func mockGitForMainBranch(t *testing.T) *MockGitRunner {
-	return SetMockGit(t, &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "branch" && args[1] == "--show-current" {
-				stdout.Write([]byte("main\n"))
-				return nil
-			}
-			if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-				stdout.Write([]byte("0\n"))
-				return nil
-			}
-			return nil
-		},
-	})
-}
-
-func TestStatusIntegration(t *testing.T) {
-	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
-
-	output, err := executeCommand(RootCmd, "pr", "status")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	var hasChangesCall bool
-	for _, req := range server.Requests() {
-		if strings.HasPrefix(req.Path, "/changes/") {
-			hasChangesCall = true
-			break
-		}
-	}
-	if !hasChangesCall {
-		t.Error("Expected QueryChanges API to be called")
-	}
-}
-
-func TestStatus_WritesToCmdOut(t *testing.T) {
-	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, [][]map[string]any{
-		{{"_number": 88888, "subject": "Status Change Subject", "status": "NEW", "owner": map[string]any{"name": "Alice"}}},
-	})
-
-	var buf bytes.Buffer
-	isolateRootCmdForTest(t)
-	RootCmd.SetOut(&buf)
-	RootCmd.SetErr(&buf)
-	RootCmd.SetArgs([]string{"pr", "status"})
-
-	if err := RootCmd.Execute(); err != nil {
-		t.Fatalf("RootCmd.Execute() failed: %v", err)
-	}
-
-	if !strings.Contains(buf.String(), "88888") || !strings.Contains(buf.String(), "Status Change Subject") {
-		t.Errorf("Expected buf to receive rendered output, got:\n%s", buf.String())
-	}
-	if !strings.Contains(buf.String(), "Next: gh pr view <id>  (or gh pr checks)") {
-		t.Errorf("Expected status output to contain Next hint, got:\n%s", buf.String())
-	}
+	return NewMockGit(t).
+		WithBranch("main").
+		WithCommit("commit without change-id\n").
+		OnCommand("rev-list --count", "0\n")
 }
 
 func TestStatus_ErrorWhenSelfAccountFails(t *testing.T) {
@@ -134,24 +66,16 @@ func TestStatus_ErrorWhenSelfAccountFails(t *testing.T) {
 }
 
 func TestStatus_CurrentBranch_ActivePR(t *testing.T) {
-	activeChange := gerrit.ChangeInfo{
-		ChangeID: "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-		Number:   472267,
-		Subject:  "Active Feature Subject",
-		Status:   "NEW",
-		Branch:   "main",
-		Labels: map[string]gerrit.LabelInfo{
-			// Ranges mirror the real Pigweed labels: Code-Review and Lint
-			// span -2..+2, but Presubmit-Verified tops out at +1.
+	server := newStatusMockServer(t)
+	onActiveChange(server, func(ch map[string]any) {
+		// Ranges mirror the real Pigweed labels: Code-Review and Lint
+		// span -2..+2, but Presubmit-Verified tops out at +1.
+		ch["labels"] = map[string]gerrit.LabelInfo{
 			"Code-Review":        narrowLabel(-2, 2, 2),
 			"Presubmit-Verified": narrowLabel(-1, 1, 1),
 			"Lint":               narrowLabel(-2, 2, 1),
-		},
-	}
-
-	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, activeChange)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
+		}
+	})
 
 	mockGitForFeatureBranch(t)
 
@@ -168,6 +92,7 @@ func TestStatus_CurrentBranch_ActivePR(t *testing.T) {
 		"Code-Review: +2 (Approved)",
 		"Presubmit-Verified: +1 (Approved)",
 		"Lint: +1 (Recommended)",
+		"Next: gh pr view <id>  (or gh pr checks)",
 	}
 	for _, exp := range expectedStrings {
 		if !strings.Contains(out, exp) {
@@ -204,20 +129,7 @@ func TestStatus_CurrentBranch_NoActivePR(t *testing.T) {
 func TestStatus_CurrentBranch_NamedBranchNoActivePR(t *testing.T) {
 	server := newStatusMockServer(t)
 	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
-
-	SetMockGit(t, &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "branch" && args[1] == "--show-current" {
-				stdout.Write([]byte("my-feature-branch\n"))
-				return nil
-			}
-			if len(args) >= 3 && args[0] == "log" && args[1] == "-1" {
-				stdout.Write([]byte("commit without change-id\n"))
-				return nil
-			}
-			return nil
-		},
-	})
+	NewMockGit(t).WithBranch("my-feature-branch").WithCommit("commit without change-id\n")
 
 	out, err := executeCommand(RootCmd, "pr", "status")
 	if err != nil {
@@ -306,144 +218,128 @@ func TestStatus_AllFlag_BypassesFilter(t *testing.T) {
 	}
 }
 
-func TestStatus_CurrentBranch_WithComments_Unresolved(t *testing.T) {
-	mockGitForFeatureBranch(t)
-	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/*/comments", http.StatusOK, map[string][]gerrit.CommentInfo{
+func TestStatus_CurrentBranch_WithCommentsAndDrafts(t *testing.T) {
+	singleUnresolved := map[string][]CommentInfo{
 		"pw_ghish/status.go": {
 			{
 				ID:         "c1",
 				Line:       142,
 				PatchSet:   14,
-				Unresolved: boolPtr(true),
-				Author:     gerrit.AccountInfo{Email: "reviewer@google.com"},
+				Unresolved: new(true),
+				Author:     AccountInfo{Email: "reviewer@google.com"},
 				Message:    "Consider sorting these keys so test output is deterministic.",
 			},
 		},
-	})
-	server.OnJSON("GET", "/changes/*/drafts", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, defaultStatusActiveChange)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
-
-	out, err := executeCommand(RootCmd, "pr", "status")
-	if err != nil {
-		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
 	}
 
-	expectedStrings := []string{
-		"Comments:",
-		"⚠ 1 unresolved thread:",
-		"• pw_ghish/status.go:142 [PS14] by reviewer@google.com:",
-		"\"Consider sorting these keys so test output is deterministic.\"",
-	}
-	for _, exp := range expectedStrings {
-		if !strings.Contains(out, exp) {
-			t.Errorf("Expected output to contain %q, but got:\n%s", exp, out)
+	t.Run("unresolved without drafts", func(t *testing.T) {
+		mockGitForFeatureBranch(t)
+		server := newStatusMockServer(t)
+		onActiveChange(server).
+			OnComments("*", singleUnresolved).
+			OnDrafts("*", nil)
+
+		out, err := executeCommand(RootCmd, "pr", "status")
+		if err != nil {
+			t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
 		}
-	}
-}
-
-func TestStatus_CurrentBranch_WithComments_Hysteresis(t *testing.T) {
-	mockGitForFeatureBranch(t)
-	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/*/comments", http.StatusOK, map[string][]gerrit.CommentInfo{
-		"file1.go": {
-			{ID: "c1", Line: 10, PatchSet: 1, Unresolved: boolPtr(true), Author: gerrit.AccountInfo{Name: "Rev1"}, Message: "First comment"},
-		},
-		"file2.go": {
-			{ID: "c2", Line: 20, PatchSet: 1, Unresolved: boolPtr(true), Author: gerrit.AccountInfo{Name: "Rev2"}, Message: "Second comment"},
-		},
-		"file3.go": {
-			{ID: "c3", Line: 30, PatchSet: 1, Unresolved: boolPtr(true), Author: gerrit.AccountInfo{Name: "Rev3"}, Message: "Third comment"},
-		},
-	})
-	server.OnJSON("GET", "/changes/*/drafts", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, defaultStatusActiveChange)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
-
-	out, err := executeCommand(RootCmd, "pr", "status")
-	if err != nil {
-		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
-	}
-
-	expectedStrings := []string{
-		"Comments:",
-		"⚠ 3 unresolved threads (use 'gh pr view --comments' to view all):",
-		"file1.go:10",
-		"file2.go:20",
-		"... and 1 more unresolved thread",
-	}
-	for _, exp := range expectedStrings {
-		if !strings.Contains(out, exp) {
-			t.Errorf("Expected output to contain %q, but got:\n%s", exp, out)
+		for _, exp := range []string{
+			"Comments:",
+			"⚠ 1 unresolved thread:",
+			"• pw_ghish/status.go:142 [PS14] by reviewer@google.com:",
+			"\"Consider sorting these keys so test output is deterministic.\"",
+		} {
+			if !strings.Contains(out, exp) {
+				t.Errorf("Expected output to contain %q, but got:\n%s", exp, out)
+			}
 		}
-	}
-	if strings.Contains(out, "file3.go:30") {
-		t.Errorf("Expected file3.go to be truncated by hysteresis, but found it in output:\n%s", out)
-	}
-}
-
-func TestStatus_CurrentBranch_WithDrafts(t *testing.T) {
-	mockGitForFeatureBranch(t)
-	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/*/comments", http.StatusOK, map[string][]gerrit.CommentInfo{
-		"pw_ghish/status.go": {
-			{
-				ID:         "c1",
-				Line:       142,
-				PatchSet:   14,
-				Unresolved: boolPtr(true),
-				Author:     gerrit.AccountInfo{Email: "reviewer@google.com"},
-				Message:    "Please fix this.",
-			},
-		},
-	})
-	server.OnJSON("GET", "/changes/*/drafts", http.StatusOK, map[string][]gerrit.CommentInfo{
-		"pw_ghish/status.go": {
-			{
-				ID:        "d1",
-				InReplyTo: "c1",
-				Message:   "I am working on it right now.",
-			},
-		},
-	})
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, defaultStatusActiveChange)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
-
-	out, err := executeCommand(RootCmd, "pr", "status")
-	if err != nil {
-		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
-	}
-
-	expectedStrings := []string{
-		"⚠ 1 unresolved thread (1 unpublished draft):",
-		"(has unpublished draft reply)",
-	}
-	for _, exp := range expectedStrings {
-		if !strings.Contains(out, exp) {
-			t.Errorf("Expected output to contain %q, but got:\n%s", exp, out)
+		if strings.Contains(out, "draft") {
+			t.Errorf("Expected no draft mention in output, got:\n%s", out)
 		}
-	}
+	})
+
+	t.Run("unresolved with unpublished draft reply", func(t *testing.T) {
+		mockGitForFeatureBranch(t)
+		server := newStatusMockServer(t)
+		onActiveChange(server).
+			OnComments("*", singleUnresolved).
+			OnDrafts("*", map[string][]CommentInfo{
+				"pw_ghish/status.go": {
+					{
+						ID:        "d1",
+						InReplyTo: "c1",
+						Message:   "I am working on it right now.",
+					},
+				},
+			})
+
+		out, err := executeCommand(RootCmd, "pr", "status")
+		if err != nil {
+			t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
+		}
+		for _, exp := range []string{
+			"Comments:",
+			"⚠ 1 unresolved thread (1 unpublished draft):",
+			"• pw_ghish/status.go:142 [PS14] by reviewer@google.com (has unpublished draft reply):",
+			"\"Consider sorting these keys so test output is deterministic.\"",
+		} {
+			if !strings.Contains(out, exp) {
+				t.Errorf("Expected output to contain %q, but got:\n%s", exp, out)
+			}
+		}
+	})
+
+	t.Run("truncates after two unresolved threads", func(t *testing.T) {
+		mockGitForFeatureBranch(t)
+		server := newStatusMockServer(t)
+		onActiveChange(server).
+			OnComments("*", map[string][]CommentInfo{
+				"pw_ghish/status.go": {
+					{ID: "c1", Line: 10, PatchSet: 14, Unresolved: new(true), Author: AccountInfo{Email: "r@google.com"}, Message: "First thread."},
+					{ID: "c2", Line: 20, PatchSet: 14, Unresolved: new(true), Author: AccountInfo{Email: "r@google.com"}, Message: "Second thread."},
+					{ID: "c3", Line: 30, PatchSet: 14, Unresolved: new(true), Author: AccountInfo{Email: "r@google.com"}, Message: "Third thread."},
+				},
+			}).
+			OnDrafts("*", map[string][]CommentInfo{})
+
+		out, err := executeCommand(RootCmd, "pr", "status")
+		if err != nil {
+			t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
+		}
+		for _, exp := range []string{
+			"Comments:",
+			"⚠ 3 unresolved threads (use 'gh pr view --comments' to view all):",
+			"pw_ghish/status.go:10",
+			"pw_ghish/status.go:20",
+			"... and 1 more unresolved thread",
+		} {
+			if !strings.Contains(out, exp) {
+				t.Errorf("Expected output to contain %q, but got:\n%s", exp, out)
+			}
+		}
+		if strings.Contains(out, "pw_ghish/status.go:30") || strings.Contains(out, "Third thread.") {
+			t.Errorf("Expected third thread to be truncated from output, got:\n%s", out)
+		}
+	})
 }
 
 func TestStatus_CurrentBranch_CommentsJSON(t *testing.T) {
 	mockGitForFeatureBranch(t)
 	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/*/comments", http.StatusOK, map[string][]gerrit.CommentInfo{
-		"pw_ghish/status.go": {
-			{
-				ID:         "c1",
-				Line:       142,
-				PatchSet:   14,
-				Unresolved: boolPtr(true),
-				Author:     gerrit.AccountInfo{Email: "reviewer@google.com"},
-				Message:    "Please check this.",
+	onActiveChange(server).
+		OnComments("*", map[string][]CommentInfo{
+			"pw_ghish/status.go": {
+				{
+					ID:         "c1",
+					Line:       142,
+					PatchSet:   14,
+					Unresolved: new(true),
+					Author:     AccountInfo{Email: "reviewer@google.com"},
+					Message:    "Please check this.",
+				},
 			},
-		},
-	})
-	server.OnJSON("GET", "/changes/*/drafts", http.StatusOK, map[string]any{})
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, defaultStatusActiveChange)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
+		}).
+		OnDrafts("*", nil)
 
 	out, err := executeCommand(RootCmd, "pr", "status", "--json", "current_branch")
 	if err != nil {
@@ -479,8 +375,7 @@ func TestStatus_CurrentBranch_CommentsFailureGraceful(t *testing.T) {
 	server.On("GET", "/changes/*/drafts", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 	})
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, defaultStatusActiveChange)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
+	onActiveChange(server)
 
 	out, err := executeCommand(RootCmd, "pr", "status")
 	if err != nil {
@@ -495,166 +390,81 @@ func TestStatus_CurrentBranch_CommentsFailureGraceful(t *testing.T) {
 	}
 }
 
-func TestStatus_CurrentBranch_ChecksSummary_Passing(t *testing.T) {
-	activeChange := gerrit.ChangeInfo{
-		ChangeID:        "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-		Number:          472267,
-		Project:         "pigweed/pigweed",
-		Subject:         "Active Feature Subject",
-		Status:          "NEW",
-		Branch:          "main",
-		CurrentRevision: "rev1",
-		Revisions: map[string]gerrit.RevisionInfo{
-			"rev1": {Number: 1},
-		},
-	}
-
-	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, activeChange)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "1",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-1",
-				},
-				"status": "SUCCESS",
+func TestStatus_CurrentBranch_ChecksSummary(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		builds         []bbBuild
+		args           []string
+		wantContains   string
+		wantAbsent     string
+		wantJSON       string
+		wantCheckCount int
+	}{
+		{
+			name: "passing",
+			builds: []bbBuild{
+				FakeBuild("1", "builder-1", "SUCCESS"),
+				FakeBuild("2", "builder-2", "SUCCESS"),
 			},
-			{
-				"id": "2",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-2",
-				},
-				"status": "SUCCESS",
+			args:         []string{"pr", "status"},
+			wantContains: "Checks:      ✓ 2 passing",
+			wantAbsent:   "https://ci.chromium.org/b/",
+		},
+		{
+			name: "failing",
+			builds: []bbBuild{
+				FakeBuild("1", "pigweed-lint", "FAILURE"),
+				FakeBuild("2", "builder-2", "SUCCESS"),
 			},
+			args:         []string{"pr", "status"},
+			wantContains: "Checks:      ✗ 1 failed: pigweed-lint (run 'gh run view 472267 --log-failed' to view errors)",
 		},
-	})
-
-	mockGitForFeatureBranch(t)
-
-	out, err := executeCommand(RootCmd, "pr", "status", "--buildbucket-host", server.URL)
-	if err != nil {
-		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
-	}
-
-	if !strings.Contains(out, "Checks:      ✓ 2 passing") {
-		t.Errorf("Expected 'Checks:      ✓ 2 passing' in status output, got:\n%s", out)
-	}
-	if strings.Contains(out, "https://ci.chromium.org/b/") {
-		t.Errorf("Expected no verbose URL table in status output, got:\n%s", out)
-	}
-}
-
-func TestStatus_CurrentBranch_ChecksSummary_Failing(t *testing.T) {
-	activeChange := gerrit.ChangeInfo{
-		ChangeID:        "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-		Number:          472267,
-		Project:         "pigweed/pigweed",
-		Subject:         "Active Feature Subject",
-		Status:          "NEW",
-		Branch:          "main",
-		CurrentRevision: "rev1",
-		Revisions: map[string]gerrit.RevisionInfo{
-			"rev1": {Number: 1},
-		},
-	}
-
-	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, activeChange)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "1",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-lint",
-				},
-				"status": "FAILURE",
+		{
+			name: "json",
+			builds: []bbBuild{
+				FakeBuild("1", "builder-1", "SUCCESS"),
 			},
-			{
-				"id": "2",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-2",
-				},
-				"status": "SUCCESS",
-			},
+			args:           []string{"pr", "status", "--json", "current_branch"},
+			wantJSON:       "✓ 1 passing",
+			wantCheckCount: 1,
 		},
-	})
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockGitForFeatureBranch(t)
+			server := newStatusMockServer(t)
+			onActiveChange(server, WithProjectName("pigweed/pigweed")).
+				OnComments("*", nil).
+				OnDrafts("*", nil).
+				OnSearchBuilds(tc.builds...)
 
-	mockGitForFeatureBranch(t)
-
-	out, err := executeCommand(RootCmd, "pr", "status", "--buildbucket-host", server.URL)
-	if err != nil {
-		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
-	}
-
-	if !strings.Contains(out, "Checks:      ✗ 1 failed: pigweed-lint (run 'gh run view 472267 --log-failed' to view errors)") {
-		t.Errorf("Expected failure summary in status output, got:\n%s", out)
-	}
-}
-
-func TestStatus_CurrentBranch_ChecksSummary_JSON(t *testing.T) {
-	activeChange := gerrit.ChangeInfo{
-		ChangeID:        "Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e",
-		Number:          472267,
-		Project:         "pigweed/pigweed",
-		Subject:         "Active Feature Subject",
-		Status:          "NEW",
-		Branch:          "main",
-		CurrentRevision: "rev1",
-		Revisions: map[string]gerrit.RevisionInfo{
-			"rev1": {Number: 1},
-		},
-	}
-
-	server := newStatusMockServer(t)
-	server.OnJSON("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", http.StatusOK, activeChange)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "1",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-1",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
-
-	mockGitForFeatureBranch(t)
-
-	out, err := executeCommand(RootCmd, "pr", "status", "--buildbucket-host", server.URL, "--json", "current_branch")
-	if err != nil {
-		t.Fatalf("pr status --json failed: %v\nOutput: %s", err, out)
-	}
-
-	var res struct {
-		CurrentBranch struct {
-			ChecksSummary string      `json:"checks_summary"`
-			Checks        []CheckItem `json:"checks"`
-		} `json:"current_branch"`
-	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		t.Fatalf("Failed to parse JSON: %v\nOutput: %s", err, out)
-	}
-
-	if res.CurrentBranch.ChecksSummary != "✓ 1 passing" {
-		t.Errorf("Expected checks_summary '✓ 1 passing', got %q", res.CurrentBranch.ChecksSummary)
-	}
-	if len(res.CurrentBranch.Checks) != 1 {
-		t.Errorf("Expected 1 item in checks array, got %d", len(res.CurrentBranch.Checks))
+			out, err := executeCommand(RootCmd, tc.args...)
+			if err != nil {
+				t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
+			}
+			if tc.wantContains != "" && !strings.Contains(out, tc.wantContains) {
+				t.Errorf("Expected %q in status output, got:\n%s", tc.wantContains, out)
+			}
+			if tc.wantAbsent != "" && strings.Contains(out, tc.wantAbsent) {
+				t.Errorf("Expected no %q in status output, got:\n%s", tc.wantAbsent, out)
+			}
+			if tc.wantJSON != "" {
+				var res struct {
+					CurrentBranch struct {
+						ChecksSummary string      `json:"checks_summary"`
+						Checks        []CheckItem `json:"checks"`
+					} `json:"current_branch"`
+				}
+				if err := json.Unmarshal([]byte(out), &res); err != nil {
+					t.Fatalf("Failed to parse JSON: %v\nOutput: %s", err, out)
+				}
+				if res.CurrentBranch.ChecksSummary != tc.wantJSON {
+					t.Errorf("checks_summary = %q, want %q", res.CurrentBranch.ChecksSummary, tc.wantJSON)
+				}
+				if len(res.CurrentBranch.Checks) != tc.wantCheckCount {
+					t.Errorf("len(checks) = %d, want %d", len(res.CurrentBranch.Checks), tc.wantCheckCount)
+				}
+			}
+		})
 	}
 }
 
@@ -853,18 +663,26 @@ func TestStatus_Pipeline1ParallelPrefetch_CommentsAndDrafts(t *testing.T) {
 		}
 		server.RespondJSON(w, http.StatusOK, map[string]any{})
 	})
-	server.On("GET", "/changes/Ic7c9a23e0aeef1af97a936896bfbf8a17cd5f96e*", func(w http.ResponseWriter, r *http.Request) {
-		wantOpts := []string{"DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS"}
-		if !slices.Equal(r.URL.Query()["o"], wantOpts) {
-			t.Errorf("GetChange o=%v, want %v", r.URL.Query()["o"], wantOpts)
-		}
-		server.RespondJSON(w, http.StatusOK, defaultStatusActiveChange)
-	})
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []any{})
+	onActiveChange(server)
 
 	out, err := executeCommand(RootCmd, "pr", "status")
 	if err != nil {
 		t.Fatalf("pr status failed: %v\nOutput: %s", err, out)
+	}
+	found := false
+	var paths []string
+	for _, req := range server.Requests() {
+		paths = append(paths, req.Path)
+		if req.Path == "/changes/"+statusChangeID {
+			found = true
+			wantOpts := []string{"DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE", "SUBMIT_REQUIREMENTS"}
+			if !slices.Equal(req.URL.Query()["o"], wantOpts) {
+				t.Errorf("GetChange o=%v, want %v", req.URL.Query()["o"], wantOpts)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no GetChange request for /changes/%s; requests: %v", statusChangeID, paths)
 	}
 	if !strings.Contains(out, "Concurrent status comment.") {
 		t.Errorf("expected concurrent status comment in output, got:\n%s", out)

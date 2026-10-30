@@ -506,37 +506,14 @@ func TestRunView_JobFlag_LogFailed_IgnoresSupersededFailure(t *testing.T) {
 	// Patchset 9 is a commit-message-only change of patchset 8, so builds from
 	// both are valid for patchset 9.
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
-		"id":               "pigweed%2Fpigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"change_id":        "I12345",
-		"subject":          "Superseded failure",
-		"status":           "NEW",
-		"_number":          12345,
-		"current_revision": "rev9",
-		"revisions": map[string]any{
-			"rev8": map[string]any{"_number": 8, "kind": "REWORK"},
-			"rev9": map[string]any{"_number": 9, "kind": "NO_CODE_CHANGE"},
-		},
-	})
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		var req bbSearchBuildsRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
-			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
-			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
-			return
-		}
-		var builds []bbBuild
-		switch ps := req.Predicate.GerritChanges[0].Patchset; ps {
-		case 9:
-			builds = []bbBuild{FakeBuild("901", "static-checks-pigweed", "SUCCESS")}
-		case 8:
-			builds = []bbBuild{FakeBuild("802", "static-checks-pigweed", "FAILURE")}
-		default:
-			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
-		}
-		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	server.OnDefaultChange(12345,
+		WithSubject("Superseded failure"),
+		WithPatchsetKind(8, "REWORK"),
+		WithPatchsetKind(9, "NO_CODE_CHANGE"),
+	)
+	server.OnSearchBuildsByPatchset(map[int][]bbBuild{
+		9: {FakeBuild("901", "static-checks-pigweed", "SUCCESS")},
+		8: {FakeBuild("802", "static-checks-pigweed", "FAILURE")},
 	})
 	server.OnGetBuild(FakeBuildDetails("901", "static-checks-pigweed", "SUCCESS"))
 
@@ -560,37 +537,14 @@ func TestRunView_JobFlag_LogFailed_IgnoresSupersededFailure(t *testing.T) {
 func newReusedBuildServer(t *testing.T) *MockGerritServer {
 	t.Helper()
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
-		"id":               "pigweed%2Fpigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"change_id":        "I12345",
-		"subject":          "Reused build",
-		"status":           "NEW",
-		"_number":          12345,
-		"current_revision": "rev9",
-		"revisions": map[string]any{
-			"rev8": map[string]any{"_number": 8, "kind": "REWORK"},
-			"rev9": map[string]any{"_number": 9, "kind": "NO_CODE_CHANGE"},
-		},
-	})
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		var req bbSearchBuildsRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
-			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
-			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
-			return
-		}
-		var builds []bbBuild
-		switch ps := req.Predicate.GerritChanges[0].Patchset; ps {
-		case 9:
-			builds = []bbBuild{FakeBuild("901", "static-checks-pigweed", "SUCCESS")}
-		case 8:
-			builds = []bbBuild{FakeBuild("801", "pigweed-linux", "FAILURE")}
-		default:
-			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
-		}
-		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	server.OnDefaultChange(12345,
+		WithSubject("Reused build"),
+		WithPatchsetKind(8, "REWORK"),
+		WithPatchsetKind(9, "NO_CODE_CHANGE"),
+	)
+	server.OnSearchBuildsByPatchset(map[int][]bbBuild{
+		9: {FakeBuild("901", "static-checks-pigweed", "SUCCESS")},
+		8: {FakeBuild("801", "pigweed-linux", "FAILURE")},
 	})
 	return server
 }
@@ -662,71 +616,51 @@ func TestRunView_LogFailed_LabelsReusedBuild(t *testing.T) {
 //   - pigweed-linux passed on patchset 9 (901) and was canceled on 10 (1001).
 //   - static-checks-pigweed failed on patchset 9 (902) and passed on 10 (1002).
 //
-// pr checks reports builds 901 and 1002. It returns a pointer to the list of
-// build IDs requested through GetBuild.
-func newCanceledOverSuccessServer(t *testing.T) (*MockGerritServer, *[]string) {
+// pr checks reports builds 901 and 1002.
+func newCanceledOverSuccessServer(t *testing.T) *MockGerritServer {
 	t.Helper()
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
-		"id":               "pigweed%2Fpigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"change_id":        "I12345",
-		"subject":          "Canceled over success",
-		"status":           "NEW",
-		"_number":          12345,
-		"current_revision": "rev10",
-		"revisions": map[string]any{
-			"rev9":  map[string]any{"_number": 9, "kind": "REWORK"},
-			"rev10": map[string]any{"_number": 10, "kind": "TRIVIAL_REBASE"},
+	server.OnDefaultChange(12345,
+		WithSubject("Canceled over success"),
+		WithPatchsetKind(9, "REWORK"),
+		WithPatchsetKind(10, "TRIVIAL_REBASE"),
+	)
+	server.OnSearchBuildsByPatchset(map[int][]bbBuild{
+		10: {
+			FakeBuild("1001", "pigweed-linux", "CANCELED"),
+			FakeBuild("1002", "static-checks-pigweed", "SUCCESS"),
+		},
+		9: {
+			FakeBuild("901", "pigweed-linux", "SUCCESS"),
+			FakeBuild("902", "static-checks-pigweed", "FAILURE"),
 		},
 	})
-	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
-		var req bbSearchBuildsRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
-			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
-			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
-			return
-		}
-		var builds []bbBuild
-		switch ps := req.Predicate.GerritChanges[0].Patchset; ps {
-		case 10:
-			builds = []bbBuild{
-				FakeBuild("1001", "pigweed-linux", "CANCELED"),
-				FakeBuild("1002", "static-checks-pigweed", "SUCCESS"),
-			}
-		case 9:
-			builds = []bbBuild{
-				FakeBuild("901", "pigweed-linux", "SUCCESS"),
-				FakeBuild("902", "static-checks-pigweed", "FAILURE"),
-			}
-		default:
-			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
-		}
-		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	server.OnGetBuild(map[string]*LUCIBuildDetails{
+		"901":  FakeBuildDetails("901", "pigweed-linux", "SUCCESS"),
+		"1002": FakeBuildDetails("1002", "static-checks-pigweed", "SUCCESS"),
 	})
-	var fetched []string
-	server.On("POST", "/prpc/buildbucket.v2.Builds/GetBuild", func(w http.ResponseWriter, r *http.Request) {
-		var req bbGetBuildRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("failed to decode GetBuild request: %v", err)
-			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
-			return
+	return server
+}
+
+func fetchedGetBuildIDs(t *testing.T, server *MockGerritServer) []string {
+	t.Helper()
+	var ids []string
+	for _, r := range server.Requests() {
+		if r.Path == "/prpc/buildbucket.v2.Builds/GetBuild" {
+			ids = append(ids, DecodeRequest[bbGetBuildRequest](t, &r).ID)
 		}
-		fetched = append(fetched, req.ID)
-		server.RespondJSON(w, http.StatusOK, FakeBuildDetails(req.ID, "pigweed-linux", "SUCCESS"))
-	})
-	return server, &fetched
+	}
+	return ids
 }
 
 func TestRunView_JobFlag_StepTree_PrefersOlderSuccessOverCancel(t *testing.T) {
-	_, fetched := newCanceledOverSuccessServer(t)
+	server := newCanceledOverSuccessServer(t)
 	output, err := executeCommand(RootCmd, "run", "view", "12345", "-j", "pigweed-linux")
 	if err != nil {
 		t.Fatalf("run view -j failed: %v\nOutput: %s", err, output)
 	}
-	if fmt.Sprint(*fetched) != "[901]" {
-		t.Errorf("fetched builds %v, want [901] (the success pr checks reports, not canceled 1001)", *fetched)
+	if fetched := fetchedGetBuildIDs(t, server); fmt.Sprint(fetched) != "[901]" {
+		t.Errorf("fetched builds %v, want [901] (the success pr checks reports, not canceled 1001)", fetched)
 	}
 }
 
@@ -750,13 +684,13 @@ func TestRunView_Web_JobFlag_PrefersOlderSuccessOverCancel(t *testing.T) {
 }
 
 func TestRunView_Verbose_IgnoresSupersededFailure(t *testing.T) {
-	_, fetched := newCanceledOverSuccessServer(t)
+	server := newCanceledOverSuccessServer(t)
 	output, err := executeCommand(RootCmd, "run", "view", "12345", "-v")
 	if err != nil {
 		t.Fatalf("run view -v failed: %v\nOutput: %s", err, output)
 	}
-	if len(*fetched) != 1 || (*fetched)[0] == "902" || (*fetched)[0] == "1001" {
-		t.Errorf("fetched builds %v; want one build that pr checks reports (901 or 1002), not superseded 902 or canceled 1001", *fetched)
+	if fetched := fetchedGetBuildIDs(t, server); len(fetched) != 1 || fetched[0] == "902" || fetched[0] == "1001" {
+		t.Errorf("fetched builds %v; want one build that pr checks reports (901 or 1002), not superseded 902 or canceled 1001", fetched)
 	}
 }
 

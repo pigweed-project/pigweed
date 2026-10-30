@@ -25,54 +25,42 @@ import (
 	"github.com/andygrunwald/go-gerrit"
 )
 
-func TestListIntegration(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
-		opts := r.URL.Query()["o"]
-		if !slices.Contains(opts, "DETAILED_ACCOUNTS") {
-			t.Errorf("Expected DETAILED_ACCOUNTS in query options, got %v", opts)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(")]}'\n[{\"_number\": 12345, \"subject\": \"Mock change\", \"status\": \"NEW\", \"owner\": {\"name\": \"John Doe\", \"email\": \"johndoe@google.com\", \"username\": \"johndoe\"}}]"))
-	})
-
-	output, err := executeCommand(RootCmd, "pr", "list")
-	if err != nil {
-		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
-	}
-
-	if server.CallCount("GET", "/changes/") != 1 {
-		t.Error("Expected ListChanges API to be called")
-	}
-
-	// Verify that the owner username is present in the output
-	if !strings.Contains(output, "johndoe") {
-		t.Errorf("Expected output to contain owner 'johndoe', got:\n%s", output)
-	}
-	if !strings.Contains(output, "Showing 1 open changes.") {
-		t.Errorf("Expected output to contain footer count, got:\n%s", output)
-	}
-	if !strings.Contains(output, "Next: gh pr view <id>  (or gh pr checkout <id>)") {
-		t.Errorf("Expected output to contain Next hint, got:\n%s", output)
-	}
-}
-
 func TestList_WritesToCmdOut(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/", http.StatusOK, `[{"_number": 99999, "subject": "Custom Out Subject", "status": "NEW", "owner": {"username": "alice"}}]`)
 
-	var buf bytes.Buffer
 	isolateRootCmdForTest(t)
+	var buf bytes.Buffer
 	RootCmd.SetOut(&buf)
 	RootCmd.SetErr(&buf)
 	RootCmd.SetArgs([]string{"pr", "list"})
-
 	if err := RootCmd.Execute(); err != nil {
-		t.Fatalf("RootCmd.Execute() failed: %v", err)
+		t.Fatalf("RootCmd.Execute(pr list) failed: %v\nOutput: %s", err, buf.String())
 	}
-
-	if !strings.Contains(buf.String(), "99999") || !strings.Contains(buf.String(), "Custom Out Subject") {
-		t.Errorf("Expected buf to receive rendered output, got:\n%s", buf.String())
+	output := buf.String()
+	for _, want := range []string{
+		"99999",
+		"Custom Out Subject",
+		"alice",
+		"Showing 1 open changes.",
+		"Next: gh pr view <id>  (or gh pr checkout <id>)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("Expected output to contain %q, got:\n%s", want, output)
+		}
+	}
+	found := false
+	for _, req := range server.Requests() {
+		if req.Method != http.MethodGet || req.Path != "/changes/" {
+			continue
+		}
+		found = true
+		if opts := req.URL.Query()["o"]; !slices.Contains(opts, "DETAILED_ACCOUNTS") {
+			t.Errorf("Expected DETAILED_ACCOUNTS in query options, got %v", opts)
+		}
+	}
+	if !found {
+		t.Error("Expected ListChanges API to be called")
 	}
 }
 

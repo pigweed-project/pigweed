@@ -478,7 +478,7 @@ func TestPush_NoNewChanges_AutoSubmitNoLabelDryRunsAndFails(t *testing.T) {
 	changeID := "I0000000000000000000000000000000000000001"
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(changeID, WithLabels("Code-Review", "Commit-Queue"))
-	server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
+	server.OnReview(changeID)
 
 	mockGit := NewMockGit(t).WithBranch("main")
 	mockGit.RunFn = func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
@@ -945,7 +945,7 @@ func TestPush_CommitMessageFlags_EndToEnd(t *testing.T) {
 			ch["current_revision"] = currentRev
 			server.RespondJSON(w, http.StatusOK, []map[string]any{ch})
 		})
-		server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
+		server.OnReview(changeID)
 
 		bodyInput := strings.NewReader("Updated body paragraph.\n")
 		out, err := executeCommandWithStdin(RootCmd, bodyInput, "push", "-t", "pw_foo: Polished title", "-F", "-", "--fixed", "b/567763970")
