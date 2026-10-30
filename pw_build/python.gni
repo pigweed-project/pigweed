@@ -238,10 +238,16 @@ template("_pw_python_static_analysis_ruff") {
     public_deps = invoker.deps
 
     if (defined(invoker.python_deps)) {
-      python_deps = []
-      foreach(dep, invoker.python_deps) {
-        public_deps += [ string_replace(dep, "(", ".lint.ruff(") ]
-        python_deps += [ dep ]
+      python_deps = invoker.python_deps
+      if (pw_build_TEST_TRANSITIVE_PYTHON_DEPS) {
+        foreach(dep, python_deps) {
+          # filter_labels_exclude is more apt, but not as backwards compatible
+          if ([] != filter_exclude(
+                  [ get_label_info(dep, "label_no_toolchain") ],
+                  pw_build_TEST_TRANSITIVE_PYTHON_DEPS_FILTER_EXCLUDES)) {
+            public_deps += [ string_replace(dep, "(", ".lint.ruff(") ]
+          }
+        }
       }
     }
     if (defined(invoker.python_metadata_deps)) {
