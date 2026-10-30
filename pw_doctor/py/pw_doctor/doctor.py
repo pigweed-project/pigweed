@@ -237,7 +237,7 @@ def git_hook(ctx: DoctorContext):
 def python_version(ctx: DoctorContext):
     """Check the Python version is correct."""
     actual = sys.version_info
-    expected = (3, 8)
+    expected = (3, 11)
     if actual[0:2] < expected or actual[0] != expected[0]:
         # If we get the wrong version but it still came from CIPD print a
         # warning but give it a pass.

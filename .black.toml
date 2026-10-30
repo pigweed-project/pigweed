@@ -15,6 +15,6 @@
 [tool.black]
 line-length = 80
 skip_string_normalization = true
-target-version = ['py310']
+target-version = ['py311']
 include = '\.pyi?$'
 exclude = '^/(out|\.?environment)'

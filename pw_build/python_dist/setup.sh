@@ -41,9 +41,9 @@ fi
 PY_MAJOR_VERSION=$(${PY_TO_TEST} -c "import sys; print(sys.version_info[0])")
 PY_MINOR_VERSION=$(${PY_TO_TEST} -c "import sys; print(sys.version_info[1])")
 
-if [ ${PY_MAJOR_VERSION} -ne 3 ] || [ ${PY_MINOR_VERSION} -lt 10 ]
+if [ ${PY_MAJOR_VERSION} -ne 3 ] || [ ${PY_MINOR_VERSION} -lt 11 ]
 then
-    echo "ERROR: This Python distributable requires Python 3.10 or newer."
+    echo "ERROR: This Python distributable requires Python 3.11 or newer."
     exit 1
 fi
 

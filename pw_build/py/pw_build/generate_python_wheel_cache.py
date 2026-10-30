@@ -117,26 +117,11 @@ def main(
         # '--platform=win32',
     ]
 
-    # Pigweed supports Python 3.8 and up.
+    # Pigweed supports Python 3.11 and up.
     python_version_args = [
         [
             '--implementation=py3',
             '--abi=none',
-        ],
-        [
-            '--implementation=cp',
-            '--python-version=3.8',
-            '--abi=cp38',
-        ],
-        [
-            '--implementation=cp',
-            '--python-version=3.9',
-            '--abi=cp39',
-        ],
-        [
-            '--implementation=cp',
-            '--python-version=3.10',
-            '--abi=cp310',
         ],
         [
             '--implementation=cp',

@@ -389,8 +389,8 @@ CPU architecture.
    - cp311, win_amd64
    - cp311, win32
 
-   Plus all of the above duplicated for Python 3.10 and 3.9 (``cp310`` and
-   ``cp39``).
+   Plus all of the above duplicated for newer Python versions (e.g. ``cp312``
+   and ``cp313``).
 
    The output of multiple ``.vendor_wheels`` runs on different host systems can
    all be merged into the same output directory.

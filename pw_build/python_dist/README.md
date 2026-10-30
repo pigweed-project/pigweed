@@ -2,7 +2,7 @@
 Setup and usage instructions for Pigweed Python distributables.
 
 ## Prerequisites
-Python distributables require Python 3.10 or later.
+Python distributables require Python 3.11 or later.
 
 ## Setup
 Run the included setup script found inside the unzipped directory. The setup

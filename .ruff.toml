@@ -28,8 +28,8 @@ respect-gitignore = true
 
 line-length = 80
 
-# Assume Python 3.10.
-target-version = 'py310'
+# Assume Python 3.11.
+target-version = 'py311'
 
 [lint]
 # Enable the pycodestyle (`E`) and Pyflakes (`F`) rules by default.

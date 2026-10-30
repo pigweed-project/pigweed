@@ -394,27 +394,6 @@ pip.parse(
         "--no-build-isolation",
     ],
     hub_name = "pigweed_python_packages",
-    python_version = "3.10",
-    requirements_by_platform = {
-        # All supported target_platforms, including none_any_mcu must have an
-        # associated requirements file.
-        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt": "osx_aarch64",
-        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt": "linux_x86_64,linux_aarch64,none_any_mcu",
-        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt": "windows_x86_64,windows_aarch64",
-    },
-    target_platforms = [
-        "{os}_{arch}",
-        "none_any_mcu",
-    ],
-)
-pip.parse(
-    envsubst = ["PIGWEED_PIP_INDEX_URL"],
-    experimental_index_url = "${PIGWEED_PIP_INDEX_URL:-https://pypi.org/simple}",
-    extra_pip_args = [
-        "--no-index",
-        "--no-build-isolation",
-    ],
-    hub_name = "pigweed_python_packages",
     python_version = "3.11",
     requirements_by_platform = {
         # All supported target_platforms, including none_any_mcu must have an
