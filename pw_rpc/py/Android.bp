@@ -22,6 +22,12 @@ python_binary_host {
     srcs: [
         "pw_rpc/**/*.py",
     ],
+    // client_utils and the console tools need pw_stream/py, which has no
+    // Android.bp; the protoc plugins do not use them.
+    exclude_srcs: [
+        "pw_rpc/client_utils.py",
+        "pw_rpc/console_tools/*.py",
+    ],
     libs: [
         "libprotobuf-python",
         "pw_protobuf_compiler_py_lib",
@@ -37,6 +43,12 @@ python_binary_host {
     srcs: [
         "pw_rpc/**/*.py",
     ],
+    // client_utils and the console tools need pw_stream/py, which has no
+    // Android.bp; the protoc plugins do not use them.
+    exclude_srcs: [
+        "pw_rpc/client_utils.py",
+        "pw_rpc/console_tools/*.py",
+    ],
     libs: [
         "libprotobuf-python",
         "pw_protobuf_compiler_py_lib",
@@ -51,6 +63,12 @@ python_binary_host {
     main: "pw_rpc/plugin_pwpb.py",
     srcs: [
         "pw_rpc/**/*.py",
+    ],
+    // client_utils and the console tools need pw_stream/py, which has no
+    // Android.bp; the protoc plugins do not use them.
+    exclude_srcs: [
+        "pw_rpc/client_utils.py",
+        "pw_rpc/console_tools/*.py",
     ],
     libs: [
         "libprotobuf-python",
