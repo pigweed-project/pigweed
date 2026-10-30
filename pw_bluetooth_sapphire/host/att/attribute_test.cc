@@ -70,6 +70,7 @@ TEST(AttributeTest, AccessRequirements) {
   EXPECT_FALSE(reqs2.encryption_required());
   EXPECT_TRUE(reqs2.authentication_required());
   EXPECT_FALSE(reqs2.authorization_required());
+  EXPECT_EQ(reqs2.min_enc_key_size(), sm::kMaxEncryptionKeySize);
 
   AccessRequirements reqs3(
       /*encryption=*/false, /*authentication=*/false, /*authorization=*/true);
@@ -77,6 +78,7 @@ TEST(AttributeTest, AccessRequirements) {
   EXPECT_FALSE(reqs3.encryption_required());
   EXPECT_FALSE(reqs3.authentication_required());
   EXPECT_TRUE(reqs3.authorization_required());
+  EXPECT_EQ(reqs3.min_enc_key_size(), sm::kMaxEncryptionKeySize);
 
   AccessRequirements reqs4(
       /*encryption=*/false, /*authentication=*/false, /*authorization=*/false);

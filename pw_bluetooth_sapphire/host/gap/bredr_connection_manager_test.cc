@@ -3433,6 +3433,12 @@ TEST_F(BrEdrConnectionManagerTest,
   pairing_delegate.SetCompletePairingCallback(
       [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
 
+  // Pre-queue an outbound channel expectation before the link is registered in
+  // L2CAP to ensure pre-registration AssignLinkSecurityProperties calls do not
+  // mutate unconnected link state.
+  l2cap()->ExpectOutboundL2capChannel(
+      kConnectionHandle, l2cap::kATT, 0x40, 0x41, kChannelParams);
+
   // Initiate pairing from the peer before interrogation completes
   test_device()->SendCommandChannelPacket(MakeIoCapabilityResponse(
       IoCapability::DISPLAY_YES_NO,
@@ -3463,6 +3469,8 @@ TEST_F(BrEdrConnectionManagerTest,
   // interrogation has not completed so host-side L2CAP should still be inactive
   // on this link (though it may be buffering packets).
   EXPECT_FALSE(l2cap()->IsLinkConnected(kConnectionHandle));
+  EXPECT_FALSE(
+      l2cap()->GetLinkSecurityProperties(kConnectionHandle).has_value());
 
   bool socket_cb_called = false;
   auto socket_fails_cb = [&socket_cb_called](auto chan_sock) {
@@ -3492,6 +3500,22 @@ TEST_F(BrEdrConnectionManagerTest,
   RETURN_IF_FATAL(RunUntilIdle());
 
   EXPECT_TRUE(l2cap()->IsLinkConnected(kConnectionHandle));
+  const sm::SecurityProperties kExpectedSecurity(
+      sm::SecurityLevel::kAuthenticated, 16, /*secure_connections=*/false);
+  EXPECT_EQ(kExpectedSecurity,
+            l2cap()->GetLinkSecurityProperties(kConnectionHandle));
+
+  l2cap::Channel::WeakPtr att_chan;
+  connmgr()->OpenL2capChannel(peer->identifier(),
+                              l2cap::kATT,
+                              kNoSecurityRequirements,
+                              kChannelParams,
+                              [&att_chan](l2cap::Channel::WeakPtr chan) {
+                                att_chan = std::move(chan);
+                              });
+  RETURN_IF_FATAL(RunUntilIdle());
+  ASSERT_TRUE(att_chan.is_alive());
+  EXPECT_EQ(kExpectedSecurity, att_chan->security());
 
   QueueDisconnection(kConnectionHandle);
 }
@@ -6388,6 +6412,27 @@ TEST_F(BrEdrConnectionManagerTest, SecureConnectionsOnlyRejectsWeakKeySize) {
   ASSERT_EQ(fit::ok(), pairing_status);
   ASSERT_TRUE(IsConnected(peer));
   ASSERT_TRUE(peer->bonded());
+  auto link_security = l2cap()->GetLinkSecurityProperties(kConnectionHandle);
+  ASSERT_TRUE(link_security.has_value());
+  EXPECT_EQ(sm::SecurityLevel::kAuthenticated, link_security->level());
+  EXPECT_EQ(8u, link_security->enc_key_size());
+
+  // Channels opened after pairing inherit the negotiated link security
+  // properties.
+  l2cap()->ExpectOutboundL2capChannel(
+      kConnectionHandle, l2cap::kATT, 0x40, 0x41, kChannelParams);
+  l2cap::Channel::WeakPtr att_chan;
+  connmgr()->OpenL2capChannel(peer->identifier(),
+                              l2cap::kATT,
+                              kNoSecurityRequirements,
+                              kChannelParams,
+                              [&att_chan](l2cap::Channel::WeakPtr chan) {
+                                att_chan = std::move(chan);
+                              });
+  RunUntilIdle();
+  ASSERT_TRUE(att_chan.is_alive());
+  EXPECT_EQ(sm::SecurityLevel::kAuthenticated, att_chan->security().level());
+  EXPECT_EQ(8u, att_chan->security().enc_key_size());
 
   // Setting Secure Connections Only mode causes connections not allowed under
   // this mode to be disconnected. In this case, |peer| is encrypted,

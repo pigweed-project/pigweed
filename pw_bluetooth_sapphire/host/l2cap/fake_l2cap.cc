@@ -184,9 +184,15 @@ void FakeL2cap::RemoveConnection(hci_spec::ConnectionHandle handle) {
   }
 }
 
-void FakeL2cap::AssignLinkSecurityProperties(hci_spec::ConnectionHandle,
-                                             sm::SecurityProperties) {
-  // TODO(armansito): implement
+void FakeL2cap::AssignLinkSecurityProperties(hci_spec::ConnectionHandle handle,
+                                             sm::SecurityProperties security) {
+  auto it = links_.find(handle);
+  if (it != links_.end() && it->second.connected) {
+    it->second.security = security;
+    for (auto& [_, channel] : it->second.channels_) {
+      channel->set_security(security);
+    }
+  }
 }
 
 void FakeL2cap::RequestConnectionParameterUpdate(
@@ -321,6 +327,9 @@ FakeChannel::WeakPtr FakeL2cap::OpenFakeChannel(LinkData* link,
   if (!simulate_open_channel_failure_) {
     auto channel = std::make_unique<FakeChannel>(
         id, remote_id, link->handle, link->type, info);
+    if (link->security.has_value()) {
+      channel->set_security(*link->security);
+    }
     chan = channel->AsWeakPtr();
     channel->SetLinkErrorCallback(
         [this, handle = link->handle] { TriggerLinkError(handle); });

@@ -37,7 +37,8 @@ class AccessRequirements final {
 
   // Enables access permission with the given requirements.
   // |min_enc_key_size| is the required minimum size of the key encrypting the
-  // connection in order to access an attribute where |encryption| is true.
+  // connection in order to access an attribute where |encryption| or
+  // |authentication| is true.
   //
   // The default value of |min_enc_key_size| enforces maximum security, but
   // could prevent devices that don't support |kMaxEncryptionKeySize| from

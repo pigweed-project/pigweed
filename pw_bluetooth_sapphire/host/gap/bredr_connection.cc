@@ -111,6 +111,11 @@ void BrEdrConnection::OnInterrogationComplete() {
            "%s on a connection that's already been interrogated",
            __FUNCTION__);
 
+  if (security_properties() != sm::SecurityProperties()) {
+    l2cap_->AssignLinkSecurityProperties(link_->handle(),
+                                         security_properties());
+  }
+
   // Fulfill and clear request so that the dtor does not signal requester(s)
   // with errors.
   if (auto request = std::exchange(request_, std::nullopt);
@@ -209,6 +214,7 @@ void BrEdrConnection::OnPairingStateStatus(hci_spec::ConnectionHandle,
   // Once pairing succeeds for the first time, the transition from Initializing
   // -> Connected can happen.
   peer_init_token_.reset();
+  l2cap_->AssignLinkSecurityProperties(link_->handle(), security_properties());
 }
 
 void BrEdrConnection::SetSecurityManagerChannel(

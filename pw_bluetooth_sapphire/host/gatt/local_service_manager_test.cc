@@ -1204,7 +1204,8 @@ TEST_F(LocalClientCharacteristicConfigurationTest, UpdatePermissions) {
   // prevent writes.
   const att::AccessRequirements kUpdateReqs(/*encryption=*/false,
                                             /*authentication=*/true,
-                                            /*authorization=*/false);
+                                            /*authorization=*/false,
+                                            /*min_enc_key_size=*/7);
   constexpr uint8_t kProps = Property::kNotify;
   BuildService(kProps, kUpdateReqs);
 
@@ -1213,7 +1214,9 @@ TEST_F(LocalClientCharacteristicConfigurationTest, UpdatePermissions) {
   EXPECT_EQ(types::kClientCharacteristicConfig, attr->type());
 
   EXPECT_FALSE(attr->read_reqs().authentication_required());
+  EXPECT_FALSE(attr->read_reqs().encryption_required());
   EXPECT_TRUE(attr->write_reqs().authentication_required());
+  EXPECT_EQ(7u, attr->write_reqs().min_enc_key_size());
 }
 
 TEST_F(LocalClientCharacteristicConfigurationTest, IndicationNotSupported) {

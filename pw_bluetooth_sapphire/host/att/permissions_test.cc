@@ -33,18 +33,30 @@ const AccessRequirements kEncryptionWithMinKeySizeReq(/*encryption=*/true,
 const AccessRequirements kAuthenticationReq(/*encryption=*/false,
                                             /*authentication=*/true,
                                             /*authorization=*/false);
+const AccessRequirements kAuthenticationWithMinKeySizeReq(
+    /*encryption=*/false,
+    /*authentication=*/true,
+    /*authorization=*/false,
+    7);
 const AccessRequirements kAuthorizationReq(/*encryption=*/false,
                                            /*authentication=*/false,
                                            /*authorization=*/true);
-const AccessRequirements kAuthorizationWithMinKeySizeReq(
-    /*encryption=*/false,
+const AccessRequirements kEncryptionAndAuthorizationReq(
+    /*encryption=*/true,
     /*authentication=*/false,
-    /*authorization=*/true,
-    7);
+    /*authorization=*/true);
+const AccessRequirements kAuthenticationAndAuthorizationReq(
+    /*encryption=*/false,
+    /*authentication=*/true,
+    /*authorization=*/true);
 
 const sm::SecurityProperties kNoSecurity(sm::SecurityLevel::kNoSecurity,
                                          16,
                                          /*secure_connections=*/false);
+const sm::SecurityProperties kNoSecurityZeroKeySize(
+    sm::SecurityLevel::kNoSecurity,
+    0,
+    /*secure_connections=*/false);
 const sm::SecurityProperties kEncrypted(sm::SecurityLevel::kEncrypted,
                                         16,
                                         /*secure_connections=*/false);
@@ -81,11 +93,21 @@ TEST(PermissionsTest, WriteNotPermittedWhenDisallowed) {
 TEST(PermissionsTest, LinkNotSecure) {
   EXPECT_EQ(fit::ok(), CheckReadPermissions(kNoSecurityReq, kNoSecurity));
   EXPECT_EQ(fit::ok(), CheckWritePermissions(kNoSecurityReq, kNoSecurity));
+  EXPECT_EQ(fit::ok(),
+            CheckReadPermissions(kNoSecurityReq, kNoSecurityZeroKeySize));
+  EXPECT_EQ(fit::ok(),
+            CheckWritePermissions(kNoSecurityReq, kNoSecurityZeroKeySize));
 
   EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
             CheckReadPermissions(kEncryptionReq, kNoSecurity).error_value());
   EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
             CheckWritePermissions(kEncryptionReq, kNoSecurity).error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+            CheckReadPermissions(kEncryptionReq, kNoSecurityZeroKeySize)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+            CheckWritePermissions(kEncryptionReq, kNoSecurityZeroKeySize)
+                .error_value());
 
   EXPECT_EQ(
       ErrorCode::kInsufficientAuthentication,
@@ -93,12 +115,41 @@ TEST(PermissionsTest, LinkNotSecure) {
   EXPECT_EQ(
       ErrorCode::kInsufficientAuthentication,
       CheckWritePermissions(kAuthenticationReq, kNoSecurity).error_value());
-
   EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+            CheckReadPermissions(kAuthenticationReq, kNoSecurityZeroKeySize)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+            CheckWritePermissions(kAuthenticationReq, kNoSecurityZeroKeySize)
+                .error_value());
+
+  EXPECT_EQ(ErrorCode::kInsufficientAuthorization,
             CheckReadPermissions(kAuthorizationReq, kNoSecurity).error_value());
   EXPECT_EQ(
-      ErrorCode::kInsufficientAuthentication,
+      ErrorCode::kInsufficientAuthorization,
       CheckWritePermissions(kAuthorizationReq, kNoSecurity).error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthorization,
+            CheckReadPermissions(kAuthorizationReq, kNoSecurityZeroKeySize)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthorization,
+            CheckWritePermissions(kAuthorizationReq, kNoSecurityZeroKeySize)
+                .error_value());
+
+  // Encryption and authentication requirements take precedence over
+  // authorization on an unencrypted link.
+  EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+            CheckReadPermissions(kEncryptionAndAuthorizationReq, kNoSecurity)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+            CheckWritePermissions(kEncryptionAndAuthorizationReq, kNoSecurity)
+                .error_value());
+  EXPECT_EQ(
+      ErrorCode::kInsufficientAuthentication,
+      CheckReadPermissions(kAuthenticationAndAuthorizationReq, kNoSecurity)
+          .error_value());
+  EXPECT_EQ(
+      ErrorCode::kInsufficientAuthentication,
+      CheckWritePermissions(kAuthenticationAndAuthorizationReq, kNoSecurity)
+          .error_value());
 }
 
 TEST(PermissionsTest, LinkEncrypted) {
@@ -114,10 +165,42 @@ TEST(PermissionsTest, LinkEncrypted) {
       ErrorCode::kInsufficientAuthentication,
       CheckWritePermissions(kAuthenticationReq, kEncrypted).error_value());
 
+  // An unauthenticated encrypted link with insufficient key size should fail
+  // with kInsufficientAuthentication rather than key size error.
   EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+            CheckReadPermissions(kAuthenticationReq, kEncryptedWithMinKeySize)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+            CheckWritePermissions(kAuthenticationReq, kEncryptedWithMinKeySize)
+                .error_value());
+
+  EXPECT_EQ(ErrorCode::kInsufficientAuthorization,
             CheckReadPermissions(kAuthorizationReq, kEncrypted).error_value());
-  EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+  EXPECT_EQ(ErrorCode::kInsufficientAuthorization,
             CheckWritePermissions(kAuthorizationReq, kEncrypted).error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthorization,
+            CheckReadPermissions(kAuthorizationReq, kEncryptedWithMinKeySize)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthorization,
+            CheckWritePermissions(kAuthorizationReq, kEncryptedWithMinKeySize)
+                .error_value());
+
+  // Encryption is satisfied, so encryption + authorization fails with
+  // kInsufficientAuthorization; authentication + authorization fails with
+  // kInsufficientAuthentication.
+  EXPECT_EQ(ErrorCode::kInsufficientAuthorization,
+            CheckReadPermissions(kEncryptionAndAuthorizationReq, kEncrypted)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthorization,
+            CheckWritePermissions(kEncryptionAndAuthorizationReq, kEncrypted)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientAuthentication,
+            CheckReadPermissions(kAuthenticationAndAuthorizationReq, kEncrypted)
+                .error_value());
+  EXPECT_EQ(
+      ErrorCode::kInsufficientAuthentication,
+      CheckWritePermissions(kAuthenticationAndAuthorizationReq, kEncrypted)
+          .error_value());
 
   EXPECT_EQ(fit::ok(),
             CheckReadPermissions(kEncryptionWithMinKeySizeReq,
@@ -146,9 +229,29 @@ TEST(PermissionsTest, LinkAuthenticated) {
   EXPECT_EQ(fit::ok(),
             CheckWritePermissions(kAuthenticationReq, kAuthenticated));
 
+  // Authorization is decoupled from encryption key size.
   EXPECT_EQ(fit::ok(), CheckReadPermissions(kAuthorizationReq, kAuthenticated));
   EXPECT_EQ(fit::ok(),
             CheckWritePermissions(kAuthorizationReq, kAuthenticated));
+  EXPECT_EQ(
+      fit::ok(),
+      CheckReadPermissions(kAuthorizationReq, kAuthenticatedWithMinKeySize));
+  EXPECT_EQ(
+      fit::ok(),
+      CheckWritePermissions(kAuthorizationReq, kAuthenticatedWithMinKeySize));
+
+  EXPECT_EQ(
+      fit::ok(),
+      CheckReadPermissions(kEncryptionAndAuthorizationReq, kAuthenticated));
+  EXPECT_EQ(
+      fit::ok(),
+      CheckWritePermissions(kEncryptionAndAuthorizationReq, kAuthenticated));
+  EXPECT_EQ(
+      fit::ok(),
+      CheckReadPermissions(kAuthenticationAndAuthorizationReq, kAuthenticated));
+  EXPECT_EQ(fit::ok(),
+            CheckWritePermissions(kAuthenticationAndAuthorizationReq,
+                                  kAuthenticated));
 
   EXPECT_EQ(ErrorCode::kInsufficientEncryptionKeySize,
             CheckReadPermissions(kEncryptionReq, kAuthenticatedWithMinKeySize)
@@ -156,6 +259,39 @@ TEST(PermissionsTest, LinkAuthenticated) {
   EXPECT_EQ(ErrorCode::kInsufficientEncryptionKeySize,
             CheckWritePermissions(kEncryptionReq, kAuthenticatedWithMinKeySize)
                 .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientEncryptionKeySize,
+            CheckReadPermissions(kEncryptionAndAuthorizationReq,
+                                 kAuthenticatedWithMinKeySize)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientEncryptionKeySize,
+            CheckWritePermissions(kEncryptionAndAuthorizationReq,
+                                  kAuthenticatedWithMinKeySize)
+                .error_value());
+
+  // Authenticated link with 7-byte key fails kAuthenticationReq (default 16B).
+  EXPECT_EQ(
+      ErrorCode::kInsufficientEncryptionKeySize,
+      CheckReadPermissions(kAuthenticationReq, kAuthenticatedWithMinKeySize)
+          .error_value());
+  EXPECT_EQ(
+      ErrorCode::kInsufficientEncryptionKeySize,
+      CheckWritePermissions(kAuthenticationReq, kAuthenticatedWithMinKeySize)
+          .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientEncryptionKeySize,
+            CheckReadPermissions(kAuthenticationAndAuthorizationReq,
+                                 kAuthenticatedWithMinKeySize)
+                .error_value());
+  EXPECT_EQ(ErrorCode::kInsufficientEncryptionKeySize,
+            CheckWritePermissions(kAuthenticationAndAuthorizationReq,
+                                  kAuthenticatedWithMinKeySize)
+                .error_value());
+
+  EXPECT_EQ(fit::ok(),
+            CheckReadPermissions(kAuthenticationWithMinKeySizeReq,
+                                 kAuthenticatedWithMinKeySize));
+  EXPECT_EQ(fit::ok(),
+            CheckWritePermissions(kAuthenticationWithMinKeySizeReq,
+                                  kAuthenticatedWithMinKeySize));
 }
 
 }  // namespace

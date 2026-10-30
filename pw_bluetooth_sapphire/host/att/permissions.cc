@@ -30,12 +30,20 @@ fit::result<ErrorCode> CheckSecurity(const AccessRequirements& reqs,
     return fit::error(ErrorCode::kInsufficientAuthentication);
   }
 
-  if ((reqs.authentication_required() || reqs.authorization_required()) &&
+  if (reqs.authentication_required() &&
       security.level() < sm::SecurityLevel::kAuthenticated) {
     return fit::error(ErrorCode::kInsufficientAuthentication);
   }
 
-  if (reqs.encryption_required() &&
+  if (reqs.authorization_required() &&
+      security.level() < sm::SecurityLevel::kAuthenticated) {
+    return fit::error(ErrorCode::kInsufficientAuthorization);
+  }
+
+  // Only check key size if the link is encrypted and encryption/authentication
+  // is required.
+  if ((reqs.encryption_required() || reqs.authentication_required()) &&
+      security.encrypted() &&
       security.enc_key_size() < reqs.min_enc_key_size()) {
     return fit::error(ErrorCode::kInsufficientEncryptionKeySize);
   }

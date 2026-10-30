@@ -3295,7 +3295,7 @@ class ServerTestSecurity : public ServerTest {
         fit::error(att::ErrorCode::kInsufficientAuthentication)));
     EXPECT_TRUE((this->*EmulateMethod)(
         authorization_required_attr()->handle(),
-        fit::error(att::ErrorCode::kInsufficientAuthentication)));
+        fit::error(att::ErrorCode::kInsufficientAuthorization)));
 
     // Link encrypted.
     fake_chan()->set_security(sm::SecurityProperties(
@@ -3309,7 +3309,7 @@ class ServerTestSecurity : public ServerTest {
         fit::error(att::ErrorCode::kInsufficientAuthentication)));
     EXPECT_TRUE((this->*EmulateMethod)(
         authorization_required_attr()->handle(),
-        fit::error(att::ErrorCode::kInsufficientAuthentication)));
+        fit::error(att::ErrorCode::kInsufficientAuthorization)));
 
     // inclusive-language: ignore
     // Link encrypted w/ MITM.

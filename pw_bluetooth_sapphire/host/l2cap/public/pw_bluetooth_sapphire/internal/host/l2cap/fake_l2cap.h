@@ -102,6 +102,15 @@ class FakeL2cap final : public ChannelManager {
   void AssignLinkSecurityProperties(hci_spec::ConnectionHandle handle,
                                     sm::SecurityProperties security) override;
 
+  std::optional<sm::SecurityProperties> GetLinkSecurityProperties(
+      hci_spec::ConnectionHandle handle) const {
+    auto it = links_.find(handle);
+    if (it == links_.end() || !it->second.connected) {
+      return std::nullopt;
+    }
+    return it->second.security;
+  }
+
   // Immediately posts accept on |dispatcher|.
   void RequestConnectionParameterUpdate(
       hci_spec::ConnectionHandle handle,
@@ -183,6 +192,7 @@ class FakeL2cap final : public ChannelManager {
     LEConnectionParameterUpdateCallback le_conn_param_cb;
 
     std::unordered_map<ChannelId, std::unique_ptr<FakeChannel>> channels_;
+    std::optional<sm::SecurityProperties> security;
   };
 
   LinkData* RegisterInternal(hci_spec::ConnectionHandle handle,

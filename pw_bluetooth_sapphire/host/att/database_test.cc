@@ -28,6 +28,7 @@ constexpr Handle kTestRangeEnd = 10;
 constexpr UUID kTestType1(uint16_t{1});
 constexpr UUID kTestType2(uint16_t{2});
 constexpr UUID kTestType3(uint16_t{3});
+constexpr UUID kTestType4(uint16_t{4});
 
 const AccessRequirements kAllowed(/*encryption=*/false,
                                   /*authentication=*/false,
@@ -750,7 +751,7 @@ TEST_F(DatabaseExecuteWriteQueueTest, WritingStaticValueNotPermitted) {
 }
 
 TEST_F(DatabaseExecuteWriteQueueTest, SecurityChecks) {
-  auto* grp = db()->NewGrouping(kTestType1, 1, kTestValue1);
+  auto* grp = db()->NewGrouping(kTestType1, 3, kTestValue1);
   auto* attr = grp->AddAttribute(
       kTestType2,
       att::AccessRequirements(),
@@ -759,6 +760,22 @@ TEST_F(DatabaseExecuteWriteQueueTest, SecurityChecks) {
           /*authentication=*/false,
           /*authorization=*/false));  // write requires encryption
   SetAttributeWriteHandler(attr);
+  auto* auth_attr = grp->AddAttribute(
+      kTestType3,
+      att::AccessRequirements(),
+      att::AccessRequirements(
+          /*encryption=*/false,
+          /*authentication=*/true,
+          /*authorization=*/false));  // write requires authentication (16B key)
+  SetAttributeWriteHandler(auth_attr);
+  auto* authz_attr = grp->AddAttribute(
+      kTestType4,
+      att::AccessRequirements(),
+      att::AccessRequirements(
+          /*encryption=*/false,
+          /*authentication=*/false,
+          /*authorization=*/true));  // write requires authorization
+  SetAttributeWriteHandler(authz_attr);
   grp->set_active(true);
 
   PrepareWriteQueue wq;
@@ -781,6 +798,93 @@ TEST_F(DatabaseExecuteWriteQueueTest, SecurityChecks) {
           sm::SecurityLevel::kEncrypted, 16, /*secure_connections=*/false));
   ResolveNextPendingWrite(fit::ok());
   EXPECT_EQ(2, callback_count());
+  EXPECT_EQ(fit::ok(), result());
+
+  wq = PrepareWriteQueue();
+  wq.push(QueuedWrite(auth_attr->handle(), 0, kTestValue1));
+
+  // Unencrypted link with 0 key size fails authentication (not key size error).
+  ExecuteWriteQueue(kPeerId,
+                    std::move(wq),
+                    sm::SecurityProperties(sm::SecurityLevel::kNoSecurity,
+                                           0,
+                                           /*secure_connections=*/false));
+  EXPECT_EQ(3, callback_count());
+  ASSERT_EQ(fit::failed(), result());
+  EXPECT_EQ(
+      std::tuple(auth_attr->handle(), ErrorCode::kInsufficientAuthentication),
+      result()->error_value());
+
+  wq = PrepareWriteQueue();
+  wq.push(QueuedWrite(auth_attr->handle(), 0, kTestValue1));
+
+  // Authenticated link with 7-byte key should fail key size check.
+  ExecuteWriteQueue(
+      kPeerId,
+      std::move(wq),
+      sm::SecurityProperties(
+          sm::SecurityLevel::kAuthenticated, 7, /*secure_connections=*/false));
+  EXPECT_EQ(4, callback_count());
+  ASSERT_EQ(fit::failed(), result());
+  EXPECT_EQ(std::tuple(auth_attr->handle(),
+                       ErrorCode::kInsufficientEncryptionKeySize),
+            result()->error_value());
+
+  wq = PrepareWriteQueue();
+  wq.push(QueuedWrite(auth_attr->handle(), 0, kTestValue1));
+
+  // Authenticated link with 16-byte key should succeed.
+  ExecuteWriteQueue(
+      kPeerId,
+      std::move(wq),
+      sm::SecurityProperties(
+          sm::SecurityLevel::kAuthenticated, 16, /*secure_connections=*/false));
+  ResolveNextPendingWrite(fit::ok());
+  EXPECT_EQ(5, callback_count());
+  EXPECT_EQ(fit::ok(), result());
+
+  wq = PrepareWriteQueue();
+  wq.push(QueuedWrite(authz_attr->handle(), 0, kTestValue1));
+
+  // Unencrypted link fails authorization with kInsufficientAuthorization.
+  ExecuteWriteQueue(kPeerId,
+                    std::move(wq),
+                    sm::SecurityProperties(sm::SecurityLevel::kNoSecurity,
+                                           0,
+                                           /*secure_connections=*/false));
+  EXPECT_EQ(6, callback_count());
+  ASSERT_EQ(fit::failed(), result());
+  EXPECT_EQ(
+      std::tuple(authz_attr->handle(), ErrorCode::kInsufficientAuthorization),
+      result()->error_value());
+
+  wq = PrepareWriteQueue();
+  wq.push(QueuedWrite(authz_attr->handle(), 0, kTestValue1));
+
+  // Encrypted unauthenticated link fails with kInsufficientAuthorization.
+  ExecuteWriteQueue(
+      kPeerId,
+      std::move(wq),
+      sm::SecurityProperties(
+          sm::SecurityLevel::kEncrypted, 16, /*secure_connections=*/false));
+  EXPECT_EQ(7, callback_count());
+  ASSERT_EQ(fit::failed(), result());
+  EXPECT_EQ(
+      std::tuple(authz_attr->handle(), ErrorCode::kInsufficientAuthorization),
+      result()->error_value());
+
+  wq = PrepareWriteQueue();
+  wq.push(QueuedWrite(authz_attr->handle(), 0, kTestValue1));
+
+  // Authenticated link with 7-byte key succeeds because authorization is
+  // decoupled from encryption key size.
+  ExecuteWriteQueue(
+      kPeerId,
+      std::move(wq),
+      sm::SecurityProperties(
+          sm::SecurityLevel::kAuthenticated, 7, /*secure_connections=*/false));
+  ResolveNextPendingWrite(fit::ok());
+  EXPECT_EQ(8, callback_count());
   EXPECT_EQ(fit::ok(), result());
 }
 
