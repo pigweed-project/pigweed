@@ -293,7 +293,8 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 3. **Resolve Threads Explicitly**: When fixing an issue raised by a reviewer,
    always reply with `--resolved --path <file> [--line <line>]`.
 4. **Authentication is Automatic**: Never use manual `curl -sb ~/.gitcookies` or
-   `gob-curl`; `./gh` handles corp (`gob-curl`) and `.gitcookies` auth automatically.
+   `gob-curl`; `./gh` handles Gerrit, LUCI, and Buganizer OAuth2/SSO
+   authentication automatically.
 5. **Never Ignore Command Failures or Exit Codes**: Invalid inputs fail fast
    with non-zero exit codes. Always inspect stderr and address reported errors.
 6. **Preserve `Change-Id` and Commit Trailers**: Preserve `Change-Id` footers

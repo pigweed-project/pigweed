@@ -207,6 +207,48 @@ func TestAuthStatus_CommunityModeUnauthenticatedGerrit(t *testing.T) {
 	if !strings.Contains(output, "Verdict: unauthenticated (community mode; login required)") || !strings.Contains(output, "Next:") {
 		t.Errorf("expected unauthenticated Verdict and Next in output, got:\n%s", output)
 	}
+
+	t.Run("HTTP 400 surfaces first-time Gerrit account and CLA instructions", func(t *testing.T) {
+		for _, mode := range []string{"community", "googler"} {
+			t.Run(mode, func(t *testing.T) {
+				server := NewMockGerritServer(t)
+				server.OnJSON("GET", "/accounts/self", http.StatusBadRequest, map[string]any{
+					"message": "Account does not exist",
+				})
+				WithHermeticAuth(t, AuthResolvers{
+					GerritToken: func(ctx context.Context) (string, string, error) {
+						return "valid-oauth-tok", "luci-auth", nil
+					},
+					LUCIToken: func(ctx context.Context) (string, string, error) {
+						return "valid-luci-tok", "luci-auth", nil
+					},
+					IssueTrackerToken: func(ctx context.Context) (string, string, error) {
+						return "valid-bug-tok", "luci-auth", nil
+					},
+				})
+
+				out400, err400 := executeCommand(RootCmd, "auth", "status", "--auth-mode", mode)
+				if err400 == nil {
+					t.Fatalf("expected error on HTTP 400, got nil\nOutput:\n%s", out400)
+				}
+				if got := ExitCodeFor(err400); got != ExitCodeAuth {
+					t.Errorf("ExitCodeFor(err400) = %d, want %d", got, ExitCodeAuth)
+				}
+				wantRemediation := fmt.Sprintf("Visit https://%s in a browser and click 'Sign in' once to create your Gerrit account, and sign the CLA at https://cla.developers.google.com/", CleanGerritHost(server.URL))
+				for _, want := range []string{
+					"No Gerrit account found",
+					wantRemediation,
+				} {
+					if !strings.Contains(out400, want) {
+						t.Errorf("expected output to contain %q, got:\n%s", want, out400)
+					}
+				}
+				if strings.Contains(out400, "Run 'gcert'") {
+					t.Errorf("HTTP 400 account remediation was overwritten by generic gcert hint:\n%s", out400)
+				}
+			})
+		}
+	})
 }
 
 func TestAuthStatus_NoneModeJSON(t *testing.T) {

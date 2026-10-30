@@ -78,9 +78,9 @@ Authentication modes
      - Behavior
    * - ``auto``
      - **(Default)** Selects ``googler`` if ``gob-curl`` or ``sso_client`` is
-       on ``PATH``, the Git ``user.email`` ends in ``@google.com``, or the
-       ``origin`` remote uses ``sso://`` or ``rpc://``; otherwise selects
-       ``community``.
+       on ``PATH``, ``/usr/bin/sso-cred-helper`` exists, the Git ``user.email``
+       ends in ``@google.com``, or the ``origin`` remote uses ``sso://`` or
+       ``rpc://``; otherwise selects ``community``.
    * - ``googler``
      - Requires authenticated access to both Gerrit and LUCI Buildbucket so
        internal tryjob buckets (such as ``pigweed/internal.try``) are included
@@ -125,6 +125,36 @@ Gerrit REST credentials in the following order:
 5. Machine credentials in ``~/.netrc`` or ``~/_netrc``.
 6. Anonymous HTTPS (permitted in ``community`` and ``none`` modes for public
    reads; rejected in ``googler`` mode with exit code ``4``).
+
+Community contributor onboarding
+--------------------------------
+To authenticate for creating, pushing, and reviewing changes outside Google
+Corp:
+
+1. **Provision your Gerrit account**: Sign in once at
+   ``https://<host>-review.googlesource.com`` (for example,
+   ``https://pigweed-review.googlesource.com``) in a web browser. Gerrit
+   provisions a new user account on first web sign-in; REST and ``git push``
+   requests before first web login return ``HTTP 400``.
+2. **Sign the Google CLA**: Sign the Contributor License Agreement at
+   ``https://cla.developers.google.com/`` and ensure ``git config user.email``
+   matches.
+3. **Log in with luci-auth**: Run ``luci-auth`` (bundled in
+   ``environment/cipd/packages/luci/luci-auth`` via ``source bootstrap.sh`` /
+   ``activate.sh``, or in ``depot_tools``) and verify with
+   ``./gh auth status``:
+
+   .. code-block:: console
+
+      $ luci-auth login -scopes "https://www.googleapis.com/auth/gerritcodereview https://www.googleapis.com/auth/userinfo.email"
+      $ ./gh auth status
+
+4. **Push over HTTPS without cookies**: ``./gh pr create`` and ``./gh pr push``
+   first push with your own git credentials. If a push to
+   ``https://<tenant>.googlesource.com/`` is rejected for authentication, they
+   retry once with the ``luci-auth`` (or ``GERRIT_TOKEN``) token in an
+   ``Authorization: Bearer`` header, so ``~/.gitcookies`` is not required. No
+   token is sent when ``--auth-mode=none``.
 
 Automatic ``git push`` fallbacks (``pr create`` / ``pr push``)
 --------------------------------------------------------------

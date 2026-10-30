@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -150,6 +151,9 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 				gerritStatus.Authenticated = false
 				if gerritMethod == AuthMethodNone && mode == AuthModeCommunity {
 					gerritStatus.Message = fmt.Sprintf("No Gerrit credentials configured for %s (public changes readable; login required to push or review)", gerritHost)
+				} else if IsGerritHTTPStatus(accErr, http.StatusBadRequest) {
+					gerritStatus.Message = fmt.Sprintf("No Gerrit account found on %s for current credentials (%s)", gerritHost, firstLine(accErr.Error()))
+					gerritStatus.Remediation = fmt.Sprintf("Visit https://%s in a browser and click 'Sign in' once to create your Gerrit account, and sign the CLA at https://cla.developers.google.com/", gerritHost)
 				} else if accErr != nil {
 					gerritStatus.Message = fmt.Sprintf("Failed to authenticate with %s (%s)", gerritHost, firstLine(accErr.Error()))
 				} else {
@@ -157,11 +161,11 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 				}
 			}
 		}
-		if !gerritStatus.Authenticated {
+		if !gerritStatus.Authenticated && gerritStatus.Remediation == "" {
 			if mode == AuthModeGoogler {
 				gerritStatus.Remediation = fmt.Sprintf("Run 'gcert' to refresh corp SSO credentials, or 'luci-auth login -scopes %q', or configure cookies at https://%s/new-password", DefaultGerritScopes, gerritHost)
 			} else {
-				gerritStatus.Remediation = fmt.Sprintf("Configure Git cookies at https://%s/new-password or set export GERRIT_TOKEN=\"<token>\"", gerritHost)
+				gerritStatus.Remediation = fmt.Sprintf("Run 'luci-auth login -scopes %q' or set export GERRIT_TOKEN=\"<token>\"", DefaultGerritScopes)
 			}
 		}
 	}

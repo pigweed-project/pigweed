@@ -21,6 +21,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -512,18 +513,45 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 
 	var outBuf, errBuf bytes.Buffer
 	pushCtx := withGitConfigEnv(ctx, "color.ui", "false")
+	httpsBase := resolveHTTPSGoogleSourceBase(ctx, cfg, remote)
+	if httpsBase != "" {
+		// Fail fast instead of prompting, so the token retry below can run.
+		pushCtx = withGitEnv(pushCtx, "GIT_TERMINAL_PROMPT=0")
+	}
 	err := cfg.GitClient().Run(pushCtx, &outBuf, &errBuf, pushArgs...)
-	if err != nil && isGitPushSSOAuthError(errBuf.String()) {
-		if fbErr, fbBuf, fbUsed := retryPushWithoutSSO(pushCtx, cmd, cfg, remote, pushArgs); fbUsed {
-			err = fbErr
-			errBuf = fbBuf
+	if err != nil {
+		var (
+			fbBuf  bytes.Buffer
+			fbUsed bool
+			fbErr  error
+		)
+		switch {
+		case isGitPushSSOAuthError(errBuf.String()):
+			fbBuf, fbUsed, fbErr = retryPushWithoutSSO(pushCtx, cmd, cfg, remote, pushArgs)
+			if fbUsed && (fbErr == nil || fbBuf.Len() > 0) {
+				outBuf.Reset()
+			}
+		case httpsBase != "" && isGitPushHTTPSAuthError(errBuf.String()):
 			outBuf.Reset()
+			fbBuf, fbErr = retryPushWithHTTPSToken(pushCtx, &outBuf, cfg, httpsBase, pushArgs, err)
+			fbUsed = true
+		}
+		if fbUsed {
+			err = fbErr
+			// Keep git's original stderr (for example sso's "run gcert") when
+			// the fallback failed without pushing.
+			if fbErr == nil || fbBuf.Len() > 0 {
+				errBuf = fbBuf
+			}
 		}
 	}
 	if err != nil {
 		errStr := errBuf.String()
 		if strings.Contains(errStr, "missing Change-Id") {
 			return fmt.Errorf("remote rejected push because a commit is missing a Change-Id in its footer.\n\nGerrit requires a Change-Id line in each commit message.\nTo resolve this:\n  1. Install the gh-ish commit-msg hook:\n     ./gh hook install --git\n  2. Amend your commit to generate the Change-Id:\n     git commit --amend --no-edit\n  3. Retry push:\n     ./gh pr push\n\nUnderlying error: %w", err)
+		}
+		if strings.Contains(strings.ToLower(errStr), "contributor license agreement") || strings.Contains(errStr, "cla.developers.google.com") {
+			return fmt.Errorf("remote rejected push because the Google Contributor License Agreement (CLA) has not been signed for your account or commit email.\n\nTo resolve this:\n  1. Sign the CLA at https://cla.developers.google.com/\n  2. Verify your Git author email matches your Gerrit/CLA email:\n     git config user.email\n  3. If you amended user.email, reset the commit author and retry:\n     git commit --amend --reset-author --no-edit\n     ./gh pr push\n\nUnderlying error: %w", err)
 		}
 		if strings.Contains(errStr, "no new changes") {
 			if hasMetadataUpdates(pushOpts) {
@@ -554,6 +582,48 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 	}
 
 	return scheduleSubmitFlowForPush(cmd, nil, pushOpts, "patchset pushed")
+}
+
+func resolveHTTPSGoogleSourceBase(ctx context.Context, cfg *Config, remote string) string {
+	raw := strings.TrimSpace(remote)
+	if !strings.HasPrefix(strings.ToLower(raw), "https://") {
+		if cfg == nil {
+			return ""
+		}
+		gc := cfg.GitClient()
+		raw = ""
+		for _, key := range []string{
+			fmt.Sprintf("remote.%s.pushurl", remote),
+			fmt.Sprintf("remote.%s.url", remote),
+		} {
+			if val, err := gc.ConfigGet(ctx, key); err == nil {
+				if trimmed := strings.TrimSpace(val); trimmed != "" {
+					raw = trimmed
+					break
+				}
+			}
+		}
+	}
+	if !strings.HasPrefix(strings.ToLower(raw), "https://") {
+		return ""
+	}
+	if u, err := url.Parse(raw); err == nil {
+		host := strings.ToLower(u.Hostname())
+		if len(host) > len(".googlesource.com") && strings.HasSuffix(host, ".googlesource.com") {
+			return "https://" + host + "/"
+		}
+	}
+	return ""
+}
+
+func isGitPushHTTPSAuthError(stderr string) bool {
+	lower := strings.ToLower(stderr)
+	return strings.Contains(lower, "could not read username") ||
+		strings.Contains(lower, "authentication failed") ||
+		strings.Contains(lower, "terminal prompts disabled") ||
+		strings.Contains(lower, "http basic: access denied") ||
+		strings.Contains(lower, "the requested url returned error: 401") ||
+		strings.Contains(lower, "the requested url returned error: 403")
 }
 
 func isGitPushSSOAuthError(stderr string) bool {
@@ -603,61 +673,128 @@ func resolveSSOTenantForRemote(ctx context.Context, cfg *Config, remote string) 
 	return ""
 }
 
+// ssoRewriteGitConfig returns git config key-value pairs that rewrite
+// sso://<tenant>/ to targetBase and override global ~/.gitconfig
+// url.sso://<tenant>/.pushInsteadOf rules for https://<tenant>*.googlesource.com/.
+func ssoRewriteGitConfig(targetBase, tenant string) []string {
+	return []string{
+		fmt.Sprintf("url.%s.insteadOf", targetBase), fmt.Sprintf("sso://%s/", tenant),
+		fmt.Sprintf("url.%s.pushInsteadOf", targetBase), fmt.Sprintf("sso://%s/", tenant),
+		fmt.Sprintf("url.%s.pushInsteadOf", targetBase), fmt.Sprintf("https://%s.googlesource.com/", tenant),
+		fmt.Sprintf("url.%s.pushInsteadOf", targetBase), fmt.Sprintf("https://%s-review.googlesource.com/", tenant),
+	}
+}
+
 // retryPushWithoutSSO retries a failed sso:// git push when the 20-hour Corp SSO ticket
 // in ssh-agent is expired:
 //  1. On Corp Linux (when git-remote-rpc is on PATH), it retries with rpc://<tenant>/
 //     which authenticates using the 7-day LOAS2 certificate from 'gcert --lifetime=168h'.
 //  2. On Corp macOS (where git-remote-rpc is absent) or if rpc:// also fails, it retries
-//     with https://<tenant>.googlesource.com/ using a luci-auth Bearer token.
-func retryPushWithoutSSO(ctx context.Context, cmd *cobra.Command, cfg *Config, remote string, pushArgs []string) (error, bytes.Buffer, bool) {
+//     with https://<tenant>.googlesource.com/ using a Gerrit OAuth2 Bearer token.
+func retryPushWithoutSSO(ctx context.Context, cmd *cobra.Command, cfg *Config, remote string, pushArgs []string) (bytes.Buffer, bool, error) {
 	var emptyBuf bytes.Buffer
 	tenant := resolveSSOTenantForRemote(ctx, cfg, remote)
 	if tenant == "" {
-		return nil, emptyBuf, false
+		return emptyBuf, false, nil
 	}
 
 	// 1. Try rpc://<tenant>/ when git-remote-rpc is available (Corp Linux with 7-day LOAS2).
 	if _, lookErr := LookPathFn("git-remote-rpc"); lookErr == nil {
-		rpcArgs := make([]string, 0, len(pushArgs)+2)
-		rpcArgs = append(rpcArgs, "-c", fmt.Sprintf("url.rpc://%s/.insteadOf=sso://%s/", tenant, tenant))
-		rpcArgs = append(rpcArgs, pushArgs...)
-
+		rpcBase := fmt.Sprintf("rpc://%s/", tenant)
+		rpcCtx := withGitConfigEnv(ctx, ssoRewriteGitConfig(rpcBase, tenant)...)
 		var rpcBuf bytes.Buffer
-		rpcErr := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), &rpcBuf, rpcArgs...)
+		rpcErr := cfg.GitClient().Run(rpcCtx, cmd.OutOrStdout(), &rpcBuf, pushArgs...)
 		if rpcErr == nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Note: sso:// credentials expired; pushed via rpc://%s/ using LOAS2.\n", tenant)
-			return nil, rpcBuf, true
+			fmt.Fprintf(cmd.ErrOrStderr(), "Note: sso:// credentials expired; pushed via %s using LOAS2.\n", rpcBase)
+			return rpcBuf, true, nil
 		}
-		rpcStr := rpcBuf.String()
-		if strings.Contains(rpcStr, "missing Change-Id") || strings.Contains(rpcStr, "no new changes") {
-			return rpcErr, rpcBuf, true
-		}
-	}
-
-	// 2. Try https://<tenant>.googlesource.com/ with a luci-auth OAuth2 Bearer token (Corp macOS & Linux).
-	if tok, src, tokErr := GerritTokenResolver(ctx); tokErr == nil && tok != "" {
-		if src == "" {
-			src = "luci-auth"
-		}
-		httpsBase := fmt.Sprintf("https://%s.googlesource.com/", tenant)
-		httpsCtx := withGitConfigEnv(ctx,
-			fmt.Sprintf("url.%s.insteadOf", httpsBase), fmt.Sprintf("sso://%s/", tenant),
-			fmt.Sprintf("http.%s.extraHeader", httpsBase), fmt.Sprintf("Authorization: Bearer %s", tok),
-		)
-
-		var httpsBuf bytes.Buffer
-		httpsErr := cfg.GitClient().Run(httpsCtx, cmd.OutOrStdout(), &httpsBuf, pushArgs...)
-		if httpsErr == nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Note: sso:// credentials expired; pushed via %s using %s.\n", httpsBase, src)
-			return nil, httpsBuf, true
-		}
-		httpsStr := httpsBuf.String()
-		if strings.Contains(httpsStr, "missing Change-Id") || strings.Contains(httpsStr, "no new changes") {
-			return httpsErr, httpsBuf, true
+		if isTerminalPushRejection(rpcBuf.String()) {
+			return rpcBuf, true, rpcErr
 		}
 	}
 
-	return nil, emptyBuf, false
+	// 2. Try https://<tenant>.googlesource.com/ with a Gerrit OAuth2 Bearer token (Corp macOS & Linux).
+	httpsBase := fmt.Sprintf("https://%s.googlesource.com/", tenant)
+	_, res, err := resolvePushGerritAuth(ctx, cfg, httpsBase)
+	if err != nil {
+		return emptyBuf, true, err
+	}
+	if res.unauthed || res.token == "" {
+		return emptyBuf, false, nil
+	}
+	kv := append(ssoRewriteGitConfig(httpsBase, tenant),
+		fmt.Sprintf("http.%s.extraHeader", httpsBase), "Authorization: Bearer "+strings.TrimSpace(res.token),
+	)
+	httpsCtx := withGitConfigEnv(ctx, kv...)
+	var httpsBuf bytes.Buffer
+	httpsErr := cfg.GitClient().Run(httpsCtx, cmd.OutOrStdout(), &httpsBuf, pushArgs...)
+	if httpsErr == nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Note: sso:// credentials expired; pushed via %s using %s.\n", httpsBase, res.desc)
+		return httpsBuf, true, nil
+	}
+	if isTerminalPushRejection(httpsBuf.String()) {
+		return httpsBuf, true, httpsErr
+	}
+	return emptyBuf, false, nil
+}
+
+func resolvePushGerritAuth(ctx context.Context, cfg *Config, httpsBase string) (AuthMode, resolvedGerritAuth, error) {
+	mode, _, err := ResolveAuthMode(ctx, cfg)
+	if err != nil {
+		return "", resolvedGerritAuth{}, err
+	}
+	if cfg != nil && ctx.Value(configKey) == nil {
+		ctx = context.WithValue(ctx, configKey, cfg)
+	}
+	res, err := resolveGerritAuth(ctx, httpsBase, mode)
+	return mode, res, err
+}
+
+// retryPushWithHTTPSToken retries a direct HTTPS git push that failed
+// authentication, once, with the Gerrit OAuth2 token in an
+// `http.<httpsBase>.extraHeader`.
+func retryPushWithHTTPSToken(ctx context.Context, out io.Writer, cfg *Config, httpsBase string, pushArgs []string, origErr error) (bytes.Buffer, error) {
+	var emptyBuf bytes.Buffer
+	mode, res, err := resolvePushGerritAuth(ctx, cfg, httpsBase)
+	if err != nil {
+		return emptyBuf, err
+	}
+	if mode == AuthModeNone {
+		return emptyBuf, NewExitCodeError(ExitCodeAuth,
+			"git push to %s failed authentication. Gerrit authentication is disabled (auth mode none), "+
+				"so it was not retried with a Gerrit OAuth2 token.\n"+
+				"Check your git credentials for %s.\n\nUnderlying error: %w", httpsBase, httpsBase, origErr)
+	}
+	if res.unauthed || res.token == "" {
+		cause := origErr
+		if res.cause != nil {
+			cause = fmt.Errorf("%w (Gerrit OAuth2 token probe: %v)", origErr, res.cause)
+		}
+		return emptyBuf, NewExitCodeError(ExitCodeAuth,
+			"git push to %s failed authentication, and no Gerrit OAuth2 token is available to retry with.\n\n"+
+				"To resolve this, do one of:\n"+
+				"  luci-auth login -scopes %q\n"+
+				"  export GERRIT_TOKEN=\"<token>\"\n"+
+				"  configure a git credential helper for %s\n\n"+
+				"Underlying error: %w", httpsBase, DefaultGerritScopes, httpsBase, cause)
+	}
+	httpsCtx := withGitConfigEnv(ctx, fmt.Sprintf("http.%s.extraHeader", httpsBase), "Authorization: Bearer "+strings.TrimSpace(res.token))
+	var httpsBuf bytes.Buffer
+	httpsErr := cfg.GitClient().Run(httpsCtx, out, &httpsBuf, pushArgs...)
+	if httpsErr == nil || isTerminalPushRejection(httpsBuf.String()) || !isGitPushHTTPSAuthError(httpsBuf.String()) {
+		return httpsBuf, httpsErr
+	}
+	return httpsBuf, NewExitCodeError(ExitCodeAuth,
+		"git push to %s was retried with a Gerrit OAuth2 token (%s), which was also rejected.\n"+
+			"Check your credentials with: ./gh auth status\n\nUnderlying error: %w", httpsBase, res.desc, httpsErr)
+}
+
+// isTerminalPushRejection reports whether git push stderr shows Gerrit
+// rejecting the push for a reason that retrying with other credentials can't
+// fix: a missing Change-Id, no new changes, or an unsigned CLA.
+func isTerminalPushRejection(stderr string) bool {
+	return strings.Contains(stderr, "missing Change-Id") || strings.Contains(stderr, "no new changes") ||
+		strings.Contains(strings.ToLower(stderr), "contributor license agreement") || strings.Contains(stderr, "cla.developers.google.com")
 }
 
 func hasMetadataUpdates(opts PushOptions) bool {

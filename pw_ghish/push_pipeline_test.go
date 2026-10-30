@@ -238,7 +238,9 @@ func TestExecutePush(t *testing.T) {
 	var calls []string
 	mockGit := &MockGitRunner{
 		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			calls = append(calls, strings.Join(args, " "))
+			if len(args) > 0 && args[0] == "push" {
+				calls = append(calls, strings.Join(args, " "))
+			}
 			return nil
 		},
 	}
@@ -277,43 +279,329 @@ func TestExecutePush(t *testing.T) {
 
 func TestExecutePush_MissingChangeIdInStderr(t *testing.T) {
 	ctx := context.Background()
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				stderr.Write([]byte("remote: ERROR: commit 1234567: missing Change-Id in commit message footer\n"))
-				return fmt.Errorf("exit status 1")
+	for _, tc := range []struct {
+		name     string
+		stderr   string
+		wantErrs []string
+	}{
+		{
+			name:     "missing Change-Id",
+			stderr:   "remote: ERROR: commit 1234567: missing Change-Id in commit message footer\n",
+			wantErrs: []string{"missing a Change-Id in its footer", "commit-msg", "git commit --amend --no-edit"},
+		},
+		{
+			name:     "missing CLA",
+			stderr:   "remote: ERROR: One or more of your commits has an author without a Contributor License Agreement (see https://cla.developers.google.com/)\n",
+			wantErrs: []string{"https://cla.developers.google.com/", "git commit --amend --reset-author --no-edit", "./gh pr push"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockGit := &MockGitRunner{
+				RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+					if len(args) > 0 && args[0] == "push" {
+						stderr.Write([]byte(tc.stderr))
+						return fmt.Errorf("exit status 1")
+					}
+					return nil
+				},
 			}
-			return nil
+			cfg := &Config{Git: mockGit, Host: "pigweed-review.googlesource.com", Profile: profiles["pigweed"]}
+			cmd := &cobra.Command{}
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			SetConfig(cmd, cfg)
+
+			err := executePush(ctx, cmd, cfg, "main", PushOptions{}, false)
+			if err == nil {
+				t.Fatal("expected error on git push rejection, got nil")
+			}
+			for _, want := range tc.wantErrs {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("expected error to contain %q, got: %v", want, err)
+				}
+			}
+			if strings.Contains(err.Error(), "curl") {
+				t.Errorf("hint still mentions curl: %v", err)
+			}
+		})
+	}
+}
+
+func TestExecutePush_HTTPSAuthRetry(t *testing.T) {
+	const authFailed = "fatal: Authentication failed for 'https://pigweed.googlesource.com/pigweed/pigweed/'\n"
+	const promptDisabled = "fatal: could not read Username for 'https://pigweed.googlesource.com': terminal prompts disabled\n"
+	const prohibited = "remote: prohibited by Gerrit: not permitted: create change on refs/heads/main\n"
+	const claRejected = "remote: error: You must sign the Contributor License Agreement at https://cla.developers.google.com/\n"
+	wantFirstEnv := []string{
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=color.ui",
+		"GIT_CONFIG_VALUE_0=false",
+		"GIT_TERMINAL_PROMPT=0",
+	}
+	wantRetryEnv := []string{
+		"GIT_CONFIG_COUNT=2",
+		"GIT_CONFIG_KEY_0=color.ui",
+		"GIT_CONFIG_VALUE_0=false",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_KEY_1=http.https://pigweed.googlesource.com/.extraHeader",
+		"GIT_CONFIG_VALUE_1=Authorization: Bearer luci-tok",
+	}
+
+	tests := []struct {
+		name string
+		// setup runs after WithHermeticAuth.
+		setup func(t *testing.T)
+		// remote overrides cfg.Remote ("origin" by default).
+		remote string
+		// pushURL configures remote.origin.pushurl (with remote.origin.url set to sso://).
+		pushURL string
+		// pushStderr is the stderr of each push attempt, in order; "" succeeds.
+		pushStderr      []string
+		wantPushes      int
+		wantResolver    int
+		wantRetryEnv    bool
+		wantErr         bool
+		wantErrContains string
+		wantErrExtra    string
+		wantExitCode    int
+		// wantStderr, if set, must appear in the command's stderr.
+		wantStderr string
+		// resolverErr makes the Gerrit token resolver fail.
+		resolverErr bool
+	}{
+		{
+			name:       "success uses own credentials",
+			pushStderr: []string{""},
+			wantPushes: 1,
+		},
+		{
+			name:         "auth failure retries with token",
+			pushStderr:   []string{authFailed, ""},
+			wantPushes:   2,
+			wantResolver: 1,
+			wantRetryEnv: true,
+		},
+		{
+			name:         "prompt disabled retries with token",
+			pushStderr:   []string{promptDisabled, ""},
+			wantPushes:   2,
+			wantResolver: 1,
+			wantRetryEnv: true,
+		},
+		{
+			name:         "direct https remote URL retries with token",
+			remote:       "https://pigweed.googlesource.com/pigweed/pigweed",
+			pushStderr:   []string{authFailed, ""},
+			wantPushes:   2,
+			wantResolver: 1,
+			wantRetryEnv: true,
+		},
+		{
+			name:         "remote.origin.pushurl https retries with token",
+			pushURL:      "https://pigweed.googlesource.com/pigweed/pigweed",
+			pushStderr:   []string{authFailed, ""},
+			wantPushes:   2,
+			wantResolver: 1,
+			wantRetryEnv: true,
+		},
+		{
+			name: "auth-mode none attaches no token",
+			setup: func(t *testing.T) {
+				prev := AuthModeFlag
+				AuthModeFlag = "none"
+				t.Cleanup(func() { AuthModeFlag = prev })
+			},
+			pushStderr:      []string{authFailed},
+			wantPushes:      1,
+			wantErr:         true,
+			wantErrContains: "Gerrit authentication is disabled",
+			wantExitCode:    ExitCodeAuth,
+			wantStderr:      authFailed,
+		},
+		{
+			name:            "retry also rejected",
+			pushStderr:      []string{authFailed, authFailed},
+			wantPushes:      2,
+			wantResolver:    1,
+			wantRetryEnv:    true,
+			wantErr:         true,
+			wantErrContains: "which was also rejected",
+			wantExitCode:    ExitCodeAuth,
+		},
+		{
+			name:            "retry fails for a non-auth reason",
+			pushStderr:      []string{authFailed, prohibited},
+			wantPushes:      2,
+			wantResolver:    1,
+			wantRetryEnv:    true,
+			wantErr:         true,
+			wantErrContains: "exit status 128 (push 2)",
+			wantStderr:      prohibited,
+		},
+		{
+			name:            "retry fails with terminal CLA rejection",
+			pushStderr:      []string{authFailed, claRejected},
+			wantPushes:      2,
+			wantResolver:    1,
+			wantRetryEnv:    true,
+			wantErr:         true,
+			wantErrContains: "Contributor License Agreement",
+		},
+		{
+			name:            "token unavailable: no retry",
+			resolverErr:     true,
+			pushStderr:      []string{promptDisabled},
+			wantPushes:      1,
+			wantResolver:    1,
+			wantErr:         true,
+			wantErrContains: "luci-auth login -scopes " + fmt.Sprintf("%q", DefaultGerritScopes),
+			wantErrExtra:    "Gerrit OAuth2 token probe: luci-auth: not logged in",
+			wantExitCode:    ExitCodeAuth,
+			wantStderr:      promptDisabled,
 		},
 	}
-	cfg := &Config{
-		Git:     mockGit,
-		Host:    "pigweed-review.googlesource.com",
-		Profile: profiles["pigweed"],
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var resolverCalls int
+			WithHermeticAuth(t, AuthResolvers{
+				GerritToken: func(ctx context.Context) (string, string, error) {
+					resolverCalls++
+					if tc.resolverErr {
+						return "", "", fmt.Errorf("luci-auth: not logged in")
+					}
+					return "luci-tok", "luci-auth", nil
+				},
+			})
+			if tc.setup != nil {
+				tc.setup(t)
+			}
+
+			var pushEnvs [][]string
+			git := &MockGitRunner{
+				RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+					if len(args) == 0 || args[0] != "push" {
+						return nil
+					}
+					pushEnvs = append(pushEnvs, gitEnvFromContext(ctx))
+					i := len(pushEnvs) - 1
+					if i < len(tc.pushStderr) && tc.pushStderr[i] != "" {
+						_, _ = io.WriteString(stderr, tc.pushStderr[i])
+						return fmt.Errorf("exit status 128 (push %d)", i+1)
+					}
+					return nil
+				},
+			}
+			if tc.pushURL != "" {
+				git.OnCommand("config --get remote.origin.pushurl", tc.pushURL+"\n")
+				git.OnCommand("config --get remote.origin.url", "sso://pigweed/pigweed/pigweed\n")
+			} else if tc.remote == "" {
+				git.OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
+			}
+
+			remote := tc.remote
+			if remote == "" {
+				remote = "origin"
+			}
+			cfg := &Config{Git: git, Host: "pigweed-review.googlesource.com", Remote: remote, Profile: profiles["pigweed"]}
+			cmd := &cobra.Command{}
+			var stderr bytes.Buffer
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(&stderr)
+			SetConfig(cmd, cfg)
+
+			err := executePush(t.Context(), cmd, cfg, "main", PushOptions{}, false)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("executePush error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !strings.Contains(stderr.String(), tc.wantStderr) {
+				t.Errorf("stderr = %q, want it to contain %q", stderr.String(), tc.wantStderr)
+			}
+			if tc.wantErrContains != "" && !strings.Contains(err.Error(), tc.wantErrContains) {
+				t.Errorf("executePush error = %q, want it to contain %q", err, tc.wantErrContains)
+			}
+			if tc.wantErrExtra != "" && !strings.Contains(err.Error(), tc.wantErrExtra) {
+				t.Errorf("executePush error = %q, want it to contain %q", err, tc.wantErrExtra)
+			}
+			if tc.wantExitCode != 0 {
+				if got := ExitCodeFor(err); got != tc.wantExitCode {
+					t.Errorf("ExitCodeFor(err) = %d, want %d", got, tc.wantExitCode)
+				}
+			}
+			if len(pushEnvs) != tc.wantPushes {
+				t.Fatalf("push attempts = %d, want %d", len(pushEnvs), tc.wantPushes)
+			}
+			if resolverCalls != tc.wantResolver {
+				t.Errorf("Gerrit token resolver calls = %d, want %d", resolverCalls, tc.wantResolver)
+			}
+			if !slices.Equal(pushEnvs[0], wantFirstEnv) {
+				t.Errorf("first push git env = %v, want %v", pushEnvs[0], wantFirstEnv)
+			}
+			if tc.wantRetryEnv && !slices.Equal(pushEnvs[1], wantRetryEnv) {
+				t.Errorf("retry push git env = %v, want %v", pushEnvs[1], wantRetryEnv)
+			}
+		})
 	}
 
-	cmd := &cobra.Command{}
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	SetConfig(cmd, cfg)
+	t.Run("sso pushurl is not an HTTPS base", func(t *testing.T) {
+		git := &MockGitRunner{}
+		git.OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
+		git.OnCommand("config --get remote.origin.pushurl", "sso://pigweed/pigweed/pigweed\n")
+		cfg := &Config{Git: git, Remote: "origin"}
+		if got := resolveHTTPSGoogleSourceBase(t.Context(), cfg, "origin"); got != "" {
+			t.Errorf("resolveHTTPSGoogleSourceBase with sso:// pushurl = %q, want empty", got)
+		}
+	})
 
-	err := executePush(ctx, cmd, cfg, "main", PushOptions{}, false)
-	if err == nil {
-		t.Fatal("expected error on git push rejection, got nil")
-	}
-	if !strings.Contains(err.Error(), "missing a Change-Id in its footer") {
-		t.Errorf("expected Change-Id explanation in error, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "commit-msg") {
-		t.Errorf("expected commit-msg hook instructions in error, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "git commit --amend --no-edit") {
-		t.Errorf("expected amend instructions in error, got: %v", err)
-	}
-	if strings.Contains(err.Error(), "curl") {
-		t.Errorf("hint still mentions curl: %v", err)
-	}
+	t.Run("non-googlesource and bare googlesource.com HTTPS remotes return empty", func(t *testing.T) {
+		for _, remoteURL := range []string{
+			"https://github.com/google/pigweed.git",
+			"https://googlesource.com",
+			"https://googlesource.com/pigweed/pigweed",
+		} {
+			if got := resolveHTTPSGoogleSourceBase(t.Context(), nil, remoteURL); got != "" {
+				t.Errorf("resolveHTTPSGoogleSourceBase(%q) = %q, want empty", remoteURL, got)
+			}
+		}
+	})
+
+	t.Run("isGitPushHTTPSAuthError markers", func(t *testing.T) {
+		cases := []struct {
+			stderr string
+			want   bool
+		}{
+			{"fatal: could not read Username for 'https://pigweed.googlesource.com': No such device or address", true},
+			{"fatal: Authentication failed for 'https://pigweed.googlesource.com/pigweed/'", true},
+			{"fatal: terminal prompts disabled", true},
+			{"remote: HTTP Basic: Access denied. The provided password or token is incorrect", true},
+			{"fatal: unable to access 'https://pigweed.googlesource.com/': The requested URL returned error: 401", true},
+			{"fatal: unable to access 'https://pigweed.googlesource.com/': The requested URL returned error: 403", true},
+			{"fatal: repository 'https://pigweed.googlesource.com/missing/' not found (The requested URL returned error: 404)", false},
+			{"fatal: unable to access 'https://pigweed.googlesource.com/': Could not resolve host: pigweed.googlesource.com", false},
+		}
+		for _, tc := range cases {
+			if got := isGitPushHTTPSAuthError(tc.stderr); got != tc.want {
+				t.Errorf("isGitPushHTTPSAuthError(%q) = %v, want %v", tc.stderr, got, tc.want)
+			}
+		}
+	})
+
+	t.Run("nil cmd and nil cfg return explicit errors", func(t *testing.T) {
+		ctx := t.Context()
+		cfg := &Config{Git: &MockGitRunner{}}
+		cmd := &cobra.Command{}
+		if err := executePush(ctx, nil, cfg, "main", PushOptions{}, false); err == nil || !strings.Contains(err.Error(), "cmd is uninitialized") {
+			t.Errorf("executePush(nil cmd) = %v, want cmd uninitialized error", err)
+		}
+		if err := executePush(ctx, cmd, nil, "main", PushOptions{}, false); err == nil || !strings.Contains(err.Error(), "cfg is uninitialized") {
+			t.Errorf("executePush(nil cfg) = %v, want cfg uninitialized error", err)
+		}
+		if err := applyPushOptionsViaREST(ctx, nil, cfg, PushOptions{}); err == nil || !strings.Contains(err.Error(), "cmd is uninitialized") {
+			t.Errorf("applyPushOptionsViaREST(nil cmd) = %v, want cmd uninitialized error", err)
+		}
+		if err := applyPushOptionsViaREST(ctx, cmd, nil, PushOptions{}); err == nil || !strings.Contains(err.Error(), "cfg is uninitialized") {
+			t.Errorf("applyPushOptionsViaREST(nil cfg) = %v, want cfg uninitialized error", err)
+		}
+	})
 }
 
 func TestExecutePush_WithTopicAndHashtags(t *testing.T) {
@@ -321,7 +609,9 @@ func TestExecutePush_WithTopicAndHashtags(t *testing.T) {
 	var calls []string
 	mockGit := &MockGitRunner{
 		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			calls = append(calls, strings.Join(args, " "))
+			if len(args) > 0 && args[0] == "push" {
+				calls = append(calls, strings.Join(args, " "))
+			}
 			return nil
 		},
 	}
@@ -570,50 +860,6 @@ func TestHasMetadataUpdates(t *testing.T) {
 	}
 }
 
-func TestExecutePush_NilConfig(t *testing.T) {
-	cmd := &cobra.Command{}
-	err := executePush(context.Background(), cmd, nil, "main", PushOptions{}, false)
-	if err == nil {
-		t.Fatal("expected error on nil cfg, got nil")
-	}
-	if !strings.Contains(err.Error(), "internal error: cfg is uninitialized in executePush") {
-		t.Errorf("expected internal error message, got: %v", err)
-	}
-}
-
-func TestExecutePush_NilCmd(t *testing.T) {
-	cfg := &Config{}
-	err := executePush(context.Background(), nil, cfg, "main", PushOptions{}, false)
-	if err == nil {
-		t.Fatal("expected error on nil cmd, got nil")
-	}
-	if !strings.Contains(err.Error(), "internal error: cmd is uninitialized in executePush") {
-		t.Errorf("expected internal error message, got: %v", err)
-	}
-}
-
-func TestApplyPushOptionsViaREST_NilConfig(t *testing.T) {
-	cmd := &cobra.Command{}
-	err := applyPushOptionsViaREST(context.Background(), cmd, nil, PushOptions{})
-	if err == nil {
-		t.Fatal("expected error on nil cfg, got nil")
-	}
-	if !strings.Contains(err.Error(), "internal error: cfg is uninitialized in applyPushOptionsViaREST") {
-		t.Errorf("expected internal error message, got: %v", err)
-	}
-}
-
-func TestApplyPushOptionsViaREST_NilCmd(t *testing.T) {
-	cfg := &Config{}
-	err := applyPushOptionsViaREST(context.Background(), nil, cfg, PushOptions{})
-	if err == nil {
-		t.Fatal("expected error on nil cmd, got nil")
-	}
-	if !strings.Contains(err.Error(), "internal error: cmd is uninitialized in applyPushOptionsViaREST") {
-		t.Errorf("expected internal error message, got: %v", err)
-	}
-}
-
 func TestCheckSubmodulePolicy(t *testing.T) {
 	ctx := context.Background()
 	diffTreeWithSubmodule := ":160000 160000 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 M\tthird_party/foo\n" +
@@ -792,16 +1038,17 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("falls back from expired sso:// to rpc:// when git-remote-rpc is on PATH", func(t *testing.T) {
-		origLookPath := LookPathFn
-		LookPathFn = func(file string) (string, error) {
-			if file == "git-remote-rpc" {
-				return "/usr/bin/git-remote-rpc", nil
-			}
-			return "", fmt.Errorf("not found: %s", file)
-		}
-		defer func() { LookPathFn = origLookPath }()
+		WithHermeticAuth(t, AuthResolvers{
+			LookPath: func(file string) (string, error) {
+				if file == "git-remote-rpc" {
+					return "/usr/bin/git-remote-rpc", nil
+				}
+				return "", fmt.Errorf("not found: %s", file)
+			},
+		})
 
 		var pushCalls []string
+		var gotEnv []string
 		mockGit := &MockGitRunner{
 			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 				call := strings.Join(args, " ")
@@ -809,16 +1056,15 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 					stdout.Write([]byte("sso://pigweed/pigweed/pigweed\n"))
 					return nil
 				}
-				if strings.HasPrefix(call, "push ") || strings.Contains(call, " push ") {
+				if call == "push origin HEAD:refs/for/main" {
 					pushCalls = append(pushCalls, call)
-					if call == "push origin HEAD:refs/for/main" {
+					if len(pushCalls) == 1 {
 						stderr.Write([]byte("remote_helper.go:932: sso: credentials expired. Try running gcert first\nfatal: remote helper 'sso' aborted session\n"))
 						return fmt.Errorf("exit status 128")
 					}
-					if call == "-c url.rpc://pigweed/.insteadOf=sso://pigweed/ push origin HEAD:refs/for/main" {
-						stderr.Write([]byte("remote: Processing changes: updated: 1, done\n"))
-						return nil
-					}
+					gotEnv = gitEnvFromContext(ctx)
+					stderr.Write([]byte("remote: Processing changes: updated: 1, done\n"))
+					return nil
 				}
 				return nil
 			},
@@ -837,23 +1083,20 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 		if len(pushCalls) != 2 {
 			t.Fatalf("expected 2 push calls (initial sso + rpc fallback), got %d: %v", len(pushCalls), pushCalls)
 		}
+		if !slices.Contains(gotEnv, "GIT_CONFIG_KEY_1=url.rpc://pigweed/.insteadOf") {
+			t.Errorf("expected rpc:// rewrite in git env, got: %v", gotEnv)
+		}
 		if !strings.Contains(errBuf.String(), "rpc://pigweed/") {
 			t.Errorf("expected stderr note mentioning rpc://pigweed/ fallback, got:\n%s", errBuf.String())
 		}
 	})
 
 	t.Run("falls back from expired sso:// to https:// with luci-auth Bearer token on Corp Mac (no git-remote-rpc)", func(t *testing.T) {
-		origLookPath := LookPathFn
-		LookPathFn = func(file string) (string, error) {
-			return "", fmt.Errorf("not found: %s", file)
-		}
-		defer func() { LookPathFn = origLookPath }()
-
-		origGerrit := GerritTokenResolver
-		GerritTokenResolver = func(ctx context.Context) (string, string, error) {
-			return "mac-luci-bearer-tok", "luci-auth", nil
-		}
-		defer func() { GerritTokenResolver = origGerrit }()
+		WithHermeticAuth(t, AuthResolvers{
+			GerritToken: func(ctx context.Context) (string, string, error) {
+				return "mac-luci-bearer-tok", "luci-auth", nil
+			},
+		})
 
 		var pushCalls []string
 		var gotEnv []string
@@ -897,13 +1140,19 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 			t.Errorf("bearer token or auth header leaked into git command args: %v", mockGit.Calls)
 		}
 		wantEnv := []string{
-			"GIT_CONFIG_COUNT=3",
+			"GIT_CONFIG_COUNT=6",
 			"GIT_CONFIG_KEY_0=color.ui",
 			"GIT_CONFIG_VALUE_0=false",
 			"GIT_CONFIG_KEY_1=url.https://pigweed.googlesource.com/.insteadOf",
 			"GIT_CONFIG_VALUE_1=sso://pigweed/",
-			"GIT_CONFIG_KEY_2=http.https://pigweed.googlesource.com/.extraHeader",
-			"GIT_CONFIG_VALUE_2=Authorization: Bearer mac-luci-bearer-tok",
+			"GIT_CONFIG_KEY_2=url.https://pigweed.googlesource.com/.pushInsteadOf",
+			"GIT_CONFIG_VALUE_2=sso://pigweed/",
+			"GIT_CONFIG_KEY_3=url.https://pigweed.googlesource.com/.pushInsteadOf",
+			"GIT_CONFIG_VALUE_3=https://pigweed.googlesource.com/",
+			"GIT_CONFIG_KEY_4=url.https://pigweed.googlesource.com/.pushInsteadOf",
+			"GIT_CONFIG_VALUE_4=https://pigweed-review.googlesource.com/",
+			"GIT_CONFIG_KEY_5=http.https://pigweed.googlesource.com/.extraHeader",
+			"GIT_CONFIG_VALUE_5=Authorization: Bearer mac-luci-bearer-tok",
 		}
 		if !slices.Equal(gotEnv, wantEnv) {
 			t.Errorf("git env = %v, want %v", gotEnv, wantEnv)
@@ -918,15 +1167,16 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 	})
 
 	t.Run("preserves no-new-changes error from fallback push so metadata updates still apply", func(t *testing.T) {
-		origLookPath := LookPathFn
-		LookPathFn = func(file string) (string, error) {
-			if file == "git-remote-rpc" {
-				return "/usr/bin/git-remote-rpc", nil
-			}
-			return "", fmt.Errorf("not found: %s", file)
-		}
-		defer func() { LookPathFn = origLookPath }()
+		WithHermeticAuth(t, AuthResolvers{
+			LookPath: func(file string) (string, error) {
+				if file == "git-remote-rpc" {
+					return "/usr/bin/git-remote-rpc", nil
+				}
+				return "", fmt.Errorf("not found: %s", file)
+			},
+		})
 
+		var pushes int
 		mockGit := &MockGitRunner{
 			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 				call := strings.Join(args, " ")
@@ -935,10 +1185,11 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 					return nil
 				}
 				if call == "push origin HEAD:refs/for/main" {
-					stderr.Write([]byte("sso: credentials expired. Try running gcert first\n"))
-					return fmt.Errorf("exit status 128")
-				}
-				if call == "-c url.rpc://pigweed/.insteadOf=sso://pigweed/ push origin HEAD:refs/for/main" {
+					pushes++
+					if pushes == 1 {
+						stderr.Write([]byte("sso: credentials expired. Try running gcert first\n"))
+						return fmt.Errorf("exit status 128")
+					}
 					stderr.Write([]byte(" ! [remote rejected] HEAD -> refs/for/main (no new changes)\n"))
 					return fmt.Errorf("exit status 1")
 				}
@@ -956,6 +1207,52 @@ func TestExecutePush_SSOFallbacks(t *testing.T) {
 		err := executePush(ctx, cmd, cfg, "main", PushOptions{}, false)
 		if err == nil || !strings.Contains(err.Error(), "no new changes to push") {
 			t.Fatalf("expected friendly 'no new changes to push' error after rpc:// fallback reached Gerrit, got: %v", err)
+		}
+	})
+
+	t.Run("CLA rejection from rpc fallback is terminal", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{
+			LookPath: func(file string) (string, error) {
+				if file == "git-remote-rpc" {
+					return "/usr/bin/git-remote-rpc", nil
+				}
+				return "", fmt.Errorf("not found: %s", file)
+			},
+		})
+
+		var pushes int
+		mockGit := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				call := strings.Join(args, " ")
+				if call == "config --get remote.origin.url" {
+					stdout.Write([]byte("sso://pigweed/pigweed/pigweed\n"))
+					return nil
+				}
+				if !slices.Contains(args, "push") {
+					return nil
+				}
+				pushes++
+				if pushes == 1 {
+					stderr.Write([]byte("sso: credentials expired. Try running gcert first\n"))
+					return fmt.Errorf("exit status 128")
+				}
+				stderr.Write([]byte("remote: A Contributor License Agreement is required. See https://cla.developers.google.com/\n"))
+				return fmt.Errorf("exit status 1")
+			},
+		}
+
+		cmd := &cobra.Command{}
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetContext(ctx)
+		cfg := &Config{Git: mockGit, Host: "pigweed-review.googlesource.com", Remote: "origin"}
+
+		err := executePush(ctx, cmd, cfg, "main", PushOptions{}, false)
+		if err == nil || !strings.Contains(err.Error(), "Contributor License Agreement (CLA) has not been signed") {
+			t.Fatalf("expected CLA remediation error after rpc:// fallback, got: %v", err)
+		}
+		if pushes != 2 {
+			t.Errorf("push attempts = %d, want 2 (no HTTPS retry after a CLA rejection)", pushes)
 		}
 	})
 }

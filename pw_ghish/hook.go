@@ -213,7 +213,7 @@ func CheckAgentCommand(command string) string {
 
 	if gerritBuildbucketRestRegex.MatchString(command) {
 		return "Blocked direct Gerrit/Buildbucket REST call or .gitcookies access. Always use './gh' " +
-			"(which handles corp and cookie auth automatically):\n" +
+			"(which handles Gerrit and Buildbucket OAuth2 authentication automatically):\n" +
 			"  • View CL metadata & comments: ./gh pr view [<id>] --comments\n" +
 			"  • View CL unified patch diff:  ./gh pr diff [<id>]\n" +
 			"  • Stage inline thread reply:   ./gh pr comment [<id>] --path <file> --line <line> -m '<msg>' --resolved\n" +

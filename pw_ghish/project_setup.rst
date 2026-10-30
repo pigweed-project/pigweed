@@ -1048,7 +1048,7 @@ Authentication and Credential Setup
 -----------------------------------
 ``./gh auth status`` checks credentials across Gerrit, LUCI Buildbucket, and
 Google Issue Tracker (Buganizer), supporting both ``googler`` (internal +
-public builders required) and ``community`` (public builders + ``.gitcookies``
+public builders required) and ``community`` (public builders + ``luci-auth``
 or anonymous reads) authentication modes.
 
 For full details on authentication modes, credential lookup order, and

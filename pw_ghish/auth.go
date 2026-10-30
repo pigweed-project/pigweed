@@ -71,7 +71,8 @@ var (
 //  1. --auth-mode flag (AuthModeFlag)
 //  2. GH_ISH_AUTH_MODE environment variable
 //  3. git config ghish.authmode
-//  4. Auto-detection (gob-curl or sso_client on PATH, @google.com git user.email, or sso:// or rpc:// remote)
+//  4. Auto-detection (gob-curl or sso_client on PATH, /usr/bin/sso-cred-helper
+//     present, @google.com git user.email, or sso:// or rpc:// remote)
 func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -147,6 +148,9 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 	}
 	if _, err := LookPathFn("sso_client"); err == nil {
 		return cacheAndReturn(AuthModeGoogler, "auto-detected (sso_client on PATH)")
+	}
+	if hasSSOCredHelper() {
+		return cacheAndReturn(AuthModeGoogler, fmt.Sprintf("auto-detected (%s present)", ssoCredHelperPath))
 	}
 
 	var gc GitClient
