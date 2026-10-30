@@ -19,6 +19,21 @@
 # the "code-review-agent" tag and are scoped to the pigweed/pigweed project.
 
 configs: {
+  id: "pigweed-code-review-agent"
+  display_name: "Code Review Agent"
+  description: "Default multi-perspective review agent for pigweed."
+  tags: "code-review-agent"
+  # Because this entry lists no skills, CRACS also attaches the default
+  # multi-perspective review skill; the entries below add path-matched Pigweed
+  # skills to it.
+  use_default_subagents: true
+  include_filters: {
+    project: "pigweed/pigweed"
+    path_regex: ".*"
+  }
+}
+
+configs: {
   id: "pigweed-code-review"
   display_name: "Pigweed Code Review"
   description: "Pigweed review checklist (docs/sphinx/code_reviews.rst), language style guides, functionality, and security."
