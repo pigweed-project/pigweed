@@ -254,6 +254,7 @@ python_library_host {
         ":pw_protobuf_codegen_protos_py",
     ],
     pkg_path: "pw_protobuf_codegen_protos",
+    libs: ["libprotobuf-python"],
 }
 
 genrule {
@@ -285,6 +286,7 @@ python_library_host {
         ":pw_protobuf_protos_py",
     ],
     pkg_path: "pw_protobuf_protos",
+    libs: ["libprotobuf-python"],
 }
 
 rust_protobuf {

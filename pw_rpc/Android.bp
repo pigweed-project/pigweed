@@ -638,6 +638,7 @@ python_library_host {
         ":pw_rpc_internal_packet_py",
     ],
     pkg_path: "pw_rpc/internal",
+    libs: ["libprotobuf-python"],
 }
 
 genrule_defaults {
