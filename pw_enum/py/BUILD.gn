@@ -26,11 +26,16 @@ pw_python_package("py") {
     "pw_enum/__init__.py",
     "pw_enum/generate.py",
     "pw_enum/generate_gn.py",
+    "pw_enum/json_source.py",
     "pw_enum/parse.py",
   ]
   tests = [
     "generate_test.py",
+    "json_source_test.py",
     "parse_test.py",
   ]
+  pylintrc = "$dir_pigweed/.pylintrc"
+  mypy_ini = "$dir_pigweed/.mypy.ini"
+  ruff_toml = "$dir_pigweed/.ruff.toml"
   python_deps = [ "$dir_pw_codegen/py" ]
 }

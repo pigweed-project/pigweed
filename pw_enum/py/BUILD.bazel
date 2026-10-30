@@ -22,6 +22,7 @@ pw_py_library(
         "pw_enum/__init__.py",
         "pw_enum/generate.py",
         "pw_enum/generate_gn.py",
+        "pw_enum/json_source.py",
         "pw_enum/parse.py",
     ],
     imports = ["."],
@@ -39,6 +40,12 @@ pw_py_binary(
 pw_py_test(
     name = "generate_test",
     srcs = ["generate_test.py"],
+    deps = [":py"],
+)
+
+pw_py_test(
+    name = "json_source_test",
+    srcs = ["json_source_test.py"],
     deps = [":py"],
 )
 

@@ -39,16 +39,27 @@ except ImportError:  # Support running without installing Python packages.
 
 
 class ParseError(Exception):
-    """Exception raised for errors in parsing .h files."""
+    """Exception raised for invalid pw_enum definitions."""
 
 
 @dataclass(frozen=True)
 class EnumValue:
-    """Represents a single, resolved enumerator."""
+    """Represents a single, resolved enumerator.
+
+    Attributes:
+        cc_name: The C++ enumerator name (e.g. ``kAlpha``).
+        value: The enumerator's integer value.
+        name: The display name, used for stringification and tokenization.
+        canonical_name: The language-neutral ``UPPER_SNAKE_CASE`` name. Only
+            set for enums defined in pw_enum data files (e.g. JSON).
+        doc: Optional documentation for the enumerator.
+    """
 
     cc_name: str
     value: int
     name: str
+    canonical_name: str = ""
+    doc: str = ""
 
 
 @dataclass(frozen=True)
@@ -79,7 +90,20 @@ _ParsedEnums = list[_ParsedEnum[tuple[str, str]]]
 
 @dataclass(frozen=True)
 class EnumDescriptor(_ParsedEnum[EnumValue]):
-    """Represents a parsed C++ enum definition with evaluated values."""
+    """Represents a parsed C++ enum definition with evaluated values.
+
+    Enums defined in pw_enum data files (e.g. JSON) also set these fields:
+
+    Attributes:
+        namespace: The canonical, language-neutral namespace (e.g.
+            ``("my", "pkg")`` for ``my.pkg``).
+        underlying_type: The canonical underlying type (e.g. ``"uint8"``).
+        doc: Optional documentation for the enum.
+    """
+
+    namespace: tuple[str, ...] = ()
+    underlying_type: str | None = None
+    doc: str = ""
 
     @property
     def version(self) -> str:
