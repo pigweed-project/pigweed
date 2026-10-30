@@ -130,6 +130,16 @@ class Zephyr(pw_package.git_repo.GitRepo):
                 'constraint.list'
             )
         ) as constraint:
+            # spsdk is not compatible with newer versions of
+            #   click, cryptography, setuptools
+            # spsdk is specified in the zephyr requirements-extras.txt file:
+            # https://github.com/zephyrproject-rtos/zephyr/blob/main/scripts/requirements-extras.txt
+            req_extras = pathlib.Path(f'{path}/scripts/requirements-extras.txt')
+            modified_extras = req_extras.read_text(encoding='utf-8').replace(
+                '\nspsdk', '\n# spsdk'
+            )
+            req_extras.write_text(modified_extras, encoding='utf-8')
+
             subprocess.check_call(
                 [
                     sys.executable,
