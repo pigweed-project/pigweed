@@ -230,6 +230,11 @@ class EnvSetup:
         self._json_file = json_file
         self._gni_file = None
 
+        # Define the roots before anything that references them. PW_ROOT comes
+        # first since other values are rewritten in terms of it.
+        self._env.set('PW_ROOT', pw_root, deactivate=False)
+        self._env.set('PW_PROJECT_ROOT', project_root, deactivate=False)
+
         self._config_file_name = config_file
         self._env.set(
             '_PW_ENVIRONMENT_CONFIG_FILE', os.path.abspath(config_file)
@@ -242,10 +247,11 @@ class EnvSetup:
         self._use_existing_cipd = use_existing_cipd
         self._virtualenv_gn_out_dir = virtualenv_gn_out_dir
 
-        if self._root_variable:
+        if self._root_variable and self._root_variable not in (
+            'PW_PROJECT_ROOT',
+            'PW_ROOT',
+        ):
             self._env.set(self._root_variable, project_root, deactivate=False)
-        self._env.set('PW_PROJECT_ROOT', project_root, deactivate=False)
-        self._env.set('PW_ROOT', pw_root, deactivate=False)
         self._env.set('_PW_ACTUAL_ENVIRONMENT_ROOT', install_dir)
         self._env.set('VIRTUAL_ENV', self._virtualenv_root)
         self._env.add_replacement('_PW_ACTUAL_ENVIRONMENT_ROOT', install_dir)

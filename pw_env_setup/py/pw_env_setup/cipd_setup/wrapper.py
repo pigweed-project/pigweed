@@ -96,7 +96,7 @@ except KeyError:
                 .strip()
                 .decode('utf-8')
             )
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         PW_ROOT = ''
 
 # Get default install dir from environment since args cannot always be passed

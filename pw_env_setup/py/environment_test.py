@@ -23,6 +23,7 @@ evaluated by the shell, then launches the shell and then saves the environment.
 This environment is then validated in the test process.
 """
 
+import json
 import logging
 import os
 import subprocess
@@ -31,7 +32,56 @@ import unittest
 
 import six
 
-from pw_env_setup import environment
+from pw_env_setup import env_setup, environment
+
+
+def _write_env_setup_script(tmpdir, pw_root, project_root):
+    """Generates a CIPD-only activate.sh like bootstrap would.
+
+    Returns the script path and the environment install directory.
+    """
+    cfg_path = os.path.join(project_root, 'pigweed.json')
+    with open(cfg_path, 'w') as outs:
+        json.dump({'pw': {'pw_env_setup': {'root_variable': 'PW_ROOT'}}}, outs)
+    shell_file = os.path.join(tmpdir, 'activate.sh')
+    install_dir = os.path.join(tmpdir, 'environment')
+    setup = env_setup.EnvSetup(
+        pw_root=pw_root,
+        cipd_cache_dir=os.path.join(tmpdir, 'cipd'),
+        shell_file=shell_file,
+        quiet=True,
+        install_dir=install_dir,
+        strict=False,
+        virtualenv_gn_out_dir=os.path.join(tmpdir, 'out'),
+        json_file=None,
+        project_root=project_root,
+        config_file=cfg_path,
+        use_existing_cipd=False,
+        check_submodules=False,
+        use_pinned_pip_packages=False,
+        cipd_only=True,
+        trust_cipd_hash=False,
+        additional_cipd_file=(),
+    )
+    with open(shell_file, 'w') as outs:
+        setup._env.write(  # pylint: disable=protected-access
+            outs, shell_file=shell_file
+        )
+    return shell_file, install_dir
+
+
+def _source_and_read_env(shell_file, extra_env=None):
+    """Sources shell_file under sh -u and returns the resulting env."""
+    env = {'PATH': '/usr/bin:/bin'}
+    env.update(extra_env or {})
+    res = subprocess.run(
+        ['sh', '-u', '-c', '. "$1" && env', 'sh', shell_file],
+        capture_output=True,
+        env=env,
+        check=True,
+    )
+    lines = res.stdout.decode().splitlines()
+    return dict(line.split('=', 1) for line in lines if '=' in line)
 
 
 class WrittenEnvFailure(Exception):
@@ -476,6 +526,24 @@ class PosixEnvironmentTest(
             self.assertEqual(res.stdout, b'')
         finally:
             os.unlink(temp_name)
+
+    def test_env_setup_sets_pw_root_before_config_file(self):
+        """Tests PW_ROOT is exported before _PW_ENVIRONMENT_CONFIG_FILE."""
+        if not self.run_shell_tests:
+            return
+
+        with tempfile.TemporaryDirectory(prefix='pw-test-envsetup-') as tmpdir:
+            shell_file, _ = _write_env_setup_script(tmpdir, tmpdir, tmpdir)
+            with open(shell_file, 'r') as ins:
+                self.assertEqual(ins.read().count('export PW_ROOT\n'), 1)
+
+            env = _source_and_read_env(shell_file)
+            self.assertEqual(env['PW_ROOT'], tmpdir)
+            self.assertEqual(env['PW_PROJECT_ROOT'], tmpdir)
+            self.assertEqual(
+                env['_PW_ENVIRONMENT_CONFIG_FILE'],
+                os.path.join(tmpdir, 'pigweed.json'),
+            )
 
 
 class WindowsCaseInsensitiveTest(unittest.TestCase):
