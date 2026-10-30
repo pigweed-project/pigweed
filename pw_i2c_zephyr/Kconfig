@@ -16,10 +16,10 @@ menu "pw_i2c"
 
 config PIGWEED_I2C
   bool "Link the pw_i2c_zephyr module"
-  select PIGWEED_SYNC_MUTEX
-  select PIGWEED_CHRONO_SYSTEM_CLOCK
   help
-    Link the library allowing I2C instantiation for Zephyr drivers.
+    Link the library allowing I2C instantiation for Zephyr drivers. Also
+    requires pw_sync.mutex and pw_chrono.system_clock backends -- CMake
+    will fail the build naming either that isn't configured.
 
 config PIGWEED_I2C_RESPONDER
   bool "Link the responder implementation for Zephyr"

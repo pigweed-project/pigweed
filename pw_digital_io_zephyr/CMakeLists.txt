@@ -31,9 +31,6 @@ pw_add_library(pw_digital_io_zephyr STATIC
     zephyr_interface
     pw_third_party.fuchsia.stdcompat
 )
-if(CONFIG_PIGWEED_DIGITAL_IO)
-  zephyr_append_cmake_library(pw_digital_io_zephyr)
-endif()
 
 pw_add_test(pw_digital_io_zephyr.digital_io_test
   SOURCES

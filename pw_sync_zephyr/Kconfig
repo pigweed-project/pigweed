@@ -16,9 +16,14 @@ menu "pw_sync"
 
 config PIGWEED_SYNC
     bool
-    select PIGWEED_CHRONO_SYSTEM_CLOCK
     select PIGWEED_PREPROCESSOR
-    select PIGWEED_INTERRUPT_CONTEXT
+
+choice PIGWEED_SYNC_MUTEX_BACKEND
+    prompt "pw_sync.mutex backend used"
+    default PIGWEED_SYNC_MUTEX
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
 
 config PIGWEED_SYNC_MUTEX
     bool "Link pw_sync.mutex library"
@@ -27,11 +32,40 @@ config PIGWEED_SYNC_MUTEX
     help
       See :ref:`module-pw_sync` for module details.
 
+config PIGWEED_SYNC_MUTEX_NONE
+    bool "Provide your own pw_sync.mutex backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_SYNC_TIMED_MUTEX_BACKEND
+    prompt "pw_sync.timed_mutex backend used"
+    default PIGWEED_SYNC_TIMED_MUTEX
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_SYNC_TIMED_MUTEX
     bool "Link pw_sync.timed_mutex library"
-    select PIGWEED_SYNC_MUTEX
     help
       See :ref:`module-pw_sync` for module details.
+
+config PIGWEED_SYNC_TIMED_MUTEX_NONE
+    bool "Provide your own pw_sync.timed_mutex backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_SYNC_BINARY_SEMAPHORE_BACKEND
+    prompt "pw_sync.binary_semaphore backend used"
+    default PIGWEED_SYNC_BINARY_SEMAPHORE
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
 
 config PIGWEED_SYNC_BINARY_SEMAPHORE
     bool "Link pw_sync.binary_semaphore library"
@@ -39,27 +73,93 @@ config PIGWEED_SYNC_BINARY_SEMAPHORE
     help
       See :ref:`module-pw_sync` for module details.
 
+config PIGWEED_SYNC_BINARY_SEMAPHORE_NONE
+    bool "Provide your own pw_sync.binary_semaphore backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_SYNC_COUNTING_SEMAPHORE_BACKEND
+    prompt "pw_sync.counting_semaphore backend used"
+    default PIGWEED_SYNC_COUNTING_SEMAPHORE
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_SYNC_COUNTING_SEMAPHORE
     bool "Link pw_sync.counting_semaphore library"
     select PIGWEED_SYNC
     help
       See :ref:`module-pw_sync` for module details.
 
+config PIGWEED_SYNC_COUNTING_SEMAPHORE_NONE
+    bool "Provide your own pw_sync.counting_semaphore backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_SYNC_INTERRUPT_SPIN_LOCK_BACKEND
+    prompt "pw_sync.interrupt_spin_lock backend used"
+    default PIGWEED_SYNC_INTERRUPT_SPIN_LOCK
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_SYNC_INTERRUPT_SPIN_LOCK
     bool "Link pw_sync.interrupt_spin_lock library"
     help
       See :ref:`module-pw_sync` for module details.
 
+config PIGWEED_SYNC_INTERRUPT_SPIN_LOCK_NONE
+    bool "Provide your own pw_sync.interrupt_spin_lock backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_SYNC_THREAD_NOTIFICATION_BACKEND
+    prompt "pw_sync.thread_notification backend used"
+    default PIGWEED_SYNC_THREAD_NOTIFICATION
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_SYNC_THREAD_NOTIFICATION
     bool "Link pw_sync.thread_notification library"
-    select PIGWEED_SYNC_BINARY_SEMAPHORE
     help
       See :ref:`module-pw_sync` for module details.
 
+config PIGWEED_SYNC_THREAD_NOTIFICATION_NONE
+    bool "Provide your own pw_sync.thread_notification backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_SYNC_TIMED_THREAD_NOTIFICATION_BACKEND
+    prompt "pw_sync.timed_thread_notification backend used"
+    default PIGWEED_SYNC_TIMED_THREAD_NOTIFICATION
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_SYNC_TIMED_THREAD_NOTIFICATION
     bool "Link pw_sync.timed_thread_notification library"
-    select PIGWEED_SYNC_BINARY_SEMAPHORE
     help
       See :ref:`module-pw_sync` for module details.
+
+config PIGWEED_SYNC_TIMED_THREAD_NOTIFICATION_NONE
+    bool "Provide your own pw_sync.timed_thread_notification backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
 
 endmenu

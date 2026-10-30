@@ -67,6 +67,31 @@ progress)
          objects they are used in. The ``alwayslink = 1`` will prevent the
          linker from erroneously garbage-collecting them.
 
+   *  **Zephyr (CMake / Kconfig)**: ``pw_system`` is added automatically
+      once Pigweed is discovered as a west module; there's no separate
+      target to depend on. Three independent facades control which pieces
+      of ``pw_system`` get linked in, each its own Kconfig ``choice`` (see
+      :ref:`zephyr-backend-selection` for how these choices work):
+
+      * ``CONFIG_PIGWEED_SYSTEM_TARGET_HOOKS=y`` -- link the backend that
+        starts pw_system's log, RPC, and work queue threads. Its stack
+        sizes are configurable via ``CONFIG_PIGWEED_SYSTEM_TARGET_HOOKS_LOG_STACK_SIZE``,
+        ``..._RPC_STACK_SIZE``, and ``..._WORK_QUEUE_STACK_SIZE``.
+      * ``CONFIG_PIGWEED_SYSTEM_HDLC_RPC_SERVER=y`` -- link an HDLC
+        (:ref:`module-pw_hdlc`) RPC (:ref:`module-pw_rpc`) server into the
+        system automatically.
+      * ``CONFIG_PIGWEED_SYSTEM_LOG_BACKEND=y`` -- use ``pw_system``'s own
+        multisink/RPC log pipeline as the logging backend, instead of
+        routing logs straight to Zephyr's log subsystem. With tokenized
+        logging, tokenized messages then go to pw_system's log service too
+        (see :ref:`module-pw_log_zephyr`).
+
+      The first two default to Pigweed's Zephyr backends.
+      ``CONFIG_PIGWEED_LOG_TOKENIZED_RPC=y`` enables
+      ``CONFIG_PIGWEED_SYSTEM_LOG_BACKEND`` and tokenized logging over RPC
+      (requires ``CONFIG_CONSOLE_GETCHAR=y``). See
+      :ref:`module-pw_log_zephyr`.
+
 #. **Write target-specific initialization.**
    Most embedded devices require a linker script, manual initialization of
    memory, and some clock initialization. pw_system leaves this to users to

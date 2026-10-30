@@ -186,6 +186,7 @@ sphinx_docs_library(
         "module_structure.rst",
         "modules.rst",
         "os/zephyr/setup.rst",
+        "os/zephyr/backends.rst",
         "os/zephyr/features.rst",
         "os/freertos/setup.rst",
         "os/freertos/features.rst",

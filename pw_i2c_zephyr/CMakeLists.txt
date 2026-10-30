@@ -32,15 +32,6 @@ pw_add_library(pw_i2c_zephyr STATIC
     pw_sync.mutex
     zephyr_interface
 )
-if(CONFIG_PIGWEED_I2C)
-  zephyr_append_cmake_library(pw_i2c_zephyr)
-  # Include directory needs to be manually added. Typically
-  # pw_zephyrize_libraries_ifdef is used, however, this creates a dependency
-  # cycle. The cmake library above doesn't propagage the include directory
-  # to its dependencies and only registers the library to be used in final
-  # linking.
-  zephyr_include_directories(public)
-endif()
 
 pw_add_library(pw_i2c_zephyr.responder STATIC
   HEADERS
@@ -60,9 +51,6 @@ pw_add_library(pw_i2c_zephyr.responder STATIC
   PRIVATE_DEPS
     pw_assert.check
 )
-if(CONFIG_PIGWEED_I2C_RESPONDER)
-  zephyr_append_cmake_library(pw_i2c_zephyr.responder)
-endif()
 
 pw_add_library(pw_i2c_zephyr.responder_test STATIC
   HEADERS
@@ -79,9 +67,6 @@ pw_add_library(pw_i2c_zephyr.responder_test STATIC
     pw_status
     zephyr_interface
 )
-if("${pw_i2c.responder_test_BACKEND}" STREQUAL "pw_i2c_zephyr.responder_test")
-  zephyr_append_cmake_library(pw_i2c_zephyr.responder_test)
-endif()
 
 pw_add_test(pw_i2c_zephyr.initiator_test
   SOURCES

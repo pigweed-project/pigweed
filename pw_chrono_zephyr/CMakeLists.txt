@@ -34,9 +34,6 @@ pw_add_library(pw_chrono_zephyr.system_clock INTERFACE
     pw_chrono.system_clock.facade
     zephyr_interface
 )
-if(CONFIG_PIGWEED_CHRONO_SYSTEM_CLOCK)
-  zephyr_link_libraries(pw_chrono_zephyr.system_clock)
-endif()
 
 pw_add_library(pw_chrono_zephyr.system_timer STATIC
   HEADERS
@@ -53,6 +50,3 @@ pw_add_library(pw_chrono_zephyr.system_timer STATIC
     pw_chrono.system_timer.facade
     zephyr_interface
 )
-if(CONFIG_PIGWEED_CHRONO_SYSTEM_TIMER)
-  zephyr_link_libraries(pw_chrono_zephyr.system_timer)
-endif()

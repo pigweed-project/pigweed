@@ -20,8 +20,9 @@ config PIGWEED_STREAM
     select PIGWEED_RESULT
     select PIGWEED_SPAN
     select PIGWEED_STATUS
-    select PIGWEED_SYS_IO
     help
-      See :ref:`module-pw_stream` for module details.
+      See :ref:`module-pw_stream` for module details. Also requires a
+      pw_sys_io backend -- CMake will fail the build if it's not
+      configured.
 
 endmenu

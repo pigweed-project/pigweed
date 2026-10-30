@@ -32,12 +32,6 @@ pw_add_library(pw_log_zephyr STATIC
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_LOG_ZEPHYR
     pw_log.facade
 )
-if(CONFIG_PIGWEED_LOG_ZEPHYR)
-  zephyr_library_link_libraries(pw_log_zephyr)
-  if(TARGET zephyr_generated_headers)
-    add_dependencies(pw_log_zephyr zephyr_generated_headers)
-  endif()
-endif()
 
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_LOG_STRING
     pw_log.facade
@@ -52,7 +46,7 @@ pw_add_library(pw_log_zephyr.pigweed_overrides INTERFACE
     zephyr_public_overrides
   PUBLIC_DEPS
     pw_hex_dump.log_bytes
-    pw_log.facade
+    pw_log
     pw_polyfill
     pw_preprocessor
 )
@@ -60,6 +54,12 @@ pw_add_library(pw_log_zephyr.pigweed_overrides INTERFACE
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_LOG_PIGWEED_OVERRIDES
     pw_log_zephyr.pigweed_overrides
 )
+# With the overrides, Zephyr's own code logs through Pigweed, so Zephyr
+# depends on pw_log and its backend. Add the overrides to ZEPHYR_LIBS so they
+# link even when nothing else in the application uses Pigweed's logging.
+if(CONFIG_PIGWEED_LOG_PIGWEED_OVERRIDES OR CONFIG_PIGWEED_LOG_TOKENIZED_RPC)
+  zephyr_append_cmake_library(pw_log_zephyr.pigweed_overrides)
+endif()
 
 pw_add_library(pw_log_zephyr.tokenized_lib INTERFACE
   PUBLIC_DEPS
@@ -75,6 +75,8 @@ pw_add_library(pw_log_zephyr.tokenized_handler STATIC
   PUBLIC_DEPS
     pw_log_tokenized.handler
     pw_log_zephyr.tokenized_lib
+  PRIVATE_DEPS
+    pw_sync.interrupt_spin_lock
 )
 
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_LOG_TOKENIZED

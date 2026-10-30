@@ -50,3 +50,12 @@ pw_add_library(pw_assert_zephyr.pigweed_overrides INTERFACE
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_ASSERT_PIGWEED_OVERRIDES
     pw_assert_zephyr.pigweed_overrides
 )
+# Zephyr's own __assert.h includes zephyr_custom_assert.h, so every Zephyr
+# compilation unit needs these include paths. They're added directly because
+# linking a library into zephyr_interface would create a dependency cycle with
+# Zephyr's generated headers.
+if(CONFIG_PIGWEED_ASSERT_PIGWEED_OVERRIDES)
+  target_include_directories(zephyr_interface INTERFACE
+    $<TARGET_PROPERTY:pw_assert_zephyr.pigweed_overrides,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:${pw_assert.check_BACKEND},INTERFACE_INCLUDE_DIRECTORIES>)
+endif()

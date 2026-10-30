@@ -12,6 +12,29 @@ drivers. Currently, only blocking calls are supported.
 Support for ten-bit addresses and the no-start flag is enabled but depends on
 underlying support by the Zephyr driver.
 
+-----
+Setup
+-----
+Enable the module in your project's ``prj.conf``:
+
+.. code-block:: kconfig
+
+   CONFIG_PIGWEED_I2C=y
+
+For the responder API, also enable:
+
+.. code-block:: kconfig
+
+   CONFIG_PIGWEED_I2C_RESPONDER=y
+
+Unlike the facades documented in :ref:`zephyr-backend-selection`,
+``pw_i2c_zephyr`` doesn't have alternate backends to choose between, so
+these are plain enable flags rather than a ``choice``. It also needs
+``pw_sync.mutex`` and ``pw_chrono.system_clock`` backends -- set
+``CONFIG_PIGWEED_SYNC_MUTEX=y`` and ``CONFIG_PIGWEED_CHRONO_SYSTEM_CLOCK=y``
+(see :ref:`module-pw_sync_zephyr` and :ref:`module-pw_chrono_zephyr`); if
+you forget, CMake fails the build naming the missing facade.
+
 -------------
 API reference
 -------------

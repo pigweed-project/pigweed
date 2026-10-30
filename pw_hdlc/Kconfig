@@ -23,9 +23,10 @@ config PIGWEED_HDLC_RPC
     select PIGWEED_RPC_COMMON
     select PIGWEED_STATUS
     select PIGWEED_STREAM
-    select PIGWEED_SYS_IO
     select PIGWEED_LOG
     help
-      See :ref:`module-pw_hdlc` for module details.
+      See :ref:`module-pw_hdlc` for module details. Also requires a
+      pw_sys_io backend -- CMake will fail the build if it's not
+      configured.
 
 endmenu

@@ -293,8 +293,3 @@ pw_cc_blob_library(pw_tokenizer.detokenizer_elf_test_blob
     PATH py/example_binary_with_tokenized_strings.elf
 )
 
-if(Zephyr_FOUND)
-  zephyr_link_libraries_ifdef(CONFIG_PIGWEED_TOKENIZER pw_tokenizer)
-  zephyr_link_libraries_ifdef(CONFIG_PIGWEED_TOKENIZER_BASE64 pw_tokenizer.base64)
-  zephyr_link_libraries_ifdef(CONFIG_PIGWEED_DETOKENIZER pw_tokenizer.decoder)
-endif()

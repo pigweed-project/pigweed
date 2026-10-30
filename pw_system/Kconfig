@@ -19,6 +19,13 @@ config PIGWEED_SYSTEM_LOG_BACKEND
     help
       See :ref:`module-pw_log` for logging module details.
 
+choice PIGWEED_SYSTEM_TARGET_HOOKS_BACKEND
+    prompt "pw_system.target_hooks backend used"
+    default PIGWEED_SYSTEM_TARGET_HOOKS
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_SYSTEM_TARGET_HOOKS
     bool "Use the backend for the pw_system.target_hooks library"
     help
@@ -27,11 +34,34 @@ config PIGWEED_SYSTEM_TARGET_HOOKS
       - RPC thread
       - Work queue thread
 
+config PIGWEED_SYSTEM_TARGET_HOOKS_NONE
+    bool "Provide your own pw_system.target_hooks backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_SYSTEM_HDLC_RPC_SERVER_BACKEND
+    prompt "pw_system.rpc_server backend used"
+    default PIGWEED_SYSTEM_HDLC_RPC_SERVER
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_SYSTEM_HDLC_RPC_SERVER
     bool "Link pw_system.hdlc_rpc_server library and set backend"
     help
       Automatically include an HDLC (:ref:`module-pw_hdlc`) RPC server
       (:ref:`module-pw_rpc`) in the system.
+
+config PIGWEED_SYSTEM_HDLC_RPC_SERVER_NONE
+    bool "Provide your own pw_system.rpc_server backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
 
 if PIGWEED_SYSTEM_TARGET_HOOKS
 

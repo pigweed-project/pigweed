@@ -36,8 +36,13 @@ Setup
 
    .. tab-item:: Zephyr (CMake / Kconfig)
 
-      Enable the backend in your project's ``prj.conf``:
+      The backend is controlled by ``choice
+      PIGWEED_INTERRUPT_CONTEXT_BACKEND`` (see
+      :ref:`zephyr-backend-selection`) and defaults to Pigweed's Zephyr
+      backend.
+
+      To supply your own backend instead, select ``NONE``:
 
       .. code-block:: kconfig
 
-         CONFIG_PIGWEED_INTERRUPT_CONTEXT=y
+         CONFIG_PIGWEED_INTERRUPT_CONTEXT_NONE=y

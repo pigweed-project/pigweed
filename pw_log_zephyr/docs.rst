@@ -41,6 +41,28 @@ This can be done in your cmake by including your own header that defines it.
    target_compile_options(log_tokenized_config INTERFACE -include header_file_that_sets_that_macro.h)
    pw_set_module_config(pw_log_tokenized_CONFIG log_tokenized_config)
 
+Where tokenized log bytes go
+-----------------------------
+Enabling tokenized logging (``CONFIG_PIGWEED_LOG_TOKENIZED`` or
+``CONFIG_PIGWEED_LOG_TOKENIZED_RPC``) only decides that log messages get
+tokenized -- a separate facade, ``pw_log_tokenized.handler``, decides where
+the resulting bytes actually go. It's controlled by its own ``choice
+PIGWEED_LOG_TOKENIZED_HANDLER_BACKEND`` (see :ref:`zephyr-backend-selection`
+for the general pattern):
+
+* ``CONFIG_PIGWEED_LOG_TOKENIZED_HANDLER_ZEPHYR`` -- route tokenized bytes
+  into Zephyr's own log subsystem.
+* ``CONFIG_PIGWEED_LOG_TOKENIZED_HANDLER_SYSTEM`` -- route tokenized bytes
+  into :ref:`module-pw_system`'s log backend (its multisink/RPC pipeline)
+  instead.
+* ``CONFIG_PIGWEED_LOG_TOKENIZED_HANDLER_NONE`` -- don't link a handler;
+  you're supplying your own via ``pw_set_backend()``.
+
+Defaults to Zephyr; to ``SYSTEM`` when ``CONFIG_PIGWEED_SYSTEM_LOG_BACKEND``
+is set (``CONFIG_PIGWEED_LOG_TOKENIZED_RPC`` sets it), since ``pw_system``
+then handles logs; and to ``NONE`` with ``CONFIG_PIGWEED_LOG_TOKENIZED_LIB``,
+where the application provides the handler.
+
 Setting the log level
 ---------------------
 In order to remain compatible with existing Pigweed code, the logging backend

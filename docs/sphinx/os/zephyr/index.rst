@@ -43,6 +43,7 @@ compatible with Pigweed's portable facades.
    self
    setup
    features
+   backends
 
 .. categories-start
 .. +----------------------------------------------------------+

@@ -14,9 +14,24 @@
 
 menu "pw_interrupt"
 
+choice PIGWEED_INTERRUPT_CONTEXT_BACKEND
+    prompt "pw_interrupt.context backend used"
+    default PIGWEED_INTERRUPT_CONTEXT
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_INTERRUPT_CONTEXT
     bool "Link pw_interrupt.context library"
     help
       See :ref:`module-pw_interrupt` for module details.
+
+config PIGWEED_INTERRUPT_CONTEXT_NONE
+    bool "Provide your own pw_interrupt.context backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
 
 endmenu

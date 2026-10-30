@@ -14,6 +14,13 @@
 
 menu "pw_chrono"
 
+choice PIGWEED_CHRONO_SYSTEM_CLOCK_BACKEND
+    prompt "pw_chrono.system_clock backend used"
+    default PIGWEED_CHRONO_SYSTEM_CLOCK
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_CHRONO_SYSTEM_CLOCK
     bool "Link pw_chrono.system_clock library"
     select PIGWEED_PREPROCESSOR
@@ -21,9 +28,32 @@ config PIGWEED_CHRONO_SYSTEM_CLOCK
     help
       See :ref:`module-pw_chrono` for module details.
 
+config PIGWEED_CHRONO_SYSTEM_CLOCK_NONE
+    bool "Provide your own pw_chrono.system_clock backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_CHRONO_SYSTEM_TIMER_BACKEND
+    prompt "pw_chrono.system_timer backend used"
+    default PIGWEED_CHRONO_SYSTEM_TIMER
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_CHRONO_SYSTEM_TIMER
     bool "Link pw_chrono.system_timer library"
     help
       See :ref:`module-pw_chrono` for module details.
+
+config PIGWEED_CHRONO_SYSTEM_TIMER_NONE
+    bool "Provide your own pw_chrono.system_timer backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
 
 endmenu

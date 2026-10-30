@@ -68,14 +68,16 @@ menuconfig PIGWEED_LOG_TOKENIZED
     bool "Maps all Zephyr log macros to pw_tokenizer"
     select PIGWEED_LOG_PIGWEED_OVERRIDES
     select PIGWEED_PREPROCESSOR
-    select PIGWEED_SYNC_INTERRUPT_SPIN_LOCK
-    select PIGWEED_SYS_IO
     select PIGWEED_TOKENIZER
     help
       Map all the Zephyr log macros to use Pigweed's then use the
       :ref:`module-pw_log_tokenized` target as the logging backend in order to
       automatically tokenize all the logging strings. This means that Pigweed
-      will also tokenize all of Zephyr's logging statements.
+      will also tokenize all of Zephyr's logging statements. Also requires
+      pw_sync.interrupt_spin_lock, pw_sys_io, and a
+      pw_log_tokenized.handler backend (see PIGWEED_LOG_TOKENIZED_HANDLER_BACKEND
+      below) -- CMake will fail the build naming any of these that aren't
+      configured.
 
 config PIGWEED_LOG_TOKENIZED_LIB
     bool "Tokenize logging and implement your own pw_log_tokenized_HandleLog"
@@ -94,20 +96,43 @@ config PIGWEED_LOG_NONE
 
 menuconfig PIGWEED_LOG_TOKENIZED_RPC
     bool "Enables RPC tokenized logging"
-    select PIGWEED_SYNC_INTERRUPT_SPIN_LOCK
-    select PIGWEED_SYNC_THREAD_NOTIFICATION
-    select PIGWEED_SYNC_TIMED_THREAD_NOTIFICATION
-    select PIGWEED_SYSTEM_HDLC_RPC_SERVER
     select PIGWEED_SYSTEM_LOG_BACKEND
-    select PIGWEED_SYSTEM_TARGET_HOOKS
-    select PIGWEED_THREAD
-    select PIGWEED_THREAD_ITERATION
     select PIGWEED_TOKENIZER
     select LOG_CUSTOM_HEADER
     select SHELL_CUSTOM_HEADER
     depends on CONSOLE_GETCHAR
     help
       Enable tokenized logging over RPC by using the system log backend.
+      Also requires pw_sync.interrupt_spin_lock, pw_sync.thread_notification,
+      pw_sync.timed_thread_notification, pw_system.rpc_server,
+      pw_system.target_hooks, pw_thread.thread, pw_thread.thread_iteration,
+      and a pw_log_tokenized.handler backend -- CMake will fail the build
+      naming any of these that aren't configured.
+
+endchoice
+
+choice PIGWEED_LOG_TOKENIZED_HANDLER_BACKEND
+    prompt "pw_log_tokenized.handler backend used"
+    default PIGWEED_LOG_TOKENIZED_HANDLER_NONE if PIGWEED_LOG_TOKENIZED_LIB
+    default PIGWEED_LOG_TOKENIZED_HANDLER_SYSTEM if PIGWEED_SYSTEM_LOG_BACKEND
+    default PIGWEED_LOG_TOKENIZED_HANDLER_ZEPHYR
+    help
+      Where tokenized log bytes go. Defaults to Zephyr's log subsystem, to
+      pw_system's log backend with PIGWEED_SYSTEM_LOG_BACKEND (which
+      PIGWEED_LOG_TOKENIZED_RPC selects), or to none with
+      PIGWEED_LOG_TOKENIZED_LIB, where the application provides the handler.
+
+config PIGWEED_LOG_TOKENIZED_HANDLER_ZEPHYR
+    bool "Route tokenized logs to Zephyr's own log subsystem"
+
+config PIGWEED_LOG_TOKENIZED_HANDLER_SYSTEM
+    bool "Route tokenized logs to pw_system's log backend"
+
+config PIGWEED_LOG_TOKENIZED_HANDLER_NONE
+    bool "Provide your own pw_log_tokenized.handler backend"
+    help
+      Pigweed's handler is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
 
 endchoice
 

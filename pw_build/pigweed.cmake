@@ -460,6 +460,16 @@ function(pw_add_library_generic NAME TYPE)
   else()
     message(FATAL_ERROR "Unsupported libary type: ${TYPE}")
   endif()
+
+  # Zephyr 4.4+ generates headers (e.g. heap_constants.h) at build time; make
+  # sure they exist before compiling anything that may include Zephyr headers.
+  if(Zephyr_FOUND)
+    if(("${TYPE}" STREQUAL "STATIC") OR ("${TYPE}" STREQUAL "SHARED"))
+      add_dependencies("${NAME}" zephyr_generated_headers)
+    elseif("${TYPE}" STREQUAL "OBJECT")
+      add_dependencies("${NAME}._pw_object" zephyr_generated_headers)
+    endif()
+  endif()
 endfunction(pw_add_library_generic)
 
 # Checks that the library's name is prefixed by the relative path with dot
@@ -828,26 +838,77 @@ function(pw_set_backend NAME BACKEND)
   set("${NAME}" "${BACKEND}" CACHE STRING "backend variable for a facade" FORCE)
 endfunction(pw_set_backend)
 
-# Zephyr specific wrapper for pw_set_backend.
+# Sets a facade's backend in a Zephyr build; prefer
+# pw_set_zephyr_backend_ifdef(). BACKEND_DECL may be relative to the calling
+# file or absolute. Fails if another call already set a different backend.
+# CONDITION, which pw_set_zephyr_backend_ifdef() passes, names the Kconfig
+# option that chose this backend in that error.
+#
+#   pw_set_zephyr_backend(FACADE BACKEND BACKEND_DECL [CONDITION <condition>])
+function(pw_set_zephyr_backend FACADE BACKEND BACKEND_DECL)
+  cmake_parse_arguments(PARSE_ARGV 3 arg "" "CONDITION" "")
+  cmake_path(IS_ABSOLUTE BACKEND_DECL backend_decl_is_absolute)
+  if(backend_decl_is_absolute)
+    set(backend_decl_path "${BACKEND_DECL}")
+  else()
+    set(backend_decl_path "${CMAKE_CURRENT_LIST_DIR}/${BACKEND_DECL}")
+  endif()
+  if(NOT EXISTS "${backend_decl_path}")
+    message(FATAL_ERROR
+        "Can't find backend declaration file '${backend_decl_path}'")
+  endif()
+
+  # Without this check, whichever call runs last would silently win.
+  # (CMAKE_CURRENT_LIST_LINE would be a line in this function, not the
+  # caller's, so name the condition instead.)
+  if(arg_CONDITION)
+    set(here "${arg_CONDITION} in ${CMAKE_CURRENT_LIST_FILE}")
+  else()
+    set(here "${CMAKE_CURRENT_LIST_FILE}")
+  endif()
+  get_property(prior_site GLOBAL PROPERTY "_PW_ZEPHYR_BACKEND_SITE_${FACADE}")
+  get_property(prior_backend GLOBAL PROPERTY "_PW_ZEPHYR_BACKEND_VALUE_${FACADE}")
+  if(prior_backend AND NOT "${prior_backend}" STREQUAL "${BACKEND}")
+    message(FATAL_ERROR
+        "Conflicting Zephyr backends requested for facade '${FACADE}': "
+        "${prior_site} selects '${prior_backend}', but ${here} also "
+        "selects '${BACKEND}'. Make these Kconfig options mutually "
+        "exclusive, e.g. members of one 'choice'.")
+  endif()
+  set_property(GLOBAL PROPERTY "_PW_ZEPHYR_BACKEND_SITE_${FACADE}" "${here}")
+  set_property(GLOBAL PROPERTY "_PW_ZEPHYR_BACKEND_VALUE_${FACADE}" "${BACKEND}")
+
+  include("${backend_decl_path}")
+  pw_set_backend("${FACADE}" "${BACKEND}")
+endfunction()
+
+# Calls pw_set_zephyr_backend() if COND is set.
 function(pw_set_zephyr_backend_ifdef COND FACADE BACKEND BACKEND_DECL)
   if(${${COND}})
-    if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/${BACKEND_DECL}")
-      message(FATAL_ERROR
-          "Can't find backend declaration file '${CMAKE_CURRENT_LIST_DIR}/${BACKEND_DECL}'")
-    endif()
-    include("${CMAKE_CURRENT_LIST_DIR}/${BACKEND_DECL}")
-    pw_set_backend("${FACADE}" "${BACKEND}")
+    pw_set_zephyr_backend("${FACADE}" "${BACKEND}" "${BACKEND_DECL}"
+        CONDITION "${COND}")
+  else()
+    message(DEBUG "No ${FACADE} backend selected via ${COND}, application should provide one if used")
   endif()
 endfunction()
 
-# Zephyr specific wrapper to convert a pw library to a Zephyr library
+# Gives pw libraries zephyr_interface's compile flags and include paths, and
+# gives Zephyr's sources theirs, since Zephyr may include their headers (e.g.
+# zephyr_custom_log.h). Neither links anything: linking into zephyr_interface
+# creates a cycle with Zephyr's generated headers, and ZEPHYR_LIBS forces
+# --whole-archive, which breaks static-library cycles such as pw_rpc <-> pw_log.
 function(pw_zephyrize_libraries_ifdef COND)
   if(DEFINED Zephyr_FOUND)
     if(${${COND}})
-      zephyr_link_libraries(${ARGN})
+      if(CMAKE_VERSION VERSION_LESS 3.27)
+        message(FATAL_ERROR
+            "Pigweed's Zephyr integration requires CMake 3.27 or newer for "
+            "$<COMPILE_ONLY>; found ${CMAKE_VERSION}.")
+      endif()
       foreach(lib ${ARGN})
         if(TARGET ${lib})
           target_link_libraries(${lib} INTERFACE zephyr_interface)
+          target_link_libraries(zephyr_interface INTERFACE $<COMPILE_ONLY:${lib}>)
         endif()
       endforeach()
     endif()

@@ -14,6 +14,14 @@
 
 menu "pw_sys_io"
 
+choice PIGWEED_SYS_IO_BACKEND
+    prompt "pw_sys_io backend used"
+    default PIGWEED_SYS_IO_NONE
+    help
+      Defaults to "none": the Zephyr backend registers itself with
+      SYS_INIT, so selecting it always links it in and initializes the
+      console at boot. Select it if you use pw_sys_io.
+
 config PIGWEED_SYS_IO
     bool "Enable the Zephyr system IO module"
     select PIGWEED_SPAN
@@ -21,6 +29,14 @@ config PIGWEED_SYS_IO
     help
       The system I/O module uses the Zephyr console under the hood to perform
       I/O operations. See :ref:`module-pw_sys_io` for module details.
+
+config PIGWEED_SYS_IO_NONE
+    bool "Provide your own pw_sys_io backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
 
 if PIGWEED_SYS_IO
 

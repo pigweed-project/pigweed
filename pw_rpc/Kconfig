@@ -46,9 +46,9 @@ config PIGWEED_RPC_COMMON
     select PIGWEED_SPAN
     select PIGWEED_STATUS
     select PIGWEED_LOG
-    select PIGWEED_SYNC_MUTEX
-    select PIGWEED_THREAD_SLEEP
     help
-      See :ref:`module-pw_rpc` for module details.
+      See :ref:`module-pw_rpc` for module details. Also requires
+      pw_sync.mutex and pw_thread.sleep backends -- CMake will fail the
+      build naming either that isn't configured.
 
 endmenu

@@ -14,29 +14,85 @@
 
 menu "pw_thread"
 
+choice PIGWEED_THREAD_SLEEP_BACKEND
+    prompt "pw_thread.sleep backend used"
+    default PIGWEED_THREAD_SLEEP
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_THREAD_SLEEP
     bool "Link and set pw_thread.sleep library backend"
-    select PIGWEED_CHRONO_SYSTEM_CLOCK
     help
       See :ref:`module-pw_thread` for module details.
+
+config PIGWEED_THREAD_SLEEP_NONE
+    bool "Provide your own pw_thread.sleep backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_THREAD_YIELD_BACKEND
+    prompt "pw_thread.yield backend used"
+    default PIGWEED_THREAD_YIELD
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
 
 config PIGWEED_THREAD_YIELD
     bool "Link and set pw_thread.yield library backend"
     help
       See :ref:`module-pw_thread` for module details.
 
+config PIGWEED_THREAD_YIELD_NONE
+    bool "Provide your own pw_thread.yield backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_THREAD_BACKEND
+    prompt "pw_thread.thread and pw_thread.id backend used"
+    default PIGWEED_THREAD
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
 
 config PIGWEED_THREAD
     bool "Link and set pw_thread.thread and pw_thread.id backends"
-    select PIGWEED_INTERRUPT_CONTEXT
     help
       See :ref:`module-pw_thread` for module details.
 
+config PIGWEED_THREAD_NONE
+    bool "Provide your own pw_thread.thread and pw_thread.id backends"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
+
+choice PIGWEED_THREAD_ITERATION_BACKEND
+    prompt "pw_thread.thread_iteration backend used"
+    default PIGWEED_THREAD_ITERATION
+    help
+      Defaults to Pigweed's Zephyr backend. Choose "none" to provide
+      your own with pw_set_backend().
+
 config PIGWEED_THREAD_ITERATION
     bool "Link and set pw_thread.thread_iteration backend"
-    select PIGWEED_THREAD
     help
       See :ref:`module-pw_thread` for module details.
+
+config PIGWEED_THREAD_ITERATION_NONE
+    bool "Provide your own pw_thread.thread_iteration backend"
+    help
+      Pigweed's Zephyr backend is not linked in. Wire up your own via
+      pw_set_backend() or an equivalent mechanism.
+
+endchoice
 
 if PIGWEED_THREAD
 

@@ -283,7 +283,8 @@ pw_add_library(pw_system.init STATIC
     pw_system.log
     pw_system.query_service
     pw_system.rpc_server
-    pw_system.target_hooks.facade
+    # init.cc calls the backend's *ThreadOptions() functions.
+    pw_system.target_hooks
     pw_system.thread_snapshot_service
     pw_system.trace_service
     pw_system.transfer_service

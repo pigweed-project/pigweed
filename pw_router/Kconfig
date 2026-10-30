@@ -19,10 +19,11 @@ config PIGWEED_ROUTER_STATIC_ROUTER
     select PIGWEED_METRIC
     select PIGWEED_ROUTER_EGRESS
     select PIGWEED_ROUTER_PACKET_PARSER
-    select PIGWEED_SYNC_MUTEX
     select PIGWEED_LOG
     help
-      See :ref:`module-pw_router-static_router` for library details.
+      See :ref:`module-pw_router-static_router` for library details. Also
+      requires a pw_sync.mutex backend -- CMake will fail the build if
+      it's not configured.
 
 config PIGWEED_ROUTER_EGRESS
     bool "Link pw_router.egress library"
