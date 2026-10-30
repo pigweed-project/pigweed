@@ -139,6 +139,8 @@ enum class PairingAction {
 // IO Capability Request Reply▶
 //     or
 // IO Capability Request Negative Reply▶ (reject pairing)
+//   (also sent if LE pairing with this peer is in progress; the host then waits
+//   for ◀ Simple Pairing Complete with an error and keeps the link)
 //     ◀ Command Complete
 // Pairing
 //     ◀ User Confirmation Request
@@ -327,6 +329,15 @@ class SecureSimplePairingState final {
 
     // As responder, wait for IO Capability Request.
     kResponderWaitIoCapRequest,
+
+    // Responder SSP denial (after stage 1/3 IO Capability Response): wait to
+    // negatively reply to IO Capability Request because Low Energy pairing is
+    // already in progress.
+    kResponderRejectingIoCapRequest,
+
+    // Responder SSP denial (after stage 2/3 IO Capability Negative Reply): wait
+    // for non-success Simple Pairing Complete.
+    kWaitRejectedPairingComplete,
 
     // Wait for controller event for pairing action. Only one of these will
     // occur in a given pairing
@@ -530,6 +541,11 @@ class SecureSimplePairingState final {
 
   // True when the remote device has reported it doesn't have a link key.
   bool peer_missing_key_;
+
+  // True while an LE pairing completion callback registered by
+  // InitiateNextPairingRequest() is pending, so that repeated parking in
+  // kInitiatorWaitLEPairingComplete registers at most one callback.
+  bool waiting_for_le_pairing_ = false;
 
   hci::LocalAddressDelegate* low_energy_address_delegate_;
 

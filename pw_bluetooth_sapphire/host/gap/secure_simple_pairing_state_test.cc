@@ -1921,6 +1921,33 @@ TEST_P(HandlesEvent, InResponderWaitIoCapRequestState) {
   }
 }
 
+TEST_P(HandlesEvent, InResponderRejectingIoCapRequestState) {
+  Peer::PairingToken le_token = peer()->MutLe().RegisterPairing();
+  pairing_state().OnIoCapabilityResponse(kTestPeerIoCap);
+  EXPECT_EQ(0, status_handler().call_count());
+
+  RETURN_IF_FATAL(InjectEvent());
+  if (event() == IoCapabilityRequest) {
+    EXPECT_EQ(0, status_handler().call_count());
+  } else {
+    EXPECT_EQ(1, status_handler().call_count());
+    ASSERT_TRUE(status_handler().status());
+    EXPECT_EQ(ToResult(HostError::kNotSupported), status_handler().status());
+  }
+}
+
+TEST_P(HandlesEvent, InWaitRejectedPairingCompleteState) {
+  Peer::PairingToken le_token = peer()->MutLe().RegisterPairing();
+  pairing_state().OnIoCapabilityResponse(kTestPeerIoCap);
+  EXPECT_FALSE(pairing_state().OnIoCapabilityRequest().has_value());
+  EXPECT_EQ(0, status_handler().call_count());
+
+  RETURN_IF_FATAL(InjectEvent());
+  EXPECT_EQ(1, status_handler().call_count());
+  ASSERT_TRUE(status_handler().status());
+  EXPECT_EQ(ToResult(HostError::kNotSupported), status_handler().status());
+}
+
 TEST_P(HandlesEvent,
        InErrorStateAfterIoCapRequestRejectedWithoutPairingDelegate) {
   // Clear the default pairing delegate set by the fixture.
@@ -3851,14 +3878,18 @@ TEST_F(PairingStateTest,
 
 TEST_F(PairingStateTest,
        IoCapabilityResponseWhileInitiatorWaitsForLEPairingToComplete) {
+  // Declared before |pairing_state| so it outlives the pending request callback
+  // that |pairing_state| invokes on destruction.
+  TestStatusHandler status_handler_0;
   NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler link_status_handler;
   SecureSimplePairingState pairing_state(
       peer()->GetWeakPtr(),
       pairing_delegate.GetWeakPtr(),
       connection()->GetWeakPtr(),
       /*outgoing_connection=*/false,
       MakeAuthRequestCallback(),
-      NoOpStatusCallback,
+      link_status_handler.MakeStatusCallback(),
       /*low_energy_address_delegate=*/this,
       /*controller_remote_public_key_validation_supported=*/true,
       sm_factory_func(),
@@ -3867,30 +3898,304 @@ TEST_F(PairingStateTest,
   std::optional<Peer::PairingToken> pairing_token =
       peer()->MutLe().RegisterPairing();
 
-  TestStatusHandler status_handler_0;
   pairing_state.InitiatePairing(kNoSecurityRequirements,
                                 status_handler_0.MakeStatusCallback());
   RunUntilIdle();
   EXPECT_EQ(auth_request_count(), 0u);
 
+  // Peer-initiated BR/EDR SSP must be rejected while LE pairing is in progress
+  // without tearing down the link or canceling the queued initiator request.
   pairing_state.OnIoCapabilityResponse(kTestPeerIoCap);
-  ASSERT_FALSE(pairing_state.initiator());
-  static_cast<void>(pairing_state.OnIoCapabilityRequest());
-  pairing_state.OnUserConfirmationRequest(kTestPasskey,
-                                          NoOpUserConfirmationCallback);
-
+  EXPECT_FALSE(peer()->bredr() && peer()->bredr()->is_pairing());
+  ASSERT_EQ(std::nullopt, pairing_state.OnIoCapabilityRequest());
   pairing_state.OnSimplePairingComplete(
-      pw::bluetooth::emboss::StatusCode::SUCCESS);
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestUnauthenticatedLinkKeyType192);
+      pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
+  EXPECT_EQ(0, link_status_handler.call_count());
+  ASSERT_EQ(0, status_handler_0.call_count());
+  EXPECT_EQ(auth_request_count(), 0u);
+
+  // Once LE pairing completes, the queued initiator pairing should proceed.
+  pairing_token.reset();
+  ASSERT_EQ(auth_request_count(), 1u);
+
+  AdvanceToEncryptionAsInitiator(&pairing_state);
+  EXPECT_TRUE(pairing_state.initiator());
+  ASSERT_EQ(0, status_handler_0.call_count());
 
   connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   ASSERT_TRUE(status_handler_0.status());
   EXPECT_EQ(fit::ok(), *status_handler_0.status());
+}
 
-  // The end of LE pairing should be ignored now.
-  pairing_token.reset();
+TEST_F(PairingStateTest, ResponderSspRejectedWhileIdleAndLePairingInProgress) {
+  // FakePairingDelegate fails the test if any unexpected PairingDelegate
+  // callback (including ConfirmPairing or CompletePairing) is invoked while
+  // rejecting responder SSP.
+  // Locals captured by callbacks are declared first so they outlive
+  // |pairing_delegate| and |pairing_state|.
+  size_t complete_pairing_count = 0;
+  std::optional<bool> confirmed;
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayOnly);
+  TestStatusHandler link_status_handler;
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      MakeAuthRequestCallback(),
+      link_status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  std::optional<Peer::PairingToken> le_pairing_token =
+      peer()->MutLe().RegisterPairing();
+  ASSERT_TRUE(peer()->le()->is_pairing());
+
+  // Peer attempts Just Works SSP on an outgoing BR/EDR link while LE pairing is
+  // in progress. It must not register a BR/EDR pairing or auto-confirm.
+  pairing_state.OnIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT);
+  EXPECT_FALSE(peer()->bredr() && peer()->bredr()->is_pairing());
+  ASSERT_EQ(std::nullopt, pairing_state.OnIoCapabilityRequest());
+
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
+  EXPECT_EQ(0, link_status_handler.call_count());
+
+  // After LE pairing finishes, normal BR/EDR SSP works again on the same link.
+  le_pairing_token.reset();
+  pairing_delegate.SetCompletePairingCallback([&](PeerId, sm::Result<> status) {
+    EXPECT_EQ(fit::ok(), status);
+    complete_pairing_count++;
+  });
+
+  pairing_state.OnIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT);
+  EXPECT_TRUE(peer()->bredr() && peer()->bredr()->is_pairing());
+  EXPECT_EQ(IoCapability::DISPLAY_ONLY, pairing_state.OnIoCapabilityRequest());
+  pairing_state.OnUserConfirmationRequest(
+      kTestPasskey, [&](bool confirm) { confirmed = confirm; });
+  ASSERT_TRUE(confirmed.has_value());
+  EXPECT_TRUE(*confirmed);
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_EQ(1u, complete_pairing_count);
+}
+
+TEST_F(PairingStateTest,
+       ResponderSspRejectedResumesQueuedPairingWhenLeFinishesMidReject) {
+  // Declared before |pairing_state| so it outlives the pending request callback
+  // that |pairing_state| invokes on destruction.
+  TestStatusHandler status_handler_0;
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler link_status_handler;
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      link_status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  std::optional<Peer::PairingToken> le_pairing_token =
+      peer()->MutLe().RegisterPairing();
+
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                status_handler_0.MakeStatusCallback());
+  RunUntilIdle();
   EXPECT_EQ(auth_request_count(), 0u);
+
+  pairing_state.OnIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT);
+  ASSERT_EQ(std::nullopt, pairing_state.OnIoCapabilityRequest());
+
+  // LE pairing completes before the controller emits Simple Pairing Complete
+  // for the rejected BR/EDR responder attempt. Initiator pairing must wait
+  // until the controller finishes cleaning up the rejected SSP attempt.
+  le_pairing_token.reset();
+  EXPECT_EQ(auth_request_count(), 0u);
+
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
+  EXPECT_EQ(0, link_status_handler.call_count());
+  EXPECT_EQ(auth_request_count(), 1u);
+}
+
+TEST_F(PairingStateTest, InitiatePairingQueuedWhileRejectingResponderSsp) {
+  // Declared before |pairing_state| so they outlive the pending request
+  // callbacks that |pairing_state| invokes on destruction.
+  TestStatusHandler status_handler_0;
+  TestStatusHandler status_handler_1;
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler link_status_handler;
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      link_status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  std::optional<Peer::PairingToken> le_pairing_token =
+      peer()->MutLe().RegisterPairing();
+
+  pairing_state.OnIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT);
+  EXPECT_FALSE(peer()->bredr() && peer()->bredr()->is_pairing());
+
+  // Queuing InitiatePairing while waiting for IO Capability Request to reject
+  // must not fail or crash.
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                status_handler_0.MakeStatusCallback());
+  ASSERT_EQ(0, status_handler_0.call_count());
+
+  ASSERT_EQ(std::nullopt, pairing_state.OnIoCapabilityRequest());
+
+  // Queuing another InitiatePairing while waiting for Simple Pairing Complete
+  // must also queue cleanly.
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                status_handler_1.MakeStatusCallback());
+  ASSERT_EQ(0, status_handler_1.call_count());
+
+  le_pairing_token.reset();
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
+  EXPECT_EQ(0, link_status_handler.call_count());
+  EXPECT_EQ(auth_request_count(), 1u);
+}
+
+TEST_F(PairingStateTest,
+       RepeatedResponderSspRejectionsResumeQueuedPairingOnceAfterLePairing) {
+  // Declared before |pairing_state| so it outlives the pending request callback
+  // that |pairing_state| invokes on destruction.
+  TestStatusHandler status_handler_0;
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler link_status_handler;
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      link_status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  std::optional<Peer::PairingToken> le_pairing_token =
+      peer()->MutLe().RegisterPairing();
+
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                status_handler_0.MakeStatusCallback());
+  RunUntilIdle();
+  EXPECT_EQ(auth_request_count(), 0u);
+
+  // The peer repeatedly retries SSP while LE pairing is in progress. Each
+  // rejection re-parks the queued initiator request.
+  constexpr int kRejectedAttempts = 5;
+  for (int i = 0; i < kRejectedAttempts; i++) {
+    pairing_state.OnIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT);
+    ASSERT_EQ(std::nullopt, pairing_state.OnIoCapabilityRequest());
+    pairing_state.OnSimplePairingComplete(
+        pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
+  }
+  EXPECT_EQ(0, link_status_handler.call_count());
+  EXPECT_EQ(0, status_handler_0.call_count());
+  EXPECT_EQ(auth_request_count(), 0u);
+
+  // LE pairing completion resumes the queued initiator pairing exactly once.
+  le_pairing_token.reset();
+  EXPECT_EQ(auth_request_count(), 1u);
+  EXPECT_EQ(0, link_status_handler.call_count());
+}
+
+TEST_F(PairingStateTest,
+       ResponderSspRejectedOnSimplePairingCompleteBeforeIoCapRequest) {
+  // Declared before |pairing_state| so it outlives the pending request callback
+  // that |pairing_state| invokes on destruction.
+  TestStatusHandler status_handler_0;
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler link_status_handler;
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      link_status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  std::optional<Peer::PairingToken> le_pairing_token =
+      peer()->MutLe().RegisterPairing();
+
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                status_handler_0.MakeStatusCallback());
+  RunUntilIdle();
+  EXPECT_EQ(auth_request_count(), 0u);
+
+  // The rejected responder SSP may end before the controller asks for our IO
+  // Capability (e.g. the peer aborts), which must be absorbed the same way.
+  pairing_state.OnIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT);
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
+  EXPECT_EQ(0, link_status_handler.call_count());
+  EXPECT_EQ(0, status_handler_0.call_count());
+  EXPECT_EQ(auth_request_count(), 0u);
+
+  // The queued initiator pairing waits for LE pairing to finish again.
+  le_pairing_token.reset();
+  EXPECT_EQ(auth_request_count(), 1u);
+}
+
+TEST_F(PairingStateTest,
+       ResponderSspRePairFromWaitEncryptionRejectedWhileLePairingInProgress) {
+  // FakePairingDelegate fails the test if any unexpected PairingDelegate
+  // callback (including ConfirmPairing or CompletePairing) is invoked.
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kNoInputNoOutput);
+  TestStatusHandler link_status_handler;
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      MakeAuthRequestCallback(),
+      link_status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
+              kTestLinkKey)));
+
+  // Hand out the bonded link key, which waits for encryption.
+  ASSERT_TRUE(pairing_state.OnLinkKeyRequest().has_value());
+  EXPECT_TRUE(peer()->bredr()->is_pairing());
+
+  std::optional<Peer::PairingToken> le_pairing_token =
+      peer()->MutLe().RegisterPairing();
+
+  // The peer rejects the bonded key and restarts SSP while LE pairing is in
+  // progress. The bonded-key pairing is dropped and the new SSP is rejected.
+  pairing_state.OnIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT);
+  EXPECT_FALSE(peer()->bredr()->is_pairing());
+  ASSERT_EQ(std::nullopt, pairing_state.OnIoCapabilityRequest());
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
+  EXPECT_EQ(0, link_status_handler.call_count());
+  EXPECT_FALSE(peer()->bredr()->is_pairing());
 }
 
 TEST_F(PairingStateTest, TransactionCollision) {

@@ -93,7 +93,9 @@ void SecureSimplePairingState::InitiatePairing(
   // TODO(fxbug.dev/42082728): Reject pairing if peer/local device don't support
   // Secure Connections and SC is required
   if (state() == State::kIdle ||
-      state() == State::kInitiatorWaitLEPairingComplete) {
+      state() == State::kInitiatorWaitLEPairingComplete ||
+      state() == State::kResponderRejectingIoCapRequest ||
+      state() == State::kWaitRejectedPairingComplete) {
     PW_CHECK(!is_pairing());
 
     // If the current link key already meets the security requirements, skip
@@ -121,7 +123,9 @@ void SecureSimplePairingState::InitiatePairing(
                            .status_callback = std::move(status_cb)};
     request_queue_.push_back(std::move(request));
 
-    if (state() == State::kInitiatorWaitLEPairingComplete) {
+    // Defer starting initiator pairing while waiting on LE pairing or finishing
+    // a responder SSP rejection; InitiateNextPairingRequest() will pick it up.
+    if (state() != State::kIdle) {
       return;
     }
 
@@ -169,10 +173,19 @@ void SecureSimplePairingState::InitiateNextPairingRequest() {
            handle(),
            bt_str(peer_id()));
     state_ = State::kInitiatorWaitLEPairingComplete;
+    // A rejected responder SSP can return here repeatedly during a single LE
+    // pairing; only register one completion callback.
+    if (waiting_for_le_pairing_) {
+      return;
+    }
+    waiting_for_le_pairing_ = true;
     peer_->MutLe().add_pairing_completion_callback(
         [self = weak_self_.GetWeakPtr()]() {
-          if (!self.is_alive() ||
-              self->state_ != State::kInitiatorWaitLEPairingComplete) {
+          if (!self.is_alive()) {
+            return;
+          }
+          self->waiting_for_le_pairing_ = false;
+          if (self->state_ != State::kInitiatorWaitLEPairingComplete) {
             return;
           }
           self->state_ = State::kIdle;
@@ -198,6 +211,20 @@ void SecureSimplePairingState::InitiateNextPairingRequest() {
 }
 
 std::optional<IoCapability> SecureSimplePairingState::OnIoCapabilityRequest() {
+  // Responder SSP denial (2/3): return std::nullopt so BrEdrConnectionManager
+  // sends IO_Capability_Request_Negative_Reply, then wait for Simple Pairing
+  // Complete to finish cleaning up the rejected controller transaction.
+  if (state() == State::kResponderRejectingIoCapRequest) {
+    bt_log(INFO,
+           "gap-bredr",
+           "Rejecting IO Capability Request while LE pairing is in progress on "
+           "%#.4x (peer: %s)",
+           handle(),
+           bt_str(peer_id()));
+    state_ = State::kWaitRejectedPairingComplete;
+    return std::nullopt;
+  }
+
   if (state() != State::kInitiatorWaitIoCapRequest &&
       state() != State::kResponderWaitIoCapRequest) {
     FailWithUnexpectedEvent(__func__);
@@ -256,6 +283,23 @@ void SecureSimplePairingState::OnIoCapabilityResponse(IoCapability peer_iocap) {
   if (state() == State::kIdle ||
       state() == State::kInitiatorWaitLEPairingComplete) {
     PW_CHECK(!is_pairing());
+    // Responder SSP denial (1/3): reject peer-initiated BR/EDR SSP while LE
+    // pairing with the same peer is in progress. This applies the Core Spec
+    // v6.0, Vol 3, Part C, Sec 14.2 rule (initiate pairing on only one
+    // transport at a time) to the responder side as well. Move through the
+    // non-pairing rejection states (kResponderRejectingIoCapRequest ->
+    // kWaitRejectedPairingComplete) to negatively reply to the controller
+    // without failing the link.
+    if (peer_->le() && peer_->le()->is_pairing()) {
+      bt_log(INFO,
+             "gap-bredr",
+             "Rejecting responder SSP while LE pairing is in progress on %#.4x "
+             "(id: %s)",
+             handle(),
+             bt_str(peer_id()));
+      state_ = State::kResponderRejectingIoCapRequest;
+      return;
+    }
     bool peer_bonded = peer_->bredr() && peer_->bredr()->bonded();
     bool allow_automatic =
         outgoing_connection_ && !re_pairing_bonded_peer && !peer_bonded;
@@ -417,6 +461,27 @@ void SecureSimplePairingState::OnUserPasskeyNotification(
 
 void SecureSimplePairingState::OnSimplePairingComplete(
     pw::bluetooth::emboss::StatusCode status_code) {
+  // Responder SSP denial (3/3): absorb the expected non-success completion
+  // without notifying PairingDelegate (which may be handling active LE pairing)
+  // or disconnecting the link, then resume any queued requests.
+  if (state() == State::kResponderRejectingIoCapRequest ||
+      state() == State::kWaitRejectedPairingComplete) {
+    PW_CHECK(!is_pairing());
+    if (const fit::result result = ToResult(status_code); result.is_error()) {
+      bt_log(DEBUG,
+             "gap-bredr",
+             "Rejected responder SSP completed on link %#.4x (id: %s): %s",
+             handle(),
+             bt_str(peer_id()),
+             bt_str(result));
+      state_ = State::kIdle;
+      InitiateNextPairingRequest();
+      return;
+    }
+    FailWithUnexpectedEvent(__func__);
+    return;
+  }
+
   // The pairing process may fail early, which the controller will deliver as an
   // Simple Pairing Complete with a non-success status. Log and proxy the error
   // code.
@@ -1006,6 +1071,10 @@ const char* SecureSimplePairingState::ToString(
       return "InitiatorWaitIoCapResponse";
     case State::kResponderWaitIoCapRequest:
       return "ResponderWaitIoCapRequest";
+    case State::kResponderRejectingIoCapRequest:
+      return "ResponderRejectingIoCapRequest";
+    case State::kWaitRejectedPairingComplete:
+      return "WaitRejectedPairingComplete";
     case State::kWaitUserConfirmationRequest:
       return "WaitUserConfirmationRequest";
     case State::kWaitUserPasskeyRequest:

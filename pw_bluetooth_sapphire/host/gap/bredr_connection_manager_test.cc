@@ -2010,6 +2010,45 @@ TEST_F(BrEdrConnectionManagerTest, IoCapabilityRequestReplyWhenConnected) {
   QueueDisconnection(kConnectionHandle);
 }
 
+// Test: replies negative to peer-initiated SSP while LE pairing with the same
+// peer is in progress, without disconnecting the BR/EDR link.
+TEST_F(BrEdrConnectionManagerTest,
+       IoCapabilityRequestNegativeReplyWhileLePairingInProgress) {
+  // FakePairingDelegate fails the test if any unexpected PairingDelegate
+  // callback (including CompletePairing) is invoked.
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kNoInputNoOutput);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  QueueSuccessfulIncomingConn();
+
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+
+  RunUntilIdle();
+
+  ASSERT_EQ(kIncomingConnTransactions, transaction_count());
+
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  Peer::PairingToken le_pairing_token = peer->MutLe().RegisterPairing();
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kIoCapabilityRequestNegativeReply,
+                        &kIoCapabilityRequestNegativeReplyRsp);
+
+  test_device()->SendCommandChannelPacket(
+      MakeIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT,
+                               AuthenticationRequirements::GENERAL_BONDING));
+  test_device()->SendCommandChannelPacket(kIoCapabilityRequest);
+  test_device()->SendCommandChannelPacket(kSimplePairingCompleteError);
+
+  // An HCI_Disconnect here would fail the test as an unexpected command.
+  RunUntilIdle();
+
+  EXPECT_EQ(kIncomingConnTransactions + 1, transaction_count());
+
+  QueueDisconnection(kConnectionHandle);
+}
+
 // Test: Responds to Secure Simple Pairing with user rejection of Numeric
 // Comparison association
 TEST_F(BrEdrConnectionManagerTest,
