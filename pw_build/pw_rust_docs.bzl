@@ -233,9 +233,9 @@ pw_rust_docs = rule(
                 List of flags passed to `rustdoc`.
 
                 These strings are subject to Make variable expansion for predefined
-                source/output path variables like `$location`, `$execpath`, and
-                `$rootpath`. This expansion is useful if you wish to pass a generated
-                file of arguments to rustc: `@$(location //package:target)`.
+                source/output path variables like `$execpath` and `$rootpath`.
+                This expansion is useful if you wish to pass a generated file of
+                arguments to rustc: `@$(execpath //package:target)`.
             """),
         ),
         "_capture_args": attr.label(

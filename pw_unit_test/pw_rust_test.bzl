@@ -123,7 +123,7 @@ def pw_rust_test(name, srcs, deps = None, **kwargs):
         tags = subtarget_tags,
         linkopts = [
             "-Wl,--whole-archive",
-            "$(location :" + lib_name + ")",
+            "$(execpath :" + lib_name + ")",
             "-Wl,--no-whole-archive",
         ],
         additional_linker_inputs = [

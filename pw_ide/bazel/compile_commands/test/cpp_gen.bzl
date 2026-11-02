@@ -21,7 +21,7 @@ def cpp_gen(name, **kwargs):
     native.genrule(
         name = genrule_name,
         outs = [name + ".cc", name + ".h"],
-        cmd = "sh $(location :generate_cpp.sh) \"$(location :" + name + ".cc)\" \"$(location :" + name + ".h)\"",
+        cmd = "sh $(execpath :generate_cpp.sh) \"$(execpath :" + name + ".cc)\" \"$(execpath :" + name + ".h)\"",
         tools = [":generate_cpp.sh"],
     )
 
