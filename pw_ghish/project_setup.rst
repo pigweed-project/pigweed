@@ -601,8 +601,9 @@ message trailer templates, and ``OWNERS`` component discovery. All keys under
      - ``""``
      - GCP project ID or number
      - ``ghish.issue.quotaProject``
-     - Google Cloud project sent via ``X-Goog-User-Project`` when calling
-       ``issuetracker.googleapis.com``.
+     - Optional Google Cloud project sent via ``X-Goog-User-Project`` on
+       Issue Tracker requests. Not needed with luci-auth credentials.
+       Overridden by ``GHISH_QUOTA_PROJECT`` / ``GOOGLE_CLOUD_QUOTA_PROJECT``.
    * - ``trailer_format`` *(alias* ``require_trailer`` *)*
      - ``string`` *(or* ``bool`` *for* ``require_trailer`` *)*
      - ``"Bug: b/{id}"``

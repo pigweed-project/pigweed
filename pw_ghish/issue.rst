@@ -425,22 +425,28 @@ Linux, or ``./gh auth status`` elsewhere to see the login command when needed.
 
 API quota project configuration
 ===============================
-When calling the Google Issue Tracker REST API with CLI credentials, Google's
-API gateway requires a Google Cloud consumer project ID
-(``X-Goog-User-Project``) for rate-limit accounting (Issue Tracker API usage
-itself is free / $0).
-
-``pw_ghish`` automatically resolves a quota project from your environment
-(``GHISH_QUOTA_PROJECT``, ``issue.quota_project`` in ``.ghish.toml``,
-``git config ghish.issue.quotaProject``, ``git config ghish.quotaproject``, or
-``gcloud`` configuration). If no quota project is detected, enable the Issue
-Tracker API on any Google Cloud project you have access to and configure
-``gh-ish`` to use it:
+Buganizer requests made with ``gh-ish``'s luci-auth credentials do not need a
+Google Cloud quota project. If you supply your own token
+(``GHISH_ISSUE_TOKEN`` or ``BUGANIZER_TOKEN``) and Issue Tracker rejects it
+with ``SERVICE_DISABLED`` or ``USER_PROJECT_DENIED``, or your team wants its
+own rate-limit bucket, set a quota project explicitly. It is sent as
+``X-Goog-User-Project`` and resolved from ``GHISH_QUOTA_PROJECT``,
+``GOOGLE_CLOUD_QUOTA_PROJECT``, ``git config ghish.issue.quotaProject``, or
+``issue.quota_project`` in ``.ghish.toml``, in that order:
 
 .. code-block:: console
 
    # 1. Enable the Google Issue Tracker API on your GCP project:
-   $ gcloud services enable issuetracker.googleapis.com --project=<gcp-project-id>
+   $ gcloud services enable issuetracker.corp.googleapis.com --project=<gcp-project-id>
 
    # 2. Configure gh-ish to use that project for rate-limit quota:
    $ git config --global ghish.issue.quotaProject <gcp-project-id>
+
+.. note::
+
+   Older versions of ``gh-ish`` wrote ``ghish.quotaproject`` to your git
+   config automatically. That key is now ignored. Remove any stale value with:
+
+   .. code-block:: console
+
+      $ git config --global --unset ghish.quotaproject

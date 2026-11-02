@@ -607,13 +607,12 @@ func DecodeRequest[T any](t testing.TB, req *MockRequest) T {
 // used across Gerrit, LUCI, Android Build, and Google Issue Tracker. Tests
 // install them with SetAuthResolvers or WithHermeticAuth.
 type AuthResolvers struct {
-	LookPath                 func(file string) (string, error)
-	CommandRunner            func(ctx context.Context, name string, args ...string) ([]byte, error)
-	GerritToken              func(ctx context.Context) (string, string, error)
-	LUCIToken                func(ctx context.Context) (string, string, error)
-	AndroidBuildToken        func(ctx context.Context) (string, error)
-	IssueTrackerToken        func(ctx context.Context) (string, string, error)
-	IssueTrackerQuotaProject func(ctx context.Context, token string) string
+	LookPath          func(file string) (string, error)
+	CommandRunner     func(ctx context.Context, name string, args ...string) ([]byte, error)
+	GerritToken       func(ctx context.Context) (string, string, error)
+	LUCIToken         func(ctx context.Context) (string, string, error)
+	AndroidBuildToken func(ctx context.Context) (string, error)
+	IssueTrackerToken func(ctx context.Context) (string, string, error)
 }
 
 // onPath returns a LookPath stub where only name resolves (to path).
@@ -629,13 +628,12 @@ func onPath(name, path string) func(string) (string, error) {
 // currentAuthResolvers returns the active package authentication resolvers.
 func currentAuthResolvers() AuthResolvers {
 	return AuthResolvers{
-		LookPath:                 LookPathFn,
-		CommandRunner:            OAuthTokenCommandRunner,
-		GerritToken:              GerritTokenResolver,
-		LUCIToken:                LUCITokenResolver,
-		AndroidBuildToken:        AndroidBuildTokenResolver,
-		IssueTrackerToken:        IssueTrackerTokenResolver,
-		IssueTrackerQuotaProject: IssueTrackerQuotaProjectResolver,
+		LookPath:          LookPathFn,
+		CommandRunner:     OAuthTokenCommandRunner,
+		GerritToken:       GerritTokenResolver,
+		LUCIToken:         LUCITokenResolver,
+		AndroidBuildToken: AndroidBuildTokenResolver,
+		IssueTrackerToken: IssueTrackerTokenResolver,
 	}
 }
 
@@ -659,9 +657,6 @@ func SetAuthResolvers(r AuthResolvers) {
 	}
 	if r.IssueTrackerToken != nil {
 		IssueTrackerTokenResolver = r.IssueTrackerToken
-	}
-	if r.IssueTrackerQuotaProject != nil {
-		IssueTrackerQuotaProjectResolver = r.IssueTrackerQuotaProject
 	}
 }
 
@@ -702,25 +697,17 @@ func failClosedAuthResolvers() AuthResolvers {
 	return r
 }
 
-// WithHermeticAuth clears the credential environment variables, resets auth
-// caches, and installs fail-closed tool lookup, the production Gerrit and Issue
-// Tracker token resolvers, and stub LUCI, Android Build, and quota-project
-// resolvers (overridden by non-nil fields in overrides). It restores the
-// previous resolvers and clears auth caches on test cleanup.
-//
-// A test that assigns LookPathFn directly, rather than through this helper,
-// must also call ResetAuthTokenCaches.
 // hermeticAuthActive reports whether WithHermeticAuth is currently active in
 // the running test, so NewMockGerritServer does not clobber resolvers installed
 // by an earlier WithHermeticAuth call.
 var hermeticAuthActive bool
 
 // WithHermeticAuth resets auth caches and installs fail-closed tool lookup, the
-// production Gerrit and Issue Tracker token resolvers, and stub LUCI, Android
-// Build, and quota-project resolvers (overridden by non-nil fields in
-// overrides). Ambient credential environment variables are cleared at test
-// binary startup by TestMain. WithHermeticAuth restores the previous resolvers
-// and clears auth caches on test cleanup.
+// production Gerrit and Issue Tracker token resolvers, and stub LUCI and
+// Android Build resolvers (overridden by non-nil fields in overrides). Ambient
+// credential environment variables are cleared at test binary startup by
+// TestMain. WithHermeticAuth restores the previous resolvers and clears auth
+// caches on test cleanup.
 //
 // A test that assigns LookPathFn directly, rather than through this helper,
 // must also call ResetAuthTokenCaches.
@@ -738,9 +725,6 @@ func WithHermeticAuth(t testing.TB, overrides AuthResolvers) {
 	}
 	hermetic.AndroidBuildToken = func(ctx context.Context) (string, error) {
 		return "mock-android-build-token", nil
-	}
-	hermetic.IssueTrackerQuotaProject = func(context.Context, string) string {
-		return "mock-quota-project"
 	}
 	ResetAuthTokenCaches()
 	SetAuthResolvers(hermetic)
@@ -1551,7 +1535,7 @@ func (s *MockIssueTrackerServer) Client() *IssueTrackerClient {
 	c.TokenProvider = func(context.Context) (string, error) {
 		return "test-mock-token", nil
 	}
-	c.QuotaProjectProvider = func(context.Context, string) string {
+	c.QuotaProjectProvider = func(context.Context) string {
 		return "mock-quota-project"
 	}
 	return c

@@ -79,8 +79,8 @@ Planned work to support external Gerrit and LUCI repositories:
   files (e.g. ``.ghish.toml`` or Git configuration) defining project behavior
   without modifying Go code.
 * **Removing remaining Pigweed-isms**: Extract hardcoded Pigweed defaults (such
-  as bootstrapped CIPD binary paths, default GCP quota projects, and slot
-  prefixes) into project configuration.
+  as bootstrapped CIPD binary paths and slot prefixes) into project
+  configuration.
 * **Configurable gating labels**: Allow projects to declare custom Commit-Queue
   votes and gating labels (e.g. ``Presubmit-Verified``,
   ``Integration-Verified``) alongside automatic auto-submit label detection.

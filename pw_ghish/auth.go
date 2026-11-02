@@ -939,7 +939,6 @@ func ResetAuthTokenCaches() {
 	luciAuthCache.notFoundErr = nil
 	luciAuthCache.mu.Unlock()
 
-	quotaProjectCache.reset()
 	resetSelfAccountMemCache()
 }
 

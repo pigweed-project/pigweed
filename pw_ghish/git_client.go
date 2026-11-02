@@ -636,23 +636,6 @@ func NewGitClientInDir(dir string) GitClient {
 	return NewGitClient(&RealGitRunner{Dir: dir})
 }
 
-// sharedGitClientForRunner returns the GitClient of the command Config carried
-// by ctx when that Config runs git through runner (nil means
-// DefaultGitRunner), so helpers that only receive a runner still share the
-// Config's config prefetch and caches instead of re-running them on a fresh
-// client. Otherwise it returns NewGitClient(runner).
-func sharedGitClientForRunner(ctx context.Context, runner GitRunner) GitClient {
-	if runner == nil {
-		runner = DefaultGitRunner
-	}
-	if ctx != nil {
-		if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil && cfg.Git != nil && cfg.Git == runner {
-			return cfg.GitClient()
-		}
-	}
-	return NewGitClient(runner)
-}
-
 // GitClient returns a GitClient for the configuration, falling back to DefaultGitRunner if unconfigured.
 func (c *Config) GitClient() GitClient {
 	if c == nil {

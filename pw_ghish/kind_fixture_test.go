@@ -180,9 +180,8 @@ func NewKindSmokeFixture(t *testing.T) *KindSmokeFixture {
 
 	s := NewMockGerritServer(t)
 	WithHermeticAuth(t, AuthResolvers{
-		LUCIToken:                func(context.Context) (string, string, error) { return "smoke-luci-token", "kind smoke fixture", nil },
-		IssueTrackerToken:        func(context.Context) (string, string, error) { return "smoke-it-token", "kind smoke fixture", nil },
-		IssueTrackerQuotaProject: func(context.Context, string) string { return "smoke-quota-project" },
+		LUCIToken:         func(context.Context) (string, string, error) { return "smoke-luci-token", "kind smoke fixture", nil },
+		IssueTrackerToken: func(context.Context) (string, string, error) { return "smoke-it-token", "kind smoke fixture", nil },
 	})
 	installKindSmokeGerrit(s)
 
@@ -360,7 +359,7 @@ func (f *KindSmokeFixture) Run(t *testing.T, args []string) KindSmokeResult {
 	if refused := f.network.takeRefused(); len(refused) > 0 {
 		t.Errorf("setup reached for the real network: %v", refused)
 	}
-	// Drop process-wide auth, token, and quota-project memos so the
+	// Drop process-wide auth and token memos so the
 	// measured invocation starts as cold as a fresh process.
 	ResetAuthTokenCaches()
 	var res KindSmokeResult

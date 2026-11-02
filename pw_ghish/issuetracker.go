@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -32,7 +31,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -185,7 +183,7 @@ type IssueTrackerClient struct {
 	Endpoint             string
 	HTTPClient           *http.Client
 	TokenProvider        func(ctx context.Context) (string, error)
-	QuotaProjectProvider func(ctx context.Context, token string) string
+	QuotaProjectProvider func(ctx context.Context) string
 }
 
 const (
@@ -238,15 +236,11 @@ func NewIssueTrackerClient(endpoint string, httpClient *http.Client) *IssueTrack
 			httpClient = &http.Client{Timeout: 30 * time.Second}
 		}
 	}
-	quotaProvider := DefaultIssueTrackerQuotaProject
-	if strings.Contains(endpoint, ".corp.googleapis.com") && hasSSOClient {
-		quotaProvider = ConfiguredIssueTrackerQuotaProject
-	}
 	return &IssueTrackerClient{
 		Endpoint:             endpoint,
 		HTTPClient:           httpClient,
 		TokenProvider:        DefaultIssueTrackerToken,
-		QuotaProjectProvider: quotaProvider,
+		QuotaProjectProvider: ConfiguredIssueTrackerQuotaProject,
 	}
 }
 
@@ -354,97 +348,9 @@ func parseSSOClientResponse(out []byte, req *http.Request) (*http.Response, erro
 	return resp, nil
 }
 
-type quotaProjectCacheState struct {
-	mu      sync.Mutex
-	project string
-	checked bool
-	runner  GitRunner
-	probed  bool
-}
-
-var quotaProjectCache quotaProjectCacheState
-
-func (c *quotaProjectCacheState) lookup(runner GitRunner) (string, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.project != "" {
-		return c.project, true
-	}
-	if c.checked && c.runner == runner {
-		return c.project, true
-	}
-	return "", false
-}
-
-func (c *quotaProjectCacheState) storeConfigResult(runner GitRunner, proj string) string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.project = proj
-	c.checked = true
-	c.runner = runner
-	return proj
-}
-
-func (c *quotaProjectCacheState) isProbed() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.probed
-}
-
-func (c *quotaProjectCacheState) markProbed() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.probed = true
-}
-
-func (c *quotaProjectCacheState) storeProbed(proj string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.project = proj
-	c.probed = true
-}
-
-func (c *quotaProjectCacheState) clearProject() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.project = ""
-}
-
-func (c *quotaProjectCacheState) reset() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.project = ""
-	c.checked = false
-	c.runner = nil
-	c.probed = false
-}
-
-// DefaultPigweedQuotaProject is the shared Pigweed GCP project configured to
-// host One Platform quota buckets for Buganizer API calls (zero billing cost;
-// used strictly for One Platform QPS rate-limit accounting).
-//
-// 1P Internal Infrastructure Note:
-// Google's One Platform API Gateway (`*.googleapis.com`) requires every REST
-// request to identify both:
-//  1. A User Identity (`Authorization: Bearer <token>` + `sso_client` ticket),
-//     used by Buganizer to enforce component ACLs and attribute comment authors.
-//  2. A Client/Quota Identity (`X-Goog-User-Project`), used by One Platform
-//     solely for per-project QPS rate-limit accounting because CLI tools
-//     (`luci-auth` and `gcloud`) share generic public OAuth client IDs.
-//
-// So internal developers do not need manual setup, `pigweed-gce` can be
-// configured in Gong (`project.pigweed-gce/apis.yaml` and `iam_policy.yaml`)
-// with `issuetracker.corp.googleapis.com` and `issuetracker.googleapis.com`
-// enabled and `roles/serviceusage.serviceUsageConsumer` granted to internal
-// developers (`domain:google.com` or team groups). When enabled, `probeQuotaProject`
-// succeeds in ~40ms and caches `pigweed-gce` in `git config ghish.quotaproject`.
-// Note that `serviceUsageConsumer` grants no access to GCP compute/storage
-// resources and does not alter Buganizer user permissions.
-const DefaultPigweedQuotaProject = "pigweed-gce"
-
 // ConfiguredIssueTrackerQuotaProject returns a locally configured GCP project ID for
 // X-Goog-User-Project without making network requests or mutating git config.
-func ConfiguredIssueTrackerQuotaProject(ctx context.Context, _ string) string {
+func ConfiguredIssueTrackerQuotaProject(ctx context.Context) string {
 	for _, envVar := range []string{"GHISH_QUOTA_PROJECT", "GOOGLE_CLOUD_QUOTA_PROJECT"} {
 		if v := strings.TrimSpace(os.Getenv(envVar)); v != "" {
 			return v
@@ -454,223 +360,17 @@ func ConfiguredIssueTrackerQuotaProject(ctx context.Context, _ string) string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	runner := quotaProjectGitRunner(ctx)
-	projectConfigLoaded := false
-	if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil {
-		if cfg.ProjectConfig != nil {
-			projectConfigLoaded = true
-			if qp := strings.TrimSpace(cfg.ProjectConfig.Issue.QuotaProject); qp != "" {
-				return qp
-			}
-		} else if hasProjectConfigFileOnDisk(cfg.CWD) {
-			if projCfg, err := cfg.LoadProjectConfig(ctx); err == nil && projCfg != nil {
-				projectConfigLoaded = true
-				if qp := strings.TrimSpace(projCfg.Issue.QuotaProject); qp != "" {
-					return qp
-				}
-			}
-		}
+	cfg, _ := ctx.Value(configKey).(*Config)
+	if cfg == nil {
+		cfg = &Config{Git: DefaultGitRunner}
 	}
-
-	if v, ok := quotaProjectCache.lookup(runner); ok {
-		return v
+	if projCfg, _ := cfg.cachedProjectConfig(); projCfg != nil {
+		return strings.TrimSpace(projCfg.Issue.QuotaProject)
 	}
-
-	keys := []string{"ghish.issue.quotaproject", "ghish.bugs.quotaproject", "ghish.quotaproject"}
-	if projectConfigLoaded {
-		// LoadProjectConfig already queried git config --get-regexp ^ghish\. and
-		// applied ghish.issue.quotaproject and ghish.bugs.quotaproject.
-		keys = []string{"ghish.quotaproject"}
+	if projCfg, err := cfg.LoadProjectConfig(ctx); err == nil && projCfg != nil {
+		return strings.TrimSpace(projCfg.Issue.QuotaProject)
 	}
-
-	gitClient := sharedGitClientForRunner(ctx, runner)
-	for _, key := range keys {
-		if val, err := gitClient.ConfigGet(ctx, key); err == nil {
-			if v := strings.TrimSpace(val); v != "" {
-				return quotaProjectCache.storeConfigResult(runner, v)
-			}
-		}
-	}
-
-	return quotaProjectCache.storeConfigResult(runner, "")
-}
-
-// quotaProjectGitRunner returns the git runner of the command Config carried
-// by ctx, or DefaultGitRunner when ctx carries none, so quota project
-// lookups and writes target the command's repository instead of whatever
-// repository the process working directory happens to be in.
-func quotaProjectGitRunner(ctx context.Context) GitRunner {
-	if ctx != nil {
-		if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil && cfg.Git != nil {
-			return cfg.Git
-		}
-	}
-	return DefaultGitRunner
-}
-
-// tryRunQuotaProjectGitConfig runs `git config <args>` through the command's
-// shared git client (see quotaProjectGitRunner), so the write invalidates
-// that client's config cache. Best-effort contract: persisting the quota
-// project is a cache for the next invocation; failure only costs a re-probe.
-func tryRunQuotaProjectGitConfig(ctx context.Context, args ...string) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	var stderr bytes.Buffer
-	gitClient := sharedGitClientForRunner(ctx, quotaProjectGitRunner(ctx))
-	if err := gitClient.Run(ctx, nil, &stderr, append([]string{"config"}, args...)...); err != nil {
-		// OK: the cached git config value is an optimization only.
-		slog.Debug("failed to update cached quota project in git config",
-			"args", args, "err", err, "stderr", strings.TrimSpace(stderr.String()))
-	}
-}
-
-// DefaultIssueTrackerQuotaProject resolves a GCP project ID for X-Goog-User-Project.
-//
-// Resolution Cascade (strictly READ-ONLY; never mutates GCP services or IAM):
-//  1. Explicit overrides: `GHISH_QUOTA_PROJECT` or `GOOGLE_CLOUD_QUOTA_PROJECT` env vars.
-//  2. Cached repository/global setting: `git config ghish.quotaproject`.
-//  3. Explicit gcloud billing quota setting: `gcloud config get-value billing/quota_project`.
-//  4. Shared 1P team default: `DefaultPigweedQuotaProject` ("pigweed-gce"),
-//     verified via a fast read-only Service Usage state check.
-//  5. Active gcloud default project: `gcloud config get-value project`.
-//  6. Read-only scan of existing active GCP projects (`GET /v1/projects`) where
-//     the Issue Tracker API is already enabled.
-func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
-	if configured := ConfiguredIssueTrackerQuotaProject(ctx, token); configured != "" {
-		return configured
-	}
-
-	if token == "" {
-		return ""
-	}
-
-	if quotaProjectCache.isProbed() {
-		return ""
-	}
-
-	markProbed := quotaProjectCache.markProbed
-
-	cacheAndReturn := func(projID string) string {
-		quotaProjectCache.storeProbed(projID)
-		tryRunQuotaProjectGitConfig(ctx, "ghish.quotaproject", projID)
-		return projID
-	}
-
-	// Priority 1: Check explicit gcloud billing/quota_project configuration.
-	if _, err := LookPathFn("gcloud"); err == nil {
-		if out, err := ExecCommandContext(ctx, "gcloud", "config", "get-value", "billing/quota_project").Output(); err == nil {
-			if v := strings.TrimSpace(string(out)); v != "" && v != "(unset)" {
-				if probeQuotaProject(ctx, token, v) {
-					return cacheAndReturn(v)
-				}
-			}
-		}
-	}
-
-	// Priority 2: Probe the shared Pigweed team quota project (pigweed-gce).
-	if probeQuotaProject(ctx, token, DefaultPigweedQuotaProject) {
-		return cacheAndReturn(DefaultPigweedQuotaProject)
-	}
-
-	// Priority 3: Check active gcloud default project.
-	if _, err := LookPathFn("gcloud"); err == nil {
-		if out, err := ExecCommandContext(ctx, "gcloud", "config", "get-value", "project").Output(); err == nil {
-			if v := strings.TrimSpace(string(out)); v != "" && v != "(unset)" && v != DefaultPigweedQuotaProject {
-				if probeQuotaProject(ctx, token, v) {
-					return cacheAndReturn(v)
-				}
-			}
-		}
-	}
-
-	// Priority 4: Read-only discovery of existing active GCP projects where
-	// the user already has Issue Tracker API enabled and Service Usage Consumer access.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://cloudresourcemanager.googleapis.com/v1/projects?pageSize=20", nil)
-	if err != nil {
-		markProbed()
-		return ""
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		markProbed()
-		return ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		markProbed()
-		return ""
-	}
-
-	var listResp struct {
-		Projects []struct {
-			ProjectID      string `json:"projectId"`
-			LifecycleState string `json:"lifecycleState"`
-		} `json:"projects"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
-		markProbed()
-		return ""
-	}
-
-	user := strings.ToLower(strings.TrimSpace(os.Getenv("USER")))
-	var preferred, others []string
-	for _, p := range listResp.Projects {
-		if p.LifecycleState != "ACTIVE" || p.ProjectID == "" || p.ProjectID == DefaultPigweedQuotaProject {
-			continue
-		}
-		if strings.HasPrefix(p.ProjectID, "google.com:") || strings.HasPrefix(p.ProjectID, "loas-") {
-			others = append(others, p.ProjectID)
-			continue
-		}
-		if user != "" && strings.Contains(strings.ToLower(p.ProjectID), user) {
-			preferred = append(preferred, p.ProjectID)
-		} else {
-			others = append(others, p.ProjectID)
-		}
-	}
-	for _, projID := range append(preferred, others...) {
-		if probeQuotaProject(ctx, token, projID) {
-			return cacheAndReturn(projID)
-		}
-	}
-
-	markProbed()
 	return ""
-}
-
-func probeQuotaProject(ctx context.Context, token, projID string) bool {
-	if projID == "" || token == "" {
-		return false
-	}
-	serviceName := "issuetracker.googleapis.com"
-	if _, err := LookPathFn("sso_client"); err == nil {
-		serviceName = "issuetracker.corp.googleapis.com"
-	}
-	svcURL := fmt.Sprintf("https://serviceusage.googleapis.com/v1/projects/%s/services/%s", projID, serviceName)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, svcURL, nil)
-	if err != nil {
-		return false
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return false
-	}
-	var svc struct {
-		State string `json:"state"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&svc); err != nil {
-		return false
-	}
-	return svc.State == "ENABLED"
 }
 
 // ScopeBuganizer is the OAuth2 scope for Google Issue Tracker (Buganizer).
@@ -739,12 +439,6 @@ var NewIssueTrackerClientForCommand = func(ctx context.Context, cmd *cobra.Comma
 	}
 	profile := cfg.GetProfile(ctx)
 	client := NewIssueTrackerClient(profile.IssueTrackerAPIEndpoint(), nil)
-	if projCfg, err := cfg.LoadProjectConfig(ctx); err == nil && projCfg != nil && strings.TrimSpace(projCfg.Issue.QuotaProject) != "" {
-		qp := strings.TrimSpace(projCfg.Issue.QuotaProject)
-		client.QuotaProjectProvider = func(context.Context, string) string {
-			return qp
-		}
-	}
 	return client, nil
 }
 
@@ -770,10 +464,12 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
+	qp := ""
 	if c.QuotaProjectProvider != nil {
-		if qp := strings.TrimSpace(c.QuotaProjectProvider(ctx, token)); qp != "" {
-			req.Header.Set("X-Goog-User-Project", qp)
-		}
+		qp = strings.TrimSpace(c.QuotaProjectProvider(ctx))
+	}
+	if qp != "" {
+		req.Header.Set("X-Goog-User-Project", qp)
 	}
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -796,24 +492,29 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 			strings.Contains(rawErr, "SERVICE_DISABLED") ||
 			strings.Contains(rawErr, "has not been used in project") ||
 			strings.Contains(rawErr, "cannot be identified with a client project") {
-			quotaProjectCache.clearProject()
-			if strings.Contains(c.Endpoint, "googleapis.com") {
-				tryRunQuotaProjectGitConfig(ctx, "--unset", "ghish.quotaproject")
-			}
-			svcName := "issuetracker.googleapis.com"
-			if strings.Contains(c.Endpoint, ".corp.googleapis.com") {
-				svcName = "issuetracker.corp.googleapis.com"
+			const svcName = "issuetracker.googleapis.com"
+			if qp != "" {
+				return fmt.Errorf("Google Issue Tracker quota project error (HTTP %d) for %s %s.\n\n"+
+					"Cause: The configured quota project %q (X-Goog-User-Project) does not have %s enabled,\n"+
+					"or you lack the serviceusage.services.use permission on it.\n\n"+
+					"Remediation:\n"+
+					"  1. Enable %s on project %q.\n"+
+					"  2. Or remove the override (GHISH_QUOTA_PROJECT / GOOGLE_CLOUD_QUOTA_PROJECT,\n"+
+					"     issue.quota_project in .ghish.toml, or git config ghish.issue.quotaProject);\n"+
+					"     gh-ish's luci-auth credentials do not need a quota project.\n\n"+
+					"Server Details: %s", resp.StatusCode, method, path, qp, svcName, svcName, qp, rawErr)
 			}
 			return fmt.Errorf("Google Issue Tracker quota project error (HTTP %d) for %s %s.\n\n"+
-				"Cause: Google's API gateway (OnePlatform) requires a GCP consumer project ID (X-Goog-User-Project)\n"+
-				"for rate-limit accounting when using CLI OAuth tokens (Buganizer API itself is $0 / free).\n\n"+
+				"Cause: The OAuth client that minted this token is not enabled for %s.\n"+
+				"gh-ish's luci-auth token does not need a quota project; this usually means\n"+
+				"GHISH_ISSUE_TOKEN/BUGANIZER_TOKEN came from another tool.\n\n"+
 				"Remediation:\n"+
-				"  1. Enable the Issue Tracker API on any GCP project you own or have access to:\n"+
-				"     gcloud services enable %s --project=\"<your-gcp-project-id>\"\n\n"+
-				"  2. Configure gh-ish to use that project for rate-limit quota:\n"+
-				"     git config --global ghish.quotaproject \"<your-gcp-project-id>\"\n"+
+				"  1. Unset GHISH_ISSUE_TOKEN/BUGANIZER_TOKEN and re-authenticate with luci-auth:\n"+
+				"     %s\n"+
+				"  2. Or set a quota project that has %s enabled:\n"+
+				"     git config --global ghish.issue.quotaProject \"<your-gcp-project-id>\"\n"+
 				"     # or: export GHISH_QUOTA_PROJECT=\"<your-gcp-project-id>\"\n\n"+
-				"Server Details: %s", resp.StatusCode, method, path, svcName, rawErr)
+				"Server Details: %s", resp.StatusCode, method, path, svcName, luciAuthLoginCommandForScope(ctx, ScopeBuganizer), svcName, rawErr)
 		}
 		return fmt.Errorf("Google Issue Tracker authentication failed (HTTP %d) for %s %s.\n\n"+
 			"Cause: Your current OAuth token was rejected or lacks the 'https://www.googleapis.com/auth/buganizer' scope.\n\n"+

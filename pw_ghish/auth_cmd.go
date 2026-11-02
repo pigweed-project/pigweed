@@ -76,10 +76,6 @@ func ValidateAuthStatusJSONFields(fieldsStr string) ([]string, error) {
 	return fields, nil
 }
 
-// IssueTrackerQuotaProjectResolver resolves the GCP quota project for Buganizer status reporting.
-// Defaults to ConfiguredIssueTrackerQuotaProject so 'gh auth status' remains fast and side-effect-free.
-var IssueTrackerQuotaProjectResolver = ConfiguredIssueTrackerQuotaProject
-
 // CheckAuthStatus probes Gerrit, LUCI Buildbucket/LogDog, and Buganizer authentication
 // and returns a structured AuthStatusReport.
 func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport, error) {
@@ -227,9 +223,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 				methodDesc = fmt.Sprintf("sso_client + %s", src)
 			}
 			buganizerStatus.Method = methodDesc
-			if IssueTrackerQuotaProjectResolver != nil {
-				buganizerStatus.QuotaProject = IssueTrackerQuotaProjectResolver(ctx, tok)
-			}
+			buganizerStatus.QuotaProject = ConfiguredIssueTrackerQuotaProject(cfgCtx)
 			if buganizerStatus.QuotaProject != "" {
 				buganizerStatus.Message = fmt.Sprintf("Authenticated with %s via %s (quota project: %s)", issueHost, methodDesc, buganizerStatus.QuotaProject)
 			} else {

@@ -52,9 +52,8 @@ Run ``./gh auth status`` to verify your credentials:
      - Method: luci-auth
 
    issuetracker.corp.googleapis.com (Google Issue Tracker)
-     ✓ Authenticated with issuetracker.corp.googleapis.com via sso_client + luci-auth (quota project: pigweed-gce)
+     ✓ Authenticated with issuetracker.corp.googleapis.com via sso_client + luci-auth
      - Method: sso_client + luci-auth
-     - Quota project: pigweed-gce
 
    Verdict: authenticated (googler mode; all required services healthy)
    Next:    gh pr status

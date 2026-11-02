@@ -39,8 +39,8 @@ func TestAuthStatus_AllHealthyGoogler(t *testing.T) {
 		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
 			return "it-tok", "luci-auth token", nil
 		},
-		IssueTrackerQuotaProject: func(ctx context.Context, _ string) string { return "pigweed-infra" },
 	})
+	t.Setenv("GHISH_QUOTA_PROJECT", "pigweed-infra")
 
 	output, err := executeCommand(RootCmd, "auth", "status", "--auth-mode", "googler")
 	if err != nil {
