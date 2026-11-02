@@ -24,7 +24,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -157,116 +156,6 @@ func TestResolveChangeContext_ClientCreationError(t *testing.T) {
 	if !strings.Contains(err.Error(), "error creating Gerrit client") {
 		t.Errorf("expected error to mention 'error creating Gerrit client', got: %v", err)
 	}
-}
-
-func TestSetReviewSafe_Success(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, map[string]any{
-		"labels": map[string]int{"Code-Review": 2},
-	})
-
-	client, err := gerrit.NewClient(context.Background(), server.URL, nil)
-	if err != nil {
-		t.Fatalf("gerrit.NewClient failed: %v", err)
-	}
-
-	input := &gerrit.ReviewInput{
-		Message: "LGTM",
-		Labels:  map[string]int{"Code-Review": 2},
-	}
-
-	if err := SetReviewSafe(context.Background(), client, "12345", "current", input); err != nil {
-		t.Fatalf("SetReviewSafe failed: %v", err)
-	}
-
-	if server.CallCount("POST", "/changes/12345/revisions/current/review") != 1 {
-		t.Errorf("expected 1 call to SetReview, got %d", server.CallCount("POST", "/changes/12345/revisions/current/review"))
-	}
-}
-
-func TestSetReviewSafe_LabelsUnmarshalErrorIgnored(t *testing.T) {
-	// Simulate Gerrit returning a JSON shape for labels that triggers go-gerrit's UnmarshalTypeError.
-	server := NewMockGerritServer(t)
-	// Return labels as a string instead of map[string]int, triggering json.UnmarshalTypeError on "labels"
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, `{
-		"labels": "malformed_labels_string"
-	}`)
-
-	client, err := gerrit.NewClient(context.Background(), server.URL, nil)
-	if err != nil {
-		t.Fatalf("gerrit.NewClient failed: %v", err)
-	}
-
-	input := &gerrit.ReviewInput{
-		Message: "LGTM",
-	}
-
-	// SetReviewSafe should safely swallow this known go-gerrit bug
-	if err := SetReviewSafe(context.Background(), client, "12345", "current", input); err != nil {
-		t.Fatalf("expected SetReviewSafe to ignore labels unmarshal error, got: %v", err)
-	}
-}
-
-func TestSetReviewSafe_OtherUnmarshalErrorPropagated(t *testing.T) {
-	server := NewMockGerritServer(t)
-	// Return ready as a string instead of boolean or something that triggers UnmarshalTypeError on non-labels
-	server.OnJSON("POST", "/changes/12345/revisions/current/review", http.StatusOK, `{
-		"ready": "not_a_bool"
-	}`)
-
-	client, err := gerrit.NewClient(context.Background(), server.URL, nil)
-	if err != nil {
-		t.Fatalf("gerrit.NewClient failed: %v", err)
-	}
-
-	input := &gerrit.ReviewInput{Message: "LGTM"}
-
-	err = SetReviewSafe(context.Background(), client, "12345", "current", input)
-	if err == nil {
-		t.Fatal("expected unmarshal error on non-labels field to be returned, got nil")
-	}
-}
-
-func TestSetReviewSafe_HTTPErrorPropagated(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnStatus(http.StatusForbidden)
-
-	client, err := gerrit.NewClient(context.Background(), server.URL, nil)
-	if err != nil {
-		t.Fatalf("gerrit.NewClient failed: %v", err)
-	}
-
-	input := &gerrit.ReviewInput{Message: "LGTM"}
-
-	err = SetReviewSafe(context.Background(), client, "12345", "current", input)
-	if err == nil {
-		t.Fatal("expected HTTP 403 error to be returned, got nil")
-	}
-}
-
-func TestSetReviewSafe_InvariantChecks(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("nil client returns error", func(t *testing.T) {
-		err := SetReviewSafe(ctx, nil, "12345", "current", &gerrit.ReviewInput{})
-		if err == nil {
-			t.Fatal("expected error for nil client, got nil")
-		}
-		if !strings.Contains(err.Error(), "client is nil") {
-			t.Errorf("expected error to mention 'client is nil', got: %v", err)
-		}
-	})
-
-	t.Run("empty changeID returns error", func(t *testing.T) {
-		client, _ := gerrit.NewClient(ctx, "http://localhost", nil)
-		err := SetReviewSafe(ctx, client, "", "current", &gerrit.ReviewInput{})
-		if err == nil {
-			t.Fatal("expected error for empty changeID, got nil")
-		}
-		if !strings.Contains(err.Error(), "changeID is empty") {
-			t.Errorf("expected error to mention 'changeID is empty', got: %v", err)
-		}
-	})
 }
 
 func TestExtractFetchRef_ProtocolOrder(t *testing.T) {
@@ -568,24 +457,6 @@ func TestChangeContext_NilReceiverInvariants(t *testing.T) {
 	})
 }
 
-func TestSetReviewSafe_AdditionalInvariants(t *testing.T) {
-	client, _ := gerrit.NewClient(context.Background(), "http://localhost", nil)
-
-	t.Run("nil ctx returns error", func(t *testing.T) {
-		err := SetReviewSafe(nil, client, "123", "current", &gerrit.ReviewInput{})
-		if err == nil || !strings.Contains(err.Error(), "context is nil") {
-			t.Errorf("expected 'context is nil', got: %v", err)
-		}
-	})
-
-	t.Run("nil review input returns error", func(t *testing.T) {
-		err := SetReviewSafe(context.Background(), client, "123", "current", nil)
-		if err == nil || !strings.Contains(err.Error(), "review input is nil") {
-			t.Errorf("expected 'review input is nil', got: %v", err)
-		}
-	})
-}
-
 func TestExtractRevision_ShortSHAAndActionableError(t *testing.T) {
 	change := &ChangeInfo{
 		Number:   12345,
@@ -667,31 +538,56 @@ func TestResolveChangeContext_CanceledContext(t *testing.T) {
 }
 
 func TestFormatGerritError(t *testing.T) {
-	const host = "https://pigweed-review.googlesource.com"
+	const googleHost = "https://pigweed-review.googlesource.com"
 	for _, tc := range []struct {
-		name         string
-		err          error
-		action       string
-		changeID     string
-		wantExitCode int
-		wantContains []string
-		wantAbsent   []string
+		name             string
+		host             string
+		hasSSOCredHelper bool
+		err              error
+		action           string
+		changeID         string
+		wantExitCode     int
+		wantContains     []string
+		wantAbsent       []string
 	}{
 		{
-			name:         "HTTP 401 Unauthorized",
+			name:         "HTTP 401 Unauthorized on Google host without sso-cred-helper",
 			err:          &GerritAPIError{StatusCode: http.StatusUnauthorized, Body: "Unauthorized"},
 			action:       "submitting review for",
 			changeID:     "12345",
 			wantExitCode: ExitCodeAuth,
-			wantContains: []string{"authentication required", "https://pigweed-review.googlesource.com/new-password", "GERRIT_TOKEN", "gcert"},
+			wantContains: []string{"authentication required", "luci-auth login -scopes", "GERRIT_TOKEN", "gh auth status"},
+			wantAbsent:   []string{"new-password", "gcert", "(for *.googlesource.com)"},
 		},
 		{
-			name:         "HTTP 403 Forbidden",
+			name:             "HTTP 401 Unauthorized on Google host with sso-cred-helper",
+			hasSSOCredHelper: true,
+			err:              &GerritAPIError{StatusCode: http.StatusUnauthorized, Body: "Unauthorized"},
+			action:           "submitting review for",
+			changeID:         "12345",
+			wantExitCode:     ExitCodeAuth,
+			wantContains:     []string{"authentication required", "Run 'gcert' (with sso-cred-helper)", "luci-auth login -scopes", "GERRIT_TOKEN", "gh auth status"},
+			wantAbsent:       []string{"new-password", "(for *.googlesource.com)"},
+		},
+		{
+			name:         "HTTP 403 Forbidden on Google host",
 			err:          &GerritAPIError{StatusCode: http.StatusForbidden, Body: "Forbidden"},
 			action:       "submitting review for",
 			changeID:     "12345",
 			wantExitCode: ExitCodeAuth,
-			wantContains: []string{"authentication required", "https://pigweed-review.googlesource.com/new-password", "GERRIT_TOKEN", "gcert"},
+			wantContains: []string{"authentication required", "luci-auth login -scopes", "GERRIT_TOKEN", "gh auth status"},
+			wantAbsent:   []string{"new-password", "gcert"},
+		},
+		{
+			name:             "HTTP 401 Unauthorized on non-Google host offers only GERRIT_TOKEN",
+			host:             "https://gerrit.example.org",
+			hasSSOCredHelper: true,
+			err:              &GerritAPIError{StatusCode: http.StatusUnauthorized, Body: "Unauthorized"},
+			action:           "submitting review for",
+			changeID:         "12345",
+			wantExitCode:     ExitCodeAuth,
+			wantContains:     []string{"authentication required", "To authenticate with gerrit.example.org:", "GERRIT_TOKEN", "gh auth status"},
+			wantAbsent:       []string{"new-password", "gcert", "luci-auth"},
 		},
 		{
 			name:         "HTTP 404 Not Found",
@@ -761,7 +657,16 @@ func TestFormatGerritError(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			formatted := FormatGerritError(tc.err, tc.action, tc.changeID, host)
+			var resolvers AuthResolvers
+			if tc.hasSSOCredHelper {
+				resolvers.LookPath = onPath(ssoCredHelperPath, ssoCredHelperPath)
+			}
+			WithHermeticAuth(t, resolvers)
+			targetHost := tc.host
+			if targetHost == "" {
+				targetHost = googleHost
+			}
+			formatted := FormatGerritError(tc.err, tc.action, tc.changeID, targetHost)
 			if formatted == nil {
 				t.Fatal("expected formatted error, got nil")
 			}
@@ -805,8 +710,8 @@ func TestChangeContext_SetReview_AuthErrorFormatted(t *testing.T) {
 	if !strings.Contains(rErr.Error(), "authentication required") {
 		t.Errorf("expected 'authentication required' in error, got: %v", rErr)
 	}
-	if !strings.Contains(rErr.Error(), "new-password") {
-		t.Errorf("expected 'new-password' in error, got: %v", rErr)
+	if !strings.Contains(rErr.Error(), "luci-auth login") {
+		t.Errorf("expected 'luci-auth login' in error, got: %v", rErr)
 	}
 }
 

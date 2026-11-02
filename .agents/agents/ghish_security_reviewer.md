@@ -28,8 +28,8 @@ Failings, and Review Checklist below.
 `pw_ghish` is a high-privilege developer and AI-agent CLI that bridges local Git
 repositories with four sensitive Google and open-source backends:
 
-1. **Gerrit Code Review** (`*.googlesource.com` via `gob-curl`, `luci-auth`, or
-   `.gitcookies`)
+1. **Gerrit Code Review** (`*.googlesource.com` via `luci-auth` OAuth2 tokens or
+   `GERRIT_TOKEN`)
 2. **LUCI Buildbucket & LogDog** (`*.appspot.com`, `*.luci.app`)
 3. **Google Issue Tracker / Buganizer** (`issuetracker.googleapis.com` and 1P
    internal `issuetracker.corp.googleapis.com` via `sso_client`)
@@ -43,14 +43,14 @@ following threats:
 
 | Threat ID | Threat Actor / Vector | What They Can Access | Impact if Exploited |
 | :--- | :--- | :--- | :--- |
-| **T1: Sandbox Credential Escape** | Sandboxed AI coding agents, Bazel test actions, or third-party build scripts running on the same machine. | Typically blocked from reading `~/.ssh`, `~/.config/chrome_infra/auth`, and `~/.gitcookies`, **but allowed to read/write `/tmp`, the Git workspace, and often `~/.cache`**. | If `pw_ghish` writes bearer tokens, refresh tokens, or SSO headers into `/tmp`, `out/`, or `~/.cache/ghish/`, a sandboxed process can steal live `@google.com` credentials. |
+| **T1: Sandbox Credential Escape** | Sandboxed AI coding agents, Bazel test actions, or third-party build scripts running on the same machine. | Typically blocked from reading `~/.ssh` and `~/.config/chrome_infra/auth`, **but allowed to read/write `/tmp`, the Git workspace, and often `~/.cache`**. | If `pw_ghish` writes bearer tokens, refresh tokens, or SSO headers into `/tmp`, `out/`, or `~/.cache/ghish/`, a sandboxed process can steal live `@google.com` credentials. |
 | **T2: Local Process & Binary Planting** | Unprivileged local software running under the developer's UID (`npm` postinstall scripts, `pip` setup.py, untrusted repo hooks) or shared-host users. | Files in world-writable directories (`/tmp`), unverified downloaded binaries, or group/world-writable cache directories. | Trojanizing a helper binary (`luci-auth`, `gh-ish`) or reading leftover tempfiles after a `SIGKILL`. |
-| **T3: Cross-Origin & Redirect Token Leakage** | Malicious URL passed on the CLI (`./gh pr view https://evil.com/...`), malicious `.ghish.toml` in an untrusted repo, or an HTTP `302` redirect to an external domain. | Any HTTP request made by `pw_ghish` transports. | Exfiltrating a user's `Authorization: Bearer` token, `.gitcookies`, or `gob-curl`/`sso_client` ticket to an attacker-controlled server. |
+| **T3: Cross-Origin & Redirect Token Leakage** | Malicious URL passed on the CLI (`./gh pr view https://evil.com/...`), malicious `.ghish.toml` in an untrusted repo, or an HTTP `302` redirect to an external domain. | Any HTTP request made by `pw_ghish` transports. | Exfiltrating a user's `Authorization: Bearer` token or `sso_client` ticket to an attacker-controlled server. |
 | **T4: Over-Scoped "God Tokens"** | Any compromised backend endpoint, proxy, or leaked request header. | The OAuth2 `access_token` sent on that request. | If a token carries `cloud-platform` or a union of all scopes (`gerritcodereview` + `buganizer` + `androidbuild.internal`), leaking one token compromises GCP projects, source code, and internal bugs simultaneously. |
 | **T5: 1P Corp Policy & RAPT Bypass** | Custom OAuth flows or custom refresh-token stores that bypass `gcert` or `luci-auth`. | Long-lived refresh tokens stored on disk without Google ReAuth / RAPT (20-hour hardware security key proof). | Weakens Google Corp's 20-hour hardware-key session boundary and leaves orphaned tokens behind after `luci-auth logout`. |
 | **T6: Log, Error & Transcript Leakage** | Terminal scrollback, CI build logs, crash dumps, and AI agent conversation transcripts. | Everything printed to `stdout` or `stderr` (including under `-v` / `--verbose`). | Recording live bearer tokens, cookies, or internal URLs into persistent logs or LLM context windows. |
 | **T7: Untrusted Remote Content Injection** | External users posting Gerrit review comments, CL descriptions, Buganizer issue bodies, or CI failure logs. | Text rendered by `./gh pr view`, `./gh issue view`, `./gh run view`, or `./gh sense`. | Terminal ANSI escape sequence injection (terminal takeover) or LLM prompt injection against AI agents reading `./gh` output. |
-| **T8: Subprocess Argument / Command Injection** | Crafted branch names, commit messages, file paths, or config values starting with `-` or containing shell metacharacters. | Arguments passed to `git`, `gob-curl`, `sso_client`, `luci-auth`, or `fetch_artifact`. | Arbitrary flag injection (e.g., `--upload-pack=...`, `--flagfile=...`, `--output=...`) or arbitrary command execution. |
+| **T8: Subprocess Argument / Command Injection** | Crafted branch names, commit messages, file paths, or config values starting with `-` or containing shell metacharacters. | Arguments passed to `git`, `sso_client`, `luci-auth`, or `fetch_artifact`. | Arbitrary flag injection (e.g., `--upload-pack=...`, `--flagfile=...`, `--output=...`) or arbitrary command execution. |
 
 ---
 
@@ -75,18 +75,22 @@ invariant ID (`SEC-INV-*`) in review comments when flagging a violation.
   for Issue Tracker, `gerritcodereview` for Gerrit, `androidbuild.internal` for
   Busytown) and must never request the superuser
   `https://www.googleapis.com/auth/cloud-platform` scope for normal operations.
-* **`SEC-INV-4` (Preserve 1P Hardware-Backed Auth Priority & RAPT)**:
-  On Corp machines, `pw_ghish` must prefer in-memory `ssh-agent` tickets
-  (`gob-curl` / `sso_client` backed by `gcert`) over disk-cached OAuth tokens,
-  and must delegate OAuth login/refresh to the official `luci-auth` binary so
-  Google Corp's 20-hour ReAuth/RAPT hardware-key policy is enforced.
+* **`SEC-INV-4` (Preserve 1P Hardware-Backed Auth & RAPT)**:
+  `pw_ghish` must delegate OAuth2 token minting, login, and refresh to the
+  official `luci-auth` binary (configuring `/usr/bin/sso-cred-helper` when
+  present on Corp Linux so tokens can be minted from `gcert` `LOAS2`
+  credentials) and use `sso_client` where applicable (1P Buganizer), preserving
+  Google Corp's 20-hour ReAuth/RAPT hardware-key policy without a custom
+  refresh-token store.
 * **`SEC-INV-5` (Strict HTTPS & Host Allowlisting Before Attaching Credentials)**:
-  Every authenticated HTTP `RoundTripper` and CLI wrapper (`GobCurlTransport`,
-  `TokenTransport`, `LUCIAuthTransport`, `AndroidBuildAuthTransport`,
-  `ssoClientRoundTripper`, `CookieTransport`) must verify `req.URL.Scheme == "https"`
-  and validate `req.URL.Host` against an explicit domain suffix allowlist for
-  that credential type before attaching credentials, and must strip
-  `Authorization` and `Cookie` headers on cross-host HTTP redirects.
+  Every authenticated HTTP client, `RoundTripper`, and CLI wrapper
+  (`GerritClient.trusted` / `isGerritAutoAuthHost`, `LUCIAuthTransport`,
+  `AndroidBuildAuthTransport`, `ssoClientRoundTripper`) must verify
+  `req.URL.Scheme == "https"` (or loopback HTTP in hermetic tests) and validate
+  `req.URL.Host` against the explicit host or domain allowlist for that
+  credential type before attaching credentials, and must strip `Authorization`
+  headers on cross-host or scheme-downgrade HTTP redirects via
+  `stripAuthOnCrossHostRedirect`.
 * **`SEC-INV-6` (Cryptographic & Permission Verification of Bootstrapped Binaries)**:
   Any helper binary downloaded or staged by `pw_ghish` in a user-writable
   directory (such as `luci-auth` in `~/.local/share/ghish/bin/`, as opposed to
@@ -109,9 +113,9 @@ invariant ID (`SEC-INV-*`) in review comments when flagging a violation.
   and multi-line bodies must be wrapped in `FormatUntrustedBlock` fences.
 * **`SEC-INV-10` (No Shell Invocation & Strict Subprocess Flag Termination)**:
   External commands must be invoked via `exec.CommandContext` (never `sh -c`),
-  header/flag values passed to `gob-curl` or `sso_client` must strip CR/LF/null
-  bytes, and positional Git arguments derived from user/remote input must follow
-  `--` where supported.
+  header/flag values passed to `sso_client` must strip CR/LF/null bytes, and
+  positional Git arguments derived from user/remote input must follow `--` where
+  supported.
 
 ---
 
@@ -119,9 +123,9 @@ invariant ID (`SEC-INV-*`) in review comments when flagging a violation.
 
 ### 3.1. Writing Sensitive Headers or Tokens to `/tmp` (`SEC-INV-1`)
 
-**Why it happens:** CLI wrappers like `sso_client` or `gob-curl` accept
-`--flagfile=<path>` or `--data_file=<path>`. Developers call
-`os.CreateTemp("", "ghish-*")`, which defaults to `/tmp`.
+**Why it happens:** CLI wrappers like `sso_client` accept `--flagfile=<path>` or
+`--data_file=<path>`. Developers call `os.CreateTemp("", "ghish-*")`, which
+defaults to `/tmp`.
 **Why it is a blocking vulnerability:** `/tmp` is readable inside AI agent and
 Bazel sandboxes, and if the process receives `SIGKILL`, `defer os.Remove(...)`
 does not run, leaving bearer tokens on disk in `/tmp`.
@@ -223,8 +227,7 @@ func (t *MyAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 ### 3.5. Swallowing Subprocess `stderr` in Auth / Tool Probes (`SEC-INV-7`)
 
 **Why it happens:** Calling `exec.CommandContext(ctx, bin, args...).Output()`
-and ignoring both `err` and `stderr` when probing `luci-auth`, `gcloud`, or
-`gob-curl`.
+and ignoring both `err` and `stderr` when probing `luci-auth` or `gcloud`.
 **Why it is a should-fix / blocking bug:** Masks OS permission errors (`EPERM` /
 macOS TCC blocks on `~/Downloads`), expired RAPT sessions, and missing OAuth
 scopes under a misleading generic error.
@@ -270,21 +273,22 @@ When reviewing any change to `pw_ghish`, verify every item in this checklist:
       its own minimal scope (`userinfo.email`, `buganizer`, `gerritcodereview`,
       or `androidbuild.internal`), and is `cloud-platform` absent from normal
       operational token requests?
-- [ ] **Corp auth priority (`SEC-INV-4`)**: On Corp machines, does Gerrit
-      transport prefer `gob-curl` (in-memory `ssh-agent` ticket) over
-      disk-cached OAuth tokens when `gob-curl` is healthy?
-- [ ] **ReAuth / RAPT preservation (`SEC-INV-4`)**: Does OAuth login/refresh
-      delegate to the official SHA256-verified `luci-auth` binary rather than
-      bypassing RAPT with a custom refresh-token store?
+- [ ] **Corp SSO & `luci-auth` delegation (`SEC-INV-4`)**: Does OAuth2 token
+      minting, login, and refresh delegate to `luci-auth` (with
+      `/usr/bin/sso-cred-helper` when present on Corp Linux) and `sso_client`
+      where used, preserving Google Corp's 20-hour ReAuth/RAPT policy without a
+      custom refresh-token store?
 
 ### C. HTTP Transports, URLs, & Redirects
 - [ ] **HTTPS + Host allowlist (`SEC-INV-5`)**: Before attaching `Authorization`
-      headers, cookies, or invoking `gob-curl` / `sso_client`, does the
-      transport verify `req.URL.Scheme == "https"` and match `req.URL.Host`
-      against the explicit allowlist for that service?
+      headers or invoking `sso_client`, does the client or transport
+      (`GerritClient.trusted` / `isGerritAutoAuthHost`, `LUCIAuthTransport`,
+      `AndroidBuildAuthTransport`, `ssoClientRoundTripper`) verify
+      `req.URL.Scheme == "https"` and match `req.URL.Host` against the explicit
+      allowlist for that service?
 - [ ] **Cross-host redirect stripping (`SEC-INV-5`)**: Does `http.Client` strip
-      `Authorization` and `Cookie` headers if an HTTP redirect crosses host
-      boundaries?
+      `Authorization` headers via `stripAuthOnCrossHostRedirect` if an HTTP
+      redirect crosses host boundaries or downgrades from HTTPS?
 - [ ] **Request cloning**: Does `RoundTrip` clone `req` (`req.Clone(req.Context())`)
       before mutating `req.Header` (per `http.RoundTripper` contract)?
 

@@ -411,6 +411,15 @@ Not implemented, and loud about it: --jq/-q as an output filter, 'gh api',
 (Gerrit submits a whole change; the strategy is a project setting).
 `
 
+func isHookCommand(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c == HookCmd {
+			return true
+		}
+	}
+	return false
+}
+
 // RootCmd is the root command for gh-ish.
 var RootCmd = &cobra.Command{
 	Use:          "gh-ish",
@@ -428,6 +437,11 @@ var RootCmd = &cobra.Command{
 		}
 		if AuthModeFlag != "" {
 			if _, _, err := ResolveAuthMode(cmd.Context(), nil); err != nil {
+				return err
+			}
+		}
+		if !isHookCommand(cmd) {
+			if err := checkRemovedAuthMethodEnv(); err != nil {
 				return err
 			}
 		}

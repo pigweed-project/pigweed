@@ -27,8 +27,8 @@ Part 1: Automated Live Integration Suite
 ========================================
 The repository provides an automated live integration test suite in
 ``pw_ghish/live_test.go``. Guarded behind the ``live`` build tag, it runs against
-production services using your local workstation authentication (``luci-auth``,
-``gob-curl``, or ``gcloud``).
+production services using your local workstation authentication (``luci-auth``
+or ``gcloud``).
 
 Running the Live Suite
 ----------------------
@@ -55,12 +55,9 @@ To run ``TestLive_IssueLifecycle`` automatically without interactive prompts:
 
 What the Live Suite Automatically Verifies
 ------------------------------------------
-* **Live Authentication, SSO Expiry Fallback & Metadata**: Verifies workstation
-  authentication against ``pigweed-review.googlesource.com``, queries change
-  metadata via ``pr view``, and verifies (``TestLive_AuthGobCurlExpiredFallbackToLuciAuth``)
-  that when ``gob-curl`` fails due to an expired 20-hour Corp SSO ticket,
-  ``./gh`` seamlessly falls back in-process to ``luci-auth`` OAuth2 tokens
-  without mutating workstation ``ssh-agent`` state.
+* **Live Authentication & Metadata**: Verifies workstation
+  authentication against ``pigweed-review.googlesource.com`` and queries change
+  metadata via ``pr view``.
 * **Live CI Failure Triage**: Queries LUCI Buildbucket via pRPC for a known
   failing build, pulls step-level details, and verifies that ``ExtractFailureReport``
   successfully retrieves the failing step and log stream without browser

@@ -1661,7 +1661,6 @@ func TestSeedPrefetchedGitConfig(t *testing.T) {
 		"branch.other.remote",
 		"remote.origin.url",
 		"user.signingkey",
-		"http.cookiefile",
 	} {
 		if _, err := dc.ConfigGet(ctx, missingKey); err == nil {
 			t.Fatalf("expected error for missing prefetched key %q, got nil", missingKey)

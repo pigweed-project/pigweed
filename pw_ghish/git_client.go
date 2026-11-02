@@ -124,7 +124,7 @@ func asRealGitRunner(git GitRunner) (*RealGitRunner, bool) {
 	return nil, false
 }
 
-const prefetchedGitConfigRegexp = `^(ghish|remote|branch|user|init|http|extensions)\.`
+const prefetchedGitConfigRegexp = `^(ghish|remote|branch|user|init|extensions)\.`
 
 func isRepoLocalGitEnvKey(key string) bool {
 	switch key {
@@ -248,7 +248,7 @@ func hasPrefetchedSectionPrefix(key string) bool {
 		return false
 	}
 	switch strings.ToLower(key[:dot]) {
-	case "ghish", "remote", "branch", "user", "init", "http", "extensions":
+	case "ghish", "remote", "branch", "user", "init", "extensions":
 		return true
 	default:
 		return false

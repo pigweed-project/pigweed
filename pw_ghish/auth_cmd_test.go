@@ -15,12 +15,16 @@
 package pw_ghish
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestAuthStatus_AllHealthyGoogler(t *testing.T) {
@@ -243,12 +247,118 @@ func TestAuthStatus_CommunityModeUnauthenticatedGerrit(t *testing.T) {
 						t.Errorf("expected output to contain %q, got:\n%s", want, out400)
 					}
 				}
-				if strings.Contains(out400, "Run 'gcert'") {
-					t.Errorf("HTTP 400 account remediation was overwritten by generic gcert hint:\n%s", out400)
+				if strings.Contains(out400, "Run 'gcert'") || strings.Contains(out400, "luci-auth login") {
+					t.Errorf("HTTP 400 account remediation was overwritten by generic login hint:\n%s", out400)
 				}
 			})
 		}
 	})
+}
+
+func TestAuthStatus_GerritUnauthenticatedMatrix(t *testing.T) {
+	const (
+		googleHost    = "pigweed-review.googlesource.com"
+		nonGoogleHost = "gerrit.example.org"
+		luciCause     = "luci-auth not found (searched PATH, /x/luci-auth)"
+	)
+	googleLoginStep := fmt.Sprintf("Run 'luci-auth login -scopes %q'", DefaultGerritScopes)
+	const (
+		gcertStep = "Run 'gcert' (with sso-cred-helper)"
+		tokenStep = `Set an OAuth2 token: export GERRIT_TOKEN="<token>"`
+	)
+
+	for _, tc := range []struct {
+		name             string
+		mode             string
+		host             string
+		hasSSOCredHelper bool
+		wantMessage      string
+		wantRemediation  string
+	}{
+		{
+			name:            "googler/google without sso-cred-helper",
+			mode:            "googler",
+			host:            googleHost,
+			wantMessage:     fmt.Sprintf("Gerrit authentication required in googler mode (--auth-mode=googler): no Gerrit credentials found for %s (%s).", googleHost, luciCause),
+			wantRemediation: googleLoginStep + "; " + tokenStep,
+		},
+		{
+			name:             "googler/google with sso-cred-helper",
+			mode:             "googler",
+			host:             googleHost,
+			hasSSOCredHelper: true,
+			wantMessage:      fmt.Sprintf("Gerrit authentication required in googler mode (--auth-mode=googler): no Gerrit credentials found for %s (%s).", googleHost, luciCause),
+			wantRemediation:  gcertStep + "; " + googleLoginStep + "; " + tokenStep,
+		},
+		{
+			name:            "community/google includes cause in message",
+			mode:            "community",
+			host:            googleHost,
+			wantMessage:     fmt.Sprintf("No Gerrit credentials configured for %s (%s; public changes readable, login required to push or review)", googleHost, luciCause),
+			wantRemediation: googleLoginStep + "; " + tokenStep,
+		},
+		{
+			name:             "googler/non-google offers only GERRIT_TOKEN",
+			mode:             "googler",
+			host:             nonGoogleHost,
+			hasSSOCredHelper: true,
+			wantMessage:      fmt.Sprintf("Gerrit host %s is not a Google-hosted Gerrit (*.googlesource.com); gh-ish only sends luci-auth tokens to Google hosts.", nonGoogleHost),
+			wantRemediation:  tokenStep,
+		},
+		{
+			name:             "community/non-google includes cause and offers only GERRIT_TOKEN",
+			mode:             "community",
+			host:             nonGoogleHost,
+			hasSSOCredHelper: true,
+			wantMessage:      fmt.Sprintf("No Gerrit credentials configured for %s (%s; public changes readable, login required to push or review)", nonGoogleHost, errNonGoogleGerritHost),
+			wantRemediation:  tokenStep,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolvers := AuthResolvers{
+				GerritToken: func(ctx context.Context) (string, string, error) {
+					return "", "", errors.New(luciCause)
+				},
+			}
+			if tc.hasSSOCredHelper {
+				resolvers.LookPath = onPath(ssoCredHelperPath, ssoCredHelperPath)
+			}
+			WithHermeticAuth(t, resolvers)
+			SetupMockConfig(t, &MockGitRunner{})
+			SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error) {
+				cfg := GetConfig(cmd)
+				if ctx.Value(configKey) == nil {
+					ctx = context.WithValue(ctx, configKey, cfg)
+				}
+				gerritURL, err := cfg.GerritURL(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return newGerritClientForURL(ctx, gerritURL, &http.Client{
+					Transport: gerritStatusTransport(http.StatusForbidden, "Authentication required\n", nil),
+				})
+			})
+
+			var stdout, stderr bytes.Buffer
+			err := executeCommandIO(RootCmd, nil, &stdout, &stderr, "auth", "status", "--json", "--auth-mode", tc.mode, "--host", tc.host)
+			if ExitCodeFor(err) != ExitCodeAuth {
+				t.Fatalf("ExitCodeFor(err) = %d, want %d (err: %v)\nStdout:\n%s\nStderr:\n%s", ExitCodeFor(err), ExitCodeAuth, err, stdout.String(), stderr.String())
+			}
+			var report AuthStatusReport
+			if uErr := json.Unmarshal(stdout.Bytes(), &report); uErr != nil {
+				t.Fatalf("json.Unmarshal: %v\nStdout:\n%s\nStderr:\n%s", uErr, stdout.String(), stderr.String())
+			}
+			if report.Gerrit.Authenticated || report.Gerrit.Method != "none" {
+				t.Errorf("gerrit = (authenticated=%v, method=%q), want (false, \"none\")", report.Gerrit.Authenticated, report.Gerrit.Method)
+			}
+			if report.Gerrit.Message != tc.wantMessage {
+				t.Errorf("gerrit.message = %q, want %q", report.Gerrit.Message, tc.wantMessage)
+			}
+			if report.Gerrit.Remediation != tc.wantRemediation {
+				t.Errorf("gerrit.remediation = %q, want %q", report.Gerrit.Remediation, tc.wantRemediation)
+			}
+		})
+	}
 }
 
 func TestAuthStatus_NoneModeJSON(t *testing.T) {

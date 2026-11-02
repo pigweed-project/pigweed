@@ -80,7 +80,6 @@ go_library(
     importpath = "pigweed.dev/pw_ghish",
     target_compatible_with = incompatible_with_mcu(),
     deps = [
-        "@com_github_andygrunwald_go_gerrit//:go-gerrit",
         "@com_github_burntsushi_toml//:toml",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_spf13_pflag//:pflag",
@@ -218,7 +217,6 @@ go_test(
     target_compatible_with = incompatible_with_mcu(),
     deps = [
         "//pw_ghish/worktree",
-        "@com_github_andygrunwald_go_gerrit//:go-gerrit",
         "@com_github_google_go_cmp//cmp",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_spf13_pflag//:pflag",

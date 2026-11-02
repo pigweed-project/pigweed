@@ -44,7 +44,7 @@ Every change to `pw_ghish` (and every review via `/review`, `.agents/agents/go_g
   3. **Actionable Remediation**: Concrete, copy-pasteable commands or step-by-step instructions that directly resolve the issue.
   4. **Discovery Fallback**: Inspection commands (e.g., `gh pr list`, `gh pr checks`, `gh pr view --comments`) when the next step depends on external state.
 * **Established Error Patterns**:
-  * **HTTP 401/403**: Never return raw HTTP 401/403; provide host- and OS-aware authentication remediation (`https://<host>/new-password`, `luci-auth login`, `gcert`).
+  * **HTTP 401/403**: Never return raw HTTP 401/403; provide host- and OS-aware authentication remediation (`gcert`, `luci-auth login`, `GERRIT_TOKEN`).
   * **HTTP 404 / 409**: Distinguish missing change vs. missing patchset; translate 409 conflicts into domain explanations (`change is already merged`, `change is already closed`).
   * **Validation & Enum Guards**: Strictly validate `--json <fields>` and enum flags (`--state`, `--mode`, `--reason`), listing all valid choices on mismatch.
 
@@ -61,11 +61,11 @@ Every change to `pw_ghish` (and every review via `/review`, `.agents/agents/go_g
   * **Does NOT belong hardcoded in `pw_ghish` (Repo Policy)**: Project-specific commit message subject-length limits (50/72 chars), module-prefix rules (`pw_foo:`), or language linters—unless opt-in and driven by declarative `[commit]` schema in `.ghish.toml`.
 
 ### 8. 1P vs. 3P & WORKSTATION PORTABILITY (CLOUDTOP / MAC / CHROMEBOOK)
-* **3P / External Open-Source Safety**: Never assume `@google.com` identity, `sso://` remotes, `gob-curl`, `sso_client`, or `/google/data/ro/...` paths exist unless `ResolveAuthMode` confirms `googler` mode AND `LookPathFn` / `os.Stat` confirms the binary exists on disk.
+* **3P / External Open-Source Safety**: Never assume `@google.com` identity, `sso://` remotes, `sso_client`, or `/google/data/ro/...` paths exist unless `ResolveAuthMode` confirms `googler` mode AND `LookPathFn` / `os.Stat` confirms the binary exists on disk.
 * **Workstation Matrix**:
-  * **1P Linux Cloudtop / gLinux**: Full `gob-curl`, `git-remote-rpc` (`rpc://` 7-day LOAS2), `sso_client`, and `/google/data/ro/projects/android/fetch_artifact` support.
-  * **1P Corp macOS Laptop**: Has `gob-curl` and `gcert`, but typically lacks `git-remote-rpc` and `/google/data/ro/...`. Always check `LookPathFn("git-remote-rpc")` before attempting `rpc://` rewrites, and check `LookPathFn("gcert")` / `LookPathFn("gob-curl")` before prescribing them in remediation messages.
-  * **1P Chromebook (Crostini) & 3P Workstations**: Treat as standard Linux without corp daemons unless binaries are detected on `PATH`; guide users to `luci-auth login` and `.gitcookies`.
+  * **1P Linux Cloudtop / gLinux**: Full `sso-cred-helper`, `git-remote-rpc` (`rpc://` 7-day LOAS2), `sso_client`, and `/google/data/ro/projects/android/fetch_artifact` support.
+  * **1P Corp macOS Laptop**: Has `gcert` and `luci-auth`, but typically lacks `git-remote-rpc` and `/google/data/ro/...`. Always check `LookPathFn("git-remote-rpc")` before attempting `rpc://` rewrites, and check `LookPathFn("gcert")` before prescribing it in remediation messages.
+  * **1P Chromebook (Crostini) & 3P Workstations**: Treat as standard Linux without corp daemons unless binaries are detected on `PATH`; guide users to `luci-auth login` and `GERRIT_TOKEN`.
 
 ### 9. SECURITY & NTK CONFIDENTIALITY
 * **Credential Safety**: NEVER pass OAuth2 bearer tokens or secrets on subprocess command lines (e.g. `git -c http.extraHeader="Authorization: Bearer ..."`), because CLI arguments are world-readable in `ps aux` / `/proc/<pid>/cmdline` and leak into verbose/error logs. Use `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0` in `cmd.Env` or temporary `0600` credential files, and redact tokens in all debug/error output.

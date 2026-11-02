@@ -17,7 +17,6 @@ package pw_ghish
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -26,7 +25,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -160,21 +158,17 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 	if errors.As(err, &exitErr) {
 		return err
 	}
-
 	// 1. Authentication failures (HTTP 401 / 403)
 	if IsGerritHTTPStatus(err, http.StatusUnauthorized) || IsGerritHTTPStatus(err, http.StatusForbidden) {
 		cleanHost := CleanGerritHost(gerritHost)
 		if cleanHost == "" {
 			cleanHost = "<host>"
 		}
+		steps := append(gerritCredentialSteps(gerritHost, AuthModeAuto), "Check auth status: gh auth status")
 		return NewExitCodeError(ExitCodeAuth, "%w", fmt.Errorf("error %s change %s: authentication required (HTTP 401/403).\n\n"+
-			"To authenticate with %s:\n"+
-			"  1. Generate Git cookies/credentials at: https://%s/new-password\n"+
-			"  2. Or set a personal access token: export GERRIT_TOKEN=\"<token>\"\n"+
-			"  3. (Corp users) Run 'gcert' to refresh single sign-on credentials.\n"+
-			"  4. Check auth status: gh auth status\n\n"+
+			"To authenticate with %s:\n%s\n\n"+
 			"Underlying error: %w",
-			actionDesc, changeID, cleanHost, cleanHost, err))
+			actionDesc, changeID, cleanHost, formatGerritRemediationSteps(steps...), err))
 	}
 
 	// 2. Change Not Found (HTTP 404)
@@ -300,39 +294,6 @@ func (c *ChangeContext) ResolveFetchRef() (*ChangeInfo, string, error) {
 		return nil, "", err
 	}
 	return change, ref, nil
-}
-
-// SetReviewSafe invokes client.Changes.SetReview while safely ignoring the known
-// go-gerrit unmarshaling bug where the "labels" field in ReviewResult fails type
-// assertion on certain Gerrit versions. All genuine API/network errors are preserved.
-//
-// NOTE: Retained temporarily until go-gerrit is removed in pwrev/514150.
-func SetReviewSafe(ctx context.Context, client *gerrit.Client, changeID, revision string, input *gerrit.ReviewInput) error {
-	if ctx == nil {
-		return fmt.Errorf("internal error: context is nil")
-	}
-	if client == nil {
-		return fmt.Errorf("internal error: gerrit client is nil")
-	}
-	if changeID == "" {
-		return fmt.Errorf("internal error: changeID is empty")
-	}
-	if input == nil {
-		return fmt.Errorf("internal error: review input is nil")
-	}
-	if revision == "" {
-		revision = "current"
-	}
-	_, _, err := client.Changes.SetReview(ctx, changeID, revision, input)
-	if err != nil {
-		var unmarshalErr *json.UnmarshalTypeError
-		if errors.As(err, &unmarshalErr) && strings.Contains(unmarshalErr.Field, "labels") {
-			// Ignore labels unmarshaling error as we don't use the result.
-			return nil
-		}
-		return err
-	}
-	return nil
 }
 
 // ExtractRevision finds the requested revision in a ChangeInfo.

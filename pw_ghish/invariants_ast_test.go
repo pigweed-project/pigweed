@@ -256,7 +256,7 @@ func suffixTargetsReview(e ast.Expr, localExprs map[string]ast.Expr, seen map[st
 	return exprTargetsReviewEndpoint(e, localExprs, seen)
 }
 
-func checkFuncBodyForDirectReviewCalls(t *testing.T, fset *token.FileSet, fn *ast.FuncDecl, checkLegacyGoGerrit bool) {
+func checkFuncBodyForDirectReviewCalls(t *testing.T, fset *token.FileSet, fn *ast.FuncDecl) {
 	t.Helper()
 	localExprs := make(map[string]ast.Expr)
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -286,13 +286,6 @@ func checkFuncBodyForDirectReviewCalls(t *testing.T, fset *token.FileSet, fn *as
 		if !ok {
 			return true
 		}
-		if checkLegacyGoGerrit && sel.Sel.Name == "SetReview" {
-			if innerSel, ok := sel.X.(*ast.SelectorExpr); ok && innerSel.Sel.Name == "Changes" {
-				pos := fset.Position(call.Pos())
-				t.Errorf("%s:%d: direct call to %s.Changes.SetReview in %s; use ChangeContext.SetReview or SetReviewSafe",
-					pos.Filename, pos.Line, innerSel.X, fn.Name.Name)
-			}
-		}
 		if (sel.Sel.Name == "do" || sel.Sel.Name == "doRaw") && len(call.Args) >= 3 {
 			if exprTargetsReviewEndpoint(call.Args[2], localExprs, make(map[string]bool)) {
 				pos := fset.Position(call.Pos())
@@ -304,12 +297,11 @@ func checkFuncBodyForDirectReviewCalls(t *testing.T, fset *token.FileSet, fn *as
 	})
 }
 
-// TestInvariants_SetReviewGoesThroughSetReviewSafe verifies that no production
-// code invokes go-gerrit's `.Changes.SetReview(` outside `SetReviewSafe` in
-// change_context.go or targets a Gerrit `/review` endpoint via `do` / `doRaw`
-// outside `GerritClient.SetReview` in gerrit.go, preserving `Drafts: "KEEP"`
-// and labels-unmarshal safety.
-func TestInvariants_SetReviewGoesThroughSetReviewSafe(t *testing.T) {
+// TestInvariants_SetReviewGoesThroughGerritClient verifies that no production
+// code targets a Gerrit `/review` endpoint via `do` / `doRaw` outside
+// `GerritClient.SetReview` in gerrit.go, preserving `Drafts: "KEEP"` and
+// labels-unmarshal safety.
+func TestInvariants_SetReviewGoesThroughGerritClient(t *testing.T) {
 	fset := token.NewFileSet()
 
 	for _, path := range collectProductionGoFiles(t, true) {
@@ -323,14 +315,10 @@ func TestInvariants_SetReviewGoesThroughSetReviewSafe(t *testing.T) {
 			if !ok || fn.Body == nil {
 				continue
 			}
-			base := filepath.Base(path)
-			if base == "change_context.go" && fn.Name.Name == "SetReviewSafe" {
+			if filepath.Base(path) == "gerrit.go" && fn.Name.Name == "SetReview" {
 				continue
 			}
-			if base == "gerrit.go" && fn.Name.Name == "SetReview" {
-				continue
-			}
-			checkFuncBodyForDirectReviewCalls(t, fset, fn, true)
+			checkFuncBodyForDirectReviewCalls(t, fset, fn)
 		}
 	}
 }

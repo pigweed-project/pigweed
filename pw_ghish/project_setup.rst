@@ -1052,8 +1052,8 @@ public builders required) and ``community`` (public builders + ``luci-auth``
 or anonymous reads) authentication modes.
 
 For full details on authentication modes, credential lookup order, and
-environment variables (``GH_ISH_AUTH_MODE``, ``GH_ISH_AUTH_METHOD``,
-``GERRIT_TOKEN``, ``LUCI_TOKEN``), see :ref:`module-pw_ghish-auth`.
+environment variables (``GH_ISH_AUTH_MODE``, ``GERRIT_TOKEN``,
+``LUCI_TOKEN``), see :ref:`module-pw_ghish-auth`.
 
 -----------------------------------
 LUCI CI and Buildbucket Integration

@@ -120,7 +120,6 @@ func TestNewGerritClient_MemoizesAuthMode(t *testing.T) {
 	AuthModeFlag = ""
 	t.Cleanup(func() { AuthModeFlag = oldModeFlag })
 	t.Setenv("GH_ISH_AUTH_MODE", "")
-	t.Setenv("GH_ISH_AUTH_METHOD", "token")
 	t.Setenv("GERRIT_TOKEN", "test-token")
 
 	mockGit := NewMockGit(t).OnCommand("config --get ghish.authmode", "googler\n")
@@ -135,48 +134,6 @@ func TestNewGerritClient_MemoizesAuthMode(t *testing.T) {
 	}
 	if len(mockGit.Calls) != 1 {
 		t.Errorf("git calls across repeated NewGerritClient = %v, want 1", mockGit.Calls)
-	}
-}
-
-func TestFallbackTransport(t *testing.T) {
-	var reqs []*http.Request
-
-	mock := &mockTransport{
-		roundTrip: func(req *http.Request) (*http.Response, error) {
-			reqs = append(reqs, req)
-			if len(reqs) == 1 {
-				return &http.Response{StatusCode: 401}, nil
-			}
-			return &http.Response{StatusCode: 200}, nil
-		},
-	}
-
-	transport := &fallbackTransport{base: mock}
-
-	req, err := http.NewRequest("GET", "https://fuchsia-review.googlesource.com/a/changes/123", nil)
-	if err != nil {
-		t.Fatalf("http.NewRequest failed: %v", err)
-	}
-
-	resp, err := transport.RoundTrip(req)
-	if err != nil {
-		t.Fatalf("RoundTrip failed: %v", err)
-	}
-
-	if resp.StatusCode != 200 {
-		t.Errorf("StatusCode = %d, want 200", resp.StatusCode)
-	}
-
-	if len(reqs) != 2 {
-		t.Fatalf("Expected 2 requests, got %d", len(reqs))
-	}
-
-	if reqs[0].URL.Path != "/a/changes/123" {
-		t.Errorf("reqs[0].URL.Path = %q, want %q", reqs[0].URL.Path, "/a/changes/123")
-	}
-
-	if reqs[1].URL.Path != "/changes/123" {
-		t.Errorf("reqs[1].URL.Path = %q, want %q", reqs[1].URL.Path, "/changes/123")
 	}
 }
 
@@ -853,4 +810,53 @@ func TestBuildWorkingDirectory(t *testing.T) {
 	if err := chdirToBuildWorkingDirectory(); err == nil || !strings.Contains(err.Error(), "BUILD_WORKING_DIRECTORY") {
 		t.Errorf("expected BUILD_WORKING_DIRECTORY error, got: %v", err)
 	}
+}
+
+func TestPersistentPreRunE_RemovedAuthMethodEnv(t *testing.T) {
+	t.Setenv("GH_ISH_AUTH_METHOD", "cookie")
+
+	t.Run("pr push exits 4 before running git", func(t *testing.T) {
+		mockGit := &MockGitRunner{}
+		SetupMockConfig(t, mockGit)
+
+		_, err := executeCommand(RootCmd, "pr", "push")
+		if ExitCodeFor(err) != ExitCodeAuth || !strings.Contains(err.Error(), "GH_ISH_AUTH_METHOD=cookie") {
+			t.Fatalf("pr push err = %v (exit %d), want ExitCodeAuth mentioning GH_ISH_AUTH_METHOD=cookie", err, ExitCodeFor(err))
+		}
+		if len(mockGit.Calls) != 0 {
+			t.Errorf("expected pr push to fail before running git, got git calls: %v", mockGit.Calls)
+		}
+	})
+
+	t.Run("pr view exits 4 before hitting Gerrit", func(t *testing.T) {
+		server := NewMockGerritServer(t).OnDefaultChange(12345)
+		mockGit := &MockGitRunner{}
+		SetupMockConfig(t, mockGit)
+
+		_, err := executeCommand(RootCmd, "pr", "view", "12345")
+		if ExitCodeFor(err) != ExitCodeAuth || !strings.Contains(err.Error(), "GH_ISH_AUTH_METHOD=cookie") {
+			t.Fatalf("pr view err = %v (exit %d), want ExitCodeAuth mentioning GH_ISH_AUTH_METHOD=cookie", err, ExitCodeFor(err))
+		}
+		if reqs := server.Requests(); len(reqs) != 0 {
+			t.Errorf("expected pr view to fail before hitting Gerrit, got %d requests", len(reqs))
+		}
+		if len(mockGit.Calls) != 0 {
+			t.Errorf("expected pr view to fail before running git, got git calls: %v", mockGit.Calls)
+		}
+	})
+
+	t.Run("hook subcommands are exempted", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		origHome := HookUserHomeDir
+		HookUserHomeDir = func() (string, error) { return tmpHome, nil }
+		t.Cleanup(func() { HookUserHomeDir = origHome })
+
+		mockGit := &MockGitRunner{}
+		SetupMockConfig(t, mockGit)
+
+		out, err := executeCommand(RootCmd, "hook", "status")
+		if err != nil {
+			t.Fatalf("hook status failed with GH_ISH_AUTH_METHOD set: %v\nOutput:\n%s", err, out)
+		}
+	})
 }

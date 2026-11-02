@@ -41,11 +41,11 @@ Run ``./gh auth status`` to verify your credentials:
 .. code-block:: console
 
    $ ./gh auth status
-   Authentication Mode: googler (auto-detected (gob-curl on PATH))
+   Authentication Mode: googler (auto-detected (sso_client on PATH))
 
    pigweed-review.googlesource.com (Gerrit)
      ✓ Logged in to pigweed-review.googlesource.com as Keir Mierle <keir@google.com> (account #1000020)
-     - Method: gob-curl
+     - Method: token (luci-auth)
 
    cr-buildbucket.appspot.com (LUCI Buildbucket & LogDog)
      ✓ Authenticated with cr-buildbucket.appspot.com via luci-auth (internal & public builders visible)
@@ -77,9 +77,9 @@ Authentication modes
    * - Mode
      - Behavior
    * - ``auto``
-     - **(Default)** Selects ``googler`` if ``gob-curl`` or ``sso_client`` is
-       on ``PATH``, ``/usr/bin/sso-cred-helper`` exists, the Git ``user.email``
-       ends in ``@google.com``, or the ``origin`` remote uses ``sso://`` or
+     - **(Default)** Selects ``googler`` if ``sso_client`` is on ``PATH``,
+       ``/usr/bin/sso-cred-helper`` exists, the Git ``user.email`` ends in
+       ``@google.com``, or the ``origin`` remote uses ``sso://`` or
        ``rpc://``; otherwise selects ``community``.
    * - ``googler``
      - Requires authenticated access to both Gerrit and LUCI Buildbucket so
@@ -88,8 +88,8 @@ Authentication modes
        credentials are missing or expired, commands exit with code ``4`` and
        print remediation instructions.
    * - ``community``
-     - Authenticates Gerrit via ``~/.gitcookies``, ``GERRIT_TOKEN``, or
-       ``~/.netrc``, and uses ``luci-auth`` for LUCI when logged in. Permits
+     - Authenticates Gerrit via ``GERRIT_TOKEN`` or (on ``*.googlesource.com``)
+       ``luci-auth``, and uses ``luci-auth`` for LUCI when logged in. Permits
        unauthenticated read queries against public Gerrit changes and public
        LUCI Buildbucket buckets (such as ``pigweed/try``).
    * - ``none``
@@ -110,21 +110,30 @@ Credential resolution
 
 Gerrit Code Review & Git Push
 =============================
-When ``GH_ISH_AUTH_METHOD`` is ``auto`` (the default), ``pw_ghish`` resolves
-Gerrit REST credentials in the following order:
+``pw_ghish`` resolves Gerrit REST credentials in the following order:
 
-1. ``GERRIT_TOKEN`` environment variable (HTTP Bearer or Basic token).
-2. ``luci-auth token`` with ``gerritcodereview`` and ``userinfo.email`` scopes
-   (located on ``PATH`` or in the repository's bootstrapped CIPD environment;
-   works across Linux, macOS, and Windows, falling back to ``gob-curl`` if
-   rejected).
-3. ``gob-curl`` on ``PATH`` (with automatic runtime fallback to ``luci-auth``,
-   ``.gitcookies``, or ``.netrc`` if the 20-hour Corp SSO ticket in
-   ``ssh-agent`` is expired).
-4. Git cookie file from ``git config http.cookiefile`` or ``~/.gitcookies``.
-5. Machine credentials in ``~/.netrc`` or ``~/_netrc``.
-6. Anonymous HTTPS (permitted in ``community`` and ``none`` modes for public
-   reads; rejected in ``googler`` mode with exit code ``4``).
+1. ``GERRIT_TOKEN`` environment variable (OAuth2 Bearer token). A value
+   containing ``:`` (a ``username:password`` pair for HTTP Basic auth) is
+   rejected with exit code ``4``; HTTP Basic auth (used by most non-Google
+   Gerrit servers) isn't supported yet.
+2. On Google-hosted Gerrit (``*.googlesource.com``), ``luci-auth token`` with
+   ``gerritcodereview`` and ``userinfo.email`` scopes (located on ``PATH`` or
+   in the repository's bootstrapped CIPD environment; works across Linux,
+   macOS, and Windows, automatically configuring ``/usr/bin/sso-cred-helper``
+   on Corp Linux when present). On other hosts ``luci-auth`` is skipped, so the
+   order is ``GERRIT_TOKEN``, then anonymous HTTPS (``googler`` mode fails with
+   exit code ``4`` without ``GERRIT_TOKEN``).
+3. Anonymous HTTPS (permitted in ``community`` and ``none`` modes for public
+   reads; rejected in ``googler`` mode with exit code ``4``). When no
+   credential is found, the error and ``./gh auth status`` say why, for
+   example ``luci-auth not found (searched PATH, ...)``.
+
+.. note::
+
+   ``GH_ISH_AUTH_METHOD`` has been removed. If it is set, commands (except
+   ``./gh hook``) exit with code ``4`` and print replacement credential steps.
+   To disable authentication, use ``--auth-mode=none`` or
+   ``GH_ISH_AUTH_MODE=none``.
 
 Community contributor onboarding
 --------------------------------
@@ -159,8 +168,8 @@ Corp:
 Automatic ``git push`` fallbacks (``pr create`` / ``pr push``)
 --------------------------------------------------------------
 On Google Corp workstations, ``gcert --lifetime=168h`` issues a 7-day
-``LOAS2`` certificate (used by ``rpc://``), whereas the ``corp/normal`` SSO
-ticket in ``ssh-agent`` (used by ``gob-curl`` and ``sso://``) is capped at 20
+``LOAS2`` certificate (used by ``rpc://`` and ``sso-cred-helper``), whereas the
+``corp/normal`` SSO ticket in ``ssh-agent`` (used by ``sso://``) is capped at 20
 hours. When a push to an ``sso://<tenant>/...`` remote fails because the
 20-hour SSO ticket has expired, ``pw_ghish`` automatically retries:
 
@@ -232,8 +241,8 @@ Comparison with GitHub CLI (gh auth)
        ``none``). Leaves ``-a`` unbound to avoid colliding with ``--active``.
    * - ``auth login`` / ``logout``
      - Interactive OAuth flow managed directly by ``gh``.
-     - Delegated to each backend's native credential tool (``gob-curl`` /
-       ``.gitcookies``, ``luci-auth login``, and ``gcloud auth``);
+     - Delegated to each backend's native credential tool (``luci-auth login``,
+       ``gcert``, and ``gcloud auth``);
        ``./gh auth status`` prints the exact login command when a service is
        unauthenticated.
 

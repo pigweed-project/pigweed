@@ -572,6 +572,14 @@ func SetTestProfile(t *testing.T, profile string) {
 	t.Cleanup(func() { ProfileFlag = oldProfile })
 }
 
+// setAuthModeFlag sets AuthModeFlag for the duration of the test and restores it on cleanup.
+func setAuthModeFlag(t testing.TB, mode string) {
+	t.Helper()
+	oldMode := AuthModeFlag
+	AuthModeFlag = mode
+	t.Cleanup(func() { AuthModeFlag = oldMode })
+}
+
 // MockRequest records an incoming HTTP request for test assertions.
 type MockRequest struct {
 	Method string
@@ -606,6 +614,16 @@ type AuthResolvers struct {
 	AndroidBuildToken        func(ctx context.Context) (string, error)
 	IssueTrackerToken        func(ctx context.Context) (string, string, error)
 	IssueTrackerQuotaProject func(ctx context.Context, token string) string
+}
+
+// onPath returns a LookPath stub where only name resolves (to path).
+func onPath(name, path string) func(string) (string, error) {
+	return func(file string) (string, error) {
+		if file == name {
+			return path, nil
+		}
+		return "", os.ErrNotExist
+	}
 }
 
 // currentAuthResolvers returns the active package authentication resolvers.

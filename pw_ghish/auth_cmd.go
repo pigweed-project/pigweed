@@ -117,11 +117,11 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 	}
 
 	// 1. Gerrit status
-	gerritMethod, gerritMethodDesc := DescribeGerritAuthMethod(ctx, gerritHost, mode)
+	res, _ := resolveGerritAuth(ctx, gerritHost, mode)
 	gerritStatus := ServiceAuthStatus{
 		Service: "gerrit",
 		Host:    gerritHost,
-		Method:  gerritMethodDesc,
+		Method:  res.desc,
 	}
 
 	if mode == AuthModeNone {
@@ -149,8 +149,12 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 				gerritStatus.Message = fmt.Sprintf("Logged in to %s as %s", gerritHost, acctLabel)
 			} else {
 				gerritStatus.Authenticated = false
-				if gerritMethod == AuthMethodNone && mode == AuthModeCommunity {
-					gerritStatus.Message = fmt.Sprintf("No Gerrit credentials configured for %s (public changes readable; login required to push or review)", gerritHost)
+				if res.method == AuthMethodNone && mode == AuthModeCommunity {
+					if res.cause != nil {
+						gerritStatus.Message = fmt.Sprintf("No Gerrit credentials configured for %s (%s; public changes readable, login required to push or review)", gerritHost, firstLine(res.cause.Error()))
+					} else {
+						gerritStatus.Message = fmt.Sprintf("No Gerrit credentials configured for %s (public changes readable; login required to push or review)", gerritHost)
+					}
 				} else if IsGerritHTTPStatus(accErr, http.StatusBadRequest) {
 					gerritStatus.Message = fmt.Sprintf("No Gerrit account found on %s for current credentials (%s)", gerritHost, firstLine(accErr.Error()))
 					gerritStatus.Remediation = fmt.Sprintf("Visit https://%s in a browser and click 'Sign in' once to create your Gerrit account, and sign the CLA at https://cla.developers.google.com/", gerritHost)
@@ -162,11 +166,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 			}
 		}
 		if !gerritStatus.Authenticated && gerritStatus.Remediation == "" {
-			if mode == AuthModeGoogler {
-				gerritStatus.Remediation = fmt.Sprintf("Run 'gcert' to refresh corp SSO credentials, or 'luci-auth login -scopes %q', or configure cookies at https://%s/new-password", DefaultGerritScopes, gerritHost)
-			} else {
-				gerritStatus.Remediation = fmt.Sprintf("Run 'luci-auth login -scopes %q' or set export GERRIT_TOKEN=\"<token>\"", DefaultGerritScopes)
-			}
+			gerritStatus.Remediation = gerritStatusRemediation(gerritHost, mode)
 		}
 	}
 

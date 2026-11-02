@@ -35,7 +35,6 @@ go_library(
     target_compatible_with = incompatible_with_mcu(),
     deps = [
         "//pw_ghish",
-        "@com_github_andygrunwald_go_gerrit//:go-gerrit",
         "@com_github_spf13_cobra//:cobra",
     ],
 )
@@ -71,7 +70,6 @@ go_test(
     target_compatible_with = incompatible_with_mcu(),
     deps = [
         "//pw_ghish",
-        "@com_github_andygrunwald_go_gerrit//:go-gerrit",
         "@com_github_spf13_cobra//:cobra",
     ],
 )
