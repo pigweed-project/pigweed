@@ -17,13 +17,8 @@ from datetime import date
 import os
 import re
 import asyncio
+import tomllib
 import requests
-
-# tomllib is new in Python 3.11
-try:
-    import tomllib as tomli  # type: ignore
-except ImportError:
-    import tomli  # type: ignore
 
 from pw_fortifier.async_path import AsyncPath
 from pw_fortifier.freshness_result import (
@@ -55,7 +50,7 @@ class CargoAnalyzer(PackageAnalyzer):
         if not await cargo_lock_path.exists():
             return
         content = await cargo_lock_path.read_text()
-        data = tomli.loads(content)
+        data = tomllib.loads(content)
 
         packages = data.get('package', [])
         if isinstance(packages, list):
@@ -70,7 +65,7 @@ class CargoAnalyzer(PackageAnalyzer):
     ) -> dict[str, int]:
         """Parses Cargo.toml to extract dependencies and their tiers."""
         content = await cargo_toml_path.read_text()
-        data = tomli.loads(content)
+        data = tomllib.loads(content)
 
         is_no_std = 'no_std' in rel_cargo_toml
         crates: dict[str, int] = {}

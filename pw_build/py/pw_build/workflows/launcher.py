@@ -20,17 +20,13 @@ import logging
 import os
 from pathlib import Path
 import sys
+import tomllib
 from typing import NoReturn
 
 from google.protobuf import json_format, text_format
 from pw_cli import multitool, argument_types
 from pw_config_loader import find_config
 import yaml
-
-try:
-    import tomllib  # type: ignore
-except ModuleNotFoundError:
-    import toml as tomllib  # type: ignore
 
 from pw_build import project_builder
 from pw_build.proto import workflows_pb2

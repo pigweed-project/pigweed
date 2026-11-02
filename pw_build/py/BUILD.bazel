@@ -117,7 +117,6 @@ pw_py_library(
         "//pw_build:workflows_proto_py_pb2",
         "//pw_cli/py:pw_cli",
         "//pw_config_loader/py:pw_config_loader",
-        "@pigweed_python_packages//toml",
     ],
 )
 

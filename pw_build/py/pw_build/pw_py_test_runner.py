@@ -17,19 +17,12 @@ import os
 from pathlib import Path
 import runpy
 import sys
+import tomllib
 import warnings
-
-try:
-    import tomllib  # type: ignore
-except ImportError:
-    try:
-        import tomli as tomllib  # type: ignore
-    except ImportError:
-        tomllib = None  # type: ignore
 
 
 def _load_pyproject_filterwarnings(pyproject_path: Path) -> list[str] | None:
-    if tomllib is None or not pyproject_path.is_file():
+    if not pyproject_path.is_file():
         return None
     data = tomllib.loads(pyproject_path.read_text(encoding='utf-8'))
     filters = (
