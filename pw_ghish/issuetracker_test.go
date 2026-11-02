@@ -222,6 +222,55 @@ func TestIssueTrackerClient_ModifyIssue(t *testing.T) {
 	}
 }
 
+func TestIssueTrackerClient_HotlistEntries(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	client := srv.Client()
+	ctx := context.Background()
+
+	srv.SeedIssue(&BuganizerIssue{
+		IssueID: 200,
+		State: BuganizerState{
+			ComponentID: 1194524,
+			Status:      "NEW",
+			Priority:    "P2",
+			Title:       "Hotlist test issue",
+		},
+	}, "Initial bug report")
+
+	if err := client.CreateHotlistEntry(ctx, 9001, 200); err != nil {
+		t.Fatalf("CreateHotlistEntry failed: %v", err)
+	}
+	if got := srv.Issues[200].State.HotlistIDs; !slices.Equal(got, []FlexInt64{9001}) {
+		t.Errorf("HotlistIDs after PUT = %v, want [9001]", got)
+	}
+	if err := client.CreateHotlistEntry(ctx, 9001, 200); err != nil {
+		t.Fatalf("duplicate CreateHotlistEntry failed: %v", err)
+	}
+	if got := srv.Issues[200].State.HotlistIDs; !slices.Equal(got, []FlexInt64{9001}) {
+		t.Errorf("HotlistIDs after duplicate PUT = %v, want [9001]", got)
+	}
+
+	if err := client.DeleteHotlistEntry(ctx, 9001, 200); err != nil {
+		t.Fatalf("DeleteHotlistEntry failed: %v", err)
+	}
+	if got := srv.Issues[200].State.HotlistIDs; len(got) != 0 {
+		t.Errorf("HotlistIDs after DELETE = %v, want empty", got)
+	}
+	if !slices.Contains(srv.Calls, "PUT /v1/hotlists/9001/entries") || !slices.Contains(srv.Calls, "DELETE /v1/hotlists/9001/entries/200") {
+		t.Errorf("hotlist calls = %v, want PUT and DELETE on /v1/hotlists/9001/entries", srv.Calls)
+	}
+
+	if err := client.CreateHotlistEntry(ctx, 0, 200); err == nil {
+		t.Error("expected error for invalid hotlist ID 0, got nil")
+	}
+	if err := client.CreateHotlistEntry(ctx, 9001, 999); err == nil {
+		t.Error("expected error for nonexistent issue 999 on CreateHotlistEntry, got nil")
+	}
+	if err := client.DeleteHotlistEntry(ctx, 9001, 999); err == nil {
+		t.Error("expected error for nonexistent issue 999 on DeleteHotlistEntry, got nil")
+	}
+}
+
 func TestIssueTrackerClient_Comments(t *testing.T) {
 	srv := NewMockIssueTrackerServer(t)
 	client := srv.Client()

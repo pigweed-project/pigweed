@@ -1802,9 +1802,8 @@ func (s *MockIssueTrackerServer) serveHTTP(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Sub-routes under /v1/hotlists/{hotlistID}/entries...
-	if strings.HasPrefix(r.URL.Path, "/v1/hotlists/") {
-		rest := strings.TrimPrefix(r.URL.Path, "/v1/hotlists/")
-		if (r.Method == http.MethodPost || r.Method == http.MethodPut) && strings.HasSuffix(rest, "/entries") {
+	if rest, ok := strings.CutPrefix(r.URL.Path, "/v1/hotlists/"); ok {
+		if r.Method == http.MethodPut && strings.HasSuffix(rest, "/entries") {
 			hidStr := strings.TrimSuffix(rest, "/entries")
 			hid, err := strconv.ParseInt(hidStr, 10, 64)
 			if err != nil || hid <= 0 {

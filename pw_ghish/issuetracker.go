@@ -1012,7 +1012,7 @@ func (c *IssueTrackerClient) ReopenIssue(ctx context.Context, issueID int64, com
 	return c.ModifyIssue(ctx, issueID, req)
 }
 
-// CreateHotlistEntry adds an issue to a Buganizer hotlist via POST /v1/hotlists/{hotlistID}/entries.
+// CreateHotlistEntry adds an issue to a Buganizer hotlist via PUT /v1/hotlists/{hotlistID}/entries.
 func (c *IssueTrackerClient) CreateHotlistEntry(ctx context.Context, hotlistID, issueID int64) error {
 	path := fmt.Sprintf("/hotlists/%d/entries", hotlistID)
 	req := map[string]any{
@@ -1020,7 +1020,7 @@ func (c *IssueTrackerClient) CreateHotlistEntry(ctx context.Context, hotlistID, 
 			"issueId": FlexInt64(issueID),
 		},
 	}
-	return c.doJSON(ctx, http.MethodPost, path, req, nil)
+	return c.doJSON(ctx, http.MethodPut, path, req, nil)
 }
 
 // DeleteHotlistEntry removes an issue from a Buganizer hotlist via DELETE /v1/hotlists/{hotlistID}/entries/{issueID}.
