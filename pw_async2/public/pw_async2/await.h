@@ -83,7 +83,5 @@
 
 /// @endsubmodule
 
-/// @cond
 #define _PW_AWAIT_2(future, cx) PW_TRY_READY((future).Pend(cx))
 #define _PW_AWAIT_3(lhs, future, cx) PW_TRY_READY_ASSIGN(lhs, (future).Pend(cx))
-/// @endcond

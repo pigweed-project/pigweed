@@ -87,7 +87,6 @@
 
 /// @endmodule
 
-/// @cond
 PW_EXTERN_C_START
 
 void _pw_log_tokenized_EncodeTokenizedLog(uint32_t metadata,
@@ -96,4 +95,3 @@ void _pw_log_tokenized_EncodeTokenizedLog(uint32_t metadata,
                                           ...);
 
 PW_EXTERN_C_END
-/// @endcond

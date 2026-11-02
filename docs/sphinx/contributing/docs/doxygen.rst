@@ -95,6 +95,18 @@ Quickstart
 
    The lack of whitespace between ``pw_bytes`` and ``ptr`` is important!
 
+   .. warning::
+
+      Doxygen publishes **everything** between ``@module`` / ``@submodule`` and
+      ``@endmodule`` / ``@endsubmodule``, even declarations that have no
+      ``///`` Doxygen comment. While symbols starting with ``_`` (such as
+      ``_PW_*`` macros) are automatically excluded by ``EXCLUDE_SYMBOLS`` in
+      :cs:`docs/doxygen/Doxyfile`, generally keep ``internal`` and ``detail``
+      namespaces outside of ``@module`` / ``@submodule`` blocks (closing and
+      reopening the block if needed rather than moving code around). Do not use
+      ``@cond`` to hide internal APIs; reserve ``@cond`` for Doxygen parser
+      workarounds. See :ref:`style-doxygen-pw-public-api`.
+
 #. (Optional) If your module uses ``@submodule``, define its submodule groups
    (such as the ``pw_bytes_ptr`` subgroup shown below) in the manual section of
    :cs:`docs/doxygen/modules.h` after ``// categories-end``:
@@ -163,9 +175,11 @@ fix, the second item the second most probable, etc.
 General tips:
 
 * The `tagfile <https://www.doxygen.nl/manual/external.html>`_ generated at
-  ``//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/index.tag`` is
-  essentially an authoritative index of the entire public API, as Doxygen
-  understands it.
+  ``//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/index.tag`` indexes
+  all *documented* public API symbols. Note that ``index.tag`` omits
+  undocumented symbols that Doxygen still publishes on module group pages
+  (``group__*.html``) when they appear inside ``@module`` or ``@submodule``
+  blocks.
 
 * Tweak the Doxygen `config <https://www.doxygen.nl/manual/config.html>`_
   (``//docs/doxygen/Doxyfile``) as needed and then re-run the build.
@@ -335,10 +349,10 @@ General tips:
   removed from the header and instead defined centrally in
   ``//docs/doxygen/modules.h`` via ``@module`` or ``@submodule``.
 
-* Avoid nesting ``@cond`` blocks inside ``@submodule`` or
-  ``@module`` groups. Close the group with ``@endsubmodule`` or ``@endmodule``
-  before starting a ``@cond`` block, and reopen the group after ``@endcond`` if
-  necessary.
+* Ensure ``@cond`` and ``@endcond`` do not wrap a group start or end marker
+  (``@module``, ``@endmodule``, ``@submodule``, ``@endsubmodule``, ``@{``, or
+  ``@}``). If a closing marker is inside a ``@cond`` block, Doxygen ignores it
+  and reports an unclosed group at the end of the file.
 
 * Avoid C-style inline comments inside of ``@code`` blocks.
 
@@ -446,8 +460,9 @@ General tips:
 
 ``No uniquely matching class member found``
 ===========================================
-* If the error is related to a ``friend`` declaration, wrap the ``friend`` line in
-  ``@cond`` and ``@endcond`` directives and add a comment explaining the suppression.
+* If the error is related to a ``friend`` declaration, wrap the ``friend`` line
+  in ``@cond`` and ``@endcond`` directives and add a comment explaining the
+  suppression.
 
   .. code-block:: diff
 
@@ -456,13 +471,19 @@ General tips:
         friend typename Base::Base;
      +  /// @endcond
 
+* If the error is on out-of-line template method definitions at the bottom of a
+  header (for example, methods defined on a template specialization like
+  ``Vector<T, vector_impl::kGeneric>::clear()``), wrap those out-of-line method
+  definitions in ``@cond`` and ``@endcond``.
+
 .. note::
 
    This error occurs when Doxygen's parser fails to resolve a type or member
-   name, often in ``friend`` declarations involving nested template aliases (e.g.
-   ``friend typename Base::Base;``) or common names (e.g.
-   ``friend internal::Channel<T>;``). Because Doxygen doesn't require ``friend``
-   declarations to generate public API documentation, you can safely hide them
+   name, often in ``friend`` declarations involving nested template aliases
+   (e.g. ``friend typename Base::Base;``), common names (e.g.
+   ``friend internal::Channel<T>;``), or out-of-line template specialization
+   method definitions. Because Doxygen only needs the class's in-line member
+   declarations to generate public API documentation, you can safely hide these
    from Doxygen.
 
 ``Refusing to add group … to itself``

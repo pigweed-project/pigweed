@@ -112,7 +112,9 @@ Path: `//docs/agents/changelog/AGENTS.md`
 Triggers:
 
 * A target in `//docs/doxygen` has failed to build
-* The user is attempting to create new C/C++ API reference content
+* The user is creating, updating, or migrating C/C++ API reference content
+* A change adds or modifies `@module`, `@submodule`, `@endmodule`, or
+  `@endsubmodule` annotations
 * The user is adding code examples to Doxygen comments
 
 Guards:

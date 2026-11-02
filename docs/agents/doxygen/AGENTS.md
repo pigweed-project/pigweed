@@ -25,6 +25,23 @@ Every `@module` and `@submodule` annotation must have an accompanying
 2. Add the `doxygen` target to `//docs/doxygen:srcs`.
 3. Annotate headers that contain public APIs with `@module` or `@submodule`.
    Always close with `@endmodule` or `@endsubmodule`.
+   * Doxygen publishes **everything** between `@module`/`@submodule` and
+     `@endmodule`/`@endsubmodule` on the module page, **even symbols that have
+     no `///` Doxygen comment**.
+   * Symbols starting with `_` (such as `_PW_*` and `_pw_*`) are automatically
+     excluded via `EXCLUDE_SYMBOLS = _*` in `//docs/doxygen/Doxyfile`.
+   * Unless an `internal` or `detail` symbol must be exposed for Doxygen to
+     document a public API (such as an internal base class whose public methods
+     are inherited by a public class), keep `internal` and `detail` namespaces
+     outside of `@module`/`@submodule` blocks. **Never move code around** to
+     group public APIs together; if `internal` namespaces are interleaved with
+     public APIs, close and reopen `@module`/`@endmodule` (or
+     `@submodule`/`@endsubmodule`) around them.
+   * Do not use `/// @cond` and `/// @endcond` to hide internal APIs. Reserve
+     `@cond` for working around Doxygen C++ parser errors (such as on `friend`
+     declarations, recursive template base classes, or out-of-line template
+     method definitions in headers). Never place `@module`, `@endmodule`,
+     `@submodule`, `@endsubmodule`, `@{`, or `@}` inside a `@cond` block.
 4. (Optional) `//docs/doxygen/modules.h` has an auto-generated section at the
    top (between `// categories-start` and `// categories-end`) for top-level
    category and module groups, followed by a manual section at the end (after
@@ -37,10 +54,16 @@ Every `@module` and `@submodule` annotation must have an accompanying
 6. Follow Pigweed's Doxygen style guide (`//docs/sphinx/style/doxygen.rst`)
    when documenting headers.
 7. Build the docs with `bazelisk build //docs`. Doxygen output can be inspected
-   at `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/`. The
-   [tagfile](https://www.doxygen.nl/manual/external.html) is an authoritative
-   index of the entire public API that Doxygen is aware of. It can be found at
-   `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/index.tag`.
+   at `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/`.
+   * Inspect the rendered module page (`group__<module>.html`, where underscores
+     in the module name are doubled, e.g. `group__pw__metric.html`) to verify
+     that all public APIs are present and no internal symbols or private macros
+     leaked onto the page.
+   * The [tagfile](https://www.doxygen.nl/manual/external.html) at
+     `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/index.tag` indexes
+     *documented* symbols, but omits undocumented symbols inside `@module` or
+     `@submodule` blocks. Do not rely on `index.tag` alone to verify that
+     internal symbols were excluded.
 
 ## Code examples
 
@@ -132,8 +155,8 @@ doesn't resolve the error.
   target of the relevant `BUILD.bazel` file.
 * `Missing title after \defgroup` - Add the group as `@submodule` in
   `//docs/doxygen/modules.h` instead.
-* `No uniquely matching class member found` - Wrap `friend` declarations in
-  `@cond` and `@endcond`.
+* `No uniquely matching class member found` - Wrap `friend` declarations or
+  out-of-line template method definitions in `@cond` and `@endcond`.
 * `Refusing to add group … to itself` - Check for `@module` or `@submodule`
   annotations that aren't closed with `@endmodule` or `@endsubmodule`.
 * `Unbalanced grouping commands` - Look for unclosed groups in other files

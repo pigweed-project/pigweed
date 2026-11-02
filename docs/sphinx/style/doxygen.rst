@@ -173,6 +173,30 @@ The following style rules are not appropriate for general adoption because they
 depend on Doxygen customizations that only exist within the upstream Pigweed
 repository.
 
+.. _style-doxygen-pw-public-api:
+
+Public API only
+===============
+In general, only public APIs should appear on module reference pages. Doxygen
+publishes every declaration between ``@module`` and ``@endmodule`` (or
+``@submodule`` and ``@endsubmodule``), even symbols that do not have Doxygen
+comments:
+
+* Symbols prefixed with ``_`` (such as ``_PW_*`` and ``_pw_*``) are
+  automatically excluded via ``EXCLUDE_SYMBOLS`` in ``//docs/doxygen/Doxyfile``.
+* Unless an ``internal`` or ``detail`` symbol must be exposed for Doxygen to
+  document a public API (such as an internal base class whose public methods
+  are inherited by a public class), keep ``internal`` and ``detail`` namespaces
+  outside of ``@module`` / ``@endmodule`` blocks—closing ``@endmodule`` and
+  reopening ``@module`` if interleaved with public APIs, rather than moving
+  code around.
+* Do not use ``@cond`` and ``@endcond`` to hide internal APIs. Reserve
+  ``@cond`` for working around Doxygen C++ parser errors (such as on
+  ``friend`` declarations, recursive template base classes, or out-of-line
+  template method definitions; see :ref:`contrib-doxygen-trouble`). Never
+  place ``@module``, ``@endmodule``, ``@submodule``, or ``@endsubmodule``
+  inside a ``@cond`` block.
+
 .. _style-doxygen-pw-status-aliases:
 
 pw::Status aliases

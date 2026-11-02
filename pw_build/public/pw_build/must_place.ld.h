@@ -21,7 +21,6 @@
 /// @module{pw_build}
 
 // clang-format off
-/// @cond PRIVATE
 #define ___PW_MUST_PLACE(isection, start_sym, end_sym)                                       \
     start_sym = .;                                                                           \
     isection                                                                                 \
@@ -39,7 +38,6 @@
 
 #define _PW_MUST_PLACE(isection, sym_prefix, unique)    \
     __PW_MUST_PLACE(isection, sym_prefix, unique)
-/// @endcond
 
 /// PW_MUST_PLACE is a macro intended for use in linker scripts to ensure inputs
 /// are non-zero sized.
@@ -88,7 +86,6 @@
     _PW_MUST_PLACE(isection, __section_place_, __COUNTER__)
 
 // clang-format off
-/// @cond PRIVATE
 #define ___PW_MUST_PLACE_SIZE(isection, isize, start_sym, end_sym)                    \
     start_sym = .;                                                                    \
     isection                                                                          \
@@ -106,7 +103,6 @@
 
 #define _PW_MUST_PLACE_SIZE(isection, isize, sym_prefix, unique)    \
     __PW_MUST_PLACE_SIZE(isection, isize, sym_prefix, unique)
-/// @endcond
 
 /// PW_MUST_PLACE_SIZE is a macro intended for use in linker scripts to ensure
 /// inputs are an expected size.
@@ -158,7 +154,6 @@
     _PW_MUST_PLACE_SIZE(isection, isize, __section_place_, __COUNTER__)
 
 // clang-format off
-/// @cond PRIVATE
 #define ___PW_MUST_NOT_PLACE(isection, start_sym, end_sym)                                  \
     start_sym = .;                                                                          \
     isection                                                                                \
@@ -176,7 +171,6 @@
 
 #define _PW_MUST_NOT_PLACE(isection, sym_prefix, unique)    \
     __PW_MUST_NOT_PLACE(isection, sym_prefix, unique)
-/// @endcond
 
 /// PW_MUST_NOT_PLACE is a macro intended for use in linker scripts to ensure inputs
 /// are _not_ present. It does the opposite of PW_MUST_PLACE.

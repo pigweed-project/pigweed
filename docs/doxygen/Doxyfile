@@ -92,6 +92,14 @@ EXAMPLE_PATH           = .
 # https://www.doxygen.nl/manual/config.html#cfg_example_recursive
 EXAMPLE_RECURSIVE      = YES
 
+# Internal symbols prefixed with `_` (such as `_PW_*` and `_pw_*`) are not part
+# of the public API. Never publish them, even if a header's `@module` or
+# `@submodule` block contains them. Unlike `@cond`, this keeps their
+# definitions visible to Doxygen's preprocessor.
+#
+# https://www.doxygen.nl/manual/config.html#cfg_exclude_symbols
+EXCLUDE_SYMBOLS        = _*
+
 # https://www.doxygen.nl/manual/config.html#cfg_extract_package
 EXTRACT_PACKAGE        = YES
 

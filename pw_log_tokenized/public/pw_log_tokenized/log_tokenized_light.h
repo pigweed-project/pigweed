@@ -48,11 +48,9 @@
 
 /// @endmodule
 
-/// @cond
 PW_EXTERN_C_START
 
 void _pw_log_tokenized_EncodeTokenizedLogWithoutMetadata(
     pw_tokenizer_Token token, pw_tokenizer_ArgTypes types, ...);
 
 PW_EXTERN_C_END
-/// @endcond
