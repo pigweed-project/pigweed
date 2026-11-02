@@ -83,6 +83,16 @@ alias(
     tags = ["kernel"],
 )
 
+alias(
+    name = "time_backend",
+    actual = select({
+        "//pw_kernel/userspace:is_app_build_enabled": "//pw_kernel/userspace:pw_time_backend",
+        "//conditions:default": "//pw_time/rust:pw_time_backend_pigweed",
+    }),
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [

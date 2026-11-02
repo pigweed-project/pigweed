@@ -27,6 +27,7 @@ platform(
         "//pw_build/constraints/riscv/extensions:M",
         "//pw_build/constraints/riscv/extensions:C",
         "//pw_build/constraints/riscv/extensions:A",
+        "//pw_build/constraints/rtos:pigweed",
         "//pw_build/constraints/rust:no_std",
         "@platforms//cpu:riscv32",
         "@platforms//os:none",

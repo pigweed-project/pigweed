@@ -44,7 +44,6 @@ platform(
             "//pw_sync/rust/pw_sync_mutex:pw_sync_mutex_backend": "@pigweed//pw_sync/rust/pw_sync_mutex:pw_sync_mutex_backend_pigweed",
             "//pw_sync:interrupt_spin_lock_backend": "//pw_sync_baremetal:interrupt_spin_lock",
             "//pw_thread/rust:pw_thread_backend": "@pigweed//pw_thread/rust:pw_thread_backend_pigweed",
-            "//pw_time/rust:pw_time_backend": "@pigweed//pw_time/rust:pw_time_backend_pigweed",
             "//targets/pw_rp2350:platform_deps": ":boot",
             "@pico-sdk//bazel/config:PICO_CLIB": "llvm_libc",
             "@pico-sdk//bazel/config:PICO_STDIO_UART": True,

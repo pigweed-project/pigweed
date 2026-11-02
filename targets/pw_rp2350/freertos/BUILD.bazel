@@ -56,7 +56,6 @@ platform(
         "//pw_sync/rust/pw_sync_spinlock:pw_sync_spinlock_backend": "//pw_sync/rust/pw_sync_spinlock:pw_sync_spinlock_backend_freertos",
         "//pw_sys_io:backend": "//pw_sys_io_rp2040",
         "//pw_thread/rust:pw_thread_backend": "//pw_thread/rust:pw_thread_backend_freertos",
-        "//pw_time/rust:pw_time_backend": "//pw_time/rust:pw_time_backend_freertos",
         "//pw_toolchain:cortex-m_toolchain_kind": "clang",
         "//pw_unit_test:main": "//targets/pw_rp2350/freertos:unit_test_boot",
         "//targets/pw_rp2350:platform_deps": ":boot",

@@ -44,7 +44,6 @@ build --@pigweed//pw_thread:id_backend=@pigweed//pw_thread_zephyr:id
 build --@pigweed//pw_thread:sleep_backend=@pigweed//pw_thread_zephyr:sleep
 build --@pigweed//pw_thread:thread_backend=@pigweed//pw_thread_zephyr:thread
 build --@pigweed//pw_thread/rust:pw_thread_backend=@pigweed//pw_thread/rust:pw_thread_backend_zephyr
-build --@pigweed//pw_time/rust:pw_time_backend=@pigweed//pw_time/rust:pw_time_backend_zephyr
 
 # Config to run tests on target
 build:pw_rp2350_zephyr --platforms=//boards:rp2350a_m33

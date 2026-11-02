@@ -24,6 +24,7 @@ platform(
     constraint_values = [
         ":target_pw_rp2350",
         "//pw_build/constraints/arm:cortex-m33",
+        "//pw_build/constraints/rtos:pigweed",
         "@platforms//cpu:armv8-m",
         "@platforms//os:none",
         "//pw_build/constraints/rust:no_std",

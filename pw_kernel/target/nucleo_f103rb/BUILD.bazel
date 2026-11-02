@@ -57,6 +57,7 @@ platform(
     constraint_values = [
         ":target_nucleo_f103rb",
         "//pw_build/constraints/arm:cortex-m3",
+        "//pw_build/constraints/rtos:pigweed",
         "@platforms//cpu:armv7-m",
         "@platforms//os:none",
         "//pw_build/constraints/rust:no_std",

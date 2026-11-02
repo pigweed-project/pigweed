@@ -150,8 +150,21 @@ cc_library(
 
 label_flag(
     name = "pw_time_backend",
-    build_setting_default = ":pw_time_backend_std",
+    build_setting_default = ":default_pw_time_backend",
     visibility = ["//visibility:public"],
+)
+
+# Default list of pw_time RTOS backends that pigweed supports in-tree.
+# To use a backend not in this set, set the [`//pw_time/rust:pw_time_backend`]
+#  label to the desired backend.
+alias(
+    name = "default_pw_time_backend",
+    actual = select({
+        "//pw_build/constraints/rtos:freertos": ":pw_time_backend_freertos",
+        "//pw_build/constraints/rtos:pigweed": "//pw_kernel:time_backend",
+        "//pw_build/constraints/rtos:zephyr": ":pw_time_backend_zephyr",
+        "//conditions:default": ":pw_time_backend_std",
+    }),
 )
 
 rust_doc(
