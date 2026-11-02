@@ -19,7 +19,7 @@ Generate data needed for unit tests, i.e. certificates, keys, and CRLSet.
 import argparse
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
@@ -232,7 +232,7 @@ def generate_test_data() -> str:
 
     # Working valid period.
     # Start from yesterday, to make sure we are in the valid period.
-    not_before = datetime.now(timezone.utc) - timedelta(days=1)
+    not_before = datetime.now(UTC) - timedelta(days=1)
     # Valid for 1 year.
     not_after = not_before + timedelta(days=365)
 

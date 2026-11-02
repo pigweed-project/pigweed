@@ -203,7 +203,7 @@ class TestRunner:
             if self._executable.endswith('.py'):
                 command.insert(0, sys.executable)
 
-            test.start_time = datetime.datetime.now(datetime.timezone.utc)
+            test.start_time = datetime.datetime.now(datetime.UTC)
             start_time = time.monotonic()
             try:
                 process = await pw_cli.process.run_async(

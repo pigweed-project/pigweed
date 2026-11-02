@@ -13,9 +13,8 @@
 # the License.
 """Install and check status of the Raspberry Pi Pico SDK."""
 
-from contextlib import contextmanager
+import contextlib
 import logging
-import os
 from pathlib import Path
 from typing import Sequence
 import subprocess
@@ -24,16 +23,6 @@ import pw_package.git_repo
 import pw_package.package_manager
 
 _LOG = logging.getLogger(__package__)
-
-
-@contextmanager
-def change_working_dir(directory: Path):
-    original_dir = Path.cwd()
-    try:
-        os.chdir(directory)
-        yield directory
-    finally:
-        os.chdir(original_dir)
 
 
 class PiPicoSdk(pw_package.package_manager.Package):
@@ -54,7 +43,7 @@ class PiPicoSdk(pw_package.package_manager.Package):
         self._pico_sdk.install(path)
 
         # Run submodule update --init to fetch tinyusb.
-        with change_working_dir(path) as _pico_sdk_repo:
+        with contextlib.chdir(path):
             command = ['git', 'submodule', 'update', '--init']
             _LOG.info('==> %s', ' '.join(command))
             subprocess.run(command)

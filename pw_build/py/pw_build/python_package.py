@@ -16,12 +16,10 @@
 from __future__ import annotations
 
 import configparser
-from contextlib import contextmanager
 import copy
 from dataclasses import dataclass, asdict
 import io
 import json
-import os
 from pathlib import Path
 import pprint
 import re
@@ -46,16 +44,6 @@ _PY_REQUIRE_ENVIRONMENT_MARKER_NAMES = [
     'implementation_version',
     'extra',
 ]
-
-
-@contextmanager
-def change_working_dir(directory: Path):
-    original_dir = Path.cwd()
-    try:
-        os.chdir(directory)
-        yield directory
-    finally:
-        os.chdir(original_dir)
 
 
 class UnknownPythonPackageName(Exception):

@@ -15,7 +15,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import subprocess
 from typing import NamedTuple, cast
 
@@ -159,7 +159,7 @@ async def _get_package_version(pkg: str, ref: str) -> PackageVersion | None:
     time_str_no_ms = time_str.split('.')[0]
     dt_str = f'{date_str} {time_str_no_ms} {offset_str}'
     dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S %z')
-    dt_utc = dt.astimezone(timezone.utc)
+    dt_utc = dt.astimezone(UTC)
     timestamp = dt_utc.date()
 
     version = None

@@ -42,7 +42,7 @@ class AdventureIntegrationTest(unittest.TestCase):
                     buf.extend(chunk)
                     if expected in buf:
                         return bytes(buf)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except socket.error as e:
                 self.fail(f"Socket error: {e}")

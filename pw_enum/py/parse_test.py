@@ -42,13 +42,12 @@ class TestEnumHParser(unittest.TestCase):
     """Test cases for .enum.h parsing."""
 
     def setUp(self):
-        self.test_dir = (
+        self.test_dir = self.enterContext(
             tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
         )
-        self.addCleanup(self.test_dir.cleanup)
 
     def test_basic_parse(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -94,7 +93,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(desc.values[1].value, 1)
 
     def test_custom_strings(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -148,7 +147,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(final_descriptors[0].values[3].value, 4)
 
     def test_class_nested_enum(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -162,7 +161,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(e.scopes, ("my", "ns", "MyClass"))
 
     def test_multiple_enums(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -178,7 +177,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(enums[1].name, "E2")
 
     def test_nested_namespaces(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -189,7 +188,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(enums[0].scopes, ("a", "b"))
 
     def test_leading_colon_scopes(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -210,7 +209,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertTrue(desc.cc_versioned_name.startswith("::a::b::"))
 
     def test_top_level_enum_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("PW_ENUM(TopLevel, kA);")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -225,7 +224,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_empty_enum(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -238,7 +237,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(len(enums[0].values), 0)
 
     def test_single_enumerator_enum(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -253,7 +252,7 @@ class TestEnumHParser(unittest.TestCase):
         )
 
     def test_empty_custom_string(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
 
         text = (
@@ -268,7 +267,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_whitespace_and_nonprintable_custom_strings(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
 
         # Whitespace-only custom string is allowed
@@ -300,7 +299,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(enums[0].values[0][1], "Foo\nBar")
 
     def test_parse_evaluation_output_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("some content line 1\n...\nline 10 | error here")
         mock_stderr = (
             f'{test_file.resolve()}:10:5: error: '
@@ -320,7 +319,7 @@ class TestEnumHParser(unittest.TestCase):
         )
 
     def test_parse_evaluation_output_success(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         mock_stderr = (
             "PwEnumValueExtractor<0, 42>\nPwEnumValueExtractor<1, 100>\n"
@@ -341,7 +340,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(eval_values[1], EnumValue("kB", 100, "B"))
 
     def test_status_enum(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -361,7 +360,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(status.ok_code, "kOk")
 
     def test_status_enum_nonzero_ok(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -379,7 +378,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(status.ok_code, "kReady")
 
     def test_status_enum_enum_name_without_ok_code_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -395,7 +394,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_status_enum_ok_code_inferred_namespace(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -416,7 +415,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(status.ok_code, "kOk")
 
     def test_status_enum_ok_code_leading_colons(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -431,7 +430,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(enums[0].cc_full_name, "::other::MyStatusCode")
 
     def test_status_enum_ok_code_nested_fully_qualified(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -446,7 +445,7 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(enums[0].cc_full_name, "::my::ns::Outer::Code")
 
     def test_status_enum_ok_code_global_namespace_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -460,7 +459,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_status_enum_ok_code_without_enum_name_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -475,7 +474,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_status_enum_same_name_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -490,7 +489,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_status_enum_duplicate_status_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -505,7 +504,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_status_enum_duplicate_enum_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -525,7 +524,7 @@ class TestEnumHParser(unittest.TestCase):
     def test_parse_enums_status(
         self, mock_preprocess, mock_compile_eval
     ) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         mock_preprocess.return_value = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -550,7 +549,7 @@ class TestEnumHParser(unittest.TestCase):
     def test_parse_enums_status_ok_name_not_ok_code_error(
         self, mock_preprocess, mock_compile_eval
     ) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         mock_preprocess.return_value = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -575,7 +574,7 @@ class TestEnumHParser(unittest.TestCase):
     def test_parse_enums_status_ok_name_alias_of_ok_code(
         self, mock_preprocess, mock_compile_eval
     ) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         mock_preprocess.return_value = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -600,7 +599,7 @@ class TestEnumHParser(unittest.TestCase):
             self.assertFalse(is_ok_name(name), name)
 
     def test_status_enum_unregistered_ok_code_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -616,7 +615,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_missing_macro_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         with self.assertRaisesRegex(
             ParseError,
@@ -625,7 +624,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header("", test_file)
 
     def test_non_utf8_custom_string_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
 
         # Hex escape representing invalid UTF-8 byte 0xFF
@@ -642,8 +641,8 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_ignore_included_headers_enums(self) -> None:
-        foo_file = Path(self.test_dir.name) / "foo.h"
-        bar_file = Path(self.test_dir.name) / "bar.h"
+        foo_file = Path(self.test_dir) / "foo.h"
+        bar_file = Path(self.test_dir) / "bar.h"
         foo_file.write_text("")
         bar_file.write_text("")
 
@@ -669,8 +668,8 @@ class TestEnumHParser(unittest.TestCase):
         self.assertEqual(enums[0].name, "BarEnum")
 
     def test_missing_macro_error_with_other_file_enums(self) -> None:
-        foo_file = Path(self.test_dir.name) / "foo.h"
-        bar_file = Path(self.test_dir.name) / "bar.h"
+        foo_file = Path(self.test_dir) / "foo.h"
+        bar_file = Path(self.test_dir) / "bar.h"
         foo_file.write_text("")
         bar_file.write_text("")
 
@@ -688,7 +687,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, foo_file)
 
     def test_empty_enumerator_error(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         text = (
             f'# 1 "{test_file.resolve()}"\n'
@@ -702,7 +701,7 @@ class TestEnumHParser(unittest.TestCase):
             _parse_preprocessed_header(text, test_file)
 
     def test_windows_escaped_line_markers(self) -> None:
-        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file = Path(self.test_dir) / "test_enum.h"
         test_file.write_text("")
         # GCC on Windows escapes backslashes in preprocessor # line directives,
         # e.g. `# 1 "C:\\dir\\test_enum.h"`. Convert to POSIX first so `/` is
@@ -748,11 +747,8 @@ class TestSameFile(unittest.TestCase):
     """Test path comparison across OS path quirks."""
 
     def setUp(self) -> None:
-        self.test_dir = (
-            tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
-        )
-        self.addCleanup(self.test_dir.cleanup)
-        self.base = Path(self.test_dir.name)
+        # pylint: disable=consider-using-with
+        self.base = Path(self.enterContext(tempfile.TemporaryDirectory()))
         (self.base / "sub").mkdir()
 
     def test_existing_file_reached_by_different_paths(self) -> None:

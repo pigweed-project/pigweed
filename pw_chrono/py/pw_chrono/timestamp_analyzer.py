@@ -13,7 +13,7 @@
 # the License.
 """Library to analyze timestamps."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 import logging
 import pw_tokenizer
 from pw_chrono_protos import chrono_pb2
@@ -80,7 +80,7 @@ class TimePointInfo:
             seconds=self._timepoint.timestamp / self.ticks_per_sec()
         )
 
-    def as_unix_time(self, tz: timezone = timezone.utc) -> datetime:
+    def as_unix_time(self, tz: timezone = UTC) -> datetime:
         return datetime.fromtimestamp(self.duration().total_seconds(), tz)
 
     def tick_count_str(self) -> str:

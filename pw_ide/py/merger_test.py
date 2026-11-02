@@ -99,19 +99,19 @@ class MergerTest(fake_filesystem_unittest.TestCase):
         self.fs.create_dir(self.workspace_root)
         self.fs.create_dir(self.output_path)
 
-        self.mock_environ_patcher = mock.patch.dict(
-            os.environ,
-            {
-                'BUILD_WORKSPACE_DIRECTORY': str(self.workspace_root),
-                'BUILD_WORKING_DIRECTORY': str(self.workspace_root),
-            },
+        self.mock_environ = self.enterContext(
+            mock.patch.dict(
+                os.environ,
+                {
+                    'BUILD_WORKSPACE_DIRECTORY': str(self.workspace_root),
+                    'BUILD_WORKING_DIRECTORY': str(self.workspace_root),
+                },
+            )
         )
-        self.mock_environ = self.mock_environ_patcher.start()
-        self.addCleanup(self.mock_environ_patcher.stop)
 
-        self.mock_run_bazel_patcher = mock.patch('pw_ide.merger._run_bazel')
-        self.mock_run_bazel = self.mock_run_bazel_patcher.start()
-        self.addCleanup(self.mock_run_bazel_patcher.stop)
+        self.mock_run_bazel = self.enterContext(
+            mock.patch('pw_ide.merger._run_bazel')
+        )
 
         def run_bazel_side_effect(
             args,

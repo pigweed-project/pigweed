@@ -51,9 +51,7 @@ def _test_presubmit(
 ) -> presubmit.Presubmit:
     if events is None:
         events = mock.Mock(spec=PresubmitEvents)
-    tmp_dir = tempfile.TemporaryDirectory()
-    test_case.addCleanup(tmp_dir.cleanup)
-    tmp_path = Path(tmp_dir.name)
+    tmp_path = Path(test_case.enterContext(tempfile.TemporaryDirectory()))
     return presubmit.Presubmit(
         root=Path('.'),
         repos=[Path('.')],

@@ -20,7 +20,7 @@ import copy
 import dataclasses
 import logging
 from pathlib import Path
-from typing import Callable, Iterable, Pattern, TypeVar
+from typing import Callable, Iterable, Pattern, Self
 
 
 from pw_cli.file_filter import FileFilter
@@ -78,9 +78,6 @@ class Context:
         return bool(self._failures)
 
 
-_T = TypeVar('_T', bound='Step')
-
-
 class Step(ABC):
     """A single step in a Presubmit run.
 
@@ -129,14 +126,14 @@ class Step(ABC):
         return self._filter
 
     def replace_filter(
-        self: _T,
+        self,
         *,
         exclude: Iterable[Pattern[str] | str] = (),
         endswith: Iterable[str] = (),
         match_name: Iterable[Pattern[str] | str] = (),
         suffix: Iterable[str] = (),
         file_filter: FileFilter = FileFilter(),
-    ) -> _T:
+    ) -> Self:
         """Make a copy of this step with a replaced FileFilter."""
         clone = copy.deepcopy(self)
         clone._filter = file_filter.concat(  # pylint: disable=protected-access
@@ -145,14 +142,14 @@ class Step(ABC):
         return clone
 
     def concat_filter(
-        self: _T,
+        self,
         *,
         exclude: Iterable[Pattern[str] | str] = (),
         endswith: Iterable[str] = (),
         match_name: Iterable[Pattern[str] | str] = (),
         suffix: Iterable[str] = (),
         file_filter: FileFilter = FileFilter(),
-    ) -> _T:
+    ) -> Self:
         """Make a copy of this step with concatenated FileFilter rules."""
         clone = copy.deepcopy(self)
         clone._filter = self._filter.concat(  # pylint: disable=protected-access

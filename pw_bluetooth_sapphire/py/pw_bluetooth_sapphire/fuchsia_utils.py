@@ -58,11 +58,8 @@ def get_fuchsia_sdk_repo_name() -> str:
 
 
 def get_sha256(path: Path) -> str:
-    h = hashlib.sha256()
     with open(path, 'rb') as f:
-        while chunk := f.read(8192):
-            h.update(chunk)
-    return h.hexdigest()
+        return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
 def make_writable(path: Path):

@@ -15,6 +15,7 @@
 
 import argparse
 import configparser
+import contextlib
 from datetime import datetime
 import io
 from pathlib import Path
@@ -30,7 +31,6 @@ try:
     from pw_build.python_package import (
         PythonPackage,
         load_packages,
-        change_working_dir,
     )
     from pw_build.generate_python_package import (
         DEFAULT_INIT_PY,
@@ -42,7 +42,6 @@ except ImportError:
     from python_package import (  # type: ignore
         PythonPackage,
         load_packages,
-        change_working_dir,
     )
     from generate_python_package import (  # type: ignore
         DEFAULT_INIT_PY,
@@ -342,7 +341,7 @@ def setuptools_build_with_base(
 
     starting_directory = Path.cwd()
     # cd to the location of setup.py
-    with change_working_dir(pkg.setup_dir):
+    with contextlib.chdir(pkg.setup_dir):
         # Run build with temp build-base location
         # Note: New files will be placed inside lib_dir_path
         setuptools.setup(

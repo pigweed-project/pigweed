@@ -291,7 +291,7 @@ class QemuLauncher(Launcher):
         assert self._qmp_init_sock is not None
         try:
             conn, _ = self._qmp_init_sock.accept()
-        except (KeyboardInterrupt, socket.timeout):
+        except (KeyboardInterrupt, TimeoutError):
             raise RunError('qemu', 'qmp connection failed')
         self._qmp_init_sock.close()
         try:

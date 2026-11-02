@@ -22,9 +22,7 @@ import subprocess
 import tempfile
 import textwrap
 from pathlib import Path
-from typing import Iterator, TypeVar
-
-_Self = TypeVar('_Self', bound='ReadOnlyGitWorkspace')
+from typing import Iterator, Self
 
 
 def _git_env() -> dict[str, str]:
@@ -211,14 +209,14 @@ class ReadOnlyGitWorkspace(BasicGitWorkspace):
 
     @classmethod
     async def clone(
-        cls: type[_Self],
+        cls,
         src_url: str,
         dst_dir: Path | str | os.PathLike[str] | None = None,
         timestamp: datetime | date | str | None = None,
         no_checkout: bool = False,
         git_filter: str | None = None,
         depth: int | None = 1,
-    ) -> _Self:
+    ) -> Self:
         """Asynchronously clones a repository.
 
         Args:
@@ -247,14 +245,14 @@ class ReadOnlyGitWorkspace(BasicGitWorkspace):
 
     @classmethod
     def clone_sync(
-        cls: type[_Self],
+        cls,
         src_url: str,
         dst_dir: Path | str | os.PathLike[str] | None = None,
         timestamp: datetime | date | str | None = None,
         no_checkout: bool = False,
         git_filter: str | None = None,
         depth: int | None = 1,
-    ) -> _Self:
+    ) -> Self:
         """Synchronously clones a repository.
 
         Args:

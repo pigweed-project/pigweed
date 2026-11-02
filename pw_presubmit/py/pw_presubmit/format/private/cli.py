@@ -14,6 +14,7 @@
 """A CLI utility that checks and fixes formatting for source files."""
 
 import argparse
+import contextlib
 import itertools
 import logging
 import os
@@ -94,10 +95,8 @@ class FormattingSuite:
             dirs = [Path.cwd()]
 
         all_files_list: list[Path] = []
-        old_cwd = Path.cwd()
-        try:
-            for d in dirs:
-                os.chdir(d)
+        for d in dirs:
+            with contextlib.chdir(d):
                 repo_files = collect_files_in_current_repo(
                     paths,
                     _git_runner,
@@ -106,8 +105,6 @@ class FormattingSuite:
                     action_flavor_text='Formatting',
                 )
                 all_files_list.extend(repo_files)
-        finally:
-            os.chdir(old_cwd)
         all_files = sorted(set(all_files_list))
 
         _LOG.info('Checking formatting for %s', plural(all_files, 'file'))

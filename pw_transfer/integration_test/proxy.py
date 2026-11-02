@@ -281,7 +281,7 @@ class DataTransposer(Filter):
                     else:
                         await self.send_data(data)
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _LOG.info(f'{self._name} sending data in order due to timeout')
                 await self.send_data(held_data)
                 held_data = None

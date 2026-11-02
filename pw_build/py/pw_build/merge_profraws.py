@@ -25,12 +25,9 @@ from typing import Any
 _LOG = logging.getLogger(__name__)
 
 
-class FailureMode(enum.Enum):
+class FailureMode(enum.StrEnum):
     ANY = 'any'
     ALL = 'all'
-
-    def __str__(self):
-        return self.value
 
 
 def _parse_args() -> dict[str, Any]:

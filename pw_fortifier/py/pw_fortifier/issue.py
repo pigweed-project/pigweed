@@ -15,12 +15,10 @@
 
 from dataclasses import dataclass, replace, asdict, fields, field
 import json
-from typing import TypeVar, Any
+from typing import Any, Self
 
 from pw_fortifier.async_path import AsyncPath
 from pw_fortifier.code_snippet import CodeSnippet
-
-_IssueT = TypeVar('_IssueT', bound='Issue')
 
 
 @dataclass(kw_only=True)
@@ -75,7 +73,7 @@ class Issue:
         return d
 
     @classmethod
-    async def load(cls: type[_IssueT], path: AsyncPath) -> _IssueT:
+    async def load(cls, path: AsyncPath) -> Self:
         """Loads and reconstructs an Issue from a JSON file.
 
         Args:
@@ -99,12 +97,12 @@ class Issue:
         content = json.dumps(data, sort_keys=True, indent=4)
         await path.write_text(content)
 
-    def _replace(self: _IssueT, **kwargs) -> _IssueT:
+    def _replace(self, **kwargs) -> Self:
         """Returns a copy of the Issue with updated fields."""
         return replace(self, **kwargs)
 
     @classmethod
-    def from_issue(cls: type[_IssueT], issue: 'Issue') -> _IssueT | None:
+    def from_issue(cls, issue: 'Issue') -> Self | None:
         """Converts an untyped tracker Issue into this Issue subtype."""
         if cls is Issue:
             return issue  # type: ignore[return-value]

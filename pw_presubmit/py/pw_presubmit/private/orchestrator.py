@@ -43,14 +43,11 @@ from pw_presubmit.private.tools import relative_paths
 _LOG = logging.getLogger("pw_presubmit")
 
 
-class Mode(enum.Enum):
+class Mode(enum.StrEnum):
     STOP = 'stop'  # Stop on errors
     CONTINUE = 'continue'  # Continue past errors
     FIX = 'fix'  # Attempt to fix errors
     AUTO = 'auto'  # Run on all commits, fixing errors, and amend
-
-    def __str__(self) -> str:
-        return self.value
 
 
 class AutoModeError(Exception):

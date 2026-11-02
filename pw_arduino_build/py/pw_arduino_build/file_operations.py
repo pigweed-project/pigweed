@@ -14,6 +14,7 @@
 # the License.
 """File Helper Functions."""
 
+import contextlib
 import glob
 import hashlib
 import json
@@ -37,38 +38,30 @@ class InvalidChecksumError(Exception):
 def find_files(
     starting_dir: str, patterns: list[str], directories_only=False
 ) -> list[str]:
-    original_working_dir = os.getcwd()
     if not (os.path.exists(starting_dir) and os.path.isdir(starting_dir)):
         raise FileNotFoundError(
             "Directory '{}' does not exist.".format(starting_dir)
         )
 
-    os.chdir(starting_dir)
     files = []
-    for pattern in patterns:
-        for file_path in glob.glob(pattern, recursive=True):
-            if not directories_only or (
-                directories_only and os.path.isdir(file_path)
-            ):
-                files.append(file_path)
-    os.chdir(original_working_dir)
+    with contextlib.chdir(starting_dir):
+        for pattern in patterns:
+            for file_path in glob.glob(pattern, recursive=True):
+                if not directories_only or (
+                    directories_only and os.path.isdir(file_path)
+                ):
+                    files.append(file_path)
     return sorted(files)
 
 
 def sha256_sum(file_name):
-    hash_sha256 = hashlib.sha256()
     with open(file_name, "rb") as file_handle:
-        for chunk in iter(lambda: file_handle.read(4096), b""):
-            hash_sha256.update(chunk)
-    return hash_sha256.hexdigest()
+        return hashlib.file_digest(file_handle, "sha256").hexdigest()
 
 
 def md5_sum(file_name):
-    hash_md5 = hashlib.md5()
     with open(file_name, "rb") as file_handle:
-        for chunk in iter(lambda: file_handle.read(4096), b""):
-            hash_md5.update(chunk)
-    return hash_md5.hexdigest()
+        return hashlib.file_digest(file_handle, "md5").hexdigest()
 
 
 def verify_file_checksum(file_path, expected_checksum, sum_function=sha256_sum):
