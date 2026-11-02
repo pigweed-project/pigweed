@@ -15,6 +15,7 @@
 #pragma once
 #include <pw_assert/check.h>
 
+#include <algorithm>
 #include <optional>
 #include <queue>
 
@@ -35,11 +36,19 @@ namespace bt {
 template <typename NumericPropertyT, typename ValueT>
 class WindowedInspectNumericProperty {
  public:
+  // Maximum number of time-bucketed entries retained in the expiry queue.
+  // 60 buckets (e.g. 10-second intervals over the default 10-minute window)
+  // provides sufficient expiry granularity for rolling diagnostic counters
+  // while keeping the queue within a single std::deque allocation block.
+  static constexpr size_t kMaxPendingValues = 60;
+
   // |expiry_duration| is the time duration after which changes should be
   // reversed. |min_resolution| is the smallest duration between changes such
   // that they are reversed independently. Changes closer to this interval may
   // be batched together for expiry, biased towards earlier expiry than
-  // |expiry_duration|. May be 0 (default) to disable batching.
+  // |expiry_duration|. If 0 (default) or smaller than
+  // |expiry_duration| / |kMaxPendingValues|, |min_resolution| is clamped to
+  // bound queue growth.
   explicit WindowedInspectNumericProperty(
       pw::async::Dispatcher& pw_dispatcher,
       pw::chrono::SystemClock::duration expiry_duration =
@@ -47,7 +56,10 @@ class WindowedInspectNumericProperty {
       pw::chrono::SystemClock::duration min_resolution =
           pw::chrono::SystemClock::duration())
       : expiry_duration_(expiry_duration),
-        min_resolution_(min_resolution),
+        min_resolution_(
+            std::max({min_resolution,
+                      expiry_duration / static_cast<int64_t>(kMaxPendingValues),
+                      pw::chrono::SystemClock::duration(1)})),
         expiry_task_(pw_dispatcher,
                      [this](pw::async::Context /*ctx*/, pw::Status status) {
                        if (!status.ok()) {
@@ -95,9 +107,10 @@ class WindowedInspectNumericProperty {
     property_.Add(value);
     pw::chrono::SystemClock::time_point now = pw_dispatcher_.now();
     if (!values_.empty()) {
-      // If the most recent change's age is less than |min_resolution_|, merge
-      // this change to it
-      if (now < values_.back().first + min_resolution_) {
+      // If the most recent change's age is less than |min_resolution_|, or the
+      // queue has reached its capacity limit, merge this change to it.
+      if (now < values_.back().first + min_resolution_ ||
+          values_.size() >= kMaxPendingValues) {
         values_.back().second += value;
         return;
       }

@@ -15,24 +15,25 @@
 #include "pw_bluetooth_sapphire/internal/host/common/windowed_inspect_numeric_property.h"
 
 #include <pw_async/fake_dispatcher_fixture.h>
+#include <pw_function/function.h>
 
 #include "pw_bluetooth_sapphire/internal/host/testing/inspect.h"
-
-#ifndef NINSPECT
 
 namespace bt {
 
 namespace {
 
-using namespace ::inspect::testing;
-
 template <typename T>
 class TestProperty {
  public:
-  using ValueCallback = fit::function<void(const T& value)>;
+  using ValueCallback = pw::Function<void(const T& value)>;
   TestProperty() = default;
-  TestProperty(T value, ValueCallback cb)
-      : value_(value), value_cb_(std::move(cb)) {}
+  TestProperty(T value,
+               ValueCallback cb,
+               pw::Function<void()> subtract_cb = nullptr)
+      : value_(value),
+        value_cb_(std::move(cb)),
+        subtract_cb_(std::move(subtract_cb)) {}
 
   void Add(const T& value) {
     value_ += value;
@@ -46,11 +47,15 @@ class TestProperty {
     if (value_cb_) {
       value_cb_(value_);
     }
+    if (subtract_cb_) {
+      subtract_cb_();
+    }
   }
 
  private:
   T value_;
-  fit::function<void(const T& value)> value_cb_;
+  ValueCallback value_cb_;
+  pw::Function<void()> subtract_cb_;
 };
 
 using WindowedProperty = WindowedInspectNumericProperty<TestProperty<int>, int>;
@@ -193,7 +198,42 @@ TEST_F(WindowedInspectNumericPropertyTest, SetPropertyClearsValueAndTimer) {
   EXPECT_EQ(value_1, 0);
 }
 
+TEST_F(WindowedInspectNumericPropertyTest,
+       QueueSizeBoundedUnderHighFrequencyUpdates) {
+  constexpr pw::chrono::SystemClock::duration kExpiryDuration =
+      std::chrono::minutes(10);
+  constexpr pw::chrono::SystemClock::duration kInterval =
+      std::chrono::milliseconds(50);
+  constexpr size_t kNumUpdates = 12000;
+
+  WindowedProperty windowed_prop(dispatcher(), kExpiryDuration);
+  int value = 0;
+  size_t subtract_count = 0;
+  windowed_prop.SetProperty(TestProperty<int>(
+      0, [&](auto val) { value = val; }, [&]() { subtract_count++; }));
+
+  for (size_t i = 0; i < kNumUpdates; ++i) {
+    windowed_prop.Add(1);
+    if (i + 1 < kNumUpdates) {
+      RunFor(kInterval);
+    }
+  }
+
+  // Elapsed time is 11,999 * 50ms = 599,950ms (< 10 minutes), so no entries
+  // have expired yet and all queued nodes are concurrently retained in memory.
+  EXPECT_EQ(value, static_cast<int>(kNumUpdates));
+  EXPECT_EQ(subtract_count, 0u);
+
+  // Drain the full expiry window. Each Subtract() call corresponds to one
+  // distinct node popped from the internal queue.
+  RunFor(kExpiryDuration);
+  EXPECT_EQ(value, 0);
+  EXPECT_LE(subtract_count, WindowedProperty::kMaxPendingValues);
+}
+
+#ifndef NINSPECT
 TEST_F(WindowedInspectNumericPropertyTest, AttachInspectRealIntProperty) {
+  using namespace ::inspect::testing;
   ::inspect::Inspector inspector;
   auto& root = inspector.GetRoot();
 
@@ -216,9 +256,8 @@ TEST_F(WindowedInspectNumericPropertyTest, AttachInspectRealIntProperty) {
       hierarchy.take_value(),
       AllOf(NodeMatches(PropertyList(ElementsAre(IntIs("windowed", 7))))));
 }
+#endif  // NINSPECT
 
 }  // namespace
 
 }  // namespace bt
-
-#endif  // NINSPECT

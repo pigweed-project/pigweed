@@ -79,6 +79,13 @@ class LowEnergyConnectionManager final {
   static constexpr pw::chrono::SystemClock::duration
       kInspectRecentConnectionFailuresExpiryDuration = std::chrono::minutes(10);
 
+  // Minimum time resolution between batched connection failure updates in
+  // Inspect. A 10-second bucket over the 10-minute expiry window provides
+  // sufficient granularity for diagnostic reporting while bounding the number
+  // of queued entries and expiry timer wakeups during repeated failures.
+  static constexpr pw::chrono::SystemClock::duration
+      kInspectRecentConnectionFailuresMinResolution = std::chrono::seconds(10);
+
   // |hci|: The HCI transport used to track link layer connection events from
   //        the controller.
   // |addr_delegate|: Used to obtain local identity information during pairing
@@ -456,7 +463,9 @@ class LowEnergyConnectionManager final {
     // Count of connection failures in the past 10 minutes.
     explicit InspectProperties(pw::async::Dispatcher& pw_dispatcher)
         : recent_connection_failures(
-              pw_dispatcher, kInspectRecentConnectionFailuresExpiryDuration) {}
+              pw_dispatcher,
+              kInspectRecentConnectionFailuresExpiryDuration,
+              kInspectRecentConnectionFailuresMinResolution) {}
     WindowedInspectIntProperty recent_connection_failures;
 
     UintMetricCounter outgoing_connection_success_count_;
