@@ -349,6 +349,26 @@ TEST_F(IsoStreamTest, CloseInCisEstablishedCallbackDoesNotCrash) {
   EXPECT_TRUE(closed());
 }
 
+TEST_F(IsoStreamTest, CloseInFailedCisEstablishedCallbackDoesNotCrash) {
+  set_on_established_cb([this](
+                            pw::bluetooth::emboss::StatusCode status,
+                            std::optional<WeakSelf<IsoStream>::WeakPtr> stream,
+                            const std::optional<CisEstablishedParameters>&) {
+    ASSERT_EQ(
+        status,
+        pw::bluetooth::emboss::StatusCode::CONNECTION_FAILED_TO_BE_ESTABLISHED);
+    ASSERT_FALSE(stream.has_value());
+    iso_stream()->Close();
+  });
+  DynamicByteBuffer le_cis_established_packet =
+      LECisEstablishedPacketWithDefaultValues(
+          pw::bluetooth::emboss::StatusCode::
+              CONNECTION_FAILED_TO_BE_ESTABLISHED);
+  test_device()->SendCommandChannelPacket(le_cis_established_packet);
+  RunUntilIdle();
+  EXPECT_TRUE(closed());
+}
+
 TEST_F(IsoStreamTest, SetupDataPathSuccessfully) {
   EstablishCis(pw::bluetooth::emboss::StatusCode::SUCCESS);
   SetupDataPath(pw::bluetooth::emboss::DataPathDirection::OUTPUT,

@@ -280,9 +280,12 @@ bool IsoStreamImpl::OnCisEstablished(const hci::EventPacket& event) {
          hci_spec::StatusCodeToString(status).c_str());
 
   if (status != pw::bluetooth::emboss::StatusCode::SUCCESS) {
+    auto self = weak_self_.GetWeakPtr();
     cis_established_cb_(status, std::nullopt, std::nullopt);
-    // Destroys this object.
-    Close();
+    if (self.is_alive()) {
+      // Destroys this object.
+      Close();
+    }
     return true;
   }
 
