@@ -25,8 +25,8 @@ namespace pw::transport {
 
 /// @module{pw_transport}
 
-/// Configuration for a `ForwardingDatagramSocketPair`.
-struct ForwardingDatagramSocketOptions {
+/// Configuration for a `ForwardingSocketPair`.
+struct ForwardingSocketOptions {
   /// Default for the maximum datagram sizes. Matches the 1500-byte Ethernet
   /// MTU, so a default pair behaves like a typical network link and bounds the
   /// size of each write buffer allocation.
@@ -61,16 +61,15 @@ struct ForwardingDatagramSocketOptions {
 /// underlying `Buf` from the writer's reservation to the reader's queue.
 ///
 /// The underlying socket endpoints are reference-counted and allocated from the
-/// provided `Allocator`. Copies of the `ReliableSocket` handles
-/// returned by `first()` and `second()` may outlive the
-/// `ForwardingDatagramSocketPair` object itself; the shared state is
-/// automatically destroyed and deallocated once all handles and futures for
-/// both endpoints have been released.
+/// provided `Allocator`. Copies of the `ReliableSocket` handles returned by
+/// `first()` and `second()` may outlive the `ForwardingSocketPair` object
+/// itself; the shared state is automatically destroyed and deallocated once all
+/// handles and futures for both endpoints have been released.
 ///
 /// Closing one socket (or dropping all handles to it) prevents further writes
 /// in both directions. Datagrams that were already committed before the socket
 /// closed can still be read by the peer, after which the peer socket also
-/// closes. Calling `Close()` on the `ForwardingDatagramSocketPair` closes both
+/// closes. Calling `Close()` on the `ForwardingSocketPair` closes both
 /// endpoints immediately and discards any unread datagrams.
 ///
 /// # Memory and locking
@@ -88,11 +87,11 @@ struct ForwardingDatagramSocketOptions {
 /// a reservation is canceled or fails to commit), not when unrelated memory is
 /// freed. Size the allocator to hold `queue_depth` maximum-size datagrams in
 /// each direction to avoid stalls.
-class ForwardingDatagramSocketPair {
+class ForwardingSocketPair {
  public:
   /// Creates an empty, uninitialized pair with null `first()` and `second()`
   /// sockets.
-  constexpr ForwardingDatagramSocketPair() = default;
+  constexpr ForwardingSocketPair() = default;
 
   /// Creates a connected pair of sockets, allocating the socket endpoints,
   /// queues, and write buffers from `allocator`.
@@ -104,9 +103,8 @@ class ForwardingDatagramSocketPair {
   ///
   /// Crash-asserts if `allocator` cannot allocate the initial socket pair state
   /// or queues. Use `TryCreate` for fallible creation.
-  static ForwardingDatagramSocketPair Create(
-      Allocator& allocator,
-      const ForwardingDatagramSocketOptions& options = {});
+  static ForwardingSocketPair Create(
+      Allocator& allocator, const ForwardingSocketOptions& options = {});
 
   /// Fallibly creates a connected pair of sockets, allocating the socket
   /// endpoints, queues, and write buffers from `allocator`.
@@ -120,20 +118,16 @@ class ForwardingDatagramSocketPair {
   /// * @OK: The socket pair was created.
   /// * @RESOURCE_EXHAUSTED: `allocator` could not allocate the socket pair
   ///   state or queues.
-  static Result<ForwardingDatagramSocketPair> TryCreate(
-      Allocator& allocator,
-      const ForwardingDatagramSocketOptions& options = {});
+  static Result<ForwardingSocketPair> TryCreate(
+      Allocator& allocator, const ForwardingSocketOptions& options = {});
 
-  ForwardingDatagramSocketPair(const ForwardingDatagramSocketPair&) = delete;
-  ForwardingDatagramSocketPair& operator=(const ForwardingDatagramSocketPair&) =
-      delete;
+  ForwardingSocketPair(const ForwardingSocketPair&) = delete;
+  ForwardingSocketPair& operator=(const ForwardingSocketPair&) = delete;
 
-  ForwardingDatagramSocketPair(ForwardingDatagramSocketPair&&) noexcept =
-      default;
-  ForwardingDatagramSocketPair& operator=(
-      ForwardingDatagramSocketPair&&) noexcept = default;
+  ForwardingSocketPair(ForwardingSocketPair&&) noexcept = default;
+  ForwardingSocketPair& operator=(ForwardingSocketPair&&) noexcept = default;
 
-  ~ForwardingDatagramSocketPair() = default;
+  ~ForwardingSocketPair() = default;
 
   /// Returns the first socket in the pair.
   const ReliableSocket& first() const { return first_; }
@@ -149,7 +143,7 @@ class ForwardingDatagramSocketPair {
   }
 
  private:
-  ForwardingDatagramSocketPair(ReliableSocket&& first, ReliableSocket&& second)
+  ForwardingSocketPair(ReliableSocket&& first, ReliableSocket&& second)
       : first_(std::move(first)), second_(std::move(second)) {}
 
   ReliableSocket first_;

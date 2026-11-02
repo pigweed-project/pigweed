@@ -46,7 +46,7 @@ namespace pw::rpc2::test {
 /// client.
 ///
 /// Instantiates and connects a real `Server` (hosting `ServiceImpl`) and a
-/// `Client` over an in-memory `ForwardingDatagramSocketPair` on a single
+/// `Client` over an in-memory `ForwardingSocketPair` on a single
 /// `DispatcherForTest`. Tests drive RPCs through the generated `raw` or `pwpb`
 /// client API using `RunToCompletion()`, `RunInTaskUntilStalled()`, or
 /// `dispatcher()`.
@@ -72,7 +72,7 @@ class TestHarness {
     PW_CHECK_OK(server_.RegisterListenerBlocking(transport_));
     server_.Start();
 
-    auto paired = transport::ForwardingDatagramSocketPair::Create(allocator_);
+    auto paired = transport::ForwardingSocketPair::Create(allocator_);
     transport_.ResolveAccept(paired.second());
 
     RpcResult<Client> client = RunToCompletion(

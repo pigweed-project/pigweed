@@ -474,8 +474,7 @@ class ServiceTest : public ::testing::Test {
     server_.Start();
     started_ = true;
 
-    auto connections =
-        transport::ForwardingDatagramSocketPair::Create(allocator_);
+    auto connections = transport::ForwardingSocketPair::Create(allocator_);
     transport_.ResolveAccept(connections.second());
     ::pw::rpc2::RpcResult<pw::rpc2::Client> client =
         RunToCompletion(::pw::rpc2::Client::Connect(

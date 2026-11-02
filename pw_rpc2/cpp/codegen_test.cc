@@ -1161,8 +1161,7 @@ class TestServer {
     }
     server_.Start();
 
-    auto paired =
-        pw::transport::ForwardingDatagramSocketPair::Create(allocator_);
+    auto paired = pw::transport::ForwardingSocketPair::Create(allocator_);
     transport_.ResolveAccept(paired.second());
 
     async2::FutureTask connect(

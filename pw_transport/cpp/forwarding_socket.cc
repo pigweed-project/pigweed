@@ -56,18 +56,18 @@ class SharedLock final : public RefCounted<SharedLock>,
   sync::InterruptSpinLock lock_;
 };
 
-// One endpoint of a `ForwardingDatagramSocketPair`.
+// One endpoint of a `ForwardingSocketPair`.
 //
 // Both sockets in a pair use the same `SharedLock`, so holding `*this` also
 // guards `*sibling_`. Clang's thread safety analysis cannot express that the
 // two capabilities alias, so methods that touch the sibling's state disable it.
-class ForwardingDatagramSocket final : public ReliableSocketImpl {
+class ForwardingSocket final : public ReliableSocketImpl {
  public:
-  ForwardingDatagramSocket(Allocator& allocator,
-                           IntrusivePtr<SharedLock> lock,
-                           FixedQueue<ConstBuf>&& read_queue,
-                           size_t max_write_message_size_bytes,
-                           size_t max_read_message_size_bytes)
+  ForwardingSocket(Allocator& allocator,
+                   IntrusivePtr<SharedLock> lock,
+                   FixedQueue<ConstBuf>&& read_queue,
+                   size_t max_write_message_size_bytes,
+                   size_t max_read_message_size_bytes)
       : ReliableSocketImpl(allocator,
                            max_write_message_size_bytes,
                            max_read_message_size_bytes),
@@ -75,13 +75,12 @@ class ForwardingDatagramSocket final : public ReliableSocketImpl {
         lock_(std::move(lock)),
         read_queue_(std::move(read_queue)) {}
 
-  ~ForwardingDatagramSocket() override {
+  ~ForwardingSocket() override {
     std::lock_guard lock(*this);
     DisconnectLocked();
   }
 
-  void SetSibling(ForwardingDatagramSocket* sibling)
-      PW_NO_LOCK_SAFETY_ANALYSIS {
+  void SetSibling(ForwardingSocket* sibling) PW_NO_LOCK_SAFETY_ANALYSIS {
     sibling_ = sibling;
   }
 
@@ -185,7 +184,7 @@ class ForwardingDatagramSocket final : public ReliableSocketImpl {
       PW_EXCLUSIVE_LOCKS_REQUIRED(*this) PW_NO_LOCK_SAFETY_ANALYSIS {
     ShutDownLocked();
     if (sibling_ != nullptr) {
-      ForwardingDatagramSocket* peer = std::exchange(sibling_, nullptr);
+      ForwardingSocket* peer = std::exchange(sibling_, nullptr);
       peer->sibling_ = nullptr;
       peer->OnPeerClosedLocked();
     }
@@ -209,7 +208,7 @@ class ForwardingDatagramSocket final : public ReliableSocketImpl {
 
   Allocator& allocator_;
   IntrusivePtr<SharedLock> lock_;
-  ForwardingDatagramSocket* sibling_ PW_GUARDED_BY(*this) = nullptr;
+  ForwardingSocket* sibling_ PW_GUARDED_BY(*this) = nullptr;
 
   FixedQueue<ConstBuf> read_queue_ PW_GUARDED_BY(*this);
   uint16_t active_reservations_ PW_GUARDED_BY(*this) = 0;
@@ -217,16 +216,15 @@ class ForwardingDatagramSocket final : public ReliableSocketImpl {
 
 }  // namespace
 
-ForwardingDatagramSocketPair ForwardingDatagramSocketPair::Create(
-    Allocator& allocator, const ForwardingDatagramSocketOptions& options) {
-  Result<ForwardingDatagramSocketPair> result = TryCreate(allocator, options);
-  PW_CHECK_OK(result.status(),
-              "Failed to allocate ForwardingDatagramSocketPair");
+ForwardingSocketPair ForwardingSocketPair::Create(
+    Allocator& allocator, const ForwardingSocketOptions& options) {
+  Result<ForwardingSocketPair> result = TryCreate(allocator, options);
+  PW_CHECK_OK(result.status(), "Failed to allocate ForwardingSocketPair");
   return std::move(*result);
 }
 
-Result<ForwardingDatagramSocketPair> ForwardingDatagramSocketPair::TryCreate(
-    Allocator& allocator, const ForwardingDatagramSocketOptions& options) {
+Result<ForwardingSocketPair> ForwardingSocketPair::TryCreate(
+    Allocator& allocator, const ForwardingSocketOptions& options) {
   const uint16_t queue_depth = options.queue_depth;
   PW_CHECK_UINT_GT(queue_depth, 0u);
 
@@ -247,22 +245,22 @@ Result<ForwardingDatagramSocketPair> ForwardingDatagramSocketPair::TryCreate(
     return Status::ResourceExhausted();
   }
 
-  ForwardingDatagramSocket* first = allocator.New<ForwardingDatagramSocket>(
-      allocator,
-      lock,
-      std::move(first_queue),
-      options.max_first_to_second_size_bytes,
-      options.max_second_to_first_size_bytes);
+  ForwardingSocket* first =
+      allocator.New<ForwardingSocket>(allocator,
+                                      lock,
+                                      std::move(first_queue),
+                                      options.max_first_to_second_size_bytes,
+                                      options.max_second_to_first_size_bytes);
   if (first == nullptr) {
     return Status::ResourceExhausted();
   }
 
-  ForwardingDatagramSocket* second = allocator.New<ForwardingDatagramSocket>(
-      allocator,
-      std::move(lock),
-      std::move(second_queue),
-      options.max_second_to_first_size_bytes,
-      options.max_first_to_second_size_bytes);
+  ForwardingSocket* second =
+      allocator.New<ForwardingSocket>(allocator,
+                                      std::move(lock),
+                                      std::move(second_queue),
+                                      options.max_second_to_first_size_bytes,
+                                      options.max_first_to_second_size_bytes);
   if (second == nullptr) {
     allocator.Delete(first);
     return Status::ResourceExhausted();
@@ -270,8 +268,7 @@ Result<ForwardingDatagramSocketPair> ForwardingDatagramSocketPair::TryCreate(
 
   first->SetSibling(second);
   second->SetSibling(first);
-  return ForwardingDatagramSocketPair(first->WrapSocket(),
-                                      second->WrapSocket());
+  return ForwardingSocketPair(first->WrapSocket(), second->WrapSocket());
 }
 
 }  // namespace pw::transport

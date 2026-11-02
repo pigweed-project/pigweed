@@ -13,7 +13,7 @@
 // the License.
 
 // End-to-end tests: generated clients talk to generated services through a
-// real `Server` over in-memory `ForwardingDatagramSocketPair` links.
+// real `Server` over in-memory `ForwardingSocketPair` links.
 
 #include <algorithm>
 #include <array>
@@ -609,7 +609,7 @@ class E2ETest : public ::testing::Test {
   // A connected client and both ends of the link it runs over.
   struct Connection {
     Client client;
-    transport::ForwardingDatagramSocketPair sockets;
+    transport::ForwardingSocketPair sockets;
   };
 
   explicit E2ETest(ServiceKind service_kind = ServiceKind::kRaw)
@@ -644,8 +644,8 @@ class E2ETest : public ::testing::Test {
   Connection& ConnectClient(test::MockTransport& listener) {
     connections_.emplace_back(Connection{
         .client = Client(),
-        .sockets = transport::ForwardingDatagramSocketPair::Create(
-            allocator_, {.queue_depth = 1}),
+        .sockets = transport::ForwardingSocketPair::Create(allocator_,
+                                                           {.queue_depth = 1}),
     });
     Connection& connection = connections_.back();
     listener.ResolveAccept(connection.sockets.second());

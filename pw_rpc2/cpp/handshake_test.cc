@@ -111,7 +111,7 @@ TEST(HandshakeTest, InitiatorAndResponderSuccessful3WayHandshake) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  auto paired = transport::ForwardingDatagramSocketPair::Create(allocator);
+  auto paired = transport::ForwardingSocketPair::Create(allocator);
 
   HandshakeTestTask initiator_task(InitiatorHandshakeFuture(paired.first()));
   HandshakeTestTask responder_task(ResponderHandshakeFuture(paired.second()));
@@ -144,7 +144,7 @@ TEST(HandshakeTest, VersionNegotiationInitiatorHigher) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  auto paired = transport::ForwardingDatagramSocketPair::Create(allocator);
+  auto paired = transport::ForwardingSocketPair::Create(allocator);
 
   HandshakeTestTask initiator_task(
       InitiatorHandshakeFuture(paired.first(), HandshakeInfo{2}));
@@ -171,7 +171,7 @@ TEST(HandshakeTest, VersionNegotiationResponderHigher) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  auto paired = transport::ForwardingDatagramSocketPair::Create(allocator);
+  auto paired = transport::ForwardingSocketPair::Create(allocator);
 
   HandshakeTestTask initiator_task(
       InitiatorHandshakeFuture(paired.first(), HandshakeInfo{1}));
@@ -595,7 +595,7 @@ TEST(HandshakeTest, VersionNegotiationBothAboveOne) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  auto paired = transport::ForwardingDatagramSocketPair::Create(allocator);
+  auto paired = transport::ForwardingSocketPair::Create(allocator);
 
   HandshakeTestTask initiator_task(
       InitiatorHandshakeFuture(paired.first(), HandshakeInfo{3}));

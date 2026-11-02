@@ -40,7 +40,7 @@ std::string_view AsString(const ConstBuf& buf) {
                           buf.size());
 }
 
-class ForwardingDatagramSocketTest : public ::testing::Test {
+class ForwardingSocketTest : public ::testing::Test {
  protected:
   void TearDown() override {
     EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), 0u);
@@ -72,15 +72,15 @@ class ForwardingDatagramSocketTest : public ::testing::Test {
   async2::DispatcherForTest dispatcher_;
 };
 
-TEST_F(ForwardingDatagramSocketTest, DefaultConstructed_IsNull) {
-  ForwardingDatagramSocketPair pair;
+TEST_F(ForwardingSocketTest, DefaultConstructed_IsNull) {
+  ForwardingSocketPair pair;
   EXPECT_FALSE(pair.first());
   EXPECT_FALSE(pair.second());
   pair.Close();
 }
 
-TEST_F(ForwardingDatagramSocketTest, SendAndReceive_BothDirections) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+TEST_F(ForwardingSocketTest, SendAndReceive_BothDirections) {
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   ASSERT_TRUE(TrySend(pair.first(), "hello"));
   ConstBuf request = Receive(pair.second());
@@ -93,8 +93,8 @@ TEST_F(ForwardingDatagramSocketTest, SendAndReceive_BothDirections) {
   EXPECT_EQ(AsString(response), "world");
 }
 
-TEST_F(ForwardingDatagramSocketTest, SendAndReceive_ForwardsZeroCopy) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+TEST_F(ForwardingSocketTest, SendAndReceive_ForwardsZeroCopy) {
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   std::optional<WriteReservation> reservation =
       pair.first().TryReserveWrite(16);
@@ -109,9 +109,8 @@ TEST_F(ForwardingDatagramSocketTest, SendAndReceive_ForwardsZeroCopy) {
   EXPECT_EQ(AsString(received), "zero-copy");
 }
 
-TEST_F(ForwardingDatagramSocketTest, SendAndReceive_EmptyDatagram) {
-  auto pair =
-      ForwardingDatagramSocketPair::Create(allocator_, {.queue_depth = 2});
+TEST_F(ForwardingSocketTest, SendAndReceive_EmptyDatagram) {
+  auto pair = ForwardingSocketPair::Create(allocator_, {.queue_depth = 2});
 
   ASSERT_TRUE(TrySend(pair.first(), ""));
   ASSERT_TRUE(TrySend(pair.first(), "after"));
@@ -127,9 +126,9 @@ TEST_F(ForwardingDatagramSocketTest, SendAndReceive_EmptyDatagram) {
   EXPECT_EQ(AsString(after), "after");
 }
 
-TEST_F(ForwardingDatagramSocketTest,
+TEST_F(ForwardingSocketTest,
        SendAndReceive_NonEmptyReservationCommittedAsEmpty) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   std::optional<WriteReservation> reservation =
       pair.first().TryReserveWrite(16);
@@ -143,9 +142,8 @@ TEST_F(ForwardingDatagramSocketTest,
   EXPECT_EQ(received.size(), 0u);
 }
 
-TEST_F(ForwardingDatagramSocketTest, SendAndReceive_ManyDatagramsInOrder) {
-  auto pair =
-      ForwardingDatagramSocketPair::Create(allocator_, {.queue_depth = 4});
+TEST_F(ForwardingSocketTest, SendAndReceive_ManyDatagramsInOrder) {
+  auto pair = ForwardingSocketPair::Create(allocator_, {.queue_depth = 4});
 
   constexpr std::array<std::string_view, 4> kDatagrams = {
       "first", "second", "third", "fourth"};
@@ -159,9 +157,8 @@ TEST_F(ForwardingDatagramSocketTest, SendAndReceive_ManyDatagramsInOrder) {
   }
 }
 
-TEST_F(ForwardingDatagramSocketTest, TryReserveWrite_LimitedByQueueDepth) {
-  auto pair =
-      ForwardingDatagramSocketPair::Create(allocator_, {.queue_depth = 2});
+TEST_F(ForwardingSocketTest, TryReserveWrite_LimitedByQueueDepth) {
+  auto pair = ForwardingSocketPair::Create(allocator_, {.queue_depth = 2});
 
   std::optional<WriteReservation> first = pair.first().TryReserveWrite(4);
   std::optional<WriteReservation> second = pair.first().TryReserveWrite(4);
@@ -196,8 +193,8 @@ TEST_F(ForwardingDatagramSocketTest, TryReserveWrite_LimitedByQueueDepth) {
   EXPECT_TRUE(pair.first().TryReserveWrite(4).has_value());
 }
 
-TEST_F(ForwardingDatagramSocketTest, ReserveWrite_WakesWhenPeerReads) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+TEST_F(ForwardingSocketTest, ReserveWrite_WakesWhenPeerReads) {
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   ASSERT_TRUE(TrySend(pair.first(), "first"));
 
@@ -222,10 +219,8 @@ TEST_F(ForwardingDatagramSocketTest, ReserveWrite_WakesWhenPeerReads) {
   EXPECT_EQ(AsString(second), "second");
 }
 
-TEST_F(ForwardingDatagramSocketTest,
-       ReserveWrite_WakesWhenReservationCanceled) {
-  auto pair =
-      ForwardingDatagramSocketPair::Create(allocator_, {.queue_depth = 1});
+TEST_F(ForwardingSocketTest, ReserveWrite_WakesWhenReservationCanceled) {
+  auto pair = ForwardingSocketPair::Create(allocator_, {.queue_depth = 1});
 
   WriteReservation blocker = pair.first().TryReserveWrite(0).value();
 
@@ -241,9 +236,9 @@ TEST_F(ForwardingDatagramSocketTest,
   ASSERT_TRUE(reserve_task.value().has_value());
 }
 
-TEST_F(ForwardingDatagramSocketTest,
+TEST_F(ForwardingSocketTest,
        ReserveWrite_MoveAssignOverResolvedFutureReleasesReservation) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   WriteReservation blocker = pair.first().TryReserveWrite(0).value();
   ReserveWriteFuture resolved = pair.first().ReserveWrite(4);
@@ -262,8 +257,8 @@ TEST_F(ForwardingDatagramSocketTest,
   EXPECT_TRUE(reservation.has_value());
 }
 
-TEST_F(ForwardingDatagramSocketTest, Read_WakesWhenPeerCommits) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+TEST_F(ForwardingSocketTest, Read_WakesWhenPeerCommits) {
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   async2::FutureTask<ReadFuture> read_task(pair.second().Read());
   dispatcher_.Post(read_task);
@@ -277,22 +272,22 @@ TEST_F(ForwardingDatagramSocketTest, Read_WakesWhenPeerCommits) {
   EXPECT_EQ(AsString(read_task.value()), "wake up");
 }
 
-TEST_F(ForwardingDatagramSocketTest, DefaultOptions_MaxSizes) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+TEST_F(ForwardingSocketTest, DefaultOptions_MaxSizes) {
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   constexpr size_t kDefault =
-      ForwardingDatagramSocketOptions::kDefaultMaxDatagramSizeBytes;
+      ForwardingSocketOptions::kDefaultMaxDatagramSizeBytes;
   EXPECT_EQ(pair.first().max_write_message_size_bytes(), kDefault);
   EXPECT_EQ(pair.first().max_read_message_size_bytes(), kDefault);
   EXPECT_EQ(pair.second().max_write_message_size_bytes(), kDefault);
   EXPECT_EQ(pair.second().max_read_message_size_bytes(), kDefault);
 }
 
-TEST_F(ForwardingDatagramSocketTest, Options_MaxSizesPerDirection) {
-  auto pair = ForwardingDatagramSocketPair::Create(
-      allocator_,
-      {.max_first_to_second_size_bytes = 64,
-       .max_second_to_first_size_bytes = 32});
+TEST_F(ForwardingSocketTest, Options_MaxSizesPerDirection) {
+  auto pair =
+      ForwardingSocketPair::Create(allocator_,
+                                   {.max_first_to_second_size_bytes = 64,
+                                    .max_second_to_first_size_bytes = 32});
 
   EXPECT_EQ(pair.first().max_write_message_size_bytes(), 64u);
   EXPECT_EQ(pair.second().max_read_message_size_bytes(), 64u);
@@ -303,9 +298,9 @@ TEST_F(ForwardingDatagramSocketTest, Options_MaxSizesPerDirection) {
   EXPECT_TRUE(pair.second().TryReserveWrite(32).has_value());
 }
 
-TEST_F(ForwardingDatagramSocketTest,
+TEST_F(ForwardingSocketTest,
        TryReserveWrite_ReturnsNulloptWhenAllocatorExhausted) {
-  auto pair = ForwardingDatagramSocketPair::Create(
+  auto pair = ForwardingSocketPair::Create(
       allocator_, {.max_first_to_second_size_bytes = 8192});
 
   EXPECT_FALSE(pair.first().TryReserveWrite(8192).has_value());
@@ -313,11 +308,11 @@ TEST_F(ForwardingDatagramSocketTest,
   EXPECT_TRUE(pair.first().TryReserveWrite(8).has_value());
 }
 
-TEST_F(ForwardingDatagramSocketTest,
+TEST_F(ForwardingSocketTest,
        ReserveWrite_RetriedWhenReservationCanceledAfterAllocationFailure) {
   // Each buffer is too large for two to fit in `allocator_` at once.
   constexpr size_t kLargeSize = 2500;
-  auto pair = ForwardingDatagramSocketPair::Create(
+  auto pair = ForwardingSocketPair::Create(
       allocator_,
       {.queue_depth = 2, .max_first_to_second_size_bytes = kLargeSize});
 
@@ -341,23 +336,21 @@ TEST_F(ForwardingDatagramSocketTest,
   EXPECT_EQ(reserve_task.value()->size(), kLargeSize);
 }
 
-TEST_F(ForwardingDatagramSocketTest, TryCreate_FailsWhenAllocatorExhausted) {
+TEST_F(ForwardingSocketTest, TryCreate_FailsWhenAllocatorExhausted) {
   allocator::NullAllocator null_alloc;
-  Result<ForwardingDatagramSocketPair> result =
-      ForwardingDatagramSocketPair::TryCreate(null_alloc);
+  Result<ForwardingSocketPair> result =
+      ForwardingSocketPair::TryCreate(null_alloc);
   EXPECT_EQ(result.status(), Status::ResourceExhausted());
 
   // Also test when the allocator does not have enough space for the queues.
-  Result<ForwardingDatagramSocketPair> queue_fail =
-      ForwardingDatagramSocketPair::TryCreate(allocator_,
-                                              {.queue_depth = 1000});
+  Result<ForwardingSocketPair> queue_fail =
+      ForwardingSocketPair::TryCreate(allocator_, {.queue_depth = 1000});
   EXPECT_EQ(queue_fail.status(), Status::ResourceExhausted());
   EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), 0u);
 }
 
-TEST_F(ForwardingDatagramSocketTest, Close_WakesAndClosesPeerWhenQueueEmpty) {
-  auto pair =
-      ForwardingDatagramSocketPair::Create(allocator_, {.queue_depth = 1});
+TEST_F(ForwardingSocketTest, Close_WakesAndClosesPeerWhenQueueEmpty) {
+  auto pair = ForwardingSocketPair::Create(allocator_, {.queue_depth = 1});
 
   WriteReservation blocker = pair.second().TryReserveWrite(0).value();
 
@@ -385,9 +378,8 @@ TEST_F(ForwardingDatagramSocketTest, Close_WakesAndClosesPeerWhenQueueEmpty) {
   EXPECT_FALSE(pair.second().TryReserveWrite(4).has_value());
 }
 
-TEST_F(ForwardingDatagramSocketTest, Close_CommittedDatagramsCanStillBeRead) {
-  auto pair =
-      ForwardingDatagramSocketPair::Create(allocator_, {.queue_depth = 3});
+TEST_F(ForwardingSocketTest, Close_CommittedDatagramsCanStillBeRead) {
+  auto pair = ForwardingSocketPair::Create(allocator_, {.queue_depth = 3});
 
   constexpr std::array<std::string_view, 3> kDatagrams = {
       "one", "two", "three"};
@@ -417,9 +409,8 @@ TEST_F(ForwardingDatagramSocketTest, Close_CommittedDatagramsCanStillBeRead) {
   EXPECT_TRUE(Receive(pair.second()) == nullptr);
 }
 
-TEST_F(ForwardingDatagramSocketTest,
-       Close_WakesPeerWriterWhilePeerHasUnreadDatagrams) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+TEST_F(ForwardingSocketTest, Close_WakesPeerWriterWhilePeerHasUnreadDatagrams) {
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   // Enqueue a datagram for `second()` so its read queue is non-empty.
   ASSERT_TRUE(TrySend(pair.first(), "unread"));
@@ -448,10 +439,8 @@ TEST_F(ForwardingDatagramSocketTest,
   EXPECT_TRUE(Receive(pair.second()) == nullptr);
 }
 
-TEST_F(ForwardingDatagramSocketTest,
-       Close_PeerReservationsStillLimitedByQueueDepth) {
-  auto pair =
-      ForwardingDatagramSocketPair::Create(allocator_, {.queue_depth = 2});
+TEST_F(ForwardingSocketTest, Close_PeerReservationsStillLimitedByQueueDepth) {
+  auto pair = ForwardingSocketPair::Create(allocator_, {.queue_depth = 2});
 
   // Keep `second()` open after `first()` closes by leaving a datagram unread.
   ASSERT_TRUE(TrySend(pair.first(), "unread"));
@@ -469,8 +458,8 @@ TEST_F(ForwardingDatagramSocketTest,
   EXPECT_TRUE(pair.second().TryReserveWrite(4).has_value());
 }
 
-TEST_F(ForwardingDatagramSocketTest, Close_CommitAfterCloseFails) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+TEST_F(ForwardingSocketTest, Close_CommitAfterCloseFails) {
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   std::optional<WriteReservation> reservation = pair.first().TryReserveWrite(4);
   ASSERT_TRUE(reservation.has_value());
@@ -482,8 +471,8 @@ TEST_F(ForwardingDatagramSocketTest, Close_CommitAfterCloseFails) {
   EXPECT_TRUE(Receive(pair.second()) == nullptr);
 }
 
-TEST_F(ForwardingDatagramSocketTest, Close_DiscardsUnreadDatagrams) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+TEST_F(ForwardingSocketTest, Close_DiscardsUnreadDatagrams) {
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   ASSERT_TRUE(TrySend(pair.first(), "unread"));
   ReadFuture read = pair.second().Read();
@@ -493,8 +482,8 @@ TEST_F(ForwardingDatagramSocketTest, Close_DiscardsUnreadDatagrams) {
   EXPECT_TRUE(RunToCompletion(read) == nullptr);
 }
 
-TEST_F(ForwardingDatagramSocketTest, PairClose_ClosesBothImmediately) {
-  auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+TEST_F(ForwardingSocketTest, PairClose_ClosesBothImmediately) {
+  auto pair = ForwardingSocketPair::Create(allocator_);
 
   ASSERT_TRUE(TrySend(pair.first(), "to-second"));
   ASSERT_TRUE(TrySend(pair.second(), "to-first"));
@@ -505,11 +494,11 @@ TEST_F(ForwardingDatagramSocketTest, PairClose_ClosesBothImmediately) {
   EXPECT_TRUE(Receive(pair.second()) == nullptr);
 }
 
-TEST_F(ForwardingDatagramSocketTest, Sockets_OutlivePair) {
+TEST_F(ForwardingSocketTest, Sockets_OutlivePair) {
   ReliableSocket first;
   ReliableSocket second;
   {
-    auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+    auto pair = ForwardingSocketPair::Create(allocator_);
     first = pair.first();
     second = pair.second();
   }
@@ -520,12 +509,12 @@ TEST_F(ForwardingDatagramSocketTest, Sockets_OutlivePair) {
   EXPECT_EQ(AsString(received), "still open");
 }
 
-TEST_F(ForwardingDatagramSocketTest,
+TEST_F(ForwardingSocketTest,
        DropLastHandle_ClosesPeerAfterDrainingCommittedDatagrams) {
   ReliableSocket first;
   ReliableSocket second;
   {
-    auto pair = ForwardingDatagramSocketPair::Create(allocator_);
+    auto pair = ForwardingSocketPair::Create(allocator_);
     first = pair.first();
     second = pair.second();
   }

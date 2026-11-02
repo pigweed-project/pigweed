@@ -459,8 +459,8 @@ class MixedApisTest : public ::testing::Test {
     server_.Start();
     started_ = true;
 
-    auto connections = transport::ForwardingDatagramSocketPair::Create(
-        allocator_, {.queue_depth = 1});
+    auto connections =
+        transport::ForwardingSocketPair::Create(allocator_, {.queue_depth = 1});
     server_connection_ = connections.second();
     transport_.ResolveAccept(connections.second());
     ::pw::rpc2::RpcResult<pw::rpc2::Client> client =
