@@ -28,11 +28,10 @@ import (
 )
 
 // TestMain runs every unit test with fail-closed credentials and network so a
-// test that forgets to mock auth can never run luci-auth, gcloud, sso_client,
-// gob-curl, bb, or the Busytown accelerators, read the developer's tokens, or
-// reach a real server. Tests that need credentials install mocks with
-// WithHermeticAuth. The live suite (-tags=live) has no TestMain and uses real
-// credentials.
+// test that forgets to mock auth can never run luci-auth, sso_client, bb, or
+// the Busytown accelerators, read the developer's tokens, or reach a real
+// server. Tests that need credentials install mocks with WithHermeticAuth. The
+// live suite (-tags=live) has no TestMain and uses real credentials.
 func TestMain(m *testing.M) {
 	for _, v := range hermeticAuthEnvVars {
 		os.Unsetenv(v)
@@ -46,6 +45,9 @@ func TestMain(m *testing.M) {
 	// auto-detection never sees their user.email.
 	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	// httptest Gerrit servers are loopback; let them receive the (mocked)
+	// luci-auth token. TestResolveGerritAuth_LoopbackNotMintedInProduction
+	// covers the production default.
 	allowLoopbackGerritAuthForTests = true
 	failClosed := failClosedAuthResolvers()
 	SetAuthResolvers(failClosed)
@@ -54,9 +56,14 @@ func TestMain(m *testing.M) {
 	SetRerunExecForTesting(failClosed.LookPath, func(ctx context.Context, name string, args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("hermetic test: unexpected command %s", name)
 	})
-	BusytownFileExistsFn = func(string) bool { return false }
-	BusytownExecCommandFn = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return failClosed.CommandRunner(ctx, name, args...)
+	defaultBusytownFileExists = func(string) bool { return false }
+	defaultBusytownExecCommand = failClosed.CommandRunner
+	newBusytownProvider := NewBusytownProvider
+	NewBusytownProvider = func() *BusytownProvider {
+		p := newBusytownProvider()
+		p.FileExistsFn = defaultBusytownFileExists
+		p.ExecCommandFn = defaultBusytownExecCommand
+		return p
 	}
 	http.DefaultTransport = &loopbackOnlyTransport{
 		inner:       http.DefaultTransport,
@@ -66,8 +73,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestHermeticDefaults_FailClosed(t *testing.T) {
-	prev := currentAuthResolvers()
-	t.Cleanup(func() { SetAuthResolvers(prev) })
 	ResetAuthTokenCaches()
 	t.Cleanup(ResetAuthTokenCaches)
 	ctx := t.Context()
@@ -83,14 +88,14 @@ func TestHermeticDefaults_FailClosed(t *testing.T) {
 		{"AndroidBuildTokenResolver", func() error { _, err := AndroidBuildTokenResolver(ctx); return err }},
 		{"IssueTrackerTokenResolver", func() error { _, _, err := IssueTrackerTokenResolver(ctx); return err }},
 		{"DefaultRerunCheck", func() error { return DefaultRerunCheck(ctx, "bb add foo", "", io.Discard, io.Discard) }},
-		{"BusytownExecCommandFn", func() error { _, err := BusytownExecCommandFn(ctx, AntsCLIBinPath); return err }},
+		{"BusytownExecCommandFn", func() error { _, err := NewBusytownProvider().ExecCommandFn(ctx, AntsCLIBinPath); return err }},
 	} {
 		if err := tc.fn(); err == nil {
 			t.Errorf("%s succeeded, want fail-closed error", tc.name)
 		}
 	}
-	if BusytownFileExistsFn(FetchArtifactBinPath) {
-		t.Errorf("BusytownFileExistsFn(%q) = true, want false", FetchArtifactBinPath)
+	if NewBusytownProvider().FileExistsFn(FetchArtifactBinPath) {
+		t.Errorf("NewBusytownProvider().FileExistsFn(%q) = true, want false", FetchArtifactBinPath)
 	}
 
 	t.Setenv("GERRIT_TOKEN", "x")

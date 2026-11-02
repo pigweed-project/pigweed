@@ -61,14 +61,18 @@ func (p *BuildbucketProvider) Name() string {
 	return "buildbucket"
 }
 
-func (p *BuildbucketProvider) luciClient(ctx context.Context) *LUCIClient {
+func (p *BuildbucketProvider) luciClient() *LUCIClient {
 	if p.LUCIClient != nil {
 		return p.LUCIClient
 	}
-	if p.Cfg != nil && ctx != nil && ctx.Value(configKey) == nil {
-		ctx = context.WithValue(ctx, configKey, p.Cfg)
+	return NewLUCIClient(buildbucketHost, getLUCIHTTPClient())
+}
+
+func (p *BuildbucketProvider) withConfig(ctx context.Context) context.Context {
+	if p != nil && p.Cfg != nil && ctx != nil && ctx.Value(configKey) == nil {
+		return context.WithValue(ctx, configKey, p.Cfg)
 	}
-	return NewLUCIClient(buildbucketHost, getLUCIHTTPClient(ctx, buildbucketHost))
+	return ctx
 }
 
 func stampBuildbucketBuilds(builds []bbBuild) {
@@ -83,12 +87,13 @@ func stampBuildbucketBuilds(builds []bbBuild) {
 }
 
 func (p *BuildbucketProvider) SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *ChangeInfo) ([]bbBuild, error) {
+	ctx = p.withConfig(ctx)
 	project := ""
 	if change != nil {
 		project = change.Project
 	}
 	cleanHost := CleanGerritHost(host)
-	builds, err := p.luciClient(ctx).SearchBuilds(ctx, cleanHost, project, changeNum, patchsetNum)
+	builds, err := p.luciClient().SearchBuilds(ctx, cleanHost, project, changeNum, patchsetNum)
 	if err != nil {
 		return nil, err
 	}
@@ -98,12 +103,13 @@ func (p *BuildbucketProvider) SearchBuilds(ctx context.Context, host string, cha
 
 // SearchBuildsByPatchset queries Buildbucket concurrently across all patchsets in patchsets.
 func (p *BuildbucketProvider) SearchBuildsByPatchset(ctx context.Context, host string, changeNum int, patchsets []int, change *ChangeInfo) ([][]bbBuild, error) {
+	ctx = p.withConfig(ctx)
 	project := ""
 	if change != nil {
 		project = change.Project
 	}
 	cleanHost := CleanGerritHost(host)
-	perPS, err := p.luciClient(ctx).SearchBuildsByPatchset(ctx, cleanHost, project, changeNum, patchsets)
+	perPS, err := p.luciClient().SearchBuildsByPatchset(ctx, cleanHost, project, changeNum, patchsets)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +120,8 @@ func (p *BuildbucketProvider) SearchBuildsByPatchset(ctx context.Context, host s
 }
 
 func (p *BuildbucketProvider) GetBuildDetails(ctx context.Context, buildID string, b *bbBuild) (*bbBuildDetails, error) {
-	details, err := p.luciClient(ctx).GetBuildDetails(ctx, buildID)
+	ctx = p.withConfig(ctx)
+	details, err := p.luciClient().GetBuildDetails(ctx, buildID)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +132,7 @@ func (p *BuildbucketProvider) GetBuildDetails(ctx context.Context, buildID strin
 }
 
 func (p *BuildbucketProvider) FetchFailureReportWithOptions(ctx context.Context, b bbBuild, opts FailureReportOptions) (*FailureReport, error) {
+	ctx = p.withConfig(ctx)
 	maxLines := opts.MaxLogLines
 	if maxLines <= 0 {
 		maxLines = 40
@@ -133,7 +141,7 @@ func (p *BuildbucketProvider) FetchFailureReportWithOptions(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	report := p.luciClient(ctx).ExtractFailureReportWithOptions(ctx, details, maxLines, opts.PreferredLogs, opts.IncludeSummaryMarkdown)
+	report := p.luciClient().ExtractFailureReportWithOptions(ctx, details, maxLines, opts.PreferredLogs, opts.IncludeSummaryMarkdown)
 	return report, nil
 }
 
@@ -420,10 +428,9 @@ func ResolveCIProvider(cfg *Config, pcfg *ProjectConfig, gerritClient *GerritCli
 	bbProv := &BuildbucketProvider{
 		Cfg: cfg,
 	}
-	btProv := &BusytownProvider{
-		GerritClient: gerritClient,
-		Cfg:          cfg,
-	}
+	btProv := NewBusytownProvider()
+	btProv.GerritClient = gerritClient
+	btProv.Cfg = cfg
 
 	var configured []string
 	if pcfg != nil {

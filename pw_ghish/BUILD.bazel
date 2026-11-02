@@ -176,6 +176,7 @@ go_test(
         "kind_contract_test.go",
         "kind_fixture_test.go",
         "list_test.go",
+        "luci_auth_test.go",
         "luci_test.go",
         "merge_test.go",
         "perfbudget_test.go",

@@ -349,7 +349,7 @@ var runViewCmd = &cobra.Command{
 			return err
 		}
 
-		luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(ctx, buildbucketHost))
+		luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient())
 
 		var res *CIContext
 		if directBuildID == "" {
@@ -392,7 +392,7 @@ var runViewCmd = &cobra.Command{
 			var directProvider CIProvider
 			if directBuildID != "" {
 				if bid, target, ok := ParseBusytownBuildTarget(directBuildID, runViewTarget); ok && (IsBusytownBuildID(directBuildID) || runViewTarget != "") {
-					directProvider = &BusytownProvider{}
+					directProvider = NewBusytownProvider()
 					builderName := target
 					if builderName == "" {
 						builderName = bid
@@ -623,7 +623,7 @@ var runViewCmd = &cobra.Command{
 			var details *LUCIBuildDetails
 			var err error
 			if directBuildID != "" && (IsBusytownBuildID(directBuildID) || runViewTarget != "") {
-				details, err = (&BusytownProvider{}).GetBuildDetails(ctx, directBuildID, &bbBuild{
+				details, err = NewBusytownProvider().GetBuildDetails(ctx, directBuildID, &bbBuild{
 					Target: runViewTarget,
 					Status: "FAILURE",
 				})

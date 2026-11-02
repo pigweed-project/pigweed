@@ -412,24 +412,16 @@ For the flag compatibility policy across all subcommands, see
 --------------
 Authentication
 --------------
-``./gh issue`` authenticates with Google Issue Tracker using an automatic OAuth2
-credential cascade:
+``./gh issue`` resolves credentials in the following order:
 
-1. ``GHISH_ISSUE_TOKEN`` environment variable (if explicitly set).
-2. ``luci-auth`` (standard on workstations configured for Pigweed, Fuchsia, or
-   Gerrit).
-3. ``gcloud auth`` (Google Cloud SDK Application Default Credentials or active
-   user credentials).
+1. ``GHISH_ISSUE_TOKEN`` or ``BUGANIZER_TOKEN`` environment variable (if
+   explicitly set).
+2. Shared ``luci-auth`` credentials in ``googler`` mode (see
+   :ref:`module-pw_ghish-auth`).
 
-To log in with the required Buganizer scope:
-
-.. code-block:: console
-
-   # Using LUCI Auth (recommended for Pigweed developers):
-   $ luci-auth login -scopes "https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform"
-
-   # Or using Google Cloud SDK:
-   $ gcloud auth application-default login --scopes="https://www.googleapis.com/auth/buganizer,https://www.googleapis.com/auth/cloud-platform"
+In ``community`` mode, set ``GHISH_ISSUE_TOKEN`` or ``BUGANIZER_TOKEN`` (or set
+``GH_ISH_AUTH_MODE=googler`` if you are a Googler). Run ``gcert`` on Corp
+Linux, or ``./gh auth status`` elsewhere to see the login command when needed.
 
 API quota project configuration
 ===============================

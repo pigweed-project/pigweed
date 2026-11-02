@@ -116,8 +116,12 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 		}
 	}
 
+	// Token resolvers read the auth mode, and so the luci-auth scope set,
+	// from the context's Config; give them the one this report used.
+	cfgCtx := context.WithValue(ctx, configKey, cfg)
+
 	// 1. Gerrit status
-	res, _ := resolveGerritAuth(ctx, gerritHost, mode)
+	res, _ := resolveGerritAuth(cfgCtx, gerritHost, mode)
 	gerritStatus := ServiceAuthStatus{
 		Service: "gerrit",
 		Host:    gerritHost,
@@ -140,10 +144,10 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 				if acc.Email != "" && acc.Email != acctLabel {
 					acctLabel = fmt.Sprintf("%s <%s>", acctLabel, acc.Email)
 				}
-				if acc.AccountID != 0 {
-					if idTag := fmt.Sprintf("account #%d", acc.AccountID); acctLabel != idTag {
-						acctLabel = fmt.Sprintf("%s (%s)", acctLabel, idTag)
-					}
+				// FormatAccount already falls back to "account #N" when only
+				// the ID is known; don't repeat it.
+				if idLabel := fmt.Sprintf("account #%d", acc.AccountID); acc.AccountID != 0 && acctLabel != idLabel {
+					acctLabel = fmt.Sprintf("%s (%s)", acctLabel, idLabel)
 				}
 				gerritStatus.Account = acctLabel
 				gerritStatus.Message = fmt.Sprintf("Logged in to %s as %s", gerritHost, acctLabel)
@@ -183,7 +187,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 		luciStatus.Method = "none"
 		luciStatus.Message = "Authentication disabled (--auth-mode=none)"
 	} else {
-		tok, src, tokErr := LUCITokenResolver(ctx)
+		tok, src, tokErr := LUCITokenResolver(cfgCtx)
 		if tokErr == nil && tok != "" {
 			luciStatus.Authenticated = true
 			luciStatus.Method = src
@@ -193,10 +197,10 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 			luciStatus.Method = "none"
 			if mode == AuthModeGoogler {
 				luciStatus.Message = fmt.Sprintf("No active OAuth2 token for %s (required in googler mode to view internal tryjobs)", bbHost)
-				luciStatus.Remediation = "Run 'luci-auth login' (or 'gcloud auth application-default login')"
+				luciStatus.Remediation = fmt.Sprintf("Run 'gcert' to refresh corp SSO credentials, or '%s'", luciAuthLoginCommand(mode))
 			} else {
 				luciStatus.Message = fmt.Sprintf("Unauthenticated on %s (public builders visible; internal builders hidden)", bbHost)
-				luciStatus.Remediation = "Optional (for internal builders): run 'luci-auth login'"
+				luciStatus.Remediation = fmt.Sprintf("Optional (for internal builders): run '%s'", luciAuthLoginCommand(mode))
 			}
 		}
 	}
@@ -215,7 +219,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 		buganizerStatus.Method = "none"
 		buganizerStatus.Message = "Authentication disabled (--auth-mode=none)"
 	} else {
-		tok, src, tokErr := IssueTrackerTokenResolver(ctx)
+		tok, src, tokErr := IssueTrackerTokenResolver(cfgCtx)
 		if tokErr == nil && tok != "" {
 			buganizerStatus.Authenticated = true
 			methodDesc := src
@@ -235,7 +239,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 			buganizerStatus.Authenticated = false
 			buganizerStatus.Method = "none"
 			buganizerStatus.Message = fmt.Sprintf("No active Buganizer OAuth2 token for %s", issueHost)
-			buganizerStatus.Remediation = "Run 'luci-auth login -scopes \"https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform\"'"
+			buganizerStatus.Remediation = fmt.Sprintf("Run 'gcert' to refresh corp SSO credentials, or '%s'", luciAuthLoginCommand(mode))
 		}
 	}
 
@@ -399,7 +403,7 @@ var authStatusCmd = &cobra.Command{
 }
 
 func init() {
-	AuthCmd.PersistentFlags().StringVar(&authStatusJSON, "json", "", "Output JSON (optionally specify comma-separated fields: mode,modeReason,authenticated,gerrit,luci,buganizer)")
+	AuthCmd.PersistentFlags().StringVar(&authStatusJSON, "json", "", "Output JSON (optionally specify comma-separated fields: mode,modeReason,authenticated,healthy,gerrit,luci,buganizer)")
 	AuthCmd.PersistentFlags().Lookup("json").NoOptDefVal = "*"
 
 	AuthCmd.AddCommand(authStatusCmd)

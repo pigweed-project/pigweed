@@ -604,7 +604,7 @@ func (c *GerritClient) doRaw(ctx context.Context, method, path string, q url.Val
 	// with a freshly minted one.
 	if c.auth.Dynamic && sentTok != "" && isGerritTokenAuthRejection(resp) &&
 		(resp.Request == nil || c.trusted(resp.Request.URL)) {
-		invalidateCachedGerritToken(sentTok)
+		invalidateLUCIAuthToken(sentTok)
 		retry, newTok, rErr := newReq(false)
 		if rErr != nil {
 			resp.Body.Close()

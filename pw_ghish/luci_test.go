@@ -38,6 +38,7 @@ func newLogServer(t *testing.T, status int, content string) *httptest.Server {
 }
 
 func TestGetBuildDetails_Success(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
 
 	mockResp := `)]}'
@@ -315,13 +316,17 @@ func TestNewLUCIClient(t *testing.T) {
 		if client.Host != "cr-buildbucket.appspot.com" {
 			t.Errorf("expected host cr-buildbucket.appspot.com, got %q", client.Host)
 		}
-		if client.HTTPClient != http.DefaultClient {
-			t.Errorf("expected http.DefaultClient when nil passed, got %v", client.HTTPClient)
+		if client.HTTPClient == nil {
+			t.Fatalf("expected non-nil HTTPClient when nil passed")
+		}
+		if client.HTTPClient.Timeout != 0 || client.HTTPClient.CheckRedirect == nil {
+			t.Errorf("default HTTPClient Timeout=%v CheckRedirect set=%v, want 0 and true",
+				client.HTTPClient.Timeout, client.HTTPClient.CheckRedirect != nil)
 		}
 	})
 
 	t.Run("custom http client", func(t *testing.T) {
-		custom := &http.Client{}
+		custom := &http.Client{CheckRedirect: stripAuthOnCrossHostRedirect}
 		client := NewLUCIClient("my-host", custom)
 		if client.HTTPClient != custom {
 			t.Errorf("expected custom client, got %v", client.HTTPClient)
@@ -329,7 +334,95 @@ func TestNewLUCIClient(t *testing.T) {
 	})
 }
 
+func TestLUCIClient_PerRequestAuthAndCrossHostRedirectStripping(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
+
+	t.Run("FetchLogStream strips Authorization on cross-host GCS redirect", func(t *testing.T) {
+		var gcsAuthHeader string
+		gcsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gcsAuthHeader = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte("raw log line 1\nraw log line 2\n"))
+		}))
+		t.Cleanup(gcsSrv.Close)
+
+		// Use "localhost" vs "127.0.0.1" so Go's http.Client treats the redirect as cross-host.
+		crossHostGCSURL := strings.Replace(gcsSrv.URL, "127.0.0.1", "localhost", 1) + "/signed-log"
+
+		var logDogAuthHeader string
+		logDogSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logDogAuthHeader = r.Header.Get("Authorization")
+			http.Redirect(w, r, crossHostGCSURL, http.StatusFound)
+		}))
+		t.Cleanup(logDogSrv.Close)
+
+		client := NewLUCIClient(logDogSrv.URL, logDogSrv.Client())
+		client.TokenProvider = func(context.Context) (string, error) { return "luci-secret-token", nil }
+
+		got, err := client.FetchLogStream(t.Context(), logDogSrv.URL+"/logs/stdout", 0)
+		if err != nil {
+			t.Fatalf("FetchLogStream failed: %v", err)
+		}
+		if !strings.Contains(got, "raw log line 1") {
+			t.Errorf("FetchLogStream = %q, want log contents", got)
+		}
+		if logDogAuthHeader != "Bearer luci-secret-token" {
+			t.Errorf("LogDog Authorization = %q, want 'Bearer luci-secret-token'", logDogAuthHeader)
+		}
+		if gcsAuthHeader != "" {
+			t.Errorf("cross-host GCS redirect leaked Authorization = %q, want empty", gcsAuthHeader)
+		}
+	})
+
+	for _, source := range []string{"flag", "env"} {
+		t.Run("googler mode from "+source+" fails with ExitCodeAuth when token missing and community mode proceeds", func(t *testing.T) {
+			origFlag := AuthModeFlag
+			t.Cleanup(func() { AuthModeFlag = origFlag })
+			AuthModeFlag = ""
+			if source == "flag" {
+				AuthModeFlag = "googler"
+			} else {
+				t.Setenv("GH_ISH_AUTH_MODE", "googler")
+			}
+
+			var gotAuthHeader string
+			var requests int
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				gotAuthHeader = r.Header.Get("Authorization")
+				_, _ = w.Write([]byte(")]}'\n{}"))
+			}))
+			t.Cleanup(srv.Close)
+
+			client := NewLUCIClient(srv.URL, srv.Client())
+			client.TokenProvider = func(context.Context) (string, error) {
+				return "", fmt.Errorf("interactive login required")
+			}
+
+			var resp struct{}
+			err := client.CallPRPC(t.Context(), "buildbucket.v2.Builds", "SearchBuilds", struct{}{}, &resp)
+			if ExitCodeFor(err) != ExitCodeAuth {
+				t.Fatalf("ExitCodeFor(err) = %d, want %d (err=%v)", ExitCodeFor(err), ExitCodeAuth, err)
+			}
+			if source == "env" && !strings.Contains(err.Error(), "GH_ISH_AUTH_MODE=googler") {
+				t.Errorf("error = %v, want GH_ISH_AUTH_MODE=googler reason", err)
+			}
+			if requests != 0 {
+				t.Errorf("requests sent = %d, want 0", requests)
+			}
+
+			AuthModeFlag = "community"
+			if err := client.CallPRPC(t.Context(), "buildbucket.v2.Builds", "SearchBuilds", struct{}{}, &resp); err != nil {
+				t.Fatalf("CallPRPC in community mode failed: %v", err)
+			}
+			if requests != 1 || gotAuthHeader != "" {
+				t.Errorf("community mode requests=%d auth=%q, want requests=1 auth=\"\"", requests, gotAuthHeader)
+			}
+		})
+	}
+}
+
 func TestCallPRPC_Success(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
 
 	type echoReq struct {
@@ -431,6 +524,7 @@ func TestCallPRPC_CRLFXSSIPrefix(t *testing.T) {
 }
 
 func TestCallPRPC_Errors(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
 
 	t.Run("http non-200", func(t *testing.T) {
@@ -481,6 +575,7 @@ func TestCallPRPC_Errors(t *testing.T) {
 }
 
 func TestSearchBuilds(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
 
 	t.Run("success via mock server", func(t *testing.T) {
@@ -747,6 +842,7 @@ func TestExtractFailureReport_NoSteps_Timeout(t *testing.T) {
 }
 
 func TestGetBuildDetails_MaskUsesSnakeCase(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -772,6 +868,7 @@ func TestGetBuildDetails_MaskUsesSnakeCase(t *testing.T) {
 }
 
 func TestSearchBuilds_MaskIncludesSummary(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -1044,6 +1141,7 @@ func TestBBBuild_IsExperimental(t *testing.T) {
 }
 
 func TestSearchBuilds_MaskIncludesExperimentalFields(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -1124,6 +1222,7 @@ func TestFormatBuildSteps_FailureSummaryWithDiagnostic(t *testing.T) {
 }
 
 func TestSearchBuilds_Pagination(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1235,6 +1334,7 @@ func TestSearchBuildsForPatchsets(t *testing.T) {
 }
 
 func TestSearchBuildsByPatchset(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
 	patchsetOf := func(r *http.Request) int {
 		var req bbSearchBuildsRequest

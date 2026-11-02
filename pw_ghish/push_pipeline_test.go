@@ -454,7 +454,7 @@ func TestExecutePush_HTTPSAuthRetry(t *testing.T) {
 			wantPushes:      1,
 			wantResolver:    1,
 			wantErr:         true,
-			wantErrContains: "luci-auth login -scopes " + fmt.Sprintf("%q", DefaultGerritScopes),
+			wantErrContains: luciAuthLoginCommand(AuthModeCommunity),
 			wantErrExtra:    "Gerrit OAuth2 token probe: luci-auth: not logged in",
 			wantExitCode:    ExitCodeAuth,
 			wantStderr:      promptDisabled,

@@ -269,7 +269,7 @@ func TestIssueTrackerClient_ActionableErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for HTTP 401, got nil")
 	}
-	if !strings.Contains(err.Error(), "HTTP 401") || !strings.Contains(err.Error(), "luci-auth login") || !strings.Contains(err.Error(), "gcloud auth") {
+	if !strings.Contains(err.Error(), "HTTP 401") || !strings.Contains(err.Error(), "luci-auth login -scopes") || strings.Contains(err.Error(), "gcloud") {
 		t.Errorf("401 error missing actionable auth remediation, got:\n%v", err)
 	}
 	srv.ForceStatus = 0

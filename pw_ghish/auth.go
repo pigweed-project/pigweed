@@ -66,7 +66,7 @@ var (
 // Precedence:
 //  1. --auth-mode flag (AuthModeFlag)
 //  2. GH_ISH_AUTH_MODE environment variable
-//  3. git config ghish.authmode
+//  3. git config ghish.authmode (from cfg, or ctx when cfg is nil)
 //  4. Auto-detection (sso_client on PATH, /usr/bin/sso-cred-helper present,
 //     @google.com git user.email, or sso:// or rpc:// remote)
 func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error) {
@@ -75,6 +75,9 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 	}
 	if err := checkRemovedAuthMethodEnv(); err != nil {
 		return "", "", err
+	}
+	if cfg == nil {
+		cfg, _ = ctx.Value(configKey).(*Config)
 	}
 
 	cacheKey := authModeCacheKey{
@@ -247,6 +250,10 @@ func urlHostIn(u *url.URL, hosts ...string) bool {
 	})
 }
 
+// ensureSafeHTTPClient returns c with CheckRedirect set to
+// stripAuthOnCrossHostRedirect (copying c if it has no CheckRedirect). A nil c
+// gives a client with no Timeout: requests are bounded by their context, so
+// Ctrl-C cancels them and long log downloads are not cut off.
 func ensureSafeHTTPClient(c *http.Client) *http.Client {
 	if c == nil {
 		return &http.Client{CheckRedirect: stripAuthOnCrossHostRedirect}
@@ -257,6 +264,148 @@ func ensureSafeHTTPClient(c *http.Client) *http.Client {
 		return &cp
 	}
 	return c
+}
+
+// bearerAuth attaches a gh-ish OAuth2 token to requests for one backend.
+type bearerAuth struct {
+	// service names the backend in errors ("LUCI", "Android Build").
+	service string
+	// trusted reports whether a URL may receive the token. It must match
+	// exact hosts (see urlHostIn).
+	trusted func(u *url.URL) bool
+	// token resolves the backend's OAuth2 token.
+	token func(ctx context.Context) (string, error)
+	// requiredInGoogler makes a missing token an ExitCodeAuth error in googler
+	// mode instead of sending the request unauthenticated.
+	requiredInGoogler bool
+	// cfg is used when the request context carries no *Config.
+	cfg *Config
+}
+
+// apply sets "Authorization: Bearer <token>" on req when req.URL is trusted
+// and authentication is not disabled. Without a token it leaves req
+// unauthenticated, unless requiredInGoogler is set and the mode is googler.
+func (a bearerAuth) apply(req *http.Request) error {
+	if req == nil || req.URL == nil || a.trusted == nil || a.token == nil || !a.trusted(req.URL) {
+		return nil
+	}
+	ctx := req.Context()
+	if a.cfg != nil && ctx.Value(configKey) == nil {
+		ctx = context.WithValue(ctx, configKey, a.cfg)
+	}
+	mode, modeReason, err := ResolveAuthMode(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if mode == AuthModeNone {
+		return nil
+	}
+	tok, tokErr := a.token(ctx)
+	tok = strings.TrimSpace(tok)
+	if tokErr == nil && tok != "" {
+		if req.Header == nil {
+			req.Header = make(http.Header)
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+		return nil
+	}
+	if tokErr == nil {
+		tokErr = errors.New("empty token")
+	}
+	// A cancelled or expired request (Ctrl-C, --watch teardown) is not an
+	// authentication failure; report the context error instead.
+	if cerr := ctx.Err(); cerr != nil {
+		return cerr
+	}
+	if a.requiredInGoogler && mode == AuthModeGoogler {
+		// Resolver errors such as DefaultLUCIToken's carry their own
+		// remediation; keep only their first line so it is not repeated.
+		return NewExitCodeError(ExitCodeAuth,
+			"%s authentication required in googler mode (%s): no OAuth2 token for %s: %v\n\n"+
+				"Remediation:\n"+
+				"  1. Corp Linux: run 'gcert'. Otherwise run '%s'\n"+
+				"  2. Check authentication status: gh auth status\n"+
+				"  3. For public projects without internal credentials: export GH_ISH_AUTH_MODE=community",
+			a.service, modeReason, req.URL.Host, firstLine(tokErr.Error()), luciAuthLoginCommand(mode))
+	}
+	return nil
+}
+
+// isPreSignedGCSURL reports whether u is a Google Cloud Storage URL or
+// carries an X-Goog-Signature query parameter, where an Authorization header
+// must not be attached.
+func isPreSignedGCSURL(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "storage.googleapis.com" || strings.HasSuffix(host, ".storage.googleapis.com") {
+		return true
+	}
+	return strings.Contains(u.RawQuery, "X-Goog-Signature")
+}
+
+// isTrustedLUCIURL reports whether u may receive the LUCI token: HTTPS to
+// cr-buildbucket.appspot.com, logs.chromium.org, or the exact configured
+// Buildbucket host, and never a pre-signed download URL.
+func isTrustedLUCIURL(bbHost string, u *url.URL) bool {
+	if isPreSignedGCSURL(u) {
+		return false
+	}
+	configured := ""
+	if bbHost != "" {
+		configured = hostnameOf(bbHost)
+	}
+	return urlHostIn(u, "cr-buildbucket.appspot.com", "logs.chromium.org", configured)
+}
+
+// newLUCIAuth returns the bearerAuth policy for LUCI Buildbucket and LogDog.
+// Internal tryjobs and logs are not returned to unauthenticated requests, so a
+// missing token is an error in googler mode.
+func newLUCIAuth(bbHost string, tokenProvider func(context.Context) (string, error)) bearerAuth {
+	if tokenProvider == nil {
+		tokenProvider = func(ctx context.Context) (string, error) {
+			tok, _, err := LUCITokenResolver(ctx)
+			return tok, err
+		}
+	}
+	return bearerAuth{
+		service: "LUCI",
+		trusted: func(u *url.URL) bool {
+			return isTrustedLUCIURL(bbHost, u)
+		},
+		token:             tokenProvider,
+		requiredInGoogler: true,
+	}
+}
+
+func newLUCIHTTPAuthError(ctx context.Context, target string, statusCode int, body []byte) error {
+	return NewExitCodeError(ExitCodeAuth,
+		"%s returned HTTP %d: %s\n\n"+
+			"To authenticate with LUCI:\n"+
+			"  1. Corp Linux: run 'gcert' (sso-cred-helper lets luci-auth mint tokens). Otherwise:\n"+
+			"     %s\n"+
+			"  2. Or set an OAuth token: export GHISH_LUCI_TOKEN=\"<token>\"\n"+
+			"  3. Check auth status: gh auth status",
+		target, statusCode, strings.TrimSpace(string(body)), luciAuthLoginCommandForScope(ctx, ""))
+}
+
+// newAndroidBuildAuth returns the bearerAuth policy for Android Build API and
+// CI hosts. Requests proceed without a token when none is available.
+func newAndroidBuildAuth(apiBase, ciBase string, tokenProvider func(context.Context) (string, error), cfg *Config) bearerAuth {
+	if tokenProvider == nil {
+		tokenProvider = func(ctx context.Context) (string, error) {
+			return AndroidBuildTokenResolver(ctx)
+		}
+	}
+	return bearerAuth{
+		service: "Android Build",
+		trusted: func(u *url.URL) bool {
+			return urlHostIn(u, hostnameOf(apiBase), hostnameOf(ciBase))
+		},
+		token: tokenProvider,
+		cfg:   cfg,
+	}
 }
 
 var gerritTokenAuthRejectionMarkers = []string{
@@ -323,22 +472,6 @@ func isGerritAutoAuthHost(h string) bool {
 	return isGoogleGerritHost(h) || (allowLoopbackGerritAuthForTests && isLoopbackHost(h))
 }
 
-// gerritTokenFromEnv reads and validates GERRIT_TOKEN, returning an empty
-// string when unset and an ExitCodeAuth error if it contains a colon
-// (username:password HTTP Basic format).
-func gerritTokenFromEnv() (string, error) {
-	tok := strings.TrimSpace(os.Getenv("GERRIT_TOKEN"))
-	if strings.Contains(tok, ":") {
-		return "", NewExitCodeError(ExitCodeAuth,
-			"GERRIT_TOKEN looks like a username:password pair, but HTTP Basic auth "+
-				"(used by non-Google Gerrit servers) is not supported yet.\n\n"+
-				"Set GERRIT_TOKEN to an OAuth2 access token for a *.googlesource.com "+
-				"Gerrit host, or unset it to use luci-auth:\n"+
-				"  unset GERRIT_TOKEN")
-	}
-	return tok, nil
-}
-
 // resolveGerritAuth picks the Gerrit credential for gerritHost (a hostname or
 // URL) in mode: none when authentication is disabled, else GERRIT_TOKEN, else
 // a luci-auth token. Auto-minted luci-auth tokens are only used for
@@ -398,11 +531,6 @@ func resolveGerritAuth(ctx context.Context, gerritHost string, mode AuthMode) (r
 	}, nil
 }
 
-// gerritLoginCommand returns the `luci-auth login` invocation for Gerrit in mode.
-func gerritLoginCommand(_ AuthMode) string {
-	return fmt.Sprintf("luci-auth login -scopes %q", DefaultGerritScopes)
-}
-
 // gerritCredentialSteps returns the host- and OS-aware credential setup steps
 // for gerritHost (an empty string means the host is unknown).
 func gerritCredentialSteps(gerritHost string, mode AuthMode) []string {
@@ -412,7 +540,7 @@ func gerritCredentialSteps(gerritHost string, mode AuthMode) []string {
 		if hasSSOCredHelper() {
 			steps = append(steps, "Run 'gcert' (with sso-cred-helper)")
 		}
-		login := fmt.Sprintf("Run '%s'", gerritLoginCommand(mode))
+		login := fmt.Sprintf("Run '%s'", luciAuthLoginCommand(mode))
 		if raw == "" {
 			login += " (for *.googlesource.com)"
 		}
@@ -465,14 +593,21 @@ func gerritGooglerAuthError(modeReason, gerritHost string, cause error) error {
 		modeReason, cleanHost, cause, formatGerritRemediationSteps(steps...))
 }
 
-// resolveGerritClientAuth translates ResolveAuthMode + resolveGerritAuth into
-// the GerritAuth configuration consumed by NewGerritClient.
+// resolveGerritClientAuth is the Gerrit auth policy for a client of
+// gerritURL:
+//   - --auth-mode=none: unauthenticated; GERRIT_TOKEN is ignored.
+//   - GERRIT_TOKEN set: a static token for the configured host.
+//   - Otherwise a luci-auth token, only for Google-hosted Gerrit (or
+//     loopback under the allowLoopbackGerritAuthForTests unit-test hook).
+//     It is minted once here so Authenticated() is known up front.
+//
+// Googler mode never falls back to anonymous requests: without a credential
+// it returns an ExitCodeAuth error. Community mode reads anonymously.
 func resolveGerritClientAuth(ctx context.Context, gerritURL string) (GerritAuth, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	cfg, _ := ctx.Value(configKey).(*Config)
-	mode, modeReason, err := ResolveAuthMode(ctx, cfg)
+	mode, modeReason, err := ResolveAuthMode(ctx, nil)
 	if err != nil {
 		return GerritAuth{}, err
 	}
@@ -494,9 +629,6 @@ func resolveGerritClientAuth(ctx context.Context, gerritURL string) (GerritAuth,
 	}
 	return auth, nil
 }
-
-// DefaultBuganizerScopes are the OAuth2 scopes required for Google Issue Tracker and GCP quota checks.
-const DefaultBuganizerScopes = "https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform"
 
 // ssoCredHelperPath is the Corp Linux path for the SSO credential helper
 // used by luci-auth v1.6+ to mint OAuth2 tokens directly from 7-day gcert
@@ -525,7 +657,7 @@ func newOAuthTokenCommand(ctx context.Context, name string, args ...string) *exe
 	return cmd
 }
 
-// OAuthTokenCommandRunner executes external CLI token helpers (luci-auth, gcloud).
+// OAuthTokenCommandRunner executes external CLI token helpers (luci-auth).
 // It can be overridden in unit tests to prevent spawning real subprocesses.
 var OAuthTokenCommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return newOAuthTokenCommand(ctx, name, args...).Output()
@@ -585,6 +717,10 @@ func findLuciAuthBinaryWithSearched(_ context.Context) (string, []string) {
 	return "", append([]string{"PATH"}, candidates...)
 }
 
+// errLUCIAuthNotFound is wrapped by luciAuthToken errors when no luci-auth
+// binary exists. It is the only token failure remembered for the process.
+var errLUCIAuthNotFound = errors.New("luci-auth not found")
+
 // commandErrorDetail summarizes why a token helper command failed: the first
 // line of its stderr when available, else the error itself.
 func commandErrorDetail(err error) string {
@@ -624,65 +760,118 @@ func parseOAuthTokenOutput(out []byte, now time.Time) (string, time.Time) {
 	return tok, expiry
 }
 
-func resolveOAuthTokenWithExpiry(ctx context.Context, luciScopes []string) (token string, source string, expiry time.Time, err error) {
+// mintLUCIAuthToken runs luci-auth once for scopes (a space-separated
+// luciAuthScopes set). It never falls back to another tool: luci-auth (with
+// sso-cred-helper on Corp Linux, or `luci-auth login` elsewhere) covers every
+// scope gh-ish needs.
+func mintLUCIAuthToken(ctx context.Context, scopes string) (string, time.Time, error) {
+	bin, searched := findLuciAuthBinaryWithSearched(ctx)
+	if bin == "" {
+		if err := ctx.Err(); err != nil {
+			return "", time.Time{}, err
+		}
+		return "", time.Time{}, fmt.Errorf("%w (searched %s)", errLUCIAuthNotFound, strings.Join(searched, ", "))
+	}
+	out, err := OAuthTokenCommandRunner(ctx, bin, "token", "-scopes", scopes, "-json-output", "-")
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", time.Time{}, ctxErr
+		}
+		return "", time.Time{}, fmt.Errorf("luci-auth (%s) returned no OAuth2 token: %s", bin, commandErrorDetail(err))
+	}
+	tok, expiry := parseOAuthTokenOutput(out, time.Now())
+	if tok == "" {
+		return "", time.Time{}, fmt.Errorf("luci-auth (%s) returned no OAuth2 token: %s", bin, commandErrorDetail(nil))
+	}
+	return tok, expiry, nil
+}
+
+// luciAuthCache holds the process-wide luci-auth token.
+var luciAuthCache struct {
+	mu          sync.Mutex
+	token       string
+	expiry      time.Time
+	scopes      string
+	notFoundErr error
+}
+
+// errLUCIAuthDisabled is returned by luciAuthToken in auth mode none.
+var errLUCIAuthDisabled = errors.New("luci-auth token not requested: authentication is disabled (auth mode none)")
+
+// luciAuthToken returns the process-wide luci-auth OAuth2 token for the
+// luciAuthScopes of the auth mode resolved from ctx, minting it on first use
+// or after expiry. It never runs luci-auth when the mode can't be resolved or
+// is none.
+func luciAuthToken(ctx context.Context) (string, error) {
+	return luciAuthTokenWithScope(ctx, "")
+}
+
+// luciAuthTokenWithScope is luciAuthToken for a service that needs scope ("" for
+// none beyond the base set). When the mode's scope set lacks scope (Buganizer
+// or Android Build in community mode), it fails without running luci-auth
+// rather than send a token the service would reject.
+func luciAuthTokenWithScope(ctx context.Context, scope string) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if len(luciScopes) == 0 {
-		luciScopes = []string{""}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
-
-	if luciAuthBin := findLuciAuthBinary(ctx); luciAuthBin != "" {
-		for _, sc := range luciScopes {
-			var args []string
-			if sc == "" {
-				args = []string{"token", "-json-output", "-"}
-			} else {
-				args = []string{"token", "-scopes", sc, "-json-output", "-"}
-			}
-			if out, err := OAuthTokenCommandRunner(ctx, luciAuthBin, args...); err == nil {
-				tok, exp := parseOAuthTokenOutput(out, time.Now())
-				if tok != "" {
-					return tok, "luci-auth", exp, nil
-				}
-			}
+	mode, _, err := ResolveAuthMode(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	scopeSet := luciAuthScopes(mode)
+	if len(scopeSet) == 0 {
+		return "", errLUCIAuthDisabled
+	}
+	if scope != "" && !slices.Contains(scopeSet, scope) {
+		if mode != AuthModeGoogler {
+			return "", fmt.Errorf("the %s-mode luci-auth token does not include the %s scope "+
+				"(Googlers: export GH_ISH_AUTH_MODE=googler)", mode, scope)
+		}
+		return "", fmt.Errorf("the %s-mode luci-auth token does not include the %s scope", mode, scope)
+	}
+	scopes := strings.Join(scopeSet, " ")
+	c := &luciAuthCache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if c.token != "" && c.scopes == scopes && time.Now().Before(c.expiry) {
+		return c.token, nil
+	}
+	if c.notFoundErr != nil {
+		return "", c.notFoundErr
+	}
+	tok, expiry, err := mintLUCIAuthToken(ctx, scopes)
+	if ctx.Err() == nil {
+		switch {
+		case err == nil:
+			c.token, c.expiry, c.scopes = tok, expiry, scopes
+		case errors.Is(err, errLUCIAuthNotFound):
+			c.notFoundErr = err
 		}
 	}
-
-	if _, err := LookPathFn("gcloud"); err == nil {
-		for _, args := range [][]string{
-			{"auth", "application-default", "print-access-token"},
-			{"auth", "print-access-token"},
-		} {
-			if out, err := OAuthTokenCommandRunner(ctx, "gcloud", args...); err == nil {
-				if tok := strings.TrimSpace(string(out)); tok != "" {
-					exp := time.Now().Add(defaultOAuthTokenTTL)
-					return tok, "gcloud", exp, nil
-				}
-			}
-		}
-	}
-
-	return "", "", time.Time{}, fmt.Errorf("no active OAuth2 token found from luci-auth or gcloud")
+	return tok, err
 }
 
-var (
-	luciTokenMu           sync.Mutex
-	cachedLUCIToken       string
-	cachedLUCITokenSource string
-	cachedLUCITokenExpiry time.Time
-
-	androidBuildTokenMu           sync.Mutex
-	cachedAndroidBuildToken       string
-	cachedAndroidBuildTokenSource string
-	cachedAndroidBuildTokenExpiry time.Time
-
-	gerritTokenMu           sync.Mutex
-	cachedGerritToken       string
-	cachedGerritTokenSource string
-	cachedGerritTokenExpiry time.Time
-	gerritTokenProbeErr     error
-)
+// invalidateLUCIAuthToken drops the cached token if it equals rejected, so the
+// next luciAuthToken re-mints. An empty rejected value is a no-op, so a caller
+// that sent no token can never wipe the shared cache.
+func invalidateLUCIAuthToken(rejected string) {
+	if rejected == "" {
+		return
+	}
+	c := &luciAuthCache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.token == rejected {
+		c.token = ""
+		c.expiry = time.Time{}
+	}
+}
 
 // ScopeAndroidBuildInternal is the OAuth2 scope for Android Build Internal v3 REST APIs.
 const ScopeAndroidBuildInternal = "https://www.googleapis.com/auth/androidbuild.internal"
@@ -693,13 +882,47 @@ const ScopeGerritCodeReview = "https://www.googleapis.com/auth/gerritcodereview"
 // ScopeUserInfoEmail is the OAuth2 scope for reading the user's email address.
 const ScopeUserInfoEmail = "https://www.googleapis.com/auth/userinfo.email"
 
-// DefaultGerritScopes are the OAuth2 scopes requested when authenticating with Gerrit via luci-auth.
-const DefaultGerritScopes = ScopeGerritCodeReview + " " + ScopeUserInfoEmail
+// luciAuthScopes returns the one scope set gh-ish requests from luci-auth in
+// mode. luci-auth only mints tokens for the exact scope set the user logged in
+// with, so each mode uses a single set and needs one `luci-auth login`:
+//   - googler: Gerrit, userinfo.email, Buganizer, and Android Build, for every
+//     Googler regardless of repository.
+//   - community: Gerrit and userinfo.email only.
+//   - none: no scopes; gh-ish never runs luci-auth.
+func luciAuthScopes(mode AuthMode) []string {
+	switch mode {
+	case AuthModeGoogler:
+		return []string{ScopeGerritCodeReview, ScopeUserInfoEmail, ScopeBuganizer, ScopeAndroidBuildInternal}
+	case AuthModeCommunity:
+		return []string{ScopeGerritCodeReview, ScopeUserInfoEmail}
+	default:
+		return nil
+	}
+}
 
-// DefaultAndroidBuildScopes are the OAuth2 scopes requested when authenticating with Android Build / Busytown.
-var DefaultAndroidBuildScopes = []string{
-	ScopeAndroidBuildInternal,
-	ScopeGerritCodeReview,
+// luciAuthLoginCommand returns the login command for mode to print in
+// remediation text. Auth mode none never runs luci-auth; it shows the
+// community command, the minimum needed once authentication is re-enabled.
+func luciAuthLoginCommand(mode AuthMode) string {
+	if mode != AuthModeGoogler {
+		mode = AuthModeCommunity
+	}
+	return fmt.Sprintf("luci-auth login -scopes %q", strings.Join(luciAuthScopes(mode), " "))
+}
+
+// luciAuthLoginCommandForScope is luciAuthLoginCommand for the auth mode
+// resolved from ctx when a service needs scope. When the mode's scope set
+// lacks scope (Buganizer or Android Build in community mode), only googler
+// mode can help, so it shows how a misdetected Googler switches to it.
+func luciAuthLoginCommandForScope(ctx context.Context, scope string) string {
+	mode, _, err := ResolveAuthMode(ctx, nil)
+	if err != nil {
+		mode = AuthModeGoogler
+	}
+	if mode == AuthModeCommunity && scope != "" && !slices.Contains(luciAuthScopes(mode), scope) {
+		return "(Googlers) export GH_ISH_AUTH_MODE=googler; " + luciAuthLoginCommand(AuthModeGoogler)
+	}
+	return luciAuthLoginCommand(mode)
 }
 
 // ResetAuthTokenCaches clears in-memory OAuth token caches for Gerrit, LUCI, Android Build, and Issue Tracker.
@@ -709,53 +932,37 @@ func ResetAuthTokenCaches() {
 	cachedAuthModeKey = authModeCacheKey{}
 	authModeCacheMu.Unlock()
 
-	luciTokenMu.Lock()
-	cachedLUCIToken = ""
-	cachedLUCITokenSource = ""
-	cachedLUCITokenExpiry = time.Time{}
-	luciTokenMu.Unlock()
-
-	androidBuildTokenMu.Lock()
-	cachedAndroidBuildToken = ""
-	cachedAndroidBuildTokenSource = ""
-	cachedAndroidBuildTokenExpiry = time.Time{}
-	androidBuildTokenMu.Unlock()
-
-	gerritTokenMu.Lock()
-	cachedGerritToken = ""
-	cachedGerritTokenSource = ""
-	cachedGerritTokenExpiry = time.Time{}
-	gerritTokenProbeErr = nil
-	gerritTokenMu.Unlock()
-
-	issueTokenMu.Lock()
-	cachedIssueToken = ""
-	cachedIssueTokenSource = ""
-	cachedIssueTokenExpiry = time.Time{}
-	issueTokenMu.Unlock()
+	luciAuthCache.mu.Lock()
+	luciAuthCache.token = ""
+	luciAuthCache.expiry = time.Time{}
+	luciAuthCache.scopes = ""
+	luciAuthCache.notFoundErr = nil
+	luciAuthCache.mu.Unlock()
 
 	quotaProjectCache.reset()
 	resetSelfAccountMemCache()
 }
 
-func invalidateCachedGerritToken(rejected string) {
-	gerritTokenMu.Lock()
-	if cachedGerritToken == rejected {
-		cachedGerritToken = ""
-		cachedGerritTokenExpiry = time.Time{}
+// gerritTokenFromEnv returns the trimmed GERRIT_TOKEN. A value containing ':'
+// is a username:password pair for HTTP Basic auth, which only non-Google
+// Gerrit servers use and gh-ish does not support yet; sending it as a Bearer
+// token would fail with a confusing 401, so it is rejected up front.
+func gerritTokenFromEnv() (string, error) {
+	tok := strings.TrimSpace(os.Getenv("GERRIT_TOKEN"))
+	if strings.Contains(tok, ":") {
+		return "", NewExitCodeError(ExitCodeAuth,
+			"GERRIT_TOKEN looks like a username:password pair, but HTTP Basic auth "+
+				"(used by non-Google Gerrit servers) is not supported yet.\n\n"+
+				"Set GERRIT_TOKEN to an OAuth2 access token for a *.googlesource.com "+
+				"Gerrit host, or unset it to use luci-auth:\n"+
+				"  unset GERRIT_TOKEN")
 	}
-	gerritTokenProbeErr = nil
-	gerritTokenMu.Unlock()
+	return tok, nil
 }
 
-// DefaultGerritToken resolves a Gerrit OAuth2 access token from GERRIT_TOKEN or luci-auth
-// (requesting gerritcodereview scope). Unlike DefaultLUCIToken, it does not fall back to
-// unscoped 'gcloud auth print-access-token', because standard gcloud tokens lack the
-// gerritcodereview scope required by Gerrit REST APIs and git-over-HTTPS.
+// DefaultGerritToken resolves a Gerrit OAuth2 access token from GERRIT_TOKEN
+// or the shared luci-auth token (see luciAuthToken).
 func DefaultGerritToken(ctx context.Context) (string, string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	tok, err := gerritTokenFromEnv()
 	if err != nil {
 		return "", "", err
@@ -763,105 +970,33 @@ func DefaultGerritToken(ctx context.Context) (string, string, error) {
 	if tok != "" {
 		return tok, "GERRIT_TOKEN", nil
 	}
-
-	gerritTokenMu.Lock()
-	defer gerritTokenMu.Unlock()
-	now := time.Now()
-	if cachedGerritToken != "" && now.Before(cachedGerritTokenExpiry) {
-		return cachedGerritToken, cachedGerritTokenSource, nil
+	tok, err = luciAuthToken(ctx)
+	if err != nil {
+		return "", "", err
 	}
-	if gerritTokenProbeErr != nil {
-		return "", "", gerritTokenProbeErr
-	}
-
-	luciAuthBin, searched := findLuciAuthBinaryWithSearched(ctx)
-	if luciAuthBin == "" {
-		gerritTokenProbeErr = fmt.Errorf("luci-auth not found (searched %s)", strings.Join(searched, ", "))
-		return "", "", gerritTokenProbeErr
-	}
-
-	var lastErr error
-	for _, sc := range []string{DefaultGerritScopes, ScopeGerritCodeReview} {
-		out, err := OAuthTokenCommandRunner(ctx, luciAuthBin, "token", "-scopes", sc, "-json-output", "-")
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		tok, expiry := parseOAuthTokenOutput(out, time.Now())
-		if tok != "" {
-			cachedGerritToken = tok
-			cachedGerritTokenSource = "luci-auth"
-			cachedGerritTokenExpiry = expiry
-			gerritTokenProbeErr = nil
-			return tok, "luci-auth", nil
-		}
-	}
-
-	gerritTokenProbeErr = fmt.Errorf("luci-auth (%s) returned no OAuth2 token: %s", luciAuthBin, commandErrorDetail(lastErr))
-	return "", "", gerritTokenProbeErr
+	return tok, "luci-auth", nil
 }
 
 // GerritTokenResolver resolves OAuth2 tokens with gerritcodereview scope for Gerrit REST and Git push fallbacks.
 // It can be overridden in unit tests.
 var GerritTokenResolver = DefaultGerritToken
 
-// DefaultAndroidBuildToken resolves an OAuth2 access token for Android Build Internal v3 and ci.android.com.
+// DefaultAndroidBuildToken resolves an OAuth2 access token for Android Build
+// Internal v3 and ci.android.com from GHISH_ANDROID_BUILD_TOKEN or the shared
+// luci-auth token.
 func DefaultAndroidBuildToken(ctx context.Context) (string, error) {
 	if tok := strings.TrimSpace(os.Getenv("GHISH_ANDROID_BUILD_TOKEN")); tok != "" {
 		return tok, nil
 	}
-
-	androidBuildTokenMu.Lock()
-	if cachedAndroidBuildToken != "" && time.Now().Before(cachedAndroidBuildTokenExpiry) {
-		tok := cachedAndroidBuildToken
-		androidBuildTokenMu.Unlock()
-		return tok, nil
-	}
-	androidBuildTokenMu.Unlock()
-
-	scopeJoined := strings.Join(DefaultAndroidBuildScopes, " ")
-	tok, src, exp, err := resolveOAuthTokenWithExpiry(ctx, []string{
-		scopeJoined,
-		ScopeAndroidBuildInternal,
-		"",
-	})
-	if err != nil {
-		return "", err
-	}
-
-	androidBuildTokenMu.Lock()
-	cachedAndroidBuildToken = tok
-	cachedAndroidBuildTokenSource = src
-	cachedAndroidBuildTokenExpiry = exp
-	androidBuildTokenMu.Unlock()
-	return tok, nil
+	return luciAuthTokenWithScope(ctx, ScopeAndroidBuildInternal)
 }
 
 // AndroidBuildTokenResolver is the function used to resolve Android Build OAuth2 tokens.
 // It can be overridden in tests.
 var AndroidBuildTokenResolver = DefaultAndroidBuildToken
 
-// AndroidBuildAuthTransport attaches OAuth2 Bearer tokens to Android Build Internal and ci.android.com requests.
-type AndroidBuildAuthTransport struct {
-	Base http.RoundTripper
-}
-
-func (t *AndroidBuildAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	ctx := req.Context()
-	base := t.Base
-	if base == nil {
-		base = http.DefaultTransport
-	}
-
-	if tok, err := AndroidBuildTokenResolver(ctx); err == nil && tok != "" {
-		authedReq := req.Clone(ctx)
-		authedReq.Header.Set("Authorization", "Bearer "+tok)
-		return base.RoundTrip(authedReq)
-	}
-	return base.RoundTrip(req)
-}
-
-// DefaultLUCIToken resolves an OAuth2 access token for LUCI Buildbucket and LogDog.
+// DefaultLUCIToken resolves an OAuth2 access token for LUCI Buildbucket and
+// LogDog from GHISH_LUCI_TOKEN, LUCI_TOKEN, or the shared luci-auth token.
 func DefaultLUCIToken(ctx context.Context) (string, string, error) {
 	if tok := strings.TrimSpace(os.Getenv("GHISH_LUCI_TOKEN")); tok != "" {
 		return tok, "GHISH_LUCI_TOKEN", nil
@@ -869,115 +1004,25 @@ func DefaultLUCIToken(ctx context.Context) (string, string, error) {
 	if tok := strings.TrimSpace(os.Getenv("LUCI_TOKEN")); tok != "" {
 		return tok, "LUCI_TOKEN", nil
 	}
-
-	luciTokenMu.Lock()
-	defer luciTokenMu.Unlock()
-	if cachedLUCIToken != "" && time.Now().Before(cachedLUCITokenExpiry) {
-		return cachedLUCIToken, cachedLUCITokenSource, nil
+	tok, err := luciAuthToken(ctx)
+	if err == nil {
+		return tok, "luci-auth", nil
 	}
-
-	tok, src, exp, err := resolveOAuthTokenWithExpiry(ctx, []string{"", DefaultBuganizerScopes})
-	if err != nil {
-		return "", "", NewExitCodeError(ExitCodeAuth,
-			"failed to obtain LUCI OAuth2 token: %w.\n\n"+
-				"Remediation:\n"+
-				"  1. Log in with LUCI Auth (recommended):\n"+
-				"     luci-auth login\n"+
-				"  2. Or log in with Google Cloud SDK:\n"+
-				"     gcloud auth application-default login\n"+
-				"  3. Or provide a token explicitly:\n"+
-				"     export GHISH_LUCI_TOKEN=\"<token>\"\n"+
-				"  4. Check authentication status:\n"+
-				"     gh auth status",
-			err)
+	if ctx != nil && ctx.Err() != nil {
+		return "", "", ctx.Err()
 	}
-
-	cachedLUCIToken = tok
-	cachedLUCITokenSource = src
-	cachedLUCITokenExpiry = exp
-	return tok, src, nil
+	return "", "", NewExitCodeError(ExitCodeAuth,
+		"failed to obtain LUCI OAuth2 token: %w.\n\n"+
+			"Remediation:\n"+
+			"  1. Corp Linux: run 'gcert' (sso-cred-helper lets luci-auth mint tokens). Otherwise:\n"+
+			"     %s\n"+
+			"  2. Or provide a token explicitly:\n"+
+			"     export GHISH_LUCI_TOKEN=\"<token>\"\n"+
+			"  3. Check authentication status:\n"+
+			"     gh auth status",
+		err, luciAuthLoginCommandForScope(ctx, ""))
 }
 
 // LUCITokenResolver is the function used to resolve LUCI OAuth2 tokens.
 // It can be overridden in tests.
 var LUCITokenResolver = DefaultLUCIToken
-
-// LUCIAuthTransport attaches OAuth2 Bearer tokens to LUCI Buildbucket and LogDog requests.
-// In googler mode, it returns ExitCodeAuth if no OAuth token is available.
-// In community mode, it attaches a token when available and falls back to unauthenticated requests otherwise.
-type LUCIAuthTransport struct {
-	Base http.RoundTripper
-	Cfg  *Config
-
-	mu               sync.Mutex
-	cachedMode       AuthMode
-	cachedModeReason string
-	cachedModeKey    authModeCacheKey
-	modeResolved     bool
-}
-
-func (t *LUCIAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	ctx := req.Context()
-	cfg := t.Cfg
-	if cfg == nil {
-		if c, ok := ctx.Value(configKey).(*Config); ok {
-			cfg = c
-		}
-	}
-
-	base := t.Base
-	if base == nil {
-		base = http.DefaultTransport
-	}
-
-	key := authModeCacheKey{
-		flag:    strings.TrimSpace(AuthModeFlag),
-		envMode: strings.TrimSpace(os.Getenv("GH_ISH_AUTH_MODE")),
-		cfg:     cfg,
-	}
-	t.mu.Lock()
-	mode, modeReason, ok := t.cachedMode, t.cachedModeReason, t.modeResolved && t.cachedModeKey == key
-	t.mu.Unlock()
-	if !ok {
-		var err error
-		mode, modeReason, err = ResolveAuthMode(ctx, cfg)
-		if err != nil {
-			return nil, err
-		}
-		t.mu.Lock()
-		t.cachedMode = mode
-		t.cachedModeReason = modeReason
-		t.cachedModeKey = key
-		t.modeResolved = true
-		t.mu.Unlock()
-	}
-	if mode == AuthModeNone {
-		return base.RoundTrip(req)
-	}
-
-	tok, _, tokErr := LUCITokenResolver(ctx)
-	if tokErr == nil && tok != "" {
-		authedReq := req.Clone(ctx)
-		authedReq.Header.Set("Authorization", "Bearer "+tok)
-		return base.RoundTrip(authedReq)
-	}
-
-	if mode == AuthModeGoogler {
-		return nil, NewExitCodeError(ExitCodeAuth,
-			"LUCI authentication required in googler mode (%s): no active OAuth2 token found for %s.\n\n"+
-				"Cause: Internal Google tryjobs and logs on LUCI Buildbucket/LogDog are not returned to unauthenticated requests.\n\n"+
-				"Remediation:\n"+
-				"  1. Authenticate with LUCI Auth (recommended):\n"+
-				"     luci-auth login\n"+
-				"  2. Or authenticate with Google Cloud SDK:\n"+
-				"     gcloud auth application-default login\n"+
-				"  3. Check authentication status across all services:\n"+
-				"     gh auth status\n"+
-				"  4. If working on a public project without internal credentials, set community mode:\n"+
-				"     export GH_ISH_AUTH_MODE=community",
-			modeReason, req.URL.Host)
-	}
-
-	// In community mode, proceed unauthenticated so contributors can query public builders.
-	return base.RoundTrip(req)
-}

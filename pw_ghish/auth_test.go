@@ -642,6 +642,28 @@ func TestResolveAuthMode(t *testing.T) {
 		}
 	})
 
+	t.Run("nil cfg falls back to Config on ctx and caches it", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{})
+		mockGit := &MockGitRunner{}
+		mockGit.OnCommand("config --get ghish.authmode", "googler\n")
+		cfg := &Config{Git: mockGit}
+		ctxWithCfg := context.WithValue(ctx, configKey, cfg)
+
+		mode, reason, err := ResolveAuthMode(ctxWithCfg, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mode != AuthModeGoogler || reason != "git config ghish.authmode=googler" {
+			t.Errorf("got (%q, %q), want (googler, \"git config ghish.authmode=googler\")", mode, reason)
+		}
+		authModeCacheMu.Lock()
+		cached, cachedCfg := authModeCacheValid, cachedAuthModeKey.cfg
+		authModeCacheMu.Unlock()
+		if !cached || cachedCfg != cfg {
+			t.Errorf("authModeCache = (valid=%v, cfg=%p), want (true, %p)", cached, cachedCfg, cfg)
+		}
+	})
+
 	t.Run("auto detects googler via sso_client on PATH", func(t *testing.T) {
 		WithHermeticAuth(t, AuthResolvers{LookPath: onPath("sso_client", "/usr/bin/sso_client")})
 		mode, reason, err := ResolveAuthMode(ctx, nil)
@@ -794,6 +816,7 @@ func TestDefaultGerritToken_CachesJSONExpiry(t *testing.T) {
 			return fmt.Appendf(nil, `{"token":"gerrit-json-token","expiry":%d}`, wantExpiry), nil
 		},
 	})
+	setAuthModeFlag(t, "googler")
 
 	for range 2 {
 		tok, src, err := DefaultGerritToken(t.Context())
@@ -807,167 +830,49 @@ func TestDefaultGerritToken_CachesJSONExpiry(t *testing.T) {
 	if runnerCalls != 1 {
 		t.Errorf("OAuthTokenCommandRunner calls = %d, want 1", runnerCalls)
 	}
-	if want := []string{"token", "-scopes", DefaultGerritScopes, "-json-output", "-"}; !slices.Equal(gotArgs, want) {
+	if want := []string{"token", "-scopes", strings.Join(luciAuthScopes(AuthModeGoogler), " "), "-json-output", "-"}; !slices.Equal(gotArgs, want) {
 		t.Errorf("luci-auth args = %q, want %q", gotArgs, want)
 	}
-	gerritTokenMu.Lock()
-	gotExpiry := cachedGerritTokenExpiry
-	gerritTokenMu.Unlock()
+	luciAuthCache.mu.Lock()
+	gotExpiry := luciAuthCache.expiry
+	luciAuthCache.mu.Unlock()
 	if want := time.Unix(wantExpiry, 0).Add(-60 * time.Second); !gotExpiry.Equal(want) {
 		t.Errorf("cachedGerritTokenExpiry = %v, want %v", gotExpiry, want)
 	}
 }
 
-func TestDefaultGerritToken_ScopeFallback(t *testing.T) {
+func TestDefaultGerritToken_ModeScopes(t *testing.T) {
 	wantExpiry := time.Now().Add(30 * time.Minute).Unix()
 	var gotScopes []string
 	WithHermeticAuth(t, AuthResolvers{
 		LookPath: onPath("luci-auth", "/usr/bin/luci-auth"),
 		CommandRunner: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			if idx := slices.Index(args, "-scopes"); idx >= 0 && idx+1 < len(args) {
-				sc := args[idx+1]
-				gotScopes = append(gotScopes, sc)
-				if sc == DefaultGerritScopes {
-					return nil, &exec.ExitError{Stderr: []byte("Not logged in for userinfo.email\n")}
-				}
+				gotScopes = append(gotScopes, args[idx+1])
 			}
-			return fmt.Appendf(nil, `{"token":"narrow-scope-token","expiry":%d}`, wantExpiry), nil
+			return fmt.Appendf(nil, `{"token":"tok-%d","expiry":%d}`, len(gotScopes), wantExpiry), nil
 		},
 	})
 
-	tok, src, err := DefaultGerritToken(t.Context())
-	if err != nil {
-		t.Fatalf("DefaultGerritToken() error = %v", err)
+	t.Setenv("GH_ISH_AUTH_MODE", "community")
+	if tok, src, err := DefaultGerritToken(t.Context()); err != nil || tok != "tok-1" || src != "luci-auth" {
+		t.Fatalf("community DefaultGerritToken() = (%q, %q, %v), want (tok-1, luci-auth, nil)", tok, src, err)
 	}
-	if tok != "narrow-scope-token" || src != "luci-auth" {
-		t.Errorf("DefaultGerritToken() = (%q, %q), want (narrow-scope-token, luci-auth)", tok, src)
+	t.Setenv("GH_ISH_AUTH_MODE", "googler")
+	if tok, src, err := DefaultGerritToken(t.Context()); err != nil || tok != "tok-2" || src != "luci-auth" {
+		t.Fatalf("googler DefaultGerritToken() = (%q, %q, %v), want (tok-2, luci-auth, nil)", tok, src, err)
 	}
-	if want := []string{DefaultGerritScopes, ScopeGerritCodeReview}; !slices.Equal(gotScopes, want) {
-		t.Errorf("probed scopes = %q, want %q", gotScopes, want)
-	}
-}
-
-func TestLUCIAuthTransport(t *testing.T) {
-	newRecordingTransport := func() (*mockTransport, **http.Request) {
-		var lastReq *http.Request
-		return &mockTransport{
-			roundTrip: func(req *http.Request) (*http.Response, error) {
-				lastReq = req
-				return okGerritResponse(req, "{}"), nil
-			},
-		}, &lastReq
+	t.Setenv("GH_ISH_AUTH_MODE", "none")
+	if _, _, err := DefaultGerritToken(t.Context()); !errors.Is(err, errLUCIAuthDisabled) {
+		t.Fatalf("none DefaultGerritToken() err = %v, want %v", err, errLUCIAuthDisabled)
 	}
 
-	t.Run("attaches Bearer token when available", func(t *testing.T) {
-		WithHermeticAuth(t, AuthResolvers{
-			LUCIToken: func(ctx context.Context) (string, string, error) {
-				return "luci-secret-token", "luci-auth token", nil
-			},
-		})
-		setAuthModeFlag(t, "googler")
-		rec, lastReq := newRecordingTransport()
-		tr := &LUCIAuthTransport{Base: rec}
-
-		req, _ := http.NewRequest("POST", "https://cr-buildbucket.appspot.com/prpc/buildbucket.v2.Builds/SearchBuilds", nil)
-		resp, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("RoundTrip failed: %v", err)
-		}
-		_ = resp.Body.Close()
-		if *lastReq == nil {
-			t.Fatal("expected HTTP request to be sent, got nil")
-		}
-		if got := (*lastReq).Header.Get("Authorization"); got != "Bearer luci-secret-token" {
-			t.Errorf("Authorization = %q, want 'Bearer luci-secret-token'", got)
-		}
-	})
-
-	t.Run("fails with ExitCodeAuth in googler mode when token missing", func(t *testing.T) {
-		WithHermeticAuth(t, AuthResolvers{
-			LUCIToken: func(ctx context.Context) (string, string, error) {
-				return "", "", fmt.Errorf("interactive login required")
-			},
-		})
-		setAuthModeFlag(t, "googler")
-		rec, lastReq := newRecordingTransport()
-		tr := &LUCIAuthTransport{Base: rec}
-
-		req, _ := http.NewRequest("POST", "https://cr-buildbucket.appspot.com/prpc/buildbucket.v2.Builds/SearchBuilds", nil)
-		_, err := tr.RoundTrip(req)
-		if err == nil {
-			t.Fatal("expected error in googler mode when LUCI token is missing")
-		}
-		if ExitCodeFor(err) != ExitCodeAuth {
-			t.Errorf("ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
-		}
-		if *lastReq != nil {
-			t.Errorf("expected no HTTP request to be sent when googler LUCI check fails")
-		}
-	})
-
-	t.Run("proceeds unauthenticated in community mode when token missing", func(t *testing.T) {
-		WithHermeticAuth(t, AuthResolvers{
-			LUCIToken: func(ctx context.Context) (string, string, error) {
-				return "", "", fmt.Errorf("luci-auth not installed")
-			},
-		})
-		setAuthModeFlag(t, "community")
-		rec, lastReq := newRecordingTransport()
-		tr := &LUCIAuthTransport{Base: rec}
-
-		req, _ := http.NewRequest("POST", "https://cr-buildbucket.appspot.com/prpc/buildbucket.v2.Builds/SearchBuilds", nil)
-		resp, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("expected community mode to proceed unauthenticated, got error: %v", err)
-		}
-		_ = resp.Body.Close()
-		if *lastReq == nil {
-			t.Fatal("expected HTTP request to be sent, got nil")
-		}
-		if got := (*lastReq).Header.Get("Authorization"); got != "" {
-			t.Errorf("expected empty Authorization header in community mode without token, got %q", got)
-		}
-	})
-}
-
-func TestLUCIAuthTransport_MemoizesAuthModeAcrossRequests(t *testing.T) {
-	setAuthModeFlag(t, "")
-	WithHermeticAuth(t, AuthResolvers{
-		LUCIToken: func(ctx context.Context) (string, string, error) {
-			return "luci-tok", "luci-auth", nil
-		},
-	})
-
-	var gitConfigCalls int
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			gitConfigCalls++
-			if len(args) >= 3 && args[0] == "config" && args[1] == "--get" && args[2] == "user.email" {
-				_, _ = stdout.Write([]byte("dev@google.com\n"))
-				return nil
-			}
-			return fmt.Errorf("not set")
-		},
+	wantScopes := []string{
+		strings.Join(luciAuthScopes(AuthModeCommunity), " "),
+		strings.Join(luciAuthScopes(AuthModeGoogler), " "),
 	}
-	cfg := &Config{Git: mockGit}
-	rec := &mockTransport{
-		roundTrip: func(req *http.Request) (*http.Response, error) {
-			return okGerritResponse(req, "{}"), nil
-		},
-	}
-	tr := &LUCIAuthTransport{Base: rec, Cfg: cfg}
-
-	for i := range 3 {
-		req, _ := http.NewRequest("POST", "https://cr-buildbucket.appspot.com/prpc/buildbucket.v2.Builds/GetBuild", nil)
-		resp, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("RoundTrip(%d) failed: %v", i, err)
-		}
-		_ = resp.Body.Close()
-	}
-	// Only the first request should query git config (ghish.authmode + user.email = 2 calls).
-	if gitConfigCalls > 2 {
-		t.Errorf("gitConfigCalls across 3 LUCI requests = %d, want <= 2", gitConfigCalls)
+	if !slices.Equal(gotScopes, wantScopes) {
+		t.Errorf("probed scopes = %q, want %q", gotScopes, wantScopes)
 	}
 }
 
@@ -1083,10 +988,10 @@ func TestResolveAuthMode_RemovedAuthMethodEnv(t *testing.T) {
 			"To disable authentication, use --auth-mode=none or GH_ISH_AUTH_MODE=none.\n\n"+
 			"Remediation:\n"+
 			"  1. Unset it: unset GH_ISH_AUTH_METHOD\n"+
-			"  2. Run 'luci-auth login -scopes %q' (for *.googlesource.com)\n"+
+			"  2. Run '%s' (for *.googlesource.com)\n"+
 			"  3. Set an OAuth2 token: export GERRIT_TOKEN=\"<token>\"\n"+
 			"  4. Check auth status: gh auth status",
-		DefaultGerritScopes)
+		luciAuthLoginCommand(AuthModeCommunity))
 
 	for _, raw := range []string{"gob-curl", "cookie", "token", "basic", "auto", "none", "  none  "} {
 		t.Run(raw, func(t *testing.T) {
@@ -1135,7 +1040,7 @@ func TestGerritGooglerAuthError(t *testing.T) {
 			"git config ghish.authmode=googler",
 			"pigweed-review.googlesource.com",
 			"luci-auth not found (searched PATH, /x/luci-auth)",
-			fmt.Sprintf("luci-auth login -scopes %q", DefaultGerritScopes),
+			luciAuthLoginCommand(AuthModeGoogler),
 			"GERRIT_TOKEN",
 			"gh auth status",
 		} {
@@ -1261,37 +1166,51 @@ func TestDefaultGerritToken_Errors(t *testing.T) {
 	}
 }
 
-func TestInvalidateCachedGerritToken_ClearsProbeError(t *testing.T) {
+func TestDefaultGerritToken_RecoversAfterFailureAndInvalidation(t *testing.T) {
 	const bin = "/x/luci-auth"
 	var calls int
+	binaryPresent := false
 	shouldFail := true
 	WithHermeticAuth(t, AuthResolvers{
-		LookPath: onPath("luci-auth", bin),
+		LookPath: func(file string) (string, error) {
+			if binaryPresent && file == "luci-auth" {
+				return bin, nil
+			}
+			return "", os.ErrNotExist
+		},
 		CommandRunner: func(context.Context, string, ...string) ([]byte, error) {
 			calls++
 			if shouldFail {
 				return nil, &exec.ExitError{Stderr: []byte("Not logged in.\n")}
 			}
-			return []byte("recovered-token\n"), nil
+			return fmt.Appendf(nil, "recovered-token-%d\n", calls), nil
 		},
 	})
 
+	// Binary missing is cached in luciAuthCache.notFoundErr until ResetAuthTokenCaches().
+	if _, _, err := DefaultGerritToken(t.Context()); !errors.Is(err, errLUCIAuthNotFound) {
+		t.Fatalf("missing binary err = %v, want %v", err, errLUCIAuthNotFound)
+	}
+	binaryPresent = true
+	if _, _, err := DefaultGerritToken(t.Context()); !errors.Is(err, errLUCIAuthNotFound) {
+		t.Fatalf("cached missing binary err = %v, want %v", err, errLUCIAuthNotFound)
+	}
+	ResetAuthTokenCaches()
+
+	// Transient login failure is not sticky; subsequent call recovers once logged in.
 	if _, _, err := DefaultGerritToken(t.Context()); err == nil {
-		t.Fatal("initial DefaultGerritToken() succeeded, want probe failure")
+		t.Fatal("DefaultGerritToken() succeeded while not logged in, want error")
 	}
-	afterFirst := calls
-	if _, _, err := DefaultGerritToken(t.Context()); err == nil || calls != afterFirst {
-		t.Fatalf("second DefaultGerritToken() err=%v, calls=%d (want cached error with %d calls)", err, calls, afterFirst)
-	}
-
 	shouldFail = false
-	invalidateCachedGerritToken("stale")
-
 	tok, src, err := DefaultGerritToken(t.Context())
-	if err != nil || tok != "recovered-token" || src != "luci-auth" {
-		t.Fatalf("DefaultGerritToken() after invalidation = (%q, %q, %v), want (recovered-token, luci-auth, nil)", tok, src, err)
+	if err != nil || tok != "recovered-token-2" || src != "luci-auth" {
+		t.Fatalf("DefaultGerritToken() after transient failure = (%q, %q, %v), want (recovered-token-2, luci-auth, nil)", tok, src, err)
 	}
-	if calls != afterFirst+1 {
-		t.Errorf("OAuthTokenCommandRunner calls after recovery = %d, want %d", calls, afterFirst+1)
+
+	// Invalidating the rejected token triggers a fresh mint on the next call.
+	invalidateLUCIAuthToken("recovered-token-2")
+	tok2, _, err := DefaultGerritToken(t.Context())
+	if err != nil || tok2 != "recovered-token-3" {
+		t.Fatalf("DefaultGerritToken() after invalidation = (%q, %v), want (recovered-token-3, nil)", tok2, err)
 	}
 }

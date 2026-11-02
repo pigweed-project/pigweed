@@ -27,8 +27,7 @@ Part 1: Automated Live Integration Suite
 ========================================
 The repository provides an automated live integration test suite in
 ``pw_ghish/live_test.go``. Guarded behind the ``live`` build tag, it runs against
-production services using your local workstation authentication (``luci-auth``
-or ``gcloud``).
+production services using your local workstation authentication (``luci-auth``).
 
 Running the Live Suite
 ----------------------

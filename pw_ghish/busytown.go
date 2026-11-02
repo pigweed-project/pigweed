@@ -33,33 +33,61 @@ const (
 	FetchArtifactBinPath = "/google/data/ro/projects/android/fetch_artifact"
 	// AntsCLIBinPath is the local corp workstation path for Android's AnTS test results CLI.
 	AntsCLIBinPath = "/google/data/ro/projects/android/ants_cli"
+
+	defaultBusytownAndroidBuildAPIBase = "https://androidbuildinternal.googleapis.com"
+	defaultBusytownAndroidCIBase       = "https://ci.android.com"
 )
 
-var (
-	// BusytownAndroidBuildAPIBase is the base URL for the Android Build Internal v3 REST API.
-	BusytownAndroidBuildAPIBase = "https://androidbuildinternal.googleapis.com"
-	// BusytownAndroidCIBase is the base URL for ci.android.com artifact and build links.
-	BusytownAndroidCIBase = "https://ci.android.com"
+// defaultBusytownFileExists reports whether path exists on disk and is not a
+// directory.
+var defaultBusytownFileExists = func(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir()
+}
 
-	// BusytownFileExistsFn checks whether a local accelerator binary exists on disk.
-	// Overridden in NewMockGerritServer so unit tests remain 100% hermetic on corp workstations.
-	BusytownFileExistsFn = func(path string) bool {
-		st, err := os.Stat(path)
-		return err == nil && !st.IsDir()
-	}
+// defaultBusytownExecCommand runs an external Busytown helper command via
+// ExecCommandContext and returns its combined stdout and stderr.
+var defaultBusytownExecCommand = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return ExecCommandContext(ctx, name, args...).CombinedOutput()
+}
 
-	// BusytownExecCommandFn executes local accelerator binaries (fetch_artifact, ants_cli).
-	BusytownExecCommandFn = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return ExecCommandContext(ctx, name, args...).CombinedOutput()
+// NewBusytownProvider constructs a BusytownProvider with production defaults.
+var NewBusytownProvider = func() *BusytownProvider {
+	return &BusytownProvider{
+		APIBase:       defaultBusytownAndroidBuildAPIBase,
+		CIBase:        defaultBusytownAndroidCIBase,
+		FileExistsFn:  defaultBusytownFileExists,
+		ExecCommandFn: defaultBusytownExecCommand,
 	}
+}
 
-	// getBusytownHTTPClient returns an authenticated HTTP client for Android Build / ci.android.com.
-	getBusytownHTTPClient = func(ctx context.Context) *http.Client {
-		return &http.Client{
-			Transport: &AndroidBuildAuthTransport{Base: http.DefaultTransport},
-		}
+func (p *BusytownProvider) apiBase() string {
+	if p.APIBase != "" {
+		return p.APIBase
 	}
-)
+	return defaultBusytownAndroidBuildAPIBase
+}
+
+func (p *BusytownProvider) ciBase() string {
+	if p.CIBase != "" {
+		return p.CIBase
+	}
+	return defaultBusytownAndroidCIBase
+}
+
+func (p *BusytownProvider) fileExists() func(string) bool {
+	if p.FileExistsFn != nil {
+		return p.FileExistsFn
+	}
+	return defaultBusytownFileExists
+}
+
+func (p *BusytownProvider) execCommand() func(context.Context, string, ...string) ([]byte, error) {
+	if p.ExecCommandFn != nil {
+		return p.ExecCommandFn
+	}
+	return defaultBusytownExecCommand
+}
 
 var (
 	busytownBuildIDPattern       = regexp.MustCompile(`^(?:(?i:[PLI]\d+)|\d{7,10})$`)
@@ -131,13 +159,17 @@ func BusytownBuildURL(buildID, target string) string {
 
 // BusytownProvider implements CIProvider for Android Busytown / TreeHugger (`treetop~` + `ci.android.com`).
 type BusytownProvider struct {
-	GerritClient *GerritClient
-	Cfg          *Config
+	GerritClient  *GerritClient
+	Cfg           *Config
+	APIBase       string
+	CIBase        string
+	HTTPClient    *http.Client
+	TokenProvider func(context.Context) (string, error)
+	FileExistsFn  func(string) bool
+	ExecCommandFn func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
-func (p *BusytownProvider) Name() string {
-	return "busytown"
-}
+func (p *BusytownProvider) Name() string { return "busytown" }
 
 type busytownTaskJSON struct {
 	Name         string `json:"name"`
@@ -520,32 +552,41 @@ func (p *BusytownProvider) resolveBuildAndTarget(buildID string, b *bbBuild, exp
 	return bid, target, invocationID, workplanID
 }
 
-func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, invocationID string) (buildLog string, antsOutput string, logURL string) {
+func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, invocationID string) (buildLog string, antsOutput string, logURL string, err error) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return "", "", "", err
+		}
+	}
 	logURL = BusytownBuildURL(bid, target)
 
 	// Tier A: Local corp workstation accelerators (`fetch_artifact` and `ants_cli`).
-	if bid != "" && target != "" && BusytownFileExistsFn(FetchArtifactBinPath) {
-		if out, err := BusytownExecCommandFn(ctx, FetchArtifactBinPath, "--bid", bid, "--target", target, "build.log", "-"); err == nil && len(out) > 0 {
+	if bid != "" && target != "" && p.fileExists()(FetchArtifactBinPath) {
+		if out, err := p.execCommand()(ctx, FetchArtifactBinPath, "--bid", bid, "--target", target, "build.log", "-"); err == nil && len(out) > 0 {
 			buildLog = string(out)
 		}
+		if ctx != nil && ctx.Err() != nil {
+			return "", "", "", ctx.Err()
+		}
 	}
-	if invocationID != "" && BusytownFileExistsFn(AntsCLIBinPath) {
-		if out, err := BusytownExecCommandFn(ctx, AntsCLIBinPath, "test_results", "--invocation_id="+invocationID, "--status=fail"); err == nil && len(out) > 0 {
+	if invocationID != "" && p.fileExists()(AntsCLIBinPath) {
+		if out, err := p.execCommand()(ctx, AntsCLIBinPath, "test_results", "--invocation_id="+invocationID, "--status=fail"); err == nil && len(out) > 0 {
 			antsOutput = strings.TrimSpace(string(out))
+		}
+		if ctx != nil && ctx.Err() != nil {
+			return "", "", "", ctx.Err()
 		}
 	}
 
 	// Tier B: Direct HTTP fallback via androidbuildinternal v3 REST API and ci.android.com.
 	if buildLog == "" && bid != "" && target != "" {
-		client := getBusytownHTTPClient(ctx)
-		if client == nil {
-			client = http.DefaultClient
-		}
-		apiBase := strings.TrimRight(BusytownAndroidBuildAPIBase, "/")
+		client := ensureSafeHTTPClient(p.HTTPClient)
+		auth := newAndroidBuildAuth(p.apiBase(), p.ciBase(), p.TokenProvider, p.Cfg)
+		apiBase := strings.TrimRight(p.apiBase(), "/")
 		urlEndpoint := fmt.Sprintf("%s/android/internal/build/v3/builds/%s/%s/attempts/latest/artifacts/build.log/url",
 			apiBase, url.PathEscape(bid), url.PathEscape(target))
 
-		if req, err := http.NewRequestWithContext(ctx, "GET", urlEndpoint, nil); err == nil {
+		if req, err := http.NewRequestWithContext(ctx, "GET", urlEndpoint, nil); err == nil && auth.apply(req) == nil {
 			if resp, err := client.Do(req); err == nil && resp != nil {
 				body, _ := readBoundedLog(resp.Body, maxHTTPBodyBytes)
 				resp.Body.Close()
@@ -577,16 +618,19 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 				}
 			}
 		}
+		if ctx != nil && ctx.Err() != nil {
+			return "", "", "", ctx.Err()
+		}
 
 		if buildLog == "" {
-			ciBase := strings.TrimRight(BusytownAndroidCIBase, "/")
+			ciBase := strings.TrimRight(p.ciBase(), "/")
 			kind := "submitted"
 			if strings.HasPrefix(strings.ToUpper(bid), "P") {
 				kind = "pending"
 			}
 			rawEndpoint := fmt.Sprintf("%s/builds/%s/%s/%s/latest/raw/build.log",
 				ciBase, kind, url.PathEscape(bid), url.PathEscape(target))
-			if req, err := http.NewRequestWithContext(ctx, "GET", rawEndpoint, nil); err == nil {
+			if req, err := http.NewRequestWithContext(ctx, "GET", rawEndpoint, nil); err == nil && auth.apply(req) == nil {
 				if resp, err := client.Do(req); err == nil && resp != nil {
 					body, _ := readBoundedLog(resp.Body, maxHTTPBodyBytes)
 					resp.Body.Close()
@@ -596,14 +640,20 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 					}
 				}
 			}
+			if ctx != nil && ctx.Err() != nil {
+				return "", "", "", ctx.Err()
+			}
 		}
 	}
 
-	return buildLog, antsOutput, logURL
+	return buildLog, antsOutput, logURL, nil
 }
 
-func (p *BusytownProvider) fetchBusytownFailureSnippet(ctx context.Context, bid, target, invocationID string, maxLines int) (snippet string, logURL string) {
-	buildLog, antsOut, logURL := p.fetchBusytownLogs(ctx, bid, target, invocationID)
+func (p *BusytownProvider) fetchBusytownFailureSnippet(ctx context.Context, bid, target, invocationID string, maxLines int) (snippet string, logURL string, err error) {
+	buildLog, antsOut, logURL, err := p.fetchBusytownLogs(ctx, bid, target, invocationID)
+	if err != nil {
+		return "", "", err
+	}
 	snippet = extractFailureSnippet(buildLog, maxLines)
 	if antsOut != "" {
 		if snippet != "" {
@@ -612,7 +662,7 @@ func (p *BusytownProvider) fetchBusytownFailureSnippet(ctx context.Context, bid,
 			snippet = antsOut
 		}
 	}
-	return snippet, logURL
+	return snippet, logURL, nil
 }
 
 func (p *BusytownProvider) GetBuildDetails(ctx context.Context, buildID string, b *bbBuild) (*bbBuildDetails, error) {
@@ -656,7 +706,10 @@ func (p *BusytownProvider) GetBuildDetails(ctx context.Context, buildID string, 
 	}
 
 	if status == "FAILURE" || status == "INFRA_FAILURE" {
-		snippet, logURL := p.fetchBusytownFailureSnippet(ctx, bid, target, invocationID, 40)
+		snippet, logURL, err := p.fetchBusytownFailureSnippet(ctx, bid, target, invocationID, 40)
+		if err != nil {
+			return nil, err
+		}
 		step := LUCIStep{
 			Name:            builderName,
 			Status:          "FAILURE",
@@ -689,7 +742,10 @@ func (p *BusytownProvider) FetchFailureReportWithOptions(ctx context.Context, b 
 		builderName = bid
 	}
 
-	snippet, logURL := p.fetchBusytownFailureSnippet(ctx, bid, target, invocationID, opts.MaxLogLines)
+	snippet, logURL, err := p.fetchBusytownFailureSnippet(ctx, bid, target, invocationID, opts.MaxLogLines)
+	if err != nil {
+		return nil, err
+	}
 
 	viewURL := b.ViewURL
 	if viewURL == "" {

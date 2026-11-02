@@ -296,30 +296,22 @@ type bbGetBuildRequest struct {
 
 // LUCIClient provides methods to interact with LUCI Buildbucket and LogDog APIs.
 type LUCIClient struct {
-	Host       string
-	HTTPClient *http.Client
+	Host          string
+	HTTPClient    *http.Client
+	TokenProvider func(context.Context) (string, error)
 }
 
 // NewLUCIClient creates a new LUCIClient targeting the given Buildbucket host.
-// If httpClient is nil, http.DefaultClient is used.
+// If httpClient is nil, a client that strips Authorization on cross-host
+// redirects is used.
 func NewLUCIClient(host string, httpClient *http.Client) *LUCIClient {
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = ensureSafeHTTPClient(nil)
 	}
 	return &LUCIClient{
 		Host:       host,
 		HTTPClient: httpClient,
 	}
-}
-
-func newLUCIHTTPAuthError(target string, statusCode int, body []byte) error {
-	return NewExitCodeError(ExitCodeAuth,
-		"%s returned HTTP %d: %s\n\n"+
-			"To authenticate with LUCI:\n"+
-			"  1. Run: luci-auth login\n"+
-			"  2. Or set an OAuth token: export GHISH_LUCI_TOKEN=\"<token>\"\n"+
-			"  3. Check auth status: gh auth status",
-		target, statusCode, strings.TrimSpace(string(body)))
 }
 
 // CallPRPC makes a pRPC POST request to the specified service and method on the LUCI client's host.
@@ -341,10 +333,7 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 	if resp == nil {
 		return fmt.Errorf("response pointer cannot be nil")
 	}
-	httpClient := c.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
+	httpClient := ensureSafeHTTPClient(c.HTTPClient)
 
 	jsonBytes, err := json.Marshal(req)
 	if err != nil {
@@ -366,6 +355,9 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
+	if err := newLUCIAuth(c.Host, c.TokenProvider).apply(httpReq); err != nil {
+		return err
+	}
 
 	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {
@@ -380,7 +372,7 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 
 	if httpResp.StatusCode != http.StatusOK {
 		if httpResp.StatusCode == http.StatusUnauthorized || httpResp.StatusCode == http.StatusForbidden {
-			return newLUCIHTTPAuthError(fmt.Sprintf("Buildbucket %s/%s", service, method), httpResp.StatusCode, bodyBytes)
+			return newLUCIHTTPAuthError(ctx, fmt.Sprintf("Buildbucket %s/%s", service, method), httpResp.StatusCode, bodyBytes)
 		}
 		return fmt.Errorf("Buildbucket %s/%s returned HTTP %d: %s", service, method, httpResp.StatusCode, string(bodyBytes))
 	}
@@ -572,23 +564,26 @@ func (c *LUCIClient) fetchLogStreamTail(ctx context.Context, viewURL string, max
 	if viewURL == "" {
 		return "", 0, fmt.Errorf("viewURL cannot be empty")
 	}
-	httpClient := c.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
+	httpClient := ensureSafeHTTPClient(c.HTTPClient)
 
 	parsed, err := url.Parse(viewURL)
 	if err != nil {
 		return "", 0, fmt.Errorf("invalid log URL %q: %w", viewURL, err)
 	}
 
-	q := parsed.Query()
-	q.Set("format", "raw")
-	parsed.RawQuery = q.Encode()
+	preSigned := isPreSignedGCSURL(parsed)
+	if !preSigned {
+		q := parsed.Query()
+		q.Set("format", "raw")
+		parsed.RawQuery = q.Encode()
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", parsed.String(), nil)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to create log request: %w", err)
+	}
+	if err := newLUCIAuth(c.Host, c.TokenProvider).apply(req); err != nil {
+		return "", 0, fmt.Errorf("failed to authenticate log request: %w", err)
 	}
 
 	resp, err := httpClient.Do(req)
@@ -600,7 +595,7 @@ func (c *LUCIClient) fetchLogStreamTail(ctx context.Context, viewURL string, max
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxHTTPBodyBytes))
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			return "", 0, newLUCIHTTPAuthError("LogDog", resp.StatusCode, body)
+			return "", 0, newLUCIHTTPAuthError(ctx, "LogDog", resp.StatusCode, body)
 		}
 		return "", 0, fmt.Errorf("LogDog returned HTTP %d: %s", resp.StatusCode, string(body))
 	}

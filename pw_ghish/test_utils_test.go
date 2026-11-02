@@ -778,6 +778,9 @@ func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	t.Helper()
 	if !hermeticAuthActive {
 		WithHermeticAuth(t, AuthResolvers{})
+	} else {
+		ResetAuthTokenCaches()
+		t.Cleanup(ResetAuthTokenCaches)
 	}
 	s := &MockGerritServer{
 		t:              t,
@@ -802,25 +805,21 @@ func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	t.Cleanup(func() { NewGerritClient = origClient })
 
 	origLUCIClient := getLUCIHTTPClient
-	getLUCIHTTPClient = func(ctx context.Context, bbHost string) *http.Client {
+	getLUCIHTTPClient = func() *http.Client {
 		return s.Server.Client()
 	}
-	origBTClient := getBusytownHTTPClient
-	getBusytownHTTPClient = func(ctx context.Context) *http.Client {
-		return s.Server.Client()
+	origNewBT := NewBusytownProvider
+	NewBusytownProvider = func() *BusytownProvider {
+		p := origNewBT()
+		p.APIBase = s.URL
+		p.CIBase = s.URL
+		p.HTTPClient = s.Server.Client()
+		p.FileExistsFn = func(string) bool { return false }
+		return p
 	}
-	origBTAPIBase := BusytownAndroidBuildAPIBase
-	BusytownAndroidBuildAPIBase = s.URL
-	origBTCIBase := BusytownAndroidCIBase
-	BusytownAndroidCIBase = s.URL
-	origBTExists := BusytownFileExistsFn
-	BusytownFileExistsFn = func(string) bool { return false }
 	t.Cleanup(func() {
 		getLUCIHTTPClient = origLUCIClient
-		getBusytownHTTPClient = origBTClient
-		BusytownAndroidBuildAPIBase = origBTAPIBase
-		BusytownAndroidCIBase = origBTCIBase
-		BusytownFileExistsFn = origBTExists
+		NewBusytownProvider = origNewBT
 		MockCWD = ""
 	})
 

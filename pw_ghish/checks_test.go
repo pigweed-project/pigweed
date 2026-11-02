@@ -1208,33 +1208,6 @@ func TestRunWatch_InheritsExitCodeContract(t *testing.T) {
 	})
 }
 
-func TestGetLUCIHTTPClient(t *testing.T) {
-	ctx := context.Background()
-
-	// Default client uses LUCIAuthTransport:
-	client := getLUCIHTTPClient(ctx, "cr-buildbucket.appspot.com")
-	if client == nil {
-		t.Fatal("expected non-nil client")
-	}
-	if _, ok := client.Transport.(*LUCIAuthTransport); !ok {
-		t.Errorf("expected *LUCIAuthTransport, got %T", client.Transport)
-	}
-
-	// Customizable hook:
-	orig := getLUCIHTTPClient
-	defer func() { getLUCIHTTPClient = orig }()
-
-	customClient := &http.Client{}
-	getLUCIHTTPClient = func(ctx context.Context, host string) *http.Client {
-		return customClient
-	}
-
-	got := getLUCIHTTPClient(ctx, "cr-buildbucket.appspot.com")
-	if got != customClient {
-		t.Errorf("got %v, want %v", got, customClient)
-	}
-}
-
 func TestBuildCheckItems(t *testing.T) {
 	builds := []bbBuild{
 		FakeBuild("101", "pigweed-linux", "SUCCESS", WithSummary("Passed all tests")),

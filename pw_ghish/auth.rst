@@ -31,7 +31,7 @@ Command reference
        required credentials are missing or expired.
    * - ``./gh auth status --json [<fields>]``
      - Output JSON authentication status (fields: ``mode``, ``modeReason``,
-       ``authenticated``, ``gerrit``, ``luci``, ``buganizer``).
+       ``authenticated``, ``healthy``, ``gerrit``, ``luci``, ``buganizer``).
 
 ------------------------------
 Checking authentication status
@@ -55,6 +55,9 @@ Run ``./gh auth status`` to verify your credentials:
      ✓ Authenticated with issuetracker.corp.googleapis.com via sso_client + luci-auth (quota project: pigweed-gce)
      - Method: sso_client + luci-auth
      - Quota project: pigweed-gce
+
+   Verdict: authenticated (googler mode; all required services healthy)
+   Next:    gh pr status
 
 Pass ``--json`` to output specific fields for scripts or tools:
 
@@ -108,6 +111,29 @@ The active authentication mode is resolved in the following order:
 Credential resolution
 ---------------------
 
+One login for every service
+===========================
+``pw_ghish`` accesses several separate backends—Gerrit, LUCI Buildbucket,
+Android Build, and Google Issue Tracker—and uses a single ``luci-auth`` login
+across them based on your :ref:`authentication mode <module-pw_ghish-auth-modes>`:
+
+* ``googler``: Covers Gerrit, LUCI, Android Build, and Google Issue Tracker, so
+  working across Pigweed and Android requires only one login.
+* ``community``: Covers Gerrit and LUCI.
+* ``none``: Disables authentication.
+
+To log in:
+
+* **Corp Linux**: Run ``gcert``. No separate ``luci-auth login`` step is needed.
+* **Elsewhere (including macOS)**: Run ``./gh auth status``. It detects your
+  mode and prints the exact ``luci-auth login`` command to run when login is
+  needed (as do authentication errors from any ``./gh`` command).
+
+If you are a Googler on a machine detected as ``community`` (for example,
+without Corp tools on ``PATH`` and with a non-``@google.com`` ``user.email``),
+set ``GH_ISH_AUTH_MODE=googler`` or
+``git config --global ghish.authmode googler`` before logging in.
+
 Gerrit Code Review & Git Push
 =============================
 ``pw_ghish`` resolves Gerrit REST credentials in the following order:
@@ -116,17 +142,11 @@ Gerrit Code Review & Git Push
    containing ``:`` (a ``username:password`` pair for HTTP Basic auth) is
    rejected with exit code ``4``; HTTP Basic auth (used by most non-Google
    Gerrit servers) isn't supported yet.
-2. On Google-hosted Gerrit (``*.googlesource.com``), ``luci-auth token`` with
-   ``gerritcodereview`` and ``userinfo.email`` scopes (located on ``PATH`` or
-   in the repository's bootstrapped CIPD environment; works across Linux,
-   macOS, and Windows, automatically configuring ``/usr/bin/sso-cred-helper``
-   on Corp Linux when present). On other hosts ``luci-auth`` is skipped, so the
-   order is ``GERRIT_TOKEN``, then anonymous HTTPS (``googler`` mode fails with
-   exit code ``4`` without ``GERRIT_TOKEN``).
+2. Shared ``luci-auth`` credentials on Google-hosted Gerrit
+   (``*.googlesource.com``; see `One login for every service`_). For other
+   Gerrit hosts, set ``GERRIT_TOKEN``.
 3. Anonymous HTTPS (permitted in ``community`` and ``none`` modes for public
-   reads; rejected in ``googler`` mode with exit code ``4``). When no
-   credential is found, the error and ``./gh auth status`` say why, for
-   example ``luci-auth not found (searched PATH, ...)``.
+   reads; rejected in ``googler`` mode with exit code ``4``).
 
 .. note::
 
@@ -183,32 +203,24 @@ hours. When a push to an ``sso://<tenant>/...`` remote fails because the
 
 LUCI Buildbucket & LogDog
 =========================
-LUCI Buildbucket pRPC requests (``pr checks``, ``pr view``, ``pr status``,
-``run view``, ``run list``, ``run rerun``) and LogDog log requests look up
-OAuth2 tokens in the following order:
+LUCI Buildbucket and LogDog requests look up credentials in the following
+order:
 
 1. ``GHISH_LUCI_TOKEN`` or ``LUCI_TOKEN`` environment variable.
-2. ``luci-auth token`` (located on ``PATH`` or in the repository's bootstrapped
-   CIPD environment).
-3. ``gcloud auth application-default print-access-token`` or
-   ``gcloud auth print-access-token``.
+2. Shared ``luci-auth`` credentials (see `One login for every service`_).
 
-In ``googler`` mode, an active LUCI OAuth2 token is required so that
-``buildbucket.v2.Builds/SearchBuilds`` returns both public and internal CQ
-builders. To log in or refresh your LUCI session:
-
-.. code-block:: console
-
-   $ luci-auth login
+In ``googler`` mode, LUCI authentication is required so queries include both
+public and internal CQ builders. Run ``gcert`` on Corp Linux, or
+``./gh auth status`` elsewhere to see the login command when needed.
 
 Google Issue Tracker (Buganizer)
 ================================
 ``./gh issue`` looks up credentials in the following order:
 
 1. ``GHISH_ISSUE_TOKEN`` or ``BUGANIZER_TOKEN`` environment variable.
-2. ``luci-auth token -scopes "https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform"``
-3. ``gcloud auth application-default print-access-token`` or
-   ``gcloud auth print-access-token``.
+2. Shared ``luci-auth`` credentials in ``googler`` mode (see
+   `One login for every service`_). In ``community`` mode, set
+   ``GHISH_ISSUE_TOKEN`` or ``BUGANIZER_TOKEN``.
 
 When ``sso_client`` is on ``PATH``, requests use
 ``https://issuetracker.corp.googleapis.com/v1`` to access both public and
@@ -233,16 +245,16 @@ Comparison with GitHub CLI (gh auth)
        Buildbucket**, and **Google Issue Tracker (Buganizer)**.
    * - ``auth status --json``
      - Outputs ``hosts`` status fields for ``github.com``.
-     - Outputs ``mode``, ``modeReason``, ``authenticated``, ``gerrit``,
-       ``luci``, and ``buganizer`` status objects.
+     - Outputs ``mode``, ``modeReason``, ``authenticated``, ``healthy``,
+       ``gerrit``, ``luci``, and ``buganizer`` status objects.
    * - ``--auth-mode``
      - *(n/a)* (``gh auth status`` binds ``-a`` to ``--active``).
      - Global **ghish-only** flag (``auto``, ``googler``, ``community``,
        ``none``). Leaves ``-a`` unbound to avoid colliding with ``--active``.
    * - ``auth login`` / ``logout``
      - Interactive OAuth flow managed directly by ``gh``.
-     - Delegated to each backend's native credential tool (``luci-auth login``,
-       ``gcert``, and ``gcloud auth``);
+     - Delegated to native credential tools (``luci-auth login`` and
+       ``gcert``);
        ``./gh auth status`` prints the exact login command when a service is
        unauthenticated.
 

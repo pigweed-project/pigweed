@@ -167,7 +167,7 @@ func TestAuthStatus_CommunityModeHealthyWithoutLUCIToken(t *testing.T) {
 			return "", "", fmt.Errorf("luci-auth not found")
 		},
 		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
-			return "", "", fmt.Errorf("gcloud not found")
+			return "", "", fmt.Errorf("luci-auth not found")
 		},
 	})
 
@@ -194,7 +194,7 @@ func TestAuthStatus_CommunityModeUnauthenticatedGerrit(t *testing.T) {
 			return "", "", fmt.Errorf("luci-auth not found")
 		},
 		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
-			return "", "", fmt.Errorf("gcloud not found")
+			return "", "", fmt.Errorf("luci-auth not found")
 		},
 	})
 
@@ -261,7 +261,8 @@ func TestAuthStatus_GerritUnauthenticatedMatrix(t *testing.T) {
 		nonGoogleHost = "gerrit.example.org"
 		luciCause     = "luci-auth not found (searched PATH, /x/luci-auth)"
 	)
-	googleLoginStep := fmt.Sprintf("Run 'luci-auth login -scopes %q'", DefaultGerritScopes)
+	googlerLoginStep := fmt.Sprintf("Run '%s'", luciAuthLoginCommand(AuthModeGoogler))
+	communityLoginStep := fmt.Sprintf("Run '%s'", luciAuthLoginCommand(AuthModeCommunity))
 	const (
 		gcertStep = "Run 'gcert' (with sso-cred-helper)"
 		tokenStep = `Set an OAuth2 token: export GERRIT_TOKEN="<token>"`
@@ -280,7 +281,7 @@ func TestAuthStatus_GerritUnauthenticatedMatrix(t *testing.T) {
 			mode:            "googler",
 			host:            googleHost,
 			wantMessage:     fmt.Sprintf("Gerrit authentication required in googler mode (--auth-mode=googler): no Gerrit credentials found for %s (%s).", googleHost, luciCause),
-			wantRemediation: googleLoginStep + "; " + tokenStep,
+			wantRemediation: googlerLoginStep + "; " + tokenStep,
 		},
 		{
 			name:             "googler/google with sso-cred-helper",
@@ -288,14 +289,14 @@ func TestAuthStatus_GerritUnauthenticatedMatrix(t *testing.T) {
 			host:             googleHost,
 			hasSSOCredHelper: true,
 			wantMessage:      fmt.Sprintf("Gerrit authentication required in googler mode (--auth-mode=googler): no Gerrit credentials found for %s (%s).", googleHost, luciCause),
-			wantRemediation:  gcertStep + "; " + googleLoginStep + "; " + tokenStep,
+			wantRemediation:  gcertStep + "; " + googlerLoginStep + "; " + tokenStep,
 		},
 		{
 			name:            "community/google includes cause in message",
 			mode:            "community",
 			host:            googleHost,
 			wantMessage:     fmt.Sprintf("No Gerrit credentials configured for %s (%s; public changes readable, login required to push or review)", googleHost, luciCause),
-			wantRemediation: googleLoginStep + "; " + tokenStep,
+			wantRemediation: communityLoginStep + "; " + tokenStep,
 		},
 		{
 			name:             "googler/non-google offers only GERRIT_TOKEN",
@@ -386,13 +387,7 @@ func TestAuthStatus_NoneModeJSON(t *testing.T) {
 }
 
 func TestView_SurfacesLUCIAuthErrorInGooglerMode(t *testing.T) {
-	server := NewMockGerritServer(t).OnDefaultChange(12345)
-
-	origLUCIClient := getLUCIHTTPClient
-	getLUCIHTTPClient = func(ctx context.Context, bbHost string) *http.Client {
-		return &http.Client{Transport: &LUCIAuthTransport{Base: server.Server.Client().Transport}}
-	}
-	defer func() { getLUCIHTTPClient = origLUCIClient }()
+	NewMockGerritServer(t).OnDefaultChange(12345)
 
 	WithHermeticAuth(t, AuthResolvers{
 		LUCIToken: func(ctx context.Context) (string, string, error) {

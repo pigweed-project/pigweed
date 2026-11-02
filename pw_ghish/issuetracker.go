@@ -673,14 +673,12 @@ func probeQuotaProject(ctx context.Context, token, projID string) bool {
 	return svc.State == "ENABLED"
 }
 
-var (
-	issueTokenMu           sync.Mutex
-	cachedIssueToken       string
-	cachedIssueTokenSource string
-	cachedIssueTokenExpiry time.Time
-)
+// ScopeBuganizer is the OAuth2 scope for Google Issue Tracker (Buganizer).
+const ScopeBuganizer = "https://www.googleapis.com/auth/buganizer"
 
-// ResolveIssueTrackerTokenWithSource resolves an OAuth2 access token with Buganizer scope and returns its source.
+// ResolveIssueTrackerTokenWithSource resolves an OAuth2 access token for
+// Google Issue Tracker from GHISH_ISSUE_TOKEN, BUGANIZER_TOKEN, or the shared
+// luci-auth token, and returns its source.
 func ResolveIssueTrackerTokenWithSource(ctx context.Context) (string, string, error) {
 	if tok := strings.TrimSpace(os.Getenv("GHISH_ISSUE_TOKEN")); tok != "" {
 		return tok, "GHISH_ISSUE_TOKEN", nil
@@ -688,36 +686,24 @@ func ResolveIssueTrackerTokenWithSource(ctx context.Context) (string, string, er
 	if tok := strings.TrimSpace(os.Getenv("BUGANIZER_TOKEN")); tok != "" {
 		return tok, "BUGANIZER_TOKEN", nil
 	}
-
-	issueTokenMu.Lock()
-	if cachedIssueToken != "" && time.Now().Before(cachedIssueTokenExpiry) {
-		tok, src := cachedIssueToken, cachedIssueTokenSource
-		issueTokenMu.Unlock()
-		return tok, src, nil
+	tok, err := luciAuthTokenWithScope(ctx, ScopeBuganizer)
+	if err == nil {
+		return tok, "luci-auth", nil
 	}
-	issueTokenMu.Unlock()
-
-	if tok, src, exp, err := resolveOAuthTokenWithExpiry(ctx, []string{DefaultBuganizerScopes}); err == nil && tok != "" {
-		issueTokenMu.Lock()
-		cachedIssueToken = tok
-		cachedIssueTokenSource = src
-		cachedIssueTokenExpiry = exp
-		issueTokenMu.Unlock()
-		return tok, src, nil
+	if ctx != nil && ctx.Err() != nil {
+		return "", "", ctx.Err()
 	}
-
 	return "", "", NewExitCodeError(ExitCodeAuth,
 		"failed to authenticate with Google Issue Tracker: no OAuth2 token found.\n\n"+
-			"Cause: Neither GHISH_ISSUE_TOKEN, luci-auth, nor gcloud returned an active access token.\n\n"+
+			"Cause: Neither GHISH_ISSUE_TOKEN/BUGANIZER_TOKEN is set nor did luci-auth return a token: %v\n\n"+
 			"Remediation:\n"+
-			"  1. Authenticate via LUCI Auth (recommended for Pigweed/Fuchsia developers):\n"+
-			"     luci-auth login -scopes \"https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform\"\n"+
-			"  2. Or authenticate via Google Cloud SDK:\n"+
-			"     gcloud auth application-default login --scopes=\"https://www.googleapis.com/auth/buganizer,https://www.googleapis.com/auth/cloud-platform\"\n"+
-			"  3. Or provide a token explicitly:\n"+
+			"  1. Corp Linux: run 'gcert' (sso-cred-helper lets luci-auth mint tokens). Otherwise:\n"+
+			"     %s\n"+
+			"  2. Or provide a token explicitly:\n"+
 			"     export GHISH_ISSUE_TOKEN=\"<token>\"\n"+
-			"  4. Check authentication status:\n"+
-			"     gh auth status")
+			"  3. Check authentication status:\n"+
+			"     gh auth status",
+		err, luciAuthLoginCommandForScope(ctx, ScopeBuganizer))
 }
 
 // IssueTrackerTokenResolver resolves an Issue Tracker OAuth2 token and its source.
@@ -832,12 +818,10 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 		return fmt.Errorf("Google Issue Tracker authentication failed (HTTP %d) for %s %s.\n\n"+
 			"Cause: Your current OAuth token was rejected or lacks the 'https://www.googleapis.com/auth/buganizer' scope.\n\n"+
 			"Remediation:\n"+
-			"  1. Re-authenticate with LUCI Auth including the buganizer scope:\n"+
-			"     luci-auth login -scopes \"https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform\"\n"+
-			"  2. Or re-authenticate with Google Cloud SDK:\n"+
-			"     gcloud auth application-default login --scopes=\"https://www.googleapis.com/auth/buganizer,https://www.googleapis.com/auth/cloud-platform\"\n"+
-			"  3. Or check if this issue belongs to a restricted internal component.\n\n"+
-			"Server Details: %s", resp.StatusCode, method, path, rawErr)
+			"  1. Re-authenticate with LUCI Auth (Corp Linux: run 'gcert'):\n"+
+			"     %s\n"+
+			"  2. Or check if this issue belongs to a restricted internal component.\n\n"+
+			"Server Details: %s", resp.StatusCode, method, path, luciAuthLoginCommandForScope(ctx, ScopeBuganizer), rawErr)
 	}
 
 	if resp.StatusCode == http.StatusNotFound {

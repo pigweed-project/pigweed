@@ -773,10 +773,10 @@ func retryPushWithHTTPSToken(ctx context.Context, out io.Writer, cfg *Config, ht
 		return emptyBuf, NewExitCodeError(ExitCodeAuth,
 			"git push to %s failed authentication, and no Gerrit OAuth2 token is available to retry with.\n\n"+
 				"To resolve this, do one of:\n"+
-				"  luci-auth login -scopes %q\n"+
+				"  %s\n"+
 				"  export GERRIT_TOKEN=\"<token>\"\n"+
 				"  configure a git credential helper for %s\n\n"+
-				"Underlying error: %w", httpsBase, DefaultGerritScopes, httpsBase, cause)
+				"Underlying error: %w", httpsBase, luciAuthLoginCommand(mode), httpsBase, cause)
 	}
 	httpsCtx := withGitConfigEnv(ctx, fmt.Sprintf("http.%s.extraHeader", httpsBase), "Authorization: Bearer "+strings.TrimSpace(res.token))
 	var httpsBuf bytes.Buffer

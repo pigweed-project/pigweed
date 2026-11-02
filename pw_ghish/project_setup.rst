@@ -1053,7 +1053,9 @@ or anonymous reads) authentication modes.
 
 For full details on authentication modes, credential lookup order, and
 environment variables (``GH_ISH_AUTH_MODE``, ``GERRIT_TOKEN``,
-``LUCI_TOKEN``), see :ref:`module-pw_ghish-auth`.
+``GHISH_LUCI_TOKEN``, ``LUCI_TOKEN``, ``GHISH_ISSUE_TOKEN``,
+``BUGANIZER_TOKEN``, ``GHISH_ANDROID_BUILD_TOKEN``), see
+:ref:`module-pw_ghish-auth`.
 
 -----------------------------------
 LUCI CI and Buildbucket Integration

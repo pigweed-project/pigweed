@@ -14,7 +14,7 @@
 
 // This file is the single subprocess choke point for pw_ghish and
 // pw_ghish/worktree. Every external process (git, sso_client/gosso,
-// luci-auth, gcloud, browsers, Busytown accelerators) MUST be constructed via
+// luci-auth, browsers, Busytown accelerators) MUST be constructed via
 // ExecCommand or ExecCommandContext so perf budget tests can deterministically
 // count commands constructed (≈ subprocesses spawned) per CLI invocation
 // (AGENTS.md invariant #16, enforced by

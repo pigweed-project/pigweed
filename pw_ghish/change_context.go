@@ -164,7 +164,8 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 		if cleanHost == "" {
 			cleanHost = "<host>"
 		}
-		steps := append(gerritCredentialSteps(gerritHost, AuthModeAuto), "Check auth status: gh auth status")
+		mode, _, _ := ResolveAuthMode(context.Background(), nil)
+		steps := append(gerritCredentialSteps(gerritHost, mode), "Check auth status: gh auth status")
 		return NewExitCodeError(ExitCodeAuth, "%w", fmt.Errorf("error %s change %s: authentication required (HTTP 401/403).\n\n"+
 			"To authenticate with %s:\n%s\n\n"+
 			"Underlying error: %w",

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -267,29 +266,30 @@ func TestBusytownProvider_FailureLogs_TierA_LocalAccelerators(t *testing.T) {
 		MockCWD = oldMockCWD
 	})
 
-	// Enable Tier A local corp accelerators via stubs
-	oldExists := BusytownFileExistsFn
-	oldExec := BusytownExecCommandFn
-	t.Cleanup(func() {
-		BusytownFileExistsFn = oldExists
-		BusytownExecCommandFn = oldExec
-	})
-
-	BusytownFileExistsFn = func(path string) bool {
-		return path == FetchArtifactBinPath || path == AntsCLIBinPath
-	}
+	// Enable Tier A local corp accelerators via BusytownProvider struct fields
 	var executedCmds []string
-	BusytownExecCommandFn = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		cmdStr := name + " " + strings.Join(args, " ")
-		executedCmds = append(executedCmds, cmdStr)
-		if name == FetchArtifactBinPath {
-			return []byte("[1/10] Compiling foo.cc\nFAILED: out/foo.o\nsrc/foo.cc:42:10: error: undeclared identifier 'bar'\nninja: build stopped: subcommand failed.\n"), nil
+	oldNewBT := NewBusytownProvider
+	NewBusytownProvider = func() *BusytownProvider {
+		p := oldNewBT()
+		p.FileExistsFn = func(path string) bool {
+			return path == FetchArtifactBinPath || path == AntsCLIBinPath
 		}
-		if name == AntsCLIBinPath {
-			return []byte("FAIL: FooTest#testBufferOverflow (java.lang.AssertionError: expected 0 but was 1)\n"), nil
+		p.ExecCommandFn = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			cmdStr := name + " " + strings.Join(args, " ")
+			executedCmds = append(executedCmds, cmdStr)
+			if name == FetchArtifactBinPath {
+				return []byte("[1/10] Compiling foo.cc\nFAILED: out/foo.o\nsrc/foo.cc:42:10: error: undeclared identifier 'bar'\nninja: build stopped: subcommand failed.\n"), nil
+			}
+			if name == AntsCLIBinPath {
+				return []byte("FAIL: FooTest#testBufferOverflow (java.lang.AssertionError: expected 0 but was 1)\n"), nil
+			}
+			return nil, fmt.Errorf("unexpected command: %s", cmdStr)
 		}
-		return nil, fmt.Errorf("unexpected command: %s", cmdStr)
+		return p
 	}
+	t.Cleanup(func() {
+		NewBusytownProvider = oldNewBT
+	})
 
 	server.OnJSON("GET", "/changes/45678", http.StatusOK, ChangeInfo{
 		Number:          45678,
@@ -333,19 +333,15 @@ func TestBusytownProvider_FailureLogs_TierB_HTTPFallbackAndDirectID(t *testing.T
 	server := NewMockGerritServer(t)
 	SetMockGit(t, nil)
 
-	// Ensure Tier A local accelerators are disabled so Tier B HTTP fallback runs
-	oldExists := BusytownFileExistsFn
-	BusytownFileExistsFn = func(string) bool { return false }
-	t.Cleanup(func() {
-		BusytownFileExistsFn = oldExists
-	})
-
+	var metadataAuthHeader, signedDownloadAuthHeader string
 	server.On("GET", "/android/internal/build/v3/builds/P99164207/firmware_host_tests/attempts/latest/artifacts/build.log/url", func(w http.ResponseWriter, r *http.Request) {
+		metadataAuthHeader = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"signedUrl": "%s/signed-artifacts/P99164207/build.log"}`, server.URL)
+		fmt.Fprintf(w, `{"signedUrl": "%s/signed-artifacts/P99164207/build.log"}`, strings.Replace(server.URL, "127.0.0.1", "localhost", 1))
 	})
 
 	server.On("GET", "/signed-artifacts/P99164207/build.log", func(w http.ResponseWriter, r *http.Request) {
+		signedDownloadAuthHeader = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "text/plain")
 		io.WriteString(w, "Starting build...\nFAILED: out/sensor.o\nsensor.cc:99:2: error: static assertion failed\nninja: build stopped: subcommand failed.\n")
 	})
@@ -354,6 +350,12 @@ func TestBusytownProvider_FailureLogs_TierB_HTTPFallbackAndDirectID(t *testing.T
 	out, err := executeCommand(RootCmd, "run", "view", "P99164207/firmware_host_tests", "--log-failed")
 	if err != nil {
 		t.Fatalf("unexpected error from run view P99164207/firmware_host_tests --log-failed: %v", err)
+	}
+	if metadataAuthHeader != "Bearer mock-android-build-token" {
+		t.Errorf("metadata endpoint Authorization = %q, want 'Bearer mock-android-build-token'", metadataAuthHeader)
+	}
+	if signedDownloadAuthHeader != "" {
+		t.Errorf("signedUrl download Authorization = %q, want empty (must not leak Bearer token to GCS signedUrl)", signedDownloadAuthHeader)
 	}
 	if !strings.Contains(out, "sensor.cc:99:2: error: static assertion failed") {
 		t.Errorf("expected HTTP-fetched build.log snippet in output, got:\n%s", out)
@@ -369,6 +371,96 @@ func TestBusytownProvider_FailureLogs_TierB_HTTPFallbackAndDirectID(t *testing.T
 	}
 	if !strings.Contains(out2, "sensor.cc:99:2: error: static assertion failed") {
 		t.Errorf("expected HTTP-fetched build.log snippet with --target flag, got:\n%s", out2)
+	}
+}
+
+func TestBusytownProvider_ZeroValueAndTokenFallbacks(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{
+		AndroidBuildToken: func(context.Context) (string, error) {
+			return "resolver-android-token", nil
+		},
+	})
+	t.Setenv("GH_ISH_AUTH_MODE", "googler")
+
+	type seenReq struct {
+		url  string
+		auth string
+	}
+	var seen []seenReq
+	client := &http.Client{
+		Transport: testRoundTripper(func(req *http.Request) (*http.Response, error) {
+			seen = append(seen, seenReq{url: req.URL.String(), auth: req.Header.Get("Authorization")})
+			if req.URL.Host == "androidbuildinternal.googleapis.com" {
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       io.NopCloser(strings.NewReader("not found")),
+					Header:     http.Header{},
+					Request:    req,
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("FAILED: out/foo.o\nsrc/foo.cc:12: error: broken\n")),
+				Header:     http.Header{"Content-Type": []string{"text/plain"}},
+				Request:    req,
+			}, nil
+		}),
+	}
+
+	// 1. Zero-value BusytownProvider (only HTTPClient set) uses default bases,
+	// helper functions, and AndroidBuildTokenResolver without panicking.
+	zeroProv := &BusytownProvider{HTTPClient: client}
+	buildLog, _, logURL, err := zeroProv.fetchBusytownLogs(t.Context(), "P99164207", "firmware_host_tests", "I11223344")
+	if err != nil {
+		t.Fatalf("zero-value fetchBusytownLogs failed: %v", err)
+	}
+	if !strings.Contains(buildLog, "src/foo.cc:12: error: broken") {
+		t.Errorf("buildLog = %q, want fallback ci.android.com log", buildLog)
+	}
+	wantCIURL := "https://ci.android.com/builds/pending/P99164207/firmware_host_tests/latest/raw/build.log"
+	if logURL != wantCIURL {
+		t.Errorf("logURL = %q, want %q", logURL, wantCIURL)
+	}
+	wantAPIURL := "https://androidbuildinternal.googleapis.com/android/internal/build/v3/builds/P99164207/firmware_host_tests/attempts/latest/artifacts/build.log/url"
+	if len(seen) != 2 || seen[0].url != wantAPIURL || seen[1].url != wantCIURL {
+		t.Fatalf("seen requests = %+v, want [%s, %s]", seen, wantAPIURL, wantCIURL)
+	}
+	if seen[0].auth != "Bearer resolver-android-token" || seen[1].auth != "Bearer resolver-android-token" {
+		t.Errorf("seen auth headers = (%q, %q), want 'Bearer resolver-android-token' on both", seen[0].auth, seen[1].auth)
+	}
+
+	// 2. Custom TokenProvider on struct overrides AndroidBuildTokenResolver.
+	seen = nil
+	customProv := &BusytownProvider{
+		HTTPClient: client,
+		TokenProvider: func(context.Context) (string, error) {
+			return "custom-struct-token", nil
+		},
+	}
+	if _, _, _, err := customProv.fetchBusytownLogs(t.Context(), "P99164207", "firmware_host_tests", ""); err != nil {
+		t.Fatalf("custom TokenProvider fetchBusytownLogs failed: %v", err)
+	}
+	if len(seen) != 2 || seen[0].auth != "Bearer custom-struct-token" || seen[1].auth != "Bearer custom-struct-token" {
+		t.Errorf("custom TokenProvider seen = %+v, want 'Bearer custom-struct-token'", seen)
+	}
+
+	// 3. TokenProvider error in googler mode sends requests unauthenticated without failing.
+	seen = nil
+	errProv := &BusytownProvider{
+		HTTPClient: client,
+		TokenProvider: func(context.Context) (string, error) {
+			return "", fmt.Errorf("missing android build scope")
+		},
+	}
+	unauthLog, _, _, err := errProv.fetchBusytownLogs(t.Context(), "P99164207", "firmware_host_tests", "")
+	if err != nil {
+		t.Fatalf("fetchBusytownLogs with failing TokenProvider returned error: %v", err)
+	}
+	if !strings.Contains(unauthLog, "src/foo.cc:12: error: broken") {
+		t.Errorf("unauthenticated buildLog = %q, want log contents", unauthLog)
+	}
+	if len(seen) != 2 || seen[0].auth != "" || seen[1].auth != "" {
+		t.Errorf("unauthenticated seen = %+v, want empty Authorization headers", seen)
 	}
 }
 
@@ -554,50 +646,6 @@ providers = ["buildbucket", "busytown"]
 	}
 }
 
-func TestAndroidBuildOAuthScopes(t *testing.T) {
-	hasAndroidBuildScope := false
-	hasGerritScope := false
-	for _, s := range DefaultAndroidBuildScopes {
-		if s == ScopeAndroidBuildInternal {
-			hasAndroidBuildScope = true
-		}
-		if s == ScopeGerritCodeReview {
-			hasGerritScope = true
-		}
-	}
-	if !hasAndroidBuildScope || !hasGerritScope {
-		t.Errorf("DefaultAndroidBuildScopes = %v, want %q and %q", DefaultAndroidBuildScopes, ScopeAndroidBuildInternal, ScopeGerritCodeReview)
-	}
-
-	oldResolver := AndroidBuildTokenResolver
-	AndroidBuildTokenResolver = func(ctx context.Context) (string, error) {
-		return "mock-android-build-token", nil
-	}
-	t.Cleanup(func() {
-		AndroidBuildTokenResolver = oldResolver
-	})
-
-	var gotAuthHeader string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuthHeader = r.Header.Get("Authorization")
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
-
-	client := &http.Client{
-		Transport: &AndroidBuildAuthTransport{Base: ts.Client().Transport},
-	}
-	resp, err := client.Get(ts.URL)
-	if err != nil {
-		t.Fatalf("client.Get failed: %v", err)
-	}
-	resp.Body.Close()
-
-	if gotAuthHeader != "Bearer mock-android-build-token" {
-		t.Errorf("Authorization header = %q, want %q", gotAuthHeader, "Bearer mock-android-build-token")
-	}
-}
-
 func TestBusytownProvider_JSPBTreetopFallbackAndMergedPreMergePatchset(t *testing.T) {
 	server := NewMockGerritServer(t)
 	SetMockGit(t, nil)
@@ -716,7 +764,7 @@ func TestCompositeCIProvider_OneProviderEmptyOrError(t *testing.T) {
 	comp := &CompositeCIProvider{
 		Providers: []CIProvider{
 			&BuildbucketProvider{},
-			&BusytownProvider{},
+			NewBusytownProvider(),
 		},
 	}
 	builds, err := comp.SearchBuilds(ctx, "android-review.googlesource.com", 99999, 1, change)
@@ -732,7 +780,7 @@ func TestCompositeCIProvider_OneProviderEmptyOrError(t *testing.T) {
 	compWithErr := &CompositeCIProvider{
 		Providers: []CIProvider{
 			&failingStubCIProvider{name: "buildbucket", err: fmt.Errorf("rpc timeout")},
-			&BusytownProvider{},
+			NewBusytownProvider(),
 		},
 		ErrOut: &errBuf,
 	}
