@@ -20,7 +20,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -336,6 +338,25 @@ func TestIssueTrackerClient_ActionableErrors(t *testing.T) {
 	}
 }
 
+func TestIssueTrackerClient_RefusesTokenOverPlainHTTP(t *testing.T) {
+	sent := 0
+	transport := testRoundTripper(func(*http.Request) (*http.Response, error) {
+		sent++
+		return nil, errors.New("unexpected request")
+	})
+	client := NewIssueTrackerClient("http://issuetracker.example.com/v1", &http.Client{Transport: transport})
+	client.TokenProvider = func(context.Context) (string, error) {
+		return "secret-token", nil
+	}
+	_, err := client.GetIssue(t.Context(), 1)
+	if err == nil || !strings.Contains(err.Error(), "refusing to send Issue Tracker credentials") {
+		t.Fatalf("GetIssue over plain HTTP error = %v, want refusal", err)
+	}
+	if sent != 0 {
+		t.Errorf("sent %d requests over plain HTTP, want 0", sent)
+	}
+}
+
 func TestIssueTrackerClient_ListAllComments_Pagination(t *testing.T) {
 	srv := NewMockIssueTrackerServer(t)
 	srv.CommentPageSize = 2
@@ -611,21 +632,21 @@ func TestSlugifyBranchName(t *testing.T) {
 	}
 }
 
-func TestParseSSOClientResponse(t *testing.T) {
+func TestParseGossoResponse(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "https://issuetracker.corp.googleapis.com/v1/issues/123", nil)
 	if err != nil {
 		t.Fatalf("http.NewRequest: %v", err)
 	}
 
 	t.Run("standard HTTP/1.1 response with banner prefix", func(t *testing.T) {
-		raw := "sso_client: connecting to uberproxy...\r\n" +
+		raw := "gosso: connecting to uberproxy...\r\n" +
 			"HTTP/1.1 200 OK\r\n" +
 			"Content-Type: application/json\r\n" +
 			"\r\n" +
 			`{"issueId":"123"}`
-		resp, err := parseSSOClientResponse([]byte(raw), req)
+		resp, err := parseGossoResponse([]byte(raw), req)
 		if err != nil {
-			t.Fatalf("parseSSOClientResponse unexpected error: %v", err)
+			t.Fatalf("parseGossoResponse unexpected error: %v", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
@@ -642,9 +663,9 @@ func TestParseSSOClientResponse(t *testing.T) {
 			"Content-Type: application/json\r\n" +
 			"\r\n" +
 			`{"error":{"code":404}}`
-		resp, err := parseSSOClientResponse([]byte(raw), req)
+		resp, err := parseGossoResponse([]byte(raw), req)
 		if err != nil {
-			t.Fatalf("parseSSOClientResponse unexpected error: %v", err)
+			t.Fatalf("parseGossoResponse unexpected error: %v", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
@@ -652,45 +673,258 @@ func TestParseSSOClientResponse(t *testing.T) {
 		}
 	})
 
-	t.Run("RoundTrip keeps credentials off sso_client argv", func(t *testing.T) {
+	t.Run("non-HTTP output names gosso", func(t *testing.T) {
+		_, err := parseGossoResponse([]byte("gosso: handshake error"), req)
+		if err == nil || !strings.Contains(err.Error(), "gosso returned non-HTTP output") {
+			t.Errorf("parseGossoResponse error = %v, want 'gosso returned non-HTTP output'", err)
+		}
+	})
+
+	t.Run("RoundTrip sanitizes CRLF headers", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{})
+
 		var gotArgs []string
-		var flagPath, flagData string
-		rt := &ssoClientRoundTripper{
+		rt := &gossoRoundTripper{
 			exec: func(_ context.Context, args ...string) ([]byte, error) {
 				gotArgs = args
-				for _, a := range args {
-					if path, ok := strings.CutPrefix(a, "--flagfile="); ok {
-						flagPath = path
-						b, err := os.ReadFile(path)
-						if err != nil {
-							return nil, err
-						}
-						flagData = string(b)
-					}
-				}
 				return []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}"), nil
 			},
 		}
 
 		rtReq := req.Clone(t.Context())
-		rtReq.Header.Set("Authorization", "Bearer secret-oauth-token")
-		rtReq.Header.Set("Cookie", "SSO=secret-cookie")
+		rtReq.Header.Set("Authorization", "Bearer gosso-token")
+		rtReq.Header.Set("X-Goog-User-Project", "proj\r\nX-CRLF: bad")
 
 		resp, err := rt.RoundTrip(rtReq)
 		if err != nil {
-			t.Fatalf("RoundTrip unexpected error: %v", err)
+			t.Fatalf("RoundTrip: %v", err)
 		}
 		resp.Body.Close()
 
-		if joined := strings.Join(gotArgs, " "); strings.Contains(joined, "secret-") || strings.Contains(joined, "--headers=") {
-			t.Errorf("credentials leaked in sso_client argv: %v", gotArgs)
+		if got := slices.Contains(gotArgs, "-loas"); got != (runtime.GOOS == "linux") {
+			t.Errorf("slices.Contains(gotArgs, \"-loas\") = %v, want %v (args=%q)", got, runtime.GOOS == "linux", gotArgs)
 		}
-		wantFlags := "--headers=Authorization: Bearer secret-oauth-token|||Cookie: SSO=secret-cookie\n"
-		if flagData != wantFlags {
-			t.Errorf("flagfile content = %q, want %q", flagData, wantFlags)
+		if !slices.Contains(gotArgs, "X-Goog-User-Project: projX-CRLF: bad") {
+			t.Errorf("expected CRLF-sanitized header in gosso args: %q", gotArgs)
 		}
-		if _, err := os.Stat(flagPath); !errors.Is(err, os.ErrNotExist) {
-			t.Errorf("expected temp flagfile %q to be removed after RoundTrip, stat err = %v", flagPath, err)
+	})
+
+	t.Run("RoundTrip fails on mid-stream gosso error after 200 OK headers", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{})
+		rt := &gossoRoundTripper{
+			exec: func(_ context.Context, _ ...string) ([]byte, error) {
+				return []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"issueId\":"), errors.New("exit status 1")
+			},
+		}
+		if _, err := rt.RoundTrip(req.Clone(t.Context())); err == nil || !strings.Contains(err.Error(), "gosso execution failed") {
+			t.Errorf("RoundTrip mid-stream error = %v, want 'gosso execution failed'", err)
+		}
+	})
+
+	t.Run("RoundTrip invokes gosso with expected flags and parses non-2xx on exit status 1", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{
+			LookPath: func(file string) (string, error) {
+				if file == "gosso" || file == "/usr/local/bin/gosso" {
+					return "/usr/local/bin/gosso", nil
+				}
+				return "", errors.New("not found")
+			},
+		})
+		var gotArgs []string
+		var dataPath, dataBody string
+		rt := &gossoRoundTripper{
+			exec: func(_ context.Context, args ...string) ([]byte, error) {
+				gotArgs = args
+				for i, a := range args {
+					if a == "-data_file" && i+1 < len(args) {
+						dataPath = args[i+1]
+						b, err := os.ReadFile(dataPath)
+						if err != nil {
+							return nil, err
+						}
+						dataBody = string(b)
+					}
+				}
+				raw := "HTTP/1.1 403 Forbidden\r\n" +
+					"Content-Type: application/json\r\n" +
+					"\r\n" +
+					`{"error":{"code":403,"message":"SERVICE_DISABLED"}}`
+				return []byte(raw), errors.New("exit status 1")
+			},
+		}
+
+		postReq, err := http.NewRequestWithContext(
+			t.Context(),
+			http.MethodPost,
+			"https://issuetracker.corp.googleapis.com/v1/issues",
+			strings.NewReader(`{"issueState":{"title":"test"}}`),
+		)
+		if err != nil {
+			t.Fatalf("http.NewRequestWithContext: %v", err)
+		}
+		postReq.Header.Set("Authorization", "Bearer gosso-token")
+		postReq.Header.Set("Accept", "application/json")
+
+		resp, err := rt.RoundTrip(postReq)
+		if err != nil {
+			t.Fatalf("RoundTrip with gosso exit status 1 unexpected error: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("StatusCode = %d, want 403", resp.StatusCode)
+		}
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		if !strings.Contains(string(bodyBytes), "SERVICE_DISABLED") {
+			t.Errorf("body = %q, want SERVICE_DISABLED payload", string(bodyBytes))
+		}
+		if dataBody != `{"issueState":{"title":"test"}}` {
+			t.Errorf("data_file content = %q, want request body", dataBody)
+		}
+		if _, err := os.Stat(dataPath); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("expected temp data_file %q to be removed after RoundTrip, stat err = %v", dataPath, err)
+		}
+
+		var wantArgs []string
+		if runtime.GOOS == "linux" {
+			wantArgs = append(wantArgs, "-loas")
+		}
+		wantArgs = append(wantArgs,
+			"-dump_headers", "-method", "POST",
+			"-header", "Accept: application/json",
+			"-header", "Authorization: Bearer gosso-token",
+			"-data_file", dataPath,
+			"-url", "https://issuetracker.corp.googleapis.com/v1/issues",
+		)
+		if !slices.Equal(gotArgs, wantArgs) {
+			t.Errorf("gosso args = %q, want %q", gotArgs, wantArgs)
+		}
+	})
+
+	t.Run("RoundTrip fails fast with actionable error when gosso is not installed", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{})
+
+		rt := &gossoRoundTripper{}
+		_, err := rt.RoundTrip(req.Clone(t.Context()))
+		if err == nil {
+			t.Fatal("expected error when gosso is not installed, got nil")
+		}
+		if ExitCodeFor(err) != ExitCodeAuth {
+			t.Errorf("ExitCodeFor(err) = %d, want %d (%v)", ExitCodeFor(err), ExitCodeAuth, err)
+		}
+		if !strings.Contains(err.Error(), "sudo apt install gosso") || !strings.Contains(err.Error(), "sudo mule install gosso") || !strings.Contains(err.Error(), "gcert") {
+			t.Errorf("expected actionable gosso install error message, got:\n%v", err)
+		}
+	})
+
+	t.Run("default corp endpoint uses gossoRoundTripper", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{
+			LookPath: func(file string) (string, error) {
+				if file == "/google/bin/releases/gosso/gosso" {
+					return file, nil
+				}
+				return "", errors.New("not found")
+			},
+		})
+
+		c := NewIssueTrackerClient("", nil)
+		if c.Endpoint != DefaultIssueTrackerEndpoint {
+			t.Errorf("c.Endpoint = %q, want %q", c.Endpoint, DefaultIssueTrackerEndpoint)
+		}
+		if c.HTTPClient.CheckRedirect == nil {
+			t.Errorf("c.HTTPClient.CheckRedirect = nil, want stripAuthOnCrossHostRedirect")
+		}
+		rt, ok := c.HTTPClient.Transport.(*gossoRoundTripper)
+		if !ok {
+			t.Fatalf("Transport = %#v, want *gossoRoundTripper", c.HTTPClient.Transport)
+		}
+		var gotArgs []string
+		rt.exec = func(_ context.Context, args ...string) ([]byte, error) {
+			gotArgs = args
+			return []byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"), nil
+		}
+		if _, err := rt.RoundTrip(req.Clone(t.Context())); err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		if !slices.Contains(gotArgs, "-dump_headers") {
+			t.Errorf("gosso args = %q, want gosso -dump_headers flag", gotArgs)
+		}
+	})
+
+	t.Run("RoundTrip delegates non-corp URLs to fallback transport", func(t *testing.T) {
+		var fallbackCalled bool
+		rt := &gossoRoundTripper{
+			fallback: testRoundTripper(func(r *http.Request) (*http.Response, error) {
+				fallbackCalled = true
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("{}")),
+					Header:     make(http.Header),
+				}, nil
+			}),
+			exec: func(_ context.Context, _ ...string) ([]byte, error) {
+				t.Fatal("unexpected gosso exec for non-corp URL")
+				return nil, nil
+			},
+		}
+		nonCorpReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://issuetracker.googleapis.com/v1/issues/123", nil)
+		if err != nil {
+			t.Fatalf("http.NewRequestWithContext: %v", err)
+		}
+		resp, err := rt.RoundTrip(nonCorpReq)
+		if err != nil {
+			t.Fatalf("RoundTrip non-corp URL error: %v", err)
+		}
+		resp.Body.Close()
+		if !fallbackCalled {
+			t.Error("expected non-corp URL to delegate to fallback transport")
+		}
+	})
+
+	t.Run("doJSON unwraps ExitCodeError from RoundTripper without prefixing HTTP request failed", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{})
+		c := NewIssueTrackerClient("", nil)
+		c.TokenProvider = func(context.Context) (string, error) { return "tok", nil }
+		c.QuotaProjectProvider = func(context.Context) string { return "" }
+
+		_, err := c.GetIssue(t.Context(), 123)
+		if err == nil {
+			t.Fatal("expected error when gosso is not installed, got nil")
+		}
+		if ExitCodeFor(err) != ExitCodeAuth {
+			t.Errorf("ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
+		}
+		if strings.HasPrefix(err.Error(), "HTTP request failed for") {
+			t.Errorf("expected ExitCodeError to be unwrapped directly, got:\n%v", err)
+		}
+	})
+
+	t.Run("isCorpIssueTrackerURL rejects spoofed and plaintext URLs", func(t *testing.T) {
+		for _, tc := range []struct {
+			rawURL string
+			want   bool
+		}{
+			{"https://issuetracker.corp.googleapis.com/v1", true},
+			{"HTTPS://IssueTracker.CORP.GoogleAPIs.com:443/v1", true},
+			{"https://autopush-issuetracker.corp.googleapis.com/v1", true},
+			{"http://issuetracker.corp.googleapis.com/v1", false},
+			{"https://issuetracker.corp.googleapis.com.evil.com/v1", false},
+			{"https://evil.com/v1?host=issuetracker.corp.googleapis.com", false},
+			{"https://user.corp.googleapis.com@evil.com/v1", false},
+			{"https://.corp.googleapis.com/v1", false},
+			{"https://corp.googleapis.com/v1", false},
+		} {
+			u, err := url.Parse(tc.rawURL)
+			if err != nil {
+				t.Fatalf("url.Parse(%q): %v", tc.rawURL, err)
+			}
+			if got := isCorpIssueTrackerURL(u); got != tc.want {
+				t.Errorf("isCorpIssueTrackerURL(%q) = %v, want %v", tc.rawURL, got, tc.want)
+			}
+			c := NewIssueTrackerClient(tc.rawURL, nil)
+			_, gotGosso := c.HTTPClient.Transport.(*gossoRoundTripper)
+			if gotGosso != tc.want {
+				t.Errorf("NewIssueTrackerClient(%q) uses gossoRoundTripper = %v, want %v", tc.rawURL, gotGosso, tc.want)
+			}
 		}
 	})
 }
@@ -725,7 +959,7 @@ func (f testRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 
 func TestIssueTrackerClient_QuotaProjectErrorRemediation(t *testing.T) {
 	client := &IssueTrackerClient{
-		Endpoint: "http://example.invalid/v1",
+		Endpoint: "https://example.invalid/v1",
 		HTTPClient: &http.Client{
 			Transport: testRoundTripper(func(r *http.Request) (*http.Response, error) {
 				body := `{"error":{"code":403,"message":"Caller does not have required permission","details":[{"reason":"USER_PROJECT_DENIED"}]}}`
@@ -871,6 +1105,43 @@ func TestConfiguredIssueTrackerQuotaProject_ProjectConfigAndGitConfig(t *testing
 		}
 		if gitCalls != 0 {
 			t.Errorf("gitCalls = %d, want 0 when ProjectConfig is already loaded", gitCalls)
+		}
+	})
+}
+
+func TestNewIssueTrackerClientForCommand_CommunityHonorsTokenEnv(t *testing.T) {
+	prevMode, prevProfile := AuthModeFlag, ProfileFlag
+	AuthModeFlag, ProfileFlag = string(AuthModeCommunity), "pigweed"
+	t.Cleanup(func() { AuthModeFlag, ProfileFlag = prevMode, prevProfile })
+
+	for _, envVar := range []string{"GHISH_ISSUE_TOKEN", "BUGANIZER_TOKEN"} {
+		t.Run(envVar, func(t *testing.T) {
+			WithHermeticAuth(t, AuthResolvers{IssueTrackerToken: ResolveIssueTrackerTokenWithSource})
+			t.Setenv(envVar, "env-token")
+			client, err := NewIssueTrackerClientForCommand(t.Context(), nil)
+			if err != nil {
+				t.Fatalf("NewIssueTrackerClientForCommand: %v", err)
+			}
+			if tok, err := client.TokenProvider(t.Context()); err != nil || tok != "env-token" {
+				t.Errorf("TokenProvider() = (%q, %v), want (\"env-token\", nil)", tok, err)
+			}
+		})
+	}
+
+	t.Run("no token env", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{IssueTrackerToken: ResolveIssueTrackerTokenWithSource})
+		client, err := NewIssueTrackerClientForCommand(t.Context(), nil)
+		if err != nil {
+			t.Fatalf("NewIssueTrackerClientForCommand: %v", err)
+		}
+		_, err = client.TokenProvider(t.Context())
+		if ExitCodeFor(err) != ExitCodeAuth || !strings.Contains(err.Error(), "https://issues.pigweed.dev") {
+			t.Errorf("TokenProvider() error = %v, want ExitCodeAuth pointing at the web tracker", err)
+		}
+		for _, tool := range []string{"sso_client", "gosso", "mule", "gcert", "luci-auth", "gcloud"} {
+			if strings.Contains(err.Error(), tool) {
+				t.Errorf("community error leaked internal tool %q:\n%v", tool, err)
+			}
 		}
 	})
 }

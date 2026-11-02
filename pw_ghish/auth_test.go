@@ -664,14 +664,14 @@ func TestResolveAuthMode(t *testing.T) {
 		}
 	})
 
-	t.Run("auto detects googler via sso_client on PATH", func(t *testing.T) {
-		WithHermeticAuth(t, AuthResolvers{LookPath: onPath("sso_client", "/usr/bin/sso_client")})
+	t.Run("auto detects googler via gosso on PATH", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{LookPath: onPath("gosso", "/usr/local/bin/gosso")})
 		mode, reason, err := ResolveAuthMode(ctx, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if mode != AuthModeGoogler || !strings.Contains(reason, "sso_client") {
-			t.Errorf("got (%q, %q), want (googler, sso_client)", mode, reason)
+		if mode != AuthModeGoogler || reason != "auto-detected (gosso on PATH)" {
+			t.Errorf("got (%q, %q), want (googler, auto-detected (gosso on PATH))", mode, reason)
 		}
 	})
 

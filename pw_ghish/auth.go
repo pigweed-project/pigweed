@@ -67,7 +67,7 @@ var (
 //  1. --auth-mode flag (AuthModeFlag)
 //  2. GH_ISH_AUTH_MODE environment variable
 //  3. git config ghish.authmode (from cfg, or ctx when cfg is nil)
-//  4. Auto-detection (sso_client on PATH, /usr/bin/sso-cred-helper present,
+//  4. Auto-detection (gosso on PATH, /usr/bin/sso-cred-helper present,
 //     @google.com git user.email, or sso:// or rpc:// remote)
 func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error) {
 	if ctx == nil {
@@ -140,8 +140,8 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		}
 	}
 
-	if _, err := LookPathFn("sso_client"); err == nil {
-		return cacheAndReturn(AuthModeGoogler, "auto-detected (sso_client on PATH)")
+	if findGossoBinary() != "" {
+		return cacheAndReturn(AuthModeGoogler, "auto-detected (gosso on PATH)")
 	}
 
 	if hasSSOCredHelper() {
@@ -446,6 +446,22 @@ func isGerritTokenAuthRejection(resp *http.Response) bool {
 
 // LookPathFn allows overriding exec.LookPath in tests.
 var LookPathFn = exec.LookPath
+
+// lookPathFirst returns the first candidate found by LookPathFn, or "" if none exist.
+func lookPathFirst(candidates ...string) string {
+	for _, cand := range candidates {
+		if path, err := LookPathFn(cand); err == nil && path != "" {
+			return path
+		}
+	}
+	return ""
+}
+
+// findGossoBinary locates the Corp SSO HTTP helper (`gosso`) on PATH or at
+// standard gLinux / gMac / BinFS paths.
+func findGossoBinary() string {
+	return lookPathFirst("gosso", "/usr/bin/gosso", "/usr/local/bin/gosso", "/google/bin/releases/gosso/gosso")
+}
 
 type resolvedGerritAuth struct {
 	method   AuthMethod

@@ -679,8 +679,12 @@ func TestScopesAndLoginCommandByMode(t *testing.T) {
 				return
 			}
 			for _, st := range []ServiceAuthStatus{report.Gerrit, report.LUCI, report.Buganizer} {
-				if !strings.Contains(st.Remediation, tc.wantLogin) || strings.Contains(st.Remediation, "gcloud") {
-					t.Errorf("%s remediation = %q, want substring %q and no gcloud", st.Service, st.Remediation, tc.wantLogin)
+				want := tc.wantLogin
+				if st.Service == "buganizer" && tc.mode == AuthModeCommunity {
+					want = "export GH_ISH_AUTH_MODE=googler"
+				}
+				if !strings.Contains(st.Remediation, want) || strings.Contains(st.Remediation, "gcloud") {
+					t.Errorf("%s remediation = %q, want substring %q and no gcloud", st.Service, st.Remediation, want)
 				}
 			}
 		})

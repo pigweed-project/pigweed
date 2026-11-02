@@ -12,8 +12,7 @@ Authentication (gh auth)
 1. **Gerrit Code Review** (e.g., ``pigweed-review.googlesource.com``)
 2. **LUCI Buildbucket & LogDog** (``cr-buildbucket.appspot.com``,
    ``logs.chromium.org``)
-3. **Google Issue Tracker / Buganizer** (``issuetracker.corp.googleapis.com``
-   or ``issuetracker.googleapis.com``)
+3. **Google Issue Tracker / Buganizer** (``issuetracker.corp.googleapis.com``)
 
 -----------------
 Command reference
@@ -41,7 +40,7 @@ Run ``./gh auth status`` to verify your credentials:
 .. code-block:: console
 
    $ ./gh auth status
-   Authentication Mode: googler (auto-detected (sso_client on PATH))
+   Authentication Mode: googler (auto-detected (gosso on PATH))
 
    pigweed-review.googlesource.com (Gerrit)
      ✓ Logged in to pigweed-review.googlesource.com as Keir Mierle <keir@google.com> (account #1000020)
@@ -52,8 +51,8 @@ Run ``./gh auth status`` to verify your credentials:
      - Method: luci-auth
 
    issuetracker.corp.googleapis.com (Google Issue Tracker)
-     ✓ Authenticated with issuetracker.corp.googleapis.com via sso_client + luci-auth
-     - Method: sso_client + luci-auth
+     ✓ Authenticated with issuetracker.corp.googleapis.com via gosso + luci-auth
+     - Method: gosso + luci-auth
 
    Verdict: authenticated (googler mode; all required services healthy)
    Next:    gh pr status
@@ -79,9 +78,9 @@ Authentication modes
    * - Mode
      - Behavior
    * - ``auto``
-     - **(Default)** Selects ``googler`` if ``sso_client`` is on ``PATH``,
-       ``/usr/bin/sso-cred-helper`` exists, the Git ``user.email`` ends in
-       ``@google.com``, or the ``origin`` remote uses ``sso://`` or
+     - **(Default)** Selects ``googler`` if ``gosso`` is on ``PATH``,
+       ``/usr/bin/sso-cred-helper`` exists, the Git ``user.email``
+       ends in ``@google.com``, or the ``origin`` remote uses ``sso://`` or
        ``rpc://``; otherwise selects ``community``.
    * - ``googler``
      - Requires authenticated access to both Gerrit and LUCI Buildbucket so
@@ -221,9 +220,8 @@ Google Issue Tracker (Buganizer)
    `One login for every service`_). In ``community`` mode, set
    ``GHISH_ISSUE_TOKEN`` or ``BUGANIZER_TOKEN``.
 
-When ``sso_client`` is on ``PATH``, requests use
-``https://issuetracker.corp.googleapis.com/v1`` to access both public and
-internal Buganizer components.
+``./gh issue`` requires Google Corp credentials; community contributors can
+view and file issues on the web at ``https://issues.pigweed.dev``.
 
 .. _module-pw_ghish-auth-comparison:
 

@@ -13,7 +13,7 @@
 // the License.
 
 // This file is the single subprocess choke point for pw_ghish and
-// pw_ghish/worktree. Every external process (git, sso_client/gosso,
+// pw_ghish/worktree. Every external process (git, gosso,
 // luci-auth, browsers, Busytown accelerators) MUST be constructed via
 // ExecCommand or ExecCommandContext so perf budget tests can deterministically
 // count commands constructed (≈ subprocesses spawned) per CLI invocation
@@ -69,7 +69,7 @@ func runBoundingOrphanedPipes(cmd *exec.Cmd) error {
 	if errors.Is(err, exec.ErrWaitDelay) {
 		// OK: the child exited 0; only a detached descendant kept the output
 		// pipe open, and its later output is not part of this command's result.
-		slog.Debug("subprocess exited but a descendant kept its output pipe open; stopped waiting", "cmd", cmd.String(), "err", err)
+		slog.Debug("subprocess exited but a descendant kept its output pipe open; stopped waiting", "cmd", cmd.Path, "err", err)
 		return nil
 	}
 	return err
@@ -103,9 +103,24 @@ func recordSubprocess(name string, args []string) {
 		// No test recorder installed (normal production execution).
 		return
 	}
+	// gosso lacks a flagfile or env-var option for HTTP headers and passes
+	// "-header" "Authorization: Bearer <token>" (or "-header=Authorization: ...")
+	// on argv; redact Authorization values before recording commands in test logs.
 	call := name
-	if len(args) > 0 {
-		call += " " + strings.Join(args, " ")
+	for _, arg := range args {
+		val := strings.TrimSpace(arg)
+		flagPrefix := ""
+		for _, p := range []string{"--header=", "-header="} {
+			if len(val) >= len(p) && strings.EqualFold(val[:len(p)], p) {
+				flagPrefix = val[:len(p)]
+				val = strings.TrimSpace(val[len(p):])
+				break
+			}
+		}
+		if len(val) >= len("authorization:") && strings.EqualFold(val[:len("authorization:")], "authorization:") {
+			arg = flagPrefix + "Authorization: <redacted>"
+		}
+		call += " " + arg
 	}
 	fn(call)
 }

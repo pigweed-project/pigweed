@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -187,53 +188,47 @@ type IssueTrackerClient struct {
 }
 
 const (
-	// DefaultIssueTrackerEndpoint is the public Google Issue Tracker v1 REST API
-	// base URL used by external contributors and standard OAuth2 clients.
-	DefaultIssueTrackerEndpoint = "https://issuetracker.googleapis.com/v1"
-
-	// DefaultCorpIssueTrackerEndpoint is the first-party (1P / internal) Issue
-	// Tracker v1 REST API base URL.
+	// DefaultIssueTrackerEndpoint is the default Google Issue Tracker v1 REST API
+	// base URL.
 	//
-	// 1P Internal Architecture Note:
-	// While external contributors access Buganizer via issuetracker.googleapis.com
-	// using standard OAuth2 bearer tokens, internal developer workstations
-	// have access to both public components and internal/partner-restricted
-	// components. Accessing internal components over REST requires traversing
-	// Google's UberProxy via `sso_client` ticket exchange against the
-	// `issuetracker.corp.googleapis.com` endpoint.
-	DefaultCorpIssueTrackerEndpoint = "https://issuetracker.corp.googleapis.com/v1"
+	// Architecture & Auth Note:
+	// The public issuetracker.googleapis.com endpoint is RESTRICTED behind
+	// Tenant Manager GOOGLE_PUBLIC (returning HTTP 404 for CLI callers) and
+	// blocks @google.com accounts. Accessing Buganizer over REST requires
+	// traversing Google's UberProxy via `gosso` against
+	// `issuetracker.corp.googleapis.com`.
+	DefaultIssueTrackerEndpoint = "https://issuetracker.corp.googleapis.com/v1"
 )
+
+// isCorpIssueTrackerURL reports whether u is an HTTPS URL on
+// issuetracker.corp.googleapis.com or another *.corp.googleapis.com host.
+func isCorpIssueTrackerURL(u *url.URL) bool {
+	if u == nil || !strings.EqualFold(u.Scheme, "https") {
+		return false
+	}
+	h := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	return len(h) > len(".corp.googleapis.com") && strings.HasSuffix(h, ".corp.googleapis.com")
+}
 
 // NewIssueTrackerClient creates a client for the Google Issue Tracker v1 REST API.
 //
 // Endpoint & Transport Selection:
-//   - If `sso_client` is present on PATH (1P workstation environment) and no
-//     custom external endpoint was forced, the client automatically targets
-//     DefaultCorpIssueTrackerEndpoint and wraps HTTP transport in
-//     ssoClientRoundTripper to handle UberProxy authentication transparently.
-//   - Otherwise (external contributors, CI environments without sso_client),
-//     the client targets DefaultIssueTrackerEndpoint over standard HTTPS.
+//   - When endpoint is empty, it defaults to DefaultIssueTrackerEndpoint.
+//   - For `*.corp.googleapis.com` endpoints when httpClient is nil, HTTP
+//     transport is wrapped in gossoRoundTripper to handle UberProxy
+//     authentication, failing fast with an actionable error if `gosso` is not
+//     installed.
 func NewIssueTrackerClient(endpoint string, httpClient *http.Client) *IssueTrackerClient {
-	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
-	hasSSOClient := false
-	if path, err := LookPathFn("sso_client"); err == nil && path != "" {
-		hasSSOClient = true
-	}
-	if endpoint == "" || (endpoint == DefaultIssueTrackerEndpoint && hasSSOClient) {
-		if hasSSOClient {
-			endpoint = DefaultCorpIssueTrackerEndpoint
-		} else {
-			endpoint = DefaultIssueTrackerEndpoint
-		}
-	}
+	endpoint = cmp.Or(strings.TrimRight(strings.TrimSpace(endpoint), "/"), DefaultIssueTrackerEndpoint)
 	if httpClient == nil {
-		if strings.Contains(endpoint, ".corp.googleapis.com") && hasSSOClient {
+		if u, err := url.Parse(endpoint); err == nil && isCorpIssueTrackerURL(u) {
 			httpClient = &http.Client{
-				Transport: &ssoClientRoundTripper{},
-				Timeout:   45 * time.Second,
+				Transport:     &gossoRoundTripper{},
+				CheckRedirect: stripAuthOnCrossHostRedirect,
+				Timeout:       45 * time.Second,
 			}
 		} else {
-			httpClient = &http.Client{Timeout: 30 * time.Second}
+			httpClient = ensureSafeHTTPClient(&http.Client{Timeout: 30 * time.Second})
 		}
 	}
 	return &IssueTrackerClient{
@@ -244,30 +239,17 @@ func NewIssueTrackerClient(endpoint string, httpClient *http.Client) *IssueTrack
 	}
 }
 
-// ssoClientRoundTripper implements http.RoundTripper for 1P internal requests
-// targeting `*.corp.googleapis.com`. It invokes the `sso_client` binary to
-// attach UberProxy security tickets alongside the user's OAuth2 bearer token,
-// parsing the raw HTTP response back into an *http.Response.
-type ssoClientRoundTripper struct {
+// gossoRoundTripper implements http.RoundTripper for 1P internal requests
+// targeting `*.corp.googleapis.com`. It invokes `gosso` to attach UberProxy
+// security tickets alongside the user's OAuth2 bearer token, parsing the raw
+// HTTP response back into an *http.Response.
+type gossoRoundTripper struct {
 	fallback http.RoundTripper
 	exec     func(ctx context.Context, args ...string) ([]byte, error)
 }
 
-func writeSSOTempFile(pattern string, content []byte) (string, error) {
-	f, err := os.CreateTemp("", pattern)
-	if err != nil {
-		return "", err
-	}
-	_, writeErr := f.Write(content)
-	if err := errors.Join(writeErr, f.Close()); err != nil {
-		os.Remove(f.Name())
-		return "", err
-	}
-	return f.Name(), nil
-}
-
-func (rt *ssoClientRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	if !strings.Contains(req.URL.Host, ".corp.googleapis.com") {
+func (rt *gossoRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !isCorpIssueTrackerURL(req.URL) {
 		fb := rt.fallback
 		if fb == nil {
 			fb = http.DefaultTransport
@@ -278,12 +260,20 @@ func (rt *ssoClientRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		defer req.Body.Close()
 	}
 
-	const headerSep = "|||"
-	args := []string{
-		"--dump_header",
-		"--location",
-		"--header_sep=" + headerSep,
-		"--method=" + req.Method,
+	binPath := findGossoBinary()
+	if binPath == "" && rt.exec == nil {
+		return nil, NewExitCodeError(ExitCodeAuth,
+			"Google Issue Tracker (gh issue) requires Corp SSO access to %s, "+
+				"but 'gosso' was not found on PATH.\n\n"+
+				"Cause: The public issuetracker.googleapis.com REST endpoint is restricted; "+
+				"gh issue communicates with issuetracker.corp.googleapis.com over UberProxy.\n\n"+
+				"Remediation:\n"+
+				"  1. Install gosso on a managed corp machine:\n"+
+				"     - Corp Linux:   sudo apt install gosso\n"+
+				"     - macOS (gMac): sudo mule install gosso\n"+
+				"  2. Ensure you have valid Corp SSO credentials:\n"+
+				"     gcert",
+			req.URL.Host)
 	}
 
 	stripCRLF := strings.NewReplacer("\r", "", "\n", "")
@@ -293,49 +283,79 @@ func (rt *ssoClientRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 			hdrs = append(hdrs, fmt.Sprintf("%s: %s", stripCRLF.Replace(k), stripCRLF.Replace(v)))
 		}
 	}
-	if len(hdrs) > 0 {
-		flagPath, err := writeSSOTempFile("ghish-sso-headers-*", fmt.Appendf(nil, "--headers=%s\n", strings.Join(hdrs, headerSep)))
-		if err != nil {
-			return nil, fmt.Errorf("failed to write sso_client headers file: %w", err)
-		}
-		defer os.Remove(flagPath)
-		args = append(args, "--flagfile="+flagPath)
-	}
 
+	var tmpBodyPath string
 	if req.Body != nil {
 		bodyBytes, err := readBoundedBody(req.Body, maxHTTPBodyBytes)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read request body for sso_client: %w", err)
+			return nil, fmt.Errorf("failed to read request body for gosso: %w", err)
 		}
 		if len(bodyBytes) > 0 {
-			tmpPath, err := writeSSOTempFile("ghish-sso-body-*.json", bodyBytes)
+			f, err := os.CreateTemp("", "ghish-gosso-body-*.json")
 			if err != nil {
-				return nil, fmt.Errorf("failed to write sso_client payload file: %w", err)
+				return nil, fmt.Errorf("failed to create gosso payload file: %w", err)
 			}
-			defer os.Remove(tmpPath)
-			args = append(args, "--data_file="+tmpPath)
+			tmpBodyPath = f.Name()
+			defer os.Remove(tmpBodyPath)
+			_, writeErr := f.Write(bodyBytes)
+			if err := errors.Join(writeErr, f.Close()); err != nil {
+				return nil, fmt.Errorf("failed to write gosso payload file: %w", err)
+			}
 		}
 	}
 
-	args = append(args, "--url="+req.URL.String())
-	execFn := rt.exec
-	if execFn == nil {
-		execFn = func(ctx context.Context, args ...string) ([]byte, error) {
-			return ExecCommandContext(ctx, "sso_client", args...).CombinedOutput()
-		}
+	var args []string
+	if runtime.GOOS == "linux" {
+		args = append(args, "-loas")
 	}
-	out, err := execFn(req.Context(), args...)
+	args = append(args, "-dump_headers", "-method", req.Method)
+	// gosso uses pure-Go flag parsing without --flagfile or header-file flags,
+	// so request headers must be passed via -header.
+	for _, h := range hdrs {
+		args = append(args, "-header", h)
+	}
+	if tmpBodyPath != "" {
+		args = append(args, "-data_file", tmpBodyPath)
+	}
+	args = append(args, "-url", req.URL.String())
+
+	var (
+		out []byte
+		err error
+	)
+	if rt.exec != nil {
+		out, err = rt.exec(req.Context(), args...)
+	} else {
+		cmd := ExecCommandContext(req.Context(), binPath, args...)
+		cmd.Env = ScrubRepoLocalGitEnv(os.Environ())
+		cmd.Stdin = bytes.NewReader(nil)
+		out, err = cmd.Output()
+	}
+	gossoErr := func() error {
+		return fmt.Errorf("gosso execution failed for %s %s: %w (output: %s)",
+			req.Method, req.URL.String(), err, cmp.Or(strings.TrimSpace(string(out)), commandErrorDetail(err)))
+	}
 	if err != nil && !bytes.Contains(out, []byte("HTTP/")) {
-		return nil, fmt.Errorf("sso_client execution failed for %s %s: %w (output: %s)",
-			req.Method, req.URL.String(), err, strings.TrimSpace(string(out)))
+		return nil, gossoErr()
 	}
-	return parseSSOClientResponse(out, req)
+	resp, parseErr := parseGossoResponse(out, req)
+	if parseErr != nil {
+		if err != nil {
+			return nil, gossoErr()
+		}
+		return nil, parseErr
+	}
+	if err != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		_ = resp.Body.Close()
+		return nil, gossoErr()
+	}
+	return resp, nil
 }
 
-func parseSSOClientResponse(out []byte, req *http.Request) (*http.Response, error) {
+func parseGossoResponse(out []byte, req *http.Request) (*http.Response, error) {
 	idx := bytes.Index(out, []byte("HTTP/"))
 	if idx < 0 {
-		return nil, fmt.Errorf("sso_client returned non-HTTP output: %s", strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf("gosso returned non-HTTP output: %s", strings.TrimSpace(string(out)))
 	}
 	raw := out[idx:]
 	if bytes.HasPrefix(raw, []byte("HTTP/2 ")) {
@@ -343,7 +363,7 @@ func parseSSOClientResponse(out []byte, req *http.Request) (*http.Response, erro
 	}
 	resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(raw)), req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse sso_client HTTP response: %w", err)
+		return nil, fmt.Errorf("failed to parse gosso HTTP response: %w", err)
 	}
 	return resp, nil
 }
@@ -410,6 +430,17 @@ func ResolveIssueTrackerTokenWithSource(ctx context.Context) (string, string, er
 // It can be overridden in tests.
 var IssueTrackerTokenResolver = ResolveIssueTrackerTokenWithSource
 
+// issueTrackerTokenEnvSet reports whether GHISH_ISSUE_TOKEN or BUGANIZER_TOKEN
+// supplies an explicit Issue Tracker token.
+func issueTrackerTokenEnvSet() bool {
+	return strings.TrimSpace(os.Getenv("GHISH_ISSUE_TOKEN")) != "" ||
+		strings.TrimSpace(os.Getenv("BUGANIZER_TOKEN")) != ""
+}
+
+func issueTrackerCommunityWebURL(profile ProjectProfile) string {
+	return strings.TrimSuffix(profile.IssueWebURL(0), "/issues/0")
+}
+
 // DefaultIssueTrackerToken resolves an OAuth2 access token with Buganizer scope.
 func DefaultIssueTrackerToken(ctx context.Context) (string, error) {
 	tok, _, err := IssueTrackerTokenResolver(ctx)
@@ -439,6 +470,20 @@ var NewIssueTrackerClientForCommand = func(ctx context.Context, cmd *cobra.Comma
 	}
 	profile := cfg.GetProfile(ctx)
 	client := NewIssueTrackerClient(profile.IssueTrackerAPIEndpoint(), nil)
+	// Community mode has no luci-auth token with the buganizer scope, so
+	// point non-Googlers at the web tracker unless they supplied a token.
+	if mode == AuthModeCommunity && !issueTrackerTokenEnvSet() {
+		webURL := issueTrackerCommunityWebURL(profile)
+		authErr := NewExitCodeError(ExitCodeAuth,
+			"Google Issue Tracker CLI commands (gh issue) require Google Corp access (%s).\n\n"+
+				"Remediation:\n"+
+				"  1. View or file issues on the web at %s\n"+
+				"  2. If you are a Google employee on a Corp workstation, pass --auth-mode=googler (or set GH_ISH_AUTH_MODE=googler).",
+			modeReason, webURL)
+		client.TokenProvider = func(context.Context) (string, error) {
+			return "", authErr
+		}
+	}
 	return client, nil
 }
 
@@ -462,6 +507,11 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request for %s %s: %w", method, fullURL, err)
 	}
+	// Only send the bearer token over HTTPS (or loopback HTTP in tests) to the
+	// configured endpoint's host.
+	if !urlHostIn(req.URL, hostnameOf(c.Endpoint)) {
+		return fmt.Errorf("refusing to send Issue Tracker credentials to %s: endpoint must be HTTPS", fullURL)
+	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 	qp := ""
@@ -477,6 +527,9 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
+		if exitErr, ok := errors.AsType[*ExitCodeError](err); ok {
+			return exitErr
+		}
 		return fmt.Errorf("HTTP request failed for %s %s: %w", method, fullURL, err)
 	}
 	defer resp.Body.Close()
@@ -492,7 +545,10 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 			strings.Contains(rawErr, "SERVICE_DISABLED") ||
 			strings.Contains(rawErr, "has not been used in project") ||
 			strings.Contains(rawErr, "cannot be identified with a client project") {
-			const svcName = "issuetracker.googleapis.com"
+			svcName := "issuetracker.googleapis.com"
+			if u, parseErr := url.Parse(c.Endpoint); parseErr == nil && isCorpIssueTrackerURL(u) {
+				svcName = "issuetracker.corp.googleapis.com"
+			}
 			if qp != "" {
 				return fmt.Errorf("Google Issue Tracker quota project error (HTTP %d) for %s %s.\n\n"+
 					"Cause: The configured quota project %q (X-Goog-User-Project) does not have %s enabled,\n"+

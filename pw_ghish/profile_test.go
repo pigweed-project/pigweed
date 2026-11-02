@@ -178,8 +178,8 @@ func TestPigweedProfile_Properties(t *testing.T) {
 	if p.DefaultComponentID() != 1194524 {
 		t.Errorf("DefaultComponentID() = %d, want 1194524", p.DefaultComponentID())
 	}
-	if p.IssueTrackerAPIEndpoint() != "https://issuetracker.googleapis.com/v1" {
-		t.Errorf("IssueTrackerAPIEndpoint() = %q, want https://issuetracker.googleapis.com/v1", p.IssueTrackerAPIEndpoint())
+	if p.IssueTrackerAPIEndpoint() != DefaultIssueTrackerEndpoint {
+		t.Errorf("IssueTrackerAPIEndpoint() = %q, want %s", p.IssueTrackerAPIEndpoint(), DefaultIssueTrackerEndpoint)
 	}
 	if gotURL := p.IssueWebURL(345678); gotURL != "https://issues.pigweed.dev/issues/345678" {
 		t.Errorf("IssueWebURL(345678) = %q, want https://issues.pigweed.dev/issues/345678", gotURL)

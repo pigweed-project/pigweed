@@ -28,8 +28,8 @@ import (
 )
 
 // TestMain runs every unit test with fail-closed credentials and network so a
-// test that forgets to mock auth can never run luci-auth, sso_client, bb, or
-// the Busytown accelerators, read the developer's tokens, or reach a real
+// test that forgets to mock auth can never run luci-auth, gosso, bb,
+// or the Busytown accelerators, read the developer's tokens, or reach a real
 // server. Tests that need credentials install mocks with WithHermeticAuth. The
 // live suite (-tags=live) has no TestMain and uses real credentials.
 func TestMain(m *testing.M) {

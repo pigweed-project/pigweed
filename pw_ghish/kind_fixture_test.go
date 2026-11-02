@@ -129,7 +129,7 @@ type KindSmokeResult struct {
 func NewKindSmokeFixture(t *testing.T) *KindSmokeFixture {
 	t.Helper()
 	// Fail closed on subprocesses: PATH holds only git, so any other tool
-	// (gcloud, sso_client, luci-auth, a browser) fails to spawn, and the
+	// (gosso, luci-auth, bb, a browser) fails to spawn, and the
 	// working directory is empty, so a git call without an explicit Dir
 	// cannot reach the developer's real repository.
 	gitPath, err := exec.LookPath("git")

@@ -36,6 +36,12 @@ func TestAuthStatus_AllHealthyGoogler(t *testing.T) {
 	})
 
 	WithHermeticAuth(t, AuthResolvers{
+		LookPath: func(file string) (string, error) {
+			if file == "gosso" {
+				return "/usr/bin/gosso", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
 		IssueTrackerToken: func(ctx context.Context) (string, string, error) {
 			return "it-tok", "luci-auth token", nil
 		},
@@ -51,7 +57,8 @@ func TestAuthStatus_AllHealthyGoogler(t *testing.T) {
 		"Authentication Mode: googler",
 		"Keir Mierle <keir@google.com> (account #1001)",
 		"(LUCI Buildbucket & LogDog)",
-		"issuetracker.googleapis.com (Google Issue Tracker)",
+		"issuetracker.corp.googleapis.com (Google Issue Tracker)",
+		"gosso + luci-auth token",
 		"quota project: pigweed-infra",
 		"Verdict: authenticated (googler mode; all required services healthy)",
 		"Next:    gh pr status",
@@ -60,6 +67,27 @@ func TestAuthStatus_AllHealthyGoogler(t *testing.T) {
 			t.Errorf("output missing %q:\n%s", want, output)
 		}
 	}
+
+	t.Run("reports Buganizer unauthenticated when gosso is not in PATH", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{
+			IssueTrackerToken: func(ctx context.Context) (string, string, error) {
+				return "it-tok", "luci-auth token", nil
+			},
+		})
+		out, err := executeCommand(RootCmd, "auth", "status", "--auth-mode", "googler", "--json", "buganizer")
+		if err != nil {
+			t.Fatalf("unexpected error: %v\nOutput:\n%s", err, out)
+		}
+		var parsed struct {
+			Buganizer ServiceAuthStatus `json:"buganizer"`
+		}
+		if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+			t.Fatalf("json.Unmarshal: %v", err)
+		}
+		if parsed.Buganizer.Authenticated || parsed.Buganizer.Method != "none" || !strings.Contains(parsed.Buganizer.Message, "gosso not found in PATH") || !strings.Contains(parsed.Buganizer.Remediation, "sudo mule install gosso") || !strings.Contains(parsed.Buganizer.Remediation, "sudo apt install gosso") {
+			t.Errorf("unexpected Buganizer status when gosso missing: %+v", parsed.Buganizer)
+		}
+	})
 }
 
 func TestAuthStatus_JSON(t *testing.T) {
@@ -132,8 +160,8 @@ func TestAuthStatus_AccountIDOnly(t *testing.T) {
 
 	WithHermeticAuth(t, AuthResolvers{
 		LookPath: func(file string) (string, error) {
-			if file == "sso_client" {
-				return "/usr/bin/sso_client", nil
+			if file == "gosso" {
+				return "/usr/bin/gosso", nil
 			}
 			return "", fmt.Errorf("not found")
 		},
@@ -175,8 +203,13 @@ func TestAuthStatus_CommunityModeHealthyWithoutLUCIToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected community auth status to succeed when Gerrit is authenticated, got: %v\nOutput:\n%s", err, output)
 	}
-	if !strings.Contains(output, "Authentication Mode: community") || !strings.Contains(output, "External Contributor") {
+	if !strings.Contains(output, "Authentication Mode: community") || !strings.Contains(output, "External Contributor") || !strings.Contains(output, "View or file issues on the web at https://") {
 		t.Errorf("unexpected output:\n%s", output)
+	}
+	for _, internalTool := range []string{"sso_client", "gosso", "mule", "gcert"} {
+		if strings.Contains(output, internalTool) {
+			t.Errorf("community auth status output leaked internal Corp tool %q:\n%s", internalTool, output)
+		}
 	}
 }
 

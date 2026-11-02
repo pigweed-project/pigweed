@@ -202,7 +202,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 	}
 
 	// 3. Buganizer (Google Issue Tracker) status
-	issueEndpoint := "https://issuetracker.googleapis.com/v1"
+	issueEndpoint := DefaultIssueTrackerEndpoint
 	if profile != nil && profile.IssueTrackerAPIEndpoint() != "" {
 		issueEndpoint = profile.IssueTrackerAPIEndpoint()
 	}
@@ -214,14 +214,23 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 	if mode == AuthModeNone {
 		buganizerStatus.Method = "none"
 		buganizerStatus.Message = "Authentication disabled (--auth-mode=none)"
+	} else if mode == AuthModeCommunity && !issueTrackerTokenEnvSet() {
+		webURL := issueTrackerCommunityWebURL(profile)
+		buganizerStatus.Authenticated = false
+		buganizerStatus.Method = "none"
+		buganizerStatus.Message = fmt.Sprintf("Google Issue Tracker CLI requires Google Corp access (%s)", issueHost)
+		buganizerStatus.Remediation = fmt.Sprintf("View or file issues on the web at %s. Googlers misdetected as community: export GH_ISH_AUTH_MODE=googler", webURL)
 	} else {
 		tok, src, tokErr := IssueTrackerTokenResolver(cfgCtx)
-		if tokErr == nil && tok != "" {
+		gossoPath := findGossoBinary()
+		if tokErr == nil && tok != "" && gossoPath == "" {
+			buganizerStatus.Authenticated = false
+			buganizerStatus.Method = "none"
+			buganizerStatus.Message = fmt.Sprintf("gosso not found in PATH for %s", issueHost)
+			buganizerStatus.Remediation = "Run 'sudo apt install gosso' (Linux) or 'sudo mule install gosso' (macOS), then 'gcert'"
+		} else if tokErr == nil && tok != "" {
 			buganizerStatus.Authenticated = true
-			methodDesc := src
-			if strings.Contains(issueEndpoint, ".corp.googleapis.com") {
-				methodDesc = fmt.Sprintf("sso_client + %s", src)
-			}
+			methodDesc := fmt.Sprintf("gosso + %s", src)
 			buganizerStatus.Method = methodDesc
 			buganizerStatus.QuotaProject = ConfiguredIssueTrackerQuotaProject(cfgCtx)
 			if buganizerStatus.QuotaProject != "" {
