@@ -116,7 +116,7 @@ Bool Message::Field::As<Bool>() {
   return decoder.ReadBool();
 }
 
-Result<bool> Bytes::Equal(ConstByteSpan bytes) {
+Result<bool> Bytes::Equal(ConstByteSpan bytes) const {
   stream::IntervalReader bytes_reader = GetBytesReader();
   if (bytes_reader.interval_size() != bytes.size()) {
     return false;
@@ -135,7 +135,7 @@ Result<bool> Bytes::Equal(ConstByteSpan bytes) {
   return true;
 }
 
-Result<bool> String::Equal(std::string_view str) {
+Result<bool> String::Equal(std::string_view str) const {
   return Bytes::Equal(as_bytes(span<const char>{str}));
 }
 
@@ -182,43 +182,47 @@ Message::iterator& Message::iterator::operator++() {
   return *this;
 }
 
-Message::iterator Message::begin() {
+Message::iterator Message::begin() const {
   if (!ok()) {
     return end();
   }
 
-  return iterator(reader_.Reset());
+  return iterator(reader_);
 }
 
-Message::iterator Message::end() {
+Message::iterator Message::end() const {
   // The end iterator is created by using an exahusted stream::IntervalReader,
   // i.e. the reader is pointing at the internval end.
   stream::IntervalReader reader_end = reader_;
   return iterator(reader_end.Exhaust());
 }
 
-RepeatedBytes Message::AsRepeatedBytes(uint32_t field_number) {
+RepeatedBytes Message::AsRepeatedBytes(uint32_t field_number) const {
   return AsRepeated<Bytes>(field_number);
 }
 
-RepeatedFieldParser<String> Message::AsRepeatedStrings(uint32_t field_number) {
+RepeatedFieldParser<String> Message::AsRepeatedStrings(
+    uint32_t field_number) const {
   return AsRepeated<String>(field_number);
 }
 
 RepeatedFieldParser<Message> Message::AsRepeatedMessages(
-    uint32_t field_number) {
+    uint32_t field_number) const {
   return AsRepeated<Message>(field_number);
 }
 
-StringMapParser<Message> Message::AsStringToMessageMap(uint32_t field_number) {
+StringMapParser<Message> Message::AsStringToMessageMap(
+    uint32_t field_number) const {
   return AsStringMap<Message>(field_number);
 }
 
-StringMapParser<Bytes> Message::AsStringToBytesMap(uint32_t field_number) {
+StringMapParser<Bytes> Message::AsStringToBytesMap(
+    uint32_t field_number) const {
   return AsStringMap<Bytes>(field_number);
 }
 
-StringMapParser<String> Message::AsStringToStringMap(uint32_t field_number) {
+StringMapParser<String> Message::AsStringToStringMap(
+    uint32_t field_number) const {
   return AsStringMap<String>(field_number);
 }
 

@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <string_view>
+#include <utility>
 
 #include "pw_assert/check.h"
 #include "pw_protobuf/internal/proto_integer_base.h"
@@ -133,13 +134,13 @@ class Bytes {
   Bytes() = default;
   Bytes(Status status) : reader_(status) {}
   Bytes(stream::IntervalReader reader) : reader_(std::move(reader)) {}
-  stream::IntervalReader GetBytesReader() { return reader_; }
+  stream::IntervalReader GetBytesReader() const { return reader_; }
 
-  bool ok() { return reader_.ok(); }
-  Status status() { return reader_.status(); }
+  bool ok() const { return reader_.ok(); }
+  Status status() const { return reader_.status(); }
 
   /// Checks whether the bytes value exactly equals the given `bytes`.
-  Result<bool> Equal(ConstByteSpan bytes);
+  Result<bool> Equal(ConstByteSpan bytes) const;
 
  private:
   stream::IntervalReader reader_;
@@ -158,7 +159,7 @@ class String : public Bytes {
   using Bytes::Bytes;
 
   /// Checks whether the string value exactly equals the given `str`.
-  Result<bool> Equal(std::string_view str);
+  Result<bool> Equal(std::string_view str) const;
 };
 
 // Forward declaration of parser classes.
@@ -338,78 +339,96 @@ class Message {
 
   Message() = default;
   Message(Status status) : reader_(status) {}
-  Message(stream::IntervalReader reader) : reader_(std::move(reader)) {}
+  Message(stream::IntervalReader reader) : reader_(reader.Reset()) {}
   Message(stream::SeekableReader& proto_source, size_t size)
       : reader_(proto_source, 0, size) {}
 
   // Parse a sub-field in the message given by `field_number` as bytes.
-  Bytes AsBytes(uint32_t field_number) { return As<Bytes>(field_number); }
+  Bytes AsBytes(uint32_t field_number) const { return As<Bytes>(field_number); }
 
   // Parse a sub-field in the message given by `field_number` as string.
-  String AsString(uint32_t field_number) { return As<String>(field_number); }
+  String AsString(uint32_t field_number) const {
+    return As<String>(field_number);
+  }
 
   // Parse a sub-field in the message given by `field_number` as one of the
   // proto integer type.
-  Int32 AsInt32(uint32_t field_number) { return As<Int32>(field_number); }
-  Sint32 AsSint32(uint32_t field_number) { return As<Sint32>(field_number); }
-  Uint32 AsUint32(uint32_t field_number) { return As<Uint32>(field_number); }
-  Fixed32 AsFixed32(uint32_t field_number) { return As<Fixed32>(field_number); }
-  Int64 AsInt64(uint32_t field_number) { return As<Int64>(field_number); }
-  Sint64 AsSint64(uint32_t field_number) { return As<Sint64>(field_number); }
-  Uint64 AsUint64(uint32_t field_number) { return As<Uint64>(field_number); }
-  Fixed64 AsFixed64(uint32_t field_number) { return As<Fixed64>(field_number); }
+  Int32 AsInt32(uint32_t field_number) const { return As<Int32>(field_number); }
+  Sint32 AsSint32(uint32_t field_number) const {
+    return As<Sint32>(field_number);
+  }
+  Uint32 AsUint32(uint32_t field_number) const {
+    return As<Uint32>(field_number);
+  }
+  Fixed32 AsFixed32(uint32_t field_number) const {
+    return As<Fixed32>(field_number);
+  }
+  Int64 AsInt64(uint32_t field_number) const { return As<Int64>(field_number); }
+  Sint64 AsSint64(uint32_t field_number) const {
+    return As<Sint64>(field_number);
+  }
+  Uint64 AsUint64(uint32_t field_number) const {
+    return As<Uint64>(field_number);
+  }
+  Fixed64 AsFixed64(uint32_t field_number) const {
+    return As<Fixed64>(field_number);
+  }
 
-  Sfixed32 AsSfixed32(uint32_t field_number) {
+  Sfixed32 AsSfixed32(uint32_t field_number) const {
     return As<Sfixed32>(field_number);
   }
 
-  Sfixed64 AsSfixed64(uint32_t field_number) {
+  Sfixed64 AsSfixed64(uint32_t field_number) const {
     return As<Sfixed64>(field_number);
   }
 
-  Float AsFloat(uint32_t field_number) { return As<Float>(field_number); }
-  Double AsDouble(uint32_t field_number) { return As<Double>(field_number); }
+  Float AsFloat(uint32_t field_number) const { return As<Float>(field_number); }
+  Double AsDouble(uint32_t field_number) const {
+    return As<Double>(field_number);
+  }
 
-  Bool AsBool(uint32_t field_number) { return As<Bool>(field_number); }
+  Bool AsBool(uint32_t field_number) const { return As<Bool>(field_number); }
 
   // Parse a sub-field in the message given by `field_number` as another
   // message.
-  Message AsMessage(uint32_t field_number) { return As<Message>(field_number); }
+  Message AsMessage(uint32_t field_number) const {
+    return As<Message>(field_number);
+  }
 
   // Parse a sub-field in the message given by `field_number` as `repeated
   // string`.
-  RepeatedBytes AsRepeatedBytes(uint32_t field_number);
+  RepeatedBytes AsRepeatedBytes(uint32_t field_number) const;
 
   // Parse a sub-field in the message given by `field_number` as `repeated
   // string`.
-  RepeatedStrings AsRepeatedStrings(uint32_t field_number);
+  RepeatedStrings AsRepeatedStrings(uint32_t field_number) const;
 
   // Parse a sub-field in the message given by `field_number` as `repeated
   // message`.
-  RepeatedMessages AsRepeatedMessages(uint32_t field_number);
+  RepeatedMessages AsRepeatedMessages(uint32_t field_number) const;
 
   // Parse a sub-field in the message given by `field_number` as `map<string,
   // message>`.
-  StringToMessageMap AsStringToMessageMap(uint32_t field_number);
+  StringToMessageMap AsStringToMessageMap(uint32_t field_number) const;
 
   // Parse a sub-field in the message given by `field_number` as
   // `map<string, bytes>`.
-  StringToBytesMap AsStringToBytesMap(uint32_t field_number);
+  StringToBytesMap AsStringToBytesMap(uint32_t field_number) const;
 
   // Parse a sub-field in the message given by `field_number` as
   // `map<string, string>`.
-  StringToStringMap AsStringToStringMap(uint32_t field_number);
+  StringToStringMap AsStringToStringMap(uint32_t field_number) const;
 
   // Convert the message to a Bytes that represents the raw bytes of this
   // message. This can be used to obatained the serialized wire-format of the
   // message.
-  Bytes ToBytes() { return Bytes(reader_.Reset()); }
+  Bytes ToBytes() const { return Bytes(reader_); }
 
-  bool ok() { return reader_.ok(); }
-  Status status() { return reader_.status(); }
+  bool ok() const { return reader_.ok(); }
+  Status status() const { return reader_.status(); }
 
-  iterator begin();
-  iterator end();
+  iterator begin() const;
+  iterator end() const;
 
   /// Parses a field given by `field_number` as the target parser type
   /// `FieldType`.
@@ -428,7 +447,7 @@ class Message {
   ///
   /// @deprecated All APIs from `message.h` are deprecated.
   template <typename FieldType>
-  FieldType As(uint32_t field_number) {
+  FieldType As(uint32_t field_number) const {
     for (Field field : *this) {
       if (field.field_number() == field_number) {
         return field.As<FieldType>();
@@ -439,12 +458,12 @@ class Message {
   }
 
   template <typename FieldType>
-  RepeatedFieldParser<FieldType> AsRepeated(uint32_t field_number) {
+  RepeatedFieldParser<FieldType> AsRepeated(uint32_t field_number) const {
     return RepeatedFieldParser<FieldType>(*this, field_number);
   }
 
   template <typename FieldParser>
-  StringMapParser<FieldParser> AsStringMap(uint32_t field_number) {
+  StringMapParser<FieldParser> AsStringMap(uint32_t field_number) const {
     return StringMapParser<FieldParser>(*this, field_number);
   }
 
@@ -540,11 +559,11 @@ class RepeatedFieldParser {
     }
 
    private:
-    RepeatedFieldParser& host_;
+    const RepeatedFieldParser& host_;
     Message::iterator iter_;
     FieldType current_ = FieldType(Status::Unavailable());
 
-    iterator(RepeatedFieldParser& host, Message::iterator init_iter)
+    iterator(const RepeatedFieldParser& host, Message::iterator init_iter)
         : host_(host),
           iter_(std::move(init_iter)),
           current_(Status::Unavailable()) {
@@ -567,16 +586,16 @@ class RepeatedFieldParser {
 
   // `message` -- The containing message.
   // `field_number` -- The field number of the repeated field.
-  RepeatedFieldParser(Message& message, uint32_t field_number)
-      : message_(message), field_number_(field_number) {}
+  RepeatedFieldParser(Message message, uint32_t field_number)
+      : message_(std::move(message)), field_number_(field_number) {}
 
   RepeatedFieldParser(Status status) : message_(status) {}
 
-  bool ok() { return message_.ok(); }
-  Status status() { return message_.status(); }
+  bool ok() const { return message_.ok(); }
+  Status status() const { return message_.status(); }
 
-  iterator begin() { return iterator(*this, message_.begin()); }
-  iterator end() { return iterator(*this, message_.end()); }
+  iterator begin() const { return iterator(*this, message_.begin()); }
+  iterator end() const { return iterator(*this, message_.end()); }
 
  private:
   Message message_;
@@ -595,12 +614,14 @@ class RepeatedFieldParser {
 template <typename ValueParser>
 class StringMapEntryParser {
  public:
-  bool ok() { return entry_.ok(); }
-  Status status() { return entry_.status(); }
+  bool ok() const { return entry_.ok(); }
+  Status status() const { return entry_.status(); }
   StringMapEntryParser(Status status) : entry_(status) {}
   StringMapEntryParser(stream::IntervalReader reader) : entry_(reader) {}
-  String Key() { return entry_.AsString(kMapKeyFieldNumber); }
-  ValueParser Value() { return entry_.As<ValueParser>(kMapValueFieldNumber); }
+  String Key() const { return entry_.AsString(kMapKeyFieldNumber); }
+  ValueParser Value() const {
+    return entry_.As<ValueParser>(kMapValueFieldNumber);
+  }
 
  private:
   static constexpr uint32_t kMapKeyFieldNumber = 1;
@@ -625,7 +646,7 @@ class StringMapParser
       StringMapEntryParser<ValueParser>>::RepeatedFieldParser;
 
   // Operator overload for value access of a given key.
-  ValueParser operator[](std::string_view target) {
+  ValueParser operator[](std::string_view target) const {
     // Iterate over all entries and find the one whose key matches `target`
     for (StringMapEntryParser<ValueParser> entry : *this) {
       String key = entry.Key();

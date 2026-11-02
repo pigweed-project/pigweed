@@ -30,9 +30,9 @@ class ProtoIntegerBase {
       : value_(std::move(value)) {}
   constexpr ProtoIntegerBase(Status status) : value_(status) {}
 
-  bool ok() { return value_.ok(); }
-  Status status() { return value_.status(); }
-  Integer value() { return value_.value(); }
+  bool ok() const { return value_.ok(); }
+  Status status() const { return value_.status(); }
+  Integer value() const { return value_.value(); }
 
  private:
   Result<Integer> value_ = 0;
