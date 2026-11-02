@@ -39,9 +39,7 @@ to provide a uniform development experience, and users have the freedom to make
 their own changes.
 """
 
-# TODO(chadnorvell): Import collections.OrderedDict when we don't need to
-# support Python 3.8 anymore.
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
 import enum
@@ -54,7 +52,6 @@ from typing import (
     Generator,
     Generic,
     Literal,
-    OrderedDict,
     Type,
     TypeVar,
 )

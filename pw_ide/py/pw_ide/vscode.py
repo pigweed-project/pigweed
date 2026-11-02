@@ -60,11 +60,10 @@ command.
 
 from __future__ import annotations
 
-# TODO(chadnorvell): Import collections.OrderedDict when we don't need to
-# support Python 3.8 anymore.
+from collections import OrderedDict
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, OrderedDict
+from typing import Any, Callable
 
 from pw_cli.env import pigweed_environment
 

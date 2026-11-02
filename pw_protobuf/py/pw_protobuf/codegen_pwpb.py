@@ -17,9 +17,7 @@ from __future__ import annotations
 import abc
 from dataclasses import dataclass
 import enum
-
-# Type ignore here for graphlib-backport on Python 3.8
-from graphlib import CycleError, TopologicalSorter  # type: ignore
+from graphlib import CycleError, TopologicalSorter
 from itertools import takewhile
 import os
 import sys

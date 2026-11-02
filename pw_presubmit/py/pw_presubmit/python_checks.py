@@ -22,7 +22,6 @@ from pathlib import Path
 import platform
 import re
 import shutil
-import sys
 from tempfile import TemporaryDirectory
 import venv
 
@@ -48,11 +47,6 @@ _PYTHON_PACKAGE_EXTENSIONS = (
     'requirements.txt',
 )
 
-_PYTHON_IS_3_9_OR_HIGHER = sys.version_info >= (
-    3,
-    9,
-)
-
 
 @filter_paths(endswith=_PYTHON_EXTENSIONS)
 def gn_python_check(ctx: PresubmitContext):
@@ -68,9 +62,6 @@ def _transform_lcov_file_paths(lcov_file: Path, repo_root: Path) -> str:
 
     lcov_input = lcov_file.read_text()
     lcov_output = ''
-
-    if not _PYTHON_IS_3_9_OR_HIGHER:
-        return lcov_input
 
     for line in lcov_input.splitlines():
         if not line.startswith('SF:'):

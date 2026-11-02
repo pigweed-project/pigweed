@@ -196,11 +196,6 @@ class QueueFileTest(unittest.TestCase):
             file.wait_for_drain(0.1)
 
 
-class Sentinel:
-    def __repr__(self):
-        return 'Sentinel'
-
-
 class _QueueReader(stream_readers.CancellableReader):
     def cancel_read(self) -> None:
         self._base_obj.close()
@@ -299,18 +294,8 @@ class DataReaderAndExecutorTest(unittest.TestCase):
     @contextmanager
     def assert_no_stream_stream_readers_error_logs(self):
         logger = logging.getLogger('pw_stream.stream_readers')
-        sentinel = Sentinel()
-        with self.assertLogs(logger, level=logging.ERROR) as ctx:
-            # TODO: b/294861320 - use assertNoLogs() in Python 3.10+
-            # We actually want to assert there are no errors, but
-            # TestCase.assertNoLogs() is not available until Python 3.10.
-            # So we log one error to keep the test from failing and manually
-            # inspect the list of captured records.
-            logger.error(sentinel)
-
-            yield ctx
-
-        self.assertEqual([record.msg for record in ctx.records], [sentinel])
+        with self.assertNoLogs(logger, level=logging.ERROR):
+            yield
 
     def assert_no_background_threads_running(self):
         self.assertEqual(threading.enumerate(), [threading.current_thread()])

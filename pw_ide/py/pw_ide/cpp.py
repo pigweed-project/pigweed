@@ -678,12 +678,8 @@ class CppCompileCommand:
 
 def _path_nearest_parent(path1: Path, path2: Path) -> Path:
     """Get the closest common parent of two paths."""
-    # This is the Python < 3.9 version of: if path2.is_relative_to(path1)
-    try:
-        path2.relative_to(path1)
+    if path2.is_relative_to(path1):
         return path1
-    except ValueError:
-        pass
 
     if path1 == path2:
         return path1

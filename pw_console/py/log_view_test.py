@@ -15,7 +15,6 @@
 
 import logging
 import re
-import sys
 from typing import Pattern
 import unittest
 from unittest.mock import MagicMock
@@ -29,11 +28,6 @@ from pw_console.log_screen import ScreenLine
 from pw_console.text_formatting import (
     flatten_formatted_text_tuples,
     join_adjacent_style_tuples,
-)
-
-_PYTHON_3_8 = sys.version_info >= (
-    3,
-    8,
 )
 
 
@@ -491,186 +485,177 @@ class TestLogView(unittest.TestCase):
         log_view.log_screen.reset_logs.reset_mock()
 
 
-if _PYTHON_3_8:
-    from unittest import IsolatedAsyncioTestCase  # type: ignore # pylint: disable=no-name-in-module
+class TestLogViewFiltering(unittest.IsolatedAsyncioTestCase):
+    """Test LogView log filtering capabilities."""
 
-    class TestLogViewFiltering(
-        IsolatedAsyncioTestCase
-    ):  # pylint: disable=undefined-variable
-        """Test LogView log filtering capabilities."""
+    maxDiff = None
 
-        maxDiff = None
+    def _create_log_view_from_list(self, log_messages):
+        log_view, log_pane = _create_log_view()
 
-        def _create_log_view_from_list(self, log_messages):
-            log_view, log_pane = _create_log_view()
+        test_log = logging.getLogger('log_view.test')
+        with self.assertLogs(test_log, level='DEBUG') as _log_context:
+            test_log.addHandler(log_view.log_store)
+            for log, extra_arg in log_messages:
+                test_log.debug('%s', log, extra=extra_arg)
 
-            test_log = logging.getLogger('log_view.test')
-            with self.assertLogs(test_log, level='DEBUG') as _log_context:
-                test_log.addHandler(log_view.log_store)
-                for log, extra_arg in log_messages:
-                    test_log.debug('%s', log, extra=extra_arg)
+        return log_view, log_pane
 
-            return log_view, log_pane
-
-        @parameterized.expand(
-            [
-                (
-                    # Test name
-                    'regex filter',
-                    # Search input_text
-                    'log.*item',
-                    # input_logs
-                    [
-                        ('Log some item', dict()),
-                        ('Log another item', dict()),
-                        ('Some exception', dict()),
-                    ],
-                    # expected_matched_lines
-                    [
-                        'Log some item',
-                        'Log another item',
-                    ],
-                    # expected_match_line_numbers
-                    {0: 0, 1: 1},
-                    # expected_export_text
-                    ('  DEBUG  Log some item\n  DEBUG  Log another item\n'),
-                    None,  # field
-                    False,  # invert
-                ),
-                (
-                    # Test name
-                    'regex filter with field',
-                    # Search input_text
-                    'earth',
-                    # input_logs
-                    [
-                        (
-                            'Log some item',
-                            dict(extra_metadata_fields={'planet': 'Jupiter'}),
-                        ),
-                        (
-                            'Log another item',
-                            dict(extra_metadata_fields={'planet': 'Earth'}),
-                        ),
-                        (
-                            'Some exception',
-                            dict(extra_metadata_fields={'planet': 'Earth'}),
-                        ),
-                    ],
-                    # expected_matched_lines
-                    [
-                        'Log another item',
-                        'Some exception',
-                    ],
-                    # expected_match_line_numbers
-                    {1: 0, 2: 1},
-                    # expected_export_text
+    @parameterized.expand(
+        [
+            (
+                # Test name
+                'regex filter',
+                # Search input_text
+                'log.*item',
+                # input_logs
+                [
+                    ('Log some item', dict()),
+                    ('Log another item', dict()),
+                    ('Some exception', dict()),
+                ],
+                # expected_matched_lines
+                [
+                    'Log some item',
+                    'Log another item',
+                ],
+                # expected_match_line_numbers
+                {0: 0, 1: 1},
+                # expected_export_text
+                ('  DEBUG  Log some item\n  DEBUG  Log another item\n'),
+                None,  # field
+                False,  # invert
+            ),
+            (
+                # Test name
+                'regex filter with field',
+                # Search input_text
+                'earth',
+                # input_logs
+                [
                     (
-                        '  DEBUG  Earth    Log another item\n'
-                        '  DEBUG  Earth    Some exception\n'
-                    ),
-                    'planet',  # field
-                    False,  # invert
-                ),
-                (
-                    # Test name
-                    'regex filter with field inverted',
-                    # Search input_text
-                    'earth',
-                    # input_logs
-                    [
-                        (
-                            'Log some item',
-                            dict(extra_metadata_fields={'planet': 'Jupiter'}),
-                        ),
-                        (
-                            'Log another item',
-                            dict(extra_metadata_fields={'planet': 'Earth'}),
-                        ),
-                        (
-                            'Some exception',
-                            dict(extra_metadata_fields={'planet': 'Earth'}),
-                        ),
-                    ],
-                    # expected_matched_lines
-                    [
                         'Log some item',
-                    ],
-                    # expected_match_line_numbers
-                    {0: 0},
-                    # expected_export_text
-                    ('  DEBUG  Jupiter  Log some item\n'),
-                    'planet',  # field
-                    True,  # invert
+                        dict(extra_metadata_fields={'planet': 'Jupiter'}),
+                    ),
+                    (
+                        'Log another item',
+                        dict(extra_metadata_fields={'planet': 'Earth'}),
+                    ),
+                    (
+                        'Some exception',
+                        dict(extra_metadata_fields={'planet': 'Earth'}),
+                    ),
+                ],
+                # expected_matched_lines
+                [
+                    'Log another item',
+                    'Some exception',
+                ],
+                # expected_match_line_numbers
+                {1: 0, 2: 1},
+                # expected_export_text
+                (
+                    '  DEBUG  Earth    Log another item\n'
+                    '  DEBUG  Earth    Some exception\n'
                 ),
-            ]
+                'planet',  # field
+                False,  # invert
+            ),
+            (
+                # Test name
+                'regex filter with field inverted',
+                # Search input_text
+                'earth',
+                # input_logs
+                [
+                    (
+                        'Log some item',
+                        dict(extra_metadata_fields={'planet': 'Jupiter'}),
+                    ),
+                    (
+                        'Log another item',
+                        dict(extra_metadata_fields={'planet': 'Earth'}),
+                    ),
+                    (
+                        'Some exception',
+                        dict(extra_metadata_fields={'planet': 'Earth'}),
+                    ),
+                ],
+                # expected_matched_lines
+                [
+                    'Log some item',
+                ],
+                # expected_match_line_numbers
+                {0: 0},
+                # expected_export_text
+                ('  DEBUG  Jupiter  Log some item\n'),
+                'planet',  # field
+                True,  # invert
+            ),
+        ]
+    )
+    async def test_log_filtering(
+        self,
+        _test_name,
+        input_text,
+        input_logs,
+        expected_matched_lines,
+        expected_match_line_numbers,
+        expected_export_text,
+        field=None,
+        invert=False,
+    ) -> None:
+        """Test run log view filtering."""
+        log_view, _log_pane = self._create_log_view_from_list(input_logs)
+        log_view.render_content()
+
+        self.assertEqual(log_view.get_total_count(), len(input_logs))
+        # Apply the search and wait for the match count background task
+        log_view.new_search(input_text, invert=invert, field=field)
+        await log_view.search_match_count_task
+        self.assertEqual(
+            log_view.search_matched_lines, expected_match_line_numbers
         )
-        async def test_log_filtering(
-            self,
-            _test_name,
-            input_text,
-            input_logs,
+
+        # Apply the filter and wait for the filter background task
+        log_view.apply_filter()
+        await log_view.filter_existing_logs_task
+
+        # Do the number of logs match the expected count?
+        self.assertEqual(
+            log_view.get_total_count(), len(expected_matched_lines)
+        )
+        self.assertEqual(
+            [log.record.message for log in log_view.filtered_logs],
             expected_matched_lines,
-            expected_match_line_numbers,
-            expected_export_text,
-            field=None,
-            invert=False,
-        ) -> None:
-            """Test run log view filtering."""
-            log_view, _log_pane = self._create_log_view_from_list(input_logs)
-            log_view.render_content()
+        )
 
-            self.assertEqual(log_view.get_total_count(), len(input_logs))
-            # Apply the search and wait for the match count background task
-            log_view.new_search(input_text, invert=invert, field=field)
-            await log_view.search_match_count_task
-            self.assertEqual(
-                log_view.search_matched_lines, expected_match_line_numbers
-            )
+        # Check exported text respects filtering
+        log_text = log_view._logs_to_text(  # pylint: disable=protected-access
+            use_table_formatting=True
+        )
+        # Remove leading time from resulting logs
+        log_text_no_datetime = ''
+        for line in log_text.splitlines():
+            log_text_no_datetime += line[17:] + '\n'
+        self.assertEqual(log_text_no_datetime, expected_export_text)
 
-            # Apply the filter and wait for the filter background task
-            log_view.apply_filter()
-            await log_view.filter_existing_logs_task
+        # Select the bottom log line
+        log_view.render_content()
+        log_view.visual_select_line(Point(0, 9))  # Window height is 10
+        # Export to text
+        log_text = log_view._logs_to_text(  # pylint: disable=protected-access
+            selected_lines_only=True, use_table_formatting=False
+        )
+        self.assertEqual(
+            # Remove date, time, and level
+            log_text[24:].strip(),
+            expected_matched_lines[0].strip(),
+        )
 
-            # Do the number of logs match the expected count?
-            self.assertEqual(
-                log_view.get_total_count(), len(expected_matched_lines)
-            )
-            self.assertEqual(
-                [log.record.message for log in log_view.filtered_logs],
-                expected_matched_lines,
-            )
-
-            # Check exported text respects filtering
-            log_text = (
-                log_view._logs_to_text(  # pylint: disable=protected-access
-                    use_table_formatting=True
-                )
-            )
-            # Remove leading time from resulting logs
-            log_text_no_datetime = ''
-            for line in log_text.splitlines():
-                log_text_no_datetime += line[17:] + '\n'
-            self.assertEqual(log_text_no_datetime, expected_export_text)
-
-            # Select the bottom log line
-            log_view.render_content()
-            log_view.visual_select_line(Point(0, 9))  # Window height is 10
-            # Export to text
-            log_text = (
-                log_view._logs_to_text(  # pylint: disable=protected-access
-                    selected_lines_only=True, use_table_formatting=False
-                )
-            )
-            self.assertEqual(
-                # Remove date, time, and level
-                log_text[24:].strip(),
-                expected_matched_lines[0].strip(),
-            )
-
-            # Clear filters and check the numbe of lines is back to normal.
-            log_view.clear_filters()
-            self.assertEqual(log_view.get_total_count(), len(input_logs))
+        # Clear filters and check the numbe of lines is back to normal.
+        log_view.clear_filters()
+        self.assertEqual(log_view.get_total_count(), len(input_logs))
 
 
 if __name__ == '__main__':
