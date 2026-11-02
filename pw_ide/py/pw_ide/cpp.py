@@ -63,6 +63,7 @@ from typing import (
     cast,
     Generator,
     Iterator,
+    NotRequired,
     TypedDict,
 )
 
@@ -467,26 +468,12 @@ def command_parts(command: str) -> tuple[str | None, str, list[str]]:
     return (wrapper, curr, parts)
 
 
-# This is a clumsy way to express optional keys, which is not directly
-# supported in TypedDicts right now.
-# TODO(chadnorvell): Use `NotRequired` when we support Python 3.11.
-class BaseCppCompileCommandDict(TypedDict):
+class CppCompileCommandDict(TypedDict):
     file: str
     directory: str
-    output: str | None
-
-
-class CppCompileCommandDictWithCommand(BaseCppCompileCommandDict):
-    command: str
-
-
-class CppCompileCommandDictWithArguments(BaseCppCompileCommandDict):
-    arguments: list[str]
-
-
-CppCompileCommandDict = (
-    CppCompileCommandDictWithCommand | CppCompileCommandDictWithArguments
-)
+    command: NotRequired[str]
+    arguments: NotRequired[list[str]]
+    output: NotRequired[str | None]
 
 
 class CppCompileCommand:
@@ -670,23 +657,16 @@ class CppCompileCommand:
         )
 
     def as_dict(self) -> CppCompileCommandDict:
-        base_compile_command_dict: BaseCppCompileCommandDict = {
-            'file': self.file,
-            'directory': self.directory,
-            'output': self.output,
-        }
-
         # TODO(chadnorvell): Support "arguments". The spec requires that a
         # We don't support "arguments" at all right now. When we do, we should
         # preferentially include "arguments" only, and only include "command"
         # when "arguments" is not present.
         if self.command is not None:
-            compile_command_dict: CppCompileCommandDictWithCommand = {
+            compile_command_dict: CppCompileCommandDict = {
                 'command': self.command,
-                # Unfortunately dict spreading doesn't work with mypy.
-                'file': base_compile_command_dict['file'],
-                'directory': base_compile_command_dict['directory'],
-                'output': base_compile_command_dict['output'],
+                'file': self.file,
+                'directory': self.directory,
+                'output': self.output,
             }
         else:
             raise NotImplementedError(

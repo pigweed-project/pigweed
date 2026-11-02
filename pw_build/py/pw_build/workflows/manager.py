@@ -19,7 +19,6 @@ from collections.abc import Sequence
 import glob
 import os
 from pathlib import Path
-import re
 import string
 
 from pw_build.build_recipe import BuildCommand, BuildRecipe
@@ -30,9 +29,6 @@ from pw_build.workflows.private.validator import (
     Validator,
     collect_all_fragments,
 )
-
-# Regex for template/variable expansion.
-_TEMPLATE_PATTERN = re.compile(r'(?:\${?)([a-zA-Z_][a-zA-Z0-9_]*)')
 
 _BAZEL_PROJECT_ROOT_ENV_VAR = 'BUILD_WORKSPACE_DIRECTORY'
 _BOOTSTRAP_PROJECT_ROOT_ENV_VAR = 'PW_PROJECT_ROOT'
@@ -60,9 +56,8 @@ def expand_action(
     """
     expanded_args: list[str] = []
     for arg in action.args:
-        # When Python 3.11 is the minimum Python version, this can be
-        # rewritten in terms of Template.get_identifiers().
-        matches = _TEMPLATE_PATTERN.findall(arg)
+        template = string.Template(arg)
+        matches = template.get_identifiers()
         is_list_expansion = any(
             isinstance(env.get(match, None), list) for match in matches
         )
@@ -71,7 +66,7 @@ def expand_action(
                 raise ValueError('Cannot expand pattern into multiple values')
             expanded_args.extend(env[matches[0]])
         else:
-            expanded_args.append(string.Template(arg).safe_substitute(env))
+            expanded_args.append(template.safe_substitute(env))
     return expanded_args
 
 

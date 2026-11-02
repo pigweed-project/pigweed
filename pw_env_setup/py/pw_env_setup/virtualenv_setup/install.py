@@ -227,34 +227,6 @@ def _check_venv(python, version, venv_path, pyvenv_cfg):
             shutil.rmtree(venv_path)
 
 
-def _check_python_install_permissions(python):
-    # These pickle files are not included on windows.
-    # The path on windows is environment/cipd/packages/python/bin/Lib/lib2to3/
-    if _is_windows():
-        return
-
-    # Make any existing lib2to3 pickle files read+write. This is needed for
-    # importing yapf.
-    lib2to3_path = os.path.join(
-        os.path.dirname(os.path.dirname(python)), 'lib', 'python3.9', 'lib2to3'
-    )
-    pickle_file_paths = []
-    if os.path.isdir(lib2to3_path):
-        pickle_file_paths.extend(
-            file_path
-            for file_path in os.listdir(lib2to3_path)
-            if '.pickle' in file_path
-        )
-    try:
-        for pickle_file in pickle_file_paths:
-            pickle_full_path = os.path.join(lib2to3_path, pickle_file)
-            os.chmod(
-                pickle_full_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
-            )
-    except PermissionError:
-        pass
-
-
 def _flatten(*items):
     """Yields items from a series of items and nested iterables."""
 
@@ -331,7 +303,6 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
 
     pyvenv_cfg = os.path.join(venv_path, 'pyvenv.cfg')
 
-    _check_python_install_permissions(python)
     _check_venv(python, version, venv_path, pyvenv_cfg)
 
     if full_envsetup or not os.path.exists(pyvenv_cfg):
@@ -362,7 +333,7 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
         # that is created using symlinks under Windows.  `venv` will fail with
         # and error that the source and destination are the same file.  To work
         # around this, we run `venv` in `--clear` mode under Windows.
-        if _is_windows() and version >= (3, 11):
+        if _is_windows():
             cmd += ['--clear', '--symlinks']
         else:
             cmd += ['--upgrade']
