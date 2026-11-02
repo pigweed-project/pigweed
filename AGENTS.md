@@ -190,7 +190,7 @@ disabled).
 
 ### Quick Command Reference
 
-- **Inspect a CL (`pwrev/1234`, Gerrit URL, or active branch)**:
+- **Inspect a CL (`pwrev.dev/1234`, Gerrit URL, or active branch)**:
   - Metadata & review comments: `./gh pr view [<id>] --comments`
   - Unified patch diff: `./gh pr diff [<id>]`
   - Check out a CL locally: `./gh pr checkout <id>`

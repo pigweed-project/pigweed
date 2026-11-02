@@ -15,7 +15,7 @@ Pigweed developers and AI agents use `./gh wt` (`pw_ghish/worktree`) to juggle m
    Agents and developers work inside `~/wrk/projects/<project>`, which is a POSIX symlink pointing to the currently mounted slot (e.g., `~/wrk/slots/pw-03`).
 3. **Orthogonal Residency (`MOUNTED` vs. `PARKED`):**
    - `MOUNTED`: Occupies a warm slot in `~/wrk/slots/<slot_prefix>XX` and appears as an active project in the Jetski left sidebar.
-   - `PARKED`: Shelved in Git (`refs/heads/<branch>`) and Gerrit (`pwrev/XXX` or configured shortlink), consuming **0 disk slots** and archived in the Jetski sidebar. Supports juggling $M$ projects on $N$ slots ($M > N$) via automatic LRU swap-out of clean/unleased slots.
+   - `PARKED`: Shelved in Git (`refs/heads/<branch>`) and Gerrit (`pwrev.dev/XXX` or configured shortlink), consuming **0 disk slots** and archived in the Jetski sidebar. Supports juggling $M$ projects on $N$ slots ($M > N$) via automatic LRU swap-out of clean/unleased slots.
 4. **Never Manually Edit `~/.bazelrc`:**
    All shared Bazel cache settings (`~/.config/pw_ghish/bazelrc.worktrees` and the `try-import` line in `~/.bazelrc`) are managed exclusively by `./gh wt init`. **Agents must NEVER manually edit or delete `~/.bazelrc`.**
 

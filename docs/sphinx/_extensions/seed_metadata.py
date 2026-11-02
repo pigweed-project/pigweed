@@ -115,7 +115,7 @@ def status_badge(seed_status: str, badge_status) -> str:
 
 def cl_link(cl_num):
     return (
-        f'`pwrev/{cl_num} '
+        f'`pwrev.dev/{cl_num} '
         '<https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/'
         f'{cl_num}>`_'
     )
