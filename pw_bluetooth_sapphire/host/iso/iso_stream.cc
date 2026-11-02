@@ -180,6 +180,7 @@ class IsoStreamImpl final : public IsoStream {
   bool inbound_client_is_waiting_ = false;
 
   std::queue<IsoDataPacket> incoming_data_queue_;
+  size_t dropped_incoming_packets_ = 0;
   std::queue<DynamicByteBuffer> outbound_pdu_queue_;
 
   // Called when stream is closed
@@ -554,6 +555,21 @@ void IsoStreamImpl::HandleCompletePacket(
   }
 
   // Client not ready to handle packet, queue it up until they ask for it
+  if (incoming_data_queue_.size() >= kMaxIncomingQueueSize) {
+    // TODO: b/580906172 - Track unreported dropped packets and surface them as
+    // `missed_packets` in `IsoStreamServer::Read()`.
+    ++dropped_incoming_packets_;
+    if (dropped_incoming_packets_ % 100 == 1) {
+      bt_log(DEBUG,
+             "iso",
+             "Incoming ISO data queue full (%zu packets) on handle %#.4x; "
+             "dropping oldest packet (%zu dropped)",
+             incoming_data_queue_.size(),
+             cis_hci_handle_,
+             dropped_incoming_packets_);
+    }
+    incoming_data_queue_.pop();
+  }
   incoming_data_queue_.emplace(packet.begin(), packet.end());
   UpdateWakeLease();
 }

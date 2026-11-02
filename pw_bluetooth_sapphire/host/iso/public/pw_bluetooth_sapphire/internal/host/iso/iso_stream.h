@@ -71,6 +71,12 @@ class IsoStream : public hci::IsoDataChannel::ConnectionInterface {
       pw::Callback<void()> on_closed_cb,
       pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider);
 
+  // Maximum number of unread incoming ISO SDUs to buffer while waiting for a
+  // client read. At standard 7.5-10ms LE Audio SDU intervals, 64 frames buffer
+  // ~480-640ms of audio (well above typical 10-100ms transport latency to
+  // absorb startup or scheduling jitter) while bounding worst-case heap usage.
+  static constexpr size_t kMaxIncomingQueueSize = 64;
+
   // Used by the client to check for queued frames. If none are present the
   // incoming data available callback will be called the next time a frame is
   // available. This allows for a 'hanging get' style interface (request a frame
@@ -80,7 +86,8 @@ class IsoStream : public hci::IsoDataChannel::ConnectionInterface {
   // callback to indicate that the next frame(s) are available). It is important
   // to note that the client cannot simply rely on notifications: until a read
   // attempt is unfulfilled the stream will buffer frames waiting for a read
-  // from the client.
+  // from the client (retaining up to `kMaxIncomingQueueSize` frames and
+  // dropping the oldest when full).
   virtual std::optional<IsoDataPacket> ReadNextQueuedIncomingPacket() = 0;
 
   // Send a packet over the stream. If the packet is too large then it will be

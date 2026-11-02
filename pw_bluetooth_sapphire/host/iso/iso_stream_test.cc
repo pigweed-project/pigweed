@@ -554,6 +554,56 @@ TEST_F(IsoStreamTest, UnreadData) {
   EXPECT_EQ(complete_incoming_sdus()->size(), 0u);
 }
 
+TEST_F(IsoStreamTest, InboundQueueCapacityEnforced) {
+  EstablishCis(pw::bluetooth::emboss::StatusCode::SUCCESS);
+  SetupDataPath(
+      pw::bluetooth::emboss::DataPathDirection::OUTPUT,
+      /*codec_configuration=*/std::nullopt,
+      /*cmd_complete_status=*/pw::bluetooth::emboss::StatusCode::SUCCESS,
+      SetupDataPathError::kSuccess);
+  EXPECT_EQ(stream_lease_provider().lease_count(), 0u);
+
+  constexpr size_t kMaxQueueSize = IsoStream::kMaxIncomingQueueSize;
+  constexpr size_t kTotalFrameCount = 100;
+  constexpr size_t kSduSize = 16;
+  std::vector<DynamicByteBuffer> sent_packets;
+  sent_packets.reserve(kTotalFrameCount);
+
+  for (size_t i = 0; i < kTotalFrameCount; i++) {
+    std::vector<uint8_t> sdu_data = testing::GenDataBlob(
+        kSduSize, /*starting_value=*/static_cast<uint8_t>(i));
+    sent_packets.push_back(testing::IsoDataPacket(
+        /*connection_handle=*/iso_stream()->cis_handle(),
+        pw::bluetooth::emboss::IsoDataPbFlag::COMPLETE_SDU,
+        /*time_stamp=*/std::nullopt,
+        /*packet_sequence_number=*/static_cast<uint16_t>(i),
+        /*iso_sdu_length=*/kSduSize,
+        pw::bluetooth::emboss::IsoDataPacketStatus::VALID_DATA,
+        sdu_data));
+    iso_stream()->ReceiveInboundPacket(sent_packets.back().subspan());
+    EXPECT_NE(stream_lease_provider().lease_count(), 0u);
+  }
+  EXPECT_EQ(complete_incoming_sdus()->size(), 0u);
+
+  std::vector<IsoDataPacket> retained_packets;
+  while (std::optional<IsoDataPacket> packet =
+             iso_stream()->ReadNextQueuedIncomingPacket()) {
+    retained_packets.push_back(std::move(*packet));
+  }
+
+  ASSERT_EQ(retained_packets.size(), kMaxQueueSize);
+  const size_t dropped_count = kTotalFrameCount - kMaxQueueSize;
+  for (size_t i = 0; i < kMaxQueueSize; i++) {
+    pw::span<const std::byte> expected =
+        sent_packets[dropped_count + i].subspan();
+    ASSERT_EQ(retained_packets[i].size(), expected.size());
+    EXPECT_TRUE(std::equal(retained_packets[i].begin(),
+                           retained_packets[i].end(),
+                           expected.begin()));
+  }
+  EXPECT_EQ(stream_lease_provider().lease_count(), 0u);
+}
+
 // This is the (somewhat unusual) case where the client asks for a frame but
 // then rejects it when the frame is ready. The frame should stay in the queue
 // and future frames should not receive notification, either.
