@@ -132,11 +132,12 @@ func TestLive_GerritAuthAndMetadata(t *testing.T) {
 // against a known failing change (CL 467905/22).
 func TestLive_BuildbucketAndLogDogFailureInspection(t *testing.T) {
 	ctx := context.Background()
+	luciClient := NewLUCIClient("cr-buildbucket.appspot.com", http.DefaultClient)
 
 	// 1. Query Buildbucket for CL 467905 Patchset 22
-	builds, err := queryBuildbucket(ctx, "cr-buildbucket.appspot.com", "pigweed-review.googlesource.com", "pigweed/pigweed", 467905, 22, http.DefaultClient)
+	builds, err := luciClient.SearchBuilds(ctx, "pigweed-review.googlesource.com", "pigweed/pigweed", 467905, 22)
 	if err != nil {
-		t.Fatalf("queryBuildbucket failed on live Buildbucket: %v", err)
+		t.Fatalf("SearchBuilds failed on live Buildbucket: %v", err)
 	}
 
 	if len(builds) == 0 {
@@ -156,7 +157,7 @@ func TestLive_BuildbucketAndLogDogFailureInspection(t *testing.T) {
 	}
 
 	// 3. Fetch step-level details via pRPC
-	details, err := GetBuildDetails(ctx, "cr-buildbucket.appspot.com", failedBuildID, http.DefaultClient)
+	details, err := luciClient.GetBuildDetails(ctx, failedBuildID)
 	if err != nil {
 		t.Fatalf("GetBuildDetails failed on live build %s: %v", failedBuildID, err)
 	}
@@ -166,7 +167,7 @@ func TestLive_BuildbucketAndLogDogFailureInspection(t *testing.T) {
 	}
 
 	// 4. Extract failure report including LogDog log stream
-	report := details.ExtractFailureReport(ctx, 30, http.DefaultClient)
+	report := luciClient.ExtractFailureReportWithOptions(ctx, details, 30, nil, true)
 	if report == nil {
 		t.Fatalf("Expected non-nil FailureReport for failing build %s", failedBuildID)
 	}
@@ -358,39 +359,64 @@ func TestLive_CommentResolvedValidation(t *testing.T) {
 	}
 }
 
-// TestLive_Status_ActiveBranchComments verifies that pr status correctly fetches
-// and summarizes comments for the active change against production Gerrit.
-func TestLive_Status_ActiveBranchComments(t *testing.T) {
-	output, err := executeLiveCommand("pr", "status", "--json", "current_branch")
+// TestLive_Status_ChecksSummaryAndComments verifies that pr status fetches and
+// summarizes comments and displays a 1-line check summary on the active change
+// against production Gerrit and Buildbucket.
+func TestLive_Status_ChecksSummaryAndComments(t *testing.T) {
+	output, err := executeLiveCommand("pr", "status")
 	if err != nil {
-		t.Fatalf("pr status --json failed on live Gerrit: %v\nOutput: %s", err, output)
+		t.Fatalf("pr status failed on live Gerrit: %v\nOutput: %s", err, output)
+	}
+
+	if !strings.Contains(output, "Current branch") {
+		t.Errorf("Expected 'Current branch' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Comments:") {
+		t.Errorf("Expected live pr status output to contain 'Comments:', got:\n%s", output)
+	}
+	summaryLine := ""
+	for line := range strings.SplitSeq(output, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "Checks:") {
+			summaryLine = line
+			break
+		}
+	}
+	if summaryLine == "" {
+		t.Fatalf("Expected a 'Checks:' summary line in pr status output, got:\n%s", output)
+	}
+	assertChecksSummary(t, "pr status",
+		strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(summaryLine), "Checks:")))
+	if strings.Contains(output, "https://ci.chromium.org/b/") {
+		t.Errorf("Expected 1-line check summary instead of verbose URL table, got:\n%s", output)
+	}
+
+	jsonOutput, err := executeLiveCommand("pr", "status", "--json", "current_branch")
+	if err != nil {
+		t.Fatalf("pr status --json failed on live Gerrit: %v\nOutput: %s", err, jsonOutput)
 	}
 
 	var res struct {
 		CurrentBranch struct {
-			Number   int             `json:"number"`
-			Comments CommentsSummary `json:"comments"`
+			Number        int             `json:"number"`
+			Comments      CommentsSummary `json:"comments"`
+			ChecksSummary string          `json:"checks_summary"`
+			Checks        []CheckItem     `json:"checks"`
 		} `json:"current_branch"`
 	}
-	if err := json.Unmarshal([]byte(output), &res); err != nil {
-		t.Fatalf("Failed to parse JSON output: %v\nOutput: %s", err, output)
+	if err := json.Unmarshal([]byte(jsonOutput), &res); err != nil {
+		t.Fatalf("Failed to parse JSON output: %v\nOutput: %s", err, jsonOutput)
 	}
 
 	if res.CurrentBranch.Number == 0 {
 		t.Fatalf("Expected active PR number to be non-zero")
 	}
-
 	t.Logf("Active PR #%d comments: TotalThreads=%d Unresolved=%d Drafts=%d",
 		res.CurrentBranch.Number, res.CurrentBranch.Comments.TotalThreads,
 		res.CurrentBranch.Comments.UnresolvedThreads, res.CurrentBranch.Comments.DraftsCount)
 
-	textOutput, err := executeLiveCommand("pr", "status")
-	if err != nil {
-		t.Fatalf("pr status failed on live Gerrit: %v\nOutput: %s", err, textOutput)
-	}
-
-	if !strings.Contains(textOutput, "Comments:") {
-		t.Errorf("Expected live pr status output to contain 'Comments:', got:\n%s", textOutput)
+	assertChecksSummary(t, "pr status --json checks_summary", res.CurrentBranch.ChecksSummary)
+	if len(res.CurrentBranch.Checks) == 0 {
+		t.Errorf("Expected checks array to be populated for active change")
 	}
 }
 
@@ -775,9 +801,10 @@ func TestLive_Checks_Watch_FailFast(t *testing.T) {
 	}
 }
 
-// TestLive_View_DisplaysCommitBody verifies that pr view renders the commit message body
-// and suppresses "No score" labels on a live Gerrit change (CL 472267).
-func TestLive_View_DisplaysCommitBody(t *testing.T) {
+// TestLive_View_DisplaysCommitBodyAndChecksSummary verifies that pr view renders
+// the commit message body, suppresses "No score" labels, and queries Buildbucket
+// to render a one-line CI summary for a live Gerrit change (CL 472267).
+func TestLive_View_DisplaysCommitBodyAndChecksSummary(t *testing.T) {
 	output, err := executeLiveCommand("pr", "view", "472267")
 	if err != nil {
 		t.Fatalf("pr view 472267 failed: %v\nOutput: %s", err, output)
@@ -786,30 +813,39 @@ func TestLive_View_DisplaysCommitBody(t *testing.T) {
 	if !strings.Contains(output, "Change 472267") {
 		t.Errorf("Expected output to contain Change 472267, got:\n%s", output)
 	}
-	// Verify commit description is visible in view output
 	if !strings.Contains(output, "Introduce pw_ghish (./gh)") {
 		t.Errorf("Expected commit message body in view output, got:\n%s", output)
 	}
-	// Verify "No score" labels are filtered out
 	if strings.Contains(output, "No score") {
 		t.Errorf("Expected 'No score' labels to be suppressed in view output, got:\n%s", output)
 	}
-}
 
-// TestLive_View_JSON_Body verifies that --json body returns the commit message body.
-func TestLive_View_JSON_Body(t *testing.T) {
-	output, err := executeLiveCommand("pr", "view", "472267", "--json", "number,body,title")
+	summaryLine := ""
+	for line := range strings.SplitSeq(output, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "Checks:") {
+			summaryLine = line
+			break
+		}
+	}
+	if summaryLine == "" {
+		t.Fatalf("Expected a 'Checks:' line in pr view output, got:\n%s", output)
+	}
+	assertChecksSummary(t, "pr view",
+		strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(summaryLine), "Checks:")))
+
+	jsonOutput, err := executeLiveCommand("pr", "view", "472267", "--json", "number,body,title,checks")
 	if err != nil {
-		t.Fatalf("pr view --json body failed: %v\nOutput: %s", err, output)
+		t.Fatalf("pr view 472267 --json failed: %v\nOutput: %s", err, jsonOutput)
 	}
 
 	var data struct {
 		Number int    `json:"number"`
 		Title  string `json:"title"`
 		Body   string `json:"body"`
+		Checks string `json:"checks"`
 	}
-	if err := json.Unmarshal([]byte(output), &data); err != nil {
-		t.Fatalf("Failed to parse JSON output: %v\nRaw: %s", err, output)
+	if err := json.Unmarshal([]byte(jsonOutput), &data); err != nil {
+		t.Fatalf("Failed to parse JSON output: %v\nRaw: %s", err, jsonOutput)
 	}
 
 	if data.Number != 472267 {
@@ -818,6 +854,7 @@ func TestLive_View_JSON_Body(t *testing.T) {
 	if !strings.Contains(data.Body, "Introduce pw_ghish (./gh)") {
 		t.Errorf("Expected body to contain 'Introduce pw_ghish (./gh)', got: %q", data.Body)
 	}
+	assertChecksSummary(t, "pr view --json checks", data.Checks)
 }
 
 // TestLive_List_AuthorMe verifies that --author @me queries changes for the current user,
@@ -864,78 +901,6 @@ func TestLive_List_AuthorMe(t *testing.T) {
 	}
 }
 
-// TestLive_Run_List verifies that 'gh run list' lists tryjob builds for a change on live Buildbucket.
-func TestLive_Run_List(t *testing.T) {
-	output, err := executeLiveCommand("run", "list", "472267")
-	if err != nil {
-		t.Fatalf("run list 472267 failed: %v\nOutput: %s", err, output)
-	}
-
-	if !strings.Contains(output, "BUILDER") || !strings.Contains(output, "STATUS") {
-		t.Errorf("Expected table headers in run list output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "static-checks-pigweed") {
-		t.Errorf("Expected static-checks-pigweed in run list output, got:\n%s", output)
-	}
-}
-
-// TestLive_Run_View_VerboseSteps verifies that 'gh run view -v -j <builder>' shows step tree on live Buildbucket.
-func TestLive_Run_View_VerboseSteps(t *testing.T) {
-	output, err := executeLiveCommand("run", "view", "472267", "-v", "-j", "static-checks-pigweed")
-	if err != nil {
-		t.Fatalf("run view -v -j failed: %v\nOutput: %s", err, output)
-	}
-
-	if !strings.Contains(output, "Steps for static-checks-pigweed") {
-		t.Errorf("Expected 'Steps for static-checks-pigweed' in output, got:\n%s", output)
-	}
-}
-
-// TestLive_View_DisplaysChecksSummary verifies that pr view queries
-// Buildbucket and renders a one-line CI summary for a live Gerrit change.
-//
-// The companion test TestLive_View_DisplaysChecks_Failing pins a specific
-// verdict, which it can do because it queries a superseded patchset whose
-// builds are frozen. CL 472267's current patchset is not frozen, so this test
-// asserts only that a recognized summary is rendered.
-func TestLive_View_DisplaysChecksSummary(t *testing.T) {
-	output, err := executeLiveCommand("pr", "view", "472267")
-	if err != nil {
-		t.Fatalf("pr view 472267 failed: %v\nOutput: %s", err, output)
-	}
-
-	summaryLine := ""
-	for _, line := range strings.Split(output, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "Checks:") {
-			summaryLine = line
-			break
-		}
-	}
-	if summaryLine == "" {
-		t.Fatalf("Expected a 'Checks:' line in pr view output, got:\n%s", output)
-	}
-	assertChecksSummary(t, "pr view",
-		strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(summaryLine), "Checks:")))
-
-	jsonOutput, err := executeLiveCommand("pr", "view", "472267", "--json", "number,checks")
-	if err != nil {
-		t.Fatalf("pr view 472267 --json failed: %v\nOutput: %s", err, jsonOutput)
-	}
-
-	var data struct {
-		Number int    `json:"number"`
-		Checks string `json:"checks"`
-	}
-	if err := json.Unmarshal([]byte(jsonOutput), &data); err != nil {
-		t.Fatalf("Failed to parse JSON: %v\nOutput: %s", err, jsonOutput)
-	}
-
-	if data.Number != 472267 {
-		t.Errorf("Expected number 472267 in JSON, got %d", data.Number)
-	}
-	assertChecksSummary(t, "pr view --json checks", data.Checks)
-}
-
 // TestLive_View_DisplaysChecks_Failing verifies that pr view detects and reports
 // failures on a live change with failing builders (CL 467905/22).
 func TestLive_View_DisplaysChecks_Failing(t *testing.T) {
@@ -952,56 +917,6 @@ func TestLive_View_DisplaysChecks_Failing(t *testing.T) {
 	}
 	if !strings.Contains(output, "(run 'gh run view 467905 --log-failed' to view errors)") {
 		t.Errorf("Expected '(run 'gh run view 467905 --log-failed' to view errors)' in pr view output, got:\n%s", output)
-	}
-}
-
-// TestLive_Status_ChecksSummaryAndParallelPerformance verifies that pr status
-// displays a 1-line check summary on active change 472267 without 75 lines of dump,
-// and completes in parallel cleanly.
-func TestLive_Status_ChecksSummaryAndParallelPerformance(t *testing.T) {
-	output, err := executeLiveCommand("pr", "status")
-	if err != nil {
-		t.Fatalf("pr status failed on live Gerrit: %v\nOutput: %s", err, output)
-	}
-
-	if !strings.Contains(output, "Current branch") {
-		t.Errorf("Expected 'Current branch' in output, got:\n%s", output)
-	}
-	summaryLine := ""
-	for _, line := range strings.Split(output, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "Checks:") {
-			summaryLine = line
-			break
-		}
-	}
-	if summaryLine == "" {
-		t.Fatalf("Expected a 'Checks:' summary line in pr status output, got:\n%s", output)
-	}
-	assertChecksSummary(t, "pr status",
-		strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(summaryLine), "Checks:")))
-	if strings.Contains(output, "https://ci.chromium.org/b/") {
-		t.Errorf("Expected 1-line check summary instead of verbose URL table, got:\n%s", output)
-	}
-
-	// Verify JSON output has checks_summary and checks array
-	jsonOutput, err := executeLiveCommand("pr", "status", "--json", "current_branch")
-	if err != nil {
-		t.Fatalf("pr status --json failed: %v\nOutput: %s", err, jsonOutput)
-	}
-
-	var data struct {
-		CurrentBranch struct {
-			ChecksSummary string      `json:"checks_summary"`
-			Checks        []CheckItem `json:"checks"`
-		} `json:"current_branch"`
-	}
-	if err := json.Unmarshal([]byte(jsonOutput), &data); err != nil {
-		t.Fatalf("Failed to parse JSON: %v\nOutput: %s", err, jsonOutput)
-	}
-
-	assertChecksSummary(t, "pr status --json checks_summary", data.CurrentBranch.ChecksSummary)
-	if len(data.CurrentBranch.Checks) == 0 {
-		t.Errorf("Expected checks array to be populated for active change")
 	}
 }
 
@@ -1085,6 +1000,9 @@ func TestLive_Run_Suite(t *testing.T) {
 	outList, err := executeLiveCommand("run", "list", "472267")
 	if err != nil {
 		t.Fatalf("run list failed: %v\nOutput: %s", err, outList)
+	}
+	if !strings.Contains(outList, "BUILDER") || !strings.Contains(outList, "STATUS") {
+		t.Errorf("Expected table headers in run list output, got:\n%s", outList)
 	}
 	if !strings.Contains(outList, "static-checks-pigweed") {
 		t.Errorf("Expected 'static-checks-pigweed' in run list output, got:\n%s", outList)

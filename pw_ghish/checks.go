@@ -334,16 +334,6 @@ var getLUCIHTTPClient = func() *http.Client {
 	return ensureSafeHTTPClient(nil)
 }
 
-// queryBuildbucket sends a pRPC request to Buildbucket to search for builds.
-func queryBuildbucket(ctx context.Context, bbHost string, gerritHost, project string, changeNum, patchsetNum int, httpClient *http.Client) ([]bbBuild, error) {
-	return NewLUCIClient(bbHost, httpClient).SearchBuilds(ctx, gerritHost, project, changeNum, patchsetNum)
-}
-
-// queryBuildbucketPatchsets sends pRPC requests to Buildbucket to search for builds across equivalent patchsets.
-func queryBuildbucketPatchsets(ctx context.Context, bbHost string, gerritHost, project string, changeNum int, patchsets []int, httpClient *http.Client) ([]bbBuild, error) {
-	return NewLUCIClient(bbHost, httpClient).SearchBuildsForPatchsets(ctx, gerritHost, project, changeNum, patchsets)
-}
-
 // buildsSettled reports whether every build in builds has finished. An empty
 // list counts as settled.
 func buildsSettled(builds []bbBuild) bool {

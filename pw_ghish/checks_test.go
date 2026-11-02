@@ -16,7 +16,6 @@ package pw_ghish
 
 import (
 	"cmp"
-	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -28,55 +27,6 @@ import (
 	"sync"
 	"testing"
 )
-
-func TestQueryBuildbucket_Success(t *testing.T) {
-	ctx := context.Background()
-
-	server := NewMockGerritServer(t)
-	server.OnSearchBuilds(
-		FakeBuild("8680709829694997521", "static-checks-pigweed", "SUCCESS",
-			WithBucket("pigweed.try"),
-			WithTimes("2026-05-26T20:23:35.545752392Z", "2026-05-26T20:23:51.610863977Z"),
-			WithSummary("All checks passed")),
-		FakeBuild("8680709829694997522", "pigweed-linux", "FAILURE",
-			WithBucket("pigweed.try"),
-			WithTimes("2026-05-26T20:23:35.000000000Z", "2026-05-26T20:24:35.000000000Z"),
-			WithSummary("Build compilation failed")),
-	)
-
-	builds, err := queryBuildbucket(ctx, server.URL, "pigweed-review.googlesource.com", "pigweed/pigweed", 413992, 1, server.Server.Client())
-	if err != nil {
-		t.Fatalf("queryBuildbucket failed: %v", err)
-	}
-
-	if len(builds) != 2 {
-		t.Fatalf("Expected 2 builds, got %d", len(builds))
-	}
-
-	if builds[0].Builder.Builder != "static-checks-pigweed" || builds[0].Status != "SUCCESS" {
-		t.Errorf("Unexpected build 0: %+v", builds[0])
-	}
-	if builds[1].Builder.Builder != "pigweed-linux" || builds[1].Status != "FAILURE" {
-		t.Errorf("Unexpected build 1: %+v", builds[1])
-	}
-
-	lastReq := server.LastRequest()
-	if lastReq == nil {
-		t.Fatal("No request captured")
-	}
-	var capturedReq bbSearchBuildsRequest
-	if err := json.Unmarshal(lastReq.Body, &capturedReq); err != nil {
-		t.Fatalf("failed to unmarshal captured body: %v", err)
-	}
-
-	if len(capturedReq.Predicate.GerritChanges) != 1 {
-		t.Fatalf("Expected 1 gerrit change predicate, got %d", len(capturedReq.Predicate.GerritChanges))
-	}
-	change := capturedReq.Predicate.GerritChanges[0]
-	if change.Host != "pigweed-review.googlesource.com" || change.Project != "pigweed/pigweed" || change.Change != 413992 || change.Patchset != 1 {
-		t.Errorf("Unexpected change predicate: %+v", change)
-	}
-}
 
 func TestChecksIntegration(t *testing.T) {
 	server := NewMockGerritServer(t)

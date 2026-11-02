@@ -452,22 +452,6 @@ func (c *LUCIClient) SearchBuilds(ctx context.Context, gerritHost, project strin
 // flight at once when querying several equivalent patchsets.
 const maxConcurrentBuildSearches = 8
 
-// SearchBuildsForPatchsets queries Buildbucket for builds across one or more
-// equivalent patchsets (ordered newest patchset first) and returns the
-// concatenated builds in that order so newer patchset builds take precedence
-// when deduplicating by builder name.
-func (c *LUCIClient) SearchBuildsForPatchsets(ctx context.Context, gerritHost, project string, changeNum int, patchsets []int) ([]bbBuild, error) {
-	perPatchset, err := c.SearchBuildsByPatchset(ctx, gerritHost, project, changeNum, patchsets)
-	if err != nil {
-		return nil, err
-	}
-	var allBuilds []bbBuild
-	for _, builds := range perPatchset {
-		allBuilds = append(allBuilds, builds...)
-	}
-	return allBuilds, nil
-}
-
 // SearchBuildsByPatchset queries Buildbucket for the builds on each of the
 // given patchsets. The queries run concurrently. The result is aligned with
 // patchsets: result[i] holds the builds for patchsets[i]. If any query fails,
@@ -549,14 +533,9 @@ func (c *LUCIClient) GetBuildDetails(ctx context.Context, buildID string) (*LUCI
 	return &details, nil
 }
 
-// FetchLogStream downloads raw text logs from LogDog (?format=raw), optionally returning the last maxLines.
-func (c *LUCIClient) FetchLogStream(ctx context.Context, viewURL string, maxLines int) (string, error) {
-	text, _, err := c.fetchLogStreamTail(ctx, viewURL, maxLines)
-	return text, err
-}
-
-// fetchLogStreamTail is FetchLogStream that also returns the number of lines
-// in the full log before tailing.
+// fetchLogStreamTail downloads raw text logs from LogDog (?format=raw),
+// optionally returning the last maxLines along with the number of lines in the
+// full log before tailing.
 func (c *LUCIClient) fetchLogStreamTail(ctx context.Context, viewURL string, maxLines int) (string, int, error) {
 	if c == nil {
 		return "", 0, fmt.Errorf("LUCIClient is nil")
@@ -657,11 +636,6 @@ func selectPreferredLogWithRank(logs []LUCILog, preferred ...string) (*LUCILog, 
 	return nil, len(preferred) + 1
 }
 
-// ExtractFailureReport analyzes steps in a failing build and retrieves the primary failure diagnostics.
-func (c *LUCIClient) ExtractFailureReport(ctx context.Context, b *LUCIBuildDetails, maxLogLines int) *FailureReport {
-	return c.ExtractFailureReportWithOptions(ctx, b, maxLogLines, nil, true)
-}
-
 // ExtractFailureReportWithOptions analyzes steps in a failing build using custom preferred log
 // names and build SummaryMarkdown inclusion settings.
 func (c *LUCIClient) ExtractFailureReportWithOptions(ctx context.Context, b *LUCIBuildDetails, maxLogLines int, preferredLogs []string, includeSummaryMarkdown bool) *FailureReport {
@@ -752,21 +726,6 @@ func (c *LUCIClient) ExtractFailureReportWithOptions(ctx context.Context, b *LUC
 	}
 
 	return report
-}
-
-// GetBuildDetails fetches step-level details for a build from Buildbucket.
-func GetBuildDetails(ctx context.Context, bbHost, buildID string, httpClient *http.Client) (*LUCIBuildDetails, error) {
-	return NewLUCIClient(bbHost, httpClient).GetBuildDetails(ctx, buildID)
-}
-
-// FetchLogStream downloads raw text logs from LogDog (?format=raw), optionally returning the last maxLines.
-func FetchLogStream(ctx context.Context, viewURL string, maxLines int, httpClient *http.Client) (string, error) {
-	return NewLUCIClient("", httpClient).FetchLogStream(ctx, viewURL, maxLines)
-}
-
-// ExtractFailureReport analyzes steps in a failing build and retrieves the primary failure diagnostics.
-func (b *LUCIBuildDetails) ExtractFailureReport(ctx context.Context, maxLogLines int, httpClient *http.Client) *FailureReport {
-	return NewLUCIClient("", httpClient).ExtractFailureReport(ctx, b, maxLogLines)
 }
 
 // FormatBuildSteps formats the step-by-step progress and status of a LUCI build.

@@ -83,7 +83,7 @@ func TestGetBuildDetails_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	details, err := GetBuildDetails(ctx, server.URL, "8680709829694997522", server.Client())
+	details, err := NewLUCIClient(server.URL, server.Client()).GetBuildDetails(ctx, "8680709829694997522")
 	if err != nil {
 		t.Fatalf("GetBuildDetails failed: %v", err)
 	}
@@ -124,18 +124,18 @@ line 5
 	defer server.Close()
 
 	// 1. Fetch full log
-	full, err := FetchLogStream(ctx, server.URL+"/+/u/test/stdout", 0, server.Client())
+	full, _, err := NewLUCIClient("", server.Client()).fetchLogStreamTail(ctx, server.URL+"/+/u/test/stdout", 0)
 	if err != nil {
-		t.Fatalf("FetchLogStream failed: %v", err)
+		t.Fatalf("fetchLogStreamTail failed: %v", err)
 	}
 	if strings.TrimSpace(full) != strings.TrimSpace(rawLog) {
 		t.Errorf("Expected full log, got: %s", full)
 	}
 
 	// 2. Fetch tail (last 2 lines)
-	tail, err := FetchLogStream(ctx, server.URL+"/+/u/test/stdout", 2, server.Client())
+	tail, _, err := NewLUCIClient("", server.Client()).fetchLogStreamTail(ctx, server.URL+"/+/u/test/stdout", 2)
 	if err != nil {
-		t.Fatalf("FetchLogStream tail failed: %v", err)
+		t.Fatalf("fetchLogStreamTail tail failed: %v", err)
 	}
 	expectedTail := "line 4\nline 5"
 	if strings.TrimSpace(tail) != expectedTail {
@@ -144,9 +144,9 @@ line 5
 
 	// 3. Oversized log stream is bounded by maxHTTPBodyBytes and appends truncation notice
 	bigSrv := newLogServer(t, http.StatusOK, strings.Repeat("a", maxHTTPBodyBytes+1024))
-	capped, err := FetchLogStream(ctx, bigSrv.URL+"/+/u/test/stdout", 0, bigSrv.Client())
+	capped, _, err := NewLUCIClient("", bigSrv.Client()).fetchLogStreamTail(ctx, bigSrv.URL+"/+/u/test/stdout", 0)
 	if err != nil {
-		t.Fatalf("FetchLogStream capped failed: %v", err)
+		t.Fatalf("fetchLogStreamTail capped failed: %v", err)
 	}
 	wantSuffix := "\n... [output truncated at 10 MiB]"
 	if len(capped) != maxHTTPBodyBytes+len(wantSuffix) || !strings.HasSuffix(capped, wantSuffix) {
@@ -154,56 +154,6 @@ line 5
 	}
 	if _, err := readBoundedBody(strings.NewReader("01234567890"), 10); err == nil || !strings.Contains(err.Error(), "exceeds maximum allowed size") {
 		t.Errorf("readBoundedBody overflow = %v, want exceeds maximum allowed size error", err)
-	}
-}
-
-func TestExtractFailureReports(t *testing.T) {
-	ctx := context.Background()
-	logServer := newLogServer(t, http.StatusOK, "error: undefined reference to 'pw::Init()'\nFAILED: pw_main")
-
-	build := LUCIBuildDetails{
-		ID: "12345",
-		Builder: bbBuilder{
-			Project: "pigweed",
-			Bucket:  "pigweed.try",
-			Builder: "pigweed-linux",
-		},
-		Status: "FAILURE",
-		Steps: []LUCIStep{
-			{
-				Name:   "setup",
-				Status: "SUCCESS",
-			},
-			{
-				Name:            "compile",
-				Status:          "FAILURE",
-				SummaryMarkdown: "ninja execution failed",
-				Logs: []LUCILog{
-					{
-						Name:    "stdout",
-						ViewURL: logServer.URL + "/log",
-					},
-				},
-			},
-		},
-	}
-
-	report := build.ExtractFailureReport(ctx, 10, logServer.Client())
-	if report == nil {
-		t.Fatal("Expected non-nil FailureReport")
-	}
-
-	if report.Builder != "pigweed-linux" {
-		t.Errorf("Expected builder pigweed-linux, got %s", report.Builder)
-	}
-	if report.FailedStep != "compile" {
-		t.Errorf("Expected failed step compile, got %s", report.FailedStep)
-	}
-	if report.StepSummary != "ninja execution failed" {
-		t.Errorf("Expected summary 'ninja execution failed', got %s", report.StepSummary)
-	}
-	if !strings.Contains(report.LogSnippet, "undefined reference") {
-		t.Errorf("Expected log snippet to contain error message, got: %s", report.LogSnippet)
 	}
 }
 
@@ -235,7 +185,7 @@ func TestExtractFailureReport_PrefersStepWithLogs(t *testing.T) {
 		},
 	}
 
-	report := build.ExtractFailureReport(ctx, 10, logServer.Client())
+	report := NewLUCIClient("", logServer.Client()).ExtractFailureReportWithOptions(ctx, &build, 10, nil, true)
 	if report == nil {
 		t.Fatal("Expected non-nil FailureReport")
 	}
@@ -267,12 +217,27 @@ func TestExtractFailureReport_FallbackBuildSummary(t *testing.T) {
 		},
 	}
 
-	report := build.ExtractFailureReport(ctx, 10, http.DefaultClient)
+	report := NewLUCIClient("", http.DefaultClient).ExtractFailureReportWithOptions(ctx, &build, 10, nil, true)
 	if report == nil {
 		t.Fatal("Expected non-nil FailureReport")
 	}
 	if report.StepSummary != "Build timed out after 30m" {
 		t.Errorf("Expected fallback to build SummaryMarkdown, got %q", report.StepSummary)
+	}
+
+	noStepsBuild := LUCIBuildDetails{
+		ID:              "11224",
+		Builder:         bbBuilder{Builder: "pigweed-test"},
+		Status:          "FAILURE",
+		SummaryMarkdown: "Build timed out after 30m",
+	}
+	noSummaryReport := NewLUCIClient("", http.DefaultClient).ExtractFailureReportWithOptions(ctx, &noStepsBuild, 10, nil, false)
+	if noSummaryReport == nil {
+		t.Fatal("Expected non-nil FailureReport when Steps is nil and includeSummaryMarkdown is false")
+	}
+	wantFallback := "Build ended with status FAILURE, but no step details were reported."
+	if noSummaryReport.StepSummary != wantFallback {
+		t.Errorf("StepSummary with includeSummaryMarkdown=false = %q, want %q", noSummaryReport.StepSummary, wantFallback)
 	}
 }
 
@@ -298,7 +263,7 @@ func TestExtractFailureReport_LogFetchErrorEmbeddedInSnippet(t *testing.T) {
 		},
 	}
 
-	report := build.ExtractFailureReport(ctx, 10, errServer.Client())
+	report := NewLUCIClient("", errServer.Client()).ExtractFailureReportWithOptions(ctx, &build, 10, nil, true)
 	if report == nil {
 		t.Fatal("Expected non-nil FailureReport")
 	}
@@ -358,12 +323,12 @@ func TestLUCIClient_PerRequestAuthAndCrossHostRedirectStripping(t *testing.T) {
 		client := NewLUCIClient(logDogSrv.URL, logDogSrv.Client())
 		client.TokenProvider = func(context.Context) (string, error) { return "luci-secret-token", nil }
 
-		got, err := client.FetchLogStream(t.Context(), logDogSrv.URL+"/logs/stdout", 0)
+		got, _, err := client.fetchLogStreamTail(t.Context(), logDogSrv.URL+"/logs/stdout", 0)
 		if err != nil {
-			t.Fatalf("FetchLogStream failed: %v", err)
+			t.Fatalf("fetchLogStreamTail failed: %v", err)
 		}
 		if !strings.Contains(got, "raw log line 1") {
-			t.Errorf("FetchLogStream = %q, want log contents", got)
+			t.Errorf("fetchLogStreamTail = %q, want log contents", got)
 		}
 		if logDogAuthHeader != "Bearer luci-secret-token" {
 			t.Errorf("LogDog Authorization = %q, want 'Bearer luci-secret-token'", logDogAuthHeader)
@@ -463,6 +428,25 @@ func TestCallPRPC_Success(t *testing.T) {
 	}
 }
 
+func TestCallPRPC_CRLFXSSIPrefix(t *testing.T) {
+	WithHermeticAuth(t, AuthResolvers{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(")]}'\r\n{\"reply\":\"crlf\"}"))
+	}))
+	defer server.Close()
+
+	var resp struct {
+		Reply string `json:"reply"`
+	}
+	if err := NewLUCIClient(server.URL, server.Client()).CallPRPC(t.Context(), "test.Service", "Echo", struct{}{}, &resp); err != nil {
+		t.Fatalf("CallPRPC failed: %v", err)
+	}
+	if resp.Reply != "crlf" {
+		t.Errorf("reply = %q, want %q", resp.Reply, "crlf")
+	}
+}
+
 func TestCallPRPC_Invariants(t *testing.T) {
 	ctx := context.Background()
 	var resp struct{}
@@ -502,25 +486,6 @@ func TestCallPRPC_Invariants(t *testing.T) {
 			t.Error("expected error for nil resp")
 		}
 	})
-}
-
-func TestCallPRPC_CRLFXSSIPrefix(t *testing.T) {
-	WithHermeticAuth(t, AuthResolvers{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(")]}'\r\n{\"reply\":\"crlf\"}"))
-	}))
-	defer server.Close()
-
-	var resp struct {
-		Reply string `json:"reply"`
-	}
-	if err := NewLUCIClient(server.URL, server.Client()).CallPRPC(t.Context(), "test.Service", "Echo", struct{}{}, &resp); err != nil {
-		t.Fatalf("CallPRPC failed: %v", err)
-	}
-	if resp.Reply != "crlf" {
-		t.Errorf("reply = %q, want %q", resp.Reply, "crlf")
-	}
 }
 
 func TestCallPRPC_Errors(t *testing.T) {
@@ -644,14 +609,14 @@ func TestFetchLogStream_Invariants(t *testing.T) {
 
 	t.Run("empty viewURL", func(t *testing.T) {
 		client := NewLUCIClient("host", nil)
-		if _, err := client.FetchLogStream(ctx, "", 10); err == nil {
+		if _, _, err := client.fetchLogStreamTail(ctx, "", 10); err == nil {
 			t.Error("expected error on empty viewURL")
 		}
 	})
 
 	t.Run("nil client", func(t *testing.T) {
 		var client *LUCIClient
-		if _, err := client.FetchLogStream(ctx, "https://logs.chromium.org/log", 10); err == nil {
+		if _, _, err := client.fetchLogStreamTail(ctx, "https://logs.chromium.org/log", 10); err == nil {
 			t.Error("expected error on nil client")
 		}
 	})
@@ -678,7 +643,7 @@ func TestExtractFailureReport_LUCIClient(t *testing.T) {
 	}
 
 	client := NewLUCIClient("", logServer.Client())
-	report := client.ExtractFailureReport(ctx, build, 5)
+	report := client.ExtractFailureReportWithOptions(ctx, build, 5, nil, true)
 	if report == nil {
 		t.Fatal("expected non-nil failure report")
 	}
@@ -688,156 +653,93 @@ func TestExtractFailureReport_LUCIClient(t *testing.T) {
 	if report.FailedStep != "ninja" {
 		t.Errorf("expected failed step ninja, got %q", report.FailedStep)
 	}
+	if report.StepSummary != "ninja failed" {
+		t.Errorf("expected step summary 'ninja failed', got %q", report.StepSummary)
+	}
 	if !strings.Contains(report.LogSnippet, "compile error in file.cc") {
 		t.Errorf("expected log snippet to contain error, got: %q", report.LogSnippet)
 	}
 
 	t.Run("nil build returns nil", func(t *testing.T) {
-		if r := client.ExtractFailureReport(ctx, nil, 5); r != nil {
+		if r := client.ExtractFailureReportWithOptions(ctx, nil, 5, nil, true); r != nil {
 			t.Errorf("expected nil report for nil build, got %+v", r)
 		}
 	})
 
 	t.Run("non-failing build returns nil", func(t *testing.T) {
 		successBuild := &LUCIBuildDetails{Status: "SUCCESS"}
-		if r := client.ExtractFailureReport(ctx, successBuild, 5); r != nil {
+		if r := client.ExtractFailureReportWithOptions(ctx, successBuild, 5, nil, true); r != nil {
 			t.Errorf("expected nil report for successful build, got %+v", r)
 		}
 	})
 
 	t.Run("nil client defaults safely", func(t *testing.T) {
 		var nilClient *LUCIClient
-		r := nilClient.ExtractFailureReport(ctx, build, 5)
+		r := nilClient.ExtractFailureReportWithOptions(ctx, build, 5, nil, true)
 		if r == nil {
 			t.Fatal("expected non-nil report when client is nil")
 		}
 	})
 }
 
-func TestExtractFailureReport_NoSteps_InfraFailureSummary(t *testing.T) {
+func TestExtractFailureReport_NoSteps(t *testing.T) {
 	ctx := context.Background()
-	build := &LUCIBuildDetails{
-		ID: "8671031638107722401",
-		Builder: bbBuilder{
-			Project: "pigweed",
-			Bucket:  "pigweed.try",
-			Builder: "pigweed-mac-arm-zephyr",
+	client := NewLUCIClient("", http.DefaultClient)
+
+	for _, tc := range []struct {
+		name        string
+		build       *LUCIBuildDetails
+		wantBuilder string
+		wantStatus  string
+		wantSummary string
+	}{
+		{
+			name:        "infra failure summary",
+			build:       FakeBuildDetails("8671031638107722401", "pigweed-mac-arm-zephyr", "INFRA_FAILURE", WithBuildSummary("Task did not start, no resource")),
+			wantBuilder: "pigweed-mac-arm-zephyr",
+			wantStatus:  "INFRA_FAILURE",
+			wantSummary: "Task did not start, no resource",
 		},
-		Status:          "INFRA_FAILURE",
-		SummaryMarkdown: "Task did not start, no resource",
-		Steps:           nil,
-	}
-
-	report := build.ExtractFailureReport(ctx, 10, http.DefaultClient)
-	if report == nil {
-		t.Fatal("expected non-nil report for INFRA_FAILURE build without steps")
-	}
-	if report.Builder != "pigweed-mac-arm-zephyr" {
-		t.Errorf("expected builder pigweed-mac-arm-zephyr, got %q", report.Builder)
-	}
-	if report.Status != "INFRA_FAILURE" {
-		t.Errorf("expected status INFRA_FAILURE, got %q", report.Status)
-	}
-	if report.StepSummary != "Task did not start, no resource" {
-		t.Errorf("expected StepSummary 'Task did not start, no resource', got %q", report.StepSummary)
-	}
-}
-
-func TestExtractFailureReport_NoSteps_CancellationMarkdown(t *testing.T) {
-	ctx := context.Background()
-	build := &LUCIBuildDetails{
-		ID: "8671031638107722402",
-		Builder: bbBuilder{
-			Project: "pigweed",
-			Bucket:  "pigweed.try",
-			Builder: "pigweed-linux",
+		{
+			name:        "cancellation markdown",
+			build:       FakeBuildDetails("8671031638107722402", "pigweed-linux", "FAILURE", func(d *LUCIBuildDetails) { d.CancellationMarkdown = "Build was cancelled by CQ" }),
+			wantBuilder: "pigweed-linux",
+			wantStatus:  "FAILURE",
+			wantSummary: "Build was cancelled by CQ",
 		},
-		Status:               "FAILURE",
-		CancellationMarkdown: "Build was cancelled by CQ",
-		Steps:                nil,
-	}
-
-	report := build.ExtractFailureReport(ctx, 10, http.DefaultClient)
-	if report == nil {
-		t.Fatal("expected non-nil report")
-	}
-	if report.StepSummary != "Build was cancelled by CQ" {
-		t.Errorf("expected StepSummary 'Build was cancelled by CQ', got %q", report.StepSummary)
-	}
-}
-
-func TestExtractFailureReport_NoSteps_FallbackGeneric(t *testing.T) {
-	ctx := context.Background()
-	build := &LUCIBuildDetails{
-		ID: "8671031638107722403",
-		Builder: bbBuilder{
-			Project: "pigweed",
-			Bucket:  "pigweed.try",
-			Builder: "pigweed-linux",
+		{
+			name:        "fallback generic",
+			build:       FakeBuildDetails("8671031638107722403", "pigweed-linux", "INFRA_FAILURE"),
+			wantBuilder: "pigweed-linux",
+			wantStatus:  "INFRA_FAILURE",
+			wantSummary: "Build ended with status INFRA_FAILURE, but no step details were reported.",
 		},
-		Status: "INFRA_FAILURE",
-		Steps:  nil,
-	}
-
-	report := build.ExtractFailureReport(ctx, 10, http.DefaultClient)
-	if report == nil {
-		t.Fatal("expected non-nil report")
-	}
-	expected := "Build ended with status INFRA_FAILURE, but no step details were reported."
-	if report.StepSummary != expected {
-		t.Errorf("expected StepSummary %q, got %q", expected, report.StepSummary)
-	}
-}
-
-func TestExtractFailureReport_NoSteps_ResourceExhaustion(t *testing.T) {
-	ctx := context.Background()
-	build := &LUCIBuildDetails{
-		ID: "8671031638107722404",
-		Builder: bbBuilder{
-			Project: "pigweed",
-			Bucket:  "pigweed.try",
-			Builder: "pigweed-mac-arm-vscode",
+		{
+			name:        "resource exhaustion",
+			build:       FakeBuildDetails("8671031638107722404", "pigweed-mac-arm-vscode", "INFRA_FAILURE", func(d *LUCIBuildDetails) { d.StatusDetails = &LUCIStatusDetails{ResourceExhaustion: &struct{}{}} }),
+			wantBuilder: "pigweed-mac-arm-vscode",
+			wantStatus:  "INFRA_FAILURE",
+			wantSummary: "Task did not start: resource exhaustion (no available bots in pool)",
 		},
-		Status: "INFRA_FAILURE",
-		StatusDetails: &LUCIStatusDetails{
-			ResourceExhaustion: &struct{}{},
+		{
+			name:        "timeout",
+			build:       FakeBuildDetails("8671031638107722405", "pigweed-linux-bazel-host", "FAILURE", func(d *LUCIBuildDetails) { d.StatusDetails = &LUCIStatusDetails{Timeout: &struct{}{}} }),
+			wantBuilder: "pigweed-linux-bazel-host",
+			wantStatus:  "FAILURE",
+			wantSummary: "Task timed out before completion",
 		},
-		Steps: nil,
-	}
-
-	report := build.ExtractFailureReport(ctx, 10, http.DefaultClient)
-	if report == nil {
-		t.Fatal("expected non-nil report")
-	}
-	expected := "Task did not start: resource exhaustion (no available bots in pool)"
-	if report.StepSummary != expected {
-		t.Errorf("expected StepSummary %q, got %q", expected, report.StepSummary)
-	}
-}
-
-func TestExtractFailureReport_NoSteps_Timeout(t *testing.T) {
-	ctx := context.Background()
-	build := &LUCIBuildDetails{
-		ID: "8671031638107722405",
-		Builder: bbBuilder{
-			Project: "pigweed",
-			Bucket:  "pigweed.try",
-			Builder: "pigweed-linux-bazel-host",
-		},
-		Status: "FAILURE",
-		StatusDetails: &LUCIStatusDetails{
-			Timeout: &struct{}{},
-		},
-		Steps: nil,
-	}
-
-	report := build.ExtractFailureReport(ctx, 10, http.DefaultClient)
-	if report == nil {
-		t.Fatal("expected non-nil report")
-	}
-	expected := "Task timed out before completion"
-	if report.StepSummary != expected {
-		t.Errorf("expected StepSummary %q, got %q", expected, report.StepSummary)
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report := client.ExtractFailureReportWithOptions(ctx, tc.build, 10, nil, true)
+			if report == nil {
+				t.Fatal("expected non-nil report")
+			}
+			if report.Builder != tc.wantBuilder || report.Status != tc.wantStatus || report.StepSummary != tc.wantSummary {
+				t.Errorf("report = (%q, %q, %q), want (%q, %q, %q)",
+					report.Builder, report.Status, report.StepSummary,
+					tc.wantBuilder, tc.wantStatus, tc.wantSummary)
+			}
+		})
 	}
 }
 
@@ -1275,67 +1177,25 @@ func TestCallPRPC_And_FetchLogStream_AuthErrorsReturnExitCode4(t *testing.T) {
 		t.Errorf("GetBuildDetails ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
 	}
 
-	_, err = client.FetchLogStream(ctx, server.URL+"/logs/stdout", 10)
+	_, _, err = client.fetchLogStreamTail(ctx, server.URL+"/logs/stdout", 10)
 	if err == nil {
-		t.Fatal("expected error on HTTP 403 from FetchLogStream")
+		t.Fatal("expected error on HTTP 403 from fetchLogStreamTail")
 	}
 	if ExitCodeFor(err) != ExitCodeAuth {
-		t.Errorf("FetchLogStream ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
+		t.Errorf("fetchLogStreamTail ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
 	}
-}
-
-func TestSearchBuildsForPatchsets(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("validation errors", func(t *testing.T) {
-		var nilClient *LUCIClient
-		if _, err := nilClient.SearchBuildsForPatchsets(ctx, "host", "proj", 1, []int{1}); err == nil {
-			t.Error("expected error for nil LUCIClient")
-		}
-		client := NewLUCIClient("https://example.com", nil)
-		if _, err := client.SearchBuildsForPatchsets(ctx, "host", "proj", 1, nil); err == nil {
-			t.Error("expected error for empty patchsets slice")
-		}
-	})
-
-	t.Run("multiple patchsets concatenated in order", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req bbSearchBuildsRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("failed to decode request: %v", err)
-			}
-			ps := req.Predicate.GerritChanges[0].Patchset
-			w.WriteHeader(http.StatusOK)
-			switch ps {
-			case 10:
-				w.Write([]byte(")]}'\n{\"builds\": []}"))
-			case 9:
-				w.Write([]byte(")]}'\n{\"builds\": [{\"id\": \"901\", \"builder\": {\"builder\": \"b1\"}, \"status\": \"SUCCESS\"}]}"))
-			case 8:
-				w.Write([]byte(")]}'\n{\"builds\": [{\"id\": \"801\", \"builder\": {\"builder\": \"b1\"}, \"status\": \"FAILURE\"}, {\"id\": \"802\", \"builder\": {\"builder\": \"b2\"}, \"status\": \"SUCCESS\"}]}"))
-			default:
-				t.Fatalf("unexpected patchset %d", ps)
-			}
-		}))
-		defer server.Close()
-
-		client := NewLUCIClient(server.URL, server.Client())
-		builds, err := client.SearchBuildsForPatchsets(ctx, "gerrit.googlesource.com", "pigweed/pigweed", 123, []int{10, 9, 8})
-		if err != nil {
-			t.Fatalf("SearchBuildsForPatchsets failed: %v", err)
-		}
-		if len(builds) != 3 {
-			t.Fatalf("expected 3 builds, got %d: %+v", len(builds), builds)
-		}
-		if builds[0].ID != "901" || builds[1].ID != "801" || builds[2].ID != "802" {
-			t.Errorf("unexpected build order: %+v", builds)
-		}
-	})
 }
 
 func TestSearchBuildsByPatchset(t *testing.T) {
 	WithHermeticAuth(t, AuthResolvers{})
 	ctx := context.Background()
+	var nilClient *LUCIClient
+	if _, err := nilClient.SearchBuildsByPatchset(ctx, "host", "proj", 1, []int{1}); err == nil {
+		t.Error("expected error for nil LUCIClient")
+	}
+	if _, err := NewLUCIClient("https://example.com", nil).SearchBuildsByPatchset(ctx, "host", "proj", 1, nil); err == nil {
+		t.Error("expected error for empty patchsets slice")
+	}
 	patchsetOf := func(r *http.Request) int {
 		var req bbSearchBuildsRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
@@ -1458,7 +1318,7 @@ func TestExtractFailureReport_OrchestratorSubbuild_IncludesBuildSummaryMarkdown(
 	}
 
 	client := NewLUCIClient("", http.DefaultClient)
-	report := client.ExtractFailureReport(ctx, build, 50)
+	report := client.ExtractFailureReportWithOptions(ctx, build, 50, nil, true)
 	if report == nil {
 		t.Fatal("expected non-nil FailureReport")
 	}
