@@ -160,9 +160,11 @@ rust_library(
     rustc_flags = [
         "--cap-lints=allow",
     ],
+    # core comes from the core_only stdlib flavor that :rust_libs_alloc_files
+    # builds this target with. Listing :libcore here compiles it a second time
+    # in that configuration.
     deps = [
         ":compiler_builtins",
-        ":libcore",
     ],
 )
 
