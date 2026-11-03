@@ -962,6 +962,9 @@ void SniffOffloadManager::SendEvent(
 
 void SniffOffloadManager::OnError(
     ErrorReason reason, std::optional<ConnectionHandle> connection_handle) {
+  if (!on_error_) {
+    return;
+  }
   if (on_error_(reason, connection_handle) == ErrorAction::kDisable) {
     DoDisable();
   }

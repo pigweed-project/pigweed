@@ -1362,6 +1362,29 @@ TEST_F(SniffOffloadManagerTest, ErrorSendEventFailed) {
             Error({ErrorReason::kSendEventFailed, std::nullopt}));
 }
 
+TEST_F(SniffOffloadManagerTest, ErrorWithoutHandler) {
+  MakeSniffOffloadWithHandlers(
+      MakeDefaultSendCommand(), MakeDefaultSendEvent(), /*on_error=*/nullptr);
+
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE));
+
+  // Trigger errors on both the ACL and event paths.
+  SimulateAclActivity(0x456, SniffOffloadManager::Direction::kRx);
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+
+  // Errors without a handler are ignored, so sniff offload stays enabled.
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(packets_to_host().empty());
+}
+
 TEST_F(SniffOffloadManagerTest, ProcessCommandStatus) {
   EXPECT_EQ(SimulateCommandStatus(MakeZeroBuffer()), Status::InvalidArgument());
   EXPECT_EQ(PopLastError(), Error({ErrorReason::kInvalidPacket, std::nullopt}));
