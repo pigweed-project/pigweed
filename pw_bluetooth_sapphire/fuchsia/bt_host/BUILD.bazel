@@ -118,7 +118,7 @@ fuchsia_structured_config_values(
     cm_label = ":manifest",
     cvf_output_name = "bt-host",
     values = {
-        "device_path": "/dev/class/bt-hci/000",
+        "device_path": "/svc/fuchsia.hardware.bluetooth.Service/default/vendor",
         "enable_suspend": False,
         "hci_command_timeout_seconds": 10,
         "le_active_scan_interval": 0,

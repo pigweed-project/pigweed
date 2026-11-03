@@ -26,7 +26,8 @@ namespace bthost::testing {
 
 using TestingBase = ::bt::testing::TestLoopFixture;
 
-const std::string DEFAULT_DEV_PATH = "/dev/class/bt-hci/000";
+const std::string DEFAULT_DEV_PATH =
+    "/svc/fuchsia.hardware.bluetooth.Service/default/vendor";
 class HostComponentTest : public TestingBase {
  public:
   HostComponentTest() = default;
