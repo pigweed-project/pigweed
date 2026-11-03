@@ -34,11 +34,11 @@ pw_python_package("py") {
   tests = [
     "codegen_test.py",
     "generate_test.py",
-
-    # "json_enum_py_test.py" is enabled when GN support for JSON enums lands.
+    "json_enum_py_test.py",
     "json_source_test.py",
     "parse_test.py",
   ]
+  python_test_deps = [ "..:toml_enums.python" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"

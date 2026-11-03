@@ -91,6 +91,54 @@ pw_add_enum_library(pw_enum._enum_with_deps
     pw_enum._test_dep_lib
 )
 
+pw_add_enum(pw_enum._json_base_enum
+  SOURCES
+    private/pw_enum_private/json_base_enum.json
+  STRIP_PREFIX
+    private
+)
+
+# DOCSTAG: [pw_enum-json-cmake]
+pw_add_enum(pw_enum._toml_enums
+  SOURCES
+    private/pw_enum_private/toml_enums.toml
+  STRIP_PREFIX
+    private
+  DEPS
+    pw_enum._json_base_enum
+)
+
+pw_add_enum_library(pw_enum._toml_enums_cc
+  ENUMS
+    pw_enum._json_base_enum
+    pw_enum._toml_enums
+)
+# DOCSTAG: [pw_enum-json-cmake]
+
+# A header-defined enum that references a JSON-defined enum.
+pw_add_enum_library(pw_enum._mixed_enum
+  ENUM_HEADERS
+    private/pw_enum_private/mixed_enum.h
+  ENUMS
+    pw_enum._json_base_enum
+  PUBLIC_INCLUDES
+    private
+)
+
+pw_add_test(pw_enum.json_enum_test
+  SOURCES
+    json_enum_test.cc
+  PRIVATE_DEPS
+    pw_enum
+    pw_enum._mixed_enum
+    pw_enum._toml_enums_cc
+    pw_tokenizer
+    pw_unit_test.constexpr
+  GROUPS
+    modules
+    pw_enum
+)
+
 pw_add_test(pw_enum.enum_test
   SOURCES
     enum_test.cc

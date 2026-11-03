@@ -17,19 +17,8 @@ import("$dir_pw_build/python_action.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_toolchain/generate_toolchain.gni")
 
-# Defines a C++ source set that automatically enables versioned enum
-# tokenization.
-#
-# Args:
-#   enum_headers: List of standard .h files containing enum definitions to tokenize (required).
-#   include_dirs: List containing exactly one path to include for generated headers (required).
-#   public: Optional list of general public C++ headers.
-#   sources: Optional list of C++ implementation source files.
-#   deps: Dependencies.
-#   public_deps: Public dependencies.
-template("pw_cc_enum_source_set") {
-  assert(defined(invoker.enum_headers),
-         "pw_cc_enum_source_set requires enum_headers")
+# Implements pw_cc_enum_source_set for enums defined in C++ headers.
+template("_pw_header_enum_source_set") {
   assert(defined(invoker.include_dirs),
          "pw_cc_enum_source_set requires include_dirs")
   _include_dirs = invoker.include_dirs
@@ -63,7 +52,7 @@ template("pw_cc_enum_source_set") {
     if (defined(invoker.public_deps)) {
       _deps += invoker.public_deps
     }
-    deps = _deps
+    deps = _deps + invoker.enum_deps
     include_dirs = _include_dirs
     public_deps = [
       "$dir_pw_enum:_generate_internal_do_not_use",
@@ -117,6 +106,7 @@ template("pw_cc_enum_source_set") {
                              "deps",
                              "public_deps",
                              "enum_headers",
+                             "enum_deps",
                              "public_configs",
                            ])
 
@@ -130,6 +120,7 @@ template("pw_cc_enum_source_set") {
       "$dir_pw_status",
       "$dir_pw_tokenizer",
     ]
+    public_deps += invoker.enum_deps
     if (defined(invoker.public_deps)) {
       public_deps += invoker.public_deps
     }
@@ -145,6 +136,50 @@ template("pw_cc_enum_source_set") {
     ]
     if (defined(invoker.public_configs)) {
       public_configs += invoker.public_configs
+    }
+  }
+}
+
+# Defines a C++ source set that automatically enables versioned enum
+# tokenization.
+#
+# Enums may be defined in C++ headers that call PW_ENUM() (enum_headers), in
+# pw_enum targets (enums), or both. Headers in enum_headers may include headers
+# generated from enums.
+#
+# Args:
+#   enum_headers: List of standard .h files containing enum definitions to
+#       tokenize.
+#   enums: List of pw_enum targets to generate C++ headers for.
+#   include_dirs: List containing exactly one path to include for generated
+#       headers (required with enum_headers).
+#   public: Optional list of general public C++ headers.
+#   sources: Optional list of C++ implementation source files.
+#   deps: Dependencies.
+#   public_deps: Public dependencies.
+template("pw_cc_enum_source_set") {
+  assert(defined(invoker.enum_headers) || defined(invoker.enums),
+         "pw_cc_enum_source_set requires enum_headers, enums, or both")
+
+  _enum_deps = []
+  if (defined(invoker.enums)) {
+    foreach(enum, invoker.enums) {
+      _enum_deps += [ get_label_info(enum, "label_no_toolchain") + ".cc" ]
+    }
+  }
+
+  if (!defined(invoker.enum_headers)) {
+    pw_source_set(target_name) {
+      forward_variables_from(invoker, "*", [ "enums" ])
+      if (!defined(public_deps)) {
+        public_deps = []
+      }
+      public_deps += _enum_deps
+    }
+  } else {
+    _pw_header_enum_source_set(target_name) {
+      forward_variables_from(invoker, "*", [ "enums" ])
+      enum_deps = _enum_deps
     }
   }
 }

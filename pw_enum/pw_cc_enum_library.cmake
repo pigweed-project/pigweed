@@ -13,25 +13,63 @@
 # the License.
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+include($ENV{PW_ROOT}/pw_enum/pw_enum.cmake)
 
 # Defines a C++ library that automatically tokenizes versioned enums.
 #
+# Enums may be defined in C++ headers that call PW_ENUM() (ENUM_HEADERS), in
+# pw_add_enum targets (ENUMS), or both. Headers in ENUM_HEADERS may include
+# headers generated from ENUMS.
+#
 # Args:
-#   ENUM_HEADERS: Standard .h files containing enum definitions to tokenize (required).
+#   ENUM_HEADERS: Standard .h files containing enum definitions to tokenize.
+#   ENUMS: pw_add_enum targets to generate C++ headers for.
 #   HEADERS: Public non-enum headers of the library.
 #   SOURCES: C++ source files of the library.
 #   PUBLIC_DEPS: Public dependencies.
 #   PRIVATE_DEPS: Private dependencies.
 #   PUBLIC_INCLUDES: Prefix to strip from the include path of generated headers.
+#       Required with ENUM_HEADERS.
 function(pw_add_enum_library NAME)
   pw_parse_arguments(
     NUM_POSITIONAL_ARGS 1
     ONE_VALUE_ARGS PUBLIC_INCLUDES
-    MULTI_VALUE_ARGS ENUM_HEADERS HEADERS SOURCES PUBLIC_DEPS PRIVATE_DEPS
+    MULTI_VALUE_ARGS ENUM_HEADERS ENUMS HEADERS SOURCES PUBLIC_DEPS PRIVATE_DEPS
   )
 
+  if(NOT arg_ENUM_HEADERS AND NOT arg_ENUMS)
+    message(FATAL_ERROR
+        "pw_add_enum_library requires ENUM_HEADERS, ENUMS, or both")
+  endif()
+
+  set(enum_deps "")
+  set(enum_generate_targets "")
+  foreach(enum IN LISTS arg_ENUMS)
+    list(APPEND enum_deps "${enum}.cc")
+    list(APPEND enum_generate_targets "${enum}.generate")
+  endforeach()
+
   if(NOT arg_ENUM_HEADERS)
-    message(FATAL_ERROR "pw_add_enum_library requires ENUM_HEADERS")
+    if("${arg_SOURCES}" STREQUAL "")
+      set(lib_type INTERFACE)
+    else()
+      set(lib_type STATIC)
+    endif()
+
+    pw_add_library("${NAME}" ${lib_type}
+      SOURCES
+        ${arg_SOURCES}
+      HEADERS
+        ${arg_HEADERS}
+      PUBLIC_INCLUDES
+        ${arg_PUBLIC_INCLUDES}
+      PUBLIC_DEPS
+        ${enum_deps}
+        ${arg_PUBLIC_DEPS}
+      PRIVATE_DEPS
+        ${arg_PRIVATE_DEPS}
+    )
+    return()
   endif()
   set(enum_headers ${arg_ENUM_HEADERS})
   set(other_headers ${arg_HEADERS})
@@ -59,6 +97,7 @@ function(pw_add_enum_library NAME)
   )
   target_link_libraries("${NAME}._base_lib" PRIVATE
       pw_enum._generate_internal_do_not_use
+      ${enum_deps}
       ${arg_PUBLIC_DEPS}
       ${arg_PRIVATE_DEPS}
   )
@@ -106,15 +145,18 @@ function(pw_add_enum_library NAME)
     list(APPEND output_files "${out_dir}/include/${relative_header}")
   endforeach()
 
+  _pw_enum_python_path(python_path)
   add_custom_command(
     OUTPUT ${output_files}
-    COMMAND python3 $ENV{PW_ROOT}/pw_enum/py/pw_enum/generate.py
+    COMMAND ${CMAKE_COMMAND} -E env "PYTHONPATH=${python_path}"
+            python3 $ENV{PW_ROOT}/pw_enum/py/pw_enum/generate.py
             ${enum_headers}
             "--outputs" ${output_files}
             "--compiler" "${CMAKE_CXX_COMPILER}"
             "--compiler-flags" "${out_dir}/flags-CXX.txt"
             "--base-cc" "${out_dir}/base.cc"
     DEPENDS ${enum_headers}
+            ${enum_generate_targets}
             "${out_dir}/flags-CXX.txt"
             "$ENV{PW_ROOT}/pw_enum/py/pw_enum/generate.py"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -142,6 +184,7 @@ function(pw_add_enum_library NAME)
       pw_status
       pw_tokenizer
       pw_enum._generate_internal_do_not_use
+      ${enum_deps}
       ${arg_PUBLIC_DEPS}
     PRIVATE_DEPS
       ${arg_PRIVATE_DEPS}

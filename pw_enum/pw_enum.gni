@@ -1,0 +1,281 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/python.gni")
+import("$dir_pw_build/python_action.gni")
+import("$dir_pw_build/target_types.gni")
+
+# Declares language-neutral enums defined in TOML or JSON files, and generates
+# code for them in these subtargets:
+#
+#   <target_name>.cc: A pw_source_set with a generated C++ header for each
+#       source.
+#   <target_name>.python: A pw_python_package with a generated Python module for
+#       each source.
+#
+# Building <target_name> itself validates the sources without generating code.
+#
+# A source at bar/baz/foo.toml generates the header bar/baz/foo.h and the
+# Python module bar.baz.foo. By default, paths are relative to the GN root
+# (//). Use strip_prefix and prefix to change the paths, which is necessary for
+# paths that don't depend on where the sources are checked out.
+#
+# Args:
+#   sources: TOML or JSON enum definitions (required).
+#   deps: Other pw_enum targets whose enumerators the sources reference.
+#   strip_prefix: Directory to remove from the paths of the sources. Relative to
+#       the current directory, or a source-absolute path (//path/to/dir).
+#   prefix: Prefix to add to the paths of the sources.
+template("pw_enum") {
+  assert(defined(invoker.sources) && invoker.sources != [],
+         "pw_enum requires TOML or JSON sources")
+
+  _sources = invoker.sources
+  _deps = []
+  if (defined(invoker.deps)) {
+    foreach(dep, invoker.deps) {
+      _deps += [ get_label_info(dep, "label_no_toolchain") ]
+    }
+  }
+
+  if (defined(invoker.strip_prefix)) {
+    _root = get_path_info(invoker.strip_prefix, "abspath")
+  } else {
+    _root = "//"
+  }
+
+  _prefix = ""
+  if (defined(invoker.prefix) && invoker.prefix != "") {
+    _prefix = invoker.prefix + "/"
+  }
+
+  _out_dir = "$target_gen_dir/$target_name"
+
+  # Python packages are only built in pw_build_PYTHON_TOOLCHAIN.
+  _python_out_dir = get_label_info(":$target_name($pw_build_PYTHON_TOOLCHAIN)",
+                                   "target_gen_dir") + "/$target_name/python"
+
+  _cc_outputs = []
+  _python_outputs = []
+  _python_import_paths = []
+  _python_init_files = []
+  foreach(source, _sources) {
+    _ext = get_path_info(source, "extension")
+    assert(_ext == "toml" || _ext == "json",
+           "pw_enum sources must be .toml or .json files: $source")
+    _path = rebase_path(get_path_info(source, "abspath"), _root)
+    assert(string_replace(_path, "../", "") == _path,
+           "pw_enum source $source is not under strip_prefix $_root")
+
+    _dir = get_path_info(_path, "dir")
+    _stem = _prefix + get_path_info(_path, "name")
+    if (_dir != ".") {
+      _stem = _prefix + "$_dir/" + get_path_info(_path, "name")
+    }
+
+    _cc_outputs += [ "$_out_dir/include/$_stem.h" ]
+    _python_outputs += [ "$_python_out_dir/$_stem.py" ]
+    _python_import_paths += [ _stem ]
+
+    _pkg_dir = get_path_info(_stem, "dir")
+    if (_pkg_dir != ".") {
+      _cur_pkg = _python_out_dir
+      foreach(part, string_split(_pkg_dir, "/")) {
+        _cur_pkg = "$_cur_pkg/$part"
+        _init_file = "$_cur_pkg/__init__.py"
+        _python_init_files += [ _init_file ]
+        _python_init_files -= [ _init_file ]
+        _python_init_files += [ _init_file ]
+      }
+    }
+  }
+
+  # Collect the enum sources of direct and transitive deps with GN metadata.
+  # The barrier stops the direct deps walk after the first level.
+  group("$target_name._srcs") {
+    forward_variables_from(invoker, [ "testonly" ])
+    metadata = {
+      pw_enum_srcs = rebase_path(_sources, root_build_dir)
+      pw_enum_direct_deps_barrier = []
+    }
+    deps = []
+    foreach(dep, _deps) {
+      deps += [ "$dep._srcs" ]
+    }
+    visibility = [ "*" ]
+  }
+
+  generated_file("$target_name._dep_srcs") {
+    forward_variables_from(invoker, [ "testonly" ])
+    deps = []
+    foreach(dep, _deps) {
+      deps += [ "$dep._srcs" ]
+    }
+    data_keys = [ "pw_enum_srcs" ]
+    walk_keys = [ "pw_enum_direct_deps_barrier" ]
+    outputs = [ "$_out_dir/dep_srcs.txt" ]
+    output_conversion = "list lines"
+    visibility = [ ":*" ]
+  }
+
+  generated_file("$target_name._transitive_srcs") {
+    forward_variables_from(invoker, [ "testonly" ])
+    deps = [ ":${invoker.target_name}._srcs" ]
+    data_keys = [ "pw_enum_srcs" ]
+    outputs = [ "$_out_dir/transitive_srcs.txt" ]
+    output_conversion = "list lines"
+    visibility = [ ":*" ]
+  }
+
+  # Arguments shared by every invocation of the code generator.
+  _dep_srcs = "$_out_dir/dep_srcs.txt"
+  _transitive_srcs = "$_out_dir/transitive_srcs.txt"
+  _codegen = {
+    module = "pw_enum.codegen"
+    python_deps = [ "$dir_pw_enum/py" ]
+    args = [ "--sources" ] + rebase_path(_sources, root_build_dir) + [
+             "--deps",
+             "@" + rebase_path(_dep_srcs, root_build_dir),
+             "--transitive-deps",
+             "@" + rebase_path(_transitive_srcs, root_build_dir),
+           ]
+
+    # Dependencies' enum sources are tracked with a depfile.
+    inputs = _sources + [
+               _dep_srcs,
+               _transitive_srcs,
+             ]
+    deps = [
+      ":$target_name._dep_srcs",
+      ":$target_name._transitive_srcs",
+    ]
+  }
+
+  # Validate the sources when this target is built.
+  pw_python_action(target_name) {
+    forward_variables_from(invoker, [ "testonly" ])
+    forward_variables_from(_codegen, "*", [ "args" ])
+    _stamp = "$_out_dir/check.stamp"
+    args = [ "check" ] + _codegen.args + [
+             "--stamp",
+             rebase_path(_stamp, root_build_dir),
+             "--depfile",
+             rebase_path("$_out_dir/check.d", root_build_dir),
+           ]
+    outputs = [ _stamp ]
+    depfile = "$_out_dir/check.d"
+    if (defined(invoker.visibility)) {
+      visibility = invoker.visibility
+    }
+  }
+
+  # C++
+  pw_python_action("$target_name._cc_gen") {
+    forward_variables_from(invoker, [ "testonly" ])
+    forward_variables_from(_codegen, "*", [ "args" ])
+    args = [ "cc" ] + _codegen.args + [ "--outputs" ] +
+           rebase_path(_cc_outputs, root_build_dir) +
+           [
+             "--depfile",
+             rebase_path("$_out_dir/cc.d", root_build_dir),
+           ]
+    outputs = _cc_outputs
+    depfile = "$_out_dir/cc.d"
+    visibility = [ ":*" ]
+  }
+
+  config("$target_name._cc_include_path") {
+    include_dirs = [ "$_out_dir/include" ]
+    visibility = [ ":*" ]
+  }
+
+  pw_source_set("$target_name.cc") {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    public = _cc_outputs
+    public_configs = [ ":${invoker.target_name}._cc_include_path" ]
+    public_deps = [
+      "$dir_pw_enum",
+      "$dir_pw_log:args",
+      "$dir_pw_status",
+      "$dir_pw_tokenizer",
+    ]
+    deps = [ ":${invoker.target_name}._cc_gen" ]
+  }
+
+  # Python
+  if (current_toolchain == pw_build_PYTHON_TOOLCHAIN) {
+    # Write namespace-package __init__.py shims so generated enum packages do
+    # not shadow a real package's __init__.py when both are on PYTHONPATH.
+    foreach(init_file, _python_init_files) {
+      write_file(
+          init_file,
+          [
+            "# _pw_enum_namespace_shim",
+            "from pathlib import Path as _Path",
+            "from pkgutil import extend_path as _extend_path  # type: ignore",
+            "__path__ = _extend_path(__path__, __name__)  # type: ignore",
+            "def __getattr__(name: str):",
+            "    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')",
+            "for _dir in list(__path__):",
+            "    _init = _Path(_dir, '__init__.py')",
+            "    if _init.is_file() and '_pw_enum_namespace_shim' not in (_src := _init.read_text(encoding='utf-8')):",
+            "        __file__ = str(_init)",
+            "        exec(compile(_src, __file__, 'exec'))",
+            "        break",
+          ])
+    }
+
+    pw_python_action("$target_name._python_gen") {
+      forward_variables_from(invoker, [ "testonly" ])
+      forward_variables_from(_codegen, "*", [ "args" ])
+      args = [ "py" ] + _codegen.args + [ "--outputs" ] +
+             rebase_path(_python_outputs, root_build_dir) +
+             [ "--import-paths" ] + _python_import_paths +
+             [
+               "--depfile",
+               rebase_path("$_out_dir/python.d", root_build_dir),
+             ]
+      outputs = _python_outputs
+      depfile = "$_out_dir/python.d"
+      visibility = [ ":*" ]
+    }
+  }
+
+  pw_python_package("$target_name.python") {
+    forward_variables_from(invoker, [ "testonly" ])
+    generate_setup = {
+      metadata = {
+        # Include the full source path in the package name to avoid conflicts
+        # with other packages.
+        name = string_replace(
+                   string_replace(get_path_info(".", "abspath"), "//", ""),
+                   "/",
+                   "_") + "_" + invoker.target_name
+        version = "0.0.1"
+      }
+    }
+    sources = _python_outputs
+    inputs = _python_init_files
+    strip_prefix = _python_out_dir
+    other_deps =
+        [ ":${invoker.target_name}._python_gen($pw_build_PYTHON_TOOLCHAIN)" ]
+    static_analysis = []
+  }
+}

@@ -16,6 +16,7 @@ import("//build_overrides/pigweed.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_unit_test/test.gni")
 import("pw_cc_enum_source_set.gni")
+import("pw_enum.gni")
 
 config("public_include_path") {
   include_dirs = [ "public" ]
@@ -109,11 +110,50 @@ pw_test("enum_test") {
   ]
 }
 
-# JSON-defined enum tests ("json_enum_test.cc" and
-# "private/pw_enum_private/mixed_enum.h") are enabled when GN support lands.
+pw_enum("json_base_enum") {
+  sources = [ "private/pw_enum_private/json_base_enum.json" ]
+  strip_prefix = "private"
+}
+
+# DOCSTAG: [pw_enum-json-gn]
+pw_enum("toml_enums") {
+  sources = [ "private/pw_enum_private/toml_enums.toml" ]
+  strip_prefix = "private"
+  deps = [ ":json_base_enum" ]
+}
+
+pw_cc_enum_source_set("toml_enums_cc") {
+  enums = [
+    ":json_base_enum",
+    ":toml_enums",
+  ]
+}
+
+# DOCSTAG: [pw_enum-json-gn]
+
+# A header-defined enum that references a JSON-defined enum.
+pw_cc_enum_source_set("mixed_enum") {
+  enum_headers = [ "private/pw_enum_private/mixed_enum.h" ]
+  enums = [ ":json_base_enum" ]
+  include_dirs = [ "private" ]
+  visibility = [ ":*" ]
+}
+
+pw_test("json_enum_test") {
+  sources = [ "json_enum_test.cc" ]
+  deps = [
+    ":mixed_enum",
+    ":pw_enum",
+    ":toml_enums_cc",
+    "$dir_pw_tokenizer",
+    "$dir_pw_unit_test:constexpr",
+  ]
+}
+
 pw_test_group("tests") {
   tests = [
     ":enum_test",
+    ":json_enum_test",
     ":to_string_test",
   ]
 }
