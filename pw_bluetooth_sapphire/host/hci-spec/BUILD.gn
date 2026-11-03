@@ -46,7 +46,10 @@ pw_source_set("hci-spec") {
 }
 
 pw_test("hci-spec_test") {
-  sources = [ "util_test.cc" ]
+  sources = [
+    "le_connection_parameters_test.cc",
+    "util_test.cc",
+  ]
   test_main = "$dir_pw_bluetooth_sapphire/host/testing:gtest_main"
   deps = [ ":hci-spec" ]
 }

@@ -49,22 +49,6 @@ std::string hci_spec::LEConnectionParameters::ToString() const {
       supervision_timeout_ * 10u);
 }
 
-LEPreferredConnectionParameters::LEPreferredConnectionParameters(
-    uint16_t min_interval,
-    uint16_t max_interval,
-    uint16_t max_latency,
-    uint16_t supervision_timeout)
-    : min_interval_(min_interval),
-      max_interval_(max_interval),
-      max_latency_(max_latency),
-      supervision_timeout_(supervision_timeout) {}
-
-LEPreferredConnectionParameters::LEPreferredConnectionParameters()
-    : min_interval_(0),
-      max_interval_(0),
-      max_latency_(0),
-      supervision_timeout_(0) {}
-
 bool LEPreferredConnectionParameters::operator==(
     const LEPreferredConnectionParameters& other) const {
   return min_interval_ == other.min_interval_ &&

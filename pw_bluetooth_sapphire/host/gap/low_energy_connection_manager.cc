@@ -95,18 +95,6 @@ pw::bluetooth::emboss::LESleepClockAccuracyRange WorstCaseSca(
   return static_cast<ScaType>(a) < static_cast<ScaType>(b) ? a : b;
 }
 
-// During the initial connection to a peripheral we use the initial high
-// duty-cycle parameters to ensure that initiating procedures (bonding,
-// encryption setup, service discovery) are completed quickly. Once these
-// procedures are complete, we will change the connection interval to the
-// peripheral's preferred connection parameters (see v5.0, Vol 3, Part C,
-// Section 9.3.12).
-static const hci_spec::LEPreferredConnectionParameters
-    kInitialConnectionParameters(kLEInitialConnIntervalMin,
-                                 kLEInitialConnIntervalMax,
-                                 /*max_latency=*/0,
-                                 hci_spec::defaults::kLESupervisionTimeout);
-
 const char* LowEnergyDisconnectReasonToString(
     LowEnergyDisconnectReason reason) {
   switch (reason) {

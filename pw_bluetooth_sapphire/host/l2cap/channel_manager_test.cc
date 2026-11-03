@@ -2035,9 +2035,11 @@ TEST_F(ChannelManagerRealAclChannelTest, LEConnectionParameterUpdateRequest) {
       // L2CAP C-frame header (LE conn. param. update request, id: 1, length: 8 bytes)
       0x12, 0x01, 0x08, 0x00,
       // Connection parameters (hardcoded to match the expectations in |conn_param_cb|).
+      // Peripheral latency is 0 so that the maximum supervision timeout is
+      // valid for the maximum connection interval.
       0x06, 0x00,
       0x80, 0x0C,
-      0xF3, 0x01,
+      0x00, 0x00,
       0x80, 0x0C));
   // clang-format on
 
@@ -3115,7 +3117,16 @@ TEST_F(
           kIntervalMin,
           kIntervalMax,
           kPeripheralLatency,
-          hci_spec::kLEConnectionSupervisionTimeoutMax + 1)};
+          hci_spec::kLEConnectionSupervisionTimeoutMax + 1),
+      // Every value is in range, but the supervision timeout (160 ms) is not
+      // larger than (1 + latency) * interval_max * 2 = (1 + 2) * 80 ms * 2 =
+      // 480 ms (Core Spec v6.2, Vol 4, Part E, Sec 7.8.18).
+      testing::AclConnectionParameterUpdateReq(kParamReqId,
+                                               kTestHandle1,
+                                               /*interval_min=*/0x0006,
+                                               /*interval_max=*/0x0040,
+                                               /*peripheral_latency=*/2,
+                                               /*timeout_multiplier=*/0x0010)};
 
   for (auto& req : invalid_requests) {
     EXPECT_LE_PACKET_OUT(testing::AclConnectionParameterUpdateRsp(

@@ -30,12 +30,13 @@ constexpr const char* kInspectConnectionCompletedTimePropertyName = "@time";
 
 // Connection parameters to use when the peer's preferred connection parameters
 // are not known.
-static const hci_spec::LEPreferredConnectionParameters
+constexpr hci_spec::LEPreferredConnectionParameters
     kDefaultPreferredConnectionParameters(
         hci_spec::defaults::kLEConnectionIntervalMin,
         hci_spec::defaults::kLEConnectionIntervalMax,
         /*max_latency=*/0,
         hci_spec::defaults::kLESupervisionTimeout);
+static_assert(kDefaultPreferredConnectionParameters.IsValid());
 
 }  // namespace
 
@@ -598,13 +599,16 @@ void LowEnergyConnection::UpdateConnectionParams(
          "gap-le",
          "updating connection parameters (peer: %s)",
          bt_str(peer_id()));
+  // Callers must only pass parameters that are valid for the
+  // HCI_LE_Connection_Update command: parameters received from the peer are
+  // validated by GenericAccessClient (GAP characteristic) and LogicalLink
+  // (L2CAP request) before they get here.
+  PW_DCHECK(params.IsValid());
   auto command = hci::CommandPacket::New<
       pw::bluetooth::emboss::LEConnectionUpdateCommandWriter>(
       hci_spec::kLEConnectionUpdate);
   auto view = command.view_t();
   view.connection_handle().Write(handle());
-  // TODO(fxbug.dev/42074287): Handle invalid connection parameters before
-  // sending them to the controller.
   view.connection_interval_min().UncheckedWrite(params.min_interval());
   view.connection_interval_max().UncheckedWrite(params.max_interval());
   view.max_latency().UncheckedWrite(params.max_latency());

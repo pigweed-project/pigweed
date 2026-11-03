@@ -840,6 +840,7 @@ void LogicalLink::SendConnectionParameterUpdateRequest(
   PW_CHECK(signaling_channel_);
   PW_CHECK(type_ == bt::LinkType::kLE);
   PW_CHECK(role_ == pw::bluetooth::emboss::ConnectionRole::PERIPHERAL);
+  PW_DCHECK(params.IsValid());
 
   LowEnergyCommandHandler cmd_handler(signaling_channel_.get());
   cmd_handler.SendConnectionParameterUpdateRequest(
@@ -1089,44 +1090,22 @@ void LogicalLink::OnRxConnectionParameterUpdateRequest(
     return;
   }
 
-  // Reject the connection parameters if they are outside the ranges allowed by
-  // the HCI specification (see HCI_LE_Connection_Update command v5.0, Vol 2,
-  // Part E, Section 7.8.18).
-  bool reject = false;
-
+  // Reject the connection parameters if they are not valid for the
+  // HCI_LE_Connection_Update command (see
+  // hci_spec::LEPreferredConnectionParameters::IsValid()).
   hci_spec::LEPreferredConnectionParameters params(
       interval_min, interval_max, peripheral_latency, timeout_multiplier);
 
-  if (params.min_interval() > params.max_interval()) {
-    bt_log(DEBUG, "l2cap", "conn. min interval larger than max");
-    reject = true;
-  } else if (params.min_interval() < hci_spec::kLEConnectionIntervalMin) {
+  const bool reject = !params.IsValid();
+  if (reject) {
     bt_log(DEBUG,
            "l2cap",
-           "conn. min interval outside allowed range: %#.4x",
-           params.min_interval());
-    reject = true;
-  } else if (params.max_interval() > hci_spec::kLEConnectionIntervalMax) {
-    bt_log(DEBUG,
-           "l2cap",
-           "conn. max interval outside allowed range: %#.4x",
-           params.max_interval());
-    reject = true;
-  } else if (params.max_latency() > hci_spec::kLEConnectionLatencyMax) {
-    bt_log(DEBUG,
-           "l2cap",
-           "conn. peripheral latency too large: %#.4x",
-           params.max_latency());
-    reject = true;
-  } else if (params.supervision_timeout() <
-                 hci_spec::kLEConnectionSupervisionTimeoutMin ||
-             params.supervision_timeout() >
-                 hci_spec::kLEConnectionSupervisionTimeoutMax) {
-    bt_log(DEBUG,
-           "l2cap",
-           "conn supv. timeout outside allowed range: %#.4x",
+           "rejecting invalid conn. parameters (interval min: %#.4x, max: "
+           "%#.4x, latency: %#.4x, supv. timeout: %#.4x)",
+           params.min_interval(),
+           params.max_interval(),
+           params.max_latency(),
            params.supervision_timeout());
-    reject = true;
   }
 
   ConnectionParameterUpdateResult result =

@@ -50,6 +50,7 @@ cc_library(
 pw_cc_test(
     name = "hci-spec_test",
     srcs = [
+        "le_connection_parameters_test.cc",
         "util_test.cc",
     ],
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",

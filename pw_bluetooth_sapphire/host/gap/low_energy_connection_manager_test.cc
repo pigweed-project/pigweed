@@ -1901,11 +1901,14 @@ TEST_F(LowEnergyConnectionManagerTest,
   RunUntilIdle();
   ASSERT_TRUE(conn_handle);
 
+  // Use the extremes of the allowed ranges. The latency must be small enough
+  // that the supervision timeout is valid for the maximum interval.
   hci_spec::LEPreferredConnectionParameters preferred(
       hci_spec::kLEConnectionIntervalMin,
       hci_spec::kLEConnectionIntervalMax,
-      hci_spec::kLEConnectionLatencyMax,
+      /*max_latency=*/0,
       hci_spec::kLEConnectionSupervisionTimeoutMax);
+  ASSERT_TRUE(preferred.IsValid());
 
   std::optional<hci_spec::LEConnectionParameters> actual;
 
@@ -2475,16 +2478,16 @@ TEST_F(
       kPeripheralPreferredConnectionParametersCharacteristic);
   service_client->set_characteristics({char_data});
 
-  // TODO(fxbug.dev/42074287): These parameters are invalid, but this test
-  // passes because we fail to validate them before sending them to the
-  // controller.
-  StaticByteBuffer char_value(0x01,
+  // Valid preferred connection parameters:
+  // min_interval=6 (7.5 ms), max_interval=6 (7.5 ms), latency=1, timeout=64
+  // (640 ms).
+  StaticByteBuffer char_value(0x06,
                               0x00,  // min interval
-                              0x02,
+                              0x06,
                               0x00,  // max interval
-                              0x03,
+                              0x01,
                               0x00,  // max latency
-                              0x04,
+                              0x40,
                               0x00);  // supervision timeout
   service_client->set_read_request_callback(
       [char_value_handle, char_value](att::Handle handle, auto read_cb) {
@@ -2506,10 +2509,10 @@ TEST_F(
   EXPECT_TRUE(conn_ref);
   ASSERT_TRUE(peer->le()->preferred_connection_parameters());
   auto params = peer->le()->preferred_connection_parameters().value();
-  EXPECT_EQ(params.min_interval(), 1u);
-  EXPECT_EQ(params.max_interval(), 2u);
-  EXPECT_EQ(params.max_latency(), 3u);
-  EXPECT_EQ(params.supervision_timeout(), 4u);
+  EXPECT_EQ(params.min_interval(), 6u);
+  EXPECT_EQ(params.max_interval(), 6u);
+  EXPECT_EQ(params.max_latency(), 1u);
+  EXPECT_EQ(params.supervision_timeout(), 64u);
 
   std::optional<hci_spec::LEConnectionParameters> conn_params;
   test_device()->set_le_connection_parameters_callback(
@@ -2518,9 +2521,92 @@ TEST_F(
   RunFor(kLEConnectionPauseCentral);
   ASSERT_TRUE(conn_params.has_value());
   EXPECT_EQ(conn_params->interval(),
-            1u);  // FakeController will use min interval
-  EXPECT_EQ(conn_params->latency(), 3u);
-  EXPECT_EQ(conn_params->supervision_timeout(), 4u);
+            6u);  // FakeController will use min interval
+  EXPECT_EQ(conn_params->latency(), 1u);
+  EXPECT_EQ(conn_params->supervision_timeout(), 64u);
+}
+
+// Regression test for b/523275339.
+//
+// Peripheral Preferred Connection Parameters (PPCP) read from a remote GATT
+// server that fall outside the Core Spec v6.2, Vol 4, Part E, Sec 7.8.18 ranges
+// must be rejected as malformed and not stored on the peer. When connection
+// parameters are subsequently updated after kLEConnectionPauseCentral, the host
+// must fall back to default parameters within the spec ranges instead of
+// forwarding the remote values to the controller.
+TEST_F(
+    LowEnergyConnectionManagerTest,
+    ReadPeripheralPreferredConnectionParametersCharacteristicOutOfRangeValuesRejected) {
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0, dispatcher());
+  test_device()->AddPeer(std::move(fake_peer));
+
+  // Set up GAP service
+  gatt::ServiceData service_data(gatt::ServiceKind::PRIMARY,
+                                 /*start=*/0x0001,
+                                 /*end=*/0x0009,
+                                 kGenericAccessService);
+  auto [remote_svc, service_client] =
+      fake_gatt()->AddPeerService(peer->identifier(), service_data);
+
+  // Set up preferred connection parameters characteristic.
+  att::Handle char_handle = 0x0002;
+  att::Handle char_value_handle = 0x0003;
+  gatt::CharacteristicData char_data(
+      gatt::kRead,
+      /*ext_props=*/std::nullopt,
+      char_handle,
+      char_value_handle,
+      kPeripheralPreferredConnectionParametersCharacteristic);
+  service_client->set_characteristics({char_data});
+
+  // Every field is outside the allowed range:
+  // min_interval=0x0000 (< 0x0006), max_interval=0x0000 (< 0x0006),
+  // max_latency=0xFFFF (> 0x01F3), supervision_timeout=0x0000 (< 0x000A).
+  StaticByteBuffer char_value(0x00,
+                              0x00,  // min interval
+                              0x00,
+                              0x00,  // max interval
+                              0xFF,
+                              0xFF,  // max latency
+                              0x00,
+                              0x00);  // supervision timeout
+  service_client->set_read_request_callback(
+      [char_value_handle, char_value](att::Handle handle, auto read_cb) {
+        if (handle == char_value_handle) {
+          read_cb(fit::ok(), char_value, /*maybe_truncated=*/false);
+        }
+      });
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_ref;
+  auto callback = [&conn_ref](auto result) {
+    ASSERT_EQ(fit::ok(), result);
+    conn_ref = std::move(result).value();
+  };
+
+  conn_mgr()->Connect(
+      peer->identifier(), callback, LowEnergyConnectionOptions());
+
+  RunUntilIdle();
+  ASSERT_TRUE(conn_ref);
+
+  // The out-of-range parameters must not be stored on the peer.
+  EXPECT_FALSE(peer->le()->preferred_connection_parameters().has_value());
+
+  // The connection parameter update must use values within the spec ranges.
+  std::optional<hci_spec::LEConnectionParameters> conn_params;
+  test_device()->set_le_connection_parameters_callback(
+      [&](auto, auto parameters) { conn_params = parameters; });
+
+  RunFor(kLEConnectionPauseCentral);
+  ASSERT_TRUE(conn_params.has_value());
+  EXPECT_GE(conn_params->interval(), hci_spec::kLEConnectionIntervalMin);
+  EXPECT_LE(conn_params->interval(), hci_spec::kLEConnectionIntervalMax);
+  EXPECT_LE(conn_params->latency(), hci_spec::kLEConnectionLatencyMax);
+  EXPECT_GE(conn_params->supervision_timeout(),
+            hci_spec::kLEConnectionSupervisionTimeoutMin);
+  EXPECT_LE(conn_params->supervision_timeout(),
+            hci_spec::kLEConnectionSupervisionTimeoutMax);
 }
 
 TEST_F(
@@ -2568,6 +2654,73 @@ TEST_F(
   RunUntilIdle();
   EXPECT_TRUE(conn_ref);
   EXPECT_FALSE(peer->le()->preferred_connection_parameters());
+}
+
+// Regression test for b/523275339.
+//
+// Peripheral Preferred Connection Parameters (PPCP) whose individual fields are
+// in range but that violate the Core Spec v6.2, Vol 6, Part B, Sec 4.5.2
+// requirement
+//
+//   Supervision_Timeout > (1 + Conn_Latency) * Conn_Interval_Max * 2
+//
+// must be rejected and not stored on the peer.
+TEST_F(
+    LowEnergyConnectionManagerTest,
+    ReadPeripheralPreferredConnectionParametersCharacteristicInvalidSupervisionTimeoutRejected) {
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0, dispatcher());
+  test_device()->AddPeer(std::move(fake_peer));
+
+  // Set up GAP service
+  gatt::ServiceData service_data(gatt::ServiceKind::PRIMARY,
+                                 /*start=*/0x0001,
+                                 /*end=*/0x0003,
+                                 kGenericAccessService);
+  auto [remote_svc, service_client] =
+      fake_gatt()->AddPeerService(peer->identifier(), service_data);
+
+  // Set up preferred connection parameters characteristic.
+  att::Handle char_handle = 0x0002;
+  att::Handle char_value_handle = 0x0003;
+  gatt::CharacteristicData char_data(
+      gatt::kRead,
+      /*ext_props=*/std::nullopt,
+      char_handle,
+      char_value_handle,
+      kPeripheralPreferredConnectionParametersCharacteristic);
+  service_client->set_characteristics({char_data});
+
+  // min_interval=0x0006, max_interval=0x0040 (80 ms), max_latency=2,
+  // supervision_timeout=0x0010 (160 ms).
+  // Required timeout > (1 + 2) * 80 ms * 2 = 480 ms, so 160 ms is invalid.
+  StaticByteBuffer invalid_char_value(0x06,
+                                      0x00,  // min interval
+                                      0x40,
+                                      0x00,  // max interval
+                                      0x02,
+                                      0x00,  // max latency
+                                      0x10,
+                                      0x00);  // supervision timeout
+  service_client->set_read_request_callback(
+      [char_value_handle, invalid_char_value](auto handle, auto read_cb) {
+        if (handle == char_value_handle) {
+          read_cb(fit::ok(), invalid_char_value, /*maybe_truncated=*/false);
+        }
+      });
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_ref;
+  auto callback = [&conn_ref](auto result) {
+    ASSERT_EQ(fit::ok(), result);
+    conn_ref = std::move(result).value();
+  };
+
+  conn_mgr()->Connect(
+      peer->identifier(), callback, LowEnergyConnectionOptions());
+
+  RunUntilIdle();
+  EXPECT_TRUE(conn_ref);
+  EXPECT_FALSE(peer->le()->preferred_connection_parameters().has_value());
 }
 
 TEST_F(LowEnergyConnectionManagerTest, GapServiceCharacteristicDiscoveryError) {

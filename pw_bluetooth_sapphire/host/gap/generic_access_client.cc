@@ -276,6 +276,20 @@ void GenericAccessClient::ReadPeripheralPreferredConnectionParameters(
               pw::bytes::ConvertOrderFrom(cpp20::endian::little,
                                           char_value.supervision_timeout));
 
+          // Reject out-of-spec values so that they are never cached on the
+          // peer and later forwarded to the controller in an
+          // HCI_LE_Connection_Update command.
+          if (!params.IsValid()) {
+            bt_log(DEBUG,
+                   "gap-le",
+                   "peripheral preferred connection parameters characteristic "
+                   "has invalid values (peer: %s)",
+                   bt_str(self->peer_id_));
+            connection_params_cb(
+                ToResult(HostError::kPacketMalformed).take_error());
+            return;
+          }
+
           connection_params_cb(fit::ok(params));
         });
   });
