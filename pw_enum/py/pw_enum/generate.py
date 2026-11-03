@@ -14,40 +14,21 @@
 """Generates shadowed headers with pw_enum footer."""
 
 import argparse
-from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 import re
 import sys
 from typing import Any
 
-try:
-    from pw_enum.parse import (
-        EnumDescriptor,
-        EnumValue,
-        parse_enums,
-        ParseError,
-        is_ok_name,
-        StatusInfo,
-    )
-except ImportError:  # Support running without installing this Python package.
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from pw_enum.parse import (
-        EnumDescriptor,
-        EnumValue,
-        parse_enums,
-        ParseError,
-        is_ok_name,
-        StatusInfo,
-    )
-
-try:
-    from pw_codegen import camel_to_upper_snake, cpp
-except ImportError:  # Support running without installing Python packages.
-    sys.path.append(
-        str(Path(__file__).resolve().parents[3] / "pw_codegen" / "py")
-    )
-    from pw_codegen import camel_to_upper_snake, cpp
+from pw_codegen import camel_to_upper_snake, cpp
+from pw_enum.parse import (
+    EnumDescriptor,
+    EnumValue,
+    parse_enums,
+    ParseError,
+    is_ok_name,
+    StatusInfo,
+)
 
 
 def _legacy_camel_to_upper_snake(name: str) -> str:
@@ -77,19 +58,7 @@ def _generate_macro_defs(enum_desc: EnumDescriptor) -> Iterator[str]:
         yield f"#define {legacy_macro}_FMT {macro}_FMT"
 
 
-def _group_by_value(enum_desc: EnumDescriptor) -> list[list[EnumValue]]:
-    """Groups enumerators by value, in ascending order of value.
-
-    Enumerators that share a value (aliases) end up in the same group, sorted
-    by name. Each group is therefore one distinct value of the enum.
-    """
-    grouped: dict[int, list[EnumValue]] = defaultdict(list)
-    for v in sorted(enum_desc.values, key=lambda val: (val.value, val.name)):
-        grouped[v.value].append(v)
-    return list(grouped.values())
-
-
-def _is_contiguous(distinct_values: list[EnumValue]) -> bool:
+def _is_contiguous(distinct_values: Sequence[EnumValue]) -> bool:
     """Returns whether the values cover every integer from min to max."""
     span = distinct_values[-1].value - distinct_values[0].value + 1
     return span == len(distinct_values)
@@ -97,7 +66,7 @@ def _is_contiguous(distinct_values: list[EnumValue]) -> bool:
 
 def _generate_is_valid(
     enum_desc: EnumDescriptor,
-    distinct_values: list[EnumValue],
+    distinct_values: Sequence[EnumValue],
     is_contiguous: bool,
 ) -> Iterator[str]:
     """Generates the IsValid overloads for an EnumTraits specialization.
@@ -138,7 +107,7 @@ def _generate_is_valid(
 
 def _generate_to_string(
     enum_desc: EnumDescriptor,
-    value_groups: list[list[EnumValue]],
+    unique_values: Sequence[tuple[EnumValue, str]],
 ) -> Iterator[str]:
     """Generates the ToString method for an EnumTraits specialization."""
     yield (
@@ -146,11 +115,9 @@ def _generate_to_string(
         "enum_type value) {"
     )
     yield "    switch (value) {"
-    for group in value_groups:
-        label = group[0].cc_name
-        name = "|".join(dict.fromkeys(v.name for v in group))
-        yield f"      case {enum_desc.cc_full_name}::{label}:"
-        yield f"        return {cpp.string_literal(name)};"
+    for value, display_name in unique_values:
+        yield f"      case {enum_desc.cc_full_name}::{value.cc_name}:"
+        yield f"        return {cpp.string_literal(display_name)};"
     yield "    }"
     yield f'    return "Unknown {enum_desc.cc_full_name} value";'
     yield "  }"
@@ -158,11 +125,11 @@ def _generate_to_string(
 
 def _generate_enum_traits(
     enum_desc: EnumDescriptor,
-    distinct_values: list[EnumValue],
-    value_groups: list[list[EnumValue]],
+    unique_values: Sequence[tuple[EnumValue, str]],
 ) -> Iterator[str]:
     """Generates a pw::EnumTraits specialization for one enum."""
     cc_name = enum_desc.cc_full_name
+    distinct_values = [v for v, _ in unique_values]
     is_contiguous = _is_contiguous(distinct_values)
 
     yield cpp.namespace_open("pw")
@@ -214,26 +181,23 @@ def _generate_enum_traits(
     yield ""
     yield from _generate_is_valid(enum_desc, distinct_values, is_contiguous)
     yield ""
-    yield from _generate_to_string(enum_desc, value_groups)
+    yield from _generate_to_string(enum_desc, unique_values)
     yield "};"
     yield cpp.namespace_close("pw")
 
 
 def _generate_tokenization(
     enum_desc: EnumDescriptor,
-    value_groups: list[list[EnumValue]],
+    unique_values: Sequence[tuple[EnumValue, str]],
 ) -> Iterator[str]:
     """Generates the pw_tokenizer registration for one enum."""
     yield f"_PW_TOKENIZE_ENUM_DOMAIN({enum_desc.cc_full_name},"
     yield f'                         "{enum_desc.cc_versioned_name}",'
-    for i, group in enumerate(value_groups):
-        label = group[0].cc_name
-        # Aliases share a token; their names are joined with "|".
-        name = "|".join(dict.fromkeys(v.name for v in group))
-        comma = "" if i == len(value_groups) - 1 else ","
+    for i, (value, display_name) in enumerate(unique_values):
+        comma = "" if i == len(unique_values) - 1 else ","
         yield (
-            f"                         ({label}, "
-            f"{cpp.string_literal(name)}){comma}"
+            f"                         ({value.cc_name}, "
+            f"{cpp.string_literal(display_name)}){comma}"
         )
     yield ");"
 
@@ -351,8 +315,7 @@ def _generate_status_class(enum_desc: EnumDescriptor) -> Iterator[str]:
 
 
 def _generate_single_enum_footer(enum_desc: EnumDescriptor) -> Iterator[str]:
-    value_groups = _group_by_value(enum_desc)
-    distinct_values = [group[0] for group in value_groups]
+    unique_values = enum_desc.unique_values()
 
     if enum_desc.status is not None:
         yield from _generate_status_class(enum_desc)
@@ -360,27 +323,88 @@ def _generate_single_enum_footer(enum_desc: EnumDescriptor) -> Iterator[str]:
 
     yield from _generate_macro_defs(enum_desc)
     yield ""
-    yield from _generate_enum_traits(enum_desc, distinct_values, value_groups)
+    yield from _generate_enum_traits(enum_desc, unique_values)
     yield ""
-    yield from _generate_tokenization(enum_desc, value_groups)
+    yield from _generate_tokenization(enum_desc, unique_values)
 
 
-def generate_footer(enums: list[EnumDescriptor]) -> Iterator[str]:
-    """Generates the C++ footer with enum traits and tokenization macros."""
+def _footer_includes(enums: Sequence[EnumDescriptor]) -> list[str]:
+    """Returns the #include lines that the footer for these enums requires."""
+    enums_with_values = [enum_desc for enum_desc in enums if enum_desc.values]
+    if not enums_with_values:
+        return []
+
+    includes = []
+    if any(e.status is not None for e in enums_with_values):
+        includes.append('#include "pw_status/status_base.h"')
+    includes.append('#include "pw_tokenizer/enum.h"')
+    return includes
+
+
+def generate_footer(
+    enums: Sequence[EnumDescriptor], *, with_includes: bool = True
+) -> Iterator[str]:
+    """Generates the C++ footer with enum traits and tokenization macros.
+
+    Args:
+        enums: The enums for which to generate the footer.
+        with_includes: Whether to emit the footer's ``#include`` lines. If
+            false, the caller is responsible for including the headers from
+            ``_footer_includes``.
+    """
     enums_with_values = [enum_desc for enum_desc in enums if enum_desc.values]
     if not enums_with_values:
         return
 
-    if any(e.status is not None for e in enums_with_values):
-        yield '#include "pw_status/status_base.h"'
-    yield '#include "pw_tokenizer/enum.h"'
+    if with_includes:
+        yield from _footer_includes(enums_with_values)
 
-    for enum_desc in enums_with_values:
-        yield ""
+    for i, enum_desc in enumerate(enums_with_values):
+        if with_includes or i > 0:
+            yield ""
         yield from _generate_single_enum_footer(enum_desc)
 
 
 _PW_ENUM_MACRO = re.compile(r'\bPW_ENUM(?:_STATUS)?(?=\s*\()')
+
+
+def _generate_enum_definition(enum_desc: EnumDescriptor) -> Iterator[str]:
+    assert enum_desc.underlying_type is not None
+    cc_type = cpp.INT_TYPES[enum_desc.underlying_type].cc_type
+    namespace = "::".join(enum_desc.scopes)
+
+    yield cpp.namespace_open(namespace)
+    yield ""
+    yield from cpp.doc_comment(enum_desc.doc)
+    yield f"enum class {enum_desc.name} : {cc_type} {{"
+    for value in enum_desc.values:
+        yield from cpp.doc_comment(value.doc, indent="  ")
+        literal = cpp.int_literal(value.value, enum_desc.underlying_type)
+        yield f"  {value.cc_name} = {literal},"
+    yield "};"
+    yield ""
+    yield cpp.namespace_close(namespace)
+
+
+def generate_cc_header(
+    source: str, enums: Sequence[EnumDescriptor]
+) -> Iterator[str]:
+    """Generates a complete C++ header for enums from a pw_enum source."""
+    yield f"// Generated by pw_enum from {source}. DO NOT EDIT."
+    yield "#pragma once"
+    yield ""
+    yield from cpp.includes(
+        ["<cstdint>", '"pw_enum/traits.h"', *_footer_includes(enums)]
+    )
+
+    for enum_desc in enums:
+        yield ""
+        yield from _generate_enum_definition(enum_desc)
+
+    yield ""
+    yield "// --- pw_enum generated footer ---"
+    yield ""
+    yield from generate_footer(enums, with_includes=False)
 
 
 def _write_generated_header(

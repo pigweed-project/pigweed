@@ -11,7 +11,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Loads and resolves language-neutral pw_enum JSON enum definitions."""
+"""Loads and resolves language-neutral pw_enum TOML and JSON definitions."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ import keyword
 import operator
 from pathlib import Path
 import re
+import tomllib
 from typing import Any, NoReturn
 
 from pw_enum.parse import (
@@ -40,9 +41,7 @@ _VALUE_NAME = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$")
 
 _FILE_KEYS = frozenset(("$schema", "namespace", "cc", "enums"))
 _FILE_CC_KEYS = frozenset(("namespace",))
-_ENUM_KEYS = frozenset(
-    ("name", "type", "doc", "values", "status", "allow_alias")
-)
+_ENUM_KEYS = frozenset(("type", "doc", "values", "status", "allow_alias"))
 _VALUE_KEYS = frozenset(("name", "value", "display_name", "doc", "cc"))
 _VALUE_CC_KEYS = frozenset(("name",))
 _STATUS_KEYS = frozenset(("name", "ok"))
@@ -54,7 +53,7 @@ _MAX_SHIFT = 64
 
 
 class SourceError(ParseError):
-    """Raised for invalid pw_enum JSON sources."""
+    """Raised for invalid pw_enum TOML or JSON sources."""
 
 
 def _fail(path: Path | str, context: str, message: str) -> NoReturn:
@@ -214,7 +213,7 @@ def _check_object(
     obj: Any, allowed: frozenset[str], path: Path, context: str
 ) -> dict[str, Any]:
     if not isinstance(obj, dict):
-        _fail(path, context, "expected a JSON object")
+        _fail(path, context, "expected a table or JSON object")
     unknown = sorted(set(obj) - allowed)
     if unknown:
         _fail(
@@ -247,7 +246,7 @@ def _get_str(
 
 
 def _get_doc(obj: dict[str, Any], path: Path, context: str) -> str:
-    doc = _get_str(obj, "doc", path, context)
+    doc = _get_str(obj, "doc", path, context).rstrip("\n")
     try:
         list(cpp.doc_comment(doc))  # Check for trailing slashes
     except ValueError:
@@ -368,15 +367,14 @@ def _parse_value(data: Any, path: Path, context: str) -> _PendingValue:
 
 
 def _parse_enum(
+    name: str,
     data: Any,
     path: Path,
     context: str,
     namespace: tuple[str, ...],
     scopes: tuple[str, ...],
 ) -> _PendingEnum:
-    context = _named_context(data, context)
     obj = _check_object(data, _ENUM_KEYS, path, context)
-    name = _get_str(obj, "name", path, context, required=True)
     _check_type_name(name, "enum", path, context)
 
     underlying_type = DEFAULT_INT_TYPE
@@ -456,15 +454,33 @@ def _parse_enum(
     return enum
 
 
-def _load_source(path: Path) -> list[_PendingEnum]:
+def _read_data(path: Path) -> Any:
     try:
-        with path.open(encoding="utf-8") as file:
-            data = json.load(file, object_pairs_hook=_reject_duplicate_keys)
+        if path.suffix == ".toml":
+            with path.open("rb") as toml_file:
+                return tomllib.load(toml_file)
+        if path.suffix == ".json":
+            with path.open(encoding="utf-8") as json_file:
+                return json.load(
+                    json_file, object_pairs_hook=_reject_duplicate_keys
+                )
     except OSError as e:
         _fail(path, "", f"unable to read file: {e.strerror or e}")
+    except tomllib.TOMLDecodeError as e:
+        _fail(path, "", f"invalid TOML: {e}")
     except (json.JSONDecodeError, ValueError) as e:
         _fail(path, "", f"invalid JSON: {e}")
 
+    _fail(
+        path,
+        "",
+        f"unsupported file extension {path.suffix!r}; expected '.toml' or "
+        "'.json'",
+    )
+
+
+def _load_source(path: Path) -> list[_PendingEnum]:
+    data = _read_data(path)
     obj = _check_object(data, _FILE_KEYS, path, "")
     _get_str(obj, "$schema", path, "")
     namespace = _parse_namespace(
@@ -481,12 +497,12 @@ def _load_source(path: Path) -> list[_PendingEnum]:
             )
 
     enums = obj.get("enums")
-    if not isinstance(enums, list) or not enums:
-        _fail(path, "", "'enums' must be a non-empty list")
+    if not isinstance(enums, dict) or not enums:
+        _fail(path, "", "'enums' must be a non-empty table or JSON object")
 
     return [
-        _parse_enum(enum, path, f"enums[{i}]", namespace, scopes)
-        for i, enum in enumerate(enums)
+        _parse_enum(name, enum, path, f"enums.{name}", namespace, scopes)
+        for name, enum in enums.items()
     ]
 
 
@@ -787,16 +803,15 @@ def resolve_sources(
     deps: Sequence[Path] = (),
     transitive_deps: Sequence[Path] = (),
 ) -> list[tuple[EnumDescriptor, ...]]:
-    """Loads and resolves JSON enum sources.
+    """Loads and resolves TOML and JSON enum sources.
 
     Enumerators may reference enumerators in any of the sources or in direct
     dependencies.
 
     Args:
-        sources: The JSON source files to load and resolve.
-        deps: JSON sources of direct dependencies, which sources may
-            reference.
-        transitive_deps: JSON sources of all transitive dependencies, which
+        sources: The TOML or JSON source files to load and resolve.
+        deps: Direct dependency sources, which sources may reference.
+        transitive_deps: All transitive dependency sources, which
             dependencies may reference. May include sources and deps.
 
     Returns:

@@ -11,7 +11,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Tests for loading and resolving pw_enum JSON sources."""
+"""Tests for loading and resolving pw_enum TOML and JSON sources."""
 
 import json
 from pathlib import Path
@@ -34,7 +34,7 @@ def _values(enums: tuple[EnumDescriptor, ...]) -> dict[str, int]:
 
 
 class JsonSourceTestBase(unittest.TestCase):
-    """Writes JSON sources to a temporary directory."""
+    """Writes TOML and JSON sources to a temporary directory."""
 
     def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
@@ -56,22 +56,28 @@ class JsonSourceTestBase(unittest.TestCase):
         data: Any,
         deps: tuple[Path, ...] = (),
         transitive_deps: tuple[Path, ...] = (),
+        *,
+        name: str = "test.json",
     ) -> tuple[EnumDescriptor, ...]:
-        path = self._write("test.json", data)
+        path = self._write(name, data)
         (result,) = resolve_sources([path], deps, transitive_deps)
         return result
 
-    def _assert_error(self, data: Any, message: str) -> None:
+    def _assert_error(
+        self, data: Any, message: str, *, name: str = "test.json"
+    ) -> None:
         with self.assertRaisesRegex(SourceError, message):
-            self._resolve(data)
+            self._resolve(data, name=name)
 
 
-def _file(*enums: dict[str, Any], **fields: Any) -> dict[str, Any]:
-    return {"namespace": "my.pkg", "enums": list(enums), **fields}
+def _file(*enums: tuple[str, dict[str, Any]], **fields: Any) -> dict[str, Any]:
+    return {"namespace": "my.pkg", "enums": dict(enums), **fields}
 
 
-def _enum(name: str, *values: dict[str, Any], **fields: Any) -> dict[str, Any]:
-    return {"name": name, "values": list(values), **fields}
+def _enum(
+    name: str, *values: dict[str, Any], **fields: Any
+) -> tuple[str, dict[str, Any]]:
+    return name, {"values": list(values), **fields}
 
 
 class TestResolve(JsonSourceTestBase):
@@ -107,6 +113,76 @@ class TestResolve(JsonSourceTestBase):
                 EnumValue("kDelta", 11, "DELTA", "DELTA"),
             ),
         )
+
+    def test_toml(self) -> None:
+        """Tests loading TOML enum definitions."""
+        toml_source = '''
+namespace = "my.pkg"
+cc.namespace = "::custom::ns"
+
+[enums.MyEnum]
+type = "uint16"
+doc = """
+My enum.
+
+With multiple lines.
+"""
+
+[[enums.MyEnum.values]]
+name = "ALPHA"
+doc = "First value."
+
+[[enums.MyEnum.values]]
+name = "BETA"
+value = 0x10
+
+[[enums.MyEnum.values]]
+name = "GAMMA"
+value = "BETA | 0b11"
+display_name = "gamma"
+cc.name = "kCustomGamma"
+
+[enums.Compact]
+status = { name = "CompactStatus", ok = "OK" }
+values = [
+  { name = "OK" },
+  { name = "BUSY", value = "MyEnum.BETA + 1" },
+]
+'''
+        my_enum, compact = self._resolve(toml_source, name="test.toml")
+        self.assertEqual(my_enum.name, "MyEnum")
+        self.assertEqual(my_enum.namespace, ("my", "pkg"))
+        self.assertEqual(my_enum.scopes, ("custom", "ns"))
+        self.assertEqual(my_enum.underlying_type, "uint16")
+        self.assertEqual(my_enum.doc, "My enum.\n\nWith multiple lines.")
+        self.assertEqual(
+            my_enum.values,
+            (
+                EnumValue("kAlpha", 0, "ALPHA", "ALPHA", "First value."),
+                EnumValue("kBeta", 16, "BETA", "BETA"),
+                EnumValue("kCustomGamma", 19, "gamma", "GAMMA"),
+            ),
+        )
+        assert compact.status is not None
+        self.assertEqual(compact.status.name, "CompactStatus")
+        self.assertEqual(
+            _values((compact,)),
+            {"Compact.OK": 0, "Compact.BUSY": 17},
+        )
+
+    def test_toml_and_json_interoperability(self) -> None:
+        toml_dep = self._write(
+            "dep.toml",
+            'namespace = "other.pkg"\n'
+            "[enums.Dep]\n"
+            'values = [{ name = "BASE", value = 0x20 }]\n',
+        )
+        result = self._resolve(
+            _file(_enum("E", {"name": "A", "value": "other.pkg.Dep.BASE + 1"})),
+            deps=(toml_dep,),
+            transitive_deps=(toml_dep,),
+        )
+        self.assertEqual(_values(result), {"E.A": 33})
 
     def test_default_type(self) -> None:
         (enum,) = self._resolve(_file(_enum("E", {"name": "A"})))
@@ -176,10 +252,10 @@ class TestResolve(JsonSourceTestBase):
     def test_references_to_dependencies(self) -> None:
         dep_path = self._write(
             "dep.json",
-            {
-                "namespace": "other.pkg",
-                "enums": [_enum("Dep", {"name": "BASE", "value": 100})],
-            },
+            _file(
+                _enum("Dep", {"name": "BASE", "value": 100}),
+                namespace="other.pkg",
+            ),
         )
         result = self._resolve(
             _file(_enum("E", {"name": "A", "value": "other.pkg.Dep.BASE + 1"})),
@@ -191,19 +267,14 @@ class TestResolve(JsonSourceTestBase):
     def test_dependencies_resolve_their_own_references(self) -> None:
         base = self._write(
             "base.json",
-            {
-                "namespace": "base",
-                "enums": [_enum("Base", {"name": "X", "value": 7})],
-            },
+            _file(_enum("Base", {"name": "X", "value": 7}), namespace="base"),
         )
         dep = self._write(
             "dep.json",
-            {
-                "namespace": "dep",
-                "enums": [
-                    _enum("Dep", {"name": "Y", "value": "base.Base.X * 2"})
-                ],
-            },
+            _file(
+                _enum("Dep", {"name": "Y", "value": "base.Base.X * 2"}),
+                namespace="dep",
+            ),
         )
         result = self._resolve(
             _file(_enum("E", {"name": "A", "value": "dep.Dep.Y + 1"})),
@@ -250,7 +321,7 @@ class TestResolve(JsonSourceTestBase):
         self.assertEqual(status.ok_code, "kOk")
 
     def test_same_version_as_header_enum(self) -> None:
-        """JSON and header enums with the same contents share a version."""
+        """Data-file and header enums with the same contents share a version."""
         (json_enum,) = self._resolve(
             _file(_enum("MyEnum", {"name": "ALPHA"}, {"name": "BETA"}))
         )
@@ -341,19 +412,44 @@ class TestErrors(JsonSourceTestBase):  # pylint: disable=too-many-public-methods
         ):
             resolve_sources([missing])
 
+    def test_unsupported_extension(self) -> None:
+        self._assert_error(
+            "namespace: my.pkg\n",
+            r"unsupported file extension '\.yaml'; expected '\.toml' or "
+            r"'\.json'",
+            name="test.yaml",
+        )
+
     def test_invalid_json(self) -> None:
         self._assert_error("{", "invalid JSON")
 
-    def test_duplicate_keys(self) -> None:
+    def test_invalid_toml(self) -> None:
+        self._assert_error("namespace = [", "invalid TOML", name="test.toml")
+
+    def test_duplicate_keys_json(self) -> None:
         self._assert_error(
-            '{"namespace": "a", "namespace": "b", "enums": []}',
+            '{"namespace": "a", "namespace": "b", "enums": {}}',
             "duplicate key 'namespace'",
+        )
+
+    def test_duplicate_keys_toml(self) -> None:
+        self._assert_error(
+            'namespace = "a.b"\n[enums.E]\nvalues = [{ name = "A" }]\n'
+            '[enums.E]\nvalues = [{ name = "B" }]\n',
+            "invalid TOML",
+            name="test.toml",
+        )
+
+    def test_non_object_enum(self) -> None:
+        self._assert_error(
+            {"namespace": "my.pkg", "enums": {"E": []}},
+            r"enums\.E: error: expected a table or JSON object",
         )
 
     def test_unknown_field(self) -> None:
         self._assert_error(
             _file(_enum("E", {"name": "A", "val": 1})),
-            r"enums\[0\] \(E\)\.values\[0\] \(A\): error: unknown field",
+            r"enums\.E\.values\[0\] \(A\): error: unknown field",
         )
         self._assert_error(
             _file(
@@ -363,24 +459,26 @@ class TestErrors(JsonSourceTestBase):  # pylint: disable=too-many-public-methods
                     cc={"status": {"name": "S", "ok": "OK"}},
                 )
             ),
-            r"enums\[0\] \(E\): error: unknown field\(s\) cc",
+            r"enums\.E: error: unknown field\(s\) cc",
         )
         self._assert_error(
             _file(_enum("E", {"name": "OK"}, status={"name": "S", "x": 1})),
-            r"enums\[0\] \(E\)\.status: error: unknown field\(s\) x",
+            r"enums\.E\.status: error: unknown field\(s\) x",
         )
 
     def test_missing_namespace(self) -> None:
-        self._assert_error({"enums": []}, "missing required field 'namespace'")
+        self._assert_error({"enums": {}}, "missing required field 'namespace'")
 
     def test_invalid_namespace(self) -> None:
         self._assert_error(
-            {"namespace": "my.class", "enums": [_enum("E", {"name": "A"})]},
+            _file(_enum("E", {"name": "A"}), namespace="my.class"),
             "invalid namespace",
         )
 
     def test_no_enums(self) -> None:
-        self._assert_error(_file(), "'enums' must be a non-empty list")
+        self._assert_error(
+            _file(), "'enums' must be a non-empty table or JSON object"
+        )
 
     def test_no_values(self) -> None:
         self._assert_error(_file(_enum("E")), "'values' must be")
@@ -413,10 +511,14 @@ class TestErrors(JsonSourceTestBase):  # pylint: disable=too-many-public-methods
         )
 
     def test_duplicate_enum(self) -> None:
-        self._assert_error(
-            _file(_enum("E", {"name": "A"}), _enum("E", {"name": "B"})),
-            "already defined",
-        )
+        first = self._write("first.json", _file(_enum("E", {"name": "A"})))
+        second = self._write("second.json", _file(_enum("E", {"name": "B"})))
+        with self.assertRaisesRegex(
+            SourceError,
+            r"second\.json: enums\.E: error: enum my\.pkg\.E is already "
+            r"defined",
+        ):
+            resolve_sources([first, second])
 
     def test_unsupported_type(self) -> None:
         self._assert_error(
@@ -451,7 +553,7 @@ class TestErrors(JsonSourceTestBase):  # pylint: disable=too-many-public-methods
     def test_reference_to_transitive_dep(self) -> None:
         base = self._write(
             "base.json",
-            {"namespace": "base", "enums": [_enum("Base", {"name": "X"})]},
+            _file(_enum("Base", {"name": "X"}), namespace="base"),
         )
         with self.assertRaisesRegex(SourceError, "not a direct dependency"):
             self._resolve(
@@ -462,10 +564,10 @@ class TestErrors(JsonSourceTestBase):  # pylint: disable=too-many-public-methods
     def test_dep_cannot_reference_source(self) -> None:
         dep = self._write(
             "dep.json",
-            {
-                "namespace": "dep",
-                "enums": [_enum("Dep", {"name": "X", "value": "my.pkg.E.A"})],
-            },
+            _file(
+                _enum("Dep", {"name": "X", "value": "my.pkg.E.A"}),
+                namespace="dep",
+            ),
         )
         with self.assertRaisesRegex(
             SourceError, "dependency cannot reference enumerator"
@@ -551,7 +653,7 @@ class TestErrors(JsonSourceTestBase):  # pylint: disable=too-many-public-methods
     def test_status_name_same_as_enum(self) -> None:
         self._assert_error(
             _file(_enum("E", {"name": "OK"}, status={"name": "E", "ok": "OK"})),
-            r"enums\[0\] \(E\)\.status: error: status and enum cannot have "
+            r"enums\.E\.status: error: status and enum cannot have "
             r"the same name \(E\)",
         )
 
@@ -561,11 +663,11 @@ class TestErrors(JsonSourceTestBase):  # pylint: disable=too-many-public-methods
             SourceError, r"C\+\+ name ::my::pkg::E is also defined"
         ):
             self._resolve(
-                {
-                    "namespace": "other.pkg",
-                    "cc": {"namespace": "my::pkg"},
-                    "enums": [_enum("E", {"name": "B"})],
-                },
+                _file(
+                    _enum("E", {"name": "B"}),
+                    namespace="other.pkg",
+                    cc={"namespace": "my::pkg"},
+                ),
                 deps=(dep,),
             )
 
@@ -606,7 +708,7 @@ class TestErrors(JsonSourceTestBase):  # pylint: disable=too-many-public-methods
 
     def test_reserved_cc_identifiers(self) -> None:
         self._assert_error(
-            {"namespace": "my.errno", "enums": [_enum("E", {"name": "A"})]},
+            _file(_enum("E", {"name": "A"}), namespace="my.errno"),
             "not C\\+\\+ reserved words",
         )
         self._assert_error(
@@ -720,7 +822,7 @@ class TestErrors(JsonSourceTestBase):  # pylint: disable=too-many-public-methods
                 )
         self._assert_error(
             _file(_enum("E", {"name": "A"}, doc="C:\\")),
-            r"enums\[0\] \(E\): error: 'doc' lines cannot end with",
+            r"enums\.E: error: 'doc' lines cannot end with",
         )
 
     def test_doc_with_inner_backslash(self) -> None:

@@ -26,16 +26,9 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 
-try:
-    from pw_codegen import camel_to_upper_snake
-except ImportError:  # Support running without installing Python packages.
-    sys.path.append(
-        str(Path(__file__).resolve().parents[3] / "pw_codegen" / "py")
-    )
-    from pw_codegen import camel_to_upper_snake
+from pw_codegen import camel_to_upper_snake
 
 
 class ParseError(Exception):
@@ -128,6 +121,20 @@ class EnumDescriptor(_ParsedEnum[EnumValue]):
     def cc_versioned_name(self) -> str:
         """Returns the fully qualified versioned C++ name of the enum."""
         return "::" + "::".join(self.scopes + (self.version, self.name))
+
+    def unique_values(self) -> list[tuple[EnumValue, str]]:
+        """Returns (representative EnumValue, display_name) per distinct value.
+
+        Values are in ascending order. Aliases that share a value are grouped
+        together, with their distinct display names sorted and joined by ``|``.
+        """
+        grouped: dict[int, list[EnumValue]] = {}
+        for v in sorted(self.values, key=lambda val: (val.value, val.name)):
+            grouped.setdefault(v.value, []).append(v)
+        return [
+            (group[0], "|".join(dict.fromkeys(v.name for v in group)))
+            for group in grouped.values()
+        ]
 
 
 def _raise_error(msg: str, line: int, path: Path) -> None:

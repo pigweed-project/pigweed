@@ -20,8 +20,10 @@ pw_py_library(
     name = "py",
     srcs = [
         "pw_enum/__init__.py",
+        "pw_enum/codegen.py",
         "pw_enum/generate.py",
         "pw_enum/generate_gn.py",
+        "pw_enum/generate_py.py",
         "pw_enum/json_source.py",
         "pw_enum/parse.py",
     ],
@@ -30,10 +32,24 @@ pw_py_library(
 )
 
 pw_py_binary(
+    name = "codegen",
+    srcs = ["pw_enum/codegen.py"],
+    imports = ["."],
+    main = "pw_enum/codegen.py",
+    deps = [":py"],
+)
+
+pw_py_binary(
     name = "enum_generator",
     srcs = ["pw_enum/generate.py"],
     imports = ["."],
     main = "pw_enum/generate.py",
+    deps = [":py"],
+)
+
+pw_py_test(
+    name = "codegen_test",
+    srcs = ["codegen_test.py"],
     deps = [":py"],
 )
 

@@ -24,12 +24,15 @@ pw_python_package("py") {
   }
   sources = [
     "pw_enum/__init__.py",
+    "pw_enum/codegen.py",
     "pw_enum/generate.py",
     "pw_enum/generate_gn.py",
+    "pw_enum/generate_py.py",
     "pw_enum/json_source.py",
     "pw_enum/parse.py",
   ]
   tests = [
+    "codegen_test.py",
     "generate_test.py",
     "json_source_test.py",
     "parse_test.py",
