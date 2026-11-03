@@ -138,7 +138,7 @@ Status ReadByte(std::byte* dest) {
   return OkStatus();
 }
 
-Status TryReadByte(std::byte* dest) { return Status::Unimplemented(); }
+Status TryReadByte(std::byte*) { return Status::Unimplemented(); }
 
 Status WriteByte(std::byte b) {
   if (HAL_UART_Transmit(

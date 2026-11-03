@@ -166,6 +166,32 @@ Additionally, the following arguments are also supported:
 * **remove_public_deps**: (optional) A list of targets to remove from the set of
   default public_deps specified by the current toolchain configuration.
 
+.. _module-pw_build-pw_system_includes:
+
+pw_system_includes
+-------------------
+The ``pw_system_includes`` template defines a config that exposes include
+directories as system includes (``-isystem``) instead of regular includes
+(``-I``). This suppresses compiler warnings in headers from those directories
+for targets that use this config.
+
+.. code-block::
+
+   import("$dir_pw_build/target_types.gni")
+
+   pw_system_includes("external_includes") {
+     include_dirs = [ "path/to/external/headers" ]
+   }
+
+   pw_source_set("my_library") {
+     public_configs = [ ":external_includes" ]
+   }
+
+Arguments
+^^^^^^^^^
+* **include_dirs**: (required) List of directories to expose with ``-isystem``.
+* **visibility**: (optional) GN visibility list forwarded to the underlying config.
+
 .. _module-pw_build-link-deps:
 
 Link-only deps

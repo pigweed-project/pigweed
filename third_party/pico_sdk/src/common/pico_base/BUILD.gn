@@ -21,7 +21,7 @@ _CWD = "${PICO_SRC_DIR}/src/common/pico_base"
 
 import("generate_version_header.gni")
 
-config("public_include_dirs") {
+pw_system_includes("public_include_dirs") {
   include_dirs = [ "${_CWD}/include" ]
 }
 
@@ -46,7 +46,6 @@ pw_source_set("pico_base") {
     ":board_define",
     "${PICO_ROOT}/src/rp2_common/cmsis:rename_exceptions_config",
     ":public_include_dirs",
-    "${PICO_ROOT}/gn:disable_warnings",
   ]
   public = [
     "${_CWD}/include/pico.h",

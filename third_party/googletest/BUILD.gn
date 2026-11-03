@@ -22,16 +22,11 @@ import("googletest.gni")
 # arg dir_pw_third_party_googletest to point to that directory. The googletest
 # library will be available in GN at "$pw_external_googletest".
 if (dir_pw_third_party_googletest != "") {
-  config("includes") {
-    cflags = [
-      "-isystem",
-      rebase_path("$dir_pw_third_party_googletest/googletest/include",
-                  root_build_dir),
-      "-isystem",
-      rebase_path("$dir_pw_third_party_googletest/googlemock/include",
-                  root_build_dir),
+  pw_system_includes("includes") {
+    include_dirs = [
+      "$dir_pw_third_party_googletest/googletest/include",
+      "$dir_pw_third_party_googletest/googlemock/include",
     ]
-    asmflags = cflags
   }
 
   config("private_config") {

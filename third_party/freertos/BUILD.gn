@@ -57,7 +57,7 @@ if (dir_pw_third_party_freertos == "") {
     visibility = [ ":*" ]
   }
 
-  config("public_includes") {
+  pw_system_includes("public_includes") {
     include_dirs = [ "$dir_pw_third_party_freertos/include" ]
     visibility = [ ":*" ]
   }
@@ -128,7 +128,7 @@ if (dir_pw_third_party_freertos == "") {
   }
 
   # ARM CM33 port of FreeRTOS
-  config("arm_cm33_includes") {
+  pw_system_includes("arm_cm33_includes") {
     include_dirs =
         [ "$dir_pw_third_party_freertos/portable/GCC/ARM_CM33_NTZ/non_secure" ]
     visibility = [ ":arm_cm33" ]
@@ -152,7 +152,7 @@ if (dir_pw_third_party_freertos == "") {
   }
 
   # ARM CM7 port of FreeRTOS
-  config("arm_cm7_includes") {
+  pw_system_includes("arm_cm7_includes") {
     include_dirs = [ "$dir_pw_third_party_freertos/portable/GCC/ARM_CM7/r0p1" ]
     visibility = [ ":arm_cm7" ]
   }
@@ -180,7 +180,7 @@ if (dir_pw_third_party_freertos == "") {
   }
 
   # ARM CM4F port of FreeRTOS.
-  config("arm_cm4f_includes") {
+  pw_system_includes("arm_cm4f_includes") {
     include_dirs = [ "$dir_pw_third_party_freertos/portable/GCC/ARM_CM4F" ]
     visibility = [ ":arm_cm4f" ]
   }
@@ -198,7 +198,7 @@ if (dir_pw_third_party_freertos == "") {
   }
 
   # ARM CM3 port of FreeRTOS.
-  config("arm_cm3_includes") {
+  pw_system_includes("arm_cm3_includes") {
     include_dirs = [ "$dir_pw_third_party_freertos/portable/GCC/ARM_CM3" ]
     visibility = [ ":arm_cm3" ]
   }
@@ -215,7 +215,7 @@ if (dir_pw_third_party_freertos == "") {
   }
 
   # ARM CM0 port of FreeRTOS.
-  config("arm_cm0_includes") {
+  pw_system_includes("arm_cm0_includes") {
     include_dirs = [ "$dir_pw_third_party_freertos/portable/GCC/ARM_CM0" ]
     visibility = [ ":arm_cm0" ]
   }

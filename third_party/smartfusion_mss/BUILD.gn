@@ -83,11 +83,16 @@ if (dir_pw_third_party_smartfusion_mss != "") {
       public_configs = [
         ":${config_name}",
         ":smartfusion_mss_common_config",
+        ":smartfusion_mss_includes",
       ]
     }
   }
 
   config("smartfusion_mss_common_config") {
+    include_dirs = [ "$pw_external_smartfusion_mss" ]
+  }
+
+  pw_system_includes("smartfusion_mss_includes") {
     include_dirs = [
       "$dir_pw_third_party_smartfusion_mss/exported_firmware/CMSIS/V4.5/Include",
       "$dir_pw_third_party_smartfusion_mss/exported_firmware/drivers",
@@ -95,13 +100,26 @@ if (dir_pw_third_party_smartfusion_mss != "") {
       "$dir_pw_third_party_smartfusion_mss/exported_firmware/CMSIS",
       "$dir_pw_third_party_smartfusion_mss/exported_firmware/hal",
       "$dir_pw_third_party_smartfusion_mss/exported_firmware/hal/CortexM3",
-      "$pw_external_smartfusion_mss",
     ]
+  }
+
+  config("disable_warnings") {
     cflags = [
-      "-Wno-error=cast-qual",
-      "-Wno-error=redundant-decls",
-      "-w",
+      "-Wno-cast-qual",
+      "-Wno-conversion",
+      "-Wno-pedantic",
+      "-Wno-redundant-decls",
+      "-Wno-shadow",
+      "-Wno-sign-compare",
+      "-Wno-switch-enum",
+      "-Wno-undef",
+      "-Wno-unused-but-set-variable",
+      "-Wno-unused-function",
+      "-Wno-unused-parameter",
+      "-Wno-unused-variable",
     ]
+    cflags_c = [ "-Wno-strict-prototypes" ]
+    visibility = [ ":*" ]
   }
 
   pw_source_set("smartfusion_mss") {
@@ -109,6 +127,7 @@ if (dir_pw_third_party_smartfusion_mss != "") {
     foreach(source, smartfusion_mss_sources) {
       sources += [ "$dir_pw_third_party_smartfusion_mss/" + source ]
     }
+    configs = [ ":disable_warnings" ]
     public_deps = [ ":${pw_third_party_smartfusion_mss_CONFIG}_config_srcset" ]
   }
 } else {

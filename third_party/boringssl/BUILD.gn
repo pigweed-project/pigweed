@@ -27,15 +27,16 @@ if (pw_third_party_boringssl_ALIAS != "") {
   import("$dir_pw_third_party_boringssl/BUILD.generated.gni")
 
   config("public_config") {
-    include_dirs = [
-      "$dir_pw_third_party_boringssl/src/include",
-      "public",
-    ]
+    include_dirs = [ "public" ]
 
     # This can be removed once boringssl threading primitives are implemented,
     # i.e. using pw_sync, and when we have a posix style socket layer.
     defines =
         [ "OPENSSL_NO_THREADS_CORRUPT_MEMORY_AND_LEAK_SECRETS_IF_THREADED" ]
+  }
+
+  pw_system_includes("external_includes") {
+    include_dirs = [ "$dir_pw_third_party_boringssl/src/include" ]
   }
 
   config("internal_config") {
@@ -58,12 +59,25 @@ if (pw_third_party_boringssl_ALIAS != "") {
       "NDEBUG",
     ]
     cflags = [
-      "-Wno-unused-function",
-      "-Wno-conversion",
-      "-Wno-unused-parameter",
-      "-Wno-char-subscripts",
       "-Wno-cast-qual",
-      "-w",
+      "-Wno-char-subscripts",
+      "-Wno-conversion",
+      "-Wno-format",
+      "-Wno-implicit-fallthrough",
+      "-Wno-pedantic",
+      "-Wno-shadow",
+      "-Wno-sign-compare",
+      "-Wno-switch-enum",
+      "-Wno-type-limits",
+      "-Wno-undef",
+      "-Wno-unused-but-set-variable",
+      "-Wno-unused-function",
+      "-Wno-unused-parameter",
+      "-Wno-unused-variable",
+    ]
+    cflags_c = [
+      "-Wno-strict-prototypes",
+      "-Wno-unterminated-string-initialization",
     ]
     cflags_cc = [
       "-fpermissive",
@@ -85,7 +99,10 @@ if (pw_third_party_boringssl_ALIAS != "") {
     foreach(source, crypto_sources - excluded_sources + ssl_sources) {
       sources += [ "$dir_pw_third_party_boringssl/$source" ]
     }
-    public_configs = [ ":public_config" ]
+    public_configs = [
+      ":public_config",
+      ":external_includes",
+    ]
     configs = [ ":internal_config" ]
 
     # Contains a faked "sysdeps/sys/socket.h"

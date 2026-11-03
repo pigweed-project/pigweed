@@ -37,7 +37,7 @@ template("generate_version_header") {
   _generated_header_dir = "${target_gen_dir}/${target_name}_include"
   _generated_header_path = "${_generated_header_dir}/pico/version.h"
 
-  config("${target_name}.public_include_dirs") {
+  pw_system_includes("${target_name}.public_include_dirs") {
     include_dirs = [ "${_generated_header_dir}" ]
   }
 
@@ -65,10 +65,7 @@ template("generate_version_header") {
   }
 
   pw_source_set("${target_name}") {
-    public_configs = [
-      "${PICO_ROOT}/gn:disable_warnings",
-      ":${target_name}.public_include_dirs",
-    ]
+    public_configs = [ ":${target_name}.public_include_dirs" ]
     deps = [ ":${target_name}.generated_header" ]
     public = [ "${_generated_header_path}" ]
     forward_variables_from(invoker,

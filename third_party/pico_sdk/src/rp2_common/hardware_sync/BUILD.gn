@@ -19,15 +19,12 @@ import("$dir_pw_build/target_types.gni")
 
 _CWD = "${PICO_SRC_DIR}/src/rp2_common/hardware_sync"
 
-config("public_include_dirs") {
+pw_system_includes("public_include_dirs") {
   include_dirs = [ "${_CWD}/include" ]
 }
 
 pw_source_set("hardware_sync") {
-  public_configs = [
-    ":public_include_dirs",
-    "${PICO_ROOT}/gn:disable_warnings",
-  ]
+  public_configs = [ ":public_include_dirs" ]
   public_deps = [
     "${PICO_ROOT}/src/common/pico_base",
     "${PICO_ROOT}/src/rp2040/hardware_regs",
@@ -35,7 +32,10 @@ pw_source_set("hardware_sync") {
   ]
 
   # hardware_claim and hardware_sync circularly depend on each other.
-  configs = [ "${PICO_ROOT}/src/rp2_common/hardware_claim:public_include_dirs" ]
+  configs = [
+    "${PICO_ROOT}/gn:disable_warnings",
+    "${PICO_ROOT}/src/rp2_common/hardware_claim:public_include_dirs",
+  ]
 
   public = [ "${_CWD}/include/hardware/sync.h" ]
   sources = [ "${_CWD}/sync.c" ]

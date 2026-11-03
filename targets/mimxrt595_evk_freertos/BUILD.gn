@@ -152,7 +152,6 @@ if (pw_third_party_mcuxpresso_SDK ==
   pw_source_set("freertos_config") {
     public_configs = [
       ":sdk_defines",
-      ":disable_warnings",
       ":freertos_config_public_includes",
     ]
     public_deps = [ "$pw_external_freertos:config_assert" ]
@@ -163,7 +162,7 @@ if (pw_third_party_mcuxpresso_SDK ==
   _freertos_port_dir =
       "$dir_pw_third_party_freertos/portable/GCC/ARM_CM33_NTZ/non_secure"
 
-  config("freertos_port_public_includes") {
+  pw_system_includes("freertos_port_public_includes") {
     include_dirs = [
       "$_freertos_port_dir",
       "$dir_pw_third_party_freertos/include",

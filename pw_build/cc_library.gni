@@ -66,3 +66,28 @@ template("pw_shared_library") {
     underlying_target_type = "shared_library"
   }
 }
+
+# Defines a config that exposes include_dirs as system includes (-isystem)
+# instead of regular includes (-I), suppressing compiler warnings in those
+# headers for targets that use this config.
+#
+# Args:
+#   include_dirs: (required) List of directories to expose with -isystem.
+#   visibility: (optional) GN visibility list forwarded to the underlying
+#     config.
+template("pw_system_includes") {
+  assert(defined(invoker.include_dirs),
+         "pw_system_includes requires 'include_dirs'")
+
+  config(target_name) {
+    forward_variables_from(invoker, [ "visibility" ])
+    cflags = []
+    foreach(_dir, invoker.include_dirs) {
+      cflags += [
+        "-isystem",
+        rebase_path(_dir, root_build_dir),
+      ]
+    }
+    asmflags = cflags
+  }
+}

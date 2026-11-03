@@ -21,7 +21,7 @@ import("$dir_pw_build/target_types.gni")
 
 _CWD = "${PICO_SRC_DIR}/src/rp2_common/boot_stage2"
 
-config("public_include_dirs") {
+pw_system_includes("public_include_dirs") {
   include_dirs = [
     "${_CWD}/include",
     "${_CWD}/asminclude",
@@ -54,7 +54,10 @@ pw_executable("boot_stage2_elf") {
   ]
 
   public_configs = [ ":public_include_dirs" ]
-  configs = [ ":no_gc_sections" ]
+  configs = [
+    ":no_gc_sections",
+    "${PICO_ROOT}/gn:disable_warnings",
+  ]
 
   is_boot_stage2 = true
 

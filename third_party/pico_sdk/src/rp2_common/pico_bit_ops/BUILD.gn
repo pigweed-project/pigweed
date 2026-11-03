@@ -20,6 +20,7 @@ import("$dir_pw_build/target_types.gni")
 _CWD = "${PICO_SRC_DIR}/src/rp2_common/pico_bit_ops"
 
 pw_source_set("pico_bit_ops") {
+  configs = [ "${PICO_ROOT}/gn:disable_warnings" ]
   deps = [
     "${PICO_ROOT}/src/common/pico_base",
     "${PICO_ROOT}/src/rp2_common/pico_bootrom",

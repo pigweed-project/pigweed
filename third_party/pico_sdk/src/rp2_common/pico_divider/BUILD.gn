@@ -20,6 +20,7 @@ import("$dir_pw_build/target_types.gni")
 _CWD = "${PICO_SRC_DIR}/src/rp2_common/pico_divider"
 
 pw_source_set("pico_divider") {
+  configs = [ "${PICO_ROOT}/gn:disable_warnings" ]
   deps = [
     "${PICO_ROOT}/src/rp2040/hardware_regs",
     "${PICO_ROOT}/src/rp2_common/hardware_divider",

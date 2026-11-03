@@ -98,11 +98,13 @@ if (dir_pw_third_party_stm32cube == "") {
   }
 
   pw_source_set("hal_timebase_template") {
+    configs = [ ":sources_flags" ]
     deps = [ ":stm32cube_headers" ]
     sources = [ "$dir_pw_third_party_stm32cube/hal_driver/Src/${files.family}_hal_timebase_tim_template.c" ]
   }
 
   pw_source_set("cmsis_init_template") {
+    configs = [ ":sources_flags" ]
     deps = [ ":stm32cube_headers" ]
     sources = [ "$dir_pw_third_party_stm32cube/cmsis_device/Source/Templates/system_${files.family}.c" ]
   }
@@ -111,7 +113,7 @@ if (dir_pw_third_party_stm32cube == "") {
   write_file("$target_gen_dir/template_config/${files.family}_hal_conf.h",
              "#include \"${files.family}_hal_conf_template.h\"")
 
-  config("hal_config_template_includes") {
+  pw_system_includes("hal_config_template_includes") {
     include_dirs = [ "$target_gen_dir/template_config" ]
   }
 
@@ -125,6 +127,17 @@ if (dir_pw_third_party_stm32cube == "") {
   }
 
   config("header_flags") {
+    include_dirs = [ "public" ]
+    defines = [
+      "USE_HAL_DRIVER",
+      files.product_define,
+      "STM32CUBE_HEADER=\"${files.family}.h\"",
+      "__ARMCC_VERSION=0",  # workaround for bug at stm32l552xx.h:1303
+    ]
+    visibility = [ ":*" ]
+  }
+
+  config("sources_flags") {
     cflags = [
       "-Wno-unused-parameter",
       "-Wno-conversion",
@@ -141,7 +154,10 @@ if (dir_pw_third_party_stm32cube == "") {
     # TODO: b/301262374 - Provide a better way to detect the compiler type.
     if (get_path_info(pw_toolchain_SCOPE.cc, "file") == "clang") {
       cflags += [ "-Wno-deprecated-volatile" ]
-      cflags_c += [ "-Wno-parentheses-equality" ]
+      cflags_c += [
+        "-Wno-parentheses-equality",
+        "-Wno-unused-but-set-variable",
+      ]
     } else {
       cflags_c += [
         "-Wno-old-style-declaration",
@@ -150,26 +166,11 @@ if (dir_pw_third_party_stm32cube == "") {
       cflags_cc = [ "-Wno-volatile" ]
     }
 
-    defines = [
-      "USE_HAL_DRIVER",
-      files.product_define,
-      "STM32CUBE_HEADER=\"${files.family}.h\"",
-      "__ARMCC_VERSION=0",  # workaround for bug at stm32l552xx.h:1303
-    ]
     visibility = [ ":*" ]
   }
 
-  config("sources_flags") {
-    if (get_path_info(pw_toolchain_SCOPE.cc, "file") == "clang") {
-      cflags_c = [ "-Wno-unused-but-set-variable" ]
-    }
-
-    visibility = [ ":*" ]
-  }
-
-  config("public_include_paths") {
+  pw_system_includes("public_include_paths") {
     include_dirs = files.include_dirs
-    include_dirs += [ "public" ]
     visibility = [ ":*" ]
   }
 

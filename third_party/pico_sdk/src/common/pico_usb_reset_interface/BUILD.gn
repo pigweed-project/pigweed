@@ -19,14 +19,11 @@ import("$dir_pw_build/target_types.gni")
 
 _CWD = "${PICO_SRC_DIR}/src/common/pico_usb_reset_interface"
 
-config("public_include_dirs") {
+pw_system_includes("public_include_dirs") {
   include_dirs = [ "${_CWD}/include" ]
 }
 
 pw_source_set("pico_usb_reset_interface") {
-  public_configs = [
-    ":public_include_dirs",
-    "${PICO_ROOT}/gn:disable_warnings",
-  ]
+  public_configs = [ ":public_include_dirs" ]
   public = [ "${_CWD}/include/pico/usb_reset_interface.h" ]
 }

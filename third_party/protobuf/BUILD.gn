@@ -31,7 +31,7 @@ import("protobuf.gni")
 if (dir_pw_third_party_protobuf != "") {
   have_pthreads = current_os == "linux" || current_os == "mac"
 
-  config("includes") {
+  pw_system_includes("includes") {
     include_dirs = [ "$dir_pw_third_party_protobuf/src" ]
   }
 
@@ -82,11 +82,11 @@ if (dir_pw_third_party_protobuf != "") {
       "$dir_pw_third_party_protobuf/src/google/protobuf/stubs/time.cc",
       "$dir_pw_third_party_protobuf/src/google/protobuf/wire_format_lite.cc",
     ]
-    public_configs = [
-      ":includes",
+    public_configs = [ ":includes" ]
+    configs = [
       ":cc_flags",
+      ":defines",
     ]
-    configs = [ ":defines" ]
   }
 
   pw_source_set("libprotobuf") {
@@ -145,7 +145,10 @@ if (dir_pw_third_party_protobuf != "") {
       "$dir_pw_third_party_protobuf/src/google/protobuf/wrappers.pb.cc",
     ]
     public_deps = [ ":libprotobuf_lite" ]
-    configs = [ ":defines" ]
+    configs = [
+      ":cc_flags",
+      ":defines",
+    ]
   }
 
   pw_proto_library("wellknown_types") {

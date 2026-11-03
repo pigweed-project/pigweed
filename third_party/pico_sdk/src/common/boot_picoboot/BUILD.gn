@@ -19,15 +19,12 @@ import("$dir_pw_build/target_types.gni")
 
 _CWD = "${PICO_SRC_DIR}/src/common/boot_picoboot"
 
-config("public_include_dirs") {
+pw_system_includes("public_include_dirs") {
   include_dirs = [ "${_CWD}/include" ]
 }
 
 pw_source_set("boot_picoboot") {
-  public_configs = [
-    ":public_include_dirs",
-    "${PICO_ROOT}/gn:disable_warnings",
-  ]
+  public_configs = [ ":public_include_dirs" ]
 
   # Optionally requires a dep on "pico/platform.h"
 

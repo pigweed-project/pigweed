@@ -111,7 +111,7 @@ pw_source_set("trap_handler") {
     "$dir_pw_sync:interrupt_spin_lock",
   ]
   deps = [ "$dir_pw_string:builder" ]
-  public_configs = [ ":disable_warnings" ]
+  configs = [ ":disable_warnings" ]
   sources = [ "trap_handler.cc" ]
 }
 
@@ -142,10 +142,8 @@ pw_source_set("trap_handler_test") {
     "$dir_pw_sync:interrupt_spin_lock",
   ]
   deps = [ "$dir_pw_string:builder" ]
-  public_configs = [
-    ":disable_warnings",
-    ":test_config",
-  ]
+  configs = [ ":disable_warnings" ]
+  public_configs = [ ":test_config" ]
   sources = [ "trap_handler.cc" ]
   visibility = [ ":*" ]
 }

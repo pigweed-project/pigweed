@@ -17,7 +17,7 @@ import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
 
-config("public_include_dirs") {
+pw_system_includes("public_include_dirs") {
   include_dirs = [ "${PICO_SRC_DIR}/lib/tinyusb/src" ]
 }
 

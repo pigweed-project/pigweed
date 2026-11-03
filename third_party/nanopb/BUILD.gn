@@ -24,7 +24,7 @@ import("nanopb.gni")
 # dir_pw_third_party_nanopb to point to that directory. The nanopb library
 # will be available in GN at "$pw_external_nanopb".
 if (dir_pw_third_party_nanopb != "") {
-  config("includes") {
+  pw_system_includes("includes") {
     include_dirs = [ dir_pw_third_party_nanopb ]
   }
 
@@ -38,10 +38,8 @@ if (dir_pw_third_party_nanopb != "") {
   }
 
   pw_source_set("nanopb") {
-    public_configs = [
-      ":disable_warnings",
-      ":includes",
-    ]
+    public_configs = [ ":includes" ]
+    configs = [ ":disable_warnings" ]
     public = [
       "$dir_pw_third_party_nanopb/pb.h",
       "$dir_pw_third_party_nanopb/pb_common.h",

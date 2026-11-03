@@ -22,7 +22,7 @@ _CWD = "${PICO_SRC_DIR}/src/rp2_common/pico_stdlib"
 import("${PICO_ROOT}/src/common/pico_stdlib/pico_stdio.gni")
 
 pw_source_set("pico_stdlib") {
-  public_configs = [ "${PICO_ROOT}/gn:disable_warnings" ]
+  configs = [ "${PICO_ROOT}/gn:disable_warnings" ]
   deps = [
     "${PICO_ROOT}/src/common/pico_stdlib:headers",
     "${PICO_ROOT}/src/rp2_common/hardware_clocks",

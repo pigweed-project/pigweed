@@ -100,8 +100,8 @@ pw_source_set("pw_chre_backend") {
   public_configs = [
     ":public_include_path",
     ":public_overrides",
-    ":disable_warnings",
   ]
+  configs = [ ":disable_warnings" ]
   remove_configs = [ "$dir_pw_build:internal_strict_warnings" ]
 }
 

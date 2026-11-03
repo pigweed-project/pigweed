@@ -27,7 +27,7 @@ config("linker_script") {
 }
 
 pw_source_set("pico_standard_link") {
-  public_configs = [ "${PICO_ROOT}/gn:disable_warnings" ]
+  configs = [ "${PICO_ROOT}/gn:disable_warnings" ]
   all_dependent_configs = [ PICO_LINKER_SCRIPT ]
   inputs = [ "${_CWD}/memmap_default.ld" ]
   deps = [

@@ -56,7 +56,7 @@ if (dir_pw_third_party_ambiq_SDK != "") {
     visibility = [ ":*" ]
   }
 
-  config("apollo4_include_dirs") {
+  pw_system_includes("apollo4_include_dirs") {
     include_dirs = [
       "$dir_pw_third_party_ambiq_SDK/devices",
       "$dir_pw_third_party_ambiq_SDK/utils",
@@ -65,7 +65,7 @@ if (dir_pw_third_party_ambiq_SDK != "") {
     ]
   }
 
-  config("apollo4p_include_dirs") {
+  pw_system_includes("apollo4p_include_dirs") {
     include_dirs = [
       "$dir_pw_third_party_ambiq_SDK/mcu/apollo4p/hal/mcu",
       "$dir_pw_third_party_ambiq_SDK/mcu/apollo4p/hal",
@@ -74,7 +74,7 @@ if (dir_pw_third_party_ambiq_SDK != "") {
     ]
   }
 
-  config("apollo4b_include_dirs") {
+  pw_system_includes("apollo4b_include_dirs") {
     include_dirs = [
       "$dir_pw_third_party_ambiq_SDK/mcu/apollo4b/hal/mcu",
       "$dir_pw_third_party_ambiq_SDK/mcu/apollo4b/hal",
@@ -87,11 +87,11 @@ if (dir_pw_third_party_ambiq_SDK != "") {
     remove_configs = [ "$dir_pw_build:extra_strict_warnings" ]
 
     public_configs = [
-      ":disable_warnings",
       ":apollo4_include_dirs",
       ":apollo4p_include_dirs",
       ":apollo4p_sdk_defines",
     ]
+    configs = [ ":disable_warnings" ]
 
     sources = [
       "$dir_pw_third_party_ambiq_SDK/boards/apollo4p_evb/bsp/am_bsp.c",
@@ -146,11 +146,11 @@ if (dir_pw_third_party_ambiq_SDK != "") {
     remove_configs = [ "$dir_pw_build:extra_strict_warnings" ]
 
     public_configs = [
-      ":disable_warnings",
       ":apollo4_include_dirs",
       ":apollo4b_include_dirs",
       ":apollo4b_sdk_defines",
     ]
+    configs = [ ":disable_warnings" ]
 
     sources = [
       "$dir_pw_third_party_ambiq_SDK/boards/apollo4b_evb/bsp/am_bsp.c",

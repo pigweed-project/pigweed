@@ -30,10 +30,13 @@ if (dir_pw_third_party_chre == "") {
   config("disable_warnings") {
     cflags = [
       "-Wno-cast-qual",
+      "-Wno-gnu-anonymous-struct",
       "-Wno-int-in-bool-context",
+      "-Wno-nested-anon-types",
       "-Wno-thread-safety-analysis",
       "-Wno-vla",
     ]
+    visibility = [ ":*" ]
   }
 
   config("default_chre_config_defines") {
@@ -58,7 +61,7 @@ if (dir_pw_third_party_chre == "") {
     public_deps = [ pw_chre_CONFIG ]
   }
 
-  config("public_includes") {
+  pw_system_includes("public_includes") {
     include_dirs = [
       "$dir_pw_third_party_chre/core/include",
       "$dir_pw_third_party_chre/chre_api/include",
@@ -87,7 +90,7 @@ if (dir_pw_third_party_chre == "") {
   }
 
   pw_source_set("shared_platform") {
-    public_configs = [ ":disable_warnings" ]
+    configs = [ ":disable_warnings" ]
     sources = [
       "$dir_pw_third_party_chre/platform/shared/chre_api_core.cc",
       "$dir_pw_third_party_chre/platform/shared/chre_api_re.cc",
@@ -113,7 +116,7 @@ if (dir_pw_third_party_chre == "") {
   }
 
   pw_source_set("chre") {
-    public_configs = [ ":disable_warnings" ]
+    configs = [ ":disable_warnings" ]
     sources = [
       "$dir_pw_third_party_chre/core/chre_message_hub_manager.cc",
       "$dir_pw_third_party_chre/core/debug_dump_manager.cc",
@@ -154,7 +157,7 @@ if (dir_pw_third_party_chre == "") {
     public_deps = [ ":chre" ]
   }
 
-  config("test_includes") {
+  pw_system_includes("test_includes") {
     include_dirs = [
       "$dir_pw_third_party_chre/platform/shared",
       "$dir_pw_third_party_chre/test/simulation/inc",
@@ -195,7 +198,7 @@ if (dir_pw_third_party_chre == "") {
       "$dir_pw_bluetooth_proxy",
       "$dir_pw_chre:chre_headers",
     ]
-    public_configs = [ ":tests_disable_warnings" ]
+    configs = [ ":tests_disable_warnings" ]
     remove_configs = [ "$dir_pw_build:internal_strict_warnings" ]
   }
 
@@ -221,7 +224,7 @@ if (dir_pw_third_party_chre == "") {
       "$dir_pw_bluetooth_proxy",
       "$dir_pw_chre:chre_headers",
     ]
-    public_configs = [
+    configs = [
       ":test_includes",
       ":tests_disable_warnings",
     ]

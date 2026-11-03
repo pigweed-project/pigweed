@@ -19,7 +19,7 @@ import("$dir_pw_build/target_types.gni")
 
 _CWD = "${PICO_SRC_DIR}/src/rp2_common/cmsis"
 
-config("public_include_dirs") {
+pw_system_includes("public_include_dirs") {
   include_dirs = [
     "${_CWD}/include",
     "${_CWD}/stub/CMSIS/Core/Include",
@@ -36,20 +36,15 @@ config("rename_exceptions_config") {
 }
 
 pw_source_set("rename_exceptions") {
-  public_configs = [
-    ":public_include_dirs",
-    "${PICO_ROOT}/gn:disable_warnings",
-  ]
+  public_configs = [ ":public_include_dirs" ]
   public = [ "${_CWD}/include/cmsis/rename_exceptions.h" ]
 }
 
 # TODO(amontanez): The CMSIS stub should probably be more configurable to match
 # CMake.
 pw_source_set("cmsis") {
-  public_configs = [
-    ":public_include_dirs",
-    "${PICO_ROOT}/gn:disable_warnings",
-  ]
+  public_configs = [ ":public_include_dirs" ]
+  configs = [ "${PICO_ROOT}/gn:disable_warnings" ]
   public = [
     "${_CWD}/stub/CMSIS/Core/Include/cmsis_armcc.h",
     "${_CWD}/stub/CMSIS/Core/Include/cmsis_armclang.h",

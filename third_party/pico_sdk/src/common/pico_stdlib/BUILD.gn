@@ -21,15 +21,18 @@ _CWD = "${PICO_SRC_DIR}/src/common/pico_stdlib"
 
 import("pico_stdio.gni")
 
-config("public_include_dirs") {
+pw_system_includes("public_include_dirs") {
   include_dirs = [ "${_CWD}/include" ]
+}
+
+config("stdio_define") {
   defines = [ "${PICO_STDIO}=1" ]
 }
 
 pw_source_set("headers") {
   public_configs = [
-    "${PICO_ROOT}/gn:disable_warnings",
     ":public_include_dirs",
+    ":stdio_define",
   ]
   public_deps = [
     "${PICO_ROOT}/src/common/pico_base",
@@ -58,7 +61,6 @@ pw_source_set("headers") {
 }
 
 pw_source_set("pico_stdlib") {
-  public_configs = [ "${PICO_ROOT}/gn:disable_warnings" ]
   public_deps = [ ":headers" ]
   public = [ "${_CWD}/include/pico/stdlib.h" ]
 

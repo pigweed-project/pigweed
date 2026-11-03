@@ -17,19 +17,21 @@
 
 import("//build_overrides/pigweed.gni")
 
+import("$dir_pw_build/target_types.gni")
 import("$pw_external_abseil_cpp/abseil-cpp.gni")
 
-config("absl_public_config") {
-  cflags = [
-    "-Wno-gcc-compat",
-    "-Wno-nullability-extension",
-    "-Wno-deprecated-attributes",
-  ]
+pw_system_includes("absl_public_config") {
+  include_dirs = []
   if (dir_pw_third_party_abseil_cpp != "") {
-    include_dirs = [ dir_pw_third_party_abseil_cpp ]
+    include_dirs += [ dir_pw_third_party_abseil_cpp ]
   }
 }
 
 config("absl_config") {
-  cflags = [ "-Wno-switch-enum" ]
+  cflags = [
+    "-Wno-deprecated-attributes",
+    "-Wno-gcc-compat",
+    "-Wno-nullability-extension",
+    "-Wno-switch-enum",
+  ]
 }

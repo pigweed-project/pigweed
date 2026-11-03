@@ -218,7 +218,7 @@ if (dir_pw_third_party_mbedtls != "") {
     "library/x509write_csr.c",
   ]
 
-  config("public_config") {
+  pw_system_includes("public_config") {
     include_dirs = [ "$dir_pw_third_party_mbedtls/include" ]
   }
 
@@ -229,11 +229,21 @@ if (dir_pw_third_party_mbedtls != "") {
       "$pw_external_mbedtls",
     ]
     cflags = [
-      "-Wno-error=cast-qual",
-      "-Wno-error=redundant-decls",
-      "-Wno-error=implicit-function-declaration",
-      "-w",
+      "-Wno-cast-qual",
+      "-Wno-conversion",
+      "-Wno-implicit-function-declaration",
+      "-Wno-redundant-decls",
+      "-Wno-shadow",
+      "-Wno-sign-compare",
+      "-Wno-switch-enum",
+      "-Wno-type-limits",
+      "-Wno-undef",
+      "-Wno-unused-but-set-variable",
+      "-Wno-unused-function",
+      "-Wno-unused-parameter",
+      "-Wno-unused-variable",
     ]
+    cflags_c = [ "-Wno-strict-prototypes" ]
     config_header_file = rebase_path(pw_third_party_mbedtls_CONFIG_HEADER,
                                      get_label_info(":mbedtls", "dir"))
     defines = [ "MBEDTLS_CONFIG_FILE=\"$config_header_file\"" ]
