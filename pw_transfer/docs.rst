@@ -26,8 +26,8 @@ running on the same system.
 .. note::
 
    All user-defined transfer callbacks (i.e. the virtual interface of a
-   ``Handler`` or completion function in a transfer client) will be
-   invoked from the transfer thread's context.
+   :cc:`Handler <pw::transfer::Handler>` or completion function in a transfer
+   client) will be invoked from the transfer thread's context.
 
 In order to operate, a transfer thread requires two buffers:
 
@@ -40,10 +40,11 @@ In order to operate, a transfer thread requires two buffers:
   Typically, this is sized to the system's maximum transmission unit at the
   transport layer.
 
-A transfer thread is created by instantiating a ``pw::transfer::Thread``. This
-class derives from ``pw::thread::ThreadCore``, allowing it to directly be used
-when creating a system thread. Refer to :ref:`module-pw_thread-thread-creation`
-for additional information.
+A transfer thread is created by instantiating a
+:cc:`Thread <pw::transfer::Thread>`. This class derives from
+``pw::thread::ThreadCore``, allowing it to directly be used when creating a
+system thread. Refer to :ref:`module-pw_thread-thread-creation` for additional
+information.
 
 **Example thread configuration**
 
@@ -94,13 +95,15 @@ Transfer server
 ``pw_transfer`` provides an RPC service for running transfers through an RPC
 server.
 
-To know how to read data from or write data to device, a ``Handler`` interface
-is defined (``pw_transfer/public/pw_transfer/handler.h``). Transfer handlers
-represent a transferable resource, wrapping a stream reader and/or writer with
+To know how to read data from or write data to device, a
+:cc:`Handler <pw::transfer::Handler>` interface is defined
+(``pw_transfer/public/pw_transfer/handler.h``). Transfer handlers represent a
+transferable resource, wrapping a stream reader and/or writer with
 initialization and completion code. Custom transfer handler implementations
-should derive from ``ReadOnlyHandler``, ``WriteOnlyHandler``, or
-``ReadWriteHandler`` as appropriate and override Prepare and Finalize methods
-if necessary.
+should derive from :cc:`ReadOnlyHandler <pw::transfer::ReadOnlyHandler>`,
+:cc:`WriteOnlyHandler <pw::transfer::WriteOnlyHandler>`, or
+:cc:`ReadWriteHandler <pw::transfer::ReadWriteHandler>` as appropriate and
+override ``Prepare`` and ``Finalize`` methods if necessary.
 
 A transfer handler should be implemented and instantiated for each unique
 resource that can be transferred to or from a device. Each instantiated handler
@@ -130,11 +133,12 @@ unregistration to indicate success or failure.
      pw::stream::MemoryReader reader_;
    };
 
-Handlers may optionally implement a `GetStatus` method, which allows clients to
-query the status of a resource with a handler registered. The application layer
-above transfer can choose how to fill and interpret this information. The status
-information is `readable_offset`, `writeable_offset`, `read_checksum`, and
-`write_checksum`.
+Handlers may optionally implement a
+:cc:`GetStatus <pw::transfer::Handler::GetStatus>` method, which allows clients
+to query the status of a resource with a handler registered. The application
+layer above transfer can choose how to fill and interpret this information. The
+status information is ``readable_offset``, ``writeable_offset``,
+``read_checksum``, and ``write_checksum``.
 
 **Example GetStatus implementation**
 
@@ -191,8 +195,8 @@ thread and registered with the system's RPC server.
 
 Lifecycle callbacks
 ^^^^^^^^^^^^^^^^^^^
-``TransferService`` supports optional callbacks that are triggered when a server
-transfer starts and ends.
+:cc:`TransferService <pw::transfer::TransferService>` supports optional
+callbacks that are triggered when a server transfer starts and ends.
 
    **Callback implementation warnings:**
 
@@ -201,7 +205,7 @@ transfer starts and ends.
    callbacks must adhere to the following constraints:
 
    * No re-entrancy: Callbacks must not interact with the transfer thread,
-     e.g. starting new transfers via a ``pw::transfer::Client`` or
+     e.g. starting new transfers via a :cc:`Client <pw::transfer::Client>` or
      calling other transfer methods that use the same thread. Doing so can
      cause deadlock or internal state corruption.
 
@@ -213,14 +217,16 @@ transfer starts and ends.
 
 Dynamic handler allocation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
-For ephemeral resources, ``pw_transfer`` provides a ``TransferHandlerAllocator``
-class to simplify the management of dynamic transfer handlers. This class
-allocates handlers from a ``pw::Allocator``, assigns them a unique resource ID,
-and registers them with the transfer service.
+For ephemeral resources, ``pw_transfer`` provides a
+:cc:`TransferHandlerAllocator <pw::transfer::TransferHandlerAllocator>` class
+to simplify the management of dynamic transfer handlers. This class allocates
+handlers from a :cc:`pw::Allocator`, assigns them a unique resource ID, and
+registers them with the transfer service.
 
-When a handler is allocated, a ``TransferResource`` is returned. This is a RAII
-handle that automatically unregisters and deallocates the handler when it goes
-out of scope, ensuring proper cleanup of resources.
+When a handler is allocated, a
+:cc:`TransferResource <pw::transfer::TransferResource>` is returned. This is a
+RAII handle that automatically unregisters and deallocates the handler when it
+goes out of scope, ensuring proper cleanup of resources.
 
 **Example of dynamic handler allocation**
 
@@ -275,44 +281,41 @@ an RPC client.
    Currently, a transfer client is only capable of running transfers on a single
    RPC channel. This may be expanded in the future.
 
-The transfer client provides the following APIs for managing data transfers:
+The :cc:`Client <pw::transfer::Client>` class provides the following APIs for
+managing data transfers:
 
-.. cpp:function:: Result<pw::Transfer::Client::Handle> pw::transfer::Client::Read(uint32_t resource_id, pw::stream::Writer& output, CompletionFunc&& on_completion, pw::transfer::ProtocolVersion version = kDefaultProtocolVersion, pw::chrono::SystemClock::duration timeout = cfg::kDefaultClientTimeout, pw::chrono::SystemClock::duration initial_chunk_timeout = cfg::kDefaultInitialChunkTimeout, uint32_t initial_offset = 0u)
-
-  Reads data from a transfer server to the specified ``pw::stream::Writer``.
-  Invokes the provided callback function with the overall status of the
-  transfer.
-
-  Due to the asynchronous nature of transfer operations, this function will only
-  return a non-OK status if it is called with bad arguments. Otherwise, it will
-  return OK and errors will be reported through the completion callback.
-
-  For using the offset parameter, please see :ref:`pw_transfer-nonzero-transfers`.
-
-.. cpp:function:: Result<pw::Transfer::Client::Handle> pw::transfer::Client::Write(uint32_t resource_id, pw::stream::Reader& input, CompletionFunc&& on_completion, pw::transfer::ProtocolVersion version = kDefaultProtocolVersion, pw::chrono::SystemClock::duration timeout = cfg::kDefaultClientTimeout, pw::chrono::SystemClock::duration initial_chunk_timeout = cfg::kDefaultInitialChunkTimeout, uint32_t initial_offset = 0u)
-
-  Writes data from a source ``pw::stream::Reader`` to a transfer server.
-  Invokes the provided callback function with the overall status of the
-  transfer.
+* :cc:`Read <pw::transfer::Client::Read>`: Reads data from a transfer server to
+  the specified :cc:`stream::Writer <pw::stream::Writer>`. Invokes the provided
+  callback function with the overall status of the transfer.
 
   Due to the asynchronous nature of transfer operations, this function will only
   return a non-OK status if it is called with bad arguments. Otherwise, it will
   return OK and errors will be reported through the completion callback.
 
-  For using the offset parameter, please see :ref:`pw_transfer-nonzero-transfers`.
+  For using the offset parameter, please see
+  :ref:`pw_transfer-nonzero-transfers`.
+
+* :cc:`Write <pw::transfer::Client::Write>`: Writes data from a source
+  :cc:`stream::Reader <pw::stream::Reader>` to a transfer server. Invokes the
+  provided callback function with the overall status of the transfer.
+
+  Due to the asynchronous nature of transfer operations, this function will only
+  return a non-OK status if it is called with bad arguments. Otherwise, it will
+  return OK and errors will be reported through the completion callback.
+
+  For using the offset parameter, please see
+  :ref:`pw_transfer-nonzero-transfers`.
 
 Transfer handles
 ^^^^^^^^^^^^^^^^
-Each transfer session initiated by a client returns a ``Handle`` object which
-is used to manage the transfer. These handles support the following operations:
+Each transfer session initiated by a client returns a
+:cc:`Handle <pw::transfer::Client::Handle>` object which is used to manage the
+transfer. These handles support the following operations:
 
-.. cpp:function:: pw::Transfer::Client::Handle::Cancel()
-
-   Terminates the ongoing transfer.
-
-.. cpp:function:: pw::Transfer::Client::Handle::SetTransferSize(size_t size_bytes)
-
-   In a write transfer, indicates the total size of the transfer resource.
+* :cc:`Cancel <pw::transfer::Client::Handle::Cancel>`: Terminates the ongoing
+  transfer.
+* :cc:`SetTransferSize <pw::transfer::Client::Handle::SetTransferSize>`: In a
+  write transfer, indicates the total size of the transfer resource.
 
 **Example client setup**
 
@@ -362,11 +365,11 @@ is used to manage the transfer. These handles support the following operations:
 
 Specifying Resource Sizes
 -------------------------
-Transfer data is sent and received through the ``pw::Stream`` interface, which
-does not have a concept of overall stream size. Users of transfers that are
-fixed-size may optionally indicate this to the transfer client and server,
-which will be shared with the transfer peer to enable features such as progress
-reporting.
+Transfer data is sent and received through the
+:cc:`stream::Stream <pw::stream::Stream>` interface, which does not have a
+concept of overall stream size. Users of transfers that are fixed-size may
+optionally indicate this to the transfer client and server, which will be shared
+with the transfer peer to enable features such as progress reporting.
 
 The transfer size can only be set on the transmitting side of the transfer;
 that is, the client in a ``Write`` transfer or the server in a ``Read``
@@ -388,8 +391,9 @@ be sent.
 
 **Setting a transfer size on a server resource**
 
-  The ``TransferHandler`` interface allows overriding its ``ResourceSize``
-  function to return the size of its transfer resource.
+  The :cc:`Handler <pw::transfer::Handler>` interface allows overriding its
+  :cc:`ResourceSize <pw::transfer::Handler::ResourceSize>` function to return
+  the size of its transfer resource.
 
 .. code-block:: c++
 
@@ -403,12 +407,14 @@ be sent.
 
 Atomic File Transfer Handler
 ----------------------------
-Transfers are handled using the generic `Handler` interface. A specialized
-`Handler`, `AtomicFileTransferHandler` is available to handle file transfers
-with atomic semantics. It guarantees that the target file of the transfer is
-always in a correct state. A temporary file is written to prior to updating the
-target file. If any transfer failure occurs, the transfer is aborted and the
-target file is either not created or not updated.
+Transfers are handled using the generic :cc:`Handler <pw::transfer::Handler>`
+interface. A specialized :cc:`Handler <pw::transfer::Handler>`,
+:cc:`AtomicFileTransferHandler <pw::transfer::AtomicFileTransferHandler>`, is
+available to handle file transfers with atomic semantics. It guarantees that the
+target file of the transfer is always in a correct state. A temporary file is
+written to prior to updating the target file. If any transfer failure occurs,
+the transfer is aborted and the target file is either not created or not
+updated.
 
 .. _module-pw_transfer-config:
 
@@ -419,96 +425,31 @@ this module, see the
 :ref:`module documentation <module-structure-compile-time-configuration>` for
 more details.
 
-.. c:macro:: PW_TRANSFER_DEFAULT_MAX_CLIENT_RETRIES
-
-  The default maximum number of times a transfer client should retry sending a
-  chunk when no response is received. Can later be configured per-transfer when
-  starting one.
-
-.. c:macro:: PW_TRANSFER_DEFAULT_MAX_SERVER_RETRIES
-
-  The default maximum number of times a transfer server should retry sending a
-  chunk when no response is received.
-
-  In typical setups, retries are driven by the client, and timeouts on the
-  server are used only to clean up resources, so this defaults to 0.
-
-.. c:macro:: PW_TRANSFER_DEFAULT_MAX_LIFETIME_RETRIES
-
-  The default maximum number of times a transfer should retry sending any chunk
-  over the course of its entire lifetime.
-
-  This number should be high, particularly if long-running transfers are
-  expected. Its purpose is to prevent transfers from getting stuck in an
-  infinite loop.
-
-.. c:macro:: PW_TRANSFER_DEFAULT_CLIENT_TIMEOUT_MS
-
-  The default amount of time, in milliseconds, to wait for a chunk to arrive
-  in a transfer client before retrying. This can later be configured
-  per-transfer.
-
-.. c:macro:: PW_TRANSFER_DEFAULT_SERVER_TIMEOUT_MS
-
-  The default amount of time, in milliseconds, to wait for a chunk to arrive
-  on the server before retrying. This can later be configured per-transfer.
-
-.. c:macro:: PW_TRANSFER_DEFAULT_INITIAL_TIMEOUT_MS
-
-  The default amount of time, in milliseconds, to wait for an initial server
-  response to a transfer before retrying. This can later be configured
-  per-transfer.
-
-  This is set separately to PW_TRANSFER_DEFAULT_TIMEOUT_MS as transfers may
-  require additional time for resource initialization (e.g. erasing a flash
-  region before writing to it).
-
-.. c:macro:: PW_TRANSFER_DEFAULT_EXTEND_WINDOW_DIVISOR
-
-  The fractional position within a window at which a receive transfer should
-  extend its window size to minimize the amount of time the transmitter
-  spends blocked.
-
-  For example, a divisor of 2 will extend the window when half of the
-  requested data has been received, a divisor of three will extend at a third
-  of the window, and so on.
-
-.. c:macro:: PW_TRANSFER_LOG_DEFAULT_CHUNKS_BEFORE_RATE_LIMIT
-
-  Number of chunks to send repetitive logs at full rate before reducing to
-  rate_limit. Retransmit parameter chunks will restart at this chunk count
-  limit.
-  Default is first 10 parameter logs will be sent, then reduced to one log
-  every ``PW_TRANSFER_RATE_PERIOD_MS``
-
-.. c:macro:: PW_TRANSFER_LOG_DEFAULT_RATE_PERIOD_MS
-
-  The minimum time between repetative logs after the rate limit has been
-  applied (after CHUNKS_BEFORE_RATE_LIMIT parameter chunks).
-  Default is to reduce repetative logs to once every 10 seconds after
-  CHUNKS_BEFORE_RATE_LIMIT parameter chunks have been sent.
-
-.. c:macro:: PW_TRANSFER_CONFIG_LOG_LEVEL
-
-  Configurable log level for the entire transfer module.
-
-.. c:macro:: PW_TRANSFER_CONFIG_DEBUG_CHUNKS
-
-  Turns on logging of individual non-data or non-parameter chunks. Default is
-  false, to disable logging.
-
-.. c:macro:: PW_TRANSFER_CONFIG_DEBUG_DATA_CHUNKS
-
-  Turns on logging of individual data and parameter chunks. Default is false to
-  disable logging. These chunks are moderated (rate-limited) by the same
-  ``PW_TRANSFER_RATE_PERIOD_MS`` as other repetitive logs.
-
-.. c:macro:: PW_TRANSFER_EVENT_PROCESSING_TIMEOUT_MS
-
-   Maximum time to wait for a transfer event to be processed before dropping
-   further queued events. In systems which can perform long-running operations
-   to process transfer data, this can be used to prevent threads from blocking
-   for extended periods. A value of 0 results in indefinite blocking.
+* :cc:`PW_TRANSFER_DEFAULT_MAX_CLIENT_RETRIES`: Default maximum number of times
+  a transfer client retries sending a chunk when no response is received.
+* :cc:`PW_TRANSFER_DEFAULT_MAX_SERVER_RETRIES`: Default maximum number of times
+  a transfer server retries sending a chunk when no response is received.
+* :cc:`PW_TRANSFER_DEFAULT_MAX_LIFETIME_RETRIES`: Default maximum number of
+  times a transfer retries sending any chunk over its entire lifetime.
+* :cc:`PW_TRANSFER_DEFAULT_CLIENT_TIMEOUT_MS`: Default time in milliseconds a
+  transfer client waits for a chunk to arrive before retrying.
+* :cc:`PW_TRANSFER_DEFAULT_SERVER_TIMEOUT_MS`: Default time in milliseconds a
+  transfer server waits for a chunk to arrive before retrying.
+* :cc:`PW_TRANSFER_DEFAULT_INITIAL_TIMEOUT_MS`: Default time in milliseconds a
+  transfer client waits for an initial server response before retrying.
+* :cc:`PW_TRANSFER_DEFAULT_EXTEND_WINDOW_DIVISOR`: Fractional position within a
+  receive window at which the window size is extended.
+* :cc:`PW_TRANSFER_LOG_DEFAULT_CHUNKS_BEFORE_RATE_LIMIT`: Number of chunks to
+  log at full rate before rate-limiting repetitive logs.
+* :cc:`PW_TRANSFER_LOG_DEFAULT_RATE_PERIOD_MS`: Minimum time in milliseconds
+  between repetitive logs once rate-limited.
+* :cc:`PW_TRANSFER_CONFIG_LOG_LEVEL`: Log level for the ``pw_transfer`` module.
+* :cc:`PW_TRANSFER_CONFIG_DEBUG_CHUNKS`: Enables logging of individual non-data
+  and non-parameter chunks.
+* :cc:`PW_TRANSFER_CONFIG_DEBUG_DATA_CHUNKS`: Enables rate-limited logging of
+  individual data and parameter chunks.
+* :cc:`PW_TRANSFER_EVENT_PROCESSING_TIMEOUT_MS`: Maximum time in milliseconds
+  to wait for a transfer event to be processed before dropping queued events.
 
 .. _pw_transfer-nonzero-transfers:
 
@@ -517,36 +458,42 @@ Non-zero Starting Offset Transfers
 ``pw_transfer`` provides for transfers which read from or
 write to a server resource starting from a point after the beginning.
 Handling of read/write/erase boundaries of the resource storage backend must
-be handled by the user through the transfer handler interfaces of `GetStatus`
-and `PrepareRead/Write(uint32_t offset)`.
+be handled by the user through the transfer handler interfaces of
+:cc:`GetStatus <pw::transfer::Handler::GetStatus>`,
+:cc:`PrepareRead <pw::transfer::Handler::PrepareRead>`, and
+:cc:`PrepareWrite <pw::transfer::Handler::PrepareWrite>`.
 
 A resource can be read or written from a non-zero starting offset simply by
-having the transfer client calling `read()` or `write()` with an offset
+having the transfer client calling ``read()`` or ``write()`` with an offset
 parameter. The offset gets included in the starting handshake.
 
 .. note::
-  The data or stream passed to `read()` or `write()` will be used as-is. I.e.
-  no seeking will be applied; the user is expected to seek to the desired
+  The data or stream passed to ``read()`` or ``write()`` will be used as-is.
+  I.e. no seeking will be applied; the user is expected to seek to the desired
   location.
 
 On the server side, the offset is accepted, and passed to the transfer
-handler's `Prepare(uint32_t)` method. This method must be implemented
-specifically by the handler in order to support the offset transfer. The
-transfer handler confirms that the start offset is valid for the read/write
-operation, and the server responds with the offset to confirm the non-zero
-transfer operation. Older server sw will ignore the offset, so the clients
-check that the server has accepted the non-zero offset during the handshake, so
-users may elect to catch such errors. Clients return `Status.UNIMPLEMENTED` in
-such cases.
+handler's :cc:`PrepareRead <pw::transfer::Handler::PrepareRead>` or
+:cc:`PrepareWrite <pw::transfer::Handler::PrepareWrite>` method. This method
+must be implemented specifically by the handler in order to support the offset
+transfer. The transfer handler confirms that the start offset is valid for the
+read/write operation, and the server responds with the offset to confirm the
+non-zero transfer operation. Older server sw will ignore the offset, so the
+clients check that the server has accepted the non-zero offset during the
+handshake, so users may elect to catch such errors. Clients return
+``Status.UNIMPLEMENTED`` in such cases.
 
 Due to the need to seek streams by the handler to support the non-zero offset,
-it is recommended to return `Status.RESOURCE_EXHAUSTED` if a seek is requested
+it is recommended to return ``Status.RESOURCE_EXHAUSTED`` if a seek is requested
 past the end of the stream.
 
 See the :ref:`transfer handler <pw_transfer-transfer-server>` documentation for
 further information about configuring resources for non-zero transfers and the
-interface documentation in
-``pw/transfer/public/pw_transfer/handler.h``
+interface documentation in :cc:`Handler <pw::transfer::Handler>`.
+
+API reference
+-------------
+Moved: :cc:`pw_transfer`
 
 Python
 ======

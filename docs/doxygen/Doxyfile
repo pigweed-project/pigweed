@@ -209,7 +209,6 @@ PREDEFINED             = __cplusplus=202002L \
                          PW_EXCLUSIVE_LOCKS_REQUIRED(...)= \
                          PW_GUARDED_BY(...)= \
                          PW_LOCK_RETURNED(...)= \
-                         PW_MODIFY_DIAGNOSTIC_CLANG(...)= \
                          PW_NO_SANITIZE(...)= \
                          PW_NODISCARD_STR(...)= \
                          configSUPPORT_STATIC_ALLOCATION=1 \
@@ -225,6 +224,16 @@ PREDEFINED            += PW_ALLOCATOR_HAS_ATOMICS=1
 # `PW_METRIC_CONFIG_ENABLE_64BIT` in `pw_metric/config.h`) so 64-bit APIs
 # are documented.
 PREDEFINED            += __LP64__=1
+# Expand compiler diagnostic pragma macros from `pw_preprocessor/compiler.h`
+# to empty so call sites inside classes, namespaces, or `@module` blocks are
+# not misparsed by Doxygen as function declarations. Using `=` (rather than
+# `:=`) allows `compiler.h`'s own `#define`s to override these when Doxygen
+# documents `pw_preprocessor` itself.
+PREDEFINED            += PW_MODIFY_DIAGNOSTIC(...)= \
+                         PW_MODIFY_DIAGNOSTIC_CLANG(...)= \
+                         PW_MODIFY_DIAGNOSTIC_GCC(...)= \
+                         PW_MODIFY_DIAGNOSTICS_POP()= \
+                         PW_MODIFY_DIAGNOSTICS_PUSH()=
 
 # https://www.doxygen.nl/manual/config.html#cfg_project_brief
 PROJECT_BRIEF          = "C/C++ API Reference"

@@ -28,77 +28,122 @@ class Context;
 
 }  // namespace internal
 
-// The Handler class is the base class for the transfer handler classes.
-// Transfer handlers connect a transfer resource ID to a data stream, wrapped
-// with initialization and cleanup procedures.
-//
-// Handlers use a stream::Reader or stream::Writer to do the reads and writes.
-// They also provide optional Prepare and Finalize functions.
+/// @module{pw_transfer}
+
+/// Base class for transfer handlers.
+///
+/// Transfer handlers connect a transfer resource ID to a data stream, wrapped
+/// with initialization and cleanup procedures. Handlers use a
+/// `pw::stream::Reader` or `pw::stream::Writer` to perform reads and writes,
+/// and provide optional `Prepare` and `Finalize` methods invoked from the
+/// transfer thread.
 class Handler : public IntrusiveForwardList<Handler>::Item {
  public:
   virtual ~Handler() = default;
 
+  /// Returns the unique identifier for the resource managed by this handler.
+  ///
+  /// @returns The resource ID.
   constexpr uint32_t id() const { return resource_id_; }
 
-  // Called at the beginning of a read transfer. The stream::Reader must be
-  // ready to read after a successful PrepareRead() call. Returning a non-OK
-  // status aborts the read.
-  //
-  // Status::Unimplemented() indicates that reads are not supported.
+  /// Called on the transfer thread at the beginning of a read transfer. The
+  /// `pw::stream::Reader` must be set and ready to read after a successful
+  /// `PrepareRead()` call. Returning a non-OK status aborts the read.
+  ///
+  /// @returns
+  /// * @OK: The reader is ready for the transfer.
+  /// * @UNIMPLEMENTED: Reads are not supported by this handler.
+  /// * Any other error status to abort the read transfer.
   virtual Status PrepareRead() = 0;
 
-  // Called at the beginning of a non-zero read transfer. The stream::Reader
-  // must be ready to read at the given offset after a successful PrepareRead()
-  // call. Returning a non-OK status aborts the read.
-  // The read handler should verify that the offset is a valid read point for
-  // the resource.
-  //
-  // Status::Unimplemented() indicates that non-zero reads are not supported.
+  /// Called on the transfer thread at the beginning of a non-zero-offset read
+  /// transfer.
+  ///
+  /// Implementations should verify that `offset` is a valid read point for the
+  /// resource and position the `pw::stream::Reader` to read from `offset`
+  /// before returning `@OK`. Returning a non-OK status aborts the read.
+  ///
+  /// @param[in] offset Starting byte offset for the read transfer.
+  ///
+  /// @returns
+  /// * @OK: The reader is positioned at `offset` and ready for the transfer.
+  /// * @UNIMPLEMENTED: Non-zero-offset reads are not supported.
+  /// * @RESOURCE_EXHAUSTED: `offset` is past the end of the stream.
+  /// * Any other error status to abort the read transfer.
   virtual Status PrepareRead([[maybe_unused]] uint32_t offset) {
     return Status::Unimplemented();
   }
 
-  // FinalizeRead() is called at the end of a read transfer. The status argument
-  // indicates whether the data transfer was successful or not.
-  virtual void FinalizeRead(Status) {}
+  /// Called on the transfer thread at the end of a read transfer.
+  ///
+  /// @param[in] status Overall status indicating whether the data transfer
+  /// succeeded.
+  virtual void FinalizeRead([[maybe_unused]] Status status) {}
 
-  // Called at the beginning of a write transfer. The stream::Writer must be
-  // ready to read after a successful PrepareRead() call. Returning a non-OK
-  // status aborts the write.
-  //
-  // Status::Unimplemented() indicates that writes are not supported.
+  /// Called on the transfer thread at the beginning of a write transfer. The
+  /// `pw::stream::Writer` must be set and ready to write after a successful
+  /// `PrepareWrite()` call. Returning a non-OK status aborts the write.
+  ///
+  /// @returns
+  /// * @OK: The writer is ready for the transfer.
+  /// * @UNIMPLEMENTED: Writes are not supported by this handler.
+  /// * Any other error status to abort the write transfer.
   virtual Status PrepareWrite() = 0;
 
-  // Called at the beginning of a non-zero write transfer. The stream::writer
-  // must be ready to write at the given offset after a successful
-  // PrepareWrite() call. Returning a non-OK status aborts the write. The write
-  // handler should verify that the offset is a valid write point for the
-  // resource, and that the resource is prepared to write at that offset.
-  //
-  // Status::Unimplemented() indicates that non-zero writes are not supported.
+  /// Called on the transfer thread at the beginning of a non-zero-offset write
+  /// transfer.
+  ///
+  /// Implementations should verify that `offset` is a valid write point for the
+  /// resource and prepare the `pw::stream::Writer` to write at `offset` before
+  /// returning `@OK`. Returning a non-OK status aborts the write.
+  ///
+  /// @param[in] offset Starting byte offset for the write transfer.
+  ///
+  /// @returns
+  /// * @OK: The writer is positioned at `offset` and ready for the transfer.
+  /// * @UNIMPLEMENTED: Non-zero-offset writes are not supported.
+  /// * @RESOURCE_EXHAUSTED: `offset` is past the end of the resource.
+  /// * Any other error status to abort the write transfer.
   virtual Status PrepareWrite([[maybe_unused]] uint32_t offset) {
     return Status::Unimplemented();
   }
 
-  // FinalizeWrite() is called at the end of a write transfer. The status
-  // argument indicates whether the data transfer was successful or not.
-  //
-  // Returning an error signals that the transfer failed, even if it had
-  // succeeded up to this point.
-  virtual Status FinalizeWrite(Status) { return OkStatus(); }
+  /// Called on the transfer thread at the end of a write transfer.
+  ///
+  /// Returning an error signals that the transfer failed, even if data transfer
+  /// had succeeded up to this point.
+  ///
+  /// @param[in] status Status indicating whether the data transfer succeeded up
+  /// to finalization.
+  ///
+  /// @returns
+  /// * @OK: Finalization succeeded.
+  /// * Any error status to fail the transfer.
+  virtual Status FinalizeWrite([[maybe_unused]] Status status) {
+    return OkStatus();
+  }
 
-  /// The total size of the transfer resource, if known. If unknown, returns
-  /// `std::numeric_limits<size_t>::max()`.
+  /// Returns the total size of the transfer resource in bytes, if known.
+  ///
+  /// @returns The resource size in bytes, or
+  /// `std::numeric_limits<size_t>::max()` if unknown.
   virtual size_t ResourceSize() const {
     return std::numeric_limits<size_t>::max();
   }
 
-  // GetStatus() is called to Transfer.GetResourceStatus RPC. The application
-  // layer invoking transfers should define the contents of these status
-  // variables for proper interpretation.
-  //
-  // Status::Unimplemented() indicates that the values have not been modifed by
-  // a handler.
+  /// Queries application-defined status metadata for this resource in response
+  /// to a `Transfer.GetResourceStatus` RPC.
+  ///
+  /// @param[out] readable_offset Readable byte offset of the resource.
+  /// @param[out] writeable_offset Writeable byte offset of the resource.
+  /// @param[out] read_checksum Checksum of readable data.
+  /// @param[out] write_checksum Checksum of written data.
+  ///
+  /// @returns
+  /// * @OK: The status fields were populated by the handler.
+  /// * @UNIMPLEMENTED: Resource status reporting is not supported by this
+  ///   handler.
+  /// * Any other error status to report to the caller.
   virtual Status GetStatus(uint64_t& readable_offset,
                            uint64_t& writeable_offset,
                            uint64_t& read_checksum,
@@ -111,13 +156,28 @@ class Handler : public IntrusiveForwardList<Handler>::Item {
   }
 
  protected:
+  /// Constructs a `Handler` with an optional initial `pw::stream::Reader`.
+  ///
+  /// @param[in] resource_id Unique ID of the transferable resource.
+  /// @param[in] reader Optional reader stream to associate with this handler.
   constexpr Handler(uint32_t resource_id, stream::Reader* reader)
       : resource_id_(resource_id), reader_(reader) {}
 
+  /// Constructs a `Handler` with an optional initial `pw::stream::Writer`.
+  ///
+  /// @param[in] resource_id Unique ID of the transferable resource.
+  /// @param[in] writer Optional writer stream to associate with this handler.
   constexpr Handler(uint32_t resource_id, stream::Writer* writer)
       : resource_id_(resource_id), writer_(writer) {}
 
+  /// Sets the `pw::stream::Reader` used by this handler.
+  ///
+  /// @param[in] reader Stream from which transfer data will be read.
   void set_reader(stream::Reader& reader) { reader_ = &reader; }
+
+  /// Sets the `pw::stream::Writer` used by this handler.
+  ///
+  /// @param[in] writer Stream to which transfer data will be written.
   void set_writer(stream::Writer& writer) { writer_ = &writer; }
 
  private:
@@ -149,19 +209,36 @@ class Handler : public IntrusiveForwardList<Handler>::Item {
   };
 };
 
+/// A `Handler` that only supports read transfers (`PrepareWrite` returns
+/// `@PERMISSION_DENIED`).
 class ReadOnlyHandler : public Handler {
  public:
+  /// Constructs a `ReadOnlyHandler` whose reader will be set later (for example
+  /// in `PrepareRead()`).
+  ///
+  /// @param[in] resource_id Unique ID of the transferable resource.
   constexpr ReadOnlyHandler(uint32_t resource_id)
       : Handler(resource_id, static_cast<stream::Reader*>(nullptr)) {}
 
+  /// Constructs a `ReadOnlyHandler` backed by `reader`.
+  ///
+  /// @param[in] resource_id Unique ID of the transferable resource.
+  /// @param[in] reader Stream from which transfer data will be read.
   constexpr ReadOnlyHandler(uint32_t resource_id, stream::Reader& reader)
       : Handler(resource_id, &reader) {}
 
   ~ReadOnlyHandler() override = default;
 
+  /// Prepares for a read transfer. Defaults to returning `@OK`.
+  ///
+  /// @returns
+  /// * @OK: The handler is ready for reading.
   Status PrepareRead() override { return OkStatus(); }
 
-  // Writes are not supported.
+  /// Rejects write transfers.
+  ///
+  /// @returns
+  /// * @PERMISSION_DENIED: Writes are not supported.
   Status PrepareWrite() final { return Status::PermissionDenied(); }
 
   using Handler::set_reader;
@@ -170,19 +247,36 @@ class ReadOnlyHandler : public Handler {
   using Handler::set_writer;
 };
 
+/// A `Handler` that only supports write transfers (`PrepareRead` returns
+/// `@PERMISSION_DENIED`).
 class WriteOnlyHandler : public Handler {
  public:
+  /// Constructs a `WriteOnlyHandler` whose writer will be set later (for
+  /// example in `PrepareWrite()`).
+  ///
+  /// @param[in] resource_id Unique ID of the transferable resource.
   constexpr WriteOnlyHandler(uint32_t resource_id)
       : Handler(resource_id, static_cast<stream::Writer*>(nullptr)) {}
 
+  /// Constructs a `WriteOnlyHandler` backed by `writer`.
+  ///
+  /// @param[in] resource_id Unique ID of the transferable resource.
+  /// @param[in] writer Stream to which transfer data will be written.
   constexpr WriteOnlyHandler(uint32_t resource_id, stream::Writer& writer)
       : Handler(resource_id, &writer) {}
 
   ~WriteOnlyHandler() override = default;
 
-  // Reads are not supported.
+  /// Rejects read transfers.
+  ///
+  /// @returns
+  /// * @PERMISSION_DENIED: Reads are not supported.
   Status PrepareRead() final { return Status::PermissionDenied(); }
 
+  /// Prepares for a write transfer. Defaults to returning `@OK`.
+  ///
+  /// @returns
+  /// * @OK: The handler is ready for writing.
   Status PrepareWrite() override { return OkStatus(); }
 
   using Handler::set_writer;
@@ -191,22 +285,45 @@ class WriteOnlyHandler : public Handler {
   using Handler::set_reader;
 };
 
+/// A `Handler` that supports both read and write transfers.
 class ReadWriteHandler : public Handler {
  public:
+  /// Constructs a `ReadWriteHandler` whose stream will be set later (for
+  /// example in `PrepareRead()` or `PrepareWrite()`).
+  ///
+  /// @param[in] resource_id Unique ID of the transferable resource.
   constexpr ReadWriteHandler(uint32_t resource_id)
       : Handler(resource_id, static_cast<stream::Reader*>(nullptr)) {}
+
+  /// Constructs a `ReadWriteHandler` backed by `reader_writer`.
+  ///
+  /// @param[in] resource_id Unique ID of the transferable resource.
+  /// @param[in] reader_writer Stream used for both reading and writing.
   ReadWriteHandler(uint32_t resource_id, stream::ReaderWriter& reader_writer)
       : Handler(resource_id, &static_cast<stream::Reader&>(reader_writer)) {}
 
   ~ReadWriteHandler() override = default;
 
-  // Both reads and writes are supported.
+  /// Prepares for a read transfer. Defaults to returning `@OK`.
+  ///
+  /// @returns
+  /// * @OK: The handler is ready for reading.
   Status PrepareRead() override { return OkStatus(); }
+
+  /// Prepares for a write transfer. Defaults to returning `@OK`.
+  ///
+  /// @returns
+  /// * @OK: The handler is ready for writing.
   Status PrepareWrite() override { return OkStatus(); }
 
+  /// Sets the `pw::stream::ReaderWriter` used by this handler.
+  ///
+  /// @param[in] reader_writer Stream used for both reading and writing.
   void set_reader_writer(stream::ReaderWriter& reader_writer) {
     set_reader(reader_writer);
   }
 };
+
+/// @endmodule
 
 }  // namespace pw::transfer

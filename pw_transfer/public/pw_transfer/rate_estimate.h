@@ -21,22 +21,36 @@
 
 namespace pw::transfer {
 
+/// @module{pw_transfer}
+
+/// Estimates the data transfer rate in bytes per second over elapsed wall time.
 class RateEstimate {
  public:
+  /// Constructs an unstarted `RateEstimate`.
   constexpr RateEstimate() : start_time_(std::nullopt), bytes_transferred_(0) {}
 
+  /// Resets the start time to the current time and clears the byte counter.
   void Reset() {
     start_time_ = chrono::SystemClock::now();
     bytes_transferred_ = 0;
   }
 
+  /// Records additional transferred bytes.
+  ///
+  /// @param[in] new_bytes Number of newly transferred bytes to add.
   constexpr void Update(size_t new_bytes) { bytes_transferred_ += new_bytes; }
 
+  /// Calculates the average transfer rate since `Reset()` was called.
+  ///
+  /// @returns The estimated transfer rate in bytes per second, or `0` if
+  /// `Reset()` has not been called or less than 1 millisecond has elapsed.
   size_t GetRateBytesPerSecond() const;
 
  private:
   std::optional<chrono::SystemClock::time_point> start_time_;
   size_t bytes_transferred_;
 };
+
+/// @endmodule
 
 }  // namespace pw::transfer

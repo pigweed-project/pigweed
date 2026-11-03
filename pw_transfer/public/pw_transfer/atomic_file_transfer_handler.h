@@ -50,7 +50,9 @@ class AtomicFileTransferHandler : public ReadWriteHandler {
   ///
   /// @returns
   /// * @OK: `AtomicFileTransferHandler` is ready for the transfer.
+  /// * @NOT_FOUND: The target file does not exist.
   Status PrepareRead() override;
+
   /// Handler function that is called by the transfer thread after a read
   /// transfer completes.
   ///
@@ -59,6 +61,7 @@ class AtomicFileTransferHandler : public ReadWriteHandler {
   ///
   /// @pre The read transfer is done before the call to this method.
   void FinalizeRead(Status status) override;
+
   /// Prepares `AtomicFileTransferHandler` for a write transfer.
   ///
   /// @pre The write transfer has not been initialized before the call to this
@@ -67,18 +70,32 @@ class AtomicFileTransferHandler : public ReadWriteHandler {
   /// @returns
   /// * @OK: `AtomicFileTransferHandler` is ready for the transfer.
   Status PrepareWrite() override;
-  /// Indicates whether the write transfer was successful.
+
+  /// Handler function that is called by the transfer thread after a write
+  /// transfer completes. Atomically updates the target file if the transfer
+  /// succeeded.
+  ///
+  /// @param[in] status A `pw::Status` object provided by the transfer thread
+  /// indicating whether the transfer succeeded.
   ///
   /// @pre The write transfer is done.
   ///
   /// @returns
-  /// * @OK: The transfer data was successfully written.
-  Status FinalizeWrite(Status) override;
+  /// * @OK: The transfer data was successfully written to the target file.
+  /// * @ABORTED: The transfer failed and the temporary file could not be
+  ///   removed.
+  /// * @INTERNAL: The target directory could not be created or the temporary
+  ///   file could not be renamed or copied to the target path.
+  /// * Any error `status` if the transfer failed and the temporary file was
+  ///   removed.
+  Status FinalizeWrite(Status status) override;
 
  private:
   std::string path_;
   std::variant<std::monostate, stream::StdFileReader, stream::StdFileWriter>
       stream_{};
 };
+
+/// @endmodule
 
 }  // namespace pw::transfer

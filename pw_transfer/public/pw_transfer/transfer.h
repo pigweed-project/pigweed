@@ -33,12 +33,38 @@ class Chunk;
 
 }  // namespace internal
 
+/// @module{pw_transfer}
+
+/// RPC service for running server-side `pw_transfer` transfers.
+///
+/// Register `Handler` instances with `RegisterHandler()` for each transferable
+/// resource, and register the `TransferService` with a `pw::rpc::Server`.
 class TransferService : public pw_rpc::raw::Transfer::Service<TransferService> {
  public:
+  /// Callback invoked from the transfer thread when a server transfer starts.
   using StartCallback =
       pw::Function<void(uint32_t session_id, uint32_t resource_id)>;
+
+  /// Callback invoked from the transfer thread when a server transfer ends.
   using EndCallback = pw::Function<void(uint32_t session_id, Status status)>;
 
+  /// Initializes a `TransferService` that can be registered with an RPC server.
+  ///
+  /// The transfer service runs all transfer tasks on `transfer_thread`, which
+  /// may be shared between a `TransferService` and a `Client`.
+  ///
+  /// @param[in] transfer_thread Thread on which transfer events are processed.
+  /// @param[in] max_window_size_bytes Maximum amount of data in bytes to
+  /// request at a time during a write transfer, unless further restricted by a
+  /// handler's stream. Should span multiple chunks; the protocol automatically
+  /// adjusts its window size as a transfer progresses.
+  /// @param[in] chunk_timeout Maximum time to wait for a chunk before retrying
+  /// or timing out.
+  /// @param[in] max_retries Maximum retries for a single chunk before aborting.
+  /// @param[in] extend_window_divisor Fractional window position at which a
+  /// receive transfer extends its window size.
+  /// @param[in] max_lifetime_retries Maximum total retries allowed across the
+  /// lifetime of a transfer.
   TransferService(
       TransferThread& transfer_thread,
       uint32_t max_window_size_bytes,
@@ -56,12 +82,20 @@ class TransferService : public pw_rpc::raw::Transfer::Service<TransferService> {
                         nullptr  /* on_end */
         ) {}
 
-  /// @warning The on_start and on_end callbacks are invoked from the
+  /// Initializes a `TransferService` with server transfer lifecycle callbacks.
+  ///
+  /// @param[in] transfer_thread Thread on which transfer events are processed.
+  /// @param[in] max_window_size_bytes Maximum amount of data in bytes to
+  /// request at a time during a write transfer.
+  /// @param[in] on_start Callback invoked when a server transfer begins.
+  /// @param[in] on_end Callback invoked when a server transfer completes.
+  ///
+  /// @warning The `on_start` and `on_end` callbacks are invoked from the
   /// transfer thread, so the implementation of the callbacks:
-  /// 1. Must not attempt to interact with the transfer thread, as
-  ///    doing so can cause deadlock or internal state corruption.
-  /// 2. Must return quickly to avoid stalling the transfer thread or
-  ///    the rpc thread.
+  /// 1. Must not attempt to interact with the transfer thread, as doing so can
+  ///    cause deadlock or internal state corruption.
+  /// 2. Must return quickly to avoid stalling the transfer thread or the RPC
+  ///    thread.
   TransferService(TransferThread& transfer_thread,
                   uint32_t max_window_size_bytes,
                   StartCallback&& on_start,
@@ -81,53 +115,105 @@ class TransferService : public pw_rpc::raw::Transfer::Service<TransferService> {
   TransferService& operator=(const TransferService&) = delete;
   TransferService& operator=(TransferService&&) = delete;
 
+  /// RPC handler for bidirectional server read transfers.
+  ///
+  /// @param[in] reader_writer Active raw RPC bidirectional stream.
   void Read(RawServerReaderWriter& reader_writer) {
     thread_.SetServerReadStream(reader_writer, [this](ConstByteSpan message) {
       HandleChunk(message, internal::TransferType::kTransmit);
     });
   }
 
+  /// RPC handler for bidirectional server write transfers.
+  ///
+  /// @param[in] reader_writer Active raw RPC bidirectional stream.
   void Write(RawServerReaderWriter& reader_writer) {
     thread_.SetServerWriteStream(reader_writer, [this](ConstByteSpan message) {
       HandleChunk(message, internal::TransferType::kReceive);
     });
   }
 
+  /// RPC handler for `GetResourceStatus` unary requests.
+  ///
+  /// @param[in] request Serialized `ResourceStatusRequest` protobuf payload.
+  /// @param[in] responder Raw unary responder used to send the status response.
   void GetResourceStatus(ConstByteSpan request,
                          rpc::RawUnaryResponder& responder);
 
+  /// Registers a `Handler` for a transferable resource with the service.
+  ///
+  /// Blocks until the registration event is processed by the transfer thread.
+  ///
+  /// @param[in] handler Resource handler to register. Must remain valid until
+  /// unregistered.
+  ///
+  /// @returns `true` if the handler was registered, `false` if queuing the
+  /// event on the transfer thread timed out.
   bool RegisterHandler(Handler& handler) {
     return thread_.AddTransferHandler(handler);
   }
 
+  /// Unregisters a previously registered `Handler` from the service.
+  ///
+  /// Blocks until the handler is fully cleaned up on the transfer thread.
+  ///
+  /// @param[in] handler Resource handler to unregister.
+  ///
+  /// @returns `true` if the handler was unregistered, `false` if queuing the
+  /// event on the transfer thread timed out.
   bool UnregisterHandler(Handler& handler) {
     return thread_.RemoveTransferHandler(handler);
   }
 
+  /// @deprecated Use `set_max_window_size_bytes()` instead.
+  ///
+  /// @param[in] pending_bytes Maximum receive window size in bytes.
   [[deprecated("Use set_max_window_size_bytes instead")]]
   constexpr void set_max_pending_bytes(uint32_t pending_bytes) {
     set_max_window_size_bytes(pending_bytes);
   }
 
+  /// Sets the maximum receive window size in bytes for write transfers.
+  ///
+  /// @param[in] max_window_size_bytes Maximum receive window size in bytes.
   constexpr void set_max_window_size_bytes(uint32_t max_window_size_bytes) {
     max_parameters_.set_max_window_size_bytes(max_window_size_bytes);
   }
 
-  // Sets the maximum size for the data in a pw_transfer chunk. Note that the
-  // max chunk size must always fit within the transfer thread's chunk buffer.
+  /// Sets the maximum size for the data payload in a `pw_transfer` chunk.
+  ///
+  /// Note that the max chunk size must always fit within the transfer thread's
+  /// chunk buffer.
+  ///
+  /// @param[in] max_chunk_size_bytes Maximum chunk payload size in bytes.
   constexpr void set_max_chunk_size_bytes(uint32_t max_chunk_size_bytes) {
     max_parameters_.set_max_chunk_size_bytes(max_chunk_size_bytes);
   }
 
+  /// Sets the chunk timeout for server transfers.
+  ///
+  /// @param[in] chunk_timeout Duration to wait for a chunk before retrying or
+  /// aborting.
   constexpr void set_chunk_timeout(
       chrono::SystemClock::duration chunk_timeout) {
     chunk_timeout_ = chunk_timeout;
   }
 
+  /// Sets the maximum number of retries per chunk on the server.
+  ///
+  /// @param[in] max_retries Maximum retries per chunk.
   constexpr void set_max_retries(uint8_t max_retries) {
     max_retries_ = max_retries;
   }
 
+  /// Sets the window divisor at which receive transfers extend their window.
+  ///
+  /// @param[in] extend_window_divisor Fractional divisor (must be greater than
+  /// `1`).
+  ///
+  /// @returns
+  /// * @OK: The divisor was updated.
+  /// * @INVALID_ARGUMENT: `extend_window_divisor` is `1` or `0`.
   constexpr Status set_extend_window_divisor(uint32_t extend_window_divisor) {
     if (extend_window_divisor <= 1) {
       return Status::InvalidArgument();
@@ -193,5 +279,7 @@ class TransferService : public pw_rpc::raw::Transfer::Service<TransferService> {
   StartCallback on_server_transfer_started_;
   EndCallback on_server_transfer_ended_;
 };
+
+/// @endmodule
 
 }  // namespace pw::transfer

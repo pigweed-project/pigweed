@@ -439,12 +439,34 @@ class TransferThread : public thread::ThreadCore {
 
 }  // namespace internal
 
+/// @module{pw_transfer}
+
+/// Non-templated transfer thread base type referenced by `Client` and
+/// `TransferService`. Derives from `pw::thread::ThreadCore`.
 using TransferThread = internal::TransferThread;
 
+/// Dedicated background thread for processing client and server transfer
+/// events.
+///
+/// Derives from `pw::thread::ThreadCore` so it can be passed directly when
+/// creating a `pw::thread::Thread`. A single `Thread` instance can be shared
+/// between a `Client` and a `TransferService`.
+///
+/// @tparam kMaxConcurrentClientTransfers Maximum number of concurrent client
+/// transfers supported (may be `0` if only running a server).
+/// @tparam kMaxConcurrentServerTransfers Maximum number of concurrent server
+/// transfers supported (may be `0` if only running a client).
 template <size_t kMaxConcurrentClientTransfers,
           size_t kMaxConcurrentServerTransfers>
 class Thread final : public internal::TransferThread {
  public:
+  /// Constructs a transfer thread using the provided staging and encoding
+  /// buffers.
+  ///
+  /// @param[in] chunk_buffer Buffer used to stage incoming transfer chunks from
+  /// the RPC system. Must fit the largest chunk supported by the system.
+  /// @param[in] encode_buffer Buffer used to encode outgoing RPC packets.
+  /// Typically sized to the transport layer's maximum transmission unit (MTU).
   Thread(ByteSpan chunk_buffer, ByteSpan encode_buffer)
       : internal::TransferThread(
             client_contexts_, server_contexts_, chunk_buffer, encode_buffer) {}
@@ -455,5 +477,7 @@ class Thread final : public internal::TransferThread {
   std::array<internal::ServerContext, kMaxConcurrentServerTransfers>
       server_contexts_;
 };
+
+/// @endmodule
 
 }  // namespace pw::transfer

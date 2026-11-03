@@ -17,22 +17,27 @@
 
 namespace pw::transfer {
 
+/// @module{pw_transfer}
+
+/// Version of the `pw_transfer` wire protocol.
 enum class ProtocolVersion {
-  // Protocol version not known or not set.
+  /// Protocol version not known or not set.
   kUnknown,
 
-  // The original transfer protocol, prior to transfer start/end handshakes.
+  /// The original transfer protocol, prior to transfer start/end handshakes.
   kLegacy,
 
-  // Second version of the transfer protocol. Guarantees type fields on all
-  // chunks, deprecates pending_bytes in favor of window_end_offset, splits
-  // transfer resource IDs from ephemeral session IDs, and adds a handshake
-  // to the start and end of all transfer sessions.
+  /// Second version of the transfer protocol. Guarantees type fields on all
+  /// chunks, deprecates `pending_bytes` in favor of `window_end_offset`, splits
+  /// transfer resource IDs from ephemeral session IDs, and adds a handshake
+  /// to the start and end of all transfer sessions.
   kVersionTwo,
 
-  // Alias to the most up-to-date version of the transfer protocol.
+  /// Alias to the most up-to-date version of the transfer protocol.
   kLatest = kVersionTwo,
 };
+
+/// @endmodule
 
 constexpr bool ValidProtocolVersion(ProtocolVersion version) {
   return version > ProtocolVersion::kUnknown &&

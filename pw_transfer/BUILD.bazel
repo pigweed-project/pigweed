@@ -313,6 +313,14 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_transfer/atomic_file_transfer_handler.h",
+        "public/pw_transfer/client.h",
+        "public/pw_transfer/handler.h",
+        "public/pw_transfer/handler_allocator.h",
+        "public/pw_transfer/internal/config.h",
+        "public/pw_transfer/internal/protocol.h",
+        "public/pw_transfer/rate_estimate.h",
+        "public/pw_transfer/transfer.h",
+        "public/pw_transfer/transfer_thread.h",
     ],
 )
 

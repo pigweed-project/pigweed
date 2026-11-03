@@ -28,6 +28,8 @@
 
 namespace pw::transfer {
 
+/// @module{pw_transfer}
+
 class TransferHandlerAllocator;
 
 /// A RAII handle for a registered transfer handler. The handler is closed and
@@ -37,6 +39,11 @@ class TransferResource {
   /// Creates an invalid handle.
   TransferResource() = default;
 
+  /// Constructs a `TransferResource` owned by `allocator` for `resource_id`.
+  ///
+  /// @param[in] allocator The `TransferHandlerAllocator` managing this
+  /// resource.
+  /// @param[in] resource_id Assigned non-zero resource ID.
   TransferResource(TransferHandlerAllocator& allocator, uint32_t resource_id)
       : allocator_(&allocator), resource_id_(resource_id) {}
 
@@ -55,13 +62,17 @@ class TransferResource {
 
   ~TransferResource() { Close(); }
 
-  /// Returns the resource ID associated with this handle. Returns 0 if invalid.
+  /// Returns the resource ID associated with this handle, or `0` if invalid.
+  ///
+  /// @returns The assigned resource ID, or `0` if this handle is invalid.
   uint32_t resource_id() const { return resource_id_; }
 
-  /// Returns true if this handle is valid.
+  /// Checks whether this handle refers to an active registered resource.
+  ///
+  /// @returns `true` if this handle is valid, `false` otherwise.
   explicit operator bool() const { return resource_id_ != 0; }
 
-  /// Closes the handler if this is a valid handle.
+  /// Unregisters and deallocates the handler if this is a valid handle.
   void Close();
 
  private:
@@ -69,23 +80,29 @@ class TransferResource {
   uint32_t resource_id_ = 0;
 };
 
-/// Manages a list of active pw::transfer::Handler instances.
+/// Dynamically allocates and registers `Handler` instances for ephemeral
+/// transfer resources.
 ///
-/// The resource_id is dynamically assigned and registered with the
-/// TransferService on creation and wrapped in a TransferResource. It's released
-/// when TransferResource is destroyed.
+/// The `resource_id` is dynamically assigned and registered with the
+/// `TransferService` on creation and wrapped in a `TransferResource`. It is
+/// unregistered and deallocated when the `TransferResource` is destroyed or
+/// closed.
 ///
-/// A range of resource id's can be specified to allocate from. The range must
+/// A range of resource IDs can be specified to allocate from. The range must
 /// be between `1` and `std::numeric_limits<uint32_t>::max() - 1` inclusive.
 ///
-/// Takes in a pw::Allocator and allocates memory for the Handler instances and
-/// list to store them.
-///
-/// When allocating a handle it takes a pw::Stream for either reading, writing,
-/// or both and create the right kind of Handler based on that.
+/// Takes a `pw::Allocator` to allocate memory for the `Handler` instances and
+/// the list tracking active handlers.
 class TransferHandlerAllocator {
  public:
-  /// Use to size allocator passed to constructor.
+  /// Calculates the allocator buffer size needed to support `max_handlers`
+  /// concurrent handlers.
+  ///
+  /// @param[in] max_handlers Maximum number of concurrent active handlers.
+  /// @param[in] allocator_block_overhead Per-allocation overhead in bytes for
+  /// the backing `pw::Allocator` (e.g. `SmallBlock::kBlockOverhead`).
+  ///
+  /// @returns Required allocator capacity in bytes.
   static constexpr size_t GetAllocatorSize(size_t max_handlers,
                                            size_t allocator_block_overhead) {
     constexpr auto handler_entry_layout = allocator::Layout::Of<HandlerEntry>();
@@ -101,6 +118,17 @@ class TransferHandlerAllocator {
            2 * allocator_block_overhead;
   }
 
+  /// Constructs a `TransferHandlerAllocator` bound to `transfer_service`.
+  ///
+  /// @param[in] transfer_service Service with which allocated handlers are
+  /// registered.
+  /// @param[in] allocator Memory allocator used for handlers and tracking
+  /// entries.
+  /// @param[in] min_resource_id Minimum resource ID to assign (inclusive).
+  /// @param[in] max_resource_id Maximum resource ID to assign (inclusive).
+  ///
+  /// @pre `min_resource_id != 0`, `max_resource_id >= min_resource_id`, and
+  /// `max_resource_id < std::numeric_limits<uint32_t>::max()`.
   TransferHandlerAllocator(
       TransferService& transfer_service,
       Allocator& allocator,
@@ -117,13 +145,38 @@ class TransferHandlerAllocator {
     PW_ASSERT(max_resource_id_ < std::numeric_limits<uint32_t>::max());
   }
 
-  /// Allocates and registers a ReadHandler for the given reader.
+  /// Allocates and registers a `ReadOnlyHandler` for the given `reader`.
+  ///
+  /// @param[in] reader Stream from which transfer data will be read.
+  ///
+  /// @returns @Result{a `TransferResource` handle for the registered handler}
+  /// * @RESOURCE_EXHAUSTED: No resource IDs are available in the configured
+  ///   range, or the allocator is out of memory.
+  /// * @FAILED_PRECONDITION: Failed to register the handler with the
+  ///   `TransferService`.
   Result<TransferResource> AllocateReader(stream::Reader& reader);
 
-  /// Allocates and registers a WriteHandler for the given writer.
+  /// Allocates and registers a `WriteOnlyHandler` for the given `writer`.
+  ///
+  /// @param[in] writer Stream to which transfer data will be written.
+  ///
+  /// @returns @Result{a `TransferResource` handle for the registered handler}
+  /// * @RESOURCE_EXHAUSTED: No resource IDs are available in the configured
+  ///   range, or the allocator is out of memory.
+  /// * @FAILED_PRECONDITION: Failed to register the handler with the
+  ///   `TransferService`.
   Result<TransferResource> AllocateWriter(stream::Writer& writer);
 
-  /// Allocates and registers a ReadWriteHandler for the given reader_writer.
+  /// Allocates and registers a `ReadWriteHandler` for the given
+  /// `reader_writer`.
+  ///
+  /// @param[in] reader_writer Stream used for both reading and writing.
+  ///
+  /// @returns @Result{a `TransferResource` handle for the registered handler}
+  /// * @RESOURCE_EXHAUSTED: No resource IDs are available in the configured
+  ///   range, or the allocator is out of memory.
+  /// * @FAILED_PRECONDITION: Failed to register the handler with the
+  ///   `TransferService`.
   Result<TransferResource> AllocateReadWriter(
       stream::ReaderWriter& reader_writer);
 
@@ -151,5 +204,7 @@ class TransferHandlerAllocator {
   uint32_t last_resource_id_ PW_GUARDED_BY(lock_);
   sync::Mutex lock_;
 };
+
+/// @endmodule
 
 }  // namespace pw::transfer
