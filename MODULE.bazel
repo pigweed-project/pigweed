@@ -142,6 +142,7 @@ git_repository = use_repo_rule(
 git_repository(
     name = "bazel_clang_tidy",
     commit = "c4d35e0d0b838309358e57a2efed831780f85cd0",
+    dev_dependency = True,
     remote = "https://github.com/erenon/bazel_clang_tidy.git",
 )
 
@@ -149,6 +150,7 @@ git_repository(
     name = "pigweed_doxylink",
     build_file = "//third_party/doxylink:doxylink.BUILD.bazel",
     commit = "e3303148c641e3a192026090fd7f445c433f08fc",
+    dev_dependency = True,
     remote = "https://pigweed.googlesource.com/third_party/github/sphinx-contrib/doxylink",
 )
 
@@ -178,6 +180,8 @@ xcode_sdk_repository(
 
 cipd_ext = use_extension("//pw_env_setup/bazel/cipd:defs.bzl", "cipd")
 use_repo(cipd_ext, "cipd_client")
+
+cipd_dev_ext = use_extension("//pw_env_setup/bazel/cipd:defs.bzl", "cipd", dev_dependency = True)
 
 pw_cxx_toolchain = use_extension("//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_cxx_toolchain")
 
@@ -220,7 +224,10 @@ register_toolchains(
     dev_dependency = True,
 )
 
-register_execution_platforms("//pw_grpc:test_platform")
+register_execution_platforms(
+    "//pw_grpc:test_platform",
+    dev_dependency = True,
+)
 
 register_toolchains(
     "//pw_toolchain/fuchsia:all",
@@ -443,11 +450,14 @@ types.requirements(
 )
 use_repo(types, "pip_types")
 
-# TODO: b/354241571 - The next two lines are only required because the Fuchsia
-# SDK doesn't correctly restrict the target platform compatibility of all its
-# targets. We should remove them once the bug is fixed.
+# TODO: b/354241571 - The next two lines are required because the Fuchsia SDK
+# and downstream wildcard MCU builds (`--platforms=<mcu> //...`) don't restrict
+# the target platform compatibility of all Python targets. Keep these non-dev
+# until all targets are properly constrained.
 register_toolchains("@pythons_hub//:all")
 
+# Register the non-hermetic toolchain too; it's marked as lowest priority so we will prefer the
+# hermetic toolchains on supported platforms, while still supporting Mac OS
 register_toolchains("@rules_python//python/runtime_env_toolchains:all")
 
 # Configure Go dependencies
@@ -514,6 +524,7 @@ use_repo(cipd_ext, qemu = "pigweed.qemu")
 http_archive(
     name = "stm32f4xx_hal_driver",
     build_file = "//third_party/stm32cube:stm32_hal_driver.BUILD.bazel",
+    dev_dependency = True,
     sha256 = "d0427a3830f0c23dd4810952321b8209be7b3c50897d1fc2d79587435cc3a379",
     strip_prefix = "stm32f4xx-hal-driver-1.8.0",
     urls = ["https://github.com/STMicroelectronics/stm32f4xx-hal-driver/archive/refs/tags/v1.8.0.tar.gz"],
@@ -522,6 +533,7 @@ http_archive(
 http_archive(
     name = "cmsis_device_f4",
     build_file = "//third_party/stm32cube:cmsis_device.BUILD.bazel",
+    dev_dependency = True,
     sha256 = "1d9612ecaaab8708c88be2c9573927f2e5e9a911aa2c1427182b545ed5ed0fd6",
     strip_prefix = "cmsis-device-f4-2.6.8",
     urls = ["https://github.com/STMicroelectronics/cmsis-device-f4/archive/refs/tags/v2.6.8.tar.gz"],
@@ -530,6 +542,7 @@ http_archive(
 http_archive(
     name = "cmsis_core",
     build_file = "//third_party/stm32cube:cmsis_core.BUILD.bazel",
+    dev_dependency = True,
     sha256 = "32f226c31d7d1ff4a504404400603e047b99f405cd0c9a8f417f1f250251b829",
     strip_prefix = "cmsis-core-5.4.0_cm4",
     urls = ["https://github.com/STMicroelectronics/cmsis-core/archive/refs/tags/v5.4.0_cm4.tar.gz"],
@@ -538,6 +551,7 @@ http_archive(
 git_repository(
     name = "mcuxpresso",
     commit = "0cc0caa0c44fc9ceae1ad4c0a9e3b79e8b38d751",
+    dev_dependency = True,
     # temporary point to antmicro github fork until SDK generated files
     # will be pushed to: https://pigweed.googlesource.com/pigweed/mcuxpresso-sdk
     remote = "https://github.com/antmicro/mcuxpresso-sdk.git",
@@ -547,6 +561,7 @@ git_repository(
     name = "smartfusion_mss",
     build_file = "//third_party/smartfusion_mss:smartfusion_mss.BUILD.bazel",
     commit = "052a2ed78fa2c7a1a7cdac5e4a988b03269d2b42",
+    dev_dependency = True,
     remote = "https://github.com/seank/smartfusion_mss",
 )
 
@@ -591,15 +606,14 @@ use_repo(cipd_ext, go = "pigweed.go")
 # Set up legacy pw_transfer test binaries.
 # Required by: pigweed.
 # Used in modules: //pw_transfer.
-cipd_ext.require(
+cipd_dev_ext.require(
     name = "pigweed.pw_transfer_test_binaries",
     # Only ever needed if you run the pw_transfer unit tests.
-    dev_dependency = True,
     packages = {
         "pigweed/pw_transfer_test_binaries/${os=linux}-${arch=amd64}": "version:pw_transfer_test_binaries_528098d588f307881af83f769207b8e6e1b57520-linux-amd64-cipd.cipd",
     },
 )
-use_repo(cipd_ext, pw_transfer_test_binaries = "pigweed.pw_transfer_test_binaries")
+use_repo(cipd_dev_ext, pw_transfer_test_binaries = "pigweed.pw_transfer_test_binaries")
 
 workspace_and_buildfile = use_repo_rule("//pw_build/bazel_internal:workspace_and_buildfile.bzl", "workspace_and_buildfile")
 
@@ -627,37 +641,37 @@ local_repository(
 # =============
 
 # Get executables.
-cipd_ext.require(
+cipd_dev_ext.require(
     name = "pigweed.doxygen_linux_amd64",
     packages = {
         "pigweed/third_party/doxygen/linux-amd64": "version:1.9.6-1",
     },
 )
-use_repo(cipd_ext, doxygen_linux_amd64 = "pigweed.doxygen_linux_amd64")
+use_repo(cipd_dev_ext, doxygen_linux_amd64 = "pigweed.doxygen_linux_amd64")
 
-cipd_ext.require(
+cipd_dev_ext.require(
     name = "pigweed.doxygen_mac_amd64",
     packages = {
         "pigweed/third_party/doxygen/mac-amd64": "version:1.9.6-1",
     },
 )
-use_repo(cipd_ext, doxygen_mac_amd64 = "pigweed.doxygen_mac_amd64")
+use_repo(cipd_dev_ext, doxygen_mac_amd64 = "pigweed.doxygen_mac_amd64")
 
-cipd_ext.require(
+cipd_dev_ext.require(
     name = "pigweed.doxygen_mac_arm64",
     packages = {
         "pigweed/third_party/doxygen/mac-arm64": "version:1.9.6",
     },
 )
-use_repo(cipd_ext, doxygen_mac_arm64 = "pigweed.doxygen_mac_arm64")
+use_repo(cipd_dev_ext, doxygen_mac_arm64 = "pigweed.doxygen_mac_arm64")
 
-cipd_ext.require(
+cipd_dev_ext.require(
     name = "pigweed.doxygen_windows_amd64",
     packages = {
         "pigweed/third_party/doxygen/windows-amd64": "version:1.9.6-1",
     },
 )
-use_repo(cipd_ext, doxygen_windows_amd64 = "pigweed.doxygen_windows_amd64")
+use_repo(cipd_dev_ext, doxygen_windows_amd64 = "pigweed.doxygen_windows_amd64")
 
 # Configure rules_doxygen to use our executables.
 doxygen_extension = use_extension("@rules_doxygen//:extensions.bzl", "doxygen_extension", dev_dependency = True)
@@ -700,7 +714,7 @@ npm.npm_translate_lock(
 )
 use_repo(npm, "npm")
 
-pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm", dev_dependency = True)
 use_repo(pnpm, "pnpm")
 
 # Setup Fuchsia SDK.
@@ -751,14 +765,13 @@ fuchsia_cipd_ext.repository(
 )
 use_repo(fuchsia_cipd_ext, "fuchsia_sdk")
 
-cipd_ext.require(
+cipd_dev_ext.require(
     name = "fuchsia_products_metadata",
-    dev_dependency = True,
     packages = {
         "fuchsia/development/product_bundles/v2": FUCHSIA_SDK_VERSION,
     },
 )
-use_repo(cipd_ext, "fuchsia_products_metadata")
+use_repo(cipd_dev_ext, "fuchsia_products_metadata")
 
 # TODO: b/531679151 - Switch back to `@rules_fuchsia//fuchsia:products.bzl` once
 # the upstream Fuchsia `fuchsia_remote_product_bundle` implementation no longer
