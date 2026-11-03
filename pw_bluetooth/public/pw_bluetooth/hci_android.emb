@@ -1300,25 +1300,26 @@ struct LEBatchScanReadResultsCommandCompleteEvent:
   -- T_fw are in the firmware time domain. This lets the host compute how long
   -- ago the event happened.
   let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0              [+hdr_size]                                     hci.CommandCompleteEvent                 command_complete
-  $next          [+1]                                            hci.StatusCode                           status
-  $next          [+1]                                            BatchScanSubOpcode                       sub_opcode
+  0              [+hdr_size]                  hci.CommandCompleteEvent                 command_complete
+  $next          [+1]                         hci.StatusCode                           status
+  $next          [+1]                         BatchScanSubOpcode                       sub_opcode
     [requires: this == BatchScanSubOpcode.READ_RESULT_PARAMETERS]
 
-  $next          [+1]                                            BatchScanReadMode                        read_mode
-  $next          [+1]                                            UInt                                     num_records
+  $next          [+1]                         BatchScanReadMode                        read_mode
+  $next          [+1]                         UInt                                     num_records
   # sizeof(status) + sizeof(sub_opcode) + sizeof(read_mode) + sizeof(num_records)
   let prefix_size = 4
   let results_offset = hdr_size+prefix_size
   if read_mode == BatchScanReadMode.FULL:
     let results_size = command_complete.return_parameters_size-prefix_size
-    results_offset [+results_size]                               UInt:8[results_size]                     full_results
+    results_offset [+results_size]            UInt:8[results_size]                     full_results
       -- NOTE(https://github.com/google/emboss/issues/230): Emboss currently
       -- doesn't support variable length array elements and returns "error:
       -- Array elements must be fixed size."
 
   if read_mode == BatchScanReadMode.TRUNCATED:
-    results_offset [+LEBatchScanTruncatedResult.$size_in_bytes]  LEBatchScanTruncatedResult[num_records]  truncated_results
+    let truncated_results_size = LEBatchScanTruncatedResult.$size_in_bytes*num_records
+    results_offset [+truncated_results_size]  LEBatchScanTruncatedResult[num_records]  truncated_results
 
 # ----------------------------- Sniff Offload ----------------------------------
 
