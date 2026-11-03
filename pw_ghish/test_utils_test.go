@@ -676,6 +676,48 @@ var hermeticAuthEnvVars = []string{
 	"GHISH_QUOTA_PROJECT",
 	"GOOGLE_CLOUD_QUOTA_PROJECT",
 	"LUCI_AUTH_CREDENTIAL_HELPER",
+	"GHISH_CACHE",
+	"GHISH_CACHE_DIR",
+	"GHISH_ACCOUNT_CACHE",
+}
+
+func hermeticCacheEnv() cacheEnv {
+	return cacheEnv{
+		Now:           time.Now,
+		PersistentDir: func() string { return "" },
+	}
+}
+
+// TestCacheConfig configures a scoped cacheEnv installed by WithTestCaches.
+type TestCacheConfig struct {
+	Now           func() time.Time
+	PersistentDir string
+}
+
+// WithTestCaches installs a scoped cacheEnv for t, resetting all registered
+// caches on entry and restoring the previous cacheEnv and cache state on
+// cleanup.
+func WithTestCaches(t testing.TB, cfg TestCacheConfig) {
+	t.Helper()
+	env := currentCacheEnv()
+	if cfg.Now != nil {
+		env.Now = cfg.Now
+	}
+	if cfg.PersistentDir != "" {
+		dir := cfg.PersistentDir
+		env.PersistentDir = func() string {
+			if strings.TrimSpace(os.Getenv("GHISH_CACHE")) == "0" {
+				return ""
+			}
+			return dir
+		}
+	}
+	prev := setCacheEnv(env)
+	resetAllCaches()
+	t.Cleanup(func() {
+		setCacheEnv(prev)
+		resetAllCaches()
+	})
 }
 
 // productionAuthResolvers holds the production resolvers, captured during

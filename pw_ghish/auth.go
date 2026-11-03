@@ -955,7 +955,7 @@ func ResetAuthTokenCaches() {
 	luciAuthCache.notFoundErr = nil
 	luciAuthCache.mu.Unlock()
 
-	resetSelfAccountMemCache()
+	defaultAccountCache.ResetMemory()
 }
 
 // gerritTokenFromEnv returns the trimmed GERRIT_TOKEN. A value containing ':'

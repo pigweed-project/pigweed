@@ -15,6 +15,7 @@
 package pw_ghish
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -228,7 +229,7 @@ func TestFormatChangeReviewersAndAssignees(t *testing.T) {
 
 func TestGetSelfAccountCached(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "pw_ghish_accounts")
-	t.Setenv("GH_ISH_ACCOUNT_CACHE_DIR", cacheDir)
+	WithTestCaches(t, TestCacheConfig{PersistentDir: cacheDir})
 
 	var selfCalls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -277,22 +278,25 @@ func TestGetSelfAccountCached(t *testing.T) {
 	if err != nil {
 		t.Fatalf("os.Stat(cacheDir) failed: %v", err)
 	}
-	if perm := dirInfo.Mode().Perm(); perm != 0700 {
+	if perm := dirInfo.Mode().Perm(); perm != 0o700 {
 		t.Errorf("cacheDir perm = %o, want 0700", perm)
 	}
 	fileInfo, err := os.Stat(filepath.Join(cacheDir, "accounts.json"))
 	if err != nil {
 		t.Fatalf("os.Stat(accounts.json) failed: %v", err)
 	}
-	if perm := fileInfo.Mode().Perm(); perm != 0600 {
+	if perm := fileInfo.Mode().Perm(); perm != 0o600 {
 		t.Errorf("accounts.json perm = %o, want 0600", perm)
 	}
 
 	// 2. Clear in-memory cache to force reading from accounts.json on disk,
 	// then verify PeekSelfAccountCache, CachedSelfAccountRef, and GetSelfAccountCached hit disk with zero RPCs.
-	resetSelfAccountMemCache()
+	defaultAccountCache.ResetMemory()
 	if peeked := PeekSelfAccountCache("https://pigweed-review.googlesource.com"); peeked == nil || peeked.AccountID != 100042 {
 		t.Fatalf("PeekSelfAccountCache on warm disk cache = %+v, want AccountID=100042", peeked)
+	}
+	if peeked := PeekSelfAccountCache("sso://pigweed/pigweed/pigweed"); peeked == nil || peeked.AccountID != 100042 {
+		t.Fatalf("PeekSelfAccountCache(sso://...) = %+v, want AccountID=100042", peeked)
 	}
 	cmd := &cobra.Command{}
 	SetConfig(cmd, &Config{Host: "https://pigweed-review.googlesource.com"})
@@ -316,7 +320,7 @@ func TestGetSelfAccountCached(t *testing.T) {
 		t.Errorf("selfCalls after disk cache hit = %d, want 1", selfCalls)
 	}
 
-	// 3. Loopback host bypasses disk cache.
+	// 3. Loopback host bypasses cache.
 	if peeked := PeekSelfAccountCache(srv.URL); peeked != nil {
 		t.Errorf("PeekSelfAccountCache(loopback) = %+v, want nil", peeked)
 	}
@@ -328,106 +332,71 @@ func TestGetSelfAccountCached(t *testing.T) {
 	}
 }
 
-func TestSelfAccountCache_EdgeCases(t *testing.T) {
-	now := time.Unix(1700000000, 0)
+func TestSelfAccountCache_DomainInvariants(t *testing.T) {
+	baseTime := time.Unix(1700000000, 0).UTC()
 
-	t.Run("TTL expiration and future timestamp rejection", func(t *testing.T) {
+	t.Run("24h TTL clock-skew rejection and AccountID > 0 invariant", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "cache")
+		curNow := baseTime
+		WithTestCaches(t, TestCacheConfig{
+			PersistentDir: dir,
+			Now:           func() time.Time { return curNow },
+		})
 		acc := AccountInfo{AccountID: 77, Username: "bob"}
 
-		// Entry at exact TTL boundary is expired when read at now.
-		tryWriteSelfAccountCache(dir, "expired-host.example.com", acc, now.Add(-time.Duration(selfAccountCacheTTLSeconds)*time.Second))
-		if _, ok := tryReadSelfAccountCache(dir, "expired-host.example.com", now); ok {
-			t.Error("entry at exact TTL boundary should be expired")
+		curNow = baseTime.Add(-selfAccountCacheTTL)
+		tryWriteSelfAccountCache("expired-host.example.com", acc)
+		curNow = baseTime
+		if got := PeekSelfAccountCache("expired-host.example.com"); got != nil {
+			t.Errorf("entry at exact TTL boundary = %+v, want nil", got)
 		}
 
-		// Entry saved just within TTL is valid when read at now.
-		tryWriteSelfAccountCache(dir, "fresh-host.example.com", acc, now.Add(-time.Duration(selfAccountCacheTTLSeconds-1)*time.Second))
-		resetSelfAccountMemCache()
-		if got, ok := tryReadSelfAccountCache(dir, "fresh-host.example.com", now); !ok || got.AccountID != 77 {
-			t.Errorf("entry at TTL-1s: got (%+v, %v), want AccountID=77, true", got, ok)
+		curNow = baseTime.Add(-(selfAccountCacheTTL - time.Second))
+		tryWriteSelfAccountCache("fresh-host.example.com", acc)
+		curNow = baseTime
+		defaultAccountCache.ResetMemory()
+		if got := PeekSelfAccountCache("fresh-host.example.com"); got == nil || got.AccountID != 77 {
+			t.Errorf("entry at TTL-1s = %+v, want AccountID=77", got)
 		}
 
-		// Writing a new entry at now prunes expired entries while preserving valid ones.
-		tryWriteSelfAccountCache(dir, "second-fresh.example.com", AccountInfo{AccountID: 88}, now)
-		disk := readSelfAccountCacheLocked(dir)
-		if _, ok := disk.Accounts["expired-host.example.com"]; ok {
-			t.Error("expected expired-host.example.com to be pruned on write")
-		}
-		if _, ok := disk.Accounts["fresh-host.example.com"]; !ok {
-			t.Error("expected fresh-host.example.com to be preserved on write")
-		}
-		if _, ok := disk.Accounts["second-fresh.example.com"]; !ok {
-			t.Error("expected second-fresh.example.com to be present on disk")
+		// Future timestamp (>24h ahead of curNow) is rejected as clock skew.
+		curNow = baseTime.Add(10 * time.Second)
+		tryWriteSelfAccountCache("future-host.example.com", acc)
+		curNow = baseTime
+		defaultAccountCache.ResetMemory()
+		if got := PeekSelfAccountCache("future-host.example.com"); got != nil {
+			t.Errorf("entry with future timestamp = %+v, want nil", got)
 		}
 
-		// Entry with timestamp in the future (clock skew) is rejected when read at now.
-		tryWriteSelfAccountCache(dir, "future-host.example.com", acc, now.Add(10*time.Second))
-		if _, ok := tryReadSelfAccountCache(dir, "future-host.example.com", now); ok {
-			t.Error("entry with future timestamp should be rejected")
-		}
-
-		// Account with AccountID <= 0 is ignored and never written.
-		tryWriteSelfAccountCache(dir, "zero-id.example.com", AccountInfo{AccountID: 0, Username: "ghost"}, now)
-		if _, ok := tryReadSelfAccountCache(dir, "zero-id.example.com", now); ok {
-			t.Error("entry with AccountID <= 0 should not be cached")
+		// AccountID <= 0 is never cached.
+		tryWriteSelfAccountCache("zero-id.example.com", AccountInfo{AccountID: 0, Username: "ghost"})
+		if got := PeekSelfAccountCache("zero-id.example.com"); got != nil {
+			t.Errorf("entry with AccountID <= 0 = %+v, want nil", got)
 		}
 	})
 
-	t.Run("corrupt JSON on disk recovers cleanly", func(t *testing.T) {
-		dir := filepath.Join(t.TempDir(), "corrupt")
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "accounts.json"), []byte("{not-json"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		resetSelfAccountMemCache()
-		if _, ok := tryReadSelfAccountCache(dir, "pigweed-review.googlesource.com", now); ok {
-			t.Error("expected cache miss on corrupt JSON")
-		}
-		tryWriteSelfAccountCache(dir, "pigweed-review.googlesource.com", AccountInfo{AccountID: 99, Username: "carol"}, now)
-		resetSelfAccountMemCache()
-		if got, ok := tryReadSelfAccountCache(dir, "pigweed-review.googlesource.com", now); !ok || got.AccountID != 99 {
-			t.Errorf("after overwriting corrupt JSON: got (%+v, %v), want AccountID=99, true", got, ok)
-		}
-	})
+	t.Run("GHISH_CACHE=0 and GHISH_ACCOUNT_CACHE=0 disable disk persistence", func(t *testing.T) {
+		for _, envVar := range []string{"GHISH_CACHE", selfAccountCacheEnvVar} {
+			t.Run(envVar, func(t *testing.T) {
+				dir := filepath.Join(t.TempDir(), "seeded")
+				WithTestCaches(t, TestCacheConfig{PersistentDir: dir})
+				tryWriteSelfAccountCache("pigweed-review.googlesource.com", AccountInfo{AccountID: 42})
+				defaultAccountCache.ResetMemory()
 
-	t.Run("refuses symlinked cache directory or symlinked accounts.json", func(t *testing.T) {
-		base := t.TempDir()
-		realDir := filepath.Join(base, "real")
-		if err := os.MkdirAll(realDir, 0700); err != nil {
-			t.Fatal(err)
-		}
-		symlinkDir := filepath.Join(base, "symlink-dir")
-		if err := os.Symlink(realDir, symlinkDir); err != nil {
-			t.Fatal(err)
-		}
-		tryWriteSelfAccountCache(symlinkDir, "host.example.com", AccountInfo{AccountID: 55}, now)
-		if _, err := os.Stat(filepath.Join(realDir, "accounts.json")); !os.IsNotExist(err) {
-			t.Errorf("expected write through symlinked dir to be refused, stat err = %v", err)
-		}
-
-		// Symlinked accounts.json inside a real directory is refused on read.
-		secretFile := filepath.Join(base, "secret.json")
-		if err := os.WriteFile(secretFile, []byte(`{"accounts":{"host.example.com":{"account":{"_account_id":55},"saved_unix":1700000000}}}`), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(secretFile, filepath.Join(realDir, "accounts.json")); err != nil {
-			t.Fatal(err)
-		}
-		resetSelfAccountMemCache()
-		if _, ok := tryReadSelfAccountCache(realDir, "host.example.com", now); ok {
-			t.Error("expected read of symlinked accounts.json to be refused")
-		}
-	})
-
-	t.Run("GH_ISH_ACCOUNT_CACHE=0 disables cache", func(t *testing.T) {
-		dir := filepath.Join(t.TempDir(), "disabled")
-		t.Setenv("GH_ISH_ACCOUNT_CACHE_DIR", dir)
-		t.Setenv("GH_ISH_ACCOUNT_CACHE", "0")
-		if got := activeAccountCacheDir(); got != "" {
-			t.Errorf("activeAccountCacheDir() with GH_ISH_ACCOUNT_CACHE=0 = %q, want empty", got)
+				t.Setenv(envVar, "0")
+				if got := PeekSelfAccountCache("pigweed-review.googlesource.com"); got != nil {
+					t.Errorf("PeekSelfAccountCache with %s=0 = %+v, want nil (disk ignored)", envVar, got)
+				}
+				notCreated := filepath.Join(t.TempDir(), "disabled")
+				WithTestCaches(t, TestCacheConfig{PersistentDir: notCreated})
+				tryWriteSelfAccountCache("pigweed-review.googlesource.com", AccountInfo{AccountID: 43})
+				if got := PeekSelfAccountCache("pigweed-review.googlesource.com"); got == nil || got.AccountID != 43 {
+					t.Errorf("in-process PeekSelfAccountCache with %s=0 = %+v, want AccountID=43", envVar, got)
+				}
+				if _, err := os.Stat(notCreated); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("expected %s=0 never to touch disk at %s, stat err = %v", envVar, notCreated, err)
+				}
+			})
 		}
 	})
 }

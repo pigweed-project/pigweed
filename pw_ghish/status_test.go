@@ -770,12 +770,11 @@ func TestStatus_Pipeline1ParallelPrefetch_CommentsAndDrafts(t *testing.T) {
 }
 
 func TestStatus_UsesCachedSelfAccountAndNumericQueries(t *testing.T) {
-	cacheDir := t.TempDir()
-	t.Setenv("GH_ISH_ACCOUNT_CACHE_DIR", cacheDir)
-	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", AccountInfo{
+	WithTestCaches(t, TestCacheConfig{PersistentDir: t.TempDir()})
+	tryWriteSelfAccountCache("pigweed-review.googlesource.com", AccountInfo{
 		AccountID: 1132682,
 		Name:      "Cached Dev",
-	}, time.Now())
+	})
 
 	mockGit := mockGitForMainBranch(t)
 	mockGit.OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")

@@ -20,7 +20,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestList_WritesToCmdOut(t *testing.T) {
@@ -151,8 +150,7 @@ func TestList_DefaultProjectScopeAndAllProjects(t *testing.T) {
 }
 
 func TestList_UsesCachedSelfAccountForMeFilters(t *testing.T) {
-	cacheDir := t.TempDir()
-	t.Setenv("GH_ISH_ACCOUNT_CACHE_DIR", cacheDir)
+	WithTestCaches(t, TestCacheConfig{PersistentDir: t.TempDir()})
 
 	mockGit := SetMockGit(t, nil)
 	mockGit.OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
@@ -182,10 +180,10 @@ func TestList_UsesCachedSelfAccountForMeFilters(t *testing.T) {
 	}
 
 	// 2. Warm cache hit rewrites @me to numeric AccountID without /accounts/self RPC.
-	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", AccountInfo{
+	tryWriteSelfAccountCache("pigweed-review.googlesource.com", AccountInfo{
 		AccountID: 1132682,
 		Name:      "Cached Dev",
-	}, time.Now())
+	})
 
 	isolateRootCmdForTest(t)
 	HostFlag = ""
@@ -206,12 +204,11 @@ func TestList_UsesCachedSelfAccountForMeFilters(t *testing.T) {
 }
 
 func TestList_UnauthenticatedIgnoresCachedSelfAccount(t *testing.T) {
-	cacheDir := t.TempDir()
-	t.Setenv("GH_ISH_ACCOUNT_CACHE_DIR", cacheDir)
-	tryWriteSelfAccountCache(cacheDir, "pigweed-review.googlesource.com", AccountInfo{
+	WithTestCaches(t, TestCacheConfig{PersistentDir: t.TempDir()})
+	tryWriteSelfAccountCache("pigweed-review.googlesource.com", AccountInfo{
 		AccountID: 1132682,
 		Name:      "Cached Dev",
-	}, time.Now())
+	})
 
 	mockGit := SetMockGit(t, nil)
 	mockGit.OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")

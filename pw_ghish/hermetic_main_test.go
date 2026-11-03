@@ -49,6 +49,7 @@ func TestMain(m *testing.M) {
 	// luci-auth token. TestResolveGerritAuth_LoopbackNotMintedInProduction
 	// covers the production default.
 	allowLoopbackGerritAuthForTests = true
+	setCacheEnv(hermeticCacheEnv())
 	failClosed := failClosedAuthResolvers()
 	SetAuthResolvers(failClosed)
 	// `bb` and the Busytown accelerators (fetch_artifact, ants_cli) carry the
