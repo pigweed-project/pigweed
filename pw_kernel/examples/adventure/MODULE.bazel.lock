@@ -963,49 +963,6 @@
         }
       }
     },
-    "@@pigweed+//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
-      "general": {
-        "bzlTransitiveDigest": "D+er3Gbi1SNnQ8bbUWWB60rvovzr4n7efHm3ukW7kro=",
-        "usagesDigest": "Xj5WOH3PY1pfa5sAg3cSUwGDXrbbX2ZUzawRCULd6Zk=",
-        "recordedInputs": [
-          "REPO_MAPPING:pigweed+,bazel_tools bazel_tools"
-        ],
-        "generatedRepoSpecs": {
-          "gcc_arm_none_eabi_toolchain": {
-            "repoRuleId": "@@pigweed+//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
-            "attributes": {
-              "build_file": "@@pigweed+//pw_toolchain/build_external:arm_none_eabi_gcc.BUILD",
-              "path": "fuchsia/third_party/3pp/armgcc/${os}-${arch}",
-              "tag": "version:2@15.2.rel1.1"
-            }
-          },
-          "llvm_toolchain": {
-            "repoRuleId": "@@pigweed+//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
-            "attributes": {
-              "build_file": "@@pigweed+//pw_toolchain/build_external:llvm_clang.BUILD",
-              "path": "fuchsia/third_party/clang/${os}-${arch}",
-              "tag": "git_revision:3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
-            }
-          },
-          "zephyr_toolchain": {
-            "repoRuleId": "@@pigweed+//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
-            "attributes": {
-              "build_file": "@@pigweed+//pw_toolchain/build_external:zephyr_gnu.BUILD",
-              "path": "infra/3pp/tools/zephyr_sdk/${os}-${arch}",
-              "tag": "version:3@1.0.0"
-            }
-          },
-          "zephyr_llvm_toolchain": {
-            "repoRuleId": "@@pigweed+//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
-            "attributes": {
-              "build_file": "@@pigweed+//pw_toolchain/build_external:zephyr_llvm.BUILD",
-              "path": "infra/3pp/tools/zephyr_sdk/${os}-${arch}",
-              "tag": "version:3@1.0.0"
-            }
-          }
-        }
-      }
-    },
     "@@pigweed+//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
         "bzlTransitiveDigest": "WBzXi4/e9a/yjsFC8k3FD+QUVicPMBVnLJlb6SsISmQ=",

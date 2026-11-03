@@ -14,6 +14,7 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load(":pw_cxx_toolchain_test.bzl", pw_cxx_toolchain_test_suite = "test_suite")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -52,3 +53,5 @@ sh_binary(
     name = "generate_module_map",
     srcs = ["generate_module_map.sh"],
 )
+
+pw_cxx_toolchain_test_suite(name = "pw_cxx_toolchain_test")
