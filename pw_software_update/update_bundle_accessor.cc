@@ -38,9 +38,10 @@
 namespace pw::software_update {
 namespace {
 
-Result<bool> VerifyEcdsaSignature(const protobuf::Bytes& public_key,
-                                  ConstByteSpan digest,
-                                  const protobuf::Bytes& signature) {
+[[gnu::always_inline]] inline Result<bool> VerifyEcdsaSignature(
+    const protobuf::Bytes& public_key,
+    ConstByteSpan digest,
+    const protobuf::Bytes& signature) {
   // TODO: b/237580538 - Move this logic into an variant of the API in
   // pw_crypto:ecdsa that takes readers as inputs.
   std::byte public_key_bytes[65];
