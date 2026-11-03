@@ -240,23 +240,22 @@ class UpdateBundleAccessor {
   // Verify a target specified by name measures up to the expected length and
   // SHA256 hash. Additionally call the backend to perform any product-specific
   // validations.
-  Status VerifyTargetPayload(ManifestAccessor manifest,
-                             std::string_view name,
-                             protobuf::Uint64 expected_length,
-                             protobuf::Bytes expected_sha256);
+  Status VerifyTargetPayload(std::string_view name,
+                             const protobuf::Uint64& expected_length,
+                             const protobuf::Bytes& expected_sha256);
 
   // For a target the payload of which is included in the bundle, verify
   // it measures up to the expected length and sha256 hash.
-  Status VerifyInBundleTargetPayload(protobuf::Uint64 expected_length,
-                                     protobuf::Bytes expected_sha256,
-                                     stream::IntervalReader payload_reader);
+  Status VerifyInBundleTargetPayload(const protobuf::Uint64& expected_length,
+                                     const protobuf::Bytes& expected_sha256,
+                                     stream::IntervalReader& payload_reader);
 
   // For a target with no corresponding payload in the bundle, verify
   // its on-device payload bytes measures up to the expected length and sha256
   // hash.
   Status VerifyOutOfBundleTargetPayload(std::string_view name,
-                                        protobuf::Uint64 expected_length,
-                                        protobuf::Bytes expected_sha256);
+                                        const protobuf::Uint64& expected_length,
+                                        const protobuf::Bytes& expected_sha256);
 };
 
 }  // namespace pw::software_update

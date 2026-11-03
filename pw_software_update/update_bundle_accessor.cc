@@ -38,9 +38,9 @@
 namespace pw::software_update {
 namespace {
 
-Result<bool> VerifyEcdsaSignature(protobuf::Bytes public_key,
+Result<bool> VerifyEcdsaSignature(const protobuf::Bytes& public_key,
                                   ConstByteSpan digest,
-                                  protobuf::Bytes signature) {
+                                  const protobuf::Bytes& signature) {
   // TODO: b/237580538 - Move this logic into an variant of the API in
   // pw_crypto:ecdsa that takes readers as inputs.
   std::byte public_key_bytes[65];
@@ -76,10 +76,11 @@ void LogKeyId(ConstByteSpan key_id) {
 }
 
 // Verifies signatures of a TUF metadata.
-Status VerifyMetadataSignatures(protobuf::Bytes message,
-                                protobuf::RepeatedMessages signatures,
-                                protobuf::Message signature_requirement,
-                                protobuf::StringToMessageMap key_mapping) {
+Status VerifyMetadataSignatures(
+    const protobuf::Bytes& message,
+    const protobuf::RepeatedMessages& signatures,
+    const protobuf::Message& signature_requirement,
+    const protobuf::StringToMessageMap& key_mapping) {
   // Gets the threshold -- at least `threshold` number of signatures must
   // pass verification in order to trust this metadata.
   protobuf::Uint32 threshold = signature_requirement.AsUint32(
@@ -195,8 +196,8 @@ Status VerifyMetadataSignatures(protobuf::Bytes message,
 // to VerifyMetadataSignatures().
 //
 // Precondition: The trusted root metadata has undergone content validity check.
-Result<bool> VerifyRootMetadataSignatures(protobuf::Message trusted_root,
-                                          protobuf::Message new_root) {
+Result<bool> VerifyRootMetadataSignatures(const protobuf::Message& trusted_root,
+                                          const protobuf::Message& new_root) {
   // Retrieves the trusted root metadata content message.
   protobuf::Message trusted = trusted_root.AsMessage(static_cast<uint32_t>(
       pwpb::SignedRootMetadata::Fields::kSerializedRootMetadata));
@@ -229,7 +230,7 @@ Result<bool> VerifyRootMetadataSignatures(protobuf::Message trusted_root,
   return true;
 }
 
-Result<uint32_t> GetMetadataVersion(protobuf::Message& metadata,
+Result<uint32_t> GetMetadataVersion(const protobuf::Message& metadata,
                                     uint32_t common_metatdata_field_number) {
   // message [Root|Targets]Metadata {
   //   ...
@@ -252,7 +253,7 @@ Result<uint32_t> GetMetadataVersion(protobuf::Message& metadata,
 }
 
 // Reads a protobuf::String into a buffer and returns a std::string_view.
-Result<std::string_view> ReadProtoString(protobuf::String str,
+Result<std::string_view> ReadProtoString(const protobuf::String& str,
                                          span<char> buffer) {
   stream::IntervalReader reader = str.GetBytesReader();
   if (reader.interval_size() > buffer.size()) {
@@ -706,7 +707,7 @@ Status UpdateBundleAccessor::VerifyTargetsPayloads() {
     PW_TRY(target_sha256.status());
 
     if (Status status = VerifyTargetPayload(
-            bundle_manifest, target_name.value(), target_length, target_sha256);
+            target_name.value(), target_length, target_sha256);
         !status.ok()) {
       PW_LOG_ERROR("Target: %s failed verification",
                    pw::MakeString(target_name.value()).c_str());
@@ -718,10 +719,9 @@ Status UpdateBundleAccessor::VerifyTargetsPayloads() {
 }
 
 Status UpdateBundleAccessor::VerifyTargetPayload(
-    ManifestAccessor,
     std::string_view target_name,
-    protobuf::Uint64 expected_length,
-    protobuf::Bytes expected_sha256) {
+    const protobuf::Uint64& expected_length,
+    const protobuf::Bytes& expected_sha256) {
   protobuf::StringToBytesMap payloads_map = bundle_.AsStringToBytesMap(
       static_cast<uint32_t>(pwpb::UpdateBundle::Fields::kTargetPayloads));
   stream::IntervalReader payload_reader =
@@ -745,8 +745,8 @@ Status UpdateBundleAccessor::VerifyTargetPayload(
 // TODO(alizhang): Add unit tests for all failure conditions.
 Status UpdateBundleAccessor::VerifyOutOfBundleTargetPayload(
     std::string_view target_name,
-    [[maybe_unused]] protobuf::Uint64 expected_length,
-    [[maybe_unused]] protobuf::Bytes expected_sha256) {
+    [[maybe_unused]] const protobuf::Uint64& expected_length,
+    [[maybe_unused]] const protobuf::Bytes& expected_sha256) {
 #if PW_SOFTWARE_UPDATE_WITH_PERSONALIZATION
   // The target payload is "personalized out". We we can't take a measurement
   // without backend help. For now we will check against the device manifest
@@ -810,9 +810,9 @@ Status UpdateBundleAccessor::VerifyOutOfBundleTargetPayload(
 }
 
 Status UpdateBundleAccessor::VerifyInBundleTargetPayload(
-    protobuf::Uint64 expected_length,
-    protobuf::Bytes expected_sha256,
-    stream::IntervalReader payload_reader) {
+    const protobuf::Uint64& expected_length,
+    const protobuf::Bytes& expected_sha256,
+    stream::IntervalReader& payload_reader) {
   // If the target payload is included in the bundle, simply take a
   // measurement.
   uint64_t actual_length = payload_reader.interval_size();
