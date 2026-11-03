@@ -16,6 +16,7 @@
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
+import re
 import textwrap
 from typing import Iterable
 
@@ -46,6 +47,13 @@ def _reindent(input_text: str, amount: int) -> Iterable[str]:
 
 def _fix_whitespace(line: str) -> str:
     return line.rstrip().replace('\t', ' ' * TAB_WIDTH) + '\n'
+
+
+_OPTION_FIELD_RE = re.compile(r'^:[a-zA-Z0-9_+-]+:(?:\s|$)')
+
+
+def _is_option_line(line: str) -> bool:
+    return _OPTION_FIELD_RE.match(line.lstrip()) is not None
 
 
 @dataclass
@@ -81,24 +89,16 @@ class _CodeBlock:
         if self.first_line_indent is None:
             # Check if the first word is a directive option.
             # E.g. :caption:
-            line_words = line.split()
-            if (
-                line_words
-                and line_words[0].startswith(':')
-                and line_words[0].endswith(':')
-                # In case the first word starts with two colons '::'
-                and len(line_words[0]) > 2
+            if not self._blank_line_after_options_found and _is_option_line(
+                line
             ):
                 self.option_lines.append(line.rstrip())
                 return
 
-            # Step 1: Check for a blank line
+            # Step 1: Check for a blank line. Directive options must immediately
+            # follow `.. code-block::`, so any blank line ends the option block.
             if len(line.strip()) == 0:
-                if (
-                    self.option_lines
-                    and not self._blank_line_after_options_found
-                ):
-                    self._blank_line_after_options_found = True
+                self._blank_line_after_options_found = True
                 return
 
             # Step 2: Check for a line that is a continuation of a previous
@@ -141,10 +141,24 @@ class _CodeBlock:
         return _indent_amount(self.directive_line)
 
     def options_block_lines(self) -> Iterable[str]:
-        yield from _reindent(
-            input_text='\n'.join(self.option_lines),
-            amount=self.directive_indent_amount + CODE_BLOCK_INDENTATION,
-        )
+        # Each `:option:` field must align directly with the code block (+3
+        # spaces), whereas `textwrap.dedent` would preserve relative
+        # misalignment between options. Wrapped continuation lines (e.g. a
+        # multi-line `:caption:`) stay indented past their owning option.
+        target_indent = self.directive_indent_amount + CODE_BLOCK_INDENTATION
+        opt_orig_indent = target_indent
+        for line in self.option_lines:
+            expanded = line.replace('\t', ' ' * TAB_WIDTH)
+            stripped = expanded.strip()
+            if _is_option_line(stripped):
+                opt_orig_indent = _indent_amount(expanded)
+                indent = target_indent
+            else:
+                indent = target_indent + max(
+                    CODE_BLOCK_INDENTATION,
+                    _indent_amount(expanded) - opt_orig_indent,
+                )
+            yield f'{" " * indent}{stripped}\n'
 
     def code_block_lines(self) -> Iterable[str]:
         yield from _reindent(

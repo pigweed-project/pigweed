@@ -25,7 +25,7 @@ Here is another paragraph.
 Here is a code block with options and bad indentation.
 
   .. code-block:: python
-       :caption: A Python Example
+     :caption: A Python Example
      :linenos:
 
      def hello():

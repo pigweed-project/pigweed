@@ -17,6 +17,7 @@ import importlib.resources
 import os
 from pathlib import Path
 import tempfile
+import textwrap
 import unittest
 
 from format_testing_utils import CapturingToolRunner
@@ -171,6 +172,123 @@ class RstFormatterTest(unittest.TestCase):
             )
         )
         self.assertEqual(expected, self._run_formatter(original))
+
+    def test_code_block_option_alignment_and_non_options(self):
+        """Tests option alignment and non-option colon prefixes."""
+        test_cases = (
+            (
+                'misaligned_options_normalized',
+                """\
+                  .. code-block:: cpp
+                       :caption: My Caption
+                    :linenos:
+
+                    int main() {
+                      return 0;
+                    }
+                """,
+                """\
+                  .. code-block:: cpp
+                     :caption: My Caption
+                     :linenos:
+
+                     int main() { return 0; }
+                """,
+            ),
+            (
+                'multiline_caption_with_inline_role_preserved',
+                """\
+                .. code-block::
+                   :caption: Example of a Python venv definition in a
+                             :octicon:`file;1em` ``BUILD.gn``
+                             :ref:`module-pw_build`: target details
+
+                   pw_python_group("my_product_packages") {}
+                """,
+                """\
+                .. code-block::
+                   :caption: Example of a Python venv definition in a
+                             :octicon:`file;1em` ``BUILD.gn``
+                             :ref:`module-pw_build`: target details
+
+                   pw_python_group("my_product_packages") {}
+                """,
+            ),
+            (
+                'underindented_option_continuation_indented',
+                """\
+                .. code-block:: text
+                     :caption: Wrapped caption
+                     continued at same column
+
+                   body
+                """,
+                """\
+                .. code-block:: text
+                   :caption: Wrapped caption
+                      continued at same column
+
+                   body
+                """,
+            ),
+            (
+                'colon_field_after_blank_line_is_code_not_option',
+                """\
+                .. code-block:: rst
+
+                   :tocdepth: 2
+                """,
+                """\
+                .. code-block:: rst
+
+                   :tocdepth: 2
+                """,
+            ),
+            (
+                'colon_field_after_options_and_blank_line_is_code',
+                """\
+                .. code-block:: rst
+                   :caption: Page metadata
+
+                   :tocdepth: 2
+                """,
+                """\
+                .. code-block:: rst
+                   :caption: Page metadata
+
+                   :tocdepth: 2
+                """,
+            ),
+            (
+                'bare_double_colon_is_code_not_option',
+                """\
+                .. code-block:: rst
+                   ::
+                """,
+                """\
+                .. code-block:: rst
+
+                   ::
+                """,
+            ),
+            (
+                'triple_colon_fence_is_code_not_option',
+                """\
+                .. code-block:: text
+                   :::
+                """,
+                """\
+                .. code-block:: text
+
+                   :::
+                """,
+            ),
+        )
+        for name, original, expected in test_cases:
+            with self.subTest(name):
+                formatted = self._run_formatter(textwrap.dedent(original))
+                self.assertEqual(textwrap.dedent(expected), formatted)
+                self.assertEqual(formatted, self._run_formatter(formatted))
 
     def test_go_code_block_keeps_tabs(self):
         original = '\n'.join(
