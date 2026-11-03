@@ -209,6 +209,94 @@ TEST_F(L2capCocTest, CanDeleteChannelInEventCallback) {
   EXPECT_FALSE(channel.has_value());
 }
 
+TEST_F(L2capCocTest, OperationsAfterChannelClosedAndMoveAssignment) {
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [](H4PacketWithH4&&) {});
+  auto* allocator = GetProxyHostAllocator();
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/1,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              allocator);
+  StartDispatcherOnCurrentThread(proxy);
+  PW_TEST_EXPECT_OK(SendLeReadBufferResponseFromController(proxy, 1));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  constexpr uint16_t kLocalCid1 = 0x0040;
+  constexpr uint16_t kRemoteCid1 = 0x0060;
+  constexpr uint16_t kLocalCid2 = 0x0041;
+  constexpr uint16_t kRemoteCid2 = 0x0061;
+
+  L2capCoc channel1 = BuildCoc(proxy,
+                               CocParameters{
+                                   .handle = kConnectionHandle,
+                                   .local_cid = kLocalCid1,
+                                   .remote_cid = kRemoteCid1,
+                               });
+  L2capCoc channel2 = BuildCoc(proxy,
+                               CocParameters{
+                                   .handle = kConnectionHandle,
+                                   .local_cid = kLocalCid2,
+                                   .remote_cid = kRemoteCid2,
+                               });
+
+  // Move-assign channel2 into channel1. This must mark the original channel1
+  // (kLocalCid1, kRemoteCid1) as stale so its CIDs can be re-registered.
+  channel1 = std::move(channel2);
+  StartChannel(channel2);
+  channel2.Stop();
+  channel2.Close();
+#if PW_BLUETOOTH_PROXY_ASYNC != 0
+  EXPECT_EQ(InitChannel(channel2), Status::FailedPrecondition());
+#endif  // PW_BLUETOOTH_PROXY_ASYNC != 0
+  EXPECT_EQ(channel2.IsWriteAvailable(), Status::FailedPrecondition());
+  RunDispatcher();
+
+  pw::Result<L2capCoc> channel3_res =
+      BuildCocWithResult(proxy,
+                         CocParameters{
+                             .handle = kConnectionHandle,
+                             .local_cid = kLocalCid1,
+                             .remote_cid = kRemoteCid1,
+                         });
+  PW_TEST_ASSERT_OK(channel3_res);
+  L2capCoc channel3 = std::move(channel3_res.value());
+  PW_TEST_EXPECT_OK(channel3.IsWriteAvailable());
+
+  // Disconnect the ACL connection, which closes and deletes the internal
+  // L2capChannel instances while channel1 and channel3 are still alive.
+  PW_TEST_ASSERT_OK(SendDisconnectionCompleteEvent(proxy, kConnectionHandle));
+  RunDispatcher();
+
+  EXPECT_EQ(channel1.InternalForTesting(), nullptr);
+  EXPECT_EQ(channel3.InternalForTesting(), nullptr);
+
+  // Calling Start(), Stop(), Close(), Init(), IsWriteAvailable(), Write(), and
+  // SendAdditionalRxCredits() on the dispatcher thread after the internal
+  // channel was deleted must safely no-op or return FailedPrecondition without
+  // dereferencing the freed channel pointer.
+  StartChannel(channel1);
+  channel1.Stop();
+  channel1.Close();
+#if PW_BLUETOOTH_PROXY_ASYNC != 0
+  EXPECT_EQ(InitChannel(channel1), Status::FailedPrecondition());
+#endif  // PW_BLUETOOTH_PROXY_ASYNC != 0
+  EXPECT_EQ(channel1.IsWriteAvailable(), Status::FailedPrecondition());
+  EXPECT_EQ(channel1.Write(MakeEmptyMultiBuf()).status,
+            Status::FailedPrecondition());
+  EXPECT_EQ(channel1.SendAdditionalRxCredits(1), Status::FailedPrecondition());
+  EXPECT_EQ(channel3.IsWriteAvailable(), Status::FailedPrecondition());
+
+  // Move-assigning a closed channel must also succeed safely.
+  channel3 = std::move(channel1);
+  channel3.Stop();
+  channel3.Close();
+  EXPECT_EQ(channel3.IsWriteAvailable(), Status::FailedPrecondition());
+}
+
 // Verify that StopAndSendEvent() does not crash if called after a concurrent
 // Close(). This test models the thread interleaving of the following race:
 //   T1 (controller-RX thread):

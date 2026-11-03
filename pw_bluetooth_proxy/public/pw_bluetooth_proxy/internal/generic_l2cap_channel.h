@@ -34,6 +34,7 @@
 namespace pw::bluetooth::proxy {
 
 class L2capChannelManager;
+class ProxyHostTest;
 
 namespace internal {
 
@@ -51,12 +52,6 @@ class GenericL2capChannel {
   GenericL2capChannel& operator=(GenericL2capChannel&& other) = default;
 
   virtual ~GenericL2capChannel() = default;
-
-  /// Completes initialization of the connection to the internal channel.
-  Status Init() { return impl_.Init(); }
-
-  /// Starts the L2CAP channel running.
-  void Start() { impl_.Start(); }
 
   /// Send a payload to the remote peer.
   ///
@@ -139,6 +134,13 @@ class GenericL2capChannel {
   friend class L2capChannelImpl;
   friend class pw::bluetooth::proxy::L2capChannel;
   friend class pw::bluetooth::proxy::L2capChannelManager;
+  friend class pw::bluetooth::proxy::ProxyHostTest;
+
+  /// Completes initialization of the connection to the internal channel.
+  Status Init() { return impl_.Init(); }
+
+  /// Starts the L2CAP channel running.
+  void Start() { impl_.Start(); }
 
   /// Check if the passed Write parameter is acceptable.
   virtual Status DoCheckWriteParameter(const multibuf::MultiBuf& payload) = 0;

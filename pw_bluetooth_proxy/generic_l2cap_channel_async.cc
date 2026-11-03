@@ -43,11 +43,15 @@ GenericL2capChannelImpl& GenericL2capChannelImpl::operator=(
   dispatcher_ = std::exchange(other.dispatcher_, nullptr);
   dispatcher_thread_id_ = std::move(other.dispatcher_thread_id_);
 
+  if (request_handle_.is_open()) {
+    request_handle_.Close();
+  }
   request_handle_ = std::move(other.request_handle_);
   request_sender_ = std::move(other.request_sender_);
 
   payload_sender_ = std::move(other.payload_sender_);
-  send_reservation_ = std::move(other.send_reservation_);
+  send_reservation_ = std::exchange(other.send_reservation_, std::nullopt);
+  initialized_ = std::exchange(other.initialized_, false);
 
   return *this;
 }
@@ -59,12 +63,24 @@ GenericL2capChannelImpl::~GenericL2capChannelImpl() {
 }
 
 Status GenericL2capChannelImpl::Init() {
+  if (channel_ == nullptr || initialized_ || request_handle_.is_open() ||
+      this_thread::get_id() != dispatcher_thread_id_) {
+    return Status::FailedPrecondition();
+  }
   PW_TRY(channel_->impl().Connect(request_handle_, request_sender_));
   channel_->impl().Connect(payload_sender_);
+  initialized_ = true;
   return OkStatus();
 }
 
-void GenericL2capChannelImpl::Start() { channel_->Start(); }
+void GenericL2capChannelImpl::Start() {
+  if (!request_handle_.is_open() ||
+      this_thread::get_id() != dispatcher_thread_id_ ||
+      channel_->state() != L2capChannel::State::kNew) {
+    return;
+  }
+  channel_->Start();
+}
 
 StatusWithMultiBuf GenericL2capChannelImpl::Write(
     multibuf::MultiBuf&& payload) {
@@ -77,7 +93,8 @@ StatusWithMultiBuf GenericL2capChannelImpl::Write(
 }
 
 Status GenericL2capChannelImpl::IsWriteAvailable() {
-  if (!payload_sender_.is_open()) {
+  if (!request_handle_.is_open() || !payload_sender_.is_open()) {
+    send_reservation_.reset();
     return Status::FailedPrecondition();
   }
   if (send_reservation_.has_value()) {
@@ -124,6 +141,9 @@ Status GenericL2capChannelImpl::SendAdditionalRxCredits(
 }
 
 void GenericL2capChannelImpl::Stop() {
+  if (!request_handle_.is_open()) {
+    return;
+  }
   if (this_thread::get_id() == dispatcher_thread_id_) {
     channel_->Stop();
     return;
@@ -134,6 +154,9 @@ void GenericL2capChannelImpl::Stop() {
 }
 
 void GenericL2capChannelImpl::Close() {
+  if (!request_handle_.is_open()) {
+    return;
+  }
   if (this_thread::get_id() == dispatcher_thread_id_) {
     return channel_->Close();
   }

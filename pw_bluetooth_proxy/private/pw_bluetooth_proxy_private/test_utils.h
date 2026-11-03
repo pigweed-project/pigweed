@@ -436,6 +436,14 @@ class ProxyHostTest : public testing::Test {
   UniquePtr<ChannelProxy> BuildBasicModeChannelProxy(
       ProxyHost& proxy, BasicChannelProxyParameters&& params);
 
+  static Status InitChannel(internal::GenericL2capChannel& channel) {
+    return channel.Init();
+  }
+
+  static void StartChannel(internal::GenericL2capChannel& channel) {
+    channel.Start();
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   // MultiBuf utilities.
 

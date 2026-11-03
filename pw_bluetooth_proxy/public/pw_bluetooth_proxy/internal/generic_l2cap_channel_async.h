@@ -104,6 +104,7 @@ class GenericL2capChannelImpl {
   // Channel for sending payloads to write.
   async2::Sender<multibuf::MultiBuf> payload_sender_;
   std::optional<async2::SendReservation<multibuf::MultiBuf>> send_reservation_;
+  bool initialized_ = false;
 };
 
 }  // namespace pw::bluetooth::proxy::internal
