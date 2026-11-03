@@ -51,7 +51,6 @@ ServiceRecord::ServiceRecord() {
 
 ServiceRecord::ServiceRecord(const ServiceRecord& other) {
   handle_ = other.handle_;
-  security_level_ = other.security_level_;
 
   for (const auto& attribute : other.attributes_) {
     attributes_.emplace(attribute.first, attribute.second.Clone());

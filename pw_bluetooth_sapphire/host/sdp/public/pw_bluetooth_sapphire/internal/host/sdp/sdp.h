@@ -34,15 +34,6 @@ inline constexpr ServiceHandle kSDPHandle = 0x00000000;
 inline constexpr ServiceHandle kFirstUnreservedHandle = 0x00010000;
 inline constexpr ServiceHandle kLastHandle = 0xFFFFFFFF;
 
-// Valid security levels for services. (Vol 3, Part C, 5.2.2)
-enum class SecurityLevel : uint8_t {
-  kNone = 0,
-  kEncOptional = 1,
-  kEncRequired = 2,
-  kMITMProtected = 3,
-  kHighStrength = 4,
-};
-
 // Vol 3, Part B, 2.3.1
 using AttributeId = uint16_t;
 

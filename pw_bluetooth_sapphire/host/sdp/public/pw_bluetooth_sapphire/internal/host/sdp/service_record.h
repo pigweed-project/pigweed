@@ -126,13 +126,6 @@ class ServiceRecord {
   // exist in the record.
   std::vector<Information> GetInfo() const;
 
-  // Set the security level required to connect to this service.
-  // See v5.0, Vol 3, Part C, Section 5.2.2.8
-  void set_security_level(SecurityLevel security_level) {
-    security_level_ = security_level;
-  }
-  SecurityLevel security_level() const { return security_level_; }
-
   // Debug representation of a service record used for Inspect.
   // Only includes kBluetoothProfileDescriptorList and kServiceClassIdList to
   // minimize log spam.
@@ -147,8 +140,6 @@ class ServiceRecord {
   // Each one of these elements is a sequence of the form that would qualify as
   // a protocol list (a sequence of sequences of protocols and params)
   std::unordered_map<ProtocolListId, DataElement> addl_protocols_;
-
-  SecurityLevel security_level_;
 };
 
 }  // namespace bt::sdp
