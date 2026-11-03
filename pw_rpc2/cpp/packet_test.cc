@@ -27,6 +27,7 @@
 #include "pw_bytes/array.h"
 #include "pw_bytes/span.h"
 #include "pw_compilation_testing/negative_compilation.h"
+#include "pw_enum/to_string.h"
 #include "pw_enum/traits.h"
 #include "pw_rpc2/internal/packet_type.h"
 #include "pw_rpc2/internal/protocol_error.h"
@@ -36,13 +37,22 @@ namespace {
 
 namespace internal = ::pw::rpc2::internal;
 
+using internal::CloseMode;
 using internal::EndpointRole;
+using internal::PacketFlag;
 using internal::PacketType;
 using internal::ProtocolError;
 
-using internal::CloseMode;
-
 namespace flags = internal::flags;
+
+static_assert(pw::EnumTraits<PacketFlag>::kDistinctValueCount == 3);
+static_assert(pw::IsValidEnum(PacketFlag::kHasPayload));
+static_assert(std::string_view(pw::EnumToString(PacketFlag::kHasPayload)) ==
+              "HAS_PAYLOAD");
+static_assert(pw::EnumTraits<CloseMode>::kDistinctValueCount == 4);
+static_assert(pw::IsValidEnum(CloseMode::kOkTerminal));
+static_assert(std::string_view(pw::EnumToString(CloseMode::kOkTerminal)) ==
+              "OK_TERMINAL");
 
 // The only valid type bytes, as listed in protocol.rst.
 constexpr uint8_t kValidTypes[] = {0x02,

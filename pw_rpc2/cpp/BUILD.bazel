@@ -37,17 +37,21 @@ pw_cc_test(
     ],
 )
 
-cc_library(
+pw_cc_enum_library(
     name = "packet_type",
     hdrs = ["public/pw_rpc2/internal/packet_type.h"],
+    enums = ["//pw_rpc2:packet_type_enum"],
     strip_include_prefix = "public",
-    deps = ["//pw_assert:assert"],
+    deps = [
+        "//pw_assert:assert",
+        "//pw_enum",
+    ],
 )
 
 pw_cc_enum_library(
     name = "protocol_error",
     hdrs = ["public/pw_rpc2/internal/protocol_error.h"],
-    enum_headers = ["public/pw_rpc2/internal/protocol_error_enum.h"],
+    enums = ["//pw_rpc2:protocol_error_enum"],
     strip_include_prefix = "public",
     deps = [
         "//pw_enum",
@@ -199,10 +203,11 @@ pw_cc_enum_library(
         "public/pw_rpc2/server.h",
         "public/pw_rpc2/service.h",
         "public/pw_rpc2/service_client.h",
+        "public/pw_rpc2/status.h",
         "public/pw_rpc2/write_reservation.h",
         "public/pw_rpc2/writer.h",
     ],
-    enum_headers = ["public/pw_rpc2/status.h"],
+    enums = ["//pw_rpc2:rpc_code"],
     implementation_deps = [
         "//pw_enum",
         "//pw_log",
@@ -230,6 +235,7 @@ pw_cc_enum_library(
         "//pw_polyfill",
         "//pw_result",
         "//pw_span",
+        "//pw_status",
         "//pw_sync:interrupt_spin_lock",
         "//pw_sync:lock_annotations",
         "//pw_transport/cpp:socket",
@@ -686,16 +692,18 @@ filegroup(
         "public/pw_rpc2/client.h",
         "public/pw_rpc2/internal/control_future.h",
         "public/pw_rpc2/internal/future_base.h",
-        "public/pw_rpc2/internal/protocol_error_enum.h",
+        "public/pw_rpc2/internal/protocol_error.h",
         "public/pw_rpc2/method_type.h",
         "public/pw_rpc2/reader.h",
         "public/pw_rpc2/server.h",
         "public/pw_rpc2/service.h",
         "public/pw_rpc2/service_client.h",
+        "public/pw_rpc2/status.h",
         "public/pw_rpc2/test_harness.h",
         "public/pw_rpc2/write_reservation.h",
         "public/pw_rpc2/writer.h",
-        ":cpp.generate",
+        ":cpp.enums",
+        ":protocol_error.enums",
     ],
     visibility = ["//docs/doxygen:__pkg__"],
 )

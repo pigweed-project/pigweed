@@ -630,4 +630,4 @@ outside the method's control after the method started, and ``0x47`` and
        writing still held the call open.
 
 ..
-   # LINT.ThenChange(//pw_rpc2/cpp/public/pw_rpc2/internal/protocol_error_enum.h:cpp_rpc2_error_codes)
+   # LINT.ThenChange(//pw_rpc2/internal/protocol_error_enum.toml)

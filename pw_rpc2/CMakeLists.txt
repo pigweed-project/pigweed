@@ -13,5 +13,33 @@
 # the License.
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+include($ENV{PW_ROOT}/pw_enum/pw_enum.cmake)
+
+pw_add_enum(pw_rpc2.rpc_code
+  SOURCES
+    rpc_code.toml
+  STRIP_PREFIX
+    .
+  PREFIX
+    pw_rpc2
+)
+
+pw_add_enum(pw_rpc2._packet_type_enum
+  SOURCES
+    internal/packet_type_enum.toml
+  STRIP_PREFIX
+    .
+  PREFIX
+    pw_rpc2
+)
+
+pw_add_enum(pw_rpc2._protocol_error_enum
+  SOURCES
+    internal/protocol_error_enum.toml
+  STRIP_PREFIX
+    .
+  PREFIX
+    pw_rpc2
+)
 
 add_subdirectory(cpp)

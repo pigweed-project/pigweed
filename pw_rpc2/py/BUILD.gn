@@ -43,6 +43,9 @@ pw_python_package("py") {
   python_deps = [
     "$dir_pw_codegen/py",
     "$dir_pw_protobuf/py",
+    "$dir_pw_rpc2:packet_type_enum.python",
+    "$dir_pw_rpc2:protocol_error_enum.python",
+    "$dir_pw_rpc2:rpc_code.python",
   ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"

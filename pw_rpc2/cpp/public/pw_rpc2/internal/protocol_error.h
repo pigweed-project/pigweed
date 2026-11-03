@@ -20,6 +20,9 @@
 
 namespace pw::rpc2::internal {
 
+/// @enum ProtocolError
+/// @ingroup pw_rpc2_status
+
 /// Which endpoint may send a `ProtocolError`.
 ///
 /// Each value is the top two bits of the codes with that origin. See

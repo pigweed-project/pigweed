@@ -40,17 +40,21 @@ pw_test("status_test") {
   sources = [ "status_test.cc" ]
 }
 
-pw_source_set("packet_type") {
+pw_cc_enum_source_set("packet_type") {
+  enums = [ "$dir_pw_rpc2:packet_type_enum" ]
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_rpc2/internal/packet_type.h" ]
-  public_deps = [ "$dir_pw_assert:assert" ]
+  public_deps = [
+    "$dir_pw_assert:assert",
+    dir_pw_enum,
+  ]
   visibility = _default_visibility
 }
 
 pw_cc_enum_source_set("protocol_error") {
-  enum_headers = [ "public/pw_rpc2/internal/protocol_error_enum.h" ]
+  enums = [ "$dir_pw_rpc2:protocol_error_enum" ]
+  public_configs = [ ":public_include_path" ]
   public = [ "public/pw_rpc2/internal/protocol_error.h" ]
-  include_dirs = [ "public" ]
   public_deps = [ dir_pw_enum ]
   visibility = _default_visibility
 }
@@ -153,8 +157,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
 }
 
 pw_cc_enum_source_set("cpp") {
-  enum_headers = [ "public/pw_rpc2/status.h" ]
-  include_dirs = [ "public" ]
+  enums = [ "$dir_pw_rpc2:rpc_code" ]
   public_configs = [ ":public_include_path" ]
   public = [
     "public/pw_rpc2/client.h",
@@ -180,6 +183,7 @@ pw_cc_enum_source_set("cpp") {
     "public/pw_rpc2/server.h",
     "public/pw_rpc2/service.h",
     "public/pw_rpc2/service_client.h",
+    "public/pw_rpc2/status.h",
     "public/pw_rpc2/write_reservation.h",
     "public/pw_rpc2/writer.h",
   ]
@@ -220,6 +224,7 @@ pw_cc_enum_source_set("cpp") {
                   dir_pw_polyfill,
                   dir_pw_result,
                   dir_pw_span,
+                  dir_pw_status,
                 ] + _coro_deps
   deps = [
     dir_pw_enum,

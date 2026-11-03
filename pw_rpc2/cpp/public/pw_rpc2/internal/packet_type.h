@@ -16,6 +16,7 @@
 #include <cstdint>
 
 #include "pw_assert/assert.h"
+#include "pw_rpc2/internal/packet_type_enum.h"  // IWYU pragma: export
 
 namespace pw::rpc2::internal {
 namespace flags {
@@ -39,25 +40,25 @@ namespace flags {
 /// with `PacketType`'s accessors.
 enum Flag : uint8_t {
   /// Bit 0: set if the server sent the packet.
-  kServer = 0b001,
+  kServer = static_cast<uint8_t>(PacketFlag::kServer),
 
   /// Bit 1: set if the packet carries a message (of zero or more bytes) that is
   /// delivered to the call. A packet without it carries no bytes after its
   /// header.
-  kHasPayload = 0b010,
+  kHasPayload = static_cast<uint8_t>(PacketFlag::kHasPayload),
 
   /// Bit 2: set if the packet starts a new call. The header is followed by the
   /// `service_id` and `method_id` to invoke.
-  kStart = 0b100,
+  kStart = static_cast<uint8_t>(PacketFlag::kStart),
 
   /// Bits 4:3 (`CloseMode::kStreamEnd`): the sender half-closes its stream.
-  kStreamEnd = 0b01'000,
+  kStreamEnd = static_cast<uint8_t>(CloseMode::kStreamEnd),
 
   /// Bits 4:3 (`CloseMode::kOkTerminal`): the RPC completes successfully.
-  kOkTerminal = 0b10'000,
+  kOkTerminal = static_cast<uint8_t>(CloseMode::kOkTerminal),
 
   /// Bits 4:3 (`CloseMode::kErrorTerminal`): the RPC aborts with an error code.
-  kErrorTerminal = 0b11'000,
+  kErrorTerminal = static_cast<uint8_t>(CloseMode::kErrorTerminal),
 };
 
 inline constexpr uint8_t kCloseModeMask = 0b11'000;
@@ -72,25 +73,6 @@ inline constexpr uint8_t kReservedMask = 0b111'00'000;
 enum class EndpointRole : uint8_t {
   kClient = 0,  // Sends packets with bit 0 == 0, expects bit 0 == 1.
   kServer = flags::kServer,  // Sends packets with bit 0 == 1.
-};
-
-/// What a packet does to the sender's stream and the RPC (bits 4:3).
-///
-/// The values are the `flags::kCloseModeMask` bits of the packet's type byte.
-enum class CloseMode : uint8_t {
-  /// The sender's stream remains open.
-  kOpen = 0,
-  /// The sender half-closes (stops writing to) its stream. The RPC continues.
-  ///
-  /// The protocol allows either the client or the server to half-close. The
-  /// C++ server currently always ends the RPC when it closes its stream, for
-  /// consistency with gRPC, but clients must still accept a server half-close
-  /// and wait for the terminal packet that follows it.
-  kStreamEnd = flags::kStreamEnd,
-  /// The RPC completes successfully, closing both streams.
-  kOkTerminal = flags::kOkTerminal,
-  /// The RPC aborts with an error code, closing both streams.
-  kErrorTerminal = flags::kErrorTerminal,
 };
 
 /// The validated `type` byte of a regular protocol packet in pw_rpc2, which is

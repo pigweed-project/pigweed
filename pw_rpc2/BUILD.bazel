@@ -14,10 +14,34 @@
 
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_enum:pw_enum.bzl", "pw_enum")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
+
+pw_enum(
+    name = "rpc_code",
+    srcs = ["rpc_code.toml"],
+    import_prefix = "pw_rpc2",
+    strip_import_prefix = ".",
+)
+
+pw_enum(
+    name = "packet_type_enum",
+    srcs = ["internal/packet_type_enum.toml"],
+    import_prefix = "pw_rpc2",
+    strip_import_prefix = ".",
+    visibility = ["//pw_rpc2:__subpackages__"],
+)
+
+pw_enum(
+    name = "protocol_error_enum",
+    srcs = ["internal/protocol_error_enum.toml"],
+    import_prefix = "pw_rpc2",
+    strip_import_prefix = ".",
+    visibility = ["//pw_rpc2:__subpackages__"],
+)
 
 sphinx_docs_library(
     name = "docs",

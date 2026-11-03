@@ -13,10 +13,20 @@
 # the License.
 
 load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
+load("//pw_enum:pw_py_enum_library.bzl", "pw_py_enum_library")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
+
+pw_py_enum_library(
+    name = "enums",
+    enums = [
+        "//pw_rpc2:packet_type_enum",
+        "//pw_rpc2:protocol_error_enum",
+        "//pw_rpc2:rpc_code",
+    ],
+)
 
 pw_py_library(
     name = "pw_rpc2_codegen",

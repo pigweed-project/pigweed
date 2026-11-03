@@ -1,0 +1,77 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+namespace = "pw.rpc2.internal"
+
+[enums.PacketFlag]
+type = "uint8"
+doc = """
+Bit flags for an RPC packet's properties. Encoded in bits 2:0 of the packet's
+`type` byte.
+"""
+
+[[enums.PacketFlag.values]]
+name = "SERVER"
+value = 0b001
+doc = "Bit 0: set if the server sent the packet."
+
+[[enums.PacketFlag.values]]
+name = "HAS_PAYLOAD"
+value = 0b010
+doc = """
+Bit 1: set if the packet carries a message (of zero or more bytes) that is
+delivered to the call. A packet without it carries no bytes after its header.
+"""
+
+[[enums.PacketFlag.values]]
+name = "START"
+value = 0b100
+doc = """
+Bit 2: set if the packet starts a new call. The header is followed by the
+`service_id` and `method_id` to invoke.
+"""
+
+[enums.CloseMode]
+type = "uint8"
+doc = """
+Indicates the RPC call's state following this packet. Encoded in bits 4:3 of the
+packet's `type` byte.
+"""
+
+[[enums.CloseMode.values]]
+name = "OPEN"
+value = 0
+doc = "The sender's stream remains open."
+
+[[enums.CloseMode.values]]
+name = "STREAM_END"
+value = 0b01_000
+doc = """
+The sender half-closes (stops writing to) its stream. The RPC continues.
+
+The protocol allows either the client or the server to half-close. Current
+server implementations always end the RPC when the server stream ends, for
+consistency with gRPC. Clients must still accept a server half-close and wait
+for the terminal packet that follows it.
+"""
+
+[[enums.CloseMode.values]]
+name = "OK_TERMINAL"
+value = 0b10_000
+doc = "The RPC completes successfully, closing both streams."
+
+[[enums.CloseMode.values]]
+name = "ERROR_TERMINAL"
+value = 0b11_000
+doc = "The RPC aborts with an error code, closing both streams."

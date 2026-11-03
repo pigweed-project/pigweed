@@ -12,3 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 """pw_rpc2 Python package."""
+
+import pkgutil
+
+# The enum modules generated from pw_rpc2's TOML enum definitions are in a
+# separate directory, so extend the path before importing anything.
+__path__ = pkgutil.extend_path(__path__, __name__)

@@ -1,0 +1,136 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+namespace = "pw.rpc2.internal"
+
+[enums.ProtocolError]
+type = "uint8"
+doc = """
+The 8-bit error code carried by an `ERROR_TERMINAL` packet.
+
+Every code names exactly one condition, so the peer knows precisely why a call
+ended. `ProtocolError` is internal: no public API takes or returns one.
+
+The top two bits of each code are its origin, which determines which
+endpoint may send it:
+
+- `0x00`--`0x3F`: Either endpoint (except `kNone`, which is never sent).
+- `0x40`--`0x7F`: Server only.
+- `0x80`--`0xBF`: Client only (none are defined).
+- `0xC0`--`0xFF`: Reserved.
+
+These are the codes for protocol version 1. Endpoints shall only send error
+codes known to the negotiated version. Receivers shall treat unrecognized codes
+as a protocol violation.
+"""
+
+[[enums.ProtocolError.values]]
+name = "NONE"
+value = 0x00
+doc = """
+No error. Never sent over the wire. Used by implementations when there is no
+error to send.
+"""
+
+[[enums.ProtocolError.values]]
+name = "INTERNAL"
+value = 0x01
+doc = "A bug in the RPC implementation."
+
+[[enums.ProtocolError.values]]
+name = "CANCELLED"
+value = 0x02
+doc = """
+Application code cancelled the call. The cancellation may be explicit, with a
+function call, or implicit, by dropping a call handle before the call completes.
+"""
+
+[[enums.ProtocolError.values]]
+name = "METHOD_TYPE_MISMATCH"
+value = 0x03
+doc = """
+A packet does not match the method's type. On the server, a unary or
+server-streaming call must be started by a packet that carries the
+request message and closes the client's stream. On the client, a unary or
+client-streaming call must be answered by a single packet that carries
+the response message and terminates the RPC.
+"""
+
+[[enums.ProtocolError.values]]
+name = "RECEIVED_PACKET_FOR_WRONG_ENDPOINT"
+value = 0x04
+doc = """
+The endpoint received a packet type that only its own role may send (a
+server received a server-to-client packet, or a client received a
+client-to-server packet).
+"""
+
+[[enums.ProtocolError.values]]
+name = "RECEIVED_PACKET_FOR_UNKNOWN_CALL"
+value = 0x05
+doc = """
+The endpoint received a non-terminal packet for a call ID it does not
+know about.
+"""
+
+[[enums.ProtocolError.values]]
+name = "UNKNOWN_SERVICE"
+value = 0x40
+doc = "The requested service is not registered on the server."
+
+[[enums.ProtocolError.values]]
+name = "UNKNOWN_METHOD"
+value = 0x41
+doc = "The requested method is not registered on the target service."
+
+[[enums.ProtocolError.values]]
+name = "RECEIVED_DUPLICATE_START"
+value = 0x42
+doc = """
+The server received a start packet for a call ID that is still active.
+Both calls end.
+"""
+
+[[enums.ProtocolError.values]]
+name = "INVALID_REQUEST_PAYLOAD"
+value = 0x43
+doc = "The request payload could not be decoded."
+
+[[enums.ProtocolError.values]]
+name = "FAILED_TO_ALLOCATE_CALL"
+value = 0x44
+doc = "The server could not allocate state for the call. The method never ran."
+
+[[enums.ProtocolError.values]]
+name = "FAILED_TO_ALLOCATE_CALL_RESOURCES_WHILE_RUNNING"
+value = 0x45
+doc = "An allocation failed after the method started."
+
+[[enums.ProtocolError.values]]
+name = "SERVICE_UNREGISTERED"
+value = 0x46
+doc = """
+The service was unregistered while the call was running. The C++ server
+does not support unregistering services, so it never sends this.
+"""
+
+[[enums.ProtocolError.values]]
+name = "DROPPED_WITHOUT_RESPONSE"
+value = 0x47
+doc = "A call handle was destroyed without responding or cancelling."
+
+[[enums.ProtocolError.values]]
+name = "METHOD_RETURNED_WITHOUT_FINISHING"
+value = 0x48
+doc = "The method completed while handles to it were still open."

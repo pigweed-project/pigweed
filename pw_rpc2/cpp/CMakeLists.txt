@@ -27,18 +27,21 @@ pw_add_test(pw_rpc2.cpp.status_test
     pw_rpc2
 )
 
-pw_add_library(pw_rpc2.cpp._packet_type INTERFACE
+pw_add_enum_library(pw_rpc2.cpp._packet_type
+  ENUMS
+    pw_rpc2._packet_type_enum
   HEADERS
     public/pw_rpc2/internal/packet_type.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
     pw_assert.assert
+    pw_enum
 )
 
 pw_add_enum_library(pw_rpc2.cpp._protocol_error
-  ENUM_HEADERS
-    public/pw_rpc2/internal/protocol_error_enum.h
+  ENUMS
+    pw_rpc2._protocol_error_enum
   HEADERS
     public/pw_rpc2/internal/protocol_error.h
   PUBLIC_INCLUDES
@@ -159,8 +162,8 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
 endif()
 
 pw_add_enum_library(pw_rpc2.cpp
-  ENUM_HEADERS
-    public/pw_rpc2/status.h
+  ENUMS
+    pw_rpc2.rpc_code
   HEADERS
     public/pw_rpc2/client.h
     public/pw_rpc2/internal/call.h
@@ -185,6 +188,7 @@ pw_add_enum_library(pw_rpc2.cpp
     public/pw_rpc2/server.h
     public/pw_rpc2/service.h
     public/pw_rpc2/service_client.h
+    public/pw_rpc2/status.h
     public/pw_rpc2/write_reservation.h
     public/pw_rpc2/writer.h
   PUBLIC_INCLUDES
@@ -210,6 +214,7 @@ pw_add_enum_library(pw_rpc2.cpp
     pw_rpc2.cpp._protocol_error
     pw_rpc2.cpp._serialize
     pw_span
+    pw_status
     pw_sync.interrupt_spin_lock
     pw_sync.lock_annotations
     pw_third_party.fuchsia.stdcompat

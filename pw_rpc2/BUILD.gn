@@ -15,7 +15,28 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
+import("$dir_pw_enum/pw_enum.gni")
 import("$dir_pw_unit_test/test.gni")
+
+pw_enum("rpc_code") {
+  sources = [ "rpc_code.toml" ]
+  strip_prefix = "."
+  prefix = "pw_rpc2"
+}
+
+pw_enum("packet_type_enum") {
+  sources = [ "internal/packet_type_enum.toml" ]
+  strip_prefix = "."
+  prefix = "pw_rpc2"
+  visibility = [ "$dir_pw_rpc2/*" ]
+}
+
+pw_enum("protocol_error_enum") {
+  sources = [ "internal/protocol_error_enum.toml" ]
+  strip_prefix = "."
+  prefix = "pw_rpc2"
+  visibility = [ "$dir_pw_rpc2/*" ]
+}
 
 pw_test_group("tests") {
   group_deps = [ "cpp:tests" ]
