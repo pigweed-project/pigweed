@@ -3847,10 +3847,22 @@ def generate_is_trivially_comparable_specialization(
 
 def generate_message_traits_specialization(
     message: ProtoMessage,
+    root: ProtoNode,
     output: OutputFile,
+    codegen_options: GeneratorOptions,
 ) -> None:
+    """Generates a MessageTraits specialization for a proto message."""
     namespace = f'::{message.cpp_namespace()}'
     qualified_message = f'{namespace}::Message'
+
+    members = [
+        prop.name()
+        for prop in proto_message_field_props(codegen_options, message, root)
+    ]
+    if codegen_options.oneof_callbacks:
+        members.extend(
+            oneof.name for oneof in message.oneofs() if not oneof.is_synthetic()
+        )
 
     output.write_line('template <>')
     output.write_line(f'struct MessageTraits<{qualified_message}> {{')
@@ -3868,6 +3880,40 @@ def generate_message_traits_specialization(
             'static constexpr size_t kScratchBufferSizeBytes = '
             f'{namespace}::kScratchBufferSizeBytes;'
         )
+        if members:
+            output.write_line(
+                f'template <typename M = {qualified_message}> '
+                'static M Copy(const M& src) {'
+            )
+            with output.indent():
+                output.write_line('return M{')
+                with output.indent():
+                    for member in members:
+                        output.write_line(f'CopyInitMember(src.{member}),')
+                output.write_line('};')
+            output.write_line('}')
+            output.write_line(
+                f'template <typename M = {qualified_message}> '
+                'static void CopyTo(const M& src, M& dst) {'
+            )
+            with output.indent():
+                for member in members:
+                    output.write_line(
+                        f'CopyAssignMember(src.{member}, dst.{member});'
+                    )
+            output.write_line('}')
+        else:
+            output.write_line(
+                f'template <typename M = {qualified_message}> '
+                'static M Copy(const M&) {'
+            )
+            with output.indent():
+                output.write_line('return M{};')
+            output.write_line('}')
+            output.write_line(
+                f'template <typename M = {qualified_message}> '
+                'static void CopyTo(const M&, M&) {}'
+            )
     output.write_line('};')
 
 
@@ -4044,7 +4090,12 @@ def generate_code_for_package(
             output.write_line()
             with cpp.namespace(output, 'internal', padding=False):
                 for message in messages:
-                    generate_message_traits_specialization(message, output)
+                    generate_message_traits_specialization(
+                        message,
+                        package,
+                        output,
+                        codegen_options,
+                    )
 
 
 def process_proto_file(

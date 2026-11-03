@@ -432,6 +432,131 @@ TEST(CodegenMessage, MovePreservesOneOfAndCopyClearsIt) {
   EXPECT_FALSE(copy_assigned.type);
 }
 
+template <typename T, typename = void>
+constexpr bool kCanCopyAndDiscardCallbacks = false;
+
+template <typename T>
+constexpr bool kCanCopyAndDiscardCallbacks<
+    T,
+    std::void_t<decltype(CopyAndDiscardCallbacks(std::declval<const T&>()))>> =
+    true;
+
+template <typename T, typename = void>
+constexpr bool kCanCopyAndDiscardCallbacksInPlace = false;
+
+template <typename T>
+constexpr bool kCanCopyAndDiscardCallbacksInPlace<
+    T,
+    std::void_t<decltype(CopyAndDiscardCallbacks(std::declval<const T&>(),
+                                                 std::declval<T&>()))>> = true;
+
+static_assert(!kCanCopyAndDiscardCallbacks<int>);
+static_assert(!kCanCopyAndDiscardCallbacksInPlace<int>);
+static_assert(!kCanCopyAndDiscardCallbacks<IntegerMetadata::Message>);
+static_assert(!kCanCopyAndDiscardCallbacksInPlace<IntegerMetadata::Message>);
+static_assert(
+    !kCanCopyAndDiscardCallbacks<Pigweed::Protobuf::Compiler::Message>);
+static_assert(kCanCopyAndDiscardCallbacks<Pigweed::Message>);
+static_assert(kCanCopyAndDiscardCallbacksInPlace<Pigweed::Message>);
+static_assert(kCanCopyAndDiscardCallbacks<DeviceInfo::Message>);
+static_assert(kCanCopyAndDiscardCallbacks<OneOfTest::Message>);
+static_assert(kCanCopyAndDiscardCallbacksInPlace<OneOfTest::Message>);
+
+TEST(CodegenMessage, CopyAndDiscardCallbacks) {
+  PW_MODIFY_DIAGNOSTICS_PUSH();
+  PW_MODIFY_DIAGNOSTIC(ignored, "-Wmissing-field-initializers");
+  Pigweed::Message src{
+      .magic_number = 0x49u,
+      .ziggy = -111,
+      .cycles = 0x40302010fecaaddeu,
+      .ratio = -1.42f,
+      .error_message = "not a typewriter",
+      .pigweed = {.status = Bool::FILE_NOT_FOUND},
+      .bin = Pigweed::Protobuf::Binary::ZERO,
+      .proto = {.bin = Proto::Binary::OFF,
+                .pigweed_pigweed_bin = Pigweed::Pigweed::Binary::ZERO,
+                .pigweed_protobuf_bin = Pigweed::Protobuf::Binary::ZERO,
+                .meta =
+                    {
+                        .file_name = "/etc/passwd",
+                        .status = Pigweed::Protobuf::Compiler::Status::FUBAR,
+                        .protobuf_bin = Pigweed::Protobuf::Binary::ONE,
+                        .pigweed_bin = Pigweed::Pigweed::Binary::ONE,
+                    }},
+      .data = {std::byte{0x10},
+               std::byte{0x20},
+               std::byte{0x30},
+               std::byte{0x40},
+               std::byte{0x50},
+               std::byte{0x60},
+               std::byte{0x70},
+               std::byte{0x80}},
+      .bungle = -111,
+  };
+  PW_MODIFY_DIAGNOSTICS_POP();
+
+  src.id.SetEncoder(
+      [](Pigweed::StreamEncoder&) -> Status { return OkStatus(); });
+  src.proto.pigweed.SetEncoder(
+      [](Proto::StreamEncoder&) -> Status { return OkStatus(); });
+
+  Pigweed::Message by_value = CopyAndDiscardCallbacks(src);
+  EXPECT_TRUE(by_value == src);
+  EXPECT_FALSE(by_value.id);
+  EXPECT_FALSE(by_value.proto.pigweed);
+  EXPECT_TRUE(src.id);
+  EXPECT_TRUE(src.proto.pigweed);
+
+  Pigweed::Message in_place{};
+  in_place.id.SetEncoder(
+      [](Pigweed::StreamEncoder&) -> Status { return OkStatus(); });
+  in_place.proto.pigweed.SetEncoder(
+      [](Proto::StreamEncoder&) -> Status { return OkStatus(); });
+  EXPECT_TRUE(in_place.id);
+  EXPECT_TRUE(in_place.proto.pigweed);
+
+  CopyAndDiscardCallbacks(src, in_place);
+  EXPECT_TRUE(in_place == src);
+  EXPECT_FALSE(in_place.id);
+  EXPECT_FALSE(in_place.proto.pigweed);
+  EXPECT_TRUE(src.id);
+  EXPECT_TRUE(src.proto.pigweed);
+
+  // Self-copy preserves non-callback fields and clears callbacks.
+  CopyAndDiscardCallbacks(src, src);
+  EXPECT_TRUE(src == by_value);
+  EXPECT_FALSE(src.id);
+  EXPECT_FALSE(src.proto.pigweed);
+}
+
+TEST(CodegenMessage, CopyAndDiscardCallbacksOneOf) {
+  OneOfTest::Message src{};
+  src.type.SetEncoder(
+      [](OneOfTest::StreamEncoder&) -> Status { return OkStatus(); });
+  src.namespace_.SetEncoder(
+      [](OneOfTest::StreamEncoder&) -> Status { return OkStatus(); });
+
+  OneOfTest::Message by_value = CopyAndDiscardCallbacks(src);
+  EXPECT_FALSE(by_value.type);
+  EXPECT_FALSE(by_value.namespace_);
+  EXPECT_TRUE(src.type);
+  EXPECT_TRUE(src.namespace_);
+
+  OneOfTest::Message in_place{};
+  in_place.type.SetEncoder(
+      [](OneOfTest::StreamEncoder&) -> Status { return OkStatus(); });
+  EXPECT_TRUE(in_place.type);
+
+  CopyAndDiscardCallbacks(src, in_place);
+  EXPECT_FALSE(in_place.type);
+  EXPECT_FALSE(in_place.namespace_);
+  EXPECT_TRUE(src.type);
+
+  CopyAndDiscardCallbacks(src, src);
+  EXPECT_FALSE(src.type);
+  EXPECT_FALSE(src.namespace_);
+}
+
 TEST(CodegenMessage, Read) {
   // clang-format off
   constexpr uint8_t proto_data[] = {

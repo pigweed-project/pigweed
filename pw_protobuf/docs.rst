@@ -171,6 +171,28 @@ The ``Point`` message can be fully compared for equality, but ``Label`` cannot.
    ASSERT_EQ(one, two);
    static_assert(!pw::protobuf::IsTriviallyComparable<Label::Message>());
 
+Copying messages with callbacks
+-------------------------------
+``Callback`` and ``OneOf`` members hold non-copyable ``pw::Function`` objects,
+so copying a message cannot copy its callbacks. Prefer moving messages with
+``std::move`` when transferring ownership.
+
+When you intentionally want to copy only the non-callback fields of a message
+that contains ``Callback`` or ``OneOf`` fields (resetting all callbacks on the
+destination message to empty), use ``pw::protobuf::CopyAndDiscardCallbacks``:
+
+.. code-block:: c++
+
+   // Construct a copy with all callbacks cleared.
+   Label::Message copy = pw::protobuf::CopyAndDiscardCallbacks(original);
+
+   // Copy into an existing message, clearing any callbacks set on `dst`.
+   pw::protobuf::CopyAndDiscardCallbacks(original, dst);
+
+``CopyAndDiscardCallbacks`` only accepts generated ``Message`` structs that
+contain ``Callback`` or ``OneOf`` fields (directly or in a nested submessage).
+Messages without callbacks should be copied directly.
+
 Buffer Sizes
 ------------
 Initializing a ``MemoryEncoder`` requires that you specify the size of the

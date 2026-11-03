@@ -186,6 +186,33 @@ struct MessageTraits {
 template <typename...>
 constexpr std::false_type kInvalidMessageStruct{};
 
+constexpr bool HasCallbacks(const span<const MessageField>* fields) {
+  for (const auto& field : *fields) {
+    if (field.callback_type() != CallbackType::kNone) {
+      return true;
+    }
+    // Check `wire_type` and `elem_size` rather than `nested_message_fields() !=
+    // nullptr` because GCC with `-fno-delete-null-pointer-checks` rejects
+    // `&kMessageFields != nullptr` in `constexpr` expressions.
+    if (field.wire_type() == WireType::kDelimited && field.elem_size() == 0 &&
+        HasCallbacks(field.nested_message_fields())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+template <typename T, typename = void>
+inline constexpr bool kHasCallbacks = false;
+
+template <typename T>
+inline constexpr bool
+    kHasCallbacks<T, std::enable_if_t<MessageTraits<T>::kIsMessage>> =
+        HasCallbacks(MessageTraits<T>::kMessageFields);
+
+template <typename T>
+struct IsCallbackOrOneOf : std::false_type {};
+
 }  // namespace internal
 
 class StreamEncoder;
@@ -372,6 +399,68 @@ constexpr bool IsTriviallyComparable() {
   static_assert(internal::kInvalidMessageStruct<T>,
                 "Not a generated message struct");
   return false;
+}
+
+namespace internal {
+
+template <typename StreamEncoder, typename StreamDecoder>
+struct IsCallbackOrOneOf<Callback<StreamEncoder, StreamDecoder>>
+    : std::true_type {};
+
+template <typename StreamEncoder, typename StreamDecoder, typename Fields>
+struct IsCallbackOrOneOf<OneOf<StreamEncoder, StreamDecoder, Fields>>
+    : std::true_type {};
+
+template <typename T>
+decltype(auto) CopyInitMember(const T& src) {
+  using ValueType = std::remove_cv_t<T>;
+  if constexpr (IsCallbackOrOneOf<ValueType>::value) {
+    return ValueType{};
+  } else if constexpr (kHasCallbacks<ValueType>) {
+    return MessageTraits<ValueType>::Copy(src);
+  } else {
+    return (src);
+  }
+}
+
+template <typename T>
+void CopyAssignMember(const T& src, T& dst) {
+  using ValueType = std::remove_cv_t<T>;
+  if constexpr (IsCallbackOrOneOf<ValueType>::value) {
+    dst = {};
+  } else if constexpr (kHasCallbacks<ValueType>) {
+    MessageTraits<ValueType>::CopyTo(src, dst);
+  } else {
+    if (&src != &dst) {
+      dst = src;
+    }
+  }
+}
+
+}  // namespace internal
+
+/// Copies a generated `pw_protobuf` `Message` struct that contains `Callback`
+/// or `OneOf` fields into `dst`, copying all non-callback fields and resetting
+/// all `Callback` and `OneOf` fields in `dst` to empty.
+///
+/// Only accepts generated `Message` types that contain `Callback` or `OneOf`
+/// fields (directly or in a nested submessage). Messages without callbacks
+/// should be copied directly.
+template <typename T, typename = std::enable_if_t<internal::kHasCallbacks<T>>>
+void CopyAndDiscardCallbacks(const T& src, T& dst) {
+  internal::MessageTraits<T>::CopyTo(src, dst);
+}
+
+/// Returns a copy of a generated `pw_protobuf` `Message` struct that contains
+/// `Callback` or `OneOf` fields, with all non-callback fields copied and all
+/// `Callback` and `OneOf` fields default-initialized (empty).
+///
+/// Only accepts generated `Message` types that contain `Callback` or `OneOf`
+/// fields (directly or in a nested submessage). Messages without callbacks
+/// should be copied directly.
+template <typename T, typename = std::enable_if_t<internal::kHasCallbacks<T>>>
+[[nodiscard]] T CopyAndDiscardCallbacks(const T& src) {
+  return internal::MessageTraits<T>::Copy(src);
 }
 
 }  // namespace pw::protobuf

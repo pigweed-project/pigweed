@@ -246,14 +246,16 @@ TEST(PwpbSerialize, BufferTooSmall) {
 }
 
 TEST(PwpbSerialize, MaxEncodedSizeStaticForBoundedFields) {
-  static_assert(!internal::HasCallbacks(&TestRequest::kMessageFields));
+  static_assert(
+      !protobuf::internal::HasCallbacks(&TestRequest::kMessageFields));
   static_assert(!TestRequestSerializer::kHasCallbacks);
   constexpr size_t kSize = TestRequestSerializer::MaxEncodedSize(kProto);
   EXPECT_EQ(kSize, TestRequest::kMaxEncodedSizeBytesWithoutValues);
 }
 
 TEST(PwpbSerialize, MaxEncodedSizeDynamicForCallbackField) {
-  static_assert(internal::HasCallbacks(&CallbackMessage::kMessageFields));
+  static_assert(
+      protobuf::internal::HasCallbacks(&CallbackMessage::kMessageFields));
   static_assert(CallbackMessageSerializer::kHasCallbacks);
 
   static constexpr std::string_view kPayload =
@@ -277,8 +279,8 @@ TEST(PwpbSerialize, MaxEncodedSizeDynamicForCallbackField) {
 }
 
 TEST(PwpbSerialize, MaxEncodedSizeDynamicForNestedCallbackField) {
-  static_assert(
-      internal::HasCallbacks(&ParentWithCallbackChild::kMessageFields));
+  static_assert(protobuf::internal::HasCallbacks(
+      &ParentWithCallbackChild::kMessageFields));
   static_assert(ParentWithCallbackChildSerializer::kHasCallbacks);
 
   static constexpr std::string_view kPayload =

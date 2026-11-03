@@ -31,19 +31,6 @@ namespace pw::rpc2::internal {
 using PwpbMessageDescriptor =
     const span<const protobuf::internal::MessageField>*;
 
-constexpr bool HasCallbacks(PwpbMessageDescriptor table) {
-  for (const auto& field : *table) {
-    if (field.callback_type() != protobuf::internal::CallbackType::kNone) {
-      return true;
-    }
-    if (field.nested_message_fields() != nullptr &&
-        HasCallbacks(field.nested_message_fields())) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // True if every field described by `table` lies within a `Message` object.
 //
 // The descriptor table carries no type information, so this is a cheap guard
@@ -109,7 +96,8 @@ struct PwpbSerde {
 /// Primary PwpbSerializer for a PWPB message type.
 template <PwpbMessageDescriptor kTable, size_t kMaxSizeBytes>
 struct PwpbSerializer {
-  static constexpr bool kHasCallbacks = HasCallbacks(kTable);
+  static constexpr bool kHasCallbacks =
+      protobuf::internal::HasCallbacks(kTable);
 
   template <typename MessageType>
   static constexpr size_t MaxEncodedSize(const MessageType& value) {
