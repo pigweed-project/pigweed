@@ -60,6 +60,12 @@ pw_py_test(
 )
 
 pw_py_test(
+    name = "json_enum_py_test",
+    srcs = ["json_enum_py_test.py"],
+    deps = ["//pw_enum:toml_enums_py"],
+)
+
+pw_py_test(
     name = "json_source_test",
     srcs = ["json_source_test.py"],
     deps = [":py"],

@@ -109,6 +109,8 @@ pw_test("enum_test") {
   ]
 }
 
+# JSON-defined enum tests ("json_enum_test.cc" and
+# "private/pw_enum_private/mixed_enum.h") are enabled when GN support lands.
 pw_test_group("tests") {
   tests = [
     ":enum_test",

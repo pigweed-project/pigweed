@@ -34,6 +34,8 @@ pw_python_package("py") {
   tests = [
     "codegen_test.py",
     "generate_test.py",
+
+    # "json_enum_py_test.py" is enabled when GN support for JSON enums lands.
     "json_source_test.py",
     "parse_test.py",
   ]

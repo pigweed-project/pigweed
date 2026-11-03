@@ -1,0 +1,17 @@
+{
+  "namespace": "pw.enum_test",
+  "enums": {
+    "JsonBaseEnum": {
+      "type": "uint8",
+      "values": [
+        {
+          "name": "ZERO"
+        },
+        {
+          "name": "TEN",
+          "value": 10
+        }
+      ]
+    }
+  }
+}
