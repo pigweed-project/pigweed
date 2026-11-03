@@ -11,149 +11,172 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""A rule for generating the application linker script based on the system
-configuration file.
+"""Rules for defining userspace kernel applications.
+
+Userspace applications run on top of the kernel and are compiled by the
+`system_image` that includes them, against that image's system configuration.
+
+* `rust_app`: Defines a single-process userspace application. Add it to a
+  `system_image`'s `apps` attribute to include it in the image.
+* `rust_process`: Defines a process to be included in a `multi_process_app`.
 """
 
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
-load("//pw_kernel/tooling:app_linker_script.bzl", "app_linker_script")
-
-def _app_codegen_src_impl(ctx):
-    output = ctx.actions.declare_file(ctx.attr.name + ".rs")
-
-    args = [
-        "--template",
-        "app=" + ctx.file.template.path,
-        "--config",
-        ctx.file.system_config.path,
-        "--output",
-        output.path,
-        "render-app-template",
-    ]
-
-    if ctx.attr.app_name:
-        args.extend(["--app-name", ctx.attr.app_name])
-
-    if ctx.attr.process_name:
-        args.extend(["--process-name", ctx.attr.process_name])
-
-    ctx.actions.run(
-        inputs = ctx.files.system_config + [ctx.file.template],
-        outputs = [output],
-        executable = ctx.executable.system_generator,
-        mnemonic = "AppCodegenSrc",
-        arguments = args,
-    )
-
-    return [
-        DefaultInfo(files = depset([output])),
-    ]
-
-_app_codegen_src = rule(
-    implementation = _app_codegen_src_impl,
-    attrs = {
-        "app_name": attr.string(
-            doc = "Name of the application in the configuration file.",
-            default = "",
-        ),
-        "process_name": attr.string(
-            doc = "Name of the process in the configuration file.",
-            default = "",
-        ),
-        "system_config": attr.label(
-            doc = "System config file which defines the system.",
-            allow_single_file = True,
-            default = "//pw_kernel/target:system_config_file",
-        ),
-        "system_generator": attr.label(
-            executable = True,
-            cfg = "exec",
-            default = "@pigweed//pw_kernel/tooling/system_generator:system_generator_bin",
-        ),
-        "template": attr.label(
-            doc = "Application code generation template file.",
-            allow_single_file = True,
-            default = "@pigweed//pw_kernel/tooling/system_generator/templates:app.rs.jinja",
-        ),
-    },
-    doc = "Generate the linker script for an app based on the system config.",
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_rust//rust:defs.bzl", "rust_common")
+load(
+    "//pw_kernel/tooling:app_info.bzl",
+    "PwAppInfo",
+    "PwProcessInfo",
+    "crate_name_for",
+    "dep_variant_infos",
+    "restrict_to_app_builds",
 )
 
-def rust_app_codegen(name, app_name = "", process_name = None, system_config = None, **kwargs):
-    """Wrapper function to generate an app's codegen src and rust library.
+def _crate_root(ctx, crate_type):
+    if ctx.file.crate_root:
+        return ctx.file.crate_root
+    if len(ctx.files.srcs) == 1:
+        return ctx.files.srcs[0]
+    default = "main.rs" if crate_type == "bin" else "lib.rs"
+    for basename in [default, ctx.label.name + ".rs"]:
+        for src in ctx.files.srcs:
+            if src.basename == basename:
+                return src
+    fail("{}: `srcs` has no {} or {}.rs; set `crate_root`".format(ctx.label, default, ctx.label.name))
 
-    Args:
-        name: The name of the target.
-        app_name: The name of the app in the system manifest.
-        process_name: The name of the process in the system manifest.
-        system_config: System config file which defines the system.
-        **kwargs: Other attributes (slice edition, tags, target_compatible_with) passed to both the `rust_library` and the internal codegen rule.
-    """
-    tags = kwargs.get("tags", [])
-
-    _app_codegen_src(
-        name = name + ".src",
-        system_config = system_config,
-        app_name = app_name,
-        process_name = process_name if process_name else "",
-        tags = tags,
+def _process_info(ctx, crate_type, crate_name = None):
+    return PwProcessInfo(
+        name = ctx.label.name,
+        crate_name = crate_name_for(crate_name or ctx.label.name),
+        codegen_crate_name = ctx.attr.codegen_crate_name,
+        crate_root = _crate_root(ctx, crate_type),
+        srcs = ctx.files.srcs,
+        compile_data = ctx.files.compile_data,
+        deps = dep_variant_infos(ctx.attr.deps),
+        proc_macro_deps = dep_variant_infos(ctx.attr.proc_macro_deps),
+        edition = ctx.attr.edition,
+        crate_features = ctx.attr.crate_features,
+        rustc_flags = ctx.attr.rustc_flags,
+        rustc_env = ctx.attr.rustc_env,
     )
 
-    codegen_kwargs = {}
-    if "edition" in kwargs:
-        codegen_kwargs["edition"] = kwargs["edition"]
-    if "tags" in kwargs:
-        codegen_kwargs["tags"] = kwargs["tags"]
-    if "target_compatible_with" in kwargs:
-        codegen_kwargs["target_compatible_with"] = kwargs["target_compatible_with"]
+def _rust_app_impl(ctx):
+    process = _process_info(ctx, "bin", crate_name = ctx.attr.crate_name)
+    return [PwAppInfo(
+        name = process.name,
+        processes = [process],
+        multi_process = False,
+        deps = [],
+    )]
 
-    rust_library(
+def _rust_process_impl(ctx):
+    return [_process_info(ctx, "lib")]
+
+_CRATE_ATTRS = {
+    "codegen_crate_name": attr.string(
+        doc = "Crate name the sources expect for the generated system config crate.",
+        mandatory = True,
+    ),
+    "compile_data": attr.label_list(
+        doc = "Files made available to the compiler, e.g. for `include_str!`.",
+        allow_files = True,
+    ),
+    "crate_features": attr.string_list(
+        doc = "List of features to enable for this crate.",
+    ),
+    "crate_root": attr.label(
+        doc = "The crate root source file. Defaults to `main.rs` / `lib.rs` or `<name>.rs` in `srcs`.",
+        allow_single_file = [".rs"],
+    ),
+    "deps": attr.label_list(
+        doc = "Rust and C/C++ library dependencies.",
+        providers = [[rust_common.crate_info], [rust_common.crate_group_info], [CcInfo]],
+    ),
+    "edition": attr.string(
+        doc = "The Rust edition to use.",
+        mandatory = True,
+    ),
+    "proc_macro_deps": attr.label_list(
+        doc = "Procedural macro dependencies.",
+        cfg = "exec",
+        providers = [[rust_common.crate_info], [rust_common.crate_group_info]],
+    ),
+    "rustc_env": attr.string_dict(
+        doc = "Additional environment variables to set for rustc.",
+    ),
+    "rustc_flags": attr.string_list(
+        doc = "Additional flags to pass to rustc.",
+    ),
+    "srcs": attr.label_list(
+        doc = "Source files of the crate.",
+        allow_files = [".rs"],
+        mandatory = True,
+    ),
+}
+
+_rust_app = rule(
+    implementation = _rust_app_impl,
+    attrs = _CRATE_ATTRS | {
+        "crate_name": attr.string(
+            doc = "Crate name of the app binary. Defaults to the lowercased target name. " +
+                  "Only affects symbol names; the app's name in the system config is always `name`.",
+        ),
+    },
+    provides = [PwAppInfo],
+    doc = "A single-process userspace app, compiled by the system images including it.",
+)
+
+_rust_process = rule(
+    implementation = _rust_process_impl,
+    attrs = _CRATE_ATTRS,
+    provides = [PwProcessInfo],
+    doc = "A userspace process of a `multi_process_app`.",
+)
+
+def rust_app(name, codegen_crate_name, srcs, deps = None, **kwargs):
+    """Defines a single-process userspace application.
+
+    List the app in a `system_image`'s `apps` attribute to build it as part of
+    that image.
+
+    Args:
+        name: Target name and name of the app in the system configuration.
+        codegen_crate_name: Name of the generated system config crate.
+        srcs: Source files for the application.
+        deps: Library dependencies for the application.
+        **kwargs: `edition` (required), `compile_data`, `crate_features`,
+            `crate_name`, `crate_root`, `proc_macro_deps`, `rustc_env`,
+            `rustc_flags` and standard target attributes (`tags`,
+            `visibility`, ...).
+    """
+    restrict_to_app_builds(kwargs)
+    crate_name_for(name)
+    _rust_app(
         name = name,
-        srcs = [":{}.src".format(name)],
-        deps = [
-            "@pigweed//pw_kernel/syscall:syscall_defs",
-        ],
-        **codegen_kwargs
-    )
-
-def rust_app(name, codegen_crate_name, srcs, deps = None, system_config = None, **kwargs):
-    """Wrapper function to generate a userspace rust_binary for the kernel.
-
-    Args:
-        name: The name of the target.
-        codegen_crate_name: Name to use for the generated codegen crate.
-        system_config: System config file which defines the system.
-        srcs: The list of source files for the app.
-        deps: The list of dependencies for the app.
-        **kwargs: Other attributes passed to the underlying rules.
-    """
-    if deps == None:
-        deps = []
-
-    rust_app_codegen(
-        name = codegen_crate_name,
-        app_name = name,
-        system_config = system_config,
+        codegen_crate_name = codegen_crate_name,
+        srcs = srcs,
+        deps = deps or [],
         **kwargs
     )
 
-    linker_script_name = name + ".linker_script"
+def rust_process(name, codegen_crate_name, srcs, deps = None, **kwargs):
+    """Defines a userspace process for the `processes` attribute of a `multi_process_app`.
 
-    tags = kwargs.get("tags", [])
-
-    app_linker_script(
-        name = linker_script_name,
-        system_config = system_config,
-        app_name = name,
-        tags = tags,
-    )
-
-    rust_binary(
+    Args:
+        name: Target name and name of the process in the system configuration.
+        codegen_crate_name: Name of the generated system config crate.
+        srcs: Source files for the process.
+        deps: Library dependencies for the process.
+        **kwargs: `edition` (required), `compile_data`, `crate_features`,
+            `crate_root`, `proc_macro_deps`, `rustc_env`, `rustc_flags` and
+            standard target attributes (`tags`, `visibility`, ...).
+    """
+    restrict_to_app_builds(kwargs)
+    crate_name_for(name)
+    _rust_process(
         name = name,
+        codegen_crate_name = codegen_crate_name,
         srcs = srcs,
-        deps = deps + [
-            ":" + codegen_crate_name,
-            ":" + linker_script_name,
-        ],
+        deps = deps or [],
         **kwargs
     )

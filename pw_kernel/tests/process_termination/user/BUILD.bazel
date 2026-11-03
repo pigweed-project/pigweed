@@ -14,7 +14,7 @@
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
-load("//pw_kernel/tooling:rust_process.bzl", "rust_process")
+load("//pw_kernel/tooling:rust_app.bzl", "rust_process")
 
 multi_process_app(
     name = "process_termination",

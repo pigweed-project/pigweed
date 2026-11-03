@@ -13,8 +13,7 @@
 # the License.
 
 load("//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
-load("//pw_kernel/tooling:rust_app.bzl", "rust_app")
-load("//pw_kernel/tooling:rust_process.bzl", "rust_process")
+load("//pw_kernel/tooling:rust_app.bzl", "rust_app", "rust_process")
 
 multi_process_app(
     name = "handlers",

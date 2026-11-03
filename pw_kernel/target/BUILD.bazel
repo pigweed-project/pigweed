@@ -30,25 +30,6 @@ rust_library(
     ],
 )
 
-label_flag(
-    name = "system_config_file",
-    build_setting_default = ":no_system_config_file",
-    tags = ["kernel"],
-)
-
-filegroup(
-    name = "no_system_config_file",
-    tags = ["kernel"],
-    target_compatible_with = ["@platforms//:incompatible"],
-)
-
-config_setting(
-    name = "system_config_not_set",
-    flag_values = {
-        ":system_config_file": ":no_system_config_file",
-    },
-)
-
 constraint_setting(
     name = "target",
     default_constraint_value = "none",

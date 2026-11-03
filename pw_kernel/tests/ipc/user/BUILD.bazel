@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 load("//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
-load("//pw_kernel/tooling:rust_process.bzl", "rust_process")
+load("//pw_kernel/tooling:rust_app.bzl", "rust_process")
 
 multi_process_app(
     name = "ipc",

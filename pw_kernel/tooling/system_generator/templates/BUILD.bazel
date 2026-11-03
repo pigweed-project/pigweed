@@ -12,6 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
+load("//pw_kernel/arch/arm_cortex_m:defs.bzl", "SUPPORTED_CORTEX_M_CPUS")
+
 exports_files(
     [
         "app.rs.jinja",
@@ -24,5 +27,20 @@ exports_files(
         "pigweed_linker_sections.ld.jinja",
         "multi_process_app.rs.jinja",
     ],
+    visibility = ["//visibility:public"],
+)
+
+# Linker script template for the apps of a system_image on the current platform.
+# Manual: only resolvable on platforms that support apps.
+alias(
+    name = "app_linker_script_template",
+    actual = selects.with_or(
+        {
+            SUPPORTED_CORTEX_M_CPUS: ":cortex_m_app.ld.jinja",
+            "@platforms//cpu:riscv32": ":riscv_app.ld.jinja",
+        },
+        no_match_error = "pw_kernel apps require a Cortex-M or RISC-V platform",
+    ),
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )

@@ -11,7 +11,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""A rule for generating the application linker script based on the system
+"""A rule for generating the system linker script based on the system
 configuration file.
 """
 
@@ -65,7 +65,7 @@ target_linker_script = rule(
         "system_config": attr.label(
             doc = "System config file which defines the system.",
             allow_single_file = True,
-            default = "//pw_kernel/target:system_config_file",
+            mandatory = True,
         ),
         "system_generator": attr.label(
             executable = True,

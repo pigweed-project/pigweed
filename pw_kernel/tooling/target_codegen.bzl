@@ -50,7 +50,7 @@ _target_codegen_rule = rule(
         "system_config": attr.label(
             doc = "System config file which defines the system.",
             allow_single_file = True,
-            default = "//pw_kernel/target:system_config_file",
+            mandatory = True,
         ),
         "system_generator": attr.label(
             executable = True,
@@ -70,7 +70,7 @@ _target_codegen_rule = rule(
 def target_codegen(
         name,
         arch,
-        system_config = None,
+        system_config,
         deps = [],
         system_generator = "@pigweed//pw_kernel/tooling/system_generator:system_generator_bin",
         templates = {

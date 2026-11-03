@@ -20,7 +20,6 @@ rust_app(
     ],
     codegen_crate_name = "main_codegen",
     edition = "2024",
-    system_config = "//pw_kernel/target:system_config_file",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
@@ -39,7 +38,6 @@ rust_app(
     ],
     codegen_crate_name = "forced_exit_codegen",
     edition = "2024",
-    system_config = "//pw_kernel/target:system_config_file",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
