@@ -886,21 +886,38 @@ bool LowEnergyConnectionManager::InitializeConnection(
       connections_.try_emplace(peer_id, std::move(connection));
   PW_CHECK(inserted);
 
-  conn_iter->second->set_peer_conn_token(peer->MutLe().RegisterConnection());
+  // RegisterConnection() and UpdatePeerWithLink() synchronously notify
+  // PeerCache listeners, which may re-entrantly disconnect and destroy the
+  // connection or `this`.
+  auto self = weak_self_.GetWeakPtr();
+  auto conn_weak = conn_iter->second->GetWeakPtr();
+
+  std::optional<Peer::ConnectionToken> peer_conn_token =
+      peer->MutLe().RegisterConnection();
+  if (!self.is_alive() || !conn_weak.is_alive()) {
+    peer_conn_token.reset();
+    request.NotifyCallbacks(fit::error(HostError::kCanceled));
+    return false;
+  }
+
+  conn_weak->set_peer_conn_token(std::move(*peer_conn_token));
 
   // Create first ref to ensure that connection is cleaned up on early returns
   // or if first request callback does not retain a ref.
-  auto first_ref = conn_iter->second->AddRef();
+  auto first_ref = conn_weak->AddRef();
 
-  UpdatePeerWithLink(*conn_iter->second->link());
+  UpdatePeerWithLink(*conn_weak->link());
+  if (!self.is_alive() || !conn_weak.is_alive()) {
+    request.NotifyCallbacks(fit::error(HostError::kCanceled));
+    return false;
+  }
 
   bt_log(TRACE,
          "gap-le",
          "notifying connection request callbacks (peer: %s)",
          bt_str(peer_id));
 
-  request.NotifyCallbacks(fit::ok(
-      [capture0 = conn_iter->second.get()] { return capture0->AddRef(); }));
+  request.NotifyCallbacks(fit::ok([conn_weak] { return conn_weak->AddRef(); }));
 
   return true;
 }
@@ -955,13 +972,17 @@ void LowEnergyConnectionManager::CleanUpConnection(
 
 Peer* LowEnergyConnectionManager::UpdatePeerWithLink(
     const hci::LowEnergyConnection& link) {
-  Peer* peer = peer_cache_->FindByAddress(link.peer_address());
+  // Copy `peer_cache_` and `link` parameters before `NewPeer()`, which
+  // synchronously notifies listeners that may disconnect and destroy `link`.
+  PeerCache* const peer_cache = peer_cache_;
+  const hci_spec::LEConnectionParameters link_params =
+      link.low_energy_parameters();
+  Peer* peer = peer_cache->FindByAddress(link.peer_address());
   if (!peer) {
-    peer = peer_cache_->NewPeer(link.peer_address(), /*connectable=*/true);
+    peer = peer_cache->NewPeer(link.peer_address(), /*connectable=*/true);
   }
-  peer->MutLe().SetConnectionParameters(link.low_energy_parameters());
-  peer_cache_->SetAutoConnectBehaviorForSuccessfulConnection(
-      peer->identifier());
+  peer->MutLe().SetConnectionParameters(link_params);
+  peer_cache->SetAutoConnectBehaviorForSuccessfulConnection(peer->identifier());
 
   return peer;
 }

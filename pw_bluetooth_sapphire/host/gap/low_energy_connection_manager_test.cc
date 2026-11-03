@@ -47,6 +47,7 @@
 #include "pw_bluetooth_sapphire/internal/host/l2cap/types.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/test_security_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/types.h"
+#include "pw_bluetooth_sapphire/internal/host/sm/util.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_controller.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_peer.h"
@@ -6097,6 +6098,115 @@ TEST_F(LowEnergyConnectionManagerTest,
 
   conn_handle.reset();
   RunUntilIdle();
+  EXPECT_TRUE(peer_cache()->remove_peer_updated_callback(cb_id));
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       DisconnectInPeerUpdatedCallbackDuringRegisterConnection) {
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  const PeerId peer_id = peer->identifier();
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  bool disconnect_called = false;
+  auto cb_id =
+      peer_cache()->add_peer_updated_callback([&](const Peer& updated_peer) {
+        if (updated_peer.identifier() == peer_id && updated_peer.le() &&
+            updated_peer.le()->connected() && !disconnect_called) {
+          disconnect_called = true;
+          EXPECT_TRUE(conn_mgr()->Disconnect(peer_id));
+        }
+      });
+
+  std::optional<ConnectionResult> connect_result;
+  conn_mgr()->Connect(
+      peer_id,
+      [&](ConnectionResult result) {
+        connect_result = std::move(result);
+        EXPECT_EQ(peer->le()->connection_state(),
+                  Peer::ConnectionState::kNotConnected);
+      },
+      kConnectionOptions);
+  RunUntilIdle();
+
+  EXPECT_TRUE(disconnect_called);
+  ASSERT_TRUE(connect_result.has_value());
+  ASSERT_TRUE(connect_result->is_error());
+  EXPECT_EQ(connect_result->error_value(), HostError::kCanceled);
+  EXPECT_EQ(peer->le()->connection_state(),
+            Peer::ConnectionState::kNotConnected);
+  EXPECT_TRUE(connected_peers().empty());
+  EXPECT_TRUE(peer_cache()->remove_peer_updated_callback(cb_id));
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       DisconnectInPeerUpdatedCallbackDuringUpdatePeerWithLink) {
+  constexpr PeerId kPeerId(1);
+  const UInt128 kIrk1{1};
+  const UInt128 kIrk2{2};
+
+  sm::PairingData initial_bond;
+  initial_bond.peer_ltk = kLTK;
+  initial_bond.local_ltk = kLTK;
+  initial_bond.irk = sm::Key(sm::SecurityProperties(), kIrk1);
+  initial_bond.identity_address = kAddress0;
+  ASSERT_TRUE(peer_cache()->AddBondedPeer(BondingData{
+      .identifier = kPeerId,
+      .address = kAddress0,
+      .name = {},
+      .device_class = {},
+      .le_pairing_data = initial_bond,
+      .bredr_link_key = {},
+      .bredr_services = {},
+  }));
+
+  const DeviceAddress rpa = sm::util::GenerateRpa(kIrk1);
+  test_device()->AddPeer(std::make_unique<FakePeer>(rpa, dispatcher()));
+  test_device()->ConnectLowEnergy(rpa);
+  RunUntilIdle();
+
+  auto link = MoveLastRemoteInitiated();
+  ASSERT_TRUE(link);
+
+  bool rotated_irk = false;
+  bool disconnected_in_update_peer_with_link = false;
+  auto cb_id =
+      peer_cache()->add_peer_updated_callback([&](const Peer& updated_peer) {
+        if (updated_peer.identifier() == kPeerId && updated_peer.le() &&
+            updated_peer.le()->connected() && !rotated_irk) {
+          rotated_irk = true;
+          sm::PairingData updated_bond = initial_bond;
+          updated_bond.irk = sm::Key(sm::SecurityProperties(), kIrk2);
+          EXPECT_TRUE(peer_cache()->StoreLowEnergyBond(kPeerId, updated_bond));
+          return;
+        }
+        if (updated_peer.address() == rpa &&
+            !disconnected_in_update_peer_with_link) {
+          disconnected_in_update_peer_with_link = true;
+          EXPECT_TRUE(conn_mgr()->Disconnect(kPeerId));
+        }
+      });
+
+  std::optional<ConnectionResult> connect_result;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(link), BondableMode::Bondable, [&](ConnectionResult result) {
+        connect_result = std::move(result);
+        Peer* peer = peer_cache()->FindById(kPeerId);
+        ASSERT_NE(peer, nullptr);
+        EXPECT_EQ(peer->le()->connection_state(),
+                  Peer::ConnectionState::kNotConnected);
+      });
+  RunUntilIdle();
+
+  EXPECT_TRUE(rotated_irk);
+  EXPECT_TRUE(disconnected_in_update_peer_with_link);
+  ASSERT_TRUE(connect_result.has_value());
+  ASSERT_TRUE(connect_result->is_error());
+  EXPECT_EQ(connect_result->error_value(), HostError::kCanceled);
+  Peer* peer = peer_cache()->FindById(kPeerId);
+  ASSERT_NE(peer, nullptr);
+  EXPECT_EQ(peer->le()->connection_state(),
+            Peer::ConnectionState::kNotConnected);
+  EXPECT_TRUE(connected_peers().empty());
   EXPECT_TRUE(peer_cache()->remove_peer_updated_callback(cb_id));
 }
 
