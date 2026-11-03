@@ -550,18 +550,24 @@ void RemoteServiceManager::OnNotification(bool /*indication*/,
     return;
   }
 
-  // Find the service that |value_handle| belongs to.
+  // Find the service that |value_handle| belongs to: the service with the
+  // largest start handle that is not greater than |value_handle|. The peer
+  // controls |value_handle|, so it may be below the start handle of every
+  // known service or fall in a gap between services.
   auto iter = services_.upper_bound(value_handle);
-  if (iter != services_.begin())
-    --iter;
-
-  // If |value_handle| is within the previous service then we found it.
-  auto& svc = iter->second;
-  PW_DCHECK(value_handle >= svc->handle());
-
-  if (svc->info().range_end >= value_handle) {
-    svc->HandleNotification(value_handle, value, maybe_truncated);
+  if (iter == services_.begin() ||
+      std::prev(iter)->second->info().range_end < value_handle) {
+    bt_log(DEBUG,
+           "gatt",
+           "ignoring notification for handle %#.4x not in any service",
+           value_handle);
+    return;
   }
+
+  auto& svc = std::prev(iter)->second;
+  PW_DCHECK(value_handle >= svc->handle());
+  PW_DCHECK(value_handle <= svc->info().range_end);
+  svc->HandleNotification(value_handle, value, maybe_truncated);
 }
 
 void RemoteServiceManager::OnServiceChangedNotification(

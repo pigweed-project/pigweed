@@ -3878,6 +3878,60 @@ TEST_F(RemoteServiceManagerTest, NotificationWithoutServices) {
   RunUntilIdle();
 }
 
+// Notifications and indications with a value handle below the start handle of
+// the first known service do not belong to any service and should be dropped.
+// Regression test for b/510064691.
+TEST_F(RemoteServiceManagerTest,
+       NotificationWithHandleBelowFirstServiceIsIgnored) {
+  auto service = SetUpFakeService(
+      ServiceData(ServiceKind::PRIMARY, 3, 6, kTestServiceUuid1));
+
+  CharacteristicData chr(
+      Property::kNotify | Property::kIndicate, std::nullopt, 4, 5, kTestUuid3);
+  DescriptorData desc(6, types::kClientCharacteristicConfig);
+  SetupCharacteristics(service, {{chr}}, {{desc}});
+
+  fake_client()->set_write_request_callback(
+      [&](att::Handle, const auto&, auto status_callback) {
+        status_callback(fit::ok());
+      });
+
+  int notification_count = 0;
+  IdType handler_id = kInvalidId;
+  att::Result<> status = ToResult(HostError::kFailed);
+  EnableNotifications(service,
+                      CharacteristicHandle(5),
+                      &status,
+                      &handler_id,
+                      [&](const ByteBuffer&, bool) { notification_count++; });
+  ASSERT_EQ(fit::ok(), status);
+
+  // Handles below the service's start handle, including kInvalidHandle.
+  for (att::Handle handle : {att::kInvalidHandle, att::Handle{2}}) {
+    fake_client()->SendNotification(
+        /*indicate=*/false,
+        handle,
+        StaticByteBuffer('n', 'o', 't', 'i', 'f', 'y'),
+        /*maybe_truncated=*/false);
+    fake_client()->SendNotification(
+        /*indicate=*/true,
+        handle,
+        StaticByteBuffer('i', 'n', 'd', 'i', 'c', 'a', 't', 'e'),
+        /*maybe_truncated=*/false);
+  }
+  RunUntilIdle();
+  EXPECT_EQ(0, notification_count);
+
+  // A notification for the characteristic's value handle is still delivered.
+  fake_client()->SendNotification(
+      /*indicate=*/false,
+      5,
+      StaticByteBuffer('n', 'o', 't', 'i', 'f', 'y'),
+      /*maybe_truncated=*/false);
+  RunUntilIdle();
+  EXPECT_EQ(1, notification_count);
+}
+
 TEST_F(RemoteServiceManagerTest, NotificationCallback) {
   auto service = SetUpFakeService(
       ServiceData(ServiceKind::PRIMARY, 1, 7, kTestServiceUuid1));
