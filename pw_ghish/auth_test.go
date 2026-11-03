@@ -610,10 +610,7 @@ func TestResolveAuthMode(t *testing.T) {
 		if mode != AuthModeGoogler || !strings.Contains(reason, "--auth-mode=googler") {
 			t.Errorf("got (%q, %q), want (googler, --auth-mode=googler)", mode, reason)
 		}
-		authModeCacheMu.Lock()
-		cached := authModeCacheValid
-		authModeCacheMu.Unlock()
-		if cached {
+		if _, ok := authModeCache.Get(authModeCacheKey{flag: "googler"}); ok {
 			t.Error("expected nil-cfg call not to populate authModeCache")
 		}
 	})
@@ -656,11 +653,9 @@ func TestResolveAuthMode(t *testing.T) {
 		if mode != AuthModeGoogler || reason != "git config ghish.authmode=googler" {
 			t.Errorf("got (%q, %q), want (googler, \"git config ghish.authmode=googler\")", mode, reason)
 		}
-		authModeCacheMu.Lock()
-		cached, cachedCfg := authModeCacheValid, cachedAuthModeKey.cfg
-		authModeCacheMu.Unlock()
-		if !cached || cachedCfg != cfg {
-			t.Errorf("authModeCache = (valid=%v, cfg=%p), want (true, %p)", cached, cachedCfg, cfg)
+		cached, ok := authModeCache.Get(authModeCacheKey{cfg: cfg})
+		if !ok || cached.Mode != AuthModeGoogler {
+			t.Errorf("authModeCache.Get(cfg=%p) = (%+v, %v), want (googler, true)", cfg, cached, ok)
 		}
 	})
 
@@ -804,8 +799,38 @@ func TestFindLuciAuthBinary_ScriptDirFallback(t *testing.T) {
 	}
 }
 
-func TestDefaultGerritToken_CachesJSONExpiry(t *testing.T) {
-	wantExpiry := time.Now().Add(45 * time.Minute).Unix()
+func TestParseOAuthTokenOutput(t *testing.T) {
+	now := time.Date(2026, 10, 29, 6, 0, 0, 0, time.UTC)
+	expUnix := now.Add(45 * time.Minute).Unix()
+	for _, tc := range []struct {
+		name    string
+		raw     []byte
+		wantTok string
+		wantExp time.Time
+	}{
+		{
+			name:    "JSON output subtracts 60s safety margin",
+			raw:     fmt.Appendf(nil, `{"token":"json-tok","expiry":%d}`, expUnix),
+			wantTok: "json-tok",
+			wantExp: time.Unix(expUnix, 0).Add(-60 * time.Second),
+		},
+		{
+			name:    "plain text falls back to default TTL",
+			raw:     []byte("  plain-tok\n"),
+			wantTok: "plain-tok",
+			wantExp: now.Add(defaultOAuthTokenTTL),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tok, exp := parseOAuthTokenOutput(tc.raw, now)
+			if tok != tc.wantTok || !exp.Equal(tc.wantExp) {
+				t.Errorf("parseOAuthTokenOutput() = (%q, %v), want (%q, %v)", tok, exp, tc.wantTok, tc.wantExp)
+			}
+		})
+	}
+}
+
+func TestDefaultGerritToken_ReusesMintedToken(t *testing.T) {
 	var runnerCalls int
 	var gotArgs []string
 	WithHermeticAuth(t, AuthResolvers{
@@ -813,18 +838,15 @@ func TestDefaultGerritToken_CachesJSONExpiry(t *testing.T) {
 		CommandRunner: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			runnerCalls++
 			gotArgs = args
-			return fmt.Appendf(nil, `{"token":"gerrit-json-token","expiry":%d}`, wantExpiry), nil
+			return fmt.Appendf(nil, `{"token":"gerrit-json-token-%d","expiry":%d}`, runnerCalls, time.Now().Add(45*time.Minute).Unix()), nil
 		},
 	})
 	setAuthModeFlag(t, "googler")
 
 	for range 2 {
 		tok, src, err := DefaultGerritToken(t.Context())
-		if err != nil {
-			t.Fatalf("DefaultGerritToken() error = %v", err)
-		}
-		if tok != "gerrit-json-token" || src != "luci-auth" {
-			t.Errorf("DefaultGerritToken() = (%q, %q), want (gerrit-json-token, luci-auth)", tok, src)
+		if err != nil || tok != "gerrit-json-token-1" || src != "luci-auth" {
+			t.Fatalf("DefaultGerritToken() = (%q, %q, %v), want (gerrit-json-token-1, luci-auth, nil)", tok, src, err)
 		}
 	}
 	if runnerCalls != 1 {
@@ -832,12 +854,6 @@ func TestDefaultGerritToken_CachesJSONExpiry(t *testing.T) {
 	}
 	if want := []string{"token", "-scopes", strings.Join(luciAuthScopes(AuthModeGoogler), " "), "-json-output", "-"}; !slices.Equal(gotArgs, want) {
 		t.Errorf("luci-auth args = %q, want %q", gotArgs, want)
-	}
-	luciAuthCache.mu.Lock()
-	gotExpiry := luciAuthCache.expiry
-	luciAuthCache.mu.Unlock()
-	if want := time.Unix(wantExpiry, 0).Add(-60 * time.Second); !gotExpiry.Equal(want) {
-		t.Errorf("cachedGerritTokenExpiry = %v, want %v", gotExpiry, want)
 	}
 }
 
@@ -1187,7 +1203,7 @@ func TestDefaultGerritToken_RecoversAfterFailureAndInvalidation(t *testing.T) {
 		},
 	})
 
-	// Binary missing is cached in luciAuthCache.notFoundErr until ResetAuthTokenCaches().
+	// Binary missing is cached in luciOAuthCache until ResetAuthTokenCaches().
 	if _, _, err := DefaultGerritToken(t.Context()); !errors.Is(err, errLUCIAuthNotFound) {
 		t.Fatalf("missing binary err = %v, want %v", err, errLUCIAuthNotFound)
 	}

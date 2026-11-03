@@ -29,7 +29,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -52,13 +51,19 @@ type authModeCacheKey struct {
 	cfg     *Config
 }
 
-var (
-	authModeCacheMu    sync.Mutex
-	cachedAuthModeKey  authModeCacheKey
-	cachedAuthModeVal  AuthMode
-	cachedAuthModeWhy  string
-	authModeCacheValid bool
-)
+type cachedAuthMode struct {
+	Mode AuthMode
+	Why  string
+}
+
+func (cachedAuthMode) CachePolicy() CachePolicy {
+	return CachePolicy{
+		Tier: CacheInMemory,
+		Name: "auth_mode",
+	}
+}
+
+var authModeCache = NewCache[authModeCacheKey, cachedAuthMode]()
 
 // ResolveAuthMode determines the active AuthMode (googler, community, or none) and a
 // human-readable explanation of how it was selected.
@@ -86,23 +91,14 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		cfg:     cfg,
 	}
 	if cfg != nil {
-		authModeCacheMu.Lock()
-		if authModeCacheValid && cachedAuthModeKey == cacheKey {
-			m, r := cachedAuthModeVal, cachedAuthModeWhy
-			authModeCacheMu.Unlock()
-			return m, r, nil
+		if cached, ok := authModeCache.Get(cacheKey); ok {
+			return cached.Mode, cached.Why, nil
 		}
-		authModeCacheMu.Unlock()
 	}
 
 	cacheAndReturn := func(m AuthMode, reason string) (AuthMode, string, error) {
 		if cfg != nil {
-			authModeCacheMu.Lock()
-			cachedAuthModeKey = cacheKey
-			cachedAuthModeVal = m
-			cachedAuthModeWhy = reason
-			authModeCacheValid = true
-			authModeCacheMu.Unlock()
+			authModeCache.Put(cacheKey, cachedAuthMode{Mode: m, Why: reason})
 		}
 		return m, reason, nil
 	}
@@ -755,6 +751,7 @@ func commandErrorDetail(err error) string {
 const (
 	defaultOAuthTokenTTL = 30 * time.Minute
 	maxOAuthTokenTTL     = 45 * time.Minute
+	luciOAuthActiveKey   = "active"
 )
 
 func parseOAuthTokenOutput(out []byte, now time.Time) (string, time.Time) {
@@ -768,9 +765,6 @@ func parseOAuthTokenOutput(out []byte, now time.Time) (string, time.Time) {
 		tok = strings.TrimSpace(parsed.Token)
 		if parsed.Expiry > 0 {
 			expiry = time.Unix(parsed.Expiry, 0).Add(-60 * time.Second)
-			if maxExpiry := now.Add(maxOAuthTokenTTL); expiry.After(maxExpiry) {
-				expiry = maxExpiry
-			}
 		}
 	}
 	return tok, expiry
@@ -795,21 +789,28 @@ func mintLUCIAuthToken(ctx context.Context, scopes string) (string, time.Time, e
 		}
 		return "", time.Time{}, fmt.Errorf("luci-auth (%s) returned no OAuth2 token: %s", bin, commandErrorDetail(err))
 	}
-	tok, expiry := parseOAuthTokenOutput(out, time.Now())
+	tok, expiry := parseOAuthTokenOutput(out, currentCacheEnv().Now())
 	if tok == "" {
 		return "", time.Time{}, fmt.Errorf("luci-auth (%s) returned no OAuth2 token: %s", bin, commandErrorDetail(nil))
 	}
 	return tok, expiry, nil
 }
 
-// luciAuthCache holds the process-wide luci-auth token.
-var luciAuthCache struct {
-	mu          sync.Mutex
-	token       string
-	expiry      time.Time
-	scopes      string
-	notFoundErr error
+type cachedOAuthToken struct {
+	Scopes      string
+	Token       string
+	NotFoundErr error
 }
+
+func (cachedOAuthToken) CachePolicy() CachePolicy {
+	return CachePolicy{
+		Tier:   CacheInMemory,
+		Name:   "luci_oauth_tokens",
+		MaxTTL: maxOAuthTokenTTL,
+	}
+}
+
+var luciOAuthCache = NewCache[string, cachedOAuthToken]()
 
 // errLUCIAuthDisabled is returned by luciAuthToken in auth mode none.
 var errLUCIAuthDisabled = errors.New("luci-auth token not requested: authentication is disabled (auth mode none)")
@@ -849,28 +850,32 @@ func luciAuthTokenWithScope(ctx context.Context, scope string) (string, error) {
 		return "", fmt.Errorf("the %s-mode luci-auth token does not include the %s scope", mode, scope)
 	}
 	scopes := strings.Join(scopeSet, " ")
-	c := &luciAuthCache
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err := ctx.Err(); err != nil {
+	loadToken := func(ctx context.Context) (cachedOAuthToken, time.Time, error) {
+		tok, expiry, err := mintLUCIAuthToken(ctx, scopes)
+		if errors.Is(err, errLUCIAuthNotFound) {
+			// Negative-cache missing luci-auth so commands in community mode do
+			// not re-probe CIPD paths and git rev-parse on every HTTP request.
+			return cachedOAuthToken{NotFoundErr: err}, time.Time{}, nil
+		}
+		if err != nil {
+			return cachedOAuthToken{}, time.Time{}, err
+		}
+		return cachedOAuthToken{Scopes: scopes, Token: tok}, expiry, nil
+	}
+	entry, err := luciOAuthCache.GetOrLoad(ctx, luciOAuthActiveKey, loadToken)
+	if err == nil && entry.NotFoundErr == nil && entry.Scopes != scopes {
+		luciOAuthCache.DeleteIf(luciOAuthActiveKey, func(cur cachedOAuthToken) bool {
+			return cur.NotFoundErr == nil && cur.Scopes != scopes
+		})
+		entry, err = luciOAuthCache.GetOrLoad(ctx, luciOAuthActiveKey, loadToken)
+	}
+	if err != nil {
 		return "", err
 	}
-	if c.token != "" && c.scopes == scopes && time.Now().Before(c.expiry) {
-		return c.token, nil
+	if entry.NotFoundErr != nil {
+		return "", entry.NotFoundErr
 	}
-	if c.notFoundErr != nil {
-		return "", c.notFoundErr
-	}
-	tok, expiry, err := mintLUCIAuthToken(ctx, scopes)
-	if ctx.Err() == nil {
-		switch {
-		case err == nil:
-			c.token, c.expiry, c.scopes = tok, expiry, scopes
-		case errors.Is(err, errLUCIAuthNotFound):
-			c.notFoundErr = err
-		}
-	}
-	return tok, err
+	return entry.Token, nil
 }
 
 // invalidateLUCIAuthToken drops the cached token if it equals rejected, so the
@@ -880,13 +885,9 @@ func invalidateLUCIAuthToken(rejected string) {
 	if rejected == "" {
 		return
 	}
-	c := &luciAuthCache
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.token == rejected {
-		c.token = ""
-		c.expiry = time.Time{}
-	}
+	luciOAuthCache.DeleteIf(luciOAuthActiveKey, func(cur cachedOAuthToken) bool {
+		return cur.Token != "" && cur.Token == rejected
+	})
 }
 
 // ScopeAndroidBuildInternal is the OAuth2 scope for Android Build Internal v3 REST APIs.
@@ -941,21 +942,9 @@ func luciAuthLoginCommandForScope(ctx context.Context, scope string) string {
 	return luciAuthLoginCommand(mode)
 }
 
-// ResetAuthTokenCaches clears in-memory OAuth token caches for Gerrit, LUCI, Android Build, and Issue Tracker.
+// ResetAuthTokenCaches clears all in-process auth and account caches.
 func ResetAuthTokenCaches() {
-	authModeCacheMu.Lock()
-	authModeCacheValid = false
-	cachedAuthModeKey = authModeCacheKey{}
-	authModeCacheMu.Unlock()
-
-	luciAuthCache.mu.Lock()
-	luciAuthCache.token = ""
-	luciAuthCache.expiry = time.Time{}
-	luciAuthCache.scopes = ""
-	luciAuthCache.notFoundErr = nil
-	luciAuthCache.mu.Unlock()
-
-	defaultAccountCache.ResetMemory()
+	resetAllCaches()
 }
 
 // gerritTokenFromEnv returns the trimmed GERRIT_TOKEN. A value containing ':'
