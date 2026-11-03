@@ -13,7 +13,10 @@
 # the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//pw_build:python.bzl", "pw_py_test")
 load("//pw_enum:pw_cc_enum_library.bzl", "pw_cc_enum_library")
+load("//pw_enum:pw_enum.bzl", "pw_enum")
+load("//pw_enum:pw_py_enum_library.bzl", "pw_py_enum_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 # DOCSTAG: [pw_enum-examples-basic-bazel]
@@ -70,6 +73,41 @@ pw_cc_test(
     ],
 )
 
+# DOCSTAG: [pw_enum-examples-toml-bazel]
+pw_enum(
+    name = "sensor_enums",
+    srcs = ["enum_example/sensor.toml"],
+)
+
+pw_cc_enum_library(
+    name = "sensor_enums_cc",
+    enums = [":sensor_enums"],
+)
+
+pw_py_enum_library(
+    name = "sensor_enums_py",
+    enums = [":sensor_enums"],
+)
+# DOCSTAG: [pw_enum-examples-toml-bazel]
+
+pw_cc_test(
+    name = "toml_enum_test",
+    srcs = ["toml_enum_test.cc"],
+    deps = [
+        ":sensor_enums_cc",
+        "//pw_enum",
+        "//pw_log",
+        "//pw_log:args",
+    ],
+)
+
+pw_py_test(
+    name = "toml_enum_py_test",
+    srcs = ["toml_enum_test.py"],
+    main = "toml_enum_test.py",
+    deps = [":sensor_enums_py"],
+)
+
 pw_cc_test(
     name = "basic_enum_test",
     srcs = ["basic_enum_test.cc"],
@@ -100,10 +138,13 @@ filegroup(
         "basic_enum.cc",
         "basic_enum_test.cc",
         "enum_example/references_other_enum.h",
+        "enum_example/sensor.toml",
         "private/enum_example/basic_enum.h",
         "private/enum_example/i2c_status.h",
         "private/enum_example/other_enum.h",
         "status_enum_test.cc",
+        "toml_enum_test.cc",
+        "toml_enum_test.py",
         "traits.cc",
     ],
     visibility = ["//pw_enum:__subpackages__"],
