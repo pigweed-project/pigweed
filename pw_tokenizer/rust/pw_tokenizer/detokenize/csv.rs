@@ -12,6 +12,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+use core::mem;
+
 use pw_status::Result;
 
 use crate::detokenize::database::Database;
@@ -36,12 +38,12 @@ pub fn parse_csv(csv: &str) -> Vec<Vec<String>> {
                 if in_quotes {
                     current.push(c);
                 } else {
-                    row.push(current);
+                    row.push(mem::take(&mut current));
                     if row_has_content || row.len() > 1 || !row[0].is_empty() {
-                        results.push(row);
+                        results.push(mem::take(&mut row));
+                    } else {
+                        row.clear();
                     }
-                    row = Vec::new();
-                    current = String::new();
                     quote_closed = false;
                     row_has_content = false;
                 }
@@ -60,8 +62,8 @@ pub fn parse_csv(csv: &str) -> Vec<Vec<String>> {
                     if !current.is_empty() || quote_closed {
                         // Error case, skip to newline.
                         skip_to_newline(&mut chars);
-                        row = Vec::new();
-                        current = String::new();
+                        row.clear();
+                        current.clear();
                         quote_closed = false;
                         row_has_content = false;
                         continue;
@@ -74,8 +76,7 @@ pub fn parse_csv(csv: &str) -> Vec<Vec<String>> {
                 if in_quotes {
                     current.push(c);
                 } else {
-                    row.push(current);
-                    current = String::new();
+                    row.push(mem::take(&mut current));
                     quote_closed = false;
                 }
             }
@@ -84,8 +85,8 @@ pub fn parse_csv(csv: &str) -> Vec<Vec<String>> {
                 if quote_closed {
                     // Error case, skip to newline.
                     skip_to_newline(&mut chars);
-                    row = Vec::new();
-                    current = String::new();
+                    row.clear();
+                    current.clear();
                     quote_closed = false;
                     row_has_content = false;
                     continue;
