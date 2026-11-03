@@ -40,6 +40,10 @@ void LowEnergyConnectionRequest::NotifyCallbacks(
       continue;
     }
     auto conn_ref = result.value()();
+    if (!conn_ref) {
+      callback(fit::error(HostError::kCanceled));
+      continue;
+    }
     callback(fit::ok(std::move(conn_ref)));
   }
 }

@@ -917,9 +917,15 @@ bool LowEnergyConnectionManager::InitializeConnection(
          "notifying connection request callbacks (peer: %s)",
          bt_str(peer_id));
 
-  request.NotifyCallbacks(fit::ok([conn_weak] { return conn_weak->AddRef(); }));
+  request.NotifyCallbacks(
+      fit::ok([conn_weak]() -> std::unique_ptr<LowEnergyConnectionHandle> {
+        if (!conn_weak.is_alive()) {
+          return nullptr;
+        }
+        return conn_weak->AddRef();
+      }));
 
-  return true;
+  return conn_weak.is_alive();
 }
 
 void LowEnergyConnectionManager::RecordDisconnectInspect(

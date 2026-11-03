@@ -6210,5 +6210,63 @@ TEST_F(LowEnergyConnectionManagerTest,
   EXPECT_TRUE(peer_cache()->remove_peer_updated_callback(cb_id));
 }
 
+TEST_F(LowEnergyConnectionManagerTest,
+       DisconnectInFirstOfMultipleCoalescedConnectCallbacks) {
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  const PeerId peer_id = peer->identifier();
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  std::optional<ConnectionResult> result1;
+  std::optional<ConnectionResult> result2;
+  std::optional<ConnectionResult> result3;
+
+  conn_mgr()->Connect(
+      peer_id,
+      [&](ConnectionResult result) {
+        result1 = std::move(result);
+        ASSERT_TRUE(result1->is_ok());
+        ASSERT_NE(result1->value(), nullptr);
+        EXPECT_TRUE(result1->value()->active());
+        EXPECT_TRUE(conn_mgr()->Disconnect(peer_id));
+        EXPECT_FALSE(result1->value()->active());
+      },
+      kConnectionOptions);
+
+  conn_mgr()->Connect(
+      peer_id,
+      [&](ConnectionResult result) {
+        result2 = std::move(result);
+        EXPECT_EQ(peer->le()->connection_state(),
+                  Peer::ConnectionState::kNotConnected);
+      },
+      kConnectionOptions);
+
+  conn_mgr()->Connect(
+      peer_id,
+      [&](ConnectionResult result) {
+        result3 = std::move(result);
+        EXPECT_EQ(peer->le()->connection_state(),
+                  Peer::ConnectionState::kNotConnected);
+      },
+      kConnectionOptions);
+
+  RunUntilIdle();
+
+  ASSERT_TRUE(result1.has_value());
+  EXPECT_TRUE(result1->is_ok());
+
+  ASSERT_TRUE(result2.has_value());
+  ASSERT_TRUE(result2->is_error());
+  EXPECT_EQ(result2->error_value(), HostError::kCanceled);
+
+  ASSERT_TRUE(result3.has_value());
+  ASSERT_TRUE(result3->is_error());
+  EXPECT_EQ(result3->error_value(), HostError::kCanceled);
+
+  EXPECT_EQ(peer->le()->connection_state(),
+            Peer::ConnectionState::kNotConnected);
+  EXPECT_TRUE(connected_peers().empty());
+}
+
 }  // namespace
 }  // namespace bt::gap
