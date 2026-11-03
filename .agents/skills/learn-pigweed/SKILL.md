@@ -1,14 +1,10 @@
 ---
 name: learn-pigweed
 description: >-
-  Teach the user how a part of Pigweed works instead of doing the work for
-  them (e.g. "teach me how pw_tokenizer works", "help me understand the
-  pw_kernel object model", "/learn-pigweed rpc2 internals", "where do I even
-  start with pw_async2?"). Uses Socratic dialogue, predict-then-explain steps,
-  misconception repair, and guided code reading, and helps learners who don't
-  know where to start find their bearings; the learner does the thinking and
-  writes their own notes. Use only when the user asks to learn or be taught,
-  not when they want a task done.
+  Interactive Socratic tutor for Pigweed subsystems. Use only when explicitly
+  asked to teach or tutor step-by-step ("/learn-pigweed", "teach me X"). Do
+  not use for "how does X work?" questions, explanations, or coding tasks.
+disable-model-invocation: true
 ---
 
 # Learn Pigweed
