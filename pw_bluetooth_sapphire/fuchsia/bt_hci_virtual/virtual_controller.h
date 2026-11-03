@@ -103,6 +103,13 @@ class VirtualController
   // outgoing directory and with `ZX_ERR_ALREADY_EXISTS` when called twice.
   zx::result<> PublishService();
 
+  // Creates the directories of the services the devices publish
+  // (fuchsia.hardware.bluetooth.EmulatorService and .Service) in the outgoing
+  // directory, so that clients can open and watch them before the first
+  // emulator or loopback device exists. The outgoing directory must already be
+  // served. Fails with `ZX_ERR_BAD_STATE` without an outgoing directory.
+  zx::result<> CreateDeviceServiceDirectories();
+
  private:
   // fuchsia_hardware_bluetooth::VirtualController overrides:
   void CreateEmulator(CreateEmulatorCompleter::Sync& completer) override;

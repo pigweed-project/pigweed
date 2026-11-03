@@ -1,17 +1,41 @@
-# Bluetooth Virtual Driver
+# Bluetooth Virtual Controller
 
 ## About
 
-The Bluetooth virtual driver is a Bluetooth controller emulator that allows
+The Bluetooth virtual controller is a Bluetooth controller emulator that allows
 system Bluetooth components to be tested in integration against the Bluetooth
 HCI protocol.
 
-The virtual driver currently supports the LoopbackDevice and EmulatorDevice.
+The virtual controller currently supports the LoopbackDevice and
+EmulatorDevice. The `virtual` package ships it in two forms, a DFv2 driver and
+a plain component, which share the VirtualController class.
 
-The driver is created by the VirtualController class. VirtualController uses
-DFv2 to create a virtual driver node (bt-hci-virtual) that can then have
-children nodes (LoopbackDevice and/or EmulatorDevice). This allows the DFv2
-logic to be contained to VirtualController.
+A client creates an emulator with `VirtualController.CreateEmulator` and then
+interacts with it through the `Emulator` protocol.
+
+`Emulator.Publish` publishes the `fuchsia.hardware.bluetooth.Service` instance
+that bt-init watches to spawn a bt-host. How a client reaches
+`VirtualController` and `Emulator` depends on the hosting.
+
+### Driver
+
+The driver wraps VirtualController in a DFv2 driver that creates a virtual
+driver node (bt-hci-virtual) that can then have child nodes (LoopbackDevice
+and/or EmulatorDevice). `VirtualController` and each emulator's `Emulator`
+protocol are reached through those devfs nodes, and
+`fuchsia.hardware.bluetooth.Service` is exposed from the driver.
+
+### Component
+
+The component, `meta/bt-hci-virtual.cm`, serves a VirtualController and
+exposes three FIDL services from its outgoing directory:
+
+- `fuchsia.hardware.bluetooth.VirtualControllerService`: the single instance
+  `default`, published at startup.
+- `fuchsia.hardware.bluetooth.EmulatorService`: one instance per live
+  emulator, named `emulator-<n>`.
+- `fuchsia.hardware.bluetooth.Service`: one instance per published emulator or
+  loopback device.
 
 ## LoopbackDevice
 

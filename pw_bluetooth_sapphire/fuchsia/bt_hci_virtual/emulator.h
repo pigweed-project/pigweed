@@ -76,7 +76,10 @@ class EmulatorDevice
   //
   // NOTE: ownership is inferred from connection order. A client that merely
   // opens and closes the Emulator protocol before the intended owner connects
-  // becomes the owner and tears the emulator down when it disconnects.
+  // becomes the owner and tears the emulator down when it disconnects. A
+  // client that needs more than one connection should open the EmulatorService
+  // instance directory once and connect through it, so that its connections
+  // arrive in the order it made them.
   void ConnectEmulator(
       fidl::ServerEnd<fuchsia_hardware_bluetooth::Emulator> request);
 

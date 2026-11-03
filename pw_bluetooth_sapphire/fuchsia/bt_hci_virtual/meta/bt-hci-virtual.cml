@@ -1,0 +1,45 @@
+// Copyright 2026 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+{
+    // No inspect shard: bt_hci_virtual does not use Inspect, and the SDK's
+    // inspect shard would add a required `use` of fuchsia.inspect.InspectSink.
+    include: [ "syslog/client.shard.cml" ],
+    program: {
+        runner: "elf",
+        binary: "bin/bt_hci_virtual",
+        forward_stderr_to: "log",
+        forward_stdout_to: "log",
+    },
+    capabilities: [
+        // One instance per VirtualController (this component): "default".
+        { service: "fuchsia.hardware.bluetooth.VirtualControllerService" },
+
+        // One instance per live emulator (added/removed dynamically).
+        { service: "fuchsia.hardware.bluetooth.EmulatorService" },
+
+        // One instance per *published* emulator or loopback device; this is
+        // what bt-init watches to spawn bt-host.
+        { service: "fuchsia.hardware.bluetooth.Service" },
+    ],
+    expose: [
+        {
+            service: [
+                "fuchsia.hardware.bluetooth.EmulatorService",
+                "fuchsia.hardware.bluetooth.Service",
+                "fuchsia.hardware.bluetooth.VirtualControllerService",
+            ],
+            from: "self",
+        },
+    ],
+}

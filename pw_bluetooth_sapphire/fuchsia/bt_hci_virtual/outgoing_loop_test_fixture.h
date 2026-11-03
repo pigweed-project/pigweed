@@ -90,8 +90,19 @@ class OutgoingLoopTestFixture : public ::testing::Test {
   // directory.
   bool ServiceInstanceIsPublished(std::string_view service,
                                   std::string_view instance) {
-    std::string path =
-        std::string("svc/").append(service).append("/").append(instance);
+    return DirectoryIsPublished(
+        std::string("svc/").append(service).append("/").append(instance));
+  }
+
+  // Returns true if the directory of `service` is published, whether or not it
+  // holds any instance.
+  bool ServiceDirectoryIsPublished(std::string_view service) {
+    return DirectoryIsPublished(std::string("svc/").append(service));
+  }
+
+  // Returns true if `path` is a directory in the outgoing directory, by opening
+  // it.
+  bool DirectoryIsPublished(const std::string& path) {
     zx::result dir = component::OpenDirectoryAt(outgoing_client(), path);
     if (dir.is_error()) {
       return false;

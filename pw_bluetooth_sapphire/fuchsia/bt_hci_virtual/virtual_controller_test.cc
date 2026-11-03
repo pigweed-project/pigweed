@@ -242,6 +242,25 @@ TEST_F(VirtualControllerTest, PublishServiceServesVirtualController) {
 TEST_F(VirtualControllerTest, PublishServiceWithoutOutgoingFails) {
   VirtualController controller(dispatcher(), nullptr);
   EXPECT_EQ(controller.PublishService().status_value(), ZX_ERR_BAD_STATE);
+  EXPECT_EQ(controller.CreateDeviceServiceDirectories().status_value(),
+            ZX_ERR_BAD_STATE);
+}
+
+// CreateDeviceServiceDirectories() makes the EmulatorService and Service
+// directories openable before any device publishes an instance, and devices
+// still publish into them afterwards.
+TEST_F(VirtualControllerTest, CreateDeviceServiceDirectoriesPrecedesDevices) {
+  EXPECT_FALSE(ServiceDirectoryIsPublished(fhb::EmulatorService::Name));
+  EXPECT_FALSE(ServiceDirectoryIsPublished(fhb::Service::Name));
+
+  ASSERT_TRUE(controller().CreateDeviceServiceDirectories().is_ok());
+  EXPECT_TRUE(ServiceDirectoryIsPublished(fhb::EmulatorService::Name));
+  EXPECT_TRUE(ServiceDirectoryIsPublished(fhb::Service::Name));
+  EXPECT_FALSE(EmulatorServiceIsServed(VirtualController::FirstEmulatorName()));
+
+  zx::result name = CreateEmulator();
+  ASSERT_TRUE(name.is_ok()) << name.status_string();
+  EXPECT_TRUE(EmulatorServiceIsServed(*name));
 }
 
 // Destroying the controller removes the VirtualControllerService instance it

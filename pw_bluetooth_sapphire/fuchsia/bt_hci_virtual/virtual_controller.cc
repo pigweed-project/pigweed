@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
@@ -75,6 +76,35 @@ std::string VirtualController::ServiceInstancePath() {
 
 std::string VirtualController::FirstEmulatorName() {
   return EmulatorName(kFirstEmulatorId);
+}
+
+zx::result<> VirtualController::CreateDeviceServiceDirectories() {
+  if (outgoing_ == nullptr) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+  // TODO: b/578928018 - `component::OutgoingDirectory` has no way to create an
+  // empty directory, so add an entry to each one and remove it again; the
+  // directory it was created in stays.
+  constexpr std::string_view kPlaceholderEntry = "placeholder";
+  for (std::string_view service :
+       {std::string_view(fhbt::EmulatorService::Name),
+        std::string_view(fhbt::Service::Name)}) {
+    std::string path =
+        std::string(component::OutgoingDirectory::kServiceDirectory) + "/" +
+        std::string(service);
+    zx::result<> added = outgoing_->AddUnmanagedProtocolAt(
+        [](zx::channel) {}, path, kPlaceholderEntry);
+    if (added.is_error()) {
+      return added;
+    }
+    // Note that RemoveUnmanagedProtocolAt() cannot be used here because it
+    // doesn't allow the protocol to be re-added (see b/581021793).
+    zx::result<> removed = outgoing_->RemoveProtocolAt(path, kPlaceholderEntry);
+    if (removed.is_error()) {
+      return removed;
+    }
+  }
+  return zx::ok();
 }
 
 zx::result<> VirtualController::PublishService() {
