@@ -292,19 +292,34 @@ Status L2capChannelManager::RegisterChannelLocked(
   uint32_t remote_key =
       L2capChannel::MakeKey(channel.connection_handle(), channel.remote_cid());
 
-  auto it = channels_by_local_cid_.find(local_key);
-  if (it != channels_by_local_cid_.end()) {
-    L2capChannel& previous = it->second;
-    if (!previous.IsStale()) {
-      PW_LOG_WARN(
-          "Attempt to register channel that matches an existing channel: %#x "
-          "(local CID: %#x, remote CID: %#x)",
-          channel.connection_handle(),
-          channel.local_cid(),
-          channel.remote_cid());
-      return Status::AlreadyExists();
+  auto local_it = channels_by_local_cid_.find(local_key);
+  L2capChannel* existing_local =
+      local_it != channels_by_local_cid_.end() ? &local_it->second : nullptr;
+  auto remote_it = channels_by_remote_cid_.find(remote_key);
+  L2capChannel* existing_remote =
+      remote_it != channels_by_remote_cid_.end() ? remote_it->second : nullptr;
+
+  if ((existing_local != nullptr && !existing_local->IsStale()) ||
+      (existing_remote != nullptr && !existing_remote->IsStale())) {
+    PW_LOG_WARN(
+        "Attempt to register channel that matches an existing channel: %#x "
+        "(local CID: %#x, remote CID: %#x)",
+        channel.connection_handle(),
+        channel.local_cid(),
+        channel.remote_cid());
+    return Status::AlreadyExists();
+  }
+
+  if (existing_local != nullptr) {
+    if (existing_remote == existing_local) {
+      existing_remote = nullptr;
     }
-    auto deregistered_node = DeregisterChannelLocked(previous);
+    auto deregistered_node = DeregisterChannelLocked(*existing_local);
+    deregistered_node->mapped().Close();
+  }
+
+  if (existing_remote != nullptr) {
+    auto deregistered_node = DeregisterChannelLocked(*existing_remote);
     deregistered_node->mapped().Close();
   }
 

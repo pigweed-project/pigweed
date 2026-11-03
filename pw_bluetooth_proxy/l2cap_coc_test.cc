@@ -76,6 +76,109 @@ TEST_F(L2capCocTest, CannotCreateChannelWithInvalidArgs) {
             PW_STATUS_INVALID_ARGUMENT);
 }
 
+TEST_F(L2capCocTest, DuplicateRemoteCidReturnsAlreadyExistsAndEvictsStale) {
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [](H4PacketWithH4&&) {});
+  auto* allocator = GetProxyHostAllocator();
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/0,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              allocator);
+  StartDispatcherOnCurrentThread(proxy);
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  constexpr uint16_t kLocalCid1 = 0x0040;
+  constexpr uint16_t kLocalCid2 = 0x0041;
+  constexpr uint16_t kLocalCid3 = 0x0042;
+  constexpr uint16_t kRemoteCid1 = 0x0060;
+  constexpr uint16_t kRemoteCid2 = 0x0061;
+
+  // Register first active channel on (kLocalCid1, kRemoteCid1).
+  std::optional<L2capCoc> channel1 = BuildCoc(proxy,
+                                              CocParameters{
+                                                  .handle = kConnectionHandle,
+                                                  .local_cid = kLocalCid1,
+                                                  .remote_cid = kRemoteCid1,
+                                              });
+
+  // Attempting to register a channel with a distinct local_cid but duplicate
+  // active remote_cid must return AlreadyExists instead of crashing.
+  EXPECT_EQ(BuildCocWithResult(proxy,
+                               CocParameters{
+                                   .handle = kConnectionHandle,
+                                   .local_cid = kLocalCid2,
+                                   .remote_cid = kRemoteCid1,
+                               })
+                .status(),
+            Status::AlreadyExists());
+
+  // Attempting to register a channel with remote_cid colliding with the
+  // internal LE signaling channel (0x0005) must also return AlreadyExists.
+  EXPECT_EQ(BuildCocWithResult(proxy,
+                               CocParameters{
+                                   .handle = kConnectionHandle,
+                                   .local_cid = kLocalCid2,
+                                   .remote_cid = static_cast<uint16_t>(
+                                       emboss::L2capFixedCid::LE_U_SIGNALING),
+                               })
+                .status(),
+            Status::AlreadyExists());
+
+  // Make channel1 stale by destroying the client handle.
+  channel1.reset();
+
+  // Registering a new channel with a distinct local_cid (kLocalCid2) and the
+  // stale channel's remote_cid (kRemoteCid1) should evict the stale channel
+  // and succeed.
+  pw::Result<L2capCoc> channel2_res =
+      BuildCocWithResult(proxy,
+                         CocParameters{
+                             .handle = kConnectionHandle,
+                             .local_cid = kLocalCid2,
+                             .remote_cid = kRemoteCid1,
+                         });
+  PW_TEST_ASSERT_OK(channel2_res);
+  std::optional<L2capCoc> channel2 = std::move(channel2_res.value());
+
+  // Register another channel on (kLocalCid3, kRemoteCid2), then make both
+  // channel2 and channel3 stale.
+  std::optional<L2capCoc> channel3 = BuildCoc(proxy,
+                                              CocParameters{
+                                                  .handle = kConnectionHandle,
+                                                  .local_cid = kLocalCid3,
+                                                  .remote_cid = kRemoteCid2,
+                                              });
+  channel2.reset();
+  channel3.reset();
+
+  // Registering a channel whose local_cid collides with stale channel2
+  // (kLocalCid2) and whose remote_cid collides with stale channel3
+  // (kRemoteCid2) should evict both stale channels and succeed.
+  pw::Result<L2capCoc> channel4_res =
+      BuildCocWithResult(proxy,
+                         CocParameters{
+                             .handle = kConnectionHandle,
+                             .local_cid = kLocalCid2,
+                             .remote_cid = kRemoteCid2,
+                         });
+  PW_TEST_ASSERT_OK(channel4_res);
+  std::optional<L2capCoc> channel4 = std::move(channel4_res.value());
+  channel4.reset();
+
+  // Registering a channel that collides with the same stale channel on both
+  // local_cid and remote_cid should evict it once and succeed.
+  PW_TEST_EXPECT_OK(BuildCocWithResult(proxy,
+                                       CocParameters{
+                                           .handle = kConnectionHandle,
+                                           .local_cid = kLocalCid2,
+                                           .remote_cid = kRemoteCid2,
+                                       }));
+}
+
 TEST_F(L2capCocTest, CanDeleteChannelInEventCallback) {
   pw::Function<void(H4PacketWithHci && packet)>&& send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});

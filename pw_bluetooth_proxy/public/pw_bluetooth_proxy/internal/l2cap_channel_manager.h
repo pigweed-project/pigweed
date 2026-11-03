@@ -285,7 +285,7 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   // @returns
   // * @OK: Channel was registered.
   // * @ALREADY_EXISTS: An active channel with the same connection handle, local
-  //                    CID, and remote CID is already registered.
+  //                    CID, or remote CID is already registered.
   Status RegisterChannel(UniquePtr<L2capChannelNode>&& node)
       PW_LOCKS_EXCLUDED(channels_mutex());
 
@@ -294,7 +294,7 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   // @returns
   // * @OK: Channel was registered.
   // * @ALREADY_EXISTS: An active channel with the same connection handle, local
-  // CID, and remote CID is already registered.
+  // CID, or remote CID is already registered.
   Status RegisterChannelLocked(UniquePtr<L2capChannelNode>&& node)
       PW_EXCLUSIVE_LOCKS_REQUIRED(channels_mutex());
 
