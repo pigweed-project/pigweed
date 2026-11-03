@@ -992,6 +992,56 @@ TEST_F(PeerCacheTestBondingTest, RemovingPeerRemovesIrkFromResolvingList) {
   EXPECT_FALSE(NewPeer(rpa, true));
 }
 
+TEST_F(PeerCacheTestBondingTest,
+       StoreLowEnergyBondRemovesPreviousIrkFromResolvingList) {
+  const sm::LTK secure_ltk(sm::SecurityProperties(/*encrypted=*/true,
+                                                  /*authenticated=*/true,
+                                                  /*secure_connections=*/true,
+                                                  sm::kMaxEncryptionKeySize),
+                           hci_spec::LinkKey(UInt128{1}, 2, 3));
+  sm::PairingData data;
+  data.peer_ltk = secure_ltk;
+  data.local_ltk = secure_ltk;
+  data.identity_address = kAddrLePublic;
+  data.irk = sm::Key(sm::SecurityProperties(), Random<UInt128>());
+  EXPECT_TRUE(cache()->StoreLowEnergyBond(peer()->identifier(), data));
+  DeviceAddress rpa = sm::util::GenerateRpa(data.irk->value());
+  EXPECT_EQ(peer(), cache()->FindByAddress(rpa));
+
+  // A rejected bond with lower security shouldn't remove the previous IRK from
+  // the resolving list.
+  sm::PairingData weak_data;
+  weak_data.peer_ltk = kLTK;
+  weak_data.local_ltk = kLTK;
+  EXPECT_FALSE(cache()->StoreLowEnergyBond(peer()->identifier(), weak_data));
+  EXPECT_EQ(peer(), cache()->FindByAddress(rpa));
+
+  // Replacing the bond with one that has a different identity should remove the
+  // previous IRK from the resolving list.
+  sm::PairingData new_data = data;
+  new_data.identity_address = kAddrLeRandom2;
+  new_data.irk = sm::Key(sm::SecurityProperties(), Random<UInt128>());
+  EXPECT_TRUE(cache()->StoreLowEnergyBond(peer()->identifier(), new_data));
+  DeviceAddress new_rpa = sm::util::GenerateRpa(new_data.irk->value());
+  EXPECT_EQ(peer(), cache()->FindByAddress(new_rpa));
+  EXPECT_EQ(nullptr, cache()->FindByAddress(rpa));
+
+  // Replacing the bond with one that has no IRK should remove the previous IRK
+  // from the resolving list.
+  sm::PairingData data_without_irk;
+  data_without_irk.peer_ltk = secure_ltk;
+  data_without_irk.local_ltk = secure_ltk;
+  EXPECT_TRUE(
+      cache()->StoreLowEnergyBond(peer()->identifier(), data_without_irk));
+  EXPECT_EQ(nullptr, cache()->FindByAddress(new_rpa));
+
+  // After the peer is removed, a new peer with the previous identity address
+  // shouldn't be found by an RPA generated from the previous IRK.
+  EXPECT_TRUE(cache()->RemoveDisconnectedPeer(peer()->identifier()));
+  ASSERT_TRUE(NewPeer(kAddrLeRandom2, /*connectable=*/true));
+  EXPECT_EQ(nullptr, cache()->FindByAddress(new_rpa));
+}
+
 TEST_F(PeerCacheTestBondingTest, StoreLowEnergyBondWithXTransportKeyNoBrEdr) {
   // There's no preexisting BR/EDR data, the LE peer already exists.
   sm::PairingData data;

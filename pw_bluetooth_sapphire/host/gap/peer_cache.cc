@@ -199,11 +199,28 @@ bool PeerCache::StoreLowEnergyBond(PeerId identifier,
     // maps to this peer.
   }
 
+  // SetBondData() overwrites the previous bond and can reject the new one, so
+  // update the resolving list only after it succeeds.
+  std::optional<DeviceAddress> previous_identity;
+  if (peer->le() && peer->le()->bonded()) {
+    previous_identity = peer->le()->bond_data()->identity_address;
+  }
+
   if (!peer->MutLe().SetBondData(bond_data)) {
     return false;
   }
   PW_DCHECK(!peer->temporary());
   PW_DCHECK(peer->le()->bonded());
+
+  // Remove the previous bond's IRK unless the new IRK overwrites it under the
+  // same identity address below.
+  if (previous_identity) {
+    bool overwrites_previous_irk =
+        bond_data.irk && bond_data.identity_address == previous_identity;
+    if (!overwrites_previous_irk) {
+      le_resolving_list_.Remove(*previous_identity);
+    }
+  }
 
   // Add the peer to the resolving list if it has an IRK.
   if (peer->identity_known() && bond_data.irk) {
