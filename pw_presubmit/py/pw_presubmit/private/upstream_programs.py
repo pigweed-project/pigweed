@@ -20,6 +20,7 @@ from pw_presubmit import (
     cpp_checks,
     json_check,
     keep_sorted,
+    rst_checks,
     upstream_checks,
 )
 from pw_presubmit.format.step import format_steps
@@ -69,6 +70,7 @@ QUICK_COMMON = (
     # javascript_checks.eslint,
     json_check.presubmit_check,
     keep_sorted.presubmit_check,
+    rst_checks.presubmit_check,
     upstream_checks.todo_check_with_exceptions,
 )
 

@@ -352,6 +352,13 @@ JSON
 The JSON check requires all ``*.json`` files to be valid JSON files. It can be
 included by adding ``json_check.presubmit_check()`` to a presubmit program.
 
+reStructuredText
+================
+The reStructuredText check validates ``*.rst`` syntax with ``docutils`` and
+``code-block`` highlighting with ``pygments`` when those packages are installed.
+It can be included by adding ``rst_checks.presubmit_check`` to a presubmit
+program (with ``@pigweed//pw_presubmit/py:rst_checks`` in Bazel).
+
 Source in build
 ===============
 Pigweed provides checks that source files are configured as part of the build

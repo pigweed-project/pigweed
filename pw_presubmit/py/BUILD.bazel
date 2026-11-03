@@ -93,6 +93,18 @@ pw_py_library(
     ],
 )
 
+# Separate library so :pw_presubmit stays free of docutils/pygments deps.
+pw_py_library(
+    name = "rst_checks",
+    srcs = ["pw_presubmit/rst_checks.py"],
+    imports = ["."],
+    deps = [
+        ":pw_presubmit",
+        "@pigweed_python_packages//docutils",
+        "@pigweed_python_packages//pygments",
+    ],
+)
+
 # Use a separate library to isolate the pw_package and transitive
 # pw_env_setup_private deps, which are not supported in the Bazel build.
 pw_py_library(
@@ -129,6 +141,7 @@ pw_py_library(
     deps = [
         ":formatters",
         ":pw_presubmit",
+        ":rst_checks",
     ],
 )
 
@@ -802,6 +815,15 @@ pw_py_test(
     srcs = ["owners_checks_test.py"],
     deps = [
         ":pw_presubmit",
+    ],
+)
+
+pw_py_test(
+    name = "rst_checks_test",
+    srcs = ["rst_checks_test.py"],
+    deps = [
+        ":pw_presubmit",
+        ":rst_checks",
     ],
 )
 
