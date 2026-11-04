@@ -1397,15 +1397,16 @@ class DocsTree:
        `bazelisk run //docs/common/metadata:sync`), where the main Sphinx site
        sources live under `<root>/docs/sphinx/`, module and target docs live in
        their own top-level directories (`<root>/pw_*/`, `<root>/targets/`), and
-       built Doxygen/rustdoc outputs live in Bazel runfiles or `bazel-bin/`.
+       built Doxygen/rustdoc outputs are passed in via CLI flags.
     2. The hermetic Sphinx source tree assembled by Bazel (`for_sphinx_srcdir`,
        used by `validate.py` during `bazelisk build //docs`), where
        `sphinx_docs` in `//docs/sphinx/BUILD.bazel` sets
        `strip_prefix = "docs/sphinx/"` so the contents of `//docs/sphinx/` sit
        directly at `<srcdir>/`, files from other `sphinx_docs_library` targets
-       sit at `<srcdir>/<repo-relpath>`, Doxygen and rustdoc outputs are mounted
-       at `<srcdir>/doxygen/api/cc/` and `<srcdir>/rustdoc/rustdoc/`, and
-       `BUILD.bazel` files are not copied into `<srcdir>/` at all.
+       sit at `<srcdir>/<repo-relpath>`, the Doxygen tagfile and rustdoc outputs
+       are mounted at `<srcdir>/_doxygen/tag/index.tag` and
+       `<srcdir>/rustdoc/rustdoc/`, and `BUILD.bazel` files are not copied into
+       `<srcdir>/` at all.
     """
 
     sphinx_dir: Path
@@ -1418,26 +1419,20 @@ class DocsTree:
     workspace_root: Path | None = None
 
     @classmethod
-    def for_workspace(cls, root: Path) -> DocsTree:
+    def for_workspace(
+        cls,
+        root: Path,
+        *,
+        doxygen_tagfile: Path,
+        rustdoc_dir: Path,
+    ) -> DocsTree:
         """The files in a Pigweed checkout."""
-        runfiles_tag = Path("docs/doxygen/html/index.tag").resolve()
-        doxygen_tagfile = (
-            runfiles_tag
-            if runfiles_tag.is_file()
-            else root / "bazel-bin/docs/doxygen/html/index.tag"
-        )
-        runfiles_rustdoc = Path("pw_rust/docs.rustdoc").resolve()
-        rustdoc_dir = (
-            runfiles_rustdoc
-            if runfiles_rustdoc.is_dir()
-            else root / "bazel-bin/pw_rust/docs.rustdoc"
-        )
         return cls(
             sphinx_dir=root / "docs/sphinx",
             doxygen_modules_h=root / "docs/doxygen/modules.h",
-            doxygen_tagfile=doxygen_tagfile,
+            doxygen_tagfile=doxygen_tagfile.resolve(),
             rust_lib_rs=root / "pw_rust/rust/pigweed/src/lib.rs",
-            rustdoc_dir=rustdoc_dir,
+            rustdoc_dir=rustdoc_dir.resolve(),
             sphinx_build_bazel=root / "docs/sphinx/BUILD.bazel",
             workspace_root=root,
         )
@@ -1452,7 +1447,7 @@ class DocsTree:
         return cls(
             sphinx_dir=srcdir,
             doxygen_modules_h=srcdir / "docs/doxygen/modules.h",
-            doxygen_tagfile=srcdir / "doxygen/api/cc/index.tag",
+            doxygen_tagfile=srcdir / "_doxygen/tag/index.tag",
             rust_lib_rs=srcdir / "pw_rust/rust/pigweed/src/lib.rs",
             rustdoc_dir=srcdir / "rustdoc/rustdoc",
             workspace_root=srcdir,
@@ -1748,6 +1743,18 @@ def main() -> int:
         action="store_true",
         help="Report out-of-date files instead of updating them.",
     )
+    parser.add_argument(
+        "--doxygen-tagfile",
+        type=Path,
+        required=True,
+        help="Path to the generated Doxygen index.tag file.",
+    )
+    parser.add_argument(
+        "--rustdoc-dir",
+        type=Path,
+        required=True,
+        help="Path to the generated rustdoc directory.",
+    )
     args = parser.parse_args()
 
     try:
@@ -1756,7 +1763,11 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     meta = Metadata.load(root)
-    tree = DocsTree.for_workspace(root)
+    tree = DocsTree.for_workspace(
+        root,
+        doxygen_tagfile=args.doxygen_tagfile,
+        rustdoc_dir=args.rustdoc_dir,
+    )
 
     issues = meta.validate()
     if issues:

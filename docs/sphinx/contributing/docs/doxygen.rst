@@ -181,7 +181,7 @@ fix, the second item the second most probable, etc.
 General tips:
 
 * The `tagfile <https://www.doxygen.nl/manual/external.html>`_ generated at
-  ``//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/index.tag`` indexes
+  ``//bazel-bin/docs/doxygen/tag/index.tag`` indexes
   all *documented* public API symbols. Note that ``index.tag`` omits
   undocumented symbols that Doxygen still publishes on module group pages
   (``group__*.html``) when they appear inside ``@module`` or ``@submodule``

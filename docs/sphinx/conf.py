@@ -221,12 +221,9 @@ redirects = json.loads(Path('redirects.json').read_text(encoding='utf-8'))
 templates_path = ['layout']
 exclude_patterns = ['docs/templates/**']
 
-# The location of the generated Doxygen tagfile. Note that this must
-# match the final location of the generated Doxygen HTML from the
-# perspective of the Sphinx build system. The organization of the
-# source files (as Sphinx sees it) can be viewed by running this:
-# bazelisk build //docs:sources
-tagfile_path = os.path.abspath('doxygen/api/cc/index.tag')
+# The location of the generated Doxygen tagfile in the Sphinx source tree
+# (`bazelisk build //docs:sources`).
+tagfile_path = str(_SPHINX_DIR / '_doxygen/tag/index.tag')
 # The relative path that Doxylink should use when creating links.
 doxygen_site_path = './api/cc'
 doxylink = {

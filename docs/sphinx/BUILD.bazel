@@ -554,5 +554,6 @@ sphinx_docs(
         ":static",
         "//docs/common",
         "//docs/doxygen:html",
+        "//docs/doxygen:tagfile",
     ],
 )

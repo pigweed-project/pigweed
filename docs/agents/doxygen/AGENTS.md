@@ -64,7 +64,7 @@ Every `@module` and `@submodule` annotation must have an accompanying
      that all public APIs are present and no internal symbols or private macros
      leaked onto the page.
    * The [tagfile](https://www.doxygen.nl/manual/external.html) at
-     `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/index.tag` indexes
+     `//bazel-bin/docs/doxygen/tag/index.tag` indexes
      *documented* symbols, but omits undocumented symbols inside `@module` or
      `@submodule` blocks. Do not rely on `index.tag` alone to verify that
      internal symbols were excluded.

@@ -126,7 +126,7 @@ GENERATE_LATEX         = NO
 # https://github.com/TendTo/rules_doxygen/blob/main/docs/doxygen_doc.md
 #
 # https://www.doxygen.nl/manual/config.html#cfg_generate_tagfile
-GENERATE_TAGFILE       = {{OUTDIR}}/html/index.tag
+GENERATE_TAGFILE       = {{OUTDIR}}/tag/index.tag
 
 # https://www.doxygen.nl/manual/config.html#cfg_generate_testlist
 GENERATE_TESTLIST      = NO

@@ -36,8 +36,12 @@ pw_py_library(
 pw_py_binary(
     name = "sync",
     srcs = ["sync.py"],
+    args = [
+        "--doxygen-tagfile=$(rootpath //docs/doxygen:_tag)/index.tag",
+        "--rustdoc-dir=$(rootpath //pw_rust:docs_dir)",
+    ],
     data = [
-        "//docs/doxygen:_html_1",
+        "//docs/doxygen:_tag",
         "//pw_rust:docs_dir",
     ],
     main = "sync.py",
