@@ -58,8 +58,10 @@ def _platform_settings(settings, platform):
 def _target_transition_impl(settings, attr):
     return _platform_settings(settings, attr.platform) | {
         str(Label("//pw_kernel/userspace:userspace_build")): attr.userspace,
-        # Only unittests should ever enable tests
-        str(Label("//pw_kernel:enable_tests")): False,
+        # Only unit-test runner images should ever enable tests. Pin the flag
+        # here so a global `--//pw_kernel:enable_tests=true` (e.g. from
+        # `bazel test --config=k_*`) never leaks tests into a shipping image.
+        str(Label("//pw_kernel:enable_tests")): attr.enable_tests,
     }
 
 _target_transition = transition(
@@ -77,7 +79,7 @@ def _app_target_transition_impl(settings, attr):
     return _platform_settings(settings, attr.platform) | {
         str(Label("//pw_kernel/userspace:userspace_build")): True,
         str(Label("//pw_kernel/userspace:is_app_build")): True,
-        # Only unittests should ever enable tests
+        # Apps never carry kernel unit tests, even in a unit-test runner image.
         str(Label("//pw_kernel:enable_tests")): False,
     }
 
@@ -471,6 +473,13 @@ _system_image = rule(
             doc = "The `<name>.apps` target that compiles this image's apps.",
             allow_files = True,
         ),
+        "enable_tests": attr.bool(
+            doc = "Compile the kernel with `//pw_kernel:enable_tests` so a " +
+                  "`unittest_core::run_all_tests!()` runner discovers the " +
+                  "kernel's unit tests. Only for unit-test runner images; " +
+                  "never set this on a shipping image.",
+            default = False,
+        ),
         "kernel": attr.label(
             doc = "Kernel image.",
             allow_single_file = True,
@@ -499,7 +508,15 @@ _system_image = rule(
     doc = "Assemble a system image combining apps and kernel.",
 )
 
-def system_image(name, kernel, platform, apps = None, system_config = None, userspace = True, **kwargs):
+def system_image(
+        name,
+        kernel,
+        platform,
+        apps = None,
+        system_config = None,
+        userspace = True,
+        enable_tests = False,
+        **kwargs):
     """Assembles a bootable system image containing the kernel and applications.
 
     Args:
@@ -511,6 +528,10 @@ def system_image(name, kernel, platform, apps = None, system_config = None, user
             against; required if `apps` is provided. The kernel receives its
             config via `target_codegen` / `target_linker_script`.
         userspace: Whether to enable userspace support in the kernel.
+        enable_tests: Whether to compile the kernel's unit tests into the
+            kernel. Set this only on unit-test runner images whose kernel
+            binary calls `unittest_core::run_all_tests!()`; `system_image`
+            otherwise forces tests off regardless of the command line.
         **kwargs: Target attributes (`tags`, `visibility`, etc.).
     """
     target_compatible_with = kwargs.pop("target_compatible_with", [])
@@ -543,6 +564,7 @@ def system_image(name, kernel, platform, apps = None, system_config = None, user
         kernel = kernel,
         platform = platform,
         userspace = userspace,
+        enable_tests = enable_tests,
         target_compatible_with = target_compatible_with,
         **kwargs
     )
