@@ -34,6 +34,14 @@ _ZEPHYR_COMMIT_SHA = '169fd6a4a98eafcee0212242b0ad5ee533bbb883'
 # END-ZEPHYR-ROLL-METADATA
 
 
+def _comment_out_requirement(req_file: pathlib.Path, package: str) -> None:
+    """Comments out a package in a pip requirements file."""
+    text = req_file.read_text(encoding='utf-8')
+    req_file.write_text(
+        text.replace(f'\n{package}', f'\n# {package}'), encoding='utf-8'
+    )
+
+
 class Zephyr(pw_package.git_repo.GitRepo):
     """Install and check status of Zephyr."""
 
@@ -134,11 +142,19 @@ class Zephyr(pw_package.git_repo.GitRepo):
             #   click, cryptography, setuptools
             # spsdk is specified in the zephyr requirements-extras.txt file:
             # https://github.com/zephyrproject-rtos/zephyr/blob/main/scripts/requirements-extras.txt
-            req_extras = pathlib.Path(f'{path}/scripts/requirements-extras.txt')
-            modified_extras = req_extras.read_text(encoding='utf-8').replace(
-                '\nspsdk', '\n# spsdk'
+            _comment_out_requirement(
+                path / 'scripts' / 'requirements-extras.txt', 'spsdk'
             )
-            req_extras.write_text(modified_extras, encoding='utf-8')
+
+            # tree-sitter-cmake is only used by Zephyr's compliance checks. It
+            # ships as an sdist only, so pip must compile it, and the CIPD
+            # Python points pip at a compiler that isn't installed on the bots.
+            # It is specified in the zephyr requirements-compliance.txt file:
+            # https://github.com/zephyrproject-rtos/zephyr/blob/main/scripts/requirements-compliance.txt
+            _comment_out_requirement(
+                path / 'scripts' / 'requirements-compliance.txt',
+                'tree-sitter-cmake',
+            )
 
             subprocess.check_call(
                 [

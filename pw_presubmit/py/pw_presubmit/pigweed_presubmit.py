@@ -561,13 +561,33 @@ gn_fuzz_build = PigweedGnGenNinja(
 )
 
 
+def _zephyr_llvm_toolchain_variant(zephyr_base: Path) -> str:
+    """Returns the ZEPHYR_TOOLCHAIN_VARIANT for the host LLVM toolchain.
+
+    Upstream Zephyr commit 180f667812fe ("cmake: toolchain: combine host
+    variants") folded the standalone ``llvm`` variant into the ``host`` variant,
+    moving ``cmake/toolchain/llvm`` to ``cmake/toolchain/host/llvm``. Newer
+    Zephyr trees therefore need ``host/llvm``, while older trees only know
+    ``llvm``. Check which layout the installed Zephyr uses so this works on both
+    sides of a Zephyr roll.
+    """
+    # TODO: b/581957244 - Remove this helper and set 'host/llvm' directly once
+    # the Zephyr pin includes 180f667812fe.
+    if (zephyr_base / 'cmake' / 'toolchain' / 'host' / 'llvm').is_dir():
+        return 'host/llvm'
+    return 'llvm'
+
+
 def _env_with_zephyr_vars(ctx: PresubmitContext) -> dict:
     """Returns the environment variables with ... set for Zephyr."""
     env = os.environ.copy()
     # Set some variables here.
-    env['ZEPHYR_BASE'] = str(ctx.package_root / 'zephyr')
+    zephyr_base = ctx.package_root / 'zephyr'
+    env['ZEPHYR_BASE'] = str(zephyr_base)
     env['ZEPHYR_MODULES'] = str(ctx.root)
-    env['ZEPHYR_TOOLCHAIN_VARIANT'] = 'llvm'
+    env['ZEPHYR_TOOLCHAIN_VARIANT'] = _zephyr_llvm_toolchain_variant(
+        zephyr_base
+    )
     return env
 
 
