@@ -76,6 +76,13 @@ func ValidateAuthStatusJSONFields(fieldsStr string) ([]string, error) {
 	return fields, nil
 }
 
+func luciStatusRemediation(mode AuthMode) string {
+	if hasUsableSSOCredHelper() {
+		return fmt.Sprintf("Run 'gcert' to refresh corp SSO credentials, or '%s'", luciAuthLoginCommand(mode))
+	}
+	return fmt.Sprintf("Run '%s'", luciAuthLoginCommand(mode))
+}
+
 // CheckAuthStatus probes Gerrit, LUCI Buildbucket/LogDog, and Buganizer authentication
 // and returns a structured AuthStatusReport.
 func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport, error) {
@@ -193,7 +200,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 			luciStatus.Method = "none"
 			if mode == AuthModeGoogler {
 				luciStatus.Message = fmt.Sprintf("No active OAuth2 token for %s (required in googler mode to view internal tryjobs)", bbHost)
-				luciStatus.Remediation = fmt.Sprintf("Run 'gcert' to refresh corp SSO credentials, or '%s'", luciAuthLoginCommand(mode))
+				luciStatus.Remediation = luciStatusRemediation(mode)
 			} else {
 				luciStatus.Message = fmt.Sprintf("Unauthenticated on %s (public builders visible; internal builders hidden)", bbHost)
 				luciStatus.Remediation = fmt.Sprintf("Optional (for internal builders): run '%s'", luciAuthLoginCommand(mode))
@@ -242,7 +249,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 			buganizerStatus.Authenticated = false
 			buganizerStatus.Method = "none"
 			buganizerStatus.Message = fmt.Sprintf("No active Buganizer OAuth2 token for %s", issueHost)
-			buganizerStatus.Remediation = fmt.Sprintf("Run 'gcert' to refresh corp SSO credentials, or '%s'", luciAuthLoginCommand(mode))
+			buganizerStatus.Remediation = luciStatusRemediation(mode)
 		}
 	}
 

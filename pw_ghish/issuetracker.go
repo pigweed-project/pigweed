@@ -28,7 +28,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -305,7 +304,7 @@ func (rt *gossoRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	var args []string
-	if runtime.GOOS == "linux" {
+	if isLOASLinux() {
 		args = append(args, "-loas")
 	}
 	args = append(args, "-dump_headers", "-method", req.Method)
@@ -417,13 +416,12 @@ func ResolveIssueTrackerTokenWithSource(ctx context.Context) (string, string, er
 		"failed to authenticate with Google Issue Tracker: no OAuth2 token found.\n\n"+
 			"Cause: Neither GHISH_ISSUE_TOKEN/BUGANIZER_TOKEN is set nor did luci-auth return a token: %v\n\n"+
 			"Remediation:\n"+
-			"  1. Corp Linux: run 'gcert' (sso-cred-helper lets luci-auth mint tokens). Otherwise:\n"+
-			"     %s\n"+
+			"%s\n"+
 			"  2. Or provide a token explicitly:\n"+
 			"     export GHISH_ISSUE_TOKEN=\"<token>\"\n"+
 			"  3. Check authentication status:\n"+
 			"     gh auth status",
-		err, luciAuthLoginCommandForScope(ctx, ScopeBuganizer))
+		err, luciAuthTokenRemediationStep1(luciAuthLoginCommandForScope(ctx, ScopeBuganizer)))
 }
 
 // IssueTrackerTokenResolver resolves an Issue Tracker OAuth2 token and its source.
@@ -575,10 +573,12 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 		return fmt.Errorf("Google Issue Tracker authentication failed (HTTP %d) for %s %s.\n\n"+
 			"Cause: Your current OAuth token was rejected or lacks the 'https://www.googleapis.com/auth/buganizer' scope.\n\n"+
 			"Remediation:\n"+
-			"  1. Re-authenticate with LUCI Auth (Corp Linux: run 'gcert'):\n"+
-			"     %s\n"+
+			"%s\n"+
 			"  2. Or check if this issue belongs to a restricted internal component.\n\n"+
-			"Server Details: %s", resp.StatusCode, method, path, luciAuthLoginCommandForScope(ctx, ScopeBuganizer), rawErr)
+			"Server Details: %s",
+			resp.StatusCode, method, path,
+			luciAuthTokenRemediationStep1(luciAuthLoginCommandForScope(ctx, ScopeBuganizer)),
+			rawErr)
 	}
 
 	if resp.StatusCode == http.StatusNotFound {

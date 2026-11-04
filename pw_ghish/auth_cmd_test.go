@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -151,6 +152,42 @@ func TestAuthStatus_GooglerFailsWithExitCode4WhenLUCIUnauthenticated(t *testing.
 	if !strings.Contains(err.Error(), "luci-auth login") {
 		t.Errorf("expected luci-auth login remediation in error, got: %v", err)
 	}
+
+	t.Run("omits gcert remediation on GOOGLE_ROLE=laptop even when sso-cred-helper is installed", func(t *testing.T) {
+		for _, tc := range []struct {
+			name      string
+			lsb       string
+			wantGcert bool
+		}{
+			{name: "desktop", lsb: "GOOGLE_ROLE=desktop\n", wantGcert: true},
+			{name: "laptop", lsb: "GOOGLE_ROLE=laptop\n", wantGcert: false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				withHostRoleForTest(t, "linux", tc.lsb, true)
+				WithHermeticAuth(t, AuthResolvers{
+					LookPath: func(file string) (string, error) {
+						if file == ssoCredHelperPath {
+							return ssoCredHelperPath, nil
+						}
+						return "", os.ErrNotExist
+					},
+					LUCIToken: func(context.Context) (string, string, error) {
+						return "", "", errors.New("not logged in")
+					},
+					IssueTrackerToken: func(context.Context) (string, string, error) {
+						return "", "", errors.New("not logged in")
+					},
+				})
+				out, runErr := executeCommand(RootCmd, "auth", "status", "--auth-mode", "googler")
+				if runErr == nil {
+					t.Fatalf("expected error, got nil\nOutput:\n%s", out)
+				}
+				if got := strings.Contains(out, "Run 'gcert'"); got != tc.wantGcert {
+					t.Errorf("output contains \"Run 'gcert'\" = %v, want %v:\n%s", got, tc.wantGcert, out)
+				}
+			})
+		}
+	})
 }
 
 // TestAuthStatus_AccountIDOnly checks that an account with only an ID is

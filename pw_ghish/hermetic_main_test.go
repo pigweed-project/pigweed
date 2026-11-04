@@ -49,6 +49,8 @@ func TestMain(m *testing.M) {
 	// luci-auth token. TestResolveGerritAuth_LoopbackNotMintedInProduction
 	// covers the production default.
 	allowLoopbackGerritAuthForTests = true
+	runtimeGOOS = "linux"
+	lsbReleasePath = "/nonexistent/hermetic-lsb-release"
 	setCacheEnv(hermeticCacheEnv())
 	failClosed := failClosedAuthResolvers()
 	SetAuthResolvers(failClosed)

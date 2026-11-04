@@ -446,6 +446,27 @@ var gerritPolicyCases = []gerritPolicyCase{
 	{name: "community/luci/loopback", mode: "community", host: "loopback", want: GerritAuth{Dynamic: true, AllowAnonymousFallback: true, modeReason: "--auth-mode=community"}, wantDesc: "token (luci-auth)", wantMints: 1},
 }
 
+func withHostRoleForTest(t *testing.T, goos, lsbRelease string, hasLSBFile bool) {
+	t.Helper()
+	prevGOOS, prevPath := runtimeGOOS, lsbReleasePath
+	t.Cleanup(func() {
+		runtimeGOOS = prevGOOS
+		lsbReleasePath = prevPath
+		laptopRoleCache.ResetMemory()
+	})
+	runtimeGOOS = goos
+	if !hasLSBFile {
+		lsbReleasePath = filepath.Join(t.TempDir(), "missing-lsb-release")
+	} else {
+		p := filepath.Join(t.TempDir(), "lsb-release")
+		if err := os.WriteFile(p, []byte(lsbRelease), 0o600); err != nil {
+			t.Fatalf("os.WriteFile(%q): %v", p, err)
+		}
+		lsbReleasePath = p
+	}
+	laptopRoleCache.ResetMemory()
+}
+
 func setupGerritPolicyCase(t *testing.T, tc gerritPolicyCase) *int {
 	t.Helper()
 	mints := new(int)
@@ -895,12 +916,16 @@ func TestDefaultGerritToken_ModeScopes(t *testing.T) {
 func TestOAuthTokenCommand_AutoConfiguresSSOCredHelper(t *testing.T) {
 	tests := []struct {
 		name           string
+		goos           string
+		lsbRelease     string
+		hasLSBFile     bool
 		hasHelper      bool
 		lookPathErr    error
 		envSet         bool
 		envVal         string
 		bin            string
 		args           []string
+		wantLaptop     bool
 		wantInjectedTo string
 	}{
 		{
@@ -911,11 +936,31 @@ func TestOAuthTokenCommand_AutoConfiguresSSOCredHelper(t *testing.T) {
 			wantInjectedTo: ssoCredHelperPath,
 		},
 		{
-			name:           "injects for resolved absolute luci-auth path",
+			name:           "injects for resolved absolute luci-auth path on GOOGLE_ROLE=desktop",
+			lsbRelease:     "DISTRIB_ID=gLinux\nGOOGLE_ROLE=desktop\n",
+			hasLSBFile:     true,
 			hasHelper:      true,
 			bin:            "/opt/cipd/packages/luci/luci-auth",
 			args:           []string{"token"},
 			wantInjectedTo: ssoCredHelperPath,
+		},
+		{
+			name:       "skips injection on GOOGLE_ROLE=laptop",
+			lsbRelease: "DISTRIB_ID=gLinux\nGOOGLE_ROLE=\"laptop\"\n",
+			hasLSBFile: true,
+			hasHelper:  true,
+			bin:        "luci-auth",
+			args:       []string{"token"},
+			wantLaptop: true,
+		},
+		{
+			name:       "darwin ignores /etc/lsb-release and skips Linux sso-cred-helper",
+			goos:       "darwin",
+			lsbRelease: "GOOGLE_ROLE=laptop\n",
+			hasLSBFile: true,
+			hasHelper:  true,
+			bin:        "luci-auth",
+			args:       []string{"token"},
 		},
 		{
 			name:      "preserves existing LUCI_AUTH_CREDENTIAL_HELPER when already set",
@@ -955,6 +1000,11 @@ func TestOAuthTokenCommand_AutoConfiguresSSOCredHelper(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			goos := tc.goos
+			if goos == "" {
+				goos = "linux"
+			}
+			withHostRoleForTest(t, goos, tc.lsbRelease, tc.hasLSBFile)
 			WithHermeticAuth(t, AuthResolvers{
 				LookPath: func(file string) (string, error) {
 					if tc.lookPathErr != nil {
@@ -970,6 +1020,10 @@ func TestOAuthTokenCommand_AutoConfiguresSSOCredHelper(t *testing.T) {
 			t.Setenv("LUCI_AUTH_CREDENTIAL_HELPER", tc.envVal)
 			if !tc.envSet {
 				_ = os.Unsetenv("LUCI_AUTH_CREDENTIAL_HELPER")
+			}
+
+			if got := isLaptopRole(); got != tc.wantLaptop {
+				t.Errorf("isLaptopRole() = %v, want %v", got, tc.wantLaptop)
 			}
 
 			cmd := newOAuthTokenCommand(t.Context(), tc.bin, tc.args...)
@@ -991,6 +1045,47 @@ func TestOAuthTokenCommand_AutoConfiguresSSOCredHelper(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("remediation and auth-mode auto-detection respect host role", func(t *testing.T) {
+		for _, tc := range []struct {
+			name      string
+			goos      string
+			lsb       string
+			hasHelper bool
+			wantMode  AuthMode
+			wantHint  bool
+		}{
+			{"LOAS linux", "linux", "GOOGLE_ROLE=desktop\n", true, AuthModeGoogler, true},
+			{"external linux without helper", "linux", "", false, AuthModeCommunity, false},
+			{"laptop linux", "linux", "GOOGLE_ROLE='laptop'\n", true, AuthModeGoogler, false},
+			{"darwin", "darwin", "GOOGLE_ROLE=laptop\n", true, AuthModeCommunity, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				withHostRoleForTest(t, tc.goos, tc.lsb, tc.lsb != "")
+				WithHermeticAuth(t, AuthResolvers{
+					LookPath: func(file string) (string, error) {
+						if tc.hasHelper && file == ssoCredHelperPath {
+							return ssoCredHelperPath, nil
+						}
+						return "", os.ErrNotExist
+					},
+				})
+				mockGit := &MockGitRunner{}
+				mockGit.OnCommand("config --get user.email", "contributor@example.com\n")
+				mode, _, err := ResolveAuthMode(t.Context(), &Config{Git: mockGit})
+				if err != nil || mode != tc.wantMode {
+					t.Errorf("ResolveAuthMode() = (%q, %v), want %q", mode, err, tc.wantMode)
+				}
+				step1 := luciAuthTokenRemediationStep1("luci-auth login")
+				if got := strings.Contains(step1, "gcert"); got != tc.wantHint {
+					t.Errorf("remediation mentions gcert = %v, want %v:\n%s", got, tc.wantHint, step1)
+				}
+				if strings.Contains(step1, "sso-cred-helper") {
+					t.Errorf("user-facing remediation unexpectedly mentions sso-cred-helper:\n%s", step1)
+				}
+			})
+		}
+	})
 }
 
 func TestResolveAuthMode_RemovedAuthMethodEnv(t *testing.T) {

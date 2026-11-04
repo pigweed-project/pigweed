@@ -577,10 +577,23 @@ func TestTrustedURLsAndLogStreamAuth(t *testing.T) {
 		t.Errorf("fetchLogStreamTail(missing googler token) = %v (code %d), want ExitCodeAuth with log auth context", authApplyErr, ExitCodeFor(authApplyErr))
 	}
 
-	// Verify newLUCIHTTPAuthError includes Corp Linux gcert / sso-cred-helper remediation.
+	// Verify newLUCIHTTPAuthError omits gcert on external Linux without sso-cred-helper,
+	// and includes Corp Linux gcert remediation when sso-cred-helper is usable.
+	withHostRoleForTest(t, "linux", "", false)
+	if err3P := newLUCIHTTPAuthError(t.Context(), "LogDog", http.StatusForbidden, []byte("denied")); strings.Contains(err3P.Error(), "gcert") {
+		t.Errorf("newLUCIHTTPAuthError without sso-cred-helper unexpectedly mentioned gcert: %v", err3P)
+	}
+	WithHermeticAuth(t, AuthResolvers{
+		LookPath: func(file string) (string, error) {
+			if file == ssoCredHelperPath {
+				return ssoCredHelperPath, nil
+			}
+			return "", os.ErrNotExist
+		},
+	})
 	httpAuthErr := newLUCIHTTPAuthError(t.Context(), "LogDog", http.StatusForbidden, []byte("denied"))
-	if ExitCodeFor(httpAuthErr) != ExitCodeAuth || !strings.Contains(httpAuthErr.Error(), "gcert") || !strings.Contains(httpAuthErr.Error(), "sso-cred-helper") {
-		t.Errorf("newLUCIHTTPAuthError = %v, want ExitCodeAuth mentioning gcert and sso-cred-helper", httpAuthErr)
+	if ExitCodeFor(httpAuthErr) != ExitCodeAuth || !strings.Contains(httpAuthErr.Error(), "gcert") {
+		t.Errorf("newLUCIHTTPAuthError = %v, want ExitCodeAuth mentioning gcert", httpAuthErr)
 	}
 }
 

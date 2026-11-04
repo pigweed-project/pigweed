@@ -122,10 +122,10 @@ across them based on your :ref:`authentication mode <module-pw_ghish-auth-modes>
 
 To log in:
 
-* **Corp Linux**: Run ``gcert``. No separate ``luci-auth login`` step is needed.
-* **Elsewhere (including macOS)**: Run ``./gh auth status``. It detects your
-  mode and prints the exact ``luci-auth login`` command to run when login is
-  needed (as do authentication errors from any ``./gh`` command).
+* **Corp Linux workstations & Cloudtops**: Run ``gcert``. No separate
+  ``luci-auth login`` step is needed.
+* **Elsewhere** (including Corp Linux laptops with ``GOOGLE_ROLE=laptop`` and
+  macOS): Run ``./gh auth status`` and follow its instructions.
 
 If you are a Googler on a machine detected as ``community`` (for example,
 without Corp tools on ``PATH`` and with a non-``@google.com`` ``user.email``),

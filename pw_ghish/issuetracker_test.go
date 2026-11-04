@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -680,32 +679,48 @@ func TestParseGossoResponse(t *testing.T) {
 		}
 	})
 
-	t.Run("RoundTrip sanitizes CRLF headers", func(t *testing.T) {
-		WithHermeticAuth(t, AuthResolvers{})
+	t.Run("RoundTrip passes -loas only on non-laptop Linux and sanitizes CRLF headers", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			goos     string
+			lsb      string
+			hasLSB   bool
+			wantLOAS bool
+		}{
+			{"linux desktop", "linux", "GOOGLE_ROLE=desktop\n", true, true},
+			{"linux without lsb-release", "linux", "", false, true},
+			{"linux laptop", "linux", "GOOGLE_ROLE=laptop\n", true, false},
+			{"darwin", "darwin", "", false, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				withHostRoleForTest(t, tc.goos, tc.lsb, tc.hasLSB)
+				WithHermeticAuth(t, AuthResolvers{})
 
-		var gotArgs []string
-		rt := &gossoRoundTripper{
-			exec: func(_ context.Context, args ...string) ([]byte, error) {
-				gotArgs = args
-				return []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}"), nil
-			},
-		}
+				var gotArgs []string
+				rt := &gossoRoundTripper{
+					exec: func(_ context.Context, args ...string) ([]byte, error) {
+						gotArgs = args
+						return []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}"), nil
+					},
+				}
 
-		rtReq := req.Clone(t.Context())
-		rtReq.Header.Set("Authorization", "Bearer gosso-token")
-		rtReq.Header.Set("X-Goog-User-Project", "proj\r\nX-CRLF: bad")
+				rtReq := req.Clone(t.Context())
+				rtReq.Header.Set("Authorization", "Bearer gosso-token")
+				rtReq.Header.Set("X-Goog-User-Project", "proj\r\nX-CRLF: bad")
 
-		resp, err := rt.RoundTrip(rtReq)
-		if err != nil {
-			t.Fatalf("RoundTrip: %v", err)
-		}
-		resp.Body.Close()
+				resp, err := rt.RoundTrip(rtReq)
+				if err != nil {
+					t.Fatalf("RoundTrip: %v", err)
+				}
+				resp.Body.Close()
 
-		if got := slices.Contains(gotArgs, "-loas"); got != (runtime.GOOS == "linux") {
-			t.Errorf("slices.Contains(gotArgs, \"-loas\") = %v, want %v (args=%q)", got, runtime.GOOS == "linux", gotArgs)
-		}
-		if !slices.Contains(gotArgs, "X-Goog-User-Project: projX-CRLF: bad") {
-			t.Errorf("expected CRLF-sanitized header in gosso args: %q", gotArgs)
+				if got := slices.Contains(gotArgs, "-loas"); got != tc.wantLOAS {
+					t.Errorf("slices.Contains(gotArgs, \"-loas\") = %v, want %v (args=%q)", got, tc.wantLOAS, gotArgs)
+				}
+				if !slices.Contains(gotArgs, "X-Goog-User-Project: projX-CRLF: bad") {
+					t.Errorf("expected CRLF-sanitized header in gosso args: %q", gotArgs)
+				}
+			})
 		}
 	})
 
@@ -722,6 +737,7 @@ func TestParseGossoResponse(t *testing.T) {
 	})
 
 	t.Run("RoundTrip invokes gosso with expected flags and parses non-2xx on exit status 1", func(t *testing.T) {
+		withHostRoleForTest(t, "darwin", "", false)
 		WithHermeticAuth(t, AuthResolvers{
 			LookPath: func(file string) (string, error) {
 				if file == "gosso" || file == "/usr/local/bin/gosso" {
@@ -784,17 +800,13 @@ func TestParseGossoResponse(t *testing.T) {
 			t.Errorf("expected temp data_file %q to be removed after RoundTrip, stat err = %v", dataPath, err)
 		}
 
-		var wantArgs []string
-		if runtime.GOOS == "linux" {
-			wantArgs = append(wantArgs, "-loas")
-		}
-		wantArgs = append(wantArgs,
+		wantArgs := []string{
 			"-dump_headers", "-method", "POST",
 			"-header", "Accept: application/json",
 			"-header", "Authorization: Bearer gosso-token",
 			"-data_file", dataPath,
 			"-url", "https://issuetracker.corp.googleapis.com/v1/issues",
-		)
+		}
 		if !slices.Equal(gotArgs, wantArgs) {
 			t.Errorf("gosso args = %q, want %q", gotArgs, wantArgs)
 		}

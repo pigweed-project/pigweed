@@ -22,11 +22,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -319,10 +321,11 @@ func (a bearerAuth) apply(req *http.Request) error {
 		return NewExitCodeError(ExitCodeAuth,
 			"%s authentication required in googler mode (%s): no OAuth2 token for %s: %v\n\n"+
 				"Remediation:\n"+
-				"  1. Corp Linux: run 'gcert'. Otherwise run '%s'\n"+
+				"%s\n"+
 				"  2. Check authentication status: gh auth status\n"+
 				"  3. For public projects without internal credentials: export GH_ISH_AUTH_MODE=community",
-			a.service, modeReason, req.URL.Host, firstLine(tokErr.Error()), luciAuthLoginCommand(mode))
+			a.service, modeReason, req.URL.Host, firstLine(tokErr.Error()),
+			luciAuthTokenRemediationStep1(luciAuthLoginCommand(mode)))
 	}
 	return nil
 }
@@ -379,11 +382,11 @@ func newLUCIHTTPAuthError(ctx context.Context, target string, statusCode int, bo
 	return NewExitCodeError(ExitCodeAuth,
 		"%s returned HTTP %d: %s\n\n"+
 			"To authenticate with LUCI:\n"+
-			"  1. Corp Linux: run 'gcert' (sso-cred-helper lets luci-auth mint tokens). Otherwise:\n"+
-			"     %s\n"+
+			"%s\n"+
 			"  2. Or set an OAuth token: export GHISH_LUCI_TOKEN=\"<token>\"\n"+
 			"  3. Check auth status: gh auth status",
-		target, statusCode, strings.TrimSpace(string(body)), luciAuthLoginCommandForScope(ctx, ""))
+		target, statusCode, strings.TrimSpace(string(body)),
+		luciAuthTokenRemediationStep1(luciAuthLoginCommandForScope(ctx, "")))
 }
 
 // newAndroidBuildAuth returns the bearerAuth policy for Android Build API and
@@ -549,7 +552,7 @@ func gerritCredentialSteps(gerritHost string, mode AuthMode) []string {
 	raw := strings.TrimSpace(gerritHost)
 	var steps []string
 	if raw == "" || isGerritAutoAuthHost(hostnameOf(raw)) {
-		if hasSSOCredHelper() {
+		if hasUsableSSOCredHelper() {
 			steps = append(steps, "Run 'gcert' (with sso-cred-helper)")
 		}
 		login := fmt.Sprintf("Run '%s'", luciAuthLoginCommand(mode))
@@ -649,20 +652,82 @@ func resolveGerritClientAuth(ctx context.Context, gerritURL string) (GerritAuth,
 // LUCI_AUTH_CREDENTIAL_HELPER unset.
 const ssoCredHelperPath = "/usr/bin/sso-cred-helper"
 
+type cachedLaptopRole bool
+
+func (cachedLaptopRole) CachePolicy() CachePolicy {
+	return CachePolicy{Tier: CacheInMemory, Name: "laptop_role"}
+}
+
+var (
+	lsbReleasePath  = "/etc/lsb-release"
+	runtimeGOOS     = runtime.GOOS
+	laptopRoleCache = NewCache[string, cachedLaptopRole]()
+)
+
+// isLaptopRole reports whether the local Linux host has GOOGLE_ROLE=laptop in
+// /etc/lsb-release (a gLinux laptop, where local LOAS credential helpers are
+// unavailable even when a gcert certificate is present). The result is
+// memoized in memory for the current lsbReleasePath and cleared by
+// ResetAuthTokenCaches.
+func isLaptopRole() bool {
+	if runtimeGOOS != "linux" {
+		return false
+	}
+	if val, ok := laptopRoleCache.Get(lsbReleasePath); ok {
+		return bool(val)
+	}
+	val := readLaptopRole(lsbReleasePath)
+	laptopRoleCache.Put(lsbReleasePath, cachedLaptopRole(val))
+	return val
+}
+
+func readLaptopRole(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		// OK: /etc/lsb-release is absent on many non-gLinux distributions.
+		slog.Debug("unable to read lsb-release for laptop role check", "path", path, "err", err)
+		return false
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if val, ok := strings.CutPrefix(strings.TrimSpace(line), "GOOGLE_ROLE="); ok {
+			if strings.Trim(strings.TrimSpace(val), `"'`) == "laptop" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isLOASLinux reports whether the local host is a non-laptop Linux workstation
+// where direct LOAS RPC helpers (sso-cred-helper, gosso -loas, git-remote-rpc)
+// can be used.
+func isLOASLinux() bool {
+	return runtimeGOOS == "linux" && !isLaptopRole()
+}
+
 // hasSSOCredHelper reports whether the Corp Linux SSO credential helper is
 // installed at ssoCredHelperPath.
 func hasSSOCredHelper() bool {
+	if runtimeGOOS != "linux" {
+		return false
+	}
 	path, err := LookPathFn(ssoCredHelperPath)
 	return err == nil && path != ""
 }
 
+// hasUsableSSOCredHelper reports whether ssoCredHelperPath is installed and can
+// mint luci-auth tokens (non-laptop Linux with sso-cred-helper present).
+func hasUsableSSOCredHelper() bool {
+	return hasSSOCredHelper() && isLOASLinux()
+}
+
 // newOAuthTokenCommand constructs an exec.Cmd for an external OAuth CLI helper
-// and auto-injects LUCI_AUTH_CREDENTIAL_HELPER when invoking luci-auth on Corp
-// Linux if LUCI_AUTH_CREDENTIAL_HELPER is unset in the environment.
+// and auto-injects LUCI_AUTH_CREDENTIAL_HELPER when invoking luci-auth on LOAS
+// Corp Linux if LUCI_AUTH_CREDENTIAL_HELPER is unset in the environment.
 func newOAuthTokenCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := ExecCommandContext(ctx, name, args...)
 	if filepath.Base(name) == "luci-auth" {
-		if _, set := os.LookupEnv("LUCI_AUTH_CREDENTIAL_HELPER"); !set && hasSSOCredHelper() {
+		if _, set := os.LookupEnv("LUCI_AUTH_CREDENTIAL_HELPER"); !set && hasUsableSSOCredHelper() {
 			cmd.Env = append(cmd.Environ(), "LUCI_AUTH_CREDENTIAL_HELPER="+ssoCredHelperPath)
 		}
 	}
@@ -999,6 +1064,18 @@ func DefaultAndroidBuildToken(ctx context.Context) (string, error) {
 // It can be overridden in tests.
 var AndroidBuildTokenResolver = DefaultAndroidBuildToken
 
+// luciAuthTokenRemediationStep1 formats the primary remediation step for
+// minting a luci-auth token with loginCmd, including Corp Linux gcert advice
+// only when sso-cred-helper is installed and usable (skipping non-Linux,
+// external Linux/Crostini without sso-cred-helper, and GOOGLE_ROLE=laptop
+// hosts).
+func luciAuthTokenRemediationStep1(loginCmd string) string {
+	if !hasUsableSSOCredHelper() {
+		return fmt.Sprintf("  1. Authenticate with luci-auth:\n     %s", loginCmd)
+	}
+	return fmt.Sprintf("  1. Corp Linux: run 'gcert'. Otherwise:\n     %s", loginCmd)
+}
+
 // DefaultLUCIToken resolves an OAuth2 access token for LUCI Buildbucket and
 // LogDog from GHISH_LUCI_TOKEN, LUCI_TOKEN, or the shared luci-auth token.
 func DefaultLUCIToken(ctx context.Context) (string, string, error) {
@@ -1018,13 +1095,12 @@ func DefaultLUCIToken(ctx context.Context) (string, string, error) {
 	return "", "", NewExitCodeError(ExitCodeAuth,
 		"failed to obtain LUCI OAuth2 token: %w.\n\n"+
 			"Remediation:\n"+
-			"  1. Corp Linux: run 'gcert' (sso-cred-helper lets luci-auth mint tokens). Otherwise:\n"+
-			"     %s\n"+
+			"%s\n"+
 			"  2. Or provide a token explicitly:\n"+
 			"     export GHISH_LUCI_TOKEN=\"<token>\"\n"+
 			"  3. Check authentication status:\n"+
 			"     gh auth status",
-		err, luciAuthLoginCommandForScope(ctx, ""))
+		err, luciAuthTokenRemediationStep1(luciAuthLoginCommandForScope(ctx, "")))
 }
 
 // LUCITokenResolver is the function used to resolve LUCI OAuth2 tokens.
