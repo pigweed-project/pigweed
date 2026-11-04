@@ -141,12 +141,6 @@ GENERATE_TODOLIST      = NO
 # https://www.doxygen.nl/manual/config.html#cfg_generate_treeview
 GENERATE_TREEVIEW      = YES
 
-# Breathe uses Doxygen's XML output to inject the API reference
-# information into our Sphinx site.
-#
-# https://www.doxygen.nl/manual/config.html#cfg_generate_xml
-GENERATE_XML           = YES
-
 # https://www.doxygen.nl/manual/config.html#cfg_html_colorstyle
 HTML_COLORSTYLE        = TOGGLE
 

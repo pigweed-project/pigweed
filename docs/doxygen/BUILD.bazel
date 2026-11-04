@@ -122,10 +122,7 @@ doxygen(
         ":srcs",
         ":website",
     ],
-    outs = [
-        "html",
-        "xml",
-    ],
+    outs = ["html"],
     doxyfile_template = "Doxyfile",
     tags = ["manual"],
     target_compatible_with = incompatible_with_mcu(),
@@ -150,23 +147,6 @@ sphinx_docs_library(
     name = "html",
     srcs = [":_html_2"],
     prefix = "doxygen/api/",
-    tags = ["manual"],
-    target_compatible_with = incompatible_with_mcu(),
-    visibility = ["//visibility:public"],
-)
-
-filegroup(
-    name = "_xml",
-    srcs = [":build"],
-    output_group = "xml",
-    tags = ["manual"],
-    target_compatible_with = incompatible_with_mcu(),
-)
-
-sphinx_docs_library(
-    name = "xml",
-    srcs = [":_xml"],
-    prefix = "_doxygen/",
     tags = ["manual"],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],

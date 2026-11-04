@@ -221,7 +221,6 @@ redirects = json.loads(Path('redirects.json').read_text(encoding='utf-8'))
 templates_path = ['layout']
 exclude_patterns = ['docs/templates/**']
 
-doxygen_xml_path = './_doxygen/xml/'
 # The location of the generated Doxygen tagfile. Note that this must
 # match the final location of the generated Doxygen HTML from the
 # perspective of the Sphinx build system. The organization of the

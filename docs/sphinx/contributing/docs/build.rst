@@ -414,14 +414,12 @@ to other components.
 
    flowchart LR
 
-     Doxygen --> Breathe
-     Breathe --> reST
+     Doxygen --> Sphinx
      reST --> Sphinx
      Rust --> Sphinx
      Python --> Sphinx
 
 .. _Doxygen: https://www.doxygen.nl/
-.. _Breathe: https://breathe.readthedocs.io/en/latest/
 .. _reStructuredText: https://docutils.sourceforge.io/rst.html
 .. _rustdoc: https://doc.rust-lang.org/rustdoc/what-is-rustdoc.html
 .. inclusive-language: disable
@@ -429,15 +427,14 @@ to other components.
 .. _Sphinx: https://www.sphinx-doc.org/en/master/
 .. inclusive-language: enable
 .. _static site generator: https://en.wikipedia.org/wiki/Static_site_generator
+.. _Doxylink: https://sphinxcontrib-doxylink.readthedocs.io/en/stable/
 
-* **Doxygen**: We feed a bunch of C/C++ headers to `Doxygen`_. Doxygen parses each
-  header and generates XML metadata for all of the classes, functions, structs,
-  etc. that it finds. We also publish the Doxygen-generated HTML as a separate
-  subsite. This subsite is available at
-  `pigweed.dev/doxygen <https://pigweed.dev/doxygen>`_.
-
-* **Breathe**: We provide the Doxygen XML metadata to `Breathe`_ so that C/C++ API
-  reference content can be inserted into our reStructuredText files.
+* **Doxygen**: We feed a bunch of C/C++ headers to `Doxygen`_. Doxygen parses
+  each header and generates a tagfile (``index.tag``) describing all of the
+  classes, functions, structs, etc. that it finds. `Doxylink`_ uses the tagfile
+  to resolve ``:cc:`` cross-references from reStructuredText to the
+  Doxygen-generated HTML, which we publish as a separate subsite at
+  `pigweed.dev/api/cc/ <https://pigweed.dev/api/cc/>`_.
 
 * **reST**: We gather up all the `reStructuredText`_ (reST) source files
   that are scattered across the Pigweed repository. Pigweed docs are authored in
