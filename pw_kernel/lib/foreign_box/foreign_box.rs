@@ -528,6 +528,11 @@ mod tests {
         Ok(())
     }
 
+    // `core::sync::atomic::AtomicUsize` only implements `pw_atomic::AtomicUsize`
+    // when `pw_atomic`'s `builtin_impls` feature is enabled, which it is not on
+    // targets without native compare-and-swap (e.g. riscv32 without the A
+    // extension).
+    #[cfg(target_has_atomic = "ptr")]
     #[test]
     fn static_foreign_rc_ref_count_is_correct() -> unittest::Result<()> {
         let rc = unsafe { static_foreign_rc!(core::sync::atomic::AtomicUsize, u32, 42) };
