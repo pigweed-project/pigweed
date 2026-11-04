@@ -182,6 +182,28 @@ class ModuleMetadataTocTest(unittest.TestCase):
             ],
         )
 
+    def test_should_add_doxygen_link_reads_tagfile_groups(self) -> None:
+        """Reads `<compound kind="group"><name>` entries from `index.tag`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(
+                module_metadata.should_add_doxygen_link('pw_unit_test', tmp)
+            )
+            tagfile = Path(tmp) / '_doxygen' / 'tag' / 'index.tag'
+            tagfile.parent.mkdir(parents=True)
+            tagfile.write_text(
+                '<tagfile>'
+                '<compound kind="group"><name>pw_unit_test</name></compound>'
+                '<compound kind="class"><name>pw_other</name></compound>'
+                '</tagfile>',
+                encoding='utf-8',
+            )
+            self.assertTrue(
+                module_metadata.should_add_doxygen_link('pw_unit_test', tmp)
+            )
+            self.assertFalse(
+                module_metadata.should_add_doxygen_link('pw_other', tmp)
+            )
+
 
 class ToctreeRewriteTest(unittest.TestCase):
     """Tests for `toctree.rewrite_relative_links` HTML post-processing."""

@@ -28,6 +28,7 @@ import json
 import os
 import tomllib
 from typing import Any, cast, TypeVar
+import xml.etree.ElementTree as ET
 
 # We use BeautifulSoup for certain docs rendering features. It may not be
 # available in downstream projects. If so, no problem. We fall back to simpler
@@ -571,6 +572,18 @@ def should_add_rust_link(module_name: str, languages: list[str] | None) -> bool:
     return True
 
 
+@functools.lru_cache(maxsize=None)
+def _doxygen_groups(tagfile_path: str) -> frozenset[str]:
+    """The `@defgroup` names listed in a Doxygen tagfile."""
+    root = ET.parse(tagfile_path).getroot()
+    return frozenset(
+        name
+        for compound in root.findall('compound')
+        if compound.get('kind') == 'group'
+        and (name := compound.findtext('name'))
+    )
+
+
 def should_add_doxygen_link(
     module_name: str, srcdir: str | None = None
 ) -> bool:
@@ -581,10 +594,11 @@ def should_add_doxygen_link(
         or os.environ.get('PW_ROOT')
         or _default_root_dir
     )
-    group = module_name.replace('_', '__')
-    return os.path.isfile(
-        os.path.join(root_dir, 'doxygen', 'api', 'cc', f'group__{group}.html')
-    )
+    tagfile = os.path.join(root_dir, '_doxygen', 'tag', 'index.tag')
+    # Absent in unit tests that call module_metadata without a Sphinx srcdir.
+    if not os.path.isfile(tagfile):
+        return False
+    return module_name in _doxygen_groups(tagfile)
 
 
 def _has_slug_placeholder(toctree: Element, slug: str) -> bool:
