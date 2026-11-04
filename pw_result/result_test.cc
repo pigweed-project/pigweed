@@ -23,6 +23,7 @@
 #include "pw_result/result.h"
 
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -175,12 +176,12 @@ constexpr int kExpectedVal = 5;
 class Immovable {
  public:
   Immovable() = delete;
-  explicit Immovable(int val) : val_(val) {}
+  explicit constexpr Immovable(int val) : val_(val) {}
   Immovable(const Immovable&) = delete;
   Immovable& operator=(const Immovable&) = delete;
   Immovable(Immovable&&) = delete;
   Immovable& operator=(Immovable&&) = delete;
-  int val() { return val_; }
+  constexpr int val() const { return val_; }
 
  private:
   int val_;
@@ -1609,6 +1610,8 @@ static_assert(std::is_final_v<Result<void>>);
 static_assert(std::is_final_v<TestResult<int>>);
 static_assert(std::is_final_v<TestResult<void>>);
 
+// Pigweed always builds without exceptions, so Result's noexcept qualifiers are
+// unconditional even when T omits noexcept on its move operations.
 struct ThrowingMove {
   ThrowingMove(ThrowingMove&&) noexcept(false) {}
   ThrowingMove& operator=(ThrowingMove&&) noexcept(false) { return *this; }
@@ -1616,8 +1619,8 @@ struct ThrowingMove {
 
 static_assert(std::is_nothrow_move_constructible_v<Result<int>>);
 static_assert(std::is_nothrow_move_assignable_v<Result<int>>);
-static_assert(!std::is_nothrow_move_constructible_v<Result<ThrowingMove>>);
-static_assert(!std::is_nothrow_move_assignable_v<Result<ThrowingMove>>);
+static_assert(std::is_nothrow_move_constructible_v<Result<ThrowingMove>>);
+static_assert(std::is_nothrow_move_assignable_v<Result<ThrowingMove>>);
 
 // Comprehensive tests for Result<Status> and Result<StatusType, StatusType>.
 static_assert(kCanCompare<Result<Status>, Result<Status>>);
@@ -2105,6 +2108,1329 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Void_PreservesDerivedStatusState, {
   PW_TEST_EXPECT_EQ(void_res.status().detail(), 77u);
 });
 
+// -----------------------------------------------------------------------------
+// Alignment with std::optional: triviality, C++20 constexpr, SFINAE, observers,
+// value_or, swap, monadic relaxations, heterogeneous ==, and noexcept.
+// -----------------------------------------------------------------------------
+
+struct ReallyTrivialMoveOnly {
+  constexpr explicit ReallyTrivialMoveOnly(int v) : value(v) {}
+  ReallyTrivialMoveOnly(const ReallyTrivialMoveOnly&) = delete;
+  ReallyTrivialMoveOnly& operator=(const ReallyTrivialMoveOnly&) = delete;
+  constexpr ReallyTrivialMoveOnly(ReallyTrivialMoveOnly&&) = default;
+  constexpr ReallyTrivialMoveOnly& operator=(ReallyTrivialMoveOnly&&) = default;
+  ~ReallyTrivialMoveOnly() = default;
+  int value;
+};
+
+struct NonTrivialCopyTrivialMove {
+  constexpr explicit NonTrivialCopyTrivialMove(int v) : value(v) {}
+  constexpr NonTrivialCopyTrivialMove(const NonTrivialCopyTrivialMove& other)
+      : value(other.value + 100) {}
+  constexpr NonTrivialCopyTrivialMove& operator=(
+      const NonTrivialCopyTrivialMove& other) {
+    value = other.value + 200;
+    return *this;
+  }
+  constexpr NonTrivialCopyTrivialMove(NonTrivialCopyTrivialMove&&) = default;
+  constexpr NonTrivialCopyTrivialMove& operator=(NonTrivialCopyTrivialMove&&) =
+      default;
+  ~NonTrivialCopyTrivialMove() = default;
+  int value;
+};
+
+// Types with non-const deleted copy operations (e.g. `T(T&) = delete`), which
+// C++17 rejects if a wrapper `= default`s a `const` copy operation directly
+// over them.
+struct TrivialNonConstDeletedCopy {
+  constexpr explicit TrivialNonConstDeletedCopy(int v) : value(v) {}
+  TrivialNonConstDeletedCopy(TrivialNonConstDeletedCopy&) = delete;
+  TrivialNonConstDeletedCopy& operator=(TrivialNonConstDeletedCopy&) = delete;
+  constexpr TrivialNonConstDeletedCopy(TrivialNonConstDeletedCopy&&) = default;
+  constexpr TrivialNonConstDeletedCopy& operator=(
+      TrivialNonConstDeletedCopy&&) = default;
+  ~TrivialNonConstDeletedCopy() = default;
+  int value;
+};
+
+struct NonTrivialNonConstDeletedCopy {
+  explicit NonTrivialNonConstDeletedCopy(int v) : value(v) {}
+  NonTrivialNonConstDeletedCopy(NonTrivialNonConstDeletedCopy&) = delete;
+  NonTrivialNonConstDeletedCopy& operator=(NonTrivialNonConstDeletedCopy&) =
+      delete;
+  NonTrivialNonConstDeletedCopy(NonTrivialNonConstDeletedCopy&& other) noexcept
+      : value(other.value) {}
+  NonTrivialNonConstDeletedCopy& operator=(
+      NonTrivialNonConstDeletedCopy&& other) noexcept {
+    value = other.value;
+    return *this;
+  }
+  ~NonTrivialNonConstDeletedCopy() {}
+  int value;
+};
+
+struct NonConstDeletedCopyAssign {
+  constexpr explicit NonConstDeletedCopyAssign(int v) : value(v) {}
+  constexpr NonConstDeletedCopyAssign(const NonConstDeletedCopyAssign& other)
+      : value(other.value) {}
+  NonConstDeletedCopyAssign& operator=(NonConstDeletedCopyAssign&) = delete;
+  constexpr NonConstDeletedCopyAssign(NonConstDeletedCopyAssign&&) = default;
+  constexpr NonConstDeletedCopyAssign& operator=(NonConstDeletedCopyAssign&&) =
+      default;
+  int value;
+};
+
+// Triviality matrix for Result<T, StatusType> and Result<void, StatusType>.
+static_assert(std::is_trivially_destructible_v<Result<int>>);
+static_assert(std::is_trivially_copy_constructible_v<Result<int>>);
+static_assert(std::is_trivially_move_constructible_v<Result<int>>);
+static_assert(std::is_trivially_copy_assignable_v<Result<int>>);
+static_assert(std::is_trivially_move_assignable_v<Result<int>>);
+static_assert(std::is_trivially_copyable_v<Result<int>>);
+
+static_assert(std::is_trivially_destructible_v<TestResult<int>>);
+static_assert(std::is_trivially_copy_constructible_v<TestResult<int>>);
+static_assert(std::is_trivially_move_constructible_v<TestResult<int>>);
+static_assert(std::is_trivially_copy_assignable_v<TestResult<int>>);
+static_assert(std::is_trivially_move_assignable_v<TestResult<int>>);
+static_assert(std::is_trivially_copyable_v<TestResult<int>>);
+
+static_assert(std::is_trivially_destructible_v<Result<const int>>);
+static_assert(std::is_trivially_copy_constructible_v<Result<const int>>);
+static_assert(std::is_trivially_move_constructible_v<Result<const int>>);
+static_assert(!std::is_copy_assignable_v<Result<const int>>);
+static_assert(!std::is_move_assignable_v<Result<const int>>);
+static_assert(std::is_trivially_copyable_v<Result<const int>>);
+
+static_assert(std::is_trivially_destructible_v<Result<ReallyTrivialMoveOnly>>);
+static_assert(!std::is_copy_constructible_v<Result<ReallyTrivialMoveOnly>>);
+static_assert(
+    std::is_trivially_move_constructible_v<Result<ReallyTrivialMoveOnly>>);
+static_assert(!std::is_copy_assignable_v<Result<ReallyTrivialMoveOnly>>);
+static_assert(
+    std::is_trivially_move_assignable_v<Result<ReallyTrivialMoveOnly>>);
+static_assert(std::is_trivially_copyable_v<Result<ReallyTrivialMoveOnly>>);
+
+static_assert(std::is_trivially_destructible_v<Result<TrivialMoveOnly>>);
+static_assert(!std::is_copy_constructible_v<Result<TrivialMoveOnly>>);
+static_assert(std::is_move_constructible_v<Result<TrivialMoveOnly>>);
+static_assert(!std::is_trivially_move_constructible_v<Result<TrivialMoveOnly>>);
+static_assert(!std::is_copy_assignable_v<Result<TrivialMoveOnly>>);
+static_assert(std::is_move_assignable_v<Result<TrivialMoveOnly>>);
+static_assert(!std::is_trivially_move_assignable_v<Result<TrivialMoveOnly>>);
+
+static_assert(
+    std::is_trivially_destructible_v<Result<NonTrivialCopyTrivialMove>>);
+static_assert(std::is_copy_constructible_v<Result<NonTrivialCopyTrivialMove>>);
+static_assert(
+    !std::is_trivially_copy_constructible_v<Result<NonTrivialCopyTrivialMove>>);
+static_assert(
+    std::is_trivially_move_constructible_v<Result<NonTrivialCopyTrivialMove>>);
+static_assert(std::is_copy_assignable_v<Result<NonTrivialCopyTrivialMove>>);
+static_assert(
+    !std::is_trivially_copy_assignable_v<Result<NonTrivialCopyTrivialMove>>);
+static_assert(
+    std::is_trivially_move_assignable_v<Result<NonTrivialCopyTrivialMove>>);
+static_assert(!std::is_trivially_copyable_v<Result<NonTrivialCopyTrivialMove>>);
+
+static_assert(!std::is_trivially_destructible_v<Result<Counter>>);
+static_assert(std::is_copy_constructible_v<Result<Counter>>);
+static_assert(!std::is_trivially_copy_constructible_v<Result<Counter>>);
+static_assert(std::is_move_constructible_v<Result<Counter>>);
+static_assert(!std::is_trivially_move_constructible_v<Result<Counter>>);
+static_assert(std::is_copy_assignable_v<Result<Counter>>);
+static_assert(!std::is_trivially_copy_assignable_v<Result<Counter>>);
+static_assert(std::is_move_assignable_v<Result<Counter>>);
+static_assert(!std::is_trivially_move_assignable_v<Result<Counter>>);
+
+static_assert(std::is_trivially_destructible_v<Result<Immovable>>);
+static_assert(!std::is_copy_constructible_v<Result<Immovable>>);
+static_assert(!std::is_move_constructible_v<Result<Immovable>>);
+static_assert(!std::is_copy_assignable_v<Result<Immovable>>);
+static_assert(!std::is_move_assignable_v<Result<Immovable>>);
+
+static_assert(!std::is_copy_constructible_v<Result<const MoveOnly>>);
+static_assert(!std::is_move_constructible_v<Result<const MoveOnly>>);
+static_assert(!std::is_copy_assignable_v<Result<const MoveOnly>>);
+static_assert(!std::is_move_assignable_v<Result<const MoveOnly>>);
+
+static_assert(
+    std::is_trivially_destructible_v<Result<TrivialNonConstDeletedCopy>>);
+static_assert(
+    !std::is_copy_constructible_v<Result<TrivialNonConstDeletedCopy>>);
+static_assert(
+    std::is_trivially_move_constructible_v<Result<TrivialNonConstDeletedCopy>>);
+static_assert(!std::is_copy_assignable_v<Result<TrivialNonConstDeletedCopy>>);
+static_assert(
+    std::is_trivially_move_assignable_v<Result<TrivialNonConstDeletedCopy>>);
+
+static_assert(
+    !std::is_trivially_destructible_v<Result<NonTrivialNonConstDeletedCopy>>);
+static_assert(
+    !std::is_copy_constructible_v<Result<NonTrivialNonConstDeletedCopy>>);
+static_assert(
+    std::is_move_constructible_v<Result<NonTrivialNonConstDeletedCopy>>);
+static_assert(
+    !std::is_copy_assignable_v<Result<NonTrivialNonConstDeletedCopy>>);
+static_assert(std::is_move_assignable_v<Result<NonTrivialNonConstDeletedCopy>>);
+
+static_assert(std::is_copy_constructible_v<Result<NonConstDeletedCopyAssign>>);
+static_assert(!std::is_copy_assignable_v<Result<NonConstDeletedCopyAssign>>);
+static_assert(
+    std::is_trivially_move_constructible_v<Result<NonConstDeletedCopyAssign>>);
+static_assert(
+    std::is_trivially_move_assignable_v<Result<NonConstDeletedCopyAssign>>);
+
+static_assert(std::is_trivially_destructible_v<Result<void>>);
+static_assert(std::is_trivially_copy_constructible_v<Result<void>>);
+static_assert(std::is_trivially_move_constructible_v<Result<void>>);
+static_assert(std::is_trivially_copy_assignable_v<Result<void>>);
+static_assert(std::is_trivially_move_assignable_v<Result<void>>);
+static_assert(std::is_trivially_copyable_v<Result<void>>);
+
+// Empty base optimization check: linear inheritance must add zero padding
+// bytes.
+static_assert(sizeof(Result<uint8_t, HasValueStatus>) == 2);
+static_assert(sizeof(Result<int>) == 2 * sizeof(int));
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, TrivialCopyMoveConstexpr, {
+  Result<int> a = 42;
+  Result<int> b = a;
+  PW_TEST_EXPECT_TRUE(b.has_value());
+  PW_TEST_EXPECT_EQ(*b, 42);
+
+  Result<int> c = std::move(b);
+  PW_TEST_EXPECT_EQ(*c, 42);
+
+  Result<int> err = Status::NotFound();
+  c = err;
+  PW_TEST_EXPECT_FALSE(c.has_value());
+  PW_TEST_EXPECT_EQ(c.status(), Status::NotFound());
+
+  c = a;
+  PW_TEST_EXPECT_TRUE(c.has_value());
+  PW_TEST_EXPECT_EQ(*c, 42);
+
+  // Trivial moves work in C++17 constant evaluation even when copies are
+  // non-trivial, including in the error state.
+  Result<NonTrivialCopyTrivialMove> nt1(std::in_place, 7);
+  Result<NonTrivialCopyTrivialMove> nt2 = std::move(nt1);
+  PW_TEST_EXPECT_EQ(nt2->value, 7);
+
+  Result<NonTrivialCopyTrivialMove> nt_err = Status::NotFound();
+  Result<NonTrivialCopyTrivialMove> nt_err2 = std::move(nt_err);
+  PW_TEST_EXPECT_EQ(nt_err2.status(), Status::NotFound());
+});
+
+TEST(ResultOptionalAlign, NonTrivialCopyTrivialMoveRuntime) {
+  Result<NonTrivialCopyTrivialMove> nt1(std::in_place, 7);
+  Result<NonTrivialCopyTrivialMove> nt2 = std::move(nt1);
+  EXPECT_EQ(nt2->value, 7);
+  Result<NonTrivialCopyTrivialMove> nt3 = nt2;
+  EXPECT_EQ(nt3->value, 107);
+
+  Result<NonTrivialCopyTrivialMove> nt_err = Status::Unavailable();
+  Result<NonTrivialCopyTrivialMove> nt_err2 = std::move(nt_err);
+  EXPECT_EQ(nt_err2.status(), Status::Unavailable());
+}
+
+TEST(ResultOptionalAlign, NonConstDeletedCopyOperations) {
+  Result<TrivialNonConstDeletedCopy> t1(std::in_place, 11);
+  Result<TrivialNonConstDeletedCopy> t2 = std::move(t1);
+  PW_TEST_ASSERT_OK(t2);
+  EXPECT_EQ(t2->value, 11);
+  t1 = Status::Aborted();
+  t2 = std::move(t1);
+  EXPECT_EQ(t2.status(), Status::Aborted());
+
+  Result<NonTrivialNonConstDeletedCopy> n1(std::in_place, 22);
+  Result<NonTrivialNonConstDeletedCopy> n2 = std::move(n1);
+  PW_TEST_ASSERT_OK(n2);
+  EXPECT_EQ(n2->value, 22);
+  n1 = Status::NotFound();
+  n2 = std::move(n1);
+  EXPECT_EQ(n2.status(), Status::NotFound());
+
+  Result<NonConstDeletedCopyAssign> a1(std::in_place, 33);
+  Result<NonConstDeletedCopyAssign> a2 = a1;
+  Result<NonConstDeletedCopyAssign> a3 = std::move(a1);
+  PW_TEST_ASSERT_OK(a2);
+  PW_TEST_ASSERT_OK(a3);
+  EXPECT_EQ(a2->value, 33);
+  EXPECT_EQ(a3->value, 33);
+}
+
+// Status type with non-trivial copy and destruction. A Result using it has
+// non-trivial special members even when the value type is trivial, so this
+// covers the non-trivial copy/move paths and destructor driven by the status.
+class [[nodiscard]] NonTrivialStatus final
+    : public StatusBase<NonTrivialStatus, HasValue::kYes> {
+ public:
+  NonTrivialStatus() noexcept = default;
+  explicit NonTrivialStatus(HasValue code) noexcept : StatusBase(code) {}
+  NonTrivialStatus(const NonTrivialStatus& other) noexcept
+      : StatusBase(other) {}
+  NonTrivialStatus& operator=(const NonTrivialStatus& other) noexcept {
+    StatusBase::operator=(other);
+    return *this;
+  }
+  ~NonTrivialStatus() { destroyed += 1; }
+
+  static inline int destroyed = 0;
+};
+
+using NonTrivialStatusResult = Result<int, NonTrivialStatus>;
+
+static_assert(std::is_copy_constructible_v<NonTrivialStatusResult>);
+static_assert(!std::is_trivially_copy_constructible_v<NonTrivialStatusResult>);
+static_assert(!std::is_trivially_move_constructible_v<NonTrivialStatusResult>);
+static_assert(!std::is_trivially_copy_assignable_v<NonTrivialStatusResult>);
+static_assert(!std::is_trivially_move_assignable_v<NonTrivialStatusResult>);
+static_assert(!std::is_trivially_destructible_v<NonTrivialStatusResult>);
+
+TEST(ResultOptionalAlign, NonTrivialStatusType) {
+  const NonTrivialStatusResult ok_res(std::in_place, 7);
+  const NonTrivialStatusResult err_res = NonTrivialStatus(HasValue::kNo);
+
+  // Copy construction.
+  NonTrivialStatusResult copy_ok = ok_res;
+  NonTrivialStatusResult copy_err = err_res;
+  PW_TEST_ASSERT_OK(copy_ok);
+  EXPECT_EQ(*copy_ok, 7);
+  EXPECT_EQ(copy_err.status().code(), HasValue::kNo);
+
+  // Move construction.
+  NonTrivialStatusResult moved_ok = std::move(copy_ok);
+  NonTrivialStatusResult moved_err = std::move(copy_err);
+  PW_TEST_ASSERT_OK(moved_ok);
+  EXPECT_EQ(*moved_ok, 7);
+  EXPECT_EQ(moved_err.status().code(), HasValue::kNo);
+
+  // Copy and move assignment between OK and non-OK states.
+  moved_ok = err_res;
+  EXPECT_EQ(moved_ok.status().code(), HasValue::kNo);
+  moved_err = ok_res;
+  PW_TEST_ASSERT_OK(moved_err);
+  EXPECT_EQ(*moved_err, 7);
+  moved_ok = std::move(moved_err);
+  PW_TEST_ASSERT_OK(moved_ok);
+  EXPECT_EQ(*moved_ok, 7);
+
+  // Converting construction.
+  const Result<long, NonTrivialStatus> converted = ok_res;
+  PW_TEST_ASSERT_OK(converted);
+  EXPECT_EQ(*converted, 7L);
+
+  // Swap between OK and non-OK states.
+  NonTrivialStatusResult swap_ok(std::in_place, 1);
+  NonTrivialStatusResult swap_err = NonTrivialStatus(HasValue::kDefinitelyNot);
+  swap_ok.swap(swap_err);
+  EXPECT_EQ(swap_ok.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_ASSERT_OK(swap_err);
+  EXPECT_EQ(*swap_err, 1);
+
+  // Destroying the Result destroys its status.
+  NonTrivialStatus::destroyed = 0;
+  {
+    const NonTrivialStatusResult scoped(std::in_place, 3);
+  }
+  EXPECT_EQ(NonTrivialStatus::destroyed, 1);
+}
+
+#if _PW_RESULT_CONSTEXPR_CONSTRUCT_AT
+struct ConstexprTracked {
+  int value;
+  int* destroyed;
+
+  constexpr ConstexprTracked(int v, int* d) : value(v), destroyed(d) {}
+  constexpr ConstexprTracked(const ConstexprTracked& other)
+      : value(other.value), destroyed(other.destroyed) {}
+  constexpr ConstexprTracked(ConstexprTracked&& other) noexcept
+      : value(other.value), destroyed(other.destroyed) {
+    other.value = -1;
+  }
+  constexpr ConstexprTracked& operator=(const ConstexprTracked& other) {
+    value = other.value;
+    destroyed = other.destroyed;
+    return *this;
+  }
+  constexpr ConstexprTracked& operator=(ConstexprTracked&& other) noexcept {
+    value = other.value;
+    destroyed = other.destroyed;
+    other.value = -1;
+    return *this;
+  }
+  constexpr ~ConstexprTracked() {
+    if (destroyed != nullptr) {
+      ++(*destroyed);
+    }
+  }
+};
+
+static_assert(!std::is_trivially_destructible_v<ConstexprTracked>);
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, Cpp20ConstexprNonTrivialLifecycle, {
+  int destroyed = 0;
+  {
+    Result<ConstexprTracked> res = Status::Unavailable();
+    PW_TEST_EXPECT_FALSE(res.has_value());
+
+    // Empty-to-engaged via emplace (uses std::construct_at).
+    ConstexprTracked& ref = res.emplace(10, &destroyed);
+    PW_TEST_EXPECT_TRUE(res.has_value());
+    PW_TEST_EXPECT_EQ(ref.value, 10);
+    PW_TEST_EXPECT_EQ(destroyed, 0);
+
+    // Engaged-to-engaged emplace destroys previous value first.
+    res.emplace(20, &destroyed);
+    PW_TEST_EXPECT_EQ(res->value, 20);
+    PW_TEST_EXPECT_EQ(destroyed, 1);
+
+    // Reset destroys value.
+    res.reset(Status::Aborted());
+    PW_TEST_EXPECT_FALSE(res.has_value());
+    PW_TEST_EXPECT_EQ(destroyed, 2);
+
+    // Empty-to-engaged assignment.
+    res = ConstexprTracked(30, &destroyed);
+    PW_TEST_EXPECT_TRUE(res.has_value());
+    PW_TEST_EXPECT_EQ(res->value, 30);
+    PW_TEST_EXPECT_EQ(destroyed, 3);  // temporary destroyed
+
+    // OK-to-non-OK assignment destroys the value.
+    Result<ConstexprTracked> other_err = Status::Internal();
+    res = other_err;
+    PW_TEST_EXPECT_FALSE(res.has_value());
+    PW_TEST_EXPECT_EQ(res.status(), Status::Internal());
+    PW_TEST_EXPECT_EQ(destroyed, 4);
+
+    // Non-OK to non-OK assignment (assert-free path).
+    res = Status::DataLoss();
+    res = std::move(other_err);
+    PW_TEST_EXPECT_EQ(res.status(), Status::Internal());
+    PW_TEST_EXPECT_EQ(destroyed, 4);
+
+    res.emplace(40, &destroyed);
+  }
+  // Scope exit ran constexpr destructor on engaged Result<ConstexprTracked>.
+  PW_TEST_EXPECT_EQ(destroyed, 5);
+});
+#endif  // _PW_RESULT_CONSTEXPR_CONSTRUCT_AT
+
+// SFINAE constraints on std::in_place constructors and emplace.
+template <typename R, typename = void, typename... Args>
+struct CanEmplaceImpl : std::false_type {};
+
+template <typename R, typename... Args>
+struct CanEmplaceImpl<
+    R,
+    std::void_t<decltype(std::declval<R&>().emplace(std::declval<Args>()...))>,
+    Args...> : std::true_type {};
+
+template <typename R, typename... Args>
+inline constexpr bool kCanEmplace = CanEmplaceImpl<R, void, Args...>::value;
+
+struct TwoIntCtor {
+  constexpr TwoIntCtor(int a, int b) : sum(a + b) {}
+  constexpr TwoIntCtor(std::initializer_list<int> ilist, int scale) : sum(0) {
+    for (int x : ilist) {
+      sum += x * scale;
+    }
+  }
+  int sum;
+};
+
+static_assert(
+    std::is_constructible_v<Result<TwoIntCtor>, std::in_place_t, int, int>);
+static_assert(
+    !std::is_constructible_v<Result<TwoIntCtor>, std::in_place_t, int>);
+static_assert(
+    !std::is_constructible_v<Result<TwoIntCtor>, std::in_place_t, const char*>);
+static_assert(std::is_constructible_v<Result<TwoIntCtor>,
+                                      std::in_place_t,
+                                      std::initializer_list<int>,
+                                      int>);
+static_assert(!std::is_constructible_v<Result<TwoIntCtor>,
+                                       std::in_place_t,
+                                       std::initializer_list<int>>);
+static_assert(!std::is_constructible_v<Result<int>,
+                                       std::in_place_t,
+                                       std::initializer_list<int>>);
+
+static_assert(kCanEmplace<Result<TwoIntCtor>, int, int>);
+static_assert(!kCanEmplace<Result<TwoIntCtor>, int>);
+static_assert(!kCanEmplace<Result<TwoIntCtor>, const char*>);
+static_assert(kCanEmplace<Result<TwoIntCtor>, std::initializer_list<int>, int>);
+static_assert(!kCanEmplace<Result<TwoIntCtor>, std::initializer_list<int>>);
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, HasValueObserver, {
+  const Result<int> ok_val = 7;
+  const Result<int> err_val = Status::NotFound();
+  PW_TEST_EXPECT_TRUE(ok_val.has_value());
+  PW_TEST_EXPECT_EQ(ok_val.has_value(), ok_val.ok());
+  PW_TEST_EXPECT_FALSE(err_val.has_value());
+  PW_TEST_EXPECT_EQ(err_val.has_value(), err_val.ok());
+
+  const Result<void> ok_void = OkStatus();
+  const Result<void> err_void = Status::NotFound();
+  PW_TEST_EXPECT_TRUE(ok_void.has_value());
+  PW_TEST_EXPECT_EQ(ok_void.has_value(), ok_void.ok());
+  PW_TEST_EXPECT_FALSE(err_void.has_value());
+  PW_TEST_EXPECT_EQ(err_void.has_value(), err_void.ok());
+});
+
+struct AggregatePair {
+  int first = 0;
+  int second = 0;
+  constexpr bool operator==(const AggregatePair& other) const {
+    return first == other.first && second == other.second;
+  }
+};
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, ValueOrDefaultedTemplateParam, {
+  const Result<AggregatePair> ok_pair(std::in_place, AggregatePair{1, 2});
+  const Result<AggregatePair> err_pair = Status::NotFound();
+
+  PW_TEST_EXPECT_EQ(ok_pair.value_or({}), (AggregatePair{1, 2}));
+  PW_TEST_EXPECT_EQ(ok_pair.value_or({9, 8}), (AggregatePair{1, 2}));
+  PW_TEST_EXPECT_EQ(err_pair.value_or({}), (AggregatePair{0, 0}));
+  PW_TEST_EXPECT_EQ(err_pair.value_or({9, 8}), (AggregatePair{9, 8}));
+
+  PW_TEST_EXPECT_EQ(Result<AggregatePair>(Status::NotFound()).value_or({}),
+                    (AggregatePair{0, 0}));
+  PW_TEST_EXPECT_EQ(Result<AggregatePair>(Status::NotFound()).value_or({3, 4}),
+                    (AggregatePair{3, 4}));
+});
+
+struct ConstMoveTracker {
+  int value;
+  bool was_moved = false;
+
+  constexpr explicit ConstMoveTracker(int v) : value(v) {}
+  constexpr ConstMoveTracker(const ConstMoveTracker& other)
+      : value(other.value), was_moved(false) {}
+  constexpr ConstMoveTracker(ConstMoveTracker&& other) noexcept
+      : value(other.value), was_moved(true) {
+    other.value = -1;
+  }
+};
+
+static_assert(std::is_same_v<
+              decltype(std::declval<const Result<const int>&>().value_or(0)),
+              int>);
+static_assert(
+    std::is_same_v<decltype(std::declval<Result<volatile int>&&>().value_or(0)),
+                   int>);
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, ConstValuePreservesConstOnRvalue, {
+  Result<const ConstMoveTracker> const_res(std::in_place, 42);
+  ConstMoveTracker out = std::move(const_res).value_or(ConstMoveTracker(0));
+  PW_TEST_EXPECT_EQ(out.value, 42);
+  PW_TEST_EXPECT_FALSE(out.was_moved);
+
+  Result<ConstMoveTracker> mut_res(std::in_place, 42);
+  ConstMoveTracker moved_out = std::move(mut_res).value_or(ConstMoveTracker(0));
+  PW_TEST_EXPECT_EQ(moved_out.value, 42);
+  PW_TEST_EXPECT_TRUE(moved_out.was_moved);
+});
+
+TEST(ResultOptionalAlign, VolatileValue) {
+  Result<volatile int> res(std::in_place, 5);
+  PW_TEST_ASSERT_OK(res);
+  EXPECT_EQ(*res, 5);
+  EXPECT_EQ(res.value_or(0), 5);
+
+  volatile int& ref = res.emplace(10);
+  PW_TEST_ASSERT_OK(res);
+  EXPECT_EQ(ref, 10);
+  EXPECT_EQ(*res, 10);
+
+  res.reset(Status::NotFound());
+  EXPECT_FALSE(res.has_value());
+  EXPECT_EQ(res.value_or(99), 99);
+  EXPECT_EQ(std::move(res).value_or(77), 77);
+}
+
+TEST(ResultOptionalAlign, ConstNonTrivialDestruction) {
+  Counter::Reset();
+  {
+    Result<const Counter> r(std::in_place, 9);
+    PW_TEST_ASSERT_OK(r);
+    EXPECT_EQ(r->value, 9);
+    r.reset(Status::Aborted());
+    EXPECT_FALSE(r.has_value());
+    EXPECT_EQ(Counter::destroyed, 1);
+  }
+  EXPECT_EQ(Counter::created, 1);
+  EXPECT_EQ(Counter::destroyed, 1);
+}
+
+// Exercises `AssignFrom` when destroying `*this`'s value mutates or destroys
+// the source `Result` (e.g., `root = std::move(*root->child)`).
+struct ChildClobberOnDestroy {
+  Result<ChildClobberOnDestroy, StatusWithDetail>* child = nullptr;
+
+  constexpr explicit ChildClobberOnDestroy(
+      Result<ChildClobberOnDestroy, StatusWithDetail>* c) noexcept
+      : child(c) {}
+  constexpr ChildClobberOnDestroy(const ChildClobberOnDestroy& other) noexcept
+      : child(other.child) {}
+  constexpr ChildClobberOnDestroy(ChildClobberOnDestroy&& other) noexcept
+      : child(other.child) {
+    other.child = nullptr;
+  }
+  constexpr ChildClobberOnDestroy& operator=(
+      const ChildClobberOnDestroy& other) noexcept {
+    child = other.child;
+    return *this;
+  }
+  constexpr ChildClobberOnDestroy& operator=(
+      ChildClobberOnDestroy&& other) noexcept {
+    child = other.child;
+    other.child = nullptr;
+    return *this;
+  }
+  PW_CONSTEXPR_CPP20 ~ChildClobberOnDestroy() {
+    if (child != nullptr) {
+      *child = StatusWithDetail(HasValue::kDefinitelyNot, 0xEE);
+    }
+  }
+};
+
+TEST(ResultOptionalAlign, TransitiveSelfAssignment) {
+  {
+    Result<ChildClobberOnDestroy, StatusWithDetail> child =
+        StatusWithDetail(HasValue::kNo, 77);
+    Result<ChildClobberOnDestroy, StatusWithDetail> root(std::in_place, &child);
+    root = std::move(child);
+    EXPECT_FALSE(root.has_value());
+    EXPECT_EQ(root.status().code(), HasValue::kNo);
+    EXPECT_EQ(root.status().detail(), 77u);
+  }
+  {
+    Result<ChildClobberOnDestroy, StatusWithDetail> child =
+        StatusWithDetail(HasValue::kNo, 88);
+    Result<ChildClobberOnDestroy, StatusWithDetail> root(std::in_place, &child);
+    root = child;
+    EXPECT_FALSE(root.has_value());
+    EXPECT_EQ(root.status().code(), HasValue::kNo);
+    EXPECT_EQ(root.status().detail(), 88u);
+  }
+}
+
+#if _PW_RESULT_CONSTEXPR_CONSTRUCT_AT &&      \
+    defined(__cpp_constexpr_dynamic_alloc) && \
+    __cpp_constexpr_dynamic_alloc >= 201907L
+struct HeapNode {
+  Result<HeapNode>* child = nullptr;
+  constexpr HeapNode() = default;
+  constexpr explicit HeapNode(Result<HeapNode>* c) : child(c) {}
+  constexpr HeapNode(HeapNode&& other) noexcept : child(other.child) {
+    other.child = nullptr;
+  }
+  constexpr HeapNode& operator=(HeapNode&& other) noexcept {
+    if (this != &other) {
+      delete child;
+      child = other.child;
+      other.child = nullptr;
+    }
+    return *this;
+  }
+  constexpr ~HeapNode() { delete child; }
+};
+
+constexpr bool TestConstexprTransitiveSelfAssign() {
+  Result<HeapNode> root(std::in_place,
+                        new Result<HeapNode>(Status::DataLoss()));
+  root = std::move(*root->child);
+  return !root.has_value() && root.status() == Status::DataLoss();
+}
+static_assert(TestConstexprTransitiveSelfAssign());
+#endif
+
+// Converting assignment checks lvalue assignability (`T& = ...`) and
+// direct-init prefers implicit value conversion over explicit status ctor.
+struct LvalueAssignNoMove {
+  constexpr LvalueAssignNoMove(int v) : value(v) {}  // NOLINT
+  constexpr LvalueAssignNoMove(const LvalueAssignNoMove&) = default;
+  constexpr LvalueAssignNoMove& operator=(const int& v) & {
+    value = v;
+    return *this;
+  }
+  LvalueAssignNoMove& operator=(const LvalueAssignNoMove&) = delete;
+  LvalueAssignNoMove& operator=(LvalueAssignNoMove&&) = delete;
+  int value;
+};
+
+static_assert(
+    std::is_assignable_v<Result<LvalueAssignNoMove>&, const Result<int>&>);
+
+struct HybridToIntOrExplicitStatus {
+  constexpr operator int() const { return 42; }  // NOLINT
+  explicit constexpr operator Status() const { return Status::NotFound(); }
+};
+
+static_assert(std::is_convertible_v<HybridToIntOrExplicitStatus, Result<int>>);
+static_assert(
+    std::is_constructible_v<Result<int>, HybridToIntOrExplicitStatus>);
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, ConvertingAssignAndHybridDirectInit, {
+  Result<LvalueAssignNoMove> dst(1);
+  const Result<int> src(9);
+  dst = src;
+  PW_TEST_EXPECT_TRUE(dst.has_value());
+  PW_TEST_EXPECT_EQ(dst->value, 9);
+
+  const Result<int> src_err = Status::Aborted();
+  dst = src_err;
+  PW_TEST_EXPECT_EQ(dst.status(), Status::Aborted());
+
+  HybridToIntOrExplicitStatus hybrid;
+  Result<int> copy_init = hybrid;
+  Result<int> direct_init(hybrid);
+  PW_TEST_EXPECT_TRUE(copy_init.has_value());
+  PW_TEST_EXPECT_EQ(*copy_init, 42);
+  PW_TEST_EXPECT_TRUE(direct_init.has_value());
+  PW_TEST_EXPECT_EQ(*direct_init, 42);
+
+  Result<int> from_code(PW_STATUS_NOT_FOUND);
+  PW_TEST_EXPECT_FALSE(from_code.has_value());
+  PW_TEST_EXPECT_EQ(from_code.status(), Status::NotFound());
+});
+
+// Swap tests and SFINAE traits.
+struct CustomSwappable {
+  int value;
+  int* custom_swap_calls;
+
+  constexpr CustomSwappable(int v, int* calls = nullptr)
+      : value(v), custom_swap_calls(calls) {}
+  constexpr CustomSwappable(CustomSwappable&&) = default;
+  constexpr CustomSwappable& operator=(CustomSwappable&&) = default;
+
+  friend constexpr void swap(CustomSwappable& a, CustomSwappable& b) noexcept {
+    int tmp = a.value;
+    a.value = b.value;
+    b.value = tmp;
+    if (a.custom_swap_calls != nullptr) {
+      ++(*a.custom_swap_calls);
+    }
+  }
+};
+
+struct MoveCtorOnlyWithAdlSwap {
+  int value;
+  constexpr explicit MoveCtorOnlyWithAdlSwap(int v) : value(v) {}
+  MoveCtorOnlyWithAdlSwap(const MoveCtorOnlyWithAdlSwap&) = delete;
+  MoveCtorOnlyWithAdlSwap& operator=(const MoveCtorOnlyWithAdlSwap&) = delete;
+  constexpr MoveCtorOnlyWithAdlSwap(MoveCtorOnlyWithAdlSwap&&) = default;
+  MoveCtorOnlyWithAdlSwap& operator=(MoveCtorOnlyWithAdlSwap&&) = delete;
+
+  friend constexpr void swap(MoveCtorOnlyWithAdlSwap& a,
+                             MoveCtorOnlyWithAdlSwap& b) noexcept {
+    int tmp = a.value;
+    a.value = b.value;
+    b.value = tmp;
+  }
+};
+
+class [[nodiscard]] NonMovableSwappableStatus final
+    : public StatusBase<NonMovableSwappableStatus, HasValue::kYes> {
+ public:
+  constexpr NonMovableSwappableStatus() noexcept = default;
+  explicit constexpr NonMovableSwappableStatus(HasValue code) noexcept
+      : StatusBase(code) {}
+  NonMovableSwappableStatus(const NonMovableSwappableStatus&) = delete;
+  NonMovableSwappableStatus& operator=(const NonMovableSwappableStatus&) =
+      delete;
+  NonMovableSwappableStatus(NonMovableSwappableStatus&&) = delete;
+  NonMovableSwappableStatus& operator=(NonMovableSwappableStatus&&) = delete;
+  friend void swap(NonMovableSwappableStatus&,
+                   NonMovableSwappableStatus&) noexcept {}
+};
+
+static_assert(std::is_swappable_v<Result<int>>);
+static_assert(std::is_nothrow_swappable_v<Result<int>>);
+static_assert(std::is_swappable_v<Result<void>>);
+static_assert(std::is_nothrow_swappable_v<Result<void>>);
+static_assert(std::is_swappable_v<Result<MoveOnly>>);
+static_assert(std::is_swappable_v<Result<MoveCtorOnlyWithAdlSwap>>);
+static_assert(std::is_nothrow_swappable_v<Result<MoveCtorOnlyWithAdlSwap>>);
+static_assert(!std::is_swappable_v<Result<const int>>);
+static_assert(!std::is_swappable_v<Result<Immovable>>);
+static_assert(!std::is_swappable_v<Result<MoveCtorNotAssign>>);
+static_assert(!std::is_swappable_v<Result<int, NonMovableSwappableStatus>>);
+static_assert(!std::is_swappable_v<Result<void, NonMovableSwappableStatus>>);
+static_assert(std::is_nothrow_swappable_v<Result<ThrowingMove>>);
+
+TEST(ResultOptionalAlign, SwapAllFourStates) {
+  using std::swap;
+
+  // 1. Both engaged: uses ADL swap on T.
+  int swap_calls = 0;
+  Result<CustomSwappable> s1(std::in_place, 10, &swap_calls);
+  Result<CustomSwappable> s2(std::in_place, 20, &swap_calls);
+  swap(s1, s2);
+  EXPECT_EQ(swap_calls, 1);
+  PW_TEST_ASSERT_OK(s1);
+  PW_TEST_ASSERT_OK(s2);
+  EXPECT_EQ(s1->value, 20);
+  EXPECT_EQ(s2->value, 10);
+
+  // Self-swap on engaged Result.
+  swap(s1, s1);
+  EXPECT_EQ(swap_calls, 2);
+  PW_TEST_ASSERT_OK(s1);
+  EXPECT_EQ(s1->value, 20);
+
+  // 2. Engaged and disengaged (preserving derived status detail).
+  Result<int, StatusWithDetail> ok_res(42);
+  Result<int, StatusWithDetail> err_res(StatusWithDetail(HasValue::kNo, 77));
+  ok_res.swap(err_res);
+  EXPECT_FALSE(ok_res.has_value());
+  EXPECT_EQ(ok_res.status().code(), HasValue::kNo);
+  EXPECT_EQ(ok_res.status().detail(), 77u);
+  PW_TEST_ASSERT_OK(err_res);
+  EXPECT_EQ(*err_res, 42);
+
+  // 3. Disengaged and engaged.
+  swap(ok_res, err_res);
+  PW_TEST_ASSERT_OK(ok_res);
+  EXPECT_EQ(*ok_res, 42);
+  EXPECT_FALSE(err_res.has_value());
+  EXPECT_EQ(err_res.status().code(), HasValue::kNo);
+  EXPECT_EQ(err_res.status().detail(), 77u);
+
+  swap(ok_res, ok_res);
+  PW_TEST_ASSERT_OK(ok_res);
+  EXPECT_EQ(*ok_res, 42);
+
+  // 4. Both disengaged.
+  Result<int, StatusWithDetail> err2(
+      StatusWithDetail(HasValue::kDefinitelyNot, 99));
+  swap(err_res, err2);
+  EXPECT_EQ(err_res.status().code(), HasValue::kDefinitelyNot);
+  EXPECT_EQ(err_res.status().detail(), 99u);
+  EXPECT_EQ(err2.status().code(), HasValue::kNo);
+  EXPECT_EQ(err2.status().detail(), 77u);
+
+  swap(err_res, err_res);
+  EXPECT_EQ(err_res.status().code(), HasValue::kDefinitelyNot);
+  EXPECT_EQ(err_res.status().detail(), 99u);
+
+  // Move-constructible (non-move-assignable) type with ADL swap.
+  Result<MoveCtorOnlyWithAdlSwap> m1(std::in_place, 1);
+  Result<MoveCtorOnlyWithAdlSwap> m2 = Status::Aborted();
+  swap(m1, m2);
+  EXPECT_FALSE(m1.has_value());
+  EXPECT_EQ(m1.status(), Status::Aborted());
+  PW_TEST_ASSERT_OK(m2);
+  EXPECT_EQ(m2->value, 1);
+
+  Result<MoveCtorOnlyWithAdlSwap> m3(std::in_place, 2);
+  swap(m2, m3);
+  EXPECT_EQ(m2->value, 2);
+  EXPECT_EQ(m3->value, 1);
+
+  // Counter lifetime check across swap.
+  Counter::Reset();
+  {
+    Result<Counter> c1(std::in_place, 5);
+    Result<Counter> c2 = Status::NotFound();
+    swap(c1, c2);
+    EXPECT_FALSE(c1.has_value());
+    PW_TEST_ASSERT_OK(c2);
+    EXPECT_EQ(c2->value, 5);
+  }
+  EXPECT_EQ(Counter::created + Counter::moved, Counter::destroyed);
+
+  // Result<void> swap.
+  Result<void, StatusWithDetail> v1(std::in_place);
+  Result<void, StatusWithDetail> v2(StatusWithDetail(HasValue::kNo, 55));
+  swap(v1, v2);
+  EXPECT_FALSE(v1.has_value());
+  EXPECT_EQ(v1.status().detail(), 55u);
+  PW_TEST_EXPECT_OK(v2);
+  swap(v1, v1);
+  swap(v2, v2);
+  EXPECT_EQ(v1.status().detail(), 55u);
+  PW_TEST_EXPECT_OK(v2);
+}
+
+#if _PW_RESULT_CONSTEXPR_CONSTRUCT_AT
+PW_CONSTEXPR_TEST(ResultOptionalAlign, ConstexprSwap, {
+  using std::swap;
+  Result<int> a = 1;
+  Result<int> b = Status::NotFound();
+  swap(a, b);
+  PW_TEST_EXPECT_FALSE(a.has_value());
+  PW_TEST_EXPECT_EQ(a.status(), Status::NotFound());
+  PW_TEST_EXPECT_TRUE(b.has_value());
+  PW_TEST_EXPECT_EQ(*b, 1);
+
+  swap(a, a);
+  swap(b, b);
+  PW_TEST_EXPECT_EQ(a.status(), Status::NotFound());
+  PW_TEST_EXPECT_EQ(*b, 1);
+
+  Result<void> v1 = OkStatus();
+  Result<void> v2 = Status::Internal();
+  swap(v1, v2);
+  PW_TEST_EXPECT_EQ(v1.status(), Status::Internal());
+  PW_TEST_EXPECT_TRUE(v2.has_value());
+  swap(v1, v1);
+  swap(v2, v2);
+  PW_TEST_EXPECT_EQ(v1.status(), Status::Internal());
+  PW_TEST_EXPECT_TRUE(v2.has_value());
+});
+#endif  // _PW_RESULT_CONSTEXPR_CONSTRUCT_AT
+
+// Monadic enhancements: lvalue Result -> MoveOnly / Immovable, 0-arg or_else,
+// and SFINAE constraints.
+template <typename R, typename Fn, typename = void>
+struct CanAndThen : std::false_type {};
+template <typename R, typename Fn>
+struct CanAndThen<
+    R,
+    Fn,
+    std::void_t<decltype(std::declval<R>().and_then(std::declval<Fn>()))>>
+    : std::true_type {};
+
+template <typename R, typename Fn, typename = void>
+struct CanTransform : std::false_type {};
+template <typename R, typename Fn>
+struct CanTransform<
+    R,
+    Fn,
+    std::void_t<decltype(std::declval<R>().transform(std::declval<Fn>()))>>
+    : std::true_type {};
+
+template <typename R, typename Fn, typename = void>
+struct CanOrElse : std::false_type {};
+template <typename R, typename Fn>
+struct CanOrElse<
+    R,
+    Fn,
+    std::void_t<decltype(std::declval<R>().or_else(std::declval<Fn>()))>>
+    : std::true_type {};
+
+struct ZeroArgMoveOnlyRecovery {
+  Result<MoveOnly> operator()() const {
+    return Result<MoveOnly>(std::in_place, 99);
+  }
+};
+struct ZeroArgImmovableRecovery {
+  Result<Immovable> operator()() const {
+    return Result<Immovable>(std::in_place, 99);
+  }
+};
+struct TakesStringOnly {
+  Result<int> operator()(std::string) const { return 0; }
+};
+
+static_assert(!CanAndThen<Result<int>&, TakesStringOnly>::value);
+static_assert(!CanTransform<Result<int>&, TakesStringOnly>::value);
+static_assert(!CanOrElse<Result<int>&, TakesStringOnly>::value);
+static_assert(
+    !CanOrElse<const Result<MoveOnly>&, ZeroArgMoveOnlyRecovery>::value);
+static_assert(!CanOrElse<Result<MoveOnly>&, ZeroArgMoveOnlyRecovery>::value);
+static_assert(CanOrElse<Result<MoveOnly>&&, ZeroArgMoveOnlyRecovery>::value);
+static_assert(!CanOrElse<Result<Immovable>&&, ZeroArgImmovableRecovery>::value);
+
+class [[nodiscard]] MoveOnlyStatus final
+    : public StatusBase<MoveOnlyStatus, HasValue::kYes> {
+ public:
+  constexpr MoveOnlyStatus() noexcept = default;
+  explicit constexpr MoveOnlyStatus(HasValue code) noexcept
+      : StatusBase(code) {}
+  MoveOnlyStatus(const MoveOnlyStatus&) = delete;
+  MoveOnlyStatus& operator=(const MoveOnlyStatus&) = delete;
+  // Moving clears the source status to OK (`HasValue::kYes`), catching any
+  // premature move from a `Result`'s status before that `Result` is returned.
+  constexpr MoveOnlyStatus(MoveOnlyStatus&& other) noexcept
+      : StatusBase(other.code_) {
+    other.code_ = HasValue::kYes;
+  }
+  constexpr MoveOnlyStatus& operator=(MoveOnlyStatus&& other) noexcept {
+    if (this != &other) {
+      code_ = other.code_;
+      other.code_ = HasValue::kYes;
+    }
+    return *this;
+  }
+};
+
+static_assert(!CanOrElse<const Result<int, MoveOnlyStatus>&,
+                         Result<int, MoveOnlyStatus> (*)()>::value);
+static_assert(CanOrElse<Result<int, MoveOnlyStatus>&&,
+                        Result<int, MoveOnlyStatus> (*)()>::value);
+static_assert(!CanOrElse<const Result<void, MoveOnlyStatus>&,
+                         Result<void, MoveOnlyStatus> (*)()>::value);
+static_assert(CanOrElse<Result<void, MoveOnlyStatus>&&,
+                        Result<void, MoveOnlyStatus> (*)()>::value);
+// Void-returning callbacks may inspect `const Status&` or take 0 args, but must
+// not consume the status by value/rvalue when `self` is returned.
+static_assert(
+    !CanOrElse<Result<int, MoveOnlyStatus>&&, void (*)(MoveOnlyStatus)>::value);
+static_assert(!CanOrElse<Result<int>&&, void (*)(Status&&)>::value);
+static_assert(CanOrElse<Result<int, MoveOnlyStatus>&&,
+                        void (*)(const MoveOnlyStatus&)>::value);
+static_assert(CanOrElse<Result<int>&&, void (*)(Status)>::value);
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, MonadicMoveOnlyStatus, {
+  auto ok_tx =
+      Result<int, MoveOnlyStatus>(10).transform([](int x) { return x * 2; });
+  PW_TEST_EXPECT_TRUE(ok_tx.has_value());
+  PW_TEST_EXPECT_EQ(*ok_tx, 20);
+
+  auto err_tx = Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo))
+                    .transform([](int x) { return x * 2; });
+  PW_TEST_EXPECT_FALSE(err_tx.has_value());
+
+  auto err_and_then =
+      Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo))
+          .and_then([](int x) { return Result<int, MoveOnlyStatus>(x + 1); });
+  PW_TEST_EXPECT_FALSE(err_and_then.has_value());
+
+  auto recovered =
+      Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo))
+          .or_else([](MoveOnlyStatus s) -> Result<int, MoveOnlyStatus> {
+            return s.code() == HasValue::kNo ? 99 : 0;
+          });
+  PW_TEST_EXPECT_TRUE(recovered.has_value());
+  PW_TEST_EXPECT_EQ(*recovered, 99);
+
+  bool observed_err = false;
+  auto side_effect_res =
+      Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kDefinitelyNot))
+          .or_else([&observed_err](const MoveOnlyStatus& s) {
+            observed_err = (s.code() == HasValue::kDefinitelyNot);
+          });
+  PW_TEST_EXPECT_TRUE(observed_err);
+  PW_TEST_EXPECT_FALSE(side_effect_res.has_value());
+  bool status_survived = false;
+  static_cast<void>(std::move(side_effect_res)
+                        .or_else([&status_survived](const MoveOnlyStatus& s) {
+                          status_survived =
+                              (s.code() == HasValue::kDefinitelyNot);
+                        }));
+  PW_TEST_EXPECT_TRUE(status_survived);
+
+  bool zero_arg_called = false;
+  auto zero_arg_res =
+      Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kDefinitelyNot))
+          .or_else([&zero_arg_called]() { zero_arg_called = true; });
+  PW_TEST_EXPECT_TRUE(zero_arg_called);
+  PW_TEST_EXPECT_FALSE(zero_arg_res.has_value());
+  bool zero_arg_survived = false;
+  static_cast<void>(std::move(zero_arg_res)
+                        .or_else([&zero_arg_survived](const MoveOnlyStatus& s) {
+                          zero_arg_survived =
+                              (s.code() == HasValue::kDefinitelyNot);
+                        }));
+  PW_TEST_EXPECT_TRUE(zero_arg_survived);
+
+  auto void_tx = Result<void, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo))
+                     .transform([]() { return 5; });
+  PW_TEST_EXPECT_FALSE(void_tx.has_value());
+
+  auto void_recovered =
+      Result<void, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo)).or_else([]() {
+        return MoveOnlyStatus();
+      });
+  PW_TEST_EXPECT_TRUE(void_recovered.has_value());
+});
+
+PW_CONSTEXPR_TEST(
+    ResultOptionalAlign, TransformAndAndThenImmovableAndMoveOnly, {
+      // Lvalue Result<int> transforming directly into Result<Immovable> and
+      // Result<TrivialMoveOnly> without requiring copy/move on the return type.
+      Result<int> ok_val = 21;
+      Result<Immovable> imm_ok =
+          ok_val.transform([](int& x) { return Immovable(x * 2); });
+      PW_TEST_EXPECT_TRUE(imm_ok.has_value());
+      PW_TEST_EXPECT_EQ(imm_ok->val(), 42);
+
+      const Result<int> const_ok = 10;
+      Result<Immovable> imm_const =
+          const_ok.transform([](const int& x) { return Immovable(x + 5); });
+      PW_TEST_EXPECT_TRUE(imm_const.has_value());
+      PW_TEST_EXPECT_EQ(imm_const->val(), 15);
+
+      Result<int> err_val = Status::PermissionDenied();
+      Result<Immovable> imm_err =
+          err_val.transform([](int x) { return Immovable(x); });
+      PW_TEST_EXPECT_FALSE(imm_err.has_value());
+      PW_TEST_EXPECT_EQ(imm_err.status(), Status::PermissionDenied());
+
+      // Lvalue and_then returning Result<TrivialMoveOnly> and
+      // Result<Immovable>.
+      Result<TrivialMoveOnly> mo_ok = ok_val.and_then(
+          [](int x) { return Result<TrivialMoveOnly>(std::in_place, x + 1); });
+      PW_TEST_EXPECT_TRUE(mo_ok.has_value());
+      PW_TEST_EXPECT_EQ(mo_ok->value, 22);
+
+      Result<Immovable> imm_and_then = const_ok.and_then(
+          [](int x) { return Result<Immovable>(std::in_place, x * 3); });
+      PW_TEST_EXPECT_TRUE(imm_and_then.has_value());
+      PW_TEST_EXPECT_EQ(imm_and_then->val(), 30);
+
+      Result<Immovable> imm_and_then_err = err_val.and_then(
+          [](int x) { return Result<Immovable>(std::in_place, x); });
+      PW_TEST_EXPECT_FALSE(imm_and_then_err.has_value());
+      PW_TEST_EXPECT_EQ(imm_and_then_err.status(), Status::PermissionDenied());
+
+      // Result<void> transforming / and_then to Immovable.
+      const Result<void> ok_void = OkStatus();
+      Result<Immovable> void_imm =
+          ok_void.transform([]() { return Immovable(77); });
+      PW_TEST_EXPECT_TRUE(void_imm.has_value());
+      PW_TEST_EXPECT_EQ(void_imm->val(), 77);
+
+      Result<Immovable> void_and_then_imm = ok_void.and_then(
+          []() { return Result<Immovable>(std::in_place, 88); });
+      PW_TEST_EXPECT_TRUE(void_and_then_imm.has_value());
+      PW_TEST_EXPECT_EQ(void_and_then_imm->val(), 88);
+
+      // Result<const int> preserves const qualification when passed to
+      // callbacks.
+      Result<const int> const_elem = 5;
+      Result<bool> was_const_lref = const_elem.transform([](auto& ref) {
+        return std::is_const_v<std::remove_reference_t<decltype(ref)>>;
+      });
+      PW_TEST_EXPECT_TRUE(*was_const_lref);
+
+      Result<bool> was_const_rref =
+          std::move(const_elem).transform([](auto&& ref) {
+            return std::is_const_v<std::remove_reference_t<decltype(ref)>>;
+          });
+      PW_TEST_EXPECT_TRUE(*was_const_rref);
+    });
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, OrElseZeroArgCallbacks, {
+  const Result<int> ok_res = 12;
+  const Result<int> err_res = Status::NotFound();
+
+  // 0-arg returning fallback Result / value / status on const&.
+  PW_TEST_EXPECT_EQ(*ok_res.or_else([]() { return 99; }), 12);
+  PW_TEST_EXPECT_EQ(*err_res.or_else([]() { return 99; }), 99);
+  PW_TEST_EXPECT_EQ(
+      err_res.or_else([]() -> Result<int> { return Status::Aborted(); })
+          .status(),
+      Status::Aborted());
+
+  // 0-arg returning void on const&.
+  bool side_effect = false;
+  PW_TEST_EXPECT_EQ(*ok_res.or_else([&side_effect]() { side_effect = true; }),
+                    12);
+  PW_TEST_EXPECT_FALSE(side_effect);
+  PW_TEST_EXPECT_EQ(
+      err_res.or_else([&side_effect]() { side_effect = true; }).status(),
+      Status::NotFound());
+  PW_TEST_EXPECT_TRUE(side_effect);
+
+  // 0-arg on rvalue Result<TrivialMoveOnly>.
+  Result<TrivialMoveOnly> mo_err = Status::Unavailable();
+  Result<TrivialMoveOnly> mo_recovered = std::move(mo_err).or_else(
+      []() { return Result<TrivialMoveOnly>(std::in_place, 55); });
+  PW_TEST_EXPECT_TRUE(mo_recovered.has_value());
+  PW_TEST_EXPECT_EQ(mo_recovered->value, 55);
+
+  bool rval_side_effect = false;
+  Result<TrivialMoveOnly> mo_err2 = Status::Unavailable();
+  Result<TrivialMoveOnly> mo_still_err = std::move(mo_err2).or_else(
+      [&rval_side_effect]() { rval_side_effect = true; });
+  PW_TEST_EXPECT_TRUE(rval_side_effect);
+  PW_TEST_EXPECT_FALSE(mo_still_err.has_value());
+
+  // Variadic callback capable of both 1-arg and 0-arg prefers 1-arg (status).
+  int arity_observed = -1;
+  Result<int> var_ret = err_res.or_else([&arity_observed](auto... args) {
+    arity_observed = sizeof...(args);
+    return 7;
+  });
+  PW_TEST_EXPECT_EQ(arity_observed, 1);
+  PW_TEST_EXPECT_EQ(*var_ret, 7);
+
+  // 0-arg on Result<void>.
+  const Result<void> void_err = Status::DataLoss();
+  PW_TEST_EXPECT_TRUE(void_err.or_else([]() { return OkStatus(); }).ok());
+  bool void_side_effect = false;
+  PW_TEST_EXPECT_EQ(
+      void_err.or_else([&void_side_effect]() { void_side_effect = true; })
+          .status(),
+      Status::DataLoss());
+  PW_TEST_EXPECT_TRUE(void_side_effect);
+
+  PW_TEST_EXPECT_TRUE(Result<void>(Status::DataLoss())
+                          .or_else([]() { return OkStatus(); })
+                          .ok());
+});
+
+// Heterogeneous Result<T, S> == Result<U, S> and sentinel exclusion.
+static_assert(kCanCompare<Result<int>, Result<long>>);
+static_assert(kCanCompare<Result<long>, Result<int>>);
+static_assert(kCanCompare<Result<std::string_view>, Result<const char*>>);
+static_assert(!kCanCompare<Result<int>, Result<std::string_view>>);
+static_assert(!kCanCompare<Result<int>, TestResult<long>>);
+
+struct FriendOnlyLhsEq {
+  int x;
+  bool operator==(int) const = delete;
+  friend constexpr bool operator==(int lhs,
+                                   const FriendOnlyLhsEq& rhs) noexcept {
+    return lhs == rhs.x;
+  }
+};
+
+#if __cplusplus < 202002L
+static_assert(!kCanCompare<Result<FriendOnlyLhsEq>, int>);
+#else
+// C++20 rewrites `Result<FriendOnlyLhsEq> == int` to `int == Result<...>`.
+static_assert(kCanCompare<Result<FriendOnlyLhsEq>, int>);
+#endif
+static_assert(kCanCompare<int, Result<FriendOnlyLhsEq>>);
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, AsymmetricValueEquality, {
+  const Result<FriendOnlyLhsEq> ok_val(std::in_place, FriendOnlyLhsEq{5});
+  const Result<FriendOnlyLhsEq> err_val = Status::NotFound();
+  PW_TEST_EXPECT_TRUE(5 == ok_val);
+  PW_TEST_EXPECT_FALSE(5 != ok_val);
+  PW_TEST_EXPECT_TRUE(6 != ok_val);
+  PW_TEST_EXPECT_FALSE(5 == err_val);
+  PW_TEST_EXPECT_TRUE(5 != err_val);
+});
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, HeterogeneousResultEquality, {
+  const Result<int> ok_int = 42;
+  const Result<long> ok_long_same = 42L;
+  const Result<long> ok_long_diff = 43L;
+  const Result<int> err_int = Status::NotFound();
+  const Result<long> err_long_same = Status::NotFound();
+  const Result<long> err_long_diff = Status::Internal();
+
+  PW_TEST_EXPECT_TRUE(ok_int == ok_long_same);
+  PW_TEST_EXPECT_FALSE(ok_int != ok_long_same);
+  PW_TEST_EXPECT_FALSE(ok_int == ok_long_diff);
+  PW_TEST_EXPECT_TRUE(ok_int != ok_long_diff);
+
+  PW_TEST_EXPECT_FALSE(ok_int == err_long_same);
+  PW_TEST_EXPECT_TRUE(ok_int != err_long_same);
+  PW_TEST_EXPECT_FALSE(err_int == ok_long_same);
+  PW_TEST_EXPECT_TRUE(err_int != ok_long_same);
+
+  PW_TEST_EXPECT_TRUE(err_int == err_long_same);
+  PW_TEST_EXPECT_FALSE(err_int != err_long_same);
+  PW_TEST_EXPECT_FALSE(err_int == err_long_diff);
+  PW_TEST_EXPECT_TRUE(err_int != err_long_diff);
+
+  const Result<std::string_view> sv = "hello";
+  const Result<const char*> cstr = "hello";
+  PW_TEST_EXPECT_TRUE(sv == cstr);
+  PW_TEST_EXPECT_TRUE(cstr == sv);
+  PW_TEST_EXPECT_FALSE(sv != cstr);
+});
+
+struct EmptySentinelTag {};
+
+class [[nodiscard]] StatusWithSentinel final
+    : public StatusBase<StatusWithSentinel, HasValue::kYes> {
+ public:
+  constexpr StatusWithSentinel() noexcept = default;
+  explicit constexpr StatusWithSentinel(HasValue code) noexcept
+      : StatusBase(code) {}
+  // Implicit conversion from EmptySentinelTag (analogous to std::nullopt_t).
+  constexpr StatusWithSentinel(EmptySentinelTag) noexcept  // NOLINT
+      : StatusBase(HasValue::kNo) {}
+};
+
+struct ComparableWithSentinel {
+  int value;
+  friend constexpr bool operator==(const ComparableWithSentinel&,
+                                   EmptySentinelTag) noexcept {
+    return true;
+  }
+  friend constexpr bool operator==(EmptySentinelTag,
+                                   const ComparableWithSentinel&) noexcept {
+    return true;
+  }
+};
+
+PW_CONSTEXPR_TEST(ResultOptionalAlign, StatusConvertibleExcludedFromValueEq, {
+  // Check that ComparableWithSentinel compares equal to EmptySentinelTag.
+  PW_TEST_EXPECT_TRUE(ComparableWithSentinel{1} == EmptySentinelTag{});
+  PW_TEST_EXPECT_TRUE(EmptySentinelTag{} == ComparableWithSentinel{1});
+
+  // Even though ComparableWithSentinel == EmptySentinelTag returns true,
+  // EmptySentinelTag is implicitly convertible to StatusWithSentinel, so
+  // Result == EmptySentinelTag must unambiguously compare the Result's status.
+  const Result<ComparableWithSentinel, StatusWithSentinel> engaged(
+      ComparableWithSentinel{1});
+  const Result<ComparableWithSentinel, StatusWithSentinel> disengaged(
+      EmptySentinelTag{});
+
+  PW_TEST_EXPECT_FALSE(engaged == EmptySentinelTag{});
+  PW_TEST_EXPECT_TRUE(engaged != EmptySentinelTag{});
+  PW_TEST_EXPECT_TRUE(disengaged == EmptySentinelTag{});
+  PW_TEST_EXPECT_FALSE(disengaged != EmptySentinelTag{});
+  PW_TEST_EXPECT_TRUE(EmptySentinelTag{} == disengaged);
+
+  // Meanwhile, Result<pw_Status, Status> (where T == Status::Code) still
+  // compares pw_Status against the held value.
+  const Result<pw_Status, Status> held_code(PW_STATUS_NOT_FOUND);
+  PW_TEST_EXPECT_TRUE(held_code.has_value());
+  PW_TEST_EXPECT_TRUE(held_code == PW_STATUS_NOT_FOUND);
+  PW_TEST_EXPECT_TRUE(held_code != PW_STATUS_OK);
+  PW_TEST_EXPECT_TRUE(held_code == OkStatus());
+});
+
+// noexcept verification for Status, StatusBase, Result<T>, and Result<void>.
+static_assert(noexcept(OkStatus()));
+static_assert(noexcept(Status::NotFound()));
+static_assert(noexcept(Status(PW_STATUS_INTERNAL)));
+static_assert(noexcept(std::declval<const Status&>().ok()));
+static_assert(noexcept(std::declval<const Status&>().code()));
+static_assert(noexcept(std::declval<const Status&>().IsNotFound()));
+static_assert(noexcept(std::declval<const Status&>().IgnoreError()));
+static_assert(noexcept(std::declval<Status&>().Update(OkStatus())));
+static_assert(noexcept(OkStatus() == Status::NotFound()));
+static_assert(noexcept(OkStatus() != PW_STATUS_NOT_FOUND));
+static_assert(noexcept(HasValueStatus().ok()));
+static_assert(noexcept(HasValueStatus().code()));
+static_assert(noexcept(HasValueStatus() == HasValue::kYes));
+
+static_assert(noexcept(Result<int>()));
+static_assert(noexcept(Result<int>(std::in_place, 5)));
+static_assert(noexcept(std::declval<const Result<int>&>().ok()));
+static_assert(noexcept(std::declval<const Result<int>&>().has_value()));
+static_assert(noexcept(std::declval<const Result<int>&>().status()));
+static_assert(noexcept(std::declval<const Result<int>&>().IgnoreError()));
+static_assert(noexcept(*std::declval<Result<int>&>()));
+static_assert(noexcept(*std::declval<const Result<int>&>()));
+static_assert(noexcept(*std::declval<Result<int>&&>()));
+static_assert(noexcept(*std::declval<const Result<int>&&>()));
+static_assert(noexcept(std::declval<Result<int>&>().operator->()));
+static_assert(noexcept(std::declval<const Result<int>&>().operator->()));
+static_assert(noexcept(std::declval<Result<int>&>().emplace(5)));
+static_assert(
+    noexcept(std::declval<Result<int>&>().reset<PW_STATUS_INTERNAL>()));
+static_assert(noexcept(std::declval<const Result<int>&>() == OkStatus()));
+static_assert(noexcept(std::declval<const Result<int>&>() == PW_STATUS_OK));
+
+static_assert(noexcept(Result<void>()));
+static_assert(noexcept(Result<void>(std::in_place)));
+static_assert(noexcept(Result<void>(OkStatus())));
+static_assert(noexcept(std::declval<const Result<void>&>().ok()));
+static_assert(noexcept(std::declval<const Result<void>&>().has_value()));
+static_assert(noexcept(std::declval<const Result<void>&>().status()));
+static_assert(noexcept(std::declval<const Result<void>&>().IgnoreError()));
+static_assert(noexcept(std::declval<Result<void>&>().emplace()));
+static_assert(
+    noexcept(std::declval<Result<void>&>().reset<PW_STATUS_INTERNAL>()));
+static_assert(noexcept(std::declval<const Result<void>&>() == Result<void>()));
+static_assert(noexcept(std::declval<const Result<void>&>() == OkStatus()));
+static_assert(noexcept(std::declval<const Result<void>&>() == PW_STATUS_OK));
+
 #if PW_NC_TEST(ResultRequiresEnumStatusCode)
 PW_NC_EXPECT("pw::Result only supports status types with enum codes");
 class [[nodiscard]] IntCodeStatus final
@@ -2152,6 +3478,59 @@ PW_NC_EXPECT("PW_TRY, PW_CHECK_OK, and PW_ASSERT_OK cannot be used directly");
 Status TryAssignDisallowedForResultStatus(Result<Status> r) {
   PW_TRY_ASSIGN([[maybe_unused]] Status s, r);
   return OkStatus();
+}
+#elif PW_NC_TEST(ResultRejectsReferenceType)
+PW_NC_EXPECT("pw::Result does not support reference types");
+void ResultRejectsReferenceType() {
+  [[maybe_unused]] Result<int&>* ptr = nullptr;
+  static_cast<void>(sizeof(*ptr));
+}
+#elif PW_NC_TEST(ResultRejectsArrayType)
+PW_NC_EXPECT("pw::Result does not support array types");
+void ResultRejectsArrayType() {
+  [[maybe_unused]] Result<int[4]>* ptr = nullptr;
+  static_cast<void>(sizeof(*ptr));
+}
+#elif PW_NC_TEST(ResultRejectsFunctionType)
+PW_NC_EXPECT("pw::Result requires an object type");
+void ResultRejectsFunctionType() {
+  [[maybe_unused]] Result<int()>* ptr = nullptr;
+  static_cast<void>(sizeof(*ptr));
+}
+#elif PW_NC_TEST(ResultRejectsInPlaceType)
+PW_NC_EXPECT("pw::Result cannot wrap std::in_place_t");
+void ResultRejectsInPlaceType() {
+  [[maybe_unused]] Result<std::in_place_t>* ptr = nullptr;
+  static_cast<void>(sizeof(*ptr));
+}
+#elif PW_NC_TEST(ResultRejectsConstInPlaceType)
+PW_NC_EXPECT("pw::Result cannot wrap std::in_place_t");
+void ResultRejectsConstInPlaceType() {
+  [[maybe_unused]] Result<const std::in_place_t>* ptr = nullptr;
+  static_cast<void>(sizeof(*ptr));
+}
+#elif PW_NC_TEST(ValueOrRequiresCopyConstructible)
+PW_NC_EXPECT("requires T to be copy constructible");
+int ValueOrRequiresCopyConstructible() {
+  const Result<MoveOnly> r(std::in_place, 1);
+  return r.value_or(MoveOnly(2)).value;
+}
+#elif PW_NC_TEST(AndThenRequiresResultReturn)
+PW_NC_EXPECT("Fn must return a pw::Result");
+void AndThenRequiresResultReturn() {
+  static_cast<void>(Result<int>(1).and_then([](int x) { return x; }));
+}
+#elif PW_NC_TEST(AndThenRequiresMatchingStatusType)
+PW_NC_EXPECT("Fn must return a pw::Result with the same status_type");
+void AndThenRequiresMatchingStatusType() {
+  static_cast<void>(
+      Result<int>(1).and_then([](int x) { return TestResult<int>(x); }));
+}
+#elif PW_NC_TEST(OrElseRequiresConvertibleReturn)
+PW_NC_EXPECT("Fn must be convertible to a pw::Result");
+void OrElseRequiresConvertibleReturn() {
+  static_cast<void>(
+      Result<int>(Status::NotFound()).or_else([]() { return "bad"; }));
 }
 #endif  // PW_NC_TEST
 

@@ -35,16 +35,14 @@
 //   }
 #pragma once
 
-#include <exception>
-#include <functional>
 #include <initializer_list>
-#include <new>
-#include <string>
+#include <memory>
+#include <string>  // IWYU pragma: keep
 #include <type_traits>
 #include <utility>
 
-#include "lib/stdcompat/functional.h"
 #include "pw_assert/assert.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_result/internal/result_internal.h"
 #include "pw_status/status.h"
@@ -55,7 +53,7 @@ namespace pw {
 namespace internal {
 
 template <typename T, typename StatusType>
-constexpr T&& ConvertToValue(Result<T, StatusType>& result);
+constexpr T&& ConvertToValue(Result<T, StatusType>& result) noexcept;
 
 }  // namespace internal
 
@@ -167,16 +165,14 @@ constexpr T&& ConvertToValue(Result<T, StatusType>& result);
 ///   `pw::Status`. Must be derived from `pw::StatusBase` and use an enum code.
 template <typename T, typename StatusType>
 class [[nodiscard]] Result final
-    : private internal_result::ResultData<T, StatusType>,
-      private internal_result::CopyCtorBase<T>,
-      private internal_result::MoveCtorBase<T>,
-      private internal_result::CopyAssignBase<T>,
-      private internal_result::MoveAssignBase<T> {
+    : private internal_result::ResultData<T, StatusType> {
   template <typename U, typename>
   friend class Result;
 
+  friend struct internal_result::Monadic;
+
   template <typename U, typename S>
-  friend constexpr U&& internal::ConvertToValue(Result<U, S>& result);
+  friend constexpr U&& internal::ConvertToValue(Result<U, S>& result) noexcept;
 
   using Base = internal_result::ResultData<T, StatusType>;
 
@@ -189,6 +185,13 @@ class [[nodiscard]] Result final
   /// `pw::Status`.
   using status_type = StatusType;
 
+  static_assert(!std::is_reference_v<T>,
+                "pw::Result does not support reference types");
+  static_assert(!std::is_array_v<T>, "pw::Result does not support array types");
+  static_assert(std::is_object_v<T>,
+                "pw::Result requires an object type (or void)");
+  static_assert(!std::is_same_v<std::remove_cv_t<T>, std::in_place_t>,
+                "pw::Result cannot wrap std::in_place_t");
   static_assert(internal::is_status_v<status_type>,
                 "The status type must derive from pw::StatusBase");
   static_assert(std::is_enum_v<typename status_type::Code>,
@@ -205,20 +208,25 @@ class [[nodiscard]] Result final
   /// Only enabled when `StatusType` is `pw::Status`.
   template <typename S = StatusType,
             typename = std::enable_if_t<std::is_same_v<S, Status>>>
-  explicit constexpr Result() : Base(Status::Unknown()) {}
+  explicit constexpr Result() noexcept
+      : Base(internal_result::kEmptyTag, Status::Unknown()) {}
 
   /// `Result<T, StatusType>` is copy constructible if `T` is copy
-  /// constructible.
+  /// constructible (and trivially copy constructible if `T` and `StatusType`
+  /// are trivially copy constructible).
   constexpr Result(const Result&) = default;
   /// `Result<T, StatusType>` is copy assignable if `T` is copy constructible
-  /// and copy assignable.
+  /// and copy assignable (and trivially copy assignable if `T` and `StatusType`
+  /// are trivially destructible, copy constructible, and copy assignable).
   constexpr Result& operator=(const Result&) = default;
 
   /// `Result<T, StatusType>` is move constructible if `T` is move
-  /// constructible.
+  /// constructible (and trivially move constructible if `T` and `StatusType`
+  /// are trivially move constructible).
   constexpr Result(Result&&) = default;
   /// `Result<T, StatusType>` is move assignable if `T` is move constructible
-  /// and move assignable.
+  /// and move assignable (and trivially move assignable if `T` and `StatusType`
+  /// are trivially destructible, move constructible, and move assignable).
   constexpr Result& operator=(Result&&) = default;
 
   // Converting Constructors
@@ -233,63 +241,45 @@ class [[nodiscard]] Result final
   /// constructor.)
   template <typename U,
             std::enable_if_t<
-                std::conjunction<
-                    std::negation<std::is_same<T, U>>,
-                    std::is_constructible<T, const U&>,
-                    std::is_convertible<const U&, T>,
-                    std::negation<
-                        internal_result::IsConstructibleOrConvertibleFromResult<
-                            T,
-                            U,
-                            StatusType>>>::value,
+                internal_result::
+                    kCanConvertFromResult<T, U, const U&, StatusType, true>,
                 int> = 0>
-  constexpr Result(const Result<U, StatusType>& other)  // NOLINT
-      : Base(static_cast<const typename Result<U, StatusType>::Base&>(other)) {}
+  constexpr Result(const Result<U, StatusType>& other) noexcept  // NOLINT
+      : Base(internal_result::kFromResultTag,
+             static_cast<
+                 const internal_result::ResultStorageBase<U, StatusType>&>(
+                 other)) {}
 
   template <typename U,
             std::enable_if_t<
-                std::conjunction<
-                    std::negation<std::is_same<T, U>>,
-                    std::is_constructible<T, const U&>,
-                    std::negation<std::is_convertible<const U&, T>>,
-                    std::negation<
-                        internal_result::IsConstructibleOrConvertibleFromResult<
-                            T,
-                            U,
-                            StatusType>>>::value,
+                internal_result::
+                    kCanConvertFromResult<T, U, const U&, StatusType, false>,
                 int> = 0>
-  explicit constexpr Result(const Result<U, StatusType>& other)
-      : Base(static_cast<const typename Result<U, StatusType>::Base&>(other)) {}
+  explicit constexpr Result(const Result<U, StatusType>& other) noexcept
+      : Base(internal_result::kFromResultTag,
+             static_cast<
+                 const internal_result::ResultStorageBase<U, StatusType>&>(
+                 other)) {}
 
-  template <typename U,
-            std::enable_if_t<
-                std::conjunction<
-                    std::negation<std::is_same<T, U>>,
-                    std::is_constructible<T, U&&>,
-                    std::is_convertible<U&&, T>,
-                    std::negation<
-                        internal_result::IsConstructibleOrConvertibleFromResult<
-                            T,
-                            U,
-                            StatusType>>>::value,
-                int> = 0>
-  constexpr Result(Result<U, StatusType>&& other)  // NOLINT
-      : Base(static_cast<typename Result<U, StatusType>::Base&&>(other)) {}
+  template <
+      typename U,
+      std::enable_if_t<
+          internal_result::kCanConvertFromResult<T, U, U&&, StatusType, true>,
+          int> = 0>
+  constexpr Result(Result<U, StatusType>&& other) noexcept  // NOLINT
+      : Base(internal_result::kFromResultTag,
+             static_cast<internal_result::ResultStorageBase<U, StatusType>&&>(
+                 other)) {}
 
-  template <typename U,
-            std::enable_if_t<
-                std::conjunction<
-                    std::negation<std::is_same<T, U>>,
-                    std::is_constructible<T, U&&>,
-                    std::negation<std::is_convertible<U&&, T>>,
-                    std::negation<
-                        internal_result::IsConstructibleOrConvertibleFromResult<
-                            T,
-                            U,
-                            StatusType>>>::value,
-                int> = 0>
-  explicit constexpr Result(Result<U, StatusType>&& other)
-      : Base(static_cast<typename Result<U, StatusType>::Base&&>(other)) {}
+  template <
+      typename U,
+      std::enable_if_t<
+          internal_result::kCanConvertFromResult<T, U, U&&, StatusType, false>,
+          int> = 0>
+  explicit constexpr Result(Result<U, StatusType>&& other) noexcept
+      : Base(internal_result::kFromResultTag,
+             static_cast<internal_result::ResultStorageBase<U, StatusType>&&>(
+                 other)) {}
 
   // Converting Assignment Operators
 
@@ -308,39 +298,26 @@ class [[nodiscard]] Result final
   /// @pre If both `Result<T, StatusType>` and `Result<U, StatusType>` contain
   /// an error code, assigns the status in `Result<U, StatusType>` to `Result<T,
   /// StatusType>`.
-  template <typename U,
-            std::enable_if_t<
-                std::conjunction<
-                    std::negation<std::is_same<T, U>>,
-                    std::is_constructible<T, const U&>,
-                    std::is_assignable<T, const U&>,
-                    std::negation<
-                        internal_result::
-                            IsConstructibleOrConvertibleOrAssignableFromResult<
-                                T,
-                                U,
-                                StatusType>>>::value,
-                int> = 0>
-  constexpr Result& operator=(const Result<U, StatusType>& other) {
-    this->Assign(other);
+  template <
+      typename U,
+      std::enable_if_t<
+          internal_result::kCanAssignFromResult<T, U, const U&, StatusType>,
+          int> = 0>
+  constexpr Result& operator=(const Result<U, StatusType>& other) noexcept {
+    this->AssignFrom(
+        static_cast<const internal_result::ResultStorageBase<U, StatusType>&>(
+            other));
     return *this;
   }
 
   template <typename U,
             std::enable_if_t<
-                std::conjunction<
-                    std::negation<std::is_same<T, U>>,
-                    std::is_constructible<T, U&&>,
-                    std::is_assignable<T, U&&>,
-                    std::negation<
-                        internal_result::
-                            IsConstructibleOrConvertibleOrAssignableFromResult<
-                                T,
-                                U,
-                                StatusType>>>::value,
+                internal_result::kCanAssignFromResult<T, U, U&&, StatusType>,
                 int> = 0>
-  constexpr Result& operator=(Result<U, StatusType>&& other) {
-    this->Assign(std::move(other));
+  constexpr Result& operator=(Result<U, StatusType>&& other) noexcept {
+    this->AssignFrom(
+        static_cast<internal_result::ResultStorageBase<U, StatusType>&&>(
+            other));
     return *this;
   }
 
@@ -362,18 +339,7 @@ class [[nodiscard]] Result final
   template <
       typename U = status_type,
       std::enable_if_t<
-          std::conjunction<
-              std::negation<std::is_same<std::remove_cv_t<T>, status_type>>,
-              std::is_convertible<U&&, status_type>,
-              std::is_constructible<status_type, U&&>,
-              std::negation<
-                  std::is_same<std::decay_t<U>, Result<T, StatusType>>>,
-              std::negation<std::is_same<std::decay_t<U>, std::remove_cv_t<T>>>,
-              std::negation<std::is_same<std::decay_t<U>, std::in_place_t>>,
-              std::negation<
-                  internal_result::
-                      HasConversionOperatorToResult<T, U&&, StatusType>>>::
-              value,
+          internal_result::kCanConstructFromStatus<T, U&&, StatusType, true>,
           int> = 0>
   constexpr Result(U&& v)  // NOLINT
       : Base(static_cast<status_type>(std::forward<U>(v))) {}
@@ -381,18 +347,7 @@ class [[nodiscard]] Result final
   template <
       typename U = status_type,
       std::enable_if_t<
-          std::conjunction<
-              std::negation<std::is_same<std::remove_cv_t<T>, status_type>>,
-              std::negation<std::is_convertible<U&&, status_type>>,
-              std::is_constructible<status_type, U&&>,
-              std::negation<
-                  std::is_same<std::decay_t<U>, Result<T, StatusType>>>,
-              std::negation<std::is_same<std::decay_t<U>, std::remove_cv_t<T>>>,
-              std::negation<std::is_same<std::decay_t<U>, std::in_place_t>>,
-              std::negation<
-                  internal_result::
-                      HasConversionOperatorToResult<T, U&&, StatusType>>>::
-              value,
+          internal_result::kCanConstructFromStatus<T, U&&, StatusType, false>,
           int> = 0>
   explicit constexpr Result(U&& v)
       : Base(static_cast<status_type>(std::forward<U>(v))) {}
@@ -405,22 +360,10 @@ class [[nodiscard]] Result final
   ///
   /// @pre `!status_type(std::forward<U>(v)).ok()`. This requirement is asserted
   /// via `PW_ASSERT`.
-  template <
-      typename U = status_type,
-      std::enable_if_t<
-          std::conjunction<
-              std::negation<std::is_same<std::remove_cv_t<T>, status_type>>,
-              std::is_convertible<U&&, status_type>,
-              std::is_constructible<status_type, U&&>,
-              std::negation<
-                  std::is_same<std::decay_t<U>, Result<T, StatusType>>>,
-              std::negation<std::is_same<std::decay_t<U>, std::remove_cv_t<T>>>,
-              std::negation<std::is_same<std::decay_t<U>, std::in_place_t>>,
-              std::negation<
-                  internal_result::
-                      HasConversionOperatorToResult<T, U&&, StatusType>>>::
-              value,
-          int> = 0>
+  template <typename U = status_type,
+            std::enable_if_t<
+                internal_result::kCanAssignFromStatus<T, U&&, StatusType>,
+                int> = 0>
   constexpr Result& operator=(U&& v) {
     this->AssignStatus(static_cast<status_type>(std::forward<U>(v)));
     return *this;
@@ -445,38 +388,32 @@ class [[nodiscard]] Result final
   ///   Result<bool> s2 = false;  // s2.ok() && *s2 == false
   ///   s1 = s2;  // ambiguous, `s1 = *s2` or `s1 = bool(s2)`?
   /// @endcode
-  template <
-      typename U = T,
-      typename = typename std::enable_if<std::conjunction<
-          std::is_constructible<T, U&&>,
-          std::is_assignable<T&, U&&>,
-          std::disjunction<
-              std::is_same<std::remove_cv_t<std::remove_reference_t<U>>,
-                           std::remove_cv_t<T>>,
-              std::conjunction<
-                  std::disjunction<
-                      std::is_same<std::remove_cv_t<T>, status_type>,
-                      std::negation<std::is_convertible<U&&, status_type>>>,
-                  std::negation<
-                      internal_result::
-                          HasConversionOperatorToResult<T, U&&, StatusType>>>>,
-          internal_result::IsForwardingAssignmentValid<T, U&&, StatusType>>::
-                                             value>::type>
-  constexpr Result& operator=(U&& v) {
+  template <typename U = T,
+            typename = std::enable_if_t<
+                internal_result::kCanAssignFromValue<T, U&&, StatusType>>>
+  constexpr Result& operator=(U&& v) noexcept {
     this->Assign(std::forward<U>(v));
     return *this;
   }
 
+  // Pigweed always builds without exceptions (-fno-exceptions), so `noexcept`
+  // qualifiers throughout `Result` are unconditional.
+
   /// Constructs the inner value `T` in-place using the provided args, using the
   /// `T(args...)` constructor.
-  template <typename... Args>
-  explicit constexpr Result(std::in_place_t, Args&&... args)
+  template <typename... Args,
+            std::enable_if_t<std::is_constructible_v<T, Args...>, int> = 0>
+  explicit constexpr Result(std::in_place_t, Args&&... args) noexcept
       : Base(std::in_place, std::forward<Args>(args)...) {}
 
-  template <typename U, typename... Args>
+  template <typename U,
+            typename... Args,
+            std::enable_if_t<
+                std::is_constructible_v<T, std::initializer_list<U>&, Args...>,
+                int> = 0>
   explicit constexpr Result(std::in_place_t,
                             std::initializer_list<U> ilist,
-                            Args&&... args)
+                            Args&&... args) noexcept
       : Base(std::in_place, ilist, std::forward<Args>(args)...) {}
 
   /// Constructs the inner value `T` in-place using the provided arg, using the
@@ -491,48 +428,17 @@ class [[nodiscard]] Result final
   template <
       typename U = T,
       std::enable_if_t<
-          std::conjunction<
-              internal_result::IsDirectInitializationValid<T, U&&, StatusType>,
-              std::is_constructible<T, U&&>,
-              std::is_convertible<U&&, T>,
-              std::disjunction<
-                  std::is_same<std::remove_cv_t<std::remove_reference_t<U>>,
-                               std::remove_cv_t<T>>,
-                  std::conjunction<
-                      std::disjunction<
-                          std::is_same<std::remove_cv_t<T>, status_type>,
-                          std::negation<std::is_convertible<U&&, status_type>>>,
-                      std::negation<
-                          internal_result::HasConversionOperatorToResult<
-                              T,
-                              U&&,
-                              StatusType>>>>>::value,
+          internal_result::kCanConstructFromValue<T, U&&, StatusType, true>,
           int> = 0>
-  constexpr Result(U&& u)  // NOLINT
+  constexpr Result(U&& u) noexcept  // NOLINT
       : Base(std::in_place, std::forward<U>(u)) {}
 
   template <
       typename U = T,
       std::enable_if_t<
-          std::conjunction<
-              internal_result::IsDirectInitializationValid<T, U&&, StatusType>,
-              std::disjunction<
-                  std::is_same<std::remove_cv_t<std::remove_reference_t<U>>,
-                               std::remove_cv_t<T>>,
-                  std::conjunction<
-                      std::disjunction<
-                          std::is_same<std::remove_cv_t<T>, status_type>,
-                          std::negation<
-                              std::is_constructible<status_type, U&&>>>,
-                      std::negation<
-                          internal_result::HasConversionOperatorToResult<
-                              T,
-                              U&&,
-                              StatusType>>>>,
-              std::is_constructible<T, U&&>,
-              std::negation<std::is_convertible<U&&, T>>>::value,
+          internal_result::kCanConstructFromValue<T, U&&, StatusType, false>,
           int> = 0>
-  explicit constexpr Result(U&& u)  // NOLINT
+  explicit constexpr Result(U&& u) noexcept
       : Base(std::in_place, std::forward<U>(u)) {}
 
   /// @returns Whether or not this `Result<T, StatusType>` holds a `T` value.
@@ -549,17 +455,25 @@ class [[nodiscard]] Result final
   ///     // Handle error
   ///   }
   /// @endcode
-  [[nodiscard]] constexpr bool ok() const { return this->status_.ok(); }
+  [[nodiscard]] constexpr bool ok() const noexcept { return Base::status.ok(); }
+
+  /// @returns `true` if this `Result<T, StatusType>` holds a `T` value
+  /// (`ok() == true`). Provided for compatibility with `std::optional`.
+  [[nodiscard]] constexpr bool has_value() const noexcept { return ok(); }
 
   /// @returns The current `status_type` contained within the
   /// `Result<T, StatusType>`. If `Result<T, StatusType>` contains a `T`, then
   /// this function returns an OK status (`ok() == true`).
-  constexpr status_type status() const { return this->status_; }
+  [[nodiscard]] constexpr status_type status() const noexcept {
+    return Base::status;
+  }
 
   /// Destroys the contained value, if any, and sets the status. The status must
   /// not be OK. To avoid a runtime check, use the `reset<kCode>()`
   /// function template whenever possible.
-  constexpr void reset(status_type status) { this->AssignStatus(status); }
+  constexpr void reset(status_type error_status) {
+    this->AssignStatus(std::move(error_status));
+  }
 
   /// @copydoc reset
   template <
@@ -571,7 +485,7 @@ class [[nodiscard]] Result final
 
   /// @copydoc reset
   template <typename status_type::Code kCode>
-  constexpr void reset() {
+  constexpr void reset() noexcept {
     this->template AssignStatus<kCode>();
   }
 
@@ -606,22 +520,22 @@ class [[nodiscard]] Result final
   /// warnings about possible uses of the result object after the move.
   constexpr const T& value() const& PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_ASSERT(ok());
-    return this->data_;
+    return this->data();
   }
   /// @copydoc value
   constexpr T& value() & PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_ASSERT(ok());
-    return this->data_;
+    return this->data();
   }
   /// @copydoc value
   constexpr const T&& value() const&& PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_ASSERT(ok());
-    return std::move(this->data_);
+    return std::move(this->data());
   }
   /// @copydoc value
   constexpr T&& value() && PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_ASSERT(ok());
-    return std::move(this->data_);
+    return std::move(this->data());
   }
 
   /// @returns A reference to the current value. Only checks if a value is
@@ -632,24 +546,24 @@ class [[nodiscard]] Result final
   /// Use `this->ok()` to verify that there is a current value within the
   /// `Result<T, StatusType>`. Alternatively, see the `value()` member function
   /// for a similar API that guarantees crashing if there is no current value.
-  constexpr const T& operator*() const& PW_ATTRIBUTE_LIFETIME_BOUND {
+  constexpr const T& operator*() const& noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_DASSERT(ok());
-    return this->data_;
+    return this->data();
   }
   /// @copydoc operator*
-  constexpr T& operator*() & PW_ATTRIBUTE_LIFETIME_BOUND {
+  constexpr T& operator*() & noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_DASSERT(ok());
-    return this->data_;
+    return this->data();
   }
   /// @copydoc operator*
-  constexpr const T&& operator*() const&& PW_ATTRIBUTE_LIFETIME_BOUND {
+  constexpr const T&& operator*() const&& noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_DASSERT(ok());
-    return std::move(this->data_);
+    return std::move(this->data());
   }
   /// @copydoc operator*
-  constexpr T&& operator*() && PW_ATTRIBUTE_LIFETIME_BOUND {
+  constexpr T&& operator*() && noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_DASSERT(ok());
-    return std::move(this->data_);
+    return std::move(this->data());
   }
 
   /// @returns A pointer to the current value. Only checks if a value is
@@ -658,14 +572,14 @@ class [[nodiscard]] Result final
   /// @pre `this->ok() == true`, otherwise the behavior is undefined.
   ///
   /// Use `this->ok()` to verify that there is a current value.
-  constexpr const T* operator->() const PW_ATTRIBUTE_LIFETIME_BOUND {
+  constexpr const T* operator->() const noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_DASSERT(ok());
-    return &this->data_;
+    return std::addressof(this->data());
   }
   /// @copydoc operator->
-  constexpr T* operator->() PW_ATTRIBUTE_LIFETIME_BOUND {
+  constexpr T* operator->() noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
     PW_DASSERT(ok());
-    return &this->data_;
+    return std::addressof(this->data());
   }
 
   /// @returns The current value if `this->ok() == true`. Otherwise constructs a
@@ -681,257 +595,214 @@ class [[nodiscard]] Result final
   ///
   /// Unlike with `value`, calling `std::move()` on the result of `value_or`
   /// will still trigger a copy.
-  template <typename U>
-  constexpr T value_or(U&& default_value) const& {
+  template <typename U = std::remove_cv_t<T>>
+  constexpr std::remove_cv_t<T> value_or(U&& default_value) const& noexcept {
+    static_assert(std::is_constructible_v<std::remove_cv_t<T>, const T&>,
+                  "Result::value_or() const& requires T to be copy "
+                  "constructible");
+    static_assert(std::is_convertible_v<U&&, std::remove_cv_t<T>>,
+                  "U&& must be convertible to T");
     if (ok()) {
-      return this->data_;
+      return this->data();
     }
-    return std::forward<U>(default_value);
+    return static_cast<std::remove_cv_t<T>>(std::forward<U>(default_value));
   }
   /// @copydoc value_or
-  template <typename U>
-  constexpr T value_or(U&& default_value) && {
+  template <typename U = std::remove_cv_t<T>>
+  constexpr std::remove_cv_t<T> value_or(U&& default_value) && noexcept {
+    static_assert(std::is_constructible_v<std::remove_cv_t<T>, T&&>,
+                  "Result::value_or() && requires T to be move constructible");
+    static_assert(std::is_convertible_v<U&&, std::remove_cv_t<T>>,
+                  "U&& must be convertible to T");
     if (ok()) {
-      return std::move(this->data_);
+      return std::move(this->data());
     }
-    return std::forward<U>(default_value);
+    return static_cast<std::remove_cv_t<T>>(std::forward<U>(default_value));
   }
 
   /// Ignores any errors. This method does nothing except potentially suppress
   /// complaints from any tools that are checking that errors are not dropped.
-  constexpr void IgnoreError() const {}
+  constexpr void IgnoreError() const noexcept {}
 
   /// Reconstructs the inner value `T` in-place using the provided args, using
   /// the `T(args...)` constructor.
   ///
   /// @returns A reference to the reconstructed `T`.
-  template <typename... Args>
-  constexpr T& emplace(Args&&... args) {
+  template <typename... Args,
+            std::enable_if_t<std::is_constructible_v<T, Args...>, int> = 0>
+  constexpr T& emplace(Args&&... args) noexcept {
     this->Clear();
     this->MakeValue(std::forward<Args>(args)...);
-    this->status_ = status_type();
-    return this->data_;
+    Base::status = status_type();
+    return this->data();
   }
 
   /// @copydoc emplace
-  template <
-      typename U,
-      typename... Args,
-      std::enable_if_t<
-          std::is_constructible<T, std::initializer_list<U>&, Args&&...>::value,
-          int> = 0>
-  constexpr T& emplace(std::initializer_list<U> ilist, Args&&... args) {
+  template <typename U,
+            typename... Args,
+            std::enable_if_t<
+                std::is_constructible_v<T, std::initializer_list<U>&, Args...>,
+                int> = 0>
+  constexpr T& emplace(std::initializer_list<U> ilist,
+                       Args&&... args) noexcept {
     this->Clear();
     this->MakeValue(ilist, std::forward<Args>(args)...);
-    this->status_ = status_type();
-    return this->data_;
+    Base::status = status_type();
+    return this->data();
+  }
+
+  /// Swaps the contents of `*this` and `other`.
+  PW_CONSTEXPR_CPP20 void swap(Result& other) noexcept {
+    static_assert(std::is_move_constructible_v<T>,
+                  "Result::swap requires T to be move constructible");
+    static_assert(std::is_swappable_v<T>,
+                  "Result::swap requires T to be swappable");
+    using std::swap;
+    if (ok() && other.ok()) {
+      swap(this->data(), other.data());
+    } else if (ok() && !other.ok()) {
+      status_type error_status = std::move(other.Base::status);
+      other.MakeValue(std::move(this->data()));
+      other.Base::status = status_type();
+      this->Clear();
+      Base::status = std::move(error_status);
+    } else if (!ok() && other.ok()) {
+      other.swap(*this);
+    } else {
+      swap(Base::status, other.Base::status);
+    }
+  }
+
+  /// Swaps two `Result<T, StatusType>` objects via ADL. Only participates in
+  /// overload resolution if `T` is move-constructible and swappable.
+  template <typename U = T,
+            std::enable_if_t<std::is_move_constructible_v<U> &&
+                                 std::is_swappable_v<U> &&
+                                 std::is_move_constructible_v<status_type> &&
+                                 std::is_swappable_v<status_type>,
+                             int> = 0>
+  friend PW_CONSTEXPR_CPP20 void swap(Result& lhs, Result& rhs) noexcept {
+    lhs.swap(rhs);
   }
 
   // Monadic operations
 
-  /// @returns The `Result` from invoking `func()` on the held value if `ok()`.
-  /// Otherwise, returns a `Result` with the contained error status.
+  /// @returns The `Result` from invoking `function` on the held value if
+  /// `ok()`. Otherwise, returns a `Result` with the contained error status.
   template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn, T&>,
-            std::enable_if_t<std::is_copy_constructible_v<Ret>, int> = 0>
+            std::enable_if_t<std::is_invocable_v<Fn, T&>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn, T&>>
   constexpr Ret and_then(Fn&& function) & {
-    static_assert(internal_result::IsResult<Ret>,
-                  "Fn must return a pw::Result");
-    if constexpr (internal_result::IsResult<Ret>) {
-      static_assert(std::is_same_v<typename Ret::status_type, status_type>,
-                    "Fn must return a pw::Result with the same status_type");
-    }
-    return ok() ? cpp20::invoke(std::forward<Fn>(function), this->data_)
-                : Ret(internal_result::kErrorTag, this->status_);
+    return internal_result::Monadic::AndThen<Ret, status_type>(
+        ok(), Base::status, std::forward<Fn>(function), this->data());
   }
 
   /// @copydoc and_then
   template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn, T&&>,
-            std::enable_if_t<std::is_move_constructible_v<Ret>, int> = 0>
+            std::enable_if_t<std::is_invocable_v<Fn, T&&>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn, T&&>>
   constexpr Ret and_then(Fn&& function) && {
-    static_assert(internal_result::IsResult<Ret>,
-                  "Fn must return a pw::Result");
-    if constexpr (internal_result::IsResult<Ret>) {
-      static_assert(std::is_same_v<typename Ret::status_type, status_type>,
-                    "Fn must return a pw::Result with the same status_type");
-    }
-    return ok() ? cpp20::invoke(std::forward<Fn>(function),
-                                std::move(this->data_))
-                : Ret(internal_result::kErrorTag, this->status_);
+    return internal_result::Monadic::AndThen<Ret, status_type>(
+        ok(),
+        std::move(Base::status),
+        std::forward<Fn>(function),
+        std::move(this->data()));
   }
 
   /// @copydoc and_then
   template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn, const T&>,
-            std::enable_if_t<std::is_copy_constructible_v<Ret>, int> = 0>
+            std::enable_if_t<std::is_invocable_v<Fn, const T&>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn, const T&>>
   constexpr Ret and_then(Fn&& function) const& {
-    static_assert(internal_result::IsResult<Ret>,
-                  "Fn must return a pw::Result");
-    if constexpr (internal_result::IsResult<Ret>) {
-      static_assert(std::is_same_v<typename Ret::status_type, status_type>,
-                    "Fn must return a pw::Result with the same status_type");
-    }
-    return ok() ? cpp20::invoke(std::forward<Fn>(function), this->data_)
-                : Ret(internal_result::kErrorTag, this->status_);
+    return internal_result::Monadic::AndThen<Ret, status_type>(
+        ok(), Base::status, std::forward<Fn>(function), this->data());
   }
 
   /// @copydoc and_then
   template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn, const T&&>,
-            std::enable_if_t<std::is_move_constructible_v<Ret>, int> = 0>
+            std::enable_if_t<std::is_invocable_v<Fn, const T&&>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn, const T&&>>
   constexpr Ret and_then(Fn&& function) const&& {
-    static_assert(internal_result::IsResult<Ret>,
-                  "Fn must return a pw::Result");
-    if constexpr (internal_result::IsResult<Ret>) {
-      static_assert(std::is_same_v<typename Ret::status_type, status_type>,
-                    "Fn must return a pw::Result with the same status_type");
-    }
-    return ok() ? cpp20::invoke(std::forward<Fn>(function),
-                                std::move(this->data_))
-                : Ret(internal_result::kErrorTag, this->status_);
+    return internal_result::Monadic::AndThen<Ret, status_type>(
+        ok(),
+        std::move(Base::status),
+        std::forward<Fn>(function),
+        std::move(this->data()));
   }
 
   /// @returns This `Result<T, StatusType>` if it has a value, otherwise invokes
-  /// the given `function` with `status()`. The function must return a type
-  /// convertible to `Result<T, StatusType>` or `void`.
+  /// the given `function` with `status()` (if invocable with `status_type`) or
+  /// with zero arguments. The function must return a type convertible to
+  /// `Result<T, StatusType>` or `void`.
   template <
       typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn, const status_type&>,
-      std::enable_if_t<!std::is_void_v<Ret>, int> = 0>
+      typename U = T,
+      typename S = status_type,
+      std::enable_if_t<
+          std::is_copy_constructible_v<U> && std::is_copy_constructible_v<S> &&
+              internal_result::kIsOrElseInvocable<Fn, const status_type&>,
+          int> = 0>
   constexpr Result<T, StatusType> or_else(Fn&& function) const& {
-    static_assert(std::is_convertible_v<Ret, Result<T, StatusType>>,
-                  "Fn must be convertible to a pw::Result");
-    return ok() ? *this : cpp20::invoke(std::forward<Fn>(function), status());
+    return internal_result::OrElse<Result<T, StatusType>>(
+        *this, std::forward<Fn>(function), Base::status);
   }
 
   /// @copydoc or_else
   template <
       typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn, const status_type&>,
-      std::enable_if_t<std::is_void_v<Ret>, int> = 0>
-  constexpr Result<T, StatusType> or_else(Fn&& function) const& {
-    if (ok()) {
-      return *this;
-    }
-    cpp20::invoke(std::forward<Fn>(function), status());
-    return *this;
-  }
-
-  /// @copydoc or_else
-  template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn, status_type&&>,
-            std::enable_if_t<!std::is_void_v<Ret>, int> = 0>
+      typename U = T,
+      typename S = status_type,
+      std::enable_if_t<
+          std::is_move_constructible_v<U> && std::is_move_constructible_v<S> &&
+              internal_result::kIsOrElseInvocable<Fn, status_type&&>,
+          int> = 0>
   constexpr Result<T, StatusType> or_else(Fn&& function) && {
-    static_assert(std::is_convertible_v<Ret, Result<T, StatusType>>,
-                  "Fn must be convertible to a pw::Result");
-    return ok() ? std::move(*this)
-                : cpp20::invoke(std::forward<Fn>(function), status());
-  }
-
-  /// @copydoc or_else
-  template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn, status_type&&>,
-            std::enable_if_t<std::is_void_v<Ret>, int> = 0>
-  constexpr Result<T, StatusType> or_else(Fn&& function) && {
-    if (ok()) {
-      return std::move(*this);
-    }
-    cpp20::invoke(std::forward<Fn>(function), status());
-    return std::move(*this);
+    return internal_result::OrElse<Result<T, StatusType>>(
+        std::move(*this), std::forward<Fn>(function), std::move(Base::status));
   }
 
   /// @returns A `Result<U, StatusType>` containing the result of invoking
   /// `function` on the held value if `*this` contains a value. Otherwise,
   /// returns a `Result<U, StatusType>` with the same status as `*this`.
-  template <
-      typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn, T&>,
-      std::enable_if_t<std::is_void_v<Ret> || std::is_copy_constructible_v<Ret>,
-                       int> = 0>
+  template <typename Fn,
+            std::enable_if_t<std::is_invocable_v<Fn, T&>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn, T&>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) & {
-    if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, this->status_);
-    }
-    if constexpr (std::is_void_v<Ret>) {
-      cpp20::invoke(std::forward<Fn>(function), this->data_);
-      return Result<void, StatusType>(std::in_place);
-    } else {
-      return cpp20::invoke(std::forward<Fn>(function), this->data_);
-    }
+    return internal_result::Monadic::Transform<Ret, status_type>(
+        ok(), Base::status, std::forward<Fn>(function), this->data());
   }
 
   /// @copydoc transform
-  template <
-      typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn, T&&>,
-      std::enable_if_t<std::is_void_v<Ret> || std::is_move_constructible_v<Ret>,
-                       int> = 0>
+  template <typename Fn,
+            std::enable_if_t<std::is_invocable_v<Fn, T&&>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn, T&&>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) && {
-    if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, this->status_);
-    }
-    if constexpr (std::is_void_v<Ret>) {
-      cpp20::invoke(std::forward<Fn>(function), std::move(this->data_));
-      return Result<void, StatusType>(std::in_place);
-    } else {
-      return cpp20::invoke(std::forward<Fn>(function), std::move(this->data_));
-    }
+    return internal_result::Monadic::Transform<Ret, status_type>(
+        ok(),
+        std::move(Base::status),
+        std::forward<Fn>(function),
+        std::move(this->data()));
   }
 
   /// @copydoc transform
-  template <
-      typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn, const T&>,
-      std::enable_if_t<std::is_void_v<Ret> || std::is_copy_constructible_v<Ret>,
-                       int> = 0>
+  template <typename Fn,
+            std::enable_if_t<std::is_invocable_v<Fn, const T&>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn, const T&>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) const& {
-    if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, this->status_);
-    }
-    if constexpr (std::is_void_v<Ret>) {
-      cpp20::invoke(std::forward<Fn>(function), this->data_);
-      return Result<void, StatusType>(std::in_place);
-    } else {
-      return cpp20::invoke(std::forward<Fn>(function), this->data_);
-    }
+    return internal_result::Monadic::Transform<Ret, status_type>(
+        ok(), Base::status, std::forward<Fn>(function), this->data());
   }
 
   /// @copydoc transform
-  template <
-      typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn, const T&&>,
-      std::enable_if_t<std::is_void_v<Ret> || std::is_move_constructible_v<Ret>,
-                       int> = 0>
+  template <typename Fn,
+            std::enable_if_t<std::is_invocable_v<Fn, const T&&>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn, const T&&>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) const&& {
-    if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, this->status_);
-    }
-    if constexpr (std::is_void_v<Ret>) {
-      cpp20::invoke(std::forward<Fn>(function), std::move(this->data_));
-      return Result<void, StatusType>(std::in_place);
-    } else {
-      return cpp20::invoke(std::forward<Fn>(function), std::move(this->data_));
-    }
-  }
-
-  /// Checks the equality of two `Result<T, StatusType>` objects. Only enabled
-  /// if `T` is equality comparable.
-  template <typename U = T,
-            std::enable_if_t<internal_result::IsEqualityComparable<U, U>::value,
-                             int> = 0>
-  friend constexpr bool operator==(const Result& lhs, const Result& rhs) {
-    if (lhs.ok() && rhs.ok()) {
-      return lhs.data_ == rhs.data_;
-    }
-    return lhs.status() == rhs.status();
-  }
-  /// @copydoc operator==(const Result&, const Result&)
-  template <typename U = T,
-            std::enable_if_t<internal_result::IsEqualityComparable<U, U>::value,
-                             int> = 0>
-  friend constexpr bool operator!=(const Result& lhs, const Result& rhs) {
-    return !(lhs == rhs);
+    return internal_result::Monadic::Transform<Ret, status_type>(
+        ok(),
+        std::move(Base::status),
+        std::forward<Fn>(function),
+        std::move(this->data()));
   }
 
   /// Compares the status of a `Result<T, StatusType>` with a status. A `Result`
@@ -939,31 +810,39 @@ class [[nodiscard]] Result final
   ///
   /// Disabled when `T` is `StatusType` (in which case `operator==` compares
   /// against the held `StatusType` value).
-  template <typename U = T,
-            std::enable_if_t<!std::is_same_v<std::remove_cv_t<U>, status_type>,
-                             int> = 0>
-  friend constexpr bool operator==(const Result& lhs, status_type rhs) {
+  template <
+      typename U = T,
+      std::enable_if_t<internal_result::kEnableStatusComparison<U, status_type>,
+                       int> = 0>
+  friend constexpr bool operator==(const Result& lhs,
+                                   status_type rhs) noexcept {
     return lhs.status() == rhs;
   }
   /// @copydoc operator==(const Result&, status_type)
-  template <typename U = T,
-            std::enable_if_t<!std::is_same_v<std::remove_cv_t<U>, status_type>,
-                             int> = 0>
-  friend constexpr bool operator==(status_type lhs, const Result& rhs) {
+  template <
+      typename U = T,
+      std::enable_if_t<internal_result::kEnableStatusComparison<U, status_type>,
+                       int> = 0>
+  friend constexpr bool operator==(status_type lhs,
+                                   const Result& rhs) noexcept {
     return lhs == rhs.status();
   }
   /// @copydoc operator==(const Result&, status_type)
-  template <typename U = T,
-            std::enable_if_t<!std::is_same_v<std::remove_cv_t<U>, status_type>,
-                             int> = 0>
-  friend constexpr bool operator!=(const Result& lhs, status_type rhs) {
+  template <
+      typename U = T,
+      std::enable_if_t<internal_result::kEnableStatusComparison<U, status_type>,
+                       int> = 0>
+  friend constexpr bool operator!=(const Result& lhs,
+                                   status_type rhs) noexcept {
     return lhs.status() != rhs;
   }
   /// @copydoc operator==(const Result&, status_type)
-  template <typename U = T,
-            std::enable_if_t<!std::is_same_v<std::remove_cv_t<U>, status_type>,
-                             int> = 0>
-  friend constexpr bool operator!=(status_type lhs, const Result& rhs) {
+  template <
+      typename U = T,
+      std::enable_if_t<internal_result::kEnableStatusComparison<U, status_type>,
+                       int> = 0>
+  friend constexpr bool operator!=(status_type lhs,
+                                   const Result& rhs) noexcept {
     return lhs != rhs.status();
   }
 
@@ -971,47 +850,39 @@ class [[nodiscard]] Result final
   ///
   /// Disabled when `T` is `StatusType` or `StatusType::Code` (in which case
   /// `operator==` compares against the held value).
-  template <
-      typename U = T,
-      std::enable_if_t<
-          !std::is_same_v<std::remove_cv_t<U>, status_type> &&
-              !std::is_same_v<std::remove_cv_t<U>, typename status_type::Code>,
-          int> = 0>
+  template <typename U = T,
+            std::enable_if_t<
+                internal_result::kEnableStatusCodeComparison<U, status_type>,
+                int> = 0>
   friend constexpr bool operator==(const Result& lhs,
-                                   typename status_type::Code rhs) {
+                                   typename status_type::Code rhs) noexcept {
     return lhs.status() == rhs;
   }
   /// @copydoc operator==(const Result&, typename status_type::Code)
-  template <
-      typename U = T,
-      std::enable_if_t<
-          !std::is_same_v<std::remove_cv_t<U>, status_type> &&
-              !std::is_same_v<std::remove_cv_t<U>, typename status_type::Code>,
-          int> = 0>
+  template <typename U = T,
+            std::enable_if_t<
+                internal_result::kEnableStatusCodeComparison<U, status_type>,
+                int> = 0>
   friend constexpr bool operator==(typename status_type::Code lhs,
-                                   const Result& rhs) {
+                                   const Result& rhs) noexcept {
     return lhs == rhs.status();
   }
   /// @copydoc operator==(const Result&, typename status_type::Code)
-  template <
-      typename U = T,
-      std::enable_if_t<
-          !std::is_same_v<std::remove_cv_t<U>, status_type> &&
-              !std::is_same_v<std::remove_cv_t<U>, typename status_type::Code>,
-          int> = 0>
+  template <typename U = T,
+            std::enable_if_t<
+                internal_result::kEnableStatusCodeComparison<U, status_type>,
+                int> = 0>
   friend constexpr bool operator!=(const Result& lhs,
-                                   typename status_type::Code rhs) {
+                                   typename status_type::Code rhs) noexcept {
     return lhs.status() != rhs;
   }
   /// @copydoc operator==(const Result&, typename status_type::Code)
-  template <
-      typename U = T,
-      std::enable_if_t<
-          !std::is_same_v<std::remove_cv_t<U>, status_type> &&
-              !std::is_same_v<std::remove_cv_t<U>, typename status_type::Code>,
-          int> = 0>
+  template <typename U = T,
+            std::enable_if_t<
+                internal_result::kEnableStatusCodeComparison<U, status_type>,
+                int> = 0>
   friend constexpr bool operator!=(typename status_type::Code lhs,
-                                   const Result& rhs) {
+                                   const Result& rhs) noexcept {
     return lhs != rhs.status();
   }
 
@@ -1022,67 +893,55 @@ class [[nodiscard]] Result final
   /// `StatusType::Code`).
   template <
       typename U,
-      std::enable_if_t<
-          internal_result::IsValueComparisonValid<T, U, StatusType>::value,
-          int> = 0>
-  friend constexpr bool operator==(const Result& lhs, const U& rhs) {
-    return lhs.ok() && lhs.data_ == rhs;
+      std::enable_if_t<internal_result::kIsValueComparable<T, U, StatusType>,
+                       int> = 0>
+  friend constexpr bool operator==(const Result& lhs, const U& rhs) noexcept {
+    return lhs.ok() && lhs.data() == rhs;
+  }
+  /// @copydoc operator==(const Result&, const U&)
+  template <typename U,
+            std::enable_if_t<
+                internal_result::kIsValueComparable<T, U, StatusType, U, T>,
+                int> = 0>
+  friend constexpr bool operator==(const U& lhs, const Result& rhs) noexcept {
+    return rhs.ok() && lhs == rhs.data();
   }
   /// @copydoc operator==(const Result&, const U&)
   template <
       typename U,
-      std::enable_if_t<
-          internal_result::IsValueComparisonValid<T, U, StatusType>::value,
-          int> = 0>
-  friend constexpr bool operator==(const U& lhs, const Result& rhs) {
-    return rhs.ok() && lhs == rhs.data_;
-  }
-  /// @copydoc operator==(const Result&, const U&)
-  template <
-      typename U,
-      std::enable_if_t<
-          internal_result::IsValueComparisonValid<T, U, StatusType>::value,
-          int> = 0>
-  friend constexpr bool operator!=(const Result& lhs, const U& rhs) {
+      std::enable_if_t<internal_result::kIsValueComparable<T, U, StatusType>,
+                       int> = 0>
+  friend constexpr bool operator!=(const Result& lhs, const U& rhs) noexcept {
     return !(lhs == rhs);
   }
   /// @copydoc operator==(const Result&, const U&)
-  template <
-      typename U,
-      std::enable_if_t<
-          internal_result::IsValueComparisonValid<T, U, StatusType>::value,
-          int> = 0>
-  friend constexpr bool operator!=(const U& lhs, const Result& rhs) {
+  template <typename U,
+            std::enable_if_t<
+                internal_result::kIsValueComparable<T, U, StatusType, U, T>,
+                int> = 0>
+  friend constexpr bool operator!=(const U& lhs, const Result& rhs) noexcept {
     return !(lhs == rhs);
   }
 
  private:
-  explicit constexpr Result(internal_result::ErrorTag, status_type status)
-      : Base(status) {}
+  explicit constexpr Result(internal_result::ErrorTag,
+                            status_type error_status) noexcept
+      : Base(internal_result::kEmptyTag, std::move(error_status)) {}
 
-  using Base::Assign;
-  template <typename U>
-  constexpr void Assign(const Result<U, StatusType>& other) {
-    if (other.ok()) {
-      this->Assign(other.data_);
-    } else {
-      this->AssignStatus(other.status());
-    }
-  }
-  template <typename U>
-  constexpr void Assign(Result<U, StatusType>&& other) {
-    if (other.ok()) {
-      this->Assign(std::move(other.data_));
-    } else {
-      this->AssignStatus(other.status());
-    }
-  }
+  template <typename Fn, typename... Args>
+  explicit constexpr Result(internal_result::InvokeTag,
+                            Fn&& function,
+                            Args&&... args) noexcept
+      : Base(internal_result::kInvokeTag,
+             std::forward<Fn>(function),
+             std::forward<Args>(args)...) {}
 };
 
 /// The `void` specialization of `Result` is provided to simplify generic and
 /// template code. `Result<void, StatusType>` wraps `StatusType` with the
-/// `Result` interface (`ok()`, `status()`, `value()`, `emplace()`, `reset()`,
-/// and monadic operations).
+/// `Result` interface (`ok()`, `has_value()`, `status()`, `value()`,
+/// `emplace()`, `reset()`, `swap()`, equality comparisons, and monadic
+/// operations).
 ///
 /// Unlike `Result<StatusType, StatusType>` (which contains a `StatusType` value
 /// AND a separate `StatusType` error status), `Result<void, StatusType>` holds
@@ -1099,6 +958,8 @@ template <typename StatusType>
 class [[nodiscard]] Result<void, StatusType> final {
   template <typename U, typename>
   friend class Result;
+
+  friend struct internal_result::Monadic;
 
  public:
   /// Generic `value_type` member (`void`).
@@ -1118,7 +979,7 @@ class [[nodiscard]] Result<void, StatusType> final {
   /// Only enabled when `StatusType` is `pw::Status`.
   template <typename S = StatusType,
             typename = std::enable_if_t<std::is_same_v<S, Status>>>
-  explicit constexpr Result() : status_(Status::Unknown()) {}
+  explicit constexpr Result() noexcept : status_(Status::Unknown()) {}
 
   /// Copy constructor.
   constexpr Result(const Result&) = default;
@@ -1131,8 +992,8 @@ class [[nodiscard]] Result<void, StatusType> final {
 
   /// Constructs a `Result<void, StatusType>` from a status value (either OK or
   /// non-OK).
-  constexpr Result(status_type status)  // NOLINT
-      : status_(status) {}
+  constexpr Result(status_type status) noexcept  // NOLINT
+      : status_(std::move(status)) {}
 
   /// Constructs a `Result<void, StatusType>` from any `U` constructible to
   /// `status_type`. This constructor is explicit if and only if `U` is not
@@ -1140,62 +1001,35 @@ class [[nodiscard]] Result<void, StatusType> final {
   template <
       typename U = status_type,
       std::enable_if_t<
-          std::conjunction<
-              std::is_convertible<U&&, status_type>,
-              std::is_constructible<status_type, U&&>,
-              std::negation<std::is_same<std::decay_t<U>, Result>>,
-              std::negation<std::is_same<std::decay_t<U>, status_type>>,
-              std::negation<std::is_same<std::decay_t<U>, std::in_place_t>>,
-              std::negation<
-                  internal_result::
-                      HasConversionOperatorToResult<void, U&&, StatusType>>>::
-              value,
+          internal_result::kCanVoidConstructFromStatus<U&&, StatusType, true>,
           int> = 0>
-  constexpr Result(U&& v)
+  constexpr Result(U&& v) noexcept  // NOLINT
       : status_(static_cast<status_type>(std::forward<U>(v))) {}
 
   template <
       typename U = status_type,
       std::enable_if_t<
-          std::conjunction<
-              std::negation<std::is_convertible<U&&, status_type>>,
-              std::is_constructible<status_type, U&&>,
-              std::negation<std::is_same<std::decay_t<U>, Result>>,
-              std::negation<std::is_same<std::decay_t<U>, status_type>>,
-              std::negation<std::is_same<std::decay_t<U>, std::in_place_t>>,
-              std::negation<
-                  internal_result::
-                      HasConversionOperatorToResult<void, U&&, StatusType>>>::
-              value,
+          internal_result::kCanVoidConstructFromStatus<U&&, StatusType, false>,
           int> = 0>
-  explicit constexpr Result(U&& v)
+  explicit constexpr Result(U&& v) noexcept
       : status_(static_cast<status_type>(std::forward<U>(v))) {}
 
   /// Assigns a status value to this `Result<void, StatusType>`.
-  template <
-      typename U = status_type,
-      std::enable_if_t<
-          std::conjunction<
-              std::is_convertible<U&&, status_type>,
-              std::is_constructible<status_type, U&&>,
-              std::negation<std::is_same<std::decay_t<U>, Result>>,
-              std::negation<std::is_same<std::decay_t<U>, std::in_place_t>>,
-              std::negation<
-                  internal_result::
-                      HasConversionOperatorToResult<void, U&&, StatusType>>>::
-              value,
-          int> = 0>
-  constexpr Result& operator=(U&& v) {
+  template <typename U = status_type,
+            std::enable_if_t<
+                internal_result::kCanVoidAssignFromStatus<U&&, StatusType>,
+                int> = 0>
+  constexpr Result& operator=(U&& v) noexcept {
     status_ = static_cast<status_type>(std::forward<U>(v));
     return *this;
   }
 
   /// Constructs a `Result<void, StatusType>` indicating success (`ok() ==
   /// true`).
-  explicit constexpr Result(std::in_place_t) : status_() {}
+  explicit constexpr Result(std::in_place_t) noexcept : status_() {}
 
   /// Sets the status to indicate success (`ok() == true`).
-  constexpr void emplace() { status_ = status_type(); }
+  constexpr void emplace() noexcept { status_ = status_type(); }
 
   /// Sets the status of the `Result` to an error status.
   ///
@@ -1203,7 +1037,7 @@ class [[nodiscard]] Result<void, StatusType> final {
   /// the `reset<kCode>()` function template whenever possible.
   constexpr void reset(status_type status) {
     PW_ASSERT(!status.ok());
-    status_ = status;
+    status_ = std::move(status);
   }
 
   /// @copydoc reset
@@ -1216,197 +1050,175 @@ class [[nodiscard]] Result<void, StatusType> final {
 
   /// @copydoc reset
   template <typename status_type::Code kCode>
-  constexpr void reset() {
+  constexpr void reset() noexcept {
     static_assert(!status_type(kCode).ok(),
                   "Cannot set status to an OK status; use emplace() instead");
     status_ = status_type(kCode);
   }
 
   /// @returns `true` if the `Result` represents success (`ok() == true`).
-  [[nodiscard]] constexpr bool ok() const { return status_.ok(); }
+  [[nodiscard]] constexpr bool ok() const noexcept { return status_.ok(); }
+
+  /// @returns `true` if the `Result` represents success (`ok() == true`).
+  /// Provided for compatibility with `std::optional`.
+  [[nodiscard]] constexpr bool has_value() const noexcept { return ok(); }
 
   /// Asserts that `ok()` is `true` via `PW_ASSERT`.
   constexpr void value() const { PW_ASSERT(ok()); }
 
   /// @returns The current `status_type`.
-  constexpr status_type status() const { return status_; }
+  [[nodiscard]] constexpr status_type status() const noexcept {
+    return status_;
+  }
 
   /// Ignores any errors. This method does nothing except potentially suppress
   /// complaints from any tools that are checking that errors are not dropped.
-  constexpr void IgnoreError() const {}
+  constexpr void IgnoreError() const noexcept {}
+
+  /// Swaps the contents of `*this` and `other`.
+  PW_CONSTEXPR_CPP20 void swap(Result& other) noexcept {
+    static_assert(std::is_move_constructible_v<status_type>,
+                  "Result::swap requires StatusType to be move constructible");
+    static_assert(std::is_swappable_v<status_type>,
+                  "Result::swap requires StatusType to be swappable");
+    using std::swap;
+    swap(status_, other.status_);
+  }
+
+  /// Swaps two `Result<void, StatusType>` objects via ADL.
+  template <typename S = status_type,
+            std::enable_if_t<std::is_move_constructible_v<S> &&
+                                 std::is_swappable_v<S>,
+                             int> = 0>
+  friend PW_CONSTEXPR_CPP20 void swap(Result& lhs, Result& rhs) noexcept {
+    lhs.swap(rhs);
+  }
 
   // Monadic operations
 
   /// @returns The `Result` from invoking `function()` if `ok()`. Otherwise,
   /// returns a `Result` with the contained error status.
   template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn>,
-            std::enable_if_t<std::is_copy_constructible_v<Ret>, int> = 0>
+            std::enable_if_t<std::is_invocable_v<Fn>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn>>
   constexpr Ret and_then(Fn&& function) const& {
-    static_assert(internal_result::IsResult<Ret>,
-                  "Fn must return a pw::Result");
-    if constexpr (internal_result::IsResult<Ret>) {
-      static_assert(std::is_same_v<typename Ret::status_type, status_type>,
-                    "Fn must return a pw::Result with the same status_type");
-    }
-    return ok() ? cpp20::invoke(std::forward<Fn>(function))
-                : Ret(internal_result::kErrorTag, status_);
+    return internal_result::Monadic::AndThen<Ret, status_type>(
+        ok(), status_, std::forward<Fn>(function));
   }
 
   /// @copydoc and_then
   template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn>,
-            std::enable_if_t<std::is_move_constructible_v<Ret>, int> = 0>
+            std::enable_if_t<std::is_invocable_v<Fn>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn>>
   constexpr Ret and_then(Fn&& function) && {
-    static_assert(internal_result::IsResult<Ret>,
-                  "Fn must return a pw::Result");
-    if constexpr (internal_result::IsResult<Ret>) {
-      static_assert(std::is_same_v<typename Ret::status_type, status_type>,
-                    "Fn must return a pw::Result with the same status_type");
-    }
-    return ok() ? cpp20::invoke(std::forward<Fn>(function))
-                : Ret(internal_result::kErrorTag, status_);
+    return internal_result::Monadic::AndThen<Ret, status_type>(
+        ok(), std::move(status_), std::forward<Fn>(function));
   }
 
   /// @returns This `Result<void, StatusType>` if `ok()`, otherwise invokes
-  /// `function` with `status()`. The function must return a type convertible
-  /// to `Result<void, StatusType>` or `void`.
-  template <
-      typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn, const status_type&>,
-      std::enable_if_t<!std::is_void_v<Ret>, int> = 0>
+  /// `function` with `status()` (if invocable with `status_type`) or with zero
+  /// arguments. The function must return a type convertible to
+  /// `Result<void, StatusType>` or `void`.
+  template <typename Fn,
+            typename S = status_type,
+            std::enable_if_t<
+                std::is_copy_constructible_v<S> &&
+                    internal_result::kIsOrElseInvocable<Fn, const status_type&>,
+                int> = 0>
   constexpr Result<void, StatusType> or_else(Fn&& function) const& {
-    static_assert(std::is_convertible_v<Ret, Result<void, StatusType>>,
-                  "Fn must be convertible to a pw::Result");
-    return ok() ? *this : cpp20::invoke(std::forward<Fn>(function), status());
-  }
-
-  /// @copydoc or_else
-  template <
-      typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn, const status_type&>,
-      std::enable_if_t<std::is_void_v<Ret>, int> = 0>
-  constexpr Result<void, StatusType> or_else(Fn&& function) const& {
-    if (ok()) {
-      return *this;
-    }
-    cpp20::invoke(std::forward<Fn>(function), status());
-    return *this;
+    return internal_result::OrElse<Result<void, StatusType>>(
+        *this, std::forward<Fn>(function), status_);
   }
 
   /// @copydoc or_else
   template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn, status_type&&>,
-            std::enable_if_t<!std::is_void_v<Ret>, int> = 0>
+            typename S = status_type,
+            std::enable_if_t<
+                std::is_move_constructible_v<S> &&
+                    internal_result::kIsOrElseInvocable<Fn, status_type&&>,
+                int> = 0>
   constexpr Result<void, StatusType> or_else(Fn&& function) && {
-    static_assert(std::is_convertible_v<Ret, Result<void, StatusType>>,
-                  "Fn must be convertible to a pw::Result");
-    return ok() ? std::move(*this)
-                : cpp20::invoke(std::forward<Fn>(function), status());
-  }
-
-  /// @copydoc or_else
-  template <typename Fn,
-            typename Ret = internal_result::InvokeResultType<Fn, status_type&&>,
-            std::enable_if_t<std::is_void_v<Ret>, int> = 0>
-  constexpr Result<void, StatusType> or_else(Fn&& function) && {
-    if (ok()) {
-      return std::move(*this);
-    }
-    cpp20::invoke(std::forward<Fn>(function), status());
-    return std::move(*this);
+    return internal_result::OrElse<Result<void, StatusType>>(
+        std::move(*this), std::forward<Fn>(function), std::move(status_));
   }
 
   /// @returns A `Result<U, StatusType>` containing the result of invoking
   /// `function()` if `ok()`. Otherwise, returns a `Result<U, StatusType>` with
   /// the same error status as `*this`.
-  template <
-      typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn>,
-      std::enable_if_t<std::is_void_v<Ret> || std::is_copy_constructible_v<Ret>,
-                       int> = 0>
+  template <typename Fn,
+            std::enable_if_t<std::is_invocable_v<Fn>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) const& {
-    if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, status_);
-    }
-    if constexpr (std::is_void_v<Ret>) {
-      cpp20::invoke(std::forward<Fn>(function));
-      return Result<void, StatusType>(std::in_place);
-    } else {
-      return cpp20::invoke(std::forward<Fn>(function));
-    }
+    return internal_result::Monadic::Transform<Ret, status_type>(
+        ok(), status_, std::forward<Fn>(function));
   }
 
   /// @copydoc transform
-  template <
-      typename Fn,
-      typename Ret = internal_result::InvokeResultType<Fn>,
-      std::enable_if_t<std::is_void_v<Ret> || std::is_move_constructible_v<Ret>,
-                       int> = 0>
+  template <typename Fn,
+            std::enable_if_t<std::is_invocable_v<Fn>, int> = 0,
+            typename Ret = internal_result::InvokeResultType<Fn>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) && {
-    if (!ok()) {
-      return Result<Ret, StatusType>(internal_result::kErrorTag, status_);
-    }
-    if constexpr (std::is_void_v<Ret>) {
-      cpp20::invoke(std::forward<Fn>(function));
-      return Result<void, StatusType>(std::in_place);
-    } else {
-      return cpp20::invoke(std::forward<Fn>(function));
-    }
+    return internal_result::Monadic::Transform<Ret, status_type>(
+        ok(), std::move(status_), std::forward<Fn>(function));
   }
 
   /// Checks the equality of two `Result<void, StatusType>` objects.
-  friend constexpr bool operator==(const Result& lhs, const Result& rhs) {
+  friend constexpr bool operator==(const Result& lhs,
+                                   const Result& rhs) noexcept {
     return lhs.status() == rhs.status();
   }
   /// Checks the inequality of two `Result<void, StatusType>` objects.
-  friend constexpr bool operator!=(const Result& lhs, const Result& rhs) {
+  friend constexpr bool operator!=(const Result& lhs,
+                                   const Result& rhs) noexcept {
     return lhs.status() != rhs.status();
   }
 
   /// Compares the status of a `Result<void, StatusType>` with a status.
-  friend constexpr bool operator==(const Result& lhs, status_type rhs) {
+  friend constexpr bool operator==(const Result& lhs,
+                                   status_type rhs) noexcept {
     return lhs.status() == rhs;
   }
   /// @copydoc operator==(const Result&, status_type)
-  friend constexpr bool operator==(status_type lhs, const Result& rhs) {
+  friend constexpr bool operator==(status_type lhs,
+                                   const Result& rhs) noexcept {
     return lhs == rhs.status();
   }
   /// @copydoc operator==(const Result&, status_type)
-  friend constexpr bool operator!=(const Result& lhs, status_type rhs) {
+  friend constexpr bool operator!=(const Result& lhs,
+                                   status_type rhs) noexcept {
     return lhs.status() != rhs;
   }
   /// @copydoc operator==(const Result&, status_type)
-  friend constexpr bool operator!=(status_type lhs, const Result& rhs) {
+  friend constexpr bool operator!=(status_type lhs,
+                                   const Result& rhs) noexcept {
     return lhs != rhs.status();
   }
 
   /// Compares the status of a `Result<void, StatusType>` with a status code.
   friend constexpr bool operator==(const Result& lhs,
-                                   typename status_type::Code rhs) {
+                                   typename status_type::Code rhs) noexcept {
     return lhs.status() == rhs;
   }
   /// @copydoc operator==(const Result&, typename status_type::Code)
   friend constexpr bool operator==(typename status_type::Code lhs,
-                                   const Result& rhs) {
+                                   const Result& rhs) noexcept {
     return lhs == rhs.status();
   }
   /// @copydoc operator==(const Result&, typename status_type::Code)
   friend constexpr bool operator!=(const Result& lhs,
-                                   typename status_type::Code rhs) {
+                                   typename status_type::Code rhs) noexcept {
     return lhs.status() != rhs;
   }
   /// @copydoc operator==(const Result&, typename status_type::Code)
   friend constexpr bool operator!=(typename status_type::Code lhs,
-                                   const Result& rhs) {
+                                   const Result& rhs) noexcept {
     return lhs != rhs.status();
   }
 
  private:
-  explicit constexpr Result(internal_result::ErrorTag, status_type status)
-      : status_(status) {
-    PW_ASSERT(!status.ok());
-  }
+  explicit constexpr Result(internal_result::ErrorTag,
+                            status_type status) noexcept
+      : status_(std::move(status)) {}
 
   status_type status_;
 };
@@ -1415,12 +1227,42 @@ class [[nodiscard]] Result<void, StatusType> final {
 template <typename T>
 Result(T value) -> Result<T>;
 
+/// Checks the equality of two `Result` objects with potentially different value
+/// types `T` and `U` that share the same `StatusType`. Only enabled if `T` and
+/// `U` are equality comparable.
+template <typename T,
+          typename U,
+          typename StatusType,
+          std::enable_if_t<internal_result::IsEqualityComparable<T, U>::value,
+                           int> = 0>
+constexpr bool operator==(const Result<T, StatusType>& lhs,
+                          const Result<U, StatusType>& rhs) noexcept {
+  if (lhs.ok() && rhs.ok()) {
+    return *lhs == *rhs;
+  }
+  return lhs.status() == rhs.status();
+}
+
+/// Checks the inequality of two `Result` objects with potentially different
+/// value types `T` and `U` that share the same `StatusType`. Only enabled if
+/// `T` and `U` are equality comparable.
+template <typename T,
+          typename U,
+          typename StatusType,
+          std::enable_if_t<internal_result::IsEqualityComparable<T, U>::value,
+                           int> = 0>
+constexpr bool operator!=(const Result<T, StatusType>& lhs,
+                          const Result<U, StatusType>& rhs) noexcept {
+  return !(lhs == rhs);
+}
+
 /// @endmodule
 
 namespace internal {
 
 template <typename T, typename StatusType>
-constexpr StatusType ConvertToStatus(const Result<T, StatusType>& result) {
+constexpr StatusType ConvertToStatus(
+    const Result<T, StatusType>& result) noexcept {
   static_assert(
       !std::is_same_v<std::remove_cv_t<T>, StatusType>,
       "PW_TRY, PW_CHECK_OK, and PW_ASSERT_OK cannot be used directly on "
@@ -1430,8 +1272,8 @@ constexpr StatusType ConvertToStatus(const Result<T, StatusType>& result) {
 }
 
 template <typename T, typename StatusType>
-constexpr T&& ConvertToValue(Result<T, StatusType>& result) {
-  return std::move(result.data_);
+constexpr T&& ConvertToValue(Result<T, StatusType>& result) noexcept {
+  return std::move(result.data());
 }
 
 }  // namespace internal

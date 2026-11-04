@@ -34,10 +34,12 @@ cc_library_static {
         "pw_assert",
     ],
     static_libs: [
+        "pw_polyfill",
         "pw_preprocessor",
         "pw_status",
     ],
     export_static_lib_headers: [
+        "pw_polyfill",
         "pw_preprocessor",
         "pw_status",
     ],

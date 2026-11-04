@@ -22,6 +22,7 @@ pw_add_library(pw_result INTERFACE
     public
   PUBLIC_DEPS
     pw_assert
+    pw_polyfill
     pw_preprocessor
     pw_status
     pw_third_party.fuchsia.stdcompat

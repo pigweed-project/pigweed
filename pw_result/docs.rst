@@ -129,9 +129,16 @@ Overview
 * A value (accessed with ``operator*`` or ``operator->``) and an OK status
 * An error (accessed with ``.status()``) and no value
 
-If ``result.ok()`` returns ``true`` the instance contains a valid value (of type
-``T``). Otherwise, it does not contain a valid value, and attempting to access
-the value is an error.
+If ``result.ok()`` (or ``result.has_value()``) returns ``true`` the instance
+contains a valid value (of type ``T``). Otherwise, it does not contain a valid
+value, and attempting to access the value is an error.
+
+``pw::Result<T, StatusType>`` preserves the triviality of ``T`` and
+``StatusType`` for destruction, copy/move construction, and copy/move
+assignment, so ``pw::Result<int>`` is trivially copyable. It also supports
+member and ADL ``swap()``, defaulted ``value_or({})`` fallback arguments, and
+heterogeneous equality comparisons (``Result<T, S> == Result<U, S>``) whenever
+``T`` and ``U`` are equality comparable.
 
 A ``pw::Result<T>`` instance can never contain both an OK status and a value. In
 most cases, this is the appropriate choice. For cases where both a size and a
@@ -288,9 +295,10 @@ return type of provided function.
 ``pw::Result<T>::or_else``
 --------------------------
 The ``pw::Result<T>::or_else`` member function will return ``*this`` if it
-contains a value. Otherwise, it will return the result of the provided function.
-The function must return a type convertible to a ``pw::Result<T>`` or ``void``.
-This is particularly useful for handling errors.
+contains a value. Otherwise, it will invoke the provided function with
+``status()`` (if invocable with ``StatusType``) or with zero arguments (matching
+``std::optional::or_else``). The function must return a type convertible to a
+``pw::Result<T>`` or ``void``. This is particularly useful for handling errors.
 
 .. code-block:: cpp
 
@@ -300,8 +308,12 @@ This is particularly useful for handling errors.
      template <typename U>
        requires std::is_convertible_v<U, Result<T>>
      Result<T> or_else(Function<U(Status)> func);
+     template <typename U>
+       requires std::is_convertible_v<U, Result<T>>
+     Result<T> or_else(Function<U()> func);
 
      Result<T> or_else(Function<void(Status)> func);
+     Result<T> or_else(Function<void()> func);
    };
 
    // Without or_else:
@@ -385,10 +397,11 @@ are not default constructible.
 ``pw::Result<void>``
 ====================
 ``pw::Result<void, StatusType>`` provides the ``pw::Result`` interface
-(``ok()``, ``status()``, ``value()``, ``emplace()``, ``reset()``, equality
-comparisons, and the monadic operations) without a contained value. It wraps a
-single ``StatusType`` state and is provided to simplify generic code and
-coroutines that handle both value-returning and ``void``-returning operations.
+(``ok()``, ``has_value()``, ``status()``, ``value()``, ``emplace()``,
+``reset()``, ``swap()``, equality comparisons, and the monadic operations)
+without a contained value. It wraps a single ``StatusType`` state and is
+provided to simplify generic code and coroutines that handle both
+value-returning and ``void``-returning operations.
 
 Unlike ``pw::Result<T>``, ``pw::Result<void, StatusType>`` may be constructed
 or assigned from either an OK or a non-OK status, or constructed in the OK
@@ -510,8 +523,10 @@ There are a few differences:
   sophisticated but smaller than ``absl::Status`` objects. In particular,
   ``pw::Status`` objects do not support string errors, and are limited to the
   canonical error codes.
-* ``pw::Result<T>`` objects are usable in ``constexpr`` statements if the value
-  type ``T`` is trivially destructible.
+* ``pw::Result<T>`` objects are usable in ``constexpr`` contexts in C++17 when
+  ``T`` is trivially destructible, and support full ``constexpr`` construction,
+  assignment, ``emplace()``, ``swap()``, and destruction in C++20 and later for
+  any ``constexpr``-capable ``T``.
 
 -------
 Roadmap

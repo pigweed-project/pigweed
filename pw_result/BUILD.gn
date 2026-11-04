@@ -26,6 +26,7 @@ pw_source_set("pw_result") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
     "$dir_pw_assert",
+    "$dir_pw_polyfill",
     "$dir_pw_preprocessor",
     "$dir_pw_status",
     "$pw_external_fuchsia:stdcompat",

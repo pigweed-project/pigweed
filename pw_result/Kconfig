@@ -16,6 +16,8 @@ menu "pw_result"
 
 config PIGWEED_RESULT
     bool "Link pw_result library"
+    select PIGWEED_POLYFILL
+    select PIGWEED_PREPROCESSOR
     select PIGWEED_STATUS
     help
       See :ref:`module-pw_result` for module details.

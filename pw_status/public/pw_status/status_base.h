@@ -56,23 +56,23 @@ class StatusBase {
   using Code = decltype(kOkCode);
 
   /// Returns true if the status is the OK code.
-  [[nodiscard]] constexpr bool ok() const { return code_ == kOkCode; }
+  [[nodiscard]] constexpr bool ok() const noexcept { return code_ == kOkCode; }
 
   /// Returns the underlying status code.
-  [[nodiscard]] constexpr Code code() const { return code_; }
+  [[nodiscard]] constexpr Code code() const noexcept { return code_; }
 
   /// Updates this status to `other` if this status is currently `ok()`.
   ///
   /// This is useful for tracking the first encountered error, as calls to this
   /// helper will not change one error status to another error status.
-  constexpr void Update(Derived other) {
+  constexpr void Update(Derived other) noexcept {
     if (ok()) {
       *static_cast<Derived*>(this) = other;
     }
   }
 
   /// Ignores any errors, suppressing unused-result warnings.
-  constexpr void IgnoreError() const {}
+  constexpr void IgnoreError() const noexcept {}
 
   /// Returns a string representation of the status. Only supported for status
   /// types with enum codes.
@@ -82,31 +82,31 @@ class StatusBase {
     return EnumToString(code_);
   }
 
-  friend constexpr bool operator==(Derived lhs, Derived rhs) {
+  friend constexpr bool operator==(Derived lhs, Derived rhs) noexcept {
     return lhs.code_ == rhs.code_;
   }
-  friend constexpr bool operator!=(Derived lhs, Derived rhs) {
+  friend constexpr bool operator!=(Derived lhs, Derived rhs) noexcept {
     return lhs.code_ != rhs.code_;
   }
-  friend constexpr bool operator==(Derived lhs, Code rhs) {
+  friend constexpr bool operator==(Derived lhs, Code rhs) noexcept {
     return lhs.code_ == rhs;
   }
-  friend constexpr bool operator==(Code lhs, Derived rhs) {
+  friend constexpr bool operator==(Code lhs, Derived rhs) noexcept {
     return lhs == rhs.code_;
   }
-  friend constexpr bool operator!=(Derived lhs, Code rhs) {
+  friend constexpr bool operator!=(Derived lhs, Code rhs) noexcept {
     return lhs.code_ != rhs;
   }
-  friend constexpr bool operator!=(Code lhs, Derived rhs) {
+  friend constexpr bool operator!=(Code lhs, Derived rhs) noexcept {
     return lhs != rhs.code_;
   }
 
  protected:
   /// Defaults to `kOkCode` (`ok() == true`).
-  constexpr StatusBase() : code_(kOkCode) {}
+  constexpr StatusBase() noexcept : code_(kOkCode) {}
 
   /// Explicitly construct from the underlying code.
-  explicit constexpr StatusBase(Code code) : code_(code) {}
+  explicit constexpr StatusBase(Code code) noexcept : code_(code) {}
 
   constexpr StatusBase(const StatusBase&) = default;
   constexpr StatusBase& operator=(const StatusBase&) = default;
@@ -134,9 +134,9 @@ class [[nodiscard]] StatusOf final
 
   static_assert(std::is_enum_v<Code>, "StatusOf requires an enum status code");
 
-  constexpr StatusOf() = default;
+  constexpr StatusOf() noexcept = default;
 
-  explicit constexpr StatusOf(Code code)
+  explicit constexpr StatusOf(Code code) noexcept
       : StatusBase<StatusOf<kOkCode>, kOkCode>(code) {}
 };
 
@@ -155,7 +155,7 @@ inline constexpr bool is_status_v = decltype(IsStatusDerived(
 /// Generic status pass-through for PW_TRY. Returns the exact status type `S`
 /// without slicing it to StatusBase.
 template <typename S, typename = std::enable_if_t<is_status_v<S>>>
-constexpr S ConvertToStatus(S status) {
+constexpr S ConvertToStatus(S status) noexcept {
   return status;
 }
 

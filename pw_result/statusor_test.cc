@@ -1408,12 +1408,14 @@ TEST(Result, ConstPayload) {
 
   // Copy-construction
   pw::Result<const int> b(a);
+  EXPECT_FALSE(b.ok());
 
   // Copy-assignment
   EXPECT_FALSE(std::is_copy_assignable<pw::Result<const int>>::value);
 
   // Move-construction
   pw::Result<const int> c(std::move(a));
+  EXPECT_FALSE(c.ok());
 
   // Move-assignment
   EXPECT_FALSE(std::is_move_assignable<pw::Result<const int>>::value);

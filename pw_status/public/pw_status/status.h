@@ -147,7 +147,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// `PW_STATUS_CANCELLED`. See
   /// [CANCELLED](../../pw_status/reference.html#c.CANCELLED) for details on
   /// interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status Cancelled() {
+  [[nodiscard]] static constexpr Status Cancelled() noexcept {
     return PW_STATUS_CANCELLED;
   }
 
@@ -159,7 +159,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// `PW_STATUS_UNKNOWN`. See
   /// [UNKNOWN](../../pw_status/reference.html#c.UNKNOWN) for details on
   /// interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status Unknown() {
+  [[nodiscard]] static constexpr Status Unknown() noexcept {
     return PW_STATUS_UNKNOWN;
   }
 
@@ -172,7 +172,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// C API is `PW_STATUS_INVALID_ARGUMENT`. See
   /// [INVALID_ARGUMENT](../../pw_status/reference.html#c.INVALID_ARGUMENT) for
   /// details on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status InvalidArgument() {
+  [[nodiscard]] static constexpr Status InvalidArgument() noexcept {
     return PW_STATUS_INVALID_ARGUMENT;
   }
 
@@ -185,7 +185,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// the C API is `PW_STATUS_DEADLINE_EXCEEDED`. See
   /// [DEADLINE_EXCEEDED](../../pw_status/reference.html#c.DEADLINE_EXCEEDED)
   /// for details on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status DeadlineExceeded() {
+  [[nodiscard]] static constexpr Status DeadlineExceeded() noexcept {
     return PW_STATUS_DEADLINE_EXCEEDED;
   }
 
@@ -198,7 +198,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// `PW_STATUS_NOT_FOUND`. See
   /// [NOT_FOUND](../../pw_status/reference.html#c.NOT_FOUND) for details on
   /// interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status NotFound() {
+  [[nodiscard]] static constexpr Status NotFound() noexcept {
     return PW_STATUS_NOT_FOUND;
   }
 
@@ -211,7 +211,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// C API is `PW_STATUS_ALREADY_EXISTS`. See
   /// [ALREADY_EXISTS](../../pw_status/reference.html#c.ALREADY_EXISTS) for
   /// details on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status AlreadyExists() {
+  [[nodiscard]] static constexpr Status AlreadyExists() noexcept {
     return PW_STATUS_ALREADY_EXISTS;
   }
 
@@ -224,7 +224,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// the C API is `PW_STATUS_PERMISSION_DENIED`. See
   /// [PERMISSION_DENIED](../../pw_status/reference.html#c.PERMISSION_DENIED)
   /// for details on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status PermissionDenied() {
+  [[nodiscard]] static constexpr Status PermissionDenied() noexcept {
     return PW_STATUS_PERMISSION_DENIED;
   }
 
@@ -238,7 +238,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// the C API is `PW_STATUS_RESOURCE_EXHAUSTED`. See
   /// [RESOURCE_EXHAUSTED](../../pw_status/reference.html#c.RESOURCE_EXHAUSTED)
   /// for details on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status ResourceExhausted() {
+  [[nodiscard]] static constexpr Status ResourceExhausted() noexcept {
     return PW_STATUS_RESOURCE_EXHAUSTED;
   }
 
@@ -251,7 +251,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// and the C API is `PW_STATUS_PERMISSION_DENIED`. See
   /// [PERMISSION_DENIED](../../pw_status/reference.html#c.PERMISSION_DENIED)
   /// for details on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status FailedPrecondition() {
+  [[nodiscard]] static constexpr Status FailedPrecondition() noexcept {
     return PW_STATUS_FAILED_PRECONDITION;
   }
 
@@ -263,7 +263,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// `PW_STATUS_ABORTED`. See
   /// [ABORTED](../../pw_status/reference.html#c.ABORTED) for details on
   /// interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status Aborted() {
+  [[nodiscard]] static constexpr Status Aborted() noexcept {
     return PW_STATUS_ABORTED;
   }
 
@@ -275,7 +275,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// is `PW_STATUS_OUT_OF_RANGE`. See
   /// [OUT_OF_RANGE](../../pw_status/reference.html#c.OUT_OF_RANGE) for details
   /// on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status OutOfRange() {
+  [[nodiscard]] static constexpr Status OutOfRange() noexcept {
     return PW_STATUS_OUT_OF_RANGE;
   }
 
@@ -288,7 +288,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// C API is `PW_STATUS_UNIMPLEMENTED`. See
   /// [UNIMPLEMENTED](../../pw_status/reference.html#c.UNIMPLEMENTED) for
   /// details on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status Unimplemented() {
+  [[nodiscard]] static constexpr Status Unimplemented() noexcept {
     return PW_STATUS_UNIMPLEMENTED;
   }
 
@@ -300,7 +300,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// `PW_STATUS_INTERNAL`. See
   /// [INTERNAL](../../pw_status/reference.html#c.INTERNAL) for details on
   /// interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status Internal() {
+  [[nodiscard]] static constexpr Status Internal() noexcept {
     return PW_STATUS_INTERNAL;
   }
 
@@ -312,7 +312,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// API is `PW_STATUS_UNAVAILABLE`.
   /// See [UNAVAILABLE](../../pw_status/reference.html#c.UNAVAILABLE) for
   /// details on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status Unavailable() {
+  [[nodiscard]] static constexpr Status Unavailable() noexcept {
     return PW_STATUS_UNAVAILABLE;
   }
 
@@ -324,7 +324,7 @@ class _PW_STATUS_NO_DISCARD Status final
   /// `PW_STATUS_DATA_LOSS`. See
   /// [DATA_LOSS](../../pw_status/reference.html#c.DATA_LOSS) for details on
   /// interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status DataLoss() {
+  [[nodiscard]] static constexpr Status DataLoss() noexcept {
     return PW_STATUS_DATA_LOSS;
   }
 
@@ -337,14 +337,14 @@ class _PW_STATUS_NO_DISCARD Status final
   /// C API is `PW_STATUS_UNAUTHENTICATED`. See
   /// [UNAUTHENTICATED](../../pw_status/reference.html#c.UNAUTHENTICATED) for
   /// details on interacting with this status code in other languages.
-  [[nodiscard]] static constexpr Status Unauthenticated() {
+  [[nodiscard]] static constexpr Status Unauthenticated() noexcept {
     return PW_STATUS_UNAUTHENTICATED;
   }
   // clang-format on
 
   /// Statuses are created with a `Status::Code`.
   // C/C++ interoperability: allow implicit conversion from pw_Status
-  constexpr Status(Code code = PW_STATUS_OK) : StatusBase(code) {}
+  constexpr Status(Code code = PW_STATUS_OK) noexcept : StatusBase(code) {}
 
   constexpr Status(const Status&) = default;
   constexpr Status& operator=(const Status&) = default;
@@ -352,67 +352,67 @@ class _PW_STATUS_NO_DISCARD Status final
   constexpr Status& operator=(Status&&) = default;
 
   /// @returns `true` if the status of this instance is @CANCELLED.
-  [[nodiscard]] constexpr bool IsCancelled() const {
+  [[nodiscard]] constexpr bool IsCancelled() const noexcept {
     return code() == PW_STATUS_CANCELLED;
   }
   /// @returns `true` if the status of this instance is @UNKNOWN.
-  [[nodiscard]] constexpr bool IsUnknown() const {
+  [[nodiscard]] constexpr bool IsUnknown() const noexcept {
     return code() == PW_STATUS_UNKNOWN;
   }
   /// @returns `true` if the status of this instance is @INVALID_ARGUMENT.
-  [[nodiscard]] constexpr bool IsInvalidArgument() const {
+  [[nodiscard]] constexpr bool IsInvalidArgument() const noexcept {
     return code() == PW_STATUS_INVALID_ARGUMENT;
   }
   /// @returns `true` if the status of this instance is @DEADLINE_EXCEEDED.
-  [[nodiscard]] constexpr bool IsDeadlineExceeded() const {
+  [[nodiscard]] constexpr bool IsDeadlineExceeded() const noexcept {
     return code() == PW_STATUS_DEADLINE_EXCEEDED;
   }
   /// @returns `true` if the status of this instance is @NOT_FOUND.
-  [[nodiscard]] constexpr bool IsNotFound() const {
+  [[nodiscard]] constexpr bool IsNotFound() const noexcept {
     return code() == PW_STATUS_NOT_FOUND;
   }
   /// @returns `true` if the status of this instance is @ALREADY_EXISTS.
-  [[nodiscard]] constexpr bool IsAlreadyExists() const {
+  [[nodiscard]] constexpr bool IsAlreadyExists() const noexcept {
     return code() == PW_STATUS_ALREADY_EXISTS;
   }
   /// @returns `true` if the status of this instance is @PERMISSION_DENIED.
-  [[nodiscard]] constexpr bool IsPermissionDenied() const {
+  [[nodiscard]] constexpr bool IsPermissionDenied() const noexcept {
     return code() == PW_STATUS_PERMISSION_DENIED;
   }
   /// @returns `true` if the status of this instance is @RESOURCE_EXHAUSTED.
-  [[nodiscard]] constexpr bool IsResourceExhausted() const {
+  [[nodiscard]] constexpr bool IsResourceExhausted() const noexcept {
     return code() == PW_STATUS_RESOURCE_EXHAUSTED;
   }
   /// @returns `true` if the status of this instance is @FAILED_PRECONDITION.
-  [[nodiscard]] constexpr bool IsFailedPrecondition() const {
+  [[nodiscard]] constexpr bool IsFailedPrecondition() const noexcept {
     return code() == PW_STATUS_FAILED_PRECONDITION;
   }
   /// @returns `true` if the status of this instance is @ABORTED.
-  [[nodiscard]] constexpr bool IsAborted() const {
+  [[nodiscard]] constexpr bool IsAborted() const noexcept {
     return code() == PW_STATUS_ABORTED;
   }
   /// @returns `true` if the status of this instance is @OUT_OF_RANGE.
-  [[nodiscard]] constexpr bool IsOutOfRange() const {
+  [[nodiscard]] constexpr bool IsOutOfRange() const noexcept {
     return code() == PW_STATUS_OUT_OF_RANGE;
   }
   /// @returns `true` if the status of this instance is @UNIMPLEMENTED.
-  [[nodiscard]] constexpr bool IsUnimplemented() const {
+  [[nodiscard]] constexpr bool IsUnimplemented() const noexcept {
     return code() == PW_STATUS_UNIMPLEMENTED;
   }
   /// @returns `true` if the status of this instance is @INTERNAL.
-  [[nodiscard]] constexpr bool IsInternal() const {
+  [[nodiscard]] constexpr bool IsInternal() const noexcept {
     return code() == PW_STATUS_INTERNAL;
   }
   /// @returns `true` if the status of this instance is @UNAVAILABLE.
-  [[nodiscard]] constexpr bool IsUnavailable() const {
+  [[nodiscard]] constexpr bool IsUnavailable() const noexcept {
     return code() == PW_STATUS_UNAVAILABLE;
   }
   /// @returns `true` if the status of this instance is @DATA_LOSS.
-  [[nodiscard]] constexpr bool IsDataLoss() const {
+  [[nodiscard]] constexpr bool IsDataLoss() const noexcept {
     return code() == PW_STATUS_DATA_LOSS;
   }
   /// @returns `true` if the status of this instance is @UNAUTHENTICATED.
-  [[nodiscard]] constexpr bool IsUnauthenticated() const {
+  [[nodiscard]] constexpr bool IsUnauthenticated() const noexcept {
     return code() == PW_STATUS_UNAUTHENTICATED;
   }
 };
@@ -428,7 +428,7 @@ class _PW_STATUS_NO_DISCARD Status final
 /// and the C API is `PW_STATUS_OK`. See
 /// [OK](../../pw_status/reference.html#c.OK) for details on interacting with
 /// this status code in other languages.
-[[nodiscard]] constexpr Status OkStatus() { return Status(); }
+[[nodiscard]] constexpr Status OkStatus() noexcept { return Status(); }
 
 namespace internal {
 
@@ -436,7 +436,7 @@ namespace internal {
 // PW_CHECK_OK. This accepts pw::Status, the C pw_Status enum, and any other
 // type that implicitly converts to pw::Status. Custom status types are handled
 // by the generic ConvertToStatus template in status_base.h.
-constexpr Status ConvertToStatus(Status status) { return status; }
+constexpr Status ConvertToStatus(Status status) noexcept { return status; }
 
 }  // namespace internal
 
