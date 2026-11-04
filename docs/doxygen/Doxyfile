@@ -170,16 +170,24 @@ INCLUDE_PATH           = pw_metric/public
 # the include path without this configuration.
 INCLUDE_PATH          += pw_string/public
 
+# rules_doxygen replaces `# {{INPUT}}` with `INPUT = <src dirs>`:
+# https://github.com/TendTo/rules_doxygen/blob/main/docs/doxygen_doc.md
+#
+# https://www.doxygen.nl/manual/config.html#cfg_input
+# {{INPUT}}
+
 # https://www.doxygen.nl/manual/config.html#cfg_layout_file
 LAYOUT_FILE            = docs/doxygen/layout.xml
 
 # https://www.doxygen.nl/manual/config.html#cfg_macro_expansion
 MACRO_EXPANSION        = YES
 
-# Let Doxygen figure out how many cores it can use.
+# Keep input parsing single-threaded so anonymous struct/union/enum names
+# (`@0`, `@1`, ...) and the HTML/tagfile anchors derived from them are
+# deterministic across runs (preserving Bazel cache hits).
 #
 # https://www.doxygen.nl/manual/config.html#cfg_num_proc_threads
-NUM_PROC_THREADS       = 0
+NUM_PROC_THREADS       = 1
 
 # rules_doxygen replaces `OUTDIR` with the correct output directory path:
 # https://github.com/TendTo/rules_doxygen/blob/main/docs/doxygen_doc.md
@@ -249,6 +257,11 @@ QUIET                  = YES
 #
 # https://www.doxygen.nl/manual/config.html#cfg_recursive
 RECURSIVE              = YES
+
+# Pagefind (//docs/common/search.py) provides sitewide search.
+#
+# https://www.doxygen.nl/manual/config.html#cfg_searchengine
+SEARCHENGINE           = NO
 
 # The headers that Doxygen generates are incorrect.
 #
