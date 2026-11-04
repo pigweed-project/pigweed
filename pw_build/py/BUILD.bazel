@@ -251,6 +251,17 @@ pw_py_test(
 )
 
 pw_py_test(
+    name = "module_bazel_leak_test",
+    size = "small",
+    srcs = [
+        "module_bazel_leak_test.py",
+    ],
+    data = [
+        "//:MODULE.bazel",
+    ],
+)
+
+pw_py_test(
     name = "bazel_cquery_test",
     srcs = [
         "bazel_cquery_test.py",

@@ -25,6 +25,7 @@ bazel-pigweed
 bazel-testlogs
 outbazel
 pw_web/node_modules
+pw_build/bazel_tests/non_root_test
 pw_kernel/examples/adventure
 targets/pw_rp2350/zephyr
 docs/tests

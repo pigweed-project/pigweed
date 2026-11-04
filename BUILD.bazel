@@ -36,6 +36,7 @@ licenses(["notice"])
 # Files visible across Pigweed.
 exports_files(
     [
+        "MODULE.bazel",
         "pigweed.json",
         "tsconfig.json",
         # Needed for releasing //pw_bluetooth_sapphire/fuchsia/bt_host.

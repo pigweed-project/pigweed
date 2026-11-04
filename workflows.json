@@ -281,6 +281,26 @@
       ]
     },
     {
+      "name": "non_root_test",
+      "build_config": {
+        "name": "non_root_test_config",
+        "description": "Non-root @pigweed Bzlmod integration and leak test",
+        "build_type": "bazel",
+        "args": [],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "project_working_subdir": "pw_build/bazel_tests/non_root_test"
+        }
+      },
+      "targets": [
+        "//...",
+        "@pigweed//pw_build:pigweed_is_not_root_test",
+        "@pigweed//pw_build/py:module_bazel_leak_test",
+        "@pigweed//pw_status:status_test",
+        "@pigweed//pw_toolchain/cc:pw_cxx_toolchain_test"
+      ]
+    },
+    {
       "name": "rust_nightly",
       "build_config": {
         "name": "rust_nightly_config",
@@ -918,7 +938,8 @@
       "description": "Most common host builds/configurations",
       "builds": [
         "all_host",
-        "jni"
+        "jni",
+        "non_root_test"
       ]
     },
     {

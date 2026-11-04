@@ -1,0 +1,71 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+module(name = "pw_non_root_test")
+
+bazel_dep(name = "pigweed")
+local_path_override(
+    module_name = "pigweed",
+    path = "../../..",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.9.0", dev_dependency = True)
+bazel_dep(name = "platforms", version = "1.1.0", dev_dependency = True)
+
+# LINT.IfChange(protobuf)
+bazel_dep(name = "protobuf", version = "36.2", dev_dependency = True, repo_name = "com_google_protobuf")
+# LINT.ThenChange(//MODULE.bazel:protobuf)
+
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = [
+        "0003-Update-rules_python-pip-and-certifi.patch",
+    ],
+)
+
+# Exercise root-module tag overrides on @pigweed's pw_cxx_toolchain extension
+# (b/579958941). Override `arm_gcc` and `zephyr_llvm` with tags distinct from
+# @pigweed's defaults so that `llvm` and `zephyr_gcc` exercise falling back to
+# @pigweed's default CIPD tags.
+pw_cxx_toolchain = use_extension(
+    "@pigweed//pw_toolchain/cc:pw_cxx_toolchain.bzl",
+    "pw_cxx_toolchain",
+    dev_dependency = True,
+)
+pw_cxx_toolchain.arm_gcc(cipd_tag = "version:2@12.2.MPACBTI-Rel1.1")
+pw_cxx_toolchain.zephyr_llvm(cipd_tag = "version:2@0.16.8-1")
+use_repo(pw_cxx_toolchain, "llvm_toolchain")
+
+# Exercise root-module tag overrides on @pigweed's pw_rust extension.
+pw_rust = use_extension(
+    "@pigweed//pw_toolchain/rust:extensions.bzl",
+    "pw_rust",
+    dev_dependency = True,
+)
+pw_rust.toolchain(
+    cipd_tag = "git_revisions:non-root-override-test",
+)
+use_repo(pw_rust, "pw_rust_toolchains")
+
+# Register only the host C++ toolchains (plus @pw_rust_toolchains//:all to force
+# evaluation of the pw_rust extension). Do NOT register @pigweed's MCU C++
+# toolchains so //:no_leaked_mcu_toolchain_test can verify that @pigweed does
+# not leak non-dev toolchain registrations into downstream consumers.
+register_toolchains(
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
+    "@pw_rust_toolchains//:all",
+    dev_dependency = True,
+)

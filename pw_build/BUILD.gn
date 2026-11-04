@@ -630,6 +630,8 @@ pw_ignore_group("_bazel_only") {
     "bazel_tests/hermetic_cc_library/hermetic_test_lib.h",
     "bazel_tests/hermetic_cc_library/private_dep.cc",
     "bazel_tests/hermetic_cc_library/private_dep.h",
+    "bazel_tests/non_root_test/non_root_cc_test.cc",
+    "bazel_tests/non_root_test/non_root_py_test.py",
     "pw_pylint_test_example.py",
     "py/pw_build/verify_hermetic_elf.py",
   ]

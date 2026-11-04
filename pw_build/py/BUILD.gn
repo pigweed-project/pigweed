@@ -124,6 +124,7 @@ pw_python_package("py") {
     "generated_tests_example_test.py",
     "gn_target_test.py",
     "gn_writer_test.py",
+    "module_bazel_leak_test.py",
     "project_builder_prefs_test.py",
     "project_builder_test.py",
     "pw_py_test_runner_test.py",

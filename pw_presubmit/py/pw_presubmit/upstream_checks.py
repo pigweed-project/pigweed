@@ -67,6 +67,7 @@ SOURCE_FILES_FILTER_BAZEL_EXCLUDE = FileFilter(
     exclude=(
         # keep-sorted: start
         r'\.agents/skills/docs/tests/',
+        r'\bpw_build/bazel_tests/non_root_test/',
         r'\bpw_docgen/py/tests/',
         # TODO: https://pwbug.dev/512125492 - Remove once this is no longer a
         # false positive.

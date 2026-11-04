@@ -450,6 +450,13 @@ pw_bool_comparison_test(
     expected = True,
 )
 
+pw_bool_comparison_test(
+    name = "pigweed_is_not_root_test",
+    actual = pigweed_is_root(),
+    expected = False,
+    tags = ["manual"],
+)
+
 pw_copy_and_patch_file_test(
     name = "patch_file_basic",
     src = "test_data/pw_copy_and_patch_file/basic.txt",
