@@ -64,6 +64,9 @@ EXTRA_TARGETS = [
     },
     {
         "build_std": True,
+        # Without an OS constraint this toolchain would also match aarch64
+        # Linux platforms, which are served by the host cross toolchains.
+        "constraints": ["@platforms//os:none"],
         "cpu": "aarch64",
         "triple": "aarch64-unknown-none",
     },

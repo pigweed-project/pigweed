@@ -146,6 +146,7 @@ def _pw_rust_impl(ctx):
         channels = CHANNELS
 
     # Register CIPD repositories for toolchain binaries
+    target_repos = {}
     for host in hosts:
         cipd_os = _normalize_os_to_cipd(host["os"])
 
@@ -156,8 +157,10 @@ def _pw_rust_impl(ctx):
             tag = rust_toolchain_cipd_tag,
         )
 
+        target_repo = "rust_toolchain_target_{}_{}".format(host["triple"], host["cpu"])
+        target_repos[target_repo] = True
         cipd_repository(
-            name = "rust_toolchain_target_{}_{}".format(host["triple"], host["cpu"]),
+            name = target_repo,
             build_file = "//pw_toolchain/rust:rust_stdlib.BUILD",
             path = "fuchsia/third_party/rust/target/{}".format(host["triple"]),
             tag = rust_toolchain_cipd_tag,
@@ -179,9 +182,14 @@ def _pw_rust_impl(ctx):
 
     for target in extra_targets:
         build_std = target.get("build_std", False)
-        if not build_std:
+        target_repo = "rust_toolchain_target_{}_{}".format(target["triple"], target["cpu"])
+
+        # A host triple may also be listed as an extra target; its prebuilt
+        # standard library was already declared above.
+        if not build_std and target_repo not in target_repos:
+            target_repos[target_repo] = True
             cipd_repository(
-                name = "rust_toolchain_target_{}_{}".format(target["triple"], target["cpu"]),
+                name = target_repo,
                 build_file = "//pw_toolchain/rust:rust_stdlib.BUILD",
                 path = "fuchsia/third_party/rust/target/{}".format(target["triple"]),
                 tag = rust_toolchain_cipd_tag,
@@ -394,6 +402,13 @@ def _BUILD_for_toolchain_repo(hosts, extra_targets, channels):
     build_file += """load("@rules_rust//rust:defs.bzl", "rust_library_group")\n"""
     build_file += """load("@rules_rust_prost//:defs.bzl", "rust_prost_toolchain")\n"""
 
+    # Explicitly listed extra targets take precedence over the Linux cross
+    # targets generated below.
+    extra_target_keys = {
+        (target["triple"], target["cpu"]): True
+        for target in extra_targets
+    }
+
     for channel in channels:
         for host in hosts:
             for prefix, std_constraint, build_std in [
@@ -425,7 +440,28 @@ def _BUILD_for_toolchain_repo(hosts, extra_targets, channels):
                     default_edition = channel.get("default_edition"),
                 )
 
-            for target in extra_targets:
+            # Cross-compile between Linux hosts (e.g. x86_64 -> aarch64) using
+            # the host's rustc and the other host's prebuilt standard library.
+            # Linking is done by the cc toolchain resolved for the target
+            # platform.
+            cross_targets = []
+            if host["os"] == "linux":
+                cross_targets = [
+                    {
+                        "constraints": [
+                            "@platforms//os:linux",
+                            "@pigweed//pw_build/constraints/rust:std",
+                        ],
+                        "cpu": target_host["cpu"],
+                        "triple": target_host["triple"],
+                    }
+                    for target_host in hosts
+                    if target_host["os"] == "linux" and
+                       target_host["cpu"] != host["cpu"] and
+                       (target_host["triple"], target_host["cpu"]) not in extra_target_keys
+                ]
+
+            for target in cross_targets + extra_targets:
                 build_file += _pw_rust_toolchain(
                     name = "{}_{}_rust_toolchain_{}_{}_{}".format(host["os"], host["cpu"], target["triple"], target["cpu"], channel["name"]),
                     analyzer_toolchain_name = "{}_{}_rust_analyzer_toolchain_{}_{}_{}".format(host["os"], host["cpu"], target["triple"], target["cpu"], channel["name"]),
@@ -435,7 +471,7 @@ def _BUILD_for_toolchain_repo(hosts, extra_targets, channels):
                     target_repo = "@rust_toolchain_target_{}_{}".format(target["triple"], target["cpu"]),
                     toolchain_repo = "@rust_toolchain_host_{}_{}".format(host["os"], host["cpu"]),
                     rust_analyzer_repo = "@rust_analyzer_{}_{}".format(host["os"], host["cpu"]),
-                    dylib_ext = "*.so",
+                    dylib_ext = ".so",
                     exec_compatible_with = [
                         "@platforms//cpu:{}".format(host["cpu"]),
                         "@platforms//os:{}".format(host["os"]),

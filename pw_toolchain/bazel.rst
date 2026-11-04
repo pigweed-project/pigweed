@@ -65,6 +65,9 @@ extra configuration is needed:
 
    $ bazelisk build --platforms=@pigweed//targets/host:linux_aarch64 //my:binary
 
+``@pw_rust_toolchains//:all`` registers matching Rust toolchains for the same
+platforms, so Rust targets can be cross-compiled just like C++.
+
 .. _module-pw_toolchain-bazel-layering-check:
 
 Layering check
