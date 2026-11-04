@@ -82,6 +82,10 @@ rust_library(
     srcs = ["config.rs"],
     crate_name = "kernel_config",
     edition = "2024",
+    target_compatible_with = [
+        "//pw_build/constraints/rtos:pigweed",
+        "@pico-sdk//bazel/constraint:rp2350",
+    ],
     deps = [
         "//pw_kernel/config:kernel_config_interface",
     ],

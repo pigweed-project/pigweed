@@ -26,8 +26,8 @@ pw_rust_docs(
     # crates in topological order.
     crates = [
         "//pw_assert/rust:pw_assert_doc",
+        "//pw_assert/rust:pw_assert_backend_core_doc",
         "//pw_assert/rust:pw_assert_backend_pw_log_doc",
-        "//pw_assert/rust:pw_assert_backend_std_doc",
         "//pw_time/rust:pw_time_core_doc",
         "//pw_time/rust:pw_time_doc",
         "//pw_sync/rust/pw_sync_spinlock:pw_sync_spinlock_core_doc",

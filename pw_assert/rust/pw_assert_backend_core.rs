@@ -13,17 +13,16 @@
 // the License.
 #![no_std]
 
-//! # pw_assert_backend_std
+//! # pw_assert_backend_core
 //!
-//! `pw_assert_backend_std` provides an implementation of `pw_assert`
-//! backend macros that route to `std::panic`, `std::assert`,
-//! `std::assert_eq` and `std::assert_ne`.
-
-extern crate std;
+//! `pw_assert_backend_core` provides a `#![no_std]` implementation of
+//! `pw_assert` backend macros that route to `core::panic`, `core::assert`,
+//! `core::assert_eq`, and `core::assert_ne`. Because `std` re-exports these
+//! macros from `core`, this backend works on both `no_std` and `std` targets.
 
 #[doc(hidden)]
 pub mod __private {
-    pub use std::{assert, assert_eq, assert_ne, panic};
+    pub use core::{assert, assert_eq, assert_ne, panic};
 }
 
 /// Backend implementation of [`pw_assert::panic`].

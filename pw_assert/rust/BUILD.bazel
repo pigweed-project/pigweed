@@ -108,7 +108,7 @@ rust_library(
 
 label_flag(
     name = "pw_assert_backend",
-    build_setting_default = ":pw_assert_backend_std",
+    build_setting_default = ":pw_assert_backend_core",
     visibility = ["//visibility:public"],
 )
 
@@ -156,42 +156,41 @@ rust_library(
 )
 
 rust_library(
-    name = "pw_assert_backend_std",
+    name = "pw_assert_backend_core",
     srcs = [
-        "pw_assert_backend_std.rs",
+        "pw_assert_backend_core.rs",
     ],
     crate_name = "pw_assert_backend",
     edition = "2021",
-    target_compatible_with = incompatible_with_mcu(),
 )
 
-# pw_assert_backend_std unit test
+# pw_assert_backend_core unit test
 platform(
-    name = "host_pw_assert_backend_std",
+    name = "host_pw_assert_backend_core",
     flags = [
-        "--//pw_assert/rust:pw_assert_backend=//pw_assert/rust:pw_assert_backend_std",
+        "--//pw_assert/rust:pw_assert_backend=//pw_assert/rust:pw_assert_backend_core",
     ],
     parents = ["@bazel_tools//tools:host_platform"],
 )
 
 rust_test(
-    name = "std_backend_test",
+    name = "core_backend_test",
     srcs = [
-        "std_backend_test.rs",
+        "core_backend_test.rs",
     ],
     edition = "2021",
-    platform = ":host_pw_assert_backend_std",
+    platform = ":host_pw_assert_backend_core",
     deps = ["@pigweed//pw_assert/rust:pw_assert"],
 )
 
-# Duplicate library for 'pw_assert_backend_std' which is only used
+# Duplicate library for 'pw_assert_backend_core' which is only used
 # to generate rustdocs.
 rust_library(
-    name = "pw_assert_backend_std_doc",
+    name = "pw_assert_backend_core_doc",
     srcs = [
-        "pw_assert_backend_std.rs",
+        "pw_assert_backend_core.rs",
     ],
-    crate_name = "pw_assert_backend_std",
+    crate_name = "pw_assert_backend_core",
     edition = "2021",
     deps = [
         ":pw_assert",
@@ -232,14 +231,14 @@ rust_doc_test(
 )
 
 rust_test(
-    name = "pw_assert_backend_std_test",
-    crate = ":pw_assert_backend_std_doc",
+    name = "pw_assert_backend_core_test",
+    crate = ":pw_assert_backend_core_doc",
     edition = "2021",
     target_compatible_with = incompatible_with_mcu(),
 )
 
 rust_doc_test(
-    name = "pw_assert_backend_std_doc_test",
-    crate = ":pw_assert_backend_std_doc",
+    name = "pw_assert_backend_core_doc_test",
+    crate = ":pw_assert_backend_core_doc",
     target_compatible_with = incompatible_with_mcu(),
 )
