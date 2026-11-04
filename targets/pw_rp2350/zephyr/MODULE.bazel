@@ -38,6 +38,7 @@ git_override(
     patch_strip = 1,
     patches = [
         "//bazel_patches:0001-Avoid-watching-resolved-symlinks-outside-workspace.patch",
+        "//bazel_patches:0002-Select-matching-Python-version-in-repo_rule_python.patch",
     ],
     remote = "https://pigweed.googlesource.com/zephyr/zephyr-bazel.git",
 )
@@ -84,11 +85,15 @@ git_repository(
 
 # Configure Python toolchain
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+
+# LINT.IfChange(python_version)
 python.toolchain(
     configure_coverage_tool = True,
     is_default = True,
-    python_version = "3.11",
+    python_version = "3.12",
 )
+
+# LINT.ThenChange(//MODULE.bazel:python_version, //docs/tests/MODULE.bazel:python_version, //pw_build/workflows_launcher/MODULE.bazel:python_version, //pw_ide/py/integration_test.py:python_version, //pw_kernel/examples/adventure/MODULE.bazel:python_version, //targets/pw_rp2350/zephyr/MODULE.bazel:python_version)
 use_repo(python, "pythons_hub")
 
 # Import pip dependencies

@@ -905,7 +905,17 @@ class CompileCommandsExternalWorkspaceTest(unittest.TestCase):
 module(name = "downstream")
 bazel_dep(name = "pigweed", version = "0.0.0")
 local_path_override(module_name = "pigweed", path = "{pigweed_root}")
-bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_cc", version = "0.2.22")
+bazel_dep(name = "rules_python", version = "1.9.1")
+
+# LINT.IfChange(python_version)
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = "3.12",
+)
+
+# LINT.ThenChange(//MODULE.bazel:python_version, //docs/tests/MODULE.bazel:python_version, //pw_build/workflows_launcher/MODULE.bazel:python_version, //pw_ide/py/integration_test.py:python_version, //pw_kernel/examples/adventure/MODULE.bazel:python_version, //targets/pw_rp2350/zephyr/MODULE.bazel:python_version)
 
 register_toolchains("@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux")
 register_toolchains("@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos")

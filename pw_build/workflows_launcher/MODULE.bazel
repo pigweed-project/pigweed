@@ -35,3 +35,13 @@ single_version_override(
 # LINT.IfChange(protobuf)
 bazel_dep(name = "protobuf", version = "36.2", repo_name = "com_google_protobuf")
 # LINT.ThenChange(//MODULE.bazel:protobuf)
+
+bazel_dep(name = "rules_python", version = "1.9.1")
+
+# LINT.IfChange(python_version)
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = "3.12",
+)
+# LINT.ThenChange(//MODULE.bazel:python_version, //docs/tests/MODULE.bazel:python_version, //pw_build/workflows_launcher/MODULE.bazel:python_version, //pw_ide/py/integration_test.py:python_version, //pw_kernel/examples/adventure/MODULE.bazel:python_version, //targets/pw_rp2350/zephyr/MODULE.bazel:python_version)

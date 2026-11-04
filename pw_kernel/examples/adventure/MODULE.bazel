@@ -82,3 +82,11 @@ register_toolchains(
     "@pigweed//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imac",
     "@pw_rust_toolchains//:all",
 )
+
+# LINT.IfChange(python_version)
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = "3.12",
+)
+# LINT.ThenChange(//MODULE.bazel:python_version, //docs/tests/MODULE.bazel:python_version, //pw_build/workflows_launcher/MODULE.bazel:python_version, //pw_ide/py/integration_test.py:python_version, //pw_kernel/examples/adventure/MODULE.bazel:python_version, //targets/pw_rp2350/zephyr/MODULE.bazel:python_version)
