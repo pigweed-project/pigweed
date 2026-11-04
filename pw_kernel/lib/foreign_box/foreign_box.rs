@@ -404,6 +404,9 @@ macro_rules! static_foreign_rc {
 
 #[cfg(test)]
 mod tests {
+    use core::cell::Cell;
+
+    use pw_atomic::AtomicLoad;
     use unittest::test;
 
     use super::*;
@@ -528,14 +531,83 @@ mod tests {
         Ok(())
     }
 
-    // `core::sync::atomic::AtomicUsize` only implements `pw_atomic::AtomicUsize`
-    // when `pw_atomic`'s `builtin_impls` feature is enabled, which it is not on
-    // targets without native compare-and-swap (e.g. riscv32 without the A
-    // extension).
-    #[cfg(target_has_atomic = "ptr")]
+    /// A `pw_atomic::AtomicUsize` backed by a plain `Cell` for use in these
+    /// single-threaded tests.
+    ///
+    /// Production code reaches `ForeignRc` through the arch-provided
+    /// `Kernel::AtomicUsize`, which exists on every supported target. The
+    /// `core` atomics do not: `pw_atomic` only implements its traits for
+    /// them on targets with native compare-and-swap. Using this type keeps
+    /// the test compiling and running on every target, including riscv32
+    /// cores without the A extension.
+    struct TestAtomicUsize(Cell<usize>);
+
+    // SAFETY: The unit-test runner is single threaded, so no two threads ever
+    // access a `TestAtomicUsize` concurrently.
+    unsafe impl Sync for TestAtomicUsize {}
+
+    impl pw_atomic::AtomicNew<usize> for TestAtomicUsize {
+        fn new(val: usize) -> Self {
+            Self(Cell::new(val))
+        }
+    }
+
+    impl pw_atomic::AtomicLoad<usize> for TestAtomicUsize {
+        fn load(&self, _order: Ordering) -> usize {
+            self.0.get()
+        }
+    }
+
+    impl pw_atomic::AtomicStore<usize> for TestAtomicUsize {
+        fn store(&self, val: usize, _order: Ordering) {
+            self.0.set(val);
+        }
+    }
+
+    impl pw_atomic::AtomicCompareExchange<usize> for TestAtomicUsize {
+        fn compare_exchange(
+            &self,
+            current: usize,
+            new: usize,
+            _success: Ordering,
+            _failure: Ordering,
+        ) -> Result<usize, usize> {
+            let prev = self.0.get();
+            if prev == current {
+                self.0.set(new);
+                Ok(prev)
+            } else {
+                Err(prev)
+            }
+        }
+    }
+
+    impl pw_atomic::AtomicAdd<usize> for TestAtomicUsize {
+        fn fetch_add(&self, val: usize, _order: Ordering) -> usize {
+            self.0.replace(self.0.get().wrapping_add(val))
+        }
+    }
+
+    impl pw_atomic::AtomicSub<usize> for TestAtomicUsize {
+        fn fetch_sub(&self, val: usize, _order: Ordering) -> usize {
+            self.0.replace(self.0.get().wrapping_sub(val))
+        }
+    }
+
+    impl pw_atomic::AtomicZero for TestAtomicUsize {
+        const ZERO: Self = Self(Cell::new(0));
+    }
+
+    impl pw_atomic::AtomicOne for TestAtomicUsize {
+        const ONE: Self = Self(Cell::new(1));
+    }
+
+    impl pw_atomic::Atomic<usize> for TestAtomicUsize {}
+    impl AtomicUsize for TestAtomicUsize {}
+
     #[test]
     fn static_foreign_rc_ref_count_is_correct() -> unittest::Result<()> {
-        let rc = unsafe { static_foreign_rc!(core::sync::atomic::AtomicUsize, u32, 42) };
+        let rc = unsafe { static_foreign_rc!(TestAtomicUsize, u32, 42) };
         unittest::assert_eq!(*rc, 42);
         unittest::assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 1);
         let rc2 = rc.clone();
