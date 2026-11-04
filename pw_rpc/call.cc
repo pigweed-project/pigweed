@@ -125,10 +125,34 @@ void Call::DestroyServerCall() {
 
 void Call::DestroyClientCall() {
   RpcLockGuard lock;
-  CloseClientCall();
-  WaitForCallbacksToComplete();
+  CloseClientCallAndWaitLocked();
   state_ |= kHasBeenDestroyed;
 }
+
+void Call::CloseClientCallAndWaitLocked() {
+  CloseClientCall();
+  WaitForCallbacksToComplete();
+}
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+Call::Callbacks Call::CloseForDynamicDeleteLocked() {
+  if (properties_.call_type() == kServerCall) {
+    CloseAndSendResponseLocked(OkStatus()).IgnoreError();
+  } else {
+    CloseClientCall();
+  }
+  // Discard a pending on_error from an earlier abort or cancellation rather
+  // than invoking it. Invoking user code from inside DynamicCallPtr::reset()
+  // would bring back the reentrancy and locking problems that DynamicCallPtr
+  // exists to avoid. This check must stay after the close above, which may
+  // release rpc_lock() (see DeleteDynamicCall()).
+  if (awaiting_cleanup()) {
+    endpoint_->CancelCleanup(*this);
+    awaiting_cleanup_ = OkStatus().code();
+  }
+  return TakeCallbacksLocked();
+}
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 
 void Call::WaitForCallbacksToComplete() {
   do {
@@ -156,7 +180,8 @@ void Call::MoveFrom(Call& other) {
   service_id_ = other.service_id_;
   method_id_ = other.method_id_;
 
-  state_ = other.state_;
+  // kHasBeenDestroyed is associated with the object in memory, not the call.
+  state_ = other.state_ & ~kHasBeenDestroyed;
 
   // No need to move awaiting_cleanup_, since it is 0 in both calls here.
 
@@ -227,10 +252,11 @@ void Call::CallOnError(Status error) {
   }
 
   // This mutex lock could be avoided by making callbacks_executing_ atomic.
-  // `lock` is declared after the taken callbacks so they are destroyed after
-  // CallbackFinished() and after rpc_lock() is released.
+  // `lock` is declared after the taken callbacks and `deleter` so they are
+  // destroyed after CallbackFinished() and after rpc_lock() is released.
+  DeferredDeleter deleter;
   RpcLockGuard lock;
-  CallbackFinished();
+  deleter = CallbackFinished();
 }
 
 bool Call::CleanUpIfRequired() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
@@ -352,31 +378,25 @@ void Call::HandlePayload(ConstByteSpan payload) PW_NO_LOCK_SAFETY_ANALYSIS {
   on_next_local(payload);
   rpc_lock().lock();
 
-  CallbackFinished();
-
   // Restore the original callback if the original call is still active and
-  // the callback has not been replaced.
+  // the callback has not been replaced. This must happen before
+  // FinishHandlingPayload(), which deletes the call if a DynamicCallPtr
+  // released it while `on_next_local` was running.
   // NOLINTNEXTLINE(bugprone-use-after-move)
   if (active_locked() && id() == original_id && on_next_ == nullptr) {
     on_next_ = std::move(on_next_local);
   }
 
-  // The call could have been reinitialized and cleaned up already by another
-  // thread that acquired the rpc_lock() while on_next_local was executing
-  // without lock held.
-  if (endpoint_ != nullptr) {
-    // Clean up calls in case decoding failed.
-    endpoint_->CleanUpCalls();
-  } else {
-    rpc_lock().unlock();
-  }
+  FinishHandlingPayload();
 }
 
 void Call::FinishHandlingPayload() {
   // Read endpoint_ first, since the call may be destroyed once the callback is
   // finished and the lock is released.
   Endpoint* endpoint = endpoint_;
-  CallbackFinished();
+  // Destroyed when this function returns, after CleanUpCalls() and after
+  // rpc_lock() is released.
+  [[maybe_unused]] DeferredDeleter deleter = CallbackFinished();
 
   // The call could have been reinitialized and cleaned up already by another
   // thread that acquired the rpc_lock() while the callback was executing

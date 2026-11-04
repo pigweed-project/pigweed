@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 
+#include "pw_rpc/dynamic_call.h"
 #include "pw_rpc/internal/test_utils.h"
 #include "pw_rpc/nanopb/client_testing.h"
 #include "pw_rpc_test_protos/test.rpc.pb.h"
@@ -26,6 +27,19 @@ PW_MODIFY_DIAGNOSTICS_PUSH();
 PW_MODIFY_DIAGNOSTIC(ignored, "-Wmissing-field-initializers");
 
 namespace pw::rpc {
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+// Instantiate DynamicCallPtr for each call type to check that it compiles.
+template class DynamicCallPtr<
+    NanopbClientReaderWriter<pw_rpc_test_TestRequest,
+                             pw_rpc_test_TestStreamResponse>>;
+template class DynamicCallPtr<
+    NanopbClientReader<pw_rpc_test_TestStreamResponse>>;
+template class DynamicCallPtr<
+    NanopbClientWriter<pw_rpc_test_TestRequest, pw_rpc_test_TestResponse>>;
+template class DynamicCallPtr<NanopbUnaryReceiver<pw_rpc_test_TestResponse>>;
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+
 namespace {
 
 using test::pw_rpc::nanopb::TestService;

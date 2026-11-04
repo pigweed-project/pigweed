@@ -220,6 +220,7 @@ class NanopbServerReaderWriter
   using internal::BaseNanopbServerReader<Request>::set_on_next;
 
  private:
+  friend class internal::Call;
   friend class internal::NanopbMethod;
   friend class Server;
 
@@ -287,6 +288,7 @@ class NanopbServerReader : private internal::BaseNanopbServerReader<Request> {
   }
 
  private:
+  friend class internal::Call;
   friend class internal::NanopbMethod;
   friend class Server;
 
@@ -361,6 +363,7 @@ class NanopbServerWriter : private internal::NanopbServerCall {
   using internal::ServerCall::set_on_completion_requested_if_enabled;
 
  private:
+  friend class internal::Call;
   friend class internal::NanopbMethod;
   friend class Server;
 
@@ -421,6 +424,7 @@ class NanopbUnaryResponder : private internal::NanopbServerCall {
   using internal::Call::set_on_error;
 
  private:
+  friend class internal::Call;
   friend class internal::NanopbMethod;
   friend class Server;
 

@@ -73,6 +73,7 @@ class RawClientReaderWriter : private internal::StreamResponseClientCall {
   using internal::Call::as_writer;
 
  private:
+  friend class internal::Call;
   friend class internal::StreamResponseClientCall;
 
   RawClientReaderWriter(internal::LockedEndpoint& client,
@@ -110,6 +111,7 @@ class RawClientReader : private internal::StreamResponseClientCall {
   using internal::ClientCall::CloseAndWaitForCallbacks;
 
  private:
+  friend class internal::Call;
   friend class internal::StreamResponseClientCall;
 
   RawClientReader(internal::LockedEndpoint& client,
@@ -153,6 +155,7 @@ class RawClientWriter : private internal::UnaryResponseClientCall {
   using internal::Call::as_writer;
 
  private:
+  friend class internal::Call;
   friend class internal::UnaryResponseClientCall;
 
   RawClientWriter(internal::LockedEndpoint& client,
@@ -191,6 +194,7 @@ class RawUnaryReceiver : private internal::UnaryResponseClientCall {
   using internal::UnaryResponseClientCall::Cancel;
 
  private:
+  friend class internal::Call;
   friend class internal::UnaryResponseClientCall;
 
   RawUnaryReceiver(internal::LockedEndpoint& client,

@@ -110,6 +110,7 @@ class RawServerReaderWriter : private internal::ServerCall {
   using internal::Call::TryCloseAndSendResponseCallback;
 
  private:
+  friend class internal::Call;
   friend class internal::RawMethod;  // Needed to construct
   friend class Server;
 
@@ -165,6 +166,7 @@ class RawServerReader : private RawServerReaderWriter {
   }
 
  private:
+  friend class internal::Call;
   friend class internal::RawMethod;  // Needed for conversions from ReaderWriter
   friend class Server;
 
@@ -218,6 +220,7 @@ class RawServerWriter : private RawServerReaderWriter {
   using internal::Call::as_writer;
 
  private:
+  friend class internal::Call;
   friend class internal::RawMethod;
   friend class Server;
 
@@ -281,6 +284,7 @@ class RawUnaryResponder : private RawServerReaderWriter {
   }
 
  private:
+  friend class internal::Call;
   friend class internal::RawMethod;
   friend class Server;
 

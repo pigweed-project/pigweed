@@ -286,6 +286,7 @@ class NanopbClientReaderWriter
   using internal::NanopbStreamResponseClientCall<Response>::set_on_next;
 
  private:
+  friend class internal::Call;
   friend class internal::NanopbStreamResponseClientCall<Response>;
 
   NanopbClientReaderWriter(internal::LockedEndpoint& client,
@@ -333,6 +334,7 @@ class NanopbClientReader
   using internal::ClientCall::CloseAndWaitForCallbacks;
 
  private:
+  friend class internal::Call;
   friend class internal::NanopbStreamResponseClientCall<Response>;
 
   NanopbClientReader(internal::LockedEndpoint& client,
@@ -383,6 +385,7 @@ class NanopbClientWriter
   using internal::ClientCall::CloseAndWaitForCallbacks;
 
  private:
+  friend class internal::Call;
   friend class internal::NanopbUnaryResponseClientCall<Response>;
 
   NanopbClientWriter(internal::LockedEndpoint& client,
@@ -427,6 +430,7 @@ class NanopbUnaryReceiver
   using internal::ClientCall::CloseAndWaitForCallbacks;
 
  private:
+  friend class internal::Call;
   friend class internal::NanopbUnaryResponseClientCall<Response>;
 
   NanopbUnaryReceiver(internal::LockedEndpoint& client,

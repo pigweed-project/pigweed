@@ -217,6 +217,11 @@ class Endpoint {
     call.CleanUpFromEndpoint();
   }
 
+  void CancelCleanup(Call& call) PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
+    const bool removed_call_to_cleanup = to_cleanup_.remove(call);
+    PW_DASSERT(removed_call_to_cleanup);  // Should have been awaiting cleanup
+  }
+
   // Removes the provided call from the call registry.
   void UnregisterCall(const Call& call)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {

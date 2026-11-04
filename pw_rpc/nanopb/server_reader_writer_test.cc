@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 
+#include "pw_rpc/dynamic_call.h"
 #include "pw_rpc/internal/test_utils.h"
 #include "pw_rpc/nanopb/fake_channel_output.h"
 #include "pw_rpc/nanopb/test_method_context.h"
@@ -25,6 +26,19 @@
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc {
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+// Instantiate DynamicCallPtr for each call type to check that it compiles.
+template class DynamicCallPtr<
+    NanopbServerReaderWriter<pw_rpc_test_TestRequest,
+                             pw_rpc_test_TestStreamResponse>>;
+template class DynamicCallPtr<
+    NanopbServerReader<pw_rpc_test_TestRequest, pw_rpc_test_TestResponse>>;
+template class DynamicCallPtr<
+    NanopbServerWriter<pw_rpc_test_TestStreamResponse>>;
+template class DynamicCallPtr<NanopbUnaryResponder<pw_rpc_test_TestResponse>>;
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+
 namespace {
 
 class TestServiceImpl final

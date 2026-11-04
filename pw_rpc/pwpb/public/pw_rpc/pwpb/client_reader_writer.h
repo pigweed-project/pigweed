@@ -430,6 +430,7 @@ class PwpbClientReaderWriter
   using internal::StreamResponseClientCall::set_on_error;
 
  protected:
+  friend class internal::Call;
   friend class internal::PwpbStreamResponseClientCall<Response>;
 
   PwpbClientReaderWriter(internal::LockedEndpoint& client,
@@ -478,6 +479,7 @@ class PwpbClientReader
   using internal::StreamResponseClientCall::set_on_error;
 
  private:
+  friend class internal::Call;
   friend class internal::PwpbStreamResponseClientCall<Response>;
 
   PwpbClientReader(internal::LockedEndpoint& client,
@@ -538,6 +540,7 @@ class PwpbClientWriter
   using internal::UnaryResponseClientCall::set_on_error;
 
  private:
+  friend class internal::Call;
   friend class internal::PwpbUnaryResponseClientCall<Response>;
 
   PwpbClientWriter(internal::LockedEndpoint& client,
@@ -585,6 +588,7 @@ class PwpbUnaryReceiver
   using internal::ClientCall::CloseAndWaitForCallbacks;
 
  private:
+  friend class internal::Call;
   friend class internal::PwpbUnaryResponseClientCall<Response>;
 
   PwpbUnaryReceiver(internal::LockedEndpoint& client,

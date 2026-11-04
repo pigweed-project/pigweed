@@ -543,6 +543,34 @@ Typed ``on_next`` and ``on_completed`` callbacks of ``pw_protobuf`` and Nanopb
 calls are not released when a call fails. They are released when the call
 object is destroyed or overwritten, or when the callback is replaced.
 
+Dynamic call objects
+^^^^^^^^^^^^^^^^^^^^
+When :cc:`PW_RPC_DYNAMIC_ALLOCATION` is enabled, a call object can be owned by a
+:cc:`pw::rpc::DynamicCallPtr`, which is created with
+:cc:`pw::rpc::MakeDynamicCall` or from the pointer returned by the generated
+pw_protobuf ``DynamicClient`` methods. Resetting or destroying a
+``DynamicCallPtr`` closes its call immediately, without waiting for the call's
+callbacks. If one of the call's callbacks is running, the call object is deleted
+when that callback returns.
+
+Closing the call works as when a call object is destroyed: server calls are
+completed with an OK status and client calls are abandoned. Unlike destroying a
+call object, a pending ``on_error`` from an earlier abort or cancellation is
+discarded and not invoked, since invoking it from ``reset()`` would reintroduce
+the reentrancy that ``DynamicCallPtr`` avoids.
+
+This means that:
+
+* A callback may reset the ``DynamicCallPtr`` that owns its call, or drop the
+  last reference to an object that owns it.
+* A thread may reset a ``DynamicCallPtr`` while holding a lock that the call's
+  running callback is waiting for.
+
+A ``DynamicCallPtr`` is not thread safe. Synchronize access to a
+``DynamicCallPtr`` that is used from multiple threads. To avoid destroying the
+call's callbacks while holding a lock, move the ``DynamicCallPtr`` out of the
+lock's scope before resetting it.
+
 Only one thread at a time may execute ``on_next``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Only one thread may execute the ``on_next`` callback for a specific service

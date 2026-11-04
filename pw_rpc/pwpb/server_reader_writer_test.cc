@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 
+#include "pw_rpc/dynamic_call.h"
 #include "pw_rpc/internal/test_utils.h"
 #include "pw_rpc/pwpb/fake_channel_output.h"
 #include "pw_rpc/pwpb/test_method_context.h"
@@ -25,6 +26,21 @@
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc {
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+// Instantiate DynamicCallPtr for each call type to check that it compiles.
+template class DynamicCallPtr<
+    PwpbServerReaderWriter<::pw::rpc::test::pwpb::TestRequest::Message,
+                           ::pw::rpc::test::pwpb::TestStreamResponse::Message>>;
+template class DynamicCallPtr<
+    PwpbServerReader<::pw::rpc::test::pwpb::TestRequest::Message,
+                     ::pw::rpc::test::pwpb::TestResponse::Message>>;
+template class DynamicCallPtr<
+    PwpbServerWriter<::pw::rpc::test::pwpb::TestStreamResponse::Message>>;
+template class DynamicCallPtr<
+    PwpbUnaryResponder<::pw::rpc::test::pwpb::TestResponse::Message>>;
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+
 namespace {
 
 namespace TestRequest = ::pw::rpc::test::pwpb::TestRequest;
@@ -489,5 +505,65 @@ TEST(PwpbServerReaderWriter,
   EXPECT_FALSE(call.active());
   EXPECT_TRUE(owner_destroyed);
 }
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+TEST(PwpbServerReaderWriter, DynamicCall_ResetInsideOnNext) {
+  PW_PWPB_TEST_METHOD_CONTEXT(TestServiceImpl, TestBidirectionalStreamRpc) ctx;
+
+  struct {
+    DynamicCallPtr<PwpbServerReaderWriter<TestRequest::Message,
+                                          TestStreamResponse::Message>>
+        dynamic_call;
+    bool on_next_ran = false;
+  } state{MakeDynamicCall(ctx.reader_writer())};
+  ASSERT_TRUE(state.dynamic_call->active());
+
+  state.dynamic_call->set_on_next([&state](const TestRequest::Message& req) {
+    EXPECT_EQ(req.integer, 42);
+    state.dynamic_call.reset();
+    state.on_next_ran = true;
+  });
+
+  ctx.SendClientStream({.integer = 42, .status_code = 0});
+  EXPECT_TRUE(state.on_next_ran);
+  EXPECT_EQ(state.dynamic_call, nullptr);
+}
+
+TEST(PwpbServerReaderWriter, DynamicCall_OnNextCaptureDropsLastOwnerReference) {
+  PW_PWPB_TEST_METHOD_CONTEXT(TestServiceImpl, TestBidirectionalStreamRpc) ctx;
+
+  struct Owner {
+    DynamicCallPtr<PwpbServerReaderWriter<TestRequest::Message,
+                                          TestStreamResponse::Message>>
+        call;
+    bool* destroyed = nullptr;
+    ~Owner() {
+      if (destroyed != nullptr) {
+        *destroyed = true;
+      }
+    }
+  };
+
+  bool owner_destroyed = false;
+  auto owner = std::make_unique<Owner>();
+  owner->destroyed = &owner_destroyed;
+  owner->call = MakeDynamicCall(ctx.reader_writer());
+  Owner* raw_owner = owner.get();
+
+  raw_owner->call->set_on_next(
+      [captured_owner = std::move(owner)](const TestRequest::Message&) {
+        // Finish() makes the call inactive without resetting
+        // captured_owner->call, so ~Owner() and ~DynamicCallPtr() run when
+        // proto_on_next_local is destroyed inside
+        // DecodeToStructAndInvokeOnNext().
+        EXPECT_EQ(OkStatus(), captured_owner->call->Finish());
+      });
+  ASSERT_FALSE(owner_destroyed);
+
+  ctx.SendClientStream({.integer = 7, .status_code = 0});
+  EXPECT_TRUE(owner_destroyed);
+}
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+
 }  // namespace
 }  // namespace pw::rpc

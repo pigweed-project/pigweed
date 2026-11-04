@@ -48,10 +48,11 @@ void UnaryResponseClientCall::HandleCompleted(
   }
 
   // This mutex lock could be avoided by making callbacks_executing_ atomic.
-  // `lock` is declared after the taken callbacks so they are destroyed after
-  // CallbackFinished() and after rpc_lock() is released.
+  // `lock` is declared after the taken callbacks and `deleter` so they are
+  // destroyed after CallbackFinished() and after rpc_lock() is released.
+  DeferredDeleter deleter;
   RpcLockGuard lock;
-  CallbackFinished();
+  deleter = CallbackFinished();
 }
 
 void StreamResponseClientCall::HandleCompleted(Status status) {
@@ -66,10 +67,11 @@ void StreamResponseClientCall::HandleCompleted(Status status) {
   }
 
   // This mutex lock could be avoided by making callbacks_executing_ atomic.
-  // `lock` is declared after the taken callbacks so they are destroyed after
-  // CallbackFinished() and after rpc_lock() is released.
+  // `lock` is declared after the taken callbacks and `deleter` so they are
+  // destroyed after CallbackFinished() and after rpc_lock() is released.
+  DeferredDeleter deleter;
   RpcLockGuard lock;
-  CallbackFinished();
+  deleter = CallbackFinished();
 }
 
 }  // namespace pw::rpc::internal

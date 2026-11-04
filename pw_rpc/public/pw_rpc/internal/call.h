@@ -22,6 +22,7 @@
 #include "pw_function/function.h"
 #include "pw_rpc/channel.h"
 #include "pw_rpc/internal/call_context.h"
+#include "pw_rpc/internal/config.h"
 #include "pw_rpc/internal/lock.h"
 #include "pw_rpc/internal/method.h"
 #include "pw_rpc/internal/packet.h"
@@ -33,7 +34,17 @@
 #include "pw_status/status_with_size.h"
 #include "pw_sync/lock_annotations.h"
 
+#if PW_RPC_DYNAMIC_ALLOCATION
+#include PW_RPC_MAKE_UNIQUE_PTR_INCLUDE
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+
 namespace pw::rpc {
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+template <typename CallType, typename UniquePtr>
+class DynamicCallPtr;
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+
 namespace internal {
 
 class Endpoint;
@@ -96,6 +107,20 @@ inline constexpr uint32_t kOpenCallId = std::numeric_limits<uint32_t>::max();
 // Legacy clients and servers didn't make use of call IDs at all, and will send
 // unrequested responses with an "empty" (zero) call ID.
 inline constexpr uint32_t kLegacyOpenCallId = 0;
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+// The largest smart pointer that a DynamicCallPtr may own: the size of the
+// pointer returned by PW_RPC_MAKE_UNIQUE_PTR.
+inline constexpr size_t kMaxDynamicCallPointerSize =
+    sizeof(decltype(PW_RPC_MAKE_UNIQUE_PTR(int, 0)));
+
+// Owns the smart pointer for a call that a DynamicCallPtr released while one of
+// the call's callbacks was running. Destroying it deletes the call. It is never
+// invoked. The smart pointer is stored inline, so this never allocates.
+using DeferredDeleter = InlineFunction<void(), kMaxDynamicCallPointerSize>;
+#else
+struct DeferredDeleter {};
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 
 // Internal RPC Call class. The Call is used to respond to any type of RPC.
 // Public classes like ServerWriters inherit from it with private inheritance
@@ -396,12 +421,30 @@ class Call : public IntrusiveForwardList<Call>::Item, private rpc::Writer {
   void DestroyServerCall() PW_LOCKS_EXCLUDED(rpc_lock());
   void DestroyClientCall() PW_LOCKS_EXCLUDED(rpc_lock());
 
+  // Closes a client call and waits for its callbacks to complete. Unlike
+  // DestroyClientCall(), the call object remains usable.
+  void CloseClientCallAndWaitForCallbacks() PW_LOCKS_EXCLUDED(rpc_lock()) {
+    RpcLockGuard lock;
+    CloseClientCallAndWaitLocked();
+  }
+
   void CallbackStarted() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
     callbacks_executing_ += 1;
   }
 
-  void CallbackFinished() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
+  // Marks a callback finished. If this was the last running callback of a call
+  // that a DynamicCallPtr released, returns the deleter for the call. Callers
+  // must destroy it after their last access to the call and after releasing
+  // rpc_lock().
+  [[nodiscard]] DeferredDeleter CallbackFinished()
+      PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
     callbacks_executing_ -= 1;
+#if PW_RPC_DYNAMIC_ALLOCATION
+    if (callbacks_executing_ == 0) {
+      return std::move(deferred_deleter_);
+    }
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+    return {};
   }
 
   // Marks the on_next callback finished, cleans up calls, and releases
@@ -569,10 +612,11 @@ class Call : public IntrusiveForwardList<Call>::Item, private rpc::Writer {
       }
     }
 
-    // `lock` is declared after the local callbacks so they are destroyed after
-    // CallbackFinished() and after rpc_lock() is released.
+    // `lock` is declared after the local callbacks and `deleter` so they are
+    // destroyed after CallbackFinished() and after rpc_lock() is released.
+    DeferredDeleter deleter;
     RpcLockGuard lock;
-    CallbackFinished();
+    deleter = CallbackFinished();
   }
 
   // An active call cannot be moved if its callbacks are running. This function
@@ -582,12 +626,51 @@ class Call : public IntrusiveForwardList<Call>::Item, private rpc::Writer {
 
  private:
   friend class rpc::Writer;
+#if PW_RPC_DYNAMIC_ALLOCATION
+  template <typename CallType, typename UniquePtr>
+  friend class rpc::DynamicCallPtr;
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 
   enum State : uint8_t {
     kActive = 0b001,
     kClientRequestedCompletion = 0b010,
     kHasBeenDestroyed = 0b100,
   };
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+  // Closes a call owned by a DynamicCallPtr and deletes it. If one of its
+  // callbacks is running, the call is deleted when the last running callback
+  // finishes instead.
+  template <typename UniquePtr>
+  static void DeleteDynamicCall(UniquePtr call) PW_LOCKS_EXCLUDED(rpc_lock()) {
+    Call* base = static_cast<Call*>(&*call);
+    // Declared before `lock` so that the callbacks are destroyed after
+    // rpc_lock() is released. If the deletion is not deferred, the `call`
+    // parameter is destroyed after this function returns, also outside of
+    // rpc_lock().
+    Callbacks old_callbacks;
+    RpcLockGuard lock;
+    old_callbacks = base->CloseForDynamicDeleteLocked();
+    // With PW_RPC_LOCKLESS_CHANNEL_SEND, closing the call releases rpc_lock()
+    // while sending the final packet, so another thread may start a callback
+    // or mark the call for cleanup meanwhile. CallbacksAreRunning() here and
+    // the awaiting_cleanup() check in CloseForDynamicDeleteLocked() must stay
+    // after the close.
+    if (base->CallbacksAreRunning()) {
+      // `Call` has a non-virtual destructor, so store a type-erased deleter
+      // that destroys the derived `CallType` when the last running callback
+      // finishes (see CallbackFinished()).
+      static_assert(sizeof(UniquePtr) <= kMaxDynamicCallPointerSize,
+                    "DynamicCallPtr supports smart pointers up to the size of "
+                    "the pointer returned by PW_RPC_MAKE_UNIQUE_PTR");
+      base->deferred_deleter_ = [owned_call = std::move(call)]{};
+    }
+  }
+
+  // Closes the call, cancels any pending cleanup, and takes its callbacks.
+  Callbacks CloseForDynamicDeleteLocked()
+      PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 
   // Common constructor for server & client calls.
   Call(LockedEndpoint& endpoint,
@@ -653,6 +736,9 @@ class Call : public IntrusiveForwardList<Call>::Item, private rpc::Writer {
   // Waits for callbacks to complete so that a call object can be destroyed.
   void WaitForCallbacksToComplete() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());
 
+  // Closes a client call and waits for its callbacks to complete.
+  void CloseClientCallAndWaitLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());
+
   Endpoint* endpoint_ PW_GUARDED_BY(rpc_lock());
   uint32_t channel_id_ PW_GUARDED_BY(rpc_lock());
   uint32_t id_ PW_GUARDED_BY(rpc_lock());
@@ -682,6 +768,13 @@ class Call : public IntrusiveForwardList<Call>::Item, private rpc::Writer {
   // Called when a request is received. Only used for RPCs with client streams.
   // The raw payload buffer is passed to the callback.
   Function<void(ConstByteSpan payload)> on_next_ PW_GUARDED_BY(rpc_lock());
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+  // Set if a DynamicCallPtr released this call while one of its callbacks was
+  // running. Like callbacks_executing_, this is associated with the object in
+  // memory rather than the call, so it is not moved.
+  DeferredDeleter deferred_deleter_ PW_GUARDED_BY(rpc_lock());
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 };
 
 }  // namespace internal

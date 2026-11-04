@@ -18,9 +18,11 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <optional>
 #include <utility>
 
+#include "pw_rpc/dynamic_call.h"
 #include "pw_rpc/internal/client_call.h"
 #include "pw_rpc/internal/test_utils.h"
 #include "pw_rpc/service.h"
@@ -54,18 +56,34 @@ using ::pw::rpc::internal::test::FakeServerWriter;
 using ::std::byte;
 using ::testing::Test;
 
-static_assert(sizeof(Call) ==
-                  // IntrusiveForwardList::Item pointer
-                  sizeof(IntrusiveForwardList<Call>::Item) +
-                      // Endpoint pointer
-                      sizeof(Endpoint*) +
-                      // call_id, channel_id, service_id, method_id
-                      4 * sizeof(uint32_t) +
-                      // Packed state and properties
-                      sizeof(void*) +
-                      // on_error and on_next callbacks
-                      2 * sizeof(Function<void(Status)>),
+constexpr size_t kCallSizeWithoutDeferredDeleter =
+    // IntrusiveForwardList::Item pointer
+    sizeof(IntrusiveForwardList<Call>::Item) +
+    // Endpoint pointer
+    sizeof(Endpoint*) +
+    // call_id, channel_id, service_id, method_id
+    4 * sizeof(uint32_t) +
+    // Packed state and properties
+    sizeof(void*) +
+    // on_error and on_next callbacks
+    2 * sizeof(Function<void(Status)>);
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+constexpr size_t AlignUp(size_t size, size_t alignment) {
+  return (size + alignment - 1) / alignment * alignment;
+}
+
+// The deferred deleter for calls released by DynamicCallPtr is the last member.
+// It is aligned for PW_RPC_MAKE_UNIQUE_PTR's pointer, so a pointer larger than
+// std::unique_ptr may add padding before it.
+static_assert(sizeof(Call) == AlignUp(kCallSizeWithoutDeferredDeleter,
+                                      alignof(DeferredDeleter)) +
+                                  sizeof(DeferredDeleter),
               "Unexpected padding in Call!");
+#else
+static_assert(sizeof(Call) == kCallSizeWithoutDeferredDeleter,
+              "Unexpected padding in Call!");
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 
 static_assert(sizeof(CallProperties) == sizeof(uint8_t));
 
@@ -529,6 +547,8 @@ class FakeUnaryClientCall : public UnaryResponseClientCall {
   FakeUnaryClientCall(FakeUnaryClientCall&&) = default;
   FakeUnaryClientCall& operator=(FakeUnaryClientCall&&) = default;
   ~FakeUnaryClientCall() { DestroyClientCall(); }
+  using Call::set_on_error;
+  using ClientCall::CloseAndWaitForCallbacks;
   using UnaryResponseClientCall::set_on_completed;
 };
 
@@ -548,6 +568,8 @@ class FakeStreamClientCall : public StreamResponseClientCall {
   FakeStreamClientCall(FakeStreamClientCall&&) = default;
   FakeStreamClientCall& operator=(FakeStreamClientCall&&) = default;
   ~FakeStreamClientCall() { DestroyClientCall(); }
+  using Call::set_on_error;
+  using ClientCall::CloseAndWaitForCallbacks;
   using StreamResponseClientCall::set_on_completed;
 };
 
@@ -642,6 +664,379 @@ TEST(ClientCallTest,
   EXPECT_TRUE(on_completed_destroyed);
   EXPECT_TRUE(on_error_destroyed);
 }
+
+TEST(ClientCallTest, CloseAndWaitForCallbacks_CallbacksCanBeReplaced) {
+  ClientContextForTest<> context;
+  FakeStreamClientCall call =
+      StreamResponseClientCall::Start<FakeStreamClientCall>(
+          context.client(),
+          context.channel_id(),
+          context.service_id(),
+          context.method_id(),
+          /*on_next=*/nullptr,
+          /*on_completed=*/nullptr,
+          /*on_error=*/nullptr,
+          {});
+  call.CloseAndWaitForCallbacks();
+  ASSERT_FALSE(call.active());
+
+  bool destroyed = false;
+  call.set_on_error([capture = LockAcquiringCapture(destroyed)](Status) {});
+  EXPECT_FALSE(destroyed);
+
+  call.set_on_error(nullptr);
+  EXPECT_TRUE(destroyed);
+}
+
+TEST(ClientCallTest, CloseAndWaitForCallbacks_MoveOntoActiveCall) {
+  ClientContextForTest<> context;
+  auto start = [&context] {
+    return StreamResponseClientCall::Start<FakeStreamClientCall>(
+        context.client(),
+        context.channel_id(),
+        context.service_id(),
+        context.method_id(),
+        /*on_next=*/nullptr,
+        /*on_completed=*/nullptr,
+        /*on_error=*/nullptr,
+        {});
+  };
+  FakeStreamClientCall call_1 = start();
+  FakeStreamClientCall call_2 = start();
+  call_2.CloseAndWaitForCallbacks();
+
+  call_1 = std::move(call_2);
+  EXPECT_FALSE(call_1.active());
+
+  // call_1 is still a live call object, so its callbacks can be set.
+  bool destroyed = false;
+  call_1.set_on_error([capture = LockAcquiringCapture(destroyed)](Status) {});
+  EXPECT_FALSE(destroyed);
+
+  call_1.set_on_error(nullptr);
+  EXPECT_TRUE(destroyed);
+}
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+TEST_F(ServerReaderWriterTest, DynamicCall_ResetInsideOnError) {
+  DynamicCallPtr<FakeServerReaderWriter> empty_call;
+  EXPECT_EQ(empty_call.get(), nullptr);
+
+  struct {
+    DynamicCallPtr<FakeServerReaderWriter> dynamic_call;
+    bool callback_ran = false;
+  } state{MakeDynamicCall(std::move(reader_writer_))};
+  EXPECT_NE(state.dynamic_call.get(), nullptr);
+  auto* raw_call = &state.dynamic_call->as_server_call();
+  state.dynamic_call->set_on_error([&state](Status) {
+    state.dynamic_call.reset();
+    state.callback_ran = true;
+  });
+
+  rpc_lock().lock();
+  raw_call->HandleError(Status::Cancelled());
+
+  EXPECT_TRUE(state.callback_ran);
+  EXPECT_EQ(state.dynamic_call, nullptr);
+  EXPECT_EQ(state.dynamic_call.get(), nullptr);
+}
+
+TEST_F(ServerReaderWriterTest, DynamicCall_ResetInsideOnNext) {
+  struct {
+    DynamicCallPtr<FakeServerReaderWriter> dynamic_call;
+    bool callback_ran = false;
+  } state{MakeDynamicCall(std::move(reader_writer_))};
+  auto* raw_call = &state.dynamic_call->as_server_call();
+  state.dynamic_call->set_on_next([&state](ConstByteSpan) {
+    state.dynamic_call.reset();
+    state.callback_ran = true;
+  });
+
+  rpc_lock().lock();
+  raw_call->HandlePayload({});
+
+  EXPECT_TRUE(state.callback_ran);
+  EXPECT_EQ(state.dynamic_call, nullptr);
+}
+
+#if PW_RPC_COMPLETION_REQUEST_CALLBACK
+TEST_F(ServerReaderWriterTest, DynamicCall_ResetInsideOnCompletionRequested) {
+  struct {
+    DynamicCallPtr<FakeServerReaderWriter> dynamic_call;
+    bool callback_ran = false;
+  } state{MakeDynamicCall(std::move(reader_writer_))};
+  auto* raw_call = &state.dynamic_call->as_server_call();
+  state.dynamic_call->set_on_completion_requested_if_enabled([&state]() {
+    state.dynamic_call.reset();
+    state.callback_ran = true;
+  });
+
+  rpc_lock().lock();
+  raw_call->HandleClientRequestedCompletion();
+
+  EXPECT_TRUE(state.callback_ran);
+  EXPECT_EQ(state.dynamic_call, nullptr);
+}
+#endif  // PW_RPC_COMPLETION_REQUEST_CALLBACK
+
+TEST_F(ServerReaderWriterTest,
+       DynamicCall_CallbackCaptureDropsLastOwnerReference) {
+  struct Owner {
+    DynamicCallPtr<FakeServerReaderWriter> call;
+    bool* destroyed = nullptr;
+    ~Owner() {
+      if (destroyed != nullptr) {
+        *destroyed = true;
+      }
+    }
+  };
+
+  bool owner_destroyed = false;
+  auto owner = std::make_unique<Owner>();
+  owner->destroyed = &owner_destroyed;
+  owner->call = MakeDynamicCall(std::move(reader_writer_));
+  Owner* raw_owner = owner.get();
+  auto* raw_call = &raw_owner->call->as_server_call();
+
+  raw_owner->call->set_on_error([captured_owner = std::move(owner)](Status) {
+    // captured_owner is owned solely by the callback and destroyed when the
+    // callback is cleared.
+  });
+  ASSERT_FALSE(owner_destroyed);
+
+  rpc_lock().lock();
+  raw_call->HandleError(Status::Aborted());
+
+  EXPECT_TRUE(owner_destroyed);
+}
+
+TEST_F(ServerReaderWriterTest, DynamicCall_ResetCancelsPendingCleanup) {
+  auto dynamic_call_1 = MakeDynamicCall(std::move(reader_writer_));
+  rpc_lock().lock();
+  FakeServerReaderWriter second_writer(context_.get(/*id=*/123).ClaimLocked());
+  rpc_lock().unlock();
+
+  struct {
+    DynamicCallPtr<FakeServerReaderWriter> dynamic_call_2;
+    bool call_1_error_called = false;
+  } state{MakeDynamicCall(std::move(second_writer))};
+
+  bool call_2_error_called = false;
+  dynamic_call_1->set_on_error([&state](Status) {
+    state.call_1_error_called = true;
+    // Resetting dynamic_call_2 while CleanUpCalls() is draining to_cleanup_
+    // must remove dynamic_call_2 from to_cleanup_ without crashing.
+    state.dynamic_call_2.reset();
+  });
+  state.dynamic_call_2->set_on_error(
+      [&call_2_error_called](Status) { call_2_error_called = true; });
+
+  rpc_lock().lock();
+  context_.server().CloseCallAndMarkForCleanup(
+      state.dynamic_call_2->as_server_call(), Status::Cancelled());
+  context_.server().CloseCallAndMarkForCleanup(dynamic_call_1->as_server_call(),
+                                               Status::Cancelled());
+  static_cast<Endpoint&>(context_.server()).CleanUpCalls();
+
+  EXPECT_TRUE(state.call_1_error_called);
+  EXPECT_FALSE(call_2_error_called);
+  EXPECT_EQ(state.dynamic_call_2, nullptr);
+}
+
+TEST_F(ServerReaderWriterTest,
+       DynamicCall_ResetInsideOnNextStillCleansUpOtherCalls) {
+  rpc_lock().lock();
+  FakeServerReaderWriter other_writer(context_.get(/*id=*/123).ClaimLocked());
+  rpc_lock().unlock();
+
+  bool other_error_called = false;
+  other_writer.set_on_error(
+      [&other_error_called](Status) { other_error_called = true; });
+
+  struct {
+    DynamicCallPtr<FakeServerReaderWriter> dynamic_call;
+    FakeServerReaderWriter* other_writer = nullptr;
+    TestServer* server = nullptr;
+  } state{MakeDynamicCall(std::move(reader_writer_)),
+          &other_writer,
+          &context_.server()};
+  auto* raw_call = &state.dynamic_call->as_server_call();
+  state.dynamic_call->set_on_next([&state](ConstByteSpan) {
+    // Mark another call for cleanup while this callback runs, then release
+    // this call. HandlePayload() must still drain to_cleanup_ after the
+    // deferred deletion of this call.
+    rpc_lock().lock();
+    state.server->CloseCallAndMarkForCleanup(
+        state.other_writer->as_server_call(), Status::Aborted());
+    rpc_lock().unlock();
+    state.dynamic_call.reset();
+  });
+
+  rpc_lock().lock();
+  raw_call->HandlePayload({});
+
+  EXPECT_EQ(state.dynamic_call, nullptr);
+  EXPECT_TRUE(other_error_called);
+}
+
+TEST_F(ServerReaderWriterTest, DynamicCall_SetCallbacksAfterResetInCallback) {
+  struct {
+    DynamicCallPtr<FakeServerReaderWriter> dynamic_call;
+    FakeServerReaderWriter* call_ptr = nullptr;
+    bool callback_ran = false;
+  } state{MakeDynamicCall(std::move(reader_writer_))};
+  state.call_ptr = state.dynamic_call.get();
+  auto* raw_call = &state.dynamic_call->as_server_call();
+  state.dynamic_call->set_on_next([&state](ConstByteSpan) {
+    state.dynamic_call.reset();
+    // Calling set_on_error / set_on_next after reset() while the callback
+    // is still running must not deadlock. The callbacks are destroyed with
+    // the call when this callback returns.
+    state.call_ptr->set_on_error([](Status) {});
+    state.call_ptr->set_on_next([](ConstByteSpan) {});
+    state.callback_ran = true;
+  });
+
+  rpc_lock().lock();
+  raw_call->HandlePayload({});
+
+  EXPECT_TRUE(state.callback_ran);
+  EXPECT_EQ(state.dynamic_call, nullptr);
+}
+
+TEST(ClientCallTest, DynamicCall_ResetInsideUnaryOnCompleted) {
+  ClientContextForTest<> context;
+  struct {
+    DynamicCallPtr<FakeUnaryClientCall> dynamic_call;
+    bool completed_ran = false;
+  } state;
+  state.dynamic_call =
+      UnaryResponseClientCall::StartDynamic<FakeUnaryClientCall>(
+          context.client(),
+          context.channel_id(),
+          context.service_id(),
+          context.method_id(),
+          [&state](ConstByteSpan, Status) {
+            state.dynamic_call.reset();
+            state.completed_ran = true;
+          },
+          /*on_error=*/nullptr,
+          {});
+
+  EXPECT_EQ(OkStatus(), context.SendResponse(OkStatus()));
+  EXPECT_TRUE(state.completed_ran);
+  EXPECT_EQ(state.dynamic_call, nullptr);
+}
+
+TEST(ClientCallTest, DynamicCall_ResetInsideStreamOnCompleted) {
+  ClientContextForTest<> context;
+  struct {
+    DynamicCallPtr<FakeStreamClientCall> dynamic_call;
+    bool completed_ran = false;
+  } state;
+  state.dynamic_call =
+      MakeDynamicCall(StreamResponseClientCall::Start<FakeStreamClientCall>(
+          context.client(),
+          context.channel_id(),
+          context.service_id(),
+          context.method_id(),
+          /*on_next=*/nullptr,
+          [&state](Status) {
+            state.dynamic_call.reset();
+            state.completed_ran = true;
+          },
+          /*on_error=*/nullptr,
+          {}));
+
+  EXPECT_EQ(OkStatus(), context.SendResponse(OkStatus()));
+  EXPECT_TRUE(state.completed_ran);
+  EXPECT_EQ(state.dynamic_call, nullptr);
+}
+
+// A stateless custom deleter that counts deletions.
+struct CountingDeleter {
+  static inline int deletions = 0;
+
+  void operator()(FakeServerReaderWriter* call) const {
+    deletions += 1;
+    delete call;
+  }
+};
+using CountingPtr = std::unique_ptr<FakeServerReaderWriter, CountingDeleter>;
+
+TEST_F(ServerReaderWriterTest, DynamicCall_CustomSmartPointer_Reset) {
+  CountingDeleter::deletions = 0;
+  DynamicCallPtr call(
+      CountingPtr(new FakeServerReaderWriter(std::move(reader_writer_))));
+  static_assert(
+      std::is_same_v<decltype(call),
+                     DynamicCallPtr<FakeServerReaderWriter, CountingPtr>>);
+  ASSERT_TRUE(call->active());
+
+  call.reset();
+  EXPECT_EQ(CountingDeleter::deletions, 1);
+}
+
+TEST_F(ServerReaderWriterTest,
+       DynamicCall_CustomSmartPointer_ResetInsideCallback) {
+  CountingDeleter::deletions = 0;
+  DynamicCallPtr<FakeServerReaderWriter, CountingPtr> call(
+      CountingPtr(new FakeServerReaderWriter(std::move(reader_writer_))));
+  auto* raw_call = &call->as_server_call();
+  call->set_on_next([&call](ConstByteSpan) {
+    call.reset();
+    // Deletion is deferred until this callback returns.
+    EXPECT_EQ(CountingDeleter::deletions, 0);
+  });
+
+  rpc_lock().lock();
+  raw_call->HandlePayload({});
+
+  EXPECT_EQ(call, nullptr);
+  EXPECT_EQ(CountingDeleter::deletions, 1);
+}
+
+TEST_F(ServerReaderWriterTest, DynamicCall_MoveAssign_ClosesPreviousCall) {
+  CountingDeleter::deletions = 0;
+  DynamicCallPtr call_1(
+      CountingPtr(new FakeServerReaderWriter(std::move(reader_writer_))));
+
+  rpc_lock().lock();
+  auto* second =
+      new FakeServerReaderWriter(context_.get(/*id=*/123).ClaimLocked());
+  rpc_lock().unlock();
+  DynamicCallPtr call_2{CountingPtr(second)};
+  ASSERT_TRUE(call_1->active());
+  ASSERT_TRUE(call_2->active());
+
+  call_1 = std::move(call_2);
+  EXPECT_EQ(CountingDeleter::deletions, 1);
+  EXPECT_EQ(call_1.get(), second);
+  EXPECT_EQ(call_2, nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_TRUE(call_1->active());
+
+  call_1.reset();
+  EXPECT_EQ(CountingDeleter::deletions, 2);
+}
+
+TEST_F(ServerReaderWriterTest, DynamicCall_AssignNullptr_ResetsCall) {
+  CountingDeleter::deletions = 0;
+  DynamicCallPtr call(
+      CountingPtr(new FakeServerReaderWriter(std::move(reader_writer_))));
+  ASSERT_TRUE(call->active());
+
+  call = nullptr;
+  EXPECT_EQ(call, nullptr);
+  EXPECT_EQ(CountingDeleter::deletions, 1);
+}
+
+static_assert(
+    std::is_same_v<decltype(DynamicCallPtr(
+                       std::declval<std::unique_ptr<FakeUnaryClientCall>>())),
+                   DynamicCallPtr<FakeUnaryClientCall,
+                                  std::unique_ptr<FakeUnaryClientCall>>>,
+    "DynamicCallPtr deduces its call type from a smart pointer");
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 
 }  // namespace
 }  // namespace internal

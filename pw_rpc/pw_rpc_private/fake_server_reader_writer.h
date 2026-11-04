@@ -74,6 +74,9 @@ class FakeServerReaderWriter : private ServerCall {
   using Call::DebugLog;
   using Call::id;
   using Call::set_id;
+
+ private:
+  friend class internal::Call;
 };
 
 class FakeServerWriter : private FakeServerReaderWriter {
@@ -96,6 +99,9 @@ class FakeServerWriter : private FakeServerReaderWriter {
 
   // Functions for test use.
   using FakeServerReaderWriter::as_server_call;
+
+ private:
+  friend class internal::Call;
 };
 
 class FakeServerReader : private FakeServerReaderWriter {
@@ -111,6 +117,9 @@ class FakeServerReader : private FakeServerReaderWriter {
 
   using FakeServerReaderWriter::active;
   using FakeServerReaderWriter::as_server_call;
+
+ private:
+  friend class internal::Call;
 };
 
 }  // namespace pw::rpc::internal::test

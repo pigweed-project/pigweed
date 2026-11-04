@@ -208,6 +208,7 @@ pw_source_set("common") {
 
   public = [
     "public/pw_rpc/channel.h",
+    "public/pw_rpc/dynamic_call.h",
     "public/pw_rpc/method_id.h",
     "public/pw_rpc/method_info.h",
     "public/pw_rpc/packet_meta.h",

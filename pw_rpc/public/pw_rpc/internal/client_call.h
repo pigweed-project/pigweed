@@ -65,7 +65,7 @@ class ClientCall : public Call {
     CloseClientCall();
   }
 
-  void CloseAndWaitForCallbacks() { DestroyClientCall(); }
+  void CloseAndWaitForCallbacks() { CloseClientCallAndWaitForCallbacks(); }
 
   void MoveClientCallFrom(ClientCall& other)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());

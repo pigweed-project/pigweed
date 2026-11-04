@@ -18,6 +18,7 @@
 
 #include "pw_bytes/array.h"
 #include "pw_bytes/span.h"
+#include "pw_rpc/dynamic_call.h"
 #include "pw_rpc/internal/lock.h"
 #include "pw_rpc/raw/fake_channel_output.h"
 #include "pw_rpc/service.h"
@@ -28,6 +29,15 @@
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc {
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+// Instantiate DynamicCallPtr for each call type to check that it compiles.
+template class DynamicCallPtr<RawServerReaderWriter>;
+template class DynamicCallPtr<RawServerReader>;
+template class DynamicCallPtr<RawServerWriter>;
+template class DynamicCallPtr<RawUnaryResponder>;
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+
 namespace {
 
 class TestServiceImpl final

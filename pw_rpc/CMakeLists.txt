@@ -122,6 +122,7 @@ pw_add_library(pw_rpc.synchronous_client_api INTERFACE
 pw_add_library(pw_rpc.common STATIC
   HEADERS
     public/pw_rpc/channel.h
+    public/pw_rpc/dynamic_call.h
     public/pw_rpc/internal/call.h
     public/pw_rpc/internal/call_context.h
     public/pw_rpc/internal/channel_list.h

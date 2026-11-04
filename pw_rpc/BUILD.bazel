@@ -165,6 +165,7 @@ cc_library(
     hdrs = [
         "public/pw_rpc/channel.h",
         "public/pw_rpc/client.h",
+        "public/pw_rpc/dynamic_call.h",
         "public/pw_rpc/internal/call.h",
         "public/pw_rpc/internal/call_allocator.h",
         "public/pw_rpc/internal/call_context.h",
@@ -470,6 +471,7 @@ pw_cc_test(
     name = "callback_test",
     srcs = ["callback_test.cc"],
     deps = [
+        ":pw_rpc",
         ":pw_rpc_test_raw_rpc",
         "//pw_rpc/raw:client_testing",
         "//pw_sync:binary_semaphore",
@@ -765,6 +767,7 @@ filegroup(
         "public/pw_rpc/channel.h",
         "public/pw_rpc/client.h",
         "public/pw_rpc/client_server.h",
+        "public/pw_rpc/dynamic_call.h",
         "public/pw_rpc/integration_test_socket_client.h",
         "public/pw_rpc/integration_testing.h",
         "public/pw_rpc/internal/config.h",

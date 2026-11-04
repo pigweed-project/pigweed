@@ -32,8 +32,10 @@ void ServerCall::HandleClientRequestedCompletion()
     on_client_requested_completion_local();
   }
 
+  // Destroyed when this function returns, after rpc_lock() is released.
+  DeferredDeleter deleter;
   rpc_lock().lock();
-  CallbackFinished();
+  deleter = CallbackFinished();
 #else
   PW_LOG_WARN(
       "Received completion request packet for %u:%08x/%08x, but completion "

@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 
+#include "pw_rpc/dynamic_call.h"
 #include "pw_rpc/internal/test_utils.h"
 #include "pw_rpc/pwpb/client_reader_writer.h"
 #include "pw_rpc/pwpb/client_testing.h"
@@ -27,6 +28,21 @@ PW_MODIFY_DIAGNOSTICS_PUSH();
 PW_MODIFY_DIAGNOSTIC(ignored, "-Wmissing-field-initializers");
 
 namespace pw::rpc {
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+// Instantiate DynamicCallPtr for each call type to check that it compiles.
+template class DynamicCallPtr<
+    PwpbClientReaderWriter<::pw::rpc::test::pwpb::TestRequest::Message,
+                           ::pw::rpc::test::pwpb::TestStreamResponse::Message>>;
+template class DynamicCallPtr<
+    PwpbClientReader<::pw::rpc::test::pwpb::TestStreamResponse::Message>>;
+template class DynamicCallPtr<
+    PwpbClientWriter<::pw::rpc::test::pwpb::TestRequest::Message,
+                     ::pw::rpc::test::pwpb::TestResponse::Message>>;
+template class DynamicCallPtr<
+    PwpbUnaryReceiver<::pw::rpc::test::pwpb::TestResponse::Message>>;
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+
 namespace {
 
 using test::pw_rpc::pwpb::TestService;
@@ -436,6 +452,34 @@ TEST(PwpbClientReader, OnNextThatCancelsCall_DestroysCallbackAfterItReturns) {
   ctx.server().SendServerStream<TestService::TestServerStreamRpc>({});
   EXPECT_TRUE(owner_destroyed);
 }
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+TEST(PwpbUnaryReceiver, DynamicCall_ResetInsideOnCompleted) {
+  PwpbClientTestContext ctx;
+  struct {
+    DynamicCallPtr<PwpbUnaryReceiver<TestResponse::Message>> call;
+    bool completed = false;
+  } state;
+
+  state.call = MakeDynamicCall(TestService::TestUnaryRpc(
+      ctx.client(),
+      ctx.channel().id(),
+      {},
+      [&state](const TestResponse::Message& response, Status status) {
+        EXPECT_EQ(response.value, 42);
+        EXPECT_EQ(status, OkStatus());
+        state.call.reset();
+        state.completed = true;
+      }));
+  ASSERT_TRUE(state.call->active());
+
+  ctx.server().SendResponse<TestService::TestUnaryRpc>({.value = 42},
+                                                       OkStatus());
+  EXPECT_TRUE(state.completed);
+  EXPECT_EQ(state.call, nullptr);
+}
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
+
 }  // namespace
 }  // namespace pw::rpc
 

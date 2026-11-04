@@ -282,6 +282,7 @@ class PwpbServerReaderWriter : private internal::BasePwpbServerReader<Request> {
   }
 
  private:
+  friend class internal::Call;
   friend class internal::PwpbMethod;
   friend class Server;
 
@@ -359,6 +360,7 @@ class PwpbServerReader : private internal::BasePwpbServerReader<Request> {
   }
 
  private:
+  friend class internal::Call;
   friend class internal::PwpbMethod;
   friend class Server;
 
@@ -436,6 +438,7 @@ class PwpbServerWriter : private internal::PwpbServerCall {
   }
 
  private:
+  friend class internal::Call;
   friend class internal::PwpbMethod;
   friend class Server;
 
@@ -506,6 +509,7 @@ class PwpbUnaryResponder : private internal::PwpbServerCall {
   }
 
  private:
+  friend class internal::Call;
   friend class internal::PwpbMethod;
   friend class Server;
 

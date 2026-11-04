@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <atomic>
+
+#include "pw_rpc/dynamic_call.h"
 #include "pw_rpc/raw/client_testing.h"
 #include "pw_rpc_test_protos/test.raw_rpc.pb.h"
 #include "pw_sync/binary_semaphore.h"
@@ -39,6 +42,20 @@ void YieldToOtherThread() {
   this_thread::sleep_for(100ms);
   this_thread::yield();
 }
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+// Counts call object deletions, which may happen on the callback thread.
+struct CountingCallDeleter {
+  static inline std::atomic<int> deletions{0};
+
+  void operator()(RawClientReaderWriter* call) const {
+    deletions.fetch_add(1);
+    delete call;
+  }
+};
+using CountingCallPtr =
+    std::unique_ptr<RawClientReaderWriter, CountingCallDeleter>;
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 
 class CallbacksTest : public ::testing::Test {
  protected:
@@ -71,6 +88,9 @@ class CallbacksTest : public ::testing::Test {
 
   RawClientReaderWriter call_1_;
   RawClientReaderWriter call_2_;
+#if PW_RPC_DYNAMIC_ALLOCATION
+  DynamicCallPtr<RawClientReaderWriter, CountingCallPtr> dynamic_call_;
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 
  private:
   void SendResponseAfterSemaphore() {
@@ -125,6 +145,58 @@ TEST_F(CallbacksTest, DestructorWaitsUntilCallbacksComplete) {
 
   // Wait for the callback thread to finish.
   callback_thread_.join();
+
+  EXPECT_EQ(callback_executed_, 1);
+}
+
+TEST_F(CallbacksTest,
+       DestructorWaitsUntilCallbacksComplete_AfterMovingInClosedCall) {
+  if (PW_RPC_USE_GLOBAL_MUTEX == 0) {
+    callback_thread_sem_.release();
+    callback_thread_.join();
+    GTEST_SKIP()
+        << "Skipping because locks are disabled, so this thread cannot yield.";
+  }
+
+  {
+    RawClientReaderWriter local_call = TestService::TestBidirectionalStreamRpc(
+        context_.client(), context_.channel().id());
+    RespondToCall(local_call);
+
+    call_is_in_scope_ = true;
+
+    local_call.set_on_next([this](ConstByteSpan) {
+      main_thread_sem_.release();
+
+      // Wait for a while so the main thread tries to destroy the call.
+      YieldToOtherThread();
+
+      // Now, make sure the call is still in scope. The main thread should
+      // block in the call's destructor until this callback completes.
+      EXPECT_TRUE(call_is_in_scope_);
+
+      callback_executed_ = callback_executed_ + 1;
+    });
+
+    // Start the callback thread so it can invoke the callback.
+    callback_thread_sem_.release();
+
+    // Wait until the callback thread starts.
+    main_thread_sem_.acquire();
+
+    // Move a call that was closed with CloseAndWaitForCallbacks() onto
+    // local_call while local_call's callback is running. local_call's
+    // destructor must still wait for that callback.
+    RawClientReaderWriter closed_call = TestService::TestBidirectionalStreamRpc(
+        context_.client(), context_.channel().id());
+    closed_call.CloseAndWaitForCallbacks();
+    local_call = std::move(closed_call);
+  }
+
+  // Wait for the callback thread to finish.
+  callback_thread_.join();
+
+  call_is_in_scope_ = false;
 
   EXPECT_EQ(callback_executed_, 1);
 }
@@ -248,6 +320,38 @@ TEST_F(CallbacksTest, PacketDroppedIfOnNextIsBusy) {
 
   EXPECT_EQ(callback_executed_, 1);
 }
+
+#if PW_RPC_DYNAMIC_ALLOCATION
+TEST_F(CallbacksTest, DynamicCall_ResetWhileCallbackIsRunningDoesNotBlock) {
+  CountingCallDeleter::deletions = 0;
+  dynamic_call_ = DynamicCallPtr(CountingCallPtr(
+      new RawClientReaderWriter(TestService::TestBidirectionalStreamRpc(
+          context_.client(), context_.channel().id()))));
+  RespondToCall(*dynamic_call_);
+
+  dynamic_call_->set_on_next([this](ConstByteSpan) {
+    main_thread_sem_.release();
+    callback_thread_sem_.acquire();
+    EXPECT_EQ(dynamic_call_, nullptr);
+    callback_executed_ = callback_executed_ + 1;
+  });
+
+  callback_thread_sem_.release();
+  main_thread_sem_.acquire();
+
+  // Resetting dynamic_call_ while on_next is blocked on callback_thread_sem_
+  // must return immediately without waiting for the callback to finish.
+  dynamic_call_.reset();
+  EXPECT_EQ(callback_executed_, 0);
+  // The call object is deleted on the callback thread after on_next returns.
+  EXPECT_EQ(CountingCallDeleter::deletions.load(), 0);
+
+  callback_thread_sem_.release();
+  callback_thread_.join();
+  EXPECT_EQ(callback_executed_, 1);
+  EXPECT_EQ(CountingCallDeleter::deletions.load(), 1);
+}
+#endif  // PW_RPC_DYNAMIC_ALLOCATION
 
 }  // namespace
 }  // namespace pw::rpc

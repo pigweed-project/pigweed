@@ -195,8 +195,11 @@ void Endpoint::CleanUpCalls() {
   }
 
   // Drain the to_cleanup_ list. This while loop is structured to avoid
-  // unnecessarily acquiring the lock after popping the last call.
-  while (true) {
+  // unnecessarily acquiring the lock after popping the last call in the common
+  // case, while re-checking to_cleanup_.empty() if a concurrent cleanup or
+  // DynamicCallPtr::reset() drained remaining calls while the lock was
+  // released.
+  while (!to_cleanup_.empty()) {
     Call& call = to_cleanup_.front();
     to_cleanup_.pop_front();
 
@@ -210,6 +213,7 @@ void Endpoint::CleanUpCalls() {
 
     rpc_lock().lock();
   }
+  rpc_lock().unlock();
 }
 
 void Endpoint::RemoveAllCalls() {
