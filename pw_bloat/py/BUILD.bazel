@@ -30,10 +30,14 @@ pw_py_library(
         "pw_bloat/no_bloaty.py",
         "pw_bloat/no_toolchains.py",
     ],
-    data = ["@bloaty//:all"],
+    data = select({
+        "@platforms//os:linux": ["@bloaty//:bin/bloaty"],
+        "@platforms//os:macos": ["@bloaty//:bin/bloaty"],
+        "//conditions:default": [],
+    }),
     imports = ["."],
     deps = [
-        "//pw_cli/py:pw_cli",
+        "//pw_cli/py",
         "@pigweed_python_packages//pyelftools",
         "@rules_python//python/runfiles",
     ],
