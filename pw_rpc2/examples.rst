@@ -46,12 +46,12 @@ In another terminal, run a client:
 
 The client makes each RPC once and logs the responses:
 
-.. literalinclude:: cpp/examples/echo_client.expected
+.. literalinclude:: cpp/examples/echo/echo_client.expected
    :language: output
 
 The server logs each request:
 
-.. literalinclude:: cpp/examples/echo_server.expected
+.. literalinclude:: cpp/examples/echo/echo_server.expected
    :language: output
    :lines: 2-
 

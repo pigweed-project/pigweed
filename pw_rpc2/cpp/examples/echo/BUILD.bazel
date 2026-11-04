@@ -34,6 +34,15 @@ package(default_visibility = ["//:__subpackages__"])
 
 licenses(["notice"])
 
+# Expected output, which the tests in //pw_rpc2/cpp/examples compare against.
+exports_files(
+    [
+        "echo_client.expected",
+        "echo_server.expected",
+    ],
+    visibility = ["//pw_rpc2/cpp/examples:__pkg__"],
+)
+
 # The framed TCP transport uses POSIX sockets.
 hosts_lin_mac = {
     "@platforms//os:linux": [],
@@ -148,6 +157,8 @@ sphinx_docs_library(
         "client_polling.cc",
         "echo.proto",
         "echo.pwpb_options",
+        "echo_client.expected",
+        "echo_server.expected",
         "server_coro.cc",
         "server_polling.cc",
     ],

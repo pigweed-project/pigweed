@@ -56,7 +56,6 @@ sphinx_docs_library(
         "testing.rst",
         "why.rst",
         "//pw_rpc2/cpp:docs",
-        "//pw_rpc2/cpp/examples:docs",
         "//pw_rpc2/cpp/examples/echo:docs",
         "//pw_rpc2/size_report:client_codegen_size_report",
         "//pw_rpc2/size_report:rpc2_size_report",

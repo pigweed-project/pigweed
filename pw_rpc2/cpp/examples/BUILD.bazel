@@ -12,8 +12,6 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:python.bzl", "pw_py_test")
 
 licenses(["notice"])
@@ -39,15 +37,15 @@ pw_py_test(
         "$(rootpath //pw_rpc2/cpp/examples/echo:client_coro)",
         "$(rootpath //pw_rpc2/cpp/examples/echo:client_polling)",
         "--expected-server-output",
-        "$(rootpath echo_server.expected)",
+        "$(rootpath //pw_rpc2/cpp/examples/echo:echo_server.expected)",
         "--expected-client-output",
-        "$(rootpath echo_client.expected)",
+        "$(rootpath //pw_rpc2/cpp/examples/echo:echo_client.expected)",
     ],
     data = [
-        "echo_client.expected",
-        "echo_server.expected",
         "//pw_rpc2/cpp/examples/echo:client_coro",
         "//pw_rpc2/cpp/examples/echo:client_polling",
+        "//pw_rpc2/cpp/examples/echo:echo_client.expected",
+        "//pw_rpc2/cpp/examples/echo:echo_server.expected",
         "//pw_rpc2/cpp/examples/echo:server_coro",
         "//pw_rpc2/cpp/examples/echo:server_polling",
     ],
@@ -60,15 +58,4 @@ pw_py_test(
     }),
     main = "example_test.py",
     target_compatible_with = select(hosts_lin_mac),
-)
-
-# The expected output, which the docs show as the output of the examples.
-sphinx_docs_library(
-    name = "docs",
-    srcs = [
-        "echo_client.expected",
-        "echo_server.expected",
-    ],
-    target_compatible_with = incompatible_with_mcu(),
-    visibility = ["//pw_rpc2:__pkg__"],
 )
