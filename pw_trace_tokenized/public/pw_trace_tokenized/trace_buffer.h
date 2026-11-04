@@ -22,9 +22,6 @@
 #include "pw_trace_tokenized/config.h"
 
 namespace pw {
-
-/// @module{pw_trace_tokenzed}
-
 namespace trace {
 namespace internal {
 
@@ -32,6 +29,8 @@ namespace internal {
 class TraceBufferImpl;
 
 }  // namespace internal
+
+/// @module{pw_trace_tokenized}
 
 /// Adapter type that allows using an `InlineVarLenEntryQueue` with code that
 /// expects a `PrefixedEntryRingBufferMulti`. This type only partially
@@ -129,8 +128,7 @@ constexpr Status TraceBuffer::PopFront() {
   return OkStatus();
 }
 
+/// @endmodule
+
 }  // namespace trace
-
-/// @}
-
 }  // namespace pw

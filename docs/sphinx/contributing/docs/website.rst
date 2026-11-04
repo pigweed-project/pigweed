@@ -175,9 +175,9 @@ else is generated from them by the synchronization CLI:
 Generated content lives between ``categories-start`` and ``categories-end``
 marker comments and is labeled ``AUTO-GENERATED``. Don't edit it by hand. The
 docs build (``bazelisk build //docs``) fails if any generated content is out of
-date or if any ``module.toml`` file is missing or invalid; the error message
-explains how to fix the problem. To run the same checks without building the
-docs:
+date, if any ``module.toml`` file is missing or invalid, or if any Doxygen
+group is uncategorized; the error message explains how to fix the problem. To
+run the same checks without building the docs:
 
 .. code-block:: console
 
@@ -308,6 +308,11 @@ Instead, add a separate ``.. toctree::`` directive outside the markers:
   modules; the synchronization CLI automatically omits ``self`` from the
   generated ``.. toctree::`` so ``self`` appears only once (see
   :cs:`docs/sphinx/toolchains/index.rst` for an example).
+
+To place non-module C/C++ Doxygen APIs (such as third-party integrations) under
+a category, declare ``@defgroup`` with ``@ingroup category_<id>`` in the manual
+section of :cs:`docs/doxygen/modules.h` after ``// categories-end`` (see
+``third_party_freertos``) and run ``bazelisk run //docs/common/metadata:sync``.
 
 To use an existing page as a category's landing page, set the category's
 ``homepage`` to the page's path and add ``.. categories-start`` and

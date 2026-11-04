@@ -24,8 +24,9 @@ Sphinx, Doxygen, and rustdoc.
   out-of-date files without modifying them.
 * `//docs/common/metadata/validate.py`: Sphinx `build-finished` hook that fails
   `bazelisk build //docs` if `categories.toml` or any `//<module>/module.toml`
-  is invalid, inconsistent with `//PIGWEED_MODULES`, or out of sync with the
-  generated files.
+  is invalid, inconsistent with `//PIGWEED_MODULES`, out of sync with the
+  generated files, or if any Doxygen group in `index.tag` does not resolve to a
+  category.
 
 See the `Module categorization` section of
 `//docs/sphinx/contributing/docs/website.rst` for more context.
@@ -135,3 +136,8 @@ it.
   `.. categories-start` (starting with `self`) to list introductory guides
   before the category's modules (`sync.py` automatically omits `self` from the
   generated `.. toctree::`; see `//docs/sphinx/toolchains/index.rst`).
+* To place non-module C/C++ Doxygen APIs (such as `//third_party/...`
+  integrations) under a category, declare `@defgroup` with
+  `@ingroup category_<id>` in the manual section of `//docs/doxygen/modules.h`
+  after `// categories-end` (see `third_party_freertos`), then run
+  `bazelisk run //docs/common/metadata:sync`.

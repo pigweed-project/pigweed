@@ -58,8 +58,10 @@ Quickstart
       )
 
 #. In each of the headers that you've listed in your module's ``doxygen``
-   target, add ``@module`` or ``@submodule`` annotations. Always explicitly
-   close with ``@endmodule`` or ``@endsubmodule``.
+   target, add ``@module`` or ``@submodule`` annotations inside the innermost
+   ``namespace`` that declares the public symbols (Doxygen won't attach
+   declarations inside a nested ``namespace`` block to an outer group). Always
+   explicitly close with ``@endmodule`` or ``@endsubmodule``.
 
    For simple modules where you want the entire API listed on a single page,
    use ``@module``:
@@ -107,8 +109,8 @@ Quickstart
       ``@cond`` to hide internal APIs; reserve ``@cond`` for Doxygen parser
       workarounds. See :ref:`style-doxygen-pw-public-api`.
 
-#. (Optional) If your module uses ``@submodule``, define its submodule groups
-   (such as the ``pw_bytes_ptr`` subgroup shown below) in the manual section of
+#. If your module uses ``@submodule``, define its submodule groups (such as
+   the ``pw_bytes_ptr`` subgroup shown below) in the manual section of
    :cs:`docs/doxygen/modules.h` after ``// categories-end``:
 
    .. literalinclude:: ../../docs/doxygen/modules.h
@@ -121,6 +123,10 @@ Quickstart
    organized by "submodules". The ``pw_bytes_ptr`` group is one of the
    submodules. On that page, all APIs related to packed pointers are
    presented.
+
+   For non-module C/C++ APIs (such as ``//third_party/...`` integrations),
+   attach the manual ``@defgroup`` directly to ``@ingroup category_<id>`` (see
+   ``third_party_freertos`` in :cs:`docs/doxygen/modules.h`).
 
 #. Run ``bazelisk run //docs/common/metadata:sync`` to auto-generate your
    module's top-level ``@defgroup`` entry in :cs:`docs/doxygen/modules.h` from
@@ -334,6 +340,19 @@ General tips:
    or are placed in locations where they might resemble C++ syntax (e.g.
    trailing return types). This often happens when macro arguments contain
    complex C++ syntax (e.g., ``->`` inside arguments).
+
+``Doxygen group '…' is not under any category``
+===============================================
+* Check ``@module{…}`` and ``@submodule{…}`` annotations for typos in the
+  module or submodule name.
+
+* Place ``@module`` and ``@submodule`` inside the innermost ``namespace`` block
+  that declares the public symbols. Placing ``@module`` outside a nested
+  ``namespace`` creates an empty Doxygen group that ``sync`` won't categorize.
+
+* If using ``@submodule``, declare its ``@defgroup`` and ``@ingroup`` in the
+  manual section of :cs:`docs/doxygen/modules.h` after ``// categories-end``,
+  then run ``bazelisk run //docs/common/metadata:sync``.
 
 .. _contrib-doxygen-trouble-group:
 

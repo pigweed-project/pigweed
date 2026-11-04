@@ -178,6 +178,6 @@ class SingleChunkAllocator : public ChunkAllocator {
   containers::StorageFor<ControlBlock> control_block_;
 };
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::multibuf::v1_adapter::internal

@@ -1094,10 +1094,10 @@ _INGROUP = re.compile(r"^/// @ingroup (\S+)")
 _GROUP_METADATA_TAGS = frozenset({"name", "title", "filename", "subgroup"})
 
 
-def _documented_doxygen_modules(
-    meta: Metadata, tagfile: Path, manual_groups: str
-) -> set[str]:
-    """Returns the modules that have documented C/C++ entities in `tagfile`."""
+def _parse_doxygen_groups(
+    tagfile: Path, manual_groups: str
+) -> tuple[list[ET.Element], dict[str, str]]:
+    """Parses group compounds and subgroup->parent links from Doxygen."""
     if not tagfile.is_file():
         raise SyncError(
             f"Doxygen tagfile {tagfile} is missing; run `{SYNC_COMMAND}`."
@@ -1121,21 +1121,140 @@ def _documented_doxygen_modules(
             for sub in compound.findall("subgroup"):
                 if sub.text and sub.text not in parent:
                     parent[sub.text] = name
+    return groups, parent
 
-    documented: set[str] = set()
+
+def _documented_doxygen_targets_from_groups(
+    meta: Metadata,
+    groups: list[ET.Element],
+    parent: dict[str, str],
+) -> tuple[set[str], set[str]]:
+    """Returns `(documented_modules, documented_categories)` from `groups`.
+
+    A documented entity usually resolves via `@ingroup` to a module in
+    `meta.modules`, or (for non-module groups such as `third_party_freertos`)
+    directly to a `category_<id>` in `meta.categories`.
+    """
+    documented_modules: set[str] = set()
+    documented_categories: set[str] = set()
+    category_groups = {f"category_{cid}": cid for cid in meta.categories}
     for compound in groups:
         if not ({el.tag for el in compound} - _GROUP_METADATA_TAGS):
             continue
         group = compound.findtext("name") or ""
         seen: set[str] = set()
         while (
-            group in parent and group not in meta.modules and group not in seen
+            group in parent
+            and group not in meta.modules
+            and group not in category_groups
+            and group not in seen
         ):
             seen.add(group)
             group = parent[group]
         if group in meta.modules:
-            documented.add(group)
-    return documented
+            documented_modules.add(group)
+        elif group in category_groups:
+            documented_categories.add(category_groups[group])
+    return documented_modules, documented_categories
+
+
+def _doxygen_modules_and_categories(
+    meta: Metadata,
+    documented_modules: set[str],
+    documented_categories: Collection[str] = (),
+) -> tuple[list[str], list[str]]:
+    """Returns sorted `(modules, active_categories)` for Doxygen."""
+    modules = sorted(
+        documented_modules
+        | {
+            facade.module
+            for m in documented_modules
+            if (facade := meta.modules[m].facade) is not None
+        }
+    )
+    seed_categories = set(documented_categories) | {
+        category.id
+        for module in modules
+        if (category := meta.modules[module].category) is not None
+    }
+    active_categories_set: set[str] = set()
+    for cid in seed_categories:
+        curr: str | None = cid
+        while curr is not None and curr in meta.categories:
+            active_categories_set.add(curr)
+            curr = meta.categories[curr].parent
+    active_categories = sorted(
+        active_categories_set, key=lambda cid: (meta.category_depth(cid), cid)
+    )
+    return modules, active_categories
+
+
+def find_uncategorized_doxygen_groups(
+    meta: Metadata,
+    tagfile: Path,
+    modules_h: str | None,
+    *,
+    ignore_groups: Collection[str] = (),
+) -> list[tuple[str, str]]:
+    """Returns sorted `(name, title)` pairs of uncategorized Doxygen groups.
+
+    Every `<compound kind="group">` in `tagfile` must belong to an active
+    `category_<id>` group or resolve via `@ingroup` to a documented Pigweed
+    module. Groups that fail this check leak directly onto the top level of
+    `api/cc/modules.html` (for example, from a typo in `@module{...}` or an
+    unregistered `@submodule{...}`).
+    """
+    if not tagfile.is_file():
+        return []
+    try:
+        _, manual_groups = CPP_MARKERS.split(
+            modules_h, "//docs/doxygen/modules.h"
+        )
+    except SyncError:
+        return []
+
+    groups, parent = _parse_doxygen_groups(tagfile, manual_groups)
+    doc_modules, doc_categories = _documented_doxygen_targets_from_groups(
+        meta, groups, parent
+    )
+    modules, active_categories = _doxygen_modules_and_categories(
+        meta, doc_modules, doc_categories
+    )
+    categorized = (
+        set(modules)
+        | {f"category_{cid}" for cid in active_categories}
+        | set(ignore_groups)
+    )
+
+    titles: dict[str, str] = {}
+    for compound in groups:
+        if name := compound.findtext("name"):
+            titles[name] = compound.findtext("title") or name
+
+    uncategorized_names: set[str] = set()
+    for compound in groups:
+        name = compound.findtext("name") or ""
+        if not name:
+            continue
+        curr = name
+        seen: set[str] = set()
+        while curr in parent and curr not in categorized and curr not in seen:
+            seen.add(curr)
+            curr = parent[curr]
+        if curr not in categorized:
+            if curr in seen:
+                cycle = {curr}
+                step = parent[curr]
+                while step != curr:
+                    cycle.add(step)
+                    step = parent[step]
+                uncategorized_names.add(min(cycle))
+            else:
+                uncategorized_names.add(curr)
+
+    return [
+        (name, titles.get(name, name)) for name in sorted(uncategorized_names)
+    ]
 
 
 def render_doxygen_modules_h(
@@ -1149,24 +1268,12 @@ def render_doxygen_modules_h(
     facade whose backend is documented).
     """
     before, after = CPP_MARKERS.split(existing, "//docs/doxygen/modules.h")
-    documented = _documented_doxygen_modules(meta, tagfile, after)
-    modules = sorted(
-        documented
-        | {
-            facade.module
-            for m in documented
-            if (facade := meta.modules[m].facade) is not None
-        }
+    groups, parent = _parse_doxygen_groups(tagfile, after)
+    doc_modules, doc_categories = _documented_doxygen_targets_from_groups(
+        meta, groups, parent
     )
-    active_categories_set: set[str] = set()
-    for module in modules:
-        category = meta.modules[module].category
-        curr = category.id if category is not None else None
-        while curr is not None and curr in meta.categories:
-            active_categories_set.add(curr)
-            curr = meta.categories[curr].parent
-    active_categories = sorted(
-        active_categories_set, key=lambda cid: (meta.category_depth(cid), cid)
+    modules, active_categories = _doxygen_modules_and_categories(
+        meta, doc_modules, doc_categories
     )
 
     header = [CPP_MARKERS.start, *CPP_MARKERS.notice]
@@ -1482,6 +1589,35 @@ def _stale_category_page_issue(tree: DocsTree, path: Path) -> str:
     )
 
 
+def _uncategorized_doxygen_group_issue(name: str, title: str) -> str:
+    titled = f" (titled '{title}')" if title != name else ""
+    return (
+        f"Doxygen group '{name}'{titled} is not under any category in "
+        f"{CATEGORIES_TOML_LABEL}. Fix any @module/@submodule typo or declare "
+        f"'@defgroup {name}' with '@ingroup <module>' in "
+        "//docs/doxygen/modules.h."
+    )
+
+
+def _generated_doxygen_categories(modules_h: str | None) -> set[str]:
+    """Returns `category_*` group names in the generated block of modules.h."""
+    if modules_h is None:
+        return set()
+    start_match = re.search(
+        rf"^[ \t]*{re.escape(CPP_MARKERS.start)}[ \t]*$", modules_h, re.M
+    )
+    if not start_match:
+        return set()
+    rest = modules_h[start_match.end() :]
+    end_match = re.search(
+        rf"^[ \t]*{re.escape(CPP_MARKERS.end)}[ \t]*$", rest, re.M
+    )
+    if not end_match:
+        return set()
+    block = rest[: end_match.start()]
+    return set(re.findall(r"^/// @defgroup (category_\S+)", block, re.M))
+
+
 def check(tree: DocsTree, meta: Metadata) -> list[str]:
     """Describes every managed file that is out of date, if any."""
     issues: list[str] = []
@@ -1502,6 +1638,10 @@ def check(tree: DocsTree, meta: Metadata) -> list[str]:
 
     for path in find_stale_category_pages(tree.sphinx_dir, meta):
         issues.append(_stale_category_page_issue(tree, path))
+    for name, title in find_uncategorized_doxygen_groups(
+        meta, tree.doxygen_tagfile, _read(tree.doxygen_modules_h)
+    ):
+        issues.append(_uncategorized_doxygen_group_issue(name, title))
     return issues
 
 
@@ -1509,8 +1649,9 @@ def sync(tree: DocsTree, meta: Metadata) -> list[Path]:
     """Brings every managed file up to date. Returns the paths that changed.
 
     Raises:
-        SyncError: A file is missing, its markers are gone, or a stale category
-            page still contains a generated block.
+        SyncError: A file is missing, its markers are gone, a stale category
+            page still contains a generated block, or Doxygen contains
+            uncategorized groups.
     """
     stale = find_stale_category_pages(tree.sphinx_dir, meta)
     if stale:
@@ -1518,6 +1659,9 @@ def sync(tree: DocsTree, meta: Metadata) -> list[Path]:
             "\n".join(_stale_category_page_issue(tree, p) for p in stale)
         )
 
+    old_generated_categories = _generated_doxygen_categories(
+        _read(tree.doxygen_modules_h)
+    )
     changed: list[Path] = []
     for file in managed_files(tree, meta):
         existing = _read(file.path)
@@ -1525,6 +1669,20 @@ def sync(tree: DocsTree, meta: Metadata) -> list[Path]:
         if expected != existing:
             _write(file.path, expected)
             changed.append(file.path)
+
+    uncategorized = find_uncategorized_doxygen_groups(
+        meta,
+        tree.doxygen_tagfile,
+        _read(tree.doxygen_modules_h),
+        ignore_groups=old_generated_categories,
+    )
+    if uncategorized:
+        raise SyncError(
+            "\n".join(
+                _uncategorized_doxygen_group_issue(name, title)
+                for name, title in uncategorized
+            )
+        )
     return changed
 
 
@@ -1550,6 +1708,9 @@ How to fix:
 
   3. If you added or removed a category in {CATEGORIES_TOML_LABEL},
      `git add` or `git rm` its landing page under //docs/sphinx/.
+  4. If a Doxygen group is uncategorized, check `@module{{...}}` and
+     `@submodule{{...}}` annotations for typos or add its `@defgroup` and
+     `@ingroup` to the manual section of //docs/doxygen/modules.h.
 
 See {CONTRIBUTOR_DOCS_URL}
 and //docs/agents/metadata/AGENTS.md.
@@ -1616,7 +1777,7 @@ def main() -> int:
     try:
         changed = sync(tree, meta)
     except SyncError as exc:
-        print(format_report([str(exc)]), file=sys.stderr)
+        print(format_report(str(exc).splitlines()), file=sys.stderr)
         return 1
     for path in changed:
         print(f"Updated {path.relative_to(root)}")

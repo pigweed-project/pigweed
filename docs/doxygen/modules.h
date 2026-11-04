@@ -74,6 +74,9 @@
 /// @defgroup category_android Android
 /// @ingroup category_os_backends
 /// @brief Utilities and toolchains for using Pigweed on Android
+/// @defgroup category_freertos Amazon FreeRTOS
+/// @ingroup category_os_backends
+/// @brief Safe, non-overflowing OS abstractions & wrappers for FreeRTOS
 /// @defgroup category_zephyr Zephyr
 /// @ingroup category_os_backends
 /// @brief Modules, backends, and helpers for the Zephyr RTOS
@@ -537,6 +540,11 @@
 /// @defgroup pw_multibuf_v1_test Test-only features
 /// @ingroup pw_multibuf_v1
 
+/// @defgroup pw_multibuf_v1_adapter v1 adapter API
+/// @ingroup pw_multibuf
+/// @brief Transitional v1-compatible interface backed by the v2 implementation
+/// @details Learn more: [Why are there three versions?](../../pw_multibuf/design.html#why-are-there-three-versions)
+
 /// @defgroup pw_multibuf_v2 Experimental v2 API
 /// @ingroup pw_multibuf
 /// @brief Experimental API that separates out the concern of memory allocation
@@ -671,11 +679,8 @@
 /// @defgroup pw_unit_test_constexpr Constexpr tests
 /// @ingroup pw_unit_test
 
-/// @defgroup third_party third-party
-/// @brief API integrations with third-party software e.g. FreeRTOS
-
-/// @defgroup third_party_freertos FreeRTOS
-/// @ingroup third_party
-/// @brief FreeRTOS application functions
+/// @defgroup third_party_freertos Application functions
+/// @ingroup category_freertos
+/// @brief FreeRTOS application hook implementations
 
 // clang-format on

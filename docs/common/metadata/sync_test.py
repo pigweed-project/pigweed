@@ -693,6 +693,106 @@ class DoxygenAndRustdocRenderTest(unittest.TestCase):
                 rendered,
             )
 
+    def test_render_doxygen_modules_h_with_direct_category_subgroup(
+        self,
+    ) -> None:
+        """Tests manual non-module groups attached directly to category_<id>."""
+        meta = _make_metadata()
+        with tempfile.TemporaryDirectory() as tmp:
+            tagfile = Path(tmp) / "index.tag"
+            tagfile.write_text(
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>\n'
+                "<tagfile>\n"
+                '  <compound kind="group">\n'
+                "    <name>third_party_freertos</name>\n"
+                "    <title>Application functions</title>\n"
+                '    <member kind="function">\n'
+                "      <name>vApplicationStackOverflowHook</name>\n"
+                "    </member>\n"
+                "  </compound>\n"
+                "</tagfile>\n",
+                encoding="utf-8",
+            )
+            existing = (
+                "// Header\n\n"
+                "// categories-start\n"
+                "// categories-end\n\n"
+                "/// @defgroup third_party_freertos Application functions\n"
+                "/// @ingroup category_os\n"
+            )
+            rendered = sync.render_doxygen_modules_h(meta, tagfile, existing)
+            self.assertIn("/// @defgroup category_os OS abstraction", rendered)
+            self.assertEqual(
+                sync.find_uncategorized_doxygen_groups(meta, tagfile, rendered),
+                [],
+            )
+
+    def test_find_uncategorized_doxygen_groups(self) -> None:
+        """Flags misspelled @module, unregistered @submodule, and cycles."""
+        meta = _make_metadata()
+        with tempfile.TemporaryDirectory() as tmp:
+            tagfile = Path(tmp) / "index.tag"
+            tagfile.write_text(
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>\n'
+                "<tagfile>\n"
+                '  <compound kind="group">\n'
+                "    <name>category_core</name>\n"
+                "    <title>Core utilities</title>\n"
+                "    <subgroup>pw_alpha</subgroup>\n"
+                "  </compound>\n"
+                '  <compound kind="group">\n'
+                "    <name>pw_alpha</name>\n"
+                "    <title>pw_alpha</title>\n"
+                "    <subgroup>pw_alpha_sub</subgroup>\n"
+                '    <class kind="class">pw::Alpha</class>\n'
+                "  </compound>\n"
+                '  <compound kind="group">\n'
+                "    <name>pw_alpha_sub</name>\n"
+                "    <title>Alpha subgroup</title>\n"
+                "  </compound>\n"
+                '  <compound kind="group">\n'
+                "    <name>pw_alpah</name>\n"
+                "    <title>Pw_alpah</title>\n"
+                "  </compound>\n"
+                '  <compound kind="group">\n'
+                "    <name>pw_alpha_unregistered</name>\n"
+                "    <title>Pw_alpha_unregistered</title>\n"
+                '    <class kind="class">pw::Unregistered</class>\n'
+                "  </compound>\n"
+                '  <compound kind="group">\n'
+                "    <name>cycle_b</name>\n"
+                "    <title>Cycle B</title>\n"
+                "    <subgroup>cycle_a</subgroup>\n"
+                "  </compound>\n"
+                '  <compound kind="group">\n'
+                "    <name>cycle_a</name>\n"
+                "    <title>Cycle A</title>\n"
+                "    <subgroup>cycle_b</subgroup>\n"
+                "  </compound>\n"
+                "</tagfile>\n",
+                encoding="utf-8",
+            )
+            modules_h = (
+                "// Header\n\n"
+                "// categories-start\n"
+                "/// @defgroup category_core Core utilities\n"
+                "/// @defgroup pw_alpha pw_alpha\n"
+                "/// @ingroup category_core\n"
+                "// categories-end\n\n"
+                "/// @defgroup pw_alpha_sub Alpha subgroup\n"
+                "/// @ingroup pw_alpha\n"
+            )
+            self.assertEqual(
+                sync.find_uncategorized_doxygen_groups(
+                    meta, tagfile, modules_h
+                ),
+                [
+                    ("cycle_a", "Cycle A"),
+                    ("pw_alpah", "Pw_alpah"),
+                    ("pw_alpha_unregistered", "Pw_alpha_unregistered"),
+                ],
+            )
+
     def test_render_rustdoc_lib_rs(self) -> None:
         meta = _make_metadata()
         with tempfile.TemporaryDirectory() as tmp:
@@ -814,6 +914,24 @@ class SyncAndCheckIntegrationTest(unittest.TestCase):
             # After sync, check() and a second sync() should both be clean.
             self.assertEqual(sync.check(tree, meta), [])
             self.assertEqual(sync.sync(tree, meta), [])
+
+            # An uncategorized Doxygen group (e.g. a @module typo) fails both
+            # check() and sync().
+            tagfile.write_text(
+                "<tagfile>\n"
+                '  <compound kind="group">\n'
+                "    <name>pw_trace_tokenzed</name>\n"
+                "    <title>Pw_trace_tokenzed</title>\n"
+                "  </compound>\n"
+                "</tagfile>\n",
+                encoding="utf-8",
+            )
+            issues = sync.check(tree, meta)
+            self.assertEqual(len(issues), 1)
+            self.assertIn("pw_trace_tokenzed", issues[0])
+            self.assertIn("Pw_trace_tokenzed", issues[0])
+            with self.assertRaisesRegex(sync.SyncError, "pw_trace_tokenzed"):
+                sync.sync(tree, meta)
 
 
 if __name__ == "__main__":

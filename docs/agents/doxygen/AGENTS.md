@@ -23,7 +23,9 @@ Every `@module` and `@submodule` annotation must have an accompanying
 1. Add a `filegroup` with name `doxygen` in the module's root `BUILD.bazel`
    file. List all Doxygen inputs in `srcs`.
 2. Add the `doxygen` target to `//docs/doxygen:srcs`.
-3. Annotate headers that contain public APIs with `@module` or `@submodule`.
+3. Annotate headers that contain public APIs with `@module` or `@submodule`
+   inside the innermost `namespace` that declares those symbols (Doxygen won't
+   attach declarations inside a nested `namespace` block to an outer group).
    Always close with `@endmodule` or `@endsubmodule`.
    * Doxygen publishes **everything** between `@module`/`@submodule` and
      `@endmodule`/`@endsubmodule` on the module page, **even symbols that have
@@ -42,12 +44,14 @@ Every `@module` and `@submodule` annotation must have an accompanying
      declarations, recursive template base classes, or out-of-line template
      method definitions in headers). Never place `@module`, `@endmodule`,
      `@submodule`, `@endsubmodule`, `@{`, or `@}` inside a `@cond` block.
-4. (Optional) `//docs/doxygen/modules.h` has an auto-generated section at the
-   top (between `// categories-start` and `// categories-end`) for top-level
-   category and module groups, followed by a manual section at the end (after
-   `// categories-end`) for submodule groups. If using `@submodule`, define the
-   submodule `@defgroup` blocks in the manual section at the end of
-   `//docs/doxygen/modules.h`.
+4. `//docs/doxygen/modules.h` has an auto-generated section at the top (between
+   `// categories-start` and `// categories-end`) for category and module
+   groups, followed by a manual section at the end (after `// categories-end`)
+   for submodule groups. If using `@submodule`, you must define its `@defgroup`
+   and `@ingroup` in the manual section of `//docs/doxygen/modules.h` (for
+   non-module APIs such as `//third_party/...`, use `@ingroup category_<id>`);
+   uncategorized Doxygen groups fail `//docs/common/metadata:sync` and
+   `bazelisk build //docs`.
 5. Run `bazelisk run //docs/common/metadata:sync` to auto-generate the module's
    top-level `@defgroup` entry in `//docs/doxygen/modules.h` from
    `//<module>/module.toml` and `//docs/common/metadata/categories.toml`.
@@ -138,6 +142,10 @@ doesn't resolve the error.
   Doxygen by wrapping the symbol in `@cond` and `@endcond`.
 * `Documented symbol … was not declared or defined` - Add the symbol to the
   `PREDEFINED` list in `//docs/doxygen/Doxyfile` to ignore or expand it.
+* `Doxygen group '…' is not under any category` - Fix any `@module` or
+  `@submodule` typo, place `@module` inside the innermost `namespace` declaring
+  the symbols rather than outside a nested `namespace`, or declare `@defgroup`
+  and `@ingroup` in the manual section of `//docs/doxygen/modules.h`.
 * `End of file while inside a group` - Ensure all `@module`, `@submodule`, and
   explicit groups (`@{`) are closed with `@endmodule`, `@endsubmodule`, or `@}`.
 * `Explicit link request to … could not be resolved` - Use `@code` and
