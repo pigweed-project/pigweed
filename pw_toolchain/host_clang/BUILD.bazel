@@ -48,6 +48,26 @@ cc_args(
     target_compatible_with = ["@platforms//os:macos"],
 )
 
+# Pin the compilation target to the CPU of the target platform so that the host
+# Linux toolchain can cross-compile between Linux CPUs (e.g. from an x86_64
+# exec platform to an aarch64 target platform). Without this, clang falls back
+# to its default triple (the exec CPU) regardless of the target platform.
+cc_args(
+    name = "linux_target_triple",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:assembly_actions",
+        "@rules_cc//cc/toolchains/actions:c_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = select({
+        "@platforms//cpu:aarch64": ["--target=aarch64-unknown-linux-gnu"],
+        "@platforms//cpu:x86_64": ["--target=x86_64-unknown-linux-gnu"],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
 cc_args(
     name = "linux_common_link_libs",
     actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
@@ -355,9 +375,11 @@ builtin_module_map(
     name = "builtin_module_map",
     include_directories = select({
         "@platforms//os:linux": [
+            "@llvm_toolchain//:include-aarch64-unknown-linux-gnu-c++-v1",
             "@llvm_toolchain//:include-x86_64-unknown-linux-gnu-c++-v1",
             "@llvm_toolchain//:include-c++-v1",
             "@llvm_toolchain//:lib-clang-include",
+            "@linux_sysroot//:usr-include-aarch64-linux-gnu",
             "@linux_sysroot//:usr-include-x86_64-linux-gnu",
             "@linux_sysroot//:usr-include-arm-linux-gnueabihf",
             "@linux_sysroot//:usr-include",
@@ -393,6 +415,7 @@ cc_toolchain(
     name = "host_toolchain",
     args = select({
         "@platforms//os:linux": [
+            ":linux_target_triple",
             ":linux_link_libs",
             "@linux_sysroot//:sysroot",
         ],

@@ -51,6 +51,20 @@ you'd like to add.
 For platform-specific flags, you can set this flag in your ``platform`` flags
 rather than in a ``.bazelrc`` file.
 
+.. _module-pw_toolchain-bazel-linux-cross:
+
+Cross-compiling between Linux CPUs
+==================================
+``host_cc_toolchain_linux`` pins the compilation target to the CPU of the
+target platform, so it can cross-compile from an x86_64 Linux machine to an
+aarch64 Linux target (or vice versa). The CIPD sysroot and clang package ship
+the glibc, libc++, compiler-rt and libunwind variants for both CPUs, so no
+extra configuration is needed:
+
+.. code-block:: console
+
+   $ bazelisk build --platforms=@pigweed//targets/host:linux_aarch64 //my:binary
+
 .. _module-pw_toolchain-bazel-layering-check:
 
 Layering check

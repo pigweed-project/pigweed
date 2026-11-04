@@ -30,6 +30,12 @@ directory(
 )
 
 subdirectory(
+    name = "usr-include-aarch64-linux-gnu",
+    parent = ":root",
+    path = "usr/include/aarch64-linux-gnu",
+)
+
+subdirectory(
     name = "usr-include-arm-linux-gnueabihf",
     parent = ":root",
     path = "usr/include/arm-linux-gnueabihf",

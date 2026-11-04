@@ -323,6 +323,12 @@ subdirectory(
 )
 
 subdirectory(
+    name = "include-aarch64-unknown-linux-gnu-c++-v1",
+    parent = ":toolchain_root",
+    path = "include/aarch64-unknown-linux-gnu/c++/v1",
+)
+
+subdirectory(
     name = "include-x86_64-unknown-linux-gnu-c++-v1",
     parent = ":toolchain_root",
     path = "include/x86_64-unknown-linux-gnu/c++/v1",
