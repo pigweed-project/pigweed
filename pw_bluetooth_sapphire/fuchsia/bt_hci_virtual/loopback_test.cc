@@ -14,6 +14,7 @@
 
 #include "loopback.h"
 
+#include <lib/component/incoming/cpp/service.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 
 #include <memory>
@@ -62,6 +63,8 @@ class LoopbackTest : public testing::OutgoingLoopTestFixture,
   LoopbackDevice& device() { return loopback_device_; }
 
   zx::channel& chan() { return loopback_chan_; }
+
+  zx::channel& service_chan() { return service_loopback_chan_; }
 
   fidl::Client<fhb::HciTransport>& hci_client() { return hci_client_; }
 
@@ -458,6 +461,77 @@ TEST_F(LoopbackTest, DestroyDeviceUnpublishesService) {
   ASSERT_EQ(CreateLoopbackDevice(outgoing(), device), ZX_OK);
   device.reset();
   EXPECT_FALSE(VendorServiceIsServed(kServiceDeviceName));
+}
+
+// Closing the peer end of the loopback UART channel unpublishes the vendor
+// service instance and closes active Vendor, HciTransport, and Snoop bindings.
+TEST_F(LoopbackTest, PeerCloseUnpublishesServiceAndClosesBindings) {
+  std::unique_ptr<LoopbackDevice> device;
+  ASSERT_EQ(CreateLoopbackDevice(outgoing(), device), ZX_OK);
+  ASSERT_TRUE(VendorServiceIsServed(kServiceDeviceName));
+
+  std::string path =
+      "svc/" + component::MakeServiceMemberPath<fhb::Service::Vendor>(
+                   kServiceDeviceName);
+  zx::result<fidl::ClientEnd<fhb::Vendor>> vendor_end =
+      component::ConnectAt<fhb::Vendor>(outgoing_client(), path);
+  ASSERT_TRUE(vendor_end.is_ok()) << vendor_end.status_string();
+
+  fidl::ClientEnd<fhb::HciTransport> hci_client_1;
+  fidl::ClientEnd<fhb::HciTransport> hci_client_2;
+  fidl::ClientEnd<fhb::Snoop> snoop_client;
+  {
+    fidl::WireClient<fhb::Vendor> vendor_client(std::move(*vendor_end),
+                                                dispatcher());
+    vendor_client->OpenHciTransport().ThenExactlyOnce(
+        [&hci_client_1](
+            fidl::WireUnownedResult<fhb::Vendor::OpenHciTransport>& result) {
+          ASSERT_TRUE(result.ok()) << result.FormatDescription();
+          ASSERT_TRUE(result->is_ok())
+              << zx_status_get_string(result->error_value());
+          hci_client_1 = std::move(result->value()->channel);
+        });
+    vendor_client->OpenHciTransport().ThenExactlyOnce(
+        [&hci_client_2](
+            fidl::WireUnownedResult<fhb::Vendor::OpenHciTransport>& result) {
+          ASSERT_TRUE(result.ok()) << result.FormatDescription();
+          ASSERT_TRUE(result->is_ok())
+              << zx_status_get_string(result->error_value());
+          hci_client_2 = std::move(result->value()->channel);
+        });
+    vendor_client->OpenSnoop().ThenExactlyOnce(
+        [&snoop_client](
+            fidl::WireUnownedResult<fhb::Vendor::OpenSnoop>& result) {
+          ASSERT_TRUE(result.ok()) << result.FormatDescription();
+          ASSERT_TRUE(result->is_ok())
+              << zx_status_get_string(result->error_value());
+          snoop_client = std::move(result->value()->channel);
+        });
+    RunUntilIdle();
+    ASSERT_TRUE(hci_client_1.is_valid());
+    ASSERT_TRUE(hci_client_2.is_valid());
+    ASSERT_TRUE(snoop_client.is_valid());
+  }
+
+  // Connect a second raw Vendor channel so we can observe its peer closure
+  // directly alongside the HciTransport and Snoop channels.
+  zx::result<fidl::ClientEnd<fhb::Vendor>> raw_vendor_end =
+      component::ConnectAt<fhb::Vendor>(outgoing_client(), path);
+  ASSERT_TRUE(raw_vendor_end.is_ok()) << raw_vendor_end.status_string();
+  RunUntilIdle();
+  ASSERT_FALSE(PeerClosed(*raw_vendor_end));
+  ASSERT_FALSE(PeerClosed(hci_client_1));
+  ASSERT_FALSE(PeerClosed(hci_client_2));
+  ASSERT_FALSE(PeerClosed(snoop_client));
+
+  service_chan().reset();
+  RunUntilIdle();
+
+  EXPECT_FALSE(VendorServiceIsServed(kServiceDeviceName));
+  EXPECT_TRUE(PeerClosed(*raw_vendor_end));
+  EXPECT_TRUE(PeerClosed(hci_client_1));
+  EXPECT_TRUE(PeerClosed(hci_client_2));
+  EXPECT_TRUE(PeerClosed(snoop_client));
 }
 
 }  // namespace

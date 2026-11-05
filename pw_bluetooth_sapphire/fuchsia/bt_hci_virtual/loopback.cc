@@ -218,6 +218,9 @@ void LoopbackDevice::OnLoopbackChannelSignal(async_dispatcher_t* dispatcher,
   if (signal->observed & ZX_CHANNEL_PEER_CLOSED) {
     bt_log(ERROR, "bt-hci-virtual", "Loopback channel peer closed");
     vendor_service_.Unpublish();
+    vendor_binding_group_.RemoveAll();
+    hci_transport_servers_.clear();
+    snoop_.reset();
     return;
   }
 
