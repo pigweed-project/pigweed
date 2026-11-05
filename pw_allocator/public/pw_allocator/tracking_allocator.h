@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 
 #include "pw_allocator/capability.h"
 #include "pw_allocator/forwarding_allocator.h"
@@ -62,7 +63,9 @@ class TrackingAllocator : public ForwardingAllocator {
       : Base(capabilities), metrics_(token) {}
 
   TrackingAllocator(metric::Token token, Allocator& allocator) noexcept
-      : Base(allocator), metrics_(token) {}
+      : TrackingAllocator(token, allocator.capabilities()) {
+    Init(allocator);
+  }
 
   template <typename OtherMetrics>
   TrackingAllocator(metric::Token token,
@@ -72,7 +75,7 @@ class TrackingAllocator : public ForwardingAllocator {
     parent.metric_group().Add(metric_group());
   }
 
-  using Base::Init;
+  void Init(Allocator& allocator);
 
   const metric::Group& metric_group() const { return metrics_.group(); }
   metric::Group& metric_group() { return metrics_.group(); }
@@ -84,7 +87,7 @@ class TrackingAllocator : public ForwardingAllocator {
   /// See also `NoMetrics::UpdateDeferred`.
   void UpdateDeferred() const { metrics_.UpdateDeferred(allocator()); }
 
- private:
+ protected:
   /// @copydoc Allocator::Allocate
   void* DoAllocate(Layout layout) override;
 
@@ -100,60 +103,100 @@ class TrackingAllocator : public ForwardingAllocator {
   /// @copydoc Allocator::DoAfterReallocateDone
   void DoAfterReallocateDone(Layout new_layout, void* new_ptr) override;
 
+ private:
   mutable internal::Metrics<MetricsType> metrics_;
 };
 
 // Template method implementation.
 
 template <typename MetricsType>
-void* TrackingAllocator<MetricsType>::DoAllocate(Layout layout) {
-  if constexpr (internal::AnyEnabled<MetricsType>()) {
-    Layout requested = layout;
-    size_t allocated = Base::DoGetAllocated();
-    void* new_ptr = Base::DoAllocate(requested);
-    if (new_ptr == nullptr) {
-      metrics_.RecordFailure(requested.size());
-      return nullptr;
-    }
-    metrics_.IncrementAllocations();
-    metrics_.ModifyRequested(requested.size(), 0);
-    metrics_.ModifyAllocated(Base::DoGetAllocated(), allocated);
-    return new_ptr;
-  } else {
-    return Base::DoAllocate(layout);
+void TrackingAllocator<MetricsType>::Init(Allocator& allocator) {
+  // Check that allocator supports requested metrics.
+  if constexpr (MetricsType::requested_bytes_enabled()) {
+    PW_ASSERT(GetRequestedLayout(allocator, nullptr).status() !=
+              Status::Unimplemented());
   }
+  if constexpr (MetricsType::allocated_bytes_enabled()) {
+    PW_ASSERT(allocator.GetAllocated() != kGetAllocatedUnsupported ||
+              allocator.GetAllocatedBytes().has_value());
+  }
+  Base::Init(allocator);
+}
+
+template <typename MetricsType>
+void* TrackingAllocator<MetricsType>::DoAllocate(Layout layout) {
+  std::optional<size_t> pre_allocated;
+  if constexpr (MetricsType::allocated_bytes_enabled()) {
+    pre_allocated = DoGetAllocatedBytes();
+  }
+  auto* new_ptr = Base::DoAllocate(layout);
+  if (new_ptr == nullptr) {
+    metrics_.RecordFailure(layout.size());
+    return nullptr;
+  }
+  metrics_.IncrementAllocations();
+  if constexpr (MetricsType::requested_bytes_enabled()) {
+    metrics_.ModifyRequested(layout.size(), 0);
+  }
+  if constexpr (MetricsType::allocated_bytes_enabled()) {
+    auto post_allocated = DoGetAllocatedBytes();
+    metrics_.ModifyAllocated(*post_allocated, *pre_allocated);
+  }
+  return new_ptr;
 }
 
 template <typename MetricsType>
 void TrackingAllocator<MetricsType>::DoDeallocate(void* ptr) {
-  if constexpr (internal::AnyEnabled<MetricsType>()) {
-    Layout requested = Layout::Unwrap(GetRequestedLayout(ptr));
-    size_t allocated = Base::DoGetAllocated();
-    Base::DoDeallocate(ptr);
-    metrics_.IncrementDeallocations();
-    metrics_.ModifyRequested(0, requested.size());
-    metrics_.ModifyAllocated(Base::DoGetAllocated(), allocated);
-  } else {
-    Base::DoDeallocate(ptr);
+  std::optional<size_t> requested;
+  if constexpr (MetricsType::requested_bytes_enabled()) {
+    if (auto result = GetRequestedLayout(ptr); result.ok()) {
+      requested = result->size();
+    }
+  }
+  std::optional<size_t> pre_allocated;
+  if constexpr (MetricsType::allocated_bytes_enabled()) {
+    pre_allocated = DoGetAllocatedBytes();
+  }
+  Base::DoDeallocate(ptr);
+  metrics_.IncrementDeallocations();
+  if constexpr (MetricsType::requested_bytes_enabled()) {
+    if (requested.has_value()) {
+      metrics_.ModifyRequested(0, *requested);
+    }
+  }
+  if constexpr (MetricsType::allocated_bytes_enabled()) {
+    auto post_allocated = DoGetAllocatedBytes();
+    metrics_.ModifyAllocated(*post_allocated, *pre_allocated);
   }
 }
 
 template <typename MetricsType>
 bool TrackingAllocator<MetricsType>::DoResize(void* ptr, size_t new_size) {
-  if constexpr (internal::AnyEnabled<MetricsType>()) {
-    Layout requested = Layout::Unwrap(GetRequestedLayout(ptr));
-    size_t allocated = Base::DoGetAllocated();
-    if (!Base::DoResize(ptr, new_size)) {
-      metrics_.RecordFailure(new_size);
-      return false;
+  std::optional<size_t> old_size;
+  if constexpr (MetricsType::requested_bytes_enabled()) {
+    if (auto result = GetRequestedLayout(ptr); result.ok()) {
+      old_size = result->size();
     }
-    metrics_.IncrementResizes();
-    metrics_.ModifyRequested(new_size, requested.size());
-    metrics_.ModifyAllocated(Base::DoGetAllocated(), allocated);
-    return true;
-  } else {
-    return Base::DoResize(ptr, new_size);
   }
+  std::optional<size_t> pre_allocated;
+  if constexpr (MetricsType::allocated_bytes_enabled()) {
+    pre_allocated = DoGetAllocatedBytes();
+  }
+  if (!Base::DoResize(ptr, new_size)) {
+    metrics_.RecordFailure(new_size);
+    return false;
+  }
+  metrics_.IncrementResizes();
+  if constexpr (MetricsType::requested_bytes_enabled()) {
+    if (old_size.has_value()) {
+      metrics_.ModifyRequested(new_size, *old_size);
+    }
+  }
+  if constexpr (MetricsType::allocated_bytes_enabled()) {
+    auto post_allocated = DoGetAllocatedBytes();
+    metrics_.ModifyAllocated(*post_allocated, *pre_allocated);
+  }
+  return true;
 }
 
 template <typename MetricsType>
@@ -168,12 +211,10 @@ void TrackingAllocator<MetricsType>::DoAfterReallocateDone(Layout new_layout,
                                                            void* new_ptr) {
   Base::DoAfterReallocateDone(new_layout, new_ptr);
   metrics_.set_reallocating(false);
-  if constexpr (internal::AnyEnabled<MetricsType>()) {
-    if (new_ptr == nullptr) {
-      metrics_.RecordFailure(new_layout.size());
-    } else {
-      metrics_.IncrementReallocations();
-    }
+  if (new_ptr == nullptr) {
+    metrics_.RecordFailure(new_layout.size());
+  } else {
+    metrics_.IncrementReallocations();
   }
 }
 

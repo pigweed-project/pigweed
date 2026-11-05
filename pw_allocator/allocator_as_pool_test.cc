@@ -49,9 +49,15 @@ TEST_F(AllocatorAsPoolTest, Capabilities) {
 }
 
 TEST_F(AllocatorAsPoolTest, AllocateDeallocate) {
+  auto allocated_bytes = pool_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
   void* ptr = pool_.Allocate();
   ASSERT_NE(ptr, nullptr);
+  EXPECT_EQ(pool_.GetAllocatedBytes(), allocator_.GetAllocatedBytes());
+  EXPECT_NE(pool_.GetAllocatedBytes().value(), 0u);
   pool_.Deallocate(ptr);
+  EXPECT_EQ(pool_.GetAllocatedBytes().value(), 0u);
 }
 
 }  // namespace

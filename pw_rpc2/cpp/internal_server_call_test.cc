@@ -212,7 +212,9 @@ TEST_F(ServerCallTest, CallRunsToCompletionAndIsRetired) {
   // Retiring the call destroyed the user's future and freed the call, since
   // no handle outlived the method.
   EXPECT_EQ(dtor_count, 1);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 // A handle the method kept hold of shares ownership of the call, so the call
@@ -238,11 +240,13 @@ TEST_F(ServerCallTest, EscapedHandleKeepsTheCallAlive) {
   // it, detached from the connection so that writing through it fails rather
   // than touching a dead connection.
   EXPECT_EQ(dtor_count, 1);
-  EXPECT_NE(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_NE(allocated_bytes.value(), 0u);
   EXPECT_EQ(escaped->ReserveWrite(0, 8).status(), RpcStatus::WriteClosed());
 
   escaped = nullptr;
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  EXPECT_EQ(alloc_.GetAllocatedBytes().value(), 0u);
 }
 
 TEST_F(ServerCallTest, CompletedCallIsRetiredEvenIfItsFutureNeverFinishes) {
@@ -266,7 +270,9 @@ TEST_F(ServerCallTest, CompletedCallIsRetiredEvenIfItsFutureNeverFinishes) {
 
   RunConnection();
   EXPECT_EQ(dtor_count, 1);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 // Regression test: a `ServerCall` holds an unowned pointer to its
@@ -295,7 +301,9 @@ TEST_F(ServerCallTest, ConnectionTaskDestructionRetiresServerCalls) {
   connection_task_ = nullptr;
 
   EXPECT_EQ(dtor_count, 1);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 // Regression test: this is the point of giving every call its own task. A
@@ -386,7 +394,9 @@ TEST_F(ServerCallTest, RetireDestroysUserFutureBeforeClosingWrite) {
   EXPECT_EQ(decode_res.type(),
             (PacketType::Make<flags::kServer, flags::kOkTerminal>()));
   EXPECT_EQ(decode_res.call_id(), 105u);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 // Checks that the only packet the server sent ends `call_id` with `error`.
@@ -428,7 +438,9 @@ TEST_F(ServerCallTest, EscapedWriterEndsCallWhenMethodReturns) {
   }
   RunConnection();
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 // Likewise for an escaped `UnaryWriter`. The method returning is a different
@@ -455,7 +467,9 @@ TEST_F(ServerCallTest, EscapedUnaryWriterEndsCallWhenMethodReturns) {
   }
   RunConnection();
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 // A `UnaryWriter` that the method still owns when it returns is destroyed with
@@ -476,7 +490,9 @@ TEST_F(ServerCallTest, UnaryWriterOwnedByMethodIsDroppedWithoutResponse) {
 
   ExpectOnlyServerError(
       *raw_conn_, 112u, ProtocolError::kDroppedWithoutResponse);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(ServerCallTest, EmplaceInvalidFutureCrashes) {
@@ -490,7 +506,9 @@ TEST_F(ServerCallTest, EmplaceInvalidFutureCrashes) {
       "");
 
   connection_task_->ForceRetireAllCalls();
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
@@ -526,7 +544,9 @@ TEST_F(ServerCallTest, CoroutineExecutionInServerCall) {
   RunConnection();
 
   EXPECT_EQ(dtor_count, 1);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(ServerCallTest,
@@ -556,7 +576,9 @@ TEST_F(ServerCallTest,
   EXPECT_EQ(decode_res.call_id(), 108u);
   EXPECT_EQ(decode_res.error(),
             ProtocolError::kFailedToAllocateCallResourcesWhileRunning);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 async2::Coro<void> RespondThenKeepWorking(async2::CoroContext,
@@ -609,7 +631,9 @@ TEST_F(ServerCallTest, WorkAfterFinalResponseIsDestroyedWithTheMethod) {
   // The coroutine was destroyed while suspended after the response.
   EXPECT_EQ(dtor_count, 1);
   EXPECT_FALSE(ran_after_response);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")

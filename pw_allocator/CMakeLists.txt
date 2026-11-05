@@ -49,6 +49,7 @@ pw_add_library(pw_allocator STATIC
   SOURCES
     allocator.cc
     control_block.cc
+    deallocator.cc
     managed_ptr.cc
 )
 
@@ -203,6 +204,7 @@ pw_add_library(pw_allocator.buddy_allocator STATIC
   PRIVATE_DEPS
     pw_allocator
     pw_assert.check
+    pw_numeric.checked_arithmetic
     pw_third_party.fuchsia.stdcompat
   SOURCES
     buddy_allocator.cc

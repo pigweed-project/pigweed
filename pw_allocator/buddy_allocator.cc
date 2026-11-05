@@ -29,6 +29,7 @@
 #include "pw_assert/check.h"
 #include "pw_bytes/alignment.h"
 #include "pw_bytes/span.h"
+#include "pw_numeric/checked_arithmetic.h"
 #include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
@@ -90,6 +91,7 @@ void GenericBuddyAllocator::Init(ByteSpan region) {
     ++count;
   }
   region_ = ByteSpan(data, min_outer_size_ * count);
+  allocated_ = region_.size();
   data++;
   for (size_t i = 0; i < count; ++i) {
     Deallocate(data);
@@ -140,6 +142,7 @@ void* GenericBuddyAllocator::DoAllocate(Layout layout) {
 
     // Check if this bucket has a compatible free block available.
     if (auto* block = bucket.RemoveCompatible(layout); block != nullptr) {
+      PW_CHECK(CheckedIncrement(allocated_, block->OuterSize()));
       return block->UsableSpace();
     }
 
@@ -152,6 +155,8 @@ void* GenericBuddyAllocator::DoAllocate(Layout layout) {
 
     auto* block = BuddyBlock::FromUsableSpace(ptr);
     BuddyBlock* buddy = block->Split();
+
+    PW_CHECK(CheckedDecrement(allocated_, buddy->OuterSize()));
     std::ignore = bucket.Add(*buddy);
     return ptr;
   }
@@ -164,6 +169,8 @@ void GenericBuddyAllocator::DoDeallocate(void* ptr) {
   }
 
   auto* block = BuddyBlock::FromUsableSpace(ptr);
+  PW_CHECK(CheckedDecrement(allocated_, block->OuterSize()));
+
   UnorderedBucket<BuddyBlock>* bucket = nullptr;
   if constexpr (Hardening::kIncludesDebugChecks) {
     PW_CHECK_INT_GT(buckets_.size(), 0);
@@ -209,6 +216,12 @@ void GenericBuddyAllocator::DoDeallocate(void* ptr) {
   std::ignore = bucket->Add(*block);
 }
 
+size_t GenericBuddyAllocator::DoGetAllocated() const { return allocated_; }
+
+std::optional<size_t> GenericBuddyAllocator::DoGetAllocatedBytes() const {
+  return allocated_;
+}
+
 std::optional<Fragmentation> GenericBuddyAllocator::DoMeasureFragmentation()
     const {
   Fragmentation fragmentation;
@@ -223,9 +236,9 @@ std::optional<Fragmentation> GenericBuddyAllocator::DoMeasureFragmentation()
 
 Result<Layout> GenericBuddyAllocator::DoGetInfo(InfoType info_type,
                                                 const void* ptr) const {
+  // Return early for unimplemented methods.
   switch (info_type) {
     case InfoType::kCapacity:
-      return Layout(region_.size(), min_outer_size_);
     case InfoType::kUsableLayoutOf:
     case InfoType::kAllocatedLayoutOf:
     case InfoType::kRecognizes:
@@ -235,14 +248,23 @@ Result<Layout> GenericBuddyAllocator::DoGetInfo(InfoType info_type,
       return Status::Unimplemented();
   }
 
+  if (region_.empty()) {
+    // Not initialized.
+    return Status::FailedPrecondition();
+  }
+
+  if (info_type == InfoType::kCapacity) {
+    return Layout(region_.size(), min_outer_size_);
+  }
+
   if (ptr < region_.data()) {
-    return Status::OutOfRange();
+    return Status::NotFound();
   }
   const auto* block = BuddyBlock::FromUsableSpace(ptr);
   size_t block_offset = cpp20::bit_cast<uintptr_t>(block) -
                         cpp20::bit_cast<uintptr_t>(region_.data());
   if (region_.size() <= block_offset || block_offset % min_outer_size_ != 0) {
-    return Status::OutOfRange();
+    return Status::NotFound();
   }
   Layout layout(block->InnerSize(), min_outer_size_);
 

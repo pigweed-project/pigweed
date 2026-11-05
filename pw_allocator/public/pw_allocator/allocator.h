@@ -278,10 +278,6 @@ class Allocator : public Deallocator {
                                  : DoReallocate(ptr, new_layout));
   }
 
-  /// Returns the total bytes that have been allocated by this allocator, or
-  /// `size_t(-1)` if this allocator does not track its total allocated bytes.
-  size_t GetAllocated() const { return DoGetAllocated(); }
-
   /// Returns fragmentation information for the allocator's memory region.
   std::optional<Fragmentation> MeasureFragmentation() const {
     return DoMeasureFragmentation();
@@ -387,12 +383,6 @@ class Allocator : public Deallocator {
   /// guaranteed to be non-zero.
   virtual void DoAfterReallocateDone([[maybe_unused]] Layout new_layout,
                                      [[maybe_unused]] void* new_ptr) {}
-
-  /// @copydoc Allocator::GetAllocated
-  ///
-  /// The default implementation simply returns `size_t(-1)`, indicating that
-  /// tracking total allocated bytes is not supported.
-  virtual size_t DoGetAllocated() const { return size_t(-1); }
 
   /// @copydoc Allocator::MeasureFragmentation
   virtual std::optional<Fragmentation> DoMeasureFragmentation() const

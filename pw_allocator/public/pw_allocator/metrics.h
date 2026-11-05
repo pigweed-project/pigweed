@@ -176,11 +176,6 @@ struct AllMetrics : public NoMetrics {
   PW_ALLOCATOR_METRICS_FOREACH(PW_ALLOCATOR_METRICS_ENABLE);
 };
 
-/// Returns whether any metric is enabled. If not, metric collection can be
-/// skipped.
-template <typename MetricsType>
-constexpr bool AnyEnabled();
-
 /// Copies the values enabled for a given `MetricsType` from `src` to `dst`.
 template <typename MetricsType>
 void CopyMetrics(const MetricsType& src, MetricsType& dst);
@@ -244,9 +239,6 @@ class Metrics final : public internal::GenericMetrics {
   /// ModifyAllocated(0, decrease);
   /// @endcode
   ///
-  /// The given `std::optional` parameters be dereferenced if and only if the
-  /// "allocated_bytes" metric is enabled.
-  ///
   /// @param  increase         How much memory was allocated.
   /// @param  decrease         How much memory was freed.
   void ModifyAllocated(size_t increase, size_t decrease);
@@ -291,20 +283,6 @@ class Metrics final : public internal::GenericMetrics {
 inline uint32_t ClampU32(size_t size) {
   return static_cast<uint32_t>(std::min(
       size, static_cast<size_t>(std::numeric_limits<uint32_t>::max())));
-}
-
-template <typename MetricsType>
-constexpr bool AnyEnabled() {
-#define PW_ALLOCATOR_RETURN_IF_ENABLED(metric_name) \
-  if (MetricsType::metric_name##_enabled()) {       \
-    return true;                                    \
-  }                                                 \
-  PW_ALLOCATOR_ABSORB_SEMICOLON()
-
-  PW_ALLOCATOR_METRICS_FOREACH(PW_ALLOCATOR_RETURN_IF_ENABLED);
-  return false;
-
-#undef PW_ALLOCATOR_RETURN_IF_ENABLED
 }
 
 template <typename MetricsType>

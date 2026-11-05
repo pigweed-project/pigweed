@@ -122,8 +122,13 @@ class BumpAllocator : public AbstractAllocator {
   /// @copydoc Deallocator::Deallocate
   void DoDeallocate(void* ptr) override;
 
-  /// @copydoc Allocator::GetAllocated
+  /// @copydoc Deallocator::GetAllocated
   size_t DoGetAllocated() const override { return allocated_; }
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  std::optional<size_t> DoGetAllocatedBytes() const override {
+    return allocated_;
+  }
 
   /// @copydoc Allocator::MeasureFragmentation
   std::optional<Fragmentation> DoMeasureFragmentation() const override;

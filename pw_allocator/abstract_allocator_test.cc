@@ -29,11 +29,6 @@ class FakeAllocator : public ::pw::allocator::AbstractAllocator {
   void DoDeallocate(void*) override {}
 };
 
-TEST(AbstractAllocatorTest, GetAllocated) {
-  FakeAllocator allocator;
-  EXPECT_EQ(allocator.GetAllocated(), std::numeric_limits<size_t>::max());
-}
-
 TEST(AbstractAllocatorTest, MeasureFragmentation) {
   FakeAllocator allocator;
   EXPECT_EQ(allocator.MeasureFragmentation(), std::nullopt);

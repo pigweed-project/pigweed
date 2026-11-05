@@ -50,7 +50,11 @@ static constexpr size_t kBufferSize = 0x400;
 TEST(BuddyAllocatorTest, ExplicitlyInit) {
   std::array<std::byte, kBufferSize> buffer;
   BuddyAllocator allocator;
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0U);
   allocator.Init(buffer);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0U);
 }
 
 TEST(BuddyAllocatorTest, AllocateSmall) {
@@ -58,7 +62,11 @@ TEST(BuddyAllocatorTest, AllocateSmall) {
   BuddyAllocator allocator(buffer);
   void* ptr = allocator.Allocate(Layout(BuddyAllocator::kMinOuterSize / 2, 1));
   ASSERT_NE(ptr, nullptr);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), BuddyAllocator::kMinOuterSize);
   allocator.Deallocate(ptr);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0U);
 }
 
 TEST(BuddyAllocatorTest, AllocateAllBlocks) {
@@ -71,11 +79,18 @@ TEST(BuddyAllocatorTest, AllocateAllBlocks) {
       break;
     }
     ptrs.push_back(ptr);
+    auto allocated_bytes = allocator.GetAllocatedBytes();
+    ASSERT_TRUE(allocated_bytes.has_value());
+    EXPECT_EQ(allocated_bytes.value(),
+              ptrs.size() * BuddyAllocator::kMinOuterSize);
   }
   while (!ptrs.empty()) {
     allocator.Deallocate(ptrs.back());
     ptrs.pop_back();
+    EXPECT_EQ(allocator.GetAllocatedBytes().value(),
+              ptrs.size() * BuddyAllocator::kMinOuterSize);
   }
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0U);
 }
 
 TEST(BuddyAllocatorTest, AllocateLarge) {
@@ -83,7 +98,11 @@ TEST(BuddyAllocatorTest, AllocateLarge) {
   BuddyAllocator allocator(buffer);
   void* ptr = allocator.Allocate(Layout(48, 1));
   ASSERT_NE(ptr, nullptr);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 64U);
   allocator.Deallocate(ptr);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0U);
 }
 
 TEST(BuddyAllocatorTest, AllocateExcessiveSize) {
@@ -91,6 +110,9 @@ TEST(BuddyAllocatorTest, AllocateExcessiveSize) {
   BuddyAllocator allocator(buffer);
   void* ptr = allocator.Allocate(Layout(786, 1));
   EXPECT_EQ(ptr, nullptr);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0U);
 }
 
 TEST(BuddyAllocatorTest, AllocateExcessiveAlignment) {
@@ -98,6 +120,9 @@ TEST(BuddyAllocatorTest, AllocateExcessiveAlignment) {
   BuddyAllocator allocator(buffer);
   void* ptr = allocator.Allocate(Layout(48, 32));
   EXPECT_EQ(ptr, nullptr);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0U);
 }
 
 TEST(BuddyAllocatorTest, CoalesceLeftThenRightDeallocation) {
@@ -109,23 +134,32 @@ TEST(BuddyAllocatorTest, CoalesceLeftThenRightDeallocation) {
 
   // Allocate B1 (left) and B2 (right)
   void* p1 = buddy.Allocate(Layout(100, 8));
-  void* p2 = buddy.Allocate(Layout(100, 8));
-
   ASSERT_NE(p1, nullptr);
+  auto allocated_bytes = buddy.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 256U);
+
+  void* p2 = buddy.Allocate(Layout(100, 8));
   ASSERT_NE(p2, nullptr);
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 512U);
 
   // Free order: Left (p1) then Right (p2)
   buddy.Deallocate(p1);
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 256U);
+
   buddy.Deallocate(p2);
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 0U);
 
   // If they coalesced, we should be able to allocate 300 bytes (needs 512
   // block)
   void* p3 = buddy.Allocate(Layout(300, 8));
   EXPECT_NE(p3, nullptr);
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 512U);
 
   if (p3 != nullptr) {
     buddy.Deallocate(p3);
   }
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 0U);
 }
 
 TEST(BuddyAllocatorTest, CoalesceRightThenLeftDeallocation) {
@@ -137,23 +171,79 @@ TEST(BuddyAllocatorTest, CoalesceRightThenLeftDeallocation) {
 
   // Allocate B1 (left) and B2 (right)
   void* p1 = buddy.Allocate(Layout(100, 8));
-  void* p2 = buddy.Allocate(Layout(100, 8));
-
   ASSERT_NE(p1, nullptr);
+  auto allocated_bytes = buddy.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 256U);
+
+  void* p2 = buddy.Allocate(Layout(100, 8));
   ASSERT_NE(p2, nullptr);
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 512U);
 
   // Free order: Right (p2) then Left (p1)
   buddy.Deallocate(p2);
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 256U);
+
   buddy.Deallocate(p1);
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 0U);
 
   // If they coalesced, we should be able to allocate 300 bytes (needs 512
   // block)
   void* p3 = buddy.Allocate(Layout(300, 8));
   EXPECT_NE(p3, nullptr);
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 512U);
 
   if (p3 != nullptr) {
     buddy.Deallocate(p3);
   }
+  EXPECT_EQ(buddy.GetAllocatedBytes().value(), 0U);
+}
+
+TEST(BuddyAllocatorTest, Resize) {
+  std::array<std::byte, kBufferSize> buffer;
+  BuddyAllocator allocator(buffer);
+  void* ptr = allocator.Allocate(Layout(48, 1));
+  ASSERT_NE(ptr, nullptr);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 64U);
+
+  EXPECT_FALSE(allocator.Resize(ptr, 32));
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 64U);
+
+  EXPECT_FALSE(allocator.Resize(ptr, 96));
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 64U);
+
+  allocator.Deallocate(ptr);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0U);
+}
+
+TEST(BuddyAllocatorTest, Reallocate) {
+  std::array<std::byte, kBufferSize> buffer;
+  BuddyAllocator allocator(buffer);
+  void* ptr1 = allocator.Allocate(Layout(BuddyAllocator::kMinOuterSize / 2, 1));
+  ASSERT_NE(ptr1, nullptr);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), BuddyAllocator::kMinOuterSize);
+
+  void* ptr2 = allocator.Reallocate(ptr1, Layout(48, 1));
+  ASSERT_NE(ptr2, nullptr);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 64U);
+
+  void* ptr3 =
+      allocator.Reallocate(ptr2, Layout(BuddyAllocator::kMinOuterSize / 2, 1));
+  ASSERT_NE(ptr3, nullptr);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(),
+            BuddyAllocator::kMinOuterSize);
+
+  void* ptr4 = allocator.Reallocate(ptr3, Layout(786, 1));
+  EXPECT_EQ(ptr4, nullptr);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(),
+            BuddyAllocator::kMinOuterSize);
+
+  allocator.Deallocate(ptr3);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0U);
 }
 
 TEST(BuddyAllocatorTest, GetAllocatedLayout) {
@@ -162,6 +252,9 @@ TEST(BuddyAllocatorTest, GetAllocatedLayout) {
 
   void* ptr = allocator.Allocate(Layout(14, 1));
   ASSERT_NE(ptr, nullptr);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 16U);
 
   auto result = allocator.GetAllocatedLayout(ptr);
   EXPECT_TRUE(result.ok());
@@ -176,15 +269,16 @@ TEST(BuddyAllocatorTest, GetAllocatedLayout) {
   auto invalid_result =
       allocator.GetAllocatedLayout(reinterpret_cast<void*>(0x1234));
   EXPECT_FALSE(invalid_result.ok());
-  EXPECT_EQ(invalid_result.status(), pw::Status::OutOfRange());
+  EXPECT_EQ(invalid_result.status(), pw::Status::NotFound());
 
   // Test unaligned pointer inside region
   void* unaligned_ptr = static_cast<std::byte*>(ptr) + 1;
   auto unaligned_result = allocator.GetAllocatedLayout(unaligned_ptr);
   EXPECT_FALSE(unaligned_result.ok());
-  EXPECT_EQ(unaligned_result.status(), pw::Status::OutOfRange());
+  EXPECT_EQ(unaligned_result.status(), pw::Status::NotFound());
 
   allocator.Deallocate(ptr);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0U);
 }
 
 TEST(BuddyAllocatorTest, MeasureFragmentation) {
@@ -209,6 +303,9 @@ TEST(BuddyAllocatorTest, MeasureFragmentation) {
   // Allocate from the 128-byte block (127 bytes inner).
   void* ptr1 = allocator.Allocate(Layout(126, 1));
   ASSERT_NE(ptr1, nullptr);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 128U);
   expected.SubtractFragment(127U);
 
   actual = allocator.MeasureFragmentation();
@@ -218,6 +315,7 @@ TEST(BuddyAllocatorTest, MeasureFragmentation) {
   // Allocate from the 16-byte block (15 bytes inner).
   void* ptr2 = allocator.Allocate(Layout(14, 1));
   ASSERT_NE(ptr2, nullptr);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 144U);
   expected.SubtractFragment(15U);
 
   actual = allocator.MeasureFragmentation();
@@ -225,7 +323,10 @@ TEST(BuddyAllocatorTest, MeasureFragmentation) {
   EXPECT_EQ(expected, *actual);
 
   allocator.Deallocate(ptr1);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 16U);
+
   allocator.Deallocate(ptr2);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0U);
 }
 
 // Fuzz tests.
@@ -239,6 +340,9 @@ void NeverCrashes(const pw::Vector<Request>& requests) {
   static BuddyAllocator allocator(buffer);
   static TestHarness fuzzer(allocator);
   fuzzer.HandleRequests(requests);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0U);
 }
 
 FUZZ_TEST(BucketBlockAllocatorFuzzTest, NeverCrashes)

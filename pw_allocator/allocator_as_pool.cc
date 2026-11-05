@@ -28,6 +28,14 @@ void* AllocatorAsPool::DoAllocate() { return allocator_.Allocate(layout()); }
 
 void AllocatorAsPool::DoDeallocate(void* ptr) { allocator_.Deallocate(ptr); }
 
+size_t AllocatorAsPool::DoGetAllocated() const {
+  return allocator_.GetAllocated();
+}
+
+std::optional<size_t> AllocatorAsPool::DoGetAllocatedBytes() const {
+  return allocator_.GetAllocatedBytes();
+}
+
 Result<Layout> AllocatorAsPool::DoGetInfo(InfoType info_type,
                                           const void* ptr) const {
   return GetInfo(allocator_, info_type, ptr);

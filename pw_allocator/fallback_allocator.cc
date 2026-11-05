@@ -27,6 +27,19 @@
 #include "pw_result/result.h"
 
 namespace pw::allocator {
+namespace {
+
+// Helper function adds optional values.
+template <typename T>
+std::optional<T> Accumulate(const std::optional<T>& primary,
+                            const std::optional<T>& secondary) {
+  if (!primary.has_value() || !secondary.has_value()) {
+    return std::nullopt;
+  }
+  return std::make_optional(*primary + *secondary);
+}
+
+}  // namespace
 
 FallbackAllocator::FallbackAllocator(pw::Allocator& primary,
                                      pw::Allocator& secondary)
@@ -57,23 +70,18 @@ bool FallbackAllocator::DoResize(void* ptr, size_t new_size) {
 }
 
 size_t FallbackAllocator::DoGetAllocated() const {
-  return primary_.GetAllocated() + secondary_.GetAllocated();
+  auto result = DoGetAllocatedBytes();
+  return result.has_value() ? result.value() : kGetAllocatedUnsupported;
+}
+
+std::optional<size_t> FallbackAllocator::DoGetAllocatedBytes() const {
+  return Accumulate(primary_.GetAllocatedBytes(),
+                    secondary_.GetAllocatedBytes());
 }
 
 std::optional<Fragmentation> FallbackAllocator::DoMeasureFragmentation() const {
-  auto primary = primary_.MeasureFragmentation();
-  auto secondary = secondary_.MeasureFragmentation();
-  if (!primary.has_value() && !secondary.has_value()) {
-    return std::nullopt;
-  }
-  Fragmentation fragmentation;
-  if (primary.has_value()) {
-    fragmentation += *primary;
-  }
-  if (secondary.has_value()) {
-    fragmentation += *secondary;
-  }
-  return fragmentation;
+  return Accumulate(primary_.MeasureFragmentation(),
+                    secondary_.MeasureFragmentation());
 }
 
 Result<Layout> FallbackAllocator::DoGetInfo(InfoType info_type,

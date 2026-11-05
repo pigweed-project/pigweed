@@ -15,9 +15,11 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 #include "pw_allocator/capability.h"
+#include "pw_allocator/config.h"
 #include "pw_allocator/hardening.h"
 #include "pw_allocator/layout.h"
 #include "pw_assert/assert.h"
@@ -45,13 +47,25 @@ class Deallocator {
     return capabilities_.has(capability);
   }
 
+  /// Returns whether the given object is the same as this one.
+  ///
+  /// This method is used instead of ``operator==`` in keeping with
+  /// ``std::pmr::memory_resource::is_equal``. There currently is no
+  /// corresponding virtual ``DoIsEqual``, as objects that would
+  /// require ``dynamic_cast`` to properly determine equality are not supported.
+  /// This method will allow the interface to remain unchanged should a future
+  /// need for such objects arise.
+  ///
+  /// @param[in]  other       Object to compare with this object.
+  bool IsEqual(const Deallocator& other) const { return this == &other; }
+
   /// Releases a previously-allocated block of memory.
   ///
   /// The given pointer must have been previously provided by this memory
   /// resource; otherwise the behavior is undefined.
   ///
   /// @param[in]  ptr           Pointer to previously-allocated memory.
-  inline void Deallocate(void* ptr);
+  void Deallocate(void* ptr);
 
   /// Destroys the object and deallocates the associated memory.
   ///
@@ -123,19 +137,21 @@ class Deallocator {
   /// capacity may be less than the memory originally given to an allocator,
   /// e.g. if the allocator must align the region of memory, its capacity may be
   /// reduced.
-  inline StatusWithSize GetCapacity() const;
+  StatusWithSize GetCapacity() const;
 
-  /// Returns whether the given object is the same as this one.
+  // TODO(b/548053990): Remove when downstream consumers migrate.
+  static constexpr size_t kGetAllocatedUnsupported = size_t(-1);
+
+  /// Returns the total bytes that have been allocated by this allocator, or
+  /// `kGetAllocatedUnsupported` if this allocator does not track its total
+  /// allocated bytes.
   ///
-  /// This method is used instead of ``operator==`` in keeping with
-  /// ``std::pmr::memory_resource::is_equal``. There currently is no
-  /// corresponding virtual ``DoIsEqual``, as objects that would
-  /// require ``dynamic_cast`` to properly determine equality are not supported.
-  /// This method will allow the interface to remain unchanged should a future
-  /// need for such objects arise.
-  ///
-  /// @param[in]  other       Object to compare with this object.
-  bool IsEqual(const Deallocator& other) const { return this == &other; }
+  /// @deprecated Use ``GetAllocatedBytes`` instead.
+  size_t GetAllocated() const;
+
+  /// Returns the total bytes that have been allocated by this allocator, or
+  /// `std::nullopt` if this allocator does not track its total allocated bytes.
+  std::optional<size_t> GetAllocatedBytes() const;
 
  protected:
   // There are downstream consumers that have implemented Allocators outside the
@@ -239,8 +255,21 @@ class Deallocator {
   /// Returns deallocator-specific information about allocations.
   ///
   /// Deallocators may support any number of `InfoType`s. See that type for what
-  /// each supported type returns. For unsupported types, this method returns
-  /// `UNIMPLEMENTED`.
+  /// each supported type returns.
+  ///
+  /// @param  info_type       Type of information to query. See `InfoType`.
+  /// @param  ptr             Pointer to allocated memory, if needed for the
+  ///                         given `info_type`.
+  ///
+  /// @returns
+  /// * @OK:                  Result contains the requested information.
+  /// * @UNIMPLEMENTED:       Allocator does not support retrieving the
+  ///                         requested information.
+  /// * @FAILED_PRECONDITION: Allocator is not initialized yet.
+  /// * @NOT_FOUND:           Given `info_type` requires a pointer, but the
+  ///                         given `ptr` is not recognized as an allocation.
+  /// * @DATA_LOSS:           Allocation given by pointer appears corrupted.
+  /// * @INVALID_ARGUMENT:    Memory given by pointer isn't allocated.
   Result<Layout> GetInfo(InfoType info_type, const void* ptr) const {
     return DoGetInfo(info_type, ptr);
   }
@@ -255,6 +284,14 @@ class Deallocator {
                                 const void* ptr) {
     return deallocator.DoGetInfo(info_type, ptr);
   }
+
+  // TODO(b/548053990): Remove when downstream consumers migrate.
+  /// @copydoc Deallocator::GetAllocated
+  virtual size_t DoGetAllocated() const { return kGetAllocatedUnsupported; }
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  virtual std::optional<size_t> DoGetAllocatedBytes() const
+      PW_ALLOCATOR_LEGACY_DEFAULT_IMPL(std::nullopt);
 
   /// Convenience wrapper of `DoGetInfo` for getting the requested layout
   /// associated with a pointer.
@@ -313,7 +350,8 @@ class Deallocator {
   /// @copydoc Deallocator::GetInfo
   ///
   /// The default implementation simply returns UNIMPLEMENTED.
-  virtual Result<Layout> DoGetInfo(InfoType, const void*) const {
+  virtual Result<Layout> DoGetInfo([[maybe_unused]] InfoType info_type,
+                                   [[maybe_unused]] const void* ptr) const {
     return Status::Unimplemented();
   }
 
@@ -323,13 +361,7 @@ class Deallocator {
 
 /// @endsubmodule
 
-// Template and inline method implementations.
-
-void Deallocator::Deallocate(void* ptr) {
-  if (ptr != nullptr) {
-    DoDeallocate(ptr);
-  }
-}
+// Template method implementations.
 
 template <typename T,
           int&... kExplicitGuard,
@@ -378,11 +410,6 @@ void Deallocator::Destroy(ElementType* ptr, size_t count) {
   if (!capabilities_.has(Capability::kSkipsDestroy)) {
     std::destroy_n(ptr, count);
   }
-}
-
-StatusWithSize Deallocator::GetCapacity() const {
-  auto result = DoGetInfo(InfoType::kCapacity, nullptr);
-  return StatusWithSize(result.status(), Layout::Unwrap(result).size());
 }
 
 }  // namespace pw

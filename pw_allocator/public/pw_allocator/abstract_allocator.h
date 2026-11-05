@@ -46,15 +46,12 @@ class AbstractAllocator
                 [[maybe_unused]] size_t new_size) override {
     return false;
   }
-#endif
-
-  /// @copydoc Allocator::GetAllocated
-  size_t DoGetAllocated() const override { return size_t(-1); }
 
   /// @copydoc Allocator::MeasureFragmentation
   std::optional<Fragmentation> DoMeasureFragmentation() const override {
     return std::nullopt;
   }
+#endif  // PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
 };
 
 /// @}

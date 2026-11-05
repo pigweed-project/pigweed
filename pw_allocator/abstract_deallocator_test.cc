@@ -15,6 +15,7 @@
 #include "pw_allocator/abstract_deallocator.h"
 
 #include <cstddef>
+#include <optional>
 
 #include "pw_allocator/deallocator.h"
 #include "pw_status/status.h"
@@ -39,6 +40,17 @@ TEST(AbstractDeallocatorTest, GetCapacity) {
   pw::StatusWithSize capacity = deallocator.GetCapacity();
   EXPECT_EQ(capacity.status(), pw::Status::Unimplemented());
   EXPECT_EQ(capacity.size(), 0U);
+}
+
+TEST(AbstractDeallocatorTest, GetAllocated) {
+  FakeDeallocator deallocator;
+  EXPECT_EQ(deallocator.GetAllocated(),
+            pw::Deallocator::kGetAllocatedUnsupported);
+}
+
+TEST(AbstractDeallocatorTest, GetAllocatedBytes) {
+  FakeDeallocator deallocator;
+  EXPECT_EQ(deallocator.GetAllocatedBytes(), std::nullopt);
 }
 
 TEST(AbstractDeallocatorTest, GetRequestedLayout) {

@@ -111,6 +111,14 @@ class ForwardingPool : public Pool {
   /// @copydoc Deallocator::Deallocate
   void DoDeallocate(void* ptr) override { return pool().Deallocate(ptr); }
 
+  /// @copydoc Deallocator::GetAllocated
+  size_t DoGetAllocated() const override { return pool().GetAllocated(); }
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  std::optional<size_t> DoGetAllocatedBytes() const override {
+    return pool().GetAllocatedBytes();
+  }
+
   /// @copydoc Deallocator::GetInfo
   Result<Layout> DoGetInfo(InfoType info_type, const void* ptr) const override {
     return Deallocator::GetInfo(pool(), info_type, ptr);

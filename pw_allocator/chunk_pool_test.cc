@@ -49,7 +49,11 @@ TEST_F(ChunkPoolTest, AllocateDeallocate) {
 
   void* ptr = pool.Allocate();
   ASSERT_NE(ptr, nullptr);
+  auto allocated_bytes = pool.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), sizeof(U64));
   pool.Deallocate(ptr);
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
 }
 
 TEST_F(ChunkPoolTest, ExhaustTwice) {
@@ -64,6 +68,9 @@ TEST_F(ChunkPoolTest, ExhaustTwice) {
     ptr = pool.Allocate();
     ASSERT_NE(ptr, nullptr);
   }
+  auto allocated_bytes = pool.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), kBufferSize);
 
   // At this point, the pool is empty.
   EXPECT_EQ(pool.Allocate(), nullptr);
@@ -73,16 +80,19 @@ TEST_F(ChunkPoolTest, ExhaustTwice) {
     pool.Deallocate(ptr);
     ptr = nullptr;
   }
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
   for (auto& ptr : ptrs) {
     ptr = pool.Allocate();
     ASSERT_NE(ptr, nullptr);
   }
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), kBufferSize);
 
   // Release everything.
   for (auto& ptr : ptrs) {
     pool.Deallocate(ptr);
     ptr = nullptr;
   }
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
 }
 
 TEST_F(ChunkPoolTest, NewDelete) {
@@ -91,8 +101,12 @@ TEST_F(ChunkPoolTest, NewDelete) {
 
   auto* counter = pool.New<Counter>(867u);
   ASSERT_NE(counter, nullptr);
+  auto allocated_bytes = pool.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), sizeof(Counter));
   EXPECT_EQ(counter->value(), 867u);
   pool.Delete(counter);
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(Counter::TakeNumDtorCalls(), 1u);
 }
 
@@ -103,10 +117,14 @@ TEST_F(ChunkPoolTest, NewDeleteBoundedArray) {
 
   auto* counters = pool.New<Counter[3]>();
   ASSERT_NE(counters, nullptr);
+  auto allocated_bytes = pool.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), layout.size());
   for (size_t i = 0; i < 3; ++i) {
     EXPECT_EQ(counters[i].value(), i);
   }
   pool.Delete<Counter[3]>(counters);
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(Counter::TakeNumDtorCalls(), 3u);
 }
 
@@ -117,10 +135,14 @@ TEST_F(ChunkPoolTest, NewDeleteUnboundedArray) {
 
   auto* counters = pool.New<Counter[]>();
   ASSERT_NE(counters, nullptr);
+  auto allocated_bytes = pool.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), layout.size());
   for (size_t i = 0; i < 5; ++i) {
     EXPECT_EQ(counters[i].value(), i);
   }
   pool.Delete<Counter[]>(counters, 5);
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(Counter::TakeNumDtorCalls(), 5u);
 }
 
@@ -131,10 +153,14 @@ TEST_F(ChunkPoolTest, NewDeleteArray) {
 
   auto* counters = pool.New<Counter[3]>();
   ASSERT_NE(counters, nullptr);
+  auto allocated_bytes = pool.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), layout.size());
   for (size_t i = 0; i < 3; ++i) {
     EXPECT_EQ(counters[i].value(), i);
   }
   pool.DeleteArray(counters, 3);
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(Counter::TakeNumDtorCalls(), 3u);
 }
 
@@ -144,8 +170,12 @@ TEST_F(ChunkPoolTest, MakeUnique) {
   {
     auto counter = pool.MakeUnique<Counter>(5309u);
     ASSERT_NE(counter, nullptr);
+    auto allocated_bytes = pool.GetAllocatedBytes();
+    ASSERT_TRUE(allocated_bytes.has_value());
+    EXPECT_EQ(allocated_bytes.value(), sizeof(Counter));
     EXPECT_EQ(counter->value(), 5309u);
   }
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(Counter::TakeNumDtorCalls(), 1u);
 }
 
@@ -156,10 +186,14 @@ TEST_F(ChunkPoolTest, MakeUniqueBoundedArray) {
   {
     auto counters = pool.MakeUnique<Counter[7]>();
     ASSERT_NE(counters, nullptr);
+    auto allocated_bytes = pool.GetAllocatedBytes();
+    ASSERT_TRUE(allocated_bytes.has_value());
+    EXPECT_EQ(allocated_bytes.value(), layout.size());
     for (size_t i = 0; i < 7; ++i) {
       EXPECT_EQ(counters[i].value(), i);
     }
   }
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(Counter::TakeNumDtorCalls(), 7u);
 }
 
@@ -167,9 +201,15 @@ TEST_F(ChunkPoolTest, MakeUniqueBoundedArrayDifferentType) {
   std::array<std::byte, 256> buffer;
   Layout layout(sizeof(Counter) * 7, alignof(Counter));
   pw::allocator::ChunkPool pool(buffer, layout);
-  auto bytes = pool.MakeUnique<std::byte[sizeof(Counter) * 7]>();
-  ASSERT_NE(bytes, nullptr);
-  EXPECT_EQ(bytes.size(), layout.size());
+  {
+    auto bytes = pool.MakeUnique<std::byte[sizeof(Counter) * 7]>();
+    ASSERT_NE(bytes, nullptr);
+    auto allocated_bytes = pool.GetAllocatedBytes();
+    ASSERT_TRUE(allocated_bytes.has_value());
+    EXPECT_EQ(allocated_bytes.value(), layout.size());
+    EXPECT_EQ(bytes.size(), layout.size());
+  }
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
 }
 
 TEST_F(ChunkPoolTest, MakeUniqueUnboundedArray) {
@@ -179,10 +219,14 @@ TEST_F(ChunkPoolTest, MakeUniqueUnboundedArray) {
   {
     auto counters = pool.MakeUnique<Counter[]>();
     ASSERT_NE(counters, nullptr);
+    auto allocated_bytes = pool.GetAllocatedBytes();
+    ASSERT_TRUE(allocated_bytes.has_value());
+    EXPECT_EQ(allocated_bytes.value(), layout.size());
     for (size_t i = 0; i < 9; ++i) {
       EXPECT_EQ(counters[i].value(), i);
     }
   }
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(Counter::TakeNumDtorCalls(), 9u);
 }
 
@@ -190,9 +234,15 @@ TEST_F(ChunkPoolTest, MakeUniqueUnboundedArrayDifferentType) {
   std::array<std::byte, 256> buffer;
   Layout layout(sizeof(Counter) * 9, alignof(Counter));
   pw::allocator::ChunkPool pool(buffer, layout);
-  auto bytes = pool.MakeUnique<std::byte[]>();
-  ASSERT_NE(bytes, nullptr);
-  EXPECT_EQ(bytes.size(), layout.size());
+  {
+    auto bytes = pool.MakeUnique<std::byte[]>();
+    ASSERT_NE(bytes, nullptr);
+    auto allocated_bytes = pool.GetAllocatedBytes();
+    ASSERT_TRUE(allocated_bytes.has_value());
+    EXPECT_EQ(allocated_bytes.value(), layout.size());
+    EXPECT_EQ(bytes.size(), layout.size());
+  }
+  EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
 }
 
 }  // namespace

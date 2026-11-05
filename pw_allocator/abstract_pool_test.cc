@@ -48,10 +48,11 @@ class FakePool : public AbstractPool {
 
   bool allocated() const { return allocated_; }
   void* deallocated() const { return deallocated_; }
+  void Exhaust() { exhausted_ = true; }
 
  private:
   void* DoAllocate() override {
-    if (layout().size() > buffer_.size() ||
+    if (exhausted_ || layout().size() > buffer_.size() ||
         layout().alignment() > alignof(std::max_align_t)) {
       return nullptr;
     }
@@ -64,6 +65,17 @@ class FakePool : public AbstractPool {
   alignas(std::max_align_t) std::array<std::byte, 64> buffer_{};
   bool allocated_ = false;
   void* deallocated_ = nullptr;
+  bool exhausted_ = false;
+};
+
+struct TestItem {
+  static inline int count = 0;
+
+  int value = 0;
+
+  TestItem() { ++count; }
+  explicit TestItem(int v) : value(v) { ++count; }
+  ~TestItem() { --count; }
 };
 
 TEST(AbstractPoolTest, CapabilitiesDefault) {
@@ -89,42 +101,140 @@ TEST(AbstractPoolTest, AllocateAndDeallocate) {
   EXPECT_EQ(pool.deallocated(), ptr);
 }
 
-TEST(AbstractPoolTest, GetCapacity) {
-  FakePool pool(kLayout);
-  pw::StatusWithSize capacity = pool.GetCapacity();
-  EXPECT_EQ(capacity.status(), pw::Status::Unimplemented());
-  EXPECT_EQ(capacity.size(), 0U);
+TEST(AbstractPoolTest, New) {
+  FakePool pool(Layout::Of<TestItem>());
+  TestItem::count = 0;
+
+  TestItem* item = pool.New<TestItem>(42);
+  ASSERT_NE(item, nullptr);
+  EXPECT_TRUE(pool.allocated());
+  EXPECT_EQ(item->value, 42);
+  EXPECT_EQ(TestItem::count, 1);
+
+  pool.Delete(item);
+  EXPECT_EQ(TestItem::count, 0);
+  EXPECT_EQ(pool.deallocated(), item);
+
+  pool.Exhaust();
+  EXPECT_EQ(pool.New<TestItem>(10), nullptr);
 }
 
-TEST(AbstractPoolTest, GetRequestedLayout) {
-  FakePool pool(kLayout);
-  void* ptr = pool.Allocate();
-  ASSERT_NE(ptr, nullptr);
-  auto result = pool.GetRequestedLayout(ptr);
-  EXPECT_EQ(result.status(), pw::Status::Unimplemented());
+TEST(AbstractPoolTest, NewBoundedArray) {
+  constexpr size_t kCount = 4;
+  FakePool pool(Layout::Of<TestItem[kCount]>());
+  TestItem::count = 0;
+
+  TestItem* items = pool.New<TestItem[kCount]>();
+  ASSERT_NE(items, nullptr);
+  EXPECT_TRUE(pool.allocated());
+  EXPECT_EQ(TestItem::count, static_cast<int>(kCount));
+  for (size_t i = 0; i < kCount; ++i) {
+    items[i].value = static_cast<int>(i + 1);
+  }
+  for (size_t i = 0; i < kCount; ++i) {
+    EXPECT_EQ(items[i].value, static_cast<int>(i + 1));
+  }
+
+  pool.Delete<TestItem[kCount]>(items);
+  EXPECT_EQ(TestItem::count, 0);
+  EXPECT_EQ(pool.deallocated(), items);
+
+  pool.Exhaust();
+  EXPECT_EQ(pool.New<TestItem[kCount]>(), nullptr);
 }
 
-TEST(AbstractPoolTest, GetUsableLayout) {
-  FakePool pool(kLayout);
-  void* ptr = pool.Allocate();
-  ASSERT_NE(ptr, nullptr);
-  auto result = pool.GetUsableLayout(ptr);
-  EXPECT_EQ(result.status(), pw::Status::Unimplemented());
+TEST(AbstractPoolTest, NewUnboundedArray) {
+  constexpr size_t kCount = 4;
+  FakePool pool(Layout::Of<TestItem[kCount]>());
+  TestItem::count = 0;
+
+  TestItem* items = pool.New<TestItem[]>();
+  ASSERT_NE(items, nullptr);
+  EXPECT_TRUE(pool.allocated());
+  EXPECT_EQ(TestItem::count, static_cast<int>(kCount));
+  for (size_t i = 0; i < kCount; ++i) {
+    items[i].value = static_cast<int>(i + 1);
+  }
+  for (size_t i = 0; i < kCount; ++i) {
+    EXPECT_EQ(items[i].value, static_cast<int>(i + 1));
+  }
+
+  pool.Delete<TestItem[]>(items, kCount);
+  EXPECT_EQ(TestItem::count, 0);
+  EXPECT_EQ(pool.deallocated(), items);
+
+  pool.Exhaust();
+  EXPECT_EQ(pool.New<TestItem[]>(), nullptr);
 }
 
-TEST(AbstractPoolTest, GetAllocatedLayout) {
-  FakePool pool(kLayout);
-  void* ptr = pool.Allocate();
-  ASSERT_NE(ptr, nullptr);
-  auto result = pool.GetAllocatedLayout(ptr);
-  EXPECT_EQ(result.status(), pw::Status::Unimplemented());
+TEST(AbstractPoolTest, MakeUnique) {
+  FakePool pool(Layout::Of<TestItem>());
+  TestItem::count = 0;
+
+  {
+    auto item = pool.MakeUnique<TestItem>(42);
+    ASSERT_NE(item, nullptr);
+    EXPECT_TRUE(pool.allocated());
+    EXPECT_EQ(item->value, 42);
+    EXPECT_EQ(TestItem::count, 1);
+  }
+  EXPECT_EQ(TestItem::count, 0);
+  EXPECT_NE(pool.deallocated(), nullptr);
+
+  pool.Exhaust();
+  auto item = pool.MakeUnique<TestItem>(10);
+  EXPECT_EQ(item, nullptr);
 }
 
-TEST(AbstractPoolTest, Recognizes) {
-  FakePool pool(kLayout);
-  void* ptr = pool.Allocate();
-  ASSERT_NE(ptr, nullptr);
-  EXPECT_FALSE(pool.Recognizes(ptr));
+TEST(AbstractPoolTest, MakeUniqueBoundedArray) {
+  constexpr size_t kCount = 4;
+  FakePool pool(Layout::Of<TestItem[kCount]>());
+  TestItem::count = 0;
+
+  {
+    auto items = pool.MakeUnique<TestItem[kCount]>();
+    ASSERT_NE(items, nullptr);
+    EXPECT_TRUE(pool.allocated());
+    EXPECT_EQ(TestItem::count, static_cast<int>(kCount));
+    for (size_t i = 0; i < kCount; ++i) {
+      items[i].value = static_cast<int>(i + 1);
+    }
+    for (size_t i = 0; i < kCount; ++i) {
+      EXPECT_EQ(items[i].value, static_cast<int>(i + 1));
+    }
+  }
+  EXPECT_EQ(TestItem::count, 0);
+  EXPECT_NE(pool.deallocated(), nullptr);
+
+  pool.Exhaust();
+  auto items = pool.MakeUnique<TestItem[kCount]>();
+  EXPECT_EQ(items, nullptr);
+}
+
+TEST(AbstractPoolTest, MakeUniqueUnboundedArray) {
+  constexpr size_t kCount = 4;
+  FakePool pool(Layout::Of<TestItem[kCount]>());
+  TestItem::count = 0;
+
+  {
+    auto items = pool.MakeUnique<TestItem[]>();
+    ASSERT_NE(items, nullptr);
+    EXPECT_TRUE(pool.allocated());
+    EXPECT_EQ(items.size(), kCount);
+    EXPECT_EQ(TestItem::count, static_cast<int>(kCount));
+    for (size_t i = 0; i < kCount; ++i) {
+      items[i].value = static_cast<int>(i + 1);
+    }
+    for (size_t i = 0; i < kCount; ++i) {
+      EXPECT_EQ(items[i].value, static_cast<int>(i + 1));
+    }
+  }
+  EXPECT_EQ(TestItem::count, 0);
+  EXPECT_NE(pool.deallocated(), nullptr);
+
+  pool.Exhaust();
+  auto items = pool.MakeUnique<TestItem[]>();
+  EXPECT_EQ(items, nullptr);
 }
 
 }  // namespace

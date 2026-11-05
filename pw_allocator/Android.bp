@@ -61,6 +61,7 @@ cc_library {
         "bump_allocator.cc",
         "chunk_pool.cc",
         "control_block.cc",
+        "deallocator.cc",
         "fallback_allocator.cc",
         "fragmentation.cc",
         "framing_allocator.cc",

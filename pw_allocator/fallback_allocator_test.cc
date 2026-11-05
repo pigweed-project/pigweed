@@ -309,6 +309,50 @@ TEST_F(FallbackAllocatorTest, Recognizes_None) {
   EXPECT_FALSE(allocator_.Recognizes(ptr));
 }
 
+TEST_F(FallbackAllocatorTest, GetAllocatedBytes_Both) {
+  Layout layout = Layout::Of<uintptr_t>();
+  std::ignore = primary_.Allocate(layout);
+  std::ignore = secondary_.Allocate(layout);
+
+  auto allocated_bytes = allocator_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_GE(allocated_bytes.value(), layout.size() * 2);
+}
+
+TEST_F(FallbackAllocatorTest, GetAllocatedBytes_OnlyPrimary) {
+  Layout layout = Layout::Of<uintptr_t>();
+  std::ignore = primary_.Allocate(layout);
+  std::ignore = secondary_.Allocate(layout);
+  secondary_.DisableGetAllocatedBytes();
+
+  EXPECT_FALSE(allocator_.GetAllocatedBytes().has_value());
+
+  auto allocated_bytes = allocator_.primary().GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_GE(allocated_bytes.value(), layout.size());
+  EXPECT_FALSE(allocator_.secondary().GetAllocatedBytes().has_value());
+}
+
+TEST_F(FallbackAllocatorTest, GetAllocatedBytes_OnlySecondary) {
+  Layout layout = Layout::Of<uintptr_t>();
+  std::ignore = primary_.Allocate(layout);
+  std::ignore = secondary_.Allocate(layout);
+  primary_.DisableGetAllocatedBytes();
+
+  EXPECT_FALSE(allocator_.GetAllocatedBytes().has_value());
+
+  EXPECT_FALSE(allocator_.primary().GetAllocatedBytes().has_value());
+  auto allocated_bytes = allocator_.secondary().GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_GE(allocated_bytes.value(), layout.size());
+}
+
+TEST_F(FallbackAllocatorTest, GetAllocatedBytes_None) {
+  primary_.DisableGetAllocatedBytes();
+  secondary_.DisableGetAllocatedBytes();
+  EXPECT_FALSE(allocator_.GetAllocatedBytes().has_value());
+}
+
 TEST_F(FallbackAllocatorTest, MeasureFragmentation_Both) {
   primary_.SetFragmentation({.sum_of_squares = {.hi = 1, .lo = 2}, .sum = 3});
   secondary_.SetFragmentation(
@@ -325,11 +369,14 @@ TEST_F(FallbackAllocatorTest, MeasureFragmentation_OnlyPrimary) {
   primary_.SetFragmentation({.sum_of_squares = {.hi = 1, .lo = 2}, .sum = 3});
   secondary_.DisableMeasureFragmentation();
 
-  auto result = allocator_.MeasureFragmentation();
+  EXPECT_FALSE(allocator_.MeasureFragmentation().has_value());
+
+  auto result = allocator_.primary().MeasureFragmentation();
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result->sum_of_squares.hi, 1U);
   EXPECT_EQ(result->sum_of_squares.lo, 2U);
   EXPECT_EQ(result->sum, 3U);
+  EXPECT_FALSE(allocator_.secondary().MeasureFragmentation().has_value());
 }
 
 TEST_F(FallbackAllocatorTest, MeasureFragmentation_OnlySecondary) {
@@ -337,7 +384,10 @@ TEST_F(FallbackAllocatorTest, MeasureFragmentation_OnlySecondary) {
   secondary_.SetFragmentation(
       {.sum_of_squares = {.hi = 4, .lo = 8}, .sum = 12});
 
-  auto result = allocator_.MeasureFragmentation();
+  EXPECT_FALSE(allocator_.MeasureFragmentation().has_value());
+
+  EXPECT_FALSE(allocator_.primary().MeasureFragmentation().has_value());
+  auto result = allocator_.secondary().MeasureFragmentation();
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result->sum_of_squares.hi, 4U);
   EXPECT_EQ(result->sum_of_squares.lo, 8U);

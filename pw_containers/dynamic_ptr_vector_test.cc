@@ -156,10 +156,11 @@ TEST_F(DynamicPtrVectorTest, Clear) {
   vec.emplace_back(2);
   EXPECT_FALSE(vec.empty());
 
-  size_t allocated_before = allocator_for_test_.GetAllocated();
+  auto allocated_before = allocator_for_test_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_before.has_value());
   vec.clear();
-  size_t allocated_after = allocator_for_test_.GetAllocated();
-  EXPECT_LT(allocated_after, allocated_before);
+  EXPECT_LT(allocator_for_test_.GetAllocatedBytes().value(),
+            allocated_before.value());
 }
 
 TEST_F(DynamicPtrVectorTest, Reset) {
@@ -193,13 +194,15 @@ TEST_F(DynamicPtrVectorTest, MoveAssign_DestroysOldElementsAndFreesBuffer) {
   ASSERT_EQ(vec2.size(), 3u);
 
   Counter::Reset();
-  const size_t initial_bytes = allocator_for_test_.GetAllocated();
+  auto allocated_before = allocator_for_test_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_before.has_value());
 
   vec1 = std::move(vec2);
 
   EXPECT_EQ(vec1.size(), 3u);
   EXPECT_EQ(Counter::destroyed, 2);
-  EXPECT_LT(allocator_for_test_.GetAllocated(), initial_bytes);
+  EXPECT_LT(allocator_for_test_.GetAllocatedBytes().value(),
+            allocated_before.value());
 }
 
 TEST_F(DynamicPtrVectorTest, TryEmplaceBack) {
@@ -356,10 +359,11 @@ TEST_F(DynamicPtrVectorTest, Take) {
   EXPECT_EQ(vec[1].value, 3);
 
   // Verify ownership transfer
-  size_t allocated_before_reset = allocator_for_test_.GetAllocated();
+  auto allocated_before_reset = allocator_for_test_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_before_reset.has_value());
   taken.Reset();
-  size_t allocated_after_reset = allocator_for_test_.GetAllocated();
-  EXPECT_LT(allocated_after_reset, allocated_before_reset);
+  EXPECT_LT(allocator_for_test_.GetAllocatedBytes().value(),
+            allocated_before_reset.value());
 }
 
 TEST_F(DynamicPtrVectorTest, PushBackUniquePtr_SameAllocator) {

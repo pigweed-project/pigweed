@@ -442,13 +442,15 @@ TEST_F(DynamicHashMapTest, MoveAssign_DestroysOldElementsAndFreesBuffer) {
   ASSERT_EQ(map2.size(), 3u);
 
   Counter::Reset();
-  const size_t initial_bytes = allocator_for_test_.GetAllocated();
+  auto allocated_before = allocator_for_test_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_before.has_value());
 
   map1 = std::move(map2);
 
   EXPECT_EQ(map1.size(), 3u);
   EXPECT_EQ(Counter::destroyed, 2);
-  EXPECT_LT(allocator_for_test_.GetAllocated(), initial_bytes);
+  EXPECT_LT(allocator_for_test_.GetAllocatedBytes().value(),
+            allocated_before.value());
 }
 
 TEST_F(DynamicHashMapTest, HashCollisions) {

@@ -31,7 +31,7 @@ namespace pw::allocator::test {
   fn(resize, Resize);                              \
   fn(reallocate, Reallocate);                      \
   fn(get_capacity, GetCapacity);                   \
-  fn(get_allocated, GetAllocated);                 \
+  fn(get_allocated_bytes, GetAllocatedBytes);      \
   fn(measure_fragmentation, MeasureFragmentation); \
   fn(get_requested_layout, GetRequestedLayout);    \
   fn(get_usable_layout, GetUsableLayout);          \
@@ -108,6 +108,18 @@ class FaultInjectingAllocator : public ForwardingAllocator {
   // the corresponding call.
   PW_ALLOCATOR_FIA_FOREACH(PW_ALLOCATOR_FIA_DISABLE);
 
+  // Special handling for the deprecated `GetAllocated` method.
+  ///
+  /// @note Enabling or disabling either `GetAllocated` or `GetAllocatedBytes`
+  /// will enable or disable **both** methods.
+  /// @{
+  [[nodiscard]] constexpr bool can_get_allocated() const {
+    return can_get_allocated_bytes_;
+  }
+  void EnableGetAllocated() { can_get_allocated_bytes_ = true; }
+  void DisableGetAllocated() { can_get_allocated_bytes_ = false; }
+  /// @}
+
   /// Forward all calls to the allocator.
   void EnableAll() { PW_ALLOCATOR_FIA_FOREACH(PW_ALLOCATOR_FIA_SET_TRUE); }
 
@@ -133,9 +145,22 @@ class FaultInjectingAllocator : public ForwardingAllocator {
     return can_reallocate_ ? Base::DoReallocate(ptr, new_layout) : nullptr;
   }
 
-  /// @copydoc Allocator::GetAllocated
+  /// @copydoc Deallocator::GetAllocated
+  ///
+  /// @note Enabling or disabling either `GetAllocated` or `GetAllocatedBytes`
+  /// will enable or disable **both** methods.
   size_t DoGetAllocated() const override {
-    return can_get_allocated_ ? Base::DoGetAllocated() : size_t(-1);
+    return can_get_allocated_bytes_ ? Base::DoGetAllocated()
+                                    : kGetAllocatedUnsupported;
+  }
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  ///
+  /// @note Enabling or disabling either `GetAllocated` or `GetAllocatedBytes`
+  /// will enable or disable **both** methods.
+  std::optional<size_t> DoGetAllocatedBytes() const override {
+    return can_get_allocated_bytes_ ? Base::DoGetAllocatedBytes()
+                                    : std::nullopt;
   }
 
   /// @copydoc Allocator::MeasureFragmentation

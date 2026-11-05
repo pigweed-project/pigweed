@@ -36,7 +36,6 @@ TEST(MetricsTest, NoMetricsEnabled) {
   EXPECT_FALSE(NoMetrics::metric_name##_enabled());
 
   PW_ALLOCATOR_METRICS_FOREACH(EXPECT_METRIC_DISABLED);
-  EXPECT_FALSE(pw::allocator::internal::AnyEnabled<NoMetrics>());
 
 #undef EXPECT_METRIC_DISABLED
 }
@@ -79,7 +78,6 @@ TEST(MetricsTest, AllMetricsEnabled) {
   EXPECT_TRUE(AllMetrics::metric_name##_enabled());
 
   PW_ALLOCATOR_METRICS_FOREACH(EXPECT_METRIC_ENABLED);
-  EXPECT_TRUE(pw::allocator::internal::AnyEnabled<AllMetrics>());
 
 #undef EXPECT_METRIC_ENABLED
 }

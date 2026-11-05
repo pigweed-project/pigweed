@@ -288,7 +288,9 @@ TEST(CoroFutureTest, ImmediateCoroCompletesAndDeallocates) {
 
   EXPECT_TRUE(task.completed());
   // Verify coroutine frame was deallocated
-  EXPECT_EQ(alloc.GetAllocated(), 0u);
+  auto allocated_bytes = alloc.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(CoroFutureTest, AwaitingCoroCompletesAndDestructsLocals) {
@@ -308,7 +310,9 @@ TEST(CoroFutureTest, AwaitingCoroCompletesAndDestructsLocals) {
 
   EXPECT_TRUE(task.completed());
   EXPECT_EQ(dtor_count, 1);
-  EXPECT_EQ(alloc.GetAllocated(), 0u);
+  auto allocated_bytes = alloc.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(CoroFutureTest, EarlyDestructionDeallocatesCoroFrameAndLocals) {
@@ -323,12 +327,14 @@ TEST(CoroFutureTest, EarlyDestructionDeallocatesCoroFrameAndLocals) {
                           MockFuture(10, &dtor_count));
     });
     EXPECT_TRUE(future.is_pendable());
-    EXPECT_GT(alloc.GetAllocated(), 0u);
+    auto allocated_bytes = alloc.GetAllocatedBytes();
+    ASSERT_TRUE(allocated_bytes.has_value());
+    EXPECT_GT(allocated_bytes.value(), 0u);
   }
   // Dropping future cancels in-flight coroutine: frame and local variables
   // are destroyed immediately.
   EXPECT_EQ(dtor_count, 1);
-  EXPECT_EQ(alloc.GetAllocated(), 0u);
+  EXPECT_EQ(alloc.GetAllocatedBytes().value(), 0u);
 }
 
 TEST(CoroFutureTest,
@@ -350,7 +356,9 @@ TEST(CoroFutureTest,
   EXPECT_FALSE(future.is_pendable());
   EXPECT_FALSE(future.is_complete());
   EXPECT_EQ(dtor_count, 1);
-  EXPECT_EQ(alloc.GetAllocated(), 0u);
+  auto allocated_bytes = alloc.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(CoroFutureTest, SizeAndAlignmentConstants) {

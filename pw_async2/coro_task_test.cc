@@ -102,7 +102,9 @@ TEST_F(FutureTaskCoroTest, ValidTaskIfAllocationSucceeds) {
     EXPECT_TRUE(coro.is_pendable());
     FutureTask task(std::move(coro));
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 Coro<void> ReturnVoid(CoroContext) { co_return; }

@@ -65,6 +65,7 @@ void* ChunkPool::DoAllocate() {
   }
   std::byte* ptr = next_;
   next_ = *(std::launder(reinterpret_cast<std::byte**>(next_)));
+  ++num_allocated_;
   return ptr;
 }
 
@@ -75,6 +76,15 @@ void ChunkPool::DoDeallocate(void* ptr) {
   std::byte** next = std::launder(reinterpret_cast<std::byte**>(ptr));
   *next = next_;
   next_ = cpp20::bit_cast<std::byte*>(ptr);
+  --num_allocated_;
+}
+
+size_t ChunkPool::DoGetAllocated() const {
+  return DoGetAllocatedBytes().value();
+}
+
+std::optional<size_t> ChunkPool::DoGetAllocatedBytes() const {
+  return num_allocated_ * allocated_layout_.size();
 }
 
 Result<Layout> ChunkPool::DoGetInfo(InfoType info_type, const void* ptr) const {

@@ -58,6 +58,7 @@ pw_source_set("pw_allocator") {
   sources = [
     "allocator.cc",
     "control_block.cc",
+    "deallocator.cc",
     "managed_ptr.cc",
   ]
 }
@@ -224,6 +225,7 @@ pw_source_set("buddy_allocator") {
     ":abstract_allocator",
     ":hardening",
     "$dir_pw_containers:vector",
+    "$dir_pw_numeric:checked_arithmetic",
     "block:basic",
     "bucket:unordered",
     dir_pw_bytes,

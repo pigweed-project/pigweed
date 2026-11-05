@@ -88,6 +88,16 @@ TEST_F(FaultInjectingAllocatorTest, ReallocateEnableDisable) {
   }
 }
 
+TEST_F(FaultInjectingAllocatorTest, GetAllocatedBytesEnableDisable) {
+  allocator_.DisableGetAllocatedBytes();
+  EXPECT_EQ(allocator_.GetAllocatedBytes(), std::nullopt);
+
+  allocator_.EnableGetAllocatedBytes();
+  auto allocated_bytes = allocator_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
+}
+
 TEST_F(FaultInjectingAllocatorTest, MeasureFragmentationEnableDisable) {
   Fragmentation fragmentation = {
       .sum_of_squares = {.hi = 0x11223344, .lo = 0x55667788},

@@ -106,10 +106,16 @@ class SynchronizedAllocator final : public ForwardingAllocator {
     return borrowed->Reallocate(ptr, new_layout);
   }
 
-  /// @copydoc Allocator::GetAllocated
+  /// @copydoc Deallocator::GetAllocated
   size_t DoGetAllocated() const override {
     std::lock_guard lock(lock_);
     return Base::DoGetAllocated();
+  }
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  std::optional<size_t> DoGetAllocatedBytes() const override {
+    std::lock_guard lock(lock_);
+    return Base::DoGetAllocatedBytes();
   }
 
   /// @copydoc Allocator::DoMeasureFragmentation

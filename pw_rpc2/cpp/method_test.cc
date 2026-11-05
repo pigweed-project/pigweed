@@ -340,7 +340,9 @@ TEST_F(MethodInvokerTest, InvokeRawUnaryFutureIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeTypedUnaryFutureIntoCall) {
@@ -363,7 +365,9 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryFutureIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeConstMethodWithRequestByValue) {
@@ -386,7 +390,9 @@ TEST_F(MethodInvokerTest, InvokeConstMethodWithRequestByValue) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryFutureIntoCall) {
@@ -409,7 +415,9 @@ TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryFutureIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeTypedUnaryFutureDeserializationFailure) {
@@ -431,7 +439,9 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryFutureDeserializationFailure) {
   // The server retires a call whose invocation failed, which frees it: no
   // future was ever set, so there is nothing else holding it.
   connection_task_->ForceRetireAllCalls();
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeRawServerStreamingFutureIntoCall) {
@@ -448,7 +458,9 @@ TEST_F(MethodInvokerTest, InvokeRawServerStreamingFutureIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeRawClientStreamingFutureIntoCall) {
@@ -464,7 +476,9 @@ TEST_F(MethodInvokerTest, InvokeRawClientStreamingFutureIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeRawBidiStreamingFutureIntoCall) {
@@ -480,7 +494,9 @@ TEST_F(MethodInvokerTest, InvokeRawBidiStreamingFutureIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, FutureMethodInvokerCreateMethod) {
@@ -507,7 +523,9 @@ TEST_F(MethodInvokerTest, InvokeStatelessTypeMethodIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeStatefulTypeMethodIntoCall) {
@@ -525,7 +543,9 @@ TEST_F(MethodInvokerTest, InvokeStatefulTypeMethodIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(MethodTest, StorageSizeBounds) {
@@ -618,7 +638,9 @@ TEST_F(MethodInvokerTest, InvokeRawUnaryCoroIntoCall) {
   RunConnection();
 
   EXPECT_EQ(service_.last_request_size(), 16u);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeTypedUnaryCoroIntoCall) {
@@ -641,7 +663,9 @@ TEST_F(MethodInvokerTest, InvokeTypedUnaryCoroIntoCall) {
   RunConnection();
 
   EXPECT_EQ(service_.last_typed_value(), 9999);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryCoroIntoCall) {
@@ -664,7 +688,9 @@ TEST_F(MethodInvokerTest, InvokeStaticTypedUnaryCoroIntoCall) {
   RunConnection();
 
   EXPECT_EQ(TestService::last_static_value(), 8888);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeRawServerStreamingCoroIntoCall) {
@@ -681,7 +707,9 @@ TEST_F(MethodInvokerTest, InvokeRawServerStreamingCoroIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeRawClientStreamingCoroIntoCall) {
@@ -697,7 +725,9 @@ TEST_F(MethodInvokerTest, InvokeRawClientStreamingCoroIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest, InvokeRawBidiStreamingCoroIntoCall) {
@@ -713,7 +743,9 @@ TEST_F(MethodInvokerTest, InvokeRawBidiStreamingCoroIntoCall) {
 
   RunConnection();
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(MethodInvokerTest,

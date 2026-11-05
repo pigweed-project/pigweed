@@ -92,12 +92,28 @@ void ChunkAllocator::DoDeallocate(void* ptr) {
 
 auto ChunkAllocator::DoGetInfo(InfoType info_type, const void* ptr) const
     -> Result<Layout> {
+  // Return early for unimplemented methods.
+  switch (info_type) {
+    case InfoType::kCapacity:
+    case InfoType::kRecognizes:
+      break;
+    case InfoType::kRequestedLayoutOf:
+    case InfoType::kAllocatedLayoutOf:
+    case InfoType::kUsableLayoutOf:
+    default:
+      return Status::Unimplemented();
+  }
+
+  if (buffer_.empty()) {
+    // Not initialized.
+    return Status::FailedPrecondition();
+  }
+
   if (info_type == InfoType::kCapacity) {
     return Layout(buffer_.size(), 1);
   }
-  if (info_type != InfoType::kRecognizes) {
-    return Status::Unimplemented();
-  }
+
+  // Must be kRecognizes
   if (ptr < buffer_.data() || buffer_.data() + buffer_.size() < ptr) {
     return Status::NotFound();
   }

@@ -13,6 +13,9 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <optional>
+
 #include "pw_allocator/abstract_pool.h"
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/layout.h"
@@ -39,6 +42,12 @@ class AllocatorAsPool : public AbstractPool {
 
   /// @copydoc Deallocator::Deallocate
   void DoDeallocate(void* ptr) override;
+
+  /// @copydoc Deallocator::GetAllocated
+  size_t DoGetAllocated() const override;
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  std::optional<size_t> DoGetAllocatedBytes() const override;
 
   /// @copydoc Deallocator::GetInfo
   Result<Layout> DoGetInfo(InfoType info_type, const void* ptr) const override;

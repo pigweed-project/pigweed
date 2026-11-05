@@ -29,6 +29,7 @@ cc_library(
     srcs = [
         "allocator.cc",
         "control_block.cc",
+        "deallocator.cc",
         "managed_ptr.cc",
     ],
     hdrs = [
@@ -220,6 +221,7 @@ cc_library(
         ":pw_allocator",
         "//pw_assert:check",
         "//pw_bytes:alignment",
+        "//pw_numeric:checked_arithmetic",
         "//third_party/fuchsia:stdcompat",
     ],
     strip_include_prefix = "public",

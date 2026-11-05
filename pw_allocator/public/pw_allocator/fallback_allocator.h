@@ -37,6 +37,14 @@ class FallbackAllocator : public pw::Allocator {
   /// @param[in]  secondary   Allocator tried if `primary` fails a request.
   FallbackAllocator(pw::Allocator& primary, pw::Allocator& secondary);
 
+  // Accessors
+
+  constexpr pw::Allocator& primary() { return primary_; }
+  constexpr const pw::Allocator& primary() const { return primary_; }
+
+  constexpr pw::Allocator& secondary() { return secondary_; }
+  constexpr const pw::Allocator& secondary() const { return secondary_; }
+
  protected:
   /// @copydoc Allocator::Allocate
   void* DoAllocate(Layout layout) override;
@@ -47,10 +55,20 @@ class FallbackAllocator : public pw::Allocator {
   /// @copydoc Allocator::Resize
   bool DoResize(void* ptr, size_t new_size) override;
 
-  /// @copydoc Allocator::GetAllocated
+  /// @copydoc Deallocator::GetAllocated
+  ///
+  /// @note Returns `kGetAllocatedUnsupported` if *either* allocator returns
+  /// `kGetAllocatedUnsupported`.
   size_t DoGetAllocated() const override;
 
-  /// @copydoc Allocator::DoMeasureFragmentation
+  /// @copydoc Deallocator::GetAllocatedBytes
+  ///
+  /// @note Returns `std::nullopt` if *either* allocator returns `std::nullopt`.
+  std::optional<size_t> DoGetAllocatedBytes() const override;
+
+  /// @copydoc Allocator::MeasureFragmentation
+  ///
+  /// @note Returns `std::nullopt` if *either* allocator returns `std::nullopt`.
   std::optional<Fragmentation> DoMeasureFragmentation() const override;
 
   /// @copydoc Deallocator::GetInfo

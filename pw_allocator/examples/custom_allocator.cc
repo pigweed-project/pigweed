@@ -35,7 +35,9 @@ void* CustomAllocator::DoAllocate(Layout layout) {
     return nullptr;
   }
   size_t prev = used_;
-  used_ = Base::DoGetAllocated();
+  if (auto used = Base::DoGetAllocatedBytes(); used.has_value()) {
+    used_ = *used;
+  }
   if (prev <= threshold_ && threshold_ < used_) {
     PW_LOG_INFO("more than %zu bytes allocated.", threshold_);
   }
@@ -47,7 +49,9 @@ void CustomAllocator::DoDeallocate(void* ptr) {
     return;
   }
   Base::DoDeallocate(ptr);
-  used_ = Base::DoGetAllocated();
+  if (auto used = Base::DoGetAllocatedBytes(); used.has_value()) {
+    used_ = *used;
+  }
 }
 
 }  // namespace examples

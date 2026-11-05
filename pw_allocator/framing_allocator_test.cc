@@ -417,7 +417,9 @@ TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutMakeShared) {
 TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutQueries) {
   allocator_.DisableGetUsableLayout();
   TestFramingAllocator<Trivial, void> allocator(allocator_);
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 
   auto capacity = allocator.GetCapacity();
   PW_TEST_ASSERT_OK(capacity.status());
@@ -425,7 +427,7 @@ TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutQueries) {
 
   void* ptr = allocator.Allocate(Layout::Of<uint32_t>());
   ASSERT_NE(ptr, nullptr);
-  EXPECT_GT(allocator.GetAllocated(), 0u);
+  EXPECT_GT(allocator.GetAllocatedBytes().value(), 0u);
   EXPECT_TRUE(allocator.MeasureFragmentation().has_value());
   EXPECT_TRUE(allocator.Recognizes(ptr));
   PW_TEST_EXPECT_OK(allocator.GetAllocatedLayout(ptr).status());
@@ -435,7 +437,7 @@ TEST_F(FramingAllocatorTest, PrefixOnlyWithoutUsableLayoutQueries) {
             pw::Status::Unimplemented());
 
   allocator.Deallocate(ptr);
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0u);
 }
 
 TEST_F(FramingAllocatorTest, SuffixOnly) {

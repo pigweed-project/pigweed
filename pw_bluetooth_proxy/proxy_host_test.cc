@@ -6199,15 +6199,16 @@ TEST_F(ProxyHostTest, ClientProvidedAllocatorUsedForH4) {
                               /*br_edr_acl_credits_to_reserve=*/0,
                               &allocator);
   StartDispatcherOnCurrentThread(proxy);
-  size_t initial = allocator.GetAllocated();
+  auto initial = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(initial.has_value());
 
   // Allow proxy to reserve 1 LE credit.
   PW_TEST_EXPECT_OK(SendLeReadBufferResponseFromController(proxy, 10));
 
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
       proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
-  EXPECT_GT(allocator.GetAllocated(), initial);
-  size_t allocated_for_connection = allocator.GetAllocated();
+  size_t allocated_for_connection = allocator.GetAllocatedBytes().value();
+  EXPECT_GT(allocated_for_connection, initial.value());
 
   constexpr uint16_t remote_channel_id = 0x1234;
   constexpr uint16_t local_channel_id = 0x4321;
@@ -6228,12 +6229,12 @@ TEST_F(ProxyHostTest, ClientProvidedAllocatorUsedForH4) {
     RunDispatcher();
     EXPECT_EQ(capture.sends_called, 1);
   }
-  EXPECT_GT(allocator.GetAllocated(),
-            initial + allocated_for_connection + payload.size());
+  EXPECT_GT(allocator.GetAllocatedBytes().value(),
+            initial.value() + allocated_for_connection + payload.size());
 
   capture.sent_packets.clear();
   proxy.Reset();
-  EXPECT_EQ(allocator.GetAllocated(), initial);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), initial.value());
 }
 
 TEST_F(ProxyHostTest, NotEnoughMemoryToAllocateConnection) {

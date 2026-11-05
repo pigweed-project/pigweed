@@ -100,7 +100,9 @@ TEST_F(CoroTest, BasicFunctionsWithoutYieldingRun) {
     EXPECT_EQ(task.Wait(), OkStatus());
     EXPECT_EQ(output, 5);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 bool CreateWithoutRunningImmediatelyReturnsFive(pw::Allocator& alloc) {
@@ -127,7 +129,9 @@ TEST_F(CoroTest, NoAllocationFailureProducesValidCoro) {
   EXPECT_TRUE(CreateWithoutRunningStoresFiveThenReturns(alloc_));
   EXPECT_TRUE(CreateWithoutRunningStoresFiveThenReturns(alloc_));
 
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, InvalidTaskIfAllocationFails) {
@@ -153,7 +157,9 @@ TEST_F(CoroTest, ObjectWithCoroMethodIsCallable) {
     EXPECT_EQ(task.Wait(), OkStatus());
     EXPECT_EQ(out, 4);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 struct FakeFuture {
@@ -229,7 +235,9 @@ TEST_F(CoroTest, AwaitMultipleAndAwakenRuns) {
     EXPECT_EQ(b.poll_count, 2);
     EXPECT_EQ(output, a_value + b_value);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 Coro<Counter> MultiplyByThree(CoroContext, Counter value) {
@@ -254,7 +262,9 @@ TEST_F(CoroTest, ReturnsInt) {
 
     EXPECT_EQ(task.Wait(), 9);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, Memory) {
@@ -267,7 +277,9 @@ TEST_F(CoroTest, Memory) {
 
     EXPECT_EQ(task.Wait().value, 9 + 5);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 Coro<void> WaitUntilFive(CoroContext, FakeFuture& fut) {
@@ -297,7 +309,9 @@ TEST_F(CoroTest, AwaitVoidCoro) {
 
     EXPECT_EQ(fut.poll_count, 2);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, AwaitVoidCoroInsideAnotherCoroutine) {
@@ -318,7 +332,9 @@ TEST_F(CoroTest, AwaitVoidCoroInsideAnotherCoroutine) {
     EXPECT_EQ(task.Wait(), OkStatus());
     EXPECT_EQ(fut.poll_count, 2);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 #if PW_NC_TEST(CoroContextReference)
@@ -402,7 +418,9 @@ TEST_F(CoroTest, FreeFunctionThatLooksLikeAMember) {
 
     EXPECT_EQ(task.value(), 123);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 Generator<int> CountToFive(CoroContext) {
@@ -430,7 +448,9 @@ TEST_F(CoroTest, GeneratorYieldsValues) {
 
     EXPECT_EQ(task.Wait(), 15);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 Generator<int> AwaitAndYieldGenerator(CoroContext,
@@ -466,7 +486,9 @@ TEST_F(CoroTest, GeneratorAwaitsAndYields) {
 
     EXPECT_EQ(task.Wait(), 30);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 PW_NO_INLINE Coro<void> ReturnsVoid(CoroContext) { co_return; }
@@ -526,7 +548,9 @@ TEST_F(CoroTest, PendCompletesAndUpdatesFutureState) {
     EXPECT_FALSE(coro.is_pendable());
     EXPECT_TRUE(coro.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, PendVoidCompletesAndUpdatesFutureState) {
@@ -541,7 +565,9 @@ TEST_F(CoroTest, PendVoidCompletesAndUpdatesFutureState) {
     EXPECT_FALSE(coro.is_pendable());
     EXPECT_TRUE(coro.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, PendSuspendedCoroRemainsPendableUntilCompletion) {
@@ -564,7 +590,9 @@ TEST_F(CoroTest, PendSuspendedCoroRemainsPendableUntilCompletion) {
     EXPECT_FALSE(coro.is_pendable());
     EXPECT_TRUE(coro.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, AwaitCoroInsideFuncTask) {
@@ -583,7 +611,9 @@ TEST_F(CoroTest, AwaitCoroInsideFuncTask) {
     EXPECT_FALSE(coro.is_pendable());
     EXPECT_TRUE(coro.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, AwaitVoidCoroInsideFuncTask) {
@@ -603,7 +633,9 @@ TEST_F(CoroTest, AwaitVoidCoroInsideFuncTask) {
     EXPECT_FALSE(coro.is_pendable());
     EXPECT_TRUE(coro.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, FutureTaskRunsCoro) {
@@ -614,7 +646,9 @@ TEST_F(CoroTest, FutureTaskRunsCoro) {
     dispatcher.RunToCompletion();
     EXPECT_EQ(task.Wait(), 42);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(FallibleCoro, DefaultConstructedIsInvalidFuture) {
@@ -716,7 +750,9 @@ TEST_F(CoroTest, FallibleCoroMoveConstructAndAssign) {
     EXPECT_FALSE(fut3.is_pendable());
     EXPECT_TRUE(fut3.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, FallibleCoroMoveWhenInitialAllocFailed) {
@@ -757,7 +793,9 @@ TEST_F(CoroTest, FallibleCoroSuspendedRemainsPendableUntilCompletion) {
     EXPECT_FALSE(fut.is_pendable());
     EXPECT_TRUE(fut.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, MakeFallibleDefaultNoArgsSuccess) {
@@ -774,7 +812,9 @@ TEST_F(CoroTest, MakeFallibleDefaultNoArgsSuccess) {
     EXPECT_FALSE(fut.is_pendable());
     EXPECT_TRUE(fut.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, MakeFallibleDefaultNoArgsFailure) {
@@ -821,7 +861,9 @@ TEST_F(CoroTest, MakeFallibleSuccessReturnsOptional) {
     EXPECT_FALSE(fut.is_pendable());
     EXPECT_TRUE(fut.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, MakeFallibleSuccessReturnsFallbackType) {
@@ -840,7 +882,9 @@ TEST_F(CoroTest, MakeFallibleSuccessReturnsFallbackType) {
     EXPECT_FALSE(handler_called);
     EXPECT_TRUE(fut.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, MakeFallibleSuccessVoid) {
@@ -855,7 +899,9 @@ TEST_F(CoroTest, MakeFallibleSuccessVoid) {
     EXPECT_FALSE(handler_called);
     EXPECT_TRUE(fut.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, MakeFallibleInitialAllocFailureCallsHandler) {
@@ -948,7 +994,9 @@ TEST_F(CoroTest, CoAwaitFallibleCoroRecoversLocallyInOuterCoro) {
     EXPECT_FALSE(outer.is_pendable());
     EXPECT_TRUE(outer.is_complete());
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, MakeFallibleInFutureTask) {
@@ -959,7 +1007,9 @@ TEST_F(CoroTest, MakeFallibleInFutureTask) {
     dispatcher.RunToCompletion();
     EXPECT_EQ(task.Wait(), 99);
   }
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST_F(CoroTest, MakeFallibleStatusFallbackDirectValue) {
@@ -1084,7 +1134,9 @@ TEST_F(CoroTest, AllocFailureAfterSuspend) {
 
   EXPECT_TRUE(handler_ran);
   EXPECT_EQ(task.Wait(), -1);
-  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 }  // namespace

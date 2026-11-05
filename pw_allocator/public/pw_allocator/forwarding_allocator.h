@@ -134,8 +134,13 @@ class ForwardingAllocator : public pw::Allocator {
     AfterReallocateDone(allocator(), new_layout, new_ptr);
   }
 
-  /// @copydoc Allocator::GetAllocated
+  /// @copydoc Deallocator::GetAllocated
   size_t DoGetAllocated() const override { return allocator().GetAllocated(); }
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  std::optional<size_t> DoGetAllocatedBytes() const override {
+    return allocator().GetAllocatedBytes();
+  }
 
   /// @copydoc Allocator::MeasureFragmentation
   std::optional<Fragmentation> DoMeasureFragmentation() const override {

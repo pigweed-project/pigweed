@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 #include "pw_allocator/abstract_pool.h"
 #include "pw_allocator/capability.h"
@@ -55,6 +56,12 @@ class ChunkPool : public AbstractPool {
   /// @copydoc Deallocator::Deallocate
   void DoDeallocate(void* ptr) override;
 
+  /// @copydoc Deallocator::GetAllocated
+  size_t DoGetAllocated() const override;
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  std::optional<size_t> DoGetAllocatedBytes() const override;
+
   /// @copydoc Deallocator::GetInfo
   Result<Layout> DoGetInfo(InfoType info_type, const void* ptr) const override;
 
@@ -63,6 +70,7 @@ class ChunkPool : public AbstractPool {
   uintptr_t start_;
   uintptr_t end_;
   std::byte* next_;
+  size_t num_allocated_ = 0;
 };
 
 /// @}

@@ -234,13 +234,15 @@ TEST_F(DynamicQueueTest, MoveAssign_DestroysOldElementsAndFreesBuffer) {
   ASSERT_EQ(queue2.size(), 3u);
 
   Counter::Reset();
-  const size_t initial_bytes = allocator_for_test_.GetAllocated();
+  auto allocated_before = allocator_for_test_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_before.has_value());
 
   queue1 = std::move(queue2);
 
   EXPECT_EQ(queue1.size(), 3u);
   EXPECT_EQ(Counter::destroyed, 2);
-  EXPECT_LT(allocator_for_test_.GetAllocated(), initial_bytes);
+  EXPECT_LT(allocator_for_test_.GetAllocatedBytes().value(),
+            allocated_before.value());
 }
 
 TEST_F(DynamicQueueTest, Capacity) {

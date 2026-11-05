@@ -155,7 +155,9 @@ TEST(ForwardListTest, ConstructEmpty) {
   EXPECT_EQ(list.begin(), list.end());
   EXPECT_EQ(list.cbegin(), list.cend());
   EXPECT_EQ(&list.get_allocator(), &allocator);
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, DestructorCleansUp) {
@@ -165,9 +167,11 @@ TEST(ForwardListTest, DestructorCleansUp) {
     list.push_front(1);
     list.push_front(2);
     list.push_front(3);
-    EXPECT_GT(allocator.GetAllocated(), 0u);
+    auto allocated_bytes = allocator.GetAllocatedBytes();
+    ASSERT_TRUE(allocated_bytes.has_value());
+    EXPECT_GT(allocated_bytes.value(), 0u);
   }
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0u);
 }
 
 TEST(ForwardListTest, MoveConstructTransfersAndRetainsAllocator) {
@@ -192,7 +196,9 @@ TEST(ForwardListTest, MoveConstructTransfersAndRetainsAllocator) {
 
   list1.clear();
   list2.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
   // NOLINTEND(bugprone-use-after-move)
 }
 
@@ -231,7 +237,9 @@ TEST(ForwardListTest, MoveAssign) {
   ExpectElements(list2, {1, 2});
 
   // Old elements of list2 on allocator2 should have been deallocated
-  EXPECT_EQ(allocator2.GetAllocated(), 0u);
+  auto allocated_bytes2 = allocator2.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes2.has_value());
+  EXPECT_EQ(allocated_bytes2.value(), 0u);
 
   // Moved-from list1 can still be used with its allocator
   list1.push_front(10);
@@ -239,7 +247,9 @@ TEST(ForwardListTest, MoveAssign) {
 
   list1.clear();
   list2.clear();
-  EXPECT_EQ(allocator1.GetAllocated(), 0u);
+  auto allocated_bytes1 = allocator1.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes1.has_value());
+  EXPECT_EQ(allocated_bytes1.value(), 0u);
   // NOLINTEND(bugprone-use-after-move)
 }
 
@@ -255,7 +265,9 @@ TEST(ForwardListTest, MoveAssignEmptyToNonEmpty) {
 
   EXPECT_TRUE(list1.empty());  // NOLINT(bugprone-use-after-move)
   EXPECT_TRUE(list2.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, MoveAssignSelf) {
@@ -538,7 +550,9 @@ TEST(ForwardListTest, PopFront) {
 
   list.pop_front();
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, PopFrontEmpty) {
@@ -547,7 +561,9 @@ TEST(ForwardListTest, PopFrontEmpty) {
 
   list.pop_front();
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, Clear) {
@@ -558,12 +574,14 @@ TEST(ForwardListTest, Clear) {
   list.push_front(2);
   list.clear();
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 
   list.push_front(3);
   list.clear();
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0u);
 }
 
 TEST(ForwardListTest, Swap) {
@@ -590,8 +608,12 @@ TEST(ForwardListTest, Swap) {
   list1.clear();
   list2.clear();
 
-  EXPECT_EQ(allocator1.GetAllocated(), 0u);
-  EXPECT_EQ(allocator2.GetAllocated(), 0u);
+  auto allocated_bytes1 = allocator1.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes1.has_value());
+  EXPECT_EQ(allocated_bytes1.value(), 0u);
+  auto allocated_bytes2 = allocator2.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes2.has_value());
+  EXPECT_EQ(allocated_bytes2.value(), 0u);
 }
 
 TEST(ForwardListTest, NonMemberSwap) {
@@ -619,8 +641,12 @@ TEST(ForwardListTest, NonMemberSwap) {
   list1.clear();
   list2.clear();
 
-  EXPECT_EQ(allocator1.GetAllocated(), 0u);
-  EXPECT_EQ(allocator2.GetAllocated(), 0u);
+  auto allocated_bytes1 = allocator1.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes1.has_value());
+  EXPECT_EQ(allocated_bytes1.value(), 0u);
+  auto allocated_bytes2 = allocator2.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes2.has_value());
+  EXPECT_EQ(allocated_bytes2.value(), 0u);
 }
 
 // -----------------------------------------------------------------------------
@@ -779,7 +805,9 @@ TEST(ForwardListTest, AssignCount) {
 
   list.assign(0, 99);
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, TryAssignCount) {
@@ -800,7 +828,9 @@ TEST(ForwardListTest, AssignRange) {
 
   list.assign(values.begin(), values.begin());
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, TryAssignRange) {
@@ -821,7 +851,9 @@ TEST(ForwardListTest, AssignInitializerList) {
 
   list.assign({});
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, TryAssignInitializerList) {
@@ -887,7 +919,9 @@ TEST(ForwardListTest, EraseAfterRangeAcceptsConstIterator) {
   it = list.erase_after(list.cbefore_begin(), list.cend());
   EXPECT_EQ(it, list.cend());
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, EraseAfterEmptyRangeSameIterator) {
@@ -943,7 +977,9 @@ TEST(ForwardListTest, ResizeAndTryResizeShrink) {
 
   list.resize(0);
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, ResizeSameSize) {
@@ -987,7 +1023,9 @@ TEST(ForwardListTest, SpliceAfterEntireListAcceptsConstIterator) {
   ExpectElements(list1, {4, 5, 1, 2, 3});
 
   list1.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, SpliceAfterSingleElementAcceptsConstIterator) {
@@ -1015,7 +1053,9 @@ TEST(ForwardListTest, SpliceAfterSingleElementAcceptsConstIterator) {
 
   list1.clear();
   list2.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, SpliceAfterRangeAcceptsConstIterator) {
@@ -1047,7 +1087,9 @@ TEST(ForwardListTest, SpliceAfterRangeAcceptsConstIterator) {
   EXPECT_TRUE(list2.empty());  // NOLINT(bugprone-use-after-move)
 
   list1.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, SpliceAfterSelf) {
@@ -1085,7 +1127,9 @@ TEST(ForwardListTest, SpliceAfterSelf) {
   ExpectElements(list, {1, 3, 2, 4});
 
   list.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, SpliceAfterEmptyRangeDifferentLists) {
@@ -1106,7 +1150,9 @@ TEST(ForwardListTest, SpliceAfterEmptyRangeDifferentLists) {
 
   list1.clear();
   list2.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 // -----------------------------------------------------------------------------
@@ -1140,7 +1186,9 @@ TEST(ForwardListTest, Remove) {
   // Remove on empty list is safe
   EXPECT_EQ(list.remove(1), 0u);
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, RemoveSelfReference) {
@@ -1165,7 +1213,9 @@ TEST(ForwardListTest, RemoveSelfReference) {
   // Single-element list self-referencing remove
   EXPECT_EQ(list.remove(list.front()), 1u);
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, RemoveMoveOnlySelfReference) {
@@ -1185,7 +1235,9 @@ TEST(ForwardListTest, RemoveMoveOnlySelfReference) {
   EXPECT_EQ(list.front().value, 2);
   list.pop_front();
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, RemoveIf) {
@@ -1210,7 +1262,9 @@ TEST(ForwardListTest, RemoveIf) {
   // Remove all
   EXPECT_EQ(list.remove_if([](int) { return true; }), 1u);
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, Unique) {
@@ -1242,7 +1296,9 @@ TEST(ForwardListTest, Unique) {
   ExpectElements(list, {1, 2, 3, 1});
 
   list.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, UniqueCustomPredicate) {
@@ -1261,7 +1317,9 @@ TEST(ForwardListTest, UniqueCustomPredicate) {
   ExpectElements(list, {2, 1, 4});
 
   list.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, Merge) {
@@ -1295,7 +1353,9 @@ TEST(ForwardListTest, Merge) {
   ExpectElements(list1, {0, 1, 2, 3, 4, 5, 6, 7});
 
   list1.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, MergeCustomComparator) {
@@ -1325,7 +1385,9 @@ TEST(ForwardListTest, MergeCustomComparator) {
   ExpectElements(list1, {7, 6, 5, 4, 3, 2, 1, 0});
 
   list1.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, MergeSelf) {
@@ -1349,7 +1411,9 @@ TEST(ForwardListTest, MergeSelf) {
   ExpectElements(list, {1, 3, 5});  // NOLINT(bugprone-use-after-move)
 
   list.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, Sort) {
@@ -1382,7 +1446,9 @@ TEST(ForwardListTest, Sort) {
   ExpectElements(list, {5, 4, 3, 2, 2, 1, 1});
 
   list.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, Reverse) {
@@ -1412,7 +1478,9 @@ TEST(ForwardListTest, Reverse) {
   ExpectElements(list, {2, 1, 0, -1});
 
   list.clear();
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 // -----------------------------------------------------------------------------
@@ -1448,7 +1516,9 @@ TEST(ForwardListTest, LifetimeTracking) {
     EXPECT_EQ(LifetimeItem::TotalConstructs() - LifetimeItem::destructions, 0);
   }
 
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
   EXPECT_GT(LifetimeItem::TotalConstructs(), 0);
   EXPECT_EQ(LifetimeItem::TotalConstructs(), LifetimeItem::destructions);
 }
@@ -1486,7 +1556,9 @@ TEST(ForwardListTest, ResizeDefaultConstructionLifetime) {
     EXPECT_EQ(LifetimeItem::TotalConstructs() - LifetimeItem::destructions, 0);
   }
 
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
   EXPECT_EQ(LifetimeItem::TotalConstructs(), LifetimeItem::destructions);
 }
 
@@ -1519,7 +1591,9 @@ TEST(ForwardListTest, MoveOnlyType) {
   list3.erase_after(list3.cbegin());
   list3.clear();
   EXPECT_TRUE(list3.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 struct MoveOnlyDefaultConstructible {
@@ -1551,7 +1625,9 @@ TEST(ForwardListTest, MoveOnlyResize) {
 
   list.resize(0);
   EXPECT_TRUE(list.empty());
-  EXPECT_EQ(allocator.GetAllocated(), 0u);
+  auto allocated_bytes = allocator.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
 }
 
 TEST(ForwardListTest, TryOperationsReturnFalseOnExhaustion) {
@@ -1630,8 +1706,9 @@ TEST(ForwardListTest, TryResizeRollbackOnPartialAllocationFailure) {
     list.push_front(LifetimeItem(2));
     list.push_front(LifetimeItem(1));
     // list: 1, 2
-    const size_t initial_bytes = backing_allocator.GetAllocated();
-    EXPECT_GT(initial_bytes, 0u);
+    auto initial_bytes = backing_allocator.GetAllocatedBytes();
+    ASSERT_TRUE(initial_bytes.has_value());
+    EXPECT_GT(initial_bytes.value(), 0u);
 
     // Allow only 2 additional allocations before failing.
     // Resizing from 2 to 5 requires 3 allocations, so the 3rd fails.
@@ -1641,7 +1718,8 @@ TEST(ForwardListTest, TryResizeRollbackOnPartialAllocationFailure) {
     // Rollback must restore original elements, free the partially allocated
     // nodes, and destruct the partially allocated items.
     ExpectElements(list, {LifetimeItem(1), LifetimeItem(2)});
-    EXPECT_EQ(backing_allocator.GetAllocated(), initial_bytes);
+    EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(),
+              initial_bytes.value());
     EXPECT_EQ(LifetimeItem::TotalConstructs() - LifetimeItem::destructions, 2);
 
     // Test rollback from an empty list
@@ -1650,7 +1728,7 @@ TEST(ForwardListTest, TryResizeRollbackOnPartialAllocationFailure) {
     EXPECT_FALSE(empty_list.try_resize(3, LifetimeItem(99)));
     EXPECT_TRUE(empty_list.empty());
   }
-  EXPECT_EQ(backing_allocator.GetAllocated(), 0u);
+  EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(LifetimeItem::TotalConstructs(), LifetimeItem::destructions);
 }
 
@@ -1663,14 +1741,16 @@ TEST(ForwardListTest, TryInsertAfterCountRollbackOnPartialAllocationFailure) {
     list.push_front(LifetimeItem(2));
     list.push_front(LifetimeItem(1));
     // list: 1, 2
-    const size_t initial_bytes = backing_allocator.GetAllocated();
+    auto initial_bytes = backing_allocator.GetAllocatedBytes();
+    ASSERT_TRUE(initial_bytes.has_value());
 
     // Inserting 4 copies after begin(), but only 2 allocations succeed.
     failing_allocator.set_remaining_allocations(2);
     EXPECT_FALSE(list.try_insert_after(list.cbegin(), 4, LifetimeItem(99)));
 
     ExpectElements(list, {LifetimeItem(1), LifetimeItem(2)});
-    EXPECT_EQ(backing_allocator.GetAllocated(), initial_bytes);
+    EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(),
+              initial_bytes.value());
     EXPECT_EQ(LifetimeItem::TotalConstructs() - LifetimeItem::destructions, 2);
 
     // Inserting 3 copies after before_begin(), but only 1 allocation succeeds.
@@ -1679,10 +1759,11 @@ TEST(ForwardListTest, TryInsertAfterCountRollbackOnPartialAllocationFailure) {
         list.try_insert_after(list.cbefore_begin(), 3, LifetimeItem(99)));
 
     ExpectElements(list, {LifetimeItem(1), LifetimeItem(2)});
-    EXPECT_EQ(backing_allocator.GetAllocated(), initial_bytes);
+    EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(),
+              initial_bytes.value());
     EXPECT_EQ(LifetimeItem::TotalConstructs() - LifetimeItem::destructions, 2);
   }
-  EXPECT_EQ(backing_allocator.GetAllocated(), 0u);
+  EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(LifetimeItem::TotalConstructs(), LifetimeItem::destructions);
 }
 
@@ -1694,7 +1775,8 @@ TEST(ForwardListTest, TryInsertAfterRangeRollbackOnPartialAllocationFailure) {
     ForwardList<LifetimeItem> list(failing_allocator);
     list.push_front(LifetimeItem(2));
     list.push_front(LifetimeItem(1));
-    const size_t initial_bytes = backing_allocator.GetAllocated();
+    auto initial_bytes = backing_allocator.GetAllocatedBytes();
+    ASSERT_TRUE(initial_bytes.has_value());
 
     std::array<LifetimeItem, 4> values = {
         LifetimeItem(10), LifetimeItem(20), LifetimeItem(30), LifetimeItem(40)};
@@ -1705,9 +1787,10 @@ TEST(ForwardListTest, TryInsertAfterRangeRollbackOnPartialAllocationFailure) {
         list.try_insert_after(list.cbegin(), values.begin(), values.end()));
 
     ExpectElements(list, {LifetimeItem(1), LifetimeItem(2)});
-    EXPECT_EQ(backing_allocator.GetAllocated(), initial_bytes);
+    EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(),
+              initial_bytes.value());
   }
-  EXPECT_EQ(backing_allocator.GetAllocated(), 0u);
+  EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(LifetimeItem::TotalConstructs(), LifetimeItem::destructions);
 }
 
@@ -1720,7 +1803,8 @@ TEST(ForwardListTest, TryAssignRollbackOnPartialAllocationFailure) {
     list.push_front(LifetimeItem(3));
     list.push_front(LifetimeItem(2));
     list.push_front(LifetimeItem(1));
-    const size_t initial_bytes = backing_allocator.GetAllocated();
+    auto initial_bytes = backing_allocator.GetAllocatedBytes();
+    ASSERT_TRUE(initial_bytes.has_value());
 
     // Assigning 5 copies, but only 2 allocations succeed in the temp list.
     failing_allocator.set_remaining_allocations(2);
@@ -1728,7 +1812,8 @@ TEST(ForwardListTest, TryAssignRollbackOnPartialAllocationFailure) {
 
     // Original list remains unchanged.
     ExpectElements(list, {LifetimeItem(1), LifetimeItem(2), LifetimeItem(3)});
-    EXPECT_EQ(backing_allocator.GetAllocated(), initial_bytes);
+    EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(),
+              initial_bytes.value());
 
     // Assigning range of 4 items, but only 2 allocations succeed.
     std::array<LifetimeItem, 4> values = {
@@ -1737,9 +1822,10 @@ TEST(ForwardListTest, TryAssignRollbackOnPartialAllocationFailure) {
     EXPECT_FALSE(list.try_assign(values.begin(), values.end()));
 
     ExpectElements(list, {LifetimeItem(1), LifetimeItem(2), LifetimeItem(3)});
-    EXPECT_EQ(backing_allocator.GetAllocated(), initial_bytes);
+    EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(),
+              initial_bytes.value());
   }
-  EXPECT_EQ(backing_allocator.GetAllocated(), 0u);
+  EXPECT_EQ(backing_allocator.GetAllocatedBytes().value(), 0u);
   EXPECT_EQ(LifetimeItem::TotalConstructs(), LifetimeItem::destructions);
 }
 

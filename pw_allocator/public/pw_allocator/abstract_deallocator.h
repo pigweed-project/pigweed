@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -36,9 +38,22 @@ class BasicAbstractDeallocator : public Base {
 
   using Base::Base;
 
+// TODO(b/548053990): Always use this as the default.
+#if !PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
+  /// @copydoc Deallocator::GetAllocated
+  size_t DoGetAllocated() const override {
+    return Base::kGetAllocatedUnsupported;
+  }
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  std::optional<size_t> DoGetAllocatedBytes() const override {
+    return std::nullopt;
+  }
+#endif  // PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
+
   /// @copydoc Deallocator::GetInfo
-  Result<Layout> DoGetInfo(typename Base::InfoType,
-                           const void*) const override {
+  Result<Layout> DoGetInfo([[maybe_unused]] typename Base::InfoType info_type,
+                           [[maybe_unused]] const void* ptr) const override {
     return Status::Unimplemented();
   }
 };

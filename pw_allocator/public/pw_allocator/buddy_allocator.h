@@ -99,6 +99,12 @@ class GenericBuddyAllocator : public AbstractAllocator {
   /// @copydoc Deallocator::DoDeallocate
   void DoDeallocate(void* ptr) override;
 
+  /// @copydoc Deallocator::GetAllocated
+  size_t DoGetAllocated() const override;
+
+  /// @copydoc Deallocator::GetAllocatedBytes
+  std::optional<size_t> DoGetAllocatedBytes() const override;
+
   /// @copydoc Allocator::MeasureFragmentation
   std::optional<Fragmentation> DoMeasureFragmentation() const override;
 
@@ -112,6 +118,7 @@ class GenericBuddyAllocator : public AbstractAllocator {
  private:
   span<UnorderedBucket<BuddyBlock>> buckets_;
   size_t min_outer_size_ = 0;
+  size_t allocated_ = 0;
   ByteSpan region_;
 };
 
