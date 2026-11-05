@@ -82,6 +82,11 @@ class SecurityManagerImpl final : public SecurityManager,
                       bool is_controller_remote_public_key_validation_supported,
                       pw::async::Dispatcher& dispatcher,
                       bt::gap::Peer::WeakPtr peer);
+
+  // Loads any existing LTK from the peer cache and starts encryption if
+  // acting as the LE Central. Returns false if starting encryption fails.
+  [[nodiscard]] bool Init();
+
   // SecurityManager overrides:
   void UpgradeSecurity(SecurityLevel level, PairingCallback callback) override;
   void InitiateBrEdrCrossTransportKeyDerivation(
@@ -166,6 +171,10 @@ class SecurityManagerImpl final : public SecurityManager,
   // requests.
   void NotifySecurityCallbacks();
 
+  // Drains `request_queue_` and invokes each queued callback with `error` and
+  // the current security properties.
+  void FailPendingRequests(Error error);
+
   // Assign the current security properties and notify the delegate of the
   // change.
   void SetSecurityProperties(const SecurityProperties& sec);
@@ -174,6 +183,16 @@ class SecurityManagerImpl final : public SecurityManager,
   // key. This function does not initiate link layer encryption and can be
   // called during and outside of pairing.
   void OnNewLongTermKey(const LTK& ltk);
+
+  // Restores `ltk_` to `previous_ltk` and synchronizes `low_energy_link_`'s
+  // link key (setting it when `previous_ltk` is present or clearing it when
+  // `std::nullopt`).
+  void RestoreLtk(std::optional<LTK> previous_ltk);
+
+  // Assigns `ltk` to the link and starts link-layer encryption, entering the
+  // `StartingEncryption` phase on success or rolling back `ltk_`, failing
+  // pending requests, and signaling a link error on failure.
+  bool StartExistingLtkEncryption(const LTK& ltk);
 
   // PairingPhase::Listener overrides:
   void OnPairingFailed(Error error) override;
@@ -286,6 +305,12 @@ class SecurityManagerImpl final : public SecurityManager,
   // be std::nullopt.
   std::optional<PairingFeatures> features_;
 
+  // Pre-Phase-2 `ltk_` snapshot saved before `OnPhase2EncryptionKey()`
+  // installs an unverified LE Secure Connections LTK, allowing
+  // `OnPairingFailed()` to roll back `ltk_` and `low_energy_link_->ltk()` if
+  // Phase 2 fails before `EndPhase2()`.
+  std::optional<std::optional<LTK>> pre_phase_2_ltk_;
+
   // The pending security requests added via UpgradeSecurity().
   std::queue<PendingRequest> request_queue_;
 
@@ -297,8 +322,9 @@ class SecurityManagerImpl final : public SecurityManager,
 
   SmartTask timeout_task_{pw_dispatcher_};
 
-  // Set to a PairingToken when the current phase is not monostate (always null
-  // in monostate).
+  // Held while an active pairing phase (SecurityRequestPhase or Phase 1-3) is
+  // in progress so gap::Peer tracks active transport pairing; not set during
+  // the WaitForBrEdrPairing or StartingEncryption pseudo-phases.
   std::optional<PairingToken> pairing_token_;
   bt::gap::Peer::WeakPtr peer_;
 
@@ -384,27 +410,35 @@ SecurityManagerImpl::SecurityManagerImpl(
     // Set up HCI encryption event.
     low_energy_link_->set_encryption_change_callback(
         fit::bind_member<&SecurityManagerImpl::OnEncryptionChange>(this));
-
-    // Obtain existing pairing data, if any.
-    std::optional<sm::LTK> ltk = GetExistingLtkFromPeerCache();
-    if (ltk) {
-      bt_log(INFO,
-             "sm",
-             "starting encryption with existing LTK (peer: %s, handle: %#.4x)",
-             bt_str(peer_->identifier()),
-             low_energy_link_->handle());
-
-      // Sets LTK in low_energy_link_
-      OnNewLongTermKey(*ltk);
-
-      // The initiatior starts encryption when there is an LTK.
-      if (low_energy_link_->role() ==
-          pw::bluetooth::emboss::ConnectionRole::CENTRAL) {
-        current_phase_ = StartingEncryption();
-        PW_CHECK(low_energy_link_->StartEncryption());
-      }
-    }
   }
+}
+
+bool SecurityManagerImpl::Init() {
+  if (!low_energy_link_.is_alive()) {
+    return true;
+  }
+
+  // Obtain existing pairing data, if any.
+  std::optional<sm::LTK> ltk = GetExistingLtkFromPeerCache();
+  if (!ltk) {
+    return true;
+  }
+
+  bt_log(INFO,
+         "sm",
+         "starting encryption with existing LTK (peer: %s, handle: %#.4x)",
+         bt_str(peer_->identifier()),
+         low_energy_link_->handle());
+
+  // The initiator starts encryption when there is an LTK.
+  if (low_energy_link_->role() ==
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL) {
+    return StartExistingLtkEncryption(*ltk);
+  }
+
+  // Sets LTK in low_energy_link_
+  OnNewLongTermKey(*ltk);
+  return true;
 }
 
 void SecurityManagerImpl::OnSecurityRequest(AuthReqField auth_req) {
@@ -477,8 +511,7 @@ void SecurityManagerImpl::OnSecurityRequest(AuthReqField auth_req) {
             "disconnecting link as it cannot be encrypted with LTK status")) {
       return;
     }
-    current_phase_ = StartingEncryption();
-    PW_CHECK(low_energy_link_->StartEncryption());
+    StartExistingLtkEncryption(*ltk_);
     return;
   }
 
@@ -672,6 +705,7 @@ void SecurityManagerImpl::UpgradeSecurityInternal() {
     return;
   }
 
+  WeakSelf<SecurityManagerImpl>::WeakPtr self = weak_self_.GetWeakPtr();
   const PendingRequest& next_req = request_queue_.front();
 
   // BR/EDR cross-transport key derivation could have created a new LE LTK that
@@ -689,16 +723,11 @@ void SecurityManagerImpl::UpgradeSecurityInternal() {
              "%#.4x)",
              bt_str(peer_->identifier()),
              low_energy_link_->handle());
-
-      OnNewLongTermKey(*ltk);
-
-      current_phase_ = StartingEncryption();
-      PW_CHECK(low_energy_link_->StartEncryption());
+      StartExistingLtkEncryption(*ltk);
       return;
     }
   }
 
-  WeakSelf<SecurityManagerImpl>::WeakPtr self = weak_self_.GetWeakPtr();
   if (fit::result<ErrorCode> result = RequestSecurityUpgrade(next_req.level);
       result.is_error()) {
     const SecurityProperties current_security = security();
@@ -853,6 +882,7 @@ void SecurityManagerImpl::OnPhase2EncryptionKey(const UInt128& new_key) {
   auto new_link_key = hci_spec::LinkKey(new_key, 0, 0);
 
   if (features_->secure_connections) {
+    pre_phase_2_ltk_ = ltk_;
     OnNewLongTermKey(LTK(FeaturesToProperties(*features_), new_link_key));
   } else {
     // `set_le_ltk` sets the encryption key of the LE link (which is the STK for
@@ -910,7 +940,7 @@ void SecurityManagerImpl::OnEncryptionChange(hci::Result<bool> enabled_result) {
                                                  bt_str(enabled_result))
                      .c_str()
                : "disabled",
-           SecurityUpgradeInProgress() ? "" : " during security upgrade");
+           SecurityUpgradeInProgress() ? " during security upgrade" : "");
     SetSecurityProperties(SecurityProperties());
     if (!self.is_alive()) {
       return;
@@ -928,6 +958,13 @@ void SecurityManagerImpl::OnEncryptionChange(hci::Result<bool> enabled_result) {
     bt_log(WARN,
            "sm",
            "peer encrypted link with insufficiently secure key, disconnecting");
+    if (SecurityUpgradeInProgress()) {
+      ResetState();
+      FailPendingRequests(Error(HostError::kInsufficientSecurity));
+      if (!self.is_alive()) {
+        return;
+      }
+    }
     delegate_->OnAuthenticationFailure(
         ToResult(HostError::kInsufficientSecurity));
     if (self.is_alive()) {
@@ -984,6 +1021,7 @@ void SecurityManagerImpl::EndPhase2() {
   PW_CHECK(features_.has_value());
   PW_CHECK(InPhase2());
   PW_CHECK(!bredr_link_.is_alive());
+  pre_phase_2_ltk_.reset();
 
   WeakSelf<SecurityManagerImpl>::WeakPtr self = weak_self_.GetWeakPtr();
   SetSecurityProperties(FeaturesToProperties(*features_));
@@ -1270,6 +1308,16 @@ void SecurityManagerImpl::NotifySecurityCallbacks() {
   }
 }
 
+void SecurityManagerImpl::FailPendingRequests(Error error) {
+  const SecurityProperties current_security = security();
+  std::queue<PendingRequest> requests = std::exchange(request_queue_, {});
+  while (!requests.empty()) {
+    PendingRequest req = std::move(requests.front());
+    requests.pop();
+    req.callback(fit::error(error), current_security);
+  }
+}
+
 void SecurityManagerImpl::InitiateBrEdrCrossTransportKeyDerivation(
     CrossTransportKeyDerivationResultCallback callback) {
   PW_CHECK(bredr_link_.is_alive());
@@ -1337,6 +1385,10 @@ PairingPhase* SecurityManagerImpl::ActivePairingPhase() {
 void SecurityManagerImpl::ResetState() {
   StopTimer();
   features_.reset();
+  if (pre_phase_2_ltk_.has_value()) {
+    RestoreLtk(*pre_phase_2_ltk_);
+    pre_phase_2_ltk_.reset();
+  }
   sm_chan_->SetChannelHandler(weak_handler_.GetWeakPtr());
   pairing_token_.reset();
   current_phase_ = std::monostate{};
@@ -1359,6 +1411,11 @@ void SecurityManagerImpl::SetSecurityProperties(const SecurityProperties& sec) {
 void SecurityManagerImpl::Abort(ErrorCode ecode) {
   if (PairingPhase* phase = ActivePairingPhase()) {
     phase->Abort(ecode);
+    return;
+  }
+  if (SecurityUpgradeInProgress()) {
+    ResetState();
+    FailPendingRequests(Error(ecode));
     return;
   }
   bt_log(
@@ -1458,6 +1515,10 @@ void SecurityManagerImpl::OnRxBFrame(ByteBufferPtr sdu) {
 
 void SecurityManagerImpl::OnChannelClosed() {
   bt_log(DEBUG, "sm", "SMP channel closed while not pairing");
+  if (SecurityUpgradeInProgress()) {
+    ResetState();
+    FailPendingRequests(Error(HostError::kLinkDisconnected));
+  }
 }
 
 void SecurityManagerImpl::OnPairingFailed(Error error) {
@@ -1481,11 +1542,8 @@ void SecurityManagerImpl::OnPairingFailed(Error error) {
 
   if (SecurityUpgradeInProgress() && !bredr_link_.is_alive()) {
     PW_CHECK(low_energy_link_.is_alive());
-    if (ltk_.has_value()) {
-      low_energy_link_->set_ltk(ltk_->key());
-    } else {
-      low_energy_link_->reset_ltk();
-    }
+    RestoreLtk(pre_phase_2_ltk_.value_or(ltk_));
+    pre_phase_2_ltk_.reset();
   }
 
   CrossTransportKeyDerivationResultCallback ctkd_cb =
@@ -1583,6 +1641,46 @@ void SecurityManagerImpl::OnNewLongTermKey(const LTK& ltk) {
   low_energy_link_->set_ltk(ltk.key());
 }
 
+void SecurityManagerImpl::RestoreLtk(std::optional<LTK> previous_ltk) {
+  ltk_ = std::move(previous_ltk);
+  if (!low_energy_link_.is_alive()) {
+    return;
+  }
+  if (ltk_.has_value()) {
+    low_energy_link_->set_ltk(ltk_->key());
+  } else {
+    low_energy_link_->reset_ltk();
+  }
+}
+
+bool SecurityManagerImpl::StartExistingLtkEncryption(const LTK& ltk) {
+  PW_CHECK(low_energy_link_.is_alive());
+  const std::optional<LTK> previous_ltk = ltk_;
+  if (ltk_ != ltk) {
+    OnNewLongTermKey(ltk);
+  }
+  if (!low_energy_link_->StartEncryption()) {
+    bt_log(WARN,
+           "sm",
+           "failed to start encryption with existing LTK (peer: %s, handle: "
+           "%#.4x)",
+           bt_str(peer_->identifier()),
+           low_energy_link_->handle());
+    WeakSelf<SecurityManagerImpl>::WeakPtr self = weak_self_.GetWeakPtr();
+    RestoreLtk(previous_ltk);
+    if (SecurityUpgradeInProgress()) {
+      ResetState();
+    }
+    FailPendingRequests(Error(ErrorCode::kUnspecifiedReason));
+    if (self.is_alive()) {
+      sm_chan_->SignalLinkError();
+    }
+    return false;
+  }
+  current_phase_ = StartingEncryption();
+  return true;
+}
+
 Result<> SecurityManagerImpl::ValidateExistingLocalLtk() {
   Result<> status = fit::ok();
   if (!ltk_.has_value()) {
@@ -1605,6 +1703,13 @@ Result<> SecurityManagerImpl::ValidateExistingLocalLtk() {
     // disconnecting the link (vs. ASSERTing these checks) is safer against
     // non-SM code potentially touching the key.
     WeakSelf<SecurityManagerImpl>::WeakPtr self = weak_self_.GetWeakPtr();
+    if (SecurityUpgradeInProgress()) {
+      ResetState();
+      FailPendingRequests(status.error_value());
+      if (!self.is_alive()) {
+        return status;
+      }
+    }
     delegate_->OnAuthenticationFailure(
         ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING));
     if (!self.is_alive()) {
@@ -1705,17 +1810,22 @@ std::unique_ptr<SecurityManager> SecurityManager::CreateLE(
     pw::async::Dispatcher& dispatcher,
     bt::gap::Peer::WeakPtr peer) {
   PW_CHECK(link.is_alive());
-  return std::make_unique<SecurityManagerImpl>(
-      std::move(link),
-      hci::BrEdrConnection::WeakPtr(),
-      std::move(smp),
-      io_capability,
-      std::move(delegate),
-      bondable_mode,
-      security_mode,
-      /*is_controller_remote_public_key_validation_supported=*/false,
-      dispatcher,
-      std::move(peer));
+  std::unique_ptr<SecurityManagerImpl> sm =
+      std::make_unique<SecurityManagerImpl>(
+          std::move(link),
+          hci::BrEdrConnection::WeakPtr(),
+          std::move(smp),
+          io_capability,
+          std::move(delegate),
+          bondable_mode,
+          security_mode,
+          /*is_controller_remote_public_key_validation_supported=*/false,
+          dispatcher,
+          std::move(peer));
+  if (!sm->Init()) {
+    return nullptr;
+  }
+  return sm;
 }
 
 std::unique_ptr<SecurityManager> SecurityManager::CreateBrEdr(
@@ -1727,18 +1837,23 @@ std::unique_ptr<SecurityManager> SecurityManager::CreateBrEdr(
     bt::gap::Peer::WeakPtr peer) {
   PW_CHECK(smp.is_alive());
   PW_CHECK(smp->id() == l2cap::kSMPChannelId);
-  return std::make_unique<SecurityManagerImpl>(
-      hci::LowEnergyConnection::WeakPtr(),
-      std::move(link),
-      std::move(smp),
-      IOCapability::kNoInputNoOutput,  // arbitrary, RFU in BR/EDR
-      std::move(delegate),
-      BondableMode::Bondable,      // BR/EDR is always "bondable".
-      gap::LESecurityMode::Mode1,  // arbitrary, not used by
-                                   // BR/EDR
-      is_controller_remote_public_key_validation_supported,
-      dispatcher,
-      std::move(peer));
+  std::unique_ptr<SecurityManagerImpl> sm =
+      std::make_unique<SecurityManagerImpl>(
+          hci::LowEnergyConnection::WeakPtr(),
+          std::move(link),
+          std::move(smp),
+          IOCapability::kNoInputNoOutput,  // arbitrary, RFU in BR/EDR
+          std::move(delegate),
+          BondableMode::Bondable,      // BR/EDR is always "bondable".
+          gap::LESecurityMode::Mode1,  // arbitrary, not used by
+                                       // BR/EDR
+          is_controller_remote_public_key_validation_supported,
+          dispatcher,
+          std::move(peer));
+  if (!sm->Init()) {
+    return nullptr;
+  }
+  return sm;
 }
 
 SecurityManager::SecurityManager(BondableMode bondable_mode,

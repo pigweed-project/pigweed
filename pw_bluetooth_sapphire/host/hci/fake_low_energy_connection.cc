@@ -40,6 +40,11 @@ void FakeLowEnergyConnection::TriggerEncryptionChangeCallback(
 }
 
 bool FakeLowEnergyConnection::StartEncryption() {
+  if (state() != Connection::State::kConnected ||
+      role() != pw::bluetooth::emboss::ConnectionRole::CENTRAL ||
+      !ltk().has_value() || !hci().is_alive()) {
+    return false;
+  }
   start_encryption_count_++;
   return true;
 }

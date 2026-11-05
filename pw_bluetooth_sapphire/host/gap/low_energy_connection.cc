@@ -458,6 +458,9 @@ bool LowEnergyConnection::OnL2capFixedChannelsOpened(
                                      security_mode,
                                      dispatcher_,
                                      peer_);
+  if (!sm_) {
+    return false;
+  }
 
   return InitializeGatt(std::move(att), connection_options.service_uuid);
 }

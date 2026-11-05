@@ -205,7 +205,8 @@ class LowEnergyConnection final : public sm::Delegate {
 
   // Initializes SecurityManager and GATT.
   // Called by the L2CAP layer once the link has been registered and the fixed
-  // channels have been opened. Returns false if GATT initialization fails.
+  // channels have been opened. Returns false if SecurityManager or GATT
+  // initialization fails.
   [[nodiscard]] bool OnL2capFixedChannelsOpened(
       l2cap::Channel::WeakPtr att,
       l2cap::Channel::WeakPtr smp,

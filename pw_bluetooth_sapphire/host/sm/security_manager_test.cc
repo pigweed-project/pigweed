@@ -170,14 +170,16 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
                          : pw::bluetooth::emboss::ConnectionRole::PERIPHERAL;
 
     if (fake_le_link_) {
-      auto status_event = testing::CommandStatusPacket(
-          hci_spec::kDisconnect, pw::bluetooth::emboss::StatusCode::SUCCESS);
-      auto disconnect_complete =
-          testing::DisconnectionCompletePacket(kConnectionHandle);
-      EXPECT_CMD_PACKET_OUT(controller_,
-                            testing::DisconnectPacket(kConnectionHandle),
-                            &status_event,
-                            &disconnect_complete);
+      if (fake_le_link_->state() == hci::Connection::State::kConnected) {
+        DynamicByteBuffer status_event = testing::CommandStatusPacket(
+            hci_spec::kDisconnect, pw::bluetooth::emboss::StatusCode::SUCCESS);
+        DynamicByteBuffer disconnect_complete =
+            testing::DisconnectionCompletePacket(kConnectionHandle);
+        EXPECT_CMD_PACKET_OUT(controller_,
+                              testing::DisconnectPacket(kConnectionHandle),
+                              &status_event,
+                              &disconnect_complete);
+      }
       fake_le_link_.reset();
       RunUntilIdle();
     }
@@ -263,6 +265,17 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
 
   void DestroySecurityManager() { pairing_ = nullptr; }
 
+  void CreateSecurityManagerOnCurrentLink(IOCapability ioc) {
+    pairing_ = SecurityManager::CreateLE(fake_le_link_->GetWeakPtr(),
+                                         fake_chan_->GetWeakPtr(),
+                                         ioc,
+                                         weak_delegate_.GetWeakPtr(),
+                                         BondableMode::Bondable,
+                                         gap::LESecurityMode::Mode1,
+                                         dispatcher(),
+                                         peer_->GetWeakPtr());
+  }
+
   void SetBondLtk(const LTK& ltk) {
     if (!peer_) {
       InitializePeer();
@@ -271,6 +284,19 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
     bond_data.peer_ltk = ltk;
     bond_data.local_ltk = ltk;
     EXPECT_TRUE(peer_->MutLe().SetBondData(bond_data));
+  }
+
+  void SimulateLinkDisconnectInProgress(
+      pw::bluetooth::emboss::StatusCode reason = pw::bluetooth::emboss::
+          StatusCode::REMOTE_USER_TERMINATED_CONNECTION) {
+    DynamicByteBuffer status_event = testing::CommandStatusPacket(
+        hci_spec::kDisconnect, pw::bluetooth::emboss::StatusCode::SUCCESS);
+    EXPECT_CMD_PACKET_OUT(
+        controller_,
+        testing::DisconnectPacket(fake_link()->handle(), reason),
+        &status_event);
+    fake_link()->Connection::Disconnect(reason);
+    RunUntilIdle();
   }
 
   // sm::Delegate override:
@@ -5997,6 +6023,307 @@ TEST_F(ResponderPairingTest, DestroyingSecurityManagerInPhaseCallbacksIsSafe) {
                         AuthReq::kBondingFlag | AuthReq::kSC);
   RunUntilIdle();
   EXPECT_EQ(initial_responses + 1, pairing_response_count());
+}
+
+TEST_F(InitiatorPairingTest,
+       StartingEncryptionFailureAndResetDrainPendingRequests) {
+  SetBondLtk(kUnauthenticatedKey);
+
+  // 1. Encryption failure during `StartingEncryption` clears phase without
+  // sending SMP Pairing Failed, and drains queued requests safely even when a
+  // callback destroys `SecurityManager`.
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  RunUntilIdle();
+  bool error_cb_called = false;
+  pairing()->UpgradeSecurity(
+      SecurityLevel::kEncrypted,
+      [this, &error_cb_called](Result<> status,
+                               const SecurityProperties& /*props*/) {
+        error_cb_called = true;
+        EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), status);
+        DestroySecurityManager();
+      });
+  fake_link()->TriggerEncryptionChangeCallback(
+      ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING)
+          .take_error());
+  RunUntilIdle();
+  EXPECT_TRUE(error_cb_called);
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(nullptr, pairing());
+
+  // 2. `SecureConnectionsOnly` rejection during `StartingEncryption` drains
+  // queued requests and disconnects the insufficiently secure link.
+  SetUpSecurityManager(IOCapability::kDisplayYesNo);
+  RunUntilIdle();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(1, security_callback_count());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity), security_status());
+  EXPECT_TRUE(fake_chan()->link_error());
+
+  // 3. Missing link LTK (`ValidateExistingLocalLtk` failure) during
+  // `StartingEncryption` drains queued requests before signaling link error and
+  // preserves any re-entrantly started upgrade.
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  RunUntilIdle();
+  const int auth_failures_before = auth_failure_callback_count();
+  bool reentrant_upgrade_clobbered = false;
+  int missing_ltk_cb_count = 0;
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  pairing()->UpgradeSecurity(
+      SecurityLevel::kEncrypted,
+      [this,
+       auth_failures_before,
+       &missing_ltk_cb_count,
+       &reentrant_upgrade_clobbered](Result<> status,
+                                     const SecurityProperties& /*props*/) {
+        missing_ltk_cb_count++;
+        EXPECT_EQ(ToResult(HostError::kNotFound), status);
+        EXPECT_EQ(auth_failures_before, auth_failure_callback_count());
+        EXPECT_FALSE(fake_chan()->link_error());
+        pairing()->UpgradeSecurity(
+            SecurityLevel::kAuthenticated,
+            [&reentrant_upgrade_clobbered](
+                Result<> /*reentrant_status*/,
+                const SecurityProperties& /*reentrant_props*/) {
+              reentrant_upgrade_clobbered = true;
+            });
+      });
+  fake_link()->reset_ltk();
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(2, security_callback_count());
+  EXPECT_EQ(ToResult(HostError::kNotFound), security_status());
+  EXPECT_EQ(1, missing_ltk_cb_count);
+  EXPECT_EQ(auth_failures_before + 1, auth_failure_callback_count());
+  EXPECT_FALSE(reentrant_upgrade_clobbered);
+  EXPECT_EQ(1, pairing_request_count());
+  EXPECT_TRUE(fake_chan()->link_error());
+
+  // 4. Disabled encryption (`fit::ok(false)`), `OnChannelClosed()`, and
+  // `Reset()` while `StartingEncryption` has queued requests drain
+  // `request_queue_` without sending SMP Pairing Failed before allowing new
+  // upgrades.
+  SetUpSecurityManager(IOCapability::kDisplayYesNo);
+  RunUntilIdle();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/false));
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(3, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+
+  SetUpSecurityManager(IOCapability::kDisplayYesNo);
+  RunUntilIdle();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  fake_chan()->Close();
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(4, security_callback_count());
+  EXPECT_EQ(ToResult(HostError::kLinkDisconnected), security_status());
+
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  RunUntilIdle();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  pairing()->Reset(IOCapability::kDisplayYesNo);
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(5, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_request_count());
+
+  // 5. `OnEncryptionChange` failure, `OnChannelClosed()`, and `Reset()` while
+  // `WaitForBrEdrPairing` is active also reset `current_phase_` (disarming the
+  // BR/EDR completion callback) and drain `request_queue_`.
+  InitializePeer(kPeerPublicAddr);
+  SetUpSecurityManager(IOCapability::kDisplayYesNo);
+  RunUntilIdle();
+  std::optional<gap::Peer::PairingToken> bredr_token =
+      peer().MutBrEdr().RegisterPairing();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/false));
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(6, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+  bredr_token.reset();
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_request_count());
+
+  SetUpSecurityManager(IOCapability::kDisplayYesNo);
+  RunUntilIdle();
+  bredr_token = peer().MutBrEdr().RegisterPairing();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  fake_chan()->Close();
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(7, security_callback_count());
+  EXPECT_EQ(ToResult(HostError::kLinkDisconnected), security_status());
+  bredr_token.reset();
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_request_count());
+
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  RunUntilIdle();
+  bredr_token = peer().MutBrEdr().RegisterPairing();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  pairing()->Reset(IOCapability::kDisplayYesNo);
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(8, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+  bredr_token.reset();
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_request_count());
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  RunUntilIdle();
+  EXPECT_EQ(3, pairing_request_count());
+}
+
+TEST_F(
+    InitiatorPairingTest,
+    StartEncryptionFailureWhileDisconnectingRollsBackLtkAndSignalsLinkError) {
+  // 1. CreateLE() StartEncryption() failure rolls back LTK, signals link
+  // error, and returns nullptr.
+  DestroySecurityManager();
+  SetBondLtk(kUnauthenticatedKey);
+  SimulateLinkDisconnectInProgress();
+  CreateSecurityManagerOnCurrentLink(IOCapability::kDisplayOnly);
+  EXPECT_EQ(nullptr, pairing());
+  EXPECT_FALSE(fake_link()->ltk().has_value());
+  EXPECT_TRUE(fake_chan()->link_error());
+
+  // 2. UpgradeSecurityInternal() StartEncryption() failure rolls back LTK,
+  // signals link error, and survives self-destruction inside callback.
+  SetBondLtk(kUnauthenticatedKey);
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  ASSERT_EQ(SecurityLevel::kEncrypted, pairing()->security().level());
+
+  SetBondLtk(kAuthenticatedSecureKey);
+  SimulateLinkDisconnectInProgress();
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  EXPECT_EQ(1, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+  EXPECT_TRUE(fake_chan()->link_error());
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(SecurityLevel::kEncrypted, pairing()->security().level());
+
+  bool destroyed_in_cb = false;
+  pairing()->UpgradeSecurity(
+      SecurityLevel::kAuthenticated,
+      [this, &destroyed_in_cb](Result<> status,
+                               const SecurityProperties& /*props*/) {
+        destroyed_in_cb = true;
+        EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), status);
+        DestroySecurityManager();
+      });
+  EXPECT_TRUE(destroyed_in_cb);
+  EXPECT_EQ(nullptr, pairing());
+
+  // 3. OnSecurityRequest() (both while StartingEncryption has a queued
+  // UpgradeSecurity request and when already encrypted) and
+  // OnPhase2EncryptionKey() StartEncryption() failures drain pending requests,
+  // signal link error, and abort pairing.
+  SetBondLtk(kAuthenticatedSecureKey);
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  RunUntilIdle();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  SimulateLinkDisconnectInProgress();
+  ReceiveSecurityRequest(AuthReq::kMITM | AuthReq::kSC);
+  EXPECT_EQ(2, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+  EXPECT_TRUE(fake_chan()->link_error());
+
+  SetBondLtk(kAuthenticatedSecureKey);
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  SimulateLinkDisconnectInProgress();
+  ReceiveSecurityRequest(AuthReq::kMITM | AuthReq::kSC);
+  EXPECT_TRUE(fake_chan()->link_error());
+
+  InitializePeer();
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  ReceivePairingFeatures();
+  RunUntilIdle();
+  SimulateLinkDisconnectInProgress();
+  UInt128 sconfirm, srand;
+  GenerateMatchingLegacyConfirmAndRandom(&sconfirm, &srand);
+  ReceivePairingConfirm(sconfirm);
+  ReceivePairingRandom(srand);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_failed_count());
+  EXPECT_EQ(3, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+  EXPECT_FALSE(fake_link()->ltk().has_value());
+
+  auto fail_sc_phase_2_start_encryption = [this]() {
+    ReceivePairingFeatures(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+    RunUntilIdle();
+    ASSERT_TRUE(public_ecdh_key().has_value());
+    const LocalEcdhKey peer_key = *LocalEcdhKey::Create();
+    ReceivePairingPublicKey(peer_key.GetSerializedPublicKey());
+    RunUntilIdle();
+    const MatchingPair sc_vals = GenerateMatchingScConfirmAndRandom(peer_key);
+    ReceivePairingConfirm(sc_vals.confirm);
+    RunUntilIdle();
+    ReceivePairingRandom(sc_vals.random);
+    RunUntilIdle();
+    const util::F5Results f5 =
+        *util::F5(peer_key.CalculateDhKey(*public_ecdh_key()),
+                  pairing_random(),
+                  sc_vals.random,
+                  kLocalAddr,
+                  kPeerAddr);
+    const PacketReader pres_reader(&peer_pairing_cmd());
+    const PairingResponseParams& pres =
+        pres_reader.payload<PairingResponseParams>();
+    const UInt128 dhkey_check_b = *util::F6(f5.mac_key,
+                                            sc_vals.random,
+                                            pairing_random(),
+                                            UInt128{0},
+                                            pres.auth_req,
+                                            pres.oob_data_flag,
+                                            pres.io_capability,
+                                            kPeerAddr,
+                                            kLocalAddr);
+    SimulateLinkDisconnectInProgress();
+    ReceivePairingDHKeyCheck(dhkey_check_b);
+    RunUntilIdle();
+  };
+
+  // Unbonded Secure Connections (sc = true) rolls back ltk_ and link LTK to
+  // std::nullopt after OnNewLongTermKey().
+  InitializePeer();
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  fail_sc_phase_2_start_encryption();
+  EXPECT_EQ(2, pairing_failed_count());
+  EXPECT_EQ(4, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+  EXPECT_FALSE(fake_link()->ltk().has_value());
+
+  // Bonded Secure Connections (sc = true) rolls back ltk_ and link LTK to the
+  // pre-Phase-2 LTK after OnNewLongTermKey().
+  SetBondLtk(kUnauthenticatedKey);
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  ReceiveSecurityRequest(AuthReq::kSC);
+  fail_sc_phase_2_start_encryption();
+  EXPECT_EQ(3, pairing_failed_count());
+  EXPECT_EQ(kUnauthenticatedKey.key(), fake_link()->ltk());
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(kUnauthenticatedKey.security(), pairing()->security());
 }
 
 }  // namespace

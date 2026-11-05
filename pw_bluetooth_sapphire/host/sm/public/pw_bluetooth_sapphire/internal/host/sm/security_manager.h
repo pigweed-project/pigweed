@@ -43,7 +43,8 @@ namespace bt::sm {
 /// See README.md for more overview of this library.
 class SecurityManager {
  public:
-  // Factory function which returns a production LE SecurityManager instance:
+  // Factory function which returns a production LE SecurityManager instance, or
+  // nullptr if starting encryption with an existing LTK fails:
   // |link|: The LE logical link over which pairing procedures occur.
   // |smp|: The L2CAP LE SMP fixed channel that operates over |link|.
   // |io_capability|: The initial I/O capability.
