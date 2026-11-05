@@ -28,7 +28,7 @@ alias(
 # it's our problem.
 alias(
     name = "sources",
-    actual = "//docs/sphinx:_docs/_sources",
+    actual = "//docs/sphinx:_sphinx/_sources",
     tags = ["manual"],
     visibility = ["//visibility:private"],
 )

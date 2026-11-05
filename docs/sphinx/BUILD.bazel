@@ -12,9 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@bazel_skylib//rules:copy_directory.bzl", "copy_directory")
 load("@sphinxdocs//sphinxdocs:sphinx.bzl", "sphinx_build_binary", "sphinx_docs")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("//docs/common:assemble.bzl", "assemble_site")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
 
@@ -30,7 +30,6 @@ sphinx_docs_library(
         "_extensions/module_metadata.py",
         "_extensions/pigweed_live.py",
         "_extensions/seed_metadata.py",
-        "_extensions/sitemap.py",
         "_extensions/toctree.py",
     ],
     target_compatible_with = incompatible_with_mcu(),
@@ -42,7 +41,6 @@ pw_py_library(
     srcs = ["_extensions/sitemap.py"],
     imports = ["_extensions"],
     tags = ["nopylint"],
-    deps = ["@pigweed_python_packages//sphinx"],
 )
 
 pw_py_test(
@@ -71,21 +69,6 @@ sphinx_docs_library(
         # "_static/svg/pw_kernel-tour-dark.svg",
         # "_static/svg/pw_kernel-tour-light.svg",
     ],
-    visibility = ["//visibility:private"],
-)
-
-copy_directory(
-    name = "rust_files",
-    src = "//pw_rust:docs_dir",
-    out = "rustdoc",
-    visibility = ["//visibility:private"],
-)
-
-sphinx_docs_library(
-    name = "rust",
-    srcs = [":rust_files"],
-    prefix = "rustdoc/",
-    target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:private"],
 )
 
@@ -474,7 +457,7 @@ sphinx_build_binary(
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:private"],
     deps = [
-        "//docs/common/metadata:validate",
+        "//docs/common/metadata:sync_lib",
         "//pw_build/py:pw_build",
         "//pw_build/py:pw_project_builder",
         "//pw_bytes/py:pw_bytes",
@@ -507,8 +490,6 @@ sphinx_build_binary(
         "//pw_watch/py:watch",
         "@pigweed_doxylink",
         "@pigweed_python_packages//jsonschema",
-        "@pigweed_python_packages//pagefind",
-        "@pigweed_python_packages//pagefind_bin_extended",
         "@pigweed_python_packages//pydata_sphinx_theme",
         "@pigweed_python_packages//pytz",
         "@pigweed_python_packages//sphinx",
@@ -521,14 +502,10 @@ sphinx_build_binary(
     ],
 )
 
-# Use Sphinx to build the main pigweed.dev website.
-#
-# The main `docs` target must output a directory containing the fully
-# built pigweed.dev website. It must output a directory, not an archive,
-# because our deploy code expects a directory when it uploads the website
-# code and assets to our CDN.
+# Builds the Sphinx portion of pigweed.dev (reST, autodoc, and Doxylink via
+# index.tag) without waiting for Doxygen or rustdoc HTML outputs.
 sphinx_docs(
-    name = "docs",
+    name = "sphinx",
     # Persistent worker dramatically speeds up iterative docs builds. Tradeoff
     # is that the docs build becomes non-hermetic. If Sphinx is failing at
     # `Ignored unreadable document` it means you're having non-hermetic caching
@@ -558,10 +535,24 @@ sphinx_docs(
     deps = [
         ":content",
         ":extensions",
-        ":rust",
         ":static",
         "//docs/common",
-        "//docs/doxygen:html",
         "//docs/doxygen:tagfile",
     ],
+)
+
+# Assembles the complete pigweed.dev website from Sphinx, Doxygen, and rustdoc.
+#
+# The main `docs` target must output a directory at
+# bazel-bin/docs/sphinx/docs/_build/html (not an archive) because the CDN
+# deployment recipe and docs/tests expect that directory structure.
+assemble_site(
+    name = "docs",
+    doxygen = "//docs/doxygen:html",
+    rustdoc = "//pw_rust:docs_dir",
+    sphinx = ":sphinx",
+    sphinx_sources = ":_sphinx/_sources",
+    tags = ["manual"],
+    target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
 )

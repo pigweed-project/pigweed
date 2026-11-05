@@ -61,8 +61,5 @@ pw_py_test(
 pw_py_library(
     name = "validate",
     srcs = ["validate.py"],
-    deps = [
-        ":sync_lib",
-        "@pigweed_python_packages//sphinx",
-    ],
+    deps = [":sync_lib"],
 )

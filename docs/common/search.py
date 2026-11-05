@@ -13,11 +13,9 @@
 # the License.
 """Generates Pagefind search index."""
 
-import asyncio
 from pathlib import Path
 
 from pagefind.index import IndexConfig, PagefindIndex
-from sphinx.application import Sphinx
 
 # Selectors excluded from Pagefind indexing to prevent UI/anchor artifacts
 # from polluting search results.
@@ -72,11 +70,3 @@ async def run_pagefind(outdir: Path) -> None:
     )
     async with PagefindIndex(config=config) as index:
         await index.add_directory(str(outdir))
-
-
-def generate_search_index(
-    app: Sphinx, exception: Exception | None = None
-) -> None:
-    if app.builder.format != 'html':
-        return
-    asyncio.run(run_pagefind(Path(app.outdir)))

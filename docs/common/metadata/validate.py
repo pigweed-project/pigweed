@@ -11,19 +11,14 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Fails the Sphinx build if the docs are out of sync with metadata TOML files.
+"""Fails the docs build if the docs are out of sync with metadata TOML files.
 
-//docs/common/__init__.py runs `validate_categories` on Sphinx's
-`build-finished` event. The checks are the same ones that
-`bazelisk run //docs/common/metadata:sync -- --check` runs, applied to the
-Sphinx source tree that Bazel assembles, which contains a copy of every file
-that sync.py manages.
+`//docs/common/assemble.py` runs `check_categories` against the assembled Sphinx
+source tree and rustdoc output. The checks match
+`bazelisk run //docs/common/metadata:sync -- --check`.
 """
 
 from pathlib import Path
-
-from sphinx.application import Sphinx
-from sphinx.errors import SphinxError
 
 from docs.common.metadata.sync import (
     DocsTree,
@@ -48,15 +43,3 @@ def check_categories(srcdir: Path, *, rustdoc_dir: Path) -> None:
         issues = check(tree, meta)
     if issues:
         raise SyncError(format_report(issues))
-
-
-def validate_categories(app: Sphinx, exception: Exception | None) -> None:
-    """Sphinx `build-finished` listener that checks the docs categorization."""
-    if exception is not None:
-        return
-
-    srcdir = Path(app.srcdir)
-    try:
-        check_categories(srcdir, rustdoc_dir=srcdir / "rustdoc/rustdoc")
-    except SyncError as exc:
-        raise SphinxError(str(exc)) from exc

@@ -19,9 +19,7 @@ from docutils import nodes  # type: ignore[import-untyped]
 from sphinx.application import Sphinx
 from sphinx.util import logging
 
-from docs.common.metadata.validate import validate_categories
 from .header import postprocess
-from .search import generate_search_index
 
 _LOG = logging.getLogger(__name__)
 
@@ -47,9 +45,7 @@ def _on_build_finished(app: Sphinx, exception: Exception | None) -> None:
     if exception is not None or app.builder.format != "html":
         return
 
-    validate_categories(app, exception)
     postprocess(app, exception)
-    generate_search_index(app, exception)
 
 
 def setup(app: Sphinx) -> dict[str, Any]:

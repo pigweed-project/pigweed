@@ -45,7 +45,6 @@ pw_py_library(
     data = _ASSETS,
     tags = ["nopylint"],
     deps = [
-        "//docs/common/metadata:validate",
         "@pigweed_python_packages//jinja2",
         "@pigweed_python_packages//pagefind",
         "@pigweed_python_packages//pagefind_bin_extended",

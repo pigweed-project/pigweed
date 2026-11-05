@@ -12,7 +12,6 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@bazel_skylib//rules:copy_directory.bzl", "copy_directory")
 load("@doxygen//:doxygen.bzl", "doxygen")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
@@ -132,27 +131,11 @@ doxygen(
 )
 
 filegroup(
-    name = "_html_1",
+    name = "html",
     srcs = [":build"],
     output_group = "html",
     tags = ["manual"],
     target_compatible_with = incompatible_with_mcu(),
-)
-
-copy_directory(
-    name = "_html_2",
-    src = ":_html_1",
-    out = "cc",
-    tags = ["manual"],
-)
-
-sphinx_docs_library(
-    name = "html",
-    srcs = [":_html_2"],
-    prefix = "doxygen/api/",
-    tags = ["manual"],
-    target_compatible_with = incompatible_with_mcu(),
-    visibility = ["//visibility:public"],
 )
 
 filegroup(

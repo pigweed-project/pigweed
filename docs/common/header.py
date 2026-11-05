@@ -261,8 +261,7 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
 
     integration_dir = Path(__file__).parent
     compiler = HeaderCompiler(integration_dir, nav_links=header_nav_links)
-    header_html_default = compiler.compile(skip_target="#main-content")
-    header_html_doxygen = compiler.compile(skip_target="#doc-content")
+    header_html = compiler.compile(skip_target="#main-content")
 
     env = Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
     env.globals["is_matching"] = is_matching_url
@@ -283,16 +282,8 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
             rel_parts = path.relative_to(outdir).parts
             rel_page_path = path.relative_to(outdir).as_posix()
 
-            is_doxygen = rel_parts[:2] == ("api", "cc")
-
-            # 1. For Sphinx pages (not assets, Doxygen under api/cc, or rustdoc), inject site nav
-            if (
-                not any(
-                    part in ("_static", "_sources", "rustdoc")
-                    for part in rel_parts
-                )
-                and not is_doxygen
-            ):
+            # 1. Inject <pw-nav> into Sphinx pages (skip static/source assets).
+            if not any(part in ("_static", "_sources") for part in rel_parts):
                 content = inject_site_nav_into_content(
                     content, rel_page_path, site_nav_links, env
                 )
@@ -301,12 +292,9 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
                         f"Failed to inject <pw-nav> into Sphinx page {rel_page_path}"
                     )
 
-            # 2. Build breadcrumb trail and replace placeholder
-            active_header = (
-                header_html_doxygen if is_doxygen else header_html_default
-            )
+            # 2. Replace placeholder with header + breadcrumbs
             new_content = _inject_header_and_breadcrumbs(
-                content, rel_page_path, active_header, site_nav_links
+                content, rel_page_path, header_html, site_nav_links
             )
             path.write_text(new_content, encoding="utf-8")
             injected_count += 1

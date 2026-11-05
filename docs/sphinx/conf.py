@@ -81,7 +81,6 @@ extensions = [
     'pigweed_live',
     'pw_docgen.sphinx.google_analytics',  # Enables optional Google Analytics
     'seed_metadata',
-    'sitemap',  # Custom extension to handle pigweed.dev sitemap nuances.
     'sphinx.ext.autodoc',  # Automatic documentation for Python code
     'sphinx.ext.intersphinx',  # Cross-references to external documentation
     'sphinx.ext.napoleon',  # Parses Google-style docstrings
@@ -147,12 +146,6 @@ html_extra_path = [
     # Note: In this repo the file lives at //docs/sphinx/blog/rss.xml but during the
     # Sphinx build it's copied to the root of the website, https://pigweed.dev/rss.xml
     'blog/rss.xml',
-    # In the Bazel build, the fully built rustdoc site is present in the Sphinx
-    # site's sources directory. Specifying the rustdoc directory here instructs
-    # Sphinx to copy over the entire directory to its output.
-    'rustdoc',
-    # Also copy over the Doxygen-generated HTML subsite.
-    'doxygen',
 ]
 
 html_theme_options = {

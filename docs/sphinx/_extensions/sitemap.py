@@ -16,8 +16,6 @@
 
 from pathlib import Path
 
-from sphinx.application import Sphinx
-
 # Directories excluded from the sitemap.
 _EXCLUDE_DIRS = {
     '_sources',  # Raw reST source files
@@ -114,17 +112,3 @@ def write_sitemap(outdir: Path) -> None:
         sitemap += f'  <url><loc>{url}</loc></url>\n'
     sitemap += '</urlset>\n'
     (outdir / 'sitemap.xml').write_text(sitemap, encoding='utf-8')
-
-
-def generate_sitemap(app: Sphinx, exception: Exception | None) -> None:
-    if exception is not None or app.builder.format != 'html':
-        return
-    write_sitemap(Path(app.outdir))
-
-
-def setup(app: Sphinx) -> dict[str, bool]:
-    app.connect('build-finished', generate_sitemap)
-    return {
-        'parallel_read_safe': True,
-        'parallel_write_safe': True,
-    }
