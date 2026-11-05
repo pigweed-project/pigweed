@@ -44,28 +44,32 @@ HOSTS = [
     },
 ]
 
+# Bare-metal targets are constrained to @platforms//os:none so they never match
+# a host platform with the same CPU (e.g. aarch64 Linux).
 EXTRA_TARGETS = [
     {
+        "constraints": ["@platforms//os:none"],
         "cpu": "armv6-m",
         "triple": "thumbv6m-none-eabi",
     },
     {
+        "constraints": ["@platforms//os:none"],
         "cpu": "armv7-m",
         "triple": "thumbv7m-none-eabi",
     },
     {
+        "constraints": ["@platforms//os:none"],
         "cpu": "armv7e-m",
         "triple": "thumbv7m-none-eabi",
     },
     {
         "build_std": True,
+        "constraints": ["@platforms//os:none"],
         "cpu": "armv8-m",
         "triple": "thumbv8m.main-none-eabihf",
     },
     {
         "build_std": True,
-        # Without an OS constraint this toolchain would also match aarch64
-        # Linux platforms, which are served by the host cross toolchains.
         "constraints": ["@platforms//os:none"],
         "cpu": "aarch64",
         "triple": "aarch64-unknown-none",
@@ -73,6 +77,7 @@ EXTRA_TARGETS = [
     {
         "build_std": True,
         "constraints": [
+            "@platforms//os:none",
             "@pigweed//pw_build/constraints/riscv/extensions:I",
             "@pigweed//pw_build/constraints/riscv/extensions:M",
             "@pigweed//pw_build/constraints/riscv/extensions:C",
@@ -84,6 +89,7 @@ EXTRA_TARGETS = [
     {
         "build_std": True,
         "constraints": [
+            "@platforms//os:none",
             "@pigweed//pw_build/constraints/riscv/extensions:I",
             "@pigweed//pw_build/constraints/riscv/extensions:M",
             "@pigweed//pw_build/constraints/riscv/extensions:C",
