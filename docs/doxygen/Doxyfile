@@ -184,7 +184,9 @@ MACRO_EXPANSION        = YES
 
 # Keep input parsing single-threaded so anonymous struct/union/enum names
 # (`@0`, `@1`, ...) and the HTML/tagfile anchors derived from them are
-# deterministic across runs (preserving Bazel cache hits).
+# deterministic across runs (preserving Bazel cache hits). Upstream fixed this
+# in Doxygen 1.13.0 (https://github.com/doxygen/doxygen/issues/11138); revisit
+# once MODULE.bazel upgrades past Doxygen 1.9.6.
 #
 # https://www.doxygen.nl/manual/config.html#cfg_num_proc_threads
 NUM_PROC_THREADS       = 1

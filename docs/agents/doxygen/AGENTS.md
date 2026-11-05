@@ -57,8 +57,10 @@ Every `@module` and `@submodule` annotation must have an accompanying
    `//<module>/module.toml` and `//docs/common/metadata/categories.toml`.
 6. Follow Pigweed's Doxygen style guide (`//docs/sphinx/style/doxygen.rst`)
    when documenting headers.
-7. Build the docs with `bazelisk build //docs`. Doxygen output can be inspected
-   at `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/`.
+7. Build the C/C++ API docs with `bazelisk build //docs/doxygen:html` (or the
+   full site with `bazelisk build //docs`). Doxygen output can be inspected at
+   `//bazel-bin/docs/doxygen/html/` (or
+   `//bazel-bin/docs/sphinx/docs/_build/html/api/cc/` in the assembled site).
    * Inspect the rendered module page (`group__<module>.html`, where underscores
      in the module name are doubled, e.g. `group__pw__metric.html`) to verify
      that all public APIs are present and no internal symbols or private macros

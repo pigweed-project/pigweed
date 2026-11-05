@@ -22,11 +22,11 @@ Sphinx, Doxygen, and rustdoc.
   `//docs/doxygen/modules.h`, and `//pw_rust/rust/pigweed/src/lib.rs` from
   `categories.toml` and `//<module>/module.toml`. Pass `-- --check` to report
   out-of-date files without modifying them.
-* `//docs/common/metadata/validate.py`: Sphinx `build-finished` hook that fails
-  `bazelisk build //docs` if `categories.toml` or any `//<module>/module.toml`
-  is invalid, inconsistent with `//PIGWEED_MODULES`, out of sync with the
-  generated files, or if any Doxygen group in `index.tag` does not resolve to a
-  category.
+* `//docs/common/metadata/validate.py`: Validation helper invoked during site
+  assembly (`//docs/common/assemble.py`) that fails `bazelisk build //docs` if
+  `categories.toml` or any `//<module>/module.toml` is invalid, inconsistent
+  with `//PIGWEED_MODULES`, out of sync with the generated files, or if any
+  Doxygen group in `index.tag` does not resolve to a category.
 
 See the `Module categorization` section of
 `//docs/sphinx/contributing/docs/website.rst` for more context.

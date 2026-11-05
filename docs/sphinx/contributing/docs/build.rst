@@ -107,13 +107,13 @@ Add reStructuredText files to Sphinx
           visibility = ["//visibility:public"],
       )
 
-#. Update ``docs`` in ``//docs/sphinx/BUILD.bazel`` to take a dependency on
+#. Update ``content`` in ``//docs/sphinx/BUILD.bazel`` to take a dependency on
    your new ``sphinx_docs_library``:
 
    .. code-block:: py
 
-      sphinx_docs(
-          name = "docs",
+      sphinx_docs_library(
+          name = "content",
           # …
           deps = [
               # …
@@ -269,23 +269,22 @@ The full list of docs sources will be logged:
 
 .. code-block:: text
 
-   bazel-bin/docs/sphinx/_docs/_sources/conf.py
-   bazel-bin/docs/sphinx/_docs/_sources/_extensions/bug.py
-   bazel-bin/docs/sphinx/_docs/_sources/_extensions/kconfig.py
-   bazel-bin/docs/sphinx/_docs/_sources/_extensions/module_metadata.py
-   bazel-bin/docs/sphinx/_docs/_sources/_extensions/pigweed_live.py
-   bazel-bin/docs/sphinx/_docs/_sources/_extensions/pw_status_codes.py
-   bazel-bin/docs/sphinx/_docs/_sources/_extensions/seed_metadata.py
-   bazel-bin/docs/sphinx/_docs/_sources/_extensions/sitemap.py
-   bazel-bin/docs/sphinx/_docs/_sources/automated_analysis.rst
-   bazel-bin/docs/sphinx/_docs/_sources/bazel_compatibility.rst
-   bazel-bin/docs/sphinx/_docs/_sources/build_system.rst
-   bazel-bin/docs/sphinx/_docs/_sources/changelog.rst
-   bazel-bin/docs/sphinx/_docs/_sources/index.rst
+   bazel-bin/docs/sphinx/_sphinx/_sources/conf.py
+   bazel-bin/docs/sphinx/_sphinx/_sources/_extensions/bug.py
+   bazel-bin/docs/sphinx/_sphinx/_sources/_extensions/cs.py
+   bazel-bin/docs/sphinx/_sphinx/_sources/_extensions/module_metadata.py
+   bazel-bin/docs/sphinx/_sphinx/_sources/_extensions/pigweed_live.py
+   bazel-bin/docs/sphinx/_sphinx/_sources/_extensions/seed_metadata.py
+   bazel-bin/docs/sphinx/_sphinx/_sources/_extensions/toctree.py
+   bazel-bin/docs/sphinx/_sphinx/_sources/automated_analysis.rst
+   bazel-bin/docs/sphinx/_sphinx/_sources/bazel_compatibility.rst
+   bazel-bin/docs/sphinx/_sphinx/_sources/build_system.rst
+   bazel-bin/docs/sphinx/_sphinx/_sources/changelog.rst
+   bazel-bin/docs/sphinx/_sphinx/_sources/index.rst
    …
-   bazel-bin/docs/sphinx/_docs/_sources/third_party/nanopb/docs.rst
-   bazel-bin/docs/sphinx/_docs/_sources/third_party/perfetto/docs.rst
-   bazel-bin/docs/sphinx/_docs/_sources/third_party/tinyusb/docs.rst
+   bazel-bin/docs/sphinx/_sphinx/_sources/third_party/nanopb/docs.rst
+   bazel-bin/docs/sphinx/_sphinx/_sources/third_party/perfetto/docs.rst
+   bazel-bin/docs/sphinx/_sphinx/_sources/third_party/tinyusb/docs.rst
 
 Often times, the Sphinx build fails because a file was not copied to the
 correct directory. Listing all docs sources can help you track down where
@@ -309,7 +308,7 @@ non-`hermetic`_ environment:
 
 .. code-block:: console
 
-   $ bazelisk run //docs/sphinx:docs.run
+   $ bazelisk run //docs/sphinx:sphinx.run
 
 Also consider tweaking these ``extra_opts`` from the ``sphinx_docs`` rule in
 ``//docs/sphinx/BUILD.bazel``:
@@ -390,13 +389,13 @@ backticks so that Docutils will parse it as inline code:
    )
 
 To track down the source of the warning, replace the ``--quiet`` option
-in ``//docs/sphinx:docs`` with ``-vvv`` (extremely verbose logging), set
+in ``//docs/sphinx`` with ``-vvv`` (extremely verbose logging), set
 the ``--jobs`` option to ``1`` (single-threaded build to make the logging
 easier to follow), run the debug build, and pipe the output to a file:
 
 .. code-block:: console
 
-   bazelisk run //docs/sphinx:docs.run > /tmp/sphinx.log
+   bazelisk run //docs/sphinx:sphinx.run > /tmp/sphinx.log
 
 Search the file for ``Inline emphasis start-string without end-string``
 and look at what was getting processed immediately before the warning
@@ -414,10 +413,12 @@ to other components.
 
    flowchart LR
 
-     Doxygen --> Sphinx
+     DoxygenTag["Doxygen (index.tag)"] --> Sphinx
      reST --> Sphinx
-     Rust --> Sphinx
      Python --> Sphinx
+     Sphinx --> Site["Assembled //docs Site"]
+     DoxygenHTML["Doxygen (HTML)"] --> Site
+     Rust --> Site
 
 .. _Doxygen: https://www.doxygen.nl/
 .. _reStructuredText: https://docutils.sourceforge.io/rst.html
@@ -448,10 +449,12 @@ to other components.
 
 * **Python**: We use Sphinx's `autodoc`_ feature to auto-generate Python API
   reference content. In order for this to work, the Python modules must be
-  listed as dependencies of the ``//docs/sphinx:docs`` target. Standard library
-  cross-references are resolved via
+  listed as dependencies of ``sphinx_build`` in ``//docs/sphinx/BUILD.bazel``.
+  Standard library cross-references are resolved via
   :ref:`intersphinx <contrib-docs-website-intersphinx>`.
 
-* **Sphinx**: Once all the other inputs are ready, we can use `Sphinx`_
-  (essentially a `static site generator`_) to build the ``pigweed.dev``
-  website.
+* **Sphinx & Site Assembly**: `Sphinx`_ (essentially a `static site generator`_)
+  builds the reST and Python pages using Doxygen's ``index.tag``, while Doxygen
+  HTML and `rustdoc`_ build in parallel. ``//docs/sphinx:docs`` then injects the
+  shared header navigation into the subsites, merges the three HTML trees, and
+  generates ``sitemap.xml`` and the Pagefind search index.

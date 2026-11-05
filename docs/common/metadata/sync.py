@@ -43,7 +43,7 @@ Usage::
    bazelisk run //docs/common/metadata:sync             # Update the docs.
    bazelisk run //docs/common/metadata:sync -- --check  # Report drift only.
 
-The Sphinx build (``bazelisk build //docs``) runs the same checks and fails if
+Site assembly (``bazelisk build //docs``) runs the same checks and fails if
 any generated content is out of date. See ``validate.py``.
 """
 
@@ -1403,9 +1403,9 @@ class DocsTree:
        `sphinx_docs` in `//docs/sphinx/BUILD.bazel` sets
        `strip_prefix = "docs/sphinx/"` so the contents of `//docs/sphinx/` sit
        directly at `<srcdir>/`, files from other `sphinx_docs_library` targets
-       sit at `<srcdir>/<repo-relpath>`, the Doxygen tagfile and rustdoc outputs
-       are mounted at `<srcdir>/_doxygen/tag/index.tag` and
-       `<srcdir>/rustdoc/rustdoc/`, and `BUILD.bazel` files are not copied into
+       sit at `<srcdir>/<repo-relpath>`, the Doxygen tagfile is mounted at
+       `<srcdir>/_doxygen/tag/index.tag`, the `rustdoc` HTML directory is passed
+       separately via `rustdoc_dir`, and `BUILD.bazel` files are not copied into
        `<srcdir>/` at all.
     """
 
