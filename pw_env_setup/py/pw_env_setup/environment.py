@@ -79,11 +79,22 @@ class _Action:
 
 
 class _VariableAction(_Action):
-    def __init__(self, name, value, *args, allow_empty_values=False, **kwargs):
+    def __init__(
+        self,
+        name,
+        value,
+        *args,
+        allow_empty_values=False,
+        replace=True,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.name = name
         self.value = value
         self.allow_empty_values = allow_empty_values
+        # Whether visitors may rewrite the value in terms of other variables
+        # (e.g. "$PW_ROOT/foo"); False keeps it literal.
+        self.replace = replace
 
         self._check()
 
@@ -355,11 +366,13 @@ class Environment:
     # A newline is printed after each high-level operation. Top-level
     # operations should not invoke each other (this is why _remove() exists).
 
-    def set(self, name, value, deactivate=True):
+    def set(self, name, value, deactivate=True, replace=True):
         """Set a variable."""
         assert not self._finalized
         name = self.normalize_key(name)
-        self._actions.append(Set(name, value, deactivate=deactivate))
+        self._actions.append(
+            Set(name, value, deactivate=deactivate, replace=replace)
+        )
         self._blankline()
 
     def clear(self, name):

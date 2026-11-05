@@ -141,6 +141,8 @@ class ShellVisitor(_BaseShellVisitor):
             self._replacements = ()
 
     def _apply_replacements(self, action):
+        if not action.replace:
+            return action.value
         value = action.value
         for var, replacement in self._replacements:
             if var != action.name:
