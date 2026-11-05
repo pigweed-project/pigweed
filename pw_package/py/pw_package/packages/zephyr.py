@@ -27,10 +27,9 @@ import pw_package.git_repo
 import pw_package.package_manager
 
 # BEGIN-ZEPHYR-ROLL-METADATA
-# ROLL: Warning: this variable is automatically updated.
-# ROLL: Last updated 2025-10-20.
-# ROLL: By https://cr-buildbucket.appspot.com/build/8700500463417867425.
-_ZEPHYR_COMMIT_SHA = '169fd6a4a98eafcee0212242b0ad5ee533bbb883'
+# ROLL: Warning: this is automatically updated by
+# ROLL: https://cr-buildbucket.appspot.com/build/8666006006692731425
+_ZEPHYR_COMMIT_SHA = '072fd9442fe12568bcc3d3c61e4f390ed5cf35a3'
 # END-ZEPHYR-ROLL-METADATA
 
 
