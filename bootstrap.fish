@@ -87,4 +87,12 @@ source $PW_ROOT/pw_cli/py/pw_cli/shell_completion/pw.fish
 
 pw_cleanup
 
-git -C "$PW_ROOT" config blame.ignoreRevsFile .git-blame-ignore-revs
+# Only write the setting when missing: writing takes .git/config.lock, which
+# contends across concurrent activations (parallel shells, worktrees) and
+# fails in read-only checkouts.
+if env GIT_OPTIONAL_LOCKS=0 git -C "$PW_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1
+    set -l _pw_ignore_revs (env GIT_OPTIONAL_LOCKS=0 git -C "$PW_ROOT" config --get blame.ignoreRevsFile 2>/dev/null)
+    if test "$_pw_ignore_revs" != ".git-blame-ignore-revs"
+        git -C "$PW_ROOT" config blame.ignoreRevsFile .git-blame-ignore-revs 2>/dev/null; or true
+    end
+end
