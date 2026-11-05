@@ -9,11 +9,6 @@ The Pigweed C++ style guide is closely based on the `Google C++ Style Guide`_.
 The Google C++ Style Guide applies to Pigweed except as described in this
 document.
 
-The Pigweed style guide only applies to Pigweed itself. It does not apply to
-projects that use Pigweed or to the third-party code included with Pigweed.
-Non-Pigweed code is free to use features restricted by Pigweed, such as dynamic
-memory allocation and the entirety of the C++ Standard Library.
-
 Recommendations in the :ref:`docs-embedded-cpp` are considered part of the
 Pigweed style guide, but are separated out since it covers more general
 embedded development beyond just C++ style.
@@ -142,9 +137,6 @@ Permitted Headers
    * ``<valarray>``
 
 Headers not listed here should be carefully evaluated before they are used.
-
-These restrictions do not apply to third party code or to projects that use
-Pigweed.
 
 Combining C and C++
 ===================
@@ -1010,9 +1002,6 @@ Pigweed modules may offer optional functionality that requires dynamic memory.
 Such code must take the allocator as a parameter, typically a
 ``pw::Allocator&`` from :ref:`module-pw_allocator`, rather than calling
 ``new`` or ``malloc`` or using an allocating standard library container.
-
-Projects that use Pigweed are free to use dynamic allocation, provided they
-have selected a target that enables the heap.
 
 Naming
 ======
