@@ -33,7 +33,6 @@ load(
 )
 load("//pw_bluetooth_sapphire/fuchsia:cipd.bzl", "CIPD_ROOT")
 load("//pw_bluetooth_sapphire/fuchsia:fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL")
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
 package(
     default_applicable_licenses = ["//pw_bluetooth_sapphire/fuchsia:license_fuchsia"],
@@ -256,9 +255,6 @@ fuchsia_cipd_releases(
         ":bt_host_x64_licenses.spdx.json": "licenses.spdx.json",
     },
     pkg = ":pkg.x64",
-    # TODO: b/354711360 - fuchsia_cipd_releases appears to be misconfigured
-    # when cross-compiling,
-    target_compatible_with = incompatible_with_mcu(),
 )
 
 fuchsia_cipd_releases(
@@ -269,9 +265,6 @@ fuchsia_cipd_releases(
         ":bt_host_arm64_licenses.spdx.json": "licenses.spdx.json",
     },
     pkg = ":pkg.arm64",
-    # TODO: b/354711360 - fuchsia_cipd_releases appears to be misconfigured
-    # when cross-compiling,
-    target_compatible_with = incompatible_with_mcu(),
 )
 
 fuchsia_cipd_releases(
@@ -282,7 +275,4 @@ fuchsia_cipd_releases(
         ":bt_host_riscv64_licenses.spdx.json": "licenses.spdx.json",
     },
     pkg = ":pkg.riscv64",
-    # TODO: b/354711360 - fuchsia_cipd_releases appears to be misconfigured
-    # when cross-compiling,
-    target_compatible_with = incompatible_with_mcu(),
 )
