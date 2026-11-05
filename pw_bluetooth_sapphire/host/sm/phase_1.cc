@@ -110,14 +110,17 @@ void Phase1::Start() {
 void Phase1::InitiateFeatureExchange() {
   // Only the initiator can initiate the feature exchange.
   PW_CHECK(role() == Role::kInitiator);
-  LocalPairingParams preq_values = BuildPairingParameters();
+  std::optional<LocalPairingParams> preq_values = BuildPairingParameters();
+  if (!preq_values.has_value()) {
+    return;
+  }
   preq_ = PairingRequestParams{
-      .io_capability = preq_values.io_capability,
-      .oob_data_flag = preq_values.oob_data_flag,
-      .auth_req = preq_values.auth_req,
-      .max_encryption_key_size = preq_values.max_encryption_key_size,
-      .initiator_key_dist_gen = preq_values.local_keys,
-      .responder_key_dist_gen = preq_values.remote_keys};
+      .io_capability = preq_values->io_capability,
+      .oob_data_flag = preq_values->oob_data_flag,
+      .auth_req = preq_values->auth_req,
+      .max_encryption_key_size = preq_values->max_encryption_key_size,
+      .initiator_key_dist_gen = preq_values->local_keys,
+      .responder_key_dist_gen = preq_values->remote_keys};
   sm_chan().SendMessage(kPairingRequest, *preq_);
 }
 
@@ -126,23 +129,27 @@ void Phase1::RespondToPairingRequest(const PairingRequestParams& req_params) {
   // i.e. we are the responder.
   PW_CHECK(role() == Role::kResponder);
 
-  LocalPairingParams pres_values = BuildPairingParameters();
+  const PairingRequestParams preq = req_params;
+  std::optional<LocalPairingParams> pres_values = BuildPairingParameters();
+  if (!pres_values.has_value()) {
+    return;
+  }
   pres_ = PairingResponseParams{
-      .io_capability = pres_values.io_capability,
-      .oob_data_flag = pres_values.oob_data_flag,
-      .auth_req = pres_values.auth_req,
-      .max_encryption_key_size = pres_values.max_encryption_key_size,
+      .io_capability = pres_values->io_capability,
+      .oob_data_flag = pres_values->oob_data_flag,
+      .auth_req = pres_values->auth_req,
+      .max_encryption_key_size = pres_values->max_encryption_key_size,
       .initiator_key_dist_gen = 0,
       .responder_key_dist_gen = 0};
   // The keys that will be exchanged correspond to the intersection of what the
   // initiator requests and we support.
   pres_->initiator_key_dist_gen =
-      pres_values.remote_keys & req_params.initiator_key_dist_gen;
+      pres_values->remote_keys & preq.initiator_key_dist_gen;
   pres_->responder_key_dist_gen =
-      pres_values.local_keys & req_params.responder_key_dist_gen;
+      pres_values->local_keys & preq.responder_key_dist_gen;
 
   fit::result<ErrorCode, PairingFeatures> maybe_features =
-      ResolveFeatures(/*local_initiator=*/false, req_params, *pres_);
+      ResolveFeatures(/*local_initiator=*/false, preq, *pres_);
   if (maybe_features.is_error()) {
     bt_log(DEBUG, "sm", "rejecting pairing features");
     Abort(maybe_features.error_value());
@@ -158,10 +165,13 @@ void Phase1::RespondToPairingRequest(const PairingRequestParams& req_params) {
 
   sm_chan().SendMessage(kPairingResponse, *pres_);
 
-  on_complete_(features, *preq_, *pres_);
+  const PairingResponseParams pres = *pres_;
+  CompleteCallback callback = std::move(on_complete_);
+  PW_CHECK(callback);
+  callback(features, preq, pres);
 }
 
-LocalPairingParams Phase1::BuildPairingParameters() {
+std::optional<LocalPairingParams> Phase1::BuildPairingParameters() {
   // We build `local_params` to reflect the capabilities of this device over the
   // LE transport.
   LocalPairingParams local_params;
@@ -195,7 +205,12 @@ LocalPairingParams Phase1::BuildPairingParameters() {
     local_params.remote_keys = KeyDistGen::kIdKey;
 
     PW_CHECK(listener().is_alive());
-    if (listener()->OnIdentityRequest().has_value()) {
+    WeakSelf<Phase1>::WeakPtr self = weak_self_.GetWeakPtr();
+    const bool has_identity = listener()->OnIdentityRequest().has_value();
+    if (!self.is_alive()) {
+      return std::nullopt;
+    }
+    if (has_identity) {
       // IdKey applies to both LE and BR/EDR.
       local_params.local_keys |= KeyDistGen::kIdKey;
     }
@@ -403,7 +418,11 @@ void Phase1::OnPairingResponse(const PairingResponseParams& response_params) {
   }
   PairingFeatures features = maybe_features.value();
   pres_ = response_params;
-  on_complete_(features, *preq_, *pres_);
+  const PairingRequestParams preq = *preq_;
+  const PairingResponseParams pres = *pres_;
+  CompleteCallback callback = std::move(on_complete_);
+  PW_CHECK(callback);
+  callback(features, preq, pres);
 }
 
 void Phase1::OnRxBFrame(ByteBufferPtr sdu) {

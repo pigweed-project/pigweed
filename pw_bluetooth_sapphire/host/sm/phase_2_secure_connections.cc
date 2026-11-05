@@ -154,12 +154,13 @@ void Phase2SecureConnections::OnPeerPublicKey(
 
 void Phase2SecureConnections::StartAuthenticationStage1() {
   PW_CHECK(peer_ecdh_);
-  auto self = weak_self_.GetWeakPtr();
-  auto complete_cb = [self](fit::result<ErrorCode, ScStage1::Output> result) {
-    if (self.is_alive()) {
-      self->OnAuthenticationStage1Complete(result);
-    }
-  };
+  WeakSelf<Phase2SecureConnections>::WeakPtr self = weak_self_.GetWeakPtr();
+  ScStage1::Stage1CompleteCallback complete_cb =
+      [self](fit::result<ErrorCode, ScStage1::Output> result) {
+        if (self.is_alive()) {
+          self->OnAuthenticationStage1Complete(result);
+        }
+      };
   if (is_just_works_or_numeric_comparison()) {
     bt_log(DEBUG, "sm", "Starting SC Stage 1 Numeric Comparison/Just Works");
     stage_1_ = std::make_unique<ScStage1JustWorksNumericComparison>(
@@ -283,7 +284,10 @@ void Phase2SecureConnections::SendDhKeyCheckE() {
     // and validating the peer's. The presence of `peer_dhkey_check` verifies
     // this invariant.
     PW_CHECK(actual_peer_dhkey_check_.has_value());
-    on_ltk_ready_(ltk_.value());
+    const UInt128 ltk = ltk_.value();
+    OnPhase2KeyGeneratedCallback callback = std::move(on_ltk_ready_);
+    PW_CHECK(callback);
+    callback(ltk);
   }
 }
 
@@ -342,7 +346,10 @@ void Phase2SecureConnections::ValidatePeerDhKeyCheck() {
   }
   if (role() == Role::kInitiator) {
     bt_log(INFO, "sm", "completed secure connections Phase 2 of pairing");
-    on_ltk_ready_(ltk_.value());
+    const UInt128 ltk = ltk_.value();
+    OnPhase2KeyGeneratedCallback callback = std::move(on_ltk_ready_);
+    PW_CHECK(callback);
+    callback(ltk);
   } else {
     SendDhKeyCheckE();
   }

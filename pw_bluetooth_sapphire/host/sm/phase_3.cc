@@ -69,9 +69,12 @@ void Phase3::Start() {
     return;
   }
 
+  WeakSelf<Phase3>::WeakPtr self = weak_self_.GetWeakPtr();
   if (!LocalKeysSent() && !SendLocalKeys()) {
     bt_log(WARN, "sm", "unable to send local keys");
-    Abort(ErrorCode::kUnspecifiedReason);
+    if (self.is_alive()) {
+      Abort(ErrorCode::kUnspecifiedReason);
+    }
     return;
   }
   // If there are no keys left to exchange then we're done with pairing. This
@@ -279,9 +282,12 @@ void Phase3::OnExpectedKeyReceived() {
     return;
   }
 
+  WeakSelf<Phase3>::WeakPtr self = weak_self_.GetWeakPtr();
   if (role() == Role::kInitiator && !LocalKeysSent() && !SendLocalKeys()) {
     bt_log(WARN, "sm", "unable to send local keys to peer");
-    Abort(ErrorCode::kUnspecifiedReason);
+    if (self.is_alive()) {
+      Abort(ErrorCode::kUnspecifiedReason);
+    }
     return;
   }
   // If we've received all the expected keys and sent the local keys, Phase 3 is
@@ -344,8 +350,9 @@ bool Phase3::SendEncryptionKey() {
 }
 
 bool Phase3::SendIdentityInfo() {
+  WeakSelf<Phase3>::WeakPtr self = weak_self_.GetWeakPtr();
   std::optional<IdentityInfo> maybe_id_info = listener()->OnIdentityRequest();
-  if (!maybe_id_info.has_value()) {
+  if (!self.is_alive() || !maybe_id_info.has_value()) {
     bt_log(DEBUG,
            "sm",
            "local identity information required but no longer "
@@ -388,7 +395,9 @@ void Phase3::SignalComplete() {
     pairing_data.irk = Key(le_sec_, *irk_);
     pairing_data.identity_address = identity_address_;
   }
-  on_complete_(pairing_data);
+  Phase3CompleteCallback callback = std::move(on_complete_);
+  PW_CHECK(callback);
+  callback(pairing_data);
 }
 
 void Phase3::OnRxBFrame(ByteBufferPtr sdu) {

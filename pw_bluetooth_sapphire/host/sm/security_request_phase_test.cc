@@ -165,6 +165,18 @@ TEST_F(SecurityRequestPhaseTest, PairingRequestAsResponderPassedThrough) {
   ASSERT_TRUE(last_pairing_req().has_value());
   PairingRequestParams last_preq = last_pairing_req().value();
   ASSERT_EQ(0, memcmp(&last_preq, &generic_preq, sizeof(PairingRequestParams)));
+
+  // If the callback rejects the request without destroying
+  // SecurityRequestPhase, a subsequent Pairing Request must still be forwarded
+  // cleanly.
+  PairingRequestParams second_preq = generic_preq;
+  second_preq.io_capability = IOCapability::kKeyboardDisplay;
+  *writer.mutable_payload<PairingRequestParams>() = second_preq;
+  fake_chan()->Receive(preq_packet);
+  RunUntilIdle();
+  ASSERT_TRUE(last_pairing_req().has_value());
+  last_preq = last_pairing_req().value();
+  ASSERT_EQ(0, memcmp(&last_preq, &second_preq, sizeof(PairingRequestParams)));
 }
 
 TEST_F(SecurityRequestPhaseTest, InboundSecurityRequestFails) {

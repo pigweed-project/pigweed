@@ -60,6 +60,9 @@ class ScStage1Passkey final : public ScStage1 {
   // StartBitExchange if there are still more bits.
   void FinishBitExchange();
 
+  // Invokes |on_complete_| with |result|.
+  void NotifyComplete(fit::result<ErrorCode, Output> result);
+
   PairingPhase::Listener::WeakPtr listener_;
   Role role_;
   UInt256 local_public_key_x_;

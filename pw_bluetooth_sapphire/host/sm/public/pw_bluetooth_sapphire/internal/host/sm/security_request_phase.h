@@ -18,6 +18,7 @@
 
 #include <string>
 
+#include "pw_bluetooth_sapphire/internal/host/common/weak_self.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/pairing_channel.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/pairing_phase.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/smp.h"
@@ -87,6 +88,7 @@ class SecurityRequestPhase final : public PairingPhase,
   SecurityLevel pending_security_request_;
 
   PairingRequestCallback on_pairing_req_;
+  WeakSelf<SecurityRequestPhase> weak_self_;
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(SecurityRequestPhase);
 };
 

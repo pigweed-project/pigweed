@@ -53,6 +53,9 @@ class ScStage1JustWorksNumericComparison final : public ScStage1 {
   // Called after all crypto messages have been exchanged
   void CompleteStage1();
 
+  // Invokes |on_complete_| with |result|.
+  void NotifyComplete(fit::result<ErrorCode, Output> result);
+
   PairingPhase::Listener::WeakPtr listener_;
   Role role_;
   UInt256 local_public_key_x_;

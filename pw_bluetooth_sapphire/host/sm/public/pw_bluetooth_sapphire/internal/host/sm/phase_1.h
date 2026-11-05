@@ -99,10 +99,12 @@ class Phase1 final : public PairingPhase, public PairingChannelHandler {
   void RespondToPairingRequest(const PairingRequestParams& req_params);
 
   // The returned `LocalPairingParams` contains the locally-preferred pairing
-  // parameters for the LE transport. The caller is responsible for making any
-  // adjustments necessary (e.g. due to peer preferences) before converting the
-  // `LocalPairingParams` to SMP Pairing(Response|Request) PDUs.
-  LocalPairingParams BuildPairingParameters();
+  // parameters for the LE transport, or `std::nullopt` if `this` was destroyed
+  // synchronously while querying local identity information. The caller is
+  // responsible for making any adjustments necessary (e.g. due to peer
+  // preferences) before converting the `LocalPairingParams` to SMP
+  // Pairing(Response|Request) PDUs.
+  std::optional<LocalPairingParams> BuildPairingParameters();
 
   // Called to complete a feature exchange. Returns the resulting
   // PairingFeatures if the parameters should be accepted, or an error code if
@@ -145,6 +147,7 @@ class Phase1 final : public PairingPhase, public PairingChannelHandler {
   BondableMode bondable_mode_;
 
   CompleteCallback on_complete_;
+  WeakSelf<Phase1> weak_self_{this};
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(Phase1);
 };

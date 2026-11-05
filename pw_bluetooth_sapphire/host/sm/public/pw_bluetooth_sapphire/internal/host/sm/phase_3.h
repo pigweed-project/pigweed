@@ -150,7 +150,8 @@ class Phase3 final : public PairingPhase, public PairingChannelHandler {
   std::optional<IRK> irk_;
   std::optional<DeviceAddress> identity_address_;
 
-  const Phase3CompleteCallback on_complete_;
+  Phase3CompleteCallback on_complete_;
+  WeakSelf<Phase3> weak_self_{this};
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(Phase3);
 };

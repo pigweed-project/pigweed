@@ -64,6 +64,12 @@ const bt::sm::LTK kAuthenticatedSecureKey(
                            sm::kMaxEncryptionKeySize),
     hci_spec::LinkKey(UInt128{4}, 5, 6));
 
+const bt::sm::LTK kUnauthenticatedKey(
+    sm::SecurityProperties(SecurityLevel::kEncrypted,
+                           sm::kMaxEncryptionKeySize,
+                           /*sc=*/false),
+    hci_spec::LinkKey(UInt128{1}, 2, 3));
+
 const PeerId kPeerId(2);
 
 const PairingRandomValue kHardCodedPairingRandom = {0x0,
@@ -257,6 +263,16 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
 
   void DestroySecurityManager() { pairing_ = nullptr; }
 
+  void SetBondLtk(const LTK& ltk) {
+    if (!peer_) {
+      InitializePeer();
+    }
+    sm::PairingData bond_data;
+    bond_data.peer_ltk = ltk;
+    bond_data.local_ltk = ltk;
+    EXPECT_TRUE(peer_->MutLe().SetBondData(bond_data));
+  }
+
   // sm::Delegate override:
   void ConfirmPairing(ConfirmCallback confirm) override {
     if (confirm_delegate_) {
@@ -290,6 +306,9 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
 
   std::optional<IdentityInfo> OnIdentityInformationRequest() override {
     local_id_info_callback_count_++;
+    if (on_id_info_delegate_) {
+      return on_id_info_delegate_();
+    }
     return local_id_info_;
   }
 
@@ -297,6 +316,9 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
   void OnPairingComplete(Result<> status) override {
     pairing_complete_count_++;
     pairing_complete_status_ = status;
+    if (on_pairing_complete_delegate_) {
+      on_pairing_complete_delegate_(status);
+    }
   }
 
   // Called by |pairing_| when any encryption procedure fails.
@@ -309,6 +331,9 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
   void OnNewSecurityProperties(const SecurityProperties& sec) override {
     new_sec_props_count_++;
     new_sec_props_ = sec;
+    if (on_new_sec_props_delegate_) {
+      on_new_sec_props_delegate_(sec);
+    }
   }
 
   void UpgradeSecurity(SecurityLevel level) {
@@ -604,6 +629,21 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
     local_id_info_ = info;
   }
 
+  using OnIdInfoDelegate = fit::function<std::optional<IdentityInfo>()>;
+  void set_on_id_info_delegate(OnIdInfoDelegate delegate) {
+    on_id_info_delegate_ = std::move(delegate);
+  }
+
+  using OnPairingCompleteDelegate = fit::function<void(Result<>)>;
+  void set_on_pairing_complete_delegate(OnPairingCompleteDelegate delegate) {
+    on_pairing_complete_delegate_ = std::move(delegate);
+  }
+
+  using OnNewSecPropsDelegate = fit::function<void(const SecurityProperties&)>;
+  void set_on_new_sec_props_delegate(OnNewSecPropsDelegate delegate) {
+    on_new_sec_props_delegate_ = std::move(delegate);
+  }
+
   int security_request_count() const { return security_request_count_; }
   int pairing_failed_count() const { return pairing_failed_count_; }
   int pairing_request_count() const { return pairing_request_count_; }
@@ -711,6 +751,9 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
   ConfirmDelegate confirm_delegate_;
   DisplayDelegate display_delegate_;
   RequestPasskeyDelegate request_passkey_delegate_;
+  OnIdInfoDelegate on_id_info_delegate_;
+  OnPairingCompleteDelegate on_pairing_complete_delegate_;
+  OnNewSecPropsDelegate on_new_sec_props_delegate_;
 
   // Counts of commands that we have sent out to the peer.
   int security_request_count_ = 0;
@@ -804,6 +847,10 @@ class InitiatorPairingTest : public SecurityManagerTest {
                         KeyDistGenField local_keys = 0,
                         uint8_t max_key_size = kMaxEncryptionKeySize,
                         BondableMode bondable_mode = BondableMode::Bondable) {
+    const int initial_confirm_count = pairing_confirm_count();
+    const int initial_random_count = pairing_random_count();
+    const int initial_failed_count = pairing_failed_count();
+    const int initial_security_cb_count = security_callback_count();
     UpgradeSecurity(level);
     EXPECT_TRUE(peer().MutLe().is_pairing());
 
@@ -831,10 +878,10 @@ class InitiatorPairingTest : public SecurityManagerTest {
     ReceivePairingRandom(srand);
     RunUntilIdle();
 
-    EXPECT_EQ(1, pairing_confirm_count());
-    EXPECT_EQ(1, pairing_random_count());
-    EXPECT_EQ(0, pairing_failed_count());
-    EXPECT_EQ(0, security_callback_count());
+    EXPECT_EQ(initial_confirm_count + 1, pairing_confirm_count());
+    EXPECT_EQ(initial_random_count + 1, pairing_random_count());
+    EXPECT_EQ(initial_failed_count, pairing_failed_count());
+    EXPECT_EQ(initial_security_cb_count, security_callback_count());
     EXPECT_TRUE(peer().MutLe().is_pairing());
 
     PW_DCHECK(out_stk);
@@ -852,6 +899,7 @@ class InitiatorPairingTest : public SecurityManagerTest {
       KeyDistGenField local_keys = 0,
       uint8_t max_key_size = kMaxEncryptionKeySize,
       BondableMode bondable_mode = BondableMode::Bondable) {
+    const int initial_new_sec_props_count = new_sec_props_count();
     EXPECT_FALSE(peer().MutLe().is_pairing());
     if (secure_connections) {
       FastForwardToScLtk(
@@ -871,7 +919,7 @@ class InitiatorPairingTest : public SecurityManagerTest {
     // Resolve the encryption request.
     fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
     RunUntilIdle();
-    EXPECT_EQ(1, new_sec_props_count());
+    EXPECT_EQ(initial_new_sec_props_count + 1, new_sec_props_count());
     EXPECT_EQ(level, new_sec_props().level());
   }
 
@@ -5671,6 +5719,284 @@ TEST_F(SecurityManagerTest, BrEdrInitiatorCtkdBlockedWhenPeerLtkStronger) {
   EXPECT_EQ(0, pairing_data_callback_count());
   EXPECT_EQ(peer().le()->bond_data()->peer_ltk->key().value(),
             kAuthenticatedSecureKey.key().value());
+}
+
+TEST_F(InitiatorPairingTest,
+       DestroyingSecurityManagerInOnPairingFailedCallbackIsSafe) {
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  // Re-entrant UpgradeSecurity inside OnPairingComplete must not be drained by
+  // the failing pairing's request queue, and destroying SM inside a queued
+  // callback must cleanly unwind without touching freed members.
+  bool reentrant_failed_prematurely = false;
+  set_on_pairing_complete_delegate(
+      [this, &reentrant_failed_prematurely](Result<> status) {
+        EXPECT_EQ(ToResult(ErrorCode::kPairingNotSupported), status);
+        pairing()->Reset(IOCapability::kDisplayOnly);
+        pairing()->UpgradeSecurity(
+            SecurityLevel::kEncrypted,
+            [&reentrant_failed_prematurely](
+                Result<> /*res*/, const SecurityProperties& /*props*/) {
+              reentrant_failed_prematurely = true;
+            });
+      });
+
+  int failed_cb_count = 0;
+  for (int i = 0; i < 2; ++i) {
+    pairing()->UpgradeSecurity(
+        SecurityLevel::kEncrypted,
+        [this, &failed_cb_count](Result<> status,
+                                 const SecurityProperties& /*props*/) {
+          failed_cb_count++;
+          EXPECT_EQ(ToResult(ErrorCode::kPairingNotSupported), status);
+          DestroySecurityManager();
+        });
+  }
+  RunUntilIdle();
+  ASSERT_EQ(1, pairing_request_count());
+
+  ReceivePairingFailed(ErrorCode::kPairingNotSupported);
+  RunUntilIdle();
+  EXPECT_EQ(2, failed_cb_count);
+  EXPECT_EQ(2, pairing_request_count());
+  EXPECT_FALSE(reentrant_failed_prematurely);
+  EXPECT_EQ(nullptr, pairing());
+}
+
+TEST_F(InitiatorPairingTest,
+       DestroyingSecurityManagerInOnEncryptionChangeCallbackIsSafe) {
+  SetBondLtk(kUnauthenticatedKey);
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  RunUntilIdle();
+  bool ok_cb_called = false;
+  pairing()->UpgradeSecurity(
+      SecurityLevel::kEncrypted,
+      [this, &ok_cb_called](Result<> status, const SecurityProperties& props) {
+        ok_cb_called = true;
+        EXPECT_EQ(fit::ok(), status);
+        DestroySecurityManager();
+        EXPECT_EQ(SecurityLevel::kEncrypted, props.level());
+      });
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_TRUE(ok_cb_called);
+  EXPECT_EQ(nullptr, pairing());
+
+  // Destroying SM inside an immediately satisfied UpgradeSecurity callback and
+  // then reading |props| is also safe.
+  InitializePeer();
+  SetBondLtk(kUnauthenticatedKey);
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  RunUntilIdle();
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  bool immediate_ok_cb_called = false;
+  pairing()->UpgradeSecurity(
+      SecurityLevel::kEncrypted,
+      [this, &immediate_ok_cb_called](Result<> status,
+                                      const SecurityProperties& props) {
+        immediate_ok_cb_called = true;
+        EXPECT_EQ(fit::ok(), status);
+        DestroySecurityManager();
+        EXPECT_EQ(SecurityLevel::kEncrypted, props.level());
+      });
+  EXPECT_TRUE(immediate_ok_cb_called);
+  EXPECT_EQ(nullptr, pairing());
+
+  // Destroying SM inside an immediately failing UpgradeSecurityInternal
+  // callback and then reading |props| is also safe.
+  InitializePeer();
+  SetUpSecurityManager(IOCapability::kNoInputNoOutput);
+  bool immediate_fail_cb_called = false;
+  pairing()->UpgradeSecurity(
+      SecurityLevel::kAuthenticated,
+      [this, &immediate_fail_cb_called](Result<> status,
+                                        const SecurityProperties& props) {
+        immediate_fail_cb_called = true;
+        EXPECT_EQ(ToResult(ErrorCode::kAuthenticationRequirements), status);
+        DestroySecurityManager();
+        EXPECT_EQ(SecurityLevel::kNoSecurity, props.level());
+      });
+  EXPECT_TRUE(immediate_fail_cb_called);
+  EXPECT_EQ(nullptr, pairing());
+
+  // Destroying SM inside OnNewSecurityProperties (during OnEncryptionChange) is
+  // also safe.
+  InitializePeer();
+  SetBondLtk(kUnauthenticatedKey);
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  RunUntilIdle();
+  set_on_new_sec_props_delegate([this](const SecurityProperties& props) {
+    DestroySecurityManager();
+    EXPECT_EQ(SecurityLevel::kEncrypted, props.level());
+  });
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  set_on_new_sec_props_delegate(nullptr);
+  EXPECT_EQ(nullptr, pairing());
+
+  // Releasing the pairing token at the end of OnLowEnergyPairingComplete fires
+  // Peer::LowEnergyData::add_pairing_completion_callback only after StoreBond
+  // has persisted the LE bond and any derived CTKD link key.
+  InitializePeer(kPeerPublicAddr);
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  bool token_released_after_bond_stored = false;
+  UInt128 stk;
+  FastForwardToScLtk(&stk,
+                     SecurityLevel::kEncrypted,
+                     KeyDistGen::kLinkKey,
+                     KeyDistGen::kLinkKey);
+  const int initial_bond_count = pairing_data_callback_count();
+  peer().MutLe().add_pairing_completion_callback(
+      [this, initial_bond_count, &token_released_after_bond_stored]() {
+        token_released_after_bond_stored = true;
+        EXPECT_EQ(initial_bond_count + 1, pairing_data_callback_count());
+        EXPECT_TRUE(pairing_data().cross_transport_key.has_value());
+      });
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_TRUE(token_released_after_bond_stored);
+
+  // Destroying SM inside OnLowEnergyPairingComplete's delegate callback is also
+  // safe.
+  InitializePeer();
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  set_on_pairing_complete_delegate([this](Result<> status) {
+    EXPECT_EQ(fit::ok(), status);
+    DestroySecurityManager();
+  });
+  FastForwardToPhase3(&stk);
+  set_on_pairing_complete_delegate(nullptr);
+  EXPECT_EQ(nullptr, pairing());
+
+  // Resetting SM inside OnNewSecurityProperties during EndPhase2 aborts Phase 2
+  // cleanly via the `!InPhase2()` check without crashing.
+  InitializePeer();
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  bool reset_in_new_sec_props = false;
+  set_on_new_sec_props_delegate(
+      [this, &reset_in_new_sec_props](const SecurityProperties& props) {
+        EXPECT_EQ(SecurityLevel::kEncrypted, props.level());
+        reset_in_new_sec_props = true;
+        pairing()->Reset(IOCapability::kDisplayYesNo);
+      });
+  UInt128 stk_for_reset;
+  FastForwardToSTK(&stk_for_reset);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  set_on_new_sec_props_delegate(nullptr);
+  EXPECT_TRUE(reset_in_new_sec_props);
+  EXPECT_EQ(3, pairing_complete_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), pairing_complete_status());
+  EXPECT_EQ(2, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+}
+
+TEST_F(InitiatorPairingTest,
+       ReentrantUpgradeSecurityAndResetInCallbacksDoNotCrashOrLeak) {
+  SetBondLtk(kUnauthenticatedKey);
+  SetUpSecurityManager(IOCapability::kDisplayOnly);
+  RunUntilIdle();
+
+  bool encrypted_cb_ran = false;
+  int auth_cb_count = 0;
+  // Queue both a satisfied-by-LTK request and an unsatisfied higher request;
+  // inside the satisfied callback, re-entrantly call UpgradeSecurity() and
+  // inside the failed pairing callback, re-entrantly call Reset().
+  pairing()->UpgradeSecurity(
+      SecurityLevel::kEncrypted,
+      [this, &encrypted_cb_ran, &auth_cb_count](
+          Result<> status, const SecurityProperties& /*props*/) {
+        encrypted_cb_ran = true;
+        EXPECT_EQ(fit::ok(), status);
+        pairing()->UpgradeSecurity(
+            SecurityLevel::kAuthenticated,
+            [this, &auth_cb_count](Result<> auth_status,
+                                   const SecurityProperties& /*auth_props*/) {
+              auth_cb_count++;
+              EXPECT_EQ(ToResult(ErrorCode::kPairingNotSupported), auth_status);
+              pairing()->Reset(IOCapability::kKeyboardDisplay);
+            });
+      });
+  pairing()->UpgradeSecurity(
+      SecurityLevel::kAuthenticated,
+      [&auth_cb_count](Result<> status, const SecurityProperties& /*props*/) {
+        auth_cb_count++;
+        EXPECT_EQ(ToResult(ErrorCode::kPairingNotSupported), status);
+      });
+
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_TRUE(encrypted_cb_ran);
+  ASSERT_EQ(1, pairing_request_count());
+
+  ReceivePairingFailed(ErrorCode::kPairingNotSupported);
+  RunUntilIdle();
+  EXPECT_EQ(2, auth_cb_count);
+}
+
+TEST_F(ResponderPairingTest, DestroyingSecurityManagerInPhaseCallbacksIsSafe) {
+  // 1. Destroying SM inside Phase1's OnIdentityRequest delegate callback.
+  set_on_id_info_delegate([this]() -> std::optional<IdentityInfo> {
+    DestroySecurityManager();
+    return std::nullopt;
+  });
+  PairingRequestParams preq{};
+  preq.io_capability = IOCapability::kNoInputNoOutput;
+  preq.auth_req = AuthReq::kBondingFlag;
+  preq.max_encryption_key_size = kMaxEncryptionKeySize;
+  preq.responder_key_dist_gen = KeyDistGen::kIdKey;
+  ReceivePairingFeatures(preq, /*peer_initiator=*/true);
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_response_count());
+  EXPECT_EQ(nullptr, pairing());
+
+  // 2. Destroying SM inside Phase3's OnIdentityRequest delegate callback.
+  InitializePeer();
+  SetUpSecurityManager();
+  IdentityInfo id_info{.irk = UInt128{9}, .address = kLocalAddr};
+  int id_req_calls = 0;
+  set_on_id_info_delegate(
+      [this, id_info, &id_req_calls]() -> std::optional<IdentityInfo> {
+        if (++id_req_calls == 2) {
+          DestroySecurityManager();
+          return std::nullopt;
+        }
+        return id_info;
+      });
+  UInt128 stk;
+  FastForwardToSTK(&stk,
+                   SecurityLevel::kEncrypted,
+                   /*remote_keys=*/0,
+                   /*local_keys=*/KeyDistGen::kIdKey);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(0, id_info_count());
+  EXPECT_EQ(nullptr, pairing());
+
+  // 3. When a Pairing Request is rejected in OnPairingRequest without replacing
+  // SecurityRequestPhase, a subsequent Pairing Request while the Security
+  // Request is still pending succeeds.
+  InitializePeer();
+  SetUpSecurityManager(IOCapability::kNoInputNoOutput);
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  ASSERT_EQ(1, security_request_count());
+
+  const int initial_responses = pairing_response_count();
+  pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);
+  ReceivePairingRequest(IOCapability::kDisplayYesNo,
+                        AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_failed_count());
+  EXPECT_EQ(ErrorCode::kAuthenticationRequirements, received_error_code());
+  EXPECT_EQ(initial_responses, pairing_response_count());
+
+  pairing()->set_security_mode(gap::LESecurityMode::Mode1);
+  ReceivePairingRequest(IOCapability::kDisplayYesNo,
+                        AuthReq::kBondingFlag | AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(initial_responses + 1, pairing_response_count());
 }
 
 }  // namespace

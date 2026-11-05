@@ -35,7 +35,8 @@ SecurityRequestPhase::SecurityRequestPhase(
     : PairingPhase(std::move(chan), std::move(listener), Role::kResponder),
       bondable_mode_(bondable_mode),
       pending_security_request_(desired_level),
-      on_pairing_req_(std::move(on_pairing_req)) {
+      on_pairing_req_(std::move(on_pairing_req)),
+      weak_self_(this) {
   SetPairingChannelHandler(*this);
 }
 
@@ -62,7 +63,13 @@ void SecurityRequestPhase::MakeSecurityRequest(SecurityLevel desired_level,
 }
 
 void SecurityRequestPhase::OnPairingRequest(PairingRequestParams req_params) {
-  on_pairing_req_(req_params);
+  WeakSelf<SecurityRequestPhase>::WeakPtr self = weak_self_.GetWeakPtr();
+  PairingRequestCallback callback = std::move(on_pairing_req_);
+  PW_CHECK(callback);
+  callback(req_params);
+  if (self.is_alive()) {
+    on_pairing_req_ = std::move(callback);
+  }
 }
 
 void SecurityRequestPhase::OnRxBFrame(ByteBufferPtr sdu) {

@@ -111,7 +111,7 @@ class Phase2Legacy final : public PairingPhase, public PairingChannelHandler {
   const DeviceAddress initiator_addr_;
   const DeviceAddress responder_addr_;
 
-  const OnPhase2KeyGeneratedCallback on_stk_ready_;
+  OnPhase2KeyGeneratedCallback on_stk_ready_;
 
   WeakSelf<Phase2Legacy> weak_self_;
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(Phase2Legacy);

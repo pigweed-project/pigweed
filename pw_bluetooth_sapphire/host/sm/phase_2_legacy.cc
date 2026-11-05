@@ -90,7 +90,7 @@ void Phase2Legacy::MakeTemporaryKeyRequest() {
          "TK request - method: %s",
          sm::util::PairingMethodToString(features_.method).c_str());
   PW_CHECK(listener().is_alive());
-  auto self = weak_self_.GetWeakPtr();
+  WeakSelf<Phase2Legacy>::WeakPtr self = weak_self_.GetWeakPtr();
   if (features_.method == sm::PairingMethod::kPasskeyEntryInput) {
     // The TK will be provided by the user.
     listener()->RequestPasskey([self](int64_t passkey) {
@@ -283,13 +283,17 @@ void Phase2Legacy::OnPairingRandom(PairingRandomValue rand) {
   }
 
   // We've generated the STK, so Phase 2 is now over if we're the initiator.
-  on_stk_ready_(stk);
+  const Role local_role = role();
+  WeakSelf<Phase2Legacy>::WeakPtr self = weak_self_.GetWeakPtr();
+  OnPhase2KeyGeneratedCallback callback = std::move(on_stk_ready_);
+  PW_CHECK(callback);
+  callback(stk);
 
   // As responder, we choose to notify the STK to the higher layer before
   // sending our SRand. We expect the peer initiator to request encryption
   // immediately after receiving SRand, and we want to ensure the STK is
   // available at the hci::Connection layer when this occurs.
-  if (role() == Role::kResponder) {
+  if (self.is_alive() && local_role == Role::kResponder) {
     SendRandomValue();
   }
 }

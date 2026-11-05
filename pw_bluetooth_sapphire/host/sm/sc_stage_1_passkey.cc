@@ -66,19 +66,20 @@ ScStage1Passkey::ScStage1Passkey(PairingPhase::Listener::WeakPtr listener,
 }
 
 void ScStage1Passkey::Run() {
-  auto self = weak_self_.GetWeakPtr();
-  auto passkey_responder = [self](std::optional<uint32_t> passkey) {
-    if (!self.is_alive()) {
-      bt_log(TRACE, "sm", "passkey for expired callback");
-      return;
-    }
-    if (!passkey.has_value()) {
-      self->on_complete_(fit::error(ErrorCode::kPasskeyEntryFailed));
-      return;
-    }
-    self->passkey_ = passkey;
-    self->StartBitExchange();
-  };
+  WeakSelf<ScStage1Passkey>::WeakPtr self = weak_self_.GetWeakPtr();
+  fit::function<void(std::optional<uint32_t>)> passkey_responder =
+      [self](std::optional<uint32_t> passkey) {
+        if (!self.is_alive()) {
+          bt_log(TRACE, "sm", "passkey for expired callback");
+          return;
+        }
+        if (!passkey.has_value()) {
+          self->NotifyComplete(fit::error(ErrorCode::kPasskeyEntryFailed));
+          return;
+        }
+        self->passkey_ = passkey;
+        self->StartBitExchange();
+      };
   if (method_ == PairingMethod::kPasskeyEntryDisplay) {
     // Randomly generate a 6 digit passkey.
     uint32_t passkey;
@@ -152,7 +153,7 @@ void ScStage1Passkey::SendPairingConfirm() {
     bt_log(WARN,
            "sm",
            "could not calculate confirm value in SC Stage 1 Passkey Entry");
-    on_complete_(fit::error(ErrorCode::kUnspecifiedReason));
+    NotifyComplete(fit::error(ErrorCode::kUnspecifiedReason));
     return;
   }
   local_confirm_ = *maybe_confirm;
@@ -166,7 +167,7 @@ void ScStage1Passkey::OnPairingConfirm(PairingConfirmValue confirm) {
            "sm",
            "received multiple Pairing Confirm values in one SC Passkey Entry "
            "cycle");
-    on_complete_(fit::error(ErrorCode::kUnspecifiedReason));
+    NotifyComplete(fit::error(ErrorCode::kUnspecifiedReason));
     return;
   }
   if (sent_local_rand_ || peer_rand_.has_value() ||
@@ -174,7 +175,7 @@ void ScStage1Passkey::OnPairingConfirm(PairingConfirmValue confirm) {
     bt_log(WARN,
            "sm",
            "received Pairing Confirm out of order in SC Passkey Entry");
-    on_complete_(fit::error(ErrorCode::kUnspecifiedReason));
+    NotifyComplete(fit::error(ErrorCode::kUnspecifiedReason));
     return;
   }
   peer_confirm_ = confirm;
@@ -201,7 +202,7 @@ void ScStage1Passkey::SendPairingRandom() {
 void ScStage1Passkey::OnPairingRandom(PairingRandomValue rand) {
   if (!sent_local_confirm_ || !peer_confirm_.has_value()) {
     bt_log(WARN, "sm", "received Pairing Random before confirm value sent");
-    on_complete_(fit::error(ErrorCode::kUnspecifiedReason));
+    NotifyComplete(fit::error(ErrorCode::kUnspecifiedReason));
     return;
   }
   if (peer_rand_.has_value()) {
@@ -209,12 +210,12 @@ void ScStage1Passkey::OnPairingRandom(PairingRandomValue rand) {
            "sm",
            "received multiple Pairing Random values in one SC Passkey Entry "
            "cycle");
-    on_complete_(fit::error(ErrorCode::kUnspecifiedReason));
+    NotifyComplete(fit::error(ErrorCode::kUnspecifiedReason));
     return;
   }
   if (role_ == Role::kInitiator && !sent_local_rand_) {
     bt_log(WARN, "sm", "received peer random out of order");
-    on_complete_(fit::error(ErrorCode::kUnspecifiedReason));
+    NotifyComplete(fit::error(ErrorCode::kUnspecifiedReason));
     return;
   }
 
@@ -223,12 +224,12 @@ void ScStage1Passkey::OnPairingRandom(PairingRandomValue rand) {
       peer_public_key_x_, local_public_key_x_, rand, current_passkey_bit);
   if (!maybe_confirm_check.has_value()) {
     bt_log(WARN, "sm", "unable to calculate SC confirm check value");
-    on_complete_(fit::error(ErrorCode::kConfirmValueFailed));
+    NotifyComplete(fit::error(ErrorCode::kConfirmValueFailed));
     return;
   }
   if (*maybe_confirm_check != *peer_confirm_) {
     bt_log(WARN, "sm", "peer SC confirm value did not match check, aborting");
-    on_complete_(fit::error(ErrorCode::kConfirmValueFailed));
+    NotifyComplete(fit::error(ErrorCode::kConfirmValueFailed));
     return;
   }
   peer_rand_ = rand;
@@ -261,10 +262,20 @@ void ScStage1Passkey::FinishBitExchange() {
   auto little_endian_passkey =
       pw::bytes::ConvertOrderTo(cpp20::endian::little, *passkey_);
   std::memcpy(passkey_array.data(), &little_endian_passkey, sizeof(uint32_t));
-  on_complete_(fit::ok(Output{.initiator_r = passkey_array,
-                              .responder_r = passkey_array,
-                              .initiator_rand = initiator_rand,
-                              .responder_rand = responder_rand}));
+  NotifyComplete(fit::ok(Output{.initiator_r = passkey_array,
+                                .responder_r = passkey_array,
+                                .initiator_rand = initiator_rand,
+                                .responder_rand = responder_rand}));
+}
+
+void ScStage1Passkey::NotifyComplete(fit::result<ErrorCode, Output> result) {
+  WeakSelf<ScStage1Passkey>::WeakPtr self = weak_self_.GetWeakPtr();
+  Stage1CompleteCallback callback = std::move(on_complete_);
+  PW_CHECK(callback);
+  callback(result);
+  if (self.is_alive()) {
+    on_complete_ = std::move(callback);
+  }
 }
 
 }  // namespace bt::sm
