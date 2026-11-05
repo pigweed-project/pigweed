@@ -29,6 +29,7 @@ pw_python_package("py") {
 
   sources = [
     "pw_rpc2/__init__.py",
+    "pw_rpc2/_packets.py",
     "pw_rpc2/codegen_common.py",
     "pw_rpc2/codegen_pwpb.py",
     "pw_rpc2/codegen_raw.py",
@@ -39,6 +40,7 @@ pw_python_package("py") {
   tests = [
     "codegen_test.py",
     "plugin_test.py",
+    "tests/packets_test.py",
   ]
   python_deps = [
     "$dir_pw_codegen/py",

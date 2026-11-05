@@ -143,7 +143,7 @@ calls for:
   send or that the protocol does not define.
 
 ..
-   # LINT.ThenChange(//pw_rpc2/cpp/connection_task.cc:cpp_rpc2_peer_error_mapping)
+   # LINT.ThenChange(//pw_rpc2/py/pw_rpc2/_packets.py:py_rpc2_peer_error_mapping)
 
 Server methods
 ==============

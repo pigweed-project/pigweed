@@ -29,9 +29,18 @@ pw_py_enum_library(
 )
 
 pw_py_library(
-    name = "pw_rpc2_codegen",
+    name = "pw_rpc2",
     srcs = [
         "pw_rpc2/__init__.py",
+        "pw_rpc2/_packets.py",
+    ],
+    imports = ["."],
+    deps = [":enums"],
+)
+
+pw_py_library(
+    name = "pw_rpc2_codegen",
+    srcs = [
         "pw_rpc2/codegen_common.py",
         "pw_rpc2/codegen_pwpb.py",
         "pw_rpc2/codegen_raw.py",
@@ -81,4 +90,11 @@ pw_py_test(
         ":pw_rpc2_codegen",
         "//pw_build:python_protobuf_runtime",
     ],
+)
+
+pw_py_test(
+    name = "packets_test",
+    size = "small",
+    srcs = ["tests/packets_test.py"],
+    deps = [":pw_rpc2"],
 )

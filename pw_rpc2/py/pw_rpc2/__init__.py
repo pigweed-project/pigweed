@@ -13,8 +13,17 @@
 # the License.
 """pw_rpc2 Python package."""
 
+from __future__ import annotations
+
 import pkgutil
 
 # The enum modules generated from pw_rpc2's TOML enum definitions are in a
 # separate directory, so extend the path before importing anything.
 __path__ = pkgutil.extend_path(__path__, __name__)
+
+from pw_rpc2._packets import DecodeError, RpcStatus
+
+__all__ = [
+    'DecodeError',
+    'RpcStatus',
+]
