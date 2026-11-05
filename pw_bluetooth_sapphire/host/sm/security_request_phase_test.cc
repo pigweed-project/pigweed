@@ -33,6 +33,7 @@ namespace {
 struct SecurityRequestOptions {
   SecurityLevel requested_level = SecurityLevel::kEncrypted;
   BondableMode bondable = BondableMode::Bondable;
+  bool sc_supported = true;
 };
 
 class SecurityRequestPhaseTest : public l2cap::testing::FakeChannelTest {
@@ -52,7 +53,8 @@ class SecurityRequestPhaseTest : public l2cap::testing::FakeChannelTest {
       bt::LinkType ll_type = bt::LinkType::kLE) {
     l2cap::ChannelId cid = ll_type == bt::LinkType::kLE ? l2cap::kLESMPChannelId
                                                         : l2cap::kSMPChannelId;
-    ChannelOptions options(cid);
+    uint16_t mtu = opts.sc_supported ? l2cap::kMaxMTU : kNoSecureConnectionsMtu;
+    ChannelOptions options(cid, mtu);
     options.link_type = ll_type;
 
     fake_chan_ = CreateFakeChannel(options);
@@ -64,6 +66,17 @@ class SecurityRequestPhaseTest : public l2cap::testing::FakeChannelTest {
         opts.requested_level,
         opts.bondable,
         [this](PairingRequestParams preq) { last_pairing_req_ = preq; });
+  }
+
+  void ExpectSecurityRequest(AuthReqField expected_auth_req) {
+    const StaticByteBuffer<2> expected_req(kSecurityRequest, expected_auth_req);
+    (void)heap_dispatcher().Post(
+        [this](pw::async::Context /*ctx*/, pw::Status status) {
+          if (status.ok()) {
+            security_request_phase()->Start();
+          }
+        });
+    EXPECT_TRUE(Expect(expected_req));
   }
 
   l2cap::testing::FakeChannel* fake_chan() const { return fake_chan_.get(); }
@@ -88,20 +101,22 @@ class SecurityRequestPhaseTest : public l2cap::testing::FakeChannelTest {
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(SecurityRequestPhaseTest);
 };
 
-using SMP_SecurityRequestPhaseDeathTest = SecurityRequestPhaseTest;
-
 TEST_F(SecurityRequestPhaseTest, MakeEncryptedBondableSecurityRequest) {
   NewSecurityRequestPhase(
       SecurityRequestOptions{.requested_level = SecurityLevel::kEncrypted,
                              .bondable = BondableMode::Bondable});
-  StaticByteBuffer kExpectedReq(kSecurityRequest, AuthReq::kBondingFlag);
-  (void)heap_dispatcher().Post(
-      [this](pw::async::Context /*ctx*/, pw::Status status) {
-        if (status.ok()) {
-          security_request_phase()->Start();
-        }
-      });
-  ASSERT_TRUE(Expect(kExpectedReq));
+  ExpectSecurityRequest(AuthReq::kBondingFlag | AuthReq::kSC);
+  EXPECT_EQ(SecurityLevel::kEncrypted,
+            security_request_phase()->pending_security_request());
+}
+
+TEST_F(SecurityRequestPhaseTest,
+       MakeEncryptedBondableSecurityRequestWithoutSecureConnectionsSupport) {
+  NewSecurityRequestPhase(
+      SecurityRequestOptions{.requested_level = SecurityLevel::kEncrypted,
+                             .bondable = BondableMode::Bondable,
+                             .sc_supported = false});
+  ExpectSecurityRequest(AuthReq::kBondingFlag);
   EXPECT_EQ(SecurityLevel::kEncrypted,
             security_request_phase()->pending_security_request());
 }
@@ -111,14 +126,7 @@ TEST_F(SecurityRequestPhaseTest, MakeAuthenticatedNonBondableSecurityRequest) {
       SecurityRequestOptions{.requested_level = SecurityLevel::kAuthenticated,
                              .bondable = BondableMode::NonBondable});
   // inclusive-language: ignore
-  StaticByteBuffer kExpectedReq(kSecurityRequest, AuthReq::kMITM);
-  (void)heap_dispatcher().Post(
-      [this](pw::async::Context /*ctx*/, pw::Status status) {
-        if (status.ok()) {
-          security_request_phase()->Start();
-        }
-      });
-  ASSERT_TRUE(Expect(kExpectedReq));
+  ExpectSecurityRequest(AuthReq::kMITM | AuthReq::kSC);
   EXPECT_EQ(SecurityLevel::kAuthenticated,
             security_request_phase()->pending_security_request());
 }
@@ -127,19 +135,8 @@ TEST_F(SecurityRequestPhaseTest,
        MakeSecureAuthenticatedBondableSecurityRequest) {
   NewSecurityRequestPhase(SecurityRequestOptions{
       .requested_level = SecurityLevel::kSecureAuthenticated});
-
-  // inclusive-language: disable
-  StaticByteBuffer kExpectedReq(
-      kSecurityRequest, AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC);
-  // inclusive-language: enable
-
-  (void)heap_dispatcher().Post(
-      [this](pw::async::Context /*ctx*/, pw::Status status) {
-        if (status.ok()) {
-          security_request_phase()->Start();
-        }
-      });
-  ASSERT_TRUE(Expect(kExpectedReq));
+  // inclusive-language: ignore
+  ExpectSecurityRequest(AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC);
   EXPECT_EQ(SecurityLevel::kSecureAuthenticated,
             security_request_phase()->pending_security_request());
 }

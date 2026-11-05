@@ -156,9 +156,10 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
       Role role,
       IOCapability ioc,
       BondableMode bondable_mode,
-      gap::LESecurityMode security_mode = gap::LESecurityMode::Mode1) {
+      gap::LESecurityMode security_mode = gap::LESecurityMode::Mode1,
+      uint16_t max_mtu = l2cap::kMaxMTU) {
     // Setup fake SMP channel.
-    ChannelOptions options(l2cap::kLESMPChannelId);
+    ChannelOptions options(l2cap::kLESMPChannelId, max_mtu);
     fake_chan_ = CreateFakeChannel(options);
     fake_chan_->SetSendCallback(
         fit::bind_member<&SecurityManagerTest::OnDataReceived>(this),
@@ -3429,7 +3430,7 @@ TEST_F(ResponderPairingTest, SuccessfulPairAfterResetInProgressPairing) {
 TEST_F(ResponderPairingTest, SecurityRequestCausesPairing) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
   RunUntilIdle();
-  AuthReqField expected_auth_req = AuthReq::kBondingFlag;
+  AuthReqField expected_auth_req = AuthReq::kBondingFlag | AuthReq::kSC;
   EXPECT_EQ(1, security_request_count());
   EXPECT_EQ(expected_auth_req, security_request_payload());
   UInt128 ltk_bytes;
@@ -3477,7 +3478,8 @@ TEST_F(ResponderPairingTest, SecurityRequestWithExistingLtk) {
   // Make the Security Upgrade request
   UpgradeSecurity(SecurityLevel::kAuthenticated);
   RunUntilIdle();
-  AuthReqField expected_auth_req = AuthReq::kBondingFlag | AuthReq::kMITM;
+  AuthReqField expected_auth_req =
+      AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC;
   EXPECT_EQ(1, security_request_count());
   EXPECT_EQ(expected_auth_req, security_request_payload());
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
@@ -3490,6 +3492,41 @@ TEST_F(ResponderPairingTest, SecurityRequestWithExistingLtk) {
   EXPECT_TRUE(sec_props().secure_connections());
 
   // No pairing should have taken place - we had an already-bonded LTK.
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(0, pairing_complete_count());
+  EXPECT_EQ(0, pairing_data_callback_count());
+}
+
+TEST_F(ResponderPairingTest, SecurityRequestWithExistingLegacyLtk) {
+  const SecurityProperties kProps(SecurityLevel::kAuthenticated,
+                                  kMaxEncryptionKeySize,
+                                  /*secure_connections=*/false);
+  const LTK kLtk(kProps, hci_spec::LinkKey({1, 2, 3}, 0, 0));
+  sm::PairingData bond_data;
+  bond_data.peer_ltk = kLtk;
+  bond_data.local_ltk = kLtk;
+  EXPECT_TRUE(peer().MutLe().SetBondData(bond_data));
+
+  NewSecurityManager(
+      Role::kResponder, IOCapability::kDisplayOnly, BondableMode::Bondable);
+
+  ASSERT_TRUE(fake_link()->ltk());
+  EXPECT_EQ(kLtk.key(), fake_link()->ltk());
+
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  RunUntilIdle();
+  AuthReqField expected_auth_req =
+      AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC;
+  EXPECT_EQ(1, security_request_count());
+  EXPECT_EQ(expected_auth_req, security_request_payload());
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+
+  EXPECT_EQ(1, security_callback_count());
+  EXPECT_EQ(fit::ok(), security_status());
+  EXPECT_EQ(kProps.level(), sec_props().level());
+  EXPECT_EQ(16u, sec_props().enc_key_size());
+  EXPECT_FALSE(sec_props().secure_connections());
+
   EXPECT_EQ(0, pairing_failed_count());
   EXPECT_EQ(0, pairing_complete_count());
   EXPECT_EQ(0, pairing_data_callback_count());
@@ -3516,7 +3553,8 @@ TEST_F(ResponderPairingTest,
   // Make a security request for authenticated security
   UpgradeSecurity(SecurityLevel::kAuthenticated);
   RunUntilIdle();
-  AuthReqField expected_auth_req = AuthReq::kBondingFlag | AuthReq::kMITM;
+  AuthReqField expected_auth_req =
+      AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC;
   EXPECT_EQ(1, security_request_count());
   EXPECT_EQ(expected_auth_req, security_request_payload());
 
@@ -3549,7 +3587,7 @@ TEST_F(ResponderPairingTest, HandlesMultipleSecurityRequestsCorrectly) {
   // Make a security request for encrypted security
   UpgradeSecurity(SecurityLevel::kEncrypted);
   RunUntilIdle();
-  AuthReqField expected_auth_req = AuthReq::kBondingFlag;
+  AuthReqField expected_auth_req = AuthReq::kBondingFlag | AuthReq::kSC;
   EXPECT_EQ(1, security_request_count());
   EXPECT_EQ(expected_auth_req, security_request_payload());
 
@@ -3582,6 +3620,8 @@ TEST_F(ResponderPairingTest, HandlesMultipleSecurityRequestsCorrectly) {
   // After the first pairing satisfied the kEncrypted Security Request, the
   // pending kAuthenticated Security Request should have been sent immediately.
   EXPECT_EQ(2, security_request_count());
+  EXPECT_EQ(AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC,
+            security_request_payload());
 }
 
 TEST_F(ResponderPairingTest, ReceiveSecondPairingRequestWhilePairing) {
@@ -6839,6 +6879,44 @@ TEST_F(InitiatorPairingTest,
   RunUntilIdle();
   EXPECT_EQ(fit::ok(), pairing_complete_status());
   EXPECT_TRUE(pairing_data().cross_transport_key.has_value());
+}
+
+TEST_F(ResponderPairingTest,
+       SecurityRequestOmitsScFlagWhenChannelMtuDoesNotSupportSc) {
+  NewSecurityManager(Role::kResponder,
+                     IOCapability::kDisplayYesNo,
+                     BondableMode::Bondable,
+                     gap::LESecurityMode::Mode1,
+                     kNoSecureConnectionsMtu);
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  RunUntilIdle();
+  EXPECT_EQ(1, security_request_count());
+  EXPECT_EQ(AuthReq::kBondingFlag | AuthReq::kMITM, security_request_payload());
+}
+
+TEST_F(ResponderPairingTest,
+       SecurityRequestSetsScFlagAndAllowsLegacyCentralFallback) {
+  // When Secure Connections is supported, requesting kEncrypted sets
+  // AuthReq::kSC in the outbound Security Request while still allowing a
+  // Legacy-only Central (SC = 0 in Pairing Request) to complete Legacy pairing
+  // cleanly.
+  NewSecurityManager(Role::kResponder,
+                     IOCapability::kDisplayYesNo,
+                     BondableMode::Bondable,
+                     gap::LESecurityMode::Mode1);
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, security_request_count());
+  EXPECT_EQ(AuthReq::kBondingFlag | AuthReq::kSC, security_request_payload());
+
+  UInt128 stk;
+  FastForwardToPhase3(&stk, /*secure_connections=*/false);
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(1, security_callback_count());
+  EXPECT_EQ(1, pairing_complete_count());
+  EXPECT_EQ(fit::ok(), security_status());
+  EXPECT_EQ(SecurityLevel::kEncrypted, sec_props().level());
+  EXPECT_FALSE(sec_props().secure_connections());
 }
 
 }  // namespace

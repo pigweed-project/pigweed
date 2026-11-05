@@ -55,7 +55,10 @@ void SecurityRequestPhase::MakeSecurityRequest(SecurityLevel desired_level,
   if (bondable_mode == BondableMode::Bondable) {
     security_req_payload |= AuthReq::kBondingFlag;
   }
-  if (desired_level == SecurityLevel::kSecureAuthenticated) {
+  // Core Spec v6.2, Vol 3, Part H, Sections 3.6.7 and 3.5.1: If LE Secure
+  // Connections pairing is supported by the device, then the SC field shall be
+  // set to 1, otherwise it shall be set to 0.
+  if (sm_chan().SupportsSecureConnections()) {
     security_req_payload |= AuthReq::kSC;
   }
   pending_security_request_ = desired_level;
