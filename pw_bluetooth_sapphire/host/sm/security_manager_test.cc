@@ -6438,6 +6438,145 @@ TEST_F(InitiatorPairingTest,
   bredr_token.reset();
 }
 
+TEST_F(InitiatorPairingTest,
+       EarlyEncryptionBeforePhase2KeyAbortsPairingWithoutEscalatingSecurity) {
+  const LTK kOriginalLtk(SecurityProperties(SecurityLevel::kEncrypted,
+                                            kMaxEncryptionKeySize,
+                                            /*secure_connections=*/true),
+                         hci_spec::LinkKey(UInt128{3}, /*rand=*/0, /*ediv=*/0));
+  SetBondLtk(kOriginalLtk);
+
+  // 1. Pre-existing LL_ENC_REQ completing during Phase 2 before Phase 2 derives
+  // a key aborts pairing and leaves link security at kEncrypted.
+  NewSecurityManager(
+      Role::kInitiator, IOCapability::kDisplayYesNo, BondableMode::Bondable);
+  ASSERT_EQ(1, fake_link()->start_encryption_count());
+  pairing()->Reset(IOCapability::kDisplayYesNo);
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  RunUntilIdle();
+  ASSERT_EQ(1, pairing_request_count());
+  ReceivePairingFeatures(IOCapability::kKeyboardOnly,
+                         AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC);
+  RunUntilIdle();
+
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_failed_count());
+  EXPECT_EQ(ErrorCode::kUnspecifiedReason, received_error_code());
+  EXPECT_EQ(1, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+  EXPECT_EQ(kOriginalLtk.security(), sec_props());
+  EXPECT_EQ(SecurityLevel::kEncrypted, pairing()->security().level());
+  EXPECT_FALSE(pairing()->security().authenticated());
+  EXPECT_EQ(kOriginalLtk.key(), fake_link()->ltk());
+  EXPECT_FALSE(fake_chan()->link_error());
+  EXPECT_FALSE(peer().MutLe().is_pairing());
+
+  // 2. Pre-existing LL_ENC_REQ completing during Phase 1 likewise aborts
+  // pairing without escalating security or clobbering a re-entrant upgrade.
+  NewSecurityManager(
+      Role::kInitiator, IOCapability::kDisplayYesNo, BondableMode::Bondable);
+  pairing()->Reset(IOCapability::kDisplayYesNo);
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  RunUntilIdle();
+  ASSERT_EQ(2, pairing_request_count());
+  set_on_new_sec_props_delegate([this](const SecurityProperties& /*props*/) {
+    pairing()->Reset(IOCapability::kDisplayYesNo);
+    UpgradeSecurity(SecurityLevel::kAuthenticated);
+  });
+
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  set_on_new_sec_props_delegate(nullptr);
+  EXPECT_EQ(2, pairing_failed_count());
+  EXPECT_EQ(3, pairing_request_count());
+  EXPECT_TRUE(peer().MutLe().is_pairing());
+  EXPECT_EQ(SecurityLevel::kEncrypted, pairing()->security().level());
+
+  // 3. Spurious early Encryption Change on an unbonded link aborts pairing and
+  // disconnects the unkeyed link via ValidateExistingLocalLtk().
+  InitializePeer();
+  SetUpSecurityManager(IOCapability::kDisplayYesNo);
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  RunUntilIdle();
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(3, pairing_failed_count());
+  EXPECT_EQ(1, auth_failure_callback_count());
+  EXPECT_TRUE(fake_chan()->link_error());
+}
+
+TEST_F(
+    ResponderPairingTest,
+    EarlyEncryptionInPhase2DoesNotEscalateSecurityOrPersistAuthenticatedBond) {
+  set_display_delegate([](uint32_t /*passkey*/,
+                          Delegate::DisplayMethod /*method*/,
+                          ConfirmCallback /*confirm*/) {});
+  const LTK kOriginalLtk(SecurityProperties(SecurityLevel::kEncrypted,
+                                            kMaxEncryptionKeySize,
+                                            /*secure_connections=*/true),
+                         hci_spec::LinkKey(UInt128{6}, /*rand=*/0, /*ediv=*/0));
+  SetBondLtk(kOriginalLtk);
+  NewSecurityManager(
+      Role::kResponder, IOCapability::kDisplayYesNo, BondableMode::Bondable);
+  ASSERT_EQ(kOriginalLtk.key(), fake_link()->ltk());
+
+  // 1. Legacy Phase 2 early encryption on Responder aborts pairing without
+  // escalating link security or distributing Phase 3 keys.
+  ReceivePairingFeatures(
+      PairingRequestParams{.io_capability = IOCapability::kKeyboardDisplay,
+                           .oob_data_flag = OOBDataFlag::kNotPresent,
+                           .auth_req = AuthReq::kBondingFlag | AuthReq::kMITM,
+                           .max_encryption_key_size = kMaxEncryptionKeySize,
+                           .initiator_key_dist_gen = 0,
+                           .responder_key_dist_gen = KeyDistGen::kEncKey},
+      /*peer_initiator=*/true);
+  RunUntilIdle();
+  ASSERT_EQ(1, pairing_response_count());
+
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_failed_count());
+  EXPECT_EQ(ErrorCode::kUnspecifiedReason, received_error_code());
+  EXPECT_EQ(0, enc_info_count());
+  EXPECT_EQ(0, central_ident_count());
+  EXPECT_EQ(SecurityLevel::kEncrypted, pairing()->security().level());
+  EXPECT_FALSE(pairing()->security().authenticated());
+  EXPECT_EQ(kOriginalLtk.key(), fake_link()->ltk());
+  EXPECT_FALSE(fake_chan()->link_error());
+  EXPECT_FALSE(peer().MutLe().is_pairing());
+  ASSERT_TRUE(peer().le()->bond_data().has_value());
+  ASSERT_TRUE(peer().le()->bond_data()->local_ltk.has_value());
+  EXPECT_EQ(kOriginalLtk, *peer().le()->bond_data()->local_ltk);
+
+  // 2. Secure Connections Phase 2 early encryption with zero key distribution
+  // also aborts pairing before EndPhase2/OnLowEnergyPairingComplete can run.
+  NewSecurityManager(
+      Role::kResponder, IOCapability::kDisplayYesNo, BondableMode::Bondable);
+  ReceivePairingFeatures(
+      PairingRequestParams{
+          .io_capability = IOCapability::kKeyboardDisplay,
+          .oob_data_flag = OOBDataFlag::kNotPresent,
+          .auth_req = AuthReq::kSC | AuthReq::kBondingFlag | AuthReq::kMITM,
+          .max_encryption_key_size = kMaxEncryptionKeySize,
+          .initiator_key_dist_gen = 0,
+          .responder_key_dist_gen = 0},
+      /*peer_initiator=*/true);
+  RunUntilIdle();
+  ASSERT_EQ(2, pairing_response_count());
+
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_failed_count());
+  EXPECT_EQ(ErrorCode::kUnspecifiedReason, received_error_code());
+  EXPECT_EQ(0, pairing_data_callback_count());
+  EXPECT_EQ(SecurityLevel::kEncrypted, pairing()->security().level());
+  EXPECT_FALSE(pairing()->security().authenticated());
+  EXPECT_EQ(kOriginalLtk.key(), fake_link()->ltk());
+  EXPECT_FALSE(fake_chan()->link_error());
+  EXPECT_FALSE(peer().MutLe().is_pairing());
+}
+
 }  // namespace
 }  // namespace bt::sm
 // inclusive-language: enable
