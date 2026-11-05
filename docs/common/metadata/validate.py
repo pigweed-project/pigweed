@@ -25,7 +25,29 @@ from pathlib import Path
 from sphinx.application import Sphinx
 from sphinx.errors import SphinxError
 
-from docs.common.metadata.sync import DocsTree, Metadata, check, format_report
+from docs.common.metadata.sync import (
+    DocsTree,
+    Metadata,
+    SyncError,
+    check,
+    format_report,
+)
+
+
+def check_categories(srcdir: Path, *, rustdoc_dir: Path) -> None:
+    """Checks that generated category content in `srcdir` matches metadata.
+
+    Raises:
+        SyncError: Any metadata TOML or generated section is out of sync.
+    """
+    metadata_dir = Path(__file__).resolve().parent
+    meta = Metadata.load(srcdir, metadata_dir=metadata_dir)
+    issues = meta.validate()
+    if not issues:
+        tree = DocsTree.for_sphinx_srcdir(srcdir, rustdoc_dir=rustdoc_dir)
+        issues = check(tree, meta)
+    if issues:
+        raise SyncError(format_report(issues))
 
 
 def validate_categories(app: Sphinx, exception: Exception | None) -> None:
@@ -34,10 +56,7 @@ def validate_categories(app: Sphinx, exception: Exception | None) -> None:
         return
 
     srcdir = Path(app.srcdir)
-    metadata_dir = Path(__file__).resolve().parent
-    meta = Metadata.load(srcdir, metadata_dir=metadata_dir)
-    issues = meta.validate()
-    if not issues:
-        issues = check(DocsTree.for_sphinx_srcdir(srcdir), meta)
-    if issues:
-        raise SphinxError(format_report(issues))
+    try:
+        check_categories(srcdir, rustdoc_dir=srcdir / "rustdoc/rustdoc")
+    except SyncError as exc:
+        raise SphinxError(str(exc)) from exc

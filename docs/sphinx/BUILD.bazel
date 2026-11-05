@@ -16,7 +16,7 @@ load("@bazel_skylib//rules:copy_directory.bzl", "copy_directory")
 load("@sphinxdocs//sphinxdocs:sphinx.bzl", "sphinx_build_binary", "sphinx_docs")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("//pw_build:python.bzl", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
 
 licenses(["notice"])
 
@@ -35,6 +35,14 @@ sphinx_docs_library(
     ],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:private"],
+)
+
+pw_py_library(
+    name = "sitemap_lib",
+    srcs = ["_extensions/sitemap.py"],
+    imports = ["_extensions"],
+    tags = ["nopylint"],
+    deps = ["@pigweed_python_packages//sphinx"],
 )
 
 pw_py_test(

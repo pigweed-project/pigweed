@@ -62,16 +62,16 @@ _EXCLUDE_SELECTORS = (
 )
 
 
-async def run_pagefind(outdir: str, srcdir: str):
+async def run_pagefind(outdir: Path) -> None:
     config = IndexConfig(
         exclude_selectors=_EXCLUDE_SELECTORS,
         verbose=False,
         keep_index_url=True,
-        output_path=f'{outdir}/search',
+        output_path=str(outdir / 'search'),
         force_language='en',
     )
     async with PagefindIndex(config=config) as index:
-        await index.add_directory(outdir)
+        await index.add_directory(str(outdir))
 
 
 def generate_search_index(
@@ -79,4 +79,4 @@ def generate_search_index(
 ) -> None:
     if app.builder.format != 'html':
         return
-    asyncio.run(run_pagefind(str(app.outdir), str(app.srcdir)))
+    asyncio.run(run_pagefind(Path(app.outdir)))

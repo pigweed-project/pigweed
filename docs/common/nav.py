@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 import os
 from pathlib import Path
 
-from docutils import nodes
+from docutils import nodes  # type: ignore[import-untyped]
 from jinja2 import Environment
 from sphinx.application import Sphinx
 from sphinx.environment.adapters.toctree import global_toctree_for_doc

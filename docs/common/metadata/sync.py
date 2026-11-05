@@ -1438,7 +1438,7 @@ class DocsTree:
         )
 
     @classmethod
-    def for_sphinx_srcdir(cls, srcdir: Path) -> DocsTree:
+    def for_sphinx_srcdir(cls, srcdir: Path, *, rustdoc_dir: Path) -> DocsTree:
         """The files in the Sphinx source tree assembled by `bazelisk build`.
 
         The tree has the contents of //docs/sphinx/ at its root, files from
@@ -1449,7 +1449,7 @@ class DocsTree:
             doxygen_modules_h=srcdir / "docs/doxygen/modules.h",
             doxygen_tagfile=srcdir / "_doxygen/tag/index.tag",
             rust_lib_rs=srcdir / "pw_rust/rust/pigweed/src/lib.rs",
-            rustdoc_dir=srcdir / "rustdoc/rustdoc",
+            rustdoc_dir=rustdoc_dir,
             workspace_root=srcdir,
         )
 

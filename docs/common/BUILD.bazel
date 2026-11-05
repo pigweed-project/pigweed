@@ -14,28 +14,54 @@
 
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//docs:__subpackages__"])
 
+_PY_SRCS = [
+    "__init__.py",
+    "breadcrumbs.py",
+    "header.py",
+    "nav.py",
+    "search.py",
+    "utils.py",
+]
+
+_ASSETS = [
+    "breadcrumbs.css",
+    "dev.js",
+    "header.css",
+    "header.html",
+    "header.js",
+    "nav.css",
+    "nav.js",
+    "search.css",
+    "theme.css",
+]
+
+pw_py_library(
+    name = "common_lib",
+    srcs = _PY_SRCS,
+    data = _ASSETS,
+    tags = ["nopylint"],
+    deps = [
+        "//docs/common/metadata:validate",
+        "@pigweed_python_packages//jinja2",
+        "@pigweed_python_packages//pagefind",
+        "@pigweed_python_packages//pagefind_bin_extended",
+        "@pigweed_python_packages//sphinx",
+    ],
+)
+
+pw_py_test(
+    name = "header_test",
+    srcs = ["header_test.py"],
+    deps = [":common_lib"],
+)
+
 sphinx_docs_library(
     name = "common",
-    srcs = [
-        "__init__.py",
-        "breadcrumbs.css",
-        "breadcrumbs.py",
-        "dev.js",
-        "header.css",
-        "header.html",
-        "header.js",
-        "header.py",
-        "nav.css",
-        "nav.js",
-        "nav.py",
-        "search.css",
-        "search.py",
-        "theme.css",
-        "utils.py",
-    ],
+    srcs = _PY_SRCS + _ASSETS,
     prefix = "_extensions/common",
     strip_prefix = "docs/common",
     target_compatible_with = incompatible_with_mcu(),

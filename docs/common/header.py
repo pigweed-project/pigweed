@@ -13,19 +13,29 @@
 # the License.
 """Universal header integration."""
 
+import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-import re
+import shutil
 from typing import Any
 
-from docutils import nodes
+from docutils import nodes  # type: ignore[import-untyped]
 from jinja2 import Environment
 from sphinx.application import Sphinx
 from sphinx.environment.adapters.toctree import global_toctree_for_doc
 
+from .breadcrumbs import build_breadcrumb_trail, render_breadcrumbs
+from .nav import (
+    NavLink,
+    extract_site_nav,
+    has_active_descendant,
+    inject_site_nav_into_content,
+    is_matching_url,
+)
 from .utils import format_href
 
+HEADER_NAV_FILENAME = "_pw_header_nav.json"
 _HEADER_PLACEHOLDER = "<!-- pw-sentinel -->"
 _MAX_VISIBLE_HEADER_LINKS = 5
 
@@ -37,6 +47,28 @@ class HeaderLink:
     title: str
     href: str
     children: list["HeaderLink"] = field(default_factory=list)
+
+
+def _link_from_dict(data: dict[str, Any]) -> HeaderLink:
+    return HeaderLink(
+        title=data["title"],
+        href=data["href"],
+        children=[_link_from_dict(c) for c in data.get("children", [])],
+    )
+
+
+def save_header_nav(path: Path, links: list[HeaderLink]) -> None:
+    """Writes serialized HeaderLink items to a JSON file."""
+    payload = json.dumps([asdict(link) for link in links], indent=2)
+    path.write_text(f"{payload}\n", encoding="utf-8")
+
+
+def load_header_nav(path: Path) -> list[HeaderLink]:
+    """Reads serialized HeaderLink items from a JSON file."""
+    return [
+        _link_from_dict(item)
+        for item in json.loads(path.read_text(encoding="utf-8"))
+    ]
 
 
 def extract_header_nav(app: Sphinx) -> list[HeaderLink]:
@@ -162,25 +194,70 @@ class HeaderCompiler:
         return "\n".join(lines) + "\n"
 
 
+def _inject_header_and_breadcrumbs(
+    content: str,
+    rel_page_path: str,
+    header_html: str,
+    site_nav_links: list[NavLink],
+) -> str:
+    trail = build_breadcrumb_trail(rel_page_path, content, site_nav_links)
+    breadcrumbs_html = render_breadcrumbs(trail)
+    header_and_breadcrumbs = (
+        f"{header_html}\n{breadcrumbs_html}"
+        if breadcrumbs_html
+        else header_html
+    )
+    return content.replace(_HEADER_PLACEHOLDER, header_and_breadcrumbs)
+
+
+def inject_subsite_headers(
+    src_dir: Path,
+    dst_dir: Path,
+    rel_prefix: str,
+    nav_links: list[HeaderLink],
+    integration_dir: Path | None = None,
+) -> None:
+    """Copies a subsite HTML tree and injects the header and breadcrumbs."""
+    prefix = rel_prefix.strip("/")
+    skip_target = "#doc-content" if prefix == "api/cc" else "#main-content"
+    compiler = HeaderCompiler(
+        integration_dir or Path(__file__).parent, nav_links=nav_links
+    )
+    header_html = compiler.compile(skip_target=skip_target)
+
+    shutil.copytree(
+        src_dir, dst_dir, copy_function=shutil.copyfile, dirs_exist_ok=True
+    )
+    injected_count = 0
+    for path in dst_dir.rglob("*.html"):
+        content = path.read_text(encoding="utf-8")
+        if _HEADER_PLACEHOLDER not in content:
+            continue
+        rel_page_path = (Path(prefix) / path.relative_to(dst_dir)).as_posix()
+        path.write_text(
+            _inject_header_and_breadcrumbs(
+                content, rel_page_path, header_html, []
+            ),
+            encoding="utf-8",
+        )
+        injected_count += 1
+
+    if injected_count == 0:
+        raise RuntimeError(
+            f"Failed to inject header: placeholder '{_HEADER_PLACEHOLDER}' not "
+            f"found in any HTML files under {src_dir}"
+        )
+
+
 def postprocess(app: Sphinx, exception: Exception | None) -> None:
     """Generates global header, sitewide nav, and breadcrumbs in a single pass."""
     if exception is not None or app.builder.format != "html":
         return
 
-    from .breadcrumbs import (
-        build_breadcrumb_trail,
-        render_breadcrumbs,
-    )
-    from .nav import (
-        extract_site_nav,
-        has_active_descendant,
-        inject_site_nav_into_content,
-        is_matching_url,
-    )
-
     outdir = Path(app.outdir)
     site_nav_links = extract_site_nav(app)
     header_nav_links = extract_header_nav(app)
+    save_header_nav(outdir / HEADER_NAV_FILENAME, header_nav_links)
 
     integration_dir = Path(__file__).parent
     compiler = HeaderCompiler(integration_dir, nav_links=header_nav_links)
@@ -224,23 +301,12 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
                         f"Failed to inject <pw-nav> into Sphinx page {rel_page_path}"
                     )
 
-            # 2. Build breadcrumb trail and HTML
-            trail = build_breadcrumb_trail(
-                rel_page_path, content, site_nav_links
-            )
-            breadcrumbs_html = render_breadcrumbs(trail)
-
-            # 3. Replace placeholder with header + breadcrumbs
+            # 2. Build breadcrumb trail and replace placeholder
             active_header = (
                 header_html_doxygen if is_doxygen else header_html_default
             )
-            header_and_breadcrumbs = (
-                f"{active_header}\n{breadcrumbs_html}"
-                if breadcrumbs_html
-                else active_header
-            )
-            new_content = content.replace(
-                _HEADER_PLACEHOLDER, header_and_breadcrumbs
+            new_content = _inject_header_and_breadcrumbs(
+                content, rel_page_path, active_header, site_nav_links
             )
             path.write_text(new_content, encoding="utf-8")
             injected_count += 1

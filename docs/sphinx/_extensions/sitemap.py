@@ -101,10 +101,8 @@ def build_url(rel_path: str) -> str:
     return url
 
 
-def generate_sitemap(app: Sphinx, exception: Exception | None) -> None:
-    if exception is not None or app.builder.format != 'html':
-        return
-    outdir = Path(app.outdir)
+def write_sitemap(outdir: Path) -> None:
+    """Writes sitemap.xml for all indexable HTML pages under outdir."""
     urls = [
         build_url(path.relative_to(outdir).as_posix())
         for path in outdir.rglob('*.html')
@@ -116,6 +114,12 @@ def generate_sitemap(app: Sphinx, exception: Exception | None) -> None:
         sitemap += f'  <url><loc>{url}</loc></url>\n'
     sitemap += '</urlset>\n'
     (outdir / 'sitemap.xml').write_text(sitemap, encoding='utf-8')
+
+
+def generate_sitemap(app: Sphinx, exception: Exception | None) -> None:
+    if exception is not None or app.builder.format != 'html':
+        return
+    write_sitemap(Path(app.outdir))
 
 
 def setup(app: Sphinx) -> dict[str, bool]:
