@@ -14,7 +14,7 @@
 
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//docs:__subpackages__"])
 
@@ -65,4 +65,30 @@ sphinx_docs_library(
     prefix = "_extensions/common",
     strip_prefix = "docs/common",
     target_compatible_with = incompatible_with_mcu(),
+)
+
+pw_py_library(
+    name = "assemble_lib",
+    srcs = ["assemble.py"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":common_lib",
+        "//docs/common/metadata:sync_lib",
+        "//docs/common/metadata:validate",
+        "//docs/sphinx:sitemap_lib",
+    ],
+)
+
+pw_py_test(
+    name = "assemble_test",
+    srcs = ["assemble_test.py"],
+    deps = [":assemble_lib"],
+)
+
+# py_binary requires its entrypoint in `srcs` even when `assemble_lib` provides
+# the module for `assemble_test`.
+pw_py_binary(
+    name = "assemble",
+    srcs = ["assemble.py"],
+    deps = [":assemble_lib"],
 )
