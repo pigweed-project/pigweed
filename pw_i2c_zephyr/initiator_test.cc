@@ -17,10 +17,17 @@
 
 #include "pw_i2c_zephyr/initiator.h"
 
+#include "pw_preprocessor/compiler.h"
+
+// Some Zephyr headers (e.g. zephyr/drivers/mspi.h via emul.h) use partial
+// designated initializers, which clang warns about when compiled as C++.
+PW_MODIFY_DIAGNOSTICS_PUSH();
+PW_MODIFY_DIAGNOSTIC_CLANG(ignored, "-Wmissing-designated-field-initializers");
 #include <zephyr/drivers/emul.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/i2c_emul.h>
 #include <zephyr/fff.h>
+PW_MODIFY_DIAGNOSTICS_POP();
 
 #include "pw_function/function.h"
 #include "pw_i2c/device.h"
@@ -40,17 +47,18 @@ FAKE_VALUE_FUNC(int, TargetWriteRequested, struct i2c_target_config*);
 FAKE_VALUE_FUNC(int, TargetWriteReceived, struct i2c_target_config*, uint8_t);
 FAKE_VALUE_FUNC(int, TargetStop, struct i2c_target_config*);
 
-struct i2c_target_callbacks mock_callbacks = {
-    .write_requested = TargetWriteRequested,
-    .read_requested = TargetReadRequested,
-    .write_received = TargetWriteReceived,
-    .read_processed = TargetReadProcessed,
-#ifdef CONFIG_I2C_TARGET_BUFFER_MODE
-    .buf_write_received = nullptr,
-    .buf_read_requested = nullptr,
-#endif
-    .stop = TargetStop,
-};
+// Assign fields individually so the test builds with Zephyr versions that add
+// callbacks to i2c_target_callbacks (e.g. the error callback); unset callbacks
+// stay null.
+struct i2c_target_callbacks mock_callbacks = [] {
+  struct i2c_target_callbacks callbacks = {};
+  callbacks.write_requested = TargetWriteRequested;
+  callbacks.read_requested = TargetReadRequested;
+  callbacks.write_received = TargetWriteReceived;
+  callbacks.read_processed = TargetReadProcessed;
+  callbacks.stop = TargetStop;
+  return callbacks;
+}();
 
 struct i2c_target_config mock_target_config = {
     .node = {},

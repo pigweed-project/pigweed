@@ -74,6 +74,7 @@ pw_add_test(pw_i2c_zephyr.initiator_test
   PRIVATE_DEPS
     pw_i2c_zephyr
     pw_function
+    pw_preprocessor
     pw_unit_test
     zephyr_interface
   GROUPS
