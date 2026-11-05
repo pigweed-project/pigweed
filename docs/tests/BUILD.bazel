@@ -28,7 +28,10 @@ filegroup(
 
 pw_py_library(
     name = "helpers",
-    srcs = ["helpers.py"],
+    srcs = [
+        "__init__.py",
+        "helpers.py",
+    ],
 )
 
 pw_py_test(

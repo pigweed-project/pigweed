@@ -20,7 +20,11 @@ module(
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_platform", version = "0.1.0")
-bazel_dep(name = "rules_python", version = "1.9.1")
+
+# LINT.IfChange(rules_python)
+bazel_dep(name = "rules_python", version = "2.4.6")
+# LINT.ThenChange(//MODULE.bazel:rules_python, //docs/tests/MODULE.bazel:rules_python, //pw_build/workflows_launcher/MODULE.bazel:rules_python, //pw_ide/py/integration_test.py:rules_python, //pw_kernel/examples/adventure/MODULE.bazel:rules_python, //targets/pw_rp2350/zephyr/MODULE.bazel:rules_python)
+
 bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "zephyr-bazel", version = "0.0.1")
@@ -141,15 +145,6 @@ single_version_override(
     patches = [
         # Once rules_rust 0.71.0 is released, we can remove this patch.
         "//bazel_patches:0003-Add-thumbv6m-and-more-thumbv7m-and-thumbv8m-triples.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_python",
-    patch_strip = 1,
-    patches = [
-        # Updates internal pip/packaging/pip-tools and publish certifi (GHSA-f8vq-jw3w-q789, GHSA-6q48-6c7w-9gw2)
-        "//:0003-Update-rules_python-pip-and-certifi.patch",
     ],
 )
 

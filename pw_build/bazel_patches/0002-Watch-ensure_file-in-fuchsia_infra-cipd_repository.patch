@@ -17,6 +17,40 @@ diff --git a/cipd/private/cipd_repository.bzl b/cipd/private/cipd_repository.bzl
  
      # Generate + resolve an ensure file with package + tag on the fly.
      ensure_file = ctx.path("generated/manifests/%s.ensure" % ctx.attr.name)
+diff --git a/infra/tools/run_tests.py b/infra/tools/run_tests.py
+--- a/infra/tools/run_tests.py
++++ b/infra/tools/run_tests.py
+@@ -46,9 +46,16 @@ def _is_valid_symlink(file: Path) -> bool:
+     return file.is_symlink() and file.exists()
+ 
+ 
++def _resolve_symlink(file: Path) -> Path:
++    link = file.readlink()
++    if link.is_absolute():
++        return link
++    return Path(os.path.normpath(file.parent / link))
++
++
+ def _expand_symlinks(files: Iterable[Path]) -> List[Path]:
+     return (
+-        _expand_symlinks([file.readlink() for file in files if _is_valid_symlink(file)])
++        _expand_symlinks([_resolve_symlink(file) for file in files if _is_valid_symlink(file)])
+         + list(files)
+         if files
+         else []
+@@ -111,11 +118,7 @@ def make_sandbox(base_dir, paths, strategy):
+                 if not _is_valid_symlink(src):
+                     continue
+ 
+-                src_link = src.readlink()
+-                if src_link.is_absolute():
+-                    src = src_link
+-                else:
+-                    src = src.parent / src_link
++                src = _resolve_symlink(src)
+ 
+                 # Preserve symlinks if their target will also be copied into the
+                 # sandbox, even for the copy sandbox strategy. This is because
 diff --git a/manifests/orchestrate.ensure b/manifests/orchestrate.ensure
 --- a/manifests/orchestrate.ensure
 +++ b/manifests/orchestrate.ensure

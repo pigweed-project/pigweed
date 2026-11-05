@@ -906,7 +906,10 @@ module(name = "downstream")
 bazel_dep(name = "pigweed", version = "0.0.0")
 local_path_override(module_name = "pigweed", path = "{pigweed_root}")
 bazel_dep(name = "rules_cc", version = "0.2.22")
-bazel_dep(name = "rules_python", version = "1.9.1")
+
+# LINT.IfChange(rules_python)
+bazel_dep(name = "rules_python", version = "2.4.6")
+# LINT.ThenChange(//MODULE.bazel:rules_python, //docs/tests/MODULE.bazel:rules_python, //pw_build/workflows_launcher/MODULE.bazel:rules_python, //pw_ide/py/integration_test.py:rules_python, //pw_kernel/examples/adventure/MODULE.bazel:rules_python, //targets/pw_rp2350/zephyr/MODULE.bazel:rules_python)
 
 # LINT.IfChange(python_version)
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
