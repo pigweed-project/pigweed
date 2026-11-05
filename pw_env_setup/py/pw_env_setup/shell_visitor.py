@@ -23,15 +23,82 @@ class _BaseShellVisitor:
         self._pathsep = pathsep
         self._outs = None
 
-    def _remove_value_from_path(self, variable, value):
-        return (
-            '{variable}="$(echo "${variable}"'
-            ' | sed "s|{pathsep}{value}{pathsep}|{pathsep}|g;"'
-            ' | sed "s|^{value}{pathsep}||g;"'
-            ' | sed "s|{pathsep}{value}$||g;"'
-            ')"\nexport {variable}\n'.format(
-                variable=variable, value=value, pathsep=self._pathsep
+    def _write_shell_header(self):
+        # Defines _pw_remove_path to remove entries from PATH-like variables in
+        # pure POSIX shell rather than spawning sed per entry.
+        self._outs.write(
+            inspect.cleandoc(
+                '''
+                # Usage: _pw_remove_path VARIABLE ENTRY
+                _pw_remove_path() {{
+                  if [ -n "${{ZSH_VERSION:-}}" ]; then
+                    emulate -L sh
+                  fi
+                  eval "_pw_val=\\${{$1-}}"
+                  # Entries are matched literally; nothing to do if absent.
+                  case "{pathsep}$_pw_val{pathsep}" in
+                    *"{pathsep}$2{pathsep}"*) ;;
+                    *)
+                      unset _pw_val
+                      return 0
+                      ;;
+                  esac
+                  # Split on the separator with globbing disabled, then rebuild
+                  # the value without the entry. Restore IFS and -f afterward.
+                  _pw_old_ifs="${{IFS-__PW_UNSET__}}"
+                  case "$-" in
+                    *f*) _pw_had_f=1 ;;
+                    *) _pw_had_f=0; set -f ;;
+                  esac
+                  IFS="{pathsep}"
+                  _pw_new=""
+                  _pw_first=1
+                  for _pw_ent in $_pw_val; do
+                    if [ "$_pw_ent" != "$2" ]; then
+                      if [ "$_pw_first" -eq 1 ]; then
+                        _pw_new="$_pw_ent"
+                        _pw_first=0
+                      else
+                        _pw_new="$_pw_new{pathsep}$_pw_ent"
+                      fi
+                    fi
+                  done
+                  if [ "$_pw_old_ifs" = "__PW_UNSET__" ]; then
+                    unset IFS
+                  else
+                    IFS="$_pw_old_ifs"
+                  fi
+                  if [ "$_pw_had_f" -eq 0 ]; then
+                    set +f
+                  fi
+                  eval "$1=\\"\\$_pw_new\\""
+                  export "$1"
+                  unset _pw_val _pw_old_ifs _pw_had_f _pw_new _pw_first _pw_ent
+                }}
+                '''.format(
+                    pathsep=self._pathsep
+                )
             )
+            + '\n\n'
+        )
+
+    def _write_shell_footer(self):
+        self._outs.write('\nunset -f _pw_remove_path\n')
+
+    def serialize(self, env, outs):
+        try:
+            self._outs = outs
+            self._write_shell_header()
+            env.accept(self)
+            self._write_shell_footer()
+        finally:
+            self._outs = None
+
+    def _remove_value_from_path(
+        self, variable, value
+    ):  # pylint: disable=no-self-use
+        return '_pw_remove_path {variable} "{value}"\n'.format(
+            variable=variable, value=value
         )
 
     def visit_hash(self, hash):  # pylint: disable=redefined-builtin
@@ -69,13 +136,9 @@ class ShellVisitor(_BaseShellVisitor):
                 (key, env.get(key) if value is None else value)
                 for key, value in env.replacements
             )
-            self._outs = outs
-
-            env.accept(self)
-
+            super().serialize(env, outs)
         finally:
             self._replacements = ()
-            self._outs = None
 
     def _apply_replacements(self, action):
         value = action.value
@@ -175,15 +238,6 @@ class DeactivateShellVisitor(_BaseShellVisitor):
         super().__init__(*args, **kwargs)
         self._pathsep = pathsep
 
-    def serialize(self, env, outs):
-        try:
-            self._outs = outs
-
-            env.accept(self)
-
-        finally:
-            self._outs = None
-
     def visit_set(self, set):  # pylint: disable=redefined-builtin
         if set.deactivate:
             self._outs.write('unset {name}\n'.format(name=set.name))
@@ -229,6 +283,12 @@ class FishShellVisitor(ShellVisitor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._pathsep = ' '
+
+    def _write_shell_header(self):
+        pass
+
+    def _write_shell_footer(self):
+        pass
 
     def _remove_value_from_path(self, variable, value):
         return 'set PATH (string match -v {value} ${variable})\n'.format(
@@ -302,13 +362,7 @@ class DeactivateFishShellVisitor(FishShellVisitor):
     """Removes values from a fish shell environment."""
 
     def serialize(self, env, outs):
-        try:
-            self._outs = outs
-
-            env.accept(self)
-
-        finally:
-            self._outs = None
+        _BaseShellVisitor.serialize(self, env, outs)
 
     def visit_set(self, set):  # pylint: disable=redefined-builtin
         if set.deactivate:

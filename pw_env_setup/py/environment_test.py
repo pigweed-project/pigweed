@@ -26,6 +26,7 @@ This environment is then validated in the test process.
 import json
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -544,6 +545,85 @@ class PosixEnvironmentTest(
                 env['_PW_ENVIRONMENT_CONFIG_FILE'],
                 os.path.join(tmpdir, 'pigweed.json'),
             )
+
+    # A path entry with shell glob and regex metacharacters.
+    TRICKY_ENTRY = '/opt/c++.v1[2]'
+
+    def _source_in_shells(self, commands):
+        """Sources self.env's script then runs commands, in every POSIX shell.
+
+        Returns a dict mapping shell name to the commands' stdout lines.
+        """
+        self.env.finalize()
+        with tempfile.TemporaryDirectory(prefix='pw-test-shells-') as tmpdir:
+            script = os.path.join(tmpdir, 'activate.sh')
+            with open(script, 'w') as outs:
+                self.env.write(outs, shell_file=script)
+
+            results = {}
+            for shell in ('sh', 'dash', 'bash', 'zsh'):
+                if shutil.which(shell) is None:
+                    continue
+                res = subprocess.run(
+                    [shell, '-eu', '-c', '. "$1"\n' + commands, shell, script],
+                    capture_output=True,
+                    env={
+                        'PATH': '/usr/bin:/bin',
+                        self.var_already_set: os.environ[self.var_already_set],
+                    },
+                    check=True,
+                )
+                results[shell] = res.stdout.decode().splitlines()
+            self.assertTrue(results)
+            return results
+
+    def test_prepend_dedupes_literally_written(self):
+        """Re-adding an entry moves it instead of duplicating it."""
+        if not self.run_shell_tests:
+            return
+
+        # Start from one:two:three (see setUp).
+        self.env.prepend(self.var_already_set, self.TRICKY_ENTRY)
+        self.env.prepend(self.var_already_set, 'two')
+        self.env.prepend(self.var_already_set, self.TRICKY_ENTRY)
+
+        for shell, lines in self._source_in_shells(
+            'echo "${}"'.format(self.var_already_set)
+        ).items():
+            self.assertEqual(
+                lines,
+                [self.pathsep.join((self.TRICKY_ENTRY, 'two', 'one', 'three'))],
+                shell,
+            )
+
+    def test_deactivate_removes_added_entries_written(self):
+        """_pw_deactivate strips every added entry, even a glob pattern."""
+        if not self.run_shell_tests:
+            return
+
+        glob_entry = os.path.join(os.path.dirname(__file__), '*')
+        self.env.prepend(self.var_already_set, self.TRICKY_ENTRY)
+        self.env.append(self.var_already_set, glob_entry)
+
+        for shell, lines in self._source_in_shells(
+            '_pw_deactivate\necho "${}"'.format(self.var_already_set)
+        ).items():
+            self.assertEqual(
+                lines, [self.pathsep.join(('one', 'two', 'three'))], shell
+            )
+
+    def test_remove_path_leaves_no_trace_written(self):
+        """The helper is undefined and globbing is restored after sourcing."""
+        if not self.run_shell_tests:
+            return
+
+        self.env.prepend(self.var_already_set, 'two')
+
+        for shell, lines in self._source_in_shells(
+            'command -v _pw_remove_path || echo undefined\n'
+            'case "$-" in *f*) echo noglob ;; *) echo glob ;; esac'
+        ).items():
+            self.assertEqual(lines, ['undefined', 'glob'], shell)
 
 
 class WindowsCaseInsensitiveTest(unittest.TestCase):
