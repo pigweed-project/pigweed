@@ -43,9 +43,21 @@ elif test -n "$ZSH_NAME"; then
   declare -r _PW_SCRIPT_DIR="${0:h:A}"
 fi
 
-if [ -d "${_PW_SCRIPT_DIR}/environment/cipd/packages/bazelisk" ]; then
-  export PATH="${_PW_SCRIPT_DIR}/environment/cipd/packages/bazelisk:${PATH}"
+_PW_ENV_DIR="${_PW_SCRIPT_DIR}/environment"
+# In a git worktree, fall back to the primary checkout's environment.
+# Check -f .git first as a fast path (linked worktrees and submodules use a
+# .git file), then verify --git-common-dir resolves to <primary>/.git.
+if [ ! -d "${_PW_ENV_DIR}" ] && [ -f "${_PW_SCRIPT_DIR}/.git" ]; then
+  _PW_COMMON_DIR="$(GIT_OPTIONAL_LOCKS=0 git -C "${_PW_SCRIPT_DIR}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  if [[ "${_PW_COMMON_DIR}" == */.git ]]; then
+    _PW_ENV_DIR="${_PW_COMMON_DIR%/.git}/environment"
+  fi
+  unset _PW_COMMON_DIR
 fi
+if [ -d "${_PW_ENV_DIR}/cipd/packages/bazelisk" ]; then
+  export PATH="${_PW_ENV_DIR}/cipd/packages/bazelisk:${PATH}"
+fi
+unset _PW_ENV_DIR
 
 declare -r _PW_LAUNCHER_DIR="${_PW_SCRIPT_DIR}/pw_build/workflows_launcher"
 declare -r _PW_WORKFLOWS_OUT_DIR="${_PW_SCRIPT_DIR}/out/workflows_launcher"
