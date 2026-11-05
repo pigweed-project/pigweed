@@ -248,6 +248,10 @@ class SecurityManagerImpl final : public SecurityManager,
   // when an LTK is expected to exist.
   Result<> ValidateExistingLocalLtk();
 
+  // Returns true if BR/EDR pairing is active on the peer or this security
+  // manager is currently waiting for BR/EDR pairing to complete.
+  bool IsBrEdrPairingInProgress() const;
+
   std::optional<sm::LTK> GetExistingLtkFromPeerCache();
 
   // Updates repeated attempts backoff state following a pairing failure.
@@ -474,6 +478,17 @@ void SecurityManagerImpl::OnSecurityRequest(AuthReqField auth_req) {
     return;
   }
 
+  // Core Spec v6.2, Vol 3, Part H, Section 2.4.6: "The Central shall ignore the
+  // Peripheral's Security Request if the Central has sent a Pairing Request
+  // without receiving a Pairing Response from the Peripheral or if the Central
+  // has initiated encryption mode setup."
+  if (std::holds_alternative<StartingEncryption>(current_phase_)) {
+    bt_log(INFO,
+           "sm",
+           "ignoring Security Request while encryption setup is in progress");
+    return;
+  }
+
   SecurityLevel requested_level;
   // inclusive-language: ignore
   if (auth_req & AuthReq::kMITM) {
@@ -482,15 +497,12 @@ void SecurityManagerImpl::OnSecurityRequest(AuthReqField auth_req) {
     requested_level = SecurityLevel::kEncrypted;
   }
 
-  // "If pairing has been initiated by the local device on the BR/EDR transport,
-  // and a pairing request is received from the same remote device on the LE
-  // transport, the LE pairing shall be rejected with SMP error code BR/EDR
-  // Pairing in Progress if both sides support LE Secure Connections." (v6.0,
-  // Vol. 3, Part C, Sec. 14.2)
-  bool peer_supports_secure_connections = auth_req & kSC;
-  bool bredr_pairing_in_progress =
-      peer_->bredr() && peer_->bredr()->is_pairing();
-  if (peer_supports_secure_connections && bredr_pairing_in_progress) {
+  // Core Spec v6.2, Vol 3, Part C, Section 14.2 & Part H, Section 2.4.6 /
+  // 3.5.5: Reject incoming LE Security Requests whenever BR/EDR pairing with
+  // the same peer is in progress (regardless of the peer's Secure Connections
+  // flag) so concurrent cross-transport pairing cannot run or overwrite an
+  // active WaitForBrEdrPairing phase.
+  if (IsBrEdrPairingInProgress()) {
     bt_log(INFO,
            "sm",
            "rejecting Security Request because BREDR pairing in progress");
@@ -501,7 +513,7 @@ void SecurityManagerImpl::OnSecurityRequest(AuthReqField auth_req) {
 
   // If we already have a LTK and its security properties satisfy the request,
   // then we start link layer encryption (which will either encrypt the link or
-  // perform a key refresh). See Vol 3, Part H, Figure 2.7 for the algorithm.
+  // perform a key refresh). See Vol. 3, Part H, Figure 2.7 for the algorithm.
   if (ltk_ && (ltk_->security().level() >= requested_level) &&
       (!(auth_req & AuthReq::kSC) || ltk_->security().secure_connections())) {
     if (bt_is_error(
@@ -590,24 +602,26 @@ void SecurityManagerImpl::OnPairingRequest(
     return;
   }
 
-  // "If pairing has been initiated by the local device on the BR/EDR transport,
-  // and a pairing request is received from the same remote device on the LE
-  // transport, the LE pairing shall be rejected with SMP error code BR/EDR
-  // Pairing in Progress if both sides support LE Secure Connections." (v6.0,
-  // Vol. 3, Part C, Sec. 14.2)
-  bool peer_supports_secure_connections = req_params.auth_req & kSC;
-  bool le_secure_connections =
-      low_energy_link_.is_alive() && peer_supports_secure_connections;
-  bool bredr_pairing_in_progress =
-      peer_->bredr() && peer_->bredr()->is_pairing();
-  if (le_secure_connections && bredr_pairing_in_progress) {
+  // Reject incoming LE Pairing Requests whenever BR/EDR pairing with the same
+  // peer is in progress (regardless of the peer's Secure Connections flag) so
+  // concurrent cross-transport pairing cannot run or overwrite an active
+  // WaitForBrEdrPairing phase.
+  if (low_energy_link_.is_alive() && IsBrEdrPairingInProgress()) {
     bt_log(INFO,
            "sm",
            "LE: rejecting Pairing Request because BREDR pairing in progress");
     sm_chan_->SendMessageNoTimerReset(kPairingFailed,
                                       ErrorCode::kBREDRPairingInProgress);
+    if (std::holds_alternative<SecurityRequestPhase>(current_phase_)) {
+      ResetState();
+      if (!request_queue_.empty()) {
+        UpgradeSecurityInternal();
+      }
+    }
     return;
   }
+  PW_CHECK(!SecurityUpgradeInProgress() ||
+           std::holds_alternative<SecurityRequestPhase>(current_phase_));
 
   // We only require authentication as Responder if there is a pending
   // Security Request for it.
@@ -1087,18 +1101,25 @@ void SecurityManagerImpl::OnLowEnergyPairingComplete(PairingData pairing_data) {
     // as such the peer and local LTKs will be equivalent.
     PW_CHECK(features.secure_connections);
     PW_CHECK(pairing_data.peer_ltk == pairing_data.local_ltk);
-    std::optional<UInt128> ct_key_value = util::LeLtkToBrEdrLinkKey(
-        ltk_->key().value(), features.generate_ct_key.value());
-    if (ct_key_value) {
-      // Core Spec v6.0, Volume 2, Part H, Section 3.1: BR/EDR link keys are
-      // always 16 bytes (128 bits).
-      SecurityProperties sec_props(ltk_->security().level(),
-                                   hci_spec::kBrEdrLinkKeySize,
-                                   ltk_->security().secure_connections());
-      pairing_data.cross_transport_key =
-          LTK(sec_props, hci_spec::LinkKey(*ct_key_value, 0, 0));
+    if (IsBrEdrPairingInProgress()) {
+      bt_log(INFO,
+             "sm",
+             "LE: skipping BR/EDR cross-transport key derivation because "
+             "BR/EDR pairing is in progress");
     } else {
-      bt_log(WARN, "sm", "failed to generate cross-transport key");
+      std::optional<UInt128> ct_key_value = util::LeLtkToBrEdrLinkKey(
+          ltk_->key().value(), features.generate_ct_key.value());
+      if (ct_key_value) {
+        // Core Spec v6.0, Volume 2, Part H, Section 3.1: BR/EDR link keys are
+        // always 16 bytes (128 bits).
+        SecurityProperties sec_props(ltk_->security().level(),
+                                     hci_spec::kBrEdrLinkKeySize,
+                                     ltk_->security().secure_connections());
+        pairing_data.cross_transport_key =
+            LTK(sec_props, hci_spec::LinkKey(*ct_key_value, 0, 0));
+      } else {
+        bt_log(WARN, "sm", "failed to generate cross-transport key");
+      }
     }
   }
 
@@ -1390,8 +1411,8 @@ void SecurityManagerImpl::ResetState() {
     pre_phase_2_ltk_.reset();
   }
   sm_chan_->SetChannelHandler(weak_handler_.GetWeakPtr());
-  pairing_token_.reset();
   current_phase_ = std::monostate{};
+  pairing_token_.reset();
 }
 
 void SecurityManagerImpl::SetSecurityProperties(const SecurityProperties& sec) {
@@ -1782,6 +1803,11 @@ bool SecurityManagerImpl::IsBrEdrCrossTransportKeyDerivationAllowed() const {
   }
 
   return true;
+}
+
+bool SecurityManagerImpl::IsBrEdrPairingInProgress() const {
+  return (peer_->bredr() && peer_->bredr()->is_pairing()) ||
+         std::holds_alternative<WaitForBrEdrPairing>(current_phase_);
 }
 
 std::optional<sm::LTK> SecurityManagerImpl::GetExistingLtkFromPeerCache() {

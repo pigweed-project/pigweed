@@ -219,6 +219,19 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
                          ? pw::bluetooth::emboss::ConnectionRole::CENTRAL
                          : pw::bluetooth::emboss::ConnectionRole::PERIPHERAL;
 
+    if (fake_bredr_link_ &&
+        fake_bredr_link_->state() == hci::Connection::State::kConnected) {
+      DynamicByteBuffer status_event = testing::CommandStatusPacket(
+          hci_spec::kDisconnect, pw::bluetooth::emboss::StatusCode::SUCCESS);
+      DynamicByteBuffer disconnect_complete =
+          testing::DisconnectionCompletePacket(kConnectionHandle);
+      EXPECT_CMD_PACKET_OUT(controller_,
+                            testing::DisconnectPacket(kConnectionHandle),
+                            &status_event,
+                            &disconnect_complete);
+      fake_bredr_link_.reset();
+      RunUntilIdle();
+    }
     fake_bredr_link_ = std::make_unique<hci::testing::FakeBrEdrConnection>(
         kConnectionHandle,
         kLocalBrEdrAddr,
@@ -969,6 +982,7 @@ class InitiatorPairingTest : public SecurityManagerTest {
     RunUntilIdle();
 
     ASSERT_EQ(1, pairing_request_count());
+    const int initial_pairing_failed_count = pairing_failed_count();
     PairingRequestParams pres;
     pres.io_capability = IOCapability::kDisplayYesNo;
     pres.oob_data_flag = OOBDataFlag::kNotPresent;
@@ -1052,7 +1066,7 @@ class InitiatorPairingTest : public SecurityManagerTest {
     ASSERT_EQ(dhkey_check_a, pairing_dhkey_check());
     ReceivePairingDHKeyCheck(dhkey_check_b);
     RunUntilIdle();
-    EXPECT_EQ(0, pairing_failed_count());
+    EXPECT_EQ(initial_pairing_failed_count, pairing_failed_count());
     EXPECT_EQ(0, security_callback_count());
     EXPECT_TRUE(peer().MutLe().is_pairing());
 
@@ -3185,6 +3199,8 @@ TEST_F(InitiatorPairingTest, ReceiveSecurityRequestWhenPaired) {
 
   // Once for the STK and once again due to the locally initiated key refresh.
   ASSERT_EQ(2, fake_link()->start_encryption_count());
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
 
   // Receive a security request with a higher security requirement. This should
   // trigger a pairing request.
@@ -5004,16 +5020,41 @@ TEST_F(ResponderPairingTest, BrEdrPairingInProgressDuringSecurityRequestPhase) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
   RunUntilIdle();
   EXPECT_EQ(1, security_request_count());
+  EXPECT_TRUE(peer().MutLe().is_pairing());
 
-  gap::Peer::PairingToken token = peer().MutBrEdr().RegisterPairing();
+  std::optional<gap::Peer::PairingToken> token =
+      peer().MutBrEdr().RegisterPairing();
 
+  // Both SC and non-SC Pairing Requests are rejected with
+  // kBREDRPairingInProgress, resetting SecurityRequestPhase (stopping the 30s
+  // timer and releasing the LE pairing token) and re-parking the pending
+  // request in WaitForBrEdrPairing.
   ReceivePairingRequest(IOCapability::kDisplayOnly, kSC);
   RunUntilIdle();
-  EXPECT_EQ(0, pairing_response_count());
   EXPECT_EQ(0, pairing_response_count());
   EXPECT_EQ(1, pairing_failed_count());
   ASSERT_TRUE(received_error_code().has_value());
   EXPECT_EQ(received_error_code().value(), ErrorCode::kBREDRPairingInProgress);
+  EXPECT_FALSE(peer().MutLe().is_pairing());
+
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_response_count());
+  EXPECT_EQ(2, pairing_failed_count());
+  EXPECT_EQ(received_error_code().value(), ErrorCode::kBREDRPairingInProgress);
+
+  // Advancing past kPairingTimeout does not disconnect the link because
+  // SecurityRequestPhase's timer was stopped.
+  RunFor(kPairingTimeout);
+  EXPECT_FALSE(fake_chan()->link_error());
+  EXPECT_EQ(0, security_callback_count());
+
+  // When BR/EDR pairing completes, the re-parked request resumes and sends a
+  // new Security Request.
+  token.reset();
+  RunUntilIdle();
+  EXPECT_EQ(2, security_request_count());
+  EXPECT_TRUE(peer().MutLe().is_pairing());
 }
 
 TEST_F(InitiatorPairingTest,
@@ -5027,6 +5068,14 @@ TEST_F(InitiatorPairingTest,
   EXPECT_EQ(0, pairing_request_count());
   EXPECT_EQ(1, pairing_failed_count());
   ASSERT_TRUE(received_error_code().has_value());
+  EXPECT_EQ(received_error_code().value(), ErrorCode::kBREDRPairingInProgress);
+
+  // Non-SC Security Request on an idle Central is also rejected while BR/EDR
+  // pairing is in progress.
+  ReceiveSecurityRequest(/*auth_req=*/0u);
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_request_count());
+  EXPECT_EQ(2, pairing_failed_count());
   EXPECT_EQ(received_error_code().value(), ErrorCode::kBREDRPairingInProgress);
 }
 
@@ -5081,23 +5130,27 @@ TEST_F(InitiatorPairingTest,
   RunUntilIdle();
   EXPECT_EQ(0, pairing_request_count());
 
-  // Non-SC!
+  // Non-SC Security Request must also be rejected while BR/EDR pairing is in
+  // progress without overwriting WaitForBrEdrPairing.
   ReceiveSecurityRequest(/*auth_req=*/0u);
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_request_count());
+  EXPECT_EQ(1, pairing_failed_count());
+  ASSERT_TRUE(received_error_code().has_value());
+  EXPECT_EQ(received_error_code().value(), ErrorCode::kBREDRPairingInProgress);
+  EXPECT_FALSE(peer().MutLe().is_pairing());
+  EXPECT_EQ(0, security_callback_count());
 
-  UInt128 stk;
-  FastForwardToSTK(&stk);
-  ASSERT_TRUE(fake_link()->ltk());
+  // Once BR/EDR pairing completes, the queued LE security upgrade proceeds.
+  bredr_pairing_token.reset();
+  EXPECT_TRUE(peer().MutLe().is_pairing());
+  UInt128 ltk;
+  FastForwardToScLtkAfterUpgradeSecurity(&ltk);
   EXPECT_EQ(1, fake_link()->start_encryption_count());
-
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
   RunUntilIdle();
-  EXPECT_EQ(0, pairing_failed_count());
   EXPECT_EQ(1, new_sec_props_count());
-  EXPECT_EQ(security_callback_count(), 2);
-
-  bredr_pairing_token.reset();
-  RunUntilIdle();
-  EXPECT_EQ(security_callback_count(), 2);
+  EXPECT_EQ(1, security_callback_count());
 }
 
 TEST_F(ResponderPairingTest,
@@ -5174,27 +5227,46 @@ TEST_F(InitiatorPairingTest,
 }
 
 TEST_F(InitiatorPairingTest, SecurityRequestReceivedWhileStartingEncryption) {
-  SecurityProperties sec_props(
-      SecurityLevel::kEncrypted, 16, /*secure_connections=*/false);
-  LTK ltk(sec_props, hci_spec::LinkKey());
-  sm::PairingData bond_data;
-  bond_data.peer_ltk = ltk;
-  bond_data.local_ltk = ltk;
-  EXPECT_TRUE(peer().MutLe().SetBondData(bond_data));
+  InitializePeer(kPeerPublicAddr);
+  SetBondLtk(kUnauthenticatedKey);
 
   NewSecurityManager(
       Role::kInitiator, IOCapability::kDisplayOnly, BondableMode::Bondable);
   RunUntilIdle();
   EXPECT_EQ(1, fake_link()->start_encryption_count());
 
-  ReceiveSecurityRequest();
-  RunUntilIdle();
-  EXPECT_EQ(2, fake_link()->start_encryption_count());
+  std::optional<gap::Peer::PairingToken> bredr_token =
+      peer().MutBrEdr().RegisterPairing();
 
+  // Core Spec v6.2, Vol 3, Part H, Section 2.4.6: Central shall ignore
+  // Peripheral Security Requests (whether SC=0 or SC=1, and whether
+  // unauthenticated or MITM) while encryption mode setup is in progress,
+  // preserving StartingEncryption.
+  ReceiveSecurityRequest();
+  ReceiveSecurityRequest(AuthReq::kMITM);
+  ReceiveSecurityRequest(AuthReq::kMITM | AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(1, fake_link()->start_encryption_count());
+  EXPECT_EQ(0, pairing_request_count());
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_FALSE(peer().MutLe().is_pairing());
+  EXPECT_TRUE(peer().MutBrEdr().is_pairing());
+
+  bredr_token.reset();
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
   RunUntilIdle();
-  EXPECT_EQ(2, fake_link()->start_encryption_count());
+  EXPECT_EQ(1, fake_link()->start_encryption_count());
   EXPECT_EQ(1, new_sec_props_count());
+  EXPECT_EQ(SecurityLevel::kEncrypted, pairing()->security().level());
+
+  // Once encryption mode setup has completed, an authenticated Security Request
+  // over the encrypted link starts Phase 1 pairing normally.
+  ReceiveSecurityRequest(AuthReq::kMITM);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+  const PairingRequestParams& params =
+      local_pairing_cmd().view(1).To<PairingRequestParams>();
+  EXPECT_TRUE(params.auth_req & AuthReq::kMITM);
 }
 
 TEST_F(InitiatorPairingTest, BrEdrCtkdHappenedAfterSecurityManagerCreation) {
@@ -6225,20 +6297,8 @@ TEST_F(
   EXPECT_TRUE(destroyed_in_cb);
   EXPECT_EQ(nullptr, pairing());
 
-  // 3. OnSecurityRequest() (both while StartingEncryption has a queued
-  // UpgradeSecurity request and when already encrypted) and
-  // OnPhase2EncryptionKey() StartEncryption() failures drain pending requests,
-  // signal link error, and abort pairing.
-  SetBondLtk(kAuthenticatedSecureKey);
-  SetUpSecurityManager(IOCapability::kDisplayOnly);
-  RunUntilIdle();
-  UpgradeSecurity(SecurityLevel::kEncrypted);
-  SimulateLinkDisconnectInProgress();
-  ReceiveSecurityRequest(AuthReq::kMITM | AuthReq::kSC);
-  EXPECT_EQ(2, security_callback_count());
-  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
-  EXPECT_TRUE(fake_chan()->link_error());
-
+  // 3. OnSecurityRequest() and OnPhase2EncryptionKey() StartEncryption()
+  // failures cleanly signal link error / abort pairing.
   SetBondLtk(kAuthenticatedSecureKey);
   SetUpSecurityManager(IOCapability::kDisplayOnly);
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
@@ -6260,7 +6320,7 @@ TEST_F(
   ReceivePairingRandom(srand);
   RunUntilIdle();
   EXPECT_EQ(1, pairing_failed_count());
-  EXPECT_EQ(3, security_callback_count());
+  EXPECT_EQ(2, security_callback_count());
   EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
   EXPECT_FALSE(fake_link()->ltk().has_value());
 
@@ -6307,7 +6367,7 @@ TEST_F(
   RunUntilIdle();
   fail_sc_phase_2_start_encryption();
   EXPECT_EQ(2, pairing_failed_count());
-  EXPECT_EQ(4, security_callback_count());
+  EXPECT_EQ(3, security_callback_count());
   EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
   EXPECT_FALSE(fake_link()->ltk().has_value());
 
@@ -6324,6 +6384,58 @@ TEST_F(
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
   RunUntilIdle();
   EXPECT_EQ(kUnauthenticatedKey.security(), pairing()->security());
+}
+
+TEST_F(ResponderPairingTest,
+       LegacyPairingRequestRejectedWhileBrEdrPairingInProgress) {
+  InitializePeer(kPeerPublicAddr);
+  NewSecurityManager(
+      Role::kResponder, IOCapability::kDisplayOnly, BondableMode::Bondable);
+
+  std::optional<gap::Peer::PairingToken> bredr_token =
+      peer().MutBrEdr().RegisterPairing();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(0, security_request_count());
+
+  // Legacy Pairing Request (SC=0) is rejected while BR/EDR pairing is active
+  // without overwriting WaitForBrEdrPairing.
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_response_count());
+  EXPECT_EQ(1, pairing_failed_count());
+  EXPECT_EQ(ErrorCode::kBREDRPairingInProgress, received_error_code());
+  EXPECT_FALSE(peer().MutLe().is_pairing());
+
+  // When BR/EDR pairing finishes, the preserved WaitForBrEdrPairing phase
+  // proceeds to SecurityRequestPhase.
+  bredr_token.reset();
+  RunUntilIdle();
+  EXPECT_EQ(1, security_request_count());
+  EXPECT_TRUE(peer().MutLe().is_pairing());
+}
+
+TEST_F(InitiatorPairingTest,
+       LeToBrEdrCrossTransportKeyDerivationSkippedWhenBrEdrPairingInProgress) {
+  InitializePeer(kPeerPublicAddr);
+  SetUpSecurityManager();
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  ASSERT_EQ(1, pairing_request_count());
+
+  std::optional<gap::Peer::PairingToken> bredr_token =
+      peer().MutBrEdr().RegisterPairing();
+  UInt128 ltk_bytes;
+  FastForwardToScLtkAfterUpgradeSecurity(&ltk_bytes,
+                                         SecurityLevel::kEncrypted,
+                                         KeyDistGen::kLinkKey,
+                                         KeyDistGen::kLinkKey);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_complete_count());
+  EXPECT_EQ(fit::ok(), pairing_complete_status());
+  EXPECT_FALSE(pairing_data().cross_transport_key.has_value());
+  bredr_token.reset();
 }
 
 }  // namespace
