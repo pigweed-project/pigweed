@@ -241,42 +241,6 @@ inline Result<uint32_t> FindUint32(stream::Reader& message_stream,
   return FindUint32(message_stream, static_cast<uint32_t>(field), occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindUint32(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint32_t> FindUint32(ConstByteSpan message,
-                                   uint32_t field_number) {
-  return FindUint32(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindUint32(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint32_t> FindUint32(ConstByteSpan message, T field) {
-  return FindUint32(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindUint32(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint32_t> FindUint32(stream::Reader& message_stream,
-                                   uint32_t field_number) {
-  return FindUint32(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindUint32(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint32_t> FindUint32(stream::Reader& message_stream, T field) {
-  return FindUint32(message_stream, field, Occurrence::kFirst);
-}
-
 using Uint32Finder = Finder<uint32_t, &Decoder::ReadUint32>;
 using Uint32StreamFinder = StreamFinder<uint32_t, &StreamDecoder::ReadUint32>;
 
@@ -326,41 +290,6 @@ inline Result<int32_t> FindInt32(stream::Reader& message_stream,
                                  T field,
                                  Occurrence occurrence) {
   return FindInt32(message_stream, static_cast<uint32_t>(field), occurrence);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindInt32(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindInt32(ConstByteSpan message, uint32_t field_number) {
-  return FindInt32(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindInt32(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindInt32(ConstByteSpan message, T field) {
-  return FindInt32(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindInt32(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindInt32(stream::Reader& message_stream,
-                                 uint32_t field_number) {
-  return FindInt32(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindInt32(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindInt32(stream::Reader& message_stream, T field) {
-  return FindInt32(message_stream, field, Occurrence::kFirst);
 }
 
 using Int32Finder = Finder<int32_t, &Decoder::ReadInt32>;
@@ -414,42 +343,6 @@ inline Result<int32_t> FindSint32(stream::Reader& message_stream,
   return FindSint32(message_stream, static_cast<uint32_t>(field), occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSint32(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindSint32(ConstByteSpan message,
-                                  uint32_t field_number) {
-  return FindSint32(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSint32(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindSint32(ConstByteSpan message, T field) {
-  return FindSint32(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSint32(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindSint32(stream::Reader& message_stream,
-                                  uint32_t field_number) {
-  return FindSint32(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSint32(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindSint32(stream::Reader& message_stream, T field) {
-  return FindSint32(message_stream, field, Occurrence::kFirst);
-}
-
 using Sint32Finder = Finder<int32_t, &Decoder::ReadSint32>;
 using Sint32StreamFinder = StreamFinder<int32_t, &StreamDecoder::ReadSint32>;
 
@@ -499,42 +392,6 @@ inline Result<uint64_t> FindUint64(stream::Reader& message_stream,
                                    T field,
                                    Occurrence occurrence) {
   return FindUint64(message_stream, static_cast<uint32_t>(field), occurrence);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindUint64(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint64_t> FindUint64(ConstByteSpan message,
-                                   uint32_t field_number) {
-  return FindUint64(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindUint64(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint64_t> FindUint64(ConstByteSpan message, T field) {
-  return FindUint64(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindUint64(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint64_t> FindUint64(stream::Reader& message_stream,
-                                   uint32_t field_number) {
-  return FindUint64(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindUint64(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint64_t> FindUint64(stream::Reader& message_stream, T field) {
-  return FindUint64(message_stream, field, Occurrence::kFirst);
 }
 
 using Uint64Finder = Finder<uint64_t, &Decoder::ReadUint64>;
@@ -588,41 +445,6 @@ inline Result<int64_t> FindInt64(stream::Reader& message_stream,
   return FindInt64(message_stream, static_cast<uint32_t>(field), occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindInt64(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindInt64(ConstByteSpan message, uint32_t field_number) {
-  return FindInt64(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindInt64(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindInt64(ConstByteSpan message, T field) {
-  return FindInt64(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindInt64(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindInt64(stream::Reader& message_stream,
-                                 uint32_t field_number) {
-  return FindInt64(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindInt64(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindInt64(stream::Reader& message_stream, T field) {
-  return FindInt64(message_stream, field, Occurrence::kFirst);
-}
-
 using Int64Finder = Finder<int64_t, &Decoder::ReadInt64>;
 using Int64StreamFinder = StreamFinder<int64_t, &StreamDecoder::ReadInt64>;
 
@@ -672,42 +494,6 @@ inline Result<int64_t> FindSint64(stream::Reader& message_stream,
                                   T field,
                                   Occurrence occurrence) {
   return FindSint64(message_stream, static_cast<uint32_t>(field), occurrence);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSint64(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindSint64(ConstByteSpan message,
-                                  uint32_t field_number) {
-  return FindSint64(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSint64(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindSint64(ConstByteSpan message, T field) {
-  return FindSint64(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSint64(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindSint64(stream::Reader& message_stream,
-                                  uint32_t field_number) {
-  return FindSint64(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSint64(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindSint64(stream::Reader& message_stream, T field) {
-  return FindSint64(message_stream, field, Occurrence::kFirst);
 }
 
 using Sint64Finder = Finder<int64_t, &Decoder::ReadSint64>;
@@ -761,41 +547,6 @@ inline Result<bool> FindBool(stream::Reader& message_stream,
   return FindBool(message_stream, static_cast<uint32_t>(field), occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindBool(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<bool> FindBool(ConstByteSpan message, uint32_t field_number) {
-  return FindBool(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindBool(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<bool> FindBool(ConstByteSpan message, T field) {
-  return FindBool(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindBool(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<bool> FindBool(stream::Reader& message_stream,
-                             uint32_t field_number) {
-  return FindBool(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindBool(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<bool> FindBool(stream::Reader& message_stream, T field) {
-  return FindBool(message_stream, field, Occurrence::kFirst);
-}
-
 using BoolFinder = Finder<bool, &Decoder::ReadBool>;
 using BoolStreamFinder = StreamFinder<bool, &StreamDecoder::ReadBool>;
 
@@ -845,42 +596,6 @@ inline Result<uint32_t> FindFixed32(stream::Reader& message_stream,
                                     T field,
                                     Occurrence occurrence) {
   return FindFixed32(message_stream, static_cast<uint32_t>(field), occurrence);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFixed32(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint32_t> FindFixed32(ConstByteSpan message,
-                                    uint32_t field_number) {
-  return FindFixed32(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFixed32(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint32_t> FindFixed32(ConstByteSpan message, T field) {
-  return FindFixed32(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFixed32(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint32_t> FindFixed32(stream::Reader& message_stream,
-                                    uint32_t field_number) {
-  return FindFixed32(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFixed32(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint32_t> FindFixed32(stream::Reader& message_stream, T field) {
-  return FindFixed32(message_stream, field, Occurrence::kFirst);
 }
 
 using Fixed32Finder = Finder<uint32_t, &Decoder::ReadFixed32>;
@@ -934,42 +649,6 @@ inline Result<uint64_t> FindFixed64(stream::Reader& message_stream,
   return FindFixed64(message_stream, static_cast<uint32_t>(field), occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFixed64(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint64_t> FindFixed64(ConstByteSpan message,
-                                    uint32_t field_number) {
-  return FindFixed64(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFixed64(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint64_t> FindFixed64(ConstByteSpan message, T field) {
-  return FindFixed64(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFixed64(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint64_t> FindFixed64(stream::Reader& message_stream,
-                                    uint32_t field_number) {
-  return FindFixed64(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFixed64(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<uint64_t> FindFixed64(stream::Reader& message_stream, T field) {
-  return FindFixed64(message_stream, field, Occurrence::kFirst);
-}
-
 using Fixed64Finder = Finder<uint64_t, &Decoder::ReadFixed64>;
 using Fixed64StreamFinder = StreamFinder<uint64_t, &StreamDecoder::ReadFixed64>;
 
@@ -1019,42 +698,6 @@ inline Result<int32_t> FindSfixed32(stream::Reader& message_stream,
                                     T field,
                                     Occurrence occurrence) {
   return FindSfixed32(message_stream, static_cast<uint32_t>(field), occurrence);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSfixed32(message, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindSfixed32(ConstByteSpan message,
-                                    uint32_t field_number) {
-  return FindSfixed32(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSfixed32(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindSfixed32(ConstByteSpan message, T field) {
-  return FindSfixed32(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSfixed32(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindSfixed32(stream::Reader& message_stream,
-                                    uint32_t field_number) {
-  return FindSfixed32(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSfixed32(message_stream, "
-    "field, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int32_t> FindSfixed32(stream::Reader& message_stream, T field) {
-  return FindSfixed32(message_stream, field, Occurrence::kFirst);
 }
 
 using Sfixed32Finder = Finder<int32_t, &Decoder::ReadSfixed32>;
@@ -1109,42 +752,6 @@ inline Result<int64_t> FindSfixed64(stream::Reader& message_stream,
   return FindSfixed64(message_stream, static_cast<uint32_t>(field), occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSfixed64(message, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindSfixed64(ConstByteSpan message,
-                                    uint32_t field_number) {
-  return FindSfixed64(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSfixed64(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindSfixed64(ConstByteSpan message, T field) {
-  return FindSfixed64(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSfixed64(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindSfixed64(stream::Reader& message_stream,
-                                    uint32_t field_number) {
-  return FindSfixed64(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSfixed64(message_stream, "
-    "field, pw::protobuf::Occurrence::kLast)")]]
-inline Result<int64_t> FindSfixed64(stream::Reader& message_stream, T field) {
-  return FindSfixed64(message_stream, field, Occurrence::kFirst);
-}
-
 using Sfixed64Finder = Finder<int64_t, &Decoder::ReadSfixed64>;
 using Sfixed64StreamFinder =
     StreamFinder<int64_t, &StreamDecoder::ReadSfixed64>;
@@ -1197,41 +804,6 @@ inline Result<float> FindFloat(stream::Reader& message_stream,
   return FindFloat(message_stream, static_cast<uint32_t>(field), occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFloat(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<float> FindFloat(ConstByteSpan message, uint32_t field_number) {
-  return FindFloat(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFloat(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<float> FindFloat(ConstByteSpan message, T field) {
-  return FindFloat(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFloat(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<float> FindFloat(stream::Reader& message_stream,
-                               uint32_t field_number) {
-  return FindFloat(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindFloat(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<float> FindFloat(stream::Reader& message_stream, T field) {
-  return FindFloat(message_stream, field, Occurrence::kFirst);
-}
-
 using FloatFinder = Finder<float, &Decoder::ReadFloat>;
 using FloatStreamFinder = StreamFinder<float, &StreamDecoder::ReadFloat>;
 
@@ -1281,41 +853,6 @@ inline Result<double> FindDouble(stream::Reader& message_stream,
                                  T field,
                                  Occurrence occurrence) {
   return FindDouble(message_stream, static_cast<uint32_t>(field), occurrence);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindDouble(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<double> FindDouble(ConstByteSpan message, uint32_t field_number) {
-  return FindDouble(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindDouble(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<double> FindDouble(ConstByteSpan message, T field) {
-  return FindDouble(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindDouble(message_stream, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<double> FindDouble(stream::Reader& message_stream,
-                                 uint32_t field_number) {
-  return FindDouble(message_stream, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindDouble(message_stream, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<double> FindDouble(stream::Reader& message_stream, T field) {
-  return FindDouble(message_stream, field, Occurrence::kFirst);
 }
 
 using DoubleFinder = Finder<double, &Decoder::ReadDouble>;
@@ -1418,66 +955,6 @@ inline StatusWithSize FindString(stream::Reader& message_stream,
       message_stream, static_cast<uint32_t>(field), out, occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindString(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<std::string_view> FindString(ConstByteSpan message,
-                                           uint32_t field_number) {
-  return FindString(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindString(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<std::string_view> FindString(ConstByteSpan message, T field) {
-  return FindString(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindString(message_stream, "
-    "field_number, out, pw::protobuf::Occurrence::kLast)")]]
-inline StatusWithSize FindString(stream::Reader& message_stream,
-                                 uint32_t field_number,
-                                 span<char> out) {
-  return FindString(message_stream, field_number, out, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindString(message_stream, "
-    "field_number, out, pw::protobuf::Occurrence::kLast)")]]
-inline StatusWithSize FindString(stream::Reader& message_stream,
-                                 uint32_t field_number,
-                                 InlineString<>& out) {
-  return FindString(message_stream, field_number, out, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindString(message_stream, field, "
-    "out, pw::protobuf::Occurrence::kLast)")]]
-inline StatusWithSize FindString(stream::Reader& message_stream,
-                                 T field,
-                                 span<char> out) {
-  return FindString(message_stream, field, out, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindString(message_stream, field, "
-    "out, pw::protobuf::Occurrence::kLast)")]]
-inline StatusWithSize FindString(stream::Reader& message_stream,
-                                 T field,
-                                 InlineString<>& out) {
-  return FindString(message_stream, field, out, Occurrence::kFirst);
-}
-
 using StringFinder = Finder<std::string_view, &Decoder::ReadString>;
 
 /// @brief Scans a serialized protobuf message for a `bytes` field.
@@ -1564,45 +1041,6 @@ inline StatusWithSize FindBytes(stream::Reader& message_stream,
       message_stream, static_cast<uint32_t>(field), out, occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindBytes(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<ConstByteSpan> FindBytes(ConstByteSpan message,
-                                       uint32_t field_number) {
-  return FindBytes(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindBytes(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<ConstByteSpan> FindBytes(ConstByteSpan message, T field) {
-  return FindBytes(message, field, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindBytes(message_stream, "
-    "field_number, out, pw::protobuf::Occurrence::kLast)")]]
-inline StatusWithSize FindBytes(stream::Reader& message_stream,
-                                uint32_t field_number,
-                                ByteSpan out) {
-  return FindBytes(message_stream, field_number, out, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindBytes(message_stream, field, "
-    "out, pw::protobuf::Occurrence::kLast)")]]
-inline StatusWithSize FindBytes(stream::Reader& message_stream,
-                                T field,
-                                ByteSpan out) {
-  return FindBytes(message_stream, field, out, Occurrence::kFirst);
-}
-
 using BytesFinder = Finder<ConstByteSpan, &Decoder::ReadBytes>;
 
 /// @brief Scans a serialized protobuf message for a submessage.
@@ -1630,24 +1068,6 @@ inline Result<ConstByteSpan> FindSubmessage(ConstByteSpan message,
   return FindSubmessage(message, static_cast<uint32_t>(field), occurrence);
 }
 
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSubmessage(message, "
-    "field_number, pw::protobuf::Occurrence::kLast)")]]
-inline Result<ConstByteSpan> FindSubmessage(ConstByteSpan message,
-                                            uint32_t field_number) {
-  return FindSubmessage(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindSubmessage(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<ConstByteSpan> FindSubmessage(ConstByteSpan message, T field) {
-  return FindSubmessage(message, field, Occurrence::kFirst);
-}
-
 /// Returns a span containing the raw bytes of the value.
 inline Result<ConstByteSpan> FindRaw(ConstByteSpan message,
                                      uint32_t field_number,
@@ -1661,24 +1081,6 @@ inline Result<ConstByteSpan> FindRaw(ConstByteSpan message,
                                      T field,
                                      Occurrence occurrence) {
   return FindRaw(message, static_cast<uint32_t>(field), occurrence);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindRaw(message, field_number, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<ConstByteSpan> FindRaw(ConstByteSpan message,
-                                     uint32_t field_number) {
-  return FindRaw(message, field_number, Occurrence::kFirst);
-}
-
-// TODO: b/512561760 - Remove once projects are migrated.
-template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-[[deprecated(
-    "Explicitly specify an occurrence, e.g. FindRaw(message, field, "
-    "pw::protobuf::Occurrence::kLast)")]]
-inline Result<ConstByteSpan> FindRaw(ConstByteSpan message, T field) {
-  return FindRaw(message, field, Occurrence::kFirst);
 }
 
 /// @endsubmodule
