@@ -1333,5 +1333,47 @@ TEST(UtilTest, LinkKeyToLtkUsingH7) {
   EXPECT_EQ(kExpectedLtkBytes, *out_ltk);
 }
 
+TEST(UtilTest, MaskKeyToSize) {
+  const UInt128 kOriginalKey = {0x01,
+                                0x02,
+                                0x03,
+                                0x04,
+                                0x05,
+                                0x06,
+                                0x07,
+                                0x08,
+                                0x09,
+                                0x0a,
+                                0x0b,
+                                0x0c,
+                                0x0d,
+                                0x0e,
+                                0x0f,
+                                0x10};
+  UInt128 full_key = kOriginalKey;
+  MaskKeyToSize(full_key, kMaxEncryptionKeySize);
+  EXPECT_EQ(kOriginalKey, full_key);
+
+  UInt128 short_key = kOriginalKey;
+  MaskKeyToSize(short_key, kMinEncryptionKeySize);
+  const UInt128 kExpectedShortKey = {0x01,
+                                     0x02,
+                                     0x03,
+                                     0x04,
+                                     0x05,
+                                     0x06,
+                                     0x07,
+                                     0x00,
+                                     0x00,
+                                     0x00,
+                                     0x00,
+                                     0x00,
+                                     0x00,
+                                     0x00,
+                                     0x00,
+                                     0x00};
+  EXPECT_EQ(kExpectedShortKey, short_key);
+}
+
 }  // namespace
 }  // namespace bt::sm::util

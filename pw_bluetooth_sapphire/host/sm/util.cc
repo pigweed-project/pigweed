@@ -697,4 +697,13 @@ std::optional<UInt128> BrEdrLinkKeyToLeLtk(
   return H6(*intermediate_ltk, brle_key_id);
 }
 
+void MaskKeyToSize(UInt128& key, uint8_t key_size) {
+  PW_CHECK(key_size <= kMaxEncryptionKeySize);
+  if (key_size < kMaxEncryptionKeySize) {
+    MutableBufferView view(key.data() + key_size,
+                           kMaxEncryptionKeySize - key_size);
+    view.SetToZeros();
+  }
+}
+
 }  // namespace bt::sm::util

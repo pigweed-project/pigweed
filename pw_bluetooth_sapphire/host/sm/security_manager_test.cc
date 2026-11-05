@@ -941,8 +941,12 @@ class InitiatorPairingTest : public SecurityManagerTest {
     const int initial_new_sec_props_count = new_sec_props_count();
     EXPECT_FALSE(peer().MutLe().is_pairing());
     if (secure_connections) {
-      FastForwardToScLtk(
-          out_encryption_key, level, remote_keys, local_keys, bondable_mode);
+      FastForwardToScLtk(out_encryption_key,
+                         level,
+                         remote_keys,
+                         local_keys,
+                         bondable_mode,
+                         max_key_size);
     } else {
       FastForwardToSTK(out_encryption_key,
                        level,
@@ -966,10 +970,19 @@ class InitiatorPairingTest : public SecurityManagerTest {
                           SecurityLevel level = SecurityLevel::kEncrypted,
                           KeyDistGenField peer_keys = 0,
                           KeyDistGenField local_keys = 0,
-                          BondableMode bondable = BondableMode::Bondable) {
+                          BondableMode bondable = BondableMode::Bondable,
+                          uint8_t max_key_size = kMaxEncryptionKeySize,
+                          AuthReqField extra_auth_req = 0) {
+    const int initial_pairing_request_count = pairing_request_count();
     UpgradeSecurity(level);
-    FastForwardToScLtkAfterUpgradeSecurity(
-        out_ltk, level, peer_keys, local_keys, bondable);
+    FastForwardToScLtkAfterUpgradeSecurity(out_ltk,
+                                           level,
+                                           peer_keys,
+                                           local_keys,
+                                           bondable,
+                                           max_key_size,
+                                           extra_auth_req,
+                                           initial_pairing_request_count);
   }
 
   void FastForwardToScLtkAfterUpgradeSecurity(
@@ -977,11 +990,18 @@ class InitiatorPairingTest : public SecurityManagerTest {
       SecurityLevel level = SecurityLevel::kEncrypted,
       KeyDistGenField peer_keys = 0,
       KeyDistGenField local_keys = 0,
-      BondableMode bondable = BondableMode::Bondable) {
+      BondableMode bondable = BondableMode::Bondable,
+      uint8_t max_key_size = kMaxEncryptionKeySize,
+      AuthReqField extra_auth_req = 0,
+      int initial_pairing_request_count = 0) {
     EXPECT_TRUE(peer().MutLe().is_pairing());
     RunUntilIdle();
 
-    ASSERT_EQ(1, pairing_request_count());
+    ASSERT_EQ(initial_pairing_request_count + 1, pairing_request_count());
+    const int initial_confirm_count = pairing_confirm_count();
+    const int initial_random_count = pairing_random_count();
+    const int initial_dhkey_check_count = pairing_dhkey_check_count();
+    const int initial_security_callback_count = security_callback_count();
     const int initial_pairing_failed_count = pairing_failed_count();
     PairingRequestParams pres;
     pres.io_capability = IOCapability::kDisplayYesNo;
@@ -990,8 +1010,8 @@ class InitiatorPairingTest : public SecurityManagerTest {
         (bondable == BondableMode::Bondable) ? AuthReq::kBondingFlag : 0;
     AuthReqField mitm_flag =
         (level >= SecurityLevel::kAuthenticated) ? AuthReq::kMITM : 0;
-    pres.auth_req = AuthReq::kSC | mitm_flag | bondable_flag;
-    pres.max_encryption_key_size = kMaxEncryptionKeySize;
+    pres.auth_req = AuthReq::kSC | mitm_flag | bondable_flag | extra_auth_req;
+    pres.max_encryption_key_size = max_key_size;
     pres.initiator_key_dist_gen = local_keys;
     pres.responder_key_dist_gen = peer_keys;
     ReceivePairingFeatures(pres);
@@ -1003,11 +1023,11 @@ class InitiatorPairingTest : public SecurityManagerTest {
     RunUntilIdle();
     // We're in SC Numeric Comparison/Just Works, so as initiator we should not
     // send a confirm.
-    ASSERT_EQ(0, pairing_confirm_count());
+    ASSERT_EQ(initial_confirm_count, pairing_confirm_count());
     MatchingPair phase_2_vals = GenerateMatchingScConfirmAndRandom(peer_key);
     ReceivePairingConfirm(phase_2_vals.confirm);
     RunUntilIdle();
-    ASSERT_EQ(1, pairing_random_count());
+    ASSERT_EQ(initial_random_count + 1, pairing_random_count());
     // If using MITM, we expect to be in Numeric Comparison
     ConfirmCallback display_cb = nullptr;
     if (mitm_flag != 0) {
@@ -1062,12 +1082,12 @@ class InitiatorPairingTest : public SecurityManagerTest {
                                       kPeerAddr,
                                       kLocalAddr);
     RunUntilIdle();
-    EXPECT_EQ(1, pairing_dhkey_check_count());
+    EXPECT_EQ(initial_dhkey_check_count + 1, pairing_dhkey_check_count());
     ASSERT_EQ(dhkey_check_a, pairing_dhkey_check());
     ReceivePairingDHKeyCheck(dhkey_check_b);
     RunUntilIdle();
     EXPECT_EQ(initial_pairing_failed_count, pairing_failed_count());
-    EXPECT_EQ(0, security_callback_count());
+    EXPECT_EQ(initial_security_callback_count, security_callback_count());
     EXPECT_TRUE(peer().MutLe().is_pairing());
 
     ASSERT_TRUE(out_ltk);
@@ -1195,8 +1215,12 @@ class ResponderPairingTest : public SecurityManagerTest {
       BondableMode bondable_mode = BondableMode::Bondable) {
     int initial_new_sec_props_count = new_sec_props_count();
     if (secure_connections) {
-      FastForwardToScLtk(
-          out_encryption_key, level, remote_keys, local_keys, bondable_mode);
+      FastForwardToScLtk(out_encryption_key,
+                         level,
+                         remote_keys,
+                         local_keys,
+                         bondable_mode,
+                         max_key_size);
     } else {
       FastForwardToSTK(out_encryption_key,
                        level,
@@ -1222,7 +1246,9 @@ class ResponderPairingTest : public SecurityManagerTest {
                           SecurityLevel level = SecurityLevel::kEncrypted,
                           KeyDistGenField peer_keys = 0,
                           KeyDistGenField local_keys = 0,
-                          BondableMode bondable = BondableMode::Bondable) {
+                          BondableMode bondable = BondableMode::Bondable,
+                          uint8_t max_key_size = kMaxEncryptionKeySize,
+                          AuthReqField extra_auth_req = 0) {
     int initial_response_count = pairing_response_count();
     int initial_public_key_count = pairing_public_key_count();
     int initial_confirm_count = pairing_confirm_count();
@@ -1238,8 +1264,8 @@ class ResponderPairingTest : public SecurityManagerTest {
         (bondable == BondableMode::Bondable) ? AuthReq::kBondingFlag : 0;
     AuthReqField mitm_flag =
         (level >= SecurityLevel::kAuthenticated) ? AuthReq::kMITM : 0;
-    preq.auth_req = AuthReq::kSC | mitm_flag | bondable_flag;
-    preq.max_encryption_key_size = kMaxEncryptionKeySize;
+    preq.auth_req = AuthReq::kSC | mitm_flag | bondable_flag | extra_auth_req;
+    preq.max_encryption_key_size = max_key_size;
     preq.initiator_key_dist_gen = local_keys;
     preq.responder_key_dist_gen = peer_keys;
     ReceivePairingFeatures(preq, /*peer_initiator=*/true);
@@ -1268,7 +1294,7 @@ class ResponderPairingTest : public SecurityManagerTest {
       });
     }  // Else we are content to use the default confirm delegate behavior to
        // accept the pairing.
-    auto peer_rand = Random<PairingRandomValue>();
+    const PairingRandomValue peer_rand = Random<PairingRandomValue>();
     ReceivePairingRandom(peer_rand);
     RunUntilIdle();
     ASSERT_EQ(initial_random_count + 1, pairing_random_count());
@@ -6575,6 +6601,244 @@ TEST_F(
   EXPECT_EQ(kOriginalLtk.key(), fake_link()->ltk());
   EXPECT_FALSE(fake_chan()->link_error());
   EXPECT_FALSE(peer().MutLe().is_pairing());
+}
+
+TEST_F(InitiatorPairingTest, ScOnlySecurityRequestRejectedWithNoInputNoOutput) {
+  SetUpSecurityManager(IOCapability::kNoInputNoOutput);
+  pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);
+  ReceiveSecurityRequest(AuthReq::kBondingFlag);
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_request_count());
+  EXPECT_EQ(1, pairing_failed_count());
+  EXPECT_EQ(ErrorCode::kAuthenticationRequirements, received_error_code());
+}
+
+TEST_F(InitiatorPairingTest,
+       ScOnlySecurityRequestPromotedToSecureAuthenticated) {
+  // Bond an existing Legacy authenticated LTK (SC = false) and complete
+  // initial link encryption so `ltk_` is populated with `kAuthenticated`.
+  const LTK kLegacyAuthenticatedKey(
+      SecurityProperties(SecurityLevel::kAuthenticated,
+                         kMaxEncryptionKeySize,
+                         /*secure_connections=*/false),
+      hci_spec::LinkKey(UInt128{2}, 3, 4));
+  SetBondLtk(kLegacyAuthenticatedKey);
+  NewSecurityManager(
+      Role::kInitiator, IOCapability::kDisplayYesNo, BondableMode::Bondable);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  ASSERT_EQ(SecurityLevel::kAuthenticated, pairing()->security().level());
+  ASSERT_EQ(1, fake_link()->start_encryption_count());
+
+  // In SecureConnectionsOnly mode, an incoming Security Request (even without
+  // AuthReq::kSC) is promoted to kSecureAuthenticated, so Central must initiate
+  // Phase 1 pairing (MITM=1, SC=1, 16-byte key size required) rather than
+  // re-encrypting with the existing non-SC LTK.
+  pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);
+  ReceiveSecurityRequest(AuthReq::kBondingFlag | AuthReq::kMITM);
+  RunUntilIdle();
+  EXPECT_EQ(1, fake_link()->start_encryption_count());
+  ASSERT_EQ(1, pairing_request_count());
+  const PairingRequestParams& params =
+      local_pairing_cmd().view(1).To<PairingRequestParams>();
+  EXPECT_TRUE(params.auth_req & AuthReq::kMITM);
+  EXPECT_TRUE(params.auth_req & AuthReq::kSC);
+
+  ReceivePairingFeatures(IOCapability::kDisplayYesNo,
+                         AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC,
+                         kMaxEncryptionKeySize - 1);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_failed_count());
+  EXPECT_EQ(ErrorCode::kEncryptionKeySize, received_error_code());
+}
+
+TEST_F(InitiatorPairingTest, ScOnlyUpgradeFromEncryptedStartsPairing) {
+  // Switching an already-encrypted non-SC-Authenticated link to
+  // SecureConnectionsOnly and calling UpgradeSecurity(kEncrypted) must
+  // initiate kSecureAuthenticated pairing rather than succeeding immediately,
+  // while UpgradeSecurity(kNoSecurity) during the in-progress upgrade succeeds
+  // immediately without being queued.
+  SetBondLtk(kUnauthenticatedKey);
+  NewSecurityManager(
+      Role::kInitiator, IOCapability::kDisplayYesNo, BondableMode::Bondable);
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  ASSERT_EQ(SecurityLevel::kEncrypted, pairing()->security().level());
+  pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+  EXPECT_EQ(0, security_callback_count());
+
+  UpgradeSecurity(SecurityLevel::kNoSecurity);
+  EXPECT_EQ(1, security_callback_count());
+  EXPECT_EQ(fit::ok(), security_status());
+  EXPECT_EQ(SecurityLevel::kEncrypted, sec_props().level());
+}
+
+TEST_F(InitiatorPairingTest, ScOnlyNoSecurityUpgradeSucceedsImmediately) {
+  // UpgradeSecurity(kNoSecurity) (Mode 1 Level 1) on an unencrypted link in
+  // SecureConnectionsOnly mode succeeds immediately without initiating pairing.
+  SetUpSecurityManager(IOCapability::kNoInputNoOutput);
+  pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);
+  UpgradeSecurity(SecurityLevel::kNoSecurity);
+  RunUntilIdle();
+  EXPECT_EQ(0, pairing_request_count());
+  EXPECT_EQ(1, security_callback_count());
+  EXPECT_EQ(fit::ok(), security_status());
+  EXPECT_EQ(SecurityLevel::kNoSecurity, sec_props().level());
+}
+
+TEST_F(InitiatorPairingTest,
+       SecureConnectionsShortEncryptionKeyMaskedAfterCtkdDerivation) {
+  SetUpSecurityManager(IOCapability::kDisplayYesNo, BondableMode::Bondable);
+
+  constexpr uint8_t kNegotiatedKeySize = 7;
+  UInt128 unmasked_ltk;
+  FastForwardToScLtk(&unmasked_ltk,
+                     SecurityLevel::kEncrypted,
+                     KeyDistGen::kLinkKey,
+                     KeyDistGen::kLinkKey,
+                     BondableMode::Bondable,
+                     kNegotiatedKeySize,
+                     AuthReq::kCT2);
+  ASSERT_TRUE(fake_link()->ltk().has_value());
+
+  UInt128 expected_masked_ltk = unmasked_ltk;
+  util::MaskKeyToSize(expected_masked_ltk, kNegotiatedKeySize);
+  EXPECT_EQ(expected_masked_ltk, fake_link()->ltk()->value());
+
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  ASSERT_EQ(1, pairing_complete_count());
+  EXPECT_EQ(fit::ok(), pairing_complete_status());
+  ASSERT_TRUE(peer_ltk().has_value());
+  EXPECT_EQ(expected_masked_ltk, peer_ltk()->key().value());
+  EXPECT_EQ(kNegotiatedKeySize, peer_ltk()->security().enc_key_size());
+
+  // Core Spec v6.2, Vol 3, Part H, Section 2.4.2.4: BR/EDR link key is derived
+  // from the unmasked LTK before key-size masking.
+  std::optional<UInt128> expected_ct_key =
+      util::LeLtkToBrEdrLinkKey(unmasked_ltk, CrossTransportKeyAlgo::kUseH7);
+  std::optional<UInt128> masked_ct_key = util::LeLtkToBrEdrLinkKey(
+      expected_masked_ltk, CrossTransportKeyAlgo::kUseH7);
+  ASSERT_TRUE(expected_ct_key.has_value());
+  ASSERT_TRUE(masked_ct_key.has_value());
+  EXPECT_NE(*expected_ct_key, *masked_ct_key);
+  ASSERT_TRUE(pairing_data().cross_transport_key.has_value());
+  EXPECT_EQ(*expected_ct_key,
+            pairing_data().cross_transport_key->key().value());
+}
+
+TEST_F(ResponderPairingTest,
+       SecureConnectionsShortEncryptionKeyMaskedAfterCtkdDerivation) {
+  SetUpSecurityManager(IOCapability::kDisplayYesNo, BondableMode::Bondable);
+
+  constexpr uint8_t kNegotiatedKeySize = 7;
+  UInt128 unmasked_ltk;
+  FastForwardToScLtk(&unmasked_ltk,
+                     SecurityLevel::kEncrypted,
+                     KeyDistGen::kLinkKey,
+                     KeyDistGen::kLinkKey,
+                     BondableMode::Bondable,
+                     kNegotiatedKeySize,
+                     AuthReq::kCT2);
+  ASSERT_TRUE(fake_link()->ltk().has_value());
+
+  UInt128 expected_masked_ltk = unmasked_ltk;
+  util::MaskKeyToSize(expected_masked_ltk, kNegotiatedKeySize);
+  EXPECT_EQ(expected_masked_ltk, fake_link()->ltk()->value());
+
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  ASSERT_EQ(1, pairing_complete_count());
+  EXPECT_EQ(fit::ok(), pairing_complete_status());
+  ASSERT_TRUE(local_ltk().has_value());
+  EXPECT_EQ(expected_masked_ltk, local_ltk()->key().value());
+  EXPECT_EQ(kNegotiatedKeySize, local_ltk()->security().enc_key_size());
+
+  // Core Spec v6.2, Vol 3, Part H, Section 2.4.2.4: BR/EDR link key is derived
+  // from the unmasked LTK before key-size masking.
+  std::optional<UInt128> expected_ct_key =
+      util::LeLtkToBrEdrLinkKey(unmasked_ltk, CrossTransportKeyAlgo::kUseH7);
+  std::optional<UInt128> masked_ct_key = util::LeLtkToBrEdrLinkKey(
+      expected_masked_ltk, CrossTransportKeyAlgo::kUseH7);
+  ASSERT_TRUE(expected_ct_key.has_value());
+  ASSERT_TRUE(masked_ct_key.has_value());
+  EXPECT_NE(*expected_ct_key, *masked_ct_key);
+  ASSERT_TRUE(pairing_data().cross_transport_key.has_value());
+  EXPECT_EQ(*expected_ct_key,
+            pairing_data().cross_transport_key->key().value());
+}
+
+TEST_F(InitiatorPairingTest, CtkdSkippedWhenExistingBrEdrKeyHasStrongerAuth) {
+  InitializePeer(kPeerPublicAddr);
+  // Authenticated 16-byte BR/EDR P-256 link key is not overwritten by
+  // unauthenticated 16-byte LE SC LTK (weaker in MITM protection).
+  const LTK kAuthBrEdrKey(
+      SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                         hci_spec::kBrEdrLinkKeySize),
+      hci_spec::LinkKey(UInt128{9, 8, 7, 6}, 0, 0));
+  ASSERT_TRUE(peer().MutBrEdr().SetBondData(kAuthBrEdrKey));
+
+  NewSecurityManager(
+      Role::kInitiator, IOCapability::kNoInputNoOutput, BondableMode::Bondable);
+  UInt128 ltk;
+  FastForwardToPhase3(&ltk,
+                      /*secure_connections=*/true,
+                      SecurityLevel::kEncrypted,
+                      KeyDistGen::kLinkKey,
+                      KeyDistGen::kLinkKey);
+  RunUntilIdle();
+  EXPECT_EQ(fit::ok(), pairing_complete_status());
+  EXPECT_FALSE(pairing_data().cross_transport_key.has_value());
+}
+
+TEST_F(InitiatorPairingTest, CtkdSkippedWhenExistingBrEdrKeyHasLargerKeySize) {
+  InitializePeer(kPeerPublicAddr);
+  // Unauthenticated 16-byte BR/EDR P-256 link key is not overwritten by
+  // authenticated 7-byte LE SC LTK (weaker in encryption key size).
+  const LTK kUnauth16ByteBrEdrKey(
+      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination256,
+                         hci_spec::kBrEdrLinkKeySize),
+      hci_spec::LinkKey(UInt128{5, 4, 3, 2}, 0, 0));
+  ASSERT_TRUE(peer().MutBrEdr().SetBondData(kUnauth16ByteBrEdrKey));
+  NewSecurityManager(
+      Role::kInitiator, IOCapability::kDisplayYesNo, BondableMode::Bondable);
+  UInt128 ltk;
+  FastForwardToPhase3(&ltk,
+                      /*secure_connections=*/true,
+                      SecurityLevel::kAuthenticated,
+                      KeyDistGen::kLinkKey,
+                      KeyDistGen::kLinkKey,
+                      /*max_key_size=*/7);
+  RunUntilIdle();
+  EXPECT_EQ(fit::ok(), pairing_complete_status());
+  EXPECT_FALSE(pairing_data().cross_transport_key.has_value());
+}
+
+TEST_F(InitiatorPairingTest,
+       CtkdPerformedWhenLeKeyIsAsStrongAsExistingBrEdrKey) {
+  InitializePeer(kPeerPublicAddr);
+  // Equal-or-stronger 16-byte authenticated LE SC LTK derives a
+  // cross-transport BR/EDR link key when an unauthenticated BR/EDR key exists.
+  const LTK kUnauth16ByteBrEdrKey(
+      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination256,
+                         hci_spec::kBrEdrLinkKeySize),
+      hci_spec::LinkKey(UInt128{5, 4, 3, 2}, 0, 0));
+  ASSERT_TRUE(peer().MutBrEdr().SetBondData(kUnauth16ByteBrEdrKey));
+  NewSecurityManager(
+      Role::kInitiator, IOCapability::kDisplayYesNo, BondableMode::Bondable);
+  UInt128 ltk;
+  FastForwardToPhase3(&ltk,
+                      /*secure_connections=*/true,
+                      SecurityLevel::kSecureAuthenticated,
+                      KeyDistGen::kLinkKey,
+                      KeyDistGen::kLinkKey,
+                      /*max_key_size=*/kMaxEncryptionKeySize);
+  RunUntilIdle();
+  EXPECT_EQ(fit::ok(), pairing_complete_status());
+  EXPECT_TRUE(pairing_data().cross_transport_key.has_value());
 }
 
 }  // namespace

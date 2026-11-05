@@ -249,4 +249,8 @@ std::optional<UInt128> LeLtkToBrEdrLinkKey(const UInt128& le_ltk,
 std::optional<UInt128> BrEdrLinkKeyToLeLtk(const UInt128& link_key,
                                            CrossTransportKeyAlgo hash_function);
 
+// Zeroes the most-significant `kMaxEncryptionKeySize - key_size` octets of
+// `key` in place per Core Spec v6.2, Vol 3, Part H, Section 2.3.4.
+void MaskKeyToSize(UInt128& key, uint8_t key_size);
+
 }  // namespace bt::sm::util

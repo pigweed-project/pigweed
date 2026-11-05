@@ -275,12 +275,7 @@ void Phase2Legacy::OnPairingRandom(PairingRandomValue rand) {
   util::S1(tk_.value(), responder_rand, initiator_rand, &stk);
 
   // Mask the key based on the requested encryption key size.
-  uint8_t key_size = features_.encryption_key_size;
-  if (key_size < kMaxEncryptionKeySize) {
-    MutableBufferView view(stk.data() + key_size,
-                           kMaxEncryptionKeySize - key_size);
-    view.SetToZeros();
-  }
+  util::MaskKeyToSize(stk, features_.encryption_key_size);
 
   // We've generated the STK, so Phase 2 is now over if we're the initiator.
   const Role local_role = role();

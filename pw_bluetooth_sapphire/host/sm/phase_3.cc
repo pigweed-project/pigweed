@@ -322,11 +322,7 @@ bool Phase3::SendEncryptionKey() {
   UInt128 ltk_bytes = Random<UInt128>();
 
   // Mask the ltk down to the maximum encryption key size.
-  uint8_t key_size = features_.encryption_key_size;
-  if (key_size < 16) {
-    MutableBufferView view(ltk_bytes.data() + key_size, 16 - key_size);
-    view.SetToZeros();
-  }
+  util::MaskKeyToSize(ltk_bytes, features_.encryption_key_size);
 
   // Generate completely random values for EDiv and Rand, use masked LTK.
   // The LTK inherits the security properties of the STK currently encrypting
