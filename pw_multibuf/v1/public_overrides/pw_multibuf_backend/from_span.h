@@ -16,7 +16,7 @@
 // IWYU pragma: private, include "pw_multibuf/from_span.h"
 
 #include "pw_multibuf/v1/from_span.h"  // IWYU pragma: export
-#include "pw_multibuf/v1/multibuf.h"   // IWYU pragma: export
+#include "pw_multibuf/v1/multibuf.h"
 
 namespace pw::multibuf {
 

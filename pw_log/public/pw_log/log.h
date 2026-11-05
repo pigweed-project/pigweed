@@ -23,7 +23,7 @@
 //
 #pragma once
 
-#include "pw_log/config.h"   // IWYU pragma: export
+#include "pw_log/config.h"
 #include "pw_log/levels.h"   // IWYU pragma: export
 #include "pw_log/options.h"  // IWYU pragma: export
 

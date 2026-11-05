@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_trace_tokenized_backend/lock_native.h"  // IWYU pragma: export
+#include "pw_trace_tokenized_backend/lock_native.h"
 
 namespace pw::trace::internal {
 

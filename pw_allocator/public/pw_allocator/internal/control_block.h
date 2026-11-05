@@ -13,8 +13,6 @@
 // the License.
 #pragma once
 
-// IWYU pragma: private, include "pw_allocator/shared_ptr.h"
-
 #include <atomic>
 #include <cstddef>
 #include <cstdint>

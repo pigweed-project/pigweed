@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "pw_allocator/fault_injecting_allocator.h"
+#include "pw_allocator/first_fit.h"
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_compilation_testing/negative_compilation.h"

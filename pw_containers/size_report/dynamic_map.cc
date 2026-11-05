@@ -14,8 +14,13 @@
 
 #include "pw_containers/size_report/dynamic_map.h"
 
+#include <cstdint>
+#include <utility>
+
+#include "pw_allocator/libc_allocator.h"
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_containers/dynamic_map.h"
+#include "pw_containers/size_report/size_report.h"
 
 namespace pw::containers::size_report {
 

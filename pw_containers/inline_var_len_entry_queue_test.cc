@@ -24,6 +24,7 @@
 #include "pw_containers/test/generic_var_len_entry_queue_testing.h"
 #include "pw_containers_private/inline_var_len_entry_queue_test_oracle.h"
 #include "pw_span/span.h"
+#include "pw_toolchain/constexpr_tag.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

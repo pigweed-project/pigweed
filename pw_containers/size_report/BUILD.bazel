@@ -156,6 +156,7 @@ pw_cc_size_binary(
     srcs = ["flat_map.cc"],
     deps = [
         ":flat_map",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -169,6 +170,7 @@ pw_cc_size_binary(
     ],
     deps = [
         ":flat_map",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -179,6 +181,7 @@ pw_cc_size_binary(
     deps = [
         ":deque",
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:deque",
     ],
@@ -191,6 +194,7 @@ pw_cc_size_binary(
     deps = [
         ":deque",
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:deque",
     ],
@@ -225,6 +229,7 @@ pw_cc_size_binary(
     deps = [
         ":deque",
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:deque",
     ],
@@ -235,6 +240,7 @@ pw_cc_size_binary(
     srcs = ["dynamic_deque.cc"],
     deps = [
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:dynamic_deque",
     ],
@@ -246,6 +252,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:dynamic_deque",
     ],
@@ -325,6 +332,7 @@ pw_cc_size_binary(
     srcs = ["inline_deque.cc"],
     deps = [
         ":deque",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:inline_deque",
     ],
@@ -336,6 +344,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
         ":deque",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:inline_deque",
     ],
@@ -346,6 +355,7 @@ pw_cc_size_binary(
     srcs = ["inline_queue.cc"],
     deps = [
         ":inline_queue",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -356,6 +366,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
         ":inline_queue",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -366,6 +377,7 @@ pw_cc_size_binary(
     deps = [
         ":deque",
         ":inline_queue",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:inline_deque",
     ],
@@ -376,6 +388,7 @@ pw_cc_size_binary(
     srcs = ["intrusive_forward_list.cc"],
     deps = [
         ":intrusive_forward_list",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -386,6 +399,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
         ":intrusive_forward_list",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -395,6 +409,7 @@ pw_cc_size_binary(
     srcs = ["intrusive_list.cc"],
     deps = [
         ":intrusive_list",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -405,6 +420,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
         ":intrusive_list",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -415,6 +431,7 @@ pw_cc_size_binary(
     deps = [
         ":intrusive_forward_list",
         ":intrusive_list",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -424,6 +441,7 @@ pw_cc_size_binary(
     srcs = ["dynamic_hash_map.cc"],
     deps = [
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:dynamic_hash_map",
     ],
@@ -435,6 +453,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:dynamic_hash_map",
     ],
@@ -448,6 +467,7 @@ pw_cc_size_binary(
     ],
     deps = [
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:dynamic_hash_map",
     ],
@@ -458,6 +478,7 @@ pw_cc_size_binary(
     srcs = ["dynamic_map.cc"],
     deps = [
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:dynamic_map",
     ],
@@ -469,6 +490,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:dynamic_map",
     ],
@@ -482,6 +504,7 @@ pw_cc_size_binary(
     ],
     deps = [
         ":size_report",
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:dynamic_map",
     ],
@@ -492,6 +515,7 @@ pw_cc_size_binary(
     srcs = ["intrusive_map.cc"],
     deps = [
         ":intrusive_map",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -502,6 +526,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_KEY"],
     deps = [
         ":intrusive_map",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -515,6 +540,7 @@ pw_cc_size_binary(
     ],
     deps = [
         ":intrusive_map",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -524,6 +550,7 @@ pw_cc_size_binary(
     srcs = ["intrusive_multimap.cc"],
     deps = [
         ":intrusive_multimap",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -534,6 +561,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_KEY"],
     deps = [
         ":intrusive_multimap",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -547,6 +575,7 @@ pw_cc_size_binary(
     ],
     deps = [
         ":intrusive_multimap",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -557,6 +586,7 @@ pw_cc_size_binary(
     deps = [
         ":intrusive_map",
         ":intrusive_multimap",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -632,6 +662,7 @@ pw_cc_size_binary(
     srcs = ["intrusive_set.cc"],
     deps = [
         ":intrusive_set",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -642,6 +673,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
         ":intrusive_set",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -651,6 +683,7 @@ pw_cc_size_binary(
     srcs = ["intrusive_multiset.cc"],
     deps = [
         ":intrusive_multiset",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -661,6 +694,7 @@ pw_cc_size_binary(
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
         ":intrusive_multiset",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -671,6 +705,7 @@ pw_cc_size_binary(
     deps = [
         ":intrusive_multiset",
         ":intrusive_set",
+        ":size_report",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -679,6 +714,7 @@ pw_cc_size_binary(
     name = "vector_base",
     srcs = ["vector.cc"],
     deps = [
+        ":size_report",
         ":vector",
         "//pw_bloat:bloat_this_binary",
     ],
@@ -689,6 +725,7 @@ pw_cc_size_binary(
     srcs = ["vector.cc"],
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_SIZE"],
     deps = [
+        ":size_report",
         ":vector",
         "//pw_bloat:bloat_this_binary",
     ],
@@ -699,6 +736,7 @@ pw_cc_size_binary(
     srcs = ["vector.cc"],
     defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
     deps = [
+        ":size_report",
         ":vector",
         "//pw_bloat:bloat_this_binary",
     ],

@@ -18,6 +18,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_containers/deque.h"
 #include "pw_containers/internal/container_tests.h"
+#include "pw_containers/storage.h"
 
 namespace {
 

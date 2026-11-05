@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_thread/priority.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>

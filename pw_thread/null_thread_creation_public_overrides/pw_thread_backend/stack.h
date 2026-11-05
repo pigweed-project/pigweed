@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include <cstddef>  // IWYU pragma: export
+#include <cstddef>
 
 namespace pw::thread::backend {
 

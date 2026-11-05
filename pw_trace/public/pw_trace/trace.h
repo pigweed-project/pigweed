@@ -23,7 +23,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "pw_preprocessor/util.h"              // IWYU pragma: export
+#include "pw_preprocessor/util.h"
 #include "pw_trace/internal/trace_internal.h"  // IWYU pragma: export
 
 // Backend defines PW_TRACE in the form:

@@ -12,9 +12,13 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <cstdint>
+
+#include "pw_allocator/libc_allocator.h"
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_containers/deque.h"
 #include "pw_containers/size_report/deque.h"
+#include "pw_containers/size_report/size_report.h"
 
 namespace pw::containers::size_report {
 namespace {

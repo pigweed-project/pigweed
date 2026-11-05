@@ -194,6 +194,7 @@ pw_source_set("inline_queue") {
   public_deps = [
     ":inline_deque",
     ":queue_common",
+    ":raw_storage",
   ]
 }
 

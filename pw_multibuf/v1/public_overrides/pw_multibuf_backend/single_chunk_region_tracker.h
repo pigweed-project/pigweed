@@ -15,7 +15,7 @@
 
 // IWYU pragma: private, include "pw_multibuf/single_chunk_region_tracker.h"
 
-#include "pw_multibuf/v1/chunk.h"                        // IWYU pragma: export
+#include "pw_multibuf/v1/chunk.h"
 #include "pw_multibuf/v1/single_chunk_region_tracker.h"  // IWYU pragma: export
 
 namespace pw::multibuf {

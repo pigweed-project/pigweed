@@ -12,6 +12,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <cstdint>
+
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_containers/size_report/size_report.h"
 

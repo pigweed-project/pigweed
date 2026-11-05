@@ -15,10 +15,13 @@
 // Note: This file violates the guidance in
 // https://pigweed.dev/style/cpp.html#permitted-headers and should not be
 // copied. It is used for size report comparison purposes only.
+#include <cstdint>
 #include <unordered_map>
+#include <utility>
 
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_containers/size_report/dynamic_hash_map.h"
+#include "pw_containers/size_report/size_report.h"
 
 namespace pw::containers::size_report {
 

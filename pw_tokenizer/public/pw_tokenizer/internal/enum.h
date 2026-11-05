@@ -20,7 +20,7 @@
 #include "pw_tokenizer/hash.h"
 #include "pw_tokenizer/tokenize.h"
 
-namespace pw::tokenizer {
+namespace pw::tokenizer::internal {
 
 template <typename T>
 constexpr bool ValidEnumerator(T) {
@@ -29,14 +29,14 @@ constexpr bool ValidEnumerator(T) {
   return true;
 }
 
-}  // namespace pw::tokenizer
+}  // namespace pw::tokenizer::internal
 
 #define _PW_SEMICOLON(...) ;
 
 // Core value tokenization macro (takes explicit domain)
-#define _PW_ENUM_TOKENIZE_VALUE_IMPL(index, name, domain, enumerator, str) \
-  static_assert(::pw::tokenizer::ValidEnumerator(name::enumerator));       \
-  PW_TOKENIZER_DEFINE_TOKEN(                                               \
+#define _PW_ENUM_TOKENIZE_VALUE_IMPL(index, name, domain, enumerator, str)     \
+  static_assert(::pw::tokenizer::internal::ValidEnumerator(name::enumerator)); \
+  PW_TOKENIZER_DEFINE_TOKEN(                                                   \
       static_cast<::pw::tokenizer::Token>(name::enumerator), domain, str)
 
 // Enum ToString switch case macro

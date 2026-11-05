@@ -20,6 +20,7 @@
 
 #include "pw_allocator/fault_injecting_allocator.h"
 #include "pw_allocator/testing.h"
+#include "pw_allocator/unique_ptr.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/test_helpers.h"
 #include "pw_unit_test/framework.h"

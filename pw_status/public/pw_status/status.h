@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_status/internal/config.h"  // IWYU pragma: export
+#include "pw_status/internal/config.h"
 
 #ifdef __cplusplus
 extern "C" {

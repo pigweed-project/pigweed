@@ -23,6 +23,9 @@
 #include <type_traits>
 #include <utility>
 
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/forwarding_allocator.h"
+#include "pw_allocator/layout.h"
 #include "pw_allocator/testing.h"
 #include "pw_containers/internal/test_helpers.h"
 #include "pw_unit_test/framework.h"

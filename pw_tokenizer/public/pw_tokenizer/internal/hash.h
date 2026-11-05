@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_tokenizer/hash.h"
+
 // Note: This header intentionally avoids C++ standard library headers like
 // <string_view> to prevent circular include issues when pw_tokenizer/tokenize.h
 // is transitively included by <assert.h> (e.g. via pw_assert_tokenized or

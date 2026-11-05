@@ -15,7 +15,7 @@
 
 #include <utility>
 
-#include "pw_containers/internal/intrusive_item.h"  // IWYU pragma: export
+#include "pw_containers/internal/intrusive_item.h"
 
 namespace pw::containers::internal {
 

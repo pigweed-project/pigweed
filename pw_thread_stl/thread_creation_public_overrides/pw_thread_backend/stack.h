@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include <cstddef>  // IWYU pragma: export
+#include <cstddef>
 
 #include "pw_thread/stack_not_supported.h"  // IWYU pragma: export
 

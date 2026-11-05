@@ -18,9 +18,9 @@
 
 // IWYU pragma: private, include "pw_trace/trace.h"
 
-#include "pw_preprocessor/arguments.h"       // IWYU pragma: export
-#include "pw_preprocessor/concat.h"          // IWYU pragma: export
-#include "pw_trace_backend/trace_backend.h"  // IWYU pragma: export
+#include "pw_preprocessor/arguments.h"
+#include "pw_preprocessor/concat.h"
+#include "pw_trace_backend/trace_backend.h"
 
 /// @module{pw_trace}
 

@@ -19,10 +19,11 @@
 #include <utility>
 
 #include "pw_containers/inline_deque.h"
-#include "pw_containers/internal/generic_queue.h"  // IWYU pragma: export
+#include "pw_containers/internal/generic_queue.h"
+#include "pw_containers/internal/raw_storage.h"
 #include "pw_containers/internal/traits.h"
 #include "pw_span/span.h"
-#include "pw_toolchain/constexpr_tag.h"  // IWYU pragma: export
+#include "pw_toolchain/constexpr_tag.h"
 
 namespace pw {
 namespace containers::internal {

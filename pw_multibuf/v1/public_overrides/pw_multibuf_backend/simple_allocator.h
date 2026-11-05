@@ -15,8 +15,8 @@
 
 // IWYU pragma: private, include "pw_multibuf/simple_allocator.h"
 
-#include "pw_multibuf/v1/allocator.h"         // IWYU pragma: export
-#include "pw_multibuf/v1/multibuf.h"          // IWYU pragma: export
+#include "pw_multibuf/v1/allocator.h"
+#include "pw_multibuf/v1/multibuf.h"
 #include "pw_multibuf/v1/simple_allocator.h"  // IWYU pragma: export
 
 namespace pw::multibuf {

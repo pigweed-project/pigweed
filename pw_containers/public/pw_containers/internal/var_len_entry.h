@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_containers/inline_var_len_entry_queue.h"
+
 #include "pw_preprocessor/util.h"
 
 #ifndef __cplusplus
@@ -30,7 +32,7 @@
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/algorithm.h"
-#include "pw_containers/internal/var_len_entry_iterator.h"
+#include "pw_containers/internal/var_len_entry_iterator.h"  // IWYU pragma: export
 #include "pw_containers/internal/wrap.h"
 #include "pw_span/span.h"
 #include "pw_varint/varint.h"

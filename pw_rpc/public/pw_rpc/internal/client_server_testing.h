@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_rpc/pwpb/client_server_testing.h"
+
 #include <atomic>
 #include <cinttypes>
 #include <mutex>

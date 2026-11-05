@@ -14,8 +14,11 @@
 
 #include "pw_containers/inline_deque.h"
 
+#include <cstdint>
+
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_containers/size_report/deque.h"
+#include "pw_containers/size_report/size_report.h"
 
 namespace pw::containers::size_report {
 

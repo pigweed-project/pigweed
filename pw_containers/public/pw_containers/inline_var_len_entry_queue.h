@@ -64,9 +64,9 @@
 
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
-#include "pw_containers/internal/raw_storage.h"  // IWYU pragma: export
+#include "pw_containers/internal/raw_storage.h"
 #include "pw_span/span.h"
-#include "pw_toolchain/constexpr_tag.h"  // IWYU pragma: export
+#include "pw_toolchain/constexpr_tag.h"
 
 #endif  // __cplusplus
 

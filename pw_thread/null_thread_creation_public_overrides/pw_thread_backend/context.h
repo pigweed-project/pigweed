@@ -16,7 +16,7 @@
 // TODO: b/385440717 - Delete this backend when generic thread creation is
 // implemented for all pw_thread backends.
 
-#include <cstddef>  // IWYU pragma: export
+#include <cstddef>
 
 namespace pw::thread::backend {
 

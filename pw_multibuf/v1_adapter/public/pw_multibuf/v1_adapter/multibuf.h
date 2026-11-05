@@ -18,7 +18,7 @@
 #include <tuple>
 
 #include "pw_bytes/span.h"
-#include "pw_multibuf/v1_adapter/chunk.h"  // IWYU pragma: export
+#include "pw_multibuf/v1_adapter/chunk.h"
 #include "pw_multibuf/v1_adapter/internal/traits.h"
 #include "pw_multibuf/v2/chunks.h"
 #include "pw_multibuf/v2/multibuf.h"  // IWYU pragma: export

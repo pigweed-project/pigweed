@@ -16,7 +16,7 @@
 #pragma once
 
 #include "pw_preprocessor/arguments.h"
-#include "pw_preprocessor/internal/apply_macros.h"  // IWYU pragma: export
+#include "pw_preprocessor/internal/apply_macros.h"
 
 /// @module{pw_preprocessor}
 

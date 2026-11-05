@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/multibuf.h"
+
 #include <type_traits>
 
 #include "pw_multibuf/v2/internal/chunk_iterator.h"

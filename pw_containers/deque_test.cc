@@ -22,12 +22,15 @@
 #include <type_traits>
 #include <utility>
 
+#include "pw_allocator/layout.h"
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
+#include "pw_allocator/unique_ptr.h"
 #include "pw_assert/assert.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/container_tests.h"
 #include "pw_containers/internal/test_helpers.h"
+#include "pw_containers/storage.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_polyfill/standard.h"
 #include "pw_span/span.h"

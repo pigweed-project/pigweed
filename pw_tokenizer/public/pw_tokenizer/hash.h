@@ -25,7 +25,7 @@
 
 #include "pw_preprocessor/compiler.h"
 #include "pw_tokenizer/config.h"
-#include "pw_tokenizer/internal/hash.h"
+#include "pw_tokenizer/internal/hash.h"  // IWYU pragma: export
 
 namespace pw::tokenizer {
 

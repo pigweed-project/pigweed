@@ -18,8 +18,8 @@
 
 // IWYU pragma: private, include "pw_log/log.h"
 
-#include "pw_log_tokenized/config.h"         // IWYU pragma: export
-#include "pw_log_tokenized/log_tokenized.h"  // IWYU pragma: export
+#include "pw_log_tokenized/config.h"
+#include "pw_log_tokenized/log_tokenized.h"
 
 #define PW_LOG_FLAG_BITS PW_LOG_TOKENIZED_FLAG_BITS
 

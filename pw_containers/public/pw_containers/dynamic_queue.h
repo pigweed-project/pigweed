@@ -18,7 +18,7 @@
 
 #include "pw_allocator/allocator.h"
 #include "pw_containers/dynamic_deque.h"
-#include "pw_containers/internal/generic_queue.h"  // IWYU pragma: export
+#include "pw_containers/internal/generic_queue.h"
 
 namespace pw {
 

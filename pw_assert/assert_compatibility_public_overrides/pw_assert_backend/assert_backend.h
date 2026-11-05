@@ -15,8 +15,8 @@
 
 // IWYU pragma: private, include "pw_assert/assert.h"
 
-#include "pw_preprocessor/compiler.h"  // IWYU pragma: export
-#include "pw_preprocessor/util.h"      // IWYU pragma: export
+#include "pw_preprocessor/compiler.h"
+#include "pw_preprocessor/util.h"
 
 PW_EXTERN_C_START
 

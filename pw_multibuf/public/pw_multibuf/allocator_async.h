@@ -13,9 +13,5 @@
 // the License.
 #pragma once
 
-#include "pw_multibuf/allocator.h"  // IWYU pragma: export
-// IWYU pragma: begin_exports
-// IWYU pragma: begin_exports
-#include "pw_multibuf_backend/allocator_async.h"  // nogncheck
-// IWYU pragma: end_exports
-// IWYU pragma: end_exports
+#include "pw_multibuf/allocator.h"
+#include "pw_multibuf_backend/allocator_async.h"  // IWYU pragma: export  // nogncheck

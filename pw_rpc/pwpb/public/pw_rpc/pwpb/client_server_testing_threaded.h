@@ -15,8 +15,8 @@
 
 #include <cinttypes>
 
-#include "pw_rpc/internal/client_server_testing.h"
-#include "pw_rpc/internal/client_server_testing_threaded.h"
+#include "pw_rpc/internal/client_server_testing.h"  // IWYU pragma: export
+#include "pw_rpc/internal/client_server_testing_threaded.h"  // IWYU pragma: export
 #include "pw_rpc/pwpb/fake_channel_output.h"
 
 namespace pw::rpc {

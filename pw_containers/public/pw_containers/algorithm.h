@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "pw_containers/internal/algorithm_internal.h"  // IWYU pragma: export
+#include "pw_containers/internal/algorithm_internal.h"
 
 ///  @file pw_containers/algorithm.h
 ///

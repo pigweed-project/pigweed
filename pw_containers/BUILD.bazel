@@ -328,6 +328,7 @@ cc_library(
     deps = [
         ":inline_deque",
         ":queue_common",
+        ":raw_storage",
     ],
 )
 
@@ -567,6 +568,7 @@ pw_cc_test(
         "//pw_assert:assert",
         "//pw_bytes",
         "//pw_span",
+        "//pw_toolchain:constexpr_tag",
         "//pw_varint",
     ],
 )
@@ -592,6 +594,7 @@ pw_cc_test(
     deps = [
         ":test_helpers",
         ":vector",
+        "//pw_toolchain:constexpr_tag",
     ],
 )
 
@@ -612,6 +615,7 @@ pw_cc_test(
     deps = [
         ":dynamic_ptr_vector",
         ":test_helpers",
+        "//pw_allocator",
         "//pw_allocator:testing",
         "//pw_unit_test",
     ],
@@ -623,7 +627,9 @@ pw_cc_test(
     has_nc_test = True,
     deps = [
         ":deque",
+        ":storage",
         ":test_helpers",
+        "//pw_allocator",
         "//pw_allocator:null_allocator",
         "//pw_allocator:testing",
         "//pw_assert:assert",
@@ -637,6 +643,7 @@ pw_cc_test(
     srcs = ["fixed_deque_allocated_common_test.cc"],
     deps = [
         ":deque",
+        ":storage",
         ":test_helpers",
         "//pw_allocator:testing",
     ],
@@ -669,6 +676,7 @@ pw_cc_test(
         ":algorithm",
         ":dynamic_deque",
         ":test_helpers",
+        "//pw_allocator:first_fit",
         "//pw_allocator:null_allocator",
         "//pw_allocator:testing",
         "//pw_polyfill",
@@ -705,6 +713,7 @@ pw_cc_test(
     deps = [
         ":inline_deque",
         ":test_helpers",
+        "//pw_toolchain:constexpr_tag",
     ],
 )
 
@@ -730,6 +739,7 @@ pw_cc_test(
         ":algorithm",
         ":inline_queue",
         ":test_helpers",
+        "//pw_toolchain:constexpr_tag",
     ],
 )
 
@@ -738,6 +748,7 @@ pw_cc_test(
     srcs = ["queue_test.cc"],
     deps = [
         ":queue",
+        ":storage",
         ":test_helpers",
         "//pw_allocator:testing",
     ],
@@ -831,6 +842,8 @@ pw_cc_test(
     deps = [
         ":forward_list",
         ":test_helpers",
+        "//pw_allocator",
+        "//pw_allocator:forwarding_allocator",
         "//pw_allocator:testing",
     ],
 )

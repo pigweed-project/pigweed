@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include <cstddef>  // IWYU pragma: export
+#include <cstddef>
 
 #include "pw_thread_stl/options.h"  // IWYU pragma: export
 

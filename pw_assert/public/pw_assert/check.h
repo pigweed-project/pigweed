@@ -19,7 +19,7 @@
 //
 #pragma once
 
-#include "pw_preprocessor/arguments.h"  // IWYU pragma: export
+#include "pw_preprocessor/arguments.h"
 
 // The pw_assert public API:
 //

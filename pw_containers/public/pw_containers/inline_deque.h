@@ -21,10 +21,10 @@
 #include <utility>
 
 #include "pw_assert/assert.h"
-#include "pw_containers/internal/generic_deque.h"  // IWYU pragma: export
-#include "pw_containers/internal/raw_storage.h"    // IWYU pragma: export
+#include "pw_containers/internal/generic_deque.h"
+#include "pw_containers/internal/raw_storage.h"
 #include "pw_containers/internal/traits.h"
-#include "pw_toolchain/constexpr_tag.h"  // IWYU pragma: export
+#include "pw_toolchain/constexpr_tag.h"
 
 namespace pw {
 namespace containers::internal {

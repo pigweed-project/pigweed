@@ -25,7 +25,7 @@
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/layout.h"
 #include "pw_assert/assert.h"
-#include "pw_containers/internal/generic_deque.h"  // IWYU pragma: export
+#include "pw_containers/internal/generic_deque.h"
 #include "pw_containers/internal/traits.h"
 #include "pw_numeric/saturating_arithmetic.h"
 

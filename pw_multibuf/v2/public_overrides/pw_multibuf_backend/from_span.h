@@ -15,8 +15,8 @@
 
 // IWYU pragma: private, include "pw_multibuf/from_span.h"
 
-#include "pw_multibuf/config.h"               // IWYU pragma: export
-#include "pw_multibuf/v1_adapter/multibuf.h"  // IWYU pragma: export
+#include "pw_multibuf/config.h"
+#include "pw_multibuf/v1_adapter/multibuf.h"
 
 // This adapter will be removed when the migration to v2 is complete.
 #if PW_MULTIBUF_INCLUDE_V1_ADAPTERS

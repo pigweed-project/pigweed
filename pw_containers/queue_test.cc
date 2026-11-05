@@ -21,6 +21,7 @@
 
 #include "pw_allocator/testing.h"
 #include "pw_containers/internal/test_helpers.h"
+#include "pw_containers/storage.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

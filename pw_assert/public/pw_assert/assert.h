@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_assert/config.h"                  // IWYU pragma: export
+#include "pw_assert/config.h"
 #include "pw_assert_backend/assert_backend.h"  // IWYU pragma: export
 
 /// @module{pw_assert}

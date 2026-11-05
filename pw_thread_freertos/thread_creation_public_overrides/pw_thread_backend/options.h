@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include "pw_thread_freertos/context.h"  // IWYU pragma: export
+#include "pw_thread_freertos/context.h"
 #include "pw_thread_freertos/options.h"  // IWYU pragma: export
 
 namespace pw::thread::backend {

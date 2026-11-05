@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_containers/inline_var_len_entry_queue.h"
+
 #ifdef __cplusplus
 
 #include <algorithm>

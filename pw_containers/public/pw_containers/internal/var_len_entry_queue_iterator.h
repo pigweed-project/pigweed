@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_containers/inline_var_len_entry_queue.h"
+
 #include "pw_containers/internal/var_len_entry.h"  // IWYU pragma: export
 #include "pw_preprocessor/util.h"
 

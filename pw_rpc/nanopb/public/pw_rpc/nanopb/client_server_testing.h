@@ -17,7 +17,7 @@
 
 #include "pb_decode.h"
 #include "pb_encode.h"
-#include "pw_rpc/internal/client_server_testing.h"
+#include "pw_rpc/internal/client_server_testing.h"  // IWYU pragma: export
 #include "pw_rpc/nanopb/fake_channel_output.h"
 
 namespace pw::rpc {

@@ -13,12 +13,14 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_rpc/pwpb/client_server_testing_threaded.h"
+
 #include <cinttypes>
 
 #include "pw_function/function.h"
 #include "pw_rpc/channel.h"
 #include "pw_rpc/client_server.h"
-#include "pw_rpc/internal/client_server_testing.h"
+#include "pw_rpc/internal/client_server_testing.h"  // IWYU pragma: export
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_sync/binary_semaphore.h"

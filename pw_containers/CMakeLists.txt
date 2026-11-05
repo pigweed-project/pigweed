@@ -195,6 +195,7 @@ pw_add_library(pw_containers.inline_queue INTERFACE
   PUBLIC_DEPS
     pw_containers.inline_deque
     pw_containers._queue_common
+    pw_containers._raw_storage
 )
 
 pw_add_library(pw_containers.iterator INTERFACE

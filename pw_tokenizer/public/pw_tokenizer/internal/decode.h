@@ -17,6 +17,8 @@
 // the Detokenizer class, defined in pw_tokenizer/detokenize.h.
 #pragma once
 
+// IWYU pragma: private, include "pw_tokenizer/detokenize.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>

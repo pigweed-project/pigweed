@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include <openssl/base.h>  // IWYU pragma: export
-#include <openssl/ec.h>    // IWYU pragma: export
+#include <openssl/base.h>
+#include <openssl/ec.h>
 
 namespace pw::crypto::ecdh::backend {
 

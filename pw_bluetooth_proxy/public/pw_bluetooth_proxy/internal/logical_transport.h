@@ -14,6 +14,8 @@
 
 #pragma once
 
+// IWYU pragma: private, include "pw_bluetooth_proxy/basic_mode_channel_config.h"
+
 #include <cstdint>
 
 namespace pw::bluetooth::proxy {

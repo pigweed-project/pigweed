@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// IWYU pragma: private, include "pw_multibuf/multibuf.h"
+
 #include <cstddef>
 
 namespace pw::multibuf::v2 {
