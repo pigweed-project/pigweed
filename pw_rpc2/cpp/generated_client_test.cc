@@ -20,12 +20,12 @@
 #include "pw_async2/future_task.h"
 #include "pw_buf/buf.h"
 #include "pw_rpc2/internal/test_utils.h"
-#include "pw_rpc2/pw_rpc2_test.pwpb.rpc2.h"
-#include "pw_rpc2/pw_rpc2_test.raw.rpc2.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/service_client.h"
 #include "pw_rpc2/status.h"
 #include "pw_rpc2/write_reservation.h"
+#include "pw_rpc2_test_pb/pw_rpc2_test.pwpb.rpc2.h"
+#include "pw_rpc2_test_pb/pw_rpc2_test.raw.rpc2.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc2 {

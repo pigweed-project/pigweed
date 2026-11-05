@@ -14,6 +14,7 @@
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 include($ENV{PW_ROOT}/pw_enum/pw_enum.cmake)
+include($ENV{PW_ROOT}/pw_protobuf_compiler/proto.cmake)
 
 pw_add_enum(pw_rpc2.rpc_code
   SOURCES
@@ -40,6 +41,13 @@ pw_add_enum(pw_rpc2._protocol_error_enum
     .
   PREFIX
     pw_rpc2
+)
+
+pw_proto_library(pw_rpc2.pw_rpc2_test_proto
+  SOURCES
+    pw_rpc2_test.proto
+  PREFIX
+    pw_rpc2_test_pb
 )
 
 add_subdirectory(cpp)

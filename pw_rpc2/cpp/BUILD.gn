@@ -286,10 +286,10 @@ pw_test("test_harness_test") {
               pw_sync_THREAD_NOTIFICATION_BACKEND != ""
   deps = [
            ":cpp",
-           ":pw_rpc2_test_proto.pwpb_rpc2",
-           ":pw_rpc2_test_proto.raw_rpc2",
            ":test_harness",
            ":test_utils",
+           "$dir_pw_rpc2:pw_rpc2_test_proto.pwpb_rpc2",
+           "$dir_pw_rpc2:pw_rpc2_test_proto.raw_rpc2",
            dir_pw_async2,
            dir_pw_buf,
          ] + _coro_deps
@@ -509,10 +509,10 @@ pw_test("client_test") {
               pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
   deps = [
     ":cpp",
-    ":pw_rpc2_test_proto.pwpb_rpc2",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
+    "$dir_pw_rpc2:pw_rpc2_test_proto.pwpb_rpc2",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
     dir_pw_async2,
@@ -528,21 +528,15 @@ pw_test("generated_client_test") {
               pw_sync_THREAD_NOTIFICATION_BACKEND != ""
   deps = [
     ":cpp",
-    ":pw_rpc2_test_proto.pwpb_rpc2",
-    ":pw_rpc2_test_proto.raw_rpc2",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
+    "$dir_pw_rpc2:pw_rpc2_test_proto.pwpb_rpc2",
+    "$dir_pw_rpc2:pw_rpc2_test_proto.raw_rpc2",
     dir_pw_async2,
     dir_pw_buf,
   ]
   sources = [ "generated_client_test.cc" ]
-}
-
-pw_proto_library("pw_rpc2_test_proto") {
-  sources = [ "pw_rpc2_test.proto" ]
-  prefix = "pw_rpc2"
-  visibility = [ ":*" ]
 }
 
 pw_test("generated_service_test") {
@@ -551,11 +545,11 @@ pw_test("generated_service_test") {
               pw_sync_THREAD_NOTIFICATION_BACKEND != ""
   deps = [
     ":cpp",
-    ":pw_rpc2_test_proto.pwpb_rpc2",
-    ":pw_rpc2_test_proto.raw_rpc2",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
+    "$dir_pw_rpc2:pw_rpc2_test_proto.pwpb_rpc2",
+    "$dir_pw_rpc2:pw_rpc2_test_proto.raw_rpc2",
     "$dir_pw_transport/cpp:forwarding_socket",
     dir_pw_async2,
     dir_pw_buf,
@@ -633,12 +627,12 @@ pw_test("e2e_test") {
               pw_sync_THREAD_NOTIFICATION_BACKEND != ""
   deps = [
     ":cpp",
-    ":pw_rpc2_test_proto.pwpb_rpc2",
-    ":pw_rpc2_test_proto.raw_rpc2",
     ":test_utils",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
     "$dir_pw_containers:vector",
+    "$dir_pw_rpc2:pw_rpc2_test_proto.pwpb_rpc2",
+    "$dir_pw_rpc2:pw_rpc2_test_proto.raw_rpc2",
     "$dir_pw_transport/cpp:forwarding_socket",
     "$dir_pw_transport/cpp:socket",
     "$dir_pw_unit_test:status_macros",

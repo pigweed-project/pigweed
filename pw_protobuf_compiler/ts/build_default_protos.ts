@@ -41,7 +41,7 @@ const protos = [
   'pw_rpc/internal/packet.proto',
   'pw_protobuf_compiler/pw_protobuf_compiler_protos/nested/more_nesting/test.proto',
   'pw_protobuf_compiler/pw_protobuf_compiler_protos/test.proto',
-  'pw_rpc2/cpp/pw_rpc2_test.proto',
+  'pw_rpc2/pw_rpc2_test.proto',
   'pw_rpc2/cpp/examples/echo/echo.proto',
 ];
 

@@ -28,11 +28,11 @@
 #include "pw_async2/task.h"
 #include "pw_buf/buf.h"
 #include "pw_compilation_testing/negative_compilation.h"
-#include "pw_rpc2/pw_rpc2_test.pwpb.rpc2.h"
-#include "pw_rpc2/pw_rpc2_test.raw.rpc2.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/status.h"
 #include "pw_rpc2/writer.h"
+#include "pw_rpc2_test_pb/pw_rpc2_test.pwpb.rpc2.h"
+#include "pw_rpc2_test_pb/pw_rpc2_test.raw.rpc2.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

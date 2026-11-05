@@ -12,6 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_enum:pw_enum.bzl", "pw_enum")
@@ -64,4 +67,24 @@ sphinx_docs_library(
     ],
     prefix = "pw_rpc2/",
     target_compatible_with = incompatible_with_mcu(),
+)
+
+proto_library(
+    name = "pw_rpc2_test_proto",
+    srcs = ["pw_rpc2_test.proto"],
+    import_prefix = "pw_rpc2_test_pb",
+    strip_import_prefix = "/pw_rpc2",
+    visibility = ["//pw_rpc2:__subpackages__"],
+)
+
+py_proto_library(
+    name = "pw_rpc2_test_py_pb2",
+    visibility = ["//pw_rpc2:__subpackages__"],
+    deps = [":pw_rpc2_test_proto"],
+)
+
+copy_to_bin(
+    name = "js_protos",
+    srcs = ["pw_rpc2_test.proto"],
+    visibility = ["//visibility:public"],
 )

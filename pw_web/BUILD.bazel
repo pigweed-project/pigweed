@@ -170,7 +170,7 @@ js_run_binary(
         "//pw_protobuf_compiler:js_protos",
         "//pw_rpc:js_protos",
         "//pw_rpc/ts:js_protos",
-        "//pw_rpc2/cpp:js_protos",
+        "//pw_rpc2:js_protos",
         "//pw_rpc2/cpp/examples/echo:js_protos",
         "//pw_tokenizer:js_protos",
         "//pw_transfer:js_protos",

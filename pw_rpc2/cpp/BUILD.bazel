@@ -12,7 +12,6 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
@@ -533,27 +532,20 @@ pw_cc_test(
     ],
 )
 
-proto_library(
-    name = "pw_rpc2_test_proto",
-    srcs = ["pw_rpc2_test.proto"],
-    import_prefix = "pw_rpc2",
-    strip_import_prefix = "/pw_rpc2/cpp",
-)
-
 raw_rpc2_proto_library(
     name = "pw_rpc2_test_raw_rpc2",
-    deps = [":pw_rpc2_test_proto"],
+    deps = ["//pw_rpc2:pw_rpc2_test_proto"],
 )
 
 pwpb_proto_library(
     name = "pw_rpc2_test_pwpb",
-    deps = [":pw_rpc2_test_proto"],
+    deps = ["//pw_rpc2:pw_rpc2_test_proto"],
 )
 
 pwpb_rpc2_proto_library(
     name = "pw_rpc2_test_pwpb_rpc2",
     pwpb_proto_library_deps = [":pw_rpc2_test_pwpb"],
-    deps = [":pw_rpc2_test_proto"],
+    deps = ["//pw_rpc2:pw_rpc2_test_proto"],
 )
 
 proto_library(
@@ -715,10 +707,4 @@ sphinx_docs_library(
     ],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//pw_rpc2:__pkg__"],
-)
-
-copy_to_bin(
-    name = "js_protos",
-    srcs = ["pw_rpc2_test.proto"],
-    visibility = ["//visibility:public"],
 )

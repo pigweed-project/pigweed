@@ -293,8 +293,8 @@ pw_add_test(pw_rpc2.cpp.test_harness_test
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
-    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
-    pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
+    pw_rpc2.pw_rpc2_test_proto.pwpb_rpc2
+    pw_rpc2.pw_rpc2_test_proto.raw_rpc2
     pw_rpc2.cpp.test_harness
   GROUPS
     modules
@@ -514,7 +514,7 @@ pw_add_test(pw_rpc2.cpp.client_test
     pw_buf
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
-    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
+    pw_rpc2.pw_rpc2_test_proto.pwpb_rpc2
     pw_status
     pw_thread.test_thread_context
     pw_thread.thread
@@ -533,17 +533,10 @@ pw_add_test(pw_rpc2.cpp.generated_client_test
     pw_buf
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
-    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
-    pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
+    pw_rpc2.pw_rpc2_test_proto.pwpb_rpc2
+    pw_rpc2.pw_rpc2_test_proto.raw_rpc2
   GROUPS
     modules
-    pw_rpc2
-)
-
-pw_proto_library(pw_rpc2.cpp.pw_rpc2_test_proto
-  SOURCES
-    pw_rpc2_test.proto
-  PREFIX
     pw_rpc2
 )
 
@@ -560,8 +553,8 @@ pw_add_test(pw_rpc2.cpp.generated_service_test
     pw_polyfill
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
-    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
-    pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
+    pw_rpc2.pw_rpc2_test_proto.pwpb_rpc2
+    pw_rpc2.pw_rpc2_test_proto.raw_rpc2
     pw_status
     pw_transport.cpp.forwarding_socket
   GROUPS
@@ -641,8 +634,8 @@ pw_add_test(pw_rpc2.cpp.e2e_test
     pw_containers.vector
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
-    pw_rpc2.cpp.pw_rpc2_test_proto.pwpb_rpc2
-    pw_rpc2.cpp.pw_rpc2_test_proto.raw_rpc2
+    pw_rpc2.pw_rpc2_test_proto.pwpb_rpc2
+    pw_rpc2.pw_rpc2_test_proto.raw_rpc2
     pw_span
     pw_transport.cpp.forwarding_socket
     pw_transport.cpp.socket
