@@ -36,15 +36,15 @@ import six
 from pw_env_setup import env_setup, environment
 
 
-def _write_env_setup_script(tmpdir, pw_root, project_root):
-    """Generates a CIPD-only activate.sh like bootstrap would.
+def _write_env_setup_script(tmpdir, pw_root, project_root, ext='.sh'):
+    """Generates a CIPD-only activate script like bootstrap would.
 
     Returns the script path and the environment install directory.
     """
     cfg_path = os.path.join(project_root, 'pigweed.json')
     with open(cfg_path, 'w') as outs:
         json.dump({'pw': {'pw_env_setup': {'root_variable': 'PW_ROOT'}}}, outs)
-    shell_file = os.path.join(tmpdir, 'activate.sh')
+    shell_file = os.path.join(tmpdir, 'activate' + ext)
     install_dir = os.path.join(tmpdir, 'environment')
     setup = env_setup.EnvSetup(
         pw_root=pw_root,
@@ -72,15 +72,14 @@ def _write_env_setup_script(tmpdir, pw_root, project_root):
 
 
 def _source_and_read_env(shell_file, extra_env=None):
-    """Sources shell_file under sh -u and returns the resulting env."""
+    """Sources shell_file and returns the resulting env."""
     env = {'PATH': '/usr/bin:/bin'}
     env.update(extra_env or {})
-    res = subprocess.run(
-        ['sh', '-u', '-c', '. "$1" && env', 'sh', shell_file],
-        capture_output=True,
-        env=env,
-        check=True,
-    )
+    if shell_file.endswith('.fish'):
+        cmd = ['fish', '-c', 'source "$argv[1]"; and env', shell_file]
+    else:
+        cmd = ['sh', '-u', '-c', '. "$1" && env', 'sh', shell_file]
+    res = subprocess.run(cmd, capture_output=True, env=env, check=True)
     lines = res.stdout.decode().splitlines()
     return dict(line.split('=', 1) for line in lines if '=' in line)
 
@@ -624,6 +623,59 @@ class PosixEnvironmentTest(
             'case "$-" in *f*) echo noglob ;; *) echo glob ;; esac'
         ).items():
             self.assertEqual(lines, ['undefined', 'glob'], shell)
+
+    def test_env_setup_worktree_activate_root_override(self):
+        """Tests _PW_ACTIVATE_ROOT override for shared worktree environments."""
+        if not self.run_shell_tests:
+            return
+
+        with tempfile.TemporaryDirectory(prefix='pw-test-wt-') as tmpdir:
+            # Pigweed nested in a project checkout, activated from a worktree.
+            primary = os.path.join(tmpdir, 'primary')
+            primary_pw = os.path.join(primary, 'third_party', 'pigweed')
+            worktree = os.path.join(tmpdir, 'worktree')
+            worktree_pw = os.path.join(worktree, 'third_party', 'pigweed')
+            os.makedirs(primary_pw)
+            os.makedirs(worktree_pw)
+
+            exts = ['.sh'] + (['.fish'] if shutil.which('fish') else [])
+            for ext in exts:
+                shell_file, install_dir = _write_env_setup_script(
+                    primary, primary_pw, primary, ext=ext
+                )
+
+                env = _source_and_read_env(
+                    shell_file,
+                    {
+                        '_PW_ACTIVATE_ROOT': worktree_pw,
+                        '_PW_ACTIVATE_PROJECT_ROOT': worktree,
+                    },
+                )
+                # Roots follow the worktree; the environment stays with primary.
+                self.assertEqual(env['PW_ROOT'], worktree_pw, ext)
+                self.assertEqual(env['PW_PROJECT_ROOT'], worktree, ext)
+                self.assertEqual(
+                    env['_PW_ENVIRONMENT_CONFIG_FILE'],
+                    os.path.join(worktree, 'pigweed.json'),
+                    ext,
+                )
+                self.assertEqual(
+                    env['_PW_ACTUAL_ENVIRONMENT_ROOT'], install_dir, ext
+                )
+                self.assertEqual(
+                    env['VIRTUAL_ENV'],
+                    os.path.join(install_dir, 'pigweed-venv'),
+                    ext,
+                )
+                # The overrides are consumed so they cannot leak into later
+                # shells.
+                self.assertNotIn('_PW_ACTIVATE_ROOT', env, ext)
+                self.assertNotIn('_PW_ACTIVATE_PROJECT_ROOT', env, ext)
+
+                # Without overrides the script behaves as before.
+                env = _source_and_read_env(shell_file)
+                self.assertEqual(env['PW_ROOT'], primary_pw, ext)
+                self.assertEqual(env['PW_PROJECT_ROOT'], primary, ext)
 
 
 class WindowsCaseInsensitiveTest(unittest.TestCase):

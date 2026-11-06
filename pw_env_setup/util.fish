@@ -131,7 +131,7 @@ function pw_check_root --argument-names _PW_ROOT
 end
 
 # Check for and return the environment directory location.
-function pw_get_env_root
+function pw_get_env_root --argument-names script_name
     # PW_ENVIRONMENT_ROOT allows callers to specify where the environment should
     # be installed. bootstrap.sh scripts should not use that variable to store the
     # result of this function. This separation allows scripts to assume
@@ -174,7 +174,39 @@ function pw_get_env_root
     else if test -d $_PW_DOTENV
         echo $_PW_DOTENV
     else
-        echo $_PW_ENV
+        # Neither exists. In a git worktree, activate.fish reuses the primary
+        # checkout's bootstrapped environment instead of creating a new one;
+        # bootstrap.fish always creates a local environment.
+        set -l _pw_shared_env
+        if contains -- "$script_name" activate.fish activate
+            set _pw_shared_env (_pw_shared_env_root "$_PW_ENV_PREFIX")
+        end
+        if test -n "$_pw_shared_env"
+            echo $_pw_shared_env
+        else
+            echo $_PW_ENV
+        end
+    end
+end
+
+# Prints the primary checkout's environment directory when $_PW_ENV_PREFIX is a
+# git worktree that shares one, and nothing otherwise.
+function _pw_shared_env_root --argument-names _PW_ENV_PREFIX
+    # Linked worktrees and submodules both use a .git file; --git-common-dir
+    # resolves to <primary>/.git only for worktrees of a standard checkout.
+    if not test -f "$_PW_ENV_PREFIX/.git"
+        return
+    end
+    set -l _pw_common_dir (env GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 git -C "$_PW_ENV_PREFIX" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+    if not string match --quiet '*/.git' "$_pw_common_dir"
+        return
+    end
+    set -l _pw_common_root (string replace --regex '/\.git$' '' "$_pw_common_dir")
+    for _pw_shared_env in "$_pw_common_root/environment" "$_pw_common_root/.environment"
+        if test -f "$_pw_shared_env/activate.fish"
+            echo $_pw_shared_env
+            return
+        end
     end
 end
 
@@ -343,11 +375,16 @@ function pw_finalize_pre_check --argument-names _PW_NAME _PW_SETUP_SH
 
     if not test -f "$_PW_SETUP_SH"
         pw_error "Error during $_PW_NAME--see messages above."
+    else
+        set -gx _PW_ACTIVATE_ROOT "$PW_ROOT"
+        set -gx _PW_ACTIVATE_PROJECT_ROOT "$PW_PROJECT_ROOT"
     end
 end
 
 function pw_finalize_post_check --argument-names _PW_NAME _PW_SETUP_SH
-    if test "$status" -eq 0
+    set -l _pw_source_status $status
+    set -e _PW_ACTIVATE_ROOT _PW_ACTIVATE_PROJECT_ROOT
+    if test "$_pw_source_status" -eq 0
         if test "$_PW_NAME" = bootstrap && test -z "$PW_ENVSETUP_QUIET"
             echo "To reactivate this environment in the future, run this in your "
             echo "terminal:"
@@ -400,6 +437,7 @@ function pw_cleanup
     functions -e pw_eval_sourced
     functions -e pw_check_root
     functions -e pw_get_env_root
+    functions -e _pw_shared_env_root
     functions -e _pw_banner
     functions -e pw_bootstrap
     functions -e pw_activate

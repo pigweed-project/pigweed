@@ -154,8 +154,39 @@ pw_get_env_root() {
   elif [ -d "$_PW_DOTENV" ]; then
     echo "$_PW_DOTENV"
   else
-    echo "$_PW_ENV"
+    # Neither exists. In a git worktree, activate.sh reuses the primary
+    # checkout's bootstrapped environment instead of creating a new one;
+    # bootstrap.sh always creates a local environment.
+    case "${1:-}" in
+      activate.sh|activate) _PW_SHARED_ENV="$(_pw_shared_env_root)" ;;
+      *) _PW_SHARED_ENV="" ;;
+    esac
+    echo "${_PW_SHARED_ENV:-$_PW_ENV}"
   fi
+}
+
+# Prints the primary checkout's environment directory when $_PW_ENV_PREFIX is a
+# git worktree that shares one, and nothing otherwise.
+_pw_shared_env_root() {
+  # Linked worktrees and submodules both use a .git file; --git-common-dir
+  # resolves to <primary>/.git only for worktrees of a standard checkout.
+  if [ ! -f "$_PW_ENV_PREFIX/.git" ]; then
+    return
+  fi
+  _PW_COMMON_DIR="$(
+    GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 \
+    git -C "$_PW_ENV_PREFIX" rev-parse --path-format=absolute --git-common-dir 2>/dev/null
+  )"
+  case "$_PW_COMMON_DIR" in
+    */.git) ;;
+    *) return ;;
+  esac
+  for _PW_SHARED_ENV in "${_PW_COMMON_DIR%/.git}/environment" "${_PW_COMMON_DIR%/.git}/.environment"; do
+    if [ -f "$_PW_SHARED_ENV/activate.sh" ]; then
+      echo "$_PW_SHARED_ENV"
+      return
+    fi
+  done
 }
 
 # Note: This banner is duplicated in three places; which is a lesser evil than
@@ -379,9 +410,13 @@ pw_finalize() {
   fi
 
   if [ -f "$_PW_SETUP_SH" ]; then
+    _PW_ACTIVATE_ROOT="$PW_ROOT"
+    _PW_ACTIVATE_PROJECT_ROOT="$PW_PROJECT_ROOT"
     . "$_PW_SETUP_SH"
+    _PW_SETUP_STATUS="$?"
+    unset _PW_ACTIVATE_ROOT _PW_ACTIVATE_PROJECT_ROOT
 
-    if [ "$?" -eq 0 ]; then
+    if [ "$_PW_SETUP_STATUS" -eq 0 ]; then
       if [ "$_PW_NAME" = "bootstrap" ] && [ -z "$PW_ENVSETUP_QUIET" ]; then
         echo "To reactivate this environment in the future, run this in your "
         echo "terminal:"
@@ -396,6 +431,7 @@ pw_finalize() {
     else
       pw_error "Error during $_PW_NAME--see messages above."
     fi
+    unset _PW_SETUP_STATUS
   else
     pw_error "Error during $_PW_NAME--see messages above."
   fi
@@ -437,6 +473,7 @@ pw_cleanup() {
   unset -f pw_eval_sourced
   unset -f pw_check_root
   unset -f pw_get_env_root
+  unset -f _pw_shared_env_root
   unset -f _pw_banner
   unset -f pw_bootstrap
   unset -f pw_activate

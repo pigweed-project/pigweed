@@ -48,7 +48,7 @@ if not pw_check_root $PW_ROOT
     return
 end
 
-set --export _PW_ACTUAL_ENVIRONMENT_ROOT (pw_get_env_root)
+set --export _PW_ACTUAL_ENVIRONMENT_ROOT (pw_get_env_root (status basename))
 
 set SETUP_SH "$_PW_ACTUAL_ENVIRONMENT_ROOT/activate.fish"
 

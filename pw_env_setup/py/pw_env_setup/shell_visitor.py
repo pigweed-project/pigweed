@@ -151,11 +151,20 @@ class ShellVisitor(_BaseShellVisitor):
 
     def visit_set(self, set):  # pylint: disable=redefined-builtin
         value = self._apply_replacements(set)
-        self._outs.write(
-            '{name}="{value}"\nexport {name}\n'.format(
-                name=set.name, value=value
+        if set.override_var:
+            self._outs.write(
+                '{name}="${{{override}:-{value}}}"\n'
+                'unset {override}\n'
+                'export {name}\n'.format(
+                    name=set.name, override=set.override_var, value=value
+                )
             )
-        )
+        else:
+            self._outs.write(
+                '{name}="{value}"\nexport {name}\n'.format(
+                    name=set.name, value=value
+                )
+            )
 
     def visit_clear(self, clear):
         self._outs.write('unset {name}\n'.format(**vars(clear)))
@@ -299,9 +308,20 @@ class FishShellVisitor(ShellVisitor):
 
     def visit_set(self, set):  # pylint: disable=redefined-builtin
         value = self._apply_replacements(set)
-        self._outs.write(
-            'set -x {name} {value}\n'.format(name=set.name, value=value)
-        )
+        if set.override_var:
+            self._outs.write(
+                'set -x {name} {value}\n'
+                'if set -q {override}; and test -n "${override}"\n'
+                '  set -x {name} ${override}\n'
+                '  set -e {override}\n'
+                'end\n'.format(
+                    name=set.name, override=set.override_var, value=value
+                )
+            )
+        else:
+            self._outs.write(
+                'set -x {name} {value}\n'.format(name=set.name, value=value)
+            )
 
     def visit_clear(self, clear):
         self._outs.write('set -e {name}\n'.format(**vars(clear)))

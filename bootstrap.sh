@@ -85,7 +85,7 @@ if ! pw_check_root "$PW_ROOT"; then
   return
 fi
 
-_PW_ACTUAL_ENVIRONMENT_ROOT="$(pw_get_env_root)"
+_PW_ACTUAL_ENVIRONMENT_ROOT="$(pw_get_env_root "$(basename "$_PW_BOOTSTRAP_PATH")")"
 export _PW_ACTUAL_ENVIRONMENT_ROOT
 SETUP_SH="$_PW_ACTUAL_ENVIRONMENT_ROOT/activate.sh"
 

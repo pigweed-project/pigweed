@@ -152,8 +152,10 @@ class Set(_VariableAction):
 
     def __init__(self, *args, **kwargs):
         deactivate = kwargs.pop('deactivate', True)
+        override_var = kwargs.pop('override_var', None)
         super().__init__(*args, **kwargs)
         self.deactivate = deactivate
+        self.override_var = override_var
 
     def accept(self, visitor):
         visitor.visit_set(self)
@@ -372,6 +374,27 @@ class Environment:
         name = self.normalize_key(name)
         self._actions.append(
             Set(name, value, deactivate=deactivate, replace=replace)
+        )
+        self._blankline()
+
+    def set_with_override(self, name, value, override_var, deactivate=True):
+        """Set a variable, preferring override_var's value when it is set.
+
+        The generated script consumes and unsets override_var, so the override
+        only applies to that activation. The default value is written literally
+        (never rewritten in terms of other variables) so that it can be defined
+        before them.
+        """
+        assert not self._finalized
+        name = self.normalize_key(name)
+        self._actions.append(
+            Set(
+                name,
+                value,
+                deactivate=deactivate,
+                replace=False,
+                override_var=override_var,
+            )
         )
         self._blankline()
 

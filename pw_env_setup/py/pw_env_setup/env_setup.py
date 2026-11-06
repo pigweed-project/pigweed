@@ -231,9 +231,17 @@ class EnvSetup:
         self._gni_file = None
 
         # Define the roots before anything that references them. PW_ROOT comes
-        # first since other values are rewritten in terms of it.
-        self._env.set('PW_ROOT', pw_root, deactivate=False)
-        self._env.set('PW_PROJECT_ROOT', project_root, deactivate=False)
+        # first since other values are rewritten in terms of it. Activating a
+        # shared environment from a git worktree overrides both roots.
+        self._env.set_with_override(
+            'PW_ROOT', pw_root, '_PW_ACTIVATE_ROOT', deactivate=False
+        )
+        self._env.set_with_override(
+            'PW_PROJECT_ROOT',
+            project_root,
+            '_PW_ACTIVATE_PROJECT_ROOT',
+            deactivate=False,
+        )
 
         self._config_file_name = config_file
         self._env.set(
@@ -256,6 +264,8 @@ class EnvSetup:
         self._env.set('VIRTUAL_ENV', self._virtualenv_root)
         self._env.add_replacement('_PW_ACTUAL_ENVIRONMENT_ROOT', install_dir)
         self._env.add_replacement('PW_ROOT', pw_root)
+        if os.path.abspath(project_root) != os.path.abspath(pw_root):
+            self._env.add_replacement('PW_PROJECT_ROOT', project_root)
 
     def _process_globs(self, globs):
         unique_globs = []
