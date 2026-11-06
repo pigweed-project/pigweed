@@ -364,4 +364,31 @@
 #define PW_NO_UNIQUE_ADDRESS
 #endif  // PW_NO_UNIQUE_ADDRESS
 
+/// `PW_ATTRIBUTE_PREFERRED_NAME(name)` hints to the compiler that a class
+/// template instantiation should be referred to using a preferred alias `name`
+/// in compiler diagnostics and debug information.
+///
+/// The attribute must be placed on the class template declaration immediately
+/// after the `class` or `struct` keyword, after the alias `name` has been
+/// declared:
+///
+/// ```cpp
+/// template <typename T, typename U = int>
+/// class GenericContainer;
+///
+/// template <typename T>
+/// using IntContainer = GenericContainer<T, int>;
+///
+/// template <typename T, typename U>
+/// class PW_ATTRIBUTE_PREFERRED_NAME(IntContainer<T>) GenericContainer {};
+/// ```
+///
+/// See the upstream documentation:
+/// https://clang.llvm.org/docs/AttributeReference.html#preferred-name
+#if PW_HAVE_CPP_ATTRIBUTE(clang::preferred_name)
+#define PW_ATTRIBUTE_PREFERRED_NAME(name) [[clang::preferred_name(name)]]
+#else
+#define PW_ATTRIBUTE_PREFERRED_NAME(name)
+#endif  // PW_HAVE_CPP_ATTRIBUTE(clang::preferred_name)
+
 /// @endsubmodule

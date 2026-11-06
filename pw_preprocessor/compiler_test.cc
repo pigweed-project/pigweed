@@ -56,5 +56,26 @@ TEST(CompilerMacros, ModifyDiagnosticsClangGcc) {
   PW_MODIFY_DIAGNOSTICS_POP();
 }
 
+template <typename T, typename U = int>
+class GenericTemplate;
+
+template <typename T>
+using IntTemplate = GenericTemplate<T, int>;
+
+template <typename T, typename U>
+class PW_ATTRIBUTE_PREFERRED_NAME(IntTemplate<T>) GenericTemplate {
+ public:
+  constexpr explicit GenericTemplate(T value) : value_(value) {}
+  constexpr T value() const { return value_; }
+
+ private:
+  T value_;
+};
+
+TEST(CompilerMacros, PreferredName) {
+  IntTemplate<int> instance(42);
+  EXPECT_EQ(instance.value(), 42);
+}
+
 }  // namespace
 }  // namespace pw::preprocessor

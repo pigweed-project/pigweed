@@ -77,7 +77,9 @@ situations when a literal is needed to build the name of a function or macro.
 
 pw_preprocessor/compiler.h
 --------------------------
-Macros for compiler-specific features, such as attributes or builtins.
+Macros for compiler-specific features, such as attributes (for example,
+:cc:`PW_ATTRIBUTE_LIFETIME_BOUND`, :cc:`PW_ATTRIBUTE_PREFERRED_NAME`,
+and :cc:`PW_NO_UNIQUE_ADDRESS`) or builtins.
 
 Modifying compiler diagnostics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
