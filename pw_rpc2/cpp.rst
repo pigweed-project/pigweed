@@ -31,6 +31,10 @@ and errors whose code already says what happened, such as ``kEndOfStream``,
 ``kClosed``, and ``kWriteClosed``. Use the code to decide how to respond, and
 the logs to debug.
 
+``pw_rpc2`` logs under the module name ``RPC2`` at a configurable level,
+:cc:`PW_RPC2_LOG_LEVEL`. Set it through
+``@pigweed//pw_rpc2/cpp:config_override``.
+
 .. list-table::
    :header-rows: 1
    :widths: 20 40 40

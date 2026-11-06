@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "RPC2"
+#define PW_LOG_LEVEL PW_RPC2_LOG_LEVEL
+
 #include "pw_rpc2/internal/call.h"
 
 #include <memory>
@@ -20,6 +23,7 @@
 #include "pw_assert/check.h"
 #include "pw_async2/try.h"
 #include "pw_log/log.h"
+#include "pw_rpc2/internal/config.h"
 #include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/reader.h"
 
@@ -250,7 +254,7 @@ RpcResult<transport::ReserveWriteFuture> Call::ReserveWrite(
   // the sizes, which could overflow.
   const size_t max_size = connection.max_write_message_size_bytes();
   if (header_size > max_size || max_payload_size > max_size - header_size) {
-    PW_LOG_WARN(
+    PW_LOG_DEBUG(
         "Call %u: %u-byte header + %u-byte payload exceeds the %u-byte "
         "transport limit",
         static_cast<unsigned>(call_id_),
@@ -307,7 +311,7 @@ void Call::CloseWriteOnRetire() {
   if (is_write_closed()) {
     return;
   }
-  PW_LOG_WARN(
+  PW_LOG_ERROR(
       "Call %u: method returned without finishing; terminating the RPC with an "
       "error",
       static_cast<unsigned>(call_id_));

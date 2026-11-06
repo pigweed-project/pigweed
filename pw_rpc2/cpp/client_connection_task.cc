@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "RPC2"
+#define PW_LOG_LEVEL PW_RPC2_LOG_LEVEL
+
 #include "pw_rpc2/internal/client_connection_task.h"
 
 #include <mutex>
@@ -19,6 +22,7 @@
 
 #include "pw_assert/check.h"
 #include "pw_log/log.h"
+#include "pw_rpc2/internal/config.h"
 
 namespace pw::rpc2::internal {
 
@@ -35,7 +39,7 @@ ClientConnectionTask::~ClientConnectionTask() {
 
 uint32_t ClientConnectionTask::NewCallId() {
   if (next_call_id_ == kMaxCallId) {
-    PW_LOG_ERROR("Client call IDs exhausted; closing the connection");
+    PW_LOG_DEBUG("Client call IDs exhausted; closing the connection");
     CloseConnection(RpcStatus::Disconnected());
     return kMaxCallId;
   }

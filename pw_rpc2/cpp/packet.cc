@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "RPC2"
+#define PW_LOG_LEVEL PW_RPC2_LOG_LEVEL
+
 #include "pw_rpc2/internal/packet.h"
 
 #include <cstddef>
@@ -20,6 +23,7 @@
 #include "pw_bytes/endian.h"
 #include "pw_enum/traits.h"
 #include "pw_log/log.h"
+#include "pw_rpc2/internal/config.h"
 
 namespace pw::rpc2::internal {
 namespace {
@@ -35,30 +39,30 @@ std::optional<HandshakePacket> HandshakePacket::Decode(ConstByteSpan bytes) {
   // (and the reserved field) are ignored rather than rejected. This lets a peer
   // that only knows this version still negotiate with a newer one.
   if (bytes.size() < sizeof(HandshakeWireFormat)) {
-    PW_LOG_WARN("Invalid handshake packet: %u bytes is shorter than %u",
-                static_cast<unsigned>(bytes.size()),
-                static_cast<unsigned>(sizeof(HandshakeWireFormat)));
+    PW_LOG_DEBUG("Invalid handshake packet: %u bytes is shorter than %u",
+                 static_cast<unsigned>(bytes.size()),
+                 static_cast<unsigned>(sizeof(HandshakeWireFormat)));
     return std::nullopt;
   }
   const uint32_t magic = bytes::ReadInOrder<uint32_t>(
       endian::little, bytes.data() + offsetof(HandshakeWireFormat, magic));
   if (magic != kMagic) {
-    PW_LOG_WARN("Invalid handshake packet: magic 0x%08x is not 0x%08x",
-                static_cast<unsigned>(magic),
-                static_cast<unsigned>(kMagic));
+    PW_LOG_DEBUG("Invalid handshake packet: magic 0x%08x is not 0x%08x",
+                 static_cast<unsigned>(magic),
+                 static_cast<unsigned>(kMagic));
     return std::nullopt;
   }
   const uint8_t version =
       static_cast<uint8_t>(bytes[offsetof(HandshakeWireFormat, version)]);
   if (version == 0) {
-    PW_LOG_WARN("Invalid handshake packet: version 0");
+    PW_LOG_DEBUG("Invalid handshake packet: version 0");
     return std::nullopt;
   }
   const uint8_t type =
       static_cast<uint8_t>(bytes[offsetof(HandshakeWireFormat, type)]);
   if (!pw::IsValidEnum<Type>(type)) {
-    PW_LOG_WARN("Invalid handshake packet: unknown type %u",
-                static_cast<unsigned>(type));
+    PW_LOG_DEBUG("Invalid handshake packet: unknown type %u",
+                 static_cast<unsigned>(type));
     return std::nullopt;
   }
   return HandshakePacket(static_cast<Type>(type), version);
@@ -88,7 +92,7 @@ Buf HandshakePacket::Encode(Buf buffer) const {
 
 InboundPacket InboundPacket::Decode(ConstBuf&& buffer) {
   if (buffer.size() < sizeof(PacketHeader)) {
-    PW_LOG_WARN(
+    PW_LOG_DEBUG(
         "Malformed RPC packet: %u bytes is shorter than the %u-byte header",
         static_cast<unsigned>(buffer.size()),
         static_cast<unsigned>(sizeof(PacketHeader)));
@@ -98,8 +102,8 @@ InboundPacket InboundPacket::Decode(ConstBuf&& buffer) {
   const auto type_bits =
       static_cast<uint8_t>(buffer[offsetof(PacketHeader, type)]);
   if (!PacketType::IsValid(type_bits)) {
-    PW_LOG_WARN("Malformed RPC packet: invalid type 0x%02x",
-                static_cast<unsigned>(type_bits));
+    PW_LOG_DEBUG("Malformed RPC packet: invalid type 0x%02x",
+                 static_cast<unsigned>(type_bits));
     return nullptr;
   }
   const PacketType type = PacketType::FromValidatedBits(type_bits);
@@ -109,7 +113,7 @@ InboundPacket InboundPacket::Decode(ConstBuf&& buffer) {
   // without `kHasPayload` has no payload, so it must end with its header.
   const size_t header_size = PacketSizeWithoutPayload(type);
   if (type.has_payload() && buffer.size() < header_size) {
-    PW_LOG_WARN(
+    PW_LOG_DEBUG(
         "Malformed RPC packet: %u bytes is too short for the %u-byte header "
         "of type 0x%02x",
         static_cast<unsigned>(buffer.size()),
@@ -118,7 +122,7 @@ InboundPacket InboundPacket::Decode(ConstBuf&& buffer) {
     return nullptr;
   }
   if (!type.has_payload() && buffer.size() != header_size) {
-    PW_LOG_WARN(
+    PW_LOG_DEBUG(
         "Malformed RPC packet: type 0x%02x is a %u-byte header with no "
         "payload, but the packet is %u bytes",
         static_cast<unsigned>(type_bits),

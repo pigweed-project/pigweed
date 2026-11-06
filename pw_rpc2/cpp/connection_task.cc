@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "RPC2"
+#define PW_LOG_LEVEL PW_RPC2_LOG_LEVEL
+
 #include "pw_rpc2/internal/connection_task.h"
 
 #include <cstddef>
@@ -24,6 +27,7 @@
 #include "pw_enum/to_string.h"
 #include "pw_log/log.h"
 #include "pw_rpc2/internal/call.h"
+#include "pw_rpc2/internal/config.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/protocol_error.h"
 
@@ -193,6 +197,9 @@ void ConnectionTask::CloseConnection(RpcStatus reason) {
     return;
   }
   PW_DASSERT(connection_);
+  PW_LOG_DEBUG("Closing %s connection: %s",
+               role_ == EndpointRole::kServer ? "server" : "client",
+               reason.str());
   set_state(State::kClosed);
   close_status_ = reason;
   pending_control_packets_.reset();
@@ -277,6 +284,9 @@ bool ConnectionTask::PendPacket(async2::Context& cx) {
 
 void ConnectionTask::FinishHandshake(HandshakeInfo info) {
   PW_DASSERT(state_ == State::kHandshaking);
+  PW_LOG_DEBUG("%s connection established with protocol version %u",
+               role_ == EndpointRole::kServer ? "server" : "client",
+               static_cast<unsigned>(info.negotiated_version));
   handshake_info_ = info;
   set_state(State::kActive);
 }
@@ -308,8 +318,7 @@ bool ConnectionTask::ProcessOutgoingControlPackets(async2::Context& cx) {
 
   if (!send_status.ok()) {
     // If sending fails, the underlying transport is closed.
-    PW_LOG_WARN("Failed to send control packet (%s), closing connection",
-                send_status.str());
+    PW_LOG_DEBUG("Failed to send control packet (%s)", send_status.str());
     CloseConnection(send_status);
   }
   return true;
@@ -357,7 +366,7 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
 
   InboundPacket packet = InboundPacket::Decode(std::move(pkt_buf));
   if (packet == nullptr) {
-    PW_LOG_ERROR("Received malformed RPC packet, closing connection");
+    PW_LOG_WARN("Received malformed RPC packet, closing connection");
     CloseConnection(RpcStatus::ProtocolError());
     return true;
   }
@@ -388,8 +397,8 @@ bool ConnectionTask::ReadPacketFromConnection(async2::Context& cx) {
       // call that is still running, which is a client bug. End the active
       // call, drop the new start packet, and tell the client that neither
       // call will proceed.
-      PW_LOG_WARN("Call %u: client reused active call ID; ending both",
-                  static_cast<unsigned>(packet.call_id()));
+      PW_LOG_DEBUG("Call %u: client reused active call ID; ending both",
+                   static_cast<unsigned>(packet.call_id()));
       QueueError(packet.call_id(), ProtocolError::kReceivedDuplicateStart);
       call->Complete(RpcStatus::ProtocolError());
       return true;
@@ -439,7 +448,7 @@ bool ConnectionTask::DeliverToCall(Call& call, InboundPacket& packet) {
       type.has_payload() && close_mode == CloseMode::kOkTerminal;
   if (call.expects_single_response() && !is_single_response &&
       close_mode != CloseMode::kErrorTerminal) {
-    PW_LOG_WARN(
+    PW_LOG_DEBUG(
         "Call %u: received unexpected packet type 0x%02x for single-response "
         "call",
         static_cast<unsigned>(packet.call_id()),
@@ -455,19 +464,12 @@ bool ConnectionTask::DeliverToCall(Call& call, InboundPacket& packet) {
   }
 
   if (close_mode == CloseMode::kErrorTerminal) {
-    // Log the protocol error, then translate it to an RpcStatus.
     const ProtocolError error = packet.error();
-    if (call.is_completed()) {
-      PW_LOG_DEBUG("Call %u: peer ended completed RPC with error %s (0x%02x)",
-                   static_cast<unsigned>(packet.call_id()),
-                   EnumToString(error),
-                   static_cast<unsigned>(error));
-    } else {
-      PW_LOG_WARN("Call %u: peer ended RPC with error %s (0x%02x)",
-                  static_cast<unsigned>(packet.call_id()),
-                  EnumToString(error),
-                  static_cast<unsigned>(error));
-    }
+    PW_LOG_DEBUG("Call %u: peer ended %s RPC with error %s (0x%02x)",
+                 static_cast<unsigned>(packet.call_id()),
+                 call.is_completed() ? "completed" : "active",
+                 EnumToString(error),
+                 static_cast<unsigned>(error));
     call.OnError(PeerErrorToRpcStatus(type.sender(), error));
     return true;
   }

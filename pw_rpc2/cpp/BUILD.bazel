@@ -36,6 +36,23 @@ pw_cc_test(
     ],
 )
 
+label_flag(
+    name = "config_override",
+    build_setting_default = "//pw_build:default_module_config",
+)
+
+# Module configuration (PW_RPC2_LOG_LEVEL) for pw_rpc2's own sources.
+cc_library(
+    name = "config",
+    hdrs = ["public/pw_rpc2/internal/config.h"],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":config_override",
+        "//pw_log",
+    ],
+)
+
 pw_cc_enum_library(
     name = "packet_type",
     hdrs = ["public/pw_rpc2/internal/packet_type.h"],
@@ -71,7 +88,10 @@ pw_cc_enum_library(
     name = "packet",
     srcs = ["packet.cc"],
     enum_headers = ["public/pw_rpc2/internal/packet.h"],
-    implementation_deps = ["//pw_log"],
+    implementation_deps = [
+        ":config",
+        "//pw_log",
+    ],
     strip_include_prefix = "public",
     deps = [
         ":packet_type",
@@ -208,6 +228,7 @@ pw_cc_enum_library(
     ],
     enums = ["//pw_rpc2:rpc_code"],
     implementation_deps = [
+        ":config",
         "//pw_enum",
         "//pw_log",
         "//pw_preprocessor",
@@ -682,6 +703,7 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_rpc2/client.h",
+        "public/pw_rpc2/internal/config.h",
         "public/pw_rpc2/internal/control_future.h",
         "public/pw_rpc2/internal/future_base.h",
         "public/pw_rpc2/internal/protocol_error.h",

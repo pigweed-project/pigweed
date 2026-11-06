@@ -591,6 +591,10 @@
 /// @brief %Status codes and result types for RPC operations
 /// @details Learn more: [Error handling](../../pw_rpc2/cpp.html#module-pw-rpc2-cpp-errors)
 
+/// @defgroup pw_rpc2_config Configuration
+/// @ingroup pw_rpc2
+/// @brief Compile-time configuration
+
 /// @defgroup pw_rpc2_testing Testing
 /// @ingroup pw_rpc2
 /// @brief Unit test RPC services and clients end to end

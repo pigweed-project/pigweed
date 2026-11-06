@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "RPC2"
+#define PW_LOG_LEVEL PW_RPC2_LOG_LEVEL
+
 #include "pw_rpc2/internal/server_task.h"
 
 #include <mutex>
@@ -21,6 +24,7 @@
 #include "pw_assert/check.h"
 #include "pw_async2/future_task.h"
 #include "pw_log/log.h"
+#include "pw_rpc2/internal/config.h"
 #include "pw_rpc2/server.h"
 
 namespace pw::rpc2::internal {
@@ -136,7 +140,7 @@ void ServerTask::SubmitListener(ControlFuture& future) {
   }
   // Avoid logging while holding `ControlLock()`.
   if (out_of_memory) {
-    PW_LOG_ERROR("Failed to allocate a record for an RPC listener");
+    PW_LOG_DEBUG("Failed to allocate a record for an RPC listener");
   }
 }
 
@@ -260,7 +264,7 @@ void ServerTask::ApplyPendingListeners(bool closing) {
       }
     }
     if (out_of_memory) {
-      PW_LOG_ERROR("Failed to allocate a record for an RPC listener");
+      PW_LOG_DEBUG("Failed to allocate a record for an RPC listener");
     }
   }
 }
@@ -286,7 +290,8 @@ void ServerTask::PollListeners(async2::Context& cx) {
     }
 
     if (!poll->ok()) {
-      PW_LOG_WARN("Listener Accept() returned error: %s", poll->status().str());
+      PW_LOG_ERROR("Listener Accept() returned error: %s",
+                   poll->status().str());
       record.stop_accepting();
       continue;
     }

@@ -15,6 +15,7 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_async2/backend.gni")
+import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_enum/pw_cc_enum_source_set.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
@@ -23,12 +24,30 @@ import("$dir_pw_thread/backend.gni")
 import("$dir_pw_toolchain/traits.gni")
 import("$dir_pw_unit_test/test.gni")
 
+declare_args() {
+  # The build target that overrides the default configuration options for this
+  # module. This should point to a source set that provides defines through a
+  # public config (which may -include a file or add defines directly).
+  pw_rpc2_CONFIG = pw_build_DEFAULT_MODULE_CONFIG
+}
+
 config("public_include_path") {
   include_dirs = [ "public" ]
   visibility = [ ":*" ]
 }
 
 _default_visibility = [ "$dir_pw_rpc2/*" ]
+
+# Module configuration (PW_RPC2_LOG_LEVEL) for pw_rpc2's own sources.
+pw_source_set("config") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_rpc2/internal/config.h" ]
+  public_deps = [
+    dir_pw_log,
+    pw_rpc2_CONFIG,
+  ]
+  visibility = [ ":*" ]
+}
 
 pw_test("status_test") {
   enable_if = pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
@@ -80,7 +99,10 @@ pw_cc_enum_source_set("packet") {
     dir_pw_enum,
     dir_pw_preprocessor,
   ]
-  deps = [ dir_pw_log ]
+  deps = [
+    ":config",
+    dir_pw_log,
+  ]
   visibility = _default_visibility
 }
 
@@ -227,6 +249,7 @@ pw_cc_enum_source_set("cpp") {
                   dir_pw_status,
                 ] + _coro_deps
   deps = [
+    ":config",
     dir_pw_enum,
     dir_pw_log,
     dir_pw_preprocessor,

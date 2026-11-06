@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "RPC2"
+#define PW_LOG_LEVEL PW_RPC2_LOG_LEVEL
+
 #include "pw_rpc2/service_client.h"
 
 #include <cstddef>
@@ -22,6 +25,7 @@
 #include "pw_async2/try.h"
 #include "pw_log/log.h"
 #include "pw_rpc2/internal/call.h"
+#include "pw_rpc2/internal/config.h"
 #include "pw_rpc2/internal/generated_service_client.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/method_type.h"
@@ -85,7 +89,7 @@ ReserveWriteFuture GeneratedServiceClient::StartCall(
   }
   IntrusivePtr<Call> call = client().CreateCall();
   if (call == nullptr) {
-    PW_LOG_ERROR(
+    PW_LOG_DEBUG(
         "Failed to allocate a call for method 0x%08x in service 0x%08x",
         static_cast<unsigned>(method_id),
         static_cast<unsigned>(service_id()));

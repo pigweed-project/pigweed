@@ -16,6 +16,19 @@ include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 include($ENV{PW_ROOT}/pw_enum/pw_cc_enum_library.cmake)
 include($ENV{PW_ROOT}/pw_protobuf_compiler/proto.cmake)
 
+pw_add_module_config(pw_rpc2_CONFIG)
+
+# Module configuration (PW_RPC2_LOG_LEVEL) for pw_rpc2's own sources.
+pw_add_library(pw_rpc2.cpp._config INTERFACE
+  HEADERS
+    public/pw_rpc2/internal/config.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_log
+    ${pw_rpc2_CONFIG}
+)
+
 pw_add_test(pw_rpc2.cpp.status_test
   SOURCES
     status_test.cc
@@ -76,6 +89,7 @@ pw_add_enum_library(pw_rpc2.cpp._packet
     pw_rpc2.cpp._protocol_error
   PRIVATE_DEPS
     pw_log
+    pw_rpc2.cpp._config
   SOURCES
     packet.cc
 )
@@ -223,6 +237,7 @@ pw_add_enum_library(pw_rpc2.cpp
     pw_enum
     pw_log
     pw_preprocessor
+    pw_rpc2.cpp._config
   SOURCES
     call.cc
     client.cc

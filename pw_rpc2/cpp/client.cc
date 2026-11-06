@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "RPC2"
+#define PW_LOG_LEVEL PW_RPC2_LOG_LEVEL
+
 #include "pw_rpc2/client.h"
 
 #include <utility>
@@ -19,6 +22,7 @@
 #include "pw_assert/check.h"
 #include "pw_async2/try.h"
 #include "pw_log/log.h"
+#include "pw_rpc2/internal/config.h"
 
 namespace pw::rpc2 {
 
@@ -35,7 +39,7 @@ async2::Poll<RpcResult<Client>> ClientFuture::Pend(async2::Context& cx) {
   if (ConnectFuture* connect = std::get_if<ConnectFuture>(&state_)) {
     PW_TRY_READY_ASSIGN(auto connection, connect->Pend(cx));
     if (!connection.ok()) {
-      PW_LOG_ERROR("Failed to connect to the RPC server: %s",
+      PW_LOG_DEBUG("Failed to connect to the RPC server: %s",
                    connection.status().str());
       state_ = Completed();
       return async2::Ready(RpcResult<Client>(RpcStatus::Disconnected()));
@@ -53,7 +57,7 @@ async2::Poll<RpcResult<Client>> ClientFuture::Pend(async2::Context& cx) {
 
   Client client(*dispatcher_, *allocator_, std::move(*established));
   if (!client.is_open()) {
-    PW_LOG_ERROR("Failed to allocate the RPC client's connection task");
+    PW_LOG_DEBUG("Failed to allocate the RPC client's connection task");
     return async2::Ready(RpcResult<Client>(RpcStatus::ResourceExhausted()));
   }
   return async2::Ready(RpcResult<Client>(std::move(client)));

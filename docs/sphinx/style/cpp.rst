@@ -851,6 +851,8 @@ areas that require debugging.
                                   total_);
         }
 
+.. _docs-pw-style-cpp-log-levels:
+
 Log at the correct level
 ------------------------
 :ref:`Log levels <module-pw_log-levels>` indicate the seriousness of a message

@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "RPC2"
+#define PW_LOG_LEVEL PW_RPC2_LOG_LEVEL
+
 #include "pw_rpc2/internal/handshake.h"
 
 #include <algorithm>
@@ -25,6 +28,7 @@
 #include "pw_enum/to_string.h"
 #include "pw_log/log.h"
 #include "pw_preprocessor/compiler.h"
+#include "pw_rpc2/internal/config.h"
 #include "pw_rpc2/internal/packet.h"
 
 namespace pw::rpc2::internal {
@@ -84,16 +88,15 @@ async2::Poll<RpcResult<HandshakePacket>> HandshakeFutureBase::PendReadPacket(
   std::optional<HandshakePacket> dec_res =
       HandshakePacket::Decode(ConstByteSpan(read_res));
   if (!dec_res.has_value()) {
-    // `Decode()` logged why the packet is invalid.
-    PW_LOG_WARN("Handshake failed: received an invalid packet instead of %s",
-                EnumToString(expected_type));
+    PW_LOG_DEBUG("Handshake failed: received an invalid packet instead of %s",
+                 EnumToString(expected_type));
     return async2::Ready(
         RpcResult<HandshakePacket>(RpcStatus::ProtocolError()));
   }
   if (dec_res->type() != expected_type) {
-    PW_LOG_WARN("Handshake failed: expected %s, received %s",
-                EnumToString(expected_type),
-                EnumToString(dec_res->type()));
+    PW_LOG_DEBUG("Handshake failed: expected %s, received %s",
+                 EnumToString(expected_type),
+                 EnumToString(dec_res->type()));
     return async2::Ready(
         RpcResult<HandshakePacket>(RpcStatus::ProtocolError()));
   }
@@ -123,7 +126,7 @@ async2::Poll<RpcResult<EstablishedConnection>> InitiatorHandshakeFuture::Pend(
         return Fail(pkt.status());
       }
       if (pkt->version() > handshake_info_.negotiated_version) {
-        PW_LOG_WARN(
+        PW_LOG_DEBUG(
             "Handshake failed: SYN_ACK negotiated version %u, but this "
             "endpoint offered at most version %u",
             static_cast<unsigned>(pkt->version()),
@@ -180,7 +183,7 @@ async2::Poll<RpcResult<EstablishedConnection>> ResponderHandshakeFuture::Pend(
         return Fail(pkt.status());
       }
       if (pkt->version() != handshake_info_.negotiated_version) {
-        PW_LOG_WARN(
+        PW_LOG_DEBUG(
             "Handshake failed: ACK has version %u, but version %u was "
             "negotiated",
             static_cast<unsigned>(pkt->version()),

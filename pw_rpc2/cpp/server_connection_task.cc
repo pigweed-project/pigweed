@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "RPC2"
+#define PW_LOG_LEVEL PW_RPC2_LOG_LEVEL
+
 #include "pw_rpc2/internal/server_connection_task.h"
 
 #include <utility>
@@ -20,6 +23,7 @@
 #include "pw_enum/to_string.h"
 #include "pw_log/log.h"
 #include "pw_rpc2/internal/call.h"
+#include "pw_rpc2/internal/config.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/protocol_error.h"
 #include "pw_rpc2/internal/server_call.h"
@@ -185,15 +189,21 @@ void ServerConnectionTask::HandleIncomingRequest(InboundPacket&& packet) {
     return;
   }
   ServerCall& call = *call_ptr;
+  // Later logs for this call identify it only by ID. This is the one place
+  // that ties the ID to its service and method.
+  PW_LOG_DEBUG("Call %u: starting method 0x%08x in service 0x%08x",
+               static_cast<unsigned>(call.call_id()),
+               static_cast<unsigned>(method_id),
+               static_cast<unsigned>(packet.service_id()));
 
   const ProtocolError invocation_error = method->Invoke(
       *target_service,
       call,
       TakeInitialPayload(call, is_client_stream_method, std::move(packet)));
   if (invocation_error != ProtocolError::kNone) {
-    PW_LOG_WARN("Call %u: method invocation failed: %s",
-                static_cast<unsigned>(call.call_id()),
-                pw::EnumToString(invocation_error));
+    PW_LOG_ERROR("Call %u: method invocation failed: %s",
+                 static_cast<unsigned>(call.call_id()),
+                 pw::EnumToString(invocation_error));
     if (!call.is_write_closed()) {
       QueueError(call.call_id(), invocation_error);
       call.CloseWrite();
