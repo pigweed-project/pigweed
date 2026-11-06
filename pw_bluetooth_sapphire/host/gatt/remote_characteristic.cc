@@ -79,12 +79,23 @@ void RemoteCharacteristic::DiscoverDescriptors(
     att::Handle range_end, att::ResultFunction<> discover_callback) {
   PW_DCHECK(client_.is_alive());
   PW_DCHECK(discover_callback);
-  PW_DCHECK(range_end >= info().value_handle);
 
   discovery_error_ = false;
   descriptors_.clear();
 
-  if (info().value_handle == range_end) {
+  // There is no room for descriptors if the range ends at the value handle.
+  // The range may also end before the value handle if the peer reported
+  // malformed characteristic handles; skip descriptor discovery in that case
+  // rather than issuing a request with an inverted handle range.
+  if (range_end <= info().value_handle) {
+    if (range_end < info().value_handle) {
+      bt_log(WARN,
+             "gatt",
+             "skipping descriptor discovery: range end (%#.4x) before "
+             "characteristic value handle (%#.4x)",
+             range_end,
+             info().value_handle);
+    }
     discover_callback(fit::ok());
     return;
   }

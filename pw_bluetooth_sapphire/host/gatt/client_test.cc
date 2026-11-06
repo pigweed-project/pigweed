@@ -1768,14 +1768,14 @@ TEST_F(ClientTest, CharacteristicDiscoveryError) {
 
 TEST_F(ClientTest, CharacteristicDiscovery16BitResultsSingleRequest) {
   constexpr att::Handle kStart = 0x0001;
-  constexpr att::Handle kEnd = 0x0005;
+  constexpr att::Handle kEnd = 0x0006;
 
   const auto kExpectedRequest =
       StaticByteBuffer(0x08,  // opcode: read by type request
                        0x01,
                        0x00,  // start handle: 0x0001
-                       0x05,
-                       0x00,  // end handle: 0x0005
+                       0x06,
+                       0x00,  // end handle: 0x0006
                        0x03,
                        0x28  // type: characteristic decl. (0x2803)
       );
@@ -1790,10 +1790,10 @@ TEST_F(ClientTest, CharacteristicDiscovery16BitResultsSingleRequest) {
       0xAD,
       0xDE,  // chrc 1 uuid: 0xDEAD
       0x05,
-      0x00,  // chrc 2 handle (0x0005 is the end of the requested range)
+      0x00,  // chrc 2 handle
       0x01,  // chrc 2 properties
       0x06,
-      0x00,  // chrc 2 value handle
+      0x00,  // chrc 2 value handle (0x0006 is the end of the requested range)
       0xEF,
       0xBE  // chrc 2 uuid: 0xBEEF
   );
@@ -1823,14 +1823,14 @@ TEST_F(ClientTest, CharacteristicDiscovery16BitResultsSingleRequest) {
 
 TEST_F(ClientTest, CharacteristicDiscovery128BitResultsSingleRequest) {
   constexpr att::Handle kStart = 0x0001;
-  constexpr att::Handle kEnd = 0x0005;
+  constexpr att::Handle kEnd = 0x0006;
 
   const auto kExpectedRequest =
       StaticByteBuffer(0x08,  // opcode: read by type request
                        0x01,
                        0x00,  // start handle: 0x0001
-                       0x05,
-                       0x00,  // end handle: 0x0005
+                       0x06,
+                       0x00,  // end handle: 0x0006
                        0x03,
                        0x28  // type: characteristic decl. (0x2803)
       );
@@ -2119,6 +2119,174 @@ TEST_F(ClientTest, CharacteristicDiscoveryValueNotContiguous) {
   RunUntilIdle();
   EXPECT_EQ(ToResult(HostError::kPacketMalformed), status);
   EXPECT_TRUE(chrcs.empty());
+}
+
+// Expects the discovery procedure to end with an error if a characteristic
+// declaration is at the end of the requested range, as its value handle would
+// then be outside of the range.
+// Regression test for b/510064612.
+TEST_F(ClientTest, CharacteristicDiscoveryValueHandleBeyondRangeIsRejected) {
+  constexpr att::Handle kStart = 0x0001;
+  constexpr att::Handle kEnd = 0x0005;
+
+  const auto kExpectedRequest =
+      StaticByteBuffer(0x08,  // opcode: read by type request
+                       0x01,
+                       0x00,  // start handle: 0x0001
+                       0x05,
+                       0x00,  // end handle: 0x0005
+                       0x03,
+                       0x28  // type: characteristic decl. (0x2803)
+      );
+  const StaticByteBuffer kResponse(
+      0x09,  // opcode: read by type response
+      0x07,  // data length: 7 (16-bit UUIDs)
+      0x05,
+      0x00,  // chrc 1 handle (end of the requested range)
+      0x20,  // chrc 1 properties: indicate
+      0x06,
+      0x00,  // chrc 1 value handle (beyond the requested range)
+      0x05,
+      0x2A  // chrc 1 uuid: 0x2A05
+  );
+
+  att::Result<> status = fit::ok();
+  auto res_cb = [&status](att::Result<> val) { status = val; };
+
+  std::vector<CharacteristicData> chrcs;
+  auto chrc_cb = [&chrcs](const CharacteristicData& chrc) {
+    chrcs.push_back(chrc);
+  };
+
+  EXPECT_PACKET_OUT(kExpectedRequest, &kResponse);
+  client()->DiscoverCharacteristics(kStart, kEnd, chrc_cb, res_cb);
+  RunUntilIdle();
+  EXPECT_EQ(ToResult(HostError::kPacketMalformed), status);
+  EXPECT_TRUE(chrcs.empty());
+}
+
+// Expects the discovery procedure to end with an error if a characteristic
+// declaration overlaps the value of the preceding characteristic.
+// Regression test for b/510064612.
+TEST_F(ClientTest, CharacteristicDiscoveryOverlappingDeclarationsAreRejected) {
+  constexpr att::Handle kStart = 0x0001;
+  constexpr att::Handle kEnd = 0x0005;
+
+  const auto kExpectedRequest =
+      StaticByteBuffer(0x08,  // opcode: read by type request
+                       0x01,
+                       0x00,  // start handle: 0x0001
+                       0x05,
+                       0x00,  // end handle: 0x0005
+                       0x03,
+                       0x28  // type: characteristic decl. (0x2803)
+      );
+  const StaticByteBuffer kResponse(
+      0x09,  // opcode: read by type response
+      0x07,  // data length: 7 (16-bit UUIDs)
+      0x02,
+      0x00,  // chrc 1 handle
+      0x00,  // chrc 1 properties
+      0x03,
+      0x00,  // chrc 1 value handle
+      0xAD,
+      0xDE,  // chrc 1 uuid: 0xDEAD
+      0x03,
+      0x00,  // chrc 2 handle (same as chrc 1 value handle)
+      0x00,  // chrc 2 properties
+      0x04,
+      0x00,  // chrc 2 value handle
+      0xEF,
+      0xBE  // chrc 2 uuid: 0xBEEF
+  );
+
+  att::Result<> status = fit::ok();
+  auto res_cb = [&status](att::Result<> val) { status = val; };
+
+  std::vector<CharacteristicData> chrcs;
+  auto chrc_cb = [&chrcs](const CharacteristicData& chrc) {
+    chrcs.push_back(chrc);
+  };
+
+  EXPECT_PACKET_OUT(kExpectedRequest, &kResponse);
+  client()->DiscoverCharacteristics(kStart, kEnd, chrc_cb, res_cb);
+  RunUntilIdle();
+  EXPECT_EQ(ToResult(HostError::kPacketMalformed), status);
+  // The overlapping characteristic should not be reported.
+  ASSERT_LE(chrcs.size(), 1u);
+  for (const auto& chrc : chrcs) {
+    EXPECT_NE(0x0003, chrc.handle);
+  }
+}
+
+// Expects the discovery procedure to end with an error if a characteristic
+// declaration overlaps the value of the last characteristic reported in the
+// previous batch.
+// Regression test for b/510064612.
+TEST_F(
+    ClientTest,
+    CharacteristicDiscoveryOverlappingDeclarationsAcrossRequestsAreRejected) {
+  constexpr att::Handle kStart = 0x0001;
+  constexpr att::Handle kEnd = 0xFFFF;
+
+  const auto kExpectedRequest0 =
+      StaticByteBuffer(0x08,  // opcode: read by type request
+                       0x01,
+                       0x00,  // start handle: 0x0001
+                       0xFF,
+                       0xFF,  // end handle: 0xFFFF
+                       0x03,
+                       0x28  // type: characteristic decl. (0x2803)
+      );
+  const auto kResponse0 =
+      StaticByteBuffer(0x09,  // opcode: read by type response
+                       0x07,  // data length: 7 (16-bit UUIDs)
+                       0x02,
+                       0x00,  // chrc 1 handle
+                       0x00,  // chrc 1 properties
+                       0x03,
+                       0x00,  // chrc 1 value handle
+                       0xAD,
+                       0xDE  // chrc 1 uuid: 0xDEAD
+      );
+  const auto kExpectedRequest1 =
+      StaticByteBuffer(0x08,  // opcode: read by type request
+                       0x03,
+                       0x00,  // start handle: 0x0003
+                       0xFF,
+                       0xFF,  // end handle: 0xFFFF
+                       0x03,
+                       0x28  // type: characteristic decl. (0x2803)
+      );
+  const auto kResponse1 =
+      StaticByteBuffer(0x09,  // opcode: read by type response
+                       0x07,  // data length: 7 (16-bit UUIDs)
+                       0x03,
+                       0x00,  // chrc 2 handle (same as chrc 1 value handle)
+                       0x00,  // chrc 2 properties
+                       0x04,
+                       0x00,  // chrc 2 value handle
+                       0xEF,
+                       0xBE  // chrc 2 uuid: 0xBEEF
+      );
+
+  att::Result<> status = fit::ok();
+  auto res_cb = [&status](att::Result<> val) { status = val; };
+
+  std::vector<CharacteristicData> chrcs;
+  auto chrc_cb = [&chrcs](const CharacteristicData& chrc) {
+    chrcs.push_back(chrc);
+  };
+
+  EXPECT_PACKET_OUT(kExpectedRequest0, &kResponse0);
+  EXPECT_PACKET_OUT(kExpectedRequest1, &kResponse1);
+  client()->DiscoverCharacteristics(kStart, kEnd, chrc_cb, res_cb);
+  RunUntilIdle();
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_EQ(ToResult(HostError::kPacketMalformed), status);
+  // The overlapping characteristic should not be reported.
+  ASSERT_EQ(1u, chrcs.size());
+  EXPECT_EQ(0x0002, chrcs[0].handle);
 }
 
 TEST_F(ClientTest, CharacteristicDiscoveryHandlesNotIncreasing) {

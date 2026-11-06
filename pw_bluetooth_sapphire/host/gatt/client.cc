@@ -577,6 +577,23 @@ class Impl final : public Client {
                                att::Handle range_end,
                                CharacteristicCallback chrc_callback,
                                att::ResultFunction<> status_callback) override {
+    DiscoverCharacteristicsFrom(range_start,
+                                range_end,
+                                /*last_value_handle=*/att::kInvalidHandle,
+                                std::move(chrc_callback),
+                                std::move(status_callback));
+  }
+
+  // Discovers the characteristics in [range_start, range_end].
+  // |last_value_handle| is the value handle of the last characteristic
+  // reported by a previous request of the same procedure (or
+  // att::kInvalidHandle if there is none), which subsequent characteristic
+  // declarations must not overlap.
+  void DiscoverCharacteristicsFrom(att::Handle range_start,
+                                   att::Handle range_end,
+                                   att::Handle last_value_handle,
+                                   CharacteristicCallback chrc_callback,
+                                   att::ResultFunction<> status_callback) {
     PW_CHECK(range_start <= range_end);
     PW_CHECK(chrc_callback);
     PW_CHECK(status_callback);
@@ -588,6 +605,7 @@ class Impl final : public Client {
 
     auto read_by_type_cb = [this,
                             range_end,
+                            last_value_handle,
                             chrc_cb = std::move(chrc_callback),
                             res_cb = status_callback.share()](
                                ReadByTypeResult result) mutable {
@@ -660,6 +678,32 @@ class Impl final : public Client {
           return;
         }
 
+        // The characteristic value must be within the requested range (i.e.
+        // the service), so a declaration cannot be at the end of the range.
+        if (value_handle > range_end) {
+          bt_log(DEBUG,
+                 "gatt",
+                 "characteristic value handle (%#.4x) beyond range end (%#.4x)",
+                 value_handle,
+                 range_end);
+          res_cb(ToResult(HostError::kPacketMalformed));
+          return;
+        }
+
+        // A characteristic declaration cannot overlap the value of the
+        // preceding characteristic.
+        if (char_attr.handle <= last_value_handle) {
+          bt_log(DEBUG,
+                 "gatt",
+                 "characteristic declaration (%#.4x) overlaps preceding "
+                 "characteristic value (%#.4x)",
+                 char_attr.handle,
+                 last_value_handle);
+          res_cb(ToResult(HostError::kPacketMalformed));
+          return;
+        }
+        last_value_handle = value_handle;
+
         // Notify the handler. By default, there are no extended properties to
         // report.
         chrc_cb(CharacteristicData(properties,
@@ -669,17 +713,13 @@ class Impl final : public Client {
                                    value_uuid));
       }
 
-      // The procedure is over if we have reached the end of the handle
-      // range.
-      const auto last_handle = attributes.back().handle;
-      if (last_handle == range_end) {
-        res_cb(fit::ok());
-        return;
-      }
-
-      // Request the next batch.
-      DiscoverCharacteristics(
-          last_handle + 1, range_end, std::move(chrc_cb), std::move(res_cb));
+      // Request the next batch. DiscoverCharacteristicsFrom() completes the
+      // procedure if we have reached the end of the handle range.
+      DiscoverCharacteristicsFrom(attributes.back().handle + 1,
+                                  range_end,
+                                  last_value_handle,
+                                  std::move(chrc_cb),
+                                  std::move(res_cb));
     };
 
     ReadByTypeRequest(types::kCharacteristicDeclaration,

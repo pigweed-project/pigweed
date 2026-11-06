@@ -1016,6 +1016,57 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsOfMultipleLateFail) {
   EXPECT_EQ(ToResult(HostError::kNotSupported), status);
 }
 
+// Descriptor discovery should be skipped for a characteristic whose value
+// handle lies beyond the end of the service range, as there is no valid
+// descriptor handle range for it.
+// Regression test for b/510064612.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverDescriptorsSkippedForValueHandleBeyondServiceRange) {
+  ServiceData data(ServiceKind::PRIMARY, 1, 5, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+
+  // The declaration is at the last handle of the service, so the value handle
+  // is outside of the service range.
+  CharacteristicData fake_chrc(
+      Property::kIndicate, std::nullopt, 5, 6, kTestUuid3);
+  fake_client()->set_characteristics({{fake_chrc}});
+
+  att::Result<> status = ToResult(HostError::kFailed);
+  service->DiscoverCharacteristics(
+      [&](att::Result<> cb_status, const auto&) { status = cb_status; });
+
+  RunUntilIdle();
+  EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
+  EXPECT_EQ(0u, fake_client()->desc_discovery_count());
+  EXPECT_EQ(fit::ok(), status);
+}
+
+// Descriptor discovery should be skipped for a characteristic whose value
+// handle is the declaration handle of the next characteristic, as there is no
+// valid descriptor handle range for it.
+// Regression test for b/510064612.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverDescriptorsSkippedForAdjacentCharacteristicDeclarations) {
+  ServiceData data(ServiceKind::PRIMARY, 1, 5, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+
+  CharacteristicData fake_chrc1(0, std::nullopt, 2, 3, kTestUuid3);
+  CharacteristicData fake_chrc2(0, std::nullopt, 3, 4, kTestUuid4);
+  fake_client()->set_characteristics({{fake_chrc1, fake_chrc2}});
+
+  att::Result<> status = ToResult(HostError::kFailed);
+  service->DiscoverCharacteristics(
+      [&](att::Result<> cb_status, const auto&) { status = cb_status; });
+
+  RunUntilIdle();
+  EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
+  // Only the second characteristic has a valid descriptor range.
+  EXPECT_EQ(1u, fake_client()->desc_discovery_count());
+  EXPECT_EQ(5u, fake_client()->last_desc_discovery_start_handle());
+  EXPECT_EQ(5u, fake_client()->last_desc_discovery_end_handle());
+  EXPECT_EQ(fit::ok(), status);
+}
+
 // Discover descriptors of a service with extended properties set.
 TEST_F(RemoteServiceManagerTest,
        DiscoverDescriptorsWithExtendedPropertiesSuccess) {
