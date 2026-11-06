@@ -1821,3 +1821,72 @@ func TestConfig_MemoizesGitClientRemoteDefaultBranchAndGerritURL(t *testing.T) {
 		}
 	}
 }
+
+func TestGitClient_Fetch_AuthFallback(t *testing.T) {
+	newSSOFailingRepo := func(t *testing.T, remoteURL string) *testGitRepo {
+		t.Helper()
+		repo := newTestGitRepo(t)
+		setTestAuthMode(t, AuthModeNone)
+		binDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(binDir, "git-remote-sso"), []byte("#!/bin/sh\necho 'sso: credentials expired. Try running gcert first' >&2\nexit 1\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		if err := repo.Client.Run(t.Context(), io.Discard, io.Discard, "remote", "set-url", "origin", remoteURL); err != nil {
+			t.Fatal(err)
+		}
+		return repo
+	}
+
+	t.Run("FetchInDir preserves ExitCodeAuth and stderr details", func(t *testing.T) {
+		repo := newSSOFailingRepo(t, "sso://pigweed/pigweed/pigweed")
+		err := FetchInDir(t.Context(), repo.WorkDir, "origin", "main")
+		if ExitCodeFor(err) != ExitCodeAuth || !strings.Contains(err.Error(), "Details:") || !strings.Contains(err.Error(), "sso: credentials expired") {
+			t.Fatalf("FetchInDir err = %v (exit=%d), want ExitCodeAuth with stderr Details", err, ExitCodeFor(err))
+		}
+	})
+
+	t.Run("FetchInDir ignores mismatched caller Config and resolves .ghish.toml in dir", func(t *testing.T) {
+		src := newSSOFailingRepo(t, "sso://pigweed/")
+		if err := os.WriteFile(filepath.Join(src.WorkDir, ".ghish.toml"), []byte("[gerrit]\nproject = \"pigweed/pigweed\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		callerMock := (&MockGitRunner{}).OnError("config --get remote.origin.url", fmt.Errorf("wrong repo"))
+		ctx := context.WithValue(t.Context(), configKey, &Config{
+			Git:           callerMock,
+			Host:          "other-review.googlesource.com",
+			ProjectConfig: &ProjectConfig{},
+		})
+		if err := FetchInDir(ctx, src.WorkDir, "origin", "main"); ExitCodeFor(err) != ExitCodeAuth {
+			t.Fatalf("ExitCodeFor(err) = %d, want %d (%v)", ExitCodeFor(err), ExitCodeAuth, err)
+		}
+		if len(callerMock.Calls) != 0 {
+			t.Errorf("callerMock calls = %v, want 0", callerMock.Calls)
+		}
+	})
+
+	t.Run("FetchInDir rejects empty refspec", func(t *testing.T) {
+		if err := FetchInDir(t.Context(), t.TempDir(), "origin", ""); err == nil {
+			t.Error("expected error for empty refspec, got nil")
+		}
+	})
+
+	t.Run("RealGitRunner with Dir scrubs ambient GIT_CONFIG_KEY_* and reindexes withGitConfigEnv from 0", func(t *testing.T) {
+		sub := newTestGitRepo(t).WorkDir
+		t.Setenv("GIT_CONFIG_COUNT", "2")
+		t.Setenv("GIT_CONFIG_KEY_0", "foo.bar")
+		t.Setenv("GIT_CONFIG_VALUE_0", "leaked")
+		t.Setenv("GIT_CONFIG_KEY_1", "foo.baz")
+		t.Setenv("GIT_CONFIG_VALUE_1", "leaked")
+
+		ctx := withGitConfigEnv(withGitEnv(t.Context(), "GIT_TERMINAL_PROMPT=0"), "color.ui", "false", "ghish.reindexed", "expected-value")
+		runner := &RealGitRunner{Dir: sub}
+		var out bytes.Buffer
+		if err := runner.Run(ctx, &out, io.Discard, "config", "--get", "ghish.reindexed"); err != nil || strings.TrimSpace(out.String()) != "expected-value" {
+			t.Fatalf("ghish.reindexed = (%q, %v), want expected-value", out.String(), err)
+		}
+		if err := runner.Run(ctx, io.Discard, io.Discard, "config", "--get", "foo.bar"); err == nil {
+			t.Error("ambient foo.bar was not scrubbed")
+		}
+	})
+}

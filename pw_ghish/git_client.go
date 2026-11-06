@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -41,61 +42,68 @@ type RealGitRunner struct {
 	Dir string
 }
 
-const gitEnvKey contextKey = "gitEnv"
+const (
+	gitEnvKey         contextKey = "gitEnv"
+	gitConfigPairsKey contextKey = "gitConfigPairs"
+)
 
 func withGitEnv(ctx context.Context, env ...string) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, gitEnvKey, slices.Concat(gitEnvFromContext(ctx), env))
+	raw, _ := ctx.Value(gitEnvKey).([]string)
+	return context.WithValue(ctx, gitEnvKey, slices.Concat(raw, env))
 }
 
 func withGitConfigEnv(ctx context.Context, kv ...string) context.Context {
+	pairs, _ := ctx.Value(gitConfigPairsKey).([][2]string)
+	pairs = slices.Clone(pairs)
+	for i := 0; i+1 < len(kv); i += 2 {
+		pairs = append(pairs, [2]string{kv[i], kv[i+1]})
+	}
+	return context.WithValue(ctx, gitConfigPairsKey, pairs)
+}
+
+func renderGitEnv(ctx context.Context, baseEnv []string, scrubLocal bool) []string {
+	raw, _ := ctx.Value(gitEnvKey).([]string)
+	if scrubLocal {
+		raw = scrubRepoLocalGitEnv(raw)
+	}
+	pairs, _ := ctx.Value(gitConfigPairsKey).([][2]string)
+	if len(pairs) == 0 {
+		return raw
+	}
 	var count int
-	for _, entry := range slices.Concat(os.Environ(), gitEnvFromContext(ctx)) {
+	for _, entry := range baseEnv {
 		if v, ok := strings.CutPrefix(entry, "GIT_CONFIG_COUNT="); ok {
 			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 				count = n
 			}
 		}
 	}
-	var env []string
-	for i := 0; i+1 < len(kv); i += 2 {
-		env = append(env,
-			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", count, kv[i]),
-			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", count, kv[i+1]),
+	out := make([]string, 0, 1+2*len(pairs)+len(raw))
+	out = append(out, fmt.Sprintf("GIT_CONFIG_COUNT=%d", count+len(pairs)))
+	for i, p := range pairs {
+		out = append(out,
+			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", count+i, p[0]),
+			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", count+i, p[1]),
 		)
-		count++
 	}
-	existing := slices.DeleteFunc(slices.Clone(gitEnvFromContext(ctx)), func(e string) bool {
-		return strings.HasPrefix(e, "GIT_CONFIG_COUNT=")
-	})
-	newEnv := append([]string{fmt.Sprintf("GIT_CONFIG_COUNT=%d", count)}, existing...)
-	newEnv = append(newEnv, env...)
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, gitEnvKey, newEnv)
+	return append(out, raw...)
 }
 
 func gitEnvFromContext(ctx context.Context) []string {
-	if ctx == nil {
-		return nil
-	}
-	env, _ := ctx.Value(gitEnvKey).([]string)
-	return env
+	return renderGitEnv(ctx, os.Environ(), false)
 }
 
 func (r *RealGitRunner) buildEnv(ctx context.Context, args []string) []string {
 	baseEnv := os.Environ()
-	if r != nil && r.Dir != "" {
+	scrubLocal := r != nil && r.Dir != ""
+	if scrubLocal {
 		baseEnv = scrubRepoLocalGitEnv(baseEnv)
 	}
 	extraEnv := []string{"GH_ISH_ACTIVE=1"}
 	if isReadOnlyGitQuery(args) {
 		extraEnv = append(extraEnv, "GIT_CONFIG_NOSYSTEM=1", "GIT_OPTIONAL_LOCKS=0")
 	}
-	return slices.Concat(baseEnv, extraEnv, gitEnvFromContext(ctx))
+	return slices.Concat(baseEnv, extraEnv, renderGitEnv(ctx, baseEnv, scrubLocal))
 }
 
 func (r *RealGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
@@ -134,7 +142,7 @@ func isRepoLocalGitEnvKey(key string) bool {
 		"GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT":
 		return true
 	}
-	return false
+	return strings.HasPrefix(key, "GIT_CONFIG_KEY_") || strings.HasPrefix(key, "GIT_CONFIG_VALUE_")
 }
 
 // ScrubRepoLocalGitEnv returns a copy of env with repository-local Git
@@ -1270,6 +1278,17 @@ func (c *defaultGitClient) stackCommitsFrom(ctx context.Context, baseRef string)
 	return commits, nil
 }
 
+func (c *defaultGitClient) fetch(ctx context.Context, cfg *Config, remote string, refspecs []string, stdout, stderr io.Writer) error {
+	outBuf, errBuf, err := runGitWithAuthFallback(ctx, c, cfg, remote, append([]string{"fetch", remote}, refspecs...), stderr)
+	if stdout != nil && outBuf.Len() > 0 {
+		_, _ = stdout.Write(outBuf.Bytes())
+	}
+	if stderr != nil && errBuf.Len() > 0 {
+		_, _ = stderr.Write(errBuf.Bytes())
+	}
+	return err
+}
+
 func (c *defaultGitClient) Fetch(ctx context.Context, remote, ref string, stdout, stderr io.Writer) error {
 	remote = strings.TrimSpace(remote)
 	if remote == "" {
@@ -1279,7 +1298,45 @@ func (c *defaultGitClient) Fetch(ctx context.Context, remote, ref string, stdout
 	if ref == "" {
 		return fmt.Errorf("git fetch requires a ref")
 	}
-	return c.Run(ctx, stdout, stderr, "fetch", remote, ref)
+	cfg, _ := ctx.Value(configKey).(*Config)
+	if cfg == nil {
+		var dir string
+		if r, ok := c.runner.(*RealGitRunner); ok && r != nil {
+			dir = r.Dir
+		}
+		cfg = &Config{Git: c.runner, CWD: dir}
+	}
+	return c.fetch(ctx, cfg, remote, []string{ref}, stdout, stderr)
+}
+
+// FetchInDir executes `git fetch <remote> [refspecs...]` inside dir using the
+// shared Gerrit transport fallback hierarchy.
+func FetchInDir(ctx context.Context, dir, remote string, refspecs ...string) error {
+	remote = strings.TrimSpace(remote)
+	if remote == "" {
+		return fmt.Errorf("git fetch requires a remote")
+	}
+	for _, r := range refspecs {
+		if strings.TrimSpace(r) == "" {
+			return fmt.Errorf("git fetch refspec must not be empty")
+		}
+	}
+	runner := &RealGitRunner{Dir: dir}
+	gc := &defaultGitClient{runner: runner}
+	var stdout, stderr bytes.Buffer
+	err := gc.fetch(ctx, &Config{Git: runner, CWD: dir}, remote, refspecs, &stdout, &stderr)
+	if err == nil {
+		return nil
+	}
+	errMsg := cmp.Or(strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()))
+	if ExitCodeFor(err) == ExitCodeAuth {
+		if errMsg != "" {
+			return fmt.Errorf("%w\nDetails: %s", err, errMsg)
+		}
+		return err
+	}
+	args := append([]string{"fetch", remote}, refspecs...)
+	return fmt.Errorf("git %s in %s failed: %w\nDetails: %s", strings.Join(args, " "), dir, err, errMsg)
 }
 
 func (c *defaultGitClient) Checkout(ctx context.Context, ref string, stdout, stderr io.Writer) error {

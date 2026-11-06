@@ -35,7 +35,39 @@ import (
 	"time"
 )
 
-// HTTP authentication overview:
+// IMPORTANT: ALL AUTHENTICATION & CREDENTIAL LOGIC BELONGS IN auth.go (plus
+// corp_sso.go, gosso.go, and git_transport.go). DO NOT add ad-hoc token
+// resolution, credential helpers, HTTP auth headers, or Git auth retry loops
+// to backend clients (gerrit.go, luci.go, busytown.go, issuetracker.go) or
+// command handlers.
+//
+// HTTP authentication architecture (why & how):
+//
+// Why:
+//   pw_ghish talks to four HTTP backends (Gerrit, LUCI Buildbucket/LogDog,
+//   Android Busytown, and Google Issue Tracker) across diverse environments
+//   (Corp Linux desktops/Cloudtops with 7-day LOAS2, Corp laptops/macOS with
+//   20-hour SSO tickets, and external community machines with luci-auth or
+//   GERRIT_TOKEN). Moreover, Google-hosted Gerrit instances enforce device
+//   trust (Review-Enforcement) or Corp IP restrictions that require cookie-
+//   backed Corp SSO over BeyondCorp Uplink (:999) rather than OAuth2 Bearer
+//   tokens. Centralizing HTTP auth behind HTTPAuthStrategy and
+//   executeWithAuthStrategy keeps every backend on a single, consistent path
+//   for credential attachment, HTTPS/redirect safety, token refresh, and
+//   Corp SSO -> OAuth2 fallback.
+//
+// How:
+//   1. ResolveAuthMode (auto | googler | community | none) selects the policy.
+//   2. Backend clients obtain an HTTPAuthStrategy:
+//      - Gerrit uses resolveGerritStrategy -> AdaptiveGerritStrategy, which
+//        prefers CorpSSOStrategy (gosso cookie jar over Uplink :999) in
+//        googler mode on *.googlesource.com, falls back to gerritBearerStrategy
+//        (OAuth2) on open hosts when Corp SSO is unavailable, and pivots to
+//        Corp SSO if an open host returns a Corp IP/SSO restriction error.
+//      - LUCI, Busytown, and Issue Tracker use NewDynamicBearerStrategy /
+//        BearerTokenStrategy for OAuth2 Bearer tokens with single-attempt
+//        cache invalidation and refresh on HTTP 401.
+//   3. Every authenticated HTTP request runs through executeWithAuthStrategy:
 //
 //   ResolveAuthMode (auto | googler | community | none)
 //          |

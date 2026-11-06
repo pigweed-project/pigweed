@@ -340,13 +340,11 @@ func (g *ExecGitRunner) CommitsAhead(repoOrWorktreePath, baseRef, rev string) (i
 }
 
 func (g *ExecGitRunner) FetchOrigin(repoOrWorktreePath string) error {
-	_, err := g.runGit(repoOrWorktreePath, "fetch", "origin")
-	return err
+	return pw_ghish.FetchInDir(context.Background(), repoOrWorktreePath, "origin")
 }
 
 func (g *ExecGitRunner) FetchRef(repoOrWorktreePath, remote, ref string) error {
-	_, err := g.runGit(repoOrWorktreePath, "fetch", remote, ref)
-	return err
+	return pw_ghish.FetchInDir(context.Background(), repoOrWorktreePath, remote, ref)
 }
 
 func (g *ExecGitRunner) RebaseOriginMain(worktreePath string) error {

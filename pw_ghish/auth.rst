@@ -203,14 +203,14 @@ Corp:
    ``Authorization: Bearer`` header, so ``~/.gitcookies`` is not required. No
    token is sent when ``--auth-mode=none``.
 
-Automatic ``git push`` fallbacks (``pr create`` / ``pr push``)
---------------------------------------------------------------
+Automatic Git transport fallbacks (``push`` & ``fetch``)
+--------------------------------------------------------
 On Google Corp workstations, ``gcert --lifetime=168h`` issues a 7-day
 ``LOAS2`` certificate (used by ``rpc://`` and ``sso-cred-helper``), whereas the
 SSO login cookie / ticket used by ``sso://`` is capped at ~20 hours. When a
-push to a Gerrit remote fails transport authentication in ``googler`` mode,
-``pw_ghish`` retries using per-invocation Git config overrides (leaving
-``~/.gitconfig`` and ``.git/config`` untouched):
+``git push`` or ``git fetch`` against a Gerrit remote fails transport
+authentication in ``googler`` mode, ``pw_ghish`` retries using per-invocation
+Git config overrides (leaving ``~/.gitconfig`` and ``.git/config`` untouched):
 
 1. **Corp Linux (Cloudtop / gLinux)**: Tries ``rpc://``, then ``sso://``, and
    finally ``https://`` with OAuth2.

@@ -25,8 +25,10 @@ Every change to `pw_ghish` (and every review via `/review`, `.agents/agents/go_g
 * **MANDATORY**: Fail immediately with an explicit error (`fmt.Errorf("internal error: runner is uninitialized")`) or panic if it represents an unrecoverable programmer defect. Never disguise broken code as a valid empty response.
 
 ### 3. DRY & COPY-PASTA PREVENTION
-* **MANDATORY**: Never duplicate command-config loading, Gerrit error translation, git trailer parsing, or stack validation across subcommands:
+* **MANDATORY**: Never duplicate command-config loading, HTTP/Git authentication, Gerrit error translation, git trailer parsing, or stack validation across subcommands:
   * Always call `LoadCommandProjectConfig(cmd)` instead of re-implementing `GetConfig(cmd)` + `LoadProjectConfig(ctx)`.
+  * Always route HTTP authentication through `HTTPAuthStrategy` and `executeWithAuthStrategy` in [`auth.go`](auth.go) (with Corp SSO in [`corp_sso.go`](corp_sso.go) and `gosso` helpers in [`gosso.go`](gosso.go)). Never add bespoke token/cookie attachment, 401/403 retry loops, or `gosso` subprocess wrappers inside individual backend clients (`gerrit.go`, `luci.go`, `busytown.go`, `issuetracker.go`).
+  * Always route remote Gerrit Git network operations (`git push`, `git fetch`, and `gh wt` fetches via `FetchInDir`) through `runGitWithAuthFallback` in [`git_transport.go`](git_transport.go) (`rpc://`, `sso://`, `https://` per-invocation config overrides). Never run raw `git push` or `git fetch` against Gerrit remotes or duplicate Git transport fallback logic across callers.
   * Always issue Gerrit REST requests through the native `*GerritClient` ([`gerrit.go`](gerrit.go)), inspect status codes with `IsGerritHTTPStatus` (never external Gerrit client libraries, raw Gerrit HTTP requests, or error-string status scraping), and route Gerrit REST errors through `ChangeContext.FormatError` / `FormatGerritError`.
   * Keep pre-push commit-stack validation in a single shared pass (`ValidateCommitStack` in `push_pipeline.go`) rather than running duplicate `git log` / `git rev-list` passes in `create.go` and `push.go`.
 
@@ -68,7 +70,7 @@ Every change to `pw_ghish` (and every review via `/review`, `.agents/agents/go_g
   * **1P Chromebook (Crostini) & 3P Workstations**: Treat as standard Linux without corp daemons unless binaries are detected on `PATH`; guide users to `luci-auth login` and `GERRIT_TOKEN`.
 
 ### 9. SECURITY & NTK CONFIDENTIALITY
-* **Credential Safety**: NEVER pass OAuth2 bearer tokens or secrets on subprocess command lines (e.g. `git -c http.extraHeader="Authorization: Bearer ..."`), because CLI arguments are world-readable in `ps aux` / `/proc/<pid>/cmdline` and leak into verbose/error logs. Use `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0` in `cmd.Env` or temporary `0600` credential files, and redact tokens in all debug/error output (the sole exception is `gosso -header` in `issuetracker.go`, because `gosso` lacks a flagfile or env-var header mechanism; never log its argv).
+* **Credential Safety**: NEVER pass OAuth2 bearer tokens or secrets on subprocess command lines (e.g. `git -c http.extraHeader="Authorization: Bearer ..."`), because CLI arguments are world-readable in `ps aux` / `/proc/<pid>/cmdline` and leak into verbose/error logs. Use `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0` in `cmd.Env` or temporary `0600` credential files, and redact tokens in all debug/error output (the sole exception is `gosso -header` in `gosso.go`, because `gosso` lacks a flagfile or env-var header mechanism; never log its argv).
 * **Need-To-Know (NTK) Boundary**: Upstream `pw_ghish` source, tests, docs, and skills are **PUBLIC**. Never include internal partner codenames, internal builder names, or internal `sso://` URLs in code, comments, or test fixtures.
 
 ### 10. GERRIT, LUCI & BUGANIZER INFRA GOOD CITIZENSHIP

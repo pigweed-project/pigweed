@@ -206,6 +206,7 @@ func TestRunGitWithAuthFallback(t *testing.T) {
 		preseedCorp      string
 		remote           string
 		remoteURL        string
+		isFetch          bool
 		stderrs          []string
 		wantSchemes      []string
 		wantCorpAfter    string
@@ -217,6 +218,7 @@ func TestRunGitWithAuthFallback(t *testing.T) {
 		{name: "happy path", hasRPC: true, hasSSO: true, remote: "origin", remoteURL: "sso://pigweed/pigweed/pigweed", stderrs: []string{""}, wantSchemes: []string{"initial"}},
 		{name: "terminal push rejection", hasRPC: true, hasSSO: true, remote: "origin", remoteURL: "sso://pigweed/pigweed/pigweed", stderrs: []string{" ! [remote rejected] HEAD -> refs/for/main (prohibited by Gerrit)\n"}, wantSchemes: []string{"initial"}, wantErr: "exit status 128"},
 		{name: "empty stderr on fallback stops without auth error", hasRPC: true, hasSSO: true, remote: "origin", remoteURL: "sso://pigweed/pigweed/pigweed", stderrs: []string{ssoExp, "<killed>"}, wantSchemes: []string{"initial", "rpc"}, wantErr: "signal: killed"},
+		{name: "LOAS rpc->sso fetch", hasRPC: true, hasSSO: true, remote: "origin", remoteURL: "rpc://pigweed/pigweed/pigweed", isFetch: true, stderrs: []string{rpcExp, ""}, wantSchemes: []string{"initial", "sso"}, wantNote: "Note: rpc:// credentials expired; fetched via sso://pigweed/ using Corp SSO."},
 		{name: "LOAS https->rpc->sso->https", hasRPC: true, hasSSO: true, remote: "origin", remoteURL: "https://pigweed.googlesource.com/pigweed/pigweed", stderrs: []string{httpsPrm, rpcExp, ssoExp, ""}, wantSchemes: []string{"initial", "rpc", "sso", "https-bearer"}},
 		{name: "laptop skips rpc", laptop: true, hasRPC: true, hasSSO: true, remote: "origin", remoteURL: "https://pigweed.googlesource.com/pigweed/pigweed", stderrs: []string{httpsPrm, ssoExp, ""}, wantSchemes: []string{"initial", "sso", "https-bearer"}},
 		{name: "warm corp-only skips https", hasRPC: true, hasSSO: true, preseedCorp: "example-internal-review.googlesource.com", remote: "origin", remoteURL: "sso://example-internal/team/repo", stderrs: []string{ssoExp, rpcExp}, wantSchemes: []string{"initial", "rpc"}, wantErr: "gcert", wantForbiddenErr: []string{"GERRIT_TOKEN", "luci-auth login"}, wantExitCode: ExitCodeAuth},
@@ -259,7 +261,12 @@ func TestRunGitWithAuthFallback(t *testing.T) {
 				t.Setenv("GERRIT_TOKEN", tc.gerritToken)
 			}
 
+			verb := "push"
 			args := []string{"push", tc.remote, "HEAD:refs/for/main"}
+			if tc.isFetch {
+				verb = "fetch"
+				args = []string{"fetch", tc.remote, "refs/changes/01/1/1"}
+			}
 			var gotSchemes []string
 			mock := &MockGitRunner{
 				RunFn: func(runCtx context.Context, stdout, stderr io.Writer, runArgs ...string) error {
@@ -268,7 +275,7 @@ func TestRunGitWithAuthFallback(t *testing.T) {
 						_, _ = io.WriteString(stdout, tc.remoteURL+"\n")
 						return nil
 					}
-					if len(runArgs) > 0 && runArgs[0] == "push" {
+					if len(runArgs) > 0 && runArgs[0] == verb {
 						env := gitEnvFromContext(runCtx)
 						if !slices.Contains(env, "GIT_TERMINAL_PROMPT=0") {
 							t.Errorf("missing GIT_TERMINAL_PROMPT=0: %v", env)
