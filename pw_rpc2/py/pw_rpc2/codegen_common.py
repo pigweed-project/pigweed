@@ -36,23 +36,7 @@ from google.protobuf import descriptor_pb2
 
 from pw_codegen import OutputFile, cpp
 from pw_protobuf.symbol_name_mapping import fix_cc_identifier
-
-_HASH_CONSTANT = 65599
-
-
-# This is the same hash as pw_rpc.ids.calculate (and pw_tokenizer's hash,
-# without the maximum length). It is duplicated to avoid a dependency on
-# pw_rpc.
-def hash_65599(string: str) -> int:
-    """Computes the 32-bit 65599 hash of a string."""
-    hash_value = len(string)
-    coefficient = _HASH_CONSTANT
-
-    for char in string:
-        hash_value = (hash_value + coefficient * ord(char)) % 2**32
-        coefficient = (coefficient * _HASH_CONSTANT) % 2**32
-
-    return hash_value
+from pw_rpc2._descriptors import rpc_id
 
 
 class RpcIdCollisionError(ValueError):
@@ -111,7 +95,7 @@ class Method:
 
     @property
     def id(self) -> int:
-        return hash_65599(self.name)
+        return rpc_id(self.name)
 
     @property
     def has_single_request(self) -> bool:
@@ -139,7 +123,7 @@ class Service:
 
     @property
     def id(self) -> int:
-        return hash_65599(self.full_name)
+        return rpc_id(self.full_name)
 
 
 def services_in(

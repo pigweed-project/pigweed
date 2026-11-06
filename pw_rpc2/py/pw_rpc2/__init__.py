@@ -21,9 +21,12 @@ import pkgutil
 # separate directory, so extend the path before importing anything.
 __path__ = pkgutil.extend_path(__path__, __name__)
 
+from pw_rpc2._descriptors import MethodType, ProtoSource
 from pw_rpc2._packets import DecodeError, RpcStatus
 
 __all__ = [
     'DecodeError',
+    'MethodType',
+    'ProtoSource',
     'RpcStatus',
 ]

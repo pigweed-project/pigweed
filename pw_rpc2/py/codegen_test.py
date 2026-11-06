@@ -20,11 +20,8 @@ import unittest
 from google.protobuf import descriptor_pb2
 
 from pw_rpc2 import codegen_common, codegen_pwpb, codegen_raw
-from pw_rpc2.codegen_common import (
-    ReservedNameError,
-    RpcIdCollisionError,
-    hash_65599,
-)
+from pw_rpc2.codegen_common import ReservedNameError, RpcIdCollisionError
+from pw_rpc2._descriptors import rpc_id
 
 
 # Suffixes that collide under the 65599 hash after any common prefix, found by
@@ -120,18 +117,16 @@ class HashTest(unittest.TestCase):
 
     def test_matches_pw_rpc_ids(self) -> None:
         # Values from pw_rpc.ids.calculate, which pw_rpc2 must agree with.
-        self.assertEqual(hash_65599(''), 0)
-        self.assertEqual(hash_65599('a'), 0x006117E0)
-        self.assertEqual(hash_65599('Echo'), 0x8B470EE9)
-        self.assertEqual(hash_65599('pw.rpc2.test.Echo'), 0x88543BAA)
+        self.assertEqual(rpc_id(''), 0)
+        self.assertEqual(rpc_id('a'), 0x006117E0)
+        self.assertEqual(rpc_id('Echo'), 0x8B470EE9)
+        self.assertEqual(rpc_id('pw.rpc2.test.Echo'), 0x88543BAA)
 
     def test_colliding_suffixes_collide(self) -> None:
         first, second = _COLLIDING_SUFFIXES
         self.assertNotEqual(first, second)
-        self.assertEqual(hash_65599(first), hash_65599(second))
-        self.assertEqual(
-            hash_65599(f'Method{first}'), hash_65599(f'Method{second}')
-        )
+        self.assertEqual(rpc_id(first), rpc_id(second))
+        self.assertEqual(rpc_id(f'Method{first}'), rpc_id(f'Method{second}'))
 
 
 class IdCollisionTest(unittest.TestCase):
@@ -319,7 +314,7 @@ class ReservedNameTest(unittest.TestCase):
             '  delete_(PwInternal_Size max_message_size) const {', header
         )
         # The ID is the hash of the proto name, not the C++ name.
-        delete_id = f'{hash_65599("delete"):#010x}'
+        delete_id = f'{rpc_id("delete"):#010x}'
         self.assertIn(
             '  using delete_ = ::pw::rpc2::internal::UnaryCopyMethod<\n'
             '      ::pkg::pw_rpc2::raw::Svc::Client,\n'
@@ -455,7 +450,7 @@ _EXPECTED_PWPB_CLIENT_METHODS = """\
         {unary_id}, ::std::move(request));
   }}
 """.format(
-    unary_id=f'{hash_65599("Unary"):#010x}',
+    unary_id=f'{rpc_id("Unary"):#010x}',
 )
 
 _EXPECTED_PWPB_SERVER_STREAM_METHODS = """\
@@ -485,7 +480,7 @@ _EXPECTED_PWPB_SERVER_STREAM_METHODS = """\
         {stream_id}, ::std::move(request));
   }}
 """.format(
-    stream_id=f'{hash_65599("ServerStream"):#010x}',
+    stream_id=f'{rpc_id("ServerStream"):#010x}',
 )
 
 _EXPECTED_PWPB_CLIENT_STREAM_METHODS = """\
@@ -507,8 +502,8 @@ _EXPECTED_PWPB_CLIENT_STREAM_METHODS = """\
         ::pkg::pwpb::Response::Message>({bidi_id});
   }}
 """.format(
-    client_stream_id=f'{hash_65599("ClientStream"):#010x}',
-    bidi_id=f'{hash_65599("Bidi"):#010x}',
+    client_stream_id=f'{rpc_id("ClientStream"):#010x}',
+    bidi_id=f'{rpc_id("Bidi"):#010x}',
 )
 
 
@@ -537,7 +532,7 @@ class CommonOutputTest(unittest.TestCase):
 
     def test_ids_are_inlined(self) -> None:
         header, _ = _raw(_file(services=[_service('Svc', [_method('Get')])]))
-        service_id = f'{hash_65599("pkg.Svc"):#010x}'
+        service_id = f'{rpc_id("pkg.Svc"):#010x}'
         self.assertIn(
             f'::pw::rpc2::Service({service_id}, kPwInternal_Methods) {{}}',
             header,
@@ -548,7 +543,7 @@ class CommonOutputTest(unittest.TestCase):
 
     def test_client_constructors(self) -> None:
         header, _ = _raw(_file(services=[_service('Svc', [_method('Get')])]))
-        service_id = f'{hash_65599("pkg.Svc"):#010x}'
+        service_id = f'{rpc_id("pkg.Svc"):#010x}'
         self.assertEqual(len(re.findall(r'\bClient\(', header)), 2)
         self.assertIn('  constexpr Client() = default;\n', header)
         self.assertIn(
@@ -677,8 +672,8 @@ class CommonOutputTest(unittest.TestCase):
                 self.assertIn(
                     _EXPECTED_COPY_METHODS.format(
                         client=f'::pkg::pw_rpc2::{flavor}::Kinds::Client',
-                        unary_id=f'{hash_65599("Unary"):#010x}',
-                        stream_id=f'{hash_65599("ServerStream"):#010x}',
+                        unary_id=f'{rpc_id("Unary"):#010x}',
+                        stream_id=f'{rpc_id("ServerStream"):#010x}',
                         resp=resp,
                     ),
                     header,
@@ -710,7 +705,7 @@ class CommonOutputTest(unittest.TestCase):
                             future=future,
                             reserve=reserve,
                             resp=resp,
-                            method_id=f'{hash_65599(name):#010x}',
+                            method_id=f'{rpc_id(name):#010x}',
                         ),
                         header,
                     )
@@ -746,7 +741,7 @@ class CommonOutputTest(unittest.TestCase):
         )
         self.assertIn('namespace pw::delete_::v1::pw_rpc2::raw::Svc {', header)
         # The service ID is the hash of the proto name.
-        self.assertIn(f'{hash_65599("pw.delete.v1.Svc"):#010x}', header)
+        self.assertIn(f'{rpc_id("pw.delete.v1.Svc"):#010x}', header)
 
     def test_service_and_method_reserved_words_vs_pwpb_names(self) -> None:
         header, _ = _raw(
@@ -773,9 +768,9 @@ class CommonOutputTest(unittest.TestCase):
         self.assertIn('struct delete_ final {', header)
         self.assertIn('struct errno_ final {', header)
         self.assertIn('struct Fields final {', header)
-        self.assertIn(f'{hash_65599("pkg.Message.Message"):#010x}', header)
-        self.assertIn(f'{hash_65599("delete"):#010x}', header)
-        self.assertIn(f'{hash_65599("errno"):#010x}', header)
+        self.assertIn(f'{rpc_id("pkg.Message.Message"):#010x}', header)
+        self.assertIn(f'{rpc_id("delete"):#010x}', header)
+        self.assertIn(f'{rpc_id("errno"):#010x}', header)
 
     def test_multiple_services(self) -> None:
         for process, flavor in ((_raw, 'raw'), (_pwpb, 'pwpb')):
@@ -828,7 +823,7 @@ class RawCodegenTest(unittest.TestCase):
         self.assertFalse(any('pwpb' in include for include in includes))
 
     def test_method_descriptors(self) -> None:
-        service_id = f'{hash_65599("pkg.Kinds"):#010x}'
+        service_id = f'{rpc_id("pkg.Kinds"):#010x}'
         for name, kind in (
             ('Unary', 'kUnary'),
             ('ServerStream', 'kServerStreaming'),
@@ -844,7 +839,7 @@ class RawCodegenTest(unittest.TestCase):
                     _EXPECTED_RAW_METHOD_INFO.format(
                         name=name,
                         service_id=service_id,
-                        method_id=f'{hash_65599(name):#010x}',
+                        method_id=f'{rpc_id(name):#010x}',
                         kind=kind,
                     ),
                     self.header,
@@ -941,7 +936,7 @@ class RawCodegenTest(unittest.TestCase):
         self.assertIn('namespace pw_rpc2::raw::Svc {', header)
         self.assertIn('namespace pw_rpc2::raw::Svc {', stubs)
         self.assertIn('::pw_rpc2::raw::Svc::Service<SvcService>', stubs)
-        self.assertIn(f'kServiceId = {hash_65599("Svc"):#010x};', header)
+        self.assertIn(f'kServiceId = {rpc_id("Svc"):#010x};', header)
 
 
 class PwpbCodegenTest(unittest.TestCase):
@@ -974,7 +969,7 @@ class PwpbCodegenTest(unittest.TestCase):
         self.assertIn(
             '  using Ping = ::pw::rpc2::internal::UnaryCopyMethod<\n'
             '      ::pkg::pw_rpc2::pwpb::Svc::Client,\n'
-            f'      {hash_65599("Ping"):#010x},\n'
+            f'      {rpc_id("Ping"):#010x},\n'
             '      ::pkg::pwpb::Pong::Message>;',
             header,
         )
@@ -1111,7 +1106,7 @@ class PwpbCodegenTest(unittest.TestCase):
         self.assertIn('using Response = ::Resp::Message;', header)
         self.assertIn('"np.pwpb.h"', _includes(header))
         self.assertIn('::pw_rpc2::pwpb::Svc::Service<SvcService>', stubs)
-        self.assertIn(f'kServiceId = {hash_65599("Svc"):#010x};', header)
+        self.assertIn(f'kServiceId = {rpc_id("Svc"):#010x};', header)
 
     def test_client(self) -> None:
         """Tests pwpb Client method signatures."""

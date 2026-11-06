@@ -12,6 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 load("//pw_enum:pw_py_enum_library.bzl", "pw_py_enum_library")
 
@@ -29,13 +31,23 @@ pw_py_enum_library(
 )
 
 pw_py_library(
+    name = "descriptors",
+    srcs = ["pw_rpc2/_descriptors.py"],
+    imports = ["."],
+    deps = ["//pw_build:python_protobuf_runtime"],
+)
+
+pw_py_library(
     name = "pw_rpc2",
     srcs = [
         "pw_rpc2/__init__.py",
         "pw_rpc2/_packets.py",
     ],
     imports = ["."],
-    deps = [":enums"],
+    deps = [
+        ":descriptors",
+        ":enums",
+    ],
 )
 
 pw_py_library(
@@ -48,6 +60,7 @@ pw_py_library(
     ],
     imports = ["."],
     deps = [
+        ":descriptors",
         "//pw_build:python_protobuf_runtime",
         "//pw_codegen/py:pw_codegen",
         "//pw_protobuf/py:plugin_library",
@@ -97,4 +110,35 @@ pw_py_test(
     size = "small",
     srcs = ["tests/packets_test.py"],
     deps = [":pw_rpc2"],
+)
+
+proto_library(
+    name = "descriptors_test_proto",
+    testonly = True,
+    srcs = [
+        "tests/descriptors_test_proto2.proto",
+        "tests/descriptors_test_proto3.proto",
+    ],
+    import_prefix = "pw_rpc2_descriptors_test_pb",
+    strip_import_prefix = "/pw_rpc2/py/tests",
+    visibility = ["//visibility:private"],
+)
+
+py_proto_library(
+    name = "descriptors_test_py_pb2",
+    testonly = True,
+    visibility = ["//visibility:private"],
+    deps = [":descriptors_test_proto"],
+)
+
+pw_py_test(
+    name = "descriptors_test",
+    size = "small",
+    srcs = ["tests/descriptors_test.py"],
+    deps = [
+        ":descriptors_test_py_pb2",
+        ":pw_rpc2",
+        "//pw_build:python_protobuf_runtime",
+        "//pw_rpc2:pw_rpc2_test_py_pb2",
+    ],
 )
