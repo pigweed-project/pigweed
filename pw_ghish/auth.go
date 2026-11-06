@@ -947,10 +947,17 @@ func lookPathFirst(candidates ...string) string {
 	return ""
 }
 
-// findGossoBinary locates the Corp SSO HTTP helper (`gosso`) on PATH or at
-// standard gLinux / gMac / BinFS paths.
-func findGossoBinary() string {
-	return lookPathFirst("gosso", "/usr/bin/gosso", "/usr/local/bin/gosso", "/google/bin/releases/gosso/gosso")
+func missingGossoAuthError(service, host, statusCmd string) error {
+	remediation := formatGerritRemediationSteps(
+		"Install gosso on a managed corp machine (Cloudtop, Corp Linux, or gMac):\n"+
+			"     - Corp Linux:   sudo apt install gosso\n"+
+			"     - macOS (gMac): sudo mule install gosso",
+		"Ensure you have valid Corp SSO credentials:\n     gcert",
+		"Check authentication status:\n     "+statusCmd,
+	)
+	return NewExitCodeError(ExitCodeAuth,
+		"%s requires Corp SSO access to %s, but 'gosso' was not found on PATH.\n\nRemediation:\n%s",
+		service, host, remediation)
 }
 
 type resolvedGerritAuth struct {
