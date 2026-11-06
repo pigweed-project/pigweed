@@ -48,6 +48,15 @@ pw_py_test(
 )
 
 pw_py_test(
+    name = "head_test",
+    srcs = ["head_test.py"],
+    tags = ["local"],
+    deps = [
+        ":helpers",
+    ],
+)
+
+pw_py_test(
     name = "header_test",
     srcs = ["header_test.py"],
     data = [":chromium_files"],

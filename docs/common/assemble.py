@@ -19,6 +19,7 @@ from pathlib import Path
 import shutil
 import sys
 
+from docs.common.head import inject_head
 from docs.common.header import (
     HEADER_NAV_FILENAME,
     inject_subsite_headers,
@@ -59,6 +60,7 @@ def assemble_site(
     inject_subsite_headers(
         rustdoc_html, out_dir / "rustdoc", "rustdoc", nav_links
     )
+    inject_head(out_dir)
 
     write_sitemap(out_dir)
     asyncio.run(run_pagefind(out_dir))

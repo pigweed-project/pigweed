@@ -42,7 +42,8 @@ class AssembleSiteTest(unittest.TestCase):
             (rustdoc_html / "pw_status").mkdir(parents=True)
 
             (sphinx_html / "index.html").write_text(
-                "<html><body><h1>Pigweed Home</h1></body></html>",
+                "<html><head><title>Pigweed</title></head>"
+                "<body><h1>Pigweed Home</h1></body></html>",
                 encoding="utf-8",
             )
             save_header_nav(
@@ -50,8 +51,8 @@ class AssembleSiteTest(unittest.TestCase):
                 [HeaderLink(title="Docs", href="https://pigweed.dev/")],
             )
             (doxygen_html / "group__pw__string.html").write_text(
-                "<html><body><!-- pw-sentinel -->"
-                "<h1>pw_string</h1></body></html>",
+                "<html><head><title>pw_string</title></head>"
+                "<body><!-- pw-sentinel --><h1>pw_string</h1></body></html>",
                 encoding="utf-8",
             )
             (rustdoc_html / "index.html").write_text(
@@ -88,6 +89,19 @@ class AssembleSiteTest(unittest.TestCase):
             self.assertIn(
                 'href="#main-content"',
                 (out_dir / "rustdoc/pw_status/index.html").read_text("utf-8"),
+            )
+            for page in (
+                "index.html",
+                "api/cc/group__pw__string.html",
+                "rustdoc/pw_status/index.html",
+            ):
+                self.assertIn(
+                    "G-JQJJWFZWFB",
+                    (out_dir / page).read_text(encoding="utf-8"),
+                )
+            self.assertNotIn(
+                "G-JQJJWFZWFB",
+                (out_dir / "rustdoc/index.html").read_text(encoding="utf-8"),
             )
             self.assertTrue((out_dir / "search" / "pagefind.js").is_file())
 

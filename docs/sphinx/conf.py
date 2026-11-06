@@ -79,7 +79,6 @@ extensions = [
     'module_metadata',
     'common',
     'pigweed_live',
-    'pw_docgen.sphinx.google_analytics',  # Enables optional Google Analytics
     'seed_metadata',
     'sphinx.ext.autodoc',  # Automatic documentation for Python code
     'sphinx.ext.intersphinx',  # Cross-references to external documentation
@@ -193,9 +192,6 @@ html_sidebars = {
 html_context = {
     'default_mode': 'dark',
 }
-
-if 'GOOGLE_ANALYTICS_ID' in os.environ:
-    google_analytics_id = os.environ['GOOGLE_ANALYTICS_ID']
 
 # Mermaid style API is very hard to use and full of footguns. The `neutral`
 # theme is the only readable default option on both light and dark themes.

@@ -31,58 +31,8 @@ $generatedby&#160;<a href="https://www.doxygen.org/index.html"><img class="foote
 <!--END !GENERATE_TREEVIEW-->
 <script>
   window.pw = {};
-  // Set up Google Analytics for the Doxygen subsite. How it works:
-  //
-  // 1. Fetch the Pigweed homepage
-  // 2. grep the Google Analytics ID from the homepage's source code
-  // 3. Manually init Google Analytics through JS with the grep'd ID
-  //
-  // Our Google Analytics ID is supplied at build time through an OS env var.
-  // Ideally, we would pass the env var to Doxygen, and Doxygen would stamp
-  // the env var into a specified location within a template. But Doxygen
-  // doesn't support that workflow.
-  //
-  // We could alternatively set up our own build-time templating system, but
-  // that's a lot more work for little gain. The JS-based implementation works
-  // fine. Sphinx's native in-site search uses an implementation similar to
-  // this approach, i.e. it's been battle-tested at major scale.
-  window.pw.initAnalytics = async () => {
-    // Fetch the Pigweed homepage.
-    //
-    // Doxygen outputs all URLs into a single directory, so the Pigweed
-    // homepage will always be two directories below any given Doxygen page.
-    // There's a few reasons to use a relative path:
-    //
-    // * Guarantees that the request will succeed by ensuring that it's a
-    //   same-origin request. A request from localhost to pigweed.dev
-    //   will be cross-origin and will probably fail.
-    // * On staging sites we pass in a fake Google Analytics ID because
-    //   we don't want those pageviews showing up in the production data.
-    const response = await fetch("../../index.html");
-    const text = await response.text();
-    // grep the Google Analytics ID from the homepage's source code.
-    const regex = /gtag\('config', '(.*?)'\)/;
-    const match = text.match(regex);
-    if (!match) {
-      return;
-    }
-    const id = match[1];
-    // Load the gtag script.
-    let lib = document.createElement('script');
-    lib.src = `https://www.googletagmanager.com/gtag/js?id=${id}`;
-    document.body.appendChild(lib);
-    // Init Google Analytics with the grep'd ID.
-    let init = document.createElement('script');
-    init.textContent = `
-      window.dataLayer = window.dataLayer || [];
-      function gtag() { dataLayer.push(arguments); }
-      gtag('js', new Date());
-      gtag('config', '${id}');
-    `;
-    document.body.appendChild(init);
-  };
   // For any given page related to a module, link back to that module's main
-  // docs. This implementation is similar to the Google Analytics solution.
+  // docs.
   window.pw.createDocsLinks = async () => {
     // .ingroups is the breadcrumbs that appear below the page title. The
     // first breadcrumb contains the link to the module's Doxygen homepage.
@@ -107,7 +57,6 @@ $generatedby&#160;<a href="https://www.doxygen.org/index.html"><img class="foote
     if (!div) return;
     div.appendChild(p);
   };
-  window.pw.initAnalytics();
   window.pw.createDocsLinks();
 </script>
 </body>

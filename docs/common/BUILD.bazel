@@ -21,6 +21,7 @@ package(default_visibility = ["//docs:__subpackages__"])
 _PY_SRCS = [
     "__init__.py",
     "breadcrumbs.py",
+    "head.py",
     "header.py",
     "nav.py",
     "search.py",
@@ -50,6 +51,12 @@ pw_py_library(
         "@pigweed_python_packages//pagefind_bin_extended",
         "@pigweed_python_packages//sphinx",
     ],
+)
+
+pw_py_test(
+    name = "head_test",
+    srcs = ["head_test.py"],
+    deps = [":common_lib"],
 )
 
 pw_py_test(
