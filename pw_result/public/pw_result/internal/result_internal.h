@@ -15,6 +15,7 @@
 
 #include <memory>
 #include <new>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -39,10 +40,21 @@
 
 namespace pw {
 
+class [[nodiscard]] HasValue;
+
 template <typename T, typename StatusType = Status>
 class [[nodiscard]] Result;
 
 namespace internal_result {
+
+enum class HasValueCode : bool {
+  kEmpty = false,
+  kHasValue = true,
+};
+
+constexpr const char* PwEnumToString(HasValueCode code) noexcept {
+  return code == HasValueCode::kHasValue ? "HAS_VALUE" : "EMPTY";
+}
 
 struct Empty {};
 
@@ -517,10 +529,26 @@ struct HasConversionOperatorToResult<
     StatusType,
     decltype(test_result_conv<T, U, StatusType>(0))> : std::true_type {};
 
+// This trait is for determining if a given type is a Result.
+template <typename T>
+constexpr bool IsResult = false;
+template <typename T, typename StatusType>
+constexpr bool IsResult<Result<T, StatusType>> = true;
+
+// This trait is for determining if a given type is an Optional.
+template <typename T>
+constexpr bool IsOptional = false;
+template <typename T>
+constexpr bool IsOptional<Result<T, HasValue>> = true;
+
 // Detects whether `T` is constructible or convertible from `Result<U,
-// StatusType>`.
+// StatusType>`. When `Result<T, StatusType>` is `Optional<cv bool>`, conversion
+// from `Optional<U>` (e.g., via `Optional`'s `explicit operator bool()`) is
+// ignored so the converting constructor takes precedence (see LWG 3836).
 template <typename T, typename U, typename StatusType>
-using IsConstructibleOrConvertibleFromResult =
+using IsConstructibleOrConvertibleFromResult = std::conjunction<
+    std::negation<std::conjunction<std::is_same<StatusType, HasValue>,
+                                   std::is_same<std::remove_cv_t<T>, bool>>>,
     std::disjunction<std::is_constructible<T, Result<U, StatusType>&>,
                      std::is_constructible<T, const Result<U, StatusType>&>,
                      std::is_constructible<T, Result<U, StatusType>&&>,
@@ -528,7 +556,7 @@ using IsConstructibleOrConvertibleFromResult =
                      std::is_convertible<Result<U, StatusType>&, T>,
                      std::is_convertible<const Result<U, StatusType>&, T>,
                      std::is_convertible<Result<U, StatusType>&&, T>,
-                     std::is_convertible<const Result<U, StatusType>&&, T>>;
+                     std::is_convertible<const Result<U, StatusType>&&, T>>>;
 
 // Detects whether `T` is constructible or convertible or assignable from
 // `Result<U, StatusType>`.
@@ -568,6 +596,10 @@ using IsDirectInitializationValid = std::disjunction<
     std::negation<std::disjunction<
         std::is_same<Result<T, StatusType>,
                      std::remove_cv_t<std::remove_reference_t<U>>>,
+        std::conjunction<std::is_same<StatusType, HasValue>,
+                         std::is_same<std::remove_cv_t<T>, bool>,
+                         std::bool_constant<IsOptional<
+                             std::remove_cv_t<std::remove_reference_t<U>>>>>,
         std::conjunction<
             std::negation<std::is_same<std::remove_cv_t<T>, StatusType>>,
             std::disjunction<
@@ -577,6 +609,10 @@ using IsDirectInitializationValid = std::disjunction<
                              std::remove_cv_t<std::remove_reference_t<U>>>>>,
         std::is_same<std::in_place_t,
                      std::remove_cv_t<std::remove_reference_t<U>>>,
+        std::conjunction<
+            std::is_same<StatusType, HasValue>,
+            std::is_same<std::nullopt_t,
+                         std::remove_cv_t<std::remove_reference_t<U>>>>,
         IsDirectInitializationAmbiguous<T, U, StatusType>>>>;
 
 // This trait detects whether `Result<T, StatusType>::operator=(U&&)` is
@@ -608,6 +644,10 @@ using IsForwardingAssignmentValid = std::disjunction<
     std::negation<std::disjunction<
         std::is_same<Result<T, StatusType>,
                      std::remove_cv_t<std::remove_reference_t<U>>>,
+        std::conjunction<std::is_same<StatusType, HasValue>,
+                         std::is_same<std::remove_cv_t<T>, bool>,
+                         std::bool_constant<IsOptional<
+                             std::remove_cv_t<std::remove_reference_t<U>>>>>,
         std::conjunction<
             std::negation<std::is_same<std::remove_cv_t<T>, StatusType>>,
             std::disjunction<
@@ -617,13 +657,11 @@ using IsForwardingAssignmentValid = std::disjunction<
                              std::remove_cv_t<std::remove_reference_t<U>>>>>,
         std::is_same<std::in_place_t,
                      std::remove_cv_t<std::remove_reference_t<U>>>,
+        std::conjunction<
+            std::is_same<StatusType, HasValue>,
+            std::is_same<std::nullopt_t,
+                         std::remove_cv_t<std::remove_reference_t<U>>>>,
         IsForwardingAssignmentAmbiguous<T, U, StatusType>>>>;
-
-// This trait is for determining if a given type is a Result.
-template <typename T>
-constexpr bool IsResult = false;
-template <typename T, typename StatusType>
-constexpr bool IsResult<Result<T, StatusType>> = true;
 
 // SFINAE constraints for converting, status, and value constructors/assignments
 // on `Result<T, StatusType>` and `Result<void, StatusType>`.
@@ -656,6 +694,9 @@ inline constexpr bool kCanConstructFromStatus = std::conjunction<
     std::negation<std::is_same<std::decay_t<URef>, Result<T, StatusType>>>,
     std::negation<std::is_same<std::decay_t<URef>, std::remove_cv_t<T>>>,
     std::negation<std::is_same<std::decay_t<URef>, std::in_place_t>>,
+    std::negation<
+        std::conjunction<std::is_same<StatusType, HasValue>,
+                         std::is_same<std::decay_t<URef>, std::nullopt_t>>>,
     std::is_constructible<StatusType, URef>,
     std::conditional_t<
         kImplicit,
@@ -698,6 +739,9 @@ inline constexpr bool kCanConstructFromValue = std::conjunction<
 template <typename T, typename URef, typename StatusType>
 inline constexpr bool kCanAssignFromValue = std::conjunction<
     IsForwardingAssignmentValid<T, URef, StatusType>,
+    std::negation<std::conjunction<std::is_same<StatusType, HasValue>,
+                                   std::is_scalar<T>,
+                                   std::is_same<T, std::decay_t<URef>>>>,
     std::is_constructible<T, URef>,
     std::is_assignable<T&, URef>,
     std::disjunction<
@@ -748,6 +792,85 @@ struct IsEqualityComparable<
                                                     std::declval<const U&>()),
                                            bool>>> : std::true_type {};
 
+template <typename T,
+          typename U,
+          bool = !std::is_void_v<T> && !std::is_void_v<U>,
+          typename = void>
+struct IsInequalityComparable : std::false_type {};
+
+template <typename T, typename U>
+struct IsInequalityComparable<
+    T,
+    U,
+    true,
+    std::enable_if_t<std::is_convertible_v<decltype(std::declval<const T&>() !=
+                                                    std::declval<const U&>()),
+                                           bool>>> : std::true_type {};
+
+template <typename T, typename U>
+struct IsNotEqualComparable : std::disjunction<IsInequalityComparable<T, U>,
+                                               IsEqualityComparable<T, U>> {};
+
+template <typename T,
+          typename U,
+          bool = !std::is_void_v<T> && !std::is_void_v<U>,
+          typename = void>
+struct IsLessThanComparable : std::false_type {};
+
+template <typename T, typename U>
+struct IsLessThanComparable<
+    T,
+    U,
+    true,
+    std::enable_if_t<std::is_convertible_v<decltype(std::declval<const T&>() <
+                                                    std::declval<const U&>()),
+                                           bool>>> : std::true_type {};
+
+template <typename T,
+          typename U,
+          bool = !std::is_void_v<T> && !std::is_void_v<U>,
+          typename = void>
+struct IsLessEqualComparable : std::false_type {};
+
+template <typename T, typename U>
+struct IsLessEqualComparable<
+    T,
+    U,
+    true,
+    std::enable_if_t<std::is_convertible_v<decltype(std::declval<const T&>() <=
+                                                    std::declval<const U&>()),
+                                           bool>>> : std::true_type {};
+
+template <typename T,
+          typename U,
+          bool = !std::is_void_v<T> && !std::is_void_v<U>,
+          typename = void>
+struct IsGreaterThanComparable : std::false_type {};
+
+template <typename T, typename U>
+struct IsGreaterThanComparable<
+    T,
+    U,
+    true,
+    std::enable_if_t<std::is_convertible_v<decltype(std::declval<const T&>() >
+                                                    std::declval<const U&>()),
+                                           bool>>> : std::true_type {};
+
+template <typename T,
+          typename U,
+          bool = !std::is_void_v<T> && !std::is_void_v<U>,
+          typename = void>
+struct IsGreaterEqualComparable : std::false_type {};
+
+template <typename T, typename U>
+struct IsGreaterEqualComparable<
+    T,
+    U,
+    true,
+    std::enable_if_t<std::is_convertible_v<decltype(std::declval<const T&>() >=
+                                                    std::declval<const U&>()),
+                                           bool>>> : std::true_type {};
+
 // Enables `Result<T, StatusType>` status comparisons unless `T` itself is
 // `StatusType` (in which case `operator==` compares the held value).
 template <typename T, typename StatusType>
@@ -761,19 +884,21 @@ inline constexpr bool kEnableStatusCodeComparison =
     !std::is_same_v<std::remove_cv_t<T>, StatusType> &&
     !std::is_same_v<std::remove_cv_t<T>, typename StatusType::Code>;
 
-// Checks whether comparing `Result<T, StatusType>` and `U` (in operand order
-// `Lhs == Rhs`) should compare `U` against the held value. `Result`, status (or
-// types implicitly convertible to `StatusType`), and status code operands are
-// handled by dedicated overloads and are excluded here, except when `T` itself
-// is `StatusType`, `StatusType::Code`, or the same (cv-unqualified) type as
-// `U` (in which case comparisons with `T` compare the held value).
+// Checks whether comparing `Result<T, StatusType>` and `U` (using comparison
+// trait `Comp`) should compare `U` against the held value. `Result`, status
+// (or types implicitly convertible to `StatusType`), and status code operands
+// are handled by dedicated overloads and are excluded here, except when `T`
+// itself is `StatusType`, `StatusType::Code`, or the same (cv-unqualified) type
+// as `U` (in which case comparisons with `T` compare the held value).
 template <typename T,
           typename U,
           typename StatusType,
-          typename Lhs = T,
-          typename Rhs = U>
+          typename Comp = IsEqualityComparable<T, U>>
 inline constexpr bool kIsValueComparable = std::conjunction<
     std::bool_constant<!IsResult<U>>,
+    std::negation<
+        std::conjunction<std::is_same<StatusType, HasValue>,
+                         std::is_same<std::remove_cv_t<U>, std::nullopt_t>>>,
     std::disjunction<std::is_same<std::remove_cv_t<T>, StatusType>,
                      std::is_same<std::remove_cv_t<T>, std::remove_cv_t<U>>,
                      std::negation<std::is_convertible<const U&, StatusType>>>,
@@ -782,7 +907,7 @@ inline constexpr bool kIsValueComparable = std::conjunction<
         std::is_same<std::remove_cv_t<T>, typename StatusType::Code>,
         std::negation<
             std::is_same<std::remove_cv_t<U>, typename StatusType::Code>>>,
-    IsEqualityComparable<Lhs, Rhs>>::value;
+    Comp>::value;
 
 // This trait determines the return type of a given function without const,
 // volatile or reference qualifiers.

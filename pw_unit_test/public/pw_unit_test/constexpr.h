@@ -82,6 +82,17 @@
   static_assert(true)
 #endif  // !defined(__clang__) && defined(__GNUC__)
 
+/// Like `PW_CONSTEXPR_TEST`, but only executes at compile time when using C++20
+/// or newer.
+#if __cplusplus >= 202002L
+#define PW_CONSTEXPR_TEST_IF_CPP20 PW_CONSTEXPR_TEST
+#else
+#define PW_CONSTEXPR_TEST_IF_CPP20(test_suite, test_case, ...) \
+  TEST(test_suite, test_case)                                  \
+  __VA_ARGS__                                                  \
+  static_assert(true)
+#endif  // __cplusplus >= 202002L
+
 // GoogleTest-style test macros for PW_CONSTEXPR_TEST.
 
 #define PW_TEST_EXPECT_TRUE(expr) _PW_CEXPECT(TRUE, expr)

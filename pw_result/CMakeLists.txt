@@ -28,6 +28,21 @@ pw_add_library(pw_result INTERFACE
     pw_third_party.fuchsia.stdcompat
 )
 
+pw_add_test(pw_result.optional_test
+  SOURCES
+    optional_test.cc
+    pw_result_private/test_helpers.h
+  PRIVATE_DEPS
+    pw_compilation_testing._pigweed_only_negative_compilation
+    pw_containers._test_helpers
+    pw_result
+    pw_status
+    pw_unit_test.constexpr
+  GROUPS
+    modules
+    pw_result
+)
+
 pw_add_library(pw_result.expected INTERFACE
   HEADERS
     public/pw_result/expected.h
@@ -38,6 +53,7 @@ pw_add_library(pw_result.expected INTERFACE
 
 pw_add_test(pw_result.result_test
   SOURCES
+    pw_result_private/test_helpers.h
     result_test.cc
   PRIVATE_DEPS
     pw_assert.assert

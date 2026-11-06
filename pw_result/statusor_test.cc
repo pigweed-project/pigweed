@@ -30,9 +30,14 @@
 #include <vector>
 
 #include "pw_result/result.h"
+#include "pw_result_private/test_helpers.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
+
+using ::pw::internal_result::test::ConvertibleToBool;
+using ::pw::internal_result::test::Copyable;
+using ::pw::internal_result::test::ExplicitConstructibleFromInt;
 
 struct CopyDetector {
   CopyDetector() = default;
@@ -572,12 +577,6 @@ struct ImplicitConstructibleFromBool {
   bool x = false;
 };
 
-struct ConvertibleToBool {
-  explicit ConvertibleToBool(bool y) : x(y) {}
-  operator bool() const { return x; }  // NOLINT
-  bool x = false;
-};
-
 TEST(Result, ImplicitBooleanConstructionWithImplicitCasts) {
   auto a = pw::Result<bool>(pw::Result<ConvertibleToBool>(true));
   PW_TEST_ASSERT_OK(a.status());
@@ -665,15 +664,10 @@ TEST(Result, ConstExplicitConstruction) {
   EXPECT_FALSE(*d);
 }
 
-struct ExplicitConstructibleFromInt {
-  int x;
-  explicit ExplicitConstructibleFromInt(int y) : x(y) {}
-};
-
 TEST(Result, ExplicitConstruction) {
   auto a = pw::Result<ExplicitConstructibleFromInt>(10);
   PW_TEST_ASSERT_OK(a.status());
-  EXPECT_EQ(a->x, 10);
+  EXPECT_EQ(a->value, 10);
 }
 
 TEST(Result, ImplicitConstruction) {
@@ -805,12 +799,6 @@ TEST(Result, SameStatusNestedResultCopyAndMoveAssignment) {
   a = std::move(status_error);
   EXPECT_FALSE(a.ok());
 }
-
-struct Copyable {
-  Copyable() {}
-  Copyable(const Copyable&) {}
-  Copyable& operator=(const Copyable&) { return *this; }
-};
 
 struct MoveOnly {
   MoveOnly() {}

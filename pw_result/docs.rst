@@ -475,6 +475,34 @@ status may be provided as a non-OK status object, a non-OK status code, or a
 template argument (``result.reset<kCode>()``), which checks at compile time that
 the code is not OK.
 
+Optional values without status codes: ``pw::Optional``
+======================================================
+When a function or member needs to represent the presence or absence of a value
+without a ``pw::Status`` error code, use ``pw::Optional<T>`` (defined in
+``pw_result/result.h`` as an alias for ``pw::Result<T, pw::HasValue>``).
+
+``pw::Optional<T>`` provides a ``std::optional``-compatible interface (including
+default construction to ``std::nullopt``, ``has_value()``,
+``explicit operator bool()``, ``reset()``, ``emplace()``, ``swap()``,
+``value_or()``, ``pw::make_optional()``, ``and_then()``, ``transform()``, and
+``or_else()``) while sharing ``pw::Result``'s implementation and extensions
+(such as ``ok()`` and ``PW_TRY_ASSIGN``). Unlike ``std::optional``, calling
+``value()`` on an empty ``pw::Optional`` triggers a ``PW_ASSERT`` rather than
+throwing ``std::bad_optional_access``.
+
+.. code-block:: cpp
+
+   #include "pw_result/result.h"
+
+   pw::Optional<int> ParseId(std::string_view token);
+
+   void HandleToken(std::string_view token) {
+     pw::Optional<int> id = ParseId(token);
+     if (id.has_value()) {
+       UseId(*id);
+     }
+   }
+
 Results with custom error types: ``pw::expected``
 =================================================
 Most error codes can fit into one of the status codes supported by

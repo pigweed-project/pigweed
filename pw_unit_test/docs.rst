@@ -512,13 +512,14 @@ compile time, use a plain ``TEST()``.
 
 .. _module-pw_unit_test-constexpr-if-compiler:
 
-Limit ``constexpr`` tests to a specific compiler
-------------------------------------------------
+Limit ``constexpr`` tests to a specific compiler or C++ standard
+----------------------------------------------------------------
 Due to differences in compilers and their maintainers interpretation of the C++
 standard, there may be cases when an expression can be constant evaluated with
-some compilers but not others. In these cases, you can restrict the
-``constexpr`` portion of a :cc:`PW_CONSTEXPR_TEST` test by using either
-:cc:`PW_CONSTEXPR_TEST_IF_CLANG` or :cc:`PW_CONSTEXPR_TEST_IF_GCC`.
+some compilers or C++ standards but not others. In these cases, you can restrict
+the ``constexpr`` portion of a :cc:`PW_CONSTEXPR_TEST` test by using
+:cc:`PW_CONSTEXPR_TEST_IF_CLANG`, :cc:`PW_CONSTEXPR_TEST_IF_GCC`, or
+:cc:`PW_CONSTEXPR_TEST_IF_CPP20`.
 
 .. _module-pw_unit_test-static:
 

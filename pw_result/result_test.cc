@@ -33,6 +33,7 @@
 #include "pw_assert/assert.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/test_helpers.h"
+#include "pw_result_private/test_helpers.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
 #include "pw_unit_test/constexpr.h"
@@ -642,81 +643,13 @@ struct OptionalTraits<TestResult<T>> {
   static constexpr bool HasValue(const TestResult<T>& opt) { return opt.ok(); }
 };
 
-struct Copyable {
-  constexpr Copyable(int v) : value(v) {}
-  constexpr Copyable(const Copyable&) = default;
-  constexpr Copyable(Copyable&&) = default;
-  constexpr Copyable& operator=(const Copyable&) = default;
-  constexpr Copyable& operator=(Copyable&&) = default;
-  int value;
-  constexpr bool operator==(const Copyable& other) const {
-    return value == other.value;
-  }
-};
-
-struct CopyCtorNotAssign {
-  constexpr CopyCtorNotAssign(int v) : value(v) {}
-  constexpr CopyCtorNotAssign(const CopyCtorNotAssign&) = default;
-  constexpr CopyCtorNotAssign(CopyCtorNotAssign&&) = default;
-  constexpr CopyCtorNotAssign& operator=(const CopyCtorNotAssign&) = delete;
-  constexpr CopyCtorNotAssign& operator=(CopyCtorNotAssign&&) = delete;
-  int value;
-  constexpr bool operator==(const CopyCtorNotAssign& other) const {
-    return value == other.value;
-  }
-};
-
-struct MoveCtorNotAssign {
-  constexpr MoveCtorNotAssign(int v) : value(v) {}
-  constexpr MoveCtorNotAssign(const MoveCtorNotAssign&) = delete;
-  constexpr MoveCtorNotAssign(MoveCtorNotAssign&&) = default;
-  constexpr MoveCtorNotAssign& operator=(const MoveCtorNotAssign&) = delete;
-  constexpr MoveCtorNotAssign& operator=(MoveCtorNotAssign&&) = delete;
-  int value;
-  constexpr bool operator==(const MoveCtorNotAssign& other) const {
-    return value == other.value;
-  }
-};
-
-struct CopyAssignNotCtor {
-  constexpr CopyAssignNotCtor(int v) : value(v) {}
-  constexpr CopyAssignNotCtor(const CopyAssignNotCtor&) = delete;
-  constexpr CopyAssignNotCtor(CopyAssignNotCtor&&) = default;
-  constexpr CopyAssignNotCtor& operator=(const CopyAssignNotCtor&) = default;
-  constexpr CopyAssignNotCtor& operator=(CopyAssignNotCtor&&) = default;
-  int value;
-  constexpr bool operator==(const CopyAssignNotCtor& other) const {
-    return value == other.value;
-  }
-};
-
-struct MoveAssignNotCtor {
-  constexpr MoveAssignNotCtor(int v) : value(v) {}
-  constexpr MoveAssignNotCtor(const MoveAssignNotCtor&) = delete;
-  constexpr MoveAssignNotCtor(MoveAssignNotCtor&&) = delete;
-  constexpr MoveAssignNotCtor& operator=(const MoveAssignNotCtor&) = delete;
-  constexpr MoveAssignNotCtor& operator=(MoveAssignNotCtor&&) = default;
-  int value;
-  constexpr bool operator==(const MoveAssignNotCtor& other) const {
-    return value == other.value;
-  }
-};
-
-struct ConvertibleFromInt {
-  constexpr ConvertibleFromInt(int v) : value(v) {}
-  int value;
-  constexpr bool operator==(const ConvertibleFromInt& other) const {
-    return value == other.value;
-  }
-};
-
-struct ExplicitConstructibleFromInt {
-  explicit constexpr ExplicitConstructibleFromInt(int v) : value(v) {}
-  int value;
-  constexpr bool operator==(const ExplicitConstructibleFromInt& other) const {
-    return value == other.value;
-  }
-};
+using internal_result::test::ConvertibleFromInt;
+using internal_result::test::Copyable;
+using internal_result::test::CopyAssignNotCtor;
+using internal_result::test::CopyCtorNotAssign;
+using internal_result::test::ExplicitConstructibleFromInt;
+using internal_result::test::MoveAssignNotCtor;
+using internal_result::test::MoveCtorNotAssign;
 
 template <typename OptT>
 void TestCommonOptional() {

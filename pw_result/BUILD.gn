@@ -37,9 +37,24 @@ pw_source_set("pw_result") {
 
 pw_test_group("tests") {
   tests = [
+    ":optional_test",
     ":result_test",
     ":expected_test",
   ]
+}
+
+pw_test("optional_test") {
+  deps = [
+    ":pw_result",
+    "$dir_pw_containers:test_helpers",
+    "$dir_pw_unit_test:constexpr",
+    dir_pw_status,
+  ]
+  sources = [
+    "optional_test.cc",
+    "pw_result_private/test_helpers.h",
+  ]
+  negative_compilation_tests = true
 }
 
 pw_test("result_test") {
@@ -51,6 +66,7 @@ pw_test("result_test") {
     dir_pw_status,
   ]
   sources = [
+    "pw_result_private/test_helpers.h",
     "result_test.cc",
     "statusor_test.cc",
   ]

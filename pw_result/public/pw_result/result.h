@@ -37,7 +37,8 @@
 
 #include <initializer_list>
 #include <memory>
-#include <string>  // IWYU pragma: keep
+#include <optional>  // IWYU pragma: export
+#include <string>    // IWYU pragma: keep
 #include <type_traits>
 #include <utility>
 
@@ -58,6 +59,37 @@ constexpr T&& ConvertToValue(Result<T, StatusType>& result) noexcept;
 }  // namespace internal
 
 /// @module{pw_result}
+
+/// Status type used by `pw::Optional<T>` (`pw::Result<T, pw::HasValue>`) to
+/// indicate whether a value is present (`ok() == true`).
+class [[nodiscard]] HasValue final
+    : public StatusBase<HasValue, internal_result::HasValueCode::kHasValue> {
+ public:
+  using typename StatusBase<HasValue,
+                            internal_result::HasValueCode::kHasValue>::Code;
+
+  static constexpr Code kEmpty = Code::kEmpty;
+  static constexpr Code kHasValue = Code::kHasValue;
+
+  /// Constructs a `HasValue` status indicating that a value is present
+  /// (`ok() == true`).
+  constexpr HasValue() noexcept = default;
+
+  /// Explicitly constructs a `HasValue` status from `HasValue::kEmpty` or
+  /// `HasValue::kHasValue`.
+  explicit constexpr HasValue(Code code) noexcept : StatusBase(code) {}
+};
+
+/// `pw::Optional<T>` is an alias for `pw::Result<T, pw::HasValue>` that
+/// represents an optional value without a `pw::Status` error code.
+///
+/// It provides a `std::optional`-compatible interface while sharing
+/// `pw::Result`'s implementation and extensions (such as `ok()` and
+/// `PW_TRY_ASSIGN`). Unlike `std::optional`, calling `value()` on an empty
+/// `pw::Optional` triggers a `PW_ASSERT` rather than throwing
+/// `std::bad_optional_access`.
+template <typename T>
+using Optional = Result<T, HasValue>;
 
 /// Error propagation primitive: value or error status.
 ///
@@ -164,7 +196,7 @@ constexpr T&& ConvertToValue(Result<T, StatusType>& result) noexcept;
 /// @tparam StatusType Status type that represents the error. Defaults to
 ///   `pw::Status`. Must be derived from `pw::StatusBase` and use an enum code.
 template <typename T, typename StatusType>
-class [[nodiscard]] Result final
+class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
     : private internal_result::ResultData<T, StatusType> {
   template <typename U, typename>
   friend class Result;
@@ -192,6 +224,8 @@ class [[nodiscard]] Result final
                 "pw::Result requires an object type (or void)");
   static_assert(!std::is_same_v<std::remove_cv_t<T>, std::in_place_t>,
                 "pw::Result cannot wrap std::in_place_t");
+  static_assert(!std::is_same_v<std::remove_cv_t<T>, std::nullopt_t>,
+                "pw::Result cannot wrap std::nullopt_t");
   static_assert(internal::is_status_v<status_type>,
                 "The status type must derive from pw::StatusBase");
   static_assert(std::is_enum_v<typename status_type::Code>,
@@ -207,9 +241,30 @@ class [[nodiscard]] Result final
   ///
   /// Only enabled when `StatusType` is `pw::Status`.
   template <typename S = StatusType,
-            typename = std::enable_if_t<std::is_same_v<S, Status>>>
+            std::enable_if_t<std::is_same_v<S, Status>, int> = 0>
   explicit constexpr Result() noexcept
       : Base(internal_result::kEmptyTag, Status::Unknown()) {}
+
+  /// Constructs an empty `Optional<T>` with no value (`has_value() == false`).
+  template <typename S = StatusType,
+            std::enable_if_t<std::is_same_v<S, HasValue>, int> = 0>
+  constexpr Result() noexcept
+      : Base(internal_result::kEmptyTag, HasValue(HasValue::kEmpty)) {}
+
+  /// Constructs an empty `Optional<T>` from `std::nullopt`
+  /// (`has_value() == false`).
+  template <typename S = StatusType,
+            std::enable_if_t<std::is_same_v<S, HasValue>, int> = 0>
+  constexpr Result(std::nullopt_t) noexcept  // NOLINT
+      : Base(internal_result::kEmptyTag, HasValue(HasValue::kEmpty)) {}
+
+  /// Resets an `Optional<T>` to an empty state (`has_value() == false`).
+  template <typename S = StatusType,
+            std::enable_if_t<std::is_same_v<S, HasValue>, int> = 0>
+  constexpr Result& operator=(std::nullopt_t) noexcept {
+    reset();
+    return *this;
+  }
 
   /// `Result<T, StatusType>` is copy constructible if `T` is copy
   /// constructible (and trivially copy constructible if `T` and `StatusType`
@@ -461,6 +516,14 @@ class [[nodiscard]] Result final
   /// (`ok() == true`). Provided for compatibility with `std::optional`.
   [[nodiscard]] constexpr bool has_value() const noexcept { return ok(); }
 
+  /// Explicit boolean conversion operator for `Optional<T>`. Returns `true` if
+  /// a value is present (`has_value() == true`).
+  template <typename S = StatusType,
+            std::enable_if_t<std::is_same_v<S, HasValue>, int> = 0>
+  explicit constexpr operator bool() const noexcept {
+    return ok();
+  }
+
   /// @returns The current `status_type` contained within the
   /// `Result<T, StatusType>`. If `Result<T, StatusType>` contains a `T`, then
   /// this function returns an OK status (`ok() == true`).
@@ -468,17 +531,29 @@ class [[nodiscard]] Result final
     return Base::status;
   }
 
+  /// Destroys the contained value, if any, and resets an `Optional<T>` to an
+  /// empty state (`has_value() == false`).
+  template <typename S = StatusType,
+            std::enable_if_t<std::is_same_v<S, HasValue>, int> = 0>
+  constexpr void reset() noexcept {
+    reset<HasValue::kEmpty>();
+  }
+
   /// Destroys the contained value, if any, and sets the status. The status must
   /// not be OK. To avoid a runtime check, use the `reset<kCode>()`
   /// function template whenever possible.
+  template <typename S = StatusType,
+            std::enable_if_t<!std::is_same_v<S, HasValue>, int> = 0>
   constexpr void reset(status_type error_status) {
     this->AssignStatus(std::move(error_status));
   }
 
   /// @copydoc reset
-  template <
-      typename C,
-      std::enable_if_t<std::is_same_v<C, typename status_type::Code>, int> = 0>
+  template <typename C,
+            typename S = StatusType,
+            std::enable_if_t<!std::is_same_v<S, HasValue> &&
+                                 std::is_same_v<C, typename S::Code>,
+                             int> = 0>
   constexpr void reset(C code) {
     this->AssignStatus(status_type(code));
   }
@@ -886,43 +961,6 @@ class [[nodiscard]] Result final
     return lhs != rhs.status();
   }
 
-  /// Checks equality of a `Result<T, StatusType>` and a value. A `Result`
-  /// without a value never compares equal to a value. This overload is only
-  /// enabled if `T` is equality comparable with `U`, and `U` is not a `Result`,
-  /// status, or status code (unless `T` itself is `StatusType` or
-  /// `StatusType::Code`).
-  template <
-      typename U,
-      std::enable_if_t<internal_result::kIsValueComparable<T, U, StatusType>,
-                       int> = 0>
-  friend constexpr bool operator==(const Result& lhs, const U& rhs) noexcept {
-    return lhs.ok() && lhs.data() == rhs;
-  }
-  /// @copydoc operator==(const Result&, const U&)
-  template <typename U,
-            std::enable_if_t<
-                internal_result::kIsValueComparable<T, U, StatusType, U, T>,
-                int> = 0>
-  friend constexpr bool operator==(const U& lhs, const Result& rhs) noexcept {
-    return rhs.ok() && lhs == rhs.data();
-  }
-  /// @copydoc operator==(const Result&, const U&)
-  template <
-      typename U,
-      std::enable_if_t<internal_result::kIsValueComparable<T, U, StatusType>,
-                       int> = 0>
-  friend constexpr bool operator!=(const Result& lhs, const U& rhs) noexcept {
-    return !(lhs == rhs);
-  }
-  /// @copydoc operator==(const Result&, const U&)
-  template <typename U,
-            std::enable_if_t<
-                internal_result::kIsValueComparable<T, U, StatusType, U, T>,
-                int> = 0>
-  friend constexpr bool operator!=(const U& lhs, const Result& rhs) noexcept {
-    return !(lhs == rhs);
-  }
-
  private:
   explicit constexpr Result(internal_result::ErrorTag,
                             status_type error_status) noexcept
@@ -973,6 +1011,8 @@ class [[nodiscard]] Result<void, StatusType> final {
                 "The status type must derive from pw::StatusBase");
   static_assert(std::is_enum_v<typename status_type::Code>,
                 "pw::Result only supports status types with enum codes");
+  static_assert(!std::is_same_v<StatusType, HasValue>,
+                "pw::Optional<void> is not supported");
 
   /// Constructs a new `Result<void>` with a `pw::Status::Unknown()` status.
   ///
@@ -1223,6 +1263,33 @@ class [[nodiscard]] Result<void, StatusType> final {
   status_type status_;
 };
 
+/// Creates a `pw::Optional` containing a value initialized from `value`.
+template <typename T>
+[[nodiscard]] constexpr Optional<std::decay_t<T>> make_optional(
+    T&& value) noexcept {
+  return Optional<std::decay_t<T>>(std::in_place, std::forward<T>(value));
+}
+
+/// Creates a `pw::Optional<T>` constructed in-place from `args...`.
+template <typename T,
+          typename... Args,
+          std::enable_if_t<std::is_constructible_v<T, Args...>, int> = 0>
+[[nodiscard]] constexpr Optional<T> make_optional(Args&&... args) noexcept {
+  return Optional<T>(std::in_place, std::forward<Args>(args)...);
+}
+
+/// Creates a `pw::Optional<T>` constructed in-place from `ilist` and `args...`.
+template <typename T,
+          typename U,
+          typename... Args,
+          std::enable_if_t<
+              std::is_constructible_v<T, std::initializer_list<U>&, Args...>,
+              int> = 0>
+[[nodiscard]] constexpr Optional<T> make_optional(
+    std::initializer_list<U> ilist, Args&&... args) noexcept {
+  return Optional<T>(std::in_place, ilist, std::forward<Args>(args)...);
+}
+
 /// Deduction guide to allow `Result(v)` rather than `Result<T>(v)`.
 template <typename T>
 Result(T value) -> Result<T>;
@@ -1238,22 +1305,323 @@ template <typename T,
 constexpr bool operator==(const Result<T, StatusType>& lhs,
                           const Result<U, StatusType>& rhs) noexcept {
   if (lhs.ok() && rhs.ok()) {
-    return *lhs == *rhs;
+    return static_cast<bool>(*lhs == *rhs);
   }
   return lhs.status() == rhs.status();
 }
 
 /// Checks the inequality of two `Result` objects with potentially different
 /// value types `T` and `U` that share the same `StatusType`. Only enabled if
-/// `T` and `U` are equality comparable.
+/// `T` and `U` are inequality or equality comparable.
 template <typename T,
           typename U,
           typename StatusType,
-          std::enable_if_t<internal_result::IsEqualityComparable<T, U>::value,
+          std::enable_if_t<internal_result::IsNotEqualComparable<T, U>::value,
                            int> = 0>
 constexpr bool operator!=(const Result<T, StatusType>& lhs,
                           const Result<U, StatusType>& rhs) noexcept {
-  return !(lhs == rhs);
+  if constexpr (internal_result::IsInequalityComparable<T, U>::value) {
+    if (lhs.ok() && rhs.ok()) {
+      return static_cast<bool>(*lhs != *rhs);
+    }
+    return lhs.status() != rhs.status();
+  } else {
+    return !(lhs == rhs);
+  }
+}
+
+/// Relational comparisons between two `Optional` (`Result<T, HasValue>`)
+/// objects with potentially different value types `T` and `U`. An empty
+/// `Optional` compares less than an engaged `Optional`, and two empty
+/// `Optional` objects compare equal.
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsLessThanComparable<T, U>::value,
+                           int> = 0>
+constexpr bool operator<(const Result<T, HasValue>& lhs,
+                         const Result<U, HasValue>& rhs) noexcept {
+  return !rhs.has_value()
+             ? false
+             : (!lhs.has_value() ? true : static_cast<bool>(*lhs < *rhs));
+}
+
+/// @copydoc operator<(const Result<T, HasValue>&, const Result<U, HasValue>&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsLessEqualComparable<T, U>::value,
+                           int> = 0>
+constexpr bool operator<=(const Result<T, HasValue>& lhs,
+                          const Result<U, HasValue>& rhs) noexcept {
+  return !lhs.has_value()
+             ? true
+             : (!rhs.has_value() ? false : static_cast<bool>(*lhs <= *rhs));
+}
+
+/// @copydoc operator<(const Result<T, HasValue>&, const Result<U, HasValue>&)
+template <
+    typename T,
+    typename U,
+    std::enable_if_t<internal_result::IsGreaterThanComparable<T, U>::value,
+                     int> = 0>
+constexpr bool operator>(const Result<T, HasValue>& lhs,
+                         const Result<U, HasValue>& rhs) noexcept {
+  return !lhs.has_value()
+             ? false
+             : (!rhs.has_value() ? true : static_cast<bool>(*lhs > *rhs));
+}
+
+/// @copydoc operator<(const Result<T, HasValue>&, const Result<U, HasValue>&)
+template <
+    typename T,
+    typename U,
+    std::enable_if_t<internal_result::IsGreaterEqualComparable<T, U>::value,
+                     int> = 0>
+constexpr bool operator>=(const Result<T, HasValue>& lhs,
+                          const Result<U, HasValue>& rhs) noexcept {
+  return !rhs.has_value()
+             ? true
+             : (!lhs.has_value() ? false : static_cast<bool>(*lhs >= *rhs));
+}
+
+/// Compares an `Optional<T>` (`Result<T, HasValue>`) with `std::nullopt`.
+template <typename T>
+constexpr bool operator==(const Result<T, HasValue>& lhs,
+                          std::nullopt_t) noexcept {
+  return !lhs.has_value();
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator==(std::nullopt_t,
+                          const Result<T, HasValue>& rhs) noexcept {
+  return !rhs.has_value();
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator!=(const Result<T, HasValue>& lhs,
+                          std::nullopt_t) noexcept {
+  return lhs.has_value();
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator!=(std::nullopt_t,
+                          const Result<T, HasValue>& rhs) noexcept {
+  return rhs.has_value();
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator<(const Result<T, HasValue>&, std::nullopt_t) noexcept {
+  return false;
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator<(std::nullopt_t,
+                         const Result<T, HasValue>& rhs) noexcept {
+  return rhs.has_value();
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator<=(const Result<T, HasValue>& lhs,
+                          std::nullopt_t) noexcept {
+  return !lhs.has_value();
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator<=(std::nullopt_t, const Result<T, HasValue>&) noexcept {
+  return true;
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator>(const Result<T, HasValue>& lhs,
+                         std::nullopt_t) noexcept {
+  return lhs.has_value();
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator>(std::nullopt_t, const Result<T, HasValue>&) noexcept {
+  return false;
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator>=(const Result<T, HasValue>&, std::nullopt_t) noexcept {
+  return true;
+}
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr bool operator>=(std::nullopt_t,
+                          const Result<T, HasValue>& rhs) noexcept {
+  return !rhs.has_value();
+}
+
+/// Checks equality of a `Result<T, StatusType>` and a value. A `Result`
+/// without a value never compares equal to a value. This overload is only
+/// enabled if `T` is equality comparable with `U`, and `U` is not a `Result`,
+/// status, or status code (unless `T` itself is `StatusType` or
+/// `StatusType::Code`).
+template <
+    typename T,
+    typename U,
+    typename StatusType,
+    std::enable_if_t<internal_result::kIsValueComparable<T, U, StatusType>,
+                     int> = 0>
+constexpr bool operator==(const Result<T, StatusType>& lhs,
+                          const U& rhs) noexcept {
+  return lhs.ok() && static_cast<bool>(*lhs == rhs);
+}
+/// @copydoc operator==(const Result<T, StatusType>&, const U&)
+template <typename T,
+          typename U,
+          typename StatusType,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               StatusType,
+                               internal_result::IsEqualityComparable<U, T>>,
+                           int> = 0>
+constexpr bool operator==(const U& lhs,
+                          const Result<T, StatusType>& rhs) noexcept {
+  return rhs.ok() && static_cast<bool>(lhs == *rhs);
+}
+/// @copydoc operator==(const Result<T, StatusType>&, const U&)
+template <typename T,
+          typename U,
+          typename StatusType,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               StatusType,
+                               internal_result::IsNotEqualComparable<T, U>>,
+                           int> = 0>
+constexpr bool operator!=(const Result<T, StatusType>& lhs,
+                          const U& rhs) noexcept {
+  if constexpr (internal_result::IsInequalityComparable<T, U>::value) {
+    return !lhs.ok() || static_cast<bool>(*lhs != rhs);
+  } else {
+    return !(lhs == rhs);
+  }
+}
+/// @copydoc operator==(const Result<T, StatusType>&, const U&)
+template <typename T,
+          typename U,
+          typename StatusType,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               StatusType,
+                               internal_result::IsNotEqualComparable<U, T>>,
+                           int> = 0>
+constexpr bool operator!=(const U& lhs,
+                          const Result<T, StatusType>& rhs) noexcept {
+  if constexpr (internal_result::IsInequalityComparable<U, T>::value) {
+    return !rhs.ok() || static_cast<bool>(lhs != *rhs);
+  } else {
+    return !(lhs == rhs);
+  }
+}
+
+/// Relational comparisons between an `Optional<T>` (`Result<T, HasValue>`) and
+/// a value `U`. An empty `Optional` compares less than any value.
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               HasValue,
+                               internal_result::IsLessThanComparable<T, U>>,
+                           int> = 0>
+constexpr bool operator<(const Result<T, HasValue>& lhs,
+                         const U& rhs) noexcept {
+  return lhs.has_value() ? static_cast<bool>(*lhs < rhs) : true;
+}
+/// @copydoc operator<(const Result<T, HasValue>&, const U&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               HasValue,
+                               internal_result::IsLessThanComparable<U, T>>,
+                           int> = 0>
+constexpr bool operator<(const U& lhs,
+                         const Result<T, HasValue>& rhs) noexcept {
+  return rhs.has_value() ? static_cast<bool>(lhs < *rhs) : false;
+}
+/// @copydoc operator<(const Result<T, HasValue>&, const U&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               HasValue,
+                               internal_result::IsLessEqualComparable<T, U>>,
+                           int> = 0>
+constexpr bool operator<=(const Result<T, HasValue>& lhs,
+                          const U& rhs) noexcept {
+  return lhs.has_value() ? static_cast<bool>(*lhs <= rhs) : true;
+}
+/// @copydoc operator<(const Result<T, HasValue>&, const U&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               HasValue,
+                               internal_result::IsLessEqualComparable<U, T>>,
+                           int> = 0>
+constexpr bool operator<=(const U& lhs,
+                          const Result<T, HasValue>& rhs) noexcept {
+  return rhs.has_value() ? static_cast<bool>(lhs <= *rhs) : false;
+}
+/// @copydoc operator<(const Result<T, HasValue>&, const U&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               HasValue,
+                               internal_result::IsGreaterThanComparable<T, U>>,
+                           int> = 0>
+constexpr bool operator>(const Result<T, HasValue>& lhs,
+                         const U& rhs) noexcept {
+  return lhs.has_value() ? static_cast<bool>(*lhs > rhs) : false;
+}
+/// @copydoc operator<(const Result<T, HasValue>&, const U&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               HasValue,
+                               internal_result::IsGreaterThanComparable<U, T>>,
+                           int> = 0>
+constexpr bool operator>(const U& lhs,
+                         const Result<T, HasValue>& rhs) noexcept {
+  return rhs.has_value() ? static_cast<bool>(lhs > *rhs) : true;
+}
+/// @copydoc operator<(const Result<T, HasValue>&, const U&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               HasValue,
+                               internal_result::IsGreaterEqualComparable<T, U>>,
+                           int> = 0>
+constexpr bool operator>=(const Result<T, HasValue>& lhs,
+                          const U& rhs) noexcept {
+  return lhs.has_value() ? static_cast<bool>(*lhs >= rhs) : false;
+}
+/// @copydoc operator<(const Result<T, HasValue>&, const U&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::kIsValueComparable<
+                               T,
+                               U,
+                               HasValue,
+                               internal_result::IsGreaterEqualComparable<U, T>>,
+                           int> = 0>
+constexpr bool operator>=(const U& lhs,
+                          const Result<T, HasValue>& rhs) noexcept {
+  return rhs.has_value() ? static_cast<bool>(lhs >= *rhs) : true;
 }
 
 /// @endmodule

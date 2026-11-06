@@ -84,6 +84,10 @@ PW_CONSTEXPR_TEST(PwConstexprTest, CommasOutsideMacrosExpandCorrectly, {
   PW_TEST_EXPECT_EQ(sum, c);
 });
 
+PW_CONSTEXPR_TEST_IF_CPP20(PwConstexprTest, ConstexprIfCpp20, {
+  PW_TEST_EXPECT_EQ(ComputeSum(2, 3), 5);
+});
+
 // block-submission: disable
 // DOCSTAG[pw_unit_test-constexpr-skip]
 // Subsequent PW_CONSTEXPR_TESTs will skip the constexpr portion of the test.
