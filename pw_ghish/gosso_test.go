@@ -221,7 +221,7 @@ func TestGossoRoundTripper(t *testing.T) {
 	})
 
 	t.Run("IssueTrackerClient and CorpSSOStrategy share missingGossoAuthError without HTTP prefix", func(t *testing.T) {
-		WithTestCaches(t, TestCacheConfig{PersistentDir: t.TempDir()})
+		WithTestCaches(t, TestCacheConfig{RuntimeDir: t.TempDir(), PersistentDir: t.TempDir()})
 		WithHermeticAuth(t, AuthResolvers{})
 
 		itClient := NewIssueTrackerClient("", nil)

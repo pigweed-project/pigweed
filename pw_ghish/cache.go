@@ -44,6 +44,11 @@ const (
 	// CacheInMemory keeps entries strictly in process memory and never
 	// serializes them to disk.
 	CacheInMemory CacheTier = iota + 1
+	// CacheRuntime stores short-lived session state across processes in the
+	// per-user 0700 runtime directory ($XDG_RUNTIME_DIR/pw_ghish on Linux,
+	// $TMPDIR/pw_ghish on macOS), degrading to CacheInMemory when
+	// unavailable or disabled. Requires MaxTTL > 0.
+	CacheRuntime
 	// CachePersistent stores non-secret metadata in the user cache directory
 	// ($GHISH_CACHE_DIR or $XDG_CACHE_HOME/pw_ghish / os.UserCacheDir),
 	// degrading to in-memory when unavailable or disabled.
@@ -91,6 +96,10 @@ func validateCachePolicy(p CachePolicy) {
 			panic(fmt.Sprintf("cache %q: CacheInMemory does not support DisableEnv (%q)", p.Name, p.DisableEnv))
 		}
 	case CachePersistent:
+	case CacheRuntime:
+		if p.MaxTTL <= 0 {
+			panic(fmt.Sprintf("cache %q: CacheRuntime requires MaxTTL > 0", p.Name))
+		}
 	default:
 		panic(fmt.Sprintf("cache %q: unknown CacheTier %d", p.Name, p.Tier))
 	}
@@ -128,6 +137,10 @@ func resetAllCaches() {
 // init(); hermetic tests swap it in TestMain or per test via WithTestCaches.
 type cacheEnv struct {
 	Now func() time.Time
+	// RuntimeDir returns the root directory for CacheRuntime JSON files
+	// (e.g. $XDG_RUNTIME_DIR/pw_ghish), or "" to keep CacheRuntime entries
+	// strictly in memory without touching disk.
+	RuntimeDir func() string
 	// PersistentDir returns the root directory for CachePersistent JSON files
 	// (e.g. ~/.cache/pw_ghish), or "" to keep CachePersistent entries strictly
 	// in memory without touching disk.
@@ -139,6 +152,7 @@ var activeCacheEnv atomic.Pointer[cacheEnv]
 func init() {
 	env := cacheEnv{
 		Now:           time.Now,
+		RuntimeDir:    defaultRuntimeCacheDir,
 		PersistentDir: productionPersistentCacheDir,
 	}
 	activeCacheEnv.Store(&env)
@@ -152,11 +166,55 @@ func setCacheEnv(env cacheEnv) cacheEnv {
 	if env.Now == nil {
 		env.Now = time.Now
 	}
+	if env.RuntimeDir == nil {
+		env.RuntimeDir = func() string { return "" }
+	}
 	if env.PersistentDir == nil {
 		env.PersistentDir = func() string { return "" }
 	}
 	prev := activeCacheEnv.Swap(&env)
 	return *prev
+}
+
+// defaultRuntimeCacheDir returns <runtime_base>/pw_ghish when the platform
+// runtime directory ($XDG_RUNTIME_DIR on Linux, $TMPDIR on macOS) is an
+// absolute regular directory with mode 0700, or "" when CacheRuntime entries
+// must stay in memory.
+func defaultRuntimeCacheDir() string {
+	var envVar string
+	switch runtimeGOOS {
+	case "linux":
+		envVar = "XDG_RUNTIME_DIR"
+	case "darwin":
+		envVar = "TMPDIR"
+	default:
+		return ""
+	}
+	base := os.Getenv(envVar)
+	if base == "" {
+		slog.Debug("runtime cache disabled: runtime directory variable is unset", "var", envVar)
+		return ""
+	}
+	if !filepath.IsAbs(base) {
+		slog.Debug("runtime cache disabled: runtime directory is not absolute", "var", envVar, "dir", base)
+		return ""
+	}
+	cleanBase := filepath.Clean(base)
+	info, err := os.Lstat(cleanBase)
+	if err != nil {
+		// OK: runtime cache is best-effort; callers degrade to in-memory.
+		slog.Debug("runtime cache disabled: cannot stat runtime directory", "dir", cleanBase, "err", err)
+		return ""
+	}
+	if !info.IsDir() {
+		slog.Debug("runtime cache disabled: runtime directory is not a regular directory", "dir", cleanBase, "mode", info.Mode())
+		return ""
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		slog.Debug("runtime cache disabled: runtime directory is not mode 0700", "dir", cleanBase, "perm", perm)
+		return ""
+	}
+	return filepath.Join(cleanBase, "pw_ghish")
 }
 
 func productionPersistentCacheDir() string {
@@ -255,6 +313,8 @@ func (c *Cache[K, V]) resolveStore(env cacheEnv) cacheStore[K, V] {
 	}
 	var dir string
 	switch c.policy.Tier {
+	case CacheRuntime:
+		dir = env.RuntimeDir()
 	case CachePersistent:
 		dir = env.PersistentDir()
 	}

@@ -91,6 +91,66 @@ func TestProductionPersistentCacheDir(t *testing.T) {
 	}
 }
 
+func TestDefaultRuntimeCacheDir(t *testing.T) {
+	for _, goos := range []string{"windows", "freebsd"} {
+		withHostRoleForTest(t, goos, "", false)
+		t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+		if got := defaultRuntimeCacheDir(); got != "" {
+			t.Errorf("defaultRuntimeCacheDir(%s) = %q, want \"\"", goos, got)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix 0700 mode checks do not apply on Windows")
+	}
+
+	good := t.TempDir()
+	if err := os.Chmod(good, 0o700); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	groupReadable := t.TempDir()
+	if err := os.Chmod(groupReadable, 0o750); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	notDir := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(notDir, nil, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	symlinkBase := filepath.Join(t.TempDir(), "runtime-link")
+	if err := os.Symlink(good, symlinkBase); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		goos    string
+		env     map[string]string
+		wantDir string
+	}{
+		{name: "linux XDG_RUNTIME_DIR 0700", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": good}, wantDir: filepath.Join(good, "pw_ghish")},
+		{name: "linux unset", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": ""}},
+		{name: "linux relative", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": "run/user"}},
+		{name: "linux missing", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": filepath.Join(good, "missing")}},
+		{name: "linux not a directory", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": notDir}},
+		{name: "linux symlink rejected", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": symlinkBase}},
+		{name: "linux not 0700", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": groupReadable}},
+		{name: "linux ignores TMPDIR", goos: "linux", env: map[string]string{"TMPDIR": good}},
+		{name: "darwin TMPDIR 0700 with trailing slash", goos: "darwin", env: map[string]string{"TMPDIR": good + "/"}, wantDir: filepath.Join(good, "pw_ghish")},
+		{name: "darwin TMPDIR not 0700", goos: "darwin", env: map[string]string{"TMPDIR": groupReadable}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withHostRoleForTest(t, tc.goos, "", false)
+			t.Setenv("XDG_RUNTIME_DIR", "")
+			t.Setenv("TMPDIR", "")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			if got := defaultRuntimeCacheDir(); got != tc.wantDir {
+				t.Errorf("defaultRuntimeCacheDir() = %q, want %q", got, tc.wantDir)
+			}
+		})
+	}
+}
+
 type testPersistentItem struct {
 	Label string `json:"label"`
 }
@@ -473,6 +533,7 @@ func TestCache_ValidationPanics(t *testing.T) {
 		{name: "path traversal Name", fn: func() { validateCachePolicy(CachePolicy{Tier: CacheInMemory, Name: "../escape"}) }},
 		{name: "negative MaxTTL", fn: func() { validateCachePolicy(CachePolicy{Tier: CacheInMemory, Name: "neg", MaxTTL: -time.Second}) }},
 		{name: "CacheInMemory with DisableEnv", fn: func() { validateCachePolicy(CachePolicy{Tier: CacheInMemory, Name: "mem", DisableEnv: "GHISH_X"}) }},
+		{name: "CacheRuntime without MaxTTL", fn: func() { validateCachePolicy(CachePolicy{Tier: CacheRuntime, Name: "rt"}) }},
 		{name: "unknown Tier", fn: func() { validateCachePolicy(CachePolicy{Name: "bad_tier"}) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -559,6 +620,13 @@ func TestCachePolicies_SecurityInvariants(t *testing.T) {
 			}
 			clear(visited)
 			inspectPersistentType(rc.ValueType, p.Name)
+		case CacheRuntime:
+			if p.MaxTTL <= 0 || p.MaxTTL > 4*time.Hour {
+				t.Errorf("CacheRuntime %q MaxTTL = %v, want within (0, 4h]", p.Name, p.MaxTTL)
+			}
+			if p.DisableEnv == "" {
+				t.Errorf("CacheRuntime %q must declare a per-cache DisableEnv", p.Name)
+			}
 		case CacheInMemory:
 		default:
 			t.Errorf("cache %q has unexpected tier %v", p.Name, p.Tier)

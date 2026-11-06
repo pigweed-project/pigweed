@@ -91,6 +91,7 @@ type corpSSOTestRig struct {
 	canonHost   string
 	corpHost    string
 	cacheDir    string
+	runtimeDir  string
 	proxyHits   atomic.Int32
 	ssoMints    atomic.Int32
 	luciCalls   atomic.Int32
@@ -105,15 +106,17 @@ func newCorpSSOTestRig(t *testing.T, opts corpSSORigOpts) *corpSSOTestRig {
 	prefix := strings.TrimSuffix(canonHost, ".googlesource.com")
 	corpHost := prefix + gobCorpDomainSuffix
 	cacheDir := t.TempDir()
-	WithTestCaches(t, TestCacheConfig{PersistentDir: cacheDir})
+	runtimeDir := t.TempDir()
+	WithTestCaches(t, TestCacheConfig{RuntimeDir: runtimeDir, PersistentDir: cacheDir})
 	setTestAuthMode(t, AuthModeGoogler)
 
 	rig := &corpSSOTestRig{
-		ctx:       t.Context(),
-		canonHost: canonHost,
-		corpHost:  corpHost,
-		cacheDir:  cacheDir,
-		warns:     captureSlogWarnings(t),
+		ctx:        t.Context(),
+		canonHost:  canonHost,
+		corpHost:   corpHost,
+		cacheDir:   cacheDir,
+		runtimeDir: runtimeDir,
+		warns:      captureSlogWarnings(t),
 	}
 
 	var proxyAddr string
@@ -505,5 +508,27 @@ func TestAdaptiveGerritStrategy_ColdIPRestrictionPivotAndWarmCache(t *testing.T)
 	}
 	if rig.directCalls.Load() != 0 || rig.luciCalls.Load() != 0 {
 		t.Errorf("warm direct=%d luci=%d, want 0/0", rig.directCalls.Load(), rig.luciCalls.Load())
+	}
+}
+
+func TestSSOSessionCache_CrossProcessReuse(t *testing.T) {
+	rig := newCorpSSOTestRig(t, corpSSORigOpts{})
+	cachePath := filepath.Join(rig.runtimeDir, "sso_sessions.json")
+
+	if _, err := rig.newClient(t).GetSelfAccount(rig.ctx); err != nil || rig.ssoMints.Load() != 1 {
+		t.Fatalf("GetSelfAccount (cold) err=%v ssoMints=%d, want nil and 1", err, rig.ssoMints.Load())
+	}
+	entry, ok := readDiskCacheFile[ssoSession](t, cachePath)[rig.canonHost]
+	if !ok || entry.Value.BasicAuth != formatCorpSSOBasicAuth("ticket-1") {
+		t.Errorf("cached entry = %+v (ok=%v), want ticket-1", entry, ok)
+	}
+
+	// Simulated second process (in-memory cleared, runtime disk retained) avoids re-minting.
+	ResetAuthTokenCaches()
+	if _, err := rig.newClient(t).GetSelfAccount(rig.ctx); err != nil {
+		t.Fatalf("GetSelfAccount (warm): %v", err)
+	}
+	if rig.ssoMints.Load() != 1 || rig.proxyHits.Load() != 2 {
+		t.Errorf("warm ssoMints=%d proxyHits=%d, want 1 and 2", rig.ssoMints.Load(), rig.proxyHits.Load())
 	}
 }

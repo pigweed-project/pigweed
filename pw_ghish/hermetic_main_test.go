@@ -110,6 +110,15 @@ func TestHermeticDefaults_FailClosed(t *testing.T) {
 	if NewBusytownProvider().FileExistsFn(FetchArtifactBinPath) {
 		t.Errorf("NewBusytownProvider().FileExistsFn(%q) = true, want false", FetchArtifactBinPath)
 	}
+	tmp700 := t.TempDir()
+	if err := os.Chmod(tmp700, 0o700); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Setenv("TMPDIR", tmp700)
+	t.Setenv("XDG_RUNTIME_DIR", tmp700)
+	if got := currentCacheEnv().RuntimeDir(); got != "" {
+		t.Errorf("hermetic default currentCacheEnv().RuntimeDir() = %q, want empty", got)
+	}
 
 	t.Setenv("GERRIT_TOKEN", "x")
 	t.Setenv("LUCI_TOKEN", "l")

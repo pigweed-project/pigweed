@@ -31,7 +31,7 @@ import (
 // Corp SSO Gerrit authentication via the local BeyondCorp Uplink proxy:
 //
 //	AdaptiveGerritStrategy
-//	  |-- CorpSSOStrategy ---> ssoSessions ---> mintViaGosso (/dev/fd/3 jar)
+//	  |-- CorpSSOStrategy ---> ssoSessions ($XDG_RUNTIME_DIR) ---> mintViaGosso
 //	  |          |
 //	  |          +---> corpUplinkHTTPTransport (127.0.0.1:999 -> corp domain)
 //	  |
@@ -42,8 +42,9 @@ const (
 	maxSSOSessionLifetime     = 4 * time.Hour // matches git-remote-sso's 4h SSO ticket cap
 	maxIPRestrictionBodyBytes = 4096
 
-	hostCacheEnvVar = "GHISH_HOST_CACHE"
-	corpSSOEnvVar   = "GHISH_CORP_SSO"
+	hostCacheEnvVar       = "GHISH_HOST_CACHE"
+	corpSSOEnvVar         = "GHISH_CORP_SSO"
+	ssoSessionCacheEnvVar = "GHISH_SSO_SESSION_CACHE"
 )
 
 // AdaptiveGerritStrategy routes googler-mode requests for a Google-hosted
@@ -436,9 +437,10 @@ type ssoSession struct {
 
 func (ssoSession) CachePolicy() CachePolicy {
 	return CachePolicy{
-		Tier:   CacheInMemory,
-		Name:   "sso_sessions",
-		MaxTTL: maxSSOSessionLifetime,
+		Tier:       CacheRuntime,
+		Name:       "sso_sessions",
+		MaxTTL:     maxSSOSessionLifetime,
+		DisableEnv: ssoSessionCacheEnvVar,
 	}
 }
 

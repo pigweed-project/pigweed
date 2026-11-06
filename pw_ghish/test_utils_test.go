@@ -693,11 +693,14 @@ var hermeticAuthEnvVars = []string{
 	"GHISH_ACCOUNT_CACHE",
 	"GHISH_HOST_CACHE",
 	"GHISH_CORP_SSO",
+	"GHISH_SSO_SESSION_CACHE",
+	"XDG_RUNTIME_DIR",
 }
 
 func hermeticCacheEnv() cacheEnv {
 	return cacheEnv{
 		Now:           time.Now,
+		RuntimeDir:    func() string { return "" },
 		PersistentDir: func() string { return "" },
 	}
 }
@@ -705,6 +708,7 @@ func hermeticCacheEnv() cacheEnv {
 // TestCacheConfig configures a scoped cacheEnv installed by WithTestCaches.
 type TestCacheConfig struct {
 	Now           func() time.Time
+	RuntimeDir    string
 	PersistentDir string
 }
 
@@ -716,6 +720,10 @@ func WithTestCaches(t testing.TB, cfg TestCacheConfig) {
 	env := currentCacheEnv()
 	if cfg.Now != nil {
 		env.Now = cfg.Now
+	}
+	if cfg.RuntimeDir != "" {
+		dir := cfg.RuntimeDir
+		env.RuntimeDir = func() string { return dir }
 	}
 	if cfg.PersistentDir != "" {
 		dir := cfg.PersistentDir
