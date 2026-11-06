@@ -15,6 +15,7 @@
 package pw_ghish
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -134,6 +136,7 @@ func TestEnsureSafeHTTPClient(t *testing.T) {
 		}
 		h := make(http.Header)
 		h.Set("Authorization", "Bearer secret")
+		h.Set("Cookie", "SID=secret")
 		return &http.Request{URL: u, Header: h}
 	}
 	origin := []*http.Request{mustAuthedReq("https://pigweed-review.googlesource.com/a/changes/1")}
@@ -143,47 +146,68 @@ func TestEnsureSafeHTTPClient(t *testing.T) {
 		if got == nil || got.CheckRedirect == nil || got.Timeout != 0 {
 			t.Fatalf("ensureSafeHTTPClient(nil) = %+v, want non-nil with CheckRedirect and Timeout=0", got)
 		}
+		if _, ok := got.Transport.(*safeHTTPTransport); !ok {
+			t.Fatalf("got.Transport = %T, want *safeHTTPTransport", got.Transport)
+		}
 		req := mustAuthedReq("https://evil.example.com/blob")
-		if err := got.CheckRedirect(req, origin); err != nil || req.Header.Get("Authorization") != "" {
-			t.Errorf("cross-host redirect: err=%v, Authorization=%q; want nil and stripped", err, req.Header.Get("Authorization"))
+		if err := got.CheckRedirect(req, origin); err != nil || req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "" {
+			t.Errorf("cross-host redirect: err=%v, hdr=%v; want nil and stripped", err, req.Header)
 		}
 	})
 
 	t.Run("client without CheckRedirect is shallow-copied without mutating input", func(t *testing.T) {
-		tr := &mockTransport{}
+		tr := &mockTransport{roundTrip: func(req *http.Request) (*http.Response, error) {
+			return okGerritResponse(req, "{}"), nil
+		}}
 		in := &http.Client{Transport: tr, Timeout: 15 * time.Second}
 		got := ensureSafeHTTPClient(in)
 		if got == in {
 			t.Fatal("expected shallow copy of input client, got same pointer")
 		}
-		if in.CheckRedirect != nil {
-			t.Error("input client CheckRedirect was mutated")
+		if in.CheckRedirect != nil || in.Transport != tr {
+			t.Error("input client was mutated")
 		}
-		if got.Transport != tr || got.Timeout != 15*time.Second || got.CheckRedirect == nil {
-			t.Fatalf("copied client = %+v, want Transport/Timeout preserved and CheckRedirect set", got)
+		safeRT, ok := got.Transport.(*safeHTTPTransport)
+		if !ok || safeRT.direct != tr || got.Timeout != 15*time.Second || got.CheckRedirect == nil {
+			t.Fatalf("copied client = %+v, want safeHTTPTransport(direct=tr), Timeout=15s, and CheckRedirect set", got)
 		}
 		req := mustAuthedReq("https://evil.example.com/blob")
-		if err := got.CheckRedirect(req, origin); err != nil || req.Header.Get("Authorization") != "" {
-			t.Errorf("cross-host redirect: err=%v, Authorization=%q; want nil and stripped", err, req.Header.Get("Authorization"))
+		if err := got.CheckRedirect(req, origin); err != nil || req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "" {
+			t.Errorf("cross-host redirect: err=%v, hdr=%v; want nil and stripped", err, req.Header)
 		}
+		if resp, err := got.Transport.RoundTrip(mustAuthedReq("http://evil.example.com/blob")); err == nil {
+			resp.Body.Close()
+			t.Fatal("expected cleartext non-loopback authenticated request to be refused")
+		}
+		resp, err := got.Transport.RoundTrip(mustAuthedReq("http://127.0.0.1:8080/a/changes/1"))
+		if err != nil {
+			t.Fatalf("loopback authenticated request failed: %v", err)
+		}
+		resp.Body.Close()
 	})
 
-	t.Run("client with custom CheckRedirect is preserved", func(t *testing.T) {
+	t.Run("client with custom CheckRedirect composes auth stripping and is idempotent", func(t *testing.T) {
 		var customCalled bool
-		sentinel := errors.New("stop redirect")
+		sentinelErr := errors.New("stop redirect")
 		in := &http.Client{
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				customCalled = true
-				return sentinel
+				return sentinelErr
 			},
 		}
 		got := ensureSafeHTTPClient(in)
-		if got != in {
-			t.Fatalf("ensureSafeHTTPClient(custom) = %p, want %p", got, in)
+		if got == in {
+			t.Fatal("expected shallow copy of input client so custom CheckRedirect is not mutated in place")
+		}
+		if ensureSafeHTTPClient(got) != got {
+			t.Error("ensureSafeHTTPClient on an already-safe client should return the same pointer")
 		}
 		req := mustAuthedReq("https://evil.example.com/blob")
-		if err := got.CheckRedirect(req, origin); !errors.Is(err, sentinel) || !customCalled {
-			t.Errorf("custom CheckRedirect: err=%v, customCalled=%v; want %v and true", err, customCalled, sentinel)
+		if err := got.CheckRedirect(req, origin); !errors.Is(err, sentinelErr) || !customCalled {
+			t.Errorf("custom CheckRedirect: err=%v, customCalled=%v; want %v and true", err, customCalled, sentinelErr)
+		}
+		if req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "" {
+			t.Errorf("cross-host redirect with custom CheckRedirect kept auth headers=%v, want stripped", req.Header)
 		}
 	})
 }
@@ -352,6 +376,44 @@ func TestGerritClient_DynamicReMint(t *testing.T) {
 			t.Errorf("resolver calls = %d, want 0", mints)
 		}
 	})
+
+	t.Run("two-step dynamic refresh then anonymous fallback", func(t *testing.T) {
+		var mints int
+		WithHermeticAuth(t, AuthResolvers{
+			GerritToken: func(context.Context) (string, string, error) {
+				mints++
+				return fmt.Sprintf("rejected-tok-%d", mints), "luci-auth", nil
+			},
+		})
+		var seen []string
+		tr := &mockTransport{roundTrip: func(req *http.Request) (*http.Response, error) {
+			seen = append(seen, req.Header.Get("Authorization")+"|"+req.URL.Path)
+			if strings.HasPrefix(req.URL.Path, "/a/") {
+				return gerritStatusTransport(http.StatusUnauthorized, "invalid_token", nil).roundTrip(req)
+			}
+			return okGerritResponse(req, `{"_number":42}`), nil
+		}}
+		var stderrBuf bytes.Buffer
+		client := NewGerritClientWithHTTP("https://pigweed-review.googlesource.com/a",
+			&http.Client{Transport: tr}, GerritAuth{Dynamic: true, AllowAnonymousFallback: true})
+		client.stderr = &stderrBuf
+
+		ch, err := client.GetChange(t.Context(), "42")
+		if err != nil || ch.Number != 42 {
+			t.Fatalf("GetChange = (%+v, %v), want change 42", ch, err)
+		}
+		wantSeen := []string{
+			"Bearer rejected-tok-1|/a/changes/42",
+			"Bearer rejected-tok-2|/a/changes/42",
+			"|/changes/42",
+		}
+		if mints != 2 || !slices.Equal(seen, wantSeen) {
+			t.Errorf("mints=%d seen=%q, want 2 and %q", mints, seen, wantSeen)
+		}
+		if !strings.Contains(stderrBuf.String(), "Warning: authenticated request to /a/changes/42 returned 401; falling back to anonymous") {
+			t.Errorf("stderr = %q, want anonymous fallback warning", stderrBuf.String())
+		}
+	})
 }
 
 // TestResolveGerritAuth_LoopbackNotMintedInProduction checks that, without
@@ -377,15 +439,14 @@ func TestResolveGerritAuth_LoopbackNotMintedInProduction(t *testing.T) {
 				t.Errorf("resolveGerritAuth(%q, %s) = %+v, %v; want unauthed non-Google", host, mode, res, err)
 			}
 		}
-		client := NewGerritClientWithHTTP(host, nil, GerritAuth{Dynamic: true})
 		u, _ := url.Parse(host + "/a/changes/1")
-		if client.trusted(u) {
-			t.Errorf("Dynamic client for %q trusts %s, want false", host, u)
+		if gerritTrustedURL(hostnameOf(host), false)(u) {
+			t.Errorf("Dynamic Gerrit strategy for %q trusts %s, want false", host, u)
 		}
 
-		_, err := resolveGerritClientAuth(t.Context(), host)
+		_, err := resolveGerritStrategy(t.Context(), host)
 		if ExitCodeFor(err) != ExitCodeAuth || !strings.Contains(err.Error(), "not a Google-hosted Gerrit") {
-			t.Errorf("resolveGerritClientAuth(%q) in googler mode = %v, want ExitCodeAuth for non-Google host", host, err)
+			t.Errorf("resolveGerritStrategy(%q) in googler mode = %v, want ExitCodeAuth for non-Google host", host, err)
 		}
 	}
 	if mints != 0 {
@@ -489,7 +550,7 @@ func TestResolveGerritClientAuth_Policy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mints := setupGerritPolicyCase(t, tc)
 			hostURL := gerritPolicyHosts[tc.host]
-			got, err := resolveGerritClientAuth(t.Context(), hostURL)
+			strategy, err := resolveGerritStrategy(t.Context(), hostURL)
 			if *mints != tc.wantMints {
 				t.Errorf("resolver calls = %d, want %d", *mints, tc.wantMints)
 			}
@@ -521,12 +582,23 @@ func TestResolveGerritClientAuth_Policy(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || got != tc.want {
-				t.Fatalf("resolveGerritClientAuth = (%+v, %v), want (%+v, nil)", got, err, tc.want)
+			if err != nil {
+				t.Fatalf("resolveGerritStrategy = %v, want nil", err)
+			}
+			gs, ok := strategy.(*gerritBearerStrategy)
+			if !ok || gs == nil {
+				t.Fatalf("resolveGerritStrategy = %T, want *gerritBearerStrategy", strategy)
+			}
+			wantCreds := tc.want.StaticToken != "" || tc.want.Dynamic
+			if gs.HasCredentials() != wantCreds || (gs.bearer.invalidate != nil) != tc.want.Dynamic || gs.allowAnonymousFallback != tc.want.AllowAnonymousFallback {
+				t.Fatalf("strategy = (creds=%v, dynamic=%v, anon=%v), want (%+v)", gs.HasCredentials(), gs.bearer.invalidate != nil, gs.allowAnonymousFallback, tc.want)
 			}
 
+			if sMethod, sDesc := strategy.Describe(); sMethod != wantMethod || sDesc != tc.wantDesc {
+				t.Errorf("strategy.Describe() = (%q, %q), want (%q, %q)", sMethod, sDesc, wantMethod, tc.wantDesc)
+			}
 			for _, firstStatus := range []int{http.StatusOK, http.StatusUnauthorized} {
-				setupGerritPolicyCase(t, tc)
+				iterMints := setupGerritPolicyCase(t, tc)
 				var reqs []*http.Request
 				rec := &mockTransport{roundTrip: func(req *http.Request) (*http.Response, error) {
 					reqs = append(reqs, req)
@@ -541,6 +613,9 @@ func TestResolveGerritClientAuth_Policy(t *testing.T) {
 				}
 				client.stderr = io.Discard
 				_, err = client.GetChange(t.Context(), "1")
+				if firstStatus == http.StatusOK && *iterMints != tc.wantMints {
+					t.Errorf("first=200 resolver calls across resolveGerritStrategy + GetChange = %d, want %d", *iterMints, tc.wantMints)
+				}
 
 				wantAuth := ""
 				if tc.want.StaticToken != "" {
@@ -569,6 +644,12 @@ func TestResolveGerritClientAuth_Policy(t *testing.T) {
 				}
 				if wantRetry && (reqs[1].Header.Get("Authorization") != "" || hasAuthenticatedPrefix(reqs[1].URL)) {
 					t.Errorf("anonymous retry: auth=%q path=%q", reqs[1].Header.Get("Authorization"), reqs[1].URL.Path)
+				}
+				// Verify initial token is consumed once and subsequent requests re-query the resolver.
+				if firstStatus == http.StatusOK && tc.mode == "community" && tc.want.Dynamic {
+					if _, err := client.GetChange(t.Context(), "1"); err != nil || *iterMints != 2 {
+						t.Errorf("second GetChange err=%v, resolver calls=%d, want nil and 2", err, *iterMints)
+					}
 				}
 			}
 		})
@@ -1323,5 +1404,112 @@ func TestDefaultGerritToken_RecoversAfterFailureAndInvalidation(t *testing.T) {
 	tok2, _, err := DefaultGerritToken(t.Context())
 	if err != nil || tok2 != "recovered-token-3" {
 		t.Fatalf("DefaultGerritToken() after invalidation = (%q, %v), want (recovered-token-3, nil)", tok2, err)
+	}
+}
+
+func TestBearerTokenStrategy_ConcurrentRequests(t *testing.T) {
+	type workerKey struct{}
+	var mu sync.Mutex
+	mints := map[int]int{}
+	seen := map[int][]string{}
+
+	shared := &gerritBearerStrategy{
+		bearer: NewDynamicBearerStrategy(
+			"",
+			func(u *url.URL) bool { return urlHostIn(u, "pigweed-review.googlesource.com") },
+			func(ctx context.Context, _ *url.URL) (string, error) {
+				id := ctx.Value(workerKey{}).(int)
+				mu.Lock()
+				defer mu.Unlock()
+				mints[id]++
+				return fmt.Sprintf("w%d-tok%d", id, mints[id]), nil
+			},
+			func(string) {},
+		),
+		allowAnonymousFallback: true,
+	}
+	hc := &http.Client{
+		Transport: testRoundTripper(func(req *http.Request) (*http.Response, error) {
+			id := req.Context().Value(workerKey{}).(int)
+			mu.Lock()
+			seen[id] = append(seen[id], req.Header.Get("Authorization")+"|"+req.URL.Path)
+			step := len(seen[id])
+			mu.Unlock()
+			if (id%3 == 1 && step == 1) || (id%3 == 2 && strings.HasPrefix(req.URL.Path, "/a/")) {
+				return gerritStatusTransport(http.StatusUnauthorized, "invalid_token", nil).roundTrip(req)
+			}
+			return okGerritResponse(req, "{}"), nil
+		}),
+	}
+
+	var wg sync.WaitGroup
+	for i := range 24 {
+		wg.Go(func() {
+			wCtx := withGerritStderr(context.WithValue(t.Context(), workerKey{}, i), io.Discard)
+			u := fmt.Sprintf("https://pigweed-review.googlesource.com/a/changes/%d", i)
+			resp, err := executeWithAuthStrategy(wCtx, hc, shared, func(reqCtx context.Context) (*http.Request, error) {
+				return http.NewRequestWithContext(reqCtx, http.MethodGet, u, nil)
+			})
+			if err != nil {
+				t.Errorf("worker %d err = %v", i, err)
+				return
+			}
+			resp.Body.Close()
+			want := [][]string{
+				{fmt.Sprintf("Bearer w%d-tok1|/a/changes/%d", i, i)},
+				{fmt.Sprintf("Bearer w%d-tok1|/a/changes/%d", i, i), fmt.Sprintf("Bearer w%d-tok2|/a/changes/%d", i, i)},
+				{fmt.Sprintf("Bearer w%d-tok1|/a/changes/%d", i, i), fmt.Sprintf("Bearer w%d-tok2|/a/changes/%d", i, i), fmt.Sprintf("|/changes/%d", i)},
+			}[i%3]
+			mu.Lock()
+			got := slices.Clone(seen[i])
+			mu.Unlock()
+			if !slices.Equal(got, want) {
+				t.Errorf("worker %d seen = %q, want %q", i, got, want)
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func TestBearerTokenStrategy_ClearsPreExistingAuthHeader(t *testing.T) {
+	trustedOnly := NewStaticBearerStrategy("token", "trusted-tok", func(u *url.URL) bool {
+		return urlHostIn(u, "trusted.example")
+	})
+	for _, tc := range []struct {
+		name     string
+		strategy *BearerTokenStrategy
+		rawURL   string
+		wantAuth string
+	}{
+		{
+			name:     "unauthenticated strategy clears stale header",
+			strategy: NewUnauthenticatedBearerStrategy("none"),
+			rawURL:   "https://trusted.example/x",
+		},
+		{
+			name:     "untrusted URL clears stale header",
+			strategy: trustedOnly,
+			rawURL:   "https://untrusted.example/x",
+		},
+		{
+			name:     "trusted URL replaces stale header",
+			strategy: trustedOnly,
+			rawURL:   "https://trusted.example/x",
+			wantAuth: "Bearer trusted-tok",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, tc.rawURL, nil)
+			if err != nil {
+				t.Fatalf("NewRequestWithContext: %v", err)
+			}
+			req.Header.Set("Authorization", "Bearer stale-header")
+			if err := tc.strategy.Prepare(t.Context(), req); err != nil {
+				t.Fatalf("Prepare: %v", err)
+			}
+			if got := req.Header.Get("Authorization"); got != tc.wantAuth {
+				t.Errorf("Authorization = %q, want %q", got, tc.wantAuth)
+			}
+		})
 	}
 }

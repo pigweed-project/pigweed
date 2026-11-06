@@ -31,8 +31,21 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+// HTTP authentication overview:
+//
+//   ResolveAuthMode (auto | googler | community | none)
+//          |
+//          +---> resolveGerritStrategy ---> HTTPAuthStrategy (*gerritBearerStrategy)
+//                (GERRIT_TOKEN | luci-auth)         |
+//                                                   v
+//                                         executeWithAuthStrategy
+//                                           1. Prepare(req)   -> Bearer header, /a/ prefix
+//                                           2. ensureSafeHTTPClient (HTTPS guard + cross-host strip)
+//                                           3. HandleResponse -> token refresh -> anon GET fallback
 
 // AuthMode describes the authentication policy mode (auto, googler, community, none).
 type AuthMode string
@@ -189,7 +202,7 @@ func checkRemovedAuthMethodEnv() error {
 		v, formatGerritRemediationSteps(steps...))
 }
 
-// AuthMethod describes the Gerrit credential source.
+// AuthMethod describes a credential mechanism used to authenticate HTTP requests.
 type AuthMethod string
 
 const (
@@ -232,6 +245,7 @@ func stripAuthOnCrossHostRedirect(req *http.Request, via []*http.Request) error 
 	if len(via) > 0 && req != nil && req.URL != nil && via[0].URL != nil {
 		if !isHTTPSOrLoopbackURL(req.URL) || !strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) {
 			req.Header.Del("Authorization")
+			req.Header.Del("Cookie")
 		}
 	}
 	return nil
@@ -248,20 +262,302 @@ func urlHostIn(u *url.URL, hosts ...string) bool {
 	})
 }
 
-// ensureSafeHTTPClient returns c with CheckRedirect set to
-// stripAuthOnCrossHostRedirect (copying c if it has no CheckRedirect). A nil c
-// gives a client with no Timeout: requests are bounded by their context, so
-// Ctrl-C cancels them and long log downloads are not cut off.
+// safeHTTPTransport wraps an HTTP RoundTripper to refuse sending credentials
+// over cleartext non-loopback HTTP.
+type safeHTTPTransport struct {
+	direct http.RoundTripper
+}
+
+func (rt *safeHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !isHTTPSOrLoopbackURL(req.URL) &&
+		(req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "") {
+		return nil, fmt.Errorf("refusing to send authenticated request over cleartext HTTP to %q", req.URL.Redacted())
+	}
+	return cmp.Or[http.RoundTripper](rt.direct, http.DefaultTransport).RoundTrip(req)
+}
+
+// ensureSafeHTTPClient returns c with CheckRedirect enforcing
+// stripAuthOnCrossHostRedirect and Transport wrapped in safeHTTPTransport
+// (composing with any existing CheckRedirect on c without mutating c in place).
+// A nil c gives a client with no Timeout: requests are bounded by their
+// context, so Ctrl-C cancels them and long log downloads are not cut off.
 func ensureSafeHTTPClient(c *http.Client) *http.Client {
 	if c == nil {
-		return &http.Client{CheckRedirect: stripAuthOnCrossHostRedirect}
+		return &http.Client{
+			CheckRedirect: stripAuthOnCrossHostRedirect,
+			Transport:     &safeHTTPTransport{},
+		}
+	}
+	_, hasSafeRT := c.Transport.(*safeHTTPTransport)
+	if hasSafeRT && c.CheckRedirect != nil {
+		return c
+	}
+	cp := *c
+	if !hasSafeRT {
+		cp.Transport = &safeHTTPTransport{direct: c.Transport}
 	}
 	if c.CheckRedirect == nil {
-		cp := *c
 		cp.CheckRedirect = stripAuthOnCrossHostRedirect
 		return &cp
 	}
-	return c
+	prev := c.CheckRedirect
+	cp.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := stripAuthOnCrossHostRedirect(req, via); err != nil {
+			return err
+		}
+		return prev(req, via)
+	}
+	return &cp
+}
+
+// HTTPAuthStrategy attaches credentials to outbound HTTP requests and handles
+// authentication-related response recovery (such as dynamic token invalidation
+// and re-minting or Gerrit anonymous fallback). Implementations must be safe
+// for concurrent use across goroutines.
+type HTTPAuthStrategy interface {
+	// Describe returns the active AuthMethod and a human-readable description
+	// of the credential source.
+	Describe() (AuthMethod, string)
+	// HasCredentials reports whether this strategy is configured with credentials.
+	HasCredentials() bool
+	// Prepare mutates req before transmission.
+	Prepare(ctx context.Context, req *http.Request) error
+	// HandleResponse inspects an HTTP response and reports whether the caller
+	// should rebuild and retry the request.
+	HandleResponse(ctx context.Context, req *http.Request, resp *http.Response) (retry bool, err error)
+}
+
+type authAttemptKeyType struct{}
+
+var authAttemptKey authAttemptKeyType
+
+// authAttemptState holds per-call retry and fallback state inside the context
+// created by executeWithAuthStrategy so a shared HTTPAuthStrategy is never
+// mutated across concurrent requests.
+type authAttemptState struct {
+	// replacementToken holds a fresh token minted during HandleResponse after a
+	// cached token was rejected, so the retry's Prepare consumes it without
+	// invoking the token resolver a second time.
+	replacementToken    string
+	retriedTokenRefresh bool
+	anonymousFallback   bool
+}
+
+// authAttemptFrom returns the per-call retry state attached by
+// executeWithAuthStrategy. When Prepare is called directly in a single-shot
+// test without executeWithAuthStrategy, returning a fresh zero-valued struct
+// (heap-allocated by Go escape analysis) represents a first attempt with no
+// prior retry state.
+func authAttemptFrom(ctx context.Context) *authAttemptState {
+	if st, ok := ctx.Value(authAttemptKey).(*authAttemptState); ok && st != nil {
+		return st
+	}
+	return &authAttemptState{}
+}
+
+// maxAuthStrategyRetries bounds executeWithAuthStrategy across multi-step
+// authentication recovery (for example: dynamic token refresh followed by
+// anonymous fallback).
+const maxAuthStrategyRetries = 3
+
+func drainAndCloseResponseBody(resp *http.Response) {
+	if resp.Body == nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	_ = resp.Body.Close()
+}
+
+// executeWithAuthStrategy executes an HTTP request using strategy, rebuilding
+// and re-sending the request when strategy.HandleResponse requests a retry.
+func executeWithAuthStrategy(
+	ctx context.Context,
+	hc *http.Client,
+	strategy HTTPAuthStrategy,
+	buildReq func(context.Context) (*http.Request, error),
+) (*http.Response, error) {
+	client := ensureSafeHTTPClient(hc)
+	attemptCtx := context.WithValue(ctx, authAttemptKey, &authAttemptState{})
+	var resp *http.Response
+	for attempt := 0; attempt <= maxAuthStrategyRetries; attempt++ {
+		if resp != nil {
+			drainAndCloseResponseBody(resp)
+			resp = nil
+		}
+		req, err := buildReq(attemptCtx)
+		if err != nil {
+			return nil, err
+		}
+		if err := strategy.Prepare(attemptCtx, req); err != nil {
+			return nil, err
+		}
+		resp, err = client.Do(req)
+		if err != nil {
+			resp = nil
+			if exitErr, ok := errors.AsType[*ExitCodeError](err); ok {
+				return nil, exitErr
+			}
+			return nil, err
+		}
+		// Custom RoundTrippers (tests, subprocess transports) may omit
+		// Response.Request on non-redirect responses; normalize it once here.
+		if resp.Request == nil {
+			resp.Request = req
+		}
+		retry, err := strategy.HandleResponse(attemptCtx, req, resp)
+		if err != nil {
+			drainAndCloseResponseBody(resp)
+			return nil, err
+		}
+		if !retry {
+			return resp, nil
+		}
+	}
+	return resp, nil
+}
+
+// BearerTokenStrategy implements HTTPAuthStrategy for OAuth2 Bearer tokens.
+// Construct via NewStaticBearerStrategy (explicit non-refreshable tokens such
+// as GERRIT_TOKEN), NewDynamicBearerStrategy (refreshable tokens minted via
+// luci-auth), or NewUnauthenticatedBearerStrategy. Instances are immutable once
+// constructed and safe for concurrent use across goroutines.
+type BearerTokenStrategy struct {
+	description string
+	trusted     func(u *url.URL) bool
+	token       func(ctx context.Context, reqURL *url.URL) (string, error)
+	invalidate  func(rejected string) // non-nil only for refreshable dynamic tokens
+}
+
+// NewUnauthenticatedBearerStrategy constructs a BearerTokenStrategy with no
+// credentials, reporting desc (or "none") from Describe.
+func NewUnauthenticatedBearerStrategy(desc string) *BearerTokenStrategy {
+	return &BearerTokenStrategy{description: cmp.Or(desc, "none")}
+}
+
+// NewStaticBearerStrategy constructs a BearerTokenStrategy for an explicit,
+// non-refreshable Bearer token (such as an environment variable override). If
+// token is empty after trimming whitespace, it returns an unauthenticated
+// strategy.
+func NewStaticBearerStrategy(desc, token string, trusted func(*url.URL) bool) *BearerTokenStrategy {
+	tok := strings.TrimSpace(token)
+	if tok == "" {
+		return NewUnauthenticatedBearerStrategy(desc)
+	}
+	return &BearerTokenStrategy{
+		description: cmp.Or(desc, "token"),
+		trusted:     trusted,
+		token: func(context.Context, *url.URL) (string, error) {
+			return tok, nil
+		},
+	}
+}
+
+// NewDynamicBearerStrategy constructs a BearerTokenStrategy for dynamically
+// minted Bearer tokens that can be invalidated and re-minted once on rejection.
+// Both token and invalidate must be non-nil.
+func NewDynamicBearerStrategy(
+	desc string,
+	trusted func(*url.URL) bool,
+	token func(context.Context, *url.URL) (string, error),
+	invalidate func(string),
+) *BearerTokenStrategy {
+	if token == nil || invalidate == nil {
+		panic("NewDynamicBearerStrategy requires non-nil token and invalidate functions")
+	}
+	return &BearerTokenStrategy{
+		description: cmp.Or(desc, "token"),
+		trusted:     trusted,
+		token:       token,
+		invalidate:  invalidate,
+	}
+}
+
+// Describe returns the active AuthMethod and credential source description.
+func (s *BearerTokenStrategy) Describe() (AuthMethod, string) {
+	if !s.HasCredentials() {
+		return AuthMethodNone, cmp.Or(s.description, "none")
+	}
+	return AuthMethodToken, cmp.Or(s.description, "token")
+}
+
+// HasCredentials reports whether a static or dynamic token source is configured.
+func (s *BearerTokenStrategy) HasCredentials() bool {
+	return s.token != nil
+}
+
+func (s *BearerTokenStrategy) isTrusted(u *url.URL) bool {
+	return s.trusted != nil && s.trusted(u)
+}
+
+func (s *BearerTokenStrategy) tokenForAttempt(ctx context.Context, reqURL *url.URL) (string, error) {
+	st := authAttemptFrom(ctx)
+	// When HandleResponse invalidated a rejected cached token and minted a
+	// fresh replacement to confirm a retry is worthwhile, consume that
+	// pre-minted token here instead of invoking s.token a second time.
+	if st.replacementToken != "" {
+		tok := st.replacementToken
+		st.replacementToken = ""
+		return tok, nil
+	}
+	tok, err := s.token(ctx, reqURL)
+	if err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return "", cerr
+		}
+		return "", err
+	}
+	return strings.TrimSpace(tok), nil
+}
+
+// Prepare clears any existing Authorization header and attaches a Bearer token
+// when s has credentials and req.URL is trusted.
+func (s *BearerTokenStrategy) Prepare(ctx context.Context, req *http.Request) error {
+	req.Header.Del("Authorization")
+	if !s.HasCredentials() || !s.isTrusted(req.URL) {
+		return nil
+	}
+	tok, err := s.tokenForAttempt(ctx, req.URL)
+	if err != nil {
+		return err
+	}
+	if tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	return nil
+}
+
+func (s *BearerTokenStrategy) refreshRejectedToken(ctx context.Context, req *http.Request, resp *http.Response) (bool, error) {
+	if s.invalidate == nil || !s.isTrusted(resp.Request.URL) {
+		return false, nil
+	}
+	sentTok, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer ")
+	if !ok || sentTok == "" {
+		return false, nil
+	}
+	st := authAttemptFrom(ctx)
+	if st.retriedTokenRefresh {
+		return false, nil
+	}
+	st.retriedTokenRefresh = true
+	s.invalidate(sentTok)
+	newTok, err := s.tokenForAttempt(ctx, req.URL)
+	if err != nil {
+		return false, err
+	}
+	if newTok == "" || newTok == sentTok {
+		return false, nil
+	}
+	st.replacementToken = newTok
+	return true, nil
+}
+
+// HandleResponse invalidates and re-mints a dynamic Bearer token once on
+// HTTP 401 Unauthorized when a fresh token differs from the rejected one.
+func (s *BearerTokenStrategy) HandleResponse(ctx context.Context, req *http.Request, resp *http.Response) (bool, error) {
+	if resp.StatusCode != http.StatusUnauthorized {
+		return false, nil
+	}
+	return s.refreshRejectedToken(ctx, req, resp)
 }
 
 // bearerAuth attaches a gh-ish OAuth2 token to requests for one backend.
@@ -414,6 +710,38 @@ var gerritTokenAuthRejectionMarkers = []string{
 	"access_token_scope_insufficient",
 }
 
+// prefixReadCloser replays an already-read byte prefix before reading the
+// remainder of closer, preserving closer.Close().
+type prefixReadCloser struct {
+	reader io.Reader
+	closer io.Closer
+}
+
+func (r *prefixReadCloser) Read(p []byte) (int, error) { return r.reader.Read(p) }
+func (r *prefixReadCloser) Close() error               { return r.closer.Close() }
+
+// peekResponseBody reads up to limit bytes from resp.Body for error
+// classification and re-buffers those bytes onto resp.Body. Go's
+// http.Response.Body is a forward-only io.ReadCloser stream with no native peek
+// or seek, so without re-buffering, downstream callers (such as
+// newGerritAPIError) would read an empty or truncated body when HandleResponse
+// decides not to retry.
+func peekResponseBody(resp *http.Response, limit int64) string {
+	if resp.Body == nil {
+		return ""
+	}
+	buf, err := io.ReadAll(io.LimitReader(resp.Body, limit))
+	if err != nil {
+		// OK: best-effort body inspection preserves whatever prefix was read.
+		slog.Debug("failed to read HTTP response body prefix", "err", err)
+	}
+	resp.Body = &prefixReadCloser{
+		reader: io.MultiReader(bytes.NewReader(buf), resp.Body),
+		closer: resp.Body,
+	}
+	return string(buf)
+}
+
 func isGerritTokenAuthRejection(resp *http.Response) bool {
 	if resp == nil {
 		return false
@@ -424,20 +752,7 @@ func isGerritTokenAuthRejection(resp *http.Response) bool {
 	if resp.StatusCode != http.StatusForbidden {
 		return false
 	}
-	var bodyPreview string
-	if resp.Body != nil {
-		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		orig := resp.Body
-		resp.Body = struct {
-			io.Reader
-			io.Closer
-		}{
-			Reader: io.MultiReader(bytes.NewReader(buf), orig),
-			Closer: orig,
-		}
-		bodyPreview = string(buf)
-	}
-	combined := strings.ToLower(resp.Header.Get("WWW-Authenticate") + "\n" + bodyPreview)
+	combined := strings.ToLower(resp.Header.Get("WWW-Authenticate") + "\n" + peekResponseBody(resp, 4096))
 	return slices.ContainsFunc(gerritTokenAuthRejectionMarkers, func(m string) bool {
 		return strings.Contains(combined, m)
 	})
@@ -608,8 +923,146 @@ func gerritGooglerAuthError(modeReason, gerritHost string, cause error) error {
 		modeReason, cleanHost, cause, formatGerritRemediationSteps(steps...))
 }
 
-// resolveGerritClientAuth is the Gerrit auth policy for a client of
-// gerritURL:
+type gerritStderrKey struct{}
+
+func withGerritStderr(ctx context.Context, w io.Writer) context.Context {
+	return context.WithValue(ctx, gerritStderrKey{}, w)
+}
+
+func gerritStderrFrom(ctx context.Context) io.Writer {
+	if w, ok := ctx.Value(gerritStderrKey{}).(io.Writer); ok && w != nil {
+		return w
+	}
+	return os.Stderr
+}
+
+// gerritBearerStrategy wraps BearerTokenStrategy with Gerrit REST API rules:
+//   - strips Gerrit's "/a/" authenticated path prefix when sending an
+//     unauthenticated request,
+//   - treats Gerrit's HTTP 403 token/scope rejections (in addition to 401) as
+//     eligible for one dynamic token refresh, and
+//   - in community mode (allowAnonymousFallback), retries failed (400/401)
+//     authenticated GETs on *.googlesource.com once anonymously without "/a/"
+//     (excluding "/accounts/self", which has no anonymous equivalent).
+type gerritBearerStrategy struct {
+	bearer                 *BearerTokenStrategy
+	allowAnonymousFallback bool
+}
+
+func (g *gerritBearerStrategy) Describe() (AuthMethod, string) {
+	return g.bearer.Describe()
+}
+
+func (g *gerritBearerStrategy) HasCredentials() bool {
+	return g.bearer.HasCredentials()
+}
+
+func (g *gerritBearerStrategy) canFallBackToAnonymous(req *http.Request) bool {
+	return g.allowAnonymousFallback && req.Method == http.MethodGet &&
+		isGoogleGerritHost(req.URL.Hostname()) && hasAuthenticatedPrefix(req.URL) &&
+		!strings.HasSuffix(req.URL.Path, "/accounts/self")
+}
+
+func (g *gerritBearerStrategy) Prepare(ctx context.Context, req *http.Request) error {
+	if authAttemptFrom(ctx).anonymousFallback {
+		req.Header.Del("Authorization")
+		stripAuthenticatedPrefix(req.URL)
+		return nil
+	}
+	if err := g.bearer.Prepare(ctx, req); err != nil {
+		return err
+	}
+	if req.Header.Get("Authorization") == "" && g.canFallBackToAnonymous(req) {
+		stripAuthenticatedPrefix(req.URL)
+	}
+	return nil
+}
+
+func (g *gerritBearerStrategy) HandleResponse(ctx context.Context, req *http.Request, resp *http.Response) (bool, error) {
+	if isGerritTokenAuthRejection(resp) {
+		retry, err := g.bearer.refreshRejectedToken(ctx, req, resp)
+		if retry || err != nil {
+			return retry, err
+		}
+	}
+	st := authAttemptFrom(ctx)
+	if !st.anonymousFallback &&
+		(resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized) &&
+		g.canFallBackToAnonymous(req) {
+		st.anonymousFallback = true
+		fmt.Fprintf(gerritStderrFrom(ctx),
+			"Warning: authenticated request to %s returned %d; falling back to anonymous\n",
+			req.URL.Path, resp.StatusCode)
+		return true, nil
+	}
+	return false, nil
+}
+
+func gerritTrustedURL(host string, hasStaticToken bool) func(*url.URL) bool {
+	return func(u *url.URL) bool {
+		if host == "" || !urlHostIn(u, host) {
+			return false
+		}
+		return hasStaticToken || isGerritAutoAuthHost(host)
+	}
+}
+
+func newGerritBearerStrategy(host string, auth GerritAuth, desc, initialToken string) *gerritBearerStrategy {
+	staticTok := strings.TrimSpace(auth.StaticToken)
+	trusted := gerritTrustedURL(host, staticTok != "")
+	var bearer *BearerTokenStrategy
+	switch {
+	case staticTok != "":
+		bearer = NewStaticBearerStrategy(cmp.Or(desc, "token (GERRIT_TOKEN)"), staticTok, trusted)
+	case auth.Dynamic:
+		// resolveGerritStrategy already called GerritTokenResolver once while
+		// constructing the client; consume that initial token on the first
+		// request so single-request commands do not invoke the resolver twice.
+		var prefetched atomic.Pointer[string]
+		if initialToken != "" {
+			prefetched.Store(&initialToken)
+		}
+		bearer = NewDynamicBearerStrategy(
+			cmp.Or(desc, "token (luci-auth)"),
+			trusted,
+			func(ctx context.Context, reqURL *url.URL) (string, error) {
+				if cerr := ctx.Err(); cerr != nil {
+					return "", cerr
+				}
+				if p := prefetched.Swap(nil); p != nil {
+					return *p, nil
+				}
+				tok, _, err := GerritTokenResolver(ctx)
+				if err == nil && tok != "" {
+					return tok, nil
+				}
+				if err == nil {
+					err = errors.New("luci-auth returned no Gerrit token")
+				}
+				if cerr := ctx.Err(); cerr != nil {
+					return "", cerr
+				}
+				if !auth.AllowAnonymousFallback {
+					return "", gerritGooglerAuthError(auth.modeReason, reqURL.Host,
+						fmt.Errorf("luci-auth token refresh failed: %w", err))
+				}
+				// OK: community mode falls back to anonymous Gerrit requests when token refresh fails.
+				slog.Debug("proceeding with anonymous Gerrit request after token refresh failure", "host", reqURL.Host, "err", err)
+				return "", nil
+			},
+			invalidateLUCIAuthToken,
+		)
+	default:
+		bearer = NewUnauthenticatedBearerStrategy(cmp.Or(desc, "none"))
+	}
+	return &gerritBearerStrategy{
+		bearer:                 bearer,
+		allowAnonymousFallback: auth.AllowAnonymousFallback,
+	}
+}
+
+// resolveGerritStrategy resolves the HTTPAuthStrategy for a Gerrit client
+// targeting gerritURL under the active AuthMode:
 //   - --auth-mode=none: unauthenticated; GERRIT_TOKEN is ignored.
 //   - GERRIT_TOKEN set: a static token for the configured host.
 //   - Otherwise a luci-auth token, only for Google-hosted Gerrit (or
@@ -618,31 +1071,31 @@ func gerritGooglerAuthError(modeReason, gerritHost string, cause error) error {
 //
 // Googler mode never falls back to anonymous requests: without a credential
 // it returns an ExitCodeAuth error. Community mode reads anonymously.
-func resolveGerritClientAuth(ctx context.Context, gerritURL string) (GerritAuth, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+func resolveGerritStrategy(ctx context.Context, gerritURL string) (HTTPAuthStrategy, error) {
 	mode, modeReason, err := ResolveAuthMode(ctx, nil)
 	if err != nil {
-		return GerritAuth{}, err
+		return nil, err
 	}
 	res, err := resolveGerritAuth(ctx, gerritURL, mode)
 	if err != nil {
-		return GerritAuth{}, err
+		return nil, err
 	}
 	if res.unauthed && mode == AuthModeGoogler {
-		return GerritAuth{}, gerritGooglerAuthError(modeReason, gerritURL, res.cause)
+		return nil, gerritGooglerAuthError(modeReason, gerritURL, res.cause)
 	}
 	auth := GerritAuth{AllowAnonymousFallback: mode != AuthModeGoogler}
+	var initialToken string
 	switch {
 	case res.unauthed:
 	case res.dynamic:
 		auth.Dynamic = true
 		auth.modeReason = modeReason
+		initialToken = res.token
 	default:
 		auth.StaticToken = res.token
 	}
-	return auth, nil
+	_, host := normalizeGerritBaseURL(gerritURL)
+	return newGerritBearerStrategy(host, auth, res.desc, initialToken), nil
 }
 
 // ssoCredHelperPath is the Corp Linux path for the SSO credential helper

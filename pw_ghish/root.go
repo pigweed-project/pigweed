@@ -539,13 +539,13 @@ func init() {
 }
 
 // newGerritClientForURL builds a GerritClient for gerritURL with the auth
-// that resolveGerritClientAuth picks. hc may be nil.
+// strategy that resolveGerritStrategy picks. hc may be nil.
 func newGerritClientForURL(ctx context.Context, gerritURL string, hc *http.Client) (*GerritClient, error) {
-	auth, err := resolveGerritClientAuth(ctx, gerritURL)
+	strategy, err := resolveGerritStrategy(ctx, gerritURL)
 	if err != nil {
 		return nil, err
 	}
-	return NewGerritClientWithHTTP(gerritURL, hc, auth), nil
+	return NewGerritClientWithStrategy(gerritURL, hc, strategy), nil
 }
 
 // NewGerritClient creates a new Gerrit client. It can be overridden in tests.

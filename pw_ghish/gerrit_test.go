@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -294,77 +293,6 @@ func TestGerritClient_PreservesEscapedSlashesOnAnonymousPrefixStrip(t *testing.T
 	})
 }
 
-func TestGerritClient_DynamicAuthTokenRefreshOn401Or403(t *testing.T) {
-	ctx := t.Context()
-
-	t.Run("refreshes token and retries once on 401", func(t *testing.T) {
-		tokens := []string{"stale-tok", "fresh-tok"}
-		idx := 0
-		WithHermeticAuth(t, AuthResolvers{
-			GerritToken: func(context.Context) (string, string, error) {
-				tok := tokens[idx]
-				if idx < len(tokens)-1 {
-					idx++
-				}
-				return tok, "luci-auth", nil
-			},
-		})
-		var gotAuth []string
-		tr := &mockTransport{
-			roundTrip: func(req *http.Request) (*http.Response, error) {
-				gotAuth = append(gotAuth, req.Header.Get("Authorization"))
-				if len(gotAuth) == 1 {
-					return gerritStatusTransport(http.StatusUnauthorized, "invalid_token", nil).roundTrip(req)
-				}
-				return gerritStatusTransport(http.StatusOK, ")]}'\n{\"_number\":123}", nil).roundTrip(req)
-			},
-		}
-		client := NewGerritClientWithHTTP("https://pigweed-review.googlesource.com/a", &http.Client{Transport: tr}, GerritAuth{Dynamic: true})
-		ch, err := client.GetChange(ctx, "123")
-		if err != nil || ch.Number != 123 {
-			t.Fatalf("GetChange = (%+v, %v), want 123", ch, err)
-		}
-		if len(gotAuth) != 2 || gotAuth[0] != "Bearer stale-tok" || gotAuth[1] != "Bearer fresh-tok" {
-			t.Errorf("Authorization headers = %v, want [Bearer stale-tok, Bearer fresh-tok]", gotAuth)
-		}
-	})
-
-	t.Run("does not retry when refreshed token is identical", func(t *testing.T) {
-		WithHermeticAuth(t, AuthResolvers{
-			GerritToken: func(context.Context) (string, string, error) {
-				return "same-tok", "luci-auth", nil
-			},
-		})
-		var reqs []*http.Request
-		client := NewGerritClientWithHTTP("https://pigweed-review.googlesource.com/a",
-			&http.Client{Transport: gerritStatusTransport(http.StatusUnauthorized, "Unauthorized", &reqs)},
-			GerritAuth{Dynamic: true})
-		if _, err := client.GetChange(ctx, "123"); !IsGerritHTTPStatus(err, http.StatusUnauthorized) || len(reqs) != 1 {
-			t.Errorf("expected 1 request and 401 when token unchanged, got reqs=%d err=%v", len(reqs), err)
-		}
-	})
-
-	t.Run("fails fast when token refresh returns error in googler mode", func(t *testing.T) {
-		calls := 0
-		WithHermeticAuth(t, AuthResolvers{
-			GerritToken: func(context.Context) (string, string, error) {
-				calls++
-				if calls == 1 {
-					return "stale-tok", "luci-auth", nil
-				}
-				return "", "", fmt.Errorf("refresh failed")
-			},
-		})
-		var reqs []*http.Request
-		client := NewGerritClientWithHTTP("https://pigweed-review.googlesource.com/a",
-			&http.Client{Transport: gerritStatusTransport(http.StatusUnauthorized, "Unauthorized", &reqs)},
-			GerritAuth{Dynamic: true, AllowAnonymousFallback: false, modeReason: "flag"})
-		if _, err := client.GetChange(ctx, "123"); err == nil || !strings.Contains(err.Error(), "refresh failed") || len(reqs) != 1 {
-			t.Errorf("expected refresh failure error after 1 request, got reqs=%d err=%v", len(reqs), err)
-		}
-	})
-}
-
 func TestGerritClient_SetReview(t *testing.T) {
 	ctx := t.Context()
 
@@ -567,64 +495,28 @@ func TestStripAuthOnCrossHostRedirect(t *testing.T) {
 		}
 		h := make(http.Header)
 		h.Set("Authorization", "Bearer secret")
+		h.Set("Cookie", "SID=secret")
 		return &http.Request{URL: u, Header: h}
 	}
 	origin := []*http.Request{mustReq("https://pigweed-review.googlesource.com:443/a/changes/1")}
 
 	sameHost := mustReq("https://pigweed-review.googlesource.com/a/changes/1/")
-	if err := stripAuthOnCrossHostRedirect(sameHost, origin); err != nil || sameHost.Header.Get("Authorization") == "" {
-		t.Errorf("same-host default-port redirect stripped Authorization or erred: hdr=%q err=%v", sameHost.Header.Get("Authorization"), err)
+	if err := stripAuthOnCrossHostRedirect(sameHost, origin); err != nil || sameHost.Header.Get("Authorization") == "" || sameHost.Header.Get("Cookie") == "" {
+		t.Errorf("same-host default-port redirect stripped auth or erred: hdr=%v err=%v", sameHost.Header, err)
 	}
 
 	crossHost := mustReq("https://evil.example.com/a/changes/1")
-	if err := stripAuthOnCrossHostRedirect(crossHost, origin); err != nil || crossHost.Header.Get("Authorization") != "" {
-		t.Errorf("cross-host redirect retained Authorization: hdr=%q err=%v", crossHost.Header.Get("Authorization"), err)
+	if err := stripAuthOnCrossHostRedirect(crossHost, origin); err != nil || crossHost.Header.Get("Authorization") != "" || crossHost.Header.Get("Cookie") != "" {
+		t.Errorf("cross-host redirect retained auth: hdr=%v err=%v", crossHost.Header, err)
 	}
 
 	plainHTTP := mustReq("http://pigweed-review.googlesource.com/a/changes/1")
-	if err := stripAuthOnCrossHostRedirect(plainHTTP, origin); err != nil || plainHTTP.Header.Get("Authorization") != "" {
-		t.Errorf("plain HTTP redirect retained Authorization: hdr=%q err=%v", plainHTTP.Header.Get("Authorization"), err)
+	if err := stripAuthOnCrossHostRedirect(plainHTTP, origin); err != nil || plainHTTP.Header.Get("Authorization") != "" || plainHTTP.Header.Get("Cookie") != "" {
+		t.Errorf("plain HTTP redirect retained auth: hdr=%v err=%v", plainHTTP.Header, err)
 	}
 
 	if err := stripAuthOnCrossHostRedirect(sameHost, make([]*http.Request, 10)); err == nil {
 		t.Errorf("expected error when len(via) == 10, got nil")
-	}
-}
-
-func TestResolveGerritClientAuth(t *testing.T) {
-	ctx := t.Context()
-	origMode := AuthModeFlag
-	t.Cleanup(func() { AuthModeFlag = origMode })
-
-	WithHermeticAuth(t, AuthResolvers{
-		GerritToken: func(context.Context) (string, string, error) {
-			return "", "", fmt.Errorf("no token")
-		},
-	})
-	AuthModeFlag = "googler"
-	if _, err := resolveGerritClientAuth(ctx, "https://pigweed-review.googlesource.com"); ExitCodeFor(err) != ExitCodeAuth {
-		t.Errorf("googler mode without token: err = %v, want ExitCodeAuth", err)
-	}
-
-	AuthModeFlag = "community"
-	if auth, err := resolveGerritClientAuth(ctx, "https://pigweed-review.googlesource.com"); err != nil || !auth.AllowAnonymousFallback {
-		t.Errorf("community mode without token = (%+v, %v), want AllowAnonymousFallback=true", auth, err)
-	}
-
-	t.Setenv("GERRIT_TOKEN", "static-env-tok")
-	ResetAuthTokenCaches()
-	if auth, err := resolveGerritClientAuth(ctx, "https://pigweed-review.googlesource.com"); err != nil || auth.StaticToken != "static-env-tok" {
-		t.Errorf("community mode with GERRIT_TOKEN = (%+v, %v), want StaticToken=static-env-tok", auth, err)
-	}
-
-	t.Setenv("GERRIT_TOKEN", "")
-	WithHermeticAuth(t, AuthResolvers{
-		GerritToken: func(context.Context) (string, string, error) {
-			return "dyn-tok", "luci-auth", nil
-		},
-	})
-	if auth, err := resolveGerritClientAuth(ctx, "https://pigweed-review.googlesource.com"); err != nil || !auth.Dynamic {
-		t.Errorf("dynamic luci-auth = (%+v, %v), want Dynamic=true", auth, err)
 	}
 }
 

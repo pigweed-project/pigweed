@@ -387,14 +387,12 @@ type GerritAuth struct {
 }
 
 // GerritClient is a native Gerrit REST API client. Its authentication is
-// fixed when it is built; see NewGerritClientWithHTTP.
+// fixed when it is built; see NewGerritClientWithStrategy and
+// NewGerritClientWithHTTP.
 type GerritClient struct {
-	baseURL string // normalized, no trailing slash
-	// host is the lower-cased hostname of baseURL. Tokens are only attached
-	// to requests for this host; "" never matches.
-	host string
-	hc   *http.Client // CheckRedirect set, no Timeout
-	auth GerritAuth
+	baseURL  string       // normalized, no trailing slash
+	hc       *http.Client // CheckRedirect set, no Timeout
+	strategy HTTPAuthStrategy
 	// stderr receives the anonymous-fallback warning (os.Stderr by default).
 	stderr io.Writer
 }
@@ -413,11 +411,7 @@ func stripAuthenticatedPrefix(u *url.URL) {
 	}
 }
 
-// NewGerritClientWithHTTP constructs a GerritClient for baseURL that
-// authenticates as auth says. A nil hc gives an http.Client without a
-// Timeout (requests are bounded by their context); any client gets
-// CheckRedirect set so Authorization is stripped on cross-host redirects.
-func NewGerritClientWithHTTP(baseURL string, hc *http.Client, auth GerritAuth) *GerritClient {
+func normalizeGerritBaseURL(baseURL string) (normURL string, host string) {
 	u := strings.TrimSpace(baseURL)
 	// Parse the URL the way hostnameOf (and so the auth policy) does, so
 	// both agree on the host. Only http(s) URLs get a host that can
@@ -425,22 +419,35 @@ func NewGerritClientWithHTTP(baseURL string, hc *http.Client, auth GerritAuth) *
 	if u != "" && !strings.Contains(u, "://") {
 		u = "https://" + u
 	}
-	var host string
 	if parsed, err := url.Parse(u); err == nil {
 		if parsed.Scheme == "http" || parsed.Scheme == "https" {
 			host = strings.ToLower(parsed.Hostname())
 		}
 		u = parsed.String()
 	}
-	u = strings.TrimRight(u, "/")
-	auth.StaticToken = strings.TrimSpace(auth.StaticToken)
+	return strings.TrimRight(u, "/"), host
+}
+
+// NewGerritClientWithStrategy constructs a GerritClient for baseURL that
+// authenticates using strategy. A nil hc gives an http.Client without a
+// Timeout (requests are bounded by their context); any client gets
+// CheckRedirect set so Authorization is stripped on cross-host redirects.
+func NewGerritClientWithStrategy(baseURL string, hc *http.Client, strategy HTTPAuthStrategy) *GerritClient {
+	normURL, _ := normalizeGerritBaseURL(baseURL)
 	return &GerritClient{
-		baseURL: u,
-		host:    host,
-		hc:      ensureSafeHTTPClient(hc),
-		auth:    auth,
-		stderr:  os.Stderr,
+		baseURL:  normURL,
+		hc:       ensureSafeHTTPClient(hc),
+		strategy: strategy,
+		stderr:   os.Stderr,
 	}
+}
+
+// NewGerritClientWithHTTP constructs a GerritClient for baseURL that
+// authenticates as auth says. Prefer NewGerritClientWithStrategy when an
+// HTTPAuthStrategy has already been resolved.
+func NewGerritClientWithHTTP(baseURL string, hc *http.Client, auth GerritAuth) *GerritClient {
+	_, host := normalizeGerritBaseURL(baseURL)
+	return NewGerritClientWithStrategy(baseURL, hc, newGerritBearerStrategy(host, auth, "", ""))
 }
 
 // BaseURL returns the client's normalized base URL (no trailing slash).
@@ -448,46 +455,9 @@ func (c *GerritClient) BaseURL() string {
 	return c.baseURL
 }
 
-// Authenticated reports whether the client sends a token.
+// Authenticated reports whether the client sends credentials.
 func (c *GerritClient) Authenticated() bool {
-	return c.auth.StaticToken != "" || c.auth.Dynamic
-}
-
-// trusted reports whether u may receive the client's token: HTTPS (or
-// loopback HTTP) to exactly the client's host, which must also be a host that
-// may receive auto-minted tokens unless the token is a static GERRIT_TOKEN.
-func (c *GerritClient) trusted(u *url.URL) bool {
-	if c.host == "" || !urlHostIn(u, c.host) {
-		return false
-	}
-	return c.auth.StaticToken != "" || isGerritAutoAuthHost(c.host)
-}
-
-// attachAuth sets the Authorization header on req when it is trusted and
-// returns the token it sent ("" if none).
-func (c *GerritClient) attachAuth(req *http.Request) (string, error) {
-	if req == nil || !c.Authenticated() || !c.trusted(req.URL) {
-		return "", nil
-	}
-	req.Header.Del("Authorization")
-	if c.auth.StaticToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.auth.StaticToken)
-		return c.auth.StaticToken, nil
-	}
-	tok, _, err := GerritTokenResolver(req.Context())
-	if err == nil && strings.TrimSpace(tok) == "" {
-		err = errors.New("luci-auth returned no Gerrit token")
-	}
-	if err != nil {
-		if !c.auth.AllowAnonymousFallback {
-			return "", gerritGooglerAuthError(c.auth.modeReason, req.URL.Host,
-				fmt.Errorf("luci-auth token refresh failed: %w", err))
-		}
-		return "", nil
-	}
-	tok = strings.TrimSpace(tok)
-	req.Header.Set("Authorization", "Bearer "+tok)
-	return tok, nil
+	return c.strategy.HasCredentials()
 }
 
 // newGerritAPIError builds the error for a non-2xx response, keeping at most
@@ -559,89 +529,37 @@ func (c *GerritClient) doRaw(ctx context.Context, method, path string, q url.Val
 		}
 	}
 
-	// newReq builds a request; anonymous requests carry no token and drop /a/.
-	newReq := func(anonymous bool) (*http.Request, string, error) {
+	resp, err := executeWithAuthStrategy(withGerritStderr(ctx, c.stderr), c.hc, c.strategy, func(reqCtx context.Context) (*http.Request, error) {
 		var body io.Reader
 		if payload != nil {
 			body = bytes.NewReader(payload)
 		}
-		req, err := http.NewRequestWithContext(ctx, method, reqURL, body)
+		req, err := http.NewRequestWithContext(reqCtx, method, reqURL, body)
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 		req.Header.Set("Accept", "application/json")
 		if payload != nil {
 			req.Header.Set("Content-Type", "application/json; charset=utf-8")
 		}
-		if anonymous {
-			stripAuthenticatedPrefix(req.URL)
-			return req, "", nil
-		}
-		tok, err := c.attachAuth(req)
-		if err != nil {
-			return nil, "", err
-		}
-		return req, tok, nil
-	}
-	canFallBack := func(req *http.Request) bool {
-		return c.auth.AllowAnonymousFallback && req.Method == http.MethodGet &&
-			isGoogleGerritHost(req.URL.Hostname()) && hasAuthenticatedPrefix(req.URL)
-	}
-
-	req, sentTok, err := newReq(false)
+		return req, nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	if sentTok == "" && canFallBack(req) {
-		stripAuthenticatedPrefix(req.URL)
-	}
-	resp, err := c.hc.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	// A rejected luci-auth token: drop it from the cache and retry once
-	// with a freshly minted one.
-	if c.auth.Dynamic && sentTok != "" && isGerritTokenAuthRejection(resp) &&
-		(resp.Request == nil || c.trusted(resp.Request.URL)) {
-		invalidateLUCIAuthToken(sentTok)
-		retry, newTok, rErr := newReq(false)
-		if rErr != nil {
-			resp.Body.Close()
-			return nil, rErr
-		}
-		if newTok != "" && newTok != sentTok {
-			resp.Body.Close()
-			req = retry
-			if resp, err = c.hc.Do(req); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized) &&
-		canFallBack(req) && !strings.HasSuffix(req.URL.Path, "/accounts/self") {
-		fmt.Fprintf(c.stderr, "Warning: authenticated request to %s returned %d; falling back to anonymous\n", req.URL.Path, resp.StatusCode)
-		resp.Body.Close()
-		if req, _, err = newReq(true); err != nil {
-			return nil, err
-		}
-		if resp, err = c.hc.Do(req); err != nil {
-			return nil, err
-		}
 	}
 	defer resp.Body.Close()
 
+	sentURL := resp.Request.URL
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxGerritErrorBodyBytes+512))
-		return nil, newGerritAPIError(method, req.URL, resp, raw)
+		return nil, newGerritAPIError(method, sentURL, resp, raw)
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("gerrit %s %s: reading response: %w", method, req.URL.Redacted(), err)
+		return nil, fmt.Errorf("gerrit %s %s: reading response: %w", method, sentURL.Redacted(), err)
 	}
 	if int64(len(raw)) > limit {
-		return nil, &gerritResponseTooLargeError{method: method, url: req.URL.Redacted(), limit: limit}
+		return nil, &gerritResponseTooLargeError{method: method, url: sentURL.Redacted(), limit: limit}
 	}
 	return stripXSSIPrefix(raw), nil
 }
