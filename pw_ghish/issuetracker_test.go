@@ -845,9 +845,13 @@ func TestParseGossoResponse(t *testing.T) {
 		if c.HTTPClient.CheckRedirect == nil {
 			t.Errorf("c.HTTPClient.CheckRedirect = nil, want stripAuthOnCrossHostRedirect")
 		}
-		rt, ok := c.HTTPClient.Transport.(*gossoRoundTripper)
+		srt, ok := c.HTTPClient.Transport.(*safeHTTPTransport)
 		if !ok {
-			t.Fatalf("Transport = %#v, want *gossoRoundTripper", c.HTTPClient.Transport)
+			t.Fatalf("Transport = %#v, want *safeHTTPTransport", c.HTTPClient.Transport)
+		}
+		rt, ok := srt.direct.(*gossoRoundTripper)
+		if !ok {
+			t.Fatalf("srt.direct = %#v, want *gossoRoundTripper", srt.direct)
 		}
 		var gotArgs []string
 		rt.exec = func(_ context.Context, args ...string) ([]byte, error) {
@@ -933,7 +937,11 @@ func TestParseGossoResponse(t *testing.T) {
 				t.Errorf("isCorpIssueTrackerURL(%q) = %v, want %v", tc.rawURL, got, tc.want)
 			}
 			c := NewIssueTrackerClient(tc.rawURL, nil)
-			_, gotGosso := c.HTTPClient.Transport.(*gossoRoundTripper)
+			rawRT := c.HTTPClient.Transport
+			if srt, ok := rawRT.(*safeHTTPTransport); ok {
+				rawRT = srt.direct
+			}
+			_, gotGosso := rawRT.(*gossoRoundTripper)
 			if gotGosso != tc.want {
 				t.Errorf("NewIssueTrackerClient(%q) uses gossoRoundTripper = %v, want %v", tc.rawURL, gotGosso, tc.want)
 			}

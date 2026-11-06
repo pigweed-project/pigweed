@@ -42,9 +42,9 @@ import (
 //          +---> resolveGerritStrategy ----> HTTPAuthStrategy (*gerritBearerStrategy)
 //          |     (GERRIT_TOKEN | luci-auth)         |
 //          |                                        v
-//          +---> modeAwareBearerToken -----> HTTPAuthStrategy (*BearerTokenStrategy)
-//                (LUCI, Busytown)                  |
-//                                                   v
+//          +---> NewDynamicBearerStrategy -> HTTPAuthStrategy (*BearerTokenStrategy)
+//                (LUCI, Busytown,                  |
+//                 Issue Tracker)                   v
 //                                         executeWithAuthStrategy
 //                                           1. Prepare(req)   -> Bearer header, /a/ prefix
 //                                           2. ensureSafeHTTPClient (HTTPS guard + cross-host strip)
@@ -699,6 +699,184 @@ func newAndroidBuildAuth(apiBase, ciBase string, tokenProvider func(context.Cont
 		modeAwareBearerToken("Android Build", cfg, false, tokenProvider),
 		invalidateLUCIAuthToken,
 	)
+}
+
+// ScopeBuganizer is the OAuth2 scope for Google Issue Tracker (Buganizer).
+const ScopeBuganizer = "https://www.googleapis.com/auth/buganizer"
+
+// isCorpIssueTrackerURL reports whether u is an HTTPS URL on
+// issuetracker.corp.googleapis.com or another *.corp.googleapis.com host.
+func isCorpIssueTrackerURL(u *url.URL) bool {
+	if u == nil || !strings.EqualFold(u.Scheme, "https") {
+		return false
+	}
+	h := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	return len(h) > len(".corp.googleapis.com") && strings.HasSuffix(h, ".corp.googleapis.com")
+}
+
+// ResolveIssueTrackerTokenWithSource resolves an OAuth2 access token for
+// Google Issue Tracker from GHISH_ISSUE_TOKEN, BUGANIZER_TOKEN, or the shared
+// luci-auth token, and returns its source.
+func ResolveIssueTrackerTokenWithSource(ctx context.Context) (string, string, error) {
+	for _, envVar := range []string{"GHISH_ISSUE_TOKEN", "BUGANIZER_TOKEN"} {
+		if tok := strings.TrimSpace(os.Getenv(envVar)); tok != "" {
+			return tok, envVar, nil
+		}
+	}
+	tok, err := luciAuthTokenWithScope(ctx, ScopeBuganizer)
+	if err == nil {
+		return tok, "luci-auth", nil
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return "", "", ctx.Err()
+	}
+	return "", "", NewExitCodeError(ExitCodeAuth,
+		"failed to authenticate with Google Issue Tracker: no OAuth2 token found.\n\n"+
+			"Cause: Neither GHISH_ISSUE_TOKEN/BUGANIZER_TOKEN is set nor did luci-auth return a token: %v\n\n"+
+			"Remediation:\n"+
+			"%s\n"+
+			"  2. Or provide a token explicitly:\n"+
+			"     export GHISH_ISSUE_TOKEN=\"<token>\"\n"+
+			"  3. Check authentication status:\n"+
+			"     gh auth status",
+		err, luciAuthTokenRemediationStep1(luciAuthLoginCommandForScope(ctx, ScopeBuganizer)))
+}
+
+// IssueTrackerTokenResolver resolves an Issue Tracker OAuth2 token and its source.
+// It can be overridden in tests.
+var IssueTrackerTokenResolver = ResolveIssueTrackerTokenWithSource
+
+// issueTrackerTokenEnvSet reports whether GHISH_ISSUE_TOKEN or BUGANIZER_TOKEN
+// supplies an explicit Issue Tracker token.
+func issueTrackerTokenEnvSet() bool {
+	return strings.TrimSpace(os.Getenv("GHISH_ISSUE_TOKEN")) != "" ||
+		strings.TrimSpace(os.Getenv("BUGANIZER_TOKEN")) != ""
+}
+
+func issueTrackerCommunityWebURL(profile ProjectProfile) string {
+	return strings.TrimSuffix(profile.IssueWebURL(0), "/issues/0")
+}
+
+// DefaultIssueTrackerToken resolves an OAuth2 access token with Buganizer scope.
+func DefaultIssueTrackerToken(ctx context.Context) (string, error) {
+	tok, _, err := IssueTrackerTokenResolver(ctx)
+	return tok, err
+}
+
+func resolveIssueTrackerCommandAuth(ctx context.Context, cfg *Config, profile ProjectProfile) (func(context.Context) (string, error), error) {
+	mode, modeReason, err := ResolveAuthMode(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if mode == AuthModeNone {
+		return nil, NewExitCodeError(ExitCodeAuth,
+			"Google Issue Tracker requires authentication, which is disabled (%s).\n\n"+
+				"Remediation:\n"+
+				"  1. Re-enable authentication by removing --auth-mode=none / GH_ISH_AUTH_MODE=none.\n"+
+				"  2. Check authentication status: gh auth status",
+			modeReason)
+	}
+	// Community mode has no luci-auth token with the buganizer scope, so point
+	// non-Googlers at the web tracker unless they supplied an explicit token.
+	if mode == AuthModeCommunity && !issueTrackerTokenEnvSet() {
+		authErr := NewExitCodeError(ExitCodeAuth,
+			"Google Issue Tracker CLI commands (gh issue) require Google Corp access (%s).\n\n"+
+				"Remediation:\n"+
+				"  1. View or file issues on the web at %s\n"+
+				"  2. If you are a Google employee on a Corp workstation, pass --auth-mode=googler (or set GH_ISH_AUTH_MODE=googler).",
+			modeReason, issueTrackerCommunityWebURL(profile))
+		return func(context.Context) (string, error) {
+			return "", authErr
+		}, nil
+	}
+	return nil, nil
+}
+
+type issueTrackerAuthStrategy struct {
+	*BearerTokenStrategy
+	endpointHost string
+}
+
+func (s *issueTrackerAuthStrategy) Prepare(ctx context.Context, req *http.Request) error {
+	if !urlHostIn(req.URL, s.endpointHost) {
+		return fmt.Errorf("refusing to send Issue Tracker credentials to %s: endpoint must be HTTPS", req.URL)
+	}
+	return s.BearerTokenStrategy.Prepare(ctx, req)
+}
+
+// newIssueTrackerAuth returns the HTTPAuthStrategy for the configured Issue
+// Tracker endpoint, failing closed before RoundTrip if a request targets plain
+// non-loopback HTTP or a different host.
+func newIssueTrackerAuth(endpoint string, tokenProvider func(context.Context) (string, error)) HTTPAuthStrategy {
+	if tokenProvider == nil {
+		tokenProvider = DefaultIssueTrackerToken
+	}
+	endpointHost := hostnameOf(endpoint)
+	return &issueTrackerAuthStrategy{
+		endpointHost: endpointHost,
+		BearerTokenStrategy: NewDynamicBearerStrategy(
+			"token (Issue Tracker)",
+			func(u *url.URL) bool {
+				return urlHostIn(u, endpointHost)
+			},
+			func(ctx context.Context, _ *url.URL) (string, error) {
+				tok, err := tokenProvider(ctx)
+				if err == nil && strings.TrimSpace(tok) == "" {
+					return "", errors.New("empty token")
+				}
+				return tok, err
+			},
+			invalidateLUCIAuthToken,
+		),
+	}
+}
+
+func isIssueTrackerQuotaProjectError(rawErr string) bool {
+	return strings.Contains(rawErr, "USER_PROJECT_DENIED") ||
+		strings.Contains(rawErr, "SERVICE_DISABLED") ||
+		strings.Contains(rawErr, "has not been used in project") ||
+		strings.Contains(rawErr, "cannot be identified with a client project")
+}
+
+func newIssueTrackerHTTPAuthError(ctx context.Context, endpoint, method, path, quotaProject string, statusCode int, respBytes []byte) error {
+	rawErr := strings.TrimSpace(string(respBytes))
+	if isIssueTrackerQuotaProjectError(rawErr) {
+		svcName := "issuetracker.googleapis.com"
+		if u, err := url.Parse(endpoint); err == nil && isCorpIssueTrackerURL(u) {
+			svcName = "issuetracker.corp.googleapis.com"
+		}
+		if quotaProject != "" {
+			return fmt.Errorf("Google Issue Tracker quota project error (HTTP %d) for %s %s.\n\n"+
+				"Cause: The configured quota project %q (X-Goog-User-Project) does not have %s enabled,\n"+
+				"or you lack the serviceusage.services.use permission on it.\n\n"+
+				"Remediation:\n"+
+				"  1. Enable %s on project %q.\n"+
+				"  2. Or remove the override (GHISH_QUOTA_PROJECT / GOOGLE_CLOUD_QUOTA_PROJECT,\n"+
+				"     issue.quota_project in .ghish.toml, or git config ghish.issue.quotaProject);\n"+
+				"     gh-ish's luci-auth credentials do not need a quota project.\n\n"+
+				"Server Details: %s", statusCode, method, path, quotaProject, svcName, svcName, quotaProject, rawErr)
+		}
+		return fmt.Errorf("Google Issue Tracker quota project error (HTTP %d) for %s %s.\n\n"+
+			"Cause: The OAuth client that minted this token is not enabled for %s.\n"+
+			"gh-ish's luci-auth token does not need a quota project; this usually means\n"+
+			"GHISH_ISSUE_TOKEN/BUGANIZER_TOKEN came from another tool.\n\n"+
+			"Remediation:\n"+
+			"  1. Unset GHISH_ISSUE_TOKEN/BUGANIZER_TOKEN and re-authenticate with luci-auth:\n"+
+			"     %s\n"+
+			"  2. Or set a quota project that has %s enabled:\n"+
+			"     git config --global ghish.issue.quotaProject \"<your-gcp-project-id>\"\n"+
+			"     # or: export GHISH_QUOTA_PROJECT=\"<your-gcp-project-id>\"\n\n"+
+			"Server Details: %s", statusCode, method, path, svcName, luciAuthLoginCommandForScope(ctx, ScopeBuganizer), svcName, rawErr)
+	}
+	return fmt.Errorf("Google Issue Tracker authentication failed (HTTP %d) for %s %s.\n\n"+
+		"Cause: Your current OAuth token was rejected or lacks the 'https://www.googleapis.com/auth/buganizer' scope.\n\n"+
+		"Remediation:\n"+
+		"%s\n"+
+		"  2. Or check if this issue belongs to a restricted internal component.\n\n"+
+		"Server Details: %s",
+		statusCode, method, path,
+		luciAuthTokenRemediationStep1(luciAuthLoginCommandForScope(ctx, ScopeBuganizer)),
+		rawErr)
 }
 
 var gerritTokenAuthRejectionMarkers = []string{

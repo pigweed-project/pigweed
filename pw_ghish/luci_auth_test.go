@@ -892,6 +892,15 @@ func TestHTTPClients_InvalidateCachedLUCITokenOn401(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "IssueTrackerClient",
+			body: `{"issueId":"1"}`,
+			call: func(t *testing.T, hc *http.Client) {
+				if issue, err := NewIssueTrackerClient("https://issuetracker.googleapis.com/v1", hc).GetIssue(t.Context(), 1); err != nil || issue == nil || issue.IssueID != 1 {
+					t.Fatalf("GetIssue = (%+v, %v), want issue 1", issue, err)
+				}
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mints int
