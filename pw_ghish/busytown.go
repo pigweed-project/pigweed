@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -586,35 +587,39 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 		urlEndpoint := fmt.Sprintf("%s/android/internal/build/v3/builds/%s/%s/attempts/latest/artifacts/build.log/url",
 			apiBase, url.PathEscape(bid), url.PathEscape(target))
 
-		if req, err := http.NewRequestWithContext(ctx, "GET", urlEndpoint, nil); err == nil && auth.apply(req) == nil {
-			if resp, err := client.Do(req); err == nil && resp != nil {
-				body, _ := readBoundedLog(resp.Body, maxHTTPBodyBytes)
-				resp.Body.Close()
-				if resp.StatusCode >= 200 && resp.StatusCode < 300 && len(body) > 0 {
-					var signed struct {
-						SignedURL string `json:"signedUrl"`
-						URL       string `json:"url"`
+		resp, err := executeWithAuthStrategy(ctx, client, auth, func(reqCtx context.Context) (*http.Request, error) {
+			return http.NewRequestWithContext(reqCtx, http.MethodGet, urlEndpoint, nil)
+		})
+		if exitErr, ok := errors.AsType[*ExitCodeError](err); ok {
+			return "", "", "", exitErr
+		}
+		if err == nil {
+			body, _ := readBoundedLog(resp.Body, maxHTTPBodyBytes)
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 && len(body) > 0 {
+				var signed struct {
+					SignedURL string `json:"signedUrl"`
+					URL       string `json:"url"`
+				}
+				trimmed := bytes.TrimSpace(bytes.TrimPrefix(body, []byte(")]}'")))
+				if json.Unmarshal(trimmed, &signed) == nil && (signed.SignedURL != "" || signed.URL != "") {
+					dlURL := signed.SignedURL
+					if dlURL == "" {
+						dlURL = signed.URL
 					}
-					trimmed := bytes.TrimSpace(bytes.TrimPrefix(body, []byte(")]}'")))
-					if json.Unmarshal(trimmed, &signed) == nil && (signed.SignedURL != "" || signed.URL != "") {
-						dlURL := signed.SignedURL
-						if dlURL == "" {
-							dlURL = signed.URL
-						}
-						if dlReq, err := http.NewRequestWithContext(ctx, "GET", dlURL, nil); err == nil {
-							if dlResp, err := client.Do(dlReq); err == nil && dlResp != nil {
-								dlBytes, _ := readBoundedLog(dlResp.Body, maxHTTPBodyBytes)
-								dlResp.Body.Close()
-								if dlResp.StatusCode >= 200 && dlResp.StatusCode < 300 {
-									buildLog = string(dlBytes)
-									logURL = dlURL
-								}
+					if dlReq, err := http.NewRequestWithContext(ctx, "GET", dlURL, nil); err == nil {
+						if dlResp, err := client.Do(dlReq); err == nil && dlResp != nil {
+							dlBytes, _ := readBoundedLog(dlResp.Body, maxHTTPBodyBytes)
+							dlResp.Body.Close()
+							if dlResp.StatusCode >= 200 && dlResp.StatusCode < 300 {
+								buildLog = string(dlBytes)
+								logURL = dlURL
 							}
 						}
-					} else {
-						buildLog = string(body)
-						logURL = urlEndpoint
 					}
+				} else {
+					buildLog = string(body)
+					logURL = urlEndpoint
 				}
 			}
 		}
@@ -630,14 +635,18 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 			}
 			rawEndpoint := fmt.Sprintf("%s/builds/%s/%s/%s/latest/raw/build.log",
 				ciBase, kind, url.PathEscape(bid), url.PathEscape(target))
-			if req, err := http.NewRequestWithContext(ctx, "GET", rawEndpoint, nil); err == nil && auth.apply(req) == nil {
-				if resp, err := client.Do(req); err == nil && resp != nil {
-					body, _ := readBoundedLog(resp.Body, maxHTTPBodyBytes)
-					resp.Body.Close()
-					if resp.StatusCode >= 200 && resp.StatusCode < 300 && len(body) > 0 {
-						buildLog = string(body)
-						logURL = rawEndpoint
-					}
+			resp, err := executeWithAuthStrategy(ctx, client, auth, func(reqCtx context.Context) (*http.Request, error) {
+				return http.NewRequestWithContext(reqCtx, http.MethodGet, rawEndpoint, nil)
+			})
+			if exitErr, ok := errors.AsType[*ExitCodeError](err); ok {
+				return "", "", "", exitErr
+			}
+			if err == nil {
+				body, _ := readBoundedLog(resp.Body, maxHTTPBodyBytes)
+				resp.Body.Close()
+				if resp.StatusCode >= 200 && resp.StatusCode < 300 && len(body) > 0 {
+					buildLog = string(body)
+					logURL = rawEndpoint
 				}
 			}
 			if ctx != nil && ctx.Err() != nil {

@@ -43,7 +43,7 @@ import (
 //          |     (GERRIT_TOKEN | luci-auth)         |
 //          |                                        v
 //          +---> modeAwareBearerToken -----> HTTPAuthStrategy (*BearerTokenStrategy)
-//                (LUCI)                             |
+//                (LUCI, Busytown)                  |
 //                                                   v
 //                                         executeWithAuthStrategy
 //                                           1. Prepare(req)   -> Bearer header, /a/ prefix
@@ -614,72 +614,6 @@ func modeAwareBearerToken(
 	}
 }
 
-// bearerAuth attaches a gh-ish OAuth2 token to requests for one backend.
-type bearerAuth struct {
-	// service names the backend in errors ("LUCI", "Android Build").
-	service string
-	// trusted reports whether a URL may receive the token. It must match
-	// exact hosts (see urlHostIn).
-	trusted func(u *url.URL) bool
-	// token resolves the backend's OAuth2 token.
-	token func(ctx context.Context) (string, error)
-	// requiredInGoogler makes a missing token an ExitCodeAuth error in googler
-	// mode instead of sending the request unauthenticated.
-	requiredInGoogler bool
-	// cfg is used when the request context carries no *Config.
-	cfg *Config
-}
-
-// apply sets "Authorization: Bearer <token>" on req when req.URL is trusted
-// and authentication is not disabled. Without a token it leaves req
-// unauthenticated, unless requiredInGoogler is set and the mode is googler.
-func (a bearerAuth) apply(req *http.Request) error {
-	if req == nil || req.URL == nil || a.trusted == nil || a.token == nil || !a.trusted(req.URL) {
-		return nil
-	}
-	ctx := req.Context()
-	if a.cfg != nil && ctx.Value(configKey) == nil {
-		ctx = context.WithValue(ctx, configKey, a.cfg)
-	}
-	mode, modeReason, err := ResolveAuthMode(ctx, nil)
-	if err != nil {
-		return err
-	}
-	if mode == AuthModeNone {
-		return nil
-	}
-	tok, tokErr := a.token(ctx)
-	tok = strings.TrimSpace(tok)
-	if tokErr == nil && tok != "" {
-		if req.Header == nil {
-			req.Header = make(http.Header)
-		}
-		req.Header.Set("Authorization", "Bearer "+tok)
-		return nil
-	}
-	if tokErr == nil {
-		tokErr = errors.New("empty token")
-	}
-	// A cancelled or expired request (Ctrl-C, --watch teardown) is not an
-	// authentication failure; report the context error instead.
-	if cerr := ctx.Err(); cerr != nil {
-		return cerr
-	}
-	if a.requiredInGoogler && mode == AuthModeGoogler {
-		// Resolver errors such as DefaultLUCIToken's carry their own
-		// remediation; keep only their first line so it is not repeated.
-		return NewExitCodeError(ExitCodeAuth,
-			"%s authentication required in googler mode (%s): no OAuth2 token for %s: %v\n\n"+
-				"Remediation:\n"+
-				"%s\n"+
-				"  2. Check authentication status: gh auth status\n"+
-				"  3. For public projects without internal credentials: export GH_ISH_AUTH_MODE=community",
-			a.service, modeReason, req.URL.Host, firstLine(tokErr.Error()),
-			luciAuthTokenRemediationStep1(luciAuthLoginCommand(mode)))
-	}
-	return nil
-}
-
 // isPreSignedGCSURL reports whether u is a Google Cloud Storage URL or
 // carries an X-Goog-Signature query parameter, where an Authorization header
 // must not be attached.
@@ -739,22 +673,32 @@ func newLUCIHTTPAuthError(ctx context.Context, target string, statusCode int, bo
 		luciAuthTokenRemediationStep1(luciAuthLoginCommandForScope(ctx, "")))
 }
 
-// newAndroidBuildAuth returns the bearerAuth policy for Android Build API and
+// isTrustedAndroidBuildURL reports whether u may receive the Android Build
+// token: HTTPS (or loopback HTTP) to the exact configured Android Build API or
+// CI host, and never a pre-signed GCS download URL.
+func isTrustedAndroidBuildURL(apiBase, ciBase string, u *url.URL) bool {
+	if isPreSignedGCSURL(u) {
+		return false
+	}
+	return urlHostIn(u, hostnameOf(apiBase), hostnameOf(ciBase))
+}
+
+// newAndroidBuildAuth returns the HTTPAuthStrategy for Android Build API and
 // CI hosts. Requests proceed without a token when none is available.
-func newAndroidBuildAuth(apiBase, ciBase string, tokenProvider func(context.Context) (string, error), cfg *Config) bearerAuth {
+func newAndroidBuildAuth(apiBase, ciBase string, tokenProvider func(context.Context) (string, error), cfg *Config) HTTPAuthStrategy {
 	if tokenProvider == nil {
 		tokenProvider = func(ctx context.Context) (string, error) {
 			return AndroidBuildTokenResolver(ctx)
 		}
 	}
-	return bearerAuth{
-		service: "Android Build",
-		trusted: func(u *url.URL) bool {
-			return urlHostIn(u, hostnameOf(apiBase), hostnameOf(ciBase))
+	return NewDynamicBearerStrategy(
+		"token (Android Build)",
+		func(u *url.URL) bool {
+			return isTrustedAndroidBuildURL(apiBase, ciBase, u)
 		},
-		token: tokenProvider,
-		cfg:   cfg,
-	}
+		modeAwareBearerToken("Android Build", cfg, false, tokenProvider),
+		invalidateLUCIAuthToken,
+	)
 }
 
 var gerritTokenAuthRejectionMarkers = []string{

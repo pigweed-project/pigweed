@@ -510,7 +510,6 @@ func TestTrustedURLsAndLogStreamAuth(t *testing.T) {
 		}
 	}
 
-	trusted := newAndroidBuildAuth("https://androidbuildinternal.googleapis.com", "http://127.0.0.1:8080", nil, nil).trusted
 	for _, tc := range []struct {
 		url  string
 		want bool
@@ -521,10 +520,12 @@ func TestTrustedURLsAndLogStreamAuth(t *testing.T) {
 		{"http://androidbuildinternal.googleapis.com/x", false},
 		{"http://localhost:8080/builds/x", false},
 		{"https://ci.android.com/builds/x", false},
+		{"https://storage.googleapis.com/b/o", false},
+		{"https://androidbuildinternal.googleapis.com/x?X-Goog-Signature=abc", false},
 	} {
 		u, _ := url.Parse(tc.url)
-		if got := trusted(u); got != tc.want {
-			t.Errorf("Busytown trusted(%q) = %v, want %v", tc.url, got, tc.want)
+		if got := isTrustedAndroidBuildURL("https://androidbuildinternal.googleapis.com", "http://127.0.0.1:8080", u); got != tc.want {
+			t.Errorf("isTrustedAndroidBuildURL(%q) = %v, want %v", tc.url, got, tc.want)
 		}
 	}
 
@@ -876,6 +877,18 @@ func TestHTTPClients_InvalidateCachedLUCITokenOn401(t *testing.T) {
 				var out map[string]any
 				if err := NewLUCIClient("cr-buildbucket.appspot.com", hc).CallPRPC(t.Context(), "buildbucket.v2.Builds", "GetBuild", map[string]any{"id": "1"}, &out); err != nil {
 					t.Fatalf("CallPRPC: %v", err)
+				}
+			},
+		},
+		{
+			name: "BusytownProvider",
+			body: "build log line",
+			call: func(t *testing.T, hc *http.Client) {
+				p := NewBusytownProvider()
+				p.APIBase = "https://androidbuildinternal.googleapis.com"
+				p.HTTPClient = hc
+				if logText, _, _, _ := p.fetchBusytownLogs(t.Context(), "123", "target", "inv"); logText != "build log line" {
+					t.Fatalf("fetchBusytownLogs = %q, want \"build log line\"", logText)
 				}
 			},
 		},
