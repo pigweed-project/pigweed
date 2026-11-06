@@ -86,6 +86,7 @@ func TestHermeticDefaults_FailClosed(t *testing.T) {
 	}{
 		{"LookPathFn", func() error { _, err := LookPathFn("luci-auth"); return err }},
 		{"OAuthTokenCommandRunner", func() error { _, err := OAuthTokenCommandRunner(ctx, "luci-auth", "token"); return err }},
+		{"gossoCookieJarRunner", func() error { _, err := gossoCookieJarRunner(ctx, "gosso"); return err }},
 		{"DefaultGerritToken", func() error { _, _, err := DefaultGerritToken(ctx); return err }},
 		{"LUCITokenResolver", func() error { _, _, err := LUCITokenResolver(ctx); return err }},
 		{"AndroidBuildTokenResolver", func() error { _, err := AndroidBuildTokenResolver(ctx); return err }},

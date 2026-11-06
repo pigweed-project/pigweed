@@ -607,12 +607,13 @@ func DecodeRequest[T any](t testing.TB, req *MockRequest) T {
 // used across Gerrit, LUCI, Android Build, and Google Issue Tracker. Tests
 // install them with SetAuthResolvers or WithHermeticAuth.
 type AuthResolvers struct {
-	LookPath          func(file string) (string, error)
-	CommandRunner     func(ctx context.Context, name string, args ...string) ([]byte, error)
-	GerritToken       func(ctx context.Context) (string, string, error)
-	LUCIToken         func(ctx context.Context) (string, string, error)
-	AndroidBuildToken func(ctx context.Context) (string, error)
-	IssueTrackerToken func(ctx context.Context) (string, string, error)
+	LookPath             func(file string) (string, error)
+	CommandRunner        func(ctx context.Context, name string, args ...string) ([]byte, error)
+	GossoCookieJarRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
+	GerritToken          func(ctx context.Context) (string, string, error)
+	LUCIToken            func(ctx context.Context) (string, string, error)
+	AndroidBuildToken    func(ctx context.Context) (string, error)
+	IssueTrackerToken    func(ctx context.Context) (string, string, error)
 }
 
 // onPath returns a LookPath stub where only name resolves (to path).
@@ -628,12 +629,13 @@ func onPath(name, path string) func(string) (string, error) {
 // currentAuthResolvers returns the active package authentication resolvers.
 func currentAuthResolvers() AuthResolvers {
 	return AuthResolvers{
-		LookPath:          LookPathFn,
-		CommandRunner:     OAuthTokenCommandRunner,
-		GerritToken:       GerritTokenResolver,
-		LUCIToken:         LUCITokenResolver,
-		AndroidBuildToken: AndroidBuildTokenResolver,
-		IssueTrackerToken: IssueTrackerTokenResolver,
+		LookPath:             LookPathFn,
+		CommandRunner:        OAuthTokenCommandRunner,
+		GossoCookieJarRunner: gossoCookieJarRunner,
+		GerritToken:          GerritTokenResolver,
+		LUCIToken:            LUCITokenResolver,
+		AndroidBuildToken:    AndroidBuildTokenResolver,
+		IssueTrackerToken:    IssueTrackerTokenResolver,
 	}
 }
 
@@ -645,6 +647,9 @@ func SetAuthResolvers(r AuthResolvers) {
 	}
 	if r.CommandRunner != nil {
 		OAuthTokenCommandRunner = r.CommandRunner
+	}
+	if r.GossoCookieJarRunner != nil {
+		gossoCookieJarRunner = r.GossoCookieJarRunner
 	}
 	if r.GerritToken != nil {
 		GerritTokenResolver = r.GerritToken
@@ -736,6 +741,9 @@ func failClosedAuthResolvers() AuthResolvers {
 	}
 	r.CommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("hermetic test: unexpected command %s", name)
+	}
+	r.GossoCookieJarRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("hermetic test: unexpected gosso command %s", name)
 	}
 	return r
 }

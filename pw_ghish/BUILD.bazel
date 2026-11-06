@@ -45,6 +45,7 @@ go_library(
         "comments_summary.go",
         "commit_msg.go",
         "commit_msg_flags.go",
+        "corp_sso.go",
         "create.go",
         "diff.go",
         "edit.go",
