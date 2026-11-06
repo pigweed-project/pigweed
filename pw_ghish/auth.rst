@@ -44,7 +44,7 @@ Run ``./gh auth status`` to verify your credentials:
 
    pigweed-review.googlesource.com (Gerrit)
      ✓ Logged in to pigweed-review.googlesource.com as Keir Mierle <keir@google.com> (account #1000020)
-     - Method: token (luci-auth)
+     - Method: corp-sso
 
    cr-buildbucket.appspot.com (LUCI Buildbucket & LogDog)
      ✓ Authenticated with cr-buildbucket.appspot.com via luci-auth (internal & public builders visible)
@@ -159,7 +159,9 @@ per vote whether the voter used a BeyondCorp-trusted device. Requests sent via
 Corp SSO carry device trust, whereas OAuth2 requests on ``*.googlesource.com``
 do not—so a ``Code-Review+2`` cast over OAuth2 is recorded as
 ``missing device trust`` and does not count on hosts that enforce it (such as
-``pigweed-review.googlesource.com``).
+``pigweed-review.googlesource.com``). ``./gh auth status`` reports
+``Method: corp-sso`` when Corp SSO is active and prints a warning when it is
+not.
 
 .. note::
 

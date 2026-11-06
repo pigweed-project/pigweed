@@ -280,7 +280,11 @@ func TestAdaptiveGerritStrategy_RoutingAndFallback(t *testing.T) {
 
 	t.Run("prefers Corp SSO without invoking luci-auth or writing hosts.json", func(t *testing.T) {
 		rig := newCorpSSOTestRig(t, corpSSORigOpts{luciErr: errors.New("luci-auth not logged in")})
-		acc, err := rig.newClient(t).GetSelfAccount(rig.ctx)
+		client := rig.newClient(t)
+		if m, desc := client.DescribeAuth(); m != AuthMethodCorpSSO || desc != "corp-sso" {
+			t.Errorf("DescribeAuth = (%q, %q), want (corp-sso, corp-sso)", m, desc)
+		}
+		acc, err := client.GetSelfAccount(rig.ctx)
 		if err != nil || acc.AccountID != 42 {
 			t.Fatalf("GetSelfAccount = (%+v, %v), want AccountID=42", acc, err)
 		}
@@ -492,7 +496,11 @@ func TestAdaptiveGerritStrategy_ColdIPRestrictionPivotAndWarmCache(t *testing.T)
 			return "", "", errors.New("unexpected luci-auth on warm corp-only host")
 		},
 	})
-	if _, err := rig.newClient(t).GetChange(rig.ctx, "12345"); err != nil {
+	client2 := rig.newClient(t)
+	if m, _ := client2.DescribeAuth(); m != AuthMethodCorpSSO {
+		t.Errorf("warm DescribeAuth = %q, want corp-sso", m)
+	}
+	if _, err := client2.GetChange(rig.ctx, "12345"); err != nil {
 		t.Fatalf("GetChange (warm): %v", err)
 	}
 	if rig.directCalls.Load() != 0 || rig.luciCalls.Load() != 0 {

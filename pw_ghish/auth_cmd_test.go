@@ -251,7 +251,7 @@ func TestAuthStatus_CommunityModeHealthyWithoutLUCIToken(t *testing.T) {
 }
 
 func TestAuthStatus_CommunityModeUnauthenticatedGerrit(t *testing.T) {
-	server := NewMockGerritServer(t)
+	server := NewMockGerritServer(t).UseResolvedAuth()
 	server.OnJSON("GET", "/accounts/self", http.StatusForbidden, map[string]any{
 		"message": "Auth required",
 	})
@@ -285,7 +285,7 @@ func TestAuthStatus_CommunityModeUnauthenticatedGerrit(t *testing.T) {
 	t.Run("HTTP 400 surfaces first-time Gerrit account and CLA instructions", func(t *testing.T) {
 		for _, mode := range []string{"community", "googler"} {
 			t.Run(mode, func(t *testing.T) {
-				server := NewMockGerritServer(t)
+				server := NewMockGerritServer(t).UseResolvedAuth()
 				server.OnJSON("GET", "/accounts/self", http.StatusBadRequest, map[string]any{
 					"message": "Account does not exist",
 				})
@@ -472,4 +472,86 @@ func TestView_SurfacesLUCIAuthErrorInGooglerMode(t *testing.T) {
 	if !strings.Contains(output, "LUCI authentication required") {
 		t.Errorf("expected pr view to surface LUCI authentication required in Checks line, got:\n%s", output)
 	}
+}
+
+func runRigAuthStatusJSON(t *testing.T, rig *corpSSOTestRig) (AuthStatusReport, error) {
+	t.Helper()
+	NewMockGit(t)
+	SetAuthResolvers(AuthResolvers{
+		LUCIToken:         func(context.Context) (string, string, error) { return "luci-ok", "luci-auth", nil },
+		IssueTrackerToken: func(context.Context) (string, string, error) { return "it-ok", "luci-auth", nil },
+	})
+	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error) {
+		cfg := GetConfig(cmd)
+		if cfg == nil {
+			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
+		}
+		gerritURL, err := cfg.GerritURL(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return newGerritClientForURL(ctx, gerritURL, &http.Client{Transport: rig.directRT})
+	})
+	var stdout, stderr bytes.Buffer
+	err := executeCommandIO(RootCmd, nil, &stdout, &stderr, "auth", "status", "--host", rig.canonHost, "--auth-mode", "googler", "--json")
+	var report AuthStatusReport
+	if uerr := json.Unmarshal(stdout.Bytes(), &report); uerr != nil {
+		t.Fatalf("json.Unmarshal (err=%v): %v\nStdout:\n%s\nStderr:\n%s", err, uerr, stdout.String(), stderr.String())
+	}
+	return report, err
+}
+
+func TestAuthStatus_CorpSSO(t *testing.T) {
+	t.Run("Corp SSO active", func(t *testing.T) {
+		rig := newCorpSSOTestRig(t, corpSSORigOpts{})
+		report, err := runRigAuthStatusJSON(t, rig)
+		if err != nil || !report.Healthy || !report.Gerrit.Authenticated || report.Gerrit.Method != "corp-sso" ||
+			report.Gerrit.Warning != "" || rig.luciCalls.Load() != 0 || rig.directCalls.Load() != 0 {
+			t.Errorf("err=%v report.Gerrit=%+v luci=%d direct=%d",
+				err, report.Gerrit, rig.luciCalls.Load(), rig.directCalls.Load())
+		}
+	})
+
+	t.Run("runtime fallback updates Method and renders warning", func(t *testing.T) {
+		rig := newCorpSSOTestRig(t, corpSSORigOpts{
+			proxyHandler: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) },
+		})
+		report, err := runRigAuthStatusJSON(t, rig)
+		if err != nil || report.Gerrit.Method != "token (luci-auth)" || !strings.Contains(report.Gerrit.Warning, "Corp SSO is not in use") {
+			t.Errorf("err=%v report.Gerrit=%+v, want token (luci-auth) with Corp SSO warning", err, report.Gerrit)
+		}
+		textOut, textErr := executeCommand(RootCmd, "auth", "status", "--host", rig.canonHost, "--auth-mode", "googler")
+		if textErr != nil || !strings.Contains(textOut, "Warning: Corp SSO is not in use") || !strings.Contains(textOut, "- Method: token (luci-auth)") {
+			t.Errorf("text auth status err=%v, output:\n%s", textErr, textOut)
+		}
+	})
+
+	t.Run("corpSSOStatusWarning reports GERRIT_TOKEN and GHISH_CORP_SSO=0 reasons", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{LookPath: gossoLookPath})
+		const host = "pigweed-review.googlesource.com"
+		t.Setenv("GERRIT_TOKEN", "explicit-env-tok")
+		if got := corpSSOStatusWarning(host, AuthModeGoogler, AuthMethodToken, "token (GERRIT_TOKEN)"); !strings.Contains(got, "GERRIT_TOKEN") {
+			t.Errorf("GERRIT_TOKEN warning = %q", got)
+		}
+		t.Setenv("GERRIT_TOKEN", "")
+		t.Setenv(corpSSOEnvVar, "0")
+		if got := corpSSOStatusWarning(host, AuthModeGoogler, AuthMethodToken, "token (luci-auth)"); !strings.Contains(got, corpSSOEnvVar+"=0") {
+			t.Errorf("GHISH_CORP_SSO=0 warning = %q", got)
+		}
+	})
+
+	t.Run("unauthenticated corp-only host suppresses warning and recommends gcert", func(t *testing.T) {
+		rig := newCorpSSOTestRig(t, corpSSORigOpts{
+			mintErr: fmt.Errorf("gcert expired"),
+			luciErr: fmt.Errorf("not logged in"),
+		})
+		defaultHostCache.MarkCorpOnly(rig.canonHost)
+		report, err := runRigAuthStatusJSON(t, rig)
+		if ExitCodeFor(err) != ExitCodeAuth || report.Gerrit.Authenticated || report.Gerrit.Warning != "" {
+			t.Errorf("err=%v report.Gerrit=%+v, want ExitCodeAuth unauthenticated with empty Warning", err, report.Gerrit)
+		}
+		if !strings.Contains(report.Gerrit.Remediation, "gcert") || strings.Contains(report.Gerrit.Remediation, "luci-auth login") {
+			t.Errorf("Remediation = %q, want gcert without luci-auth login", report.Gerrit.Remediation)
+		}
+	})
 }

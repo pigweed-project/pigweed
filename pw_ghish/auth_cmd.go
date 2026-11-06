@@ -37,6 +37,7 @@ type ServiceAuthStatus struct {
 	Account       string `json:"account,omitempty"`
 	QuotaProject  string `json:"quotaProject,omitempty"`
 	Message       string `json:"message,omitempty"`
+	Warning       string `json:"warning,omitempty"`
 	Remediation   string `json:"remediation,omitempty"`
 }
 
@@ -124,23 +125,29 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 	cfgCtx := context.WithValue(ctx, configKey, cfg)
 
 	// 1. Gerrit status
-	res, _ := resolveGerritAuth(cfgCtx, gerritHost, mode)
 	gerritStatus := ServiceAuthStatus{
 		Service: "gerrit",
 		Host:    gerritHost,
-		Method:  res.desc,
+		Method:  "none",
 	}
 
 	if mode == AuthModeNone {
-		gerritStatus.Method = "none"
 		gerritStatus.Message = "Authentication disabled (--auth-mode=none)"
 	} else {
-		client, clientErr := NewGerritClient(ctx, cmd)
+		var gerritMethod AuthMethod
+		client, clientErr := NewGerritClient(cfgCtx, cmd)
 		if clientErr != nil {
-			gerritStatus.Authenticated = false
 			gerritStatus.Message = firstLine(clientErr.Error())
 		} else {
-			acc, accErr := client.GetSelfAccount(ctx)
+			acc, accErr := client.GetSelfAccount(cfgCtx)
+			gerritMethod, gerritStatus.Method = client.DescribeAuth()
+			// Populate the unauthenticated cause for community-mode reporting.
+			var unauthCause error
+			if gerritMethod == AuthMethodNone {
+				if res, err := resolveGerritAuth(cfgCtx, gerritHost, mode); err == nil {
+					unauthCause = res.cause
+				}
+			}
 			if accErr == nil && acc != nil && (acc.AccountID != 0 || acc.Email != "" || acc.Username != "" || acc.Name != "") {
 				gerritStatus.Authenticated = true
 				acctLabel := FormatAccount(*acc)
@@ -154,23 +161,23 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 				}
 				gerritStatus.Account = acctLabel
 				gerritStatus.Message = fmt.Sprintf("Logged in to %s as %s", gerritHost, acctLabel)
-			} else {
-				gerritStatus.Authenticated = false
-				if res.method == AuthMethodNone && mode == AuthModeCommunity {
-					if res.cause != nil {
-						gerritStatus.Message = fmt.Sprintf("No Gerrit credentials configured for %s (%s; public changes readable, login required to push or review)", gerritHost, firstLine(res.cause.Error()))
-					} else {
-						gerritStatus.Message = fmt.Sprintf("No Gerrit credentials configured for %s (public changes readable; login required to push or review)", gerritHost)
-					}
-				} else if IsGerritHTTPStatus(accErr, http.StatusBadRequest) {
-					gerritStatus.Message = fmt.Sprintf("No Gerrit account found on %s for current credentials (%s)", gerritHost, firstLine(accErr.Error()))
-					gerritStatus.Remediation = fmt.Sprintf("Visit https://%s in a browser and click 'Sign in' once to create your Gerrit account, and sign the CLA at https://cla.developers.google.com/", gerritHost)
-				} else if accErr != nil {
-					gerritStatus.Message = fmt.Sprintf("Failed to authenticate with %s (%s)", gerritHost, firstLine(accErr.Error()))
+			} else if gerritMethod == AuthMethodNone && mode == AuthModeCommunity {
+				if unauthCause != nil {
+					gerritStatus.Message = fmt.Sprintf("No Gerrit credentials configured for %s (%s; public changes readable, login required to push or review)", gerritHost, firstLine(unauthCause.Error()))
 				} else {
-					gerritStatus.Message = fmt.Sprintf("Not authenticated with %s", gerritHost)
+					gerritStatus.Message = fmt.Sprintf("No Gerrit credentials configured for %s (public changes readable; login required to push or review)", gerritHost)
 				}
+			} else if IsGerritHTTPStatus(accErr, http.StatusBadRequest) {
+				gerritStatus.Message = fmt.Sprintf("No Gerrit account found on %s for current credentials (%s)", gerritHost, firstLine(accErr.Error()))
+				gerritStatus.Remediation = fmt.Sprintf("Visit https://%s in a browser and click 'Sign in' once to create your Gerrit account, and sign the CLA at https://cla.developers.google.com/", gerritHost)
+			} else if accErr != nil {
+				gerritStatus.Message = fmt.Sprintf("Failed to authenticate with %s (%s)", gerritHost, firstLine(accErr.Error()))
+			} else {
+				gerritStatus.Message = fmt.Sprintf("Not authenticated with %s", gerritHost)
 			}
+		}
+		if gerritStatus.Authenticated {
+			gerritStatus.Warning = corpSSOStatusWarning(gerritHost, mode, gerritMethod, gerritStatus.Method)
 		}
 		if !gerritStatus.Authenticated && gerritStatus.Remediation == "" {
 			gerritStatus.Remediation = gerritStatusRemediation(gerritHost, mode)
@@ -305,6 +312,9 @@ func formatAuthStatusReport(r *AuthStatusReport) string {
 		}
 		if s.QuotaProject != "" {
 			fmt.Fprintf(&sb, "  - Quota project: %s\n", s.QuotaProject)
+		}
+		if s.Warning != "" {
+			fmt.Fprintf(&sb, "  %s Warning: %s\n", GlyphWarn, s.Warning)
 		}
 		if s.Remediation != "" {
 			fmt.Fprintf(&sb, "  - Remediation: %s\n", s.Remediation)

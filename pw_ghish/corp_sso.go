@@ -347,6 +347,20 @@ func corpSSOWouldBeActive(host string) bool {
 	return normalizeCorpHostKey(host) != "" && corpSSOUnavailableReason(host) == ""
 }
 
+// corpSSOStatusWarning returns an auth-status warning when a Googler is
+// authenticated to an open Google-hosted Gerrit instance over OAuth2 rather
+// than Corp SSO, or "" when Corp SSO is active or not applicable.
+func corpSSOStatusWarning(host string, mode AuthMode, method AuthMethod, methodDesc string) string {
+	if mode != AuthModeGoogler || method == AuthMethodCorpSSO ||
+		normalizeCorpHostKey(host) == "" || defaultHostCache.IsCorpOnly(host) {
+		return ""
+	}
+	reason := cmp.Or(corpSSOUnavailableReason(host), "authenticating with "+methodDesc)
+	return fmt.Sprintf("Corp SSO is not in use for %s (%s). Code-Review votes sent over OAuth2 "+
+		"lack BeyondCorp device trust and are recorded as 'missing device trust' by Gerrit review enforcement "+
+		"on hosts that verify it.", host, reason)
+}
+
 func normalizeCorpHostKey(host string) string {
 	canon := CanonicalGerritHost(host)
 	if !isGoogleGerritHost(canon) {
