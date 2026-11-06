@@ -30,6 +30,7 @@ cc_library(
     name = "socket",
     srcs = ["socket.cc"],
     hdrs = [
+        "public/pw_transport/internal/transport_futures.h",
         "public/pw_transport/socket.h",
         "public/pw_transport/transport.h",
     ],
@@ -109,6 +110,7 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_transport/forwarding_socket.h",
+        "public/pw_transport/internal/transport_futures.h",
         "public/pw_transport/socket.h",
         "public/pw_transport/transport.h",
     ],
@@ -134,6 +136,7 @@ pw_cc_test(
 pw_cc_test(
     name = "transport_test",
     srcs = ["transport_test.cc"],
+    has_nc_test = True,
     deps = [
         ":socket",
         "//pw_allocator:testing",

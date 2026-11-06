@@ -86,7 +86,7 @@ class MockServerListener : public transport::ReliableListener {
     accept_provider_.Resolve(Status::Cancelled());
   }
 
-  transport::ReliableListener::AcceptFuture Accept() override {
+  AcceptFuture DoAcceptReliable() override {
     ++accept_calls_;
     return accept_provider_.Get();
   }
@@ -100,7 +100,7 @@ class MockServerListener : public transport::ReliableListener {
   size_t accept_calls() const { return accept_calls_; }
 
  private:
-  async2::ValueProvider<Result<transport::ReliableSocket>> accept_provider_;
+  AcceptProvider accept_provider_;
   size_t accept_calls_ = 0;
 };
 

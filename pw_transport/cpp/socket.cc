@@ -18,12 +18,25 @@
 #include <utility>
 
 #include "pw_assert/assert.h"
+#include "pw_async2/try.h"
+#include "pw_async2/value_future.h"
+#include "pw_result/result.h"
 
 namespace pw::transport {
 
 namespace internal {
 
-BaseSocketFuture::BaseSocketFuture(SocketImpl& socket)
+async2::Poll<Result<ReliableSocket>> PendReliableSocket(
+    async2::ValueFuture<Result<Socket>>& future, async2::Context& cx) {
+  PW_TRY_READY_ASSIGN(Result<Socket> result, future.Pend(cx));
+  if (!result.ok()) {
+    return async2::Ready(Result<ReliableSocket>(result.status()));
+  }
+  return async2::Ready(
+      Result<ReliableSocket>(ReliableSocket(std::move(*result))));
+}
+
+SocketFutureBase::SocketFutureBase(SocketImpl& socket)
     : core_(async2::FutureState::kPending) {
   std::lock_guard lock(socket);
   if (socket.is_open()) {
@@ -31,12 +44,12 @@ BaseSocketFuture::BaseSocketFuture(SocketImpl& socket)
   }
 }
 
-BaseSocketFuture::BaseSocketFuture(BaseSocketFuture&& other) noexcept {
+SocketFutureBase::SocketFutureBase(SocketFutureBase&& other) noexcept {
   MoveFrom(other);
 }
 
-BaseSocketFuture& BaseSocketFuture::operator=(
-    BaseSocketFuture&& other) noexcept {
+SocketFutureBase& SocketFutureBase::operator=(
+    SocketFutureBase&& other) noexcept {
   if (this != &other) {
     RemoveFromSocket();
     MoveFrom(other);
@@ -44,7 +57,7 @@ BaseSocketFuture& BaseSocketFuture::operator=(
   return *this;
 }
 
-void BaseSocketFuture::MoveFrom(BaseSocketFuture& other)
+void SocketFutureBase::MoveFrom(SocketFutureBase& other)
     PW_NO_LOCK_SAFETY_ANALYSIS {
   if (other.socket_ == nullptr) {
     core_ = std::move(other.core_);
@@ -55,7 +68,7 @@ void BaseSocketFuture::MoveFrom(BaseSocketFuture& other)
   }
 }
 
-void BaseSocketFuture::RemoveFromSocket() {
+void SocketFutureBase::RemoveFromSocket() {
   if (socket_ != nullptr) {
     {
       std::lock_guard lock(*socket_);
@@ -67,7 +80,7 @@ void BaseSocketFuture::RemoveFromSocket() {
 
 }  // namespace internal
 
-ReadFuture::ReadFuture(SocketImpl& socket) : BaseSocketFuture(socket) {}
+ReadFuture::ReadFuture(SocketImpl& socket) : SocketFutureBase(socket) {}
 
 async2::Poll<pw::ConstBuf> ReadFuture::Pend(async2::Context& cx) {
   SocketImpl* sock = socket();
@@ -101,7 +114,7 @@ async2::Poll<pw::ConstBuf> ReadFuture::Pend(async2::Context& cx) {
 }
 
 ReserveWriteFuture::ReserveWriteFuture(ReserveWriteFuture&& other) noexcept
-    : BaseSocketFuture(async2::FutureState::kPending), min_size_bytes_(0) {
+    : SocketFutureBase(async2::FutureState::kPending), min_size_bytes_(0) {
   MoveFrom(other);
 }
 
@@ -175,7 +188,7 @@ async2::Poll<std::optional<WriteReservation>> ReserveWriteFuture::Pend(
 }
 
 CloseFuture::CloseFuture(SocketImpl& socket)
-    : BaseSocketFuture(async2::FutureState::kPending) {
+    : SocketFutureBase(async2::FutureState::kPending) {
   if (socket.is_closed()) {
     return;
   }
@@ -246,7 +259,7 @@ void SocketImpl::MarkClosed() {
         [](ReserveWriteFuture& future)
             PW_NO_LOCK_SAFETY_ANALYSIS { future.Resolve(std::nullopt); });
     closed_futures_.ResolveAllWith(
-        [](internal::BaseSocketFuture& future)
+        [](internal::SocketFutureBase& future)
             PW_NO_LOCK_SAFETY_ANALYSIS { future.Wake(); });
   }
 }

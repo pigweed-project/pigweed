@@ -636,7 +636,7 @@ class MockTransport : public transport::ReliableListener,
     }
   }
 
-  transport::ReliableConnector::ConnectFuture Connect() override {
+  transport::ReliableConnector::ConnectFuture DoConnectReliable() override {
     if (pending_connect_result_.has_value()) {
       auto res = std::move(*pending_connect_result_);
       pending_connect_result_.reset();
@@ -645,7 +645,7 @@ class MockTransport : public transport::ReliableListener,
     }
     return connect_provider_.Get();
   }
-  transport::ReliableListener::AcceptFuture Accept() override {
+  transport::ReliableListener::AcceptFuture DoAcceptReliable() override {
     if (pending_accept_result_.has_value()) {
       auto res = std::move(*pending_accept_result_);
       pending_accept_result_.reset();
@@ -679,8 +679,8 @@ class MockTransport : public transport::ReliableListener,
   }
 
  private:
-  async2::ValueProvider<Result<transport::ReliableSocket>> connect_provider_;
-  async2::ValueProvider<Result<transport::ReliableSocket>> accept_provider_;
+  ConnectProvider connect_provider_;
+  AcceptProvider accept_provider_;
   std::optional<Result<transport::ReliableSocket>> pending_connect_result_;
   std::optional<Result<transport::ReliableSocket>> pending_accept_result_;
 };

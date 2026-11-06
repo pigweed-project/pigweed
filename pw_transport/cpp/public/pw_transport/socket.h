@@ -22,11 +22,13 @@
 #include "pw_assert/assert.h"
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
+#include "pw_async2/value_future.h"
 #include "pw_buf/buf.h"
 #include "pw_intrusive_ptr/intrusive_ptr.h"
 #include "pw_intrusive_ptr/recyclable.h"
 #include "pw_intrusive_ptr/ref_counted.h"
 #include "pw_memory/container_of.h"
+#include "pw_result/result.h"
 #include "pw_sync/lock_annotations.h"
 
 namespace pw::transport {
@@ -48,17 +50,20 @@ class CloseFuture;
 
 namespace internal {
 
+async2::Poll<Result<ReliableSocket>> PendReliableSocket(
+    async2::ValueFuture<Result<Socket>>& future, async2::Context& cx);
+
 /// Base class for socket-bound futures.
-class BaseSocketFuture {
+class SocketFutureBase {
  public:
-  constexpr BaseSocketFuture() = default;
+  constexpr SocketFutureBase() = default;
 
-  BaseSocketFuture(const BaseSocketFuture&) = delete;
-  BaseSocketFuture& operator=(const BaseSocketFuture&) = delete;
+  SocketFutureBase(const SocketFutureBase&) = delete;
+  SocketFutureBase& operator=(const SocketFutureBase&) = delete;
 
-  BaseSocketFuture(BaseSocketFuture&& other) noexcept
+  SocketFutureBase(SocketFutureBase&& other) noexcept
       PW_LOCKS_EXCLUDED(*socket_, *other.socket_);
-  BaseSocketFuture& operator=(BaseSocketFuture&& other) noexcept
+  SocketFutureBase& operator=(SocketFutureBase&& other) noexcept
       PW_LOCKS_EXCLUDED(*socket_, *other.socket_);
 
   [[nodiscard]] bool is_pendable() const PW_NO_LOCK_SAFETY_ANALYSIS {
@@ -71,9 +76,9 @@ class BaseSocketFuture {
   void Wake() PW_EXCLUSIVE_LOCKS_REQUIRED(*socket_) { core_.Wake(); }
 
  protected:
-  explicit BaseSocketFuture(SocketImpl& socket) PW_LOCKS_EXCLUDED(socket);
+  explicit SocketFutureBase(SocketImpl& socket) PW_LOCKS_EXCLUDED(socket);
 
-  explicit constexpr BaseSocketFuture(async2::FutureState::Pending)
+  explicit constexpr SocketFutureBase(async2::FutureState::Pending)
       : core_(async2::FutureState::kPending) {}
 
   // Unlists this future and removes a reference from its socket.
@@ -99,7 +104,7 @@ class BaseSocketFuture {
   }
 
   void ClearSocket() { socket_ = nullptr; }
-  void MoveSocket(BaseSocketFuture& other) {
+  void MoveSocket(SocketFutureBase& other) {
     socket_ = std::move(other.socket_);
   }
 
@@ -117,14 +122,14 @@ class BaseSocketFuture {
   friend class ::pw::transport::ReserveWriteFuture;
   friend class ::pw::transport::CloseFuture;
 
-  void MoveFrom(BaseSocketFuture& other)
+  void MoveFrom(SocketFutureBase& other)
       PW_LOCKS_EXCLUDED(*socket_, *other.socket_);
 
   IntrusivePtr<SocketImpl> socket_;
   async2::FutureCore core_ PW_GUARDED_BY(*socket_);
 
  public:
-  using List = async2::FutureList<&BaseSocketFuture::core_>;
+  using List = async2::FutureList<&SocketFutureBase::core_>;
 };
 
 }  // namespace internal
@@ -333,8 +338,12 @@ class ReliableSocket {
   friend class ReliableSocketImpl;
   friend class ReliableListener;
   friend class ReliableConnector;
+  friend async2::Poll<Result<ReliableSocket>> internal::PendReliableSocket(
+      async2::ValueFuture<Result<Socket>>&, async2::Context&);
 
   explicit ReliableSocket(ReliableSocketImpl& impl);
+  explicit ReliableSocket(Socket&& socket) noexcept
+      : socket_(std::move(socket)) {}
 
   Socket socket_;
 };
@@ -413,7 +422,7 @@ class WriteReservation {
 };
 
 /// Future representing receiving a single datagram from a `Socket`.
-class [[nodiscard]] ReadFuture final : public internal::BaseSocketFuture {
+class [[nodiscard]] ReadFuture final : public internal::SocketFutureBase {
  public:
   using value_type = ConstBuf;
 
@@ -438,7 +447,7 @@ class [[nodiscard]] ReadFuture final : public internal::BaseSocketFuture {
   explicit ReadFuture(SocketImpl& socket);
 
   explicit ReadFuture(ConstBuf&& buffer)
-      : BaseSocketFuture(async2::FutureState::kPending),
+      : SocketFutureBase(async2::FutureState::kPending),
         resolved_value_(std::move(buffer)) {}
 
   ConstBuf resolved_value_;
@@ -449,7 +458,7 @@ static_assert(async2::Future<ReadFuture>);
 /// Future representing reserving write space for a datagram in a
 /// `Socket`.
 class [[nodiscard]] ReserveWriteFuture final
-    : public internal::BaseSocketFuture {
+    : public internal::SocketFutureBase {
  public:
   using value_type = std::optional<WriteReservation>;
 
@@ -470,7 +479,7 @@ class [[nodiscard]] ReserveWriteFuture final
  private:
   friend class Socket;
   friend class SocketImpl;
-  friend class internal::BaseSocketFuture;
+  friend class internal::SocketFutureBase;
 
   static ReserveWriteFuture Resolved(
       std::optional<WriteReservation>&& reservation) {
@@ -481,7 +490,7 @@ class [[nodiscard]] ReserveWriteFuture final
 
   static ReserveWriteFuture* FromCore(async2::FutureCore* core) {
     return static_cast<ReserveWriteFuture*>(
-        ContainerOf<&BaseSocketFuture::core_>(core));
+        ContainerOf<&SocketFutureBase::core_>(core));
   }
   static async2::FutureCore& ToCore(ReserveWriteFuture& future)
       PW_NO_LOCK_SAFETY_ANALYSIS {
@@ -489,10 +498,10 @@ class [[nodiscard]] ReserveWriteFuture final
   }
 
   ReserveWriteFuture(SocketImpl& socket, size_t min_size_bytes)
-      : BaseSocketFuture(socket), min_size_bytes_(min_size_bytes) {}
+      : SocketFutureBase(socket), min_size_bytes_(min_size_bytes) {}
 
   explicit ReserveWriteFuture(std::optional<WriteReservation>&& reservation)
-      : BaseSocketFuture(async2::FutureState::kPending),
+      : SocketFutureBase(async2::FutureState::kPending),
         min_size_bytes_(0),
         resolved_value_(std::move(reservation)) {}
 
@@ -509,7 +518,7 @@ class [[nodiscard]] ReserveWriteFuture final
 static_assert(async2::Future<ReserveWriteFuture>);
 
 /// Future representing waiting for a `Socket` to close.
-class CloseFuture final : public internal::BaseSocketFuture {
+class CloseFuture final : public internal::SocketFutureBase {
  public:
   using value_type = void;
 
@@ -531,7 +540,7 @@ class CloseFuture final : public internal::BaseSocketFuture {
   }
 
   explicit constexpr CloseFuture(async2::FutureState::Pending)
-      : BaseSocketFuture(async2::FutureState::kPending) {}
+      : SocketFutureBase(async2::FutureState::kPending) {}
 
   explicit CloseFuture(SocketImpl& socket) PW_EXCLUSIVE_LOCKS_REQUIRED(socket);
 };
@@ -707,7 +716,7 @@ class PW_LOCKABLE("pw::transport::SocketImpl") SocketImpl
   friend class ReadFuture;
   friend class ReserveWriteFuture;
   friend class CloseFuture;
-  friend class internal::BaseSocketFuture;
+  friend class internal::SocketFutureBase;
 
   /// Implements reading a single datagram from the peer.
   /// Called from ReadFuture::Pend with `*this` locked.
@@ -763,7 +772,7 @@ class PW_LOCKABLE("pw::transport::SocketImpl") SocketImpl
 
   bool ResolveOneWriter() PW_EXCLUSIVE_LOCKS_REQUIRED(*this);
 
-  void add_read_future(internal::BaseSocketFuture& future)
+  void add_read_future(internal::SocketFutureBase& future)
       PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
     read_futures_.Push(future);
   }
@@ -773,7 +782,7 @@ class PW_LOCKABLE("pw::transport::SocketImpl") SocketImpl
     write_futures_.Push(future);
   }
 
-  void add_closed_future(internal::BaseSocketFuture& future)
+  void add_closed_future(internal::SocketFutureBase& future)
       PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
     closed_futures_.Push(future);
   }
@@ -782,9 +791,9 @@ class PW_LOCKABLE("pw::transport::SocketImpl") SocketImpl
   size_t max_write_message_size_bytes_ = 0;
   size_t max_read_message_size_bytes_ = 0;
   State state_ PW_GUARDED_BY(*this) = State::kOpen;
-  internal::BaseSocketFuture::List read_futures_ PW_GUARDED_BY(*this);
+  internal::SocketFutureBase::List read_futures_ PW_GUARDED_BY(*this);
   ReserveWriteFuture::List write_futures_ PW_GUARDED_BY(*this);
-  internal::BaseSocketFuture::List closed_futures_ PW_GUARDED_BY(*this);
+  internal::SocketFutureBase::List closed_futures_ PW_GUARDED_BY(*this);
 };
 
 /// Implementation base class for reliable, in-order datagram sockets.

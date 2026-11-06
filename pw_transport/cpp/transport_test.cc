@@ -24,6 +24,7 @@
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_bytes/span.h"
+#include "pw_compilation_testing/negative_compilation.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_transport/socket.h"
 #include "pw_unit_test/framework.h"
@@ -31,9 +32,8 @@
 namespace pw::transport {
 namespace {
 
-/// A mock transport that vends connections.
-template <typename ListenerBase = ReliableListener,
-          typename ConnectorBase = ReliableConnector>
+/// A mock transport base that vends connections.
+template <typename ListenerBase, typename ConnectorBase>
 class BasicMockTransport : public ListenerBase, public ConnectorBase {
  public:
   using AcceptFuture = typename ListenerBase::AcceptFuture;
@@ -47,9 +47,6 @@ class BasicMockTransport : public ListenerBase, public ConnectorBase {
     connect_provider_.Resolve(Status::FailedPrecondition());
   }
 
-  AcceptFuture Accept() override { return accept_provider_.Get(); }
-  ConnectFuture Connect() override { return connect_provider_.Get(); }
-
   void ResolveAccept(ResultType&& connection) {
     accept_provider_.Resolve(std::move(connection));
   }
@@ -58,13 +55,37 @@ class BasicMockTransport : public ListenerBase, public ConnectorBase {
     connect_provider_.Resolve(std::move(connection));
   }
 
+ protected:
+  AcceptFuture NextAcceptFuture() { return accept_provider_.Get(); }
+  ConnectFuture NextConnectFuture() { return connect_provider_.Get(); }
+
  private:
-  async2::ValueProvider<ResultType> accept_provider_;
-  async2::ValueProvider<ResultType> connect_provider_;
+  typename ListenerBase::AcceptProvider accept_provider_;
+  typename ConnectorBase::ConnectProvider connect_provider_;
 };
 
-using MockTransport = BasicMockTransport<>;
-using MockDatagramTransport = BasicMockTransport<Listener, Connector>;
+class MockTransport final
+    : public BasicMockTransport<ReliableListener, ReliableConnector> {
+ private:
+  AcceptFuture DoAcceptReliable() override { return NextAcceptFuture(); }
+  ConnectFuture DoConnectReliable() override { return NextConnectFuture(); }
+};
+
+class MockDatagramTransport final
+    : public BasicMockTransport<Listener, Connector> {
+ private:
+  AcceptFuture DoAccept() override { return NextAcceptFuture(); }
+  ConnectFuture DoConnect() override { return NextConnectFuture(); }
+};
+
+/// Exposes the protected `ReliableListener` and `ReliableConnector` provider
+/// aliases to tests. Abstract and never instantiated.
+class ReliableProviders : public ReliableListener, public ReliableConnector {
+ public:
+  using ReliableConnector::ConnectListProvider;
+  using ReliableListener::AcceptListProvider;
+  using ReliableListener::AcceptProvider;
+};
 
 /// A mock connection that acts as a one-deep loopback queue.
 /// Writes feed directly into reads.
@@ -1944,5 +1965,274 @@ TEST(TransportTest, UnreliableListenerAndConnector) {
   ASSERT_TRUE(connect_task.result().ok());
   EXPECT_TRUE(*connect_task.result());
 }
+
+// Reliable futures convert to unreliable futures, but only from rvalues, since
+// the conversion moves the pending future out of the reliable future.
+static_assert(std::is_convertible_v<ReliableListener::AcceptFuture,
+                                    Listener::AcceptFuture>);
+static_assert(!std::is_convertible_v<ReliableListener::AcceptFuture&,
+                                     Listener::AcceptFuture>);
+static_assert(std::is_convertible_v<ReliableConnector::ConnectFuture,
+                                    Connector::ConnectFuture>);
+static_assert(!std::is_convertible_v<ReliableConnector::ConnectFuture&,
+                                     Connector::ConnectFuture>);
+
+// Reliable and unreliable futures add no overhead to the wrapped ValueFuture.
+static_assert(sizeof(Listener::AcceptFuture) ==
+              sizeof(async2::ValueFuture<Result<Socket>>));
+static_assert(sizeof(ReliableListener::AcceptFuture) ==
+              sizeof(async2::ValueFuture<Result<Socket>>));
+
+TEST(TransportTest, ReliableListenerUsedAsListener) {
+  constexpr size_t kCapacity = 4096;
+  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  MockTransport reliable_transport;
+
+  async2::DispatcherForTest dispatcher;
+  dispatcher.AllowBlocking();
+
+  BasicAcceptTask<Listener> accept_task(reliable_transport);
+  dispatcher.Post(accept_task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  const ReliableSocket socket = MockSocket::Allocated(allocator);
+  reliable_transport.ResolveAccept(socket);
+  dispatcher.RunToCompletion();
+
+  ASSERT_TRUE(accept_task.result().ok());
+  EXPECT_TRUE(*accept_task.result() == socket);
+}
+
+TEST(TransportTest, ReliableConnectorUsedAsConnector) {
+  MockTransport reliable_transport;
+
+  async2::DispatcherForTest dispatcher;
+  dispatcher.AllowBlocking();
+
+  BasicConnectTask<Connector> connect_task(reliable_transport);
+  dispatcher.Post(connect_task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  reliable_transport.ResolveConnect(Status::Unavailable());
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(connect_task.result().status(), Status::Unavailable());
+}
+
+TEST(TransportTest, CancelConvertedFuture) {
+  MockTransport reliable_transport;
+  Listener& listener = reliable_transport;
+
+  Listener::AcceptFuture future = listener.Accept();
+  EXPECT_TRUE(future.is_pendable());
+  future.Cancel();
+  EXPECT_FALSE(future.is_pendable());
+
+  // MockTransport uses a one-to-one AcceptProvider, which asserts if a vended
+  // future is still pending, so this verifies that Cancel() released it.
+  ReliableListener::AcceptFuture next = reliable_transport.Accept();
+  EXPECT_TRUE(next.is_pendable());
+}
+
+TEST(TransportTest, TransportFutureProvider) {
+  constexpr size_t kCapacity = 4096;
+  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  async2::DispatcherForTest dispatcher;
+  ReliableProviders::AcceptProvider provider;
+
+  EXPECT_FALSE(provider.has_future());
+  std::optional<ReliableListener::AcceptFuture> future = provider.TryGet();
+  ASSERT_TRUE(future.has_value());
+  EXPECT_TRUE(provider.has_future());
+  EXPECT_FALSE(provider.TryGet().has_value());
+
+  const Result<ReliableSocket> socket = MockSocket::Allocated(allocator);
+  provider.Resolve(socket);
+  EXPECT_FALSE(provider.has_future());
+
+  auto poll = dispatcher.RunInTaskUntilStalled(*future);
+  ASSERT_TRUE(poll.IsReady());
+  PW_TEST_ASSERT_OK(*poll);
+  EXPECT_TRUE(**poll == *socket);
+  EXPECT_TRUE(future->is_complete());
+}
+
+TEST(TransportTest, TransportFutureListProvider) {
+  constexpr size_t kCapacity = 4096;
+  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  async2::DispatcherForTest dispatcher;
+  ReliableProviders::AcceptListProvider provider;
+
+  const ReliableSocket socket_1 = MockSocket::Allocated(allocator);
+  const ReliableSocket socket_2 = MockSocket::Allocated(allocator);
+
+  // With no pending futures, ResolveFirst leaves its argument unmoved.
+  Result<ReliableSocket> result_1 = socket_1;
+  EXPECT_FALSE(provider.ResolveFirst(std::move(result_1)));
+  ASSERT_TRUE(result_1.ok());          // NOLINT(bugprone-use-after-move)
+  EXPECT_TRUE(*result_1 == socket_1);  // NOLINT(bugprone-use-after-move)
+
+  // The oldest future is converted to an unreliable future while pending.
+  Listener::AcceptFuture first = provider.Get();
+  ReliableListener::AcceptFuture second = provider.Get();
+  ReliableListener::AcceptFuture third = provider.Get();
+  EXPECT_EQ(provider.size(), 3u);
+
+  // Futures are resolved oldest first.
+  EXPECT_TRUE(provider.ResolveFirst(std::move(result_1)));
+  const Result<ReliableSocket> result_2 = socket_2;
+  EXPECT_TRUE(provider.ResolveFirst(result_2));
+  provider.ResolveAll(Status::FailedPrecondition());
+  EXPECT_TRUE(provider.empty());
+
+  auto first_poll = dispatcher.RunInTaskUntilStalled(first);
+  ASSERT_TRUE(first_poll.IsReady());
+  PW_TEST_ASSERT_OK(*first_poll);
+  EXPECT_TRUE(**first_poll == socket_1);
+
+  auto second_poll = dispatcher.RunInTaskUntilStalled(second);
+  ASSERT_TRUE(second_poll.IsReady());
+  PW_TEST_ASSERT_OK(*second_poll);
+  EXPECT_TRUE(**second_poll == socket_2);
+
+  auto third_poll = dispatcher.RunInTaskUntilStalled(third);
+  ASSERT_TRUE(third_poll.IsReady());
+  EXPECT_EQ(third_poll->status(), Status::FailedPrecondition());
+}
+
+TEST(TransportTest, ResolvedFutures) {
+  constexpr size_t kCapacity = 4096;
+  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  const ReliableSocket socket = MockSocket::Allocated(allocator);
+  const Socket unreliable_socket = socket;
+  const Result<ReliableSocket> reliable_result = socket;
+  const Result<Socket> unreliable_error = Status::Unavailable();
+
+  auto accept =
+      Listener::AcceptFuture::Resolved(Result<Socket>(unreliable_socket));
+  auto connect = Connector::ConnectFuture::Resolved(unreliable_error);
+  auto reliable_accept =
+      ReliableListener::AcceptFuture::Resolved(reliable_result);
+  Connector::ConnectFuture converted_connect =
+      ReliableConnector::ConnectFuture::Resolved(Status::Unavailable());
+
+  auto accept_poll = dispatcher.RunInTaskUntilStalled(accept);
+  ASSERT_TRUE(accept_poll.IsReady());
+  PW_TEST_ASSERT_OK(*accept_poll);
+  EXPECT_TRUE(**accept_poll == socket);
+
+  auto connect_poll = dispatcher.RunInTaskUntilStalled(connect);
+  ASSERT_TRUE(connect_poll.IsReady());
+  EXPECT_EQ(connect_poll->status(), Status::Unavailable());
+
+  auto reliable_accept_poll = dispatcher.RunInTaskUntilStalled(reliable_accept);
+  ASSERT_TRUE(reliable_accept_poll.IsReady());
+  PW_TEST_ASSERT_OK(*reliable_accept_poll);
+  EXPECT_TRUE(**reliable_accept_poll == socket);
+
+  auto converted_connect_poll =
+      dispatcher.RunInTaskUntilStalled(converted_connect);
+  ASSERT_TRUE(converted_connect_poll.IsReady());
+  EXPECT_EQ(converted_connect_poll->status(), Status::Unavailable());
+}
+
+#if PW_NC_TEST(ReliableListenerCannotForwardUnreliableListenerAccept)
+PW_NC_EXPECT_CLANG("no viable conversion");
+PW_NC_EXPECT_GCC("could not convert");
+class ForwardingReliableListener : public ReliableListener {
+ public:
+  explicit ForwardingReliableListener(Listener& lower) : lower_(lower) {}
+
+ private:
+  AcceptFuture DoAcceptReliable() override { return lower_.Accept(); }
+  Listener& lower_;
+};
+#elif PW_NC_TEST(ReliableConnectorCannotForwardUnreliableConnectorConnect)
+PW_NC_EXPECT_CLANG("no viable conversion");
+PW_NC_EXPECT_GCC("could not convert");
+class ForwardingReliableConnector : public ReliableConnector {
+ public:
+  explicit ForwardingReliableConnector(Connector& lower) : lower_(lower) {}
+
+ private:
+  ConnectFuture DoConnectReliable() override { return lower_.Connect(); }
+  Connector& lower_;
+};
+#elif PW_NC_TEST(ReliableListenerCannotOverrideDoAccept)
+PW_NC_EXPECT("final");
+class BadReliableListener : public ReliableListener {
+  Listener::AcceptFuture DoAccept() override {
+    return Listener::AcceptFuture();
+  }
+  AcceptFuture DoAcceptReliable() override { return AcceptFuture(); }
+};
+#elif PW_NC_TEST(ReliableConnectorCannotOverrideDoConnect)
+PW_NC_EXPECT("final");
+class BadReliableConnector : public ReliableConnector {
+  Connector::ConnectFuture DoConnect() override {
+    return Connector::ConnectFuture();
+  }
+  ConnectFuture DoConnectReliable() override { return ConnectFuture(); }
+};
+#elif PW_NC_TEST(AcceptFutureCannotWrapValueFuture)
+PW_NC_EXPECT("private");
+Listener::AcceptFuture BadWrap() {
+  return Listener::AcceptFuture(async2::ValueFuture<Result<Socket>>());
+}
+#elif PW_NC_TEST(ReliableAcceptFutureCannotWrapValueFuture)
+PW_NC_EXPECT("private");
+ReliableListener::AcceptFuture BadWrap() {
+  return ReliableListener::AcceptFuture(async2::ValueFuture<Result<Socket>>());
+}
+#elif PW_NC_TEST(ConnectFutureCannotWrapValueFuture)
+PW_NC_EXPECT("private");
+Connector::ConnectFuture BadWrap() {
+  return Connector::ConnectFuture(async2::ValueFuture<Result<Socket>>());
+}
+#elif PW_NC_TEST(ReliableConnectFutureCannotWrapValueFuture)
+PW_NC_EXPECT("private");
+ReliableConnector::ConnectFuture BadWrap() {
+  return ReliableConnector::ConnectFuture(
+      async2::ValueFuture<Result<Socket>>());
+}
+#elif PW_NC_TEST(ReliableListenerCannotWrapUnreliableSocketImpl)
+PW_NC_EXPECT("ReliableSocketImpl");
+class BadReliableListener : public ReliableListener {
+ public:
+  static auto TryWrap(SocketImpl& impl) { return WrapSocket(impl); }
+};
+#elif PW_NC_TEST(ReliableConnectorCannotWrapUnreliableSocketImpl)
+PW_NC_EXPECT("ReliableSocketImpl");
+class BadReliableConnector : public ReliableConnector {
+ public:
+  static auto TryWrap(SocketImpl& impl) { return WrapSocket(impl); }
+};
+#elif PW_NC_TEST(ReliableFutureResolvedRejectsUnreliableSocket)
+PW_NC_EXPECT("no matching function");
+auto BadResolved(Socket unreliable) {
+  return ReliableListener::AcceptFuture::Resolved(std::move(unreliable));
+}
+#elif PW_NC_TEST(ReliableProviderRejectsUnreliableSocket)
+PW_NC_EXPECT_CLANG("no matching member function");
+PW_NC_EXPECT_GCC("no matching function");
+void BadResolve(ReliableProviders::AcceptProvider& provider,
+                Socket unreliable) {
+  provider.Resolve(std::move(unreliable));
+}
+#elif PW_NC_TEST(ReliableListProviderRejectsUnreliableSocket)
+PW_NC_EXPECT_CLANG("no matching member function");
+PW_NC_EXPECT_GCC("no matching function");
+void BadResolveFirst(ReliableProviders::ConnectListProvider& provider,
+                     Socket unreliable) {
+  provider.ResolveFirst(std::move(unreliable));
+}
+#elif PW_NC_TEST(CannotConstructReliableSocketFromUnreliableSocket)
+PW_NC_EXPECT("private");
+ReliableSocket BadWrap(Socket unreliable) {
+  return ReliableSocket(std::move(unreliable));
+}
+#endif  // PW_NC_TEST
+
 }  // namespace
 }  // namespace pw::transport

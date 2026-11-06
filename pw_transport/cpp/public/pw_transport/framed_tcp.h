@@ -19,7 +19,6 @@
 #include <string_view>
 
 #include "pw_allocator/allocator.h"
-#include "pw_async2/value_future.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_string/string.h"
@@ -96,9 +95,11 @@ class WakePipe {
 /// A `ReliableListener` that accepts TCP connections.
 ///
 /// The listener accepts IPv4 and IPv6 connections on all local interfaces. It
-/// accepts connections on a background thread. If a connection arrives without
-/// a pending `Accept` call, the listener holds it until `Accept` is called and
-/// stops listening for additional connections until then.
+/// accepts connections on a background thread. `Accept` may be called before
+/// `Listen`, in which case the future waits until the listener starts and a
+/// peer connects. If a connection arrives without a pending `Accept` call, the
+/// listener holds it until `Accept` is called and stops listening for
+/// additional connections until then.
 ///
 /// On destruction, pending `Accept` futures resolve to `FAILED_PRECONDITION`.
 /// Sockets that were already accepted remain open.
@@ -130,17 +131,6 @@ class FramedTcpListener final : public ReliableListener {
   /// succeeded.
   uint16_t port() const PW_LOCKS_EXCLUDED(lock_);
 
-  /// Waits for a peer to connect. `Accept` may be called before `Listen`,
-  /// in which case the future waits until the listener starts and a peer
-  /// connects.
-  ///
-  /// @returns
-  /// * @OK: A connection was accepted.
-  /// * @FAILED_PRECONDITION: The listener failed or was destroyed.
-  /// * @RESOURCE_EXHAUSTED: The connection could not be accepted because
-  ///   memory or file descriptors ran out.
-  AcceptFuture Accept() override PW_LOCKS_EXCLUDED(lock_);
-
  private:
   enum class State : uint8_t {
     kIdle,
@@ -148,6 +138,7 @@ class FramedTcpListener final : public ReliableListener {
     kStopped,
   };
 
+  AcceptFuture DoAcceptReliable() override PW_LOCKS_EXCLUDED(lock_);
   void AcceptLoop() PW_LOCKS_EXCLUDED(lock_);
   bool WaitForUnclaimedSlot() PW_LOCKS_EXCLUDED(lock_);
   void Deliver(Result<ReliableSocket>&& result) PW_LOCKS_EXCLUDED(lock_);
@@ -168,7 +159,7 @@ class FramedTcpListener final : public ReliableListener {
   // A connection that was accepted when no Accept() call was waiting.
   std::optional<Result<ReliableSocket>> unclaimed_ PW_GUARDED_BY(lock_);
 
-  async2::ValueListProvider<Result<ReliableSocket>> accept_provider_;
+  AcceptListProvider accept_provider_;
 
   // Released when `unclaimed_` is claimed or the listener stops.
   sync::ThreadNotification unclaimed_slot_available_;
@@ -203,18 +194,8 @@ class FramedTcpConnector final : public ReliableConnector {
   FramedTcpConnector(const FramedTcpConnector&) = delete;
   FramedTcpConnector& operator=(const FramedTcpConnector&) = delete;
 
-  /// Connects to the peer.
-  ///
-  /// @returns
-  /// * @OK: The connection was established.
-  /// * @UNAVAILABLE: The host could not be resolved or did not accept the
-  ///   connection.
-  /// * @FAILED_PRECONDITION: The connector was destroyed.
-  /// * @RESOURCE_EXHAUSTED: The connection could not be opened because memory
-  ///   or file descriptors ran out.
-  ConnectFuture Connect() override PW_LOCKS_EXCLUDED(lock_);
-
  private:
+  ConnectFuture DoConnectReliable() override PW_LOCKS_EXCLUDED(lock_);
   void ConnectLoop() PW_LOCKS_EXCLUDED(lock_);
   Result<ReliableSocket> ConnectToPeer();
 
@@ -229,7 +210,7 @@ class FramedTcpConnector final : public ReliableConnector {
   sync::Mutex lock_;
   bool stopping_ PW_GUARDED_BY(lock_) = false;
 
-  async2::ValueListProvider<Result<ReliableSocket>> connect_provider_;
+  ConnectListProvider connect_provider_;
 
   // Released when Connect() is called or the connector is destroyed.
   sync::ThreadNotification connect_requested_;

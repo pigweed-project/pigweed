@@ -74,12 +74,10 @@ class MockListener : public transport::ReliableListener {
   /// transport implementations.
   using transport::ReliableListener::WrapSocket;
 
-  transport::ReliableListener::AcceptFuture Accept() override {
-    return accept_provider_.Get();
-  }
+  AcceptFuture DoAcceptReliable() override { return accept_provider_.Get(); }
 
  private:
-  async2::ValueProvider<Result<transport::ReliableSocket>> accept_provider_;
+  AcceptProvider accept_provider_;
 };
 
 uint32_t SetBaseline(uint32_t mask);

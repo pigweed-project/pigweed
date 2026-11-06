@@ -16,6 +16,7 @@ include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 
 pw_add_library(pw_transport.cpp.socket STATIC
   HEADERS
+    public/pw_transport/internal/transport_futures.h
     public/pw_transport/socket.h
     public/pw_transport/transport.h
   PUBLIC_INCLUDES
@@ -86,6 +87,7 @@ pw_add_test(pw_transport.cpp.transport_test
     pw_async2
     pw_async2.testing
     pw_bytes
+    pw_compilation_testing._pigweed_only_negative_compilation
     pw_sync.interrupt_spin_lock
   GROUPS
     modules

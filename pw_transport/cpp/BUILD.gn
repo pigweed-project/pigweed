@@ -28,6 +28,7 @@ config("public_include_path") {
 pw_source_set("socket") {
   public_configs = [ ":public_include_path" ]
   public = [
+    "public/pw_transport/internal/transport_futures.h",
     "public/pw_transport/socket.h",
     "public/pw_transport/transport.h",
   ]
@@ -125,6 +126,7 @@ pw_test("transport_test") {
     "$dir_pw_sync:interrupt_spin_lock",
   ]
   sources = [ "transport_test.cc" ]
+  negative_compilation_tests = true
 }
 
 pw_test("framed_tcp_test") {

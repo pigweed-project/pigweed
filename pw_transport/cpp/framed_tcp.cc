@@ -853,7 +853,7 @@ uint16_t FramedTcpListener::port() const {
   return port_;
 }
 
-ReliableListener::AcceptFuture FramedTcpListener::Accept() {
+ReliableListener::AcceptFuture FramedTcpListener::DoAcceptReliable() {
   std::lock_guard lock(lock_);
   if (unclaimed_.has_value()) {
     AcceptFuture future = AcceptFuture::Resolved(std::move(*unclaimed_));
@@ -935,20 +935,16 @@ void FramedTcpListener::Deliver(Result<ReliableSocket>&& result) {
     // lock is released.
     return;
   }
-  const bool resolved =
-      accept_provider_.ResolveFirstMatching([&result](AcceptFuture&) {
-        return std::make_optional(std::move(result));
-      });
-  if (!resolved) {
-    unclaimed_ = std::move(result);
+  if (!accept_provider_.ResolveFirst(std::move(result))) {
+    // ResolveFirst leaves `result` unmodified if no future is pending.
+    unclaimed_ = std::move(result);  // NOLINT(bugprone-use-after-move)
   }
 }
 
 void FramedTcpListener::Stop() {
   std::lock_guard lock(lock_);
   state_ = State::kStopped;
-  accept_provider_.ResolveAll(
-      [](AcceptFuture&) { return Status::FailedPrecondition(); });
+  accept_provider_.ResolveAll(Status::FailedPrecondition());
 }
 
 FramedTcpConnector::FramedTcpConnector(Allocator& allocator,
@@ -971,11 +967,10 @@ FramedTcpConnector::~FramedTcpConnector() {
   if (thread.joinable()) {
     thread.join();
   }
-  connect_provider_.ResolveAll(
-      [](ConnectFuture&) { return Status::FailedPrecondition(); });
+  connect_provider_.ResolveAll(Status::FailedPrecondition());
 }
 
-ReliableConnector::ConnectFuture FramedTcpConnector::Connect() {
+ReliableConnector::ConnectFuture FramedTcpConnector::DoConnectReliable() {
   std::lock_guard lock(lock_);
   if (!thread_.joinable()) {
     if (!wake_pipe_.Open().ok()) {

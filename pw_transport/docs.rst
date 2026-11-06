@@ -26,7 +26,11 @@ Sockets are provisioned by one of two transport interfaces:
 a :cc:`Connector <pw::transport::Connector>` / :cc:`ReliableConnector
 <pw::transport::ReliableConnector>` which establishes them, or a :cc:`Listener
 <pw::transport::Listener>` / :cc:`ReliableListener
-<pw::transport::ReliableListener>` which accepts them from a peer.
+<pw::transport::ReliableListener>` which accepts them from a peer. Any
+:cc:`ReliableListener <pw::transport::ReliableListener>` or
+:cc:`ReliableConnector <pw::transport::ReliableConnector>` can also be used as
+a :cc:`Listener <pw::transport::Listener>` or
+:cc:`Connector <pw::transport::Connector>`.
 
 -----
 Usage
@@ -173,7 +177,8 @@ implementations of ``Listener`` / ``ReliableListener`` and
     public:
      FramedTcpConnector(std::string_view host, uint16_t port);
 
-     pw::transport::ReliableConnector::ConnectFuture Connect() override;
+    private:
+     ConnectFuture DoConnectReliable() override;
    };
 
 Instances of these objects can then be configured for specific endpoints and
