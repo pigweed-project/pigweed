@@ -401,13 +401,6 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
     auto channel_it =
         conn_state.channels.find(MakeDlci(channel_number, direction));
     if (channel_it == conn_state.channels.end()) {
-      PW_LOG_DEBUG(
-          "Received RFCOMM PDU for unknown DLCI: (channel %u, direction %u, "
-          "size %zu), "
-          "forwarding to host.",
-          channel_number,
-          static_cast<uint8_t>(direction),
-          pdu_bytes.size());
       return std::move(pdu);
     }
 
