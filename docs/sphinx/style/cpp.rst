@@ -884,8 +884,9 @@ and provide a simple mechanism for conditional logging and for log filtering.
             return Status::OutOfRange();
           }
 
-  - Use :c:macro:`PW_LOG_INFO` and :c:macro:`PW_LOG_WARN` to communicate error
-    conditions that may not have a caller that can handle them.
+  - Use :c:macro:`PW_LOG_INFO`, :c:macro:`PW_LOG_WARN`, and
+    :c:macro:`PW_LOG_ERROR` to communicate conditions that may not have
+    a caller that can handle them.
 
     .. admonition:: **Yes**
        :class: checkmark
