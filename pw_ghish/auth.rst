@@ -207,17 +207,18 @@ Automatic ``git push`` fallbacks (``pr create`` / ``pr push``)
 --------------------------------------------------------------
 On Google Corp workstations, ``gcert --lifetime=168h`` issues a 7-day
 ``LOAS2`` certificate (used by ``rpc://`` and ``sso-cred-helper``), whereas the
-``corp/normal`` SSO ticket in ``ssh-agent`` (used by ``sso://``) is capped at 20
-hours. When a push to an ``sso://<tenant>/...`` remote fails because the
-20-hour SSO ticket has expired, ``pw_ghish`` automatically retries:
+SSO login cookie / ticket used by ``sso://`` is capped at ~20 hours. When a
+push to a Gerrit remote fails transport authentication in ``googler`` mode,
+``pw_ghish`` retries using per-invocation Git config overrides (leaving
+``~/.gitconfig`` and ``.git/config`` untouched):
 
-1. **Corp Linux (Cloudtop / gLinux)**: If ``git-remote-rpc`` is on ``PATH``,
-   retries with ``-c url.rpc://<tenant>/.insteadOf=sso://<tenant>/`` using the
-   7-day ``LOAS2`` certificate.
-2. **Corp macOS & Linux**: If ``git-remote-rpc`` is unavailable (such as on
-   Corp macOS) or ``rpc://`` also fails, mints a Gerrit OAuth2 token via
-   ``luci-auth`` and retries over ``https://<tenant>.googlesource.com/`` with
-   an ``Authorization: Bearer`` header.
+1. **Corp Linux (Cloudtop / gLinux)**: Tries ``rpc://``, then ``sso://``, and
+   finally ``https://`` with OAuth2.
+2. **Corp macOS &** ``GOOGLE_ROLE=laptop``: Tries ``sso://`` and then
+   ``https://`` with OAuth2.
+
+On corp-only Gerrit hosts that enforce IP/SSO restrictions, ``pw_ghish`` skips
+the ``https://`` fallback and prescribes ``gcert``.
 
 LUCI Buildbucket & LogDog
 =========================
