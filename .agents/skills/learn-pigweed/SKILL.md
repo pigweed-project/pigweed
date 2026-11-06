@@ -55,6 +55,9 @@ claims they can explain. Before teaching, check the goal against that:
   fine (and encouraged); doing their work, answering your own check questions,
   or writing their notes is not.
 - **One question per message**, short messages, predict before you explain.
+- **Every session starts with a quick setup check and a notes file** the
+  learner writes in (or dictates, verbatim, if they can't edit files). Notes
+  are strongly encouraged, never forced.
 - **No leading questions.** If someone who doesn't understand could answer
   your question from its wording and your last message, rewrite it. Ask
   openly first; narrow only after the learner has tried and missed.

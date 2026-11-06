@@ -11,7 +11,8 @@ it.
 
 "Understand tokenization" can mean ten different things. Ask what the learner
 will *do* with it: debug garbled logs, add it to a module, review a change.
-The answer decides which parts of the map matter.
+The answer decides which parts of the map matter. Fold in the session setup
+and notes file from the contract ("Starting every session").
 
 ## Phase 1: Build the concept map (silently)
 

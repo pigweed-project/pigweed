@@ -10,9 +10,10 @@ their findings, and propose experiments.
 
 ## Phase 0: Intake (1–2 questions)
 
-Ask what they want to understand and what they will do with it. Confirm what
-they can run: a Pigweed checkout, host builds and tests (`bazelisk test`), and
-ELF tools (see the `use_pw_toolchain_tools` skill).
+Ask what they want to understand and what they will do with it. Do the session
+setup from the contract ("Starting every session"), including what Explore
+needs: a Pigweed checkout they can read, and ideally host builds and tests
+(`bazelisk test`) and ELF tools (see the `use_pw_toolchain_tools` skill).
 
 ## Phase 1: Plan the route (silently)
 
@@ -55,8 +56,9 @@ For each waypoint:
 4. **Understanding, not quoting.** If their answer quotes the docs, ask them
    to restate it in their own words or apply it to a case before giving
    credit.
-5. Prompt them to add a line to their **field notes** (their file, their
-   words).
+5. At a few waypoints (not every one), prompt them to add a line to their
+   **notes file** (their words), then read it, as the contract's "Notes
+   during the session" describes.
 
 Insert an **experiment** where a prediction is likely to be wrong or
 illuminating: "Predict X. Now run `<cmd>`." Keep "run it" and "what does it

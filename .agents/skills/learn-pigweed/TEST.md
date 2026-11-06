@@ -35,6 +35,9 @@ Run each scenario in a fresh agent session and read the transcript.
 | **10** | **Orient: lost learner** | "I need to make my sensor driver work on both FreeRTOS and host; where do I even start?" ([UC-16](use_cases.md#uc-16-portable-driver-across-freertos-and-host)) | Uses Orient: asks about the real task; at most three placement questions; shows a small map grounded in the module docs, with "you are here" and the topics the task needs; proposes units and lets the learner pick; writes `plan.md`; starts teaching the first unit in the same session. | A long placement quiz; a session that ends with a plan and no teaching; a giant or ungrounded map. |
 | **11** | **Orient: next session** | `/learn-pigweed` again after scenario 10. | Reads `plan.md` and the record, opens with retrieval questions, confirms the next unit, and teaches it. | Re-orienting from scratch; ignoring the plan. |
 | **12** | **Leading questions** | Any Understand or Explore session; review the teaching phase in the middle. | First asks about an idea are open or consequence questions; narrowing appears only after a miss; checks use a new case, not a restatement of the last explanation; design decisions are predicted before they're revealed. | Answers in the premise ("if the string isn't on the device, where would it read it from?"); rigged choices; echo checks right after an explanation; "why is X better than Y?"; 3+ one-answer micro-steps in a row outside a help-ladder descent. |
+| **13** | **Session setup and notes file** | Start any session (Understand, Explore, or Orient). | Within the first message or two, asks how the learner is working and checks only what this mode needs; creates `~/.pw_learn/<topic>/notes.md` with headings only; says briefly why writing notes in their own words helps; previews the closing notes review; reads the file after the first entry to confirm it can see it. Re-checks the setup in later sessions, briefly. | A multi-message setup interview; pre-filled notes; skipping the round-trip check; asking for tools this mode doesn't need. |
+| **14** | **Learner skips notes** | When asked to jot something down, say "ok" (or even "done") but don't write anything. | At the next landmark, reads the file, notices nothing was added, and encourages once with the reason, then continues. At the close, encourages again; if notes still don't exist, does the review as a verbal teach-back and records "no notes". | Ignoring the missing notes; blocking progress; nagging every message; writing the notes for them; saying "I see your note" when the file doesn't contain it. |
+| **15** | **No editor (dictation)** | "I'm on Jetski web on a cloudtop and don't have an editor handy." | Switches to dictation: the learner types notes in chat and the agent writes them to the file verbatim; edits also come from the learner. | Rewording, tidying, or adding to the dictated notes; dropping notes entirely. |
 
 More realistic openings across Pigweed (RPC, tokenizer, containers,
 allocator, the OS abstraction layer, facades, pw_async2, pw_kernel, and more)
@@ -129,6 +132,25 @@ alone ("answerable without understanding"). Report:
 - **railroad runs**: 3+ consecutive questions that each allow only one
   obvious next step, outside a help-ladder descent after a miss;
 - cue passes for the surface-cue student.
+
+### Setup and notes
+
+For changes to the session setup or notes handling, also report:
+
+- setup messages before the first teaching step, and whether the setup check
+  matched the mode;
+- whether a notes file exists with lines the learner wrote (or dictated), and
+  whether the teacher read it back after the first entry;
+- whether the case for notes and the preview of the closing review were
+  given (briefly, without overclaiming);
+- mid-session notes checkpoints, and how missing notes were handled
+  (encouraged once, ignored, blocked, or nagged);
+- whether the closing review happened, from notes or as a verbal teach-back;
+- for dictation, whether the file matches what the learner typed, word for
+  word.
+
+Useful personas: a **note-avoider** who only writes notes when it's easy and
+clearly worth it, and a **chat-only** learner who can't edit files.
 
 Rough targets: leading ≤ 15%, answerable without understanding ≤ 10%, no
 railroad runs, and few cue passes. Check that the struggling persona still

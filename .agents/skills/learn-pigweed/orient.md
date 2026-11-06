@@ -23,7 +23,8 @@ Ask what they need to *do* in the next few weeks, not what they want to learn
 about: "write a service that talks to another process", "make my driver build
 for both FreeRTOS and host", "review CLs in pw_async2". A junior can't scope
 "the kernel", but the task scopes it for them. If there's no task (pure
-curiosity), ask what would make them feel they "get it".
+curiosity), ask what would make them feel they "get it". Fold in the session
+setup and notes file from the contract ("Starting every session").
 
 ## Phase 2: Build a coarse map (silently)
 
