@@ -333,7 +333,6 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 	if resp == nil {
 		return fmt.Errorf("response pointer cannot be nil")
 	}
-	httpClient := ensureSafeHTTPClient(c.HTTPClient)
 
 	jsonBytes, err := json.Marshal(req)
 	if err != nil {
@@ -349,18 +348,19 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 		fmt.Fprintf(os.Stderr, "[debug] pRPC request: %s %s\n", endpoint, string(jsonBytes))
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(jsonBytes))
+	httpResp, err := executeWithAuthStrategy(ctx, c.HTTPClient, newLUCIAuth(c.Host, c.TokenProvider), func(reqCtx context.Context) (*http.Request, error) {
+		httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(jsonBytes))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s/%s request: %w", service, method, err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Accept", "application/json")
+		return httpReq, nil
+	})
 	if err != nil {
-		return fmt.Errorf("failed to create %s/%s request: %w", service, method, err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-	if err := newLUCIAuth(c.Host, c.TokenProvider).apply(httpReq); err != nil {
-		return err
-	}
-
-	httpResp, err := httpClient.Do(httpReq)
-	if err != nil {
+		if _, ok := errors.AsType[*ExitCodeError](err); ok {
+			return err
+		}
 		return fmt.Errorf("%s/%s request failed: %w", service, method, err)
 	}
 	defer httpResp.Body.Close()
@@ -543,7 +543,6 @@ func (c *LUCIClient) fetchLogStreamTail(ctx context.Context, viewURL string, max
 	if viewURL == "" {
 		return "", 0, fmt.Errorf("viewURL cannot be empty")
 	}
-	httpClient := ensureSafeHTTPClient(c.HTTPClient)
 
 	parsed, err := url.Parse(viewURL)
 	if err != nil {
@@ -557,16 +556,14 @@ func (c *LUCIClient) fetchLogStreamTail(ctx context.Context, viewURL string, max
 		parsed.RawQuery = q.Encode()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", parsed.String(), nil)
+	targetURL := parsed.String()
+	resp, err := executeWithAuthStrategy(ctx, c.HTTPClient, newLUCIAuth(c.Host, c.TokenProvider), func(reqCtx context.Context) (*http.Request, error) {
+		return http.NewRequestWithContext(reqCtx, http.MethodGet, targetURL, nil)
+	})
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to create log request: %w", err)
-	}
-	if err := newLUCIAuth(c.Host, c.TokenProvider).apply(req); err != nil {
-		return "", 0, fmt.Errorf("failed to authenticate log request: %w", err)
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
+		if ExitCodeFor(err) == ExitCodeAuth {
+			return "", 0, fmt.Errorf("failed to authenticate log request: %w", err)
+		}
 		return "", 0, fmt.Errorf("failed to fetch log: %w", err)
 	}
 	defer resp.Body.Close()

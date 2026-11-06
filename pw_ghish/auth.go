@@ -39,8 +39,11 @@ import (
 //
 //   ResolveAuthMode (auto | googler | community | none)
 //          |
-//          +---> resolveGerritStrategy ---> HTTPAuthStrategy (*gerritBearerStrategy)
-//                (GERRIT_TOKEN | luci-auth)         |
+//          +---> resolveGerritStrategy ----> HTTPAuthStrategy (*gerritBearerStrategy)
+//          |     (GERRIT_TOKEN | luci-auth)         |
+//          |                                        v
+//          +---> modeAwareBearerToken -----> HTTPAuthStrategy (*BearerTokenStrategy)
+//                (LUCI)                             |
 //                                                   v
 //                                         executeWithAuthStrategy
 //                                           1. Prepare(req)   -> Bearer header, /a/ prefix
@@ -560,6 +563,57 @@ func (s *BearerTokenStrategy) HandleResponse(ctx context.Context, req *http.Requ
 	return s.refreshRejectedToken(ctx, req, resp)
 }
 
+// modeAwareBearerToken adapts a service token resolver to a dynamic
+// BearerTokenStrategy token callback under the active AuthMode: skipping
+// minting in AuthModeNone, failing with ExitCodeAuth when requiredInGoogler is
+// set in AuthModeGoogler, and proceeding unauthenticated in community mode or
+// optional-auth backends.
+func modeAwareBearerToken(
+	service string,
+	cfg *Config,
+	requiredInGoogler bool,
+	mint func(context.Context) (string, error),
+) func(context.Context, *url.URL) (string, error) {
+	return func(ctx context.Context, reqURL *url.URL) (string, error) {
+		if cfg != nil && ctx.Value(configKey) == nil {
+			ctx = context.WithValue(ctx, configKey, cfg)
+		}
+		mode, modeReason, err := ResolveAuthMode(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+		if mode == AuthModeNone {
+			return "", nil
+		}
+		tok, tokErr := mint(ctx)
+		tok = strings.TrimSpace(tok)
+		if tokErr == nil && tok != "" {
+			return tok, nil
+		}
+		if tokErr == nil {
+			tokErr = errors.New("empty token")
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			return "", cerr
+		}
+		if requiredInGoogler && mode == AuthModeGoogler {
+			// Resolver errors such as DefaultLUCIToken's carry their own
+			// remediation; keep only their first line so it is not repeated.
+			return "", NewExitCodeError(ExitCodeAuth,
+				"%s authentication required in googler mode (%s): no OAuth2 token for %s: %v\n\n"+
+					"Remediation:\n"+
+					"%s\n"+
+					"  2. Check authentication status: gh auth status\n"+
+					"  3. For public projects without internal credentials: export GH_ISH_AUTH_MODE=community",
+				service, modeReason, reqURL.Host, firstLine(tokErr.Error()),
+				luciAuthTokenRemediationStep1(luciAuthLoginCommand(mode)))
+		}
+		// OK: community mode and optional-auth backends proceed unauthenticated when no token is available.
+		slog.Debug("proceeding without OAuth2 token", "service", service, "host", reqURL.Host, "err", tokErr)
+		return "", nil
+	}
+}
+
 // bearerAuth attaches a gh-ish OAuth2 token to requests for one backend.
 type bearerAuth struct {
 	// service names the backend in errors ("LUCI", "Android Build").
@@ -654,24 +708,24 @@ func isTrustedLUCIURL(bbHost string, u *url.URL) bool {
 	return urlHostIn(u, "cr-buildbucket.appspot.com", "logs.chromium.org", configured)
 }
 
-// newLUCIAuth returns the bearerAuth policy for LUCI Buildbucket and LogDog.
+// newLUCIAuth returns the HTTPAuthStrategy for LUCI Buildbucket and LogDog.
 // Internal tryjobs and logs are not returned to unauthenticated requests, so a
 // missing token is an error in googler mode.
-func newLUCIAuth(bbHost string, tokenProvider func(context.Context) (string, error)) bearerAuth {
+func newLUCIAuth(bbHost string, tokenProvider func(context.Context) (string, error)) HTTPAuthStrategy {
 	if tokenProvider == nil {
 		tokenProvider = func(ctx context.Context) (string, error) {
 			tok, _, err := LUCITokenResolver(ctx)
 			return tok, err
 		}
 	}
-	return bearerAuth{
-		service: "LUCI",
-		trusted: func(u *url.URL) bool {
+	return NewDynamicBearerStrategy(
+		"token (LUCI)",
+		func(u *url.URL) bool {
 			return isTrustedLUCIURL(bbHost, u)
 		},
-		token:             tokenProvider,
-		requiredInGoogler: true,
-	}
+		modeAwareBearerToken("LUCI", nil, true, tokenProvider),
+		invalidateLUCIAuthToken,
+	)
 }
 
 func newLUCIHTTPAuthError(ctx context.Context, target string, statusCode int, body []byte) error {

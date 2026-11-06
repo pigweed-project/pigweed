@@ -350,7 +350,7 @@ func TestLUCIAuthToken_ConcurrentCallersMintOnce(t *testing.T) {
 	}
 }
 
-func TestBearerAuth_Apply(t *testing.T) {
+func TestBearerTokenStrategy_Prepare(t *testing.T) {
 	origFlag := AuthModeFlag
 	t.Cleanup(func() { AuthModeFlag = origFlag })
 
@@ -376,29 +376,32 @@ func TestBearerAuth_Apply(t *testing.T) {
 			WithHermeticAuth(t, AuthResolvers{})
 			AuthModeFlag = tc.mode
 			var calls int
-			a := bearerAuth{
-				service:           "Test service",
-				trusted:           func(u *url.URL) bool { return urlHostIn(u, "trusted.example") },
-				token:             func(context.Context) (string, error) { calls++; return tc.tok, tc.tokErr },
-				requiredInGoogler: tc.required,
-			}
+			s := NewDynamicBearerStrategy(
+				"token",
+				func(u *url.URL) bool { return urlHostIn(u, "trusted.example") },
+				modeAwareBearerToken("Test service", nil, tc.required, func(context.Context) (string, error) {
+					calls++
+					return tc.tok, tc.tokErr
+				}),
+				func(string) {},
+			)
 			ctx := t.Context()
 			if tc.cancelled {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
 				cancel()
 			}
-			req, _ := http.NewRequestWithContext(ctx, "GET", tc.url, nil)
-			err := a.apply(req)
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, tc.url, nil)
+			err := s.Prepare(ctx, req)
 			if tc.cancelled && (!errors.Is(err, context.Canceled) || ExitCodeFor(err) == ExitCodeAuth) {
-				t.Errorf("apply() error = %v, want context.Canceled without ExitCodeAuth", err)
+				t.Errorf("Prepare() error = %v, want context.Canceled without ExitCodeAuth", err)
 			}
 			if (tc.wantCode == 0 && err != nil) || (tc.wantCode != 0 && err == nil) || (tc.wantCode > 0 && ExitCodeFor(err) != tc.wantCode) {
-				t.Errorf("apply() err = %v (code %d), want code %d", err, ExitCodeFor(err), tc.wantCode)
+				t.Errorf("Prepare() err = %v (code %d), want code %d", err, ExitCodeFor(err), tc.wantCode)
 			}
 			for _, want := range tc.wantInErr {
 				if err == nil || !strings.Contains(err.Error(), want) {
-					t.Errorf("apply() error = %v, want substring %q", err, want)
+					t.Errorf("Prepare() error = %v, want substring %q", err, want)
 				}
 			}
 			if got := req.Header.Get("Authorization"); got != tc.wantHeader || calls != tc.wantCalls {
@@ -407,7 +410,7 @@ func TestBearerAuth_Apply(t *testing.T) {
 		})
 	}
 
-	t.Run("nil request, nil Header, and fallback Config", func(t *testing.T) {
+	t.Run("fallback Config propagation", func(t *testing.T) {
 		WithHermeticAuth(t, AuthResolvers{})
 		SetMockGit(t, nil)
 		AuthModeFlag = ""
@@ -421,27 +424,22 @@ func TestBearerAuth_Apply(t *testing.T) {
 			Host: "pigweed-review.googlesource.com",
 			Git:  (&MockGitRunner{}).OnCommand("config --get ghish.authmode", "googler\n"),
 		}
-		a := bearerAuth{
-			service: "Test service",
-			trusted: func(u *url.URL) bool { return urlHostIn(u, "trusted.example") },
-			token: func(ctx context.Context) (string, error) {
+		s := NewDynamicBearerStrategy(
+			"token",
+			func(u *url.URL) bool { return urlHostIn(u, "trusted.example") },
+			modeAwareBearerToken("Test service", wantCfg, true, func(ctx context.Context) (string, error) {
 				gotCfg, _ = ctx.Value(configKey).(*Config)
 				gotMode, gotReason, _ = ResolveAuthMode(ctx, nil)
 				if failToken {
 					return "", errors.New("no token")
 				}
 				return "tok", nil
-			},
-			requiredInGoogler: true,
-			cfg:               wantCfg,
-		}
-		if err := a.apply(nil); err != nil {
-			t.Fatalf("apply(nil) error = %v, want nil", err)
-		}
-		u, _ := url.Parse("https://trusted.example/x")
-		req := (&http.Request{Method: "GET", URL: u}).WithContext(t.Context())
-		if err := a.apply(req); err != nil {
-			t.Fatalf("apply(req with nil Header) error = %v, want nil", err)
+			}),
+			func(string) {},
+		)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://trusted.example/x", nil)
+		if err := s.Prepare(t.Context(), req); err != nil {
+			t.Fatalf("Prepare() error = %v, want nil", err)
 		}
 		if got := req.Header.Get("Authorization"); got != "Bearer tok" {
 			t.Errorf("Authorization = %q, want %q", got, "Bearer tok")
@@ -453,28 +451,31 @@ func TestBearerAuth_Apply(t *testing.T) {
 			t.Errorf("token ResolveAuthMode(ctx) = (%q, %q), want (googler, git config ghish.authmode=googler)", gotMode, gotReason)
 		}
 
-		// Verify bearerAuth.apply itself observed a.cfg via ResolveAuthMode when token fails.
+		// Verify modeAwareBearerToken observes cfg via ResolveAuthMode when token fails.
 		failToken = true
 		reqErr := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://trusted.example/x", nil)
-		err := a.apply(reqErr)
+		err := s.Prepare(t.Context(), reqErr)
 		if ExitCodeFor(err) != ExitCodeAuth || !strings.Contains(err.Error(), "git config ghish.authmode=googler") {
-			t.Errorf("apply() with failing token under a.cfg googler mode = %v, want ExitCodeAuth mentioning git config ghish.authmode=googler", err)
+			t.Errorf("Prepare() with failing token under cfg googler mode = %v, want ExitCodeAuth mentioning git config ghish.authmode=googler", err)
 		}
 
-		// Verify a.cfg with ghish.authmode=none disables auth without calling token().
+		// Verify cfg with ghish.authmode=none disables auth without calling token().
 		ResetAuthTokenCaches()
 		var tokenCalls int
-		noneAuth := bearerAuth{
-			service: "Test service",
-			trusted: func(u *url.URL) bool { return urlHostIn(u, "trusted.example") },
-			token:   func(context.Context) (string, error) { tokenCalls++; return "tok", nil },
-			cfg: &Config{
+		noneStrategy := NewDynamicBearerStrategy(
+			"token",
+			func(u *url.URL) bool { return urlHostIn(u, "trusted.example") },
+			modeAwareBearerToken("Test service", &Config{
 				Git: (&MockGitRunner{}).OnCommand("config --get ghish.authmode", "none\n"),
-			},
-		}
+			}, false, func(context.Context) (string, error) {
+				tokenCalls++
+				return "tok", nil
+			}),
+			func(string) {},
+		)
 		reqNone := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://trusted.example/x", nil)
-		if err := noneAuth.apply(reqNone); err != nil || tokenCalls != 0 || reqNone.Header.Get("Authorization") != "" {
-			t.Errorf("apply() under a.cfg none mode = %v (calls=%d, Auth=%q), want nil, 0, empty", err, tokenCalls, reqNone.Header.Get("Authorization"))
+		if err := noneStrategy.Prepare(t.Context(), reqNone); err != nil || tokenCalls != 0 || reqNone.Header.Get("Authorization") != "" {
+			t.Errorf("Prepare() under cfg none mode = %v (calls=%d, Auth=%q), want nil, 0, empty", err, tokenCalls, reqNone.Header.Get("Authorization"))
 		}
 	})
 }
@@ -740,14 +741,15 @@ func TestLUCIAuthToken_ContextModeSkipsAutoDetection(t *testing.T) {
 		t.Errorf("auto-detection lookups with explicit mode = %d, want 0", n)
 	}
 
-	a := bearerAuth{
-		service: "LUCI",
-		trusted: func(*url.URL) bool { return true },
-		token:   luciAuthToken,
-	}
+	s := NewDynamicBearerStrategy(
+		"token",
+		func(*url.URL) bool { return true },
+		modeAwareBearerToken("LUCI", nil, false, luciAuthToken),
+		func(string) {},
+	)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cr-buildbucket.appspot.com/", nil)
-	if err := a.apply(req); err != nil || req.Header.Get("Authorization") != "Bearer tok" {
-		t.Errorf("apply() = %v, Auth=%q", err, req.Header.Get("Authorization"))
+	if err := s.Prepare(t.Context(), req); err != nil || req.Header.Get("Authorization") != "Bearer tok" {
+		t.Errorf("Prepare() = %v, Auth=%q", err, req.Header.Get("Authorization"))
 	}
 
 	t.Setenv("GH_ISH_AUTH_MODE", "")
@@ -756,11 +758,11 @@ func TestLUCIAuthToken_ContextModeSkipsAutoDetection(t *testing.T) {
 		t.Errorf("luciAuthToken() in auto mode err=%v, detections=%d (want >0)", err, detections())
 	}
 	afterFirstAuto := detections()
-	if err := a.apply(httptest.NewRequestWithContext(cfgCtx, http.MethodGet, "https://cr-buildbucket.appspot.com/", nil)); err != nil {
-		t.Errorf("apply() in auto mode = %v", err)
+	if err := s.Prepare(cfgCtx, httptest.NewRequestWithContext(cfgCtx, http.MethodGet, "https://cr-buildbucket.appspot.com/", nil)); err != nil {
+		t.Errorf("Prepare() in auto mode = %v", err)
 	}
 	if got := detections(); got != afterFirstAuto {
-		t.Errorf("detections after cached auto-mode apply() = %d, want %d", got, afterFirstAuto)
+		t.Errorf("detections after cached auto-mode Prepare() = %d, want %d", got, afterFirstAuto)
 	}
 }
 
@@ -858,5 +860,52 @@ func TestBuildbucketProvider_PropagatesCfgToLUCIAuth(t *testing.T) {
 	_, err = prov.SearchBuilds(t.Context(), "pigweed-review.googlesource.com", 123, 1, change)
 	if ExitCodeFor(err) != ExitCodeAuth || !strings.Contains(err.Error(), "git config ghish.authmode=googler") {
 		t.Errorf("SearchBuilds with failing token = %v, want ExitCodeAuth mentioning git config ghish.authmode=googler", err)
+	}
+}
+
+func TestHTTPClients_InvalidateCachedLUCITokenOn401(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		call func(*testing.T, *http.Client)
+	}{
+		{
+			name: "LUCIClient",
+			body: ")]}'\n{}",
+			call: func(t *testing.T, hc *http.Client) {
+				var out map[string]any
+				if err := NewLUCIClient("cr-buildbucket.appspot.com", hc).CallPRPC(t.Context(), "buildbucket.v2.Builds", "GetBuild", map[string]any{"id": "1"}, &out); err != nil {
+					t.Fatalf("CallPRPC: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var mints int
+			WithHermeticAuth(t, AuthResolvers{
+				LookPath: luciAuthFoundLookPath,
+				CommandRunner: func(context.Context, string, ...string) ([]byte, error) {
+					mints++
+					return luciAuthJSON(fmt.Sprintf("shared-tok-%d", mints), time.Now().Add(time.Hour)), nil
+				},
+			})
+			withLUCIAuthTokenResolvers(t)
+			t.Setenv("GH_ISH_AUTH_MODE", "googler")
+			ResetAuthTokenCaches()
+
+			var auths []string
+			tc.call(t, &http.Client{
+				Transport: testRoundTripper(func(req *http.Request) (*http.Response, error) {
+					auths = append(auths, req.Header.Get("Authorization"))
+					if len(auths) == 1 {
+						return &http.Response{StatusCode: http.StatusUnauthorized, Body: http.NoBody, Header: make(http.Header), Request: req}, nil
+					}
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header), Request: req}, nil
+				}),
+			})
+			if mints != 2 || !slices.Equal(auths, []string{"Bearer shared-tok-1", "Bearer shared-tok-2"}) {
+				t.Errorf("mints=%d auths=%q, want 2 and [Bearer shared-tok-1, Bearer shared-tok-2]", mints, auths)
+			}
+		})
 	}
 }
