@@ -161,7 +161,10 @@ do not—so a ``Code-Review+2`` cast over OAuth2 is recorded as
 ``missing device trust`` and does not count on hosts that enforce it (such as
 ``pigweed-review.googlesource.com``). ``./gh auth status`` reports
 ``Method: corp-sso`` when Corp SSO is active and prints a warning when it is
-not.
+not. In ``googler`` mode, ``./gh pr review`` refuses positive ``Code-Review``
+votes over OAuth2 on changes with an applicable ``Review-Enforcement`` submit
+requirement, exiting with code ``4`` instead of casting a vote Gerrit would
+ignore (see :ref:`module-pw_ghish-pr`).
 
 .. note::
 

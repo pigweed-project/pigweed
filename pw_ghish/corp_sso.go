@@ -158,6 +158,56 @@ func (s *AdaptiveGerritStrategy) HandleResponse(ctx context.Context, req *http.R
 	return false, nil
 }
 
+func (c *GerritClient) setPositiveCodeReview(
+	ctx context.Context,
+	mode AuthMode,
+	host, changeID, revision string,
+	input *ReviewInput,
+) (*ReviewResult, error) {
+	if mode != AuthModeGoogler || !isGerritAutoAuthHost(hostnameOf(host)) {
+		return c.SetReview(ctx, changeID, revision, input)
+	}
+	// Fetch submit requirements first so AdaptiveGerritStrategy resolves cold
+	// corp-only pivots or open-host OAuth2 fallbacks on GET before any review
+	// mutation is sent.
+	change, err := c.GetChange(ctx, changeID, "SUBMIT_REQUIREMENTS")
+	if err != nil {
+		return nil, err
+	}
+	if method, desc := c.DescribeAuth(); method != AuthMethodCorpSSO && change.isReviewEnforced() {
+		reason := "this client authenticates with " + desc
+		if tok, _ := gerritTokenFromEnv(); tok == "" {
+			reason = cmp.Or(corpSSOUnavailableReason(host), reason)
+		}
+		return nil, untrustedCodeReviewVoteError(host, input.Labels["Code-Review"], reason)
+	}
+	return c.SetReview(ctx, changeID, revision, input)
+}
+
+func untrustedCodeReviewVoteError(host string, score int, reason string) error {
+	cleanHost := CleanGerritHost(host)
+	var steps []string
+	if tok, _ := gerritTokenFromEnv(); tok != "" {
+		steps = append(steps, "unset GERRIT_TOKEN")
+	}
+	if strings.TrimSpace(os.Getenv(corpSSOEnvVar)) == "0" {
+		steps = append(steps, "unset "+corpSSOEnvVar)
+	}
+	steps = append(steps, "gcert")
+	if findGossoBinary() == "" {
+		steps = append(steps, "Install gosso (Linux: 'sudo apt install gosso'; macOS: 'sudo mule install gosso')")
+	}
+	steps = append(steps, "gh auth status --host "+cleanHost)
+	return NewExitCodeError(ExitCodeAuth,
+		"Code-Review+%d on %s would be recorded as 'missing device trust' and ignored by review enforcement "+
+			"because this request would use OAuth2 instead of Corp SSO (%s).\n\n"+
+			"Cause: Gerrit's Review-Enforcement submit requirement only counts Code-Review approvals sent "+
+			"with BeyondCorp device trust, which only the Corp SSO path through the local Uplink proxy carries.\n\n"+
+			"Remediation:\n%s\n"+
+			"  (comments and Code-Review 0/-1 still post)",
+		score, cleanHost, reason, formatGerritRemediationSteps(steps...))
+}
+
 // CorpSSOStrategy implements HTTPAuthStrategy for Google-hosted Gerrit hosts
 // accessed over HTTP through the local BeyondCorp Uplink proxy (:999) using
 // UberProxy cookies and a Google-CorpSSO Basic auth ticket.
@@ -359,7 +409,7 @@ func corpSSOStatusWarning(host string, mode AuthMode, method AuthMethod, methodD
 	reason := cmp.Or(corpSSOUnavailableReason(host), "authenticating with "+methodDesc)
 	return fmt.Sprintf("Corp SSO is not in use for %s (%s). Code-Review votes sent over OAuth2 "+
 		"lack BeyondCorp device trust and are recorded as 'missing device trust' by Gerrit review enforcement "+
-		"on hosts that verify it.", host, reason)
+		"on hosts that verify it; gh pr review refuses such votes.", host, reason)
 }
 
 func normalizeCorpHostKey(host string) string {

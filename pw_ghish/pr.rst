@@ -410,6 +410,14 @@ attach a review message from a file or ``stdin``):
    # Publish all staged draft comments on the change without uploading a patchset:
    $ ./gh pr review 413992 --publish
 
+.. note::
+
+   In ``googler`` mode, positive ``Code-Review`` votes require BeyondCorp device
+   trust (Corp SSO) on changes with an applicable ``Review-Enforcement`` submit
+   requirement; ``pr review`` exits with code ``4`` instead of sending or
+   falling back to OAuth2 Bearer (comments, ``Code-Review`` 0/-1, and
+   ``Commit-Queue`` votes are unaffected; see :ref:`module-pw_ghish-auth`).
+
 Posting inline comments: ``pr comment``
 =======================================
 Posts change-level, file-level, or inline review comments (via ``-m, --message``,

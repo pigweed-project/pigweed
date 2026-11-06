@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -355,6 +356,62 @@ func TestReviewCmd_Agent(t *testing.T) {
 			}
 			if tc.name == "agent" && body.Labels["Code-Review"] != 2 {
 				t.Errorf("approve vote lost: labels %v", body.Labels)
+			}
+		})
+	}
+}
+
+func TestReviewCmd_RefusesUntrustedCodeReviewVotes(t *testing.T) {
+	enforced := []map[string]any{{"name": "Review-Enforcement", "status": "UNSATISFIED"}}
+	notApplicable := []map[string]any{{"name": "Review-Enforcement", "status": "NOT_APPLICABLE"}}
+
+	for _, tc := range []struct {
+		name        string
+		srs         []map[string]any
+		args        []string
+		wantRefused bool
+		wantGetSRs  bool
+		wantLabels  map[string]int
+	}{
+		{name: "refused: Bearer + enforced + approve", srs: enforced, args: []string{"--approve"}, wantRefused: true, wantGetSRs: true},
+		{name: "allowed: non-enforced approve", srs: notApplicable, args: []string{"--approve"}, wantGetSRs: true, wantLabels: map[string]int{"Code-Review": 2}},
+		{name: "allowed: request-changes (-1) skips SR fetch", srs: enforced, args: []string{"--request-changes"}, wantLabels: map[string]int{"Code-Review": -1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			WithHermeticAuth(t, AuthResolvers{
+				GerritToken: func(context.Context) (string, string, error) { return "mock-oauth-tok", "luci-auth", nil },
+			})
+			server := NewMockGerritServer(t)
+			server.OnDefaultChange(777, func(ch map[string]any) { ch["submit_requirements"] = tc.srs })
+			server.OnReview(777)
+
+			out, err := executeCommand(RootCmd, append([]string{"pr", "review", "777", "--auth-mode", "googler"}, tc.args...)...)
+
+			var gotSRFetch bool
+			var posted []MockRequest
+			for _, r := range server.Requests() {
+				if r.Method == http.MethodGet && strings.HasSuffix(r.Path, "/changes/777") && slices.Contains(r.URL.Query()["o"], "SUBMIT_REQUIREMENTS") {
+					gotSRFetch = true
+				}
+				if r.Method == http.MethodPost && strings.HasSuffix(r.Path, "/review") {
+					posted = append(posted, r)
+				}
+			}
+			if gotSRFetch != tc.wantGetSRs {
+				t.Errorf("GET SUBMIT_REQUIREMENTS = %v, want %v", gotSRFetch, tc.wantGetSRs)
+			}
+			if tc.wantRefused {
+				if ExitCodeFor(err) != ExitCodeAuth || !strings.Contains(err.Error(), "gcert") || len(posted) != 0 {
+					t.Fatalf("refusal: err=%v (exit=%d) posted=%d\n%s", err, ExitCodeFor(err), len(posted), out)
+				}
+				return
+			}
+			if err != nil || len(posted) != 1 {
+				t.Fatalf("pr review %v: err=%v posted=%d\n%s", tc.args, err, len(posted), out)
+			}
+			input := DecodeRequest[ReviewInput](t, &posted[0])
+			if diff := cmp.Diff(tc.wantLabels, input.Labels); diff != "" {
+				t.Errorf("labels mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

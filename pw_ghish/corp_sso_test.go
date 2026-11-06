@@ -532,3 +532,81 @@ func TestSSOSessionCache_CrossProcessReuse(t *testing.T) {
 		t.Errorf("warm ssoMints=%d proxyHits=%d, want 1 and 2", rig.ssoMints.Load(), rig.proxyHits.Load())
 	}
 }
+
+func (r *corpSSOTestRig) newChangeContext(t *testing.T, changeID string) *ChangeContext {
+	t.Helper()
+	return &ChangeContext{
+		Context:  r.ctx,
+		Config:   &Config{Host: r.canonHost},
+		Client:   r.newClient(t),
+		ChangeID: changeID,
+		Revision: "current",
+		Host:     r.canonHost,
+	}
+}
+
+func TestSetPositiveCodeReview_VoteGating(t *testing.T) {
+	t.Run("enforced change refuses positive vote when Corp SSO fails", func(t *testing.T) {
+		var directPosts atomic.Int32
+		rig := newCorpSSOTestRig(t, corpSSORigOpts{
+			dialFail: true,
+			directRound: func(req *http.Request) (*http.Response, error) {
+				if req.Method == http.MethodPost {
+					directPosts.Add(1)
+				}
+				return okGerritResponse(req, `{"_number":77,"submit_requirements":[{"name":"Review-Enforcement","status":"UNSATISFIED"}]}`), nil
+			},
+		})
+		chCtx := rig.newChangeContext(t, "77")
+		err := chCtx.SetReview(&ReviewInput{Message: "LGTM", Labels: map[string]int{"Code-Review": 2}})
+		if ExitCodeFor(err) != ExitCodeAuth || !strings.Contains(err.Error(), "missing device trust") {
+			t.Fatalf("SetReview(CR+2) err = %v, want ExitCodeAuth mentioning missing device trust", err)
+		}
+		if directPosts.Load() != 0 {
+			t.Errorf("directPosts = %d, want 0", directPosts.Load())
+		}
+	})
+
+	t.Run("non-enforced change falls back to direct on cold Corp SSO failure", func(t *testing.T) {
+		var directPosts atomic.Int32
+		rig := newCorpSSOTestRig(t, corpSSORigOpts{
+			mintErr: errors.New("gcert expired"),
+			directRound: func(req *http.Request) (*http.Response, error) {
+				if req.Method == http.MethodPost {
+					directPosts.Add(1)
+				}
+				return okGerritResponse(req, `{"_number":77,"submit_requirements":[]}`), nil
+			},
+		})
+		if err := rig.newChangeContext(t, "77").SetReview(&ReviewInput{Message: "LGTM", Labels: map[string]int{"Code-Review": 2}}); err != nil {
+			t.Fatalf("SetReview on non-enforced change: %v", err)
+		}
+		if directPosts.Load() != 1 || rig.directCalls.Load() != 2 || corpSSOFallbackReason(rig.canonHost) == "" {
+			t.Errorf("directPosts=%d directCalls=%d fb=%q, want 1, 2, and non-empty",
+				directPosts.Load(), rig.directCalls.Load(), corpSSOFallbackReason(rig.canonHost))
+		}
+	})
+
+	t.Run("GHISH_CORP_SSO=0 on cold corp-only host pivots probe to Corp SSO and allows enforced vote", func(t *testing.T) {
+		t.Setenv(corpSSOEnvVar, "0")
+		var proxyPosts atomic.Int32
+		rig := newCorpSSOTestRig(t, corpSSORigOpts{
+			proxyHandler: func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					proxyPosts.Add(1)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, ")]}'\n"+`{"_number":77,"submit_requirements":[{"name":"Review-Enforcement","status":"UNSATISFIED"}]}`)
+			},
+			directRound: func(req *http.Request) (*http.Response, error) {
+				return statusResponse(req, http.StatusForbidden, "PERMISSION_DENIED_BY_IP_RESTRICTIONS"), nil
+			},
+		})
+		if err := rig.newChangeContext(t, "77").SetReview(&ReviewInput{Message: "LGTM", Labels: map[string]int{"Code-Review": 2}}); err != nil {
+			t.Fatalf("SetReview on cold corp-only host: %v", err)
+		}
+		if proxyPosts.Load() != 1 || !defaultHostCache.IsCorpOnly(rig.canonHost) {
+			t.Errorf("proxyPosts=%d corpOnly=%v, want 1 and true", proxyPosts.Load(), defaultHostCache.IsCorpOnly(rig.canonHost))
+		}
+	})
+}

@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -316,6 +317,14 @@ type ChangeInfo struct {
 	Revisions              map[string]RevisionInfo       `json:"revisions,omitempty"`
 	WorkInProgress         bool                          `json:"work_in_progress,omitempty"`
 	SubmitRequirements     []SubmitRequirementResultInfo `json:"submit_requirements,omitempty"`
+}
+
+// isReviewEnforced reports whether Gerrit's Review-Enforcement submit
+// requirement applies to c (requires o=SUBMIT_REQUIREMENTS).
+func (c *ChangeInfo) isReviewEnforced() bool {
+	return slices.ContainsFunc(c.SubmitRequirements, func(sr SubmitRequirementResultInfo) bool {
+		return sr.Name == "Review-Enforcement" && !strings.EqualFold(sr.Status, "NOT_APPLICABLE")
+	})
 }
 
 // GerritAPIError represents a non-2xx HTTP response from the Gerrit REST API.

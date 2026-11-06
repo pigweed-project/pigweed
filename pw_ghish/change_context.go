@@ -238,18 +238,27 @@ func (c *ChangeContext) SetReview(input *ReviewInput) error {
 	if c == nil {
 		return fmt.Errorf("internal error: ChangeContext is nil")
 	}
-	if _, err := c.Client.SetReview(c.Context, c.ChangeID, c.Revision, input); err != nil {
-		return c.FormatError(err, "setting review for")
-	}
-	return nil
+	return c.SetReviewRevision(c.Revision, input)
 }
 
-// SetReviewRevision applies a review input targeting an explicit revision.
+// SetReviewRevision applies a review input targeting an explicit revision,
+// refusing positive Code-Review votes in googler mode that Gerrit review
+// enforcement would ignore due to missing BeyondCorp device trust.
 func (c *ChangeContext) SetReviewRevision(revision string, input *ReviewInput) error {
 	if c == nil {
 		return fmt.Errorf("internal error: ChangeContext is nil")
 	}
-	if _, err := c.Client.SetReview(c.Context, c.ChangeID, revision, input); err != nil {
+	var err error
+	if input.Labels["Code-Review"] > 0 {
+		mode, _, modeErr := ResolveAuthMode(c.Context, c.Config)
+		if modeErr != nil {
+			return modeErr
+		}
+		_, err = c.Client.setPositiveCodeReview(c.Context, mode, cmp.Or(c.Host, c.Client.BaseURL()), c.ChangeID, revision, input)
+	} else {
+		_, err = c.Client.SetReview(c.Context, c.ChangeID, revision, input)
+	}
+	if err != nil {
 		return c.FormatError(err, "setting review for")
 	}
 	return nil
