@@ -533,8 +533,15 @@ The ``pw requires`` command simplifies creation of the Pigweed-Internal change.
 In this case the command would be ``pw requires secret-project:B``. Run this
 inside the Pigweed repository after committing change A and it will create
 change C and add ``[{"gerrit_name": "pigweed-internal", "number": C}]`` to
-change A. Multiple changes can be handled by passing multiple arguments to
-``pw requires``.
+change A. It also adds ``Depends-on:`` footers: change C gets
+``Depends-on: secret-project:<Change-Id of B>`` and change A gets
+``Depends-on: pigweed-internal:<Change-Id of C>``. Multiple changes can be
+handled by passing multiple arguments to ``pw requires``.
+
+Requirements can also be given as ``<gerrit-name>:I<change-id>`` (for example
+``pw requires secret-project:I0123...``). Either way, ``pw requires`` uses
+``./gh`` to look up both the change number (for ``patches.json``) and the
+Change-Id (for ``Depends-on:``).
 
 Public builders won't have access to the Pigweed-Internal Gerrit instance so
 they won't even be able to see the ``secret-project`` reference. Internal

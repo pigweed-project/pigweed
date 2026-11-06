@@ -215,6 +215,17 @@ pw_py_test(
 )
 
 pw_py_test(
+    name = "requires_test",
+    size = "small",
+    srcs = [
+        "requires_test.py",
+    ],
+    deps = [
+        ":py",
+    ],
+)
+
+pw_py_test(
     name = "tool_runner_test",
     size = "small",
     srcs = [

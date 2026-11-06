@@ -33,10 +33,11 @@ import logging
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Callable, IO, Sequence
+from typing import Any, Callable, IO, Sequence
 import uuid
 
 HELPER_GERRIT = 'pigweed-internal'
@@ -60,6 +61,11 @@ remote:
 '''.strip()
 # pylint: enable=line-too-long
 
+_CHANGE_ID_RE = re.compile(r'^I[0-9a-f]{40}$')
+_CHANGE_ID_FOOTER_RE = re.compile(
+    r'^Change-Id:\s*(I[0-9a-f]{40})\s*$', re.MULTILINE
+)
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -67,6 +73,22 @@ _LOG = logging.getLogger(__name__)
 class Change:
     gerrit_name: str
     number: int
+
+
+@dataclasses.dataclass
+class Requirement:
+    """A change required by the current change.
+
+    At least one of number and change_id is set. change_id includes the
+    leading 'I'.
+    """
+
+    gerrit_name: str
+    number: int | None = None
+    change_id: str | None = None
+
+    def __str__(self) -> str:
+        return f'{self.gerrit_name}:{self.number or self.change_id}'
 
 
 class EnhancedJSONEncoder(json.JSONEncoder):
@@ -106,7 +128,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         'requirements',
         nargs='+',
-        help='Requirements to be added ("<gerrit-name>:<cl-number>").',
+        help=(
+            'Requirements to be added ("<gerrit-name>:<cl-number>" or '
+            '"<gerrit-name>:I<change-id>").'
+        ),
     )
     parser.add_argument(
         '--push',
@@ -130,6 +155,127 @@ def _run_command(*args, **kwargs) -> subprocess.CompletedProcess:
     return res
 
 
+def _git_root() -> Path:
+    return Path(
+        _run_command(['git', 'rev-parse', '--show-toplevel'])
+        .stdout.decode()
+        .rstrip('\n')
+    )
+
+
+@log_entry_exit
+def parse_requirement(req: str) -> Requirement:
+    """Parses '<gerrit-name>:<cl-number>' or '<gerrit-name>:I<change-id>'."""
+    gerrit_name, sep, value = req.partition(':')
+    if gerrit_name and sep:
+        if value.isdigit():
+            return Requirement(gerrit_name, number=int(value))
+        if _CHANGE_ID_RE.match(value):
+            return Requirement(gerrit_name, change_id=value)
+    raise ValueError(
+        f'invalid requirement {req!r}, expected '
+        "'<gerrit-name>:<cl-number>' or '<gerrit-name>:I<change-id>'"
+    )
+
+
+@log_entry_exit
+def find_gh() -> str:
+    """Returns the path to './gh' (gh-ish) for the current repository."""
+    gh = _git_root() / 'gh'
+    if gh.is_file() and os.access(gh, os.X_OK):
+        return str(gh)
+    gh_ish = shutil.which('gh-ish')
+    if gh_ish:
+        return gh_ish
+    raise FileNotFoundError(
+        f"couldn't find '{gh}' or 'gh-ish' to look up requirements"
+    )
+
+
+def _run_gh(gh: str, req: Requirement, *args: str) -> Any:
+    """Runs a './gh' command against req's Gerrit host and parses its JSON."""
+    host = f'{req.gerrit_name}-review.googlesource.com'
+    cmd = [gh, '--host', host, *args]
+    try:
+        res = _run_command(cmd)
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(
+            f"couldn't look up {req} with '{' '.join(cmd)}':\n"
+            f'{exc.stderr.decode()}'
+        ) from exc
+    return json.loads(res.stdout)
+
+
+@log_entry_exit
+def lookup_change(gh: str, req: Requirement) -> Requirement:
+    """Looks up the CL number and Change-Id of a change using './gh'.
+
+    Args:
+        gh: Path to './gh'.
+        req: The change to look up. Must have a number or a Change-Id.
+
+    Returns a Requirement with both number and change_id set.
+
+    Raises ValueError if the change can't be found, or if a Change-Id matches
+    more than one change (e.g., cherry-picks to other branches).
+    """
+    _LOG.info('looking up %s', req)
+
+    if req.number is not None:
+        details = _run_gh(
+            gh,
+            req,
+            *('pr', 'view', str(req.number)),
+            *('--json', 'number,commitMessage'),
+        )
+        matches = _CHANGE_ID_FOOTER_RE.findall(details['commitMessage'])
+        if not matches:
+            raise ValueError(f'no Change-Id footer in {req}')
+        return Requirement(req.gerrit_name, req.number, matches[-1])
+
+    # 'pr view' can't handle Change-Ids that match multiple changes, so search
+    # for all changes with this Change-Id.
+    changes = _run_gh(
+        gh,
+        req,
+        *('pr', 'list', '--all-projects', '--state', 'all'),
+        *('--limit', '100', '--search', f'change:{req.change_id}'),
+        *('--json', 'number,project,branch,status,title'),
+    )
+    if not changes:
+        raise ValueError(f'no changes found matching {req}')
+    if len(changes) > 1:
+        lines = [f'{req} matches {len(changes)} changes:']
+        for change in changes:
+            lines.append(
+                f'  {req.gerrit_name}:{change["number"]}'
+                f'  project={change["project"]}'
+                f'  branch={change["branch"]}'
+                f'  status={change["status"]}'
+                f'  {change["title"]}'
+            )
+        lines.append(f"Pass '{req.gerrit_name}:<cl-number>' instead.")
+        raise ValueError('\n'.join(lines))
+    return Requirement(req.gerrit_name, changes[0]['number'], req.change_id)
+
+
+@log_entry_exit
+def resolve_requirements(
+    requirement_strings: Sequence[str],
+) -> list[Requirement]:
+    """Parses requirements and looks up their CL numbers and Change-Ids."""
+    requirements = [parse_requirement(x) for x in requirement_strings]
+    gh = find_gh()
+    resolved: list[Requirement] = []
+    for req in requirements:
+        result = lookup_change(gh, req)
+        if result in resolved:
+            _LOG.info('skipping duplicate requirement %s', req)
+            continue
+        resolved.append(result)
+    return resolved
+
+
 @log_entry_exit
 def check_status() -> bool:
     res = subprocess.run(['git', 'status'], capture_output=True)
@@ -147,33 +293,35 @@ def clone(requires_dir: Path) -> None:
 
 @log_entry_exit
 def create_commit(
-    requires_dir: Path, requirement_strings: Sequence[str]
-) -> None:
-    """Create a commit in the local tree with the given requirements."""
-    change_id = str(uuid.uuid4()).replace('-', '00')
+    requires_dir: Path, requirements: Sequence[Requirement]
+) -> str:
+    """Create a commit in the local tree with the given requirements.
+
+    Each requirement is added to 'patches.json' and gets a 'Depends-on:'
+    footer, so each must have both a number and a Change-Id.
+
+    Returns the Change-Id of the created commit, including the leading 'I'.
+    """
+    change_id = 'I' + str(uuid.uuid4()).replace('-', '00')
     _LOG.debug('change_id %s', change_id)
 
-    requirement_objects: list[Change] = []
-    for req in requirement_strings:
-        gerrit_name, number = req.split(':', 1)
-        requirement_objects.append(Change(gerrit_name, int(number)))
+    patches: list[Change] = []
+    for req in requirements:
+        assert req.number is not None and req.change_id is not None
+        patches.append(Change(req.gerrit_name, req.number))
 
     path = requires_dir / 'patches.json'
     _LOG.debug('path %s', path)
     with open(path, 'w') as outs:
-        dump_json_patches(requirement_objects, outs)
+        dump_json_patches(patches, outs)
         outs.write('\n')
 
     _run_command(['git', 'add', path], cwd=requires_dir)
 
-    # TODO: b/232234662 - Don't add 'Requires:' lines to commit messages.
-    commit_message = [
-        f'{_DNS} {change_id[0:10]}\n\n',
-        '',
-        f'Change-Id: I{change_id}',
-    ]
-    for req in requirement_strings:
-        commit_message.append(f'Requires: {req}')
+    commit_message = [f'{_DNS} {change_id[1:11]}', '']
+    for req in requirements:
+        commit_message.append(f'Depends-on: {req.gerrit_name}:{req.change_id}')
+    commit_message.append(f'Change-Id: {change_id}')
 
     _LOG.debug('message %s', commit_message)
     _run_command(
@@ -183,6 +331,8 @@ def create_commit(
 
     # Not strictly necessary, only used for logging.
     _run_command(['git', 'show'], cwd=requires_dir)
+
+    return change_id
 
 
 @log_entry_exit
@@ -221,22 +371,21 @@ def push_commit(requires_dir: Path, push=True) -> Change:
 
 
 @log_entry_exit
-def amend_existing_change(dependency: dict[str, str]) -> None:
+def amend_existing_change(
+    dependency: Change, dependency_change_id: str | None = None
+) -> None:
     """Amend the current change to depend on the dependency
+
+    Adds the dependency to 'patches.json' and, if dependency_change_id is
+    given, adds a 'Depends-on:' footer to the commit message.
 
     Args:
         dependency: The change on which the top of the current checkout now
             depends.
+        dependency_change_id: The Change-Id of the dependency, including the
+            leading 'I'.
     """
-    git_root = Path(
-        subprocess.run(
-            ['git', 'rev-parse', '--show-toplevel'],
-            capture_output=True,
-        )
-        .stdout.decode()
-        .rstrip('\n')
-    )
-    patches_json = git_root / 'patches.json'
+    patches_json = _git_root() / 'patches.json'
     _LOG.info('%s %d', patches_json, os.path.isfile(patches_json))
 
     patches = []
@@ -251,7 +400,25 @@ def amend_existing_change(dependency: dict[str, str]) -> None:
     _LOG.info('%s %d', patches_json, os.path.isfile(patches_json))
 
     _run_command(['git', 'add', patches_json])
-    _run_command(['git', 'commit', '--amend', '--no-edit'])
+
+    if not dependency_change_id:
+        _run_command(['git', 'commit', '--amend', '--no-edit'])
+        return
+
+    message = _run_command(['git', 'log', '-1', '--format=%B']).stdout
+    footer = f'Depends-on: {dependency.gerrit_name}:{dependency_change_id}'
+    message = _run_command(
+        [
+            'git',
+            'interpret-trailers',
+            '--if-exists',
+            'addIfDifferent',
+            '--trailer',
+            footer,
+        ],
+        input=message,
+    ).stdout
+    _run_command(['git', 'commit', '--amend', '--file', '-'], input=message)
 
 
 def run(requirements: Sequence[str], push: bool = True) -> int:
@@ -260,17 +427,24 @@ def run(requirements: Sequence[str], push: bool = True) -> int:
     if not check_status():
         return -1
 
+    # Parse requirements and look them up before creating anything.
+    try:
+        resolved = resolve_requirements(requirements)
+    except (ValueError, FileNotFoundError) as exc:
+        _LOG.error('%s', exc)
+        return -1
+
     # Create directory for checking out helper repository.
     with tempfile.TemporaryDirectory() as requires_dir_str:
         requires_dir = Path(requires_dir_str)
         # Clone into helper repository.
         clone(requires_dir)
         # Make commit with requirements from command line.
-        create_commit(requires_dir, requirements)
+        change_id = create_commit(requires_dir, resolved)
         # Push that commit and save its number.
         change = push_commit(requires_dir, push=push)
     # Add dependency on newly pushed commit on current commit.
-    amend_existing_change(change)
+    amend_existing_change(change, change_id)
 
     return 0
 
