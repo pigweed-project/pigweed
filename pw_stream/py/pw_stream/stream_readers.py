@@ -14,7 +14,7 @@
 """Serial reader utilities."""
 
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 import logging
 import os
 import platform
@@ -235,7 +235,9 @@ class DataReaderAndExecutor:
 
     def _run(self) -> None:
         """Reads raw data in a background thread."""
-        with ThreadPoolExecutor(max_workers=self._handler_threads) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=self._handler_threads
+        ) as executor:
             while not self._reader_thread_stop.is_set():
                 try:
                     data = self._reader.read()

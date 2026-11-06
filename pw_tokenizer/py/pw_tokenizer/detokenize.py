@@ -34,7 +34,7 @@ messages from a file or stdin.
 import argparse
 import base64
 import binascii
-from concurrent.futures import Executor, ThreadPoolExecutor
+import concurrent.futures
 import enum
 import io
 import logging
@@ -526,7 +526,9 @@ class AutoUpdatingDetokenizer(Detokenizer):
         self,
         *paths_or_files: Path | str,
         min_poll_period_s: float = 1.0,
-        pool: Executor = ThreadPoolExecutor(max_workers=1),
+        pool: concurrent.futures.Executor = (
+            concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        ),
         prefix: str | bytes = encode.NESTED_TOKEN_PREFIX,
         extra_databases: Iterable = (),
     ) -> None:

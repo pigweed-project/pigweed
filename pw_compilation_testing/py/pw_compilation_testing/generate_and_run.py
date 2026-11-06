@@ -18,11 +18,11 @@ when executed.
 """
 
 import argparse
+import concurrent.futures
 import logging
 import io
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable, NamedTuple, Sequence, TextIO
 
@@ -71,8 +71,10 @@ def _test_in_parallel(
     """Runs the tests in parallel and yields _TestRuns as they complete."""
     all_tests = [t.case for t in tests]
 
-    with ThreadPoolExecutor(max_workers=_MAX_PARALLELISM) as executor:
-        for future in as_completed(
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=_MAX_PARALLELISM
+    ) as executor:
+        for future in concurrent.futures.as_completed(
             executor.submit(_execute_test_case, test, sources, all_tests)
             for test in tests
         ):

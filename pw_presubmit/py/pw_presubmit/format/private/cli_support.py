@@ -15,7 +15,7 @@
 
 import argparse
 import collections
-from concurrent.futures import ThreadPoolExecutor, Future
+import concurrent.futures
 import json
 import logging
 from pathlib import Path
@@ -201,9 +201,9 @@ def check(
     ) -> FormattedDiff | None:
         return code_formatter.get_formatting_diff(file_path)
 
-    with ThreadPoolExecutor(max_workers=jobs) as exe:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as exe:
         futures: Dict[
-            Future[FormattedDiff | None],
+            concurrent.futures.Future[FormattedDiff | None],
             FileFormatter,
         ] = {}
 
