@@ -252,13 +252,9 @@ func TestGossoRoundTripper(t *testing.T) {
 	t.Run("RoundTrip delegates non-corp URLs to fallback transport", func(t *testing.T) {
 		var fallbackCalled bool
 		rt := &gossoRoundTripper{
-			fallback: testRoundTripper(func(*http.Request) (*http.Response, error) {
+			fallback: testRoundTripper(func(r *http.Request) (*http.Response, error) {
 				fallbackCalled = true
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       io.NopCloser(strings.NewReader("{}")),
-					Header:     make(http.Header),
-				}, nil
+				return statusResponse(r, http.StatusOK, "{}"), nil
 			}),
 			exec: func(_ context.Context, _ ...string) ([]byte, error) {
 				t.Fatal("unexpected gosso exec for non-corp URL")

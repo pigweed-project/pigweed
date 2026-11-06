@@ -33,14 +33,20 @@ import (
 	"time"
 )
 
-// okGerritResponse is a canned 200 reply for recorder transports.
-func okGerritResponse(req *http.Request, body string) *http.Response {
+// statusResponse builds a canned HTTP response for recorder transports.
+func statusResponse(req *http.Request, code int, body string) *http.Response {
 	return &http.Response{
-		StatusCode: http.StatusOK,
-		Body:       io.NopCloser(strings.NewReader(")]}'\n" + body)),
+		StatusCode: code,
+		Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
+		Body:       io.NopCloser(strings.NewReader(body)),
 		Header:     make(http.Header),
 		Request:    req,
 	}
+}
+
+// okGerritResponse is a canned 200 reply for recorder transports.
+func okGerritResponse(req *http.Request, body string) *http.Response {
+	return statusResponse(req, http.StatusOK, ")]}'\n"+body)
 }
 
 func TestGerritClient_PerRequestAuth(t *testing.T) {
@@ -585,9 +591,18 @@ func TestResolveGerritClientAuth_Policy(t *testing.T) {
 			if err != nil {
 				t.Fatalf("resolveGerritStrategy = %v, want nil", err)
 			}
-			gs, ok := strategy.(*gerritBearerStrategy)
-			if !ok || gs == nil {
-				t.Fatalf("resolveGerritStrategy = %T, want *gerritBearerStrategy", strategy)
+			var gs *gerritBearerStrategy
+			if tc.mode == string(AuthModeGoogler) && tc.want.Dynamic && tc.host == "google" {
+				as, ok := strategy.(*AdaptiveGerritStrategy)
+				if !ok || as == nil || as.corpSSO == nil {
+					t.Fatalf("resolveGerritStrategy = %T, want *AdaptiveGerritStrategy with corpSSO", strategy)
+				}
+				gs = as.direct
+			} else {
+				gs, _ = strategy.(*gerritBearerStrategy)
+			}
+			if gs == nil {
+				t.Fatalf("resolveGerritStrategy = %T, missing *gerritBearerStrategy", strategy)
 			}
 			wantCreds := tc.want.StaticToken != "" || tc.want.Dynamic
 			if gs.HasCredentials() != wantCreds || (gs.bearer.invalidate != nil) != tc.want.Dynamic || gs.allowAnonymousFallback != tc.want.AllowAnonymousFallback {
@@ -1176,7 +1191,7 @@ func TestResolveAuthMode_RemovedAuthMethodEnv(t *testing.T) {
 
 	wantNoneErr := fmt.Sprintf(
 		"GH_ISH_AUTH_METHOD=none is set, but GH_ISH_AUTH_METHOD has been removed.\n\n"+
-			"gh-ish now picks Gerrit credentials automatically: GERRIT_TOKEN when set, otherwise luci-auth (for *.googlesource.com).\n"+
+			"gh-ish now picks Gerrit credentials automatically: GERRIT_TOKEN when set, otherwise Corp SSO (googler mode) or luci-auth (for *.googlesource.com).\n"+
 			"To disable authentication, use --auth-mode=none or GH_ISH_AUTH_MODE=none.\n\n"+
 			"Remediation:\n"+
 			"  1. Unset it: unset GH_ISH_AUTH_METHOD\n"+

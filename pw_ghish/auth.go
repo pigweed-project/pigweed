@@ -39,16 +39,17 @@ import (
 //
 //   ResolveAuthMode (auto | googler | community | none)
 //          |
-//          +---> resolveGerritStrategy ----> HTTPAuthStrategy (*gerritBearerStrategy)
-//          |     (GERRIT_TOKEN | luci-auth)         |
-//          |                                        v
-//          +---> NewDynamicBearerStrategy -> HTTPAuthStrategy (*BearerTokenStrategy)
-//                (LUCI, Busytown,                  |
-//                 Issue Tracker)                   v
-//                                         executeWithAuthStrategy
-//                                           1. Prepare(req)   -> Bearer header, /a/ prefix
-//                                           2. ensureSafeHTTPClient (HTTPS guard + cross-host strip)
-//                                           3. HandleResponse -> token refresh -> anon GET fallback
+//          +---> resolveGerritStrategy ---> AdaptiveGerritStrategy
+//          |     (Corp SSO | GERRIT_TOKEN     |-- CorpSSOStrategy (Uplink :999; gosso)
+//          |      | luci-auth)                +-- gerritBearerStrategy (OAuth2 fallback)
+//          |                                             |
+//          +---> NewDynamicBearerStrategy ---------------+-> HTTPAuthStrategy
+//                (LUCI, Busytown, Issue Tracker)               |
+//                                                              v
+//                                                      executeWithAuthStrategy
+//                                                        1. Prepare(req)   -> auth headers, /a/ prefix
+//                                                        2. ensureSafeHTTPClient (Uplink / HTTPS guard)
+//                                                        3. HandleResponse -> refresh / fallback
 
 // AuthMode describes the authentication policy mode (auto, googler, community, none).
 type AuthMode string
@@ -199,7 +200,7 @@ func checkRemovedAuthMethodEnv() error {
 	steps = append(steps, "Check auth status: gh auth status")
 	return NewExitCodeError(ExitCodeAuth,
 		"GH_ISH_AUTH_METHOD=%s is set, but GH_ISH_AUTH_METHOD has been removed.\n\n"+
-			"gh-ish now picks Gerrit credentials automatically: GERRIT_TOKEN when set, otherwise luci-auth (for *.googlesource.com).\n"+
+			"gh-ish now picks Gerrit credentials automatically: GERRIT_TOKEN when set, otherwise Corp SSO (googler mode) or luci-auth (for *.googlesource.com).\n"+
 			"To disable authentication, use --auth-mode=none or GH_ISH_AUTH_MODE=none.\n\n"+
 			"Remediation:\n%s",
 		v, formatGerritRemediationSteps(steps...))
@@ -362,7 +363,15 @@ type authAttemptState struct {
 	replacementToken      string
 	retriedTokenRefresh   bool
 	retriedCorpSSORefresh bool
+	corpSSOFallback       *corpSSOPathError
 	anonymousFallback     bool
+}
+
+// transportErrorRecoverer is implemented by strategies that can recover from a
+// transport-level error returned by http.Client.Do before any response (such
+// as a local Uplink dial failure) by switching to another transport.
+type transportErrorRecoverer interface {
+	HandleTransportError(ctx context.Context, req *http.Request, err error) (retry bool)
 }
 
 // authAttemptFrom returns the per-call retry state attached by
@@ -416,6 +425,10 @@ func executeWithAuthStrategy(
 		resp, err = client.Do(req)
 		if err != nil {
 			resp = nil
+			if rec, ok := strategy.(transportErrorRecoverer); ok && attempt < maxAuthStrategyRetries &&
+				rec.HandleTransportError(attemptCtx, req, err) {
+				continue
+			}
 			if exitErr, ok := errors.AsType[*ExitCodeError](err); ok {
 				return nil, exitErr
 			}
@@ -1067,9 +1080,17 @@ func resolveGerritAuth(ctx context.Context, gerritHost string, mode AuthMode) (r
 // for gerritHost (an empty string means the host is unknown).
 func gerritCredentialSteps(gerritHost string, mode AuthMode) []string {
 	raw := strings.TrimSpace(gerritHost)
+	if mode == AuthModeGoogler && defaultHostCache.IsCorpOnly(raw) {
+		if findGossoBinary() == "" {
+			return []string{"Run 'sudo apt install gosso' (Linux) or 'sudo mule install gosso' (macOS), then 'gcert'"}
+		}
+		return []string{"Run 'gcert' to refresh corp SSO credentials"}
+	}
 	var steps []string
 	if raw == "" || isGerritAutoAuthHost(hostnameOf(raw)) {
-		if hasUsableSSOCredHelper() {
+		if mode == AuthModeGoogler && findGossoBinary() != "" {
+			steps = append(steps, "Run 'gcert' to refresh corp SSO credentials")
+		} else if hasUsableSSOCredHelper() {
 			steps = append(steps, "Run 'gcert' (with sso-cred-helper)")
 		}
 		login := fmt.Sprintf("Run '%s'", luciAuthLoginCommand(mode))
@@ -1263,20 +1284,53 @@ func newGerritBearerStrategy(host string, auth GerritAuth, desc, initialToken st
 	}
 }
 
+func newAdaptiveGerritStrategy(host string, direct *gerritBearerStrategy) *AdaptiveGerritStrategy {
+	return &AdaptiveGerritStrategy{
+		corpSSO: NewCorpSSOStrategy(host),
+		direct:  direct,
+	}
+}
+
 // resolveGerritStrategy resolves the HTTPAuthStrategy for a Gerrit client
 // targeting gerritURL under the active AuthMode:
 //   - --auth-mode=none: unauthenticated; GERRIT_TOKEN is ignored.
 //   - GERRIT_TOKEN set: a static token for the configured host.
-//   - Otherwise a luci-auth token, only for Google-hosted Gerrit (or
-//     loopback under the allowLoopbackGerritAuthForTests unit-test hook).
-//     It is minted once here so Authenticated() is known up front.
-//
-// Googler mode never falls back to anonymous requests: without a credential
-// it returns an ExitCodeAuth error. Community mode reads anonymously.
+//   - Google-hosted Gerrit in googler mode: AdaptiveGerritStrategy preferring
+//     Corp SSO with lazy luci-auth OAuth2 fallback on open hosts (never
+//     falling back on corp-only hosts), or resolving luci-auth up front when
+//     Corp SSO is disabled/unavailable.
+//   - Otherwise (community mode, or loopback under allowLoopbackGerritAuthForTests):
+//     a luci-auth gerritBearerStrategy.
 func resolveGerritStrategy(ctx context.Context, gerritURL string) (HTTPAuthStrategy, error) {
 	mode, modeReason, err := ResolveAuthMode(ctx, nil)
 	if err != nil {
 		return nil, err
+	}
+	_, host := normalizeGerritBaseURL(gerritURL)
+	if mode == AuthModeGoogler && isGoogleGerritHost(host) {
+		tok, tokErr := gerritTokenFromEnv()
+		if tokErr != nil {
+			return nil, tokErr
+		}
+		if tok == "" {
+			// Skip eager luci-auth when Corp SSO is active so Corp SSO requests never
+			// spawn luci-auth unless an open-host fallback actually occurs; otherwise
+			// resolve luci-auth up front while keeping AdaptiveGerritStrategy for cold
+			// IP-restriction pivots.
+			var initialToken, desc string
+			if !corpSSOWouldBeActive(host) {
+				res, err := resolveGerritAuth(ctx, gerritURL, mode)
+				if err != nil {
+					return nil, err
+				}
+				if res.unauthed {
+					return nil, gerritGooglerAuthError(modeReason, gerritURL, res.cause)
+				}
+				initialToken, desc = res.token, res.desc
+			}
+			direct := newGerritBearerStrategy(host, GerritAuth{Dynamic: true, modeReason: modeReason}, desc, initialToken)
+			return newAdaptiveGerritStrategy(host, direct), nil
+		}
 	}
 	res, err := resolveGerritAuth(ctx, gerritURL, mode)
 	if err != nil {
@@ -1296,7 +1350,6 @@ func resolveGerritStrategy(ctx context.Context, gerritURL string) (HTTPAuthStrat
 	default:
 		auth.StaticToken = res.token
 	}
-	_, host := normalizeGerritBaseURL(gerritURL)
 	return newGerritBearerStrategy(host, auth, res.desc, initialToken), nil
 }
 

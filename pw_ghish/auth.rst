@@ -112,8 +112,9 @@ Credential resolution
 One login for every service
 ===========================
 ``pw_ghish`` accesses several separate backends—Gerrit, LUCI Buildbucket,
-Android Build, and Google Issue Tracker—and uses a single ``luci-auth`` login
-across them based on your :ref:`authentication mode <module-pw_ghish-auth-modes>`:
+Android Build, and Google Issue Tracker—and uses Corp SSO for Google-hosted
+Gerrit in ``googler`` mode plus a single ``luci-auth`` login across OAuth2
+backends based on your :ref:`authentication mode <module-pw_ghish-auth-modes>`:
 
 * ``googler``: Covers Gerrit, LUCI, Android Build, and Google Issue Tracker, so
   working across Pigweed and Android requires only one login.
@@ -140,11 +141,25 @@ Gerrit Code Review & Git Push
    containing ``:`` (a ``username:password`` pair for HTTP Basic auth) is
    rejected with exit code ``4``; HTTP Basic auth (used by most non-Google
    Gerrit servers) isn't supported yet.
-2. Shared ``luci-auth`` credentials on Google-hosted Gerrit
+2. **Corp SSO** on Google-hosted Gerrit (``*.googlesource.com``) in ``googler``
+   mode (run ``gcert`` to authenticate; see `Why Corp SSO is preferred`_). Open
+   Gerrit hosts fall back to ``luci-auth`` (step 3) with a warning when Corp SSO
+   is unavailable or unauthorized on reads (set ``GHISH_CORP_SSO=0`` to prefer
+   OAuth2 on open hosts); corp-only Gerrit hosts require Corp SSO.
+3. Shared ``luci-auth`` credentials on Google-hosted Gerrit
    (``*.googlesource.com``; see `One login for every service`_). For other
    Gerrit hosts, set ``GERRIT_TOKEN``.
-3. Anonymous HTTPS (permitted in ``community`` and ``none`` modes for public
+4. Anonymous HTTPS (permitted in ``community`` and ``none`` modes for public
    reads; rejected in ``googler`` mode with exit code ``4``).
+
+Why Corp SSO is preferred
+-------------------------
+Gerrit's review enforcement (``Review-Enforcement`` submit requirement) checks
+per vote whether the voter used a BeyondCorp-trusted device. Requests sent via
+Corp SSO carry device trust, whereas OAuth2 requests on ``*.googlesource.com``
+do not—so a ``Code-Review+2`` cast over OAuth2 is recorded as
+``missing device trust`` and does not count on hosts that enforce it (such as
+``pigweed-review.googlesource.com``).
 
 .. note::
 

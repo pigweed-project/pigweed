@@ -472,6 +472,12 @@ func (c *GerritClient) Authenticated() bool {
 	return c.strategy.HasCredentials()
 }
 
+// DescribeAuth returns the client's active AuthMethod and credential source
+// description.
+func (c *GerritClient) DescribeAuth() (AuthMethod, string) {
+	return c.strategy.Describe()
+}
+
 // newGerritAPIError builds the error for a non-2xx response, keeping at most
 // maxGerritErrorBodyBytes of the XSSI-stripped body.
 func newGerritAPIError(method string, sent *url.URL, resp *http.Response, raw []byte) *GerritAPIError {

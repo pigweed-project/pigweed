@@ -691,6 +691,8 @@ var hermeticAuthEnvVars = []string{
 	"GHISH_CACHE",
 	"GHISH_CACHE_DIR",
 	"GHISH_ACCOUNT_CACHE",
+	"GHISH_HOST_CACHE",
+	"GHISH_CORP_SSO",
 }
 
 func hermeticCacheEnv() cacheEnv {
