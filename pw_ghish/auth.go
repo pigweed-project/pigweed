@@ -209,8 +209,9 @@ func checkRemovedAuthMethodEnv() error {
 type AuthMethod string
 
 const (
-	AuthMethodToken AuthMethod = "token"
-	AuthMethodNone  AuthMethod = "none"
+	AuthMethodToken   AuthMethod = "token"
+	AuthMethodCorpSSO AuthMethod = "corp-sso"
+	AuthMethodNone    AuthMethod = "none"
 )
 
 func hostnameOf(raw string) string {
@@ -245,6 +246,12 @@ func stripAuthOnCrossHostRedirect(req *http.Request, via []*http.Request) error 
 	if len(via) >= 10 {
 		return fmt.Errorf("stopped after 10 redirects")
 	}
+	// UberProxy redirects expired Corp SSO sessions (3xx to login.corp); return
+	// the redirect directly so CorpSSOStrategy.HandleResponse can refresh
+	// credentials without following redirects off-host.
+	if len(via) > 0 && isCorpSSORequest(via[0]) {
+		return http.ErrUseLastResponse
+	}
 	if len(via) > 0 && req != nil && req.URL != nil && via[0].URL != nil {
 		if !isHTTPSOrLoopbackURL(req.URL) || !strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) {
 			req.Header.Del("Authorization")
@@ -265,16 +272,27 @@ func urlHostIn(u *url.URL, hosts ...string) bool {
 	})
 }
 
-// safeHTTPTransport wraps an HTTP RoundTripper to refuse sending credentials
-// over cleartext non-loopback HTTP.
+func hasRequestCredentials(h http.Header) bool {
+	return h.Get("Authorization") != "" || h.Get("Cookie") != ""
+}
+
+func isCorpGerritURL(u *url.URL) bool {
+	return u != nil && strings.HasSuffix(strings.ToLower(u.Hostname()), gobCorpDomainSuffix)
+}
+
+// safeHTTPTransport wraps an HTTP RoundTripper to route Corp SSO requests
+// through the local Uplink proxy and refuse sending credentials or corp
+// requests over cleartext non-loopback HTTP.
 type safeHTTPTransport struct {
 	direct http.RoundTripper
 }
 
 func (rt *safeHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if !isHTTPSOrLoopbackURL(req.URL) &&
-		(req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "") {
-		return nil, fmt.Errorf("refusing to send authenticated request over cleartext HTTP to %q", req.URL.Redacted())
+	if isCorpSSORequest(req) {
+		return roundTripCorpSSO(req)
+	}
+	if !isHTTPSOrLoopbackURL(req.URL) && (hasRequestCredentials(req.Header) || isCorpGerritURL(req.URL)) {
+		return nil, fmt.Errorf("refusing to send authenticated or corp request over cleartext HTTP to %q", req.URL.Redacted())
 	}
 	return cmp.Or[http.RoundTripper](rt.direct, http.DefaultTransport).RoundTrip(req)
 }
@@ -341,9 +359,10 @@ type authAttemptState struct {
 	// replacementToken holds a fresh token minted during HandleResponse after a
 	// cached token was rejected, so the retry's Prepare consumes it without
 	// invoking the token resolver a second time.
-	replacementToken    string
-	retriedTokenRefresh bool
-	anonymousFallback   bool
+	replacementToken      string
+	retriedTokenRefresh   bool
+	retriedCorpSSORefresh bool
+	anonymousFallback     bool
 }
 
 // authAttemptFrom returns the per-call retry state attached by

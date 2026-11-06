@@ -220,7 +220,8 @@ func TestGossoRoundTripper(t *testing.T) {
 		}
 	})
 
-	t.Run("IssueTrackerClient returns missingGossoAuthError without HTTP prefix", func(t *testing.T) {
+	t.Run("IssueTrackerClient and CorpSSOStrategy share missingGossoAuthError without HTTP prefix", func(t *testing.T) {
+		WithTestCaches(t, TestCacheConfig{PersistentDir: t.TempDir()})
 		WithHermeticAuth(t, AuthResolvers{})
 
 		itClient := NewIssueTrackerClient("", nil)
@@ -230,8 +231,21 @@ func TestGossoRoundTripper(t *testing.T) {
 		if itErr != nil && strings.HasPrefix(itErr.Error(), "HTTP request failed for") {
 			t.Errorf("Issue Tracker wrapped ExitCodeError with HTTP prefix:\n%v", itErr)
 		}
-		if ExitCodeFor(itErr) != ExitCodeAuth || !strings.Contains(itErr.Error(), "issuetracker.corp.googleapis.com") || !strings.Contains(itErr.Error(), "gosso") {
-			t.Errorf("Issue Tracker err = %v (exit=%d), want ExitCodeAuth mentioning issuetracker.corp.googleapis.com and gosso", itErr, ExitCodeFor(itErr))
+
+		gerritReq, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example-internal-review.googlesource.com/a/accounts/self", nil)
+		stratErr := NewCorpSSOStrategy("example-internal-review.googlesource.com").Prepare(t.Context(), gerritReq)
+
+		for _, tc := range []struct {
+			name string
+			err  error
+			host string
+		}{
+			{"Issue Tracker", itErr, "issuetracker.corp.googleapis.com"},
+			{"Gerrit", stratErr, "example-internal-review.googlesource.com"},
+		} {
+			if ExitCodeFor(tc.err) != ExitCodeAuth || !strings.Contains(tc.err.Error(), tc.host) || !strings.Contains(tc.err.Error(), "gosso") {
+				t.Errorf("%s err = %v (exit=%d), want ExitCodeAuth mentioning %q and gosso", tc.name, tc.err, ExitCodeFor(tc.err), tc.host)
+			}
 		}
 	})
 

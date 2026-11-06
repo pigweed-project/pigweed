@@ -738,7 +738,7 @@ func parseInternalGitURL(raw string) (scheme, tenant string, ok bool) {
 	if scheme != "sso" && scheme != "rpc" {
 		return "", "", false
 	}
-	tenant, _, _ = strings.Cut(parsed.Host, ".")
+	tenant, _, _ = strings.Cut(strings.ToLower(parsed.Host), ".")
 	tenant = strings.TrimSuffix(tenant, "-review")
 	if tenant == "" {
 		return "", "", false
@@ -759,7 +759,7 @@ func CanonicalGerritHost(raw string) string {
 	if _, tenant, ok := parseInternalGitURL(raw); ok {
 		return tenant + "-review.googlesource.com"
 	}
-	h := CleanGerritHost(raw)
+	h := strings.ToLower(CleanGerritHost(raw))
 	if idx := strings.IndexByte(h, '/'); idx != -1 {
 		h = h[:idx]
 	}

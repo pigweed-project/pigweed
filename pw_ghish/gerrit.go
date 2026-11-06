@@ -411,6 +411,18 @@ func stripAuthenticatedPrefix(u *url.URL) {
 	}
 }
 
+// ensureAuthenticatedPrefix prepends Gerrit's "/a" prefix to u.Path and keeps
+// u.RawPath in sync when present so "%2F"-encoded project IDs are preserved.
+func ensureAuthenticatedPrefix(u *url.URL) {
+	if hasAuthenticatedPrefix(u) || u.Path == "/a" {
+		return
+	}
+	u.Path = "/a/" + strings.TrimPrefix(u.Path, "/")
+	if u.RawPath != "" {
+		u.RawPath = "/a/" + strings.TrimPrefix(u.RawPath, "/")
+	}
+}
+
 func normalizeGerritBaseURL(baseURL string) (normURL string, host string) {
 	u := strings.TrimSpace(baseURL)
 	// Parse the URL the way hostnameOf (and so the auth policy) does, so

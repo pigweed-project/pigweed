@@ -156,6 +156,7 @@ go_test(
         "comments_summary_test.go",
         "commit_msg_flags_test.go",
         "commit_msg_test.go",
+        "corp_sso_test.go",
         "create_test.go",
         "design_contract_test.go",
         "diff_test.go",

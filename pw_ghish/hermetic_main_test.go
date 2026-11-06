@@ -87,6 +87,15 @@ func TestHermeticDefaults_FailClosed(t *testing.T) {
 		{"LookPathFn", func() error { _, err := LookPathFn("luci-auth"); return err }},
 		{"OAuthTokenCommandRunner", func() error { _, err := OAuthTokenCommandRunner(ctx, "luci-auth", "token"); return err }},
 		{"gossoCookieJarRunner", func() error { _, err := gossoCookieJarRunner(ctx, "gosso"); return err }},
+		{"SafeHTTPTransportCorpSSO", func() error {
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example-internal-review"+gobCorpDomainSuffix+"/a/accounts/self", nil)
+			markCorpSSORequest(req)
+			resp, err := (&safeHTTPTransport{}).RoundTrip(req)
+			if resp != nil {
+				resp.Body.Close()
+			}
+			return err
+		}},
 		{"DefaultGerritToken", func() error { _, _, err := DefaultGerritToken(ctx); return err }},
 		{"LUCITokenResolver", func() error { _, _, err := LUCITokenResolver(ctx); return err }},
 		{"AndroidBuildTokenResolver", func() error { _, err := AndroidBuildTokenResolver(ctx); return err }},

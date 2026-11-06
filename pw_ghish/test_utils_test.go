@@ -610,6 +610,7 @@ type AuthResolvers struct {
 	LookPath             func(file string) (string, error)
 	CommandRunner        func(ctx context.Context, name string, args ...string) ([]byte, error)
 	GossoCookieJarRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
+	CorpUplinkAddr       string
 	GerritToken          func(ctx context.Context) (string, string, error)
 	LUCIToken            func(ctx context.Context) (string, string, error)
 	AndroidBuildToken    func(ctx context.Context) (string, error)
@@ -632,6 +633,7 @@ func currentAuthResolvers() AuthResolvers {
 		LookPath:             LookPathFn,
 		CommandRunner:        OAuthTokenCommandRunner,
 		GossoCookieJarRunner: gossoCookieJarRunner,
+		CorpUplinkAddr:       corpUplinkAddr,
 		GerritToken:          GerritTokenResolver,
 		LUCIToken:            LUCITokenResolver,
 		AndroidBuildToken:    AndroidBuildTokenResolver,
@@ -650,6 +652,10 @@ func SetAuthResolvers(r AuthResolvers) {
 	}
 	if r.GossoCookieJarRunner != nil {
 		gossoCookieJarRunner = r.GossoCookieJarRunner
+	}
+	if r.CorpUplinkAddr != "" {
+		corpUplinkAddr = r.CorpUplinkAddr
+		corpUplinkHTTPTransport.CloseIdleConnections()
 	}
 	if r.GerritToken != nil {
 		GerritTokenResolver = r.GerritToken
@@ -745,6 +751,7 @@ func failClosedAuthResolvers() AuthResolvers {
 	r.GossoCookieJarRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("hermetic test: unexpected gosso command %s", name)
 	}
+	r.CorpUplinkAddr = "disabled"
 	return r
 }
 
