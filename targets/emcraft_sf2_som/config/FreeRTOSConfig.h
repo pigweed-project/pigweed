@@ -15,11 +15,19 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Externally defined variables that must be forward-declared for FreeRTOS to
 // use them.
 extern uint32_t SystemCoreClock;
 extern void configureTimerForRunTimeStats(void);
 extern unsigned long getRunTimeCounterValue(void);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 #define configSUPPORT_DYNAMIC_ALLOCATION 0
 #define configSUPPORT_STATIC_ALLOCATION 1

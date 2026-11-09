@@ -29,7 +29,7 @@ class FreeRtos(pw_package.git_repo.GitRepo):
             name='freertos',
             # pylint: disable=line-too-long
             url='https://pigweed.googlesource.com/third_party/github/FreeRTOS/FreeRTOS-Kernel',
-            commit='dbf70559b27d39c1fdb68dfb9a32140b6a6777a0',
+            commit='8a59a4b19bf72977819feddef87d41163ced7004',
             **kwargs,
         )
 

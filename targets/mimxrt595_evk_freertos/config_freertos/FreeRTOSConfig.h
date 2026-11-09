@@ -14,10 +14,20 @@
 
 #pragma once
 
+#include <stdint.h>
+
 // Disable formatting to make it easier to compare with other config files.
 // clang-format off
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern uint32_t SystemCoreClock;
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 /*-----------------------------------------------------------
  * Application specific definitions.

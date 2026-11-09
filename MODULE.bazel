@@ -30,7 +30,7 @@ bazel_dep(name = "boringssl", version = "0.20260730.0")
 bazel_dep(name = "emboss", version = "2025.1003.000719", repo_name = "com_google_emboss")
 
 # LINT.ThenChange(/pw_package/py/pw_package/packages/emboss.py:emboss)
-bazel_dep(name = "freertos", version = "11.1.0.bcr.3")
+bazel_dep(name = "freertos", version = "11.3.2")
 bazel_dep(name = "fuzztest", version = "20260219.0")
 bazel_dep(name = "gazelle", version = "0.52.2", repo_name = "bazel_gazelle")
 

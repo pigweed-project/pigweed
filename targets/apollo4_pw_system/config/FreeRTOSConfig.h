@@ -15,9 +15,17 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Externally defined variables that must be forward-declared for FreeRTOS to
 // use them.
 extern uint32_t SystemCoreClock;
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 // Disable formatting to make it easier to compare with other config files.
 // clang-format off
