@@ -18,6 +18,7 @@ These checks assume that they are running in a preconfigured Python environment.
 
 import difflib
 import logging
+import os
 from pathlib import Path
 import platform
 import re
@@ -624,24 +625,123 @@ def _update_upstream_python_constraints(
             raise PresubmitFailure(
                 'Please run:\n'
                 '\n'
-                '  pw presubmit --step update_upstream_python_constraints'
+                '  pw presubmit --step update_upstream_python_constraints_gn'
             )
 
 
 @filter_paths(endswith=_PYTHON_PACKAGE_EXTENSIONS)
-def check_upstream_python_constraints(ctx: PresubmitContext) -> None:
+def check_upstream_python_constraints_gn(ctx: PresubmitContext) -> None:
     _update_upstream_python_constraints(ctx, update_files=False)
 
 
 @filter_paths(endswith=_PYTHON_PACKAGE_EXTENSIONS)
-def update_upstream_python_constraints(ctx: PresubmitContext) -> None:
+def update_upstream_python_constraints_gn(ctx: PresubmitContext) -> None:
     _update_upstream_python_constraints(ctx, update_files=True)
 
 
-def diff_upstream_python_constraints(ctx: PresubmitContext) -> None:
+def diff_upstream_python_constraints_gn(ctx: PresubmitContext) -> None:
     _update_upstream_python_constraints(
         ctx, update_files=True, diff_in_place=True
     )
+
+
+_BAZEL_PYTHON_CONSTRAINTS_ARGS = (
+    # Shortens the Bazel output directory name from `*-fastbuild` to `*-opt` to
+    # help keep runfiles paths under Windows `MAX_PATH` (260 characters).
+    '--compilation_mode=opt',
+    # Matches the `enable_runfiles = "true"` rule transition applied by
+    # `rules_python`'s `py_binary` on Windows, avoiding a 16-character
+    # `-ST-<hash>` Starlark transition suffix in `bazel-out/` that otherwise
+    # pushes standard library paths (e.g. `importlib/resources/_adapters.py`)
+    # to 260 characters (`MAX_PATH`) on Windows LUCI bots.
+    '--enable_runfiles',
+    # Avoids packaging runfiles into a Python zip archive on Windows when
+    # `--enable_runfiles` is active.
+    '--nobuild_python_zip',
+    # Overrides `--incompatible_strict_action_env` from `pigweed.bazelrc` so
+    # `rules_python`'s `PyBuildLauncher` action (`launcher_maker.exe`) inherits
+    # the host `PATH` on Windows and can locate required C++ runtime DLLs.
+    '--noincompatible_strict_action_env',
+    # Prevents duplicating external repository runfiles under
+    # `bazel-out/.../runfiles/<workspace>/external/`, further reducing path
+    # lengths and runfiles tree size on Windows.
+    '--nolegacy_external_runfiles',
+)
+
+
+@filter_paths(endswith=_PYTHON_PACKAGE_EXTENSIONS)
+def check_upstream_python_constraints(ctx: PresubmitContext) -> None:
+    try:
+        build.bazel(
+            ctx,
+            'test',
+            *_BAZEL_PYTHON_CONSTRAINTS_ARGS,
+            '//pw_env_setup/py:constraint_hashes.test',
+            '//pw_env_setup/py:upstream_requirements_lock.test',
+        )
+    except PresubmitFailure as exc:
+        raise PresubmitFailure(
+            'Please run:\n'
+            '\n'
+            '  pw presubmit --step update_upstream_python_constraints'
+        ) from exc
+
+
+def _update_upstream_python_constraints_bazel(ctx: PresubmitContext) -> None:
+    # Unset TEST_TMPDIR so rules_python's dependency_resolver.py does not
+    # mistake a LUCI environment for `bazel test` and skip updating files.
+    env = os.environ.copy()
+    env.pop('TEST_TMPDIR', None)
+    build.bazel(
+        ctx,
+        'run',
+        *_BAZEL_PYTHON_CONSTRAINTS_ARGS,
+        '//pw_env_setup/py:constraint_hashes.update',
+        env=env,
+    )
+    build.bazel(
+        ctx,
+        'run',
+        *_BAZEL_PYTHON_CONSTRAINTS_ARGS,
+        '//pw_env_setup/py:upstream_requirements_lock.update',
+        env=env,
+    )
+
+
+@filter_paths(endswith=_PYTHON_PACKAGE_EXTENSIONS)
+def update_upstream_python_constraints(ctx: PresubmitContext) -> None:
+    _update_upstream_python_constraints_bazel(ctx)
+
+
+def diff_upstream_python_constraints(ctx: PresubmitContext) -> None:
+    _update_upstream_python_constraints_bazel(ctx)
+
+    platform_name = platform.system().lower()
+    constraint_hashes_original = (
+        ctx.root
+        / 'pw_env_setup/py/pw_env_setup/virtualenv_setup'
+        / f'constraint_hashes_{platform_name}.list'
+    )
+    upstream_requirements_lock_original = (
+        ctx.root
+        / 'pw_env_setup/py/pw_env_setup/virtualenv_setup'
+        / f'upstream_requirements_{platform_name}_lock.txt'
+    )
+
+    diff = git_repo.find_git_repo(ctx.root).diff(
+        '--',
+        constraint_hashes_original,
+        upstream_requirements_lock_original,
+    )
+    if not diff:
+        return
+
+    ctx.output_dir.mkdir(exist_ok=True, parents=True)
+    diff_path = ctx.output_dir / 'git_diff.txt'
+    with open(diff_path, 'w') as stdout:
+        stdout.write(diff)
+
+    raise PresubmitFailure(f'git diff output is not empty; see {diff_path}')
 
 
 @filter_paths(endswith=_PYTHON_EXTENSIONS + ('.pylintrc',))

@@ -154,8 +154,9 @@ def bazel(
                     (ctx.output_dir / f'bazel.{cmd}.stdout').open('w')
                 )
 
+            output_base_path = ctx.output_dir / 'bazel.output.base'
             with (
-                (ctx.output_dir / 'bazel.output.base').open('w') as outs,
+                output_base_path.open('w') as outs,
                 (ctx.output_dir / 'bazel.output.base.err').open('w') as errs,
             ):
                 call(
@@ -165,6 +166,16 @@ def bazel(
                     tee=outs,
                     stderr=errs,
                 )
+
+            # Normalize the path written to `bazel.output.base` via `Path(...)`
+            # so that on Windows, `bazel info output_base`'s forward-slash
+            # output (`C:/...`) is converted to native backslashes (`C:\...`).
+            # The LUCI `pw_presubmit` recipe reads this file with
+            # `self.m.path.abs_to_path()`, which raises `ValueError: path is
+            # not absolute` on Windows if the path contains forward slashes.
+            output_base = output_base_path.read_text().strip()
+            if output_base:
+                output_base_path.write_text(f'{Path(output_base)}\n')
 
             working_dir = ctx.root
             if override_working_dir:

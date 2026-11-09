@@ -12,6 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
 
 # Unlike most Pigweed modules, this package is private by default. This is
@@ -34,6 +36,57 @@ exports_files([
     "pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt",
     "pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt",
 ] + glob(["pw_env_setup/**/*.json"]))
+
+compile_pip_requirements(
+    name = "constraint_hashes",
+    srcs = [
+        "pw_env_setup/virtualenv_setup/constraint.list",
+        "pw_env_setup/virtualenv_setup/python_base_requirements.txt",
+    ],
+    extra_args = [
+        "--reuse-hashes",
+        "--strip-extras",
+    ],
+    requirements_darwin = "pw_env_setup/virtualenv_setup/constraint_hashes_darwin.list",
+    # `requirements_txt` is used for Linux (`requirements_linux` is omitted)
+    # because `compile_pip_requirements` falls back to `requirements_txt` when
+    # `requirements_linux` is not set, and setting both to the same file causes
+    # a duplicate label error in `data` with older versions of `rules_python`.
+    requirements_txt = "pw_env_setup/virtualenv_setup/constraint_hashes_linux.list",
+    requirements_windows = "pw_env_setup/virtualenv_setup/constraint_hashes_windows.list",
+    tags = [
+        "manual",
+        "nomypy",
+        "nopylint",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+)
+
+compile_pip_requirements(
+    name = "upstream_requirements_lock",
+    srcs = [
+        "pw_env_setup/virtualenv_setup/constraint.list",
+        "pw_env_setup/virtualenv_setup/pigweed_upstream_requirements.txt",
+        "pw_env_setup/virtualenv_setup/python_base_requirements.txt",
+    ],
+    extra_args = [
+        "--reuse-hashes",
+        "--strip-extras",
+    ],
+    requirements_darwin = "pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt",
+    # `requirements_txt` is used for Linux (`requirements_linux` is omitted)
+    # because `compile_pip_requirements` falls back to `requirements_txt` when
+    # `requirements_linux` is not set, and setting both to the same file causes
+    # a duplicate label error in `data` with older versions of `rules_python`.
+    requirements_txt = "pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt",
+    requirements_windows = "pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt",
+    tags = [
+        "manual",
+        "nomypy",
+        "nopylint",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+)
 
 filegroup(
     # Default to an empty group since not all projects will use a pigweed.json.
