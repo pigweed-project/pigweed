@@ -155,8 +155,8 @@ TEST_F(EmulatorTest, AlreadyClosedFirstConnectionShutsDown) {
 }
 
 // If the device is shut down (and destroyed) by some other path first, e.g.
-// the framework removing its node, the owner's binding is torn down with it
-// and its close handler must never fire.
+// `CreateEmulator` failing, the owner's binding is torn down with it and its
+// close handler must never fire.
 TEST_F(EmulatorTest, ShutdownBeforeOwnerDisconnectOnlyShutsDownOnce) {
   fidl::ClientEnd<fhb::Emulator> owner = ConnectEmulator();
 

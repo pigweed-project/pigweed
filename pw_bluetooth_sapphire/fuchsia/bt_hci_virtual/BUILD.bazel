@@ -16,13 +16,10 @@ load("@fuchsia_infra//infra:infra.bzl", "fuchsia_cipd_releases")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
-    "fuchsia_cc_driver",
     "fuchsia_cc_library",
     "fuchsia_cc_test",
     "fuchsia_component",
     "fuchsia_component_manifest",
-    "fuchsia_driver_bind_bytecode",
-    "fuchsia_driver_component",
     "fuchsia_package",
     "fuchsia_platforms",
     "fuchsia_test_component",
@@ -41,19 +38,7 @@ load("//pw_bluetooth_sapphire/fuchsia:fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL
 
 package(default_visibility = ["//visibility:public"])
 
-fuchsia_driver_bind_bytecode(
-    name = "bt-hci-virtual-bind",
-    output = "bt-hci-virtual.bindbc",
-    rules = "meta/bt-hci-virtual.bind",
-    deps = [
-        "@fuchsia_sdk//bind/fuchsia",
-        "@fuchsia_sdk//bind/fuchsia.platform",
-    ],
-)
-
-# The virtual devices and the VirtualController that creates them. Shared by
-# the component and the driver, so it has no driver framework dependencies and
-# no pw_log backend: each binary links its own.
+# The virtual devices and the VirtualController that creates them.
 fuchsia_cc_library(
     name = "virtual_sources",
     testonly = True,
@@ -137,58 +122,11 @@ fuchsia_component(
     deps = [":bt_hci_virtual_bin"],
 )
 
-fuchsia_cc_library(
-    name = "controller",
-    testonly = True,
-    srcs = ["controller.cc"],
-    hdrs = ["controller.h"],
-    target_compatible_with = ["@platforms//os:fuchsia"],
-    deps = [
-        ":virtual_sources",
-        "//pw_assert:check",
-        "//pw_log_fuchsia",
-        "//pw_log_fuchsia:pw_log_fuchsia_driver",
-        "@fuchsia_sdk//fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
-        "@fuchsia_sdk//pkg/driver_component_cpp",
-        "@fuchsia_sdk//pkg/driver_devfs_cpp",
-        "@fuchsia_sdk//pkg/driver_logging_cpp",
-        "@fuchsia_sdk//pkg/driver_outgoing_cpp",
-        "@fuchsia_sdk//pkg/driver_runtime",
-    ],
-    # `controller.cc` defines `__fuchsia_driver_registration__`, which nothing
-    # in the driver references and which fdf_testing::*DriverTest resolves at
-    # link time; keep the object when linking statically into either.
-    alwayslink = True,
-)
-
-fuchsia_cc_driver(
-    name = "bt-hci-virtual",
-    testonly = True,
-    output_name = "bt-hci-virtual",
-    deps = [":controller"],
-)
-
-fuchsia_component_manifest(
-    name = "manifest",
-    src = "meta/driver.cml",
-)
-
-fuchsia_driver_component(
-    name = "component",
-    testonly = True,
-    bind_bytecode = ":bt-hci-virtual-bind",
-    driver_lib = ":bt-hci-virtual",
-    manifest = ":manifest",
-)
-
 fuchsia_package(
     name = "pkg.x64",
     package_name = "virtual",
     testonly = True,
-    components = [
-        ":bt_hci_virtual_component",
-        ":component",
-    ],
+    components = [":bt_hci_virtual_component"],
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     package_repository_name = "fuchsia.com",
     platform = fuchsia_platforms.x64,
@@ -199,10 +137,7 @@ fuchsia_package(
     name = "pkg.x64.repo.disabled",
     package_name = "virtual",
     testonly = True,
-    components = [
-        ":bt_hci_virtual_component",
-        ":component",
-    ],
+    components = [":bt_hci_virtual_component"],
     disable_repository_name = "fuchsia.com",
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     platform = fuchsia_platforms.x64,
@@ -213,10 +148,7 @@ fuchsia_package(
     name = "pkg.arm64",
     package_name = "virtual",
     testonly = True,
-    components = [
-        ":bt_hci_virtual_component",
-        ":component",
-    ],
+    components = [":bt_hci_virtual_component"],
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     package_repository_name = "fuchsia.com",
     platform = fuchsia_platforms.arm64,
@@ -227,26 +159,11 @@ fuchsia_package(
     name = "pkg.riscv64",
     package_name = "virtual",
     testonly = True,
-    components = [
-        ":bt_hci_virtual_component",
-        ":component",
-    ],
+    components = [":bt_hci_virtual_component"],
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     package_repository_name = "fuchsia.com",
     platform = fuchsia_platforms.riscv64,
     visibility = ["//visibility:public"],
-)
-
-fuchsia_cc_test(
-    name = "controller_test",
-    srcs = ["controller_test.cc"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":controller",
-        "//pw_bluetooth_sapphire/host/testing:gtest_main",
-        "//pw_unit_test",
-        "@fuchsia_sdk//pkg/driver_testing_cpp",
-    ],
 )
 
 fuchsia_cc_test(
@@ -330,7 +247,6 @@ fuchsia_test_package(
     subpackages = ["@fuchsia_sdk//packages/realm_builder_server"],
     test_components = [
         ":component_test",
-        ":controller_test.unittest_component",
         ":emulator_test.unittest_component",
         ":loopback_test.unittest_component",
         ":virtual_controller_test.unittest_component",

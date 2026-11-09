@@ -51,8 +51,8 @@ class OutgoingLoopTestFixture : public ::testing::Test {
 
   void RunUntilIdle() { loop_.RunUntilIdle(); }
 
-  // Shuts down the dispatcher, as happens when the component or driver hosting
-  // the devices stops.
+  // Shuts down the dispatcher, as happens when the component hosting the
+  // devices stops.
   void ShutdownLoop() { loop_.Shutdown(); }
 
   component::OutgoingDirectory* outgoing() { return &outgoing_; }
