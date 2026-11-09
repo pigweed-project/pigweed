@@ -87,16 +87,6 @@ void BrEdrConnectionRequest::CreateConnection(
     if (status.is_error()) {
       on_command_fail_cb(status, peer_id);
     } else {
-      // Both CommandChannel and the controller perform some scheduling, so log
-      // when the controller finally acknowledges Create Connection to observe
-      // outgoing connection sequencing.
-      // TODO(fxbug.dev/42173957): Added to investigate timing and can be
-      // removed if it adds no value
-      bt_log(INFO,
-             "hci-bredr",
-             "Create Connection for peer %s successfully dispatched",
-             bt_str(peer_id));
-
       // The request was started but has not completed; initiate the command
       // timeout period. NOTE: The request will complete when the controller
       // asynchronously notifies us of with a BrEdr Connection Complete event.

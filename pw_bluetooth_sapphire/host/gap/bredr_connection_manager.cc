@@ -1274,19 +1274,6 @@ void BrEdrConnectionManager::CompleteRequest(
     status = pending_request_->CompleteRequest(status);
     pending_request_.reset();
   } else {
-    // This incoming connection arrived while we're trying to make an outgoing
-    // connection; not an impossible coincidence but log it in case it's
-    // interesting.
-    // TODO(fxbug.dev/42173957): Added to investigate timing and can be removed
-    // if it adds no value
-    if (pending_request_) {
-      bt_log(
-          INFO,
-          "gap-bredr",
-          "doesn't complete pending outgoing connection to peer %s (addr: %s)",
-          bt_str(pending_request_->peer_id()),
-          bt_str(pending_request_->peer_address()));
-    }
     // If this was an incoming attempt, clear it
     request.CompleteIncoming();
   }
