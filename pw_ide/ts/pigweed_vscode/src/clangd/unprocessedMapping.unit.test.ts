@@ -28,7 +28,10 @@ const TEST_DIR = path.join(os.tmpdir(), '__pw_ide_test');
 const CDB_DIR = path.join(TEST_DIR, CDB_FILE_DIR);
 
 suite('unprocessedMapping', () => {
+  let origWorkingDir: string;
+
   setup(async () => {
+    origWorkingDir = workingDir.get();
     await fs_p.mkdir(CDB_DIR, { recursive: true });
 
     await fs_p.mkdir(path.join(CDB_DIR, 'target1'));
@@ -46,6 +49,9 @@ suite('unprocessedMapping', () => {
   });
 
   teardown(async () => {
+    // Restore the shared working dir so later suites don't inherit TEST_DIR
+    // after it has been deleted.
+    workingDir.set(origWorkingDir);
     await fs_p.rm(TEST_DIR, { recursive: true, force: true });
   });
 

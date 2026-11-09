@@ -297,7 +297,8 @@
     "package": "npm run clean && npm run build && npm run bundle && npm run prePackage && npm run doPackage && npm run postPackage",
     "packagePrerelease": "npm run clean && npm run build && npm run bundle && npm run prePackage && npm run doPackagePrerelease && npm run postPackage",
     "vsceLogin": "vsce login pigweed",
-    "test:all": "npm run clean && npm run build && vscode-test"
+    "test:all": "npm run clean && npm run build && vscode-test",
+    "test:unit": "npm run clean && npm run build && mocha --ui tdd --timeout 60000 --require ./out/src/test/register-vscode-mock.js \"out/src/**/*.unit.test.js\" out/src/activeFilesCache.test.js --ignore out/src/webviewProvider.unit.test.js"
   },
   "dependencies": {
     "@bazel/bazelisk": "^1.19.0",

@@ -18,7 +18,7 @@ import * as vscode from 'vscode';
 
 import { getReliableBazelExecutable } from '../bazel';
 import logger from '../logging';
-import { getPigweedProjectRoot } from '../project';
+import { getPigweedProjectRoot, isBazelProject } from '../project';
 import { settings, stringSettingFor, workingDir } from '../settings/vscode';
 import { existsSync } from 'fs';
 
@@ -32,6 +32,9 @@ function getBazelExecRoot(): string | undefined {
   if (cachedExecRoot) {
     return cachedExecRoot;
   }
+  if (!isBazelProject(workingDir.get())) {
+    return undefined;
+  }
   const cmd = getReliableBazelExecutable();
   if (!cmd) return;
   const args = ['info', 'execution_root'];
@@ -44,6 +47,10 @@ function getBazelExecRoot(): string | undefined {
 export const clangdPath = () => {
   if (cachedClangdPath && existsSync(cachedClangdPath)) {
     return cachedClangdPath;
+  }
+
+  if (!isBazelProject(workingDir.get())) {
+    return undefined;
   }
 
   const cmd = getReliableBazelExecutable();

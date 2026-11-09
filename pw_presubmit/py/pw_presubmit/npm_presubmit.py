@@ -48,3 +48,15 @@ def vscode_test(ctx: PresubmitContext) -> None:
     npm = shutil.which('npm.cmd' if os.name == 'nt' else 'npm')
     call(npm, 'install', cwd=vsc_dir)
     call(npm, 'run', 'test:all', cwd=vsc_dir)
+
+
+def vscode_unit_test(ctx: PresubmitContext) -> None:
+    """Build the VS Code extension and run its unit tests headlessly.
+
+    Unlike vscode_test, this does not launch VS Code: `vscode` is replaced by
+    an in-process mock, so it needs no display server or GUI libraries.
+    """
+    vsc_dir = ctx.root / 'pw_ide' / 'ts' / 'pigweed_vscode'
+    npm = shutil.which('npm.cmd' if os.name == 'nt' else 'npm')
+    call(npm, 'install', cwd=vsc_dir)
+    call(npm, 'run', 'test:unit', cwd=vsc_dir)

@@ -1206,6 +1206,7 @@ OTHER_CHECKS = (
     lockfile_check,
     module_owners.presubmit_check(),
     npm_presubmit.vscode_test,
+    npm_presubmit.vscode_unit_test,
     pw_internal_namespace.pw_internal_namespace,
     pw_transfer_integration_test,
     python_checks.diff_upstream_python_constraints,
