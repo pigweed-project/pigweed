@@ -72,7 +72,8 @@ For both ``Join`` and ``Select``, the report shows:
   types, which demonstrates the overhead of template specialization.
 
 Additionally, the table includes a comparison showing the code size difference
-between using the ``Select`` helper versus manually polling each future.
+between using the ``Select`` helper versus manually polling each future, and
+the cost of waiting on a ``TimeFuture`` from the system ``TimeProvider``.
 
 .. include:: size_report/utilities_size_report
 

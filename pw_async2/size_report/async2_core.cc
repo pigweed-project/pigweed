@@ -31,6 +31,12 @@
 #include "pw_status/status.h"
 #endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
+#ifdef _PW_ASYNC2_SIZE_REPORT_TIME_FUTURE
+#include "pw_async2/system_time_provider.h"
+#include "pw_async2/time_provider.h"
+#include "pw_chrono/system_clock.h"
+#endif  // _PW_ASYNC2_SIZE_REPORT_TIME_FUTURE
+
 namespace pw::async2::size_report {
 namespace {
 
@@ -100,6 +106,23 @@ int Measure() {
   PW_BLOAT_COND(dispatcher.RunUntilStalled(), mask);
 
 #endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE
+
+#ifdef _PW_ASYNC2_SIZE_REPORT_TIME_FUTURE
+
+  TimeProvider<chrono::SystemClock>& time = GetSystemTimeProvider();
+  TimeFuture<chrono::SystemClock> timeout =
+      time.WaitFor(chrono::SystemClock::duration(mask));
+  // Complete naturally after polling `timeout` so `Task::Deregister()` (not in
+  // the `:async2_core` baseline) is not attributed to `TimeFuture`.
+  FuncTask timer_task([&](Context& cx) {
+    PW_BLOAT_COND(timeout.Pend(cx).IsReady(), mask);
+    return Ready();
+  });
+  dispatcher.Post(timer_task);
+  PW_BLOAT_COND(dispatcher.RunUntilStalled(), mask);
+  timeout = time.WaitFor(chrono::SystemClock::duration(mask));
+
+#endif  // _PW_ASYNC2_SIZE_REPORT_TIME_FUTURE
 
   return task.polled;
 }
