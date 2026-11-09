@@ -79,12 +79,13 @@ filegroup {
 // path to the "public" directory relative to this module.
 cc_library_headers {
     name: "pw_rpc_include_dirs",
+    defaults: [
+        "pw_android_common_target_support",
+    ],
     export_include_dirs: [
         "public",
     ],
     cmake_snapshot_supported: true,
-    vendor_available: true,
-    host_supported: true,
 }
 
 // This rule must be instantiated, i.e.

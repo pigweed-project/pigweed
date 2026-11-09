@@ -26,13 +26,11 @@ filegroup {
 cc_library_headers {
     name: "pw_rpc_raw_include_dirs",
     defaults: [
-        "pw_android_cpp_version",
+        "pw_android_common_target_support",
     ],
     export_include_dirs: [
         "public",
     ],
-    vendor_available: true,
-    host_supported: true,
 }
 
 // This rule must be instantiated, i.e.
