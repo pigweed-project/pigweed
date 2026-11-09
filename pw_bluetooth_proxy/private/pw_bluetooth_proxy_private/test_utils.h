@@ -314,7 +314,7 @@ class ProxyHostTest : public testing::Test {
 
   Status SendReadBufferResponseFromController(
       ProxyHost& proxy,
-      uint8_t num_credits_to_reserve,
+      uint16_t num_credits_to_reserve,
       uint16_t acl_data_packet_length = 0xFFFF);
 
   // Send a Number_of_Completed_Packets event to `proxy` that reports each

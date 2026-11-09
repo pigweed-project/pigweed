@@ -172,7 +172,7 @@ Status ProxyHostTest::SendLeReadBufferResponseFromController(
 
 Status ProxyHostTest::SendReadBufferResponseFromController(
     ProxyHost& proxy,
-    uint8_t num_credits_to_reserve,
+    uint16_t num_credits_to_reserve,
     uint16_t acl_data_packet_length) {
   std::array<uint8_t,
              emboss::ReadBufferSizeCommandCompleteEventWriter::SizeInBytes()>

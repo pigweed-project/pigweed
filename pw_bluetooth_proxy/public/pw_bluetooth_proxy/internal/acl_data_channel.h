@@ -510,6 +510,13 @@ class AclDataChannel {
   // TODO: https://pwbug.dev/349700888 - Make size configurable.
   static constexpr size_t kMaxConnections = 10;
 
+  // Maximum initial per-connection host packet queue capacity reserved from
+  // the controller-reported buffer size when dynamic credit sharing is
+  // enabled. The queue can still grow dynamically if more host packets are
+  // queued; 32 is above standard controller buffer sizes while preventing a
+  // large controller-reported value from exhausting memory up front.
+  static constexpr uint16_t kMaxInitialDynamicPacketQueueCapacity = 32;
+
   // Reference to the transport owned by the host.
   HciTransport& hci_transport_;
 

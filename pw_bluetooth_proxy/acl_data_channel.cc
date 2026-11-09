@@ -14,6 +14,7 @@
 
 #include "pw_bluetooth_proxy/internal/acl_data_channel.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstdint>
 #include <mutex>
@@ -811,17 +812,21 @@ Status AclDataChannel::CreateAclConnection(uint16_t connection_handle,
   }
 
   uint16_t max_packets = 0;
+  bool dynamic_sharing = false;
   {
     std::lock_guard credit_lock(credit_mutex_);
-    max_packets = LookupCredits(transport).controller_max_packets();
+    const Credits& credits = LookupCredits(transport);
+    max_packets = credits.controller_max_packets();
+    dynamic_sharing = credits.dynamic_sharing();
   }
 
   acl_connections_.emplace_back(transport,
                                 /*connection_handle=*/connection_handle,
                                 allocator_);
 
-  if (max_packets > 0) {
-    if (!acl_connections_.back().queue().try_reserve(max_packets)) {
+  if (dynamic_sharing && max_packets > 0) {
+    if (!acl_connections_.back().queue().try_reserve_exact(
+            std::min(max_packets, kMaxInitialDynamicPacketQueueCapacity))) {
       PW_LOG_ERROR("Failed to reserve capacity for ACL connection %#x queue.",
                    connection_handle);
     }
@@ -1028,8 +1033,9 @@ Status AclDataChannel::RecoverFromSnapshot(const AclSnapshot& snapshot) {
         (connection_snapshot.transport == AclTransportType::kLe)
             ? snapshot.le_controller_max_packets
             : snapshot.br_edr_controller_max_packets;
-    if (controller_max > 0 &&
-        !acl_connections_.back().queue().try_reserve(controller_max)) {
+    if (credits.dynamic_sharing() && controller_max > 0 &&
+        !acl_connections_.back().queue().try_reserve_exact(
+            std::min(controller_max, kMaxInitialDynamicPacketQueueCapacity))) {
       PW_LOG_ERROR("Failed to reserve capacity for ACL connection %#x queue.",
                    connection_snapshot.connection_handle);
     }

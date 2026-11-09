@@ -1369,6 +1369,35 @@ TEST_F(ReserveLeAclCreditsTest, DuplicateBrEdrReadBufferSizeIgnored) {
   EXPECT_EQ(capture.last_received_credits, 8);
 }
 
+TEST_F(ReserveLeAclCreditsTest,
+       StaticModeMaxBufferSizeDoesNotExhaustAllocator) {
+  // A reasonable memory limit that is well above normal connection overhead
+  // (~1-2 KiB) and far below an unclamped 0xFFFF-packet queue (~3.1 MiB).
+  constexpr size_t kReasonableMemoryLimit = 32 * 1024;
+  allocator::test::AllocatorForTest<65536> allocator;
+  ProxyHost proxy(
+      /*send_to_host_fn=*/[](H4PacketWithHci&&) {},
+      /*send_to_controller_fn=*/[](H4PacketWithH4&&) {},
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/2,
+      &allocator);
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendReadBufferResponseFromController(proxy, 0xFFFF, 251));
+  PW_TEST_ASSERT_OK(SendConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(allocator.metrics().num_failures.value(), 0u);
+  EXPECT_LT(allocator.metrics().peak_allocated_bytes.value(),
+            kReasonableMemoryLimit);
+  PW_TEST_EXPECT_OK(BuildBasicL2capChannelWithResult(
+                        proxy,
+                        BasicL2capParameters{
+                            .handle = kConnectionHandle,
+                            .transport = AclTransportType::kBrEdr,
+                        })
+                        .status());
+}
+
 // ########## NumberOfCompletedPacketsTest
 
 class NumberOfCompletedPacketsTest : public ProxyHostTest {};

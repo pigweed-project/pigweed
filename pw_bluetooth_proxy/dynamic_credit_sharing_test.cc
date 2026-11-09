@@ -1675,5 +1675,34 @@ TEST_F(DynamicCreditSharingTest,
   EXPECT_EQ(sends_called, 5);
 }
 
+TEST_F(DynamicCreditSharingTest,
+       DynamicModeMaxBufferSizeClampsInitialQueueAllocation) {
+  constexpr uint16_t kConnectionHandle = 0x0456;
+  // A reasonable memory limit that is well above normal connection overhead
+  // (~2-3 KiB) and far below an unclamped 0xFFFF-packet queue (~3.1 MiB).
+  constexpr size_t kReasonableMemoryLimit = 32 * 1024;
+  allocator::test::AllocatorForTest<65536> allocator;
+  ProxyHost proxy(
+      /*send_to_host_fn=*/[](H4PacketWithHci&&) {},
+      /*send_to_controller_fn=*/[](H4PacketWithH4&&) {},
+      allocator);
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendReadBufferResponseFromController(proxy, 0xFFFF, 251));
+  PW_TEST_ASSERT_OK(SendConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(proxy.GetNumFreeBrEdrAclPackets(), 0xFFFFu);
+  EXPECT_EQ(allocator.metrics().num_failures.value(), 0u);
+  EXPECT_LT(allocator.metrics().peak_allocated_bytes.value(),
+            kReasonableMemoryLimit);
+  PW_TEST_EXPECT_OK(BuildBasicL2capChannelWithResult(
+                        proxy,
+                        BasicL2capParameters{
+                            .handle = kConnectionHandle,
+                            .transport = AclTransportType::kBrEdr,
+                        })
+                        .status());
+}
+
 }  // namespace
 }  // namespace pw::bluetooth::proxy

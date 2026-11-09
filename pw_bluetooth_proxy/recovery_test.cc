@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <utility>
 
+#include "pw_allocator/testing.h"
 #include "pw_bluetooth_proxy/acl_snapshot.h"
 #include "pw_bluetooth_proxy/h4_packet.h"
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
@@ -167,6 +168,24 @@ class AclRecoveryTest : public ProxyHostTest {
     snapshot.br_edr_controller_max_packets = br_edr_max;
     snapshot.le_max_acl_data_packet_length = le_max_len;
     snapshot.br_edr_max_acl_data_packet_length = br_edr_max_len;
+    return snapshot;
+  }
+
+  static ProxyHostSnapshot CreateMaxBufferSizeSnapshot() {
+    ProxyHostSnapshot snapshot;
+    snapshot.acl = CreateAclSnapshot(/*le_max=*/0xFFFF, /*br_edr_max=*/0xFFFF);
+    snapshot.acl.acl_connections.push_back(CreateAclConnectionSnapshot(
+        kLeConnectionHandle1, AclTransportType::kLe));
+    snapshot.acl.acl_connections.push_back(CreateAclConnectionSnapshot(
+        kBrEdrConnectionHandle, AclTransportType::kBrEdr));
+    snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+        .connection_handle = kLeConnectionHandle1,
+        .transport = AclTransportType::kLe,
+    });
+    snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+        .connection_handle = kBrEdrConnectionHandle,
+        .transport = AclTransportType::kBrEdr,
+    });
     return snapshot;
   }
 };
@@ -683,6 +702,75 @@ TEST_F(AclRecoveryTest, DynamicCreditsPendingDerivedFromConnections) {
   // Controller max is 10, total pending is 2 + 3 = 5.
   // Verify that remaining credits is 10 - 5 = 5.
   EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 5);
+}
+
+TEST_F(
+    AclRecoveryTest,
+    DynamicModeRecoverFromSnapshotMaxBufferSizeClampsInitialQueueAllocation) {
+  constexpr size_t kReasonableMemoryLimit = 32 * 1024;
+  allocator::test::AllocatorForTest<65536> allocator;
+  ProxyHost proxy(
+      /*send_to_host_fn=*/[](H4PacketWithHci&&) {},
+      /*send_to_controller_fn=*/[](H4PacketWithH4&&) {},
+      allocator);
+  StartDispatcherOnCurrentThread(proxy);
+
+  ProxyHostSnapshot snapshot = CreateMaxBufferSizeSnapshot();
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
+  EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 0xFFFFu);
+  EXPECT_EQ(proxy.GetNumFreeBrEdrAclPackets(), 0xFFFFu);
+  EXPECT_EQ(allocator.metrics().num_failures.value(), 0u);
+  EXPECT_LT(allocator.metrics().peak_allocated_bytes.value(),
+            kReasonableMemoryLimit);
+  PW_TEST_EXPECT_OK(
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .transport = AclTransportType::kLe,
+                                       })
+          .status());
+  PW_TEST_EXPECT_OK(BuildBasicL2capChannelWithResult(
+                        proxy,
+                        BasicL2capParameters{
+                            .handle = kBrEdrConnectionHandle,
+                            .transport = AclTransportType::kBrEdr,
+                        })
+                        .status());
+}
+
+TEST_F(AclRecoveryTest,
+       StaticModeRecoverFromSnapshotMaxBufferSizeDoesNotExhaustAllocator) {
+  constexpr size_t kReasonableMemoryLimit = 32 * 1024;
+  allocator::test::AllocatorForTest<65536> allocator;
+  ProxyHost proxy(
+      /*send_to_host_fn=*/[](H4PacketWithHci&&) {},
+      /*send_to_controller_fn=*/[](H4PacketWithH4&&) {},
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/2,
+      &allocator);
+  StartDispatcherOnCurrentThread(proxy);
+
+  ProxyHostSnapshot snapshot = CreateMaxBufferSizeSnapshot();
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
+  EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 2u);
+  EXPECT_EQ(proxy.GetNumFreeBrEdrAclPackets(), 2u);
+  EXPECT_EQ(allocator.metrics().num_failures.value(), 0u);
+  EXPECT_LT(allocator.metrics().peak_allocated_bytes.value(),
+            kReasonableMemoryLimit);
+  PW_TEST_EXPECT_OK(
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .transport = AclTransportType::kLe,
+                                       })
+          .status());
+  PW_TEST_EXPECT_OK(BuildBasicL2capChannelWithResult(
+                        proxy,
+                        BasicL2capParameters{
+                            .handle = kBrEdrConnectionHandle,
+                            .transport = AclTransportType::kBrEdr,
+                        })
+                        .status());
 }
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
