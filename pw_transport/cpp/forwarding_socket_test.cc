@@ -118,7 +118,7 @@ TEST_F(ForwardingSocketTest, SendAndReceive_EmptyDatagram) {
   ConstBuf empty = Receive(pair.second());
   ASSERT_NE(empty, nullptr);
   EXPECT_TRUE(empty.empty());
-  EXPECT_FALSE(empty.owned());
+  EXPECT_TRUE(empty.owned());
   EXPECT_EQ(empty.size(), 0u);
 
   ConstBuf after = Receive(pair.second());

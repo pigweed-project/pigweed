@@ -39,9 +39,13 @@ pw_source_set("pw_buf") {
 pw_test("buf_test") {
   deps = [
     ":pw_buf",
+    "$dir_pw_allocator:abstract_allocator",
     "$dir_pw_allocator:null_allocator",
     "$dir_pw_allocator:testing",
+    dir_pw_allocator,
     dir_pw_bytes,
+    dir_pw_result,
+    dir_pw_status,
   ]
   sources = [ "buf_test.cc" ]
 }

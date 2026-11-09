@@ -32,7 +32,7 @@ Buf& Buf::operator=(Buf&& other) noexcept {
 }
 
 void Buf::reset() {
-  if (owned()) {
+  if (owned() && base_size() != 0) {
     deallocator_->Deallocate(mutable_base());
   }
   Clear();
@@ -64,6 +64,10 @@ UniquePtr<std::byte[]> TakeAllocation(Buf&& buf) {
   if (!buf.owned()) {
     // Only a null Buf may be unowned here. A null Buf has no state to clear.
     PW_CHECK(buf.data_ == nullptr);
+    return UniquePtr<std::byte[]>();
+  }
+  if (buf.base_size() == 0) {
+    buf.Clear();
     return UniquePtr<std::byte[]>();
   }
   UniquePtr<std::byte[]> allocation(
@@ -100,7 +104,7 @@ Buf Buf::AllocateCopy(Allocator& allocator,
 
 Buf Buf::TryAllocate(Allocator& allocator, size_t size_bytes) {
   if (size_bytes == 0) {
-    return ZeroLength();
+    return Buf(const_cast<std::byte*>(&kEmpty), 0, allocator);
   }
   void* ptr =
       allocator.Allocate(allocator::Layout::Of<std::byte[]>(size_bytes));

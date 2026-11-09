@@ -47,11 +47,14 @@ pw_cc_test(
     deps = [
         ":pw_buf",
         "//pw_allocator",
+        "//pw_allocator:abstract_allocator",
         "//pw_allocator:null_allocator",
         "//pw_allocator:testing",
         "//pw_assert:check",
         "//pw_bytes",
         "//pw_containers:iterator",
+        "//pw_result",
+        "//pw_status",
         "//pw_unit_test",
     ],
 )

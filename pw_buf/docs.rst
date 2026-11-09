@@ -58,11 +58,18 @@ buffer (``buf == nullptr``):
   bytes, when 0 bytes are allocated, or when created with
   :cc:`pw::Buf::ZeroLength` or :cc:`pw::ConstBuf::ZeroLength`.
 
-``ZeroLength()`` returns an empty, non-null, unowned buffer. Allocating 0 bytes
-with ``Allocate*`` or ``TryAllocate*`` also returns ``Buf::ZeroLength()``
-without invoking the allocator. This is useful when an API needs to distinguish
-a valid zero-byte payload (such as an empty datagram) from a null buffer used
-to signal closure or allocation failure.
+This distinction is useful when an API needs to separate a valid zero-byte
+payload (such as an empty datagram) from a null buffer used to signal closure or
+allocation failure.
+
+``ZeroLength()`` returns an empty, non-null, **unowned** buffer. In contrast,
+explicitly requesting 0 bytes with ``Buf::Allocate(alloc, 0)`` (or any
+``Allocate*`` / ``TryAllocate*`` method) returns an empty, non-null, **owned**
+buffer with ``deallocator() == &alloc``. Because ``pw::Allocator`` does not
+support zero-length allocations, ``alloc`` is never invoked on creation or
+destruction. However, the ``Buf`` still retains its association with ``alloc``
+in case it is significant. For example, a network stack might track packets by
+their association with an allocator.
 
 Slicing and reclaiming
 ======================

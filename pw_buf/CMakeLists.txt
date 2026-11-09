@@ -36,11 +36,14 @@ pw_add_test(pw_buf.buf_test
     buf_test.cc
   PRIVATE_DEPS
     pw_allocator
+    pw_allocator.abstract_allocator
     pw_allocator.null_allocator
     pw_allocator.testing
     pw_assert
     pw_buf
     pw_bytes
+    pw_result
+    pw_status
   GROUPS
     modules
     pw_buf

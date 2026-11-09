@@ -16,13 +16,18 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
+#include "pw_allocator/abstract_allocator.h"
+#include "pw_allocator/layout.h"
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_allocator/unique_ptr.h"
 #include "pw_bytes/span.h"
+#include "pw_result/result.h"
+#include "pw_status/status.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw {
@@ -72,10 +77,51 @@ static_assert(!std::is_convertible_v<bool, Buf>);
 
 static_assert(sizeof(ConstBuf) == 4 * sizeof(void*));
 static_assert(sizeof(Buf) == 4 * sizeof(void*));
+
+// Allocator that fails the test if any of its methods are invoked.
+class FailIfTouchedAllocator : public allocator::AbstractAllocator {
+ public:
+  constexpr FailIfTouchedAllocator() = default;
+
+ private:
+  void* DoAllocate(Layout) override {
+    ADD_FAILURE() << "DoAllocate called unexpectedly";
+    return nullptr;
+  }
+  void DoDeallocate(void*) override {
+    ADD_FAILURE() << "DoDeallocate called unexpectedly";
+  }
+  bool DoResize(void*, size_t) override {
+    ADD_FAILURE() << "DoResize called unexpectedly";
+    return false;
+  }
+  void* DoReallocate(void*, Layout) override {
+    ADD_FAILURE() << "DoReallocate called unexpectedly";
+    return nullptr;
+  }
+  size_t DoGetAllocated() const override {
+    ADD_FAILURE() << "DoGetAllocated called unexpectedly";
+    return 0;
+  }
+  std::optional<size_t> DoGetAllocatedBytes() const override {
+    ADD_FAILURE() << "DoGetAllocatedBytes called unexpectedly";
+    return std::nullopt;
+  }
+  Result<Layout> DoGetInfo(InfoType, const void*) const override {
+    ADD_FAILURE() << "DoGetInfo called unexpectedly";
+    return Status::Unimplemented();
+  }
+  std::optional<Fragmentation> DoMeasureFragmentation() const override {
+    ADD_FAILURE() << "DoMeasureFragmentation called unexpectedly";
+    return std::nullopt;
+  }
+};
+
 // Test fixture for shared allocator setup.
 class BufTest : public ::testing::Test {
  protected:
   allocator::test::AllocatorForTest<256> test_allocator_;
+  FailIfTouchedAllocator untouched_allocator_;
 };
 
 // ConstBuf tests
@@ -772,16 +818,16 @@ TEST_F(BufTest, AllocateSuccess) {
   EXPECT_EQ(buf.deallocator(), &test_allocator_);
 }
 
-TEST_F(BufTest, AllocateZeroSizeReturnsZeroLength) {
-  allocator::NullAllocator null_allocator;
-  Buf buf = Buf::Allocate(null_allocator, 0);
+TEST_F(BufTest, AllocateZeroSizeReturnsOwnedWithoutTouchingAllocator) {
+  Buf buf = Buf::Allocate(untouched_allocator_, 0);
   EXPECT_NE(buf, nullptr);
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.base_size(), 0u);
   EXPECT_NE(buf.data(), nullptr);
   EXPECT_NE(buf.base(), nullptr);
-  EXPECT_FALSE(buf.owned());
-  EXPECT_EQ(buf.deallocator(), nullptr);
+  EXPECT_TRUE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), &untouched_allocator_);
 }
 
 TEST_F(BufTest, AllocateFailureAsserts) {
@@ -809,13 +855,14 @@ TEST_F(BufTest, AllocateFillSuccessCustomValue) {
   }
 }
 
-TEST_F(BufTest, AllocateFillZeroSizeReturnsZeroLength) {
-  allocator::NullAllocator null_allocator;
-  Buf buf = Buf::AllocateFill(null_allocator, 0);
+TEST_F(BufTest, AllocateFillZeroSizeReturnsOwnedWithoutTouchingAllocator) {
+  Buf buf = Buf::AllocateFill(untouched_allocator_, 0);
   EXPECT_NE(buf, nullptr);
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
-  EXPECT_FALSE(buf.owned());
+  EXPECT_EQ(buf.base_size(), 0u);
+  EXPECT_TRUE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), &untouched_allocator_);
 }
 
 TEST_F(BufTest, AllocateFillFailureAsserts) {
@@ -830,16 +877,16 @@ TEST_F(BufTest, TryAllocateSuccess) {
   EXPECT_EQ(buf.deallocator(), &test_allocator_);
 }
 
-TEST_F(BufTest, TryAllocateZeroSizeReturnsZeroLength) {
-  allocator::NullAllocator null_allocator;
-  Buf buf = Buf::TryAllocate(null_allocator, 0);
+TEST_F(BufTest, TryAllocateZeroSizeReturnsOwnedWithoutTouchingAllocator) {
+  Buf buf = Buf::TryAllocate(untouched_allocator_, 0);
   EXPECT_NE(buf, nullptr);
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.base_size(), 0u);
   EXPECT_NE(buf.data(), nullptr);
   EXPECT_NE(buf.base(), nullptr);
-  EXPECT_FALSE(buf.owned());
-  EXPECT_EQ(buf.deallocator(), nullptr);
+  EXPECT_TRUE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), &untouched_allocator_);
 }
 
 TEST_F(BufTest, TryAllocateFailureReturnsNull) {
@@ -873,16 +920,16 @@ TEST_F(BufTest, TryAllocateFillSuccessCustomValue) {
   }
 }
 
-TEST_F(BufTest, TryAllocateFillZeroSizeReturnsZeroLength) {
-  allocator::NullAllocator null_allocator;
-  Buf buf = Buf::TryAllocateFill(null_allocator, 0);
+TEST_F(BufTest, TryAllocateFillZeroSizeReturnsOwnedWithoutTouchingAllocator) {
+  Buf buf = Buf::TryAllocateFill(untouched_allocator_, 0);
   EXPECT_NE(buf, nullptr);
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.base_size(), 0u);
   EXPECT_NE(buf.data(), nullptr);
   EXPECT_NE(buf.base(), nullptr);
-  EXPECT_FALSE(buf.owned());
-  EXPECT_EQ(buf.deallocator(), nullptr);
+  EXPECT_TRUE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), &untouched_allocator_);
 }
 
 TEST_F(BufTest, TryAllocateFillFailureReturnsNull) {
@@ -919,20 +966,23 @@ TEST_F(BufTest, AllocateCopyFromPointerAndSizeSuccess) {
   EXPECT_TRUE(std::equal(buf.begin(), buf.end(), data.begin(), data.end()));
 }
 
-TEST_F(BufTest, AllocateCopyZeroSizeReturnsZeroLength) {
-  allocator::NullAllocator null_allocator;
+TEST_F(BufTest, AllocateCopyZeroSizeReturnsOwnedWithoutTouchingAllocator) {
   ConstByteSpan empty_span;
-  Buf buf1 = Buf::AllocateCopy(null_allocator, empty_span);
+  Buf buf1 = Buf::AllocateCopy(untouched_allocator_, empty_span);
   EXPECT_NE(buf1, nullptr);
   EXPECT_TRUE(buf1.empty());
   EXPECT_EQ(buf1.size(), 0u);
-  EXPECT_FALSE(buf1.owned());
+  EXPECT_EQ(buf1.base_size(), 0u);
+  EXPECT_TRUE(buf1.owned());
+  EXPECT_EQ(buf1.deallocator(), &untouched_allocator_);
 
-  Buf buf2 = Buf::AllocateCopy(null_allocator, nullptr, 0);
+  Buf buf2 = Buf::AllocateCopy(untouched_allocator_, nullptr, 0);
   EXPECT_NE(buf2, nullptr);
   EXPECT_TRUE(buf2.empty());
   EXPECT_EQ(buf2.size(), 0u);
-  EXPECT_FALSE(buf2.owned());
+  EXPECT_EQ(buf2.base_size(), 0u);
+  EXPECT_TRUE(buf2.owned());
+  EXPECT_EQ(buf2.deallocator(), &untouched_allocator_);
 }
 
 TEST_F(BufTest, AllocateCopyFailureAsserts) {
@@ -968,26 +1018,64 @@ TEST_F(BufTest, TryAllocateCopyFromPointerAndSizeSuccess) {
   EXPECT_TRUE(std::equal(buf.begin(), buf.end(), data.begin(), data.end()));
 }
 
-TEST_F(BufTest, TryAllocateCopyZeroSizeReturnsZeroLength) {
-  allocator::NullAllocator null_allocator;
+TEST_F(BufTest, TryAllocateCopyZeroSizeReturnsOwnedWithoutTouchingAllocator) {
   ConstByteSpan empty_span;
-  Buf buf1 = Buf::TryAllocateCopy(null_allocator, empty_span);
+  Buf buf1 = Buf::TryAllocateCopy(untouched_allocator_, empty_span);
   EXPECT_NE(buf1, nullptr);
   EXPECT_TRUE(buf1.empty());
   EXPECT_EQ(buf1.size(), 0u);
+  EXPECT_EQ(buf1.base_size(), 0u);
   EXPECT_NE(buf1.data(), nullptr);
   EXPECT_NE(buf1.base(), nullptr);
-  EXPECT_FALSE(buf1.owned());
-  EXPECT_EQ(buf1.deallocator(), nullptr);
+  EXPECT_TRUE(buf1.owned());
+  EXPECT_EQ(buf1.deallocator(), &untouched_allocator_);
 
-  Buf buf2 = Buf::TryAllocateCopy(null_allocator, nullptr, 0);
+  Buf buf2 = Buf::TryAllocateCopy(untouched_allocator_, nullptr, 0);
   EXPECT_NE(buf2, nullptr);
   EXPECT_TRUE(buf2.empty());
   EXPECT_EQ(buf2.size(), 0u);
+  EXPECT_EQ(buf2.base_size(), 0u);
   EXPECT_NE(buf2.data(), nullptr);
   EXPECT_NE(buf2.base(), nullptr);
-  EXPECT_FALSE(buf2.owned());
-  EXPECT_EQ(buf2.deallocator(), nullptr);
+  EXPECT_TRUE(buf2.owned());
+  EXPECT_EQ(buf2.deallocator(), &untouched_allocator_);
+}
+
+TEST_F(BufTest, ZeroSizeAllocatedLifecycleNeverTouchesAllocator) {
+  {
+    Buf buf = Buf::Allocate(test_allocator_, 0);
+    EXPECT_EQ(test_allocator_.metrics().num_allocations.value(), 0u);
+    EXPECT_EQ(test_allocator_.metrics().num_deallocations.value(), 0u);
+    EXPECT_TRUE(buf.owned());
+    EXPECT_EQ(buf.deallocator(), &test_allocator_);
+
+    buf = Slice(std::move(buf), 0, 0);
+    buf = Reclaim(std::move(buf), 0, 0);
+    EXPECT_TRUE(buf.owned());
+    EXPECT_EQ(buf.deallocator(), &test_allocator_);
+
+    ConstBuf const_buf = std::move(buf);
+    EXPECT_EQ(buf, nullptr);  // NOLINT(bugprone-use-after-move)
+    EXPECT_FALSE(buf.owned());
+    EXPECT_TRUE(const_buf.owned());
+    EXPECT_EQ(const_buf.deallocator(), &test_allocator_);
+  }
+  EXPECT_EQ(test_allocator_.metrics().num_allocations.value(), 0u);
+  EXPECT_EQ(test_allocator_.metrics().num_deallocations.value(), 0u);
+
+  Buf buf = Buf::Allocate(untouched_allocator_, 0);
+  buf.reset();
+  EXPECT_EQ(buf, nullptr);
+  EXPECT_FALSE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), nullptr);
+
+  // Any 0-length base buffer (not just kEmpty) skips deallocation.
+  std::byte byte{};
+  Buf raw_zero(&byte, 0, untouched_allocator_);
+  EXPECT_TRUE(raw_zero.owned());
+  EXPECT_EQ(raw_zero.base_size(), 0u);
+  raw_zero.reset();
+  EXPECT_EQ(raw_zero, nullptr);
 }
 
 TEST_F(BufTest, TryAllocateCopyFailureReturnsNull) {
@@ -1323,11 +1411,35 @@ TEST_F(BufTest, TakeAllocationOwned) {
   EXPECT_EQ(restored.deallocator(), &test_allocator_);
 }
 
+TEST_F(BufTest, TakeAllocationZeroSizeOwned) {
+  Buf buf = Buf::Allocate(untouched_allocator_, 0);
+  ASSERT_TRUE(buf.owned());
+
+  UniquePtr<std::byte[]> allocation = TakeAllocation(std::move(buf));
+  EXPECT_EQ(buf, nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_FALSE(buf.owned());
+  EXPECT_EQ(buf.deallocator(), nullptr);
+  EXPECT_EQ(allocation, nullptr);
+  EXPECT_EQ(allocation, UniquePtr<std::byte[]>());
+  EXPECT_EQ(allocation.get(), nullptr);
+  EXPECT_EQ(allocation.size(), 0u);
+  EXPECT_EQ(allocation.deallocator(), nullptr);
+
+  std::byte byte{};
+  Buf raw_zero(&byte, 0, untouched_allocator_);
+  UniquePtr<std::byte[]> raw_allocation = TakeAllocation(std::move(raw_zero));
+  EXPECT_EQ(raw_zero, nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_EQ(raw_allocation, nullptr);
+  EXPECT_EQ(raw_allocation.deallocator(), nullptr);
+}
+
 TEST_F(BufTest, TakeAllocationUnownedFails) {
   std::array<std::byte, 10> storage{};
   Buf buf = Buf::Unowned(storage);
   EXPECT_DEATH_IF_SUPPORTED(static_cast<void>(TakeAllocation(std::move(buf))),
                             ".*");
+  EXPECT_DEATH_IF_SUPPORTED(
+      static_cast<void>(TakeAllocation(Buf::ZeroLength())), ".*");
 }
 
 TEST_F(BufTest, TakeAllocationNull) {

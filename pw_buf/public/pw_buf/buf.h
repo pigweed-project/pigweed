@@ -43,9 +43,9 @@ class GenericMultiBuf;
 /// fails.
 ///
 /// An empty `Buf` is not necessarily null (for example, if it was created with
-/// `Buf::ZeroLength()` or sliced or truncated to length 0), in which case
-/// `base()` and `data()` return non-null pointers and `base_size()` returns the
-/// base allocation size.
+/// `Buf::ZeroLength()`, allocated with a size of 0, or sliced or truncated to
+/// length 0), in which case `base()` and `data()` return non-null pointers and
+/// `base_size()` returns the base allocation size.
 ///
 /// Nullness can be checked via comparison to `nullptr` (`buf == nullptr`,
 /// `buf != nullptr`). `operator bool` is not provided to prevent confusion
@@ -148,14 +148,19 @@ class Buf {
     return Buf(base, 0, size, nullptr);
   }
 
-  /// Allocates a new owned `Buf` of the specified size, or returns
-  /// `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
+  /// Allocates a new owned `Buf` of the specified size.
+  ///
+  /// If `size_bytes` is 0, returns an empty, non-null, owned `Buf`
+  /// (`deallocator() == &allocator`) without invoking the allocator.
   ///
   /// Asserts if allocation fails.
   [[nodiscard]] static Buf Allocate(Allocator& allocator, size_t size_bytes);
 
   /// Allocates a new owned `Buf` of the specified size and fills it with
-  /// `value`, or returns `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
+  /// `value`.
+  ///
+  /// If `size_bytes` is 0, returns an empty, non-null, owned `Buf`
+  /// (`deallocator() == &allocator`) without invoking the allocator.
   ///
   /// Asserts if allocation fails.
   [[nodiscard]] static Buf AllocateFill(Allocator& allocator,
@@ -163,8 +168,10 @@ class Buf {
                                         std::byte value = std::byte{0});
 
   /// Allocates a new owned `Buf` the same size as `data` and copies the
-  /// contents of `data` into it, or returns `Buf::ZeroLength()` (unowned) if
-  /// `data` is empty.
+  /// contents of `data` into it.
+  ///
+  /// If `data` is empty, returns an empty, non-null, owned `Buf`
+  /// (`deallocator() == &allocator`) without invoking the allocator.
   ///
   /// Asserts if allocation fails.
   [[nodiscard]] static Buf AllocateCopy(Allocator& allocator,
@@ -173,21 +180,29 @@ class Buf {
   }
 
   /// Allocates a new owned `Buf` of the specified size and copies from `data`
-  /// into it, or returns `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
+  /// into it.
+  ///
+  /// If `size_bytes` is 0, returns an empty, non-null, owned `Buf`
+  /// (`deallocator() == &allocator`) without invoking the allocator.
   ///
   /// Asserts if allocation fails.
   [[nodiscard]] static Buf AllocateCopy(Allocator& allocator,
                                         const std::byte* data,
                                         size_t size_bytes);
 
-  /// Allocates a new owned `Buf` of the specified size, or returns
-  /// `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
+  /// Allocates a new owned `Buf` of the specified size.
+  ///
+  /// If `size_bytes` is 0, returns an empty, non-null, owned `Buf`
+  /// (`deallocator() == &allocator`) without invoking the allocator.
   ///
   /// Returns a null `Buf` if allocation fails.
   [[nodiscard]] static Buf TryAllocate(Allocator& allocator, size_t size_bytes);
 
   /// Allocates a new owned `Buf` of the specified size and fills it with
-  /// `value`, or returns `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
+  /// `value`.
+  ///
+  /// If `size_bytes` is 0, returns an empty, non-null, owned `Buf`
+  /// (`deallocator() == &allocator`) without invoking the allocator.
   ///
   /// Returns a null `Buf` if allocation fails.
   [[nodiscard]] static Buf TryAllocateFill(Allocator& allocator,
@@ -195,8 +210,10 @@ class Buf {
                                            std::byte value = std::byte{0});
 
   /// Allocates a new owned `Buf` the same size as `data` and copies the
-  /// contents of `data` into it, or returns `Buf::ZeroLength()` (unowned) if
-  /// `data` is empty.
+  /// contents of `data` into it.
+  ///
+  /// If `data` is empty, returns an empty, non-null, owned `Buf`
+  /// (`deallocator() == &allocator`) without invoking the allocator.
   ///
   /// Returns a null `Buf` if allocation fails.
   [[nodiscard]] static Buf TryAllocateCopy(Allocator& allocator,
@@ -205,7 +222,10 @@ class Buf {
   }
 
   /// Allocates a new owned `Buf` of the specified size and copies from `data`
-  /// into it, or returns `Buf::ZeroLength()` (unowned) if `size_bytes` is 0.
+  /// into it.
+  ///
+  /// If `size_bytes` is 0, returns an empty, non-null, owned `Buf`
+  /// (`deallocator() == &allocator`) without invoking the allocator.
   ///
   /// Returns a null `Buf` if allocation fails.
   [[nodiscard]] static Buf TryAllocateCopy(Allocator& allocator,
@@ -459,7 +479,7 @@ class Buf {
 /// To take sole responsibility for the memory, call `Release()` on the
 /// returned `UniquePtr` after saving its `deallocator()` and `size()`.
 ///
-/// If the `Buf` is null, returns a null `UniquePtr`.
+/// If the `Buf` is null or has `base_size() == 0`, returns a null `UniquePtr`.
 ///
 /// @pre `buf` must be owned (`buf.owned()`) or null. An unowned `Buf` has no
 /// allocation to take.
@@ -491,8 +511,8 @@ inline Buf Buf::Unowned(ByteSpan span, size_t offset) {
 /// default-constructed, moved-from, or reset.
 ///
 /// An empty `ConstBuf` is not necessarily null (for example, if it was created
-/// with `ConstBuf::ZeroLength()` or sliced or truncated to length 0), in which
-/// case `data()` returns a non-null pointer.
+/// with `ConstBuf::ZeroLength()`, allocated with a size of 0, or sliced or
+/// truncated to length 0), in which case `data()` returns a non-null pointer.
 ///
 /// Nullness can be checked via comparison to `nullptr` (`buf == nullptr`,
 /// `buf != nullptr`). `operator bool` is not provided to prevent confusion
