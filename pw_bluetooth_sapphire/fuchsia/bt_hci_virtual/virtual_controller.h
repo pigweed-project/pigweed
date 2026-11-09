@@ -17,9 +17,7 @@
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
-#include <lib/fit/function.h>
 #include <lib/zx/result.h>
-#include <zircon/types.h>
 
 #include <cstdint>
 #include <map>
@@ -40,26 +38,6 @@ namespace bt_hci_virtual {
 class VirtualController
     : public fidl::WireServer<fuchsia_hardware_bluetooth::VirtualController> {
  public:
-  // Lets the DFv2 driver attach driver-framework nodes to the devices this
-  // controller creates. A host without such nodes passes none of them.
-  struct NodeHooks {
-    // Called after `device` is initialized; a failure is reported to the
-    // `CreateEmulator` caller and the device is shut down.
-    fit::function<zx_status_t(const std::string& name, EmulatorDevice& device)>
-        add_emulator_node;
-    // Called from the device's `ShutdownCallback`, before the device is
-    // destroyed, including after `add_emulator_node` failed or was not called.
-    // Not called when this controller is destroyed.
-    fit::function<void(const std::string& name)> remove_emulator_node;
-    // Called after `device` is initialized; a failure destroys the device.
-    fit::function<zx_status_t(const std::string& name, LoopbackDevice& device)>
-        add_loopback_node;
-    // Called before the device is destroyed, when `CreateLoopbackDevice`
-    // replaces it or creating it failed, including after `add_loopback_node`
-    // failed or was not called. Not called when this controller is destroyed.
-    fit::function<void(const std::string& name)> remove_loopback_node;
-  };
-
   // Prefix of the unique name `CreateEmulator` gives each emulator.
   static constexpr std::string_view kEmulatorNamePrefix = "emulator-";
 
@@ -85,8 +63,7 @@ class VirtualController
   // non-null, the devices publish their services to it, which must already be
   // served; otherwise `PublishService()` fails. Both must outlive this object.
   VirtualController(async_dispatcher_t* dispatcher,
-                    component::OutgoingDirectory* outgoing,
-                    NodeHooks&& hooks = {});
+                    component::OutgoingDirectory* outgoing);
   ~VirtualController() override;
 
   VirtualController(const VirtualController&) = delete;
@@ -121,12 +98,8 @@ class VirtualController
           metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  // Removes the loopback device's node, if any, and destroys the device.
-  void DestroyLoopbackDevice();
-
   async_dispatcher_t* dispatcher_;
   component::OutgoingDirectory* outgoing_;
-  NodeHooks hooks_;
   bool service_published_ = false;
 
   // Live emulators keyed by the unique name returned from `CreateEmulator`.

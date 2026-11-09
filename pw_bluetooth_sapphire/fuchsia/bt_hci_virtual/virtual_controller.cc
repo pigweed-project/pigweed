@@ -14,8 +14,10 @@
 
 #include "pw_bluetooth_sapphire/fuchsia/bt_hci_virtual/virtual_controller.h"
 
+#include <lib/fit/function.h>
 #include <pw_assert/check.h>
 #include <zircon/status.h>
+#include <zircon/types.h>
 
 #include <memory>
 #include <string>
@@ -42,11 +44,9 @@ std::string EmulatorName(uint64_t id) {
 }  // namespace
 
 VirtualController::VirtualController(async_dispatcher_t* dispatcher,
-                                     component::OutgoingDirectory* outgoing,
-                                     NodeHooks&& hooks)
+                                     component::OutgoingDirectory* outgoing)
     : dispatcher_(dispatcher),
       outgoing_(outgoing),
-      hooks_(std::move(hooks)),
       next_emulator_id_(kFirstEmulatorId) {}
 
 VirtualController::~VirtualController() {
@@ -145,19 +145,11 @@ void VirtualController::CreateEmulator(
              "ShutdownCallback ran for unknown emulator %s",
              name.c_str());
     bt_log(INFO, "bt-hci-virtual", "Releasing EmulatorDevice %s", name.c_str());
-    if (hooks_.remove_emulator_node) {
-      hooks_.remove_emulator_node(name);
-    }
     emulators_.erase(entry);
   };
 
   zx_status_t status =
       device.Initialize(name, std::move(shutdown_cb), outgoing_);
-  // A failure to add the node is reported too: without one the caller could
-  // never find the emulator, so it must not get a name that will never appear.
-  if (status == ZX_OK && hooks_.add_emulator_node) {
-    status = hooks_.add_emulator_node(name, device);
-  }
   if (status != ZX_OK) {
     bt_log(ERROR,
            "bt-hci-virtual",
@@ -177,8 +169,6 @@ void VirtualController::CreateEmulator(
 void VirtualController::CreateLoopbackDevice(
     CreateLoopbackDeviceRequestView request,
     CreateLoopbackDeviceCompleter::Sync& completer) {
-  std::string name(kLoopbackName);
-
   if (!request->has_uart_channel()) {
     bt_log(
         ERROR, "bt-hci-virtual", "CreateLoopbackDevice without uart_channel");
@@ -187,31 +177,16 @@ void VirtualController::CreateLoopbackDevice(
   }
 
   // Any previous device is replaced.
-  DestroyLoopbackDevice();
   loopback_device_ = std::make_unique<LoopbackDevice>(dispatcher_);
   zx_status_t status = loopback_device_->Initialize(
-      std::move(request->uart_channel()), name, outgoing_);
-  if (status == ZX_OK && hooks_.add_loopback_node) {
-    status = hooks_.add_loopback_node(name, *loopback_device_);
-  }
+      std::move(request->uart_channel()), kLoopbackName, outgoing_);
   if (status != ZX_OK) {
     bt_log(ERROR,
            "bt-hci-virtual",
            "Failed to create loopback device: %s",
            zx_status_get_string(status));
-    DestroyLoopbackDevice();
-    return;
+    loopback_device_.reset();
   }
-}
-
-void VirtualController::DestroyLoopbackDevice() {
-  if (!loopback_device_) {
-    return;
-  }
-  if (hooks_.remove_loopback_node) {
-    hooks_.remove_loopback_node(std::string(kLoopbackName));
-  }
-  loopback_device_.reset();
 }
 
 void VirtualController::handle_unknown_method(

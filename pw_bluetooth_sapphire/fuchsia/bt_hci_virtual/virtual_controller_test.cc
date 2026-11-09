@@ -25,7 +25,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 #include "gtest/gtest.h"
 #include "pw_bluetooth_sapphire/fuchsia/bt_hci_virtual/outgoing_loop_test_fixture.h"
@@ -35,26 +34,20 @@ namespace {
 
 namespace fhb = fuchsia_hardware_bluetooth;
 
-// Drives a `VirtualController` through its FIDL surface on a plain async loop,
-// with the node hooks recording what they were called with.
+// Drives a `VirtualController` through its FIDL surface on a plain async loop.
 class VirtualControllerTest : public testing::OutgoingLoopTestFixture {
  public:
   void SetUp() override {
     ASSERT_NO_FATAL_FAILURE(OutgoingLoopTestFixture::SetUp());
-    StartController(RecordingHooks());
+    controller_.emplace(dispatcher(), outgoing());
+    client_.Bind(ConnectController(), dispatcher());
+    RunUntilIdle();
   }
 
   void TearDown() override { DestroyController(); }
 
  protected:
   VirtualController& controller() { return *controller_; }
-
-  // Creates the controller with `hooks` and binds the default client to it.
-  void StartController(VirtualController::NodeHooks&& hooks) {
-    controller_.emplace(dispatcher(), outgoing(), std::move(hooks));
-    client_.Bind(ConnectController(), dispatcher());
-    RunUntilIdle();
-  }
 
   void DestroyController() {
     client_ = {};
@@ -85,25 +78,6 @@ class VirtualControllerTest : public testing::OutgoingLoopTestFixture {
     return ServiceInstanceIsPublished(
         VirtualController::kServiceName,
         component::OutgoingDirectory::kDefaultServiceInstance);
-  }
-
-  const std::vector<std::string>& added_emulators() const {
-    return added_emulators_;
-  }
-  const std::vector<std::string>& removed_emulators() const {
-    return removed_emulators_;
-  }
-  const std::vector<std::string>& added_loopbacks() const {
-    return added_loopbacks_;
-  }
-  const std::vector<std::string>& removed_loopbacks() const {
-    return removed_loopbacks_;
-  }
-  void set_add_emulator_node_status(zx_status_t status) {
-    add_emulator_node_status_ = status;
-  }
-  void set_add_loopback_node_status(zx_status_t status) {
-    add_loopback_node_status_ = status;
   }
 
   // Calls `VirtualController.CreateEmulator` through `client` and returns the
@@ -181,41 +155,8 @@ class VirtualControllerTest : public testing::OutgoingLoopTestFixture {
   }
 
  private:
-  // Hooks that only record their calls: they run inside `CreateEmulator`, so
-  // they can neither run the loop nor connect to the emulator (the first
-  // `Emulator` connection would make them its owner).
-  VirtualController::NodeHooks RecordingHooks() {
-    return {
-        .add_emulator_node =
-            [this](const std::string& name, EmulatorDevice&) {
-              added_emulators_.push_back(name);
-              return add_emulator_node_status_;
-            },
-        .remove_emulator_node =
-            [this](const std::string& name) {
-              removed_emulators_.push_back(name);
-            },
-        .add_loopback_node =
-            [this](const std::string& name, LoopbackDevice&) {
-              added_loopbacks_.push_back(name);
-              return add_loopback_node_status_;
-            },
-        .remove_loopback_node =
-            [this](const std::string& name) {
-              removed_loopbacks_.push_back(name);
-            },
-    };
-  }
-
   std::optional<VirtualController> controller_;
   fidl::WireClient<fhb::VirtualController> client_;
-
-  std::vector<std::string> added_emulators_;
-  std::vector<std::string> removed_emulators_;
-  std::vector<std::string> added_loopbacks_;
-  std::vector<std::string> removed_loopbacks_;
-  zx_status_t add_emulator_node_status_ = ZX_OK;
-  zx_status_t add_loopback_node_status_ = ZX_OK;
 };
 
 // `PublishService()` makes the `VirtualController` protocol reachable at the
@@ -273,45 +214,19 @@ TEST_F(VirtualControllerTest, DestroyingControllerUnpublishesService) {
   EXPECT_FALSE(VirtualControllerServiceIsPublished());
 }
 
-// Destroying the controller destroys its devices without calling the remove
-// hooks.
-TEST_F(VirtualControllerTest, DestroyingControllerDoesNotCallRemoveHooks) {
+// Destroying the controller destroys its devices and unpublishes their
+// services.
+TEST_F(VirtualControllerTest, DestroyingControllerDestroysDevices) {
   zx::result name = CreateEmulator();
   ASSERT_TRUE(name.is_ok()) << name.status_string();
   fidl::ClientEnd<fhb::Emulator> owner = ConnectEmulatorService(*name);
   zx::channel uart = CreateLoopbackDevice();
 
   DestroyController();
-  EXPECT_TRUE(removed_emulators().empty());
-  EXPECT_TRUE(removed_loopbacks().empty());
   EXPECT_TRUE(PeerClosed(owner));
   EXPECT_TRUE(PeerClosed(uart));
   EXPECT_FALSE(EmulatorServiceIsServed(*name));
   EXPECT_FALSE(VendorServiceIsServed(VirtualController::kLoopbackName));
-}
-
-// Without node hooks, emulators and loopback devices are still created,
-// replaced and torn down.
-TEST_F(VirtualControllerTest, DevicesWorkWithoutNodeHooks) {
-  DestroyController();
-  StartController({});
-
-  zx::result name = CreateEmulator();
-  ASSERT_TRUE(name.is_ok()) << name.status_string();
-  {
-    fidl::ClientEnd<fhb::Emulator> owner = ConnectEmulatorService(*name);
-    EXPECT_TRUE(EmulatorServiceIsServed(*name));
-  }
-  RunUntilIdle();
-  EXPECT_FALSE(EmulatorServiceIsServed(*name));
-
-  zx::channel first_uart = CreateLoopbackDevice();
-  zx::channel second_uart = CreateLoopbackDevice();
-  EXPECT_TRUE(PeerClosed(first_uart));
-  EXPECT_TRUE(VendorServiceIsServed(VirtualController::kLoopbackName));
-
-  DestroyController();
-  EXPECT_TRUE(PeerClosed(second_uart));
 }
 
 // Each `CreateEmulator` call produces a distinct emulator with its own
@@ -334,107 +249,50 @@ TEST_F(VirtualControllerTest, CreateEmulatorTwiceYieldsIndependentEmulators) {
   RunUntilIdle();
   EXPECT_FALSE(EmulatorServiceIsServed(*first));
   EXPECT_TRUE(EmulatorServiceIsServed(*second));
-  EXPECT_EQ(removed_emulators(), std::vector<std::string>{*first});
 }
 
-// The node hooks are called with the emulator's name: `add_emulator_node`
-// when it is created and `remove_emulator_node` when it shuts down.
-TEST_F(VirtualControllerTest, NodeHooksSeeEmulatorNames) {
-  zx::result name = CreateEmulator();
-  ASSERT_TRUE(name.is_ok()) << name.status_string();
-  EXPECT_EQ(added_emulators(), std::vector<std::string>{*name});
-  EXPECT_TRUE(removed_emulators().empty());
-
-  {
-    fidl::ClientEnd<fhb::Emulator> owner = ConnectEmulatorService(*name);
-    ASSERT_TRUE(owner.is_valid());
-  }
-  RunUntilIdle();
-  EXPECT_EQ(removed_emulators(), std::vector<std::string>{*name});
-}
-
-// If `add_emulator_node` fails, the caller gets that error rather than a name
-// that will never appear, the emulator is gone, and later calls still work.
-TEST_F(VirtualControllerTest, AddEmulatorNodeFailureIsReportedToCaller) {
-  set_add_emulator_node_status(ZX_ERR_ALREADY_EXISTS);
-  zx::result first = CreateEmulator();
-  ASSERT_TRUE(first.is_error());
-  EXPECT_EQ(first.status_value(), ZX_ERR_ALREADY_EXISTS);
-  ASSERT_EQ(added_emulators().size(), 1u);
-  const std::string failed_name = added_emulators()[0];
-  EXPECT_EQ(removed_emulators(), std::vector<std::string>{failed_name});
-  EXPECT_FALSE(EmulatorServiceIsServed(failed_name));
-
-  set_add_emulator_node_status(ZX_OK);
-  zx::result second = CreateEmulator();
-  ASSERT_TRUE(second.is_ok()) << second.status_string();
-  EXPECT_NE(*second, failed_name);
-  EXPECT_TRUE(EmulatorServiceIsServed(*second));
-}
-
-// If the emulator fails to initialize, the caller gets the error and
-// `remove_emulator_node` is called without `add_emulator_node`.
-TEST_F(VirtualControllerTest, EmulatorInitializeFailureSkipsAddEmulatorNode) {
+// If the emulator fails to initialize, the caller gets the error and later
+// calls still succeed.
+TEST_F(VirtualControllerTest, EmulatorInitializeFailureIsReportedToCaller) {
   const std::string first_name = VirtualController::FirstEmulatorName();
   ASSERT_NO_FATAL_FAILURE(OccupyEmulatorServiceInstance(first_name));
 
   zx::result first = CreateEmulator();
   ASSERT_TRUE(first.is_error());
   EXPECT_EQ(first.status_value(), ZX_ERR_ALREADY_EXISTS);
-  EXPECT_TRUE(added_emulators().empty());
-  EXPECT_EQ(removed_emulators(), std::vector<std::string>{first_name});
+
+  zx::result second = CreateEmulator();
+  ASSERT_TRUE(second.is_ok()) << second.status_string();
+  EXPECT_NE(*second, first_name);
+  EXPECT_TRUE(EmulatorServiceIsServed(*second));
 }
 
 // `CreateLoopbackDevice` publishes the fixed-name vendor service instance, and
-// calling it again removes the previous device's node, replaces the device and
-// re-publishes the instance.
+// calling it again replaces the previous device and re-publishes the instance.
 TEST_F(VirtualControllerTest, CreateLoopbackDeviceTwiceRepublishesService) {
-  const std::string name(VirtualController::kLoopbackName);
-
   zx::channel first_uart = CreateLoopbackDevice();
-  EXPECT_EQ(added_loopbacks(), std::vector<std::string>{name});
-  EXPECT_TRUE(removed_loopbacks().empty());
-  EXPECT_TRUE(VendorServiceIsServed(name));
+  EXPECT_TRUE(VendorServiceIsServed(VirtualController::kLoopbackName));
 
   zx::channel second_uart = CreateLoopbackDevice();
-  EXPECT_EQ(added_loopbacks(), (std::vector<std::string>{name, name}));
-  EXPECT_EQ(removed_loopbacks(), std::vector<std::string>{name});
-  EXPECT_TRUE(VendorServiceIsServed(name));
+  EXPECT_TRUE(VendorServiceIsServed(VirtualController::kLoopbackName));
   // The first device is gone, so its end of the UART channel is closed.
   EXPECT_TRUE(PeerClosed(first_uart));
   EXPECT_FALSE(PeerClosed(second_uart));
 }
 
-// If `add_loopback_node` fails, `remove_loopback_node` is called and the
-// device is destroyed, and a later call still works.
-TEST_F(VirtualControllerTest, AddLoopbackNodeFailureRemovesDevice) {
-  const std::string name(VirtualController::kLoopbackName);
+// If the loopback device fails to initialize, the device is destroyed and a
+// later call still works.
+TEST_F(VirtualControllerTest, LoopbackInitializeFailureDestroysDevice) {
+  ASSERT_NO_FATAL_FAILURE(
+      OccupyVendorServiceInstance(VirtualController::kLoopbackName));
 
-  set_add_loopback_node_status(ZX_ERR_ALREADY_EXISTS);
   zx::channel first_uart = CreateLoopbackDevice();
-  EXPECT_EQ(added_loopbacks(), std::vector<std::string>{name});
-  EXPECT_EQ(removed_loopbacks(), std::vector<std::string>{name});
-  EXPECT_FALSE(VendorServiceIsServed(name));
   EXPECT_TRUE(PeerClosed(first_uart));
+  EXPECT_FALSE(VendorServiceIsServed(VirtualController::kLoopbackName));
 
-  set_add_loopback_node_status(ZX_OK);
   zx::channel second_uart = CreateLoopbackDevice();
-  EXPECT_EQ(added_loopbacks(), (std::vector<std::string>{name, name}));
-  EXPECT_EQ(removed_loopbacks(), std::vector<std::string>{name});
-  EXPECT_TRUE(VendorServiceIsServed(name));
+  EXPECT_TRUE(VendorServiceIsServed(VirtualController::kLoopbackName));
   EXPECT_FALSE(PeerClosed(second_uart));
-}
-
-// If the loopback device fails to initialize, `remove_loopback_node` is called
-// without `add_loopback_node` and the device is destroyed.
-TEST_F(VirtualControllerTest, LoopbackInitializeFailureSkipsAddLoopbackNode) {
-  const std::string name(VirtualController::kLoopbackName);
-  ASSERT_NO_FATAL_FAILURE(OccupyVendorServiceInstance(name));
-
-  zx::channel uart = CreateLoopbackDevice();
-  EXPECT_TRUE(added_loopbacks().empty());
-  EXPECT_EQ(removed_loopbacks(), std::vector<std::string>{name});
-  EXPECT_TRUE(PeerClosed(uart));
 }
 
 // A `CreateLoopbackDevice` request without a UART channel closes that
@@ -444,7 +302,6 @@ TEST_F(VirtualControllerTest, CreateLoopbackDeviceWithoutUartClosesConnection) {
   SendCreateLoopbackDevice(client, std::nullopt);
 
   EXPECT_TRUE(PeerClosed(client.client_end()));
-  EXPECT_TRUE(added_loopbacks().empty());
   EXPECT_FALSE(VendorServiceIsServed(VirtualController::kLoopbackName));
 }
 
