@@ -76,6 +76,7 @@ constexpr uint64_t BuildLEEventMask() {
   event_mask |= static_cast<uint64_t>(hci_spec::LEEventMask::event)
 
   ENABLE_EVT(kLEAdvertisingReport);
+  ENABLE_EVT(kLEBIGInfoAdvertisingReport);
   ENABLE_EVT(kLEConnectionComplete);
   ENABLE_EVT(kLEConnectionUpdateComplete);
   ENABLE_EVT(kLEEnhancedConnectionComplete);
@@ -84,6 +85,11 @@ constexpr uint64_t BuildLEEventMask() {
   ENABLE_EVT(kLECISRequest);
   ENABLE_EVT(kLECISEstablished);
   ENABLE_EVT(kLELongTermKeyRequest);
+  ENABLE_EVT(kLEPeriodicAdvertisingReport);
+  ENABLE_EVT(kLEPeriodicAdvertisingReportV2);
+  ENABLE_EVT(kLEPeriodicAdvertisingSyncEstablished);
+  ENABLE_EVT(kLEPeriodicAdvertisingSyncEstablishedV2);
+  ENABLE_EVT(kLEPeriodicAdvertisingSyncLost);
   ENABLE_EVT(kLEReadRemoteFeaturesComplete);
   ENABLE_EVT(kLERequestPeerSCAComplete);
 
