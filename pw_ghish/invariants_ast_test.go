@@ -35,9 +35,7 @@ import (
 	"testing"
 )
 
-// collectProductionGoFiles returns all non-test .go source files in pw_ghish/
-// and pw_ghish/worktree/ (excluding cmd/main.go unless includeMain is true).
-func collectProductionGoFiles(t *testing.T, includeMain bool) []string {
+func collectGoFiles(t *testing.T, keep func(rel string) bool) []string {
 	t.Helper()
 	var files []string
 	for _, dir := range []string{".", "worktree", "cmd"} {
@@ -49,18 +47,34 @@ func collectProductionGoFiles(t *testing.T, includeMain bool) []string {
 			t.Fatalf("os.ReadDir(%q): %v", dir, err)
 		}
 		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
 				continue
 			}
-			rel := filepath.ToSlash(filepath.Join(dir, e.Name()))
-			if !includeMain && rel == "cmd/main.go" {
-				continue
+			if rel := filepath.ToSlash(filepath.Join(dir, e.Name())); keep(rel) {
+				files = append(files, rel)
 			}
-			files = append(files, rel)
 		}
 	}
 	slices.Sort(files)
 	return files
+}
+
+// collectProductionGoFiles returns all non-test .go source files in pw_ghish/
+// and pw_ghish/worktree/ (excluding cmd/main.go unless includeMain is true).
+func collectProductionGoFiles(t *testing.T, includeMain bool) []string {
+	t.Helper()
+	return collectGoFiles(t, func(rel string) bool {
+		return !strings.HasSuffix(rel, "_test.go") && (includeMain || rel != "cmd/main.go")
+	})
+}
+
+// collectUnitTestGoFiles returns all *_test.go files in pw_ghish/ and
+// pw_ghish/worktree/ except live_test.go (which requires -tags=live).
+func collectUnitTestGoFiles(t *testing.T) []string {
+	t.Helper()
+	return collectGoFiles(t, func(rel string) bool {
+		return strings.HasSuffix(rel, "_test.go") && filepath.Base(rel) != "live_test.go"
+	})
 }
 
 // TestInvariants_CobraCommandsUseRunE verifies that every cobra.Command composite
@@ -437,16 +451,17 @@ func TestInvariants_SubprocessesUseCountingHelper(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ParseFile(%q): %v", path, err)
 		}
-		for _, v := range findUncountedProcessSpawns(fset, f) {
+		for _, v := range findProcessSpawns(fset, f, false) {
 			t.Errorf("%s bypasses the counting subprocess choke point; use ExecCommand / ExecCommandContext from procexec.go so perf budget tests can deterministically count commands constructed per CLI invocation (AGENTS.md invariant #16)", v)
 		}
 	}
 }
 
-// findUncountedProcessSpawns reports exec.Command / exec.CommandContext calls
-// (including via a dot-import of os/exec), exec.Cmd composite literals, and
-// os.StartProcess / syscall.Exec / syscall.ForkExec references in f.
-func findUncountedProcessSpawns(fset *token.FileSet, f *ast.File) []string {
+// findProcessSpawns reports exec.Command / exec.CommandContext calls
+// (including via a dot-import of os/exec), exec.Cmd composite literals,
+// os.StartProcess / syscall.Exec / syscall.ForkExec references, and (when
+// banCountingHelpers is true) direct ExecCommand / ExecCommandContext calls.
+func findProcessSpawns(fset *token.FileSet, f *ast.File, banCountingHelpers bool) []string {
 	// banned maps an import path to the identifiers that spawn processes.
 	banned := map[string][]string{
 		"os/exec": {"Command", "CommandContext"},
@@ -470,7 +485,7 @@ func findUncountedProcessSpawns(fset *token.FileSet, f *ast.File) []string {
 		}
 		pkgs[name] = ipath
 	}
-	if len(pkgs) == 0 && len(dotImports) == 0 {
+	if len(pkgs) == 0 && len(dotImports) == 0 && !banCountingHelpers {
 		return nil
 	}
 	isExecCmdType := func(e ast.Expr) bool {
@@ -487,6 +502,10 @@ func findUncountedProcessSpawns(fset *token.FileSet, f *ast.File) []string {
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.SelectorExpr:
+			if banCountingHelpers && (x.Sel.Name == "ExecCommand" || x.Sel.Name == "ExecCommandContext") {
+				found = append(found, fset.Position(x.Pos()).String()+": "+x.Sel.Name)
+				return true
+			}
 			id, ok := x.X.(*ast.Ident)
 			if !ok {
 				return true
@@ -503,6 +522,10 @@ func findUncountedProcessSpawns(fset *token.FileSet, f *ast.File) []string {
 			if !ok {
 				return true
 			}
+			if banCountingHelpers && (id.Name == "ExecCommand" || id.Name == "ExecCommandContext") {
+				found = append(found, fset.Position(x.Pos()).String()+": "+id.Name)
+				return true
+			}
 			for _, ipath := range dotImports {
 				if slices.Contains(banned[ipath], id.Name) {
 					found = append(found, fset.Position(x.Pos()).String()+": dot-imported "+ipath+"."+id.Name)
@@ -512,4 +535,73 @@ func findUncountedProcessSpawns(fset *token.FileSet, f *ast.File) []string {
 		return true
 	})
 	return found
+}
+
+// TestInvariants_UnitTestsUseGitFixtures verifies that unit test files never
+// spawn subprocesses directly (via exec.Command / ExecCommandContext) outside
+// brokenpipe_test.go and workspace_hook_test.go, and that every Test* function
+// using RealGitRunner, NewGitClientInDir, NewExecGitRunner, or runTestGit
+// guards execution via a LookPath("git") fixture.
+func TestInvariants_UnitTestsUseGitFixtures(t *testing.T) {
+	directSpawnAllowlist := []string{"brokenpipe_test.go", "workspace_hook_test.go"}
+	fset := token.NewFileSet()
+	for _, path := range collectUnitTestGoFiles(t) {
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatalf("ParseFile(%q): %v", path, err)
+		}
+		for _, v := range findTestGitViolations(fset, f, slices.Contains(directSpawnAllowlist, filepath.Base(path))) {
+			t.Errorf("%s", v)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		src  string
+	}{
+		{"direct ExecCommandContext in test", `package p; import "testing"; func TestX(t *testing.T) { _ = ExecCommandContext(t.Context(), "git", "init") }`},
+		{"unguarded RealGitRunner in test", `package p; import "testing"; func TestX(t *testing.T) { r := &RealGitRunner{}; _ = r }`},
+	} {
+		f, err := parser.ParseFile(fset, tc.name+".go", tc.src, 0)
+		if err != nil {
+			t.Fatalf("ParseFile(%s): %v", tc.name, err)
+		}
+		if got := findTestGitViolations(fset, f, false); len(got) == 0 {
+			t.Errorf("%s: expected AST violation, got none", tc.name)
+		}
+	}
+}
+
+func findTestGitViolations(fset *token.FileSet, f *ast.File, allowDirectSpawn bool) []string {
+	realGitSymbols := []string{"RealGitRunner", "NewGitClientInDir", "NewExecGitRunner", "runTestGit"}
+	gitFixtureGuards := []string{"initTestRepo", "initTestRepoWithOrigin", "newTestGitRepo", "NewKindSmokeFixture", "setupPerfBudgetPool", "LookPath"}
+	var violations []string
+	if !allowDirectSpawn {
+		violations = append(violations, findProcessSpawns(fset, f, true)...)
+	}
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil || !strings.HasPrefix(fn.Name.Name, "Test") {
+			continue
+		}
+		var realGitPos token.Pos
+		var hasGuard bool
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			id, ok := n.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if realGitPos == token.NoPos && slices.Contains(realGitSymbols, id.Name) {
+				realGitPos = id.Pos()
+			}
+			if slices.Contains(gitFixtureGuards, id.Name) {
+				hasGuard = true
+			}
+			return true
+		})
+		if realGitPos != token.NoPos && !hasGuard {
+			violations = append(violations, fset.Position(realGitPos).String()+": "+fn.Name.Name+" uses real git without calling initTestRepo, newTestGitRepo, or exec.LookPath(\"git\")")
+		}
+	}
+	return violations
 }
