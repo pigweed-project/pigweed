@@ -14,6 +14,7 @@
 
 import("//build_overrides/pigweed.gni")
 
+import("$dir_pw_async2/backend.gni")
 import("$dir_pw_bloat/bloat.gni")
 import("$dir_pw_build/python.gni")
 import("$dir_pw_build/python_action.gni")
@@ -153,6 +154,40 @@ pw_source_set("client_server") {
   ]
   public = [ "public/pw_rpc/client_server.h" ]
   sources = [ "client_server.cc" ]
+}
+
+pw_source_set("rpc2_adapter") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_rpc/rpc2_adapter.h" ]
+  sources = [
+    "public/pw_rpc/internal/rpc2_adapter.h",
+    "rpc2_adapter.cc",
+  ]
+  public_deps = [
+    ":common",
+    ":server",
+    "$dir_pw_assert:assert",
+    "$dir_pw_containers:forward_list",
+    "$dir_pw_containers:intrusive_forward_list",
+    "$dir_pw_containers:intrusive_queue",
+    "$dir_pw_rpc2/cpp",
+    "$dir_pw_sync:lock_annotations",
+    "$dir_pw_sync:mutex",
+    "$dir_pw_sync:thread_notification",
+    "$dir_pw_thread:options",
+    "$dir_pw_thread:thread",
+    dir_pw_allocator,
+    dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_span,
+    dir_pw_status,
+  ]
+  deps = [
+    ":log_config",
+    "$dir_pw_assert:check",
+    dir_pw_log,
+  ]
 }
 
 pw_source_set("synchronous_client_api") {
@@ -447,6 +482,7 @@ pw_test_group("tests") {
     ":ids_test",
     ":packet_test",
     ":packet_meta_test",
+    ":rpc2_adapter_test",
     ":server_test",
     ":service_test",
   ]
@@ -614,4 +650,51 @@ pw_test("test_helpers_test") {
   enable_if = pw_sync_TIMED_THREAD_NOTIFICATION_BACKEND != "" &&
               pw_sync_COUNTING_SEMAPHORE_BACKEND != "" &&
               pw_chrono_SYSTEM_CLOCK_BACKEND != ""
+}
+
+pw_test("rpc2_adapter_test") {
+  # The adapter requires the global mutex, since it uses the server from
+  # multiple threads.
+  enable_if = pw_rpc_CONFIG != "$dir_pw_rpc:disable_global_mutex" &&
+              pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_chrono_SYSTEM_CLOCK_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_MUTEX_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != "" &&
+              pw_thread_SLEEP_BACKEND != "" &&
+              pw_thread_TEST_THREAD_CONTEXT_BACKEND != "" &&
+              pw_thread_THREAD_BACKEND != ""
+  deps = [
+    ":common",
+    ":rpc2_adapter",
+    ":server",
+    ":test_protos.pwpb_rpc",
+    ":test_protos.pwpb_rpc2",
+    ":test_protos.raw_rpc",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_assert:check",
+    "$dir_pw_async2:testing",
+    "$dir_pw_rpc2/cpp",
+    "$dir_pw_rpc2/cpp:test_utils",
+    "$dir_pw_sync:thread_notification",
+    "$dir_pw_thread:options",
+    "$dir_pw_thread:sleep",
+    "$dir_pw_thread:test_thread_context",
+    "$dir_pw_thread:thread",
+    "$dir_pw_transport/cpp:forwarding_socket",
+    "$dir_pw_unit_test:status_macros",
+    "pwpb:server_api",
+    "raw:server_api",
+    dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_status,
+  ]
+  sources = [ "rpc2_adapter_test.cc" ]
+  negative_compilation_tests = true
+}
+
+# Not built in GN because it tests an example in //pw_rpc/examples (Bazel-only).
+pw_ignore_group("bazel_only_tests") {
+  sources = [ "use_rpc_services_in_rpc2_test.cc" ]
 }

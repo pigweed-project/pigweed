@@ -283,7 +283,7 @@ pw_source_set("test_utils") {
     dir_pw_status,
     dir_pw_unit_test,
   ]
-  visibility = _default_visibility
+  visibility = _default_visibility + [ "$dir_pw_rpc/*" ]
 }
 
 pw_source_set("test_harness") {

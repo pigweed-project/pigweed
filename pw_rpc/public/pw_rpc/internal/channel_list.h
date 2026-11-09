@@ -86,6 +86,10 @@ class ChannelList {
   Status SetDefaultChannelOutput(ChannelOutput& output)
       PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());
 
+  bool has_default_channel() const PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
+    return default_channel_.assigned();
+  }
+
   // Removes the channel with the requested ID. Returns:
   //
   //   OK - the channel was removed

@@ -34,8 +34,6 @@
 
 namespace pw::rpc2 {
 
-class Server;
-
 namespace internal {
 
 // Provides internal access to `Service`'s ID and method table, which are not

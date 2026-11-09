@@ -30,10 +30,11 @@ load(
     "pwpb_rpc_proto_library",
     "raw_rpc_proto_library",
 )
+load("//pw_protobuf_compiler:pwpb_rpc2_proto_library.bzl", "pwpb_rpc2_proto_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(
-    default_visibility = ["//visibility:public"],
+    default_visibility = ["//visibility:private"],
 )
 
 licenses(["notice"])
@@ -134,6 +135,38 @@ pw_cc_test(
     ],
 )
 # [pw_rpc-examples-sensor-build]
+
+# pw_rpc2 client for the sensor service, which //pw_rpc:use_rpc_services_in_rpc2_test
+# uses to call the legacy SensorServiceImpl.
+pwpb_proto_library(
+    name = "sensor_pwpb",
+    testonly = True,
+    deps = [":sensor_proto"],
+)
+
+pwpb_rpc2_proto_library(
+    name = "sensor_pwpb_rpc2",
+    testonly = True,
+    pwpb_proto_library_deps = [":sensor_pwpb"],
+    visibility = ["//pw_rpc:__pkg__"],
+    deps = [":sensor_proto"],
+)
+
+cc_library(
+    name = "use_rpc_services_in_rpc2",
+    srcs = ["use_rpc_services_in_rpc2.cc"],
+    visibility = ["//pw_rpc:__pkg__"],
+    deps = [
+        ":sensor_service",
+        "//pw_allocator",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_rpc",
+        "//pw_rpc:rpc2_adapter",
+        "//pw_rpc2/cpp",
+        "//pw_thread:options",
+    ],
+)
 
 # [pw_rpc-examples-chat-build]
 pw_proto_filegroup(
@@ -302,6 +335,12 @@ cc_library(
     ],
 )
 
+filegroup(
+    name = "doxygen",
+    srcs = ["use_rpc_services_in_rpc2.cc"],
+    visibility = ["//pw_rpc:__pkg__"],
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [
@@ -324,6 +363,8 @@ sphinx_docs_library(
         "sensor_service.h",
         "sensor_service.proto",
         "sensor_service_test.cc",
+        "use_rpc_services_in_rpc2.cc",
     ],
     target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//pw_rpc:__pkg__"],
 )

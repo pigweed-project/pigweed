@@ -147,4 +147,5 @@ Where to go next
    benchmarking
    protocol
    design
+   rpc2_adapter
    Serial & HDLC example <pw://pw_hdlc/rpc_example/docs.html>

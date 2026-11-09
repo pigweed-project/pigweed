@@ -114,4 +114,5 @@ Evaluation and migration
    Wire protocol <protocol>
    Why RPC2? <why>
    RPC1 vs. RPC2 <comparison>
+   RPC1 service adapter <pw://pw_rpc/rpc2_adapter.html>
    Extended size report <size_report>

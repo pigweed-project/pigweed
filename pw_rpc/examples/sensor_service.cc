@@ -25,9 +25,13 @@ namespace pw::rpc::examples {
 
 // DOCSTAG: [pw_rpc-examples-sensor-service-impl]
 pw::Status SensorServiceImpl::GetReading(
-    const pw_rpc_examples_SensorRequest& /*request*/,
+    const pw_rpc_examples_SensorRequest& request,
     pw_rpc_examples_SensorResponse& response) {
-  response.temperature = 24.2f;
+  if (request.sensor_id == 0) {
+    response.error = true;
+    return pw::Status::NotFound();
+  }
+  response.temperature = 24.2f + temperature_offset_;
   response.humidity = 45.0f;
   response.error = false;
   return pw::OkStatus();

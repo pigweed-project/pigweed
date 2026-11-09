@@ -19,6 +19,10 @@
 #include "pw_rpc2/internal/method.h"
 #include "pw_span/span.h"
 
+namespace pw::rpc {
+class Rpc2ServiceAdapter;
+}  // namespace pw::rpc
+
 namespace pw::rpc2 {
 
 namespace internal {
@@ -61,6 +65,7 @@ class Service : public IntrusiveForwardList<Service>::Item {
 
  private:
   friend struct internal::ServiceAccess;
+  friend class ::pw::rpc::Rpc2ServiceAdapter;  // pw_rpc's adapter for pw_rpc2
 
   uint32_t service_id() const { return service_id_; }
 

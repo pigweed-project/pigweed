@@ -199,9 +199,9 @@ languages **today**, pick RPC1.
 Coexistence and migration
 -------------------------
 Good news! You will not have to choose between the two exclusively. Pigweed
-plans to offer an adapter for existing RPC1 systems, allowing their services to
-run on an RPC2 server.
+offers an adapter that runs existing RPC1 services on an RPC2 server; see
+:ref:`module-pw_rpc-rpc2-adapter`.
 
-If you are already using RPC1, this will allow you to incrementally migrate your
+If you are already using RPC1, this allows you to incrementally migrate your
 code over at your own pace, while your existing service implementations continue
 to work just as before.

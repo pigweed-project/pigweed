@@ -424,7 +424,7 @@ def _generate_service(gen: CodeGenerator, service: ProtoService) -> None:
 
 
 def _method_lookup_table(gen: CodeGenerator, service: ProtoService) -> None:
-    """Generates array of method IDs for looking up methods at compile time."""
+    """Generates arrays of method IDs and types for compile-time lookups."""
     gen.line(
         'static constexpr std::array<uint32_t, '
         f'{len(service.methods())}> kPwRpcMethodIds = {{'
@@ -433,6 +433,22 @@ def _method_lookup_table(gen: CodeGenerator, service: ProtoService) -> None:
     with gen.indent(4):
         for method in service.methods():
             gen.line(f'{get_id(method)},  // Hash of "{method.name()}"')
+
+    gen.line('};')
+    gen.line()
+
+    # Method types, in the same order as the IDs. These are only referenced at
+    # compile time (by pw::rpc::internal::kAdaptedMethods, which builds the
+    # pw_rpc2 method table for pw::rpc::Rpc2ServiceAdapter), so they cost
+    # nothing unless used.
+    gen.line(
+        f'static constexpr std::array<{RPC_NAMESPACE}::MethodType, '
+        f'{len(service.methods())}> kPwRpcMethodTypes = {{'
+    )
+
+    with gen.indent(4):
+        for method in service.methods():
+            gen.line(f'{method.type().cc_enum()},  // {method.name()}')
 
     gen.line('};')
 

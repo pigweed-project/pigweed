@@ -542,7 +542,8 @@ Other language clients
 --------------------------------
 Configuration & memory tuning
 --------------------------------
-The following compile-time options allow you to tune memory consumption and performance:
+The following compile-time options allow you to tune memory consumption and
+performance:
 
 .. list-table::
    :header-rows: 1

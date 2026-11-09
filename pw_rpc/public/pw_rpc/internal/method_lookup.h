@@ -48,6 +48,19 @@ class MethodLookup {
     return method;
   }
 
+  // The IDs of a generated service's methods, in declaration order.
+  template <typename Service>
+  static constexpr const auto& MethodIds() {
+    return Service::kPwRpcMethodIds;
+  }
+
+  // The types of a generated service's methods, in the same order as
+  // MethodIds().
+  template <typename Service>
+  static constexpr const auto& MethodTypes() {
+    return Service::kPwRpcMethodTypes;
+  }
+
  private:
   template <typename Service, uint32_t kMethodId>
   static constexpr const auto& GetMethodUnion() {

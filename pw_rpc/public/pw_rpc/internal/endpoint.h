@@ -142,6 +142,10 @@ class Endpoint {
     return calls_.end();
   }
 
+  bool has_default_channel() const PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
+    return channels_.has_default_channel();
+  }
+
   // Aborts calls associated with a particular service. Calls to
   // AbortCallsForService() must be followed by a call to CleanUpCalls().
   void AbortCallsForService(const Service& service)

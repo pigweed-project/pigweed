@@ -13,7 +13,11 @@
 # the License.
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+include($ENV{PW_ROOT}/pw_async2/backend.cmake)
+include($ENV{PW_ROOT}/pw_chrono/backend.cmake)
 include($ENV{PW_ROOT}/pw_protobuf_compiler/proto.cmake)
+include($ENV{PW_ROOT}/pw_sync/backend.cmake)
+include($ENV{PW_ROOT}/pw_thread/backend.cmake)
 
 if(NOT "${dir_pw_third_party_nanopb}" STREQUAL "")
   add_subdirectory(nanopb)
@@ -103,6 +107,39 @@ pw_add_library(pw_rpc.client_server STATIC
     pw_rpc.server
   SOURCES
     client_server.cc
+)
+
+pw_add_library(pw_rpc.rpc2_adapter STATIC
+  HEADERS
+    public/pw_rpc/internal/rpc2_adapter.h
+    public/pw_rpc/rpc2_adapter.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator
+    pw_assert.assert
+    pw_async2
+    pw_buf
+    pw_bytes
+    pw_containers.forward_list
+    pw_containers.intrusive_forward_list
+    pw_containers.intrusive_queue
+    pw_rpc.common
+    pw_rpc.server
+    pw_rpc2.cpp
+    pw_span
+    pw_status
+    pw_sync.lock_annotations
+    pw_sync.mutex
+    pw_sync.thread_notification
+    pw_thread.options
+    pw_thread.thread
+  SOURCES
+    rpc2_adapter.cc
+  PRIVATE_DEPS
+    pw_assert.check
+    pw_log
+    pw_rpc.log_config
 )
 
 pw_add_library(pw_rpc.synchronous_client_api INTERFACE
@@ -488,3 +525,49 @@ pw_add_test(pw_rpc.test_helpers_test
     modules
     pw_rpc
 )
+
+# The adapter requires the global mutex, since it uses the server from multiple
+# threads.
+if((NOT "${pw_rpc_CONFIG}" STREQUAL "pw_rpc.disable_global_mutex_config") AND
+   (NOT "${pw_async2.dispatcher_for_test_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_chrono.system_clock_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_sync.interrupt_spin_lock_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_sync.mutex_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_sync.thread_notification_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_thread.sleep_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_thread.test_thread_context_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_thread.thread_BACKEND}" STREQUAL ""))
+  pw_add_test(pw_rpc.rpc2_adapter_test
+    SOURCES
+      rpc2_adapter_test.cc
+    PRIVATE_DEPS
+      pw_allocator.testing
+      pw_assert.check
+      pw_async2
+      pw_async2.testing
+      pw_buf
+      pw_bytes
+      pw_compilation_testing._pigweed_only_negative_compilation
+      pw_rpc.common
+      pw_rpc.pwpb.server_api
+      pw_rpc.raw.server_api
+      pw_rpc.rpc2_adapter
+      pw_rpc.server
+      pw_rpc.test_protos.pwpb_rpc
+      pw_rpc.test_protos.pwpb_rpc2
+      pw_rpc.test_protos.raw_rpc
+      pw_rpc2.cpp
+      pw_rpc2.cpp._test_utils
+      pw_status
+      pw_sync.thread_notification
+      pw_thread.options
+      pw_thread.sleep
+      pw_thread.test_thread_context
+      pw_thread.thread
+      pw_transport.cpp.forwarding_socket
+      pw_unit_test.status_macros
+    GROUPS
+      modules
+      pw_rpc
+  )
+endif()

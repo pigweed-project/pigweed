@@ -25,6 +25,9 @@ class SensorServiceImpl final
     : public pw::rpc::examples::pw_rpc::nanopb::SensorService::Service<
           SensorServiceImpl> {
  public:
+  explicit SensorServiceImpl(float temperature_offset = 0.0f)
+      : temperature_offset_(temperature_offset) {}
+
   // 1a. Synchronous Unary RPC
   pw::Status GetReading(const pw_rpc_examples_SensorRequest& request,
                         pw_rpc_examples_SensorResponse& response);
@@ -47,6 +50,7 @@ class SensorServiceImpl final
           stream);
 
  private:
+  float temperature_offset_;
   pw::rpc::NanopbUnaryResponder<pw_rpc_examples_SensorResponse>
       async_responder_;
   pw::rpc::NanopbServerReaderWriter<pw_rpc_examples_CalibrationPoint,

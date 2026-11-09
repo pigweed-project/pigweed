@@ -135,6 +135,10 @@ class Server : public internal::Endpoint {
   // ProcessPacket
   friend class pw::grpc::PwRpcHandler;
 
+  // Give the pw_rpc2 adapter access to the internal::Packet version of
+  // ProcessPacket, so it can forward packets without encoding them.
+  friend class Rpc2ServerAdapter;
+
   // Give call classes access to OpenCall.
   friend class RawServerReaderWriter;
   friend class RawServerWriter;

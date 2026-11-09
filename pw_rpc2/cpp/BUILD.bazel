@@ -272,6 +272,10 @@ cc_library(
         "public/pw_rpc2/internal/test_utils.h",
     ],
     strip_include_prefix = "public",
+    visibility = [
+        "//pw_rpc:__pkg__",
+        "//pw_rpc2:__subpackages__",
+    ],
     deps = [
         ":cpp",
         ":packet",
