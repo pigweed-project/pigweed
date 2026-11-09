@@ -58,6 +58,7 @@ class BorrowedL2capChannel {
 
  private:
   friend class GenericL2capChannelImpl;
+  friend class L2capChannelImpl;
   friend class pw::bluetooth::proxy::L2capChannel;
 
   BorrowedL2capChannel(L2capChannelImpl& impl);
@@ -87,7 +88,8 @@ class L2capChannelImpl {
   [[nodiscard]] bool PayloadQueueEmpty() const PW_LOCKS_EXCLUDED(mutex_);
 
   // Send `event` to client if an event callback was provided.
-  void SendEvent(L2capChannelEvent event) PW_LOCKS_EXCLUDED(static_mutex_);
+  void SendEvent(L2capChannelEvent event)
+      PW_LOCKS_EXCLUDED(static_mutex_, mutex_);
   void SendEventLocked(L2capChannelEvent event)
       PW_EXCLUSIVE_LOCKS_REQUIRED(static_mutex_);
 

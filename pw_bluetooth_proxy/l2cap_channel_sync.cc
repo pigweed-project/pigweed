@@ -170,11 +170,13 @@ bool L2capChannelImpl::PayloadQueueEmpty() const {
 }
 
 void L2capChannelImpl::SendEvent(L2capChannelEvent event) {
+  BorrowedL2capChannel borrowed;
   {
     std::lock_guard lock(L2capChannelImpl::mutex());
     if (!client_.has_value() || *client_ == nullptr) {
       return;
     }
+    borrowed = BorrowedL2capChannel(*this);
   }
 
   // We don't log kWriteAvailable since they happen often. Optimally we would
@@ -183,13 +185,13 @@ void L2capChannelImpl::SendEvent(L2capChannelEvent event) {
     PW_LOG_INFO(
         "btproxy: L2capChannel::SendEvent -  connection: %#x, "
         "local_cid: %#x, event: %u,",
-        channel_.connection_handle(),
-        channel_.local_cid(),
+        borrowed->connection_handle(),
+        borrowed->local_cid(),
         cpp23::to_underlying(event));
   }
 
-  if (channel_.event_fn_) {
-    channel_.event_fn_(event);
+  if (borrowed->event_fn_) {
+    borrowed->event_fn_(event);
   }
 }
 

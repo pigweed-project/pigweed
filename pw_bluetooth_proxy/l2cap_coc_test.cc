@@ -2908,6 +2908,135 @@ TEST_F(L2capCocTest, ConcurrentDisconnectionDuringDrain) {
   state.trigger = true;
   disconnect_thread.join();
 }
+
+#if PW_BLUETOOTH_PROXY_ASYNC == 0
+TEST_F(L2capCocTest, ConcurrentDeletionDuringSendEvent) {
+  static constexpr uint16_t kHandle = 0x123;
+  static constexpr uint16_t kStaleLocalCid = 0x0040;
+  static constexpr uint16_t kStaleRemoteCid = 0x0060;
+  static constexpr uint16_t kActiveLocalCid = 0x0050;
+  static constexpr uint16_t kActiveRemoteCid = 0x0070;
+
+  pw::Function<void(H4PacketWithHci&&)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4&&)> send_to_controller_fn(
+      [](H4PacketWithH4&&) {});
+
+  ProxyHost proxy(std::move(send_to_host_fn),
+                  std::move(send_to_controller_fn),
+                  /*le_acl_credits_to_reserve=*/10,
+                  /*br_edr_acl_credits_to_reserve=*/0,
+                  &pw::allocator::GetLibCAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kHandle, emboss::StatusCode::SUCCESS));
+
+  struct RaceState {
+    std::array<uint8_t, 4> tx_data = {1, 2, 3, 4};
+    std::optional<L2capCoc> stale_coc;
+    std::optional<L2capCoc> active_coc;
+    sync::ThreadNotification thread_ready;
+    sync::ThreadNotification client_reset_done;
+    sync::ThreadNotification write_starting;
+    std::atomic<bool> drain_finished{false};
+    int events_received = 0;
+  } state;
+
+  state.stale_coc.emplace(
+      BuildCoc(proxy,
+               CocParameters{
+                   .handle = kHandle,
+                   .local_cid = kStaleLocalCid,
+                   .remote_cid = kStaleRemoteCid,
+                   .tx_credits = 1,
+                   .receive_fn = [](multibuf::MultiBuf&&) {},
+                   .event_fn =
+                       [&state](L2capChannelEvent event) {
+                         EXPECT_EQ(event, L2capChannelEvent::kRxInvalid);
+                         ++state.events_received;
+                         // Disconnect client handle while SendEvent is
+                         // executing, marking the underlying L2capChannel as
+                         // stale.
+                         state.stale_coc.reset();
+                         state.client_reset_done.release();
+                         state.write_starting.acquire();
+
+                         // Allow the drain thread to attempt to reap and delete
+                         // the stale channel while SendEvent is still in
+                         // progress.
+                         for (int i = 0; i < 1000; ++i) {
+                           pw::this_thread::yield();
+                         }
+
+                         // Because SendEvent holds a BorrowedL2capChannel,
+                         // ~L2capChannel on the drain thread must block in
+                         // BlockWhileBorrowed() until SendEvent finishes, so
+                         // `drain_finished` must still be false here.
+                         EXPECT_FALSE(state.drain_finished.load());
+                       },
+               }));
+
+  state.active_coc.emplace(
+      BuildCoc(proxy,
+               CocParameters{
+                   .handle = kHandle,
+                   .local_cid = kActiveLocalCid,
+                   .remote_cid = kActiveRemoteCid,
+                   .tx_mtu = 100,
+                   .tx_credits = 10,
+                   .receive_fn = [](multibuf::MultiBuf&&) {},
+                   .event_fn = [](L2capChannelEvent) {},
+               }));
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread drain_thread(context.options(), [&state]() {
+    state.thread_ready.release();
+    state.client_reset_done.acquire();
+    auto mbuf = multibuf::FromSpan(pw::allocator::GetLibCAllocator(),
+                                   as_writable_bytes(span(state.tx_data)),
+                                   [](ByteSpan) {});
+    PW_ASSERT(mbuf.has_value());
+    state.write_starting.release();
+    std::ignore = state.active_coc->Write(std::move(*mbuf));
+    state.drain_finished.store(true);
+  });
+  state.thread_ready.acquire();
+
+  // Send an L2CAP_FLOW_CONTROL_CREDIT_IND on the LE signaling channel that
+  // overflows stale_coc's tx_credits, triggering AddTxCredits ->
+  // StopAndSendEvent(kRxInvalid) -> SendEvent(kRxInvalid) without an outer
+  // channel borrow on stale_coc.
+  constexpr size_t kCreditIndLen =
+      emboss::L2capFlowControlCreditInd::IntrinsicSizeInBytes();
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      CFrameWithStorage cframe,
+      SetupCFrame(kHandle,
+                  cpp23::to_underlying(emboss::L2capFixedCid::LE_U_SIGNALING),
+                  kCreditIndLen));
+  emboss::L2capFlowControlCreditIndWriter ind =
+      emboss::MakeL2capFlowControlCreditIndView(
+          cframe.writer.payload().BackingStorage().data(),
+          cframe.writer.payload().SizeInBytes());
+  ind.command_header().code().Write(
+      emboss::L2capSignalingPacketCode::FLOW_CONTROL_CREDIT_IND);
+  ind.command_header().identifier().Write(1);
+  ind.command_header().data_length().Write(
+      kCreditIndLen -
+      emboss::L2capSignalingCommandHeader::IntrinsicSizeInBytes());
+  ind.cid().Write(kStaleRemoteCid);
+  ind.credits().Write(0xFFFF);
+
+  H4PacketWithHci credit_ind_packet{emboss::H4PacketType::ACL_DATA,
+                                    cframe.acl.hci_span()};
+  proxy.HandleH4HciFromController(std::move(credit_ind_packet));
+
+  drain_thread.join();
+  EXPECT_EQ(state.events_received, 1);
+  EXPECT_TRUE(state.drain_finished.load());
+}
+#endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
 #endif  // PW_THREAD_JOINING_ENABLED
 
 }  // namespace
