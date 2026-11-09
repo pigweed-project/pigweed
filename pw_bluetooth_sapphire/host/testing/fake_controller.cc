@@ -66,7 +66,7 @@ void FakeController::Settings::ApplyDualModeDefaults() {
   le_event_mask = 0;
   bd_addr = DeviceAddress();
   lmp_features_page0 = 0;
-  SetBit(&lmp_features_page0, hci_spec::LMPFeature::kLESupportedHost);
+  SetBit(&lmp_features_page0, hci_spec::LMPFeature::kLESupportedController);
   SetBit(&lmp_features_page0, hci_spec::LMPFeature::kSimultaneousLEAndBREDR);
   SetBit(&lmp_features_page0, hci_spec::LMPFeature::kExtendedFeatures);
   SetBit(&lmp_features_page0, hci_spec::LMPFeature::kRSSIwithInquiryResults);

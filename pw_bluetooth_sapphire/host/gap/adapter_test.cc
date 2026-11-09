@@ -140,6 +140,34 @@ TEST_F(AdapterTest, InitializeFailureNoFeaturesSupported) {
   EXPECT_FALSE(transport_closed_called());
 }
 
+TEST_F(AdapterTest, InitializeFailureWithoutControllerLESupport) {
+  bool success = true;
+  int init_cb_count = 0;
+  auto init_cb = [&](bool cb_success) {
+    success = cb_success;
+    init_cb_count++;
+  };
+
+  // k5SlotPackets on page 0 shares the bit position (bit 1) with
+  // kLESupportedHost on page 1. Ensure LE controller support requires
+  // kLESupportedController on page 0.
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  settings.lmp_features_page0 &=
+      ~static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
+  settings.lmp_features_page0 |=
+      static_cast<uint64_t>(hci_spec::LMPFeature::k5SlotPackets);
+  settings.lmp_features_page1 |=
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+  test_device()->set_settings(settings);
+
+  InitializeAdapter(std::move(init_cb));
+  EXPECT_FALSE(success);
+  EXPECT_EQ(1, init_cb_count);
+  EXPECT_FALSE(adapter()->state().IsLowEnergySupported());
+  EXPECT_FALSE(transport_closed_called());
+}
+
 TEST_F(AdapterTest, InitializeFailureNoBufferInfo) {
   bool success;
   int init_cb_count = 0;
@@ -151,7 +179,7 @@ TEST_F(AdapterTest, InitializeFailureNoBufferInfo) {
   // Enable LE support.
   FakeController::Settings settings;
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   test_device()->set_settings(settings);
 
   InitializeAdapter(std::move(init_cb));
@@ -171,7 +199,7 @@ TEST_F(AdapterTest, InitializeNoBREDR) {
   // Enable LE support, disable BR/EDR
   FakeController::Settings settings;
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.lmp_features_page0 |=
       static_cast<uint64_t>(hci_spec::LMPFeature::kBREDRNotSupported);
   settings.le_acl_data_packet_length = 0x1B;
@@ -248,7 +276,7 @@ TEST_F(AdapterTest, InitializeSuccess) {
   // succeed).
   FakeController::Settings settings;
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.le_acl_data_packet_length = 0x1B;
   settings.le_total_num_acl_data_packets = 1;
   test_device()->set_settings(settings);
@@ -1285,7 +1313,7 @@ TEST_F(AdapterTest, InspectHierarchy) {
   FakeController::Settings settings;
   settings.AddBREDRSupportedCommands();
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.le_acl_data_packet_length = 0x1B;
   settings.le_total_num_acl_data_packets = 1;
   settings.synchronous_data_packet_length = 6;
@@ -1781,7 +1809,7 @@ TEST_F(AdapterTest, BufferSizesRecordedInState) {
   settings.AddBREDRSupportedCommands();
   settings.AddLESupportedCommands();
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
 
   // Minimum supported size as per Core Spec v5.4, Vol 4, Part E, 7.8.2
   settings.le_acl_data_packet_length = 0x1B;
@@ -1828,7 +1856,7 @@ TEST_F(AdapterTest, LEReadMaximumAdvertisingDataLengthNotSupported) {
   settings.AddBREDRSupportedCommands();
   settings.AddLESupportedCommands();
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.le_acl_data_packet_length = 0x1B;
   settings.le_total_num_acl_data_packets = 2;
   test_device()->set_settings(settings);
@@ -1847,7 +1875,7 @@ TEST_F(AdapterTest, LEReadMaximumAdvertisingDataLengthSupported) {
   settings.AddBREDRSupportedCommands();
   settings.AddLESupportedCommands();
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.le_acl_data_packet_length = 0x1B;
   settings.le_total_num_acl_data_packets = 2;
   settings.SupportedCommandsView()
@@ -1872,7 +1900,7 @@ TEST_F(AdapterTest, LEConnectedIsochronousStreamSupported) {
   settings.AddBREDRSupportedCommands();
   settings.AddLESupportedCommands();
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.le_features |= static_cast<uint64_t>(
       hci_spec::LESupportedFeature::kConnectedIsochronousStreamPeripheral);
   settings.le_acl_data_packet_length = 0x1B;
@@ -1898,7 +1926,7 @@ TEST_F(AdapterTest, ScoDataChannelInitializedSuccessfully) {
   FakeController::Settings settings;
   settings.AddBREDRSupportedCommands();
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.le_acl_data_packet_length = 0x1B;
   settings.le_total_num_acl_data_packets = 1;
   // Ensure SCO buffers are available.
@@ -1923,7 +1951,7 @@ TEST_F(AdapterTest,
   FakeController::Settings settings;
   settings.AddBREDRSupportedCommands();
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.SupportedCommandsView()
       .write_synchronous_flow_control_enable()
       .Write(false);
@@ -1946,7 +1974,7 @@ TEST_F(AdapterTest, ScoDataChannelNotInitializedBecauseBufferInfoNotAvailable) {
   FakeController::Settings settings;
   settings.AddBREDRSupportedCommands();
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.le_acl_data_packet_length = 0x1B;
   settings.le_total_num_acl_data_packets = 1;
   // Ensure SCO buffers are not available.
@@ -1971,7 +1999,7 @@ TEST_F(AdapterScoAndIsoDisabledTest,
   FakeController::Settings settings;
   settings.AddBREDRSupportedCommands();
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.le_acl_data_packet_length = 0x1B;
   settings.le_total_num_acl_data_packets = 1;
   // Ensure SCO buffers are available.
@@ -2059,7 +2087,7 @@ TEST_F(AdapterTest, InitializeWriteSecureConnectionsHostSupport) {
   // Enable LE support and extended features (Secure Connections Host Support)
   FakeController::Settings settings;
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.lmp_features_page0 |=
       static_cast<uint64_t>(hci_spec::LMPFeature::kExtendedFeatures);
   settings.lmp_features_page1 |= static_cast<uint64_t>(
@@ -2086,7 +2114,7 @@ void AdapterTest::GetSupportedDelayRangeHelper(
 
   // Define minimum required settings for an LE controller
   settings.lmp_features_page0 |=
-      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedHost);
+      static_cast<uint64_t>(hci_spec::LMPFeature::kLESupportedController);
   settings.le_acl_data_packet_length = 0x1B;
   settings.le_total_num_acl_data_packets = 1;
 

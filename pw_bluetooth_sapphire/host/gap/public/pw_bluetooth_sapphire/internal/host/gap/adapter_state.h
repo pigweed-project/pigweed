@@ -51,7 +51,8 @@ struct AdapterState final {
   }
 
   inline bool IsLowEnergySupported() const {
-    return features.HasBit(/*page=*/0u, hci_spec::LMPFeature::kLESupportedHost);
+    return features.HasBit(/*page=*/0u,
+                           hci_spec::LMPFeature::kLESupportedController);
   }
 
   inline bool IsLocalSecureConnectionsSupported() const {
