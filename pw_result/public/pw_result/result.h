@@ -35,6 +35,10 @@
 //   }
 #pragma once
 
+#if defined(__cpp_impl_three_way_comparison) && __has_include(<compare>)
+#include <compare>  // IWYU pragma: export
+#endif  // defined(__cpp_impl_three_way_comparison) && __has_include(<compare>)
+
 #include <initializer_list>
 #include <memory>
 #include <optional>  // IWYU pragma: export
@@ -376,6 +380,71 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
     return *this;
   }
 
+  /// Constructs an `Optional<T>` from a `std::optional<U>` when `T` is
+  /// constructible from `U`.
+  ///
+  /// Disabled unless `StatusType` is `HasValue` and `T` is not constructible or
+  /// convertible from `std::optional<U>` directly (except when `T` is `bool`;
+  /// see LWG 3836). Explicit if and only if converting `U` to `T` is explicit.
+  template <
+      typename U,
+      std::enable_if_t<
+          internal_result::
+              kCanConvertFromStdOptional<T, U, const U&, StatusType, true>,
+          int> = 0>
+  constexpr Result(const std::optional<U>& other) noexcept  // NOLINT
+      : Base(internal_result::kFromStdOptionalTag, other) {}
+
+  /// @copydoc Result(const std::optional<U>&)
+  template <
+      typename U,
+      std::enable_if_t<
+          internal_result::
+              kCanConvertFromStdOptional<T, U, const U&, StatusType, false>,
+          int> = 0>
+  explicit constexpr Result(const std::optional<U>& other) noexcept
+      : Base(internal_result::kFromStdOptionalTag, other) {}
+
+  /// @copydoc Result(const std::optional<U>&)
+  template <typename U,
+            std::enable_if_t<
+                internal_result::
+                    kCanConvertFromStdOptional<T, U, U&&, StatusType, true>,
+                int> = 0>
+  constexpr Result(std::optional<U>&& other) noexcept  // NOLINT
+      : Base(internal_result::kFromStdOptionalTag, std::move(other)) {}
+
+  /// @copydoc Result(const std::optional<U>&)
+  template <typename U,
+            std::enable_if_t<
+                internal_result::
+                    kCanConvertFromStdOptional<T, U, U&&, StatusType, false>,
+                int> = 0>
+  explicit constexpr Result(std::optional<U>&& other) noexcept
+      : Base(internal_result::kFromStdOptionalTag, std::move(other)) {}
+
+  /// Assigns an `Optional<T>` from a `std::optional<U>`.
+  template <typename U,
+            std::enable_if_t<
+                internal_result::
+                    kCanAssignFromStdOptional<T, U, const U&, StatusType>,
+                int> = 0>
+  constexpr Result& operator=(const std::optional<U>& other) noexcept {
+    this->AssignFromStdOptional(other);
+    return *this;
+  }
+
+  /// @copydoc operator=(const std::optional<U>&)
+  template <
+      typename U,
+      std::enable_if_t<
+          internal_result::kCanAssignFromStdOptional<T, U, U&&, StatusType>,
+          int> = 0>
+  constexpr Result& operator=(std::optional<U>&& other) noexcept {
+    this->AssignFromStdOptional(std::move(other));
+    return *this;
+  }
+
   /// Constructs a new `Result<T, StatusType>` with a non-OK status.
   ///
   /// After calling this constructor, `this->ok()` will be `false` and calls to
@@ -443,7 +512,7 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
   ///   Result<bool> s2 = false;  // s2.ok() && *s2 == false
   ///   s1 = s2;  // ambiguous, `s1 = *s2` or `s1 = bool(s2)`?
   /// @endcode
-  template <typename U = T,
+  template <typename U = std::remove_cv_t<T>,
             typename = std::enable_if_t<
                 internal_result::kCanAssignFromValue<T, U&&, StatusType>>>
   constexpr Result& operator=(U&& v) noexcept {
@@ -481,7 +550,7 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
   /// ambiguity, this constructor is disabled if `U` is a `Result<J,
   /// StatusType>`, where `J` is convertible to `T`.
   template <
-      typename U = T,
+      typename U = std::remove_cv_t<T>,
       std::enable_if_t<
           internal_result::kCanConstructFromValue<T, U&&, StatusType, true>,
           int> = 0>
@@ -489,7 +558,7 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
       : Base(std::in_place, std::forward<U>(u)) {}
 
   template <
-      typename U = T,
+      typename U = std::remove_cv_t<T>,
       std::enable_if_t<
           internal_result::kCanConstructFromValue<T, U&&, StatusType, false>,
           int> = 0>
@@ -522,6 +591,39 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
             std::enable_if_t<std::is_same_v<S, HasValue>, int> = 0>
   explicit constexpr operator bool() const noexcept {
     return ok();
+  }
+
+  /// Converts an `Optional<T>` (`Result<T, HasValue>`) to a
+  /// `std::optional<std::remove_cv_t<T>>`.
+  ///
+  /// This is a named method rather than a conversion operator because
+  /// `std::optional`'s forwarding constructor `optional(U&&)` is an exact match
+  /// in direct-initialization (e.g. `std::optional<bool> s(opt)`) and would
+  /// construct the `bool` from `explicit operator bool()`, yielding
+  /// `has_value()` instead of the held value.
+  template <typename S = StatusType,
+            typename U = std::remove_cv_t<T>,
+            std::enable_if_t<std::is_same_v<S, HasValue> &&
+                                 std::is_constructible_v<U, const T&>,
+                             int> = 0>
+  [[nodiscard]] constexpr std::optional<U> std_optional() const& noexcept {
+    if (ok()) {
+      return std::optional<U>(std::in_place, this->data());
+    }
+    return std::nullopt;
+  }
+
+  /// @copydoc std_optional
+  template <typename S = StatusType,
+            typename U = std::remove_cv_t<T>,
+            std::enable_if_t<std::is_same_v<S, HasValue> &&
+                                 std::is_constructible_v<U, T&&>,
+                             int> = 0>
+  [[nodiscard]] constexpr std::optional<U> std_optional() && noexcept {
+    if (ok()) {
+      return std::optional<U>(std::in_place, std::move(this->data()));
+    }
+    return std::nullopt;
   }
 
   /// @returns The current `status_type` contained within the
@@ -732,15 +834,18 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
                   "Result::swap requires T to be move constructible");
     static_assert(std::is_swappable_v<T>,
                   "Result::swap requires T to be swappable");
+    static_assert(std::is_move_constructible_v<status_type>,
+                  "Result::swap requires StatusType to be move constructible");
+    static_assert(std::is_swappable_v<status_type>,
+                  "Result::swap requires StatusType to be swappable");
     using std::swap;
     if (ok() && other.ok()) {
       swap(this->data(), other.data());
+      swap(Base::status, other.Base::status);
     } else if (ok() && !other.ok()) {
-      status_type error_status = std::move(other.Base::status);
       other.MakeValue(std::move(this->data()));
-      other.Base::status = status_type();
       this->Clear();
-      Base::status = std::move(error_status);
+      swap(Base::status, other.Base::status);
     } else if (!ok() && other.ok()) {
       other.swap(*this);
     } else {
@@ -839,18 +944,25 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
   /// @returns A `Result<U, StatusType>` containing the result of invoking
   /// `function` on the held value if `*this` contains a value. Otherwise,
   /// returns a `Result<U, StatusType>` with the same status as `*this`.
-  template <typename Fn,
-            std::enable_if_t<std::is_invocable_v<Fn, T&>, int> = 0,
-            typename Ret = internal_result::InvokeResultType<Fn, T&>>
+  ///
+  /// For `Optional<T>` (`StatusType` is `HasValue`), `function` must return a
+  /// non-reference, non-`void`, non-array object type other than
+  /// `std::in_place_t` or `std::nullopt_t` (matching
+  /// `std::optional::transform`).
+  template <
+      typename Fn,
+      std::enable_if_t<std::is_invocable_v<Fn, T&>, int> = 0,
+      typename Ret = internal_result::TransformResultType<StatusType, Fn, T&>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) & {
     return internal_result::Monadic::Transform<Ret, status_type>(
         ok(), Base::status, std::forward<Fn>(function), this->data());
   }
 
   /// @copydoc transform
-  template <typename Fn,
-            std::enable_if_t<std::is_invocable_v<Fn, T&&>, int> = 0,
-            typename Ret = internal_result::InvokeResultType<Fn, T&&>>
+  template <
+      typename Fn,
+      std::enable_if_t<std::is_invocable_v<Fn, T&&>, int> = 0,
+      typename Ret = internal_result::TransformResultType<StatusType, Fn, T&&>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) && {
     return internal_result::Monadic::Transform<Ret, status_type>(
         ok(),
@@ -862,7 +974,8 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
   /// @copydoc transform
   template <typename Fn,
             std::enable_if_t<std::is_invocable_v<Fn, const T&>, int> = 0,
-            typename Ret = internal_result::InvokeResultType<Fn, const T&>>
+            typename Ret =
+                internal_result::TransformResultType<StatusType, Fn, const T&>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) const& {
     return internal_result::Monadic::Transform<Ret, status_type>(
         ok(), Base::status, std::forward<Fn>(function), this->data());
@@ -871,7 +984,8 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
   /// @copydoc transform
   template <typename Fn,
             std::enable_if_t<std::is_invocable_v<Fn, const T&&>, int> = 0,
-            typename Ret = internal_result::InvokeResultType<Fn, const T&&>>
+            typename Ret =
+                internal_result::TransformResultType<StatusType, Fn, const T&&>>
   constexpr Result<Ret, StatusType> transform(Fn&& function) const&& {
     return internal_result::Monadic::Transform<Ret, status_type>(
         ok(),
@@ -1265,28 +1379,27 @@ class [[nodiscard]] Result<void, StatusType> final {
 
 /// Creates a `pw::Optional` containing a value initialized from `value`.
 template <typename T>
-[[nodiscard]] constexpr Optional<std::decay_t<T>> make_optional(
-    T&& value) noexcept {
+[[nodiscard]] constexpr std::enable_if_t<
+    std::is_constructible_v<std::decay_t<T>, T>,
+    Optional<std::decay_t<T>>>
+make_optional(T&& value) noexcept {
   return Optional<std::decay_t<T>>(std::in_place, std::forward<T>(value));
 }
 
 /// Creates a `pw::Optional<T>` constructed in-place from `args...`.
-template <typename T,
-          typename... Args,
-          std::enable_if_t<std::is_constructible_v<T, Args...>, int> = 0>
-[[nodiscard]] constexpr Optional<T> make_optional(Args&&... args) noexcept {
+template <typename T, typename... Args>
+[[nodiscard]] constexpr std::enable_if_t<std::is_constructible_v<T, Args...>,
+                                         Optional<T>>
+make_optional(Args&&... args) noexcept {
   return Optional<T>(std::in_place, std::forward<Args>(args)...);
 }
 
 /// Creates a `pw::Optional<T>` constructed in-place from `ilist` and `args...`.
-template <typename T,
-          typename U,
-          typename... Args,
-          std::enable_if_t<
-              std::is_constructible_v<T, std::initializer_list<U>&, Args...>,
-              int> = 0>
-[[nodiscard]] constexpr Optional<T> make_optional(
-    std::initializer_list<U> ilist, Args&&... args) noexcept {
+template <typename T, typename U, typename... Args>
+[[nodiscard]] constexpr std::enable_if_t<
+    std::is_constructible_v<T, std::initializer_list<U>&, Args...>,
+    Optional<T>>
+make_optional(std::initializer_list<U> ilist, Args&&... args) noexcept {
   return Optional<T>(std::in_place, ilist, std::forward<Args>(args)...);
 }
 
@@ -1383,12 +1496,31 @@ constexpr bool operator>=(const Result<T, HasValue>& lhs,
              : (!lhs.has_value() ? false : static_cast<bool>(*lhs >= *rhs));
 }
 
+#ifdef __cpp_lib_three_way_comparison
+/// Three-way comparison between two `Optional` (`Result<T, HasValue>`) objects.
+template <typename T, std::three_way_comparable_with<T> U>
+constexpr std::compare_three_way_result_t<T, U> operator<=>(
+    const Result<T, HasValue>& lhs, const Result<U, HasValue>& rhs) noexcept {
+  return lhs.has_value() && rhs.has_value()
+             ? *lhs <=> *rhs
+             : lhs.has_value() <=> rhs.has_value();
+}
+#endif  // __cpp_lib_three_way_comparison
+
 /// Compares an `Optional<T>` (`Result<T, HasValue>`) with `std::nullopt`.
 template <typename T>
 constexpr bool operator==(const Result<T, HasValue>& lhs,
                           std::nullopt_t) noexcept {
   return !lhs.has_value();
 }
+#ifdef __cpp_lib_three_way_comparison
+/// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
+template <typename T>
+constexpr std::strong_ordering operator<=>(const Result<T, HasValue>& lhs,
+                                           std::nullopt_t) noexcept {
+  return lhs.has_value() <=> false;
+}
+#else
 /// @copydoc operator==(const Result<T, HasValue>&, std::nullopt_t)
 template <typename T>
 constexpr bool operator==(std::nullopt_t,
@@ -1451,6 +1583,180 @@ constexpr bool operator>=(std::nullopt_t,
                           const Result<T, HasValue>& rhs) noexcept {
   return !rhs.has_value();
 }
+#endif  // __cpp_lib_three_way_comparison
+
+/// Compares an `Optional<T>` (`Result<T, HasValue>`) with a `std::optional<U>`.
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsEqualityComparable<T, U>::value,
+                           int> = 0>
+constexpr bool operator==(const Result<T, HasValue>& lhs,
+                          const std::optional<U>& rhs) noexcept {
+  if (lhs.has_value() != rhs.has_value()) {
+    return false;
+  }
+  return !lhs.has_value() || static_cast<bool>(*lhs == *rhs);
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsEqualityComparable<U, T>::value,
+                           int> = 0>
+constexpr bool operator==(const std::optional<U>& lhs,
+                          const Result<T, HasValue>& rhs) noexcept {
+  if (lhs.has_value() != rhs.has_value()) {
+    return false;
+  }
+  return !lhs.has_value() || static_cast<bool>(*lhs == *rhs);
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsNotEqualComparable<T, U>::value,
+                           int> = 0>
+constexpr bool operator!=(const Result<T, HasValue>& lhs,
+                          const std::optional<U>& rhs) noexcept {
+  if (lhs.has_value() != rhs.has_value()) {
+    return true;
+  }
+  if (!lhs.has_value()) {
+    return false;
+  }
+  if constexpr (internal_result::IsInequalityComparable<T, U>::value) {
+    return static_cast<bool>(*lhs != *rhs);
+  } else {
+    return !static_cast<bool>(*lhs == *rhs);
+  }
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsNotEqualComparable<U, T>::value,
+                           int> = 0>
+constexpr bool operator!=(const std::optional<U>& lhs,
+                          const Result<T, HasValue>& rhs) noexcept {
+  if (lhs.has_value() != rhs.has_value()) {
+    return true;
+  }
+  if (!lhs.has_value()) {
+    return false;
+  }
+  if constexpr (internal_result::IsInequalityComparable<U, T>::value) {
+    return static_cast<bool>(*lhs != *rhs);
+  } else {
+    return !static_cast<bool>(*lhs == *rhs);
+  }
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsLessThanComparable<T, U>::value,
+                           int> = 0>
+constexpr bool operator<(const Result<T, HasValue>& lhs,
+                         const std::optional<U>& rhs) noexcept {
+  return !rhs.has_value()
+             ? false
+             : (!lhs.has_value() ? true : static_cast<bool>(*lhs < *rhs));
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsLessThanComparable<U, T>::value,
+                           int> = 0>
+constexpr bool operator<(const std::optional<U>& lhs,
+                         const Result<T, HasValue>& rhs) noexcept {
+  return !rhs.has_value()
+             ? false
+             : (!lhs.has_value() ? true : static_cast<bool>(*lhs < *rhs));
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsLessEqualComparable<T, U>::value,
+                           int> = 0>
+constexpr bool operator<=(const Result<T, HasValue>& lhs,
+                          const std::optional<U>& rhs) noexcept {
+  return !lhs.has_value()
+             ? true
+             : (!rhs.has_value() ? false : static_cast<bool>(*lhs <= *rhs));
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <typename T,
+          typename U,
+          std::enable_if_t<internal_result::IsLessEqualComparable<U, T>::value,
+                           int> = 0>
+constexpr bool operator<=(const std::optional<U>& lhs,
+                          const Result<T, HasValue>& rhs) noexcept {
+  return !lhs.has_value()
+             ? true
+             : (!rhs.has_value() ? false : static_cast<bool>(*lhs <= *rhs));
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <
+    typename T,
+    typename U,
+    std::enable_if_t<internal_result::IsGreaterThanComparable<T, U>::value,
+                     int> = 0>
+constexpr bool operator>(const Result<T, HasValue>& lhs,
+                         const std::optional<U>& rhs) noexcept {
+  return !lhs.has_value()
+             ? false
+             : (!rhs.has_value() ? true : static_cast<bool>(*lhs > *rhs));
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <
+    typename T,
+    typename U,
+    std::enable_if_t<internal_result::IsGreaterThanComparable<U, T>::value,
+                     int> = 0>
+constexpr bool operator>(const std::optional<U>& lhs,
+                         const Result<T, HasValue>& rhs) noexcept {
+  return !lhs.has_value()
+             ? false
+             : (!rhs.has_value() ? true : static_cast<bool>(*lhs > *rhs));
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <
+    typename T,
+    typename U,
+    std::enable_if_t<internal_result::IsGreaterEqualComparable<T, U>::value,
+                     int> = 0>
+constexpr bool operator>=(const Result<T, HasValue>& lhs,
+                          const std::optional<U>& rhs) noexcept {
+  return !rhs.has_value()
+             ? true
+             : (!lhs.has_value() ? false : static_cast<bool>(*lhs >= *rhs));
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <
+    typename T,
+    typename U,
+    std::enable_if_t<internal_result::IsGreaterEqualComparable<U, T>::value,
+                     int> = 0>
+constexpr bool operator>=(const std::optional<U>& lhs,
+                          const Result<T, HasValue>& rhs) noexcept {
+  return !rhs.has_value()
+             ? true
+             : (!lhs.has_value() ? false : static_cast<bool>(*lhs >= *rhs));
+}
+#ifdef __cpp_lib_three_way_comparison
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <typename T, std::three_way_comparable_with<T> U>
+constexpr std::compare_three_way_result_t<T, U> operator<=>(
+    const Result<T, HasValue>& lhs, const std::optional<U>& rhs) noexcept {
+  return lhs.has_value() && rhs.has_value()
+             ? *lhs <=> *rhs
+             : lhs.has_value() <=> rhs.has_value();
+}
+/// @copydoc operator==(const Result<T, HasValue>&, const std::optional<U>&)
+template <typename T, std::three_way_comparable_with<T> U>
+constexpr std::compare_three_way_result_t<U, T> operator<=>(
+    const std::optional<U>& lhs, const Result<T, HasValue>& rhs) noexcept {
+  return lhs.has_value() && rhs.has_value()
+             ? *lhs <=> *rhs
+             : lhs.has_value() <=> rhs.has_value();
+}
+#endif  // __cpp_lib_three_way_comparison
 
 /// Checks equality of a `Result<T, StatusType>` and a value. A `Result`
 /// without a value never compares equal to a value. This overload is only
@@ -1623,6 +1929,24 @@ constexpr bool operator>=(const U& lhs,
                           const Result<T, HasValue>& rhs) noexcept {
   return rhs.has_value() ? static_cast<bool>(lhs >= *rhs) : true;
 }
+
+#ifdef __cpp_lib_three_way_comparison
+/// Three-way comparison between an `Optional<T>` (`Result<T, HasValue>`) and a
+/// value `U`.
+///
+/// `std::three_way_comparable_with` is checked last so that the
+/// `kIsValueComparable` exclusions (`Result`, `std::optional`,
+/// `std::nullopt_t`) short-circuit first; otherwise checking `U <=> U` for `U =
+/// Optional<V>` would recurse into this overload's own constraints.
+template <typename T, typename U>
+  requires(
+      internal_result::kIsValueComparable<T, U, HasValue, std::true_type> &&
+      std::three_way_comparable_with<T, U>)
+constexpr std::compare_three_way_result_t<T, U> operator<=>(
+    const Result<T, HasValue>& lhs, const U& rhs) noexcept {
+  return lhs.has_value() ? *lhs <=> rhs : std::strong_ordering::less;
+}
+#endif  // __cpp_lib_three_way_comparison
 
 /// @endmodule
 

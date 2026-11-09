@@ -70,6 +70,9 @@ inline constexpr InvokeTag kInvokeTag{};
 struct FromResultTag {};
 inline constexpr FromResultTag kFromResultTag{};
 
+struct FromStdOptionalTag {};
+inline constexpr FromStdOptionalTag kFromStdOptionalTag{};
+
 // Casts `value` to `const Val&` if `Owner` is an lvalue reference, or `Val&&`
 // otherwise (preserving `const` if `Val` itself is `const`).
 template <typename Owner, typename Val>
@@ -244,6 +247,17 @@ struct ResultStorageBase : ResultBase<T, StatusType> {
     }
   }
 
+  template <typename Other>
+  explicit constexpr ResultStorageBase(FromStdOptionalTag,
+                                       Other&& other) noexcept
+      : Base(kEmptyTag,
+             status_type(other.has_value() ? HasValueCode::kHasValue
+                                           : HasValueCode::kEmpty)) {
+    if (other.has_value()) {
+      MakeValue(*std::forward<Other>(other));
+    }
+  }
+
   template <typename... Args>
   constexpr void MakeValue(Args&&... args) noexcept {
 #if _PW_RESULT_CONSTEXPR_CONSTRUCT_AT
@@ -274,6 +288,16 @@ struct ResultStorageBase : ResultBase<T, StatusType> {
       status_type error_status = CopyOrMove<Other>(other.status);
       this->Clear();
       this->status = std::move(error_status);
+    }
+  }
+
+  template <typename Other>
+  constexpr void AssignFromStdOptional(Other&& other) noexcept {
+    if (other.has_value()) {
+      Assign(*std::forward<Other>(other));
+    } else {
+      this->Clear();
+      this->status = status_type(HasValueCode::kEmpty);
     }
   }
 
@@ -541,6 +565,12 @@ constexpr bool IsOptional = false;
 template <typename T>
 constexpr bool IsOptional<Result<T, HasValue>> = true;
 
+// This trait is for determining if a given type is a std::optional.
+template <typename T>
+constexpr bool IsStdOptional = false;
+template <typename T>
+constexpr bool IsStdOptional<std::optional<T>> = true;
+
 // Detects whether `T` is constructible or convertible from `Result<U,
 // StatusType>`. When `Result<T, StatusType>` is `Optional<cv bool>`, conversion
 // from `Optional<U>` (e.g., via `Optional`'s `explicit operator bool()`) is
@@ -567,6 +597,30 @@ using IsConstructibleOrConvertibleOrAssignableFromResult =
                      std::is_assignable<T&, const Result<U, StatusType>&>,
                      std::is_assignable<T&, Result<U, StatusType>&&>,
                      std::is_assignable<T&, const Result<U, StatusType>&&>>;
+
+// Detects whether `T` is constructible or convertible from `std::optional<U>`.
+// When `T` is `cv bool`, conversion via `std::optional<U>`'s `explicit
+// operator bool()` is ignored so `Optional<bool>`'s converting constructor
+// takes precedence (see LWG 3836).
+template <typename T, typename U>
+using IsConstructibleOrConvertibleFromStdOptional = std::conjunction<
+    std::negation<std::is_same<std::remove_cv_t<T>, bool>>,
+    std::disjunction<std::is_constructible<T, std::optional<U>&>,
+                     std::is_constructible<T, const std::optional<U>&>,
+                     std::is_constructible<T, std::optional<U>&&>,
+                     std::is_constructible<T, const std::optional<U>&&>,
+                     std::is_convertible<std::optional<U>&, T>,
+                     std::is_convertible<const std::optional<U>&, T>,
+                     std::is_convertible<std::optional<U>&&, T>,
+                     std::is_convertible<const std::optional<U>&&, T>>>;
+
+template <typename T, typename U>
+using IsConstructibleOrConvertibleOrAssignableFromStdOptional =
+    std::disjunction<IsConstructibleOrConvertibleFromStdOptional<T, U>,
+                     std::is_assignable<T&, std::optional<U>&>,
+                     std::is_assignable<T&, const std::optional<U>&>,
+                     std::is_assignable<T&, std::optional<U>&&>,
+                     std::is_assignable<T&, const std::optional<U>&&>>;
 
 // Detects whether direct initializing `Result<T, StatusType>` from `U` is
 // ambiguous, i.e. when `U` is `Result<V, StatusType>` and `T` is constructible
@@ -596,10 +650,12 @@ using IsDirectInitializationValid = std::disjunction<
     std::negation<std::disjunction<
         std::is_same<Result<T, StatusType>,
                      std::remove_cv_t<std::remove_reference_t<U>>>,
-        std::conjunction<std::is_same<StatusType, HasValue>,
-                         std::is_same<std::remove_cv_t<T>, bool>,
-                         std::bool_constant<IsOptional<
-                             std::remove_cv_t<std::remove_reference_t<U>>>>>,
+        std::conjunction<
+            std::is_same<StatusType, HasValue>,
+            std::is_same<std::remove_cv_t<T>, bool>,
+            std::bool_constant<
+                IsOptional<std::remove_cv_t<std::remove_reference_t<U>>> ||
+                IsStdOptional<std::remove_cv_t<std::remove_reference_t<U>>>>>,
         std::conjunction<
             std::negation<std::is_same<std::remove_cv_t<T>, StatusType>>,
             std::disjunction<
@@ -644,10 +700,12 @@ using IsForwardingAssignmentValid = std::disjunction<
     std::negation<std::disjunction<
         std::is_same<Result<T, StatusType>,
                      std::remove_cv_t<std::remove_reference_t<U>>>,
-        std::conjunction<std::is_same<StatusType, HasValue>,
-                         std::is_same<std::remove_cv_t<T>, bool>,
-                         std::bool_constant<IsOptional<
-                             std::remove_cv_t<std::remove_reference_t<U>>>>>,
+        std::conjunction<
+            std::is_same<StatusType, HasValue>,
+            std::is_same<std::remove_cv_t<T>, bool>,
+            std::bool_constant<
+                IsOptional<std::remove_cv_t<std::remove_reference_t<U>>> ||
+                IsStdOptional<std::remove_cv_t<std::remove_reference_t<U>>>>>,
         std::conjunction<
             std::negation<std::is_same<std::remove_cv_t<T>, StatusType>>,
             std::disjunction<
@@ -687,6 +745,27 @@ inline constexpr bool kCanAssignFromResult = std::conjunction<
     std::negation<
         IsConstructibleOrConvertibleOrAssignableFromResult<T, U, StatusType>>>::
     value;
+
+template <typename T,
+          typename U,
+          typename FromRef,
+          typename StatusType,
+          bool kImplicit>
+inline constexpr bool kCanConvertFromStdOptional = std::conjunction<
+    std::is_same<StatusType, HasValue>,
+    std::is_constructible<T, FromRef>,
+    std::conditional_t<kImplicit,
+                       std::is_convertible<FromRef, T>,
+                       std::negation<std::is_convertible<FromRef, T>>>,
+    std::negation<IsConstructibleOrConvertibleFromStdOptional<T, U>>>::value;
+
+template <typename T, typename U, typename FromRef, typename StatusType>
+inline constexpr bool kCanAssignFromStdOptional = std::conjunction<
+    std::is_same<StatusType, HasValue>,
+    std::is_constructible<T, FromRef>,
+    std::is_assignable<T&, FromRef>,
+    std::negation<
+        IsConstructibleOrConvertibleOrAssignableFromStdOptional<T, U>>>::value;
 
 template <typename T, typename URef, typename StatusType, bool kImplicit>
 inline constexpr bool kCanConstructFromStatus = std::conjunction<
@@ -739,9 +818,10 @@ inline constexpr bool kCanConstructFromValue = std::conjunction<
 template <typename T, typename URef, typename StatusType>
 inline constexpr bool kCanAssignFromValue = std::conjunction<
     IsForwardingAssignmentValid<T, URef, StatusType>,
-    std::negation<std::conjunction<std::is_same<StatusType, HasValue>,
-                                   std::is_scalar<T>,
-                                   std::is_same<T, std::decay_t<URef>>>>,
+    std::negation<std::conjunction<
+        std::is_same<StatusType, HasValue>,
+        std::is_scalar<T>,
+        std::is_same<std::remove_cv_t<T>, std::decay_t<URef>>>>,
     std::is_constructible<T, URef>,
     std::is_assignable<T&, URef>,
     std::disjunction<
@@ -895,10 +975,12 @@ template <typename T,
           typename StatusType,
           typename Comp = IsEqualityComparable<T, U>>
 inline constexpr bool kIsValueComparable = std::conjunction<
-    std::bool_constant<!IsResult<U>>,
-    std::negation<
-        std::conjunction<std::is_same<StatusType, HasValue>,
-                         std::is_same<std::remove_cv_t<U>, std::nullopt_t>>>,
+    std::bool_constant<!IsResult<std::remove_cv_t<U>>>,
+    std::negation<std::conjunction<
+        std::is_same<StatusType, HasValue>,
+        std::disjunction<
+            std::is_same<std::remove_cv_t<U>, std::nullopt_t>,
+            std::bool_constant<IsStdOptional<std::remove_cv_t<U>>>>>>,
     std::disjunction<std::is_same<std::remove_cv_t<T>, StatusType>,
                      std::is_same<std::remove_cv_t<T>, std::remove_cv_t<U>>,
                      std::negation<std::is_convertible<const U&, StatusType>>>,
@@ -909,11 +991,32 @@ inline constexpr bool kIsValueComparable = std::conjunction<
             std::is_same<std::remove_cv_t<U>, typename StatusType::Code>>>,
     Comp>::value;
 
+// Checks whether `T` is a valid value type for `pw::Optional<T>` (a non-array
+// object type other than `std::in_place_t` or `std::nullopt_t`).
+template <typename T>
+inline constexpr bool kIsValidOptionalValue =
+    std::is_object_v<T> && !std::is_array_v<T> &&
+    !std::is_same_v<std::remove_cv_t<T>, std::in_place_t> &&
+    !std::is_same_v<std::remove_cv_t<T>, std::nullopt_t>;
+
 // This trait determines the return type of a given function without const,
 // volatile or reference qualifiers.
 template <typename Fn, typename... Args>
 using InvokeResultType = std::remove_cv_t<
     std::remove_reference_t<std::invoke_result_t<Fn, Args...>>>;
+
+// Determines the `Result` value type produced by `transform`. `Optional<T>`
+// (`StatusType == HasValue`) matches `std::optional::transform`, rejecting
+// reference and `void` return types via `static_assert` in `Monadic::Transform`
+// while substituting `Empty` here to avoid secondary instantiation errors.
+template <typename StatusType, typename Fn, typename... Args>
+using TransformResultType = std::conditional_t<
+    std::is_same_v<StatusType, HasValue>,
+    std::conditional_t<kIsValidOptionalValue<
+                           std::remove_cv_t<std::invoke_result_t<Fn, Args...>>>,
+                       std::remove_cv_t<std::invoke_result_t<Fn, Args...>>,
+                       Empty>,
+    InvokeResultType<Fn, Args...>>;
 
 // Shared implementation for `and_then` and `transform` across `Result<T>` and
 // `Result<void>`. Befriended by `Result` to access private tag constructors.
@@ -951,17 +1054,43 @@ struct Monadic {
                                                      StatusArg&& status,
                                                      Fn&& function,
                                                      ValArgs&&... args) {
-    if (!is_ok) {
-      return Result<Ret, StatusType>(kErrorTag,
-                                     std::forward<StatusArg>(status));
-    }
-    if constexpr (std::is_void_v<Ret>) {
-      cpp20::invoke(std::forward<Fn>(function), std::forward<ValArgs>(args)...);
-      return Result<void, StatusType>(std::in_place);
+    if constexpr (std::is_same_v<StatusType, HasValue>) {
+      using RawRet = std::invoke_result_t<Fn, ValArgs...>;
+      using ValueRet = std::remove_cv_t<RawRet>;
+      static_assert(
+          !std::is_reference_v<RawRet>,
+          "pw::Optional::transform callback cannot return a reference");
+      static_assert(!std::is_void_v<RawRet>,
+                    "pw::Optional::transform callback cannot return void");
+      static_assert(kIsValidOptionalValue<ValueRet>,
+                    "pw::Optional::transform callback must return an object "
+                    "type other than array, std::in_place_t, or "
+                    "std::nullopt_t");
+      if constexpr (!kIsValidOptionalValue<ValueRet>) {
+        return Result<Ret, StatusType>();
+      } else {
+        if (!is_ok) {
+          return Result<Ret, StatusType>(kErrorTag,
+                                         std::forward<StatusArg>(status));
+        }
+        return Result<Ret, StatusType>(kInvokeTag,
+                                       std::forward<Fn>(function),
+                                       std::forward<ValArgs>(args)...);
+      }
     } else {
-      return Result<Ret, StatusType>(kInvokeTag,
-                                     std::forward<Fn>(function),
-                                     std::forward<ValArgs>(args)...);
+      if (!is_ok) {
+        return Result<Ret, StatusType>(kErrorTag,
+                                       std::forward<StatusArg>(status));
+      }
+      if constexpr (std::is_void_v<Ret>) {
+        cpp20::invoke(std::forward<Fn>(function),
+                      std::forward<ValArgs>(args)...);
+        return Result<void, StatusType>(std::in_place);
+      } else {
+        return Result<Ret, StatusType>(kInvokeTag,
+                                       std::forward<Fn>(function),
+                                       std::forward<ValArgs>(args)...);
+      }
     }
   }
 };

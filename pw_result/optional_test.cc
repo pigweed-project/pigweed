@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <optional>
 #include <string_view>
 #include <type_traits>
@@ -735,6 +736,495 @@ PW_CONSTEXPR_TEST(OptionalTest, AdlDoesNotRecurseOnAssociatedResultType, {
   PW_TEST_EXPECT_FALSE(nullptr != opt_cb);
 });
 
+static_assert(sizeof(HasValue) == 1);
+static_assert(noexcept(HasValue()));
+static_assert(noexcept(std::declval<const Optional<int>&>().std_optional()));
+static_assert(noexcept(std::declval<Optional<int>&&>().std_optional()));
+
+PW_CONSTEXPR_TEST(OptionalTest, HasValueStatus, {
+  constexpr HasValue present;
+  constexpr HasValue empty(HasValue::kEmpty);
+  constexpr HasValue from_code(HasValue::kHasValue);
+
+  PW_TEST_EXPECT_TRUE(present.ok());
+  PW_TEST_EXPECT_EQ(present.code(), HasValue::kHasValue);
+  PW_TEST_EXPECT_EQ(std::string_view(present.str()), "HAS_VALUE");
+
+  PW_TEST_EXPECT_FALSE(empty.ok());
+  PW_TEST_EXPECT_EQ(empty.code(), HasValue::kEmpty);
+  PW_TEST_EXPECT_EQ(std::string_view(empty.str()), "EMPTY");
+
+  PW_TEST_EXPECT_EQ(present, from_code);
+  PW_TEST_EXPECT_NE(present, empty);
+});
+
+struct MoveOnlyPair {
+  TrivialMoveOnly first;
+  int second;
+};
+
+PW_CONSTEXPR_TEST(OptionalTest, ConstMoveOnlyAggregateBraceInit, {
+  // LWG 3887: Defaulting U = std::remove_cv_t<T> on Result(U&&) allows
+  // brace-initializing Optional<const T> for move-only aggregates.
+  Optional<const MoveOnlyPair> pair({TrivialMoveOnly(7), 8});
+  PW_TEST_EXPECT_TRUE(pair.has_value());
+  PW_TEST_EXPECT_EQ(pair->first.value, 7);
+  PW_TEST_EXPECT_EQ(pair->second, 8);
+
+  Optional<const MoveOnlyPair> copy_list = {{TrivialMoveOnly(9), 10}};
+  PW_TEST_EXPECT_TRUE(copy_list.has_value());
+  PW_TEST_EXPECT_EQ(copy_list->first.value, 9);
+  PW_TEST_EXPECT_EQ(copy_list->second, 10);
+
+  pw::Result<const MoveOnlyPair> res_pair({TrivialMoveOnly(11), 12});
+  PW_TEST_EXPECT_TRUE(res_pair.has_value());
+  PW_TEST_EXPECT_EQ(res_pair->first.value, 11);
+  PW_TEST_EXPECT_EQ(res_pair->second, 12);
+});
+
+TEST(OptionalTest, VolatileScalarBraceAssignmentResetsToNullopt) {
+  Optional<volatile int> vol = 5;
+  EXPECT_TRUE(vol.has_value());
+  EXPECT_EQ(*vol, 5);
+  vol = {};
+  EXPECT_FALSE(vol.has_value());
+}
+
+template <typename T, typename = void>
+struct CanMakeOptional : std::false_type {};
+
+template <typename T>
+struct CanMakeOptional<
+    T,
+    std::void_t<decltype(pw::make_optional(std::declval<T>()))>>
+    : std::true_type {};
+
+template <typename T, typename... Args>
+struct CanMakeOptionalInPlaceImpl {
+  template <typename U,
+            typename = decltype(pw::make_optional<U>(std::declval<Args>()...))>
+  static std::true_type test(int);
+  template <typename>
+  static std::false_type test(...);
+  using type = decltype(test<T>(0));
+};
+
+template <typename T, typename... Args>
+inline constexpr bool kCanMakeOptionalInPlace =
+    CanMakeOptionalInPlaceImpl<T, Args...>::type::value;
+
+static_assert(CanMakeOptional<int>::value);
+static_assert(CanMakeOptional<MoveOnly>::value);
+static_assert(!CanMakeOptional<MoveAssignNotCtor>::value);
+static_assert(kCanMakeOptionalInPlace<ExplicitConstructibleFromInt, int>);
+static_assert(
+    !kCanMakeOptionalInPlace<ExplicitConstructibleFromInt, const char*>);
+
+template <typename T, typename = void>
+struct HasStdOptionalMethod : std::false_type {};
+
+template <typename T>
+struct HasStdOptionalMethod<
+    T,
+    std::void_t<decltype(std::declval<T>().std_optional())>> : std::true_type {
+};
+
+static_assert(HasStdOptionalMethod<const Optional<int>&>::value);
+static_assert(HasStdOptionalMethod<Optional<int>&&>::value);
+static_assert(HasStdOptionalMethod<const Optional<const int>&>::value);
+static_assert(!HasStdOptionalMethod<const Optional<MoveOnly>&>::value);
+static_assert(HasStdOptionalMethod<Optional<MoveOnly>&&>::value);
+static_assert(!HasStdOptionalMethod<Optional<MoveAssignNotCtor>&&>::value);
+static_assert(!HasStdOptionalMethod<const pw::Result<int>&>::value);
+static_assert(!std::is_constructible_v<pw::Result<int>, std::optional<int>>);
+static_assert(!std::is_assignable_v<pw::Result<int>&, std::optional<int>>);
+static_assert(!std::is_assignable_v<Optional<const int>&, std::optional<int>>);
+static_assert(
+    !std::is_constructible_v<Optional<bool>, std::optional<Copyable>>);
+static_assert(!std::is_constructible_v<Optional<bool>, Optional<Copyable>>);
+static_assert(!std::is_assignable_v<Optional<bool>&, std::optional<Copyable>>);
+static_assert(!std::is_assignable_v<Optional<bool>&, Optional<Copyable>>);
+
+struct ExplicitFalse {
+  explicit constexpr operator bool() const noexcept { return false; }
+};
+
+PW_CONSTEXPR_TEST(OptionalTest, ToStdOptionalConstexpr, {
+  std::optional<int> from_val = Optional<int>(42).std_optional();
+  std::optional<int> from_empty = Optional<int>().std_optional();
+  PW_TEST_EXPECT_TRUE(from_val.has_value());
+  PW_TEST_EXPECT_EQ(*from_val, 42);
+  PW_TEST_EXPECT_FALSE(from_empty.has_value());
+
+  const Optional<const int> const_opt = 77;
+  std::optional<int> from_const = const_opt.std_optional();
+  PW_TEST_EXPECT_TRUE(from_const.has_value());
+  PW_TEST_EXPECT_EQ(*from_const, 77);
+
+  std::optional<bool> std_bool_false = Optional<bool>(false).std_optional();
+  PW_TEST_EXPECT_TRUE(std_bool_false.has_value());
+  PW_TEST_EXPECT_FALSE(*std_bool_false);
+
+  std::optional<bool> std_bool_empty = Optional<bool>().std_optional();
+  PW_TEST_EXPECT_FALSE(std_bool_empty.has_value());
+});
+
+PW_CONSTEXPR_TEST_IF_CPP20(OptionalTest, StdOptionalConversionConstexpr, {
+  constexpr std::optional<int> std_val = 42;
+  constexpr std::optional<int> std_empty = std::nullopt;
+
+  Optional<int> from_val = std_val;
+  Optional<int> from_empty = std_empty;
+  PW_TEST_EXPECT_TRUE(from_val.has_value());
+  PW_TEST_EXPECT_EQ(*from_val, 42);
+  PW_TEST_EXPECT_FALSE(from_empty.has_value());
+
+  Optional<long> widen = std_val;
+  PW_TEST_EXPECT_TRUE(widen.has_value());
+  PW_TEST_EXPECT_EQ(*widen, 42L);
+
+  Optional<ConvertibleFromInt> implicit_conv = std_val;
+  PW_TEST_EXPECT_TRUE(implicit_conv.has_value());
+  PW_TEST_EXPECT_EQ(implicit_conv->value, 42);
+
+  Optional<ExplicitConstructibleFromInt> explicit_conv(std_val);
+  PW_TEST_EXPECT_TRUE(explicit_conv.has_value());
+  PW_TEST_EXPECT_EQ(explicit_conv->value, 42);
+
+  Optional<ExplicitConstructibleFromInt> explicit_empty(std_empty);
+  PW_TEST_EXPECT_FALSE(explicit_empty.has_value());
+
+  // Optional<bool> <-> std::optional<U> (LWG 3836)
+  Optional<bool> bool_from_zero = std::optional<int>(0);
+  PW_TEST_EXPECT_TRUE(bool_from_zero.has_value());
+  PW_TEST_EXPECT_FALSE(*bool_from_zero);
+
+  Optional<bool> bool_from_nullopt = std::optional<int>(std::nullopt);
+  PW_TEST_EXPECT_FALSE(bool_from_nullopt.has_value());
+
+  Optional<bool> bool_from_false = std::optional<bool>(false);
+  PW_TEST_EXPECT_TRUE(bool_from_false.has_value());
+  PW_TEST_EXPECT_FALSE(*bool_from_false);
+
+  Optional<bool> bool_from_explicit(
+      std::optional<ExplicitFalse>{std::in_place});
+  PW_TEST_EXPECT_TRUE(bool_from_explicit.has_value());
+  PW_TEST_EXPECT_FALSE(*bool_from_explicit);
+
+  Optional<bool> bool_from_explicit_empty(
+      std::optional<ExplicitFalse>{std::nullopt});
+  PW_TEST_EXPECT_FALSE(bool_from_explicit_empty.has_value());
+});
+
+TEST(OptionalTest, StdOptionalMoveAndAssignment) {
+  // Move construction and .std_optional() && for MoveOnly
+  std::optional<MoveOnly> std_mv(std::in_place, 55);
+  Optional<MoveOnly> pw_mv = std::move(std_mv);
+  ASSERT_TRUE(pw_mv.has_value());
+  EXPECT_EQ(pw_mv->value, 55);
+
+  std::optional<MoveOnly> round_trip = std::move(pw_mv).std_optional();
+  ASSERT_TRUE(round_trip.has_value());
+  EXPECT_EQ(round_trip->value, 55);
+
+  Optional<MoveOnly> empty_mv;
+  std::optional<MoveOnly> empty_round_trip = std::move(empty_mv).std_optional();
+  EXPECT_FALSE(empty_round_trip.has_value());
+
+  // Converting assignment across all 4 state transitions
+  Optional<long> target;
+  std::optional<int> src_empty;
+  std::optional<int> src_ten = 10;
+
+  target = src_empty;  // empty -> empty
+  EXPECT_FALSE(target.has_value());
+
+  target = src_ten;  // empty -> engaged
+  ASSERT_TRUE(target.has_value());
+  EXPECT_EQ(*target, 10L);
+
+  target = std::optional<int>(25);  // engaged -> engaged (rvalue)
+  ASSERT_TRUE(target.has_value());
+  EXPECT_EQ(*target, 25L);
+
+  target = src_empty;  // engaged -> empty
+  EXPECT_FALSE(target.has_value());
+
+  // Optional<bool> assignment from std::optional<int> (LWG 3836)
+  Optional<bool> opt_b = true;
+  opt_b = std::optional<int>(0);
+  ASSERT_TRUE(opt_b.has_value());
+  EXPECT_FALSE(*opt_b);
+  opt_b = std::optional<int>(std::nullopt);
+  EXPECT_FALSE(opt_b.has_value());
+  opt_b = std::optional<int>(3);
+  ASSERT_TRUE(opt_b.has_value());
+  EXPECT_TRUE(*opt_b);
+
+  // Nested Optional<std::optional<int>> wraps std::optional<int> as a value
+  std::optional<int> inner_empty = std::nullopt;
+  Optional<std::optional<int>> nested = inner_empty;
+  ASSERT_TRUE(nested.has_value());
+  EXPECT_FALSE(nested->has_value());
+
+  nested = std::optional<int>(99);
+  ASSERT_TRUE(nested.has_value());
+  ASSERT_TRUE(nested->has_value());
+  EXPECT_EQ(**nested, 99);
+
+  // Counter lifetime tracking across std::optional conversions
+  Counter::Reset();
+  {
+    std::optional<Counter> sc(std::in_place, 7);
+    Optional<Counter> pc = sc;
+    EXPECT_TRUE(pc.has_value());
+    pc = std::optional<Counter>();
+    EXPECT_FALSE(pc.has_value());
+    pc = std::move(sc);
+    EXPECT_TRUE(pc.has_value());
+  }
+  EXPECT_EQ(Counter::created + Counter::moved, Counter::destroyed);
+}
+
+PW_CONSTEXPR_TEST(OptionalTest, StdOptionalComparisons, {
+  Optional<int> pw_empty;
+  Optional<int> pw_one = 1;
+  Optional<int> pw_two = 2;
+  std::optional<int> std_empty;
+  std::optional<int> std_one = 1;
+  std::optional<long> std_one_long = 1L;
+  std::optional<long> std_two_long = 2L;
+  std::optional<long> std_empty_long;
+
+  // Equality & inequality in both operand orders
+  PW_TEST_EXPECT_TRUE(pw_empty == std_empty);
+  PW_TEST_EXPECT_TRUE(std_empty == pw_empty);
+  PW_TEST_EXPECT_FALSE(pw_empty != std_empty);
+  PW_TEST_EXPECT_FALSE(std_empty != pw_empty);
+  PW_TEST_EXPECT_TRUE(pw_empty == std_empty_long);
+  PW_TEST_EXPECT_TRUE(std_empty_long == pw_empty);
+
+  PW_TEST_EXPECT_FALSE(pw_empty == std_one);
+  PW_TEST_EXPECT_FALSE(std_one == pw_empty);
+  PW_TEST_EXPECT_TRUE(pw_empty != std_one);
+  PW_TEST_EXPECT_TRUE(std_one != pw_empty);
+
+  PW_TEST_EXPECT_TRUE(pw_one == std_one);
+  PW_TEST_EXPECT_TRUE(std_one == pw_one);
+  PW_TEST_EXPECT_TRUE(pw_one == std_one_long);
+  PW_TEST_EXPECT_TRUE(std_one_long == pw_one);
+  PW_TEST_EXPECT_FALSE(pw_one != std_one_long);
+  PW_TEST_EXPECT_FALSE(std_one_long != pw_one);
+
+  PW_TEST_EXPECT_TRUE(pw_one != std_two_long);
+  PW_TEST_EXPECT_TRUE(std_two_long != pw_one);
+
+  // Relational (<, <=, >, >=) in both operand orders
+  PW_TEST_EXPECT_FALSE(pw_empty < std_empty);
+  PW_TEST_EXPECT_FALSE(std_empty < pw_empty);
+  PW_TEST_EXPECT_TRUE(pw_empty <= std_empty);
+  PW_TEST_EXPECT_TRUE(std_empty <= pw_empty);
+  PW_TEST_EXPECT_FALSE(pw_empty > std_empty);
+  PW_TEST_EXPECT_FALSE(std_empty > pw_empty);
+  PW_TEST_EXPECT_TRUE(pw_empty >= std_empty);
+  PW_TEST_EXPECT_TRUE(std_empty >= pw_empty);
+
+  PW_TEST_EXPECT_TRUE(pw_empty < std_one);
+  PW_TEST_EXPECT_TRUE(pw_empty <= std_one);
+  PW_TEST_EXPECT_FALSE(pw_empty > std_one);
+  PW_TEST_EXPECT_FALSE(pw_empty >= std_one);
+
+  PW_TEST_EXPECT_FALSE(std_one < pw_empty);
+  PW_TEST_EXPECT_FALSE(std_one <= pw_empty);
+  PW_TEST_EXPECT_TRUE(std_one > pw_empty);
+  PW_TEST_EXPECT_TRUE(std_one >= pw_empty);
+
+  PW_TEST_EXPECT_TRUE(std_empty < pw_one);
+  PW_TEST_EXPECT_TRUE(std_empty <= pw_one);
+  PW_TEST_EXPECT_FALSE(std_empty > pw_one);
+  PW_TEST_EXPECT_FALSE(std_empty >= pw_one);
+
+  PW_TEST_EXPECT_TRUE(pw_one < std_two_long);
+  PW_TEST_EXPECT_TRUE(pw_one <= std_two_long);
+  PW_TEST_EXPECT_FALSE(pw_one > std_two_long);
+  PW_TEST_EXPECT_FALSE(pw_one >= std_two_long);
+
+  PW_TEST_EXPECT_FALSE(std_two_long < pw_one);
+  PW_TEST_EXPECT_FALSE(std_two_long <= pw_one);
+  PW_TEST_EXPECT_TRUE(std_two_long > pw_one);
+  PW_TEST_EXPECT_TRUE(std_two_long >= pw_one);
+
+  PW_TEST_EXPECT_TRUE(pw_two > std_one_long);
+  PW_TEST_EXPECT_TRUE(std_one_long < pw_two);
+
+  // Custom operator!= without operator==
+  Optional<CustomNotEqualOnly> ne_pw(std::in_place, CustomNotEqualOnly{1});
+  std::optional<CustomNotEqualOnly> ne_std_same(std::in_place,
+                                                CustomNotEqualOnly{1});
+  std::optional<CustomNotEqualOnly> ne_std_diff(std::in_place,
+                                                CustomNotEqualOnly{2});
+  std::optional<CustomNotEqualOnly> ne_std_empty;
+  PW_TEST_EXPECT_FALSE(ne_pw != ne_std_same);
+  PW_TEST_EXPECT_FALSE(ne_std_same != ne_pw);
+  PW_TEST_EXPECT_TRUE(ne_pw != ne_std_diff);
+  PW_TEST_EXPECT_TRUE(ne_std_diff != ne_pw);
+  PW_TEST_EXPECT_TRUE(ne_pw != ne_std_empty);
+  PW_TEST_EXPECT_TRUE(ne_std_empty != ne_pw);
+});
+
+PW_CONSTEXPR_TEST(OptionalTest, NanPartialOrderingComparisons, {
+  constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
+  Optional<float> nan_opt = kNan;
+  Optional<float> one_opt = 1.0f;
+  Optional<float> empty_opt;
+  std::optional<float> std_one = 1.0f;
+  std::optional<float> std_empty;
+
+  // Engaged NaN vs engaged value: all relational and == are false, != is true
+  PW_TEST_EXPECT_FALSE(nan_opt == one_opt);
+  PW_TEST_EXPECT_TRUE(nan_opt != one_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt < one_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt <= one_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt > one_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt >= one_opt);
+  PW_TEST_EXPECT_FALSE(one_opt < nan_opt);
+  PW_TEST_EXPECT_FALSE(one_opt <= nan_opt);
+  PW_TEST_EXPECT_FALSE(one_opt > nan_opt);
+  PW_TEST_EXPECT_FALSE(one_opt >= nan_opt);
+
+  // Engaged NaN vs itself
+  PW_TEST_EXPECT_FALSE(nan_opt == nan_opt);
+  PW_TEST_EXPECT_TRUE(nan_opt != nan_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt < nan_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt <= nan_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt > nan_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt >= nan_opt);
+
+  // Empty Optional is still strictly less than engaged NaN
+  PW_TEST_EXPECT_TRUE(empty_opt < nan_opt);
+  PW_TEST_EXPECT_TRUE(empty_opt <= nan_opt);
+  PW_TEST_EXPECT_FALSE(empty_opt > nan_opt);
+  PW_TEST_EXPECT_FALSE(empty_opt >= nan_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt < empty_opt);
+  PW_TEST_EXPECT_FALSE(nan_opt <= empty_opt);
+  PW_TEST_EXPECT_TRUE(nan_opt > empty_opt);
+  PW_TEST_EXPECT_TRUE(nan_opt >= empty_opt);
+
+  // std::nullopt vs engaged NaN
+  PW_TEST_EXPECT_TRUE(std::nullopt < nan_opt);
+  PW_TEST_EXPECT_TRUE(nan_opt > std::nullopt);
+  PW_TEST_EXPECT_FALSE(nan_opt < std::nullopt);
+
+  // Engaged NaN vs raw float
+  PW_TEST_EXPECT_FALSE(nan_opt < 1.0f);
+  PW_TEST_EXPECT_FALSE(nan_opt <= 1.0f);
+  PW_TEST_EXPECT_FALSE(nan_opt > 1.0f);
+  PW_TEST_EXPECT_FALSE(nan_opt >= 1.0f);
+  PW_TEST_EXPECT_FALSE(1.0f < nan_opt);
+  PW_TEST_EXPECT_FALSE(1.0f <= nan_opt);
+  PW_TEST_EXPECT_FALSE(1.0f > nan_opt);
+  PW_TEST_EXPECT_FALSE(1.0f >= nan_opt);
+
+  // Engaged NaN vs std::optional<float>
+  PW_TEST_EXPECT_FALSE(nan_opt < std_one);
+  PW_TEST_EXPECT_FALSE(nan_opt <= std_one);
+  PW_TEST_EXPECT_FALSE(nan_opt > std_one);
+  PW_TEST_EXPECT_FALSE(nan_opt >= std_one);
+  PW_TEST_EXPECT_FALSE(std_one < nan_opt);
+  PW_TEST_EXPECT_FALSE(std_one <= nan_opt);
+  PW_TEST_EXPECT_FALSE(std_one > nan_opt);
+  PW_TEST_EXPECT_FALSE(std_one >= nan_opt);
+  PW_TEST_EXPECT_TRUE(std_empty < nan_opt);
+  PW_TEST_EXPECT_TRUE(nan_opt > std_empty);
+});
+
+#ifdef __cpp_lib_three_way_comparison
+PW_CONSTEXPR_TEST(OptionalTest, ThreeWayComparisons, {
+  Optional<int> empty;
+  Optional<int> one = 1;
+  Optional<long> two_long = 2L;
+  std::optional<long> std_one_long = 1L;
+  std::optional<long> std_two_long = 2L;
+  std::optional<long> std_empty_long;
+
+  static_assert(
+      std::is_same_v<decltype(one <=> two_long), std::strong_ordering>);
+  static_assert(
+      std::is_same_v<decltype(one <=> std::nullopt), std::strong_ordering>);
+  static_assert(
+      std::is_same_v<decltype(std::nullopt <=> one), std::strong_ordering>);
+  static_assert(std::is_same_v<decltype(one <=> 2L), std::strong_ordering>);
+  static_assert(std::is_same_v<decltype(2L <=> one), std::strong_ordering>);
+  static_assert(
+      std::is_same_v<decltype(one <=> std_two_long), std::strong_ordering>);
+  static_assert(
+      std::is_same_v<decltype(std_two_long <=> one), std::strong_ordering>);
+
+  // Optional <=> Optional
+  PW_TEST_EXPECT_EQ(empty <=> Optional<long>(), std::strong_ordering::equal);
+  PW_TEST_EXPECT_EQ(empty <=> one, std::strong_ordering::less);
+  PW_TEST_EXPECT_EQ(one <=> empty, std::strong_ordering::greater);
+  PW_TEST_EXPECT_EQ(one <=> two_long, std::strong_ordering::less);
+  PW_TEST_EXPECT_EQ(two_long <=> one, std::strong_ordering::greater);
+  PW_TEST_EXPECT_EQ(one <=> Optional<long>(1L), std::strong_ordering::equal);
+
+  // Optional <=> std::nullopt
+  PW_TEST_EXPECT_EQ(empty <=> std::nullopt, std::strong_ordering::equal);
+  PW_TEST_EXPECT_EQ(std::nullopt <=> empty, std::strong_ordering::equal);
+  PW_TEST_EXPECT_EQ(one <=> std::nullopt, std::strong_ordering::greater);
+  PW_TEST_EXPECT_EQ(std::nullopt <=> one, std::strong_ordering::less);
+
+  // Optional <=> value
+  PW_TEST_EXPECT_EQ(empty <=> 0, std::strong_ordering::less);
+  PW_TEST_EXPECT_EQ(0 <=> empty, std::strong_ordering::greater);
+  PW_TEST_EXPECT_EQ(one <=> 1L, std::strong_ordering::equal);
+  PW_TEST_EXPECT_EQ(1L <=> one, std::strong_ordering::equal);
+  PW_TEST_EXPECT_EQ(one <=> 2L, std::strong_ordering::less);
+  PW_TEST_EXPECT_EQ(2L <=> one, std::strong_ordering::greater);
+
+  // Optional <=> std::optional
+  PW_TEST_EXPECT_EQ(empty <=> std_empty_long, std::strong_ordering::equal);
+  PW_TEST_EXPECT_EQ(std_empty_long <=> empty, std::strong_ordering::equal);
+  PW_TEST_EXPECT_EQ(empty <=> std_one_long, std::strong_ordering::less);
+  PW_TEST_EXPECT_EQ(std_one_long <=> empty, std::strong_ordering::greater);
+  PW_TEST_EXPECT_EQ(one <=> std_one_long, std::strong_ordering::equal);
+  PW_TEST_EXPECT_EQ(std_one_long <=> one, std::strong_ordering::equal);
+  PW_TEST_EXPECT_EQ(one <=> std_two_long, std::strong_ordering::less);
+  PW_TEST_EXPECT_EQ(std_two_long <=> one, std::strong_ordering::greater);
+
+  // Partial ordering with float & NaN
+  constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
+  Optional<float> nan_opt = kNan;
+  Optional<float> float_one = 1.0f;
+  Optional<float> float_empty;
+  static_assert(
+      std::is_same_v<decltype(nan_opt <=> float_one), std::partial_ordering>);
+  PW_TEST_EXPECT_EQ(nan_opt <=> float_one, std::partial_ordering::unordered);
+  PW_TEST_EXPECT_EQ(nan_opt <=> 1.0f, std::partial_ordering::unordered);
+  PW_TEST_EXPECT_EQ(1.0f <=> nan_opt, std::partial_ordering::unordered);
+  PW_TEST_EXPECT_EQ(nan_opt <=> std::optional<float>(1.0f),
+                    std::partial_ordering::unordered);
+  PW_TEST_EXPECT_EQ(float_empty <=> nan_opt, std::partial_ordering::less);
+  PW_TEST_EXPECT_EQ(nan_opt <=> float_empty, std::partial_ordering::greater);
+  PW_TEST_EXPECT_EQ(float_one <=> 1.0f, std::partial_ordering::equivalent);
+});
+#endif  // __cpp_lib_three_way_comparison
+
+PW_CONSTEXPR_TEST(OptionalTest, ResultTransformStillAllowsReferenceAndVoid, {
+  // Non-Optional pw::Result preserves reference-stripping and void transform.
+  pw::Result<int> res = 21;
+  pw::Result<int> by_ref =
+      res.transform([](const int& x) -> const int& { return x; });
+  PW_TEST_EXPECT_TRUE(by_ref.ok());
+  PW_TEST_EXPECT_EQ(*by_ref, 21);
+
+  int side_effect = 0;
+  pw::Result<void> to_void =
+      res.transform([&side_effect](int x) { side_effect = x; });
+  PW_TEST_EXPECT_TRUE(to_void.ok());
+  PW_TEST_EXPECT_EQ(side_effect, 21);
+});
+
 #if PW_NC_TEST(OptionalRejectsVoid)
 PW_NC_EXPECT("pw::Optional<void> is not supported");
 void OptionalRejectsVoid() {
@@ -759,6 +1249,13 @@ PW_NC_EXPECT_CLANG(
 PW_NC_EXPECT_GCC(
     "invalid 'static_cast' from type 'pw::Result<int>' to type 'bool'");
 bool ResultHasNoOperatorBool() { return static_cast<bool>(pw::Result<int>(1)); }
+#elif PW_NC_TEST(OptionalImplicitBoolConversionRejected)
+PW_NC_EXPECT("no viable conversion|cannot convert");
+bool OptionalImplicitBoolConversionRejected() {
+  Optional<int> opt(1);
+  bool b = opt;
+  return b;
+}
 #elif PW_NC_TEST(ResultHasNoZeroArgReset)
 PW_NC_EXPECT_CLANG("no matching member function for call to 'reset'");
 PW_NC_EXPECT_GCC("no matching function for call to");
@@ -779,6 +1276,37 @@ PW_NC_EXPECT_GCC("no matching function for call to");
 void OptionalRejectsCodeReset() {
   Optional<int> opt(1);
   opt.reset(HasValue::kEmpty);
+}
+#elif PW_NC_TEST(OptionalResetOkCodeRejected)
+PW_NC_EXPECT("Cannot set status to an OK status");
+void OptionalResetOkCodeRejected() {
+  Optional<int> opt(1);
+  opt.reset<HasValue::kHasValue>();
+}
+#elif PW_NC_TEST(OptionalTransformRejectsReference)
+PW_NC_EXPECT("pw::Optional::transform callback cannot return a reference");
+void OptionalTransformRejectsReference() {
+  Optional<int> opt(1);
+  static_cast<void>(opt.transform([](int& x) -> int& { return x; }));
+}
+#elif PW_NC_TEST(OptionalTransformRejectsConstReference)
+PW_NC_EXPECT("pw::Optional::transform callback cannot return a reference");
+void OptionalTransformRejectsConstReference() {
+  const Optional<int> opt(1);
+  static_cast<void>(
+      opt.transform([](const int& x) -> const int& { return x; }));
+}
+#elif PW_NC_TEST(OptionalTransformRejectsVoid)
+PW_NC_EXPECT("pw::Optional::transform callback cannot return void");
+void OptionalTransformRejectsVoid() {
+  Optional<int> opt(1);
+  static_cast<void>(opt.transform([](int) {}));
+}
+#elif PW_NC_TEST(ResultHasNoStdOptionalMethod)
+PW_NC_EXPECT_CLANG("no matching member function for call to 'std_optional'");
+PW_NC_EXPECT_GCC("no matching function for call to");
+bool ResultHasNoStdOptionalMethod() {
+  return pw::Result<int>(1).std_optional().has_value();
 }
 #endif  // PW_NC_TEST
 

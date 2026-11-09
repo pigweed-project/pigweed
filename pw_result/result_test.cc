@@ -2782,6 +2782,21 @@ class [[nodiscard]] NonMovableSwappableStatus final
                    NonMovableSwappableStatus&) noexcept {}
 };
 
+class [[nodiscard]] StatefulOkStatus final
+    : public StatusBase<StatefulOkStatus, HasValue::kYes> {
+ public:
+  StatefulOkStatus() noexcept : StatusBase(HasValue::kYes), id_(next_id++) {}
+  explicit constexpr StatefulOkStatus(HasValue code, uint8_t id) noexcept
+      : StatusBase(code), id_(id) {}
+
+  [[nodiscard]] constexpr uint8_t id() const noexcept { return id_; }
+
+  inline static uint8_t next_id = 1;
+
+ private:
+  uint8_t id_ = 0;
+};
+
 static_assert(std::is_swappable_v<Result<int>>);
 static_assert(std::is_nothrow_swappable_v<Result<int>>);
 static_assert(std::is_swappable_v<Result<void>>);
@@ -2888,6 +2903,26 @@ TEST(ResultOptionalAlign, SwapAllFourStates) {
   swap(v2, v2);
   EXPECT_EQ(v1.status().detail(), 55u);
   PW_TEST_EXPECT_OK(v2);
+
+  // Derived StatusType fields are preserved even on engaged (OK) statuses.
+  StatefulOkStatus::next_id = 10;
+  Result<int, StatefulOkStatus> ok_a(1);
+  Result<int, StatefulOkStatus> ok_b(2);
+  ASSERT_EQ(ok_a.status().id(), 10u);
+  ASSERT_EQ(ok_b.status().id(), 11u);
+  swap(ok_a, ok_b);
+  EXPECT_EQ(*ok_a, 2);
+  EXPECT_EQ(*ok_b, 1);
+  EXPECT_EQ(ok_a.status().id(), 11u);
+  EXPECT_EQ(ok_b.status().id(), 10u);
+
+  Result<int, StatefulOkStatus> err_c(StatefulOkStatus(HasValue::kNo, 99));
+  swap(ok_a, err_c);
+  EXPECT_FALSE(ok_a.has_value());
+  EXPECT_EQ(ok_a.status().id(), 99u);
+  PW_TEST_ASSERT_OK(err_c);
+  EXPECT_EQ(*err_c, 2);
+  EXPECT_EQ(err_c.status().id(), 11u);
 }
 
 #if _PW_RESULT_CONSTEXPR_CONSTRUCT_AT

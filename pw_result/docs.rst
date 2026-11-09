@@ -481,14 +481,29 @@ When a function or member needs to represent the presence or absence of a value
 without a ``pw::Status`` error code, use ``pw::Optional<T>`` (defined in
 ``pw_result/result.h`` as an alias for ``pw::Result<T, pw::HasValue>``).
 
-``pw::Optional<T>`` provides a ``std::optional``-compatible interface (including
-default construction to ``std::nullopt``, ``has_value()``,
-``explicit operator bool()``, ``reset()``, ``emplace()``, ``swap()``,
-``value_or()``, ``pw::make_optional()``, ``and_then()``, ``transform()``, and
-``or_else()``) while sharing ``pw::Result``'s implementation and extensions
-(such as ``ok()`` and ``PW_TRY_ASSIGN``). Unlike ``std::optional``, calling
-``value()`` on an empty ``pw::Optional`` triggers a ``PW_ASSERT`` rather than
-throwing ``std::bad_optional_access``.
+``pw::Optional<T>`` provides a ``std::optional``-compatible interface while
+sharing ``pw::Result``'s implementation and extensions (such as ``ok()`` and
+``PW_TRY_ASSIGN``). It supports:
+
+* Default construction to ``std::nullopt``, ``has_value()``,
+  ``explicit operator bool()``, ``reset()``, ``emplace()``, ``swap()``,
+  ``value_or()``, and ``pw::make_optional()``.
+* Relational and C++20 three-way (``<=>``) comparisons with other
+  ``pw::Optional`` objects, ``std::nullopt``, values, and ``std::optional``.
+* Conversion from ``std::optional<U>`` via converting constructors and
+  assignment operators, and conversion to ``std::optional`` via
+  ``std_optional()``. Conversion *to* ``std::optional`` is a named method rather
+  than a conversion operator because ``std::optional``'s own forwarding
+  constructor would take precedence in direct-initialization
+  (``std::optional<bool> s(opt)``) and construct ``std::optional<bool>`` from
+  ``explicit operator bool()``, silently producing ``has_value()`` instead of
+  the held value.
+* The monadic operations ``and_then()``, ``transform()``, and ``or_else()``.
+  Matching ``std::optional::transform``, ``pw::Optional::transform`` requires a
+  non-reference, non-``void`` return type.
+
+Unlike ``std::optional``, calling ``value()`` on an empty ``pw::Optional``
+triggers a ``PW_ASSERT`` rather than throwing ``std::bad_optional_access``.
 
 .. code-block:: cpp
 
