@@ -19,6 +19,7 @@ cc_library {
     name: "pw_file",
     defaults: [
         "pw_android_common_backends",
+        "pw_android_common_target_support",
         "pw_rpc_defaults",
         "pw_rpc_raw_defaults",
     ],
