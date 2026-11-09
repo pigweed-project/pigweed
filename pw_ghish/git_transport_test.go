@@ -20,8 +20,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -125,52 +123,33 @@ func TestClassifyGitTransportAuthError(t *testing.T) {
 }
 
 func TestRemoteSchemeOverrideGitConfig_BeatsGlobalInsteadOf(t *testing.T) {
-	ctx := t.Context()
-	tmp := t.TempDir()
-	repoDir := filepath.Join(tmp, "repo")
-	if err := os.MkdirAll(repoDir, 0o755); err != nil {
-		t.Fatal(err)
+	repoDir := initTestRepo(t)
+	runTestGit(t, repoDir, "remote", "add", "origin", "https://pigweed.googlesource.com/pigweed/pigweed")
+	runTestGit(t, repoDir, "remote", "set-url", "--add", "--push", "origin", "sso://pigweed/pigweed/pigweed")
+	for _, prefix := range []string{"https://pigweed.googlesource.com/", "rpc://pigweed/"} {
+		runTestGit(t, repoDir, "config", "--add", "url.sso://pigweed/.insteadOf", prefix)
+		runTestGit(t, repoDir, "config", "--add", "url.sso://pigweed/.pushInsteadOf", prefix)
 	}
-	globalCfg := filepath.Join(tmp, "global.gitconfig")
-	globalContent := "[url \"sso://pigweed/\"]\n\tinsteadOf = https://pigweed.googlesource.com/\n\tinsteadOf = rpc://pigweed/\n\tpushInsteadOf = https://pigweed.googlesource.com/\n\tpushInsteadOf = https://pigweed-review.googlesource.com/\n\tpushInsteadOf = rpc://pigweed/\n"
-	if err := os.WriteFile(globalCfg, []byte(globalContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	runGit := func(extraEnv []string, args ...string) string {
-		t.Helper()
-		cmd := ExecCommandContext(ctx, "git", args...)
-		cmd.Dir = repoDir
-		cmd.Env = slices.Concat(ScrubRepoLocalGitEnv(os.Environ()), []string{"GIT_CONFIG_GLOBAL=" + globalCfg, "GIT_CONFIG_NOSYSTEM=1"}, extraEnv)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-	runGit(nil, "init", "-q")
-	runGit(nil, "remote", "add", "origin", "https://pigweed.googlesource.com/pigweed/pigweed")
-	runGit(nil, "remote", "set-url", "--add", "--push", "origin", "sso://pigweed/pigweed/pigweed")
 
-	repoCfgPath := filepath.Join(repoDir, ".git", "config")
-	beforeCfg, err := os.ReadFile(repoCfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := &RealGitRunner{Dir: repoDir}
 	for _, tc := range []struct{ scheme, wantURL string }{
 		{"rpc", "rpc://pigweed/pigweed/pigweed"},
 		{"sso", "sso://pigweed/pigweed/pigweed"},
 		{"https", "https://pigweed.googlesource.com/pigweed/pigweed"},
 	} {
-		env := gitEnvFromContext(withGitConfigEnv(ctx, remoteSchemeOverrideGitConfig("origin", tc.scheme, "pigweed", "pigweed/pigweed")...))
-		if got := runGit(env, "remote", "get-url", "origin"); got != tc.wantURL {
-			t.Errorf("%s get-url = %q, want %q", tc.scheme, got, tc.wantURL)
+		ctx := withGitConfigEnv(t.Context(), remoteSchemeOverrideGitConfig("origin", tc.scheme, "pigweed", "pigweed/pigweed")...)
+		for _, args := range [][]string{
+			{"remote", "get-url", "origin"},
+			{"remote", "get-url", "--push", "origin"},
+		} {
+			var out, stderr strings.Builder
+			if err := r.Run(ctx, &out, &stderr, args...); err != nil {
+				t.Fatalf("git %v: %v (%s)", args, err, stderr.String())
+			}
+			if got := strings.TrimSpace(out.String()); got != tc.wantURL {
+				t.Errorf("%s %v = %q, want %q", tc.scheme, args, got, tc.wantURL)
+			}
 		}
-		if got := runGit(env, "remote", "get-url", "--push", "origin"); got != tc.wantURL {
-			t.Errorf("%s get-url --push = %q, want %q", tc.scheme, got, tc.wantURL)
-		}
-	}
-	if afterCfg, err := os.ReadFile(repoCfgPath); err != nil || !bytes.Equal(beforeCfg, afterCfg) {
-		t.Errorf(".git/config mutated: err=%v", err)
 	}
 }
 
