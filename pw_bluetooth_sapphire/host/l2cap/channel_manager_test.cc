@@ -804,7 +804,9 @@ class ChannelManagerMockAclChannelTest : public TestingBase {
     });
   }
 
-  void OpenInboundErtmChannel(ChannelCallback channel_cb) {
+  void OpenInboundErtmChannel(
+      ChannelCallback channel_callback,
+      LinkErrorCallback link_error_callback = DoNothing) {
     CommandId kPeerConnReqId = 3;
 
     l2cap::ChannelParameters chan_params;
@@ -813,8 +815,10 @@ class ChannelManagerMockAclChannelTest : public TestingBase {
     chan_params.mode = config_mode;
     chan_params.max_rx_sdu_size = l2cap::kMinACLMTU;
 
-    const auto cmd_ids = QueueRegisterACL(
-        kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+    const auto cmd_ids =
+        QueueRegisterACL(kTestHandle1,
+                         pw::bluetooth::emboss::ConnectionRole::CENTRAL,
+                         std::move(link_error_callback));
     ReceiveAclDataPacket(testing::AclExtFeaturesInfoRsp(
         cmd_ids.extended_features_id,
         kTestHandle1,
@@ -823,8 +827,10 @@ class ChannelManagerMockAclChannelTest : public TestingBase {
         cmd_ids.fixed_channels_supported_id,
         kTestHandle1,
         kFixedChannelsSupportedBitSignaling));
-    EXPECT_TRUE(chanmgr()->RegisterService(
-        bt::LinkType::kACL, kTestPsm, chan_params, std::move(channel_cb)));
+    EXPECT_TRUE(chanmgr()->RegisterService(bt::LinkType::kACL,
+                                           kTestPsm,
+                                           chan_params,
+                                           std::move(channel_callback)));
 
     const auto config_req_id = NextCommandId();
     EXPECT_ACL_PACKET_OUT_(OutboundConnectionResponse(kPeerConnReqId),
@@ -5356,6 +5362,52 @@ TEST_F(
 
   ReceiveAclDataPacket(invalid_reqseq_frame);
   RunUntilIdle();
+}
+
+// Verifies that an inbound ERTM unsegmented I-frame exceeding the local
+// channel's negotiated `max_rx_sdu_size` is dropped without delivering an SDU,
+// closes the channel, sends a Disconnection Request, and signals a link error.
+TEST_F(ChannelManagerMockAclChannelTest,
+       OversizedInboundErtmIFrameClosesChannelAndSignalsLinkError) {
+  Channel::WeakPtr channel;
+  bool link_error = false;
+  OpenInboundErtmChannel(
+      [&channel](l2cap::Channel::WeakPtr opened_channel) {
+        channel = std::move(opened_channel);
+      },
+      [&link_error] { link_error = true; });
+  ASSERT_TRUE(channel.is_alive());
+  ASSERT_EQ(kMinACLMTU, channel->max_rx_sdu_size());
+
+  bool rx_called = false;
+  bool closed_called = false;
+  ASSERT_TRUE(channel->Activate([&](ByteBufferPtr) { rx_called = true; },
+                                [&] { closed_called = true; }));
+
+  const CommandId disconn_req_id = NextCommandId();
+  EXPECT_ACL_PACKET_OUT_(OutboundDisconnectionRequest(disconn_req_id),
+                         kHighPriority);
+
+  DynamicByteBuffer oversized_payload(kMinACLMTU + 1);
+  oversized_payload.Fill('A');
+  ReceiveAclDataPacket(testing::AclIFrame(kTestHandle1,
+                                          channel->id(),
+                                          /*receive_seq_num=*/0,
+                                          /*tx_seq=*/0,
+                                          /*is_poll_response=*/false,
+                                          oversized_payload));
+  RunUntilIdle();
+
+  EXPECT_FALSE(rx_called);
+  EXPECT_TRUE(closed_called);
+  EXPECT_FALSE(channel.is_alive());
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_FALSE(link_error);
+
+  ReceiveAclDataPacket(testing::AclDisconnectionRsp(
+      disconn_req_id, kTestHandle1, kLocalId, kRemoteId));
+  RunUntilIdle();
+  EXPECT_TRUE(link_error);
 }
 
 // Verify that the ChannelImpl::Send() cap is not bypassed when the peer sends

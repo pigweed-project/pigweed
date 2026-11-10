@@ -14,6 +14,8 @@
 
 #include "pw_bluetooth_sapphire/internal/host/l2cap/enhanced_retransmission_mode_engines.h"
 
+#include "pw_bluetooth_sapphire/internal/host/l2cap/l2cap_defs.h"
+
 namespace bt::l2cap::internal {
 
 // This factory function ensures that their states are properly linked and
@@ -25,6 +27,7 @@ std::pair<std::unique_ptr<EnhancedRetransmissionModeRxEngine>,
           std::unique_ptr<EnhancedRetransmissionModeTxEngine>>
 MakeLinkedEnhancedRetransmissionModeEngines(
     ChannelId channel_id,
+    uint16_t max_rx_sdu_size,
     uint16_t max_tx_sdu_size,
     uint8_t max_transmissions,
     uint8_t n_frames_in_tx_window,
@@ -33,6 +36,8 @@ MakeLinkedEnhancedRetransmissionModeEngines(
         connection_failure_callback,
     pw::async::Dispatcher& dispatcher) {
   auto rx_engine = std::make_unique<EnhancedRetransmissionModeRxEngine>(
+      max_rx_sdu_size,
+      kMaxInboundPduPayloadSize,
       fit::bind_member(&channel, &TxEngine::TxChannel::SendFrame),
       connection_failure_callback.share());
   auto tx_engine = std::make_unique<EnhancedRetransmissionModeTxEngine>(

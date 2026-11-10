@@ -110,7 +110,9 @@ cc_library(
         "public/pw_bluetooth_sapphire/internal/host/l2cap/types.h",
     ],
     implementation_deps = [
+        "//pw_assert:check",
         "//pw_bluetooth:emboss_l2cap_frames",
+        "//pw_bytes",
         "//pw_preprocessor",
     ],
     strip_include_prefix = "public",
@@ -239,6 +241,7 @@ pw_cc_test(
         "//pw_bluetooth_sapphire/host/testing:gtest_helpers",
         "//pw_bluetooth_sapphire/host/testing:test_helpers",
         "//pw_bluetooth_sapphire/host/transport:testing",
+        "//pw_bytes",
     ],
 )
 

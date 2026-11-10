@@ -116,6 +116,8 @@ pw_source_set("l2cap") {
   ]
   deps = [
     "$dir_pw_bluetooth:emboss_l2cap_frames",
+    dir_pw_assert,
+    dir_pw_bytes,
     dir_pw_preprocessor,
   ]
 }
@@ -212,6 +214,7 @@ pw_test("l2cap_tests") {
     "$dir_pw_bluetooth_sapphire/host/testing:gtest_helpers",
     "$dir_pw_bluetooth_sapphire/host/testing:test_helpers",
     "$dir_pw_bluetooth_sapphire/host/transport:testing",
+    dir_pw_bytes,
   ]
 }
 

@@ -36,6 +36,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       std::max(provider.ConsumeIntegral<uint8_t>(), static_cast<uint8_t>(1u));
 
   uint8_t max_transmissions = provider.ConsumeIntegral<uint8_t>();
+  uint16_t max_rx_sdu_size =
+      std::max(provider.ConsumeIntegral<uint16_t>(), bt::l2cap::kMinACLMTU);
   uint16_t max_tx_sdu_size =
       std::max(provider.ConsumeIntegral<uint16_t>(), bt::l2cap::kMinACLMTU);
 
@@ -46,6 +48,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   auto [rx_engine, tx_engine] =
       bt::l2cap::internal::MakeLinkedEnhancedRetransmissionModeEngines(
           kTestChannelId,
+          max_rx_sdu_size,
           max_tx_sdu_size,
           max_transmissions,
           tx_window,

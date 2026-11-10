@@ -13,7 +13,7 @@
 // the License.
 
 #pragma once
-#include <variant>
+#include <cstdint>
 
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
 #include "pw_bluetooth_sapphire/internal/host/common/weak_self.h"
@@ -32,6 +32,8 @@ class EnhancedRetransmissionModeRxEngine final : public RxEngine {
   using ConnectionFailureCallback = fit::function<void()>;
 
   EnhancedRetransmissionModeRxEngine(
+      uint16_t max_rx_sdu_size,
+      uint16_t max_rx_pdu_payload_size,
       SendFrameCallback send_frame_callback,
       ConnectionFailureCallback connection_failure_callback);
   ~EnhancedRetransmissionModeRxEngine() override = default;
@@ -99,11 +101,17 @@ class EnhancedRetransmissionModeRxEngine final : public RxEngine {
   }
 
  private:
-  ByteBufferPtr ProcessFrame(const SimpleInformationFrameHeader, PDU);
-  ByteBufferPtr ProcessFrame(const SimpleStartOfSduFrameHeader, PDU);
-  ByteBufferPtr ProcessFrame(const SimpleSupervisoryFrame, PDU);
-  ByteBufferPtr ProcessFrame(std::monostate, PDU);
+  // Returns the SDU produced by `pdu`, or nullptr if none was produced.
+  ByteBufferPtr ProcessInformationFrame(PDU pdu);
+  void ProcessSupervisoryFrame(const PDU& pdu);
   void AdvanceSeqNum();
+  void OnFailure();
+
+  // Maximum inbound SDU size (MTU) for this channel.
+  const uint16_t max_rx_sdu_size_;
+
+  // Maximum inbound I-frame information payload size (MPS) for this channel.
+  const uint16_t max_rx_pdu_payload_size_;
 
   // We assume that the Extended Window Size option is _not_ enabled. In such
   // cases, the sequence number is a 6-bit counter that wraps on overflow. See
@@ -113,6 +121,9 @@ class EnhancedRetransmissionModeRxEngine final : public RxEngine {
   // Represents the RemoteBusy state variable (Core Spec v5.0, Vol 3, Part A,
   // Section 8.6.5.3) for whether the peer has sent a Receiver Not Ready.
   bool remote_is_busy_;
+
+  // True once a fatal channel error has been detected.
+  bool failed_ = false;
 
   SendFrameCallback send_frame_callback_;
 

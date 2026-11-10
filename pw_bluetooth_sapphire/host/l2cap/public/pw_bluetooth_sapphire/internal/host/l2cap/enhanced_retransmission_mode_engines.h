@@ -25,12 +25,11 @@ namespace bt::l2cap::internal {
 // synchronized to each other and share a |send_frame_callback|. They must be
 // run on the same thread and can be deleted in any order, but must be deleted
 // consecutively without calling their methods in between.
-//
-// The parameters are identical to the EnhancedRetransmissionTxEngine ctor.
 std::pair<std::unique_ptr<EnhancedRetransmissionModeRxEngine>,
           std::unique_ptr<EnhancedRetransmissionModeTxEngine>>
 MakeLinkedEnhancedRetransmissionModeEngines(
     ChannelId channel_id,
+    uint16_t max_rx_sdu_size,
     uint16_t max_tx_sdu_size,
     uint8_t max_transmissions,
     uint8_t n_frames_in_tx_window,

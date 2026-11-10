@@ -189,6 +189,7 @@ ChannelImpl::ChannelImpl(
     std::tie(rx_engine_, tx_engine_) =
         MakeLinkedEnhancedRetransmissionModeEngines(
             id,
+            max_rx_sdu_size(),
             max_tx_sdu_size(),
             info_.max_transmissions,
             info_.n_frames_in_tx_window,

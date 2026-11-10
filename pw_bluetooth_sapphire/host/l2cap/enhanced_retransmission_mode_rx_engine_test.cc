@@ -14,6 +14,10 @@
 
 #include "pw_bluetooth_sapphire/internal/host/l2cap/enhanced_retransmission_mode_rx_engine.h"
 
+#include <pw_bytes/endian.h>
+
+#include <optional>
+
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fragmenter.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/test_helpers.h"
 #include "pw_unit_test/framework.h"
@@ -35,12 +39,74 @@ using Engine = EnhancedRetransmissionModeRxEngine;
 void NoOpTxCallback(ByteBufferPtr) {}
 void NoOpFailureCallback() {}
 
+struct RxEngineTestFixture {
+  explicit RxEngineTestFixture(
+      uint16_t max_rx_sdu_size = kDefaultMTU,
+      uint16_t max_rx_pdu_payload_size = kMaxInboundPduPayloadSize)
+      : engine(
+            max_rx_sdu_size,
+            max_rx_pdu_payload_size,
+            [this](ByteBufferPtr) { tx_called = true; },
+            [this] { ++failure_count; }) {
+    engine.set_ack_seq_num_callback([this](uint8_t) { ack_seq_called = true; });
+    engine.set_receive_seq_num_callback([this](uint8_t seq_num, bool) {
+      receive_seq_num_called = true;
+      last_receive_seq_num = seq_num;
+    });
+  }
+
+  RxEngineTestFixture(const RxEngineTestFixture&) = delete;
+  RxEngineTestFixture& operator=(const RxEngineTestFixture&) = delete;
+  RxEngineTestFixture(RxEngineTestFixture&&) = delete;
+  RxEngineTestFixture& operator=(RxEngineTestFixture&&) = delete;
+
+  ByteBufferPtr ProcessPayload(const ByteBuffer& frame,
+                               FrameCheckSequenceOption fcs_option =
+                                   FrameCheckSequenceOption::kIncludeFcs) {
+    return engine.ProcessPdu(
+        Fragmenter(kTestHandle).BuildFrame(kTestChannelId, frame, fcs_option));
+  }
+
+  bool tx_called = false;
+  size_t failure_count = 0;
+  bool ack_seq_called = false;
+  bool receive_seq_num_called = false;
+  std::optional<uint8_t> last_receive_seq_num;
+  Engine engine;
+};
+
+DynamicByteBuffer MakeUnsegmentedIFrame(size_t payload_size,
+                                        uint8_t tx_seq = 0,
+                                        uint8_t receive_seq_num = 0,
+                                        uint8_t fill_byte = 'a') {
+  SimpleInformationFrameHeader header(tx_seq);
+  header.set_receive_seq_num(receive_seq_num);
+  DynamicByteBuffer frame(sizeof(header) + payload_size);
+  frame.Fill(fill_byte);
+  frame.WriteObj(header);
+  return frame;
+}
+
+DynamicByteBuffer MakeStartOfSduIFrame(uint16_t sdu_len,
+                                       size_t payload_size = 0,
+                                       uint8_t tx_seq = 0) {
+  SimpleStartOfSduFrameHeader header(tx_seq);
+  header.sdu_len = pw::bytes::ConvertOrderTo(cpp20::endian::little, sdu_len);
+  DynamicByteBuffer frame(sizeof(header) + payload_size);
+  frame.Fill('a');
+  frame.WriteObj(header);
+  return frame;
+}
+
 TEST(EnhancedRetransmissionModeRxEngineTest,
      ProcessPduImmediatelyReturnsDataForUnsegmentedSdu) {
   // See Core Spec, v5, Vol 3, Part A, Table 3.2 for the first two bytes.
   const StaticByteBuffer payload(0, 0, 'h', 'e', 'l', 'l', 'o');
   const ByteBufferPtr sdu =
-      Engine(NoOpTxCallback, NoOpFailureCallback)
+      Engine(kDefaultMTU,
+             kMaxInboundPduPayloadSize,
+             NoOpTxCallback,
+             NoOpFailureCallback)
           .ProcessPdu(Fragmenter(kTestHandle)
                           .BuildFrame(kTestChannelId,
                                       payload,
@@ -54,7 +120,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
   // See Core Spec, v5, Vol 3, Part A, Table 3.2 for the first two bytes.
   const StaticByteBuffer payload(0, 0);
   const ByteBufferPtr sdu =
-      Engine(NoOpTxCallback, NoOpFailureCallback)
+      Engine(kDefaultMTU,
+             kMaxInboundPduPayloadSize,
+             NoOpTxCallback,
+             NoOpFailureCallback)
           .ProcessPdu(Fragmenter(kTestHandle)
                           .BuildFrame(kTestChannelId,
                                       payload,
@@ -67,14 +136,14 @@ TEST(EnhancedRetransmissionModeRxEngineTest, ProcessPduCanHandleZeroBytePdu) {
   // See Core Spec, v5, Vol 3, Part A, Table 3.2 for the first two bytes.
   const StaticByteBuffer payload{0, 0};
 
+  RxEngineTestFixture fixture;
+
   // FCS footer is entirely omitted.
-  const ByteBufferPtr sdu =
-      Engine(NoOpTxCallback, NoOpFailureCallback)
-          .ProcessPdu(Fragmenter(kTestHandle)
-                          .BuildFrame(kTestChannelId,
-                                      payload,
-                                      FrameCheckSequenceOption::kNoFcs));
-  EXPECT_FALSE(sdu);
+  EXPECT_FALSE(
+      fixture.ProcessPayload(payload, FrameCheckSequenceOption::kNoFcs));
+  EXPECT_EQ(1u, fixture.failure_count);
+  EXPECT_FALSE(fixture.tx_called);
+  EXPECT_FALSE(fixture.receive_seq_num_called);
 }
 
 TEST(EnhancedRetransmissionModeRxEngineTest,
@@ -82,13 +151,14 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
   // See Core Spec, v5, Vol 3, Part A, Table 3.2 for the first two bytes.
   // No payload is present and only one byte of the FCS footer is present.
   const StaticByteBuffer payload{0, 0, 0};
-  const ByteBufferPtr sdu =
-      Engine(NoOpTxCallback, NoOpFailureCallback)
-          .ProcessPdu(Fragmenter(kTestHandle)
-                          .BuildFrame(kTestChannelId,
-                                      payload,
-                                      FrameCheckSequenceOption::kNoFcs));
-  EXPECT_FALSE(sdu);
+
+  RxEngineTestFixture fixture;
+
+  EXPECT_FALSE(
+      fixture.ProcessPayload(payload, FrameCheckSequenceOption::kNoFcs));
+  EXPECT_EQ(1u, fixture.failure_count);
+  EXPECT_FALSE(fixture.tx_called);
+  EXPECT_FALSE(fixture.receive_seq_num_called);
 }
 
 TEST(EnhancedRetransmissionModeRxEngineTest,
@@ -103,7 +173,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
       'l',
       'o');
   EXPECT_FALSE(
-      Engine(NoOpTxCallback, NoOpFailureCallback)
+      Engine(kDefaultMTU,
+             kMaxInboundPduPayloadSize,
+             NoOpTxCallback,
+             NoOpFailureCallback)
           .ProcessPdu(Fragmenter(kTestHandle)
                           .BuildFrame(kTestChannelId,
                                       payload,
@@ -112,7 +185,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
 
 TEST(EnhancedRetransmissionModeRxEngineTest,
      ProcessPduAdvancesSequenceNumberOnInSequenceFrame) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
 
   // Send with sequence 0.
   {
@@ -168,7 +244,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
 
 TEST(EnhancedRetransmissionModeRxEngineTest,
      ProcessPduRollsOverSequenceNumber) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
   StaticByteBuffer payload(  //
       0 << 1,                // TxSeq=0, R=0
       0,                     // SAR and ReqSeq
@@ -198,7 +277,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
 
 TEST(EnhancedRetransmissionModeRxEngineTest,
      ProcessPduDoesNotAdvanceSequenceNumberForOutOfSequencePdu) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
   const StaticByteBuffer out_of_seq(  //
       1 << 1,                         // TxSeq=1, R=0
       0,                              // SAR and ReqSeq
@@ -239,7 +321,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
   // See Core Spec, v5, Vol 3, Part A, Table 3.2 for the first two bytes.
   const StaticByteBuffer payload(0, 0, 'h', 'e', 'l', 'l', 'o');
   ASSERT_TRUE(
-      Engine(tx_callback, NoOpFailureCallback)
+      Engine(kDefaultMTU,
+             kMaxInboundPduPayloadSize,
+             tx_callback,
+             NoOpFailureCallback)
           .ProcessPdu(Fragmenter(kTestHandle)
                           .BuildFrame(kTestChannelId,
                                       payload,
@@ -263,7 +348,8 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
     ++n_acks;
   };
 
-  Engine rx_engine(tx_callback, NoOpFailureCallback);
+  Engine rx_engine(
+      kDefaultMTU, kMaxInboundPduPayloadSize, tx_callback, NoOpFailureCallback);
   // See Core Spec, v5, Vol 3, Part A, Table 3.2 for the first two bytes.
   for (size_t i = 0; i < 64; ++i) {
     const StaticByteBuffer payload(i << 1, 0, 'h', 'e', 'l', 'l', 'o');
@@ -303,7 +389,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
   // TODO(fxbug.dev/42055218): Revise this test when we start sending Reject
   // frames.
   ASSERT_FALSE(
-      Engine(tx_callback, NoOpFailureCallback)
+      Engine(kDefaultMTU,
+             kMaxInboundPduPayloadSize,
+             tx_callback,
+             NoOpFailureCallback)
           .ProcessPdu(Fragmenter(kTestHandle)
                           .BuildFrame(kTestChannelId,
                                       payload,
@@ -320,7 +409,8 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
     ++n_outbound_frames;
   };
 
-  Engine rx_engine(tx_callback, NoOpFailureCallback);
+  Engine rx_engine(
+      kDefaultMTU, kMaxInboundPduPayloadSize, tx_callback, NoOpFailureCallback);
   // Send an I-frame to advance the receiver's sequence number.
   // See Core Spec, v5, Vol 3, Part A, Table 3.2 for the first two bytes.
   const StaticByteBuffer info_frame(0, 0, 'h', 'e', 'l', 'l', 'o');
@@ -354,7 +444,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
 
 TEST(EnhancedRetransmissionModeRxEngineTest,
      ProcessPduCallsReceiveSeqNumCallback) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
 
   std::optional<uint8_t> receive_seq_num;
   std::optional<bool> receive_is_poll_response;
@@ -419,7 +512,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
 }
 
 TEST(EnhancedRetransmissionModeRxEngineTest, ProcessPduCallsAckSeqNumCallback) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
 
   std::optional<uint8_t> ack_seq_num;
   auto ack_seq_num_callback = [&ack_seq_num](uint8_t seq_num) {
@@ -444,7 +540,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest, ProcessPduCallsAckSeqNumCallback) {
 
 TEST(EnhancedRetransmissionModeRxEngineTest,
      ProcessPduCallsRemoteBusySetCallbackOnReceiverNotReady) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
 
   bool receive_seq_num_called = false;
   rx_engine.set_receive_seq_num_callback(
@@ -486,7 +585,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
 TEST(
     EnhancedRetransmissionModeRxEngineTest,
     ProcessPduCallsRemoteBusySetCallbackOnReceiverNotReadyAfterReceiverReadyClearedBusy) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
 
   const StaticByteBuffer receiver_not_ready(
       0b1 | kExtendedControlReceiverNotReadyBits, 0);
@@ -531,7 +633,10 @@ class ExtendedControlFieldBitsTest : public testing::TestWithParam<uint16_t> {};
 TEST_P(
     ExtendedControlFieldBitsTest,
     ProcessPduCallsRemoteBusyClearedCallbackOnNonRnrSFrameAfterReceiverNotReady) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
 
   bool receive_seq_num_called = false;
   int remote_busy_set_calls = 0;
@@ -603,7 +708,10 @@ INSTANTIATE_TEST_SUITE_P(EnhancedRetransmissionModeRxEngineTestNonRnrSFrames,
 TEST(
     EnhancedRetransmissionModeRxEngineTest,
     ProcessPduCallsRangeRetransmitSetCallbackThenReceiveSeqNumCallbackOnReject) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
 
   std::optional<bool> receive_is_poll_request;
   rx_engine.set_range_retransmit_set_callback(
@@ -634,7 +742,10 @@ TEST(
 TEST(
     EnhancedRetransmissionModeRxEngineTest,
     ProcessPduCallsSingleRetransmitSetCallbackThenReceiveSeqNumCallbackOnSelectiveReject) {
-  Engine rx_engine(NoOpTxCallback, NoOpFailureCallback);
+  Engine rx_engine(kDefaultMTU,
+                   kMaxInboundPduPayloadSize,
+                   NoOpTxCallback,
+                   NoOpFailureCallback);
 
   std::optional<bool> receive_is_poll_request;
   rx_engine.set_single_retransmit_set_callback(
@@ -666,7 +777,12 @@ TEST(
 TEST(EnhancedRetransmissionModeRxEngineTest,
      ProcessPduWithPollResponseAndPollRequestClosesChannel) {
   bool connection_failed = false;
-  Engine rx_engine(NoOpTxCallback, [&] { connection_failed = true; });
+  bool receive_seq_num_called = false;
+  Engine rx_engine(kDefaultMTU, kMaxInboundPduPayloadSize, NoOpTxCallback, [&] {
+    connection_failed = true;
+  });
+  rx_engine.set_receive_seq_num_callback(
+      [&](uint8_t, bool) { receive_seq_num_called = true; });
 
   // Send an RR S-frame with both poll request and response bits set.
   // See Core Spec, v5, Vol 3, Part A, Section 3.3.2, Table 3.2 for field
@@ -678,13 +794,15 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
                                        rr_frame,
                                        FrameCheckSequenceOption::kIncludeFcs));
   EXPECT_TRUE(connection_failed);
+  EXPECT_FALSE(receive_seq_num_called);
 }
 
 TEST(EnhancedRetransmissionModeRxEngineTest, DestructEngineInAckCallback) {
   std::unique_ptr<Engine> rx_engine;
   auto tx_callback = [](auto) {};
   auto ack_callback = [&](uint8_t) { rx_engine.reset(); };
-  rx_engine = std::make_unique<Engine>(tx_callback, NoOpFailureCallback);
+  rx_engine = std::make_unique<Engine>(
+      kDefaultMTU, kMaxInboundPduPayloadSize, tx_callback, NoOpFailureCallback);
   rx_engine->set_ack_seq_num_callback(ack_callback);
 
   // Send an I-frame to trigger ack_seq_num_callback.
@@ -699,7 +817,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
      DestructEngineInRemoteBusySetCallback) {
   std::unique_ptr<Engine> rx_engine;
   auto remote_busy_set_callback = [&] { rx_engine.reset(); };
-  rx_engine = std::make_unique<Engine>(NoOpTxCallback, NoOpFailureCallback);
+  rx_engine = std::make_unique<Engine>(kDefaultMTU,
+                                       kMaxInboundPduPayloadSize,
+                                       NoOpTxCallback,
+                                       NoOpFailureCallback);
   rx_engine->set_remote_busy_set_callback(remote_busy_set_callback);
 
   // Send RNR S-frame to trigger remote_busy_set_callback.
@@ -715,7 +836,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
      DestructEngineInRemoteBusyClearedCallback) {
   std::unique_ptr<Engine> rx_engine;
   auto remote_busy_cleared_callback = [&] { rx_engine.reset(); };
-  rx_engine = std::make_unique<Engine>(NoOpTxCallback, NoOpFailureCallback);
+  rx_engine = std::make_unique<Engine>(kDefaultMTU,
+                                       kMaxInboundPduPayloadSize,
+                                       NoOpTxCallback,
+                                       NoOpFailureCallback);
   rx_engine->set_remote_busy_cleared_callback(remote_busy_cleared_callback);
 
   // First set remote busy.
@@ -738,7 +862,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
      DestructEngineInRangeRetransmitSetCallback) {
   std::unique_ptr<Engine> rx_engine;
   auto range_retransmit_set_callback = [&](bool) { rx_engine.reset(); };
-  rx_engine = std::make_unique<Engine>(NoOpTxCallback, NoOpFailureCallback);
+  rx_engine = std::make_unique<Engine>(kDefaultMTU,
+                                       kMaxInboundPduPayloadSize,
+                                       NoOpTxCallback,
+                                       NoOpFailureCallback);
   rx_engine->set_range_retransmit_set_callback(range_retransmit_set_callback);
 
   // Send REJ S-frame to trigger range_retransmit_set_callback.
@@ -753,7 +880,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
      DestructEngineInSingleRetransmitSetCallback) {
   std::unique_ptr<Engine> rx_engine;
   auto single_retransmit_set_callback = [&](bool) { rx_engine.reset(); };
-  rx_engine = std::make_unique<Engine>(NoOpTxCallback, NoOpFailureCallback);
+  rx_engine = std::make_unique<Engine>(kDefaultMTU,
+                                       kMaxInboundPduPayloadSize,
+                                       NoOpTxCallback,
+                                       NoOpFailureCallback);
   rx_engine->set_single_retransmit_set_callback(single_retransmit_set_callback);
 
   // Send SREJ S-frame to trigger single_retransmit_set_callback.
@@ -769,7 +899,10 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
      DestructEngineInConnectionFailureCallback) {
   std::unique_ptr<Engine> rx_engine;
   auto connection_failure_cb = [&] { rx_engine.reset(); };
-  rx_engine = std::make_unique<Engine>(NoOpTxCallback, connection_failure_cb);
+  rx_engine = std::make_unique<Engine>(kDefaultMTU,
+                                       kMaxInboundPduPayloadSize,
+                                       NoOpTxCallback,
+                                       connection_failure_cb);
 
   // Send an S-frame with both poll request and response bits set.
   auto rr_frame = StaticByteBuffer(
@@ -778,6 +911,216 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
                             .BuildFrame(kTestChannelId,
                                         rr_frame,
                                         FrameCheckSequenceOption::kIncludeFcs));
+}
+
+// Verifies that frames shorter than an `EnhancedControlField` close the channel
+// without invoking outbound or `PassToTx` callbacks.
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     ProcessPduRejectsFrameShorterThanEnhancedControlField) {
+  for (size_t len = 0; len < sizeof(EnhancedControlField); ++len) {
+    SCOPED_TRACE(len);
+    RxEngineTestFixture fixture;
+
+    DynamicByteBuffer truncated_frame(len);
+    EXPECT_FALSE(fixture.ProcessPayload(truncated_frame,
+                                        FrameCheckSequenceOption::kNoFcs));
+    EXPECT_EQ(1u, fixture.failure_count);
+    EXPECT_FALSE(fixture.tx_called);
+    EXPECT_FALSE(fixture.receive_seq_num_called);
+  }
+}
+
+// Verifies that an S-frame longer than a supervisory frame plus FCS closes the
+// channel without invoking `PassToTx`.
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     ProcessPduRejectsSupervisoryFrameWithInvalidLength) {
+  RxEngineTestFixture fixture;
+  SimpleReceiverReadyFrame sframe;
+  StaticByteBuffer<sizeof(sframe) + 1> long_sframe;
+  long_sframe.Fill(0);
+  long_sframe.WriteObj(sframe);
+  EXPECT_FALSE(fixture.ProcessPayload(long_sframe));
+  EXPECT_EQ(1u, fixture.failure_count);
+  EXPECT_FALSE(fixture.receive_seq_num_called);
+}
+
+// Verifies that destroying the engine from the connection failure callback
+// while rejecting an S-frame with an invalid length is safe.
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     DestructEngineInConnectionFailureCallbackForInvalidSupervisoryFrame) {
+  std::unique_ptr<Engine> rx_engine;
+  auto connection_failure_cb = [&] { rx_engine.reset(); };
+  rx_engine = std::make_unique<Engine>(kDefaultMTU,
+                                       kMaxInboundPduPayloadSize,
+                                       NoOpTxCallback,
+                                       connection_failure_cb);
+
+  // RR S-frame with a trailing payload byte.
+  auto long_rr_frame = StaticByteBuffer(0b1, 0, 0);
+  EXPECT_FALSE(rx_engine->ProcessPdu(
+      Fragmenter(kTestHandle)
+          .BuildFrame(kTestChannelId,
+                      long_rr_frame,
+                      FrameCheckSequenceOption::kIncludeFcs)));
+  EXPECT_FALSE(rx_engine);
+}
+
+// Verifies `max_rx_sdu_size` handling for unsegmented I-frames: out-of-sequence
+// frames exceeding `max_rx_sdu_size` are ignored while forwarding `ReqSeq`,
+// in-sequence frames at `max_rx_sdu_size` succeed, and in-sequence frames
+// exceeding `max_rx_sdu_size` close the channel and suppress further PDUs.
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     ProcessPduEnforcesMaxRxSduSizeForInSequenceUnsegmentedIFrame) {
+  constexpr uint16_t kMtu = kMinACLMTU;
+  constexpr uint8_t kExpectedReceiveSeqNum = 5;
+  RxEngineTestFixture fixture(kMtu);
+
+  // Out-of-sequence (`tx_seq = 1` when expecting `0`) oversized I-frame does
+  // not close the channel and still forwards `ReqSeq` via `PassToTx`.
+  EXPECT_FALSE(fixture.ProcessPayload(
+      MakeUnsegmentedIFrame(kMtu + 1, /*tx_seq=*/1, kExpectedReceiveSeqNum)));
+  EXPECT_EQ(0u, fixture.failure_count);
+  EXPECT_EQ(kExpectedReceiveSeqNum, fixture.last_receive_seq_num);
+
+  // In-sequence (`tx_seq = 0`) I-frame at `max_rx_sdu_size` is accepted and
+  // advances expected `tx_seq` to `1`.
+  ByteBufferPtr sdu =
+      fixture.ProcessPayload(MakeUnsegmentedIFrame(kMtu, /*tx_seq=*/0));
+  ASSERT_TRUE(sdu);
+  EXPECT_EQ(kMtu, sdu->size());
+  EXPECT_EQ(0u, fixture.failure_count);
+
+  // In-sequence (`tx_seq = 1`) I-frame exceeding `max_rx_sdu_size` closes the
+  // channel without acknowledging or forwarding `ReqSeq`.
+  fixture.tx_called = false;
+  fixture.ack_seq_called = false;
+  fixture.receive_seq_num_called = false;
+  EXPECT_FALSE(
+      fixture.ProcessPayload(MakeUnsegmentedIFrame(kMtu + 1, /*tx_seq=*/1)));
+  EXPECT_EQ(1u, fixture.failure_count);
+  EXPECT_FALSE(fixture.tx_called);
+  EXPECT_FALSE(fixture.ack_seq_called);
+  EXPECT_FALSE(fixture.receive_seq_num_called);
+
+  // Subsequent valid frames must be ignored once the engine has failed.
+  EXPECT_FALSE(fixture.ProcessPayload(
+      MakeUnsegmentedIFrame(/*payload_size=*/2, /*tx_seq=*/1)));
+  EXPECT_EQ(1u, fixture.failure_count);
+  EXPECT_FALSE(fixture.tx_called);
+  EXPECT_FALSE(fixture.receive_seq_num_called);
+}
+
+// Verifies that an I-frame whose information payload exceeds
+// `max_rx_pdu_payload_size` closes the channel before sequence-number checking,
+// whereas an I-frame at `max_rx_pdu_payload_size` succeeds.
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     ProcessPduEnforcesMaxRxPduPayloadSizeBeforeSequenceCheck) {
+  constexpr uint16_t kMps = 64;
+  constexpr uint16_t kMtu = 128;
+  constexpr uint8_t kOutOfSeqTxSeq = 1;
+
+  // Unsegmented I-frame equal to MPS succeeds.
+  {
+    RxEngineTestFixture fixture(kMtu, kMps);
+    ByteBufferPtr sdu = fixture.ProcessPayload(MakeUnsegmentedIFrame(kMps));
+    ASSERT_TRUE(sdu);
+    EXPECT_EQ(kMps, sdu->size());
+    EXPECT_EQ(0u, fixture.failure_count);
+  }
+
+  // Out-of-sequence unsegmented I-frame exceeding MPS closes the channel
+  // without invoking `PassToTx`.
+  {
+    RxEngineTestFixture fixture(kMtu, kMps);
+    EXPECT_FALSE(fixture.ProcessPayload(
+        MakeUnsegmentedIFrame(kMps + 1, kOutOfSeqTxSeq)));
+    EXPECT_EQ(1u, fixture.failure_count);
+    EXPECT_FALSE(fixture.receive_seq_num_called);
+  }
+
+  // Out-of-sequence Start-of-SDU I-frame at MPS does not close the channel,
+  // while one exceeding MPS does.
+  {
+    RxEngineTestFixture fixture(kMtu, kMps);
+    EXPECT_FALSE(fixture.ProcessPayload(
+        MakeStartOfSduIFrame(kMtu, kMps, kOutOfSeqTxSeq)));
+    EXPECT_EQ(0u, fixture.failure_count);
+
+    EXPECT_FALSE(fixture.ProcessPayload(
+        MakeStartOfSduIFrame(kMtu, kMps + 1, kOutOfSeqTxSeq)));
+    EXPECT_EQ(1u, fixture.failure_count);
+  }
+}
+
+// Verifies that a truncated Start-of-SDU I-frame missing its complete SDU
+// length field is ignored when out of sequence and closes the channel when
+// received in sequence.
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     ProcessPduRejectsTruncatedStartOfSduFrameWhenInSequence) {
+  constexpr size_t kTruncatedHeaderLen =
+      sizeof(SimpleStartOfSduFrameHeader) - 1;
+  RxEngineTestFixture fixture;
+
+  const DynamicByteBuffer out_of_seq =
+      MakeStartOfSduIFrame(kDefaultMTU, /*payload_size=*/0, /*tx_seq=*/1);
+  EXPECT_FALSE(fixture.ProcessPayload(
+      BufferView(out_of_seq.data(), kTruncatedHeaderLen)));
+  EXPECT_EQ(0u, fixture.failure_count);
+  EXPECT_TRUE(fixture.receive_seq_num_called);
+
+  fixture.receive_seq_num_called = false;
+  const DynamicByteBuffer in_seq =
+      MakeStartOfSduIFrame(kDefaultMTU, /*payload_size=*/0, /*tx_seq=*/0);
+  EXPECT_FALSE(
+      fixture.ProcessPayload(BufferView(in_seq.data(), kTruncatedHeaderLen)));
+  EXPECT_EQ(1u, fixture.failure_count);
+  EXPECT_FALSE(fixture.receive_seq_num_called);
+}
+
+// Verifies that a Start-of-SDU I-frame whose `sdu_len` exceeds
+// `max_rx_sdu_size` closes the channel when received in sequence, but not when
+// out of sequence.
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     ProcessPduRejectsStartOfSduExceedingMaxRxSduSizeWhenInSequence) {
+  constexpr uint16_t kMtu = kMinACLMTU;
+  RxEngineTestFixture fixture(kMtu);
+
+  // Out-of-sequence Start-of-SDU exceeding MTU does not close the channel.
+  EXPECT_FALSE(fixture.ProcessPayload(
+      MakeStartOfSduIFrame(kMtu + 1, /*payload_size=*/0, /*tx_seq=*/1)));
+  EXPECT_EQ(0u, fixture.failure_count);
+
+  // In-sequence Start-of-SDU at MTU does not close the channel.
+  EXPECT_FALSE(fixture.ProcessPayload(
+      MakeStartOfSduIFrame(kMtu, /*payload_size=*/0, /*tx_seq=*/0)));
+  EXPECT_EQ(0u, fixture.failure_count);
+
+  // In-sequence Start-of-SDU exceeding MTU closes the channel.
+  fixture.receive_seq_num_called = false;
+  EXPECT_FALSE(fixture.ProcessPayload(
+      MakeStartOfSduIFrame(kMtu + 1, /*payload_size=*/0, /*tx_seq=*/0)));
+  EXPECT_EQ(1u, fixture.failure_count);
+  EXPECT_FALSE(fixture.receive_seq_num_called);
+}
+
+// Verifies that Continuation and End-of-SDU I-frames received in sequence
+// without a preceding Start-of-SDU close the channel.
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     ProcessPduRejectsUnexpectedContinuationOrEndOfSduFrame) {
+  for (auto status :
+       {SegmentationStatus::MiddleSegment, SegmentationStatus::LastSegment}) {
+    RxEngineTestFixture fixture;
+
+    SimpleInformationFrameHeader header(/*tx_seq=*/0);
+    header.set_segmentation_status(status);
+    StaticByteBuffer<sizeof(header) + 1> buf;
+    buf.WriteObj(header);
+    buf[sizeof(header)] = 'z';
+
+    EXPECT_FALSE(fixture.ProcessPayload(buf));
+    EXPECT_EQ(1u, fixture.failure_count);
+    EXPECT_FALSE(fixture.receive_seq_num_called);
+  }
 }
 
 }  // namespace

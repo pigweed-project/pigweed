@@ -56,6 +56,7 @@ TEST_F(EnhancedRetransmissionModeEnginesTest, MakeLinkedERTMEngines) {
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
                                                   kDefaultMTU,
+                                                  kDefaultMTU,
                                                   kMaxTransmissions,
                                                   kTxWindow,
                                                   channel(),
@@ -98,6 +99,7 @@ TEST_F(EnhancedRetransmissionModeEnginesTest,
   });
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
+                                                  kDefaultMTU,
                                                   kDefaultMTU,
                                                   kMaxTransmissions,
                                                   /*n_frames_in_tx_window=*/1,
@@ -160,6 +162,7 @@ TEST_F(EnhancedRetransmissionModeEnginesTest,
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
                                                   kDefaultMTU,
+                                                  kDefaultMTU,
                                                   /*max_transmissions=*/1,
                                                   kTxWindow,
                                                   channel(),
@@ -216,6 +219,7 @@ TEST_F(EnhancedRetransmissionModeEnginesTest,
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
                                                   kDefaultMTU,
+                                                  kDefaultMTU,
                                                   /*max_transmissions=*/1,
                                                   kTxWindow,
                                                   channel(),
@@ -269,6 +273,7 @@ TEST_F(EnhancedRetransmissionModeEnginesTest,
   });
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
+                                                  kDefaultMTU,
                                                   kDefaultMTU,
                                                   kMaxTransmissions,
                                                   kTxWindow,
@@ -324,6 +329,7 @@ TEST_F(EnhancedRetransmissionModeEnginesTest,
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
                                                   kDefaultMTU,
+                                                  kDefaultMTU,
                                                   kMaxTransmissions,
                                                   /*n_frames_in_tx_window=*/3,
                                                   channel(),
@@ -376,6 +382,7 @@ TEST_F(EnhancedRetransmissionModeEnginesTest,
   });
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
+                                                  kDefaultMTU,
                                                   kDefaultMTU,
                                                   kMaxTransmissions,
                                                   /*n_frames_in_tx_window=*/3,
@@ -453,6 +460,7 @@ TEST_F(EnhancedRetransmissionModeEnginesTest,
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
                                                   kDefaultMTU,
+                                                  kDefaultMTU,
                                                   kMaxTransmissions,
                                                   kTxWindow,
                                                   channel(),
@@ -510,6 +518,7 @@ TEST_F(EnhancedRetransmissionModeEnginesTest,
   });
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
+                                                  kDefaultMTU,
                                                   kDefaultMTU,
                                                   kMaxTransmissions,
                                                   kTxWindow,
@@ -575,6 +584,7 @@ TEST_F(
   });
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
+                                                  kDefaultMTU,
                                                   kDefaultMTU,
                                                   kMaxTransmissions,
                                                   kTxWindow,
@@ -661,6 +671,7 @@ TEST_F(
   });
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
+                                                  kDefaultMTU,
                                                   kDefaultMTU,
                                                   kMaxTransmissions,
                                                   kTxWindow,
@@ -761,6 +772,7 @@ TEST_F(
   auto [rx_engine, tx_engine] =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
                                                   kDefaultMTU,
+                                                  kDefaultMTU,
                                                   kMaxTransmissions,
                                                   kTxWindow,
                                                   channel(),
@@ -830,6 +842,7 @@ TEST_F(
   std::tie(rx_engine, tx_engine) =
       MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
                                                   kDefaultMTU,
+                                                  kDefaultMTU,
                                                   kMaxTransmissions,
                                                   kTxWindow,
                                                   channel(),
@@ -846,6 +859,57 @@ TEST_F(
                             .BuildFrame(kTestChannelId,
                                         receiver_ready_poll_and_final,
                                         FrameCheckSequenceOption::kIncludeFcs));
+}
+
+// Verifies that receiving an I-frame exceeding `max_rx_sdu_size` on linked
+// engines invokes `connection_failure_callback` without forwarding an invalid
+// `ReqSeq` to `TxEngine` or crashing when the callback destroys both engines.
+TEST_F(EnhancedRetransmissionModeEnginesTest,
+       OversizedInboundIFrameSynchronouslyDestroysLinkedEngines) {
+  constexpr uint16_t kRxMtu = kMinACLMTU;
+  std::unique_ptr<RxEngine> rx_engine;
+  std::unique_ptr<TxEngine> tx_engine;
+
+  size_t failure_count = 0;
+  auto failure_cb = [&] {
+    ++failure_count;
+    rx_engine.reset();
+    tx_engine.reset();
+  };
+
+  std::tie(rx_engine, tx_engine) =
+      MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
+                                                  kRxMtu,
+                                                  kDefaultMTU,
+                                                  kMaxTransmissions,
+                                                  kTxWindow,
+                                                  channel(),
+                                                  std::move(failure_cb),
+                                                  dispatcher());
+  ASSERT_TRUE(rx_engine);
+  ASSERT_TRUE(tx_engine);
+
+  int tx_count = 0;
+  channel().HandleSendFrame([&](ByteBufferPtr) { ++tx_count; });
+
+  DynamicByteBuffer oversized_iframe(sizeof(SimpleInformationFrameHeader) +
+                                     kRxMtu + 1);
+  oversized_iframe.Fill('A');
+  SimpleInformationFrameHeader header(/*tx_seq=*/0);
+  // Invalid ReqSeq = 1: would fail TxEngine too if PassToTx ran after RxEngine
+  // failure.
+  header.set_receive_seq_num(1);
+  oversized_iframe.WriteObj(header);
+
+  EXPECT_FALSE(rx_engine->ProcessPdu(
+      Fragmenter(kTestHandle)
+          .BuildFrame(kTestChannelId,
+                      oversized_iframe,
+                      FrameCheckSequenceOption::kIncludeFcs)));
+  EXPECT_EQ(1u, failure_count);
+  EXPECT_EQ(0, tx_count);
+  EXPECT_FALSE(rx_engine);
+  EXPECT_FALSE(tx_engine);
 }
 
 }  // namespace
