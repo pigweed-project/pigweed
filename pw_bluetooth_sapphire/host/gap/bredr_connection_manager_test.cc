@@ -17,6 +17,7 @@
 #include "pw_bluetooth_sapphire/internal/host/gap/bredr_connection_manager.h"
 
 #include <cpp-string/string_printf.h>
+#include <lib/fit/defer.h>
 
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
 #include "pw_bluetooth_sapphire/internal/host/common/error.h"
@@ -939,6 +940,88 @@ class BrEdrConnectionManagerTest : public TestingBase,
                           &disconnect_complete);
   }
 
+  // Queues a locally-initiated MITM-protected SSP pairing in which the
+  // controller reports a link key of |key_type| that the host is expected to
+  // reject, followed by the host disconnecting the link.
+  void QueueRejectedLinkKeyPairing(hci_spec::LinkKeyType key_type) {
+    EXPECT_CMD_PACKET_OUT(test_device(),
+                          kAuthenticationRequested,
+                          &kAuthenticationRequestedStatus,
+                          &kLinkKeyRequest);
+    EXPECT_CMD_PACKET_OUT(test_device(),
+                          kLinkKeyRequestNegativeReply,
+                          &kLinkKeyRequestNegativeReplyRsp,
+                          &kIoCapabilityRequest);
+    const auto kIoCapabilityResponse = MakeIoCapabilityResponse(
+        IoCapability::DISPLAY_YES_NO,
+        AuthenticationRequirements::MITM_GENERAL_BONDING);
+    const auto kUserConfirmationRequest = MakeUserConfirmationRequest(kPasskey);
+    EXPECT_CMD_PACKET_OUT(test_device(),
+                          MakeIoCapabilityRequestReply(
+                              IoCapability::DISPLAY_YES_NO,
+                              AuthenticationRequirements::MITM_GENERAL_BONDING),
+                          &kIoCapabilityRequestReplyRsp,
+                          &kIoCapabilityResponse,
+                          &kUserConfirmationRequest);
+    const auto kLinkKeyNotificationWithKeyType =
+        MakeLinkKeyNotification(key_type);
+    EXPECT_CMD_PACKET_OUT(test_device(),
+                          kUserConfirmationRequestReply,
+                          &kUserConfirmationRequestReplyRsp,
+                          &kSimplePairingCompleteSuccess,
+                          &kLinkKeyNotificationWithKeyType);
+    QueueDisconnection(kConnectionHandle);
+  }
+
+  // Connects an SSP-capable peer, initiates pairing that results in a link key
+  // of |key_type|, and verifies that the host rejects the key: pairing fails,
+  // the link is disconnected, and the rejected key is not bonded.
+  void PairAndExpectLinkKeyNotBonded(hci_spec::LinkKeyType key_type) {
+    QueueSuccessfulIncomingConn();
+    test_device()->SendCommandChannelPacket(kConnectionRequest);
+    RunUntilIdle();
+    EXPECT_EQ(kIncomingConnTransactions, transaction_count());
+    Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+    ASSERT_TRUE(peer);
+    ASSERT_TRUE(IsInitializing(peer));
+    ASSERT_FALSE(peer->bonded());
+
+    int bonded_callback_count = 0;
+    peer_cache()->set_peer_bonded_callback(
+        [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+    auto clear_bonded_callback =
+        fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+    FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+    connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+    pairing_delegate.SetDisplayPasskeyCallback(
+        [](PeerId, uint32_t, auto, auto confirm_cb) {
+          ASSERT_TRUE(confirm_cb);
+          confirm_cb(true);
+        });
+    // The delegate is notified of the controller's Simple Pairing Complete
+    // (success) before the host evaluates the resulting link key.
+    pairing_delegate.SetCompletePairingCallback(
+        [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
+
+    QueueRejectedLinkKeyPairing(key_type);
+
+    std::optional<hci::Result<>> pairing_status;
+    connmgr()->Pair(
+        peer->identifier(),
+        kNoSecurityRequirements,
+        [&pairing_status](hci::Result<> status) { pairing_status = status; });
+    RETURN_IF_FATAL(RunUntilIdle());
+
+    EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+    ASSERT_TRUE(pairing_status.has_value());
+    EXPECT_TRUE(pairing_status->is_error());
+    EXPECT_TRUE(IsNotConnected(peer));
+    EXPECT_FALSE(peer->bredr()->bonded());
+    EXPECT_FALSE(peer->bonded());
+    EXPECT_EQ(bonded_callback_count, 0);
+  }
+
   sm::testing::TestSecurityManagerFactory* security_manager_factory() {
     return &security_manager_factory_;
   }
@@ -1121,6 +1204,43 @@ TEST_F(BrEdrConnectionManagerTest,
   EXPECT_TRUE(IsNotConnected(peer));
 }
 
+// A link key notification that arrives while a connection request is pending,
+// before any HCI_Link_Key_Request or HCI_PIN_Code_Request has created a legacy
+// pairing state, must be rejected (not bonded) rather than crashing.
+TEST_F(BrEdrConnectionManagerTest,
+       LinkKeyNotificationDuringConnectionSetupWithoutPairingIsNotBonded) {
+  // Trigger inbound connection but don't complete the connection.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kAcceptConnectionRequest, &kAcceptConnectionRequestRsp);
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  EXPECT_EQ(1, transaction_count());
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  ASSERT_TRUE(IsInitializing(peer));
+  ASSERT_FALSE(peer->bredr()->bonded());
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  // Legacy pairing is disabled, so only non-Combination key types reach the
+  // pending connection request.
+  test_device()->SendCommandChannelPacket(kLinkKeyNotification);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(IsInitializing(peer));
+  EXPECT_FALSE(peer->bredr()->bonded());
+  EXPECT_EQ(bonded_callback_count, 0);
+
+  test_device()->SendCommandChannelPacket(kConnectionCompleteError);
+  RETURN_IF_FATAL(RunUntilIdle());
+  EXPECT_TRUE(IsNotConnected(peer));
+}
+
 // Legacy pairing requires a PIN code to be displayed for the peer to enter, so
 // this cannot happen when we do not have any display output capabilities.
 TEST_F(BrEdrConnectionManagerLegacyPairingTest,
@@ -1205,6 +1325,94 @@ TEST_F(
   ASSERT_TRUE(peer->bredr()->bonded());
 
   QueueDisconnection(kConnectionHandle);
+}
+
+// Legacy pairing must produce a Combination link key. A link key of any other
+// type is rejected by the pairing state and must not be bonded.
+TEST_F(BrEdrConnectionManagerLegacyPairingTest,
+       LegacyPairingWrongLinkKeyTypeIsNotBonded) {
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayOnly);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  // Approve pairing requests
+  pairing_delegate.SetRequestPasskeyCallback([](PeerId, auto response_cb) {
+    ASSERT_TRUE(response_cb);
+    response_cb(kDefaultPinCode);
+  });
+
+  // Complete connection and interrogation successfully.
+  QueueSuccessfulAccept();
+  QueueSuccessfulInterrogationNoSsp(kTestDevAddr, kConnectionHandle);
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+
+  RunUntilIdle();
+
+  ASSERT_EQ(kIncomingConnTransactions, transaction_count());
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  ASSERT_TRUE(IsInitializing(peer));
+  ASSERT_FALSE(peer->bredr()->bonded());
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  // Initiate pairing from the peer with an HCI_Link_Key_Request event. The
+  // controller reports an SSP key type instead of a Combination key.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kLinkKeyRequestNegativeReply,
+                        &kLinkKeyRequestNegativeReplyRsp,
+                        &kPinCodeRequest);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kPinCodeRequestReply,
+                        &kPinCodeRequestReplyRsp,
+                        &kLinkKeyNotification);
+  QueueDisconnection(kConnectionHandle);
+  test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsNotConnected(peer));
+  EXPECT_FALSE(peer->bredr()->bonded());
+  EXPECT_EQ(bonded_callback_count, 0);
+}
+
+// With legacy pairing enabled, a Combination link key notification that arrives
+// during connection setup before any HCI_Link_Key_Request or
+// HCI_PIN_Code_Request has created a legacy pairing state must be rejected (not
+// bonded) rather than crashing.
+TEST_F(BrEdrConnectionManagerLegacyPairingTest,
+       LinkKeyNotificationDuringConnectionSetupWithoutPairingIsNotBonded) {
+  // Trigger inbound connection but don't complete the connection.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kAcceptConnectionRequest, &kAcceptConnectionRequestRsp);
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  ASSERT_TRUE(IsInitializing(peer));
+  ASSERT_FALSE(peer->bredr()->bonded());
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationLegacy);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(IsInitializing(peer));
+  EXPECT_FALSE(peer->bredr()->bonded());
+  EXPECT_EQ(bonded_callback_count, 0);
+
+  test_device()->SendCommandChannelPacket(kConnectionCompleteError);
+  RETURN_IF_FATAL(RunUntilIdle());
+  EXPECT_TRUE(IsNotConnected(peer));
 }
 
 // Responding to a legacy pairing request (HCI_Link_Key_Request event) before
@@ -2494,6 +2702,90 @@ TEST_F(BrEdrConnectionManagerTest, UnbondedPeerChangeLinkKey) {
   EXPECT_EQ(kIncomingConnTransactions + 1, transaction_count());
 
   QueueDisconnection(kConnectionHandle);
+}
+
+// A link key notification that arrives before interrogation has created a
+// pairing state has nothing to evaluate it, so the key must not be bonded and
+// the link must be disconnected rather than left holding the unaccepted key.
+TEST_F(BrEdrConnectionManagerTest,
+       LinkKeyNotificationBeforePairingStateIsNotBonded) {
+  QueueSuccessfulAccept();
+  // Keep interrogation from completing so that no pairing state is created.
+  QueueIncompleteInterrogation(kTestDevAddr, kConnectionHandle);
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  ASSERT_TRUE(IsInitializing(peer));
+  ASSERT_FALSE(peer->bonded());
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  QueueDisconnection(kConnectionHandle);
+  test_device()->SendCommandChannelPacket(kLinkKeyNotification);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsNotConnected(peer));
+  EXPECT_FALSE(peer->bonded());
+  EXPECT_EQ(bonded_callback_count, 0);
+}
+
+// Currently a peer-initiated link key change on a bonded SSP link is rejected
+// by the pairing state, so the previous bond is kept rather than overwritten.
+// TODO(fxbug.dev/577226622): Update once peer-initiated link key changes on
+// bonded SSP links are accepted.
+TEST_F(BrEdrConnectionManagerTest, BondedPeerChangeLinkKeyKeepsPreviousBond) {
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+  pairing_delegate.SetDisplayPasskeyCallback(
+      [](PeerId, uint32_t, auto, auto confirm_cb) {
+        ASSERT_TRUE(confirm_cb);
+        confirm_cb(true);
+      });
+  pairing_delegate.SetCompletePairingCallback(
+      [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
+
+  QueueSuccessfulPairing();
+  std::optional<hci::Result<>> pairing_status;
+  connmgr()->Pair(
+      peer->identifier(),
+      kNoSecurityRequirements,
+      [&pairing_status](hci::Result<> status) { pairing_status = status; });
+  RETURN_IF_FATAL(RunUntilIdle());
+  ASSERT_TRUE(pairing_status.has_value());
+  ASSERT_EQ(fit::ok(), *pairing_status);
+  ASSERT_TRUE(IsConnected(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+  const sm::LTK bond_before = *peer->bredr()->link_key();
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  QueueDisconnection(kConnectionHandle);
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsNotConnected(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+  EXPECT_EQ(bond_before, *peer->bredr()->link_key());
+  EXPECT_NE(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(bonded_callback_count, 0);
 }
 
 // Test: if L2CAP gets a link error, we disconnect the connection
@@ -6096,6 +6388,12 @@ TEST_F(BrEdrConnectionManagerTest,
   ASSERT_TRUE(IsInitializing(peer));
   ASSERT_FALSE(peer->bredr()->bonded());
 
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
   // Approve pairing requests
   pairing_delegate.SetDisplayPasskeyCallback(
       [](PeerId, uint32_t, auto, auto confirm_cb) {
@@ -6129,6 +6427,34 @@ TEST_F(BrEdrConnectionManagerTest,
   // type (kUnauthenticatedCombination256 or kAuthenticatedCombination256).
   QueueDisconnection(kConnectionHandle);
   RETURN_IF_FATAL(RunUntilIdle());
+
+  // The rejected (downgraded) link key must not be bonded or reported as a new
+  // bond, otherwise it would be persisted and trusted on reconnection.
+  EXPECT_TRUE(IsNotConnected(peer));
+  EXPECT_FALSE(peer->bredr()->bonded());
+  EXPECT_EQ(bonded_callback_count, 0);
+}
+
+// Locally-initiated MITM-protected pairing where the controller reports an
+// unauthenticated link key. The key is rejected and must not be bonded.
+TEST_F(BrEdrConnectionManagerTest,
+       UnauthenticatedLinkKeyAfterMitmPairingIsNotBonded) {
+  PairAndExpectLinkKeyNotBonded(
+      hci_spec::LinkKeyType::kUnauthenticatedCombination192);
+}
+
+// Debug Combination link keys are publicly known and must never be bonded.
+TEST_F(BrEdrConnectionManagerTest, DebugCombinationLinkKeyIsNotBonded) {
+  PairAndExpectLinkKeyNotBonded(hci_spec::LinkKeyType::kDebugCombination);
+}
+
+// In Secure Connections Only mode, a non-Secure Connections link key is
+// rejected and must not be bonded.
+TEST_F(BrEdrConnectionManagerTest,
+       SecureConnectionsOnlyRejectedLinkKeyIsNotBonded) {
+  connmgr()->SetSecurityMode(BrEdrSecurityMode::SecureConnectionsOnly);
+  PairAndExpectLinkKeyNotBonded(
+      hci_spec::LinkKeyType::kAuthenticatedCombination192);
 }
 
 // Active connections that do not meeting the requirements for Secure

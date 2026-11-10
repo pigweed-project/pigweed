@@ -173,16 +173,26 @@ void PairingStateManager::OnPinCodeRequest(UserPinCodeCallback cb) {
   legacy_pairing_state_->OnPinCodeRequest(std::move(cb));
 }
 
-void PairingStateManager::OnLinkKeyNotification(
+bool PairingStateManager::OnLinkKeyNotification(
     const UInt128& link_key,
     hci_spec::LinkKeyType key_type,
     bool local_secure_connections_supported) {
   if (pairing_state_type_ == PairingStateType::kSecureSimplePairing) {
-    secure_simple_pairing_state_->OnLinkKeyNotification(
+    return secure_simple_pairing_state_->OnLinkKeyNotification(
         link_key, key_type, local_secure_connections_supported);
-  } else if (pairing_state_type_ == PairingStateType::kLegacyPairing) {
-    legacy_pairing_state_->OnLinkKeyNotification(link_key, key_type);
   }
+  if (pairing_state_type_ == PairingStateType::kLegacyPairing) {
+    return legacy_pairing_state_->OnLinkKeyNotification(link_key, key_type);
+  }
+  // No pairing state exists to evaluate the key (e.g. the link key notification
+  // arrived before interrogation completed), so treat it as a pairing failure.
+  // This disconnects the link, so this object may be destroyed by |status_cb_|.
+  bt_log(WARN,
+         "gap",
+         "link key notification with no pairing state (handle: %#.4x)",
+         link_->handle());
+  status_cb_(link_->handle(), ToResult(HostError::kInsufficientSecurity));
+  return false;
 }
 
 void PairingStateManager::OnAuthenticationComplete(

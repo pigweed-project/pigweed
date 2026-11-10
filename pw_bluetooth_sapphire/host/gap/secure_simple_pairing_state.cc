@@ -597,7 +597,7 @@ std::optional<hci_spec::LinkKey> SecureSimplePairingState::OnLinkKeyRequest() {
   return std::nullopt;
 }
 
-void SecureSimplePairingState::OnLinkKeyNotification(
+bool SecureSimplePairingState::OnLinkKeyNotification(
     const UInt128& link_key,
     hci_spec::LinkKeyType key_type,
     bool local_secure_connections_supported) {
@@ -613,7 +613,7 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     state_ = State::kFailed;
     SignalStatus(ToResult(HostError::kInsufficientSecurity),
                  "OnLinkKeyNotification used Debug Combination key");
-    return;
+    return false;
   }
 
   // When not pairing, only connection link key changes are allowed.
@@ -628,7 +628,7 @@ void SecureSimplePairingState::OnLinkKeyNotification(
       state_ = State::kFailed;
       SignalStatus(ToResult(HostError::kInsufficientSecurity),
                    "OnLinkKeyNotification with no current key");
-      return;
+      return false;
     }
 
     bt_log(DEBUG,
@@ -637,12 +637,12 @@ void SecureSimplePairingState::OnLinkKeyNotification(
            handle(),
            bt_str(peer_id()));
     link_->set_link_key(hci_spec::LinkKey(link_key, 0, 0), key_type);
-    return;
+    return true;
   }
 
   if (state() != State::kWaitLinkKey) {
     FailWithUnexpectedEvent(__func__);
-    return;
+    return false;
   }
 
   // The association model and resulting link security properties are computed
@@ -665,7 +665,7 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     state_ = State::kFailed;
     SignalStatus(ToResult(HostError::kInsufficientSecurity),
                  "OnLinkKeyNotification with insufficient security");
-    return;
+    return false;
   }
 
   // inclusive-language: ignore
@@ -685,7 +685,7 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     state_ = State::kFailed;
     SignalStatus(ToResult(HostError::kInsufficientSecurity),
                  "OnLinkKeyNotification with incorrect link authorization");
-    return;
+    return false;
   }
 
   // inclusive-language: disable
@@ -703,7 +703,7 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     state_ = State::kFailed;
     SignalStatus(ToResult(HostError::kInsufficientSecurity),
                  "OnLinkKeyNotification requires Secure Connections");
-    return;
+    return false;
   }
 
   // Prevent downgrade: If the peer is already bonded with Secure Connections,
@@ -722,7 +722,7 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     SignalStatus(ToResult(HostError::kInsufficientSecurity),
                  "OnLinkKeyNotification rejecting downgrade from Secure "
                  "Connections");
-    return;
+    return false;
   }
 
   // Core Spec v6.0, Vol 4, Part E, Section 7.7.24: The values 0x07 and 0x08
@@ -739,7 +739,7 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     state_ = State::kFailed;
     SignalStatus(ToResult(HostError::kInsufficientSecurity),
                  "OnLinkKeyNotification unexpected Secure Connections key");
-    return;
+    return false;
   }
 
   // If peer and local Secure Connections support are present, verify that the
@@ -757,7 +757,7 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     state_ = State::kFailed;
     SignalStatus(ToResult(HostError::kInsufficientSecurity),
                  "OnLinkKeyNotification requires Secure Connections");
-    return;
+    return false;
   }
 
   link_->set_use_secure_connections(sec_props.secure_connections());
@@ -765,9 +765,11 @@ void SecureSimplePairingState::OnLinkKeyNotification(
   link_->set_link_key(hci_spec::LinkKey(link_key, 0, 0), key_type);
   if (initiator()) {
     state_ = State::kInitiatorWaitAuthComplete;
-  } else {
-    EnableEncryption();
+    return true;
   }
+  // Responders enable encryption now. If that fails, pairing has failed and
+  // this object may have been destroyed, so the key must not be bonded.
+  return EnableEncryption();
 }
 
 void SecureSimplePairingState::OnAuthenticationComplete(
@@ -1258,7 +1260,7 @@ std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
   return callbacks_to_signal;
 }
 
-void SecureSimplePairingState::EnableEncryption() {
+bool SecureSimplePairingState::EnableEncryption() {
   if (!link_->StartEncryption()) {
     bt_log(ERROR,
            "gap-bredr",
@@ -1268,9 +1270,10 @@ void SecureSimplePairingState::EnableEncryption() {
            ToString(state()));
     state_ = State::kFailed;
     status_callback_(link_->handle(), ToResult(HostError::kFailed));
-    return;
+    return false;
   }
   state_ = State::kWaitEncryption;
+  return true;
 }
 
 void SecureSimplePairingState::FailWithUnexpectedEvent(

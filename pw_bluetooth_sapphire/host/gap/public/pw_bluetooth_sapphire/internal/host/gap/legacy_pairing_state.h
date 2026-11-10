@@ -136,9 +136,12 @@ class LegacyPairingState final {
   void OnPinCodeRequest(UserPinCodeCallback cb);
 
   // If the connection is complete, store |link_key| in the connection.
-  // Otherwise store temporarily in |link_key_|.
-  void OnLinkKeyNotification(const UInt128& link_key,
-                             hci_spec::LinkKeyType key_type);
+  // Otherwise store temporarily in |link_key_|. Returns true if |link_key| was
+  // accepted and may be bonded. Returns false if it was rejected or pairing
+  // otherwise failed (e.g. encryption could not be started), in which case this
+  // object may have been destroyed by the status callback.
+  [[nodiscard]] bool OnLinkKeyNotification(const UInt128& link_key,
+                                           hci_spec::LinkKeyType key_type);
 
   // Retry pairing if the peer is missing a PIN or link key. Otherwise enable
   // encryption.
@@ -280,8 +283,10 @@ class LegacyPairingState final {
   hci_spec::ConnectionHandle handle() const { return link_->handle(); }
 
   // Called to enable encryption on the link for this peer. Sets |state_| to
-  // |kWaitEncryption|.
-  void EnableEncryption();
+  // |kWaitEncryption| and returns true. If encryption cannot be started, fails
+  // pairing and returns false, in which case this object may have been
+  // destroyed by the status callback.
+  bool EnableEncryption();
 
   // Call the permanent status callback this object was created with as well as
   // any completed request callbacks from local initiators. Resets the current

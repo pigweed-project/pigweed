@@ -1552,6 +1552,7 @@ BrEdrConnectionManager::OnLinkKeyNotification(const hci::EventPacket& event) {
 
   auto* peer = cache_->FindByAddress(addr);
   if (!peer) {
+    // Unknown device: there is no peer to bond the key to.
     bt_log(WARN,
            "gap-bredr",
            "no known peer with address %s found; link key not stored (key "
@@ -1564,6 +1565,7 @@ BrEdrConnectionManager::OnLinkKeyNotification(const hci::EventPacket& event) {
 
   if (!legacy_pairing_enabled_ &&
       key_type == pw::bluetooth::emboss::KeyType::COMBINATION) {
+    // Legacy (Combination) key while legacy pairing is disabled: drop it.
     bt_log(WARN,
            "gap-bredr",
            "Got %u key type in link key notification for peer %s but legacy "
@@ -1582,7 +1584,9 @@ BrEdrConnectionManager::OnLinkKeyNotification(const hci::EventPacket& event) {
 
   sm::SecurityProperties sec_props;
   if (key_type == pw::bluetooth::emboss::KeyType::CHANGED_COMBINATION_KEY) {
+    // Changed Combination: an existing key was replaced, not a new pairing.
     if (!peer->bredr() || !peer->bredr()->bonded()) {
+      // A key change needs an existing bond to update.
       bt_log(WARN,
              "gap-bredr",
              "can't update link key of unbonded peer %s",
@@ -1594,6 +1598,10 @@ BrEdrConnectionManager::OnLinkKeyNotification(const hci::EventPacket& event) {
     // Reuse current properties
     PW_DCHECK(peer->bredr()->link_key());
     sec_props = peer->bredr()->link_key()->security();
+    // TODO(fxbug.dev/577226622): Rewriting the key type here means the pairing
+    // state never sees kChangedCombination, so a peer-initiated link key change
+    // on a bonded SSP link is rejected as an unexpected event, disconnects,
+    // and keeps the previous key instead of bonding the new one.
     key_type =
         static_cast<pw::bluetooth::emboss::KeyType>(sec_props.GetLinkKeyType());
   } else {
@@ -1613,34 +1621,72 @@ BrEdrConnectionManager::OnLinkKeyNotification(const hci::EventPacket& event) {
   hci_spec::LinkKey hci_key(key_value, 0, 0);
   sm::LTK key(sec_props, hci_key);
 
+  // Only bond keys that the pairing state accepted. A rejected key must not be
+  // persisted, otherwise it would be trusted on reconnection and bypass the
+  // pairing state's security checks.
+  // The key is evaluated by the pairing state that owns it, if any:
+  //   1. No connection and no pending connection request: nothing.
+  //   2. Pending connection request with a LegacyPairingState: that state.
+  //   3. Pending connection request without a LegacyPairingState: nothing.
+  //   4. Established connection: its PairingStateManager.
+  bool key_accepted = false;
   auto handle = FindConnectionById(peer_id);
   if (!handle) {
+    // No connection yet: the ACL connection is still being set up (cases 1-3).
     std::optional<BrEdrConnectionRequest*> request =
         FindConnectionRequestById(peer_id);
     if (!request) {
+      // Case 1: no pending connection request either, so nothing can evaluate
+      // the key.
       bt_log(WARN,
              "gap-bredr",
              "Can't find current connection or connection request for peer %s",
              bt_str(peer_id));
-    } else {
-      // The connection request's legacy pairing state object must exist at this
-      // point since we created it in the request's constructor.
-      PW_CHECK(request.value()->legacy_pairing_state());
-      request.value()->legacy_pairing_state()->OnLinkKeyNotification(
+    } else if (LegacyPairingState* legacy_pairing_state =
+                   request.value()->legacy_pairing_state()) {
+      // Case 2: legacy pairing started during connection setup, before the ACL
+      // connection completed. Its pairing state is created lazily by
+      // OnLinkKeyRequest or OnPinCodeRequest.
+      key_accepted = legacy_pairing_state->OnLinkKeyNotification(
           key_value, static_cast<hci_spec::LinkKeyType>(key_type));
+    } else {
+      // Case 3: no pairing is in progress for the pending connection request,
+      // so nothing has evaluated this key and it must not be bonded.
+      bt_log(WARN,
+             "gap-bredr",
+             "No pairing state for pending connection to peer %s; link key not "
+             "stored",
+             bt_str(peer_id));
     }
   } else {
-    handle->second->link().set_link_key(
-        hci_key, static_cast<hci_spec::LinkKeyType>(key_type));
-    handle->second->pairing_state_manager().OnLinkKeyNotification(
-        key_value,
-        static_cast<hci_spec::LinkKeyType>(key_type),
-        local_secure_connections_supported_);
+    // Case 4: the connection exists, so its PairingStateManager evaluates the
+    // key (SSP or Legacy; an unknown pairing state type fails pairing).
+    // The pairing state assigns the key to the link only after accepting it.
+    // Rejecting the key disconnects the link, which destroys the connection
+    // and invalidates |handle|, so |handle| must not be used after this call.
+    key_accepted =
+        handle->second->pairing_state_manager().OnLinkKeyNotification(
+            key_value,
+            static_cast<hci_spec::LinkKeyType>(key_type),
+            local_secure_connections_supported_);
+  }
+
+  if (!key_accepted) {
+    // Rejected or never evaluated by a pairing state: do not bond.
+    bt_log(
+        WARN,
+        "gap-bredr",
+        "link key not accepted by pairing state; not storing bond (peer: %s)",
+        bt_str(peer_id));
+    cache_->LogBrEdrBondingEvent(false);
+    return hci::CommandChannel::EventCallbackResult::kContinue;
   }
 
   if (cache_->StoreBrEdrBond(addr, key)) {
+    // Accepted key bonded and reported to listeners.
     cache_->LogBrEdrBondingEvent(true);
   } else {
+    // PeerCache could not store the bond.
     cache_->LogBrEdrBondingEvent(false);
     bt_log(ERROR,
            "gap-bredr",

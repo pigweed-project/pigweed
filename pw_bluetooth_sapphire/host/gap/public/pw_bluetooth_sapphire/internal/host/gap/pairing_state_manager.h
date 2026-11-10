@@ -160,10 +160,15 @@ class PairingStateManager final {
       fit::callback<void(std::optional<uint16_t> passkey)>;
   void OnPinCodeRequest(UserPinCodeCallback cb);
 
-  // Caller is not expected to send a response.
-  void OnLinkKeyNotification(const UInt128& link_key,
-                             hci_spec::LinkKeyType key_type,
-                             bool local_secure_connections_supported = false);
+  // Caller is not expected to send a response. Returns true if |link_key| was
+  // accepted by the active pairing state and may be bonded. Returns false if it
+  // was rejected, pairing otherwise failed, or there is no pairing state to
+  // evaluate it, in which case the link is disconnected and this object may
+  // have been destroyed.
+  [[nodiscard]] bool OnLinkKeyNotification(
+      const UInt128& link_key,
+      hci_spec::LinkKeyType key_type,
+      bool local_secure_connections_supported = false);
 
   // Caller is not expected to send a response.
   void OnAuthenticationComplete(pw::bluetooth::emboss::StatusCode status_code);

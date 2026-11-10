@@ -551,8 +551,8 @@ TEST_F(LegacyPairingStateTest, PairingInitiatorWithNoInputGeneratesRandomPin) {
   ASSERT_TRUE(pin_code.value() >= 0);
   ASSERT_TRUE(pin_code.value() <= 9999);
 
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(connection()->ltk().has_value());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk()->value());
@@ -595,8 +595,8 @@ TEST_F(LegacyPairingStateTest,
   ASSERT_TRUE(pin_code.value() >= 0);
   ASSERT_TRUE(pin_code.value() <= 9999);
 
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(connection()->ltk().has_value());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk()->value());
@@ -639,8 +639,8 @@ TEST_F(LegacyPairingStateTest,
   ASSERT_TRUE(pin_code.value() >= 0);
   ASSERT_TRUE(pin_code.value() <= 9999);
 
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(connection()->ltk().has_value());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk()->value());
@@ -678,8 +678,8 @@ TEST_F(LegacyPairingStateTest, PairingResponderWithNoInputTriesCommonPins) {
   ASSERT_TRUE(pin_code.has_value());
   ASSERT_EQ(0, pin_code.value());
 
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(connection()->ltk().has_value());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk()->value());
@@ -717,8 +717,8 @@ TEST_F(LegacyPairingStateTest, PairingResponderWithYesNoInputTriesCommonPins) {
   ASSERT_TRUE(pin_code.has_value());
   ASSERT_EQ(0, pin_code.value());
 
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(connection()->ltk().has_value());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk()->value());
@@ -757,8 +757,8 @@ TEST_F(LegacyPairingStateTest,
   ASSERT_TRUE(pin_code.has_value());
   ASSERT_EQ(kTestRandomPinCode, pin_code.value());
 
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(connection()->ltk().has_value());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk()->value());
@@ -797,8 +797,8 @@ TEST_F(LegacyPairingStateTest,
   ASSERT_TRUE(pin_code.has_value());
   ASSERT_EQ(kTestRandomPinCode, pin_code.value());
 
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(connection()->ltk().has_value());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk()->value());
@@ -882,8 +882,8 @@ TEST_F(LegacyPairingStateTest,
   ASSERT_TRUE(pin_code.has_value());
 
   EXPECT_FALSE(connection()->ltk().has_value());
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   // Connection not complete yet so link key is stored in LegacyPairingState and
   // not the connection
@@ -922,8 +922,8 @@ TEST_F(LegacyPairingStateTest,
   ASSERT_TRUE(pin_code.has_value());
 
   EXPECT_FALSE(connection()->ltk().has_value());
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
   ASSERT_TRUE(connection()->ltk());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk()->value());
 
@@ -966,8 +966,8 @@ TEST_F(LegacyPairingStateTest,
   pairing_state.OnPinCodeRequest(std::move(pin_code_cb));
   ASSERT_TRUE(pin_code.has_value());
 
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(connection()->ltk().has_value());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk()->value());
@@ -994,8 +994,8 @@ TEST_F(LegacyPairingStateTest, UnexpectedLinkKeyTypeRaisesError) {
   pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
 
   // Provide an SSP link key when a combination link key was expected
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestUnauthenticatedLinkKeyType192);
+  EXPECT_FALSE(pairing_state.OnLinkKeyNotification(
+      kTestLinkKeyValue, kTestUnauthenticatedLinkKeyType192));
 
   EXPECT_EQ(1, status_handler.call_count());
   ASSERT_TRUE(status_handler.handle());
@@ -1059,8 +1059,8 @@ TEST_F(LegacyPairingStateTest,
   EXPECT_FALSE(pairing_state.initiator());
 
   // Keep advancing state machine.
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   // Connection was complete so link key was stored in the connection
   EXPECT_TRUE(connection()->ltk().has_value());
@@ -1147,8 +1147,8 @@ TEST_F(LegacyPairingStateTest,
                                    link_status_handler.MakeStatusCallback());
 
   // Unexpected event should make status callback get called with an error
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_FALSE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                   kTestLegacyLinkKeyType));
 
   EXPECT_EQ(1, link_status_handler.call_count());
   ASSERT_TRUE(link_status_handler.handle());
@@ -1197,8 +1197,8 @@ TEST_F(LegacyPairingStateTest, UnresolvedPairingCallbackIsCalledOnDestruction) {
     EXPECT_FALSE(pairing_state.initiator());
 
     // Keep advancing state machine.
-    pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                        kTestLegacyLinkKeyType);
+    EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                    kTestLegacyLinkKeyType));
 
     // as pairing_state falls out of scope, we expect additional pairing
     // callbacks to be called
@@ -1239,8 +1239,8 @@ TEST_F(LegacyPairingStateTest, StatusCallbackMayDestroyPairingState) {
                                            status_cb);
 
   // Unexpected event should make status callback get called with an error
-  pairing_state->OnLinkKeyNotification(kTestLinkKeyValue,
-                                       kTestLegacyLinkKeyType);
+  EXPECT_FALSE(pairing_state->OnLinkKeyNotification(kTestLinkKeyValue,
+                                                    kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(cb_called);
 }
@@ -1269,8 +1269,8 @@ TEST_F(LegacyPairingStateTest, PairingInitiatorCallbackMayDestroyPairingState) {
   pairing_state->InitiatePairing(status_cb);
 
   // Unexpected event should make status callback get called with an error
-  pairing_state->OnLinkKeyNotification(kTestLinkKeyValue,
-                                       kTestLegacyLinkKeyType);
+  EXPECT_FALSE(pairing_state->OnLinkKeyNotification(kTestLinkKeyValue,
+                                                    kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(cb_called);
 }
@@ -1367,8 +1367,8 @@ TEST_F(LegacyPairingStateTest, EnableEncryptionFailureMayDestroyPairingState) {
 
   // Failure to enable encryption during link key notification should make
   // status callback get called with an error.
-  pairing_state->OnLinkKeyNotification(kTestLinkKeyValue,
-                                       kTestLegacyLinkKeyType);
+  EXPECT_FALSE(pairing_state->OnLinkKeyNotification(kTestLinkKeyValue,
+                                                    kTestLegacyLinkKeyType));
 
   EXPECT_TRUE(cb_called);
 }
@@ -1399,8 +1399,8 @@ TEST_F(LegacyPairingStateTest, TransactionCollision) {
   pairing_state.InitiatePairing(status_cb);
   static_cast<void>(pairing_state.OnLinkKeyRequest());
   pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
   pairing_state.OnAuthenticationComplete(
       pw::bluetooth::emboss::StatusCode::SUCCESS);
 
@@ -1440,8 +1440,8 @@ TEST_F(LegacyPairingStateTest, DifferentTransactionCollisionAsCentral) {
   pairing_state.InitiatePairing(status_cb);
   static_cast<void>(pairing_state.OnLinkKeyRequest());
   pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
   pairing_state.OnAuthenticationComplete(
       pw::bluetooth::emboss::StatusCode::SUCCESS);
   ASSERT_EQ(1, connection()->start_encryption_count());
@@ -1486,8 +1486,8 @@ TEST_F(LegacyPairingStateTest, DifferentTransactionCollisionAsPeripheral) {
   pairing_state.InitiatePairing(status_cb);
   static_cast<void>(pairing_state.OnLinkKeyRequest());
   pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
   pairing_state.OnAuthenticationComplete(
       pw::bluetooth::emboss::StatusCode::SUCCESS);
   ASSERT_EQ(1, connection()->start_encryption_count());
@@ -1533,8 +1533,8 @@ TEST_F(LegacyPairingStateTest,
   pairing_state.InitiatePairing(status_cb);
   static_cast<void>(pairing_state.OnLinkKeyRequest());
   pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
   pairing_state.OnAuthenticationComplete(
       pw::bluetooth::emboss::StatusCode::SUCCESS);
   ASSERT_EQ(1, connection()->start_encryption_count());
@@ -1591,8 +1591,8 @@ TEST_F(LegacyPairingStateTest,
   pairing_state.InitiatePairing(status_cb);
   static_cast<void>(pairing_state.OnLinkKeyRequest());
   pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
   pairing_state.OnAuthenticationComplete(
       pw::bluetooth::emboss::StatusCode::SUCCESS);
   ASSERT_EQ(1, connection()->start_encryption_count());
@@ -1622,8 +1622,11 @@ void PinCodeRequest(LegacyPairingState* pairing_state) {
   pairing_state->OnPinCodeRequest(NoOpUserPinCodeCallback);
 }
 void LinkKeyNotification(LegacyPairingState* pairing_state) {
-  pairing_state->OnLinkKeyNotification(kTestLinkKeyValue,
-                                       kTestLegacyLinkKeyType);
+  // The result depends on the state under test (a key of this type is only
+  // accepted in kWaitLinkKey), so HandlesLegacyEvent tests check the outcome
+  // via the status handler instead.
+  static_cast<void>(pairing_state->OnLinkKeyNotification(
+      kTestLinkKeyValue, kTestLegacyLinkKeyType));
 }
 void AuthenticationComplete(LegacyPairingState* pairing_state) {
   pairing_state->OnAuthenticationComplete(
@@ -1815,8 +1818,8 @@ TEST_P(HandlesLegacyEvent, InInitiatorWaitAuthCompleteAfterLegacyPairing) {
   pairing_state().InitiatePairing(NoOpStatusCallback);
   static_cast<void>(pairing_state().OnLinkKeyRequest());
   pairing_state().OnPinCodeRequest(NoOpUserPinCodeCallback);
-  pairing_state().OnLinkKeyNotification(kTestLinkKeyValue,
-                                        kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state().OnLinkKeyNotification(kTestLinkKeyValue,
+                                                    kTestLegacyLinkKeyType));
   EXPECT_TRUE(pairing_state().initiator());
 
   RETURN_IF_FATAL(InjectEvent());
@@ -1853,8 +1856,8 @@ TEST_P(HandlesLegacyEvent, InIdleStateAfterOnePairing) {
   pairing_state().InitiatePairing(NoOpStatusCallback);
   static_cast<void>(pairing_state().OnLinkKeyRequest());
   pairing_state().OnPinCodeRequest(NoOpUserPinCodeCallback);
-  pairing_state().OnLinkKeyNotification(kTestLinkKeyValue,
-                                        kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state().OnLinkKeyNotification(kTestLinkKeyValue,
+                                                    kTestLegacyLinkKeyType));
   pairing_state().OnAuthenticationComplete(
       pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_TRUE(pairing_state().initiator());
@@ -1890,8 +1893,8 @@ TEST_P(HandlesLegacyEvent, InFailedStateAfterAuthenticationFailed) {
   pairing_state().InitiatePairing(NoOpStatusCallback);
   static_cast<void>(pairing_state().OnLinkKeyRequest());
   pairing_state().OnPinCodeRequest(NoOpUserPinCodeCallback);
-  pairing_state().OnLinkKeyNotification(kTestLinkKeyValue,
-                                        kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state().OnLinkKeyNotification(kTestLinkKeyValue,
+                                                    kTestLegacyLinkKeyType));
 
   // Inject failure status.
   pairing_state().OnAuthenticationComplete(
@@ -1937,8 +1940,8 @@ TEST_F(LegacyPairingStateTest, CompletePairingRequestsUpdatesKeySize) {
 
   connection()->set_encryption_key_size(7);
 
-  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
-                                      kTestLegacyLinkKeyType);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
 
   pairing_state.OnAuthenticationComplete(
       pw::bluetooth::emboss::StatusCode::SUCCESS);

@@ -280,10 +280,14 @@ class SecureSimplePairingState final {
   // Link Key Request Negative Reply if the returned value is null).
   [[nodiscard]] std::optional<hci_spec::LinkKey> OnLinkKeyRequest();
 
-  // Caller is not expected to send a response.
-  void OnLinkKeyNotification(const UInt128& link_key,
-                             hci_spec::LinkKeyType key_type,
-                             bool local_secure_connections_supported = false);
+  // Caller is not expected to send a response. Returns true if |link_key| was
+  // accepted and may be bonded. Returns false if it was rejected or pairing
+  // otherwise failed (e.g. encryption could not be started), in which case this
+  // object may have been destroyed by the status callback.
+  [[nodiscard]] bool OnLinkKeyNotification(
+      const UInt128& link_key,
+      hci_spec::LinkKeyType key_type,
+      bool local_secure_connections_supported = false);
 
   // Caller is not expected to send a response.
   void OnAuthenticationComplete(pw::bluetooth::emboss::StatusCode status_code);
@@ -508,8 +512,10 @@ class SecureSimplePairingState final {
   void InitiateNextPairingRequest();
 
   // Called to enable encryption on the link for this peer. Sets |state_| to
-  // kWaitEncryption.
-  void EnableEncryption();
+  // kWaitEncryption and returns true. If encryption cannot be started, fails
+  // pairing and returns false, in which case this object may have been
+  // destroyed by the status callback.
+  bool EnableEncryption();
 
   // Called when an event is received while in a state that doesn't expect that
   // event. Invokes |status_callback_| with HostError::kNotSupported and sets

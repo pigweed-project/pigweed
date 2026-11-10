@@ -408,11 +408,11 @@ void LegacyPairingState::OnPinCodeRequest(UserPinCodeCallback cb) {
   pairing_delegate_->RequestPasskey(peer_id_, std::move(passkey_cb));
 }
 
-void LegacyPairingState::OnLinkKeyNotification(const UInt128& link_key,
+bool LegacyPairingState::OnLinkKeyNotification(const UInt128& link_key,
                                                hci_spec::LinkKeyType key_type) {
   if (state_ != State::kWaitLinkKey) {
     FailWithUnexpectedEvent(__func__);
-    return;
+    return false;
   }
 
   PW_CHECK(peer_.is_alive());
@@ -428,7 +428,7 @@ void LegacyPairingState::OnLinkKeyNotification(const UInt128& link_key,
            hci_spec::LinkKeyTypeToString(key_type));
     state_ = State::kFailed;
     SignalStatus(ToResult(HostError::kFailed), __func__);
-    return;
+    return false;
   }
 
   // The resulting link security properties are computed by both the Link
@@ -451,7 +451,7 @@ void LegacyPairingState::OnLinkKeyNotification(const UInt128& link_key,
 
     state_ = State::kIdle;
     SignalStatus(hci::Result<>(fit::ok()), __func__);
-    return;
+    return true;
   }
 
   // If we interrogated the peer and they support SSP, we should be using SSP
@@ -462,7 +462,7 @@ void LegacyPairingState::OnLinkKeyNotification(const UInt128& link_key,
            "Do not use Legacy Pairing when peer actually supports SSP");
     state_ = State::kFailed;
     SignalStatus(ToResult(HostError::kFailed), __func__);
-    return;
+    return false;
   }
 
   link_->set_link_key(hci_spec::LinkKey(link_key, /*rand=*/0, /*ediv=*/0),
@@ -470,10 +470,12 @@ void LegacyPairingState::OnLinkKeyNotification(const UInt128& link_key,
   if (initiator()) {
     // Initiators will receive a HCI_Authentication_Complete event
     state_ = State::kInitiatorWaitAuthComplete;
-  } else {
-    // Responders can now enable encryption after generating a valid link key
-    EnableEncryption();
+    return true;
   }
+  // Responders can now enable encryption after generating a valid link key. If
+  // that fails, pairing has failed and this object may have been destroyed, so
+  // the key must not be bonded.
+  return EnableEncryption();
 }
 
 void LegacyPairingState::OnAuthenticationComplete(
@@ -712,7 +714,7 @@ LegacyPairingState::Pairing::MakeResponderForBonded(
   return pairing;
 }
 
-void LegacyPairingState::EnableEncryption() {
+bool LegacyPairingState::EnableEncryption() {
   PW_CHECK(link_.is_alive());
 
   if (!link_->StartEncryption()) {
@@ -725,9 +727,10 @@ void LegacyPairingState::EnableEncryption() {
         ToString(state_));
     state_ = State::kFailed;
     status_callback_(link_->handle(), ToResult(HostError::kFailed));
-    return;
+    return false;
   }
   state_ = State::kWaitEncryption;
+  return true;
 }
 
 void LegacyPairingState::SignalStatus(hci::Result<> status,
