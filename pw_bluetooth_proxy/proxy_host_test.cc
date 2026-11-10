@@ -5012,6 +5012,94 @@ TEST_F(ProxyHostConnectionEventTest,
   EXPECT_EQ(events_received, 2);
 }
 
+TEST_F(ProxyHostConnectionEventTest, HciDisconnectionCallbackCanReenterProxy) {
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [](H4PacketWithH4&&) {});
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/0,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle + 1, emboss::StatusCode::SUCCESS));
+
+  constexpr uint16_t kCid = 0x111;
+  struct {
+    ProxyHost& proxy;
+    std::optional<BasicL2capChannel> reacquired_channel{};
+  } capture{proxy};
+  BasicL2capChannel chan1 = BuildBasicL2capChannel(
+      proxy,
+      {.handle = kConnectionHandle,
+       .local_cid = kCid,
+       .remote_cid = kCid,
+       .event_fn = [this, &capture](L2capChannelEvent event) {
+         EXPECT_EQ(event, L2capChannelEvent::kChannelClosedByOther);
+         EXPECT_EQ(
+             BuildBasicL2capChannelWithResult(capture.proxy,
+                                              {.handle = kConnectionHandle,
+                                               .local_cid = kCid,
+                                               .remote_cid = kCid})
+                 .status(),
+             Status::InvalidArgument());
+         Result<BasicL2capChannel> result =
+             BuildBasicL2capChannelWithResult(capture.proxy,
+                                              {.handle = kConnectionHandle + 1,
+                                               .local_cid = kCid + 1,
+                                               .remote_cid = kCid + 1});
+         PW_TEST_EXPECT_OK(result);
+         if (result.ok()) {
+           capture.reacquired_channel.emplace(std::move(*result));
+         }
+       }});
+
+  PW_TEST_EXPECT_OK(SendDisconnectionCompleteEvent(proxy, kConnectionHandle));
+  EXPECT_EQ(GetState(chan1), L2capChannel::State::kClosed);
+  ASSERT_TRUE(capture.reacquired_channel.has_value());
+  EXPECT_EQ(GetState(*capture.reacquired_channel),
+            L2capChannel::State::kRunning);
+}
+
+TEST_F(ProxyHostConnectionEventTest, ResetCallbackCanReenterProxy) {
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [](H4PacketWithH4&&) {});
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/0,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  struct {
+    ProxyHost& proxy;
+    int events_received = 0;
+  } capture{proxy};
+  L2capCoc channel = BuildCoc(
+      proxy,
+      {.handle = kConnectionHandle,
+       .event_fn = [this, &capture](L2capChannelEvent event) {
+         ++capture.events_received;
+         EXPECT_EQ(event, L2capChannelEvent::kReset);
+         EXPECT_EQ(
+             BuildCocWithResult(capture.proxy, {.handle = kConnectionHandle})
+                 .status(),
+             Status::InvalidArgument());
+       }});
+
+  proxy.Reset();
+  EXPECT_EQ(capture.events_received, 1);
+  EXPECT_EQ(GetState(channel), L2capChannel::State::kClosed);
+}
+
 TEST_F(ProxyHostConnectionEventTest,
        L2capDisconnectionRspFromHostClosesChannels) {
   pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(

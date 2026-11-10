@@ -32,7 +32,6 @@ L2capChannelManager::L2capChannelManager(AclDataChannel& acl_data_channel,
     : acl_data_channel_(acl_data_channel),
       channels_by_local_cid_(allocator),
       channels_by_remote_cid_(allocator),
-      stale_(allocator),
       allocator_(allocator),
       impl_(*this, allocator),
       logical_links_(allocator) {}

@@ -310,9 +310,6 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   void DeleteChannelLocked(L2capChannel& channel)
       PW_EXCLUSIVE_LOCKS_REQUIRED(channels_mutex());
 
-  // Deletes any channels that have been observed to be stale.
-  void DeleteStaleChannels() PW_LOCKS_EXCLUDED(channels_mutex());
-
   void ResetLogicalLinksLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(links_mutex_);
 
   // L2capChannelManagerInterface override:
@@ -338,9 +335,6 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
 
   // Secondary L2CAP channel lookup mapped by remote CID (non-owning).
   L2capChannelRefMap channels_by_remote_cid_ PW_GUARDED_BY(channels_mutex());
-
-  // Stale L2CAP channels awaiting deletion.
-  L2capChannelMap stale_ PW_GUARDED_BY(channels_mutex());
 
   Allocator& allocator_;
 

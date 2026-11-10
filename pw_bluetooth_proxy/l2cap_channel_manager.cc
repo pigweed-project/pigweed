@@ -388,9 +388,10 @@ L2capChannelManager::DeregisterChannelLocked(
 }
 
 void L2capChannelManager::DeregisterAndCloseChannels(L2capChannelEvent event) {
-  std::lock_guard links_lock(links_mutex_);
-  ResetLogicalLinksLocked();
+  L2capChannelMap channels_to_close(impl_.allocator());
   {
+    std::lock_guard links_lock(links_mutex_);
+    ResetLogicalLinksLocked();
     std::lock_guard channels_lock(channels_mutex());
     while (!channels_by_local_cid_.empty()) {
       L2capChannel& channel = channels_by_local_cid_.begin()->second;
@@ -398,19 +399,11 @@ void L2capChannelManager::DeregisterAndCloseChannels(L2capChannelEvent event) {
       // teardown keeps the snapshot.
       auto node =
           DeregisterChannelLocked(channel, /*notify_state_update=*/false);
-      node->mapped().Close(event);
-      stale_.insert(std::move(node));
+      channels_to_close.insert(std::move(node));
     }
   }
-  DeleteStaleChannels();
-}
-
-void L2capChannelManager::DeleteStaleChannels() {
-  L2capChannelMap stale(impl_.allocator());
-  {
-    std::lock_guard channels_lock(channels_mutex());
-
-    stale.swap(stale_);
+  for (auto& [key, channel] : channels_to_close) {
+    channel.Close(event);
   }
 }
 
@@ -528,6 +521,7 @@ void L2capChannelManager::HandleAclDisconnectionComplete(
       "btproxy: L2capChannelManager::HandleAclDisconnectionComplete - "
       "connection_handle: %u",
       connection_handle);
+  L2capChannelMap channels_to_close(impl_.allocator());
   {
     std::lock_guard links_lock(links_mutex_);
     [[maybe_unused]] const bool link_erased =
@@ -540,8 +534,7 @@ void L2capChannelManager::HandleAclDisconnectionComplete(
       L2capChannel& channel = (channel_it++)->second;
       if (channel.connection_handle() == connection_handle) {
         auto node = DeregisterChannelLocked(channel);
-        node->mapped().Close();
-        stale_.insert(std::move(node));
+        channels_to_close.insert(std::move(node));
       }
     }
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
@@ -551,7 +544,9 @@ void L2capChannelManager::HandleAclDisconnectionComplete(
     }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   }
-  DeleteStaleChannels();
+  for (auto& [key, channel] : channels_to_close) {
+    channel.Close();
+  }
 
   status_tracker_.HandleAclDisconnectionComplete(connection_handle);
 }
