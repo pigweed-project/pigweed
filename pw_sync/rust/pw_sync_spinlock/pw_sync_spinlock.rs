@@ -101,6 +101,60 @@ impl<T> InterruptSpinLock<T> {
                 _marker: PhantomData,
             })
     }
+
+    /// Acquire the lock, run `f` with exclusive access to the protected data,
+    /// and release the lock when `f` returns.
+    ///
+    /// Spins the current thread or interrupt context until the lock is acquired,
+    /// then holds it for exactly the duration of `f`.
+    ///
+    /// Returns the value returned by `f`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use pw_sync_spinlock::InterruptSpinLock;
+    ///
+    /// static COUNTER: InterruptSpinLock<u32> = InterruptSpinLock::new(0);
+    ///
+    /// fn increment() -> u32 {
+    ///     COUNTER.with(|count| {
+    ///         *count += 1;
+    ///         *count
+    ///     })
+    /// }
+    /// ```
+    #[inline]
+    pub fn with<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        let mut guard = self.lock();
+        f(&mut *guard)
+    }
+
+    /// Attempt to acquire the lock, run `f` with exclusive access to the protected data,
+    /// and release the lock when `f` returns.
+    ///
+    /// If the lock is acquired, holds it for the duration of `f` and returns `Some(R)`
+    /// containing the value returned by `f`.
+    /// If the lock could not be acquired, returns `None` without invoking `f`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use pw_sync_spinlock::InterruptSpinLock;
+    ///
+    /// static COUNTER: InterruptSpinLock<u32> = InterruptSpinLock::new(0);
+    ///
+    /// fn try_increment() -> Option<u32> {
+    ///     COUNTER.try_with(|count| {
+    ///         *count += 1;
+    ///         *count
+    ///     })
+    /// }
+    /// ```
+    #[inline]
+    pub fn try_with<R>(&self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        self.try_lock().map(|mut guard| f(&mut *guard))
+    }
 }
 
 /// A guard that provides exclusive access to the data protected by an `InterruptSpinLock`.
