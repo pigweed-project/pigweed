@@ -23,7 +23,6 @@ load(
     "fuchsia_package",
     "fuchsia_platforms",
     "fuchsia_structured_config_cpp_elf_lib",
-    "fuchsia_structured_config_values",
     "fuchsia_unittest_package",
 )
 load(
@@ -112,34 +111,6 @@ fuchsia_structured_config_cpp_elf_lib(
     cm_label = ":manifest",
 )
 
-fuchsia_structured_config_values(
-    name = "default_config_values",
-    cm_label = ":manifest",
-    cvf_output_name = "bt-host",
-    values = {
-        "device_path": "/svc/fuchsia.hardware.bluetooth.Service/default/vendor",
-        "enable_suspend": False,
-        "hci_command_timeout_seconds": 10,
-        "le_active_scan_interval": 0,
-        "le_active_scan_window": 0,
-        "le_batched_scanning_enabled": False,
-        "le_fast_adv_interval_max": 0,
-        "le_fast_adv_interval_min": 0,
-        "le_fast_adv_max_tx_power": 127,  # 127 (0x7F) indicates no preference.
-        "le_scan_batch_max_read_delay_seconds": 3,
-        "le_scan_offload_filters_enabled": False,
-        "le_slow_adv_interval_max": 0,
-        "le_slow_adv_interval_min": 0,
-        "le_slow_adv_max_tx_power": 127,  # 127 (0x7F) indicates no preference.
-        "le_very_fast_adv_interval_max": 0,
-        "le_very_fast_adv_interval_min": 0,
-        "le_very_fast_adv_max_tx_power": 127,  # 127 (0x7F) indicates no preference.
-        "legacy_pairing_enabled": False,
-        "override_vendor_capabilites_version": 0,
-        "sco_offload_path_index": 6,
-    },
-)
-
 fuchsia_component(
     name = "component",
     component_name = "bt-host",
@@ -180,7 +151,6 @@ fuchsia_package(
     ],
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     platform = fuchsia_platforms.x64,
-    resources = [":default_config_values"],
 )
 
 fuchsia_package(
@@ -191,7 +161,6 @@ fuchsia_package(
     ],
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     platform = fuchsia_platforms.arm64,
-    resources = [":default_config_values"],
 )
 
 fuchsia_package(
@@ -202,7 +171,6 @@ fuchsia_package(
     ],
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     platform = fuchsia_platforms.riscv64,
-    resources = [":default_config_values"],
 )
 
 fuchsia_licenses_collection(
