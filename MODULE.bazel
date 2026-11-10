@@ -89,7 +89,7 @@ bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
 # Require aspect_rules_esbuild to be at least 0.25.1, to resolve a `rule() got
 # unexpected keyword argument 'incompatible_use_toolchain_transition'` error.
 # aspect_rules_esbuild@0.25.1 removes that keyword argument.
-bazel_dep(name = "aspect_rules_esbuild", version = "0.25.1")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.27.1")
 
 # Require flatbuffers to be at least 25.12.19.bcr.1 (transitively pulled in by
 # fuzztest@20260219.0 at 25.12.19), to resolve an `unknown attribute
