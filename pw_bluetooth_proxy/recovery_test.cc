@@ -380,13 +380,14 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
   EXPECT_EQ(update_capture.updates_sent, 2u);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
-  // Verify that disconnection triggers a state update callback.
+  // Verify that disconnection triggers a signaling state update callback
+  // followed by a connection state update callback.
   PW_TEST_ASSERT_OK(
       SendDisconnectionCompleteEvent(proxy, kLeConnectionHandle1));
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
-  EXPECT_EQ(update_capture.updates_sent, 5u);
+  EXPECT_EQ(update_capture.updates_sent, 6u);
 #else
-  EXPECT_EQ(update_capture.updates_sent, 3u);
+  EXPECT_EQ(update_capture.updates_sent, 4u);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   ASSERT_TRUE(
       std::holds_alternative<AclConnectionRemoved>(update_capture.last_update));
@@ -991,6 +992,28 @@ TEST(L2capSnapshotTest, L2capSnapshotApplyStateUpdate) {
   EXPECT_TRUE(snapshot.snapshot_incomplete);
 }
 
+TEST(L2capSnapshotTest, L2capSignalingStateSnapshotApplyStateUpdate) {
+  L2capSnapshot snapshot;
+
+  // Verify signaling state insertion.
+  L2capSignalingStateSnapshot signaling_snapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  };
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(signaling_snapshot));
+  ASSERT_EQ(snapshot.l2cap_signaling_states.size(), 1u);
+
+  // Verify that removing a non-existent signaling state is a no-op.
+  L2capSignalingStateRemoved removed{.connection_handle = kLeConnectionHandle2};
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(removed));
+  ASSERT_EQ(snapshot.l2cap_signaling_states.size(), 1u);
+
+  // Verify signaling state removal.
+  removed.connection_handle = kLeConnectionHandle1;
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(removed));
+  EXPECT_TRUE(snapshot.l2cap_signaling_states.empty());
+}
+
 constexpr uint16_t kMtu = 100;
 constexpr uint16_t kMps = 100;
 
@@ -1366,6 +1389,40 @@ TEST_F(L2capRecoveryTest, AclDisconnectionSendsChannelRemovedUpdates) {
       std::get<L2capChannelRemoved>(updates[1]);
   EXPECT_EQ(removed_channel.connection_handle, kLeConnectionHandle1);
   EXPECT_EQ(removed_channel.local_cid, kLocalCid1);
+}
+
+TEST_F(L2capRecoveryTest, AclDisconnectionSendsSignalingStateRemovedUpdate) {
+  std::optional<L2capSignalingStateRemoved> signaling_removed;
+
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&signaling_removed](const ProxyHostStateUpdate& update) {
+        if (auto* removed = std::get_if<L2capSignalingStateRemoved>(&update)) {
+          signaling_removed = *removed;
+        }
+      });
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kLeConnectionHandle1, emboss::StatusCode::SUCCESS));
+
+  // Verify that disconnection triggers a signaling state update callback.
+  PW_TEST_ASSERT_OK(
+      SendDisconnectionCompleteEvent(proxy, kLeConnectionHandle1));
+  RunDispatcher();
+  ASSERT_TRUE(signaling_removed.has_value());
+  EXPECT_EQ(signaling_removed->connection_handle, kLeConnectionHandle1);
 }
 
 TEST_F(L2capRecoveryTest, DuplicateChannelReplacementEmitsStateUpdates) {
@@ -2590,9 +2647,15 @@ TEST(ProxyHostSnapshotTest, ProxyHostSnapshotApplyStateUpdate) {
   PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(connection_removed));
   EXPECT_EQ(snapshot.acl.acl_connections.size(), 0u);
 
-  L2capSignalingStateSnapshot signaling_snapshot;
+  L2capSignalingStateSnapshot signaling_snapshot{.connection_handle =
+                                                     kLeConnectionHandle1};
   PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(signaling_snapshot));
   EXPECT_EQ(snapshot.l2cap.l2cap_signaling_states.size(), 1u);
+
+  L2capSignalingStateRemoved signaling_removed{.connection_handle =
+                                                   kLeConnectionHandle1};
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(signaling_removed));
+  EXPECT_EQ(snapshot.l2cap.l2cap_signaling_states.size(), 0u);
 
   L2capChannelSnapshot channel_snapshot;
   channel_snapshot.connection_handle = kLeConnectionHandle1;

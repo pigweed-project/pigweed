@@ -57,6 +57,7 @@ using ProxyHostStateUpdate = std::variant<AclConnectionSnapshot,
                                           AclConnectionRemoved,
                                           AclBufferSizeSnapshot,
                                           L2capSignalingStateSnapshot,
+                                          L2capSignalingStateRemoved,
                                           L2capChannelSnapshot,
                                           L2capChannelRemoved,
                                           ProxyHostReset>;

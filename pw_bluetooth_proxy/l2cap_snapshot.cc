@@ -20,6 +20,11 @@ bool L2capSignalingStateSnapshot::MatchesKey(uint16_t handle) const {
   return connection_handle == handle;
 }
 
+bool L2capSignalingStateSnapshot::MatchesKey(
+    const L2capSignalingStateRemoved& removal) const {
+  return MatchesKey(removal.connection_handle);
+}
+
 Status L2capSignalingStateSnapshot::Update(
     const L2capSignalingStateSnapshot& update) {
   if (!MatchesKey(update.connection_handle)) {
@@ -69,6 +74,16 @@ Status L2capSnapshot::ApplyStateUpdate(const L2capStateUpdate& update) {
             return Status::ResourceExhausted();
           }
           l2cap_signaling_states.push_back(arg);
+          return OkStatus();
+        } else if constexpr (std::is_same_v<T, L2capSignalingStateRemoved>) {
+          for (auto it = l2cap_signaling_states.begin();
+               it != l2cap_signaling_states.end();
+               ++it) {
+            if (it->MatchesKey(arg)) {
+              l2cap_signaling_states.erase(it);
+              return OkStatus();
+            }
+          }
           return OkStatus();
         } else if constexpr (std::is_same_v<T, L2capChannelSnapshot>) {
           for (L2capChannelSnapshot& channel : l2cap_channels) {

@@ -530,7 +530,8 @@ void L2capChannelManager::HandleAclDisconnectionComplete(
       connection_handle);
   {
     std::lock_guard links_lock(links_mutex_);
-    logical_links_.erase(connection_handle);
+    [[maybe_unused]] const bool link_erased =
+        logical_links_.erase(connection_handle) > 0;
 
     std::lock_guard lock(channels_mutex());
     uint32_t key = L2capChannel::MakeKey(connection_handle, 0);
@@ -543,6 +544,12 @@ void L2capChannelManager::HandleAclDisconnectionComplete(
         stale_.insert(std::move(node));
       }
     }
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    if (link_erased && state_update_callback_) {
+      state_update_callback_(
+          L2capSignalingStateRemoved{.connection_handle = connection_handle});
+    }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   }
   DeleteStaleChannels();
 

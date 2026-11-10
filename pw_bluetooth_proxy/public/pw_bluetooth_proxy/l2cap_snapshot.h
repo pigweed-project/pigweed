@@ -25,13 +25,19 @@
 
 namespace pw::bluetooth::proxy {
 
+/// Removes the signaling state for a disconnected connection.
+struct L2capSignalingStateRemoved {
+  uint16_t connection_handle = 0;
+};
+
 struct L2capSignalingStateSnapshot {
   uint16_t connection_handle = 0;
   AclTransportType transport = AclTransportType::kLe;
   uint8_t next_identifier = 1;
 
-  /// Checks primary-key handle equality.
+  /// Checks primary-key handle equality against a handle or removal event.
   bool MatchesKey(uint16_t handle) const;
+  bool MatchesKey(const L2capSignalingStateRemoved& removal) const;
 
   /// Updates an individual signaling state snapshot record in-place.
   Status Update(const L2capSignalingStateSnapshot& update);
@@ -73,6 +79,7 @@ struct L2capChannelSnapshot {
 
 /// Incremental update payload emitted on L2CAP state mutations.
 using L2capStateUpdate = std::variant<L2capSignalingStateSnapshot,
+                                      L2capSignalingStateRemoved,
                                       L2capChannelSnapshot,
                                       L2capChannelRemoved>;
 

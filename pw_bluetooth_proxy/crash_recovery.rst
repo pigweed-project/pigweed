@@ -301,6 +301,7 @@ Each subsystem defines its own strongly typed callback and payload variant:
    * - ProxyHost (L2CAP)
      - ``ProxyHostStateUpdateCallback``
      - ``L2capSignalingStateSnapshot``,
+       ``L2capSignalingStateRemoved``,
        ``L2capChannelSnapshot``,
        ``L2capChannelRemoved``
    * - ProxyHost (reset)
@@ -342,8 +343,9 @@ regions or together in a unified structure:
   erases the entry if an ``AclConnectionRemoved`` is received, or records
   buffer size parameters when an ``AclBufferSizeSnapshot`` is received.
 * ``L2capSnapshot::ApplyStateUpdate``:
-  Updates signaling records, updates channel entries, or erases channels upon
-  receiving ``L2capChannelRemoved``.
+  Updates signaling records and channel entries, erases signaling records upon
+  receiving ``L2capSignalingStateRemoved``, or erases channels upon receiving
+  ``L2capChannelRemoved``.
 * ``hci::SniffSnapshot::ApplyStateUpdate``:
   Updates or overwrites active sniff connection records.
 * ``rfcomm::RfcommSnapshot::ApplyStateUpdate``:
