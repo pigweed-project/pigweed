@@ -184,19 +184,6 @@ source_set("fuzztest_driver") {
   ]
 }
 
-# TODO(fxbug.dev/324105856): Delete after socket and fidl libraries are
-# migrated to Bazel.
-source_set("loop_fixture") {
-  testonly = true
-  public =
-      [ "public/pw_bluetooth_sapphire/internal/host/testing/loop_fixture.h" ]
-  public_configs = [ ":public_include_path" ]
-  public_deps = [
-    "//zircon/system/ulib/async-testing",
-    dir_pw_unit_test,
-  ]
-}
-
 pw_test("tests") {
   sources = [
     "fake_controller_test.cc",
