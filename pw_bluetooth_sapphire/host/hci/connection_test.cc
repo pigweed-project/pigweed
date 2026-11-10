@@ -1054,6 +1054,122 @@ TEST_F(ConnectionTest, AclEncryptionEnableKeySizeOneByteClosesLink) {
   EXPECT_EQ(1, callback_count);
 }
 
+TEST_F(ConnectionTest, AclEncryptionKeySizeCompleteAfterDisconnectIgnored) {
+  StaticByteBuffer kKeySizeCompleteInsufficient(
+      0x0E,  // event code: Command Complete
+      0x07,  // parameters total size
+      0x01,  // num command packets allowed (1)
+      0x08,
+      0x14,  // original opcode: HCI_Read_Encryption_Key_Size
+      0x00,  // status (success)
+      0x01,
+      0x00,  // connection handle: 0x0001
+      0x01   // encryption key size: 1 (< kMinEncryptionKeySize)
+  );
+
+  int callback_count = 0;
+  Result<bool> last_result = fit::ok(true);
+  auto conn = NewACLConnection();
+  conn->set_encryption_change_callback([&](Result<bool> result) {
+    callback_count++;
+    last_result = result;
+  });
+
+  // 1. Encryption Change (enabled) sends Read_Encryption_Key_Size, which stays
+  // pending until the controller replies.
+  EXPECT_CMD_PACKET_OUT(test_device(), kReadEncryptionKeySizeCommand);
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::SUCCESS,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOn));
+  RunUntilIdle();
+  EXPECT_EQ(0, callback_count);
+  EXPECT_EQ(Connection::State::kConnected, conn->state());
+
+  // 2. While Read_Encryption_Key_Size is still in flight, a second Encryption
+  // Change event with an error status arrives and triggers Disconnect(),
+  // transitioning the connection to kWaitingForDisconnectionComplete.
+  const auto disconnect_status_rsp =
+      bt::testing::DisconnectStatusResponsePacket();
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kDisconnectCommandAuthFailure, &disconnect_status_rsp);
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOff));
+  RunUntilIdle();
+  EXPECT_EQ(1, callback_count);
+  EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED)
+                .error_value(),
+            last_result);
+  EXPECT_EQ(Connection::State::kWaitingForDisconnectionComplete, conn->state());
+
+  // 3. The delayed Command Complete for Read_Encryption_Key_Size arrives with
+  // an insufficient key size. Since the connection is no longer kConnected, it
+  // must be ignored without calling Disconnect() a second time or firing the
+  // encryption change callback again.
+  test_device()->SendCommandChannelPacket(kKeySizeCompleteInsufficient);
+  RunUntilIdle();
+  EXPECT_EQ(1, callback_count);
+  EXPECT_FALSE(conn->encryption_key_size().has_value());
+
+  // Complete the first connection's disconnection so its Disconnection Complete
+  // event handler is unregistered before creating a new connection on the same
+  // handle.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::DisconnectionCompletePacket(
+          kTestHandle,
+          pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE));
+  RunUntilIdle();
+  EXPECT_EQ(Connection::State::kDisconnected, conn->state());
+
+  // 4. Verify that a delayed Read_Encryption_Key_Size completion with a
+  // sufficient key size is also ignored after Disconnection Complete
+  // transitions the connection to kDisconnected.
+  StaticByteBuffer kKeySizeCompleteSufficient(
+      0x0E,  // event code: Command Complete
+      0x07,  // parameters total size
+      0x01,  // num command packets allowed (1)
+      0x08,
+      0x14,  // original opcode: HCI_Read_Encryption_Key_Size
+      0x00,  // status (success)
+      0x01,
+      0x00,  // connection handle: 0x0001
+      0x10   // encryption key size: 16 (>= kMinEncryptionKeySize)
+  );
+
+  conn = NewACLConnection();
+  callback_count = 0;
+  conn->set_encryption_change_callback([&](Result<bool> result) {
+    callback_count++;
+    last_result = result;
+  });
+
+  EXPECT_CMD_PACKET_OUT(test_device(), kReadEncryptionKeySizeCommand);
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::SUCCESS,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOn));
+  RunUntilIdle();
+  EXPECT_EQ(0, callback_count);
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::DisconnectionCompletePacket(
+          kTestHandle,
+          pw::bluetooth::emboss::StatusCode::
+              REMOTE_USER_TERMINATED_CONNECTION));
+  RunUntilIdle();
+  EXPECT_EQ(Connection::State::kDisconnected, conn->state());
+
+  test_device()->SendCommandChannelPacket(kKeySizeCompleteSufficient);
+  RunUntilIdle();
+  EXPECT_EQ(0, callback_count);
+  EXPECT_FALSE(conn->encryption_key_size().has_value());
+}
+
 TEST_F(ConnectionTest, AclEncryptionKeyRefreshKeySizeOneByteClosesLink) {
   StaticByteBuffer kKeySizeComplete(0x0E,  // event code: Command Complete
                                     0x07,  // parameters total size

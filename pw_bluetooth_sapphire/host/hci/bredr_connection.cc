@@ -154,8 +154,12 @@ void BrEdrConnection::HandleEncryptionStatusValidated(Result<bool> result) {
   // change, so allowing the link to continue would expose previously-authorised
   // channels over plaintext.
 
-  if (state() == Connection::State::kConnected &&
-      (result.is_error() || !result.value())) {
+  if (state() != Connection::State::kConnected) {
+    bt_log(DEBUG, "hci", "encryption status ignored for closed connection");
+    return;
+  }
+
+  if (result.is_error() || !result.value()) {
     Disconnect(pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
   }
 
@@ -182,6 +186,10 @@ void BrEdrConnection::ValidateEncryptionKeySize(
                    valid_cb = std::move(key_size_validity_cb)](
                       auto, const EventPacket& event) {
     if (!self.is_alive()) {
+      return;
+    }
+    if (self->state() != Connection::State::kConnected) {
+      bt_log(DEBUG, "hci", "encryption key size ignored for closed connection");
       return;
     }
 
