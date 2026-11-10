@@ -161,6 +161,25 @@
 #define PW_HAVE_ATTRIBUTE(x) 0
 #endif  // __has_attribute
 
+/// Instructs the compiler to inline a function, even when optimizing for size.
+///
+/// @warning Use with caution! The compiler usually makes the right inlining
+/// decision based on optimization settings, and forcing inlining can increase
+/// code size. Only use `PW_ALWAYS_INLINE` when backed by concrete data (such
+/// as a size report or performance benchmark), and include a comment at the
+/// usage site referencing that data.
+///
+/// @note On free functions and function templates in headers, pair
+/// `PW_ALWAYS_INLINE` with `inline` or `constexpr` so the function maintains
+/// inline linkage.
+#if PW_HAVE_ATTRIBUTE(always_inline)
+#define PW_ALWAYS_INLINE __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#define PW_ALWAYS_INLINE __forceinline
+#else
+#define PW_ALWAYS_INLINE
+#endif  // PW_HAVE_ATTRIBUTE(always_inline)
+
 /// A function-like feature checking macro that accepts C++11 style attributes.
 /// It is a wrapper around `__has_cpp_attribute`, which was introduced in the <a
 /// href="https://en.cppreference.com/w/cpp/feature_test">C++20 standard</a>. It

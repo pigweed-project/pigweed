@@ -77,5 +77,14 @@ TEST(CompilerMacros, PreferredName) {
   EXPECT_EQ(instance.value(), 42);
 }
 
+// Exercise PW_ALWAYS_INLINE macro expansion on constexpr and inline functions.
+PW_ALWAYS_INLINE constexpr int AlwaysInlineAdd(int a, int b) { return a + b; }
+
+PW_ALWAYS_INLINE inline int AlwaysInlineMul(int a, int b) { return a * b; }
+
+TEST(CompilerMacros, AlwaysInline) {
+  static_assert(AlwaysInlineAdd(2, 3) == 5);
+  EXPECT_EQ(AlwaysInlineMul(3, 4), 12);
+}
 }  // namespace
 }  // namespace pw::preprocessor

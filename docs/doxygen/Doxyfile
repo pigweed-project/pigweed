@@ -221,7 +221,8 @@ PREDEFINED             = __cplusplus=202002L \
                          configCHECK_FOR_STACK_OVERFLOW=1 \
                          PW_EXCLUDE_FROM_DOXYGEN=1 \
                          PW_ALLOCATOR_LEGACY_DEFAULT_IMPL(...)=; \
-                         PW_MULTIBUF_DEPRECATED=
+                         PW_MULTIBUF_DEPRECATED= \
+                         PW_ALWAYS_INLINE=
 # TODO: https://pwbug.dev/402489948 - Replace PW_ALLOCATOR_HAS_ATOMICS
 # when `pw_atomic` provides portable atomics.
 PREDEFINED            += PW_ALLOCATOR_HAS_ATOMICS=1
