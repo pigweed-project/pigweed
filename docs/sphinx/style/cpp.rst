@@ -718,6 +718,110 @@ execution on a fatal error.
    reasons. It is likely better to surface this error to a higher level that can
    decide how to handle a missing value.
 
+.. _docs-pw-style-cpp-facades:
+
+Facades
+=======
+A :ref:`facade <docs-facades>` defines a compile-time swappable API contract,
+while a backend provides its implementation. Public facade headers must define
+the complete portable API contract with explicit types in the facade's public
+namespace rather than relying on ``#include`` or ``using`` duck-typing to
+define the portable API:
+
+* **Backend namespace**: Backend override headers must declare
+  backend-provided types, constants, and functions in a ``backend`` namespace
+  nested under the facade's namespace. Backend override headers may use
+  ``using`` aliases or ``auto`` to define symbols in the ``backend``
+  namespace.
+* **Strongly typed portable API**: Public facade headers must include the
+  backend override header and explicitly specify the types of the portable API
+  in the facade's public namespace—for example, by defining the public class,
+  struct, or function signatures that wrap ``backend::`` symbols, and by
+  forwarding constants with an explicit type (``inline constexpr <Type> kFoo =
+  backend::kFoo;``) rather than ``auto`` or a ``using`` alias that leaves the
+  portable type unspecified in the facade.
+* **Backend escape hatches**: A facade may expose an explicitly non-portable
+  escape hatch (such as ``using native_handle_type =
+  backend::NativeMutexHandle;`` on :cc:`pw::sync::Mutex`) for callers that are
+  intentionally coupled to a specific backend.
+* **Compile-time validation**: Validate backend-provided types and constants
+  with ``static_assert`` where practical.
+
+.. admonition:: **Yes**: Public facade header strongly types the portable API,
+   validates ``backend::`` symbols, and clearly scopes any native escape hatch:
+   :class: checkmark
+
+   .. code-block:: cpp
+      :caption: Backend override header (pw_foo_backend/foo.h)
+
+      #pragma once
+
+      #include <chrono>
+
+      #include "pw_foo_my_backend/types.h"
+
+      namespace pw::foo::backend {
+
+      using NativeChannel = ::pw::foo::my_backend::Channel;
+      using NativeChannelHandle = ::pw::foo::my_backend::Channel&;
+      inline constexpr auto kDrainTimeout = std::chrono::milliseconds(50);
+
+      }  // namespace pw::foo::backend
+
+   .. code-block:: cpp
+      :caption: Public facade header (pw_foo/foo.h)
+
+      #pragma once
+
+      #include <chrono>
+
+      #include "pw_foo_backend/foo.h"  // IWYU pragma: export
+      #include "pw_status/status.h"
+
+      namespace pw::foo {
+
+      /// Maximum time to wait for pending output to drain before closing.
+      inline constexpr std::chrono::milliseconds kDrainTimeout =
+          backend::kDrainTimeout;
+
+      static_assert(kDrainTimeout >= std::chrono::milliseconds::zero(),
+                    "kDrainTimeout must be non-negative");
+
+      /// Portable channel interface backed by the configured pw_foo backend.
+      class Channel {
+       public:
+        /// Non-portable escape hatch for backend-aware callers.
+        using native_handle_type = backend::NativeChannelHandle;
+
+        Status Flush();
+        native_handle_type native_handle() { return native_.handle(); }
+
+       private:
+        backend::NativeChannel native_;
+      };
+
+      }  // namespace pw::foo
+
+.. admonition:: **No**: Public facade header relies on backend duck-typing for
+   its portable API:
+   :class: error
+
+   .. code-block:: cpp
+      :caption: Public facade header (pw_foo/foo.h)
+
+      #pragma once
+
+      // Backends must define Channel and kDrainTimeout, or the facade aliases
+      // an unconstrained backend type as the portable API.
+      #include "pw_foo_backend/foo.h"  // IWYU pragma: export
+
+      namespace pw::foo {
+
+      using Channel = backend::NativeChannel;
+      inline constexpr auto kDrainTimeout = backend::kDrainTimeout;
+
+      }  // namespace pw::foo
+
 Include guards
 ==============
 The first non-comment line of every header file must be ``#pragma once``. Do
@@ -1006,6 +1110,8 @@ Such code must take the allocator as a parameter, typically a
 ``pw::Allocator&`` from :ref:`module-pw_allocator`, rather than calling
 ``new`` or ``malloc`` or using an allocating standard library container.
 
+.. _docs-pw-style-cpp-naming:
+
 Naming
 ======
 Entities shall be named according to the `Google style guide
@@ -1023,6 +1129,10 @@ C++ code
 * If private code must be exposed in a header file, it must be in a namespace
   nested under ``pw``. The namespace may be named for its subsystem or use a
   name that designates it as private, such as ``internal``.
+* Symbols provided by a :ref:`facade <docs-pw-style-cpp-facades>` backend in an
+  override header must be placed in a ``backend`` namespace nested under the
+  facade's namespace and explicitly forwarded into the public namespace by the
+  facade header.
 * Template arguments for non-type names (e.g. ``template <int kFooBar>``) should
   follow the constexpr and const variable Google naming convention, which means
   k prefixed camel case (e.g.  ``kCamelCase``). This matches the Google C++
