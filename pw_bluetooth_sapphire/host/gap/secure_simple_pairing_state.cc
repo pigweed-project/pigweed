@@ -616,9 +616,37 @@ bool SecureSimplePairingState::OnLinkKeyNotification(
     return false;
   }
 
-  // When not pairing, only connection link key changes are allowed.
-  if (!is_pairing() && key_type == hci_spec::LinkKeyType::kChangedCombination) {
-    if (!link_->ltk()) {
+  // A Changed Combination key doesn't report the key's real type: the Host must
+  // remember the type from before the change (Core Spec v6.2, Vol 4, Part E,
+  // Section 7.7.24), and the new key has equal strength (Section 7.1.17).
+  // Handle it here; sm::SecurityProperties can't be built from it.
+  if (key_type == hci_spec::LinkKeyType::kChangedCombination) {
+    if (state() == State::kWaitLinkKey) {
+      bt_log(WARN,
+             "gap-bredr",
+             "Got Changed Combination key during pairing on link %#.4x (id: "
+             "%s)",
+             handle(),
+             bt_str(peer_id()));
+      state_ = State::kFailed;
+      SignalStatus(ToResult(HostError::kInsufficientSecurity),
+                   "OnLinkKeyNotification with Changed Combination key during "
+                   "pairing");
+      return false;
+    }
+
+    // !is_pairing() is not sufficient: it also holds in kFailed and the
+    // rejected-pairing states.
+    // TODO(fxbug.dev/583826276): Accept key changes in kWaitEncryption on a
+    // bonded reconnect, where the link already has the recalled key.
+    if (state() != State::kIdle &&
+        state() != State::kInitiatorWaitLEPairingComplete) {
+      FailWithUnexpectedEvent(__func__);
+      return false;
+    }
+
+    PW_CHECK(!is_pairing());
+    if (!link_->ltk() || !link_->ltk_type()) {
       bt_log(WARN,
              "gap-bredr",
              "Got Changed Combination key but link %#.4x (id: %s) has no "
@@ -631,12 +659,32 @@ bool SecureSimplePairingState::OnLinkKeyNotification(
       return false;
     }
 
+    const hci_spec::LinkKeyType current_key_type = link_->ltk_type().value();
+    PW_CHECK(current_key_type != hci_spec::LinkKeyType::kChangedCombination);
+    const sm::SecurityProperties current_sec_props(
+        current_key_type, /*enc_key_size=*/std::nullopt);
+    if (security_mode_ == BrEdrSecurityMode::SecureConnectionsOnly &&
+        (!current_sec_props.secure_connections() ||
+         !current_sec_props.authenticated())) {
+      bt_log(WARN,
+             "gap-bredr",
+             "Changed link key on %#.4x (id: %s) has insufficient security for "
+             "Secure Connections Only mode",
+             handle(),
+             bt_str(peer_id()));
+      state_ = State::kFailed;
+      SignalStatus(ToResult(HostError::kInsufficientSecurity),
+                   "OnLinkKeyNotification requires Secure Connections");
+      return false;
+    }
+
     bt_log(DEBUG,
            "gap-bredr",
            "Changing link key on %#.4x (id: %s)",
            handle(),
            bt_str(peer_id()));
-    link_->set_link_key(hci_spec::LinkKey(link_key, 0, 0), key_type);
+    // Keep the replaced key's type, which determines the link's security.
+    link_->set_link_key(hci_spec::LinkKey(link_key, 0, 0), current_key_type);
     return true;
   }
 

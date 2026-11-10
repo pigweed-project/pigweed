@@ -410,6 +410,8 @@ void LegacyPairingState::OnPinCodeRequest(UserPinCodeCallback cb) {
 
 bool LegacyPairingState::OnLinkKeyNotification(const UInt128& link_key,
                                                hci_spec::LinkKeyType key_type) {
+  // TODO(fxbug.dev/581509273): Accept peer-initiated link key changes
+  // (kChangedCombination) on bonded links instead of failing pairing.
   if (state_ != State::kWaitLinkKey) {
     FailWithUnexpectedEvent(__func__);
     return false;

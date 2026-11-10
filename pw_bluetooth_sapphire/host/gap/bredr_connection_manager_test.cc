@@ -2736,11 +2736,10 @@ TEST_F(BrEdrConnectionManagerTest,
   EXPECT_EQ(bonded_callback_count, 0);
 }
 
-// Currently a peer-initiated link key change on a bonded SSP link is rejected
-// by the pairing state, so the previous bond is kept rather than overwritten.
-// TODO(fxbug.dev/577226622): Update once peer-initiated link key changes on
-// bonded SSP links are accepted.
-TEST_F(BrEdrConnectionManagerTest, BondedPeerChangeLinkKeyKeepsPreviousBond) {
+// A peer-initiated link key change on a bonded SSP link keeps the link
+// connected and updates the bond to the new key with the same security
+// properties.
+TEST_F(BrEdrConnectionManagerTest, BondedPeerChangeLinkKeyUpdatesBond) {
   QueueSuccessfulIncomingConn();
   test_device()->SendCommandChannelPacket(kConnectionRequest);
   RunUntilIdle();
@@ -2768,7 +2767,118 @@ TEST_F(BrEdrConnectionManagerTest, BondedPeerChangeLinkKeyKeepsPreviousBond) {
   ASSERT_EQ(fit::ok(), *pairing_status);
   ASSERT_TRUE(IsConnected(peer));
   ASSERT_TRUE(peer->bredr()->bonded());
-  const sm::LTK bond_before = *peer->bredr()->link_key();
+  const sm::SecurityProperties security_before =
+      peer->bredr()->link_key()->security();
+  ASSERT_TRUE(security_before.authenticated());
+  ASSERT_EQ(sm::kMaxEncryptionKeySize, security_before.enc_key_size());
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsConnected(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(security_before, peer->bredr()->link_key()->security());
+  EXPECT_EQ(bonded_callback_count, 1);
+
+  // The link keeps the original key type, so a request that the current key
+  // already satisfies completes without pairing again (no HCI commands are
+  // expected).
+  std::optional<hci::Result<>> auth_status;
+  connmgr()->Pair(
+      peer->identifier(),
+      kAuthSecurityRequirements,
+      [&auth_status](hci::Result<> status) { auth_status = status; });
+  RETURN_IF_FATAL(RunUntilIdle());
+  ASSERT_TRUE(auth_status.has_value());
+  EXPECT_EQ(fit::ok(), *auth_status);
+
+  QueueDisconnection(kConnectionHandle);
+}
+
+// On reconnection with a bonded peer, once the recalled key has authenticated
+// and encrypted the link, a peer-initiated link key change updates the bond
+// without disconnecting.
+TEST_F(BrEdrConnectionManagerTest,
+       BondedPeerReconnectAuthenticateAndChangeLinkKeyUpdatesBond) {
+  ASSERT_TRUE(
+      peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
+                                              .address = kTestDevAddr,
+                                              .name = std::nullopt,
+                                              .device_class = {},
+                                              .le_pairing_data = {},
+                                              .bredr_link_key = kLinkKey,
+                                              .bredr_services = {}}));
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kLinkKeyRequestReply, &kLinkKeyRequestReplyRsp);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
+  test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+  test_device()->SendCommandChannelPacket(kEncryptionChangeEvent);
+  RETURN_IF_FATAL(RunUntilIdle());
+  ASSERT_TRUE(IsConnected(peer));
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsConnected(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(kLinkKey.security(), peer->bredr()->link_key()->security());
+  EXPECT_EQ(bonded_callback_count, 1);
+
+  QueueDisconnection(kConnectionHandle);
+}
+
+// A bonded peer that changes the link key after authenticating with the
+// recalled key, but before encryption starts, is disconnected and the previous
+// bond is kept.
+// TODO(fxbug.dev/583826276): Expect the link to stay up and the bond to be
+// updated once key changes are accepted while waiting for encryption.
+TEST_F(BrEdrConnectionManagerTest,
+       BondedPeerChangeLinkKeyBeforeEncryptionDisconnectsAndKeepsPreviousBond) {
+  ASSERT_TRUE(
+      peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
+                                              .address = kTestDevAddr,
+                                              .name = std::nullopt,
+                                              .device_class = {},
+                                              .le_pairing_data = {},
+                                              .bredr_link_key = kLinkKey,
+                                              .bredr_services = {}}));
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  // Reply with the recalled key; the link now waits for encryption.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kLinkKeyRequestReply, &kLinkKeyRequestReplyRsp);
+  test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+  RETURN_IF_FATAL(RunUntilIdle());
+  ASSERT_TRUE(IsInitializing(peer));
 
   int bonded_callback_count = 0;
   peer_cache()->set_peer_bonded_callback(
@@ -2783,9 +2893,268 @@ TEST_F(BrEdrConnectionManagerTest, BondedPeerChangeLinkKeyKeepsPreviousBond) {
   EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
   EXPECT_TRUE(IsNotConnected(peer));
   ASSERT_TRUE(peer->bredr()->bonded());
-  EXPECT_EQ(bond_before, *peer->bredr()->link_key());
-  EXPECT_NE(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(kLinkKey, *peer->bredr()->link_key());
   EXPECT_EQ(bonded_callback_count, 0);
+}
+
+// A Changed Combination notification from a bonded peer before the reconnected
+// link has a key is rejected, disconnecting the link and keeping the previous
+// bond.
+TEST_F(
+    BrEdrConnectionManagerTest,
+    BondedPeerChangeLinkKeyBeforeAuthenticationDisconnectsAndKeepsPreviousBond) {
+  ASSERT_TRUE(
+      peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
+                                              .address = kTestDevAddr,
+                                              .name = std::nullopt,
+                                              .device_class = {},
+                                              .le_pairing_data = {},
+                                              .bredr_link_key = kLinkKey,
+                                              .bredr_services = {}}));
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+  ASSERT_TRUE(IsInitializing(peer));
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  QueueDisconnection(kConnectionHandle);
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsNotConnected(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+  EXPECT_EQ(kLinkKey, *peer->bredr()->link_key());
+  EXPECT_EQ(bonded_callback_count, 0);
+}
+
+// If a stronger bond was stored in PeerCache after the active BR/EDR link
+// paired (for example via LE Secure Connections CTKD), changing the active
+// link's weaker key keeps the connection without overwriting the stronger
+// cached bond.
+TEST_F(BrEdrConnectionManagerTest,
+       BondedPeerChangeLinkKeyDoesNotDowngradeStrongerCachedBond) {
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kNoInputNoOutput);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+  pairing_delegate.SetConfirmPairingCallback(
+      [](PeerId, auto confirm_cb) { confirm_cb(true); });
+  pairing_delegate.SetCompletePairingCallback(
+      [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
+
+  QueueSuccessfulUnauthenticatedPairing();
+  std::optional<hci::Result<>> pairing_status;
+  connmgr()->Pair(
+      peer->identifier(),
+      kNoSecurityRequirements,
+      [&pairing_status](hci::Result<> status) { pairing_status = status; });
+  RETURN_IF_FATAL(RunUntilIdle());
+  ASSERT_TRUE(pairing_status.has_value());
+  ASSERT_EQ(fit::ok(), *pairing_status);
+  ASSERT_TRUE(IsConnected(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+
+  // Simulate LE Secure Connections CTKD upgrading the cached BR/EDR bond.
+  const sm::LTK kStrongerScBond(
+      sm::SecurityProperties(
+          hci_spec::LinkKeyType::kAuthenticatedCombination256,
+          sm::kMaxEncryptionKeySize),
+      hci_spec::LinkKey(UInt128{0x77}, 0, 0));
+  ASSERT_TRUE(peer->MutBrEdr().SetBondData(kStrongerScBond));
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsConnected(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+  EXPECT_EQ(kStrongerScBond, *peer->bredr()->link_key());
+  EXPECT_EQ(bonded_callback_count, 0);
+
+  QueueDisconnection(kConnectionHandle);
+}
+
+// When a bonded link holds a recalled key without a known session encryption
+// key size (for example, after responder SSP is rejected during LE pairing and
+// an initiator request is queued in kInitiatorWaitLEPairingComplete), a
+// peer-initiated link key change falls back to the bond's key size and updates
+// PeerCache.
+TEST_F(BrEdrConnectionManagerTest,
+       BondedPeerChangeLinkKeyWithUnknownEncryptionKeySizeUpdatesBond) {
+  ASSERT_TRUE(
+      peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
+                                              .address = kTestDevAddr,
+                                              .name = std::nullopt,
+                                              .device_class = {},
+                                              .le_pairing_data = {},
+                                              .bredr_link_key = kLinkKey,
+                                              .bredr_services = {}}));
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  std::optional<Peer::PairingToken> le_pairing_token =
+      peer->MutLe().RegisterPairing();
+
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  // Peer requests the link key (populating link.ltk()), then attempts responder
+  // SSP while LE pairing is active; rejecting SSP returns the state to kIdle
+  // before encryption starts, leaving link.encryption_key_size() unset.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kLinkKeyRequestReply, &kLinkKeyRequestReplyRsp);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kIoCapabilityRequestNegativeReply,
+                        &kIoCapabilityRequestNegativeReplyRsp);
+  test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+  test_device()->SendCommandChannelPacket(MakeIoCapabilityResponse(
+      IoCapability::DISPLAY_YES_NO,
+      AuthenticationRequirements::MITM_GENERAL_BONDING));
+  test_device()->SendCommandChannelPacket(kIoCapabilityRequest);
+  test_device()->SendCommandChannelPacket(kSimplePairingCompleteError);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  // With encryption_key_size() unknown, an initiator Pair() request parks in
+  // kInitiatorWaitLEPairingComplete.
+  std::optional<hci::Result<>> pairing_status;
+  connmgr()->Pair(
+      peer->identifier(),
+      kNoSecurityRequirements,
+      [&pairing_status](hci::Result<> status) { pairing_status = status; });
+  RETURN_IF_FATAL(RunUntilIdle());
+  ASSERT_FALSE(pairing_status.has_value());
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(kLinkKey.security(), peer->bredr()->link_key()->security());
+  EXPECT_EQ(bonded_callback_count, 1);
+
+  // Once LE pairing finishes, the queued initiator request authenticates using
+  // the newly stored key.
+  const auto kChangedKeyReply =
+      testing::LinkKeyRequestReplyPacket(TEST_DEV_ADDR, kChangedKey.value());
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kAuthenticationRequested,
+                        &kAuthenticationRequestedStatus,
+                        &kLinkKeyRequest);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kChangedKeyReply,
+                        &kLinkKeyRequestReplyRsp,
+                        &kAuthenticationComplete);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kSetConnectionEncryption,
+                        &kSetConnectionEncryptionRsp,
+                        &kEncryptionChangeEvent);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
+  le_pairing_token.reset();
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  ASSERT_TRUE(pairing_status.has_value());
+  EXPECT_EQ(fit::ok(), *pairing_status);
+  EXPECT_TRUE(IsConnected(peer));
+
+  QueueDisconnection(kConnectionHandle);
+}
+
+// If a Secure Connections authenticated bond (enc_key_size == 16) reconnects in
+// Mode 4 with a smaller negotiated session encryption key size,
+// UpdateBondSecurityProperties keeps the bond at 16, and a subsequent
+// peer-initiated link key change still updates PeerCache to the new key.
+TEST_F(BrEdrConnectionManagerTest,
+       BondedScPeerChangeLinkKeyWithSmallerEncryptionKeySizeUpdatesBond) {
+  const sm::LTK kScLinkKey(
+      sm::SecurityProperties(
+          hci_spec::LinkKeyType::kAuthenticatedCombination256,
+          sm::kMaxEncryptionKeySize),
+      kRawKey);
+  ASSERT_TRUE(
+      peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
+                                              .address = kTestDevAddr,
+                                              .name = std::nullopt,
+                                              .device_class = {},
+                                              .le_pairing_data = {},
+                                              .bredr_link_key = kScLinkKey,
+                                              .bredr_services = {}}));
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  const StaticByteBuffer kReadEncryptionKeySizeRspSmall(
+      hci_spec::kCommandCompleteEventCode,
+      0x07,  // parameters total size
+      0xFF,  // num command packets allowed (255)
+      LowerBits(hci_spec::kReadEncryptionKeySize),
+      UpperBits(hci_spec::kReadEncryptionKeySize),
+      pw::bluetooth::emboss::StatusCode::SUCCESS,  // status
+      0xAA,
+      0x0B,  // connection handle
+      0x08   // encryption key size: 8
+  );
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kLinkKeyRequestReply, &kLinkKeyRequestReplyRsp);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRspSmall);
+  test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+  test_device()->SendCommandChannelPacket(kEncryptionChangeEventAes);
+  RETURN_IF_FATAL(RunUntilIdle());
+  ASSERT_TRUE(IsConnected(peer));
+  ASSERT_EQ(sm::kMaxEncryptionKeySize,
+            peer->bredr()->link_key()->security().enc_key_size());
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsConnected(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(kScLinkKey.security(), peer->bredr()->link_key()->security());
+  EXPECT_EQ(bonded_callback_count, 1);
+
+  QueueDisconnection(kConnectionHandle);
 }
 
 // Test: if L2CAP gets a link error, we disconnect the connection

@@ -18,6 +18,8 @@
 #include <pw_bytes/endian.h>
 #include <pw_string/string_builder.h>
 
+#include <algorithm>
+
 #include "pw_bluetooth_sapphire/internal/host/common/expiring_set.h"
 #include "pw_bluetooth_sapphire/internal/host/common/inspectable.h"
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
@@ -1567,7 +1569,9 @@ BrEdrConnectionManager::OnLinkKeyNotification(const hci::EventPacket& event) {
          static_cast<uint8_t>(key_type),
          bt_str(peer_id));
 
-  sm::SecurityProperties sec_props;
+  // Copy the bond's security while it is known to exist, instead of reading
+  // PeerCache again after the pairing state runs, to prevent a TOCTOU issue.
+  std::optional<sm::SecurityProperties> bond_sec;
   if (key_type == pw::bluetooth::emboss::KeyType::CHANGED_COMBINATION_KEY) {
     if (!peer->bredr() || !peer->bredr()->bonded()) {
       bt_log(WARN,
@@ -1577,21 +1581,7 @@ BrEdrConnectionManager::OnLinkKeyNotification(const hci::EventPacket& event) {
       cache_->LogBrEdrBondingEvent(false);
       return hci::CommandChannel::EventCallbackResult::kContinue;
     }
-
-    PW_DCHECK(peer->bredr()->link_key());
-    sec_props = peer->bredr()->link_key()->security();
-    // TODO(fxbug.dev/577226622): Pass kChangedCombination to the pairing state
-    // instead of rewriting it here, which causes bonded SSP links to reject
-    // peer-initiated key changes, disconnect, and keep the previous key
-    // instead of bonding the new one.
-    key_type =
-        static_cast<pw::bluetooth::emboss::KeyType>(sec_props.GetLinkKeyType());
-  } else {
-    // Initialize SecurityProperties with a key length of 0 as the key length
-    // is not provided in the Link Key Notification event. The key length will
-    // be updated when the key is stored in the cache.
-    sec_props =
-        sm::SecurityProperties(static_cast<hci_spec::LinkKeyType>(key_type), 0);
+    bond_sec = peer->bredr()->link_key()->security();
   }
 
   UInt128 key_value;
@@ -1609,6 +1599,41 @@ BrEdrConnectionManager::OnLinkKeyNotification(const hci::EventPacket& event) {
         bt_str(peer_id));
     cache_->LogBrEdrBondingEvent(false);
     return hci::CommandChannel::EventCallbackResult::kContinue;
+  }
+
+  sm::SecurityProperties sec_props;
+  if (key_type == pw::bluetooth::emboss::KeyType::CHANGED_COMBINATION_KEY) {
+    // A changed key's notification doesn't report its real type; the Host must
+    // remember the type from before the change (Core Spec v6.2, Vol 4, Part E,
+    // Section 7.7.24), which the pairing state kept on the link. Use the link
+    // rather than PeerCache, whose bond may have since been replaced (e.g. by
+    // LE Secure Connections CTKD).
+    auto conn_pair = FindConnectionById(peer_id);
+    if (!conn_pair.has_value() ||
+        !conn_pair->second->link().ltk_type().has_value()) {
+      bt_log(ERROR,
+             "gap-bredr",
+             "changed link key has no current key type; not storing bond "
+             "(peer: %s)",
+             bt_str(peer_id));
+      cache_->LogBrEdrBondingEvent(false);
+      return hci::CommandChannel::EventCallbackResult::kContinue;
+    }
+    hci::BrEdrConnection& link = conn_pair->second->link();
+    size_t enc_key_size = link.encryption_key_size().value_or(0);
+    // Changing the link key does not renegotiate encryption key size; avoid
+    // rejecting a same-type key update when the session key size is unknown or
+    // smaller than the bond's.
+    // TODO(fxbug.dev/582136827): Remove once bonds store the link key size
+    // instead of the session encryption key size.
+    if (bond_sec->GetLinkKeyType() == *link.ltk_type()) {
+      enc_key_size = std::max(enc_key_size, bond_sec->enc_key_size());
+    }
+    sec_props = sm::SecurityProperties(*link.ltk_type(), enc_key_size);
+  } else {
+    // Key length is omitted from HCI_Link_Key_Notification and updated later.
+    sec_props =
+        sm::SecurityProperties(static_cast<hci_spec::LinkKeyType>(key_type), 0);
   }
 
   const sm::LTK key(sec_props, hci_spec::LinkKey(key_value, 0, 0));

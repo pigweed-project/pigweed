@@ -566,7 +566,7 @@ TEST_F(PairingStateTest,
   EXPECT_EQ(0, status_handler.call_count());
 }
 
-TEST_F(PairingStateTest, PeerMayNotChangeLinkKeyWhenNotEncrypted) {
+TEST_F(PairingStateTest, PeerMayNotChangeLinkKeyWithoutCurrentKey) {
   NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
 
   TestStatusHandler status_handler;
@@ -620,10 +620,192 @@ TEST_F(PairingStateTest, PeerMayChangeLinkKeyWhenInIdleState) {
 
   ASSERT_TRUE(connection()->ltk().has_value());
   EXPECT_EQ(kTestLinkKeyValue, connection()->ltk().value().value());
+  // The link keeps the type of the replaced key.
   ASSERT_TRUE(connection()->ltk_type().has_value());
-  EXPECT_EQ(kTestChangedLinkKeyType, connection()->ltk_type().value());
+  EXPECT_EQ(kTestAuthenticatedLinkKeyType192, connection()->ltk_type().value());
   EXPECT_EQ(0, status_handler.call_count());
   EXPECT_FALSE(peer()->MutBrEdr().is_pairing());
+}
+
+TEST_F(PairingStateTest,
+       PeerMayNotChangeNonSecureConnectionsLinkKeyInSecureConnectionsOnlyMode) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+  pairing_state.set_security_mode(BrEdrSecurityMode::SecureConnectionsOnly);
+  const UInt128 kCurrentKey{0x01};
+  connection()->set_link_key(hci_spec::LinkKey(kCurrentKey, 0, 0),
+                             kTestAuthenticatedLinkKeyType192);
+
+  EXPECT_FALSE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                   kTestChangedLinkKeyType));
+
+  ASSERT_TRUE(connection()->ltk().has_value());
+  EXPECT_EQ(kCurrentKey, connection()->ltk().value().value());
+  EXPECT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+}
+
+TEST_F(PairingStateTest,
+       PeerMayChangeSecureConnectionsLinkKeyInSecureConnectionsOnlyMode) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+  pairing_state.set_security_mode(BrEdrSecurityMode::SecureConnectionsOnly);
+  connection()->set_link_key(
+      hci_spec::LinkKey(UInt128(), 0, 0),
+      hci_spec::LinkKeyType::kAuthenticatedCombination256);
+
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestChangedLinkKeyType));
+
+  ASSERT_TRUE(connection()->ltk().has_value());
+  EXPECT_EQ(kTestLinkKeyValue, connection()->ltk().value().value());
+  ASSERT_TRUE(connection()->ltk_type().has_value());
+  EXPECT_EQ(hci_spec::LinkKeyType::kAuthenticatedCombination256,
+            connection()->ltk_type().value());
+  EXPECT_EQ(0, status_handler.call_count());
+}
+
+TEST_F(PairingStateTest, PeerMayNotChangeLinkKeyDuringPairing) {
+  NoOpPairingDelegate pairing_delegate(sm::IOCapability::kDisplayOnly);
+
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  // Advance to kWaitLinkKey as responder.
+  pairing_state.OnIoCapabilityResponse(IoCapability::DISPLAY_YES_NO);
+  static_cast<void>(pairing_state.OnIoCapabilityRequest());
+  pairing_state.OnUserConfirmationRequest(kTestPasskey,
+                                          NoOpUserConfirmationCallback);
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  EXPECT_FALSE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                   kTestChangedLinkKeyType));
+
+  EXPECT_FALSE(connection()->ltk().has_value());
+  EXPECT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+}
+
+TEST_F(PairingStateTest, PeerMayChangeLinkKeyWhileWaitingForLePairing) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+
+  TestStatusHandler status_handler;
+  TestStatusHandler request_status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+  connection()->set_link_key(hci_spec::LinkKey(UInt128(), 0, 0),
+                             kTestAuthenticatedLinkKeyType192);
+
+  // With no encryption key size known, the request is queued behind the
+  // in-progress LE pairing.
+  std::optional<Peer::PairingToken> le_token =
+      peer()->MutLe().RegisterPairing();
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                request_status_handler.MakeStatusCallback());
+  RunUntilIdle();
+  ASSERT_EQ(0u, auth_request_count());
+
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestChangedLinkKeyType));
+
+  ASSERT_TRUE(connection()->ltk().has_value());
+  EXPECT_EQ(kTestLinkKeyValue, connection()->ltk().value().value());
+  ASSERT_TRUE(connection()->ltk_type().has_value());
+  EXPECT_EQ(kTestAuthenticatedLinkKeyType192, connection()->ltk_type().value());
+  EXPECT_EQ(0, status_handler.call_count());
+  EXPECT_EQ(0, request_status_handler.call_count());
+
+  // The queued request still starts once LE pairing completes.
+  le_token.reset();
+  EXPECT_EQ(1u, auth_request_count());
+}
+
+TEST_F(PairingStateTest, PeerMayNotChangeLinkKeyInFailedState) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+  const UInt128 kCurrentKey{0x01};
+  connection()->set_link_key(hci_spec::LinkKey(kCurrentKey, 0, 0),
+                             kTestAuthenticatedLinkKeyType192);
+
+  // A Debug Combination key moves the pairing state to kFailed.
+  EXPECT_FALSE(pairing_state.OnLinkKeyNotification(
+      kTestLinkKeyValue, hci_spec::LinkKeyType::kDebugCombination));
+  ASSERT_EQ(1, status_handler.call_count());
+
+  // Not pairing, but not idle either, so the key change is unexpected.
+  EXPECT_FALSE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                   kTestChangedLinkKeyType));
+
+  ASSERT_TRUE(connection()->ltk().has_value());
+  EXPECT_EQ(kCurrentKey, connection()->ltk().value().value());
+  EXPECT_EQ(2, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(ToResult(HostError::kNotSupported), *status_handler.status());
 }
 
 // Inject events that occur during the course of a successful pairing as an
