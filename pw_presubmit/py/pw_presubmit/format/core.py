@@ -128,9 +128,9 @@ class FileChecker(abc.ABC):
             describes what kind of files this check applies to.
         mnemonic: A human-readable description of the kind of checker this is
             (e.g. "C and C++", "Bazel", "Python (black)").
-        tool_runner: The :py:class:`pw_presubmit.format.core.ToolRunner` to use
+        tool_runner: The :py:class:`pw_cli.tool_runner.ToolRunner` to use
             when calling out to subprocesses.
-        diff_tool: The :py:attr:`pw_presubmit.format.core.DiffCallback` to use
+        diff_tool: The :py:data:`pw_presubmit.format.core.DiffCallback` to use
             when producing formatting diffs.
     """
 
@@ -227,7 +227,7 @@ class FileChecker(abc.ABC):
         with each file path.
 
         Returns:
-            An iterator of :py:class:`pw_presubmit.format.core.FormattingDiff`
+            An iterator of :py:class:`pw_presubmit.format.core.FormattedDiff`
             objects for each file with identified formatting issues.
         """
 
