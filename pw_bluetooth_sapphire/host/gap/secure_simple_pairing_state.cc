@@ -635,17 +635,19 @@ bool SecureSimplePairingState::OnLinkKeyNotification(
       return false;
     }
 
-    // !is_pairing() is not sufficient: it also holds in kFailed and the
-    // rejected-pairing states.
-    // TODO(fxbug.dev/583826276): Accept key changes in kWaitEncryption on a
-    // bonded reconnect, where the link already has the recalled key.
+    // Accept only in kIdle, kInitiatorWaitLEPairingComplete, or
+    // kWaitEncryption; kFailed and the rejected-pairing states are not pairing
+    // but must not accept a key change. In kWaitEncryption, a peer may change a
+    // recalled or just-paired key after authentication: the change only needs a
+    // current link key, and encryption is paused and resumed only "if
+    // encryption is enabled" (Core Spec v6.2, Vol 2, Part C, Section 4.2.3).
     if (state() != State::kIdle &&
-        state() != State::kInitiatorWaitLEPairingComplete) {
+        state() != State::kInitiatorWaitLEPairingComplete &&
+        state() != State::kWaitEncryption) {
       FailWithUnexpectedEvent(__func__);
       return false;
     }
 
-    PW_CHECK(!is_pairing());
     if (!link_->ltk() || !link_->ltk_type()) {
       bt_log(WARN,
              "gap-bredr",

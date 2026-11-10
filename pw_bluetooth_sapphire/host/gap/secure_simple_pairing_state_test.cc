@@ -824,6 +824,112 @@ void AdvanceToEncryptionAsInitiator(SecureSimplePairingState* pairing_state) {
       pw::bluetooth::emboss::StatusCode::SUCCESS);
 }
 
+TEST_F(PairingStateTest,
+       PeerMayChangeLinkKeyWhileWaitingForEncryptionOnBondedReconnect) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+  const UInt128 kOriginalKeyValue{0xAA};
+  const UInt128 kChangedKeyValue{0xBB};
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(
+      sm::LTK(sm::SecurityProperties(kTestAuthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
+              hci_spec::LinkKey(kOriginalKeyValue, 0, 0))));
+
+  // As responder, reply to the peer's Link Key Request with the recalled key
+  // and wait for the peer to enable encryption.
+  ASSERT_EQ(hci_spec::LinkKey(kOriginalKeyValue, 0, 0),
+            pairing_state.OnLinkKeyRequest());
+  ASSERT_EQ(0, connection()->start_encryption_count());
+  ASSERT_TRUE(peer()->MutBrEdr().is_pairing());
+
+  // The peer changes the link key after authenticating with the recalled
+  // key, but before encryption is enabled.
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kChangedKeyValue,
+                                                  kTestChangedLinkKeyType));
+
+  ASSERT_TRUE(connection()->ltk().has_value());
+  EXPECT_EQ(kChangedKeyValue, connection()->ltk().value().value());
+  ASSERT_TRUE(connection()->ltk_type().has_value());
+  EXPECT_EQ(kTestAuthenticatedLinkKeyType192, connection()->ltk_type().value());
+  EXPECT_EQ(0, status_handler.call_count());
+  EXPECT_TRUE(peer()->MutBrEdr().is_pairing());
+
+  // The peer enables encryption, which completes pairing.
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
+  EXPECT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(fit::ok(), *status_handler.status());
+  EXPECT_FALSE(peer()->MutBrEdr().is_pairing());
+}
+
+TEST_F(PairingStateTest,
+       PeerMayChangeLinkKeyWhileWaitingForEncryptionAfterFreshPairing) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+  const UInt128 kOriginalKeyValue{0xAA};
+  const UInt128 kChangedKeyValue{0xBB};
+
+  // As responder, complete Simple Pairing and enable encryption after the new
+  // link key arrives.
+  pairing_state.OnIoCapabilityResponse(IoCapability::DISPLAY_YES_NO);
+  ASSERT_EQ(IoCapability::DISPLAY_YES_NO,
+            pairing_state.OnIoCapabilityRequest());
+  pairing_state.OnUserConfirmationRequest(kTestPasskey,
+                                          NoOpUserConfirmationCallback);
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  ASSERT_TRUE(pairing_state.OnLinkKeyNotification(
+      kOriginalKeyValue, kTestAuthenticatedLinkKeyType192));
+  ASSERT_EQ(1, connection()->start_encryption_count());
+  ASSERT_TRUE(peer()->MutBrEdr().is_pairing());
+
+  // The peer changes the link key after pairing, but before encryption is
+  // enabled.
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kChangedKeyValue,
+                                                  kTestChangedLinkKeyType));
+
+  ASSERT_TRUE(connection()->ltk().has_value());
+  EXPECT_EQ(kChangedKeyValue, connection()->ltk().value().value());
+  ASSERT_TRUE(connection()->ltk_type().has_value());
+  EXPECT_EQ(kTestAuthenticatedLinkKeyType192, connection()->ltk_type().value());
+  EXPECT_EQ(0, status_handler.call_count());
+  EXPECT_TRUE(peer()->MutBrEdr().is_pairing());
+
+  // Encryption that we requested after pairing is enabled, which completes
+  // pairing.
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
+  EXPECT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(fit::ok(), *status_handler.status());
+  EXPECT_FALSE(peer()->MutBrEdr().is_pairing());
+}
+
 TEST_F(PairingStateTest, SuccessfulEncryptionChangeTriggersStatusCallback) {
   NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
 

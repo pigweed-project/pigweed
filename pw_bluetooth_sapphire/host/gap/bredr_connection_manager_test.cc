@@ -1022,6 +1022,32 @@ class BrEdrConnectionManagerTest : public TestingBase,
     EXPECT_EQ(bonded_callback_count, 0);
   }
 
+  // Has the peer disconnect and reconnect, then verifies that its Link Key
+  // Request is answered with |link_key| and that the link encrypts.
+  void ReconnectAndExpectLinkKeyRequestReply(
+      Peer* peer, const hci_spec::LinkKey& link_key) {
+    test_device()->SendCommandChannelPacket(kDisconnectionComplete);
+    RETURN_IF_FATAL(RunUntilIdle());
+    ASSERT_TRUE(IsNotConnected(peer));
+
+    QueueRepeatIncomingConn();
+    test_device()->SendCommandChannelPacket(kConnectionRequest);
+    RETURN_IF_FATAL(RunUntilIdle());
+
+    const auto kLinkKeyReply =
+        testing::LinkKeyRequestReplyPacket(TEST_DEV_ADDR, link_key.value());
+    EXPECT_CMD_PACKET_OUT(
+        test_device(), kLinkKeyReply, &kLinkKeyRequestReplyRsp);
+    EXPECT_CMD_PACKET_OUT(
+        test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
+    test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+    test_device()->SendCommandChannelPacket(kEncryptionChangeEvent);
+    RETURN_IF_FATAL(RunUntilIdle());
+
+    EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+    EXPECT_TRUE(IsConnected(peer));
+  }
+
   sm::testing::TestSecurityManagerFactory* security_manager_factory() {
     return &security_manager_factory_;
   }
@@ -2851,13 +2877,11 @@ TEST_F(BrEdrConnectionManagerTest,
   QueueDisconnection(kConnectionHandle);
 }
 
-// A bonded peer that changes the link key after authenticating with the
-// recalled key, but before encryption starts, is disconnected and the previous
-// bond is kept.
-// TODO(fxbug.dev/583826276): Expect the link to stay up and the bond to be
-// updated once key changes are accepted while waiting for encryption.
+// On reconnection with a bonded peer, a peer-initiated link key change after
+// authenticating with the recalled key, but before encryption, replaces the
+// bonded key, and the link finishes encrypting and connects.
 TEST_F(BrEdrConnectionManagerTest,
-       BondedPeerChangeLinkKeyBeforeEncryptionDisconnectsAndKeepsPreviousBond) {
+       BondedPeerChangeLinkKeyBeforeEncryptionUpdatesBond) {
   ASSERT_TRUE(
       peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
                                               .address = kTestDevAddr,
@@ -2873,12 +2897,15 @@ TEST_F(BrEdrConnectionManagerTest,
   test_device()->SendCommandChannelPacket(kConnectionRequest);
   RunUntilIdle();
 
-  // Reply with the recalled key; the link now waits for encryption.
+  // As responder, reply to the peer's Link Key Request with the recalled key
+  // and wait for the peer to enable encryption.
   EXPECT_CMD_PACKET_OUT(
       test_device(), kLinkKeyRequestReply, &kLinkKeyRequestReplyRsp);
   test_device()->SendCommandChannelPacket(kLinkKeyRequest);
   RETURN_IF_FATAL(RunUntilIdle());
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
   ASSERT_TRUE(IsInitializing(peer));
+  EXPECT_EQ(kRawKey.value(), peer->bredr()->link_key()->key().value());
 
   int bonded_callback_count = 0;
   peer_cache()->set_peer_bonded_callback(
@@ -2886,15 +2913,195 @@ TEST_F(BrEdrConnectionManagerTest,
   auto clear_bonded_callback =
       fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
 
-  QueueDisconnection(kConnectionHandle);
+  // The peer changes the link key after authenticating with the recalled
+  // key, but before encryption is enabled.
   test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
   RETURN_IF_FATAL(RunUntilIdle());
 
-  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
-  EXPECT_TRUE(IsNotConnected(peer));
+  EXPECT_TRUE(IsInitializing(peer));
   ASSERT_TRUE(peer->bredr()->bonded());
-  EXPECT_EQ(kLinkKey, *peer->bredr()->link_key());
-  EXPECT_EQ(bonded_callback_count, 0);
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(hci_spec::LinkKeyType::kAuthenticatedCombination192,
+            peer->bredr()->link_key()->security().GetLinkKeyType());
+  EXPECT_EQ(bonded_callback_count, 1);
+
+  // The peer enables encryption, which completes pairing.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
+  test_device()->SendCommandChannelPacket(kEncryptionChangeEvent);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsConnected(peer));
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(kLinkKey.security(), peer->bredr()->link_key()->security());
+
+  RETURN_IF_FATAL(ReconnectAndExpectLinkKeyRequestReply(peer, kChangedKey));
+
+  QueueDisconnection(kConnectionHandle);
+}
+
+// After a fresh pairing, a peer-initiated link key change after authentication
+// but before encryption replaces the newly bonded key, and the link finishes
+// encrypting and connects.
+TEST_F(BrEdrConnectionManagerTest,
+       FreshPairingChangeLinkKeyBeforeEncryptionUpdatesBond) {
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  ASSERT_FALSE(peer->bonded());
+
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+  pairing_delegate.SetDisplayPasskeyCallback(
+      [](PeerId, uint32_t, auto, auto confirm_cb) {
+        ASSERT_TRUE(confirm_cb);
+        confirm_cb(true);
+      });
+  pairing_delegate.SetCompletePairingCallback(
+      [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
+
+  // As responder, complete Simple Pairing; the new link key starts encryption.
+  const auto kUserConfirmationRequest = MakeUserConfirmationRequest(kPasskey);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        MakeIoCapabilityRequestReply(
+                            IoCapability::DISPLAY_YES_NO,
+                            AuthenticationRequirements::MITM_GENERAL_BONDING),
+                        &kIoCapabilityRequestReplyRsp,
+                        &kUserConfirmationRequest);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kUserConfirmationRequestReply,
+                        &kUserConfirmationRequestReplyRsp,
+                        &kSimplePairingCompleteSuccess,
+                        &kLinkKeyNotification);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kSetConnectionEncryption, &kSetConnectionEncryptionRsp);
+  test_device()->SendCommandChannelPacket(MakeIoCapabilityResponse(
+      IoCapability::DISPLAY_YES_NO,
+      AuthenticationRequirements::MITM_GENERAL_BONDING));
+  test_device()->SendCommandChannelPacket(kIoCapabilityRequest);
+  RETURN_IF_FATAL(RunUntilIdle());
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  ASSERT_TRUE(IsInitializing(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+  EXPECT_EQ(kRawKey.value(), peer->bredr()->link_key()->key().value());
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  // The peer changes the link key after pairing, but before encryption is
+  // enabled.
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(IsInitializing(peer));
+  ASSERT_TRUE(peer->bredr()->bonded());
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(hci_spec::LinkKeyType::kAuthenticatedCombination192,
+            peer->bredr()->link_key()->security().GetLinkKeyType());
+  EXPECT_EQ(bonded_callback_count, 1);
+
+  // Encryption that we requested after pairing is enabled, which completes
+  // pairing.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
+  test_device()->SendCommandChannelPacket(kEncryptionChangeEvent);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_TRUE(IsConnected(peer));
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(kLinkKey.security(), peer->bredr()->link_key()->security());
+
+  RETURN_IF_FATAL(ReconnectAndExpectLinkKeyRequestReply(peer, kChangedKey));
+
+  QueueDisconnection(kConnectionHandle);
+}
+
+// As initiator on a bonded reconnect, a peer-initiated link key change after
+// authenticating with the recalled key, but before encryption, replaces the
+// bonded key, and the Pair() request succeeds once the link is encrypted.
+TEST_F(BrEdrConnectionManagerTest,
+       BondedPeerChangeLinkKeyBeforeEncryptionAsInitiatorUpdatesBond) {
+  ASSERT_TRUE(
+      peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
+                                              .address = kTestDevAddr,
+                                              .name = std::nullopt,
+                                              .device_class = {},
+                                              .le_pairing_data = {},
+                                              .bredr_link_key = kLinkKey,
+                                              .bredr_services = {}}));
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  // As initiator, authenticate with the recalled key, then request encryption
+  // but hold back the Encryption Change event.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kAuthenticationRequested,
+                        &kAuthenticationRequestedStatus,
+                        &kLinkKeyRequest);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kLinkKeyRequestReply,
+                        &kLinkKeyRequestReplyRsp,
+                        &kAuthenticationComplete);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kSetConnectionEncryption, &kSetConnectionEncryptionRsp);
+  std::optional<hci::Result<>> pairing_status;
+  connmgr()->Pair(
+      peer->identifier(),
+      kNoSecurityRequirements,
+      [&pairing_status](hci::Result<> status) { pairing_status = status; });
+  RETURN_IF_FATAL(RunUntilIdle());
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  ASSERT_FALSE(pairing_status.has_value());
+  ASSERT_TRUE(IsInitializing(peer));
+  EXPECT_EQ(kRawKey.value(), peer->bredr()->link_key()->key().value());
+
+  int bonded_callback_count = 0;
+  peer_cache()->set_peer_bonded_callback(
+      [&bonded_callback_count](const Peer&) { bonded_callback_count++; });
+  auto clear_bonded_callback =
+      fit::defer([this] { peer_cache()->set_peer_bonded_callback(nullptr); });
+
+  // The peer changes the link key after authenticating with the recalled
+  // key, but before encryption is enabled.
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(IsInitializing(peer));
+  ASSERT_FALSE(pairing_status.has_value());
+  ASSERT_TRUE(peer->bredr()->bonded());
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(hci_spec::LinkKeyType::kAuthenticatedCombination192,
+            peer->bredr()->link_key()->security().GetLinkKeyType());
+  EXPECT_EQ(bonded_callback_count, 1);
+
+  // Encryption that we requested after authentication is enabled, which
+  // completes pairing.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
+  test_device()->SendCommandChannelPacket(kEncryptionChangeEvent);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  ASSERT_TRUE(pairing_status.has_value());
+  EXPECT_EQ(fit::ok(), *pairing_status);
+  EXPECT_TRUE(IsConnected(peer));
+  EXPECT_EQ(kChangedKey.value(), peer->bredr()->link_key()->key().value());
+  EXPECT_EQ(kLinkKey.security(), peer->bredr()->link_key()->security());
+
+  RETURN_IF_FATAL(ReconnectAndExpectLinkKeyRequestReply(peer, kChangedKey));
+
+  QueueDisconnection(kConnectionHandle);
 }
 
 // A Changed Combination notification from a bonded peer before the reconnected
