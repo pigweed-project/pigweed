@@ -85,25 +85,25 @@ struct is_future : std::false_type {};
 template <typename T>
 struct is_future<
     T,
-    std::void_t<typename T::value_type,
-                decltype(std::declval<T&>().Pend(std::declval<Context&>())),
-                decltype(std::declval<const T&>().is_pendable()),
-                decltype(std::declval<const T&>().is_complete())>>
-    : std::conjunction<
-          std::is_convertible<decltype(&T::is_pendable), bool (T::*)() const>,
-          std::is_convertible<decltype(&T::is_complete), bool (T::*)() const>,
-          std::is_convertible<decltype(&T::Pend),
-                              Poll<typename T::value_type> (T::*)(Context&)>,
-          std::is_default_constructible<T>,
-          std::is_destructible<T>> {};
+    std::void_t<std::enable_if_t<!std::is_const_v<T> && !std::is_volatile_v<T>>,
+                typename T::value_type,
+                decltype(static_cast<bool (T::*)() const>(&T::is_pendable)),
+                decltype(static_cast<bool (T::*)() const>(&T::is_complete)),
+                decltype(static_cast<Poll<typename T::value_type> (T::*)(
+                             Context&)>(&T::Pend))>>
+    : std::conjunction<std::is_default_constructible<T>,
+                       std::is_nothrow_destructible<T>,
+                       std::is_move_constructible<T>,
+                       std::is_convertible<T, T>,
+                       std::is_move_assignable<T>,
+                       std::is_swappable<T>> {};
 
 }  // namespace internal
 
 // This variable is named as a type to match the C++20 concept. This makes it
 // possible to use `Future` in static asserts in either C++17 or C++20.
 template <typename T>
-constexpr bool Future =
-    internal::is_future<std::remove_cv_t<std::remove_reference_t<T>>>::value;
+constexpr bool Future = internal::is_future<T>::value;
 
 #endif  // __cpp_concepts
 

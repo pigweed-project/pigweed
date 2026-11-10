@@ -156,6 +156,50 @@ class NotDefaultConstructible {
 };
 static_assert(!Future<NotDefaultConstructible>);
 
+class NotMoveConstructible {
+ public:
+  NotMoveConstructible() = default;
+  NotMoveConstructible(NotMoveConstructible&&) = delete;
+  NotMoveConstructible& operator=(NotMoveConstructible&&) = default;
+
+  using value_type = int;
+  Poll<int> Pend(Context& cx);
+  bool is_pendable() const;
+  bool is_complete() const;
+};
+static_assert(!Future<NotMoveConstructible>);
+
+class NotMoveAssignable {
+ public:
+  NotMoveAssignable() = default;
+  NotMoveAssignable(NotMoveAssignable&&) = default;
+  NotMoveAssignable& operator=(NotMoveAssignable&&) = delete;
+
+  using value_type = int;
+  Poll<int> Pend(Context& cx);
+  bool is_pendable() const;
+  bool is_complete() const;
+};
+static_assert(!Future<NotMoveAssignable>);
+
+class ExplicitMoveConstructible {
+ public:
+  ExplicitMoveConstructible() = default;
+  explicit ExplicitMoveConstructible(ExplicitMoveConstructible&&) = default;
+  ExplicitMoveConstructible& operator=(ExplicitMoveConstructible&&) = default;
+
+  using value_type = int;
+  Poll<int> Pend(Context& cx);
+  bool is_pendable() const;
+  bool is_complete() const;
+};
+static_assert(!Future<ExplicitMoveConstructible>);
+
+static_assert(!Future<FakeFuture&>);
+static_assert(!Future<FakeFuture&&>);
+static_assert(!Future<const FakeFuture>);
+static_assert(!Future<volatile FakeFuture>);
+
 #if PW_NC_TEST(FutureWaitReasonMustBeProvided)
 PW_NC_EXPECT("kWaitReason");
 
