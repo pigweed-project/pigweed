@@ -301,8 +301,9 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   // Stop proxying L2CAP packets addressed to `channel` and stop sending L2CAP
   // packets queued in `channel`, if `channel` is currently registered. Returns
   // the extracted channel node, transferring ownership of the channel to the
-  // caller.
-  UniquePtr<L2capChannelNode> DeregisterChannelLocked(L2capChannel& channel)
+  // caller. Emits `L2capChannelRemoved` unless `notify_state_update` is false.
+  UniquePtr<L2capChannelNode> DeregisterChannelLocked(
+      L2capChannel& channel, bool notify_state_update = true)
       PW_EXCLUSIVE_LOCKS_REQUIRED(channels_mutex());
 
   // Delete a channel, which must be deregister and closed before calling.

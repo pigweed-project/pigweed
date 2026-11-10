@@ -2606,6 +2606,87 @@ TEST(ProxyHostSnapshotTest, ProxyHostSnapshotApplyStateUpdate) {
   EXPECT_EQ(snapshot.l2cap.l2cap_channels.size(), 0u);
 }
 
+TEST(ProxyHostSnapshotTest, ProxyHostSnapshotApplyReset) {
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.snapshot_incomplete = true;
+  snapshot.acl.le_controller_max_packets = 12;
+  snapshot.acl.le_max_acl_data_packet_length = 251;
+  snapshot.acl.br_edr_controller_max_packets = 8;
+  snapshot.acl.br_edr_max_acl_data_packet_length = 672;
+  snapshot.acl.acl_connections.push_back(CreateAclConnectionSnapshot());
+  snapshot.l2cap.snapshot_incomplete = true;
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot());
+
+  // Verify that a reset restores the snapshot to its default value.
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(ProxyHostReset{}));
+  EXPECT_FALSE(snapshot.acl.snapshot_incomplete);
+  EXPECT_EQ(snapshot.acl.le_controller_max_packets, 0);
+  EXPECT_EQ(snapshot.acl.le_max_acl_data_packet_length, 0);
+  EXPECT_EQ(snapshot.acl.br_edr_controller_max_packets, 0);
+  EXPECT_EQ(snapshot.acl.br_edr_max_acl_data_packet_length, 0);
+  EXPECT_TRUE(snapshot.acl.acl_connections.empty());
+  EXPECT_FALSE(snapshot.l2cap.snapshot_incomplete);
+  EXPECT_TRUE(snapshot.l2cap.l2cap_signaling_states.empty());
+  EXPECT_TRUE(snapshot.l2cap.l2cap_channels.empty());
+}
+
+class ProxyHostRecoveryTest : public ProxyHostTest {};
+
+TEST_F(ProxyHostRecoveryTest, ResetEmitsProxyHostReset) {
+  struct {
+    uint32_t updates_sent = 0;
+    ProxyHostStateUpdate last_update;
+    ProxyHostSnapshot snapshot;
+  } update_capture;
+
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&update_capture](const ProxyHostStateUpdate& update) {
+        update_capture.updates_sent++;
+        update_capture.last_update = update;
+        PW_TEST_EXPECT_OK(update_capture.snapshot.ApplyStateUpdate(update));
+      });
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kLeConnectionHandle1, emboss::StatusCode::SUCCESS));
+  Result<BasicL2capChannel> channel =
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid1,
+                                           .remote_cid = kRemoteCid1,
+                                           .transport = AclTransportType::kLe,
+                                       });
+  PW_TEST_ASSERT_OK(channel.status());
+  ASSERT_EQ(update_capture.snapshot.acl.acl_connections.size(), 1u);
+  ASSERT_EQ(update_capture.snapshot.l2cap.l2cap_channels.size(), 1u);
+
+  // Verify that resetting the proxy emits a single ProxyHostReset update.
+  update_capture.updates_sent = 0;
+  proxy.Reset();
+  EXPECT_EQ(update_capture.updates_sent, 1u);
+  EXPECT_TRUE(
+      std::holds_alternative<ProxyHostReset>(update_capture.last_update));
+  EXPECT_TRUE(update_capture.snapshot.acl.acl_connections.empty());
+  EXPECT_TRUE(update_capture.snapshot.l2cap.l2cap_channels.empty());
+}
+
 }  // namespace
 }  // namespace pw::bluetooth::proxy
 

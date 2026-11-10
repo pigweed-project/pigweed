@@ -120,9 +120,12 @@ Status ProxyHostSnapshot::ApplyStateUpdate(const ProxyHostStateUpdate& update) {
   return std::visit(
       [this](const auto& arg) -> Status {
         using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, AclConnectionSnapshot> ||
-                      std::is_same_v<T, AclConnectionRemoved> ||
-                      std::is_same_v<T, AclBufferSizeSnapshot>) {
+        if constexpr (std::is_same_v<T, ProxyHostReset>) {
+          *this = ProxyHostSnapshot{};
+          return OkStatus();
+        } else if constexpr (std::is_same_v<T, AclConnectionSnapshot> ||
+                             std::is_same_v<T, AclConnectionRemoved> ||
+                             std::is_same_v<T, AclBufferSizeSnapshot>) {
           return acl.ApplyStateUpdate(arg);
         } else {
           return l2cap.ApplyStateUpdate(arg);
@@ -185,6 +188,11 @@ void ProxyHost::DoReset() {
   // registered, but they cannot erroneously use invalidated send credits.
   acl_data_channel_.Reset();
   l2cap_channel_manager_.DeregisterAndCloseChannels(L2capChannelEvent::kReset);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  if (state_update_callback_) {
+    state_update_callback_(ProxyHostReset{});
+  }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 }
 
 void ProxyHost::DoHandleH4HciFromHost(H4PacketWithH4&& h4_packet) {

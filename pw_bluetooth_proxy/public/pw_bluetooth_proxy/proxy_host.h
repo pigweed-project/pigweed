@@ -50,12 +50,16 @@ class Dispatcher;
 /// Lightweight proxy for augmenting Bluetooth functionality
 namespace pw::bluetooth::proxy {
 
+/// Emitted when `ProxyHost` resets. Applying it restores a default snapshot.
+struct ProxyHostReset {};
+
 using ProxyHostStateUpdate = std::variant<AclConnectionSnapshot,
                                           AclConnectionRemoved,
                                           AclBufferSizeSnapshot,
                                           L2capSignalingStateSnapshot,
                                           L2capChannelSnapshot,
-                                          L2capChannelRemoved>;
+                                          L2capChannelRemoved,
+                                          ProxyHostReset>;
 
 using ProxyHostStateUpdateCallback =
     Function<void(const ProxyHostStateUpdate& update)>;
@@ -241,6 +245,9 @@ class ProxyHost : public L2capChannelManagerInterface {
   ///
   /// May also be called by container to notify proxy that the Bluetooth system
   /// is being otherwise reset.
+  ///
+  /// When recovery is enabled, emits `ProxyHostReset` to the state update
+  /// callback so that persisted snapshots are cleared.
   ///
   /// Note: Resetting the proxy does not reset configured event filters. Use
   /// `ResetFilters()` to clear them.

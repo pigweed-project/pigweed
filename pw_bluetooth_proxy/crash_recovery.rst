@@ -303,6 +303,9 @@ Each subsystem defines its own strongly typed callback and payload variant:
      - ``L2capSignalingStateSnapshot``,
        ``L2capChannelSnapshot``,
        ``L2capChannelRemoved``
+   * - ProxyHost (reset)
+     - ``ProxyHostStateUpdateCallback``
+     - ``ProxyHostReset``
    * - SniffOffloadManager
      - ``hci::SniffStateUpdateCallback``
      - ``hci::SniffSnapshot``,
@@ -332,7 +335,8 @@ regions or together in a unified structure:
 
 * ``ProxyHostSnapshot::ApplyStateUpdate``:
   Takes a ``ProxyHostStateUpdate`` and routes it
-  directly to the corresponding ACL or L2CAP snapshot entry.
+  directly to the corresponding ACL or L2CAP snapshot entry, or restores the
+  default snapshot on ``ProxyHostReset``.
 * ``AclSnapshot::ApplyStateUpdate``:
   Updates an existing ``AclConnectionSnapshot``,
   erases the entry if an ``AclConnectionRemoved`` is received, or records

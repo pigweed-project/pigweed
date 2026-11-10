@@ -360,11 +360,13 @@ void L2capChannelManager::DeregisterChannel(L2capChannel& channel) {
 }
 
 UniquePtr<L2capChannelManager::L2capChannelNode>
-L2capChannelManager::DeregisterChannelLocked(L2capChannel& channel) {
+L2capChannelManager::DeregisterChannelLocked(
+    L2capChannel& channel, [[maybe_unused]] bool notify_state_update) {
   impl_.OnDeregister(channel);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  if (state_update_callback_ && !channel.IsSignalingChannel()) {
+  if (notify_state_update && state_update_callback_ &&
+      !channel.IsSignalingChannel()) {
     state_update_callback_(L2capChannelRemoved{
         .connection_handle = channel.connection_handle(),
         .local_cid = channel.local_cid(),
@@ -392,7 +394,10 @@ void L2capChannelManager::DeregisterAndCloseChannels(L2capChannelEvent event) {
     std::lock_guard channels_lock(channels_mutex());
     while (!channels_by_local_cid_.empty()) {
       L2capChannel& channel = channels_by_local_cid_.begin()->second;
-      auto node = DeregisterChannelLocked(channel);
+      // Skip removal updates, since reset emits `ProxyHostReset` instead and
+      // teardown keeps the snapshot.
+      auto node =
+          DeregisterChannelLocked(channel, /*notify_state_update=*/false);
       node->mapped().Close(event);
       stale_.insert(std::move(node));
     }
