@@ -13,9 +13,12 @@ why a second version of RPC was written, see
 :ref:`Why RPC2? <module-pw_rpc2-why>`.
 
 While we recommend that most new projects move forward using RPC2, it is not a
-universal replacement, nor do existing projects need to migrate. The two
-versions of RPC were designed with different goals and constraints in mind, and
-in some cases the original may be a better choice for you.
+universal replacement, nor do existing projects need to migrate all at once. The
+two versions of RPC were designed with different goals and constraints in mind,
+and in some cases the original may be a better choice for you. Projects that
+want to adopt RPC2 incrementally can use the
+:ref:`RPC1 service adapter <module-pw_rpc-rpc2-adapter>` to serve existing
+``pw_rpc`` C++ services from an RPC2 server without modifying them.
 
 -------------------------------
 Quick comparison: RPC1 vs. RPC2
@@ -95,6 +98,12 @@ systems, some of which will be described in more detail in sections below.
      - C++ (Nanopb, pwpb, raw), Python, TypeScript, Java.
      - Initially C++ (raw and pwpb APIs, manual polling or C++20 coroutines),
        with Rust (``no_std``, Embassy) and others planned.
+
+   * - :ref:`Coexistence and migration <module-pw_rpc2-comparison-migration>`
+     - Existing C++ services (Nanopb, pwpb, raw) can run unmodified on an RPC2
+       server via :ref:`module-pw_rpc-rpc2-adapter`.
+     - Can host both native RPC2 services and adapted RPC1 services on the
+       same :cc:`pw::rpc2::Server`.
 
 ---------------------------------
 Important points of consideration
@@ -194,6 +203,8 @@ Production readiness and ecosystem
 
 If you require stability, or need to communicate with devices written in other
 languages **today**, pick RPC1.
+
+.. _module-pw_rpc2-comparison-migration:
 
 -------------------------
 Coexistence and migration

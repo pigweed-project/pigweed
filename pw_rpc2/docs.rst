@@ -40,7 +40,7 @@ Highlights
 -----------------
 C++ documentation
 -----------------
-.. grid:: 2
+.. grid:: 3
 
    .. grid-item-card:: :octicon:`code-square` C++ client and server
       :link: module-pw_rpc2-cpp
@@ -59,6 +59,15 @@ C++ documentation
       **End-to-end C++ example suites.**
       Examples covering common RPC patterns and use cases.
 
+   .. grid-item-card:: :octicon:`beaker` C++ unit testing
+      :link: module-pw_rpc2-testing
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      **Testing services and clients.**
+      Unit test ``pw_rpc2`` services and clients in-process with
+      ``TestHarness``.
+
 -------------------------
 Protocol and architecture
 -------------------------
@@ -76,7 +85,7 @@ Protocol and architecture
 ------------------------
 Evaluation and migration
 ------------------------
-.. grid:: 3
+.. grid:: 2
 
    .. grid-item-card:: :octicon:`info` Why RPC2?
       :link: module-pw_rpc2-why
@@ -94,6 +103,17 @@ Evaluation and migration
 
       **Choosing the right RPC framework.**
       Trade-offs between RPC1 and RPC2, with a guide on when to use which.
+
+.. grid:: 2
+
+   .. grid-item-card:: :octicon:`plug` RPC1 service adapter
+      :link: module-pw_rpc-rpc2-adapter
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      **Incremental migration from RPC1.**
+      Serve existing ``pw_rpc`` C++ services from a ``pw_rpc2`` server without
+      modifying service implementations or ``.proto`` files.
 
    .. grid-item-card:: :octicon:`meter` Extended size report
       :link: module-pw_rpc2-size_report

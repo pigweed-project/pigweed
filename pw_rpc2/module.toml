@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-status = "experimental"
+status = "unstable"
 tagline = "Next gen, zero-copy async RPC with end-to-end backpressure"
 languages = ["C++"]
 

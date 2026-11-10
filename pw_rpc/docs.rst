@@ -14,6 +14,36 @@ shared Protocol Buffer (``.proto``) files.
 ``pw_rpc`` supports C++ (with Nanopb, ``pw_protobuf``, or Raw RPC codegen), Python,
 TypeScript, and Java.
 
+.. admonition:: Use ``pw_rpc2`` for new projects!
+
+   :ref:`module-pw_rpc2` is Pigweed's next-generation RPC framework, redesigned
+   around :ref:`cooperative async tasks <module-pw_async2>` and
+   :ref:`connection-oriented transports <module-pw_transport>`. Key advantages
+   over ``pw_rpc`` include:
+
+   * **Cooperative concurrency**: Multiplexes RPC calls as async tasks
+     (including C++20 coroutines) on a single dispatcher thread.
+   * **End-to-end flow control and backpressure**: Asynchronously waits for
+     transport capacity on writes and pauses ingress when calls are saturated,
+     instead of dropping packets.
+   * **Active, stateful connections**: Tracks connection lifecycles and detects
+     peer disconnects.
+   * **Reliable delivery**: Delivers messages reliably and in order over the
+     connection, eliminating dropped-packet uncertainty and the need to reach
+     for :ref:`module-pw_transfer`.
+   * **Zero-copy payloads and compact framing**: Uses small, fixed-size packet
+     headers and :ref:`pw_buf <module-pw_buf>` views to read and write payloads
+     directly in transport buffers, avoiding the overhead and extra copies of
+     ``pw_rpc``'s protobuf packet format.
+   * **Dynamic per-call allocation**: Allocates active call state on demand via
+     :ref:`module-pw_allocator` rather than permanently reserving RAM for every
+     possible call at compile time.
+
+   See :ref:`Why RPC2? <module-pw_rpc2-why>` and :ref:`RPC1 vs. RPC2
+   <module-pw_rpc2-comparison>` to evaluate which framework fits your system.
+   Consider using the :ref:`pw_rpc2 adapter <module-pw_rpc-rpc2-adapter>` to
+   serve existing ``pw_rpc`` C++ services from a ``pw_rpc2`` server.
+
 .. tab-set::
 
    .. tab-item:: blinky.proto
@@ -129,6 +159,16 @@ Where to go next
       :class-item: sales-pitch-cta-secondary
 
       Packet wire format and envelope protocol specification.
+
+.. grid:: 1
+
+   .. grid-item-card:: :octicon:`plug` pw_rpc2 adapter
+      :link: module-pw_rpc-rpc2-adapter
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Serve existing ``pw_rpc`` C++ services from a ``pw_rpc2`` server without
+      modifying service implementations or ``.proto`` files.
 
 .. toctree::
    :maxdepth: 1

@@ -151,7 +151,7 @@ Module index
    ":ref:`module-pw_ring_buffer`", ":bdg-primary:`stable`", "", ""
    ":ref:`module-pw_router`", ":bdg-warning:`experimental`", "Transport-agnostic packet routing", "C++"
    ":ref:`module-pw_rpc`", ":bdg-primary:`stable`", "Efficient, low-code-size RPC system for embedded devices", "C++, Java, JavaScript, Python, TypeScript"
-   ":ref:`module-pw_rpc2`", ":bdg-warning:`experimental`", "Next gen, zero-copy async RPC with end-to-end backpressure", "C++"
+   ":ref:`module-pw_rpc2`", ":bdg-secondary:`unstable`", "Next gen, zero-copy async RPC with end-to-end backpressure", "C++"
    ":ref:`module-pw_rpc_transport`", ":bdg-secondary:`unstable`", "", ""
    ":ref:`module-pw_rust`", ":bdg-warning:`experimental`", "", ""
    ":ref:`module-pw_sensor`", ":bdg-warning:`experimental`", "A modular way to see the world", "Python, C++"

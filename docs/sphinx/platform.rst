@@ -147,7 +147,7 @@ Learn more: :doc:`comms/index`
 .. csv-table::
    :header: "Name", "Status", "Description", "Languages"
 
-   ":ref:`module-pw_rpc2`", ":bdg-warning:`experimental`", "Next gen, zero-copy async RPC with end-to-end backpressure", "C++"
+   ":ref:`module-pw_rpc2`", ":bdg-secondary:`unstable`", "Next gen, zero-copy async RPC with end-to-end backpressure", "C++"
    ":ref:`module-pw_transport`", ":bdg-warning:`experimental`", "Asynchronous datagram-oriented transport interface", "C++"
    ":ref:`module-pw_channel`", ":bdg-danger:`deprecated`", "Async, zero-copy API for sending and receiving bytes or datagrams", "C++"
    ":ref:`module-pw_cobs`", ":bdg-warning:`experimental`", "Consistent Overhead Byte Stuffing (COBS) codec and zero-copy frame streamer", "C++"
