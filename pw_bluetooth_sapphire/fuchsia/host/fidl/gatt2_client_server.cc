@@ -267,9 +267,6 @@ void Gatt2ClientServer::ConnectToService(
     return;
   }
 
-  // Mark this connection as in progress.
-  services_.try_emplace(service_handle, nullptr);
-
   bt::gatt::RemoteService::WeakPtr service =
       gatt()->FindService(peer_id_, service_handle);
   if (!service.is_alive()) {
@@ -278,7 +275,6 @@ void Gatt2ClientServer::ConnectToService(
            "service not found (peer: %s, handle: %#.4x)",
            bt_str(peer_id_),
            service_handle);
-    services_.erase(service_handle);
     request.Close(ZX_ERR_NOT_FOUND);
     return;
   }
@@ -341,9 +337,8 @@ void Gatt2ClientServer::ConnectToService(
         self->services_.erase(service_handle);
       });
 
-  // Error handler should not have been called yet.
-  PW_CHECK(services_.count(service_handle) == 1);
-  services_[service_handle] = std::move(remote_service_server);
+  PW_CHECK(services_.emplace(service_handle, std::move(remote_service_server))
+               .second);
 }
 
 }  // namespace bthost

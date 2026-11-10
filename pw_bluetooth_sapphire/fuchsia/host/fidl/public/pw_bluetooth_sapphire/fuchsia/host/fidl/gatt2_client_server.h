@@ -69,10 +69,7 @@ class Gatt2ClientServer
   // closing this server).
   fit::callback<void()> server_error_cb_;
 
-  // If a service's handle maps to a null value, a connection request to that
-  // service is in progress.
-  // TODO(fxbug.dev/42165614): Once FindService() returns the service directly,
-  // don't use null values.
+  // Servers for connected RemoteServices, keyed by service handle.
   std::unordered_map<bt::att::Handle, std::unique_ptr<Gatt2RemoteServiceServer>>
       services_;
 
