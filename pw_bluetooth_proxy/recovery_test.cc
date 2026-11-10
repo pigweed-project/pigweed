@@ -641,6 +641,47 @@ TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {
   EXPECT_FALSE(send_capture.captured_packet.has_value());
 }
 
+TEST_F(AclRecoveryTest, ResetClearsDeferredRefunds) {
+  int sent_to_host_count = 0;
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&sent_to_host_count](H4PacketWithHci&&) { ++sent_to_host_count; });
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  Vector<AclConnectionSnapshot, 2> state_updates;
+  ProxyHost proxy =
+      ProxyHost(std::move(send_to_host_fn),
+                std::move(send_to_controller_fn),
+                /*le_acl_credits_to_reserve=*/2,
+                /*br_edr_acl_credits_to_reserve=*/0,
+                GetProxyHostAllocator(),
+                [&state_updates](const ProxyHostStateUpdate& update) {
+                  if (const AclConnectionSnapshot* conn_snap =
+                          std::get_if<AclConnectionSnapshot>(&update)) {
+                    state_updates.push_back(*conn_snap);
+                  }
+                });
+  StartDispatcherOnCurrentThread(proxy);
+
+  ProxyHostSnapshot snapshot_with_loss;
+  snapshot_with_loss.acl = CreateAclSnapshot();
+  snapshot_with_loss.acl.acl_connections.push_back(
+      CreateAclConnectionSnapshot(kLeConnectionHandle1,
+                                  AclTransportType::kLe,
+                                  /*num_proxy_pending=*/0,
+                                  /*num_host_pending=*/0,
+                                  /*num_queued_host=*/2));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot_with_loss));
+
+  // Resetting the proxy must clear deferred refunds accumulated from the prior
+  // recovery.
+  proxy.Reset();
+  proxy.InitiateAclCreditResynchronization();
+  EXPECT_EQ(sent_to_host_count, 0);
+  EXPECT_TRUE(state_updates.empty());
+}
+
 TEST_F(AclRecoveryTest, StaticCreditsPendingDerivedFromConnections) {
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});

@@ -283,6 +283,9 @@ void AclDataChannel::Reset() {
   {
     std::lock_guard lock(connection_mutex_);
     acl_connections_.clear();
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    deferred_refunds_.clear();
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   }
   {
     std::lock_guard lock(delegates_mutex_);
