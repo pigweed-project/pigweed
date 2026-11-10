@@ -51,6 +51,9 @@ RfcommManager::RfcommManager(
 
 RfcommManager::~RfcommManager() {
   PW_LOG_INFO("RFCOMM manager destroyed");
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  state_update_callback_ = nullptr;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   DeregisterAndCloseChannels(RfcommEvent::kChannelClosedByOther);
 }
 
@@ -210,12 +213,20 @@ void RfcommManager::DeregisterAndCloseChannels(RfcommEvent event) {
   {
     std::lock_guard lock(connections_mutex_);
     connections_to_close.swap(connections_);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    restored_snapshot_ = nullptr;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   }
 
   while (!connections_to_close.empty()) {
     CloseConnectionState(
         connections_to_close.take(connections_to_close.begin()), event);
   }
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  if (event == RfcommEvent::kReset && state_update_callback_) {
+    state_update_callback_(RfcommReset{});
+  }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 }
 
 Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
@@ -309,9 +320,11 @@ void RfcommManager::CloseConnectionState(
   channels_to_close.swap(conn_state_node->mapped().channels);
   for (auto& [_, channel] : channels_to_close) {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-    NotifyChannelRemoved(channel.connection_handle(),
-                         channel.channel_number(),
-                         channel.direction());
+    if (event != RfcommEvent::kReset) {
+      NotifyChannelRemoved(channel.connection_handle(),
+                           channel.channel_number(),
+                           channel.direction());
+    }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
     channel.Close(event);
   }
@@ -453,6 +466,9 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
 void RfcommManager::HandleL2capEvent(L2capChannelEvent event,
                                      ConnectionHandle connection_handle) {
   UniquePtr<ConnectionMap::node_type> conn_state_to_close;
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  bool emit_reset = false;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   {
     std::lock_guard lock(connections_mutex_);
     auto it = connections_.find(connection_handle);
@@ -470,6 +486,12 @@ void RfcommManager::HandleL2capEvent(L2capChannelEvent event,
     if (event == L2capChannelEvent::kChannelClosedByOther ||
         event == L2capChannelEvent::kReset) {
       conn_state_to_close = connections_.take(it);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+      if (event == L2capChannelEvent::kReset && connections_.empty()) {
+        restored_snapshot_ = nullptr;
+        emit_reset = true;
+      }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
     }
   }
 
@@ -478,6 +500,11 @@ void RfcommManager::HandleL2capEvent(L2capChannelEvent event,
                                    ? RfcommEvent::kReset
                                    : RfcommEvent::kChannelClosedByOther;
     CloseConnectionState(std::move(conn_state_to_close), rfcomm_event);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    if (emit_reset && state_update_callback_) {
+      state_update_callback_(RfcommReset{});
+    }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   }
 }
 

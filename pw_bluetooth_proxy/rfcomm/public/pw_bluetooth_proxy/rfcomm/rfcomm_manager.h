@@ -49,8 +49,9 @@ class RfcommManager final : public RfcommChannelManagerInterface {
                 RfcommStateUpdateCallback state_update_callback = nullptr);
   ~RfcommManager() override;
 
-  // Deregisters all channels for the given connection and closes the
-  // connection.
+  /// Deregisters and closes all active RFCOMM channels across all connections,
+  /// notifying each channel with @p event. Passing `RfcommEvent::kReset` also
+  /// resets persisted RFCOMM recovery state via the state update callback.
   void DeregisterAndCloseChannels(RfcommEvent event);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
@@ -192,7 +193,8 @@ class RfcommManager final : public RfcommChannelManagerInterface {
 
   // Registered state update callback for offload recovery persistence. This
   // must only be modified during initialization before packet traffic is
-  // processed. This allows it to be safely invoked without acquiring any locks.
+  // processed or during destruction after traffic has stopped. This allows it
+  // to be safely invoked without acquiring any locks.
   RfcommStateUpdateCallback state_update_callback_;
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };

@@ -32,6 +32,10 @@ struct RfcommChannelRemoved {
   RfcommDirection direction = RfcommDirection::kResponder;
 };
 
+/// Emitted when @c RfcommManager resets. Applying it restores a default
+/// snapshot.
+struct RfcommReset {};
+
 /// Snapshot record representing an active RFCOMM channel.
 struct RfcommChannelSnapshot {
   uint16_t connection_handle = 0;
@@ -57,7 +61,7 @@ struct RfcommChannelSnapshot {
 
 /// Incremental update payload emitted on RFCOMM state mutations.
 using RfcommStateUpdate =
-    std::variant<RfcommChannelSnapshot, RfcommChannelRemoved>;
+    std::variant<RfcommChannelSnapshot, RfcommChannelRemoved, RfcommReset>;
 
 /// Callback type invoked when the RFCOMM subsystem state mutates.
 ///

@@ -993,6 +993,19 @@ TEST(RfcommSnapshotTest, ApplyStateUpdateCapacityExhaustion) {
   EXPECT_TRUE(snapshot.snapshot_incomplete);
 }
 
+TEST(RfcommSnapshotTest, ApplyStateUpdateReset) {
+  RfcommSnapshot snapshot;
+  snapshot.snapshot_incomplete = true;
+  snapshot.rfcomm_channels.push_back(CreateRfcommChannelSnapshot(
+      /*connection_handle=*/1,
+      /*channel_number=*/2,
+      /*direction=*/RfcommDirection::kInitiator));
+
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(RfcommReset{}));
+  EXPECT_FALSE(snapshot.snapshot_incomplete);
+  EXPECT_TRUE(snapshot.rfcomm_channels.empty());
+}
+
 using RfcommProxyHostTest = ProxyHostTest;
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
@@ -1527,11 +1540,189 @@ TEST_F(RfcommManagerRecoveryTest, StateUpdateEmittedOnL2capEvent) {
                                     nullptr);
   PW_TEST_ASSERT_OK(channel_result.status());
 
-  l2cap_manager_.TriggerL2capEvent(L2capChannelEvent::kReset);
+  l2cap_manager_.TriggerL2capEvent(L2capChannelEvent::kChannelClosedByOther);
   ASSERT_TRUE(last_channel_removed.has_value());
   EXPECT_EQ(last_channel_removed->connection_handle,
             static_cast<uint16_t>(kConnectionHandle1));
   EXPECT_EQ(last_channel_removed->channel_number, kChannelNumber1);
+}
+
+TEST_F(RfcommManagerRecoveryTest,
+       DeregisterAndCloseWithResetEmitsRfcommResetAndClearsSnapshot) {
+  RfcommSnapshot snapshot;
+  snapshot.rfcomm_channels.push_back(CreateRfcommChannelSnapshot(
+      /*connection_handle=*/static_cast<uint16_t>(kConnectionHandle1),
+      /*channel_number=*/kChannelNumber1,
+      /*direction=*/RfcommDirection::kInitiator,
+      /*local_cid=*/kDefaultConfig.cid,
+      /*remote_cid=*/kDefaultConfig.cid,
+      /*mux_initiator=*/true,
+      /*tx_credits=*/99,
+      /*rx_credits=*/88,
+      /*rx_total_credits=*/77));
+  PW_TEST_ASSERT_OK(manager_.RecoverFromSnapshot(&snapshot));
+
+  Result<RfcommChannel> channel_result =
+      manager_.AcquireRfcommChannel(multibuf_allocator_,
+                                    kConnectionHandle1,
+                                    kChannelNumber1,
+                                    RfcommDirection::kInitiator,
+                                    true,
+                                    kDefaultConfig,
+                                    kDefaultConfig,
+                                    nullptr,
+                                    nullptr);
+  PW_TEST_ASSERT_OK(channel_result.status());
+
+  struct CallbackState {
+    RfcommSnapshot persisted_snapshot{};
+    size_t reset_count = 0;
+    size_t removed_count = 0;
+    std::optional<RfcommChannelSnapshot> post_reset_channel_snapshot =
+        std::nullopt;
+  } callback_state;
+  callback_state.persisted_snapshot = snapshot;
+  callback_state.persisted_snapshot.snapshot_incomplete = true;
+  state_update_callback_ = [&callback_state](const RfcommStateUpdate& update) {
+    if (std::holds_alternative<RfcommReset>(update)) {
+      ++callback_state.reset_count;
+    } else if (std::holds_alternative<RfcommChannelRemoved>(update)) {
+      ++callback_state.removed_count;
+    } else if (const RfcommChannelSnapshot* ch_snap =
+                   std::get_if<RfcommChannelSnapshot>(&update)) {
+      callback_state.post_reset_channel_snapshot = *ch_snap;
+    }
+    PW_TEST_EXPECT_OK(
+        callback_state.persisted_snapshot.ApplyStateUpdate(update));
+  };
+
+  manager_.DeregisterAndCloseChannels(RfcommEvent::kReset);
+  EXPECT_EQ(callback_state.reset_count, 1u);
+  EXPECT_EQ(callback_state.removed_count, 0u);
+  EXPECT_FALSE(callback_state.persisted_snapshot.snapshot_incomplete);
+  EXPECT_TRUE(callback_state.persisted_snapshot.rfcomm_channels.empty());
+
+  // Verify restored_snapshot_ was cleared so subsequent channel acquisition
+  // uses requested config and emits an initial state update even though
+  // snapshot.rfcomm_channels still contains kChannelNumber1.
+  Result<RfcommChannel> post_reset_channel =
+      manager_.AcquireRfcommChannel(multibuf_allocator_,
+                                    kConnectionHandle1,
+                                    kChannelNumber1,
+                                    RfcommDirection::kInitiator,
+                                    true,
+                                    kDefaultConfig,
+                                    kDefaultConfig,
+                                    nullptr,
+                                    nullptr);
+  PW_TEST_ASSERT_OK(post_reset_channel.status());
+  ASSERT_TRUE(callback_state.post_reset_channel_snapshot.has_value());
+  EXPECT_EQ(callback_state.post_reset_channel_snapshot->tx_credits,
+            kDefaultConfig.initial_credits);
+}
+
+TEST_F(RfcommManagerRecoveryTest,
+       L2capResetEventEmitsRfcommResetAndClearsSnapshot) {
+  RfcommSnapshot snapshot;
+  snapshot.rfcomm_channels.push_back(CreateRfcommChannelSnapshot(
+      /*connection_handle=*/static_cast<uint16_t>(kConnectionHandle1),
+      /*channel_number=*/kChannelNumber1,
+      /*direction=*/RfcommDirection::kInitiator,
+      /*local_cid=*/kDefaultConfig.cid,
+      /*remote_cid=*/kDefaultConfig.cid,
+      /*mux_initiator=*/true,
+      /*tx_credits=*/99,
+      /*rx_credits=*/88,
+      /*rx_total_credits=*/77));
+  PW_TEST_ASSERT_OK(manager_.RecoverFromSnapshot(&snapshot));
+
+  Result<RfcommChannel> channel_result =
+      manager_.AcquireRfcommChannel(multibuf_allocator_,
+                                    kConnectionHandle1,
+                                    kChannelNumber1,
+                                    RfcommDirection::kInitiator,
+                                    true,
+                                    kDefaultConfig,
+                                    kDefaultConfig,
+                                    nullptr,
+                                    nullptr);
+  PW_TEST_ASSERT_OK(channel_result.status());
+
+  struct CallbackState {
+    RfcommSnapshot persisted_snapshot{};
+    size_t reset_count = 0;
+    size_t removed_count = 0;
+    std::optional<RfcommChannelSnapshot> post_reset_channel_snapshot =
+        std::nullopt;
+  } callback_state;
+  callback_state.persisted_snapshot = snapshot;
+  callback_state.persisted_snapshot.snapshot_incomplete = true;
+  state_update_callback_ = [&callback_state](const RfcommStateUpdate& update) {
+    if (std::holds_alternative<RfcommReset>(update)) {
+      ++callback_state.reset_count;
+    } else if (std::holds_alternative<RfcommChannelRemoved>(update)) {
+      ++callback_state.removed_count;
+    } else if (const RfcommChannelSnapshot* ch_snap =
+                   std::get_if<RfcommChannelSnapshot>(&update)) {
+      callback_state.post_reset_channel_snapshot = *ch_snap;
+    }
+    PW_TEST_EXPECT_OK(
+        callback_state.persisted_snapshot.ApplyStateUpdate(update));
+  };
+
+  l2cap_manager_.TriggerL2capEvent(L2capChannelEvent::kReset);
+  EXPECT_EQ(callback_state.reset_count, 1u);
+  EXPECT_EQ(callback_state.removed_count, 0u);
+  EXPECT_FALSE(callback_state.persisted_snapshot.snapshot_incomplete);
+  EXPECT_TRUE(callback_state.persisted_snapshot.rfcomm_channels.empty());
+
+  Result<RfcommChannel> post_reset_channel =
+      manager_.AcquireRfcommChannel(multibuf_allocator_,
+                                    kConnectionHandle1,
+                                    kChannelNumber1,
+                                    RfcommDirection::kInitiator,
+                                    true,
+                                    kDefaultConfig,
+                                    kDefaultConfig,
+                                    nullptr,
+                                    nullptr);
+  PW_TEST_ASSERT_OK(post_reset_channel.status());
+  ASSERT_TRUE(callback_state.post_reset_channel_snapshot.has_value());
+  EXPECT_EQ(callback_state.post_reset_channel_snapshot->tx_credits,
+            kDefaultConfig.initial_credits);
+}
+
+TEST_F(RfcommManagerRecoveryTest, DestructionDoesNotEmitStateUpdates) {
+  // Prevent ~RfcommChannel() from releasing the channel before `local_manager`
+  // is destroyed or dereferencing `local_manager` after it goes out of scope.
+  union UnreleasedChannel {
+    UnreleasedChannel() {}
+    ~UnreleasedChannel() {}
+    RfcommChannel channel;
+  } holder;
+
+  size_t update_count = 0;
+  {
+    RfcommManager local_manager(
+        l2cap_manager_, allocator_, [&update_count](const RfcommStateUpdate&) {
+          ++update_count;
+        });
+    Result<RfcommChannel> channel_result =
+        local_manager.AcquireRfcommChannel(multibuf_allocator_,
+                                           kConnectionHandle1,
+                                           kChannelNumber1,
+                                           RfcommDirection::kInitiator,
+                                           true,
+                                           kDefaultConfig,
+                                           kDefaultConfig,
+                                           nullptr,
+                                           nullptr);
+    PW_TEST_ASSERT_OK(channel_result.status());
+    new (&holder.channel) RfcommChannel(std::move(channel_result.value()));
+    EXPECT_EQ(update_count, 1u);
+    update_count = 0;
+  }
+  EXPECT_EQ(update_count, 0u);
 }
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES

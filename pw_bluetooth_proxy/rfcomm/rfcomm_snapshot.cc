@@ -48,7 +48,10 @@ Status RfcommSnapshot::ApplyStateUpdate(const RfcommStateUpdate& update) {
   return std::visit(
       [this](const auto& arg) -> Status {
         using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, RfcommChannelSnapshot>) {
+        if constexpr (std::is_same_v<T, RfcommReset>) {
+          *this = RfcommSnapshot{};
+          return OkStatus();
+        } else if constexpr (std::is_same_v<T, RfcommChannelSnapshot>) {
           for (RfcommChannelSnapshot& channel : rfcomm_channels) {
             if (channel.MatchesKey(
                     arg.connection_handle, arg.channel_number, arg.direction)) {

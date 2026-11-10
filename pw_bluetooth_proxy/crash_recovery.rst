@@ -314,7 +314,8 @@ Each subsystem defines its own strongly typed callback and payload variant:
    * - RfcommManager
      - ``rfcomm::RfcommStateUpdateCallback``
      - ``rfcomm::RfcommChannelSnapshot``,
-       ``rfcomm::RfcommChannelRemoved``
+       ``rfcomm::RfcommChannelRemoved``,
+       ``rfcomm::RfcommReset``
 
 Re-entrancy safety rules
 ========================
@@ -349,8 +350,9 @@ regions or together in a unified structure:
 * ``hci::SniffSnapshot::ApplyStateUpdate``:
   Updates or overwrites active sniff connection records.
 * ``rfcomm::RfcommSnapshot::ApplyStateUpdate``:
-  Updates channel credits/parameters or removes records on
-  ``rfcomm::RfcommChannelRemoved``.
+  Updates channel credits/parameters, removes records on
+  ``rfcomm::RfcommChannelRemoved``, or resets the snapshot on
+  ``rfcomm::RfcommReset``.
 * ``hci::CommandMultiplexerSnapshot::ApplyStateUpdate``:
   Updates command credit counts directly from the update payload.
 * Individual record methods ``Update()`` and ``MatchesKey()`` allow custom
