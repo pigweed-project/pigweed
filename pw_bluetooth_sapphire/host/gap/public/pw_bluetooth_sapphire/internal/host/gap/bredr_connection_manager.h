@@ -315,6 +315,11 @@ class BrEdrConnectionManager final {
   [[nodiscard]] bool TryAssignNewLinkKeyToPairingState(
       PeerId peer_id, const UInt128& key_value, hci_spec::LinkKeyType key_type);
 
+  // Returns |request|'s LegacyPairingState, creating it if pairing begins
+  // before HCI_Connection_Complete.
+  LegacyPairingState& GetOrCreatePreAclLegacyPairingState(
+      BrEdrConnectionRequest& request, Peer& peer);
+
   void HandleNonAclConnectionRequest(const DeviceAddress& addr,
                                      pw::bluetooth::emboss::LinkType link_type);
 
