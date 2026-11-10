@@ -25,6 +25,9 @@ common --incompatible_default_to_explicit_init_py
 # We rely on vendored toolchains from Pigweed.
 common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
+# Disable third-party ruleset telemetry (e.g. aspect_tools_telemetry).
+common --repo_env=DO_NOT_TRACK=1
+
 # Silence warnings in external repositories and generated proto files.
 common --per_file_copt=.*external.*,.*\.pb\.cc@-w
 common --host_per_file_copt=.*external.*,.*\.pb\.cc@-w

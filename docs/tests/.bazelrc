@@ -14,3 +14,6 @@
 
 # Default documentation build output path for tests
 test --test_env=DOCS_PATH=../../bazel-bin/docs/sphinx/docs
+
+# Disable third-party ruleset telemetry (e.g. aspect_tools_telemetry).
+common --repo_env=DO_NOT_TRACK=1

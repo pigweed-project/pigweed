@@ -21,6 +21,9 @@ common --host_per_file_copt=external.*pioasm.*@-fexceptions,-frtti
 common --per_file_copt=external/.*@-w
 common --host_per_file_copt=external/.*@-w
 
+# Disable third-party ruleset telemetry (e.g. aspect_tools_telemetry).
+common --repo_env=DO_NOT_TRACK=1
+
 # Use Zephyr llvm toolchain
 common --@zephyr-bazel//toolchain:zephyr_toolchain_variant=llvm
 

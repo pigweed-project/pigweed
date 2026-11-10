@@ -29,6 +29,7 @@ _ALLOWED_NON_DEV_BAZEL_DEPS = frozenset(
         'bazel_skylib',
         'boringssl',
         'emboss',
+        'flatbuffers',
         'freertos',
         'fuzztest',
         'gazelle',

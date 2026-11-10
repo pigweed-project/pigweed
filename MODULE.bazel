@@ -21,7 +21,7 @@ module(
 )
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
-bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "aspect_rules_js", version = "3.5.1")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "boringssl", version = "0.20260730.0")
 
@@ -90,6 +90,12 @@ bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
 # unexpected keyword argument 'incompatible_use_toolchain_transition'` error.
 # aspect_rules_esbuild@0.25.1 removes that keyword argument.
 bazel_dep(name = "aspect_rules_esbuild", version = "0.25.1")
+
+# Require flatbuffers to be at least 25.12.19.bcr.1 (transitively pulled in by
+# fuzztest@20260219.0 at 25.12.19), to resolve an `unknown attribute
+# root_package provided` error in `npm.npm_translate_lock` with
+# aspect_rules_js 3.x.
+bazel_dep(name = "flatbuffers", version = "25.12.19.bcr.1")
 
 # Repository overrides
 # ====================
@@ -756,6 +762,14 @@ node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node", dev_depende
 node.toolchain(node_version = "26.5.0")
 
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+
+# aspect_rules_js 3.x strips `.gitignore` files by default, which causes Bazel
+# to drop the otherwise-empty `@protobuf-ts/protoc/installed/` directory that
+# `@protobuf-ts/protoc`'s runtime script scans for cached protoc binaries.
+npm.npm_exclude_package_contents(
+    package = "@protobuf-ts/protoc",
+    presets = [],
+)
 npm.npm_translate_lock(
     name = "npm",
     data = [
