@@ -19,6 +19,7 @@
 #include "pw_bluetooth_sapphire/internal/host/common/bounded_inspect_list_node.h"
 #include "pw_bluetooth_sapphire/internal/host/common/expiring_set.h"
 #include "pw_bluetooth_sapphire/internal/host/common/metrics.h"
+#include "pw_bluetooth_sapphire/internal/host/common/uint128.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/bredr_connection.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/bredr_connection_request.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/gap.h"
@@ -306,6 +307,13 @@ class BrEdrConnectionManager final {
       const hci::EventPacket& event);
   hci::CommandChannel::EventCallbackResult OnPinCodeRequest(
       const hci::EventPacket& event);
+
+  // Forwards |key_value| to |peer_id|'s active pairing state, if any. Accepting
+  // assigns the key to the pairing state; rejecting on an established
+  // connection disconnects and destroys it synchronously. Returns true only if
+  // accepted.
+  [[nodiscard]] bool TryAssignNewLinkKeyToPairingState(
+      PeerId peer_id, const UInt128& key_value, hci_spec::LinkKeyType key_type);
 
   void HandleNonAclConnectionRequest(const DeviceAddress& addr,
                                      pw::bluetooth::emboss::LinkType link_type);
