@@ -39,6 +39,7 @@
 #include <compare>  // IWYU pragma: export
 #endif  // defined(__cpp_impl_three_way_comparison) && __has_include(<compare>)
 
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <optional>  // IWYU pragma: export
@@ -695,23 +696,25 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
   ///
   /// The `std::move` on `result` instead of on the whole expression enables
   /// warnings about possible uses of the result object after the move.
-  constexpr const T& value() const& PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_ASSERT(ok());
+  PW_ALWAYS_INLINE constexpr const T& value()
+      const& PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::AssertValuePresent(ok());
     return this->data();
   }
   /// @copydoc value
-  constexpr T& value() & PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_ASSERT(ok());
+  PW_ALWAYS_INLINE constexpr T& value() & PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::AssertValuePresent(ok());
     return this->data();
   }
   /// @copydoc value
-  constexpr const T&& value() const&& PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_ASSERT(ok());
+  PW_ALWAYS_INLINE constexpr const T&& value()
+      const&& PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::AssertValuePresent(ok());
     return std::move(this->data());
   }
   /// @copydoc value
-  constexpr T&& value() && PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_ASSERT(ok());
+  PW_ALWAYS_INLINE constexpr T&& value() && PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::AssertValuePresent(ok());
     return std::move(this->data());
   }
 
@@ -723,23 +726,27 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
   /// Use `this->ok()` to verify that there is a current value within the
   /// `Result<T, StatusType>`. Alternatively, see the `value()` member function
   /// for a similar API that guarantees crashing if there is no current value.
-  constexpr const T& operator*() const& noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_DASSERT(ok());
+  PW_ALWAYS_INLINE constexpr const T& operator*() const& noexcept
+      PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::DAssertValuePresent(ok());
     return this->data();
   }
   /// @copydoc operator*
-  constexpr T& operator*() & noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_DASSERT(ok());
+  PW_ALWAYS_INLINE constexpr T& operator*() & noexcept
+      PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::DAssertValuePresent(ok());
     return this->data();
   }
   /// @copydoc operator*
-  constexpr const T&& operator*() const&& noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_DASSERT(ok());
+  PW_ALWAYS_INLINE constexpr const T&& operator*() const&& noexcept
+      PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::DAssertValuePresent(ok());
     return std::move(this->data());
   }
   /// @copydoc operator*
-  constexpr T&& operator*() && noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_DASSERT(ok());
+  PW_ALWAYS_INLINE constexpr T&& operator*() && noexcept
+      PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::DAssertValuePresent(ok());
     return std::move(this->data());
   }
 
@@ -749,13 +756,15 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
   /// @pre `this->ok() == true`, otherwise the behavior is undefined.
   ///
   /// Use `this->ok()` to verify that there is a current value.
-  constexpr const T* operator->() const noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_DASSERT(ok());
+  PW_ALWAYS_INLINE constexpr const T* operator->() const noexcept
+      PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::DAssertValuePresent(ok());
     return std::addressof(this->data());
   }
   /// @copydoc operator->
-  constexpr T* operator->() noexcept PW_ATTRIBUTE_LIFETIME_BOUND {
-    PW_DASSERT(ok());
+  PW_ALWAYS_INLINE constexpr T* operator->() noexcept
+      PW_ATTRIBUTE_LIFETIME_BOUND {
+    internal_result::DAssertValuePresent(ok());
     return std::addressof(this->data());
   }
 
@@ -1190,7 +1199,7 @@ class [[nodiscard]] Result<void, StatusType> final {
   /// The status must not be OK (`!status.ok()`). To avoid a runtime check, use
   /// the `reset<kCode>()` function template whenever possible.
   constexpr void reset(status_type status) {
-    PW_ASSERT(!status.ok());
+    internal_result::AssertErrorStatus(status.ok());
     status_ = std::move(status);
   }
 
@@ -1218,7 +1227,7 @@ class [[nodiscard]] Result<void, StatusType> final {
   [[nodiscard]] constexpr bool has_value() const noexcept { return ok(); }
 
   /// Asserts that `ok()` is `true` via `PW_ASSERT`.
-  constexpr void value() const { PW_ASSERT(ok()); }
+  constexpr void value() const { internal_result::AssertValuePresent(ok()); }
 
   /// @returns The current `status_type`.
   [[nodiscard]] constexpr status_type status() const noexcept {
@@ -1403,9 +1412,10 @@ make_optional(std::initializer_list<U> ilist, Args&&... args) noexcept {
   return Optional<T>(std::in_place, ilist, std::forward<Args>(args)...);
 }
 
-/// Deduction guide to allow `Result(v)` rather than `Result<T>(v)`.
-template <typename T>
-Result(T value) -> Result<T>;
+/// Deduction guide to allow `Result(v)` and `Optional(v)` (in C++20+) rather
+/// than `Result<T>(v)` or `Optional<T>(v)`.
+template <typename T, typename StatusType = Status>
+Result(T value) -> Result<T, StatusType>;
 
 /// Checks the equality of two `Result` objects with potentially different value
 /// types `T` and `U` that share the same `StatusType`. Only enabled if `T` and
@@ -1970,4 +1980,54 @@ constexpr T&& ConvertToValue(Result<T, StatusType>& result) noexcept {
 
 }  // namespace internal
 
+namespace internal_result {
+
+// Base templates for `std::hash<Result<T, StatusType>>`. `std::hash` is
+// enabled when `T` is hashable or `void`, and disabled otherwise.
+
+// Enabled base: hashes `*result` if `ok()`, otherwise the status code.
+template <typename T,
+          typename StatusType,
+          bool kEnabled = std::is_default_constructible_v<
+              std::hash<std::remove_const_t<T>>>>
+struct ResultHashBase {
+  constexpr size_t operator()(const Result<T, StatusType>& result) const
+      noexcept(noexcept(std::hash<std::remove_const_t<T>>{}(*result))) {
+    return result.ok()
+               ? std::hash<std::remove_const_t<T>>{}(*result)
+               : std::hash<typename StatusType::Code>{}(result.status().code());
+  }
+};
+
+// Disabled base when `T` is not hashable (deletes special members).
+template <typename T, typename StatusType>
+struct ResultHashBase<T, StatusType, false> {
+  ResultHashBase() = delete;
+  ResultHashBase(const ResultHashBase&) = delete;
+  ResultHashBase(ResultHashBase&&) = delete;
+  ResultHashBase& operator=(const ResultHashBase&) = delete;
+  ResultHashBase& operator=(ResultHashBase&&) = delete;
+};
+
+// `void` specialization: hashes the status code (`std::hash<void>` is
+// disabled, so `kEnabled` is `false`).
+template <typename StatusType>
+struct ResultHashBase<void, StatusType, false> {
+  constexpr size_t operator()(
+      const Result<void, StatusType>& result) const noexcept {
+    return std::hash<typename StatusType::Code>{}(result.status().code());
+  }
+};
+
+}  // namespace internal_result
+
 }  // namespace pw
+
+namespace std {
+
+// Enables using `pw::Result` and `pw::Optional` with standard hash containers.
+template <typename T, typename StatusType>
+struct hash<::pw::Result<T, StatusType>>
+    : ::pw::internal_result::ResultHashBase<T, StatusType> {};
+
+}  // namespace std

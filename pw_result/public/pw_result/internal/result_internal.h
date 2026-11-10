@@ -73,6 +73,38 @@ inline constexpr FromResultTag kFromResultTag{};
 struct FromStdOptionalTag {};
 inline constexpr FromStdOptionalTag kFromStdOptionalTag{};
 
+// Out-of-line crash helper shared across all `Result<T, StatusType>` and
+// `Optional<T>` instantiations. Keeping the `PW_ASSERT` expansion out of the
+// template accessors avoids emitting a separate ~36-byte function per `<T,
+// StatusType, cv/ref>` under `-Os`/`-Oz` and lets the compiler inline the
+// accessors and eliminate redundant `ok()` checks after `if (res.ok())` or
+// `if (opt.has_value())`.
+[[noreturn]] PW_NO_INLINE inline void Crash() noexcept {
+  PW_ASSERT(false);
+  PW_UNREACHABLE;
+}
+
+PW_ALWAYS_INLINE constexpr void AssertValuePresent(bool ok) noexcept {
+  if (!ok) {
+    Crash();
+  }
+}
+
+PW_ALWAYS_INLINE constexpr void DAssertValuePresent(
+    [[maybe_unused]] bool ok) noexcept {
+#if PW_ASSERT_ENABLE_DEBUG
+  if (!ok) {
+    Crash();
+  }
+#endif  // PW_ASSERT_ENABLE_DEBUG
+}
+
+PW_ALWAYS_INLINE constexpr void AssertErrorStatus(bool ok) noexcept {
+  if (ok) {
+    Crash();
+  }
+}
+
 // Casts `value` to `const Val&` if `Owner` is an lvalue reference, or `Val&&`
 // otherwise (preserving `const` if `Val` itself is `const`).
 template <typename Owner, typename Val>
@@ -181,7 +213,7 @@ struct ResultMembers {
 
   explicit constexpr ResultMembers(status_type error_status)
       : storage(), status(std::move(error_status)) {
-    PW_ASSERT(!this->status.ok());
+    AssertErrorStatus(this->status.ok());
   }
 
   template <typename... Args>
@@ -304,7 +336,7 @@ struct ResultStorageBase : ResultBase<T, StatusType> {
   constexpr void AssignStatus(status_type error_status) {
     this->Clear();
     this->status = std::move(error_status);
-    PW_ASSERT(!this->status.ok());
+    AssertErrorStatus(this->status.ok());
   }
 
   template <typename status_type::Code kCode>

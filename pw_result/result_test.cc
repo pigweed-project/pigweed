@@ -3399,6 +3399,48 @@ static_assert(noexcept(std::declval<const Result<void>&>() == Result<void>()));
 static_assert(noexcept(std::declval<const Result<void>&>() == OkStatus()));
 static_assert(noexcept(std::declval<const Result<void>&>() == PW_STATUS_OK));
 
+struct NonHashable {};
+
+static_assert(std::is_default_constructible_v<std::hash<Result<int>>>);
+static_assert(std::is_default_constructible_v<std::hash<Result<const int>>>);
+static_assert(std::is_default_constructible_v<std::hash<TestResult<int>>>);
+static_assert(std::is_default_constructible_v<std::hash<Result<void>>>);
+static_assert(std::is_default_constructible_v<std::hash<TestResult<void>>>);
+static_assert(!std::is_default_constructible_v<std::hash<Result<NonHashable>>>);
+static_assert(!std::is_copy_constructible_v<std::hash<Result<NonHashable>>>);
+static_assert(!std::is_move_constructible_v<std::hash<Result<NonHashable>>>);
+static_assert(!std::is_copy_assignable_v<std::hash<Result<NonHashable>>>);
+static_assert(!std::is_move_assignable_v<std::hash<Result<NonHashable>>>);
+
+TEST(ResultTest, StdHash) {
+  Result<int> ok_val = 42;
+  Result<const int> ok_const_val = 42;
+  Result<int> err_not_found = Status::NotFound();
+  Result<int> err_invalid = Status::InvalidArgument();
+
+  EXPECT_EQ(std::hash<Result<int>>{}(ok_val), std::hash<int>{}(42));
+  EXPECT_EQ(std::hash<Result<const int>>{}(ok_const_val), std::hash<int>{}(42));
+  EXPECT_EQ(std::hash<Result<int>>{}(err_not_found),
+            std::hash<Status::Code>{}(PW_STATUS_NOT_FOUND));
+  EXPECT_NE(std::hash<Result<int>>{}(err_not_found),
+            std::hash<Result<int>>{}(err_invalid));
+
+  TestResult<int> custom_ok = 7;
+  TestResult<int> custom_err(HasValue::kNo);
+  EXPECT_EQ(std::hash<TestResult<int>>{}(custom_ok), std::hash<int>{}(7));
+  EXPECT_EQ(std::hash<TestResult<int>>{}(custom_err),
+            std::hash<HasValueStatus::Code>{}(HasValue::kNo));
+
+  Result<void> void_ok = OkStatus();
+  Result<void> void_err = Status::PermissionDenied();
+  EXPECT_EQ(std::hash<Result<void>>{}(void_ok),
+            std::hash<Status::Code>{}(PW_STATUS_OK));
+  EXPECT_EQ(std::hash<Result<void>>{}(void_err),
+            std::hash<Status::Code>{}(PW_STATUS_PERMISSION_DENIED));
+  EXPECT_NE(std::hash<Result<void>>{}(void_ok),
+            std::hash<Result<void>>{}(void_err));
+}
+
 #if PW_NC_TEST(ResultRequiresEnumStatusCode)
 PW_NC_EXPECT("pw::Result only supports status types with enum codes");
 class [[nodiscard]] IntCodeStatus final

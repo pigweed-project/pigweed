@@ -1225,6 +1225,42 @@ PW_CONSTEXPR_TEST(OptionalTest, ResultTransformStillAllowsReferenceAndVoid, {
   PW_TEST_EXPECT_EQ(side_effect, 21);
 });
 
+struct NonHashable {};
+
+static_assert(std::is_default_constructible_v<std::hash<Optional<int>>>);
+static_assert(std::is_default_constructible_v<std::hash<Optional<const int>>>);
+static_assert(
+    !std::is_default_constructible_v<std::hash<Optional<NonHashable>>>);
+static_assert(!std::is_copy_constructible_v<std::hash<Optional<NonHashable>>>);
+static_assert(!std::is_move_constructible_v<std::hash<Optional<NonHashable>>>);
+static_assert(!std::is_copy_assignable_v<std::hash<Optional<NonHashable>>>);
+static_assert(!std::is_move_assignable_v<std::hash<Optional<NonHashable>>>);
+
+TEST(OptionalTest, StdHash) {
+  Optional<int> engaged = 42;
+  Optional<int> empty;
+  Optional<const int> engaged_const = 42;
+
+  EXPECT_EQ(std::hash<Optional<int>>{}(engaged), std::hash<int>{}(42));
+  EXPECT_EQ(std::hash<Optional<const int>>{}(engaged_const),
+            std::hash<int>{}(42));
+  EXPECT_EQ(std::hash<Optional<int>>{}(empty), 0u);
+}
+
+#if defined(__cpp_deduction_guides) && __cpp_deduction_guides >= 201907L
+PW_CONSTEXPR_TEST(OptionalTest, AliasCtadCpp20, {
+  Optional deduced_val(42);
+  static_assert(std::is_same_v<decltype(deduced_val), Optional<int>>);
+  PW_TEST_EXPECT_TRUE(deduced_val.has_value());
+  PW_TEST_EXPECT_EQ(*deduced_val, 42);
+
+  Optional deduced_copy(deduced_val);
+  static_assert(std::is_same_v<decltype(deduced_copy), Optional<int>>);
+  PW_TEST_EXPECT_TRUE(deduced_copy.has_value());
+  PW_TEST_EXPECT_EQ(*deduced_copy, 42);
+});
+#endif  // defined(__cpp_deduction_guides) && __cpp_deduction_guides >= 201907L
+
 #if PW_NC_TEST(OptionalRejectsVoid)
 PW_NC_EXPECT("pw::Optional<void> is not supported");
 void OptionalRejectsVoid() {
