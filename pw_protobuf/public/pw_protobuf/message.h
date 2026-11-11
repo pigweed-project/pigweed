@@ -263,10 +263,10 @@ class Message {
  public:
   class Field {
    public:
-    uint32_t field_number() { return field_number_; }
-    const stream::IntervalReader& field_reader() { return field_reader_; }
-    bool ok() { return field_reader_.ok(); }
-    Status status() { return field_reader_.status(); }
+    uint32_t field_number() const { return field_number_; }
+    const stream::IntervalReader& field_reader() const { return field_reader_; }
+    bool ok() const { return field_reader_.ok(); }
+    Status status() const { return field_reader_.status(); }
 
     // Create a helper parser type of `FieldType` for the field.
     // The default implementation below assumes the field is a length-delimited
@@ -313,8 +313,8 @@ class Message {
       return iter;
     }
 
-    bool ok() { return status_.ok(); }
-    Status status() { return status_; }
+    bool ok() const { return status_.ok(); }
+    Status status() const { return status_; }
     Field operator*() { return current_; }
     Field* operator->() { return &current_; }
     bool operator!=(const iterator& other) const { return !(*this == other); }
