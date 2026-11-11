@@ -233,7 +233,7 @@ class HumanUI(PresubmitEvents):
             self._print(self._padded_line(''))
             self._print(self._padded_line(commit_description))
             self._print('═' * content_width + '╝')
-        except GitError:
+        except (GitError, FileNotFoundError):
             self._print('═' * content_width + '╗')
             self._print(self._padded_line(f' {program} presubmit checks '))
             self._print('═' * content_width + '╝')

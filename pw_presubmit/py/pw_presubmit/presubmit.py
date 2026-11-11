@@ -360,7 +360,7 @@ def run(  # pylint: disable=too-many-arguments,too-many-locals
     if list_steps_file:
         with list_steps_file.open() as ins:
             list_steps_data = json.load(ins)
-        all_files.extend(list_steps_data['all_files'])
+        all_files.extend(Path(x) for x in list_steps_data['all_files'])
         for step in list_steps_data['steps']:
             modified_files.extend(Path(x) for x in step.get("paths", ()))
         modified_files = sorted(set(modified_files))

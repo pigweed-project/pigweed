@@ -16,6 +16,7 @@
 
 import contextlib
 import io
+import json
 import tempfile
 from pathlib import Path
 import unittest
@@ -185,6 +186,50 @@ class PresubmitEventsTest(unittest.TestCase):
             encoding='utf-8'
         )
         self.assertIn('\u221a \u274c', failure_log)
+
+    def test_run_with_list_steps_file_converts_all_files_to_paths(self) -> None:
+        """Test that list_steps_file converts all_files strings to Path."""
+        tmp_path = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        list_steps_file = tmp_path / 'steps.json'
+        list_steps_file.write_text(
+            json.dumps(
+                {
+                    'steps': [
+                        {
+                            'name': '_check_all_paths',
+                            'paths': [str(tmp_path / 'foo.cc')],
+                        }
+                    ],
+                    'all_files': [
+                        str(tmp_path / 'BUILD.gn'),
+                        str(tmp_path / 'foo.cc'),
+                    ],
+                }
+            ),
+            encoding='utf-8',
+        )
+
+        observed_all_paths: tuple[Path, ...] = ()
+
+        @presubmit.check
+        def _check_all_paths(ctx: presubmit.PresubmitContext):
+            nonlocal observed_all_paths
+            observed_all_paths = ctx.all_paths
+
+        with mock.patch('pw_presubmit.presubmit.HumanUI'):
+            presubmit.run(
+                program=[_check_all_paths],
+                root=tmp_path,
+                repos=(),
+                output_directory=tmp_path / 'out',
+                list_steps_file=list_steps_file,
+            )
+
+        self.assertEqual(
+            observed_all_paths,
+            (tmp_path / 'BUILD.gn', tmp_path / 'foo.cc'),
+        )
+        self.assertTrue(all(isinstance(p, Path) for p in observed_all_paths))
 
 
 class HumanUITest(unittest.TestCase):

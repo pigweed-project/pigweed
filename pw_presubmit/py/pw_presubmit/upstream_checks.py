@@ -24,7 +24,7 @@ from typing import Iterable, Sequence
 from pw_cli.file_filter import FileFilter
 from pw_cli.plural import plural
 
-from pw_presubmit import PresubmitContext, PresubmitFailure
+from pw_presubmit import Check, PresubmitContext, PresubmitFailure
 from pw_presubmit import (
     bazel_checks,
     format_code,
@@ -72,6 +72,7 @@ SOURCE_FILES_FILTER_BAZEL_EXCLUDE = FileFilter(
         # TODO: https://pwbug.dev/512125492 - Remove once this is no longer a
         # false positive.
         r'\bpw_kernel/examples/adventure/.*\.py',
+        r'^docs/tests/',
         # keep-sorted: end
     ),
 )
@@ -85,6 +86,7 @@ SOURCE_FILES_FILTER_GN_EXCLUDE = FileFilter(
         r'\bexamples/',
         r'\bjava/',
         r'\bjava_jni/',
+        r'\bpw_bluetooth_sapphire/.*/loop_fixture\.h$',
         r'\bpw_bluetooth_sapphire/fuchsia/',
         r'\bpw_hal/',
         r'\bpw_ide/bazel/',
@@ -693,28 +695,33 @@ def todo_check_with_exceptions(ctx: Context) -> None:
     todo_check.create(todo_check.BUGS_OR_USERNAMES)(ctx)
 
 
-def source_in_gn_build() -> Step:
-    @step(
-        name='source_is_in_gn_build',
-        file_filter=SOURCE_FILES_FILTER.concat(SOURCE_FILES_FILTER_GN_EXCLUDE),
-    )
-    def _source_in_gn_build(ctx: Context) -> None:
-        source_in_build.gn(SOURCE_FILES_FILTER)(ctx)
+class _SourceInBuildStep(Step):
+    def __init__(self, check: Check) -> None:
+        super().__init__(file_filter=check.filter)
+        self._name = check.name
+        self.__doc__ = check.doc
+        self._check = check
 
-    return _source_in_gn_build
+    def run(self, ctx: Context) -> None:
+        check = self._check.unfiltered().with_file_filter(self.filter)
+        for substep in check.substeps():
+            substep(ctx)
+
+
+def source_in_gn_build() -> Step:
+    return _SourceInBuildStep(
+        source_in_build.gn(
+            SOURCE_FILES_FILTER.concat(SOURCE_FILES_FILTER_GN_EXCLUDE)
+        )
+    )
 
 
 def source_in_bazel_build() -> Step:
-    @step(
-        name='source_is_in_bazel_build',
-        file_filter=SOURCE_FILES_FILTER.concat(
-            SOURCE_FILES_FILTER_BAZEL_EXCLUDE
-        ),
+    return _SourceInBuildStep(
+        source_in_build.bazel(
+            SOURCE_FILES_FILTER.concat(SOURCE_FILES_FILTER_BAZEL_EXCLUDE)
+        )
     )
-    def _source_in_bazel_build(ctx: Context) -> None:
-        source_in_build.bazel(SOURCE_FILES_FILTER)(ctx)
-
-    return _source_in_bazel_build
 
 
 @step(
