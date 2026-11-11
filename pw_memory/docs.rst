@@ -11,6 +11,17 @@ object lifetime utilities. It is similar to C++'s ``<memory>`` header, but
 memory allocation and smart pointers are provided by :ref:`module-pw_allocator`
 instead.
 
+----------------------------
+In-place object construction
+----------------------------
+:cc:`pw::construct_at` (in ``pw_memory/construct_at.h``, target
+``//pw_memory:construct_at``) is a C++17-compatible backport of C++20's
+``std::construct_at`` for constructing an object at a given address without
+allocating memory. Unlike placement ``new``, :cc:`pw::construct_at` can be
+evaluated in ``constexpr`` contexts when compiled as C++20 or newer with
+``std::construct_at`` support (for example, when activating a ``union`` member
+at compile time).
+
 ---------------------------------------------------------
 Global variables: constant initialization and binary size
 ---------------------------------------------------------

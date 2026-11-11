@@ -31,6 +31,12 @@ cc_library(
 )
 
 cc_library(
+    name = "construct_at",
+    hdrs = ["public/pw_memory/construct_at.h"],
+    strip_include_prefix = "public",
+)
+
+cc_library(
     name = "no_destructor",
     hdrs = ["public/pw_memory/no_destructor.h"],
     strip_include_prefix = "public",
@@ -61,6 +67,16 @@ pw_cc_test(
     name = "container_of_test",
     srcs = ["container_of_test.cc"],
     deps = [":pw_memory"],
+)
+
+pw_cc_test(
+    name = "construct_at_test",
+    srcs = ["construct_at_test.cc"],
+    deps = [
+        ":construct_at",
+        "//pw_polyfill",
+        "//pw_unit_test:constexpr",
+    ],
 )
 
 pw_cc_test(
@@ -106,6 +122,7 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_memory/busy_wait_forever.h",
+        "public/pw_memory/construct_at.h",
         "public/pw_memory/globals.h",
         "public/pw_memory/no_destructor.h",
     ],

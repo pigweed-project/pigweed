@@ -28,6 +28,11 @@ pw_source_set("pw_memory") {
   public_deps = [ dir_pw_assert ]
 }
 
+pw_source_set("construct_at") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_memory/construct_at.h" ]
+}
+
 pw_source_set("no_destructor") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_memory/no_destructor.h" ]
@@ -54,6 +59,7 @@ pw_source_set("sibling_cast") {
 pw_test_group("tests") {
   tests = [
     ":container_of_test",
+    ":construct_at_test",
     ":no_destructor_test",
     ":globals_test",
     ":busy_wait_forever_test",
@@ -64,6 +70,15 @@ pw_test_group("tests") {
 pw_test("container_of_test") {
   deps = [ ":pw_memory" ]
   sources = [ "container_of_test.cc" ]
+}
+
+pw_test("construct_at_test") {
+  sources = [ "construct_at_test.cc" ]
+  deps = [
+    ":construct_at",
+    "$dir_pw_unit_test:constexpr",
+    dir_pw_polyfill,
+  ]
 }
 
 pw_test("no_destructor_test") {

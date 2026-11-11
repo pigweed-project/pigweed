@@ -33,6 +33,25 @@ pw_add_test(pw_memory.container_of_test
     pw_memory
 )
 
+pw_add_library(pw_memory.construct_at INTERFACE
+  HEADERS
+    public/pw_memory/construct_at.h
+  PUBLIC_INCLUDES
+    public
+)
+
+pw_add_test(pw_memory.construct_at_test
+  SOURCES
+    construct_at_test.cc
+  PRIVATE_DEPS
+    pw_memory.construct_at
+    pw_polyfill
+    pw_unit_test.constexpr
+  GROUPS
+    modules
+    pw_memory
+)
+
 pw_add_library(pw_memory.no_destructor INTERFACE
   HEADERS
     public/pw_memory/no_destructor.h
