@@ -49,7 +49,14 @@ pw_py_binary(
     name = "module",
     srcs = ["pw_module/__main__.py"],
     main = "pw_module/__main__.py",
-    deps = [":pw_module"],
+    deps = [":pw_module"] + select({
+        # gn formats the generated modules list. Only upstream Pigweed has
+        # that list, and it enables GN formatting.
+        "//pw_presubmit/py:gn_formatter_is_enabled": [
+            "//pw_presubmit/py:gn_runfiles",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 pw_py_test(
@@ -72,5 +79,8 @@ pw_py_test(
 pw_py_test(
     name = "create_test",
     srcs = ["create_test.py"],
-    deps = [":pw_module"],
+    deps = [
+        ":pw_module",
+        "//pw_presubmit/py:gn_runfiles",
+    ],
 )

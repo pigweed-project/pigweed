@@ -14,42 +14,40 @@ License for the specific language governing permissions and limitations under
 the License.
 #}
 {% import 'helpers/gn.jinja' as gn %}
+{% if build.get_license %}
 {{ build.get_license }}
 
+{% endif %}
+{% set gni_imports = [] %}
+{% do gni_imports.append('$dir_pw_build/target_types.gni') if build.cc_targets %}
+{% do gni_imports.append('$dir_pw_docgen/docs.gni') if build.docs_sources %}
+{% do gni_imports.append('$dir_pw_unit_test/test.gni') if build.cc_tests or module.is_upstream %}
 import("//build_overrides/pigweed.gni")
+{% if gni_imports %}
 
+{% for gni in gni_imports %}
+import("{{ gni }}")
+{% endfor %}
+{% endif %}
 {% if build.cc_targets %}
-import("$dir_pw_build/target_types.gni")
-{% endif %}
-{% if build.cc_tests or module.is_upstream %}
-import("$dir_pw_unit_test/test.gni")
-{% endif %}
-{% if build.docs_sources %}
-import("$dir_pw_docgen/docs.gni")
-{% endif %}
 
-{% if build.cc_targets %}
 config("public_include_path") {
   include_dirs = [ "public" ]
   visibility = [ ":*" ]
 }
 {% endif %}
-
 {% if build.cc_tests or module.is_upstream %}
+{% set test_labels = [] %}
+{% for test in build.cc_tests %}
+{% do test_labels.append(':' ~ test.name) %}
+{% endfor %}
+
 pw_test_group("tests") {
-  tests = {% if build.cc_tests -%}
-    [
-      {%- for test in build.cc_tests|sort(attribute='name') %}
-      ":{{ test.name }}",
-      {%- endfor %}
-    ]
-  {%- else -%}
-    []
-  {%- endif %}
+  tests = {{ gn.string_list(test_labels) }}
 }
 {% endif %}
-
 {% for target in build.cc_targets %}
+
 pw_source_set("{{ target.name }}") {
   {% if target.headers %}
   public_configs = [ ":public_include_path" ]
@@ -63,20 +61,16 @@ pw_source_set("{{ target.name }}") {
   {% endif %}
 }
 {% endfor %}
-
 {% for test in build.cc_tests %}
+
 pw_test("{{ test.name }}") {
   sources = {{ gn.file_list(build, test.sources) }}
   deps = {{ gn.deps_list(test.deps) }}
 }
 {% endfor %}
-
 {% if build.docs_sources %}
+
 pw_doc_group("docs") {
-  sources = [
-    {% for doc in build.docs_sources|sort %}
-    "{{ doc }}",
-    {% endfor %}
-  ]
+  sources = {{ gn.string_list(build.docs_sources) }}
 }
 {% endif %}

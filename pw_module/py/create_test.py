@@ -14,19 +14,73 @@
 """Tests for pw_module create."""
 
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from pw_module.create import (
+    _add_to_pigweed_modules_file,
+    _BazelBuildFile,
     _BuildFile,
     _BUILD_FILES,
+    _CmakeBuildFile,
     _ConfigErrors,
     _GnBuildFile,
+    _gn_tool,
     _ModuleConfig,
+    _ModuleName,
+    _OutputFile,
     _PythonLanguageGenerator,
 )
+
+
+def _mock_context(is_upstream: bool = True) -> SimpleNamespace:
+    return SimpleNamespace(
+        is_upstream=is_upstream,
+        name=SimpleNamespace(full='pw_async3', path='pw_async3'),
+    )
+
+
+def _add_cc_targets(build_file: _BuildFile, module_dir: Path) -> None:
+    build_file.add_cc_target(
+        _BuildFile.CcTarget(
+            name='pw_async3',
+            headers=[module_dir / 'public/pw_async3/headers.h'],
+            sources=[module_dir / 'source.cc'],
+            deps=['//pw_assert'],
+        )
+    )
+    build_file.add_cc_test(
+        _BuildFile.CcTarget(
+            name='pw_async3_test',
+            sources=[module_dir / 'test.cc'],
+            deps=[':pw_async3'],
+        )
+    )
+
+
+def _write(build_file: _BuildFile, project_root: Path) -> str:
+    with patch('pw_module.create._project_root', return_value=project_root):
+        build_file.write()
+    return build_file.path.read_text()
+
+
+class TestReporting(unittest.TestCase):
+    """Tests reporting of written files."""
+
+    def test_write_without_pw_root(self):
+        """Files are reported relative to the project root, not PW_ROOT."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with (
+                patch('pw_module.create._PW_ROOT', None),
+                patch('pw_module.create._project_root', return_value=tmp_path),
+            ):
+                _OutputFile(tmp_path / 'docs.rst').write('hi')
+
+            self.assertEqual((tmp_path / 'docs.rst').read_text(), 'hi\n')
 
 
 class TestModuleConfig(unittest.TestCase):
@@ -111,43 +165,33 @@ class TestModuleConfig(unittest.TestCase):
 class TestGnModuleCreation(unittest.TestCase):
     """Tests GN module creation."""
 
+    def assert_formatted_gn(self, path: Path) -> None:
+        """Checks that a file is valid GN that gn format leaves unchanged."""
+        # Format through stdin to ignore platform-specific line endings.
+        content = path.read_text()
+        result = subprocess.run(
+            [str(_gn_tool()), 'format', '--stdin'],
+            input=content.encode(),
+            capture_output=True,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f'gn format failed for:\n{content}\n{result.stderr.decode()}',
+        )
+        self.assertEqual(result.stdout.decode().replace('\r\n', '\n'), content)
+
     def test_gn_build_file_creation(self):
         """Tests that _GnBuildFile correctly generates a BUILD.gn file."""
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
 
-            # Create a minimal context
-            mock_ctx = SimpleNamespace(is_upstream=True)
-
-            gn_file = _GnBuildFile(tmp_path, mock_ctx)
-
-            gn_file.add_cc_target(
-                _BuildFile.CcTarget(
-                    name='pw_async3',
-                    headers=[tmp_path / 'public/pw_async3/headers.h'],
-                    sources=[tmp_path / 'source.cc'],
-                    deps=['//pw_assert'],
-                )
-            )
-
-            gn_file.add_cc_test(
-                _BuildFile.CcTarget(
-                    name='pw_async3_test',
-                    sources=[tmp_path / 'test.cc'],
-                    deps=[':pw_async3'],
-                )
-            )
-
+            gn_file = _GnBuildFile(tmp_path, _mock_context())
+            _add_cc_targets(gn_file, tmp_path)
             gn_file.add_docs_source('docs.rst')
 
-            with patch('pw_module.create._PW_ROOT', tmp_path):
-                gn_file.write()
-
-            generated_file = tmp_path / 'BUILD.gn'
-            self.assertTrue(generated_file.exists())
-
-            content = generated_file.read_text()
+            content = _write(gn_file, tmp_path)
 
             self.assertIn('pw_source_set("pw_async3")', content)
             self.assertIn('pw_test("pw_async3_test")', content)
@@ -155,6 +199,122 @@ class TestGnModuleCreation(unittest.TestCase):
             self.assertIn('import("$dir_pw_build/target_types.gni")', content)
             self.assertIn('import("$dir_pw_unit_test/test.gni")', content)
             self.assertIn('import("$dir_pw_docgen/docs.gni")', content)
+            self.assertIn('public = [ "public/pw_async3/headers.h" ]', content)
+            self.assertIn('tests = [ ":pw_async3_test" ]', content)
+            self.assert_formatted_gn(gn_file.path)
+
+    def test_gn_build_file_without_cc(self):
+        """Tests a BUILD.gn file for an upstream module with no C++."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+
+            gn_file = _GnBuildFile(tmp_path, _mock_context())
+            gn_file.add_docs_source('docs.rst')
+
+            content = _write(gn_file, tmp_path)
+
+            self.assertIn('tests = []', content)
+            self.assertNotIn('pw_source_set', content)
+            self.assert_formatted_gn(gn_file.path)
+
+    def test_gn_build_file_downstream(self):
+        """Tests a BUILD.gn file for a downstream module."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+
+            gn_file = _GnBuildFile(tmp_path, _mock_context(is_upstream=False))
+            _add_cc_targets(gn_file, tmp_path)
+            gn_file.add_docs_source('docs.rst')
+
+            content = _write(gn_file, tmp_path)
+
+            self.assertNotIn('Copyright', content)
+            self.assert_formatted_gn(gn_file.path)
+
+    def test_add_to_pigweed_modules_file(self):
+        """Tests that the generated modules list is updated and formatted."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / 'PIGWEED_MODULES').write_text('pw_a\npw_c\n')
+            (tmp_path / 'pw_build').mkdir()
+
+            module_name = _ModuleName.parse('pw_b')
+            assert module_name is not None
+            with patch('pw_module.create._project_root', return_value=tmp_path):
+                _add_to_pigweed_modules_file(tmp_path, module_name, _gn_tool())
+
+            self.assertEqual(
+                (tmp_path / 'PIGWEED_MODULES').read_text(), 'pw_a\npw_b\npw_c\n'
+            )
+            gni_file = tmp_path / 'pw_build/generated_pigweed_modules_lists.gni'
+            self.assertIn(
+                '  dir_pw_b = get_path_info("../pw_b", "abspath")',
+                gni_file.read_text(),
+            )
+            self.assert_formatted_gn(gni_file)
+
+    def test_add_to_pigweed_modules_file_failure(self):
+        """Tests that a failed modules list update is reported as an error."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / 'PIGWEED_MODULES').write_text('pw_a\n')
+            (tmp_path / 'pw_build').mkdir()
+
+            module_name = _ModuleName.parse('pw_b')
+            assert module_name is not None
+            with (
+                patch('pw_module.create._project_root', return_value=tmp_path),
+                patch(
+                    'pw_module.create.generate_modules_lists.main',
+                    return_value=1,
+                ),
+                patch('pw_module.create._report_edited_file') as report_edit,
+                self.assertLogs('pw_module.create', level='ERROR') as logs,
+            ):
+                _add_to_pigweed_modules_file(tmp_path, module_name, Path('gn'))
+
+            report_edit.assert_called_once_with(tmp_path / 'PIGWEED_MODULES')
+            gni_path = Path('pw_build', 'generated_pigweed_modules_lists.gni')
+            self.assertIn(f'Failed to update {gni_path}', logs.output[0])
+
+
+class TestBazelModuleCreation(unittest.TestCase):
+    """Tests Bazel module creation."""
+
+    def test_bazel_build_file_creation(self):
+        """Tests that _BazelBuildFile correctly generates a BUILD.bazel file."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+
+            bazel_file = _BazelBuildFile(tmp_path, _mock_context())
+            _add_cc_targets(bazel_file, tmp_path)
+
+            content = _write(bazel_file, tmp_path)
+
+            self.assertIn(
+                'load("@rules_cc//cc:cc_library.bzl", "cc_library")', content
+            )
+            self.assertIn(
+                'load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")', content
+            )
+
+
+class TestCmakeModuleCreation(unittest.TestCase):
+    """Tests CMake module creation."""
+
+    def test_cmake_build_file_creation(self):
+        """Tests that _CmakeBuildFile generates a CMakeLists.txt file."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+
+            cmake_file = _CmakeBuildFile(tmp_path, _mock_context())
+            _add_cc_targets(cmake_file, tmp_path)
+
+            content = _write(cmake_file, tmp_path)
+
+            self.assertIn('pw_add_library(pw_async3 STATIC', content)
+            self.assertNotIn('pw_add_module_library', content)
+            self.assertIn('pw_add_test(pw_async3.pw_async3_test', content)
 
 
 class TestPythonModuleCreation(unittest.TestCase):

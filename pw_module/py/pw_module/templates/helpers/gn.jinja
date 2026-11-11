@@ -14,28 +14,31 @@ License for the specific language governing permissions and limitations under
 the License.
 #}
 
-{# GN build file helper macros. #}
+{# GN build file helper macros. Unlike Starlark arguments, GN assignments
+   are not separated by commas, so a list must not be followed by one. #}
 
-{% macro file_list(build, files) -%}
-{% if files|length == 1 %}
-[ "{{ build.relative_file(files|first) }}" ],
+{% macro string_list(items) -%}
+{% if not items %}
+[]
+{%- elif items|length == 1 %}
+[ "{{ items|first }}" ]
 {%- else %}
 [
-{% for src in files|sort %}
-    "{{ build.relative_file(src) }}",
+{% for item in items|sort %}
+    "{{ item }}",
 {% endfor %}
-  ],
+  ]
 {%- endif %}
 {%- endmacro -%}
 
-{% macro deps_list(deps) -%}
-{% if deps|length == 1 %}
-[ "{{ deps|first }}" ],
-{%- else %}
-[
-{% for dep in deps|sort %}
-    "{{ dep }}",
+{% macro file_list(build, files) -%}
+{% set relative_files = [] %}
+{% for file in files %}
+{% do relative_files.append(build.relative_file(file)) %}
 {% endfor %}
-  ],
-{%- endif %}
+{{ string_list(relative_files) }}
+{%- endmacro -%}
+
+{% macro deps_list(deps) -%}
+{{ string_list(deps) }}
 {%- endmacro -%}

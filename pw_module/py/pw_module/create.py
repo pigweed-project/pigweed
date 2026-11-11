@@ -34,6 +34,7 @@ from typing import Collection, Iterable, Type
 from prompt_toolkit import prompt
 
 from pw_build import generate_modules_lists
+from pw_build.runfiles_manager import RunfilesManager
 import pw_cli.color
 import pw_cli.env
 from pw_cli.diff import colorize_diff
@@ -75,9 +76,17 @@ _IDENTICAL = _COLOR.blue('identical ')
 _REPORT = StatusReporter()
 
 
+def _display_path(path: Path) -> str:
+    """Returns ``path`` relative to the project root, if it is within it."""
+    try:
+        return str(path.relative_to(_project_root()))
+    except ValueError:
+        return str(path)
+
+
 def _report_write_file(file_path: Path) -> None:
     """Print a notification when a file is newly created or replaced."""
-    relative_file_path = str(file_path.relative_to(_PW_ROOT))
+    relative_file_path = _display_path(file_path)
     if file_path.is_file():
         _REPORT.info(_REPLACE + relative_file_path)
         return
@@ -86,19 +95,19 @@ def _report_write_file(file_path: Path) -> None:
 
 def _report_unchanged_file(file_path: Path) -> None:
     """Print a notification a file was not updated/changed."""
-    relative_file_path = str(file_path.relative_to(_PW_ROOT))
+    relative_file_path = _display_path(file_path)
     _REPORT.ok(_UNCHANGED + relative_file_path)
 
 
 def _report_identical_file(file_path: Path) -> None:
     """Print a notification a file is identical."""
-    relative_file_path = str(file_path.relative_to(_PW_ROOT))
+    relative_file_path = _display_path(file_path)
     _REPORT.ok(_IDENTICAL + relative_file_path)
 
 
 def _report_edited_file(file_path: Path) -> None:
     """Print a notification a file was modified/edited."""
-    relative_file_path = str(file_path.relative_to(_PW_ROOT))
+    relative_file_path = _display_path(file_path)
     _REPORT.new(_UPDATE + relative_file_path)
 
 
@@ -169,7 +178,7 @@ def _prompt_overwrite(file_path: Path, new_contents: str) -> bool:
         _report_identical_file(file_path)
         return False
 
-    file_name = file_path.relative_to(_PW_ROOT)
+    file_name = _display_path(file_path)
     # File exists and is different.
     _REPORT.wrn(f'{file_name} already exists.')
 
@@ -286,7 +295,7 @@ class _ModuleContext:
 
     def add_docs_file(self, file: Path):
         for build_file in self.root_build_files:
-            build_file.add_docs_source(str(file.relative_to(self.dir)))
+            build_file.add_docs_source(file.relative_to(self.dir).as_posix())
 
     def add_cc_target(self, target: _BuildFile.CcTarget) -> None:
         for build_file in self.root_build_files:
@@ -365,7 +374,7 @@ class _BuildFile:
     def relative_file(self, file_path: Path | str) -> str:
         if isinstance(file_path, str):
             return file_path
-        return str(file_path.relative_to(self._path.parent))
+        return file_path.relative_to(self._path.parent).as_posix()
 
     @abc.abstractmethod
     def write(self) -> None:
@@ -465,14 +474,18 @@ class _CcLanguageGenerator(_LanguageGenerator):
             'source.cc.jinja',
             license=_PIGWEED_LICENSE_CC if self._ctx.is_upstream else '',
             namespace=namespace,
-            header_path=main_header.path.relative_to(self._public_dir),
+            header_path=main_header.path.relative_to(
+                self._public_dir
+            ).as_posix(),
         )
 
         test_source.write_template(
             'test.cc.jinja',
             license=_PIGWEED_LICENSE_CC if self._ctx.is_upstream else '',
             namespace=namespace,
-            header_path=main_header.path.relative_to(self._public_dir),
+            header_path=main_header.path.relative_to(
+                self._public_dir
+            ).as_posix(),
             camel_case_name=snake_to_pascal(self._ctx.name.main),
         )
 
@@ -705,9 +718,22 @@ def _add_to_docs_build(
     _report_edited_file(build_file)
 
 
+def _gn_tool() -> Path:
+    """Returns the gn binary to use for formatting GN files.
+
+    Under Bazel, this is the gn binary from Pigweed's runfiles, so it works
+    without a bootstrapped environment. Otherwise, it is gn from the PATH.
+    """
+    runfiles = RunfilesManager()
+    runfiles.add_bazel_tool('gn', 'pw_presubmit.py.gn_runfiles')
+    runfiles.add_bootstrapped_tool('gn', 'gn', from_shell_path=True)
+    return runfiles.get('gn')
+
+
 def _add_to_pigweed_modules_file(
     project_root: Path,
     module_name: _ModuleName,
+    gn: Path,
 ) -> None:
     modules_file = project_root / 'PIGWEED_MODULES'
     if not modules_file.exists():
@@ -732,12 +758,16 @@ def _add_to_pigweed_modules_file(
     modules_file.write_text('\n'.join(modules_list))
     _report_edited_file(modules_file)
 
-    generate_modules_lists.main(
+    result = generate_modules_lists.main(
         root=project_root,
         modules_list=modules_file,
         modules_gni_file=modules_gni_file,
         mode=generate_modules_lists.Mode.UPDATE,
+        gn=gn,
     )
+    if result != 0:
+        _LOG.error('Failed to update %s', _display_path(modules_gni_file))
+        return
     _report_edited_file(modules_gni_file)
 
 
@@ -879,6 +909,16 @@ def _create_module(
             )
             sys.exit(1)
 
+    gn: Path | None = None
+    if is_upstream:
+        # Find gn before writing any files, so a missing tool doesn't leave a
+        # partially created module behind.
+        try:
+            gn = _gn_tool()
+        except (FileNotFoundError, ImportError) as err:
+            _LOG.error('Failed to find gn to update the modules list: %s', err)
+            sys.exit(1)
+
     ctx = _basic_module_setup(
         module_name, module_dir, build_systems, is_upstream
     )
@@ -905,7 +945,8 @@ def _create_module(
 
     needs_categories = False
     if is_upstream:
-        _add_to_pigweed_modules_file(project_root, module_name)
+        assert gn is not None
+        _add_to_pigweed_modules_file(project_root, module_name, gn)
         needs_categories = _add_to_module_metadata(
             project_root, module_name, languages
         )
@@ -914,7 +955,7 @@ def _create_module(
             _add_to_root_cmakelists(project_root, module_name)
 
     print()
-    _REPORT.new(f'{module_name} created at: {module_dir.relative_to(_PW_ROOT)}')
+    _REPORT.new(f'{module_name} created at: {_display_path(module_dir)}')
 
     if needs_categories:
         _REPORT.info(

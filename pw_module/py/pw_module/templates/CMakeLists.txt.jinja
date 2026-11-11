@@ -19,11 +19,13 @@ the License.
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 
 {% for target in build.cc_targets %}
-pw_add_module_library({{ cmake.target_name(target, module) }}
+pw_add_library({{ cmake.target_name(target, module) }} {{ 'STATIC' if target.sources else 'INTERFACE' }}
+  {% if target.sources %}
   SOURCES
   {% for src in target.sources %}
     {{ build.relative_file(src) }}
   {% endfor %}
+  {% endif %}
   HEADERS
   {% for header in target.headers %}
     {{ build.relative_file(header) }}

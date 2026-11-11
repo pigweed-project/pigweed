@@ -222,7 +222,7 @@ pw_py_importable_runfile(
     src = "@gn",
     executable = True,
     tags = ["manual"],
-    visibility = ["//visibility:private"],
+    visibility = ["//pw_module/py:__pkg__"],
 )
 
 pw_py_importable_runfile(

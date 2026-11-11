@@ -225,8 +225,12 @@ def main(
     modules_gni_file: Path,
     mode: Mode,
     stamp: Path | None = None,
+    gn: str | Path = 'gn',
 ) -> int:
-    """Manages the list of Pigweed modules."""
+    """Manages the list of Pigweed modules.
+
+    ``gn`` is the gn binary used to format the generated .gni file.
+    """
     prefix = Path(os.path.relpath(root, modules_gni_file.parent))
     modules = modules_list.read_text().splitlines()
 
@@ -243,7 +247,7 @@ def main(
             print(line, file=text)
 
         process = subprocess.run(
-            ['gn', 'format', '--stdin'],
+            [str(gn), 'format', '--stdin'],
             input=text.getvalue().encode('utf-8'),
             stdout=subprocess.PIPE,
         )
@@ -280,7 +284,7 @@ def main(
                 print(line, file=file)
 
         process = subprocess.run(
-            ['gn', 'format', modules_gni_file], stdout=subprocess.DEVNULL
+            [str(gn), 'format', modules_gni_file], stdout=subprocess.DEVNULL
         )
         if process.returncode != 0:
             errors.append(_FORMAT_FAILED_WARNING)
