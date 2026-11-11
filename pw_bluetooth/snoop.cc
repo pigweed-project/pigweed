@@ -98,7 +98,7 @@ void AddTrace(emboss::snoop_log::PacketFlags emboss_packet_flag,
   pw::StringBuilder trace_tag_builder(trace_tag);
 
   uint8_t type = static_cast<uint8_t>(hci_packet.GetH4Type());
-  // Direction uses 0 for incoming, 1 for outcomming packet to match android
+  // Direction uses 0 for incoming, 1 for outgoing packet to match android
   // BTSL traces.
   uint8_t direction;
   switch (emboss_packet_flag) {

@@ -420,7 +420,7 @@ TEST(SnoopTest, DisabledEnable) {
   proxy::H4PacketWithHci packet1{emboss::H4PacketType::ACL_DATA, rx_data1};
   snoop.AddRx(packet1);
 
-  // Renable
+  // Re-enable
   snoop.Enable();
   EXPECT_TRUE(snoop.IsEnabled());
 

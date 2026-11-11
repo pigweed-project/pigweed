@@ -170,7 +170,7 @@ information (type, size, direction, etc).
 +----------+         | Direction          |         +------------+--------------------------------------------+
 | COMMAND  | Packet  |                    | Packet  | Opcode     | <EMPTY>                                    |
 +----------+ Type    | (``0``: incoming,  | Size    +------------+--------------------------------------------+
-| ACL_DATA |         | ``1``: outcoming)  |         | Handle     | Packet Boundary Flag                       |
+| ACL_DATA |         | ``1``: outgoing)   |         | Handle     | Packet Boundary Flag                       |
 +----------+         |                    |         +------------+--------------------------------------------+
 | Others   |         |                    |         | <EMPTY>    | <EMPTY>                                    |
 +----------+---------+--------------------+---------+------------+--------------------------------------------+
