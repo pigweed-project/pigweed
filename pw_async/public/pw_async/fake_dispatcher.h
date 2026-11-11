@@ -14,7 +14,7 @@
 #pragma once
 
 #include "pw_async/dispatcher.h"
-#include "pw_async_backend/fake_dispatcher.h"  // IWYU pragma: export  // nogncheck
+#include "pw_async_backend/fake_dispatcher.h"  // IWYU pragma: export
 
 namespace pw::async::test {
 

@@ -48,7 +48,11 @@ pw_source_set("v1") {
 pw_source_set("allocator_async_backend") {
   public_configs = [ ":public_overrides_include_path" ]
   public = [ "public_overrides/pw_multibuf_backend/allocator_async.h" ]
-  public_deps = [ ":allocator_async" ]
+  public_deps = [
+    ":allocator_async",
+    "$dir_pw_multibuf:allocator_async.facade",
+  ]
+  allow_circular_includes_from = [ "$dir_pw_multibuf:allocator_async.facade" ]
 }
 
 # LINT.ThenChange(BUILD.gn, CMakeLists.txt)

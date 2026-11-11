@@ -71,6 +71,7 @@ pw_source_set("fake_dispatcher") {
     ":task",
     "$dir_pw_async:fake_dispatcher.facade",
   ]
+  allow_circular_includes_from = [ "$dir_pw_async:fake_dispatcher.facade" ]
   deps = [ dir_pw_log ]
   visibility = [
                  ":*",

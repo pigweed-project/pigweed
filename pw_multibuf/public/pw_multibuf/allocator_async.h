@@ -14,4 +14,4 @@
 #pragma once
 
 #include "pw_multibuf/allocator.h"
-#include "pw_multibuf_backend/allocator_async.h"  // IWYU pragma: export  // nogncheck
+#include "pw_multibuf_backend/allocator_async.h"  // IWYU pragma: export
