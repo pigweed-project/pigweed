@@ -29,8 +29,6 @@ _BASE_URL = "https://pigweed.dev/"
 # Utility and source files that exist in the HTML output directory but are
 # intentionally excluded from sitemap.xml.
 _EXCLUDED_REL_FILES = {
-    "genindex.html",
-    "py-modindex.html",
     "rustdoc/help.html",
     "rustdoc/settings.html",
     "search.html",
@@ -249,8 +247,6 @@ class SitemapTest(unittest.TestCase):
             # Rustdoc macro redirect stub
             "https://pigweed.dev/rustdoc/pw_assert/macro.assert!.html",
             # Utility / non-content pages
-            "https://pigweed.dev/genindex.html",
-            "https://pigweed.dev/py-modindex.html",
             "https://pigweed.dev/search.html",
             "https://pigweed.dev/rustdoc/help.html",
             "https://pigweed.dev/rustdoc/settings.html",

@@ -32,8 +32,6 @@ _EXCLUDE_PATTERNS = {
 
 # Specific files (relative to outdir) excluded from the sitemap.
 _EXCLUDE_FILES = {
-    'genindex.html',  # Unused Sphinx general index
-    'py-modindex.html',  # Unused Sphinx Python module index
     'rustdoc/help.html',  # Rustdoc keyboard shortcuts help UI
     'rustdoc/settings.html',  # Rustdoc settings UI
     'search.html',  # Unused legacy Sphinx search page

@@ -108,16 +108,13 @@ html_title = 'Pigweed'
 html_use_smartypants = True
 
 # If false, no module index is generated.
-html_domain_indices = True
+html_domain_indices = False
 
 html_favicon = 'https://www.gstatic.com/pigweed/pw_logo.ico'
 html_logo = 'https://www.gstatic.com/pigweed/pw_logo.svg'
 
 # If false, no index is generated.
-html_use_index = True
-
-# If true, the index is split into individual pages for each letter.
-html_split_index = False
+html_use_index = False
 
 # If true, links to the reST sources are added to the pages.
 html_show_sourcelink = False
