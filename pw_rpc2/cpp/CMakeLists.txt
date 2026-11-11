@@ -222,6 +222,7 @@ pw_add_enum_library(pw_rpc2.cpp
     pw_containers.intrusive_forward_list
     pw_intrusive_ptr
     pw_polyfill
+    pw_preprocessor
     pw_result
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._packet_type
@@ -236,7 +237,6 @@ pw_add_enum_library(pw_rpc2.cpp
   PRIVATE_DEPS
     pw_enum
     pw_log
-    pw_preprocessor
     pw_rpc2.cpp._config
   SOURCES
     call.cc
@@ -429,6 +429,7 @@ pw_add_test(pw_rpc2.cpp.method_future_test
     pw_allocator.testing
     pw_async2
     pw_async2.testing
+    pw_preprocessor
     pw_rpc2.cpp
   GROUPS
     modules
@@ -443,6 +444,7 @@ pw_add_test(pw_rpc2.cpp.internal_server_call_test
     pw_assert.check
     pw_async2
     pw_async2.testing
+    pw_preprocessor
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
     pw_transport.cpp.socket

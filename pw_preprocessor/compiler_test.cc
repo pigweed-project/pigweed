@@ -86,5 +86,35 @@ TEST(CompilerMacros, AlwaysInline) {
   static_assert(AlwaysInlineAdd(2, 3) == 5);
   EXPECT_EQ(AlwaysInlineMul(3, 4), 12);
 }
+
+class PW_ATTRIBUTE_CORO_RETURN_TYPE PW_ATTRIBUTE_CORO_LIFETIME_BOUND
+    FakeCoroReturnType {
+ public:
+  constexpr explicit FakeCoroReturnType(int value) : value_(value) {}
+  constexpr int value() const { return value_; }
+
+ private:
+  int value_;
+};
+
+PW_ATTRIBUTE_CORO_WRAPPER constexpr FakeCoroReturnType MakeFakeCoro(
+    const int& value) {
+  return FakeCoroReturnType(value);
+}
+
+PW_ATTRIBUTE_CORO_WRAPPER
+PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND constexpr FakeCoroReturnType
+MakeFakeCoroCopied(const int& value) {
+  return FakeCoroReturnType(value);
+}
+
+TEST(CompilerMacros, CoroutineLifetimeAttributes) {
+  constexpr int kLvalue = 7;
+  FakeCoroReturnType wrapped = MakeFakeCoro(kLvalue);
+  EXPECT_EQ(wrapped.value(), kLvalue);
+
+  FakeCoroReturnType disabled = MakeFakeCoroCopied(/*value=*/11);
+  EXPECT_EQ(disabled.value(), 11);
+}
 }  // namespace
 }  // namespace pw::preprocessor

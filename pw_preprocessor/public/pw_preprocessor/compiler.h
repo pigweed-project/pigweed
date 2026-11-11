@@ -286,6 +286,90 @@
 #define PW_ATTRIBUTE_LIFETIME_BOUND
 #endif  // PW_ATTRIBUTE_LIFETIME_BOUND
 
+/// `PW_ATTRIBUTE_CORO_RETURN_TYPE` marks a C++ class or struct as a coroutine
+/// return type.
+///
+/// Functions returning a type annotated with `PW_ATTRIBUTE_CORO_RETURN_TYPE`
+/// must either be coroutines (`co_await`, `co_yield`, or `co_return`) or be
+/// annotated with `PW_ATTRIBUTE_CORO_WRAPPER`. Combine with
+/// `PW_ATTRIBUTE_CORO_LIFETIME_BOUND` so compilers that support coroutine
+/// lifetime analysis diagnose dangling reference arguments passed to coroutines
+/// and coroutine wrappers.
+///
+/// Expands to nothing on compilers that do not support the attribute.
+///
+/// See the upstream documentation:
+/// https://clang.llvm.org/docs/AttributeReference.html#coro-return-type
+#if PW_HAVE_CPP_ATTRIBUTE(clang::coro_return_type)
+#define PW_ATTRIBUTE_CORO_RETURN_TYPE [[clang::coro_return_type]]
+#else
+#define PW_ATTRIBUTE_CORO_RETURN_TYPE
+#endif  // PW_HAVE_CPP_ATTRIBUTE(clang::coro_return_type)
+
+/// `PW_ATTRIBUTE_CORO_LIFETIME_BOUND` indicates that all parameters (including
+/// the implicit `*this` object parameter on non-static member functions) of a
+/// coroutine or `PW_ATTRIBUTE_CORO_WRAPPER` function returning the annotated
+/// coroutine return type are retained in the returned coroutine frame, similar
+/// to `PW_ATTRIBUTE_LIFETIME_BOUND`.
+///
+/// Must be used on a class or struct also annotated with
+/// `PW_ATTRIBUTE_CORO_RETURN_TYPE`. Individual functions can opt out of this
+/// analysis with `PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND`.
+///
+/// Expands to nothing on compilers that do not support the attribute.
+///
+/// See the upstream documentation:
+/// https://clang.llvm.org/docs/AttributeReference.html#coro-lifetimebound
+#if PW_HAVE_CPP_ATTRIBUTE(clang::coro_lifetimebound)
+#define PW_ATTRIBUTE_CORO_LIFETIME_BOUND [[clang::coro_lifetimebound]]
+#else
+#define PW_ATTRIBUTE_CORO_LIFETIME_BOUND
+#endif  // PW_HAVE_CPP_ATTRIBUTE(clang::coro_lifetimebound)
+
+/// `PW_ATTRIBUTE_CORO_WRAPPER` marks a non-coroutine function or lambda that
+/// returns a `PW_ATTRIBUTE_CORO_RETURN_TYPE` (for example, a factory or
+/// forwarding wrapper that invokes and returns a coroutine).
+///
+/// Parameters of a `PW_ATTRIBUTE_CORO_WRAPPER` function returning a
+/// `PW_ATTRIBUTE_CORO_LIFETIME_BOUND` type are checked for dangling temporaries
+/// and stack references just like coroutine parameters, unless disabled with
+/// `PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND`.
+///
+/// On lambdas, place `PW_ATTRIBUTE_CORO_WRAPPER` after the parameter list
+/// (`[&]() PW_ATTRIBUTE_CORO_WRAPPER { ... }`) for C++20 compatibility.
+///
+/// Expands to nothing on compilers that do not support the attribute.
+///
+/// See the upstream documentation:
+/// https://clang.llvm.org/docs/AttributeReference.html#coro-wrapper
+#if defined(__cplusplus) && PW_HAVE_ATTRIBUTE(coro_wrapper)
+#define PW_ATTRIBUTE_CORO_WRAPPER __attribute__((coro_wrapper))
+#elif PW_HAVE_CPP_ATTRIBUTE(clang::coro_wrapper)
+#define PW_ATTRIBUTE_CORO_WRAPPER [[clang::coro_wrapper]]
+#else
+#define PW_ATTRIBUTE_CORO_WRAPPER
+#endif  // PW_ATTRIBUTE_CORO_WRAPPER
+
+/// `PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND` disables
+/// `PW_ATTRIBUTE_CORO_LIFETIME_BOUND` parameter lifetime analysis on a specific
+/// coroutine or `PW_ATTRIBUTE_CORO_WRAPPER` function (for example, when a
+/// wrapper copies a reference argument by value into the underlying coroutine
+/// rather than retaining the reference across suspension).
+///
+/// Expands to nothing on compilers that do not support the attribute.
+///
+/// See the upstream documentation:
+/// https://clang.llvm.org/docs/AttributeReference.html#coro-disable-lifetimebound
+#if defined(__cplusplus) && PW_HAVE_ATTRIBUTE(coro_disable_lifetimebound)
+#define PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND \
+  __attribute__((coro_disable_lifetimebound))
+#elif PW_HAVE_CPP_ATTRIBUTE(clang::coro_disable_lifetimebound)
+#define PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND \
+  [[clang::coro_disable_lifetimebound]]
+#else
+#define PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND
+#endif  // PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND
+
 /// Internal attribute; name and documentation TBD.
 ///
 /// This is a copy of `ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY`.

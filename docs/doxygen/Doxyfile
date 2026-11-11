@@ -200,6 +200,10 @@ OUTPUT_DIRECTORY       = {{OUTDIR}}
 # https://www.doxygen.nl/manual/config.html#cfg_predefined
 PREDEFINED             = __cplusplus=202002L \
                          __cpp_concepts=202002L \
+                         PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND= \
+                         PW_ATTRIBUTE_CORO_LIFETIME_BOUND= \
+                         PW_ATTRIBUTE_CORO_RETURN_TYPE= \
+                         PW_ATTRIBUTE_CORO_WRAPPER= \
                          PW_ATTRIBUTE_PREFERRED_NAME(...)= \
                          PW_LOCKABLE= \
                          PW_PRINTF_FORMAT(...)= \

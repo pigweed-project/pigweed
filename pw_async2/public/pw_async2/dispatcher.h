@@ -32,12 +32,34 @@
 
 // Coroutines are supported if the build target depends on //pw_async2:coro.
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
-#include <functional>  // std::invoke
-
 #include "pw_async2/coro.h"
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
 namespace pw::async2 {
+
+#if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
+namespace internal {
+
+template <typename>
+struct MemberPointerClass;
+
+template <typename Member, typename Class>
+struct MemberPointerClass<Member Class::*> {
+  using type = Class;
+};
+
+template <typename Class, typename Receiver>
+constexpr decltype(auto) DereferenceIfNeeded(Receiver&& receiver) {
+  using DecayedReceiver = std::remove_cv_t<std::remove_reference_t<Receiver>>;
+  if constexpr (std::is_base_of_v<Class, DecayedReceiver>) {
+    return std::forward<Receiver>(receiver);
+  } else {
+    return *std::forward<Receiver>(receiver);
+  }
+}
+
+}  // namespace internal
+#endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
 /// @submodule{pw_async2,dispatchers}
 
@@ -239,7 +261,7 @@ class Dispatcher {
                                              std::forward<Args>(args)...);
     } else {
       return Post(coro_cx.allocator(),
-                  std::invoke(kCoroFunc, coro_cx, std::forward<Args>(args)...));
+                  kCoroFunc(coro_cx, std::forward<Args>(args)...));
     }
   }
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
@@ -392,16 +414,20 @@ class Dispatcher {
       PW_LOCKS_EXCLUDED(internal::lock());
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
+  // Invokes a member coroutine without `std::invoke`, since standard library
+  // `std::invoke` lacks `PW_ATTRIBUTE_CORO_WRAPPER` and triggers `-Wdangling`
+  // when returning `Coro<T>`.
   template <auto kCoroMemberFunc, typename Receiver, typename... Args>
   [[nodiscard]] auto PostSharedMemberCoro(CoroContext coro_cx,
                                           Receiver&& receiver,
                                           Args&&... args)
       PW_LOCKS_EXCLUDED(internal::lock()) {
+    using Class =
+        typename internal::MemberPointerClass<decltype(kCoroMemberFunc)>::type;
     return Post(coro_cx.allocator(),
-                std::invoke(kCoroMemberFunc,
-                            std::forward<Receiver>(receiver),
-                            coro_cx,
-                            std::forward<Args>(args)...));
+                (internal::DereferenceIfNeeded<Class>(
+                     std::forward<Receiver>(receiver)).*
+                 kCoroMemberFunc)(coro_cx, std::forward<Args>(args)...));
   }
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 

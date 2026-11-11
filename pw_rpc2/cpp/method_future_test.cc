@@ -23,6 +23,7 @@
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
+#include "pw_preprocessor/compiler.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc2::internal {
@@ -276,7 +277,9 @@ TEST(CoroFutureTest, ImmediateCoroCompletesAndDeallocates) {
       std::byte storage[sizeof(MethodFutureImpl<async2::Coro<void>>)];
 
   auto future = BoxedMethodFuture::Emplace<async2::Coro<void>>(
-      storage, [&] { return ImmediateCoro(async2::CoroContext(alloc)); });
+      storage, [&]() PW_ATTRIBUTE_CORO_WRAPPER {
+        return ImmediateCoro(async2::CoroContext(alloc));
+      });
 
   EXPECT_TRUE(future.is_pendable());
   EXPECT_FALSE(future.is_complete());
@@ -299,9 +302,11 @@ TEST(CoroFutureTest, AwaitingCoroCompletesAndDestructsLocals) {
       std::byte storage[sizeof(MethodFutureImpl<async2::Coro<void>>)];
   int dtor_count = 0;
 
-  auto future = BoxedMethodFuture::Emplace<async2::Coro<void>>(storage, [&] {
-    return AwaitingCoro(async2::CoroContext(alloc), MockFuture(2, &dtor_count));
-  });
+  auto future = BoxedMethodFuture::Emplace<async2::Coro<void>>(
+      storage, [&]() PW_ATTRIBUTE_CORO_WRAPPER {
+        return AwaitingCoro(async2::CoroContext(alloc),
+                            MockFuture(2, &dtor_count));
+      });
 
   async2::DispatcherForTest dispatcher;
   DriverTask task(std::move(future));
@@ -322,10 +327,11 @@ TEST(CoroFutureTest, EarlyDestructionDeallocatesCoroFrameAndLocals) {
   int dtor_count = 0;
 
   {
-    auto future = BoxedMethodFuture::Emplace<async2::Coro<void>>(storage, [&] {
-      return AwaitingCoro(async2::CoroContext(alloc),
-                          MockFuture(10, &dtor_count));
-    });
+    auto future = BoxedMethodFuture::Emplace<async2::Coro<void>>(
+        storage, [&]() PW_ATTRIBUTE_CORO_WRAPPER {
+          return AwaitingCoro(async2::CoroContext(alloc),
+                              MockFuture(10, &dtor_count));
+        });
     EXPECT_TRUE(future.is_pendable());
     auto allocated_bytes = alloc.GetAllocatedBytes();
     ASSERT_TRUE(allocated_bytes.has_value());
@@ -346,10 +352,12 @@ TEST(CoroFutureTest,
       std::byte storage[sizeof(MethodFutureImpl<async2::Coro<void>>)];
   int dtor_count = 0;
 
-  auto future = BoxedMethodFuture::Emplace<async2::Coro<void>>(storage, [&] {
-    return ParentCoroWithFailingChild(
-        async2::CoroContext(alloc), failing_alloc, MockFuture(2, &dtor_count));
-  });
+  auto future = BoxedMethodFuture::Emplace<async2::Coro<void>>(
+      storage, [&]() PW_ATTRIBUTE_CORO_WRAPPER {
+        return ParentCoroWithFailingChild(async2::CoroContext(alloc),
+                                          failing_alloc,
+                                          MockFuture(2, &dtor_count));
+      });
 
   async2::DispatcherForTest dispatcher;
   EXPECT_TRUE(dispatcher.RunInTaskUntilStalled(future).IsReady());

@@ -398,6 +398,7 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
       pw_allocator
       pw_assert.assert
       pw_async2
+      pw_preprocessor
       pw_result
       pw_function
     PUBLIC_INCLUDES

@@ -463,6 +463,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       "$dir_pw_result",
       dir_pw_allocator,
       dir_pw_function,
+      dir_pw_preprocessor,
     ]
     deps = [
       "$dir_pw_assert:check",

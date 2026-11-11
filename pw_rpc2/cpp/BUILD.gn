@@ -244,6 +244,7 @@ pw_cc_enum_source_set("cpp") {
                   dir_pw_bytes,
                   dir_pw_intrusive_ptr,
                   dir_pw_polyfill,
+                  dir_pw_preprocessor,
                   dir_pw_result,
                   dir_pw_span,
                   dir_pw_status,
@@ -252,7 +253,6 @@ pw_cc_enum_source_set("cpp") {
     ":config",
     dir_pw_enum,
     dir_pw_log,
-    dir_pw_preprocessor,
   ]
 }
 
@@ -437,6 +437,7 @@ pw_test("method_future_test") {
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
     dir_pw_async2,
+    dir_pw_preprocessor,
   ]
   sources = [ "method_future_test.cc" ]
 }
@@ -453,6 +454,7 @@ pw_test("internal_server_call_test") {
     "$dir_pw_async2:testing",
     "$dir_pw_transport/cpp:socket",
     dir_pw_async2,
+    dir_pw_preprocessor,
   ]
   sources = [ "internal_server_call_test.cc" ]
 }

@@ -151,6 +151,25 @@ handle initial and nested allocation failures without crashing, wrap the
 coroutine with
 :cc:`MakeFallible <pw::async2::Coro::MakeFallible>`.
 
+Argument lifetimes
+==================
+Because a coroutine suspends before executing its body, any reference arguments
+(including the implicit ``*this`` receiver on member coroutines) are stored as
+references inside the coroutine frame and must outlive the returned
+:cc:`Coro <pw::async2::Coro>` or :cc:`Generator <pw::async2::Generator>`.
+
+On compilers that support Clang's coroutine lifetime attributes,
+:cc:`Coro <pw::async2::Coro>` and :cc:`Generator <pw::async2::Generator>` are
+annotated with :cc:`PW_ATTRIBUTE_CORO_RETURN_TYPE` and
+:cc:`PW_ATTRIBUTE_CORO_LIFETIME_BOUND`. Passing a temporary to a reference
+parameter of a coroutine (outside an immediate ``co_await`` expression) triggers
+a ``-Wdangling`` compiler warning. Non-coroutine helper functions or lambdas
+that construct and return a :cc:`Coro <pw::async2::Coro>` or
+:cc:`Generator <pw::async2::Generator>` must be annotated with
+:cc:`PW_ATTRIBUTE_CORO_WRAPPER` (and optionally
+:cc:`PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND` if reference parameters are
+copied by value rather than retained by the coroutine).
+
 .. _module-pw_async2-coro-passing-data:
 
 -------------------------------

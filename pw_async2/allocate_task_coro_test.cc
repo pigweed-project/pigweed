@@ -237,6 +237,17 @@ TEST_F(AllocateTaskCoroTest, AllocatesWithMemberCoroPointer) {
   EXPECT_EQ(task->value(), 242);
 }
 
+TEST_F(AllocateTaskCoroTest, AllocatesWithMemberCoroSharedPtr) {
+  auto obj = alloc_.MakeShared<MemberCoroClass>(/*value=*/250);
+  ASSERT_NE(obj, nullptr);
+
+  auto task = dispatcher_.Post<&MemberCoroClass::MemberCoro>(alloc_, obj, 42);
+  ASSERT_NE(task, nullptr);
+
+  dispatcher_.RunToCompletion();
+  EXPECT_EQ(task->value(), 292);
+}
+
 TEST_F(AllocateTaskCoroTest, AllocatesByCallingMemberCoro) {
   MemberCoroClass obj{300};
 

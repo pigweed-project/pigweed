@@ -585,6 +585,7 @@ cc_library(
         "//pw_allocator",
         "//pw_assert:assert",
         "//pw_function",
+        "//pw_preprocessor",
         "//pw_result",
         "//pw_status",
     ],

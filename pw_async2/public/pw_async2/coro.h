@@ -29,6 +29,7 @@
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_function/function.h"
+#include "pw_preprocessor/compiler.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 namespace pw::async2 {
@@ -47,12 +48,13 @@ class CoroPromiseBase;
 // Forward-declare coroutine types so that they can be referenced by the
 // promise type APIs.
 template <typename T>
-class Coro;
+class PW_ATTRIBUTE_CORO_RETURN_TYPE PW_ATTRIBUTE_CORO_LIFETIME_BOUND Coro;
 
 class Dispatcher;
 
 template <typename T>
-class Generator;
+class [[nodiscard]] PW_ATTRIBUTE_CORO_RETURN_TYPE
+    PW_ATTRIBUTE_CORO_LIFETIME_BOUND Generator;
 
 template <typename T, typename Handler>
 class FallibleCoro;
@@ -739,7 +741,8 @@ class Awaitable final {
 /// Inside a coroutine function, `co_await <expr>` can be used for pw_async2
 /// futures or other coroutines. The result will be a value of type `T`.
 template <typename T>
-class Coro final {
+class PW_ATTRIBUTE_CORO_RETURN_TYPE PW_ATTRIBUTE_CORO_LIFETIME_BOUND
+    Coro final {
  public:
   /// The type this coroutine returns from a `co_return` expression.
   using value_type = T;
@@ -1036,12 +1039,16 @@ static_assert(Future<FallibleCoro<int, internal::ReturnValueHandler<int>>>);
 /// They implement a `Next()` method that returns a future, allowing them to be
 /// consumed in a `while` loop with `co_await`.
 template <typename T>
-class [[nodiscard]] Generator final {
+class
+    [[nodiscard]] PW_ATTRIBUTE_CORO_RETURN_TYPE PW_ATTRIBUTE_CORO_LIFETIME_BOUND
+    Generator final {
  public:
   using promise_type = internal::GeneratorPromise<T>;
   using handle_type = internal::OwningCoroutineHandle<promise_type>;
 
-  static Generator Empty() { return Generator(handle_type{nullptr}); }
+  PW_ATTRIBUTE_CORO_WRAPPER static Generator Empty() {
+    return Generator(handle_type{nullptr});
+  }
 
   Generator(handle_type&& handle) : handle_(std::move(handle)) {}
   ~Generator() = default;
@@ -1089,7 +1096,7 @@ class [[nodiscard]] Generator final {
     return Pending();
   }
 
-  auto Next() {
+  auto Next() PW_ATTRIBUTE_LIFETIME_BOUND {
     struct NextFuture {
       using value_type = std::optional<T>;
       Generator* gen_ = nullptr;

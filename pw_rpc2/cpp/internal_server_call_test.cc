@@ -20,6 +20,7 @@
 #include "pw_assert/check.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/poll.h"
+#include "pw_preprocessor/compiler.h"
 #include "pw_rpc2/internal/method_future.h"
 #include "pw_rpc2/internal/packet_testing.h"
 #include "pw_rpc2/internal/server_call.h"
@@ -535,9 +536,11 @@ TEST_F(ServerCallTest, CoroutineExecutionInServerCall) {
   static constexpr Method kMethod = TestMethod(103, sizeof(ImplType));
   ServerCall& call = AdoptCall(/*call_id=*/103, kMethod);
 
-  EXPECT_EQ(call.EmplaceFutureFromFactory<async2::Coro<void>>([&] {
-    return EchoCoro(async2::CoroContext(alloc_), MockFuture(2, &dtor_count));
-  }),
+  EXPECT_EQ(call.EmplaceFutureFromFactory<async2::Coro<void>>(
+                [&]() PW_ATTRIBUTE_CORO_WRAPPER {
+                  return EchoCoro(async2::CoroContext(alloc_),
+                                  MockFuture(2, &dtor_count));
+                }),
             ProtocolError::kNone);
   StartCall(call);
 
@@ -557,12 +560,13 @@ TEST_F(ServerCallTest,
   static constexpr Method kMethod = TestMethod(108, sizeof(ImplType));
   ServerCall& call = AdoptCall(/*call_id=*/108, kMethod);
 
-  EXPECT_EQ(call.EmplaceFutureFromFactory<async2::Coro<void>>([&] {
-    return FailingChildCoro(
-        async2::CoroContext(alloc_),
-        failing_alloc,
-        CallAccess::Create<RawUnaryWriter>(call.shared_call()));
-  }),
+  EXPECT_EQ(call.EmplaceFutureFromFactory<async2::Coro<void>>(
+                [&]() PW_ATTRIBUTE_CORO_WRAPPER {
+                  return FailingChildCoro(
+                      async2::CoroContext(alloc_),
+                      failing_alloc,
+                      CallAccess::Create<RawUnaryWriter>(call.shared_call()));
+                }),
             ProtocolError::kNone);
   StartCall(call);
 
@@ -606,14 +610,15 @@ TEST_F(ServerCallTest, WorkAfterFinalResponseIsDestroyedWithTheMethod) {
   async2::Waker waker;
   int dtor_count = 0;
   bool ran_after_response = false;
-  EXPECT_EQ(call.EmplaceFutureFromFactory<async2::Coro<void>>([&] {
-    return RespondThenKeepWorking(
-        async2::CoroContext(alloc_),
-        CallAccess::Create<RawUnaryWriter>(call.shared_call()),
-        waker,
-        dtor_count,
-        ran_after_response);
-  }),
+  EXPECT_EQ(call.EmplaceFutureFromFactory<async2::Coro<void>>(
+                [&]() PW_ATTRIBUTE_CORO_WRAPPER {
+                  return RespondThenKeepWorking(
+                      async2::CoroContext(alloc_),
+                      CallAccess::Create<RawUnaryWriter>(call.shared_call()),
+                      waker,
+                      dtor_count,
+                      ran_after_response);
+                }),
             ProtocolError::kNone);
   StartCall(call);
 

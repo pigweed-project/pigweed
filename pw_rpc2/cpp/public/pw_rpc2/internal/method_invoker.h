@@ -22,6 +22,7 @@
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/future.h"
 #include "pw_buf/buf.h"
+#include "pw_preprocessor/compiler.h"
 #include "pw_result/result.h"
 #include "pw_rpc2/internal/connection_task.h"
 #include "pw_rpc2/internal/method.h"
@@ -240,24 +241,33 @@ class MethodInvoker
     using Invocation =
         InvocationTraits<kExpectedType, Traits::kIsRaw, Req, Resp>;
     using Responder = typename Invocation::Responder;
-    return call.EmplaceFutureFromFactory<typename Traits::Future>([&] {
-      if constexpr (Traits::kTakesCoroContext) {
+    return call.EmplaceFutureFromFactory<typename Traits::Future>(
+        [&]() PW_ATTRIBUTE_CORO_WRAPPER {
+          if constexpr (Traits::kTakesCoroContext) {
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
-        return CallMethod(
-            service,
-            async2::CoroContext(call.connection_task().allocator()),
-            std::forward<RequestExprFn>(make_request)(),
-            CallAccess::Create<Responder>(call.shared_call()));
+            if constexpr (Traits::kIsStatic) {
+              static_cast<void>(service);
+              return kMethod(
+                  async2::CoroContext(call.connection_task().allocator()),
+                  std::forward<RequestExprFn>(make_request)(),
+                  CallAccess::Create<Responder>(call.shared_call()));
+            } else {
+              return (service.*kMethod)(
+                  async2::CoroContext(call.connection_task().allocator()),
+                  std::forward<RequestExprFn>(make_request)(),
+                  CallAccess::Create<Responder>(call.shared_call()));
+            }
 #else
-        static_assert(!Traits::kTakesCoroContext,
-                      "Coroutine RPC methods require C++20.");
+            static_assert(!Traits::kTakesCoroContext,
+                          "Coroutine RPC methods require C++20.");
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
-      } else {
-        return CallMethod(service,
-                          std::forward<RequestExprFn>(make_request)(),
-                          CallAccess::Create<Responder>(call.shared_call()));
-      }
-    });
+          } else {
+            return CallMethod(
+                service,
+                std::forward<RequestExprFn>(make_request)(),
+                CallAccess::Create<Responder>(call.shared_call()));
+          }
+        });
   }
 };
 

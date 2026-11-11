@@ -392,7 +392,68 @@ PW_NC_EXPECT("no matching member function for call to 'MakeFallible'");
   });
 }
 #endif  // PW_NC_TEST
-        //
+
+#if PW_HAVE_CPP_ATTRIBUTE(clang::coro_lifetimebound) && \
+    PW_HAVE_CPP_ATTRIBUTE(clang::coro_return_type)
+#if PW_NC_TEST(CoroDanglingTemporaryReferenceArgument)
+PW_NC_EXPECT("temporary whose address is used as value of local");
+Coro<int> NcReadRefCoro(CoroContext, const int& value) { co_return value; }
+[[maybe_unused]] void DanglingCoroRefArg() {
+  Coro<int> coro =
+      NcReadRefCoro(pw::allocator::GetNullAllocator(), /*value=*/42);
+  (void)coro;
+}
+#elif PW_NC_TEST(CoroDanglingTemporaryMemberObject)
+PW_NC_EXPECT("temporary whose address is used as value of local");
+[[maybe_unused]] void DanglingMemberCoro() {
+  int out = 0;
+  Coro<Status> coro = ObjectWithCoroMethod(/*x=*/4).CoroMethodStoresField(
+      pw::allocator::GetNullAllocator(), out);
+  (void)coro;
+}
+#elif PW_NC_TEST(GeneratorDanglingTemporaryReferenceArgument)
+PW_NC_EXPECT("temporary whose address is used as value of local");
+Generator<int> NcReadRefGenerator(CoroContext, const int& value) {
+  co_yield value;
+}
+[[maybe_unused]] void DanglingGeneratorRefArg() {
+  Generator<int> gen =
+      NcReadRefGenerator(pw::allocator::GetNullAllocator(), /*value=*/42);
+  (void)gen;
+}
+#elif PW_NC_TEST(CoroWrapperMissingAttribute)
+PW_NC_EXPECT("neither a coroutine nor a coroutine wrapper");
+Coro<int> NcWrappedCoro(CoroContext) { co_return 1; }
+[[maybe_unused]] Coro<int> UnannotatedWrapper(CoroContext cx) {
+  return NcWrappedCoro(cx);
+}
+#elif PW_NC_TEST(CoroWrapperDanglingTemporaryReferenceArgument)
+PW_NC_EXPECT("temporary whose address is used as value of local");
+Coro<int> NcReadRefForWrapper(CoroContext, const int& value) {
+  co_return value;
+}
+PW_ATTRIBUTE_CORO_WRAPPER Coro<int> NcForwardingWrapper(CoroContext cx,
+                                                        const int& value) {
+  return NcReadRefForWrapper(cx, value);
+}
+[[maybe_unused]] void DanglingWrapperCall() {
+  Coro<int> coro =
+      NcForwardingWrapper(pw::allocator::GetNullAllocator(), /*value=*/42);
+  (void)coro;
+}
+#endif  // PW_NC_TEST
+#endif  // PW_HAVE_CPP_ATTRIBUTE(clang::coro_lifetimebound) && ...
+
+#if PW_HAVE_CPP_ATTRIBUTE(clang::lifetimebound)
+#if PW_NC_TEST(GeneratorNextDanglingTemporaryGenerator)
+PW_NC_EXPECT("temporary whose address is used as value of local");
+Generator<int> NcSimpleGenerator(CoroContext) { co_yield 1; }
+[[maybe_unused]] void DanglingGeneratorNext() {
+  auto next = NcSimpleGenerator(pw::allocator::GetNullAllocator()).Next();
+  (void)next;
+}
+#endif  // PW_NC_TEST
+#endif  // PW_HAVE_CPP_ATTRIBUTE(clang::lifetimebound)
 
 class SomeClass {};
 
@@ -1134,6 +1195,46 @@ TEST_F(CoroTest, AllocFailureAfterSuspend) {
 
   EXPECT_TRUE(handler_ran);
   EXPECT_EQ(task.Wait(), -1);
+  auto allocated_bytes = alloc_.GetAllocatedBytes();
+  ASSERT_TRUE(allocated_bytes.has_value());
+  EXPECT_EQ(allocated_bytes.value(), 0u);
+}
+
+Coro<int> DerefIntCoro(CoroContext, const int& value) { co_return value; }
+
+PW_ATTRIBUTE_CORO_WRAPPER Coro<int> WrapDerefIntCoro(CoroContext cx,
+                                                     const int& value) {
+  return DerefIntCoro(cx, value);
+}
+
+PW_ATTRIBUTE_CORO_WRAPPER PW_ATTRIBUTE_CORO_DISABLE_LIFETIME_BOUND Coro<int>
+WrapCopiedIntCoro(CoroContext cx, const int& value) {
+  return DoubleValue(cx, value);
+}
+
+Coro<int> CoAwaitTemporaryRefArgCoro(CoroContext cx) {
+  co_return co_await DerefIntCoro(cx, /*value=*/19);
+}
+
+TEST_F(CoroTest, CoroLifetimeAttributesAndWrappers) {
+  {
+    constexpr int kExpected = 37;
+    Coro<int> wrapped = WrapDerefIntCoro(alloc_, kExpected);
+    DispatcherForTest dispatcher;
+    EXPECT_EQ(dispatcher.RunInTaskUntilStalled(wrapped), Ready(kExpected));
+
+    Coro<int> disabled = WrapCopiedIntCoro(alloc_, /*value=*/21);
+    EXPECT_EQ(dispatcher.RunInTaskUntilStalled(disabled), Ready(42));
+
+    auto make_coro = [&]() PW_ATTRIBUTE_CORO_WRAPPER {
+      return DerefIntCoro(alloc_, kExpected);
+    };
+    Coro<int> from_lambda = make_coro();
+    EXPECT_EQ(dispatcher.RunInTaskUntilStalled(from_lambda), Ready(kExpected));
+
+    Coro<int> awaited_temp = CoAwaitTemporaryRefArgCoro(alloc_);
+    EXPECT_EQ(dispatcher.RunInTaskUntilStalled(awaited_temp), Ready(19));
+  }
   auto allocated_bytes = alloc_.GetAllocatedBytes();
   ASSERT_TRUE(allocated_bytes.has_value());
   EXPECT_EQ(allocated_bytes.value(), 0u);
