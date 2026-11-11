@@ -70,6 +70,25 @@ class ForwardingAllocator : public pw::Allocator {
       const Capabilities& capabilities) noexcept
       : pw::Allocator(capabilities) {}
 
+  /// Creates a forwarding allocator that wraps a given allocator with explicit
+  /// capabilities.
+  ///
+  /// Unlike `ForwardingAllocator(pw::Allocator&)`, this constructor does not
+  /// read `allocator.capabilities()`, so it can be used with `PW_CONSTINIT` to
+  /// constant-initialize a forwarding allocator wrapping a separate static or
+  /// `constinit` allocator.
+  ///
+  /// The given `capabilities` may differ from those of `allocator` if a derived
+  /// allocator provides extra functionality. Only the `capabilities` provided
+  /// here will be returned by `capabilities()`.
+  ///
+  /// @param[in,out] allocator Wrapped allocator to forward requests to. Must
+  /// remain valid for the lifetime of this object.
+  /// @param[in] capabilities Capabilities exposed by this forwarding allocator.
+  constexpr ForwardingAllocator(pw::Allocator& allocator,
+                                const Capabilities& capabilities) noexcept
+      : pw::Allocator(capabilities), allocator_(&allocator) {}
+
   /// Creates a forwarding allocator that wraps a given allocator.
   ///
   /// This constructor should be used when the forwarding allocator is created
@@ -77,7 +96,7 @@ class ForwardingAllocator : public pw::Allocator {
   ///
   /// The allocator must remain valid for the lifetime of this object.
   constexpr explicit ForwardingAllocator(pw::Allocator& allocator) noexcept
-      : pw::Allocator(allocator.capabilities()), allocator_(&allocator) {}
+      : ForwardingAllocator(allocator, allocator.capabilities()) {}
 
   /// Sets the allocator being wrapped.
   ///

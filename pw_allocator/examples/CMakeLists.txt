@@ -112,10 +112,13 @@ pw_add_test(pw_allocator.examples.linker_sections
 pw_add_test(pw_allocator.examples.metrics
   PRIVATE_DEPS
     pw_allocator.examples.named_u32
+    pw_allocator.first_fit
     pw_allocator.metrics
     pw_allocator.testing
     pw_allocator.tracking_allocator
     pw_metric
+    pw_metric.global
+    pw_polyfill
   SOURCES
     metrics.cc
 )

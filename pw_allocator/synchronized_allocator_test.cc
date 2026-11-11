@@ -14,18 +14,85 @@
 
 #include "pw_allocator/synchronized_allocator.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/first_fit.h"
 #include "pw_allocator/sync_allocator_testing.h"
 #include "pw_allocator/test_harness.h"
 #include "pw_allocator/testing.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_sync/mutex.h"
+#include "pw_sync/no_lock.h"
 #include "pw_thread/thread.h"
 #include "pw_unit_test/framework.h"
+
+namespace {
+
+using ConstinitBlockType = ::pw::allocator::FirstFitBlock<uint32_t>;
+using ConstinitBaseAllocator =
+    ::pw::allocator::FirstFitAllocator<ConstinitBlockType>;
+
+alignas(ConstinitBlockType::kAlignment)
+    PW_CONSTINIT std::array<std::byte, 128> constinit_buffer{};
+PW_CONSTINIT ConstinitBaseAllocator constinit_base_allocator;
+PW_CONSTINIT ::pw::allocator::SynchronizedAllocator<::pw::sync::NoLock>
+    constinit_synchronized_allocator(constinit_base_allocator,
+                                     ConstinitBaseAllocator::kCapabilities);
+
+TEST(SynchronizedAllocatorConstinitTest, AllocateDeallocateAndBorrow) {
+  static bool initialized = false;
+  if (!initialized) {
+    constinit_base_allocator.Init(constinit_buffer);
+    initialized = true;
+  }
+
+  EXPECT_EQ(constinit_synchronized_allocator.capabilities(),
+            constinit_base_allocator.capabilities());
+  {
+    auto borrowed = constinit_synchronized_allocator.Borrow();
+    EXPECT_EQ(&(*borrowed), &constinit_base_allocator);
+  }
+
+  void* ptr = constinit_synchronized_allocator.Allocate(
+      ::pw::allocator::Layout::Of<uint32_t[2]>());
+  ASSERT_NE(ptr, nullptr);
+  constinit_synchronized_allocator.Deallocate(ptr);
+}
+
+alignas(ConstinitBlockType::kAlignment)
+    PW_CONSTINIT std::array<std::byte, 128> constinit_two_phase_buffer{};
+PW_CONSTINIT ConstinitBaseAllocator constinit_two_phase_base;
+PW_CONSTINIT ::pw::allocator::SynchronizedAllocator<
+    ::pw::sync::InterruptSpinLock>
+    constinit_two_phase_synchronized(ConstinitBaseAllocator::kCapabilities);
+
+TEST(SynchronizedAllocatorConstinitTest, TwoPhaseInterruptSpinLock) {
+  static bool initialized = false;
+  if (!initialized) {
+    constinit_two_phase_base.Init(constinit_two_phase_buffer);
+    constinit_two_phase_synchronized.Init(constinit_two_phase_base);
+    initialized = true;
+  }
+
+  EXPECT_EQ(constinit_two_phase_synchronized.capabilities(),
+            constinit_two_phase_base.capabilities());
+  {
+    auto borrowed = constinit_two_phase_synchronized.Borrow();
+    EXPECT_EQ(&(*borrowed), &constinit_two_phase_base);
+  }
+
+  void* ptr = constinit_two_phase_synchronized.Allocate(
+      ::pw::allocator::Layout::Of<uint32_t[2]>());
+  ASSERT_NE(ptr, nullptr);
+  constinit_two_phase_synchronized.Deallocate(ptr);
+}
+
+}  // namespace
 
 // TODO: https://pwbug.dev/365161669 - Express joinability as a build-system
 // constraint.
