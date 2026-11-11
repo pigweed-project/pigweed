@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-"""This is a stub implementation for when zephyr-bazel is not loaded."""
+"""This is a stub implementation for when zephyr is not loaded."""
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 

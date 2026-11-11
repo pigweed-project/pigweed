@@ -12,23 +12,22 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-"""Bazel transition for compiling Pigweed binaries under the Zephyr build context."""
+"""Bazel helpers for compiling Pigweed binaries and tests under Zephyr."""
 
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("@zephyr//:cc.bzl", "zephyr_app")
-load("@zephyr-bazel//bazel:zephyr_transition.bzl", "zephyr_transition")
 
-def _rp2350_zephyr_binary_impl(ctx):
+def _rp2350_zephyr_test_impl(ctx):
     # Retrieve the transitioned target binary's output files.
     binary_files = ctx.attr.binary[DefaultInfo].files.to_list()
     if not binary_files:
         fail("Binary target %s produced no files" % ctx.attr.binary.label)
     in_file = binary_files[0]
 
-    # Declare a local output file to satisfy Bazel's 'executable = True' rule requirement.
+    # Declare a local output file to satisfy Bazel's 'test = True' rule requirement.
     out_file = ctx.actions.declare_file(ctx.label.name)
 
-    # Symlink the transitioned binary ELF to the local executable file.
+    # Symlink the transitioned binary ELF to the local test executable file.
     ctx.actions.symlink(
         output = out_file,
         target_file = in_file,
@@ -42,30 +41,12 @@ def _rp2350_zephyr_binary_impl(ctx):
         ),
     ]
 
-_COMMON_ATTRS = {
-    "app_label": attr.string(mandatory = True),
-    "binary": attr.label(mandatory = True, cfg = "target"),
-    "_allowlist_function_transition": attr.label(
-        default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
-    ),
-}
-
-# Rule that applies the Zephyr bzlmod configuration transition to a target binary.
-# The transition maps Kconfig and Devicetree parameters to build settings.
-_rp2350_zephyr_binary = rule(
-    implementation = _rp2350_zephyr_binary_impl,
-    attrs = _COMMON_ATTRS,
-    executable = True,
-    cfg = zephyr_transition,
-)
-
-# Rule that applies the Zephyr bzlmod configuration transition to a target test.
-# The transition maps Kconfig and Devicetree parameters to build settings.
 _rp2350_zephyr_test = rule(
-    implementation = _rp2350_zephyr_binary_impl,
-    attrs = _COMMON_ATTRS,
+    implementation = _rp2350_zephyr_test_impl,
+    attrs = {
+        "binary": attr.label(mandatory = True, cfg = "target"),
+    },
     test = True,
-    cfg = zephyr_transition,
 )
 
 def _rp2350_zephyr_app(name, library, app_label, boot, testonly):
@@ -81,50 +62,42 @@ def _rp2350_zephyr_app(name, library, app_label, boot, testonly):
     )
     return ":" + app_name + ".elf"
 
-def rp2350_zephyr_binary(name = "", binary = "", app_label = "//app", testonly = False):
+def rp2350_zephyr_binary(
+        name = "",
+        binary = "",
+        app_label = "//app",
+        testonly = False,
+        library = None,
+        boot = None):
     """Transitions a binary target to compile under the Zephyr platform build context.
 
     This macro:
-    1. Instantiates a local zephyr_app to force the two-pass link for ISR tables.
-    2. Instantiates _rp2350_zephyr_binary to transition the build context
-       (Kconfig/Devicetree) based on the board platform configured in the
-       platforms flag.
-    3. Wraps the target in platform_data to force the initial platform
-       transition to the RP2350 board.
+    1. Instantiates a local zephyr_app to force the two-pass link for ISR tables
+       and apply the Zephyr Kconfig/Devicetree transition.
+    2. Wraps the resulting ELF target in platform_data to force the initial
+       platform transition to the RP2350 board.
 
     Args:
       name: The name of the final platform_data target.
       binary: The binary target to transition.
       app_label: The Zephyr app label to use.
       testonly: Common Bazel attribute.
+      library: Optional library target overriding `binary + "_lib"`.
+      boot: Optional boot library target to link into the app.
     """
     elf_target = _rp2350_zephyr_app(
         name = name,
-        library = binary + "_lib",
+        library = library or (binary + "_lib"),
         app_label = app_label,
-        boot = None,
-        testonly = testonly,
-    )
-
-    elf_target_name = name + "_zephyr_transitioned"
-    _rp2350_zephyr_binary(
-        name = elf_target_name,
-        binary = elf_target,
-        app_label = app_label,
+        boot = boot,
         testonly = testonly,
     )
 
     platform_data(
         name = name,
-        target = ":" + elf_target_name,
+        target = elf_target,
         testonly = testonly,
         platform = "//boards:rp2350a_m33",
-        # TODO: https://pwbug.dev/528015032 - macos is not currently supported
-        target_compatible_with = select({
-            "//:host_macos_arm64": ["@platforms//:incompatible"],
-            "//:host_macos_x86_64": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        }),
     )
 
 def rp2350_zephyr_test(name = "", binary = "", app_label = "//unit_test_app"):
@@ -132,27 +105,20 @@ def rp2350_zephyr_test(name = "", binary = "", app_label = "//unit_test_app"):
 
     # Zephyr requires a two-pass link to generate the interrupt vector table
     # (isr_table.c). Standard cc_test targets transitioned directly bypass this.
-    # To force the two-pass link, we define a local `zephyr_app` for the test,
-    # depending on the `.lib` target of the test (generated by `pw_cc_test`)
-    # and the generic unit test boot runner.
-    elf_target = _rp2350_zephyr_app(
-        name = name,
-        library = binary + ".lib",
+    # To force the two-pass link, we build a platform_data-wrapped zephyr_app
+    # from the test's `.lib` target (generated by `pw_cc_test`) and the generic
+    # unit test boot runner, then expose it as a platform-compatible test target.
+    rp2350_zephyr_binary(
+        name = name + "_binary",
+        binary = binary,
         app_label = app_label,
-        boot = "//unit_test_app:unit_test_boot",
         testonly = True,
+        library = binary + ".lib",
+        boot = "//unit_test_app:unit_test_boot",
     )
 
-    # Wrap the generated ELF in the test rule so Bazel recognizes
-    # it as a test target that can be run under `bazel test`.
     _rp2350_zephyr_test(
         name = name,
-        binary = elf_target,
-        app_label = app_label,
-        # TODO: https://pwbug.dev/528015032 - macos is not currently supported
-        target_compatible_with = select({
-            "//:host_macos_arm64": ["@platforms//:incompatible"],
-            "//:host_macos_x86_64": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        }),
+        binary = ":" + name + "_binary",
+        target_compatible_with = ["//boards:raspberrypi_pw_rp2350"],
     )

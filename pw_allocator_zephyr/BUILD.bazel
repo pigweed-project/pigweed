@@ -59,5 +59,6 @@ zephyr_cc_test(
     deps = [
         ":synchronized_heap_allocator",
         ":system_heap_allocator",
+        "//pw_unit_test",
     ],
 )

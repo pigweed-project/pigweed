@@ -50,7 +50,9 @@ class BuildifierFormatter(FileFormatter):
 
     @staticmethod
     def _detect_file_type(file_path: Path) -> str:
-        if file_path.name == 'MODULE.bazel':
+        if file_path.name == 'MODULE.bazel' or file_path.name.endswith(
+            '.MODULE.bazel'
+        ):
             return 'module'
         if file_path.name == 'WORKSPACE':
             return 'workspace'

@@ -12,41 +12,29 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rust//rust:defs.bzl", "rust_library")
-load("@zephyr//:cc.bzl", "zephyr_app")
+load("@zephyr//:cc.bzl", "zephyr_app", "zephyr_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 zephyr_app(
     name = "app",
-    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
-    target_compatible_with = select({
-        "//:host_macos_arm64": ["@platforms//:incompatible"],
-        "//:host_macos_x86_64": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
 )
 
 rust_library(
     name = "boot",
     srcs = ["boot.rs"],
     edition = "2021",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         ":boot_cc",
         "@pigweed//pw_log/rust:pw_log",
     ],
 )
 
-cc_library(
+zephyr_cc_library(
     name = "boot_cc",
     srcs = ["boot.cc"],
-    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
-    target_compatible_with = select({
-        "//:host_macos_arm64": ["@platforms//:incompatible"],
-        "//:host_macos_x86_64": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "@pigweed//pw_log",
         "@zephyr//:board_deps",

@@ -12,24 +12,23 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-"""A Pigweed extension module for configuring Pigweed to use pigweed-zephyr.
+"""A Pigweed extension module for configuring Pigweed to use zephyr.
 
-A Bazel module that uses both Pigweed and Zephyr-Bazel should put this its
+A Bazel module that uses both Pigweed and Zephyr should put this in its
 MODULE.bazel:
 
     pw_zephyr_config = use_extension(
         "@pigweed//zephyr/config:pw_zephyr_config.bzl",
-        "pw_zephyr_config"
+        "pw_zephyr_config",
     )
     override_repo(
         pw_zephyr_config,
-        "zephyr-bazel",
-        "zephyr",
-        "kconfig",
-        "cmsis_6"
+        kconfig = "zephyr_kconfig",
+        zephyr = "zephyr",
+        zephyr_version = "zephyr_version",
     )
 
-This is in addition to the setup needed by zephyr-bazel to define those repos.
+This is in addition to the setup needed by zephyr to define those repos.
 """
 
 def _symlinked_repo_impl(rctx):
@@ -55,7 +54,7 @@ def _pw_zephyr_config_impl(mctx):
         "REPO.bazel": Label("//zephyr/config/stubs:stub_REPO"),
     }
 
-    # Set up minimal skeletons for each of the zephyr-bazel internal repos.
+    # Set up minimal skeletons for each of the zephyr internal repos.
     symlinked_repo(name = "kconfig", files = default_files)
 
     symlinked_repo(

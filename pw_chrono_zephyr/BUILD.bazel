@@ -100,5 +100,6 @@ zephyr_cc_test(
         "//pw_chrono_zephyr:system_clock",
         "//pw_sync_zephyr:binary_semaphore",
         "//pw_sync_zephyr:timed_thread_notification",
+        "//pw_unit_test",
     ],
 )

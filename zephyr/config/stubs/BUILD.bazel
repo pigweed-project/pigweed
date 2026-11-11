@@ -15,7 +15,8 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "stub_cc.bzl",
     "stub_BUILD",
     "stub_REPO",
+    "stub_cc.bzl",
+    "stub_cc_test.bzl",
 ])

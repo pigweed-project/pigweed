@@ -229,5 +229,6 @@ zephyr_cc_test(
     srcs = ["mutex_test.cc"],
     deps = [
         ":mutex",
+        "//pw_unit_test",
     ],
 )

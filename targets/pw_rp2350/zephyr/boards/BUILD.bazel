@@ -30,34 +30,25 @@ dts_library(
     ],
     overlay = "pw_rp2350_rp2350a_m33.dts",
     references = [
-        "@zephyr//boards/raspberrypi/rpi_pico2:rpi_pico2.dtsi",
-        "@zephyr//boards/raspberrypi/rpi_pico2:rpi_pico2-pinctrl.dtsi",
         "@zephyr//boards/raspberrypi/common:rpi_pico-led.dtsi",
         "@zephyr//boards/raspberrypi/common:rpi_pico-pinctrl-common.dtsi",
+        "@zephyr//boards/raspberrypi/rpi_pico2:dts_files",
         "@zephyr//dts/arm/raspberrypi/rpi_pico",
-        "@zephyr//dts/vendor/raspberrypi/rpi_pico",
         "@zephyr//dts/common",
+        "@zephyr//dts/vendor",
         "@zephyr//include:dt_bindings",
     ],
-    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
-    target_compatible_with = select({
-        "//:host_macos_arm64": ["@platforms//:incompatible"],
-        "//:host_macos_x86_64": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
 )
 
 dts_cc_library(
     name = "devicetree_generated",
     bindings = ["@zephyr//dts:bindings"],
     dts_lib = ":devicetree_lib",
-    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
-    target_compatible_with = select({
-        "//:host_macos_arm64": ["@platforms//:incompatible"],
-        "//:host_macos_x86_64": ["@platforms//:incompatible"],
-        ":raspberrypi_pw_rp2350": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = [
+        ":raspberrypi_pw_rp2350",
+        "@zephyr//constraints:zephyr_autoconf_force_included",
+    ],
 )
 
 platform(

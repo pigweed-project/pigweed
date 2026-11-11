@@ -181,6 +181,37 @@ class TestBuildifierFormatter(unittest.TestCase):
                 self.assertFalse(error.ok)
                 self.assertIn('syntax error', error.error_message)
 
+    def test_module_bazel_fragment_uses_module_type(self):
+        """Tests that *.MODULE.bazel files are formatted as Bazel modules."""
+        formatter = BuildifierFormatter()
+        formatter.run_tool = self.tool_runner
+
+        content = (
+            'bazel_dep(name = "a", version = "1.0.0")\n'
+            'bazel_dep(name = "b", version = "1.0.0")\n'
+        )
+        result = formatter.format_file_in_memory(
+            Path('zephyr_dep.MODULE.bazel'),
+            content.encode(),
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.error_message, None)
+        self.assertMultiLineEqual(
+            result.formatted_file_contents.decode(),
+            content,
+        )
+        self.assertEqual(
+            self.tool_runner.command_history.pop(0),
+            ' '.join(
+                (
+                    self._buildifier_path(),
+                    '--type=module',
+                    '--lint=fix',
+                    f'--warnings={",".join(_WARNINGS)}',
+                )
+            ),
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

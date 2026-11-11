@@ -1,0 +1,90 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+# ===========================================================================
+# This is a common .bazelrc fragment meant to be included from the .bazelrc
+# files in Zephyr sub-workspaces.
+# ===========================================================================
+
+# Disable third-party telemetry in rulesets (e.g. Aspect Build).
+common --repo_env=DO_NOT_TRACK=1
+
+# Standard Pigweed flags
+# ======================
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+build --incompatible_enable_cc_toolchain_resolution
+build --@rules_python//python/config_settings:exec_tools_toolchain=enabled
+common --experimental_exclude_defines_from_exec_config
+common --experimental_exclude_starlark_flags_from_exec_config
+common --incompatible_default_to_explicit_init_py
+common --incompatible_strict_action_env
+common --legacy_external_runfiles=True
+common --incompatible_bazel_test_exec_run_under=True
+common --experimental_platform_in_output_dir=True
+common --strip=never
+common --incompatible_enable_proto_toolchain_resolution
+build --extra_toolchains=@pigweed//pw_build:pw_python_proto_toolchain_toolchain
+common --repo_env=CIPD_CACHE_DIR
+
+# C++ toolchain configuration
+# ===========================
+# Ignore all warnings in third-party code.
+common --per_file_copt=external/.*@-w
+common --host_per_file_copt=external/.*@-w
+
+# UX settings
+# ===========
+# Error output settings.
+common --verbose_failures
+test --test_output=errors
+common --ui_event_filters=-debug
+
+# Pigweed Zephyr backends
+# =======================
+# Backends can not yet be set via inherited platforms like regular Pigweed
+# Bazel projects. They can only be set via .bazelrc flags with Zephyr.
+build --@pigweed//pw_chrono:system_clock_backend=@pigweed//pw_chrono_zephyr:system_clock
+build --@pigweed//pw_chrono:system_timer_backend=@pigweed//pw_chrono_zephyr:system_timer
+build --@pigweed//pw_sync:binary_semaphore_backend=@pigweed//pw_sync_zephyr:binary_semaphore
+build --@pigweed//pw_sync:counting_semaphore_backend=@pigweed//pw_sync_zephyr:counting_semaphore
+build --@pigweed//pw_sync:interrupt_spin_lock_backend=@pigweed//pw_sync_zephyr:interrupt_spin_lock
+build --@pigweed//pw_sync:mutex_backend=@pigweed//pw_sync_zephyr:mutex
+build --@pigweed//pw_sync:thread_notification_backend=@pigweed//pw_sync_zephyr:thread_notification
+build --@pigweed//pw_sync:timed_mutex_backend=@pigweed//pw_sync_zephyr:timed_mutex
+build --@pigweed//pw_sync:timed_thread_notification_backend=@pigweed//pw_sync_zephyr:timed_thread_notification
+build --@pigweed//pw_sys_io:backend=@pigweed//pw_sys_io_zephyr
+build --@pigweed//pw_thread:id_backend=@pigweed//pw_thread_zephyr:id
+build --@pigweed//pw_thread:sleep_backend=@pigweed//pw_thread_zephyr:sleep
+build --@pigweed//pw_thread:thread_backend=@pigweed//pw_thread_zephyr:thread
+
+# Remote execution config definitions
+# ===================================
+# Use the remote cache. This will only work for users who have permission to
+# access it (including the CI system!).
+common --remote_default_exec_properties=cache-silo-key=20240918
+common:remote_cache --bes_backend="buildeventservice.googleapis.com"
+common:remote_cache --bes_instance_name=pigweed-rbe-open
+common:remote_cache --bes_results_url="https://source.cloud.google.com/results/invocations/"
+common:remote_cache --bes_timeout=600s
+common:remote_cache --experimental_remote_cache_eviction_retries=5
+common:remote_cache --google_default_credentials=true
+# Required to use buildeventservice on Bazel 8+.
+# TODO: b/345556899 -- Remove this flag when no longer required.
+common:remote_cache --legacy_important_outputs
+common:remote_cache --remote_cache=grpcs://remotebuildexecution.googleapis.com
+common:remote_cache --remote_download_outputs=toplevel
+common:remote_cache --remote_instance_name=projects/pigweed-rbe-open/instances/default-instance
+common:remote_cache --remote_upload_local_results=false
+
+try-import %workspace%/user.bazelrc

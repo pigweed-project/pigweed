@@ -27,64 +27,23 @@ bazel_dep(name = "rules_python", version = "2.4.6")
 
 bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "rules_shell", version = "0.6.1")
-bazel_dep(name = "zephyr-bazel", version = "0.0.1")
 bazel_dep(name = "pigweed")
 local_path_override(
     module_name = "pigweed",
     path = "../../..",
 )
 
-# TODO: https://pwbug.dev/574617885 - zephyr-bazel is dead. Switch to
-# https://pigweed.googlesource.com/third_party/github/zephyrproject-rtos/zephyr
-git_override(
-    module_name = "zephyr-bazel",
-    commit = "8214e58f096ea9f7524884d3e9abd63514c81938",
-    patch_strip = 1,
-    patches = [
-        "//bazel_patches:0001-Avoid-watching-resolved-symlinks-outside-workspace.patch",
-        "//bazel_patches:0002-Select-matching-Python-version-in-repo_rule_python.patch",
-    ],
-    remote = "https://pigweed.googlesource.com/zephyr/zephyr-bazel.git",
-)
+include("//:zephyr_dep.MODULE.bazel")
 
 # Register local host toolchain first so host tools compile with system compiler
-register_toolchains("@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux")
-
-# Register zephyr-bazel toolchains
 register_toolchains(
-    "@zephyr-bazel//toolchain:all",
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
 )
 
-# Setup Zephyr patch and checkout
-zephyr_patch = use_extension("@zephyr-bazel//:setup.bzl", "zephyr_patch_file")
-zephyr_patch.checkout(
-    commit = "684c9e8f32e4373a21098559f748f06915f950c9",
-)
-use_repo(zephyr_patch, "zephyr", "zephyr_version")
-
-# Inject required external modules for Cortex-M and Pico 2
-inject_repo(zephyr_patch, "cmsis_6")
-
-inject_repo(zephyr_patch, "hal_rpi_pico")
-
-git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
-
-git_repository(
-    name = "cmsis_6",
-    build_file = "@zephyr-bazel//modules:cmsis_6.BUILD",
-    commit = "30a859f44ef8ab4dc8f84b03ed586fd16ccf9d74",
-    remote = "https://github.com/zephyrproject-rtos/CMSIS_6.git",
-)
-
-git_repository(
-    name = "hal_rpi_pico",
-    build_file = "@zephyr-bazel//modules:hal_rpi_pico.BUILD",
-    commit = "562b41e10a1d8b1a761b253b107c5c6a84cf4535",
-    patch_cmds = [
-        "find . -mindepth 2 -name 'BUILD.bazel' -delete",
-        "find . -mindepth 2 -name 'BUILD' -delete",
-    ],
-    remote = "https://github.com/zephyrproject-rtos/hal_rpi_pico.git",
+# Register zephyr toolchains
+register_toolchains(
+    "@zephyr//toolchain:all",
 )
 
 # Configure Python toolchain
@@ -102,18 +61,16 @@ use_repo(python, "pythons_hub")
 
 # Import pip dependencies
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
-use_repo(pip, "zephyr_bazel_pip_deps")
+use_repo(pip, "zephyr_pip_deps")
 
 # Configure Zephyr setup environment
-zephyr_setup = use_extension("@zephyr-bazel//:setup.bzl", "zephyr_setup")
+zephyr_setup = use_extension("@zephyr//bazel:setup.bzl", "zephyr_setup")
 zephyr_setup.env(
     apps_dirs = ["//:MODULE.bazel"],
     boards_dirs = [
-        "@zephyr//boards",
         "//:MODULE.bazel",
     ],
     modules = [
-        "@hal_rpi_pico//:zephyr/module.yml",
         "@pigweed//zephyr:module.yml",
     ],
 )
@@ -122,6 +79,7 @@ use_repo(
     "zephyr_index",
     "zephyr_kconfig",
     "zephyr_state",
+    "zephyr_version",
 )
 
 pw_zephyr_config = use_extension("@pigweed//zephyr/config:pw_zephyr_config.bzl", "pw_zephyr_config")

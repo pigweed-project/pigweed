@@ -20,12 +20,6 @@ package(default_visibility = ["//visibility:public"])
 zephyr_app(
     name = "unit_test_app",
     testonly = True,
-    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
-    target_compatible_with = select({
-        "//:host_macos_arm64": ["@platforms//:incompatible"],
-        "//:host_macos_x86_64": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
 )
 
 rust_library(
@@ -34,6 +28,7 @@ rust_library(
     srcs = ["unit_test_boot.rs"],
     crate_name = "boot",
     edition = "2021",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         ":unit_test_boot_cc",
         "@pigweed//pw_log/rust:pw_log",
@@ -44,12 +39,6 @@ zephyr_cc_library(
     name = "unit_test_boot_cc",
     testonly = True,
     srcs = ["unit_test_boot.cc"],
-    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
-    target_compatible_with = select({
-        "//:host_macos_arm64": ["@platforms//:incompatible"],
-        "//:host_macos_x86_64": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "@pigweed//pw_log",
         "@pigweed//pw_thread_zephyr:thread",
