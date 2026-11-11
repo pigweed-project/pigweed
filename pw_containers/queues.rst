@@ -228,13 +228,20 @@ Like :cc:`pw::Queue` and :cc:`pw::FixedQueue`, two classes are provided:
   which may be statically allocated inline (``FixedLockFreeSpscQueue<T, N>``) or
   dynamically/externally allocated (``FixedLockFreeSpscQueue<T>``).
 
-Producer operations (:cc:`pw::LockFreeSpscQueue::try_push`,
-:cc:`pw::LockFreeSpscQueue::try_emplace`, :cc:`pw::LockFreeSpscQueue::push`,
+Producer operations (such as :cc:`pw::LockFreeSpscQueue::push` and
 :cc:`pw::LockFreeSpscQueue::emplace`) may be called concurrently with consumer
-operations (:cc:`pw::LockFreeSpscQueue::try_pop`,
-:cc:`pw::LockFreeSpscQueue::try_peek`, :cc:`pw::LockFreeSpscQueue::front`,
+operations (such as :cc:`pw::LockFreeSpscQueue::front` and
 :cc:`pw::LockFreeSpscQueue::pop`) as long as there is at most one producer
 context and at most one consumer context active at a time.
+
+For batch and zero-copy workflows (such as draining a hardware FIFO in an ISR,
+DMA transfers, or streaming protocol decoding),
+:cc:`pw::LockFreeSpscQueue::BeginWrite` and
+:cc:`pw::LockFreeSpscQueue::BeginRead` return scoped RAII
+:cc:`pw::LockFreeSpscQueue::WriteTransaction` and
+:cc:`pw::LockFreeSpscQueue::ReadTransaction` handles that cache the atomic
+indices on construction and commit all staged/consumed elements with a single
+``std::memory_order_release`` store on ``Commit()`` or destruction.
 
 .. note::
 
@@ -308,16 +315,22 @@ trade-offs in mind:
     compile down to ``std::memcpy`` and no-ops. Queue operations can never
     inadvertently invoke a blocking allocator, acquire a mutex, or run an
     unbounded destructor inside an ISR.
+  * **Zero-copy contiguous writes**: When ``T`` is also trivially default
+    constructible, :cc:`pw::LockFreeSpscQueue::WriteTransaction` exposes
+    ``contiguous_space()``, ``write_space()``, and ``advance()`` for direct
+    in-place writes (such as hardware DMA transfers or ``std::memcpy``) without
+    placement ``new``.
   * **Minimal code size**: Avoids generating per-element placement ``new`` and
-    destructor loops on ``pop()`` or ``clear()``.
+    destructor loops on ``pop()``, ``clear()``, or transaction ``Abort()``.
 
 * **Non-trivial and move-only RAII types**:
 
   * **Hidden constructor/destructor hazards in ISRs**: Calling ``emplace()`` on
     a type whose constructor allocates memory or acquires a lock breaks ISR
-    safety. Similarly, calling ``pop()`` or ``clear()`` invokes ``T::~T()``; if
-    the last owner of a heap-backed RAII handle (e.g. :cc:`pw::UniquePtr`) is
-    destroyed inside an ISR, its deallocator will execute in interrupt context.
+    safety. Similarly, calling ``pop()``, ``consume()``, ``Abort()``, or
+    ``clear()`` invokes ``T::~T()``; if the last owner of a heap-backed RAII
+    handle (e.g. :cc:`pw::UniquePtr`) is destroyed inside an ISR, its
+    deallocator will execute in interrupt context.
   * **Zero-copy ownership transfer via dual queues (submission + reclaim)**:
     Supporting move-only RAII types enables zero-copy ownership transfer across
     an ISR boundary without decomposing smart pointers into raw pointers,

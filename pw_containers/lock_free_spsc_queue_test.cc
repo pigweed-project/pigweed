@@ -14,6 +14,7 @@
 
 #include "pw_containers/lock_free_spsc_queue.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -409,6 +410,269 @@ TEST(LockFreeSpscQueueTest, CopyOnlyElements) {
   EXPECT_TRUE(queue.empty());
 }
 
+TEST(LockFreeSpscQueueTest, WriteTransaction_StageCommitAndAutoCommit) {
+  Counter::Reset();
+  {
+    FixedLockFreeSpscQueue<Counter, 4> queue;
+    {
+      auto tx = queue.BeginWrite();
+      EXPECT_EQ(tx.remaining_capacity(), 4u);
+      EXPECT_EQ(tx.staged_count(), 0u);
+      EXPECT_FALSE(tx.full());
+
+      tx.emplace(10);
+      EXPECT_TRUE(tx.try_emplace(20));
+      EXPECT_EQ(tx.staged_count(), 2u);
+      EXPECT_EQ(tx.remaining_capacity(), 2u);
+
+      // Uncommitted elements are not yet visible to the consumer!
+      EXPECT_TRUE(queue.empty());
+      EXPECT_EQ(queue.size(), 0u);
+      EXPECT_EQ(queue.try_peek(), nullptr);
+
+      // Explicit Commit() makes the first 2 elements visible while allowing
+      // continued staging in the same transaction.
+      EXPECT_EQ(tx.Commit(), 2u);
+      EXPECT_EQ(tx.staged_count(), 0u);
+      EXPECT_EQ(tx.remaining_capacity(), 2u);
+      EXPECT_EQ(queue.size(), 2u);
+
+      tx.push(Counter(30));
+      EXPECT_TRUE(tx.try_push(Counter(40)));
+      EXPECT_TRUE(tx.full());
+      EXPECT_FALSE(tx.try_emplace(50));
+      EXPECT_EQ(queue.size(), 2u);
+    }  // ~WriteTransaction() auto-commits the remaining 2 staged elements.
+
+    EXPECT_TRUE(queue.full());
+    EXPECT_EQ(queue.size(), 4u);
+    EXPECT_EQ(queue.try_pop()->value, 10);
+    EXPECT_EQ(queue.try_pop()->value, 20);
+    EXPECT_EQ(queue.try_pop()->value, 30);
+    EXPECT_EQ(queue.try_pop()->value, 40);
+    EXPECT_TRUE(queue.empty());
+  }
+  EXPECT_EQ(Counter::created + Counter::moved, Counter::destroyed);
+}
+
+TEST(LockFreeSpscQueueTest, WriteTransaction_AbortAcrossWrapAround) {
+  Counter::Reset();
+  {
+    FixedLockFreeSpscQueue<Counter, 4> queue;
+    // Advance head and tail to index 3 so the next transaction wraps around the
+    // end of the physical buffer and across the 2 * capacity virtual boundary.
+    for (int i = 0; i < 7; ++i) {
+      queue.emplace(i);
+      queue.pop();
+    }
+    queue.emplace(100);
+    EXPECT_EQ(queue.size(), 1u);
+
+    const int destroyed_before_tx = Counter::destroyed;
+    {
+      auto tx = queue.BeginWrite();
+      EXPECT_EQ(tx.remaining_capacity(), 3u);
+      tx.emplace(200);
+      tx.emplace(300);
+      tx.emplace(400);
+      EXPECT_TRUE(tx.full());
+      EXPECT_EQ(queue.size(), 1u);
+
+      // Aborting destroys the 3 uncommitted elements and leaves tail_ intact.
+      tx.Abort();
+      EXPECT_EQ(tx.staged_count(), 0u);
+      EXPECT_EQ(tx.remaining_capacity(), 3u);
+      EXPECT_EQ(Counter::destroyed - destroyed_before_tx, 3);
+
+      // Can stage again after Abort() and let destructor commit.
+      tx.emplace(500);
+    }
+
+    EXPECT_EQ(queue.size(), 2u);
+    EXPECT_EQ(queue.try_pop()->value, 100);
+    EXPECT_EQ(queue.try_pop()->value, 500);
+    EXPECT_TRUE(queue.empty());
+  }
+  EXPECT_EQ(Counter::created + Counter::moved, Counter::destroyed);
+}
+
+TEST(LockFreeSpscQueueTest, WriteAndReadTransactions_MoveSemantics) {
+  FixedLockFreeSpscQueue<int, 4> queue;
+
+  auto tx1 = queue.BeginWrite();
+  tx1.push(1);
+  tx1.push(2);
+
+  // Move-construct tx2 from tx1; tx1 becomes inactive without committing yet.
+  auto tx2(std::move(tx1));
+  EXPECT_EQ(queue.size(), 0u);
+  tx2.push(3);
+
+  LockFreeSpscQueue<int>::WriteTransaction tx3;
+  tx3 = std::move(tx2);
+  EXPECT_EQ(queue.size(), 0u);
+  EXPECT_EQ(tx3.Commit(), 3u);
+  EXPECT_EQ(queue.size(), 3u);
+
+  auto rx1 = queue.BeginRead();
+  EXPECT_EQ(rx1.try_pop(), 1);
+  auto rx2(std::move(rx1));
+  EXPECT_EQ(queue.size(), 3u);  // Not committed yet.
+
+  LockFreeSpscQueue<int>::ReadTransaction rx3;
+  rx3 = std::move(rx2);
+  EXPECT_EQ(rx3.try_pop(), 2);
+  EXPECT_EQ(rx3.Commit(), 2u);
+  EXPECT_EQ(queue.size(), 1u);
+  EXPECT_EQ(queue.try_pop(), 3);
+}
+
+TEST(LockFreeSpscQueueTest, ContiguousSpaceAndContiguousData_WrapAround) {
+  FixedLockFreeSpscQueue<uint32_t, 5> queue;
+
+  // Advance head and tail to physical index 3 (with 1 element queued at index
+  // 3).
+  for (uint32_t i = 0; i < 3; ++i) {
+    queue.push(i);
+    queue.pop();
+  }
+  queue.push(10u);
+  EXPECT_EQ(queue.size(), 1u);
+
+  // Producer: 4 slots available, split across [4..4] (1 slot) and [0..2] (3
+  // slots).
+  {
+    auto tx = queue.BeginWrite();
+    EXPECT_EQ(tx.remaining_capacity(), 4u);
+
+    span<uint32_t> contig = tx.contiguous_space();
+    ASSERT_EQ(contig.size(), 1u);
+    contig[0] = 20u;
+    tx.advance(1u);
+    EXPECT_EQ(tx.remaining_capacity(), 3u);
+
+    auto [first, second] = tx.write_space();
+    ASSERT_EQ(first.size(), 3u);
+    EXPECT_TRUE(second.empty());
+    first[0] = 30u;
+    first[1] = 40u;
+    first[2] = 50u;
+    tx.advance(3u);
+    EXPECT_TRUE(tx.full());
+  }
+  EXPECT_TRUE(queue.full());
+  EXPECT_EQ(queue.size(), 5u);
+
+  // Consumer: 5 elements queued, split across [3..4] (2 elements) and [0..2]
+  // (3 elements).
+  {
+    auto rx = queue.BeginRead();
+    EXPECT_EQ(rx.remaining(), 5u);
+
+    auto [first, second] = std::as_const(rx).read_space();
+    ASSERT_EQ(first.size(), 2u);
+    ASSERT_EQ(second.size(), 3u);
+    EXPECT_EQ(first[0], 10u);
+    EXPECT_EQ(first[1], 20u);
+    EXPECT_EQ(second[0], 30u);
+    EXPECT_EQ(second[1], 40u);
+    EXPECT_EQ(second[2], 50u);
+
+    span<uint32_t> chunk1 = rx.contiguous_data();
+    ASSERT_EQ(chunk1.size(), 2u);
+    EXPECT_EQ(chunk1[0], 10u);
+    EXPECT_EQ(chunk1[1], 20u);
+    rx.consume(2u);
+    EXPECT_EQ(rx.consumed_count(), 2u);
+    EXPECT_EQ(rx.remaining(), 3u);
+
+    span<const uint32_t> chunk2 = std::as_const(rx).contiguous_data();
+    ASSERT_EQ(chunk2.size(), 3u);
+    EXPECT_EQ(chunk2[0], 30u);
+    rx.consume(1u);
+  }  // Auto-commits 3 consumed elements.
+
+  EXPECT_EQ(queue.size(), 2u);
+  EXPECT_EQ(queue.try_pop(), 40u);
+  EXPECT_EQ(queue.try_pop(), 50u);
+  EXPECT_TRUE(queue.empty());
+}
+
+TEST(LockFreeSpscQueueTest, BulkPushAndPopHelpers) {
+  Counter::Reset();
+  {
+    FixedLockFreeSpscQueue<Counter, 5> queue;
+
+    // Advance indices to physical slot 3 so bulk operations wrap around.
+    for (int i = 0; i < 3; ++i) {
+      queue.emplace(i);
+      queue.pop();
+    }
+
+    const std::array<Counter, 4> kBatch1 = {
+        Counter(1), Counter(2), Counter(3), Counter(4)};
+    EXPECT_TRUE(queue.try_push_all(kBatch1));
+    EXPECT_EQ(queue.size(), 4u);
+
+    // try_push_all is all-or-nothing when remaining_capacity() < items.size().
+    const std::array<Counter, 2> kTooLarge = {Counter(5), Counter(6)};
+    EXPECT_FALSE(queue.try_push_all(kTooLarge));
+    EXPECT_EQ(queue.size(), 4u);
+
+    // push_some pushes as many as fit (1 element).
+    EXPECT_EQ(queue.push_some(kTooLarge), 1u);
+    EXPECT_TRUE(queue.full());
+
+    // pop_n removes and destroys the front 2 elements across the wrap boundary.
+    const int destroyed_before_pop_n = Counter::destroyed;
+    EXPECT_EQ(queue.pop_n(2u), 2u);
+    EXPECT_EQ(Counter::destroyed - destroyed_before_pop_n, 2);
+    EXPECT_EQ(queue.size(), 3u);
+
+    // pop_some moves the remaining 3 elements out into `dest`.
+    std::array<Counter, 4> dest = {
+        Counter(0), Counter(0), Counter(0), Counter(0)};
+    const int destroyed_before_pop_some = Counter::destroyed;
+    EXPECT_EQ(queue.pop_some(dest), 3u);
+    EXPECT_EQ(Counter::destroyed - destroyed_before_pop_some, 3);
+    EXPECT_TRUE(queue.empty());
+    EXPECT_EQ(dest[0].value, 3);
+    EXPECT_EQ(dest[1].value, 4);
+    EXPECT_EQ(dest[2].value, 5);
+  }
+  // Note: `Counter::operator=(Counter&&)` increments `Counter::moved` without
+  // creating a new object (while `Counter::ObjectCounter` verifies 0 live
+  // objects remain at the end of the test).
+  EXPECT_EQ(Counter::created, Counter::destroyed);
+}
+
+TEST(LockFreeSpscQueueTest, BulkMovePushHelpers) {
+  FixedLockFreeSpscQueue<MoveOnly, 4> queue;
+
+  std::array<MoveOnly, 3> batch1 = {MoveOnly(10), MoveOnly(20), MoveOnly(30)};
+  EXPECT_TRUE(queue.try_move_push_all(batch1));
+  EXPECT_EQ(queue.size(), 3u);
+
+  // Failing try_move_push_all does not move from the source span!
+  std::array<MoveOnly, 2> batch2 = {MoveOnly(40), MoveOnly(50)};
+  EXPECT_FALSE(queue.try_move_push_all(batch2));
+  EXPECT_EQ(batch2[0].value, 40);
+  EXPECT_EQ(batch2[1].value, 50);
+
+  // move_push_some moves only the 1 element that fits.
+  EXPECT_EQ(queue.move_push_some(batch2), 1u);
+  EXPECT_EQ(batch2[1].value, 50);
+
+  std::array<MoveOnly, 4> out = {
+      MoveOnly(0), MoveOnly(0), MoveOnly(0), MoveOnly(0)};
+  EXPECT_EQ(queue.pop_some(out), 4u);
+  EXPECT_EQ(out[0].value, 10);
+  EXPECT_EQ(out[1].value, 20);
+  EXPECT_EQ(out[2].value, 30);
+  EXPECT_EQ(out[3].value, 40);
+  EXPECT_TRUE(queue.empty());
+}
+
 #if defined(PW_THREAD_JOINING_ENABLED) && PW_THREAD_JOINING_ENABLED
 
 struct ThreadSafeMoveOnly {
@@ -505,6 +769,52 @@ TEST(LockFreeSpscQueueTest, Multithreaded_DynamicQueueStress) {
   EXPECT_EQ(allocator.metrics().allocated_bytes.value(), 0u);
 }
 
+TEST(LockFreeSpscQueueTest, Multithreaded_BatchTransactionStress) {
+  constexpr uint32_t kTotalItems = 50000;
+  FixedLockFreeSpscQueue<uint32_t, 64> queue;
+
+  thread::test::TestThreadContext producer_context;
+  Thread producer_thread(producer_context.options(), [&queue]() {
+    uint32_t sent = 0;
+    while (sent < kTotalItems) {
+      auto tx = queue.BeginWrite();
+      if (tx.full()) {
+        this_thread::yield();
+        continue;
+      }
+      span<uint32_t> space = tx.contiguous_space();
+      const uint32_t n = std::min<uint32_t>(
+          {static_cast<uint32_t>(space.size()), 19u, kTotalItems - sent});
+      for (uint32_t i = 0; i < n; ++i) {
+        space[i] = sent + i;
+      }
+      tx.advance(n);
+      sent += n;
+    }
+  });
+
+  uint32_t received = 0;
+  while (received < kTotalItems) {
+    auto rx = queue.BeginRead();
+    if (rx.empty()) {
+      this_thread::yield();
+      continue;
+    }
+    span<const uint32_t> readable = rx.contiguous_data();
+    const uint32_t n =
+        std::min<uint32_t>(static_cast<uint32_t>(readable.size()), 13u);
+    for (uint32_t i = 0; i < n; ++i) {
+      ASSERT_EQ(readable[i], received + i);
+    }
+    rx.consume(n);
+    received += n;
+  }
+
+  producer_thread.join();
+  EXPECT_EQ(received, kTotalItems);
+  EXPECT_TRUE(queue.empty());
+}
+
 #endif  // defined(PW_THREAD_JOINING_ENABLED) && PW_THREAD_JOINING_ENABLED
 
 // Negative compilation tests.
@@ -523,6 +833,15 @@ PW_NC_EXPECT_CLANG("call to deleted constructor");
 PW_NC_EXPECT_GCC("use of deleted function");
 [[maybe_unused]] void CopyQueue(const FixedLockFreeSpscQueue<int, 4>& queue) {
   [[maybe_unused]] FixedLockFreeSpscQueue<int, 4> copy(queue);
+}
+#elif PW_NC_TEST(ContiguousWriteSpaceRequiresTrivialType)
+PW_NC_EXPECT_CLANG(
+    "no matching member function for call to 'contiguous_space'");
+PW_NC_EXPECT_GCC("no matching function for call to");
+[[maybe_unused]] void NonTrivialContiguousSpace(
+    FixedLockFreeSpscQueue<MoveOnly, 4>& queue) {
+  auto tx = queue.BeginWrite();
+  [[maybe_unused]] auto space = tx.contiguous_space();
 }
 #endif  // PW_NC_TEST
 
