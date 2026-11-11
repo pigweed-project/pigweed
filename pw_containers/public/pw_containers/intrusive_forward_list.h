@@ -47,7 +47,7 @@ class LegacyIntrusiveList;
 
 /// Inserts an element at the end of the forward list. Runs in O(n) time.
 template <typename T>
-void PushBackSlow(IntrusiveForwardList<T>& forward_list, T& item) {
+constexpr void PushBackSlow(IntrusiveForwardList<T>& forward_list, T& item) {
   forward_list.list().push_back(item);
 }
 
@@ -132,6 +132,7 @@ class IntrusiveForwardList {
       typename ::pw::containers::internal::ForwardIterator<std::add_const_t<T>,
                                                            const ItemBase>;
 
+  /// Constructs an empty list.
   constexpr IntrusiveForwardList() = default;
 
   // Intrusive lists cannot be copied, since each Item can only be in one list.
@@ -141,64 +142,84 @@ class IntrusiveForwardList {
   /// Moves the other list's contents into this list.
   ///
   /// This is O(n).
-  IntrusiveForwardList(IntrusiveForwardList&&) = default;
+  constexpr IntrusiveForwardList(IntrusiveForwardList&&) = default;
 
   /// Clears this list and moves the other list's contents into it.
   ///
   /// This is O(n).
-  IntrusiveForwardList& operator=(IntrusiveForwardList&&) = default;
+  constexpr IntrusiveForwardList& operator=(IntrusiveForwardList&&) = default;
 
   /// Constructs a list from an iterator over items. The iterator may
   /// dereference as either Item& (e.g. from std::array<Item>) or Item* (e.g.
   /// from std::initializer_list<Item*>).
   template <typename Iterator>
-  IntrusiveForwardList(Iterator first, Iterator last) {
+  constexpr IntrusiveForwardList(Iterator first, Iterator last) {
     list().assign(first, last);
   }
 
   /// Constructs a list from a std::initializer_list of pointers to items.
-  IntrusiveForwardList(std::initializer_list<Item*> items)
+  constexpr IntrusiveForwardList(std::initializer_list<Item*> items)
       : IntrusiveForwardList(items.begin(), items.end()) {}
 
+  /// Replaces the contents of the list with the items in `[first, last)`.
   template <typename Iterator>
-  void assign(Iterator first, Iterator last) {
+  constexpr void assign(Iterator first, Iterator last) {
     list().assign(first, last);
   }
 
-  void assign(std::initializer_list<T*> items) {
+  /// Replaces the contents of the list with the pointers in `items`.
+  constexpr void assign(std::initializer_list<T*> items) {
     list().assign(items.begin(), items.end());
   }
 
   // Element access
 
   /// Reference to the first element in the list. Undefined behavior if empty().
-  reference front() { return static_cast<T&>(*list().begin()); }
-  const_reference front() const {
+  constexpr reference front() { return static_cast<T&>(*list().begin()); }
+
+  /// Const reference to the first element in the list. Undefined behavior if
+  /// empty().
+  constexpr const_reference front() const {
     return static_cast<const T&>(*list().begin());
   }
 
   // Iterators
 
-  iterator before_begin() noexcept { return iterator(list().before_begin()); }
-  const_iterator before_begin() const noexcept {
+  /// Returns an iterator to the position before the first element.
+  constexpr iterator before_begin() noexcept {
+    return iterator(list().before_begin());
+  }
+  /// Returns a const iterator to the position before the first element.
+  constexpr const_iterator before_begin() const noexcept {
     return const_iterator(list().before_begin());
   }
-  const_iterator cbefore_begin() const noexcept { return before_begin(); }
+  /// Returns a const iterator to the position before the first element.
+  constexpr const_iterator cbefore_begin() const noexcept {
+    return before_begin();
+  }
 
-  iterator begin() noexcept { return iterator(list().begin()); }
-  const_iterator begin() const noexcept {
+  /// Returns an iterator to the first element.
+  constexpr iterator begin() noexcept { return iterator(list().begin()); }
+  /// Returns a const iterator to the first element.
+  constexpr const_iterator begin() const noexcept {
     return const_iterator(list().begin());
   }
-  const_iterator cbegin() const noexcept { return begin(); }
+  /// Returns a const iterator to the first element.
+  constexpr const_iterator cbegin() const noexcept { return begin(); }
 
-  iterator end() noexcept { return iterator(list().end()); }
-  const_iterator end() const noexcept { return const_iterator(list().end()); }
-  const_iterator cend() const noexcept { return end(); }
+  /// Returns an iterator past the last element.
+  constexpr iterator end() noexcept { return iterator(list().end()); }
+  /// Returns a const iterator past the last element.
+  constexpr const_iterator end() const noexcept {
+    return const_iterator(list().end());
+  }
+  /// Returns a const iterator past the last element.
+  constexpr const_iterator cend() const noexcept { return end(); }
 
   // Capacity
 
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::empty
-  [[nodiscard]] bool empty() const noexcept { return list().empty(); }
+  [[nodiscard]] constexpr bool empty() const noexcept { return list().empty(); }
 
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::max_size
   constexpr size_type max_size() const noexcept {
@@ -208,41 +229,42 @@ class IntrusiveForwardList {
   // Modifiers
 
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::clear
-  void clear() { list().clear(); }
+  constexpr void clear() { list().clear(); }
 
   /// Inserts the given `item` after the given position, `pos`.
-  iterator insert_after(iterator pos, T& item) {
+  constexpr iterator insert_after(iterator pos, T& item) {
     return iterator(list().insert_after(pos.item_, item));
   }
 
   /// Inserts the range of items from `first` (inclusive) to `last` (exclusive)
   /// after the given position, `pos`.
   template <typename Iterator>
-  iterator insert_after(iterator pos, Iterator first, Iterator last) {
+  constexpr iterator insert_after(iterator pos, Iterator first, Iterator last) {
     return iterator(list().insert_after(pos.item_, first, last));
   }
 
   /// Inserts the range of items from `first` (inclusive) to `last` (exclusive)
   /// after the given position, `pos`.
-  iterator insert_after(iterator pos, std::initializer_list<T*> items) {
+  constexpr iterator insert_after(iterator pos,
+                                  std::initializer_list<T*> items) {
     return insert_after(pos, items.begin(), items.end());
   }
 
   /// Removes the item following pos from the list. The item is not destructed.
-  iterator erase_after(iterator pos) {
+  constexpr iterator erase_after(iterator pos) {
     return iterator(list().erase_after(pos.item_));
   }
 
   /// Removes the range of items from `first` (inclusive) to `last` (exclusive).
-  iterator erase_after(iterator first, iterator last) {
+  constexpr iterator erase_after(iterator first, iterator last) {
     return iterator(list().erase_after(first.item_, last.item_));
   }
 
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::push_front
-  void push_front(T& item) { list().push_front(item); }
+  constexpr void push_front(T& item) { list().push_front(item); }
 
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::pop_front
-  void pop_front() { list().pop_front(); }
+  constexpr void pop_front() { list().pop_front(); }
 
   /// Exchanges this list's items with the `other` list's items.
   ///
@@ -256,7 +278,7 @@ class IntrusiveForwardList {
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::merge
   ///
   /// This overload uses `T::operator<`.
-  void merge(IntrusiveForwardList<T>& other) {
+  constexpr void merge(IntrusiveForwardList<T>& other) {
     list().merge(other.list(),
                  [](const ItemBase& a, const ItemBase& b) -> bool {
                    return static_cast<const T&>(a) < static_cast<const T&>(b);
@@ -265,7 +287,7 @@ class IntrusiveForwardList {
 
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::merge
   template <typename Compare>
-  void merge(IntrusiveForwardList<T>& other, Compare comp) {
+  constexpr void merge(IntrusiveForwardList<T>& other, Compare comp) {
     list().merge(other.list(), [comp](const ItemBase& a, const ItemBase& b) {
       return comp(static_cast<const T&>(a), static_cast<const T&>(b));
     });
@@ -273,31 +295,33 @@ class IntrusiveForwardList {
 
   /// Inserts the items of `other` to after `pos` in this list. Upon returning,
   /// `other` will be empty.
-  void splice_after(iterator pos, IntrusiveForwardList<T>& other) {
+  constexpr void splice_after(iterator pos, IntrusiveForwardList<T>& other) {
     splice_after(pos, other, other.before_begin(), other.end());
   }
 
   /// Moves the item pointed to by the iterator *following* `it` from `other`
   /// to after `pos` in this list.
-  void splice_after(iterator pos, IntrusiveForwardList<T>& other, iterator it) {
+  constexpr void splice_after(iterator pos,
+                              IntrusiveForwardList<T>& other,
+                              iterator it) {
     splice_after(pos, other, it, std::next(std::next(it)));
   }
 
   /// Moves the items exclusively between `first` and `last` from `other` to
   /// after `pos` in this list.
-  void splice_after(iterator pos,
-                    IntrusiveForwardList<T>& other,
-                    iterator first,
-                    iterator last) {
+  constexpr void splice_after(iterator pos,
+                              IntrusiveForwardList<T>& other,
+                              iterator first,
+                              iterator last) {
     list().splice_after(pos.item_, other.list(), first.item_, last.item_);
   }
 
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::remove
-  bool remove(const T& item) { return list().remove(item); }
+  constexpr bool remove(const T& item) { return list().remove(item); }
 
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::remove_if
   template <typename UnaryPredicate>
-  size_type remove_if(UnaryPredicate pred) {
+  constexpr size_type remove_if(UnaryPredicate pred) {
     return list().remove_if([pred](const ItemBase& item) -> bool {
       return pred(static_cast<const T&>(item));
     });
@@ -309,7 +333,7 @@ class IntrusiveForwardList {
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::unique
   ///
   /// This overload uses `T::operator==`.
-  size_type unique() {
+  constexpr size_type unique() {
     return list().unique([](const ItemBase& a, const ItemBase& b) -> bool {
       return static_cast<const T&>(a) == static_cast<const T&>(b);
     });
@@ -317,7 +341,7 @@ class IntrusiveForwardList {
 
   /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::unique
   template <typename BinaryPredicate>
-  size_type unique(BinaryPredicate pred) {
+  constexpr size_type unique(BinaryPredicate pred) {
     return list().unique([pred](const ItemBase& a, const ItemBase& b) {
       return pred(static_cast<const T&>(a), static_cast<const T&>(b));
     });
@@ -344,7 +368,8 @@ class IntrusiveForwardList {
   template <typename>
   friend class containers::internal::LegacyIntrusiveList;
 
-  friend void containers::PushBackSlow<T>(IntrusiveForwardList<T>&, T&);
+  friend constexpr void containers::PushBackSlow<T>(IntrusiveForwardList<T>&,
+                                                    T&);
 
   // Check that T is an Item in a function, since the class T will not be fully
   // defined when the IntrusiveList<T> class is instantiated.
@@ -384,12 +409,15 @@ class IntrusiveForwardListItem final
   using reference = value_type&;
   using const_reference = const value_type&;
 
+  /// Constructs the wrapped item in place from `args`.
   template <typename... Args>
-  IntrusiveForwardListItem(Args&&... args)
+  constexpr IntrusiveForwardListItem(Args&&... args)
       : item_(std::forward<Args>(args)...) {}
 
-  reference item() { return item_; }
-  const_reference item() const { return item_; }
+  /// Returns a mutable reference to the wrapped item.
+  constexpr reference item() { return item_; }
+  /// Returns a const reference to the wrapped item.
+  constexpr const_reference item() const { return item_; }
 
  private:
   element_type item_;

@@ -23,6 +23,7 @@
 
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/vector.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_preprocessor/util.h"
 #include "pw_unit_test/framework.h"
 
@@ -44,16 +45,20 @@ class Item : public IntrusiveForwardList<Item>::Item {
     return *this;
   }
 
-  int GetNumber() const { return number_; }
-  void SetNumber(int num) { number_ = num; }
+  constexpr int GetNumber() const { return number_; }
+  constexpr void SetNumber(int num) { number_ = num; }
 
   // This operator ensures comparisons are done by identity rather than equality
   // for `remove`, and allows using the zero-parameter overload of `unique`.
-  bool operator==(const Item& other) const { return number_ == other.number_; }
+  constexpr bool operator==(const Item& other) const {
+    return number_ == other.number_;
+  }
 
   // This operator allows using the zero-parameter overloads of `merge` and
   // `sort`.
-  bool operator<(const Item& other) const { return number_ < other.number_; }
+  constexpr bool operator<(const Item& other) const {
+    return number_ < other.number_;
+  }
 
  private:
   int number_ = 0;
@@ -1469,6 +1474,69 @@ TEST(IntrusiveForwardListItem, Compiles) {
   list.push_front(item);
   EXPECT_TRUE(list.begin()->item());
   list.clear();
+}
+
+struct ConstinitListWithItems {
+  Item first{10};
+  Item second{20};
+  Item third{30};
+  Item fourth{40};
+  Item temp_front{5};
+  Item temp_after{15};
+  Item duplicate{20};
+  Item removed{99};
+  Item removed_if{101};
+  List extra;
+  List to_merge;
+  List source;
+  List list;
+
+  constexpr ConstinitListWithItems()
+      : extra(),
+        to_merge({&third}),
+        source({&second, &duplicate, &removed}),
+        list() {
+    source.push_front(temp_front);
+    source.pop_front();
+    source.push_front(first);
+
+    auto it = source.insert_after(source.begin(), temp_after);
+    source.erase_after(source.begin());
+    static_cast<void>(it);
+
+    pw::containers::PushBackSlow(source, removed_if);
+    source.remove(removed);
+    source.remove_if([](const Item& item) { return item.GetNumber() > 100; });
+    source.unique();
+
+    extra.assign({&fourth});
+    to_merge.splice_after(to_merge.begin(), extra);
+    source.merge(to_merge);
+
+    list = std::move(source);
+  }
+  ~ConstinitListWithItems() { list.clear(); }
+};
+
+PW_CONSTINIT ConstinitListWithItems constinit_list;
+PW_CONSTINIT IntrusiveForwardListItem<int> constinit_wrapped_item(42);
+
+TEST(IntrusiveForwardListTest, ConstinitOperations) {
+  const List& cref = constinit_list.list;
+  ASSERT_FALSE(cref.empty());
+  EXPECT_GT(cref.max_size(), 0u);
+  EXPECT_EQ(&constinit_list.first, &constinit_list.list.front());
+  EXPECT_EQ(&constinit_list.first, &cref.front());
+  EXPECT_EQ(cref.cbegin(), std::next(cref.cbefore_begin()));
+
+  auto it = cref.cbegin();
+  EXPECT_EQ(10, (it++)->GetNumber());
+  EXPECT_EQ(20, (it++)->GetNumber());
+  EXPECT_EQ(30, (it++)->GetNumber());
+  EXPECT_EQ(40, (it++)->GetNumber());
+  EXPECT_EQ(cref.cend(), it);
+
+  EXPECT_EQ(42, constinit_wrapped_item.item());
 }
 
 }  // namespace

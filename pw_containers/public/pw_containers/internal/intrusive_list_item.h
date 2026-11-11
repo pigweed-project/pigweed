@@ -54,13 +54,13 @@ class IntrusiveListItemBase {
   /// Returns whether this object is not part of a list.
   ///
   /// This is O(1) whether the object is in a list or not.
-  bool unlisted() const { return this == next_; }
+  constexpr bool unlisted() const { return this == next_; }
 
   /// Unlink this from the list it is apart of, if any.
   ///
   /// Specifying prev saves calling previous(), which may require looping around
   /// the cycle. This is always O(1) with `previous`, and may be O(n) without.
-  void unlist(Derived* prev = nullptr) {
+  constexpr void unlist(Derived* prev = nullptr) {
     if (prev == nullptr) {
       prev = previous();
     }
@@ -79,7 +79,7 @@ class IntrusiveListItemBase {
   /// with G and H unlisted, then the result of calling `B.replace(E)` and
   ///`G.replace(C)` would be L1=[A, G] and L2=[D, B, F] with C, E and H
   /// unlisted.
-  void replace(Derived& other) {
+  constexpr void replace(Derived& other) {
     // Remove `this` object from its current list.
     if (!unlisted()) {
       unlist();
@@ -116,7 +116,7 @@ class IntrusiveListItemBase {
   }
 
   /// Return the next item in the list.
-  Derived* next() const { return next_; }
+  constexpr Derived* next() const { return next_; }
 
   /// Return the previous item in the list.
   ///
@@ -125,10 +125,10 @@ class IntrusiveListItemBase {
   /// number of items in this object's list.
   ///
   /// Unlisted items are self-cycles, i.e. this method will return `this`.
-  Derived* previous() const { return derived()->DoGetPrevious(); }
+  constexpr Derived* previous() const { return derived()->DoGetPrevious(); }
 
   /// Stores the pointer to the previous item, if supported.
-  void set_previous(Derived* prev) {
+  constexpr void set_previous(Derived* prev) {
     static_cast<Derived*>(this)->DoSetPrevious(prev);
   }
 
@@ -148,7 +148,7 @@ class IntrusiveForwardListItem
   template <typename>
   friend class GenericIntrusiveList;
 
-  IntrusiveForwardListItem* DoGetPrevious() const {
+  constexpr IntrusiveForwardListItem* DoGetPrevious() const {
     IntrusiveForwardListItem* prev = next_;
     while (prev->next_ != this) {
       prev = prev->next_;
@@ -156,7 +156,7 @@ class IntrusiveForwardListItem
     return prev;
   }
 
-  void DoSetPrevious(IntrusiveForwardListItem*) {}
+  constexpr void DoSetPrevious(IntrusiveForwardListItem*) {}
 };
 
 /// Base class for items in doubly-linked lists.
@@ -170,8 +170,8 @@ class IntrusiveListItem : public IntrusiveListItemBase<IntrusiveListItem> {
   template <typename>
   friend class GenericIntrusiveList;
 
-  IntrusiveListItem* DoGetPrevious() const { return prev_; }
-  void DoSetPrevious(IntrusiveListItem* prev) { prev_ = prev; }
+  constexpr IntrusiveListItem* DoGetPrevious() const { return prev_; }
+  constexpr void DoSetPrevious(IntrusiveListItem* prev) { prev_ = prev; }
 
   IntrusiveListItem* prev_ = this;
 };

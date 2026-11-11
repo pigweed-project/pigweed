@@ -69,11 +69,15 @@ class IteratorBase {
   template <typename, typename, typename>
   friend class IteratorBase;
 
-  Derived& derived() { return static_cast<Derived&>(*this); }
-  const Derived& derived() const { return static_cast<const Derived&>(*this); }
+  constexpr Derived& derived() { return static_cast<Derived&>(*this); }
+  constexpr const Derived& derived() const {
+    return static_cast<const Derived&>(*this);
+  }
 
-  T& downcast() { return static_cast<T&>(*derived().item_); }
-  const T& downcast() const { return static_cast<const T&>(*derived().item_); }
+  constexpr T& downcast() { return static_cast<T&>(*derived().item_); }
+  constexpr const T& downcast() const {
+    return static_cast<const T&>(*derived().item_);
+  }
 };
 
 // Mixin for iterators that can advance to a subsequent item.
@@ -128,7 +132,8 @@ class ForwardIterator : public IteratorBase<ForwardIterator<T, I>, T, I>,
 
   // Allow creating const_iterators from iterators.
   template <typename U>
-  ForwardIterator(const ForwardIterator<U, std::remove_cv_t<I>>& other)
+  constexpr ForwardIterator(
+      const ForwardIterator<U, std::remove_cv_t<I>>& other)
       : item_(other.item_) {}
 
  private:
@@ -174,7 +179,7 @@ class BidirectionalIterator
 
   // Allow creating const_iterators from iterators.
   template <typename U>
-  BidirectionalIterator(
+  constexpr BidirectionalIterator(
       const BidirectionalIterator<U, std::remove_cv_t<I>>& other)
       : item_(other.item_) {}
 

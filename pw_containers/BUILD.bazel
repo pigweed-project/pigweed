@@ -832,6 +832,7 @@ pw_cc_test(
     deps = [
         ":intrusive_forward_list",
         ":vector",
+        "//pw_polyfill",
         "//pw_preprocessor",
     ],
 )

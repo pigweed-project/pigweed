@@ -64,7 +64,9 @@ intrusive list implementation. It is very similar to
 doubly linked.
 
 This class is similar to ``std::forward_list<T>``, but items to be added must
-derive from ``pw::IntrusiveForwardList<T>::Item``.
+derive from ``pw::IntrusiveForwardList<T>::Item``. Construction and list
+operations (excluding ``swap()``, ``reverse()``, and ``sort()``) are
+``constexpr``, enabling constant initialization with ``PW_CONSTINIT``.
 
 See also :ref:`module-pw_containers-multiple_containers`.
 

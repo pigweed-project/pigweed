@@ -43,7 +43,8 @@ class GenericIntrusiveList {
   constexpr GenericIntrusiveList() : head_() {}
 
   template <typename Iterator>
-  GenericIntrusiveList(Iterator first, Iterator last) : GenericIntrusiveList() {
+  constexpr GenericIntrusiveList(Iterator first, Iterator last)
+      : GenericIntrusiveList() {
     insert_after(&head_, first, last);
   }
 
@@ -52,12 +53,12 @@ class GenericIntrusiveList {
   GenericIntrusiveList& operator=(const GenericIntrusiveList&) = delete;
 
   // Moves the other list's contents into this list.
-  GenericIntrusiveList(GenericIntrusiveList&& other) {
+  constexpr GenericIntrusiveList(GenericIntrusiveList&& other) {
     head_.replace(other.head_);
   }
 
   // Clears this list and moves the other list's contents into it.
-  GenericIntrusiveList& operator=(GenericIntrusiveList&& other) {
+  constexpr GenericIntrusiveList& operator=(GenericIntrusiveList&& other) {
     clear();
     head_.replace(other.head_);
     return *this;
@@ -70,7 +71,7 @@ class GenericIntrusiveList {
   }
 
   template <typename Iterator>
-  void assign(Iterator first, Iterator last) {
+  constexpr void assign(Iterator first, Iterator last) {
     clear();
     insert_after(&head_, first, last);
   }
@@ -86,7 +87,7 @@ class GenericIntrusiveList {
   constexpr const Item* begin() const noexcept { return head_.next_; }
 
   /// Returns a pointer to the last item.
-  Item* before_end() noexcept { return before_begin()->previous(); }
+  constexpr Item* before_end() noexcept { return before_begin()->previous(); }
 
   /// Returns a pointer to the sentinel item.
   constexpr Item* end() noexcept { return &head_; }
@@ -94,7 +95,7 @@ class GenericIntrusiveList {
 
   // Capacity
 
-  bool empty() const noexcept { return begin() == end(); }
+  constexpr bool empty() const noexcept { return begin() == end(); }
 
   /// Returns how many items can be added.
   ///
@@ -106,23 +107,23 @@ class GenericIntrusiveList {
   // Modifiers
 
   /// Removes all items from the list.
-  void clear() {
+  constexpr void clear() {
     while (!empty()) {
       erase_after(before_begin());
     }
   }
 
   /// Inserts an element at the end of the list.
-  void push_back(Item& item) { insert_after(before_end(), item); }
+  constexpr void push_back(Item& item) { insert_after(before_end(), item); }
 
   /// Removes the last item in the list. The list must not be empty.
-  void pop_back() { erase_after(before_end()->previous()); }
+  constexpr void pop_back() { erase_after(before_end()->previous()); }
 
   /// Inserts an element at the beginning of the list.
-  void push_front(Item& item) { insert_after(before_begin(), item); }
+  constexpr void push_front(Item& item) { insert_after(before_begin(), item); }
 
   /// Removes the first item in the list. The list must not be empty.
-  void pop_front() { erase_after(before_begin()); }
+  constexpr void pop_front() { erase_after(before_begin()); }
 
   /// Inserts an item into a list.
   ///
@@ -133,7 +134,7 @@ class GenericIntrusiveList {
   /// This is O(1). The ownership of the item is not changed.
   ///
   /// @return The item that was added.
-  static Item* insert_after(Item* prev, Item& item) {
+  static constexpr Item* insert_after(Item* prev, Item& item) {
     if (!item.unlisted()) {
       CrashIntrusiveItemIsContained();
     }
@@ -150,7 +151,9 @@ class GenericIntrusiveList {
   ///
   /// @return The last item that was added.
   template <typename Iterator>
-  static Item* insert_after(Item* prev, Iterator first, Iterator last) {
+  static constexpr Item* insert_after(Item* prev,
+                                      Iterator first,
+                                      Iterator last) {
     for (Iterator it = first; it != last; ++it) {
       prev = insert_after(prev, *(FromIterator(it)));
     }
@@ -163,13 +166,13 @@ class GenericIntrusiveList {
   /// returned.
   ///
   /// This is O(1). The item is not destroyed..
-  static Item* erase_after(Item* item) {
+  static constexpr Item* erase_after(Item* item) {
     item->next_->unlist(item);
     return item->next_;
   }
 
   /// Removes the range of items exclusively between `first` and `last`.
-  static Item* erase_after(Item* first, Item* last) {
+  static constexpr Item* erase_after(Item* first, Item* last) {
     while (first->next_ != last) {
       erase_after(first);
     }
@@ -193,7 +196,7 @@ class GenericIntrusiveList {
   /// stable, and equivalent items in each list will remain in the same order
   /// relative to each other.
   template <typename Compare>
-  void merge(GenericIntrusiveList<Item>& other, Compare comp) {
+  constexpr void merge(GenericIntrusiveList<Item>& other, Compare comp) {
     Item* prev = before_begin();
     Item* item = begin();
     Item* other_item = other.begin();
@@ -211,10 +214,10 @@ class GenericIntrusiveList {
 
   /// Moves the items exclusively between `first` and `last` from `other` to
   /// after `pos` in this list.
-  static void splice_after(Item* pos,
-                           GenericIntrusiveList<Item>& other,
-                           Item* first,
-                           Item* last) {
+  static constexpr void splice_after(Item* pos,
+                                     GenericIntrusiveList<Item>& other,
+                                     Item* first,
+                                     Item* last) {
     // Return if the range is empty, unless it is from before_begin to end.
     if (first == last && first != &other.head_) {
       return;
@@ -239,7 +242,7 @@ class GenericIntrusiveList {
   // Removes this specific item from the list, if it is present. Finds the item
   // by identity (address comparison) rather than value equality. Returns true
   // if the item was removed; false if it was not present.
-  bool remove(const Item& item_to_remove) {
+  constexpr bool remove(const Item& item_to_remove) {
     Item* prev = find_previous(item_to_remove);
     if (prev == nullptr) {
       return false;
@@ -256,7 +259,7 @@ class GenericIntrusiveList {
   ///
   /// @returns The item before `item`, which may be `before_begin()`, or
   /// `nullptr` if `item` is not in this list.
-  Item* find_previous(const Item& item) {
+  constexpr Item* find_previous(const Item& item) {
     for (Item* prev = before_begin(); prev->next_ != end();
          prev = prev->next_) {
       if (prev->next_ == &item) {
@@ -273,8 +276,8 @@ class GenericIntrusiveList {
   ///
   /// @returns The number of items removed.
   template <typename UnaryPredicate>
-  size_t remove_if(UnaryPredicate pred,
-                   size_t max = std::numeric_limits<size_t>::max()) {
+  constexpr size_t remove_if(UnaryPredicate pred,
+                             size_t max = std::numeric_limits<size_t>::max()) {
     size_t removed = 0;
     Item* prev = before_begin();
     while (true) {
@@ -312,7 +315,7 @@ class GenericIntrusiveList {
   /// @tparam BinaryPredicate   Function with the signature
   ///                           `bool(const Item&, const Item&)`
   template <typename BinaryPredicate>
-  size_t unique(BinaryPredicate pred) {
+  constexpr size_t unique(BinaryPredicate pred) {
     if (empty()) {
       return 0;
     }
@@ -368,7 +371,7 @@ class GenericIntrusiveList {
 
  private:
   template <typename Iterator>
-  static Item* FromIterator(Iterator& it) {
+  static constexpr Item* FromIterator(Iterator& it) {
     if constexpr (std::is_pointer<std::remove_reference_t<decltype(*it)>>()) {
       return *it;
     } else {

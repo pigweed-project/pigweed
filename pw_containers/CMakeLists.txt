@@ -871,6 +871,7 @@ pw_add_test(pw_containers.intrusive_forward_list_test
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_containers.intrusive_forward_list
     pw_containers.vector
+    pw_polyfill
     pw_preprocessor
   GROUPS
     modules
