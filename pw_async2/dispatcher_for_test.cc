@@ -47,6 +47,7 @@ Poll<> DispatcherForTestImpl::IdleTask::DoPend(Context& cx) {
   // Complete function.
   PW_ASYNC_STORE_WAKER(cx, waker_, "DispatcherForTest waiting for Release()");
   if (should_complete_.load(std::memory_order_relaxed)) {
+    waker_.Clear();
     return Ready();
   }
   return Pending();

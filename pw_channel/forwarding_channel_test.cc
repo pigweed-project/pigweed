@@ -265,6 +265,8 @@ TEST(ForwardingDatagramchannel, PendCloseAwakensAndClosesPeer) {
       if (read->ok()) {
         packets_read += 1;
         EXPECT_TRUE(read->value().empty());
+        PW_ASYNC_STORE_WAKER(
+            cx, waker, "TryToReadUntilClosed is waiting for manual wake");
         return Pending();
       }
       EXPECT_EQ(read->status(), pw::Status::FailedPrecondition());
@@ -488,6 +490,8 @@ TEST(ForwardingByteChannel, PendCloseAwakensAndClosesPeer) {
       if (read->ok()) {
         bytes_read += read->value().size();
         EXPECT_EQ(read->value().size(), 5u);
+        PW_ASYNC_STORE_WAKER(
+            cx, waker, "TryToReadUntilClosed is waiting for manual wake");
         return Pending();
       }
 

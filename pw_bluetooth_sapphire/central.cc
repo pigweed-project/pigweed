@@ -248,12 +248,14 @@ async2::PollResult<Central::ScanResult> Central::ScanHandleImpl::PendResult(
     async2::Context& cx) {
   std::lock_guard guard(lock());
   if (!results_.empty()) {
+    waker_.Clear();
     ScanResult result = std::move(results_.front());
     results_.pop();
     return async2::Ready(std::move(result));
   }
 
   if (!central_) {
+    waker_.Clear();
     return async2::Ready(pw::Status::Cancelled());
   }
 

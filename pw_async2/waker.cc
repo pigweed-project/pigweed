@@ -43,7 +43,7 @@ void Waker::Wake() {
     internal::lock().unlock();
   } else {
     Task& task = *task_;
-    RemoveTask();
+    task.AddWokenWakerLocked(*this);
     task.Wake();
   }
 }
@@ -58,13 +58,11 @@ bool Waker::TrySetTask(Context& context, log::Token wait_reason) {
 
   set_wait_reason(wait_reason);
 
-  if (task_ != new_task) {
-    if (task_ != nullptr) {
-      task_->RemoveWakerLocked(*this);
-    }
-    task_ = new_task;
-    task_->AddWakerLocked(*this);
+  if (task_ != nullptr) {
+    task_->RemoveWakerLocked(*this);
   }
+  task_ = new_task;
+  task_->AddWakerLocked(*this);
   return true;
 }
 
@@ -73,10 +71,7 @@ bool Waker::CloneInto(Waker& out, log::Token wait_reason) {
   if (out.task_ != nullptr && out.task_ != task_) {
     return false;
   }
-  // The `out` waker already points to this task, so no work is necessary.
-  if (out.task_ == task_) {
-    return true;
-  }
+
   // Remove the output waker from its existing task's list.
   out.RemoveTaskIfSet();
   out.task_ = task_;

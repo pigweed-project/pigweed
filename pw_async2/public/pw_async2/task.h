@@ -297,7 +297,20 @@ class Task : public IntrusiveQueue<Task>::Item, private Context {
   // Adds a `Waker` to the linked list of `Waker`s tracked by this `Task`.
   void AddWakerLocked(Waker& waker)
       PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock()) {
-    wakers_.push_front(waker);
+    waker.unlist();
+    pending_wakers_.push_front(waker);
+  }
+
+  // Adds a waker to `woken_wakers_`.
+  //
+  // If a task is woken concurrently while Pend() is executing, its waker is
+  // pushed to the `woken_wakers_` list for the next execution. If `DoPend`
+  // returns `Ready` during this execution, then the waker will be removed from
+  // `woken_wakers_` through the `Waker::Clear()` method.
+  void AddWokenWakerLocked(Waker& waker)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock()) {
+    waker.unlist();
+    woken_wakers_.push_front(waker);
   }
 
   // Removes a `Waker` from the linked list of `Waker`s tracked by this `Task`.
@@ -306,7 +319,7 @@ class Task : public IntrusiveQueue<Task>::Item, private Context {
   // by this `Task`.
   void RemoveWakerLocked(Waker& waker)
       PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock()) {
-    wakers_.remove(waker);
+    waker.unlist();
   }
 
   void ReleaseSharedRef(allocator::internal::ControlBlock* control_block)
@@ -353,8 +366,11 @@ class Task : public IntrusiveQueue<Task>::Item, private Context {
   allocator::internal::ControlBlock* control_block_
       PW_GUARDED_BY(internal::lock()) = nullptr;
 
-  // Linked list of `Waker` s that may awaken this `Task`.
-  IntrusiveForwardList<Waker> wakers_ PW_GUARDED_BY(internal::lock());
+  // Linked list of `Waker`s that may awaken this `Task`.
+  IntrusiveForwardList<Waker> pending_wakers_ PW_GUARDED_BY(internal::lock());
+  // Linked list of `Waker`s that have awakened this `Task` but are not yet
+  // handled.
+  IntrusiveForwardList<Waker> woken_wakers_ PW_GUARDED_BY(internal::lock());
 
   // Optional user-facing name for the task. If set, it will be included in
   // debug logs.

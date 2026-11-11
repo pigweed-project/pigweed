@@ -223,6 +223,7 @@ class TestByteReader
           cx, read_waker_, "TestByteReader is waiting for a call to PushData");
       return Pending();
     }
+    read_waker_.Clear();
     return std::move(data_);
   }
 
@@ -262,6 +263,7 @@ class TestDatagramWriter : public pw::channel::Implement<DatagramWriter> {
  private:
   Poll<pw::Status> DoPendReadyToWrite(Context& cx) override {
     if (state_ == kReadyToWrite) {
+      waker_.Clear();
       return Ready(pw::OkStatus());
     }
 
@@ -294,6 +296,7 @@ class TestDatagramWriter : public pw::channel::Implement<DatagramWriter> {
           cx, waker_, "TestDatagramWriter is waiting for its Channel to flush");
       return Pending();
     }
+    waker_.Clear();
     last_flush_ = last_write_;
     return pw::OkStatus();
   }

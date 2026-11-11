@@ -61,6 +61,9 @@ class L2capChannelImpl {
   async2::Poll<std::optional<H4PacketWithH4>> DequeuePacket(
       async2::Context& context);
 
+  /// Clears any pending futures or wakers when ACL send credits are exhausted.
+  void ClearWakers();
+
   /// @copydoc L2capChannel::PayloadQueueEmpty
   bool PayloadQueueEmpty() const;
 

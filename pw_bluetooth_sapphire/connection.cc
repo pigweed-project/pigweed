@@ -57,6 +57,7 @@ async2::Poll<pw::bluetooth::low_energy::Connection2::DisconnectReason>
 Connection::PendDisconnect(async2::Context& cx) {
   std::lock_guard guard(lock());
   if (disconnect_reason_) {
+    waker_.Clear();
     return async2::Ready(*disconnect_reason_);
   }
   PW_ASYNC_STORE_WAKER(cx, waker_, "bt-disconnect");

@@ -44,10 +44,11 @@ class MockTask : public Task {
     if (unschedule) {
       return cx.Unschedule();
     }
-    PW_ASYNC_STORE_WAKER(cx, last_waker, "MockTask is waiting for last_waker");
     if (should_complete) {
+      last_waker.Clear();
       return Ready();
     }
+    PW_ASYNC_STORE_WAKER(cx, last_waker, "MockTask is waiting for last_waker");
     return Pending();
   }
 };

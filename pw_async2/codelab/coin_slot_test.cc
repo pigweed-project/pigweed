@@ -63,7 +63,9 @@ TEST(CoinSlotTest, MultipleDeposits) {
         PW_AWAIT(coins, coin_future, context);
         total_coins += coins;
       }
-
+      // Reset the future to consume and unlink any woken wakers before
+      // terminating the task.
+      coin_future = {};
       return Ready();
     }
 

@@ -45,6 +45,7 @@ class BlockingTask : public Task {
       running_.release();
       return Pending();
     }
+    waker_.Clear();
     return Ready();
   }
 

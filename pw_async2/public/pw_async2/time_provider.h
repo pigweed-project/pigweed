@@ -179,6 +179,7 @@ class [[nodiscard]] TimeFuture
     std::lock_guard lock(internal::time_lock());
     if (this->unlisted()) {
       provider_ = nullptr;
+      waker_.Clear();
       return Ready(expiration_);
     }
     // NOTE: this is done under the lock in order to ensure that `provider_` is

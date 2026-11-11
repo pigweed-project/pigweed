@@ -47,9 +47,14 @@ Task::~Task() {
 }
 
 void Task::RemoveAllWakersLocked() {
-  while (!wakers_.empty()) {
-    Waker& waker = wakers_.front();
-    wakers_.pop_front();
+  while (!pending_wakers_.empty()) {
+    Waker& waker = pending_wakers_.front();
+    pending_wakers_.pop_front();
+    waker.ClearTask();
+  }
+  while (!woken_wakers_.empty()) {
+    Waker& waker = woken_wakers_.front();
+    woken_wakers_.pop_front();
     waker.ClearTask();
   }
 }
@@ -144,6 +149,19 @@ RunTaskResult Task::RunInDispatcher() {
   // Reset the waker requirement flag before every run.
   waker_requirement_ = kWakerNeeded;
 
+  internal::lock().lock();
+#if PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES
+  IntrusiveForwardList<Waker> currently_executing_wakers =
+      std::move(woken_wakers_);
+#else
+  while (!woken_wakers_.empty()) {
+    Waker& waker = woken_wakers_.front();
+    woken_wakers_.pop_front();
+    waker.ClearTask();
+  }
+#endif  // PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES
+  internal::lock().unlock();
+
   // The task is pended without the lock held.
   const bool complete = Pend(*this).IsReady();
 
@@ -153,6 +171,13 @@ RunTaskResult Task::RunInDispatcher() {
   internal::lock().lock();
 
   if (complete || state_ == State::kDeregisteredButRunning) {
+#if PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES
+    while (!currently_executing_wakers.empty()) {
+      Waker& waker = currently_executing_wakers.front();
+      currently_executing_wakers.pop_front();
+      waker.ClearTask();
+    }
+#endif  // PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES
     switch (state_) {
       case State::kUnposted:
         // Invalid state -- if unregistered from another thread, the state
@@ -178,6 +203,54 @@ RunTaskResult Task::RunInDispatcher() {
     return RunTaskResult::kCompleted;
   }
 
+#if PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES
+  // At this point all currently executing wakers should have been destroyed
+  // (in the case where the future is dropped) or repolled and thus placed back
+  // into pending_wakers_.
+  //
+  // Otherwise, a wake was leaked.
+  if (!currently_executing_wakers.empty()) {
+    PW_LOG_ERROR(
+        "Task finished executing without handling all woken wakers "
+        "(task " PW_TASK_NAME_FMT() ":%p):",
+        name_,
+        static_cast<const void*>(this));
+    for (const Waker& waker : currently_executing_wakers) {
+#if PW_ASYNC2_DEBUG_WAIT_REASON
+      if (waker.wait_reason_ != log::kDefaultToken) {
+        PW_LOG_ERROR(
+            "  - Unhandled waker %p with wait reason: " PW_LOG_TOKEN_FMT(
+                "pw_async2"),
+            static_cast<const void*>(&waker),
+            waker.wait_reason_);
+        continue;
+      }
+#endif  // PW_ASYNC2_DEBUG_WAIT_REASON
+      PW_LOG_ERROR("  - Unhandled waker %p", static_cast<const void*>(&waker));
+    }
+
+#if PW_ASYNC2_DEBUG_WAIT_REASON
+    const Waker& first = currently_executing_wakers.front();
+    if (first.wait_reason_ != log::kDefaultToken) {
+      PW_CRASH(
+          "Task finished executing without handling all woken wakers. "
+          "Task: " PW_TASK_NAME_FMT() ":%p, first unhandled waker: %p "
+          "(wait reason: " PW_LOG_TOKEN_FMT("pw_async2") ")",
+          name_,
+          static_cast<const void*>(this),
+          static_cast<const void*>(&first),
+          first.wait_reason_);
+    }
+#endif  // PW_ASYNC2_DEBUG_WAIT_REASON
+    PW_CRASH(
+        "Task finished executing without handling all woken wakers. "
+        "Task: " PW_TASK_NAME_FMT() ":%p, first unhandled waker: %p",
+        name_,
+        static_cast<const void*>(this),
+        static_cast<const void*>(&currently_executing_wakers.front()));
+  }
+#endif  // PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES
+
   if (state_ == State::kRunning) {
     PW_LOG_DEBUG(
         "Dispatcher adding task " PW_TASK_NAME_FMT() ":%p to sleep queue",
@@ -185,7 +258,7 @@ RunTaskResult Task::RunInDispatcher() {
         static_cast<const void*>(this));
 
     if (waker_requirement_ == kWakerNeeded) {
-      PW_CHECK(!wakers_.empty(),
+      PW_CHECK(!pending_wakers_.empty() || !woken_wakers_.empty(),
                "Task " PW_TASK_NAME_FMT()
                ":%p returned Pending() without registering a waker",
                name_,

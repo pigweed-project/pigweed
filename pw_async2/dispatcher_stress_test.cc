@@ -258,6 +258,12 @@ pw::async2::Poll<> EventHandler::DoPend(pw::async2::Context& cx) {
       PW_ASYNC_STORE_WAKER(cx, waker_, "EventHandler");
       return pw::async2::Pending();
     };
+
+    // We are operating on a non-empty queue. Although we can't be certain that
+    // this waker triggered this particular call to `DoPend()`, we have to clear
+    // it anyways to avoid leaking if it did.
+    waker_.Clear();
+
     event = events_.front();
     events_.pop();
   }
@@ -289,7 +295,10 @@ pw::async2::Poll<> EventHandler::DoPend(pw::async2::Context& cx) {
       return pw::async2::Ready();
   }
 
-  // Allow other tasks to run
+  // Allow other tasks to run. This creates a temporary waker under the hood.
+  // The temporary's destructor runs before this call returns and thus before
+  // the next call to `DoPend()` (single-threaded dispatcher) that it will
+  // trigger, so we don't have to worry about it triggering a wake leak crash.
   cx.ReEnqueue();
   return pw::async2::Pending();
 }

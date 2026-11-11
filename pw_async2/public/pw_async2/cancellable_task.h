@@ -44,12 +44,17 @@ class CancellableTask final : public TaskType {
  protected:
   Poll<> DoPend(Context& cx) final {
     if (cancelled_) {
+      cancel_waker_.Clear();
       return Ready();
     }
 
     std::ignore = PW_ASYNC_TRY_STORE_WAKER(
         cx, cancel_waker_, "CancellableTask waiting for cancellation");
-    return TaskType::DoPend(cx);
+    const Poll<> result = TaskType::DoPend(cx);
+    if (result.IsReady()) {
+      cancel_waker_.Clear();
+    }
+    return result;
   }
 
  private:

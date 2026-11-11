@@ -131,6 +131,7 @@ async2::Poll<> L2capChannelManagerImpl::DoDrainChannelQueuesIfNewTx(
     std::optional<AclDataChannel::SendCredit> credit =
         manager_.acl_data_channel_.ReserveSendCredit(channel.transport());
     if (!credit.has_value()) {
+      channel.impl().ClearWakers();
       manager_.Advance(lrd_channel_);
       if (lrd_channel_ == round_robin_terminus_) {
         break;

@@ -32,12 +32,20 @@ namespace examples {
 // DOCSTAG: [pw_multibuf-examples-async_queue-observer]
 class AsyncMultiBufQueueObserver : public pw::multibuf::Observer {
  public:
-  pw::async2::Poll<> PendNotFull(pw::async2::Context& context) {
+  pw::async2::Poll<> PendNotFull(pw::async2::Context& context, bool is_full) {
+    if (!is_full) {
+      full_waker_.Clear();
+      return pw::async2::Ready();
+    }
     PW_ASYNC_STORE_WAKER(context, full_waker_, "waiting for space");
     return pw::async2::Pending();
   }
 
-  pw::async2::Poll<> PendNotEmpty(pw::async2::Context& context) {
+  pw::async2::Poll<> PendNotEmpty(pw::async2::Context& context, bool is_empty) {
+    if (!is_empty) {
+      empty_waker_.Clear();
+      return pw::async2::Ready();
+    }
     PW_ASYNC_STORE_WAKER(context, empty_waker_, "waiting for data");
     return pw::async2::Pending();
   }
@@ -66,11 +74,11 @@ class AsyncMultiBufQueue {
   }
 
   pw::async2::Poll<> PendNotFull(pw::async2::Context& context) {
-    return full() ? observer_.PendNotFull(context) : pw::async2::Ready();
+    return observer_.PendNotFull(context, full());
   }
 
   pw::async2::Poll<> PendNotEmpty(pw::async2::Context& context) {
-    return empty() ? observer_.PendNotEmpty(context) : pw::async2::Ready();
+    return observer_.PendNotEmpty(context, empty());
   }
 
  private:

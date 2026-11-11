@@ -289,3 +289,5 @@ platforms and constraints.
 - :cc:`PW_ASYNC2_LOG_LEVEL` sets the log level for ``pw_async2``.
 - :cc:`PW_ASYNC2_DEBUG_WAIT_REASON` controls whether to include debug
   information for blocked tasks.
+- :cc:`PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES` controls whether unhandled woken
+  wakers ("leaked wakes") result in a crash during `Task::RunInDispatcher`.

@@ -87,6 +87,7 @@ class RpcServerThread final {
   async2::Poll<> PendReadyForPacket(async2::Context& cx) {
     std::lock_guard lock(mutex_);
     if (ready_for_packet_) {
+      ready_to_receive_packet_.Clear();
       return async2::Ready();
     }
     PW_ASYNC_STORE_WAKER(

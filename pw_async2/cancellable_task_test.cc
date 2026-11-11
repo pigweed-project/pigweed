@@ -47,6 +47,7 @@ class MockTask : public Task {
     PW_ASYNC_STORE_WAKER(cx, waker, "MockTask is waiting for waker");
     if (should_complete) {
       callback_();
+      waker.Clear();
       return Ready();
     }
     return Pending();

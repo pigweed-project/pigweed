@@ -30,6 +30,7 @@ PollResult<MultiBuf> LoopbackChannel<DataType::kByte>::DoPendRead(Context& cx) {
         cx, read_waker_, "LoopbackChannel is waiting for incoming data");
     return Pending();
   }
+  read_waker_.Clear();
   return std::move(queue_);
 }
 

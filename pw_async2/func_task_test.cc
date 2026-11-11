@@ -48,6 +48,7 @@ TEST(FuncTask, PendDelegatesToFunc) {
   FuncTask func_task([&](Context& cx) -> Poll<> {
     ++poll_count;
     if (allow_completion) {
+      waker.Clear();
       return Ready();
     }
     PW_ASYNC_STORE_WAKER(cx, waker, "func_task is waiting for waker");

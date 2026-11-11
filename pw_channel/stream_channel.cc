@@ -54,10 +54,12 @@ void StreamChannelReadState::ProvideBufferToFill(MultiBuf&& buf) {
 PollResult<MultiBuf> StreamChannelReadState::PendFilledBuffer(Context& cx) {
   std::lock_guard lock(buffer_lock_);
   if (!filled_buffer_.empty()) {
+    on_buffer_filled_.Clear();
     return std::move(filled_buffer_);
   }
   // Return an error status only after pulling all the data.
   if (!status_.ok()) {
+    on_buffer_filled_.Clear();
     return status_;
   }
   PW_ASYNC_STORE_WAKER(

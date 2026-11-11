@@ -153,7 +153,8 @@ class ForwardingChannel<DataType::kDatagram>
 
   // Could use a queue here.
   std::optional<multibuf::MultiBuf> read_queue_ PW_GUARDED_BY(pair_.mutex_);
-  async2::Waker waker_ PW_GUARDED_BY(pair_.mutex_);
+  async2::Waker read_waker_ PW_GUARDED_BY(pair_.mutex_);
+  async2::Waker write_waker_ PW_GUARDED_BY(pair_.mutex_);
   multibuf::v1::MultiBufAllocationFuture write_alloc_future_;
 };
 

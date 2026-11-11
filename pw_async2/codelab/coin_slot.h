@@ -35,16 +35,8 @@ class CoinFuture {
 
   ~CoinFuture() { core_.Unlist(); }
 
-  CoinFuture(CoinFuture&& other) noexcept : CoinFuture() {
-    *this = std::move(other);
-  }
-
-  CoinFuture& operator=(CoinFuture&& other) {
-    PW_ASSERT(!is_pendable());
-    core_ = std::move(other.core_);
-    coin_slot_ = std::exchange(other.coin_slot_, nullptr);
-    return *this;
-  }
+  CoinFuture(CoinFuture&&) = default;
+  CoinFuture& operator=(CoinFuture&&) = default;
 
   pw::async2::Poll<unsigned> Pend(pw::async2::Context& cx) {
     return core_.DoPend(*this, cx);

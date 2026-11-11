@@ -31,6 +31,7 @@ async2::Poll<void*> AsyncPool::PendAllocate(async2::Context& context) {
     PW_ASYNC_STORE_WAKER(context, waker_, "waiting for pool memory");
     return async2::Pending();
   }
+  waker_.Clear();
   return async2::Ready(ptr);
 }
 

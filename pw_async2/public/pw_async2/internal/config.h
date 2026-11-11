@@ -40,4 +40,13 @@
 #define PW_ASYNC2_LOG_LEVEL PW_LOG_LEVEL_INFO
 #endif  // PW_ASYNC2_LOG_LEVEL
 
+/// Controls whether `Task::RunInDispatcher` asserts that all woken wakers are
+/// handled by the task before returning. If enabled, any unhandled woken waker
+/// results in a fatal check failure.
+///
+/// Disabled by default.
+#ifndef PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES
+#define PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES 0
+#endif  // PW_ASYNC2_CONFIG_ASSERT_LEAKED_WAKES
+
 /// @endsubmodule

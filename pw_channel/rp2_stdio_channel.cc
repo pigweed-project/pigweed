@@ -73,6 +73,7 @@ Poll<std::byte> PollReadByte(Context& cx) {
       return Pending();
     }
   }
+  global_chars_available_waker.Clear();
   return static_cast<std::byte>(c);
 }
 

@@ -270,6 +270,7 @@ async2::Poll<pw::Status> Peripheral::AdvertisedPeripheralImpl::PendStop(
     async2::Context& cx) {
   std::lock_guard guard(Peripheral::lock());
   if (stop_status_.has_value()) {
+    waker_.Clear();
     return async2::Ready(stop_status_.value());
   }
   PW_ASYNC_STORE_WAKER(cx, waker_, "AdvPeripheralPendStop");

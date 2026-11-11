@@ -106,6 +106,11 @@ StatusWithMultiBuf L2capChannelImpl::Write(multibuf::MultiBuf&& payload) {
 
 void L2capChannelImpl::NotifyOnDequeue() { notify_on_dequeue_ = true; }
 
+void L2capChannelImpl::ClearWakers() {
+  payload_future_ = async2::ReceiveFuture<multibuf::MultiBuf>();
+  waker_.Clear();
+}
+
 async2::Poll<std::optional<H4PacketWithH4>> L2capChannelImpl::DequeuePacket(
     async2::Context& context) {
   std::optional<H4PacketWithH4> packet;
@@ -115,11 +120,18 @@ async2::Poll<std::optional<H4PacketWithH4>> L2capChannelImpl::DequeuePacket(
     if (!payload_future_.is_pendable()) {
       payload_future_ = payload_receiver_.Receive();
     }
-    PW_TRY_READY_ASSIGN(payload_, payload_future_.Pend(context));
+    async2::Poll<std::optional<multibuf::MultiBuf>> poll =
+        payload_future_.Pend(context);
+    if (poll.IsPending()) {
+      waker_.Clear();
+      return async2::Pending();
+    }
+    payload_ = std::move(*poll);
 
     // Either the handle was closed, or the future returned std::nullopt. Either
     // way the channel is closed.
     if (!payload_.has_value()) {
+      waker_.Clear();
       return async2::Ready(std::move(packet));
     }
 
@@ -150,6 +162,7 @@ async2::Poll<std::optional<H4PacketWithH4>> L2capChannelImpl::DequeuePacket(
     return async2::Pending();
   }
 
+  waker_.Clear();
   channel_.NotifyCreditMutation();
 
   return async2::Ready(std::move(packet));

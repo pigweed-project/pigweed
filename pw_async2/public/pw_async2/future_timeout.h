@@ -182,11 +182,17 @@ class [[nodiscard]] FutureWithTimeout {
     PW_ASSERT(is_pendable());
     auto result = primary_future_.Pend(cx);
     if (result.IsReady()) {
+      // Reset the unused timeout_future_ to unregister any stored waker
+      // (e.g. from a timer provider) and prevent wake leaks after completion.
+      timeout_future_ = TimeoutFuture();
       state_.MarkComplete();
       return Ready<value_type>(std::in_place, std::move(result).value());
     }
 
     if (timeout_future_.Pend(cx).IsReady()) {
+      // Reset the unused primary_future_ to unregister any stored waker
+      // and prevent wake leaks after completion.
+      primary_future_ = PrimaryFuture();
       state_.MarkComplete();
       return timeout_resolution_();
     }

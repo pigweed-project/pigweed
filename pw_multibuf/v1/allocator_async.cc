@@ -154,6 +154,7 @@ PollOptional<MultiBuf> MultiBufAllocationFuture::Pend(Context& cx) {
   if (this->unlisted()) {
     auto result = TryAllocate();
     if (result.IsReady()) {
+      waker_.Clear();
       return result;
     }
     allocator_->AddMemoryAvailableDelegate(*this);

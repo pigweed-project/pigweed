@@ -130,7 +130,9 @@ void Dispatcher::LogRegisteredTasks() {
   PW_LOG_INFO("Sleeping tasks:");
   for (const Task& task : sleeping_) {
     int waker_count = static_cast<int>(
-        std::distance(task.wakers_.begin(), task.wakers_.end()));
+        std::distance(task.pending_wakers_.begin(),
+                      task.pending_wakers_.end()) +
+        std::distance(task.woken_wakers_.begin(), task.woken_wakers_.end()));
 
     PW_LOG_INFO("  - " PW_LOG_TOKEN_FMT("pw_async2") ":%p (%d wakers)",
                 task.name_,
@@ -144,14 +146,21 @@ void Dispatcher::LogRegisteredTasks() {
 void Dispatcher::LogTaskWakers([[maybe_unused]] const Task& task) {
 #if PW_ASYNC2_DEBUG_WAIT_REASON
   int i = 0;
-  for (const Waker& waker : task.wakers_) {
-    i++;
-    if (waker.wait_reason_ != log::kDefaultToken) {
-      PW_LOG_INFO("    * Waker %d: " PW_LOG_TOKEN_FMT("pw_async2"),
-                  i,
-                  waker.wait_reason_);
-    }
-  }
+  auto log_wakers =
+      [&i](const IntrusiveForwardList<Waker>& wakers)
+          PW_NO_LOCK_SAFETY_ANALYSIS {
+            for (const Waker& waker : wakers) {
+              i++;
+              if (waker.wait_reason_ != log::kDefaultToken) {
+                PW_LOG_INFO("    * Waker %d: " PW_LOG_TOKEN_FMT("pw_async2"),
+                            i,
+                            waker.wait_reason_);
+              }
+            }
+          };
+
+  log_wakers(task.pending_wakers_);
+  log_wakers(task.woken_wakers_);
 #endif  // PW_ASYNC2_DEBUG_WAIT_REASON
 }
 

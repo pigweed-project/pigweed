@@ -60,6 +60,7 @@ KeyPressFuture& KeyPressFuture::operator=(KeyPressFuture&& other) noexcept {
 
 pw::async2::Poll<int> KeyPressFuture::Pend(pw::async2::Context& cx) {
   if (key_pressed_.has_value()) {
+    waker_.Clear();
     return pw::async2::Ready(key_pressed_.value());
   }
   PW_ASYNC_STORE_WAKER(cx, waker_, "Waiting for keypad press");

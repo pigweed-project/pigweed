@@ -309,7 +309,10 @@ class FutureCore : public IntrusiveForwardList<FutureCore>::Item {
   ///
   /// @warning Do not use this function when `FutureCore::DoPend` is used.
   /// `FutureCore::DoPend` calls `MarkComplete` when `Pend()` returns `Ready`.
-  void MarkComplete() { state_.MarkComplete(); }
+  void MarkComplete() {
+    waker_.Clear();
+    state_.MarkComplete();
+  }
 
   /// Removes this future from its list, if it is in one.
   void Unlist() { unlist(); }
@@ -317,6 +320,7 @@ class FutureCore : public IntrusiveForwardList<FutureCore>::Item {
   /// Unlists the `FutureCore` and resets it to the empty state.
   void Reset() {
     Unlist();
+    waker_.Clear();
     state_ = FutureState();
   }
 

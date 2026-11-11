@@ -49,6 +49,7 @@ RpcChannelOutputQueue::PendOutgoingDatagram(Context& cx) {
         "RpcChannel is waiting for outgoing RPC datagrams to be enqueued");
     return Pending();
   }
+  packet_ready_.Clear();
   return Ready(queue_.front());
 }
 

@@ -263,6 +263,7 @@ class Link {
       rx_waker_.Wake();
     } else if (pending_->empty()) {
       pending_.reset();
+      tx_waker_.Clear();
       return pw::async2::Ready();
     }
     PW_ASYNC_STORE_WAKER(context, tx_waker_, "transmitting data");
@@ -275,6 +276,7 @@ class Link {
       PW_ASYNC_STORE_WAKER(context, rx_waker_, "waiting for data");
       return pw::async2::Pending();
     }
+    rx_waker_.Clear();
     size_t len = std::min(pending_->size(), rx_buffer.size());
     std::memcpy(rx_buffer.data(), pending_->data(), len);
     pending_ = pending_->subspan(len);
