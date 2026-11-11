@@ -266,6 +266,22 @@ Result<std::string_view> ReadProtoString(const protobuf::String& str,
   return std::string_view(buffer.data(), res.value().size());
 }
 
+protobuf::Bytes GetTargetSha256(const protobuf::Message& target_file) {
+  protobuf::RepeatedMessages hashes = target_file.AsRepeatedMessages(
+      static_cast<uint32_t>(pwpb::TargetFile::Fields::kHashes));
+  for (protobuf::Message hash : hashes) {
+    protobuf::Uint32 hash_function =
+        hash.AsUint32(static_cast<uint32_t>(pwpb::Hash::Fields::kFunction));
+    PW_TRY(hash_function.status());
+
+    if (hash_function.value() ==
+        static_cast<uint32_t>(pwpb::HashFunction::SHA256)) {
+      return hash.AsBytes(static_cast<uint32_t>(pwpb::Hash::Fields::kHash));
+    }
+  }
+  return Status::NotFound();
+}
+
 }  // namespace
 
 Status UpdateBundleAccessor::OpenAndVerify() {
@@ -690,21 +706,7 @@ Status UpdateBundleAccessor::VerifyTargetsPayloads() {
     }
 
     // Get target SHA256 hash.
-    protobuf::Bytes target_sha256 = Status::NotFound();
-    protobuf::RepeatedMessages hashes = target_file.AsRepeatedMessages(
-        static_cast<uint32_t>(pwpb::TargetFile::Fields::kHashes));
-    for (protobuf::Message hash : hashes) {
-      protobuf::Uint32 hash_function =
-          hash.AsUint32(static_cast<uint32_t>(pwpb::Hash::Fields::kFunction));
-      PW_TRY(hash_function.status());
-
-      if (hash_function.value() ==
-          static_cast<uint32_t>(pwpb::HashFunction::SHA256)) {
-        target_sha256 =
-            hash.AsBytes(static_cast<uint32_t>(pwpb::Hash::Fields::kHash));
-        break;
-      }
-    }
+    protobuf::Bytes target_sha256 = GetTargetSha256(target_file);
     PW_TRY(target_sha256.status());
 
     if (Status status = VerifyTargetPayload(
@@ -778,21 +780,7 @@ Status UpdateBundleAccessor::VerifyOutOfBundleTargetPayload(
     return Status::Unauthenticated();
   }
 
-  protobuf::Bytes cached_sha256 = Status::NotFound();
-  protobuf::RepeatedMessages hashes = cached.AsRepeatedMessages(
-      static_cast<uint32_t>(pwpb::TargetFile::Fields::kHashes));
-  for (protobuf::Message hash : hashes) {
-    protobuf::Uint32 hash_function =
-        hash.AsUint32(static_cast<uint32_t>(pwpb::Hash::Fields::kFunction));
-    PW_TRY(hash_function.status());
-
-    if (hash_function.value() ==
-        static_cast<uint32_t>(pwpb::HashFunction::SHA256)) {
-      cached_sha256 =
-          hash.AsBytes(static_cast<uint32_t>(pwpb::Hash::Fields::kHash));
-      break;
-    }
-  }
+  protobuf::Bytes cached_sha256 = GetTargetSha256(cached);
   std::byte sha256[crypto::sha256::kDigestSizeBytes] = {};
   PW_TRY(cached_sha256.GetBytesReader().Read(sha256));
 
