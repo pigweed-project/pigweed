@@ -95,11 +95,8 @@ class GenericL2capChannelImpl {
   thread::Id dispatcher_thread_id_;
 
   // Channel for sending requests.
-  //
-  // TODO(b/469150426): If `Sender<T>::BlockingSend` is made cost, the `mutable`
-  // keyword can be dropped.
   async2::SpscChannelHandle<Request> request_handle_;
-  mutable async2::Sender<Request> request_sender_;
+  async2::Sender<Request> request_sender_;
 
   // Channel for sending payloads to write.
   async2::Sender<multibuf::MultiBuf> payload_sender_;
