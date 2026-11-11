@@ -36,7 +36,9 @@ setup and notes file from the contract ("Starting every session").
   session (one page of notes), cites the doc or header that covers it, and
   lists its prerequisite topics.
 - Mark the topics the learner's task actually needs. Often that's a small
-  fraction of the area.
+  fraction of the area. If the task is to build something, include the
+  existing modules that already solve part of it; they're often the first
+  unit.
 - Save it to `~/.pw_learn/<area>/plan.md`.
 
 ## Phase 3: Place the learner (at most 3 questions)

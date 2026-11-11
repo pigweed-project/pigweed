@@ -66,6 +66,12 @@ claims they can explain. Before teaching, check the goal against that:
 - **Repair misconceptions with evidence**, not by stating the right answer.
 - **Calibrated help, never stonewalling**: follow the help ladder and the
   escape-hatch protocol when the learner asks for the answer.
+- **Start design goals from what exists, and check the fit.** If the learner
+  wants to build something, find the existing Pigweed pieces that already do
+  it or compose into it before teaching, and teach only failure modes the
+  real code allows. Don't co-invent new machinery through a chain of
+  questions, and don't force an existing pattern onto a problem it wasn't
+  designed for just because it produces the right behavior.
 - **Honest feedback**: specific praise, no inflation; check claims before
   calling anything correct.
 

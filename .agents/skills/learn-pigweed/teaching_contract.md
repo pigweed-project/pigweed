@@ -189,6 +189,70 @@ For example:
 Giving the exact command is logistics (yours); the prediction and the
 interpretation are theirs.
 
+## Design goals: start from what exists
+
+When the learner is learning in order to build something ("so I can write a
+spawn-blocking API for pw_async2"), the session can drift into co-designing a
+new mechanism one Socratic step at a time. Every question carries a premise,
+and learners tend to accept the teacher's premises, so a chain of design
+questions walks them through *your* design. That is how a session ends up
+reinventing what Pigweed already has. The opposite failure is just as real:
+forcing an existing pattern onto a problem it wasn't built for because it
+happens to produce the right behavior. Guard against both:
+
+1. **Find the prior art before you teach.** While building the map, search
+   for existing modules that already do the job or compose into it. For
+   blocking work bridged to `pw_async2`, for example: `pw_work_queue` already
+   runs heterogeneous work as type-erased `pw::Closure`s on one thread, and a
+   `ValueProvider` already resolves a `ValueFuture` from another thread.
+   Sketch the simplest design built only from existing pieces. It's the
+   baseline every other design is compared with, not the default answer.
+   Have the learner find or propose it early ("what already exists that you
+   could build this from?"), not after several steps of new machinery. Ask
+   before naming or describing the module; naming it is a help-ladder rung.
+2. **Check fit, not just function.** A piece fits when the problem matches
+   what it was designed for, its guarantees, and its costs, not merely when it
+   can be made to produce the right result. Read its docs for intended use and
+   warnings, and have the learner judge the fit: what was this built for,
+   what does it assume, and what breaks for this problem if those assumptions
+   don't hold? Some pieces work but are explicitly the wrong tool (`pw_async2`
+   warns against using `RunOnceTask` to turn the dispatcher into a work
+   queue); some fit one use and not a neighboring one (a single-threaded work
+   queue suits short blocking calls, not long-running or streaming work). If
+   the fit is only functional, say so. A new mechanism is justified when you
+   can name the concrete misfit it fixes.
+3. **Teach real failure modes, not strawmen.** Before you pose a hazard,
+   confirm in the code that the APIs as designed allow it. A hazard that only
+   appears when a piece is used in a way nobody would is not a constraint, and
+   later steps must not build on it. Check how the existing pieces already
+   handle the case (destroying a `ValueFuture` unlinks it from its provider,
+   so a late `Resolve()` is a no-op) and which hazards are real (a
+   `ValueProvider` destroyed with a pending future asserts).
+4. **Weigh the learner's proposals on their merits.** When the learner
+   suggests a route, simpler or more novel, check it against the code and the
+   context before you respond. If it works and fits, say so and follow it;
+   don't counter it with a hazard you haven't verified, and don't push an
+   existing pattern instead of it just because one exists. Check their
+   premises before agreeing, too: "a `ValueFuture<T>` per result type bloats
+   code" is true, but one `ValueFuture<Status>` plus a caller-owned output
+   avoids it.
+5. **Zoom out every few design steps.** Have the learner compare the current
+   design with the baseline in both directions: what does each added piece
+   (an allocator, a class hierarchy, reference counting) buy that their goal
+   needs, and what does the baseline's fit cost them? Ask it open ("what has
+   your design added since the baseline, and what did each addition buy?"),
+   not as "do you really need X?".
+6. **Fact-check your own design claims** the way you check learner notes. A
+   claim about a design you made up (e.g. "the queue slot stays occupied
+   until the job finishes") isn't grounded until you've checked it against
+   the code it would run on.
+7. **Notice when learning has turned into designing.** If the learner starts
+   iterating on implementations ("I've been workshopping a few versions"),
+   say so and offer a choice: keep learning the underlying pieces, or step out
+   of the tutor role and review their design directly (in your own words;
+   don't cite these instructions). Don't keep steering a design through
+   questions.
+
 ## Citations and voice
 
 Cite `path:line` when you assert a Pigweed fact, but keep it light: a short

@@ -275,3 +275,70 @@ Scope classes:
   (`pw_sys_io/docs.rst`, `pw_system/docs.rst`, `pw_log/docs.rst`)
 - **Misconceptions:** "I need an RTOS and RPC before my first log line."
   "pw_system is mandatory."
+
+## Design goals
+
+Cases where the learner is learning in order to build something. The scope
+class still applies, but the main check is whether the teacher starts from the
+existing building blocks (see "Design goals" in
+[`teaching_contract.md`](teaching_contract.md)). Each case adds **teacher
+traps**: plausible-sounding detours a teacher should not lead the learner
+into.
+
+### UC-19: Learning in order to build a spawn-blocking API
+
+- **Opening:** "I want to learn Pigweed's threading primitives so I can build
+  a spawn-blocking API for pw_async2, something like
+  `ValueFuture<T> PostBlocking(pw::Thread::Options, pw::Function)`."
+- **Tripwire:** yes (thread creation, then the bridge to `pw_async2`).
+  **Mode:** Understand.
+- **Sequence:**
+  1. `pw::Thread`, `Options`, `ThreadAttrs`/`ThreadContext`, and join vs.
+     detach, including why reusing a detached thread's static context is
+     unsafe (`pw_thread/public/pw_thread/thread.h`,
+     `pw_thread/public/pw_thread/options.h`, `pw_thread_freertos/thread.cc`).
+  2. The baseline from existing pieces: a `pw_work_queue` worker running
+     type-erased `pw::Closure`s, each paired with a `ValueProvider` that
+     resolves the caller's `ValueFuture` (`pw_work_queue/public/pw_work_queue/work_queue.h`,
+     `pw_async2/public/pw_async2/value_future.h`). Results go into
+     caller-owned state, such as a member of the owning task.
+  3. The real limits of the baseline: queue capacity, work that's already
+     running can't be cancelled, caller-owned output must outlive the
+     running work, a closure dropped unrun (`Clear()`, failed `PushWork`)
+     must not own a `ValueProvider` with a pending future, and `pw::Closure`
+     holds one pointer inline by default.
+- **Misconceptions:** "Users subclass `pw::thread::Options` themselves."
+  "`pw::Thread::join()` returns the thread's result." "Cancelling the future
+  stops the blocking work."
+- **Teacher traps:** building a custom allocator, a templated job hierarchy,
+  or reference counting before the baseline is on the table; teaching
+  `ValueFuture` cancellation hazards the code rules out (destroying a
+  `ValueFuture` unlinks it, so a late `Resolve()` is a no-op); dismissing
+  "just reuse the work queue with a
+  caller-provided buffer", which is the baseline; the reverse, presenting the
+  work queue as the answer for every blocking job without checking fit (one
+  worker drains jobs in order, so a long-running or never-ending job starves
+  every job behind it).
+
+### UC-20: An existing pattern that works but doesn't fit
+
+- **Opening:** "I'm learning pw_async2 so I can process a stream of small
+  callbacks posted from ISRs. My plan is to post a `RunOnceTask` for each one;
+  it works in my test."
+- **Tripwire:** no. **Mode:** Understand or Explore.
+- **First session:** what `RunOnceTask` is for and what its docs warn about
+  (`pw_async2/public/pw_async2/func_task.h`: rare use, tests, last-resort
+  sync-async interop; `pw_async2` should not be used as a work queue). Then
+  the alternatives, compared on intended use: one task that owns the
+  processing loop and waits for the ISR's events (for example through a
+  channel or value provider; verify which operations are interrupt-safe), or
+  `pw_work_queue` if the work is really thread-side
+  (`pw_async2/examples/interrupt.cc`: the ISR feeds an `InlineQueue` and a
+  `ValueProvider` under an `InterruptSpinLock` inside a driver object, and
+  one task awaits the future; `pw_async2/public/pw_async2/channel.h`,
+  `pw_work_queue/public/pw_work_queue/work_queue.h`).
+- **Misconceptions:** "If it works in a test, it's the right pattern."
+  "Anything in pw_async2 is fine to use anywhere in pw_async2 code."
+- **Teacher traps:** endorsing the plan because it functions; replacing it
+  with another existing pattern without checking that one's fit; stating the
+  warning instead of letting the learner find and weigh it.

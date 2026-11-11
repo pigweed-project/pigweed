@@ -28,6 +28,8 @@ should not read it):
   directory, R1 search term, R2 file, R3 line), and a **why question**.
 - At least one waypoint on a **failure mode** (e.g. "can two strings get the
   same token? find what the tooling does about it").
+- For a build goal, a **prior-art waypoint** early in the route: find what
+  Pigweed already has for this job and how far it gets them.
 - 1–3 **predict-then-run experiments**: small commands whose output tests a
   prediction (a host unit test, inspecting ELF sections, detokenizing a byte
   string).

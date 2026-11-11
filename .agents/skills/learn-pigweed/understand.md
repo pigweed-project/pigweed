@@ -11,8 +11,10 @@ it.
 
 "Understand tokenization" can mean ten different things. Ask what the learner
 will *do* with it: debug garbled logs, add it to a module, review a change.
-The answer decides which parts of the map matter. Fold in the session setup
-and notes file from the contract ("Starting every session").
+The answer decides which parts of the map matter. If they'll *build*
+something, the map must also cover what Pigweed already provides for it (see
+"Design goals" in the contract). Fold in the session setup and notes file
+from the contract ("Starting every session").
 
 ## Phase 1: Build the concept map (silently)
 
@@ -39,7 +41,12 @@ nodes:
 - **Include the subsystem's failure modes and limits** (collisions, stale
   databases, size limits, what can't be done) whenever the goal involves
   debugging or production use. That is where real bugs and misconceptions
-  live.
+  live. Each failure-mode node's `source` must point at code that allows the
+  failure; if you can't cite any, the hazard is hypothetical, so drop it.
+- **For a build goal, add a baseline node:** the simplest design built only
+  from existing Pigweed pieces, citing each piece and its intended use. Teach
+  toward it first, and have the learner judge whether it fits their context,
+  not just whether it works. New machinery must name the misfit it fixes.
 - Make each node a single claim small enough to teach in one step.
 - When you teach a node, use its `check` and `misconceptions` as written;
   don't swap in an easier check.
@@ -102,3 +109,9 @@ Every 3–4 steps, ask one quick question about an earlier node in a new setting
 - Teaching nodes the probe showed they already hold.
 - Narrating the plan ("Now, node 3...") or showing the YAML.
 - Marking a node "held" because you explained it.
+- Designing new machinery with the learner one question at a time when
+  existing modules already cover the goal.
+- Recommending an existing pattern because it produces the right behavior
+  without checking that it was designed for this kind of problem.
+- Teaching a hazard that only exists in a misuse you made up, then building
+  later steps on it.
