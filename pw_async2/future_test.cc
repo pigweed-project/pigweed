@@ -134,6 +134,16 @@ class ExtraArgPend {
 };
 static_assert(!Future<ExtraArgPend>);
 
+class OverloadedPend {
+ public:
+  using value_type = int;
+  Poll<int> Pend(Context& cx);
+  Poll<int> Pend(Context& cx, int extra);
+  bool is_pendable() const;
+  bool is_complete() const;
+};
+static_assert(Future<OverloadedPend>);
+
 class NonDestructible {
  public:
   ~NonDestructible() = delete;
@@ -144,6 +154,20 @@ class NonDestructible {
   bool is_complete() const;
 };
 static_assert(!Future<NonDestructible>);
+
+class ThrowingDestructor {
+ public:
+  ThrowingDestructor() = default;
+  ThrowingDestructor(ThrowingDestructor&&) = default;
+  ThrowingDestructor& operator=(ThrowingDestructor&&) = default;
+  ~ThrowingDestructor() noexcept(false);
+
+  using value_type = int;
+  Poll<int> Pend(Context& cx);
+  bool is_pendable() const;
+  bool is_complete() const;
+};
+static_assert(!Future<ThrowingDestructor>);
 
 class NotDefaultConstructible {
  public:
@@ -181,6 +205,20 @@ class NotMoveAssignable {
   bool is_complete() const;
 };
 static_assert(!Future<NotMoveAssignable>);
+
+class WrongMoveAssignReturn {
+ public:
+  WrongMoveAssignReturn() = default;
+  WrongMoveAssignReturn(WrongMoveAssignReturn&&) = default;
+  // NOLINTNEXTLINE(misc-unconventional-assign-operator)
+  void operator=(WrongMoveAssignReturn&&);
+
+  using value_type = int;
+  Poll<int> Pend(Context& cx);
+  bool is_pendable() const;
+  bool is_complete() const;
+};
+static_assert(!Future<WrongMoveAssignReturn>);
 
 class ExplicitMoveConstructible {
  public:

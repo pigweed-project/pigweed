@@ -90,20 +90,22 @@ struct is_future<
                 decltype(static_cast<bool (T::*)() const>(&T::is_pendable)),
                 decltype(static_cast<bool (T::*)() const>(&T::is_complete)),
                 decltype(static_cast<Poll<typename T::value_type> (T::*)(
-                             Context&)>(&T::Pend))>>
-    : std::conjunction<std::is_default_constructible<T>,
-                       std::is_nothrow_destructible<T>,
-                       std::is_move_constructible<T>,
-                       std::is_convertible<T, T>,
-                       std::is_move_assignable<T>,
-                       std::is_swappable<T>> {};
+                             Context&)>(&T::Pend)),
+                decltype(std::declval<T&>() = std::declval<T>())>>
+    : std::conjunction<
+          std::is_default_constructible<T>,
+          std::is_nothrow_destructible<T>,
+          std::is_move_constructible<T>,
+          std::is_convertible<T, T>,
+          std::is_same<decltype(std::declval<T&>() = std::declval<T>()), T&>,
+          std::is_swappable<T>> {};
 
 }  // namespace internal
 
 // This variable is named as a type to match the C++20 concept. This makes it
 // possible to use `Future` in static asserts in either C++17 or C++20.
 template <typename T>
-constexpr bool Future = internal::is_future<T>::value;
+inline constexpr bool Future = internal::is_future<T>::value;
 
 #endif  // __cpp_concepts
 
