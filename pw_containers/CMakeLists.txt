@@ -13,6 +13,7 @@
 # the License.
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+include($ENV{PW_ROOT}/pw_thread/backend.cmake)
 
 # Module configuration
 
@@ -102,6 +103,7 @@ pw_add_library(pw_containers._deque_common INTERFACE
     pw_assert
     pw_bytes
     pw_containers._common
+    pw_containers.storage
     pw_numeric.checked_arithmetic
     pw_span
     pw_third_party.fuchsia.stdcompat
@@ -241,7 +243,9 @@ pw_add_library(pw_containers.storage INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_assert.assert
     pw_containers.algorithm
+    pw_span
 )
 
 pw_add_library(pw_containers.deque INTERFACE
@@ -264,6 +268,18 @@ pw_add_library(pw_containers.queue INTERFACE
   PUBLIC_DEPS
     pw_containers.deque
     pw_containers._queue_common
+)
+
+pw_add_library(pw_containers.lock_free_spsc_queue INTERFACE
+  HEADERS
+    public/pw_containers/lock_free_spsc_queue.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator
+    pw_assert
+    pw_containers.storage
+    pw_span
 )
 
 pw_add_library(pw_containers._test_helpers STATIC
@@ -695,6 +711,34 @@ pw_add_test(pw_containers.queue_test
     pw_containers.queue
     pw_containers._test_helpers
     pw_allocator.testing
+  GROUPS
+    modules
+    pw_containers
+)
+
+set(lock_free_spsc_queue_test_thread_deps)
+if((NOT "${pw_thread.thread_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_thread.test_thread_context_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_thread.yield_BACKEND}" STREQUAL ""))
+  list(APPEND lock_free_spsc_queue_test_thread_deps
+    pw_thread.test_thread_context
+    pw_thread.thread
+    pw_thread.yield
+  )
+endif()
+
+pw_add_test(pw_containers.lock_free_spsc_queue_test
+  SOURCES
+    lock_free_spsc_queue_test.cc
+  PRIVATE_DEPS
+    pw_allocator.null_allocator
+    pw_allocator.testing
+    pw_assert
+    pw_compilation_testing._pigweed_only_negative_compilation
+    pw_containers._test_helpers
+    pw_containers.lock_free_spsc_queue
+    pw_span
+    ${lock_free_spsc_queue_test_thread_deps}
   GROUPS
     modules
     pw_containers

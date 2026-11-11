@@ -19,6 +19,7 @@ import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_chrono/backend.gni")
 import("$dir_pw_sync/backend.gni")
+import("$dir_pw_thread/backend.gni")
 import("$dir_pw_toolchain/traits.gni")
 import("$dir_pw_unit_test/test.gni")
 
@@ -216,7 +217,11 @@ pw_source_set("raw_storage") {
 pw_source_set("storage") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_containers/storage.h" ]
-  public_deps = [ ":algorithm" ]
+  public_deps = [
+    ":algorithm",
+    dir_pw_assert,
+    dir_pw_span,
+  ]
 }
 
 pw_source_set("deque") {
@@ -236,6 +241,17 @@ pw_source_set("queue") {
   public_deps = [
     ":deque",
     ":queue_common",
+  ]
+}
+
+pw_source_set("lock_free_spsc_queue") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_containers/lock_free_spsc_queue.h" ]
+  public_deps = [
+    ":storage",
+    dir_pw_allocator,
+    dir_pw_assert,
+    dir_pw_span,
   ]
 }
 
@@ -499,6 +515,7 @@ pw_test_group("tests") {
     ":intrusive_multimap_test",
     ":intrusive_set_test",
     ":intrusive_multiset_test",
+    ":lock_free_spsc_queue_test",
     ":queue_test",
     ":raw_storage_test",
     ":storage_test",
@@ -660,6 +677,28 @@ pw_test("queue_test") {
     ":test_helpers",
     "$dir_pw_allocator:testing",
   ]
+}
+
+pw_test("lock_free_spsc_queue_test") {
+  sources = [ "lock_free_spsc_queue_test.cc" ]
+  deps = [
+    ":lock_free_spsc_queue",
+    ":test_helpers",
+    "$dir_pw_allocator:null_allocator",
+    "$dir_pw_allocator:testing",
+    dir_pw_assert,
+    dir_pw_span,
+  ]
+  if (pw_thread_THREAD_BACKEND != "" &&
+      pw_thread_TEST_THREAD_CONTEXT_BACKEND != "" &&
+      pw_thread_YIELD_BACKEND != "") {
+    deps += [
+      "$dir_pw_thread:test_thread_context",
+      "$dir_pw_thread:thread",
+      "$dir_pw_thread:yield",
+    ]
+  }
+  negative_compilation_tests = true
 }
 
 pw_test("inline_queue_test") {

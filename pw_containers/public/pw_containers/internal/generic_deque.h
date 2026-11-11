@@ -30,6 +30,7 @@
 #include "pw_containers/internal/deque_iterator.h"
 #include "pw_containers/internal/traits.h"
 #include "pw_containers/internal/wrap.h"
+#include "pw_containers/storage.h"
 #include "pw_numeric/checked_arithmetic.h"
 #include "pw_span/span.h"
 
@@ -38,48 +39,6 @@ namespace pw::containers::internal {
 template <typename T>
 using EnableIfIterable =
     std::enable_if_t<true, decltype(T().begin(), T().end())>;
-
-// Span that is known to be aligned as ValueType.
-template <typename ValueType>
-class Aligned {
- public:
-  // Construct from an UNALIGNED span. Adjusts alignment if necessary.
-  static constexpr Aligned Align(span<std::byte> unaligned_buffer) {
-    Aligned buffer(unaligned_buffer.data(), unaligned_buffer.size());
-
-    if constexpr (alignof(ValueType) > alignof(std::byte)) {
-      void* data_void = buffer.data_;
-      buffer.data_ = static_cast<std::byte*>(std::align(
-          alignof(ValueType), sizeof(ValueType), data_void, buffer.size_));
-      if (buffer.data_ == nullptr) {
-        buffer.size_ = 0;  // cannot fit any items
-      }
-    }
-
-    return buffer;
-  }
-
-  // Asserts that a buffer is aligned at least as ValueType.
-  static constexpr Aligned Assert(std::byte* data, size_t size) {
-    void* buffer_start = data;
-    // Avoid "%" in the PW_ASSERT condition being misinterpreted as a format
-    // specifier: https://pigweed.dev/pw_assert/#in-conditions
-    uintptr_t misalignment =
-        reinterpret_cast<uintptr_t>(buffer_start) % alignof(ValueType);
-    PW_ASSERT(misalignment == 0);
-    return Aligned(data, size);
-  }
-
-  constexpr Aligned(std::byte* aligned_data, size_t size_bytes)
-      : data_(aligned_data), size_(size_bytes) {}
-
-  constexpr std::byte* data() const { return data_; }
-  constexpr size_t capacity() const { return size_ / sizeof(ValueType); }
-
- private:
-  std::byte* data_;
-  size_t size_;
-};
 
 /// @module{pw_containers}
 

@@ -343,6 +343,18 @@ cc_library(
 )
 
 cc_library(
+    name = "lock_free_spsc_queue",
+    hdrs = ["public/pw_containers/lock_free_spsc_queue.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":storage",
+        "//pw_allocator",
+        "//pw_assert:assert",
+        "//pw_span",
+    ],
+)
+
+cc_library(
     name = "generic_var_len_entry_queue",
     srcs = [
         "var_len_entry.cc",
@@ -475,7 +487,11 @@ cc_library(
     name = "storage",
     hdrs = ["public/pw_containers/storage.h"],
     strip_include_prefix = "public",
-    deps = [":algorithm"],
+    deps = [
+        ":algorithm",
+        "//pw_assert:assert",
+        "//pw_span",
+    ],
 )
 
 cc_library(
@@ -755,6 +771,23 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "lock_free_spsc_queue_test",
+    srcs = ["lock_free_spsc_queue_test.cc"],
+    has_nc_test = True,
+    deps = [
+        ":lock_free_spsc_queue",
+        ":test_helpers",
+        "//pw_allocator:null_allocator",
+        "//pw_allocator:testing",
+        "//pw_assert:assert",
+        "//pw_span",
+        "//pw_thread:test_thread_context",
+        "//pw_thread:thread",
+        "//pw_thread:yield",
+    ],
+)
+
+pw_cc_test(
     name = "raw_storage_test",
     srcs = [
         "raw_storage_test.cc",
@@ -984,6 +1017,7 @@ filegroup(
         "public/pw_containers/intrusive_multiset.h",
         "public/pw_containers/intrusive_queue.h",
         "public/pw_containers/intrusive_set.h",
+        "public/pw_containers/lock_free_spsc_queue.h",
         "public/pw_containers/optional_tuple.h",
         "public/pw_containers/ptr_iterator.h",
         "public/pw_containers/queue.h",
