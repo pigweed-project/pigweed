@@ -621,6 +621,8 @@ pw_source_set("select") {
     ":pw_async2",
     "$dir_pw_assert:assert",
     "$dir_pw_containers:optional_tuple",
+    "$dir_pw_memory:construct_at",
+    dir_pw_polyfill,
     dir_pw_preprocessor,
   ]
 }
@@ -635,6 +637,7 @@ pw_test("select_test") {
     ":value_future",
     "$dir_pw_containers:optional_tuple",
     "$dir_pw_unit_test:constexpr",
+    dir_pw_polyfill,
   ]
   negative_compilation_tests = true
 }

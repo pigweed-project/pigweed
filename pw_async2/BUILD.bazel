@@ -803,6 +803,8 @@ cc_library(
         ":pw_async2",
         "//pw_assert:assert",
         "//pw_containers:optional_tuple",
+        "//pw_memory:construct_at",
+        "//pw_polyfill",
         "//pw_preprocessor",
     ],
 )
@@ -819,6 +821,7 @@ pw_cc_test(
         ":testing",
         ":value_future",
         "//pw_containers:optional_tuple",
+        "//pw_polyfill",
         "//pw_unit_test:constexpr",
     ],
 )

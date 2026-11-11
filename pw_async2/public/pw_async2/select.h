@@ -13,13 +13,11 @@
 // the License.
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
-#include <cstdint>
+#include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <variant>
 
 #include "pw_assert/assert.h"
 #include "pw_async2/context.h"
@@ -28,6 +26,8 @@
 #include "pw_async2/task.h"
 #include "pw_async2/try.h"
 #include "pw_containers/optional_tuple.h"
+#include "pw_memory/construct_at.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_preprocessor/compiler.h"
 
 namespace pw::async2 {
@@ -72,16 +72,27 @@ Poll<OptionalTuple<FutureValue<Futures>...>> PendSelectImpl(
 // completed. The futures are only referenced for the duration of the call, so
 // their owner may move them between calls.
 template <typename... Futures>
-Poll<OptionalTuple<FutureValue<Futures>...>> PendSelect(Context& cx,
-                                                        Futures&... futures) {
+auto PendSelect(Context& cx, Futures&... futures) {
   static_assert(sizeof...(Futures) > 0,
                 "Cannot select over an empty set of futures");
   static_assert(
       (!std::is_const_v<Futures> && ...),
       "Futures passed to PW_SELECT or PW_CO_SELECT must not be const");
-  static_assert((Future<Futures> && ...),
+  static_assert(
+      (!std::is_volatile_v<Futures> && ...),
+      "Futures passed to PW_SELECT or PW_CO_SELECT must not be volatile");
+  static_assert(((std::is_const_v<Futures> || std::is_volatile_v<Futures> ||
+                  Future<Futures>) &&
+                 ...),
                 "All arguments to PW_SELECT or PW_CO_SELECT must be futures");
-  return PendSelectImpl(cx, std::index_sequence_for<Futures...>(), futures...);
+  if constexpr (sizeof...(Futures) > 0 && (!std::is_const_v<Futures> && ...) &&
+                (!std::is_volatile_v<Futures> && ...) &&
+                (Future<Futures> && ...)) {
+    return PendSelectImpl(
+        cx, std::index_sequence_for<Futures...>(), futures...);
+  } else {
+    return Poll<>(Pending());
+  }
 }
 
 // Future that pends futures owned by a coroutine in place. Holds pointers to
@@ -131,57 +142,263 @@ class InPlaceSelectFuture {
 template <typename... Futures>
 InPlaceSelectFuture(Futures&...) -> InPlaceSelectFuture<Futures...>;
 
+// Stand-in for `pw::containers::internal::Maybe<Tuple>` until
+// https://pwrev.dev/522188 lands.
+template <typename Tuple, bool = std::is_trivially_destructible_v<Tuple>>
+union SelectFutureUnion {
+  constexpr SelectFutureUnion() : no_futures{} {}
+
+  template <typename... Futures>
+  explicit constexpr SelectFutureUnion(std::in_place_t,
+                                       Futures&&... sub_futures)
+      : futures(std::forward<Futures>(sub_futures)...) {}
+
+  ~SelectFutureUnion() = default;
+
+  char no_futures;
+  Tuple futures;
+};
+
+template <typename Tuple>
+union SelectFutureUnion<Tuple, false> {
+  constexpr SelectFutureUnion() : no_futures{} {}
+
+  template <typename... Futures>
+  explicit constexpr SelectFutureUnion(std::in_place_t,
+                                       Futures&&... sub_futures)
+      : futures(std::forward<Futures>(sub_futures)...) {}
+
+  PW_CONSTEXPR_CPP20 ~SelectFutureUnion() {}
+
+  char no_futures;
+  Tuple futures;
+};
+
+template <typename Tuple, bool = std::is_trivially_destructible_v<Tuple>>
+struct SelectFutureStorage;
+
+// Storage and lifecycle management for a `SelectFuture`'s sub-futures and
+// state. The sub-futures are alive if and only if `state.is_pendable()`, so no
+// separate flag is needed to track their lifetime.
+template <typename Tuple>
+struct SelectFutureMembers {
+  constexpr SelectFutureMembers() = default;
+
+  template <typename... Futures>
+  explicit constexpr SelectFutureMembers(std::in_place_t,
+                                         Futures&&... sub_futures)
+      : storage(std::in_place, std::forward<Futures>(sub_futures)...),
+        state(FutureState::kPending) {}
+
+  SelectFutureMembers(const SelectFutureMembers&) = delete;
+  SelectFutureMembers& operator=(const SelectFutureMembers&) = delete;
+  SelectFutureMembers(SelectFutureMembers&&) = delete;
+  SelectFutureMembers& operator=(SelectFutureMembers&&) = delete;
+  ~SelectFutureMembers() = default;
+
+  constexpr Tuple& futures() { return storage.futures; }
+
+  void Complete() {
+    state.MarkComplete();
+    // Destroy (and thereby cancel) all sub-futures.
+    std::destroy_at(&storage.futures);
+  }
+
+  PW_CONSTEXPR_CPP20 void Reset() {
+    if (state.is_pendable()) {
+      state = FutureState();
+      std::destroy_at(&storage.futures);
+    }
+  }
+
+  // Moves the sub-futures, if any, from `other`, then destroys `other`'s
+  // sub-futures. The sub-futures in `this` must not be alive.
+  PW_CONSTEXPR_CPP20 void MoveFrom(SelectFutureMembers& other) {
+    if (other.state.is_pendable()) {
+      pw::construct_at(&storage.futures, std::move(other.storage.futures));
+      state = std::move(other.state);
+      std::destroy_at(&other.storage.futures);
+    } else {
+      state = std::move(other.state);
+    }
+  }
+
+  PW_CONSTEXPR_CPP20 void MoveAssignFrom(SelectFutureMembers& other) {
+    if (this == &other) {
+      return;
+    }
+    if (state.is_pendable()) {
+      // Move `other` before destroying `this`'s sub-futures in case a
+      // sub-future of `this` transitively owns `other`.
+      SelectFutureStorage<Tuple> temp;
+      temp.MoveFrom(other);
+      Reset();
+      MoveFrom(temp);
+    } else {
+      MoveFrom(other);
+    }
+  }
+
+  SelectFutureUnion<Tuple> storage;
+  FutureState state;
+};
+
+// Specialized so that `SelectFuture` is trivially destructible if its
+// sub-futures are.
+template <typename Tuple, bool>
+struct SelectFutureStorage : SelectFutureMembers<Tuple> {
+  using SelectFutureMembers<Tuple>::SelectFutureMembers;
+  constexpr SelectFutureStorage() = default;
+};
+
+template <typename Tuple>
+struct SelectFutureStorage<Tuple, false> : SelectFutureMembers<Tuple> {
+  using SelectFutureMembers<Tuple>::SelectFutureMembers;
+  constexpr SelectFutureStorage() = default;
+  PW_CONSTEXPR_CPP20 ~SelectFutureStorage() { this->Reset(); }
+};
+
+// Guards `SelectFuture` member types so invalid `Futures` fail cleanly at
+// `SelectFuture`'s `static_assert`s without secondary instantiation errors.
+template <bool kValid, typename... Futures>
+struct SelectFutureTraits {
+  using value_type = OptionalTuple<FutureValue<Futures>...>;
+  using Tuple = std::tuple<Futures...>;
+};
+
+template <typename... Futures>
+struct SelectFutureTraits<false, Futures...> {
+  using value_type = void;
+  using Tuple = std::tuple<>;
+};
+
 }  // namespace internal
 
 /// @submodule{pw_async2,combinators}
 
+/// Future returned by `Select()` that polls multiple sub-futures until at least
+/// one completes.
+///
+/// `SelectFuture` owns its sub-futures by value and destroys all of them in
+/// place once `Pend()` returns `Ready`, cancelling any that did not complete.
+///
+/// Prefer constructing `SelectFuture` via `Select()`. To wait on the same
+/// futures repeatedly without destroying incomplete ones, use `PW_SELECT` or
+/// `PW_CO_SELECT`.
 template <typename... Futures>
-class SelectFuture {
+class [[nodiscard]] SelectFuture {
+ private:
+  static constexpr bool kValidFutures =
+      sizeof...(Futures) > 0 && (!std::is_reference_v<Futures> && ...) &&
+      (!std::is_const_v<Futures> && ...) &&
+      (!std::is_volatile_v<Futures> && ...) && (Future<Futures> && ...);
+
+  using Traits = internal::SelectFutureTraits<kValidFutures, Futures...>;
+  using Tuple = typename Traits::Tuple;
+
+  static constexpr bool kNothrowMove =
+      std::is_nothrow_move_constructible_v<Tuple>;
+
  public:
   static_assert(sizeof...(Futures) > 0,
                 "Cannot select over an empty set of futures");
+  static_assert((!std::is_reference_v<Futures> && ...),
+                "SelectFuture stores futures by value; reference types are not "
+                "supported");
+  static_assert((!std::is_const_v<std::remove_reference_t<Futures>> && ...),
+                "Futures in SelectFuture must not be const");
+  static_assert((!std::is_volatile_v<std::remove_reference_t<Futures>> && ...),
+                "Futures in SelectFuture must not be volatile");
+  static_assert(((std::is_reference_v<Futures> || std::is_const_v<Futures> ||
+                  std::is_volatile_v<Futures> || Future<Futures>) &&
+                 ...),
+                "All types in SelectFuture must be Future types");
 
-  using value_type = OptionalTuple<FutureValue<Futures>...>;
+  /// Output type (`OptionalTuple<FutureValue<Futures>...>`) produced on
+  /// completion, holding the output of each sub-future that completed.
+  using value_type = typename Traits::value_type;
 
+  /// Constructs an empty, non-pendable `SelectFuture`.
   constexpr SelectFuture() = default;
 
-  explicit SelectFuture(Futures&&... futures)
-      : futures_(std::move(futures)...), state_(FutureState::kPending) {}
+  /// Constructs a pendable `SelectFuture` that takes ownership of `futures`.
+  ///
+  /// @param[in] futures The sub-futures to poll concurrently.
+  template <bool kEnable = kValidFutures, std::enable_if_t<kEnable, int> = 0>
+  explicit constexpr SelectFuture(Futures&&... futures)
+      : storage_(std::in_place, std::move(futures)...) {}
 
+  SelectFuture(const SelectFuture&) = delete;
+  SelectFuture& operator=(const SelectFuture&) = delete;
+
+  /// Move-constructs a `SelectFuture`, leaving `other` empty.
+  ///
+  /// @param[in,out] other The `SelectFuture` to move from.
+  PW_CONSTEXPR_CPP20 SelectFuture(SelectFuture&& other) noexcept(kNothrowMove) {
+    storage_.MoveFrom(other.storage_);
+  }
+
+  /// Move-assigns from `other`, cancelling and destroying any active
+  /// sub-futures in `this` and leaving `other` empty.
+  ///
+  /// @param[in,out] other The `SelectFuture` to move from.
+  /// @returns A reference to `this`.
+  PW_CONSTEXPR_CPP20 SelectFuture& operator=(SelectFuture&& other) noexcept(
+      kNothrowMove) {
+    storage_.MoveAssignFrom(other.storage_);
+    return *this;
+  }
+
+  /// Destroys the `SelectFuture`, cancelling any active sub-futures.
+  ~SelectFuture() = default;
+
+  /// Polls each pendable sub-future in order, completing once at least one
+  /// returns `Ready`.
+  ///
+  /// When `Pend()` returns `Ready`, all sub-futures (including any that did not
+  /// complete) are immediately destroyed in place.
+  ///
+  /// @pre `is_pendable()` is `true` and at least one sub-future is pendable.
+  /// @param[in,out] cx The asynchronous `Context` used to register wakers.
+  /// @returns `Ready` with an `OptionalTuple` of all completed outputs if one
+  /// or more sub-futures completed, or `Pending` otherwise.
   Poll<value_type> Pend(Context& cx) {
+    PW_ASSERT(is_pendable());
     Poll<value_type> poll = PendAll(cx, kTupleIndexSequence);
     if (poll.IsReady()) {
-      state_.MarkComplete();
-      futures_ = std::tuple<Futures...>();
+      storage_.Complete();
     }
     return poll;
   }
 
+  /// Checks whether `Pend()` may be called.
+  ///
+  /// @returns `true` if the `SelectFuture` holds active sub-futures and has not
+  /// yet completed.
   [[nodiscard]] constexpr bool is_pendable() const {
-    return state_.is_pendable();
+    return storage_.state.is_pendable();
   }
+
+  /// Checks whether the `SelectFuture` has completed.
+  ///
+  /// @returns `true` if a previous call to `Pend()` returned `Ready`.
   [[nodiscard]] constexpr bool is_complete() const {
-    return state_.is_complete();
+    return storage_.state.is_complete();
   }
 
  private:
   static constexpr auto kTupleIndexSequence =
       std::make_index_sequence<sizeof...(Futures)>();
 
-  enum State : uint8_t {
-    kDefaultConstructed,
-    kPendable,
-    kComplete,
-  };
-
   /// Pends every sub-future, returning the results of each that is ready.
-  template <size_t... Is>
-  Poll<value_type> PendAll(Context& cx, std::index_sequence<Is...>) {
-    return internal::PendSelect(cx, std::get<Is>(futures_)...);
+  template <size_t... kIndices>
+  Poll<value_type> PendAll(Context& cx, std::index_sequence<kIndices...>) {
+    return internal::PendSelectImpl(cx,
+                                    std::index_sequence<kIndices...>(),
+                                    std::get<kIndices>(storage_.futures())...);
   }
 
-  std::tuple<Futures...> futures_;
-  FutureState state_;
+  internal::SelectFutureStorage<Tuple> storage_;
 };
 
 template <typename... Futures>
@@ -196,11 +413,36 @@ SelectFuture(Futures&&...) -> SelectFuture<Futures...>;
 /// `Select` takes ownership of its futures and destroys all of them once it
 /// completes, including those that did not complete. To wait on the same
 /// futures repeatedly, such as in a loop, use `PW_SELECT` or `PW_CO_SELECT`.
+///
+/// @param[in] futures The futures to take ownership of and poll concurrently.
+/// @returns A `SelectFuture` owning `futures`.
 template <typename... Futures>
-SelectFuture<Futures...> Select(Futures&&... futures) {
-  static_assert((Future<Futures> && ...),
+constexpr auto Select(Futures&&... futures) {
+  static_assert(sizeof...(Futures) > 0,
+                "Cannot select over an empty set of futures");
+  static_assert((!std::is_lvalue_reference_v<Futures> && ...),
+                "Select takes ownership of its futures; pass rvalues "
+                "(std::move) or use PW_SELECT to select in place");
+  static_assert((!std::is_rvalue_reference_v<Futures> && ...),
+                "Do not specify explicit reference template arguments to "
+                "Select");
+  static_assert((!std::is_const_v<std::remove_reference_t<Futures>> && ...),
+                "Futures passed to Select must not be const");
+  static_assert((!std::is_volatile_v<std::remove_reference_t<Futures>> && ...),
+                "Futures passed to Select must not be volatile");
+  static_assert(((std::is_reference_v<Futures> || std::is_const_v<Futures> ||
+                  std::is_volatile_v<Futures> || Future<Futures>) &&
+                 ...),
                 "All arguments to Select must be Future types");
-  return SelectFuture(std::forward<Futures>(futures)...);
+  if constexpr (sizeof...(Futures) > 0 &&
+                (!std::is_reference_v<Futures> && ...) &&
+                (!std::is_const_v<Futures> && ...) &&
+                (!std::is_volatile_v<Futures> && ...) &&
+                (Future<Futures> && ...)) {
+    return SelectFuture<Futures...>(std::forward<Futures>(futures)...);
+  } else {
+    return 0;
+  }
 }
 
 /// @endsubmodule

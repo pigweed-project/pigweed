@@ -14,7 +14,10 @@
 
 #include "pw_async2/select.h"
 
-#include <variant>
+#include <optional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
@@ -24,6 +27,7 @@
 #include "pw_async2/value_future.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/optional_tuple.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
 
@@ -48,6 +52,20 @@ using ::pw::async2::VoidFuture;
 struct LiteralFuture {
   using value_type = int;
   constexpr LiteralFuture() = default;
+  constexpr bool is_pendable() const { return true; }
+  constexpr bool is_complete() const { return false; }
+  constexpr pw::async2::Poll<int> Pend(pw::async2::Context&) {
+    return pw::async2::Pending();
+  }
+};
+
+struct ConstexprDtorFuture {
+  using value_type = int;
+  constexpr ConstexprDtorFuture() = default;
+  ConstexprDtorFuture(ConstexprDtorFuture&&) = default;
+  ConstexprDtorFuture& operator=(ConstexprDtorFuture&&) = default;
+  PW_CONSTEXPR_CPP20 ~ConstexprDtorFuture() {}
+  constexpr bool is_pendable() const { return true; }
   constexpr bool is_complete() const { return false; }
   constexpr pw::async2::Poll<int> Pend(pw::async2::Context&) {
     return pw::async2::Pending();
@@ -56,14 +74,87 @@ struct LiteralFuture {
 
 static_assert(pw::async2::Future<
               SelectFuture<LiteralFuture, LiteralFuture, LiteralFuture>>);
+static_assert(pw::async2::Future<SelectFuture<ConstexprDtorFuture>>);
 static_assert(
     pw::async2::Future<
         SelectFuture<ValueFuture<int>, ValueFuture<int>, ValueFuture<char>>>);
+static_assert(std::is_trivially_destructible_v<
+              SelectFuture<LiteralFuture, LiteralFuture, LiteralFuture>>);
+static_assert(
+    !std::is_trivially_destructible_v<SelectFuture<ConstexprDtorFuture>>);
+static_assert(
+    !std::is_trivially_destructible_v<SelectFuture<ValueFuture<int>>>);
+static_assert(std::is_nothrow_move_constructible_v<
+              SelectFuture<ValueFuture<int>, ValueFuture<char>>>);
+static_assert(std::is_nothrow_move_assignable_v<
+              SelectFuture<ValueFuture<int>, ValueFuture<char>>>);
+static_assert(!std::is_copy_constructible_v<SelectFuture<LiteralFuture>>);
+static_assert(!std::is_copy_assignable_v<SelectFuture<LiteralFuture>>);
+
+template <typename... Futures>
+struct ExpectedSelectFutureLayout {
+  std::tuple<Futures...> futures;
+  FutureState state;
+};
+static_assert(sizeof(SelectFuture<LiteralFuture, LiteralFuture>) ==
+              sizeof(ExpectedSelectFutureLayout<LiteralFuture, LiteralFuture>));
+static_assert(
+    sizeof(SelectFuture<ValueFuture<int>, ValueFuture<char>>) ==
+    sizeof(ExpectedSelectFutureLayout<ValueFuture<int>, ValueFuture<char>>));
+static_assert(
+    alignof(SelectFuture<ValueFuture<int>, ValueFuture<char>>) ==
+    alignof(ExpectedSelectFutureLayout<ValueFuture<int>, ValueFuture<char>>));
 
 PW_CONSTEXPR_TEST(SelectFuture, DefaultConstruct, {
   SelectFuture<LiteralFuture, LiteralFuture, LiteralFuture> future;
   PW_TEST_EXPECT_FALSE(future.is_pendable());
   PW_TEST_EXPECT_FALSE(future.is_complete());
+});
+
+PW_CONSTEXPR_TEST(SelectFuture, ConstructFromFutures, {
+  auto future = Select(LiteralFuture{}, LiteralFuture{});
+  PW_TEST_EXPECT_TRUE(future.is_pendable());
+  PW_TEST_EXPECT_FALSE(future.is_complete());
+});
+
+PW_CONSTEXPR_TEST_IF_CPP20(SelectFuture, MoveConstructAndAssign, {
+  auto first = Select(LiteralFuture{}, LiteralFuture{});
+  auto moved = std::move(first);
+  PW_TEST_EXPECT_FALSE(first.is_pendable());  // NOLINT(bugprone-use-after-move)
+  PW_TEST_EXPECT_TRUE(moved.is_pendable());
+
+  SelectFuture<LiteralFuture, LiteralFuture> assigned;
+  assigned = std::move(moved);
+  PW_TEST_EXPECT_FALSE(moved.is_pendable());  // NOLINT(bugprone-use-after-move)
+  PW_TEST_EXPECT_TRUE(assigned.is_pendable());
+
+  auto replacement = Select(LiteralFuture{}, LiteralFuture{});
+  assigned = std::move(replacement);
+  PW_TEST_EXPECT_FALSE(
+      replacement.is_pendable());  // NOLINT(bugprone-use-after-move)
+  PW_TEST_EXPECT_TRUE(assigned.is_pendable());
+
+  auto nested = Select(Select(LiteralFuture{}), LiteralFuture{});
+  PW_TEST_EXPECT_TRUE(nested.is_pendable());
+});
+
+PW_CONSTEXPR_TEST_IF_CPP20(SelectFuture, NonTrivialConstexprDestructor, {
+  SelectFuture<ConstexprDtorFuture> empty;
+  PW_TEST_EXPECT_FALSE(empty.is_pendable());
+
+  auto active = Select(ConstexprDtorFuture{});
+  PW_TEST_EXPECT_TRUE(active.is_pendable());
+
+  auto moved = std::move(active);
+  PW_TEST_EXPECT_FALSE(
+      active.is_pendable());  // NOLINT(bugprone-use-after-move)
+  PW_TEST_EXPECT_TRUE(moved.is_pendable());
+
+  empty = std::move(moved);
+  PW_TEST_EXPECT_TRUE(empty.is_pendable());
+
+  empty = Select(ConstexprDtorFuture{});
+  PW_TEST_EXPECT_TRUE(empty.is_pendable());
 });
 
 TEST(SelectFuture, Pend_OneReady) {
@@ -202,6 +293,537 @@ TEST(SelectFuture, DestroysFuturesOnCompletion) {
   // Even though only one future was resolved, both should be destroyed.
   EXPECT_FALSE(provider1.has_active_futures());
   EXPECT_FALSE(provider2.has_active_futures());
+}
+
+// Counts constructions, move assignments, and destructions of a type.
+struct LifetimeCounts {
+  int constructed = 0;
+  int default_constructed = 0;
+  int move_assigned = 0;
+  int destroyed = 0;
+
+  int alive() const { return constructed - destroyed; }
+};
+
+LifetimeCounts counted_value_lifetimes;
+LifetimeCounts counting_future_lifetimes;
+
+class CountedValue {
+ public:
+  explicit CountedValue(int value) : value_(value) {
+    counted_value_lifetimes.constructed += 1;
+  }
+
+  CountedValue(const CountedValue& other) : value_(other.value_) {
+    counted_value_lifetimes.constructed += 1;
+  }
+  CountedValue& operator=(const CountedValue&) = default;
+
+  CountedValue(CountedValue&& other) : value_(other.value_) {
+    counted_value_lifetimes.constructed += 1;
+  }
+  CountedValue& operator=(CountedValue&&) = default;
+
+  ~CountedValue() { counted_value_lifetimes.destroyed += 1; }
+
+  int value() const { return value_; }
+
+ private:
+  int value_;
+};
+
+// Wraps a ValueFuture<int>, resolving to a CountedValue. Counts its own
+// constructions, move assignments, and destructions.
+class CountingFuture {
+ public:
+  using value_type = CountedValue;
+
+  CountingFuture() {
+    counting_future_lifetimes.constructed += 1;
+    counting_future_lifetimes.default_constructed += 1;
+  }
+
+  explicit CountingFuture(ValueFuture<int>&& future)
+      : future_(std::move(future)) {
+    counting_future_lifetimes.constructed += 1;
+  }
+
+  CountingFuture(CountingFuture&& other) : future_(std::move(other.future_)) {
+    counting_future_lifetimes.constructed += 1;
+  }
+
+  CountingFuture& operator=(CountingFuture&& other) {
+    counting_future_lifetimes.move_assigned += 1;
+    future_ = std::move(other.future_);
+    return *this;
+  }
+
+  ~CountingFuture() { counting_future_lifetimes.destroyed += 1; }
+
+  Poll<CountedValue> Pend(Context& cx) {
+    Poll<int> poll = future_.Pend(cx);
+    if (poll.IsPending()) {
+      return Pending();
+    }
+    return CountedValue(*poll);
+  }
+
+  bool is_pendable() const { return future_.is_pendable(); }
+  bool is_complete() const { return future_.is_complete(); }
+
+ private:
+  ValueFuture<int> future_;
+};
+
+static_assert(pw::async2::Future<CountingFuture>);
+
+class SelectFutureLifetime : public ::testing::Test {
+ protected:
+  SelectFutureLifetime() {
+    counted_value_lifetimes = {};
+    counting_future_lifetimes = {};
+  }
+
+  ~SelectFutureLifetime() override {
+    EXPECT_EQ(counted_value_lifetimes.alive(), 0);
+    EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+    EXPECT_EQ(counting_future_lifetimes.move_assigned, 0);
+  }
+
+  DispatcherForTest dispatcher_;
+  BroadcastValueProvider<int> provider_1_;
+  BroadcastValueProvider<int> provider_2_;
+};
+
+TEST_F(SelectFutureLifetime, CompleteThenDestroy) {
+  int destroyed_on_completion = 0;
+  {
+    auto future = Select(CountingFuture(provider_1_.Get()),
+                         CountingFuture(provider_2_.Get()));
+    EXPECT_EQ(counting_future_lifetimes.alive(), 2);
+    EXPECT_EQ(dispatcher_.RunInTaskUntilStalled(future), Pending());
+
+    provider_2_.Resolve(2);
+    {
+      auto result = dispatcher_.RunInTaskUntilStalled(future);
+      ASSERT_TRUE(result.IsReady());
+      EXPECT_TRUE(future.is_complete());
+      EXPECT_FALSE(future.is_pendable());
+      EXPECT_FALSE(result->has_value<0>());
+      ASSERT_TRUE(result->has_value<1>());
+      EXPECT_EQ(result->value<1>().value(), 2);
+
+      // Both sub-futures are destroyed in place on completion.
+      EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+      EXPECT_EQ(counted_value_lifetimes.alive(), 1);
+      destroyed_on_completion = counting_future_lifetimes.destroyed;
+    }
+    EXPECT_EQ(counted_value_lifetimes.alive(), 0);
+  }
+  // Destroying the completed SelectFuture destroys no additional sub-futures.
+  EXPECT_EQ(counting_future_lifetimes.destroyed, destroyed_on_completion);
+  EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+  EXPECT_EQ(counting_future_lifetimes.move_assigned, 0);
+  EXPECT_GT(counting_future_lifetimes.constructed, 0);
+  EXPECT_GT(counted_value_lifetimes.constructed, 0);
+}
+
+TEST_F(SelectFutureLifetime, DestroyBeforeCompletion) {
+  {
+    auto future = Select(CountingFuture(provider_1_.Get()),
+                         CountingFuture(provider_2_.Get()));
+    EXPECT_EQ(dispatcher_.RunInTaskUntilStalled(future), Pending());
+    EXPECT_EQ(counting_future_lifetimes.alive(), 2);
+  }
+  EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+  EXPECT_EQ(counting_future_lifetimes.destroyed,
+            counting_future_lifetimes.constructed);
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+  EXPECT_EQ(counting_future_lifetimes.move_assigned, 0);
+}
+
+TEST_F(SelectFutureLifetime, MoveBeforeCompletion) {
+  {
+    auto future = Select(CountingFuture(provider_1_.Get()),
+                         CountingFuture(provider_2_.Get()));
+    EXPECT_EQ(dispatcher_.RunInTaskUntilStalled(future), Pending());
+
+    SelectFuture<CountingFuture, CountingFuture> moved(std::move(future));
+    EXPECT_FALSE(future.is_pendable());  // NOLINT(bugprone-use-after-move)
+    EXPECT_FALSE(future.is_complete());  // NOLINT(bugprone-use-after-move)
+    EXPECT_TRUE(moved.is_pendable());
+    EXPECT_FALSE(moved.is_complete());
+    EXPECT_EQ(counting_future_lifetimes.alive(), 2);
+
+    SelectFuture<CountingFuture, CountingFuture> move_assigned;
+    move_assigned = std::move(moved);
+    EXPECT_FALSE(moved.is_pendable());  // NOLINT(bugprone-use-after-move)
+    EXPECT_FALSE(moved.is_complete());  // NOLINT(bugprone-use-after-move)
+    ASSERT_TRUE(move_assigned.is_pendable());
+    EXPECT_FALSE(move_assigned.is_complete());
+    EXPECT_EQ(counting_future_lifetimes.alive(), 2);
+
+    provider_1_.Resolve(1);
+    auto result = dispatcher_.RunInTaskUntilStalled(move_assigned);
+    ASSERT_TRUE(result.IsReady());
+    EXPECT_TRUE(move_assigned.is_complete());
+    ASSERT_TRUE(result->has_value<0>());
+    EXPECT_EQ(result->value<0>().value(), 1);
+    EXPECT_FALSE(result->has_value<1>());
+  }
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+  EXPECT_EQ(counting_future_lifetimes.move_assigned, 0);
+  EXPECT_GT(counting_future_lifetimes.constructed, 0);
+}
+
+TEST_F(SelectFutureLifetime, MoveAssignOverActive) {
+  BroadcastValueProvider<int> provider_3;
+  BroadcastValueProvider<int> provider_4;
+  {
+    auto target = Select(CountingFuture(provider_1_.Get()),
+                         CountingFuture(provider_2_.Get()));
+    auto source = Select(CountingFuture(provider_3.Get()),
+                         CountingFuture(provider_4.Get()));
+    EXPECT_EQ(counting_future_lifetimes.alive(), 4);
+
+    target = std::move(source);
+    EXPECT_FALSE(source.is_pendable());  // NOLINT(bugprone-use-after-move)
+    EXPECT_TRUE(target.is_pendable());
+    EXPECT_EQ(counting_future_lifetimes.alive(), 2);
+
+    provider_4.Resolve(44);
+    auto result = dispatcher_.RunInTaskUntilStalled(target);
+    ASSERT_TRUE(result.IsReady());
+    ASSERT_TRUE(result->has_value<1>());
+    EXPECT_EQ(result->value<1>().value(), 44);
+    EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+  }
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+  EXPECT_EQ(counting_future_lifetimes.move_assigned, 0);
+}
+
+TEST_F(SelectFutureLifetime, ResetBeforeCompletion) {
+  auto active = Select(CountingFuture(provider_1_.Get()),
+                       CountingFuture(provider_2_.Get()));
+  EXPECT_EQ(counting_future_lifetimes.alive(), 2);
+
+  active = {};
+  EXPECT_FALSE(active.is_pendable());
+  EXPECT_FALSE(active.is_complete());
+  EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+}
+
+template <typename T>
+void MoveAssignViaAliases(T& dst, T& src) {
+  dst = std::move(src);
+}
+
+TEST_F(SelectFutureLifetime, SelfMoveAssignEmpty) {
+  SelectFuture<CountingFuture, CountingFuture> empty;
+  MoveAssignViaAliases(empty, empty);
+  EXPECT_FALSE(empty.is_pendable());
+  EXPECT_FALSE(empty.is_complete());
+  EXPECT_EQ(counting_future_lifetimes.constructed, 0);
+}
+
+TEST_F(SelectFutureLifetime, SelfMoveAssignActive) {
+  auto active = Select(CountingFuture(provider_1_.Get()),
+                       CountingFuture(provider_2_.Get()));
+  EXPECT_EQ(dispatcher_.RunInTaskUntilStalled(active), Pending());
+  MoveAssignViaAliases(active, active);
+  ASSERT_TRUE(active.is_pendable());
+  EXPECT_EQ(counting_future_lifetimes.alive(), 2);
+
+  provider_1_.Resolve(99);
+  auto result = dispatcher_.RunInTaskUntilStalled(active);
+  ASSERT_TRUE(result.IsReady());
+  ASSERT_TRUE(result->has_value<0>());
+  EXPECT_EQ(result->value<0>().value(), 99);
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+}
+
+TEST_F(SelectFutureLifetime, SelfMoveAssignCompleted) {
+  auto completed = Select(CountingFuture(provider_1_.Get()),
+                          CountingFuture(provider_2_.Get()));
+  provider_1_.Resolve(99);
+  ASSERT_TRUE(dispatcher_.RunInTaskUntilStalled(completed).IsReady());
+  ASSERT_TRUE(completed.is_complete());
+
+  MoveAssignViaAliases(completed, completed);
+  EXPECT_TRUE(completed.is_complete());
+  EXPECT_FALSE(completed.is_pendable());
+  EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+}
+
+// Sub-future whose destructor records the state of its enclosing SelectFuture
+// while sub-future destruction is in progress.
+class StateCheckingFuture {
+ public:
+  using value_type = int;
+
+  struct ObservedState {
+    int destructor_calls = 0;
+    bool was_pendable = true;
+    bool was_complete = false;
+  };
+
+  StateCheckingFuture() = default;
+  StateCheckingFuture(Poll<int> poll_result,
+                      const SelectFuture<StateCheckingFuture>** owner,
+                      ObservedState* observed)
+      : poll_result_(poll_result), owner_(owner), observed_(observed) {}
+
+  StateCheckingFuture(StateCheckingFuture&& other) noexcept
+      : poll_result_(other.poll_result_),
+        owner_(std::exchange(other.owner_, nullptr)),
+        observed_(std::exchange(other.observed_, nullptr)) {}
+
+  StateCheckingFuture& operator=(StateCheckingFuture&& other) noexcept {
+    if (this != &other) {
+      RecordDestruction();
+      poll_result_ = other.poll_result_;
+      owner_ = std::exchange(other.owner_, nullptr);
+      observed_ = std::exchange(other.observed_, nullptr);
+    }
+    return *this;
+  }
+
+  ~StateCheckingFuture() { RecordDestruction(); }
+
+  Poll<int> Pend(Context&) { return poll_result_; }
+  bool is_pendable() const { return observed_ != nullptr; }
+  bool is_complete() const { return false; }
+
+ private:
+  void RecordDestruction() {
+    if (observed_ != nullptr && owner_ != nullptr && *owner_ != nullptr) {
+      observed_->destructor_calls += 1;
+      observed_->was_pendable = (*owner_)->is_pendable();
+      observed_->was_complete = (*owner_)->is_complete();
+    }
+  }
+
+  Poll<int> poll_result_ = Pending();
+  const SelectFuture<StateCheckingFuture>** owner_ = nullptr;
+  ObservedState* observed_ = nullptr;
+};
+
+static_assert(pw::async2::Future<StateCheckingFuture>);
+
+TEST(SelectFuture, CompleteUpdatesStateBeforeSubfutureDestruction) {
+  DispatcherForTest dispatcher;
+  const SelectFuture<StateCheckingFuture>* owner = nullptr;
+  StateCheckingFuture::ObservedState observed;
+  auto future = Select(StateCheckingFuture(Ready(7), &owner, &observed));
+  owner = &future;
+
+  auto result = dispatcher.RunInTaskUntilStalled(future);
+  ASSERT_TRUE(result.IsReady());
+  EXPECT_EQ(observed.destructor_calls, 1);
+  EXPECT_FALSE(observed.was_pendable);
+  EXPECT_TRUE(observed.was_complete);
+}
+
+TEST(SelectFuture, MoveAssignUpdatesStateBeforeSubfutureDestruction) {
+  const SelectFuture<StateCheckingFuture>* owner = nullptr;
+  StateCheckingFuture::ObservedState observed;
+  auto future = Select(StateCheckingFuture(Pending(), &owner, &observed));
+  owner = &future;
+
+  future = {};
+  EXPECT_EQ(observed.destructor_calls, 1);
+  EXPECT_FALSE(observed.was_pendable);
+  EXPECT_FALSE(observed.was_complete);
+}
+
+TEST(SelectFuture, DestroyUpdatesStateBeforeSubfutureDestruction) {
+  const SelectFuture<StateCheckingFuture>* owner = nullptr;
+  StateCheckingFuture::ObservedState observed;
+  {
+    auto future = Select(StateCheckingFuture(Pending(), &owner, &observed));
+    owner = &future;
+  }
+  EXPECT_EQ(observed.destructor_calls, 1);
+  EXPECT_FALSE(observed.was_pendable);
+  EXPECT_FALSE(observed.was_complete);
+}
+
+struct OwnedSelectFuture {
+  using value_type = int;
+
+  OwnedSelectFuture() = default;
+  explicit OwnedSelectFuture(
+      int value,
+      std::optional<SelectFuture<OwnedSelectFuture>>* owned = nullptr)
+      : value_(value), owned_(owned), pendable_(true) {}
+
+  OwnedSelectFuture(OwnedSelectFuture&& other) noexcept
+      : value_(other.value_),
+        owned_(std::exchange(other.owned_, nullptr)),
+        pendable_(std::exchange(other.pendable_, false)) {}
+
+  OwnedSelectFuture& operator=(OwnedSelectFuture&& other) noexcept {
+    if (this != &other) {
+      DestroyOwned();
+      value_ = other.value_;
+      owned_ = std::exchange(other.owned_, nullptr);
+      pendable_ = std::exchange(other.pendable_, false);
+    }
+    return *this;
+  }
+
+  ~OwnedSelectFuture() {
+    EXPECT_FALSE(destroyed_);
+    destroyed_ = true;
+    DestroyOwned();
+  }
+
+  Poll<int> Pend(Context&) {
+    pendable_ = false;
+    complete_ = true;
+    return Ready(value_);
+  }
+
+  bool is_pendable() const { return pendable_; }
+  bool is_complete() const { return complete_; }
+
+  void DestroyOwned() {
+    if (owned_ != nullptr) {
+      owned_->reset();
+      owned_ = nullptr;
+    }
+  }
+
+  int value_ = 0;
+  std::optional<SelectFuture<OwnedSelectFuture>>* owned_ = nullptr;
+  bool pendable_ = false;
+  bool complete_ = false;
+  bool destroyed_ = false;
+};
+
+static_assert(pw::async2::Future<OwnedSelectFuture>);
+
+TEST(SelectFuture, MoveAssignFromTransitivelyOwnedPendableFuture) {
+  DispatcherForTest dispatcher;
+  std::optional<SelectFuture<OwnedSelectFuture>> child;
+  child.emplace(Select(OwnedSelectFuture(42)));
+  auto parent = Select(OwnedSelectFuture(1, &child));
+
+  parent = std::move(*child);
+  ASSERT_TRUE(parent.is_pendable());
+  auto result = dispatcher.RunInTaskUntilStalled(parent);
+  ASSERT_TRUE(result.IsReady());
+  ASSERT_TRUE(result->has_value<0>());
+  EXPECT_EQ(result->value<0>(), 42);
+}
+
+TEST(SelectFuture, MoveAssignFromTransitivelyOwnedCompletedFuture) {
+  DispatcherForTest dispatcher;
+  std::optional<SelectFuture<OwnedSelectFuture>> child;
+  child.emplace(Select(OwnedSelectFuture(7)));
+  ASSERT_TRUE(dispatcher.RunInTaskUntilStalled(*child).IsReady());
+  ASSERT_TRUE(child->is_complete());
+  auto parent = Select(OwnedSelectFuture(1, &child));
+
+  parent = std::move(*child);
+  EXPECT_TRUE(parent.is_complete());
+  EXPECT_FALSE(parent.is_pendable());
+}
+
+TEST_F(SelectFutureLifetime, MoveAfterCompletion) {
+  {
+    auto future = Select(CountingFuture(provider_1_.Get()),
+                         CountingFuture(provider_2_.Get()));
+    provider_1_.Resolve(1);
+    provider_2_.Resolve(2);
+    {
+      auto result = dispatcher_.RunInTaskUntilStalled(future);
+      ASSERT_TRUE(result.IsReady());
+      ASSERT_TRUE(result->has_value<0>());
+      ASSERT_TRUE(result->has_value<1>());
+      EXPECT_EQ(result->value<0>().value(), 1);
+      EXPECT_EQ(result->value<1>().value(), 2);
+    }
+    EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+
+    SelectFuture<CountingFuture, CountingFuture> moved(std::move(future));
+    EXPECT_FALSE(future.is_pendable());  // NOLINT(bugprone-use-after-move)
+    EXPECT_FALSE(future.is_complete());  // NOLINT(bugprone-use-after-move)
+    EXPECT_TRUE(moved.is_complete());
+    EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+
+    auto move_assigned =
+        Select(CountingFuture(provider_1_.Get()), CountingFuture());
+    EXPECT_EQ(counting_future_lifetimes.default_constructed, 1);
+    EXPECT_EQ(counting_future_lifetimes.alive(), 2);
+    move_assigned = std::move(moved);
+    EXPECT_FALSE(moved.is_pendable());  // NOLINT(bugprone-use-after-move)
+    EXPECT_FALSE(moved.is_complete());  // NOLINT(bugprone-use-after-move)
+    EXPECT_TRUE(move_assigned.is_complete());
+    EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+  }
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 1);
+  EXPECT_EQ(counting_future_lifetimes.move_assigned, 0);
+  EXPECT_GT(counting_future_lifetimes.constructed, 0);
+}
+
+TEST_F(SelectFutureLifetime, ReArmAfterCompletion) {
+  auto future = Select(CountingFuture(provider_1_.Get()),
+                       CountingFuture(provider_2_.Get()));
+  provider_1_.Resolve(1);
+  ASSERT_TRUE(dispatcher_.RunInTaskUntilStalled(future).IsReady());
+  ASSERT_TRUE(future.is_complete());
+  EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+
+  BroadcastValueProvider<int> provider_3;
+  BroadcastValueProvider<int> provider_4;
+  future = Select(CountingFuture(provider_3.Get()),
+                  CountingFuture(provider_4.Get()));
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+  EXPECT_EQ(counting_future_lifetimes.alive(), 2);
+
+  provider_3.Resolve(3);
+  auto result = dispatcher_.RunInTaskUntilStalled(future);
+  ASSERT_TRUE(result.IsReady());
+  ASSERT_TRUE(result->has_value<0>());
+  EXPECT_EQ(result->value<0>().value(), 3);
+  EXPECT_TRUE(future.is_complete());
+  EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+}
+
+TEST_F(SelectFutureLifetime, ResetAfterCompletion) {
+  auto future = Select(CountingFuture(provider_1_.Get()),
+                       CountingFuture(provider_2_.Get()));
+  provider_1_.Resolve(1);
+  ASSERT_TRUE(dispatcher_.RunInTaskUntilStalled(future).IsReady());
+  ASSERT_TRUE(future.is_complete());
+
+  future = {};
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+  EXPECT_EQ(counting_future_lifetimes.alive(), 0);
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+}
+
+TEST_F(SelectFutureLifetime, DefaultConstructThenDestroy) {
+  {
+    SelectFuture<CountingFuture, CountingFuture> future;
+    EXPECT_FALSE(future.is_pendable());
+    EXPECT_FALSE(future.is_complete());
+
+    SelectFuture<CountingFuture, CountingFuture> moved(std::move(future));
+    EXPECT_FALSE(moved.is_pendable());
+    EXPECT_FALSE(moved.is_complete());
+  }
+  EXPECT_EQ(counting_future_lifetimes.constructed, 0);
+  EXPECT_EQ(counting_future_lifetimes.default_constructed, 0);
+  EXPECT_EQ(counting_future_lifetimes.move_assigned, 0);
+  EXPECT_EQ(counted_value_lifetimes.constructed, 0);
 }
 
 TEST(SelectFuture, Pend_VoidFuture) {
@@ -470,6 +1092,40 @@ PW_NC_EXPECT("must not be const");
                                     const ValueFuture<int>& future) {
   PW_SELECT(auto result, cx, future);
   return Ready();
+}
+
+#elif PW_NC_TEST(PwSelectRejectsNonFuture)
+PW_NC_EXPECT("All arguments to PW_SELECT or PW_CO_SELECT must be futures");
+
+[[maybe_unused]] Poll<> PwSelectNonFuture(Context& cx, int& not_a_future) {
+  PW_SELECT(auto result, cx, not_a_future);
+  return Ready();
+}
+
+#elif PW_NC_TEST(SelectRejectsLvalues)
+PW_NC_EXPECT("Select takes ownership of its futures");
+
+void SelectLvalue(ValueFuture<int>& future) {
+  [[maybe_unused]] auto selected = Select(future);
+}
+
+#elif PW_NC_TEST(SelectRejectsConstFutures)
+PW_NC_EXPECT("Futures passed to Select must not be const");
+
+void SelectConstRvalue(const ValueFuture<int>&& future) {
+  [[maybe_unused]] auto selected = Select(std::move(future));
+}
+
+#elif PW_NC_TEST(SelectRejectsNonFuture)
+PW_NC_EXPECT("All arguments to Select must be Future types");
+
+void SelectNonFuture() { [[maybe_unused]] auto selected = Select(42); }
+
+#elif PW_NC_TEST(SelectFutureRejectsNonFuture)
+PW_NC_EXPECT("All types in SelectFuture must be Future types");
+
+void InstantiateNonFutureSelectFuture() {
+  [[maybe_unused]] SelectFuture<int> selected;
 }
 
 #endif  // PW_NC_TEST

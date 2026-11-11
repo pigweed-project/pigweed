@@ -563,6 +563,8 @@ pw_add_library(pw_async2.select INTERFACE
     pw_assert.assert
     pw_async2
     pw_containers.optional_tuple
+    pw_memory.construct_at
+    pw_polyfill
     pw_preprocessor
 )
 
@@ -576,6 +578,7 @@ pw_add_test(pw_async2.select_test
     pw_async2.value_future
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_containers.optional_tuple
+    pw_polyfill
     pw_unit_test.constexpr
   GROUPS
     modules
