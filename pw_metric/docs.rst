@@ -669,6 +669,30 @@ correctly, even when the objects are allocated globally:
    Be extra careful about **static global metric registration**. Consider using
    the ``Init()`` pattern.
 
+Constant initialization with ``PW_CONSTINIT``
+---------------------------------------------
+``Group`` and ``TypedMetric`` constructors, ``Group::Add()``, and list lookup
+helpers are ``constexpr``. A self-contained static object that owns its own
+metric group and metrics (including members declared with :cc:`PW_METRIC_GROUP`
+and :cc:`PW_METRIC`) can be constant-initialized with ``PW_CONSTINIT`` so that
+its internal metric tree is wired at compile time without dynamic static
+constructors:
+
+.. code-block:: cpp
+
+   struct SubsystemMetrics {
+     PW_METRIC_GROUP(root, "subsystem");
+     PW_METRIC(root, rx_bytes, "rx_bytes", 0u);
+     PW_METRIC(root, tx_bytes, "tx_bytes", 0u);
+   };
+
+   PW_CONSTINIT SubsystemMetrics subsystem_metrics;
+
+Note that ``PW_CONSTINIT`` cannot mutate a separate external global variable
+such as :cc:`global_groups <pw::metric::global_groups>` at compile time; link
+constant-initialized root groups into external lists during ``Init()`` at
+runtime.
+
 Metric member order matters in objects
 --------------------------------------
 The order of declaring in-class groups and metrics matters if the metrics are
