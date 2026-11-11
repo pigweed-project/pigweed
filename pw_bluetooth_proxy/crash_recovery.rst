@@ -358,6 +358,27 @@ regions or together in a unified structure:
 * Individual record methods ``Update()`` and ``MatchesKey()`` allow custom
   searching and in-place updates when maintaining custom persistent layouts.
 
+Handling controller and host resets
+===================================
+When the Bluetooth controller or host stack resets (including during a Subsystem
+Restart), active subsystems emit reset state updates to clear their persisted
+snapshots and reset ``snapshot_incomplete`` to ``false``. The Platform Container
+is responsible for triggering subsystem resets as follows:
+
+* **ProxyHost:** Automatically resets when an ``HCI_Reset`` ``Command_Complete``
+  event passes through the proxy. For out-of-band or SSR resets where no
+  ``HCI_Reset`` ``Command_Complete`` event is observed, the Container must
+  explicitly invoke ``proxy_host.Reset()``.
+* **CommandMultiplexer and SniffOffloadManager (if used):** Do not automatically
+  reset on ``HCI_Reset`` events. The Container must explicitly invoke
+  ``Reset()`` on ``hci::CommandMultiplexer`` and ``hci::SniffOffloadManager`` on
+  any controller or host reset.
+* **RfcommManager (if used):** The Container must invoke
+  ``rfcomm_manager.DeregisterAndCloseChannels(rfcomm::RfcommEvent::kReset)`` on
+  any controller or host reset so ``RfcommSnapshot`` (including
+  ``snapshot_incomplete``) is cleared even when no RFCOMM channels are currently
+  open.
+
 ----------------------
 Implementation example
 ----------------------
