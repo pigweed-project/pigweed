@@ -42,7 +42,7 @@ _pw_bluetooth_proxy_gatt_deps = [
 
 _pw_bluetooth_proxy_gatt_srcs = [ "gatt.cc" ]
 
-# LINT.ThenChange(Anfroid.bp, gatt.bzl, CMakeLists.txt)
+# LINT.ThenChange(Android.bp, gatt.bzl, CMakeLists.txt)
 
 # LINT.IfChange
 
