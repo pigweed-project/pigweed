@@ -253,6 +253,10 @@ class PicoBoardInfo:
         """
         return self._lookup_device().serial_number
 
+    def usb_device(self) -> usb.core.Device:
+        """Queries and returns the underlying USB device."""
+        return self._lookup_device()
+
     @staticmethod
     def vendor_id() -> int:
         return _RASPBERRY_PI_VENDOR_ID

@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_binary")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -38,5 +38,55 @@ pw_py_binary(
     deps = [
         "//targets/rp2040/py:rp2040_utils",
         "@rules_python//python/runfiles",
+    ],
+)
+
+pw_py_library(
+    name = "debug_probe",
+    srcs = [
+        "pw_rp2350_debug_probe/__init__.py",
+        "pw_rp2350_debug_probe/cli.py",
+        "pw_rp2350_debug_probe/debug_probe.py",
+    ],
+    imports = ["."],
+    deps = [
+        "//pw_cli/py",
+        "//pw_cli/py:interactive_prompts",
+        "//targets/rp2040/py:rp2040_utils",
+        "@pigweed_python_packages//pyusb",
+    ],
+)
+
+pw_py_binary(
+    name = "debug_probe_cli",
+    srcs = [
+        "pw_rp2350_debug_probe/cli.py",
+    ],
+    main = "pw_rp2350_debug_probe/cli.py",
+    deps = [
+        ":debug_probe",
+        "@pigweed_python_packages//pyusb",
+    ],
+)
+
+pw_py_test(
+    name = "debug_probe_test",
+    size = "small",
+    srcs = ["debug_probe_test.py"],
+    deps = [
+        ":debug_probe",
+        "//targets/rp2040/py:rp2040_utils",
+        "@pigweed_python_packages//pyusb",
+    ],
+)
+
+pw_py_test(
+    name = "cli_test",
+    size = "small",
+    srcs = ["cli_test.py"],
+    deps = [
+        ":debug_probe",
+        "//targets/rp2040/py:rp2040_utils",
+        "@pigweed_python_packages//pyusb",
     ],
 )
