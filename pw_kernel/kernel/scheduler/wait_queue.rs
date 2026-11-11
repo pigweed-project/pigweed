@@ -115,6 +115,8 @@ impl<K: Kernel> WakeList<K> {
         kernel: K,
         mut sched: SpinLockGuard<'a, K, SchedulerState<K>>,
     ) -> SpinLockGuard<'a, K, SchedulerState<K>> {
+        use crate::scheduler::algorithm::SchedulerAlgorithmInterface as _;
+
         let mut woke_any = false;
         while let Some(thread) = self.threads.pop_head() {
             wait_queue_debug!(
@@ -203,6 +205,8 @@ impl<K: Kernel> SchedLockGuard<'_, '_, K, WaitQueue<K>> {
     // Caller guarantees that thread is non-null, valid, and process_timeout
     // has exclusive access to `waiting_thread`.
     unsafe fn process_timeout(&mut self, waiting_thread: *mut Thread<K>) -> Option<Error> {
+        use crate::scheduler::algorithm::SchedulerAlgorithmInterface as _;
+
         if !(unsafe { (*waiting_thread).state }.is_waiting()) {
             // Thread has already been woken.
             return None;

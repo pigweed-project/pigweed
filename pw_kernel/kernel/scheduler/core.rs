@@ -30,7 +30,9 @@ use pw_time_core::Instant;
 
 #[cfg(feature = "user_space")]
 use crate::object::{NullObjectTable, SignalUpdate, Signals};
-use crate::scheduler::algorithm::{RescheduleReason, SchedulerAlgorithm};
+use crate::scheduler::algorithm::{
+    RescheduleReason, SchedulerAlgorithm, SchedulerAlgorithmInterface as _,
+};
 use crate::scheduler::locks::WaitQueueLock;
 use crate::scheduler::process::{Process, ProcessHandle, ProcessListAdapter, ProcessState};
 use crate::scheduler::thread::{
@@ -648,8 +650,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             #[allow(unused_mut)]
             let mut thread = unsafe {
                 self.termination_queue
-                    .remove_element(thread_handle.thread)
-                    .unwrap_unchecked()
+                    .remove_element_unchecked(thread_handle.thread)
             };
 
             // Clear JOINABLE signal.
@@ -860,8 +861,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             #[allow(unused_mut)]
             let mut process_box = unsafe {
                 self.process_list
-                    .remove_element(process_handle.process)
-                    .unwrap_unchecked()
+                    .remove_element_unchecked(process_handle.process)
             };
             process_box.state = ProcessState::Inactive;
 
@@ -1000,7 +1000,7 @@ pub(crate) fn context_switch<K: Kernel>(
     // Pop a new thread off the head of the run queue.
     // At the moment cannot handle an empty queue, so will panic in that case.
     // TODO: Implement either an idle thread or a special idle routine for that case.
-    let Some(mut new_thread) = sched_state.algorithm.get_next_thread() else {
+    let Some(mut new_thread) = sched_state.algorithm.pop_next_thread() else {
         pw_assert::panic!("Run queue empty: no runnable threads (idle thread missing or blocked?)");
     };
 

@@ -87,12 +87,30 @@ impl<T, A: Adapter<T>> ForeignList<T, A> {
     // often shared via raw pointers).
 
     /// # Safety
-    /// Caller ensures the element is a valid pointer to an instance of T.
+    /// Caller ensures `element` is a valid pointer to an instance of `T` that
+    /// is either unlinked or currently linked in `self`. Caller must also have
+    /// exclusive access to the list and its members for the duration of the
+    /// call: no live `&`/`&mut` references to `element` or its neighbors may
+    /// be used across it.
     pub unsafe fn remove_element(&mut self, element: NonNull<T>) -> Option<ForeignBox<T>> {
         unsafe {
             self.list
                 .unlink_element(element)
                 .map(|element| ForeignBox::new(element))
+        }
+    }
+
+    /// # Safety
+    /// Caller ensures `element` is a valid pointer to an instance of `T` that
+    /// is currently linked in `self`. Caller must also have exclusive access
+    /// to the list and its members for the duration of the call: no live
+    /// `&`/`&mut` references to `element` or its neighbors may be used across
+    /// it.
+    #[must_use]
+    pub unsafe fn remove_element_unchecked(&mut self, element: NonNull<T>) -> ForeignBox<T> {
+        unsafe {
+            self.list.unlink_element_unchecked(element);
+            ForeignBox::new(element)
         }
     }
 }
@@ -237,8 +255,14 @@ impl<T, A: Adapter<T>> RandomAccessForeignList<T, A> {
 
     #[must_use]
     pub fn remove_element(&mut self, key: RandomAccessKey<T, A>) -> ForeignBox<T> {
-        // SAFETY: Caller ensures the element is a valid pointer to an instance of T.
-        unsafe { self.list.remove_element(key.ptr).unwrap_unchecked() }
+        // SAFETY: `key` was created when inserting `key.ptr` into a
+        // `RandomAccessForeignList<T, A>` and is consumed by value here, so the
+        // element is still linked. Callers must only present keys to the list
+        // that issued them.
+        //
+        // TODO: b/582868884 - `RandomAccessKey` is not tied to the list that
+        // issued it, so a key from another list can be passed here in safe code.
+        unsafe { self.list.remove_element_unchecked(key.ptr) }
     }
 }
 
@@ -511,6 +535,85 @@ mod tests {
         validate_list(&list, &[1, 2])?;
         drain_list(&mut list);
         Ok(())
+    }
+
+    #[test]
+    fn remove_element_unchecked_removes_head_middle_and_tail() -> unittest::Result<()> {
+        let mut element1 = TestMember {
+            value: 1,
+            link: Link::new(),
+        };
+        let mut element2 = TestMember {
+            value: 2,
+            link: Link::new(),
+        };
+        let mut element3 = TestMember {
+            value: 3,
+            link: Link::new(),
+        };
+
+        let mut list = ForeignList::<TestMember, TestAdapter>::new();
+        list.push_back(unsafe { ForeignBox::new_from_ptr(&raw mut element1) });
+        list.push_back(unsafe { ForeignBox::new_from_ptr(&raw mut element2) });
+        list.push_back(unsafe { ForeignBox::new_from_ptr(&raw mut element3) });
+
+        // Run the assertions in a closure so that, on failure, the list can
+        // be drained before it is dropped. Otherwise `ForeignList::drop`
+        // panics on the non-empty list and masks the real assertion failure.
+        let result = (|| -> unittest::Result<()> {
+            let removed2 =
+                unsafe { list.remove_element_unchecked(NonNull::new(&raw mut element2).unwrap()) };
+            unittest::assert_true!(removed2.link.is_unlinked());
+            unittest::assert_eq!(removed2.consume(), NonNull::new(&raw mut element2).unwrap());
+            validate_list(&list, &[1, 3])?;
+
+            let removed3 =
+                unsafe { list.remove_element_unchecked(NonNull::new(&raw mut element3).unwrap()) };
+            unittest::assert_true!(removed3.link.is_unlinked());
+            unittest::assert_eq!(removed3.consume(), NonNull::new(&raw mut element3).unwrap());
+            validate_list(&list, &[1])?;
+
+            let removed1 =
+                unsafe { list.remove_element_unchecked(NonNull::new(&raw mut element1).unwrap()) };
+            unittest::assert_true!(removed1.link.is_unlinked());
+            unittest::assert_eq!(removed1.consume(), NonNull::new(&raw mut element1).unwrap());
+            unittest::assert_true!(list.is_empty());
+            Ok(())
+        })();
+
+        drain_list(&mut list);
+        result
+    }
+
+    #[test]
+    fn remove_element_returns_none_for_unlinked_element() -> unittest::Result<()> {
+        let mut element1 = TestMember {
+            value: 1,
+            link: Link::new(),
+        };
+        let mut element2 = TestMember {
+            value: 2,
+            link: Link::new(),
+        };
+        let mut unlinked = TestMember {
+            value: 9,
+            link: Link::new(),
+        };
+
+        let mut list = ForeignList::<TestMember, TestAdapter>::new();
+        list.push_back(unsafe { ForeignBox::new_from_ptr(&raw mut element1) });
+        list.push_back(unsafe { ForeignBox::new_from_ptr(&raw mut element2) });
+
+        let removed = unsafe { list.remove_element(NonNull::new(&raw mut unlinked).unwrap()) };
+        let result = (|| -> unittest::Result<()> {
+            unittest::assert_true!(removed.is_none());
+            unittest::assert_true!(unlinked.link.is_unlinked());
+            validate_list(&list, &[1, 2])?;
+            Ok(())
+        })();
+
+        drain_list(&mut list);
+        result
     }
 
     #[test]

@@ -36,7 +36,6 @@ pub(crate) mod algorithm;
 pub(crate) mod core;
 pub(crate) mod locks;
 pub(crate) mod priority;
-pub(crate) mod priority_bitmask;
 pub(crate) mod process;
 pub(crate) mod thread;
 pub(crate) mod timer;
