@@ -12,18 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-"""Defines the list of tests to run as Zephyr smoke tests
+"""Defines the list of Pigweed module tests to run on Zephyr.
 
-The tests are run out of zephyr-bazel
-(https://pigweed.googlesource.com/zephyr/zephyr-bazel/), out of the
-tests/pw_smoke_tests subdirectory.
-
-They are run there instead of here as the zephyr-bazel is not yet stable, and
-the setup is evolving.
+The tests are run out of the `zephyr/pw_tests/pw_module_tests` directory.
 """
 
 # Note: If not specified, the default timeout is 5 seconds.
-ZEPHYR_PW_SMOKE_TESTS = {
+ZEPHYR_PW_MODULE_TESTS = {
     "pw_allocator_zephyr_test": {
         "deps": ["//pw_allocator_zephyr:heap_allocator_test"],
         "timeout": 5,

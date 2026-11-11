@@ -250,6 +250,40 @@
       ]
     },
     {
+      "name": "zephyr_pw_module_tests",
+      "build_config": {
+        "name": "zephyr_pw_module_tests_config",
+        "description": "Pigweed Zephyr module tests (native_sim)",
+        "build_type": "bazel",
+        "args": [],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "project_working_subdir": "zephyr/pw_tests"
+        }
+      },
+      "targets": [
+        "//pw_module_tests"
+      ]
+    },
+    {
+      "name": "zephyr_pw_module_tests_ndebug",
+      "build_config": {
+        "name": "zephyr_pw_module_tests_ndebug_config",
+        "description": "Pigweed Zephyr module tests (native_sim, NDEBUG)",
+        "build_type": "bazel",
+        "args": [
+          "--copt=-DNDEBUG"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "project_working_subdir": "zephyr/pw_tests"
+        }
+      },
+      "targets": [
+        "//pw_module_tests"
+      ]
+    },
+    {
       "name": "lm3s6965evb",
       "build_config": {
         "name": "lm3s6965evb_config",
@@ -931,6 +965,14 @@
         "pw_rp2350_freertos",
         "pw_rp2350_pigweed",
         "pw_rp2350_zephyr"
+      ]
+    },
+    {
+      "name": "zephyr_pw_modules",
+      "description": "Pigweed Zephyr module tests (native_sim)",
+      "builds": [
+        "zephyr_pw_module_tests",
+        "zephyr_pw_module_tests_ndebug"
       ]
     },
     {

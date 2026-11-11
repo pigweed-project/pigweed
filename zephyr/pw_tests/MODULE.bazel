@@ -1,0 +1,82 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+module(
+    name = "zephyr_tests",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_platform", version = "0.1.0")
+
+# LINT.IfChange(rules_python)
+bazel_dep(name = "rules_python", version = "2.4.6")
+# LINT.ThenChange(//MODULE.bazel:rules_python, //docs/tests/MODULE.bazel:rules_python, //pw_build/workflows_launcher/MODULE.bazel:rules_python, //pw_ide/py/integration_test.py:rules_python, //pw_kernel/examples/adventure/MODULE.bazel:rules_python, //targets/pw_rp2350/zephyr/MODULE.bazel:rules_python, //zephyr/pw_tests/MODULE.bazel:rules_python)
+
+bazel_dep(name = "pigweed")
+local_path_override(
+    module_name = "pigweed",
+    path = "../..",
+)
+
+include("//:zephyr_dep.MODULE.bazel")
+
+# Register zephyr toolchains first so Zephyr targets do not fall back to host clang.
+register_toolchains(
+    "@zephyr//toolchain:all",
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
+)
+
+# Configure Python toolchain
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+
+# LINT.IfChange(python_version)
+python.toolchain(
+    configure_coverage_tool = True,
+    is_default = True,
+    python_version = "3.12",
+)
+# LINT.ThenChange(//MODULE.bazel:python_version, //docs/tests/MODULE.bazel:python_version, //pw_build/workflows_launcher/MODULE.bazel:python_version, //pw_ide/py/integration_test.py:python_version, //pw_kernel/examples/adventure/MODULE.bazel:python_version, //targets/pw_rp2350/zephyr/MODULE.bazel:python_version, //zephyr/pw_tests/MODULE.bazel:python_version)
+
+use_repo(python, "pythons_hub")
+
+# Import pip dependencies
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+use_repo(pip, "zephyr_pip_deps")
+
+# Configure Zephyr setup environment
+zephyr_setup = use_extension("@zephyr//bazel:setup.bzl", "zephyr_setup")
+zephyr_setup.env(
+    apps_dirs = ["//pw_module_tests"],
+    boards_dirs = [],
+    manual_boards = ["native_sim/native/64"],
+    modules = ["@pigweed//zephyr:module.yml"],
+)
+use_repo(
+    zephyr_setup,
+    "zephyr_index",
+    "zephyr_kconfig",
+    "zephyr_state",
+    "zephyr_version",
+)
+
+pw_zephyr_config = use_extension("@pigweed//zephyr/config:pw_zephyr_config.bzl", "pw_zephyr_config")
+
+override_repo(
+    pw_zephyr_config,
+    kconfig = "zephyr_kconfig",
+    zephyr = "zephyr",
+    zephyr_version = "zephyr_version",
+)

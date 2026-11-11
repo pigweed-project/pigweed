@@ -1179,6 +1179,7 @@ def lockfile_check(ctx: PresubmitContext) -> None:
         additional_lockfiles=(
             'pw_kernel/examples/adventure/MODULE.bazel.lock',
             'targets/pw_rp2350/zephyr/MODULE.bazel.lock',
+            'zephyr/pw_tests/MODULE.bazel.lock',
         ),
     )
 

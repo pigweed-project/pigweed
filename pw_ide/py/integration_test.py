@@ -909,7 +909,7 @@ bazel_dep(name = "rules_cc", version = "0.2.22")
 
 # LINT.IfChange(rules_python)
 bazel_dep(name = "rules_python", version = "2.4.6")
-# LINT.ThenChange(//MODULE.bazel:rules_python, //docs/tests/MODULE.bazel:rules_python, //pw_build/workflows_launcher/MODULE.bazel:rules_python, //pw_ide/py/integration_test.py:rules_python, //pw_kernel/examples/adventure/MODULE.bazel:rules_python, //targets/pw_rp2350/zephyr/MODULE.bazel:rules_python)
+# LINT.ThenChange(//MODULE.bazel:rules_python, //docs/tests/MODULE.bazel:rules_python, //pw_build/workflows_launcher/MODULE.bazel:rules_python, //pw_ide/py/integration_test.py:rules_python, //pw_kernel/examples/adventure/MODULE.bazel:rules_python, //targets/pw_rp2350/zephyr/MODULE.bazel:rules_python, //zephyr/pw_tests/MODULE.bazel:rules_python)
 
 # LINT.IfChange(python_version)
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
@@ -918,7 +918,7 @@ python.toolchain(
     python_version = "3.12",
 )
 
-# LINT.ThenChange(//MODULE.bazel:python_version, //docs/tests/MODULE.bazel:python_version, //pw_build/workflows_launcher/MODULE.bazel:python_version, //pw_ide/py/integration_test.py:python_version, //pw_kernel/examples/adventure/MODULE.bazel:python_version, //targets/pw_rp2350/zephyr/MODULE.bazel:python_version)
+# LINT.ThenChange(//MODULE.bazel:python_version, //docs/tests/MODULE.bazel:python_version, //pw_build/workflows_launcher/MODULE.bazel:python_version, //pw_ide/py/integration_test.py:python_version, //pw_kernel/examples/adventure/MODULE.bazel:python_version, //targets/pw_rp2350/zephyr/MODULE.bazel:python_version, //zephyr/pw_tests/MODULE.bazel:python_version)
 
 register_toolchains("@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux")
 register_toolchains("@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos")
