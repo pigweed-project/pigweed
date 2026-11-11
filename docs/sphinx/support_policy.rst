@@ -11,13 +11,15 @@ languages.
 -----
 Bazel
 -----
-.. LINT.IfChange(bazel_compatibility)
+..
+   # LINT.IfChange(bazel_compatibility)
 
-Pigweed currently supports **Bazel 8.5.0** through the latest release of
+Pigweed currently supports **Bazel 8.6.0** through the latest release of
 **Bazel 9**. The minimum supported version is declared via
 ``bazel_compatibility`` in Pigweed's :cs:`MODULE.bazel` file.
 
-.. LINT.ThenChange(//MODULE.bazel:bazel_compatibility)
+..
+   # LINT.ThenChange(//MODULE.bazel:bazel_compatibility)
 
 We strongly recommend using the latest version of Bazel that Pigweed supports.
 
