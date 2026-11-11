@@ -896,5 +896,29 @@ TEST(EmbossTest, ReadWriteLERemoveCIGCommandCompleteEvent) {
   EXPECT_EQ(reader.cig_id().Read(), 0x05);
 }
 
+TEST(EmbossTest, CommandHeaderOpcodeUintAndLeSubEventCodes) {
+  std::array<uint8_t, emboss::CommandHeaderView::SizeInBytes()> buffer{};
+  auto writer = emboss::MakeCommandHeaderView(&buffer);
+
+  // Vendor-specific opcode (OGF 0x3F, OCF 0x0155 -> 0xFD55) unknown to OpCode.
+  writer.opcode_uint().Write(0xFD55);
+  writer.parameter_total_size().Write(0);
+  EXPECT_TRUE(writer.Ok());
+
+  auto reader = emboss::MakeCommandHeaderView(&buffer);
+  ASSERT_TRUE(reader.Ok());
+  EXPECT_EQ(reader.opcode_uint().Read(), 0xFD55);
+  EXPECT_EQ(reader.opcode_bits().ogf().Read(), 0x3F);
+  EXPECT_EQ(reader.opcode_bits().ocf().Read(), 0x0155);
+
+  EXPECT_EQ(cpp23::to_underlying(emboss::LeSubEventCode::CREATE_BIG_COMPLETE),
+            0x1B);
+  EXPECT_EQ(
+      cpp23::to_underlying(emboss::LeSubEventCode::TERMINATE_BIG_COMPLETE),
+      0x1C);
+  EXPECT_EQ(cpp23::to_underlying(emboss::LeSubEventCode::CIS_ESTABLISHED_V2),
+            0x2A);
+}
+
 }  // namespace
 }  // namespace pw::bluetooth

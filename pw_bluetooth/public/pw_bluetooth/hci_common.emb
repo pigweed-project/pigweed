@@ -832,6 +832,8 @@ enum LeSubEventCode:
   PERIODIC_ADVERTISING_SYNC_TRANSFER_RECEIVED    = 0x18
   CIS_ESTABLISHED                                = 0x19
   CIS_REQUEST                                    = 0x1A
+  CREATE_BIG_COMPLETE                            = 0x1B
+  TERMINATE_BIG_COMPLETE                         = 0x1C
   REQUEST_PEER_SCA_COMPLETE                      = 0x1F
   BIG_INFO_ADVERTISING_REPORT                    = 0x22
   SUBRATE_CHANGE                                 = 0x23
@@ -839,6 +841,7 @@ enum LeSubEventCode:
   PERIODIC_ADVERTISING_REPORT_V2                 = 0x25
   PERIODIC_ADVERTISING_SYNC_TRANSFER_RECEIVED_V2 = 0x26
   ENHANCED_CONNECTION_COMPLETE_V2                = 0x29
+  CIS_ESTABLISHED_V2                             = 0x2A
 
 
 enum MajorDeviceClass:
@@ -1407,6 +1410,9 @@ struct CommandHeader:
 
   0     [+2]  OpCodeBits  opcode_bits
     -- Access opcode ogf or ocf sub-fields.
+
+  0     [+2]  UInt        opcode_uint
+    -- Raw 16-bit opcode.
 
   $next [+1]  UInt        parameter_total_size
   let max_parameter_total_size = $upper_bound(parameter_total_size)
