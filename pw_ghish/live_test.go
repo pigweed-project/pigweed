@@ -348,14 +348,14 @@ func TestLive_AuthMethodValidation(t *testing.T) {
 	}
 }
 
-// TestLive_CommentResolvedValidation verifies that --resolved without --path and --line fails fast.
+// TestLive_CommentResolvedValidation verifies that --resolved without --path fails fast.
 func TestLive_CommentResolvedValidation(t *testing.T) {
 	output, err := executeLiveCommand("pr", "comment", "472267", "-m", "Fixed issue", "--resolved")
 	if err == nil {
-		t.Fatalf("Expected error for --resolved without path/line, got success: %s", output)
+		t.Fatalf("Expected error for --resolved without path, got success: %s", output)
 	}
-	if !strings.Contains(err.Error(), "--resolved requires both --path and --line") {
-		t.Errorf("Expected '--resolved requires both --path and --line' in error, got: %v", err)
+	if !strings.Contains(err.Error(), "--resolved requires --path") {
+		t.Errorf("Expected '--resolved requires --path' in error, got: %v", err)
 	}
 }
 
@@ -646,8 +646,8 @@ func TestLive_GitRemoteTipIntegration(t *testing.T) {
 // developed, so its checks may be passing, failing, or still running, and
 // `pr checks` deliberately exits non-zero for the latter two.
 func TestLive_Checks_List(t *testing.T) {
-	// 1. Plain text checks table
-	output, err := executeLiveCommand("pr", "checks", "472267")
+	// 1. Plain text checks table (--all so all-passing patchsets still render builder rows)
+	output, err := executeLiveCommand("pr", "checks", "472267", "--all")
 	if err != nil && !isCIVerdict(err) {
 		t.Fatalf("pr checks 472267 failed: %v\nOutput: %s", err, output)
 	}
@@ -996,8 +996,8 @@ func TestLive_Diff_NameOnlyAndStat(t *testing.T) {
 
 // TestLive_Run_Suite verifies 'gh run' commands against live Buildbucket checks.
 func TestLive_Run_Suite(t *testing.T) {
-	// 1. gh run list on change 472267
-	outList, err := executeLiveCommand("run", "list", "472267")
+	// 1. gh run list on change 472267 (--all so all-passing patchsets still render builder rows)
+	outList, err := executeLiveCommand("run", "list", "472267", "--all")
 	if err != nil {
 		t.Fatalf("run list failed: %v\nOutput: %s", err, outList)
 	}

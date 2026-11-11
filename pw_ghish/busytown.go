@@ -103,11 +103,8 @@ var (
 // IsBusytownBuildID reports whether id matches an Android Busytown / TreeHugger build or workplan identifier
 // (such as "P99164207", "L87654321", "12345678", or "P99164207/target_name").
 func IsBusytownBuildID(id string) bool {
-	trimmed := strings.TrimSpace(id)
-	if trimmed == "" {
-		return false
-	}
-	return busytownBuildIDPattern.MatchString(trimmed) || busytownBuildTargetPattern.MatchString(trimmed)
+	_, _, ok := ParseBusytownBuildTarget(id, "")
+	return ok
 }
 
 // ParseBusytownBuildTarget parses a direct Busytown build specifier (either "<bid>/<target>"
@@ -115,7 +112,7 @@ func IsBusytownBuildID(id string) bool {
 func ParseBusytownBuildTarget(raw string, explicitTarget string) (buildID string, target string, ok bool) {
 	trimmed := strings.TrimSpace(raw)
 	explicitTarget = strings.TrimSpace(explicitTarget)
-	if m := busytownBuildTargetPattern.FindStringSubmatch(trimmed); len(m) == 3 {
+	if m := busytownBuildTargetPattern.FindStringSubmatch(trimmed); len(m) == 3 && !isDigitsOnly(m[2]) {
 		return m[1], m[2], true
 	}
 	if busytownBuildIDPattern.MatchString(trimmed) {

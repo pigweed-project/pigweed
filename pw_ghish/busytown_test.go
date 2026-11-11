@@ -812,6 +812,8 @@ func TestIsBusytownBuildID_And_ParseBusytownBuildTarget(t *testing.T) {
 		{id: "12345678", target: "device_arm64-userdebug", wantIsBT: true, wantBID: "12345678", wantTgt: "device_arm64-userdebug", wantOK: true},
 		{id: "P99164207/sensor_unit_tests", wantIsBT: true, wantBID: "P99164207", wantTgt: "sensor_unit_tests", wantOK: true},
 		{id: "12345678/device_arm64-userdebug", wantIsBT: true, wantBID: "12345678", wantTgt: "device_arm64-userdebug", wantOK: true},
+		{id: "467905/22", wantIsBT: false, wantOK: false},
+		{id: "12345678/22", wantIsBT: false, wantOK: false},
 		{id: "12345", wantIsBT: false, wantOK: false},
 		{id: "8680709829694997521", wantIsBT: false, wantOK: false},
 	}
