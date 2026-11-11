@@ -11,10 +11,10 @@ defining and invoking structured methods over arbitrary serial, bus, or packet
 transports (UART, SPI, USB, BLE, Sockets). Services and messages are defined in
 shared Protocol Buffer (``.proto``) files.
 
-``pw_rpc`` supports C++ (with Nanopb, ``pw_protobuf``, or Raw RPC codegen), Python,
-TypeScript, and Java.
+``pw_rpc`` supports C++ (with Nanopb, ``pw_protobuf``, or Raw RPC codegen),
+Python, TypeScript, and Java.
 
-.. admonition:: Use ``pw_rpc2`` for new projects!
+.. admonition:: Consider using ``pw_rpc2``
 
    :ref:`module-pw_rpc2` is Pigweed's next-generation RPC framework, redesigned
    around :ref:`cooperative async tasks <module-pw_async2>` and
@@ -24,25 +24,25 @@ TypeScript, and Java.
    * **Cooperative concurrency**: Multiplexes RPC calls as async tasks
      (including C++20 coroutines) on a single dispatcher thread.
    * **End-to-end flow control and backpressure**: Asynchronously waits for
-     transport capacity on writes and pauses ingress when calls are saturated,
-     instead of dropping packets.
+     transport capacity on writes and pauses ingress when calls are saturated.
    * **Active, stateful connections**: Tracks connection lifecycles and detects
      peer disconnects.
    * **Reliable delivery**: Delivers messages reliably and in order over the
-     connection, eliminating dropped-packet uncertainty and the need to reach
-     for :ref:`module-pw_transfer`.
+     connection. No need for :ref:`module-pw_transfer`.
    * **Zero-copy payloads and compact framing**: Uses small, fixed-size packet
      headers and :ref:`pw_buf <module-pw_buf>` views to read and write payloads
-     directly in transport buffers, avoiding the overhead and extra copies of
-     ``pw_rpc``'s protobuf packet format.
+     directly in transport buffers.
    * **Dynamic per-call allocation**: Allocates active call state on demand via
-     :ref:`module-pw_allocator` rather than permanently reserving RAM for every
-     possible call at compile time.
+     :ref:`module-pw_allocator` rather than reserving RAM for every possible
+     call at compile time.
 
    See :ref:`Why RPC2? <module-pw_rpc2-why>` and :ref:`RPC1 vs. RPC2
    <module-pw_rpc2-comparison>` to evaluate which framework fits your system.
    Consider using the :ref:`pw_rpc2 adapter <module-pw_rpc-rpc2-adapter>` to
    serve existing ``pw_rpc`` C++ services from a ``pw_rpc2`` server.
+
+   Not ready for ``pw_rpc2``? That's okay! ``pw_rpc`` is here to stay and
+   continues to be actively developed.
 
 .. tab-set::
 

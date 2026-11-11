@@ -8,9 +8,9 @@ pw_transport
 
 .. note::
 
-   ``pw_transport`` is still considered experimental. While the core interfaces
-   are likely stable, some changes are still expected to be made around the
-   edges. The documentation is also incomplete.
+   ``pw_transport`` is still in development. While the core interfaces are
+   likely stable, some changes are still expected to be made around the edges.
+   The documentation is also incomplete.
 
 ``pw_transport`` defines interfaces for async-native, datagram-oriented
 network sockets built on :ref:`module-pw_async2`.

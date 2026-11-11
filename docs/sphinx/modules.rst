@@ -205,7 +205,7 @@ Module index
    ":ref:`module-pw_trace`", ":bdg-primary:`stable`", "", ""
    ":ref:`module-pw_trace_tokenized`", ":bdg-primary:`stable`", "", ""
    ":ref:`module-pw_transfer`", ":bdg-primary:`stable`", "", ""
-   ":ref:`module-pw_transport`", ":bdg-warning:`experimental`", "Asynchronous datagram-oriented transport interface", "C++"
+   ":ref:`module-pw_transport`", ":bdg-secondary:`unstable`", "Asynchronous datagram-oriented transport interface", "C++"
    ":ref:`module-pw_uart`", ":bdg-secondary:`unstable`", "Core interfaces for UART communication", "C++"
    ":ref:`module-pw_uart_mcuxpresso`", ":bdg-secondary:`unstable`", "NXP MCUXpresso SDK implementation for pw_uart", "C++"
    ":ref:`module-pw_unit_test`", ":bdg-primary:`stable`", "GoogleTest for embedded", ""
