@@ -14,7 +14,6 @@
 #pragma once
 
 #include "pw_log/levels.h"
-#include "pw_log/options.h"
 #include "pw_polyfill/static_assert.h"
 #include "pw_tokenizer/config.h"
 

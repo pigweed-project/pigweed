@@ -80,6 +80,33 @@ cc_library(
 )
 
 cc_library(
+    name = "assert_with_condition_backend",
+    hdrs = [
+        "assert_with_condition_public_overrides/pw_assert_backend/assert_backend.h",
+    ],
+    strip_include_prefix = "assert_with_condition_public_overrides",
+    deps = [
+        ":assert_with_condition_backend_private",
+    ],
+)
+
+cc_library(
+    name = "assert_with_condition_backend_private",
+    hdrs = [
+        "public/pw_assert_tokenized/assert_with_condition.h",
+    ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":handler",
+        "//pw_log_tokenized:headers",
+        "//pw_polyfill",
+        "//pw_preprocessor",
+        "//pw_tokenizer",
+    ],
+)
+
+cc_library(
     name = "check_backend",
     hdrs = [
         "check_public_overrides/pw_assert_backend/check_backend.h",
@@ -109,8 +136,10 @@ pw_cc_test(
         "assert_tokenized_test.cc",
         "assert_tokenized_test_c.c",
     ],
+    has_nc_test = True,
     deps = [
         ":assert_backend_private",
+        ":assert_with_condition_backend_private",
     ],
 )
 

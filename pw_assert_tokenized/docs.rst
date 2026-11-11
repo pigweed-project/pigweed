@@ -16,14 +16,49 @@ however, is that ``PW_CHECK_*()`` macros are much more limited as all argument
 values are discarded. This means only constant string information is captured in
 the reported tokens.
 
-* **PW_ASSERT()**: The ``PW_ASSERT()`` macro will capture the file name and line
-  number of the assert statement. By default, it is passed to the logging system
-  to produce a string like this:
+* **PW_ASSERT() (assert_backend)**: The default ``assert_backend`` target
+  captures the file name and line number of the assert statement and passes them
+  to ``pw_assert_tokenized_HandleAssertFailure()``, producing a string like
+  this:
 
   .. code-block:: text
 
      PW_ASSERT() or PW_DASSERT() failure at
      pw_result/public/pw_result/result.h:63
+
+  In C and C++23 (where ``static`` variables are permitted inside unreached
+  branches of ``constexpr`` functions per P2242R3), ``assert_backend`` emits
+  tokenized ``__FILE__`` strings directly into the ``.pw_tokenizer.entries`` ELF
+  section. In pre-C++23 C++ or in translation units that redefine ``static`` to
+  empty (such as FreeRTOS ``tasks.c`` with
+  ``PW_THIRD_PARTY_FREERTOS_NO_STATICS``), it falls back to
+  ``PW_TOKENIZER_STRING_TOKEN(__FILE__)``, which requires offline file name
+  token generation (see Setup below).
+
+* **PW_ASSERT() (assert_with_condition_backend)**: In C and C++23, the opt-in
+  ``assert_with_condition_backend`` target enables the ``PW_ASSERT()`` family of
+  macros (including ``PW_DASSERT()``, ``PW_ASSERT_OK()``, and
+  ``PW_ASSERT_NOTNULL()``) to capture the assert condition expression and file
+  name directly in the ``.pw_tokenizer.entries`` ELF section using the
+  ``pw_log_tokenized`` key/value format:
+
+  .. code-block:: text
+
+     "■msg♦Assert failure: x > 0■module♦PW_ASSERT■file♦pw_result/public/pw_result/result.h"
+
+  .. note::
+     Because the stringified assert condition is embedded directly into a
+     ``pw_tokenizer`` format string with no format arguments, avoid ``%``
+     characters followed by valid ``printf`` flags or conversion specifiers in
+     ``PW_ASSERT()`` conditions (for example, ``PW_ASSERT(x % divisor == 0)``,
+     where ``% d`` is parsed as a space flag plus ``%d`` with a missing
+     argument at detokenization time).
+
+  ``assert_with_condition_backend`` requires C or C++23 (where ``static``
+  variables are permitted inside unreached branches of ``constexpr`` functions
+  per P2242R3) and requires that ``static`` is not macro-defined to empty;
+  attempting to use it in pre-C++23 C++ or when ``static`` is defined to nothing
+  fails at compile time with a ``static_assert``.
 
 * **PW_CHECK_\*()**: The ``PW_CHECK_*()`` macros work in contexts where
   tokenization is fully supported, so they are able to capture the CHECK
@@ -40,12 +75,12 @@ the reported tokens.
   cost as only two arguments are ever passed to the handler (the calculated
   token, and the line number of the statement).
 
-  Note that the line number is passed to the tokenized logging system as
-  metadata, but is not part of the tokenized string. This is to ensure the
-  CHECK callsite maximizes efficiency by only passing two arguments to the
-  handler.
+  Note that for both ``PW_CHECK_*()`` and ``assert_with_condition_backend``, the
+  line number is passed to the tokenized logging system as metadata, but is not
+  part of the tokenized string. This is to ensure the callsite maximizes
+  efficiency by only passing two arguments to the handler.
 
-In both cases, the assert handler is only called with two arguments: a 32-bit
+In all cases, the assert handler is only called with two arguments: a 32-bit
 token to represent a string, and the integer line number of the callsite.
 
 -----
@@ -53,20 +88,23 @@ Setup
 -----
 
 #. Set ``pw_assert_BACKEND = "$dir_pw_assert_tokenized:check_backend"`` and
-   ``pw_assert_LITE_BACKEND = "$dir_pw_assert_tokenized:assert_backend"`` in
-   your target configuration.
+   ``pw_assert_LITE_BACKEND = "$dir_pw_assert_tokenized:assert_backend"`` (or
+   ``"$dir_pw_assert_tokenized:assert_with_condition_backend"`` in C and C++23
+   projects) in your target configuration.
 #. Ensure your target provides
    ``pw_log_tokenized_HANDLER_BACKEND``. By default, pw_assert_tokenized will
    forward assert failures to the log system. The tokenizer handler should check
    for ``LOG_LEVEL_FATAL`` and properly divert to a crash handler.
-#. When compiling with C or C++23, ``pw_assert_tokenized`` emits ``__FILE__``
-   tokens directly into the ``.pw_tokenizer.entries`` ELF section, so no
-   additional token database setup is needed (and offline file name generation
-   should be skipped to avoid adding unused file names to the database).
+#. When compiling with C or C++23 (using either ``assert_backend`` or
+   ``assert_with_condition_backend``), ``pw_assert_tokenized`` emits tokens
+   directly into the ``.pw_tokenizer.entries`` ELF section, so no additional
+   token database setup is needed (unless a translation unit using
+   ``assert_backend`` redefines ``static`` to empty).
 
-   In C++17/C++20 (where ``static constexpr`` variables are not permitted inside
-   ``constexpr`` functions) or in translation units that redefine ``static``
-   (such as FreeRTOS ``tasks.c`` with ``PW_THIRD_PARTY_FREERTOS_NO_STATICS``),
+   When using ``assert_backend`` in C++17/C++20 (where ``static`` variables are
+   not permitted inside unreached branches of ``constexpr`` functions per
+   P2242R3) or in translation units that redefine ``static`` (such as FreeRTOS
+   ``tasks.c`` with ``PW_THIRD_PARTY_FREERTOS_NO_STATICS``),
    ``pw_assert_tokenized`` cannot emit file name tokens into the compiled
    binary. In those configurations, the ``pw_relative_source_file_names``
    :ref:`GN template<module-pw_build-relative-source-file-names>` can be used to

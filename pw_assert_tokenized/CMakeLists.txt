@@ -52,6 +52,29 @@ pw_add_library(pw_assert_tokenized._assert_backend_private INTERFACE
     pw_tokenizer
 )
 
+pw_add_library(pw_assert_tokenized.assert_with_condition_backend INTERFACE
+  HEADERS
+    assert_with_condition_public_overrides/pw_assert_backend/assert_backend.h
+  PUBLIC_INCLUDES
+    assert_with_condition_public_overrides
+  PUBLIC_DEPS
+    pw_assert_tokenized._assert_with_condition_backend_private
+    pw_assert_tokenized.handler
+)
+
+pw_add_library(pw_assert_tokenized._assert_with_condition_backend_private INTERFACE
+  HEADERS
+    public/pw_assert_tokenized/assert_with_condition.h
+    public/pw_assert_tokenized/handler.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_log_tokenized.config
+    pw_polyfill
+    pw_preprocessor
+    pw_tokenizer
+)
+
 pw_add_library(pw_assert_tokenized.check_backend INTERFACE
   HEADERS
     check_public_overrides/pw_assert_backend/check_backend.h
@@ -71,6 +94,8 @@ pw_add_test(pw_assert_tokenized.assert_tokenized_test
     assert_tokenized_test_c.c
   PRIVATE_DEPS
     pw_assert_tokenized._assert_backend_private
+    pw_assert_tokenized._assert_with_condition_backend_private
+    pw_compilation_testing._pigweed_only_negative_compilation
   GROUPS
     modules
     pw_assert_tokenized

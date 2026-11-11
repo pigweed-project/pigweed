@@ -31,6 +31,11 @@ config("assert_backend_config") {
   visibility = [ ":*" ]
 }
 
+config("assert_with_condition_backend_config") {
+  include_dirs = [ "assert_with_condition_public_overrides" ]
+  visibility = [ ":*" ]
+}
+
 config("check_backend_config") {
   include_dirs = [ "check_public_overrides" ]
   visibility = [ ":*" ]
@@ -60,6 +65,31 @@ pw_source_set("assert_backend_private") {
 }
 
 pw_source_set("assert_backend.impl") {
+  public_deps = [ pw_assert_tokenized_HANDLER_BACKEND ]
+}
+
+pw_source_set("assert_with_condition_backend") {
+  public_configs = [ ":assert_with_condition_backend_config" ]
+  public_deps = [ ":assert_with_condition_backend_private" ]
+  public = [
+    "assert_with_condition_public_overrides/pw_assert_backend/assert_backend.h",
+  ]
+}
+
+pw_source_set("assert_with_condition_backend_private") {
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":handler",
+    "$dir_pw_log_tokenized:config",
+    "$dir_pw_polyfill",
+    "$dir_pw_preprocessor",
+    "$dir_pw_tokenizer",
+  ]
+  public = [ "public/pw_assert_tokenized/assert_with_condition.h" ]
+  visibility = [ ":*" ]
+}
+
+pw_source_set("assert_with_condition_backend.impl") {
   public_deps = [ pw_assert_tokenized_HANDLER_BACKEND ]
 }
 
@@ -111,11 +141,15 @@ pw_source_set("log_handler") {
 }
 
 pw_test("assert_tokenized_test") {
-  deps = [ ":assert_backend_private" ]
+  deps = [
+    ":assert_backend_private",
+    ":assert_with_condition_backend_private",
+  ]
   sources = [
     "assert_tokenized_test.cc",
     "assert_tokenized_test_c.c",
   ]
+  negative_compilation_tests = true
 }
 
 pw_test_group("tests") {

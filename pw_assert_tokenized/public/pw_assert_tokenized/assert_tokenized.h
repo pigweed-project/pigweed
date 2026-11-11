@@ -38,6 +38,7 @@
 
 #define PW_ASSERT_HANDLE_FAILURE(expression)                                  \
   do {                                                                        \
+    (void)expression;                                                         \
     _PW_TOKENIZER_CONST uint32_t _pw_assert_file_token =                      \
         _PW_ASSERT_TOKENIZED_FILE_TOKEN;                                      \
     pw_assert_tokenized_HandleAssertFailure(_pw_assert_file_token, __LINE__); \
