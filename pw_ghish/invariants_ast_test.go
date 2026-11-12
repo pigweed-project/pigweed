@@ -26,71 +26,23 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"pigweed.dev/pw_ghish/internal/astcheck"
 )
-
-func collectGoFiles(t *testing.T, keep func(rel string) bool) []string {
-	t.Helper()
-	var files []string
-	for _, dir := range []string{".", "worktree", "cmd"} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			t.Fatalf("os.ReadDir(%q): %v", dir, err)
-		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
-				continue
-			}
-			if rel := filepath.ToSlash(filepath.Join(dir, e.Name())); keep(rel) {
-				files = append(files, rel)
-			}
-		}
-	}
-	slices.Sort(files)
-	return files
-}
-
-// collectProductionGoFiles returns all non-test .go source files in pw_ghish/
-// and pw_ghish/worktree/ (excluding cmd/main.go unless includeMain is true).
-func collectProductionGoFiles(t *testing.T, includeMain bool) []string {
-	t.Helper()
-	return collectGoFiles(t, func(rel string) bool {
-		return !strings.HasSuffix(rel, "_test.go") && (includeMain || rel != "cmd/main.go")
-	})
-}
-
-// collectUnitTestGoFiles returns all *_test.go files in pw_ghish/ and
-// pw_ghish/worktree/ except live_test.go (which requires -tags=live).
-func collectUnitTestGoFiles(t *testing.T) []string {
-	t.Helper()
-	return collectGoFiles(t, func(rel string) bool {
-		return strings.HasSuffix(rel, "_test.go") && filepath.Base(rel) != "live_test.go"
-	})
-}
 
 // TestInvariants_CobraCommandsUseRunE verifies that every cobra.Command composite
 // literal in pw_ghish uses RunE / PreRunE / PersistentPreRunE / PostRunE and never
 // the error-swallowing void Run / PreRun / PersistentPreRun / PostRun fields.
 func TestInvariants_CobraCommandsUseRunE(t *testing.T) {
-	fset := token.NewFileSet()
 	prohibitedFields := []string{"Run", "PreRun", "PersistentPreRun", "PostRun"}
-
-	for _, path := range collectProductionGoFiles(t, true) {
-		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
-		if err != nil {
-			t.Fatalf("ParseFile(%q): %v", path, err)
-		}
-
-		ast.Inspect(f, func(n ast.Node) bool {
+	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
+		ast.Inspect(fc.AST, func(n ast.Node) bool {
 			comp, ok := n.(*ast.CompositeLit)
 			if !ok {
 				return true
@@ -103,13 +55,9 @@ func TestInvariants_CobraCommandsUseRunE(t *testing.T) {
 			if !ok || pkgIdent.Name != "cobra" {
 				return true
 			}
-
-			// Allow newRootAlias in root.go which copies fields from target.
-			pos := fset.Position(comp.Pos())
-			if filepath.Base(path) == "root.go" && isAliasCloneLiteral(comp) {
+			if filepath.Base(fc.Path) == "root.go" && isAliasCloneLiteral(comp) {
 				return true
 			}
-
 			for _, elt := range comp.Elts {
 				kv, ok := elt.(*ast.KeyValueExpr)
 				if !ok {
@@ -120,9 +68,8 @@ func TestInvariants_CobraCommandsUseRunE(t *testing.T) {
 					continue
 				}
 				if slices.Contains(prohibitedFields, keyIdent.Name) {
-					kvPos := fset.Position(kv.Pos())
 					t.Errorf("%s:%d: cobra.Command defines %s (at %s:%d); must use %sE returning error so failures are never silently ignored",
-						pos.Filename, pos.Line, keyIdent.Name, kvPos.Filename, kvPos.Line, keyIdent.Name)
+						fc.Path, fc.Line(comp.Pos()), keyIdent.Name, fc.Path, fc.Line(kv.Pos()), keyIdent.Name)
 				}
 			}
 			return true
@@ -150,15 +97,8 @@ func isAliasCloneLiteral(comp *ast.CompositeLit) bool {
 // TestInvariants_NoDirectExitOrStdoutPrint verifies that no non-main production
 // file calls os.Exit or writes directly to stdout via fmt.Print/Println/Printf.
 func TestInvariants_NoDirectExitOrStdoutPrint(t *testing.T) {
-	fset := token.NewFileSet()
-
-	for _, path := range collectProductionGoFiles(t, false) {
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			t.Fatalf("ParseFile(%q): %v", path, err)
-		}
-
-		ast.Inspect(f, func(n ast.Node) bool {
+	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree") {
+		ast.Inspect(fc.AST, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
@@ -171,15 +111,14 @@ func TestInvariants_NoDirectExitOrStdoutPrint(t *testing.T) {
 			if !ok {
 				return true
 			}
-
-			pos := fset.Position(call.Pos())
+			line := fc.Line(call.Pos())
 			if pkgIdent.Name == "os" && sel.Sel.Name == "Exit" {
 				t.Errorf("%s:%d: direct call to os.Exit is prohibited outside cmd/main.go; return an error (or ExitError) from RunE",
-					pos.Filename, pos.Line)
+					fc.Path, line)
 			}
 			if pkgIdent.Name == "fmt" && (sel.Sel.Name == "Print" || sel.Sel.Name == "Println" || sel.Sel.Name == "Printf") {
 				t.Errorf("%s:%d: direct call to fmt.%s writes to os.Stdout and breaks hermetic test capture; use fmt.F%s(cmd.OutOrStdout(), ...)",
-					pos.Filename, pos.Line, sel.Sel.Name, strings.ToLower(sel.Sel.Name[:1])+sel.Sel.Name[1:])
+					fc.Path, line, sel.Sel.Name, strings.ToLower(sel.Sel.Name[:1])+sel.Sel.Name[1:])
 			}
 			return true
 		})
@@ -270,7 +209,7 @@ func suffixTargetsReview(e ast.Expr, localExprs map[string]ast.Expr, seen map[st
 	return exprTargetsReviewEndpoint(e, localExprs, seen)
 }
 
-func checkFuncBodyForDirectReviewCalls(t *testing.T, fset *token.FileSet, fn *ast.FuncDecl) {
+func checkFuncBodyForDirectReviewCalls(t *testing.T, fc *astcheck.File, fn *ast.FuncDecl) {
 	t.Helper()
 	localExprs := make(map[string]ast.Expr)
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -302,9 +241,8 @@ func checkFuncBodyForDirectReviewCalls(t *testing.T, fset *token.FileSet, fn *as
 		}
 		if (sel.Sel.Name == "do" || sel.Sel.Name == "doRaw") && len(call.Args) >= 3 {
 			if exprTargetsReviewEndpoint(call.Args[2], localExprs, make(map[string]bool)) {
-				pos := fset.Position(call.Pos())
 				t.Errorf("%s:%d: direct %s call to Gerrit /review endpoint in %s; use GerritClient.SetReview (via ChangeContext.SetReview) to preserve Drafts: \"KEEP\" and labels-unmarshal safety",
-					pos.Filename, pos.Line, sel.Sel.Name, fn.Name.Name)
+					fc.Path, fc.Line(call.Pos()), sel.Sel.Name, fn.Name.Name)
 			}
 		}
 		return true
@@ -316,23 +254,16 @@ func checkFuncBodyForDirectReviewCalls(t *testing.T, fset *token.FileSet, fn *as
 // `GerritClient.SetReview` in gerrit.go, preserving `Drafts: "KEEP"` and
 // labels-unmarshal safety.
 func TestInvariants_SetReviewGoesThroughGerritClient(t *testing.T) {
-	fset := token.NewFileSet()
-
-	for _, path := range collectProductionGoFiles(t, true) {
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			t.Fatalf("ParseFile(%q): %v", path, err)
-		}
-
-		for _, decl := range f.Decls {
+	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
+		for _, decl := range fc.AST.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
 				continue
 			}
-			if filepath.Base(path) == "gerrit.go" && fn.Name.Name == "SetReview" {
+			if filepath.Base(fc.Path) == "gerrit.go" && fn.Name.Name == "SetReview" {
 				continue
 			}
-			checkFuncBodyForDirectReviewCalls(t, fset, fn)
+			checkFuncBodyForDirectReviewCalls(t, fc, fn)
 		}
 	}
 }
@@ -350,19 +281,12 @@ var legacyDirectGitConfigAllowlist = map[string][]string{
 // settings are loaded through `ProjectConfig` in project_config.go rather than
 // scattered via ad-hoc `ConfigGet(ctx, "ghish....")` calls.
 func TestInvariants_NoAdHocGhishGitConfigLookups(t *testing.T) {
-	fset := token.NewFileSet()
-
-	for _, path := range collectProductionGoFiles(t, true) {
-		base := filepath.Base(path)
+	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
+		base := filepath.Base(fc.Path)
 		if base == "project_config.go" {
 			continue
 		}
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			t.Fatalf("ParseFile(%q): %v", path, err)
-		}
-
-		ast.Inspect(f, func(n ast.Node) bool {
+		ast.Inspect(fc.AST, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || len(call.Args) < 2 {
 				return true
@@ -376,15 +300,11 @@ func TestInvariants_NoAdHocGhishGitConfigLookups(t *testing.T) {
 				return true
 			}
 			key := strings.Trim(lit.Value, `"`+"`")
-			if !strings.HasPrefix(key, "ghish.") {
+			if !strings.HasPrefix(key, "ghish.") || slices.Contains(legacyDirectGitConfigAllowlist[base], key) {
 				return true
 			}
-			if slices.Contains(legacyDirectGitConfigAllowlist[base], key) {
-				return true
-			}
-			pos := fset.Position(call.Pos())
 			t.Errorf("%s:%d: ad-hoc ConfigGet(%q) outside project_config.go; declare the setting on ProjectConfig in project_config.go and document it in project_setup.rst",
-				pos.Filename, pos.Line, key)
+				fc.Path, fc.Line(call.Pos()), key)
 			return true
 		})
 	}
@@ -394,20 +314,14 @@ func TestInvariants_NoAdHocGhishGitConfigLookups(t *testing.T) {
 // body read uses readBoundedBody, readBoundedLog, or io.LimitReader rather than
 // an unbounded io.ReadAll(resp.Body).
 func TestInvariants_BoundedHTTPBodyReads(t *testing.T) {
-	fset := token.NewFileSet()
-	for _, path := range collectProductionGoFiles(t, true) {
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			t.Fatalf("ParseFile(%q): %v", path, err)
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
+	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
+		ast.Inspect(fc.AST, func(n ast.Node) bool {
 			if call, ok := n.(*ast.CallExpr); ok && len(call.Args) == 1 {
 				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "ReadAll" {
 					if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "io" {
 						if bodySel, ok := call.Args[0].(*ast.SelectorExpr); ok && bodySel.Sel.Name == "Body" {
-							pos := fset.Position(call.Pos())
 							t.Errorf("%s:%d: unbounded io.ReadAll(%s.Body); use readBoundedBody, readBoundedLog, or io.LimitReader per AGENTS.md invariant #10",
-								pos.Filename, pos.Line, bodySel.X)
+								fc.Path, fc.Line(call.Pos()), bodySel.X)
 						}
 					}
 				}
@@ -422,17 +336,13 @@ func TestInvariants_BoundedHTTPBodyReads(t *testing.T) {
 // ensuring all terminal styling goes through ColorEnabled and PadRightStyled in
 // ui.go (AGENTS.md invariant #15).
 func TestInvariants_NoRawANSIEscapesOutsideUIGo(t *testing.T) {
-	for _, path := range collectProductionGoFiles(t, true) {
-		if filepath.Base(path) == "ui.go" {
+	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
+		if filepath.Base(fc.Path) == "ui.go" {
 			continue
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("os.ReadFile(%q): %v", path, err)
-		}
-		src := string(data)
+		src := string(fc.Src)
 		if strings.Contains(src, `\x1b[`) || strings.Contains(src, `\033[`) {
-			t.Errorf("%s: contains raw ANSI escape sequence outside ui.go; use Style* and PadRightStyled helpers in ui.go so NO_COLOR, non-TTY pipes, and coding agents receive pure plaintext (AGENTS.md invariant #15)", path)
+			t.Errorf("%s: contains raw ANSI escape sequence outside ui.go; use Style* and PadRightStyled helpers in ui.go so NO_COLOR, non-TTY pipes, and coding agents receive pure plaintext (AGENTS.md invariant #15)", fc.Path)
 		}
 	}
 }
@@ -442,16 +352,11 @@ func TestInvariants_NoRawANSIEscapesOutsideUIGo(t *testing.T) {
 // through ExecCommand / ExecCommandContext (AGENTS.md invariant #16).
 func TestInvariants_SubprocessesUseCountingHelper(t *testing.T) {
 	allowlist := []string{"procexec.go"}
-	fset := token.NewFileSet()
-	for _, path := range collectProductionGoFiles(t, true) {
-		if slices.Contains(allowlist, path) {
+	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
+		if slices.Contains(allowlist, fc.Path) {
 			continue
 		}
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			t.Fatalf("ParseFile(%q): %v", path, err)
-		}
-		for _, v := range findProcessSpawns(fset, f, false) {
+		for _, v := range findProcessSpawns(fc.Fset, fc.AST, false) {
 			t.Errorf("%s bypasses the counting subprocess choke point; use ExecCommand / ExecCommandContext from procexec.go so perf budget tests can deterministically count commands constructed per CLI invocation (AGENTS.md invariant #16)", v)
 		}
 	}
@@ -544,16 +449,16 @@ func findProcessSpawns(fset *token.FileSet, f *ast.File, banCountingHelpers bool
 // guards execution via a LookPath("git") fixture.
 func TestInvariants_UnitTestsUseGitFixtures(t *testing.T) {
 	directSpawnAllowlist := []string{"brokenpipe_test.go", "workspace_hook_test.go"}
-	fset := token.NewFileSet()
-	for _, path := range collectUnitTestGoFiles(t) {
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			t.Fatalf("ParseFile(%q): %v", path, err)
+	for _, fc := range astcheck.MustLoadTestFiles(t, ".", "worktree") {
+		base := filepath.Base(fc.Path)
+		if base == "live_test.go" {
+			continue
 		}
-		for _, v := range findTestGitViolations(fset, f, slices.Contains(directSpawnAllowlist, filepath.Base(path))) {
+		for _, v := range findTestGitViolations(fc.Fset, fc.AST, slices.Contains(directSpawnAllowlist, base)) {
 			t.Errorf("%s", v)
 		}
 	}
+	fset := token.NewFileSet()
 
 	for _, tc := range []struct {
 		name string

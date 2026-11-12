@@ -24,16 +24,14 @@ package pw_ghish
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"pigweed.dev/pw_ghish/internal/astcheck"
 )
 
 // flagPolicyMode classifies how a pw_ghish flag relates to upstream GitHub CLI (gh).
@@ -53,26 +51,14 @@ type flagPolicySpec struct {
 	Doc    string
 }
 
-var ghishFlagDirectiveRegex = regexp.MustCompile(`^//\s*ghish:flag\s+(.+)$`)
-var ghishFlagKVRegex = regexp.MustCompile(`([a-z_]+)=(?:"([^"]*)"|(\S+))`)
-
-// parseGhishFlagDirective parses a `//ghish:flag mode=...` comment line.
-func parseGhishFlagDirective(text string) (flagPolicySpec, bool, error) {
-	m := ghishFlagDirectiveRegex.FindStringSubmatch(strings.TrimSpace(text))
-	if m == nil {
-		return flagPolicySpec{}, false, nil
+// parseGhishFlagDirective parses a `//ghish:flag mode=...` directive comment.
+func parseGhishFlagDirective(dir astcheck.DirectiveComment) (flagPolicySpec, error) {
+	kvs, err := dir.ParseKV()
+	if err != nil {
+		return flagPolicySpec{}, fmt.Errorf("malformed //ghish:flag directive %q: %w", dir.RawText, err)
 	}
 	var spec flagPolicySpec
-	matches := ghishFlagKVRegex.FindAllStringSubmatch(m[1], -1)
-	if len(matches) == 0 {
-		return flagPolicySpec{}, true, fmt.Errorf("malformed //ghish:flag directive %q: expected key=value pairs", text)
-	}
-	for _, kv := range matches {
-		key := kv[1]
-		val := kv[2]
-		if val == "" {
-			val = kv[3]
-		}
+	for key, val := range kvs {
 		switch key {
 		case "mode":
 			spec.Mode = flagPolicyMode(val)
@@ -83,13 +69,13 @@ func parseGhishFlagDirective(text string) (flagPolicySpec, bool, error) {
 		case "doc":
 			spec.Doc = val
 		default:
-			return flagPolicySpec{}, true, fmt.Errorf("unknown key %q in //ghish:flag directive %q", key, text)
+			return flagPolicySpec{}, fmt.Errorf("unknown key %q in //ghish:flag directive %q", key, dir.RawText)
 		}
 	}
 	if err := validateFlagPolicySpec(spec); err != nil {
-		return flagPolicySpec{}, true, fmt.Errorf("invalid //ghish:flag directive %q: %w", text, err)
+		return flagPolicySpec{}, fmt.Errorf("invalid //ghish:flag directive %q: %w", dir.RawText, err)
 	}
-	return spec, true, nil
+	return spec, nil
 }
 
 func validateFlagPolicySpec(spec flagPolicySpec) error {
@@ -378,10 +364,7 @@ var rootAliasTargets = map[string]string{
 // with its scoped command-path resolver.
 func parseASTFlagDirectives(t *testing.T) (map[string]flagPolicySpec, func(fnName, cmdVar string) []string) {
 	t.Helper()
-	fset := token.NewFileSet()
-	paths := collectProductionGoFiles(t, false)
-
-	var files []*ast.File
+	files := astcheck.MustLoadFiles(t, ".", "worktree")
 	cmdUseName := map[string]string{
 		"RootCmd": "*",
 		"PrCmd":   "pr",
@@ -401,14 +384,8 @@ func parseASTFlagDirectives(t *testing.T) (map[string]flagPolicySpec, func(fnNam
 	}
 	var addCmdCalls []addCmdCall
 
-	for _, path := range paths {
-		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
-		if err != nil {
-			t.Fatalf("ParseFile(%q): %v", path, err)
-		}
-		files = append(files, f)
-
-		for _, decl := range f.Decls {
+	for _, fc := range files {
+		for _, decl := range fc.AST.Decls {
 			switch d := decl.(type) {
 			case *ast.GenDecl:
 				if d.Tok != token.VAR {
@@ -584,7 +561,7 @@ func parseASTFlagDirectives(t *testing.T) (map[string]flagPolicySpec, func(fnNam
 	}
 
 	directives := make(map[string]flagPolicySpec)
-	for _, f := range files {
+	for _, fc := range files {
 		// Index flag registration calls by line number: `<cmdVar>.Flags().*Var*(..., "<flagName>", ...)`
 		type flagReg struct {
 			fnName   string
@@ -592,7 +569,7 @@ func parseASTFlagDirectives(t *testing.T) (map[string]flagPolicySpec, func(fnNam
 			flagName string
 		}
 		regByLine := make(map[int]flagReg)
-		for _, decl := range f.Decls {
+		for _, decl := range fc.AST.Decls {
 			fnName := ""
 			if fn, ok := decl.(*ast.FuncDecl); ok {
 				fnName = fn.Name.Name
@@ -606,8 +583,7 @@ func parseASTFlagDirectives(t *testing.T) (map[string]flagPolicySpec, func(fnNam
 				if !ok {
 					return true
 				}
-				line := fset.Position(call.Pos()).Line
-				regByLine[line] = flagReg{
+				regByLine[fc.Line(call.Pos())] = flagReg{
 					fnName:   fnName,
 					cmdVar:   cmdVar,
 					flagName: flagName,
@@ -616,30 +592,24 @@ func parseASTFlagDirectives(t *testing.T) (map[string]flagPolicySpec, func(fnNam
 			})
 		}
 
-		for _, cg := range f.Comments {
-			for _, c := range cg.List {
-				spec, matched, err := parseGhishFlagDirective(c.Text)
-				if !matched {
-					continue
-				}
-				pos := fset.Position(c.Pos())
-				if err != nil {
-					t.Errorf("%s:%d: %v", pos.Filename, pos.Line, err)
-					continue
-				}
-				reg, found := regByLine[pos.Line+1]
-				if !found {
-					t.Errorf("%s:%d: //ghish:flag directive must sit immediately above a Flags().*Var* registration call", pos.Filename, pos.Line)
-					continue
-				}
-				cmdPaths := resolveCmdPaths(reg.fnName, reg.cmdVar)
-				if len(cmdPaths) == 0 {
-					t.Errorf("%s:%d: could not resolve Cobra command path for %q (in %s) on flag --%s", pos.Filename, pos.Line, reg.cmdVar, reg.fnName, reg.flagName)
-					continue
-				}
-				for _, cp := range cmdPaths {
-					directives[cp+":"+reg.flagName] = spec
-				}
+		for _, dir := range fc.Directives("ghish:flag") {
+			spec, err := parseGhishFlagDirective(dir)
+			if err != nil {
+				t.Errorf("%s:%d: %v", fc.Path, dir.Line, err)
+				continue
+			}
+			reg, found := regByLine[dir.TargetLine]
+			if !found {
+				t.Errorf("%s:%d: //ghish:flag directive must sit immediately above a Flags().*Var* registration call", fc.Path, dir.Line)
+				continue
+			}
+			cmdPaths := resolveCmdPaths(reg.fnName, reg.cmdVar)
+			if len(cmdPaths) == 0 {
+				t.Errorf("%s:%d: could not resolve Cobra command path for %q (in %s) on flag --%s", fc.Path, dir.Line, reg.cmdVar, reg.fnName, reg.flagName)
+				continue
+			}
+			for _, cp := range cmdPaths {
+				directives[cp+":"+reg.flagName] = spec
 			}
 		}
 	}
@@ -756,8 +726,12 @@ func TestFlagPolicy_AllRegisteredFlagsClassified(t *testing.T) {
 	setupRootAliases()
 	astDirectives, _ := parseASTFlagDirectives(t)
 
+	visitedWT := false
 	var walk func(cmd *cobra.Command, relPath string)
 	walk = func(cmd *cobra.Command, relPath string) {
+		if relPath == "wt" {
+			visitedWT = true
+		}
 		canonicalPath := relPath
 		for aliasPrefix, targetPrefix := range rootAliasTargets {
 			if canonicalPath == aliasPrefix {
@@ -833,35 +807,8 @@ func TestFlagPolicy_AllRegisteredFlagsClassified(t *testing.T) {
 	}
 
 	walk(RootCmd, "")
-}
-
-// TestFlagPolicy_WorktreeCommandsUseRunE ensures worktree flags in
-// worktree/cmd.go are also covered by AST inspection when present in the package tree.
-func TestFlagPolicy_WorktreeCommandsUseRunE(t *testing.T) {
-	fset := token.NewFileSet()
-	wtCmdPath := filepath.Join("worktree", "cmd.go")
-	f, err := parser.ParseFile(fset, wtCmdPath, nil, parser.ParseComments)
-	if err != nil {
-		t.Skipf("worktree/cmd.go is in subpackage //pw_ghish/worktree: %v", err)
-	}
-
-	foundFlags := 0
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		if strings.Contains(sel.Sel.Name, "Var") {
-			foundFlags++
-		}
-		return true
-	})
-	if foundFlags == 0 {
-		t.Errorf("expected flag registrations in %s, found 0", wtCmdPath)
+	if !visitedWT {
+		t.Fatal("RootCmd has no wt command; is pigweed.dev/pw_ghish/worktree imported?")
 	}
 }
 

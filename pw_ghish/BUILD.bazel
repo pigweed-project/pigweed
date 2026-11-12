@@ -225,6 +225,7 @@ go_test(
     ],
     target_compatible_with = incompatible_with_mcu(),
     deps = [
+        "//pw_ghish/internal/astcheck",
         "//pw_ghish/worktree",
         "@com_github_google_go_cmp//cmp",
         "@com_github_spf13_cobra//:cobra",
