@@ -84,6 +84,24 @@ pw_add_library(pw_containers.functional INTERFACE
     public
 )
 
+pw_add_library(pw_containers._tag INTERFACE
+  HEADERS
+    public/pw_containers/internal/tag.h
+  PUBLIC_INCLUDES
+    public
+)
+
+pw_add_library(pw_containers._maybe INTERFACE
+  HEADERS
+    public/pw_containers/internal/maybe.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_containers._tag
+    pw_polyfill
+    pw_third_party.fuchsia.stdcompat
+)
+
 pw_add_library(pw_containers._common INTERFACE
   HEADERS
     public/pw_containers/internal/traits.h
@@ -235,6 +253,8 @@ pw_add_library(pw_containers._raw_storage INTERFACE
     public/pw_containers/internal/raw_storage.h
   PUBLIC_INCLUDES
     public
+  PUBLIC_DEPS
+    pw_containers._tag
 )
 
 pw_add_library(pw_containers.storage INTERFACE
@@ -539,6 +559,8 @@ pw_add_library(pw_containers.optional_tuple INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_containers._maybe
+    pw_containers._tag
     pw_containers.bitset
     pw_polyfill
     pw_third_party.fuchsia.stdcompat
@@ -1010,6 +1032,20 @@ pw_add_test(pw_containers.intrusive_item_test
     pw_containers.intrusive_multimap
     pw_containers.intrusive_set
     pw_containers.intrusive_multiset
+  GROUPS
+    modules
+    pw_containers
+)
+
+pw_add_test(pw_containers.internal_helpers_test
+  SOURCES
+    internal_helpers_test.cc
+  PRIVATE_DEPS
+    pw_compilation_testing._pigweed_only_negative_compilation
+    pw_containers._maybe
+    pw_containers._tag
+    pw_polyfill
+    pw_unit_test.constexpr
   GROUPS
     modules
     pw_containers

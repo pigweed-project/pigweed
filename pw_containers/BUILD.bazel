@@ -199,6 +199,25 @@ cc_library(
 )
 
 cc_library(
+    name = "tag",
+    hdrs = ["public/pw_containers/internal/tag.h"],
+    strip_include_prefix = "public",
+    visibility = ["//:__subpackages__"],
+)
+
+cc_library(
+    name = "maybe",
+    hdrs = ["public/pw_containers/internal/maybe.h"],
+    strip_include_prefix = "public",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":tag",
+        "//pw_polyfill",
+        "//third_party/fuchsia:stdcompat",
+    ],
+)
+
+cc_library(
     name = "common",
     hdrs = [
         "public/pw_containers/internal/traits.h",
@@ -481,6 +500,7 @@ cc_library(
     hdrs = ["public/pw_containers/internal/raw_storage.h"],
     strip_include_prefix = "public",
     visibility = [":__subpackages__"],
+    deps = [":tag"],
 )
 
 cc_library(
@@ -959,12 +979,26 @@ pw_cc_test(
     ],
 )
 
+pw_cc_test(
+    name = "internal_helpers_test",
+    srcs = ["internal_helpers_test.cc"],
+    has_nc_test = True,
+    deps = [
+        ":maybe",
+        ":tag",
+        "//pw_polyfill",
+        "//pw_unit_test:constexpr",
+    ],
+)
+
 cc_library(
     name = "optional_tuple",
     hdrs = ["public/pw_containers/optional_tuple.h"],
     strip_include_prefix = "public",
     deps = [
         ":bitset",
+        ":maybe",
+        ":tag",
         "//pw_assert:assert",
         "//pw_polyfill",
         "//third_party/fuchsia:stdcompat",

@@ -91,6 +91,23 @@ pw_source_set("functional") {
   public = [ "public/pw_containers/functional.h" ]
 }
 
+pw_source_set("tag") {
+  public = [ "public/pw_containers/internal/tag.h" ]
+  public_configs = [ ":public_include_path" ]
+  visibility = [ "$dir_pigweed/*" ]
+}
+
+pw_source_set("maybe") {
+  public = [ "public/pw_containers/internal/maybe.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":tag",
+    "$dir_pigweed/third_party/fuchsia:stdcompat",
+    dir_pw_polyfill,
+  ]
+  visibility = [ "$dir_pigweed/*" ]
+}
+
 pw_source_set("common") {
   public = [
     "public/pw_containers/internal/traits.h",
@@ -211,6 +228,7 @@ pw_source_set("iterator") {
 pw_source_set("raw_storage") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_containers/internal/raw_storage.h" ]
+  public_deps = [ ":tag" ]
   visibility = [ ":*" ]
 }
 
@@ -484,6 +502,8 @@ pw_source_set("optional_tuple") {
   public = [ "public/pw_containers/optional_tuple.h" ]
   public_deps = [
     ":bitset",
+    ":maybe",
+    ":tag",
     "$dir_pigweed/third_party/fuchsia:stdcompat",
     dir_pw_polyfill,
   ]
@@ -499,6 +519,7 @@ pw_test_group("tests") {
     ":filtered_view_test",
     ":flat_map_test",
     ":functional_test",
+    ":internal_helpers_test",
     ":dynamic_deque_test",
     ":dynamic_hash_map_test",
     ":dynamic_map_test",
@@ -908,6 +929,17 @@ pw_test("intrusive_item_test") {
     ":intrusive_multimap",
     ":intrusive_multiset",
     ":intrusive_set",
+  ]
+  negative_compilation_tests = true
+}
+
+pw_test("internal_helpers_test") {
+  sources = [ "internal_helpers_test.cc" ]
+  deps = [
+    ":maybe",
+    ":tag",
+    "$dir_pw_unit_test:constexpr",
+    dir_pw_polyfill,
   ]
   negative_compilation_tests = true
 }

@@ -194,7 +194,7 @@ TEST(OptionalTuple, Emplace_IntoEmpty) {
   EXPECT_TRUE(tuple.empty());
 
 #if PW_NC_TEST(CannotEmplaceWithTupleNull)
-  PW_NC_EXPECT("OptionalTupleNullPlaceholder");
+  PW_NC_EXPECT("NullPlaceholder");
   tuple.emplace<0>(pw::kTupleNull);
 #endif  // PW_NC_TEST
 

@@ -22,6 +22,8 @@
 #include "lib/stdcompat/type_traits.h"
 #include "pw_assert/assert.h"
 #include "pw_containers/bitset.h"
+#include "pw_containers/internal/maybe.h"
+#include "pw_containers/internal/tag.h"
 #include "pw_polyfill/language_feature_macros.h"
 
 namespace pw {
@@ -30,48 +32,6 @@ template <typename... Types>
 class OptionalTuple;
 
 namespace containers::internal {
-
-// Empty tag type to indicate that an `pw::OptionalTuple` element is not set.
-// Equivalent to `std::nullopt_t`. Use `pw::kTupleNull` to refer to a value of
-// this type.
-//
-// This type is for the exclusive use of  only be used by Pigweed containers!
-class OptionalTupleNullPlaceholder {
- public:
-  static constexpr OptionalTupleNullPlaceholder InternalUseOnly() { return {}; }
-
- private:
-  constexpr OptionalTupleNullPlaceholder() = default;
-};
-
-struct Empty {};
-
-// Untagged optional type for use in OptionalTuple.
-template <typename T>
-union Maybe {
-  // For trivially default constructible types, prefer default-constructing the
-  // value over default-constructing the empty state to avoid a
-  // -WWmaybe-uninitialized when building with GCC.
-  template <
-      typename U = T,
-      typename = std::enable_if_t<std::is_trivially_default_constructible_v<U>>>
-  explicit constexpr Maybe(OptionalTupleNullPlaceholder) : value{} {}
-
-  template <typename U = T,
-            typename =
-                std::enable_if_t<!std::is_trivially_default_constructible_v<U>>,
-            int = 0>
-  explicit constexpr Maybe(OptionalTupleNullPlaceholder) : none{} {}
-
-  template <typename... Args>
-  constexpr Maybe(Args&&... args) : value(std::forward<Args>(args)...) {}
-
-  // A destructor is required for types with non-trivial destructors.
-  PW_CONSTEXPR_CPP20 ~Maybe() {}
-
-  Empty none;
-  T value;
-};
 
 template <typename T, typename First, typename... Other>
 constexpr size_t FindFirstIndexOf() {
@@ -105,7 +65,7 @@ struct IsOptionalTuple<OptionalTuple<Types...>> : std::true_type {};
 /// mean to leave the element uninitialized or initialize it to an empty
 /// `std::optional`.
 inline constexpr auto kTupleNull =
-    containers::internal::OptionalTupleNullPlaceholder::InternalUseOnly();
+    containers::internal::NullPlaceholder::InternalUseOnly();
 
 /// Tuple class with optional elements. Equivalent to
 /// `std::tuple<std::optional<Types>...>`, but much more efficient. Field
@@ -148,12 +108,11 @@ class OptionalTuple {
                                          cpp20::remove_cvref_t<Args>>::value &&
                                      ...))>>
   constexpr OptionalTuple(Args&&... args)
-      : tuple_(
-            std::forward<Args>(args)...,
-            Bits::LittleEndian(
-                !std::is_same_v<
-                    cpp20::remove_cvref_t<Args>,
-                    containers::internal::OptionalTupleNullPlaceholder>...)) {}
+      : tuple_(std::forward<Args>(args)...,
+               Bits::LittleEndian(
+                   !std::is_same_v<cpp20::remove_cvref_t<Args>,
+                                   containers::internal::NullPlaceholder>...)) {
+  }
 
   /// Copy constructs from another `OptionalTuple`.
   constexpr OptionalTuple(const OptionalTuple& other)

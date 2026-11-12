@@ -19,6 +19,8 @@
 #include <new>
 #include <type_traits>
 
+#include "pw_containers/internal/tag.h"
+
 namespace pw::containers::internal {
 
 // Used as max_size in generic-sized interfaces using RawStorage<T>.
@@ -80,8 +82,6 @@ class BasicRawStorage : public Base {
   constexpr size_type max_size() const noexcept { return kCapacity; }
 
  private:
-  struct Empty {};
-
   union {
     // Elements must initialized on demand with placement new, this array
     // provides the right amount of storage needed for the elements, however it
