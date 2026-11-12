@@ -23,6 +23,7 @@
 package pw_ghish
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -247,10 +248,45 @@ func TestInvariants_NoRawANSIEscapesOutsideUIGo(t *testing.T) {
 	}
 }
 
+type wrapsErrorRecorder struct {
+	testing.TB
+	errs []string
+}
+
+func (r *wrapsErrorRecorder) Helper() {}
+func (r *wrapsErrorRecorder) Errorf(f string, a ...any) {
+	r.errs = append(r.errs, fmt.Sprintf(f, a...))
+}
+
 // TestInvariants_DomainWrappers verifies that all //ghish:wraps domain wrappers
 // are respected across pw_ghish, pw_ghish/worktree, and pw_ghish/cmd.
 func TestInvariants_DomainWrappers(t *testing.T) {
-	astcheck.AssertWraps(t, astcheck.MustLoadFiles(t, ".", "worktree", "cmd"))
+	files := astcheck.MustLoadFiles(t, ".", "worktree", "cmd")
+	astcheck.AssertWraps(t, files)
+
+	for _, tc := range []struct {
+		src, wantWrapper string
+	}{
+		{`package p; import "os/exec"; func f() { _ = exec.Command("git") }`, "ExecCommand"},
+		{`package p; import "os/exec"; func f() { _, _ = exec.LookPath("git") }`, "LookPath"},
+		{`package p; import "net/http"; func f() { _ = &http.Client{} }`, "EnsureSafeHTTPClient"},
+		{`package p; import "net/http"; func f() { _ = &http.Transport{} }`, "EnsureSafeHTTPClient"},
+		{`package p; import "net/http"; func f() { _ = http.DefaultClient }`, "EnsureSafeHTTPClient"},
+		{`package p; import "net/http"; func f() { _, _ = http.Get("https://example.com") }`, "EnsureSafeHTTPClient"},
+		{`package p; import "net/http"; func f() { _, _ = http.NewRequest("GET", "https://example.com", nil) }`, "EnsureSafeHTTPClient"},
+		{`package p; import ("context"; "net/http"); func f(ctx context.Context) { _, _ = http.NewRequestWithContext(ctx, "GET", "https://example.com", nil) }`, "ExecuteWithAuthStrategy"},
+	} {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, "bad.go", tc.src, 0)
+		if err != nil {
+			t.Fatalf("ParseFile(%s): %v", tc.src, err)
+		}
+		rec := &wrapsErrorRecorder{TB: t}
+		astcheck.AssertWraps(rec, append(slices.Clone(files), &astcheck.File{AST: f, Path: "bad.go", Src: []byte(tc.src), Fset: fset}))
+		if len(rec.errs) != 1 || !strings.Contains(rec.errs[0], "bypasses wrapper "+tc.wantWrapper) {
+			t.Errorf("for %s: got %v, want 1 error mentioning wrapper %s", tc.src, rec.errs, tc.wantWrapper)
+		}
+	}
 }
 
 // findTestProcessSpawns reports direct process-spawning calls or references

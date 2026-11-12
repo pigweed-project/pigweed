@@ -15,13 +15,11 @@
 package pw_ghish
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"net/url"
@@ -209,12 +207,11 @@ const (
 func NewIssueTrackerClient(endpoint string, httpClient *http.Client) *IssueTrackerClient {
 	endpoint = cmp.Or(strings.TrimRight(strings.TrimSpace(endpoint), "/"), DefaultIssueTrackerEndpoint)
 	if httpClient == nil {
-		c := &http.Client{Timeout: 30 * time.Second}
+		httpClient = EnsureSafeHTTPClient(nil)
+		httpClient.Timeout = 30 * time.Second
 		if u, err := url.Parse(endpoint); err == nil && isCorpIssueTrackerURL(u) {
-			c.Transport = &gossoRoundTripper{}
-			c.Timeout = 45 * time.Second
+			httpClient.Timeout = 45 * time.Second
 		}
-		httpClient = ensureSafeHTTPClient(c)
 	}
 	return &IssueTrackerClient{
 		Endpoint:             endpoint,
@@ -286,24 +283,7 @@ func (c *IssueTrackerClient) doJSON(ctx context.Context, method, path string, re
 	}
 
 	fullURL := c.Endpoint + path
-	resp, err := executeWithAuthStrategy(ctx, c.HTTPClient, newIssueTrackerAuth(c.Endpoint, c.TokenProvider), func(reqCtx context.Context) (*http.Request, error) {
-		var bodyReader io.Reader
-		if reqBody != nil {
-			bodyReader = bytes.NewReader(jsonBytes)
-		}
-		req, err := http.NewRequestWithContext(reqCtx, method, fullURL, bodyReader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP request for %s %s: %w", method, fullURL, err)
-		}
-		req.Header.Set("Accept", "application/json")
-		if qp != "" {
-			req.Header.Set("X-Goog-User-Project", qp)
-		}
-		if reqBody != nil {
-			req.Header.Set("Content-Type", "application/json")
-		}
-		return req, nil
-	})
+	resp, err := ExecuteWithAuthStrategy(ctx, c.HTTPClient, newIssueTrackerAuth(c.Endpoint, c.TokenProvider, qp), method, fullURL, jsonBytes)
 	if err != nil {
 		if exitErr, ok := errors.AsType[*ExitCodeError](err); ok {
 			return exitErr

@@ -179,7 +179,7 @@ func findGitRemoteSSO() string {
 func preferredCorpGitSchemes() []string {
 	var schemes []string
 	if isLOASLinux() {
-		if p, err := LookPathFn("git-remote-rpc"); err == nil && p != "" {
+		if p, err := LookPath("git-remote-rpc"); err == nil && p != "" {
 			schemes = append(schemes, "rpc")
 		}
 	}

@@ -331,7 +331,7 @@ func effectiveLocalPresubmitHint(projCfg *ProjectConfig, _ ProjectProfile) strin
 // getLUCIHTTPClient returns an HTTP client for LUCI Buildbucket queries.
 // It standardizes where the LUCI HTTP client comes from across checks and run commands.
 var getLUCIHTTPClient = func() *http.Client {
-	return ensureSafeHTTPClient(nil)
+	return EnsureSafeHTTPClient(nil)
 }
 
 // buildsSettled reports whether every build in builds has finished. An empty

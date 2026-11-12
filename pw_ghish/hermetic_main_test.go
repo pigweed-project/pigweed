@@ -84,7 +84,7 @@ func TestHermeticDefaults_FailClosed(t *testing.T) {
 		name string
 		fn   func() error
 	}{
-		{"LookPathFn", func() error { _, err := LookPathFn("luci-auth"); return err }},
+		{"LookPath", func() error { _, err := LookPath("luci-auth"); return err }},
 		{"OAuthTokenCommandRunner", func() error { _, err := OAuthTokenCommandRunner(ctx, "luci-auth", "token"); return err }},
 		{"gossoCookieJarRunner", func() error { _, err := gossoCookieJarRunner(ctx, "gosso"); return err }},
 		{"SafeHTTPTransportCorpSSO", func() error {

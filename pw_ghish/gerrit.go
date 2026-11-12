@@ -457,7 +457,7 @@ func NewGerritClientWithStrategy(baseURL string, hc *http.Client, strategy HTTPA
 	normURL, _ := normalizeGerritBaseURL(baseURL)
 	return &GerritClient{
 		baseURL:  normURL,
-		hc:       ensureSafeHTTPClient(hc),
+		hc:       EnsureSafeHTTPClient(hc),
 		strategy: strategy,
 		stderr:   os.Stderr,
 	}
@@ -556,21 +556,7 @@ func (c *GerritClient) doRaw(ctx context.Context, method, path string, q url.Val
 		}
 	}
 
-	resp, err := executeWithAuthStrategy(withGerritStderr(ctx, c.stderr), c.hc, c.strategy, func(reqCtx context.Context) (*http.Request, error) {
-		var body io.Reader
-		if payload != nil {
-			body = bytes.NewReader(payload)
-		}
-		req, err := http.NewRequestWithContext(reqCtx, method, reqURL, body)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Accept", "application/json")
-		if payload != nil {
-			req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		}
-		return req, nil
-	})
+	resp, err := ExecuteWithAuthStrategy(withGerritStderr(ctx, c.stderr), c.hc, c.strategy, method, reqURL, payload)
 	if err != nil {
 		return nil, err
 	}

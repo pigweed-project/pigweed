@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"sync"
 )
@@ -187,7 +186,7 @@ func FormatProfileRerunCommand(p ProjectProfile, change GerritChangeRef, builder
 }
 
 var (
-	lookPathFn = exec.LookPath
+	lookPathFn = LookPath
 	execCmdFn  = func(ctx context.Context, name string, args []string, stdout, stderr io.Writer) error {
 		cmd := ExecCommandContext(ctx, name, args...)
 		cmd.Stdout = stdout

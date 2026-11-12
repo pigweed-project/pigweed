@@ -15,7 +15,6 @@
 package pw_ghish
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -306,7 +305,7 @@ type LUCIClient struct {
 // redirects is used.
 func NewLUCIClient(host string, httpClient *http.Client) *LUCIClient {
 	if httpClient == nil {
-		httpClient = ensureSafeHTTPClient(nil)
+		httpClient = EnsureSafeHTTPClient(nil)
 	}
 	return &LUCIClient{
 		Host:       host,
@@ -348,15 +347,7 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 		fmt.Fprintf(os.Stderr, "[debug] pRPC request: %s %s\n", endpoint, string(jsonBytes))
 	}
 
-	httpResp, err := executeWithAuthStrategy(ctx, c.HTTPClient, newLUCIAuth(c.Host, c.TokenProvider), func(reqCtx context.Context) (*http.Request, error) {
-		httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(jsonBytes))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create %s/%s request: %w", service, method, err)
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Accept", "application/json")
-		return httpReq, nil
-	})
+	httpResp, err := ExecuteWithAuthStrategy(ctx, c.HTTPClient, newLUCIAuth(c.Host, c.TokenProvider), http.MethodPost, endpoint, jsonBytes)
 	if err != nil {
 		if _, ok := errors.AsType[*ExitCodeError](err); ok {
 			return err
@@ -557,9 +548,7 @@ func (c *LUCIClient) fetchLogStreamTail(ctx context.Context, viewURL string, max
 	}
 
 	targetURL := parsed.String()
-	resp, err := executeWithAuthStrategy(ctx, c.HTTPClient, newLUCIAuth(c.Host, c.TokenProvider), func(reqCtx context.Context) (*http.Request, error) {
-		return http.NewRequestWithContext(reqCtx, http.MethodGet, targetURL, nil)
-	})
+	resp, err := ExecuteWithAuthStrategy(ctx, c.HTTPClient, newLUCIAuth(c.Host, c.TokenProvider), http.MethodGet, targetURL, nil)
 	if err != nil {
 		if ExitCodeFor(err) == ExitCodeAuth {
 			return "", 0, fmt.Errorf("failed to authenticate log request: %w", err)

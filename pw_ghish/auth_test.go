@@ -148,9 +148,9 @@ func TestEnsureSafeHTTPClient(t *testing.T) {
 	origin := []*http.Request{mustAuthedReq("https://pigweed-review.googlesource.com/a/changes/1")}
 
 	t.Run("nil client creates safe client with no timeout", func(t *testing.T) {
-		got := ensureSafeHTTPClient(nil)
+		got := EnsureSafeHTTPClient(nil)
 		if got == nil || got.CheckRedirect == nil || got.Timeout != 0 {
-			t.Fatalf("ensureSafeHTTPClient(nil) = %+v, want non-nil with CheckRedirect and Timeout=0", got)
+			t.Fatalf("EnsureSafeHTTPClient(nil) = %+v, want non-nil with CheckRedirect and Timeout=0", got)
 		}
 		if _, ok := got.Transport.(*safeHTTPTransport); !ok {
 			t.Fatalf("got.Transport = %T, want *safeHTTPTransport", got.Transport)
@@ -166,7 +166,7 @@ func TestEnsureSafeHTTPClient(t *testing.T) {
 			return okGerritResponse(req, "{}"), nil
 		}}
 		in := &http.Client{Transport: tr, Timeout: 15 * time.Second}
-		got := ensureSafeHTTPClient(in)
+		got := EnsureSafeHTTPClient(in)
 		if got == in {
 			t.Fatal("expected shallow copy of input client, got same pointer")
 		}
@@ -201,12 +201,12 @@ func TestEnsureSafeHTTPClient(t *testing.T) {
 				return sentinelErr
 			},
 		}
-		got := ensureSafeHTTPClient(in)
+		got := EnsureSafeHTTPClient(in)
 		if got == in {
 			t.Fatal("expected shallow copy of input client so custom CheckRedirect is not mutated in place")
 		}
-		if ensureSafeHTTPClient(got) != got {
-			t.Error("ensureSafeHTTPClient on an already-safe client should return the same pointer")
+		if EnsureSafeHTTPClient(got) != got {
+			t.Error("EnsureSafeHTTPClient on an already-safe client should return the same pointer")
 		}
 		req := mustAuthedReq("https://evil.example.com/blob")
 		if err := got.CheckRedirect(req, origin); !errors.Is(err, sentinelErr) || !customCalled {
@@ -1462,9 +1462,7 @@ func TestBearerTokenStrategy_ConcurrentRequests(t *testing.T) {
 		wg.Go(func() {
 			wCtx := withGerritStderr(context.WithValue(t.Context(), workerKey{}, i), io.Discard)
 			u := fmt.Sprintf("https://pigweed-review.googlesource.com/a/changes/%d", i)
-			resp, err := executeWithAuthStrategy(wCtx, hc, shared, func(reqCtx context.Context) (*http.Request, error) {
-				return http.NewRequestWithContext(reqCtx, http.MethodGet, u, nil)
-			})
+			resp, err := ExecuteWithAuthStrategy(wCtx, hc, shared, http.MethodGet, u, nil)
 			if err != nil {
 				t.Errorf("worker %d err = %v", i, err)
 				return

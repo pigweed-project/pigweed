@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -578,15 +579,13 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 
 	// Tier B: Direct HTTP fallback via androidbuildinternal v3 REST API and ci.android.com.
 	if buildLog == "" && bid != "" && target != "" {
-		client := ensureSafeHTTPClient(p.HTTPClient)
+		client := EnsureSafeHTTPClient(p.HTTPClient)
 		auth := newAndroidBuildAuth(p.apiBase(), p.ciBase(), p.TokenProvider, p.Cfg)
 		apiBase := strings.TrimRight(p.apiBase(), "/")
 		urlEndpoint := fmt.Sprintf("%s/android/internal/build/v3/builds/%s/%s/attempts/latest/artifacts/build.log/url",
 			apiBase, url.PathEscape(bid), url.PathEscape(target))
 
-		resp, err := executeWithAuthStrategy(ctx, client, auth, func(reqCtx context.Context) (*http.Request, error) {
-			return http.NewRequestWithContext(reqCtx, http.MethodGet, urlEndpoint, nil)
-		})
+		resp, err := ExecuteWithAuthStrategy(ctx, client, auth, http.MethodGet, urlEndpoint, nil)
 		if exitErr, ok := errors.AsType[*ExitCodeError](err); ok {
 			return "", "", "", exitErr
 		}
@@ -600,18 +599,13 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 				}
 				trimmed := bytes.TrimSpace(bytes.TrimPrefix(body, []byte(")]}'")))
 				if json.Unmarshal(trimmed, &signed) == nil && (signed.SignedURL != "" || signed.URL != "") {
-					dlURL := signed.SignedURL
-					if dlURL == "" {
-						dlURL = signed.URL
-					}
-					if dlReq, err := http.NewRequestWithContext(ctx, "GET", dlURL, nil); err == nil {
-						if dlResp, err := client.Do(dlReq); err == nil && dlResp != nil {
-							dlBytes, _ := readBoundedLog(dlResp.Body, maxHTTPBodyBytes)
-							dlResp.Body.Close()
-							if dlResp.StatusCode >= 200 && dlResp.StatusCode < 300 {
-								buildLog = string(dlBytes)
-								logURL = dlURL
-							}
+					dlURL := cmp.Or(signed.SignedURL, signed.URL)
+					if dlResp, err := ExecuteWithAuthStrategy(ctx, client, auth, http.MethodGet, dlURL, nil); err == nil && dlResp != nil {
+						dlBytes, _ := readBoundedLog(dlResp.Body, maxHTTPBodyBytes)
+						dlResp.Body.Close()
+						if dlResp.StatusCode >= 200 && dlResp.StatusCode < 300 {
+							buildLog = string(dlBytes)
+							logURL = dlURL
 						}
 					}
 				} else {
@@ -632,9 +626,7 @@ func (p *BusytownProvider) fetchBusytownLogs(ctx context.Context, bid, target, i
 			}
 			rawEndpoint := fmt.Sprintf("%s/builds/%s/%s/%s/latest/raw/build.log",
 				ciBase, kind, url.PathEscape(bid), url.PathEscape(target))
-			resp, err := executeWithAuthStrategy(ctx, client, auth, func(reqCtx context.Context) (*http.Request, error) {
-				return http.NewRequestWithContext(reqCtx, http.MethodGet, rawEndpoint, nil)
-			})
+			resp, err := ExecuteWithAuthStrategy(ctx, client, auth, http.MethodGet, rawEndpoint, nil)
 			if exitErr, ok := errors.AsType[*ExitCodeError](err); ok {
 				return "", "", "", exitErr
 			}

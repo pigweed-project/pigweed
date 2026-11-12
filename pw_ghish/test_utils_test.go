@@ -798,6 +798,7 @@ func WithHermeticAuth(t testing.TB, overrides AuthResolvers) {
 	SetAuthResolvers(hermetic)
 	SetAuthResolvers(overrides)
 	t.Cleanup(func() {
+		LookPathFn = prev.LookPath
 		SetAuthResolvers(prev)
 		hermeticAuthActive = prevActive
 		ResetAuthTokenCaches()

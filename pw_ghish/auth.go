@@ -80,7 +80,7 @@ import (
 //                                                              v
 //                                                      executeWithAuthStrategy
 //                                                        1. Prepare(req)   -> auth headers, /a/ prefix
-//                                                        2. ensureSafeHTTPClient (Uplink / HTTPS guard)
+//                                                        2. EnsureSafeHTTPClient (Uplink / HTTPS guard)
 //                                                        3. HandleResponse -> refresh / fallback
 
 // AuthMode describes the authentication policy mode (auto, googler, community, none).
@@ -324,18 +324,23 @@ func (rt *safeHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error
 	if isCorpSSORequest(req) {
 		return roundTripCorpSSO(req)
 	}
+	if rt.direct == nil && isCorpIssueTrackerURL(req.URL) {
+		return (&gossoRoundTripper{}).RoundTrip(req)
+	}
 	if !isHTTPSOrLoopbackURL(req.URL) && (hasRequestCredentials(req.Header) || isCorpGerritURL(req.URL)) {
 		return nil, fmt.Errorf("refusing to send authenticated or corp request over cleartext HTTP to %q", req.URL.Redacted())
 	}
 	return cmp.Or[http.RoundTripper](rt.direct, http.DefaultTransport).RoundTrip(req)
 }
 
-// ensureSafeHTTPClient returns c with CheckRedirect enforcing
+// EnsureSafeHTTPClient returns c with CheckRedirect enforcing
 // stripAuthOnCrossHostRedirect and Transport wrapped in safeHTTPTransport
 // (composing with any existing CheckRedirect on c without mutating c in place).
 // A nil c gives a client with no Timeout: requests are bounded by their
 // context, so Ctrl-C cancels them and long log downloads are not cut off.
-func ensureSafeHTTPClient(c *http.Client) *http.Client {
+//
+//ghish:wraps &net/http.Client{}, &net/http.Transport{}, net/http.DefaultClient, net/http.Get, net/http.Head, net/http.Post, net/http.PostForm, net/http.NewRequest -- use EnsureSafeHTTPClient and ExecuteWithAuthStrategy
+func EnsureSafeHTTPClient(c *http.Client) *http.Client {
 	if c == nil {
 		return &http.Client{
 			CheckRedirect: stripAuthOnCrossHostRedirect,
@@ -431,15 +436,18 @@ func drainAndCloseResponseBody(resp *http.Response) {
 	_ = resp.Body.Close()
 }
 
-// executeWithAuthStrategy executes an HTTP request using strategy, rebuilding
-// and re-sending the request when strategy.HandleResponse requests a retry.
-func executeWithAuthStrategy(
+// ExecuteWithAuthStrategy executes an HTTP request using strategy, rebuilding
+// the request and rewinding body on each retry attempt.
+//
+//ghish:wraps net/http.NewRequestWithContext -- use ExecuteWithAuthStrategy in auth.go so all HTTP requests honor auth strategy and retry policies
+func ExecuteWithAuthStrategy(
 	ctx context.Context,
 	hc *http.Client,
 	strategy HTTPAuthStrategy,
-	buildReq func(context.Context) (*http.Request, error),
+	method, reqURL string,
+	body []byte,
 ) (*http.Response, error) {
-	client := ensureSafeHTTPClient(hc)
+	client := EnsureSafeHTTPClient(hc)
 	attemptCtx := context.WithValue(ctx, authAttemptKey, &authAttemptState{})
 	var resp *http.Response
 	for attempt := 0; attempt <= maxAuthStrategyRetries; attempt++ {
@@ -447,9 +455,17 @@ func executeWithAuthStrategy(
 			drainAndCloseResponseBody(resp)
 			resp = nil
 		}
-		req, err := buildReq(attemptCtx)
+		var bodyReader io.Reader
+		if body != nil {
+			bodyReader = bytes.NewReader(body)
+		}
+		req, err := http.NewRequestWithContext(attemptCtx, method, reqURL, bodyReader)
 		if err != nil {
 			return nil, err
+		}
+		req.Header.Set("Accept", "application/json")
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
 		}
 		if err := strategy.Prepare(attemptCtx, req); err != nil {
 			return nil, err
@@ -859,25 +875,33 @@ func resolveIssueTrackerCommandAuth(ctx context.Context, cfg *Config, profile Pr
 type issueTrackerAuthStrategy struct {
 	*BearerTokenStrategy
 	endpointHost string
+	quotaProject string
 }
 
 func (s *issueTrackerAuthStrategy) Prepare(ctx context.Context, req *http.Request) error {
 	if !urlHostIn(req.URL, s.endpointHost) {
 		return fmt.Errorf("refusing to send Issue Tracker credentials to %s: endpoint must be HTTPS", req.URL)
 	}
-	return s.BearerTokenStrategy.Prepare(ctx, req)
+	if err := s.BearerTokenStrategy.Prepare(ctx, req); err != nil {
+		return err
+	}
+	if s.quotaProject != "" {
+		req.Header.Set("X-Goog-User-Project", s.quotaProject)
+	}
+	return nil
 }
 
 // newIssueTrackerAuth returns the HTTPAuthStrategy for the configured Issue
 // Tracker endpoint, failing closed before RoundTrip if a request targets plain
 // non-loopback HTTP or a different host.
-func newIssueTrackerAuth(endpoint string, tokenProvider func(context.Context) (string, error)) HTTPAuthStrategy {
+func newIssueTrackerAuth(endpoint string, tokenProvider func(context.Context) (string, error), quotaProject string) HTTPAuthStrategy {
 	if tokenProvider == nil {
 		tokenProvider = DefaultIssueTrackerToken
 	}
 	endpointHost := hostnameOf(endpoint)
 	return &issueTrackerAuthStrategy{
 		endpointHost: endpointHost,
+		quotaProject: strings.TrimSpace(quotaProject),
 		BearerTokenStrategy: NewDynamicBearerStrategy(
 			"token (Issue Tracker)",
 			func(u *url.URL) bool {
@@ -998,13 +1022,24 @@ func isGerritTokenAuthRejection(resp *http.Response) bool {
 	})
 }
 
-// LookPathFn allows overriding exec.LookPath in tests.
-var LookPathFn = exec.LookPath
+// LookPathFn allows overriding LookPath in tests.
+var LookPathFn func(file string) (string, error)
 
-// lookPathFirst returns the first candidate found by LookPathFn, or "" if none exist.
+// LookPath searches for an executable named file in the directories named by
+// the PATH environment variable, honoring any test override in LookPathFn.
+//
+//ghish:wraps os/exec.LookPath -- use LookPath in auth.go so PATH lookups respect WithHermeticAuth
+func LookPath(file string) (string, error) {
+	if LookPathFn != nil {
+		return LookPathFn(file)
+	}
+	return exec.LookPath(file)
+}
+
+// lookPathFirst returns the first candidate found by LookPath, or "" if none exist.
 func lookPathFirst(candidates ...string) string {
 	for _, cand := range candidates {
-		if path, err := LookPathFn(cand); err == nil && path != "" {
+		if path, err := LookPath(cand); err == nil && path != "" {
 			return path
 		}
 	}
@@ -1451,7 +1486,7 @@ func hasSSOCredHelper() bool {
 	if runtimeGOOS != "linux" {
 		return false
 	}
-	path, err := LookPathFn(ssoCredHelperPath)
+	path, err := LookPath(ssoCredHelperPath)
 	return err == nil && path != ""
 }
 
@@ -1504,7 +1539,7 @@ func findLuciAuthBinary(ctx context.Context) string {
 // findLuciAuthBinaryWithSearched is findLuciAuthBinary, also returning every
 // location it checked, in order ("PATH" first), for error messages.
 func findLuciAuthBinaryWithSearched(_ context.Context) (string, []string) {
-	if path, err := LookPathFn("luci-auth"); err == nil && path != "" {
+	if path, err := LookPath("luci-auth"); err == nil && path != "" {
 		return path, []string{"PATH"}
 	}
 	var candidates []string
@@ -1527,7 +1562,7 @@ func findLuciAuthBinaryWithSearched(_ context.Context) (string, []string) {
 		)
 	}
 	for i, cand := range candidates {
-		if path, err := LookPathFn(cand); err == nil && path != "" {
+		if path, err := LookPath(cand); err == nil && path != "" {
 			return path, append([]string{"PATH"}, candidates[:i+1]...)
 		}
 	}
