@@ -875,15 +875,12 @@ pw_test("synchronized_allocator_test") {
       pw_thread_YIELD_BACKEND != "" &&
       pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
   deps = [
-    ":first_fit",
     ":sync_allocator_testing",
     ":synchronized_allocator",
     ":test_harness",
     ":testing",
     "$dir_pw_sync:interrupt_spin_lock",
     "$dir_pw_sync:mutex",
-    "$dir_pw_sync:no_lock",
-    dir_pw_polyfill,
   ]
   sources = [ "synchronized_allocator_test.cc" ]
 }
@@ -914,7 +911,6 @@ pw_test("tracking_allocator_test") {
     ":tracking_allocator",
     dir_pw_log,
     dir_pw_metric,
-    dir_pw_polyfill,
   ]
   sources = [ "tracking_allocator_test.cc" ]
 }

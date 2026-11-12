@@ -185,8 +185,8 @@ class GenericMetrics {
  public:
   ~GenericMetrics() = default;
 
-  constexpr const metric::Group& group() const { return group_; }
-  constexpr metric::Group& group() { return group_; }
+  const metric::Group& group() const { return group_; }
+  metric::Group& group() { return group_; }
 
   [[nodiscard]] constexpr bool is_reallocating() const { return reallocating_; }
   constexpr void set_reallocating(bool reallocating) {
@@ -194,9 +194,7 @@ class GenericMetrics {
   }
 
  protected:
-  constexpr explicit GenericMetrics(metric::Token token) : group_(token) {}
-  constexpr GenericMetrics(metric::Token token, metric::GroupList& groups)
-      : group_(token, groups) {}
+  explicit GenericMetrics(metric::Token token) : group_(token) {}
 
  private:
   metric::Group group_;
@@ -216,10 +214,9 @@ template <typename MetricsType>
 class Metrics final : public internal::GenericMetrics {
  public:
   constexpr Metrics(metric::Token token);
-  constexpr Metrics(metric::Token token, metric::GroupList& groups);
   ~Metrics() = default;
 
-  constexpr const MetricsType& metrics() const { return metrics_; }
+  const MetricsType& metrics() const { return metrics_; }
 
   /// Updates how much memory was requested and successfully allocated.
   ///
@@ -275,8 +272,6 @@ class Metrics final : public internal::GenericMetrics {
   }
 
  private:
-  constexpr void AddMetricsToGroup();
-
   MetricsType metrics_;
 };
 
@@ -306,18 +301,6 @@ void CopyMetrics(const MetricsType& src, MetricsType& dst) {
 template <typename MetricsType>
 constexpr Metrics<MetricsType>::Metrics(metric::Token token)
     : GenericMetrics(token) {
-  AddMetricsToGroup();
-}
-
-template <typename MetricsType>
-constexpr Metrics<MetricsType>::Metrics(metric::Token token,
-                                        metric::GroupList& groups)
-    : GenericMetrics(token, groups) {
-  AddMetricsToGroup();
-}
-
-template <typename MetricsType>
-constexpr void Metrics<MetricsType>::AddMetricsToGroup() {
 #define PW_ALLOCATOR_ADD_TO_GROUP(metric_name)      \
   if constexpr (MetricsType::has_##metric_name()) { \
     group().Add(metrics_.metric_name);              \

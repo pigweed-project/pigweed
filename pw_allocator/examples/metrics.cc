@@ -14,19 +14,14 @@
 
 #include "pw_allocator/metrics.h"
 
-#include <array>
-#include <cstddef>
 #include <cstdint>
 #include <string_view>
 
 #include "examples/named_u32.h"
 #include "pw_allocator/allocator.h"
-#include "pw_allocator/first_fit.h"
 #include "pw_allocator/testing.h"
 #include "pw_allocator/tracking_allocator.h"
-#include "pw_metric/global.h"
 #include "pw_metric/metric.h"
-#include "pw_polyfill/language_feature_macros.h"
 #include "pw_unit_test/framework.h"
 
 namespace examples {
@@ -80,32 +75,6 @@ void CollectMultipleTrackers(pw::Allocator& allocator) {
   combined.metric_group().Dump();
 }
 
-void CollectRegisteredMetrics(pw::Allocator& allocator) {
-  // DOCSTAG: [pw_allocator-examples-metrics-group_list]
-  constexpr pw::metric::Token kToken = PW_METRIC_TOKEN("GlobalTracker");
-  pw::allocator::TrackingAllocator<CustomMetrics> tracker(
-      kToken, allocator, pw::metric::global_groups);
-  // DOCSTAG: [pw_allocator-examples-metrics-group_list]
-
-  auto ptr = tracker.MakeUnique<NamedU32>("test", 111u);
-}
-
-struct CounterMetrics : public ::pw::allocator::NoMetrics {
-  PW_ALLOCATOR_METRICS_ENABLE(num_allocations);
-  PW_ALLOCATOR_METRICS_ENABLE(num_deallocations);
-  PW_ALLOCATOR_METRICS_ENABLE(num_failures);
-};
-
-// DOCSTAG: [pw_allocator-examples-metrics-constinit]
-constexpr pw::metric::Token kConstinitToken =
-    PW_METRIC_TOKEN("ConstinitTracker");
-PW_CONSTINIT pw::allocator::FirstFitAllocator<> base_allocator;
-PW_CONSTINIT pw::allocator::TrackingAllocator<CounterMetrics> constinit_tracker(
-    kConstinitToken,
-    base_allocator,
-    pw::allocator::FirstFitAllocator<>::kCapabilities);
-// DOCSTAG: [pw_allocator-examples-metrics-constinit]
-
 }  // namespace examples
 
 namespace pw::allocator {
@@ -147,24 +116,6 @@ TEST_F(MetricsExampleTest, CollectMultipleTrackers) {
   //   EXPECT_EQ(log.level, PW_LOG_LEVEL_INFO);
   //   EXPECT_STREQ(log.message.c_str(), line.data());
   // }
-}
-
-TEST_F(MetricsExampleTest, CollectRegisteredMetrics) {
-  examples::CollectRegisteredMetrics(allocator_);
-}
-
-TEST_F(MetricsExampleTest, ConstinitTracker) {
-  alignas(pw::allocator::FirstFitAllocator<>::BlockType::
-              kAlignment) static std::array<std::byte, 256>
-      buffer{};
-  static bool initialized = false;
-  if (!initialized) {
-    examples::base_allocator.Init(buffer);
-    initialized = true;
-  }
-  auto ptr =
-      examples::constinit_tracker.MakeUnique<examples::NamedU32>("test", 333u);
-  ASSERT_NE(ptr, nullptr);
 }
 
 }  // namespace pw::allocator

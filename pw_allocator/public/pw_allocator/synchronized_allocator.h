@@ -16,7 +16,6 @@
 #include <cstddef>
 #include <mutex>
 #include <optional>
-#include <utility>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/forwarding_allocator.h"
@@ -48,41 +47,11 @@ class SynchronizedAllocator final : public ForwardingAllocator {
  public:
   using BorrowedPointer = sync::BorrowedPointer<pw::Allocator, LockType>;
 
-  /// Constructs a synchronized allocator without setting its wrapped allocator.
-  ///
-  /// The wrapped allocator must be provided via `Init()` before any allocation
-  /// methods or `Borrow()` are called. Constant initialization with
-  /// `PW_CONSTINIT` requires `LockType` to be `constexpr`-default-constructible
-  /// (such as `pw::sync::NoLock` or `pw::sync::InterruptSpinLock`).
-  ///
-  /// @param[in] capabilities Capabilities exposed by this allocator.
   constexpr SynchronizedAllocator(const Capabilities& capabilities) noexcept
       : Base(capabilities) {}
 
-  /// Constructs a synchronized allocator wrapping `allocator` with explicit
-  /// `capabilities`.
-  ///
-  /// Unlike `SynchronizedAllocator(pw::Allocator&)`, this constructor does not
-  /// read `allocator.capabilities()`, allowing constant initialization with
-  /// `PW_CONSTINIT` when wrapping a separate static allocator and using a
-  /// `constexpr`-default-constructible `LockType` (such as `pw::sync::NoLock`
-  /// or `pw::sync::InterruptSpinLock`).
-  ///
-  /// @param[in,out] allocator Wrapped allocator to synchronize access to. Must
-  /// remain valid for the lifetime of this object.
-  /// @param[in] capabilities Capabilities exposed by this allocator.
-  constexpr SynchronizedAllocator(pw::Allocator& allocator,
-                                  const Capabilities& capabilities) noexcept
-      : Base(allocator, capabilities),
-        borrowable_(std::in_place, allocator, lock_) {}
-
-  /// Constructs a synchronized allocator wrapping `allocator` and inheriting
-  /// `allocator.capabilities()`.
-  ///
-  /// @param[in,out] allocator Wrapped allocator to synchronize access to. Must
-  /// remain valid for the lifetime of this object.
   constexpr explicit SynchronizedAllocator(pw::Allocator& allocator) noexcept
-      : SynchronizedAllocator(allocator, allocator.capabilities()) {}
+      : Base(allocator), borrowable_(Borrowable(allocator, lock_)) {}
 
   /// @copydoc ForwardingAllocator::Init
   void Init(pw::Allocator& allocator) {
