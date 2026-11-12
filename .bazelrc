@@ -259,7 +259,8 @@ common:non_hermetic --extra_toolchains=@local_config_cc_toolchains//...
 # Configure workspace status command to test pw_build_info git_build_info
 # https://bazel.build/docs/user-manual#workspace-status-command
 # TODO: b/348046338 - Add a Windows version of this command
-build --workspace_status_command=pw_build_info/git_workspace_status_command.sh
+build:linux --workspace_status_command=pw_build_info/git_workspace_status_command.sh
+build:macos --workspace_status_command=pw_build_info/git_workspace_status_command.sh
 
 # Target platform config definitions
 # ==================================

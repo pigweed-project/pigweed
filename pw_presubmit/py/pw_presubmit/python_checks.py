@@ -666,7 +666,31 @@ _BAZEL_PYTHON_CONSTRAINTS_ARGS = (
     # `bazel-out/.../runfiles/<workspace>/external/`, further reducing path
     # lengths and runfiles tree size on Windows.
     '--nolegacy_external_runfiles',
+    # Prevents creating `bazel-*` convenience symlinks/junctions inside
+    # `ctx.output_dir`. On LUCI bots, `ctx.output_dir` (`co/p/<step>`) is inside
+    # the workspace root (`co/`), so creating `bazel-co -> execroot/_main` forms
+    # a recursive NTFS junction cycle (`co/p/<step>/bazel-co/p/<step>/bazel-co`)
+    # that stalls workspace scans and post-step `ls out` / `save_logs` walks.
+    '--experimental_convenience_symlinks=ignore',
+    # Skips running `--workspace_status_command`
+    # (`git_workspace_status_command.sh`), which is unnecessary for Python
+    # constraint lockfile targets and can hang `BazelWorkspaceStatusAction` on
+    # Windows.
+    '--workspace_status_command=',
 )
+
+
+def _shutdown_bazel_on_windows_luci(
+    ctx: PresubmitContext,
+    env: dict[str, str] | None = None,
+) -> None:
+    # On Windows LUCI bots, a background Bazel server (`java.exe`) holds open
+    # `windows_jni.dll` in the task temp directory (`C:\b\s\w\ir\x\t`) and the
+    # checkout directory (`C:\b\s\w\ir\x\w\co`), causing Swarming's post-task
+    # `rmtree('C:\\b\\s\\w\\ir')` cleanup and leaked-process check to hard-fail
+    # the task after the recipe exits.
+    if ctx.luci and platform.system().lower() == 'windows':
+        call(build.BAZEL_EXECUTABLE, 'shutdown', cwd=ctx.root, env=env)
 
 
 @filter_paths(endswith=_PYTHON_PACKAGE_EXTENSIONS)
@@ -685,6 +709,8 @@ def check_upstream_python_constraints(ctx: PresubmitContext) -> None:
             '\n'
             '  pw presubmit --step update_upstream_python_constraints'
         ) from exc
+    finally:
+        _shutdown_bazel_on_windows_luci(ctx)
 
 
 def _update_upstream_python_constraints_bazel(ctx: PresubmitContext) -> None:
@@ -692,20 +718,23 @@ def _update_upstream_python_constraints_bazel(ctx: PresubmitContext) -> None:
     # mistake a LUCI environment for `bazel test` and skip updating files.
     env = os.environ.copy()
     env.pop('TEST_TMPDIR', None)
-    build.bazel(
-        ctx,
-        'run',
-        *_BAZEL_PYTHON_CONSTRAINTS_ARGS,
-        '//pw_env_setup/py:constraint_hashes.update',
-        env=env,
-    )
-    build.bazel(
-        ctx,
-        'run',
-        *_BAZEL_PYTHON_CONSTRAINTS_ARGS,
-        '//pw_env_setup/py:upstream_requirements_lock.update',
-        env=env,
-    )
+    try:
+        build.bazel(
+            ctx,
+            'run',
+            *_BAZEL_PYTHON_CONSTRAINTS_ARGS,
+            '//pw_env_setup/py:constraint_hashes.update',
+            env=env,
+        )
+        build.bazel(
+            ctx,
+            'run',
+            *_BAZEL_PYTHON_CONSTRAINTS_ARGS,
+            '//pw_env_setup/py:upstream_requirements_lock.update',
+            env=env,
+        )
+    finally:
+        _shutdown_bazel_on_windows_luci(ctx, env=env)
 
 
 @filter_paths(endswith=_PYTHON_PACKAGE_EXTENSIONS)
