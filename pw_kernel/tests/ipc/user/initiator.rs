@@ -78,18 +78,54 @@ fn test_uppercase_ipcs() -> Result<()> {
     }
 
     test_logger::step_passed!("All characters received correctly");
+    Ok(())
+}
 
-    test_ipc_preserves_user_signal()?;
-
-    // Test object_set_peer_user_signal: signal the handler and wait for the echo back.
-    // Level-triggered model: the initiator raises USER on the handler, the handler
-    // echoes USER back on the initiator and then lowers it.  The initiator only
-    // observes; it does not clear the signal the handler raised.
+/// Tests raising and lowering `Signals::USER` in both directions.
+///
+/// As `Signals::USER` is level-triggered, a transaction is used to sequence both
+/// sides of the test, notifying the peer when to test that the `Signals::USER` is
+/// not asserted.
+///
+/// ```text
+/// Initiator                           Handler                             Initiator | Handler
+/// ----------------------------------  ----------------------------------  -------------------
+///                                     object_wait(READABLE | USER)        -         | -
+/// object_set_peer_user_signal(true)                                       -         | USER
+/// object_wait(USER)                                                       USER      | USER
+///                                     wakes on USER                       -         | USER
+///                                     object_set_peer_user_signal(true)   USER      | USER
+///                                     object_wait(READABLE)               USER      | USER
+/// object_set_peer_user_signal(false)                                      USER      | -
+/// channel_transact (starts)                                               USER      | READABLE
+///                                     wakes on READABLE;                  USER      | READABLE
+///                                     asserts USER not set                USER      | READABLE
+///                                     object_set_peer_user_signal(false)  -         | READABLE
+///                                     channel_respond                     READABLE  | -
+/// channel_transact finishes                                               -         | -
+/// object_wait(USER, Instant::MIN)                                         -         | -
+/// ```
+fn test_user_signal_round_trip() -> Result<()> {
     test_logger::step_start!("Testing object_set_peer_user_signal");
-    syscall::object_set_peer_user_signal(handle::IPC, true).map_err(|_| Error::Internal)?;
-    let wait_return = syscall::object_wait(handle::IPC, Signals::USER, Instant::MAX)
-        .map_err(|_| Error::Internal)?;
+
+    syscall::object_set_peer_user_signal(handle::IPC, true)?;
+
+    let wait_return = syscall::object_wait(handle::IPC, Signals::USER, Instant::MAX)?;
     if !wait_return.pending_signals.contains(Signals::USER) {
+        test_logger::error!(
+            "Expected Signals::USER on initiator, got signals={:#x}",
+            wait_return.pending_signals.bits() as u32,
+        );
+        return Err(Error::Internal);
+    }
+
+    syscall::object_set_peer_user_signal(handle::IPC, false)?;
+    syscall::channel_transact(handle::IPC, &[0u8; 0], &mut [0u8; 0], Instant::MAX)?;
+
+    if syscall::object_wait(handle::IPC, Signals::USER, Instant::MIN)
+        != Err(Error::DeadlineExceeded)
+    {
+        test_logger::error!("Expected Signals::USER to be lowered on initiator");
         return Err(Error::Internal);
     }
     test_logger::step_passed!("object_set_peer_user_signal round-trip OK");
@@ -183,6 +219,8 @@ fn test_iovec_ipc() -> Result<()> {
 
 fn execute_tests() -> Result<()> {
     test_uppercase_ipcs()?;
+    test_ipc_preserves_user_signal()?;
+    test_user_signal_round_trip()?;
     test_iovec_ipc()?;
     Ok(())
 }

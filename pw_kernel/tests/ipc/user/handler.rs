@@ -20,6 +20,29 @@ use userspace::process_entry;
 use userspace::syscall::{self, Signals};
 use userspace::time::Instant;
 
+/// Handler side of `test_user_signal_round_trip()` in `initiator.rs`.
+fn handle_user_signal_round_trip() -> Result<()> {
+    syscall::object_set_peer_user_signal(handle::IPC, true)?;
+    let wait_return = syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)?;
+    if !wait_return.pending_signals.contains(Signals::READABLE) || wait_return.user_data != 0 {
+        test_logger::error!(
+            "Unexpected wait_return on handler: signals={:#x}, user_data={}",
+            wait_return.pending_signals.bits() as u32,
+            wait_return.user_data as usize,
+        );
+        return Err(Error::Internal);
+    }
+
+    if wait_return.pending_signals.contains(Signals::USER) {
+        test_logger::error!("Expected Signals::USER to be lowered on handler");
+        return Err(Error::FailedPrecondition);
+    }
+
+    syscall::object_set_peer_user_signal(handle::IPC, false)?;
+    syscall::channel_respond(handle::IPC, &[0u8; 0])?;
+    Ok(())
+}
+
 fn handle_uppercase_ipcs() -> Result<()> {
     loop {
         // Wait for an IPC or a USER signal from the initiator.
@@ -27,13 +50,10 @@ fn handle_uppercase_ipcs() -> Result<()> {
             syscall::object_wait(handle::IPC, Signals::READABLE | Signals::USER, Instant::MAX)
                 .map_err(|_| Error::Internal)?;
 
-        // USER signal means the initiator is pinging us; echo it back and lower it
-        // (level-triggered: the sender owns both raise and lower).
+        // `Signals::USER` ends the character loop and runs
+        // `test_user_signal_round_trip()`.
         if wait_return.pending_signals.contains(Signals::USER) {
-            syscall::object_set_peer_user_signal(handle::IPC, true).map_err(|_| Error::Internal)?;
-            syscall::object_set_peer_user_signal(handle::IPC, false)
-                .map_err(|_| Error::Internal)?;
-            return Ok(());
+            return handle_user_signal_round_trip();
         }
 
         if !wait_return.pending_signals.contains(Signals::READABLE) || wait_return.user_data != 0 {
