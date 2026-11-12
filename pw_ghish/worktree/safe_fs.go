@@ -19,7 +19,49 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// ValidateSafePath verifies that targetPath is a strict subdirectory of allowedRoot
+// (not equal to allowedRoot itself, not "/", and at least 2 path components deep).
+func ValidateSafePath(targetPath, allowedRoot string) error {
+	targetPath = strings.TrimSpace(targetPath)
+	allowedRoot = strings.TrimSpace(allowedRoot)
+	if targetPath == "" || allowedRoot == "" {
+		return fmt.Errorf("refusing operation: targetPath (%q) and allowedRoot (%q) must be non-empty", targetPath, allowedRoot)
+	}
+	cleanTarget := filepath.Clean(targetPath)
+	cleanRoot := filepath.Clean(allowedRoot)
+	if cleanTarget == "/" || cleanTarget == "." || cleanRoot == "/" || cleanRoot == "." {
+		return fmt.Errorf("refusing operation on unsafe root path %q (allowedRoot: %q)", cleanTarget, cleanRoot)
+	}
+	if cleanTarget == cleanRoot {
+		return fmt.Errorf("refusing to remove allowedRoot %q itself", cleanRoot)
+	}
+	if !strings.HasPrefix(cleanTarget, cleanRoot+string(filepath.Separator)) {
+		return fmt.Errorf("refusing operation: %q is outside allowed root %q", cleanTarget, cleanRoot)
+	}
+	rel, err := filepath.Rel(cleanRoot, cleanTarget)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("refusing operation: %q is not strictly within allowed root %q", cleanTarget, cleanRoot)
+	}
+	trimmed := strings.Trim(cleanTarget, string(filepath.Separator))
+	if strings.Count(trimmed, string(filepath.Separator)) < 1 {
+		return fmt.Errorf("refusing operation on shallow path %q", cleanTarget)
+	}
+	return nil
+}
+
+// SafeRemoveAll removes targetPath and any children it contains only after verifying
+// via ValidateSafePath that targetPath is strictly confined within allowedRoot.
+//
+//ghish:wraps os.RemoveAll -- use SafeRemoveAll in worktree/safe_fs.go to enforce path confinement
+func SafeRemoveAll(targetPath, allowedRoot string) error {
+	if err := ValidateSafePath(targetPath, allowedRoot); err != nil {
+		return err
+	}
+	return os.RemoveAll(targetPath)
+}
 
 // SafeModifyFile reads an existing file (or passes nil, false if and only if os.IsNotExist(err)),
 // executes transformFn to compute the updated content, and atomically writes the result via

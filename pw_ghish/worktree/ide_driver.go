@@ -329,18 +329,3 @@ func (j *JetskiIDEDriver) ArchiveProject(project *Project) error {
 		return existing, nil
 	})
 }
-
-func (j *JetskiIDEDriver) atomicWriteJSON(targetFile string, payload map[string]any) error {
-	data, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to serialize Jetski project JSON: %w", err)
-	}
-	tmpFile := targetFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temporary Jetski project file %s: %w", tmpFile, err)
-	}
-	if err := os.Rename(tmpFile, targetFile); err != nil {
-		return fmt.Errorf("failed to atomically update Jetski project file %s: %w", targetFile, err)
-	}
-	return nil
-}

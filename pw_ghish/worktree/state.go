@@ -231,20 +231,7 @@ func (s *StateStore) Save(st *State) error {
 	if st == nil {
 		return fmt.Errorf("internal error: cannot save nil state")
 	}
-	dir := filepath.Dir(s.StateFilePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create state directory %s: %w", dir, err)
-	}
-	data, err := json.MarshalIndent(st, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal state JSON: %w", err)
-	}
-	tmpFile := s.StateFilePath + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temporary state file %s: %w", tmpFile, err)
-	}
-	if err := os.Rename(tmpFile, s.StateFilePath); err != nil {
-		return fmt.Errorf("failed to atomically replace state file %s: %w", s.StateFilePath, err)
-	}
-	return nil
+	return SafeModifyFile(s.StateFilePath, 0644, func(_ []byte, _ bool) ([]byte, error) {
+		return json.MarshalIndent(st, "", "  ")
+	})
 }

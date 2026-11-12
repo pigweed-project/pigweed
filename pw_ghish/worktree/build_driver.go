@@ -330,7 +330,7 @@ func (b *BazelDriver) GarbageCollect(dryRun bool, validWorkspacePaths map[string
 					}
 					return nil
 				})
-				if err := os.RemoveAll(dirPath); err != nil {
+				if err := SafeRemoveAll(dirPath, b.BazelCacheRoot); err != nil {
 					report.Warnings = append(report.Warnings, DiagnosticWarning{
 						Subsystem:   "Bazel GC",
 						Message:     fmt.Sprintf("Failed to delete orphaned output base %s: %v", dirPath, err),
