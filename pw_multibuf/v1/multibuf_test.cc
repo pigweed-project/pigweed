@@ -413,6 +413,31 @@ TEST_F(MultiBufV1Test, TakeAllChunksOnebyOne) {
   EXPECT_EQ(chunk.size(), 65u);
 }
 
+TEST_F(MultiBufV1Test, TakeFrontChunkAfterSliceReturnsSlicedSubspan) {
+  MultiBuf buf;
+  buf.PushBackChunk(MakeChunk({1_b, 2_b, 3_b, 4_b, 5_b}));
+  buf.Slice(1, 4);
+
+  OwnedChunk chunk = buf.TakeFrontChunk();
+  ExpectElementsEqual(*chunk, {2_b, 3_b, 4_b});
+  EXPECT_TRUE(buf.empty());
+}
+
+TEST_F(MultiBufV1Test, TakeChunkAfterTakePrefixReturnsRemainingSubspan) {
+  MultiBuf buf;
+  buf.PushBackChunk(MakeChunk({1_b, 2_b, 3_b, 4_b, 5_b}));
+  buf.PushBackChunk(MakeChunk({6_b, 7_b}));
+
+  std::optional<MultiBuf> prefix = buf.TakePrefix(2);
+  ASSERT_TRUE(prefix.has_value());
+  ExpectElementsEqual(*prefix, {1_b, 2_b});
+
+  auto [iter, chunk] = buf.TakeChunk(buf.Chunks().begin());
+  ExpectElementsEqual(*chunk, {3_b, 4_b, 5_b});
+  ExpectElementsEqual(buf, {6_b, 7_b});
+  EXPECT_EQ(iter, buf.Chunks().begin());
+}
+
 TEST_F(MultiBufV1Test, RangeBasedForLoopsCompile) {
   MultiBuf buf;
   for ([[maybe_unused]] std::byte& byte : buf) {

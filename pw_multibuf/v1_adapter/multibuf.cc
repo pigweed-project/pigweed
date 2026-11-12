@@ -298,9 +298,11 @@ std::tuple<MultiBufChunks::iterator, OwnedChunk> MultiBuf::TakeChunk(
   size_t size = position->size();
   auto byte_iter = ToByteIterator(position);
   auto chunk = mbv2->Share(byte_iter);
+  size_t offset = static_cast<size_t>(position->data() - chunk.get());
   auto result = mbv2->Discard(byte_iter, size);
   PW_CHECK_OK(result.status());
   OwnedChunk owned(mbv2->get_allocator(), chunk);
+  owned->Slice(offset, offset + size);
   if (mbv2->empty()) {
     Release();
     return std::make_tuple(MultiBufChunks::iterator(), std::move(owned));
