@@ -76,16 +76,15 @@ Set up the Sense project
             you won't see the popups. That's OK; you can just skip the
             instructions for popups you didn't see.
 
-      #. If you see the **Do you trust the authors of the files in this folder?** popup
-         click **Yes, I trust the authors**.
+      #. If you see **Restricted Mode is intended for safe code browsing.
+         Trust this folder to enable all features.**  click **Manage** and then
+         click **Trust**.
 
-         If you want to try out the project's building and flashing workflows, you must
-         click **Yes, I trust the authors** or else the project doesn't have sufficient
-         permissions to perform these actions. You can still browse the tutorial
-         if you click **No, I don't trust the authors** but you won't be able to do
+         If you want to try out the project's building and flashing workflows,
+         you must click **Trust** or else the project doesn't have sufficient
+         permissions to perform these actions. You can still browse the
+         tutorial if you stay in restricted mode but you won't be able to do
          much more than that.
-
-         .. figure:: https://www.gstatic.com/pigweed/sense/trust.png
 
       #. If you see the **Do you want to install the recommended 'Pigweed' extension
          from pigweed for this repository?** popup click **Install**.
@@ -97,7 +96,7 @@ Set up the Sense project
 
       #. Open the **Extensions** pane (:kbd:`Control+Shift+X` on Linux and Windows,
          :kbd:`Command+Shift+X` on macOS), open the **Pigweed** extension, and make
-         sure that you're running version 1.9.9 or later. If not, click the **More actions** (**▼**)
+         sure that you're running version 1.11.1 or later. If not, click the **More actions** (**▼**)
          button next to **Uninstall**, then select **Install Specific Version**, and then select
          the latest version from the dropdown menu.
 

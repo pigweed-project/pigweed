@@ -81,8 +81,8 @@ toolchain management. Try building the ``blinky`` bringup app now:
      pop up from time-to-time as the Sense codebase and its dependencies
      evolve.
 
-   * **Long build times**. Two minutes is typical for the first
-     build. Pigweed builds a lot of things from source, such as
+   * **Long build times**. 5-10 minutes is typical for the first
+     build. Pigweed builds a lot of dependencies from source, such as
      the Protocol Buffer compiler, ``libusb``, and more.
 
 .. _showcase-sense-tutorial-build-summary:

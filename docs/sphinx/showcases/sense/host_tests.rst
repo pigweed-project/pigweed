@@ -42,7 +42,7 @@ tests:
       .. tab-item:: VS Code
          :sync: vsc
 
-         Make sure that your platform is set to **k8-fastbuild**, as demonstrated
+         Make sure that your platform is set to **Host**, as demonstrated
          in :ref:`showcase-sense-tutorial-intel-nav`. If VS Code was displaying
          red squiggly line warnings in ``blinky_test.cc``, those should go away.
 
@@ -80,13 +80,6 @@ tests:
             Executed 1 out of 1 test: 1 fails locally.
 
          Press any key to close the terminal that was launched.
-
-         .. tip::
-
-            When you want to run all unit tests, open a VS Code Terminal
-            and execute ``bazelisk test //...``. You don't need to manually
-            set up ``bazelisk``, the Pigweed extension for VS Code sets it
-            up for you.
 
       .. tab-item:: CLI
          :sync: cli

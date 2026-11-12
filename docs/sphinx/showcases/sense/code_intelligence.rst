@@ -13,11 +13,10 @@ code navigation features now:
 -------------------------------
 Navigate the code intelligently
 -------------------------------
-Imagine this hypothetical development scenario. Suppose that you need
-to modify how your app logs messages. Your first task is to understand
-how logging currently works on the Pico 1. You know that your app uses
-:ref:`module-pw_log` and that ``pw_log`` uses a special type of API called
-a :ref:`facade <docs-facades>` where the implementation can be changed during
+Suppose that you need to modify how your app logs messages. Your first task is
+to understand how logging currently works. You know that your app uses
+:ref:`module-pw_log` and that ``pw_log`` uses a special type of API called a
+:ref:`facade <docs-facades>` where the implementation can be changed during
 compilation. The plan is to use the intelligent code navigation features of
 ``pw_ide`` to determine the true, final implementation of the logging functions
 used in your project.
@@ -28,6 +27,13 @@ used in your project.
 
    .. tab-item:: VS Code
       :sync: vsc
+
+      #. Click the Pigweed icon to open the **Pigweed VSCode Extension** view.
+
+         .. figure:: https://www.gstatic.com/pigweed/sense/extension_icon_v1.png
+
+      #. Under **Select or generate compile commands** click the **Generate**
+         button for **Host**.
 
       #. Press :kbd:`Control+Shift+P` (:kbd:`Command+Shift+P` on macOS) to open
          the `Command Palette`_.
@@ -46,22 +52,11 @@ used in your project.
 
             .. figure:: https://www.gstatic.com/pigweed/sense/20240802/select_target_status_bar.png
 
-      #. Select the ``rp2040`` option.
+      #. Select the ``Host (@targets//host:host)`` option.
 
-         The code intelligence is now set up to help you with physical Pico 1
-         programming. The RP2040 is the microprocessor that powers the Pico 1.
-         If you had selected the ``host_simulator`` option,
-         the code intelligence would be set up to help with programming the
-         simulated app that you will run on your development host later.
-         ``rp2040`` represents one platform, ``host_simulator`` another.
-
-         We will verify the platform-specific code intelligence now by making
-         sure that :ref:`module-pw_log` invocations resolve to different
-         backends.
-
-         .. note::
-
-            Code intelligence for the Pico 2 (``rp2350``) isn't supported yet.
+         The code intelligence is now set up to help you understand how logging
+         works when you build the firmware so that it can be simulated on your
+         development host.
 
       #. Open ``//apps/blinky/main.cc``.
 
@@ -111,11 +106,6 @@ used in your project.
 
             #define PW_HANDLE_LOG PW_LOG_TOKENIZED_TO_GLOBAL_HANDLER_WITH_METADATA
 
-      #. Open the Command Palette, switch your target to ``host_simulator``,
-         and then repeat this workflow again, starting from the ``PW_LOG_INFO``
-         invocation in ``//apps/blinky/main.cc``. You should see the definitions
-         finally resolve to a :ref:`module-pw_log_string` backend header.
-
    .. tab-item:: CLI
       :sync: cli
 
@@ -126,20 +116,18 @@ used in your project.
 -----------
 Explanation
 -----------
-When you set your platform to ``rp2040`` and followed the call to
-``PW_LOG_INFO()`` in ``//apps/blinky/main.cc`` back to its source,
-you ended on a header within ``pw_log_tokenized``. When you repeated
-the process a second time with the ``host_simulator`` platform you
-ended on a header in a different module, ``pw_log_string``. This proves
-that intelligent code navigation is working. The ``pw_log`` API is a
-:ref:`facade <docs-facades>`. It's implementation is swapped out during
-compilation depending on what platform you're building for. The
-``rp2040`` platform has been set up to use the ``pw_log_tokenized``
-implementation, whereas the ``host_simulator`` platform uses the ``pw_log_string``
-implementation.
-
-Here's a diagram summary of how the intelligent code navigation resolved to
-different files depending on the code analysis target you selected:
+``PW_LOG`` is a :ref:`facade <docs-facades>`. You can change out the
+implementation of that logging function at compile-time. For example, on your
+real hardware perhaps you use :ref:`module-pw_log_tokenized` to save code size,
+but when simulating your firmware on your development host maybe you compile
+with :ref:`module-pw_log_string` to make it easy to view debug log messages.
+Let's call the hardware target in our example ``rp2040`` and the host target
+``host_simulator``. The ``Select Code Analysis Target`` feature of Pigweed's
+VS Code extension lets you investigate these different code paths. Selecting
+``host_simulator`` as your target and drilling down via **Go to Definition**
+would ultimately show you a ``PW_LOG`` implementation in ``pw_log_string``.
+Selecting the ``rp2040`` target and drilling down again would show a completely
+different implementation for ``PW_LOG`` in ``pw_log_tokenized``.
 
 .. mermaid::
 
@@ -148,6 +136,11 @@ different files depending on the code analysis target you selected:
      a["main.cc"] --> b["log.h"]
      b["log.h"] -. rp2040 .-> c["pw_log_tokenized/.../log_backend.h"]
      b["log.h"] -. host_simulator .-> d["pw_log_string/.../log_backend.h"]
+
+.. note::
+
+   Currently all Sense targets use ``pw_log_tokenized`` as their backend so
+   it's not possible to demonstrate this idea with the Sense repo.
 
 .. _showcase-sense-tutorial-intel-summary:
 
@@ -158,7 +151,7 @@ Portable, hardware-agnostic software abstractions such as :ref:`module-pw_log`
 make it easier to reuse code across projects and hardware platforms. But they
 also make it more difficult to correctly navigate references in your codebase.
 The Pigweed extension for VS Code can solve this problem; you just need to
-tell it what hardware platform within your codebase to focus on.
+tell it what target within your codebase to focus on.
 
 Next, head over to :ref:`showcase-sense-tutorial-hosttests` to learn how to run
 unit tests on your development host.
