@@ -435,22 +435,22 @@ func TestConfigPrefetch_SubsectionsAreCaseSensitive(t *testing.T) {
 	dir := initTestRepo(t)
 	runTestGit(t, dir, "config", "branch.Foo.remote", "upper")
 	runTestGit(t, dir, "config", "branch.foo.remote", "lower")
-	client := NewGitClientInDir(dir)
+	client := NewGitClientInDir(dir).(*defaultGitClient)
 	for key, want := range map[string]string{
 		"branch.Foo.remote": "upper",
 		"branch.foo.remote": "lower",
 		"BRANCH.Foo.REMOTE": "upper",
 	} {
-		got, err := client.ConfigGet(t.Context(), key)
+		got, err := client.configGetCached(t.Context(), key)
 		if err != nil || got != want {
-			t.Errorf("ConfigGet(%q) = (%q, %v), want %q", key, got, err, want)
+			t.Errorf("configGetCached(%q) = (%q, %v), want %q", key, got, err, want)
 		}
 		if gitGot := runTestGit(t, dir, "config", "--get", key); gitGot != want {
 			t.Errorf("git config --get %s = %q, want %q (test premise)", key, gitGot, want)
 		}
 	}
-	if got, err := client.ConfigGet(t.Context(), "branch.FOO.remote"); err == nil {
-		t.Errorf("ConfigGet(branch.FOO.remote) = %q, want not found (subsection is case-sensitive)", got)
+	if got, err := client.configGetCached(t.Context(), "branch.FOO.remote"); err == nil {
+		t.Errorf("configGetCached(branch.FOO.remote) = %q, want not found (subsection is case-sensitive)", got)
 	}
 }
 
@@ -473,7 +473,7 @@ func TestLoadProjectConfig_RetriesAfterFailedLazyPrefetch(t *testing.T) {
 	if got := projCfg.Gerrit.DefaultBranch; got != "trunk" {
 		t.Errorf("Gerrit.DefaultBranch = %q, want %q after retrying the prefetch", got, "trunk")
 	}
-	if got, err := dc.ConfigGet(t.Context(), "ghish.gerrit.defaultbranch"); err != nil || got != "trunk" {
-		t.Errorf("ConfigGet after retry = (%q, %v), want trunk from the seeded cache", got, err)
+	if got, err := dc.configGetCached(t.Context(), "ghish.gerrit.defaultbranch"); err != nil || got != "trunk" {
+		t.Errorf("configGetCached after retry = (%q, %v), want trunk from the seeded cache", got, err)
 	}
 }

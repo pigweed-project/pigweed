@@ -459,10 +459,7 @@ func (c *Config) GerritProject(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("internal error: git runner is not initialized")
 	}
 	remote := c.ResolveRemote(ctx)
-	urlStr, err := c.GitClient().ConfigGet(ctx, fmt.Sprintf("remote.%s.url", remote))
-	if (err != nil || strings.TrimSpace(urlStr) == "") && remote != "origin" {
-		urlStr, err = c.GitClient().ConfigGet(ctx, "remote.origin.url")
-	}
+	urlStr, err := c.resolveRemoteURL(ctx)
 	if err != nil || strings.TrimSpace(urlStr) == "" {
 		return "", fmt.Errorf("could not determine the Gerrit project: 'remote.origin.url' is not configured in git config.\n\n" +
 			"To set it:\n" +

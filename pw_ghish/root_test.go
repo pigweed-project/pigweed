@@ -122,7 +122,7 @@ func TestNewGerritClient_MemoizesAuthMode(t *testing.T) {
 	t.Setenv("GH_ISH_AUTH_MODE", "")
 	t.Setenv("GERRIT_TOKEN", "test-token")
 
-	mockGit := NewMockGit(t).OnCommand("config --get ghish.authmode", "googler\n")
+	mockGit := NewMockGit(t).OnCommand("config --get-regexp ^ghish\\.", "ghish.authmode googler\n")
 	cmd := &cobra.Command{}
 	cmd.SetContext(t.Context())
 	SetConfig(cmd, &Config{Host: "pigweed-review.googlesource.com", Git: mockGit})

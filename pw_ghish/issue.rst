@@ -180,8 +180,7 @@ component ID using a 6-tier priority order:
    ``# Buganizer component: <id>``.
 4. ``issue.default_component`` in ``.ghish.toml`` (or ``git config
    ghish.issue.defaultComponent``).
-5. Legacy ``git config ghish.componentid``.
-6. Active ``ProjectProfile.DefaultComponentID()``.
+5. Active ``ProjectProfile.DefaultComponentID()``.
 
 ---------------------------------
 Step 3: Working in branch context

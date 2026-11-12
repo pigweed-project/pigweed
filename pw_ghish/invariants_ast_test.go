@@ -215,34 +215,6 @@ func TestInvariants_SetReviewGoesThroughGerritClient(t *testing.T) {
 	}
 }
 
-// legacyDirectGitConfigAllowlist freezes existing direct ConfigGet("ghish.*") call
-// sites until they are migrated into ProjectConfig. No new ad-hoc ghish.* git
-// config lookups may be added outside project_config.go.
-var legacyDirectGitConfigAllowlist = map[string][]string{
-	"auth.go":      {"ghish.authmode"},
-	"cmd_issue.go": {"ghish.componentid", "ghish.worktree.auto"},
-	"hook.go":      {"ghish.blockrawpush"},
-}
-
-// TestInvariants_NoAdHocGhishGitConfigLookups ensures all new `ghish.*` config
-// settings are loaded through `ProjectConfig` in project_config.go rather than
-// scattered via ad-hoc `ConfigGet(ctx, "ghish....")` calls.
-func TestInvariants_NoAdHocGhishGitConfigLookups(t *testing.T) {
-	files := astcheck.MustLoadFiles(t, ".", "worktree", "cmd")
-	for _, cs := range astcheck.FindCalls(files, "*.ConfigGet") {
-		base := filepath.Base(cs.File.Path)
-		if base == "project_config.go" {
-			continue
-		}
-		key, ok := astcheck.StringLitArg(cs.Call, 1)
-		if !ok || !strings.HasPrefix(key, "ghish.") || slices.Contains(legacyDirectGitConfigAllowlist[base], key) {
-			continue
-		}
-		t.Errorf("%s: ad-hoc ConfigGet(%q) outside project_config.go; declare the setting on ProjectConfig in project_config.go and document it in project_setup.rst",
-			cs.Pos, key)
-	}
-}
-
 // TestInvariants_BoundedHTTPBodyReads verifies that every HTTP request/response
 // body read uses readBoundedBody, readBoundedLog, or io.LimitReader rather than
 // an unbounded io.ReadAll(resp.Body).

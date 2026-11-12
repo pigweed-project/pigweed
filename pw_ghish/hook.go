@@ -131,8 +131,7 @@ var hookPrePushCmd = &cobra.Command{
 		if cfg == nil {
 			return fmt.Errorf("internal error: command config is uninitialized")
 		}
-		val, err := cfg.GitClient().ConfigGet(cmd.Context(), "ghish.blockrawpush")
-		if err != nil || !strings.EqualFold(strings.TrimSpace(val), "true") {
+		if !cfg.GetProjectConfig(cmd.Context()).BlockRawPush {
 			return nil
 		}
 		return fmt.Errorf("raw 'git push' is blocked because 'ghish.blockrawpush' is enabled.\n\n" +

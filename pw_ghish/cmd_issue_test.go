@@ -510,13 +510,13 @@ func TestIssue_FailFastOnInvalidConfig(t *testing.T) {
 	SetupMockConfig(t, gitRunner)
 	SetTestProfile(t, "pigweed")
 
-	// 1. Invalid git config ghish.componentid must fail fast (no silent fallback to pigweed default)
-	gitRunner.OnCommand("config --get ghish.componentid", "invalid-id")
+	// 1. Invalid git config ghish.issue.defaultComponent must fail fast (no silent fallback to pigweed default)
+	gitRunner.OnCommand("config --get-regexp ^ghish\\.", "ghish.issue.defaultcomponent invalid-id\n")
 	_, errBadComp := executeCommand(RootCmd, "issue", "list")
-	if errBadComp == nil || !strings.Contains(errBadComp.Error(), "invalid git config 'ghish.componentid'") {
-		t.Errorf("expected invalid ghish.componentid error, got: %v", errBadComp)
+	if errBadComp == nil || !strings.Contains(errBadComp.Error(), "invalid git config ghish.issue.defaultcomponent") {
+		t.Errorf("expected invalid ghish.issue.defaultcomponent error, got: %v", errBadComp)
 	}
-	gitRunner.OnCommand("config --get ghish.componentid", "")
+	gitRunner.OnCommand("config --get-regexp ^ghish\\.", "")
 
 	// 2. --assignee me when user.email is unconfigured must fail fast
 	_, errNoEmail := executeCommand(RootCmd, "issue", "list", "--assignee", "me")

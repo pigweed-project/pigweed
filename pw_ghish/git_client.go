@@ -179,7 +179,6 @@ type GitClient interface {
 	CurrentBranch(ctx context.Context) (string, error)
 	HeadCommitMessage(ctx context.Context) (string, error)
 	CommitMessage(ctx context.Context, ref ...string) (string, error)
-	ConfigGet(ctx context.Context, key string) (string, error)
 	RevParse(ctx context.Context, args ...string) (string, error)
 	VerifyRef(ctx context.Context, ref string) (bool, error)
 	GitDir(ctx context.Context) (string, error)
@@ -203,6 +202,9 @@ type GitClient interface {
 	IsHeadRemoteTip(ctx context.Context) (bool, []string, error)
 	HeadAuthorEmail(ctx context.Context) (string, error)
 	UserEmail(ctx context.Context) (string, error)
+	RemoteURL(ctx context.Context, remote string) (string, error)
+	RemotePushURL(ctx context.Context, remote string) (string, error)
+	BranchChangeID(ctx context.Context, branch string) (string, error)
 	// CheckAmendAllowed verifies that HEAD is safe to amend locally (not on a
 	// remote tracking tip, merge commit, or active sequencer operation).
 	CheckAmendAllowed(ctx context.Context) error
@@ -1107,10 +1109,6 @@ func (c *defaultGitClient) configGetCached(ctx context.Context, key string) (str
 	return c.configGetLocked(ctx, key)
 }
 
-func (c *defaultGitClient) ConfigGet(ctx context.Context, key string) (string, error) {
-	return c.configGetCached(ctx, key)
-}
-
 func (c *defaultGitClient) RevParse(ctx context.Context, args ...string) (string, error) {
 	if len(args) == 0 {
 		return "", fmt.Errorf("git rev-parse requires at least one argument")
@@ -1379,7 +1377,28 @@ func (c *defaultGitClient) HeadAuthorEmail(ctx context.Context) (string, error) 
 }
 
 func (c *defaultGitClient) UserEmail(ctx context.Context) (string, error) {
-	return c.ConfigGet(ctx, "user.email")
+	return c.configGetCached(ctx, "user.email")
+}
+
+func (c *defaultGitClient) RemoteURL(ctx context.Context, remote string) (string, error) {
+	return c.configGetCached(ctx, fmt.Sprintf("remote.%s.url", remote))
+}
+
+func (c *defaultGitClient) RemotePushURL(ctx context.Context, remote string) (string, error) {
+	return c.configGetCached(ctx, fmt.Sprintf("remote.%s.pushurl", remote))
+}
+
+func (c *defaultGitClient) BranchChangeID(ctx context.Context, branch string) (string, error) {
+	return c.configGetCached(ctx, fmt.Sprintf("branch.%s.gerrit-change-id", branch))
+}
+
+func (c *Config) resolveRemoteURL(ctx context.Context) (string, error) {
+	remote := c.ResolveRemote(ctx)
+	urlStr, err := c.GitClient().RemoteURL(ctx, remote)
+	if (err != nil || strings.TrimSpace(urlStr) == "") && remote != "origin" {
+		urlStr, err = c.GitClient().RemoteURL(ctx, "origin")
+	}
+	return urlStr, err
 }
 
 type sequencerMarker struct {

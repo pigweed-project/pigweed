@@ -211,14 +211,7 @@ func (c *Config) GetProfile(ctx context.Context) ProjectProfile {
 	}
 	var remoteURL string
 	if c.Git != nil {
-		remote := c.ResolveRemote(ctx)
-		if val, err := c.GitClient().ConfigGet(ctx, fmt.Sprintf("remote.%s.url", remote)); err == nil && val != "" {
-			remoteURL = val
-		} else if remote != "origin" {
-			if val, err := c.GitClient().ConfigGet(ctx, "remote.origin.url"); err == nil {
-				remoteURL = val
-			}
-		}
+		remoteURL, _ = c.resolveRemoteURL(ctx)
 	}
 	p, err := DetectProfile(remoteURL, c.Host, ProfileFlag)
 	if err != nil {
@@ -670,11 +663,7 @@ func (c *Config) GerritURL(ctx context.Context) (string, error) {
 			host = "https://" + host
 		}
 	} else {
-		remote := c.ResolveRemote(ctx)
-		urlStr, err := c.GitClient().ConfigGet(ctx, fmt.Sprintf("remote.%s.url", remote))
-		if (err != nil || urlStr == "") && remote != "origin" {
-			urlStr, err = c.GitClient().ConfigGet(ctx, "remote.origin.url")
-		}
+		urlStr, err := c.resolveRemoteURL(ctx)
 		if err != nil || urlStr == "" {
 			if defHost := c.GetProfile(ctx).DefaultGerritHost(); defHost != "" {
 				return defHost, nil

@@ -163,8 +163,7 @@ func matchPathComponentPattern(pattern, relPath string) bool {
 //  2. [issue.path_components] in .ghish.toml / git config matched against modifiedPaths (or CWD)
 //  3. Nearest OWNERS file (# COMPONENT: <id> or # Buganizer component: <id>) when UseOwnersComponents is true
 //  4. [issue] default_component in .ghish.toml / git config
-//  5. git config ghish.componentid
-//  6. ProjectProfile.DefaultComponentID()
+//  5. ProjectProfile.DefaultComponentID()
 func ResolveIssueComponent(ctx context.Context, cfg *Config, explicitFlag int64, modifiedPaths []string) (int64, error) {
 	if explicitFlag > 0 {
 		return explicitFlag, nil
@@ -287,20 +286,8 @@ func projectComponentID(ctx context.Context, cfg *Config, pcfg *ProjectConfig) (
 		return pcfg.Issue.DefaultComponent, nil
 	}
 
-	// Tier 5: Legacy git config ghish.componentid
+	// Tier 5: Profile default component ID
 	if cfg != nil {
-		if val, err := cfg.GitClient().ConfigGet(ctx, "ghish.componentid"); err == nil && strings.TrimSpace(val) != "" {
-			trimmed := strings.TrimSpace(val)
-			parsed, parseErr := strconv.ParseInt(trimmed, 10, 64)
-			if parseErr != nil || parsed <= 0 {
-				return 0, fmt.Errorf("invalid git config 'ghish.componentid' value %q: must be a positive integer component ID.\n\n"+
-					"Remediation:\n"+
-					"  Set a valid numeric Buganizer component ID:\n"+
-					"    git config ghish.componentid 1194524", trimmed)
-			}
-			return parsed, nil
-		}
-		// Tier 6: Profile default component ID
 		if def := cfg.GetProfile(ctx).DefaultComponentID(); def > 0 {
 			return def, nil
 		}
@@ -1080,7 +1067,7 @@ var issueCreateCmd = &cobra.Command{
 				"  1. Specify a component ID via flag:\n" +
 				"     gh issue create -C <component_id> -t ...\n" +
 				"  2. Or set a default repository component ID in git config:\n" +
-				"     git config ghish.componentid <component_id>")
+				"     git config ghish.issue.defaultComponent <component_id>")
 		}
 
 		if issueCreateAssignee != "" {
@@ -1567,15 +1554,8 @@ var issueDevelopCmd = &cobra.Command{
 			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
 		}
 
-		useWorktree := issueDevelopWorktree
-		if !useWorktree {
-			if autoWT, cfgErr := cfg.GitClient().ConfigGet(ctx, "ghish.worktree.auto"); cfgErr == nil && strings.EqualFold(strings.TrimSpace(autoWT), "true") {
-				useWorktree = true
-			}
-		}
-
 		profile := cfg.GetProfile(ctx)
-		if useWorktree {
+		if issueDevelopWorktree {
 			if RegisteredWorkspaceIntegration == nil {
 				return fmt.Errorf("worktree integration is not available in this build")
 			}

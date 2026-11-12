@@ -701,8 +701,7 @@ func ResolveActiveChangeID(ctx context.Context, cfg *Config) (string, error) {
 
 	// 2. Check git config branch.<currentBranch>.gerrit-change-id
 	if currentBranch != "" {
-		configKey := fmt.Sprintf("branch.%s.gerrit-change-id", currentBranch)
-		if id, err := git.ConfigGet(ctx, configKey); err == nil && id != "" {
+		if id, err := git.BranchChangeID(ctx, currentBranch); err == nil && id != "" {
 			return id, nil
 		}
 	}
@@ -783,8 +782,7 @@ func ResolveTargetChangeID(ctx context.Context, cmd *cobra.Command, args []strin
 	if cfg != nil && cfg.Git != nil {
 		git := cfg.GitClient()
 		// 1. Check if git config branch.<target>.gerrit-change-id is set
-		configKey := fmt.Sprintf("branch.%s.gerrit-change-id", target)
-		if id, err := git.ConfigGet(ctx, configKey); err == nil && id != "" {
+		if id, err := git.BranchChangeID(ctx, target); err == nil && id != "" {
 			return id, nil
 		}
 

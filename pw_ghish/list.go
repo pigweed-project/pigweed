@@ -61,7 +61,7 @@ func resolveDefaultListProject(ctx context.Context, cmd *cobra.Command) (string,
 		targetHost = CanonicalGerritHost(cfg.Host)
 	}
 	if targetHost != "" {
-		if remoteURL, err := cfg.GitClient().ConfigGet(ctx, "remote.origin.url"); err == nil && remoteURL != "" {
+		if remoteURL, err := cfg.GitClient().RemoteURL(ctx, "origin"); err == nil && remoteURL != "" {
 			remoteHost := CanonicalGerritHost(remoteURL)
 			if remoteHost != "" && remoteHost != targetHost {
 				return "", nil

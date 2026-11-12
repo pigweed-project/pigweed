@@ -333,6 +333,12 @@ func (f *hookFakeGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, a
 				f.blockRawPush = ""
 				return nil
 			}
+			if a == "--get-regexp" {
+				if f.blockRawPush != "" {
+					_, _ = io.WriteString(stdout, "ghish.blockrawpush "+f.blockRawPush+"\n")
+				}
+				return nil
+			}
 		}
 		_, _ = io.WriteString(stdout, f.blockRawPush+"\n")
 		return nil

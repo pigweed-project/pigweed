@@ -36,11 +36,13 @@ import (
 // files (from the repository root down to the working directory) and `git config`
 // (`ghish.*`) overrides.
 type ProjectConfig struct {
-	Gerrit   GerritProjectConfig   `json:"gerrit"`
-	CI       CIProjectConfig       `json:"ci"`
-	Issue    IssueProjectConfig    `json:"issue"`
-	Worktree WorktreeProjectConfig `json:"worktree"`
-	Oncall   OncallProjectConfig   `json:"oncall"`
+	Gerrit       GerritProjectConfig   `json:"gerrit"`
+	CI           CIProjectConfig       `json:"ci"`
+	Issue        IssueProjectConfig    `json:"issue"`
+	Worktree     WorktreeProjectConfig `json:"worktree"`
+	Oncall       OncallProjectConfig   `json:"oncall"`
+	AuthMode     string                `json:"auth_mode,omitempty"`
+	BlockRawPush bool                  `json:"block_raw_push,omitempty"`
 }
 
 // GerritProjectConfig holds `[gerrit]` configuration settings.
@@ -787,6 +789,15 @@ func applyGitConfigEntries(entries []gitConfigEntry, dst *ProjectConfig) error {
 			continue
 		}
 
+		switch strings.ToLower(rest) {
+		case "authmode":
+			dst.AuthMode = val
+			continue
+		case "blockrawpush":
+			dst.BlockRawPush = strings.EqualFold(val, "true")
+			continue
+		}
+
 		section, subkey, found := strings.Cut(rest, ".")
 		if !found {
 			continue
@@ -861,8 +872,8 @@ func applyGitConfigEntries(entries []gitConfigEntry, dst *ProjectConfig) error {
 				dst.Issue.Host = val
 			case "defaultcomponent", "defaultcomponentid":
 				n, err := strconv.ParseInt(val, 10, 64)
-				if err != nil {
-					return fmt.Errorf("invalid git config %s=%q: %w", key, val, err)
+				if err != nil || n <= 0 {
+					return fmt.Errorf("invalid git config %s=%q: must be a positive integer component ID", key, val)
 				}
 				dst.Issue.DefaultComponent = n
 			case "quotaproject":

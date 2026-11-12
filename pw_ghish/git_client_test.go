@@ -127,16 +127,16 @@ func TestGitClient_ConfigGet(t *testing.T) {
 			return fmt.Errorf("key not found")
 		},
 	}
-	client := NewGitClient(mock)
-	val, err := client.ConfigGet(ctx, "user.email")
+	client := NewGitClient(mock).(*defaultGitClient)
+	val, err := client.configGetCached(ctx, "user.email")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if val != "test@example.com" {
-		t.Errorf("ConfigGet() = %q, want test@example.com", val)
+		t.Errorf("configGetCached() = %q, want test@example.com", val)
 	}
 
-	_, err = client.ConfigGet(ctx, "nonexistent")
+	_, err = client.configGetCached(ctx, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent key, got nil")
 	}
@@ -328,14 +328,15 @@ func TestGitClient_ValidationErrors(t *testing.T) {
 		}
 	})
 
-	t.Run("ConfigGet validation", func(t *testing.T) {
-		_, err := client.ConfigGet(ctx, "")
+	t.Run("configGetCached validation", func(t *testing.T) {
+		dc := client.(*defaultGitClient)
+		_, err := dc.configGetCached(ctx, "")
 		if err == nil {
-			t.Fatal("expected error for ConfigGet with empty key, got nil")
+			t.Fatal("expected error for configGetCached with empty key, got nil")
 		}
-		_, err = client.ConfigGet(ctx, "   ")
+		_, err = dc.configGetCached(ctx, "   ")
 		if err == nil {
-			t.Fatal("expected error for ConfigGet with whitespace key, got nil")
+			t.Fatal("expected error for configGetCached with whitespace key, got nil")
 		}
 	})
 
@@ -1083,7 +1084,7 @@ func TestRealGitRunner_IgnoresInheritedGitDirWhenDirExplicit(t *testing.T) {
 		t.Errorf("GitDir() = %q, want %q", gotGitDir, wantGitDir)
 	}
 
-	if val, err := innerClient.ConfigGet(ctx, "ghish.test.outer"); err == nil {
+	if val, err := innerClient.(*defaultGitClient).configGetCached(ctx, "ghish.test.outer"); err == nil {
 		t.Errorf("inherited GIT_CONFIG leaked into inner repo: got %q, want error", val)
 	}
 
@@ -1526,7 +1527,7 @@ func TestGitClient_MemoizationAndCacheInvalidation(t *testing.T) {
 		},
 	}
 
-	client := NewGitClient(mock)
+	client := NewGitClient(mock).(*defaultGitClient)
 
 	for range 5 {
 		if b, err := client.CurrentBranch(ctx); err != nil || b != "feature-a" {
@@ -1535,10 +1536,10 @@ func TestGitClient_MemoizationAndCacheInvalidation(t *testing.T) {
 		if gd, err := client.GitDir(ctx); err != nil || gd != "/repo/.git" {
 			t.Fatalf("GitDir() = (%q, %v), want /repo/.git", gd, err)
 		}
-		if v, err := client.ConfigGet(ctx, "user.email"); err != nil || v != "first@example.com" {
-			t.Fatalf("ConfigGet(user.email) = (%q, %v), want first@example.com", v, err)
+		if v, err := client.configGetCached(ctx, "user.email"); err != nil || v != "first@example.com" {
+			t.Fatalf("configGetCached(user.email) = (%q, %v), want first@example.com", v, err)
 		}
-		if _, err := client.ConfigGet(ctx, "missing.key"); err == nil {
+		if _, err := client.configGetCached(ctx, "missing.key"); err == nil {
 			t.Fatal("expected error for missing.key")
 		}
 		if r := client.ResolveRemote(ctx); r != "goog" {
@@ -1583,8 +1584,8 @@ func TestGitClient_MemoizationAndCacheInvalidation(t *testing.T) {
 	if err := client.Run(ctx, io.Discard, io.Discard, "config", "user.email", "second@example.com"); err != nil {
 		t.Fatalf("config set failed: %v", err)
 	}
-	if v, err := client.ConfigGet(ctx, "user.email"); err != nil || v != "second@example.com" {
-		t.Fatalf("ConfigGet(user.email) after config write = (%q, %v), want second@example.com", v, err)
+	if v, err := client.configGetCached(ctx, "user.email"); err != nil || v != "second@example.com" {
+		t.Fatalf("configGetCached(user.email) after config write = (%q, %v), want second@example.com", v, err)
 	}
 }
 
@@ -1642,17 +1643,17 @@ func TestSeedPrefetchedGitConfig(t *testing.T) {
 	}, "\n"))
 
 	// Hits in prefetched sections (both exact subsection case and case-insensitive key) must spawn 0 subprocesses.
-	if got, err := dc.ConfigGet(ctx, "user.email"); err != nil || got != "erahm@google.com" {
-		t.Fatalf("ConfigGet(user.email) = (%q, %v), want erahm@google.com", got, err)
+	if got, err := dc.configGetCached(ctx, "user.email"); err != nil || got != "erahm@google.com" {
+		t.Fatalf("configGetCached(user.email) = (%q, %v), want erahm@google.com", got, err)
 	}
-	if got, err := dc.ConfigGet(ctx, "init.defaultBranch"); err != nil || got != "main" {
-		t.Fatalf("ConfigGet(init.defaultBranch) = (%q, %v), want main", got, err)
+	if got, err := dc.configGetCached(ctx, "init.defaultBranch"); err != nil || got != "main" {
+		t.Fatalf("configGetCached(init.defaultBranch) = (%q, %v), want main", got, err)
 	}
-	if got, err := dc.ConfigGet(ctx, "branch.MyFeature.remote"); err != nil || got != "goog" {
-		t.Fatalf("ConfigGet(branch.MyFeature.remote) = (%q, %v), want goog", got, err)
+	if got, err := dc.configGetCached(ctx, "branch.MyFeature.remote"); err != nil || got != "goog" {
+		t.Fatalf("configGetCached(branch.MyFeature.remote) = (%q, %v), want goog", got, err)
 	}
-	if got, err := dc.ConfigGet(ctx, "remote.goog.url"); err != nil || got != "https://pigweed.googlesource.com/pigweed/pigweed" {
-		t.Fatalf("ConfigGet(remote.goog.url) = (%q, %v)", got, err)
+	if got, err := dc.configGetCached(ctx, "remote.goog.url"); err != nil || got != "https://pigweed.googlesource.com/pigweed/pigweed" {
+		t.Fatalf("configGetCached(remote.goog.url) = (%q, %v)", got, err)
 	}
 
 	// Negative lookups in prefetched sections must fail immediately without spawning git.
@@ -1662,7 +1663,7 @@ func TestSeedPrefetchedGitConfig(t *testing.T) {
 		"remote.origin.url",
 		"user.signingkey",
 	} {
-		if _, err := dc.ConfigGet(ctx, missingKey); err == nil {
+		if _, err := dc.configGetCached(ctx, missingKey); err == nil {
 			t.Fatalf("expected error for missing prefetched key %q, got nil", missingKey)
 		}
 	}
@@ -1671,8 +1672,8 @@ func TestSeedPrefetchedGitConfig(t *testing.T) {
 	}
 
 	// Non-prefetched section (core.*) still delegates to git runner.
-	if got, err := dc.ConfigGet(ctx, "core.bare"); err != nil || got != "false" {
-		t.Fatalf("ConfigGet(core.bare) = (%q, %v), want false", got, err)
+	if got, err := dc.configGetCached(ctx, "core.bare"); err != nil || got != "false" {
+		t.Fatalf("configGetCached(core.bare) = (%q, %v), want false", got, err)
 	}
 	if len(mock.Calls) != 1 || mock.Calls[0] != "config --get core.bare" {
 		t.Fatalf("unexpected mock calls: %v", mock.Calls)
@@ -1771,7 +1772,7 @@ func TestRealGitRunner_ReadOnlyEnvFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GIT_CONFIG_SYSTEM", sysCfg)
-	if val, err := r.Client.ConfigGet(ctx, "ghish.test.systemonly"); err == nil {
+	if val, err := r.Client.(*defaultGitClient).configGetCached(ctx, "ghish.test.systemonly"); err == nil {
 		t.Errorf("expected GIT_CONFIG_NOSYSTEM=1 to skip GIT_CONFIG_SYSTEM on read-only git config, got %q", val)
 	}
 }

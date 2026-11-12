@@ -422,7 +422,7 @@ func TestBearerTokenStrategy_Prepare(t *testing.T) {
 		var failToken bool
 		wantCfg := &Config{
 			Host: "pigweed-review.googlesource.com",
-			Git:  (&MockGitRunner{}).OnCommand("config --get ghish.authmode", "googler\n"),
+			Git:  (&MockGitRunner{}).OnCommand("config --get-regexp ^ghish\\.", "ghish.authmode googler\n"),
 		}
 		s := NewDynamicBearerStrategy(
 			"token",
@@ -466,7 +466,7 @@ func TestBearerTokenStrategy_Prepare(t *testing.T) {
 			"token",
 			func(u *url.URL) bool { return urlHostIn(u, "trusted.example") },
 			modeAwareBearerToken("Test service", &Config{
-				Git: (&MockGitRunner{}).OnCommand("config --get ghish.authmode", "none\n"),
+				Git: (&MockGitRunner{}).OnCommand("config --get-regexp ^ghish\\.", "ghish.authmode none\n"),
 			}, false, func(context.Context) (string, error) {
 				tokenCalls++
 				return "tok", nil
@@ -777,7 +777,7 @@ func TestBuildbucketProvider_PropagatesCfgToLUCIAuth(t *testing.T) {
 
 	cfg := &Config{
 		Host: "pigweed-review.googlesource.com",
-		Git:  (&MockGitRunner{}).OnCommand("config --get ghish.authmode", "googler\n"),
+		Git:  (&MockGitRunner{}).OnCommand("config --get-regexp ^ghish\\.", "ghish.authmode googler\n"),
 	}
 
 	var mu sync.Mutex

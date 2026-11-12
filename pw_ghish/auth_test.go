@@ -759,7 +759,7 @@ func TestResolveAuthMode(t *testing.T) {
 	t.Run("nil cfg falls back to Config on ctx and caches it", func(t *testing.T) {
 		WithHermeticAuth(t, AuthResolvers{})
 		mockGit := &MockGitRunner{}
-		mockGit.OnCommand("config --get ghish.authmode", "googler\n")
+		mockGit.OnCommand("config --get-regexp ^ghish\\.", "ghish.authmode googler\n")
 		cfg := &Config{Git: mockGit}
 		ctxWithCfg := context.WithValue(ctx, configKey, cfg)
 

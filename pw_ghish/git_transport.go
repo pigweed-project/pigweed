@@ -219,14 +219,6 @@ func parseGerritGitRemote(raw string) (gerritGitRemote, bool) {
 	}, true
 }
 
-func configRemoteURL(ctx context.Context, gc GitClient, key string) string {
-	val, err := gc.ConfigGet(ctx, key)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(val)
-}
-
 func resolveGerritGitRemote(ctx context.Context, gc GitClient, cfg *Config, remote string, forPush bool) (gerritGitRemote, bool) {
 	remote = strings.TrimSpace(remote)
 	if remote == "" {
@@ -234,12 +226,14 @@ func resolveGerritGitRemote(ctx context.Context, gc GitClient, cfg *Config, remo
 	}
 	info, ok := parseGerritGitRemote(remote)
 	if isValidRemoteName(remote) {
-		keys := []string{"remote." + remote + ".url", "remote." + remote + ".pushurl"}
+		u, _ := gc.RemoteURL(ctx, remote)
+		pu, _ := gc.RemotePushURL(ctx, remote)
+		urls := []string{u, pu}
 		if forPush {
-			keys = []string{keys[1], keys[0]}
+			urls = []string{pu, u}
 		}
-		for _, key := range keys {
-			cand, candOK := parseGerritGitRemote(configRemoteURL(ctx, gc, key))
+		for _, raw := range urls {
+			cand, candOK := parseGerritGitRemote(strings.TrimSpace(raw))
 			if !candOK {
 				continue
 			}

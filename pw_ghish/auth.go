@@ -162,8 +162,8 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		rawMode = cacheKey.envMode
 		source = fmt.Sprintf("GH_ISH_AUTH_MODE=%s", cacheKey.envMode)
 	} else if cfg != nil && cfg.Git != nil {
-		if v, err := cfg.GitClient().ConfigGet(ctx, "ghish.authmode"); err == nil && strings.TrimSpace(v) != "" {
-			rawMode = strings.TrimSpace(v)
+		if v := cfg.GetProjectConfig(ctx).AuthMode; v != "" {
+			rawMode = v
 			source = fmt.Sprintf("git config ghish.authmode=%s", rawMode)
 		}
 	}
@@ -204,13 +204,13 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		gc = NewGitClient(DefaultGitRunner)
 	}
 	if gc != nil {
-		if email, err := gc.ConfigGet(ctx, "user.email"); err == nil {
+		if email, err := gc.UserEmail(ctx); err == nil {
 			email = strings.TrimSpace(email)
 			if strings.HasSuffix(strings.ToLower(email), "@google.com") {
 				return cacheAndReturn(AuthModeGoogler, fmt.Sprintf("auto-detected (git user.email %s)", email))
 			}
 		}
-		if origin, err := gc.ConfigGet(ctx, "remote.origin.url"); err == nil {
+		if origin, err := gc.RemoteURL(ctx, "origin"); err == nil {
 			if scheme, _, ok := parseInternalGitURL(origin); ok {
 				return cacheAndReturn(AuthModeGoogler, fmt.Sprintf("auto-detected (%s:// git remote)", scheme))
 			}

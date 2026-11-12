@@ -593,7 +593,7 @@ message trailer templates, and ``OWNERS`` component discovery. All keys under
      - ``int64`` *(or numeric string)*
      - ``0``
      - Positive integer (e.g. ``1194524``)
-     - ``ghish.issue.defaultComponent`` / ``ghish.componentid``
+     - ``ghish.issue.defaultComponent``
      - Fallback Buganizer component ID for ``gh issue list`` and
        ``gh issue create``.
    * - ``quota_project``
@@ -669,8 +669,7 @@ candidate path, the **longest pattern string** (``len(pattern)``) **wins**.
 4. **Project config default**: ``[issue] default_component`` (or
    ``default_component_id``) in ``.ghish.toml`` or
    ``git config ghish.issue.defaultComponent``.
-5. **Legacy Git config**: ``git config ghish.componentid``.
-6. **Project profile default**: ``ProjectProfile.DefaultComponentID()`` (e.g.
+5. **Project profile default**: ``ProjectProfile.DefaultComponentID()`` (e.g.
    ``1194524`` for the ``pigweed`` profile).
 
 ``[issue.components]`` & ``[issue.hotlists]`` sections
