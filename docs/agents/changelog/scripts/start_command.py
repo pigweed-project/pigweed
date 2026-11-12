@@ -22,18 +22,14 @@ import tomlkit
 import common
 
 
-def check_sorted_keys(dictionary: dict, name: str) -> list[str]:
-    """Checks that categories.json5 is alphabetically sorted."""
-    keys = list(dictionary.keys())
-    if keys != sorted(keys):
-        sys.exit(f"[ERR] '{name}' must be alphabetically sorted")
-    return keys
-
-
 def check_categories() -> None:
-    """Checks that //docs/sphinx/changelog/categories.json5 is up-to-date."""
+    """Checks that //docs/common/metadata/categories.toml is valid."""
     data = common.load_categories_data()
-    check_sorted_keys(data, "categories.json5")
+    if not data:
+        sys.exit("[ERR] No top-level categories found in categories.toml")
+    for category_id, info in data.items():
+        if not info.get("title"):
+            sys.exit(f"[ERR] Category '{category_id}' is missing a title")
 
 
 def clean_resources_dir() -> None:
@@ -42,7 +38,7 @@ def clean_resources_dir() -> None:
     if not resources_dir.exists():
         return
     for item in resources_dir.iterdir():
-        if item.name not in ["README.md", "categories.json5"]:
+        if item.name != "README.md":
             if item.is_dir():
                 shutil.rmtree(item)
             else:

@@ -13,7 +13,13 @@
 # the License.
 """Next command for the changelog scripts."""
 
+import re
+
 import common
+
+_FORBIDDEN_ROLE_OR_LINK_RE = re.compile(
+    r":(?:ref|doc|cc|cpp|c|py):|`[^`]+<[^`>]+>`__?"
+)
 
 
 def get_next(shas: list[str], data: dict, count: int = 10) -> list[str]:
@@ -59,16 +65,31 @@ def check_shas(data: dict, true_shas: set) -> dict:
     return {"valid": True}
 
 
-def check_categories_validity(data: dict, valid_categories: dict) -> dict:
+def check_categories_validity(
+    data: dict,
+    valid_categories: dict,
+    raw_categories: dict | None = None,
+) -> dict:
     """Verifies all stated categories inside story data are valid."""
     gathered_categories = set(data.get("stories", {}).keys())
-    invalid_categories = gathered_categories - set(valid_categories.keys())
+    invalid_categories = sorted(
+        gathered_categories - set(valid_categories.keys())
+    )
     if invalid_categories:
-        return {
+        result: dict = {
             "valid": False,
-            "invalid_categories": list(invalid_categories),
-            "valid_categories": sorted(list(valid_categories.keys())),
+            "invalid_categories": invalid_categories,
+            "valid_categories": list(valid_categories.keys()),
         }
+        if raw_categories:
+            remapped = {}
+            for cat in invalid_categories:
+                top = common.resolve_top_level_category(cat, raw_categories)
+                if top and top in valid_categories:
+                    remapped[cat] = top
+            if remapped:
+                result["remapped_subcategories"] = remapped
+        return result
     return {"valid": True}
 
 
@@ -92,6 +113,20 @@ def check_stories(data: dict) -> dict:
             if story_id == "misc":
                 if story["example"] != "":
                     missing.append("example (must be empty string for misc)")
+            elif story["example"].strip():
+                if not story.get("example_proof", "").strip():
+                    missing.append(
+                        "example_proof (required when example is non-empty)"
+                    )
+
+        for field in ["body", "highlight"]:
+            if field in story and _FORBIDDEN_ROLE_OR_LINK_RE.search(
+                story[field]
+            ):
+                missing.append(
+                    f"{field} (must not contain Sphinx cross-reference roles "
+                    "or inline links; use ``code`` instead)"
+                )
 
         if missing:
             invalid_stories.append(
@@ -132,6 +167,31 @@ def check_scores_uniqueness(data: dict) -> dict:
     return {"valid": True}
 
 
+def check_highlights_count(data: dict) -> dict:
+    """Ensures at most 5 visible stories have score >= 750."""
+    categories_data = common.load_categories_data()
+    hidden = {k for k, v in categories_data.items() if not v.get("show", True)}
+    highlighted = []
+    for category_name, story_id, story in _all_stories(data):
+        if category_name in hidden:
+            continue
+        if story.get("highlight", "").strip() and story.get("score", 0) >= 750:
+            highlighted.append(
+                {
+                    "story": f"{category_name}.{story_id}",
+                    "score": story.get("score", 0),
+                }
+            )
+    if len(highlighted) > 5:
+        highlighted.sort(key=lambda x: x["score"], reverse=True)
+        return {
+            "valid": False,
+            "count": len(highlighted),
+            "highlights": highlighted,
+        }
+    return {"valid": True}
+
+
 def get_categories() -> dict:
     """Loads all categories."""
     data = common.load_categories_data()
@@ -157,8 +217,11 @@ def next_command(args) -> None:
     stories_data = check_stories(data)
     if not stories_data.get("valid", True):
         instructions = (
-            "Fix the incomplete stories that were found in data.toml. Every "
-            "story must have a title, body, highlight, score, and example."
+            "Fix the invalid or incomplete stories that were found in "
+            "data.toml. Every story must have a title, body, highlight, "
+            "score, and example; non-empty examples require example_proof; "
+            "and body/highlight must not contain cross-reference roles or "
+            "inline links."
         )
         common.write_json_resource(
             "next.json",
@@ -185,8 +248,27 @@ def next_command(args) -> None:
         )
         return
 
+    # Then check highlights cap (max 5 stories with score >= 750)
+    highlights_data = check_highlights_count(data)
+    if not highlights_data.get("valid", True):
+        instructions = (
+            "At most 5 visible stories may have a score >= 750 (the "
+            "threshold for top-level Highlights). Adjust story scores in "
+            "data.toml so at most 5 stories have score >= 750."
+        )
+        common.write_json_resource(
+            "next.json",
+            {
+                "highlights": highlights_data,
+                "instructions": instructions,
+            },
+        )
+        return
+
     # Then check categories
-    categories_data = check_categories_validity(data, get_categories())
+    categories_data = check_categories_validity(
+        data, get_categories(), common.load_raw_categories_data()
+    )
     if not categories_data.get("valid", True):
         instructions = (
             "Fix the invalid categories that were found in data.toml."
@@ -218,17 +300,23 @@ def next_command(args) -> None:
         )
         return
 
+    module_categories = common.load_module_categories()
     next_commits = []
     for sha in next_shas:
         message = repo.commit_message(sha)
+        diff = repo.diff(f"{sha}^!")
+        suggested = common.suggest_commit_categories_from_diff(
+            diff, module_categories
+        )
         next_commits.append(
             {
                 "sha": sha,
                 "message": message,
-                "diff": repo.diff(f"{sha}^!"),
+                "diff": diff,
                 "url": repo.commit_review_url(sha),
                 "date": str(repo.commit_date(sha)),
                 "title": message.splitlines()[0],
+                "suggested_categories": suggested,
             }
         )
 

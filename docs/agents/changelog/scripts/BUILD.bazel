@@ -12,24 +12,39 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_binary")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
 licenses(["notice"])
 
-pw_py_binary(
-    name = "scripts",
+pw_py_library(
+    name = "scripts_lib",
     srcs = [
         "common.py",
         "end_command.py",
         "next_command.py",
-        "scripts.py",
         "start_command.py",
     ],
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
         "//pw_cli/py:pw_cli",
-        "@pigweed_python_packages//json5",
         "@pigweed_python_packages//tomlkit",
+    ],
+)
+
+pw_py_binary(
+    name = "scripts",
+    srcs = ["scripts.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [":scripts_lib"],
+)
+
+pw_py_test(
+    name = "scripts_test",
+    srcs = ["scripts_test.py"],
+    deps = [
+        ":scripts_lib",
+        "//docs/common/metadata:sync_lib",
     ],
 )

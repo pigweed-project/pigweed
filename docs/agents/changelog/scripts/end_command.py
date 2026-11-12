@@ -91,7 +91,7 @@ def _get_highlights(
                 )
 
     highlight_stories.sort(key=lambda x: x["score"], reverse=True)
-    return highlight_stories
+    return highlight_stories[:5]
 
 
 def _build_highlights_section(
@@ -124,13 +124,6 @@ def _build_highlights_section(
     return rst
 
 
-def _category_sort_key(category: str) -> tuple[int, str]:
-    """Sorts pw_* categories first, then alphabetically, else alphabetically."""
-    if category.startswith("pw_"):
-        return (0, category)
-    return (1, category)
-
-
 def _build_story_section(
     category: str, story_key: str, story: dict, year: str, month: str
 ) -> list[str]:
@@ -150,7 +143,11 @@ def _build_story_section(
 
     links = []
     if commits:
-        for i, (_, commit_info) in enumerate(sorted(commits.items()), 1):
+        ordered_commits = sorted(
+            commits.items(),
+            key=lambda item: (item[1].get("date", ""), item[0]),
+        )
+        for i, (_, commit_info) in enumerate(ordered_commits, 1):
             url = commit_info.get("url", "")
             url = url.replace(
                 "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/",
@@ -234,7 +231,12 @@ def build_rst_for_month(
     rst.extend(_build_highlights_section(highlights, year, month))
 
     stories = data.get("stories", {})
-    for category in sorted(stories.keys(), key=_category_sort_key):
+    category_order = {cat: idx for idx, cat in enumerate(categories_map)}
+    ordered_categories = sorted(
+        stories.keys(),
+        key=lambda cat: (category_order.get(cat, len(category_order)), cat),
+    )
+    for category in ordered_categories:
         if category in ignore_list:
             continue
         rst.extend(
@@ -243,7 +245,7 @@ def build_rst_for_month(
             )
         )
 
-    return "\n".join(rst) + "\n"
+    return "\n".join(rst).rstrip() + "\n"
 
 
 def export_rst(args) -> None:

@@ -22,6 +22,7 @@ pw_ignore_group("scripts") {
     "end_command.py",
     "next_command.py",
     "scripts.py",
+    "scripts_test.py",
     "start_command.py",
   ]
 }
