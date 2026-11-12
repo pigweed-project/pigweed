@@ -173,6 +173,51 @@ type StackCommit struct {
 	ChangeID string
 }
 
+// WorktreeInfo describes a single worktree entry from `git worktree list --porcelain`.
+type WorktreeInfo struct {
+	Path     string `json:"path"`
+	HeadSHA  string `json:"head_sha"`
+	Branch   string `json:"branch,omitempty"` // short branch name (e.g. "ghish"), empty if detached
+	Detached bool   `json:"detached"`
+}
+
+// ParseWorktreeListPorcelain parses the output of `git worktree list --porcelain`.
+func ParseWorktreeListPorcelain(output string) []WorktreeInfo {
+	var result []WorktreeInfo
+	var current *WorktreeInfo
+
+	flush := func() {
+		if current != nil && current.Path != "" {
+			result = append(result, *current)
+		}
+		current = nil
+	}
+
+	for _, rawLine := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			flush()
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			flush()
+			current = &WorktreeInfo{
+				Path: strings.TrimSpace(strings.TrimPrefix(line, "worktree ")),
+			}
+		case current != nil && strings.HasPrefix(line, "HEAD "):
+			current.HeadSHA = strings.TrimSpace(strings.TrimPrefix(line, "HEAD "))
+		case current != nil && strings.HasPrefix(line, "branch "):
+			ref := strings.TrimSpace(strings.TrimPrefix(line, "branch "))
+			current.Branch = strings.TrimPrefix(ref, "refs/heads/")
+		case current != nil && line == "detached":
+			current.Detached = true
+		}
+	}
+	flush()
+	return result
+}
+
 // GitClient defines high-level Git queries and operations on top of GitRunner.
 type GitClient interface {
 	GitRunner
@@ -182,6 +227,19 @@ type GitClient interface {
 	RevParse(ctx context.Context, args ...string) (string, error)
 	VerifyRef(ctx context.Context, ref string) (bool, error)
 	GitDir(ctx context.Context) (string, error)
+	StatusPorcelain(ctx context.Context) (string, error)
+	ListWorktrees(ctx context.Context, prune bool) ([]WorktreeInfo, error)
+	WorktreeAddDetached(ctx context.Context, worktreePath string) error
+	SwitchBranch(ctx context.Context, branchName, createFromRef string) error
+	SwitchExistingBranch(ctx context.Context, branchName string) error
+	CreateBranch(ctx context.Context, branchName, createFromRef string) error
+	ResetBranch(ctx context.Context, branchName, targetRef string) error
+	SwitchDetach(ctx context.Context, targetRef string) error
+	SwitchDetachForce(ctx context.Context, targetRef string) error
+	Rebase(ctx context.Context, upstream string) error
+	CommitsAheadBetween(ctx context.Context, baseRef, rev string) (int, error)
+	InspectHeadAheadChangeID(ctx context.Context, baseRef, rev string) (ahead int, changeID string, err error)
+	EnsureCommitMsgHook(ctx context.Context) (bool, error)
 	CountCommitsAhead(ctx context.Context, branch string) (int, error)
 	StackCommits(ctx context.Context, branch string) ([]StackCommit, error)
 	Fetch(ctx context.Context, remote, ref string, stdout, stderr io.Writer) error
@@ -288,13 +346,6 @@ func splitGitSubcommand(args []string) (string, []string) {
 		}
 	}
 	return "", nil
-}
-
-// IsReadOnlyGitQuery reports whether git args invoke a read-only plumbing or
-// inspection subcommand that neither mutates repository state nor requires
-// index locks or system-level git config.
-func IsReadOnlyGitQuery(args []string) bool {
-	return isReadOnlyGitQuery(args)
 }
 
 func isReadOnlyGitQuery(args []string) bool {
@@ -635,6 +686,9 @@ func NewGitClient(runner GitRunner) GitClient {
 	if runner == nil {
 		runner = DefaultGitRunner
 	}
+	if r, ok := asRealGitRunner(runner); ok {
+		return &defaultGitClient{runner: r}
+	}
 	if gc, ok := runner.(GitClient); ok {
 		return gc
 	}
@@ -642,8 +696,10 @@ func NewGitClient(runner GitRunner) GitClient {
 }
 
 // NewGitClientInDir returns a GitClient configured to execute git commands in dir.
+//
+//ghish:wraps &pw_ghish.RealGitRunner{} -- use NewGitClientInDir in git_client.go
 func NewGitClientInDir(dir string) GitClient {
-	return NewGitClient(&RealGitRunner{Dir: dir})
+	return &defaultGitClient{runner: &RealGitRunner{Dir: dir}}
 }
 
 // GitClient returns a GitClient for the configuration, falling back to DefaultGitRunner if unconfigured.
@@ -1319,10 +1375,9 @@ func FetchInDir(ctx context.Context, dir, remote string, refspecs ...string) err
 			return fmt.Errorf("git fetch refspec must not be empty")
 		}
 	}
-	runner := &RealGitRunner{Dir: dir}
-	gc := &defaultGitClient{runner: runner}
+	gc := NewGitClientInDir(dir).(*defaultGitClient)
 	var stdout, stderr bytes.Buffer
-	err := gc.fetch(ctx, &Config{Git: runner, CWD: dir}, remote, refspecs, &stdout, &stderr)
+	err := gc.fetch(ctx, &Config{Git: gc.runner, CWD: dir}, remote, refspecs, &stdout, &stderr)
 	if err == nil {
 		return nil
 	}
@@ -1579,6 +1634,163 @@ func (c *defaultGitClient) UpdateHeadRef(ctx context.Context, targetSHA, expecte
 	args = append(args, "HEAD", targetSHA, expectedCurrentSHA)
 	_, err := c.runOutput(ctx, args...)
 	return err
+}
+
+func (c *defaultGitClient) StatusPorcelain(ctx context.Context) (string, error) {
+	var stdout, stderr bytes.Buffer
+	if err := c.Run(ctx, &stdout, &stderr, "status", "--porcelain"); err != nil {
+		if errStr := cmp.Or(strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String())); errStr != "" {
+			return "", fmt.Errorf("git status --porcelain failed: %w: %s", err, errStr)
+		}
+		return "", fmt.Errorf("git status --porcelain failed: %w", err)
+	}
+	return strings.TrimRight(stdout.String(), "\r\n"), nil
+}
+
+func (c *defaultGitClient) ListWorktrees(ctx context.Context, prune bool) ([]WorktreeInfo, error) {
+	if prune {
+		_, _ = c.runOutput(ctx, "worktree", "prune")
+	}
+	porcelain, err := c.runOutput(ctx, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	return ParseWorktreeListPorcelain(porcelain), nil
+}
+
+func (c *defaultGitClient) WorktreeAddDetached(ctx context.Context, worktreePath string) error {
+	if _, err := os.Stat(worktreePath); err == nil {
+		if _, gitErr := os.Stat(filepath.Join(worktreePath, ".git")); gitErr == nil {
+			return nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(worktreePath), 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory for worktree %s: %w", worktreePath, err)
+	}
+	_, _ = c.runOutput(ctx, "worktree", "prune")
+	if _, err := c.runOutput(ctx, "worktree", "add", "--detach", worktreePath, "origin/main"); err != nil {
+		if _, fallbackErr := c.runOutput(ctx, "worktree", "add", "--detach", worktreePath, "HEAD"); fallbackErr != nil {
+			return fmt.Errorf("failed to add git worktree at %s: %w", worktreePath, err)
+		}
+	}
+	return nil
+}
+
+func (c *defaultGitClient) resolveBaseRef(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		ref = "origin/main"
+	}
+	ok, err := c.VerifyRef(ctx, ref)
+	if err != nil {
+		return "", fmt.Errorf("failed to verify ref %q: %w", ref, err)
+	}
+	if ok {
+		return ref, nil
+	}
+	// Only allow fallback from origin/main -> main for local repositories without remotes.
+	// NEVER silently fall back to HEAD!
+	if ref == "origin/main" {
+		if mainOk, mainErr := c.VerifyRef(ctx, "main"); mainErr == nil && mainOk {
+			return "main", nil
+		}
+	}
+	return "", fmt.Errorf("base ref %q does not exist in repository", ref)
+}
+
+func (c *defaultGitClient) SwitchBranch(ctx context.Context, branchName, createFromRef string) error {
+	exists, err := c.VerifyRef(ctx, "refs/heads/"+branchName)
+	if err != nil {
+		return fmt.Errorf("failed to check if branch %q exists: %w", branchName, err)
+	}
+	if exists {
+		return c.SwitchExistingBranch(ctx, branchName)
+	}
+	return c.CreateBranch(ctx, branchName, createFromRef)
+}
+
+func (c *defaultGitClient) SwitchExistingBranch(ctx context.Context, branchName string) error {
+	_, err := c.runOutput(ctx, "switch", branchName)
+	return err
+}
+
+func (c *defaultGitClient) CreateBranch(ctx context.Context, branchName, createFromRef string) error {
+	baseRef, err := c.resolveBaseRef(ctx, createFromRef)
+	if err != nil {
+		return err
+	}
+	_, err = c.runOutput(ctx, "switch", "-c", branchName, baseRef)
+	return err
+}
+
+func (c *defaultGitClient) ResetBranch(ctx context.Context, branchName, targetRef string) error {
+	baseRef, err := c.resolveBaseRef(ctx, targetRef)
+	if err != nil {
+		return err
+	}
+	_, err = c.runOutput(ctx, "switch", "-C", branchName, baseRef)
+	return err
+}
+
+func (c *defaultGitClient) SwitchDetach(ctx context.Context, targetRef string) error {
+	baseRef, err := c.resolveBaseRef(ctx, targetRef)
+	if err != nil {
+		return err
+	}
+	_, err = c.runOutput(ctx, "switch", "--detach", baseRef)
+	return err
+}
+
+func (c *defaultGitClient) SwitchDetachForce(ctx context.Context, targetRef string) error {
+	baseRef, err := c.resolveBaseRef(ctx, targetRef)
+	if err != nil {
+		return err
+	}
+	if _, err := c.runOutput(ctx, "reset", "--hard"); err != nil {
+		return err
+	}
+	if _, err := c.runOutput(ctx, "clean", "-fd"); err != nil {
+		return err
+	}
+	_, err = c.runOutput(ctx, "switch", "--detach", "--discard-changes", baseRef)
+	return err
+}
+
+func (c *defaultGitClient) Rebase(ctx context.Context, upstream string) error {
+	_, err := c.runOutput(ctx, "rebase", upstream)
+	return err
+}
+
+func (c *defaultGitClient) CommitsAheadBetween(ctx context.Context, baseRef, rev string) (int, error) {
+	baseRef, err := c.resolveBaseRef(ctx, baseRef)
+	if err != nil {
+		return 0, err
+	}
+	out, err := c.runOutput(ctx, "rev-list", "--count", fmt.Sprintf("%s..%s", baseRef, rev))
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(out))
+}
+
+func (c *defaultGitClient) InspectHeadAheadChangeID(ctx context.Context, baseRef, rev string) (ahead int, changeID string, err error) {
+	if baseRef == "" {
+		baseRef = "origin/main"
+	}
+	out, err := c.runOutput(ctx, "log", "-n", "1", "--format=%H%x00%B", fmt.Sprintf("%s..%s", baseRef, rev))
+	if err != nil && baseRef == "origin/main" {
+		if out2, err2 := c.runOutput(ctx, "log", "-n", "1", "--format=%H%x00%B", fmt.Sprintf("main..%s", rev)); err2 == nil {
+			out = out2
+			err = nil
+		}
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	if strings.TrimSpace(out) == "" {
+		return 0, "", nil
+	}
+	_, msg, _ := strings.Cut(out, "\x00")
+	return 1, ExtractChangeID(msg), nil
 }
 
 func filterGitPushProgress(output string) string {

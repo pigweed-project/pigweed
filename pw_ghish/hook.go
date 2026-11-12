@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/hex"
@@ -1094,20 +1095,77 @@ func isAgentHookInstalled(homeDir, target string) bool {
 	return isGhishHookCommand(string(data))
 }
 
+func commitMsgHookScript(stagedBin string) string {
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n# Standard Gerrit Change-Id commit-msg hook managed by gh-ish\n")
+	if stagedBin != "" {
+		fmt.Fprintf(&b, "if [ -x %q ]; then\n  exec %q hook commit-msg \"$1\"\nfi\n", stagedBin, stagedBin)
+	}
+	b.WriteString(`if grep -q "^Change-Id:" "$1"; then
+  exit 0
+fi
+random_id=$( (git var GIT_AUTHOR_IDENT ; git var GIT_COMMITTER_IDENT ; cat "$1" ; date ; dd if=/dev/urandom bs=64 count=1 2>/dev/null) | git hash-object --stdin )
+awk '
+  BEGIN { added=0 }
+  /^Signed-off-by:/ && !added { print "Change-Id: I" id; added=1 }
+  { print }
+  END { if (!added) print "\nChange-Id: I" id }
+' id="$random_id" "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+`)
+	return b.String()
+}
+
+func resolveGitHooksDirForClient(ctx context.Context, git GitClient, fallbackDir string) (string, error) {
+	gitDir, err := git.RevParse(ctx, "--git-common-dir")
+	if err != nil {
+		return "", fmt.Errorf("not inside a Git repository (git rev-parse --git-common-dir failed: %w)", err)
+	}
+	if !filepath.IsAbs(gitDir) && fallbackDir != "" {
+		gitDir = filepath.Join(fallbackDir, gitDir)
+	}
+	return filepath.Join(gitDir, "hooks"), nil
+}
+
 func resolveGitHooksDir(cmd *cobra.Command) (string, error) {
 	cfg := GetConfig(cmd)
 	if cfg == nil {
 		return "", fmt.Errorf("internal error: command config is uninitialized")
 	}
-	var stdout, stderr bytes.Buffer
-	if err := cfg.Git.Run(cmd.Context(), &stdout, &stderr, "rev-parse", "--git-common-dir"); err != nil {
-		return "", fmt.Errorf("not inside a Git repository (git rev-parse --git-common-dir failed: %w)", err)
+	return resolveGitHooksDirForClient(cmd.Context(), cfg.GitClient(), cfg.CWD)
+}
+
+func writeCommitMsgHook(hooksDir, stagedBin string) (string, error) {
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create Git hooks directory %s: %w", hooksDir, err)
 	}
-	gitDir := strings.TrimSpace(stdout.String())
-	if !filepath.IsAbs(gitDir) && cfg.CWD != "" {
-		gitDir = filepath.Join(cfg.CWD, gitDir)
+	commitMsgPath := filepath.Join(hooksDir, "commit-msg")
+	if err := os.WriteFile(commitMsgPath, []byte(commitMsgHookScript(stagedBin)), 0755); err != nil {
+		return "", fmt.Errorf("failed to write commit-msg hook: %w", err)
 	}
-	return filepath.Join(gitDir, "hooks"), nil
+	return commitMsgPath, nil
+}
+
+func (c *defaultGitClient) EnsureCommitMsgHook(ctx context.Context) (bool, error) {
+	var fallbackDir string
+	if realRunner, ok := c.runner.(*RealGitRunner); ok {
+		fallbackDir = realRunner.Dir
+	}
+	hooksDir, err := resolveGitHooksDirForClient(ctx, c, fallbackDir)
+	if err != nil {
+		return false, err
+	}
+	hookPath := filepath.Join(hooksDir, "commit-msg")
+	if info, err := os.Stat(hookPath); err == nil && info.Mode()&0111 != 0 {
+		return false, nil
+	}
+	var stagedBin string
+	if homeDir, homeErr := HookUserHomeDir(); homeErr == nil {
+		stagedBin = filepath.ToSlash(stagedHookBinaryPath(homeDir))
+	}
+	if _, err := writeCommitMsgHook(hooksDir, stagedBin); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func runHookInstall(cmd *cobra.Command, args []string) error {
@@ -1163,10 +1221,9 @@ func runHookInstall(cmd *cobra.Command, args []string) error {
 		slashBin := filepath.ToSlash(stagedBin)
 
 		if hookInstallGitFlag {
-			commitMsgPath := filepath.Join(hooksDir, "commit-msg")
-			script := fmt.Sprintf("#!/bin/sh\nexec %q hook commit-msg \"$1\"\n", slashBin)
-			if err := os.WriteFile(commitMsgPath, []byte(script), 0755); err != nil {
-				return fmt.Errorf("failed to write commit-msg hook: %w", err)
+			commitMsgPath, err := writeCommitMsgHook(hooksDir, slashBin)
+			if err != nil {
+				return err
 			}
 			_, _ = fmt.Fprintf(out, "Installed Git commit-msg hook: %s\n", commitMsgPath)
 		}

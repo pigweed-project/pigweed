@@ -262,7 +262,7 @@ func isHostFlagChanged(cmd *cobra.Command) bool {
 }
 
 // DefaultGitRunner is the default implementation of GitRunner.
-var DefaultGitRunner GitRunner = &RealGitRunner{}
+var DefaultGitRunner GitRunner = NewGitClientInDir("")
 
 const cheatSheetTemplate = `A command line tool for managing Gerrit code reviews, inspired by the GitHub CLI (gh).
 This tool enables developers and GenAI agents to interact with Gerrit using standard GitHub CLI concepts.

@@ -15,60 +15,17 @@
 package worktree
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 
 	"pigweed.dev/pw_ghish"
 )
 
 // WorktreeInfo describes a single worktree entry from `git worktree list --porcelain`.
-type WorktreeInfo struct {
-	Path     string `json:"path"`
-	HeadSHA  string `json:"head_sha"`
-	Branch   string `json:"branch,omitempty"` // short branch name (e.g. "ghish"), empty if detached
-	Detached bool   `json:"detached"`
-}
+type WorktreeInfo = pw_ghish.WorktreeInfo
 
 // ParseWorktreeListPorcelain parses the output of `git worktree list --porcelain`.
 func ParseWorktreeListPorcelain(output string) []WorktreeInfo {
-	var result []WorktreeInfo
-	var current *WorktreeInfo
-
-	flush := func() {
-		if current != nil && current.Path != "" {
-			result = append(result, *current)
-		}
-		current = nil
-	}
-
-	for _, rawLine := range strings.Split(output, "\n") {
-		line := strings.TrimSpace(rawLine)
-		if line == "" {
-			flush()
-			continue
-		}
-		switch {
-		case strings.HasPrefix(line, "worktree "):
-			flush()
-			current = &WorktreeInfo{
-				Path: strings.TrimSpace(strings.TrimPrefix(line, "worktree ")),
-			}
-		case current != nil && strings.HasPrefix(line, "HEAD "):
-			current.HeadSHA = strings.TrimSpace(strings.TrimPrefix(line, "HEAD "))
-		case current != nil && strings.HasPrefix(line, "branch "):
-			ref := strings.TrimSpace(strings.TrimPrefix(line, "branch "))
-			current.Branch = strings.TrimPrefix(ref, "refs/heads/")
-		case current != nil && line == "detached":
-			current.Detached = true
-		}
-	}
-	flush()
-	return result
+	return pw_ghish.ParseWorktreeListPorcelain(output)
 }
 
 // GitRunner abstracts all Git and worktree operations for hermetic testing.
@@ -116,181 +73,72 @@ type GitRunner interface {
 	EnsureCommitMsgHook(primaryRepo string) (installed bool, err error)
 }
 
-// ExecGitRunner executes real git subprocess commands using pw_ghish primitives.
-type ExecGitRunner struct{}
+// ExecGitRunner executes real git subprocess commands using pw_ghish.GitClient.
+type ExecGitRunner struct {
+	Ctx context.Context
+}
 
 func NewExecGitRunner() *ExecGitRunner {
 	return &ExecGitRunner{}
 }
 
-// RunInDir executes a git subprocess inside dir, scrubbing inherited repository-local
-// Git environment overrides and setting read-only lock/system-config environment flags
-// for read-only git subcommands.
-func (g *ExecGitRunner) RunInDir(dir string, args ...string) (string, error) {
-	cmd := pw_ghish.ExecCommand("git", args...)
-	baseEnv := os.Environ()
-	if dir != "" {
-		cmd.Dir = dir
-		baseEnv = pw_ghish.ScrubRepoLocalGitEnv(baseEnv)
+func (g *ExecGitRunner) ctx() context.Context {
+	if g != nil && g.Ctx != nil {
+		return g.Ctx
 	}
-	cmd.Env = append(baseEnv, "GH_ISH_ACTIVE=1")
-	if pw_ghish.IsReadOnlyGitQuery(args) {
-		cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_OPTIONAL_LOCKS=0")
-	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(stderr.String())
-		if errMsg == "" {
-			errMsg = strings.TrimSpace(stdout.String())
-		}
-		return "", fmt.Errorf("git %s in %s failed: %w\nDetails: %s", strings.Join(args, " "), dir, err, errMsg)
-	}
-	return strings.TrimSpace(stdout.String()), nil
-}
-
-func (g *ExecGitRunner) runGit(dir string, args ...string) (string, error) {
-	return g.RunInDir(dir, args...)
+	return context.Background()
 }
 
 func (g *ExecGitRunner) WorktreeAddDetached(primaryRepo, worktreePath string) error {
-	if _, err := os.Stat(worktreePath); err == nil {
-		// Directory already exists; verify it has a .git file or directory.
-		if _, gitErr := os.Stat(filepath.Join(worktreePath, ".git")); gitErr == nil {
-			return nil
-		}
-	}
-	if err := os.MkdirAll(filepath.Dir(worktreePath), 0755); err != nil {
-		return fmt.Errorf("failed to create parent directory for worktree %s: %w", worktreePath, err)
-	}
-	// Prune any stale administrative worktree entries whose directories were deleted from disk.
-	_, _ = g.runGit(primaryRepo, "worktree", "prune")
-	// Try detaching at origin/main first; fall back to HEAD if origin/main is absent (e.g. local test repos).
-	if _, err := g.runGit(primaryRepo, "worktree", "add", "--detach", worktreePath, "origin/main"); err != nil {
-		if _, fallbackErr := g.runGit(primaryRepo, "worktree", "add", "--detach", worktreePath, "HEAD"); fallbackErr != nil {
-			return fmt.Errorf("failed to add git worktree at %s: %w", worktreePath, err)
-		}
-	}
-	return nil
+	return pw_ghish.NewGitClientInDir(primaryRepo).WorktreeAddDetached(g.ctx(), worktreePath)
 }
 
 func (g *ExecGitRunner) ListWorktrees(repoOrWorktreePath string) ([]WorktreeInfo, error) {
-	out, err := g.runGit(repoOrWorktreePath, "worktree", "prune")
-	_ = out
-	_ = err
-	porcelain, err := g.runGit(repoOrWorktreePath, "worktree", "list", "--porcelain")
-	if err != nil {
-		return nil, err
-	}
-	return ParseWorktreeListPorcelain(porcelain), nil
+	return pw_ghish.NewGitClientInDir(repoOrWorktreePath).ListWorktrees(g.ctx(), true)
 }
 
 func (g *ExecGitRunner) BranchExists(primaryRepo, branchName string) (bool, error) {
-	client := pw_ghish.NewGitClientInDir(primaryRepo)
-	return client.VerifyRef(context.Background(), "refs/heads/"+branchName)
-}
-
-func (g *ExecGitRunner) resolveBaseRef(worktreePath, ref string) (string, error) {
-	if ref == "" {
-		ref = "origin/main"
-	}
-	client := pw_ghish.NewGitClientInDir(worktreePath)
-	ok, err := client.VerifyRef(context.Background(), ref)
-	if err != nil {
-		return "", fmt.Errorf("failed to verify ref %q in %s: %w", ref, worktreePath, err)
-	}
-	if ok {
-		return ref, nil
-	}
-	// Only allow fallback from origin/main -> main for local repositories without remotes.
-	// NEVER silently fall back to HEAD!
-	if ref == "origin/main" {
-		mainOk, mainErr := client.VerifyRef(context.Background(), "main")
-		if mainErr == nil && mainOk {
-			return "main", nil
-		}
-	}
-	return "", fmt.Errorf("base ref %q does not exist in repository %s", ref, worktreePath)
+	return pw_ghish.NewGitClientInDir(primaryRepo).VerifyRef(g.ctx(), "refs/heads/"+branchName)
 }
 
 func (g *ExecGitRunner) SwitchBranch(worktreePath, branchName, createFromRef string) error {
-	exists, err := g.BranchExists(worktreePath, branchName)
-	if err != nil {
-		return fmt.Errorf("failed to check if branch %q exists in %s: %w", branchName, worktreePath, err)
-	}
-	if exists {
-		return g.SwitchExistingBranch(worktreePath, branchName)
-	}
-	return g.CreateBranch(worktreePath, branchName, createFromRef)
+	return pw_ghish.NewGitClientInDir(worktreePath).SwitchBranch(g.ctx(), branchName, createFromRef)
 }
 
 func (g *ExecGitRunner) SwitchExistingBranch(worktreePath, branchName string) error {
-	_, err := g.runGit(worktreePath, "switch", branchName)
-	return err
+	return pw_ghish.NewGitClientInDir(worktreePath).SwitchExistingBranch(g.ctx(), branchName)
 }
 
 func (g *ExecGitRunner) CreateBranch(worktreePath, branchName, createFromRef string) error {
-	baseRef, err := g.resolveBaseRef(worktreePath, createFromRef)
-	if err != nil {
-		return err
-	}
-	// Use lowercase -c (non-forcing create) so existing branches are never clobbered.
-	_, err = g.runGit(worktreePath, "switch", "-c", branchName, baseRef)
-	return err
+	return pw_ghish.NewGitClientInDir(worktreePath).CreateBranch(g.ctx(), branchName, createFromRef)
 }
 
 func (g *ExecGitRunner) ResetBranch(worktreePath, branchName, targetRef string) error {
-	baseRef, err := g.resolveBaseRef(worktreePath, targetRef)
-	if err != nil {
-		return err
-	}
-	_, err = g.runGit(worktreePath, "switch", "-C", branchName, baseRef)
-	return err
+	return pw_ghish.NewGitClientInDir(worktreePath).ResetBranch(g.ctx(), branchName, targetRef)
 }
 
 func (g *ExecGitRunner) SwitchDetach(worktreePath, targetRef string) error {
-	baseRef, err := g.resolveBaseRef(worktreePath, targetRef)
-	if err != nil {
-		return err
-	}
-	_, err = g.runGit(worktreePath, "switch", "--detach", baseRef)
-	return err
+	return pw_ghish.NewGitClientInDir(worktreePath).SwitchDetach(g.ctx(), targetRef)
 }
 
 func (g *ExecGitRunner) SwitchDetachForce(worktreePath, targetRef string) error {
-	baseRef, err := g.resolveBaseRef(worktreePath, targetRef)
-	if err != nil {
-		return err
-	}
-	if _, err := g.runGit(worktreePath, "reset", "--hard"); err != nil {
-		return err
-	}
-	if _, err := g.runGit(worktreePath, "clean", "-fd"); err != nil {
-		return err
-	}
-	_, err = g.runGit(worktreePath, "switch", "--detach", "--discard-changes", baseRef)
-	return err
+	return pw_ghish.NewGitClientInDir(worktreePath).SwitchDetachForce(g.ctx(), targetRef)
 }
 
 func (g *ExecGitRunner) StatusPorcelain(worktreePath string) (string, error) {
-	return g.runGit(worktreePath, "status", "--porcelain")
+	return pw_ghish.NewGitClientInDir(worktreePath).StatusPorcelain(g.ctx())
 }
 
 func (g *ExecGitRunner) CurrentBranch(worktreePath string) (string, error) {
-	out, err := g.runGit(worktreePath, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	return out, nil
+	return pw_ghish.NewGitClientInDir(worktreePath).CurrentBranch(g.ctx())
 }
 
 func (g *ExecGitRunner) RevParse(repoOrWorktreePath, rev string) (string, error) {
-	return g.runGit(repoOrWorktreePath, "rev-parse", rev)
+	return pw_ghish.NewGitClientInDir(repoOrWorktreePath).RevParse(g.ctx(), rev)
 }
 
 func (g *ExecGitRunner) ExtractChangeID(repoOrWorktreePath, rev string) (string, error) {
-	msg, err := g.runGit(repoOrWorktreePath, "log", "-n", "1", "--format=%B", rev)
+	msg, err := pw_ghish.NewGitClientInDir(repoOrWorktreePath).CommitMessage(g.ctx(), rev)
 	if err != nil {
 		return "", err
 	}
@@ -300,90 +148,25 @@ func (g *ExecGitRunner) ExtractChangeID(repoOrWorktreePath, rev string) (string,
 // InspectHeadAheadChangeID checks in a single git subprocess whether rev has commits
 // ahead of baseRef and, if so, parses the Change-Id trailer from the tip commit message.
 func (g *ExecGitRunner) InspectHeadAheadChangeID(dir, baseRef, rev string) (ahead int, changeID string, err error) {
-	if baseRef == "" {
-		baseRef = "origin/main"
-	}
-	out, err := g.runGit(dir, "log", "-n", "1", "--format=%H%x00%B", fmt.Sprintf("%s..%s", baseRef, rev))
-	if err != nil && baseRef == "origin/main" {
-		if out2, err2 := g.runGit(dir, "log", "-n", "1", "--format=%H%x00%B", fmt.Sprintf("main..%s", rev)); err2 == nil {
-			out = out2
-			err = nil
-		}
-	}
-	if err != nil {
-		return 0, "", err
-	}
-	if strings.TrimSpace(out) == "" {
-		return 0, "", nil
-	}
-	_, msg, _ := strings.Cut(out, "\x00")
-	return 1, pw_ghish.ExtractChangeID(msg), nil
+	return pw_ghish.NewGitClientInDir(dir).InspectHeadAheadChangeID(g.ctx(), baseRef, rev)
 }
 
 func (g *ExecGitRunner) CommitsAhead(repoOrWorktreePath, baseRef, rev string) (int, error) {
-	if _, err := g.runGit(repoOrWorktreePath, "rev-parse", "--verify", baseRef); err != nil {
-		if baseRef == "origin/main" {
-			if _, err2 := g.runGit(repoOrWorktreePath, "rev-parse", "--verify", "main"); err2 == nil {
-				baseRef = "main"
-			} else {
-				return 0, err
-			}
-		} else {
-			return 0, err
-		}
-	}
-	out, err := g.runGit(repoOrWorktreePath, "rev-list", "--count", fmt.Sprintf("%s..%s", baseRef, rev))
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(strings.TrimSpace(out))
+	return pw_ghish.NewGitClientInDir(repoOrWorktreePath).CommitsAheadBetween(g.ctx(), baseRef, rev)
 }
 
 func (g *ExecGitRunner) FetchOrigin(repoOrWorktreePath string) error {
-	return pw_ghish.FetchInDir(context.Background(), repoOrWorktreePath, "origin")
+	return pw_ghish.FetchInDir(g.ctx(), repoOrWorktreePath, "origin")
 }
 
 func (g *ExecGitRunner) FetchRef(repoOrWorktreePath, remote, ref string) error {
-	return pw_ghish.FetchInDir(context.Background(), repoOrWorktreePath, remote, ref)
+	return pw_ghish.FetchInDir(g.ctx(), repoOrWorktreePath, remote, ref)
 }
 
 func (g *ExecGitRunner) RebaseOriginMain(worktreePath string) error {
-	_, err := g.runGit(worktreePath, "rebase", "origin/main")
-	return err
+	return pw_ghish.NewGitClientInDir(worktreePath).Rebase(g.ctx(), "origin/main")
 }
 
 func (g *ExecGitRunner) EnsureCommitMsgHook(primaryRepo string) (bool, error) {
-	gitDirOut, err := g.runGit(primaryRepo, "rev-parse", "--git-common-dir")
-	if err != nil {
-		return false, fmt.Errorf("failed to locate git common dir in %s: %w", primaryRepo, err)
-	}
-	if !filepath.IsAbs(gitDirOut) {
-		gitDirOut = filepath.Join(primaryRepo, gitDirOut)
-	}
-	hookPath := filepath.Join(gitDirOut, "hooks", "commit-msg")
-	if info, err := os.Stat(hookPath); err == nil && info.Mode()&0111 != 0 {
-		return false, nil // Already installed and executable
-	}
-	if err := os.MkdirAll(filepath.Dir(hookPath), 0755); err != nil {
-		return false, fmt.Errorf("failed to create hooks directory: %w", err)
-	}
-	// Check if primaryRepo or parent has a standard commit-msg hook we can copy,
-	// or write standard Gerrit Change-Id generator hook stub.
-	stubHook := `#!/bin/sh
-# Standard Gerrit Change-Id commit-msg hook managed by gh wt init
-if grep -q "^Change-Id:" "$1"; then
-  exit 0
-fi
-random_id=$( (git var GIT_AUTHOR_IDENT ; git var GIT_COMMITTER_IDENT ; cat "$1" ; date ; dd if=/dev/urandom bs=64 count=1 2>/dev/null) | git hash-object --stdin )
-awk '
-  BEGIN { added=0 }
-  /^Signed-off-by:/ && !added { print "Change-Id: I" id; added=1 }
-  { print }
-  END { if (!added) print "\nChange-Id: I" id }
-' id="$random_id" "$1" > "$1.tmp" && mv "$1.tmp" "$1"
-`
-	if err := os.WriteFile(hookPath, []byte(stubHook), 0755); err != nil {
-		return false, fmt.Errorf("failed to install commit-msg hook at %s: %w", hookPath, err)
-	}
-	return true, nil
+	return pw_ghish.NewGitClientInDir(primaryRepo).EnsureCommitMsgHook(g.ctx())
 }

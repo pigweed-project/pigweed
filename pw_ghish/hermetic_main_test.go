@@ -27,11 +27,19 @@ import (
 	"testing"
 )
 
-// TestMain runs every unit test with fail-closed credentials and network so a
-// test that forgets to mock auth can never run luci-auth, gosso, bb,
-// or the Busytown accelerators, read the developer's tokens, or reach a real
-// server. Tests that need credentials install mocks with WithHermeticAuth. The
-// live suite (-tags=live) has no TestMain and uses real credentials.
+type failClosedGitRunner struct{}
+
+func (failClosedGitRunner) Run(_ context.Context, _, _ io.Writer, args ...string) error {
+	return fmt.Errorf("hermetic test: unexpected git %s (use NewMockGit or newTestGitRepo)", strings.Join(args, " "))
+}
+
+// TestMain runs every unit test with fail-closed credentials, git, and network
+// so a test that forgets to mock auth or git can never run git, luci-auth,
+// gosso, bb, or the Busytown accelerators against the host environment, read
+// the developer's tokens, or reach a real server. Tests that need credentials
+// install mocks with WithHermeticAuth; tests that need git use NewMockGit or
+// newTestGitRepo. The live suite (-tags=live) has no TestMain and uses real
+// credentials.
 func TestMain(m *testing.M) {
 	for _, v := range hermeticAuthEnvVars {
 		os.Unsetenv(v)
@@ -52,6 +60,7 @@ func TestMain(m *testing.M) {
 	runtimeGOOS = "linux"
 	lsbReleasePath = "/nonexistent/hermetic-lsb-release"
 	setCacheEnv(hermeticCacheEnv())
+	DefaultGitRunner = failClosedGitRunner{}
 	failClosed := failClosedAuthResolvers()
 	SetAuthResolvers(failClosed)
 	// `bb` and the Busytown accelerators (fetch_artifact, ants_cli) carry the
@@ -85,6 +94,7 @@ func TestHermeticDefaults_FailClosed(t *testing.T) {
 		fn   func() error
 	}{
 		{"LookPath", func() error { _, err := LookPath("luci-auth"); return err }},
+		{"DefaultGitRunner", func() error { return DefaultGitRunner.Run(ctx, io.Discard, io.Discard, "status") }},
 		{"OAuthTokenCommandRunner", func() error { _, err := OAuthTokenCommandRunner(ctx, "luci-auth", "token"); return err }},
 		{"gossoCookieJarRunner", func() error { _, err := gossoCookieJarRunner(ctx, "gosso"); return err }},
 		{"SafeHTTPTransportCorpSSO", func() error {

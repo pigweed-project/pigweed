@@ -275,6 +275,8 @@ func TestInvariants_DomainWrappers(t *testing.T) {
 		{`package p; import "net/http"; func f() { _, _ = http.Get("https://example.com") }`, "EnsureSafeHTTPClient"},
 		{`package p; import "net/http"; func f() { _, _ = http.NewRequest("GET", "https://example.com", nil) }`, "EnsureSafeHTTPClient"},
 		{`package p; import ("context"; "net/http"); func f(ctx context.Context) { _, _ = http.NewRequestWithContext(ctx, "GET", "https://example.com", nil) }`, "ExecuteWithAuthStrategy"},
+		{`package pw_ghish; func f() { _ = &RealGitRunner{} }`, "NewGitClientInDir"},
+		{`package worktree; import "pigweed.dev/pw_ghish"; func f() { _ = &pw_ghish.RealGitRunner{} }`, "NewGitClientInDir"},
 	} {
 		fset := token.NewFileSet()
 		f, err := parser.ParseFile(fset, "bad.go", tc.src, 0)

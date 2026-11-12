@@ -1391,29 +1391,25 @@ func senseGitAndWorktrees(ctx context.Context, cfg *Config, cwd string, meta sen
 		}
 	}
 
-	var statusOut bytes.Buffer
-	if err := git.Run(ctx, &statusOut, io.Discard, "status", "--porcelain"); err == nil {
-		raw := strings.TrimRight(statusOut.String(), "\r\n")
-		if strings.TrimSpace(raw) != "" {
-			lines := strings.Split(raw, "\n")
-			st.IsDirty = true
-			st.DirtyFilesCount = len(lines)
-			for _, line := range lines {
-				if len(line) < 3 {
-					continue
-				}
-				xy := line[:2]
-				path := strings.TrimSpace(line[2:])
-				if path == "" {
-					continue
-				}
-				if len(st.DirtyFiles) < 8 {
-					st.DirtyFiles = append(st.DirtyFiles, path)
-				}
-				switch xy {
-				case "UU", "AA", "DD", "AU", "UA", "DU", "UD":
-					st.ConflictedFiles = append(st.ConflictedFiles, path)
-				}
+	if raw, err := git.StatusPorcelain(ctx); err == nil && strings.TrimSpace(raw) != "" {
+		lines := strings.Split(raw, "\n")
+		st.IsDirty = true
+		st.DirtyFilesCount = len(lines)
+		for _, line := range lines {
+			if len(line) < 3 {
+				continue
+			}
+			xy := line[:2]
+			path := strings.TrimSpace(line[2:])
+			if path == "" {
+				continue
+			}
+			if len(st.DirtyFiles) < 8 {
+				st.DirtyFiles = append(st.DirtyFiles, path)
+			}
+			switch xy {
+			case "UU", "AA", "DD", "AU", "UA", "DU", "UD":
+				st.ConflictedFiles = append(st.ConflictedFiles, path)
 			}
 		}
 	}
@@ -1443,56 +1439,25 @@ func senseGitAndWorktrees(ctx context.Context, cfg *Config, cwd string, meta sen
 		}
 	}
 
-	if wtRaw, err := runGit("worktree", "list", "--porcelain"); err == nil && wtRaw != "" {
-		wtList = parseGitWorktreeListPorcelain(wtRaw)
-	}
-	if wtList == nil {
-		wtList = []SenseGitWorktreeEntry{}
+	if wts, err := git.ListWorktrees(ctx, false); err == nil {
+		for _, wt := range wts {
+			wtList = append(wtList, SenseGitWorktreeEntry{
+				Path:   wt.Path,
+				Head:   wt.HeadSHA,
+				Branch: wt.Branch,
+			})
+		}
 	}
 
 	st.IsStale = st.CommitsBehind >= staleBehindThreshold || (st.CommitsBehind > 0 && st.CommitAgeSeconds >= staleAgeSeconds)
 	return st, wtList
 }
 
-func parseGitWorktreeListPorcelain(raw string) []SenseGitWorktreeEntry {
-	var list []SenseGitWorktreeEntry
-	var current *SenseGitWorktreeEntry
-	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			if current != nil && current.Path != "" {
-				list = append(list, *current)
-			}
-			current = nil
-			continue
-		}
-		if strings.HasPrefix(line, "worktree ") {
-			if current != nil && current.Path != "" {
-				list = append(list, *current)
-			}
-			current = &SenseGitWorktreeEntry{
-				Path: strings.TrimSpace(strings.TrimPrefix(line, "worktree ")),
-			}
-		} else if current != nil {
-			if strings.HasPrefix(line, "HEAD ") {
-				current.Head = strings.TrimSpace(strings.TrimPrefix(line, "HEAD "))
-			} else if strings.HasPrefix(line, "branch ") {
-				br := strings.TrimSpace(strings.TrimPrefix(line, "branch "))
-				current.Branch = strings.TrimPrefix(br, "refs/heads/")
-			}
-		}
-	}
-	if current != nil && current.Path != "" {
-		list = append(list, *current)
-	}
-	return list
-}
-
 func isRealGitRunner(cfg *Config) bool {
 	if cfg == nil || cfg.Git == nil {
 		return false
 	}
-	_, isReal := cfg.Git.(*RealGitRunner)
+	_, isReal := asRealGitRunner(cfg.Git)
 	return isReal
 }
 

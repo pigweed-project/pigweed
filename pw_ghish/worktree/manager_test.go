@@ -956,7 +956,7 @@ func TestExecGitRunner_InspectHeadAheadChangeID(t *testing.T) {
 	mustRunGit := func(args ...string) {
 		t.Helper()
 		fullArgs := append([]string{"-c", "commit.gpgsign=false"}, args...)
-		if _, err := runner.RunInDir(repoDir, fullArgs...); err != nil {
+		if err := pw_ghish.NewGitClientInDir(repoDir).Run(t.Context(), nil, nil, fullArgs...); err != nil {
 			t.Fatalf("git %v failed: %v", args, err)
 		}
 	}

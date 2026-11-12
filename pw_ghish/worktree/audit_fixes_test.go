@@ -22,6 +22,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"pigweed.dev/pw_ghish"
 )
 
 // [DL-03] Test that BazelDriver.CheckAndConfigure refuses to overwrite ~/.bazelrc on non-ENOENT read error.
@@ -279,7 +281,7 @@ func TestExecGitRunner_SafeSwitchAndNoSilentHeadFallback(t *testing.T) {
 	// Initialize real git repo with origin/main
 	runCmd := func(dir string, args ...string) {
 		t.Helper()
-		if _, err := runner.runGit(dir, args...); err != nil {
+		if err := pw_ghish.NewGitClientInDir(dir).Run(t.Context(), nil, nil, args...); err != nil {
 			t.Fatalf("git %v failed: %v", args, err)
 		}
 	}
