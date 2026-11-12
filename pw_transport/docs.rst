@@ -209,3 +209,16 @@ implement three virtual interfaces:
 
 Refer to the doxygen docs for details of each of these, with requirements and
 preconditions.
+
+------
+Python
+------
+The ``pw_transport`` Python package (``//pw_transport/py:pw_transport``)
+provides host-side synchronous counterparts to the C++ interfaces. See
+:ref:`module-pw_transport-python` for usage and API reference.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   Python <python>

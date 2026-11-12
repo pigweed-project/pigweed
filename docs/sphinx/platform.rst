@@ -148,7 +148,7 @@ Learn more: :doc:`comms/index`
    :header: "Name", "Status", "Description", "Languages"
 
    ":ref:`module-pw_rpc2`", ":bdg-secondary:`unstable`", "Next gen, zero-copy async RPC with end-to-end backpressure", "C++"
-   ":ref:`module-pw_transport`", ":bdg-secondary:`unstable`", "Asynchronous datagram-oriented transport interface", "C++"
+   ":ref:`module-pw_transport`", ":bdg-secondary:`unstable`", "Asynchronous datagram-oriented transport interface", "C++, Python"
    ":ref:`module-pw_channel`", ":bdg-danger:`deprecated`", "Async, zero-copy API for sending and receiving bytes or datagrams", "C++"
    ":ref:`module-pw_cobs`", ":bdg-warning:`experimental`", "Consistent Overhead Byte Stuffing (COBS) codec and zero-copy frame streamer", "C++"
    ":ref:`module-pw_grpc`", ":bdg-secondary:`unstable`", "pw_rpc over gRPC", "C++"

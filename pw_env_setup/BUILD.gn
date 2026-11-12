@@ -87,6 +87,7 @@ pw_python_group("core_pigweed_python_packages") {
     "$dir_pw_trace/py",
     "$dir_pw_trace_tokenized/py",
     "$dir_pw_transfer/py",
+    "$dir_pw_transport/py",
     "$dir_pw_unit_test/py",
     "$dir_pw_watch/py",
   ]

@@ -14,7 +14,7 @@
 
 status = "unstable"
 tagline = "Asynchronous datagram-oriented transport interface"
-languages = ["C++"]
+languages = ["C++", "Python"]
 
 [category]
 id = "comms"

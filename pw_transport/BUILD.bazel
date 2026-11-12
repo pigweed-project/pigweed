@@ -24,6 +24,7 @@ sphinx_docs_library(
     srcs = [
         "docs.rst",
         "module.toml",
+        "python.rst",
     ],
     prefix = "pw_transport/",
     target_compatible_with = incompatible_with_mcu(),
