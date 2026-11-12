@@ -38,10 +38,10 @@ import (
 )
 
 // TestInvariants_CobraCommandsUseRunE verifies that every cobra.Command composite
-// literal in pw_ghish uses RunE / PreRunE / PersistentPreRunE / PostRunE and never
-// the error-swallowing void Run / PreRun / PersistentPreRun / PostRun fields.
+// literal in pw_ghish uses RunE / PreRunE / PersistentPreRunE / PostRunE /
+// PersistentPostRunE and never the error-swallowing void fields.
 func TestInvariants_CobraCommandsUseRunE(t *testing.T) {
-	prohibitedFields := []string{"Run", "PreRun", "PersistentPreRun", "PostRun"}
+	prohibitedFields := []string{"Run", "PreRun", "PersistentPreRun", "PostRun", "PersistentPostRun"}
 	files := astcheck.MustLoadFiles(t, ".", "worktree", "cmd")
 	// FindCompositeLits locates every cobra.Command{} struct literal; m.Field
 	// inspects its key-value fields, and m.FuncName identifies the enclosing
@@ -60,16 +60,38 @@ func TestInvariants_CobraCommandsUseRunE(t *testing.T) {
 }
 
 // TestInvariants_NoDirectExitOrStdoutPrint verifies that no non-main production
-// file calls os.Exit or writes directly to stdout via fmt.Print/Println/Printf.
+// file calls os.Exit / log.Fatal* or writes directly to stdout via fmt.Print*,
+// fmt.Fprint*(os.Stdout, ...), os.Stdout.Write*, or built-in print/println
+// (docs/sphinx/style/go.rst "CLI command architecture and state isolation").
 func TestInvariants_NoDirectExitOrStdoutPrint(t *testing.T) {
 	files := astcheck.MustLoadFiles(t, ".", "worktree")
-	for _, cs := range astcheck.FindCalls(files, "os.Exit", "fmt.Print*") {
-		if cs.Selector == "os.Exit" {
-			t.Errorf("%s: os.Exit called outside cmd/main.go; return an error instead", cs.Pos)
+	for _, cs := range astcheck.FindCalls(files, "os.Exit", "log.Fatal*", "fmt.Print*", "fmt.Fprint*") {
+		if cs.Selector == "os.Exit" || strings.HasPrefix(cs.Selector, "log.Fatal") {
+			t.Errorf("%s: %s called outside cmd/main.go; return an error instead", cs.Pos, cs.Selector)
+			continue
+		}
+		if strings.HasPrefix(cs.Selector, "fmt.Fprint") {
+			if len(cs.Call.Args) > 0 && cs.File.TextRange(cs.Call.Args[0].Pos(), cs.Call.Args[0].End()) == "os.Stdout" {
+				t.Errorf("%s: direct call to %s(os.Stdout, ...) breaks hermetic test capture; use cmd.OutOrStdout()", cs.Pos, cs.Selector)
+			}
 			continue
 		}
 		t.Errorf("%s: direct call to %s writes to os.Stdout and breaks hermetic test capture; use fmt.F%s(cmd.OutOrStdout(), ...)",
 			cs.Pos, cs.Selector, strings.ToLower(cs.Callee[:1])+cs.Callee[1:])
+	}
+	for _, fc := range files {
+		for n := range ast.Preorder(fc.AST) {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			if id, ok := call.Fun.(*ast.Ident); ok && (id.Name == "print" || id.Name == "println") {
+				t.Errorf("%s:%d: built-in %s called in production code; use cmd.OutOrStdout() or cmd.ErrOrStderr()", fc.Path, fc.Line(call.Pos()), id.Name)
+			}
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && fc.TextRange(sel.X.Pos(), sel.X.End()) == "os.Stdout" {
+				t.Errorf("%s:%d: direct call to os.Stdout.%s breaks hermetic test capture; use cmd.OutOrStdout()", fc.Path, fc.Line(call.Pos()), sel.Sel.Name)
+			}
+		}
 	}
 }
 
@@ -233,17 +255,37 @@ func TestInvariants_BoundedHTTPBodyReads(t *testing.T) {
 }
 
 // TestInvariants_NoRawANSIEscapesOutsideUIGo verifies that no production Go
-// file outside ui.go embeds raw ANSI CSI escape sequences (`\x1b[` or `\033[`),
-// ensuring all terminal styling goes through ColorEnabled and PadRightStyled in
-// ui.go (AGENTS.md invariant #15).
+// file outside ui.go embeds raw ANSI CSI/OSC escape sequences (`\x1b[`, `\x1B[`,
+// `\033[`, `\x1b]`, `\x1B]`), ensuring all terminal styling goes through
+// ColorEnabled and PadRightStyled in ui.go (AGENTS.md invariant #15).
 func TestInvariants_NoRawANSIEscapesOutsideUIGo(t *testing.T) {
 	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
 		if filepath.Base(fc.Path) == "ui.go" {
 			continue
 		}
 		src := string(fc.Src)
-		if strings.Contains(src, `\x1b[`) || strings.Contains(src, `\033[`) {
+		if strings.Contains(src, `\x1b[`) || strings.Contains(src, `\x1B[`) || strings.Contains(src, `\033[`) ||
+			strings.Contains(src, `\x1b]`) || strings.Contains(src, `\x1B]`) {
 			t.Errorf("%s: contains raw ANSI escape sequence outside ui.go; use Style* and PadRightStyled helpers in ui.go so NO_COLOR, non-TTY pipes, and coding agents receive pure plaintext (AGENTS.md invariant #15)", fc.Path)
+		}
+	}
+}
+
+// TestInvariants_NoLegacyGoIdioms verifies that production Go files use modern
+// Go idioms ('any' instead of 'interface{}', and 'io'/'os' instead of 'io/ioutil')
+// per docs/sphinx/style/go.rst ("Standard library generics and modern Go") and
+// AGENTS.md invariant #13 ("Modern Go Style").
+func TestInvariants_NoLegacyGoIdioms(t *testing.T) {
+	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
+		for _, imp := range fc.AST.Imports {
+			if imp.Path.Value == `"io/ioutil"` {
+				t.Errorf("%s:%d: deprecated io/ioutil import; use io or os (AGENTS.md invariant #13)", fc.Path, fc.Line(imp.Pos()))
+			}
+		}
+		for n := range ast.Preorder(fc.AST) {
+			if iface, ok := n.(*ast.InterfaceType); ok && iface.Methods != nil && len(iface.Methods.List) == 0 {
+				t.Errorf("%s:%d: legacy interface{} type; use 'any' (AGENTS.md invariant #13)", fc.Path, fc.Line(iface.Pos()))
+			}
 		}
 	}
 }
