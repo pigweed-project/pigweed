@@ -17,8 +17,8 @@
 // luci-auth, browsers, Busytown accelerators) MUST be constructed via
 // ExecCommand or ExecCommandContext so perf budget tests can deterministically
 // count commands constructed (≈ subprocesses spawned) per CLI invocation
-// (AGENTS.md invariant #16, enforced by
-// TestInvariants_SubprocessesUseCountingHelper).
+// (AGENTS.md invariant #16, enforced by //ghish:wraps and
+// TestInvariants_DomainWrappers).
 
 package pw_ghish
 
@@ -38,12 +38,16 @@ var (
 )
 
 // ExecCommand is a counting drop-in replacement for exec.Command.
+//
+//ghish:wraps os/exec.Command, &os/exec.Cmd{}, os.StartProcess, syscall.Exec, syscall.ForkExec -- Use ExecCommand or ExecCommandContext from procexec.go so perf budget tests count subprocesses (AGENTS.md invariant #16).
 func ExecCommand(name string, args ...string) *exec.Cmd {
 	recordSubprocess(name, args)
 	return exec.Command(name, args...)
 }
 
 // ExecCommandContext is a counting drop-in replacement for exec.CommandContext.
+//
+//ghish:wraps os/exec.CommandContext -- Use ExecCommandContext from procexec.go so perf budget tests count subprocesses (AGENTS.md invariant #16).
 func ExecCommandContext(ctx context.Context, name string, args ...string) *exec.Cmd {
 	recordSubprocess(name, args)
 	return exec.CommandContext(ctx, name, args...)

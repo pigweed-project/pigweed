@@ -275,33 +275,23 @@ func TestInvariants_NoRawANSIEscapesOutsideUIGo(t *testing.T) {
 	}
 }
 
-// TestInvariants_SubprocessesUseCountingHelper verifies via AST inspection that
-// no production file outside procexec.go creates processes without going
-// through ExecCommand / ExecCommandContext (AGENTS.md invariant #16).
-func TestInvariants_SubprocessesUseCountingHelper(t *testing.T) {
-	allowlist := []string{"procexec.go"}
-	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
-		if slices.Contains(allowlist, fc.Path) {
-			continue
-		}
-		for _, v := range findProcessSpawns(fc.Fset, fc.AST, false) {
-			t.Errorf("%s bypasses the counting subprocess choke point; use ExecCommand / ExecCommandContext from procexec.go so perf budget tests can deterministically count commands constructed per CLI invocation (AGENTS.md invariant #16)", v)
-		}
-	}
+// TestInvariants_DomainWrappers verifies that all //ghish:wraps domain wrappers
+// are respected across pw_ghish, pw_ghish/worktree, and pw_ghish/cmd.
+func TestInvariants_DomainWrappers(t *testing.T) {
+	astcheck.AssertWraps(t, astcheck.MustLoadFiles(t, ".", "worktree", "cmd"))
 }
 
-// findProcessSpawns reports exec.Command / exec.CommandContext calls
-// (including via a dot-import of os/exec), exec.Cmd composite literals,
-// os.StartProcess / syscall.Exec / syscall.ForkExec references, and (when
-// banCountingHelpers is true) direct ExecCommand / ExecCommandContext calls.
-func findProcessSpawns(fset *token.FileSet, f *ast.File, banCountingHelpers bool) []string {
-	// banned maps an import path to the identifiers that spawn processes.
+// findTestProcessSpawns reports direct process-spawning calls or references
+// (exec.Command, exec.CommandContext, exec.Cmd literals, os.StartProcess,
+// syscall.Exec, syscall.ForkExec, and ExecCommand / ExecCommandContext) in unit
+// test file f.
+func findTestProcessSpawns(fset *token.FileSet, f *ast.File) []string {
 	banned := map[string][]string{
 		"os/exec": {"Command", "CommandContext"},
 		"os":      {"StartProcess"},
 		"syscall": {"Exec", "ForkExec"},
 	}
-	pkgs := map[string]string{} // local name -> import path
+	pkgs := map[string]string{}
 	var dotImports []string
 	for _, imp := range f.Imports {
 		ipath := strings.Trim(imp.Path.Value, `"`)
@@ -318,9 +308,6 @@ func findProcessSpawns(fset *token.FileSet, f *ast.File, banCountingHelpers bool
 		}
 		pkgs[name] = ipath
 	}
-	if len(pkgs) == 0 && len(dotImports) == 0 && !banCountingHelpers {
-		return nil
-	}
 	isExecCmdType := func(e ast.Expr) bool {
 		switch typ := e.(type) {
 		case *ast.SelectorExpr:
@@ -335,7 +322,7 @@ func findProcessSpawns(fset *token.FileSet, f *ast.File, banCountingHelpers bool
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.SelectorExpr:
-			if banCountingHelpers && (x.Sel.Name == "ExecCommand" || x.Sel.Name == "ExecCommandContext") {
+			if x.Sel.Name == "ExecCommand" || x.Sel.Name == "ExecCommandContext" {
 				found = append(found, fset.Position(x.Pos()).String()+": "+x.Sel.Name)
 				return true
 			}
@@ -355,7 +342,7 @@ func findProcessSpawns(fset *token.FileSet, f *ast.File, banCountingHelpers bool
 			if !ok {
 				return true
 			}
-			if banCountingHelpers && (id.Name == "ExecCommand" || id.Name == "ExecCommandContext") {
+			if id.Name == "ExecCommand" || id.Name == "ExecCommandContext" {
 				found = append(found, fset.Position(x.Pos()).String()+": "+id.Name)
 				return true
 			}
@@ -410,7 +397,7 @@ func findTestGitViolations(fset *token.FileSet, f *ast.File, allowDirectSpawn bo
 	gitFixtureGuards := []string{"initTestRepo", "initTestRepoWithOrigin", "newTestGitRepo", "NewKindSmokeFixture", "setupPerfBudgetPool", "LookPath"}
 	var violations []string
 	if !allowDirectSpawn {
-		violations = append(violations, findProcessSpawns(fset, f, true)...)
+		violations = append(violations, findTestProcessSpawns(fset, f)...)
 	}
 	for _, decl := range f.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
