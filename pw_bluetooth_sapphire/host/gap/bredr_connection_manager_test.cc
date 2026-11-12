@@ -4546,6 +4546,48 @@ TEST_F(BrEdrConnectionManagerTest, RemovePeerFromPeerCacheDuringDisconnection) {
   EXPECT_FALSE(peer_cache()->FindByAddress(kTestDevAddr));
 }
 
+// Disconnecting in a connection callback should cancel the remaining callbacks.
+TEST_F(BrEdrConnectionManagerTest, DisconnectInConnectCallback) {
+  // Packet type optimization reads the connection after the callbacks run.
+  connmgr()->set_packet_type_optimization_enabled(true);
+
+  Peer* peer = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
+  const PeerId peer_id = peer->identifier();
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kCreateConnection,
+                        &kCreateConnectionRsp,
+                        &kConnectionComplete);
+  QueueSuccessfulInterrogation(peer->address(), kConnectionHandle);
+  QueueDisconnection(kConnectionHandle);
+
+  std::optional<hci::Result<>> status_a;
+  auto callback_a = [this, &status_a, peer_id](hci::Result<> status,
+                                               BrEdrConnection* conn) {
+    status_a = status;
+    ASSERT_NE(nullptr, conn);
+    EXPECT_EQ(peer_id, conn->peer_id());
+    EXPECT_TRUE(connmgr()->Disconnect(peer_id, DisconnectReason::kApiRequest));
+  };
+  std::optional<hci::Result<>> status_b;
+  auto callback_b = [&status_b, peer](hci::Result<> status,
+                                      BrEdrConnection* conn) {
+    status_b = status;
+    EXPECT_EQ(nullptr, conn);
+    EXPECT_TRUE(IsNotConnected(peer));
+  };
+
+  EXPECT_TRUE(connmgr()->Connect(peer_id, callback_a));
+  EXPECT_TRUE(connmgr()->Connect(peer_id, callback_b));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  ASSERT_TRUE(status_a.has_value());
+  EXPECT_EQ(fit::ok(), *status_a);
+  ASSERT_TRUE(status_b.has_value());
+  EXPECT_EQ(ToResult(HostError::kCanceled), *status_b);
+  EXPECT_TRUE(IsNotConnected(peer));
+}
+
 TEST_F(BrEdrConnectionManagerTest, AddServiceSearchAll) {
   size_t search_cb_count = 0;
   auto search_cb = [&](auto id, const auto&) {

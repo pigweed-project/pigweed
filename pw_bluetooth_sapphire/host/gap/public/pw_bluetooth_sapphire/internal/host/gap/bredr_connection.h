@@ -19,6 +19,7 @@
 
 #include "pw_bluetooth_sapphire/internal/host/common/identifier.h"
 #include "pw_bluetooth_sapphire/internal/host/common/inspect.h"
+#include "pw_bluetooth_sapphire/internal/host/common/weak_self.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/bredr_connection_request.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/bredr_interrogator.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/gap.h"
@@ -136,6 +137,9 @@ class BrEdrConnection final {
   void SetSecurityManagerChannel(
       l2cap::Channel::WeakPtr security_manager_channel);
 
+  using WeakPtr = WeakSelf<BrEdrConnection>::WeakPtr;
+  BrEdrConnection::WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
+
  private:
   // |conn_token| is a token received from Peer::MutBrEdr::RegisterConnection().
   void set_peer_connection_token(Peer::ConnectionToken conn_token);
@@ -174,6 +178,10 @@ class BrEdrConnection final {
   Peer::ConnectionToken peer_conn_token_;
 
   pw::async::Dispatcher& dispatcher_;
+
+  // Keep this as the last member to make sure that all weak pointers are
+  // invalidated before other members get destroyed.
+  WeakSelf<BrEdrConnection> weak_self_{this};
 };
 
 }  // namespace bt::gap

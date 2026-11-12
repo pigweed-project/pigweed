@@ -120,7 +120,14 @@ void BrEdrConnection::OnInterrogationComplete() {
   // with errors.
   if (auto request = std::exchange(request_, std::nullopt);
       request.has_value()) {
-    request->NotifyCallbacks(fit::ok(), [this] { return this; });
+    // A callback may disconnect and destroy this connection.
+    request->NotifyCallbacks(
+        fit::ok(), [self = weak_self_.GetWeakPtr()]() -> BrEdrConnection* {
+          if (!self.is_alive()) {
+            return nullptr;
+          }
+          return &self.get();
+        });
   }
 }
 

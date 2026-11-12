@@ -80,7 +80,9 @@ class BrEdrConnectionRequest final {
 
   // Notifies all elements in |callbacks| with |status| and the result of
   // |generate_ref|. Called by the appropriate manager once a connection request
-  // has completed, successfully or otherwise
+  // has completed, successfully or otherwise. If an earlier callback destroys
+  // the connection, |generate_ref| should return null so the remaining
+  // callbacks get |HostError::kCanceled|.
   void NotifyCallbacks(hci::Result<> status, const RefFactory& generate_ref);
 
   void BeginIncoming() { has_incoming_.Set(true); }

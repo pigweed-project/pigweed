@@ -1013,7 +1013,12 @@ void BrEdrConnectionManager::CompleteConnectionSetup(
         });
   }
 
+  // Request callbacks may synchronously disconnect and destroy |conn_state|.
+  BrEdrConnection::WeakPtr conn_weak = conn_state.GetWeakPtr();
   conn_state.OnInterrogationComplete();
+  if (!conn_weak.is_alive()) {
+    return;
+  }
 
   if (packet_type_optimization_enabled_ &&
       conn_state.link().role() ==

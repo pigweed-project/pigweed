@@ -57,7 +57,13 @@ void BrEdrConnectionRequest::NotifyCallbacks(hci::Result<> status,
 
   // If this request has been moved from, |callbacks_| may be empty.
   for (const auto& callback : *callbacks_) {
-    callback(status, generate_ref());
+    BrEdrConnection* conn_ref = generate_ref();
+    if (status.is_ok() && !conn_ref) {
+      // An earlier callback destroyed the connection.
+      callback(ToResult(HostError::kCanceled), nullptr);
+      continue;
+    }
+    callback(status, conn_ref);
   }
 }
 
