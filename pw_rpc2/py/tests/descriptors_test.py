@@ -168,7 +168,7 @@ class ServiceTest(unittest.TestCase):
     """Tests Service and Method."""
 
     def setUp(self) -> None:
-        (self.service,) = descriptors.services([pw_rpc2_test_pb2])
+        (self.service,) = list(descriptors.services([pw_rpc2_test_pb2]))
 
     def test_service(self) -> None:
         self.assertEqual(self.service.name, 'TestEcho')
@@ -231,11 +231,15 @@ class RequestTest(unittest.TestCase):
     """Tests building requests."""
 
     def setUp(self) -> None:
-        (service,) = descriptors.services([pw_rpc2_test_pb2])
+        (service,) = list(descriptors.services([pw_rpc2_test_pb2]))
         self.method = service.methods['EchoUnary']
-        (p3_service,) = descriptors.services([descriptors_test_proto3_pb2])
+        (p3_service,) = list(
+            descriptors.services([descriptors_test_proto3_pb2])
+        )
         self.proto3_method = p3_service.methods['Call']
-        (p2_service,) = descriptors.services([descriptors_test_proto2_pb2])
+        (p2_service,) = list(
+            descriptors.services([descriptors_test_proto2_pb2])
+        )
         self.proto2_method = p2_service.methods['Call']
 
     def test_from_fields(self) -> None:
@@ -253,7 +257,9 @@ class RequestTest(unittest.TestCase):
 
     def test_from_message_in_another_pool(self) -> None:
         pool = dynamic_test_service()
-        (dynamic,) = descriptors.services([pool.FindServiceByName(_SERVICE)])
+        (dynamic,) = list(
+            descriptors.services([pool.FindServiceByName(_SERVICE)])
+        )
         request = pw_rpc2_test_pb2.EchoRequest(val=5)
         self.assertIs(dynamic.methods['EchoUnary'].request(request), request)
 
