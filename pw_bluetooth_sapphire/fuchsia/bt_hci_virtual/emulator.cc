@@ -305,6 +305,13 @@ void EmulatorDevice::EncodeCommand(EncodeCommandRequestView request,
 
 void EmulatorDevice::OpenHciTransport(
     OpenHciTransportCompleter::Sync& completer) {
+  // The transport is exclusive: the controller has a single host until that
+  // host's HciTransport connection closes.
+  if (hci_transport_bindings_.size() != 0) {
+    completer.ReplyError(ZX_ERR_ALREADY_BOUND);
+    return;
+  }
+
   // Sets FakeController to respond with event, ACL, and ISO packet types when
   // it receives an incoming packet of the appropriate type
   fake_device_.SetEventFunction(

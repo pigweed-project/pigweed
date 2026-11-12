@@ -86,6 +86,44 @@ class EmulatorTest : public testing::OutgoingLoopTestFixture {
     return OutgoingLoopTestFixture::VendorServiceIsServed(kEmulatorName);
   }
 
+  // Connects a new Vendor client through the published vendor service and
+  // returns its client end.
+  fidl::ClientEnd<fhb::Vendor> ConnectVendor() {
+    std::string path =
+        "svc/" +
+        component::MakeServiceMemberPath<fhb::Service::Vendor>(kEmulatorName);
+    zx::result vendor_end =
+        component::ConnectAt<fhb::Vendor>(outgoing_client(), path);
+    if (vendor_end.is_error()) {
+      ADD_FAILURE() << "ConnectAt failed: " << vendor_end.status_string();
+      return {};
+    }
+    return std::move(*vendor_end);
+  }
+
+  // Calls OpenHciTransport() through `vendor` and returns the transport client
+  // end on success, or the error status.
+  zx::result<fidl::ClientEnd<fhb::HciTransport>> OpenHciTransport(
+      fidl::WireClient<fhb::Vendor>& vendor) {
+    std::optional<zx::result<fidl::ClientEnd<fhb::HciTransport>>> result;
+    vendor->OpenHciTransport().ThenExactlyOnce(
+        [&result](fidl::WireUnownedResult<fhb::Vendor::OpenHciTransport>& res) {
+          if (!res.ok()) {
+            result = zx::error(res.status());
+          } else if (res->is_error()) {
+            result = zx::error(res->error_value());
+          } else {
+            result = zx::ok(std::move(res->value()->channel));
+          }
+        });
+    RunUntilIdle();
+    if (!result.has_value()) {
+      ADD_FAILURE() << "OpenHciTransport() did not reply";
+      return zx::error(ZX_ERR_TIMED_OUT);
+    }
+    return std::move(*result);
+  }
+
   void ReleaseDevice() { device_.reset(); }
 
  private:
@@ -199,42 +237,50 @@ TEST_F(EmulatorTest, OwnerDisconnectClosesVendorHciTransportAndHangingGets) {
   RunUntilIdle();
 
   // Connect a Vendor client and open an HciTransport connection through it.
-  std::string path =
-      "svc/" +
-      component::MakeServiceMemberPath<fhb::Service::Vendor>(kEmulatorName);
-  zx::result vendor_end =
-      component::ConnectAt<fhb::Vendor>(outgoing_client(), path);
-  ASSERT_TRUE(vendor_end.is_ok());
-
   fidl::ClientEnd<fhb::HciTransport> hci_transport_end;
   {
-    fidl::WireClient<fhb::Vendor> vendor_client(std::move(*vendor_end),
-                                                dispatcher());
-    vendor_client->OpenHciTransport().ThenExactlyOnce(
-        [&](fidl::WireUnownedResult<fhb::Vendor::OpenHciTransport>& res) {
-          ASSERT_TRUE(res.ok());
-          ASSERT_TRUE(res->is_ok());
-          hci_transport_end = std::move(res->value()->channel);
-        });
-    RunUntilIdle();
-    ASSERT_TRUE(hci_transport_end.is_valid());
+    fidl::WireClient<fhb::Vendor> vendor_client(ConnectVendor(), dispatcher());
+    zx::result transport = OpenHciTransport(vendor_client);
+    ASSERT_TRUE(transport.is_ok()) << transport.status_string();
+    hci_transport_end = std::move(*transport);
   }
 
   // Connect a second raw Vendor channel so we can observe its peer closure
   // directly alongside `hci_transport_end`.
-  zx::result raw_vendor_end =
-      component::ConnectAt<fhb::Vendor>(outgoing_client(), path);
-  ASSERT_TRUE(raw_vendor_end.is_ok());
+  fidl::ClientEnd<fhb::Vendor> raw_vendor_end = ConnectVendor();
+  ASSERT_TRUE(raw_vendor_end.is_valid());
   RunUntilIdle();
-  EXPECT_FALSE(PeerClosed(*raw_vendor_end));
+  EXPECT_FALSE(PeerClosed(raw_vendor_end));
   EXPECT_FALSE(PeerClosed(hci_transport_end));
 
   owner.reset();
   RunUntilIdle();
 
   EXPECT_EQ(shutdown_count(), 1);
-  EXPECT_TRUE(PeerClosed(*raw_vendor_end));
+  EXPECT_TRUE(PeerClosed(raw_vendor_end));
   EXPECT_TRUE(PeerClosed(hci_transport_end));
+}
+
+// OpenHciTransport() serves a single host at a time: a second call fails with
+// ZX_ERR_ALREADY_BOUND until the first transport connection closes.
+TEST_F(EmulatorTest, OpenHciTransportIsExclusive) {
+  std::optional<fidl::Client<fhb::Emulator>> owner;
+  owner.emplace(ConnectEmulator(), dispatcher());
+  ASSERT_NO_FATAL_FAILURE(Publish(*owner));
+
+  fidl::WireClient<fhb::Vendor> vendor_client(ConnectVendor(), dispatcher());
+
+  zx::result first = OpenHciTransport(vendor_client);
+  ASSERT_TRUE(first.is_ok()) << first.status_string();
+
+  zx::result second = OpenHciTransport(vendor_client);
+  EXPECT_EQ(second.status_value(), ZX_ERR_ALREADY_BOUND);
+  EXPECT_FALSE(PeerClosed(*first));
+
+  first->reset();
+  RunUntilIdle();
+  zx::result third = OpenHciTransport(vendor_client);
+  EXPECT_TRUE(third.is_ok()) << third.status_string();
 }
 
 TEST_F(EmulatorTest, ShutdownIsIdempotentWhenDeviceRemainsAlive) {
