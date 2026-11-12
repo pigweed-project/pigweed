@@ -484,6 +484,7 @@ sphinx_build_binary(
         "//pw_system/py:pw_system_lib",
         "//pw_tokenizer/py:pw_tokenizer",
         "//pw_transfer/py:pw_transfer",
+        "//pw_transport/py:forwarding_socket",
         "//pw_transport/py:pw_transport",
         "//pw_unit_test/py:pw_unit_test",
         "//pw_watch/py:pw_watch",

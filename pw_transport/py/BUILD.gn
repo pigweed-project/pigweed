@@ -27,9 +27,13 @@ pw_python_package("py") {
   sources = [
     "pw_transport/__init__.py",
     "pw_transport/_socket.py",
+    "pw_transport/forwarding_socket.py",
     "pw_transport/py.typed",
   ]
-  tests = [ "socket_test.py" ]
+  tests = [
+    "forwarding_socket_test.py",
+    "socket_test.py",
+  ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"

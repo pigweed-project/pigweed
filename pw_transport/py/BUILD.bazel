@@ -28,9 +28,26 @@ pw_py_library(
     imports = ["."],
 )
 
+pw_py_library(
+    name = "forwarding_socket",
+    srcs = ["pw_transport/forwarding_socket.py"],
+    imports = ["."],
+    deps = [":pw_transport"],
+)
+
 pw_py_test(
     name = "socket_test",
     size = "small",
     srcs = ["socket_test.py"],
     deps = [":pw_transport"],
+)
+
+pw_py_test(
+    name = "forwarding_socket_test",
+    size = "small",
+    srcs = ["forwarding_socket_test.py"],
+    deps = [
+        ":forwarding_socket",
+        ":pw_transport",
+    ],
 )

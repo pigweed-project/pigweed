@@ -22,6 +22,22 @@ Outgoing connections are opened with plain functions (such as
 -----
 Usage
 -----
+In-memory forwarding sockets
+============================
+:py:func:`pw_transport.forwarding_socket.socket_pair`
+(``//pw_transport/py:forwarding_socket``) returns a connected pair of in-memory
+:py:class:`~pw_transport.ReliableSocket` endpoints, mirroring
+:cc:`ForwardingSocketPair <pw::transport::ForwardingSocketPair>`:
+
+.. code-block:: py
+
+   from pw_transport.forwarding_socket import socket_pair
+
+   client, server = socket_pair(queue_depth=4, max_message_size=1024)
+   with client, server:
+       client.write(b'ping')
+       assert server.read() == b'ping'
+
 Implementing a custom transport
 ===============================
 Protocol implementations (such as ``pw_rpc2``) depend only on
@@ -104,3 +120,9 @@ pw_transport
 
 .. autoexception:: pw_transport.SocketClosed
    :members:
+
+pw_transport.forwarding_socket
+==============================
+.. automodule:: pw_transport.forwarding_socket
+   :members:
+   :inherited-members:
