@@ -117,7 +117,6 @@ fuchsia_component_manifest(
 fuchsia_component(
     name = "bt_hci_virtual_component",
     testonly = True,
-    component_name = "bt-hci-virtual",
     manifest = ":bt_hci_virtual_manifest",
     deps = [":bt_hci_virtual_bin"],
 )

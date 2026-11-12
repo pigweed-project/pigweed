@@ -113,7 +113,6 @@ fuchsia_structured_config_cpp_elf_lib(
 
 fuchsia_component(
     name = "component",
-    component_name = "bt-host",
     manifest = ":manifest",
     moniker = "core/bluetooth-core/bt-host-collection:bt-host_000",
     deps = [":bt_host_bin"],
