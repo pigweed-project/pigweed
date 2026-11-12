@@ -129,9 +129,16 @@ def _detokenizer(
         detokenizer = detokenize.Detokenizer(image)
         line_buffer = ""
         with open(tokenized_file, 'r', buffering=1, errors='replace') as f:
-            while not qemu_finished.is_set():
+            while True:
+                # Check whether qemu has exited before reading, so that an
+                # empty read afterwards means all of its output has been
+                # consumed. qemu usually exits before this thread has caught
+                # up, and stopping as soon as it exits would drop the rest.
+                finished = qemu_finished.is_set()
                 try:
                     chunk = f.readline()
+                    if not chunk and finished:
+                        break
                     if chunk:
                         # qemu may not write a complete line, so buffer
                         # the chunks until there is a complete line to
@@ -158,7 +165,7 @@ def _detokenizer(
             # detokenize any remaining data in the buffer.
             if line_buffer:
                 detokenizer.detokenize_text_to_file(
-                    complete_line, sys.stdout.buffer
+                    line_buffer, sys.stdout.buffer
                 )
                 sys.stdout.flush()
     except OSError as e:
@@ -251,7 +258,10 @@ def _main(args) -> int:
                 print(err)
 
             return_code = proc.returncode
-    stdout_thread.join()
+
+        # Wait for the detokenizer to finish before the temporary file is
+        # deleted, as it opens the file by name.
+        stdout_thread.join()
 
     sys.exit(return_code)
 
