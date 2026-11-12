@@ -873,4 +873,40 @@ TEST_F(AdvertisingPacketFilterTest, NameSubstringOverflow) {
 
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 }
+
+TEST_F(AdvertisingPacketFilterTest, OffloadingDisabledIfMaxFiltersIsZero) {
+  AdvertisingPacketFilter::Config config(
+      /*offloading_supported=*/true,
+      /*max_filters=*/0,
+      /*peer_delivery_mode=*/
+      AdvertisingPacketFilter::Config::DeliveryMode::kImmediate);
+  EXPECT_FALSE(config.offloading_supported());
+
+  AdvertisingPacketFilter packet_filter(config, transport()->GetWeakPtr());
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+
+  DiscoveryFilter filter;
+  filter.set_name_substring("bluetooth");
+  packet_filter.SetPacketFilters(0, {filter});
+
+  std::optional<Result<>> apply_result;
+  packet_filter.ApplyPacketFilters(
+      [&](Result<> status) { apply_result = status; });
+  RunUntilIdle();
+
+  ASSERT_TRUE(apply_result.has_value());
+  EXPECT_TRUE(apply_result->is_ok());
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+  EXPECT_FALSE(test_device()->packet_filter_state().enabled);
+
+  std::optional<Result<>> clear_result;
+  packet_filter.ClearPacketFilters(
+      [&](Result<> status) { clear_result = status; });
+  RunUntilIdle();
+
+  ASSERT_TRUE(clear_result.has_value());
+  EXPECT_TRUE(clear_result->is_ok());
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+  EXPECT_FALSE(test_device()->packet_filter_state().enabled);
+}
 }  // namespace bt::hci

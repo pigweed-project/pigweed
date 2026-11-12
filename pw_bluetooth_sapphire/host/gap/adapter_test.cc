@@ -1649,6 +1649,33 @@ TEST_F(AdapterTest, CreateScannerVendorBatchScanningConfigDisabled) {
             test_device()->scan_procedure());
 }
 
+TEST_F(AdapterTest,
+       StartDiscoveryWithVendorFilteringSupportedAndZeroMaxFilters) {
+  TearDown();
+  SetUp(FeaturesBits::kAndroidVendorExtensions,
+        {.legacy_pairing_enabled = false,
+         .le_scan_offload_filters_enabled = true});
+
+  FakeController::Settings settings;
+  settings.ApplyLegacyLEConfig();
+  settings.ApplyAndroidVendorExtensionDefaults();
+  auto view = settings.android_extension_settings.view();
+  view.filtering_support().Write(
+      pw::bluetooth::vendor::android_hci::Capability::CAPABLE);
+  view.max_filter().Write(0);
+  test_device()->set_settings(settings);
+  ASSERT_TRUE(EnsureInitialized());
+
+  LowEnergyDiscoverySessionPtr session;
+  adapter()->le()->StartDiscovery(
+      /*active=*/true, {}, [&](LowEnergyDiscoverySessionPtr cb_session) {
+        session = std::move(cb_session);
+      });
+  RunUntilIdle();
+  EXPECT_TRUE(session);
+  EXPECT_FALSE(test_device()->packet_filter_state().enabled);
+}
+
 TEST_F(AdapterTest, CreateScannerExtendedScanningSupported) {
   FakeController::Settings settings;
   settings.ApplyExtendedLEConfig();

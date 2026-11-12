@@ -36,12 +36,18 @@ class AdvertisingPacketFilter {
       kBatched,
     };
 
+    // Offloading requires at least one controller filter slot; if
+    // |max_filters| is 0, |offloading_supported()| is set to false.
     Config(bool offloading_supported,
            uint8_t max_filters,
            DeliveryMode peer_delivery_mode)
         : offloading_supported_(offloading_supported),
           max_filters_(max_filters),
-          delivery_mode_(peer_delivery_mode) {}
+          delivery_mode_(peer_delivery_mode) {
+      if (max_filters == 0) {
+        offloading_supported_ = false;
+      }
+    }
 
     bool offloading_supported() const { return offloading_supported_; }
     uint8_t max_filters() const { return max_filters_; }

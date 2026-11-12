@@ -496,21 +496,24 @@ class AdapterImpl final : public Adapter {
     using PeerDeliveryMode = hci::AdvertisingPacketFilter::Config::DeliveryMode;
 
     bool offloading_enabled = false;
-    bool controller_supported = false;
     uint8_t max_filters = 0;
     PeerDeliveryMode peer_delivery_mode = PeerDeliveryMode::kImmediate;
 
     constexpr pw::bluetooth::Controller::FeaturesBits feature =
         pw::bluetooth::Controller::FeaturesBits::kAndroidVendorExtensions;
-    if (state().IsControllerFeatureSupported(feature) &&
-        state().android_vendor_capabilities.has_value() &&
-        state().android_vendor_capabilities->supports_filtering()) {
-      controller_supported = true;
+    const bool vendor_extensions_supported =
+        state().IsControllerFeatureSupported(feature) &&
+        state().android_vendor_capabilities.has_value();
+    const bool controller_supported =
+        vendor_extensions_supported &&
+        state().android_vendor_capabilities->supports_filtering() &&
+        state().android_vendor_capabilities->max_filters() > 0;
+
+    if (controller_supported) {
       max_filters = state().android_vendor_capabilities->max_filters();
       if (config_.le_scan_offload_filters_enabled) {
         offloading_enabled = true;
       }
-
       if (state().android_batch_scan_enabled) {
         peer_delivery_mode = PeerDeliveryMode::kBatched;
       }
