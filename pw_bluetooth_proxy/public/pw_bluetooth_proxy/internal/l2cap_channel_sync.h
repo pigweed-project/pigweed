@@ -81,8 +81,20 @@ class L2capChannelImpl {
     return static_mutex_;
   }
 
-  /// @copydoc L2capChannel::DequeuePacket
-  std::optional<H4PacketWithH4> DequeuePacket() PW_LOCKS_EXCLUDED(mutex_);
+  struct DequeueResult {
+    std::optional<H4PacketWithH4> packet;
+    bool should_notify = false;
+  };
+
+  /// Dequeues the next Tx packet from the channel's payload queue, if one can
+  /// be generated.
+  ///
+  /// Sets `should_notify` if dequeuing freed queue space that a client is
+  /// waiting for. The caller must then send
+  /// `L2capChannelEvent::kWriteAvailable` after releasing
+  /// `L2capChannelManagerImpl::channels_mutex_`, since the client's event
+  /// callback may acquire it.
+  DequeueResult DequeuePacket() PW_LOCKS_EXCLUDED(mutex_);
 
   // Returns whether this object has no more pending payloads.
   [[nodiscard]] bool PayloadQueueEmpty() const PW_LOCKS_EXCLUDED(mutex_);

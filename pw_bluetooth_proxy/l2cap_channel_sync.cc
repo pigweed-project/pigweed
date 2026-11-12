@@ -114,10 +114,9 @@ Status L2capChannelImpl::IsWriteAvailable() PW_NO_LOCK_SAFETY_ANALYSIS {
   return OkStatus();
 }
 
-std::optional<H4PacketWithH4> L2capChannelImpl::DequeuePacket()
+L2capChannelImpl::DequeueResult L2capChannelImpl::DequeuePacket()
     PW_NO_LOCK_SAFETY_ANALYSIS {
-  std::optional<H4PacketWithH4> packet;
-  bool should_notify = false;
+  DequeueResult result;
   {
     // Get a payload.
     std::lock_guard lock(mutex_);
@@ -125,32 +124,27 @@ std::optional<H4PacketWithH4> L2capChannelImpl::DequeuePacket()
       payload_queue_.clear();
     }
     if (payload_queue_.empty()) {
-      return std::nullopt;
+      return result;
     }
     const multibuf::MultiBuf& payload = payload_queue_.front();
 
     // Create a packet from the payload.
     bool keep_payload = false;
-    packet = channel_.GenerateNextTxPacket(payload, keep_payload);
+    result.packet = channel_.GenerateNextTxPacket(payload, keep_payload);
 
     // If no additional packets can be created from the payload, remove it.
     if (!keep_payload) {
       payload_queue_.pop();
-      should_notify = notify_on_dequeue_;
+      result.should_notify = notify_on_dequeue_;
       notify_on_dequeue_ = false;
     }
   }
 
-  // Notify the client if there is now room in the queue.
-  if (should_notify) {
-    SendEvent(L2capChannelEvent::kWriteAvailable);
-  }
-
-  if (packet.has_value()) {
+  if (result.packet.has_value()) {
     channel_.NotifyCreditMutation();
   }
 
-  return packet;
+  return result;
 }
 
 void L2capChannelImpl::ReportNewTxPacketsOrCredits() {

@@ -6698,5 +6698,65 @@ TEST_F(AsyncConcurrencyTest,
 }
 
 #endif  // PW_BLUETOOTH_PROXY_ASYNC != 0
+
+#if PW_BLUETOOTH_PROXY_ASYNC == 0
+
+TEST_F(ProxyHostTest, WriteAvailableCallbackCanAcquireChannel) {
+  ProxyHost proxy([](H4PacketWithHci&&) {},
+                  [](H4PacketWithH4&&) {},
+                  1,
+                  0,
+                  GetProxyHostAllocator());
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 1));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  constexpr uint16_t kTxCid = 0x0043;
+  constexpr uint16_t kAuxCid = 0x0044;
+  struct {
+    ProxyHost* proxy = nullptr;
+    int write_available_count = 0;
+    std::optional<BasicL2capChannel> aux_channel;
+  } state;
+  state.proxy = &proxy;
+  BasicL2capChannel tx_channel = BuildBasicL2capChannel(
+      proxy,
+      {.handle = kConnectionHandle,
+       .local_cid = kTxCid,
+       .remote_cid = kTxCid,
+       .event_fn = [this, &state](L2capChannelEvent event) {
+         if (event != L2capChannelEvent::kWriteAvailable) {
+           return;
+         }
+         ++state.write_available_count;
+         // Acquiring a channel takes the channel manager's lock, so this
+         // deadlocks if the event is sent while the drain holds it.
+         Result<BasicL2capChannel> result =
+             BuildBasicL2capChannelWithResult(*state.proxy,
+                                              {.handle = kConnectionHandle,
+                                               .local_cid = kAuxCid,
+                                               .remote_cid = kAuxCid});
+         PW_TEST_EXPECT_OK(result.status());
+         if (result.ok()) {
+           state.aux_channel.emplace(std::move(*result));
+         }
+       }});
+
+  // Use the only LE ACL credit and fill the channel queue, then request a
+  // kWriteAvailable event once queue space frees up.
+  for (size_t i = 0; i < BasicL2capChannel::QueueCapacity() + 1; ++i) {
+    PW_TEST_EXPECT_OK(tx_channel.Write(MakeEmptyMultiBuf()).status);
+  }
+  EXPECT_EQ(tx_channel.IsWriteAvailable(), Status::Unavailable());
+
+  // Returning the credit drains one queued packet, which frees queue space.
+  PW_TEST_EXPECT_OK(
+      SendNumberOfCompletedPackets(proxy, {{kConnectionHandle, 1}}));
+
+  EXPECT_EQ(state.write_available_count, 1);
+  EXPECT_TRUE(state.aux_channel.has_value());
+}
+
+#endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
 }  // namespace
 }  // namespace pw::bluetooth::proxy

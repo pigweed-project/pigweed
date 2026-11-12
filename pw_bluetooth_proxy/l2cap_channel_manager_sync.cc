@@ -82,6 +82,7 @@ void L2capChannelManagerImpl::DrainChannelQueuesIfNewTx() {
   for (;;) {
     std::optional<H4PacketWithH4> packet;
     std::optional<AclDataChannel::SendCredit> packet_credit{};
+    std::optional<BorrowedL2capChannel> notify_channel;
     // Attempt to reserve credits. This may be our first pass or we may have
     // used one on last pass.
     // We reserve credits upfront so that acl_data_channel_'s credits mutex lock
@@ -117,7 +118,11 @@ void L2capChannelManagerImpl::DrainChannelQueuesIfNewTx() {
       std::optional<AclDataChannel::SendCredit>& current_credit =
           credits.at(channel.transport());
       if (current_credit.has_value()) {
-        packet = channel.impl_.DequeuePacket();
+        auto [dequeued_packet, should_notify] = channel.impl_.DequeuePacket();
+        packet = std::move(dequeued_packet);
+        if (packet && should_notify) {
+          notify_channel.emplace(channel.Borrow());
+        }
       }
 
       if (packet) {
@@ -157,6 +162,11 @@ void L2capChannelManagerImpl::DrainChannelQueuesIfNewTx() {
         return;
       }
     }  // lock_guard: channels_mutex_
+
+    if (notify_channel.has_value()) {
+      (*notify_channel)->impl_.SendEvent(L2capChannelEvent::kWriteAvailable);
+      notify_channel.reset();
+    }
 
     PW_DCHECK(packet.has_value());
     // A packet with a credit was found inside the lock. Send while unlocked
