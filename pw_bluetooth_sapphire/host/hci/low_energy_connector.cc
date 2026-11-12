@@ -189,10 +189,20 @@ void LowEnergyConnector::CreateConnectionInternal(
 
   // HCI Command Status Event will be sent as our completion callback.
   auto self = weak_self_.GetWeakPtr();
-  auto complete_cb = [self, timeout](auto, const EventPacket& event) {
+  auto complete_cb = [self, timeout](CommandChannel::TransactionId id,
+                                     const EventPacket& event) {
     PW_DCHECK(event.event_code() == hci_spec::kCommandStatusEventCode);
 
     if (!self.is_alive()) {
+      return;
+    }
+
+    if (!self->pending_request_ || !self->pending_request_->initiating ||
+        self->pending_request_->transaction_id != id) {
+      bt_log(WARN,
+             "hci-le",
+             "ignoring command status event with no matching pending "
+             "connection request");
       return;
     }
 
@@ -226,11 +236,13 @@ void LowEnergyConnector::CreateConnectionInternal(
                                                 scan_window));
   }
 
-  hci_->command_channel()
-      ->SendCommand(std::move(request.value()),
-                    complete_cb,
-                    hci_spec::kCommandStatusEventCode)
-      .IgnoreError();
+  pw::Result<CommandChannel::TransactionId> transaction_id =
+      hci_->command_channel()->SendCommand(std::move(request.value()),
+                                           complete_cb,
+                                           hci_spec::kCommandStatusEventCode);
+  if (transaction_id.ok()) {
+    pending_request_->transaction_id = transaction_id.value();
+  }
 }
 
 CommandPacket LowEnergyConnector::BuildExtendedCreateConnectionPacket(

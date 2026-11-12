@@ -148,6 +148,7 @@ class LowEnergyConnector : public LocalAddressClient {
     bool initiating = false;  // True if the HCI command has been sent.
     bool canceled = false;
     bool timed_out = false;
+    CommandChannel::TransactionId transaction_id = 0u;
     DeviceAddress local_address;
     DeviceAddress peer_address;
     StatusCallback status_callback;

@@ -928,5 +928,188 @@ TEST_P(LowEnergyConnectorTest,
   EXPECT_TRUE(status_callback_called);
 }
 
+TEST_P(LowEnergyConnectorTest, ConnectionCompleteBeforeCommandStatusError) {
+  auto fake_peer = std::make_unique<FakePeer>(kTestAddress, dispatcher());
+  fake_peer->set_connect_status(
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  Result<> status = ToResult(HostError::kFailed);
+  std::unique_ptr<LowEnergyConnection> conn;
+  unsigned int callback_count = 0;
+
+  auto callback = [&](Result<> cb_status,
+                      std::unique_ptr<LowEnergyConnection> cb_conn) {
+    status = cb_status;
+    conn = std::move(cb_conn);
+    callback_count++;
+  };
+
+  bool ret = connector()->CreateConnection(
+      /*use_accept_list=*/false,
+      kTestAddress,
+      hci_spec::defaults::kLEScanInterval,
+      hci_spec::defaults::kLEScanWindow,
+      kTestParams,
+      callback,
+      kPwConnectTimeout);
+  ASSERT_TRUE(ret);
+  ASSERT_TRUE(connector()->request_pending());
+
+  // Deliver LE Connection Complete before FakeController processes the create
+  // connection command and sends back HCI Command Status (COMMAND_DISALLOWED).
+  EventPacket packet = CreateConnectionCompleteSubevent(1, kTestAddress);
+  test_device()->SendCommandChannelPacket(packet.data());
+
+  RunUntilIdle();
+
+  EXPECT_FALSE(connector()->request_pending());
+  EXPECT_FALSE(connector()->timeout_posted());
+  EXPECT_EQ(1u, callback_count);
+  EXPECT_EQ(fit::ok(), status);
+  EXPECT_TRUE(in_connections().empty());
+  ASSERT_TRUE(conn);
+  EXPECT_EQ(1u, conn->handle());
+  conn->Disconnect(
+      pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
+}
+
+TEST_P(LowEnergyConnectorTest, ConnectionCompleteBeforeCommandStatusSuccess) {
+  auto fake_peer = std::make_unique<FakePeer>(kTestAddress, dispatcher());
+  fake_peer->set_force_pending_connect(true);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  Result<> status = ToResult(HostError::kFailed);
+  std::unique_ptr<LowEnergyConnection> conn;
+  unsigned int callback_count = 0;
+
+  auto callback = [&](Result<> cb_status,
+                      std::unique_ptr<LowEnergyConnection> cb_conn) {
+    status = cb_status;
+    conn = std::move(cb_conn);
+    callback_count++;
+  };
+
+  bool ret = connector()->CreateConnection(
+      /*use_accept_list=*/false,
+      kTestAddress,
+      hci_spec::defaults::kLEScanInterval,
+      hci_spec::defaults::kLEScanWindow,
+      kTestParams,
+      callback,
+      kPwConnectTimeout);
+  ASSERT_TRUE(ret);
+  ASSERT_TRUE(connector()->request_pending());
+
+  // Deliver LE Connection Complete before FakeController processes the create
+  // connection command and sends back HCI Command Status (SUCCESS).
+  EventPacket packet = CreateConnectionCompleteSubevent(1, kTestAddress);
+  test_device()->SendCommandChannelPacket(packet.data());
+
+  RunUntilIdle();
+
+  EXPECT_FALSE(connector()->request_pending());
+  EXPECT_FALSE(connector()->timeout_posted());
+  EXPECT_EQ(1u, callback_count);
+  EXPECT_EQ(fit::ok(), status);
+  EXPECT_TRUE(in_connections().empty());
+  ASSERT_TRUE(conn);
+  EXPECT_EQ(1u, conn->handle());
+
+  // Advancing past the connection timeout should not trigger a timeout on a
+  // disengaged pending_request_.
+  RunFor(kPwConnectTimeout);
+  EXPECT_EQ(1u, callback_count);
+
+  conn->Disconnect(
+      pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
+}
+
+TEST_P(LowEnergyConnectorTest,
+       ConnectionCompleteBeforeCommandStatusDoesNotAffectSubsequentRequest) {
+  const DeviceAddress kSecondTestAddress(DeviceAddress::Type::kLEPublic, {2});
+
+  auto fake_peer1 = std::make_unique<FakePeer>(kTestAddress, dispatcher());
+  fake_peer1->set_connect_status(
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
+  test_device()->AddPeer(std::move(fake_peer1));
+
+  auto fake_peer2 =
+      std::make_unique<FakePeer>(kSecondTestAddress, dispatcher());
+  test_device()->AddPeer(std::move(fake_peer2));
+
+  Result<> status1 = ToResult(HostError::kFailed);
+  std::unique_ptr<LowEnergyConnection> conn1;
+  unsigned int callback1_count = 0;
+
+  Result<> status2 = ToResult(HostError::kFailed);
+  std::unique_ptr<LowEnergyConnection> conn2;
+  unsigned int callback2_count = 0;
+
+  auto callback2 = [&](Result<> cb_status,
+                       std::unique_ptr<LowEnergyConnection> cb_conn) {
+    status2 = cb_status;
+    conn2 = std::move(cb_conn);
+    callback2_count++;
+  };
+
+  auto callback1 = [&](Result<> cb_status,
+                       std::unique_ptr<LowEnergyConnection> cb_conn) {
+    status1 = cb_status;
+    conn1 = std::move(cb_conn);
+    callback1_count++;
+
+    // Immediately initiate a second connection from within the first request's
+    // completion callback before the first request's delayed CommandStatus
+    // arrives.
+    bool started = connector()->CreateConnection(
+        /*use_accept_list=*/false,
+        kSecondTestAddress,
+        hci_spec::defaults::kLEScanInterval,
+        hci_spec::defaults::kLEScanWindow,
+        kTestParams,
+        callback2,
+        kPwConnectTimeout);
+    EXPECT_TRUE(started);
+  };
+
+  bool ret = connector()->CreateConnection(
+      /*use_accept_list=*/false,
+      kTestAddress,
+      hci_spec::defaults::kLEScanInterval,
+      hci_spec::defaults::kLEScanWindow,
+      kTestParams,
+      callback1,
+      kPwConnectTimeout);
+  ASSERT_TRUE(ret);
+  ASSERT_TRUE(connector()->request_pending());
+
+  // Deliver LE Connection Complete for the first request before FakeController
+  // processes the first command and sends back HCI Command Status
+  // (COMMAND_DISALLOWED).
+  EventPacket packet = CreateConnectionCompleteSubevent(10, kTestAddress);
+  test_device()->SendCommandChannelPacket(packet.data());
+
+  RunUntilIdle();
+
+  EXPECT_FALSE(connector()->request_pending());
+  EXPECT_EQ(1u, callback1_count);
+  EXPECT_EQ(fit::ok(), status1);
+  ASSERT_TRUE(conn1);
+  EXPECT_EQ(10u, conn1->handle());
+  EXPECT_EQ(kTestAddress, conn1->peer_address());
+
+  EXPECT_EQ(1u, callback2_count);
+  EXPECT_EQ(fit::ok(), status2);
+  ASSERT_TRUE(conn2);
+  EXPECT_EQ(kSecondTestAddress, conn2->peer_address());
+  EXPECT_TRUE(in_connections().empty());
+
+  conn1->Disconnect(
+      pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
+  conn2->Disconnect(
+      pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
+}
+
 }  // namespace
 }  // namespace bt::hci
