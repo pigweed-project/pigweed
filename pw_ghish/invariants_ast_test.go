@@ -41,57 +41,21 @@ import (
 // the error-swallowing void Run / PreRun / PersistentPreRun / PostRun fields.
 func TestInvariants_CobraCommandsUseRunE(t *testing.T) {
 	prohibitedFields := []string{"Run", "PreRun", "PersistentPreRun", "PostRun"}
-	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
-		ast.Inspect(fc.AST, func(n ast.Node) bool {
-			comp, ok := n.(*ast.CompositeLit)
-			if !ok {
-				return true
-			}
-			sel, ok := comp.Type.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "Command" {
-				return true
-			}
-			pkgIdent, ok := sel.X.(*ast.Ident)
-			if !ok || pkgIdent.Name != "cobra" {
-				return true
-			}
-			if filepath.Base(fc.Path) == "root.go" && isAliasCloneLiteral(comp) {
-				return true
-			}
-			for _, elt := range comp.Elts {
-				kv, ok := elt.(*ast.KeyValueExpr)
-				if !ok {
-					continue
-				}
-				keyIdent, ok := kv.Key.(*ast.Ident)
-				if !ok {
-					continue
-				}
-				if slices.Contains(prohibitedFields, keyIdent.Name) {
-					t.Errorf("%s:%d: cobra.Command defines %s (at %s:%d); must use %sE returning error so failures are never silently ignored",
-						fc.Path, fc.Line(comp.Pos()), keyIdent.Name, fc.Path, fc.Line(kv.Pos()), keyIdent.Name)
-				}
-			}
-			return true
-		})
-	}
-}
-
-func isAliasCloneLiteral(comp *ast.CompositeLit) bool {
-	for _, elt := range comp.Elts {
-		kv, ok := elt.(*ast.KeyValueExpr)
-		if !ok {
+	files := astcheck.MustLoadFiles(t, ".", "worktree", "cmd")
+	// FindCompositeLits locates every cobra.Command{} struct literal; m.Field
+	// inspects its key-value fields, and m.FuncName identifies the enclosing
+	// function (replacing the bespoke isAliasCloneLiteral helper for root.go).
+	for _, m := range astcheck.FindCompositeLits(files, "cobra.Command") {
+		if filepath.Base(m.File.Path) == "root.go" && m.FuncName == "newRootAlias" {
 			continue
 		}
-		if keyIdent, ok := kv.Key.(*ast.Ident); ok && keyIdent.Name == "Run" {
-			if sel, ok := kv.Value.(*ast.SelectorExpr); ok {
-				if x, ok := sel.X.(*ast.Ident); ok && x.Name == "target" && sel.Sel.Name == "Run" {
-					return true
-				}
+		for _, field := range prohibitedFields {
+			if val, ok := m.Field(field); ok {
+				t.Errorf("%s:%d: cobra.Command defines %s (at %s:%d); must use %sE returning error so failures are never silently ignored",
+					m.File.Path, m.Line, field, m.File.Path, m.File.Line(val.Pos()), field)
 			}
 		}
 	}
-	return false
 }
 
 // TestInvariants_NoDirectExitOrStdoutPrint verifies that no non-main production

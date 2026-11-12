@@ -384,88 +384,78 @@ func parseASTFlagDirectives(t *testing.T) (map[string]flagPolicySpec, func(fnNam
 	}
 	var addCmdCalls []addCmdCall
 
+	// Populate cmdUseName from every cobra.Command{Use: "..."} literal:
+	// package-level vars map "VarName" -> subcommand token (e.g. "IssueCmd" -> "issue"),
+	// and constructor-local vars map "funcName:varName" -> token (e.g. "newEditCmd:editCmd" -> "edit").
+	// TestFlagPolicy_DirectivesSyntax and TestFlagPolicy_AllRegisteredFlagsClassified verify
+	// that the resolved paths match the live RootCmd tree.
+	for _, m := range astcheck.FindCompositeLits(files, "cobra.Command") {
+		if m.VarName == "" || m.VarName == "RootCmd" {
+			continue
+		}
+		use, ok := m.StringField("Use")
+		if !ok {
+			continue
+		}
+		fields := strings.Fields(use)
+		if len(fields) == 0 {
+			continue
+		}
+		key := m.VarName
+		if m.FuncName != "" {
+			key = m.FuncName + ":" + m.VarName
+		}
+		cmdUseName[key] = fields[0]
+	}
+
 	for _, fc := range files {
 		for _, decl := range fc.AST.Decls {
-			switch d := decl.(type) {
-			case *ast.GenDecl:
-				if d.Tok != token.VAR {
-					continue
-				}
-				for _, spec := range d.Specs {
-					valSpec, ok := spec.(*ast.ValueSpec)
-					if !ok {
-						continue
-					}
-					for i, nameIdent := range valSpec.Names {
-						if i < len(valSpec.Values) && nameIdent.Name != "RootCmd" {
-							if use := extractCobraCommandUse(valSpec.Values[i]); use != "" {
-								cmdUseName[nameIdent.Name] = use
-							}
-						}
-					}
-				}
-			case *ast.FuncDecl:
-				if d.Body == nil {
-					continue
-				}
-				fnName := d.Name.Name
-				if d.Recv == nil {
-					ast.Inspect(d.Body, func(n ast.Node) bool {
-						if _, isClosure := n.(*ast.FuncLit); isClosure {
-							return false
-						}
-						ret, ok := n.(*ast.ReturnStmt)
-						if ok && len(ret.Results) == 1 {
-							if retIdent, ok := ret.Results[0].(*ast.Ident); ok {
-								funcReturnIdent[fnName] = fnName + ":" + retIdent.Name
-							}
-						}
-						return true
-					})
-				}
+			d, ok := decl.(*ast.FuncDecl)
+			if !ok || d.Body == nil {
+				continue
+			}
+			fnName := d.Name.Name
+			if d.Recv == nil {
 				ast.Inspect(d.Body, func(n ast.Node) bool {
-					switch stmt := n.(type) {
-					case *ast.ValueSpec:
-						for i, nameIdent := range stmt.Names {
-							if i < len(stmt.Values) {
-								if use := extractCobraCommandUse(stmt.Values[i]); use != "" {
-									cmdUseName[fnName+":"+nameIdent.Name] = use
-								}
-							}
-						}
-					case *ast.AssignStmt:
-						for i, lhs := range stmt.Lhs {
-							if ident, ok := lhs.(*ast.Ident); ok && i < len(stmt.Rhs) {
-								if use := extractCobraCommandUse(stmt.Rhs[i]); use != "" {
-									cmdUseName[fnName+":"+ident.Name] = use
-								}
-							}
-						}
-					case *ast.CallExpr:
-						sel, ok := stmt.Fun.(*ast.SelectorExpr)
-						if !ok || sel.Sel.Name != "AddCommand" {
-							return true
-						}
-						var parentName string
-						switch x := sel.X.(type) {
-						case *ast.Ident:
-							parentName = x.Name
-						case *ast.SelectorExpr:
-							parentName = x.Sel.Name
-						default:
-							return true
-						}
-						for _, arg := range stmt.Args {
-							addCmdCalls = append(addCmdCalls, addCmdCall{
-								fnName: fnName,
-								parent: parentName,
-								arg:    arg,
-							})
+					if _, isClosure := n.(*ast.FuncLit); isClosure {
+						return false
+					}
+					ret, ok := n.(*ast.ReturnStmt)
+					if ok && len(ret.Results) == 1 {
+						if retIdent, ok := ret.Results[0].(*ast.Ident); ok {
+							funcReturnIdent[fnName] = fnName + ":" + retIdent.Name
 						}
 					}
 					return true
 				})
 			}
+			ast.Inspect(d.Body, func(n ast.Node) bool {
+				stmt, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := stmt.Fun.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "AddCommand" {
+					return true
+				}
+				var parentName string
+				switch x := sel.X.(type) {
+				case *ast.Ident:
+					parentName = x.Name
+				case *ast.SelectorExpr:
+					parentName = x.Sel.Name
+				default:
+					return true
+				}
+				for _, arg := range stmt.Args {
+					addCmdCalls = append(addCmdCalls, addCmdCall{
+						fnName: fnName,
+						parent: parentName,
+						arg:    arg,
+					})
+				}
+				return true
+			})
 		}
 	}
 
@@ -618,41 +608,6 @@ func parseASTFlagDirectives(t *testing.T) (map[string]flagPolicySpec, func(fnNam
 		t.Errorf("expected at least one //ghish:flag directive in production source files, found 0")
 	}
 	return directives, resolveCmdPaths
-}
-
-func extractCobraCommandUse(expr ast.Expr) string {
-	unary, ok := expr.(*ast.UnaryExpr)
-	if !ok || unary.Op != token.AND {
-		return ""
-	}
-	comp, ok := unary.X.(*ast.CompositeLit)
-	if !ok {
-		return ""
-	}
-	sel, ok := comp.Type.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != "Command" {
-		return ""
-	}
-	for _, elt := range comp.Elts {
-		kv, ok := elt.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-		keyIdent, ok := kv.Key.(*ast.Ident)
-		if !ok || keyIdent.Name != "Use" {
-			continue
-		}
-		lit, ok := kv.Value.(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			continue
-		}
-		unquoted := strings.Trim(lit.Value, "`\"")
-		fields := strings.Fields(unquoted)
-		if len(fields) > 0 {
-			return fields[0]
-		}
-	}
-	return ""
 }
 
 func extractFlagRegistrationCall(call *ast.CallExpr) (cmdVar string, flagName string, ok bool) {

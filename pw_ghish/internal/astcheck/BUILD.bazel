@@ -22,6 +22,7 @@ go_library(
     srcs = [
         "directives.go",
         "loader.go",
+        "query.go",
     ],
     importpath = "pigweed.dev/pw_ghish/internal/astcheck",
     target_compatible_with = incompatible_with_mcu(),
@@ -30,7 +31,10 @@ go_library(
 go_test(
     name = "astcheck_test",
     size = "small",
-    srcs = ["astcheck_test.go"],
+    srcs = [
+        "astcheck_test.go",
+        "query_test.go",
+    ],
     tags = [
         "noasan",
         "nomsan",
