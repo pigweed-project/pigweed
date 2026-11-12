@@ -506,6 +506,414 @@ class NavTest(unittest.TestCase):
             context.close()
             browser.close()
 
+    def test_doxygen_sidebar_width_and_theme_color(self):
+        """Verifies Doxygen 272px default width, saved width persistence, and
+        light-mode active link color on dark OS."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 840},
+                color_scheme="dark",
+            )
+            context.add_init_script(
+                "localStorage.setItem('theme', 'light');"
+                "localStorage.setItem('mode', 'light');"
+            )
+            page = context.new_page()
+            page.goto(
+                self.server.url_for("api/cc/group__pw__varint.html"),
+                wait_until="networkidle",
+            )
+            nav_tree = page.locator("#nav-tree")
+            nav_tree.wait_for(state="visible", timeout=5000)
+            selected = nav_tree.locator(".item.selected .label a")
+            selected.wait_for(state="visible", timeout=5000)
+
+            self.assertEqual(round(nav_tree.bounding_box()["width"]), 272)
+            self.assertEqual(
+                round(page.locator("#doc-content").bounding_box()["x"]), 278
+            )
+            self.assertEqual(
+                selected.evaluate("el => getComputedStyle(el).color"),
+                "rgb(42, 90, 223)",
+            )
+
+            page.evaluate("localStorage.setItem('doxygen_width', '310')")
+            page.reload(wait_until="networkidle")
+            self.assertEqual(round(nav_tree.bounding_box()["width"]), 310)
+
+            context.close()
+            browser.close()
+
+    def test_doxygen_chevron_column_alignment(self):
+        """Verifies that visible Doxygen disclosure chevrons sit to the right of
+        labels in a single vertical column."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 840}
+            )
+            page = context.new_page()
+            page.goto(
+                self.server.url_for("api/cc/group__pw__varint.html"),
+                wait_until="networkidle",
+            )
+            nav_tree = page.locator("#nav-tree")
+            nav_tree.locator(".item.selected .label a").wait_for(
+                state="visible", timeout=5000
+            )
+
+            arrow_rights = page.evaluate(
+                """() => {
+                const items = Array.from(
+                    document.querySelectorAll('#nav-tree .item:has(> a)')
+                ).filter(el => el.offsetParent !== null);
+                return items.map(item => {
+                    const label = item.querySelector(':scope > .label');
+                    const arrow = item.querySelector(':scope > a > .arrow');
+                    return {
+                        labelRight: label.getBoundingClientRect().right,
+                        arrowLeft: arrow.getBoundingClientRect().left,
+                        arrowRight: Math.round(arrow.getBoundingClientRect().right),
+                    };
+                });
+            }"""
+            )
+            self.assertGreater(len(arrow_rights), 5)
+            for row in arrow_rights:
+                self.assertLessEqual(row["labelRight"], row["arrowLeft"])
+            self.assertEqual(
+                len({row["arrowRight"] for row in arrow_rights}), 1
+            )
+
+            context.close()
+            browser.close()
+
+    def test_doxygen_row_toggle_and_keyboard(self):
+        """Verifies keyboard Enter/Space expansion preserves focus and advances
+        Tab into the first child, and clicking empty row space toggles without
+        navigating."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 840}
+            )
+            page = context.new_page()
+            nav_tree = page.locator("#nav-tree")
+
+            # 1. Keyboard Enter on unvisited Modules preserves focus and Tabs to first child
+            page.goto(
+                self.server.url_for("api/cc/index.html"),
+                wait_until="networkidle",
+            )
+            modules_item = nav_tree.locator(
+                ".item:has(> .label > a:text-is('Modules'))"
+            )
+            modules_link = modules_item.locator("> .label > a")
+            modules_link.wait_for(state="visible", timeout=5000)
+            modules_link.focus()
+
+            page.keyboard.press("Tab")
+            self.assertEqual(
+                page.evaluate(
+                    "document.activeElement.getAttribute('aria-label')"
+                ),
+                "Modules subpages",
+            )
+            page.keyboard.press("Enter")
+            nav_tree.locator(
+                "a[aria-label='Modules subpages'][aria-expanded='true']"
+            ).wait_for(state="attached", timeout=5000)
+            self.assertEqual(
+                page.evaluate(
+                    "document.activeElement.getAttribute('aria-label')"
+                ),
+                "Modules subpages",
+            )
+            self.assertTrue(
+                page.evaluate(
+                    "document.activeElement.matches(':focus-visible')"
+                )
+            )
+
+            page.keyboard.press("Tab")
+            self.assertEqual(
+                page.evaluate("document.activeElement.textContent.trim()"),
+                "Async & concurrency",
+            )
+
+            # 2. Keyboard Space on async-loaded category preserves focus too
+            page.keyboard.press("Tab")
+            self.assertEqual(
+                page.evaluate(
+                    "document.activeElement.getAttribute('aria-label')"
+                ),
+                "Async & concurrency subpages",
+            )
+            page.keyboard.press(" ")
+            nav_tree.locator(
+                "a[aria-label='Async & concurrency subpages'][aria-expanded='true']"
+            ).wait_for(state="attached", timeout=5000)
+            self.assertEqual(
+                page.evaluate(
+                    "document.activeElement.getAttribute('aria-label')"
+                ),
+                "Async & concurrency subpages",
+            )
+            page.keyboard.press("Tab")
+            self.assertEqual(
+                page.evaluate("document.activeElement.textContent.trim()"),
+                "pw_async",
+            )
+
+            # 3. Clicking empty row space toggles without navigating
+            page.goto(
+                self.server.url_for("api/cc/group__pw__varint.html"),
+                wait_until="networkidle",
+            )
+            nav_tree.locator(".item.selected .label a").wait_for(
+                state="visible", timeout=5000
+            )
+            hals_item = nav_tree.locator(
+                ".item:has(> .label > a:text-is('HALs'))"
+            )
+            hals_link = hals_item.locator("> .label > a")
+            hals_link.scroll_into_view_if_needed()
+            link_box = hals_link.bounding_box()
+            page.mouse.click(
+                link_box["x"] + link_box["width"] + 16,
+                link_box["y"] + link_box["height"] / 2,
+            )
+            nav_tree.locator(
+                "a[aria-label='HALs subpages'][aria-expanded='true']"
+            ).wait_for(state="attached", timeout=5000)
+            self.assertTrue(page.url.endswith("api/cc/group__pw__varint.html"))
+
+            context.close()
+            browser.close()
+
+    def test_doxygen_cpp_namespace_shortening_and_collision_guard(self):
+        """Verifies leading lowercase C++ namespaces are stripped with full
+        hover tooltips while colliding sibling names stay intact."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 840}
+            )
+            page = context.new_page()
+            nav_tree = page.locator("#nav-tree")
+
+            page.goto(
+                self.server.url_for(
+                    "api/cc/classpw_1_1unit__test_1_1_google_test_style_event_handler.html"
+                ),
+                wait_until="networkidle",
+            )
+            selected = nav_tree.locator(".item.selected .label a")
+            selected.wait_for(state="visible", timeout=5000)
+            self.assertEqual(
+                selected.inner_text().strip(), "GoogleTestStyleEventHandler"
+            )
+            self.assertEqual(
+                selected.get_attribute("title"),
+                "pw::unit_test::GoogleTestStyleEventHandler",
+            )
+            self.assertEqual(
+                nav_tree.evaluate("el => el.scrollWidth - el.clientWidth"), 0
+            )
+
+            page.goto(
+                self.server.url_for("api/cc/classpw_1_1thread_1_1_thread.html"),
+                wait_until="networkidle",
+            )
+            nav_tree.locator(".item.selected .label a").wait_for(
+                state="visible", timeout=5000
+            )
+            thread_labels = nav_tree.locator(".item .label a").all_inner_texts()
+            self.assertIn("pw::Thread", thread_labels)
+            self.assertIn("pw::thread::Thread", thread_labels)
+
+            context.close()
+            browser.close()
+
+    def test_doxygen_no_js_hides_empty_sidebar(self):
+        """Verifies that when JavaScript is disabled, the unpopulated Doxygen
+        sidebar stays hidden and does not cover main page content."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 840},
+                java_script_enabled=False,
+            )
+            page = context.new_page()
+            page.goto(
+                self.server.url_for("api/cc/group__pw__varint.html"),
+                wait_until="domcontentloaded",
+            )
+
+            self.assertFalse(page.locator("#side-nav").is_visible())
+            title_box = page.locator(".headertitle .title").bounding_box()
+            self.assertGreaterEqual(title_box["x"], 8)
+
+            context.close()
+            browser.close()
+
+    def test_doxygen_mobile_drawer_toggle_and_in_page_link(self):
+        """Verifies that expanding a Doxygen section on mobile keeps the drawer
+        open while clicking an in-page anchor link closes it."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 375, "height": 667}
+            )
+            page = context.new_page()
+            page.goto(
+                self.server.url_for("api/cc/group__pw__varint.html"),
+                wait_until="networkidle",
+            )
+
+            menu_btn = page.locator("#pw-header-menu")
+            menu_btn.wait_for(state="visible", timeout=5000)
+            menu_btn.click()
+
+            side_nav = page.locator("#side-nav")
+            side_nav.wait_for(state="visible", timeout=5000)
+            self.assertEqual(menu_btn.get_attribute("aria-expanded"), "true")
+
+            # Expanding pw_varint subpages keeps the mobile drawer open
+            varint_toggle = side_nav.locator(
+                "a[aria-label='pw_varint subpages']"
+            )
+            varint_toggle.scroll_into_view_if_needed()
+            varint_toggle.click()
+            format_link = side_nav.locator(".label a:text-is('Format')").first
+            format_link.wait_for(state="visible", timeout=5000)
+            self.assertTrue(side_nav.is_visible())
+
+            # Clicking in-page Format anchor closes the mobile drawer
+            format_link.click()
+            side_nav.wait_for(state="hidden", timeout=5000)
+            self.assertEqual(menu_btn.get_attribute("aria-expanded"), "false")
+
+            context.close()
+            browser.close()
+
+    def test_doxygen_mobile_drawer_matches_sphinx(self):
+        """Verifies Doxygen and Sphinx mobile drawers share 75vw slide-in width,
+        dimmed right-side backdrop, scroll lock, and tap-outside dismissal."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            widths = []
+            for rel_path, drawer_sel, scroll_sel in (
+                ("pw_string/docs.html", "#pw-nav", "body"),
+                ("api/cc/group__pw__varint.html", "#side-nav", "#doc-content"),
+            ):
+                context = browser.new_context(
+                    viewport={"width": 375, "height": 667}
+                )
+                page = context.new_page()
+                page.goto(
+                    self.server.url_for(rel_path),
+                    wait_until="networkidle",
+                )
+                drawer = page.locator(drawer_sel)
+                menu_btn = page.locator("#pw-header-menu")
+                menu_btn.wait_for(state="visible", timeout=5000)
+
+                # Closed drawer rests off-screen to the left with transform transition
+                self.assertFalse(drawer.is_visible())
+                closed_x = page.evaluate(
+                    "sel => Math.round(document.querySelector(sel).getBoundingClientRect().x)",
+                    drawer_sel,
+                )
+                self.assertLess(closed_x, -200)
+                self.assertIn(
+                    "transform",
+                    drawer.evaluate(
+                        "el => getComputedStyle(el).transitionProperty"
+                    ),
+                )
+
+                # Opening slides drawer to x=0 at 75vw width with dimmed backdrop on right
+                menu_btn.click()
+                drawer.wait_for(state="visible", timeout=5000)
+                page.wait_for_function(
+                    "sel => Math.round(document.querySelector(sel).getBoundingClientRect().x) === 0",
+                    arg=drawer_sel,
+                    timeout=5000,
+                )
+                box = drawer.bounding_box()
+                self.assertLessEqual(box["width"], 350)
+                self.assertEqual(round(box["width"]), round(375 * 0.75))
+                widths.append(round(box["width"]))
+
+                backdrop = page.locator("#pw-nav-backdrop")
+                self.assertTrue(backdrop.is_visible())
+                self.assertEqual(
+                    backdrop.evaluate(
+                        "el => getComputedStyle(el).backgroundColor"
+                    ),
+                    "rgba(0, 0, 0, 0.4)",
+                )
+                self.assertEqual(
+                    page.evaluate(
+                        "() => document.elementFromPoint(340, 300)?.id"
+                    ),
+                    "pw-nav-backdrop",
+                )
+                self.assertEqual(
+                    page.locator(scroll_sel).evaluate(
+                        "el => getComputedStyle(el).overflowY"
+                    ),
+                    "hidden",
+                )
+
+                # Clicking exposed dimmed content on the right closes the drawer
+                page.mouse.click(340, 300)
+                drawer.wait_for(state="hidden", timeout=5000)
+                self.assertEqual(
+                    menu_btn.get_attribute("aria-expanded"), "false"
+                )
+                context.close()
+
+            self.assertEqual(widths[0], widths[1])
+            browser.close()
+
 
 if __name__ == "__main__":
     unittest.main()

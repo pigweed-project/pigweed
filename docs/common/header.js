@@ -185,9 +185,12 @@ class PwHeader extends HTMLElement {
       backdrop.addEventListener('click', closeAllDrawers);
     }
 
-    // Close mobile drawer when a link in Rustdoc sidebar is clicked
+    // Close mobile drawer when a page or anchor link in Rustdoc or Doxygen
+    // sidebars is clicked (excluding Doxygen disclosure toggles).
     document.addEventListener('click', (e) => {
-      const link = e.target.closest('nav.sidebar a, .rustdoc .sidebar a');
+      const link = e.target.closest(
+        'nav.sidebar a, .rustdoc .sidebar a, #side-nav .label a:not(.nolink)',
+      );
       if (link) {
         closeAllDrawers();
       }

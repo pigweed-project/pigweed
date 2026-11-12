@@ -613,3 +613,19 @@ drawer on mobile viewports (``<840px``).
   custom element (``PwNav``), which automatically scrolls the active page link
   (``[aria-current="page"]``) into view on desktop page load and when opening
   the mobile navigation drawer.
+
+.. _contrib-docs-website-doxygen-nav:
+
+-----------------------
+Doxygen site navigation
+-----------------------
+C/C++ API reference pages keep Doxygen's generated sidebar tree because Doxygen
+populates symbol links at runtime from generated JavaScript index files. Shared
+styles in ``//docs/common/nav.css`` align the Doxygen sidebar with the Sphinx
+navigation across desktop padding, typography, disclosure chevrons, theme
+colors, and the mobile slide-in drawer. ``//docs/common/nav.js`` sets the
+default desktop width from ``--pw-nav-width``, strips leading lowercase C++
+namespaces when sibling labels stay distinct (keeping full names in hover
+tooltips), and preserves keyboard focus when sections expand. When JavaScript
+is disabled, CSS hides the unpopulated sidebar container so it does not cover
+page content.

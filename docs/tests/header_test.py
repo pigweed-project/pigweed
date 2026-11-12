@@ -263,12 +263,9 @@ class HeaderTest(unittest.TestCase):
             side_nav = page.locator("#side-nav")
             side_nav.wait_for(state="visible", timeout=5000)
 
-            # Check that nav tree links are clickable and not intercepted by backdrop
-            first_link = side_nav.locator("#nav-tree a").first
+            # Wait for Doxygen's tree to populate and verify side-nav is scrollable
+            first_link = side_nav.locator("#nav-tree a:visible").first
             first_link.wait_for(state="visible", timeout=5000)
-            first_link.click()
-
-            # Verify side-nav is scrollable
             is_scrollable = page.evaluate(
                 "() => { const el = document.querySelector('#side-nav'); return el.scrollHeight > el.clientHeight; }"
             )
@@ -276,6 +273,9 @@ class HeaderTest(unittest.TestCase):
                 is_scrollable,
                 "#side-nav should have scrollable content on mobile",
             )
+
+            # Check that nav tree links are clickable and not intercepted by backdrop
+            first_link.click()
 
             browser.close()
 

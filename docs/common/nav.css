@@ -45,23 +45,14 @@
   background-color: transparent;
 }
 
-/* ========== SPHINX GLOBAL NAVIGATION (<pw-nav>) ========== */
-.bd-sidebar-secondary {
-  top: var(--pw-header-height) !important;
-  height: calc(100vh - var(--pw-header-height)) !important;
+:root {
+  --pw-nav-width: 17rem;
+  --pw-nav-chevron-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z'/%3E%3C/svg%3E");
 }
 
-pw-nav {
-  --pw-nav-chevron-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z'/%3E%3C/svg%3E");
-
-  display: block;
-  position: sticky;
-  align-self: flex-start;
-  top: var(--pw-header-height);
-  flex: 0 0 17rem;
-  width: 17rem;
-  height: calc(100vh - var(--pw-header-height));
-  max-height: calc(100vh - var(--pw-header-height));
+/* ========== SHARED SPHINX (<pw-nav>) & DOXYGEN (#nav-tree) SIDEBAR ========== */
+pw-nav,
+#nav-tree {
   box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
@@ -75,30 +66,32 @@ pw-nav {
 }
 
 .pw-nav-tree,
-.pw-nav-sublist {
+.pw-nav-sublist,
+#nav-tree ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.pw-nav-sublist {
-  clear: both;
+.pw-nav-sublist,
+#nav-tree .children_ul {
+  margin-left: 0.5rem;
   padding-left: 0.875rem;
   border-left: 1px solid var(--pw-color-border);
-  margin-left: 0.5rem;
 }
 
-.pw-nav-tree-item {
-  display: flow-root;
-  position: relative;
+.pw-nav-tree-item,
+#nav-tree .item {
   margin: 1px 0;
   border-radius: 4px;
 }
 
 pw-nav a.pw-nav-tree-link,
 pw-nav a.pw-nav-tree-link:link,
-pw-nav a.pw-nav-tree-link:visited {
-  float: left;
+pw-nav a.pw-nav-tree-link:visited,
+#nav-tree .label a,
+#nav-tree .label a:link,
+#nav-tree .label a:visited {
   max-width: 100%;
   box-sizing: border-box;
   padding: 0.25rem 0.5rem;
@@ -106,27 +99,27 @@ pw-nav a.pw-nav-tree-link:visited {
   border-radius: 4px;
   color: var(--pw-color-foreground-primary);
   text-decoration: none;
-  overflow-wrap: anywhere;
 }
 
-pw-nav .pw-nav-level-1 > a.pw-nav-tree-link {
+pw-nav .pw-nav-level-1 > a.pw-nav-tree-link,
+#nav-tree-contents > ul > li > .item > .label > a {
   font-weight: 500;
-}
-
-pw-nav .pw-nav-tree-item.has-children > a.pw-nav-tree-link {
-  max-width: calc(100% - 28px);
-  border-radius: 4px 0 0 4px;
 }
 
 pw-nav a.pw-nav-tree-link:hover,
 pw-nav a.pw-nav-tree-link:visited:hover,
-pw-nav a.pw-nav-tree-link:active {
+pw-nav a.pw-nav-tree-link:active,
+#nav-tree .label a:hover,
+#nav-tree .label a:visited:hover,
+#nav-tree .label a:active {
   color: var(--pw-color-link);
   text-decoration: none;
 }
 
 pw-nav a.pw-nav-tree-link[aria-current='page'],
-pw-nav a.pw-nav-tree-link[aria-current='page']:visited {
+pw-nav a.pw-nav-tree-link[aria-current='page']:visited,
+#nav-tree .item.selected > .label > a,
+#nav-tree .item.selected > .label > a:visited {
   color: var(--pw-color-link);
   font-weight: 600;
 }
@@ -136,10 +129,7 @@ pw-nav
     > a.pw-nav-tree-link:hover,
     > a.pw-nav-tree-link:active,
     > a.pw-nav-tree-link[aria-current='page']
-  ) {
-  background-color: var(--pw-color-hover);
-}
-
+  ),
 pw-nav
   .pw-nav-tree-item.has-children:has(
     > a.pw-nav-tree-link:hover,
@@ -156,17 +146,25 @@ pw-nav
     > a.pw-nav-tree-link[aria-current='page']
   )
   > details
-  > summary {
+  > summary,
+#nav-tree .item:not(:has(> a)):has(> .label > a:hover, > .label > a:active),
+#nav-tree .item:not(:has(> a)).selected,
+#nav-tree .item:has(> a):hover,
+#nav-tree .item:has(> a).selected {
   background-color: var(--pw-color-hover);
 }
 
 pw-nav a.pw-nav-tree-link:focus-visible,
-pw-nav summary:focus-visible {
+pw-nav summary:focus-visible,
+#nav-tree .label a:focus-visible,
+#nav-tree .item > a:focus-visible {
   outline: 2px solid var(--pw-color-outline-focus);
   outline-offset: -2px;
 }
 
-pw-nav summary {
+pw-nav summary,
+#nav-tree .item > a,
+#nav-tree .item.selected > a {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -175,20 +173,19 @@ pw-nav summary {
   box-sizing: border-box;
   border-radius: 0 4px 4px 0;
   cursor: pointer;
-  list-style: none;
   color: var(--pw-color-foreground-primary);
+  text-decoration: none;
   user-select: none;
 }
 
-pw-nav summary::-webkit-details-marker {
-  display: none;
-}
-
-pw-nav summary:hover {
+pw-nav summary:hover,
+#nav-tree .item > a:hover {
   color: var(--pw-color-link);
+  text-decoration: none;
 }
 
-pw-nav summary::before {
+pw-nav summary::before,
+#nav-tree .item > a > .arrow::before {
   content: '';
   display: block;
   width: 1rem;
@@ -199,56 +196,55 @@ pw-nav summary::before {
   transition: transform 0.15s ease;
 }
 
-pw-nav details[open] > summary::before {
+pw-nav details[open] > summary::before,
+#nav-tree .item > a > .arrow.pw-open::before {
   transform: rotate(180deg);
 }
 
-/* Mobile Sphinx navigation (<840px):
- * Slide-out drawer positioned below header, controlled via body.pw-sphinx-nav-open */
-@media (max-width: 839px) {
-  body.pw-sphinx-nav-open {
-    overflow: hidden;
-  }
+/* ========== SPHINX GLOBAL NAVIGATION (<pw-nav>) ========== */
+.bd-sidebar-secondary {
+  top: var(--pw-header-height) !important;
+  height: calc(100vh - var(--pw-header-height)) !important;
+}
 
-  pw-nav {
-    position: fixed;
-    top: var(--pw-header-height);
-    left: 0;
-    width: 75vw;
-    max-width: 350px;
-    height: calc(100vh - var(--pw-header-height));
-    max-height: calc(100vh - var(--pw-header-height));
-    padding: 1rem var(--pw-header-padding-x);
-    font-size: 0.9375rem;
-    transform: translateX(-100%);
-    visibility: hidden;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-    z-index: 1055;
-    transition:
-      visibility 0.2s ease-out,
-      transform 0.2s ease-out;
-  }
+pw-nav {
+  display: block;
+  position: sticky;
+  align-self: flex-start;
+  top: var(--pw-header-height);
+  flex: 0 0 var(--pw-nav-width);
+  width: var(--pw-nav-width);
+  height: calc(100vh - var(--pw-header-height));
+  max-height: calc(100vh - var(--pw-header-height));
+}
 
-  body.pw-sphinx-nav-open pw-nav {
-    transform: translateX(0);
-    visibility: visible;
-  }
+.pw-nav-sublist {
+  clear: both;
+}
 
-  pw-nav a.pw-nav-tree-link,
-  pw-nav a.pw-nav-tree-link:link,
-  pw-nav a.pw-nav-tree-link:visited {
-    padding: 0.375rem 0.625rem;
-    line-height: 1.375rem;
-  }
+.pw-nav-tree-item {
+  display: flow-root;
+  position: relative;
+}
 
-  pw-nav .pw-nav-tree-item.has-children > a.pw-nav-tree-link {
-    max-width: calc(100% - 32px);
-  }
+pw-nav a.pw-nav-tree-link,
+pw-nav a.pw-nav-tree-link:link,
+pw-nav a.pw-nav-tree-link:visited {
+  float: left;
+  overflow-wrap: anywhere;
+}
 
-  pw-nav summary {
-    min-height: 2.125rem;
-    padding: 0 8px;
-  }
+pw-nav .pw-nav-tree-item.has-children > a.pw-nav-tree-link {
+  max-width: calc(100% - 28px);
+  border-radius: 4px 0 0 4px;
+}
+
+pw-nav summary {
+  list-style: none;
+}
+
+pw-nav summary::-webkit-details-marker {
+  display: none;
 }
 
 /* Sphinx Secondary Sidebar (Page Table of Contents) Drawer on mobile (<1200px) */
@@ -352,20 +348,8 @@ pw-nav details[open] > summary::before {
   touch-action: none;
 }
 
-@media (max-width: 839px) {
-  body.pw-sphinx-nav-open #pw-nav-backdrop {
-    display: block !important;
-  }
-}
-
 @media (max-width: 1199px) {
   body.pw-sphinx-toc-open #pw-nav-backdrop {
-    display: block !important;
-  }
-}
-
-@media (max-width: 839px) {
-  body.pw-doxygen-nav-open #pw-nav-backdrop {
     display: block !important;
   }
 }
@@ -443,6 +427,11 @@ html.sidebar-resizing > body {
   height: calc(100vh - var(--pw-header-height)) !important;
 }
 
+/* Doxygen leaves #nav-tree-contents empty when JavaScript is disabled. */
+#side-nav:not(:has(#nav-tree-contents > ul)) {
+  display: none !important;
+}
+
 #doc-content {
   height: calc(100vh - var(--pw-header-height)) !important;
 }
@@ -451,37 +440,126 @@ html.sidebar-resizing > body {
   height: 100% !important;
 }
 
-/* Mobile Doxygen navigation (<840px):
- * Hide splitbar/resizable handles and hide #side-nav by default.
- * When toggled open via pw-header-menu (body.pw-doxygen-nav-open),
- * display #side-nav as a full-width mobile navigation drawer with high z-index
- * above backdrop, allowing touches and vertical scrolling. */
+#nav-tree-contents {
+  margin: 0;
+}
+
+#nav-tree li {
+  white-space: nowrap;
+  margin: 0;
+  padding: 0;
+}
+
+#nav-tree .item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+/* Hide Doxygen's per-row indentation spacers on leaf items. */
+#nav-tree .item > .arrow {
+  display: none !important;
+}
+
+#nav-tree .label {
+  order: 1;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+}
+
+#nav-tree .item:has(> a) > .label {
+  max-width: calc(100% - 28px);
+}
+
+#nav-tree .label a,
+#nav-tree .label a:link,
+#nav-tree .label a:visited {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#nav-tree .item:has(> a) > .label > a {
+  padding-right: 0.25rem;
+  border-radius: 4px 0 0 4px;
+}
+
+#nav-tree .item > a,
+#nav-tree .item.selected > a {
+  order: 2;
+  flex: 1 0 28px;
+  align-self: stretch;
+}
+
+#nav-tree .item > a > .arrow {
+  padding: 0 !important;
+  margin: 0;
+  width: 1rem;
+  height: 1rem;
+  font-size: 0;
+  line-height: 0;
+  color: inherit;
+  display: block;
+  flex-shrink: 0;
+}
+
+/* ========== SHARED MOBILE DRAWER (<840px: SPHINX & DOXYGEN) ========== */
 @media (max-width: 839px) {
+  body.pw-sphinx-nav-open,
+  body.pw-doxygen-nav-open,
+  body.pw-doxygen-nav-open #doc-content {
+    overflow: hidden !important;
+  }
+
+  body.pw-sphinx-nav-open #pw-nav-backdrop,
+  body.pw-doxygen-nav-open #pw-nav-backdrop {
+    display: block !important;
+  }
+
   #splitbar,
   .ui-resizable-handle {
     display: none !important;
   }
 
+  /* !important overrides inline width and padding set by Doxygen's resize.js. */
+  pw-nav,
   #side-nav {
-    display: none !important;
-    position: fixed !important;
+    position: fixed;
+    top: var(--pw-header-height);
     left: 0 !important;
-    top: var(--pw-header-height) !important;
-    width: 100vw !important;
-    height: calc(100vh - var(--pw-header-height)) !important;
-    max-height: calc(100vh - var(--pw-header-height)) !important;
-    background-color: var(--pw-color-background-primary) !important;
-    z-index: 1055 !important;
-    padding: 16px !important;
-    box-sizing: border-box !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch !important;
-    touch-action: pan-y !important;
-    border-right: none !important;
+    width: 75vw !important;
+    max-width: 350px;
+    height: calc(100vh - var(--pw-header-height));
+    max-height: calc(100vh - var(--pw-header-height));
+    padding: 1rem var(--pw-header-padding-x) !important;
+    box-sizing: border-box;
+    background-color: var(--pw-color-background-primary);
+    border-right: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    font-size: 0.9375rem;
+    transform: translateX(-100%);
+    visibility: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    z-index: 1055;
+    transition:
+      visibility 0.2s ease-out,
+      transform 0.2s ease-out;
   }
 
+  body.pw-sphinx-nav-open pw-nav,
   body.pw-doxygen-nav-open #side-nav {
-    display: block !important;
+    transform: translateX(0);
+    visibility: visible;
   }
 
   #doc-content {
@@ -495,15 +573,14 @@ html.sidebar-resizing > body {
     width: 100vw !important;
   }
 
-  /* Doxygen tree styling customization on mobile */
   #nav-tree {
-    background-color: transparent !important;
+    background-color: transparent;
     height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-    font-size: 15px !important;
-    -webkit-overflow-scrolling: touch !important;
-    touch-action: pan-y !important;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border-right: none;
+    font-size: 0.9375rem;
   }
 
   #nav-tree-contents {
@@ -511,45 +588,25 @@ html.sidebar-resizing > body {
     height: auto !important;
   }
 
-  #nav-tree ul {
-    padding-left: 8px !important;
+  pw-nav a.pw-nav-tree-link,
+  pw-nav a.pw-nav-tree-link:link,
+  pw-nav a.pw-nav-tree-link:visited,
+  #nav-tree .label a,
+  #nav-tree .label a:link,
+  #nav-tree .label a:visited {
+    padding: 0.375rem 0.625rem;
+    line-height: 1.375rem;
   }
 
-  #nav-tree li {
-    padding: 4px 0 !important;
-    white-space: normal !important;
+  pw-nav .pw-nav-tree-item.has-children > a.pw-nav-tree-link,
+  #nav-tree .item:has(> a) > .label {
+    max-width: calc(100% - 32px);
   }
 
-  #nav-tree .item {
-    display: flex !important;
-    align-items: center !important;
-    min-height: 36px !important;
-    padding: 2px 0 !important;
-  }
-
-  #nav-tree .label {
-    font-size: 15px !important;
-  }
-
-  #nav-tree .label a {
-    font-size: 15px !important;
-    padding: 6px 8px !important;
-    color: var(--pw-color-foreground-primary) !important;
-    display: inline-block !important;
-  }
-
-  #nav-tree .arrow {
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    min-width: 28px !important;
-    min-height: 28px !important;
-    font-size: 14px !important;
-    cursor: pointer !important;
-  }
-
-  #nav-tree .selected a {
-    color: var(--pw-color-link) !important;
-    font-weight: bold !important;
+  pw-nav summary,
+  #nav-tree .item > a,
+  #nav-tree .item.selected > a {
+    min-height: 2.125rem;
+    padding: 0 8px;
   }
 }
