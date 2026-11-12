@@ -66,6 +66,8 @@ class LoopbackTest : public testing::OutgoingLoopTestFixture,
 
   zx::channel& service_chan() { return service_loopback_chan_; }
 
+  fidl::Client<fhb::Vendor>& vendor_client() { return vendor_client_; }
+
   fidl::Client<fhb::HciTransport>& hci_client() { return hci_client_; }
 
   fidl::Client<fhb::Snoop>& snoop_client() { return snoop_client_; }
@@ -477,27 +479,18 @@ TEST_F(LoopbackTest, PeerCloseUnpublishesServiceAndClosesBindings) {
       component::ConnectAt<fhb::Vendor>(outgoing_client(), path);
   ASSERT_TRUE(vendor_end.is_ok()) << vendor_end.status_string();
 
-  fidl::ClientEnd<fhb::HciTransport> hci_client_1;
-  fidl::ClientEnd<fhb::HciTransport> hci_client_2;
+  fidl::ClientEnd<fhb::HciTransport> hci_client;
   fidl::ClientEnd<fhb::Snoop> snoop_client;
   {
     fidl::WireClient<fhb::Vendor> vendor_client(std::move(*vendor_end),
                                                 dispatcher());
     vendor_client->OpenHciTransport().ThenExactlyOnce(
-        [&hci_client_1](
+        [&hci_client](
             fidl::WireUnownedResult<fhb::Vendor::OpenHciTransport>& result) {
           ASSERT_TRUE(result.ok()) << result.FormatDescription();
           ASSERT_TRUE(result->is_ok())
               << zx_status_get_string(result->error_value());
-          hci_client_1 = std::move(result->value()->channel);
-        });
-    vendor_client->OpenHciTransport().ThenExactlyOnce(
-        [&hci_client_2](
-            fidl::WireUnownedResult<fhb::Vendor::OpenHciTransport>& result) {
-          ASSERT_TRUE(result.ok()) << result.FormatDescription();
-          ASSERT_TRUE(result->is_ok())
-              << zx_status_get_string(result->error_value());
-          hci_client_2 = std::move(result->value()->channel);
+          hci_client = std::move(result->value()->channel);
         });
     vendor_client->OpenSnoop().ThenExactlyOnce(
         [&snoop_client](
@@ -508,8 +501,7 @@ TEST_F(LoopbackTest, PeerCloseUnpublishesServiceAndClosesBindings) {
           snoop_client = std::move(result->value()->channel);
         });
     RunUntilIdle();
-    ASSERT_TRUE(hci_client_1.is_valid());
-    ASSERT_TRUE(hci_client_2.is_valid());
+    ASSERT_TRUE(hci_client.is_valid());
     ASSERT_TRUE(snoop_client.is_valid());
   }
 
@@ -520,8 +512,7 @@ TEST_F(LoopbackTest, PeerCloseUnpublishesServiceAndClosesBindings) {
   ASSERT_TRUE(raw_vendor_end.is_ok()) << raw_vendor_end.status_string();
   RunUntilIdle();
   ASSERT_FALSE(PeerClosed(*raw_vendor_end));
-  ASSERT_FALSE(PeerClosed(hci_client_1));
-  ASSERT_FALSE(PeerClosed(hci_client_2));
+  ASSERT_FALSE(PeerClosed(hci_client));
   ASSERT_FALSE(PeerClosed(snoop_client));
 
   service_chan().reset();
@@ -529,9 +520,68 @@ TEST_F(LoopbackTest, PeerCloseUnpublishesServiceAndClosesBindings) {
 
   EXPECT_FALSE(VendorServiceIsServed(kServiceDeviceName));
   EXPECT_TRUE(PeerClosed(*raw_vendor_end));
-  EXPECT_TRUE(PeerClosed(hci_client_1));
-  EXPECT_TRUE(PeerClosed(hci_client_2));
+  EXPECT_TRUE(PeerClosed(hci_client));
   EXPECT_TRUE(PeerClosed(snoop_client));
+}
+
+// Verify that we can't open an HciTransport connection if one is already open.
+// Also, verify that after closing the connection we can reopen it.
+TEST_F(LoopbackTest, OpenHciTransportIsExclusive) {
+  std::optional<zx_status_t> second_error;
+  vendor_client()->OpenHciTransport().Then(
+      [&second_error](fidl::Result<fhb::Vendor::OpenHciTransport>& result) {
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error());
+        second_error = result.error_value().domain_error();
+      });
+  RunUntilIdle();
+  EXPECT_EQ(second_error, ZX_ERR_ALREADY_BOUND);
+
+  fit::result<fidl::Error, fidl::ClientEnd<fhb::HciTransport>> first =
+      hci_client().UnbindMaybeGetEndpoint();
+  ASSERT_TRUE(first.is_ok());
+  EXPECT_FALSE(PeerClosed(first.value()));
+
+  first.value().reset();
+  RunUntilIdle();
+
+  bool third_ok = false;
+  vendor_client()->OpenHciTransport().Then(
+      [&third_ok](fidl::Result<fhb::Vendor::OpenHciTransport>& result) {
+        third_ok = result.is_ok();
+      });
+  RunUntilIdle();
+  EXPECT_TRUE(third_ok);
+}
+
+// Verify that we can't open a Snoop connection if one is already open. Also,
+// verify that after closing the connection we can reopen it.
+TEST_F(LoopbackTest, OpenSnoopIsExclusive) {
+  std::optional<zx_status_t> second_error;
+  vendor_client()->OpenSnoop().Then(
+      [&second_error](fidl::Result<fhb::Vendor::OpenSnoop>& result) {
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error());
+        second_error = result.error_value().domain_error();
+      });
+  RunUntilIdle();
+  EXPECT_EQ(second_error, ZX_ERR_ALREADY_BOUND);
+
+  fit::result<fidl::Error, fidl::ClientEnd<fhb::Snoop>> first =
+      snoop_client().UnbindMaybeGetEndpoint();
+  ASSERT_TRUE(first.is_ok());
+  EXPECT_FALSE(PeerClosed(first.value()));
+
+  first.value().reset();
+  RunUntilIdle();
+
+  bool third_ok = false;
+  vendor_client()->OpenSnoop().Then(
+      [&third_ok](fidl::Result<fhb::Vendor::OpenSnoop>& result) {
+        third_ok = result.is_ok();
+      });
+  RunUntilIdle();
+  EXPECT_TRUE(third_ok);
 }
 
 }  // namespace

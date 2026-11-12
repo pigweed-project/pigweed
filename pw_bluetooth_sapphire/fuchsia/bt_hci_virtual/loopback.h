@@ -20,6 +20,7 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/zx/channel.h>
 
+#include <optional>
 #include <queue>
 #include <string_view>
 
@@ -110,7 +111,6 @@ class LoopbackDevice : public fidl::Server<fuchsia_hardware_bluetooth::Vendor> {
    public:
     HciTransportServer(
         LoopbackDevice* device,
-        size_t binding_id,
         fidl::ServerEnd<fuchsia_hardware_bluetooth::HciTransport> server_end);
 
     // `buffer` must have an indicator byte.
@@ -133,7 +133,6 @@ class LoopbackDevice : public fidl::Server<fuchsia_hardware_bluetooth::Vendor> {
         fidl::UnknownMethodCompleter::Sync& completer) override;
 
     LoopbackDevice* device_;
-    size_t binding_id_;
     size_t receive_credits_ = kMaxReceiveUnackedPackets;
     std::queue<std::vector<uint8_t>> receive_queue_;
     fidl::ServerBinding<fuchsia_hardware_bluetooth::HciTransport> binding_;
@@ -143,8 +142,6 @@ class LoopbackDevice : public fidl::Server<fuchsia_hardware_bluetooth::Vendor> {
                                async::WaitBase* wait,
                                zx_status_t status,
                                const zx_packet_signal_t* signal);
-
-  void OnHciTransportUnbound(size_t binding_id, fidl::UnbindInfo info);
 
   void ReadLoopbackChannel();
   void WriteLoopbackChannel(PacketIndicator indicator,
@@ -171,10 +168,8 @@ class LoopbackDevice : public fidl::Server<fuchsia_hardware_bluetooth::Vendor> {
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor>
       vendor_binding_group_;
 
-  // Multiple HciTransport servers need to be supported: at least 1 for bt-host
-  // and 1 for bt-snoop.
-  std::unordered_map<size_t, HciTransportServer> hci_transport_servers_;
-  size_t next_hci_transport_server_id_ = 0u;
+  // Only support 1 HciTransport binding at a time.
+  std::optional<HciTransportServer> hci_transport_;
 
   // Only support 1 Snoop binding at a time.
   std::optional<SnoopServer> snoop_;

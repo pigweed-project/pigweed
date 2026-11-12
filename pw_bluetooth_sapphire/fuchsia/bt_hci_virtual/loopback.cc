@@ -219,17 +219,12 @@ void LoopbackDevice::OnLoopbackChannelSignal(async_dispatcher_t* dispatcher,
     bt_log(ERROR, "bt-hci-virtual", "Loopback channel peer closed");
     vendor_service_.Unpublish();
     vendor_binding_group_.RemoveAll();
-    hci_transport_servers_.clear();
+    hci_transport_.reset();
     snoop_.reset();
     return;
   }
 
   loopback_chan_wait_.Begin(dispatcher_);
-}
-
-void LoopbackDevice::OnHciTransportUnbound(size_t binding_id,
-                                           fidl::UnbindInfo info) {
-  hci_transport_servers_.erase(binding_id);
 }
 
 void LoopbackDevice::ReadLoopbackChannel() {
@@ -263,8 +258,8 @@ void LoopbackDevice::ReadLoopbackChannel() {
       continue;
     }
 
-    for (auto& [_, server] : hci_transport_servers_) {
-      server.OnReceive(read_buffer_.data(), actual_bytes);
+    if (hci_transport_.has_value()) {
+      hci_transport_->OnReceive(read_buffer_.data(), actual_bytes);
     }
 
     if (snoop_.has_value()) {
@@ -327,6 +322,10 @@ void LoopbackDevice::OpenHci(OpenHciCompleter::Sync& completer) {
 
 void LoopbackDevice::OpenHciTransport(
     OpenHciTransportCompleter::Sync& completer) {
+  if (hci_transport_.has_value()) {
+    completer.Reply(fit::error(ZX_ERR_ALREADY_BOUND));
+    return;
+  }
   auto endpoints =
       fidl::CreateEndpoints<fuchsia_hardware_bluetooth::HciTransport>();
   if (endpoints.is_error()) {
@@ -338,14 +337,15 @@ void LoopbackDevice::OpenHciTransport(
     return;
   }
 
-  size_t binding_id = next_hci_transport_server_id_++;
-  auto [_, inserted] = hci_transport_servers_.try_emplace(
-      binding_id, this, binding_id, std::move(endpoints->server));
-  ZX_ASSERT(inserted);
+  hci_transport_.emplace(this, std::move(endpoints->server));
   completer.Reply(fit::ok(std::move(endpoints->client)));
 }
 
 void LoopbackDevice::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
+  if (snoop_.has_value()) {
+    completer.Reply(fit::error(ZX_ERR_ALREADY_BOUND));
+    return;
+  }
   auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_bluetooth::Snoop>();
   if (endpoints.is_error()) {
     bt_log(ERROR,
@@ -355,7 +355,7 @@ void LoopbackDevice::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
     completer.Reply(fit::error(ZX_ERR_INTERNAL));
     return;
   }
-  snoop_.emplace(std::move(std::move(endpoints->server)), this);
+  snoop_.emplace(std::move(endpoints->server), this);
   completer.Reply(fit::ok(std::move(endpoints->client)));
 }
 
@@ -375,10 +375,8 @@ void LoopbackDevice::handle_unknown_method(
 
 LoopbackDevice::HciTransportServer::HciTransportServer(
     LoopbackDevice* device,
-    size_t binding_id,
     fidl::ServerEnd<fuchsia_hardware_bluetooth::HciTransport> server_end)
     : device_(device),
-      binding_id_(binding_id),
       binding_(device_->dispatcher_,
                std::move(server_end),
                this,
@@ -401,7 +399,7 @@ void LoopbackDevice::HciTransportServer::OnReceive(uint8_t* buffer,
 }
 
 void LoopbackDevice::HciTransportServer::OnUnbound(fidl::UnbindInfo info) {
-  device_->hci_transport_servers_.erase(binding_id_);
+  device_->hci_transport_.reset();
 }
 
 void LoopbackDevice::HciTransportServer::SendOnReceive(uint8_t* buffer,
