@@ -352,9 +352,9 @@ When `autodoc`_ generates Python API references or when reStructuredText files
 use ``:py:*:`` roles (such as ``:py:class:`pathlib.Path```), Sphinx first
 checks whether the symbol is defined in Pigweed's own documentation. If the
 symbol is not found locally, ``intersphinx`` looks it up in the external
-inventories configured in ``intersphinx_mapping`` (which fetches
-``https://docs.python.org/3/objects.inv`` over the network at build time) and
-links the reference to the official Python documentation.
+inventories configured in ``intersphinx_mapping`` (such as Python's standard
+library and ``protobuf``, fetched as ``objects.inv`` over the network at build
+time) and links the reference to the upstream documentation.
 
 .. _contrib-docs-website-fonts:
 

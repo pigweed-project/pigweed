@@ -13,8 +13,19 @@ and debugging RPC performance.
 
 pw_rpc.client
 =============
+.. TODO: https://pwbug.dev/584356434 - Stop excluding PendingRpcs.get_pending
+   once it no longer exposes the private _PendingRpcMetadata class in its
+   return type annotation.
+
 .. automodule:: pw_rpc.client
-  :members: Client, ClientImpl, ChannelClient, ServiceClient
+   :members:
+      Client,
+      ClientImpl,
+      ChannelClient,
+      PendingRpcs,
+      ServiceClient,
+      Services,
+   :exclude-members: get_pending
 
 Querying services and methods
 -----------------------------
@@ -36,49 +47,53 @@ to introspect available services and methods by name:
 pw_rpc.client_utils
 ===================
 .. automodule:: pw_rpc.client_utils
-  :members:
-    NoEncodingSingleChannelRpcClient,
-    RpcClient,
+   :members:
+      NoEncodingSingleChannelRpcClient,
+      RpcClient,
 
 pw_rpc.callback_client
 ======================
 .. automodule:: pw_rpc.callback_client
-  :members:
-    UnaryResponse,
-    StreamResponse,
-    Call,
-    UnaryCall,
-    ServerStreamingCall,
-    ClientStreamingCall,
-    BidirectionalStreamingCall,
+   :members:
+      UseDefault,
+      UnaryResponse,
+      StreamResponse,
+      Call,
+      UnaryCall,
+      ServerStreamingCall,
+      ClientStreamingCall,
+      BidirectionalStreamingCall,
+
+.. autoclass:: pw_rpc.callback_client.call.CallTypeT
 
 pw_rpc.descriptors
 ==================
 .. automodule:: pw_rpc.descriptors
-  :members:
-    Channel,
-    ChannelManipulator,
-    Service,
-    Services,
-    Method,
-    Methods,
+   :members:
+      Channel,
+      ChannelManipulator,
+      Service,
+      Services,
+      Method,
+      Methods,
+      PendingRpc,
 
 pw_rpc.console_tools
 ====================
 .. automodule:: pw_rpc.console_tools
-  :members:
-     ClientInfo,
-     Context,
-     Watchdog,
-     alias_deprecated_command,
-     flattened_rpc_completions,
-     help_as_repr,
+   :members:
+      ClientInfo,
+      Context,
+      Watchdog,
+      alias_deprecated_command,
+      flattened_rpc_completions,
+      help_as_repr,
 
 pw_rpc.benchmark
 ================
 .. automodule:: pw_rpc.benchmark
-  :members:
-    DataStatistics,
-    BaseResult,
-    GoodputStatisticsResult,
-    Benchmark,
+   :members:
+      DataStatistics,
+      BaseResult,
+      GoodputStatisticsResult,
+      Benchmark,

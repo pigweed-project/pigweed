@@ -11,17 +11,16 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Pigweed Status class; mirrors pw::Status."""
+"""Python implementation of :cc:`pw::Status`."""
 
 import enum
 
 
 class Status(enum.Enum):
-    """Pigweed status codes.
+    """Standard Pigweed status codes.
 
-    The status codes are described at
-    https://pigweed.dev/pw_status#status-codes. Consult that guide when deciding
-    which status code to use.
+    See :ref:`Status codes <module-pw_status-codes>` for the semantics of each
+    code and guidance on choosing one.
     """
 
     OK = 0
@@ -43,4 +42,5 @@ class Status(enum.Enum):
     UNAUTHENTICATED = 16
 
     def ok(self) -> bool:
+        """Returns ``True`` if this status is :py:attr:`Status.OK`."""
         return self is self.OK

@@ -450,7 +450,8 @@ to other components.
 * **Python**: We use Sphinx's `autodoc`_ feature to auto-generate Python API
   reference content. In order for this to work, the Python modules must be
   listed as dependencies of ``sphinx_build`` in ``//docs/sphinx/BUILD.bazel``.
-  Standard library cross-references are resolved via
+  External Python cross-references (such as the standard library and
+  ``protobuf``) are resolved via
   :ref:`intersphinx <contrib-docs-website-intersphinx>`.
 
 * **Sphinx & Site Assembly**: `Sphinx`_ (essentially a `static site generator`_)

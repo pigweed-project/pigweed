@@ -388,3 +388,12 @@ Rust API
 --------
 ``pw_status``'s Rust API is documented in our
 `rustdoc API docs </rustdoc/pw_status/>`_.
+
+----------
+Python API
+----------
+.. automodule:: pw_status
+   :members:
+   :undoc-members:
+   :member-order: bysource
+   :show-inheritance:

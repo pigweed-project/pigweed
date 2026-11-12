@@ -124,8 +124,8 @@ class ClientInfo(NamedTuple):
     # An object to use in the console for the client. May be a pw_rpc.Client.
     client: object
 
-    # The pw_rpc.Client; may be the same object as client.
-    rpc_client: pw_rpc.Client
+    # The pw_rpc.client.Client; may be the same object as client.
+    rpc_client: pw_rpc.client.Client
 
 
 def flattened_rpc_completions(

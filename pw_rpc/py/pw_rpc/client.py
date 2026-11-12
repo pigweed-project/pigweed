@@ -134,7 +134,7 @@ class PendingRpcs:
           The CLIENT_ERROR packet to send.
 
         Raises:
-          KeyError if the RPC is not pending
+          KeyError: If the RPC is not pending.
         """
         _LOG.debug('Cancelling %s', rpc)
         del self._pending[rpc]
