@@ -35,6 +35,16 @@ pw_py_library(
     deps = [":pw_transport"],
 )
 
+# Intended for host tests and tools, so restricted to upstream Pigweed to match
+# //pw_transport/cpp:framed_tcp.
+pw_py_library(
+    name = "framed_tcp",
+    srcs = ["pw_transport/framed_tcp.py"],
+    imports = ["."],
+    visibility = ["//:__subpackages__"],
+    deps = [":pw_transport"],
+)
+
 pw_py_test(
     name = "socket_test",
     size = "small",
@@ -48,6 +58,16 @@ pw_py_test(
     srcs = ["forwarding_socket_test.py"],
     deps = [
         ":forwarding_socket",
+        ":pw_transport",
+    ],
+)
+
+pw_py_test(
+    name = "framed_tcp_test",
+    size = "small",
+    srcs = ["framed_tcp_test.py"],
+    deps = [
+        ":framed_tcp",
         ":pw_transport",
     ],
 )

@@ -28,10 +28,15 @@ pw_python_package("py") {
     "pw_transport/__init__.py",
     "pw_transport/_socket.py",
     "pw_transport/forwarding_socket.py",
+
+    # Intended for host tests and tools in upstream Pigweed. GN cannot restrict
+    # the visibility of one module in a package as the Bazel build does.
+    "pw_transport/framed_tcp.py",
     "pw_transport/py.typed",
   ]
   tests = [
     "forwarding_socket_test.py",
+    "framed_tcp_test.py",
     "socket_test.py",
   ]
   pylintrc = "$dir_pigweed/.pylintrc"

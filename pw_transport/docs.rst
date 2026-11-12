@@ -215,7 +215,8 @@ Python
 ------
 The ``pw_transport`` Python package (``//pw_transport/py:pw_transport``)
 provides host-side synchronous counterparts to the C++ interfaces, along with
-in-memory forwarding sockets (``pw_transport.forwarding_socket``). See
+in-memory forwarding sockets (``pw_transport.forwarding_socket``) and
+framed TCP sockets (``pw_transport.framed_tcp``). See
 :ref:`module-pw_transport-python` for usage and API reference.
 
 .. toctree::

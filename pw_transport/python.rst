@@ -38,6 +38,28 @@ In-memory forwarding sockets
        client.write(b'ping')
        assert server.read() == b'ping'
 
+Framed TCP
+==========
+:py:mod:`pw_transport.framed_tcp` (``//pw_transport/py:framed_tcp``) frames
+datagrams over TCP with a 4-byte little-endian length prefix to interoperate
+with ``pw::transport::FramedTcpListener`` and
+``pw::transport::FramedTcpConnector``. Like the C++ implementation, it is
+intended for host tests and tools in upstream Pigweed, so its Bazel target is
+not visible to other projects.
+
+.. code-block:: py
+
+   from pw_transport import framed_tcp
+   from pw_transport.framed_tcp import FramedTcpListener
+
+   with FramedTcpListener(host='127.0.0.1') as listener:
+       with (
+           framed_tcp.connect('127.0.0.1', listener.port) as client,
+           listener.accept() as server,
+       ):
+           client.write(b'hello')
+           assert server.read() == b'hello'
+
 Implementing a custom transport
 ===============================
 Protocol implementations (such as ``pw_rpc2``) depend only on
@@ -124,5 +146,11 @@ pw_transport
 pw_transport.forwarding_socket
 ==============================
 .. automodule:: pw_transport.forwarding_socket
+   :members:
+   :inherited-members:
+
+pw_transport.framed_tcp
+=======================
+.. automodule:: pw_transport.framed_tcp
    :members:
    :inherited-members:
