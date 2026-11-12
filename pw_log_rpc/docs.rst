@@ -228,6 +228,12 @@ stream that is started without the need to receive an RCP request for logs.
 The ``RpcLogDrainThread`` sets up a callback for each drain, to be notified when
 a drain is opened and flushing must resume.
 
+``PollUntilDrained()`` waits for ``RpcLogDrainThread`` to drain and transmit all
+queued entries across its open drains. This function polls and sleeps, which is
+not ideal, but avoids needing to add additional synchronization primitives.
+As such, ``PollUntilDrained()`` is intended for test use, not load-bearing
+production code.
+
 ---------
 Log Drops
 ---------

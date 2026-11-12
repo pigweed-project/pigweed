@@ -18,6 +18,7 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <string_view>
 
@@ -202,8 +203,9 @@ class RpcLogDrain : public multisink::MultiSink::Drain {
   // the drain needs to be notified that the drain was opened. The optional
   // `force` argument, when set to false, will not set the callback if one was
   // already set. Returns true if callback was set, false otherwise.
-  bool set_on_open_callback(pw::Function<void()>&& callback,
-                            bool force = true) {
+  bool set_on_open_callback(pw::Function<void()>&& callback, bool force = true)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard lock(mutex_);
     if (force || on_open_callback_ == nullptr) {
       on_open_callback_ = std::move(callback);
       return true;
@@ -212,10 +214,19 @@ class RpcLogDrain : public multisink::MultiSink::Drain {
   }
 
  private:
+  friend class RpcLogDrainThread;
+
   enum class LogDrainState {
     kCaughtUp,
     kMoreEntriesRemaining,
   };
+
+  void Attach(multisink::MultiSink& multisink) PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard lock(mutex_);
+    multisink.AttachDrain(*this);
+  }
+
+  bool HasPendingLogs() const PW_LOCKS_EXCLUDED(mutex_);
 
   LogDrainState SendLogs(size_t max_num_bundles,
                          ByteSpan encoding_buffer,
@@ -241,7 +252,7 @@ class RpcLogDrain : public multisink::MultiSink::Drain {
   size_t max_bundles_per_trickle_;
   pw::chrono::SystemClock::duration trickle_delay_;
   pw::chrono::SystemClock::time_point no_writes_until_;
-  pw::Function<void()> on_open_callback_;
+  pw::Function<void()> on_open_callback_ PW_GUARDED_BY(mutex_);
   bool is_writer_open_ PW_GUARDED_BY(mutex_);
   bool is_writing_ PW_GUARDED_BY(mutex_);
   uint32_t session_id_ PW_GUARDED_BY(mutex_);

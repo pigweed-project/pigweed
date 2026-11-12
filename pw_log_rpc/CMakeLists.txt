@@ -126,8 +126,10 @@ pw_add_library(pw_log_rpc.rpc_log_drain_thread INTERFACE
     pw_multisink
     pw_result
     pw_rpc.raw.server_api
+    pw_span
     pw_status
     pw_sync.timed_thread_notification
+    pw_thread.sleep
     pw_thread.thread
     pw_thread.thread_core
 )
@@ -210,6 +212,7 @@ pw_add_test(pw_log_rpc.log_filter_test
 
 if((NOT "${pw_chrono.system_clock_BACKEND}" STREQUAL "") AND
    (NOT "${pw_sync.timed_thread_notification_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_thread.sleep_BACKEND}" STREQUAL "") AND
    (NOT "${pw_thread.test_thread_context_BACKEND}" STREQUAL "") AND
    (NOT "${pw_thread.thread_BACKEND}" STREQUAL ""))
   pw_add_test(pw_log_rpc.rpc_log_drain_test
@@ -223,6 +226,7 @@ if((NOT "${pw_chrono.system_clock_BACKEND}" STREQUAL "") AND
       pw_log_rpc.log_filter
       pw_log_rpc.log_service
       pw_log_rpc.rpc_log_drain
+      pw_log_rpc.rpc_log_drain_thread
       pw_log_rpc.test_utils
       pw_log_tokenized.metadata
       pw_multisink
@@ -238,6 +242,7 @@ if((NOT "${pw_chrono.system_clock_BACKEND}" STREQUAL "") AND
       pw_thread.test_thread_context
       pw_thread.thread
       pw_thread.thread_core
+      pw_unit_test.status_macros
     GROUPS
       modules
       pw_log_rpc

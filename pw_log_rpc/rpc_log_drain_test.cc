@@ -28,6 +28,7 @@
 #include "pw_log_rpc/log_filter.h"
 #include "pw_log_rpc/log_service.h"
 #include "pw_log_rpc/rpc_log_drain_map.h"
+#include "pw_log_rpc/rpc_log_drain_thread.h"
 #include "pw_log_rpc_private/test_utils.h"
 #include "pw_log_tokenized/metadata.h"
 #include "pw_multisink/multisink.h"
@@ -45,6 +46,7 @@
 #include "pw_thread/thread.h"
 #include "pw_thread/thread_core.h"
 #include "pw_unit_test/framework.h"
+#include "pw_unit_test/status_macros.h"
 
 namespace pw::log_rpc {
 namespace {
@@ -523,10 +525,12 @@ class BlockingChannelOutput : public rpc::ChannelOutput {
       send_started.release();
       unblock_send.acquire();
     }
+    sent_packets.fetch_add(1, std::memory_order_relaxed);
     return OkStatus();
   }
 
   std::atomic<bool> block_on_send{true};
+  std::atomic<size_t> sent_packets{0};
   sync::ThreadNotification send_started;
   sync::ThreadNotification unblock_send;
 };
@@ -729,6 +733,246 @@ TEST(RpcLogDrain, CloseDuringTransportEgress) {
   // Drain is closed; subsequent Flush should report Unavailable.
   EXPECT_EQ(drains[0].Flush(encoding_buffer), Status::Unavailable());
   EXPECT_EQ(drains[0].Close(), Status::FailedPrecondition());
+}
+
+// Stoppable drain worker used to exercise RpcLogDrainThread::PollUntilDrained()
+// without modifying RpcLogDrainThread::Run()'s infinite loop.
+template <size_t kEncodingBufferSize = 256>
+class ScopedDrainWorker final : public thread::ThreadCore,
+                                public multisink::MultiSink::Listener {
+ public:
+  ScopedDrainWorker(multisink::MultiSink& multisink, RpcLogDrainMap& drain_map)
+      : multisink_(multisink), drain_map_(drain_map) {
+    for (auto& drain : drain_map_.drains()) {
+      multisink_.AttachDrain(drain);
+      drain.set_on_open_callback([this] { OnNewEntryAvailable(); });
+    }
+    multisink_.AttachListener(*this);
+  }
+
+  void Start() { thread_ = thread::Thread(context_.options(), *this); }
+
+  ~ScopedDrainWorker() override {
+    if (thread_.joinable()) {
+      keep_running_.store(false, std::memory_order_release);
+      notification_.release();
+      thread_.join();
+    }
+    multisink_.DetachListener(*this);
+    for (auto& drain : drain_map_.drains()) {
+      drain.set_on_open_callback(nullptr);
+      multisink_.DetachDrain(drain);
+    }
+  }
+
+  void OnNewEntryAvailable() override { notification_.release(); }
+
+ private:
+  void Run() override {
+    std::optional<chrono::SystemClock::duration> min_delay =
+        chrono::SystemClock::duration::zero();
+    while (keep_running_.load(std::memory_order_acquire)) {
+      if (min_delay.has_value()) {
+        std::ignore = notification_.try_acquire_for(*min_delay);
+      } else {
+        notification_.acquire();
+      }
+      if (!keep_running_.load(std::memory_order_acquire)) {
+        break;
+      }
+      min_delay = std::nullopt;
+      for (auto& drain : drain_map_.drains()) {
+        if (std::optional<chrono::SystemClock::duration> delay =
+                drain.Trickle(encoding_buffer_);
+            delay.has_value()) {
+          min_delay = std::min(*delay, min_delay.value_or(*delay));
+        }
+      }
+    }
+  }
+
+  multisink::MultiSink& multisink_;
+  RpcLogDrainMap& drain_map_;
+  sync::TimedThreadNotification notification_;
+  std::atomic<bool> keep_running_ = true;
+  std::byte encoding_buffer_[kEncodingBufferSize];
+  thread::test::TestThreadContext context_;
+  thread::Thread thread_;
+};
+
+TEST(RpcLogDrainThread, PollUntilDrainedWithClosedDrainReturnsImmediately) {
+  constexpr uint32_t kDrainChannelId = 1;
+  std::array<std::byte, kBufferSize> log_entry_buffer;
+  sync::Mutex drains_mutex;
+  std::array<RpcLogDrain, 1> drains{
+      RpcLogDrain(kDrainChannelId,
+                  log_entry_buffer,
+                  drains_mutex,
+                  RpcLogDrain::LogDrainErrorHandling::kIgnoreWriterErrors,
+                  nullptr),
+  };
+  RpcLogDrainMap drain_map(drains);
+
+  std::array<std::byte, 512> multisink_buffer;
+  multisink::MultiSink multisink(multisink_buffer);
+
+  constexpr log_tokenized::Metadata kSampleMetadata =
+      log_tokenized::Metadata::Set<PW_LOG_LEVEL_INFO, 123, 0x03, 300>();
+  std::array<std::byte, 64> log_encode_buf;
+  Result<ConstByteSpan> encoded_log_result =
+      log::EncodeTokenizedLog(kSampleMetadata,
+                              as_bytes(span<const char>("Unopened test")),
+                              1000,
+                              as_bytes(span<const char>("test_thread")),
+                              log_encode_buf);
+  PW_TEST_ASSERT_OK(encoded_log_result);
+  multisink.HandleEntry(encoded_log_result.value());
+
+  RpcLogDrainThreadWithBuffer<256> log_thread(multisink, drain_map);
+  log_thread.PollUntilDrained();
+}
+
+TEST(RpcLogDrainThread,
+     PollUntilDrainedDuringInProgressPassRunsSubsequentPass) {
+  using namespace std::chrono_literals;
+
+  constexpr uint32_t kDrainChannelId = 1;
+  std::array<std::byte, kBufferSize> log_entry_buffer;
+  sync::Mutex drains_mutex;
+  std::array<RpcLogDrain, 1> drains{
+      RpcLogDrain(kDrainChannelId,
+                  log_entry_buffer,
+                  drains_mutex,
+                  RpcLogDrain::LogDrainErrorHandling::kIgnoreWriterErrors,
+                  nullptr),
+  };
+  RpcLogDrainMap drain_map(drains);
+  LogService log_service(drain_map);
+
+  BlockingChannelOutput output;
+  rpc::Channel channel(rpc::Channel::Create<kDrainChannelId>(&output));
+  rpc::Server server(span(&channel, 1));
+
+  std::array<std::byte, 512> multisink_buffer;
+  multisink::MultiSink multisink(multisink_buffer);
+
+  constexpr log_tokenized::Metadata kSampleMetadata =
+      log_tokenized::Metadata::Set<PW_LOG_LEVEL_INFO, 123, 0x03, 300>();
+  std::array<std::byte, 64> log_encode_buf;
+  Result<ConstByteSpan> encoded_log_result =
+      log::EncodeTokenizedLog(kSampleMetadata,
+                              as_bytes(span<const char>("First entry")),
+                              1000,
+                              as_bytes(span<const char>("test_thread")),
+                              log_encode_buf);
+  PW_TEST_ASSERT_OK(encoded_log_result);
+  multisink.HandleEntry(encoded_log_result.value());
+
+  RpcLogDrainThreadWithBuffer<256> log_thread(multisink, drain_map);
+  ScopedDrainWorker<> worker(multisink, drain_map);
+  PW_TEST_ASSERT_OK(log_thread.OpenUnrequestedLogStream(
+      kDrainChannelId, server, log_service));
+  worker.Start();
+
+  // Wait until pass 1 pops the first entry and blocks in transport Send().
+  output.send_started.acquire();
+
+  // Enqueue a second entry while pass 1 is mid-write, then call
+  // PollUntilDrained() on another thread while pass 1 is still in progress.
+  encoded_log_result =
+      log::EncodeTokenizedLog(kSampleMetadata,
+                              as_bytes(span<const char>("Second entry")),
+                              2000,
+                              as_bytes(span<const char>("test_thread")),
+                              log_encode_buf);
+  PW_TEST_ASSERT_OK(encoded_log_result);
+  multisink.HandleEntry(encoded_log_result.value());
+
+  class PollUntilDrainedThread final : public thread::ThreadCore {
+   public:
+    explicit PollUntilDrainedThread(RpcLogDrainThread& log_thread)
+        : log_thread_(log_thread) {}
+
+    sync::TimedThreadNotification& done() { return done_; }
+
+   private:
+    void Run() override {
+      log_thread_.PollUntilDrained();
+      done_.release();
+    }
+
+    RpcLogDrainThread& log_thread_;
+    sync::TimedThreadNotification done_;
+  };
+
+  PollUntilDrainedThread poll_runner(log_thread);
+  thread::test::TestThreadContext flush_thread_ctx;
+  thread::Thread flush_thread(flush_thread_ctx.options(), poll_runner);
+
+  // PollUntilDrained() must stay blocked while pass 1's Send() is blocked.
+  EXPECT_FALSE(poll_runner.done().try_acquire_for(20ms));
+
+  // Unblock Send(); PollUntilDrained() must wait for pass 2 to transmit the
+  // second entry as well before returning.
+  output.block_on_send = false;
+  output.unblock_send.release();
+
+  flush_thread.join();
+  EXPECT_EQ(output.sent_packets.load(std::memory_order_relaxed), 2u);
+  EXPECT_EQ(drains[0].GetUnreadEntriesCount(), 0u);
+}
+
+TEST(RpcLogDrainThread, PollUntilDrainedWaitsForTrickleDelay) {
+  using namespace std::chrono_literals;
+
+  constexpr uint32_t kDrainChannelId = 1;
+  std::array<std::byte, kBufferSize> log_entry_buffer;
+  sync::Mutex drains_mutex;
+  std::array<RpcLogDrain, 1> drains{
+      RpcLogDrain(kDrainChannelId,
+                  log_entry_buffer,
+                  drains_mutex,
+                  RpcLogDrain::LogDrainErrorHandling::kIgnoreWriterErrors,
+                  /*filter=*/nullptr,
+                  /*max_bundles_per_trickle=*/1,
+                  /*trickle_delay=*/5ms),
+  };
+  RpcLogDrainMap drain_map(drains);
+  LogService log_service(drain_map);
+
+  BlockingChannelOutput output;
+  output.block_on_send = false;
+  rpc::Channel channel(rpc::Channel::Create<kDrainChannelId>(&output));
+  rpc::Server server(span(&channel, 1));
+
+  std::array<std::byte, 512> multisink_buffer;
+  multisink::MultiSink multisink(multisink_buffer);
+
+  constexpr log_tokenized::Metadata kSampleMetadata =
+      log_tokenized::Metadata::Set<PW_LOG_LEVEL_INFO, 123, 0x03, 300>();
+  std::array<std::byte, 64> log_encode_buf;
+  for (std::string_view text :
+       {"First trickle message", "Second trickle message"}) {
+    Result<ConstByteSpan> encoded_log_result =
+        log::EncodeTokenizedLog(kSampleMetadata,
+                                as_bytes(span(text)),
+                                1000,
+                                as_bytes(span<const char>("test_thread")),
+                                log_encode_buf);
+    PW_TEST_ASSERT_OK(encoded_log_result);
+    multisink.HandleEntry(encoded_log_result.value());
+  }
+
+  // Size the encoding buffer so each entry requires its own bundle.
+  RpcLogDrainThreadWithBuffer<80> log_thread(multisink, drain_map);
+  ScopedDrainWorker<80> worker(multisink, drain_map);
+  PW_TEST_ASSERT_OK(log_thread.OpenUnrequestedLogStream(
+      kDrainChannelId, server, log_service));
+  worker.Start();
+
+  log_thread.PollUntilDrained();
+  EXPECT_EQ(output.sent_packets.load(std::memory_order_relaxed), 2u);
+  EXPECT_EQ(drains[0].GetUnreadEntriesCount(), 0u);
 }
 
 }  // namespace

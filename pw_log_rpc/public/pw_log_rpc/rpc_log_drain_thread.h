@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <optional>
 #include <utility>
@@ -28,6 +30,7 @@
 #include "pw_status/status.h"
 #include "pw_status/try.h"
 #include "pw_sync/timed_thread_notification.h"
+#include "pw_thread/sleep.h"
 #include "pw_thread/thread_core.h"
 
 namespace pw::log_rpc {
@@ -60,10 +63,32 @@ class RpcLogDrainThread : public thread::ThreadCore,
 
   inline void OnDrainOpen() { OnNewEntryAvailable(); }
 
+  // Polls and sleeps until the drain thread finishes flushing queued log
+  // entries across all open drains. Uses polling to avoid adding
+  // synchronization primitives to RpcLogDrainThread; intended for test use
+  // rather than load-bearing production code.
+  //
+  // Preconditions:
+  // - Must be called from a thread context other than the RpcLogDrainThread.
+  // - Must not be called while holding a drain mutex or the RPC lock.
+  // - Run() must be actively executing on another thread whenever any drain
+  //   stream is open.
+  void PollUntilDrained(
+      chrono::SystemClock::duration poll_interval =
+          chrono::SystemClock::for_at_least(std::chrono::milliseconds(1))) {
+    if (!HasPendingLogs()) {
+      return;
+    }
+    ready_to_flush_notification_.release();
+    do {
+      this_thread::sleep_for(poll_interval);
+    } while (HasPendingLogs());
+  }
+
   // Sequentially flushes each log stream.
   void Run() override {
     for (auto& drain : drain_map_.drains()) {
-      multisink_.AttachDrain(drain);
+      drain.Attach(multisink_);
       drain.set_on_open_callback(
           [this]() { this->OnDrainOpen(); },
           /*force=*/always_use_default_on_open_callback_);
@@ -108,6 +133,15 @@ class RpcLogDrainThread : public thread::ThreadCore,
   }
 
  private:
+  bool HasPendingLogs() const {
+    for (const auto& drain : drain_map_.drains()) {
+      if (drain.HasPendingLogs()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   sync::TimedThreadNotification ready_to_flush_notification_;
   RpcLogDrainMap& drain_map_;
   multisink::MultiSink& multisink_;

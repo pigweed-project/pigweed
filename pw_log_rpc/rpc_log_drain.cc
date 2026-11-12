@@ -317,4 +317,17 @@ Status RpcLogDrain::Close() {
   return server_writer_.Finish();
 }
 
+bool RpcLogDrain::HasPendingLogs() const {
+  std::lock_guard lock(mutex_);
+  if (is_writing_) {
+    return true;
+  }
+  if (!is_writer_open_ || !server_writer_.active()) {
+    return false;
+  }
+  // Treat an open, not-yet-attached drain as pending until Run() attaches it
+  // and drains any entries buffered prior to thread startup.
+  return !attached() || GetUnreadEntriesCount() > 0;
+}
+
 }  // namespace pw::log_rpc

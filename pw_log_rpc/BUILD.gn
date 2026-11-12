@@ -144,8 +144,10 @@ pw_source_set("rpc_log_drain_thread") {
     "$dir_pw_rpc/raw:server_api",
     "$dir_pw_status",
     "$dir_pw_sync:timed_thread_notification",
+    "$dir_pw_thread:sleep",
     "$dir_pw_thread:thread",
     "$dir_pw_thread:thread_core",
+    dir_pw_span,
   ]
   if (current_os == "win") {
     public_configs += [ ":disable_warning" ]
@@ -223,6 +225,7 @@ pw_test("log_filter_test") {
 pw_test("rpc_log_drain_test") {
   enable_if = pw_chrono_SYSTEM_CLOCK_BACKEND != "" &&
               pw_sync_TIMED_THREAD_NOTIFICATION_BACKEND != "" &&
+              pw_thread_SLEEP_BACKEND != "" &&
               pw_thread_TEST_THREAD_CONTEXT_BACKEND != "" &&
               pw_thread_THREAD_BACKEND != ""
   sources = [ "rpc_log_drain_test.cc" ]
@@ -230,6 +233,7 @@ pw_test("rpc_log_drain_test") {
     ":log_filter",
     ":log_service",
     ":rpc_log_drain",
+    ":rpc_log_drain_thread",
     ":test_utils",
     "$dir_pw_bytes",
     "$dir_pw_chrono:system_clock",
@@ -249,6 +253,7 @@ pw_test("rpc_log_drain_test") {
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
     "$dir_pw_thread:thread_core",
+    "$dir_pw_unit_test:status_macros",
   ]
 
   # TODO: https://pwbug.dev/325509758 - Doesn't work on the Pico yet; hangs
