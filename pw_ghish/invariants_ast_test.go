@@ -61,31 +61,14 @@ func TestInvariants_CobraCommandsUseRunE(t *testing.T) {
 // TestInvariants_NoDirectExitOrStdoutPrint verifies that no non-main production
 // file calls os.Exit or writes directly to stdout via fmt.Print/Println/Printf.
 func TestInvariants_NoDirectExitOrStdoutPrint(t *testing.T) {
-	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree") {
-		ast.Inspect(fc.AST, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			pkgIdent, ok := sel.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			line := fc.Line(call.Pos())
-			if pkgIdent.Name == "os" && sel.Sel.Name == "Exit" {
-				t.Errorf("%s:%d: direct call to os.Exit is prohibited outside cmd/main.go; return an error (or ExitError) from RunE",
-					fc.Path, line)
-			}
-			if pkgIdent.Name == "fmt" && (sel.Sel.Name == "Print" || sel.Sel.Name == "Println" || sel.Sel.Name == "Printf") {
-				t.Errorf("%s:%d: direct call to fmt.%s writes to os.Stdout and breaks hermetic test capture; use fmt.F%s(cmd.OutOrStdout(), ...)",
-					fc.Path, line, sel.Sel.Name, strings.ToLower(sel.Sel.Name[:1])+sel.Sel.Name[1:])
-			}
-			return true
-		})
+	files := astcheck.MustLoadFiles(t, ".", "worktree")
+	for _, cs := range astcheck.FindCalls(files, "os.Exit", "fmt.Print*") {
+		if cs.Selector == "os.Exit" {
+			t.Errorf("%s: os.Exit called outside cmd/main.go; return an error instead", cs.Pos)
+			continue
+		}
+		t.Errorf("%s: direct call to %s writes to os.Stdout and breaks hermetic test capture; use fmt.F%s(cmd.OutOrStdout(), ...)",
+			cs.Pos, cs.Selector, strings.ToLower(cs.Callee[:1])+cs.Callee[1:])
 	}
 }
 
@@ -245,32 +228,18 @@ var legacyDirectGitConfigAllowlist = map[string][]string{
 // settings are loaded through `ProjectConfig` in project_config.go rather than
 // scattered via ad-hoc `ConfigGet(ctx, "ghish....")` calls.
 func TestInvariants_NoAdHocGhishGitConfigLookups(t *testing.T) {
-	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
-		base := filepath.Base(fc.Path)
+	files := astcheck.MustLoadFiles(t, ".", "worktree", "cmd")
+	for _, cs := range astcheck.FindCalls(files, "*.ConfigGet") {
+		base := filepath.Base(cs.File.Path)
 		if base == "project_config.go" {
 			continue
 		}
-		ast.Inspect(fc.AST, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) < 2 {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "ConfigGet" {
-				return true
-			}
-			lit, ok := call.Args[1].(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				return true
-			}
-			key := strings.Trim(lit.Value, `"`+"`")
-			if !strings.HasPrefix(key, "ghish.") || slices.Contains(legacyDirectGitConfigAllowlist[base], key) {
-				return true
-			}
-			t.Errorf("%s:%d: ad-hoc ConfigGet(%q) outside project_config.go; declare the setting on ProjectConfig in project_config.go and document it in project_setup.rst",
-				fc.Path, fc.Line(call.Pos()), key)
-			return true
-		})
+		key, ok := astcheck.StringLitArg(cs.Call, 1)
+		if !ok || !strings.HasPrefix(key, "ghish.") || slices.Contains(legacyDirectGitConfigAllowlist[base], key) {
+			continue
+		}
+		t.Errorf("%s: ad-hoc ConfigGet(%q) outside project_config.go; declare the setting on ProjectConfig in project_config.go and document it in project_setup.rst",
+			cs.Pos, key)
 	}
 }
 
@@ -278,20 +247,15 @@ func TestInvariants_NoAdHocGhishGitConfigLookups(t *testing.T) {
 // body read uses readBoundedBody, readBoundedLog, or io.LimitReader rather than
 // an unbounded io.ReadAll(resp.Body).
 func TestInvariants_BoundedHTTPBodyReads(t *testing.T) {
-	for _, fc := range astcheck.MustLoadFiles(t, ".", "worktree", "cmd") {
-		ast.Inspect(fc.AST, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok && len(call.Args) == 1 {
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "ReadAll" {
-					if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "io" {
-						if bodySel, ok := call.Args[0].(*ast.SelectorExpr); ok && bodySel.Sel.Name == "Body" {
-							t.Errorf("%s:%d: unbounded io.ReadAll(%s.Body); use readBoundedBody, readBoundedLog, or io.LimitReader per AGENTS.md invariant #10",
-								fc.Path, fc.Line(call.Pos()), bodySel.X)
-						}
-					}
-				}
-			}
-			return true
-		})
+	files := astcheck.MustLoadFiles(t, ".", "worktree", "cmd")
+	for _, cs := range astcheck.FindCalls(files, "io.ReadAll", "ioutil.ReadAll") {
+		if len(cs.Call.Args) != 1 {
+			continue
+		}
+		if sel, ok := ast.Unparen(cs.Call.Args[0]).(*ast.SelectorExpr); ok && sel.Sel.Name == "Body" {
+			t.Errorf("%s: unbounded %s(%s); use readBoundedBody, readBoundedLog, or io.LimitReader",
+				cs.Pos, cs.Selector, cs.File.TextRange(cs.Call.Args[0].Pos(), cs.Call.Args[0].End()))
+		}
 	}
 }
 

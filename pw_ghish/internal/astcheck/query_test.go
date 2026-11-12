@@ -44,3 +44,29 @@ func setup() {
 		t.Errorf("unexpected function-local CompositeLitMatch: %+v use=%q", lits[1], u)
 	}
 }
+
+// TestFindCalls verifies that FindCalls matches selector patterns ("fmt.Print*",
+// "*.ConfigGet") and method-name globs ("*Var*") without false positives when a
+// receiver variable name happens to match "*Var*" (myVar.Close) or when a bare
+// function call lacks a selector receiver (ConfigGet()).
+func TestFindCalls(t *testing.T) {
+	files := astcheck.MustLoadFiles(t, writeTempTree(t, map[string]string{
+		"calls.go": `package ghish
+import "fmt"
+func ConfigGet() {}
+func register(myVar interface{ Close() }) {
+	sub.Flags().BoolVar(&jsonOut, "json", false, "")
+	myVar.Close()
+	ConfigGet()
+	fmt.Println("hi")
+}
+`,
+	}))
+	calls := astcheck.FindCalls(files, "fmt.Print*", "*Var*", "*.ConfigGet")
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 matched calls (ignoring myVar.Close and bare ConfigGet), got %+v", calls)
+	}
+	if name, ok := astcheck.StringLitArg(calls[0].Call, 1); !ok || name != "json" {
+		t.Errorf("StringLitArg(1) = (%q, %v), want (\"json\", true)", name, ok)
+	}
+}

@@ -23,6 +23,127 @@ import (
 	"strings"
 )
 
+// CallMatch represents a matched function or method call site in a Go file.
+type CallMatch struct {
+	File                  *File
+	Call                  *ast.CallExpr
+	Callee, Selector, Pos string
+}
+
+// FindCalls returns all CallMatch records matching any of patterns across files.
+//
+// Patterns containing "." match selector expressions (such as "os.Exit",
+// "fmt.Print*", or "*.ConfigGet"); patterns without "." match the function or
+// method name regardless of receiver (such as "*Var*").
+func FindCalls(files []*File, patterns ...string) []CallMatch {
+	if len(patterns) == 0 {
+		panic("astcheck: FindCalls called with no patterns")
+	}
+	for _, p := range patterns {
+		if strings.TrimSpace(p) == "" {
+			panic("astcheck: FindCalls called with empty pattern")
+		}
+	}
+	var out []CallMatch
+	for _, f := range files {
+		if f == nil || f.AST == nil {
+			panic("astcheck: FindCalls called with nil File or AST")
+		}
+		for n := range ast.Preorder(f.AST) {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			callee := callName(call)
+			if callee == "" {
+				continue
+			}
+			sel := unwrapToSelector(call.Fun)
+			selector := callee
+			if sel != nil {
+				selector = f.TextRange(sel.X.Pos(), sel.Sel.End())
+			}
+			if slices.ContainsFunc(patterns, func(p string) bool {
+				return matchesCallPattern(callee, selector, sel != nil, p)
+			}) {
+				out = append(out, CallMatch{
+					File:     f,
+					Call:     call,
+					Callee:   callee,
+					Selector: selector,
+					Pos:      fmt.Sprintf("%s:%d", f.Path, f.Line(call.Pos())),
+				})
+			}
+		}
+	}
+	return out
+}
+
+func matchesCallPattern(callee, selector string, isSel bool, pattern string) bool {
+	pattern = strings.TrimSpace(pattern)
+	if strings.Contains(pattern, ".") {
+		return isSel && matchWildcard(selector, pattern)
+	}
+	return matchWildcard(callee, pattern)
+}
+
+// StringLitArg extracts the constant string value of call's idx-th argument.
+func StringLitArg(call *ast.CallExpr, idx int) (string, bool) {
+	if call == nil {
+		panic("astcheck: StringLitArg called with nil CallExpr")
+	}
+	if idx < 0 {
+		panic(fmt.Sprintf("astcheck: StringLitArg called with negative index %d", idx))
+	}
+	if idx >= len(call.Args) {
+		// Call site has fewer arguments than idx.
+		return "", false
+	}
+	return evalSimpleString(call.Args[idx])
+}
+
+func callName(call *ast.CallExpr) string {
+	switch fn := unwrapIndexExpr(call.Fun).(type) {
+	case *ast.Ident:
+		return fn.Name
+	case *ast.SelectorExpr:
+		return fn.Sel.Name
+	}
+	// Indirect call (e.g. closure or indexed func) has no static callee identifier.
+	return ""
+}
+
+func unwrapToSelector(expr ast.Expr) *ast.SelectorExpr {
+	sel, _ := unwrapIndexExpr(expr).(*ast.SelectorExpr)
+	return sel
+}
+
+func matchWildcard(s, pattern string) bool {
+	if pattern == "*" {
+		return true
+	}
+	if !strings.Contains(pattern, "*") {
+		return s == pattern
+	}
+	parts := strings.Split(pattern, "*")
+	if !strings.HasPrefix(s, parts[0]) || !strings.HasSuffix(s, parts[len(parts)-1]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+	if len(s) < len(parts[len(parts)-1]) {
+		return false
+	}
+	s = s[:len(s)-len(parts[len(parts)-1])]
+	for _, mid := range parts[1 : len(parts)-1] {
+		idx := strings.Index(s, mid)
+		if idx < 0 {
+			return false
+		}
+		s = s[idx+len(mid):]
+	}
+	return true
+}
+
 // CompositeLitMatch represents a composite literal found in a Go source file.
 type CompositeLitMatch struct {
 	File              *File

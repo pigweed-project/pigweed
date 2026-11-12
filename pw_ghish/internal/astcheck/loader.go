@@ -45,6 +45,25 @@ func (f *File) Line(pos token.Pos) int {
 	return f.Fset.Position(pos).Line
 }
 
+// TextRange returns the source slice spanning [start, end).
+func (f *File) TextRange(start, end token.Pos) string {
+	if f == nil || f.Fset == nil {
+		panic("astcheck: File.TextRange called on nil File or Fset")
+	}
+	if !start.IsValid() || !end.IsValid() {
+		panic(fmt.Sprintf("astcheck: File.TextRange called with invalid pos (%v, %v) in %s", start, end, f.Path))
+	}
+	tf := f.Fset.File(start)
+	if tf == nil || f.Fset.File(end) != tf {
+		panic(fmt.Sprintf("astcheck: File.TextRange positions (%v, %v) do not belong to %s", start, end, f.Path))
+	}
+	s, e := tf.Offset(start), tf.Offset(end)
+	if s < 0 || e < s || e > len(f.Src) {
+		panic(fmt.Sprintf("astcheck: File.TextRange offsets [%d:%d] out of range for %s (len %d)", s, e, f.Path, len(f.Src)))
+	}
+	return string(f.Src[s:e])
+}
+
 // MustLoadFiles parses non-test Go source files in dirs and fails tb on error or 0 files.
 func MustLoadFiles(tb testing.TB, dirs ...string) []*File {
 	tb.Helper()

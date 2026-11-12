@@ -24,7 +24,6 @@ package pw_ghish
 import (
 	"fmt"
 	"go/ast"
-	"go/token"
 	"slices"
 	"strings"
 	"testing"
@@ -636,11 +635,11 @@ func extractFlagRegistrationCall(call *ast.CallExpr) (cmdVar string, flagName st
 	if nameArgIdx < 0 {
 		return "", "", false
 	}
-	nameLit, isLit := call.Args[nameArgIdx].(*ast.BasicLit)
-	if !isLit || nameLit.Kind != token.STRING {
+	flagName, ok = astcheck.StringLitArg(call, nameArgIdx)
+	if !ok {
 		return "", "", false
 	}
-	return recvIdent.Name, strings.Trim(nameLit.Value, "`\""), true
+	return recvIdent.Name, flagName, true
 }
 
 // TestFlagPolicy_DirectivesSyntax parses all `//ghish:flag` comments across
