@@ -16,9 +16,7 @@
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/component/incoming/cpp/constants.h>
 #include <lib/component/incoming/cpp/directory.h>
-#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/sys/component/cpp/testing/realm_builder_types.h>
@@ -63,7 +61,7 @@ class ComponentTest : public ::testing::Test {
         .capabilities = {component_testing::Service{fhb::EmulatorService::Name},
                          component_testing::Service{fhb::Service::Name},
                          component_testing::Service{
-                             VirtualController::kServiceName}},
+                             fhb::VirtualControllerService::Name}},
         .source = component_testing::ChildRef{kChildName},
         .targets = {component_testing::ParentRef()}});
     realm_.emplace(builder.Build(loop_.dispatcher()));
@@ -105,15 +103,9 @@ class ComponentTest : public ::testing::Test {
   // Calls VirtualController.CreateEmulator through the exposed
   // VirtualControllerService instance and returns the emulator's name.
   zx::result<std::string> CreateEmulator() {
-    // Spelled out by path: the pinned SDK has no bindings for
-    // VirtualControllerService yet.
-    zx::result controller = component::ConnectAt<fhb::VirtualController>(
-        exposed(),
-        std::string(VirtualController::kServiceName)
-            .append("/")
-            .append(component::kDefaultInstance)
-            .append("/")
-            .append(VirtualController::kServiceMemberName));
+    zx::result controller =
+        component::ConnectAtMember<fhb::VirtualControllerService::Device>(
+            exposed());
     if (controller.is_error()) {
       return controller.take_error();
     }

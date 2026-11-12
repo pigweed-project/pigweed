@@ -53,7 +53,8 @@ VirtualController::~VirtualController() {
   if (!service_published_) {
     return;
   }
-  zx::result result = outgoing_->RemoveService(kServiceName);
+  zx::result result =
+      outgoing_->RemoveService<fhbt::VirtualControllerService>();
   if (result.is_error()) {
     bt_log(WARN,
            "bt-hci-virtual",
@@ -66,12 +67,6 @@ void VirtualController::Connect(
     fidl::ServerEnd<fhbt::VirtualController> request) {
   bindings_.AddBinding(
       dispatcher_, std::move(request), this, fidl::kIgnoreBindingClosure);
-}
-
-std::string VirtualController::ServiceInstancePath() {
-  return std::string(component::OutgoingDirectory::kServiceDirectory) + "/" +
-         std::string(kServiceName) + "/" +
-         component::OutgoingDirectory::kDefaultServiceInstance;
 }
 
 std::string VirtualController::FirstEmulatorName() {
@@ -114,14 +109,11 @@ zx::result<> VirtualController::PublishService() {
   if (service_published_) {
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
-  // TODO: b/430578502 - Use `AddService<fhbt::VirtualControllerService>` once
-  // the pinned SDK ships its bindings; until then the single instance is
-  // published by path.
+  fhbt::VirtualControllerService::InstanceHandler handler({
+      .device = fit::bind_member<&VirtualController::Connect>(this),
+  });
   zx::result<> result =
-      outgoing_->AddUnmanagedProtocolAt<fhbt::VirtualController>(
-          ServiceInstancePath(),
-          fit::bind_member<&VirtualController::Connect>(this),
-          kServiceMemberName);
+      outgoing_->AddService<fhbt::VirtualControllerService>(std::move(handler));
   if (result.is_ok()) {
     service_published_ = true;
   }

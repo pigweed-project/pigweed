@@ -44,17 +44,6 @@ class VirtualController
   // Name of the vendor service instance `CreateLoopbackDevice` publishes.
   static constexpr std::string_view kLoopbackName = "loopback";
 
-  // The service `PublishService()` publishes, as its default instance.
-  static constexpr std::string_view kServiceName =
-      "fuchsia.hardware.bluetooth.VirtualControllerService";
-  // The member of the `kServiceName` instance that serves the
-  // `VirtualController` protocol.
-  static constexpr std::string_view kServiceMemberName = "device";
-
-  // Returns the path of the instance `PublishService()` publishes, relative to
-  // the outgoing directory.
-  static std::string ServiceInstancePath();
-
   // Returns the name `CreateEmulator` gives the first emulator of a new
   // controller.
   static std::string FirstEmulatorName();
@@ -75,9 +64,11 @@ class VirtualController
   void Connect(
       fidl::ServerEnd<fuchsia_hardware_bluetooth::VirtualController> request);
 
-  // Publishes the default instance of `kServiceName` to the outgoing directory
-  // until this object is destroyed. Fails with `ZX_ERR_BAD_STATE` without an
-  // outgoing directory and with `ZX_ERR_ALREADY_EXISTS` when called twice.
+  // Publishes the default instance of
+  // `fuchsia.hardware.bluetooth.VirtualControllerService` to the outgoing
+  // directory until this object is destroyed. Fails with `ZX_ERR_BAD_STATE`
+  // without an outgoing directory and with `ZX_ERR_ALREADY_EXISTS` when called
+  // twice.
   zx::result<> PublishService();
 
   // Creates the directories of the services the devices publish

@@ -15,6 +15,7 @@
 #include "pw_bluetooth_sapphire/fuchsia/bt_hci_virtual/virtual_controller.h"
 
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/zx/channel.h>
@@ -66,17 +67,10 @@ class VirtualControllerTest : public testing::OutgoingLoopTestFixture {
     return std::move(endpoints->client);
   }
 
-  // Path of the `VirtualController` protocol published by `PublishService()`,
-  // relative to the outgoing directory.
-  static std::string ServiceMemberPath() {
-    return VirtualController::ServiceInstancePath() + "/" +
-           std::string(VirtualController::kServiceMemberName);
-  }
-
   // Returns true if the instance `PublishService()` publishes is present.
   bool VirtualControllerServiceIsPublished() {
     return ServiceInstanceIsPublished(
-        VirtualController::kServiceName,
+        fhb::VirtualControllerService::Name,
         component::OutgoingDirectory::kDefaultServiceInstance);
   }
 
@@ -164,9 +158,15 @@ class VirtualControllerTest : public testing::OutgoingLoopTestFixture {
 TEST_F(VirtualControllerTest, PublishServiceServesVirtualController) {
   zx::result publish = controller().PublishService();
   ASSERT_TRUE(publish.is_ok()) << publish.status_string();
+  EXPECT_EQ(controller().PublishService().status_value(),
+            ZX_ERR_ALREADY_EXISTS);
 
-  zx::result client_end = component::ConnectAt<fhb::VirtualController>(
-      outgoing_client(), ServiceMemberPath());
+  std::string path =
+      "svc/" +
+      component::MakeServiceMemberPath<fhb::VirtualControllerService::Device>(
+          component::OutgoingDirectory::kDefaultServiceInstance);
+  zx::result client_end =
+      component::ConnectAt<fhb::VirtualController>(outgoing_client(), path);
   ASSERT_TRUE(client_end.is_ok()) << client_end.status_string();
   fidl::WireClient<fhb::VirtualController> service_client(
       std::move(*client_end), dispatcher());
@@ -174,9 +174,6 @@ TEST_F(VirtualControllerTest, PublishServiceServesVirtualController) {
   zx::result name = CreateEmulator(service_client);
   ASSERT_TRUE(name.is_ok()) << name.status_string();
   EXPECT_EQ(name->rfind(VirtualController::kEmulatorNamePrefix, 0), 0u);
-
-  EXPECT_EQ(controller().PublishService().status_value(),
-            ZX_ERR_ALREADY_EXISTS);
 }
 
 // `PublishService()` fails without an outgoing directory.
