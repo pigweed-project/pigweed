@@ -8,6 +8,7 @@ What's new in Pigweed
    :maxdepth: 3
 
    Index <self>
+   October 2026 <2026/10>
    September 2026 <2026/09>
    August 2026 <2026/08>
    July 2026 <2026/07>

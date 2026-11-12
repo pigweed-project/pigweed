@@ -1,0 +1,515 @@
+===================================
+What's new in Pigweed: October 2026
+===================================
+
+.. changelog_highlights_start
+
+Highlights:
+
+* :ref:`changelog-2026-10-comms-pw-rpc2-cpp` - Invoke and serve unary and
+  streaming RPCs asynchronously over stateful ``pw_transport`` connections with
+  ``pw::rpc2::Client`` and ``pw::rpc2::Server``.
+
+* :ref:`changelog-2026-10-core-custom-status-types` - Define zero-cost custom
+  status types and return them from fallible functions with ``pw::StatusBase``,
+  ``PW_ENUM_STATUS``, and ``pw::Result<T, StatusType>``.
+
+* :ref:`changelog-2026-10-comms-pw-cobs` - Frame binary packets over byte
+  streams with predictable overhead in C++ and Python using ``pw_cobs``.
+
+* :ref:`changelog-2026-10-test-test-case-filtering` - Run individual test cases
+  with ``SuiteName.TestName`` wildcard filters across C++, RPC, and Python in
+  ``pw_unit_test``.
+
+.. changelog_highlights_end
+
+-----
+Comms
+-----
+
+.. _changelog-2026-10-comms-pw-rpc2-cpp:
+
+Asynchronous C++ client and server in pw_rpc2
+=============================================
+
+You can now implement and call unary and streaming RPCs asynchronously in C++
+with ``pw::rpc2::Server`` and ``pw::rpc2::Client``, built on ``pw_async2`` and
+``pw_transport`` with raw and ``pw_protobuf`` code generation
+(``raw_rpc2_proto_library`` and ``pwpb_rpc2_proto_library``). Servers accept
+stateful connections from a ``ReliableListener`` and dispatch calls to
+``pw::rpc2::Service`` handlers written with futures or C++20 coroutines, while
+clients connect over a ``ReliableConnector`` or ``ReliableSocket`` with
+end-to-end transport backpressure and ``RpcStatus``/``RpcResult`` error
+reporting. CLs: `1 <https://pwrev.dev/484391>`__, `2 <https://pwrev.dev/492511>`__, `3 <https://pwrev.dev/493011>`__, `4 <https://pwrev.dev/498954>`__
+
+.. code-block:: c++
+
+   #include <utility>
+
+   #include "echo_pb/echo.pwpb.rpc2.h"
+   #include "pw_assert/check.h"
+   #include "pw_async2/coro.h"
+   #include "pw_rpc2/client.h"
+   #include "pw_rpc2/server.h"
+   #include "pw_rpc2/status.h"
+   #include "pw_rpc2/writer.h"
+   #include "pw_status/try.h"
+
+   using EchoMessage = examples::pwpb::EchoMessage::Message;
+
+   // Server: implement generated service methods as coroutines (or futures).
+   class EchoService : public examples::pw_rpc2::pwpb::Echo::Service<EchoService> {
+    public:
+     pw::async2::Coro<void> Echo(pw::async2::CoroContext,
+                                 EchoMessage request,
+                                 pw::rpc2::UnaryWriter<EchoMessage> responder) {
+       co_await responder.Finish(std::move(request));
+     }
+   };
+
+   void StartServer(pw::rpc2::Server& server,
+                    EchoService& service,
+                    pw::transport::ReliableListener& listener) {
+     PW_CHECK_OK(server.RegisterService(service));
+     PW_CHECK_OK(server.RegisterListenerBlocking(listener));
+     server.Start();
+   }
+
+   // Client: connect over a ReliableConnector and invoke the generated RPC.
+   pw::async2::Coro<pw::rpc2::RpcStatus> CallEcho(
+       pw::async2::CoroContext,
+       pw::async2::Dispatcher& dispatcher,
+       pw::Allocator& allocator,
+       pw::transport::ReliableConnector& connector) {
+     PW_CO_TRY_ASSIGN(
+         pw::rpc2::Client client,
+         co_await pw::rpc2::Client::Connect(dispatcher, allocator, connector));
+     examples::pw_rpc2::pwpb::Echo::Client echo_client(client);
+     PW_CO_TRY_ASSIGN(EchoMessage response,
+                      co_await echo_client.Echo({.msg = "hello"}));
+     co_return co_await client.Close();
+   }
+
+.. _changelog-2026-10-comms-pw-cobs:
+
+Low-overhead packet framing with pw_cobs
+========================================
+
+Unlike escape-based framing such as HDLC, which can double frame sizes in the
+worst case, Consistent Overhead Byte Stuffing (COBS) bounds framing overhead to
+at most 1 byte per 254 payload bytes while keeping non-zero payload runs
+contiguous for zero-copy streaming. You can now encode and decode COBS-framed
+packets over raw byte streams (such as UART, SPI, and USB CDC) in both C++ and
+Python with the new experimental ``pw_cobs`` module. CLs: `1 <https://pwrev.dev/488889>`__, `2 <https://pwrev.dev/503227>`__
+
+.. code-block:: c++
+
+   #include "pw_bytes/span.h"
+   #include "pw_cobs/cobs.h"
+   #include "pw_result/result.h"
+
+   pw::cobs::DecoderBuffer<256> decoder;
+
+   void SendPacket(pw::ConstByteSpan payload) {
+     pw::cobs::EncodeBuffer<256> buffer(payload);
+     pw::ConstByteSpan encoded = buffer.Encode();
+     WriteToSerial(encoded);
+   }
+
+   void OnSerialBytesReceived(pw::ConstByteSpan rx_bytes) {
+     decoder.Process(rx_bytes, [](pw::Result<pw::ByteSpan> frame) {
+       if (frame.ok()) {
+         HandlePacket(*frame);
+       }
+     });
+   }
+
+.. _changelog-2026-10-comms-pw-rpc2-test-harness:
+
+End-to-end TestHarness fixture in pw_rpc2
+=========================================
+
+Unit tests for ``pw_rpc2`` services and clients no longer need to set up
+sockets or connection tasks by hand. The new
+``pw::rpc2::test::TestHarness<ServiceImpl>`` fixture wires ``ServiceImpl`` to
+an in-memory ``pw::rpc2::Server`` and ``pw::rpc2::Client`` on a shared
+``pw::async2::DispatcherForTest`` so tests can exercise full serialization,
+streaming, and cancellation synchronously. CLs: `1 <https://pwrev.dev/502153>`__
+
+.. code-block:: c++
+
+   #include "pw_rpc2/test_harness.h"
+   #include "pw_unit_test/framework.h"
+
+   TEST(EchoServiceTest, UnaryDirectFuture) {
+     pw::rpc2::test::TestHarness<EchoFutureService> tester;
+
+     pw::rpc2::RpcResult<EchoResponse> resp = tester.RunToCompletion(
+         tester.pwpb_client().EchoUnary(EchoRequest{.val = 21}));
+     PW_TEST_ASSERT_OK(resp);
+     EXPECT_EQ(resp->val, 42u);
+   }
+
+.. _changelog-2026-10-comms-pw-transport-sockets:
+
+Non-reliable datagram sockets in pw_transport
+=============================================
+
+Alongside reliable, in-order connections, ``pw_transport`` now supports
+best-effort, non-reliable datagram links (such as UDP or raw BLE L2CAP) via
+``pw::transport::Socket``, ``Listener``, and ``Connector``. Any
+``ReliableSocket`` implicitly converts to a ``Socket``, so code that does not
+require delivery or ordering guarantees can accept either transport. CLs: `1 <https://pwrev.dev/507465>`__
+
+.. _changelog-2026-10-comms-pw-rpc-query-service:
+
+Server introspection with pw::rpc::QueryService
+===============================================
+
+Host tools and test runners can now discover at runtime which RPC services and
+methods a connected device supports instead of hardcoding firmware
+capabilities. Registering ``pw::rpc::QueryService`` on a ``pw::rpc::Server``
+exposes the optional ``pw.rpc.Query`` introspection service, and Python
+``pw_rpc`` and ``pw_system`` clients resolve the reported IDs back to
+human-readable service and method names. In ``pw_system``, ``QueryService`` is
+disabled by default; set ``PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE=1`` to enable it. CLs: `1 <https://pwrev.dev/445253>`__
+
+.. code-block:: c++
+
+   #include <array>
+
+   #include "pw_rpc/channel.h"
+   #include "pw_rpc/query_service_pwpb.h"
+   #include "pw_rpc/server.h"
+
+   std::array<pw::rpc::Channel, 1> channels;
+   pw::rpc::Server server(channels);
+   pw::rpc::QueryService query_service;
+
+   void InitRpcServer() { query_service.Init(server); }
+
+-------------
+Observability
+-------------
+
+.. _changelog-2026-10-observability-assert-notnull:
+
+Header- and constexpr-safe PW_ASSERT_NOTNULL macro
+==================================================
+
+The new ``PW_ASSERT_NOTNULL(ptr)`` macro is a header- and ``constexpr``-safe
+counterpart to ``PW_CHECK_NOTNULL()`` in C++. It evaluates raw, function, or
+smart pointers once, crashes if the pointer equals ``nullptr``, and returns the
+argument with its original type and value category preserved. CLs: `1 <https://pwrev.dev/498433>`__
+
+.. code-block:: c++
+
+   #include <utility>
+
+   #include "pw_allocator/unique_ptr.h"
+   #include "pw_assert/assert.h"
+
+   static constexpr int kDefaultConfig = 42;
+   constexpr const int* kConfigPtr = PW_ASSERT_NOTNULL(&kDefaultConfig);
+
+   class Driver {
+    public:
+     explicit Driver(pw::UniquePtr<int> state)
+         : state_(PW_ASSERT_NOTNULL(std::move(state))) {}
+
+    private:
+     pw::UniquePtr<int> state_;
+   };
+
+.. _changelog-2026-10-observability-assert-tokenized-elf-files:
+
+Automatic ELF file tokens in pw_assert_tokenized
+================================================
+
+When compiling as C or C++23, ``pw_assert_tokenized`` now emits ``__FILE__``
+tokens directly into the ``.pw_tokenizer.entries`` ELF section via
+``PW_TOKENIZE_STRING``, allowing ``PW_ASSERT`` file names to detokenize without
+separate offline file-name token database generation. C++17 and C++20 builds
+continue to fall back to ``PW_TOKENIZER_STRING_TOKEN``. CLs: `1 <https://pwrev.dev/491452>`__, `2 <https://pwrev.dev/499114>`__
+
+-------------------
+Async & concurrency
+-------------------
+
+.. _changelog-2026-10-async-pw-select-macros:
+
+In-place future selection with PW_SELECT and PW_CO_SELECT
+=========================================================
+
+``pw::async2::Select`` takes ownership of its futures and cancels losing
+branches as soon as one completes, which makes event loops awkward to write.
+The new ``PW_SELECT`` and ``PW_CO_SELECT`` macros poll caller-owned lvalue
+futures in place inside polling functions and C++20 coroutines, leaving
+incomplete branches pending across loop iterations and assigning a
+``pw::OptionalTuple`` of all completed outputs. CLs: `1 <https://pwrev.dev/510945>`__
+
+.. code-block:: c++
+
+   #include "pw_async2/coro.h"
+   #include "pw_async2/select.h"
+   #include "pw_async2/time_provider.h"
+   #include "pw_async2/value_future.h"
+   #include "pw_chrono/system_clock.h"
+
+   pw::async2::Coro<int> CountMessages(
+       pw::async2::CoroContext,
+       pw::async2::TimeProvider<pw::chrono::SystemClock>& time) {
+     auto deadline = time.WaitFor(std::chrono::milliseconds(100));
+     pw::async2::ValueFuture<int> message = ReceiveMessage();
+     int count = 0;
+
+     while (true) {
+       PW_CO_SELECT(auto results, message, deadline);
+       if (results.has_value<0>()) {
+         ++count;
+         message = ReceiveMessage();  // Re-arm only the completed future.
+       }
+       if (results.has_value<1>()) {
+         co_return count;
+       }
+     }
+   }
+
+---------------------
+OS abstraction layers
+---------------------
+
+.. _changelog-2026-10-os-zephyr-44-migration:
+
+Zephyr 4.4 migration and explicit CMake library linking
+=======================================================
+
+Pigweed's Zephyr integration now targets Zephyr 4.4 (requiring CMake 3.27 or
+newer) and makes each facade backend a mutually exclusive Kconfig ``choice``
+with a ``_NONE`` option for custom ``pw_set_backend()`` implementations.
+Enabling a ``CONFIG_PIGWEED_*`` option configures the facade backend without
+adding Pigweed libraries to ``ZEPHYR_LIBS`` with ``--whole-archive``, so
+applications must link used Pigweed libraries explicitly via
+``target_link_libraries()``. Non-``INTERFACE`` Pigweed CMake libraries also
+depend automatically on ``zephyr_generated_headers``. CLs: `1 <https://pwrev.dev/473645>`__
+
+.. code-block:: cmake
+
+   # Optional: wire a custom backend before find_package(Zephyr) after setting
+   # CONFIG_PIGWEED_SYNC_MUTEX_NONE=y in prj.conf.
+   include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+   include($ENV{PW_ROOT}/pw_sync/backend.cmake)
+   pw_set_backend(pw_sync.mutex my_mutex_backend)
+
+   find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+   project(my_zephyr_app)
+
+   # Link the Pigweed libraries used by the application explicitly:
+   target_link_libraries(app PRIVATE pw_rpc.server pw_log)
+
+----------------
+Memory & storage
+----------------
+
+.. _changelog-2026-10-memory-origin-allocator:
+
+Allocation call-site tracking with OriginAllocator
+==================================================
+
+Attributing heap usage and diagnosing memory leaks on constrained targets is
+difficult when full stack backtraces are too expensive to capture. Wrapping an
+allocator in the new ``pw::allocator::OriginAllocator`` records a
+``pw::allocator::SourceLocation`` (a tokenized filename and line number)
+alongside each allocation via ``PW_ALLOCATOR_SET_ORIGIN``, which callers can
+inspect with ``GetOrigin`` on raw or smart pointers. CLs: `1 <https://pwrev.dev/381042>`__
+
+.. code-block:: c++
+
+   #include "pw_allocator/origin_allocator.h"
+
+   pw::allocator::OriginAllocator origin_alloc(base_allocator);
+
+   pw::UniquePtr<uint32_t> ptr =
+       PW_ALLOCATOR_SET_ORIGIN(origin_alloc, MakeUnique<uint32_t>(42u));
+   if (ptr != nullptr) {
+     pw::allocator::SourceLocation loc = origin_alloc.GetOrigin(ptr);
+     // loc.file holds the tokenized __FILE__ and loc.line holds __LINE__.
+   }
+
+.. _changelog-2026-10-memory-enable-shared-from-this:
+
+EnableSharedFromThis smart pointer mixin in pw_allocator
+========================================================
+
+The new ``pw::EnableSharedFromThis<T>`` mixin is Pigweed's
+``pw::Allocator``-backed counterpart to ``std::enable_shared_from_this``.
+Inheriting from it lets an object managed by ``pw::SharedPtr<T>`` safely hand
+out additional ``SharedPtr`` or ``WeakPtr`` handles to itself from member
+functions without creating a second control block. CLs: `1 <https://pwrev.dev/481886>`__
+
+.. code-block:: c++
+
+   #include "pw_allocator/allocator.h"
+   #include "pw_allocator/enable_shared_from_this.h"
+   #include "pw_allocator/shared_ptr.h"
+
+   class Session : public pw::EnableSharedFromThis<Session> {
+    public:
+     pw::SharedPtr<Session> GetHandle() { return shared_from_this(); }
+   };
+
+   pw::SharedPtr<Session> CreateSession(pw::Allocator& allocator) {
+     return allocator.MakeShared<Session>();
+   }
+
+----
+HALs
+----
+
+.. _changelog-2026-10-hal-buffered-uart-driver:
+
+Buffered UART driver and sync wrapper in pw_hal
+===============================================
+
+Buffered UART peripheral abstractions are now available in the experimental
+``pw_hal`` module. ``pw::hal::uart::BufferedUartDriver`` defines a portable
+non-blocking TX/RX driver interface with ISR-safe readiness callbacks,
+``pw::hal::uart::SyncBufferedUart`` wraps a driver for blocking transfers with
+timeouts, and ``pw::hal::uart::GmockBufferedUartDriver`` provides a GoogleMock
+test double for host unit tests. CLs: `1 <https://pwrev.dev/488749>`__
+
+.. code-block:: c++
+
+   #include <array>
+   #include <chrono>
+   #include <cstddef>
+   #include <memory>
+   #include <utility>
+
+   #include "pw_bytes/array.h"
+   #include "pw_hal/uart/sync_uart.h"
+   #include "pw_status/status.h"
+   #include "pw_status/try.h"
+
+   pw::Status ExchangeFrame(
+       std::unique_ptr<pw::hal::uart::BufferedUartDriver> driver) {
+     using namespace std::chrono_literals;
+     pw::hal::uart::SyncBufferedUart uart(std::move(driver));
+     constexpr auto kRequest = pw::bytes::Array<0x01, 0x02, 0x03>();
+     PW_TRY(uart.SendFor(kRequest, 100ms));
+
+     std::array<std::byte, 4> response{};
+     return uart.ReceiveFor(response, 100ms);
+   }
+
+---------------------------
+Data structures & utilities
+---------------------------
+
+.. _changelog-2026-10-core-custom-status-types:
+
+Custom status types in pw_status, pw_result, and pw_enum
+========================================================
+
+Libraries can now define zero-cost, domain-specific status types to express
+subsystem-specific errors without implicit conversions across unrelated error
+domains. ``pw::StatusBase`` and ``pw::StatusOf`` in ``pw_status`` back custom
+status types with enums or integers, ``PW_ENUM_STATUS`` in ``pw_enum``
+generates full status classes (with error factories, predicates, string
+conversion, and tokenized logging) from an enum declaration, and
+``pw::Result<T, StatusType>`` (including ``pw::Result<void, StatusType>``)
+carries them with ``PW_TRY``, ``PW_TRY_ASSIGN``, and ``PW_CHECK_OK``. CLs: `1 <https://pwrev.dev/477645>`__, `2 <https://pwrev.dev/478325>`__, `3 <https://pwrev.dev/490178>`__, `4 <https://pwrev.dev/499033>`__
+
+.. code-block:: c++
+
+   // i2c_status.h (compiled with pw_cc_enum_library)
+   #include <cstdint>
+
+   #include "pw_enum/generate.h"
+
+   namespace my_driver {
+
+   enum class I2cStatusCode : uint8_t { kOk, kNack, kBusError, kTimeout };
+
+   }  // namespace my_driver
+
+   PW_ENUM_STATUS(
+       my_driver::I2cStatus, I2cStatusCode::kOk, kOk, kNack, kBusError, kTimeout);
+
+   // Usage with pw::Result and PW_TRY:
+   #include "pw_result/result.h"
+   #include "pw_status/try.h"
+
+   pw::Result<uint8_t, my_driver::I2cStatus> ReadRegister(bool acked) {
+     if (!acked) {
+       return my_driver::I2cStatus::Nack();
+     }
+     return 0x42;
+   }
+
+   pw::Result<void, my_driver::I2cStatus> VerifyRegister(bool acked) {
+     PW_TRY(ReadRegister(acked));
+     return my_driver::I2cStatus();
+   }
+
+-------
+Testing
+-------
+
+.. _changelog-2026-10-test-test-case-filtering:
+
+Test case filtering in pw_unit_test
+===================================
+
+Instead of running an entire test suite at a time, you can now filter
+individual ``SuiteName.TestName`` test cases (including ``*`` wildcards) in
+``pw_unit_test`` to speed up iteration on large on-device test binaries. In
+C++, ``pw::unit_test::SetTestFilters`` replaces ``SetTestSuitesToRun``, and the
+``UnitTest`` RPC service and Python test runners accept the same per-test
+filter patterns. CLs: `1 <https://pwrev.dev/484030>`__
+
+.. code-block:: c++
+
+   #include <array>
+
+   #include "pw_unit_test/event_handler.h"
+   #include "pw_unit_test/framework.h"
+
+   constexpr std::array<pw::unit_test::TestCaseFilter, 2> kFilters = {{
+       {.suite_name = "SensorTest", .test_name = "ReadsTemperature"},
+       {.suite_name = "CalibTest", .test_name = "*"},
+   }};
+   pw::unit_test::SetTestFilters(kFilters);
+   int status = RUN_ALL_TESTS();
+
+-------------
+Build systems
+-------------
+
+.. _changelog-2026-10-build-bazel-support-policy:
+
+Minimum Bazel 8.5.0 requirement and support policy
+==================================================
+
+Pigweed now requires Bazel 8.5.0 or newer (``bazel_compatibility = [">=8.5.0"]``
+in ``MODULE.bazel``) and publishes an official Bazel version support policy.
+Under this policy, Pigweed supports the latest active Bazel release and the
+previous major release for up to 12 months of maintenance, bounded by critical
+Bazel Central Registry dependencies. Pigweed plans to update the minimum version
+to Bazel 8.6.0 in November 2026, and upgrading to ``protobuf`` v38 in early 2027
+will require Bazel 9 or newer. CLs: `1 <https://pwrev.dev/503486>`__
+
+---------------
+Developer tools
+---------------
+
+.. _changelog-2026-10-devtools-python-311-minimum:
+
+Python 3.11 minimum supported version
+=====================================
+
+Python 3.11 is now the minimum supported Python version across Pigweed's build
+systems, bootstrapped virtual environments, and host tooling, dropping support
+for end-of-life Python 3.10. Upstream support covers Python 3.11 through 3.14
+following Python's end-of-life schedule, with active CI testing on Python 3.11
+and 3.13 in GN and Python 3.12 in Bazel. CLs: `1 <https://pwrev.dev/510045>`__, `2 <https://pwrev.dev/517345>`__
