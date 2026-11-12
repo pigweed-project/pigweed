@@ -23,6 +23,7 @@ import argparse
 import copy
 import glob
 import inspect
+import io
 import json
 import os
 import shutil
@@ -160,6 +161,15 @@ def _assert_sequence(value):
     return value
 
 
+def _write_if_changed(path, contents):
+    if os.path.isfile(path):
+        with open(path, 'r') as ins:
+            if ins.read() == contents:
+                return
+    with open(path, 'w') as outs:
+        outs.write(contents)
+
+
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=too-many-arguments
 class EnvSetup:
@@ -197,6 +207,7 @@ class EnvSetup:
         self._quiet = quiet
         self._install_dir = install_dir
         self._virtualenv_root = os.path.join(self._install_dir, 'pigweed-venv')
+        self._pw_package_root = os.path.join(self._install_dir, 'packages')
         self._strict = strict
         self._cipd_only = cipd_only
         self._trust_cipd_hash = trust_cipd_hash
@@ -532,9 +543,18 @@ class EnvSetup:
             self._install_dir, 'build_overrides', 'pigweed_environment.gni'
         )
         os.makedirs(os.path.dirname(generated_gni_file), exist_ok=True)
-        with open(generated_gni_file, 'w') as outs:
-            self._env.gni(outs, self._project_root, generated_gni_file)
-        shutil.copy(generated_gni_file, os.path.join(self._install_dir, 'logs'))
+        # Pre-seed PW_PACKAGE_ROOT on a copy so pigweed_environment.gni is
+        # identical before and after the pw_package step without mutating
+        # self._env early. VIRTUAL_ENV is already set in __init__.
+        env = copy.deepcopy(self._env)
+        env.set('PW_PACKAGE_ROOT', self._pw_package_root)
+        buf = io.StringIO()
+        env.gni(buf, self._project_root, generated_gni_file)
+        _write_if_changed(generated_gni_file, buf.getvalue())
+
+        log_dir = os.path.join(self._install_dir, 'logs')
+        if os.path.isdir(log_dir):
+            shutil.copy(generated_gni_file, log_dir)
 
         # The location of the project's gni file
         project_gni_file = os.path.join(self._project_root, self._gni_file)
@@ -545,11 +565,9 @@ class EnvSetup:
             self._pw_root, 'build_overrides', 'pigweed_environment.gni'
         )
 
-        # Copy the pigweed gni to the project's location
-        try:
-            shutil.copyfile(pigweed_gni_file, project_gni_file)
-        except shutil.SameFileError:
-            pass
+        # Copy the pigweed gni to the project's location only if changed
+        with open(pigweed_gni_file, 'r') as ins:
+            _write_if_changed(project_gni_file, ins.read())
 
     def _log(self, *args, **kwargs):
         # Not using logging module because it's awkward to flush a log handler.
@@ -655,10 +673,10 @@ Then use `set +x` to go back to normal.
             with open(actions_json, 'w') as outs:
                 self._env.json(outs)
 
-            # This file needs to be written after the CIPD step and before the
-            # Python virtualenv step. It also needs to be rewritten after the
-            # Python virtualenv step, so it's easiest to just write it after
-            # every step.
+            # Write the gni file before the Python virtualenv step (after CIPD
+            # and project_actions) and after any subsequent step that modifies
+            # the environment. Unchanged writes are skipped, so calling this
+            # after every step is cheap.
             self._write_gni_file()
 
         # Only write stuff for GitHub Actions once, at the end.
@@ -830,6 +848,7 @@ Then use `set +x` to go back to normal.
         if not virtualenv_setup.install(
             project_root=self._project_root,
             venv_path=self._virtualenv_root,
+            full_envsetup='PW_ENVSETUP_FULL' in os.environ,
             requirements=requirements,
             constraints=constraints,
             pip_install_find_links=self._virtualenv_pip_install_find_links,
@@ -857,7 +876,7 @@ Then use `set +x` to go back to normal.
 
         result = result_func()
 
-        pkg_dir = os.path.join(self._install_dir, 'packages')
+        pkg_dir = self._pw_package_root
         self._env.set('PW_PACKAGE_ROOT', pkg_dir)
 
         if not os.path.isdir(pkg_dir):

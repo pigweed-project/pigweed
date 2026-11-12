@@ -583,6 +583,13 @@ never need to set these.
   Disable the console spinner that runs when waiting for env setup steps to
   complete.
 
+``PW_ENVSETUP_FULL``
+  If set, force a full Python virtualenv setup instead of skipping steps whose
+  tracked inputs have not changed. Use this when changing untracked inputs such
+  as files included transitively via ``-r`` or ``-c`` lines inside requirements
+  or constraint files, the contents of ``pip_install_find_links`` directories,
+  or manual modifications inside the virtualenv.
+
 ``PW_ENVSETUP_NO_BANNER``
   Skip printing the banner.
 

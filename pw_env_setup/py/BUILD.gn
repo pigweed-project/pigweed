@@ -50,6 +50,7 @@ pw_python_package("py") {
   tests = [
     "config_file_test.py",
     "cipd_setup_update_test.py",
+    "env_setup_test.py",
     "environment_test.py",
     "json_visitor_test.py",
     "python_packages_test.py",

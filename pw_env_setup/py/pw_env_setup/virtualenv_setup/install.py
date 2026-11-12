@@ -16,6 +16,7 @@
 import contextlib
 import datetime
 import glob
+import hashlib
 import os
 import platform
 import re
@@ -74,14 +75,16 @@ class GnTarget:
 
 def git_stdout(*args, **kwargs):
     """Run git, passing args as git params and kwargs to subprocess."""
-    return subprocess.check_output(['git'] + list(args), **kwargs).strip()
+    return (
+        subprocess.check_output(['git'] + list(args), **kwargs).strip().decode()
+    )
 
 
 def git_repo_root(path='./'):
     """Find git repository root."""
     try:
         return git_stdout('-C', path, 'rev-parse', '--show-toplevel')
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         return None
 
 
@@ -206,25 +209,161 @@ def _find_files_by_name(roots, name, allow_nesting=False):
     return matches
 
 
-def _check_venv(python, version, venv_path, pyvenv_cfg):
-    if _is_windows():
-        return
+def _parse_pyvenv_cfg(pyvenv_cfg: str) -> dict[str, str]:
+    """Parses key = value pairs from a pyvenv.cfg file."""
+    values: dict[str, str] = {}
+    with open(pyvenv_cfg, 'r') as ins:
+        for line in ins:
+            if ' = ' in line:
+                key, value = line.strip().split(' = ', 1)
+                values[key] = value
+    return values
+
+
+def _version_matches(cfg_version: str, version: tuple[int, ...]) -> bool:
+    """Returns True if cfg_version matches the leading components of version."""
+    if not cfg_version:
+        return False
+    cfg_parts = cfg_version.split('.')
+    version_parts = [str(part) for part in version]
+    return (
+        len(cfg_parts) <= len(version_parts)
+        and cfg_parts == version_parts[: len(cfg_parts)]
+    )
+
+
+def _pyvenv_cfg_matches_python(
+    pyvenv_values: dict[str, str],
+    python: str,
+    venv_path: str,
+    version: tuple[int, ...],
+) -> bool:
+    """Returns True if pyvenv.cfg matches the target Python home and version."""
+    pydir = os.path.dirname(python)
+    home = pyvenv_values.get('home')
+    if pydir != home and not pydir.startswith(venv_path):
+        return False
+    return _version_matches(pyvenv_values.get('version', ''), version)
+
+
+def _venv_has_pip(venv_python: str) -> bool:
+    """Returns True if venv_python exists and has a working pip module."""
+    try:
+        return (
+            subprocess.call(
+                [venv_python, '-m', 'pip', '--version'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            == 0
+        )
+    except OSError:
+        return False
+
+
+def _needs_venv_setup(
+    pyvenv_cfg: str,
+    venv_python: str,
+    python: str,
+    venv_path: str,
+    version: tuple[int, ...],
+    *,
+    system_packages: bool,
+    full_envsetup: bool,
+) -> bool:
+    """Returns whether `python -m venv` needs to run."""
+    if not os.path.exists(pyvenv_cfg):
+        return True
 
     # Check if the python location and version used for the existing virtualenv
-    # is the same as the python we're using. If it doesn't match, we need to
-    # delete the existing virtualenv and start again.
-    if os.path.exists(pyvenv_cfg):
-        pyvenv_values = {}
-        with open(pyvenv_cfg, 'r') as ins:
-            for line in ins:
-                key, value = line.strip().split(' = ', 1)
-                pyvenv_values[key] = value
-        pydir = os.path.dirname(python)
-        home = pyvenv_values.get('home')
-        if pydir != home and not pydir.startswith(venv_path):
+    # is the same as the python we're using. On non-Windows, delete the
+    # existing virtualenv if it doesn't match so `venv --upgrade` starts clean.
+    pyvenv_values = _parse_pyvenv_cfg(pyvenv_cfg)
+    if not _pyvenv_cfg_matches_python(
+        pyvenv_values, python, venv_path, version
+    ):
+        if not _is_windows():
             shutil.rmtree(venv_path)
-        elif pyvenv_values.get('version') not in '.'.join(map(str, version)):
-            shutil.rmtree(venv_path)
+        return True
+
+    if full_envsetup:
+        return True
+
+    expected_system_packages = 'true' if system_packages else 'false'
+    if (
+        pyvenv_values.get('include-system-site-packages', '').lower()
+        != expected_system_packages
+    ):
+        return True
+
+    return not _venv_has_pip(venv_python)
+
+
+def _make_venv_writable(venv_path: str, *, skip_gn_dir: bool = True) -> None:
+    """Makes read-only files in venv_path writable."""
+    # Virtual environments may contain read-only files (notably activate
+    # scripts). `venv` calls will fail if they are not writeable.
+    if not os.path.isdir(venv_path):
+        return
+
+    for root, dirs, files in os.walk(venv_path):
+        if skip_gn_dir and root == venv_path and 'gn' in dirs:
+            dirs.remove('gn')
+        for file in files:
+            path = os.path.join(root, file)
+            mode = os.lstat(path).st_mode
+            if not (stat.S_ISLNK(mode) or (mode & stat.S_IWRITE)):
+                os.chmod(path, mode | stat.S_IWRITE)
+
+
+def _compute_pip_digest(
+    pip_install_args: list[str],
+    pyvenv_cfg: str,
+    constraints,
+    requirements,
+) -> str:
+    """Computes a SHA-256 digest of inputs that affect pip installations."""
+    hasher = hashlib.sha256()
+    hasher.update('\0'.join(pip_install_args).encode())
+    hasher.update(b'\0')
+    if os.path.isfile(pyvenv_cfg):
+        with open(pyvenv_cfg, 'rb') as ins:
+            hasher.update(ins.read())
+    hasher.update(b'\0')
+    # Note: Files pulled in transitively via `-r` or `-c` lines inside a
+    # requirements or constraint file are not included in this hash.
+    for path in list(constraints or ()) + list(requirements or ()):
+        hasher.update(path.encode())
+        hasher.update(b'\0')
+        if os.path.isfile(path):
+            with open(path, 'rb') as ins:
+                hasher.update(ins.read())
+        hasher.update(b'\0')
+    return hasher.hexdigest()
+
+
+def _needs_gn_gen(
+    build_dir: str,
+    args_digest: str,
+    *,
+    venv_created: bool,
+) -> bool:
+    """Returns whether `gn gen` needs to run for build_dir."""
+    if venv_created:
+        return True
+
+    build_ninja_path = os.path.join(build_dir, 'build.ninja')
+    args_gn_path = os.path.join(build_dir, 'args.gn')
+    args_hash_path = os.path.join(build_dir, 'args.gn.sha256')
+    if not (
+        os.path.isfile(build_ninja_path)
+        and os.path.isfile(args_gn_path)
+        and os.path.isfile(args_hash_path)
+    ):
+        return True
+
+    with open(args_hash_path, 'r') as ins:
+        return ins.read().strip() != args_digest
 
 
 def _flatten(*items):
@@ -271,7 +410,20 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
     system_packages=False,
     use_pinned_pip_packages=True,
 ):
-    """Creates a venv and installs all packages in this Git repo."""
+    """Creates a venv and installs all packages in this Git repo.
+
+    When `full_envsetup` is False, steps whose inputs have not changed are
+    skipped:
+    - `python -m venv` is skipped when `pyvenv.cfg` matches `python` (`home`,
+      `version`, and `include-system-site-packages`) and `venv_python -m pip`
+      works.
+    - `pip install` is skipped when `<venv_path>/pip-requirements.sha256`
+      matches the digest of `pip_install_args`, `pyvenv.cfg`, `constraints`,
+      and `requirements`.
+    - `gn gen` is skipped when `<build_dir>/build.ninja`, `args.gn`, and
+      `args.gn.sha256` exist and `args.gn.sha256` matches the digest of the GN
+      args.
+    """
 
     version = _python_version(python)
     if version[0] != 3:
@@ -282,30 +434,31 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
 
     # The bin/ directory is called Scripts/ on Windows. Don't ask.
     venv_bin = os.path.join(venv_path, 'Scripts' if os.name == 'nt' else 'bin')
+    venv_python = os.path.join(venv_bin, 'python')
 
-    if env:
+    if env is not None:
         env.set('VIRTUAL_ENV', venv_path)
         env.prepend('PATH', venv_bin)
         env.clear('PYTHONHOME')
         env.clear('__PYVENV_LAUNCHER__')
+        env_ctx = env
     else:
-        env = contextlib.nullcontext()
-
-    # Virtual environments may contain read-only files (notably activate
-    # scripts).  `venv` calls below will fail if they are not writeable.
-    if os.path.isdir(venv_path):
-        for root, _dirs, files in os.walk(venv_path):
-            for file in files:
-                path = os.path.join(root, file)
-                mode = os.lstat(path).st_mode
-                if not (stat.S_ISLNK(mode) or (mode & stat.S_IWRITE)):
-                    os.chmod(path, mode | stat.S_IWRITE)
+        env_ctx = contextlib.nullcontext
 
     pyvenv_cfg = os.path.join(venv_path, 'pyvenv.cfg')
 
-    _check_venv(python, version, venv_path, pyvenv_cfg)
+    venv_created = _needs_venv_setup(
+        pyvenv_cfg,
+        venv_python,
+        python,
+        venv_path,
+        version,
+        system_packages=system_packages,
+        full_envsetup=full_envsetup,
+    )
+    if venv_created:
+        _make_venv_writable(venv_path, skip_gn_dir=not _is_windows())
 
-    if full_envsetup or not os.path.exists(pyvenv_cfg):
         # On Mac sometimes the CIPD Python has __PYVENV_LAUNCHER__ set to
         # point to the system Python, which causes CIPD Python to create
         # virtualenvs that reference the system Python instead of the CIPD
@@ -342,11 +495,9 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
         cmd += [venv_path]
         _check_call(cmd, env=envcopy)
 
-    venv_python = os.path.join(venv_bin, 'python')
-
     pw_root = os.environ.get('PW_ROOT')
-    if not pw_root and env:
-        pw_root = env.PW_ROOT
+    if not pw_root and env is not None:
+        pw_root = env.get('PW_ROOT')
     if not pw_root:
         pw_root = git_repo_root()
     if not pw_root:
@@ -365,7 +516,7 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
     if pip_install_find_links:
         for package_dir in pip_install_find_links:
             pip_install_args.append('--find-links')
-            with env():
+            with env_ctx():
                 pip_install_args.append(os.path.expandvars(package_dir))
     if pip_install_require_hashes:
         pip_install_args.append('--require-hashes')
@@ -376,7 +527,7 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
 
     def pip_install(*args):
         args = list(_flatten(args))
-        with env():
+        with env_ctx():
             cmd = (
                 [
                     venv_python,
@@ -398,38 +549,53 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
             '--constraint={}'.format(constraint) for constraint in constraints
         )
 
-    pip_install(
-        '--log',
-        os.path.join(venv_path, 'pip-upgrade.log'),
-        '--upgrade',
-        'pip',
-        'setuptools',
-        'toml',  # Needed for pyproject.toml package installs.
-        # Include wheel so pip installs can be done without build
-        # isolation.
-        'wheel',
-        'pip-tools',
-        constraint_args,
-    )
-
     # TODO(tonymd): Remove this when projects have defined requirements.
     if (not requirements) and constraints:
         requirements = constraints
 
-    if requirements:
-        requirement_args = []
-        # Note: --no-build-isolation should be avoided for installing 3rd party
-        # Python packages that use C/C++ extension modules.
-        # https://setuptools.pypa.io/en/latest/userguide/ext_modules.html
-        requirement_args.extend(
-            '--requirement={}'.format(req) for req in requirements
-        )
-        combined_requirement_args = requirement_args + constraint_args
+    pip_digest = _compute_pip_digest(
+        pip_install_args, pyvenv_cfg, constraints, requirements
+    )
+    pip_hash_file = os.path.join(venv_path, 'pip-requirements.sha256')
+    pip_hash_unchanged = False
+    if not venv_created and os.path.isfile(pip_hash_file):
+        with open(pip_hash_file, 'r') as ins:
+            pip_hash_unchanged = ins.read().strip() == pip_digest
+
+    if not pip_hash_unchanged:
+        if os.path.isfile(pip_hash_file):
+            os.unlink(pip_hash_file)
         pip_install(
             '--log',
-            os.path.join(venv_path, 'pip-requirements.log'),
-            combined_requirement_args,
+            os.path.join(venv_path, 'pip-upgrade.log'),
+            '--upgrade',
+            'pip',
+            'setuptools',
+            'toml',  # Needed for pyproject.toml package installs.
+            # Include wheel so pip installs can be done without build
+            # isolation.
+            'wheel',
+            'pip-tools',
+            constraint_args,
         )
+
+        if requirements:
+            requirement_args = []
+            # Note: --no-build-isolation should be avoided for installing 3rd
+            # party Python packages that use C/C++ extension modules.
+            # https://setuptools.pypa.io/en/latest/userguide/ext_modules.html
+            requirement_args.extend(
+                '--requirement={}'.format(req) for req in requirements
+            )
+            combined_requirement_args = requirement_args + constraint_args
+            pip_install(
+                '--log',
+                os.path.join(venv_path, 'pip-requirements.log'),
+                combined_requirement_args,
+            )
+
+        with open(pip_hash_file, 'w') as outs:
+            print(pip_digest, file=outs)
 
     def install_packages(gn_target):
         if gn_out_dir is None:
@@ -450,31 +616,44 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
                 else:
                     print(key, '=', value, file=outs)
 
-        gn_log = 'gn-gen-{}.log'.format(gn_target.name)
-        gn_log_path = os.path.join(venv_path, gn_log)
-        try:
-            with open(gn_log_path, 'w') as outs:
-                gn_cmd = ['gn', 'gen', build_dir]
+        args = list(gn_args)
+        if not use_pinned_pip_packages:
+            args.append('pw_build_PIP_CONSTRAINTS=[]')
 
-                args = list(gn_args)
-                if not use_pinned_pip_packages:
-                    args.append('pw_build_PIP_CONSTRAINTS=[]')
+        args.append('dir_pigweed="{}"'.format(pw_root))
+        joined_args = ' '.join(args)
+        args_digest = hashlib.sha256(joined_args.encode()).hexdigest()
+        args_hash_path = os.path.join(build_dir, 'args.gn.sha256')
 
-                args.append('dir_pigweed="{}"'.format(pw_root))
-                gn_cmd.append('--args={}'.format(' '.join(args)))
+        if _needs_gn_gen(
+            build_dir,
+            args_digest,
+            venv_created=venv_created,
+        ):
+            if os.path.isfile(args_hash_path):
+                os.unlink(args_hash_path)
+            gn_log = 'gn-gen-{}.log'.format(gn_target.name)
+            gn_log_path = os.path.join(venv_path, gn_log)
+            try:
+                with open(gn_log_path, 'w') as outs:
+                    gn_cmd = ['gn', 'gen', build_dir]
+                    gn_cmd.append('--args={}'.format(joined_args))
 
-                print(gn_cmd, file=outs)
-                subprocess.check_call(
-                    gn_cmd,
-                    cwd=os.path.join(project_root, gn_target.directory),
-                    stdout=outs,
-                    stderr=outs,
-                )
-        except subprocess.CalledProcessError as err:
-            with open(gn_log_path, 'r') as ins:
-                raise subprocess.CalledProcessError(
-                    err.returncode, err.cmd, ins.read()
-                )
+                    print(gn_cmd, file=outs)
+                    subprocess.check_call(
+                        gn_cmd,
+                        cwd=os.path.join(project_root, gn_target.directory),
+                        stdout=outs,
+                        stderr=outs,
+                    )
+            except subprocess.CalledProcessError as err:
+                with open(gn_log_path, 'r') as ins:
+                    raise subprocess.CalledProcessError(
+                        err.returncode, err.cmd, ins.read()
+                    )
+
+            with open(args_hash_path, 'w') as outs:
+                print(args_digest, file=outs)
 
         ninja_log = 'ninja-{}.log'.format(gn_target.name)
         ninja_log_path = os.path.join(venv_path, ninja_log)
@@ -503,7 +682,7 @@ def install(  # pylint: disable=too-many-arguments,too-many-locals,too-many-stat
             )
 
     if gn_targets:
-        with env():
+        with env_ctx():
             for gn_target in gn_targets:
                 install_packages(gn_target)
 

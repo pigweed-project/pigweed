@@ -227,6 +227,12 @@ pw_py_test(
 )
 
 pw_py_test(
+    name = "env_setup_test",
+    srcs = ["env_setup_test.py"],
+    deps = [":pw_env_setup_private"],
+)
+
+pw_py_test(
     name = "environment_test",
     srcs = ["environment_test.py"],
     deps = [
