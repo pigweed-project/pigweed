@@ -237,6 +237,10 @@ cc_toolchain(
     known_features = [
         "//pw_toolchain/cc/capability:known_toolchain_types",
     ],
+    # Exclude from wildcard builds. Analyzing this toolchain requires fetching
+    # the multi-gigabyte Zephyr SDK, which is wasteful for builds that only
+    # match it because they target a compatible Cortex-M CPU.
+    tags = ["manual"],
     target_compatible_with = select({
         "//pw_build/constraints/arm:cortex-m33": [],
         # TODO: https://pwbug.dev/380001331 - Add support for other cortex MCUs

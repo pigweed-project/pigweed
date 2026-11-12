@@ -177,17 +177,21 @@ pw_cc_test(
     ],
 )
 
-# TODO: b/242059613 - Enable this library when logging_event_handler can be used.
-filegroup(
+cc_library(
     name = "client_integration_test",
+    testonly = True,
     srcs = [
         "client_integration_test.cc",
     ],
-    #deps = [
-    #    "//pw_rpc:integration_testing",
-    #    "//pw_sync:binary_semaphore",
-    #    "//pw_rpc:benchmark_cc.nanopb_rpc",
-    #]
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [
+        "//pw_assert:check",
+        "//pw_rpc:benchmark_nanopb_rpc",
+        "//pw_rpc:integration_testing",
+        "//pw_sync:binary_semaphore",
+        "//pw_unit_test",
+    ],
+    alwayslink = True,
 )
 
 pw_cc_test(

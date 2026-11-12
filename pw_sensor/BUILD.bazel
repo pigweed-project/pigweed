@@ -34,7 +34,7 @@ cc_library(
     hdrs = [
         "public/pw_sensor/types.h",
     ],
-    includes = ["public"],
+    strip_include_prefix = "public",
     deps = [
         "//pw_tokenizer",
     ],
@@ -53,7 +53,7 @@ pw_sensor_library(
         ":triggers.yaml",
         ":units.yaml",
     ],
-    out_header = "public/pw_sensor/generated/sensor_constants.h",
+    out_header = "pw_sensor/generated/sensor_constants.h",
     deps = [
         ":pw_sensor_types",
         "//pw_containers:flat_map",

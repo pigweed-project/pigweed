@@ -12,6 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//rules/directory:directory.bzl", "directory")
+load("@bazel_skylib//rules/directory:subdirectory.bzl", "subdirectory")
 load("@rules_cc//cc/toolchains:tool.bzl", "cc_tool")
 load("@rules_cc//cc/toolchains:tool_map.bzl", "cc_tool_map")
 
@@ -42,6 +44,51 @@ cc_tool_map(
     },
 )
 
+# GCC's versioned library directory, e.g. "lib/gcc/arm-none-eabi/15.2.1".
+_GCC_LIB_DIR = glob(["lib/gcc/arm-none-eabi/*/include/stddef.h"])[0].removesuffix(
+    "/include/stddef.h",
+)
+
+directory(
+    name = "toolchain_root",
+    srcs = glob([
+        "arm-none-eabi/include/**",
+        _GCC_LIB_DIR + "/include/**",
+        _GCC_LIB_DIR + "/include-fixed/**",
+    ]),
+)
+
+subdirectory(
+    name = "gcc_include",
+    parent = ":toolchain_root",
+    path = _GCC_LIB_DIR + "/include",
+)
+
+subdirectory(
+    name = "gcc_include_fixed",
+    parent = ":toolchain_root",
+    path = _GCC_LIB_DIR + "/include-fixed",
+)
+
+subdirectory(
+    name = "newlib_include",
+    parent = ":toolchain_root",
+    path = "arm-none-eabi/include",
+)
+
+# GCC's built-in C header search path, in GCC's search order. GCC finds these
+# implicitly, but declaring them exposes them to Bazel as the toolchain's
+# built-in include directories. Tools that run clang with this toolchain's
+# flags, such as rust_bindgen, need them to find the target's C headers.
+#
+# The libstdc++ directories are omitted because one of them depends on the
+# multilib variant selected by -mcpu/-mfloat-abi.
+_BUILTIN_C_INCLUDE_DIRECTORIES = [
+    ":gcc_include",
+    ":gcc_include_fixed",
+    ":newlib_include",
+]
+
 cc_tool(
     name = "arm-none-eabi-ar",
     src = select({
@@ -56,6 +103,7 @@ cc_tool(
         "@platforms//os:windows": "//:bin/arm-none-eabi-g++.exe",
         "//conditions:default": "//:bin/arm-none-eabi-g++",
     }),
+    allowlist_include_directories = _BUILTIN_C_INCLUDE_DIRECTORIES,
     data = glob([
         "**/*.spec",
         "**/*.specs",
@@ -79,6 +127,7 @@ cc_tool(
         "@platforms//os:windows": "//:bin/arm-none-eabi-gcc.exe",
         "//conditions:default": "//:bin/arm-none-eabi-gcc",
     }),
+    allowlist_include_directories = _BUILTIN_C_INCLUDE_DIRECTORIES,
     data = glob([
         "**/*.spec",
         "**/*.specs",

@@ -24,15 +24,16 @@ static const TickType_t __configTICK_RATE_HZ = configTICK_RATE_HZ;
 #undef configTICK_RATE_HZ
 static const TickType_t configTICK_RATE_HZ = __configTICK_RATE_HZ;
 
-// FreeRTOS implements critical section entry/exit and semaphore operations as
-// preprocessor macros or inline functions, which cannot be directly translated
-// to Rust FFI by bindgen. These wrapper functions expose them as standard C
-// symbols.
+// FreeRTOS implements critical section entry/exit, interrupt status checks, and
+// semaphore operations as preprocessor macros or inline functions on some
+// ports, which cannot be directly translated to Rust FFI by bindgen. These
+// wrapper functions expose them as standard C symbols.
 UBaseType_t freertos_sys_taskENTER_CRITICAL_FROM_ISR(void);
 void freertos_sys_taskEXIT_CRITICAL_FROM_ISR(UBaseType_t mask);
 void freertos_sys_taskENTER_CRITICAL(void);
 void freertos_sys_taskEXIT_CRITICAL(void);
 void freertos_sys_taskYIELD(void);
+BaseType_t freertos_sys_xPortIsInsideInterrupt(void);
 
 SemaphoreHandle_t freertos_sys_xSemaphoreCreateMutex(void);
 SemaphoreHandle_t freertos_sys_xSemaphoreCreateMutexStatic(

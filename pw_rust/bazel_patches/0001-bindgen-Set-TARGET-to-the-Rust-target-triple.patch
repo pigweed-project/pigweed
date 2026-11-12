@@ -1,0 +1,43 @@
+From 1cb1c13804b33931407320acec08ed69d52197bb Mon Sep 17 00:00:00 2001
+From: Wyatt Hepler <hepler@google.com>
+Date: Thu, 22 Oct 2026 23:38:15 -0700
+Subject: [PATCH] bindgen: Set TARGET to the Rust target triple
+
+rust_bindgen passes clang the C++ toolchain's compile flags, but never
+tells bindgen which target the bindings are for. When those flags lack
+an explicit --target, as with GCC-based cross toolchains, libclang
+parses the headers for the exec platform. This silently generates
+bindings with the host's type sizes and struct layouts.
+
+Set the TARGET environment variable to the Rust toolchain's target
+triple, matching what Cargo does for build scripts. bindgen converts it
+to a clang target when no explicit --target is given; explicit flags
+still take precedence.
+---
+ private/bindgen.bzl | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/private/bindgen.bzl b/private/bindgen.bzl
+index 84361e7..7033922 100644
+--- a/private/bindgen.bzl
++++ b/private/bindgen.bzl
+@@ -243,6 +243,16 @@ def _rust_bindgen_impl(ctx):
+     args.add_all(ctx.attr.bindgen_flags)
+ 
+     rust_toolchain = ctx.toolchains[Label("@rules_rust//rust:toolchain_type")]
++
++    # Tell bindgen which Rust target the bindings are for, using the same
++    # `TARGET` environment variable that Cargo sets for build scripts. If the
++    # clang arguments don't include an explicit `--target`, which is the case
++    # when the C/C++ toolchain is GCC, bindgen derives the clang target from
++    # `TARGET`. Otherwise, clang parses the headers for the exec platform, which
++    # silently produces bindings with the wrong type sizes and layouts.
++    if rust_toolchain.target_triple:
++        env["TARGET"] = rust_toolchain.target_triple.str
++
+     user_flags = [f.split("=")[0] for f in ctx.attr.bindgen_flags]
+ 
+     # Ignore `nightly` or `beta` versions.
+-- 
+2.56.0.257.gf7497c7d27-goog
+

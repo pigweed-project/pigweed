@@ -296,7 +296,10 @@ pw_cc_test(
         "private/pw_cpu_exception_cortex_m_backend/crash.h",
         "public/pw_cpu_exception_cortex_m/crash.h",
     ],
-    includes = ["private"],
+    includes = [
+        "private",
+        "public",
+    ],
     # TODO: https://pwbug.dev/350758633 - Add v6m support.
     # TODO: https://pwbug.dev/353533678 - Failing on Cortex-M33 right now.
     target_compatible_with = select({

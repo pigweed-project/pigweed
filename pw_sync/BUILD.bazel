@@ -387,17 +387,33 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "condition_variable_facade",
+pw_facade(
+    name = "condition_variable",
     hdrs = [
         "public/pw_sync/condition_variable.h",
     ],
+    backend = ":condition_variable_backend",
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
         "//pw_chrono:system_clock",
         "//pw_sync:mutex",
     ],
+)
+
+alias(
+    name = "condition_variable_facade",
+    actual = ":condition_variable.facade",
+)
+
+label_flag(
+    name = "condition_variable_backend",
+    build_setting_default = ":condition_variable_unspecified_backend",
+)
+
+host_backend_alias(
+    name = "condition_variable_unspecified_backend",
+    backend = "//pw_sync_stl:condition_variable",
 )
 
 # TODO: b/228998350 - This needs to be instantiated for each platform that

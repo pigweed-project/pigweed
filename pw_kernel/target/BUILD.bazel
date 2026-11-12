@@ -43,6 +43,7 @@ constraint_value(
 label_flag(
     name = "target_arch",
     build_setting_default = ":default_target_arch",
+    tags = ["kernel"],
 )
 
 alias(
@@ -52,4 +53,5 @@ alias(
         ALL_RISCV_CPUS: "//pw_kernel/arch/riscv:arch_riscv",
         "//conditions:default": "@platforms//:incompatible",
     }),
+    tags = ["kernel"],
 )

@@ -943,6 +943,9 @@ def bazel_build(ctx: PresubmitContext) -> None:
     # platforms.
     targets_for_config = {
         "lm3s6965evb": [
+            "//...",
+        ],
+        "lm3s6965evb_freertos": [
             "//pw_rust/...",
         ],
         "microbit": [

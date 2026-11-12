@@ -30,6 +30,7 @@ platform(
     constraint_values = [
         "//pw_interrupt_cortex_m:compatible",
         "//pw_malloc:bucket_allocator_backend",
+        "//pw_rpc:use_global_mutex_false",
         "//pw_sys_io_baremetal_stm32f429:compatible",
         "@platforms//cpu:armv7e-m",
         "@platforms//os:none",
@@ -37,16 +38,24 @@ platform(
         "//pw_build/constraints/rust:no_std",
     ],
     flags = flags_from_dict({
+        "@bazel_tools//tools/cpp:link_extra_libs": "//targets/stm32f429i_disc1:extra_platform_libs",
         "@pigweed//pw_assert:check_backend": "//pw_assert_basic",
         "@pigweed//pw_assert:check_backend_impl": "//pw_assert_basic:impl",
         "@pigweed//pw_boot:backend": "//pw_boot_cortex_m",
+        "@pigweed//pw_cpu_exception:entry_backend": "//pw_cpu_exception_cortex_m:cpu_exception",
+        "@pigweed//pw_cpu_exception:entry_backend_impl": "//pw_cpu_exception_cortex_m:cpu_exception_impl",
+        "@pigweed//pw_cpu_exception:handler_backend": "//pw_cpu_exception:basic_handler",
+        "@pigweed//pw_cpu_exception:support_backend": "//pw_cpu_exception_cortex_m:support",
         "@pigweed//pw_interrupt:backend": "//pw_interrupt_cortex_m:impl",
         "@pigweed//pw_log:backend": "//pw_log_basic",
         "@pigweed//pw_log:backend_impl": "//pw_log_basic:impl",
         "@pigweed//pw_malloc:backend": "//pw_malloc:bucket_allocator",
+        "@pigweed//pw_sync:interrupt_spin_lock_backend": "//pw_sync_baremetal:interrupt_spin_lock",
+        "@pigweed//pw_sync:mutex_backend": "//pw_sync_baremetal:mutex",
         "@pigweed//pw_sys_io:backend": "//pw_sys_io_baremetal_stm32f429",
         "@pigweed//pw_system:extra_platform_libs": "//targets/stm32f429i_disc1:extra_platform_libs",
         "@pigweed//pw_toolchain/arm_gcc:freestanding": "False",
+        "@pigweed//pw_unit_test:main": "//pw_unit_test:logging_main",
     }),
 )
 
@@ -60,7 +69,9 @@ cc_library(
         "PW_MALLOC_ACTIVE=1",
     ],
     deps = [
+        ":basic_linker_script",
         "//pw_boot",
+        "//pw_boot_cortex_m",
         "//pw_malloc",
         "//pw_memory:busy_wait_forever",
         "//pw_preprocessor",

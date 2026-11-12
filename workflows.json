@@ -300,6 +300,80 @@
       ]
     },
     {
+      "name": "build_lm3s6965evb_tests",
+      "build_config": {
+        "name": "lm3s6965evb_all",
+        "description": "Default lm3s6965evb baremetal build",
+        "build_type": "bazel",
+        "args": [
+          "--config=lm3s6965evb"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//..."
+      ]
+    },
+    {
+      "name": "build_lm3s6965evb_cpp17_tests",
+      "build_config": {
+        "name": "lm3s6965evb_cpp17",
+        "description": "lm3s6965evb baremetal build (C++17)",
+        "build_type": "bazel",
+        "args": [
+          "--config=lm3s6965evb",
+          "--//pw_toolchain/cc:cxx_standard=17"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//..."
+      ]
+    },
+    {
+      "name": "build_stm32f429i_baremetal_tests",
+      "build_config": {
+        "name": "stm32f429i_baremetal_all",
+        "description": "Default STM32F429I-DISC1 baremetal build",
+        "build_type": "bazel",
+        "args": [
+          "--config=stm32f429i_baremetal"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//..."
+      ]
+    },
+    {
+      "name": "build_stm32f429i_freertos_tests",
+      "build_config": {
+        "name": "stm32f429i_freertos_all",
+        "description": "Default STM32F429I-DISC1 FreeRTOS build",
+        "build_type": "bazel",
+        "args": [
+          "--config=stm32f429i_freertos"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//...",
+        "//pw_system:system_example"
+      ]
+    },
+    {
       "name": "jni",
       "build_config": {
         "name": "jni_config",
@@ -960,6 +1034,10 @@
       "description": "Device-specific tests",
       "builds": [
         "lm3s6965evb",
+        "build_lm3s6965evb_tests",
+        "build_lm3s6965evb_cpp17_tests",
+        "build_stm32f429i_baremetal_tests",
+        "build_stm32f429i_freertos_tests",
         "build_rp2040_tests",
         "build_rp2350_tests",
         "pw_rp2350_freertos",

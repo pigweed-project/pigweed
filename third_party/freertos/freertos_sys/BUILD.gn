@@ -30,6 +30,8 @@ pw_source_set("freertos_sys_header") {
 pw_rust_bindgen("freertos_sys_bindgen") {
   header = "freertos_sys.h"
   flags = [
+    "--blocklist-function",
+    "xPortIsInsideInterrupt",
     "--rust-edition",
     "2021",
     "--use-core",

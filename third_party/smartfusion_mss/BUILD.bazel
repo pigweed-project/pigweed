@@ -82,6 +82,7 @@ cc_library(
         "-Iexternal/smartfusion_mss/exported_firmware/hal/CortexM3",
         "-Iexternal/smartfusion_mss",
     ],
+    tags = ["manual"],
     target_compatible_with = [
         "//pw_build/constraints/arm:cortex-m3",
     ],

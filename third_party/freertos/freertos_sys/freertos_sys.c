@@ -32,6 +32,10 @@ void freertos_sys_taskEXIT_CRITICAL(void) { taskEXIT_CRITICAL(); }
 
 void freertos_sys_taskYIELD(void) { taskYIELD(); }
 
+BaseType_t freertos_sys_xPortIsInsideInterrupt(void) {
+  return xPortIsInsideInterrupt();
+}
+
 SemaphoreHandle_t freertos_sys_xSemaphoreCreateMutex(void) {
 #if defined(configUSE_MUTEXES) && (configUSE_MUTEXES == 1) && \
     defined(configSUPPORT_DYNAMIC_ALLOCATION) &&              \

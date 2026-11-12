@@ -67,6 +67,7 @@ platform(
         "@pigweed//pw_assert:check_backend": "//pw_assert_basic",
         "@pigweed//pw_assert:check_backend_impl": "//pw_assert_basic:impl",
         "@pigweed//pw_boot:backend": "//pw_boot_cortex_m",
+        "@pigweed//pw_build:default_module_config": "//targets/stm32f429i_disc1_stm32cube:pigweed_module_config",
         "@pigweed//pw_interrupt:backend": "//pw_interrupt_cortex_m:impl",
         "@pigweed//pw_log:backend": "//pw_log_tokenized",
         "@pigweed//pw_log:backend_impl": "//pw_log_tokenized:impl",
@@ -79,6 +80,14 @@ platform(
         "@pigweed//pw_unit_test:main": "//targets/stm32f429i_disc1_stm32cube:unit_test_app",
         "@stm32f4xx_hal_driver//:hal_config": "//targets/stm32f429i_disc1_stm32cube:hal_config",
     }),
+)
+
+cc_library(
+    name = "pigweed_module_config",
+    defines = [
+        "PW_THREAD_FREERTOS_CONFIG_JOINING_ENABLED=1",
+        "PW_THREAD_FREERTOS_CONFIG_TEST_THREAD_STACK_SIZE_WORDS=512",
+    ],
 )
 
 cc_library(

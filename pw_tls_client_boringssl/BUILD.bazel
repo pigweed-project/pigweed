@@ -28,12 +28,15 @@ cc_library(
         "public/pw_tls_client_boringssl/backend_types.h",
         "public_overrides/pw_tls_client_backends/backend_types.h",
     ],
+    features = ["-layering_check"],
     includes = [
         "public",
         "public_overrides",
     ],
+    target_compatible_with = incompatible_with_mcu(),
     deps = [
         "//pw_tls_client:pw_tls_client.facade",
+        "//third_party/boringssl:sysdeps",
     ],
 )
 

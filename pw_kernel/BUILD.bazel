@@ -155,5 +155,6 @@ filegroup(
     name = "docs_dir",
     srcs = [":rust_docs"],
     output_group = "rustdoc_dir",
+    tags = ["kernel"],
     visibility = ["//visibility:public"],
 )

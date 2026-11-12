@@ -324,11 +324,9 @@ pw_cc_test(
     srcs = [
         "detokenize_from_this_program_test.cc",
     ],
-    # The linker script used by this test does not work on macOS.
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    # This test requires a linker script to load the tokenizer sections. This is
+    # currently only supported on Linux.
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":detokenize_from_this_program",
         ":pw_tokenizer",

@@ -111,6 +111,17 @@ single_version_override(
 )
 
 single_version_override(
+    module_name = "rules_rust_bindgen",
+    patch_strip = 1,
+    patches = [
+        # Passes the Rust target triple to bindgen so that bindings are
+        # generated for the target when the C++ toolchain is GCC.
+        # TODO: https://pwbug.dev/581542189 - Upstream below patch
+        "//pw_rust/bazel_patches:0001-bindgen-Set-TARGET-to-the-Rust-target-triple.patch",
+    ],
+)
+
+single_version_override(
     module_name = "googletest",
     patch_strip = 1,
     patches = [

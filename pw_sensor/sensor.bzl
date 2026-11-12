@@ -62,8 +62,11 @@ def _pw_sensor_library_impl(ctx):
         dep[CcInfo].compilation_context
         for dep in ctx.attr.deps
     ]
+    include_dir = ctx.bin_dir.path
+    if ctx.label.package:
+        include_dir = include_dir + "/" + ctx.label.package
     compilation_context = cc_common.create_compilation_context(
-        includes = depset([ctx.bin_dir.path]),
+        quote_includes = depset([include_dir]),
         headers = depset([out_header]),
     )
 

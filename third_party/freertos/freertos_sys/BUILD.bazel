@@ -38,6 +38,8 @@ cc_library(
 rust_bindgen(
     name = "freertos_sys_bindgen",
     bindgen_flags = [
+        "--blocklist-function",
+        "xPortIsInsideInterrupt",
         "--rust-edition",
         "2021",
         "--use-core",
