@@ -125,9 +125,7 @@ pw_add_test(pw_metric.metric_test
   SOURCES
     metric_test.cc
   PRIVATE_DEPS
-    pw_assert.assert
     pw_metric
-    pw_polyfill
   GROUPS
     modules
     pw_metric

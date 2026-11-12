@@ -95,8 +95,7 @@ using tokenizer::Token;
 /// Size: 8 bytes / 64 bits - next, name_and_type.
 class UntypedMetric : public MetricList::Item {
  public:
-  /// Returns this metric's 28-bit tokenized name.
-  constexpr Token name() const { return name_and_type_ & kTokenMask; }
+  Token name() const { return name_and_type_ & kTokenMask; }
 
   // Disallow copy and assign.
   UntypedMetric(UntypedMetric const&) = delete;
@@ -117,33 +116,22 @@ class UntypedMetric : public MetricList::Item {
   };
   // LINT.ThenChange(//pw_metric/py/pw_metric/constants.py:metric_types)
 
-  /// Returns the discriminated value type of this metric.
-  constexpr Type type() const {
-    return static_cast<Type>(name_and_type_ & kTypeMask);
-  }
+  Type type() const { return static_cast<Type>(name_and_type_ & kTypeMask); }
 
-  /// Returns true if this metric stores a `float`.
-  constexpr bool is_float() const { return type() == kTypeFloat; }
-  /// Returns true if this metric stores a `uint32_t`.
-  constexpr bool is_uint32() const { return type() == kTypeUint32; }
+  bool is_float() const { return type() == kTypeFloat; }
+  bool is_uint32() const { return type() == kTypeUint32; }
 #if PW_METRIC_CONFIG_ENABLE_64BIT
-  /// Returns true if this metric stores a `uint64_t`.
-  constexpr bool is_uint64() const { return type() == kTypeUint64; }
-  /// Returns true if this metric stores an `int64_t`.
-  constexpr bool is_int64() const { return type() == kTypeInt64; }
-  /// Returns true if this metric stores a `double`.
-  constexpr bool is_double() const { return type() == kTypeDouble; }
+  bool is_uint64() const { return type() == kTypeUint64; }
+  bool is_int64() const { return type() == kTypeInt64; }
+  bool is_double() const { return type() == kTypeDouble; }
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
-  /// Returns true if this metric stores a `bool`.
-  constexpr bool is_bool() const { return type() == kTypeBool; }
-  /// Returns true if this metric stores an `int32_t`.
-  constexpr bool is_int32() const { return type() == kTypeInt32; }
-  /// Returns true if this metric stores a `TokenValue`.
-  constexpr bool is_token() const { return type() == kTypeToken; }
+  bool is_bool() const { return type() == kTypeBool; }
+  bool is_int32() const { return type() == kTypeInt32; }
+  bool is_token() const { return type() == kTypeToken; }
 
   /// Backward compatibility alias.
   [[deprecated("Use is_uint32() instead")]]
-  constexpr bool is_int() const {
+  bool is_int() const {
     return is_uint32();
   }
 
@@ -174,10 +162,7 @@ class UntypedMetric : public MetricList::Item {
   constexpr UntypedMetric(Token name, Type type)
       : name_and_type_((name & kTokenMask) | type) {}
 
-  constexpr UntypedMetric(Token name, Type type, MetricList& metrics)
-      : UntypedMetric(name, type) {
-    metrics.list().push_front(*this);
-  }
+  UntypedMetric(Token name, Type type, MetricList& metrics);
 
   ~UntypedMetric();
 
@@ -214,7 +199,7 @@ class TypedMetric<float> : public UntypedMetric {
  public:
   constexpr TypedMetric(Token name, float value)
       : UntypedMetric(name, kTypeFloat), value_(value) {}
-  constexpr TypedMetric(Token name, float value, MetricList& metrics)
+  TypedMetric(Token name, float value, MetricList& metrics)
       : UntypedMetric(name, kTypeFloat, metrics), value_(value) {}
 
   ~TypedMetric() = default;
@@ -236,7 +221,7 @@ class TypedMetric<uint32_t> : public UntypedMetric {
  public:
   constexpr TypedMetric(Token name, uint32_t value)
       : UntypedMetric(name, kTypeUint32), value_(value) {}
-  constexpr TypedMetric(Token name, uint32_t value, MetricList& metrics)
+  TypedMetric(Token name, uint32_t value, MetricList& metrics)
       : UntypedMetric(name, kTypeUint32, metrics), value_(value) {}
 
   ~TypedMetric() = default;
@@ -275,7 +260,7 @@ class TypedMetric<bool> : public UntypedMetric {
  public:
   constexpr TypedMetric(Token name, bool value)
       : UntypedMetric(name, kTypeBool), value_(value) {}
-  constexpr TypedMetric(Token name, bool value, MetricList& metrics)
+  TypedMetric(Token name, bool value, MetricList& metrics)
       : UntypedMetric(name, kTypeBool, metrics), value_(value) {}
 
   ~TypedMetric() = default;
@@ -296,7 +281,7 @@ class TypedMetric<int32_t> : public UntypedMetric {
  public:
   constexpr TypedMetric(Token name, int32_t value)
       : UntypedMetric(name, kTypeInt32), value_(value) {}
-  constexpr TypedMetric(Token name, int32_t value, MetricList& metrics)
+  TypedMetric(Token name, int32_t value, MetricList& metrics)
       : UntypedMetric(name, kTypeInt32, metrics), value_(value) {}
 
   ~TypedMetric() = default;
@@ -323,7 +308,7 @@ class TypedMetric<TokenValue> : public UntypedMetric {
  public:
   constexpr TypedMetric(Token name, TokenValue value)
       : UntypedMetric(name, kTypeToken), value_(value.value) {}
-  constexpr TypedMetric(Token name, TokenValue value, MetricList& metrics)
+  TypedMetric(Token name, TokenValue value, MetricList& metrics)
       : UntypedMetric(name, kTypeToken, metrics), value_(value.value) {}
 
   ~TypedMetric() = default;
@@ -348,26 +333,10 @@ class TypedMetric<TokenValue> : public UntypedMetric {
 /// children.
 class Group : public GroupList::Item {
  public:
-  /// Constructs an empty, unregistered metric group with the given tokenized
-  /// `name`.
-  ///
-  /// @param[in] name Tokenized name of this metric group.
-  constexpr Group(Token name) : name_(name) {}
+  Group(Token name);
+  Group(Token name, GroupList& groups);
 
-  /// Constructs a metric group with the given tokenized `name` and registers
-  /// it in `groups`.
-  ///
-  /// @param[in] name Tokenized name of this metric group.
-  /// @param[in,out] groups Parent or global group list to register with.
-  ///
-  /// @pre `groups` must already be initialized, and any concurrent access to
-  /// `groups` must be externally synchronized.
-  constexpr Group(Token name, GroupList& groups) : name_(name) {
-    groups.list().push_front(*this);
-  }
-
-  /// Returns this group's tokenized name.
-  constexpr Token name() const { return name_; }
+  Token name() const { return name_; }
 
   // Disallow copy and assign.
   Group(Group const&) = delete;
@@ -375,33 +344,14 @@ class Group : public GroupList::Item {
 
   ~Group();
 
-  /// Adds `metric` to this group's metrics list.
-  ///
-  /// @param[in,out] metric Metric to add to this group's metrics list.
-  ///
-  /// @pre `metric` must not already belong to a list, and concurrent mutations
-  /// of this group must be externally synchronized.
-  constexpr void Add(UntypedMetric& metric) {
-    metrics_.list().push_front(metric);
-  }
+  void Add(UntypedMetric& metric) { metrics_.list().push_front(metric); }
+  void Add(Group& group) { children_.list().push_front(group); }
 
-  /// Adds child `group` to this group's children list.
-  ///
-  /// @param[in,out] group Child group to add to this group's children list.
-  ///
-  /// @pre `group` must not already belong to a list, and concurrent mutations
-  /// of this group must be externally synchronized.
-  constexpr void Add(Group& group) { children_.list().push_front(group); }
+  MetricList& metrics() { return metrics_; }
+  GroupList& children() { return children_; }
 
-  /// Returns the mutable list of metrics in this group.
-  constexpr MetricList& metrics() { return metrics_; }
-  /// Returns the mutable list of child groups in this group.
-  constexpr GroupList& children() { return children_; }
-
-  /// Returns the list of metrics in this group.
-  constexpr const MetricList& metrics() const { return metrics_; }
-  /// Returns the list of child groups in this group.
-  constexpr const GroupList& children() const { return children_; }
+  const MetricList& metrics() const { return metrics_; }
+  const GroupList& children() const { return children_; }
 
   /// Recursively dump a metrics group or groups to `pw_log`. Level determines
   /// the indentation `indent_level` up to a maximum of 4. Produces output like:
@@ -731,7 +681,7 @@ class TypedMetric<uint64_t> : public UntypedMetric {
  public:
   constexpr TypedMetric(Token name, uint64_t value)
       : UntypedMetric(name, kTypeUint64), value_(value) {}
-  constexpr TypedMetric(Token name, uint64_t value, MetricList& metrics)
+  TypedMetric(Token name, uint64_t value, MetricList& metrics)
       : UntypedMetric(name, kTypeUint64, metrics), value_(value) {}
 
   ~TypedMetric() = default;
@@ -758,7 +708,7 @@ class TypedMetric<int64_t> : public UntypedMetric {
  public:
   constexpr TypedMetric(Token name, int64_t value)
       : UntypedMetric(name, kTypeInt64), value_(value) {}
-  constexpr TypedMetric(Token name, int64_t value, MetricList& metrics)
+  TypedMetric(Token name, int64_t value, MetricList& metrics)
       : UntypedMetric(name, kTypeInt64, metrics), value_(value) {}
 
   ~TypedMetric() = default;
@@ -788,7 +738,7 @@ class TypedMetric<double> : public UntypedMetric {
  public:
   constexpr TypedMetric(Token name, double value)
       : UntypedMetric(name, kTypeDouble), value_(value) {}
-  constexpr TypedMetric(Token name, double value, MetricList& metrics)
+  TypedMetric(Token name, double value, MetricList& metrics)
       : UntypedMetric(name, kTypeDouble, metrics), value_(value) {}
 
   ~TypedMetric() = default;

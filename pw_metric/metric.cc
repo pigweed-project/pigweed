@@ -37,6 +37,11 @@ const char* Indent(int level) {
 
 }  // namespace
 
+UntypedMetric::UntypedMetric(Token name, Type type, MetricList& metrics)
+    : UntypedMetric(name, type) {
+  metrics.list().push_front(*this);
+}
+
 UntypedMetric::~UntypedMetric() {
   if (!unlisted()) {
     unlist();
@@ -169,6 +174,12 @@ void TypedMetric<int32_t>::Decrement(int32_t amount) {
   PW_DCHECK(is_int32());
   internal::SaturatedDecrement(value_, amount);
 }
+
+Group::Group(Token name, GroupList& groups) : name_(name) {
+  groups.list().push_front(*this);
+}
+
+Group::Group(Token name) : name_(name) {}
 
 Group::~Group() {
   if (!unlisted()) {

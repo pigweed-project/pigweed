@@ -210,8 +210,6 @@ pw_cc_test(
     ],
     deps = [
         ":metric",
-        "//pw_assert:assert",
-        "//pw_polyfill",
     ],
 )
 

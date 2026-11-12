@@ -205,11 +205,7 @@ pw_test_group("tests") {
 
 pw_test("metric_test") {
   sources = [ "metric_test.cc" ]
-  deps = [
-    ":pw_metric",
-    "$dir_pw_assert:assert",
-    dir_pw_polyfill,
-  ]
+  deps = [ ":pw_metric" ]
 }
 
 pw_test("global_test") {
