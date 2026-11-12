@@ -125,7 +125,7 @@ Every change to `pw_ghish` (and every review via `/review`, `.agents/agents/go_g
    ```bash
    bazelisk test --noshow_progress --noshow_loading_progress //pw_ghish/...
    ```
-   Includes unit tests, AST invariant enforcement (`invariants_ast_test.go`), flag compatibility verification (`flag_policy_test.go`), and CLI/config/skill documentation sync (`doc_sync_test.go`).
+   Includes unit tests, AST invariant enforcement (`invariants_ast_test.go`), flag compatibility verification (`flag_policy_test.go`), and CLI/config/skill documentation sync (`doc_sync_test.go`). For new AST checks, follow [`internal/astcheck/AGENTS.md`](internal/astcheck/AGENTS.md): use `//ghish:wraps` for wrapper choke-points, otherwise compose `astcheck` primitives in `*_ast_test.go`.
 
 2. **Live Integration Tests (FTE SWE Invoked)**
    ```bash
