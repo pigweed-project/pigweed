@@ -83,8 +83,8 @@ referencing==0.37.0
 requests==2.33.0
 rpds-py==0.30.0
 rsa==4.8
-ruamel-yaml==0.18.10
-ruamel-yaml-clib==0.2.12
+ruamel-yaml==0.19.1
+ruamel-yaml-clib==0.2.14
 six==1.16.0
 snowballstemmer==2.2.0
 soupsieve==2.6
