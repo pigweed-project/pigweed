@@ -108,6 +108,7 @@ class DataElement {
   DataElement Clone() const { return DataElement(*this); }
 
   constexpr static size_t kDefaultRecursionDepth = 32;
+  constexpr static size_t kMaxElements = 4096;
 
   // Reads a DataElement from |buffer|, replacing any data that was in |elem|.
   // Returns the amount of space occupied on |buffer| by the data element, or
@@ -180,6 +181,11 @@ class DataElement {
   std::string ToString() const;
 
  private:
+  static size_t ReadInternal(DataElement* elem,
+                             const ByteBuffer& buffer,
+                             size_t max_depth,
+                             size_t* remaining_elements);
+
   // Copy constructor for Clone().
   DataElement(const DataElement&);
 

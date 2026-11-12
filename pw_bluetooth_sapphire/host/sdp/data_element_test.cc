@@ -407,6 +407,66 @@ TEST(DataElementTest, ReadDeeplyNestedSequenceFails) {
   EXPECT_EQ(0u, read_bytes);
 }
 
+TEST(DataElementTest, ReadMaxElementsSequenceSucceeds) {
+  constexpr size_t kCount = DataElement::kMaxElements;
+  constexpr uint8_t kSequenceNextTwo = 0x36;
+  constexpr size_t kHeaderSize = 3;
+
+  DynamicByteBuffer buf(kHeaderSize + kCount);
+  buf.Fill(0x00);  // Fill with 1-byte kNull elements.
+  buf[0] = kSequenceNextTwo;
+  buf[1] = static_cast<uint8_t>((kCount >> 8) & 0xFF);
+  buf[2] = static_cast<uint8_t>(kCount & 0xFF);
+
+  DataElement elem;
+  EXPECT_EQ(buf.size(), DataElement::Read(&elem, buf));
+  EXPECT_EQ(DataElement::Type::kSequence, elem.type());
+  EXPECT_EQ(kCount, elem.ElementCount());
+}
+
+TEST(DataElementTest, ReadTooManyElementsInSequenceFails) {
+  constexpr size_t kCount = DataElement::kMaxElements + 1;
+  constexpr uint8_t kSequenceNextTwo = 0x36;
+  constexpr size_t kHeaderSize = 3;
+
+  DynamicByteBuffer buf(kHeaderSize + kCount);
+  buf.Fill(0x00);  // Fill with 1-byte kNull elements.
+  buf[0] = kSequenceNextTwo;
+  buf[1] = static_cast<uint8_t>((kCount >> 8) & 0xFF);
+  buf[2] = static_cast<uint8_t>(kCount & 0xFF);
+
+  DataElement elem;
+  EXPECT_EQ(0u, DataElement::Read(&elem, buf));
+}
+
+TEST(DataElementTest, ReadTooManyElementsAcrossNestedSequencesFails) {
+  constexpr uint8_t kSequenceNextOne = 0x35;
+  constexpr uint8_t kSequenceNextTwo = 0x36;
+  constexpr size_t kInnerCount = 64;
+  constexpr size_t kInnerSeqCount = 64;
+  // Each inner sequence has a 2-byte header (0x35, 64) + 64 1-byte kNulls.
+  // Total child DataElements across the tree = 64 inner sequences +
+  // (64 * 64 = 4096) kNulls = 4160 > DataElement::kMaxElements.
+  constexpr size_t kInnerSize = 2 + kInnerCount;
+  constexpr size_t kOuterPayloadSize = kInnerSeqCount * kInnerSize;
+  constexpr size_t kOuterHeaderSize = 3;
+
+  DynamicByteBuffer buf(kOuterHeaderSize + kOuterPayloadSize);
+  buf.Fill(0x00);
+  buf[0] = kSequenceNextTwo;
+  buf[1] = static_cast<uint8_t>((kOuterPayloadSize >> 8) & 0xFF);
+  buf[2] = static_cast<uint8_t>(kOuterPayloadSize & 0xFF);
+
+  for (size_t i = 0; i < kInnerSeqCount; ++i) {
+    size_t offset = kOuterHeaderSize + i * kInnerSize;
+    buf[offset] = kSequenceNextOne;
+    buf[offset + 1] = static_cast<uint8_t>(kInnerCount);
+  }
+
+  DataElement elem;
+  EXPECT_EQ(0u, DataElement::Read(&elem, buf));
+}
+
 TEST(DataElementTest, ToString) {
   EXPECT_EQ("Null", DataElement().ToString());
   EXPECT_EQ("Boolean(true)", DataElement(true).ToString());

@@ -2222,5 +2222,43 @@ TEST(PDUTest, ServiceSearchResponseBoundedContinuationGrowth) {
       << kSiblingAccumulationCapBytes << ")";
 }
 
+TEST(PDUTest, ServiceSearchAttributeResponseRejectsExcessiveSequenceElements) {
+  auto make_packet = [](size_t child_sequence_count) {
+    constexpr uint8_t kSequenceNextOne = 0x35;
+    constexpr uint8_t kSequenceNextTwo = 0x36;
+    constexpr size_t kOuterSequenceHeaderSize = 3;
+    constexpr size_t kEmptyInnerSequenceSize = 2;  // 0x35, 0x00
+    const size_t payload_size = child_sequence_count * kEmptyInnerSequenceSize;
+    const size_t attribute_lists_byte_count =
+        kOuterSequenceHeaderSize + payload_size;
+    const size_t packet_size =
+        sizeof(uint16_t) + attribute_lists_byte_count + sizeof(uint8_t);
+
+    DynamicByteBuffer packet(packet_size);
+    packet.Fill(0x00);
+    packet[0] = static_cast<uint8_t>((attribute_lists_byte_count >> 8) & 0xFF);
+    packet[1] = static_cast<uint8_t>(attribute_lists_byte_count & 0xFF);
+    packet[2] = kSequenceNextTwo;
+    packet[3] = static_cast<uint8_t>((payload_size >> 8) & 0xFF);
+    packet[4] = static_cast<uint8_t>(payload_size & 0xFF);
+    for (size_t i = 0; i < child_sequence_count; ++i) {
+      size_t offset = sizeof(uint16_t) + kOuterSequenceHeaderSize +
+                      i * kEmptyInnerSequenceSize;
+      packet[offset] = kSequenceNextOne;
+      packet[offset + 1] = 0x00;
+    }
+    return packet;
+  };
+
+  ServiceSearchAttributeResponse valid_response;
+  EXPECT_EQ(fit::ok(),
+            valid_response.Parse(make_packet(DataElement::kMaxElements)));
+
+  ServiceSearchAttributeResponse excessive_response;
+  EXPECT_EQ(
+      ToResult(HostError::kPacketMalformed),
+      excessive_response.Parse(make_packet(DataElement::kMaxElements + 1)));
+}
+
 }  // namespace
 }  // namespace bt::sdp
