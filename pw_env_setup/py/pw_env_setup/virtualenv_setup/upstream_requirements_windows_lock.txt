@@ -1624,9 +1624,9 @@ pyelftools==0.32 \
     --hash=sha256:013df952a006db5e138b1edf6d8a68ecc50630adbd0d83a2d41e7f846163d738 \
     --hash=sha256:6de90ee7b8263e740c8715a925382d4099b354f29ac48ea40d840cf7aa14ace5
     # via -r pw_env_setup/py/pw_env_setup/virtualenv_setup/constraint.list
-pyfakefs==5.7.2 \
-    --hash=sha256:40da84175c5af8d9c4f3b31800b8edc4af1e74a212671dd658b21cc881c60000 \
-    --hash=sha256:e1527b0e8e4b33be52f0b024ca1deb269c73eecd68457c6b0bf608d6dab12ebd
+pyfakefs==6.2.0 \
+    --hash=sha256:0968a49db692694ffed420e54a9f1cbae4636637b880e8ab09c8ccc0f11bd7ae \
+    --hash=sha256:e59a36db447bf509ce9c97ab3d1510c08cc51895c5311325a560a5e5b5dc1940
     # via -r pw_env_setup/py/pw_env_setup/virtualenv_setup/constraint.list
 pygments==2.18.0 \
     --hash=sha256:786ff802f32e91311bff3889f6e9a86e81505fe99f2735bb6d60ae0c5004f199 \
