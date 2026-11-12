@@ -96,6 +96,7 @@ alias(
 sphinx_docs_library(
     name = "docs",
     srcs = [
+        "build.rst",
         "design.rst",
         "docs.rst",
         "examples/adventure/MODULE.bazel",

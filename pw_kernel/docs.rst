@@ -6,23 +6,12 @@ pw_kernel
 .. pigweed-module::
    :name: pw_kernel
 
-``pw_kernel`` is an embedded kernel written in Rust that provides:
-
-* A core preemptive scheduling and context switch system
-* Synchronization primitives (spinlocks, mutexes, and events)
-* Out-of-tree architecture porting layer
-* In-tree support for RV32, ARMv8-M, and ARMv7-M
-* Capability-based userspace primitives (processes, IPC, interrupts, and
-  wait groups)
-* Robust protection against process faults
-* Shareable ``.text`` sections and ``pw_tokenizer``-based logging for
-  reduced binary size
-
-Embedded systems built on top of ``pw_kernel`` are a composition of
-memory-protected userspace apps and drivers. All interactions with the kernel
-are mediated through unforgeable tokens called handles. The system is defined
-declaratively, and all allocation is static.  Bazel macros are provided for
-building, linking, and optimizing multiple processes into a single image.
+``pw_kernel`` is an embedded kernel written in Rust. Embedded systems built on
+top of ``pw_kernel`` are a composition of memory-protected userspace apps and
+drivers. All interactions with the kernel are mediated through unforgeable
+tokens called handles. The system is defined declaratively, and all allocation
+is static. Bazel macros are provided for building, linking, and optimizing
+multiple processes into a single image.
 
 .. grid:: 2
 
@@ -44,12 +33,22 @@ building, linking, and optimizing multiple processes into a single image.
 
 .. grid:: 2
 
+   .. grid-item-card:: :octicon:`tools` Building system images
+      :link: build
+      :link-type: doc
+      :class-item: sales-pitch-cta-secondary
+
+      How kernelspace and userspace apps are compiled and assembled into
+      firmware images.
+
    .. grid-item-card:: :octicon:`beaker` Design
       :link: design
       :link-type: doc
       :class-item: sales-pitch-cta-secondary
 
       The design philosophy and goals of ``pw_kernel``.
+
+.. grid:: 2
 
    .. grid-item-card:: :octicon:`list-unordered` Guides
       :link: guides
@@ -66,6 +65,7 @@ building, linking, and optimizing multiple processes into a single image.
 
    quickstart
    Tour <tour>
+   System images <build>
    design
    guides
    Upstream <upstream>
