@@ -21,9 +21,10 @@ python_library_host {
     srcs: [
         "pw_env_setup/*.py",
     ],
-    // env_setup.py needs the cipd_setup and virtualenv_setup subpackages and
-    // is not used from Android.
+    // env_setup.py and python_packages.py need subpackages and third-party
+    // modules not used from Android.
     exclude_srcs: [
         "pw_env_setup/env_setup.py",
+        "pw_env_setup/python_packages.py",
     ],
 }
