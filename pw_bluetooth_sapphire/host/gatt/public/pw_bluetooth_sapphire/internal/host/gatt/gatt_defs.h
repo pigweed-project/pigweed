@@ -34,6 +34,7 @@ inline constexpr uint16_t kClientCharacteristicConfig16 = 0x2902;
 inline constexpr uint16_t kServerCharacteristicConfig16 = 0x2903;
 inline constexpr uint16_t kCharacteristicFormat16 = 0x2904;
 inline constexpr uint16_t kCharacteristicAggregateFormat16 = 0x2905;
+inline constexpr uint16_t kGenericAccessService16 = 0x1800;
 inline constexpr uint16_t kGenericAttributeService16 = 0x1801;
 inline constexpr uint16_t kServiceChangedCharacteristic16 = 0x2a05;
 inline constexpr uint16_t kServerSupportedFeaturesCharacteristic16 = 0x2b3a;
@@ -53,6 +54,9 @@ inline constexpr UUID kServerCharacteristicConfig(
 inline constexpr UUID kCharacteristicFormat(kCharacteristicFormat16);
 inline constexpr UUID kCharacteristicAggregateFormat(
     kCharacteristicAggregateFormat16);
+
+// GAP Service (Vol 3, Part C, 12)
+inline constexpr bt::UUID kGenericAccessService(kGenericAccessService16);
 
 // Defined Generic Attribute Profile Service (Vol 3, Part G, 7)
 inline constexpr bt::UUID kGenericAttributeService(kGenericAttributeService16);

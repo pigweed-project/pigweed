@@ -130,6 +130,113 @@ TEST(LocalServiceManagerTest, UnregisterService) {
   EXPECT_FALSE(mgr.UnregisterService(id1));
 }
 
+// Regression test for b/521638283.
+TEST(LocalServiceManagerTest, RegisterSecondGenericAccessServiceFails) {
+  LocalServiceManager mgr;
+
+  IdType id1 =
+      RegisterService(&mgr,
+                      std::make_unique<Service>(/*primary=*/true,
+                                                types::kGenericAccessService));
+  EXPECT_NE(kInvalidId, id1);
+  ASSERT_EQ(1u, mgr.database()->groupings().size());
+
+  // A second instance is rejected regardless of whether it is primary or
+  // secondary, and no attribute grouping is allocated for it.
+  EXPECT_EQ(
+      kInvalidId,
+      RegisterService(&mgr,
+                      std::make_unique<Service>(
+                          /*primary=*/true, types::kGenericAccessService)));
+  EXPECT_EQ(
+      kInvalidId,
+      RegisterService(&mgr,
+                      std::make_unique<Service>(/*primary=*/false,
+                                                types::kGenericAccessService)));
+  EXPECT_EQ(1u, mgr.database()->groupings().size());
+}
+
+// Regression test for b/521638283.
+TEST(LocalServiceManagerTest, RegisterSecondGenericAttributeServiceFails) {
+  LocalServiceManager mgr;
+
+  IdType id1 =
+      RegisterService(&mgr,
+                      std::make_unique<Service>(
+                          /*primary=*/true, types::kGenericAttributeService));
+  EXPECT_NE(kInvalidId, id1);
+  ASSERT_EQ(1u, mgr.database()->groupings().size());
+
+  EXPECT_EQ(
+      kInvalidId,
+      RegisterService(&mgr,
+                      std::make_unique<Service>(
+                          /*primary=*/true, types::kGenericAttributeService)));
+  EXPECT_EQ(
+      kInvalidId,
+      RegisterService(&mgr,
+                      std::make_unique<Service>(
+                          /*primary=*/false, types::kGenericAttributeService)));
+  EXPECT_EQ(1u, mgr.database()->groupings().size());
+}
+
+TEST(LocalServiceManagerTest,
+     RegisterGenericAccessAndGenericAttributeServicesSucceeds) {
+  LocalServiceManager mgr;
+
+  EXPECT_NE(
+      kInvalidId,
+      RegisterService(&mgr,
+                      std::make_unique<Service>(
+                          /*primary=*/true, types::kGenericAccessService)));
+  EXPECT_NE(
+      kInvalidId,
+      RegisterService(&mgr,
+                      std::make_unique<Service>(
+                          /*primary=*/true, types::kGenericAttributeService)));
+  EXPECT_EQ(2u, mgr.database()->groupings().size());
+}
+
+TEST(LocalServiceManagerTest,
+     RegisterGenericAccessServiceAfterUnregisterSucceeds) {
+  LocalServiceManager mgr;
+
+  IdType id1 =
+      RegisterService(&mgr,
+                      std::make_unique<Service>(/*primary=*/true,
+                                                types::kGenericAccessService));
+  ASSERT_NE(kInvalidId, id1);
+  ASSERT_EQ(
+      kInvalidId,
+      RegisterService(&mgr,
+                      std::make_unique<Service>(
+                          /*primary=*/true, types::kGenericAccessService)));
+
+  EXPECT_TRUE(mgr.UnregisterService(id1));
+  IdType id2 =
+      RegisterService(&mgr,
+                      std::make_unique<Service>(/*primary=*/true,
+                                                types::kGenericAccessService));
+  EXPECT_NE(kInvalidId, id2);
+  EXPECT_NE(id1, id2);
+  EXPECT_EQ(1u, mgr.database()->groupings().size());
+}
+
+TEST(LocalServiceManagerTest, RegisterDuplicateNonSingletonServiceSucceeds) {
+  LocalServiceManager mgr;
+
+  IdType id1 = RegisterService(
+      &mgr, std::make_unique<Service>(/*primary=*/true, kTestType16));
+  IdType id2 = RegisterService(
+      &mgr, std::make_unique<Service>(/*primary=*/true, kTestType16));
+  IdType id3 = RegisterService(
+      &mgr, std::make_unique<Service>(/*primary=*/false, kTestType16));
+  EXPECT_NE(kInvalidId, id1);
+  EXPECT_NE(kInvalidId, id2);
+  EXPECT_NE(kInvalidId, id3);
+  EXPECT_EQ(3u, mgr.database()->groupings().size());
+}
+
 TEST(LocalServiceManagerTest, RegisterCharacteristic) {
   LocalServiceManager mgr;
 

@@ -607,6 +607,26 @@ TEST_F(GattTest, ServiceDiscoveryFailureIsAggregated) {
 }
 #endif
 
+// Regression test for b/521638283. GATT registers its own Generic Attribute
+// service on construction, so a second one must be rejected.
+TEST_F(GattTest, RegisterGenericAttributeServiceFails) {
+  std::optional<IdType> svc_id;
+  gatt()->RegisterService(
+      std::make_unique<Service>(/*primary=*/true,
+                                types::kGenericAttributeService),
+      [&svc_id](IdType id) { svc_id = id; },
+      NopReadHandler,
+      NopWriteHandler,
+      NopCCCallback);
+  RunUntilIdle();
+  ASSERT_TRUE(svc_id.has_value());
+  EXPECT_EQ(kInvalidId, *svc_id);
+
+  // Other services can still be registered, including duplicates.
+  EXPECT_NE(kInvalidId, RegisterArbitraryService());
+  EXPECT_NE(kInvalidId, RegisterArbitraryService());
+}
+
 TEST_F(GattTest, SendIndicationNoConnectionFails) {
   att::Result<> res = fit::ok();
   auto indicate_cb = [&res](att::Result<> cb_res) { res = cb_res; };

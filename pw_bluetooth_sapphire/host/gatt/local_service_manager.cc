@@ -153,6 +153,17 @@ bool ValidateService(const Service& service, size_t* out_attr_count) {
   return true;
 }
 
+// Returns true if at most one instance of a service of |type| may be
+// registered on a GATT server.
+bool IsSingletonServiceType(const UUID& type) {
+  // "A device shall have only one instance of the GAP Service in the GATT
+  // Server." (Vol 3, Part C, 12)
+  // "Only one instance of the GATT service shall be exposed on a GATT Server."
+  // (Vol 3, Part G, 7)
+  return type == types::kGenericAccessService ||
+         type == types::kGenericAttributeService;
+}
+
 }  // namespace
 
 class LocalServiceManager::ServiceData final {
@@ -165,6 +176,7 @@ class LocalServiceManager::ServiceData final {
               ClientConfigCallback&& ccc_callback,
               ClientDisconnectCallback&& disconnect_callback)
       : id_(id),
+        type_(service->type()),
         read_handler_(std::forward<ReadHandler>(read_handler)),
         write_handler_(std::forward<WriteHandler>(write_handler)),
         ccc_callback_(std::forward<ClientConfigCallback>(ccc_callback)),
@@ -194,6 +206,7 @@ class LocalServiceManager::ServiceData final {
   }
 
   inline IdType id() const { return id_; }
+  inline const UUID& type() const { return type_; }
   inline att::Handle start_handle() const { return start_handle_; }
   inline att::Handle end_handle() const { return end_handle_; }
 
@@ -525,6 +538,7 @@ class LocalServiceManager::ServiceData final {
   }
 
   IdType id_;
+  UUID type_;
   att::Handle start_handle_;
   att::Handle end_handle_;
   ReadHandler read_handler_;
@@ -568,6 +582,15 @@ IdType LocalServiceManager::RegisterService(
     return kInvalidId;
   }
 
+  const bool duplicate_type = IsServiceTypeRegistered(service->type());
+  if (duplicate_type && IsSingletonServiceType(service->type())) {
+    bt_log(ERROR,
+           "gatt",
+           "server: rejecting duplicate service: %s",
+           bt_str(service->type()));
+    return kInvalidId;
+  }
+
   size_t attr_count;
   if (!ValidateService(*service, &attr_count))
     return kInvalidId;
@@ -604,6 +627,16 @@ IdType LocalServiceManager::RegisterService(
 
   // TODO(armansito): Handle potential 64-bit unsigned overflow?
   IdType id = next_service_id_++;
+
+  if (duplicate_type) {
+    // Multiple instances of most services are allowed (Vol 3, Part G, 3.1).
+    bt_log(INFO,
+           "gatt",
+           "server: registered another instance of service: %s (id: %" PRIu64
+           ")",
+           bt_str(service_data->type()),
+           id);
+  }
 
   services_[id] = std::move(service_data);
   if (service_changed_callback_) {
@@ -648,6 +681,13 @@ void LocalServiceManager::DisconnectClient(PeerId peer_id) {
   for (auto& id_service_pair : services_) {
     id_service_pair.second->DisconnectClient(peer_id);
   }
+}
+
+bool LocalServiceManager::IsServiceTypeRegistered(const UUID& type) const {
+  return std::any_of(
+      services_.begin(), services_.end(), [&type](const auto& pair) {
+        return pair.second->type() == type;
+      });
 }
 
 }  // namespace bt::gatt

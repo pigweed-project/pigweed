@@ -96,9 +96,11 @@ class LocalServiceManager final : public WeakSelf<LocalServiceManager> {
   // can be used by the caller to refer to the service in the future.
   //
   // Returns |kInvalidId| on failure. Registration can fail if the attribute
-  // database has run out of handles or if the hierarchy contains
-  // characteristics or descriptors with repeated IDs. Objects under |service|
-  // must have unique identifiers to aid in value request handling.
+  // database has run out of handles, if the hierarchy contains
+  // characteristics or descriptors with repeated IDs, or if |service| is a GAP
+  // or GATT service and an instance of it is already registered (only one of
+  // each is allowed per GATT server). Objects under |service| must have unique
+  // identifiers to aid in value request handling.
   IdType RegisterService(
       ServicePtr service,
       ReadHandler read_handler,
@@ -136,6 +138,9 @@ class LocalServiceManager final : public WeakSelf<LocalServiceManager> {
 
  private:
   class ServiceData;
+
+  // Returns true if a service with the given |type| is registered.
+  bool IsServiceTypeRegistered(const UUID& type) const;
 
   std::unique_ptr<att::Database> db_;
   IdType next_service_id_;
