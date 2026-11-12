@@ -13,9 +13,9 @@
 # the License.
 
 load("@fuchsia_infra//infra:infra.bzl", "fuchsia_cipd_releases")
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
+    "fuchsia_cc_binary",
     "fuchsia_cc_library",
     "fuchsia_cc_test",
     "fuchsia_component",
@@ -30,9 +30,6 @@ load(
     "fuchsia_licenses_collection",
     "fuchsia_licenses_spdx",
 )
-
-# buildifier: disable=bzl-visibility
-load("@rules_fuchsia//fuchsia/private:fuchsia_cc.bzl", "data_for_features", "fuchsia_cc")
 load("//pw_bluetooth_sapphire/fuchsia:cipd.bzl", "CIPD_ROOT")
 load("//pw_bluetooth_sapphire/fuchsia:fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL")
 
@@ -72,41 +69,23 @@ fuchsia_cc_library(
     ],
 )
 
-bt_hci_virtual_bin_deps = [
-    ":virtual_sources",
-    "//pw_bluetooth_sapphire/host/common",
-    "//pw_log_fuchsia",
-    "//pw_log_fuchsia:pw_log_fuchsia_syslog",
-    "@fuchsia_sdk//pkg/async-loop-cpp",
-    "@fuchsia_sdk//pkg/async-loop-default",
-    "@fuchsia_sdk//pkg/component_outgoing_cpp",
-]
-
-bt_hci_virtual_bin_features = ["static_cpp_standard_library"]
-
-# What `fuchsia_cc_binary` expands to, except that the `fuchsia_cc` wrapper is
-# `testonly` as well: the macro does not forward `testonly` to it, so the
-# wrapper could not depend on the testonly `:virtual_sources`.
-# TODO: b/430578502 - Use `fuchsia_cc_binary` once it forwards `testonly`.
-cc_binary(
-    name = "bt_hci_virtual_bin.binary",
-    testonly = True,
-    srcs = ["main.cc"],
-    # TODO: b/367805596 - Remove when dynamic linking size budget issues are resolved.
-    features = bt_hci_virtual_bin_features,
-    tags = ["manual"],
-    target_compatible_with = ["@platforms//os:fuchsia"],
-    deps = bt_hci_virtual_bin_deps,
-)
-
-fuchsia_cc(
+fuchsia_cc_binary(
     name = "bt_hci_virtual_bin",
     testonly = True,
+    srcs = ["main.cc"],
     bin_name = "bt_hci_virtual",
-    data = data_for_features(bt_hci_virtual_bin_features),
-    native_target = ":bt_hci_virtual_bin.binary",
-    tags = ["manual"],
-    deps = bt_hci_virtual_bin_deps,
+    # TODO: b/367805596 - Remove when dynamic linking size budget issues are resolved.
+    features = ["static_cpp_standard_library"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":virtual_sources",
+        "//pw_bluetooth_sapphire/host/common",
+        "//pw_log_fuchsia",
+        "//pw_log_fuchsia:pw_log_fuchsia_syslog",
+        "@fuchsia_sdk//pkg/async-loop-cpp",
+        "@fuchsia_sdk//pkg/async-loop-default",
+        "@fuchsia_sdk//pkg/component_outgoing_cpp",
+    ],
 )
 
 fuchsia_component_manifest(
