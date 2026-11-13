@@ -245,16 +245,16 @@ std::optional<hci_spec::LinkKey> LegacyPairingState::OnLinkKeyRequest() {
 
     PW_CHECK(peer_->bredr()->link_key().has_value());
     link_key = peer_->bredr()->link_key();
-    PW_DCHECK(link_key->security().enc_key_size() ==
-              hci_spec::kBrEdrLinkKeySize);
-    if (link_key->security().enc_key_size() != hci_spec::kBrEdrLinkKeySize) {
+    if (link_key->security().enc_key_size() < sm::kMinEncryptionKeySize ||
+        link_key->security().enc_key_size() > sm::kMaxEncryptionKeySize) {
       bt_log(WARN,
              "gap-bredr",
              "Recalled link key for peer id %s has unexpected enc_key_size "
-             "%zu (expected %zu) before connection is complete",
+             "%zu (expected [%hhu, %hhu])",
              bt_str(peer_id_),
              link_key->security().enc_key_size(),
-             hci_spec::kBrEdrLinkKeySize);
+             sm::kMinEncryptionKeySize,
+             sm::kMaxEncryptionKeySize);
     }
 
     if (link_.is_alive()) {

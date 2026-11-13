@@ -2141,5 +2141,27 @@ TEST_F(LegacyPairingStateTest, Inspect) {
 }
 #endif  // NINSPECT
 
+TEST_F(LegacyPairingStateTest, OnLinkKeyRequestRecallsValidSub16ByteLinkKey) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  LegacyPairingState pairing_state(peer()->GetWeakPtr(),
+                                   pairing_delegate.GetWeakPtr(),
+                                   connection()->GetWeakPtr(),
+                                   /*outgoing_connection=*/false,
+                                   &dispatcher(),
+                                   MakeAuthRequestCallback(),
+                                   NoOpStatusCallback);
+
+  sm::LTK min_size_key(
+      sm::SecurityProperties(kTestLegacyLinkKeyType, sm::kMinEncryptionKeySize),
+      kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(min_size_key));
+
+  std::optional<hci_spec::LinkKey> reply = pairing_state.OnLinkKeyRequest();
+  ASSERT_TRUE(reply.has_value());
+  EXPECT_EQ(kTestLinkKey, *reply);
+  ASSERT_TRUE(connection()->ltk().has_value());
+  EXPECT_EQ(kTestLinkKey, *connection()->ltk());
+}
+
 }  // namespace
 }  // namespace bt::gap

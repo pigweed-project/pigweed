@@ -5455,5 +5455,68 @@ TEST_F(PairingStateTest, RePairingWithSecureConnectionsSucceeds) {
   ASSERT_TRUE(status_handler.status().has_value());
   EXPECT_EQ(fit::ok(), *status_handler.status());
 }
+
+TEST_F(PairingStateTest,
+       OnLinkKeyRequestRejectsSub16ByteSecureConnectionsKeyWhenScRequired) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK sub_16_sc_key(sm::SecurityProperties(
+                            hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                            sm::kMinEncryptionKeySize),
+                        kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(sub_16_sc_key));
+
+  pairing_state.InitiatePairing(
+      BrEdrSecurityRequirements{.authentication = true,
+                                .secure_connections = true},
+      NoOpStatusCallback);
+  EXPECT_EQ(std::nullopt, pairing_state.OnLinkKeyRequest());
+  EXPECT_FALSE(connection()->ltk().has_value());
+  EXPECT_FALSE(connection()->use_secure_connections());
+}
+
+TEST_F(PairingStateTest, OnLinkKeyRequestRecallsValidSub16ByteLinkKey) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  sm::LTK min_size_key(
+      sm::SecurityProperties(
+          hci_spec::LinkKeyType::kUnauthenticatedCombination192,
+          sm::kMinEncryptionKeySize),
+      kTestLinkKey);
+  ASSERT_TRUE(peer()->MutBrEdr().SetBondData(min_size_key));
+
+  std::optional<hci_spec::LinkKey> reply = pairing_state.OnLinkKeyRequest();
+  ASSERT_TRUE(reply.has_value());
+  EXPECT_EQ(kTestLinkKey, *reply);
+  ASSERT_TRUE(connection()->ltk().has_value());
+  EXPECT_EQ(kTestLinkKey, *connection()->ltk());
+  EXPECT_FALSE(connection()->use_secure_connections());
+}
 }  // namespace
 }  // namespace bt::gap
