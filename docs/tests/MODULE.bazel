@@ -82,7 +82,7 @@ http_archive(
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
     is_default = True,
-    python_version = "3.12",
+    python_version = "3.14",
 )
 # LINT.ThenChange(//MODULE.bazel:python_version, //docs/tests/MODULE.bazel:python_version, //pw_build/workflows_launcher/MODULE.bazel:python_version, //pw_ide/py/integration_test.py:python_version, //pw_kernel/examples/adventure/MODULE.bazel:python_version, //targets/pw_rp2350/zephyr/MODULE.bazel:python_version, //zephyr/pw_tests/MODULE.bazel:python_version)
 
@@ -95,7 +95,7 @@ pip.parse(
         "--no-build-isolation",
     ],
     hub_name = "docs_tests_pip",
-    python_version = "3.12",
+    python_version = "3.14",
     requirements_lock = "//:requirements.txt",
 )
 use_repo(pip, "docs_tests_pip")

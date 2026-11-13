@@ -78,12 +78,12 @@ support for Python versions as they reach end-of-life.
    * - Python Version
      - Supported Build Systems
    * - 3.11 (minimum)
-     - GN
+     - :bdg-primary-line:`GN`
    * - 3.12
-     - Bazel
+     - :bdg-success-line:`Bazel`
    * - 3.13
-     - GN, Planned: Bazel
+     - :bdg-primary-line:`GN`, :bdg-success-line:`Bazel`
    * - 3.14
-     - Planned: GN, Bazel
+     - :bdg-primary-line:`GN`, :bdg-success-line:`Bazel`
    * - 3.15
-     - Planned: GN, Bazel
+     - Planned
