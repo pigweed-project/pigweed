@@ -22,7 +22,6 @@
 #include "pw_assert/check.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/future.h"
-#include "pw_async2/future_task.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_rpc2/client.h"
@@ -121,11 +120,7 @@ class TestHarness {
   /// can be made, returning its `Poll` state without destroying the future.
   template <typename Fut>
   auto RunInTaskUntilStalled(Fut& future) {
-    async2::FutureTask<Fut&, async2::ReturnValuePolicy::kKeep> task(future);
-    dispatcher_.Post(task);
-    dispatcher_.RunUntilStalled();
-    task.Deregister();
-    return task.TakePoll();
+    return dispatcher_.RunInTaskUntilStalled(future);
   }
 
   /// Drives `runnable` to completion on the test dispatcher and returns its

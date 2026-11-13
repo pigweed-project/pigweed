@@ -18,6 +18,8 @@
 #include <cstddef>
 
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/func_task.h"
+#include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_async2/value_future.h"
@@ -167,6 +169,8 @@ TEST(DispatcherForTest, RunInTaskUntilStalledReturnsOutputOnReady) {
   DispatcherForTest dispatcher_for_test;
   Poll<int> result = dispatcher_for_test.RunInTaskUntilStalled(future);
   EXPECT_EQ(result, Ready(5));
+  EXPECT_EQ(dispatcher_for_test.tasks_polled(), 1u);
+  EXPECT_EQ(dispatcher_for_test.tasks_completed(), 1u);
 }
 
 TEST(DispatcherForTest, RunInTaskUntilStalledReturnsPending) {
@@ -176,6 +180,64 @@ TEST(DispatcherForTest, RunInTaskUntilStalledReturnsPending) {
   DispatcherForTest dispatcher_for_test;
   Poll<int> result = dispatcher_for_test.RunInTaskUntilStalled(future);
   EXPECT_EQ(result, Pending());
+  EXPECT_EQ(dispatcher_for_test.tasks_polled(), 1u);
+  EXPECT_EQ(dispatcher_for_test.tasks_completed(), 0u);
+}
+
+class DispatcherCheckFuture {
+ public:
+  using value_type = bool;
+
+  constexpr DispatcherCheckFuture() = default;
+  explicit constexpr DispatcherCheckFuture(const Dispatcher& expected)
+      : expected_(&expected) {}
+
+  Poll<bool> Pend(Context& cx) {
+    EXPECT_TRUE(is_pendable());
+    const Dispatcher* expected = expected_;
+    expected_ = nullptr;
+    completed_ = true;
+    return Ready(cx.IsSameDispatcher(*expected));
+  }
+
+  [[nodiscard]] bool is_pendable() const { return expected_ != nullptr; }
+  [[nodiscard]] bool is_complete() const { return completed_; }
+
+ private:
+  const Dispatcher* expected_ = nullptr;
+  bool completed_ = false;
+};
+static_assert(Future<DispatcherCheckFuture>);
+
+TEST(DispatcherForTest, RunInTaskUntilStalledUsesSameDispatcher) {
+  DispatcherForTest dispatcher;
+  DispatcherForTest other_dispatcher;
+
+  DispatcherCheckFuture same_check(dispatcher);
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(same_check), Ready(true));
+
+  DispatcherCheckFuture different_check(other_dispatcher);
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(different_check), Ready(false));
+}
+
+TEST(DispatcherForTest, RunInTaskUntilStalledRunsPostedTasks) {
+  DispatcherForTest dispatcher;
+  ValueProvider<int> provider;
+  ValueFuture<int> future = provider.Get();
+
+  // First poll registers the waker on `future`; no resolver is posted yet.
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Pending());
+
+  FuncTask resolver([&provider](Context&) -> Poll<> {
+    provider.Resolve(42);
+    return Ready();
+  });
+  dispatcher.Post(resolver);
+
+  // `RunInTaskUntilStalled` runs all ready tasks on `dispatcher`, including
+  // `resolver`, which resolves `provider` and wakes `future`.
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Ready(42));
+  EXPECT_EQ(dispatcher.tasks_completed(), 2u);
 }
 
 TEST(DispatcherForTest, PostToDispatcherFromInsidePendSucceeds) {

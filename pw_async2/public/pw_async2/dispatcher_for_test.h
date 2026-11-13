@@ -60,8 +60,8 @@ class DispatcherForTestFacade final : public RunnableDispatcher {
   template <typename T>
   auto RunInTaskUntilStalled(T& future) PW_LOCKS_EXCLUDED(internal::lock()) {
     FutureTask<T&, ReturnValuePolicy::kKeep> task(future);
-    native().Post(task);
-    native().RunUntilStalled();
+    Post(task);
+    RunUntilStalled();
 
     // Ensure that the task is no longer registered, as it will be destroyed
     // once we return.
@@ -73,7 +73,7 @@ class DispatcherForTestFacade final : public RunnableDispatcher {
     return task.TakePoll();
   }
 
-  /// Runs the disptacher until all tasks have completed and
+  /// Runs the dispatcher until all tasks have completed and
   /// `DispatcherForTest::Release` has been called. This allows a test to wait
   /// until a series of steps complete, independent of the tasks registered at a
   /// particular time.
@@ -141,7 +141,7 @@ class DispatcherForTestFacade final : public RunnableDispatcher {
   Native native_;
   IdleTask idle_task_;
   bool blocking_is_allowed_ = false;
-  std::atomic<int> blocking_until_released_ = false;
+  std::atomic<int> blocking_until_released_ = 0;
 
   // TODO: b/401049619 - Optionally provide metrics for production dispatchers.
   std::atomic<uint32_t> tasks_polled_ = 0u;

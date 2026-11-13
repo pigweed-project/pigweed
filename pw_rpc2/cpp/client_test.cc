@@ -157,17 +157,36 @@ TEST(ClientFutureTest, DestroyedUnpendedFromConnectionClosesConnection) {
   EXPECT_TRUE(raw_conn->is_closed());
 }
 
+TEST(ClientFutureTest, RunInTaskUntilStalledConnectsOnDesignatedDispatcher) {
+  allocator::test::AllocatorForTest<16384> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  ClientFuture fut = Client::Connect(dispatcher, allocator, conn);
+
+  EXPECT_TRUE(dispatcher.RunInTaskUntilStalled(fut).IsPending());
+  EXPECT_EQ(raw_conn->commit_count(), 1u);
+
+  test::PushSynAck(allocator, *raw_conn);
+  auto poll = dispatcher.RunInTaskUntilStalled(fut);
+  ASSERT_TRUE(poll.IsReady());
+  PW_TEST_ASSERT_OK(*poll);
+
+  Client client = std::move(**poll);
+  EXPECT_TRUE(client.is_open());
+  test::CloseClient(client, dispatcher);
+}
+
 TEST(ClientFutureTest, PollingOnWrongDispatcherCrashes) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
   async2::DispatcherForTest wrong_dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  async2::FutureTask task(Client::Connect(dispatcher, allocator, conn));
-  wrong_dispatcher.Post(task);
+  ClientFuture fut = Client::Connect(dispatcher, allocator, conn);
 
-  EXPECT_DEATH_IF_SUPPORTED(wrong_dispatcher.RunUntilStalled(), "");
-  task.Deregister();
+  EXPECT_DEATH_IF_SUPPORTED(
+      wrong_dispatcher.RunInTaskUntilStalled(fut).IgnorePoll(), "");
 }
 
 TEST(ClientTest, MoveEmptiesTheSource) {

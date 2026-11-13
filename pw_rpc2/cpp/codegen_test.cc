@@ -1164,27 +1164,22 @@ class TestServer {
     auto paired = pw::transport::ForwardingSocketPair::Create(allocator_);
     transport_.ResolveAccept(paired.second());
 
-    async2::FutureTask connect(
-        Client::Connect(dispatcher_, allocator_, paired.first()));
-    dispatcher_.Post(connect);
-    dispatcher_.RunUntilStalled();
-    if (!connect.has_value() || !connect.value().ok()) {
+    auto client = Run(Client::Connect(dispatcher_, allocator_, paired.first()));
+    if (!client.has_value() || !client->ok()) {
       return false;
     }
-    client_.emplace(std::move(*connect.value()), dispatcher_);
+    client_.emplace(std::move(**client), dispatcher_);
     return true;
   }
 
   // Runs `future` until it stalls and returns its result, if it completed.
   template <typename Fut>
   std::optional<async2::FutureValue<Fut>> Run(Fut future) {
-    async2::FutureTask task(std::move(future));
-    dispatcher_.Post(task);
-    dispatcher_.RunUntilStalled();
-    if (!task.has_value()) {
+    async2::Poll poll = dispatcher_.RunInTaskUntilStalled(future);
+    if (poll.IsPending()) {
       return std::nullopt;
     }
-    return std::move(task.value());
+    return std::move(*poll);
   }
 
   const Client& client() const { return *client_; }
