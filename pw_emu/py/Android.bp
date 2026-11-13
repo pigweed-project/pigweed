@@ -26,6 +26,10 @@ python_binary_host {
         "pw_env_setup_py_lib",
         "pyserial",
     ],
+    // pw_emu/core.py imports psutil, which is not present in the Android
+    // source tree, and pw_emu/__main__.py imports SerialException from serial,
+    // which pyserial re-exports via wildcard import.
+    strict_deps: false,
 }
 
 python_library_host {
@@ -33,4 +37,8 @@ python_library_host {
     srcs: [
         "pw_emu/*.py",
     ],
+    // pw_emu/core.py imports psutil, which is not present in the Android
+    // source tree, and pw_emu/__main__.py imports SerialException from serial,
+    // which pyserial re-exports via wildcard import.
+    strict_deps: false,
 }
