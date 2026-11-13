@@ -17,6 +17,7 @@
 #include <pw_assert/check.h>
 #include <pw_bytes/endian.h>
 
+#include <algorithm>
 #include <iterator>
 #include <utility>
 
@@ -599,7 +600,21 @@ void RemoteServiceManager::OnServiceChangedNotification(
     return;
   }
 
-  queued_service_changes_.push(value);
+  if (next_service_change_.has_value()) {
+    // Coalesce pending Service Changed notifications into a single handle
+    // range.
+    next_service_change_->range_start_handle =
+        std::min(att::Handle{next_service_change_->range_start_handle},
+                 att::Handle{value.range_start_handle});
+    next_service_change_->range_end_handle =
+        std::max(att::Handle{next_service_change_->range_end_handle},
+                 att::Handle{value.range_end_handle});
+    bt_log(DEBUG,
+           "gatt",
+           "coalesced service changed notification into pending range");
+  } else {
+    next_service_change_ = value;
+  }
 
   // Bonded devices may send service changed notifications upon connection if
   // services changed while the device was disconnected (Core Spec v5.3, Vol 3,
@@ -628,7 +643,7 @@ void RemoteServiceManager::MaybeHandleNextServiceChangedNotification(
     return;
   }
 
-  if (queued_service_changes_.empty()) {
+  if (!next_service_change_.has_value()) {
     for (auto& cb : service_changes_complete_callbacks_) {
       cb(fit::ok());
     }
@@ -638,8 +653,8 @@ void RemoteServiceManager::MaybeHandleNextServiceChangedNotification(
 
   bt_log(DEBUG, "gatt", "handling next Service Changed notification");
 
-  const ServiceChangedCharacteristicValue& value =
-      queued_service_changes_.front();
+  const ServiceChangedCharacteristicValue value = *next_service_change_;
+  next_service_change_.reset();
   // Services outside of the changed range are unaffected, so only the
   // remaining capacity is available to services in the changed range.
   const size_t services_in_range = static_cast<size_t>(
@@ -651,7 +666,6 @@ void RemoteServiceManager::MaybeHandleNextServiceChangedNotification(
       .value = value,
       .services = {},
       .max_services = kMaxRemoteServices - services_outside_range};
-  queued_service_changes_.pop();
 
   auto self = weak_self_.GetWeakPtr();
   ServiceCallback svc_cb = [self](const ServiceData& service_data) {
@@ -723,10 +737,10 @@ void RemoteServiceManager::OnServiceChangedFatalError(att::Error error) {
          "unable to apply Service Changed notification: %s",
          bt_str(error));
 
-  // Drop the current and all queued service changes. The peer's services can
+  // Drop the current and any pending service changes. The peer's services can
   // no longer be kept in sync, so the connection is expected to be closed.
   current_service_change_.reset();
-  queued_service_changes_ = {};
+  next_service_change_.reset();
 
   if (!initialized_) {
     // Service changes are only processed during initialization as its last

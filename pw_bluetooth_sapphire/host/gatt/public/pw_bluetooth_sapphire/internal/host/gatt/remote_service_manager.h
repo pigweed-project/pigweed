@@ -225,8 +225,9 @@ class RemoteServiceManager final {
   // Services are sorted by handle.
   ServiceMap services_;
 
-  // Queue of unprocessed Service Changed notification changes.
-  std::queue<ServiceChangedCharacteristicValue> queued_service_changes_;
+  // Coalesced handle range of unprocessed Service Changed notifications
+  // received while initialization or service discovery is in flight.
+  std::optional<ServiceChangedCharacteristicValue> next_service_change_;
 
   // Service Changed notification that is currently being processed by
   // performing service discovery.

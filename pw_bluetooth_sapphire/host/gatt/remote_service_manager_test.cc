@@ -5103,6 +5103,57 @@ TEST_F(RemoteServiceManagerServiceChangedTest,
   EXPECT_EQ(kSvc1StartHandle, svc_watcher_data()[1].modified[0]->handle());
 }
 
+// Regression test for b/525186157.
+TEST_F(RemoteServiceManagerServiceChangedTest,
+       QueuedServiceChangedNotificationsCoalesced) {
+  const att::Handle kSvc1Handle(5);
+  const att::Handle kSvc2Handle(7);
+  const att::Handle kSvc3Handle(10);
+
+  ServiceData svc1(
+      ServiceKind::PRIMARY, kSvc1Handle, kSvc1Handle, kTestServiceUuid1);
+  ServiceData svc2(
+      ServiceKind::PRIMARY, kSvc2Handle, kSvc2Handle, kTestServiceUuid2);
+  ServiceData svc3(
+      ServiceKind::PRIMARY, kSvc3Handle, kSvc3Handle, kTestServiceUuid3);
+  fake_client()->set_services({gatt_service(), svc1, svc2, svc3});
+
+  size_t primary_discoveries = 0;
+  size_t secondary_discoveries = 0;
+  fake_client()->set_discover_services_callback([&](ServiceKind kind) {
+    if (kind == ServiceKind::PRIMARY) {
+      primary_discoveries++;
+    } else {
+      secondary_discoveries++;
+    }
+    return fit::ok();
+  });
+
+  // The first notification starts discovery immediately for [7, 7].
+  SendServiceChanged(kSvc2Handle, kSvc2Handle);
+
+  // Subsequent notifications arriving while discovery is in flight should
+  // coalesce into a single pending range [5, 10].
+  SendServiceChanged(kSvc2Handle, kSvc2Handle + 1);
+  SendServiceChanged(kSvc1Handle, kSvc1Handle);
+  SendServiceChanged(kSvc3Handle, kSvc3Handle);
+
+  // Only the first discovery has started before the dispatcher runs.
+  EXPECT_EQ(1u, primary_discoveries);
+  EXPECT_EQ(0u, secondary_discoveries);
+
+  RunUntilIdle();
+
+  // Total discovery cycles should be 1 (in-flight) + 1 (coalesced), not 4.
+  EXPECT_EQ(2u, primary_discoveries);
+  EXPECT_EQ(2u, secondary_discoveries);
+
+  // All three services in the coalesced [5, 10] range should be tracked.
+  EXPECT_TRUE(mgr()->FindService(kSvc1Handle).is_alive());
+  EXPECT_TRUE(mgr()->FindService(kSvc2Handle).is_alive());
+  EXPECT_TRUE(mgr()->FindService(kSvc3Handle).is_alive());
+}
+
 TEST_F(RemoteServiceManagerServiceChangedTest, ServiceUuidChanged) {
   const att::Handle kSvcStartHandle(5);
   const att::Handle kSvcEndHandle(kSvcStartHandle);
