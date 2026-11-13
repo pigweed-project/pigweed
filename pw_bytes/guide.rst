@@ -261,8 +261,8 @@ Ensure data is correctly aligned in memory.
      }
 
      // Get the largest aligned subspan
-     pw::ByteSpan original_span(static_cast<std::byte*>(some_memory_block),
-                                memory_size);
+     pw::ByteSpan original_span =
+         pw::AsWritableBytes(some_memory_block, memory_size);
      pw::ByteSpan aligned_subspan =
          pw::GetAlignedSubspan(original_span, alignof(uint64_t));
      // aligned_subspan can now be safely used to store uint64_t values,

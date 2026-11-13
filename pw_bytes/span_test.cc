@@ -65,6 +65,84 @@ namespace {
 
 constexpr auto kSomeValue = 0xDEADBEEF2B84F00D;
 
+TEST(AsBytes, FromConstVoidPointer) {
+  const uint32_t val = 0x12345678;
+  const void* ptr = &val;
+
+  pw::ConstByteSpan bytes = pw::AsBytes(ptr, sizeof(val));
+  EXPECT_EQ(bytes.data(), reinterpret_cast<const std::byte*>(&val));
+  EXPECT_EQ(bytes.size(), sizeof(val));
+
+  const void* const const_ptr = &val;
+  pw::ConstByteSpan const_ptr_bytes = pw::AsBytes(const_ptr, sizeof(val));
+  EXPECT_EQ(const_ptr_bytes.data(), reinterpret_cast<const std::byte*>(&val));
+  EXPECT_EQ(const_ptr_bytes.size(), sizeof(val));
+
+  pw::ConstByteSpan empty = pw::AsBytes(static_cast<const void*>(nullptr), 0);
+  EXPECT_EQ(empty.data(), nullptr);
+  EXPECT_TRUE(empty.empty());
+}
+
+TEST(AsBytes, FromMutableVoidPointer) {
+  uint32_t val = 0x12345678;
+  void* ptr = &val;
+
+  pw::ConstByteSpan bytes = pw::AsBytes(ptr, sizeof(val));
+  static_assert(std::is_const_v<decltype(bytes)::element_type>);
+  EXPECT_EQ(bytes.data(), reinterpret_cast<const std::byte*>(&val));
+  EXPECT_EQ(bytes.size(), sizeof(val));
+
+  pw::ConstByteSpan obj_bytes = pw::ObjectAsBytes(val);
+  EXPECT_SEQ_EQ(bytes, obj_bytes);
+}
+
+TEST(AsWritableBytes, FromMutableVoidPointer) {
+  uint32_t src = 0x12345678;
+  uint32_t dst = 0;
+  void* dst_ptr = &dst;
+
+  pw::ByteSpan dst_bytes = pw::AsWritableBytes(dst_ptr, sizeof(dst));
+  static_assert(!std::is_const_v<decltype(dst_bytes)::element_type>);
+  EXPECT_EQ(dst_bytes.data(), reinterpret_cast<std::byte*>(&dst));
+  EXPECT_EQ(dst_bytes.size(), sizeof(dst));
+
+  pw::ConstByteSpan src_bytes =
+      pw::AsBytes(static_cast<const void*>(&src), sizeof(src));
+  std::copy(src_bytes.begin(), src_bytes.end(), dst_bytes.begin());
+  EXPECT_EQ(src, dst);
+
+  pw::ByteSpan obj_bytes = pw::ObjectAsWritableBytes(dst);
+  EXPECT_SEQ_EQ(dst_bytes, obj_bytes);
+
+  pw::ByteSpan empty = pw::AsWritableBytes(static_cast<void*>(nullptr), 0);
+  EXPECT_EQ(empty.data(), nullptr);
+  EXPECT_TRUE(empty.empty());
+}
+
+#if PW_NC_TEST(AsBytesFailsWithConstTypedPointer)
+PW_NC_EXPECT("cannot pass typed pointer to 2-argument pw::AsBytes");
+pw::ConstByteSpan FailsWithConstTypedPointer(const uint32_t* ptr) {
+  return pw::AsBytes(ptr, 4);
+}
+#elif PW_NC_TEST(AsBytesFailsWithMutableTypedPointer)
+PW_NC_EXPECT("cannot pass typed pointer to 2-argument pw::AsBytes");
+pw::ConstByteSpan FailsWithMutableTypedPointer(uint32_t* ptr) {
+  return pw::AsBytes(ptr, 4);
+}
+#elif PW_NC_TEST(AsWritableBytesFailsWithConstVoidPointer)
+PW_NC_EXPECT(
+    "cannot pass typed or const pointer to 2-argument pw::AsWritableBytes");
+pw::ByteSpan FailsWithConstVoidPointer(const void* ptr) {
+  return pw::AsWritableBytes(ptr, 4);
+}
+#elif PW_NC_TEST(AsWritableBytesFailsWithTypedPointer)
+PW_NC_EXPECT(
+    "cannot pass typed or const pointer to 2-argument pw::AsWritableBytes");
+pw::ByteSpan FailsWithTypedPointer(uint32_t* ptr) {
+  return pw::AsWritableBytes(ptr, 4);
+}
+#endif  // PW_NC_TEST
+
 template <class T>
 void ObjectAsBytesWorksInt() {
   const T val = static_cast<T>(kSomeValue);

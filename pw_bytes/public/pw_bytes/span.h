@@ -29,6 +29,50 @@ using ByteSpan = span<std::byte>;
 /// Alias for a read-only `pw::span` of bytes.
 using ConstByteSpan = span<const std::byte>;
 
+/// Gets a read-only `pw::ConstByteSpan` (`pw::span<const std::byte>`) view of a
+/// type-erased memory buffer (`const void*` or `void*`) of a given size in
+/// bytes.
+///
+/// This function is constrained strictly to `const void*` and `void*` so that
+/// typed pointers (`T*`) cannot implicitly convert to `const void*` and
+/// accidentally interpret an element count as a byte count. For typed pointers,
+/// construct a `pw::span` first: `pw::as_bytes(pw::span(ptr, count))`.
+template <typename VoidPtr>
+ConstByteSpan AsBytes(VoidPtr data, size_t size_bytes) noexcept {
+  if constexpr (std::is_same_v<VoidPtr, const void*> ||
+                std::is_same_v<VoidPtr, void*>) {
+    return ConstByteSpan(static_cast<const std::byte*>(data), size_bytes);
+  } else {
+    static_assert(
+        !std::is_same_v<VoidPtr, VoidPtr>,
+        "cannot pass typed pointer to 2-argument pw::AsBytes: "
+        "only void* or const void* is accepted to prevent treating element "
+        "counts as byte counts; construct a pw::span first: "
+        "pw::as_bytes(pw::span(ptr, count))");
+  }
+}
+
+/// Gets a writable `pw::ByteSpan` (`pw::span<std::byte>`) view of a mutable
+/// type-erased memory buffer (`void*`) of a given size in bytes.
+///
+/// This function is constrained strictly to `void*` so that typed pointers
+/// (`T*`) cannot implicitly convert to `void*` and accidentally interpret an
+/// element count as a byte count. For typed pointers, construct a `pw::span`
+/// first: `pw::as_writable_bytes(pw::span(ptr, count))`.
+template <typename VoidPtr>
+ByteSpan AsWritableBytes(VoidPtr data, size_t size_bytes) noexcept {
+  if constexpr (std::is_same_v<VoidPtr, void*>) {
+    return ByteSpan(static_cast<std::byte*>(data), size_bytes);
+  } else {
+    static_assert(
+        !std::is_same_v<VoidPtr, VoidPtr>,
+        "cannot pass typed or const pointer to 2-argument "
+        "pw::AsWritableBytes: only mutable void* is accepted to prevent "
+        "treating element counts as byte counts; construct a pw::span first: "
+        "pw::as_writable_bytes(pw::span(ptr, count))");
+  }
+}
+
 /// Gets a read-only `pw::span<const std::byte>` (`ConstByteSpan`) view of an
 /// object.
 ///
