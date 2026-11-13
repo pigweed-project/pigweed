@@ -31,6 +31,9 @@ use pw_time_core::Instant;
 use crate::Kernel;
 #[cfg(feature = "user_space")]
 use crate::object::KernelObject;
+use crate::scheduler::affinity::AffinityMask;
+#[cfg(feature = "smp")]
+use crate::scheduler::affinity::CoreId;
 use crate::scheduler::algorithm::SchedulerAlgorithmThreadState;
 use crate::scheduler::process::ProcessHandle;
 use crate::scheduler::{JoinResult, Priority, SchedulerState, TryJoinResult, WaitQueue, WaitType};
@@ -479,6 +482,14 @@ pub struct Thread<K: Kernel> {
     /// The state for the scheduler algorithm.
     pub algorithm_state: SchedulerAlgorithmThreadState,
 
+    /// CPU affinity mask.
+    #[cfg(feature = "smp")]
+    pub(super) affinity: AffinityMask,
+
+    /// Last CPU core this thread was assigned to or ran on.
+    #[cfg(feature = "smp")]
+    pub(super) last_core: Option<CoreId>,
+
     #[cfg(feature = "user_space")]
     pub object: Option<foreign_box::ForeignRc<K::AtomicUsize, crate::object::ThreadObject<K>>>,
 }
@@ -510,6 +521,21 @@ impl<K: Kernel> Thread<K> {
         self.stack = stack;
     }
 
+    /// Sets the CPU affinity mask for this thread.
+    #[cfg(not(feature = "smp"))]
+    #[inline]
+    pub fn set_affinity(&mut self, _affinity: AffinityMask) {}
+
+    /// Sets the CPU affinity mask for this thread.
+    #[cfg(feature = "smp")]
+    #[inline]
+    pub fn set_affinity(&mut self, affinity: AffinityMask) {
+        self.affinity = affinity;
+
+        // Reset the last core to clear any outdated scheduling decisions.
+        self.last_core = None;
+    }
+
     // Create an empty, uninitialized thread
     #[must_use]
     pub const fn new(name: &'static str, priority: Priority, stack: Stack) -> Self {
@@ -527,6 +553,10 @@ impl<K: Kernel> Thread<K> {
             exit_status: None,
             name,
             algorithm_state: SchedulerAlgorithmThreadState::new(priority),
+            #[cfg(feature = "smp")]
+            affinity: AffinityMask::all(),
+            #[cfg(feature = "smp")]
+            last_core: None,
             #[cfg(feature = "user_space")]
             object: None,
         }

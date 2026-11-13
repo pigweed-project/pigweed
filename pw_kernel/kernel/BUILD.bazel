@@ -36,6 +36,7 @@ rust_library(
         "lib.rs",
         "panic.rs",
         "scheduler.rs",
+        "scheduler/affinity.rs",
         "scheduler/algorithm.rs",
         "scheduler/algorithm/global_queue.rs",
         "scheduler/algorithm/interface.rs",

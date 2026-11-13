@@ -24,6 +24,9 @@ pub trait KernelConfigInterface {
 
     /// The native rate at which the system clock advances.
     const SYSTEM_CLOCK_HZ: u64;
+
+    /// Maximum number of cores supported by the kernel on this platform.
+    const MAX_CORES: usize = 1;
 }
 
 /// SysTick clock source.

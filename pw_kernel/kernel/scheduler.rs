@@ -32,6 +32,7 @@
 //!   M-profile ARM which handles the context switch in an exception handler
 //!   after an interrupt has returned.
 
+pub(crate) mod affinity;
 pub(crate) mod algorithm;
 pub(crate) mod core;
 pub(crate) mod locks;
@@ -49,6 +50,7 @@ pub use core::{
     try_deferred_reschedule, yield_timeslice,
 };
 
+pub use affinity::{AffinityMask, CoreId};
 pub use algorithm::RescheduleReason;
 pub use locks::{SchedLockGuard, WaitQueueLock, WaitQueueLockGuard};
 pub use priority::Priority;
