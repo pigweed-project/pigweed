@@ -102,7 +102,7 @@ pw-nav a.pw-nav-tree-link:visited,
 }
 
 pw-nav .pw-nav-level-1 > a.pw-nav-tree-link,
-#nav-tree-contents > ul > li > .item > .label > a {
+#nav-tree-contents > ul > li > ul > li > :where(.item) > .label > a {
   font-weight: 500;
 }
 
@@ -442,6 +442,18 @@ html.sidebar-resizing > body {
 
 #nav-tree-contents {
   margin: 0;
+}
+
+/* Hide Doxygen's outer project wrapper row ("Pigweed") so top-level tabs sit flush. */
+#nav-tree-contents > ul > li > .item {
+  display: none;
+}
+
+#nav-tree-contents > ul > li > .children_ul {
+  display: block !important;
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
 }
 
 #nav-tree li {

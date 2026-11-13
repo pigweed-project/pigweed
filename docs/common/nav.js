@@ -212,6 +212,34 @@ function setupDoxygenNav() {
     return /(?:^|;\s*)doxygen_width=/.test(document.cookie || '');
   };
 
+  const ensureRootExpanded = (o) => {
+    const rootNode =
+      o && o.node && Array.isArray(o.node.children) ? o.node.children[0] : null;
+    if (!rootNode) {
+      return;
+    }
+    if (rootNode.itemDiv && rootNode.itemDiv.classList.contains('selected')) {
+      rootNode.itemDiv.classList.remove('selected');
+      if (rootNode.itemDiv.id === 'selected') {
+        rootNode.itemDiv.removeAttribute('id');
+      }
+    }
+    if (!rootNode.expanded) {
+      if (!rootNode.childrenVisited && typeof window.getNode === 'function') {
+        window.getNode(o, rootNode);
+      }
+      const childrenUl =
+        typeof rootNode.getChildrenUL === 'function'
+          ? rootNode.getChildrenUL()
+          : null;
+      if (childrenUl) {
+        childrenUl.style.display = 'block';
+      }
+      rootNode.expanded = true;
+      syncNodeExpanded(rootNode);
+    }
+  };
+
   if (typeof window.getNode === 'function') {
     const origGetNode = window.getNode;
     window.getNode = function (o, po) {
@@ -256,6 +284,9 @@ function setupDoxygenNav() {
     window.showNode = function (o, node, index, hash) {
       origShowNode.call(this, o, node, index, hash);
       syncNodeExpanded(node);
+      if (index === 0) {
+        ensureRootExpanded(o);
+      }
     };
   }
 

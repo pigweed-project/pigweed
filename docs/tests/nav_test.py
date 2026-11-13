@@ -756,6 +756,69 @@ class NavTest(unittest.TestCase):
             context.close()
             browser.close()
 
+    def test_doxygen_hides_project_root_and_expands_unindexed_pages(self):
+        """Verifies Doxygen's outer 'Pigweed' wrapper row is hidden, top-level
+        items sit flush, and unindexed pages still populate top-level links."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 840}
+            )
+            page = context.new_page()
+            nav_tree = page.locator("#nav-tree")
+
+            page.goto(
+                self.server.url_for("api/cc/index.html"),
+                wait_until="networkidle",
+            )
+            selected = nav_tree.locator(".item.selected .label a")
+            selected.wait_for(state="visible", timeout=5000)
+            self.assertFalse(
+                nav_tree.locator(
+                    "#nav-tree-contents > ul > li > .item"
+                ).is_visible()
+            )
+            self.assertEqual(
+                nav_tree.locator(
+                    "#nav-tree-contents > ul > li > .children_ul"
+                ).evaluate("el => getComputedStyle(el).borderLeftStyle"),
+                "none",
+            )
+            self.assertEqual(
+                selected.inner_text().strip(), "C/C++ API reference home"
+            )
+            self.assertEqual(
+                selected.evaluate("el => getComputedStyle(el).fontWeight"),
+                "600",
+            )
+            modules_link = nav_tree.locator(".item .label a:text-is('Modules')")
+            self.assertEqual(
+                modules_link.evaluate("el => getComputedStyle(el).fontWeight"),
+                "500",
+            )
+
+            page.goto(
+                self.server.url_for("api/cc/algorithm_8h.html"),
+                wait_until="networkidle",
+            )
+            nav_tree.locator(".item .label a:text-is('Modules')").wait_for(
+                state="visible", timeout=5000
+            )
+            self.assertTrue(
+                nav_tree.locator(
+                    ".item .label a:text-is('C/C++ API reference home')"
+                ).is_visible()
+            )
+            self.assertEqual(nav_tree.locator(".item.selected").count(), 0)
+
+            context.close()
+            browser.close()
+
     def test_doxygen_no_js_hides_empty_sidebar(self):
         """Verifies that when JavaScript is disabled, the unpopulated Doxygen
         sidebar stays hidden and does not cover main page content."""
