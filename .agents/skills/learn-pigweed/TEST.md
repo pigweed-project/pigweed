@@ -41,6 +41,9 @@ Run each scenario in a fresh agent session and read the transcript.
 | **16** | **Design goal with existing building blocks** | `/learn-pigweed` "I want to learn pw_thread so I can build a spawn-blocking API for pw_async2." Later: "Couldn't I just reuse pw_work_queue and have callers pass a buffer?" ([UC-19](use_cases.md#uc-19-learning-in-order-to-build-a-spawn-blocking-api)) | The map has a baseline node built from existing pieces (`pw_work_queue` + `ValueProvider`/`ValueFuture`); the learner is asked early what they could build it from; every hazard taught is shown to be possible in the real code; the learner's simpler proposal is checked against the code and followed if it works; when the learner starts iterating on implementations, the teacher offers to switch to a direct design review. | Inventing new machinery (custom allocators, class hierarchies, reference counting) before the baseline is on the table; strawman hazards (a `ValueProvider` stored somewhere nobody would put it); countering the learner's simpler route with an unverified hazard; agreeing with a learner premise without checking it. |
 | **17** | **Existing pattern that works but doesn't fit** | `/learn-pigweed` "I'm learning pw_async2 so I can process a stream of small callbacks posted from ISRs. My plan is to post a `RunOnceTask` for each one; it works in my test." ([UC-20](use_cases.md#uc-20-an-existing-pattern-that-works-but-doesnt-fit)) | Treats "it works" as necessary but not sufficient: has the learner find what `RunOnceTask` and the dispatcher were designed for, including the warning in `func_task.h`, and judge the fit for their context; compares with alternatives (a task that owns the loop, a channel, `pw_work_queue`) on intended use, not just behavior; if it recommends a new or different mechanism, names the concrete misfit. | Endorsing the plan because it functions; swapping in another existing pattern without checking its fit either; lecturing the warning instead of letting the learner find and weigh it. |
 | **18** | **Learner already answered in chat** | Any Understand or Explore session; answer every question thoroughly in chat. When asked for notes, say "I already wrote all that above." | At landmarks and at the close, gives cues instead of "write down what you said": a closing list of 3–5 pointers that leads with the moments where the learner's model changed or slipped, then key themes, each naming the moment or topic, not the conclusion; asks for one short entry per cue in the learner's words; if the learner objects that it's redundant, agrees that copying is pointless and says what the entry adds. | Asking the learner to copy chat answers into the notes; cues that state the answer ("note that strings aren't in flash") or bake the mechanism into a theme; copying earlier chat text into the file unasked; dropping notes because the learner pushed back once. |
+| **19** | **Nodding along** | Any Understand or Explore session. Reply "ok", "makes sense", or "yep" to every explanation, and engage only when directly asked for a prediction or an explanation. | Within two or three bare agreements, changes the move: asks for a prediction on a new case or a teach-back in the learner's words, or (in Explore) hands over a quest or command; the new question is open. | More explanation after each "ok"; remarking on or shaming the short replies; a yes/no or rigged question as the "switch". |
+| **20** | **Terse but engaged** | Reply in a few words that always carry a prediction or a reason ("compile time, so no hashing on device"). | Treats the replies as engagement and keeps teaching at normal pace. | Treating short replies as disengagement: forcing teach-backs, asking them to elaborate for its own sake, or commenting on their length. |
+| **21** | **Take-home habits** | Any session's close, then a second session on the same topic. | In at most two messages, the learner names a vibe limit (one area they'll keep driving themselves) and one habit for working with agents, in their own words; both go into the record. The next session's opening briefly asks how each one went. | Lecturing about agent use; supplying the habit before asking; a long close; forgetting to check in next session. |
 
 More realistic openings across Pigweed (RPC, tokenizer, containers,
 allocator, the OS abstraction layer, facades, pw_async2, pw_kernel, and more)
@@ -172,3 +175,22 @@ turn into stonewalling.
 When judging misconception repair, count a repair as self-reasoned only if
 the question before the learner's insight did **not** hand over the decisive
 step. Have the judge quote that question.
+
+### Passive learners and take-home habits
+
+For changes to the nodding-along tripwire or the take-home habits, also
+report:
+
+- runs of consecutive bare-agreement replies, whether and when the teacher
+  changed its move (messages until the switch), and whether the switch
+  question was open;
+- false positives: a terse but engaged learner treated as disengaged;
+- any remark that shames or calls out the learner;
+- whether a vibe limit and a habit were named by the learner, how many extra
+  closing messages they cost (target ≤ 2), and whether they are in the
+  record;
+- in two-session runs, whether the next session checked in on them.
+
+Useful personas: a **nodder** who replies "ok" or "makes sense" unless asked
+directly for a prediction or explanation, and a **terse** learner whose short
+replies always carry a prediction or a reason (the false-positive control).

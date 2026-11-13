@@ -80,7 +80,8 @@ claims they can explain. Before teaching, check the goal against that:
 
 Keep per-topic state in `~/.pw_learn/<topic-slug>/` (outside the repository;
 never commit it). If it exists when a session starts, read it and open with
-1–3 retrieval questions from last time before starting anything new.
+1–3 retrieval questions from last time before starting anything new. If it
+lists take-home habits, briefly ask how each one went.
 
 ## Testing
 
