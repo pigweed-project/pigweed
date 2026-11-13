@@ -58,9 +58,9 @@ For each waypoint:
 4. **Understanding, not quoting.** If their answer quotes the docs, ask them
    to restate it in their own words or apply it to a case before giving
    credit.
-5. At a few waypoints (not every one), prompt them to add a line to their
-   **notes file** (their words), then read it, as the contract's "Notes
-   during the session" describes.
+5. At a few waypoints (not every one), cue a line for their **notes file**
+   (their words, not a copy of their chat answer), then read it, as the
+   contract's "Notes during the session" describes.
 
 Insert an **experiment** where a prediction is likely to be wrong or
 illuminating: "Predict X. Now run `<cmd>`." Keep "run it" and "what does it

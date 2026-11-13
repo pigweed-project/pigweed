@@ -40,6 +40,7 @@ Run each scenario in a fresh agent session and read the transcript.
 | **15** | **No editor (dictation)** | "I'm on Jetski web on a cloudtop and don't have an editor handy." | Switches to dictation: the learner types notes in chat and the agent writes them to the file verbatim; edits also come from the learner. | Rewording, tidying, or adding to the dictated notes; dropping notes entirely. |
 | **16** | **Design goal with existing building blocks** | `/learn-pigweed` "I want to learn pw_thread so I can build a spawn-blocking API for pw_async2." Later: "Couldn't I just reuse pw_work_queue and have callers pass a buffer?" ([UC-19](use_cases.md#uc-19-learning-in-order-to-build-a-spawn-blocking-api)) | The map has a baseline node built from existing pieces (`pw_work_queue` + `ValueProvider`/`ValueFuture`); the learner is asked early what they could build it from; every hazard taught is shown to be possible in the real code; the learner's simpler proposal is checked against the code and followed if it works; when the learner starts iterating on implementations, the teacher offers to switch to a direct design review. | Inventing new machinery (custom allocators, class hierarchies, reference counting) before the baseline is on the table; strawman hazards (a `ValueProvider` stored somewhere nobody would put it); countering the learner's simpler route with an unverified hazard; agreeing with a learner premise without checking it. |
 | **17** | **Existing pattern that works but doesn't fit** | `/learn-pigweed` "I'm learning pw_async2 so I can process a stream of small callbacks posted from ISRs. My plan is to post a `RunOnceTask` for each one; it works in my test." ([UC-20](use_cases.md#uc-20-an-existing-pattern-that-works-but-doesnt-fit)) | Treats "it works" as necessary but not sufficient: has the learner find what `RunOnceTask` and the dispatcher were designed for, including the warning in `func_task.h`, and judge the fit for their context; compares with alternatives (a task that owns the loop, a channel, `pw_work_queue`) on intended use, not just behavior; if it recommends a new or different mechanism, names the concrete misfit. | Endorsing the plan because it functions; swapping in another existing pattern without checking its fit either; lecturing the warning instead of letting the learner find and weigh it. |
+| **18** | **Learner already answered in chat** | Any Understand or Explore session; answer every question thoroughly in chat. When asked for notes, say "I already wrote all that above." | At landmarks and at the close, gives cues instead of "write down what you said": a closing list of 3–5 pointers that leads with the moments where the learner's model changed or slipped, then key themes, each naming the moment or topic, not the conclusion; asks for one short entry per cue in the learner's words; if the learner objects that it's redundant, agrees that copying is pointless and says what the entry adds. | Asking the learner to copy chat answers into the notes; cues that state the answer ("note that strings aren't in flash") or bake the mechanism into a theme; copying earlier chat text into the file unasked; dropping notes because the learner pushed back once. |
 
 More realistic openings across Pigweed (RPC, tokenizer, containers,
 allocator, the OS abstraction layer, facades, pw_async2, pw_kernel, and more)
@@ -149,10 +150,19 @@ For changes to the session setup or notes handling, also report:
   (encouraged once, ignored, blocked, or nagged);
 - whether the closing review happened, from notes or as a verbal teach-back;
 - for dictation, whether the file matches what the learner typed, word for
-  word.
+  word;
+- whether the teacher gave cues (a 3–5 item list at the close) rather than
+  asking the learner to write down what they already said in chat;
+- **cue leaks**: cues that state the conclusion instead of naming the moment
+  or theme (apply the leading-question test to each cue);
+- how many note entries are tied to specific moments or themes from the
+  session versus generic summaries, and how much the notes overlap with the
+  learner's own chat text (heavy overlap suggests transcription).
 
 Useful personas: a **note-avoider** who only writes notes when it's easy and
-clearly worth it, and a **chat-only** learner who can't edit files.
+clearly worth it, a **chat-only** learner who can't edit files, and a
+**chatty** learner who answers thoroughly in chat and finds copying those
+answers into notes redundant.
 
 Rough targets: leading ≤ 15%, answerable without understanding ≤ 10%, no
 railroad runs, and few cue passes. Check that the struggling persona still

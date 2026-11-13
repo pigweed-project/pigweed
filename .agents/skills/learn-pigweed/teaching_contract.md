@@ -39,8 +39,10 @@ question or two. It should cost at most one extra message.
 3. **Make the case for notes, briefly.** In a sentence or two: writing ideas
    down in your own words is one of the more reliable ways to make them
    stick, because people remember what they produce much better than what
-   they read. Preview the end of the session: "we'll finish by going over your
-   notes together to consolidate what you learned."
+   they read. Make clear the notes aren't a copy of the chat: they're the few
+   things worth finding again, which you'll point out as you go. Preview the
+   end of the session: "we'll finish by going over your notes together to
+   consolidate what you learned."
 4. **Check the round trip.** Their first entry is under "What I want to be
    able to do". Read the file afterwards to confirm you can see it. If they
    can't easily edit files (no editor on a cloudtop, say), switch to
@@ -61,14 +63,37 @@ question or two. It should cost at most one extra message.
 
 ## Notes during the session
 
+Notes are for synthesis and recall, not transcription. The chat already holds
+what the learner said, so **never ask them to copy their chat answers into the
+file**. Instead, point at what is worth keeping with **cues**, and let them
+write each entry in their own words, usually shorter and more connected than
+what they said in chat.
+
 At a few natural landmarks (roughly 2–4 per session: the end of an Explore
-waypoint cluster, after a key Understand step, the end of an Orient unit),
-prompt one notes entry and then **read the file**. If nothing was added,
-encourage once, with the reason ("before we move on, add a line on what you
-just found; it's what you'll keep from this session"), then continue. Notes
-should come up in a minority of your messages: never pause the session to wait
-for notes, never block progress on them, and don't mention them between
-landmarks.
+waypoint cluster, after a key Understand step, the end of an Orient unit), give
+one or two cues for a notes entry and then **read the file**. The best landmark
+is just after the learner's model changed: cue that moment while it's fresh
+(what changed their mind, or how it connects to an earlier piece). If nothing
+was added, encourage once, with the reason ("before we move on, add a line for
+that cue; it's what you'll keep from this session"), then continue. Notes should
+come up in a minority of your messages: never pause the session to wait for
+notes, never block progress on them, and don't mention them between landmarks.
+
+**Cues name the moment, never the conclusion.** A cue is a short pointer to
+one of two things:
+
+- **A key theme**, named but not explained: "where the string ends up after
+  the build".
+- **A moment where their model changed or slipped:** "around the ELF-section
+  question, you first predicted something different; what changed?"
+
+Apply hard rule 7 to every cue: "Strings aren't stored in flash" is a
+conclusion; "what you found in the ELF sections" is a cue. Themes
+name the topic, not the mechanism: "how a handle becomes an object", not "how
+a handle indexes a per-process table". Ask for one bullet per cue, under the
+heading it fits. If the learner says this repeats the chat, agree that copying
+would be pointless and say what the entry adds: the one line they'd want to
+find next month, in words they'd search for.
 
 ## Hard rules
 
@@ -303,9 +328,18 @@ what keeps it honest.
 ### 1. Learner-authored notes
 
 Ask the learner to finish their notes file: a summary (5–10 bullets or a small
-diagram) in their own words, under the headings set up at the start. The
-notes are not just a keepsake: they are the learner's unprompted model after
-the teaching, which makes them the best place in the session to catch what
+diagram) in their own words, under the headings set up at the start. Give them
+a **cue list** of 3–5 pointers to work from, following "Cues name the moment,
+never the conclusion" above. **Lead with the moments where their model changed
+or slipped** (a repaired misconception or a surprising result is one), then
+fill the rest with key themes. For example: "your first guess about when the
+token is computed, and what changed it; the ELF-section experiment; what you'd
+check first when a log won't decode." Ask for one entry per cue, in their own
+words; entries on slips go under "Things I got wrong or that surprised me": what
+they used to think and what changed their mind. After a teach-back in chat, cue
+what it left out or blurred, plus the slips; don't paste it into the file for
+them. The notes are not just a keepsake: they are the learner's unprompted model
+after the teaching, which makes them the best place in the session to catch what
 didn't land. Treat errors in them as teaching opportunities, not as things to
 fix for the learner.
 
