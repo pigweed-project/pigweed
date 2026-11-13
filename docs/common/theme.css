@@ -26,9 +26,25 @@ html[data-theme='dark'] {
   --pw-color-background-secondary: #22272e;
   --pw-color-background-code: #2d333b;
   --pw-color-foreground-primary: #ffffffcc;
+  --pw-color-foreground-emphasis: #ffffff;
   --pw-color-border: #333;
   --pw-color-hover: var(--pw-color-background-secondary);
   --pw-color-outline-focus: #58a6ff;
+  --pw-color-brand-primary: #fb71fe;
+  --pw-color-brand-secondary: #8be9fd;
+  --pw-color-warning: #ff9245;
+
+  /* Shared code syntax palette (based on PigweedCodeStyle with higher-contrast
+   * comments for dark surfaces). */
+  --pw-color-syntax-keyword: #ff79c6;
+  --pw-color-syntax-type: var(--pw-color-brand-secondary);
+  --pw-color-syntax-number: #bd93f9;
+  --pw-color-syntax-string: #f1fa8c;
+  --pw-color-syntax-function: #50fa7b;
+  --pw-color-syntax-comment: #94a3b8;
+  --pw-color-syntax-doc-comment: #9eb89e;
+  --pw-color-syntax-constant: #ff7b72;
+  --pw-color-syntax-qualifier: #ffb86c;
 
   /* TODO: https://pwbug.dev/575488391 - Migrate remaining non-search uses of
    * --pf-* variables in docs/common/ to --pw-* variables. */
@@ -60,9 +76,23 @@ html[data-theme='light'] {
   --pw-color-background-secondary: #f8f9fb;
   --pw-color-background-code: #e8ecef;
   --pw-color-foreground-primary: #222832;
+  --pw-color-foreground-emphasis: #000000;
   --pw-color-border: #e0e0e0;
   --pw-color-hover: var(--pw-color-background-secondary);
   --pw-color-outline-focus: #0969da;
+  --pw-color-brand-primary: #b529aa;
+  --pw-color-brand-secondary: #016074;
+  --pw-color-warning: #92400e;
+
+  --pw-color-syntax-keyword: var(--pw-color-brand-primary);
+  --pw-color-syntax-type: var(--pw-color-brand-secondary);
+  --pw-color-syntax-number: #6d28d9;
+  --pw-color-syntax-string: #3f6212;
+  --pw-color-syntax-function: #047857;
+  --pw-color-syntax-comment: #525e6b;
+  --pw-color-syntax-doc-comment: #3f6212;
+  --pw-color-syntax-constant: #b91c1c;
+  --pw-color-syntax-qualifier: var(--pw-color-warning);
 
   /* TODO: https://pwbug.dev/575488391 - Migrate remaining non-search uses of
    * --pf-* variables in docs/common/ to --pw-* variables. */
@@ -90,4 +120,160 @@ html[data-theme='light'] {
 /* Hide Rustdoc ayu theme option in settings */
 label[for='theme-ayu'] {
   display: none !important;
+}
+
+/* ========== RUSTDOC DARK THEME ALIGNMENT ========== */
+/* Scope Rustdoc's unprefixed variables to pages whose <body> carries .rustdoc
+ * so they cannot collide with Sphinx or Doxygen variables, while targeting
+ * :root (specificity 0,3,1) to beat :root[data-theme="dark"] (0,2,0) and
+ * cover root scrollbars. */
+html:root[data-theme='dark']:has(> body.rustdoc) {
+  /* Surfaces and text */
+  --main-background-color: var(--pw-color-background-primary);
+  --main-color: var(--pw-color-foreground-primary);
+  --sidebar-background-color: var(--pw-color-background-primary);
+  --sidebar-background-color-hover: var(--pw-color-hover);
+  --sidebar-current-link-background-color: var(--pw-color-hover);
+  --sidebar-border-color: var(--pw-color-border);
+  --code-block-background-color: var(--pw-color-background-code);
+  --table-alt-row-background-color: var(--pw-color-background-secondary);
+  --src-sidebar-background-selected: var(--pw-color-background-code);
+  --src-sidebar-background-hover: var(--pw-color-hover);
+  --codeblock-link-background: color-mix(
+    in srgb,
+    var(--pw-color-foreground-emphasis) 6%,
+    transparent
+  );
+  --scrape-example-code-wrapper-background-start: var(
+    --pw-color-background-primary
+  );
+  --scrape-example-code-wrapper-background-end: color-mix(
+    in srgb,
+    var(--pw-color-background-primary) 0%,
+    transparent
+  );
+
+  /* Borders, muted labels, and interactive chrome */
+  --border-color: var(--pw-color-border);
+  --headings-border-bottom-color: var(--pw-color-border);
+  --right-side-color: var(--pw-color-link-inactive);
+  --code-attribute-color: var(--pw-color-link-inactive);
+  --toggles-color: var(--pw-color-link-inactive);
+  --copy-path-button-color: var(--pw-color-link-inactive);
+  --code-example-button-color: var(--pw-color-link-inactive);
+  --code-example-button-hover-color: var(--pw-color-foreground-primary);
+  --button-background-color: var(--pw-color-background-secondary);
+  --settings-input-color: var(--pw-color-outline-focus);
+  --settings-input-border-color: var(--pf-border-focus);
+  --settings-button-border-focus: var(--pw-color-outline-focus);
+  --search-input-focused-border-color: var(--pw-color-outline-focus);
+  --crate-search-hover-border: var(--pw-color-outline-focus);
+  --sidebar-resizer-hover: color-mix(
+    in srgb,
+    var(--pw-color-outline-focus) 50%,
+    transparent
+  );
+  --sidebar-resizer-active: var(--pw-color-outline-focus);
+  --scrollbar-track-background-color: transparent;
+  --scrollbar-thumb-background-color: var(--pw-scrollbar-thumb);
+  --scrollbar-color: var(--pw-scrollbar-thumb) transparent;
+  --kbd-color: var(--pw-color-foreground-primary);
+  --kbd-background: var(--pw-color-background-code);
+  --kbd-box-shadow-color: var(--pw-color-border);
+  --stab-background-color: color-mix(
+    in srgb,
+    var(--pw-color-outline-focus) 14%,
+    var(--pw-color-background-primary)
+  );
+  --stab-code-color: var(--pw-color-foreground-primary);
+  --scrape-example-toggle-line-background: var(--pf-border-focus);
+  --scrape-example-toggle-line-hover-background: var(--pw-color-link-inactive);
+  --scrape-example-help-border-color: var(--pf-border-focus);
+  --scrape-example-help-color: var(--pw-color-foreground-primary);
+  --scrape-example-help-hover-border-color: var(--pw-color-outline-focus);
+  --scrape-example-help-hover-color: var(--pw-color-foreground-emphasis);
+  --search-color: var(--pw-color-foreground-primary);
+  --search-error-code-background-color: var(--pw-color-background-code);
+  --search-result-link-focus-background-color: var(--pw-color-background-code);
+  --search-result-border-color: var(--pw-color-border);
+  --search-results-grey-color: var(--pw-color-link-inactive);
+  --search-tab-title-count-color: var(--pw-color-link-inactive);
+  --search-tab-button-not-selected-border-top-color: var(
+    --pw-color-background-secondary
+  );
+  --search-tab-button-not-selected-background: var(
+    --pw-color-background-secondary
+  );
+  --search-tab-button-selected-border-top-color: var(--pw-color-outline-focus);
+  --search-tab-button-selected-background: var(--pw-color-background-primary);
+
+  /* Links and target highlights.
+   * Use --pw-color-outline-focus (#58a6ff) instead of --pw-color-link
+   * (#2b8cee) so links keep >=4.5:1 WCAG AA contrast on
+   * --pw-color-background-code (#2d333b: 5.04:1 vs 3.69:1). */
+  --link-color: var(--pw-color-outline-focus);
+  --sidebar-link-color: var(--pw-color-outline-focus);
+  --mod-link-color: var(--pw-color-outline-focus);
+  --assoc-item-link-color: var(--pw-color-outline-focus);
+  --keyword-link-color: var(--pw-color-outline-focus);
+  --attribute-link-color: var(--pw-color-outline-focus);
+  --target-background-color: color-mix(
+    in srgb,
+    var(--pw-color-outline-focus) 14%,
+    transparent
+  );
+  --target-border-color: var(--pw-color-outline-focus);
+  --src-line-numbers-span-color: var(--pw-color-outline-focus);
+  --src-line-number-highlighted-background-color: color-mix(
+    in srgb,
+    var(--pw-color-outline-focus) 18%,
+    transparent
+  );
+  --scrape-example-code-line-highlight: color-mix(
+    in srgb,
+    var(--pw-color-outline-focus) 14%,
+    transparent
+  );
+  --scrape-example-code-line-highlight-focus: color-mix(
+    in srgb,
+    var(--pw-color-outline-focus) 28%,
+    transparent
+  );
+  --warning-border-color: var(--pw-color-warning);
+  --codeblock-ignore-hover-color: var(--pw-color-warning);
+  --codeblock-ignore-color: color-mix(
+    in srgb,
+    var(--pw-color-warning) 60%,
+    transparent
+  );
+
+  /* Semantic item colors derived from Pigweed's syntax palette */
+  --type-link-color: color-mix(
+    in srgb,
+    var(--pw-color-syntax-type) 82%,
+    var(--pw-color-background-primary)
+  );
+  --trait-link-color: var(--pw-color-syntax-number);
+  --function-link-color: color-mix(
+    in srgb,
+    var(--pw-color-syntax-function) 88%,
+    var(--pw-color-background-primary)
+  );
+  --macro-link-color: var(--pw-color-syntax-keyword);
+
+  /* Code block syntax highlighting mapped to shared --pw-color-syntax-* vars */
+  --code-highlight-kw-color: var(--pw-color-syntax-keyword);
+  --code-highlight-kw-2-color: var(--pw-color-syntax-type);
+  --code-highlight-lifetime-color: var(--pw-color-syntax-qualifier);
+  --code-highlight-prelude-color: var(--pw-color-syntax-type);
+  --code-highlight-prelude-val-color: var(--pw-color-syntax-constant);
+  --code-highlight-number-color: var(--pw-color-syntax-number);
+  --code-highlight-string-color: var(--pw-color-syntax-string);
+  --code-highlight-literal-color: var(--pw-color-syntax-keyword);
+  --code-highlight-attribute-color: var(--pw-color-syntax-function);
+  --code-highlight-self-color: var(--pw-color-syntax-keyword);
+  --code-highlight-macro-color: var(--pw-color-syntax-function);
+  --code-highlight-question-mark-color: var(--pw-color-syntax-qualifier);
+  --code-highlight-comment-color: var(--pw-color-syntax-comment);
+  --code-highlight-doc-comment-color: var(--pw-color-syntax-doc-comment);
 }

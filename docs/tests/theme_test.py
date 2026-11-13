@@ -309,6 +309,309 @@ class ThemeTest(unittest.TestCase):
 
             browser.close()
 
+    def _resolve_css_color(self, page, var_name: str) -> str:
+        """Resolves a CSS color custom property to its computed rgb() string."""
+        return page.evaluate(
+            """(varName) => {
+                const probe = document.createElement('span');
+                probe.style.color = `var(${varName})`;
+                document.body.appendChild(probe);
+                const resolved = getComputedStyle(probe).color;
+                probe.remove();
+                return resolved;
+            }""",
+            var_name,
+        )
+
+    def _goto_dark_page(self, page, path: str) -> None:
+        page.goto(self.server.url_for(path), wait_until="domcontentloaded")
+        page.wait_for_function(
+            "() => document.documentElement.getAttribute('data-theme')"
+            " === 'dark'",
+            timeout=5000,
+        )
+
+    def test_rustdoc_dark_surfaces_match_sphinx(self):
+        """Verifies Rustdoc dark surfaces, borders, and links match Pigweed's
+        dark palette and Sphinx navigation surface."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                color_scheme="dark",
+            )
+            page = context.new_page()
+
+            self._goto_dark_page(page, "pw_bytes/docs.html")
+            sphinx_styles = page.evaluate(
+                """() => {
+                    const container = getComputedStyle(
+                        document.querySelector('.bd-container')
+                    );
+                    const nav = getComputedStyle(
+                        document.querySelector('#pw-nav')
+                    );
+                    return {
+                        containerBg: container.backgroundColor,
+                        navBg: nav.backgroundColor,
+                        navBorderRight: nav.borderRightColor,
+                    };
+                }"""
+            )
+
+            self._goto_dark_page(page, "rustdoc/pw_bytes/index.html")
+            expected = {
+                "primaryBg": self._resolve_css_color(
+                    page, "--pw-color-background-primary"
+                ),
+                "codeBg": self._resolve_css_color(
+                    page, "--pw-color-background-code"
+                ),
+                "linkFocus": self._resolve_css_color(
+                    page, "--pw-color-outline-focus"
+                ),
+                "border": self._resolve_css_color(page, "--pw-color-border"),
+            }
+            rustdoc_styles = page.evaluate(
+                """() => {
+                    const body = getComputedStyle(document.body);
+                    const sidebar = getComputedStyle(
+                        document.querySelector('nav.sidebar')
+                    );
+                    const code = getComputedStyle(
+                        document.querySelector('pre.rust')
+                    );
+                    const sidebarLink = getComputedStyle(
+                        document.querySelector('nav.sidebar .block a')
+                    );
+                    const headings = getComputedStyle(
+                        document.querySelector('.section-header')
+                    );
+                    return {
+                        bodyBg: body.backgroundColor,
+                        sidebarBg: sidebar.backgroundColor,
+                        sidebarBorder: sidebar.borderRightColor,
+                        codeBg: code.backgroundColor,
+                        sidebarLink: sidebarLink.color,
+                        headingBorder: headings.borderBottomColor,
+                    };
+                }"""
+            )
+            self.assertEqual(rustdoc_styles["bodyBg"], expected["primaryBg"])
+            self.assertEqual(
+                rustdoc_styles["bodyBg"], sphinx_styles["containerBg"]
+            )
+            self.assertEqual(
+                rustdoc_styles["sidebarBg"], sphinx_styles["navBg"]
+            )
+            self.assertEqual(
+                rustdoc_styles["sidebarBorder"], sphinx_styles["navBorderRight"]
+            )
+            self.assertEqual(rustdoc_styles["codeBg"], expected["codeBg"])
+            self.assertEqual(
+                rustdoc_styles["sidebarLink"], expected["linkFocus"]
+            )
+            self.assertEqual(
+                rustdoc_styles["headingBorder"], expected["border"]
+            )
+
+            browser.close()
+
+    def test_rustdoc_theme_vars_scoped_to_rustdoc(self):
+        """Verifies Rustdoc dark-mode overrides do not leak onto Sphinx or
+        Doxygen pages."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                color_scheme="dark",
+            )
+            page = context.new_page()
+
+            for path in ("pw_bytes/docs.html", "api/cc/group__pw__bytes.html"):
+                self._goto_dark_page(page, path)
+                vars_on_root = page.evaluate(
+                    """() => {
+                        const s = getComputedStyle(document.documentElement);
+                        return {
+                            mainBg: s.getPropertyValue('--main-background-color').trim(),
+                            settingsInput: s.getPropertyValue('--settings-input-color').trim(),
+                        };
+                    }"""
+                )
+                self.assertEqual(vars_on_root["mainBg"], "", path)
+                self.assertEqual(vars_on_root["settingsInput"], "", path)
+
+            self._goto_dark_page(page, "rustdoc/pw_bytes/index.html")
+            self.assertEqual(
+                self._resolve_css_color(page, "--settings-input-color"),
+                self._resolve_css_color(page, "--pw-color-outline-focus"),
+            )
+
+            browser.close()
+
+    def test_rustdoc_dark_semantic_and_syntax_colors(self):
+        """Verifies Rustdoc preserves distinct semantic item-kind colors and
+        aligns code highlighting in dark mode."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                color_scheme="dark",
+            )
+            page = context.new_page()
+
+            self._goto_dark_page(page, "rustdoc/pw_bytes/index.html")
+            expected = {
+                "linkFocus": self._resolve_css_color(
+                    page, "--pw-color-outline-focus"
+                ),
+                "macro": self._resolve_css_color(
+                    page, "--pw-color-syntax-keyword"
+                ),
+                "kw": self._resolve_css_color(
+                    page, "--pw-color-syntax-keyword"
+                ),
+                "str": self._resolve_css_color(
+                    page, "--pw-color-syntax-string"
+                ),
+                "struct": self._resolve_css_color(page, "--type-link-color"),
+                "trait": self._resolve_css_color(
+                    page, "--pw-color-syntax-number"
+                ),
+                "fn": self._resolve_css_color(page, "--function-link-color"),
+            }
+            crate_styles = page.evaluate(
+                """() => {
+                    const macroLink = getComputedStyle(
+                        document.querySelector('dl.item-table a.macro')
+                    );
+                    const kw = getComputedStyle(
+                        document.querySelector('pre.rust .kw')
+                    );
+                    const str = getComputedStyle(
+                        document.querySelector('pre.rust .string')
+                    );
+                    return {
+                        macroLink: macroLink.color,
+                        kwColor: kw.color,
+                        strColor: str.color,
+                    };
+                }"""
+            )
+            self.assertEqual(crate_styles["macroLink"], expected["macro"])
+            self.assertEqual(crate_styles["kwColor"], expected["kw"])
+            self.assertEqual(crate_styles["strColor"], expected["str"])
+
+            self._goto_dark_page(page, "rustdoc/pw_status/enum.Error.html")
+            item_styles = page.evaluate(
+                """() => {
+                    const docLink = getComputedStyle(
+                        document.querySelector('.docblock a')
+                    );
+                    const assocLink = getComputedStyle(
+                        document.querySelector('a.associatedtype')
+                    );
+                    const structLink = getComputedStyle(
+                        document.querySelector('a.struct')
+                    );
+                    const traitLink = getComputedStyle(
+                        document.querySelector('a.trait')
+                    );
+                    const fnLink = getComputedStyle(
+                        document.querySelector('a.fn')
+                    );
+                    return {
+                        docLink: docLink.color,
+                        assocLink: assocLink.color,
+                        structLink: structLink.color,
+                        traitLink: traitLink.color,
+                        fnLink: fnLink.color,
+                    };
+                }"""
+            )
+            self.assertEqual(item_styles["docLink"], expected["linkFocus"])
+            self.assertEqual(item_styles["assocLink"], expected["linkFocus"])
+            self.assertEqual(item_styles["structLink"], expected["struct"])
+            self.assertEqual(item_styles["traitLink"], expected["trait"])
+            self.assertEqual(item_styles["fnLink"], expected["fn"])
+            distinct_colors = {
+                item_styles["docLink"],
+                item_styles["structLink"],
+                item_styles["traitLink"],
+                item_styles["fnLink"],
+                crate_styles["macroLink"],
+            }
+            self.assertEqual(
+                len(distinct_colors),
+                5,
+                f"Expected distinct semantic link colors, got {item_styles}",
+            )
+
+            browser.close()
+
+    def test_rustdoc_settings_dark_and_light_toggle(self):
+        """Verifies Rustdoc settings uses dark surface and light mode toggle
+        restores the light background."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                color_scheme="dark",
+            )
+            page = context.new_page()
+
+            self._goto_dark_page(page, "rustdoc/settings.html")
+            dark_bg = self._resolve_css_color(
+                page, "--pw-color-background-primary"
+            )
+            self.assertEqual(
+                page.evaluate(
+                    "getComputedStyle(document.body).backgroundColor"
+                ),
+                dark_bg,
+            )
+
+            light_btn = page.locator("pw-theme button[data-theme-val='light']")
+            light_btn.wait_for(state="visible", timeout=5000)
+            light_btn.click()
+            page.wait_for_function(
+                "() => document.documentElement.getAttribute('data-theme')"
+                " === 'light'",
+                timeout=5000,
+            )
+            light_bg = self._resolve_css_color(
+                page, "--pw-color-background-primary"
+            )
+            self.assertEqual(
+                page.evaluate(
+                    "getComputedStyle(document.body).backgroundColor"
+                ),
+                light_bg,
+            )
+
+            browser.close()
+
 
 if __name__ == "__main__":
     unittest.main()
